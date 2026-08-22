@@ -92,6 +92,39 @@ describe('QuitConfirmationModal', () => {
     expect(onRespond).toHaveBeenCalledExactlyOnceWith(false);
   });
 
+  it('focuses the dialog on open so Escape works without clicking inside', async () => {
+    const onRespond = vi.fn();
+    const QuitConfirmationModal = (await import('../QuitConfirmationModal.svelte')).default;
+
+    // Focus an unrelated element first — the dialog must steal focus on open.
+    const outside = document.createElement('button');
+    document.body.appendChild(outside);
+    outside.focus();
+
+    render(QuitConfirmationModal, { props: { open: true, payload: FULL_PAYLOAD, onRespond } });
+
+    const dialogEl = await screen.findByRole('alertdialog', { name: 'Quit Intent?' });
+    expect(document.activeElement).toBe(dialogEl);
+
+    // Escape dispatched at the focused element (no prior click inside).
+    await fireEvent.keyDown(document.activeElement!, { key: 'Escape' });
+
+    expect(onRespond).toHaveBeenCalledExactlyOnceWith(false);
+  });
+
+  it('exposes alertdialog ARIA semantics', async () => {
+    const QuitConfirmationModal = (await import('../QuitConfirmationModal.svelte')).default;
+
+    render(QuitConfirmationModal, {
+      props: { open: true, payload: FULL_PAYLOAD, onRespond: vi.fn() },
+    });
+
+    const dialogEl = await screen.findByRole('alertdialog', { name: 'Quit Intent?' });
+    expect(dialogEl.getAttribute('aria-modal')).toBe('true');
+    expect(dialogEl.getAttribute('aria-labelledby')).toBe('quit-confirmation-dialog-title');
+    expect(dialogEl.getAttribute('aria-describedby')).toBe('quit-confirmation-dialog-description');
+  });
+
   it('responds false on backdrop click', async () => {
     const onRespond = vi.fn();
     const QuitConfirmationModal = (await import('../QuitConfirmationModal.svelte')).default;

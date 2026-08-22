@@ -27,6 +27,17 @@
   const dialogTitleId = 'quit-confirmation-dialog-title';
   const dialogDescriptionId = 'quit-confirmation-dialog-description';
 
+  let dialogEl = $state<HTMLDivElement | null>(null);
+
+  // Move focus into the dialog on open (ARIA alertdialog pattern) so Escape
+  // reaches the keydown handler immediately — without this, focus stays on
+  // the previously focused page element outside the portal.
+  $effect(() => {
+    if (open && payload && dialogEl) {
+      dialogEl.focus();
+    }
+  });
+
   const interrupted = $derived(payload?.interrupted ?? []);
   const keepRunning = $derived(payload?.keepRunning ?? []);
   const disruptedTabs = $derived(payload?.disruptedBrowserTabs ?? []);
@@ -57,7 +68,8 @@
       onclick={() => respond(false)}
     >
       <div
-        class="flex w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-border bg-background shadow-xl shadow-black/20 max-h-[85vh]"
+        bind:this={dialogEl}
+        class="flex w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-border bg-background shadow-xl shadow-black/20 max-h-[85vh] outline-none"
         onclick={(e) => e.stopPropagation()}
         role="alertdialog"
         aria-modal="true"
