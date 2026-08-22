@@ -45,6 +45,15 @@ function clampViewportDimension(px: number): number {
  */
 const TAB_REGISTRATION_TIMEOUT_MS = 15_000;
 
+/**
+ * How long (ms) to wait for the Page-domain screenshot CDP commands
+ * (Page.getLayoutMetrics / Page.captureScreenshot) before falling back to
+ * webContents.capturePage(). On some guests the debugger's Page domain never
+ * answers even while Runtime/Accessibility commands work, hanging screenshot
+ * until the caller's budget kills it (intent-hq/monorepo#3154).
+ */
+const SCREENSHOT_CDP_TIMEOUT_MS = 5_000;
+
 interface TabInfo {
   tabId: string;
   webContentsId: number;
@@ -1452,6 +1461,63 @@ class EmbeddedBrowserCdpService {
   }
 
   /**
+   * Race a Page-domain screenshot command against a bounded timeout. The
+   * command promise is returned as-is when it settles first; on timeout the
+   * caller falls back to webContents.capturePage() (monorepo#3154).
+   * Rejections are prefixed with the command label so the fallback's warn
+   * log always identifies which CDP command failed.
+   */
+  private async withScreenshotCdpTimeout<T>(promise: Promise<T>, label: string): Promise<T> {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      return await Promise.race([
+        promise,
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(
+            () => reject(new Error(`${label} timed out after ${SCREENSHOT_CDP_TIMEOUT_MS}ms`)),
+            SCREENSHOT_CDP_TIMEOUT_MS,
+          );
+        }),
+      ]);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      throw message.startsWith(label) ? error : new Error(`${label} failed: ${message}`);
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  /**
+   * Fallback capture via webContents.capturePage(): works without the
+   * debugger's Page domain (which on some guests never answers even while
+   * Runtime/Accessibility commands work, monorepo#3154) and honors
+   * offscreen painting. Captures the full visible view (no scroll clip).
+   *
+   * Fidelity caveats versus the CDP path: on viewport-emulated tabs whose
+   * displayed image is scaled to fit the hosting view (scale < 1), this
+   * captures the scaled-down composited view, so width/height can differ
+   * from the tab's emulated size; and getSize() reports DIP dimensions
+   * while toJPEG() encodes the physical-pixel bitmap, so on HiDPI displays
+   * the encoded image can exceed the reported width/height by the display
+   * scale factor. Acceptable degradation versus hanging the action.
+   */
+  private async capturePageFallback(
+    webContentsId: number,
+  ): Promise<{ base64: string; width: number; height: number }> {
+    const wc = webContents.fromId(webContentsId);
+    if (!wc || wc.isDestroyed()) {
+      throw new Error(`WebContents ${webContentsId} not found or destroyed`);
+    }
+    const image = await wc.capturePage();
+    const size = image.getSize();
+    return {
+      base64: image.toJPEG(80).toString('base64'),
+      width: size.width,
+      height: size.height,
+    };
+  }
+
+  /**
    * Take a screenshot of a tab
    */
   async screenshot(tabId?: string): Promise<{ base64: string; width: number; height: number }> {
@@ -1465,12 +1531,33 @@ class EmbeddedBrowserCdpService {
       );
     }
 
+    try {
+      return await this.screenshotViaCdp(webContentsId);
+    } catch (error) {
+      // The Page domain can hang (or fail) on some guests while the rest of
+      // the debugger session works; degrade to capturePage() instead of
+      // hanging the action until the caller's budget kills it (#3154).
+      logger.warn('CDP screenshot failed; falling back to webContents.capturePage()', {
+        webContentsId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return this.capturePageFallback(webContentsId);
+    }
+  }
+
+  /** Page-domain screenshot with per-command timeouts (see screenshot()). */
+  private async screenshotViaCdp(
+    webContentsId: number,
+  ): Promise<{ base64: string; width: number; height: number }> {
     // Get layout metrics to determine viewport size.
     // layoutViewport reflects the page's internal layout (may exceed visible area
     // if the page sets min-width larger than the panel).
     // cssVisualViewport reflects the actual visible area the user sees.
     // We cap to whichever is smaller so screenshots match the panel bounds.
-    const layoutMetrics = (await this.sendCommand(webContentsId, 'Page.getLayoutMetrics')) as {
+    const layoutMetrics = (await this.withScreenshotCdpTimeout(
+      this.sendCommand(webContentsId, 'Page.getLayoutMetrics'),
+      'Page.getLayoutMetrics',
+    )) as {
       layoutViewport: { clientWidth: number; clientHeight: number };
       cssVisualViewport?: {
         clientWidth: number;
@@ -1495,17 +1582,20 @@ class EmbeddedBrowserCdpService {
     const width = visualW && visualW > 0 ? Math.min(layoutW, visualW) : layoutW;
     const height = visualH && visualH > 0 ? Math.min(layoutH, visualH) : layoutH;
 
-    const result = (await this.sendCommand(webContentsId, 'Page.captureScreenshot', {
-      format: 'jpeg',
-      quality: 80,
-      clip: {
-        x: scrollX,
-        y: scrollY,
-        width,
-        height,
-        scale: 1,
-      },
-    })) as { data: string };
+    const result = (await this.withScreenshotCdpTimeout(
+      this.sendCommand(webContentsId, 'Page.captureScreenshot', {
+        format: 'jpeg',
+        quality: 80,
+        clip: {
+          x: scrollX,
+          y: scrollY,
+          width,
+          height,
+          scale: 1,
+        },
+      }),
+      'Page.captureScreenshot',
+    )) as { data: string };
 
     return {
       base64: result.data,
