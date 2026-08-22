@@ -55,6 +55,7 @@
   import {
     parseAgentMessage,
     parseSuggestedPrompts,
+    parseSuggestedPromptsFromContentBlocks,
     groupParsedBlocks,
     groupContentBlocks,
     filterWorkspaceCardsCoveredByIds,
@@ -191,8 +192,14 @@
     // renders per resource, preferring the daemon-canonical variant.
     // Agent Q&A questions are wizard-only: they never render in the
     // transcript (pending or resolved), so strip them up front.
+    const parsedPromptBlocks = parseSuggestedPromptsFromContentBlocks(hydratedContent, {
+      isStreaming,
+    });
     const rawBlocks = dedupeAgentVideoContentBlocks(
-      normalizeAgentVideoContentBlocks(dedupeResourceBlocks(hydratedContent), role),
+      normalizeAgentVideoContentBlocks(
+        dedupeResourceBlocks(parsedPromptBlocks.contentBlocks),
+        role,
+      ),
     ).filter((block) => !isQuestionResourceBlock(block));
 
     // DEBUG: Log content block types for tool call visibility debugging
