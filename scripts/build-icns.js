@@ -2,6 +2,7 @@
 /** Build desktop and web icons from the approved app icon PNGs. */
 
 import { execFileSync } from 'child_process';
+import { createHash } from 'crypto';
 import fs from 'fs';
 import path from 'path';
 import sharp from 'sharp';
@@ -18,6 +19,8 @@ const DEV_ICONSET_DIR = path.join(ICONS_DIR, 'DevAppIcon.iconset');
 const FAVICON_PATH = path.join(__dirname, '../static/favicon.png');
 const SOURCE_SIZES = [32, 64, 128, 256, 512, 1024];
 const ICO_SIZES = [16, 32, 48, 64, 128, 256];
+const DEV_SOURCE_SHA256 = '4e6e13f59557bb3ee33ed7810ba07d05f7308d564e16456b1117885822c68581';
+const DEV_SOURCE_ALPHA_BOUNDS = { left: 80, top: 91, right: 943, bottom: 954 };
 
 // macOS iconutil requires these exact filenames and sizes
 const ICONSET_SPEC = {
@@ -49,7 +52,7 @@ async function devPngBuffer(size) {
   return sharp(DEV_SOURCE_PATH).resize(size, size).png().toBuffer();
 }
 
-async function validateSources() {
+async function validateReleaseSources() {
   for (const size of SOURCE_SIZES) {
     const source = sourcePath(size);
     const metadata = await sharp(source).metadata();
@@ -57,10 +60,34 @@ async function validateSources() {
       throw new Error(`${source} must be a ${size}x${size} PNG`);
     }
   }
+}
 
-  const devMetadata = await sharp(DEV_SOURCE_PATH).metadata();
-  if (devMetadata.format !== 'png' || devMetadata.width !== 276 || devMetadata.height !== 276) {
-    throw new Error(`${DEV_SOURCE_PATH} must be a 276x276 PNG`);
+async function validateDevSource() {
+  const source = fs.readFileSync(DEV_SOURCE_PATH);
+  const devMetadata = await sharp(source).metadata();
+  if (devMetadata.format !== 'png' || devMetadata.width !== 1024 || devMetadata.height !== 1024) {
+    throw new Error(`${DEV_SOURCE_PATH} must be a 1024x1024 PNG`);
+  }
+  if (createHash('sha256').update(source).digest('hex') !== DEV_SOURCE_SHA256) {
+    throw new Error(`${DEV_SOURCE_PATH} must match the approved unstable icon source`);
+  }
+
+  const { data, info } = await sharp(source)
+    .ensureAlpha()
+    .raw()
+    .toBuffer({ resolveWithObject: true });
+  const bounds = { left: info.width, top: info.height, right: -1, bottom: -1 };
+  for (let y = 0; y < info.height; y += 1) {
+    for (let x = 0; x < info.width; x += 1) {
+      if (data[(y * info.width + x) * info.channels + 3] === 0) continue;
+      bounds.left = Math.min(bounds.left, x);
+      bounds.top = Math.min(bounds.top, y);
+      bounds.right = Math.max(bounds.right, x);
+      bounds.bottom = Math.max(bounds.bottom, y);
+    }
+  }
+  if (Object.keys(bounds).some((key) => bounds[key] !== DEV_SOURCE_ALPHA_BOUNDS[key])) {
+    throw new Error(`${DEV_SOURCE_PATH} must preserve the approved transparent spacing`);
   }
 }
 
@@ -101,18 +128,35 @@ async function buildIco(pngBuffer, destination) {
   fs.writeFileSync(destination, Buffer.concat([header, ...images]));
 }
 
+async function buildDevelopmentIcons() {
+  await buildIcns(devPngBuffer, DEV_ICONSET_DIR, path.join(ICONS_DIR, 'dev-icon.icns'));
+  await buildIco(devPngBuffer, path.join(ICONS_DIR, 'dev-icon.ico'));
+  fs.writeFileSync(path.join(ICONS_DIR, 'dev-icon.png'), await devPngBuffer(512));
+}
+
 async function main() {
+  const args = process.argv.slice(2);
+  const unknownArgs = args.filter((arg) => arg !== '--dev-only');
+  if (unknownArgs.length > 0) throw new Error(`Unknown argument: ${unknownArgs[0]}`);
+
+  if (args.includes('--dev-only')) {
+    console.log('Building development app icons...');
+    await validateDevSource();
+    await buildDevelopmentIcons();
+    console.log('Created dev-icon PNG/ICO/ICNS assets');
+    return;
+  }
+
   console.log('Building release and development app icons...');
-  await validateSources();
+  await validateReleaseSources();
+  await validateDevSource();
 
   await buildIcns(releasePngBuffer, ICONSET_DIR, path.join(ICONS_DIR, 'icon.icns'));
   await buildIco(releasePngBuffer, path.join(ICONS_DIR, 'icon.ico'));
   fs.copyFileSync(sourcePath(512), path.join(ICONS_DIR, 'icon.png'));
   fs.copyFileSync(sourcePath(128), FAVICON_PATH);
 
-  await buildIcns(devPngBuffer, DEV_ICONSET_DIR, path.join(ICONS_DIR, 'dev-icon.icns'));
-  await buildIco(devPngBuffer, path.join(ICONS_DIR, 'dev-icon.ico'));
-  fs.writeFileSync(path.join(ICONS_DIR, 'dev-icon.png'), await devPngBuffer(512));
+  await buildDevelopmentIcons();
   console.log('Created release icons, favicon.png, and dev-icon PNG/ICO/ICNS assets');
 }
 
