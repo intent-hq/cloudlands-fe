@@ -44,6 +44,7 @@
   import SetupScriptCard from './SetupScriptCard.svelte';
   import ThinkingBlock from './ThinkingBlock.svelte';
   import ReasoningHistoryBlock from './ReasoningHistoryBlock.svelte';
+  import ExecutionPlanCard from './ExecutionPlanCard.svelte';
   import NavLink from './NavLink.svelte';
   import {
     parseAgentMessage,
@@ -597,7 +598,11 @@
       return Boolean((contentBlock.data || contentBlock.dataTruncated) && contentBlock.mimeType);
     }
     if (contentBlock.type === 'video') return Boolean(contentBlock.source);
-    return contentBlock.type === 'tool_use' || contentBlock.type === 'thinking';
+    return (
+      contentBlock.type === 'tool_use' ||
+      contentBlock.type === 'thinking' ||
+      contentBlock.type === 'plan'
+    );
   }
 
   let lastVisibleTopLevelBlockIndex = $derived.by(() => {
@@ -831,6 +836,8 @@
   {:else if block.type === 'tool_result'}
     <!-- Tool results are handled by associating them with their tool_use blocks -->
     <!-- We don't render them separately as they're shown within the ToolCall component -->
+  {:else if block.type === 'plan' && block.entries}
+    <ExecutionPlanCard entries={block.entries} />
   {:else if block.type === 'thinking'}
     <!-- Daemon-emitted thinking blocks carry `text` (PROTOCOL §7.1); the legacy
          <think>-tag parser path in messageParser emits `content`. -->
@@ -973,7 +980,7 @@
           </ResponseGroup>
         </div>
       {/if}
-    {:else if isNavLinkBlock(block as ContentBlock) || ['text', 'tool_use', 'thinking', 'image', 'video'].includes(block.type)}
+    {:else if isNavLinkBlock(block as ContentBlock) || ['text', 'tool_use', 'thinking', 'plan', 'image', 'video'].includes(block.type)}
       <div
         class="content-block content-block--{isNavLinkBlock(block as ContentBlock)
           ? 'nav-link'

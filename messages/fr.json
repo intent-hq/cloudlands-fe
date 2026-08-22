@@ -5905,5 +5905,10 @@
   "workspace_agentsList_noSearchResults_label": "Aucun agent ne correspond à votre recherche.",
   "workspace_contextPanel_noSearchResults_label": "Aucun contexte ne correspond à votre recherche.",
   "workspace_sidebarSearch_clear_ariaLabel": "Effacer la recherche",
-  "layout_allCard_archived_label": "Archivés"
+  "layout_allCard_archived_label": "Archivés",
+  "chat_executionPlan_title": "Plan d’exécution",
+  "chat_executionPlan_step_label": "Étape {current} / {total}",
+  "chat_executionPlan_completed_label": "Terminé",
+  "chat_executionPlan_current_label": "En cours",
+  "chat_executionPlan_pending_label": "En attente"
 }

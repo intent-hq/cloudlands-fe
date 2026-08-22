@@ -5905,5 +5905,10 @@
   "workspace_agentsList_noSearchResults_label": "검색과 일치하는 에이전트가 없습니다.",
   "workspace_contextPanel_noSearchResults_label": "검색과 일치하는 컨텍스트가 없습니다.",
   "workspace_sidebarSearch_clear_ariaLabel": "검색 지우기",
-  "layout_allCard_archived_label": "보관됨"
+  "layout_allCard_archived_label": "보관됨",
+  "chat_executionPlan_title": "실행 계획",
+  "chat_executionPlan_step_label": "단계 {current} / {total}",
+  "chat_executionPlan_completed_label": "완료",
+  "chat_executionPlan_current_label": "현재",
+  "chat_executionPlan_pending_label": "대기 중"
 }

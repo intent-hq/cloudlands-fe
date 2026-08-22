@@ -5905,5 +5905,10 @@
   "workspace_agentsList_noSearchResults_label": "検索に一致するエージェントはありません。",
   "workspace_contextPanel_noSearchResults_label": "検索に一致するコンテキストはありません。",
   "workspace_sidebarSearch_clear_ariaLabel": "検索をクリア",
-  "layout_allCard_archived_label": "アーカイブ済み"
+  "layout_allCard_archived_label": "アーカイブ済み",
+  "chat_executionPlan_title": "実行計画",
+  "chat_executionPlan_step_label": "ステップ {current} / {total}",
+  "chat_executionPlan_completed_label": "完了",
+  "chat_executionPlan_current_label": "実行中",
+  "chat_executionPlan_pending_label": "保留中"
 }
