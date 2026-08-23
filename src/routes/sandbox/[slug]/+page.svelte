@@ -1,12 +1,18 @@
 <script lang="ts">
   import { page } from '$app/state';
   import CatalogFixtureList from '$lib/component-catalog/CatalogFixtureList.svelte';
+  import CatalogScene from '$lib/component-catalog/CatalogScene.svelte';
   import { getCatalogEntry } from '$lib/component-catalog/catalog';
+  import { parseCatalogUrlSettings } from '$lib/component-catalog/catalog-preferences';
 
-  const entry = $derived(getCatalogEntry((page.params as { slug: string }).slug));
+  const slug = $derived((page.params as { slug: string }).slug);
+  const entry = $derived(getCatalogEntry(slug));
+  const urlSettings = $derived(parseCatalogUrlSettings(page.url.searchParams));
 </script>
 
-{#if entry}
+{#if urlSettings.state}
+  <CatalogScene {slug} requestedState={urlSettings.state} requestedWidth={urlSettings.width} />
+{:else if entry}
   <CatalogFixtureList {entry} />
 {:else}
   <section class="mx-auto max-w-3xl space-y-4 p-6 lg:p-10">
