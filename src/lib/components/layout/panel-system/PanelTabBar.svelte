@@ -125,6 +125,8 @@
   const PANEL_HEADER_INTERACTIVE_SELECTOR =
     'button, a, input, textarea, select, [role="button"], [role="tab"], [contenteditable="true"]';
   const MAX_VISIBLE_PANE_LAYERS = 2;
+  const ONE_PANE_LAYER_MIN_WIDTH = 212;
+  const TWO_PANE_LAYERS_MIN_WIDTH = 300;
   const PANEL_COLUMN_COUNTS = [1, 2, 3, 4] as const satisfies readonly PanelColumnCount[];
   const PANEL_COLUMN_DIVIDER_SLOTS = [0, 1, 2] as const;
 
@@ -230,6 +232,8 @@
   let contextMenuElement = $state<HTMLDivElement | null>(null);
 
   let paneStackMenuOpen = $state(false);
+  let paneStackElement = $state<HTMLElement | null>(null);
+  let maxVisiblePaneLayers = $state(MAX_VISIBLE_PANE_LAYERS);
 
   // Tab rename state - tracks which tab is being renamed inline
   let renamingTabId = $state<string | null>(null);
@@ -379,7 +383,9 @@
 
   const attentionPaneIds = $derived(new Set(attentionTabIds));
   const inactivePaneLayers = $derived(tabs.filter((tab) => tab.id !== activeTabId));
-  const visiblePaneLayers = $derived(inactivePaneLayers.slice(-MAX_VISIBLE_PANE_LAYERS));
+  const visiblePaneLayers = $derived(
+    maxVisiblePaneLayers === 0 ? [] : inactivePaneLayers.slice(-maxVisiblePaneLayers),
+  );
   const paneOverflowCount = $derived(inactivePaneLayers.length - visiblePaneLayers.length);
   const hiddenPaneIds = $derived(
     new Set(inactivePaneLayers.slice(0, paneOverflowCount).map((tab) => tab.id)),
@@ -387,6 +393,28 @@
   const hiddenAttentionCount = $derived(
     attentionTabIds.filter((tabId) => hiddenPaneIds.has(tabId)).length,
   );
+
+  function visiblePaneLayerLimit(width: number): number {
+    if (width <= 0) return MAX_VISIBLE_PANE_LAYERS;
+    if (width >= TWO_PANE_LAYERS_MIN_WIDTH) return MAX_VISIBLE_PANE_LAYERS;
+    if (width >= ONE_PANE_LAYER_MIN_WIDTH) return 1;
+    return 0;
+  }
+
+  $effect(() => {
+    const element = paneStackElement;
+    if (!element) return;
+
+    const update = (width = element.clientWidth) => {
+      maxVisiblePaneLayers = visiblePaneLayerLimit(width);
+    };
+    update();
+    if (typeof ResizeObserver === 'undefined') return;
+
+    const observer = new ResizeObserver(([entry]) => update(entry?.contentRect.width));
+    observer.observe(element);
+    return () => observer.disconnect();
+  });
 
   function handlePanelColumnCountChange(count: number) {
     if (isPanelColumnCount(count)) {
@@ -1479,7 +1507,7 @@
 {/snippet}
 
 {#snippet paneStackOverflowMenu()}
-  {#if paneOverflowCount > 0}
+  {#if tabs.length > 1}
     <span class="pane-stack-overflow relative z-3 -mr-2 shrink-0 self-center">
       <Menu.Root bind:open={paneStackMenuOpen}>
         <Menu.Trigger>
@@ -1506,7 +1534,7 @@
               data-pane-stack-overflow-trigger
               data-attention={hiddenAttentionCount > 0 ? '' : undefined}
             >
-              {m.layout_panelTabBar_paneOverflow_label({ count: paneOverflowCount })}
+              {m.layout_panelTabBar_paneOverflow_label({ count: tabs.length })}
               {#if hiddenAttentionCount > 0}
                 <span class="size-1.5 rounded-full bg-primary" aria-hidden="true"></span>
               {/if}
@@ -1923,6 +1951,7 @@
     >
       <!-- Left: visible pane layers with the active pane in front. -->
       <div
+        bind:this={paneStackElement}
         class="pane-stack-control flex min-w-0 flex-1 items-center overflow-hidden"
         role="group"
         aria-label={m.layout_panelTabBar_paneStack_ariaLabel({ count: tabs.length })}
@@ -1931,7 +1960,7 @@
       >
         {@render paneStackLayers()}
         <div
-          class="pane-stack-active relative z-10 flex min-w-0 flex-1 items-center gap-2 rounded-md bg-card pl-1"
+          class="pane-stack-active relative z-10 flex min-w-24 flex-1 items-center gap-2 rounded-md bg-card pl-1"
           aria-label={m.layout_panelTabBar_activePane_ariaLabel({
             title: activeTabTitle,
             position: panePosition(activeTab.id),

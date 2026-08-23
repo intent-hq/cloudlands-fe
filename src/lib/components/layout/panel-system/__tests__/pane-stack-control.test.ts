@@ -66,7 +66,7 @@ describe('pane stack control', () => {
   it('opens the complete stack list from the keyboard and selects a pane', async () => {
     const { container } = render(PaneStackControlHost);
     const trigger = screen.getByTestId('pane-stack-overflow-trigger');
-    expect(trigger.textContent?.trim()).toBe('+2');
+    expect(trigger.textContent?.trim()).toBe('+5');
     expect(trigger.getAttribute('aria-label')).toBe(
       'Show all panes. Stack size: 5. Hidden layers: 2.',
     );
