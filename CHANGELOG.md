@@ -4,6 +4,14 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.86.3](https://github.com/intent-hq/cloudlands-fe/compare/v2.86.2...v2.86.3) (2026-08-23)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.7.47 ([#1634](https://github.com/intent-hq/cloudlands-fe/issues/1634)) ([495c7a3](https://github.com/intent-hq/cloudlands-fe/commit/495c7a31178b56d91475925c6cb656423f8aff1e))
+* make ModelPicker trigger-label lookup prefix-insensitive ([#1631](https://github.com/intent-hq/cloudlands-fe/issues/1631)) ([337539b](https://github.com/intent-hq/cloudlands-fe/commit/337539b3ed6a729809be009ee36d4a25163ab7c3))
+
 ## [2.86.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.86.1...v2.86.2) (2026-08-23)
 
 
