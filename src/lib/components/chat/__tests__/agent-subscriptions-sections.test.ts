@@ -108,6 +108,7 @@ import { store as appStore } from '$store/renderer/store';
 import { workspaceDeleted } from '$store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice';
 import { setWorkspaceEntity } from '$store/renderer/slices/workspace/workspace-slice';
 import { requestSubscriptionFetch } from '$store/renderer/slices/agent-subscription-ui/agent-subscription-ui-slice';
+import { chatTranscriptSnapshotApplied } from '$store/renderer/slices/chat-state/chat-state-slice';
 import { agentSubscriptionReadSaga } from '$store/renderer/slices/agent-subscription-ui/sagas/agent-subscription-read-saga';
 import { agentMutationSaga } from '$store/renderer/slices/agent-session/sagas/agent-mutation-saga';
 import { appLayoutNavigationSaga } from '$store/renderer/slices/app-layout/sagas/app-layout-navigation-saga';
@@ -236,6 +237,16 @@ function seedSession(
     updatedAt,
     ...extra,
   });
+}
+
+function markTranscriptAuthoritative(agentId: string, totalMessages = 0) {
+  appStore.dispatch(
+    chatTranscriptSnapshotApplied(agentId, {
+      truncated: false,
+      totalMessages,
+      ...(totalMessages > 0 ? { oldestMessageId: `${agentId}:oldest` } : {}),
+    }),
+  );
 }
 
 async function renderWithSnapshot(wsId: string, wire: unknown, compact = false) {
@@ -1152,6 +1163,7 @@ describe('AgentSubscriptions unified waiting disclosure', () => {
         { total: 2, completed: 1, inProgress: 0 },
       ),
     );
+    markTranscriptAuthoritative('agent-linked');
 
     await renderWithSnapshot(
       wsId,
@@ -1203,6 +1215,7 @@ describe('AgentSubscriptions unified waiting disclosure', () => {
         { total: 1, completed: 0, inProgress: 1 },
       ),
     );
+    markTranscriptAuthoritative('agent-linked');
     await renderWithSnapshot(
       wsId,
       snapshot([oneShotSubscription('watch-progress-live', wsId, ['agent-linked'])]),
@@ -1217,6 +1230,91 @@ describe('AgentSubscriptions unified waiting disclosure', () => {
     await waitFor(() => expect(trigger.textContent?.trim()).toBe('1/1'));
     expect(document.activeElement).toBe(trigger);
     expect(await screen.findByRole('button', { name: '1 task completed' })).toBeTruthy();
+  });
+
+  it('waits for an AgentLite transcript snapshot before showing a linked fallback', async () => {
+    const wsId = 'ws-agent-task-progress-agent-lite-fallback';
+    const agentId = 'agent-lite-fallback';
+    seedSession(agentId, '2026-01-03T00:00:00.000Z', 'waiting', wsId, {
+      metadata: { taskNoteId: 'task-linked-agent-lite' },
+    });
+    appStore.dispatch(
+      loadWorkspaceTasksSucceeded(
+        wsId,
+        [
+          {
+            id: 'task-linked-agent-lite',
+            title: 'Authoritative linked fallback',
+            status: 'in_progress',
+            specLinked: false,
+          },
+        ],
+        { total: 1, completed: 0, inProgress: 1 },
+      ),
+    );
+    await renderWithSnapshot(
+      wsId,
+      snapshot([oneShotSubscription('watch-agent-lite-fallback', wsId, [agentId])]),
+    );
+
+    expect(within(agentRow(agentId)).queryByTestId('task-progress-trigger')).toBeNull();
+    markTranscriptAuthoritative(agentId);
+    await waitFor(() =>
+      expect(
+        within(agentRow(agentId)).getByTestId('task-progress-trigger').textContent?.trim(),
+      ).toBe('0/1'),
+    );
+  });
+
+  it('restores a native plan ahead of the linked fallback for an AgentLite-only child row', async () => {
+    const wsId = 'ws-agent-task-progress-agent-lite-native';
+    const agentId = 'agent-lite-native';
+    seedSession(agentId, '2026-01-03T00:00:00.000Z', 'responding', wsId, {
+      metadata: { taskNoteId: 'task-hidden-fallback' },
+    });
+    appStore.dispatch(
+      loadWorkspaceTasksSucceeded(
+        wsId,
+        [
+          {
+            id: 'task-hidden-fallback',
+            title: 'Hidden linked fallback',
+            status: 'complete',
+            specLinked: false,
+          },
+        ],
+        { total: 1, completed: 1, inProgress: 0 },
+      ),
+    );
+    await renderWithSnapshot(
+      wsId,
+      snapshot([oneShotSubscription('watch-agent-lite-native', wsId, [agentId])]),
+    );
+    expect(within(agentRow(agentId)).queryByTestId('task-progress-trigger')).toBeNull();
+
+    const persisted = {
+      id: 'persisted-native-plan',
+      role: 'assistant',
+      contentBlocks: [
+        {
+          type: 'plan',
+          id: 'persisted-native-plan:block',
+          entries: [
+            { content: 'Persisted native task', priority: 'high', status: 'in_progress' },
+            { content: 'Next native task', priority: 'medium', status: 'pending' },
+          ],
+        },
+      ],
+    };
+    sessionState.historyById.set(agentId, [persisted]);
+    markTranscriptAuthoritative(agentId, 1);
+    const trigger = await within(agentRow(agentId)).findByTestId('task-progress-trigger');
+    expect(trigger.textContent?.trim()).toBe('0/2');
+
+    await fireEvent.click(trigger);
+    const dialog = await screen.findByRole('dialog', { name: 'Agent tasks' });
+    expect(within(dialog).queryByText('Hidden linked fallback')).toBeNull();
+    expect(within(dialog).getByText('Next native task')).toBeTruthy();
   });
 
   it('keeps grouped rows individually stoppable with group-scoped cancel routing', async () => {

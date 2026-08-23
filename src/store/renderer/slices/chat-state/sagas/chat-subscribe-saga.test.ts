@@ -61,6 +61,7 @@ import {
   chatSendStarted,
   chatTranscriptSnapshotRerequested,
   initializeChatRequested,
+  retainedChatTranscriptsSet,
   refreshChatTranscriptRequested,
   transcriptHydrationFailed,
   transcriptHydrationSettled,
@@ -438,6 +439,49 @@ describe('chatSubscribeSaga (fake seam, real store)', () => {
     expect(messages[1].contentBlocks?.[0]).toMatchObject({
       text: 'Let me check the logs first.',
     });
+  });
+
+  it('retains an AgentLite child transcript through snapshot hydration and live plan updates', async () => {
+    const agentId = 'agent-sub-retained-plan';
+    seedSession(agentId, { messages: [] });
+
+    appStore.dispatch(retainedChatTranscriptsSet('subscription-list-a', WS, [agentId]));
+    await vi.waitFor(() => {
+      expect(chatApi.subscribe.mock.calls.filter(([id]) => id === agentId)).toHaveLength(1);
+    });
+    const sub = fakeSubscriptions.find((candidate) => candidate.agentId === agentId)!;
+    const planMessage = (status: 'pending' | 'in_progress' | 'completed') =>
+      makeMessage('retained-plan', 'Plan', {
+        contentBlocks: [
+          {
+            type: 'plan',
+            id: 'retained-plan:block',
+            entries: [{ content: 'Hydrated child task', priority: 'high', status }],
+          },
+        ],
+      });
+
+    sub.handler({ ...transcript([planMessage('in_progress')]), fromSnapshot: true });
+    expect(selectAgentMessages.select(appStore.state, agentId)[0].contentBlocks?.[0]).toMatchObject({
+      type: 'plan',
+      entries: [{ content: 'Hydrated child task', status: 'in_progress' }],
+    });
+
+    appStore.dispatch(retainedChatTranscriptsSet('subscription-list-b', WS, [agentId]));
+    appStore.dispatch(retainedChatTranscriptsSet('subscription-list-a', WS, []));
+    expect(chatApi.subscribe.mock.calls.filter(([id]) => id === agentId)).toHaveLength(1);
+    expect(sub.unsubscribe).not.toHaveBeenCalled();
+
+    appStore.dispatch(markAgentAsViewed('agent-unrelated-view'));
+    expect(sub.unsubscribe).not.toHaveBeenCalled();
+    sub.handler(transcript([planMessage('completed')]));
+    expect(selectAgentMessages.select(appStore.state, agentId)[0].contentBlocks?.[0]).toMatchObject({
+      type: 'plan',
+      entries: [{ content: 'Hydrated child task', status: 'completed' }],
+    });
+
+    appStore.dispatch(retainedChatTranscriptsSet('subscription-list-b', WS, []));
+    await vi.waitFor(() => expect(sub.unsubscribe).toHaveBeenCalledOnce());
   });
 
   it('records snapshot metadata on fromSnapshot emits (single-transfer hydration signal)', () => {

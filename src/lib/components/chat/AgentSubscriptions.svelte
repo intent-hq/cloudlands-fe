@@ -50,6 +50,9 @@
   } from '$store/renderer/slices/workspace-tasks/workspace-tasks-selectors';
   import { ensureWorkspaceTasksLoaded } from '$store/renderer/slices/workspace-tasks/workspace-tasks-slice';
   import { deriveTaskProgress, type TaskProgressItem } from './workspace-task-fallback';
+  import { hasNativeExecutionPlan } from './workspace-task-fallback';
+  import { retainedChatTranscriptsSet } from '$store/renderer/slices/chat-state/chat-state-slice';
+  import { selectTranscriptSnapshotMeta } from '$store/renderer/slices/chat-state/chat-state-selectors';
 
   import {
     selectAgentSubscriptions,
@@ -248,6 +251,24 @@
     return rows;
   });
 
+  let retainedTranscriptWorkspaceId: string | null = null;
+  let retainedTranscriptKey = '';
+  $effect(() => {
+    if (isolatedPreview || !workspaceId) return;
+    const agentIds = waitingAgentRows.map((row) => row.agentId);
+    const nextKey = `${workspaceId}\u001e${agentIds.join('\u001f')}`;
+    if (nextKey === retainedTranscriptKey) return;
+    retainedTranscriptWorkspaceId = workspaceId;
+    retainedTranscriptKey = nextKey;
+    untrack(() =>
+      appStore.dispatch(retainedChatTranscriptsSet(componentId, workspaceId, agentIds)),
+    );
+  });
+  onDestroy(() => {
+    if (!retainedTranscriptWorkspaceId) return;
+    appStore.dispatch(retainedChatTranscriptsSet(componentId, retainedTranscriptWorkspaceId, []));
+  });
+
   // The participant ID set changes independently from the session map. Bridge
   // immutable Redux snapshots into local rune state so derived avatar items
   // invalidate when Redux replaces a session.
@@ -379,14 +400,21 @@
     for (const row of waitingAgentRows) {
       const session = sessionsById[row.agentId];
       if (!session) continue;
+      const messages = [
+        ...selectAgentHistoryMessages.select(state, row.agentId),
+        ...(session.messages ?? []),
+      ];
+      if (
+        !hasNativeExecutionPlan(messages) &&
+        !selectTranscriptSnapshotMeta.select(state, row.agentId)
+      ) {
+        continue;
+      }
       progress[row.agentId] = deriveTaskProgress({
         initialized,
         tasks,
         session,
-        messages: [
-          ...selectAgentHistoryMessages.select(state, row.agentId),
-          ...(session.messages ?? []),
-        ],
+        messages,
       });
     }
     return progress;
