@@ -234,6 +234,8 @@ test('renders the full reference table as a wide overlay from the real workspace
     modelBox,
     breakdownRows,
     breakdownLists,
+    breakdownItemVisibility,
+    breakdownBars,
   ] = await Promise.all([
     details.boundingBox(),
     sidebar.boundingBox(),
@@ -291,6 +293,20 @@ test('renders the full reference table as a wide overlay from the real workspace
         scrollHeight: list.scrollHeight,
       })),
     ),
+    details.locator('.breakdown-section ol').evaluateAll((lists) =>
+      lists.map((list) => {
+        const listBox = list.getBoundingClientRect();
+        const firstRowBox = list.firstElementChild!.getBoundingClientRect();
+        const secondRowBox = list.children[1]!.getBoundingClientRect();
+        return { listBox, firstRowBox, secondRowBox };
+      }),
+    ),
+    details.locator('.breakdown-share-bar').evaluateAll((bars) =>
+      bars.map((bar) => ({
+        height: bar.getBoundingClientRect().height,
+        borderRadius: Number.parseFloat(getComputedStyle(bar).borderRadius),
+      })),
+    ),
   ]);
 
   expect(detailsBox).not.toBeNull();
@@ -317,25 +333,47 @@ test('renders the full reference table as a wide overlay from the real workspace
   expect(
     breakdownLists.every(
       ({ clientHeight, maxHeight, overflowY, scrollbarWidth, scrollHeight }) =>
-        clientHeight <= 32 &&
-        maxHeight === 32 &&
+        clientHeight >= 40 &&
+        clientHeight <= 44 &&
+        maxHeight === 40 &&
         overflowY === 'auto' &&
         scrollbarWidth === 'thin' &&
         scrollHeight > clientHeight,
     ),
   ).toBe(true);
-  await details.locator('.breakdown-section ol').evaluateAll((lists) => {
-    for (const list of lists) list.scrollTop = list.scrollHeight;
-  });
   expect(
-    await details.locator('.breakdown-section ol').evaluateAll((lists) =>
-      lists.every((list) => {
-        const listBox = list.getBoundingClientRect();
-        const lastRowBox = list.lastElementChild!.getBoundingClientRect();
-        return lastRowBox.top >= listBox.top - 1 && lastRowBox.bottom <= listBox.bottom + 1;
-      }),
+    breakdownItemVisibility.every(
+      ({ listBox, firstRowBox, secondRowBox }) =>
+        firstRowBox.top >= listBox.top - 1 &&
+        firstRowBox.bottom <= listBox.bottom + 1 &&
+        secondRowBox.top >= listBox.bottom - 1,
     ),
   ).toBe(true);
+  expect(
+    breakdownBars.every(
+      ({ height, borderRadius }) =>
+        height >= 8 && height <= 10 && borderRadius > 0 && borderRadius <= 3,
+    ),
+  ).toBe(true);
+  const agentList = agentSection.locator('.breakdown-list');
+  const modelList = modelSection.locator('.breakdown-list');
+  await agentList.focus();
+  await expect(agentList).toBeFocused();
+  await agentList.press('PageDown');
+  await agentList.press('End');
+  await modelList.hover();
+  await page.mouse.wheel(0, 1000);
+  await expect
+    .poll(async () =>
+      details.locator('.breakdown-section ol').evaluateAll((lists) =>
+        lists.every((list) => {
+          const listBox = list.getBoundingClientRect();
+          const lastRowBox = list.lastElementChild!.getBoundingClientRect();
+          return lastRowBox.top >= listBox.top - 1 && lastRowBox.bottom <= listBox.bottom + 1;
+        }),
+      ),
+    )
+    .toBe(true);
   expect(
     desktopRows.every(
       ({

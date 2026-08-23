@@ -370,7 +370,7 @@
           <div class="breakdown-grid grid grid-cols-1 border-t border-border dark:border-[#1e1e1e]">
             {#if agentRows.length > 0}
               <section
-                class="breakdown-section h-[4.75rem] min-w-0 px-3 py-2"
+                class="breakdown-section h-20 min-w-0 px-3 py-2"
                 aria-labelledby={`${detailsId}-agents`}
                 data-testid="token-usage-by-agent"
               >
@@ -380,29 +380,34 @@
                 >
                   {m.workspace_tokenUsage_byAgent_label()}
                 </h4>
-                <ol class="breakdown-list max-h-8 space-y-1 overflow-y-auto">
+                <ol
+                  class="breakdown-list h-10 max-h-10 overflow-y-auto overscroll-contain outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                >
                   {#each agentRows as row (row.id)}
-                    <li class="min-w-0">
-                      <span class="block h-px overflow-hidden bg-muted" aria-hidden="true">
+                    <li class="breakdown-item h-10 min-w-0">
+                      <span
+                        class="breakdown-share-bar block h-2.5 overflow-hidden rounded-[3px] bg-muted"
+                        aria-hidden="true"
+                      >
                         <span
                           class="token-cache-fill block h-full bg-success/80"
                           style:width={`${share(row.tokens, agentTokenTotal) * 100}%`}
                         ></span>
                       </span>
                       <span
-                        class="mt-0.5 grid min-w-0 grid-cols-[minmax(0,1fr)_2.75rem_2.25rem] items-center gap-x-1"
+                        class="breakdown-metadata mt-1.5 grid min-w-0 grid-cols-[minmax(0,1fr)_2.75rem_2.25rem] items-center gap-x-1"
                       >
                         <span
-                          class="truncate text-[10px] leading-3 text-foreground"
+                          class="truncate text-[11px] leading-4 text-foreground"
                           title={row.title}>{row.label}</span
                         >
                         <span
-                          class="text-right text-[10px] font-medium leading-3 tabular-nums text-foreground"
+                          class="text-right text-[11px] font-medium leading-4 tabular-nums text-foreground"
                         >
                           {formatCompactNumber(row.tokens)}
                         </span>
                         <span
-                          class="token-cache-text text-right text-[10px] leading-3 tabular-nums text-success"
+                          class="token-cache-text text-right text-[11px] leading-4 tabular-nums text-success"
                         >
                           {shareLabel(share(row.tokens, agentTokenTotal))}
                         </span>
@@ -415,7 +420,7 @@
 
             {#if modelRows.length > 0}
               <section
-                class="breakdown-section h-[4.75rem] min-w-0 px-3 py-2"
+                class="breakdown-section h-20 min-w-0 px-3 py-2"
                 aria-labelledby={`${detailsId}-models`}
                 data-testid="token-usage-by-model"
               >
@@ -425,29 +430,34 @@
                 >
                   {m.workspace_tokenUsage_byModel_label()}
                 </h4>
-                <ol class="breakdown-list max-h-8 space-y-1 overflow-y-auto">
+                <ol
+                  class="breakdown-list h-10 max-h-10 overflow-y-auto overscroll-contain outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                >
                   {#each modelRows as row (row.id)}
-                    <li class="min-w-0">
-                      <span class="block h-px overflow-hidden bg-muted" aria-hidden="true">
+                    <li class="breakdown-item h-10 min-w-0">
+                      <span
+                        class="breakdown-share-bar block h-2.5 overflow-hidden rounded-[3px] bg-muted"
+                        aria-hidden="true"
+                      >
                         <span
                           class="token-cache-fill block h-full bg-success/80"
                           style:width={`${share(row.tokens, modelTokenTotal) * 100}%`}
                         ></span>
                       </span>
                       <span
-                        class="mt-0.5 grid min-w-0 grid-cols-[minmax(0,1fr)_2.75rem_2.25rem] items-center gap-x-1"
+                        class="breakdown-metadata mt-1.5 grid min-w-0 grid-cols-[minmax(0,1fr)_2.75rem_2.25rem] items-center gap-x-1"
                       >
                         <span
-                          class="truncate text-[10px] leading-3 text-foreground"
+                          class="truncate text-[11px] leading-4 text-foreground"
                           title={row.title}>{row.label}</span
                         >
                         <span
-                          class="text-right text-[10px] font-medium leading-3 tabular-nums text-foreground"
+                          class="text-right text-[11px] font-medium leading-4 tabular-nums text-foreground"
                         >
                           {formatCompactNumber(row.tokens)}
                         </span>
                         <span
-                          class="token-cache-text text-right text-[10px] leading-3 tabular-nums text-success"
+                          class="token-cache-text text-right text-[11px] leading-4 tabular-nums text-success"
                         >
                           {shareLabel(share(row.tokens, modelTokenTotal))}
                         </span>

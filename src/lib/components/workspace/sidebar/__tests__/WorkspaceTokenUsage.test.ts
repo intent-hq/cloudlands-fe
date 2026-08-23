@@ -282,6 +282,13 @@ describe('WorkspaceTokenUsage', () => {
       true,
     );
     expect(
+      [...modelRows, ...agentRows].every(
+        (listRow) =>
+          listRow.firstElementChild?.classList.contains('breakdown-share-bar') === true &&
+          listRow.lastElementChild?.classList.contains('breakdown-metadata') === true,
+      ),
+    ).toBe(true);
+    expect(
       [...modelRows, ...agentRows].every((listRow) => {
         const shareBar = listRow.querySelector('[aria-hidden="true"] > [style*="width"]');
         return shareBar instanceof HTMLElement && shareBar.style.width.endsWith('%');
