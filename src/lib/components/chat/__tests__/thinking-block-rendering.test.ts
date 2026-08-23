@@ -110,7 +110,7 @@ describe('thinking blocks — StreamingMessageContent', () => {
     expect(screen.queryByTestId('markdown-viewer')).toBeNull();
   });
 
-  it('shows only the current live-group child and never reveals full history', async () => {
+  it('shows one current live-group child until the user expands the full history', async () => {
     const content = [
       { type: 'text', id: 'msg_1:0', text: '<group:Working>' },
       { type: 'text', id: 'msg_1:1', text: 'Earlier answer' },
@@ -123,8 +123,7 @@ describe('thinking blocks — StreamingMessageContent', () => {
         child.getAttribute('data-message-content-block'),
       );
 
-    expect(groupDisclosure.hasAttribute('aria-expanded')).toBe(false);
-    expect(groupDisclosure.closest('button, [role="button"]')).toBeNull();
+    expect(groupDisclosure.getAttribute('aria-expanded')).toBe('false');
     expect(visibleChildTypes()).toEqual(['thinking']);
     expect(screen.getByTestId('reasoning-disclosure').textContent?.trim()).toBe('Thinking...');
 
@@ -159,13 +158,23 @@ describe('thinking blocks — StreamingMessageContent', () => {
     expect(document.body.textContent).not.toContain('Earlier answer');
 
     await fireEvent.click(groupDisclosure);
-    await fireEvent.keyDown(groupDisclosure, { key: 'Enter' });
-    await fireEvent.keyDown(groupDisclosure, { key: ' ' });
-    expect(visibleChildTypes()).toEqual(['text']);
-    expect(document.body.textContent).not.toContain('Earlier answer');
+    expect(groupDisclosure.getAttribute('aria-expanded')).toBe('true');
+    expect(visibleChildTypes()).toEqual(['text', 'thinking', 'tool_use', 'text']);
+    expect(document.body.textContent).toContain('Earlier answer');
+    const toolDisclosure = document.querySelector(
+      '[data-message-content-block="tool_use"] [data-testid="tool-call-disclosure"]',
+    );
+    expect(toolDisclosure).toBeTruthy();
+    await fireEvent.click(toolDisclosure!);
+    expect(document.body.textContent).toContain('done');
 
     const latestThought = thinking('msg_1:7', 'Latest thought');
     await view.rerender({ content: [...withAnswer, latestThought], isStreaming: true });
+    expect(groupDisclosure.getAttribute('aria-expanded')).toBe('true');
+    expect(visibleChildTypes()).toEqual(['text', 'thinking', 'tool_use', 'text', 'thinking']);
+
+    await fireEvent.click(groupDisclosure);
+    expect(groupDisclosure.getAttribute('aria-expanded')).toBe('false');
     expect(visibleChildTypes()).toEqual(['thinking']);
 
     await view.rerender({ content: [...withAnswer, latestThought], isStreaming: false });
@@ -181,7 +190,7 @@ describe('thinking blocks — StreamingMessageContent', () => {
         child.getAttribute('data-message-content-block'),
       );
 
-    expect(groupDisclosure.hasAttribute('aria-expanded')).toBe(false);
+    expect(groupDisclosure.getAttribute('aria-expanded')).toBe('true');
     expect(visibleChildTypes()).toEqual([]);
 
     const groupContent = [
@@ -212,12 +221,12 @@ describe('thinking blocks — StreamingMessageContent', () => {
 
     await view.rerender({ content: completedContent, isStreaming: false });
     await fireEvent.click(groupDisclosure);
-    await fireEvent.keyDown(groupDisclosure, { key: 'Enter' });
-    await fireEvent.keyDown(groupDisclosure, { key: ' ' });
-    expect(visibleChildTypes()).toEqual([]);
+    expect(groupDisclosure.getAttribute('aria-expanded')).toBe('true');
+    expect(visibleChildTypes()).toEqual(['text', 'thinking', 'tool_use', 'thinking']);
 
     await view.rerender({ content: [...completedContent], isStreaming: false });
-    expect(visibleChildTypes()).toEqual([]);
+    expect(groupDisclosure.getAttribute('aria-expanded')).toBe('true');
+    expect(visibleChildTypes()).toEqual(['text', 'thinking', 'tool_use', 'thinking']);
   });
 
   it('uses the reasoning title in the static message path', async () => {
@@ -276,8 +285,8 @@ describe('thinking blocks — StreamingMessageContent', () => {
 
   it('only flags the truly last block of a streaming message as streaming inside a group', async () => {
     // Streaming message whose last top-level block is an unclosed <group:…>
-    // containing [thinking, tool_use, thinking, text]. The summary-only group
-    // must hide its history and render only the final text as streaming.
+    // containing [thinking, tool_use, thinking, text]. Open the group to inspect
+    // all children: only the final text must still receive streaming state.
     await renderStreaming(
       [
         { type: 'text', id: 'msg_1:0', text: '<group:Working>' },
@@ -289,10 +298,16 @@ describe('thinking blocks — StreamingMessageContent', () => {
       true,
     );
 
+    await fireEvent.click(screen.getByTestId('response-group-disclosure'));
+
     const thinkingRows = document.querySelectorAll('.content-block--thinking');
-    expect(thinkingRows).toHaveLength(0);
-    expect(document.body.textContent).not.toContain('First reasoning pass');
-    expect(document.body.textContent).not.toContain('Second reasoning pass');
+    expect(thinkingRows).toHaveLength(2);
+    for (const row of thinkingRows) {
+      expect(row.querySelector('[data-operational-leading]')?.className).not.toContain(
+        'animate-pulse',
+      );
+      expect(row.querySelector('[aria-expanded]')?.getAttribute('aria-expanded')).toBe('false');
+    }
 
     const streamingViewers = [
       ...document.querySelectorAll('[data-testid="markdown-viewer"]'),
@@ -312,11 +327,14 @@ describe('thinking blocks — StreamingMessageContent', () => {
       true,
     );
 
+    await fireEvent.click(screen.getByTestId('response-group-disclosure'));
+
     const thinkingRows = document.querySelectorAll('.content-block--thinking');
-    expect(thinkingRows).toHaveLength(1);
-    expect(document.body.textContent).not.toContain('First reasoning pass');
-    expect(document.body.textContent).toContain('Still reasoning');
-    expect(thinkingRows[0].querySelector('[data-operational-leading]')?.className).toContain(
+    expect(thinkingRows).toHaveLength(2);
+    expect(thinkingRows[0].querySelector('[data-operational-leading]')?.className).not.toContain(
+      'animate-pulse',
+    );
+    expect(thinkingRows[1].querySelector('[data-operational-leading]')?.className).toContain(
       'animate-pulse',
     );
   });

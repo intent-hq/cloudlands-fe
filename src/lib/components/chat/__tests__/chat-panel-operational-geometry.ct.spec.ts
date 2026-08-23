@@ -25,15 +25,17 @@ for (const theme of ['light', 'dark'] as const) {
         for (const messageId of ['assistant-finished', 'assistant-streaming']) {
           await unlockFollow();
           const message = component.locator(`[data-message-id="${messageId}"]`);
-          await expect(message.getByTestId('response-group-disclosure')).not.toHaveAttribute(
-            'aria-expanded',
-          );
           await message.getByTestId('response-group-disclosure').click();
-          expect(await message.locator('[data-response-group-child]').count()).toBeLessThanOrEqual(
-            1,
-          );
           const rows = message.locator('[data-chat-operational-row]');
-          await expect(rows).toHaveCount(messageId === 'assistant-streaming' ? 16 : 15);
+          await expect(rows).toHaveCount(messageId === 'assistant-streaming' ? 21 : 20);
+          const groupContent = message.locator('[data-operational-expanded-content]').first();
+          await groupContent.evaluate(async (element) => {
+            await Promise.all(
+              element
+                .getAnimations({ subtree: true })
+                .map((animation) => animation.finished.catch(() => {})),
+            );
+          });
           const geometry = await rows.evaluateAll((elements) =>
             elements.map((element) => {
               const row = element.querySelector('[data-operational-disclosure-row]')!;
@@ -157,11 +159,21 @@ for (const theme of ['light', 'dark'] as const) {
             await expect(streamingRow.locator('[data-operational-expanded-content]')).toBeVisible();
           }
 
-          await expect(
-            message.locator(
+          const groupedIconCenter = await message
+            .locator(
               `[data-tool-use-id="${messageId === 'assistant-finished' ? 'finished' : 'streaming'}-grouped-tool"]`,
-            ),
-          ).toHaveCount(0);
+            )
+            .locator('[data-operational-leading]')
+            .evaluate((element) => {
+              const box = element.getBoundingClientRect();
+              return (box.left + box.right) / 2;
+            });
+          const nestedProseStart = await message
+            .locator('[data-response-group-child][data-message-content-block="text"] p')
+            .first()
+            .evaluate((element) => element.getBoundingClientRect().x);
+          expect(groupedIconCenter).toBeCloseTo(nestedProseStart + 8 * zoom, 1);
+          await expect(message.locator('[data-operational-expanded-guide]')).toHaveCount(1);
 
           if (messageId === 'assistant-finished') {
             // Measure relative to the message container: expanding can toggle

@@ -62,7 +62,7 @@ for (const config of [
   { theme: 'light' as const, width: 720, zoom: 1 },
   { theme: 'dark' as const, width: 320, zoom: 2 },
 ]) {
-  test(`keeps summary-only response rows stable at ${config.width}px/${config.zoom}x ${config.theme}`, async ({
+  test(`prepares frame measurements for rapid response motion at ${config.width}px/${config.zoom}x ${config.theme}`, async ({
     mount,
     page,
   }) => {
@@ -80,12 +80,12 @@ for (const config of [
     await trigger.evaluate((node) => (node as HTMLElement).click());
 
     const samples = await finishSampling(page);
-    await expect(trigger).not.toHaveAttribute('aria-expanded');
+    await expect(trigger).toHaveAttribute('aria-expanded', 'true');
     const details = component.locator('[data-operational-expanded-content]');
-    await expect(details).toHaveCount(0);
+    await expect(details).toHaveCount(1);
     expect(samples).toHaveLength(48);
-    expect(Math.max(...samples.map((sample) => sample.responseHeight))).toBe(0);
-    expect(Math.max(...samples.map((sample) => sample.responseAnimations))).toBe(0);
+    expect(Math.max(...samples.map((sample) => sample.responseHeight))).toBeGreaterThan(40);
+    expect(Math.max(...samples.map((sample) => sample.responseAnimations))).toBeLessThanOrEqual(1);
     expect(
       Math.max(...samples.map((sample) => Math.abs(sample.bottomDistance))),
     ).toBeLessThanOrEqual(8);
@@ -104,6 +104,15 @@ for (const config of [
       Math.max(...repeatSamples.map((sample) => Math.abs(sample.bottomDistance))),
     ).toBeLessThanOrEqual(8);
     await expect(component.getByTestId('disclosure-bottom-state')).toContainText('locked:0');
+    expect(
+      await details.evaluate((node) => ({
+        height: (node as HTMLElement).style.height,
+        overflow: (node as HTMLElement).style.overflow,
+        opacity: (node as HTMLElement).style.opacity,
+        transform: (node as HTMLElement).style.transform,
+        animations: node.getAnimations().length,
+      })),
+    ).toEqual({ height: '', overflow: '', opacity: '', transform: '', animations: 0 });
   });
 }
 
@@ -161,14 +170,25 @@ test('reverses the outer subscription disclosure and keeps native keyboard contr
   expect(await component.evaluate((node) => node.getAnimations({ subtree: true }).length)).toBe(0);
 });
 
-test('accepts live response updates without revealing stale history', async ({ mount, page }) => {
+test('accepts live response updates during collapse without stale detached content', async ({
+  mount,
+  page,
+}) => {
   const initialProps = { responseStreaming: true, responseText: 'Initial live activity.' };
   const component = await mount(DisclosureMotionPreparationHost, { props: initialProps });
   const transcript = component.getByTestId('disclosure-transcript');
   await transcript.evaluate((node) => node.scrollTo(0, node.scrollHeight));
   const toggle = component.getByTestId('response-group-disclosure');
 
+  await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+  await expect(component.getByTestId('prepared-response-current')).toHaveText(
+    'Initial live activity.',
+  );
   await toggle.click();
+  await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+  await expect(component.getByTestId('prepared-response-body')).toBeVisible();
+  await toggle.click();
+  await expect(toggle).toHaveAttribute('aria-expanded', 'false');
   await page.waitForTimeout(35);
   await component.update({
     props: { ...initialProps, responseText: 'Updated live activity while collapsing.' },
@@ -184,7 +204,10 @@ test('accepts live response updates without revealing stale history', async ({ m
   ).toBeLessThanOrEqual(8);
 
   await toggle.click();
-  await expect(component.getByTestId('prepared-response-current')).toBeVisible();
+  await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+  await expect(component.getByTestId('prepared-response-body')).toContainText(
+    'Updated live activity while collapsing.',
+  );
   await page.waitForTimeout(240);
   expect(
     await component
@@ -274,10 +297,14 @@ test('completes reduced-motion disclosure cleanup without residual animations or
 }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
   const component = await mount(DisclosureMotionPreparationHost);
-  await expect(component.getByTestId('response-group-disclosure')).not.toHaveAttribute(
-    'aria-expanded',
-  );
+  const response = component.getByTestId('response-group-disclosure');
+  await response.click();
+  const focusTarget = component.getByTestId('prepared-response-focus');
+  await focusTarget.focus();
+  await response.evaluate((node) => (node as HTMLElement).click());
+  await expect(response).toHaveAttribute('aria-expanded', 'false');
   await expect(component.getByTestId('prepared-response-body')).toHaveCount(0);
+  await expect(response).toBeFocused();
 
   await component.getByTestId('one-shot-summary-toggle').click();
   await component.getByTestId('event-subscriptions-summary').click();
@@ -295,7 +322,8 @@ test('honors animation debug disable with immediate clean disclosure states', as
 
   await response.click();
   await outer.click();
-  await expect(component.locator('[data-operational-expanded-content]')).toHaveCount(0);
+  const details = component.locator('[data-operational-expanded-content]');
+  await expect(details).toBeVisible();
   await expect(component.getByTestId('event-subscriptions-body')).toHaveCount(0);
-  await expect(component.locator('[data-subscription-motion]')).toHaveCount(0);
+  expect(await details.evaluate((node) => node.getAnimations().length)).toBe(0);
 });
