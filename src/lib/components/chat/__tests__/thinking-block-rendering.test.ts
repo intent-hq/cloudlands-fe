@@ -161,6 +161,7 @@ describe('thinking blocks — StreamingMessageContent', () => {
     await fireEvent.click(groupDisclosure);
     expect(groupDisclosure.getAttribute('aria-expanded')).toBe('true');
     expect(visibleChildTypes()).toEqual(['text', 'thinking', 'tool_use', 'text']);
+    expect(document.querySelector('[data-reasoning-history]')).toBeNull();
     expect(document.body.textContent).toContain('Earlier answer');
     const toolDisclosure = document.querySelector(
       '[data-message-content-block="tool_use"] [data-testid="tool-call-disclosure"]',
@@ -214,6 +215,10 @@ describe('thinking blocks — StreamingMessageContent', () => {
       document.body.textContent?.match(/Assessing delegation and tool availability/g),
     ).toHaveLength(1);
     expect(document.body.textContent?.match(/I’ll first title the workspace/g)).toHaveLength(1);
+    const historyRow = screen.getByTestId('reasoning-history-row');
+    expect(historyRow.textContent?.trim()).toBe('Assessing delegation and tool availability');
+    expect(historyRow.querySelector('button, [aria-expanded]')).toBeNull();
+    expect(document.querySelector('[data-reasoning-history-body]')).toBeNull();
   });
 
   it('renders the alternate-model Prepping wrapper as one reasoning disclosure', async () => {
@@ -281,7 +286,7 @@ describe('thinking blocks — StreamingMessageContent', () => {
 
     await fireEvent.click(groupDisclosure);
     expect(groupDisclosure.getAttribute('aria-expanded')).toBe('true');
-    expect(visibleChildTypes()).toEqual(['text', 'text', 'tool_use', 'text', 'tool_use']);
+    expect(visibleChildTypes()).toEqual(['text', 'thinking', 'tool_use', 'thinking', 'tool_use']);
     const responseGroup = screen.getByTestId('response-group');
     expect(responseGroup.querySelectorAll('[data-testid="reasoning-disclosure"]')).toHaveLength(0);
     expect(responseGroup.textContent?.match(/Reasoning/g)).toHaveLength(1);
@@ -294,6 +299,28 @@ describe('thinking blocks — StreamingMessageContent', () => {
     expect(history[2]).toContain('Set workspace title and read the current spec');
     expect(history[3]).toContain('Planning clarification questions on formatting issues');
     expect(history[4]).toContain('Ask for the expected agent chat layout');
+    const historyTitles = [
+      ...responseGroup.querySelectorAll('[data-testid="reasoning-history-title"]'),
+    ].map((title) => title.textContent?.trim());
+    expect(historyTitles).toEqual([
+      'Invoking workspace API to set title',
+      'Planning clarification questions on formatting issues',
+      'Planning code inspection and question sequencing',
+    ]);
+    const historyRows = responseGroup.querySelectorAll('[data-testid="reasoning-history-row"]');
+    expect(historyRows).toHaveLength(3);
+    expect([...historyRows].every((row) => !row.querySelector('button, [aria-expanded]'))).toBe(
+      true,
+    );
+    const historyBodies = responseGroup.querySelectorAll('[data-reasoning-history-body]');
+    expect(historyBodies).toHaveLength(1);
+    expect(historyBodies[0].textContent?.trim()).toBe(
+      'The screenshot shows three possible faults: large vertical gaps, raw reasoning rows that stay open, and mixed tool-row indentation.',
+    );
+    expect(
+      responseGroup.textContent?.match(/The screenshot shows three possible faults/g),
+    ).toHaveLength(1);
+    expect(historyRows[0].querySelector('[data-testid="markdown-viewer"]')).toBeNull();
     const toolDisclosure = document.querySelector(
       '[data-response-group-child][data-message-content-block="tool_use"] [data-testid="tool-call-disclosure"]',
     );
@@ -320,9 +347,37 @@ describe('thinking blocks — StreamingMessageContent', () => {
 
     await fireEvent.click(groupDisclosure);
     expect(groupDisclosure.getAttribute('aria-expanded')).toBe('true');
-    expect(visibleChildTypes()).toEqual(['text', 'text', 'tool_use', 'text', 'tool_use']);
+    expect(visibleChildTypes()).toEqual(['text', 'thinking', 'tool_use', 'thinking', 'tool_use']);
     expect(responseGroup.textContent?.match(/Reasoning/g)).toHaveLength(1);
     expect(responseGroup.textContent?.match(/Then I will read the current spec/g)).toHaveLength(1);
+  });
+
+  it('keeps the exact screenshot history shape in the static message path', async () => {
+    await renderStatic([
+      { type: 'text', id: 'msg_1:0', text: '<group:Prepping>Group description prose.' },
+      thinking('msg_1:1', 'Reasoning\n\n**Title-only operation**'),
+      thinking('msg_1:2', 'Earlier operation\n\n**Current operation**\n\nSubordinate body.'),
+      { type: 'text', id: 'msg_1:3', text: '</group:Prepping>' },
+    ]);
+
+    const groupDisclosure = screen.getByTestId('response-group-disclosure');
+    await fireEvent.click(groupDisclosure);
+    const responseGroup = screen.getByTestId('response-group');
+    expect(
+      responseGroup.querySelectorAll('[data-testid="response-group-disclosure"]'),
+    ).toHaveLength(1);
+    expect(responseGroup.querySelectorAll('[data-testid="reasoning-disclosure"]')).toHaveLength(0);
+    expect(
+      [...responseGroup.querySelectorAll('[data-testid="reasoning-history-title"]')].map((title) =>
+        title.textContent?.trim(),
+      ),
+    ).toEqual(['Title-only operation', 'Earlier operation', 'Current operation']);
+    expect(responseGroup.querySelectorAll('[data-reasoning-history-body]')).toHaveLength(1);
+    expect(responseGroup.textContent?.match(/Subordinate body\./g)).toHaveLength(1);
+    expect(responseGroup.textContent?.match(/Group description prose\./g)).toHaveLength(1);
+    expect(
+      responseGroup.querySelectorAll('[data-testid="reasoning-history-row"] button'),
+    ).toHaveLength(0);
   });
 
   it('uses the reasoning title in the static message path', async () => {

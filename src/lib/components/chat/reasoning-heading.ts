@@ -3,6 +3,11 @@ export interface ReasoningHeading {
   body: string;
 }
 
+export interface ReasoningHistoryItem {
+  title: string | null;
+  body: string;
+}
+
 const MAX_TITLE_CHARACTERS = 80;
 const MAX_TITLE_WORDS = 10;
 
@@ -36,6 +41,51 @@ export function extractStandaloneReasoningTitle(content: string): string | null 
 
   const title = markdownInlineToPlainText(strongTitle[1]);
   return isShortTitleLike(strongTitle[0], title) ? title : null;
+}
+
+function extractLeadingStrongReasoningTitle(
+  content: string,
+): { title: string; body: string } | null {
+  const leading = content.match(/^(?:[ \t]*(?:\r\n|\n|\r))*/)?.[0] ?? '';
+  const candidate = content.slice(leading.length);
+  const strongTitle = candidate.match(/^\*\*([^\r\n]+)\*\*[ \t]*(?:(?:\r\n|\n|\r)|$)/);
+  if (!strongTitle) return null;
+
+  const title = markdownInlineToPlainText(strongTitle[1]);
+  if (!isShortTitleLike(strongTitle[0], title)) return null;
+  return {
+    title,
+    body: bodyAfterHeading(content, leading.length + strongTitle[0].length),
+  };
+}
+
+export function extractReasoningHistory(content: string): ReasoningHistoryItem[] {
+  const reasoning = extractReasoningHeading(content);
+  const items: ReasoningHistoryItem[] = [];
+  let remainder = content;
+
+  if (reasoning.heading) {
+    items.push({ title: reasoning.heading, body: '' });
+    remainder = reasoning.body;
+  }
+
+  const strongTitle = extractLeadingStrongReasoningTitle(remainder);
+  if (strongTitle) {
+    items.push({ title: strongTitle.title, body: '' });
+    remainder = strongTitle.body;
+  }
+
+  if (items.length === 0) {
+    const candidate = content.trim();
+    const title = markdownInlineToPlainText(candidate);
+    if (!candidate.includes('\n') && isShortTitleLike(candidate, title)) {
+      return [{ title, body: '' }];
+    }
+    return candidate ? [{ title: null, body: candidate }] : [];
+  }
+
+  items[items.length - 1].body = remainder.trim();
+  return items;
 }
 
 export function extractReasoningHeading(content: string): ReasoningHeading {

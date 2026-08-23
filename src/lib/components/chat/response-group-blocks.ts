@@ -16,10 +16,10 @@ export function isReasoningPhaseGroupName(name: string): boolean {
   return REASONING_PHASE_GROUP_NAMES.has(name.trim().toLowerCase());
 }
 
-function reasoningAsText(block: ContentBlock, text: string): ContentBlock | null {
+function reasoningWithText(block: ContentBlock, text: string): ContentBlock | null {
   if (!text.trim()) return null;
   const { content: _content, ...rest } = block;
-  return { ...rest, type: 'text', text } as ContentBlock;
+  return { ...rest, type: 'thinking', text } as ContentBlock;
 }
 
 export function normalizeResponseGroup(block: ContentBlockGroup): ContentBlockGroup {
@@ -34,7 +34,7 @@ export function normalizeResponseGroup(block: ContentBlockGroup): ContentBlockGr
     const reasoning = parsedReasoning[index];
     const text =
       index === firstNamedReasoning ? (reasoning?.body ?? '') : (child.text ?? child.content ?? '');
-    const normalized = reasoningAsText(child, text);
+    const normalized = reasoningWithText(child, text);
     return normalized ? [normalized] : [];
   });
 
@@ -64,10 +64,10 @@ function pairAdjacentReasoningGroup(
   const title = extractStandaloneReasoningTitle(precedingReasoning.body);
   if (!title) return null;
 
-  const precedingHistory = reasoningAsText(preceding, precedingReasoning.heading);
+  const precedingHistory = reasoningWithText(preceding, precedingReasoning.heading);
   const children = group.children.flatMap((child) => {
     if (child.type !== 'thinking') return [child];
-    const normalized = reasoningAsText(child, child.text ?? child.content ?? '');
+    const normalized = reasoningWithText(child, child.text ?? child.content ?? '');
     return normalized ? [normalized] : [];
   });
 

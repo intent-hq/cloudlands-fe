@@ -28,6 +28,7 @@
   import type { DiagramPrimitive } from '$shared/types/notes-primitives';
   import ToolCall from './ToolCall.svelte';
   import ThinkingBlock from './ThinkingBlock.svelte';
+  import ReasoningHistoryBlock from './ReasoningHistoryBlock.svelte';
   import CodeBlock from '$lib/components/editor/CodeBlock.svelte';
   import MarkdownViewer from '$lib/components/markdown/MarkdownViewer.svelte';
   import AugmentCodeSnippet from '$lib/components/editor/AugmentCodeSnippet.svelte';
@@ -516,6 +517,7 @@
   blockIndex: number,
   nested = false,
   adjacentOperationalRow = false,
+  reasoningHistory = false,
 )}
   {#if isNavLinkBlock(block)}
     <div class="w-full" in:fly={{ y: 10, duration: 200 }}>
@@ -680,11 +682,19 @@
       </div>
     </div>
   {:else if block.type === 'thinking'}
-    <ThinkingBlock
-      content={getContentBlockText(block) || m.chat_shared_processing_fallback()}
-      {workspaceId}
-      {adjacentOperationalRow}
-    />
+    {#if reasoningHistory}
+      <ReasoningHistoryBlock
+        content={getContentBlockText(block) || m.chat_shared_processing_fallback()}
+        {workspaceId}
+        {adjacentOperationalRow}
+      />
+    {:else}
+      <ThinkingBlock
+        content={getContentBlockText(block) || m.chat_shared_processing_fallback()}
+        {workspaceId}
+        {adjacentOperationalRow}
+      />
+    {/if}
   {/if}
 {/snippet}
 
@@ -747,6 +757,7 @@
                       childIndex,
                       isVisibleOperationalBlock,
                     ),
+                    group.isReasoningPhase,
                   )}
                 </div>
               {/if}

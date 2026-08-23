@@ -20,6 +20,7 @@ import {
   normalizeResponseGroup,
   normalizeResponseGroups,
 } from '../response-group-blocks';
+import { extractReasoningHistory } from '../reasoning-heading';
 import { warmImport } from '../../../../test/warm-import';
 import type { ContentBlock } from '$shared/types';
 import ResponseGroupCollapseHost from './ResponseGroupCollapseHost.svelte';
@@ -418,9 +419,9 @@ describe('ResponseGroup - block identity', () => {
       isReasoningPhase: true,
       children: [
         description,
-        { type: 'text', text: '**Invoking workspace API to set title**' },
+        { type: 'thinking', text: '**Invoking workspace API to set title**' },
         {
-          type: 'text',
+          type: 'thinking',
           text: 'Planning clarification questions\n\nPlanning code inspection.',
         },
       ],
@@ -455,7 +456,11 @@ describe('ResponseGroup - block identity', () => {
         sourceName: 'Prepping',
         isReasoningPhase: true,
         children: [
-          { type: 'text', id: 'msg_1:0', text: 'Assessing delegation and tool availability' },
+          {
+            type: 'thinking',
+            id: 'msg_1:0',
+            text: 'Assessing delegation and tool availability',
+          },
           description,
         ],
       },
@@ -492,6 +497,23 @@ describe('ResponseGroup - block identity', () => {
         sourceName: 'Prepping',
         isReasoningPhase: true,
       },
+    ]);
+  });
+
+  it('splits the screenshot reasoning history into compact titles and one subordinate body', () => {
+    expect(
+      extractReasoningHistory(
+        'Planning clarification questions on formatting issues\n\n**Planning code inspection and question sequencing**\n\nThe screenshot shows three possible faults.',
+      ),
+    ).toEqual([
+      { title: 'Planning clarification questions on formatting issues', body: '' },
+      {
+        title: 'Planning code inspection and question sequencing',
+        body: 'The screenshot shows three possible faults.',
+      },
+    ]);
+    expect(extractReasoningHistory('**Invoking workspace API to set title**')).toEqual([
+      { title: 'Invoking workspace API to set title', body: '' },
     ]);
   });
 

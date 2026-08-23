@@ -45,6 +45,7 @@
   import ChatAgentActionBlock from './ChatAgentActionBlock.svelte';
   import SetupScriptCard from './SetupScriptCard.svelte';
   import ThinkingBlock from './ThinkingBlock.svelte';
+  import ReasoningHistoryBlock from './ReasoningHistoryBlock.svelte';
   import ProposalCard from './proposals/ProposalCard.svelte';
   import { applySpecialistProposal } from './proposals/specialist-proposal-actions';
   import {
@@ -762,6 +763,7 @@
   isLastBlock: boolean,
   nested = false,
   adjacentOperationalRow = false,
+  reasoningHistory = false,
 )}
   {#if isNavLinkBlock(block)}
     <div class="w-full">
@@ -873,12 +875,21 @@
   {:else if block.type === 'thinking'}
     <!-- Daemon-emitted thinking blocks carry `text` (PROTOCOL §7.1); the legacy
          <think>-tag parser path in messageParser emits `content`. -->
-    <ThinkingBlock
-      content={getContentBlockText(block) || m.chat_shared_processing_fallback()}
-      isStreaming={isStreaming && isLastBlock}
-      {workspaceId}
-      {adjacentOperationalRow}
-    />
+    {#if reasoningHistory}
+      <ReasoningHistoryBlock
+        content={getContentBlockText(block) || m.chat_shared_processing_fallback()}
+        isStreaming={isStreaming && isLastBlock}
+        {workspaceId}
+        {adjacentOperationalRow}
+      />
+    {:else}
+      <ThinkingBlock
+        content={getContentBlockText(block) || m.chat_shared_processing_fallback()}
+        isStreaming={isStreaming && isLastBlock}
+        {workspaceId}
+        {adjacentOperationalRow}
+      />
+    {/if}
   {:else if block.type === 'image' && (block.data || block.dataTruncated) && block.mimeType}
     <ChatImageBlock
       data={block.data}
@@ -930,6 +941,7 @@
         childIndex,
         (candidate) => candidate.type !== 'tool_result',
       ),
+      group.isReasoningPhase,
     )}
   </div>
 {/snippet}
