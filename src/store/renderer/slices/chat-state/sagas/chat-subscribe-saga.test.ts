@@ -107,7 +107,11 @@ import {
   clearAllChatInterestLeases,
   releaseChatInterestLease,
 } from '$features/agent/utils/chat-interest-leases';
-import { hasReplayableChatSnapshot } from '$features/agent/utils/chat-subscription-registry';
+import {
+  hasChatSubscriptionAcquisitionInFlight,
+  hasReplayableChatSnapshot,
+  hasStandingChatSubscription,
+} from '$features/agent/utils/chat-subscription-registry';
 import { seedStreamFromSnapshot } from '$features/events/daemon-events-bridge.client';
 import { selectTranscriptSnapshotMeta } from '$store/renderer/slices/chat-state/chat-state-selectors';
 import { shouldShowStoppedIndicator } from '$lib/components/chat/message-display-utils';
@@ -2464,6 +2468,51 @@ describe('chatSubscribeSaga (fake seam, real store)', () => {
     appStore.dispatch(removeSession(agentId));
     await vi.waitFor(() => expect(sub.unsubscribe).toHaveBeenCalledOnce());
     expect(hasReplayableChatSnapshot(agentId)).toBe(false);
+  });
+
+  it('flips the acquiring flag true on enqueue, false once standing installs, false again on close (registry wiring, monorepo#3295)', async () => {
+    // End-to-end pin of the acquiring-marker wiring the chat-read saga's
+    // dead-wait escalation consults: a missed set-site would strand a cold
+    // open's plain wait, a missed clear-site (install/close/dispose) would
+    // leave a stale acquisition that suppresses a genuine dead-wait escalation.
+    const agentId = 'agent-sub-acquiring-wiring';
+    seedSession(agentId);
+    const { acquisition, subscription } = delayNextSubscription(agentId);
+    // Open enqueued, acquisition still in flight: marked acquiring, not
+    // standing yet.
+    expect(hasChatSubscriptionAcquisitionInFlight(agentId)).toBe(true);
+    expect(hasStandingChatSubscription(agentId)).toBe(false);
+
+    // The registration installs: standing supersedes acquiring.
+    acquisition.resolve(subscription.unsubscribe);
+    await vi.waitFor(() => expect(hasStandingChatSubscription(agentId)).toBe(true));
+    expect(hasChatSubscriptionAcquisitionInFlight(agentId)).toBe(false);
+
+    // Teardown clears standing; nothing is acquiring afterwards.
+    appStore.dispatch(removeSession(agentId));
+    await vi.waitFor(() => expect(subscription.unsubscribe).toHaveBeenCalledOnce());
+    expect(hasStandingChatSubscription(agentId)).toBe(false);
+    expect(hasChatSubscriptionAcquisitionInFlight(agentId)).toBe(false);
+  });
+
+  it('clears the acquiring flag when an in-flight open is cancelled before it installs (monorepo#3295)', async () => {
+    // A close landing while the open is still acquiring must drop the
+    // acquiring marker — otherwise a later hydration would read a stale
+    // acquisition for a registration that never installed.
+    const agentId = 'agent-sub-acquiring-cancel';
+    seedSession(agentId);
+    const { acquisition, subscription } = delayNextSubscription(agentId);
+    expect(hasChatSubscriptionAcquisitionInFlight(agentId)).toBe(true);
+
+    appStore.dispatch(removeSession(agentId));
+    expect(hasChatSubscriptionAcquisitionInFlight(agentId)).toBe(false);
+
+    // The acquisition resolving late must not resurrect the marker or a
+    // standing registration (the open was cancelled).
+    acquisition.resolve(subscription.unsubscribe);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(hasChatSubscriptionAcquisitionInFlight(agentId)).toBe(false);
+    expect(hasStandingChatSubscription(agentId)).toBe(false);
   });
 
   describe('chief-workspace exemption from the viewed-agent swap (monorepo#1421)', () => {

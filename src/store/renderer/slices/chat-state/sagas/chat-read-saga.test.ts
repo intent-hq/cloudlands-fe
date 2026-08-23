@@ -42,6 +42,7 @@ import { hydratedBlockKey } from '../chat-state-types';
 import { workspaceUnmounted } from '../../workspace-lifecycle/workspace-lifecycle-slice';
 import {
   clearAllStandingChatSubscriptions,
+  markChatSubscriptionAcquiring,
   setReplayableChatSnapshot,
 } from '$features/agent/utils/chat-subscription-registry';
 import { chatReadSaga } from './chat-read-saga';
@@ -358,6 +359,9 @@ describe('chatReadSaga (single-transfer hydration)', () => {
     vi.useFakeTimers();
     try {
       mocks.get.mockResolvedValue(session());
+      // A subscription is acquiring (seq-0 push in flight, monorepo#2692) — the
+      // plain bounded wait runs; no immediate dead-wait escalation.
+      markChatSubscriptionAcquiring(AGENT);
       const run = harness();
       run.channel.put(initializeChatRequested(AGENT, { wsId: WS }));
       // Still loading past the live client's own 5s snapshot timeout — the
@@ -406,6 +410,9 @@ describe('chatReadSaga (single-transfer hydration)', () => {
     vi.useFakeTimers();
     try {
       mocks.get.mockResolvedValue(session());
+      // A subscription is acquiring (the dropped initial push, monorepo#2692) —
+      // the plain bounded wait runs; no immediate dead-wait escalation.
+      markChatSubscriptionAcquiring(AGENT);
       const run = harness();
       run.channel.put(initializeChatRequested(AGENT, { wsId: WS }));
       // First window (8s) times out; the re-request went out.
@@ -466,13 +473,16 @@ describe('chatReadSaga (single-transfer hydration)', () => {
     }
   });
 
-  // Cold open: no replayable snapshot yet — the seq-0 emit is in flight and
-  // the plain bounded wait must run without an immediate escalation (an
-  // early force-cycle would only churn a healthy opening subscription).
-  it('does not escalate early on a cold open without a replayable snapshot', async () => {
+  // Cold open with an in-flight acquisition (monorepo#3295): no replayable
+  // snapshot yet, but the subscribe saga IS opening a registration (its seq-0
+  // emit is still coming) — the plain bounded wait must run without an
+  // immediate escalation, because an early force-cycle would only churn a
+  // healthy opening subscription.
+  it('does not escalate early on a cold open while an acquisition is in flight', async () => {
     vi.useFakeTimers();
     try {
       mocks.get.mockResolvedValue(session());
+      markChatSubscriptionAcquiring(AGENT);
       const run = harness();
       run.channel.put(initializeChatRequested(AGENT, { wsId: WS }));
       await vi.advanceTimersByTimeAsync(1_000);
@@ -484,6 +494,38 @@ describe('chatReadSaga (single-transfer hydration)', () => {
       applySnapshot(run, [message('m-cold', 'cold open')]);
       await vi.advanceTimersByTimeAsync(0);
       expect(run.chat().byAgentId[AGENT]?.transcriptHydration).toBe('settled');
+      run.task.cancel();
+      await run.task.toPromise();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  // Dead wait (monorepo#3295): the window opens with NEITHER a standing
+  // registration NOR an acquisition in flight — a dedup-consumed open or an
+  // already-swept slot, so no seq-0 emit is coming at all. The saga must
+  // escalate immediately (force-cycle a fresh registration) instead of
+  // stranding the first ~8s wait window.
+  it('escalates immediately when no subscription exists and none is acquiring', async () => {
+    vi.useFakeTimers();
+    try {
+      mocks.get.mockResolvedValue(session());
+      const run = harness();
+      run.channel.put(initializeChatRequested(AGENT, { wsId: WS }));
+      // No wait window elapses: the re-request goes out right away.
+      await vi.advanceTimersByTimeAsync(50);
+      expect(
+        run.dispatch.mock.calls.filter(
+          ([action]) => action.type === chatTranscriptSnapshotRerequested.type,
+        ),
+      ).toHaveLength(1);
+      expect(run.chat().byAgentId[AGENT]?.transcriptHydration).toBe('loading');
+
+      // The force-cycled registration answers with a fresh snapshot.
+      applySnapshot(run, [message('m-healed', 'healed')]);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(run.chat().byAgentId[AGENT]?.transcriptHydration).toBe('settled');
+      expect(mocks.getConversation).not.toHaveBeenCalled();
       run.task.cancel();
       await run.task.toPromise();
     } finally {

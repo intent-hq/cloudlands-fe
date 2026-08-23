@@ -23,6 +23,7 @@
 
 const agentsWithStandingSubscription = new Set<string>();
 const agentsWithReplayableSnapshot = new Set<string>();
+const agentsAcquiringSubscription = new Set<string>();
 
 /** Whether a standing chat.subscribe registration currently covers this agent. */
 export function hasStandingChatSubscription(agentId: string): boolean {
@@ -44,6 +45,35 @@ export function clearStandingChatSubscription(agentId: string): void {
 export function clearAllStandingChatSubscriptions(): void {
   agentsWithStandingSubscription.clear();
   agentsWithReplayableSnapshot.clear();
+  agentsAcquiringSubscription.clear();
+}
+
+/**
+ * Whether the chat-subscribe saga is actively opening a registration for this
+ * agent — intent recorded (an open is enqueued/in flight) but the standing
+ * registration has not installed yet. Marked when an open is enqueued, cleared
+ * on install (superseded by the standing marker), on any abort/close of that
+ * open, and on coordinator dispose. Consulted by the chat-read saga alongside
+ * `hasStandingChatSubscription` (intent-hq/monorepo#3295): a wait window that
+ * opens with NEITHER a standing registration NOR an acquisition in flight is a
+ * dead wait (the seq-0 emit was dedup-consumed or the slot was already swept,
+ * so no emit is coming) — the read saga escalates immediately instead of
+ * stranding a full bounded wait window. A cold open whose acquisition is in
+ * flight keeps the plain wait: its seq-0 emit is still coming and
+ * force-cycling it would only churn a healthy opening subscription.
+ */
+export function hasChatSubscriptionAcquisitionInFlight(agentId: string): boolean {
+  return agentsAcquiringSubscription.has(agentId);
+}
+
+/** Record that an open is enqueued/in flight for this agent (not yet standing). */
+export function markChatSubscriptionAcquiring(agentId: string): void {
+  agentsAcquiringSubscription.add(agentId);
+}
+
+/** Record that this agent's in-flight open installed, aborted, or closed. */
+export function clearChatSubscriptionAcquiring(agentId: string): void {
+  agentsAcquiringSubscription.delete(agentId);
 }
 
 /**

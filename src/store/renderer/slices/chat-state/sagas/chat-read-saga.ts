@@ -41,7 +41,11 @@ import { INITIAL_RETRY_DELAY_MS, SNAPSHOT_TIMEOUT_MS } from '$lib/client/live/li
 import { createLogger } from '$lib/utils/client-logger';
 import type { AgentMessage, AgentSession } from '$shared/types';
 import { isAgentDeletionPending } from '$features/agent/utils/pending-agent-deletions';
-import { hasReplayableChatSnapshot } from '$features/agent/utils/chat-subscription-registry';
+import {
+  hasChatSubscriptionAcquisitionInFlight,
+  hasReplayableChatSnapshot,
+  hasStandingChatSubscription,
+} from '$features/agent/utils/chat-subscription-registry';
 import {
   acquireChatInterestLease,
   releaseChatInterestLease,
@@ -185,10 +189,22 @@ function* hydrateChatTranscriptSaga(request: ChatRequest): SagaGenerator<Hydrate
         // was consumed before this hydration attached (e.g. a teardown reset
         // dropped the meta) and no new emit is coming. Escalate NOW instead
         // of stranding the first bounded wait window: the re-request replays
-        // the held snapshot without touching the wire. A cold open (no
-        // replayable snapshot yet) keeps the plain wait — its seq-0 emit is
-        // still in flight and force-cycling it would only churn.
-        if (yield* call(hasReplayableChatSnapshot, agentId)) {
+        // the held snapshot without touching the wire.
+        //
+        // Dead-wait fast path (intent-hq/monorepo#3295): this window opened
+        // with NEITHER a standing registration NOR an acquisition in flight
+        // for the agent — a dedup-consumed open or an already-swept slot, so
+        // no seq-0 emit is coming at all. Escalate NOW too: the re-request
+        // force-cycles a fresh registration instead of stranding ~8s.
+        //
+        // A cold open (no replayable snapshot, but an acquisition IS in
+        // flight) keeps the plain wait — its seq-0 emit is still coming and
+        // force-cycling it would only churn a healthy opening subscription.
+        const replayable = yield* call(hasReplayableChatSnapshot, agentId);
+        const deadWait =
+          !(yield* call(hasStandingChatSubscription, agentId)) &&
+          !(yield* call(hasChatSubscriptionAcquisitionInFlight, agentId));
+        if (replayable || deadWait) {
           yield* put(chatTranscriptSnapshotRerequested(wsId, agentId));
         }
         for (let attempt = 1; attempt <= SNAPSHOT_WAIT_ATTEMPTS && !meta; attempt += 1) {

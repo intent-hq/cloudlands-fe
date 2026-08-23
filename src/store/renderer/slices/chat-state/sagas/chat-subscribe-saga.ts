@@ -165,7 +165,9 @@ import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
 import { createLogger } from '$lib/utils/client-logger';
 import { isAgentDeletionPending } from '$features/agent/utils/pending-agent-deletions';
 import {
+  clearChatSubscriptionAcquiring,
   clearStandingChatSubscription,
+  markChatSubscriptionAcquiring,
   markStandingChatSubscription,
   setReplayableChatSnapshot,
 } from '$features/agent/utils/chat-subscription-registry';
@@ -622,6 +624,7 @@ function* openSubscription(
     if (slot.desiredToken === transition.token) {
       slot.desiredToken = undefined;
       slot.wsId = undefined;
+      clearChatSubscriptionAcquiring(agentId);
     }
     return;
   }
@@ -664,6 +667,9 @@ function* openSubscription(
     // install — the seq-0 snapshot that follows is canonical for anything
     // the firehose would have written in between.
     markStandingChatSubscription(agentId);
+    // Standing coverage supersedes the acquiring marker: the read saga's
+    // probe now reads the standing registration directly.
+    clearChatSubscriptionAcquiring(agentId);
     installed = true;
     ready = true;
     for (const event of pending) coordinator.events.put(event);
@@ -677,6 +683,13 @@ function* openSubscription(
     if (!installed && slot.desiredToken === transition.token) {
       slot.desiredToken = undefined;
       slot.wsId = undefined;
+    }
+    // An open that never installed (cancelled acquisition, deletion race, or
+    // thrown error) leaves no acquisition in flight — clear the marker,
+    // unless a NEWER open superseded this one (its desiredToken remains set
+    // and it re-marked its own acquisition).
+    if (!installed && !slot.desiredToken) {
+      clearChatSubscriptionAcquiring(agentId);
     }
   }
 }
@@ -853,6 +866,11 @@ function* enqueueOpen(
   const token = {};
   slot.desiredToken = token;
   slot.wsId = wsId;
+  // Record the acquisition as in flight (intent-hq/monorepo#3295): a
+  // concurrent chat-read hydration probes this to tell a cold open (seq-0
+  // emit still coming — keep the plain wait) apart from a dead wait (no
+  // standing registration AND no open in flight — escalate immediately).
+  markChatSubscriptionAcquiring(agentId);
   const completion = createCompletion();
   return enqueue(slot, { kind: 'open', token, wsId, waitFor, completion });
 }
@@ -869,6 +887,11 @@ function enqueueClose(
   }
   slot.desiredToken = undefined;
   slot.acquisition?.cancelPending();
+  // The open this close supersedes is no longer desired — drop its acquiring
+  // marker synchronously (a still-queued open transition early-returns at its
+  // token check before its own finally can clear it). A force-cycle's paired
+  // enqueueOpen re-marks right after, so the net state stays correct.
+  clearChatSubscriptionAcquiring(agentId);
   // Any close retires a pending deferred sweep-close — the teardown it
   // deferred is now happening through this path.
   coordinator.pendingSweepCloses.delete(agentId);
@@ -1392,10 +1415,14 @@ function* watchLeaseReleases(coordinator: SubscriptionCoordinator): SagaGenerato
 function disposeCoordinator(coordinator: SubscriptionCoordinator): string[] {
   const agentIds = [...coordinator.subscriptions.keys()];
   coordinator.events.close();
-  for (const slot of coordinator.slots.values()) {
+  for (const [slotAgentId, slot] of coordinator.slots.entries()) {
     slot.desiredToken = undefined;
     slot.channel.close();
     slot.acquisition?.dispose();
+    // Slots may hold an open in flight that never installed a standing
+    // registration — clear its acquiring marker so the read-saga probe
+    // cannot see a stale acquisition after the coordinator is torn down.
+    clearChatSubscriptionAcquiring(slotAgentId);
   }
   for (const entry of coordinator.subscriptions.values()) entry.acquisition.dispose();
   for (const agentId of agentIds) clearStandingChatSubscription(agentId);
