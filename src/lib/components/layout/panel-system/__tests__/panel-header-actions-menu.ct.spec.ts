@@ -19,6 +19,7 @@ for (const [index, panelType] of panelTypes.entries()) {
       '[data-panel-tabless-header] [data-testid="panel-close-button"]',
     );
     const actions = component.locator('[data-panel-tabless-header] [data-panel-header-actions]');
+    const stack = component.locator('[data-panel-tabless-header] [data-pane-stack]');
     const key = index % 2 === 0 ? 'Enter' : 'Space';
 
     const actionGeometry = await actions.evaluate((node) => {
@@ -39,6 +40,12 @@ for (const [index, panelType] of panelTypes.entries()) {
     expect(actionGeometry.trigger).toEqual(['28px', '28px']);
     expect(actionGeometry.close).toEqual(['28px', '28px']);
     expect(actionGeometry.closeGlyph).toEqual(['14px', '14px']);
+
+    const stackBox = await stack.boundingBox();
+    const actionsBox = await actions.boundingBox();
+    expect(stackBox).not.toBeNull();
+    expect(actionsBox).not.toBeNull();
+    expect(stackBox!.x + stackBox!.width).toBeLessThanOrEqual(actionsBox!.x + 0.5);
 
     await trigger.focus();
     await page.keyboard.press(key);

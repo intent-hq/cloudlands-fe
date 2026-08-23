@@ -1566,13 +1566,14 @@
 {#snippet paneStackLayers()}
   {#each visiblePaneLayers as tab, index (tab.id)}
     <Tooltip content={getTabTitle(tab)} side="bottom" delayDuration={300}>
-      <button
-        type="button"
+      <Button
+        variant="outline"
+        size="sm"
         class={cn(
           'pane-stack-layer relative -mr-2 flex h-6 min-w-10 max-w-24 items-center gap-1 overflow-hidden rounded-md border border-border bg-muted py-0.5 pl-2 pr-3 text-xs text-muted-foreground shadow-sm transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:z-20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
           attentionPaneIds.has(tab.id) && 'border-primary text-foreground',
         )}
-        style:z-index={index + 1}
+        style={`z-index: ${index + 1}`}
         aria-label={paneLayerLabel(tab)}
         onclick={() => activatePane(tab.id)}
         data-pane-stack-layer={tab.id}
@@ -1582,7 +1583,7 @@
           <span class="size-1.5 shrink-0 rounded-full bg-primary" aria-hidden="true"></span>
         {/if}
         <span class="truncate">{getTabTitle(tab)}</span>
-      </button>
+      </Button>
     </Tooltip>
   {/each}
   {@render paneStackOverflowMenu()}
@@ -1922,7 +1923,7 @@
     >
       <!-- Left: visible pane layers with the active pane in front. -->
       <div
-        class="pane-stack-control flex min-w-0 flex-1 items-center"
+        class="pane-stack-control flex min-w-0 flex-1 items-center overflow-hidden"
         role="group"
         aria-label={m.layout_panelTabBar_paneStack_ariaLabel({ count: tabs.length })}
         data-pane-stack
@@ -2290,8 +2291,10 @@
           </Button>
           <div class="border-t border-border"></div>
         {/if}
-        <button
-          class="w-full px-3 py-1.5 text-sm text-left hover:bg-sidebar cursor-pointer flex items-center justify-between disabled:cursor-not-allowed disabled:opacity-50"
+        <Button
+          variant="ghost-light"
+          size="sm"
+          class="h-auto w-full justify-between rounded-none px-3 py-1.5 text-left"
           disabled={!onMovePaneLeft}
           onclick={() => {
             onMovePaneLeft?.();
@@ -2303,9 +2306,11 @@
             {m.layout_panelTabBar_movePaneLeft_label()}
           </span>
           <span class="text-subtle text-xs">{movePaneLeftShortcutHint}</span>
-        </button>
-        <button
-          class="w-full px-3 py-1.5 text-sm text-left hover:bg-sidebar cursor-pointer flex items-center justify-between disabled:cursor-not-allowed disabled:opacity-50"
+        </Button>
+        <Button
+          variant="ghost-light"
+          size="sm"
+          class="h-auto w-full justify-between rounded-none px-3 py-1.5 text-left"
           disabled={!onMovePaneRight}
           onclick={() => {
             onMovePaneRight?.();
@@ -2317,7 +2322,7 @@
             {m.layout_panelTabBar_movePaneRight_label()}
           </span>
           <span class="text-subtle text-xs">{movePaneRightShortcutHint}</span>
-        </button>
+        </Button>
         <div class="border-t border-border"></div>
         <button
           class="w-full px-3 py-1.5 text-sm text-left hover:bg-sidebar cursor-pointer flex items-center justify-between disabled:cursor-not-allowed disabled:opacity-50"

@@ -50,10 +50,11 @@ describe('pane stack control', () => {
     expect(container.querySelector('[data-panel-identity-forward]')).toBeNull();
   });
 
-  it('uses native buttons as direct layer targets', async () => {
+  it('uses approved button controls as direct layer targets', async () => {
     const { container } = render(PaneStackControlHost);
     const browser = screen.getByRole('button', { name: /Open pane Preview browser/ });
     expect(browser.getAttribute('type')).toBe('button');
+    expect(browser.getAttribute('data-slot')).toBe('button');
     await fireEvent.click(browser);
     expect(container.firstElementChild?.getAttribute('data-active-tab')).toBe('browser-pane');
 
