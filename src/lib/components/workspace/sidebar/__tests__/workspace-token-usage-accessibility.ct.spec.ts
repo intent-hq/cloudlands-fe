@@ -87,51 +87,65 @@ test('exposes compact values and keeps summary text readable on hover', async ({
   }
 });
 
-test('keeps the full reference table at workspace and 280 px widths', async ({ mount }) => {
+test('renders the full reference table as a wide overlay from the real workspace sidebar', async ({
+  mount,
+  page,
+}) => {
+  await page.setViewportSize({ width: 1100, height: 720 });
   const component = await mount(WorkspaceTokenUsageAccessibilityHost, {
-    props: { theme: 'dark', width: 452 },
+    props: { theme: 'dark', width: 304 },
   });
+  const sidebar = component.getByTestId('workspace-sidebar');
+  const sidebarRegion = component.getByTestId('token-usage-test-width');
+  const workspaceContent = component.getByTestId('workspace-content');
   const shell = component.getByTestId('workspace-token-usage');
   const disclosure = component.getByTestId('token-usage-disclosure');
 
-  const [closedBox, disclosureBox, summaryMetrics] = await Promise.all([
-    shell.boundingBox(),
-    disclosure.boundingBox(),
-    disclosure.evaluate((element) => {
-      const tokenLabel = element.querySelector('.summary-token-label')!;
-      const processedValue = element.querySelector(
-        '[id^="workspace-token-usage-processed-"] > span:not(.sr-only)',
-      )!;
-      const cache = element.querySelector('[id^="workspace-token-usage-cache-"]')!;
-      const style = getComputedStyle(element);
-      const tokenRect = tokenLabel.getBoundingClientRect();
-      return {
-        backgroundColor: style.backgroundColor,
-        borderRadius: Number.parseFloat(style.borderRadius),
-        borderColor: style.borderColor,
-        cacheLeft: cache.getBoundingClientRect().left,
-        processedFontSize: Number.parseFloat(getComputedStyle(processedValue).fontSize),
-        tokenLabelDisplay: getComputedStyle(tokenLabel).display,
-        tokenLabelFontSize: Number.parseFloat(getComputedStyle(tokenLabel).fontSize),
-        tokenLabelText: tokenLabel.textContent?.trim(),
-        tokenLabelTransform: getComputedStyle(tokenLabel).textTransform,
-        tokenRight: tokenRect.right,
-      };
-    }),
-  ]);
+  const [closedBox, disclosureBox, sidebarBox, sidebarRegionBox, contentBox, summaryMetrics] =
+    await Promise.all([
+      shell.boundingBox(),
+      disclosure.boundingBox(),
+      sidebar.boundingBox(),
+      sidebarRegion.boundingBox(),
+      workspaceContent.boundingBox(),
+      disclosure.evaluate((element) => {
+        const tokenLabel = element.querySelector('.summary-token-label')!;
+        const processedValue = element.querySelector(
+          '[id^="workspace-token-usage-processed-"] > span:not(.sr-only)',
+        )!;
+        const cache = element.querySelector('[id^="workspace-token-usage-cache-"]')!;
+        const style = getComputedStyle(element);
+        const tokenRect = tokenLabel.getBoundingClientRect();
+        return {
+          backgroundColor: style.backgroundColor,
+          borderRadius: Number.parseFloat(style.borderRadius),
+          borderColor: style.borderColor,
+          cacheLeft: cache.getBoundingClientRect().left,
+          processedFontSize: Number.parseFloat(getComputedStyle(processedValue).fontSize),
+          tokenLabelDisplay: getComputedStyle(tokenLabel).display,
+          tokenLabelFontSize: Number.parseFloat(getComputedStyle(tokenLabel).fontSize),
+          tokenLabelText: tokenLabel.textContent?.trim(),
+          tokenLabelTransform: getComputedStyle(tokenLabel).textTransform,
+          tokenRight: tokenRect.right,
+        };
+      }),
+    ]);
   expect(closedBox).not.toBeNull();
   expect(disclosureBox).not.toBeNull();
+  expect(sidebarBox).not.toBeNull();
+  expect(sidebarRegionBox).not.toBeNull();
+  expect(contentBox).not.toBeNull();
+  expect(sidebarBox!.width).toBeCloseTo(352, 0);
+  expect(sidebarRegionBox!.width).toBeCloseTo(304, 0);
   expect(closedBox!.height).toBeLessThanOrEqual(44);
   expect(disclosureBox!.width).toBeCloseTo(304, 0);
-  expect(452 / disclosureBox!.width).toBeCloseTo(1.49, 2);
   expect(summaryMetrics.borderRadius).toBeGreaterThanOrEqual(6);
   expect(summaryMetrics.borderRadius).toBeLessThanOrEqual(8);
-  expect(summaryMetrics.cacheLeft - summaryMetrics.tokenRight).toBeGreaterThanOrEqual(4);
   expect(summaryMetrics).toMatchObject({
     backgroundColor: 'rgb(19, 19, 19)',
     borderColor: 'rgb(30, 30, 30)',
     processedFontSize: 14,
-    tokenLabelDisplay: 'block',
+    tokenLabelDisplay: 'none',
     tokenLabelFontSize: 10,
     tokenLabelText: 'Tokens',
     tokenLabelTransform: 'uppercase',
@@ -151,6 +165,8 @@ test('keeps the full reference table at workspace and 280 px widths', async ({ m
       backgroundColor: style.backgroundColor,
       borderColor: style.borderColor,
       borderRadius: Number.parseFloat(style.borderRadius),
+      position: style.position,
+      zIndex: Number.parseInt(style.zIndex, 10),
     };
   });
 
@@ -160,6 +176,8 @@ test('keeps the full reference table at workspace and 280 px widths', async ({ m
   expect(detailsMetrics).toMatchObject({
     backgroundColor: 'rgb(19, 19, 19)',
     borderColor: 'rgb(30, 30, 30)',
+    position: 'fixed',
+    zIndex: 60,
   });
   await expect(details).toContainText('1K processed');
   await expect(compositionRows).toHaveCount(4);
@@ -195,53 +213,75 @@ test('keeps the full reference table at workspace and 280 px widths', async ({ m
       ),
   ).toBe(true);
 
-  const [detailsBox, dimensions, desktopRows, agentBox, modelBox, breakdownRows] =
-    await Promise.all([
-      details.boundingBox(),
-      shell.evaluate((element) => ({
-        clientWidth: element.clientWidth,
-        scrollWidth: element.scrollWidth,
-      })),
-      compositionRows.evaluateAll((rows) =>
-        rows.map((row) => {
-          const box = (selector: string) =>
-            row.querySelector(selector)!.getBoundingClientRect().toJSON();
-          const valueElement = row.querySelector('.composition-value')!;
-          const contextElement = row.querySelector('.composition-context')!;
-          return {
-            row: row.getBoundingClientRect().toJSON(),
-            swatch: row
-              .querySelector('.composition-metric [aria-hidden="true"]')!
-              .getBoundingClientRect()
-              .toJSON(),
-            metric: box('.composition-metric'),
-            description: box('.composition-description'),
-            value: box('.composition-value'),
-            context: box('.composition-context'),
-            valueAlign: getComputedStyle(valueElement).textAlign,
-            contextAlign: getComputedStyle(contextElement).textAlign,
-            descriptionDisplay: getComputedStyle(row.querySelector('.composition-description')!)
-              .display,
-            contextDisplay: getComputedStyle(row.querySelector('.composition-context')!).display,
-          };
-        }),
-      ),
-      agentSection.boundingBox(),
-      modelSection.boundingBox(),
-      details.locator('.breakdown-section li').evaluateAll((rows) =>
-        rows.map((row) => {
-          const metadata = row.lastElementChild!;
-          const [name, value, context] = Array.from(metadata.children).map((child) =>
-            child.getBoundingClientRect().toJSON(),
-          );
-          return { name, value, context };
-        }),
-      ),
-    ]);
+  const [
+    detailsBox,
+    openSidebarBox,
+    openContentBox,
+    dimensions,
+    pageDimensions,
+    desktopRows,
+    agentBox,
+    modelBox,
+    breakdownRows,
+  ] = await Promise.all([
+    details.boundingBox(),
+    sidebar.boundingBox(),
+    workspaceContent.boundingBox(),
+    shell.evaluate((element) => ({
+      clientWidth: element.clientWidth,
+      scrollWidth: element.scrollWidth,
+    })),
+    page.evaluate(() => ({
+      clientWidth: document.documentElement.clientWidth,
+      scrollWidth: document.documentElement.scrollWidth,
+    })),
+    compositionRows.evaluateAll((rows) =>
+      rows.map((row) => {
+        const box = (selector: string) =>
+          row.querySelector(selector)!.getBoundingClientRect().toJSON();
+        const swatchElement = row.querySelector('.composition-metric [aria-hidden="true"]')!;
+        const metricLabel = row.querySelector('.composition-metric span.truncate')!;
+        const valueElement = row.querySelector('.composition-value')!;
+        const contextElement = row.querySelector('.composition-context')!;
+        return {
+          row: row.getBoundingClientRect().toJSON(),
+          swatch: swatchElement.getBoundingClientRect().toJSON(),
+          swatchRadius: Number.parseFloat(getComputedStyle(swatchElement).borderRadius),
+          metric: box('.composition-metric'),
+          metricTransform: getComputedStyle(metricLabel).textTransform,
+          description: box('.composition-description'),
+          value: box('.composition-value'),
+          context: box('.composition-context'),
+          valueAlign: getComputedStyle(valueElement).textAlign,
+          contextAlign: getComputedStyle(contextElement).textAlign,
+          descriptionDisplay: getComputedStyle(row.querySelector('.composition-description')!)
+            .display,
+          contextDisplay: getComputedStyle(row.querySelector('.composition-context')!).display,
+        };
+      }),
+    ),
+    agentSection.boundingBox(),
+    modelSection.boundingBox(),
+    details.locator('.breakdown-section li').evaluateAll((rows) =>
+      rows.map((row) => {
+        const metadata = row.lastElementChild!;
+        const [name, value, context] = Array.from(metadata.children).map((child) =>
+          child.getBoundingClientRect().toJSON(),
+        );
+        return { name, value, context };
+      }),
+    ),
+  ]);
 
   expect(detailsBox).not.toBeNull();
   expect(detailsBox!.width).toBeCloseTo(452, 0);
+  expect(detailsBox!.x).toBeCloseTo(disclosureBox!.x, 0);
+  expect(detailsBox!.y).toBeCloseTo(disclosureBox!.y + disclosureBox!.height + 8, 0);
+  expect(detailsBox!.width / disclosureBox!.width).toBeCloseTo(1.49, 2);
+  expect(openSidebarBox).toEqual(sidebarBox);
+  expect(openContentBox).toEqual(contentBox);
   expect(dimensions.scrollWidth).toBeLessThanOrEqual(dimensions.clientWidth);
+  expect(pageDimensions.scrollWidth).toBeLessThanOrEqual(pageDimensions.clientWidth);
   expect(agentBox).not.toBeNull();
   expect(modelBox).not.toBeNull();
   expect(Math.abs(agentBox!.y - modelBox!.y)).toBeLessThanOrEqual(1);
@@ -251,7 +291,9 @@ test('keeps the full reference table at workspace and 280 px widths', async ({ m
       ({
         row,
         swatch,
+        swatchRadius,
         metric,
+        metricTransform,
         description,
         value,
         context,
@@ -263,6 +305,9 @@ test('keeps the full reference table at workspace and 280 px widths', async ({ m
         row.height <= 44 &&
         swatch.width > 0 &&
         swatch.height > 0 &&
+        Math.abs(swatch.width - swatch.height) <= 1 &&
+        swatchRadius === 0 &&
+        metricTransform === 'uppercase' &&
         descriptionDisplay !== 'none' &&
         contextDisplay !== 'none' &&
         valueAlign === 'right' &&
@@ -285,44 +330,81 @@ test('keeps the full reference table at workspace and 280 px widths', async ({ m
     ),
   ).toBe(true);
 
-  await component.update({ props: { width: 280 } });
-  const [narrowDimensions, narrowRows, narrowAgentBox, narrowModelBox, longModel] =
-    await Promise.all([
-      shell.evaluate((element) => ({
-        clientWidth: element.clientWidth,
-        scrollWidth: element.scrollWidth,
+  const topmost = await page.evaluate(
+    ({ x, y }) =>
+      document
+        .elementFromPoint(x, y)
+        ?.closest('[data-testid="token-usage-details"]')
+        ?.getAttribute('data-testid'),
+    {
+      x: Math.max(contentBox!.x + 24, detailsBox!.x + detailsBox!.width - 48),
+      y: detailsBox!.y + 24,
+    },
+  );
+  expect(topmost).toBe('token-usage-details');
+
+  await component.update({ props: { theme: 'dark', width: 452 } });
+  const [wideSidebarRegion, wideDetails, wideSummaryMetrics] = await Promise.all([
+    sidebarRegion.boundingBox(),
+    details.boundingBox(),
+    disclosure.evaluate((element) => {
+      const tokenLabel = element.querySelector('.summary-token-label')!;
+      const cache = element.querySelector('[id^="workspace-token-usage-cache-"]')!;
+      const tokenRect = tokenLabel.getBoundingClientRect();
+      return {
+        cacheLeft: cache.getBoundingClientRect().left,
+        tokenLabelDisplay: getComputedStyle(tokenLabel).display,
+        tokenRight: tokenRect.right,
+      };
+    }),
+  ]);
+  expect(wideSidebarRegion!.width).toBeCloseTo(452, 0);
+  expect(wideDetails!.width).toBeCloseTo(452, 0);
+  expect(wideSummaryMetrics.tokenLabelDisplay).toBe('block');
+  expect(wideSummaryMetrics.cacheLeft - wideSummaryMetrics.tokenRight).toBeGreaterThanOrEqual(4);
+
+  await component.update({ props: { theme: 'dark', width: 280 } });
+  const [
+    narrowSidebarRegion,
+    narrowDetails,
+    narrowRows,
+    narrowAgentBox,
+    narrowModelBox,
+    longModel,
+  ] = await Promise.all([
+    sidebarRegion.boundingBox(),
+    details.boundingBox(),
+    compositionRows.evaluateAll((rows) =>
+      rows.map((row) => {
+        const box = (selector: string) => row.querySelector(selector)!.getBoundingClientRect();
+        const metric = box('.composition-metric');
+        const description = box('.composition-description');
+        const value = box('.composition-value');
+        const context = box('.composition-context');
+        return {
+          ys: [metric.y, description.y, value.y, context.y],
+          valueRight: value.right,
+          contextRight: context.right,
+          descriptionDisplay: getComputedStyle(row.querySelector('.composition-description')!)
+            .display,
+          contextDisplay: getComputedStyle(row.querySelector('.composition-context')!).display,
+        };
+      }),
+    ),
+    agentSection.boundingBox(),
+    modelSection.boundingBox(),
+    modelSection
+      .locator('[title="provider/this-is-an-extraordinarily-long-model-name-for-truncation"]')
+      .evaluate((label) => ({
+        clientWidth: label.clientWidth,
+        scrollWidth: label.scrollWidth,
+        overflow: getComputedStyle(label).overflow,
+        textOverflow: getComputedStyle(label).textOverflow,
+        whiteSpace: getComputedStyle(label).whiteSpace,
       })),
-      compositionRows.evaluateAll((rows) =>
-        rows.map((row) => {
-          const box = (selector: string) => row.querySelector(selector)!.getBoundingClientRect();
-          const metric = box('.composition-metric');
-          const description = box('.composition-description');
-          const value = box('.composition-value');
-          const context = box('.composition-context');
-          return {
-            ys: [metric.y, description.y, value.y, context.y],
-            valueRight: value.right,
-            contextRight: context.right,
-            descriptionDisplay: getComputedStyle(row.querySelector('.composition-description')!)
-              .display,
-            contextDisplay: getComputedStyle(row.querySelector('.composition-context')!).display,
-          };
-        }),
-      ),
-      agentSection.boundingBox(),
-      modelSection.boundingBox(),
-      modelSection
-        .locator('[title="provider/this-is-an-extraordinarily-long-model-name-for-truncation"]')
-        .evaluate((label) => ({
-          clientWidth: label.clientWidth,
-          scrollWidth: label.scrollWidth,
-          overflow: getComputedStyle(label).overflow,
-          textOverflow: getComputedStyle(label).textOverflow,
-          whiteSpace: getComputedStyle(label).whiteSpace,
-        })),
-    ]);
-  expect(narrowDimensions.clientWidth).toBe(280);
-  expect(narrowDimensions.scrollWidth).toBeLessThanOrEqual(narrowDimensions.clientWidth);
+  ]);
+  expect(narrowSidebarRegion!.width).toBeCloseTo(280, 0);
+  expect(narrowDetails!.width).toBeCloseTo(452, 0);
   expect(
     narrowRows.every(
       ({ ys, descriptionDisplay, contextDisplay }) =>
@@ -349,26 +431,104 @@ test('keeps the full reference table at workspace and 280 px widths', async ({ m
     textOverflow: 'ellipsis',
     whiteSpace: 'nowrap',
   });
+});
 
-  await component.update({ props: { width: 248 } });
-  const [compactDimensions, compactRows, compactAgentBox, compactModelBox] = await Promise.all([
-    shell.evaluate((element) => ({
-      clientWidth: element.clientWidth,
-      scrollWidth: element.scrollWidth,
-    })),
-    compositionRows.evaluateAll((rows) =>
-      rows.map((row) => {
-        const metric = row.querySelector('.composition-metric')!.getBoundingClientRect();
-        const description = row.querySelector('.composition-description')!.getBoundingClientRect();
-        const value = row.querySelector('.composition-value')!.getBoundingClientRect();
-        const context = row.querySelector('.composition-context')!.getBoundingClientRect();
-        return { metric, description, value, context };
-      }),
-    ),
-    agentSection.boundingBox(),
-    modelSection.boundingBox(),
+test('dismisses, repositions, flips, and clamps the overlay without changing workspace geometry', async ({
+  mount,
+  page,
+}) => {
+  await page.setViewportSize({ width: 1100, height: 520 });
+  const component = await mount(WorkspaceTokenUsageAccessibilityHost, {
+    props: { theme: 'dark', width: 304, placement: 'top', side: 'left' },
+  });
+  const sidebar = component.getByTestId('workspace-sidebar');
+  const sidebarScroll = component.getByTestId('workspace-sidebar-scroll');
+  const workspaceContent = component.getByTestId('workspace-content');
+  const disclosure = component.getByTestId('token-usage-disclosure');
+
+  await disclosure.click();
+  let details = component.getByTestId('token-usage-details');
+  const beforeScroll = await details.boundingBox();
+  await sidebarScroll.evaluate((element) => element.scrollTo({ top: 20 }));
+  await expect
+    .poll(async () => {
+      const [anchor, panel] = await Promise.all([disclosure.boundingBox(), details.boundingBox()]);
+      return panel!.y - (anchor!.y + anchor!.height);
+    })
+    .toBeCloseTo(8, 0);
+  const afterScroll = await details.boundingBox();
+  expect(afterScroll!.y).toBeLessThan(beforeScroll!.y);
+
+  const contentBox = await workspaceContent.boundingBox();
+  await workspaceContent.click({
+    position: { x: contentBox!.width - 24, y: contentBox!.height - 24 },
+  });
+  await expect(details).toHaveCount(0);
+
+  await disclosure.click();
+  details = component.getByTestId('token-usage-details');
+  await disclosure.press('Escape');
+  await expect(details).toHaveCount(0);
+  await expect(disclosure).toBeFocused();
+
+  await sidebarScroll.evaluate((element) => element.scrollTo({ top: 0 }));
+  await component.update({ props: { placement: 'bottom', side: 'left' } });
+  await page.setViewportSize({ width: 700, height: 360 });
+  await disclosure.click();
+  details = component.getByTestId('token-usage-details');
+  let [anchorBox, detailsBox] = await Promise.all([
+    disclosure.boundingBox(),
+    details.boundingBox(),
   ]);
-  expect(compactDimensions.scrollWidth).toBeLessThanOrEqual(compactDimensions.clientWidth);
+  expect(detailsBox!.y).toBeGreaterThanOrEqual(8);
+  expect(detailsBox!.y + detailsBox!.height).toBeCloseTo(anchorBox!.y - 8, 0);
+  expect(detailsBox!.height).toBeLessThanOrEqual(anchorBox!.y - 16);
+
+  await component.update({ props: { placement: 'bottom', side: 'right' } });
+  await page.evaluate(() => window.dispatchEvent(new Event('resize')));
+  await expect
+    .poll(async () => {
+      const box = await details.boundingBox();
+      return box!.x + box!.width;
+    })
+    .toBeCloseTo(692, 0);
+  [anchorBox, detailsBox] = await Promise.all([disclosure.boundingBox(), details.boundingBox()]);
+  expect(detailsBox!.x).toBeLessThan(anchorBox!.x);
+  expect(detailsBox!.x).toBeGreaterThanOrEqual(8);
+
+  await component.update({ props: { placement: 'top', side: 'left' } });
+  await sidebarScroll.evaluate((element) => element.scrollTo({ top: 0 }));
+  await page.setViewportSize({ width: 280, height: 520 });
+  const compositionRows = details.locator('.composition-row');
+  const agentSection = component.getByTestId('token-usage-by-agent');
+  const modelSection = component.getByTestId('token-usage-by-model');
+  const [summaryBox280, compactBox280, compactRows, agentBox, modelBox, pageDimensions280] =
+    await Promise.all([
+      disclosure.boundingBox(),
+      details.boundingBox(),
+      compositionRows.evaluateAll((rows) =>
+        rows.map((row) => {
+          const metric = row.querySelector('.composition-metric')!.getBoundingClientRect();
+          const description = row
+            .querySelector('.composition-description')!
+            .getBoundingClientRect();
+          const value = row.querySelector('.composition-value')!.getBoundingClientRect();
+          const context = row.querySelector('.composition-context')!.getBoundingClientRect();
+          return { metric, description, value, context };
+        }),
+      ),
+      agentSection.boundingBox(),
+      modelSection.boundingBox(),
+      page.evaluate(() => ({
+        clientWidth: document.documentElement.clientWidth,
+        scrollWidth: document.documentElement.scrollWidth,
+      })),
+    ]);
+  expect(summaryBox280!.width).toBeCloseTo(232, 0);
+  expect(compactBox280!.width).toBeCloseTo(264, 0);
+  expect(compactBox280!.x).toBeCloseTo(8, 0);
+  expect(compactBox280!.x + compactBox280!.width).toBeCloseTo(272, 0);
+  expect(pageDimensions280.scrollWidth).toBeLessThanOrEqual(pageDimensions280.clientWidth);
   expect(
     compactRows.every(
       ({ metric, description, value, context }) =>
@@ -377,9 +537,21 @@ test('keeps the full reference table at workspace and 280 px widths', async ({ m
         description.y > metric.y,
     ),
   ).toBe(true);
-  expect(compactAgentBox).not.toBeNull();
-  expect(compactModelBox).not.toBeNull();
-  expect(compactModelBox!.y).toBeGreaterThanOrEqual(
-    compactAgentBox!.y + compactAgentBox!.height - 1,
-  );
+  expect(modelBox!.y).toBeGreaterThanOrEqual(agentBox!.y + agentBox!.height - 1);
+
+  await page.setViewportSize({ width: 248, height: 480 });
+  const [summaryBox248, compactBox248, pageDimensions248] = await Promise.all([
+    disclosure.boundingBox(),
+    details.boundingBox(),
+    page.evaluate(() => ({
+      clientWidth: document.documentElement.clientWidth,
+      scrollWidth: document.documentElement.scrollWidth,
+    })),
+  ]);
+  expect(summaryBox248!.width).toBeCloseTo(200, 0);
+  expect(compactBox248!.width).toBeCloseTo(232, 0);
+  expect(compactBox248!.x).toBeCloseTo(8, 0);
+  expect(compactBox248!.x + compactBox248!.width).toBeCloseTo(240, 0);
+  expect(pageDimensions248.scrollWidth).toBeLessThanOrEqual(pageDimensions248.clientWidth);
+  expect((await sidebar.boundingBox())!.width).toBeCloseTo(248, 0);
 });
