@@ -137,6 +137,7 @@ function renderHeader(type: (typeof panelTypes)[number], props: Record<string, u
       panelId: 'panel-1',
       workspaceId: 'workspace-1',
       contentActions,
+      onTabClose: vi.fn(),
       ...props,
     },
   });
@@ -296,14 +297,7 @@ describe('mounted panel header actions menu', () => {
       Array.from(populatedActions.querySelectorAll('button')).map((button) =>
         button.getAttribute('aria-label'),
       ),
-    ).toEqual([
-      'More',
-      'Panel history',
-      'Go back',
-      'Go forward',
-      'Panel columns: 2',
-      'Close panel',
-    ]);
+    ).toEqual(['More', 'Panel columns: 2', 'Close active pane']);
     populated.unmount();
 
     const empty = render(PanelTabBar, {
@@ -393,18 +387,20 @@ describe('mounted panel header actions menu', () => {
     expect(outsideTrigger.getAttribute('aria-expanded')).toBe('false');
   });
 
-  it('runs enabled actions once, keeps disabled items inert, and preserves close behavior', async () => {
+  it('runs enabled actions once and closes only the active pane', async () => {
     const onZoomToggle = vi.fn();
     const onSplitHorizontal = vi.fn();
     const onMoveLeft = vi.fn();
     const onMoveRight = vi.fn();
     const onClosePanel = vi.fn();
+    const onTabClose = vi.fn();
     const { container } = renderHeader('browser', {
       onZoomToggle,
       onSplitHorizontal,
       onMoveLeft,
       onMoveRight,
       onClosePanel,
+      onTabClose,
     });
     const trigger = panelTrigger(container);
 
@@ -433,7 +429,9 @@ describe('mounted panel header actions menu', () => {
     await fireEvent.click(
       container.querySelector('[data-panel-tabless-header] [data-testid="panel-close-button"]')!,
     );
-    expect(onClosePanel).toHaveBeenCalledOnce();
+    expect(onTabClose).toHaveBeenCalledOnce();
+    expect(onTabClose).toHaveBeenCalledWith('browser-tab');
+    expect(onClosePanel).not.toHaveBeenCalled();
   });
 
   it('rejects a drag from the trigger but keeps blank-header dragging active', async () => {

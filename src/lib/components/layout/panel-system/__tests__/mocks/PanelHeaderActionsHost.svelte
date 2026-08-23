@@ -136,6 +136,7 @@
     onSplitHorizontal={() => (splitCount += 1)}
     onMoveLeft={() => (moveLeftCount += 1)}
     onMoveRight={() => (moveRightCount += 1)}
+    onTabClose={() => (closeCount += 1)}
     onClosePanel={() => (closeCount += 1)}
     isFocused
   />

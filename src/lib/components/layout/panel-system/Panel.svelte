@@ -483,6 +483,7 @@
       <PanelTabBar
         tabs={panel.tabs}
         activeTabId={panel.activeTabId}
+        attentionTabIds={panel.attentionTabIds}
         panelId={panel.id}
         {workspaceId}
         {layoutId}

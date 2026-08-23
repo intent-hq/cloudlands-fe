@@ -89,9 +89,9 @@ describe('editorial workspace shell presentation contract', () => {
     expect(tabBar).toContain('data-panel-tab-bar');
     expect(tabBar).toContain('data-panel-tabless-header');
     expect(tabBar).toContain('data-panel-content-header');
-    expect(tabBar).toContain('m.layout_panelTabBar_closePanel_label()');
+    expect(tabBar).toContain('m.layout_panelTabBar_closePane_ariaLabel()');
     expect(tabBar).toContain('{#snippet panelActionsDropdown()}');
-    expect(tabBar).toContain('{#snippet panelCloseButton()}');
+    expect(tabBar).toContain('{#snippet panelCloseButton(tab: PanelTab | null = null)}');
     expect(tabBar).toContain('data-testid="panel-close-button"');
     expect(tabBar).toContain('data-panel-actions-section="display"');
     expect(tabBar).toContain('data-panel-actions-section="actions"');

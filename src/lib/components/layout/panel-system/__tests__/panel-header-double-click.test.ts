@@ -97,6 +97,7 @@ function renderTabBar(showTabStrip = false) {
       panelId: 'panel-1',
       workspaceId: 'workspace-1',
       showTabStrip,
+      onTabClose: vi.fn(),
       onClosePanel: vi.fn(),
     },
   });

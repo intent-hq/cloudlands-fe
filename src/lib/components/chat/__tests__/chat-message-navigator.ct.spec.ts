@@ -202,9 +202,6 @@ test.describe('chat message navigator production path', () => {
         'chat-message-navigator-trigger',
         'chat-scroll-to-bottom-button',
         'panel-actions-trigger',
-        'panel-identity-history-trigger',
-        null,
-        null,
         null,
         'panel-close-button',
       ]);
