@@ -30,8 +30,7 @@ describe('chat content column contracts', () => {
       'class="composer-prompt-layer relative z-10 w-full border-t border-border"',
     );
     expect(panel).toContain('class:pb-3={!hasVisibleTranscriptUtility}');
-    expect(panel).toContain('bind:visible={hasVisibleEventSubscriptions}');
-    expect(panel).toContain('bind:visible={hasVisibleFallbackPlan}');
+    expect(panel).toContain('bind:visible={hasVisibleTranscriptUtility}');
     expect(panel).toContain('style:padding-inline-end="{scrollbarGutterWidth}px"');
     expect(panel).toMatch(
       /class="chat-content-measure mx-auto w-full min-w-0"[\s\S]*?data-testid="chat-composer-controls-inner"/,

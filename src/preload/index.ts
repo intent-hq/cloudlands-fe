@@ -705,9 +705,7 @@ const ALLOWED_CHANNELS = [
   "connections:auth-rejected",
   "transfer:progress",
   "transfer:import-progress",
-  "menu:import-workspace",
-  "acp:plan-updated",
-  "acp:plan-cleared"
+  "menu:import-workspace"
 ];
 
 // Dynamic channel patterns that are matched with startsWith()
@@ -884,9 +882,7 @@ const EVENT_CHANNELS = [
   "connections:auth-rejected",
   "transfer:progress",
   "transfer:import-progress",
-  "menu:import-workspace",
-  "acp:plan-updated",
-  "acp:plan-cleared"
+  "menu:import-workspace"
 ];
 
 /**
