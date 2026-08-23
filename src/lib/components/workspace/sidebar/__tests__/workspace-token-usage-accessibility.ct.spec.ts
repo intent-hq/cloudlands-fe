@@ -94,14 +94,38 @@ test('keeps the full reference table at workspace and 280 px widths', async ({ m
   const shell = component.getByTestId('workspace-token-usage');
   const disclosure = component.getByTestId('token-usage-disclosure');
 
-  const [closedBox, disclosureBox] = await Promise.all([
+  const [closedBox, disclosureBox, summaryMetrics] = await Promise.all([
     shell.boundingBox(),
     disclosure.boundingBox(),
+    disclosure.evaluate((element) => {
+      const tokenLabel = element.querySelector('.summary-token-label')!;
+      const processedValue = element.querySelector(
+        '[id^="workspace-token-usage-processed-"] > span:not(.sr-only)',
+      )!;
+      const style = getComputedStyle(element);
+      return {
+        borderRadius: Number.parseFloat(style.borderRadius),
+        processedFontSize: Number.parseFloat(getComputedStyle(processedValue).fontSize),
+        tokenLabelDisplay: getComputedStyle(tokenLabel).display,
+        tokenLabelFontSize: Number.parseFloat(getComputedStyle(tokenLabel).fontSize),
+        tokenLabelText: tokenLabel.textContent?.trim(),
+        tokenLabelTransform: getComputedStyle(tokenLabel).textTransform,
+      };
+    }),
   ]);
   expect(closedBox).not.toBeNull();
   expect(disclosureBox).not.toBeNull();
   expect(closedBox!.height).toBeLessThanOrEqual(44);
-  expect(disclosureBox!.width).toBeCloseTo(352, 0);
+  expect(disclosureBox!.width).toBeCloseTo(304, 0);
+  expect(452 / disclosureBox!.width).toBeCloseTo(1.49, 2);
+  expect(summaryMetrics.borderRadius).toBeLessThanOrEqual(5);
+  expect(summaryMetrics).toMatchObject({
+    processedFontSize: 14,
+    tokenLabelDisplay: 'block',
+    tokenLabelFontSize: 10,
+    tokenLabelText: 'Tokens',
+    tokenLabelTransform: 'uppercase',
+  });
 
   await disclosure.click();
   const agentSection = component.getByTestId('token-usage-by-agent');
@@ -133,6 +157,19 @@ test('keeps the full reference table at workspace and 280 px widths', async ({ m
   await expect(
     composition.locator('div[aria-hidden="true"]').first().locator(':scope > span').first(),
   ).toHaveClass(/bg-success/);
+  expect(
+    await composition
+      .locator('div[aria-hidden="true"]')
+      .first()
+      .locator(':scope > span')
+      .evaluateAll((segments) =>
+        segments.every(
+          (segment) =>
+            Number.parseFloat(getComputedStyle(segment).minWidth) >= 2 &&
+            segment.getBoundingClientRect().width >= 2,
+        ),
+      ),
+  ).toBe(true);
 
   const [detailsBox, dimensions, desktopRows, agentBox, modelBox, breakdownRows] =
     await Promise.all([
@@ -199,7 +236,7 @@ test('keeps the full reference table at workspace and 280 px widths', async ({ m
         descriptionDisplay,
         contextDisplay,
       }) =>
-        row.height <= 40 &&
+        row.height <= 44 &&
         swatch.width > 0 &&
         swatch.height > 0 &&
         descriptionDisplay !== 'none' &&
