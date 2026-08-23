@@ -4,6 +4,17 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.86.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.86.0...v2.86.1) (2026-08-23)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.7.44 ([#1625](https://github.com/intent-hq/cloudlands-fe/issues/1625)) ([dae4ea7](https://github.com/intent-hq/cloudlands-fe/commit/dae4ea7f4d1e2f15b651102efc12a06f22d9cf89))
+* bump intentd sidecar to v0.7.45 ([#1627](https://github.com/intent-hq/cloudlands-fe/issues/1627)) ([eb0370f](https://github.com/intent-hq/cloudlands-fe/commit/eb0370f3445a82c44f24847f3340e35876aa1de8))
+* never render a default pseudo-row in the model picker list ([#1620](https://github.com/intent-hq/cloudlands-fe/issues/1620)) ([aa42328](https://github.com/intent-hq/cloudlands-fe/commit/aa4232828a73d1129214a15c7706a60a02aefef2))
+* scope STAB-9 event-driven agent refresh to the changed agent ([#1619](https://github.com/intent-hq/cloudlands-fe/issues/1619)) ([dc32b0b](https://github.com/intent-hq/cloudlands-fe/commit/dc32b0b0e5764d354d8223081977598af221d482))
+* stop rendering 'No results' above real search output and parse grep-style results ([#1623](https://github.com/intent-hq/cloudlands-fe/issues/1623)) ([522894e](https://github.com/intent-hq/cloudlands-fe/commit/522894eeadb92385f435f25ed4eadb2755fa7299))
+
 ## [2.86.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.85.1...v2.86.0) (2026-08-23)
 
 
