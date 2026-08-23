@@ -77,6 +77,7 @@
     dedupeKeys,
     getResponseGroupBlockKeys,
     getResponseGroupCurrentBlockIndex,
+    normalizeResponseGroups,
   } from './response-group-blocks';
   import { chatSearchBlockPath } from './chat-search';
   import { AuggieTextParser } from '$lib/utils/auggie-text-parser';
@@ -296,7 +297,7 @@
   });
 
   // Group content blocks by <group:Name> tags at the ContentBlock level.
-  let groupedBlocks = $derived(groupContentBlocks(blocks, isStreaming));
+  let groupedBlocks = $derived(normalizeResponseGroups(groupContentBlocks(blocks, isStreaming)));
 
   // Track tool states
   let toolStates = $state<Map<string, 'running' | 'completed' | 'error'>>(new Map());
@@ -569,7 +570,7 @@
     // ContentBlockGroup: use group name + index
     if (block.type === 'content_group') {
       const group = block as ContentBlockGroup;
-      return `group-${index}-${group.name}`;
+      return `group-${index}-${group.sourceName ?? group.name}`;
     }
 
     const contentBlock = block as ContentBlock;
@@ -966,6 +967,7 @@
           isStreaming={group.isStreaming}
           blocks={group.children}
           searchPath={chatSearchBlockPath(blockIndex)}
+          reasoningPhase={group.isReasoningPhase}
           currentChild={currentChildIndex >= 0 ? currentChild : undefined}
           adjacentOperationalRow={isAdjacentOperationalClusterRow(
             groupedBlocks,

@@ -17,6 +17,7 @@ import {
   getResponseGroupCurrentBlockIndex,
   getResponseGroupPreviewBlock,
   isReasoningPhaseGroupName,
+  normalizeResponseGroup,
 } from '../response-group-blocks';
 import { warmImport } from '../../../../test/warm-import';
 import type { ContentBlock } from '$shared/types';
@@ -387,6 +388,45 @@ describe('ResponseGroup - block identity', () => {
     expect(isReasoningPhaseGroupName(' prepping ')).toBe(true);
     expect(isReasoningPhaseGroupName('Working')).toBe(false);
     expect(isReasoningPhaseGroupName('Plan')).toBe(false);
+  });
+
+  it('pairs the first alternate reasoning name with the group description once', () => {
+    const description = {
+      type: 'text',
+      text: 'Read the spec and inspect the screenshot.',
+    } as ContentBlock;
+    const firstReasoning = {
+      type: 'thinking',
+      text: 'Reasoning\n\n**Invoking workspace API to set title**',
+    } as ContentBlock;
+    const laterReasoning = {
+      type: 'thinking',
+      text: 'Planning clarification questions\n\nPlanning code inspection.',
+    } as ContentBlock;
+    const namedGroup = {
+      type: 'content_group' as const,
+      name: 'Prepping',
+      isStreaming: true,
+      children: [description, firstReasoning, laterReasoning],
+    };
+
+    expect(normalizeResponseGroup(namedGroup)).toEqual({
+      ...namedGroup,
+      name: 'Reasoning',
+      sourceName: 'Prepping',
+      isReasoningPhase: true,
+      children: [
+        description,
+        { type: 'text', text: '**Invoking workspace API to set title**' },
+        {
+          type: 'text',
+          text: 'Planning clarification questions\n\nPlanning code inspection.',
+        },
+      ],
+    });
+
+    const normalGroup = { ...namedGroup, name: 'Working' };
+    expect(normalizeResponseGroup(normalGroup)).toBe(normalGroup);
   });
 
   it('selects the last visible child and skips trailing tool results', () => {

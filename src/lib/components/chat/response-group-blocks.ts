@@ -1,9 +1,11 @@
 import type { ContentBlock } from '$shared/types';
+import type { ContentBlockGroup, RenderContentBlock } from '$lib/utils/messageParser';
 import {
   getIdBackedContentBlockKey,
   getToolResultContentBlockKey,
   getToolUseContentBlockKey,
 } from '$shared/utils/content-block-helpers';
+import { extractReasoningHeading } from './reasoning-heading';
 
 // This provider phase arrives in the same parsed content_group shape as normal
 // named groups. Keep the compatibility match narrow so authored group names
@@ -12,6 +14,45 @@ const REASONING_PHASE_GROUP_NAMES = new Set(['prepping']);
 
 export function isReasoningPhaseGroupName(name: string): boolean {
   return REASONING_PHASE_GROUP_NAMES.has(name.trim().toLowerCase());
+}
+
+function reasoningAsText(block: ContentBlock, text: string): ContentBlock | null {
+  if (!text.trim()) return null;
+  const { content: _content, ...rest } = block;
+  return { ...rest, type: 'text', text } as ContentBlock;
+}
+
+export function normalizeResponseGroup(block: ContentBlockGroup): ContentBlockGroup {
+  if (!isReasoningPhaseGroupName(block.name)) return block;
+
+  const parsedReasoning = block.children.map((child) =>
+    child.type === 'thinking' ? extractReasoningHeading(child.text ?? child.content ?? '') : null,
+  );
+  const firstNamedReasoning = parsedReasoning.findIndex((reasoning) => reasoning?.heading);
+  const children = block.children.flatMap((child, index) => {
+    if (child.type !== 'thinking') return [child];
+    const reasoning = parsedReasoning[index];
+    const text =
+      index === firstNamedReasoning ? (reasoning?.body ?? '') : (child.text ?? child.content ?? '');
+    const normalized = reasoningAsText(child, text);
+    return normalized ? [normalized] : [];
+  });
+
+  return {
+    ...block,
+    name: parsedReasoning[firstNamedReasoning]?.heading ?? '',
+    sourceName: block.name,
+    isReasoningPhase: true,
+    children,
+  };
+}
+
+export function normalizeResponseGroups(
+  blocks: readonly RenderContentBlock[],
+): RenderContentBlock[] {
+  return blocks.map((block) =>
+    block.type === 'content_group' ? normalizeResponseGroup(block) : block,
+  );
 }
 
 export function getResponseGroupBlockKey(block: ContentBlock, index: number): string {

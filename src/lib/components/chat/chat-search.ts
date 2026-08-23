@@ -7,7 +7,6 @@ import {
   type ContentBlockGroup,
 } from '$lib/utils/messageParser';
 import { getPresentedUserMessageText } from '$lib/utils/user-message-presentation';
-
 interface ChatSearchBlock {
   messageId: string;
   turnKey: string;
@@ -15,6 +14,7 @@ interface ChatSearchBlock {
   disclosurePath: string[];
   text: string;
 }
+import { normalizeResponseGroups } from './response-group-blocks';
 
 export interface ChatSearchMatch {
   messageId: string;
@@ -49,7 +49,9 @@ function buildMessageSearchBlocks(message: AgentMessage, turnKey: string): ChatS
   const parsedPromptBlocks = parseSuggestedPromptsFromContentBlocks(contentBlocks, {
     isStreaming: !!message.isStreaming,
   });
-  const grouped = groupContentBlocks(parsedPromptBlocks.contentBlocks, !!message.isStreaming);
+  const grouped = normalizeResponseGroups(
+    groupContentBlocks(parsedPromptBlocks.contentBlocks, !!message.isStreaming),
+  );
   const output: ChatSearchBlock[] = [];
   const addText = (text: string, blockPath: string, disclosurePath: string[]) => {
     const cleaned = parseSuggestedPrompts(text).cleanedContent;

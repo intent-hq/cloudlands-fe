@@ -44,6 +44,22 @@ describe('chat search utilities', () => {
     );
   });
 
+  it('excludes the alternate reasoning description and history while collapsed', () => {
+    const blocks = [
+      { type: 'text', text: '<group:Prepping>hidden group description' },
+      { type: 'thinking', text: 'Reasoning\n\nhidden first reasoning body' },
+      { type: 'thinking', text: 'Planning clarification\n\nhidden later reasoning body' },
+      { type: 'text', text: '</group:Prepping>visible final prose' },
+    ] as AgentMessage['contentBlocks'];
+
+    expect(
+      findChatSearchMatches([assistant('alternate-complete', blocks)], 'hidden', new Map()),
+    ).toEqual([]);
+    expect(
+      findChatSearchMatches([assistant('alternate-complete', blocks)], 'visible final', new Map()),
+    ).toHaveLength(1);
+  });
+
   it('does not index exact delivery notes on user messages', () => {
     const note =
       '[SYSTEM NOTE] This message was queued at 2026-01-01T00:00:00Z and waited 8s before delivery.';

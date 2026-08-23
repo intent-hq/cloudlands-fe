@@ -15,7 +15,7 @@
   import { m } from '$shared/paraglide/messages.js';
   import CylinderScroller from './CylinderScroller.svelte';
   import InlineMarkdownSnippet from './InlineMarkdownSnippet.svelte';
-  import { getResponseGroupPreviewBlock, isReasoningPhaseGroupName } from './response-group-blocks';
+  import { getResponseGroupPreviewBlock } from './response-group-blocks';
   import { faArrowsInLineVertical, faArrowsOutLineVertical } from '$lib/icons/phosphor-icons';
   import {
     OPERATIONAL_GROUP_CONTENT_CLASS,
@@ -33,6 +33,7 @@
     children: Snippet;
     currentChild?: Snippet;
     blocks?: ContentBlock[];
+    reasoningPhase?: boolean;
     adjacentOperationalRow?: boolean;
     searchPath?: string;
     class?: string;
@@ -44,6 +45,7 @@
     children,
     currentChild,
     blocks,
+    reasoningPhase = false,
     adjacentOperationalRow = false,
     searchPath,
     class: className = '',
@@ -165,20 +167,19 @@
   }
 
   // Keep the collapsed row to one inert, current inline summary.
-  const isReasoningPhase = $derived(isReasoningPhaseGroupName(name));
-
   // Keep normal named groups to one inline summary. Reasoning phases match the
   // standard reasoning disclosure and reveal their description only when open.
   const textSnippet = $derived.by(() => {
-    if (isReasoningPhase) return '';
+    if (reasoningPhase) return '';
     const previewBlock = getResponseGroupPreviewBlock(blocks);
     return previewBlock ? getContentBlockText(previewBlock).trim() : '';
   });
   const displayName = $derived(
-    isReasoningPhase
-      ? isStreaming
-        ? m.chat_thinkingBlock_thinking_label()
-        : m.chat_thinkingBlock_reasoning_label()
+    reasoningPhase
+      ? name.trim() ||
+          (isStreaming
+            ? m.chat_thinkingBlock_thinking_label()
+            : m.chat_thinkingBlock_reasoning_label())
       : name,
   );
   const accessibleSummary = $derived(textSnippet ? `${displayName}: ${textSnippet}` : displayName);

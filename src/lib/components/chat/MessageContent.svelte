@@ -64,7 +64,11 @@
     OPERATIONAL_GROUP_CHILD_CONTENT_CLASS,
     OPERATIONAL_GROUP_CHILD_ROW_CLASS,
   } from './operational-disclosure-row';
-  import { dedupeKeys, getResponseGroupBlockKeys } from './response-group-blocks';
+  import {
+    dedupeKeys,
+    getResponseGroupBlockKeys,
+    normalizeResponseGroups,
+  } from './response-group-blocks';
   import { chatSearchBlockPath } from './chat-search';
   import NavLink from './NavLink.svelte';
   import ProposalCard from './proposals/ProposalCard.svelte';
@@ -181,7 +185,7 @@
   });
 
   // Group content blocks by <group:Name> tags at the ContentBlock level.
-  const groupedBlocks = $derived(groupContentBlocks(blocks, isStreaming));
+  const groupedBlocks = $derived(normalizeResponseGroups(groupContentBlocks(blocks, isStreaming)));
 
   function isVisibleOperationalBlock(block: RenderContentBlock): boolean {
     return block.type !== 'tool_result';
@@ -386,7 +390,7 @@
   function getBlockKey(block: RenderContentBlock, index: number): string {
     if (block.type === 'content_group') {
       const group = block as ContentBlockGroup;
-      return `group-${index}-${group.name}`;
+      return `group-${index}-${group.sourceName ?? group.name}`;
     }
     const contentBlock = block as ContentBlock;
     if (isNavLinkBlock(contentBlock)) return `nav-link-${index}-${contentBlock.target}`;
@@ -705,6 +709,7 @@
           isStreaming={group.isStreaming}
           blocks={group.children}
           searchPath={chatSearchBlockPath(blockIndex)}
+          reasoningPhase={group.isReasoningPhase}
           adjacentOperationalRow={isAdjacentOperationalClusterRow(
             groupedBlocks,
             blockIndex,
