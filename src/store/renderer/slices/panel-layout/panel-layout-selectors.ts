@@ -419,15 +419,3 @@ export const selectLastClosedPanelColumn = store.createSelector<
     ).find((closed) => isRecentlyClosedPanelColumnRestorable(workspace, closed)) ?? null
   );
 });
-
-/** Select whether we can go back in layout history */
-export const selectCanGoBack = store.createSelector<[wsId: string], boolean>((state, wsId) => {
-  const ws = state.panelLayout.byWorkspaceId[wsId] ?? emptyWorkspaceState;
-  return ws.historyIndex > 0 && ws.layoutHistory.length > 0;
-});
-
-/** Select whether we can go forward in layout history */
-export const selectCanGoForward = store.createSelector<[wsId: string], boolean>((state, wsId) => {
-  const ws = state.panelLayout.byWorkspaceId[wsId] ?? emptyWorkspaceState;
-  return ws.historyIndex < ws.layoutHistory.length - 1;
-});

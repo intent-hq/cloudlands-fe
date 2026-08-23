@@ -655,7 +655,7 @@ export const movePanelToRootEdge = createAction(
   }),
 );
 
-export const restorePanelDragLayout = createAction(
+const restorePanelDragLayout = createAction(
   'panelLayout/restorePanelDragLayout',
   (wsId: string, snapshot: PanelDragLayoutSnapshot) => ({ wsId, snapshot }),
 );
