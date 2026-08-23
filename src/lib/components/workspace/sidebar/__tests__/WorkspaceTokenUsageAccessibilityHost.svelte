@@ -8,9 +8,11 @@
   interface Props {
     theme?: 'light' | 'dark';
     width?: number;
+    placement?: 'top' | 'bottom';
+    side?: 'left' | 'right';
   }
 
-  let { theme = 'light', width = 248 }: Props = $props();
+  let { theme = 'light', width = 304, placement = 'top', side = 'left' }: Props = $props();
   const workspaceId = 'token-usage-accessibility-ct';
   const disposeStore = startRootStoreLifecycle(store, { startSagas: () => [] });
 
@@ -66,8 +68,58 @@
   });
 </script>
 
-<section class="min-h-32 bg-background p-4 text-foreground" data-theme={theme}>
-  <div data-testid="token-usage-test-width" style:width={`${width}px`}>
-    <WorkspaceTokenUsage {workspaceId} />
+<section
+  class="workspace-page relative flex h-screen w-screen flex-col overflow-hidden bg-sidebar text-foreground"
+  data-theme={theme}
+>
+  <div
+    class="upper-area relative flex min-h-0 flex-1 overflow-hidden"
+    class:flex-row-reverse={side === 'right'}
+  >
+    <aside
+      class="workspace-sidebar-panel relative h-full shrink-0 bg-sidebar"
+      style:width={`${width + 48}px`}
+      style:max-width="100vw"
+      data-testid="workspace-sidebar"
+    >
+      <div
+        class="workspace-sidebar-content relative flex h-full flex-col overflow-y-auto bg-transparent"
+        data-testid="workspace-sidebar-scroll"
+      >
+        {#if placement === 'bottom'}
+          <div class="min-h-[calc(100vh-132px)] shrink-0" aria-hidden="true"></div>
+        {/if}
+        <div class="shrink-0 px-6 pb-2 pt-5" data-workspace-title-region>
+          <div class="mb-3 h-8 rounded-md bg-muted/30" aria-hidden="true"></div>
+          <div
+            data-testid="token-usage-test-width"
+            style:width={`${width}px`}
+            style:max-width="100%"
+          >
+            <WorkspaceTokenUsage {workspaceId} />
+          </div>
+        </div>
+        <div class="h-[480px] shrink-0" aria-hidden="true"></div>
+      </div>
+    </aside>
+    <main
+      class="main-content-area relative z-10 h-full min-w-0 flex-1 overflow-hidden bg-sidebar"
+      data-testid="workspace-content"
+    >
+      <div
+        class="absolute inset-3 rounded-xl border border-border bg-card"
+        aria-hidden="true"
+      ></div>
+    </main>
   </div>
 </section>
+
+<style>
+  .workspace-sidebar-content {
+    scrollbar-width: none;
+  }
+
+  .workspace-sidebar-content::-webkit-scrollbar {
+    display: none;
+  }
+</style>

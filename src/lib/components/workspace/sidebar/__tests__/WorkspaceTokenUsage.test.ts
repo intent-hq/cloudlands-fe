@@ -113,6 +113,18 @@ describe('WorkspaceTokenUsage', () => {
     expect(details).not.toBeNull();
     expect(details?.getAttribute('aria-labelledby')).toBe('workspace-token-usage-title-ws-1');
 
+    await fireEvent.keyDown(document, { key: 'Escape' });
+    expect(disclosure.getAttribute('aria-expanded')).toBe('false');
+    expect(document.getElementById(detailsId!)).toBeNull();
+    expect(document.activeElement).toBe(disclosure);
+
+    await fireEvent.click(disclosure);
+    expect(disclosure.getAttribute('aria-expanded')).toBe('true');
+    await fireEvent.pointerDown(document.body);
+    expect(disclosure.getAttribute('aria-expanded')).toBe('false');
+    expect(document.getElementById(detailsId!)).toBeNull();
+
+    await fireEvent.click(disclosure);
     await fireEvent.click(disclosure);
     expect(disclosure.getAttribute('aria-expanded')).toBe('false');
     expect(document.getElementById(detailsId!)).toBeNull();
