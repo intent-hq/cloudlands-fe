@@ -58,20 +58,15 @@ async function readSurface(page: Page) {
     const host = document.querySelector<HTMLElement>('[data-testid="message-host"]')!;
     const transcript = document.querySelector<HTMLElement>('[data-testid="transcript"]')!;
     const surface = document.querySelector<HTMLElement>('[data-testid="user-message-surface"]')!;
+    const pinned = document.querySelector<HTMLElement>('[data-testid="pinned-user-prompt"]')!;
+    const sidebar = document.querySelector<HTMLElement>('[data-testid="sidebar-reference"]')!;
     const text = surface.querySelector<HTMLElement>('.select-text')!;
     const assistant = document.querySelector<HTMLElement>('[data-testid="assistant-message"]')!;
     const style = getComputedStyle(surface);
+    const pinnedStyle = getComputedStyle(pinned);
     const textStyle = getComputedStyle(text);
     const rect = surface.getBoundingClientRect();
     const transcriptRect = transcript.getBoundingClientRect();
-    const resolveBackgroundToken = (token: string) => {
-      const probe = document.createElement('span');
-      probe.style.backgroundColor = `hsl(${getComputedStyle(host).getPropertyValue(token)})`;
-      host.append(probe);
-      const value = getComputedStyle(probe).backgroundColor;
-      probe.remove();
-      return value;
-    };
     const channels = (color: string) =>
       (color.match(/[0-9.]+/g) ?? [])
         .slice(0, 3)
@@ -87,13 +82,14 @@ async function readSurface(page: Page) {
     const darker = Math.min(luminance(textStyle.color), luminance(style.backgroundColor));
     return {
       background: style.backgroundColor,
-      mutedBackground: resolveBackgroundToken('--muted'),
-      secondaryBackground: resolveBackgroundToken('--secondary'),
+      pinnedBackground: pinnedStyle.backgroundColor,
+      sidebarBackground: getComputedStyle(sidebar).backgroundColor,
       hostBackground: getComputedStyle(host).backgroundColor,
       assistantBackground: getComputedStyle(assistant).backgroundColor,
       contrast: (lighter + 0.05) / (darker + 0.05),
       borderRadius: style.borderRadius,
       borderWidth: style.borderTopWidth,
+      pinnedBorderWidth: pinnedStyle.borderTopWidth,
       padding: [style.paddingTop, style.paddingRight, style.paddingBottom, style.paddingLeft],
       userSelect: textStyle.userSelect,
       widthDelta: Math.abs(rect.width - transcriptRect.width),
@@ -102,7 +98,7 @@ async function readSurface(page: Page) {
   });
 }
 
-test('keeps the accepted distinct surface in light and dark themes', async ({ page }) => {
+test('uses the computed sidebar surface in light and dark themes', async ({ page }) => {
   const backgrounds: string[] = [];
   const cases = [
     { theme: 'light' as const, zoom: 1, transcriptWidth: 640 },
@@ -118,20 +114,27 @@ test('keeps the accepted distinct surface in light and dark themes', async ({ pa
     });
     const state = await readSurface(page);
     backgrounds.push(state.background);
-    expect(state.background).toBe(
-      scenario.theme === 'light' ? state.mutedBackground : state.secondaryBackground,
-    );
+    expect(state.background).toBe(state.sidebarBackground);
+    expect(state.pinnedBackground).toBe(state.sidebarBackground);
     expect(state.background).not.toBe(state.hostBackground);
     expect(state.assistantBackground).toBe('rgba(0, 0, 0, 0)');
     expect(state.contrast).toBeGreaterThanOrEqual(4.5);
     expect(state.borderRadius).toBe('9px');
     expect(state.borderWidth).toBe('0px');
+    expect(state.pinnedBorderWidth).toBe('0px');
     expect(state.padding).toEqual(['8px', '12px', '8px', '12px']);
     expect(state.userSelect).toBe('text');
     expect(state.widthDelta).toBeLessThanOrEqual(1);
     expect(state.clipped).toBe(false);
   }
   expect(new Set(backgrounds).size).toBe(2);
+
+  const pinned = page.getByTestId('pinned-user-prompt');
+  await pinned.hover();
+  await pinned.focus();
+  await expect(pinned).toBeFocused();
+  await page.keyboard.press('Enter');
+  await expect(page.getByTestId('pinned-activation')).toHaveText('true');
 });
 
 test('contains narrow, wide, multiline, and 200% zoom states', async ({ page }) => {
@@ -156,4 +159,22 @@ test('contains narrow, wide, multiline, and 200% zoom states', async ({ page }) 
     expect(state.widthDelta).toBeLessThanOrEqual(1);
     expect(state.clipped).toBe(false);
   }
+});
+
+test('keeps sidebar parity and readable text in forced colors', async ({ page }) => {
+  await mountSurface(page, {
+    message: 'A forced-colors user prompt remains readable and actionable.',
+    theme: 'light',
+    transcriptWidth: 320,
+    viewport: { width: 360, height: 720 },
+  });
+  await page.emulateMedia({ forcedColors: 'active' });
+  const state = await readSurface(page);
+
+  expect(state.background).toBe(state.sidebarBackground);
+  expect(state.pinnedBackground).toBe(state.sidebarBackground);
+  expect(state.contrast).toBeGreaterThanOrEqual(4.5);
+  expect(state.clipped).toBe(false);
+  await page.getByTestId('pinned-user-prompt').focus();
+  await expect(page.getByTestId('pinned-user-prompt')).toBeFocused();
 });

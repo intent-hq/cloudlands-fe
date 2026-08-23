@@ -262,6 +262,19 @@ describe('theme color contract', () => {
   );
 
   it.each(['light', 'dark'] as const)(
+    'keeps %s human-prompt text readable on the sidebar surface',
+    (mode) => {
+      const css = fs.readFileSync(path.resolve(process.cwd(), 'src/lib/styles/tokens.css'), 'utf8');
+      const values = tokenValues(css, mode);
+
+      expect(
+        contrast(values['secondary-foreground'], values.sidebar),
+        'secondary-foreground on sidebar',
+      ).toBeGreaterThanOrEqual(4.5);
+    },
+  );
+
+  it.each(['light', 'dark'] as const)(
     'uses the exact approved %s neutral source values',
     (mode) => {
       const css = fs.readFileSync(path.resolve(process.cwd(), 'src/lib/styles/tokens.css'), 'utf8');

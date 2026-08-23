@@ -81,9 +81,10 @@ describe('editorial conversation presentation contract', () => {
     expect(pinned).toContain('USER_MESSAGE_TEXT_CLASS');
     expect(pinned).toContain('truncate whitespace-nowrap');
     expect(message).toContain(': USER_MESSAGE_TEXT_CLASS}');
-    expect(surface).toContain('bg-muted');
-    expect(surface).toContain('dark:bg-secondary');
+    expect(hasUnqualifiedClassToken(surface, 'bg-sidebar')).toBe(true);
     expect(surface).toContain('text-secondary-foreground');
+    expect(surface).not.toMatch(/(?:dark|light):bg-/);
+    expect(hasUnqualifiedClassToken(surface, 'bg-muted')).toBe(false);
     expect(hasUnqualifiedClassToken(surface, 'bg-secondary')).toBe(false);
     expect(hasUnqualifiedClassToken(surface, 'border')).toBe(false);
     expect(hasUnqualifiedClassToken(surface, 'border-border')).toBe(false);
@@ -177,7 +178,7 @@ describe('editorial conversation presentation contract', () => {
     expect(panel).not.toContain('<hr class="border-t border-border/50 mb-3" />');
   });
 
-  it('uses the soft secondary user prompt surface and semantic body typography', () => {
+  it('uses the canonical sidebar user prompt surface and semantic body typography', () => {
     const message = source('src/lib/components/chat/ChatMessage.svelte');
     const markdown = source('src/lib/components/markdown/MarkdownViewer.svelte');
 

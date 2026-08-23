@@ -334,63 +334,74 @@ test('matches sent-message disclosures to real finished event rows', async ({ mo
 
 for (const theme of ['light', 'dark'] as const) {
   for (const zoom of [1, 2] as const) {
-    test(`uses canonical borderless user-message colors and readable content in ${theme} at ${zoom * 100}%`, async ({
-      mount,
-    }) => {
-      const component = await mount(ChatEventGeometryHost, {
-        props: { panelId: `colors-${theme}-${zoom}`, theme, zoom },
+    for (const chiefVariant of [false, true]) {
+      test(`uses canonical sidebar user-message colors in ${theme} at ${zoom * 100}% (chiefVariant=${chiefVariant})`, async ({
+        mount,
+      }) => {
+        const component = await mount(ChatEventGeometryHost, {
+          props: { panelId: `colors-${theme}-${zoom}-${chiefVariant}`, theme, zoom, chiefVariant },
+        });
+        await component.getByTestId('sticky-scroll').evaluate((node) => node.scrollTo(0, 330));
+        await expect(component.getByTestId('pinned-user-prompt')).toBeVisible();
+
+        const styles = await component.evaluate((root) => {
+          const style = (selector: string, pseudo?: string) =>
+            getComputedStyle(root.querySelector(selector) as Element, pseudo);
+          const resolveToken = (token: string, property: 'backgroundColor' | 'color') => {
+            const probe = document.createElement('span');
+            probe.style[property] = `hsl(${getComputedStyle(root).getPropertyValue(token)})`;
+            root.append(probe);
+            const value = getComputedStyle(probe)[property];
+            probe.remove();
+            return value;
+          };
+          return {
+            surface: resolveToken('--sidebar', 'backgroundColor'),
+            surfaceForeground: resolveToken('--secondary-foreground', 'color'),
+            ordinaryBackground: style('[data-testid="sent-card"]').backgroundColor,
+            ordinaryBorderWidth: style('[data-testid="sent-card"]').borderTopWidth,
+            pinnedBackground: style('[data-testid="pinned-user-prompt"]').backgroundColor,
+            pinnedBorderWidth: style('[data-testid="pinned-user-prompt"]').borderTopWidth,
+            attributedBackground: style(
+              '[data-testid="attributed-message-lane"] [data-testid="user-message-surface"]',
+            ).backgroundColor,
+            eventBackground: style('[data-testid="event-wakeup-card"]').backgroundColor,
+            ordinaryText: style('[data-testid="ordinary-user-text"]').color,
+            pinnedText: style('[data-testid="pinned-user-prompt-text"]').color,
+            linkText: style('[data-testid="ordinary-user-link"]').color,
+            codeText: style('[data-testid="ordinary-user-code"]').color,
+            codeBackground: style('[data-testid="ordinary-user-code"]').backgroundColor,
+            selectionBackground: style('[data-testid="pinned-user-prompt-text"]', '::selection')
+              .backgroundColor,
+            selectionText: style('[data-testid="pinned-user-prompt-text"]', '::selection').color,
+          };
+        });
+
+        expect(styles.ordinaryBackground).toBe(styles.surface);
+        expect(styles.pinnedBackground).toBe(styles.surface);
+        expect(styles.attributedBackground).not.toBe(styles.surface);
+        expect(styles.eventBackground).not.toBe(styles.surface);
+        expect(styles.ordinaryBorderWidth).toBe('0px');
+        expect(styles.pinnedBorderWidth).toBe('0px');
+        expect(styles.ordinaryText).toBe(styles.surfaceForeground);
+        expect(styles.pinnedText).toBe(styles.surfaceForeground);
+        expect(styles.linkText).toBe(styles.surfaceForeground);
+        expect(styles.codeText).toBe(styles.surfaceForeground);
+        expect(styles.codeBackground).toBe('rgba(0, 0, 0, 0)');
+        expect(contrastRatio(styles.pinnedText, styles.pinnedBackground)).toBeGreaterThanOrEqual(
+          4.5,
+        );
+        expect(contrastRatio(styles.linkText, styles.ordinaryBackground)).toBeGreaterThanOrEqual(
+          4.5,
+        );
+        expect(contrastRatio(styles.codeText, styles.ordinaryBackground)).toBeGreaterThanOrEqual(
+          4.5,
+        );
+        expect(
+          contrastRatio(styles.selectionText, styles.selectionBackground),
+        ).toBeGreaterThanOrEqual(4.5);
       });
-      await component.getByTestId('sticky-scroll').evaluate((node) => node.scrollTo(0, 330));
-      await expect(component.getByTestId('pinned-user-prompt')).toBeVisible();
-
-      const styles = await component.evaluate((root, currentTheme) => {
-        const style = (selector: string, pseudo?: string) =>
-          getComputedStyle(root.querySelector(selector) as Element, pseudo);
-        const resolveToken = (token: string, property: 'backgroundColor' | 'color') => {
-          const probe = document.createElement('span');
-          probe.style[property] = `hsl(${getComputedStyle(root).getPropertyValue(token)})`;
-          root.append(probe);
-          const value = getComputedStyle(probe)[property];
-          probe.remove();
-          return value;
-        };
-        return {
-          surface: resolveToken(
-            currentTheme === 'light' ? '--muted' : '--secondary',
-            'backgroundColor',
-          ),
-          surfaceForeground: resolveToken('--secondary-foreground', 'color'),
-          ordinaryBackground: style('[data-testid="sent-card"]').backgroundColor,
-          ordinaryBorderWidth: style('[data-testid="sent-card"]').borderTopWidth,
-          pinnedBackground: style('[data-testid="pinned-user-prompt"]').backgroundColor,
-          pinnedBorderWidth: style('[data-testid="pinned-user-prompt"]').borderTopWidth,
-          ordinaryText: style('[data-testid="ordinary-user-text"]').color,
-          pinnedText: style('[data-testid="pinned-user-prompt-text"]').color,
-          linkText: style('[data-testid="ordinary-user-link"]').color,
-          codeText: style('[data-testid="ordinary-user-code"]').color,
-          codeBackground: style('[data-testid="ordinary-user-code"]').backgroundColor,
-          selectionBackground: style('[data-testid="pinned-user-prompt-text"]', '::selection')
-            .backgroundColor,
-          selectionText: style('[data-testid="pinned-user-prompt-text"]', '::selection').color,
-        };
-      }, theme);
-
-      expect(styles.ordinaryBackground).toBe(styles.surface);
-      expect(styles.pinnedBackground).toBe(styles.surface);
-      expect(styles.ordinaryBorderWidth).toBe('0px');
-      expect(styles.pinnedBorderWidth).toBe('0px');
-      expect(styles.ordinaryText).toBe(styles.surfaceForeground);
-      expect(styles.pinnedText).toBe(styles.surfaceForeground);
-      expect(styles.linkText).toBe(styles.surfaceForeground);
-      expect(styles.codeText).toBe(styles.surfaceForeground);
-      expect(styles.codeBackground).toBe('rgba(0, 0, 0, 0)');
-      expect(contrastRatio(styles.pinnedText, styles.pinnedBackground)).toBeGreaterThanOrEqual(4.5);
-      expect(contrastRatio(styles.linkText, styles.ordinaryBackground)).toBeGreaterThanOrEqual(4.5);
-      expect(contrastRatio(styles.codeText, styles.ordinaryBackground)).toBeGreaterThanOrEqual(4.5);
-      expect(
-        contrastRatio(styles.selectionText, styles.selectionBackground),
-      ).toBeGreaterThanOrEqual(4.5);
-    });
+    }
   }
 }
 
