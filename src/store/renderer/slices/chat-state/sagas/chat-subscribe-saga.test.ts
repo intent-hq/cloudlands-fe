@@ -2022,6 +2022,136 @@ describe('chatSubscribeSaga (fake seam, real store)', () => {
     },
   );
 
+  // Fifth recurrence in the stranded-window family (monorepo#3295, local UDS
+  // daemon): rapid workspace switching lands on a REVISITED double-mount
+  // workspace right after the previous workspace's panel was torn down
+  // mid-hydration. On a local daemon the first-mounted (viewed) agent's
+  // chat.subscribe acquisition resolves almost immediately, so by the time
+  // the sibling panel's markAgentAsViewed sweep runs (~18ms later) the
+  // reopen is already INSTALLED — no longer "acquiring" — while its
+  // per-agent chat state still reads the PREVIOUS visit's 'settled' (chat
+  // state survives workspace switches, and the read saga flips 'loading'
+  // only after the current task). Neither swap-sweep spare matches
+  // (monorepo#2917's loading spare, monorepo#3073/#3185's acquiring spare
+  // both miss an installed-not-yet-emitted registration under a stale
+  // settled flag), so the sweep closes the registration the viewed panel is
+  // waiting on BEFORE its seq-0 snapshot arrived: the emit is token-dropped,
+  // no snapshot meta is recorded, and no replayable snapshot exists for the
+  // read saga's immediate-escalation fast path (monorepo#2864) — stranding
+  // that hydration for a full SNAPSHOT_WAIT_MS window (the attempt-1/3 warn
+  // in the #3295 trace) until the re-request escalation force-cycles a
+  // fresh registration.
+  //
+  // CHARACTERIZATION of the current (broken) behavior — once the fix lands,
+  // flip the strand assertions (unsubscribe NOT called, snapshot meta
+  // defined, rows contain the snapshot, replayable snapshot true).
+  it(
+    "double-mount sweep closes the first-mounted viewed agent's installed reopen before its seq-0 snapshot arrives, stranding its hydration (monorepo#3295)",
+    async () => {
+      vi.useFakeTimers();
+      try {
+        const prevWs = 'ws-chat-sub-3295-prev';
+        const prior = 'agent-3295-prior';
+        const first = 'agent-3295-first';
+        const second = 'agent-3295-second';
+        seedSession(prior, { workspaceId: prevWs });
+        seedSession(first);
+        seedSession(second);
+        // Both target-workspace agent tabs sit in the restored layout; the
+        // prior workspace's tab persists in ITS layout across the switch.
+        appStore.dispatch(
+          openTab(WS, { type: 'agent', title: 'First', closable: true, agentId: first }),
+        );
+        appStore.dispatch(
+          openTab(WS, { type: 'agent', title: 'Second', closable: true, agentId: second }),
+        );
+        appStore.dispatch(
+          openTab(prevWs, { type: 'agent', title: 'Prior', closable: true, agentId: prior }),
+        );
+
+        // PREVIOUS VISIT of the target workspace: the first agent hydrated
+        // and settled — its per-agent chat state keeps 'settled' across the
+        // switches below.
+        const firstPrior = openChat(first);
+        appStore.dispatch(markAgentAsViewed(first));
+        firstPrior.handler({ ...transcript([]), fromSnapshot: true });
+        appStore.dispatch(transcriptHydrationStarted(first));
+        appStore.dispatch(transcriptHydrationSettled(first));
+
+        // Switch to the prior workspace: its panel mounts and starts
+        // hydrating; the viewed swap sweeps first's settled subscription.
+        appStore.dispatch(initializeChatRequested(prior, { wsId: prevWs }));
+        const priorSub = fakeSubscriptions.find((s) => s.agentId === prior);
+        if (!priorSub) throw new Error('no chat.subscribe recorded for prior');
+        appStore.dispatch(markAgentAsViewed(prior));
+        appStore.dispatch(transcriptHydrationStarted(prior));
+        await vi.advanceTimersByTimeAsync(0);
+        expect(firstPrior.unsubscribe).toHaveBeenCalledOnce();
+
+        // ~460ms in, the prior workspace's panel is destroyed MID-HYDRATION
+        // (before its snapshot or settle): its scoped clear applies
+        // (viewed → null) and the close-all sweep spares the loading hosted
+        // hydration — this teardown is in flight while the next workspace's
+        // opens land.
+        await vi.advanceTimersByTimeAsync(460);
+        appStore.dispatch(clearCurrentlyViewedAgent(prior));
+        expect(priorSub.unsubscribe).not.toHaveBeenCalled();
+
+        // ~90ms later the target workspace double-mounts. Local UDS: the
+        // first-mounted panel's reopen acquisition resolves synchronously,
+        // so the registration INSTALLS immediately — its seq-0 snapshot is
+        // still in flight.
+        await vi.advanceTimersByTimeAsync(90);
+        appStore.dispatch(initializeChatRequested(first, { wsId: WS }));
+        const firstSub = fakeSubscriptions.filter((s) => s.agentId === first).at(-1);
+        if (!firstSub || firstSub === firstPrior) {
+          throw new Error('no fresh chat.subscribe recorded for first');
+        }
+        appStore.dispatch(markAgentAsViewed(first));
+        expect(firstSub.unsubscribe).not.toHaveBeenCalled();
+
+        // ~18ms later the sibling panel mounts. The read saga has flipped
+        // neither hydration flag yet (it defers past the current task), so
+        // the sibling's viewed sweep sees first INSTALLED (not acquiring)
+        // under the stale 'settled' flag — no spare matches and the sweep
+        // closes the registration the viewed panel is actively waiting on.
+        await vi.advanceTimersByTimeAsync(18);
+        const secondSub = openChat(second);
+        appStore.dispatch(markAgentAsViewed(second));
+        appStore.dispatch(transcriptHydrationStarted(first));
+        appStore.dispatch(transcriptHydrationStarted(second));
+        expect(firstSub.unsubscribe).toHaveBeenCalledOnce();
+
+        // The daemon's seq-0 snapshots land; first's arrives on the closed
+        // registration and is token-dropped.
+        secondSub.handler({
+          ...transcript([makeMessage('m-3295-second', 'second snapshot')]),
+          fromSnapshot: true,
+        });
+        firstSub.handler({
+          ...transcript([makeMessage('m-3295-first', 'first snapshot')]),
+          fromSnapshot: true,
+        });
+        await vi.advanceTimersByTimeAsync(0);
+
+        // The second-mounted sibling hydrates fine…
+        expect(selectTranscriptSnapshotMeta.select(appStore.state, second)).toBeDefined();
+
+        // …while the FIRST-mounted (viewed) agent stranded: no snapshot
+        // meta, no rows from the dropped emit, and no replayable snapshot
+        // for the read saga's fast path — its bounded wait sits out the
+        // full SNAPSHOT_WAIT_MS window (the #3295 attempt-1/3 warn) before
+        // the re-request escalation force-cycles a fresh registration.
+        expect(selectTranscriptSnapshotMeta.select(appStore.state, first)).toBeUndefined();
+        expect(selectAgentMessages.select(appStore.state, first)).toEqual([]);
+        expect(hasReplayableChatSnapshot(first)).toBe(false);
+      } finally {
+        appStore.dispatch(clearPanelLayout('ws-chat-sub-3295-prev'));
+        vi.useRealTimers();
+      }
+    },
+  );
+
   it(
     'runs the deferred close once hydration settles when the swap-spared sibling panel closed mid-load (no leaked subscription, monorepo#2917)',
     async () => {
