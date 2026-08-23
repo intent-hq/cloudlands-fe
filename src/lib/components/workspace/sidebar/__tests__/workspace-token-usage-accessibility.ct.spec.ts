@@ -16,7 +16,8 @@ function contrastRatio(first: Rgba, second: Rgba): number {
   return (lighter + 0.05) / (darker + 0.05);
 }
 
-test('exposes compact values and keeps summary text readable on hover', async ({ mount }) => {
+test('exposes compact values and keeps summary text readable on hover', async ({ mount, page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
   const component = await mount(WorkspaceTokenUsageAccessibilityHost, {
     props: { theme: 'light', width: 280 },
   });
@@ -31,6 +32,15 @@ test('exposes compact values and keeps summary text readable on hover', async ({
   await expect(disclosure).toHaveAccessibleName('Expand token usage details');
   await disclosure.click();
   await expect(disclosure).toHaveAccessibleName('Collapse token usage details');
+  const reducedDurations = await Promise.all([
+    disclosure.evaluate((element) =>
+      Number.parseFloat(getComputedStyle(element).transitionDuration),
+    ),
+    disclosure
+      .locator('svg')
+      .evaluate((element) => Number.parseFloat(getComputedStyle(element).transitionDuration)),
+  ]);
+  expect(reducedDurations.every((duration) => duration <= 0.001)).toBe(true);
 
   for (const theme of ['light', 'dark'] as const) {
     await component.update({ props: { theme, width: 280 } });
@@ -77,11 +87,9 @@ test('exposes compact values and keeps summary text readable on hover', async ({
   }
 });
 
-test('fits real workspace widths without becoming an oversized vertical card', async ({
-  mount,
-}) => {
+test('keeps the full reference table at workspace and 280 px widths', async ({ mount }) => {
   const component = await mount(WorkspaceTokenUsageAccessibilityHost, {
-    props: { width: 280 },
+    props: { width: 452 },
   });
   const shell = component.getByTestId('workspace-token-usage');
   const disclosure = component.getByTestId('token-usage-disclosure');
@@ -93,120 +101,111 @@ test('fits real workspace widths without becoming an oversized vertical card', a
   expect(closedBox).not.toBeNull();
   expect(disclosureBox).not.toBeNull();
   expect(closedBox!.height).toBeLessThanOrEqual(44);
-  expect(disclosureBox!.width).toBeCloseTo(280, 0);
+  expect(disclosureBox!.width).toBeCloseTo(352, 0);
 
   await disclosure.click();
   const agentSection = component.getByTestId('token-usage-by-agent');
   const modelSection = component.getByTestId('token-usage-by-model');
   const details = component.getByTestId('token-usage-details');
-  const breakdownDisclosure = component.getByTestId('token-usage-breakdown-disclosure');
-  const breakdown = details.locator('details.breakdown-disclosure');
+  const composition = details.locator('section').first();
   const compositionRows = details.locator('.composition-row');
+  const agentRows = agentSection.getByRole('listitem');
+  const modelRows = modelSection.getByRole('listitem');
+
+  await expect(details.getByRole('heading', { name: 'Token composition' })).toBeVisible();
+  await expect(details).toContainText('1K processed');
   await expect(compositionRows).toHaveCount(4);
-  await expect(breakdown).not.toHaveAttribute('open', '');
-  await expect(agentSection).not.toBeVisible();
-  await expect(modelSection).not.toBeVisible();
-  await expect(details.locator('details.breakdown-disclosure')).toHaveCount(1);
-
-  const [collapsedDetailsBox, dimensions, narrowRows] = await Promise.all([
-    details.boundingBox(),
-    shell.evaluate((element) => ({
-      clientWidth: element.clientWidth,
-      scrollWidth: element.scrollWidth,
-    })),
-    compositionRows.evaluateAll((rows) =>
-      rows.map((row) => {
-        const metric = row.querySelector('.composition-metric')!.getBoundingClientRect();
-        const value = row.querySelector('.composition-value')!.getBoundingClientRect();
-        return {
-          height: row.getBoundingClientRect().height,
-          metricY: metric.y,
-          valueY: value.y,
-          descriptionDisplay: getComputedStyle(row.querySelector('.composition-description')!)
-            .display,
-          contextDisplay: getComputedStyle(row.querySelector('.composition-context')!).display,
-        };
-      }),
-    ),
-  ]);
-
-  expect(collapsedDetailsBox).not.toBeNull();
-  expect(collapsedDetailsBox!.height).toBeLessThan(292);
-  expect(dimensions.scrollWidth).toBeLessThanOrEqual(dimensions.clientWidth);
-  expect(narrowRows.every(({ height }) => height <= 32)).toBe(true);
-  expect(narrowRows.every(({ metricY, valueY }) => Math.abs(metricY - valueY) <= 1)).toBe(true);
-  expect(narrowRows.every(({ descriptionDisplay }) => descriptionDisplay === 'none')).toBe(true);
-  expect(narrowRows.every(({ contextDisplay }) => contextDisplay === 'none')).toBe(true);
-
-  await breakdownDisclosure.focus();
-  await breakdownDisclosure.press('Enter');
-  await expect(breakdown).toHaveAttribute('open', '');
+  await expect(compositionRows.nth(0)).toContainText('Cached');
+  await expect(compositionRows.nth(1)).toContainText('In');
+  await expect(compositionRows.nth(2)).toContainText('Out');
+  await expect(compositionRows.nth(3)).toContainText('Reasoning');
+  await expect(compositionRows.locator('.composition-metric [aria-hidden="true"]')).toHaveCount(4);
   await expect(agentSection).toBeVisible();
   await expect(modelSection).toBeVisible();
-  await expect(agentSection).not.toContainText('%');
-  await expect(modelSection).not.toContainText('%');
-  await expect(agentSection.locator('[style*="width"]')).toHaveCount(0);
-  await expect(modelSection.locator('[style*="width"]')).toHaveCount(0);
+  await expect(agentRows).toHaveCount(2);
+  await expect(modelRows).toHaveCount(2);
+  await expect(agentRows.nth(0)).toContainText('750 75%');
+  await expect(agentRows.nth(1)).toContainText('250 25%');
+  await expect(modelRows.nth(0)).toContainText('750 75%');
+  await expect(modelRows.nth(1)).toContainText('250 25%');
+  await expect(agentRows.locator('[aria-hidden="true"] > [style*="width"]')).toHaveCount(2);
+  await expect(modelRows.locator('[aria-hidden="true"] > [style*="width"]')).toHaveCount(2);
+  await expect(
+    composition.locator('div[aria-hidden="true"]').first().locator(':scope > span').first(),
+  ).toHaveClass(/bg-success/);
 
-  const [agentBox, modelBox, rowBoxes, longModel] = await Promise.all([
-    agentSection.boundingBox(),
-    modelSection.boundingBox(),
-    agentSection
-      .locator('li')
-      .evaluateAll((rows) => rows.map((row) => row.getBoundingClientRect().height)),
-    modelSection
-      .locator('[title="provider/this-is-an-extraordinarily-long-model-name-for-truncation"]')
-      .evaluate((label) => ({
-        clientWidth: label.clientWidth,
-        scrollWidth: label.scrollWidth,
-        overflow: getComputedStyle(label).overflow,
-        textOverflow: getComputedStyle(label).textOverflow,
-        whiteSpace: getComputedStyle(label).whiteSpace,
+  const [detailsBox, dimensions, desktopRows, agentBox, modelBox, breakdownRows] =
+    await Promise.all([
+      details.boundingBox(),
+      shell.evaluate((element) => ({
+        clientWidth: element.clientWidth,
+        scrollWidth: element.scrollWidth,
       })),
-  ]);
+      compositionRows.evaluateAll((rows) =>
+        rows.map((row) => {
+          const box = (selector: string) =>
+            row.querySelector(selector)!.getBoundingClientRect().toJSON();
+          const valueElement = row.querySelector('.composition-value')!;
+          const contextElement = row.querySelector('.composition-context')!;
+          return {
+            row: row.getBoundingClientRect().toJSON(),
+            swatch: row
+              .querySelector('.composition-metric [aria-hidden="true"]')!
+              .getBoundingClientRect()
+              .toJSON(),
+            metric: box('.composition-metric'),
+            description: box('.composition-description'),
+            value: box('.composition-value'),
+            context: box('.composition-context'),
+            valueAlign: getComputedStyle(valueElement).textAlign,
+            contextAlign: getComputedStyle(contextElement).textAlign,
+            descriptionDisplay: getComputedStyle(row.querySelector('.composition-description')!)
+              .display,
+            contextDisplay: getComputedStyle(row.querySelector('.composition-context')!).display,
+          };
+        }),
+      ),
+      agentSection.boundingBox(),
+      modelSection.boundingBox(),
+      details.locator('.breakdown-section li').evaluateAll((rows) =>
+        rows.map((row) => {
+          const metadata = row.lastElementChild!;
+          const [name, value, context] = Array.from(metadata.children).map((child) =>
+            child.getBoundingClientRect().toJSON(),
+          );
+          return { name, value, context };
+        }),
+      ),
+    ]);
+
+  expect(detailsBox).not.toBeNull();
+  expect(detailsBox!.width).toBeCloseTo(452, 0);
+  expect(dimensions.scrollWidth).toBeLessThanOrEqual(dimensions.clientWidth);
   expect(agentBox).not.toBeNull();
   expect(modelBox).not.toBeNull();
-  expect(modelBox!.y).toBeGreaterThanOrEqual(agentBox!.y + agentBox!.height - 1);
-  expect(Math.max(...rowBoxes)).toBeLessThanOrEqual(24);
-  expect(longModel.scrollWidth).toBeGreaterThan(longModel.clientWidth);
-  expect(longModel).toMatchObject({
-    overflow: 'hidden',
-    textOverflow: 'ellipsis',
-    whiteSpace: 'nowrap',
-  });
-
-  await component.update({ props: { width: 452 } });
-  await breakdownDisclosure.press('Enter');
-  await expect(breakdown).not.toHaveAttribute('open', '');
-  const [wideShellBox, wideDisclosureBox, detailsBox, wideRows] = await Promise.all([
-    shell.boundingBox(),
-    disclosure.boundingBox(),
-    details.boundingBox(),
-    compositionRows.evaluateAll((rows) =>
-      rows.map((row) => {
-        const box = (selector: string) =>
-          row.querySelector(selector)!.getBoundingClientRect().toJSON();
-        return {
-          row: row.getBoundingClientRect().toJSON(),
-          metric: box('.composition-metric'),
-          description: box('.composition-description'),
-          value: box('.composition-value'),
-          context: box('.composition-context'),
-        };
-      }),
-    ),
-  ]);
-  expect(wideShellBox).not.toBeNull();
-  expect(wideDisclosureBox).not.toBeNull();
-  expect(detailsBox).not.toBeNull();
-  expect(wideShellBox!.height).toBeLessThan(wideShellBox!.width);
-  expect(detailsBox!.width).toBeCloseTo(452, 0);
-  expect(detailsBox!.width).toBeGreaterThan(wideDisclosureBox!.width);
-  expect(detailsBox!.height).toBeLessThan(292);
+  expect(Math.abs(agentBox!.y - modelBox!.y)).toBeLessThanOrEqual(1);
+  expect(agentBox!.width).toBeCloseTo(modelBox!.width, 0);
   expect(
-    wideRows.every(
-      ({ row, metric, description, value, context }) =>
-        row.height <= 32 &&
+    desktopRows.every(
+      ({
+        row,
+        swatch,
+        metric,
+        description,
+        value,
+        context,
+        valueAlign,
+        contextAlign,
+        descriptionDisplay,
+        contextDisplay,
+      }) =>
+        row.height <= 40 &&
+        swatch.width > 0 &&
+        swatch.height > 0 &&
+        descriptionDisplay !== 'none' &&
+        contextDisplay !== 'none' &&
+        valueAlign === 'right' &&
+        contextAlign === 'right' &&
         Math.max(metric.y, description.y, value.y, context.y) -
           Math.min(metric.y, description.y, value.y, context.y) <=
           1 &&
@@ -215,19 +214,111 @@ test('fits real workspace widths without becoming an oversized vertical card', a
         value.x < context.x,
     ),
   ).toBe(true);
-  const valueRightEdges = wideRows.map(({ value }) => value.x + value.width);
-  const contextRightEdges = wideRows.map(({ context }) => context.x + context.width);
+  const valueRightEdges = desktopRows.map(({ value }) => value.x + value.width);
+  const contextRightEdges = desktopRows.map(({ context }) => context.x + context.width);
   expect(Math.max(...valueRightEdges) - Math.min(...valueRightEdges)).toBeLessThanOrEqual(1);
   expect(Math.max(...contextRightEdges) - Math.min(...contextRightEdges)).toBeLessThanOrEqual(1);
+  expect(
+    breakdownRows.every(
+      ({ name, value, context }) => name.x < value.x && value.x + value.width <= context.x + 1,
+    ),
+  ).toBe(true);
 
-  await breakdownDisclosure.press('Enter');
-  const [wideAgentBox, wideModelBox] = await Promise.all([
+  await component.update({ props: { width: 280 } });
+  const [narrowDimensions, narrowRows, narrowAgentBox, narrowModelBox, longModel] =
+    await Promise.all([
+      shell.evaluate((element) => ({
+        clientWidth: element.clientWidth,
+        scrollWidth: element.scrollWidth,
+      })),
+      compositionRows.evaluateAll((rows) =>
+        rows.map((row) => {
+          const box = (selector: string) => row.querySelector(selector)!.getBoundingClientRect();
+          const metric = box('.composition-metric');
+          const description = box('.composition-description');
+          const value = box('.composition-value');
+          const context = box('.composition-context');
+          return {
+            ys: [metric.y, description.y, value.y, context.y],
+            valueRight: value.right,
+            contextRight: context.right,
+            descriptionDisplay: getComputedStyle(row.querySelector('.composition-description')!)
+              .display,
+            contextDisplay: getComputedStyle(row.querySelector('.composition-context')!).display,
+          };
+        }),
+      ),
+      agentSection.boundingBox(),
+      modelSection.boundingBox(),
+      modelSection
+        .locator('[title="provider/this-is-an-extraordinarily-long-model-name-for-truncation"]')
+        .evaluate((label) => ({
+          clientWidth: label.clientWidth,
+          scrollWidth: label.scrollWidth,
+          overflow: getComputedStyle(label).overflow,
+          textOverflow: getComputedStyle(label).textOverflow,
+          whiteSpace: getComputedStyle(label).whiteSpace,
+        })),
+    ]);
+  expect(narrowDimensions.clientWidth).toBe(280);
+  expect(narrowDimensions.scrollWidth).toBeLessThanOrEqual(narrowDimensions.clientWidth);
+  expect(
+    narrowRows.every(
+      ({ ys, descriptionDisplay, contextDisplay }) =>
+        descriptionDisplay !== 'none' &&
+        contextDisplay !== 'none' &&
+        Math.max(...ys) - Math.min(...ys) <= 1,
+    ),
+  ).toBe(true);
+  expect(
+    Math.max(...narrowRows.map(({ valueRight }) => valueRight)) -
+      Math.min(...narrowRows.map(({ valueRight }) => valueRight)),
+  ).toBeLessThanOrEqual(1);
+  expect(
+    Math.max(...narrowRows.map(({ contextRight }) => contextRight)) -
+      Math.min(...narrowRows.map(({ contextRight }) => contextRight)),
+  ).toBeLessThanOrEqual(1);
+  expect(narrowAgentBox).not.toBeNull();
+  expect(narrowModelBox).not.toBeNull();
+  expect(Math.abs(narrowAgentBox!.y - narrowModelBox!.y)).toBeLessThanOrEqual(1);
+  expect(narrowAgentBox!.width).toBeCloseTo(narrowModelBox!.width, 0);
+  expect(longModel.scrollWidth).toBeGreaterThan(longModel.clientWidth);
+  expect(longModel).toMatchObject({
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap',
+  });
+
+  await component.update({ props: { width: 248 } });
+  const [compactDimensions, compactRows, compactAgentBox, compactModelBox] = await Promise.all([
+    shell.evaluate((element) => ({
+      clientWidth: element.clientWidth,
+      scrollWidth: element.scrollWidth,
+    })),
+    compositionRows.evaluateAll((rows) =>
+      rows.map((row) => {
+        const metric = row.querySelector('.composition-metric')!.getBoundingClientRect();
+        const description = row.querySelector('.composition-description')!.getBoundingClientRect();
+        const value = row.querySelector('.composition-value')!.getBoundingClientRect();
+        const context = row.querySelector('.composition-context')!.getBoundingClientRect();
+        return { metric, description, value, context };
+      }),
+    ),
     agentSection.boundingBox(),
     modelSection.boundingBox(),
   ]);
-  expect(wideAgentBox).not.toBeNull();
-  expect(wideModelBox).not.toBeNull();
-  expect(Math.abs(wideAgentBox!.y - wideModelBox!.y)).toBeLessThanOrEqual(1);
-  expect(wideModelBox!.x).toBeGreaterThan(wideAgentBox!.x);
-  expect(wideAgentBox!.width).toBeCloseTo(wideModelBox!.width, 0);
+  expect(compactDimensions.scrollWidth).toBeLessThanOrEqual(compactDimensions.clientWidth);
+  expect(
+    compactRows.every(
+      ({ metric, description, value, context }) =>
+        Math.abs(metric.y - value.y) <= 1 &&
+        Math.abs(value.y - context.y) <= 1 &&
+        description.y > metric.y,
+    ),
+  ).toBe(true);
+  expect(compactAgentBox).not.toBeNull();
+  expect(compactModelBox).not.toBeNull();
+  expect(compactModelBox!.y).toBeGreaterThanOrEqual(
+    compactAgentBox!.y + compactAgentBox!.height - 1,
+  );
 });
