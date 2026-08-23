@@ -89,7 +89,7 @@ test('exposes compact values and keeps summary text readable on hover', async ({
 
 test('keeps the full reference table at workspace and 280 px widths', async ({ mount }) => {
   const component = await mount(WorkspaceTokenUsageAccessibilityHost, {
-    props: { width: 452 },
+    props: { theme: 'dark', width: 452 },
   });
   const shell = component.getByTestId('workspace-token-usage');
   const disclosure = component.getByTestId('token-usage-disclosure');
@@ -102,14 +102,20 @@ test('keeps the full reference table at workspace and 280 px widths', async ({ m
       const processedValue = element.querySelector(
         '[id^="workspace-token-usage-processed-"] > span:not(.sr-only)',
       )!;
+      const cache = element.querySelector('[id^="workspace-token-usage-cache-"]')!;
       const style = getComputedStyle(element);
+      const tokenRect = tokenLabel.getBoundingClientRect();
       return {
+        backgroundColor: style.backgroundColor,
         borderRadius: Number.parseFloat(style.borderRadius),
+        borderColor: style.borderColor,
+        cacheLeft: cache.getBoundingClientRect().left,
         processedFontSize: Number.parseFloat(getComputedStyle(processedValue).fontSize),
         tokenLabelDisplay: getComputedStyle(tokenLabel).display,
         tokenLabelFontSize: Number.parseFloat(getComputedStyle(tokenLabel).fontSize),
         tokenLabelText: tokenLabel.textContent?.trim(),
         tokenLabelTransform: getComputedStyle(tokenLabel).textTransform,
+        tokenRight: tokenRect.right,
       };
     }),
   ]);
@@ -118,8 +124,12 @@ test('keeps the full reference table at workspace and 280 px widths', async ({ m
   expect(closedBox!.height).toBeLessThanOrEqual(44);
   expect(disclosureBox!.width).toBeCloseTo(304, 0);
   expect(452 / disclosureBox!.width).toBeCloseTo(1.49, 2);
-  expect(summaryMetrics.borderRadius).toBeLessThanOrEqual(5);
+  expect(summaryMetrics.borderRadius).toBeGreaterThanOrEqual(6);
+  expect(summaryMetrics.borderRadius).toBeLessThanOrEqual(8);
+  expect(summaryMetrics.cacheLeft - summaryMetrics.tokenRight).toBeGreaterThanOrEqual(4);
   expect(summaryMetrics).toMatchObject({
+    backgroundColor: 'rgb(19, 19, 19)',
+    borderColor: 'rgb(30, 30, 30)',
     processedFontSize: 14,
     tokenLabelDisplay: 'block',
     tokenLabelFontSize: 10,
@@ -135,8 +145,22 @@ test('keeps the full reference table at workspace and 280 px widths', async ({ m
   const compositionRows = details.locator('.composition-row');
   const agentRows = agentSection.getByRole('listitem');
   const modelRows = modelSection.getByRole('listitem');
+  const detailsMetrics = await details.evaluate((element) => {
+    const style = getComputedStyle(element);
+    return {
+      backgroundColor: style.backgroundColor,
+      borderColor: style.borderColor,
+      borderRadius: Number.parseFloat(style.borderRadius),
+    };
+  });
 
   await expect(details.getByRole('heading', { name: 'Token composition' })).toBeVisible();
+  expect(detailsMetrics.borderRadius).toBeGreaterThanOrEqual(8);
+  expect(detailsMetrics.borderRadius).toBeLessThanOrEqual(10);
+  expect(detailsMetrics).toMatchObject({
+    backgroundColor: 'rgb(19, 19, 19)',
+    borderColor: 'rgb(30, 30, 30)',
+  });
   await expect(details).toContainText('1K processed');
   await expect(compositionRows).toHaveCount(4);
   await expect(compositionRows.nth(0)).toContainText('Cached');

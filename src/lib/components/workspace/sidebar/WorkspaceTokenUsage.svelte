@@ -155,7 +155,7 @@
   <div class="token-usage-shell w-full min-w-0 text-xs" data-testid="workspace-token-usage">
     <button
       type="button"
-      class="summary-control group grid h-11 w-full max-w-[19rem] min-w-0 grid-cols-[minmax(3.25rem,3.75rem)_auto_1px_auto_auto_auto] items-center gap-x-1.5 overflow-hidden rounded-sm border border-border bg-card/45 px-3 text-left text-foreground shadow-sm outline-none transition-colors hover:bg-muted/20 focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none dark:border-white/15 dark:bg-card/25 dark:hover:bg-muted/30"
+      class="summary-control group grid h-11 w-full max-w-[19rem] min-w-0 grid-cols-[minmax(2.75rem,3.25rem)_max-content_1px_max-content_auto_auto] items-center gap-x-1.5 overflow-hidden rounded-[7px] border border-border bg-card/45 px-3 text-left text-foreground shadow-sm outline-none transition-colors hover:bg-muted/20 focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none dark:border-[#1e1e1e] dark:bg-[#131313] dark:hover:bg-muted/30"
       data-testid="token-usage-disclosure"
       aria-label={expanded
         ? m.workspace_tokenUsage_collapse_ariaLabel()
@@ -185,7 +185,7 @@
           {m.workspace_tokenUsage_tokens_label()}
         </span>
       </span>
-      <span class="h-5 w-px bg-border/70" aria-hidden="true"></span>
+      <span class="h-5 w-px bg-border/70 dark:bg-[#1e1e1e]" aria-hidden="true"></span>
       <span
         id={cacheId}
         class="flex shrink-0 items-baseline gap-1"
@@ -221,7 +221,7 @@
     {#if expanded}
       <section
         id={detailsId}
-        class="mt-2 w-full max-w-[34rem] overflow-hidden rounded-sm border border-border bg-card/45 shadow-sm dark:border-white/20 dark:bg-card/20"
+        class="mt-2 w-full max-w-[34rem] overflow-hidden rounded-[9px] border border-border bg-card/45 shadow-sm dark:border-[#1e1e1e] dark:bg-[#131313]"
         aria-labelledby={titleId}
         data-testid="token-usage-details"
       >
@@ -252,7 +252,7 @@
             {/each}
           </div>
           <dl
-            class="mt-2 divide-y divide-border/80 border-y border-border dark:divide-white/15 dark:border-white/15"
+            class="mt-2 divide-y divide-border/80 border-y border-border dark:divide-[#1e1e1e] dark:border-[#1e1e1e]"
           >
             {#each compositionRows as row (row.id)}
               <div class="composition-row min-w-0 py-3">
@@ -282,7 +282,7 @@
         </section>
 
         {#if agentRows.length > 0 || modelRows.length > 0}
-          <div class="breakdown-grid grid grid-cols-1 border-t border-border dark:border-white/20">
+          <div class="breakdown-grid grid grid-cols-1 border-t border-border dark:border-[#1e1e1e]">
             {#if agentRows.length > 0}
               <section
                 class="breakdown-section min-w-0 px-3 py-3.5"
@@ -412,6 +412,10 @@
 
   :global(.dark) .token-cache-text {
     color: #9ac55f;
+  }
+
+  :global(.dark) .breakdown-section + .breakdown-section {
+    border-color: #1e1e1e;
   }
 
   .composition-row {
