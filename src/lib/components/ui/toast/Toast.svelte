@@ -34,6 +34,11 @@
   }
 </script>
 
+<!-- `expand` keeps stacked toasts at their own height with content visible.
+     Collapsed stacking hides children of non-front toasts but clamps them to
+     --front-toast-height, which svelte-sonner 1.1.1 derives from the OLDEST
+     toast (heights are pushed in mount order), so a taller toast behind a
+     shorter one rendered as a blank opaque slab. -->
 <Sonner
   id="app-toast-region"
   theme={$isDarkTheme ? 'dark' : 'light'}
@@ -59,6 +64,7 @@
   closeButton
   duration={10000}
   gap={8}
+  expand
 />
 
 {#if showClearAll}
@@ -190,32 +196,15 @@
     background-color: hsl(var(--muted-foreground) / 0.3);
   }
 
-  /* Warning/undo toasts — inverted (foreground bg, background text) */
+  /* Warning toasts — card surface with a warning accent (border + icon).
+     Background, text, description, close button, and action buttons fall
+     through to the base [data-sonner-toast] rules above, which are
+     theme-aware and legible in both light and dark themes. */
   :global([data-sonner-toast][data-type='warning']) {
-    background: hsl(var(--foreground)) !important;
-    color: hsl(var(--background)) !important;
-    border-color: hsl(var(--foreground)) !important;
+    border-color: hsl(var(--warning)) !important;
   }
 
-  :global([data-sonner-toast][data-type='warning'] [data-description]) {
-    color: hsl(var(--background) / 0.7) !important;
-  }
-
-  :global([data-sonner-toast][data-type='warning'] [data-close-button]) {
-    color: hsl(var(--background)) !important;
-    border-color: hsl(var(--background) / 0.2) !important;
-    background: hsl(var(--foreground)) !important;
-  }
-
-  :global([data-sonner-toast][data-type='warning'] button[data-button]) {
-    background: hsl(var(--background)) !important;
-    color: hsl(var(--foreground)) !important;
-    border: none !important;
-    font-weight: 700 !important;
-  }
-
-  :global([data-sonner-toast][data-type='warning'] button[data-button]:hover) {
-    background: hsl(var(--background) / 0.85) !important;
-    border: none !important;
+  :global([data-sonner-toast][data-type='warning'] [data-icon]) {
+    color: hsl(var(--warning));
   }
 </style>
