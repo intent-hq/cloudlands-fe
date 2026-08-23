@@ -276,9 +276,8 @@ describe('thinking blocks — StreamingMessageContent', () => {
 
   it('only flags the truly last block of a streaming message as streaming inside a group', async () => {
     // Streaming message whose last top-level block is an unclosed <group:…>
-    // containing [thinking, tool_use, thinking, text]. Only the final text
-    // block is still streaming; the completed thinking blocks must render
-    // static (collapsed, no pulse animation).
+    // containing [thinking, tool_use, thinking, text]. The summary-only group
+    // must hide its history and render only the final text as streaming.
     await renderStreaming(
       [
         { type: 'text', id: 'msg_1:0', text: '<group:Working>' },
@@ -291,16 +290,13 @@ describe('thinking blocks — StreamingMessageContent', () => {
     );
 
     const thinkingRows = document.querySelectorAll('.content-block--thinking');
-    expect(thinkingRows).toHaveLength(2);
-    for (const row of thinkingRows) {
-      expect(row.querySelector('[data-operational-leading]')?.className).not.toContain(
-        'animate-pulse',
-      );
-      expect(row.querySelector('[aria-expanded]')?.getAttribute('aria-expanded')).toBe('false');
-    }
+    expect(thinkingRows).toHaveLength(0);
+    expect(document.body.textContent).not.toContain('First reasoning pass');
+    expect(document.body.textContent).not.toContain('Second reasoning pass');
 
-    const streamingViewers = [...document.querySelectorAll('[data-testid="markdown-viewer"]')]
-      .filter((viewer) => viewer.getAttribute('data-streaming') === 'true');
+    const streamingViewers = [
+      ...document.querySelectorAll('[data-testid="markdown-viewer"]'),
+    ].filter((viewer) => viewer.getAttribute('data-streaming') === 'true');
     expect(streamingViewers.map((viewer) => viewer.textContent)).toEqual([
       'Partial streamed answer',
     ]);
@@ -317,11 +313,10 @@ describe('thinking blocks — StreamingMessageContent', () => {
     );
 
     const thinkingRows = document.querySelectorAll('.content-block--thinking');
-    expect(thinkingRows).toHaveLength(2);
-    expect(
-      thinkingRows[0].querySelector('[data-operational-leading]')?.className,
-    ).not.toContain('animate-pulse');
-    expect(thinkingRows[1].querySelector('[data-operational-leading]')?.className).toContain(
+    expect(thinkingRows).toHaveLength(1);
+    expect(document.body.textContent).not.toContain('First reasoning pass');
+    expect(document.body.textContent).toContain('Still reasoning');
+    expect(thinkingRows[0].querySelector('[data-operational-leading]')?.className).toContain(
       'animate-pulse',
     );
   });
