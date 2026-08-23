@@ -28,7 +28,6 @@ for (const theme of ['light', 'dark'] as const) {
           props: { theme, width, zoom },
         });
         const baseline = component.locator('[data-testid="baseline-geometry"]');
-        const groupButton = baseline.locator('[data-testid="group-adjacency"] button').first();
         const groupSummary = baseline
           .locator('[data-testid="group-adjacency"]')
           .locator('[data-testid="response-group-summary"]');
@@ -61,11 +60,7 @@ for (const theme of ['light', 'dark'] as const) {
               '[data-operational-icon-box], [data-tool-icon]',
             ) as HTMLElement;
             const icon = iconBox.querySelector('svg') as SVGElement;
-            const content = (
-              element.matches('button')
-                ? element.children[1]
-                : element.querySelector('button > :nth-child(2), [data-tool-sentence]')
-            ) as HTMLElement;
+            const content = element.querySelector('[data-operational-summary]') as HTMLElement;
             return {
               contentX: content.getBoundingClientRect().x + window.scrollX,
               height: element.getBoundingClientRect().height,
@@ -171,15 +166,14 @@ for (const theme of ['light', 'dark'] as const) {
         const expandedGroupDisclosure = expandedGroup.locator(
           '[data-testid="response-group-disclosure"]',
         );
-        await expect(expandedGroupDisclosure).toHaveAttribute('aria-expanded', 'false');
+        await expect(expandedGroupDisclosure).not.toHaveAttribute('aria-expanded');
         await expandedGroupDisclosure.click();
-        await expect(expandedGroupDisclosure).toHaveAttribute('aria-expanded', 'true');
+        await expect(expandedGroup.locator('[data-response-group-child]')).toHaveCount(0);
         const leadingIconNames = await component
           .locator('[data-chat-operational-row] [data-operational-leading] [data-icon]')
           .evaluateAll((elements) => elements.map((element) => element.getAttribute('data-icon')));
         expect([...new Set(leadingIconNames)].sort()).toEqual([
           'arrows-in-line-vertical',
-          'arrows-out-line-vertical',
           'brain',
           'eye',
           'hand',
@@ -227,12 +221,9 @@ for (const theme of ['light', 'dark'] as const) {
         expect(toolBox.x).toBeCloseTo(laneBox.x, 1);
         expect(toolBox.x + toolBox.width).toBeCloseTo(laneBox.x + laneBox.width, 1);
 
-        await groupButton.click();
-        const groupDetails = component.locator(
-          '[data-testid="group-adjacency"] [data-operational-expanded-content]',
-        );
-        await expect(groupDetails).toBeVisible();
-        await expect(groupDetails.locator('[data-assistant-prose]')).toHaveCount(0);
+        await expect(
+          component.locator('[data-testid="group-adjacency"] [data-operational-expanded-content]'),
+        ).toHaveCount(0);
         await page.waitForTimeout(250);
         await expect(
           component.locator(
@@ -314,46 +305,13 @@ for (const theme of ['light', 'dark'] as const) {
         await assertCluster('static-operational-cluster', 5);
         await assertCluster('streaming-operational-cluster', 5);
 
-        const groupRow = expandedGroup.locator('[data-operational-disclosure-row]');
-        const groupProse = expandedGroup.locator(
-          '[data-response-group-content] > [data-message-content-block="text"]',
-        );
-        await expect(groupProse).toBeVisible();
-        const [groupRowBox, groupProseBox] = await Promise.all([
-          groupRow.boundingBox(),
-          groupProse.boundingBox(),
-        ]);
-        expect(groupProseBox!.y - (groupRowBox!.y + groupRowBox!.height)).toBeCloseTo(16 * zoom, 1);
-
         const nestedGroup = component.locator('[data-testid="expanded-group-operational-rows"]');
         const nestedGroupDisclosure = nestedGroup.locator(
           '[data-testid="response-group-disclosure"]',
         );
-        await expect(nestedGroupDisclosure).toHaveAttribute('aria-expanded', 'false');
+        await expect(nestedGroupDisclosure).not.toHaveAttribute('aria-expanded');
         await nestedGroupDisclosure.click();
-        await expect(nestedGroupDisclosure).toHaveAttribute('aria-expanded', 'true');
-        const nestedGroupContent = nestedGroup.locator('[data-response-group-content]');
-        const nestedRows = nestedGroup.locator('[data-response-group-child]');
-        await expect(nestedRows).toHaveCount(2);
-        const nestedGeometry = await nestedRows.evaluateAll((elements) =>
-          elements.map((element) => {
-            const box = element.getBoundingClientRect();
-            const parentBox = element.parentElement!.getBoundingClientRect();
-            const style = getComputedStyle(element);
-            return {
-              inset: box.left - parentBox.left,
-              marginLeft: style.marginLeft,
-              rightEdge: box.right,
-              parentRightEdge: parentBox.right,
-            };
-          }),
-        );
-        await expect(nestedGroupContent).toBeVisible();
-        for (const row of nestedGeometry) {
-          expect(row.inset).toBeCloseTo(8 * zoom, 1);
-          expect(row.marginLeft).toBe('8px');
-          expect(row.rightEdge).toBeCloseTo(row.parentRightEdge, 1);
-        }
+        await expect(nestedGroup.locator('[data-response-group-child]')).toHaveCount(0);
 
         for (const mode of ['static', 'streaming']) {
           for (const pair of [

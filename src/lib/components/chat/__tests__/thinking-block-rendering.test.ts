@@ -110,7 +110,7 @@ describe('thinking blocks — StreamingMessageContent', () => {
     expect(screen.queryByTestId('markdown-viewer')).toBeNull();
   });
 
-  it('shows one current live-group child until the user expands the full history', async () => {
+  it('shows only the current live-group child and never reveals full history', async () => {
     const content = [
       { type: 'text', id: 'msg_1:0', text: '<group:Working>' },
       { type: 'text', id: 'msg_1:1', text: 'Earlier answer' },
@@ -123,7 +123,8 @@ describe('thinking blocks — StreamingMessageContent', () => {
         child.getAttribute('data-message-content-block'),
       );
 
-    expect(groupDisclosure.getAttribute('aria-expanded')).toBe('false');
+    expect(groupDisclosure.hasAttribute('aria-expanded')).toBe(false);
+    expect(groupDisclosure.closest('button, [role="button"]')).toBeNull();
     expect(visibleChildTypes()).toEqual(['thinking']);
     expect(screen.getByTestId('reasoning-disclosure').textContent?.trim()).toBe('Thinking...');
 
@@ -158,20 +159,16 @@ describe('thinking blocks — StreamingMessageContent', () => {
     expect(document.body.textContent).not.toContain('Earlier answer');
 
     await fireEvent.click(groupDisclosure);
-    expect(groupDisclosure.getAttribute('aria-expanded')).toBe('true');
-    expect(visibleChildTypes()).toEqual(['text', 'thinking', 'tool_use', 'text']);
+    await fireEvent.keyDown(groupDisclosure, { key: 'Enter' });
+    await fireEvent.keyDown(groupDisclosure, { key: ' ' });
+    expect(visibleChildTypes()).toEqual(['text']);
+    expect(document.body.textContent).not.toContain('Earlier answer');
 
     const latestThought = thinking('msg_1:7', 'Latest thought');
     await view.rerender({ content: [...withAnswer, latestThought], isStreaming: true });
-    expect(groupDisclosure.getAttribute('aria-expanded')).toBe('true');
-    expect(visibleChildTypes()).toEqual(['text', 'thinking', 'tool_use', 'text', 'thinking']);
-
-    await fireEvent.click(groupDisclosure);
-    expect(groupDisclosure.getAttribute('aria-expanded')).toBe('false');
     expect(visibleChildTypes()).toEqual(['thinking']);
 
     await view.rerender({ content: [...withAnswer, latestThought], isStreaming: false });
-    expect(groupDisclosure.getAttribute('aria-expanded')).toBe('false');
     expect(visibleChildTypes()).toEqual([]);
   });
 
@@ -184,7 +181,8 @@ describe('thinking blocks — StreamingMessageContent', () => {
         child.getAttribute('data-message-content-block'),
       );
 
-    expect(groupDisclosure.getAttribute('aria-expanded')).toBe('true');
+    expect(groupDisclosure.hasAttribute('aria-expanded')).toBe(false);
+    expect(visibleChildTypes()).toEqual([]);
 
     const groupContent = [
       { type: 'text', id: 'msg_1:0', text: '<group:Prepping>Review current code.' },
@@ -201,7 +199,6 @@ describe('thinking blocks — StreamingMessageContent', () => {
     ] as ContentBlock[];
     await view.rerender({ content: groupContent, isStreaming: true });
 
-    expect(groupDisclosure.getAttribute('aria-expanded')).toBe('false');
     expect(visibleChildTypes()).toEqual(['thinking']);
 
     const completedContent = [
@@ -210,20 +207,17 @@ describe('thinking blocks — StreamingMessageContent', () => {
     ] as ContentBlock[];
     await view.rerender({ content: completedContent, isStreaming: true });
 
-    expect(groupDisclosure.getAttribute('aria-expanded')).toBe('false');
     expect(visibleChildTypes()).toEqual([]);
     expect(document.body.textContent).toContain('Final prose.');
 
     await view.rerender({ content: completedContent, isStreaming: false });
-    expect(groupDisclosure.getAttribute('aria-expanded')).toBe('false');
-
     await fireEvent.click(groupDisclosure);
-    expect(groupDisclosure.getAttribute('aria-expanded')).toBe('true');
-    expect(visibleChildTypes()).toEqual(['text', 'thinking', 'tool_use', 'thinking']);
+    await fireEvent.keyDown(groupDisclosure, { key: 'Enter' });
+    await fireEvent.keyDown(groupDisclosure, { key: ' ' });
+    expect(visibleChildTypes()).toEqual([]);
 
     await view.rerender({ content: [...completedContent], isStreaming: false });
-    expect(groupDisclosure.getAttribute('aria-expanded')).toBe('true');
-    expect(visibleChildTypes()).toEqual(['text', 'thinking', 'tool_use', 'thinking']);
+    expect(visibleChildTypes()).toEqual([]);
   });
 
   it('uses the reasoning title in the static message path', async () => {
