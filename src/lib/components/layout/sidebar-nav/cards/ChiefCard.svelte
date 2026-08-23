@@ -106,12 +106,15 @@
       $chiefThreads$.find((thread) => thread.agentId === selectedAgentId) ??
       defaultThread,
   );
+  // ChatPanel prop/key expressions re-evaluate lazily, so they must never
+  // dereference a possibly-null activeThread (it can empty while mounted).
+  const activeAgentId = $derived(activeThread?.agentId ?? null);
   const threadOptions = $derived<DropdownOption[]>(
     $chiefThreads$.map((thread) => ({
       value: thread.agentId,
       label: thread.title,
       data: { isActive: thread.isActive },
-      class: activeThread?.agentId === thread.agentId ? 'bg-muted/70 text-foreground' : '',
+      class: activeAgentId === thread.agentId ? 'bg-muted/70 text-foreground' : '',
     })),
   );
   const currentPreview = $derived(activeThread ?? $chiefPreview$);
@@ -363,12 +366,12 @@
          up to 8px above — accepted as cosmetic. -->
     <div class="min-h-0 flex-1 overflow-clip px-2 pt-0 [overflow-clip-margin:0.5rem]">
       <section class="flex h-full min-h-0 flex-col">
-        {#if activeThread}
-          {#key activeThread.agentId}
+        {#if activeAgentId}
+          {#key activeAgentId}
             <div class="min-h-0 flex-1">
               <ChatPanel
                 workspace={chiefWorkspace}
-                agentId={activeThread.agentId}
+                agentId={activeAgentId}
                 agentName={m.layout_chiefCard_title()}
                 isActive={true}
                 autoFocus={true}
