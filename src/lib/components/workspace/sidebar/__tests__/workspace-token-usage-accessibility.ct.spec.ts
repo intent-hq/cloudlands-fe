@@ -114,6 +114,7 @@ test('renders the full reference table as a wide overlay from the real workspace
           '[id^="workspace-token-usage-processed-"] > span:not(.sr-only)',
         )!;
         const cache = element.querySelector('[id^="workspace-token-usage-cache-"]')!;
+        const cacheLabel = element.querySelector('.summary-cache-label')!;
         const style = getComputedStyle(element);
         const tokenRect = tokenLabel.getBoundingClientRect();
         return {
@@ -121,6 +122,8 @@ test('renders the full reference table as a wide overlay from the real workspace
           borderRadius: Number.parseFloat(style.borderRadius),
           borderColor: style.borderColor,
           cacheLeft: cache.getBoundingClientRect().left,
+          cacheLabelDisplay: getComputedStyle(cacheLabel).display,
+          cacheLabelText: cacheLabel.textContent?.trim(),
           processedFontSize: Number.parseFloat(getComputedStyle(processedValue).fontSize),
           tokenLabelDisplay: getComputedStyle(tokenLabel).display,
           tokenLabelFontSize: Number.parseFloat(getComputedStyle(tokenLabel).fontSize),
@@ -145,11 +148,16 @@ test('renders the full reference table as a wide overlay from the real workspace
     backgroundColor: 'rgb(19, 19, 19)',
     borderColor: 'rgb(30, 30, 30)',
     processedFontSize: 14,
-    tokenLabelDisplay: 'none',
+    tokenLabelDisplay: 'block',
     tokenLabelFontSize: 10,
     tokenLabelText: 'Tokens',
     tokenLabelTransform: 'uppercase',
+    cacheLabelDisplay: 'block',
+    cacheLabelText: 'Cached',
   });
+  expect(summaryMetrics.cacheLeft - summaryMetrics.tokenRight).toBeGreaterThanOrEqual(4);
+  await expect(disclosure.getByText('Tokens', { exact: true })).toBeVisible();
+  await expect(disclosure.getByText('Cached', { exact: true })).toBeVisible();
 
   await disclosure.click();
   const agentSection = component.getByTestId('token-usage-by-agent');
@@ -223,6 +231,7 @@ test('renders the full reference table as a wide overlay from the real workspace
     agentBox,
     modelBox,
     breakdownRows,
+    breakdownLists,
   ] = await Promise.all([
     details.boundingBox(),
     sidebar.boundingBox(),
@@ -271,6 +280,14 @@ test('renders the full reference table as a wide overlay from the real workspace
         return { name, value, context };
       }),
     ),
+    details.locator('.breakdown-section ol').evaluateAll((lists) =>
+      lists.map((list) => ({
+        clientHeight: list.clientHeight,
+        maxHeight: Number.parseFloat(getComputedStyle(list).maxHeight),
+        overflowY: getComputedStyle(list).overflowY,
+        scrollbarWidth: getComputedStyle(list).scrollbarWidth,
+      })),
+    ),
   ]);
 
   expect(detailsBox).not.toBeNull();
@@ -286,6 +303,15 @@ test('renders the full reference table as a wide overlay from the real workspace
   expect(modelBox).not.toBeNull();
   expect(Math.abs(agentBox!.y - modelBox!.y)).toBeLessThanOrEqual(1);
   expect(agentBox!.width).toBeCloseTo(modelBox!.width, 0);
+  expect(detailsBox!.height).toBeLessThanOrEqual(335);
+  expect(agentBox!.height).toBeLessThanOrEqual(80);
+  expect(modelBox!.height).toBeLessThanOrEqual(80);
+  expect(
+    breakdownLists.every(
+      ({ clientHeight, maxHeight, overflowY, scrollbarWidth }) =>
+        clientHeight <= 40 && maxHeight === 40 && overflowY === 'auto' && scrollbarWidth === 'none',
+    ),
+  ).toBe(true);
   expect(
     desktopRows.every(
       ({
