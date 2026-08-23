@@ -6,7 +6,7 @@ import { AgentId, WorkspaceId } from '$shared/types/branded-ids';
 import { store } from '$store/renderer/store';
 import {
   bulkUpsertSessions,
-  clearAllSessions,
+  removeSession,
 } from '$store/renderer/slices/agent-session/agent-session-slice';
 import MentionAgentAvatar from './MentionAgentAvatar.svelte';
 
@@ -26,9 +26,9 @@ function setup(status: AgentStatus) {
       createdAt: timestamp,
       updatedAt: timestamp,
     };
-    store.dispatch(clearAllSessions());
+    store.dispatch(removeSession(agentId));
     store.dispatch(bulkUpsertSessions([session]));
-    return () => store.dispatch(clearAllSessions());
+    return () => store.dispatch(removeSession(agentId));
   };
 }
 
