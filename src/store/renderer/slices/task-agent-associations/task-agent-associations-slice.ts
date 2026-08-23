@@ -13,6 +13,7 @@ const TASK_AGENT_KEY_PREFIX = 'agent:';
 
 const emptyTaskAgentAssociationsWorkspaceState: TaskAgentAssociationsWorkspaceState = {
   byNoteId: {},
+  hydrated: false,
 };
 
 export const initialState: TaskAgentAssociationsState = {
@@ -117,7 +118,7 @@ export const taskAgentAssociationsReducer = createReducer<TaskAgentAssociationsS
 taskAgentAssociationsReducer.with(
   hydrateTaskAgentAssociations,
   (state, { payload: [workspaceId, byNoteId] }) =>
-    setWorkspaceState(state, workspaceId, { byNoteId }),
+    setWorkspaceState(state, workspaceId, { byNoteId, hydrated: true }),
 );
 taskAgentAssociationsReducer.with(
   addTaskAgentAssociation,
@@ -126,6 +127,7 @@ taskAgentAssociationsReducer.with(
     const noteAssociations = workspaceState.byNoteId[noteId] ?? {};
 
     return setWorkspaceState(state, workspaceId, {
+      ...workspaceState,
       byNoteId: {
         ...workspaceState.byNoteId,
         [noteId]: {
@@ -144,6 +146,7 @@ taskAgentAssociationsReducer.with(
     const workspaceState = getWorkspaceState(state, workspaceId);
     const noteAssociations = workspaceState.byNoteId[noteId] ?? {};
     return setWorkspaceState(state, workspaceId, {
+      ...workspaceState,
       byNoteId: {
         ...workspaceState.byNoteId,
         [noteId]: {
@@ -169,7 +172,7 @@ taskAgentAssociationsReducer.with(
         ? omitKey(workspaceState.byNoteId, noteId)
         : { ...workspaceState.byNoteId, [noteId]: nextNoteAssociations };
 
-    return setWorkspaceState(state, workspaceId, { byNoteId });
+    return setWorkspaceState(state, workspaceId, { ...workspaceState, byNoteId });
   },
 );
 taskAgentAssociationsReducer.with(
@@ -187,7 +190,7 @@ taskAgentAssociationsReducer.with(
       Object.keys(nextNoteAssociations).length === 0
         ? omitKey(workspaceState.byNoteId, noteId)
         : { ...workspaceState.byNoteId, [noteId]: nextNoteAssociations };
-    return setWorkspaceState(state, workspaceId, { byNoteId });
+    return setWorkspaceState(state, workspaceId, { ...workspaceState, byNoteId });
   },
 );
 taskAgentAssociationsReducer.with(
@@ -229,7 +232,7 @@ taskAgentAssociationsReducer.with(
         ? omitKey(workspaceState.byNoteId, noteId)
         : { ...workspaceState.byNoteId, [noteId]: nextNoteAssociations };
 
-    return setWorkspaceState(state, workspaceId, { byNoteId });
+    return setWorkspaceState(state, workspaceId, { ...workspaceState, byNoteId });
   },
 );
 taskAgentAssociationsReducer.with(workspaceUnmounted, (state, { payload: [workspaceId] }) =>
