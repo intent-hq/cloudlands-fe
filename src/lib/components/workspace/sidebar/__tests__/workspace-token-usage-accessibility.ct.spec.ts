@@ -99,48 +99,75 @@ test('fits real workspace widths without becoming an oversized vertical card', a
   const agentSection = component.getByTestId('token-usage-by-agent');
   const modelSection = component.getByTestId('token-usage-by-model');
   const details = component.getByTestId('token-usage-details');
+  const breakdownDisclosure = component.getByTestId('token-usage-breakdown-disclosure');
+  const breakdown = details.locator('details.breakdown-disclosure');
   const compositionRows = details.locator('.composition-row');
   await expect(compositionRows).toHaveCount(4);
-  const [agentBox, modelBox, rowBoxes, dimensions, narrowComposition, longModel] =
-    await Promise.all([
-      agentSection.boundingBox(),
-      modelSection.boundingBox(),
-      agentSection
-        .locator('li')
-        .evaluateAll((rows) => rows.map((row) => row.getBoundingClientRect().height)),
-      shell.evaluate((element) => ({
-        clientWidth: element.clientWidth,
-        scrollWidth: element.scrollWidth,
-      })),
-      compositionRows.first().evaluate((row) => {
-        const box = (selector: string) =>
-          row.querySelector(selector)!.getBoundingClientRect().toJSON();
+  await expect(breakdown).not.toHaveAttribute('open', '');
+  await expect(agentSection).not.toBeVisible();
+  await expect(modelSection).not.toBeVisible();
+  await expect(details.locator('details.breakdown-disclosure')).toHaveCount(1);
+
+  const [collapsedDetailsBox, dimensions, narrowRows] = await Promise.all([
+    details.boundingBox(),
+    shell.evaluate((element) => ({
+      clientWidth: element.clientWidth,
+      scrollWidth: element.scrollWidth,
+    })),
+    compositionRows.evaluateAll((rows) =>
+      rows.map((row) => {
+        const metric = row.querySelector('.composition-metric')!.getBoundingClientRect();
+        const value = row.querySelector('.composition-value')!.getBoundingClientRect();
         return {
-          metric: box('.composition-metric'),
-          description: box('.composition-description'),
-          value: box('.composition-value'),
-          context: box('.composition-context'),
+          height: row.getBoundingClientRect().height,
+          metricY: metric.y,
+          valueY: value.y,
+          descriptionDisplay: getComputedStyle(row.querySelector('.composition-description')!)
+            .display,
+          contextDisplay: getComputedStyle(row.querySelector('.composition-context')!).display,
         };
       }),
-      modelSection
-        .locator('[title="provider/this-is-an-extraordinarily-long-model-name-for-truncation"]')
-        .evaluate((label) => ({
-          clientWidth: label.clientWidth,
-          scrollWidth: label.scrollWidth,
-          overflow: getComputedStyle(label).overflow,
-          textOverflow: getComputedStyle(label).textOverflow,
-          whiteSpace: getComputedStyle(label).whiteSpace,
-        })),
-    ]);
+    ),
+  ]);
 
+  expect(collapsedDetailsBox).not.toBeNull();
+  expect(collapsedDetailsBox!.height).toBeLessThan(292);
+  expect(dimensions.scrollWidth).toBeLessThanOrEqual(dimensions.clientWidth);
+  expect(narrowRows.every(({ height }) => height <= 32)).toBe(true);
+  expect(narrowRows.every(({ metricY, valueY }) => Math.abs(metricY - valueY) <= 1)).toBe(true);
+  expect(narrowRows.every(({ descriptionDisplay }) => descriptionDisplay === 'none')).toBe(true);
+  expect(narrowRows.every(({ contextDisplay }) => contextDisplay === 'none')).toBe(true);
+
+  await breakdownDisclosure.focus();
+  await breakdownDisclosure.press('Enter');
+  await expect(breakdown).toHaveAttribute('open', '');
+  await expect(agentSection).toBeVisible();
+  await expect(modelSection).toBeVisible();
+  await expect(agentSection).not.toContainText('%');
+  await expect(modelSection).not.toContainText('%');
+  await expect(agentSection.locator('[style*="width"]')).toHaveCount(0);
+  await expect(modelSection.locator('[style*="width"]')).toHaveCount(0);
+
+  const [agentBox, modelBox, rowBoxes, longModel] = await Promise.all([
+    agentSection.boundingBox(),
+    modelSection.boundingBox(),
+    agentSection
+      .locator('li')
+      .evaluateAll((rows) => rows.map((row) => row.getBoundingClientRect().height)),
+    modelSection
+      .locator('[title="provider/this-is-an-extraordinarily-long-model-name-for-truncation"]')
+      .evaluate((label) => ({
+        clientWidth: label.clientWidth,
+        scrollWidth: label.scrollWidth,
+        overflow: getComputedStyle(label).overflow,
+        textOverflow: getComputedStyle(label).textOverflow,
+        whiteSpace: getComputedStyle(label).whiteSpace,
+      })),
+  ]);
   expect(agentBox).not.toBeNull();
   expect(modelBox).not.toBeNull();
   expect(modelBox!.y).toBeGreaterThanOrEqual(agentBox!.y + agentBox!.height - 1);
-  expect(Math.max(...rowBoxes)).toBeLessThanOrEqual(32);
-  expect(dimensions.scrollWidth).toBeLessThanOrEqual(dimensions.clientWidth);
-  expect(narrowComposition.description.y).toBeGreaterThan(narrowComposition.metric.y);
-  expect(narrowComposition.metric.y).toBeCloseTo(narrowComposition.value.y, 0);
-  expect(narrowComposition.value.y).toBeCloseTo(narrowComposition.context.y, 0);
+  expect(Math.max(...rowBoxes)).toBeLessThanOrEqual(24);
   expect(longModel.scrollWidth).toBeGreaterThan(longModel.clientWidth);
   expect(longModel).toMatchObject({
     overflow: 'hidden',
@@ -149,37 +176,58 @@ test('fits real workspace widths without becoming an oversized vertical card', a
   });
 
   await component.update({ props: { width: 452 } });
-  const [wideShellBox, detailsBox, wideAgentBox, wideModelBox, wideComposition] = await Promise.all(
-    [
-      shell.boundingBox(),
-      details.boundingBox(),
-      agentSection.boundingBox(),
-      modelSection.boundingBox(),
-      compositionRows.first().evaluate((row) => {
+  await breakdownDisclosure.press('Enter');
+  await expect(breakdown).not.toHaveAttribute('open', '');
+  const [wideShellBox, wideDisclosureBox, detailsBox, wideRows] = await Promise.all([
+    shell.boundingBox(),
+    disclosure.boundingBox(),
+    details.boundingBox(),
+    compositionRows.evaluateAll((rows) =>
+      rows.map((row) => {
         const box = (selector: string) =>
           row.querySelector(selector)!.getBoundingClientRect().toJSON();
         return {
+          row: row.getBoundingClientRect().toJSON(),
           metric: box('.composition-metric'),
           description: box('.composition-description'),
           value: box('.composition-value'),
           context: box('.composition-context'),
         };
       }),
-    ],
-  );
+    ),
+  ]);
   expect(wideShellBox).not.toBeNull();
+  expect(wideDisclosureBox).not.toBeNull();
   expect(detailsBox).not.toBeNull();
-  expect(wideAgentBox).not.toBeNull();
-  expect(wideModelBox).not.toBeNull();
   expect(wideShellBox!.height).toBeLessThan(wideShellBox!.width);
   expect(detailsBox!.width).toBeCloseTo(452, 0);
+  expect(detailsBox!.width).toBeGreaterThan(wideDisclosureBox!.width);
+  expect(detailsBox!.height).toBeLessThan(292);
+  expect(
+    wideRows.every(
+      ({ row, metric, description, value, context }) =>
+        row.height <= 32 &&
+        Math.max(metric.y, description.y, value.y, context.y) -
+          Math.min(metric.y, description.y, value.y, context.y) <=
+          1 &&
+        metric.x < description.x &&
+        description.x < value.x &&
+        value.x < context.x,
+    ),
+  ).toBe(true);
+  const valueRightEdges = wideRows.map(({ value }) => value.x + value.width);
+  const contextRightEdges = wideRows.map(({ context }) => context.x + context.width);
+  expect(Math.max(...valueRightEdges) - Math.min(...valueRightEdges)).toBeLessThanOrEqual(1);
+  expect(Math.max(...contextRightEdges) - Math.min(...contextRightEdges)).toBeLessThanOrEqual(1);
+
+  await breakdownDisclosure.press('Enter');
+  const [wideAgentBox, wideModelBox] = await Promise.all([
+    agentSection.boundingBox(),
+    modelSection.boundingBox(),
+  ]);
+  expect(wideAgentBox).not.toBeNull();
+  expect(wideModelBox).not.toBeNull();
   expect(Math.abs(wideAgentBox!.y - wideModelBox!.y)).toBeLessThanOrEqual(1);
   expect(wideModelBox!.x).toBeGreaterThan(wideAgentBox!.x);
   expect(wideAgentBox!.width).toBeCloseTo(wideModelBox!.width, 0);
-  expect(wideComposition.metric.y).toBeCloseTo(wideComposition.description.y, 0);
-  expect(wideComposition.description.y).toBeCloseTo(wideComposition.value.y, 0);
-  expect(wideComposition.value.y).toBeCloseTo(wideComposition.context.y, 0);
-  expect(wideComposition.metric.x).toBeLessThan(wideComposition.description.x);
-  expect(wideComposition.description.x).toBeLessThan(wideComposition.value.x);
-  expect(wideComposition.value.x).toBeLessThan(wideComposition.context.x);
 });
