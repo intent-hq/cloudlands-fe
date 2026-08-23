@@ -4,6 +4,14 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.84.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.84.0...v2.84.1) (2026-08-23)
+
+
+### 🐛 Bug Fixes
+
+* bootstrap the renderer store for Playwright CT and repair TaskItemNodeView specs ([#1609](https://github.com/intent-hq/cloudlands-fe/issues/1609)) ([c1d0e82](https://github.com/intent-hq/cloudlands-fe/commit/c1d0e82b56a77dcffe699d35b8ecddc9b8474343))
+* bump intentd sidecar to v0.7.41 ([#1612](https://github.com/intent-hq/cloudlands-fe/issues/1612)) ([3b46ebe](https://github.com/intent-hq/cloudlands-fe/commit/3b46ebe61ecd5ee3c5a78849751ab0a605976d44))
+
 ## [2.84.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.83.0...v2.84.0) (2026-08-23)
 
 
