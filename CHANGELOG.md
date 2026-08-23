@@ -4,6 +4,18 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.86.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.85.1...v2.86.0) (2026-08-23)
+
+
+### 🚀 Features
+
+* **hud:** diagonal shimmer on in-progress takeover cells ([#1615](https://github.com/intent-hq/cloudlands-fe/issues/1615)) ([f3b100d](https://github.com/intent-hq/cloudlands-fe/commit/f3b100d599f4443dfc9dc58d0ea56f9050339904))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.7.43 ([#1621](https://github.com/intent-hq/cloudlands-fe/issues/1621)) ([277590e](https://github.com/intent-hq/cloudlands-fe/commit/277590e2e3815680d8d1411bcbcdf83f9640af51))
+
 ## [2.85.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.85.0...v2.85.1) (2026-08-23)
 
 
