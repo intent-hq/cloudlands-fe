@@ -45,6 +45,7 @@ describe('hardcoded user-facing string gate', () => {
     expect(result.output).toContain('Scanning: src/features/workspace/');
     expect(result.output).toContain('Scanning: src/routes/(app)/workspace/');
     expect(result.output).toMatch(/Known i18n debt:.*0 violation\(s\).*0 stable baseline entries/);
+    expect(result.output).toMatch(/Excluded [1-9][0-9]* scaffolding file\(s\)/);
     expect(result.output).toContain('✓ No new or changed hardcoded-string violations found.');
   });
 
@@ -61,6 +62,7 @@ describe('hardcoded user-facing string gate', () => {
       (dir) => {
         const result = runGate([dir]);
         expect(result.exitCode).toBe(1);
+        expect(result.output).toContain('Excluded 5 scaffolding file(s)');
         expect(result.output).toContain('[template text] "Rendered product text"');
         expect(result.output).not.toContain('Harness only demo text');
         expect(result.output).not.toContain('Test harness demo text');

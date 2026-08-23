@@ -194,6 +194,10 @@ const SKIP_DIRS = new Set([
 const SCAFFOLDING_FILE_RE =
   /(?:Harness\.svelte|\.test-harness\.svelte|\.fixtures\.ts|\.meta\.ts|\.playwright\.config\.ts)$/;
 
+// Counted per run and reported so name-based exclusions stay visible in CI
+// logs (a product file accidentally matching the pattern shows up here).
+let excludedScaffoldingFiles = 0;
+
 const USER_FACING_ATTRS = [
   'placeholder',
   'title',
@@ -216,7 +220,10 @@ function isCheckedFile(absPath) {
   const norm = absPath.split('\\').join('/');
   if (norm.endsWith('.d.ts')) return false;
   if (/\.(test|spec)\.(ts|js|mjs|cjs)$/.test(norm)) return false;
-  if (SCAFFOLDING_FILE_RE.test(norm)) return false;
+  if (SCAFFOLDING_FILE_RE.test(norm)) {
+    excludedScaffoldingFiles++;
+    return false;
+  }
   if (!/\.(svelte|ts)$/.test(norm)) return false;
   return true;
 }
@@ -774,6 +781,11 @@ async function main() {
 
   console.log(`${CYAN}=== Hardcoded user-facing string gate (i18n) ===${NC}`);
   const violations = await collectViolations(dirs);
+  if (excludedScaffoldingFiles > 0) {
+    console.log(
+      `Excluded ${excludedScaffoldingFiles} scaffolding file(s) (harnesses, fixtures, catalog metadata, playwright configs).`,
+    );
+  }
 
   if (options.updateBaseline) {
     const entries = baselineEntries(violations);
