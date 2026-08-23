@@ -7,12 +7,12 @@
 export interface NativePlanEntry {
   id: string;
   title: string;
-  status: "pending" | "in_progress" | "completed" | "failed" | "cancelled";
+  status: 'pending' | 'in_progress' | 'completed' | 'failed' | 'cancelled';
   children?: NativePlanEntry[];
 }
 
 /** Per-session native plan state, keyed by the ACP session identifier. */
-export interface NativePlanSessionState {
+interface NativePlanSessionState {
   entries: NativePlanEntry[];
 }
 

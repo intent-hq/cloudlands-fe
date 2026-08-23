@@ -48,6 +48,7 @@ import { TerminalHandler } from './handlers/terminal';
 import { Logger } from '../../../../shared/logger';
 import { permissionManager } from '../../permissions/permission-manager';
 import { planManager } from '../../plans/plan-manager';
+import { registerPlanBroadcaster } from '../plan-broadcast';
 
 const logger = new Logger('ACPServer');
 
@@ -76,7 +77,14 @@ export class ACPServer extends EventEmitter {
     this.config = config;
     this.sessionManager = new SessionManager({ workspacePath: config.workspacePath });
     this.fileSystemHandler = new FileSystemHandler(config.workspacePath, config.scope);
-    this.terminalHandler = new TerminalHandler(config.workspacePath, config.scope, config.workspaceId);
+    this.terminalHandler = new TerminalHandler(
+      config.workspacePath,
+      config.scope,
+      config.workspaceId,
+    );
+    // Forward planManager events to renderer windows (monorepo#3249);
+    // idempotent, so repeat constructions are safe.
+    registerPlanBroadcaster();
   }
 
   /**

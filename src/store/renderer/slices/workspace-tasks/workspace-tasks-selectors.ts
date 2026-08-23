@@ -88,15 +88,22 @@ export const selectSpecLinkedTaskDisplayList = store.createSelector(
  * agent (it has `task-agent-associations` rows) sees only its own linked
  * task(s); a root/Coordinator agent (no association rows) sees the
  * spec-linked list. Both views preserve source order and exclude cancelled
- * tasks. The native-plan source-priority gate lives in the `nativePlans`
- * slice — callers combine the two.
+ * tasks. Returns [] until the associations slice has hydrated for the
+ * workspace — before `task.listAgentLinks` resolves, "no links" is
+ * indistinguishable from "links not loaded", and falling through would
+ * briefly show a delegated agent the Coordinator view. The native-plan
+ * source-priority gate lives in the `nativePlans` slice — callers combine
+ * the two.
  */
 export const selectFallbackPlanTasksForAgent = store.createSelector(
   (state, workspaceId: string, agentId: string): WorkspaceTask[] => {
     const ws = state.workspaceTasks?.byWorkspaceId[workspaceId];
     if (!ws || !agentId) return [];
 
-    const byNoteId = state.taskAgentAssociations?.byWorkspaceId[workspaceId]?.byNoteId ?? {};
+    const associations = state.taskAgentAssociations?.byWorkspaceId[workspaceId];
+    if (!associations?.hydrated) return [];
+
+    const byNoteId = associations.byNoteId;
     const linkedNoteIds = new Set<string>();
     for (const noteAssociations of Object.values(byNoteId)) {
       for (const association of Object.values(noteAssociations)) {

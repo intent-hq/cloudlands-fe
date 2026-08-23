@@ -1103,6 +1103,11 @@ export const EVENT_CHANNELS = [
   'transfer:import-progress',
   // File menu → renderer: open the import-workspace wizard.
   'menu:import-workspace',
+  // Native ACP plan session updates forwarded from the main-process
+  // planManager singleton so the renderer's source-priority gate for the
+  // fallback plan card sees real plans (monorepo#3249).
+  'acp:plan-updated',
+  'acp:plan-cleared',
 ] as const;
 
 // Dynamic channel patterns that use runtime IDs
