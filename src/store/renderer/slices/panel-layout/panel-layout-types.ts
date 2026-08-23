@@ -89,6 +89,8 @@ export interface PanelState {
   id: string;
   tabs: PanelTab[];
   activeTabId: string | null;
+  /** Inactive panes added by background activity and not yet selected by the user. */
+  attentionTabIds?: string[];
   /** True for an untouched reusable blank panel that the next user item can consume. */
   pristine?: boolean;
 }

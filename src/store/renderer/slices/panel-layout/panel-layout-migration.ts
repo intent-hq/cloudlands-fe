@@ -72,8 +72,19 @@ function cleanPanel(
   const activeTabId = tabs.some((tab) => tab.id === panel.activeTabId)
     ? panel.activeTabId
     : (tabs[0]?.id ?? null);
+  const validTabIds = new Set(tabs.map((tab) => tab.id));
+  const attentionTabIds = Array.isArray(panel.attentionTabIds)
+    ? [...new Set(panel.attentionTabIds)].filter(
+        (tabId) => validTabIds.has(tabId) && tabId !== activeTabId,
+      )
+    : undefined;
   const { pinned: _pinned, ...clean } = panel as PanelState & { pinned?: unknown };
-  return { ...clean, tabs, activeTabId };
+  return {
+    ...clean,
+    tabs,
+    activeTabId,
+    ...(attentionTabIds === undefined ? {} : { attentionTabIds }),
+  };
 }
 
 function fixedColumnRoot(panelIds: string[]): PanelLayoutNode {
@@ -207,6 +218,8 @@ export function migratePanelLayoutForWorkspace(
   const rightmostId = visibleIds[visibleIds.length - 1];
   const rightmost = visiblePanels[rightmostId];
   const tabs = [...rightmost.tabs];
+  const attentionTabIds = new Set(rightmost.attentionTabIds ?? []);
+  let hasAttentionMetadata = rightmost.attentionTabIds !== undefined;
   const overflowIds = [...rootedIds.slice(targetCount), ...orphanIds.slice(visibleOrphanCount)];
   const hasOverflow = overflowIds.length > 0;
   const visibleTabs = Object.values(visiblePanels).flatMap((panel) => panel.tabs);
@@ -226,15 +239,26 @@ export function migratePanelLayoutForWorkspace(
       tabs.push(tab);
       visibleTabs.push(tab);
     }
+    if (panel.attentionTabIds !== undefined) hasAttentionMetadata = true;
+    for (const tabId of panel.attentionTabIds ?? []) attentionTabIds.add(tabId);
     if (panelId === layout.focusedPanelId) overflowActiveTabId = panel.activeTabId;
   }
+  const activeTabId =
+    overflowActiveTabId && tabs.some((tab) => tab.id === overflowActiveTabId)
+      ? overflowActiveTabId
+      : rightmost.activeTabId;
+  const mergedTabIds = new Set(tabs.map((tab) => tab.id));
   visiblePanels[rightmostId] = {
     ...rightmost,
     tabs,
-    activeTabId:
-      overflowActiveTabId && tabs.some((tab) => tab.id === overflowActiveTabId)
-        ? overflowActiveTabId
-        : rightmost.activeTabId,
+    activeTabId,
+    ...(hasAttentionMetadata
+      ? {
+          attentionTabIds: [...attentionTabIds].filter(
+            (tabId) => mergedTabIds.has(tabId) && tabId !== activeTabId,
+          ),
+        }
+      : {}),
     pristine: hasOverflow && tabs.length > 0 ? false : rightmost.pristine,
   };
   const width = hasValidGeometry(layout.root)

@@ -1066,7 +1066,7 @@ describe('panelLayoutReducer', () => {
       expect(result).toBe(state);
     });
 
-    it('reuses a populated sole fixed column without changing the count', () => {
+    it('creates a stack to the right of a populated sole column', () => {
       const state = stateWithPanel('p1', [{ id: 'existing', type: 'file', title: 'Existing' }]);
       const result = panelLayoutReducer(
         state,
@@ -1080,20 +1080,23 @@ describe('panelLayoutReducer', () => {
       );
       const panels = Object.values(result.byWorkspaceId[WS].panels);
 
-      expect(panels).toHaveLength(1);
-      expect(result.byWorkspaceId[WS].root).toEqual({ type: 'panel', panelId: 'p1' });
-      expect(result.byWorkspaceId[WS].columnCount).toBe(1);
-      expect(result.byWorkspaceId[WS].panels.p1.tabs.at(-1)).toMatchObject({
+      expect(panels).toHaveLength(2);
+      expect(result.byWorkspaceId[WS].root).toMatchObject({
+        type: 'split',
+        children: [{ panelId: 'p1' }, {}],
+      });
+      expect(result.byWorkspaceId[WS].columnCount).toBe(2);
+      expect(panels.at(-1)?.tabs.at(-1)).toMatchObject({
         type: 'note',
         noteId: 'spec',
       });
       expect(result.byWorkspaceId[WS].pendingPanelReveal).toMatchObject({
-        panelId: 'p1',
-        tabId: result.byWorkspaceId[WS].panels.p1.activeTabId,
+        panelId: panels.at(-1)?.id,
+        tabId: panels.at(-1)?.activeTabId,
       });
     });
 
-    it('keeps sole-column geometry when opening an adjacent chat', () => {
+    it('adds chat-width geometry when opening an adjacent chat', () => {
       const state = stateWithPanel('p1', [{ id: 'existing', type: 'note', title: 'Existing' }]);
       const result = panelLayoutReducer(
         state,
@@ -1106,12 +1109,15 @@ describe('panelLayoutReducer', () => {
         ),
       ).byWorkspaceId[WS];
 
-      expect(result.canvasWidth).toBeNull();
-      expect(result.root).toEqual({ type: 'panel', panelId: 'p1' });
-      expect(result.panels.p1.tabs.at(-1)).toMatchObject({ type: 'agent', agentId: 'agent-1' });
+      expect(result.canvasWidth).toBe(1208);
+      expect(result.root).toMatchObject({ type: 'split', children: [{ panelId: 'p1' }, {}] });
+      expect(Object.values(result.panels).at(-1)?.tabs.at(-1)).toMatchObject({
+        type: 'agent',
+        agentId: 'agent-1',
+      });
     });
 
-    it('preserves existing explicit column pixels when reusing the fixed column', () => {
+    it('preserves existing explicit column pixels when adding the side stack', () => {
       const state = stateWithPanel('p1', [{ id: 'existing', type: 'note', title: 'Existing' }]);
       state.byWorkspaceId[WS].canvasWidth = 860;
       state.byWorkspaceId[WS].canvasWidthSource = 'explicit';
@@ -1125,9 +1131,9 @@ describe('panelLayoutReducer', () => {
         }),
       ).byWorkspaceId[WS];
 
-      expect(result.canvasWidth).toBe(860);
+      expect(result.canvasWidth).toBe(1568);
       expect(result.canvasWidthSource).toBe('explicit');
-      expect(result.root).toEqual({ type: 'panel', panelId: 'p1' });
+      expect(result.root).toMatchObject({ type: 'split', children: [{ panelId: 'p1' }, {}] });
     });
 
     it('fills an empty focused panel instead of creating another empty shell', () => {
@@ -3186,10 +3192,9 @@ describe('panelLayoutReducer', () => {
       expect(ws.panels.p1.tabs.at(-1)?.ownerAgentId).toBe('agent-1');
     });
 
-    // showTab without focus (monorepo#3112): the UI renders only a panel's
-    // active tab, so a reveal must activate the tab somewhere the user can
-    // see it without changing the fixed column count or moving panel focus.
-    it('restoreHiddenTab with focus: false activates in the sole fixed column', () => {
+    // showTab without focus adds a selectable background pane and never
+    // replaces the content the user is viewing.
+    it('restoreHiddenTab with focus: false signals in the sole fixed column', () => {
       const state = stateWithPanel('p1', [ownedTab, { id: 't2', type: 'note', title: 'A' }]);
       const hidden = panelLayoutReducer(state, closeTab(WS, 'owned', 'p1', 1000));
       const before = hidden.byWorkspaceId[WS];
@@ -3198,13 +3203,14 @@ describe('panelLayoutReducer', () => {
       expect(getItems(ws.hiddenTabs)).toHaveLength(0);
       expect(Object.keys(ws.panels)).toEqual(['p1']);
       expect(ws.panels.p1.tabs.map((t) => t.id)).toEqual(['t2', 'owned']);
-      expect(ws.panels.p1.activeTabId).toBe('owned');
+      expect(ws.panels.p1.activeTabId).toBe('t2');
+      expect(ws.panels.p1.attentionTabIds).toEqual(['owned']);
       expect(ws.focusedPanelId).toBe(before.focusedPanelId);
-      expect(ws.pendingPanelReveal).toMatchObject({ panelId: 'p1', tabId: 'owned' });
+      expect(ws.pendingPanelReveal).toBeNull();
       expect(ws.focusHistory).toBe(before.focusHistory);
     });
 
-    it('restoreHiddenTab with focus: false activates in another fixed column without moving focus', () => {
+    it('restoreHiddenTab with focus: false signals in another fixed column without moving focus', () => {
       const state = stateWithPanel('p1', [ownedTab, { id: 't2', type: 'note', title: 'A' }]);
       state.byWorkspaceId[WS].root = {
         type: 'split',
@@ -3228,9 +3234,10 @@ describe('panelLayoutReducer', () => {
       expect(ws.panels.p1.tabs.map((t) => t.id)).toEqual(['t2']);
       expect(ws.panels.p1.activeTabId).toBe(before.panels.p1.activeTabId);
       expect(ws.panels.p2.tabs.map((t) => t.id)).toEqual(['n2', 'owned']);
-      expect(ws.panels.p2.activeTabId).toBe('owned');
+      expect(ws.panels.p2.activeTabId).toBe('n2');
+      expect(ws.panels.p2.attentionTabIds).toEqual(['owned']);
       expect(ws.focusedPanelId).toBe(before.focusedPanelId);
-      expect(ws.pendingPanelReveal).toMatchObject({ panelId: 'p2', tabId: 'owned' });
+      expect(ws.pendingPanelReveal).toBeNull();
     });
 
     // Agent openTab is hidden by default (monorepo#3045): the tab is created

@@ -527,7 +527,7 @@ describe('panelLayoutSaga', () => {
     await cancelSaga(task);
   });
 
-  it('drops background reveal state after routing a rightmost-column request', async () => {
+  it('routes agent-driven content into the rightmost stack in the background', async () => {
     let state: any = storeState();
     state.panelLayout.byWorkspaceId[WS_1].columnCount = 2;
     const channel = stdChannel();
@@ -552,9 +552,17 @@ describe('panelLayoutSaga', () => {
     expect(dispatch.mock.calls.map(([action]) => action.type)).toEqual([
       'panelLayout/reconcilePanelColumnCount',
       'panelLayout/openTabInRightmostColumn',
-      'panelLayout/consumePanelReveal',
-      'panelLayout/consumePendingFocus',
     ]);
+    expect(dispatch.mock.calls[1]?.[0]).toMatchObject({ payload: { background: true } });
+    const workspace = state.panelLayout.byWorkspaceId[WS_1];
+    const rightmostPanel =
+      workspace.panels[
+        workspace.root.type === 'split'
+          ? workspace.root.children.at(-1).panelId
+          : workspace.root.panelId
+      ];
+    expect(rightmostPanel.activeTabId).toBeNull();
+    expect(rightmostPanel.attentionTabIds).toEqual(['browser-1']);
     await cancelSaga(task);
   });
 

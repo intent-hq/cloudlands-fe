@@ -124,7 +124,6 @@ import {
   updateTabFavicon,
   updateTabTitle,
 } from '../panel-layout-slice';
-import { dropRevealIfWorkspaceNotDisplayed } from './reveal-suppression';
 import {
   HISTORY_PERSIST_DEBOUNCE_MS,
   PANEL_LAYOUT_STORAGE_KEY_PREFIX,
@@ -283,10 +282,14 @@ function* routeTabToRightmostColumn(
   yield* put(
     reconcilePanelColumnCount(wsId, yield* selectPanelColumnCount.effect(wsId), timestamp),
   );
-  yield* put(openTabInRightmostColumn(wsId, tab, { force, allowDuplicate, newTabId }, timestamp));
-  if (agentDriven === true) {
-    yield* dropRevealIfWorkspaceNotDisplayed(wsId, newTabId);
-  }
+  yield* put(
+    openTabInRightmostColumn(
+      wsId,
+      tab,
+      { force, allowDuplicate, newTabId, background: agentDriven === true },
+      timestamp,
+    ),
+  );
 }
 
 export function* watchRightmostColumnRequests(): SagaGenerator<void> {
