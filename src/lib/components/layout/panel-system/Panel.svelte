@@ -288,6 +288,7 @@
 
   function getDropZone(e: DragEvent): DropZone {
     if (!panelRef) return 'center';
+    // Tabless panels only split along the horizontal stack.
     return getPaneColumnDropZone(
       e.clientX,
       panelRef.getBoundingClientRect(),

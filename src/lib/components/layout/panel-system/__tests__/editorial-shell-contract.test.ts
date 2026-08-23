@@ -111,7 +111,8 @@ describe('editorial workspace shell presentation contract', () => {
     const presets = source('../LayoutPresetDropdown.svelte');
 
     expect(panel).toContain('Tabless panels only split along the horizontal stack.');
-    expect(layout).toContain("handleSplitPanel(focusedId, 'horizontal')");
+    expect(layout).toContain("if (direction !== 'horizontal') return;");
+    expect(layout).toContain("position,\n      'horizontal',");
     expect(presets).not.toContain("id: 'split-vertical'");
   });
 
