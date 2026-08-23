@@ -132,7 +132,7 @@ for (const stackCount of stackCounts) {
     await expect(active).toContainText('note panel 1');
     await expect(position).toHaveText(`1/${stackCount}`);
     await expect(listTrigger).toBeVisible();
-    await expect(listTrigger).toContainText(`+${stackCount}`);
+    await expect(listTrigger).toHaveText(`${stackCount}`);
     await expect(stack.locator('[data-pane-stack-layer]')).toHaveCount(0);
 
     const boxes = await Promise.all(

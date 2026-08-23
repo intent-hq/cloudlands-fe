@@ -66,12 +66,16 @@ describe('pane stack control', () => {
   it('opens the complete stack list from the keyboard and selects a pane', async () => {
     const { container } = render(PaneStackControlHost);
     const trigger = screen.getByTestId('pane-stack-overflow-trigger');
-    expect(trigger.textContent?.trim()).toBe('+5');
+    expect(trigger.textContent?.trim()).toBe('5');
     expect(trigger.getAttribute('aria-label')).toBe(
-      'Show all panes. Stack size: 5. Hidden layers: 2.',
+      'Show all panes. Total panes in stack: 5. Hidden layers: 2.',
     );
 
     trigger.focus();
+    await fireEvent.focus(trigger);
+    expect((await screen.findByRole('tooltip', { hidden: true })).textContent).toContain(
+      'Show all panes. Total panes in stack: 5. Hidden layers: 2.',
+    );
     await fireEvent.keyDown(trigger, { key: 'Enter' });
     const menu = await screen.findByRole('menu', { name: 'Panes in this stack' });
     expect(menu.querySelectorAll('[data-pane-stack-item]')).toHaveLength(5);
