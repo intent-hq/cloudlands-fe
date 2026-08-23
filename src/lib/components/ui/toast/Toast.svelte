@@ -201,10 +201,22 @@
      through to the base [data-sonner-toast] rules above, which are
      theme-aware and legible in both light and dark themes. */
   :global([data-sonner-toast][data-type='warning']) {
-    border-color: hsl(var(--warning)) !important;
+    --toast-warning-accent: var(--warning);
+    border-color: hsl(var(--toast-warning-accent)) !important;
+  }
+
+  /* In light theme the raw --warning token (42 91% 54%) is only ~1.8:1
+     against the white card surface — below the 3:1 non-text minimum. Use a
+     darker shade of the same hue for the accent (42 91% 35% ≈ 3.8:1);
+     dark theme keeps the token (~12:1 against the dark card). Toast-local
+     on purpose: other --warning consumers are unaffected. */
+  :global(
+    [data-sonner-toaster][data-sonner-theme='light'] [data-sonner-toast][data-type='warning']
+  ) {
+    --toast-warning-accent: 42 91% 35%;
   }
 
   :global([data-sonner-toast][data-type='warning'] [data-icon]) {
-    color: hsl(var(--warning));
+    color: hsl(var(--toast-warning-accent));
   }
 </style>
