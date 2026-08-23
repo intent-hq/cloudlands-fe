@@ -4,6 +4,18 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.85.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.84.1...v2.85.0) (2026-08-23)
+
+
+### 🚀 Features
+
+* show workspace tasks when a provider emits no ACP plan ([#1611](https://github.com/intent-hq/cloudlands-fe/issues/1611)) ([778b32b](https://github.com/intent-hq/cloudlands-fe/commit/778b32b502ad46ffbc46906b75f5bd44e394b508))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.7.42 ([#1614](https://github.com/intent-hq/cloudlands-fe/issues/1614)) ([bf97a69](https://github.com/intent-hq/cloudlands-fe/commit/bf97a69b45df7092943666e047b11daf9910f147))
+
 ## [2.84.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.84.0...v2.84.1) (2026-08-23)
 
 
