@@ -53,7 +53,6 @@
   const titleId = $derived(`workspace-token-usage-title-${workspaceId}`);
   const processedId = $derived(`workspace-token-usage-processed-${workspaceId}`);
   const cacheId = $derived(`workspace-token-usage-cache-${workspaceId}`);
-  const breakdownId = $derived(`workspace-token-usage-breakdown-${workspaceId}`);
 
   function tokenCount(entry: TokenUsageTotals): number {
     return (
@@ -112,17 +111,25 @@
   );
 
   const totalCost = $derived(costLabel(totals.cost));
-  const hasSecondaryDetails = $derived(
-    agentRows.length > 0 || modelRows.length > 0 || totalCost !== null,
-  );
+  const modelTokenTotal = $derived(modelRows.reduce((sum, row) => sum + row.tokens, 0));
+  const agentTokenTotal = $derived(agentRows.reduce((sum, row) => sum + row.tokens, 0));
   const compositionRows = $derived.by(() =>
     [
+      {
+        id: 'cached',
+        label: m.workspace_tokenUsage_cached_label(),
+        description: m.workspace_tokenUsage_cached_description(),
+        tokens: cachedTokens,
+        colorClass: 'bg-success',
+        contextClass: 'text-success',
+      },
       {
         id: 'input',
         label: m.workspace_tokenUsage_in_label(),
         description: m.workspace_tokenUsage_in_description(),
         tokens: totals.inputTokens,
         colorClass: 'bg-cyan-500',
+        contextClass: 'text-cyan-600 dark:text-cyan-400',
       },
       {
         id: 'output',
@@ -130,13 +137,7 @@
         description: m.workspace_tokenUsage_out_description(),
         tokens: totals.outputTokens,
         colorClass: 'bg-sky-300',
-      },
-      {
-        id: 'cached',
-        label: m.workspace_tokenUsage_cached_label(),
-        description: m.workspace_tokenUsage_cached_description(),
-        tokens: cachedTokens,
-        colorClass: 'bg-success',
+        contextClass: 'text-sky-600 dark:text-sky-300',
       },
       {
         id: 'reasoning',
@@ -144,6 +145,7 @@
         description: m.workspace_tokenUsage_thinking_description(),
         tokens: thoughtTokens,
         colorClass: 'bg-violet-500',
+        contextClass: 'text-violet-600 dark:text-violet-400',
       },
     ].map((row) => ({ ...row, share: share(row.tokens, processedTokens) })),
   );
@@ -153,7 +155,7 @@
   <div class="token-usage-shell w-full min-w-0 text-xs" data-testid="workspace-token-usage">
     <button
       type="button"
-      class="summary-control group grid h-11 w-full max-w-[22rem] min-w-0 grid-cols-[minmax(2.75rem,7rem)_auto_1px_auto_auto_auto] items-center gap-x-2 overflow-hidden rounded-md border border-border/70 bg-card/35 px-3 text-left text-foreground shadow-sm outline-none transition-colors hover:bg-muted/15 focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none dark:bg-card/20 dark:hover:bg-muted/25"
+      class="summary-control group grid h-11 w-full max-w-[22rem] min-w-0 grid-cols-[minmax(2.75rem,7rem)_auto_1px_auto_auto_auto] items-center gap-x-2 overflow-hidden rounded-lg border border-border/80 bg-card/45 px-3 text-left text-foreground shadow-sm outline-none transition-colors hover:bg-muted/20 focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none dark:bg-card/25 dark:hover:bg-muted/30"
       data-testid="token-usage-disclosure"
       aria-label={expanded
         ? m.workspace_tokenUsage_collapse_ariaLabel()
@@ -219,30 +221,44 @@
     {#if expanded}
       <section
         id={detailsId}
-        class="mt-2 w-full max-w-[34rem] overflow-hidden rounded-md border border-border/60 bg-card/30 shadow-sm dark:bg-card/15"
+        class="mt-2 w-full max-w-[34rem] overflow-hidden rounded-lg border border-border/80 bg-card/45 shadow-sm dark:bg-card/20"
         aria-labelledby={titleId}
         data-testid="token-usage-details"
       >
-        <section
-          class="px-3 py-3"
-          aria-label={m.workspace_tokenUsage_composition_label()}
-          data-testid="token-usage-composition"
-        >
-          <h4 class="text-[9px] font-semibold uppercase tracking-[0.1em] text-muted-foreground">
-            {m.workspace_tokenUsage_composition_label()}
-          </h4>
-          <div class="mt-2 flex h-2 w-full overflow-hidden rounded-sm bg-muted" aria-hidden="true">
+        <section class="px-4 py-3.5" aria-labelledby={`${detailsId}-composition`}>
+          <div class="flex items-baseline justify-between gap-3">
+            <h4
+              id={`${detailsId}-composition`}
+              class="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground"
+            >
+              {m.workspace_tokenUsage_composition_label()}
+            </h4>
+            <span
+              class="shrink-0 text-[9px] font-medium uppercase tracking-[0.09em] text-muted-foreground"
+            >
+              <span class="tabular-nums">{formatCompactNumber(processedTokens)}</span>
+              {m.workspace_tokenUsage_processed_label()}
+            </span>
+          </div>
+          <div
+            class="mt-3 flex h-2.5 w-full overflow-hidden rounded-sm bg-muted"
+            aria-hidden="true"
+          >
             {#each compositionRows as row (row.id)}
               {#if row.tokens > 0}
                 <span class={row.colorClass} style:width={`${row.share * 100}%`}></span>
               {/if}
             {/each}
           </div>
-          <dl class="mt-2 divide-y divide-border/40 border-t border-border/40">
+          <dl class="mt-2 divide-y divide-border/60 border-y border-border/70">
             {#each compositionRows as row (row.id)}
-              <div class="composition-row min-w-0 py-1.5">
-                <dt class="composition-metric truncate text-[10px] font-medium text-foreground">
-                  {row.label}
+              <div class="composition-row min-w-0 py-2.5">
+                <dt
+                  class="composition-metric flex min-w-0 items-center gap-2 text-[11px] font-medium text-foreground"
+                >
+                  <span class="size-2.5 shrink-0 rounded-sm {row.colorClass}" aria-hidden="true"
+                  ></span>
+                  <span class="truncate">{row.label}</span>
                 </dt>
                 <dd class="composition-description truncate text-[9px] text-muted-foreground">
                   {row.description}
@@ -253,7 +269,7 @@
                   {formatCompactNumber(row.tokens)}
                 </dd>
                 <dd
-                  class="composition-context text-right text-[9px] tabular-nums text-muted-foreground"
+                  class="composition-context text-right text-[10px] tabular-nums {row.contextClass}"
                 >
                   {shareLabel(row.share)}
                 </dd>
@@ -262,102 +278,108 @@
           </dl>
         </section>
 
-        {#if hasSecondaryDetails}
-          <details class="breakdown-disclosure group border-t border-border/50">
-            <summary
-              class="flex cursor-pointer items-center justify-between gap-3 px-3 py-2 text-[9px] font-semibold uppercase tracking-[0.08em] text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
-              aria-controls={breakdownId}
-              data-testid="token-usage-breakdown-disclosure"
-            >
-              <span class="flex min-w-0 items-center gap-1.5">
-                {#if agentRows.length > 0}
-                  <span>{m.workspace_tokenUsage_byAgent_label()}</span>
-                {/if}
-                {#if agentRows.length > 0 && modelRows.length > 0}
-                  <span aria-hidden="true">/</span>
-                {/if}
-                {#if modelRows.length > 0}
-                  <span>{m.workspace_tokenUsage_byModel_label()}</span>
-                {/if}
-                {#if agentRows.length === 0 && modelRows.length === 0}
-                  <span>{m.workspace_tokenUsage_totalCost_label()}</span>
-                {/if}
-              </span>
-              <Fa
-                icon={faChevronDown}
-                size="xs"
-                class="shrink-0 transition-transform duration-[var(--motion-fast)] group-open:rotate-180 motion-reduce:transition-none"
-              />
-            </summary>
-
-            <div id={breakdownId} class="breakdown-grid grid grid-cols-1 gap-4 px-3 pb-3">
-              {#if agentRows.length > 0}
-                <section
-                  class="min-w-0"
-                  aria-labelledby={`${detailsId}-agents`}
-                  data-testid="token-usage-by-agent"
+        {#if agentRows.length > 0 || modelRows.length > 0}
+          <div class="breakdown-grid grid grid-cols-1 border-t border-border/80">
+            {#if agentRows.length > 0}
+              <section
+                class="breakdown-section min-w-0 px-3 py-3"
+                aria-labelledby={`${detailsId}-agents`}
+                data-testid="token-usage-by-agent"
+              >
+                <h4
+                  id={`${detailsId}-agents`}
+                  class="mb-2.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground"
                 >
-                  <h4
-                    id={`${detailsId}-agents`}
-                    class="mb-1.5 text-[9px] font-semibold uppercase tracking-[0.08em] text-muted-foreground"
-                  >
-                    {m.workspace_tokenUsage_byAgent_label()}
-                  </h4>
-                  <ol class="max-h-24 space-y-1 overflow-y-auto">
-                    {#each agentRows as row (row.id)}
-                      <li class="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] gap-3 text-[10px]">
-                        <span class="truncate text-muted-foreground" title={row.title}
+                  {m.workspace_tokenUsage_byAgent_label()}
+                </h4>
+                <ol class="max-h-32 space-y-2 overflow-y-auto">
+                  {#each agentRows as row (row.id)}
+                    <li class="min-w-0">
+                      <span
+                        class="block h-1.5 overflow-hidden rounded-sm bg-muted"
+                        aria-hidden="true"
+                      >
+                        <span
+                          class="block h-full bg-success/80"
+                          style:width={`${share(row.tokens, agentTokenTotal) * 100}%`}
+                        ></span>
+                      </span>
+                      <span
+                        class="mt-1.5 grid min-w-0 grid-cols-[minmax(0,1fr)_2.75rem_2.25rem] items-center gap-x-1"
+                      >
+                        <span class="truncate text-[10px] text-foreground" title={row.title}
                           >{row.label}</span
                         >
-                        <span class="font-medium tabular-nums text-foreground">
+                        <span
+                          class="text-right text-[10px] font-medium tabular-nums text-foreground"
+                        >
                           {formatCompactNumber(row.tokens)}
                         </span>
-                      </li>
-                    {/each}
-                  </ol>
-                </section>
-              {/if}
+                        <span class="text-right text-[10px] tabular-nums text-success">
+                          {shareLabel(share(row.tokens, agentTokenTotal))}
+                        </span>
+                      </span>
+                    </li>
+                  {/each}
+                </ol>
+              </section>
+            {/if}
 
-              {#if modelRows.length > 0}
-                <section
-                  class="min-w-0"
-                  aria-labelledby={`${detailsId}-models`}
-                  data-testid="token-usage-by-model"
+            {#if modelRows.length > 0}
+              <section
+                class="breakdown-section min-w-0 px-3 py-3"
+                aria-labelledby={`${detailsId}-models`}
+                data-testid="token-usage-by-model"
+              >
+                <h4
+                  id={`${detailsId}-models`}
+                  class="mb-2.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground"
                 >
-                  <h4
-                    id={`${detailsId}-models`}
-                    class="mb-1.5 text-[9px] font-semibold uppercase tracking-[0.08em] text-muted-foreground"
-                  >
-                    {m.workspace_tokenUsage_byModel_label()}
-                  </h4>
-                  <ol class="max-h-24 space-y-1 overflow-y-auto">
-                    {#each modelRows as row (row.id)}
-                      <li class="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] gap-3 text-[10px]">
-                        <span class="truncate text-muted-foreground" title={row.title}
+                  {m.workspace_tokenUsage_byModel_label()}
+                </h4>
+                <ol class="max-h-32 space-y-2 overflow-y-auto">
+                  {#each modelRows as row (row.id)}
+                    <li class="min-w-0">
+                      <span
+                        class="block h-1.5 overflow-hidden rounded-sm bg-muted"
+                        aria-hidden="true"
+                      >
+                        <span
+                          class="block h-full bg-success/80"
+                          style:width={`${share(row.tokens, modelTokenTotal) * 100}%`}
+                        ></span>
+                      </span>
+                      <span
+                        class="mt-1.5 grid min-w-0 grid-cols-[minmax(0,1fr)_2.75rem_2.25rem] items-center gap-x-1"
+                      >
+                        <span class="truncate text-[10px] text-foreground" title={row.title}
                           >{row.label}</span
                         >
-                        <span class="font-medium tabular-nums text-foreground">
+                        <span
+                          class="text-right text-[10px] font-medium tabular-nums text-foreground"
+                        >
                           {formatCompactNumber(row.tokens)}
                         </span>
-                      </li>
-                    {/each}
-                  </ol>
-                </section>
-              {/if}
+                        <span class="text-right text-[10px] tabular-nums text-success">
+                          {shareLabel(share(row.tokens, modelTokenTotal))}
+                        </span>
+                      </span>
+                    </li>
+                  {/each}
+                </ol>
+              </section>
+            {/if}
+          </div>
+        {/if}
 
-              {#if totalCost !== null}
-                <div
-                  class="col-span-full flex justify-between gap-3 text-[10px]"
-                  data-testid="token-usage-total-cost"
-                >
-                  <span class="text-muted-foreground"
-                    >{m.workspace_tokenUsage_totalCost_label()}</span
-                  >
-                  <span class="font-medium tabular-nums text-foreground">{totalCost}</span>
-                </div>
-              {/if}
-            </div>
-          </details>
+        {#if totalCost !== null}
+          <div
+            class="flex justify-between gap-3 border-t border-border/80 px-4 py-2.5 text-[10px]"
+            data-testid="token-usage-total-cost"
+          >
+            <span class="text-muted-foreground">{m.workspace_tokenUsage_totalCost_label()}</span>
+            <span class="font-medium tabular-nums text-foreground">{totalCost}</span>
+          </div>
         {/if}
       </section>
     {/if}
@@ -369,29 +391,41 @@
     container-type: inline-size;
   }
 
-  .breakdown-disclosure > summary {
-    list-style: none;
-  }
-
-  .breakdown-disclosure > summary::-webkit-details-marker {
-    display: none;
-  }
-
   .composition-row {
     display: grid;
-    grid-template-columns: minmax(4.5rem, 0.7fr) minmax(7rem, 1.3fr) 4.5rem 3.5rem;
+    grid-template-areas: 'metric description value context';
+    grid-template-columns: minmax(4.25rem, 0.85fr) minmax(3.5rem, 1fr) 3rem 2.5rem;
     align-items: center;
-    column-gap: 0.5rem;
+    column-gap: 0.375rem;
   }
 
-  @container (max-width: 419px) {
-    .composition-row {
-      grid-template-columns: minmax(0, 1fr) auto;
-    }
+  .composition-metric {
+    grid-area: metric;
+  }
 
-    .composition-description,
-    .composition-context {
-      display: none;
+  .composition-description {
+    grid-area: description;
+  }
+
+  .composition-value {
+    grid-area: value;
+  }
+
+  .composition-context {
+    grid-area: context;
+  }
+
+  .breakdown-section + .breakdown-section {
+    border-top: 1px solid hsl(var(--border));
+  }
+
+  @container (max-width: 279px) {
+    .composition-row {
+      grid-template-areas:
+        'metric value context'
+        'description description description';
+      grid-template-columns: minmax(0, 1fr) 3.25rem 2.75rem;
+      row-gap: 0.125rem;
     }
   }
 
@@ -405,11 +439,20 @@
     .summary-token-label {
       display: none;
     }
+
+    .breakdown-section {
+      padding-inline: 0.5rem;
+    }
   }
 
-  @container (min-width: 420px) {
+  @container (min-width: 280px) {
     .breakdown-grid {
       grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .breakdown-section + .breakdown-section {
+      border-top: 0;
+      border-left: 1px solid hsl(var(--border));
     }
   }
 </style>
