@@ -617,6 +617,26 @@
       ['text', 'tool_use', 'thinking', 'image', 'video'].includes(contentBlock.type),
     );
   }
+
+  /**
+   * Index of the last group child that actually renders. tool_result children
+   * are skipped by the group render loop, and text children that are empty
+   * after stripping suggested prompts render nothing — a hidden trailing
+   * child must not steal the "last block" streaming flag from the final
+   * visible one.
+   */
+  function lastRenderableChildIndex(children: ContentBlock[]): number {
+    for (let i = children.length - 1; i >= 0; i--) {
+      const child = children[i];
+      if (child.type === 'tool_result') continue;
+      if (child.type === 'text') {
+        const text = child.text || (child as any).content || '';
+        if (!parseSuggestedPrompts(text).cleanedContent.trim()) continue;
+      }
+      return i;
+    }
+    return -1;
+  }
 </script>
 
 {#snippet renderParsedContentBlock(
@@ -772,7 +792,11 @@
       {/if}
       {#if parsedResult.blocks.length > 0}
         {#each parsedResult.blocks as renderBlock, parsedBlockIndex (`${parsedKey}-parsed-${parsedBlockIndex}`)}
-          {@render renderParsedContentBlock(renderBlock as ParsedContent, isLastBlock, !nested)}
+          {@render renderParsedContentBlock(
+            renderBlock as ParsedContent,
+            isLastBlock && parsedBlockIndex === parsedResult.blocks.length - 1,
+            !nested,
+          )}
         {/each}
       {:else}
         <!-- Only render fallback if text has content after stripping suggested prompts -->
@@ -891,6 +915,7 @@
         >
           {#snippet children()}
             {@const childKeys = getResponseGroupBlockKeys(group.children)}
+            {@const lastRenderableIndex = lastRenderableChildIndex(group.children)}
             {#each group.children as childBlock, childIndex (childKeys[childIndex])}
               {#if childBlock.type !== 'tool_result'}
                 <div
@@ -911,7 +936,7 @@
                     childBlock,
                     `${blockIndex}-${childIndex}`,
                     blockIndex === groupedBlocks.length - 1 &&
-                      childIndex === group.children.length - 1,
+                      childIndex === lastRenderableIndex,
                     true,
                     isAdjacentOperationalClusterRow(
                       group.children,
