@@ -424,16 +424,46 @@ export const SHORTCUTS = {
       return m.ui_shortcuts_growPanel_label();
     },
   },
-  SPLIT_PANEL_HORIZONTAL: {
+  PREVIOUS_PANE: {
+    key: 'mod+pageup',
+    get label() {
+      return m.ui_shortcuts_prevTab_label();
+    },
+  },
+  NEXT_PANE: {
+    key: 'mod+pagedown',
+    get label() {
+      return m.ui_shortcuts_nextTab_label();
+    },
+  },
+  FOCUS_PREVIOUS_COLUMN: {
+    key: 'mod+shift+pageup',
+    get label() {
+      return m.ui_shortcuts_prevPanel_label();
+    },
+  },
+  FOCUS_NEXT_COLUMN: {
+    key: 'mod+shift+pagedown',
+    get label() {
+      return m.ui_shortcuts_nextPanel_label();
+    },
+  },
+  MOVE_PANE_PREVIOUS_COLUMN: {
+    key: 'mod+alt+pageup',
+    get label() {
+      return m.ui_shortcuts_movePanePreviousColumn_label();
+    },
+  },
+  MOVE_PANE_NEXT_COLUMN: {
+    key: 'mod+alt+pagedown',
+    get label() {
+      return m.ui_shortcuts_movePaneNextColumn_label();
+    },
+  },
+  CREATE_COLUMN_RIGHT: {
     key: 'mod+\\',
     get label() {
       return m.ui_shortcuts_splitPanelHorizontal_label();
-    },
-  },
-  SPLIT_PANEL_VERTICAL: {
-    key: 'mod+shift+\\',
-    get label() {
-      return m.ui_shortcuts_splitPanelVertical_label();
     },
   },
   COPY_BROWSER_URL: {
@@ -594,20 +624,6 @@ export const SHORTCUT_CATEGORIES: Record<
       return m.ui_shortcuts_navigationCategory_title();
     },
     shortcuts: [
-      {
-        key: 'mod+[',
-        get label() {
-          return m.ui_shortcuts_goBack_label();
-        },
-        contexts: ['global'],
-      },
-      {
-        key: 'mod+]',
-        get label() {
-          return m.ui_shortcuts_goForward_label();
-        },
-        contexts: ['global'],
-      },
       {
         key: 'mod+1-9',
         get label() {
@@ -770,16 +786,16 @@ export const SHORTCUT_CATEGORIES: Record<
         contexts: ['panel'],
       },
       {
-        key: 'mod+\\',
+        key: SHORTCUTS.CREATE_COLUMN_RIGHT.key,
         get label() {
-          return m.ui_shortcuts_splitHorizontally_label();
+          return SHORTCUTS.CREATE_COLUMN_RIGHT.label;
         },
         contexts: ['global'],
       },
       {
-        key: 'mod+shift+\\',
+        key: SHORTCUTS.FOCUS_NEXT_COLUMN.key,
         get label() {
-          return m.ui_shortcuts_splitVertically_label();
+          return SHORTCUTS.FOCUS_NEXT_COLUMN.label;
         },
         contexts: ['global'],
       },
@@ -791,30 +807,37 @@ export const SHORTCUT_CATEGORIES: Record<
         contexts: ['global'],
       },
       {
-        key: 'mod+shift+pagedown',
+        key: SHORTCUTS.FOCUS_PREVIOUS_COLUMN.key,
         get label() {
-          return m.ui_shortcuts_nextPanel_label();
+          return SHORTCUTS.FOCUS_PREVIOUS_COLUMN.label;
         },
         contexts: ['global'],
       },
       {
-        key: 'mod+shift+pageup',
+        key: SHORTCUTS.NEXT_PANE.key,
         get label() {
-          return m.ui_shortcuts_prevPanel_label();
+          return SHORTCUTS.NEXT_PANE.label;
         },
         contexts: ['global'],
       },
       {
-        key: 'mod+pagedown',
+        key: SHORTCUTS.PREVIOUS_PANE.key,
         get label() {
-          return m.ui_shortcuts_nextTab_label();
+          return SHORTCUTS.PREVIOUS_PANE.label;
         },
         contexts: ['global'],
       },
       {
-        key: 'mod+pageup',
+        key: SHORTCUTS.MOVE_PANE_NEXT_COLUMN.key,
         get label() {
-          return m.ui_shortcuts_prevTab_label();
+          return SHORTCUTS.MOVE_PANE_NEXT_COLUMN.label;
+        },
+        contexts: ['global'],
+      },
+      {
+        key: SHORTCUTS.MOVE_PANE_PREVIOUS_COLUMN.key,
+        get label() {
+          return SHORTCUTS.MOVE_PANE_PREVIOUS_COLUMN.label;
         },
         contexts: ['global'],
       },

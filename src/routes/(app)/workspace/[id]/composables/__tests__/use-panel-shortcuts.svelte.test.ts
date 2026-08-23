@@ -39,4 +39,11 @@ describe('usePanelShortcuts shortcut boundaries', () => {
 
     expect(event.defaultPrevented).toBe(false);
   });
+
+  it.each(['[', ']'])('leaves Cmd+%s available to browser history', (key) => {
+    const event = new KeyboardEvent('keydown', { key, metaKey: true, cancelable: true });
+    window.dispatchEvent(event);
+
+    expect(event.defaultPrevented).toBe(false);
+  });
 });

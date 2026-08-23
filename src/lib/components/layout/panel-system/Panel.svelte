@@ -62,6 +62,8 @@
     onTabDrop?: (tabId: string, fromPanelId: string, zone: DropZone) => void;
     /** Handler for moving a tab to this panel's tab bar */
     onTabMoveToPanel?: (tabId: string, fromPanelId: string, insertIndex?: number) => void;
+    onMovePaneLeft?: () => void;
+    onMovePaneRight?: () => void;
     onMoveLeft?: () => void;
     onMoveRight?: () => void;
     /** Handler for renaming a tab (note, agent, or file) */
@@ -99,6 +101,8 @@
     isZoomed = false,
     onTabDrop,
     onTabMoveToPanel,
+    onMovePaneLeft,
+    onMovePaneRight,
     onMoveLeft,
     onMoveRight,
     onTabRename,
@@ -409,6 +413,8 @@
         {onTabClose}
         {onTabReorder}
         {onTabMoveToPanel}
+        {onMovePaneLeft}
+        {onMovePaneRight}
         {onMoveLeft}
         {onMoveRight}
         {onCloseOtherTabs}

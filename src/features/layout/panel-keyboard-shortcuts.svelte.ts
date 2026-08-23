@@ -2,9 +2,10 @@
  * Panel Keyboard Shortcuts Manager
  *
  * Direct shortcuts (no leader key required):
- * - Cmd+[ / Ctrl+[: Go back in panel history (undo layout change)
- * - Cmd+] / Ctrl+]: Go forward in panel history (redo layout change)
- * - Cmd+0 / Ctrl+0: Reset zoom (unzoom panel)
+ * - Mod+PageUp/PageDown: Select the previous/next pane in the active stack
+ * - Mod+Shift+PageUp/PageDown: Focus the previous/next column
+ * - Mod+Alt+PageUp/PageDown: Move the active pane to the previous/next column
+ * - Mod+\: Create a column to the right
  *
  * Implements tmux/vim-style leader key system for panel navigation and management.
  * Leader key: Cmd+; (Mac) / Ctrl+; (Windows/Linux)
@@ -21,12 +22,11 @@
  */
 
 import { createLogger } from '$lib/utils/client-logger';
+import { isFocusInEditableElement, isFocusInTerminal } from '$lib/utils/keyboardShortcuts';
 
 import {
   selectFocusedPanelId,
   selectFocusedPanel,
-  selectCanGoBack,
-  selectCanGoForward,
   selectPanelLayoutWorkspace,
   selectPanelIds,
 } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
@@ -69,11 +69,20 @@ interface KeyboardShortcutsState {
   showPanelNumbers: boolean;
 }
 
+interface PanelKeyboardShortcutOptions {
+  isMac?: boolean;
+  onFocusAdjacentColumn?: (direction: PanelCycleDirection) => boolean;
+}
+
 export function createPanelKeyboardShortcuts(
   getLayoutManager: () => PanelLayoutManager,
   onCyclePanel?: (direction: PanelCycleDirection) => void,
   getAvailableCanvasWidth: () => number | null = () => null,
+  options: PanelKeyboardShortcutOptions = {},
 ) {
+  const isMac =
+    options.isMac ??
+    (typeof navigator !== 'undefined' && navigator.platform.toUpperCase().includes('MAC'));
   const state = $state<KeyboardShortcutsState>({
     leaderActive: false,
     leaderTimeout: null,
@@ -143,7 +152,8 @@ export function createPanelKeyboardShortcuts(
 
       case 'split-right': {
         const focusedId = selectFocusedPanelId.select(appStore.state, layoutManager.workspaceId);
-        if (focusedId) {
+        const panelIds = selectPanelIds.select(appStore.state, layoutManager.workspaceId);
+        if (focusedId && panelIds.length < 4) {
           layoutManager.splitPanel(focusedId, 'horizontal');
         }
         break;
@@ -298,39 +308,88 @@ export function createPanelKeyboardShortcuts(
     }
   }
 
+  function selectAdjacentPane(
+    layoutManager: PanelLayoutManager,
+    direction: PanelCycleDirection,
+  ): boolean {
+    const panel = selectFocusedPanel.select(appStore.state, layoutManager.workspaceId);
+    if (!panel || panel.tabs.length < 2) return false;
+    if (direction === 'next') layoutManager.selectNextTab(panel.id);
+    else layoutManager.selectPreviousTab(panel.id);
+    return true;
+  }
+
+  function focusAdjacentColumn(
+    layoutManager: PanelLayoutManager,
+    direction: PanelCycleDirection,
+  ): boolean {
+    if (options.onFocusAdjacentColumn) return options.onFocusAdjacentColumn(direction);
+    const panelIds = selectPanelIds.select(appStore.state, layoutManager.workspaceId);
+    const focusedPanelId = selectFocusedPanelId.select(appStore.state, layoutManager.workspaceId);
+    const currentIndex = focusedPanelId ? panelIds.indexOf(focusedPanelId) : -1;
+    const targetIndex = currentIndex + (direction === 'next' ? 1 : -1);
+    const targetPanelId = panelIds[targetIndex];
+    if (!targetPanelId) return false;
+    layoutManager.focusPanel(targetPanelId);
+    return true;
+  }
+
+  function moveActivePane(
+    layoutManager: PanelLayoutManager,
+    direction: PanelCycleDirection,
+  ): boolean {
+    const panelIds = selectPanelIds.select(appStore.state, layoutManager.workspaceId);
+    const panel = selectFocusedPanel.select(appStore.state, layoutManager.workspaceId);
+    if (!panel?.activeTabId) return false;
+    const currentIndex = panelIds.indexOf(panel.id);
+    const targetIndex = currentIndex + (direction === 'next' ? 1 : -1);
+    const targetPanelId = panelIds[targetIndex];
+    if (!targetPanelId) return false;
+    layoutManager.moveTabToPanel(panel.activeTabId, panel.id, targetPanelId);
+    return true;
+  }
+
+  function createColumnToRight(layoutManager: PanelLayoutManager): boolean {
+    const panelIds = selectPanelIds.select(appStore.state, layoutManager.workspaceId);
+    const focusedPanelId = selectFocusedPanelId.select(appStore.state, layoutManager.workspaceId);
+    if (!focusedPanelId || panelIds.length >= 4) return false;
+    layoutManager.splitPanel(focusedPanelId, 'horizontal');
+    return true;
+  }
+
   /**
    * Handle a keydown event. Returns true if the event was handled.
    */
-  const isMac =
-    typeof navigator !== 'undefined' && navigator.platform.toUpperCase().includes('MAC');
-
   function handleKeyDown(e: KeyboardEvent): boolean {
+    const target = e.target instanceof Element ? e.target : null;
+    if (isFocusInTerminal(target as HTMLElement | null) || isFocusInEditableElement(target)) {
+      return false;
+    }
+
     // On Mac, "Mod" is Cmd (metaKey) only — Ctrl is reserved for Emacs bindings and other uses.
     // On Win/Linux, "Mod" is Ctrl.
-    const isMod = isMac ? e.metaKey : e.ctrlKey;
+    const isMod = isMac ? e.metaKey && !e.ctrlKey : e.ctrlKey && !e.metaKey;
     const layoutManager = getLayoutManager();
 
-    // Back navigation: Cmd+[ / Ctrl+[
-    if (isMod && e.key === '[' && !e.shiftKey && !e.altKey) {
-      const storeState = appStore.state;
-      if (selectCanGoBack.select(storeState, layoutManager.workspaceId)) {
-        e.preventDefault();
-        layoutManager.goBack();
-        return true;
-      }
+    if (isMod && (e.key === 'PageUp' || e.key === 'PageDown')) {
+      const direction = e.key === 'PageDown' ? 'next' : 'prev';
+      const handled =
+        e.altKey && !e.shiftKey
+          ? moveActivePane(layoutManager, direction)
+          : e.shiftKey && !e.altKey
+            ? focusAdjacentColumn(layoutManager, direction)
+            : !e.shiftKey && !e.altKey
+              ? selectAdjacentPane(layoutManager, direction)
+              : false;
+      if (handled) e.preventDefault();
+      return handled;
     }
 
-    // Forward navigation: Cmd+] / Ctrl+]
-    if (isMod && e.key === ']' && !e.shiftKey && !e.altKey) {
-      const storeState = appStore.state;
-      if (selectCanGoForward.select(storeState, layoutManager.workspaceId)) {
-        e.preventDefault();
-        layoutManager.goForward();
-        return true;
-      }
+    if (isMod && e.key === '\\' && !e.shiftKey && !e.altKey) {
+      const handled = createColumnToRight(layoutManager);
+      if (handled) e.preventDefault();
+      return handled;
     }
-
-    // Cmd+0: Let browser handle native zoom reset (don't intercept)
 
     // Leader key activation: Cmd+; / Ctrl+; (tmux-style, avoids conflict with Cmd+K command palette)
     if (isMod && e.key === ';' && !e.shiftKey && !e.altKey) {

@@ -35,6 +35,19 @@ describe('sendWorkspaceCommand', () => {
     expect(mainSource).toContain('label: m.menu_close_window()');
   });
 
+  it('shows pane shortcuts without registering native editor or terminal accelerators', () => {
+    const mainSource = readFileSync(resolve(process.cwd(), 'src/main/index.ts'), 'utf8');
+
+    expect(mainSource).toMatch(
+      /label: m\.menu_select_previous_tab\(\),[\s\S]*?accelerator: 'CmdOrCtrl\+PageUp',[\s\S]*?registerAccelerator: false/,
+    );
+    expect(mainSource).toMatch(
+      /label: m\.menu_select_next_tab\(\),[\s\S]*?accelerator: 'CmdOrCtrl\+PageDown',[\s\S]*?registerAccelerator: false/,
+    );
+    expect(mainSource).not.toContain("accelerator: 'CmdOrCtrl+Shift+['");
+    expect(mainSource).not.toContain("accelerator: 'CmdOrCtrl+Shift+]'");
+  });
+
   it('emits every workspace menu channel with the exact workspace payload', () => {
     const { window, send } = createWindow();
 

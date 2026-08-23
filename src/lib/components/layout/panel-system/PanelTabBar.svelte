@@ -92,6 +92,7 @@
   import { toNativePath } from '$lib/utils/path-utils';
   import { writeTextToClipboard } from '$lib/utils/clipboard';
   import { createLogger } from '$lib/utils/client-logger';
+  import { SHORTCUTS, formatShortcut } from '$lib/utils/shortcuts';
   import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-session-selectors';
   import { m } from '$shared/paraglide/messages.js';
   import { store as appStore } from '$store/renderer/store';
@@ -113,6 +114,10 @@
       : m.layout_panelTabBar_fileManagerGeneric_label();
   const logger = createLogger('PanelTabBar');
   const copyBrowserUrlShortcutHint = isMac ? '⇧⌘C' : 'Ctrl+Shift+C';
+  const closePaneShortcutHint = formatShortcut(SHORTCUTS.CLOSE_TAB.key);
+  const createColumnRightShortcutHint = formatShortcut(SHORTCUTS.CREATE_COLUMN_RIGHT.key);
+  const movePaneLeftShortcutHint = formatShortcut(SHORTCUTS.MOVE_PANE_PREVIOUS_COLUMN.key);
+  const movePaneRightShortcutHint = formatShortcut(SHORTCUTS.MOVE_PANE_NEXT_COLUMN.key);
   const CONTEXT_MENU_MARGIN = 8;
   const CONTEXT_MENU_OFFSET = 4;
   const CONTEXT_MENU_FALLBACK_WIDTH = 224;
@@ -153,6 +158,8 @@
     onTabReorder?: (fromIndex: number, toIndex: number) => void;
     /** Handler for moving a tab from another panel to this panel's tab bar */
     onTabMoveToPanel?: (tabId: string, fromPanelId: string, insertIndex?: number) => void;
+    onMovePaneLeft?: () => void;
+    onMovePaneRight?: () => void;
     onMoveLeft?: () => void;
     onMoveRight?: () => void;
     onCloseOtherTabs?: (tabId: string) => void;
@@ -192,6 +199,8 @@
     onTabClose,
     onTabReorder,
     onTabMoveToPanel,
+    onMovePaneLeft,
+    onMovePaneRight,
     onMoveLeft,
     onMoveRight,
     onCloseOtherTabs,
@@ -362,6 +371,10 @@
 
   function handleTabClick(tabId: string) {
     onTabClick?.(tabId);
+  }
+
+  function isAgentOwnedBrowserPane(tab: PanelTab): boolean {
+    return tab.type === 'browser' && Boolean(tab.ownerAgentId);
   }
 
   const attentionPaneIds = $derived(new Set(attentionTabIds));
@@ -1268,9 +1281,29 @@
       <div data-panel-actions-section="actions">
         {@render contentActions?.actions?.()}
         <Menu.CommandItem
+          icon={faArrowLeft}
+          label={m.layout_panelTabBar_movePaneLeft_label()}
+          shortcut={movePaneLeftShortcutHint}
+          disabled={!onMovePaneLeft}
+          onclick={() => {
+            onMovePaneLeft?.();
+            close();
+          }}
+        />
+        <Menu.CommandItem
+          icon={faArrowRight}
+          label={m.layout_panelTabBar_movePaneRight_label()}
+          shortcut={movePaneRightShortcutHint}
+          disabled={!onMovePaneRight}
+          onclick={() => {
+            onMovePaneRight?.();
+            close();
+          }}
+        />
+        <Menu.CommandItem
           icon={faTableColumns}
           label={m.layout_panelTabBar_splitRight_label()}
-          shortcut="⌘\"
+          shortcut={createColumnRightShortcutHint}
           disabled={!onSplitHorizontal}
           onclick={() => {
             onSplitHorizontal?.();
@@ -1394,7 +1427,14 @@
         ? m.layout_panelTabBar_hideOwnedTab_ariaLabel()
         : m.layout_panelTabBar_closePane_ariaLabel()
       : m.layout_panelTabBar_closePanel_label()}
-    <Tooltip content={closeLabel} side="bottom" delayDuration={300}>
+    {@const closeTooltip =
+      tab && !isOwnedBrowser
+        ? m.layout_panelTabBar_actionWithShortcut_tooltip({
+            label: closeLabel,
+            shortcut: closePaneShortcutHint,
+          })
+        : closeLabel}
+    <Tooltip content={closeTooltip} side="bottom" delayDuration={300}>
       <Button
         variant="ghost-light"
         size="icon-sm"
@@ -1705,10 +1745,10 @@
                       : 'opacity-0 group-hover:opacity-60 group-focus-within:opacity-60',
                   )}
                   onclick={(e) => handleTabClose(e, tab.id)}
-                  title={tab.type === 'browser' && tab.ownerAgentId
+                  title={isAgentOwnedBrowserPane(tab)
                     ? m.layout_panelTabBar_hideOwnedTab_tooltip()
                     : undefined}
-                  aria-label={tab.type === 'browser' && tab.ownerAgentId
+                  aria-label={isAgentOwnedBrowserPane(tab)
                     ? m.layout_panelTabBar_hideOwnedTab_ariaLabel()
                     : m.layout_panelTabBar_closeTab_ariaLabel()}
                 >
@@ -1737,6 +1777,7 @@
           class="shrink-0 flex items-center self-stretch pl-1 pr-1 transition-opacity sticky right-0 bg-card"
         >
           <DropdownMenu align="start" side="bottom">
+            <!-- i18n-ignore (Svelte snippet signature, not user-facing text) -->
             {#snippet trigger({ props }: { props: Record<string, unknown> })}
               <Tooltip
                 content={m.layout_panelTabBar_new_tooltip()}
@@ -2251,6 +2292,35 @@
         {/if}
         <button
           class="w-full px-3 py-1.5 text-sm text-left hover:bg-sidebar cursor-pointer flex items-center justify-between disabled:cursor-not-allowed disabled:opacity-50"
+          disabled={!onMovePaneLeft}
+          onclick={() => {
+            onMovePaneLeft?.();
+            closeContextMenu();
+          }}
+        >
+          <span class="flex items-center gap-2">
+            <Fa icon={faArrowLeft} size="xs" class="text-ghost" />
+            {m.layout_panelTabBar_movePaneLeft_label()}
+          </span>
+          <span class="text-subtle text-xs">{movePaneLeftShortcutHint}</span>
+        </button>
+        <button
+          class="w-full px-3 py-1.5 text-sm text-left hover:bg-sidebar cursor-pointer flex items-center justify-between disabled:cursor-not-allowed disabled:opacity-50"
+          disabled={!onMovePaneRight}
+          onclick={() => {
+            onMovePaneRight?.();
+            closeContextMenu();
+          }}
+        >
+          <span class="flex items-center gap-2">
+            <Fa icon={faArrowRight} size="xs" class="text-ghost" />
+            {m.layout_panelTabBar_movePaneRight_label()}
+          </span>
+          <span class="text-subtle text-xs">{movePaneRightShortcutHint}</span>
+        </button>
+        <div class="border-t border-border"></div>
+        <button
+          class="w-full px-3 py-1.5 text-sm text-left hover:bg-sidebar cursor-pointer flex items-center justify-between disabled:cursor-not-allowed disabled:opacity-50"
           disabled={!onSplitHorizontal}
           onclick={() => {
             onSplitHorizontal?.();
@@ -2283,7 +2353,7 @@
             </svg>
             {m.layout_panelTabBar_splitRight_label()}
           </span>
-          <span class="text-subtle text-xs">⌘\</span>
+          <span class="text-subtle text-xs">{createColumnRightShortcutHint}</span>
         </button>
         <div class="border-t border-border"></div>
         {#if contextMenuTab.source === 'tab'}
@@ -2295,7 +2365,7 @@
             }}
           >
             {m.layout_panelTabBar_close_label()}
-            <span class="text-subtle text-xs">⌘W</span>
+            <span class="text-subtle text-xs">{closePaneShortcutHint}</span>
           </button>
           <button
             class="w-full px-3 py-1.5 text-sm text-left hover:bg-sidebar cursor-pointer flex items-center justify-between"

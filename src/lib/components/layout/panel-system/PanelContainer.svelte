@@ -92,6 +92,8 @@
       fromPanelId: string,
       insertIndex?: number,
     ) => void;
+    /** Handler for moving the active pane to an adjacent column. */
+    onMoveActivePane?: (panelId: string, direction: 'next' | 'prev') => void;
     /** Handler for reordering a whole panel relative to another panel */
     onPanelMove?: (
       draggedPanelId: string,
@@ -149,6 +151,7 @@
     onResizeRootDivider,
     onTabDropToSplit,
     onTabMoveToPanel,
+    onMoveActivePane,
     onPanelMove,
     onTabDropToSplitHandle,
     onTabRename,
@@ -634,6 +637,12 @@
           onTabDropToSplit?.(node.panelId, tabId, fromPanelId, zone)}
         onTabMoveToPanel={(tabId, fromPanelId, insertIndex?: number) =>
           onTabMoveToPanel?.(node.panelId, tabId, fromPanelId, insertIndex)}
+        onMovePaneLeft={onMoveActivePane && panelIndex > 0
+          ? () => onMoveActivePane(node.panelId, 'prev')
+          : undefined}
+        onMovePaneRight={onMoveActivePane && panelIndex >= 0 && panelIndex < panelOrder.length - 1
+          ? () => onMoveActivePane(node.panelId, 'next')
+          : undefined}
         onMoveLeft={panelIndex > 0
           ? () => onPanelMove?.(node.panelId, panelOrder[panelIndex - 1], 'before')
           : undefined}
@@ -714,6 +723,7 @@
             {onResizeRootDivider}
             {onTabDropToSplit}
             {onTabMoveToPanel}
+            {onMoveActivePane}
             {onPanelMove}
             {onTabDropToSplitHandle}
             {onTabRename}

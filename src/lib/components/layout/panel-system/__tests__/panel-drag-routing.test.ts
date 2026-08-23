@@ -2,6 +2,7 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { PanelState, PanelTab } from '$store/renderer/slices/panel-layout/panel-layout-types';
+import { SHORTCUTS, formatShortcut } from '$lib/utils/shortcuts';
 
 const mocks = vi.hoisted(() => ({
   dispatch: vi.fn(),
@@ -397,11 +398,13 @@ describe('panel context menu routing', () => {
     const display = document.querySelector<HTMLElement>('[data-panel-actions-section="display"]');
     const actions = document.querySelector<HTMLElement>('[data-panel-actions-section="actions"]');
     expect(display?.textContent).toContain('Zoom Panel');
-    expect(actions?.textContent).toContain('Split right');
+    expect(actions?.textContent).toContain('Create column to right');
     expect(actions?.textContent).not.toContain('Split down');
     expect(document.querySelector('[role="menu"]')?.textContent).not.toContain('Close panel');
     expect(
-      screen.getByRole('menuitem', { name: /Split right/i }).getAttribute('aria-disabled'),
+      screen
+        .getByRole('menuitem', { name: /Create column to right/i })
+        .getAttribute('aria-disabled'),
     ).toBe('false');
   });
 
@@ -430,8 +433,45 @@ describe('panel context menu routing', () => {
     );
 
     expect(
-      screen.getByRole('menuitem', { name: /Split right/i }).getAttribute('aria-disabled'),
+      screen
+        .getByRole('menuitem', { name: /Create column to right/i })
+        .getAttribute('aria-disabled'),
     ).toBe('true');
+  });
+
+  it('routes active-pane movement and disables the missing adjacent target', async () => {
+    const panelIds = ['panel-1', 'panel-2'];
+    const panels = Object.fromEntries(panelIds.map((id) => [id, panel(id, [tab(`${id}-pane`)])]));
+    const onMoveActivePane = vi.fn();
+    const { container } = render(PanelContainer, {
+      props: {
+        node: {
+          type: 'split',
+          direction: 'horizontal',
+          sizes: [50, 50],
+          children: panelIds.map((panelId) => ({ type: 'panel' as const, panelId })),
+        },
+        panels,
+        panelOrder: panelIds,
+        focusedPanelId: 'panel-1',
+        workspaceId: 'workspace-1',
+        layoutId: 'workspace-1',
+        onMoveActivePane,
+      },
+    });
+
+    await fireEvent.click(
+      container.querySelector<HTMLElement>('[data-testid="panel-actions-trigger"]')!,
+    );
+
+    expect(
+      screen.getByRole('menuitem', { name: 'Move active pane left' }).getAttribute('aria-disabled'),
+    ).toBe('true');
+    const moveRight = screen.getByRole('menuitem', { name: 'Move active pane right' });
+    expect(moveRight.getAttribute('aria-disabled')).toBe('false');
+    expect(moveRight.textContent).toContain(formatShortcut(SHORTCUTS.MOVE_PANE_NEXT_COLUMN.key));
+    await fireEvent.click(moveRight);
+    expect(onMoveActivePane).toHaveBeenCalledWith('panel-1', 'next');
   });
 
   it('uses a high-visibility kebab icon for panel actions', () => {
@@ -469,7 +509,7 @@ describe('panel context menu routing', () => {
     );
     expect(moveLeft?.disabled).toBe(true);
     expect(moveRight?.disabled).toBe(false);
-    expect(labels).not.toContain('Close ⌘W');
+    expect(labels).not.toContain(`Close ${formatShortcut(SHORTCUTS.CLOSE_TAB.key)}`);
     expect(labels).not.toContain('Close other tabs in panel');
     expect(labels).not.toContain('Close tabs to the right');
     await fireEvent.click(moveRight!);
@@ -506,7 +546,7 @@ describe('panel context menu routing', () => {
     const labels = Array.from(menu.querySelectorAll('button'), (button) =>
       button.textContent?.replace(/\s+/g, ' ').trim(),
     );
-    expect(labels).toContain('Close ⌘W');
+    expect(labels).toContain(`Close ${formatShortcut(SHORTCUTS.CLOSE_TAB.key)}`);
     expect(labels).toContain('Close other tabs in panel');
     expect(labels).toContain('Close tabs to the right');
   });

@@ -5,6 +5,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/sv
 import { createRawSnippet } from 'svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { PanelTab } from '$store/renderer/slices/panel-layout/panel-layout-types';
+import { SHORTCUTS, formatShortcut } from '$lib/utils/shortcuts';
 
 const mocks = vi.hoisted(() => {
   let columnCount = 2;
@@ -392,6 +393,8 @@ describe('mounted panel header actions menu', () => {
     const onSplitHorizontal = vi.fn();
     const onMoveLeft = vi.fn();
     const onMoveRight = vi.fn();
+    const onMovePaneLeft = vi.fn();
+    const onMovePaneRight = vi.fn();
     const onClosePanel = vi.fn();
     const onTabClose = vi.fn();
     const { container } = renderHeader('browser', {
@@ -399,6 +402,8 @@ describe('mounted panel header actions menu', () => {
       onSplitHorizontal,
       onMoveLeft,
       onMoveRight,
+      onMovePaneLeft,
+      onMovePaneRight,
       onClosePanel,
       onTabClose,
     });
@@ -418,7 +423,21 @@ describe('mounted panel header actions menu', () => {
     await waitFor(() => expect(screen.queryByRole('menu')).toBeNull());
 
     await fireEvent.click(trigger);
-    await fireEvent.click(await screen.findByRole('menuitem', { name: /Split right/i }));
+    const movePaneLeft = await screen.findByRole('menuitem', { name: 'Move active pane left' });
+    expect(movePaneLeft.textContent).toContain(
+      formatShortcut(SHORTCUTS.MOVE_PANE_PREVIOUS_COLUMN.key),
+    );
+    await fireEvent.click(movePaneLeft);
+    expect(onMovePaneLeft).toHaveBeenCalledOnce();
+
+    await fireEvent.click(trigger);
+    await fireEvent.click(await screen.findByRole('menuitem', { name: 'Move active pane right' }));
+    expect(onMovePaneRight).toHaveBeenCalledOnce();
+
+    await fireEvent.click(trigger);
+    const createColumn = await screen.findByRole('menuitem', { name: /Create column to right/i });
+    expect(createColumn.textContent).toContain(formatShortcut(SHORTCUTS.CREATE_COLUMN_RIGHT.key));
+    await fireEvent.click(createColumn);
     expect(onSplitHorizontal).toHaveBeenCalledOnce();
 
     await fireEvent.click(trigger);
@@ -432,6 +451,23 @@ describe('mounted panel header actions menu', () => {
     expect(onTabClose).toHaveBeenCalledOnce();
     expect(onTabClose).toHaveBeenCalledWith('browser-tab');
     expect(onClosePanel).not.toHaveBeenCalled();
+  });
+
+  it('shows disabled pane-move commands when no adjacent column exists', async () => {
+    const { container } = renderHeader('note');
+
+    await fireEvent.click(panelTrigger(container));
+
+    expect(
+      (await screen.findByRole('menuitem', { name: 'Move active pane left' })).getAttribute(
+        'aria-disabled',
+      ),
+    ).toBe('true');
+    expect(
+      screen
+        .getByRole('menuitem', { name: 'Move active pane right' })
+        .getAttribute('aria-disabled'),
+    ).toBe('true');
   });
 
   it('rejects a drag from the trigger but keeps blank-header dragging active', async () => {

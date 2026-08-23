@@ -519,7 +519,7 @@ describe('global workspace tab navigation', () => {
       expect(shortcut).toMatchObject({
         key: 'w',
         global: true,
-        description: 'Close Panel Tab',
+        description: 'Close Active Pane',
       });
       expect(Boolean(shortcut.meta)).toBe(meta);
       expect(Boolean(shortcut.ctrl)).toBe(ctrl);
@@ -891,7 +891,6 @@ describe('global workspace tab navigation', () => {
 
   it('does not collide with either panel split chord', () => {
     expect(SHORTCUTS.WORKSPACE_VIEW_MODE.key).toBe('mod+shift+l');
-    expect(SHORTCUTS.WORKSPACE_VIEW_MODE.key).not.toBe(SHORTCUTS.SPLIT_PANEL_HORIZONTAL.key);
-    expect(SHORTCUTS.WORKSPACE_VIEW_MODE.key).not.toBe(SHORTCUTS.SPLIT_PANEL_VERTICAL.key);
+    expect(SHORTCUTS.WORKSPACE_VIEW_MODE.key).not.toBe(SHORTCUTS.CREATE_COLUMN_RIGHT.key);
   });
 });

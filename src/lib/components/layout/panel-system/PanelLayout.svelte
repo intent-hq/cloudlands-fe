@@ -35,9 +35,7 @@
   import { terminalManager } from '$features/terminal/terminal-manager.svelte';
   import { terminalHistoryTracker } from '$features/terminal/terminal-history-tracker';
   import { appClient } from '$lib/client';
-  import { selectIsTerminalOverlayOpen } from '$store/renderer/slices/terminals/terminals-selectors';
-  import { derived, get, writable } from 'svelte/store';
-  import { isFocusInTerminal } from '$lib/utils/keyboardShortcuts';
+  import { derived, writable } from 'svelte/store';
   import { createLogger } from '$lib/utils/client-logger';
   import { hasCapability } from '$lib/utils/platform-capabilities';
   import { dispatchWindowEvent } from '$lib/utils/window-events';
@@ -77,7 +75,6 @@
     selectExpandedPanelId,
     selectPanels,
     selectFocusedPanelId,
-    selectFocusedPanel,
     selectActiveTab,
     selectAllTabs,
     selectPanelIds,
@@ -578,6 +575,7 @@
     () => layoutManager,
     (direction) => focusCycledPanel(direction),
     () => panelViewportWidth,
+    { onFocusAdjacentColumn: (direction) => focusAdjacentColumn(direction) },
   );
 
   // Register keyboard shortcuts in cache so they can be accessed from outside
@@ -847,6 +845,17 @@
     layoutManager.moveTabToPanel(tabId, fromPanelId, targetPanelId, insertIndex);
   }
 
+  function handleMoveActivePane(panelId: string, direction: PanelCycleDirection) {
+    const panelIds = selectPanelIds.select(appStore.state, workspaceId);
+    const panelIndex = panelIds.indexOf(panelId);
+    const targetIndex = panelIndex + (direction === 'next' ? 1 : -1);
+    const targetPanelId = panelIds[targetIndex];
+    const activeTabId = layoutManager.getPanel(panelId)?.activeTabId;
+    if (targetPanelId && activeTabId) {
+      layoutManager.moveTabToPanel(activeTabId, panelId, targetPanelId);
+    }
+  }
+
   function handleTabDropToSplitHandle(
     tabId: string,
     fromPanelId: string,
@@ -1068,7 +1077,16 @@
     return true;
   }
 
-  const terminalOverlayOpen = selectIsTerminalOverlayOpen(workspaceIdStore);
+  function focusAdjacentColumn(direction: PanelCycleDirection): boolean {
+    const panelIds = selectPanelIds.select(appStore.state, workspaceId);
+    const focusedPanelId = selectFocusedPanelId.select(appStore.state, workspaceId);
+    const targetPanelId = resolveLocalPanelCycleTarget(panelIds, focusedPanelId, direction);
+    if (!targetPanelId) return false;
+    appStore.dispatch(markPanelTouched(effectiveLayoutId, targetPanelId));
+    layoutManager.focusPanel(targetPanelId);
+    dispatchFocusPanelContent(targetPanelId);
+    return true;
+  }
 
   const isMac =
     typeof navigator !== 'undefined' && navigator.platform.toUpperCase().includes('MAC');
@@ -1088,26 +1106,6 @@
     // Note: Mod+/ for keyboard shortcuts cheat sheet is handled globally in +layout.svelte
     // Do NOT add a handler here or it will toggle twice (once per handler)
 
-    // Mod+\ - Split horizontally
-    if (isMod && e.key === '\\' && !e.shiftKey) {
-      e.preventDefault();
-      const focusedId = selectFocusedPanelId.select(appStore.state, workspaceId);
-      if (focusedId) {
-        handleSplitPanel(focusedId, 'horizontal');
-      }
-      return;
-    }
-
-    // Mod+Shift+\ also inserts into the horizontal stack.
-    if (isMod && e.key === '\\' && e.shiftKey) {
-      e.preventDefault();
-      const focusedId = selectFocusedPanelId.select(appStore.state, workspaceId);
-      if (focusedId) {
-        handleSplitPanel(focusedId, 'horizontal');
-      }
-      return;
-    }
-
     // Mod+Shift+M - Toggle zoom on focused panel
     if (isMod && e.shiftKey && (e.key === 'm' || e.key === 'M')) {
       e.preventDefault();
@@ -1121,57 +1119,6 @@
       e.preventDefault();
       e.stopPropagation();
       keyboardShortcuts.executeAction('zoom-toggle');
-      return;
-    }
-
-    // Cmd+PageDown - Next tab in focused panel
-    // Cmd+PageUp - Previous tab in focused panel
-    if (e.metaKey && !e.ctrlKey && (e.key === 'PageDown' || e.key === 'PageUp')) {
-      const panel = selectFocusedPanel.select(appStore.state, workspaceId);
-      if (panel && panel.tabs.length > 1) {
-        e.preventDefault();
-        const currentIndex = panel.tabs.findIndex((t) => t.id === panel.activeTabId);
-        let newIndex: number;
-        if (e.key === 'PageUp') {
-          // Previous tab
-          newIndex = currentIndex <= 0 ? panel.tabs.length - 1 : currentIndex - 1;
-        } else {
-          // Next tab
-          newIndex = currentIndex >= panel.tabs.length - 1 ? 0 : currentIndex + 1;
-        }
-        layoutManager.setActiveTab(panel.tabs[newIndex].id, panel.id);
-      }
-      return;
-    }
-
-    // Mod+Shift+] (or }) or Cmd+Shift+PageDown - Next panel
-    // Mod+Shift+[ (or {) or Cmd+Shift+PageUp - Previous panel
-    // Note: Shift+] produces } and Shift+[ produces { on US keyboards, so we check for both
-    //
-    // IMPORTANT: These shortcuts are context-aware based on which section has focus:
-    // - If terminal is open AND focused: Let terminal handle tab cycling (don't handle here)
-    // - Otherwise: Cycle through panels
-    if (
-      isMod &&
-      e.shiftKey &&
-      (e.key === ']' ||
-        e.key === '}' ||
-        e.key === '[' ||
-        e.key === '{' ||
-        e.key === 'PageDown' ||
-        e.key === 'PageUp')
-    ) {
-      // Check if terminal is open and has focus - let terminal handle its own tab cycling
-      const terminalIsOpen = get(terminalOverlayOpen);
-      const terminalHasFocus = isFocusInTerminal(e.target as HTMLElement);
-
-      if (terminalIsOpen && terminalHasFocus) {
-        // Terminal is focused - don't handle here, let QuakeTerminalOverlay handle it
-        return;
-      }
-
-      const direction = e.key === ']' || e.key === '}' || e.key === 'PageDown' ? 'next' : 'prev';
-      if (focusCycledPanel(direction)) e.preventDefault();
       return;
     }
   }
@@ -1332,6 +1279,7 @@
           onResizeRootDivider={handleResizeRootDivider}
           onTabDropToSplit={handleTabDropToSplit}
           onTabMoveToPanel={handleTabMoveToPanel}
+          onMoveActivePane={handleMoveActivePane}
           onPanelMove={handlePanelMove}
           onTabDropToSplitHandle={handleTabDropToSplitHandle}
           onTabRename={handleTabRename}

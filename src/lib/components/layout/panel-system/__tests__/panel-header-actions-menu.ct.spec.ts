@@ -77,7 +77,7 @@ for (const [index, panelType] of panelTypes.entries()) {
     await expect(component).toHaveAttribute('data-zoom-count', '1');
 
     await trigger.click();
-    await page.getByRole('menuitem', { name: /Split right/i }).click();
+    await page.getByRole('menuitem', { name: /Create column to right/i }).click();
     await expect(component).toHaveAttribute('data-split-count', '1');
 
     await trigger.click();
