@@ -82,7 +82,8 @@ export function buildGroupedModelOptions({
         ? toDropdownOptions(availableModels)
         : undefined);
     // Never list a `default` pseudo-row (older daemons can still serve one);
-    // it is kept only as the sole row so the group is never empty (D1).
+    // pseudo-rows are kept only when no real rows remain, so the group is
+    // never empty (D1).
     const models = rawModels && filterDefaultPseudoOptions(rawModels);
     if (models && models.length > 0) {
       const displayName = selectProviderDisplayName.select(state, pid);

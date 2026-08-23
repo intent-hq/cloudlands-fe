@@ -291,7 +291,7 @@ export function findModelFallbackOption(
   }
 
   // Never fall back to a `default` pseudo-row that the picker hides from the
-  // list — unless it is the only candidate (D1: sole rendered row).
+  // list — pseudo-rows are kept only when no real candidates remain (D1).
   candidates = filterDefaultPseudoOptions(candidates);
 
   return (

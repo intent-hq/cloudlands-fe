@@ -5,7 +5,13 @@ import { cleanup, render, screen } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import { writable } from 'svelte/store';
 
-type ModelOption = { value: string; label: string; description?: string; isDefault?: boolean };
+type ModelOption = {
+  value: string;
+  label: string;
+  description?: string;
+  isDefault?: boolean;
+  isLegacyModel?: boolean;
+};
 type Session = {
   id: string;
   workspaceId: string;
@@ -619,6 +625,30 @@ describe('ModelPicker trigger label regressions', () => {
     const text = screen.getByRole('button').textContent ?? '';
     expect(text).toContain('Auggie Butler');
     expect(text).not.toContain('default');
+  });
+
+  it('D2 skips legacy rows: maps to the first non-legacy row, not raw catalog order', () => {
+    // Reviewer example shape: the first non-pseudo catalog row is a legacy
+    // row. The group builder renders legacy rows in a separate trailing
+    // subgroup, so the first *rendered* row is the non-legacy one — the D2
+    // mapping must land there, not on the legacy row.
+    availableModels$.set([
+      { value: 'auggie:default', label: 'Default (recommended)' },
+      { value: 'auggie:old', label: 'Auggie Old', isLegacyModel: true },
+      { value: 'auggie:sonnet', label: 'Sonnet 4.6' },
+    ]);
+
+    render(ModelPicker, {
+      props: {
+        selectedModel: 'auggie:default',
+        isLocked: true,
+      },
+    });
+
+    const text = screen.getByRole('button').textContent ?? '';
+    expect(text).toContain('Sonnet 4.6');
+    expect(text).not.toContain('Auggie Old');
+    expect(text).not.toContain('Default (recommended)');
   });
 
   it('renders the raw id for a <provider>:default selection while the catalog is cold', () => {
