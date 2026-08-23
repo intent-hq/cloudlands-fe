@@ -1775,11 +1775,11 @@ describe('selectHudWorkspaceCards', () => {
     ]);
   });
 
-  it('the STAB-9 mid-turn agent.list re-hydration (waiting + turnInFlight) keeps the bucket running (live bug, 2nd repro)', () => {
+  it('the STAB-9 mid-turn agent re-hydration (waiting + turnInFlight) keeps the bucket running (live bug, 2nd repro)', () => {
     // Second live repro AFTER the event-fold fix: the card square STILL
     // stayed grey all turn. The event fold DID clear the frozen waiting flag
-    // — but the daemon-events-bridge refires `hydrateAgentsRequested` on the
-    // SAME `agent:status-changed` (STAB-9), and the fresh `agent.list`
+    // — but the daemon-events-bridge refires a per-agent `agent.get` on the
+    // SAME `agent:status-changed` (STAB-9), and the fresh
     // AgentLite legitimately carries `isWaitingForOtherAgents: true` for the
     // WHOLE turn (the completion watch on the probe child pends through it,
     // §5.5 agent_activity_flags_for). lifecycle-read-service folds it via

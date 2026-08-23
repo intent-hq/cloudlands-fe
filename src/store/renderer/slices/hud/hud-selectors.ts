@@ -731,7 +731,7 @@ interface HudAgentBucketInfo {
  * Genuine turn work still buckets running — a coordinator can take a turn
  * while its watches pend: the daemon's `turnInFlight` (§5.5 STAB-125, the
  * emit-time "a worker is draining a turn NOW" signal, refreshed by the
- * STAB-9 `agent.list` re-hydration on every status event) or the FE-owned
+ * STAB-9 per-agent `agent.get` refresh on every status event) or the FE-owned
  * `isStreaming`/`isProcessing` send signals defeat the waiting gate. THEN an in-flight
  * turn wins (`selectAgentIsResponding` — BE activity flags including
  * `isWaitingOnTool`, §5.5: a mid-turn tool call is running work, not idle),
@@ -778,7 +778,7 @@ function agentBucketOf(state: StoreState, info: WorkspaceAgentInfo): HudAgentBuc
   // derived at emit time (never a persisted lag like `status: "active"`).
   // Watch-pending and turn-running are ORTHOGONAL: a coordinator holding a
   // completion watch on a child still takes turns of its own, and the
-  // `agent.list` hydration the events bridge refires on every
+  // per-agent `agent.get` refresh the events bridge refires on every
   // `agent:status-changed` (STAB-9) reports isWaitingForOtherAgents: true
   // THROUGHOUT that turn — so waiting may only win while no turn is in
   // flight, else the card square stays grey for the whole turn while the
