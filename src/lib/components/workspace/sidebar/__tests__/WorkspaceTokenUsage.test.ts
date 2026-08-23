@@ -61,13 +61,6 @@ async function renderExpandedTokenUsage(workspaceId = 'ws-1') {
   return rendered;
 }
 
-async function openBreakdown() {
-  const disclosure = screen.getByTestId('token-usage-breakdown-disclosure');
-  await fireEvent.click(disclosure);
-  expect(disclosure.closest('details')?.hasAttribute('open')).toBe(true);
-  return disclosure;
-}
-
 // Pre-warm the component module graph so the cold dynamic import is not
 // billed to the first test's timeout (intent-hq/monorepo#1464).
 warmImport(() => import('../WorkspaceTokenUsage.svelte'));
@@ -125,7 +118,7 @@ describe('WorkspaceTokenUsage', () => {
     expect(document.getElementById(detailsId!)).toBeNull();
   });
 
-  it('renders each composition metric once and hides simple ranked lists behind one disclosure', async () => {
+  it('renders the full inspiration hierarchy with visible composition and ranked breakdowns', async () => {
     mocks.state.usage = makeUsage({
       byAgentId: {
         'agent-a': {
@@ -212,15 +205,10 @@ describe('WorkspaceTokenUsage', () => {
     const text = details.textContent ?? '';
 
     const compositionHeading = screen.getByRole('heading', { name: 'Token composition' });
-    const secondaryDisclosure = screen.getByTestId('token-usage-breakdown-disclosure');
-    const secondaryDetails = secondaryDisclosure.closest('details')!;
-    expect(details.querySelectorAll('details.breakdown-disclosure')).toHaveLength(1);
-    expect(secondaryDetails.hasAttribute('open')).toBe(false);
-    expect(visibleText(secondaryDisclosure)).toContain('By agent / By model');
-    await openBreakdown();
-
     const modelSection = screen.getByTestId('token-usage-by-model');
     const agentSection = screen.getByTestId('token-usage-by-agent');
+    expect(screen.queryByTestId('token-usage-breakdown-disclosure')).toBeNull();
+    expect(details.querySelector('details')).toBeNull();
     expect(
       compositionHeading.compareDocumentPosition(agentSection) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
@@ -231,6 +219,12 @@ describe('WorkspaceTokenUsage', () => {
     expect(screen.getByRole('heading', { name: 'By model' })).toBeTruthy();
 
     const composition = compositionHeading.closest('section')!;
+    expect(visibleText(compositionHeading.parentElement!)).toBe('Token composition 9.4M processed');
+    const compositionStrip = composition.querySelector('div[aria-hidden="true"]')!;
+    const stripSegments = Array.from(compositionStrip.children) as HTMLElement[];
+    expect(stripSegments).toHaveLength(3);
+    expect(stripSegments[0].classList.contains('bg-success')).toBe(true);
+    expect(stripSegments.every((segment) => segment.style.width.endsWith('%'))).toBe(true);
     const compositionRows = Array.from(composition.querySelectorAll('.composition-row'));
     expect(compositionRows).toHaveLength(4);
     const compositionValues = compositionRows.map((compositionRow) => ({
@@ -240,39 +234,47 @@ describe('WorkspaceTokenUsage', () => {
       context: compositionRow.querySelector('.composition-context')?.textContent?.trim(),
     }));
     expect(compositionValues).toEqual([
-      { metric: 'In', description: 'Prompt context', value: '1.2K', context: '0%' },
-      { metric: 'Out', description: 'Model responses', value: '98K', context: '1%' },
       {
         metric: 'Cached',
         description: 'Read and written context',
         value: '9.3M',
         context: '98.9%',
       },
+      { metric: 'In', description: 'Prompt context', value: '1.2K', context: '0%' },
+      { metric: 'Out', description: 'Model responses', value: '98K', context: '1%' },
       { metric: 'Reasoning', description: 'Internal tokens', value: '0', context: '0%' },
     ]);
+    expect(
+      compositionRows.every((compositionRow) => {
+        const swatch = compositionRow.querySelector('.composition-metric [aria-hidden="true"]');
+        return swatch !== null && swatch.className.includes('bg-');
+      }),
+    ).toBe(true);
     expect(new Set(compositionValues.map(({ metric }) => metric)).size).toBe(4);
     expect(composition.querySelectorAll('.composition-value')).toHaveLength(4);
     expect(composition.querySelectorAll('.composition-context')).toHaveLength(4);
-    expect(text).not.toContain('9.4M processed');
+    expect(text).toContain('9.4M processed');
 
     const modelRows = within(modelSection).getAllByRole('listitem');
     expect(modelRows).toHaveLength(2);
-    expect(visibleText(modelRows[0])).toBe('Model Big 9.3M');
-    expect(visibleText(modelRows[1])).toBe('Model Small 31K');
+    expect(visibleText(modelRows[0])).toBe('Model Big 9.3M 99.7%');
+    expect(visibleText(modelRows[1])).toBe('Model Small 31K 0.3%');
     expect(modelSection.querySelector('[title="model-big"]')?.textContent).toBe('Model Big');
     expect(modelSection.querySelector('[title="model-small"]')?.textContent).toBe('Model Small');
 
     const agentRows = within(agentSection).getAllByRole('listitem');
     expect(agentRows).toHaveLength(2);
-    expect(visibleText(agentRows[0])).toBe('Beta 332.4K');
-    expect(visibleText(agentRows[1])).toBe('Alpha 31K');
+    expect(visibleText(agentRows[0])).toBe('Beta 332.4K 91.5%');
+    expect(visibleText(agentRows[1])).toBe('Alpha 31K 8.5%');
     expect([...modelRows, ...agentRows].every((listRow) => listRow.children.length === 2)).toBe(
       true,
     );
-    expect(modelSection.textContent).not.toContain('%');
-    expect(agentSection.textContent).not.toContain('%');
-    expect(modelSection.querySelector('[style*="width"]')).toBeNull();
-    expect(agentSection.querySelector('[style*="width"]')).toBeNull();
+    expect(
+      [...modelRows, ...agentRows].every((listRow) => {
+        const shareBar = listRow.querySelector('[aria-hidden="true"] > [style*="width"]');
+        return shareBar instanceof HTMLElement && shareBar.style.width.endsWith('%');
+      }),
+    ).toBe(true);
 
     expect(text).not.toContain('redits');
     expect(row.textContent).not.toContain('redits');
@@ -299,7 +301,6 @@ describe('WorkspaceTokenUsage', () => {
     });
 
     await renderExpandedTokenUsage();
-    await openBreakdown();
 
     const modelSection = screen.getByTestId('token-usage-by-model');
     expect(modelSection.textContent).toContain('Unknown');
@@ -365,7 +366,6 @@ describe('WorkspaceTokenUsage', () => {
     mocks.state.agents = [{ id: 'agent-a', name: 'Alpha' }];
 
     await renderExpandedTokenUsage();
-    await openBreakdown();
 
     expect(visibleText(screen.getByTestId('token-usage-disclosure'))).toContain('4.2K processed');
 
@@ -401,7 +401,6 @@ describe('WorkspaceTokenUsage', () => {
     });
 
     await renderExpandedTokenUsage();
-    await openBreakdown();
 
     expect(visibleText(screen.getByTestId('token-usage-disclosure'))).toContain('30 processed');
     const modelSection = screen.getByTestId('token-usage-by-model');
@@ -468,7 +467,6 @@ describe('WorkspaceTokenUsage', () => {
     ];
 
     await renderExpandedTokenUsage();
-    await openBreakdown();
 
     const modelText = screen.getByTestId('token-usage-by-model').textContent ?? '';
     expect(modelText).toContain('Model Live');
@@ -561,12 +559,11 @@ describe('WorkspaceTokenUsage', () => {
     mocks.state.agents = [{ id: 'agent-a', name: 'Alpha' }];
 
     await renderExpandedTokenUsage();
-    await openBreakdown();
 
     const modelSection = screen.getByTestId('token-usage-by-model');
     const agentSection = screen.getByTestId('token-usage-by-agent');
-    expect(visibleText(modelSection)).toBe('By model Model Big 31K');
-    expect(visibleText(agentSection)).toBe('By agent Alpha 31K');
+    expect(visibleText(modelSection)).toBe('By model Model Big 31K 100%');
+    expect(visibleText(agentSection)).toBe('By agent Alpha 31K 100%');
     expect(modelSection.textContent).not.toContain('$1.50');
     expect(agentSection.textContent).not.toContain('$1.50');
 
@@ -602,7 +599,6 @@ describe('WorkspaceTokenUsage', () => {
     });
 
     await renderExpandedTokenUsage();
-    await openBreakdown();
 
     const modelSection = screen.getByTestId('token-usage-by-model');
     expect(modelSection.textContent).not.toContain('$2.00');
@@ -631,7 +627,6 @@ describe('WorkspaceTokenUsage', () => {
     });
 
     await renderExpandedTokenUsage();
-    await openBreakdown();
 
     const modelSection = screen.getByTestId('token-usage-by-model');
     expect(modelSection.textContent).not.toContain('Cost');
@@ -661,7 +656,6 @@ describe('WorkspaceTokenUsage', () => {
     });
 
     await renderExpandedTokenUsage();
-    await openBreakdown();
 
     const modelSection = screen.getByTestId('token-usage-by-model');
     expect(modelSection.textContent).not.toContain('Cost');
