@@ -31,7 +31,10 @@
   import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
   import { m } from '$shared/paraglide/messages.js';
   import { formatInteger } from '$lib/i18n/format';
-  import { selectAgentSessionsById } from '$store/renderer/slices/agent-session/agent-session-selectors';
+  import {
+    selectAgentHistoryMessages,
+    selectAgentSessionsById,
+  } from '$store/renderer/slices/agent-session/agent-session-selectors';
   import AgentAvatarStack, {
     type AgentAvatarStackItem,
   } from '$features/agent/components/agent-avatar/AgentAvatarStack.svelte';
@@ -41,6 +44,12 @@
     toAgentRuntimeStateInput,
   } from '$shared/utils/agent-runtime-state';
   import type { AgentSession } from '$shared/types';
+  import {
+    selectWorkspaceTasks,
+    selectWorkspaceTasksInitialized,
+  } from '$store/renderer/slices/workspace-tasks/workspace-tasks-selectors';
+  import { ensureWorkspaceTasksLoaded } from '$store/renderer/slices/workspace-tasks/workspace-tasks-slice';
+  import { deriveTaskProgress, type TaskProgressItem } from './workspace-task-fallback';
 
   import {
     selectAgentSubscriptions,
@@ -156,6 +165,13 @@
     if (nextKey === lastFetchKey) return;
     lastFetchKey = nextKey;
     untrack(() => appStore.dispatch(requestSubscriptionFetch(workspaceId, agentId)));
+  });
+
+  let lastTaskWorkspaceId: string | null = null;
+  $effect(() => {
+    if (isolatedPreview || !workspaceId || workspaceId === lastTaskWorkspaceId) return;
+    lastTaskWorkspaceId = workspaceId;
+    untrack(() => appStore.dispatch(ensureWorkspaceTasksLoaded(workspaceId)));
   });
 
   const workspaceById = selectWorkspaceById(workspaceIdStore);
@@ -353,6 +369,27 @@
         const bTimestamp = timestampMillis(agentSessionsById[b.agentId]?.updatedAt);
         return bTimestamp - aTimestamp || a.agentId.localeCompare(b.agentId);
       });
+  });
+  const taskProgressByAgentId = $derived.by(() => {
+    const state = rendererState;
+    const sessionsById = selectAgentSessionsById.select(state);
+    const initialized = selectWorkspaceTasksInitialized.select(state, workspaceId);
+    const tasks = selectWorkspaceTasks.select(state, workspaceId);
+    const progress: Record<string, TaskProgressItem[]> = {};
+    for (const row of waitingAgentRows) {
+      const session = sessionsById[row.agentId];
+      if (!session) continue;
+      progress[row.agentId] = deriveTaskProgress({
+        initialized,
+        tasks,
+        session,
+        messages: [
+          ...selectAgentHistoryMessages.select(state, row.agentId),
+          ...(session.messages ?? []),
+        ],
+      });
+    }
+    return progress;
   });
   const shouldGroupWaitingAgents = $derived(
     forceWaitingHeader || waitingAgentRows.length > WAITING_AGENT_DISCLOSURE_THRESHOLD,
@@ -622,6 +659,7 @@
       agentName={row.agentName}
       workspace={resolvedWorkspace}
       isCompleted={finished}
+      taskProgress={taskProgressByAgentId[watchedAgentId] ?? []}
       headerActions={oneShotActions}
       inline
       inlineRowClass={SUBSCRIPTION_ROW_GEOMETRY_CLASS}

@@ -107,6 +107,40 @@ describe('AgentCard live preview precedence', () => {
     expect(header?.contains(timestamp)).toBe(true);
   });
 
+  it('reserves a non-clipping trailing slot for task progress outside row navigation', async () => {
+    seedSession({
+      name: 'A very long watched agent name that must truncate',
+      lastAgentResponse: 'A long preview that must keep its own truncation behavior',
+    });
+
+    const { container } = render(AgentCard, {
+      props: {
+        agentId,
+        inline: true,
+        taskProgress: [
+          { id: 'running', title: 'Run the focused task', status: 'running' },
+          { id: 'done', title: 'Finish setup', status: 'completed' },
+        ],
+      },
+    });
+
+    const trigger = await screen.findByTestId('task-progress-trigger');
+    const activationButton = container.querySelector('[data-testid="agent-list-item"] > button');
+    const content = container.querySelector('.agent-card-content');
+    const trailing = screen.getByTestId('agent-card-trailing-slot');
+    expect(trigger.textContent?.trim()).toBe('1/2');
+    expect(activationButton?.contains(trigger)).toBe(false);
+    expect(activationButton?.className).toContain('overflow-hidden');
+    expect(content?.className).toContain('mr-10');
+    expect(trailing.className).toContain('w-10');
+    expect(screen.getByTestId('agent-card-name').className).toContain('shrink-0');
+    expect(screen.getByTestId('agent-card-preview').className).toContain('truncate');
+
+    trigger.focus();
+    expect(await screen.findByRole('dialog', { name: 'Agent tasks' })).toBeTruthy();
+    expect(document.activeElement).toBe(trigger);
+  });
+
   it('serves the pushed wire preview over a streaming buffer ending in suggested prompts', async () => {
     // Regression (monorepo#2843): the viewed-agent chat.subscribe buffer is
     // never consulted — a buffer ending in a multi-line suggested-prompts

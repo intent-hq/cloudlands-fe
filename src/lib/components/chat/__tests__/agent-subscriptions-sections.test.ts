@@ -6,7 +6,10 @@ import { tick } from 'svelte';
 const { backendRequestSpy, navigateToRouteSpy, sessionState } = vi.hoisted(() => ({
   backendRequestSpy: vi.fn(),
   navigateToRouteSpy: vi.fn().mockResolvedValue(undefined),
-  sessionState: { byId: new Map<string, Record<string, unknown>>() },
+  sessionState: {
+    byId: new Map<string, Record<string, unknown>>(),
+    historyById: new Map<string, Record<string, unknown>[]>(),
+  },
 }));
 vi.mock('$lib/client/live/backend-transport', () => ({
   backendRequest: (method: string, params?: unknown) => backendRequestSpy(method, params),
@@ -54,6 +57,9 @@ vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
     () => makeReadable(Object.fromEntries(sessionState.byId)),
     { select: () => Object.fromEntries(sessionState.byId) },
   ),
+  selectAgentHistoryMessages: Object.assign(() => makeReadable([]), {
+    select: (_state: unknown, agentId: string) => sessionState.historyById.get(agentId) ?? [],
+  }),
   selectAgentIsResponding: (agentId: { subscribe: (run: (value: string) => void) => () => void }) =>
     makeDerivedReadable(agentId, (id) => mockIsResponding.get(id) ?? false),
   selectAgentPreview: Object.assign(
@@ -89,7 +95,13 @@ vi.mock('$features/agent/components/agent-avatar/AgentAvatarWithState.svelte', a
 }));
 vi.mock('$lib/components/ui/tooltip', async () => {
   const SlotOnly = (await import('./mocks/SlotOnly.svelte')).default;
-  return { Provider: SlotOnly, Root: SlotOnly, Trigger: SlotOnly, Content: SlotOnly };
+  return {
+    Provider: SlotOnly,
+    Root: SlotOnly,
+    Trigger: SlotOnly,
+    Content: SlotOnly,
+    TooltipShortcut: SlotOnly,
+  };
 });
 
 import { store as appStore } from '$store/renderer/store';
@@ -114,6 +126,10 @@ import {
   SUBSCRIPTION_INSET_TOP_DIVIDER_CLASS,
 } from '../subscription-disclosure';
 import { resetAgentSubscriptionsViewStateForTests } from '../agent-subscriptions-view-state';
+import {
+  applyTaskStatusChanged,
+  loadWorkspaceTasksSucceeded,
+} from '$store/renderer/slices/workspace-tasks/workspace-tasks-slice';
 
 const PARENT = 'agent-parent-1';
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
@@ -284,6 +300,7 @@ describe('AgentSubscriptions unified waiting disclosure', () => {
     backendRequestSpy.mockResolvedValue(snapshot());
     navigateToRouteSpy.mockClear();
     sessionState.byId.clear();
+    sessionState.historyById.clear();
     resetAgentSubscriptionsViewStateForTests();
   });
 
@@ -1089,6 +1106,117 @@ describe('AgentSubscriptions unified waiting disclosure', () => {
       'agent.cancelSubscriptions',
       { workspaceId: wsId, agentId: PARENT, subscriptionId: 'watch-a' },
     ]);
+  });
+
+  it('shows each agent own native-or-linked task progress without nesting row controls', async () => {
+    const wsId = 'ws-agent-task-progress';
+    seedSession('agent-native', '2026-01-03T00:00:00.000Z', 'responding', wsId, {
+      metadata: { taskNoteId: 'task-native-fallback' },
+    });
+    seedSession('agent-linked', '2026-01-03T00:00:00.000Z', 'waiting', wsId, {
+      metadata: { taskNoteId: 'task-linked' },
+    });
+    sessionState.historyById.set('agent-native', [
+      {
+        id: 'history-plan',
+        role: 'assistant',
+        contentBlocks: [
+          {
+            type: 'plan',
+            id: 'history-plan:block',
+            entries: [
+              { content: 'Native task completed', priority: 'high', status: 'completed' },
+              { content: 'Native task running', priority: 'medium', status: 'in_progress' },
+            ],
+          },
+        ],
+      },
+    ]);
+    appStore.dispatch(
+      loadWorkspaceTasksSucceeded(
+        wsId,
+        [
+          {
+            id: 'task-native-fallback',
+            title: 'Hidden native fallback',
+            status: 'not_started',
+            specLinked: false,
+          },
+          {
+            id: 'task-linked',
+            title: 'Linked workspace task',
+            status: 'complete',
+            specLinked: false,
+          },
+        ],
+        { total: 2, completed: 1, inProgress: 0 },
+      ),
+    );
+
+    await renderWithSnapshot(
+      wsId,
+      snapshot([oneShotSubscription('watch-progress', wsId, ['agent-native', 'agent-linked'])]),
+    );
+    await expandWaitingAgents();
+
+    const nativeRow = agentRow('agent-native');
+    const linkedRow = agentRow('agent-linked');
+    const nativeTrigger = within(nativeRow).getByTestId('task-progress-trigger');
+    const linkedTrigger = within(linkedRow).getByTestId('task-progress-trigger');
+    const activationButton = within(nativeRow).getAllByRole('button')[0];
+
+    expect(nativeTrigger.textContent?.trim()).toBe('1/2');
+    expect(linkedTrigger.textContent?.trim()).toBe('1/1');
+    expect(activationButton.contains(nativeTrigger)).toBe(false);
+    expect(nativeRow.querySelector('.agent-card-content')?.className).toContain('mr-24');
+    expect(within(nativeRow).getByTestId('agent-card-trailing-slot').className).toContain('w-24');
+    expect(within(nativeRow).getByTestId('one-shot-stop')).toBeTruthy();
+    expect(within(nativeRow).getByTestId('one-shot-cancel')).toBeTruthy();
+
+    nativeTrigger.focus();
+    const dialog = await screen.findByRole('dialog', { name: 'Agent tasks' });
+    expect(document.activeElement).toBe(nativeTrigger);
+    expect(within(dialog).getByText('Native task running')).toBeTruthy();
+    expect(within(dialog).queryByText('Native task completed')).toBeNull();
+    expect(within(dialog).getByRole('button', { name: '1 task completed' })).toBeTruthy();
+    expect(within(dialog).queryByText('Hidden native fallback')).toBeNull();
+    expect(within(dialog).queryByText('Linked workspace task')).toBeNull();
+    expect(within(dialog).getByText('Native task running').closest('.shimmer-text')).toBeTruthy();
+  });
+
+  it('updates linked task counts live while keeping the progress trigger focused', async () => {
+    const wsId = 'ws-agent-task-progress-live';
+    seedSession('agent-linked', '2026-01-03T00:00:00.000Z', 'responding', wsId, {
+      metadata: { taskNoteId: 'task-linked' },
+    });
+    appStore.dispatch(
+      loadWorkspaceTasksSucceeded(
+        wsId,
+        [
+          {
+            id: 'task-linked',
+            title: 'Live linked task',
+            status: 'in_progress',
+            specLinked: false,
+          },
+        ],
+        { total: 1, completed: 0, inProgress: 1 },
+      ),
+    );
+    await renderWithSnapshot(
+      wsId,
+      snapshot([oneShotSubscription('watch-progress-live', wsId, ['agent-linked'])]),
+    );
+    await expandWaitingAgents();
+
+    const trigger = within(agentRow('agent-linked')).getByTestId('task-progress-trigger');
+    trigger.focus();
+    expect(trigger.textContent?.trim()).toBe('0/1');
+    appStore.dispatch(applyTaskStatusChanged(wsId, 'task-linked', 'complete'));
+
+    await waitFor(() => expect(trigger.textContent?.trim()).toBe('1/1'));
+    expect(document.activeElement).toBe(trigger);
+    expect(await screen.findByRole('button', { name: '1 task completed' })).toBeTruthy();
   });
 
   it('keeps grouped rows individually stoppable with group-scoped cancel routing', async () => {

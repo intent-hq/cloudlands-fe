@@ -64,6 +64,8 @@
   import OpenPanelIndicator from '$lib/components/workspace/sidebar/OpenPanelIndicator.svelte';
   import { isCmdClickModifier } from '$shared/utils/link-helpers';
   import { isReplaceAgentEligible } from '$shared/utils/replace-agent-eligibility';
+  import TaskProgressControl from './TaskProgressControl.svelte';
+  import type { TaskProgressItem } from './workspace-task-fallback';
 
   interface Props {
     agentId: string;
@@ -109,6 +111,8 @@
     provider?: string;
     /** Optional actions rendered beside, never inside, the row activation button. */
     headerActions?: Snippet;
+    /** Optional per-agent task progress rendered beside row actions. */
+    taskProgress?: TaskProgressItem[];
     openPanelCount?: number;
     activeInPanel?: boolean;
     /** Optional timestamp supplied by list data before the session selector is hydrated. */
@@ -138,6 +142,7 @@
     isCompleted = false,
     provider = undefined,
     headerActions,
+    taskProgress = [],
     openPanelCount = 0,
     activeInPanel = false,
     updatedAt: updatedAtProp = undefined,
@@ -146,6 +151,7 @@
 
   const logger = createLogger('AgentCard');
   const INLINE_PEEK_TYPOGRAPHY_CLASS = 'font-normal! text-muted-foreground';
+  const hasTaskProgress = $derived(taskProgress.length > 0);
 
   // svelte-ignore state_referenced_locally -- selectors are initialized with the current agent; the effect below mirrors prop changes.
   const agentIdStore = writable(agentId);
@@ -678,9 +684,13 @@
       </div>
 
       <div
-        class="agent-card-content flex min-w-0 max-w-full flex-1 overflow-hidden {headerActions
-          ? 'mr-14'
-          : ''} {inline || panelRow ? 'flex-row items-center gap-2' : 'flex-col'}"
+        class="agent-card-content flex min-w-0 max-w-full flex-1 overflow-hidden {hasTaskProgress
+          ? headerActions
+            ? 'mr-24'
+            : 'mr-10'
+          : headerActions
+            ? 'mr-14'
+            : ''} {inline || panelRow ? 'flex-row items-center gap-2' : 'flex-col'}"
       >
         <!-- Header row -->
         <div
@@ -887,21 +897,32 @@
         {/if}
       </div>
     </svelte:element>
-    {#if headerActions}
+    {#if headerActions || hasTaskProgress}
       <div
-        class="absolute right-3 top-1/2 z-10 h-6 w-14 shrink-0 -translate-y-1/2"
+        class="absolute right-3 top-1/2 z-10 flex h-6 shrink-0 -translate-y-1/2 items-center justify-end {hasTaskProgress
+          ? headerActions
+            ? 'w-24'
+            : 'w-10'
+          : 'w-14'}"
         data-testid="agent-card-trailing-slot"
       >
-        {#if updatedAt}
-          <RelativeTime
-            date={updatedAt}
-            compact
-            class="type-caption tabular-nums absolute inset-0 flex items-center justify-end text-right {INLINE_PEEK_TYPOGRAPHY_CLASS} transition-opacity group-hover/watch:opacity-0 group-focus-within/watch:opacity-0"
-          />
+        {#if hasTaskProgress}
+          <TaskProgressControl tasks={taskProgress} />
         {/if}
-        <div class="absolute inset-0 flex items-center justify-end gap-1">
-          {@render headerActions()}
-        </div>
+        {#if headerActions}
+          <div class="relative h-6 w-14 shrink-0">
+            {#if updatedAt}
+              <RelativeTime
+                date={updatedAt}
+                compact
+                class="type-caption tabular-nums absolute inset-0 flex items-center justify-end text-right {INLINE_PEEK_TYPOGRAPHY_CLASS} transition-opacity group-hover/watch:opacity-0 group-focus-within/watch:opacity-0"
+              />
+            {/if}
+            <div class="absolute inset-0 flex items-center justify-end gap-1">
+              {@render headerActions()}
+            </div>
+          </div>
+        {/if}
       </div>
     {/if}
   </div>
