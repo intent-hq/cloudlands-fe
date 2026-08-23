@@ -172,6 +172,58 @@ describe('HudTakeoverOverlay COMPLETE-cell report body', () => {
   });
 });
 
+describe('HudTakeoverOverlay in-progress cell shimmer', () => {
+  beforeEach(() => {
+    appStore.init();
+    appStore.dispatch(setWorkspaceEntity(workspace()));
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    cleanup();
+    appStore.dispose();
+  });
+
+  function cellByTitle(title: string): Element | undefined {
+    return screen
+      .getAllByTestId('hud-takeover-cell')
+      .find((cell) => cell.querySelector('.ov-cell-title')?.textContent?.trim() === title);
+  }
+
+  it('applies the diagonal shimmer class to in-progress cells only', () => {
+    seedTasks([
+      { id: 'task-1', title: 'In flight', status: 'in_progress' },
+      { id: 'task-2', title: 'Done', status: 'complete' },
+      { id: 'task-3', title: 'Queued', status: 'not_started' },
+    ]);
+
+    render(HudTakeoverOverlay, { props: { nowMs: NOW_MS } });
+    openTakeover();
+
+    expect(cellByTitle('In flight')?.classList.contains('ov-cell-shimmer')).toBe(true);
+    expect(cellByTitle('Done')?.classList.contains('ov-cell-shimmer')).toBe(false);
+    expect(cellByTitle('Queued')?.classList.contains('ov-cell-shimmer')).toBe(false);
+  });
+
+  it('skips the shimmer class entirely under reduced motion', () => {
+    vi.stubGlobal(
+      'matchMedia',
+      vi.fn().mockReturnValue({
+        matches: true,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+      }),
+    );
+    seedTasks([{ id: 'task-1', title: 'In flight', status: 'in_progress' }]);
+
+    render(HudTakeoverOverlay, { props: { nowMs: NOW_MS } });
+    openTakeover();
+
+    expect(screen.getByTestId('hud-takeover-cell').classList.contains('ov-cell-shimmer')).toBe(
+      false,
+    );
+  });
+});
+
 describe('HudTakeoverOverlay header hardware-key square', () => {
   beforeEach(() => {
     appStore.init();

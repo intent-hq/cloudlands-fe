@@ -371,6 +371,7 @@
                     <div
                       class="ov-cell ov-cell-task"
                       class:ov-cell-changed={changed}
+                      class:ov-cell-shimmer={motion && task.status === 'in_progress'}
                       style:left={cellLeft(coord.x, map.pitch)}
                       style:top={cellTop(coord.y, map.pitch)}
                       style:border={`1px ${meta.borderStyle} ${changed ? meta.color : meta.borderColor}`}
@@ -950,6 +951,33 @@
       conquerin 0.4s ease both,
       ovringblink 0.9s step-end 1s infinite;
   }
+  /* Diagonal shimmer sweep on in-progress cells (accent at low opacity;
+     clipped by the cell's overflow: hidden). */
+  .ov-cell-shimmer::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background: linear-gradient(
+      135deg,
+      transparent 0%,
+      transparent 40%,
+      hsl(var(--primary) / 0.08) 50%,
+      transparent 60%,
+      transparent 100%
+    );
+    background-size: 250% 250%;
+    background-position: 100% 100%;
+    animation: ovshimmer 3s linear infinite;
+  }
+  @keyframes ovshimmer {
+    from {
+      background-position: 100% 100%;
+    }
+    to {
+      background-position: 0% 0%;
+    }
+  }
   .ov-cell-head {
     display: flex;
     align-items: center;
@@ -1182,7 +1210,8 @@
     .ov-cell,
     .ov-status-hint,
     .ov-anim-pulse,
-    .ov-anim-blink {
+    .ov-anim-blink,
+    .ov-cell-shimmer::after {
       animation: none;
     }
     .ov-map-pan {
