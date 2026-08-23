@@ -31,6 +31,10 @@ describe('Chief card migration contract', () => {
     expect(source).toContain('<section class="flex h-full min-h-0 flex-col">');
     expect(source).not.toContain('flex h-full min-h-0 flex-col overflow-hidden');
     expect(source).toContain('[overflow-clip-margin:0.5rem]');
+    // No clip-path utility here: it would clip fixed-position dialogs rendered
+    // in this subtree (e.g. RulesInspector), since clip-path clips all painted
+    // descendants including position:fixed ones.
+    expect(source).not.toContain('[clip-path:');
   });
 
   it('keeps the compact thread picker trigger at caption scale', () => {

@@ -357,7 +357,10 @@
     <!-- Clip on the padded wrapper (not the inner section) with an 8px clip
          margin so the composer's streaming aurora can bleed across the px-2
          inset and the app frame's window inset, while transcript content
-         still cannot overflow the panel. -->
+         still cannot overflow the panel. The margin is omnidirectional (no
+         per-side form exists, and a clip-path here would clip fixed-position
+         dialogs rendered in this subtree), so a very short pane can overdraw
+         up to 8px above — accepted as cosmetic. -->
     <div class="min-h-0 flex-1 overflow-clip px-2 pt-0 [overflow-clip-margin:0.5rem]">
       <section class="flex h-full min-h-0 flex-col">
         {#if activeThread}
