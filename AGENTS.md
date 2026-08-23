@@ -80,15 +80,58 @@ All user-facing strings (labels, aria-labels, placeholders, tooltips, toasts, er
 ## Common commands
 
 ```bash
-pnpm run dev           # Standard development launcher
-pnpm run dev:cdp       # Development with CDP support
-pnpm run build         # Production build
-pnpm run check         # Svelte + TypeScript checks
-pnpm run lint          # ESLint
-pnpm run format        # Prettier
-pnpm run test:unit     # Vitest suite
-pnpm run test:playwright
+corepack pnpm run dev:ui        # Fast named-state UI preview
+corepack pnpm run dev:web       # Complete plain-browser renderer
+corepack pnpm run dev           # Standard Electron launcher
+corepack pnpm run dev:cdp       # Electron launcher with CDP support
+corepack pnpm run build         # Production build
+corepack pnpm run check         # Svelte + TypeScript checks
+corepack pnpm run lint          # ESLint
+corepack pnpm run format        # Prettier write pass
+corepack pnpm run test:unit     # Vitest suite
+corepack pnpm run test:playwright
 ```
+
+## Fast UI preview loop
+
+Use `dev:ui` for component-only work. It skips Electron, native helpers, the daemon,
+and production application sagas. Use `dev:web` when the full browser renderer or a
+client connection is required. Use `dev:cdp` for Electron main, preload, native,
+window, or shell behavior.
+
+From the monorepo root, start a workspace service with `make dev-ui DEV_PORT=5290`.
+The target installs locked dependencies when needed. Keep the port unique because the
+preview uses strict port binding.
+
+Use these exact state names in direct URLs:
+
+- `/sandbox/button?state=default`, `loading`, `disabled`, or `destructive`
+- `/sandbox/mention-agent-avatar?state=idle`, `waiting`, or `error`
+- Add `theme=system|light|dark`, an integer `width=240..1600`, and
+  `motion=full|reduced`. Example:
+  `/sandbox/button?state=loading&theme=dark&width=420&motion=reduced`.
+
+On the sandbox page, use `window.__INTENT_PREVIEW__.list()` to find preview IDs,
+`await window.__INTENT_PREVIEW__.states('button')` to find states, and
+`window.__INTENT_PREVIEW__.current()` to inspect the active ready state. Wait for
+`[data-preview-ready=true]` before capture.
+
+Call `ws.browser.listTabs` before `ws.browser.openTab` and reuse a matching URL. New
+agent tabs are hidden by default and can still be evaluated, inspected, and captured.
+Keep the tab open so Vite HMR updates it after source edits. Use `ws.browser.showTab`
+to reveal it for human review; add `focus: true` only when focus is wanted. Use
+`http://daemon.localhost:5290` in `ws.browser` URLs so local and remote daemon setups
+resolve correctly.
+
+For focused browser validation, run:
+
+```bash
+corepack pnpm run test:ct -- src/features/agent/components/agent-avatar/__tests__/agent-avatar-waiting.ct.spec.ts
+```
+
+The CT harness uses fixed port 3100 and has no override. Stop the process on that port
+before retrying if it is occupied. The full workflow is in
+`../../docs/fe/DEVELOPER_GUIDE.md#fast-ui-preview-workflow`.
 
 ## Dogfooding a dev FE against the production daemon (UDS→WS bridge)
 
