@@ -1577,6 +1577,46 @@ describe('ModelPicker multi-provider mode', () => {
     expect(vi.mocked(toast.info)).not.toHaveBeenCalled();
   });
 
+  it('never rewrites a <provider>:default selection mapped by D2 (no setModel, no fallback toast)', async () => {
+    const { agentClient } = await import('$features/agent/agent.client');
+    const { toast } = await import('svelte-sonner');
+    // Settled catalog with real rows but no isDefault row — the selection
+    // renders via the D2 first-model mapping; the persisted value must not
+    // be rewritten (filtering is display-only).
+    vi.mocked(getModelsForProvider).mockImplementation((providerId) => {
+      if (providerId === 'auggie') {
+        return Promise.resolve([
+          { value: 'auggie:sonnet4.6', label: 'Sonnet 4.6', description: 'Smart' },
+          { value: 'auggie:opus4.5', label: 'Opus 4.5', description: 'Smarter' },
+        ]);
+      }
+      return Promise.resolve([]);
+    });
+
+    enabledProviderIds$.set(['auggie']);
+    activeProviderId$.set('auggie');
+
+    const onModelChange = vi.fn();
+
+    render(ModelPicker, {
+      props: {
+        selectedModel: 'auggie:default',
+        agentId: 'test-agent',
+        onModelChange,
+      },
+    });
+
+    await waitFor(() => {
+      expect(vi.mocked(getModelsForProvider)).toHaveBeenCalledWith('auggie');
+    });
+    // Give the $effect scheduler a chance to run auto-fallback if it were going to
+    await new Promise((r) => setTimeout(r, 100));
+
+    expect(onModelChange).not.toHaveBeenCalled();
+    expect(vi.mocked(agentClient.setModel)).not.toHaveBeenCalled();
+    expect(vi.mocked(toast.info)).not.toHaveBeenCalled();
+  });
+
   it('still triggers fallback when a non-default-provider compound model ID is unavailable', async () => {
     const { toast } = await import('svelte-sonner');
     vi.mocked(getModelsForProvider).mockImplementation((providerId) => {

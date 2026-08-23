@@ -144,9 +144,9 @@ export function isDefaultPseudoModelId(value: string): boolean {
 
 /**
  * Display-only filter: drop `default` pseudo-rows from a provider's option
- * list. Last resort (D1): when filtering would leave no rows at all, the
- * pseudo-rows are kept so a provider group is never rendered empty —
- * mirroring the daemon-side rule.
+ * list. Last resort (D1): pseudo-rows are kept only when no real rows remain
+ * (all of them, in the degenerate case of several pseudo-rows), so a provider
+ * group is never rendered empty — mirroring the daemon-side rule.
  */
 export function filterDefaultPseudoOptions(options: DropdownOption[]): DropdownOption[] {
   const filtered = options.filter((opt) => !isDefaultPseudoModelId(opt.value));
@@ -269,6 +269,12 @@ export interface FindModelFallbackOptionParams {
  * The CLI-marked default is a *default*, not an override — the user's
  * explicitly configured global model outranks it (coordinator ruling on the
  * PR #759 review, recorded in the spec's Decisions section).
+ *
+ * `default` pseudo-rows are removed from the candidate list before the
+ * precedence runs (so a globally selected `<provider>:default` degrades to
+ * the isDefault find), and D1 here applies to the whole candidate list: a
+ * pseudo-row survives only when it is the sole candidate overall, not merely
+ * the sole row of its provider as in the rendered groups.
  */
 export function findModelFallbackOption(
   params: FindModelFallbackOptionParams,
