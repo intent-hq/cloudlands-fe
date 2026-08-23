@@ -71,6 +71,10 @@
   import { selectAgentQueueMessages } from '$store/renderer/slices/agent-queue/agent-queue-selectors';
   import { removeQueuedMessageRequested } from '$store/renderer/slices/agent-queue/agent-queue-slice';
   import { hydrateAgentQueue } from '$features/agent/agent-queue-read-service';
+  import {
+    acquireChatInterestLease,
+    releaseChatInterestLease,
+  } from '$features/agent/utils/chat-interest-leases';
   import { selectNoteById } from '$store/renderer/slices/workspace-notes/workspace-notes-selectors';
   import { getPanelLayoutManager } from '$features/layout/panel-layout-adapter';
   import { selectAllTabs as selectPanelLayoutAllTabs } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
@@ -2778,6 +2782,15 @@
 
   // Initialize chat on mount
   onMount(() => {
+    // Interest lease (intent-hq/monorepo#3295): acquired SYNCHRONOUSLY at the
+    // top of mount, BEFORE chatTrackedWorkspaceSet/initializeChatRequested are
+    // dispatched, so the lease exists before a sibling panel's
+    // markAgentAsViewed sweep can run in either redux flush ordering.
+    // Released in onDestroy.
+    if (agentId && !agentId.startsWith('terminal-')) {
+      acquireChatInterestLease(agentId, instanceId);
+    }
+
     logger.info('ChatPanel mounted', {
       instanceId,
       agentId,
@@ -3598,6 +3611,12 @@
     // from accessing reactive state after destruction, which would cause
     // "N is not a function" errors in Svelte's reactive system.
     isComponentDestroyed = true;
+    // Release this instance's interest lease (intent-hq/monorepo#3295) before
+    // any destroy-path dispatch, so the trailing scoped clear is not spared by
+    // the dying panel's own lease.
+    if (agentId && !agentId.startsWith('terminal-')) {
+      releaseChatInterestLease(agentId, instanceId);
+    }
     cancelAllSendTransitions();
     if (lockConfirmationTimer !== null) {
       clearTimeout(lockConfirmationTimer);

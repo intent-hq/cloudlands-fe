@@ -42,6 +42,10 @@ import { createLogger } from '$lib/utils/client-logger';
 import type { AgentMessage, AgentSession } from '$shared/types';
 import { isAgentDeletionPending } from '$features/agent/utils/pending-agent-deletions';
 import { hasReplayableChatSnapshot } from '$features/agent/utils/chat-subscription-registry';
+import {
+  acquireChatInterestLease,
+  releaseChatInterestLease,
+} from '$features/agent/utils/chat-interest-leases';
 import { bulkUpsertSessions, upsertSession } from '../../agent-session/agent-session-slice';
 import { selectAgentMessages } from '../../agent-session/agent-session-selectors';
 import { workspaceUnmounted } from '../../workspace-lifecycle/workspace-lifecycle-slice';
@@ -95,6 +99,9 @@ const SNAPSHOT_WAIT_MS = SNAPSHOT_TIMEOUT_MS + INITIAL_RETRY_DELAY_MS + SNAPSHOT
  */
 const SNAPSHOT_WAIT_ATTEMPTS = 3;
 
+/** Unique interest-lease holder id per hydration attempt (monorepo#3295). */
+let hydrationLeaseSeq = 0;
+
 type ChatRequest = { wsId: string; agentId: string };
 type HydrationTails = Map<string, Promise<void>>;
 type HydrateResult = {
@@ -117,6 +124,13 @@ function* hydrateChatTranscriptSaga(request: ChatRequest): SagaGenerator<Hydrate
   }
   let started = false;
   let succeeded = false;
+  // Interest lease (intent-hq/monorepo#3295): held for the duration of this
+  // hydration attempt — acquired before the bounded snapshot wait so a sweep
+  // cannot close the standing registration the wait depends on, released in
+  // the finally (which also runs on saga cancellation).
+  hydrationLeaseSeq += 1;
+  const leaseHolder = `chat-read:${hydrationLeaseSeq}`;
+  yield* call(acquireChatInterestLease, agentId, leaseHolder);
   try {
     yield* put(transcriptHydrationStarted(agentId));
     started = true;
@@ -208,6 +222,8 @@ function* hydrateChatTranscriptSaga(request: ChatRequest): SagaGenerator<Hydrate
       `Failed to hydrate chat transcript for agent ${agentId} in workspace ${wsId}`,
       error,
     );
+  } finally {
+    yield* call(releaseChatInterestLease, agentId, leaseHolder);
   }
   return { started, succeeded };
 }
