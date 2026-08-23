@@ -4,6 +4,13 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.85.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.85.0...v2.85.1) (2026-08-23)
+
+
+### 🐛 Bug Fixes
+
+* revert fallback plan card for providers without ACP plans ([#1611](https://github.com/intent-hq/cloudlands-fe/issues/1611)) ([#1616](https://github.com/intent-hq/cloudlands-fe/issues/1616)) ([8fdea00](https://github.com/intent-hq/cloudlands-fe/commit/8fdea00a980a062c481e814300cdab1023c7bc51))
+
 ## [2.85.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.84.1...v2.85.0) (2026-08-23)
 
 
