@@ -339,7 +339,9 @@ describe('tool-result-parser', () => {
       const result = parseToolResult('grep', { pattern: 'render' }, output);
 
       expect(result.type).toBe('code-search');
-      expect(result.content).toBeUndefined();
+      // Truncation footer is surfaced (minus the log-file hint) so the card
+      // view does not silently understate the result set
+      expect(result.content).toBe('+241 more in src/lib/components/chat/tool-result-parser.ts');
       expect(result.snippets).toEqual([
         {
           path: 'src/lib/components/chat/AgentCard.svelte',
@@ -352,6 +354,30 @@ describe('tool-result-parser', () => {
           lineStart: 13,
         },
       ]);
+    });
+
+    it('parses match lines in hyphen-digit filenames as matches, not context lines', () => {
+      const output = [
+        'src/lib/utf-8-utils.ts:33:encode()',
+        'src/lib/foo-2-bar.ts:7:const y;',
+        'src/lib/sha-256.ts:12:digest()',
+      ].join('\n');
+      const result = parseToolResult('grep', { pattern: 'x' }, output);
+
+      expect(result.snippets).toEqual([
+        { path: 'src/lib/utf-8-utils.ts', content: '33: encode()', lineStart: 33 },
+        { path: 'src/lib/foo-2-bar.ts', content: '7: const y;', lineStart: 7 },
+        { path: 'src/lib/sha-256.ts', content: '12: digest()', lineStart: 12 },
+      ]);
+      expect(result.content).toBeUndefined();
+    });
+
+    it('flags a whitespace-only search result as noMatches', () => {
+      const result = parseToolResult('grep', { pattern: 'TODO' }, '\n');
+
+      expect(result.noMatches).toBe(true);
+      expect(result.snippets).toHaveLength(0);
+      expect(result.content).toBe('Search: TODO');
     });
 
     it('falls back to raw content for prose output without claiming noMatches', () => {

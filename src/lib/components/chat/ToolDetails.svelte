@@ -482,6 +482,12 @@
                   )}
                 </div>
               {/if}
+              {#if parsedResult.content}
+                <!-- Tool-reported truncation note (e.g. rtk "+N more in <file>") -->
+                <div class="text-xs text-subtle py-1 whitespace-pre-wrap">
+                  {parsedResult.content}
+                </div>
+              {/if}
             </div>
           {:else if parsedResult.type === 'code-search'}
             <!-- No parsed snippets - only claim "No results" when the search was
