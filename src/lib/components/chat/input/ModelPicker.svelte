@@ -85,6 +85,7 @@
   import { formatProviderLoadError, type ProviderLoadError } from './model-picker-provider-errors';
   import { AUGGIE_LEGACY_GROUP_KEY, buildGroupedModelOptions } from './model-picker-groups';
   import {
+    filterDefaultPseudoOptions,
     findModelFallbackOption,
     isProviderEnabled,
     isUserProviderSettled,
@@ -840,24 +841,42 @@
       : undefined,
   );
 
-  // Legacy persisted `<provider>:default` selections (picked while the daemon
-  // still listed a 'default' pseudo-row): with no catalog row of their own
-  // they map to the provider's isDefault row, rendering as that model instead
-  // of an unavailable selection. An actual `:default` catalog row (older
-  // daemon) still wins via the exact-id lookup.
+  // The provider's first known model row (pseudo-rows filtered; a sole
+  // pseudo-row survives per D1). Undefined while the catalog is cold.
+  function findFirstCatalogModelOption(providerId: string): DropdownOption | undefined {
+    const normalizedId = normalizeProviderId(providerId);
+    if (!normalizedId) return undefined;
+    const fromAll = allProviderModels[normalizedId];
+    if (fromAll && fromAll.length > 0) return filterDefaultPseudoOptions(fromAll)[0];
+    if (
+      availableModelsProviderId !== '' &&
+      normalizeProviderId(availableModelsProviderId) === normalizedId &&
+      availableModels.length > 0
+    ) {
+      return filterDefaultPseudoOptions(toDropdownOptions(availableModels))[0];
+    }
+    return undefined;
+  }
+
+  // Persisted `<provider>:default` selections have no rendered row of their
+  // own (the picker filters the pseudo-row from the list): they map to the
+  // provider's isDefault row, falling back to the first known model row (D2,
+  // mirroring the daemon's cached_default_or_first_model) so the selection
+  // never renders as dead/unavailable. Undefined while the catalog is cold.
   const legacyDefaultMappedOption = $derived.by(() => {
     if (!hasExplicitModel || !localModel) return undefined;
     const { providerId: modelProviderId, modelId } = parseCompoundModelId(localModel);
-    if (modelId !== 'default') return undefined;
-    if (getModelLabel(localModel) !== undefined) return undefined;
-    return findCatalogDefaultOption(modelProviderId);
+    if (modelId.toLowerCase() !== 'default') return undefined;
+    return (
+      findCatalogDefaultOption(modelProviderId) ?? findFirstCatalogModelOption(modelProviderId)
+    );
   });
 
   const currentModelLabel = $derived.by(() => {
     if (hasExplicitModel) {
       return localModel
-        ? (getModelLabel(localModel) ??
-            legacyDefaultMappedOption?.label ??
+        ? (legacyDefaultMappedOption?.label ??
+            getModelLabel(localModel) ??
             parseCompoundModelId(localModel).modelId)
         : (defaultModelLabel ?? m.chat_modelPicker_defaultModel_label());
     }
@@ -950,10 +969,11 @@
   const selectedCatalogOption = $derived.by(() => {
     const selectedId = hasExplicitModel ? localModel : defaultModelId;
     if (!selectedId) return catalogDefaultFallbackOption;
-    return (
-      flatModelOptions.find(
-        (option) => normalizeModelIdForMatch(option.value) === normalizeModelIdForMatch(selectedId),
-      ) ?? (hasExplicitModel ? legacyDefaultMappedOption : undefined)
+    // The mapped row wins for `<provider>:default` — an exact-id match would
+    // resolve to the hidden pseudo-row when an older daemon still serves one.
+    if (hasExplicitModel && legacyDefaultMappedOption) return legacyDefaultMappedOption;
+    return flatModelOptions.find(
+      (option) => normalizeModelIdForMatch(option.value) === normalizeModelIdForMatch(selectedId),
     );
   });
 

@@ -606,8 +606,23 @@ describe('ModelPicker trigger label regressions', () => {
     expect(text).not.toContain('default');
   });
 
-  it('renders the raw id for a legacy <provider>:default selection with no isDefault row', () => {
+  it('falls back to the first known model row for a <provider>:default selection with no isDefault row (D2)', () => {
     availableModels$.set([{ value: 'auggie:butler', label: 'Auggie Butler' }]);
+
+    render(ModelPicker, {
+      props: {
+        selectedModel: 'auggie:default',
+        isLocked: true,
+      },
+    });
+
+    const text = screen.getByRole('button').textContent ?? '';
+    expect(text).toContain('Auggie Butler');
+    expect(text).not.toContain('default');
+  });
+
+  it('renders the raw id for a <provider>:default selection while the catalog is cold', () => {
+    availableModels$.set([]);
 
     render(ModelPicker, {
       props: {

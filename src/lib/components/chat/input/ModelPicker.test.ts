@@ -446,6 +446,68 @@ describe('ModelPicker legacy Auggie models', () => {
   });
 });
 
+describe('ModelPicker default pseudo-row filtering', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockModelState.selectedModel = 'auggie:sonnet';
+    mockModelState.availableModels = [];
+    mockModelState.availableModelsProviderId = 'auggie';
+    mockModelState.loadError = null;
+    enabledProviderIds$.set(['auggie']);
+    activeProviderId$.set('auggie');
+  });
+
+  afterEach(() => {
+    cleanup();
+    document.body.innerHTML = '';
+  });
+
+  it('never lists a default pseudo-row still served by an older daemon', async () => {
+    vi.mocked(getModelsForProviderForLoadingState).mockResolvedValue({
+      models: [
+        { value: 'auggie:default', label: 'Default (recommended)' },
+        { value: 'auggie:sonnet', label: 'Sonnet 4.6' },
+        { value: 'auggie:opus', label: 'Opus 4.5' },
+      ],
+    });
+    render(ModelPicker, { props: { selectedModel: 'auggie:sonnet', portal: false } });
+
+    await fireEvent.click(screen.getByRole('button'));
+    expect(await screen.findByRole('option', { name: /Sonnet 4.6/ })).toBeTruthy();
+    expect(screen.getByRole('option', { name: /Opus 4.5/ })).toBeTruthy();
+    expect(screen.queryByRole('option', { name: /Default \(recommended\)/ })).toBeNull();
+  });
+
+  it('cannot surface the default pseudo-row through search', async () => {
+    vi.mocked(getModelsForProviderForLoadingState).mockResolvedValue({
+      models: [
+        { value: 'auggie:default', label: 'Default (recommended)' },
+        { value: 'auggie:sonnet', label: 'Sonnet 4.6' },
+      ],
+    });
+    render(ModelPicker, { props: { selectedModel: 'auggie:sonnet', portal: false } });
+
+    await fireEvent.click(screen.getByRole('button'));
+    await screen.findByRole('option', { name: /Sonnet 4.6/ });
+    const search = screen.getByRole('searchbox', { name: 'Search options' });
+    await fireEvent.input(search, { target: { value: 'Default' } });
+
+    await waitFor(() =>
+      expect(screen.queryByRole('option', { name: /Default \(recommended\)/ })).toBeNull(),
+    );
+  });
+
+  it('keeps the default pseudo-row when it is the only row for the provider (D1)', async () => {
+    vi.mocked(getModelsForProviderForLoadingState).mockResolvedValue({
+      models: [{ value: 'auggie:default', label: 'Default (recommended)' }],
+    });
+    render(ModelPicker, { props: { selectedModel: 'auggie:default', portal: false } });
+
+    await fireEvent.click(screen.getByRole('button'));
+    expect(await screen.findByRole('option', { name: /Default \(recommended\)/ })).toBeTruthy();
+  });
+});
+
 describe('ModelPicker combined reasoning mode', () => {
   beforeEach(() => {
     vi.clearAllMocks();

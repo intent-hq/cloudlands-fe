@@ -21,7 +21,9 @@ vi.mock('$store/renderer/store', async () => {
 
 import {
   collapseCodexEffortModels,
+  filterDefaultPseudoOptions,
   findModelFallbackOption,
+  isDefaultPseudoModelId,
   isUserProviderSettled,
   normalizeModelIdForMatch,
   toDropdownOptions,
@@ -257,5 +259,41 @@ describe('findModelFallbackOption', () => {
     // codex:x is filtered out by the provider restriction, so the in-provider
     // CLI default wins over first-available.
     expect(result?.value).toBe('auggie:cli-default');
+  });
+
+  it('never falls back to a hidden default pseudo-row when real rows exist', () => {
+    const options = [option('auggie:default'), option('auggie:a')];
+    const result = findModelFallbackOption({ options, globallySelectedModel: null });
+    expect(result?.value).toBe('auggie:a');
+  });
+
+  it('falls back to the sole default pseudo-row when nothing else exists (D1)', () => {
+    const options = [option('auggie:default')];
+    const result = findModelFallbackOption({ options, globallySelectedModel: null });
+    expect(result?.value).toBe('auggie:default');
+  });
+});
+
+describe('isDefaultPseudoModelId', () => {
+  it('matches bare and provider-prefixed default ids case-insensitively', () => {
+    expect(isDefaultPseudoModelId('default')).toBe(true);
+    expect(isDefaultPseudoModelId('claude-code:default')).toBe(true);
+    expect(isDefaultPseudoModelId('claude-code:Default')).toBe(true);
+    expect(isDefaultPseudoModelId('auggie:sonnet')).toBe(false);
+    expect(isDefaultPseudoModelId('auggie:default-plus')).toBe(false);
+  });
+});
+
+describe('filterDefaultPseudoOptions', () => {
+  const opt = (value: string): DropdownOption => ({ value, label: value });
+
+  it('drops default pseudo-rows when real rows remain', () => {
+    expect(filterDefaultPseudoOptions([opt('auggie:default'), opt('auggie:a')])).toEqual([
+      opt('auggie:a'),
+    ]);
+  });
+
+  it('keeps the pseudo-row when it is the only row (D1)', () => {
+    expect(filterDefaultPseudoOptions([opt('auggie:default')])).toEqual([opt('auggie:default')]);
   });
 });
