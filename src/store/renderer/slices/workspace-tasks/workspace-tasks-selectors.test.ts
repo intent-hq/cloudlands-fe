@@ -3,6 +3,8 @@ import type { StoreState } from "../../types";
 import type { WorkspaceTask, WorkspaceTaskStats } from "$shared/types";
 import { createCollection } from "@augmentcode/themis/utils/collections/collection-utils";
 import {
+  selectFallbackPlanTasksForAgent,
+  selectSpecLinkedTaskDisplayList,
   selectWorkspaceTaskDisplayList,
   selectWorkspaceTaskProgress,
   selectWorkspaceTasks,
@@ -118,5 +120,92 @@ describe("workspace-tasks selectors", () => {
       ]);
     });
   });
-});
+  describe("selectSpecLinkedTaskDisplayList (fallback plan card, monorepo#3249)", () => {
+    it("keeps spec-linked tasks in source order and drops cancelled + specLinked:false rows", () => {
+      const state = stateWith([
+        { ...makeTask("t1", "complete"), specLinked: true },
+        { ...makeTask("t2", "in_progress"), specLinked: true },
+        { ...makeTask("orphan", "not_started"), specLinked: false },
+        { ...makeTask("gone", "cancelled"), specLinked: true },
+        { ...makeTask("t3", "not_started"), specLinked: true },
+      ]);
 
+      expect(selectSpecLinkedTaskDisplayList.select(state, WS).map((t) => t.id)).toEqual([
+        "t1",
+        "t2",
+        "t3",
+      ]);
+    });
+
+    it("keeps legacy behavior (all non-cancelled) when the daemon omits specLinked", () => {
+      const state = stateWith([
+        makeTask("t1", "not_started"),
+        makeTask("gone", "cancelled"),
+        makeTask("t2", "in_progress"),
+      ]);
+
+      expect(selectSpecLinkedTaskDisplayList.select(state, WS).map((t) => t.id)).toEqual([
+        "t1",
+        "t2",
+      ]);
+    });
+
+    it("returns [] for unknown workspaces", () => {
+      expect(selectSpecLinkedTaskDisplayList.select(emptyState, WS)).toEqual([]);
+    });
+  });
+
+  describe("selectFallbackPlanTasksForAgent (fallback plan card, monorepo#3249)", () => {
+    const withAssociations = (
+      base: StoreState,
+      byNoteId: Record<string, Record<string, { agentId: string; noteId: string }>>
+    ): StoreState =>
+      ({
+        ...(base as object),
+        taskAgentAssociations: { byWorkspaceId: { [WS]: { byNoteId } } },
+      }) as unknown as StoreState;
+
+    it("shows only the delegated agent's linked task when associations exist", () => {
+      const base = stateWith([
+        { ...makeTask("t1", "not_started"), specLinked: true },
+        { ...makeTask("t2", "in_progress"), specLinked: true },
+      ]);
+      const state = withAssociations(base, {
+        t2: { key: { agentId: "agent-1", noteId: "t2" } },
+      });
+
+      expect(
+        selectFallbackPlanTasksForAgent.select(state, WS, "agent-1").map((t) => t.id)
+      ).toEqual(["t2"]);
+    });
+
+    it("excludes a delegated agent's linked task when it is cancelled", () => {
+      const base = stateWith([{ ...makeTask("t1", "cancelled"), specLinked: true }]);
+      const state = withAssociations(base, {
+        t1: { key: { agentId: "agent-1", noteId: "t1" } },
+      });
+
+      expect(selectFallbackPlanTasksForAgent.select(state, WS, "agent-1")).toEqual([]);
+    });
+
+    it("falls back to the spec-linked list for agents with no associations (coordinator/root)", () => {
+      const base = stateWith([
+        { ...makeTask("t1", "not_started"), specLinked: true },
+        { ...makeTask("orphan", "not_started"), specLinked: false },
+      ]);
+      const state = withAssociations(base, {
+        t1: { key: { agentId: "other-agent", noteId: "t1" } },
+      });
+
+      expect(
+        selectFallbackPlanTasksForAgent.select(state, WS, "coordinator-1").map((t) => t.id)
+      ).toEqual(["t1"]);
+    });
+
+    it("returns [] for an empty agent id or unknown workspace", () => {
+      const base = stateWith([{ ...makeTask("t1", "not_started"), specLinked: true }]);
+      expect(selectFallbackPlanTasksForAgent.select(base, WS, "")).toEqual([]);
+      expect(selectFallbackPlanTasksForAgent.select(emptyState, WS, "agent-1")).toEqual([]);
+    });
+  });
+});

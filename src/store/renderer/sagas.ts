@@ -54,6 +54,7 @@ import { legacyImportSaga } from './slices/legacy-import/sagas/legacy-import-sag
 import { linearAuthSaga } from './slices/linear-auth/sagas/linear-auth-saga';
 import { mcpSettingsSaga } from './slices/mcp-settings/sagas/mcp-settings-saga';
 import { modelBootSaga } from './slices/model/sagas/model-boot-saga';
+import { nativePlansSaga } from './slices/native-plans/sagas/native-plans-saga';
 import { modelReloadSaga } from './slices/model/sagas/model-reload-saga';
 import { modelSelectionSaga } from './slices/model/sagas/model-selection-saga';
 import {
@@ -143,6 +144,7 @@ export const sagas = [
   workspaceNotesSaga,
   contextSaga,
   taskAgentAssociationsSaga,
+  nativePlansSaga,
   appLayoutNavigationSaga,
   workspaceNavigationTabSaga,
   workspaceNavigationLayoutSaga,

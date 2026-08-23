@@ -12,7 +12,7 @@ import type { PlanEntry, SessionId } from '../types/base';
 
 const logger = new Logger('PlanManager');
 
-interface EnhancedPlanEntry extends PlanEntry {
+export interface EnhancedPlanEntry extends PlanEntry {
   id: string;
   title: string;
   parentId?: string;
@@ -25,7 +25,7 @@ interface EnhancedPlanEntry extends PlanEntry {
   color?: string;
 }
 
-interface SessionPlan {
+export interface SessionPlan {
   sessionId: AgentId;
   entries: EnhancedPlanEntry[];
   createdAt: number;
