@@ -1023,9 +1023,9 @@ function parseGrepSnippets(result: string): NonNullable<ParsedToolResult['snippe
     entry.rows.push(`${lineNumber}: ${text}`);
   }
 
-  // Require at least one real match and a majority of grep-shaped lines so
-  // prose containing colons does not misparse as search results.
-  if (matchLines === 0 || grepLines < considered * 0.5) return [];
+  // Require at least one real match and a strict majority of grep-shaped lines
+  // so prose containing colons does not misparse as search results.
+  if (matchLines === 0 || grepLines * 2 <= considered) return [];
 
   return [...byFile.entries()].map(([path, entry]) => ({
     path,

@@ -372,6 +372,14 @@ describe('tool-result-parser', () => {
       expect(result.snippets).toHaveLength(0);
       expect(result.content).toBe(output);
     });
+
+    it('falls back to raw content when grep-shaped lines are exactly half (not a strict majority)', () => {
+      const output = ['src/a.ts:1:hit', 'search finished with warnings'].join('\n');
+      const result = parseToolResult('grep', { pattern: 'hit' }, output);
+
+      expect(result.snippets).toHaveLength(0);
+      expect(result.content).toBe(output);
+    });
   });
 
   describe('workspace_api ws.app.* routing', () => {
