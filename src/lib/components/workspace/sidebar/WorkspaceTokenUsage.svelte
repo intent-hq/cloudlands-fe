@@ -309,7 +309,7 @@
         aria-labelledby={titleId}
         data-testid="token-usage-details"
       >
-        <section class="px-4 py-3.5" aria-labelledby={`${detailsId}-composition`}>
+        <section class="px-4 py-2.5" aria-labelledby={`${detailsId}-composition`}>
           <div class="flex items-baseline justify-between gap-3">
             <h4
               id={`${detailsId}-composition`}
@@ -325,7 +325,7 @@
             </span>
           </div>
           <div
-            class="mt-3 flex h-2.5 w-full overflow-hidden rounded-sm bg-muted"
+            class="mt-2 flex h-2.5 w-full overflow-hidden rounded-sm bg-muted"
             aria-hidden="true"
           >
             {#each compositionRows as row (row.id)}
@@ -336,7 +336,7 @@
             {/each}
           </div>
           <dl
-            class="mt-2 divide-y divide-border/80 border-y border-border dark:divide-[#1e1e1e] dark:border-[#1e1e1e]"
+            class="mt-1.5 divide-y divide-border/80 border-y border-border dark:divide-[#1e1e1e] dark:border-[#1e1e1e]"
           >
             {#each compositionRows as row (row.id)}
               <div class="composition-row min-w-0 py-3">
@@ -370,7 +370,7 @@
           <div class="breakdown-grid grid grid-cols-1 border-t border-border dark:border-[#1e1e1e]">
             {#if agentRows.length > 0}
               <section
-                class="breakdown-section min-w-0 px-3 py-2"
+                class="breakdown-section h-[4.75rem] min-w-0 px-3 py-2"
                 aria-labelledby={`${detailsId}-agents`}
                 data-testid="token-usage-by-agent"
               >
@@ -380,7 +380,7 @@
                 >
                   {m.workspace_tokenUsage_byAgent_label()}
                 </h4>
-                <ol class="breakdown-list max-h-10 space-y-1 overflow-y-auto">
+                <ol class="breakdown-list max-h-8 space-y-1 overflow-y-auto">
                   {#each agentRows as row (row.id)}
                     <li class="min-w-0">
                       <span class="block h-px overflow-hidden bg-muted" aria-hidden="true">
@@ -415,7 +415,7 @@
 
             {#if modelRows.length > 0}
               <section
-                class="breakdown-section min-w-0 px-3 py-2"
+                class="breakdown-section h-[4.75rem] min-w-0 px-3 py-2"
                 aria-labelledby={`${detailsId}-models`}
                 data-testid="token-usage-by-model"
               >
@@ -425,7 +425,7 @@
                 >
                   {m.workspace_tokenUsage_byModel_label()}
                 </h4>
-                <ol class="breakdown-list max-h-10 space-y-1 overflow-y-auto">
+                <ol class="breakdown-list max-h-8 space-y-1 overflow-y-auto">
                   {#each modelRows as row (row.id)}
                     <li class="min-w-0">
                       <span class="block h-px overflow-hidden bg-muted" aria-hidden="true">
@@ -532,11 +532,17 @@
   }
 
   .breakdown-list {
-    scrollbar-width: none;
+    scrollbar-color: hsl(var(--muted-foreground) / 0.45) transparent;
+    scrollbar-width: thin;
   }
 
   .breakdown-list::-webkit-scrollbar {
-    display: none;
+    width: 3px;
+  }
+
+  .breakdown-list::-webkit-scrollbar-thumb {
+    border-radius: 9999px;
+    background: hsl(var(--muted-foreground) / 0.45);
   }
 
   @container token-details (max-width: 279px) {

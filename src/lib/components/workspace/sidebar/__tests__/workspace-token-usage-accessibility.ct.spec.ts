@@ -198,6 +198,8 @@ test('renders the full reference table as a wide overlay from the real workspace
   await expect(modelSection).toBeVisible();
   await expect(agentRows).toHaveCount(2);
   await expect(modelRows).toHaveCount(2);
+  await expect(agentRows.first()).toBeVisible();
+  await expect(modelRows.first()).toBeVisible();
   await expect(agentRows.nth(0)).toContainText('750 75%');
   await expect(agentRows.nth(1)).toContainText('250 25%');
   await expect(modelRows.nth(0)).toContainText('750 75%');
@@ -286,6 +288,7 @@ test('renders the full reference table as a wide overlay from the real workspace
         maxHeight: Number.parseFloat(getComputedStyle(list).maxHeight),
         overflowY: getComputedStyle(list).overflowY,
         scrollbarWidth: getComputedStyle(list).scrollbarWidth,
+        scrollHeight: list.scrollHeight,
       })),
     ),
   ]);
@@ -303,13 +306,34 @@ test('renders the full reference table as a wide overlay from the real workspace
   expect(modelBox).not.toBeNull();
   expect(Math.abs(agentBox!.y - modelBox!.y)).toBeLessThanOrEqual(1);
   expect(agentBox!.width).toBeCloseTo(modelBox!.width, 0);
-  expect(detailsBox!.height).toBeLessThanOrEqual(335);
-  expect(agentBox!.height).toBeLessThanOrEqual(80);
-  expect(modelBox!.height).toBeLessThanOrEqual(80);
+  expect(detailsBox!.height).toBeGreaterThanOrEqual(300);
+  expect(detailsBox!.height).toBeLessThanOrEqual(320);
+  expect(detailsBox!.height / detailsBox!.width).toBeGreaterThanOrEqual(0.68);
+  expect(detailsBox!.height / detailsBox!.width).toBeLessThanOrEqual(0.71);
+  expect(agentBox!.height).toBeGreaterThanOrEqual(76);
+  expect(agentBox!.height).toBeLessThanOrEqual(84);
+  expect(modelBox!.height).toBeGreaterThanOrEqual(76);
+  expect(modelBox!.height).toBeLessThanOrEqual(84);
   expect(
     breakdownLists.every(
-      ({ clientHeight, maxHeight, overflowY, scrollbarWidth }) =>
-        clientHeight <= 40 && maxHeight === 40 && overflowY === 'auto' && scrollbarWidth === 'none',
+      ({ clientHeight, maxHeight, overflowY, scrollbarWidth, scrollHeight }) =>
+        clientHeight <= 32 &&
+        maxHeight === 32 &&
+        overflowY === 'auto' &&
+        scrollbarWidth === 'thin' &&
+        scrollHeight > clientHeight,
+    ),
+  ).toBe(true);
+  await details.locator('.breakdown-section ol').evaluateAll((lists) => {
+    for (const list of lists) list.scrollTop = list.scrollHeight;
+  });
+  expect(
+    await details.locator('.breakdown-section ol').evaluateAll((lists) =>
+      lists.every((list) => {
+        const listBox = list.getBoundingClientRect();
+        const lastRowBox = list.lastElementChild!.getBoundingClientRect();
+        return lastRowBox.top >= listBox.top - 1 && lastRowBox.bottom <= listBox.bottom + 1;
+      }),
     ),
   ).toBe(true);
   expect(
