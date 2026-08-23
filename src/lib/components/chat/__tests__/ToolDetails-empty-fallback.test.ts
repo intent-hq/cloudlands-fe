@@ -235,6 +235,75 @@ describe('ToolDetails pending (running) rendering', () => {
   });
 });
 
+describe('ToolDetails code-search empty-state guard', () => {
+  it('does not show "No results" above raw fallback content holding real matches', () => {
+    // Regression for #3284: unparsed grep output fell into content while the
+    // empty-snippets branch still rendered the "No results" label above it
+    const { container } = render(ToolDetails, {
+      props: {
+        input: { pattern: 'isDefault' },
+        result: 'src/a.ts:10:isDefault',
+        parsedResult: {
+          type: 'code-search' as const,
+          snippets: [],
+          content: 'raw grep output with thousands of matches',
+        },
+        isError: false,
+      },
+    });
+
+    expect(container.textContent).not.toContain('No results');
+  });
+
+  it('shows "No results" for a genuinely empty search carrying a query echo', () => {
+    const { container } = render(ToolDetails, {
+      props: {
+        input: { pattern: 'TODO' },
+        result: '',
+        parsedResult: {
+          type: 'code-search' as const,
+          snippets: [],
+          content: 'Search: TODO',
+          noMatches: true,
+        },
+        isError: false,
+      },
+    });
+
+    expect(container.textContent).toContain('No results');
+  });
+
+  it('shows "No results" when there are no snippets and no content', () => {
+    const { container } = render(ToolDetails, {
+      props: {
+        input: {},
+        result: '',
+        parsedResult: { type: 'code-search' as const, snippets: [] },
+        isError: false,
+      },
+    });
+
+    expect(container.textContent).toContain('No results');
+  });
+
+  it('renders snippet cards without the empty-state when snippets exist', () => {
+    const { container } = render(ToolDetails, {
+      props: {
+        input: { pattern: 'foo' },
+        result: 'src/lib/a.ts:10:const foo = 1;',
+        parsedResult: {
+          type: 'code-search' as const,
+          snippets: [{ path: 'src/lib/a.ts', content: '10: const foo = 1;', lineStart: 10 }],
+        },
+        isError: false,
+      },
+    });
+
+    expect(container.textContent).toContain('a.ts');
+    expect(container.textContent).not.toContain('No results');
+  });
+});
+
 describe('ToolDetails batch delegate rendering', () => {
   it('renders a disposition summary instead of the "Agent spawned" label', () => {
     const { container } = render(ToolDetails, {

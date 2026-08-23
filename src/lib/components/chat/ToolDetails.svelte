@@ -484,10 +484,13 @@
               {/if}
             </div>
           {:else if parsedResult.type === 'code-search'}
-            <!-- Search results with no snippets - show "No results" message -->
-            <div class="text-center py-2 text-subtle text-sm">
-              {m.chat_toolDetails_noResults_label()}
-            </div>
+            <!-- No parsed snippets - only claim "No results" when the search was
+                 genuinely empty; unparsed fallback content still holds real matches -->
+            {#if parsedResult.noMatches || !parsedResult.content}
+              <div class="text-center py-2 text-subtle text-sm">
+                {m.chat_toolDetails_noResults_label()}
+              </div>
+            {/if}
             {#if parsedResult.content}
               <CodeBlock
                 code={parsedResult.content}

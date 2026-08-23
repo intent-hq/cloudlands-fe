@@ -276,6 +276,102 @@ describe('tool-result-parser', () => {
       expect(result.type).toBe('code-search');
       expect(result.content).toBe('Search: Find all API endpoints');
     });
+
+    it('flags a genuinely empty search result with noMatches', () => {
+      const result = parseToolResult('grep', { pattern: 'TODO' }, '');
+
+      expect(result.type).toBe('code-search');
+      expect(result.noMatches).toBe(true);
+      expect(result.snippets).toHaveLength(0);
+      expect(result.content).toBe('Search: TODO');
+    });
+
+    it('parses grep -n file:line: output into per-file snippets', () => {
+      const output = [
+        'src/lib/a.ts:10:const foo = 1;',
+        'src/lib/a.ts:22:const bar = foo;',
+        'src/lib/b.svelte:5:<div>{foo}</div>',
+      ].join('\n');
+      const result = parseToolResult('grep', { pattern: 'foo' }, output);
+
+      expect(result.type).toBe('code-search');
+      expect(result.noMatches).toBeUndefined();
+      expect(result.content).toBeUndefined();
+      expect(result.snippets).toEqual([
+        {
+          path: 'src/lib/a.ts',
+          content: '10: const foo = 1;\n22: const bar = foo;',
+          lineStart: 10,
+        },
+        {
+          path: 'src/lib/b.svelte',
+          content: '5: <div>{foo}</div>',
+          lineStart: 5,
+        },
+      ]);
+    });
+
+    it('includes grep context lines (-A/-B) and skips group separators', () => {
+      const output = [
+        'src/lib/a.ts:10:match line',
+        'src/lib/a.ts-11-context line',
+        '--',
+        'src/lib/b.ts:20:another match',
+      ].join('\n');
+      const result = parseToolResult('Grep', { pattern: 'match' }, output);
+
+      expect(result.snippets).toEqual([
+        { path: 'src/lib/a.ts', content: '10: match line\n11: context line', lineStart: 10 },
+        { path: 'src/lib/b.ts', content: '20: another match', lineStart: 20 },
+      ]);
+      expect(result.content).toBeUndefined();
+    });
+
+    it('parses rtk compact grep output, skipping header and truncation footer', () => {
+      // Incident shape from #3284: rtk grep dump rendered under a "No results" label
+      const output = [
+        '222 matches in 40 files:',
+        '',
+        "src/lib/components/chat/AgentCard.svelte:29:import { render } from './x';",
+        'src/.../chat/AgentPreviewToolLabel.svelte:13:import { render } fro...',
+        '  +241 more in src/lib/components/chat/tool-result-parser.ts [see remaining: tail -n +26 ~/.local/share/rtk/tee/x.log]',
+      ].join('\n');
+      const result = parseToolResult('grep', { pattern: 'render' }, output);
+
+      expect(result.type).toBe('code-search');
+      expect(result.content).toBeUndefined();
+      expect(result.snippets).toEqual([
+        {
+          path: 'src/lib/components/chat/AgentCard.svelte',
+          content: "29: import { render } from './x';",
+          lineStart: 29,
+        },
+        {
+          path: 'src/.../chat/AgentPreviewToolLabel.svelte',
+          content: '13: import { render } fro...',
+          lineStart: 13,
+        },
+      ]);
+    });
+
+    it('falls back to raw content for prose output without claiming noMatches', () => {
+      const output =
+        'The search completed but the tool emitted a note: results were streamed elsewhere.';
+      const result = parseToolResult('search', { query: 'foo' }, output);
+
+      expect(result.type).toBe('code-search');
+      expect(result.snippets).toHaveLength(0);
+      expect(result.noMatches).toBeUndefined();
+      expect(result.content).toBe(output);
+    });
+
+    it('does not misparse colon-heavy log output as grep matches', () => {
+      const output = ['12:34:56 starting server', 'listening on http://localhost:3000'].join('\n');
+      const result = parseToolResult('grep', { pattern: 'server' }, output);
+
+      expect(result.snippets).toHaveLength(0);
+      expect(result.content).toBe(output);
+    });
   });
 
   describe('workspace_api ws.app.* routing', () => {

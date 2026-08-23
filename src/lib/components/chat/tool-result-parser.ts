@@ -67,6 +67,7 @@ export interface ParsedToolResult {
   editSummary?: string;
   // For search results
   snippets?: Array<{ path: string; content: string; lineStart?: number }>;
+  noMatches?: boolean;
   // For terminal
   command?: string;
   exitCode?: number;
@@ -972,7 +973,69 @@ function parseSaveResult(
 }
 
 /**
- * Parse codebase-retrieval result
+ * Grep-style match/context line: `path:line:content` (match) or
+ * `path-line-content` (context from -A/-B/-C); the separator must be the same
+ * on both sides of the line number.
+ */
+const GREP_LINE_REGEX = /^(.+?)([:-])(\d+)\2(.*)$/;
+/** rtk grep header line: `266 matches in 1 files:` */
+const RTK_HEADER_REGEX = /^\d+ matches? in \d+ files?:$/;
+/** rtk grep truncation footer: `  +241 more in <file> [see remaining: ...]` */
+const RTK_FOOTER_REGEX = /^\s*\+\d+ more in .+$/;
+
+/** Heuristic: does a grep-line prefix plausibly name a file? */
+function looksLikeFilePath(path: string): boolean {
+  if (!path || /^\s/.test(path)) return false;
+  return path.includes('/') || path.includes('\\') || /\.[A-Za-z0-9_-]+$/.test(path);
+}
+
+/**
+ * Parse grep-style `file:line:` output (plain grep/rg -n and rtk grep's
+ * compact format) into per-file snippets. Returns [] when the text does not
+ * look like grep output, so callers can fall back to raw content.
+ */
+function parseGrepSnippets(result: string): NonNullable<ParsedToolResult['snippets']> {
+  const byFile = new Map<string, { lineStart: number; rows: string[] }>();
+  let considered = 0;
+  let grepLines = 0;
+  let matchLines = 0;
+
+  for (const line of result.split('\n')) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed === '--') continue;
+    // rtk grep decorations: header, truncation footers, hook warnings
+    if (RTK_HEADER_REGEX.test(trimmed) || RTK_FOOTER_REGEX.test(line)) continue;
+    if (trimmed.startsWith('[rtk]')) continue;
+    considered++;
+
+    const match = line.match(GREP_LINE_REGEX);
+    if (!match) continue;
+    const [, path, separator, lineNumber, text] = match;
+    if (!looksLikeFilePath(path)) continue;
+    grepLines++;
+    if (separator === ':') matchLines++;
+
+    let entry = byFile.get(path);
+    if (!entry) {
+      entry = { lineStart: parseInt(lineNumber, 10), rows: [] };
+      byFile.set(path, entry);
+    }
+    entry.rows.push(`${lineNumber}: ${text}`);
+  }
+
+  // Require at least one real match and a majority of grep-shaped lines so
+  // prose containing colons does not misparse as search results.
+  if (matchLines === 0 || grepLines < considered * 0.5) return [];
+
+  return [...byFile.entries()].map(([path, entry]) => ({
+    path,
+    content: entry.rows.join('\n'),
+    lineStart: entry.lineStart,
+  }));
+}
+
+/**
+ * Parse codebase-retrieval / grep-style search results
  */
 function parseSearchResult(
   input: Record<string, any>,
@@ -985,6 +1048,9 @@ function parseSearchResult(
   };
 
   if (!result) {
+    // Genuinely empty search result — flag it so the renderer shows the
+    // "No results" empty-state even when a query echo is added below.
+    parsed.noMatches = true;
     // When result is empty but we have a query/pattern, add it as content
     // This ensures search tools always have something to display when expanded
     if (input.information_request) {
@@ -1011,6 +1077,11 @@ function parseSearchResult(
         snippets.push({ path, content });
       }
     }
+  }
+
+  // Try grep-style `file:line:` output (plain grep/rg and rtk grep)
+  if (snippets.length === 0) {
+    snippets.push(...parseGrepSnippets(result));
   }
 
   // If no structured paths found, treat as plain content
