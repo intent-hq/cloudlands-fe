@@ -164,6 +164,58 @@ describe('thinking blocks — StreamingMessageContent', () => {
     expect(document.body.textContent).toContain('Visible answer');
   });
 
+  it('only flags the truly last block of a streaming message as streaming inside a group', async () => {
+    // Streaming message whose last top-level block is an unclosed <group:…>
+    // containing [thinking, tool_use, thinking, text]. Only the final text
+    // block is still streaming; the completed thinking blocks must render
+    // static (collapsed, no pulse animation).
+    await renderStreaming(
+      [
+        { type: 'text', id: 'msg_1:0', text: '<group:Working>' },
+        thinking('msg_1:1', 'First reasoning pass'),
+        { type: 'tool_use', id: 'msg_1:2', name: 'view', input: {} } as ContentBlock,
+        thinking('msg_1:3', 'Second reasoning pass'),
+        { type: 'text', id: 'msg_1:4', text: 'Partial streamed answer' },
+      ],
+      true,
+    );
+
+    const thinkingRows = document.querySelectorAll('.content-block--thinking');
+    expect(thinkingRows).toHaveLength(2);
+    for (const row of thinkingRows) {
+      expect(row.querySelector('[data-operational-leading]')?.className).not.toContain(
+        'animate-pulse',
+      );
+      expect(row.querySelector('[aria-expanded]')?.getAttribute('aria-expanded')).toBe('false');
+    }
+
+    const streamingViewers = [...document.querySelectorAll('[data-testid="markdown-viewer"]')]
+      .filter((viewer) => viewer.getAttribute('data-streaming') === 'true');
+    expect(streamingViewers.map((viewer) => viewer.textContent)).toEqual([
+      'Partial streamed answer',
+    ]);
+  });
+
+  it('flags a trailing streaming thinking block inside a group as streaming', async () => {
+    await renderStreaming(
+      [
+        { type: 'text', id: 'msg_1:0', text: '<group:Working>' },
+        thinking('msg_1:1', 'First reasoning pass'),
+        thinking('msg_1:2', 'Still reasoning'),
+      ],
+      true,
+    );
+
+    const thinkingRows = document.querySelectorAll('.content-block--thinking');
+    expect(thinkingRows).toHaveLength(2);
+    expect(
+      thinkingRows[0].querySelector('[data-operational-leading]')?.className,
+    ).not.toContain('animate-pulse');
+    expect(thinkingRows[1].querySelector('[data-operational-leading]')?.className).toContain(
+      'animate-pulse',
+    );
+  });
+
   it('still renders legacy <think>-tag reasoning when showReasoningBlocks is on', async () => {
     await renderStreaming(
       [

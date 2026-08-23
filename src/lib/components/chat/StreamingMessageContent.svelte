@@ -621,7 +621,7 @@
 
 {#snippet renderParsedContentBlock(
   parsedBlock: ParsedContent,
-  blockIndex: number,
+  isLastBlock: boolean,
   insetProse = false,
 )}
   {#if parsedBlock.type === 'augment_code_snippet'}
@@ -695,7 +695,7 @@
     >
       <MarkdownViewer
         content={parsedBlock.content || ''}
-        isStreaming={isStreaming && blockIndex === groupedBlocks.length - 1}
+        isStreaming={isStreaming && isLastBlock}
         {workspaceId}
         taskBlockRenderMode="content"
         onFileClick={(path, options) => handleOpenFile({ path, ...options })}
@@ -708,7 +708,7 @@
     >
       <MarkdownViewer
         content={parsedBlock.content || ''}
-        isStreaming={isStreaming && blockIndex === groupedBlocks.length - 1}
+        isStreaming={isStreaming && isLastBlock}
         {workspaceId}
         taskBlockRenderMode="content"
         onFileClick={(path, options) => handleOpenFile({ path, ...options })}
@@ -725,7 +725,7 @@
 {#snippet renderContentBlock(
   block: ContentBlock,
   parsedKey: string,
-  blockIndex: number,
+  isLastBlock: boolean,
   nested = false,
   adjacentOperationalRow = false,
 )}
@@ -772,7 +772,7 @@
       {/if}
       {#if parsedResult.blocks.length > 0}
         {#each parsedResult.blocks as renderBlock, parsedBlockIndex (`${parsedKey}-parsed-${parsedBlockIndex}`)}
-          {@render renderParsedContentBlock(renderBlock as ParsedContent, blockIndex, !nested)}
+          {@render renderParsedContentBlock(renderBlock as ParsedContent, isLastBlock, !nested)}
         {/each}
       {:else}
         <!-- Only render fallback if text has content after stripping suggested prompts -->
@@ -785,7 +785,7 @@
           >
             <MarkdownViewer
               content={cleanedText}
-              isStreaming={isStreaming && blockIndex === groupedBlocks.length - 1}
+              isStreaming={isStreaming && isLastBlock}
               {workspaceId}
               taskBlockRenderMode="content"
               onFileClick={(path, options) => handleOpenFile({ path, ...options })}
@@ -837,7 +837,7 @@
          <think>-tag parser path in messageParser emits `content`. -->
     <ThinkingBlock
       content={getContentBlockText(block) || m.chat_shared_processing_fallback()}
-      isStreaming={isStreaming && blockIndex === groupedBlocks.length - 1}
+      isStreaming={isStreaming && isLastBlock}
       {workspaceId}
       {adjacentOperationalRow}
     />
@@ -910,7 +910,8 @@
                   {@render renderContentBlock(
                     childBlock,
                     `${blockIndex}-${childIndex}`,
-                    blockIndex,
+                    blockIndex === groupedBlocks.length - 1 &&
+                      childIndex === group.children.length - 1,
                     true,
                     isAdjacentOperationalClusterRow(
                       group.children,
@@ -944,7 +945,7 @@
         {@render renderContentBlock(
           block as ContentBlock,
           String(blockIndex),
-          blockIndex,
+          blockIndex === groupedBlocks.length - 1,
           false,
           isAdjacentOperationalClusterRow(groupedBlocks, blockIndex, isVisibleTopLevelBlock),
         )}
