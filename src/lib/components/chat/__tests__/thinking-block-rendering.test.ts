@@ -124,6 +124,7 @@ describe('thinking blocks — StreamingMessageContent', () => {
       );
 
     expect(groupDisclosure.getAttribute('aria-expanded')).toBe('false');
+    expect(screen.getByTestId('response-group-name').textContent).toBe('Working');
     expect(visibleChildTypes()).toEqual(['thinking']);
     expect(screen.getByTestId('reasoning-disclosure').textContent?.trim()).toBe('Thinking...');
 
@@ -181,52 +182,79 @@ describe('thinking blocks — StreamingMessageContent', () => {
     expect(visibleChildTypes()).toEqual([]);
   });
 
-  it('reconciles a tag-first response group through explicit close and message completion', async () => {
+  it('renders the alternate-model Prepping wrapper as one reasoning disclosure', async () => {
     const opening = [{ type: 'text', id: 'msg_1:0', text: '<group:Prepping>' }] as ContentBlock[];
     const view = await renderStreaming(opening, true);
-    const groupDisclosure = screen.getByTestId('response-group-disclosure');
     const visibleChildTypes = () =>
       [...document.querySelectorAll('[data-response-group-child]')].map((child) =>
         child.getAttribute('data-message-content-block'),
       );
 
+    let groupDisclosure = screen.getByTestId('response-group-disclosure');
     expect(groupDisclosure.getAttribute('aria-expanded')).toBe('true');
+    expect(screen.getByTestId('response-group-name').textContent).toBe('Thinking...');
+    expect(document.body.textContent).not.toContain('Prepping');
     expect(visibleChildTypes()).toEqual([]);
 
     const groupContent = [
-      { type: 'text', id: 'msg_1:0', text: '<group:Prepping>Review current code.' },
-      thinking('msg_1:1', 'Inspect the response-group state'),
+      {
+        type: 'text',
+        id: 'msg_1:0',
+        text: '<group:Prepping>I will set the workspace title and inspect the current workspace.',
+      },
+      thinking('msg_1:1', 'Figma startup\n\nCheck the workspace before changing files.'),
       {
         type: 'tool_use',
         id: 'msg_1:2',
         toolCallId: 'call-1',
         name: 'workspace_api',
-        input: { summary: 'Read the current state' },
+        input: { summary: 'Set workspace title and read details' },
       },
-      { type: 'tool_result', id: 'msg_1:3', tool_use_id: 'call-1', output: 'done' },
-      thinking('msg_1:4', 'Confirm the completed state'),
+      { type: 'tool_result', id: 'msg_1:3', tool_use_id: 'call-1', output: 'Workspace ready' },
+      thinking('msg_1:4', 'Searching workspace API\n\nFind the relevant implementation.'),
     ] as ContentBlock[];
     await view.rerender({ content: groupContent, isStreaming: true });
 
-    expect(visibleChildTypes()).toEqual(['thinking']);
+    expect(groupDisclosure.getAttribute('aria-expanded')).toBe('true');
+    expect(visibleChildTypes()).toEqual(['text', 'thinking', 'tool_use', 'thinking']);
+    expect(document.body.textContent).toContain(
+      'I will set the workspace title and inspect the current workspace.',
+    );
+
+    await fireEvent.click(groupDisclosure);
+    expect(groupDisclosure.getAttribute('aria-expanded')).toBe('false');
+    expect(visibleChildTypes()).toEqual([]);
+    expect(document.body.textContent).not.toContain('I will set the workspace title');
+
+    await fireEvent.click(groupDisclosure);
+    expect(groupDisclosure.getAttribute('aria-expanded')).toBe('true');
+    const toolDisclosure = document.querySelector(
+      '[data-message-content-block="tool_use"] [data-testid="tool-call-disclosure"]',
+    );
+    expect(toolDisclosure).toBeTruthy();
+    await fireEvent.click(toolDisclosure!);
+    expect(document.body.textContent).toContain('Workspace ready');
+    await fireEvent.click(groupDisclosure);
+    expect(groupDisclosure.getAttribute('aria-expanded')).toBe('false');
 
     const completedContent = [
       ...groupContent,
-      { type: 'text', id: 'msg_1:5', text: '</group:Prepping>Final prose.' },
+      { type: 'text', id: 'msg_1:5', text: '</group:Prepping>Workspace inspection complete.' },
     ] as ContentBlock[];
-    await view.rerender({ content: completedContent, isStreaming: true });
-
-    expect(visibleChildTypes()).toEqual([]);
-    expect(document.body.textContent).toContain('Final prose.');
-
     await view.rerender({ content: completedContent, isStreaming: false });
+
+    groupDisclosure = screen.getByTestId('response-group-disclosure');
+    expect(groupDisclosure.getAttribute('aria-expanded')).toBe('false');
+    expect(screen.getByTestId('response-group-name').textContent).toBe('Reasoning');
+    expect(document.body.textContent).toContain('Workspace inspection complete.');
+    expect(document.body.textContent).not.toContain('Prepping');
+
     await fireEvent.click(groupDisclosure);
     expect(groupDisclosure.getAttribute('aria-expanded')).toBe('true');
     expect(visibleChildTypes()).toEqual(['text', 'thinking', 'tool_use', 'thinking']);
-
-    await view.rerender({ content: [...completedContent], isStreaming: false });
-    expect(groupDisclosure.getAttribute('aria-expanded')).toBe('true');
-    expect(visibleChildTypes()).toEqual(['text', 'thinking', 'tool_use', 'thinking']);
+    expect(document.body.textContent).toContain(
+      'I will set the workspace title and inspect the current workspace.',
+    );
   });
 
   it('uses the reasoning title in the static message path', async () => {

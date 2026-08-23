@@ -14,17 +14,29 @@
   }: { phase?: 'opening' | 'live' | 'closed'; isStreaming?: boolean } = $props();
 
   const liveContent = [
-    { type: 'text', id: 'msg_1:0', text: '<group:Prepping>Review current code.' },
-    { type: 'thinking', id: 'msg_1:1', text: 'Inspect the response-group state' },
+    {
+      type: 'text',
+      id: 'msg_1:0',
+      text: '<group:Prepping>I will set the workspace title and inspect the current workspace.',
+    },
+    {
+      type: 'thinking',
+      id: 'msg_1:1',
+      text: 'Figma startup\n\nCheck the workspace before changing files.',
+    },
     {
       type: 'tool_use',
       id: 'msg_1:2',
       toolCallId: 'call-1',
       name: 'workspace_api',
-      input: { summary: 'Read the current state' },
+      input: { summary: 'Set workspace title and read details' },
     },
-    { type: 'tool_result', id: 'msg_1:3', tool_use_id: 'call-1', output: 'done' },
-    { type: 'thinking', id: 'msg_1:4', text: 'Confirm the completed state' },
+    { type: 'tool_result', id: 'msg_1:3', tool_use_id: 'call-1', output: 'Workspace ready' },
+    {
+      type: 'thinking',
+      id: 'msg_1:4',
+      text: 'Searching workspace API\n\nFind the relevant implementation.',
+    },
   ] as ContentBlock[];
 
   const content = $derived(
@@ -34,7 +46,11 @@
         ? liveContent
         : ([
             ...liveContent,
-            { type: 'text', id: 'msg_1:5', text: '</group:Prepping>Final prose.' },
+            {
+              type: 'text',
+              id: 'msg_1:5',
+              text: '</group:Prepping>Workspace inspection complete.',
+            },
           ] as ContentBlock[]),
   );
 </script>

@@ -16,6 +16,7 @@ import {
   getResponseGroupCurrentBlock,
   getResponseGroupCurrentBlockIndex,
   getResponseGroupPreviewBlock,
+  isReasoningPhaseGroupName,
 } from '../response-group-blocks';
 import { warmImport } from '../../../../test/warm-import';
 import type { ContentBlock } from '$shared/types';
@@ -381,6 +382,13 @@ describe('ResponseGroup - collapse state model', () => {
 });
 
 describe('ResponseGroup - block identity', () => {
+  it('recognizes only the alternate-model reasoning phase name', () => {
+    expect(isReasoningPhaseGroupName('Prepping')).toBe(true);
+    expect(isReasoningPhaseGroupName(' prepping ')).toBe(true);
+    expect(isReasoningPhaseGroupName('Working')).toBe(false);
+    expect(isReasoningPhaseGroupName('Plan')).toBe(false);
+  });
+
   it('selects the last visible child and skips trailing tool results', () => {
     const blocks = [
       { type: 'thinking', id: 'thought-1', text: 'Earlier reasoning' },

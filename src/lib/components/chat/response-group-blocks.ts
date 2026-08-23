@@ -5,6 +5,15 @@ import {
   getToolUseContentBlockKey,
 } from '$shared/utils/content-block-helpers';
 
+// This provider phase arrives in the same parsed content_group shape as normal
+// named groups. Keep the compatibility match narrow so authored group names
+// such as Working and Plan retain their model-provided titles.
+const REASONING_PHASE_GROUP_NAMES = new Set(['prepping']);
+
+export function isReasoningPhaseGroupName(name: string): boolean {
+  return REASONING_PHASE_GROUP_NAMES.has(name.trim().toLowerCase());
+}
+
 export function getResponseGroupBlockKey(block: ContentBlock, index: number): string {
   // A tool owner id is not row identity. Prefer the protocol block id so
   // sibling results owned by one tool call stay stable through finalization.

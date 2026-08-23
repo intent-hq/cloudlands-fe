@@ -32,27 +32,34 @@ test('keeps one current row until click opens the full live history', async ({ m
   await expect(component.getByTestId('response-group-snippet')).toContainText('earlier chunk');
 });
 
-test('reconciles a tag-first streaming group through explicit close and completion', async ({
-  mount,
-}) => {
+test('normalizes the alternate-model reasoning phase through completion', async ({ mount }) => {
   const component = await mount(StreamingResponseGroupLifecycleHost);
   const trigger = component.getByTestId('response-group-disclosure');
   const visibleChildren = component.locator('[data-response-group-child]');
 
   await expect(trigger).toHaveAttribute('aria-expanded', 'true');
+  await expect(component.getByTestId('response-group-name')).toHaveText('Thinking...');
 
   await component.update({ props: { phase: 'live', isStreaming: true } });
-  await expect(trigger).toHaveAttribute('aria-expanded', 'false');
-  await expect(visibleChildren).toHaveCount(1);
-  await expect(visibleChildren).toHaveAttribute('data-message-content-block', 'thinking');
+  await expect(trigger).toHaveAttribute('aria-expanded', 'true');
+  await expect(visibleChildren).toHaveCount(4);
+  await expect(
+    component.getByText('I will set the workspace title and inspect the current workspace.'),
+  ).toBeVisible();
 
-  await component.update({ props: { phase: 'closed', isStreaming: true } });
+  await trigger.click();
   await expect(trigger).toHaveAttribute('aria-expanded', 'false');
   await expect(visibleChildren).toHaveCount(0);
-  await expect(component.getByText('Final prose.')).toBeVisible();
+  await trigger.click();
+  await expect(trigger).toHaveAttribute('aria-expanded', 'true');
+  await expect(visibleChildren).toHaveCount(4);
+  await trigger.click();
+  await expect(trigger).toHaveAttribute('aria-expanded', 'false');
 
   await component.update({ props: { phase: 'closed', isStreaming: false } });
   await expect(trigger).toHaveAttribute('aria-expanded', 'false');
+  await expect(component.getByTestId('response-group-name')).toHaveText('Reasoning');
+  await expect(component.getByText('Workspace inspection complete.')).toBeVisible();
   await trigger.click();
   await expect(trigger).toHaveAttribute('aria-expanded', 'true');
   await expect(visibleChildren).toHaveCount(4);
@@ -72,13 +79,15 @@ test('rehydrates a completed group collapsed and opens its full history', async 
   });
   const trigger = component.getByTestId('response-group-disclosure');
   await expect(trigger).toHaveAttribute('aria-expanded', 'false');
+  await expect(component.getByTestId('response-group-name')).toHaveText('Reasoning');
   await expect(component.locator('[data-response-group-child]')).toHaveCount(0);
-  await expect(component.getByTestId('response-group-snippet')).toContainText(
-    'Review current code.',
-  );
+  await expect(component.getByTestId('response-group-snippet')).toHaveCount(0);
   await trigger.press('Enter');
   await expect(trigger).toHaveAttribute('aria-expanded', 'true');
   await expect(component.locator('[data-response-group-child]')).toHaveCount(4);
+  await expect(
+    component.getByText('I will set the workspace title and inspect the current workspace.'),
+  ).toBeVisible();
   await trigger.press('Space');
   await expect(trigger).toHaveAttribute('aria-expanded', 'false');
   await expect(component.locator('[data-response-group-child]')).toHaveCount(0);

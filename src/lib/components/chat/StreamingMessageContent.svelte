@@ -77,6 +77,7 @@
     dedupeKeys,
     getResponseGroupBlockKeys,
     getResponseGroupCurrentBlockIndex,
+    isReasoningPhaseGroupName,
   } from './response-group-blocks';
   import { chatSearchBlockPath } from './chat-search';
   import { AuggieTextParser } from '$lib/utils/auggie-text-parser';
@@ -944,6 +945,7 @@
     {#if block.type === 'content_group'}
       {@const group = block as ContentBlockGroup}
       {@const currentChildIndex = getResponseGroupCurrentBlockIndex(group.children)}
+      {@const isReasoningPhase = isReasoningPhaseGroupName(group.name)}
       {#snippet currentChild()}
         {@render renderResponseGroupChild(
           group,
@@ -966,7 +968,7 @@
           isStreaming={group.isStreaming}
           blocks={group.children}
           searchPath={chatSearchBlockPath(blockIndex)}
-          currentChild={currentChildIndex >= 0 ? currentChild : undefined}
+          currentChild={!isReasoningPhase && currentChildIndex >= 0 ? currentChild : undefined}
           adjacentOperationalRow={isAdjacentOperationalClusterRow(
             groupedBlocks,
             blockIndex,

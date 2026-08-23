@@ -12,9 +12,10 @@
   import { onDestroy } from 'svelte';
   import type { ContentBlock } from '$shared/types';
   import { getContentBlockText } from '$shared/utils/content-block-helpers';
+  import { m } from '$shared/paraglide/messages.js';
   import CylinderScroller from './CylinderScroller.svelte';
   import InlineMarkdownSnippet from './InlineMarkdownSnippet.svelte';
-  import { getResponseGroupPreviewBlock } from './response-group-blocks';
+  import { getResponseGroupPreviewBlock, isReasoningPhaseGroupName } from './response-group-blocks';
   import { faArrowsInLineVertical, faArrowsOutLineVertical } from '$lib/icons/phosphor-icons';
   import {
     OPERATIONAL_GROUP_CONTENT_CLASS,
@@ -164,11 +165,23 @@
   }
 
   // Keep the collapsed row to one inert, current inline summary.
+  const isReasoningPhase = $derived(isReasoningPhaseGroupName(name));
+
+  // Keep normal named groups to one inline summary. Reasoning phases match the
+  // standard reasoning disclosure and reveal their description only when open.
   const textSnippet = $derived.by(() => {
+    if (isReasoningPhase) return '';
     const previewBlock = getResponseGroupPreviewBlock(blocks);
     return previewBlock ? getContentBlockText(previewBlock).trim() : '';
   });
-  const accessibleSummary = $derived(textSnippet ? `${name}: ${textSnippet}` : name);
+  const displayName = $derived(
+    isReasoningPhase
+      ? isStreaming
+        ? m.chat_thinkingBlock_thinking_label()
+        : m.chat_thinkingBlock_reasoning_label()
+      : name,
+  );
+  const accessibleSummary = $derived(textSnippet ? `${displayName}: ${textSnippet}` : displayName);
   const groupContentClass = $derived(
     `${OPERATIONAL_GROUP_CONTENT_CLASS} ${getOperationalGroupContentSpacingClass(blocks)}`,
   );
@@ -184,7 +197,7 @@
 
 {#snippet summary()}
   <span class="font-normal {OPERATIONAL_PRIMARY_CLASS}" data-testid="response-group-name"
-    >{name}</span
+    >{displayName}</span
   >{#if textSnippet && !isExpanded && (!isStreaming || !currentChild)}<InlineMarkdownSnippet
       content={textSnippet}
       class="ml-2.5 font-normal {OPERATIONAL_SECONDARY_CLASS}"
