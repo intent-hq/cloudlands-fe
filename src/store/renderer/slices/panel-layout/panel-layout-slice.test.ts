@@ -12,6 +12,7 @@ import {
   openTabInNewRootColumn,
   openBlankWorkingPanel,
   splitPanel,
+  moveTabToPanel,
   moveTabToSplit,
   moveTabToSplitLevel,
   createGridLayout,
@@ -2221,6 +2222,57 @@ describe('panelLayoutReducer', () => {
       return state;
     }
 
+    it('moves one pane into another stack, activates it, and preserves the source stack', () => {
+      const state = twoColumnState();
+      const targetPanelId = getPanelOrder(state.byWorkspaceId[WS].root)[1];
+      state.byWorkspaceId[WS].panels.p1.attentionTabIds = ['move', 'stay'];
+      state.byWorkspaceId[WS].panels[targetPanelId] = {
+        ...state.byWorkspaceId[WS].panels[targetPanelId],
+        tabs: [{ id: 'target', type: 'note', title: 'Target' }],
+        activeTabId: 'target',
+      };
+
+      const result = panelLayoutReducer(
+        state,
+        moveTabToPanel(WS, 'move', 'p1', targetPanelId, undefined, 2),
+      ).byWorkspaceId[WS];
+
+      expect(result.panels.p1.tabs.map((tab) => tab.id)).toEqual(['stay']);
+      expect(result.panels.p1.activeTabId).toBe('stay');
+      expect(result.panels.p1.attentionTabIds).toEqual(['stay']);
+      expect(result.panels[targetPanelId].tabs.map((tab) => tab.id)).toEqual(['target', 'move']);
+      expect(result.panels[targetPanelId].activeTabId).toBe('move');
+      expect(result.focusedPanelId).toBe(targetPanelId);
+    });
+
+    it('collapses the source column only when its final pane moves', () => {
+      let state = stateWithPanel('p1', [{ id: 'move', type: 'note', title: 'Move' }]);
+      state = panelLayoutReducer(state, splitPanel(WS, 'p1', 'horizontal', undefined, 1));
+      const targetPanelId = getPanelOrder(state.byWorkspaceId[WS].root)[1];
+
+      const result = panelLayoutReducer(
+        state,
+        moveTabToPanel(WS, 'move', 'p1', targetPanelId, undefined, 2),
+      ).byWorkspaceId[WS];
+
+      expect(result.panels.p1).toBeUndefined();
+      expect(getPanelOrder(result.root)).toEqual([targetPanelId]);
+      expect(result.panels[targetPanelId].tabs.map((tab) => tab.id)).toEqual(['move']);
+    });
+
+    it('collapses the source column after its final pane creates a new column', () => {
+      let state = stateWithPanel('p1', [{ id: 'move', type: 'note', title: 'Move' }]);
+      state = panelLayoutReducer(state, splitPanel(WS, 'p1', 'horizontal', undefined, 1));
+      const targetPanelId = getPanelOrder(state.byWorkspaceId[WS].root)[1];
+      const action = moveTabToSplit(WS, 'move', 'p1', targetPanelId, 'right', 2);
+
+      const result = panelLayoutReducer(state, action).byWorkspaceId[WS];
+
+      expect(result.panels.p1).toBeUndefined();
+      expect(getPanelOrder(result.root)).toEqual([targetPanelId, action.payload.newPanelId]);
+      expect(result.panels[action.payload.newPanelId].tabs.map((tab) => tab.id)).toEqual(['move']);
+    });
+
     it.each([
       ['left', ['p1', 'new', 'target']],
       ['right', ['p1', 'target', 'new']],
@@ -2263,6 +2315,37 @@ describe('panelLayoutReducer', () => {
 
       expectFixedColumns(result, 3);
       expect(getPanelOrder(result.root).at(-1)).toBe(action.payload.newPanelId);
+    });
+
+    it('does not create a fifth column', () => {
+      let state = twoColumnState();
+      for (let index = 0; index < 2; index++) {
+        const targetPanelId = getPanelOrder(state.byWorkspaceId[WS].root).at(-1)!;
+        state = panelLayoutReducer(
+          state,
+          splitPanel(WS, targetPanelId, 'horizontal', undefined, 2 + index),
+        );
+      }
+      const targetPanelId = getPanelOrder(state.byWorkspaceId[WS].root).at(-1)!;
+
+      const result = panelLayoutReducer(
+        state,
+        moveTabToSplit(WS, 'move', 'p1', targetPanelId, 'right', 5),
+      );
+
+      expect(result).toBe(state);
+      expectFixedColumns(result.byWorkspaceId[WS], 4);
+      expect(result.byWorkspaceId[WS].panels.p1.tabs.map((tab) => tab.id)).toEqual([
+        'move',
+        'stay',
+      ]);
+
+      const edgeResult = panelLayoutReducer(
+        state,
+        moveTabToSplitLevel(WS, 'move', 'p1', [], 'after', 'horizontal', 6),
+      );
+      expect(edgeResult).toBe(state);
+      expectFixedColumns(edgeResult.byWorkspaceId[WS], 4);
     });
   });
 

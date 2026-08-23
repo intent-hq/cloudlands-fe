@@ -31,15 +31,8 @@
   } from './panel-tab-cache';
   import { selectIsDragging } from '$store/renderer/slices/tab-state/tab-state-selectors';
   import { untrack, type Snippet } from 'svelte';
-  import {
-    PANEL_DRAG_MIME,
-    clearDraggedPanelState,
-    getDraggedPanelId,
-    getPanelColumnDragPlacement,
-    type PanelDragPlacement,
-  } from './panel-drag';
+  import { PANE_DRAG_MIME, getPaneColumnDropZone } from './panel-drag';
   import { store as appStore } from '$store/renderer/store';
-  import { endDrag } from '$store/renderer/slices/tab-state/tab-state-slice';
   import { markPanelTouched } from '$store/renderer/slices/panel-layout/panel-layout-slice';
 
   export type DropZone = 'left' | 'right' | 'center';
@@ -51,6 +44,7 @@
     layoutId: string;
     availableCanvasWidth?: number;
     isRightmostPanel?: boolean;
+    canCreateColumn?: boolean;
     contained?: boolean;
     onFocus?: () => void;
     onTabClick?: (tabId: string) => void;
@@ -68,15 +62,8 @@
     onTabDrop?: (tabId: string, fromPanelId: string, zone: DropZone) => void;
     /** Handler for moving a tab to this panel's tab bar */
     onTabMoveToPanel?: (tabId: string, fromPanelId: string, insertIndex?: number) => void;
-    /** Handler for dropping a whole panel onto this panel (reorder) */
-    onPanelMove?: (draggedPanelId: string, position: PanelDragPlacement) => void;
     onMoveLeft?: () => void;
     onMoveRight?: () => void;
-    onPanelMovePreview?: (
-      draggedPanelId: string,
-      targetPanelId: string,
-      position: PanelDragPlacement | null,
-    ) => void;
     /** Handler for renaming a tab (note, agent, or file) */
     onTabRename?: (tab: PanelTab, newName: string) => void;
     /** Callbacks for creating new items */
@@ -97,6 +84,7 @@
     layoutId,
     availableCanvasWidth,
     isRightmostPanel = false,
+    canCreateColumn = true,
     contained = false,
     onFocus,
     onTabClick,
@@ -111,10 +99,8 @@
     isZoomed = false,
     onTabDrop,
     onTabMoveToPanel,
-    onPanelMove,
     onMoveLeft,
     onMoveRight,
-    onPanelMovePreview,
     onTabRename,
     onCreateAgent,
     onCreateAgentWithSpecialist,
@@ -251,14 +237,11 @@
   let animateTabBar = $state(false);
 
   // Custom MIME type for tab drag (must match PanelTabBar)
-  const TAB_DRAG_MIME = 'application/x-panel-tab';
+  const TAB_DRAG_MIME = PANE_DRAG_MIME;
 
   // Drop zone state
   let isDragOver = $state(false);
   let activeDropZone = $state<DropZone | null>(null);
-  let panelDropPlacement = $state<PanelDragPlacement | null>(null);
-  // Tab bar height in pixels (h-9 = 2.25rem = 36px)
-  const TAB_BAR_HEIGHT = 36;
 
   // Track global drag state to disable pointer events on content
   const isDragging = selectIsDragging();
@@ -268,7 +251,6 @@
     if (!$isDragging) {
       isDragOver = false;
       activeDropZone = null;
-      panelDropPlacement = null;
     }
   });
 
@@ -300,66 +282,24 @@
     if (!isEmptyStateInteraction(event.target)) markUserTouch();
   }
 
-  // Determine which drop zone based on cursor position (relative to content area below tab bar)
-  function getDropZone(e: DragEvent): DropZone | null {
+  function getDropZone(e: DragEvent): DropZone {
     if (!panelRef) return 'center';
-
-    const rect = panelRef.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
-
-    // If cursor is over the tab bar area, no drop zone
-    if (y < TAB_BAR_HEIGHT) return null;
-
-    const width = rect.width;
-
-    // Tabless panels only split along the horizontal stack.
-    if (x < width * 0.2) return 'left';
-    if (x > width * 0.8) return 'right';
-    return 'center';
-  }
-
-  function getPanelPlacement(e: DragEvent): PanelDragPlacement {
-    if (!panelRef) return 'after';
-    return getPanelColumnDragPlacement(
+    return getPaneColumnDropZone(
       e.clientX,
       panelRef.getBoundingClientRect(),
-      panelDropPlacement,
+      canCreateColumn,
+      activeDropZone,
     );
   }
 
   function handleDragOver(e: DragEvent) {
-    // Whole-panel drag: preview only. The real layout changes once, on drop.
-    if (e.dataTransfer?.types.includes(PANEL_DRAG_MIME)) {
-      const draggedPanelId = getDraggedPanelId();
-      if (!draggedPanelId) return;
-      e.preventDefault();
-      if (draggedPanelId === panel.id) {
-        panelDropPlacement = getPanelPlacement(e);
-        onPanelMovePreview?.(draggedPanelId, panel.id, panelDropPlacement);
-        if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
-        return;
-      }
-      panelDropPlacement = getPanelPlacement(e);
-      onPanelMovePreview?.(draggedPanelId, panel.id, panelDropPlacement);
-      if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
-      return;
-    }
-
-    // Only accept our custom tab drag MIME type
     if (!e.dataTransfer?.types.includes(TAB_DRAG_MIME)) return;
 
     e.preventDefault();
-
     const zone = getDropZone(e);
-    // Only show drop zones if cursor is in the content area (not tab bar)
-    if (zone === null) {
-      isDragOver = false;
-      activeDropZone = null;
-    } else {
-      isDragOver = true;
-      activeDropZone = zone;
-    }
+    isDragOver = true;
+    activeDropZone = zone;
+    if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
   }
 
   function handleDragLeave(e: DragEvent) {
@@ -378,9 +318,6 @@
 
     isDragOver = false;
     activeDropZone = null;
-    panelDropPlacement = null;
-    const draggedPanelId = getDraggedPanelId();
-    if (draggedPanelId) onPanelMovePreview?.(draggedPanelId, panel.id, null);
   }
 
   function handleDrop(e: DragEvent) {
@@ -389,36 +326,13 @@
     e.stopPropagation(); // Prevent drop from reaching content (like editors)
     isDragOver = false;
 
-    // Whole-panel drop: reorder the stack
-    const panelData = e.dataTransfer?.getData(PANEL_DRAG_MIME);
-    const mirroredPanelId = getDraggedPanelId();
-    if (panelData || mirroredPanelId) {
-      const placement = panelDropPlacement ?? getPanelPlacement(e);
-      panelDropPlacement = null;
-      activeDropZone = null;
-      let draggedId = mirroredPanelId;
-      try {
-        if (panelData) draggedId = JSON.parse(panelData).panelId ?? draggedId;
-      } catch {
-        // Fall back to the mirrored id used during dragover.
-      }
-      if (draggedId) {
-        onPanelMovePreview?.(draggedId, panel.id, null);
-        clearDraggedPanelState();
-        appStore.dispatch(endDrag());
-        if (draggedId !== panel.id) onPanelMove?.(draggedId, placement);
-      }
-      return;
-    }
-    panelDropPlacement = null;
-
     try {
       const data = e.dataTransfer?.getData(TAB_DRAG_MIME);
       if (!data) return;
 
       const { tabId, panelId: fromPanelId } = JSON.parse(data);
 
-      const zone = activeDropZone ?? 'center';
+      const zone = activeDropZone ?? getDropZone(e);
       activeDropZone = null;
 
       if (zone === 'center') {

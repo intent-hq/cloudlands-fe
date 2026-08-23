@@ -48,26 +48,20 @@
   import { selectIsDragging } from '$store/renderer/slices/tab-state/tab-state-selectors';
   import { startDrag, endDrag } from '$store/renderer/slices/tab-state/tab-state-slice';
   import {
-    restorePanelDragLayout,
     setPanelColumnCount,
     toggleExpandPanel,
   } from '$store/renderer/slices/panel-layout/panel-layout-slice';
-  import {
-    selectPanelColumnCount,
-    selectPanelLayoutWorkspace,
-  } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
+  import { selectPanelColumnCount } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
   import {
     isPanelColumnCount,
     type PanelColumnCount,
   } from '$store/renderer/slices/panel-layout/panel-layout-types';
   import {
-    PANEL_DRAG_MIME,
-    clearDraggedPanelState,
-    createPanelDragImage,
-    getDraggedPanelId,
-    setPanelDragSnapshot,
-    setDraggedPanelId,
-    takePanelDragSnapshot,
+    PANE_DRAG_MIME,
+    clearDraggedPaneState,
+    createPaneDragImage,
+    getDraggedPane,
+    setDraggedPane,
   } from './panel-drag';
 
   import EditableName from '$lib/components/ui/EditableName.svelte';
@@ -738,7 +732,7 @@
   }
 
   // Custom MIME type to prevent editors from interpreting drop as text paste
-  const TAB_DRAG_MIME = 'application/x-panel-tab';
+  const TAB_DRAG_MIME = PANE_DRAG_MIME;
 
   // Drag state
   let draggedTabId = $state<string | null>(null);
@@ -834,8 +828,8 @@
     appStore.dispatch(endDrag());
   }
 
-  // --- Panel drag (grab the header to reorder whole panels) ---
-  function handlePanelDragStart(e: DragEvent) {
+  // --- Active pane drag (grab the header to move only the visible pane) ---
+  function handlePaneDragStart(e: DragEvent) {
     if (!e.dataTransfer) return;
     // Don't hijack drags that started on an interactive control
     const target = e.target as HTMLElement;
@@ -843,42 +837,30 @@
       e.preventDefault();
       return;
     }
-    setDraggedPanelId(panelId);
-    const activeLayoutId = layoutId ?? workspaceId;
-    const layout = selectPanelLayoutWorkspace.select(appStore.state, activeLayoutId);
-    setPanelDragSnapshot(activeLayoutId, {
-      root: layout.root,
-      focusedPanelId: layout.focusedPanelId,
-      layoutHistory: layout.layoutHistory,
-      historyIndex: layout.historyIndex,
-    });
+    if (!activeTab) {
+      e.preventDefault();
+      return;
+    }
+    const draggedPane = { tabId: activeTab.id, panelId };
+    setDraggedPane(draggedPane);
     e.dataTransfer.effectAllowed = 'move';
-    e.dataTransfer.setData(PANEL_DRAG_MIME, JSON.stringify({ panelId }));
+    e.dataTransfer.setData(PANE_DRAG_MIME, JSON.stringify(draggedPane));
 
-    const dragImage = createPanelDragImage(activeTab?.title ?? '');
+    const dragImage = createPaneDragImage(activeTab.title ?? '');
     e.dataTransfer.setDragImage(dragImage, 16, 16);
     requestAnimationFrame(() => dragImage.remove());
 
     appStore.dispatch(startDrag());
   }
 
-  function handlePanelDragEnd(e: DragEvent) {
-    if (e.dataTransfer?.dropEffect === 'none') restorePanelDragStartLayout();
-    clearDraggedPanelState();
+  function handlePaneDragEnd() {
+    clearDraggedPaneState();
     appStore.dispatch(endDrag());
   }
 
-  function restorePanelDragStartLayout() {
-    const snapshot = takePanelDragSnapshot();
-    if (!snapshot) return;
-    const { layoutId: snapshotLayoutId, ...layoutSnapshot } = snapshot;
-    appStore.dispatch(restorePanelDragLayout(snapshotLayoutId, layoutSnapshot));
-  }
-
-  function handlePanelDragKeyDown(e: KeyboardEvent) {
-    if (e.key !== 'Escape' || getDraggedPanelId() !== panelId) return;
-    restorePanelDragStartLayout();
-    clearDraggedPanelState();
+  function handlePaneDragKeyDown(e: KeyboardEvent) {
+    if (e.key !== 'Escape' || getDraggedPane()?.panelId !== panelId) return;
+    clearDraggedPaneState();
     appStore.dispatch(endDrag());
   }
 
@@ -1184,7 +1166,7 @@
     if (
       !(target instanceof Element) ||
       target.closest(PANEL_HEADER_INTERACTIVE_SELECTOR) ||
-      getDraggedPanelId() !== null
+      getDraggedPane() !== null
     ) {
       return;
     }
@@ -1566,7 +1548,7 @@
   {@render paneStackOverflowMenu()}
 {/snippet}
 
-<svelte:window onkeydown={handlePanelDragKeyDown} />
+<svelte:window onkeydown={handlePaneDragKeyDown} />
 
 <!-- Tab bar + Header wrapper -->
 <div class="panel-tab-wrapper flex flex-col">
@@ -1892,8 +1874,8 @@
       oncontextmenu={(event) => handlePanelContextMenu(event, activeTab.id)}
       ondblclick={handlePanelHeaderDoubleClick}
       draggable="true"
-      ondragstart={handlePanelDragStart}
-      ondragend={handlePanelDragEnd}
+      ondragstart={handlePaneDragStart}
+      ondragend={handlePaneDragEnd}
       data-panel-tabless-header
       data-panel-content-header
     >
@@ -2268,7 +2250,8 @@
           <div class="border-t border-border"></div>
         {/if}
         <button
-          class="w-full px-3 py-1.5 text-sm text-left hover:bg-sidebar cursor-pointer flex items-center justify-between"
+          class="w-full px-3 py-1.5 text-sm text-left hover:bg-sidebar cursor-pointer flex items-center justify-between disabled:cursor-not-allowed disabled:opacity-50"
+          disabled={!onSplitHorizontal}
           onclick={() => {
             onSplitHorizontal?.();
             closeContextMenu();

@@ -56,9 +56,10 @@
   import { createBrowserFocusOwnershipReporter } from './browser-focus-ownership';
   import { closePanelWithLastPanelPolicy } from './close-panel';
   import {
-    clearDraggedPanelState,
-    getDraggedPanelId,
-    getPanelLayoutEdgePlacement,
+    clearDraggedPaneState,
+    getDraggedPane,
+    getPaneLayoutEdgePlacement,
+    type PaneLayoutEdgePlacement,
     type PanelDragPlacement,
   } from './panel-drag';
   import { selectIsDragging } from '$store/renderer/slices/tab-state/tab-state-selectors';
@@ -90,7 +91,6 @@
   import { renameAgentSessionRequested } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
   import {
     markPanelTouched,
-    movePanelToRootEdge,
     panelLayoutScopeMounted,
     panelLayoutScopeUnmounted,
     consumePanelReveal,
@@ -198,6 +198,7 @@
     | null
   >(null);
   let panelLayoutMotionElement = $state.raw<HTMLDivElement | null>(null);
+  let paneLayoutEdgeDropPosition = $state<PaneLayoutEdgePlacement | null>(null);
   let panelWorkspaceInset = $state.raw<HTMLDivElement | null>(null);
   const panelRevealScheduler = createLayoutStableRevealScheduler();
   $effect(() => {
@@ -444,56 +445,53 @@
     });
   }
 
-  function handlePanelMovePreview(
-    draggedPanelId: string,
-    targetPanelId: string,
-    position: PanelDragPlacement | null,
-  ) {
-    if (panelMovePreviewClearFrame !== null) cancelAnimationFrame(panelMovePreviewClearFrame);
-    panelMovePreviewClearFrame = null;
-    if (!position) {
-      panelMovePreviewClearFrame = requestAnimationFrame(() => {
-        panelMovePreviewClearFrame = null;
-        panelMovePreview = null;
-      });
+  function handleLayoutEdgeDragOver(event: DragEvent) {
+    const draggedPane = getDraggedPane();
+    if (!draggedPane || !panelLayoutMotionElement) {
+      paneLayoutEdgeDropPosition = null;
       return;
     }
-    panelMovePreview = { kind: 'panel', draggedPanelId, targetPanelId, position };
-  }
-
-  function handleLayoutEdgeDragOver(event: DragEvent) {
-    const draggedPanelId = getDraggedPanelId();
-    if (!draggedPanelId || !panelLayoutMotionElement) return;
-    const position = getPanelLayoutEdgePlacement(
+    const position = getPaneLayoutEdgePlacement(
       event.clientX,
-      event.clientY,
       panelLayoutMotionElement.getBoundingClientRect(),
+      $panelIds$.length < 4,
     );
-    if (!position || position === 'above' || position === 'below') return;
+    paneLayoutEdgeDropPosition = position;
+    if (!position) return;
 
     event.preventDefault();
     event.stopPropagation();
     if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
-    panelMovePreview = { kind: 'edge', draggedPanelId, position };
   }
 
   function handleLayoutEdgeDrop(event: DragEvent) {
-    const draggedPanelId = getDraggedPanelId();
-    if (!draggedPanelId || !panelLayoutMotionElement) return;
-    const position = getPanelLayoutEdgePlacement(
+    const draggedPane = getDraggedPane();
+    if (!draggedPane || !panelLayoutMotionElement) return;
+    const position = getPaneLayoutEdgePlacement(
       event.clientX,
-      event.clientY,
       panelLayoutMotionElement.getBoundingClientRect(),
+      $panelIds$.length < 4,
     );
-    if (!position || position === 'above' || position === 'below') return;
+    if (!position) return;
 
     event.preventDefault();
     event.stopPropagation();
-    commitPanelMoveWithoutReplay(() => {
-      clearDraggedPanelState();
-      appStore.dispatch(endDrag());
-      appStore.dispatch(movePanelToRootEdge(effectiveLayoutId, draggedPanelId, position));
-    });
+    paneLayoutEdgeDropPosition = null;
+    clearDraggedPaneState();
+    appStore.dispatch(endDrag());
+    layoutManager.moveTabToSplitLevel(
+      draggedPane.tabId,
+      draggedPane.panelId,
+      [],
+      position,
+      'horizontal',
+    );
+  }
+
+  function handleLayoutEdgeDragLeave(event: DragEvent) {
+    const relatedTarget = event.relatedTarget;
+    if (relatedTarget instanceof Node && panelLayoutMotionElement?.contains(relatedTarget)) return;
+    paneLayoutEdgeDropPosition = null;
   }
 
   $effect.pre(() => {
@@ -517,6 +515,7 @@
   });
 
   $effect(() => {
+    if (!$isDragging$) paneLayoutEdgeDropPosition = null;
     if (!$isDragging$ && !suppressCommittedPanelMoveMotion) clearPanelMovePreviewNow();
   });
 
@@ -1297,6 +1296,7 @@
       data-panel-layout-motion
       ondragovercapture={handleLayoutEdgeDragOver}
       ondropcapture={handleLayoutEdgeDrop}
+      ondragleave={handleLayoutEdgeDragLeave}
       transition:resize={{ axis: 'x', duration: layoutMotionDuration }}
     >
       <div class:opacity-0={panelMovePreviewRoot !== null} class="h-full w-full min-w-0">
@@ -1333,7 +1333,6 @@
           onTabDropToSplit={handleTabDropToSplit}
           onTabMoveToPanel={handleTabMoveToPanel}
           onPanelMove={handlePanelMove}
-          onPanelMovePreview={handlePanelMovePreview}
           onTabDropToSplitHandle={handleTabDropToSplitHandle}
           onTabRename={handleTabRename}
           {onCreateAgent}
@@ -1343,6 +1342,24 @@
           onOpenBrowser={canOpenBrowserPanel ? handleOpenBrowser : undefined}
         />
       </div>
+      {#if paneLayoutEdgeDropPosition}
+        <div
+          class={cn(
+            'pointer-events-none absolute inset-y-0 z-50 flex w-20 items-center justify-center border-primary bg-primary/15',
+            paneLayoutEdgeDropPosition === 'before' ? 'left-0 border-r' : 'right-0 border-l',
+          )}
+          data-pane-layout-edge-target={paneLayoutEdgeDropPosition}
+          aria-hidden="true"
+        >
+          <span
+            class="rounded-md bg-background/90 px-2 py-1 text-sm font-medium text-primary shadow-sm"
+          >
+            {paneLayoutEdgeDropPosition === 'before'
+              ? m.layout_panelDropZones_splitLeft_label()
+              : m.layout_panelDropZones_splitRight_label()}
+          </span>
+        </div>
+      {/if}
       {#if panelMovePreviewRoot}
         <div
           bind:this={panelDragPreviewElement}

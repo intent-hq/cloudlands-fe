@@ -106,7 +106,7 @@ vi.mock('svelte-fa', async () => ({
 }));
 
 import PanelTabBar from '../PanelTabBar.svelte';
-import { PANEL_DRAG_MIME, getDraggedPanelId, setDraggedPanelId } from '../panel-drag';
+import { PANE_DRAG_MIME, getDraggedPane, setDraggedPane } from '../panel-drag';
 
 const panelTypes = ['agent', 'note', 'browser', 'terminal', 'changes'] as const;
 const contentActions = {
@@ -167,7 +167,7 @@ function dragEvent(target: Element) {
 beforeEach(() => {
   mocks.dispatch.mockClear();
   mocks.setPanelColumnCount(2);
-  setDraggedPanelId(null);
+  setDraggedPane(null);
   Element.prototype.scrollIntoView = vi.fn();
   vi.stubGlobal(
     'ResizeObserver',
@@ -184,7 +184,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  setDraggedPanelId(null);
+  setDraggedPane(null);
   cleanup();
   vi.unstubAllGlobals();
 });
@@ -359,7 +359,7 @@ describe('mounted panel header actions menu', () => {
     await screen.findByRole('menu');
 
     expect(trigger.getAttribute('aria-expanded')).toBe('true');
-    expect(getDraggedPanelId()).toBeNull();
+    expect(getDraggedPane()).toBeNull();
     expect(mocks.dispatch).not.toHaveBeenCalledWith({ type: 'tabState/startDrag' });
   });
 
@@ -441,7 +441,7 @@ describe('mounted panel header actions menu', () => {
 
     const triggerDrag = await dragEvent(trigger);
     expect(triggerDrag.event.defaultPrevented).toBe(true);
-    expect(getDraggedPanelId()).toBeNull();
+    expect(getDraggedPane()).toBeNull();
     expect(mocks.dispatch).not.toHaveBeenCalledWith({ type: 'tabState/startDrag' });
 
     await fireEvent.dblClick(trigger);
@@ -451,8 +451,11 @@ describe('mounted panel header actions menu', () => {
 
     const headerDrag = await dragEvent(header);
     expect(headerDrag.event.defaultPrevented).toBe(false);
-    expect(getDraggedPanelId()).toBe('panel-1');
+    expect(getDraggedPane()).toEqual({ panelId: 'panel-1', tabId: 'terminal-tab' });
     expect(mocks.dispatch).toHaveBeenCalledWith({ type: 'tabState/startDrag' });
-    expect(headerDrag.dataTransfer.getData(PANEL_DRAG_MIME)).toContain('panel-1');
+    expect(JSON.parse(headerDrag.dataTransfer.getData(PANE_DRAG_MIME))).toEqual({
+      panelId: 'panel-1',
+      tabId: 'terminal-tab',
+    });
   });
 });

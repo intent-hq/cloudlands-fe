@@ -85,7 +85,7 @@ vi.mock('svelte-fa', async () => ({
 }));
 
 import PanelTabBar from '../PanelTabBar.svelte';
-import { setDraggedPanelId } from '../panel-drag';
+import { setDraggedPane } from '../panel-drag';
 
 const tabs = [{ id: 'tab-1', type: 'file' as const, title: 'File', closable: true }];
 
@@ -113,12 +113,12 @@ beforeEach(() => {
     },
   );
   mocks.dispatch.mockClear();
-  setDraggedPanelId(null);
+  setDraggedPane(null);
 });
 
 afterEach(() => {
   vi.unstubAllGlobals();
-  setDraggedPanelId(null);
+  setDraggedPane(null);
   cleanup();
 });
 
@@ -152,9 +152,9 @@ describe('panel header double-click expansion', () => {
     });
   });
 
-  it('does not toggle while a panel drag is active', async () => {
+  it('does not toggle while a pane drag is active', async () => {
     const { container } = renderTabBar();
-    setDraggedPanelId('panel-1');
+    setDraggedPane({ panelId: 'panel-1', tabId: 'tab-1' });
     await fireEvent.dblClick(container.querySelector('[data-panel-tabless-header]')!);
     expect(mocks.dispatch).not.toHaveBeenCalled();
   });

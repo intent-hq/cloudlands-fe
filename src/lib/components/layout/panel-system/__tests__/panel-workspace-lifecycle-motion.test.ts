@@ -57,7 +57,7 @@ describe('panel and workspace lifecycle motion', () => {
     expect(container).toContain("data-split-gutter={item.type === 'gutter'");
     expect(container).toContain("axis: node.direction === 'horizontal' ? 'x' : 'y'");
     expect(container).toContain(
-      'if (suppressLayoutMotion || getDraggedPanelId()) return { duration: 0 }',
+      'if (suppressLayoutMotion || getDraggedPane()) return { duration: 0 }',
     );
     expect(container).toContain('out:resizePanelChild={{');
     expect(container).not.toContain('transition:fade');

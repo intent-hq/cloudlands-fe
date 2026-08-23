@@ -1306,7 +1306,12 @@ function moveTabIntoFixedColumn(
     ...moved,
     panels: {
       ...moved.panels,
-      [fromPanelId]: { ...fromPanel, tabs: remainingTabs, activeTabId },
+      [fromPanelId]: {
+        ...fromPanel,
+        tabs: remainingTabs,
+        activeTabId,
+        attentionTabIds: fromPanel.attentionTabIds?.filter((id) => id !== tab.id),
+      },
     },
   };
   if (remainingTabs.length === 0) moved = closePanelHelper(moved, fromPanelId);
@@ -2737,8 +2742,18 @@ panelLayoutReducer.with(moveTabToPanel, (state, { payload }) => {
     ...ws,
     panels: {
       ...ws.panels,
-      [fromPanelId]: { ...fromPanel, tabs: newFromTabs, activeTabId: newFromActiveTabId },
-      [toPanelId]: { ...toPanel, tabs: newToTabs, activeTabId: tab.id },
+      [fromPanelId]: {
+        ...fromPanel,
+        tabs: newFromTabs,
+        activeTabId: newFromActiveTabId,
+        attentionTabIds: fromPanel.attentionTabIds?.filter((id) => id !== tab.id),
+      },
+      [toPanelId]: {
+        ...toPanel,
+        tabs: newToTabs,
+        activeTabId: tab.id,
+        attentionTabIds: toPanel.attentionTabIds?.filter((id) => id !== tab.id),
+      },
     },
     focusedPanelId: toPanelId,
   };

@@ -24,7 +24,7 @@
     resizeAdjacentPanels,
   } from './panel-resize';
   import { translatePanel } from './panel-reorder-animation';
-  import { getDraggedPanelId } from './panel-drag';
+  import { getDraggedPane } from './panel-drag';
   import { resize } from '$lib/components/layout/size-transition';
   import { cubicOut } from 'svelte/easing';
   import {
@@ -98,11 +98,6 @@
       targetPanelId: string,
       position: 'before' | 'after' | 'above' | 'below',
     ) => void;
-    onPanelMovePreview?: (
-      draggedPanelId: string,
-      targetPanelId: string,
-      position: 'before' | 'after' | 'above' | 'below' | null,
-    ) => void;
     /** Handler for dropping a tab on a split handle (container-level insertion) */
     onTabDropToSplitHandle?: (
       tabId: string,
@@ -155,7 +150,6 @@
     onTabDropToSplit,
     onTabMoveToPanel,
     onPanelMove,
-    onPanelMovePreview,
     onTabDropToSplitHandle,
     onTabRename,
     onCreateAgent,
@@ -223,7 +217,7 @@
   );
 
   function resizePanelChild(nodeToResize: HTMLElement, params: Parameters<typeof resize>[1]) {
-    if (suppressLayoutMotion || getDraggedPanelId()) return { duration: 0 };
+    if (suppressLayoutMotion || getDraggedPane()) return { duration: 0 };
     return resize(nodeToResize, params);
   }
 
@@ -622,6 +616,7 @@
         {workspaceId}
         {layoutId}
         {availableCanvasWidth}
+        canCreateColumn={panelOrder.length < 4}
         isRightmostPanel={panelOrder.at(-1) === node.panelId}
         isFocused={focusedPanelId === node.panelId}
         isZoomed={zoomedPanelId === node.panelId}
@@ -639,16 +634,12 @@
           onTabDropToSplit?.(node.panelId, tabId, fromPanelId, zone)}
         onTabMoveToPanel={(tabId, fromPanelId, insertIndex?: number) =>
           onTabMoveToPanel?.(node.panelId, tabId, fromPanelId, insertIndex)}
-        onPanelMove={(draggedPanelId, position) =>
-          onPanelMove?.(draggedPanelId, node.panelId, position)}
         onMoveLeft={panelIndex > 0
           ? () => onPanelMove?.(node.panelId, panelOrder[panelIndex - 1], 'before')
           : undefined}
         onMoveRight={panelIndex >= 0 && panelIndex < panelOrder.length - 1
           ? () => onPanelMove?.(node.panelId, panelOrder[panelIndex + 1], 'after')
           : undefined}
-        onPanelMovePreview={(draggedPanelId, targetPanelId, position) =>
-          onPanelMovePreview?.(draggedPanelId, targetPanelId, position)}
         {onTabRename}
         {onCreateAgent}
         {onCreateAgentWithSpecialist}
@@ -656,7 +647,9 @@
         {onCreateTerminal}
         {onOpenBrowser}
         {contained}
-        onSplitHorizontal={() => onSplitPanel?.(node.panelId, 'horizontal')}
+        onSplitHorizontal={panelOrder.length < 4
+          ? () => onSplitPanel?.(node.panelId, 'horizontal')
+          : undefined}
       />
     {:else}
       <div class="h-full w-full bg-background text-foreground" data-missing-panel-surface></div>
@@ -722,7 +715,6 @@
             {onTabDropToSplit}
             {onTabMoveToPanel}
             {onPanelMove}
-            {onPanelMovePreview}
             {onTabDropToSplitHandle}
             {onTabRename}
             {onCreateAgent}
