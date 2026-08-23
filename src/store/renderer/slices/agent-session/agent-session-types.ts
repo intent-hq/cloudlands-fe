@@ -93,8 +93,8 @@ export type StoredAgentSession = Omit<AgentSession, 'messages'> & {
    *
    * Exists because the daemon emits the turn-start event BEFORE opening the
    * STAB-125 live-turn slot (agent_manager: try_begin → persist_status(Active)
-   * → run_prompt_turn → begin_live_turn), so the STAB-9 `agent.list` refetch
-   * fired off that very event can resolve with `turnInFlight: false` mid-turn
+   * → run_prompt_turn → begin_live_turn), so the STAB-9 per-agent `agent.get`
+   * refetch fired off that very event can resolve with `turnInFlight: false` mid-turn
    * — the HUD waiting gate must not trust that single racy snapshot field.
    */
   liveTurnOpen?: boolean;

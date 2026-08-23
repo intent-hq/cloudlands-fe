@@ -1150,8 +1150,8 @@ describe('agent-session-slice reducer', () => {
     });
 
     it('a hydration whose only change is turnInFlight is not swallowed as a no-op', () => {
-      // STAB-125 turn-liveness (§5.5): the STAB-9 mid-turn agent.list
-      // re-hydration can differ from the stored session ONLY by
+      // STAB-125 turn-liveness (§5.5): the STAB-9 mid-turn per-agent
+      // agent.get re-hydration can differ from the stored session ONLY by
       // turnInFlight flipping — the HUD bucket gate reads it, so the upsert
       // must produce new state in both directions.
       let state = agentSessionReducer(
