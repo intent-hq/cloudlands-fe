@@ -4,6 +4,13 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.84.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.83.0...v2.84.0) (2026-08-23)
+
+
+### 🚀 Features
+
+* replace app brand mark with burst logo ([#1605](https://github.com/intent-hq/cloudlands-fe/issues/1605)) ([98dee7e](https://github.com/intent-hq/cloudlands-fe/commit/98dee7e4b25bcffd4355ab22b9b6228ccabc8130))
+
 ## [2.83.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.82.0...v2.83.0) (2026-08-22)
 
 
