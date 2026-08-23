@@ -462,10 +462,12 @@ describe('chatSubscribeSaga (fake seam, real store)', () => {
       });
 
     sub.handler({ ...transcript([planMessage('in_progress')]), fromSnapshot: true });
-    expect(selectAgentMessages.select(appStore.state, agentId)[0].contentBlocks?.[0]).toMatchObject({
-      type: 'plan',
-      entries: [{ content: 'Hydrated child task', status: 'in_progress' }],
-    });
+    expect(selectAgentMessages.select(appStore.state, agentId)[0].contentBlocks?.[0]).toMatchObject(
+      {
+        type: 'plan',
+        entries: [{ content: 'Hydrated child task', status: 'in_progress' }],
+      },
+    );
 
     appStore.dispatch(retainedChatTranscriptsSet('subscription-list-b', WS, [agentId]));
     appStore.dispatch(retainedChatTranscriptsSet('subscription-list-a', WS, []));
@@ -475,10 +477,12 @@ describe('chatSubscribeSaga (fake seam, real store)', () => {
     appStore.dispatch(markAgentAsViewed('agent-unrelated-view'));
     expect(sub.unsubscribe).not.toHaveBeenCalled();
     sub.handler(transcript([planMessage('completed')]));
-    expect(selectAgentMessages.select(appStore.state, agentId)[0].contentBlocks?.[0]).toMatchObject({
-      type: 'plan',
-      entries: [{ content: 'Hydrated child task', status: 'completed' }],
-    });
+    expect(selectAgentMessages.select(appStore.state, agentId)[0].contentBlocks?.[0]).toMatchObject(
+      {
+        type: 'plan',
+        entries: [{ content: 'Hydrated child task', status: 'completed' }],
+      },
+    );
 
     appStore.dispatch(retainedChatTranscriptsSet('subscription-list-b', WS, []));
     await vi.waitFor(() => expect(sub.unsubscribe).toHaveBeenCalledOnce());

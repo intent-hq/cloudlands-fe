@@ -599,9 +599,12 @@ export const chatQueuedRetryRecordsCleared = createAction<[agentId: string]>(
  * so no drain-start event under this client's key ever promoted it).
  */
 export const chatSendFailed =
-  createAction<
-    [agentId: string, error: string, turnId?: string, failureCorrelation?: StreamFailureCorrelation]
-  >('chatState/sendFailed');
+  createAction<[
+    agentId: string,
+    error: string,
+    turnId?: string,
+    failureCorrelation?: StreamFailureCorrelation,
+  ]>('chatState/sendFailed');
 
 /**
  * `agent:queue:processing` drain-start signal (PROTOCOL §6.5): the daemon
@@ -1039,37 +1042,34 @@ chatStateReducer.with(
 chatStateReducer.with(chatQueueProcessingReceived, (state, { payload: [agentId, turnId] }) =>
   reduceQueueProcessing(state, agentId, turnId),
 );
-chatStateReducer.with(
-  chatSendFailed,
-  (state, { payload: [agentId, error, turnId, failureCorrelation] }) => {
-    // monorepo#1057: when the failure names a turn whose record is still
-    // PARKED (e.g. an agent.retry redrive that failed again — its requeued
-    // entry has a new id, so no processing event promoted it under this
-    // client's key), pair the banner with the exact record.
-    // An already-promoted or unknown turnId leaves the slot untouched —
-    // `lastAttemptedMessage` already holds the right payload (or none).
-    const agent = state.byAgentId[agentId];
-    const key = agent ? findParkedRecordKey(agent, turnId) : null;
-    if (agent && key !== null) {
-      const remaining = { ...agent.queuedRetryRecords };
-      delete remaining[key];
-      return updateAgent(state, agentId, {
-        streamingStartTime: null,
-        error,
-        failureCorrelation,
-        modelUnavailable: null,
-        lastAttemptedMessage: agent.queuedRetryRecords[key].record,
-        queuedRetryRecords: remaining,
-      });
-    }
+chatStateReducer.with(chatSendFailed, (state, { payload: [agentId, error, turnId, failureCorrelation] }) => {
+  // monorepo#1057: when the failure names a turn whose record is still
+  // PARKED (e.g. an agent.retry redrive that failed again — its requeued
+  // entry has a new id, so no processing event promoted it under this
+  // client's key), pair the banner with the exact record.
+  // An already-promoted or unknown turnId leaves the slot untouched —
+  // `lastAttemptedMessage` already holds the right payload (or none).
+  const agent = state.byAgentId[agentId];
+  const key = agent ? findParkedRecordKey(agent, turnId) : null;
+  if (agent && key !== null) {
+    const remaining = { ...agent.queuedRetryRecords };
+    delete remaining[key];
     return updateAgent(state, agentId, {
       streamingStartTime: null,
       error,
       failureCorrelation,
       modelUnavailable: null,
+      lastAttemptedMessage: agent.queuedRetryRecords[key].record,
+      queuedRetryRecords: remaining,
     });
-  },
-);
+  }
+  return updateAgent(state, agentId, {
+    streamingStartTime: null,
+    error,
+    failureCorrelation,
+    modelUnavailable: null,
+  });
+});
 chatStateReducer.with(chatInterrupted, (state, { payload: [agentId] }) =>
   updateAgent(state, agentId, {
     streamingStartTime: null,
