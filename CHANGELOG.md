@@ -4,6 +4,16 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.86.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.86.1...v2.86.2) (2026-08-23)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.7.46 ([#1630](https://github.com/intent-hq/cloudlands-fe/issues/1630)) ([d3407f9](https://github.com/intent-hq/cloudlands-fe/commit/d3407f9407c2d805609701665636f617302cb4a3))
+* guard ChiefCard against null activeThread agentId access ([#1628](https://github.com/intent-hq/cloudlands-fe/issues/1628)) ([0f4b4bc](https://github.com/intent-hq/cloudlands-fe/commit/0f4b4bc4c09d6653c12388c233c9f72a1eadb4a8))
+* only flag the truly last block of a streaming message as streaming ([#1624](https://github.com/intent-hq/cloudlands-fe/issues/1624)) ([53fabae](https://github.com/intent-hq/cloudlands-fe/commit/53fabaeadddb3614bd6dc12ae008a263f1b67d8a))
+* remove chief user-row band and let aurora reach window edges ([#1626](https://github.com/intent-hq/cloudlands-fe/issues/1626)) ([1279281](https://github.com/intent-hq/cloudlands-fe/commit/1279281879de5dffec7f12ffacdad91052957a65))
+
 ## [2.86.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.86.0...v2.86.1) (2026-08-23)
 
 
