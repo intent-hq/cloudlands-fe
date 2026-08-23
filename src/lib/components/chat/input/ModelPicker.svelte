@@ -784,6 +784,11 @@
 
   // Get the label for a model ID from available models list; undefined when
   // the id resolves to no loaded model (callers pick the fallback).
+  // Catalog row values are shape-dependent — bare for the FE's default
+  // provider, `provider:model` otherwise (prefixModelsForProvider) — while a
+  // session id may be daemon-pinned bare or stored compound, so ids are
+  // compared via normalizeModelIdForMatch (like selectedCatalogOption), not
+  // exact string equality.
   // Legacy codex compound ids (`{model}/{effort}`) no longer exist as catalog
   // rows (the daemon collapses them to one base row + effortLevels), so on an
   // exact-id miss the base model's label is rendered with the effort suffix
@@ -792,11 +797,16 @@
   function getModelLabel(modelId: string | undefined): string | undefined {
     if (!modelId) return undefined;
     const lookup = (id: string): string | undefined => {
-      for (const models of Object.values(allProviderModels)) {
-        const found = models.find((m) => m.value === id);
+      const target = normalizeModelIdForMatch(id, effectiveProviderId);
+      for (const [rowProviderId, models] of Object.entries(allProviderModels)) {
+        const found = models.find(
+          (m) => normalizeModelIdForMatch(m.value, rowProviderId) === target,
+        );
         if (found) return found.label;
       }
-      return availableModels.find((m) => m.value === id)?.label;
+      return availableModels.find(
+        (m) => normalizeModelIdForMatch(m.value, availableModelsProviderId) === target,
+      )?.label;
     };
     const exact = lookup(modelId);
     if (exact) return exact;

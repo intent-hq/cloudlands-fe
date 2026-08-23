@@ -300,6 +300,64 @@ describe('ModelPicker trigger label regressions', () => {
     expect(text).not.toContain('Auggie Butler');
   });
 
+  it('resolves a bare session model id against a provider-prefixed catalog row', async () => {
+    // Daemon-pinned bare id (intent-hq/monorepo#3302): the loaded catalog row
+    // for a non-default provider is `provider:model`-prefixed, so an exact-id
+    // lookup misses and the raw id renders.
+    enabledProviderIds$.set(['auggie', 'claude-code']);
+    availableModels$.set([]);
+
+    render(ModelPicker, {
+      props: {
+        selectedModel: 'claude-opus-4-8',
+        providerId: 'claude-code',
+        isLocked: true,
+      },
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 80));
+    await tick();
+
+    const text = screen.getByRole('button').textContent ?? '';
+    expect(text).toContain('Claude Opus 4.8');
+    expect(text).not.toContain('claude-opus-4-8');
+  });
+
+  it('resolves a provider-prefixed session model id against a bare catalog row', () => {
+    // The default provider's catalog rows are bare (prefixModelsForProvider),
+    // so a stored compound id must still match them.
+    availableModels$.set([{ value: 'butler', label: 'Auggie Butler' }]);
+
+    render(ModelPicker, {
+      props: {
+        selectedModel: 'auggie:butler',
+        isLocked: true,
+      },
+    });
+
+    const text = screen.getByRole('button').textContent ?? '';
+    expect(text).toContain('Auggie Butler');
+    expect(text).not.toContain('auggie:butler');
+  });
+
+  it('suffixes the effort of a legacy compound id whose base only matches a prefixed row', async () => {
+    enabledProviderIds$.set(['auggie', 'claude-code']);
+    availableModels$.set([]);
+
+    render(ModelPicker, {
+      props: {
+        selectedModel: 'claude-opus-4-8/high',
+        providerId: 'claude-code',
+        isLocked: true,
+      },
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 80));
+    await tick();
+
+    expect(screen.getByRole('button').textContent ?? '').toContain('Claude Opus 4.8 (High)');
+  });
+
   it('does not silently flip to the first available model when selectedModel becomes undefined', async () => {
     const { rerender } = render(ModelPicker, {
       props: {
