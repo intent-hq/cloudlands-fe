@@ -18,6 +18,7 @@ import {
   getResponseGroupPreviewBlock,
   isReasoningPhaseGroupName,
   normalizeResponseGroup,
+  normalizeResponseGroups,
 } from '../response-group-blocks';
 import { warmImport } from '../../../../test/warm-import';
 import type { ContentBlock } from '$shared/types';
@@ -427,6 +428,71 @@ describe('ResponseGroup - block identity', () => {
 
     const normalGroup = { ...namedGroup, name: 'Working' };
     expect(normalizeResponseGroup(normalGroup)).toBe(normalGroup);
+  });
+
+  it('pairs the exact adjacent alternate-model title and description shape', () => {
+    const preceding = {
+      type: 'thinking',
+      id: 'msg_1:0',
+      text: '\n\n**Assessing delegation and tool availability**\n\n**Planning workspace title setup**',
+    } as ContentBlock;
+    const description = {
+      type: 'text',
+      id: 'msg_1:1',
+      text: 'I’ll first title the workspace, read the existing spec, and inspect the project.',
+    } as ContentBlock;
+    const group = {
+      type: 'content_group' as const,
+      name: 'Prepping',
+      isStreaming: true,
+      children: [description],
+    };
+
+    expect(normalizeResponseGroups([preceding, group])).toEqual([
+      {
+        ...group,
+        name: 'Planning workspace title setup',
+        sourceName: 'Prepping',
+        isReasoningPhase: true,
+        children: [
+          { type: 'text', id: 'msg_1:0', text: 'Assessing delegation and tool availability' },
+          description,
+        ],
+      },
+    ]);
+  });
+
+  it('does not pair ordinary authored groups or adjacent prose', () => {
+    const titledReasoning = {
+      type: 'thinking',
+      text: '**Assessing availability**\n\n**Planning workspace setup**',
+    } as ContentBlock;
+    const proseReasoning = {
+      type: 'thinking',
+      text: '**Assessing availability**\n\nExplain the next step.',
+    } as ContentBlock;
+    const description = { type: 'text', text: 'Inspect the workspace.' } as ContentBlock;
+    const authoredGroup = {
+      type: 'content_group' as const,
+      name: 'Working',
+      isStreaming: true,
+      children: [description],
+    };
+    const reasoningGroup = { ...authoredGroup, name: 'Prepping' };
+
+    expect(normalizeResponseGroups([titledReasoning, authoredGroup])).toEqual([
+      titledReasoning,
+      authoredGroup,
+    ]);
+    expect(normalizeResponseGroups([proseReasoning, reasoningGroup])).toEqual([
+      proseReasoning,
+      {
+        ...reasoningGroup,
+        name: '',
+        sourceName: 'Prepping',
+        isReasoningPhase: true,
+      },
+    ]);
   });
 
   it('selects the last visible child and skips trailing tool results', () => {

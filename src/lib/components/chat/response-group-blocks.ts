@@ -5,7 +5,7 @@ import {
   getToolResultContentBlockKey,
   getToolUseContentBlockKey,
 } from '$shared/utils/content-block-helpers';
-import { extractReasoningHeading } from './reasoning-heading';
+import { extractReasoningHeading, extractStandaloneReasoningTitle } from './reasoning-heading';
 
 // This provider phase arrives in the same parsed content_group shape as normal
 // named groups. Keep the compatibility match narrow so authored group names
@@ -47,12 +47,58 @@ export function normalizeResponseGroup(block: ContentBlockGroup): ContentBlockGr
   };
 }
 
+function pairAdjacentReasoningGroup(
+  preceding: ContentBlock,
+  group: ContentBlockGroup,
+): ContentBlockGroup | null {
+  if (preceding.type !== 'thinking' || !isReasoningPhaseGroupName(group.name)) return null;
+
+  const description = group.children[0];
+  if (description?.type !== 'text' || !(description.text ?? description.content ?? '').trim()) {
+    return null;
+  }
+
+  const precedingReasoning = extractReasoningHeading(preceding.text ?? preceding.content ?? '');
+  if (!precedingReasoning.heading) return null;
+
+  const title = extractStandaloneReasoningTitle(precedingReasoning.body);
+  if (!title) return null;
+
+  const precedingHistory = reasoningAsText(preceding, precedingReasoning.heading);
+  const children = group.children.flatMap((child) => {
+    if (child.type !== 'thinking') return [child];
+    const normalized = reasoningAsText(child, child.text ?? child.content ?? '');
+    return normalized ? [normalized] : [];
+  });
+
+  return {
+    ...group,
+    name: title,
+    sourceName: group.name,
+    isReasoningPhase: true,
+    children: precedingHistory ? [precedingHistory, ...children] : children,
+  };
+}
+
 export function normalizeResponseGroups(
   blocks: readonly RenderContentBlock[],
 ): RenderContentBlock[] {
-  return blocks.map((block) =>
-    block.type === 'content_group' ? normalizeResponseGroup(block) : block,
-  );
+  const normalized: RenderContentBlock[] = [];
+  for (let index = 0; index < blocks.length; index += 1) {
+    const block = blocks[index];
+    const next = blocks[index + 1];
+    if (block.type !== 'content_group' && next?.type === 'content_group') {
+      const paired = pairAdjacentReasoningGroup(block, next);
+      if (paired) {
+        normalized.push(paired);
+        index += 1;
+        continue;
+      }
+    }
+
+    normalized.push(block.type === 'content_group' ? normalizeResponseGroup(block) : block);
+  }
+  return normalized;
 }
 
 export function getResponseGroupBlockKey(block: ContentBlock, index: number): string {

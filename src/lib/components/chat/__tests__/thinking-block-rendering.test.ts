@@ -182,6 +182,40 @@ describe('thinking blocks — StreamingMessageContent', () => {
     expect(visibleChildTypes()).toEqual([]);
   });
 
+  it('pairs the persisted adjacent title and description into one live disclosure', async () => {
+    await renderStreaming(
+      [
+        thinking(
+          '01a03064:0',
+          '\n\n**Assessing delegation and tool availability**\n\n**Planning workspace title setup**',
+        ),
+        {
+          type: 'text',
+          id: '01a03064:1',
+          text: '<group:Prepping>\nI’ll first title the workspace, read the existing spec, and inspect the project’s dark-mode surface before drafting the implementation plan.',
+        },
+      ],
+      true,
+    );
+
+    const disclosure = screen.getByTestId('response-group-disclosure');
+    expect(screen.getAllByRole('button')).toHaveLength(1);
+    expect(screen.queryByTestId('reasoning-disclosure')).toBeNull();
+    expect(screen.getByTestId('response-group-name').textContent).toBe(
+      'Planning workspace title setup',
+    );
+    expect(document.body.textContent).not.toContain('Thinking...');
+    expect(document.body.textContent?.match(/Planning workspace title setup/g)).toHaveLength(1);
+    expect(document.body.textContent?.match(/I’ll first title the workspace/g)).toHaveLength(1);
+    expect(document.body.textContent).not.toContain('Assessing delegation and tool availability');
+
+    await fireEvent.click(disclosure);
+    expect(
+      document.body.textContent?.match(/Assessing delegation and tool availability/g),
+    ).toHaveLength(1);
+    expect(document.body.textContent?.match(/I’ll first title the workspace/g)).toHaveLength(1);
+  });
+
   it('renders the alternate-model Prepping wrapper as one reasoning disclosure', async () => {
     const leadingContent = [
       {

@@ -29,6 +29,15 @@ function isShortTitleLike(rawLine: string, plainText: string): boolean {
   return !/^[ \t]*(?:[-+*][ \t]+|\d+[.)][ \t]+|>|```|~~~|\|)/.test(rawLine);
 }
 
+export function extractStandaloneReasoningTitle(content: string): string | null {
+  const candidate = content.trim();
+  const strongTitle = candidate.match(/^\*\*([^\r\n]+)\*\*$/);
+  if (!strongTitle) return null;
+
+  const title = markdownInlineToPlainText(strongTitle[1]);
+  return isShortTitleLike(strongTitle[0], title) ? title : null;
+}
+
 export function extractReasoningHeading(content: string): ReasoningHeading {
   const leading = content.match(/^(?:\uFEFF)?(?:[ \t]*(?:\r\n|\n|\r))*/)?.[0] ?? '';
   const candidate = content.slice(leading.length);
