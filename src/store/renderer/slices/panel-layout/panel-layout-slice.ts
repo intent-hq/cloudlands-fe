@@ -1311,10 +1311,18 @@ function moveTabIntoFixedColumn(
         tabs: remainingTabs,
         activeTabId,
         attentionTabIds: fromPanel.attentionTabIds?.filter((id) => id !== tab.id),
+        pristine: remainingTabs.length === 0 ? true : fromPanel.pristine,
       },
     },
   };
-  if (remainingTabs.length === 0) moved = closePanelHelper(moved, fromPanelId);
+  if (
+    remainingTabs.length === 0 &&
+    Object.entries(moved.panels).some(
+      ([panelId, panel]) => panelId !== fromPanelId && panel.tabs.length === 0,
+    )
+  ) {
+    moved = closePanelHelper(moved, fromPanelId);
+  }
   return moved;
 }
 
@@ -2747,6 +2755,7 @@ panelLayoutReducer.with(moveTabToPanel, (state, { payload }) => {
         tabs: newFromTabs,
         activeTabId: newFromActiveTabId,
         attentionTabIds: fromPanel.attentionTabIds?.filter((id) => id !== tab.id),
+        pristine: newFromTabs.length === 0 ? true : fromPanel.pristine,
       },
       [toPanelId]: {
         ...toPanel,
@@ -2758,8 +2767,13 @@ panelLayoutReducer.with(moveTabToPanel, (state, { payload }) => {
     focusedPanelId: toPanelId,
   };
 
-  // Close empty panel
-  if (newFromTabs.length === 0 && Object.keys(ws.panels).length > 1) {
+  // Collapse the emptied source only when another empty column remains.
+  if (
+    newFromTabs.length === 0 &&
+    Object.entries(ws.panels).some(
+      ([panelId, panel]) => panelId !== fromPanelId && panel.tabs.length === 0,
+    )
+  ) {
     ws = closePanelHelper(ws, fromPanelId);
   }
   return setWorkspaceState(state, wsId, ws);

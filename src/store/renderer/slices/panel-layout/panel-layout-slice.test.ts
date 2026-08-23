@@ -2245,19 +2245,48 @@ describe('panelLayoutReducer', () => {
       expect(result.focusedPanelId).toBe(targetPanelId);
     });
 
-    it('collapses the source column only when its final pane moves', () => {
+    it('keeps the emptied source as the one pristine column after a stack move', () => {
       let state = stateWithPanel('p1', [{ id: 'move', type: 'note', title: 'Move' }]);
       state = panelLayoutReducer(state, splitPanel(WS, 'p1', 'horizontal', undefined, 1));
       const targetPanelId = getPanelOrder(state.byWorkspaceId[WS].root)[1];
+      state.byWorkspaceId[WS].panels[targetPanelId] = {
+        ...state.byWorkspaceId[WS].panels[targetPanelId],
+        tabs: [{ id: 'target', type: 'note', title: 'Target' }],
+        activeTabId: 'target',
+        pristine: false,
+      };
 
       const result = panelLayoutReducer(
         state,
         moveTabToPanel(WS, 'move', 'p1', targetPanelId, undefined, 2),
       ).byWorkspaceId[WS];
 
+      expect(result.panels.p1).toMatchObject({ tabs: [], activeTabId: null, pristine: true });
+      expect(getPanelOrder(result.root)).toEqual(['p1', targetPanelId]);
+      expect(result.panels[targetPanelId].tabs.map((tab) => tab.id)).toEqual(['target', 'move']);
+    });
+
+    it('collapses an emptied source when another empty column remains', () => {
+      let state = stateWithPanel('p1', [{ id: 'move', type: 'note', title: 'Move' }]);
+      state = panelLayoutReducer(state, splitPanel(WS, 'p1', 'horizontal', undefined, 1));
+      const targetPanelId = getPanelOrder(state.byWorkspaceId[WS].root)[1];
+      state.byWorkspaceId[WS].panels[targetPanelId] = {
+        ...state.byWorkspaceId[WS].panels[targetPanelId],
+        tabs: [{ id: 'target', type: 'note', title: 'Target' }],
+        activeTabId: 'target',
+        pristine: false,
+      };
+      state = panelLayoutReducer(state, splitPanel(WS, targetPanelId, 'horizontal', undefined, 2));
+      const emptyPanelId = getPanelOrder(state.byWorkspaceId[WS].root).at(-1)!;
+
+      const result = panelLayoutReducer(
+        state,
+        moveTabToPanel(WS, 'move', 'p1', targetPanelId, undefined, 3),
+      ).byWorkspaceId[WS];
+
       expect(result.panels.p1).toBeUndefined();
-      expect(getPanelOrder(result.root)).toEqual([targetPanelId]);
-      expect(result.panels[targetPanelId].tabs.map((tab) => tab.id)).toEqual(['move']);
+      expect(getPanelOrder(result.root)).toEqual([targetPanelId, emptyPanelId]);
+      expect(result.panels[emptyPanelId].tabs).toEqual([]);
     });
 
     it('collapses the source column after its final pane creates a new column', () => {
