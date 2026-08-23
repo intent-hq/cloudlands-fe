@@ -18,19 +18,16 @@
   import {
     selectHudTakeoverRequestWorkspaceId,
     selectHudTakeoverView,
-    type HudCardAgent,
   } from '$store/renderer/slices/hud/hud-selectors';
   import { ensureWorkspaceTasksLoaded } from '$store/renderer/slices/workspace-tasks/workspace-tasks-slice';
   import { hydrateTaskAgentAssociationsRequested } from '$store/renderer/slices/task-agent-associations/task-agent-associations-slice';
   import { microConnectedReadable } from '$features/hardware-console/device/connection-status';
-  import { formatHudTimer } from '../utils/hud-format';
   import { watchReducedMotion } from '../right-column/hud-slide.svelte';
   import { onTakeoverTrigger } from './hud-takeover-bus';
   import {
     activeTakeoverTrigger,
     takeoverCountdownSeconds,
     takeoverDwellMs,
-    type HudTakeoverTrigger,
   } from './hud-takeover-queue';
   import { createTakeoverController } from './hud-takeover-controller.svelte';
   import { takeoverFrameStyle } from './hud-takeover-frame';
@@ -39,8 +36,10 @@
   import HudTakeoverEdges from './HudTakeoverEdges.svelte';
   import {
     agentBucketLabel,
+    takeoverChangeLine,
+    takeoverElapsedText,
     takeoverKindColor,
-    takeoverKindLabel,
+    takeoverSpecSegments,
     taskCellMeta,
   } from './hud-takeover-meta';
   import HudTakeoverBanner from './HudTakeoverBanner.svelte';
@@ -214,32 +213,7 @@
   });
 
   /** Spec-progress segments (mock `taskSegs`): done → inProgress → rest. */
-  const specSegments = $derived.by(() => {
-    const stats = $view$?.stats;
-    if (!stats || stats.total === 0) return [];
-    const count = Math.min(stats.total, 24);
-    const done = Math.round((stats.completed / stats.total) * count);
-    const active = Math.round(((stats.completed + stats.inProgress) / stats.total) * count);
-    return Array.from({ length: count }, (_, i) => {
-      if (i < done) return 'hsl(var(--primary))';
-      if (i < active) return 'hsl(var(--ring))';
-      return 'hsl(var(--muted))';
-    });
-  });
-
-  /** Localized WHAT CHANGED line for a trigger (labels off `kind`). */
-  function changeLine(trigger: HudTakeoverTrigger): string {
-    return trigger.detail
-      ? `${takeoverKindLabel(trigger.kind)} · ${trigger.detail}` // i18n-ignore (label + wire detail join)
-      : takeoverKindLabel(trigger.kind);
-  }
-
-  function elapsedText(agent: HudCardAgent): string {
-    if (!agent.lastActivityTs) return '--:--:--'; // i18n-ignore (digit placeholder)
-    const startedMs = Date.parse(agent.lastActivityTs);
-    if (!Number.isFinite(startedMs)) return '--:--:--'; // i18n-ignore (digit placeholder)
-    return formatHudTimer((nowMs - startedMs) / 1000);
-  }
+  const specSegments = $derived(takeoverSpecSegments($view$?.stats));
 </script>
 
 {#if visible && $view$}
@@ -468,7 +442,7 @@
                     .reverse() as change, i (`${change.kind}-${change.raisedAtMs}-${i}`)}
                     <div class="ov-change">
                       <span style:color={takeoverKindColor(change.kind)}>▸</span>
-                      <span class="ov-change-text">{changeLine(change)}</span>
+                      <span class="ov-change-text">{takeoverChangeLine(change)}</span>
                     </div>
                   {/each}
                 {/if}
@@ -492,7 +466,7 @@
                         style:background={agentBucketColor(agent.bucket)}
                       ></span>
                       <span class="ov-agent-name">{agent.name}</span>
-                      <span class="ov-agent-elapsed">{elapsedText(agent)}</span>
+                      <span class="ov-agent-elapsed">{takeoverElapsedText(agent, nowMs)}</span>
                       <span class="ov-agent-state" style:color={agentBucketColor(agent.bucket)}>
                         {agentBucketLabel(agent.bucket)}
                       </span>
