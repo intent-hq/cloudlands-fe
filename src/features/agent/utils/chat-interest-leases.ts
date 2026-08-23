@@ -29,6 +29,9 @@
 
 const leaseHoldersByAgent = new Map<string, Set<string>>();
 
+type LastLeaseReleasedListener = (agentId: string) => void;
+const lastLeaseReleasedListeners = new Set<LastLeaseReleasedListener>();
+
 /** Record that `holderId` now depends on this agent's chat subscription. */
 export function acquireChatInterestLease(agentId: string, holderId: string): void {
   let holders = leaseHoldersByAgent.get(agentId);
@@ -42,9 +45,27 @@ export function acquireChatInterestLease(agentId: string, holderId: string): voi
 /** Record that `holderId` no longer depends on this agent's chat subscription. */
 export function releaseChatInterestLease(agentId: string, holderId: string): void {
   const holders = leaseHoldersByAgent.get(agentId);
-  if (!holders) return;
-  holders.delete(holderId);
-  if (holders.size === 0) leaseHoldersByAgent.delete(agentId);
+  if (!holders || !holders.delete(holderId)) return;
+  if (holders.size === 0) {
+    leaseHoldersByAgent.delete(agentId);
+    // LAST-lease release: notify synchronously so the chat-subscribe saga can
+    // run a deferred sweep-close the moment nothing depends on the agent —
+    // including when this release comes from the chat-read saga's finally on
+    // cancellation, which dispatches no settle/fail action for a revisit to
+    // key on. Listeners must be cheap and non-throwing (they run inside
+    // component teardown / saga finally paths).
+    for (const listener of [...lastLeaseReleasedListeners]) listener(agentId);
+  }
+}
+
+/**
+ * Subscribe to LAST-lease releases (an agent's holder set becoming empty via
+ * `releaseChatInterestLease`). Returns the unsubscribe. `clearAllChatInterestLeases`
+ * (test reset / dispose) deliberately does not notify.
+ */
+export function onLastChatInterestLeaseReleased(listener: LastLeaseReleasedListener): () => void {
+  lastLeaseReleasedListeners.add(listener);
+  return () => lastLeaseReleasedListeners.delete(listener);
 }
 
 /** Whether any live consumer currently holds a lease on this agent. */

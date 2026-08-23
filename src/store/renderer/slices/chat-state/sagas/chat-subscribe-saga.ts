@@ -15,26 +15,24 @@
  *    is a standing sidebar surface that stays open — and must keep rendering
  *    live — while the user views workspace chats (and vice versa). Viewing a
  *    chief thread still closes other chief threads' subscriptions. The
- *    swap's sweep spares same-realm agents whose transcript hydration sits
- *    in `loading` while a panel tab still hosts them (monorepo#2917): on a
- *    double ChatPanel mount the second panel's viewed dispatch would
- *    otherwise close the first panel's still-acquiring cold-open slot —
- *    cancelPending resolves its `chat.subscribe` straight into an
- *    unsubscribe, its seq-0 snapshot is token-dropped, and hydration
- *    strands a full wait window. ANY hosted slot whose open is still
- *    acquiring spares the same way, whatever its hydration flag reads: a
- *    cold open before the flag exists (monorepo#3073 — the chat-read saga
- *    defers the loading flag by at least one microtask, so a same-flush
- *    double mount sweeps before the flag is visible) and a warm reopen on a
- *    revisited workspace whose flag still reads the previous visit's
- *    `settled` (monorepo#3185 — chat state survives workspace switches).
- *    The hosting check spans every workspace's
- *    layout (the same predicate the settle-time revisit uses), so a panel
- *    in a visible sibling workspace column spares too — and so does a tab
- *    persisted in a backgrounded workspace's layout, a bounded keep (until
- *    the next same-realm swap) preferred over token-dropping its snapshot.
- *    Spared agents follow the same spare-then-revisit contract as the
- *    applied clear's (below): the close is deferred, never cancelled.
+ *    swap's sweep spares same-realm agents holding a chat interest lease
+ *    (chat-interest-leases.ts, monorepo#3295): a mounted ChatPanel instance
+ *    acquires its lease synchronously at the top of onMount and an
+ *    in-flight chat-read hydration holds one for the duration of its
+ *    bounded snapshot wait, so a sweep can never close a registration a
+ *    live consumer is waiting on. Leases replaced the heuristic spare
+ *    conditions (hydration `loading`, still-acquiring slot, open panel tab)
+ *    that were defeated one flush-ordering race at a time — the
+ *    #2864/#2917/#3073/#3185/#3295 strand family: each heuristic inferred
+ *    "still needed" from state that lagged the consumer's existence (the
+ *    read saga defers its loading flag by at least one microtask, chat
+ *    state survives workspace switches so flags go stale, and an
+ *    installed-but-not-yet-emitted reopen looks closable). The spare
+ *    defers the close, it never cancels it: each spared agent is recorded
+ *    and the deferred close runs when its LAST lease releases
+ *    (watchLeaseReleases) — a destroyed panel releases in onDestroy and a
+ *    settled, failed, or CANCELLED hydration releases in its finally, so
+ *    the subscription cannot leak even when no settle/fail action follows.
  *  - `transcriptHydrationSettled` re-applies the entry's last reconciled
  *    transcript: a slower chat-read hydrate whose pages predate a finalize
  *    would otherwise clobber the finalized row this stream already delivered
@@ -53,20 +51,16 @@
  *    agent remains viewed after the reducer). A background panel's trailing
  *    scoped clear is ignored by the reducer, so the viewed agent's
  *    subscription survives (monorepo#1215). An applied clear still spares
- *    agents whose transcript hydration sits in `loading`: on a same-agent
- *    ChatPanel remount the new instance re-initializes (deduped against the
- *    standing subscription) before the old instance's trailing clear lands,
- *    and closing the subscription then would drop the snapshot meta and
- *    strand that hydration (monorepo#2864). A hosted slot still ACQUIRING
- *    its open spares too, whatever its hydration flag reads (monorepo#3185):
- *    a departing panel's destroy can land after a remounting panel's init
- *    reopened the agent, while the flag still reads a previous visit's
- *    `settled`. Each spared agent is revisited
- *    when its hydration settles or fails: a live remounted panel keeps its
- *    agent tab open (or re-viewed the agent), so the subscription stays; a
- *    genuine panel close mid-load left no tab behind, so the deferred close
- *    runs then — the spare defers the teardown, it never cancels it.
- *    A clear scoped to a
+ *    leased agents (the same lease-based spare as the swap's): on a
+ *    same-agent ChatPanel remount the new instance re-initializes (deduped
+ *    against the standing subscription) before the old instance's trailing
+ *    clear lands, and closing the subscription then would drop the snapshot
+ *    meta and strand that hydration (monorepo#2864) — the remounted panel's
+ *    lease (and its in-flight hydration's) spares it, whatever the
+ *    hydration flag or acquisition state reads (monorepo#3185). Each spared
+ *    agent's deferred close runs at its LAST lease release when nothing
+ *    keeps it (not re-viewed, no session-level keep) — the spare defers the
+ *    teardown, it never cancels it. A clear scoped to a
  *    chief-workspace agent instead closes exactly that subscription,
  *    regardless of which agent remains viewed: the swap exempts chief
  *    subscriptions, so the Chief panel's own destroy (collapse /
@@ -135,7 +129,6 @@ import {
   chatUtilityFooterReady,
   initializeChatRequested,
   refreshChatTranscriptRequested,
-  transcriptHydrationFailed,
   transcriptHydrationSettled,
 } from '$store/renderer/slices/chat-state/chat-state-slice';
 import {
@@ -178,11 +171,14 @@ import {
 } from '$features/agent/utils/chat-subscription-registry';
 import { seedStreamFromSnapshot } from '$features/events/daemon-events-bridge.client';
 import {
+  hasChatInterestLease,
+  onLastChatInterestLeaseReleased,
+} from '$features/agent/utils/chat-interest-leases';
+import {
   selectAgentMessages,
   selectAgentSession,
 } from '$store/renderer/slices/agent-session/agent-session-selectors';
 import { selectCurrentlyViewedAgentId } from '$store/renderer/slices/unread-tracking/unread-tracking-selectors';
-import { selectAgentHasOpenPanelTab } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
 
 const logger = createLogger('ChatSubscribeSaga');
 
@@ -252,17 +248,22 @@ interface SubscriptionCoordinator {
   /** One bounded reveal-gate watcher per agent (see revealGateWatcher). */
   revealGateWatchers: Map<string, Task>;
   /**
-   * Agents spared from a close-all sweep — an applied clear's
-   * (monorepo#2864) or the viewed-agent swap's (monorepo#2917) — because
-   * their transcript hydration sat in `loading`, or their hosted slot's
-   * open was still acquiring regardless of the flag's value (a cold open
-   * before the read saga flipped it, monorepo#3073; a warm reopen under a
-   * stale settled flag from a previous visit, monorepo#3185).
-   * Revisited when that hydration settles/fails: an agent with no open
-   * panel tab and not re-viewed had its panel genuinely closed mid-load, so
-   * the deferred close runs then instead of leaking the subscription.
+   * LAST-lease releases forwarded from the chat-interest-lease registry
+   * (monorepo#3295) into the saga runtime; drained by watchLeaseReleases.
    */
-  pendingClearWhileLoading: Set<string>;
+  leaseReleases: Channel<string>;
+  /**
+   * Agents spared from a sweep — the viewed-agent swap's, an applied
+   * clear's close-all, or a scoped clear's own-slot close — because a live
+   * consumer held a chat interest lease at sweep time (a mounted ChatPanel
+   * instance, an in-flight chat-read hydration; monorepo#3295, replacing
+   * the heuristic loading/acquiring/panel-tab spares of the
+   * #2864/#2917/#3073/#3185 family). Revisited when the agent's LAST lease
+   * releases (watchLeaseReleases): with nothing depending on it and no
+   * re-view, the deferred close runs then instead of leaking the
+   * subscription. The spare defers the close, it never cancels it.
+   */
+  pendingSweepCloses: Set<string>;
 }
 
 function createCompletion(): TransitionCompletion {
@@ -868,9 +869,9 @@ function enqueueClose(
   }
   slot.desiredToken = undefined;
   slot.acquisition?.cancelPending();
-  // Any close retires a pending deferred clear — the teardown it deferred is
-  // now happening through this path.
-  coordinator.pendingClearWhileLoading.delete(agentId);
+  // Any close retires a pending deferred sweep-close — the teardown it
+  // deferred is now happening through this path.
+  coordinator.pendingSweepCloses.delete(agentId);
   const completion = createCompletion();
   return enqueue(slot, { kind: 'close', clearResumeAnchor, completion });
 }
@@ -1067,60 +1068,30 @@ function* startRevealGateWatcher(
  */
 function* handleViewed(coordinator: SubscriptionCoordinator, agentId: string): SagaGenerator<void> {
   const viewedIsChief = yield* isChiefChatAgent(coordinator, agentId);
-  // Double-mount hole in the swap sweep (monorepo#2917): when two ChatPanels
-  // mount in rapid succession, the second panel's viewed dispatch lands while
-  // the first panel's cold-open slot is still acquiring over WSS — sweeping
-  // it clears the slot's desiredToken and cancelPending()s the acquisition,
-  // so its chat.subscribe resolves straight into an unsubscribe and the
-  // seq-0 snapshot is token-dropped, stranding that hydration for a full
-  // wait window. Spare same-realm agents whose transcript hydration sits in
-  // `loading` while a panel tab still hosts them. The hosting predicate
-  // (selectAgentHasOpenPanelTab) deliberately spans EVERY workspace's
-  // layout, like the settle-time revisit's: a mounted sibling panel of the
-  // double mount is actively waiting on the snapshot, and a tab persisted
-  // in a backgrounded workspace's layout (workspace switch mid-hydration)
-  // also spares — letting that hidden hydration complete keeps the
-  // transcript warm for switch-back instead of token-dropping its
-  // snapshot, a keep bounded by the next same-realm swap or scoped clear.
-  // The spare defers the close, it never cancels it — the same
-  // spare-then-revisit contract the applied clear's sweep uses
-  // (monorepo#2864): each spared agent is recorded and revisited when its
-  // hydration settles/fails (runDeferredClearIfPanelGone), so a panel
-  // genuinely closed mid-load still tears the subscription down.
+  // Spare same-realm agents holding a chat interest lease (monorepo#3295):
+  // a mounted ChatPanel instance or an in-flight chat-read hydration is a
+  // live consumer of the standing registration, and sweeping it clears the
+  // slot's desiredToken (token-dropping the seq-0 snapshot of a
+  // still-acquiring or installed-but-not-yet-emitted open) — the
+  // #2864/#2917/#3073/#3185/#3295 strand family. Leases are maintained
+  // synchronously by the consumers themselves (panel onMount before its
+  // init/viewed dispatches, hydration worker before its bounded wait), so
+  // unlike the heuristic spares they replaced (hydration `loading`,
+  // still-acquiring slot, hosted panel tab — each defeated by a
+  // flush-ordering race in turn) they cannot lag the consumer's existence
+  // at sweep time. Unleased agents (nothing mounted, nothing hydrating)
+  // keep closing as before, and their resume anchor makes the eventual
+  // re-view cheap. The spare defers the close, it never cancels it: each
+  // spared agent is recorded and revisited when its LAST lease releases
+  // (runDeferredSweepCloseIfUnleased), so a panel genuinely closed
+  // mid-load still tears the subscription down.
   const spared = new Set<string>();
   for (const [slotAgentId, slot] of [...coordinator.slots.entries()]) {
     if (slotAgentId === agentId) continue;
     if ((slot.wsId === CHIEF_WORKSPACE_ID) !== viewedIsChief) continue;
-    const hydration = yield* selectTranscriptHydration.effect(slotAgentId);
-    // Same-task hole behind the loading spare (monorepo#3073): the chat-read
-    // saga defers transcriptHydrationStarted by at least one microtask (its
-    // worker first awaits the hydration-tail chain), so when two ChatPanels
-    // mount inside ONE synchronous flush the sibling's cold-open hydration
-    // still reads undefined (never started) at sweep time. That sibling is
-    // recognizable without the flag: its slot's open is still acquiring
-    // (desiredToken set, no subscription installed yet) — treat it exactly
-    // like the loading case. The spare deliberately ignores the hydration
-    // flag's VALUE while the slot is acquiring (monorepo#3185): chat state
-    // survives workspace switches, so on a revisited workspace's double
-    // mount the sibling's flag still reads the PREVIOUS visit's 'settled' —
-    // a warm reopen whose remounting panel is just as much waiting on the
-    // seq-0 snapshot as a cold open's. Only the acquisition state is
-    // trustworthy at sweep time. Installed warm subscriptions (not
-    // acquiring, hydration settled/error) keep closing as before, and their
-    // resume anchor makes the eventual re-view cheap. The settle/fail
-    // revisit is guaranteed only for init/refresh-driven acquires (the
-    // chat-read saga unconditionally starts and settles/fails those
-    // hydrations); a viewed-only acquire (tab reactivation) spared under a
-    // stale settled flag has no hydration cycle coming — its subscription
-    // falls back to the bounded keep above (retired by the next same-realm
-    // swap, the scoped clear on tab close, or session teardown), and its
-    // stale marker is deleted by any enqueueClose.
-    const acquiring =
-      slot.desiredToken !== undefined && !coordinator.subscriptions.has(slotAgentId);
-    if (hydration !== 'loading' && !acquiring) continue;
-    if (yield* selectAgentHasOpenPanelTab.effect(slotAgentId)) spared.add(slotAgentId);
+    if (yield* call(hasChatInterestLease, slotAgentId)) spared.add(slotAgentId);
   }
-  for (const slotAgentId of spared) coordinator.pendingClearWhileLoading.add(slotAgentId);
+  for (const slotAgentId of spared) coordinator.pendingSweepCloses.add(slotAgentId);
   closeMatchingSlots(
     coordinator,
     (otherId, slot) =>
@@ -1135,24 +1106,24 @@ function* handleViewed(coordinator: SubscriptionCoordinator, agentId: string): S
 }
 
 /**
- * Revisit an agent spared from a close-all sweep — an applied clear's
- * (monorepo#2864) or the viewed-agent swap's (monorepo#2917) — because its
- * hydration was `loading` or its hosted slot's open was still acquiring
- * (monorepo#3073 cold opens, monorepo#3185 warm reopens), now that the
- * hydration has settled or failed. The
- * spare exists for a live panel actively waiting on the subscription (the
- * same-agent remount, or a sibling panel of a double mount), which keeps its
- * agent tab open (or re-views the agent) — so when neither holds, the panel
- * was genuinely closed mid-load and the deferred close runs now instead of
- * leaking the subscription until an unrelated swap or session teardown.
+ * Revisit an agent spared from a sweep because a lease was held, now that
+ * its LAST lease has released (every panel instance destroyed, every
+ * hydration settled/failed/cancelled). A re-viewed agent stays: the view is
+ * an authoritative keep the swap will retire on the next switch. A tab
+ * persisted in a panel layout without a live lease holds nothing open — an
+ * unmounted (backgrounded/cached) panel is not waiting on the subscription,
+ * and its remount re-initializes the chat. Otherwise the sweep's deferred
+ * close runs now instead of leaking the subscription until an unrelated
+ * swap or session teardown.
  */
-function* runDeferredClearIfPanelGone(
+function* runDeferredSweepCloseIfUnleased(
   coordinator: SubscriptionCoordinator,
   agentId: string,
 ): SagaGenerator<void> {
-  if (!coordinator.pendingClearWhileLoading.delete(agentId)) return;
+  if (!coordinator.pendingSweepCloses.has(agentId)) return;
+  if (yield* call(hasChatInterestLease, agentId)) return;
+  coordinator.pendingSweepCloses.delete(agentId);
   if ((yield* selectCurrentlyViewedAgentId.effect()) === agentId) return;
-  if (yield* selectAgentHasOpenPanelTab.effect(agentId)) return;
   enqueueClose(coordinator, agentId);
 }
 
@@ -1257,7 +1228,6 @@ type ChatSubscribeAction =
   | ReturnType<typeof chatSendStarted>
   | ReturnType<typeof markAgentAsViewed>
   | ReturnType<typeof transcriptHydrationSettled>
-  | ReturnType<typeof transcriptHydrationFailed>
   | ReturnType<typeof refreshChatTranscriptRequested>
   | ReturnType<typeof chatTranscriptSnapshotRerequested>
   | ReturnType<typeof clearCurrentlyViewedAgent>
@@ -1305,10 +1275,6 @@ function* routeLifecycleAction(
       yield* startRevealGateWatcher(coordinator, agentId);
     }
     enqueueHydrationSettled(coordinator, agentId);
-    yield* runDeferredClearIfPanelGone(coordinator, agentId);
-  } else if (action.type === transcriptHydrationFailed.type) {
-    const [agentId] = action.payload as ReturnType<typeof transcriptHydrationFailed>['payload'];
-    yield* runDeferredClearIfPanelGone(coordinator, agentId);
   } else if (action.type === refreshChatTranscriptRequested.type) {
     const [wsId, agentId] = action.payload as ReturnType<
       typeof refreshChatTranscriptRequested
@@ -1333,60 +1299,48 @@ function* routeLifecycleAction(
       // old instance's trailing scoped clear APPLIES (viewed → null) and
       // would close the very subscription the remounted panel depends on,
       // dropping the snapshot meta with no seq-0 emit coming (the remount's
-      // open was consumed by the dedup). Spare agents whose transcript
-      // hydration sits in `loading`: an in-flight hydration means a live
-      // panel is actively waiting on this subscription's snapshot. The spare
-      // defers the close, it never cancels it: each spared agent is recorded
-      // and revisited when its hydration settles/fails
-      // (runDeferredClearIfPanelGone), so a genuine close-mid-load still
-      // tears the subscription down instead of leaking it. A hosted slot
-      // whose open is still ACQUIRING spares the same way regardless of the
-      // hydration flag's value (monorepo#3185): on a revisited workspace the
-      // departing panel's destroy can land after the remounting panel's init
-      // reopened the agent (Svelte defers teardown to the microtask flush),
-      // while that agent's per-agent chat state still reads the previous
-      // visit's 'settled' — sweeping the acquiring reopen would token-drop
-      // its seq-0 snapshot and strand the in-flight hydration a full wait
-      // window. The hosting requirement keeps the sweep closing acquiring
-      // slots nothing is waiting on.
-      const hydrating = new Set<string>();
-      for (const [slotAgentId, slot] of coordinator.slots.entries()) {
-        if ((yield* selectTranscriptHydration.effect(slotAgentId)) === 'loading') {
-          hydrating.add(slotAgentId);
-          continue;
-        }
-        const acquiring =
-          slot.desiredToken !== undefined && !coordinator.subscriptions.has(slotAgentId);
-        if (acquiring && (yield* selectAgentHasOpenPanelTab.effect(slotAgentId))) {
-          hydrating.add(slotAgentId);
-        }
+      // open was consumed by the dedup). Spare leased agents: the remounted
+      // panel acquired its lease synchronously at mount (before this
+      // trailing clear could land in any flush ordering) and its in-flight
+      // hydration holds one too, while the departing instance released its
+      // OWN lease before dispatching this clear — so a genuine final close
+      // leaves the agent unleased and the sweep closes it immediately. The
+      // spare defers the close, it never cancels it: each spared agent is
+      // revisited when its last lease releases
+      // (runDeferredSweepCloseIfUnleased), so a close-mid-load still tears
+      // the subscription down instead of leaking it.
+      const leased = new Set<string>();
+      for (const slotAgentId of coordinator.slots.keys()) {
+        if (yield* call(hasChatInterestLease, slotAgentId)) leased.add(slotAgentId);
       }
       for (const [slotAgentId, slot] of coordinator.slots.entries()) {
-        if (slot.wsId !== CHIEF_WORKSPACE_ID && hydrating.has(slotAgentId)) {
-          coordinator.pendingClearWhileLoading.add(slotAgentId);
+        if (slot.wsId !== CHIEF_WORKSPACE_ID && leased.has(slotAgentId)) {
+          coordinator.pendingSweepCloses.add(slotAgentId);
         }
       }
       closeMatchingSlots(
         coordinator,
-        (agentId, slot) => slot.wsId !== CHIEF_WORKSPACE_ID && !hydrating.has(agentId),
+        (agentId, slot) => slot.wsId !== CHIEF_WORKSPACE_ID && !leased.has(agentId),
       );
     } else if (scopeAgentId) {
       // Another agent is still viewed, so this scoped clear was a reducer
       // no-op (monorepo#1215's cross-agent guard) — but the CLEARED agent's
       // own slot may still be standing: a sibling spared from the viewed
-      // -agent swap (monorepo#2917) whose deferred-clear marker was retired
-      // at hydration settle while its panel tab was open. When that tab
-      // later closes (deactivation/destroy dispatch this scoped clear), no
-      // sweep would otherwise reach the sibling and its subscription would
-      // leak until an unrelated swap or session teardown. Close the scoped
-      // agent's OWN slot — never the viewed agent's, preserving the #1215
-      // guard: immediately when no panel tab hosts it, deferred through the
-      // spare-then-revisit contract when its hydration is still loading with
-      // a hosting tab (a live panel is waiting on the snapshot).
-      if (!(yield* selectAgentHasOpenPanelTab.effect(scopeAgentId))) {
+      // -agent swap (monorepo#2917) whose subscription outlived the swap.
+      // When its tab later deactivates or its panel destroys (both dispatch
+      // this scoped clear), no sweep would otherwise reach the sibling and
+      // its subscription would leak until an unrelated swap or session
+      // teardown. Close the scoped agent's OWN slot — never the viewed
+      // agent's, preserving the #1215 guard: immediately when no lease
+      // remains (the dispatching panel was the last consumer and released
+      // in onDestroy first), deferred through the spare-then-revisit
+      // contract while a lease is still held (a cached-but-mounted
+      // deactivated panel, a remounting instance, or an in-flight
+      // hydration).
+      if (!(yield* call(hasChatInterestLease, scopeAgentId))) {
         enqueueClose(coordinator, scopeAgentId);
-      } else if ((yield* selectTranscriptHydration.effect(scopeAgentId)) === 'loading') {
-        coordinator.pendingClearWhileLoading.add(scopeAgentId);
+      } else {
+        coordinator.pendingSweepCloses.add(scopeAgentId);
       }
     }
   } else if (action.type === upsertSession.type) {
@@ -1421,6 +1375,20 @@ function* watchSubscriptionEvents(coordinator: SubscriptionCoordinator): SagaGen
   }
 }
 
+/**
+ * Drain LAST-lease releases into the deferred sweep-close revisit. The lease
+ * registry notifies synchronously (a panel's onDestroy, a hydration worker's
+ * finally — including on saga CANCELLATION, where no settle/fail action
+ * follows); the channel re-enters the saga runtime so the revisit runs with
+ * ordinary effect semantics after the release completes.
+ */
+function* watchLeaseReleases(coordinator: SubscriptionCoordinator): SagaGenerator<void> {
+  while (true) {
+    const agentId = yield* take(coordinator.leaseReleases);
+    yield* runDeferredSweepCloseIfUnleased(coordinator, agentId);
+  }
+}
+
 function disposeCoordinator(coordinator: SubscriptionCoordinator): string[] {
   const agentIds = [...coordinator.subscriptions.keys()];
   coordinator.events.close();
@@ -1436,7 +1404,7 @@ function disposeCoordinator(coordinator: SubscriptionCoordinator): string[] {
   // Watcher tasks are forked children of the root saga — cancellation
   // retires them; only the bookkeeping map needs clearing.
   coordinator.revealGateWatchers.clear();
-  coordinator.pendingClearWhileLoading.clear();
+  coordinator.pendingSweepCloses.clear();
   return agentIds;
 }
 
@@ -1448,15 +1416,18 @@ export function* chatSubscribeSaga(): SagaGenerator<void> {
     events: createChannel(buffers.expanding<ChatSubscriptionEvent>()),
     locallyStartedTurns: new Set(),
     revealGateWatchers: new Map(),
-    pendingClearWhileLoading: new Set(),
+    leaseReleases: createChannel(buffers.expanding<string>()),
+    pendingSweepCloses: new Set(),
   };
+  const unsubscribeLeaseReleases = onLastChatInterestLeaseReleased((agentId) =>
+    coordinator.leaseReleases.put(agentId),
+  );
   const lifecycleActions = yield* actionChannel(
     [
       initializeChatRequested,
       chatSendStarted,
       markAgentAsViewed,
       transcriptHydrationSettled,
-      transcriptHydrationFailed,
       refreshChatTranscriptRequested,
       chatTranscriptSnapshotRerequested,
       clearCurrentlyViewedAgent,
@@ -1470,6 +1441,7 @@ export function* chatSubscribeSaga(): SagaGenerator<void> {
     buffers.expanding<ChatSubscribeAction>(),
   );
   yield* fork(watchSubscriptionEvents, coordinator);
+  yield* fork(watchLeaseReleases, coordinator);
   try {
     while (true) {
       const action = (yield* take(lifecycleActions)) as ChatSubscribeAction;
@@ -1480,7 +1452,9 @@ export function* chatSubscribeSaga(): SagaGenerator<void> {
       }
     }
   } finally {
+    unsubscribeLeaseReleases();
     lifecycleActions.close();
+    coordinator.leaseReleases.close();
     const agentIds = disposeCoordinator(coordinator);
     for (const agentId of agentIds) {
       yield* put(chatLiveStreamPhaseChanged(agentId, null));
