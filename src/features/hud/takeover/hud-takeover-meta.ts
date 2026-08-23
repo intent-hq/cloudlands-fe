@@ -1,12 +1,16 @@
 /**
  * Takeover overlay metadata — localized labels + mock-faithful colors for
  * takeover kinds (mock `ovDefs().kind/kc`) and task-map cells (mock
- * `taskMeta`). Plain functions so strings re-evaluate per render on locale
- * change; colors are CSS color expressions over the app theme tokens.
+ * `taskMeta`), plus small pure view derivations (spec-progress segments,
+ * WHAT CHANGED lines, roster elapsed timers). Plain functions so strings
+ * re-evaluate per render on locale change; colors are CSS color expressions
+ * over the app theme tokens.
  */
 import { m } from '$shared/paraglide/messages.js';
+import type { HudCardAgent } from '$store/renderer/slices/hud/hud-selectors';
 import type { HudAgentStateBucket } from '$store/renderer/slices/hud/hud-types';
 import { HUD_STATE_COLORS } from '../grid/hud-card-meta';
+import { formatHudTimer } from '../utils/hud-format';
 import type { HudTakeoverKind, HudTakeoverTrigger } from './hud-takeover-queue';
 
 /** Localized banner-chip label for a takeover kind. */
@@ -259,4 +263,34 @@ export function agentBucketLabel(bucket: HudAgentStateBucket): string {
     case 'idle':
       return m.hud_agentState_idle_label();
   }
+}
+
+/** Localized WHAT CHANGED line for a trigger (labels off `kind`). */
+export function takeoverChangeLine(trigger: HudTakeoverTrigger): string {
+  return trigger.detail
+    ? `${takeoverKindLabel(trigger.kind)} · ${trigger.detail}` // i18n-ignore (label + wire detail join)
+    : takeoverKindLabel(trigger.kind);
+}
+
+/** Spec-progress segment colors (mock `taskSegs`): done → inProgress → rest. */
+export function takeoverSpecSegments(
+  stats: { total: number; completed: number; inProgress: number } | undefined,
+): string[] {
+  if (!stats || stats.total === 0) return [];
+  const count = Math.min(stats.total, 24);
+  const done = Math.round((stats.completed / stats.total) * count);
+  const active = Math.round(((stats.completed + stats.inProgress) / stats.total) * count);
+  return Array.from({ length: count }, (_, i) => {
+    if (i < done) return 'hsl(var(--primary))';
+    if (i < active) return 'hsl(var(--ring))';
+    return 'hsl(var(--muted))';
+  });
+}
+
+/** Roster elapsed timer for an agent row; digit placeholder without a ts. */
+export function takeoverElapsedText(agent: HudCardAgent, nowMs: number): string {
+  if (!agent.lastActivityTs) return '--:--:--'; // i18n-ignore (digit placeholder)
+  const startedMs = Date.parse(agent.lastActivityTs);
+  if (!Number.isFinite(startedMs)) return '--:--:--'; // i18n-ignore (digit placeholder)
+  return formatHudTimer((nowMs - startedMs) / 1000);
 }
