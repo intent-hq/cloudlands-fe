@@ -370,41 +370,39 @@
           <div class="breakdown-grid grid grid-cols-1 border-t border-border dark:border-[#1e1e1e]">
             {#if agentRows.length > 0}
               <section
-                class="breakdown-section min-w-0 px-3 py-3.5"
+                class="breakdown-section min-w-0 px-3 py-2"
                 aria-labelledby={`${detailsId}-agents`}
                 data-testid="token-usage-by-agent"
               >
                 <h4
                   id={`${detailsId}-agents`}
-                  class="mb-3 text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground"
+                  class="mb-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground"
                 >
                   {m.workspace_tokenUsage_byAgent_label()}
                 </h4>
-                <ol class="max-h-32 space-y-2 overflow-y-auto">
+                <ol class="breakdown-list max-h-10 space-y-1 overflow-y-auto">
                   {#each agentRows as row (row.id)}
                     <li class="min-w-0">
-                      <span
-                        class="block h-1.5 overflow-hidden rounded-sm bg-muted"
-                        aria-hidden="true"
-                      >
+                      <span class="block h-px overflow-hidden bg-muted" aria-hidden="true">
                         <span
                           class="token-cache-fill block h-full bg-success/80"
                           style:width={`${share(row.tokens, agentTokenTotal) * 100}%`}
                         ></span>
                       </span>
                       <span
-                        class="mt-1.5 grid min-w-0 grid-cols-[minmax(0,1fr)_2.75rem_2.25rem] items-center gap-x-1"
+                        class="mt-0.5 grid min-w-0 grid-cols-[minmax(0,1fr)_2.75rem_2.25rem] items-center gap-x-1"
                       >
-                        <span class="truncate text-[11px] text-foreground" title={row.title}
-                          >{row.label}</span
+                        <span
+                          class="truncate text-[10px] leading-3 text-foreground"
+                          title={row.title}>{row.label}</span
                         >
                         <span
-                          class="text-right text-[11px] font-medium tabular-nums text-foreground"
+                          class="text-right text-[10px] font-medium leading-3 tabular-nums text-foreground"
                         >
                           {formatCompactNumber(row.tokens)}
                         </span>
                         <span
-                          class="token-cache-text text-right text-[11px] tabular-nums text-success"
+                          class="token-cache-text text-right text-[10px] leading-3 tabular-nums text-success"
                         >
                           {shareLabel(share(row.tokens, agentTokenTotal))}
                         </span>
@@ -417,41 +415,39 @@
 
             {#if modelRows.length > 0}
               <section
-                class="breakdown-section min-w-0 px-3 py-3.5"
+                class="breakdown-section min-w-0 px-3 py-2"
                 aria-labelledby={`${detailsId}-models`}
                 data-testid="token-usage-by-model"
               >
                 <h4
                   id={`${detailsId}-models`}
-                  class="mb-3 text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground"
+                  class="mb-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground"
                 >
                   {m.workspace_tokenUsage_byModel_label()}
                 </h4>
-                <ol class="max-h-32 space-y-2 overflow-y-auto">
+                <ol class="breakdown-list max-h-10 space-y-1 overflow-y-auto">
                   {#each modelRows as row (row.id)}
                     <li class="min-w-0">
-                      <span
-                        class="block h-1.5 overflow-hidden rounded-sm bg-muted"
-                        aria-hidden="true"
-                      >
+                      <span class="block h-px overflow-hidden bg-muted" aria-hidden="true">
                         <span
                           class="token-cache-fill block h-full bg-success/80"
                           style:width={`${share(row.tokens, modelTokenTotal) * 100}%`}
                         ></span>
                       </span>
                       <span
-                        class="mt-1.5 grid min-w-0 grid-cols-[minmax(0,1fr)_2.75rem_2.25rem] items-center gap-x-1"
+                        class="mt-0.5 grid min-w-0 grid-cols-[minmax(0,1fr)_2.75rem_2.25rem] items-center gap-x-1"
                       >
-                        <span class="truncate text-[11px] text-foreground" title={row.title}
-                          >{row.label}</span
+                        <span
+                          class="truncate text-[10px] leading-3 text-foreground"
+                          title={row.title}>{row.label}</span
                         >
                         <span
-                          class="text-right text-[11px] font-medium tabular-nums text-foreground"
+                          class="text-right text-[10px] font-medium leading-3 tabular-nums text-foreground"
                         >
                           {formatCompactNumber(row.tokens)}
                         </span>
                         <span
-                          class="token-cache-text text-right text-[11px] tabular-nums text-success"
+                          class="token-cache-text text-right text-[10px] leading-3 tabular-nums text-success"
                         >
                           {shareLabel(share(row.tokens, modelTokenTotal))}
                         </span>
@@ -535,6 +531,14 @@
     border-top: 1px solid hsl(var(--border));
   }
 
+  .breakdown-list {
+    scrollbar-width: none;
+  }
+
+  .breakdown-list::-webkit-scrollbar {
+    display: none;
+  }
+
   @container token-details (max-width: 279px) {
     .composition-row {
       grid-template-areas:
@@ -551,7 +555,9 @@
       column-gap: 0.375rem;
       padding-inline: 0.5rem;
     }
+  }
 
+  @container token-summary (max-width: 295px) {
     .summary-token-label {
       display: none;
     }
