@@ -5,7 +5,13 @@ import { cleanup, render, screen } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import { writable } from 'svelte/store';
 
-type ModelOption = { value: string; label: string; description?: string; isDefault?: boolean };
+type ModelOption = {
+  value: string;
+  label: string;
+  description?: string;
+  isDefault?: boolean;
+  isLegacyModel?: boolean;
+};
 type Session = {
   id: string;
   workspaceId: string;
@@ -606,7 +612,7 @@ describe('ModelPicker trigger label regressions', () => {
     expect(text).not.toContain('default');
   });
 
-  it('renders the raw id for a legacy <provider>:default selection with no isDefault row', () => {
+  it('falls back to the first known model row for a <provider>:default selection with no isDefault row (D2)', () => {
     availableModels$.set([{ value: 'auggie:butler', label: 'Auggie Butler' }]);
 
     render(ModelPicker, {
@@ -616,6 +622,102 @@ describe('ModelPicker trigger label regressions', () => {
       },
     });
 
+    const text = screen.getByRole('button').textContent ?? '';
+    expect(text).toContain('Auggie Butler');
+    expect(text).not.toContain('default');
+  });
+
+  it('D2 skips legacy rows: maps to the first non-legacy row, not raw catalog order', () => {
+    // Reviewer example shape: the first non-pseudo catalog row is a legacy
+    // row. The group builder renders legacy rows in a separate trailing
+    // subgroup, so the first *rendered* row is the non-legacy one — the D2
+    // mapping must land there, not on the legacy row.
+    availableModels$.set([
+      { value: 'auggie:default', label: 'Default (recommended)' },
+      { value: 'auggie:old', label: 'Auggie Old', isLegacyModel: true },
+      { value: 'auggie:sonnet', label: 'Sonnet 4.6' },
+    ]);
+
+    render(ModelPicker, {
+      props: {
+        selectedModel: 'auggie:default',
+        isLocked: true,
+      },
+    });
+
+    const text = screen.getByRole('button').textContent ?? '';
+    expect(text).toContain('Sonnet 4.6');
+    expect(text).not.toContain('Auggie Old');
+    expect(text).not.toContain('Default (recommended)');
+  });
+
+  it('renders the raw id for a <provider>:default selection while the catalog is cold', () => {
+    availableModels$.set([]);
+
+    render(ModelPicker, {
+      props: {
+        selectedModel: 'auggie:default',
+        isLocked: true,
+      },
+    });
+
     expect(screen.getByRole('button').textContent ?? '').toContain('default');
+  });
+
+  it('treats a D2-mapped <provider>:default selection as resolved while other providers still load', () => {
+    // The exact pseudo-row is absent from the catalog, so the id-match scan
+    // fails — but the D2 mapping resolves the label, so no pulsing skeleton
+    // even while the model catalogs are still loading.
+    isLoadingModels$.set(true);
+    availableModels$.set([{ value: 'auggie:butler', label: 'Auggie Butler' }]);
+
+    render(ModelPicker, {
+      props: {
+        selectedModel: 'auggie:default',
+        isLocked: true,
+      },
+    });
+
+    const button = screen.getByRole('button');
+    expect(button.querySelector('.animate-pulse')).toBeNull();
+    expect(button.textContent ?? '').toContain('Auggie Butler');
+  });
+
+  it('maps a <provider>:default daemon preview (defaultModelId) to its D2 row label', () => {
+    availableModels$.set([
+      { value: 'auggie:butler', label: 'Auggie Butler' },
+      { value: 'auggie:sonnet-4.6', label: 'Sonnet 4.6', isDefault: true },
+    ]);
+
+    render(ModelPicker, {
+      props: {
+        selectedModel: undefined,
+        defaultModelId: 'auggie:default',
+        defaultModelLabel: 'Provider default',
+        isLocked: true,
+      },
+    });
+
+    const text = screen.getByRole('button').textContent ?? '';
+    expect(text).toContain('Sonnet 4.6');
+    expect(text).not.toContain('Provider default');
+    expect(text).not.toContain('default');
+  });
+
+  it('falls back to the first known model row for a <provider>:default daemon preview with no isDefault row (D2)', () => {
+    availableModels$.set([{ value: 'auggie:butler', label: 'Auggie Butler' }]);
+
+    render(ModelPicker, {
+      props: {
+        selectedModel: undefined,
+        defaultModelId: 'auggie:default',
+        defaultModelLabel: 'Provider default',
+        isLocked: true,
+      },
+    });
+
+    const text = screen.getByRole('button').textContent ?? '';
+    expect(text).toContain('Auggie Butler');
+    expect(text).not.toContain('default');
   });
 });

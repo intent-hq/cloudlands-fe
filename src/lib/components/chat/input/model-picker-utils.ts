@@ -132,6 +132,27 @@ function formatCostTier(tier: number | undefined): string | undefined {
   return undefined;
 }
 
+/**
+ * True when a value's model-id part is the `default` pseudo-row id (bare
+ * `default` or `<provider>:default`, case-insensitive). The daemon resolves
+ * this pseudo-row away and marks the real row `isDefault`; older daemons can
+ * still serve it, so the picker filters it defensively.
+ */
+export function isDefaultPseudoModelId(value: string): boolean {
+  return splitCompoundModelId(value).modelId.toLowerCase() === 'default';
+}
+
+/**
+ * Display-only filter: drop `default` pseudo-rows from a provider's option
+ * list. Last resort (D1): pseudo-rows are kept only when no real rows remain
+ * (all of them, in the degenerate case of several pseudo-rows), so a provider
+ * group is never rendered empty — mirroring the daemon-side rule.
+ */
+export function filterDefaultPseudoOptions(options: DropdownOption[]): DropdownOption[] {
+  const filtered = options.filter((opt) => !isDefaultPseudoModelId(opt.value));
+  return filtered.length > 0 ? filtered : options;
+}
+
 export function toDropdownOptions(models: ModelPickerOptionInput[]): DropdownOption[] {
   return collapseCodexEffortModels(models).map((m) => ({
     value: m.value,
@@ -248,6 +269,12 @@ export interface FindModelFallbackOptionParams {
  * The CLI-marked default is a *default*, not an override — the user's
  * explicitly configured global model outranks it (coordinator ruling on the
  * PR #759 review, recorded in the spec's Decisions section).
+ *
+ * `default` pseudo-rows are removed from the candidate list before the
+ * precedence runs (so a globally selected `<provider>:default` degrades to
+ * the isDefault find), and D1 here applies to the whole candidate list: a
+ * pseudo-row survives only when it is the sole candidate overall, not merely
+ * the sole row of its provider as in the rendered groups.
  */
 export function findModelFallbackOption(
   params: FindModelFallbackOptionParams,
@@ -262,6 +289,10 @@ export function findModelFallbackOption(
         (splitCompoundModelId(opt.value).providerId ?? defaultProviderId) === restrictToProvider,
     );
   }
+
+  // Never fall back to a `default` pseudo-row that the picker hides from the
+  // list — pseudo-rows are kept only when no real candidates remain (D1).
+  candidates = filterDefaultPseudoOptions(candidates);
 
   return (
     candidates.find((opt) => opt.value === globallySelectedModel) ??

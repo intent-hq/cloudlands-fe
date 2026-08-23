@@ -65,3 +65,34 @@ describe('buildGroupedModelOptions legacy models', () => {
     expect(groups[0]).toMatchObject({ key: 'codex', options: [{ value: 'codex:old' }] });
   });
 });
+
+describe('buildGroupedModelOptions default pseudo-row filtering', () => {
+  it('drops a default pseudo-row served alongside real rows', () => {
+    const groups = buildGroupedModelOptions({
+      ...baseParams,
+      enabledProviderIds: ['auggie'],
+      allProviderModels: {
+        auggie: [
+          { value: 'auggie:default', label: 'Default (recommended)' },
+          { value: 'auggie:sonnet', label: 'Sonnet' },
+        ],
+      },
+    });
+
+    expect(groups).toHaveLength(1);
+    expect(groups[0]?.options.map(({ value }) => value)).toEqual(['auggie:sonnet']);
+  });
+
+  it('keeps a sole default pseudo-row so the group is never empty (D1)', () => {
+    const groups = buildGroupedModelOptions({
+      ...baseParams,
+      enabledProviderIds: ['auggie'],
+      allProviderModels: {
+        auggie: [{ value: 'auggie:default', label: 'Default (recommended)' }],
+      },
+    });
+
+    expect(groups).toHaveLength(1);
+    expect(groups[0]?.options.map(({ value }) => value)).toEqual(['auggie:default']);
+  });
+});

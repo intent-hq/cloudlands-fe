@@ -8,7 +8,7 @@ import { store as appStore } from '$store/renderer/store';
 import { m } from '$shared/paraglide/messages.js';
 
 import { formatProviderLoadError, type ProviderLoadError } from './model-picker-provider-errors';
-import { toDropdownOptions } from './model-picker-utils';
+import { filterDefaultPseudoOptions, toDropdownOptions } from './model-picker-utils';
 
 type ModelPickerOptions = Parameters<typeof toDropdownOptions>[0];
 
@@ -76,11 +76,15 @@ export function buildGroupedModelOptions({
     const isDisabledEffectiveProvider =
       pid === normalizedEffectiveProviderId && !normalizedEnabledProviderIds.has(pid);
     if (!normalizedEnabledProviderIds.has(pid) && !isDisabledEffectiveProvider) continue;
-    const models =
+    const rawModels =
       allProviderModels[pid] ??
       (isDisabledEffectiveProvider && fallbackModelsMatchEffectiveProvider
         ? toDropdownOptions(availableModels)
         : undefined);
+    // Never list a `default` pseudo-row (older daemons can still serve one);
+    // pseudo-rows are kept only when no real rows remain, so the group is
+    // never empty (D1).
+    const models = rawModels && filterDefaultPseudoOptions(rawModels);
     if (models && models.length > 0) {
       const displayName = selectProviderDisplayName.select(state, pid);
       if (pid === 'auggie') {
