@@ -1,3 +1,5 @@
+import type { Collection } from '@augmentcode/themis/utils/collections/collection-utils';
+
 /**
  * Serializable projection of a native ACP `plan` session update (the
  * `planManager` source in `src/features/acp-official/plans/plan-manager.ts`).
@@ -13,7 +15,7 @@ export interface NativePlanEntry {
 
 /** Per-session native plan state, keyed by the ACP session identifier. */
 interface NativePlanSessionState {
-  entries: NativePlanEntry[];
+  entries: Collection<NativePlanEntry, 'id'>;
 }
 
 export interface NativePlansState {

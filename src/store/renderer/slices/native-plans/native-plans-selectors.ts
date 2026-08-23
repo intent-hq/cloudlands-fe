@@ -4,13 +4,18 @@
  * Source-priority gate for the workspace-task fallback card (monorepo#3249):
  * a native ACP plan for the session always wins over the fallback.
  */
-import { store } from "../../store";
-import type { NativePlanEntry } from "./native-plans-types";
+import { getItems } from '@augmentcode/themis/utils/collections/collection-utils';
+import { store } from '../../store';
+import type { NativePlanEntry } from './native-plans-types';
+
+const NO_ENTRIES: NativePlanEntry[] = [];
 
 /** Native plan entries for an ACP session id (empty when none). */
 export const selectNativePlanEntries = store.createSelector(
-  (state, sessionId: string): NativePlanEntry[] =>
-    state.nativePlans?.bySessionId[sessionId]?.entries ?? [],
+  (state, sessionId: string): NativePlanEntry[] => {
+    const entries = state.nativePlans?.bySessionId[sessionId]?.entries;
+    return entries ? getItems(entries) : NO_ENTRIES;
+  },
 );
 
 /**
@@ -24,6 +29,6 @@ export const selectHasNativePlanForAgent = store.createSelector(
     const bySessionId = state.nativePlans?.bySessionId ?? {};
     if (bySessionId[agentId]) return true;
     const acpSessionId = state.agentSessions?.byAgentId[agentId]?.acpSessionId;
-    return typeof acpSessionId === "string" && acpSessionId in bySessionId;
+    return typeof acpSessionId === 'string' && acpSessionId in bySessionId;
   },
 );
