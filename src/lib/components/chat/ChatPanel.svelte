@@ -204,7 +204,6 @@
   import AutoCommitStatus, { type CommitStatus } from './AutoCommitStatus.svelte';
   import QueuedMessageList from './QueuedMessageList.svelte';
   import EventSubscriptionsCard from './EventSubscriptionsCard.svelte';
-  import FallbackPlanCard from './FallbackPlanCard.svelte';
   import Button from '../ui/button/button.svelte';
   import { PanelFindBar } from '$lib/components/ui/panel-find-bar';
   import { getSelectedTextWithinSurface } from '$lib/utils/selected-text';
@@ -762,17 +761,12 @@
   // The pinned-prompt overlay host subtracts it so the overlay lane occupies
   // the same horizontal box as the conversation column.
   let scrollbarGutterWidth = $state(0);
-  let hasVisibleEventSubscriptions = $state(false);
-  let hasVisibleFallbackPlan = $state(false);
-  const hasVisibleTranscriptUtility = $derived(
-    hasVisibleEventSubscriptions || hasVisibleFallbackPlan,
-  );
+  let hasVisibleTranscriptUtility = $state(false);
 
   $effect(() => {
     workspace?.id;
     agentId;
-    hasVisibleEventSubscriptions = false;
-    hasVisibleFallbackPlan = false;
+    hasVisibleTranscriptUtility = false;
   });
 
   $effect(() => {
@@ -5360,16 +5354,7 @@
                 workspaceId={workspace.id}
                 {agentId}
                 compact={isCompactMode}
-                bind:visible={hasVisibleEventSubscriptions}
-              />
-              <!-- Fallback plan card (monorepo#3249): workspace tasks when the
-                   provider emits no native ACP plan; hidden whenever a native
-                   plan exists for this session. -->
-              <FallbackPlanCard
-                workspaceId={workspace.id}
-                {agentId}
-                compact={isCompactMode}
-                bind:visible={hasVisibleFallbackPlan}
+                bind:visible={hasVisibleTranscriptUtility}
               />
             {/key}
           {/if}
