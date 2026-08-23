@@ -617,11 +617,31 @@
       ['text', 'tool_use', 'thinking', 'image', 'video'].includes(contentBlock.type),
     );
   }
+
+  /**
+   * Index of the last group child that actually renders. tool_result children
+   * are skipped by the group render loop, and text children that are empty
+   * after stripping suggested prompts render nothing — a hidden trailing
+   * child must not steal the "last block" streaming flag from the final
+   * visible one.
+   */
+  function lastRenderableChildIndex(children: ContentBlock[]): number {
+    for (let i = children.length - 1; i >= 0; i--) {
+      const child = children[i];
+      if (child.type === 'tool_result') continue;
+      if (child.type === 'text') {
+        const text = child.text || (child as any).content || '';
+        if (!parseSuggestedPrompts(text).cleanedContent.trim()) continue;
+      }
+      return i;
+    }
+    return -1;
+  }
 </script>
 
 {#snippet renderParsedContentBlock(
   parsedBlock: ParsedContent,
-  blockIndex: number,
+  isLastBlock: boolean,
   insetProse = false,
 )}
   {#if parsedBlock.type === 'augment_code_snippet'}
@@ -695,7 +715,7 @@
     >
       <MarkdownViewer
         content={parsedBlock.content || ''}
-        isStreaming={isStreaming && blockIndex === groupedBlocks.length - 1}
+        isStreaming={isStreaming && isLastBlock}
         {workspaceId}
         taskBlockRenderMode="content"
         onFileClick={(path, options) => handleOpenFile({ path, ...options })}
@@ -708,7 +728,7 @@
     >
       <MarkdownViewer
         content={parsedBlock.content || ''}
-        isStreaming={isStreaming && blockIndex === groupedBlocks.length - 1}
+        isStreaming={isStreaming && isLastBlock}
         {workspaceId}
         taskBlockRenderMode="content"
         onFileClick={(path, options) => handleOpenFile({ path, ...options })}
@@ -725,7 +745,7 @@
 {#snippet renderContentBlock(
   block: ContentBlock,
   parsedKey: string,
-  blockIndex: number,
+  isLastBlock: boolean,
   nested = false,
   adjacentOperationalRow = false,
 )}
@@ -772,7 +792,11 @@
       {/if}
       {#if parsedResult.blocks.length > 0}
         {#each parsedResult.blocks as renderBlock, parsedBlockIndex (`${parsedKey}-parsed-${parsedBlockIndex}`)}
-          {@render renderParsedContentBlock(renderBlock as ParsedContent, blockIndex, !nested)}
+          {@render renderParsedContentBlock(
+            renderBlock as ParsedContent,
+            isLastBlock && parsedBlockIndex === parsedResult.blocks.length - 1,
+            !nested,
+          )}
         {/each}
       {:else}
         <!-- Only render fallback if text has content after stripping suggested prompts -->
@@ -785,7 +809,7 @@
           >
             <MarkdownViewer
               content={cleanedText}
-              isStreaming={isStreaming && blockIndex === groupedBlocks.length - 1}
+              isStreaming={isStreaming && isLastBlock}
               {workspaceId}
               taskBlockRenderMode="content"
               onFileClick={(path, options) => handleOpenFile({ path, ...options })}
@@ -837,7 +861,7 @@
          <think>-tag parser path in messageParser emits `content`. -->
     <ThinkingBlock
       content={getContentBlockText(block) || m.chat_shared_processing_fallback()}
-      isStreaming={isStreaming && blockIndex === groupedBlocks.length - 1}
+      isStreaming={isStreaming && isLastBlock}
       {workspaceId}
       {adjacentOperationalRow}
     />
@@ -891,6 +915,7 @@
         >
           {#snippet children()}
             {@const childKeys = getResponseGroupBlockKeys(group.children)}
+            {@const lastRenderableIndex = lastRenderableChildIndex(group.children)}
             {#each group.children as childBlock, childIndex (childKeys[childIndex])}
               {#if childBlock.type !== 'tool_result'}
                 <div
@@ -910,7 +935,8 @@
                   {@render renderContentBlock(
                     childBlock,
                     `${blockIndex}-${childIndex}`,
-                    blockIndex,
+                    blockIndex === groupedBlocks.length - 1 &&
+                      childIndex === lastRenderableIndex,
                     true,
                     isAdjacentOperationalClusterRow(
                       group.children,
@@ -944,7 +970,7 @@
         {@render renderContentBlock(
           block as ContentBlock,
           String(blockIndex),
-          blockIndex,
+          blockIndex === groupedBlocks.length - 1,
           false,
           isAdjacentOperationalClusterRow(groupedBlocks, blockIndex, isVisibleTopLevelBlock),
         )}
