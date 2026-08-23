@@ -215,19 +215,16 @@ describe('thinking blocks — StreamingMessageContent', () => {
     ] as ContentBlock[];
     await view.rerender({ content: groupContent, isStreaming: true });
 
+    expect(groupDisclosure.getAttribute('aria-expanded')).toBe('false');
+    expect(visibleChildTypes()).toEqual(['thinking']);
+    expect(document.body.textContent).not.toContain('I will set the workspace title');
+
+    await fireEvent.click(groupDisclosure);
     expect(groupDisclosure.getAttribute('aria-expanded')).toBe('true');
     expect(visibleChildTypes()).toEqual(['text', 'thinking', 'tool_use', 'thinking']);
     expect(document.body.textContent).toContain(
       'I will set the workspace title and inspect the current workspace.',
     );
-
-    await fireEvent.click(groupDisclosure);
-    expect(groupDisclosure.getAttribute('aria-expanded')).toBe('false');
-    expect(visibleChildTypes()).toEqual([]);
-    expect(document.body.textContent).not.toContain('I will set the workspace title');
-
-    await fireEvent.click(groupDisclosure);
-    expect(groupDisclosure.getAttribute('aria-expanded')).toBe('true');
     const toolDisclosure = document.querySelector(
       '[data-message-content-block="tool_use"] [data-testid="tool-call-disclosure"]',
     );
@@ -236,6 +233,8 @@ describe('thinking blocks — StreamingMessageContent', () => {
     expect(document.body.textContent).toContain('Workspace ready');
     await fireEvent.click(groupDisclosure);
     expect(groupDisclosure.getAttribute('aria-expanded')).toBe('false');
+    expect(visibleChildTypes()).toEqual(['thinking']);
+    expect(document.body.textContent).not.toContain('I will set the workspace title');
 
     const completedContent = [
       ...groupContent,

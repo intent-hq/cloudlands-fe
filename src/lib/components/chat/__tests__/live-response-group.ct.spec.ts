@@ -32,7 +32,9 @@ test('keeps one current row until click opens the full live history', async ({ m
   await expect(component.getByTestId('response-group-snippet')).toContainText('earlier chunk');
 });
 
-test('normalizes the alternate-model reasoning phase through completion', async ({ mount }) => {
+test('reconciles a tag-first streaming group through explicit close and completion', async ({
+  mount,
+}) => {
   const component = await mount(StreamingResponseGroupLifecycleHost);
   const trigger = component.getByTestId('response-group-disclosure');
   const visibleChildren = component.locator('[data-response-group-child]');
@@ -41,6 +43,11 @@ test('normalizes the alternate-model reasoning phase through completion', async 
   await expect(component.getByTestId('response-group-name')).toHaveText('Thinking...');
 
   await component.update({ props: { phase: 'live', isStreaming: true } });
+  await expect(trigger).toHaveAttribute('aria-expanded', 'false');
+  await expect(visibleChildren).toHaveCount(1);
+  await expect(visibleChildren).toHaveAttribute('data-message-content-block', 'thinking');
+
+  await trigger.click();
   await expect(trigger).toHaveAttribute('aria-expanded', 'true');
   await expect(visibleChildren).toHaveCount(4);
   await expect(
@@ -49,12 +56,8 @@ test('normalizes the alternate-model reasoning phase through completion', async 
 
   await trigger.click();
   await expect(trigger).toHaveAttribute('aria-expanded', 'false');
-  await expect(visibleChildren).toHaveCount(0);
-  await trigger.click();
-  await expect(trigger).toHaveAttribute('aria-expanded', 'true');
-  await expect(visibleChildren).toHaveCount(4);
-  await trigger.click();
-  await expect(trigger).toHaveAttribute('aria-expanded', 'false');
+  await expect(visibleChildren).toHaveCount(1);
+  await expect(visibleChildren).toHaveAttribute('data-message-content-block', 'thinking');
 
   await component.update({ props: { phase: 'closed', isStreaming: false } });
   await expect(trigger).toHaveAttribute('aria-expanded', 'false');
