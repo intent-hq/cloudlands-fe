@@ -9,7 +9,7 @@
    * Renders nothing until token data is available (no layout shift).
    */
   import { faChevronDown } from '@fortawesome/free-solid-svg-icons';
-  import { onMount } from 'svelte';
+  import { onMount, tick } from 'svelte';
   import Fa from 'svelte-fa';
   import { writable } from 'svelte/store';
   import { selectWorkspaceTokenUsage } from '$store/renderer/slices/token-usage/token-usage-selectors';
@@ -28,6 +28,13 @@
 
   let { workspaceId }: Props = $props();
   let expanded = $state(false);
+  let disclosureElement: HTMLButtonElement | undefined = $state();
+  let detailsElement: HTMLElement | undefined = $state();
+  let overlayStyle = $state('position: fixed; visibility: hidden;');
+
+  const overlayWidth = 452;
+  const overlayGap = 8;
+  const viewportPadding = 8;
 
   const workspaceIdStore = writable('');
   $effect(() => {
@@ -149,11 +156,86 @@
       },
     ].map((row) => ({ ...row, share: share(row.tokens, processedTokens) })),
   );
+
+  function updateOverlayPosition() {
+    if (!expanded || !disclosureElement || !detailsElement) return;
+
+    const anchor = disclosureElement.getBoundingClientRect();
+    const padding = Math.min(viewportPadding, window.innerWidth / 2);
+    const width = Math.min(overlayWidth, Math.max(0, window.innerWidth - padding * 2));
+    const rightLimit = Math.max(padding, window.innerWidth - padding - width);
+    const left = Math.max(padding, Math.min(anchor.left, rightLimit));
+    const spaceBelow = Math.max(
+      0,
+      window.innerHeight - viewportPadding - anchor.bottom - overlayGap,
+    );
+    const spaceAbove = Math.max(0, anchor.top - viewportPadding - overlayGap);
+    const opensAbove = detailsElement.scrollHeight > spaceBelow && spaceAbove > spaceBelow;
+    const availableHeight = opensAbove ? spaceAbove : spaceBelow;
+    const renderedHeight = Math.min(detailsElement.scrollHeight, availableHeight);
+    const top = opensAbove
+      ? Math.max(viewportPadding, anchor.top - overlayGap - renderedHeight)
+      : anchor.bottom + overlayGap;
+
+    overlayStyle = `position: fixed; visibility: visible; top: ${top}px; left: ${left}px; width: ${width}px; max-height: ${availableHeight}px;`;
+  }
+
+  function handleDocumentPointerDown(event: PointerEvent) {
+    if (!expanded || !(event.target instanceof Node)) return;
+    if (disclosureElement?.contains(event.target) || detailsElement?.contains(event.target)) {
+      return;
+    }
+    expanded = false;
+  }
+
+  function handleDocumentKeydown(event: KeyboardEvent) {
+    if (!expanded || event.key !== 'Escape') return;
+    event.preventDefault();
+    expanded = false;
+    disclosureElement?.focus();
+  }
+
+  onMount(() => {
+    document.addEventListener('pointerdown', handleDocumentPointerDown, true);
+    document.addEventListener('keydown', handleDocumentKeydown);
+    window.addEventListener('resize', updateOverlayPosition);
+    window.addEventListener('scroll', updateOverlayPosition, true);
+
+    return () => {
+      document.removeEventListener('pointerdown', handleDocumentPointerDown, true);
+      document.removeEventListener('keydown', handleDocumentKeydown);
+      window.removeEventListener('resize', updateOverlayPosition);
+      window.removeEventListener('scroll', updateOverlayPosition, true);
+    };
+  });
+
+  $effect(() => {
+    if (!expanded) {
+      overlayStyle = 'position: fixed; visibility: hidden;';
+      return;
+    }
+
+    agentRows.length;
+    modelRows.length;
+    totalCost;
+    updateOverlayPosition();
+    let cancelled = false;
+    let frame = 0;
+    void tick().then(() => {
+      if (cancelled) return;
+      frame = requestAnimationFrame(updateOverlayPosition);
+    });
+    return () => {
+      cancelled = true;
+      cancelAnimationFrame(frame);
+    };
+  });
 </script>
 
 {#if hasData}
   <div class="token-usage-shell w-full min-w-0 text-xs" data-testid="workspace-token-usage">
     <button
+      bind:this={disclosureElement}
       type="button"
       class="summary-control group grid h-11 w-full max-w-[19rem] min-w-0 grid-cols-[minmax(2.75rem,3.25rem)_max-content_1px_max-content_auto_auto] items-center gap-x-1.5 overflow-hidden rounded-[7px] border border-border bg-card/45 px-3 text-left text-foreground shadow-sm outline-none transition-colors hover:bg-muted/20 focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none dark:border-[#1e1e1e] dark:bg-[#131313] dark:hover:bg-muted/30"
       data-testid="token-usage-disclosure"
@@ -220,8 +302,10 @@
 
     {#if expanded}
       <section
+        bind:this={detailsElement}
         id={detailsId}
-        class="mt-2 w-full max-w-[34rem] overflow-hidden rounded-[9px] border border-border bg-card/45 shadow-sm dark:border-[#1e1e1e] dark:bg-[#131313]"
+        class="token-usage-details fixed z-[60] overflow-x-hidden overflow-y-auto rounded-[9px] border border-border bg-card shadow-lg dark:border-[#1e1e1e] dark:bg-[#131313]"
+        style={overlayStyle}
         aria-labelledby={titleId}
         data-testid="token-usage-details"
       >
@@ -259,11 +343,12 @@
                 <dt
                   class="composition-metric flex min-w-0 items-center gap-2 text-[12px] font-medium text-foreground"
                 >
-                  <span class="size-2.5 shrink-0 rounded-sm {row.colorClass}" aria-hidden="true"
-                  ></span>
-                  <span class="truncate">{row.label}</span>
+                  <span class="size-2.5 shrink-0 {row.colorClass}" aria-hidden="true"></span>
+                  <span class="truncate uppercase tracking-[0.08em]">{row.label}</span>
                 </dt>
-                <dd class="composition-description truncate text-[10px] text-muted-foreground">
+                <dd
+                  class="composition-description truncate text-[10px] uppercase tracking-[0.06em] text-muted-foreground"
+                >
                   {row.description}
                 </dd>
                 <dd
@@ -395,7 +480,11 @@
 
 <style>
   .token-usage-shell {
-    container-type: inline-size;
+    container: token-summary / inline-size;
+  }
+
+  .token-usage-details {
+    container: token-details / inline-size;
   }
 
   .token-cache-fill {
@@ -446,7 +535,7 @@
     border-top: 1px solid hsl(var(--border));
   }
 
-  @container (max-width: 279px) {
+  @container token-details (max-width: 279px) {
     .composition-row {
       grid-template-areas:
         'metric value context'
@@ -456,7 +545,7 @@
     }
   }
 
-  @container (max-width: 319px) {
+  @container token-summary (max-width: 319px) {
     .summary-control {
       grid-template-columns: minmax(2.25rem, 1fr) auto 1px auto auto auto;
       column-gap: 0.375rem;
@@ -466,13 +555,15 @@
     .summary-token-label {
       display: none;
     }
+  }
 
+  @container token-details (max-width: 319px) {
     .breakdown-section {
       padding-inline: 0.5rem;
     }
   }
 
-  @container (min-width: 280px) {
+  @container token-details (min-width: 280px) {
     .breakdown-grid {
       grid-template-columns: repeat(2, minmax(0, 1fr));
     }
