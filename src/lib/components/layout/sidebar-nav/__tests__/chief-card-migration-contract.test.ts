@@ -21,8 +21,16 @@ describe('Chief card migration contract', () => {
   });
 
   it('docks the embedded Chief chat to the bottom without an extra wrapper inset', () => {
-    expect(source).toContain('class="min-h-0 flex-1 px-2 pt-0"');
+    expect(source).toContain(
+      'class="min-h-0 flex-1 overflow-clip px-2 pt-0 [overflow-clip-margin:0.5rem]"',
+    );
     expect(source).not.toContain('class="min-h-0 flex-1 px-2 pb-4 pt-0"');
+  });
+
+  it('clips at the padded wrapper with a clip margin so the composer aurora reaches the window edges', () => {
+    expect(source).toContain('<section class="flex h-full min-h-0 flex-col">');
+    expect(source).not.toContain('flex h-full min-h-0 flex-col overflow-hidden');
+    expect(source).toContain('[overflow-clip-margin:0.5rem]');
   });
 
   it('keeps the compact thread picker trigger at caption scale', () => {

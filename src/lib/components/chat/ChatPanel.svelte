@@ -5040,8 +5040,6 @@
                             data-message-index={globalIndex}
                             class="message-nav-target relative z-10"
                             class:mb-8={turn.assistantMessages.length > 0}
-                            class:bg-sidebar={isChiefWorkspace}
-                            class:bg-card={!isChiefWorkspace}
                             use:attachPinnedPromptMessage={message}
                             transition:safeSlide={{ axis: 'y', duration: 200 }}
                           >
@@ -5085,8 +5083,6 @@
                             class:invisible={pendingSendMessageIds.has(
                               String(message.appMessageId ?? ''),
                             )}
-                            class:bg-sidebar={isChiefWorkspace}
-                            class:bg-card={!isChiefWorkspace}
                             use:attachPinnedPromptMessage={message}
                           >
                             <div class={isChiefWorkspace ? 'mx-1 sm:mx-2' : ''}>
@@ -5407,10 +5403,15 @@
     data-streaming={$agentSessionIsStreaming$}
     data-testid="chat-composer-shell"
   >
-    <!-- Aurora northern lights effect during streaming -->
+    <!-- Aurora northern lights effect during streaming. The chief variant bleeds
+         further left/bottom so the shader crosses the ChiefCard px-2 inset and
+         the sidebar frame's pl-2/pb-2 window inset (the ancestors clip with an
+         8px overflow-clip-margin), touching the app window's left/bottom edges. -->
     {#if $agentSessionIsStreaming$}
       <div
-        class="pointer-events-none absolute -inset-x-2 -bottom-2 z-0 overflow-hidden"
+        class="pointer-events-none absolute z-0 overflow-hidden {isChiefWorkspace
+          ? '-left-4 -right-2 -bottom-4'
+          : '-inset-x-2 -bottom-2'}"
         style="height: calc(100% + 10rem);"
         data-testid="composer-aurora-host"
         transition:fade

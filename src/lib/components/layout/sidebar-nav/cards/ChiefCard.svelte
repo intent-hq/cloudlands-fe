@@ -354,8 +354,12 @@
       </div>
     </div>
 
-    <div class="min-h-0 flex-1 px-2 pt-0">
-      <section class="flex h-full min-h-0 flex-col overflow-hidden">
+    <!-- Clip on the padded wrapper (not the inner section) with an 8px clip
+         margin so the composer's streaming aurora can bleed across the px-2
+         inset and the app frame's window inset, while transcript content
+         still cannot overflow the panel. -->
+    <div class="min-h-0 flex-1 overflow-clip px-2 pt-0 [overflow-clip-margin:0.5rem]">
+      <section class="flex h-full min-h-0 flex-col">
         {#if activeThread}
           {#key activeThread.agentId}
             <div class="min-h-0 flex-1">
