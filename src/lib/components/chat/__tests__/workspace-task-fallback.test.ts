@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import type { AgentMessage, AgentSession, WorkspaceTask } from '$shared/types';
-import { deriveWorkspaceTaskFallback, hasNativeExecutionPlan } from '../workspace-task-fallback';
+import {
+  deriveTaskProgress,
+  deriveWorkspaceTaskFallback,
+  hasNativeExecutionPlan,
+} from '../workspace-task-fallback';
 
 const tasks: WorkspaceTask[] = [
   { id: 'root-1', title: 'First root task', status: 'not_started', specLinked: true },
@@ -106,5 +110,53 @@ describe('workspace task fallback routing', () => {
     });
     expect(first.status).toBe('not_started');
     expect(second.status).toBe('review_required');
+  });
+
+  it('maps the newest native plan into stable progress rows before workspace tasks', () => {
+    const newerPlan = {
+      ...nativePlanMessage,
+      id: 'message-2',
+      contentBlocks: [
+        {
+          type: 'plan',
+          id: 'message-2:plan',
+          entries: [
+            { content: 'Done natively', priority: 'high', status: 'completed' },
+            { content: 'Running natively', priority: 'medium', status: 'in_progress' },
+            { content: 'Pending natively', priority: 'low', status: 'pending' },
+          ],
+        },
+      ],
+    } as AgentMessage;
+
+    expect(
+      deriveTaskProgress({
+        initialized: true,
+        tasks,
+        session: session(),
+        messages: [nativePlanMessage, newerPlan],
+      }),
+    ).toEqual([
+      { id: 'plan:message-2:plan:0', title: 'Done natively', status: 'completed' },
+      { id: 'plan:message-2:plan:1', title: 'Running natively', status: 'running' },
+      { id: 'plan:message-2:plan:2', title: 'Pending natively', status: 'pending' },
+    ]);
+  });
+
+  it('maps the unchanged root and delegated fallback scope into progress rows', () => {
+    expect(
+      deriveTaskProgress({ initialized: true, tasks, session: session(), messages: [] }),
+    ).toEqual([
+      { id: 'workspace:root-1', title: 'First root task', status: 'pending' },
+      { id: 'workspace:root-2', title: 'Second root task', status: 'running' },
+    ]);
+    expect(
+      deriveTaskProgress({
+        initialized: true,
+        tasks,
+        session: session('nested'),
+        messages: [],
+      }),
+    ).toEqual([{ id: 'workspace:nested', title: 'Nested task', status: 'waiting' }]);
   });
 });

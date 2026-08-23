@@ -5912,5 +5912,10 @@
   "chat_executionPlan_current_label": "実行中",
   "chat_executionPlan_pending_label": "保留中",
   "chat_workspaceTasks_title": "ワークスペースのタスク",
-  "chat_workspaceTasks_progress_label": "{completed} / {total} 完了"
+  "chat_workspaceTasks_progress_label": "{completed} / {total} 完了",
+  "chat_taskProgress_progress_ariaLabel": "タスクの進捗: {total} 件中 {completed} 件完了",
+  "chat_taskProgress_list_ariaLabel": "エージェントのタスク",
+  "chat_taskProgress_completed_one": "1 件のタスクが完了",
+  "chat_taskProgress_completed_many": "{count} 件のタスクが完了",
+  "chat_taskProgress_task_ariaLabel": "{title}、状態：{status}"
 }

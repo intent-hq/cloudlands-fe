@@ -47,16 +47,23 @@ vi.mock('svelte-fa', async () => ({
   default: (await import('$lib/components/ui/__tests__/mocks/Fa.svelte')).default,
 }));
 vi.mock('@fortawesome/free-solid-svg-icons', () => ({
+  faArrowDown: { iconName: 'arrow-down' },
   faCheck: { iconName: 'check' },
+  faChevronDown: { iconName: 'chevron-down' },
+  faChevronRight: { iconName: 'chevron-right' },
+  faCircle: { iconName: 'circle' },
+  faCircleQuestion: { iconName: 'circle-question' },
   faCircleInfo: { iconName: 'circle-info' },
+  faClock: { iconName: 'clock' },
   faCopy: { iconName: 'copy' },
+  faEye: { iconName: 'eye' },
+  faList: { iconName: 'list' },
+  faSpinner: { iconName: 'spinner' },
   faSliders: { iconName: 'sliders' },
   faTrash: { iconName: 'trash' },
+  faTriangleExclamation: { iconName: 'triangle-exclamation' },
 }));
 vi.mock('$lib/icons/faNote', () => ({ faNote: { iconName: 'note' } }));
-vi.mock('$lib/components/layout/panel-system/panel-header-context.svelte', () => ({
-  getPanelHeaderContext: () => ({ registerActions: vi.fn(), registerState: vi.fn() }),
-}));
 vi.mock('$features/agent/browser', () => ({
   subscribeToAgent: (agentId: string, run: (session: any) => void) => {
     run(mockState.agents.get()[agentId]);
@@ -175,7 +182,7 @@ vi.mock('$lib/utils/client-logger', () => ({
   createLogger: () => ({ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() }),
 }));
 
-import AgentTabType from '../AgentTabType.svelte';
+import AgentTabTypePrimaryActionsHarness from './mocks/AgentTabTypePrimaryActionsHarness.svelte';
 
 describe('AgentTabType agent model reactivity', () => {
   beforeEach(() => {
@@ -194,7 +201,7 @@ describe('AgentTabType agent model reactivity', () => {
   });
 
   it('updates the ChatPanel agentModel prop when Redux session model changes', async () => {
-    render(AgentTabType, {
+    render(AgentTabTypePrimaryActionsHarness, {
       props: {
         tab: { id: 'tab-1', type: 'agent', title: 'Agent', agentId: 'agent-1' },
         workspaceId: 'ws-1',
@@ -219,5 +226,21 @@ describe('AgentTabType agent model reactivity', () => {
         'anthropic:claude-opus-4-7',
       );
     });
+  });
+
+  it('renders task progress in the registered primary header actions', async () => {
+    render(AgentTabTypePrimaryActionsHarness, {
+      props: {
+        tab: { id: 'tab-1', type: 'agent', title: 'Agent', agentId: 'agent-1' },
+        workspaceId: 'ws-1',
+        isActive: true,
+        isPanelFocused: true,
+      },
+    });
+
+    const header = await screen.findByTestId('agent-primary-header-actions');
+    await waitFor(() => expect(screen.getByTestId('task-progress-trigger')).toBeTruthy());
+    expect(header.contains(screen.getByTestId('task-progress-trigger'))).toBe(true);
+    expect(screen.getByTestId('task-progress-trigger').textContent?.trim()).toBe('1/2');
   });
 });

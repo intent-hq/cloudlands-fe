@@ -249,10 +249,16 @@ const workspace = {
   branch: 'feature/setup',
 };
 
-async function renderInitialWorkspaceChatPanel() {
+async function renderInitialWorkspaceChatPanel(onTaskProgressChange?: (tasks: unknown[]) => void) {
   const ChatPanel = (await import('../ChatPanel.svelte')).default;
   render(ChatPanel, {
-    props: { workspace, agentId: 'agent-1', isActive: true, isInitialWorkspaceAgent: true },
+    props: {
+      workspace,
+      agentId: 'agent-1',
+      isActive: true,
+      isInitialWorkspaceAgent: true,
+      onTaskProgressChange,
+    },
   });
   await Promise.resolve();
 }
@@ -300,7 +306,7 @@ describe('ChatPanel skeleton branch vs WorkspaceSetupCard', () => {
     expect(screen.queryByTestId('chat-transcript-skeleton')).toBeNull();
   });
 
-  it('mounts the hydrated workspace-task fallback but gives a native plan precedence', async () => {
+  it('routes hydrated fallback progress to the header and gives a native plan precedence', async () => {
     testState.transcriptHydration = 'settled';
     testState.transcriptHydratedOnce = true;
     testState.workspaceTasksInitialized = true;
@@ -308,9 +314,18 @@ describe('ChatPanel skeleton branch vs WorkspaceSetupCard', () => {
       { id: 'task-1', title: 'Canonical workspace task', status: 'in_progress', specLinked: true },
     ];
 
-    await renderInitialWorkspaceChatPanel();
-    await waitFor(() => expect(screen.getByTestId('workspace-task-fallback-card')).toBeTruthy());
-    expect(screen.getByText('Canonical workspace task')).toBeTruthy();
+    const onTaskProgressChange = vi.fn();
+    await renderInitialWorkspaceChatPanel(onTaskProgressChange);
+    await waitFor(() =>
+      expect(onTaskProgressChange).toHaveBeenLastCalledWith([
+        {
+          id: 'workspace:task-1',
+          title: 'Canonical workspace task',
+          status: 'running',
+        },
+      ]),
+    );
+    expect(screen.queryByTestId('workspace-task-fallback-card')).toBeNull();
 
     cleanup();
     testState.agentMessages = [
@@ -325,8 +340,13 @@ describe('ChatPanel skeleton branch vs WorkspaceSetupCard', () => {
         ],
       },
     ];
-    await renderInitialWorkspaceChatPanel();
+    await renderInitialWorkspaceChatPanel(onTaskProgressChange);
     await waitFor(() => expect(screen.queryByTestId('chat-transcript-skeleton')).toBeNull());
     expect(screen.queryByTestId('workspace-task-fallback-card')).toBeNull();
+    await waitFor(() =>
+      expect(onTaskProgressChange).toHaveBeenLastCalledWith([
+        { id: 'plan:assistant-plan:0:0', title: 'Native plan', status: 'running' },
+      ]),
+    );
   });
 });

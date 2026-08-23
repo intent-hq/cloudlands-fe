@@ -5912,5 +5912,10 @@
   "chat_executionPlan_current_label": "En cours",
   "chat_executionPlan_pending_label": "En attente",
   "chat_workspaceTasks_title": "Tâches de l’espace de travail",
-  "chat_workspaceTasks_progress_label": "{completed} / {total} terminées"
+  "chat_workspaceTasks_progress_label": "{completed} / {total} terminées",
+  "chat_taskProgress_progress_ariaLabel": "Progression des tâches : {completed} sur {total} terminées",
+  "chat_taskProgress_list_ariaLabel": "Tâches de l’agent",
+  "chat_taskProgress_completed_one": "1 tâche terminée",
+  "chat_taskProgress_completed_many": "{count} tâches terminées",
+  "chat_taskProgress_task_ariaLabel": "{status} : {title}"
 }

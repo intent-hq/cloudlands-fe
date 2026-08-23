@@ -259,8 +259,7 @@
   import AutoCommitStatus, { type CommitStatus } from './AutoCommitStatus.svelte';
   import QueuedMessageList from './QueuedMessageList.svelte';
   import EventSubscriptionsCard from './EventSubscriptionsCard.svelte';
-  import WorkspaceTaskFallbackCard from './WorkspaceTaskFallbackCard.svelte';
-  import { deriveWorkspaceTaskFallback } from './workspace-task-fallback';
+  import { deriveTaskProgress, type TaskProgressItem } from './workspace-task-fallback';
   import Button from '../ui/button/button.svelte';
   import { PanelFindBar } from '$lib/components/ui/panel-find-bar';
   import { getSelectedTextWithinSurface } from '$lib/utils/selected-text';
@@ -409,6 +408,7 @@
     /** Whether this panel is focused (has DOM focus within panel wrapper) */
     isPanelFocused?: boolean;
     onNavigationStateChange?: (state: ChatNavigationState) => void;
+    onTaskProgressChange?: (tasks: TaskProgressItem[]) => void;
   }
 
   let {
@@ -429,6 +429,7 @@
     onChatUpdate,
     isPanelFocused = false,
     onNavigationStateChange,
+    onTaskProgressChange,
   }: Props = $props();
 
   // True when this panel is rendering the Chief workspace, which opens directly
@@ -897,17 +898,7 @@
   // the same horizontal box as the conversation column.
   let scrollbarGutterWidth = $state(0);
   let hasVisibleEventUtility = $state(false);
-  const workspaceTaskFallback = $derived(
-    deriveWorkspaceTaskFallback({
-      initialized: $workspaceTasksInitialized$,
-      tasks: $workspaceTasks$,
-      session: $agentSession$ ?? null,
-      messages: [...$agentHistoryMessages$, ...$agentMessages$],
-    }),
-  );
-  const hasVisibleTranscriptUtility = $derived(
-    hasVisibleEventUtility || workspaceTaskFallback.length > 0,
-  );
+  const hasVisibleTranscriptUtility = $derived(hasVisibleEventUtility);
 
   $effect(() => {
     workspace?.id;
@@ -2092,6 +2083,20 @@
       revealDeferred: deferTranscriptReveal,
     }),
   );
+  const taskProgressItems = $derived(
+    showTranscriptUtilityCard
+      ? deriveTaskProgress({
+          initialized: $workspaceTasksInitialized$,
+          tasks: $workspaceTasks$,
+          session: $agentSession$ ?? null,
+          messages: [...$agentHistoryMessages$, ...$agentMessages$],
+        })
+      : [],
+  );
+
+  $effect(() => {
+    onTaskProgressChange?.(taskProgressItems);
+  });
 
   // Provider/model lock — prevents changing provider or model after any message
   let canChangeProvider = $derived(
@@ -6251,10 +6256,9 @@
           <!-- {#key} forces a full remount when workspace or agent changes,
              preventing stale utility UI from leaking across switches.
              Hidden until transcript hydration settles; the workspace-task
-             fallback also waits for canonical task hydration. -->
+             task progress is routed to the panel header instead. -->
           {#if workspace?.id && showTranscriptUtilityCard}
             {#key `${workspace.id}::${agentId}`}
-              <WorkspaceTaskFallbackCard tasks={workspaceTaskFallback} compact={isCompactMode} />
               <EventSubscriptionsCard
                 workspaceId={workspace.id}
                 {agentId}

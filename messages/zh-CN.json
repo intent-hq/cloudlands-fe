@@ -5912,5 +5912,10 @@
   "chat_executionPlan_current_label": "当前",
   "chat_executionPlan_pending_label": "待处理",
   "chat_workspaceTasks_title": "工作区任务",
-  "chat_workspaceTasks_progress_label": "已完成 {completed} / {total}"
+  "chat_workspaceTasks_progress_label": "已完成 {completed} / {total}",
+  "chat_taskProgress_progress_ariaLabel": "任务进度：已完成 {completed} 项，共 {total} 项",
+  "chat_taskProgress_list_ariaLabel": "代理任务",
+  "chat_taskProgress_completed_one": "已完成 1 项任务",
+  "chat_taskProgress_completed_many": "已完成 {count} 项任务",
+  "chat_taskProgress_task_ariaLabel": "{status}：{title}"
 }
