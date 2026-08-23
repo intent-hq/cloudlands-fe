@@ -120,8 +120,8 @@
         label: m.workspace_tokenUsage_cached_label(),
         description: m.workspace_tokenUsage_cached_description(),
         tokens: cachedTokens,
-        colorClass: 'bg-success',
-        contextClass: 'text-success',
+        colorClass: 'bg-success token-cache-fill',
+        contextClass: 'text-success token-cache-text',
       },
       {
         id: 'input',
@@ -155,7 +155,7 @@
   <div class="token-usage-shell w-full min-w-0 text-xs" data-testid="workspace-token-usage">
     <button
       type="button"
-      class="summary-control group grid h-11 w-full max-w-[22rem] min-w-0 grid-cols-[minmax(2.75rem,7rem)_auto_1px_auto_auto_auto] items-center gap-x-2 overflow-hidden rounded-lg border border-border/80 bg-card/45 px-3 text-left text-foreground shadow-sm outline-none transition-colors hover:bg-muted/20 focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none dark:bg-card/25 dark:hover:bg-muted/30"
+      class="summary-control group grid h-11 w-full max-w-[19rem] min-w-0 grid-cols-[minmax(3.25rem,3.75rem)_auto_1px_auto_auto_auto] items-center gap-x-1.5 overflow-hidden rounded-sm border border-border bg-card/45 px-3 text-left text-foreground shadow-sm outline-none transition-colors hover:bg-muted/20 focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none dark:border-white/15 dark:bg-card/25 dark:hover:bg-muted/30"
       data-testid="token-usage-disclosure"
       aria-label={expanded
         ? m.workspace_tokenUsage_collapse_ariaLabel()
@@ -169,17 +169,17 @@
       <span class="flex h-2 min-w-0 overflow-hidden rounded-sm bg-muted" aria-hidden="true">
         {#each compositionRows as row (row.id)}
           {#if row.tokens > 0}
-            <span class={row.colorClass} style:width={`${row.share * 100}%`}></span>
+            <span class="min-w-[2px] {row.colorClass}" style:width={`${row.share * 100}%`}></span>
           {/if}
         {/each}
       </span>
-      <span id={processedId} class="flex min-w-0 items-baseline gap-1 truncate">
-        <span class="text-[13px] font-semibold tabular-nums text-foreground">
+      <span id={processedId} class="flex min-w-0 items-baseline gap-1 whitespace-nowrap">
+        <span class="text-[14px] font-semibold tabular-nums text-foreground">
           {formatCompactNumber(processedTokens)}
         </span>
         <span class="sr-only">{m.workspace_tokenUsage_processed_label()}</span>
         <span
-          class="summary-token-label text-[9px] font-medium uppercase tracking-[0.08em] text-muted-foreground"
+          class="summary-token-label text-[10px] font-medium uppercase tracking-[0.1em] text-muted-foreground"
           aria-hidden="true"
         >
           {m.workspace_tokenUsage_tokens_label()}
@@ -191,11 +191,11 @@
         class="flex shrink-0 items-baseline gap-1"
         title={m.workspace_tokenUsage_cacheEfficiency_label()}
       >
-        <span class="text-[12px] font-semibold tabular-nums text-success">
+        <span class="token-cache-text text-[13px] font-semibold tabular-nums text-success">
           {shareLabel(cacheShare)}
         </span>
         <span
-          class="summary-cache-label text-[9px] font-medium uppercase tracking-[0.08em] text-muted-foreground"
+          class="summary-cache-label text-[10px] font-medium uppercase tracking-[0.1em] text-muted-foreground"
           >{m.workspace_tokenUsage_cached_label()}</span
         >
       </span>
@@ -221,7 +221,7 @@
     {#if expanded}
       <section
         id={detailsId}
-        class="mt-2 w-full max-w-[34rem] overflow-hidden rounded-lg border border-border/80 bg-card/45 shadow-sm dark:bg-card/20"
+        class="mt-2 w-full max-w-[34rem] overflow-hidden rounded-sm border border-border bg-card/45 shadow-sm dark:border-white/20 dark:bg-card/20"
         aria-labelledby={titleId}
         data-testid="token-usage-details"
       >
@@ -229,12 +229,12 @@
           <div class="flex items-baseline justify-between gap-3">
             <h4
               id={`${detailsId}-composition`}
-              class="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground"
+              class="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground"
             >
               {m.workspace_tokenUsage_composition_label()}
             </h4>
             <span
-              class="shrink-0 text-[9px] font-medium uppercase tracking-[0.09em] text-muted-foreground"
+              class="shrink-0 text-[10px] font-medium uppercase tracking-[0.1em] text-muted-foreground"
             >
               <span class="tabular-nums">{formatCompactNumber(processedTokens)}</span>
               {m.workspace_tokenUsage_processed_label()}
@@ -246,30 +246,33 @@
           >
             {#each compositionRows as row (row.id)}
               {#if row.tokens > 0}
-                <span class={row.colorClass} style:width={`${row.share * 100}%`}></span>
+                <span class="min-w-[2px] {row.colorClass}" style:width={`${row.share * 100}%`}
+                ></span>
               {/if}
             {/each}
           </div>
-          <dl class="mt-2 divide-y divide-border/60 border-y border-border/70">
+          <dl
+            class="mt-2 divide-y divide-border/80 border-y border-border dark:divide-white/15 dark:border-white/15"
+          >
             {#each compositionRows as row (row.id)}
-              <div class="composition-row min-w-0 py-2.5">
+              <div class="composition-row min-w-0 py-3">
                 <dt
-                  class="composition-metric flex min-w-0 items-center gap-2 text-[11px] font-medium text-foreground"
+                  class="composition-metric flex min-w-0 items-center gap-2 text-[12px] font-medium text-foreground"
                 >
                   <span class="size-2.5 shrink-0 rounded-sm {row.colorClass}" aria-hidden="true"
                   ></span>
                   <span class="truncate">{row.label}</span>
                 </dt>
-                <dd class="composition-description truncate text-[9px] text-muted-foreground">
+                <dd class="composition-description truncate text-[10px] text-muted-foreground">
                   {row.description}
                 </dd>
                 <dd
-                  class="composition-value text-right text-[11px] font-medium tabular-nums text-foreground"
+                  class="composition-value text-right text-[12px] font-medium tabular-nums text-foreground"
                 >
                   {formatCompactNumber(row.tokens)}
                 </dd>
                 <dd
-                  class="composition-context text-right text-[10px] tabular-nums {row.contextClass}"
+                  class="composition-context text-right text-[11px] tabular-nums {row.contextClass}"
                 >
                   {shareLabel(row.share)}
                 </dd>
@@ -279,16 +282,16 @@
         </section>
 
         {#if agentRows.length > 0 || modelRows.length > 0}
-          <div class="breakdown-grid grid grid-cols-1 border-t border-border/80">
+          <div class="breakdown-grid grid grid-cols-1 border-t border-border dark:border-white/20">
             {#if agentRows.length > 0}
               <section
-                class="breakdown-section min-w-0 px-3 py-3"
+                class="breakdown-section min-w-0 px-3 py-3.5"
                 aria-labelledby={`${detailsId}-agents`}
                 data-testid="token-usage-by-agent"
               >
                 <h4
                   id={`${detailsId}-agents`}
-                  class="mb-2.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground"
+                  class="mb-3 text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground"
                 >
                   {m.workspace_tokenUsage_byAgent_label()}
                 </h4>
@@ -300,22 +303,24 @@
                         aria-hidden="true"
                       >
                         <span
-                          class="block h-full bg-success/80"
+                          class="token-cache-fill block h-full bg-success/80"
                           style:width={`${share(row.tokens, agentTokenTotal) * 100}%`}
                         ></span>
                       </span>
                       <span
                         class="mt-1.5 grid min-w-0 grid-cols-[minmax(0,1fr)_2.75rem_2.25rem] items-center gap-x-1"
                       >
-                        <span class="truncate text-[10px] text-foreground" title={row.title}
+                        <span class="truncate text-[11px] text-foreground" title={row.title}
                           >{row.label}</span
                         >
                         <span
-                          class="text-right text-[10px] font-medium tabular-nums text-foreground"
+                          class="text-right text-[11px] font-medium tabular-nums text-foreground"
                         >
                           {formatCompactNumber(row.tokens)}
                         </span>
-                        <span class="text-right text-[10px] tabular-nums text-success">
+                        <span
+                          class="token-cache-text text-right text-[11px] tabular-nums text-success"
+                        >
                           {shareLabel(share(row.tokens, agentTokenTotal))}
                         </span>
                       </span>
@@ -327,13 +332,13 @@
 
             {#if modelRows.length > 0}
               <section
-                class="breakdown-section min-w-0 px-3 py-3"
+                class="breakdown-section min-w-0 px-3 py-3.5"
                 aria-labelledby={`${detailsId}-models`}
                 data-testid="token-usage-by-model"
               >
                 <h4
                   id={`${detailsId}-models`}
-                  class="mb-2.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground"
+                  class="mb-3 text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground"
                 >
                   {m.workspace_tokenUsage_byModel_label()}
                 </h4>
@@ -345,22 +350,24 @@
                         aria-hidden="true"
                       >
                         <span
-                          class="block h-full bg-success/80"
+                          class="token-cache-fill block h-full bg-success/80"
                           style:width={`${share(row.tokens, modelTokenTotal) * 100}%`}
                         ></span>
                       </span>
                       <span
                         class="mt-1.5 grid min-w-0 grid-cols-[minmax(0,1fr)_2.75rem_2.25rem] items-center gap-x-1"
                       >
-                        <span class="truncate text-[10px] text-foreground" title={row.title}
+                        <span class="truncate text-[11px] text-foreground" title={row.title}
                           >{row.label}</span
                         >
                         <span
-                          class="text-right text-[10px] font-medium tabular-nums text-foreground"
+                          class="text-right text-[11px] font-medium tabular-nums text-foreground"
                         >
                           {formatCompactNumber(row.tokens)}
                         </span>
-                        <span class="text-right text-[10px] tabular-nums text-success">
+                        <span
+                          class="token-cache-text text-right text-[11px] tabular-nums text-success"
+                        >
                           {shareLabel(share(row.tokens, modelTokenTotal))}
                         </span>
                       </span>
@@ -389,6 +396,22 @@
 <style>
   .token-usage-shell {
     container-type: inline-size;
+  }
+
+  .token-cache-fill {
+    background-color: #477e50;
+  }
+
+  .token-cache-text {
+    color: #2f6b3c;
+  }
+
+  :global(.dark) .token-cache-fill {
+    background-color: #92b85c;
+  }
+
+  :global(.dark) .token-cache-text {
+    color: #9ac55f;
   }
 
   .composition-row {
