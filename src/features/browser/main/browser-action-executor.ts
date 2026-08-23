@@ -1156,8 +1156,8 @@ async function executeAction(
           return {
             action: 'navigate',
             success: false,
-            // i18n-ignore (agent-facing protocol error, not user-facing)
             error:
+              // i18n-ignore (agent-facing protocol error, not user-facing)
               'No browser tabs available. Use { action: "openTab", url: "..." } to open a tab first.',
           };
         }

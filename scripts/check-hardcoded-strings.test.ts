@@ -38,14 +38,39 @@ function runGate(args: string[] = []) {
 }
 
 describe('hardcoded user-facing string gate', () => {
-  it('scans the full intended path inventory and passes against the debt baseline', () => {
+  it('scans the full intended path inventory and passes with an empty baseline', () => {
     const result = runGate();
     expect(result.exitCode).toBe(0);
     expect(result.output).toContain('Scanning: src/lib/components/');
     expect(result.output).toContain('Scanning: src/features/workspace/');
     expect(result.output).toContain('Scanning: src/routes/(app)/workspace/');
-    expect(result.output).toMatch(/Known i18n debt:.*[1-9][0-9]* violation/);
+    expect(result.output).toMatch(/Known i18n debt:.*0 violation\(s\).*0 stable baseline entries/);
+    expect(result.output).toMatch(/Excluded [1-9][0-9]* scaffolding file\(s\)/);
     expect(result.output).toContain('✓ No new or changed hardcoded-string violations found.');
+  });
+
+  it('skips developer-facing scaffolding files but still checks siblings', () => {
+    withFixture(
+      {
+        'card/CardHarness.svelte': '<span>Harness only demo text</span>',
+        'combobox/combobox.test-harness.svelte': '<span>Test harness demo text</span>',
+        'badge/badge.fixtures.ts': "export const label = 'Fixture demo sentence';",
+        'badge/badge.meta.ts': "export const description = 'Catalog metadata sentence';",
+        'card/operate-patterns.playwright.config.ts': "export const name = 'Desktop Chrome';",
+        'card/Card.svelte': '<span>Rendered product text</span>',
+      },
+      (dir) => {
+        const result = runGate([dir]);
+        expect(result.exitCode).toBe(1);
+        expect(result.output).toContain('Excluded 5 scaffolding file(s)');
+        expect(result.output).toContain('[template text] "Rendered product text"');
+        expect(result.output).not.toContain('Harness only demo text');
+        expect(result.output).not.toContain('Test harness demo text');
+        expect(result.output).not.toContain('Fixture demo sentence');
+        expect(result.output).not.toContain('Catalog metadata sentence');
+        expect(result.output).not.toContain('Desktop Chrome');
+      },
+    );
   });
 
   it('flags literal template text and user-facing attributes in Svelte files', () => {
