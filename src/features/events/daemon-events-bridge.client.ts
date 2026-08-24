@@ -3334,10 +3334,26 @@ export function routeDaemonEventsNotification(
     appStore.dispatch(refreshWorkspaceSubscriptionEntriesRequested(workspaceId));
   }
 
-  // STAB-9: Agent lifecycle events (status-changed, idle) should refresh the
-  // agent list so the sidebar shows live status/last-activity updates.
+  // STAB-9: Agent lifecycle events (status-changed, idle) refresh ONLY the
+  // affected agent — `refreshAgentSessionAfterEvent` fetches `agent.get`
+  // (single-flight per agent with one trailing coalesced read, transcript
+  // preserved, same delete-tombstone + `pendingDeleteAt` guards as the list
+  // path) — so the sidebar shows live status/last-activity updates without
+  // refetching the whole workspace agent list on every per-agent tick (a
+  // large-workspace `agent.list` frame head-of-line blocks the shared
+  // connection — see the audit in the workspace spec). Whole-list hydration
+  // stays reserved for list-membership changes: mount, reconnect,
+  // `workspace:created`, and agent-delete recovery. A payload without an
+  // agentId (unexpected per §6.5) falls back to the list refetch so
+  // convergence is never lost.
   if (type === 'agent:status-changed' || type === 'agent:idle') {
-    appStore.dispatch(hydrateAgentsRequested(workspaceId));
+    const data = (event as { data?: Record<string, unknown> }).data;
+    const agentId = data?.agentId;
+    if (typeof agentId === 'string' && agentId.length > 0) {
+      void refreshAgentSessionAfterEvent(agentId);
+    } else {
+      appStore.dispatch(hydrateAgentsRequested(workspaceId));
+    }
   }
 
   // Failure-registry lifecycle: drop an agent from the failure aggregation

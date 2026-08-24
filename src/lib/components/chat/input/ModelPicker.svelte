@@ -85,6 +85,7 @@
   import { formatProviderLoadError, type ProviderLoadError } from './model-picker-provider-errors';
   import { AUGGIE_LEGACY_GROUP_KEY, buildGroupedModelOptions } from './model-picker-groups';
   import {
+    filterDefaultPseudoOptions,
     findModelFallbackOption,
     isProviderEnabled,
     isUserProviderSettled,
@@ -783,6 +784,11 @@
 
   // Get the label for a model ID from available models list; undefined when
   // the id resolves to no loaded model (callers pick the fallback).
+  // Catalog row values are shape-dependent — bare for the FE's default
+  // provider, `provider:model` otherwise (prefixModelsForProvider) — while a
+  // session id may be daemon-pinned bare or stored compound, so ids are
+  // compared via normalizeModelIdForMatch (like selectedCatalogOption), not
+  // exact string equality.
   // Legacy codex compound ids (`{model}/{effort}`) no longer exist as catalog
   // rows (the daemon collapses them to one base row + effortLevels), so on an
   // exact-id miss the base model's label is rendered with the effort suffix
@@ -791,11 +797,16 @@
   function getModelLabel(modelId: string | undefined): string | undefined {
     if (!modelId) return undefined;
     const lookup = (id: string): string | undefined => {
-      for (const models of Object.values(allProviderModels)) {
-        const found = models.find((m) => m.value === id);
+      const target = normalizeModelIdForMatch(id, effectiveProviderId);
+      for (const [rowProviderId, models] of Object.entries(allProviderModels)) {
+        const found = models.find(
+          (m) => normalizeModelIdForMatch(m.value, rowProviderId) === target,
+        );
         if (found) return found.label;
       }
-      return availableModels.find((m) => m.value === id)?.label;
+      return availableModels.find(
+        (m) => normalizeModelIdForMatch(m.value, availableModelsProviderId) === target,
+      )?.label;
     };
     const exact = lookup(modelId);
     if (exact) return exact;
@@ -840,32 +851,71 @@
       : undefined,
   );
 
-  // Legacy persisted `<provider>:default` selections (picked while the daemon
-  // still listed a 'default' pseudo-row): with no catalog row of their own
-  // they map to the provider's isDefault row, rendering as that model instead
-  // of an unavailable selection. An actual `:default` catalog row (older
-  // daemon) still wins via the exact-id lookup.
-  const legacyDefaultMappedOption = $derived.by(() => {
-    if (!hasExplicitModel || !localModel) return undefined;
-    const { providerId: modelProviderId, modelId } = parseCompoundModelId(localModel);
-    if (modelId !== 'default') return undefined;
-    if (getModelLabel(localModel) !== undefined) return undefined;
-    return findCatalogDefaultOption(modelProviderId);
-  });
+  // The provider's first known model row (pseudo-rows filtered; a sole
+  // pseudo-row survives per D1). Prefers the first non-legacy row — the group
+  // builder splits isLegacyModel rows into a separate legacy subgroup, so the
+  // first *rendered* current row is the non-legacy one. Undefined while the
+  // catalog is cold.
+  function findFirstCatalogModelOption(providerId: string): DropdownOption | undefined {
+    const normalizedId = normalizeProviderId(providerId);
+    if (!normalizedId) return undefined;
+    const firstCurrentRow = (options: DropdownOption[]): DropdownOption | undefined => {
+      const filtered = filterDefaultPseudoOptions(options);
+      return filtered.find((opt) => opt.data?.isLegacyModel !== true) ?? filtered[0];
+    };
+    const fromAll = allProviderModels[normalizedId];
+    if (fromAll && fromAll.length > 0) return firstCurrentRow(fromAll);
+    if (
+      availableModelsProviderId !== '' &&
+      normalizeProviderId(availableModelsProviderId) === normalizedId &&
+      availableModels.length > 0
+    ) {
+      return firstCurrentRow(toDropdownOptions(availableModels));
+    }
+    return undefined;
+  }
+
+  // A `<provider>:default` id has no rendered row of its own (the picker
+  // filters the pseudo-row from the list): it maps to the provider's
+  // isDefault row, falling back to the first known model row (D2, mirroring
+  // the daemon's cached_default_or_first_model) so the selection never
+  // renders as dead/unavailable. Undefined for non-pseudo ids and while the
+  // catalog is cold.
+  function mapDefaultPseudoSelection(compoundId: string): DropdownOption | undefined {
+    const { providerId: modelProviderId, modelId } = parseCompoundModelId(compoundId);
+    if (modelId.toLowerCase() !== 'default') return undefined;
+    return (
+      findCatalogDefaultOption(modelProviderId) ?? findFirstCatalogModelOption(modelProviderId)
+    );
+  }
+
+  // D2 mapping for a persisted `<provider>:default` selection.
+  const legacyDefaultMappedOption = $derived.by(() =>
+    hasExplicitModel && localModel ? mapDefaultPseudoSelection(localModel) : undefined,
+  );
+
+  // D2 mapping for a daemon-resolved `<provider>:default` preview
+  // (defaultModelId from an older daemon) — same exposure as the explicit
+  // selection: an exact-id match would resolve to the hidden pseudo-row.
+  const defaultModelIdMappedOption = $derived.by(() =>
+    defaultModelId ? mapDefaultPseudoSelection(defaultModelId) : undefined,
+  );
 
   const currentModelLabel = $derived.by(() => {
     if (hasExplicitModel) {
       return localModel
-        ? (getModelLabel(localModel) ??
-            legacyDefaultMappedOption?.label ??
+        ? (legacyDefaultMappedOption?.label ??
+            getModelLabel(localModel) ??
             parseCompoundModelId(localModel).modelId)
         : (defaultModelLabel ?? m.chat_modelPicker_defaultModel_label());
     }
 
     // Unresolvable defaultModelId (models not loaded yet): prefer the caller's
-    // defaultModelLabel (e.g. "Provider default"), then the bare model id.
+    // defaultModelLabel (e.g. "Provider default"), then the bare model id. A
+    // `<provider>:default` preview maps to its D2 row's label first.
     if (defaultModelId) {
       const resolvedLabel =
+        defaultModelIdMappedOption?.label ??
         getModelLabel(defaultModelId) ??
         defaultModelLabel ??
         parseCompoundModelId(defaultModelId).modelId;
@@ -894,6 +944,9 @@
 
   const isTriggerLabelResolved = $derived.by(() => {
     if (!hasExplicitModel || !localModel) return true; // "Default model" text, no need for skeleton
+    // A `<provider>:default` selection mapped to its D2 row renders that
+    // row's label — resolved even while other providers are still loading.
+    if (legacyDefaultMappedOption) return true;
     if (!isLoadingModels && allProvidersLoaded) return true;
     for (const models of Object.values(allProviderModels)) {
       if (models.some((m) => m.value === localModel)) return true;
@@ -950,10 +1003,12 @@
   const selectedCatalogOption = $derived.by(() => {
     const selectedId = hasExplicitModel ? localModel : defaultModelId;
     if (!selectedId) return catalogDefaultFallbackOption;
-    return (
-      flatModelOptions.find(
-        (option) => normalizeModelIdForMatch(option.value) === normalizeModelIdForMatch(selectedId),
-      ) ?? (hasExplicitModel ? legacyDefaultMappedOption : undefined)
+    // The mapped row wins for `<provider>:default` — an exact-id match would
+    // resolve to the hidden pseudo-row when an older daemon still serves one.
+    const mappedOption = hasExplicitModel ? legacyDefaultMappedOption : defaultModelIdMappedOption;
+    if (mappedOption) return mappedOption;
+    return flatModelOptions.find(
+      (option) => normalizeModelIdForMatch(option.value) === normalizeModelIdForMatch(selectedId),
     );
   });
 
@@ -1820,7 +1875,9 @@
     bind:this={dropdownRef}
     bind:value={dropdownValue}
     bind:searchValue={modelSearchValue}
-    defaultHighlightValue={defaultModelId ?? catalogDefaultFallbackOption?.value}
+    defaultHighlightValue={defaultModelIdMappedOption?.value ??
+      defaultModelId ??
+      catalogDefaultFallbackOption?.value}
     bind:open={dropdownOpen}
     groups={displayGroups}
     onchange={handleModelChange}

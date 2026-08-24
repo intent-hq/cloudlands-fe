@@ -111,6 +111,20 @@ describe('settings-hydration-service (boot read + applySettingsChanges)', () => 
     ).toBe('');
   });
 
+  it('hydrates specialists.default into the specialists slice (string, trim, null-clear)', () => {
+    applySettingsChanges([{ path: 'specialists.default', value: ' verifier ' }]);
+    const specialists = () =>
+      (appStore.state as { specialists: { defaultSpecialistId: string } }).specialists;
+    expect(specialists().defaultSpecialistId).toBe('verifier');
+
+    // Non-string garbage is ignored (except null, which clears).
+    applySettingsChanges([{ path: 'specialists.default', value: 42 }]);
+    expect(specialists().defaultSpecialistId).toBe('verifier');
+
+    applySettingsChanges([{ path: 'specialists.default', value: null }]);
+    expect(specialists().defaultSpecialistId).toBe('');
+  });
+
   it('ignores non-string model.defaultReasoningEffort values', () => {
     applySettingsChanges([{ path: 'model.defaultReasoningEffort', value: 'medium' }]);
     applySettingsChanges([

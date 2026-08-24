@@ -10,7 +10,12 @@ describe('sidebar shell background ownership', () => {
 
     expect(panel).toContain('sidebar-panel h-full flex flex-col relative text-sidebar-foreground');
     expect(panel).not.toMatch(/sidebar-panel[^"\n]*(?:bg-sidebar|background)/);
-    expect(panel).toMatch(/class="shrink-0 h-full overflow-hidden"\s+data-sidebar-panel/);
+    expect(panel).toMatch(
+      /class="shrink-0 h-full overflow-clip \[overflow-clip-margin:0\.5rem\]"\s+data-sidebar-panel/,
+    );
+    expect(panel).toMatch(
+      /class="min-h-0 flex-1 overflow-clip \[overflow-clip-margin:0\.5rem\] flex flex-col"\s+data-combined-panel-chief/,
+    );
     expect(panel).not.toMatch(/data-sidebar-panel[^>]+(?:bg-sidebar|background)/s);
   });
 

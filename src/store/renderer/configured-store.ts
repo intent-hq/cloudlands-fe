@@ -12,7 +12,14 @@ type RendererBaseStore = Store<RendererStateMap, typeof reducers>;
 type RendererBoundState = ReturnType<RendererBaseStore['getStoreStateSnapshot']>;
 
 function isTestEnvironment(): boolean {
-  return typeof process !== 'undefined' && process.env.NODE_ENV === 'test';
+  if (typeof process !== 'undefined' && process.env.NODE_ENV === 'test') return true;
+  // Playwright CT bundle: playwright/index.ts sets this flag before calling
+  // store.init() outside Svelte component initialization (monorepo#2224).
+  return (
+    typeof window !== 'undefined' &&
+    (window as { __PLAYWRIGHT_CT_STORE_BOOTSTRAP__?: boolean })
+      .__PLAYWRIGHT_CT_STORE_BOOTSTRAP__ === true
+  );
 }
 
 function isReduxActionLoggingEnabled(): boolean {

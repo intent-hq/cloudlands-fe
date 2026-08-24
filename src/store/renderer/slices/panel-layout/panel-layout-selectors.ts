@@ -199,20 +199,6 @@ export const selectAllTabs = store.createSelector<[wsId: string], PanelTab[]>((s
   return Object.values(ws.panels).flatMap((p) => p.tabs);
 });
 
-/** Whether any open panel tab (across all workspaces) hosts this agent's chat. */
-export const selectAgentHasOpenPanelTab = store.createSelector<[agentId: string], boolean>(
-  (state, agentId) => {
-    for (const ws of Object.values(state.panelLayout.byWorkspaceId)) {
-      for (const panel of Object.values(ws.panels)) {
-        if (panel.tabs.some((tab) => tab.type === 'agent' && tab.agentId === agentId)) {
-          return true;
-        }
-      }
-    }
-    return false;
-  },
-);
-
 /** Hidden (user-closed) agent-owned browser tabs, kept alive offscreen (monorepo#2857). */
 export const selectHiddenTabs = store.createSelector<[wsId: string], PanelTab[]>((state, wsId) => {
   const ws = state.panelLayout.byWorkspaceId[wsId] ?? emptyWorkspaceState;

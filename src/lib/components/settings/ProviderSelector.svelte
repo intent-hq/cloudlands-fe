@@ -57,7 +57,7 @@
   import { toast } from 'svelte-sonner';
   import { m } from '$shared/paraglide/messages.js';
   import GrokLogo from '../ui/GrokLogo.svelte';
-  import Logo from '../Logo.svelte';
+  import AuggieLogo from '../AuggieLogo.svelte';
   import ProviderPathConfig from './ProviderPathConfig.svelte';
   import { checkPiMcpAdapterInstalled, installPiMcpAdapter } from '$features/pi/pi-models.client';
   import Button from '../ui/button/button.svelte';
@@ -790,7 +790,7 @@
 {#snippet providerIcon(providerId: string)}
   <span class="w-7 text-subtle">
     {#if providerId === 'auggie'}
-      <Logo width={22} />
+      <AuggieLogo width={22} />
     {:else if providerId === 'claude-code'}
       <svg class="size-5" viewBox="0 0 1200 1200" xmlns="http://www.w3.org/2000/svg">
         <g id="g314">

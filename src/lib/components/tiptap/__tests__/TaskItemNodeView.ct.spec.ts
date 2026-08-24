@@ -6,19 +6,20 @@ import TaskItemNodeView from '../TaskItemNodeView.svelte';
 import type { Node as ProseMirrorNode } from '@tiptap/pm/model';
 import type { Editor } from '@tiptap/core';
 
-// FIXME(intent-hq/monorepo#2224): TaskItemNodeView reads Redux selectors at
-// component init, which throws before Store.init() — the CT bundle has no
-// store bootstrap. Skipped until the component gets a CT-safe store seam.
-test.fixme();
+// Helper to create a mock ProseMirror node. `content` needs a forEach so the
+// linked-task-note-id derivation can walk it (empty = plain inline task).
+function createMockNode(attrs: Record<string, unknown> = { checked: false, status: 'todo' }) {
+  return {
+    attrs,
+    nodeSize: 10,
+    textContent: 'Task text',
+    content: { size: 0, forEach: () => {} },
+    toJSON: () => ({ type: 'taskItem', attrs }),
+  } as unknown as ProseMirrorNode;
+}
 
 // Helper to create mock props
 function createMockProps(overrides: any = {}) {
-  const defaultNode = {
-    attrs: { checked: false, status: 'todo' },
-    nodeSize: 10,
-    toJSON: () => ({ type: 'taskItem', attrs: { checked: false, status: 'todo' } }),
-  } as unknown as ProseMirrorNode;
-
   const defaultEditor = {
     state: {
       doc: {
@@ -29,7 +30,7 @@ function createMockProps(overrides: any = {}) {
   } as unknown as Editor;
 
   return {
-    node: overrides.node || defaultNode,
+    node: overrides.node || createMockNode(),
     editor: overrides.editor || defaultEditor,
     getPos: overrides.getPos || (() => 0),
     updateAttributes: overrides.updateAttributes || (() => {}),
@@ -46,7 +47,7 @@ test.describe('TaskItemNodeView - Playwright Component Tests', () => {
 
       // The component itself is the <li> with data-type="taskItem"
       await expect(component).toHaveAttribute('data-type', 'taskItem');
-      await expect(component.locator('input[type="checkbox"]')).toBeVisible();
+      await expect(component.locator('[role="checkbox"]')).toBeVisible();
     });
 
     test('should render content area with data-node-view-content', async ({ mount }) => {
@@ -59,184 +60,141 @@ test.describe('TaskItemNodeView - Playwright Component Tests', () => {
       await expect(contentArea).toBeAttached();
     });
 
-    test('should render menu button', async ({ mount }) => {
+    test('should render convert-to-task-note action for unchecked tasks', async ({ mount }) => {
       const component = await mount(TaskItemNodeView, {
         props: createMockProps(),
       });
 
-      await expect(component.locator('.task-item-menu-button')).toBeVisible();
+      await expect(
+        component.getByRole('button', { name: 'Convert to Task Note' }),
+      ).toBeAttached();
     });
   });
 
   test.describe('Checkbox States', () => {
     test('todo task should have unchecked checkbox', async ({ mount }) => {
-      const props = createMockProps({
-        node: {
-          attrs: { checked: false, status: 'todo' },
-          nodeSize: 10,
-          toJSON: () => ({ type: 'taskItem', attrs: { checked: false, status: 'todo' } }),
-        },
+      const component = await mount(TaskItemNodeView, {
+        props: createMockProps({ node: createMockNode({ checked: false, status: 'todo' }) }),
       });
 
-      const component = await mount(TaskItemNodeView, { props });
-      const checkbox = component.locator('input[type="checkbox"]');
-
-      await expect(checkbox).not.toBeChecked();
-
-      const isIndeterminate = await checkbox.evaluate((el: HTMLInputElement) => el.indeterminate);
-      expect(isIndeterminate).toBe(false);
+      await expect(component).toHaveAttribute('data-status', 'todo');
+      await expect(component.locator('[role="checkbox"]')).toHaveAttribute(
+        'aria-checked',
+        'false',
+      );
     });
 
-    test('in-progress task should have indeterminate checkbox', async ({ mount }) => {
-      const props = createMockProps({
-        node: {
-          attrs: { checked: false, status: 'in-progress' },
-          nodeSize: 10,
-          toJSON: () => ({ type: 'taskItem', attrs: { checked: false, status: 'in-progress' } }),
-        },
+    test('in-progress task should stay unchecked with in-progress status', async ({ mount }) => {
+      const component = await mount(TaskItemNodeView, {
+        props: createMockProps({
+          node: createMockNode({ checked: false, status: 'in-progress' }),
+        }),
       });
 
-      const component = await mount(TaskItemNodeView, { props });
-      const checkbox = component.locator('input[type="checkbox"]');
-
-      await expect(checkbox).not.toBeChecked();
-
-      const isIndeterminate = await checkbox.evaluate((el: HTMLInputElement) => el.indeterminate);
-      expect(isIndeterminate).toBe(true);
+      await expect(component).toHaveAttribute('data-status', 'in-progress');
+      await expect(component.locator('[role="checkbox"]')).toHaveAttribute(
+        'aria-checked',
+        'false',
+      );
     });
 
     test('done task should have checked checkbox', async ({ mount }) => {
-      const props = createMockProps({
-        node: {
-          attrs: { checked: true, status: 'done' },
-          nodeSize: 10,
-          toJSON: () => ({ type: 'taskItem', attrs: { checked: true, status: 'done' } }),
-        },
+      const component = await mount(TaskItemNodeView, {
+        props: createMockProps({ node: createMockNode({ checked: true, status: 'done' }) }),
       });
 
-      const component = await mount(TaskItemNodeView, { props });
-      const checkbox = component.locator('input[type="checkbox"]');
-
-      await expect(checkbox).toBeChecked();
-
-      const isIndeterminate = await checkbox.evaluate((el: HTMLInputElement) => el.indeterminate);
-      expect(isIndeterminate).toBe(false);
+      await expect(component).toHaveAttribute('data-status', 'done');
+      await expect(component.locator('[role="checkbox"]')).toHaveAttribute('aria-checked', 'true');
     });
   });
 
-  test.describe('Checkbox Cycling', () => {
-    test('should cycle from todo to in-progress on click', async ({ mount }) => {
-      let currentAttrs = { checked: false, status: 'todo' };
+  test.describe('Checkbox Toggling', () => {
+    test('should move from todo to in-progress on check', async ({ mount }) => {
+      let currentAttrs: Record<string, unknown> = { checked: false, status: 'todo' };
 
-      const props = createMockProps({
-        node: {
-          attrs: currentAttrs,
-          nodeSize: 10,
-          toJSON: () => ({ type: 'taskItem', attrs: currentAttrs }),
-        },
-        updateAttributes: (attrs: any) => {
-          currentAttrs = { ...currentAttrs, ...attrs };
-        },
+      const component = await mount(TaskItemNodeView, {
+        props: createMockProps({
+          node: createMockNode(currentAttrs),
+          updateAttributes: (attrs: any) => {
+            currentAttrs = { ...currentAttrs, ...attrs };
+          },
+        }),
       });
-
-      const component = await mount(TaskItemNodeView, { props });
-      const checkbox = component.locator('input[type="checkbox"]');
+      const checkbox = component.locator('[role="checkbox"]');
 
       // Initial state
-      await expect(checkbox).not.toBeChecked();
+      await expect(checkbox).toHaveAttribute('aria-checked', 'false');
 
       // Click checkbox
       await checkbox.click();
 
       // Verify updateAttributes was called with correct values
-      expect(currentAttrs.status).toBe('in-progress');
-      expect(currentAttrs.checked).toBe(false);
-    });
-
-    test('should cycle from in-progress to done on click', async ({ mount }) => {
-      let currentAttrs = { checked: false, status: 'in-progress' };
-
-      const props = createMockProps({
-        node: {
-          attrs: currentAttrs,
-          nodeSize: 10,
-          toJSON: () => ({ type: 'taskItem', attrs: currentAttrs }),
-        },
-        updateAttributes: (attrs: any) => {
-          currentAttrs = { ...currentAttrs, ...attrs };
-        },
-      });
-
-      const component = await mount(TaskItemNodeView, { props });
-      const checkbox = component.locator('input[type="checkbox"]');
-
-      // Initial state: indeterminate
-      const isIndeterminate = await checkbox.evaluate((el: HTMLInputElement) => el.indeterminate);
-      expect(isIndeterminate).toBe(true);
-
-      // Click checkbox
-      await checkbox.click();
-
-      // Verify updateAttributes was called with correct values
-      expect(currentAttrs.status).toBe('done');
+      await expect.poll(() => currentAttrs.status).toBe('in-progress');
       expect(currentAttrs.checked).toBe(true);
     });
 
-    test('should cycle from done to todo on click', async ({ mount }) => {
-      let currentAttrs = { checked: true, status: 'done' };
+    test('should move from in-progress to in-progress checked on check', async ({ mount }) => {
+      let currentAttrs: Record<string, unknown> = { checked: false, status: 'in-progress' };
 
-      const props = createMockProps({
-        node: {
-          attrs: currentAttrs,
-          nodeSize: 10,
-          toJSON: () => ({ type: 'taskItem', attrs: currentAttrs }),
-        },
-        updateAttributes: (attrs: any) => {
-          currentAttrs = { ...currentAttrs, ...attrs };
-        },
+      const component = await mount(TaskItemNodeView, {
+        props: createMockProps({
+          node: createMockNode(currentAttrs),
+          updateAttributes: (attrs: any) => {
+            currentAttrs = { ...currentAttrs, ...attrs };
+          },
+        }),
       });
+      const checkbox = component.locator('[role="checkbox"]');
 
-      const component = await mount(TaskItemNodeView, { props });
-      const checkbox = component.locator('input[type="checkbox"]');
+      await expect(checkbox).toHaveAttribute('aria-checked', 'false');
+      await checkbox.click();
+
+      await expect.poll(() => currentAttrs.checked).toBe(true);
+      expect(currentAttrs.status).toBe('in-progress');
+    });
+
+    test('should move from done back to todo on uncheck', async ({ mount }) => {
+      let currentAttrs: Record<string, unknown> = { checked: true, status: 'done' };
+
+      const component = await mount(TaskItemNodeView, {
+        props: createMockProps({
+          node: createMockNode(currentAttrs),
+          updateAttributes: (attrs: any) => {
+            currentAttrs = { ...currentAttrs, ...attrs };
+          },
+        }),
+      });
+      const checkbox = component.locator('[role="checkbox"]');
 
       // Initial state: checked
-      await expect(checkbox).toBeChecked();
+      await expect(checkbox).toHaveAttribute('aria-checked', 'true');
 
       // Click checkbox
       await checkbox.click();
 
       // Verify updateAttributes was called with correct values
-      expect(currentAttrs.status).toBe('todo');
+      await expect.poll(() => currentAttrs.status).toBe('todo');
       expect(currentAttrs.checked).toBe(false);
     });
   });
 
   test.describe('Visual Appearance', () => {
     test('done task should have task-checked class', async ({ mount }) => {
-      const props = createMockProps({
-        node: {
-          attrs: { checked: true, status: 'done' },
-          nodeSize: 10,
-          toJSON: () => ({ type: 'taskItem', attrs: { checked: true, status: 'done' } }),
-        },
+      const component = await mount(TaskItemNodeView, {
+        props: createMockProps({ node: createMockNode({ checked: true, status: 'done' }) }),
       });
-
-      const component = await mount(TaskItemNodeView, { props });
 
       await expect(component).toHaveClass(/task-checked/);
     });
 
-    test('menu button should have correct popover attributes', async ({ mount }) => {
+    test('checked task should not offer the convert-to-task-note action', async ({ mount }) => {
       const component = await mount(TaskItemNodeView, {
-        props: createMockProps(),
+        props: createMockProps({ node: createMockNode({ checked: true, status: 'done' }) }),
       });
 
-      const menuButton = component.locator('.task-item-menu-button');
-
-      // Should have popovertarget attribute
-      const popovertarget = await menuButton.getAttribute('popovertarget');
-      expect(popovertarget).toBeTruthy();
-      expect(popovertarget).toMatch(/^task-menu-/);
+      await expect(
+        component.getByRole('button', { name: 'Convert to Task Note' }),
+      ).not.toBeAttached();
     });
   });
 });

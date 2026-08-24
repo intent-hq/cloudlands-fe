@@ -1,5 +1,14 @@
-<script lang="ts">
+<script lang="ts" module>
   import { marked, type Tokens } from 'marked';
+  import { strikethroughDoubleTilde } from '$lib/utils/marked-strikethrough';
+
+  // Restrict strikethrough to the double-tilde form (~~text~~) on the global
+  // marked singleton at module load — not inside the $effect below — so other
+  // consumers of the singleton are covered even before an instance mounts.
+  marked.use(strikethroughDoubleTilde);
+</script>
+
+<script lang="ts">
   import CodeBlock from './CodeBlock.svelte';
   import AugmentCodeSnippet from './AugmentCodeSnippet.svelte';
   import MermaidRenderer from '$lib/components/markdown/MermaidRenderer.svelte';

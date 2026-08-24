@@ -164,6 +164,104 @@ describe('thinking blocks — StreamingMessageContent', () => {
     expect(document.body.textContent).toContain('Visible answer');
   });
 
+  it('only flags the truly last block of a streaming message as streaming inside a group', async () => {
+    // Streaming message whose last top-level block is an unclosed <group:…>
+    // containing [thinking, tool_use, thinking, text]. Only the final text
+    // block is still streaming; the completed thinking blocks must render
+    // static (collapsed, no pulse animation).
+    await renderStreaming(
+      [
+        { type: 'text', id: 'msg_1:0', text: '<group:Working>' },
+        thinking('msg_1:1', 'First reasoning pass'),
+        { type: 'tool_use', id: 'msg_1:2', name: 'view', input: {} } as ContentBlock,
+        thinking('msg_1:3', 'Second reasoning pass'),
+        { type: 'text', id: 'msg_1:4', text: 'Partial streamed answer' },
+      ],
+      true,
+    );
+
+    const thinkingRows = document.querySelectorAll('.content-block--thinking');
+    expect(thinkingRows).toHaveLength(2);
+    for (const row of thinkingRows) {
+      expect(row.querySelector('[data-operational-leading]')?.className).not.toContain(
+        'animate-pulse',
+      );
+      expect(row.querySelector('[aria-expanded]')?.getAttribute('aria-expanded')).toBe('false');
+    }
+
+    const streamingViewers = [...document.querySelectorAll('[data-testid="markdown-viewer"]')]
+      .filter((viewer) => viewer.getAttribute('data-streaming') === 'true');
+    expect(streamingViewers.map((viewer) => viewer.textContent)).toEqual([
+      'Partial streamed answer',
+    ]);
+  });
+
+  it('flags a trailing streaming thinking block inside a group as streaming', async () => {
+    await renderStreaming(
+      [
+        { type: 'text', id: 'msg_1:0', text: '<group:Working>' },
+        thinking('msg_1:1', 'First reasoning pass'),
+        thinking('msg_1:2', 'Still reasoning'),
+      ],
+      true,
+    );
+
+    const thinkingRows = document.querySelectorAll('.content-block--thinking');
+    expect(thinkingRows).toHaveLength(2);
+    expect(
+      thinkingRows[0].querySelector('[data-operational-leading]')?.className,
+    ).not.toContain('animate-pulse');
+    expect(thinkingRows[1].querySelector('[data-operational-leading]')?.className).toContain(
+      'animate-pulse',
+    );
+  });
+
+  it('only flags the last parsed entry of the last text block as streaming', async () => {
+    // A single trailing text ContentBlock can expand into multiple
+    // ParsedContent entries (text around an embedded special block). Only the
+    // final parsed entry is still streaming.
+    await renderStreaming(
+      [
+        {
+          type: 'text',
+          id: 'msg_1:0',
+          text: 'Before block\n\n<COMMIT_MESSAGE>feat: something</COMMIT_MESSAGE>\n\nAfter streaming',
+        },
+      ],
+      true,
+    );
+
+    const viewers = [...document.querySelectorAll('[data-testid="markdown-viewer"]')];
+    expect(viewers.map((viewer) => viewer.textContent)).toEqual([
+      'Before block',
+      'After streaming',
+    ]);
+    expect(viewers.map((viewer) => viewer.getAttribute('data-streaming'))).toEqual([
+      'false',
+      'true',
+    ]);
+  });
+
+  it('flags the last visible group child as streaming when a hidden child trails', async () => {
+    // tool_result children are never rendered by the group loop — a trailing
+    // one must not steal the "last block" streaming flag from the final
+    // visible thinking block.
+    await renderStreaming(
+      [
+        { type: 'text', id: 'msg_1:0', text: '<group:Working>' },
+        thinking('msg_1:1', 'Reasoning while a result trails'),
+        { type: 'tool_result', tool_use_id: 'call_1', output: 'done' } as ContentBlock,
+      ],
+      true,
+    );
+
+    const thinkingRows = document.querySelectorAll('.content-block--thinking');
+    expect(thinkingRows).toHaveLength(1);
+    expect(thinkingRows[0].querySelector('[data-operational-leading]')?.className).toContain(
+      'animate-pulse',
+    );
+  });
+
   it('still renders legacy <think>-tag reasoning when showReasoningBlocks is on', async () => {
     await renderStreaming(
       [

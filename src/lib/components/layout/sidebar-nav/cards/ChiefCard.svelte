@@ -106,12 +106,15 @@
       $chiefThreads$.find((thread) => thread.agentId === selectedAgentId) ??
       defaultThread,
   );
+  // ChatPanel prop/key expressions re-evaluate lazily, so they must never
+  // dereference a possibly-null activeThread (it can empty while mounted).
+  const activeAgentId = $derived(activeThread?.agentId ?? null);
   const threadOptions = $derived<DropdownOption[]>(
     $chiefThreads$.map((thread) => ({
       value: thread.agentId,
       label: thread.title,
       data: { isActive: thread.isActive },
-      class: activeThread?.agentId === thread.agentId ? 'bg-muted/70 text-foreground' : '',
+      class: activeAgentId === thread.agentId ? 'bg-muted/70 text-foreground' : '',
     })),
   );
   const currentPreview = $derived(activeThread ?? $chiefPreview$);
@@ -354,14 +357,21 @@
       </div>
     </div>
 
-    <div class="min-h-0 flex-1 px-2 pt-0">
-      <section class="flex h-full min-h-0 flex-col overflow-hidden">
-        {#if activeThread}
-          {#key activeThread.agentId}
+    <!-- Clip on the padded wrapper (not the inner section) with an 8px clip
+         margin so the composer's streaming aurora can bleed across the px-2
+         inset and the app frame's window inset, while transcript content
+         still cannot overflow the panel. The margin is omnidirectional (no
+         per-side form exists, and a clip-path here would clip fixed-position
+         dialogs rendered in this subtree), so a very short pane can overdraw
+         up to 8px above — accepted as cosmetic. -->
+    <div class="min-h-0 flex-1 overflow-clip px-2 pt-0 [overflow-clip-margin:0.5rem]">
+      <section class="flex h-full min-h-0 flex-col">
+        {#if activeAgentId}
+          {#key activeAgentId}
             <div class="min-h-0 flex-1">
               <ChatPanel
                 workspace={chiefWorkspace}
-                agentId={activeThread.agentId}
+                agentId={activeAgentId}
                 agentName={m.layout_chiefCard_title()}
                 isActive={true}
                 autoFocus={true}

@@ -241,6 +241,18 @@ const APP_SETTING_DEFINITIONS: readonly AppSettingDefinition[] = [
   {
     path: 'specialists.default',
     label: 'Default specialist',
+    description:
+      'Daemon setting: specialist applied when none is chosen (e.g. running a task note). Empty means unset (falls back to implementor).',
+    category: 'agents',
+    type: 'string',
+    source: 'daemon-settings',
+    storageKey: 'specialists.default',
+    defaultValue: '',
+    apply: { kind: 'daemon-settings-update', path: 'specialists.default' },
+  },
+  {
+    path: 'workspaceInitializer.lastSpecialist',
+    label: 'Last workspace initializer specialist',
     description: 'Last submitted workspace initializer specialist selection.',
     category: 'agents',
     type: 'object',

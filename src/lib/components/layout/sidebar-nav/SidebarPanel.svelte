@@ -232,7 +232,7 @@
 {#if $panelItem$ && !$onboardingActive$}
   <!-- Outer wrapper animates width; inner content stays at full static width -->
   <div
-    class="shrink-0 h-full overflow-hidden"
+    class="shrink-0 h-full overflow-clip [overflow-clip-margin:0.5rem]"
     data-sidebar-panel
     data-panel-item={$panelItem$}
     transition:slide={{ axis: 'x', duration: 200 }}
@@ -377,7 +377,13 @@
             ></div>
           </div>
 
-          <div class="min-h-0 flex-1 overflow-hidden flex flex-col" data-combined-panel-chief>
+          <!-- overflow-clip with an 8px clip margin (instead of overflow-hidden)
+               lets the Chief composer's streaming aurora bleed across the app
+               frame's pl-2/pb-2 window inset to the window edges. -->
+          <div
+            class="min-h-0 flex-1 overflow-clip [overflow-clip-margin:0.5rem] flex flex-col"
+            data-combined-panel-chief
+          >
             <ChiefCard expanded={true} embedded={true} />
           </div>
         </div>

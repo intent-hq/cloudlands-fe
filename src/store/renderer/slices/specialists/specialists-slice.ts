@@ -91,6 +91,11 @@ export type SpecialistsState = {
   fileSpecialistsLoaded: boolean;
   bundledSpecialistsLoaded: boolean;
   specialistsFolderPath: string | null;
+  /**
+   * Daemon `specialists.default` setting (PROTOCOL §5.12): specialist applied
+   * when none is chosen (e.g. task Run). Empty string means unset.
+   */
+  defaultSpecialistId: string;
 };
 
 // ============================================================================
@@ -112,6 +117,7 @@ export const initialState: SpecialistsState = {
   fileSpecialistsLoaded: false,
   bundledSpecialistsLoaded: false,
   specialistsFolderPath: null,
+  defaultSpecialistId: '',
 };
 
 // ============================================================================
@@ -133,6 +139,9 @@ export const setFileSpecialistsLoaded = createAction<[loaded: boolean]>(
 );
 export const setBundledSpecialistsLoaded = createAction<[loaded: boolean]>(
   'specialists/setBundledSpecialistsLoaded',
+);
+export const setDefaultSpecialistId = createAction<[specialistId: string]>(
+  'specialists/setDefaultSpecialistId',
 );
 export const saveFileSpecialist = createAction<[specialist: FileSpecialistWritePayload]>(
   'specialists/saveFileSpecialist',
@@ -169,4 +178,8 @@ specialistsReducer.with(setFileSpecialistsLoaded, (state, { payload: [loaded] })
 specialistsReducer.with(setBundledSpecialistsLoaded, (state, { payload: [loaded] }) => ({
   ...state,
   bundledSpecialistsLoaded: loaded,
+}));
+specialistsReducer.with(setDefaultSpecialistId, (state, { payload: [specialistId] }) => ({
+  ...state,
+  defaultSpecialistId: specialistId,
 }));

@@ -6,12 +6,26 @@ import {
 import {
   getItems,
 } from "@augmentcode/themis/utils/collections/collection-utils";
-import { specialistsReducer, initialState, setBundledSpecialists, setFileSpecialists, setOverridesLoaded, setCustomSpecialistsLoaded, type FileSpecialist } from "./specialists-slice";
+import { specialistsReducer, initialState, setBundledSpecialists, setDefaultSpecialistId, setFileSpecialists, setOverridesLoaded, setCustomSpecialistsLoaded, type FileSpecialist } from "./specialists-slice";
 
 describe("specialistsReducer", () => {
   it("should return initial state", () => {
     const state = specialistsReducer(undefined, { type: "@@INIT" });
     expect(state).toEqual(initialState);
+    expect(state.defaultSpecialistId).toBe("");
+  });
+
+  describe("setDefaultSpecialistId", () => {
+    it("should set the default specialist id", () => {
+      const state = specialistsReducer(initialState, setDefaultSpecialistId("verifier"));
+      expect(state.defaultSpecialistId).toBe("verifier");
+    });
+
+    it("should clear the default specialist id", () => {
+      const seeded = specialistsReducer(initialState, setDefaultSpecialistId("verifier"));
+      const state = specialistsReducer(seeded, setDefaultSpecialistId(""));
+      expect(state.defaultSpecialistId).toBe("");
+    });
   });
 
   describe("setBundledSpecialists", () => {

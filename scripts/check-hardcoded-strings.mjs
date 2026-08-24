@@ -20,6 +20,9 @@
 // Suppress a deliberate literal by putting `i18n-ignore` in a comment on the
 // same line or the line above.
 //
+// Component-catalog / test scaffolding files (see SCAFFOLDING_FILE_RE) are
+// excluded from the scan entirely — their strings are developer-facing.
+//
 // Usage: node scripts/check-hardcoded-strings.mjs [dir ...] [--baseline path]
 //   With no dirs, scans ENFORCED_DIRS and applies the checked-in debt baseline.
 //   Explicit dirs have no baseline unless --baseline is provided (used by tests).
@@ -182,6 +185,19 @@ const SKIP_DIRS = new Set([
   '__mocks__',
 ]);
 
+// Developer-facing scaffolding excluded from the gate (intent-hq/monorepo#2248):
+// component-catalog visual harnesses (*Harness.svelte), component-test harnesses
+// (*.test-harness.svelte), catalog fixtures (*.fixtures.ts) and metadata
+// (*.meta.ts), and playwright configs (*.playwright.config.ts). These files are
+// demo/test scaffolding, not product UI; harness strings surfacing in the
+// in-app component catalog (a developer tool) are accepted.
+const SCAFFOLDING_FILE_RE =
+  /(?:Harness\.svelte|\.test-harness\.svelte|\.fixtures\.ts|\.meta\.ts|\.playwright\.config\.ts)$/;
+
+// Counted per run and reported so name-based exclusions stay visible in CI
+// logs (a product file accidentally matching the pattern shows up here).
+let excludedScaffoldingFiles = 0;
+
 const USER_FACING_ATTRS = [
   'placeholder',
   'title',
@@ -204,6 +220,10 @@ function isCheckedFile(absPath) {
   const norm = absPath.split('\\').join('/');
   if (norm.endsWith('.d.ts')) return false;
   if (/\.(test|spec)\.(ts|js|mjs|cjs)$/.test(norm)) return false;
+  if (SCAFFOLDING_FILE_RE.test(norm)) {
+    excludedScaffoldingFiles++;
+    return false;
+  }
   if (!/\.(svelte|ts)$/.test(norm)) return false;
   return true;
 }
@@ -761,6 +781,11 @@ async function main() {
 
   console.log(`${CYAN}=== Hardcoded user-facing string gate (i18n) ===${NC}`);
   const violations = await collectViolations(dirs);
+  if (excludedScaffoldingFiles > 0) {
+    console.log(
+      `Excluded ${excludedScaffoldingFiles} scaffolding file(s) (harnesses, fixtures, catalog metadata, playwright configs).`,
+    );
+  }
 
   if (options.updateBaseline) {
     const entries = baselineEntries(violations);

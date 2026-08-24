@@ -7850,7 +7850,7 @@ describe('daemonEventsBridge (completion-watch refresh routing)', () => {
     },
   );
 
-  it('non-completion agent events do not trigger a subscription refresh (except status-changed/idle which trigger agent list refresh instead)', async () => {
+  it('non-completion agent events do not trigger a subscription refresh (except status-changed/idle which refresh the changed agent instead)', async () => {
     await primeBridge();
     const handler = capturedHandlers[0]!;
     const dispatchSpy = vi.spyOn(appStore, 'dispatch');
@@ -7864,7 +7864,7 @@ describe('daemonEventsBridge (completion-watch refresh routing)', () => {
   });
 });
 
-describe('daemonEventsBridge (STAB-9 — agent:status-changed / agent:idle trigger agent list refresh)', () => {
+describe('daemonEventsBridge (STAB-9 — agent:status-changed / agent:idle refresh only the changed agent)', () => {
   beforeAll(() => {
     appStore.init();
   });
@@ -7880,7 +7880,7 @@ describe('daemonEventsBridge (STAB-9 — agent:status-changed / agent:idle trigg
 
   afterEach(() => vi.clearAllMocks());
 
-  it('agent:status-changed dispatches hydrateAgentsRequested(workspaceId)', async () => {
+  it('agent:status-changed refreshes only the changed agent (no whole-list hydrate)', async () => {
     await primeBridge();
     const handler = capturedHandlers[0]!;
 
@@ -7897,13 +7897,14 @@ describe('daemonEventsBridge (STAB-9 — agent:status-changed / agent:idle trigg
 
     handler(notification('agent:status-changed', { agentId: AGENT, status: 'responding' }));
 
-    expect(dispatchSpy).toHaveBeenCalledWith(hydrateAgentsRequested(WS));
+    expect(refreshAgentSessionAfterEventSpy).toHaveBeenCalledWith(AGENT);
+    expect(dispatchSpy).not.toHaveBeenCalledWith(hydrateAgentsRequested(WS));
 
     // Restore the getter to prevent leakage
     dispatchGetterSpy.mockRestore();
   });
 
-  it('agent:idle dispatches hydrateAgentsRequested(workspaceId)', async () => {
+  it('agent:idle refreshes only the changed agent (no whole-list hydrate)', async () => {
     await primeBridge();
     const handler = capturedHandlers[0]!;
 
@@ -7920,9 +7921,31 @@ describe('daemonEventsBridge (STAB-9 — agent:status-changed / agent:idle trigg
 
     handler(notification('agent:idle', { agentId: AGENT }));
 
-    expect(dispatchSpy).toHaveBeenCalledWith(hydrateAgentsRequested(WS));
+    expect(refreshAgentSessionAfterEventSpy).toHaveBeenCalledWith(AGENT);
+    expect(dispatchSpy).not.toHaveBeenCalledWith(hydrateAgentsRequested(WS));
 
     // Restore the getter to prevent leakage
+    dispatchGetterSpy.mockRestore();
+  });
+
+  it('falls back to hydrateAgentsRequested(workspaceId) when the payload carries no agentId', async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    const hydrateAgentsRequested =
+      await import('$store/renderer/slices/workspace-agents/workspace-agents-slice').then(
+        (m) => m.hydrateAgentsRequested,
+      );
+
+    const originalDispatch = appStore.dispatch;
+    const dispatchSpy = vi.fn(originalDispatch);
+    const dispatchGetterSpy = vi.spyOn(appStore, 'dispatch', 'get').mockReturnValue(dispatchSpy);
+
+    handler(notification('agent:idle', {}));
+
+    expect(refreshAgentSessionAfterEventSpy).not.toHaveBeenCalled();
+    expect(dispatchSpy).toHaveBeenCalledWith(hydrateAgentsRequested(WS));
+
     dispatchGetterSpy.mockRestore();
   });
 });
@@ -9413,9 +9436,10 @@ describe('daemonEventsBridge (activity reconciliation → missed edges)', () => 
     await primeBridge();
     const handler = capturedHandlers[0]!;
 
-    // Mock workspace.get to return agent_running. primeBridge calls events.subscribe and
-    // the agent:status-changed handler also triggers agent.list (hydrateAgentsRequested),
-    // so we need to mock those calls too or use mockResolvedValue to apply to all calls.
+    // Mock workspace.get to return agent_running. primeBridge calls
+    // events.subscribe, so mock the non-workspace.get calls too (the STAB-9
+    // per-agent refresh goes through the mocked agent-read-service, not the
+    // wire).
     const { WorkspaceStatus } = await import('$shared/types');
     backendRequestSpy.mockImplementation(async (method: string) => {
       if (method === 'workspace.get') {
@@ -9757,7 +9781,7 @@ describe('daemonEventsBridge (activity reconciliation → missed edges)', () => 
 
 // monorepo#1712: the HUD card's agent rows are built from
 // `workspace.agentSummary.agents` (`agentInfosOf` in hud-selectors.ts), which
-// the `agent.list` hydration path (STAB-9, above) does NOT touch — without a
+// the per-agent `agent.get` refresh path (STAB-9, above) does NOT touch — without a
 // `workspace.get` refetch on `agent:deleted` a deleted agent lingers on its
 // card until an unrelated workspace refetch.
 describe('daemonEventsBridge (agent:deleted → reconcileWorkspaceAgentSummary)', () => {

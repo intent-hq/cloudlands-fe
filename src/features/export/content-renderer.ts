@@ -1,5 +1,11 @@
 import type { ContentBlock } from '$shared/types';
 import { marked } from 'marked';
+import { strikethroughDoubleTilde } from '$lib/utils/marked-strikethrough';
+
+// Restrict strikethrough to the double-tilde form (~~text~~) on the global
+// marked singleton at module load, so exports are covered regardless of
+// whether any other consumer configured the singleton first.
+marked.use(strikethroughDoubleTilde);
 
 /**
  * Render a text block to HTML using markdown processing

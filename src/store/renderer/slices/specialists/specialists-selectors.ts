@@ -28,6 +28,11 @@ export const selectCustomSpecialistsLoaded = store.createSelector((state): boole
 export const selectFileSpecialistsLoaded = store.createSelector((state): boolean => state.specialists.fileSpecialistsLoaded);
 export const selectBundledSpecialistsLoaded = store.createSelector((state): boolean => state.specialists.bundledSpecialistsLoaded);
 export const selectSpecialistsFolderPath = store.createSelector((state): string | null => state.specialists.specialistsFolderPath);
+/**
+ * Daemon `specialists.default` setting — the specialist applied when none is
+ * chosen (e.g. task Run). `''` when unset.
+ */
+export const selectDefaultSpecialistId = store.createSelector((state): string => state.specialists.defaultSpecialistId ?? '');
 export const selectProviderModelOverrides = store.createSelector((state): Record<string, Record<string, string>> => state.specialists.providerModelOverrides);
 // ============================================================================
 // Visibility gating helpers
@@ -111,11 +116,16 @@ export const selectSpecialists = store.createSelector((state): Specialist[] => {
     }
     // Wave 2: Electron-store custom specialists are no longer included.
     // They should have been migrated to files on startup.
-    // Last resort fallback: hardcoded SPECIALISTS
-    for (const specialist of SPECIALISTS) {
-        if (!seen.has(specialist.id) && selectIsSpecialistVisible.select(state, specialist.id)) {
-            seen.add(specialist.id);
-            result.push(specialist);
+    // Last resort fallback: hardcoded SPECIALISTS, only before any other
+    // source has produced specialists. Once file/daemon specialists loaded,
+    // the loaded set is authoritative — shipped specialists absent from it
+    // must not resurrect (daemon replacement mode).
+    if (fileSpecialists.length === 0 && bundledSpecialists.length === 0) {
+        for (const specialist of SPECIALISTS) {
+            if (!seen.has(specialist.id) && selectIsSpecialistVisible.select(state, specialist.id)) {
+                seen.add(specialist.id);
+                result.push(specialist);
+            }
         }
     }
 
@@ -127,8 +137,10 @@ export const selectSpecialists = store.createSelector((state): Specialist[] => {
     for (const s of bundledSpecialists) {
         if (!bundledOrder.has(s.id)) bundledOrder.set(s.id, bundledOrder.size);
     }
-    for (const s of SPECIALISTS) {
-        if (!bundledOrder.has(s.id)) bundledOrder.set(s.id, bundledOrder.size);
+    if (bundledSpecialists.length === 0) {
+        for (const s of SPECIALISTS) {
+            if (!bundledOrder.has(s.id)) bundledOrder.set(s.id, bundledOrder.size);
+        }
     }
 
     result.sort((a, b) => {

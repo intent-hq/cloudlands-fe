@@ -12,6 +12,7 @@
     showCloseButton = true,
     closeDisabled = false,
     closeLabel = m.ui_dialog_close_ariaLabel(),
+    onInteractOutside,
     children,
     ...restProps
   }: WithoutChildrenOrChild<DialogPrimitive.ContentProps> & {
@@ -21,6 +22,16 @@
     closeLabel?: string;
     children: Snippet;
   } = $props();
+
+  // Interactions inside a lightbox stacked above the dialog (see
+  // ImageLightbox's data-image-lightbox-root) are not outside interactions:
+  // closing the lightbox must not also dismiss the dialog.
+  function handleInteractOutside(e: Parameters<NonNullable<typeof onInteractOutside>>[0]) {
+    if (e.target instanceof Element && e.target.closest('[data-image-lightbox-root]')) {
+      e.preventDefault();
+    }
+    onInteractOutside?.(e);
+  }
 </script>
 
 <DialogPrimitive.Portal {...portalProps}>
@@ -33,6 +44,7 @@
       className,
     )}
     {...restProps}
+    onInteractOutside={handleInteractOutside}
   >
     {@render children?.()}
     {#if showCloseButton}

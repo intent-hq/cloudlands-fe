@@ -71,6 +71,10 @@
   import { selectAgentQueueMessages } from '$store/renderer/slices/agent-queue/agent-queue-selectors';
   import { removeQueuedMessageRequested } from '$store/renderer/slices/agent-queue/agent-queue-slice';
   import { hydrateAgentQueue } from '$features/agent/agent-queue-read-service';
+  import {
+    acquireChatInterestLease,
+    releaseChatInterestLease,
+  } from '$features/agent/utils/chat-interest-leases';
   import { selectNoteById } from '$store/renderer/slices/workspace-notes/workspace-notes-selectors';
   import { getPanelLayoutManager } from '$features/layout/panel-layout-adapter';
   import { selectAllTabs as selectPanelLayoutAllTabs } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
@@ -2778,6 +2782,15 @@
 
   // Initialize chat on mount
   onMount(() => {
+    // Interest lease (intent-hq/monorepo#3295): acquired SYNCHRONOUSLY at the
+    // top of mount, BEFORE chatTrackedWorkspaceSet/initializeChatRequested are
+    // dispatched, so the lease exists before a sibling panel's
+    // markAgentAsViewed sweep can run in either redux flush ordering.
+    // Released in onDestroy.
+    if (agentId && !agentId.startsWith('terminal-')) {
+      acquireChatInterestLease(agentId, instanceId);
+    }
+
     logger.info('ChatPanel mounted', {
       instanceId,
       agentId,
@@ -3598,6 +3611,12 @@
     // from accessing reactive state after destruction, which would cause
     // "N is not a function" errors in Svelte's reactive system.
     isComponentDestroyed = true;
+    // Release this instance's interest lease (intent-hq/monorepo#3295) before
+    // any destroy-path dispatch, so the trailing scoped clear is not spared by
+    // the dying panel's own lease.
+    if (agentId && !agentId.startsWith('terminal-')) {
+      releaseChatInterestLease(agentId, instanceId);
+    }
     cancelAllSendTransitions();
     if (lockConfirmationTimer !== null) {
       clearTimeout(lockConfirmationTimer);
@@ -5041,8 +5060,6 @@
                             data-message-index={globalIndex}
                             class="message-nav-target relative z-10"
                             class:mb-8={turn.assistantMessages.length > 0}
-                            class:bg-sidebar={isChiefWorkspace}
-                            class:bg-card={!isChiefWorkspace}
                             use:attachPinnedPromptMessage={message}
                             transition:safeSlide={{ axis: 'y', duration: 200 }}
                           >
@@ -5086,8 +5103,6 @@
                             class:invisible={pendingSendMessageIds.has(
                               String(message.appMessageId ?? ''),
                             )}
-                            class:bg-sidebar={isChiefWorkspace}
-                            class:bg-card={!isChiefWorkspace}
                             use:attachPinnedPromptMessage={message}
                           >
                             <div class={isChiefWorkspace ? 'mx-1 sm:mx-2' : ''}>
@@ -5408,10 +5423,15 @@
     data-streaming={$agentSessionIsStreaming$}
     data-testid="chat-composer-shell"
   >
-    <!-- Aurora northern lights effect during streaming -->
+    <!-- Aurora northern lights effect during streaming. The chief variant bleeds
+         further left/bottom so the shader crosses the ChiefCard px-2 inset and
+         the sidebar frame's pl-2/pb-2 window inset (the ancestors clip with an
+         8px overflow-clip-margin), touching the app window's left/bottom edges. -->
     {#if $agentSessionIsStreaming$}
       <div
-        class="pointer-events-none absolute -inset-x-2 -bottom-2 z-0 overflow-hidden"
+        class="pointer-events-none absolute z-0 overflow-hidden {isChiefWorkspace
+          ? '-left-4 -right-2 -bottom-4'
+          : '-inset-x-2 -bottom-2'}"
         style="height: calc(100% + 10rem);"
         data-testid="composer-aurora-host"
         transition:fade

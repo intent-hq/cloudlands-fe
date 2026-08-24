@@ -239,7 +239,7 @@ describe('editorial conversation presentation contract', () => {
     const streaming = source('src/lib/components/chat/StreamingMessageContent.svelte');
     const messageContent = source('src/lib/components/chat/MessageContent.svelte');
 
-    expect(panel).toContain('class:bg-sidebar={isChiefWorkspace}');
+    expect(panel).not.toContain('class:bg-sidebar={isChiefWorkspace}');
     expect(panel).toContain("<div class={isChiefWorkspace ? 'mx-1 sm:mx-2' : ''}>");
     expect(panel.match(/message=\{pendingMessage\}[\s\S]{0,80}\{workspace\}/g)).toHaveLength(2);
     expect(streaming).toContain('neutralBorder={workspaceId === CHIEF_WORKSPACE_ID}');
@@ -248,14 +248,14 @@ describe('editorial conversation presentation contract', () => {
     ).toHaveLength(2);
   });
 
-  it('keeps the accepted opaque user surface in Chief sticky rows', () => {
+  it('keeps user rows transparent with the opaque surface on the bubble itself', () => {
     const panel = source('src/lib/components/chat/ChatPanel.svelte');
     const message = source('src/lib/components/chat/ChatMessage.svelte');
 
-    expect(panel).toContain('class:bg-sidebar={isChiefWorkspace}');
-    expect(panel).toContain('class:bg-card={!isChiefWorkspace}');
+    expect(panel).not.toContain('class:bg-sidebar={isChiefWorkspace}');
+    expect(panel).not.toContain('class:bg-card={!isChiefWorkspace}');
     expect(panel).toMatch(
-      /class:bg-card=\{!isChiefWorkspace\}[\s\S]{0,220}<div class=\{isChiefWorkspace \? 'mx-1 sm:mx-2' : ''\}>/,
+      /message-nav-target relative z-20[\s\S]{0,700}<div class=\{isChiefWorkspace \? 'mx-1 sm:mx-2' : ''\}>/,
     );
     expect(panel).not.toContain('chief-sticky-message-mask');
     expect(panel).not.toContain('backdrop-filter: blur(24px)');
@@ -296,7 +296,7 @@ describe('editorial conversation presentation contract', () => {
     const avatar = source('src/lib/components/chat/InlineAgentAvatar.svelte');
 
     expect(panel).toMatch(
-      /data-message-index=\{globalIndex\}[\s\S]{0,220}message-nav-target relative z-10[\s\S]{0,280}class:bg-sidebar=\{isChiefWorkspace\}[\s\S]{0,80}class:bg-card=\{!isChiefWorkspace\}/,
+      /data-message-index=\{globalIndex\}[\s\S]{0,220}message-nav-target relative z-10[\s\S]{0,120}use:attachPinnedPromptMessage=\{message\}/,
     );
     expect(panel).toContain('class:mb-8={turn.assistantMessages.length > 0}');
     expect(panel).toContain('class:mb-5={isAutomatedMessage(message)}');
@@ -415,8 +415,10 @@ describe('editorial conversation presentation contract', () => {
 
     expect(panel).toContain('class="conversation-composer relative z-10 w-full"');
     expect(panel).toContain(
-      'class="pointer-events-none absolute -inset-x-2 -bottom-2 z-0 overflow-hidden"',
+      'class="pointer-events-none absolute z-0 overflow-hidden {isChiefWorkspace',
     );
+    expect(panel).toContain("'-left-4 -right-2 -bottom-4'");
+    expect(panel).toContain("'-inset-x-2 -bottom-2'");
     expect(panel).toContain('height: calc(100% + 10rem)');
     expect(panel).toContain('class="relative z-20 mt-6 {isChiefWorkspace');
   });
