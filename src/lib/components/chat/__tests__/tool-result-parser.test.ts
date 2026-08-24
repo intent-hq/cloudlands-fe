@@ -922,7 +922,8 @@ describe('tool-result-parser', () => {
     });
 
     it('still parses the legacy prose agent list', () => {
-      const prose = '- Coordinator (agent-1)\n  Status: idle\n- Helper (agent-2)\n  Status: responding';
+      const prose =
+        '- Coordinator (agent-1)\n  Status: idle\n- Helper (agent-2)\n  Status: responding';
       const result = parseToolResult(
         'workspace_api_workspace-mcp',
         wsInput('return await ws.agent.list()'),
@@ -1143,6 +1144,21 @@ describe('tool-result-parser', () => {
       expect(result.screenshotHeight).toBe(800);
     });
 
+    it.each([
+      ['/9j/4AAQSkZJRgABAQ==', 'image/jpeg'],
+      ['iVBORw0KGgoAAAANSUhEUg==', 'image/png'],
+    ] as const)('infers browser screenshot MIME metadata for %s', (base64, mimeType) => {
+      const result = parseToolResult(
+        'workspace_api_workspace-mcp',
+        wsInput('return await ws.browser.exec([{ action: "screenshot" }])'),
+        JSON.stringify({ base64, width: 1, height: 1 }),
+      );
+
+      expect(result.type).toBe('browser');
+      expect(result.screenshotBase64).toBe(base64);
+      expect(result.screenshotMimeType).toBe(mimeType);
+    });
+
     it('parses a TOON multi-action browser result', () => {
       const toon = [
         '[2]:',
@@ -1158,9 +1174,7 @@ describe('tool-result-parser', () => {
       ].join('\n');
       const result = parseToolResult(
         'workspace_api_workspace-mcp',
-        wsInput(
-          'return await ws.browser.exec([{ action: "evaluate" }, { action: "screenshot" }])',
-        ),
+        wsInput('return await ws.browser.exec([{ action: "evaluate" }, { action: "screenshot" }])'),
         toon,
       );
 

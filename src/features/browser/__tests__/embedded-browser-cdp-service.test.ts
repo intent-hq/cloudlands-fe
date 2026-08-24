@@ -41,6 +41,9 @@ vi.mock('../../system/main/system.ipc', () => ({
 
 import { IPC_CHANNELS } from '../../../shared/ipc-registry';
 
+const JPEG_1PX =
+  '/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAP//////////////////////////////////////////////////////////////////////////////////////2wBDAf//////////////////////////////////////////////////////////////////////////////////////wAARCAABAAEDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAX/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/9oADAMBAAIQAxAAAAEf/8QAFBABAAAAAAAAAAAAAAAAAAAAAP/aAAgBAQABBQJ//8QAFBEBAAAAAAAAAAAAAAAAAAAAAP/aAAgBAwEBPwF//8QAFBEBAAAAAAAAAAAAAAAAAAAAAP/aAAgBAgEBPwF//8QAFBABAAAAAAAAAAAAAAAAAAAAAP/aAAgBAQAGPwJ//8QAFBABAAAAAAAAAAAAAAAAAAAAAP/aAAgBAQABPyF//9oADAMBAAIAAwAAABAf/8QAFBEBAAAAAAAAAAAAAAAAAAAAAP/aAAgBAwEBPxB//8QAFBEBAAAAAAAAAAAAAAAAAAAAAP/aAAgBAgEBPxB//8QAFBABAAAAAAAAAAAAAAAAAAAAAP/aAAgBAQABPxB//9k=';
+
 type PanelTab = {
   tabId: string;
   url: string;
@@ -83,7 +86,7 @@ function fakeCdpWebview(
     if (capturePageImage === 'hang') return new Promise<never>(() => {});
     return {
       getSize: () => capturePageImage,
-      toJPEG: () => Buffer.from('fallback-jpeg-bytes'),
+      toJPEG: () => Buffer.from(JPEG_1PX, 'base64'),
     };
   });
   return {
@@ -584,16 +587,21 @@ describe('screenshot Page-domain hang fallback (#3154)', () => {
     const service = await loadService();
     const wc = fakeCdpWebview(61, {
       'Page.getLayoutMetrics': LAYOUT_METRICS,
-      'Page.captureScreenshot': { data: 'cdp-base64' },
+      'Page.captureScreenshot': { data: JPEG_1PX },
     });
     mocks.fromId.mockReturnValue(wc);
     service.registerTab('tab-cdp', 61);
 
     await expect(service.screenshot('tab-cdp')).resolves.toEqual({
-      base64: 'cdp-base64',
+      base64: JPEG_1PX,
       width: 800,
       height: 600,
     });
+    expect(Buffer.from(JPEG_1PX, 'base64').subarray(0, 3)).toEqual(Buffer.from([0xff, 0xd8, 0xff]));
+    expect(wc.debugger.sendCommand).toHaveBeenCalledWith(
+      'Page.captureScreenshot',
+      expect.objectContaining({ format: 'jpeg', quality: 80 }),
+    );
     expect(wc.capturePage).not.toHaveBeenCalled();
     service.unregisterTab('tab-cdp');
   });
@@ -608,7 +616,7 @@ describe('screenshot Page-domain hang fallback (#3154)', () => {
     await vi.advanceTimersByTimeAsync(6_000);
 
     await expect(pending).resolves.toEqual({
-      base64: Buffer.from('fallback-jpeg-bytes').toString('base64'),
+      base64: JPEG_1PX,
       width: 320,
       height: 240,
     });
@@ -629,7 +637,7 @@ describe('screenshot Page-domain hang fallback (#3154)', () => {
     await vi.advanceTimersByTimeAsync(6_000);
 
     await expect(pending).resolves.toEqual({
-      base64: Buffer.from('fallback-jpeg-bytes').toString('base64'),
+      base64: JPEG_1PX,
       width: 320,
       height: 240,
     });
@@ -646,7 +654,7 @@ describe('screenshot Page-domain hang fallback (#3154)', () => {
     service.registerTab('tab-reject', 64);
 
     await expect(service.screenshot('tab-reject')).resolves.toEqual({
-      base64: Buffer.from('fallback-jpeg-bytes').toString('base64'),
+      base64: JPEG_1PX,
       width: 320,
       height: 240,
     });

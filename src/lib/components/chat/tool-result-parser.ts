@@ -7,6 +7,10 @@
 
 import { decode as decodeToon } from '@toon-format/toon';
 import { m } from '$shared/paraglide/messages.js';
+import {
+  inferBrowserScreenshotMimeType,
+  type BrowserScreenshotMimeType,
+} from './browser-screenshot-source';
 import { formatInteger } from '$lib/i18n/format';
 
 type ToolResultType =
@@ -124,6 +128,7 @@ export interface ParsedToolResult {
   browserAction?: string;
   screenshotBase64?: string;
   screenshotUrl?: string;
+  screenshotMimeType?: BrowserScreenshotMimeType;
   screenshotWidth?: number;
   screenshotHeight?: number;
   browserTabs?: Array<{
@@ -2020,7 +2025,7 @@ function parseBrowserResult(input: Record<string, any>, result: unknown): Parsed
         (typeof decoded.base64 === 'string' || typeof decoded.assetUrl === 'string')
       ) {
         // Screenshot result: { base64 | assetUrl, width, height }
-        if (typeof decoded.base64 === 'string') parsed.screenshotBase64 = decoded.base64;
+        setBrowserScreenshotBase64(parsed, decoded.base64);
         if (typeof decoded.assetUrl === 'string') parsed.screenshotUrl = decoded.assetUrl;
         if (typeof decoded.width === 'number') parsed.screenshotWidth = decoded.width;
         if (typeof decoded.height === 'number') parsed.screenshotHeight = decoded.height;
@@ -2067,7 +2072,7 @@ function parseBrowserResult(input: Record<string, any>, result: unknown): Parsed
   if (data && typeof data === 'object' && !Array.isArray(data) && (data.base64 || data.assetUrl)) {
     // Screenshot result: { base64, width, height } or { assetUrl, width, height }
     if (data.base64) {
-      parsed.screenshotBase64 = data.base64;
+      setBrowserScreenshotBase64(parsed, data.base64);
     }
     if (data.assetUrl) {
       parsed.screenshotUrl = data.assetUrl;
@@ -2100,7 +2105,7 @@ function parseUnwrappedBrowserAction(parsed: ParsedToolResult, resultText: strin
       try {
         const data = JSON.parse(resultText);
         if (data && (data.base64 || data.assetUrl)) {
-          if (data.base64) parsed.screenshotBase64 = data.base64;
+          setBrowserScreenshotBase64(parsed, data.base64);
           if (data.assetUrl) parsed.screenshotUrl = data.assetUrl;
           parsed.screenshotWidth = data.width;
           parsed.screenshotHeight = data.height;
@@ -2168,7 +2173,7 @@ function parseMultiActionResults(parsed: ParsedToolResult, actionResults: any[])
     if (!ar || typeof ar !== 'object') continue;
 
     if (ar.action === 'screenshot' && (ar.result?.base64 || ar.result?.assetUrl)) {
-      if (ar.result.base64) parsed.screenshotBase64 = ar.result.base64;
+      setBrowserScreenshotBase64(parsed, ar.result.base64);
       if (ar.result.assetUrl) parsed.screenshotUrl = ar.result.assetUrl;
       parsed.screenshotWidth = ar.result.width;
       parsed.screenshotHeight = ar.result.height;
@@ -2232,7 +2237,7 @@ function extractFromTruncatedActions(parsed: ParsedToolResult, text: string): bo
   if (!parsed.screenshotUrl) {
     const base64Match = text.match(/"base64"\s*:\s*"([A-Za-z0-9+/=]{20,})"/);
     if (base64Match) {
-      parsed.screenshotBase64 = base64Match[1];
+      setBrowserScreenshotBase64(parsed, base64Match[1]);
       foundSomething = true;
     }
   }
@@ -2244,6 +2249,12 @@ function extractFromTruncatedActions(parsed: ParsedToolResult, text: string): bo
   if (heightMatch) parsed.screenshotHeight = parseInt(heightMatch[1]);
 
   return foundSomething;
+}
+
+function setBrowserScreenshotBase64(parsed: ParsedToolResult, base64: unknown): void {
+  if (typeof base64 !== 'string') return;
+  parsed.screenshotBase64 = base64;
+  parsed.screenshotMimeType = inferBrowserScreenshotMimeType(base64);
 }
 
 /**

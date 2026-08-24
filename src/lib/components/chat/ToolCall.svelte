@@ -24,6 +24,7 @@
   import ToolStatusIcon from './ToolStatusIcon.svelte';
   import ChatOperationalRow from './ChatOperationalRow.svelte';
   import { resolveToolLeadingIcon } from './tool-leading-icon';
+  import { resolveBrowserScreenshotSource } from './browser-screenshot-source';
 
   interface Props {
     toolUse: ToolUseBlock;
@@ -79,19 +80,9 @@
   const parsedResult = $derived(
     result ? parseToolResult(toolUse.name, toolUse.input || {}, result) : null,
   );
-  const browserScreenshotSource = $derived.by(() => {
-    if (parsedResult?.type !== 'browser') return null;
-
-    const assetUrl = parsedResult.screenshotUrl?.trim();
-    if (assetUrl && /^(?:https?:\/\/|workspace-asset:\/\/)/i.test(assetUrl)) return assetUrl;
-
-    const base64 = parsedResult.screenshotBase64?.trim();
-    if (base64 && /^[A-Za-z0-9+/]+={0,2}$/.test(base64)) {
-      return `data:image/png;base64,${base64}`;
-    }
-
-    return null;
-  });
+  const browserScreenshotSource = $derived(
+    parsedResult?.type === 'browser' ? resolveBrowserScreenshotSource(parsedResult) : null,
+  );
   let failedBrowserScreenshotSource = $state<string | null>(null);
 
   // PERF: Classify tool - memoized with $derived
