@@ -5,6 +5,11 @@ import DeferredThemeRealSurfaceHost from './DeferredThemeRealSurfaceHost.svelte'
 
 test.describe.configure({ mode: 'serial' });
 test.setTimeout(60_000);
+test.afterEach(async ({ page }) => {
+  await page.locator('#root').evaluate(async (root) => {
+    if (root.childElementCount > 0) await window.playwrightUnmount(root);
+  });
+});
 
 const artifactDirectory =
   process.env.FOUNDATION_ARTIFACT_DIR ?? path.join('test-results', 'deferred-theme-real-surfaces');

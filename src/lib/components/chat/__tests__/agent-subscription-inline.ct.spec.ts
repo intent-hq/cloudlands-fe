@@ -3,6 +3,12 @@ import AgentSubscriptionInlineHost from './AgentSubscriptionInlineHost.svelte';
 
 const toolKinds = ['file', 'terminal', 'tool'] as const;
 
+test.afterEach(async ({ page }) => {
+  await page.locator('#root').evaluate(async (root) => {
+    if (root.childElementCount > 0) await window.playwrightUnmount(root);
+  });
+});
+
 async function measure(component: Locator, page: Page) {
   await expect(component.getByTestId('agent-card-preview')).toBeVisible();
   await expect(component.getByTestId('agent-card-trailing-slot').locator('[title]')).toHaveCount(1);
