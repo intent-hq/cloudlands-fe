@@ -1,10 +1,20 @@
 import { expect, test } from '@playwright/experimental-ct-svelte';
+import type { Locator } from '@playwright/test';
 import type { PanelTabType } from '$store/renderer/slices/panel-layout/panel-layout-types';
 import { SHORTCUTS, formatShortcut } from '$lib/utils/shortcuts';
 import PanelHeaderActionsHost from './mocks/PanelHeaderActionsHost.svelte';
 
 const panelTypes: PanelTabType[] = ['agent', 'note', 'browser', 'terminal', 'changes'];
 const stackCounts = [1, 2, 3, 4, 5] as const;
+
+async function waitForMenuFocusReady(menu: Locator) {
+  await menu.evaluate(async (element) => {
+    await Promise.allSettled(
+      element.getAnimations({ subtree: true }).map((animation) => animation.finished),
+    );
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+  });
+}
 
 for (const [index, panelType] of panelTypes.entries()) {
   test(`keeps the ${panelType} panel menu portalled and operable at narrow 200% zoom`, async ({
@@ -208,7 +218,19 @@ for (const stackCount of stackCounts) {
       await expect(menu.locator('[data-pane-stack-item]')).toHaveCount(stackCount);
       const item = menu.locator(`[data-pane-stack-item="note-tab-${index}"]`);
       if (index % 2 === 0) {
-        await item.press('Enter');
+        await waitForMenuFocusReady(menu);
+        const initialKeyboardItem = menu.locator(
+          index === 2 ? '[data-pane-stack-open-below]' : '[data-pane-stack-open-above]',
+        );
+        await expect(initialKeyboardItem).toBeFocused();
+        await page.keyboard.press('End');
+        await expect(menu.locator(`[data-pane-stack-item="note-tab-${stackCount}"]`)).toBeFocused();
+        for (let step = stackCount - 1; step >= index; step -= 1) {
+          await page.keyboard.press('ArrowUp');
+          await expect(menu.locator(`[data-pane-stack-item="note-tab-${step}"]`)).toBeFocused();
+        }
+        await expect(item).toBeFocused();
+        await page.keyboard.press('Enter');
       } else {
         await item.click();
       }

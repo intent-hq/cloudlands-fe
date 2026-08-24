@@ -10,6 +10,22 @@ async function addColumn(component: Locator, count: number) {
   await expect(component.locator('[data-panel-id]')).toHaveCount(count);
 }
 
+function devicePixelOverflow(
+  right: number,
+  visibleRight: number,
+  edgeAllowance: number,
+  devicePixelRatio: number,
+) {
+  return Math.max(
+    0,
+    Math.round(right * devicePixelRatio) -
+      Math.round((visibleRight + edgeAllowance) * devicePixelRatio),
+  );
+}
+
+// The measured viewport and panel endpoints can each round by one device pixel.
+const MAX_ENDPOINT_ROUNDING_PIXELS = 2;
+
 function measureFit(component: Locator) {
   return component.evaluate(() => {
     const inset = document.querySelector<HTMLElement>('[data-testid="panel-workspace-inset"]')!;
@@ -40,11 +56,21 @@ function measureFit(component: Locator) {
       renderedCanvasRight: renderedCanvasRect.right,
       visibleRight: insetRect.right - (Number.parseFloat(styles.paddingRight) || 0),
       rightmostRight: rightmostRect.right,
+      devicePixelRatio: window.devicePixelRatio,
       panelWidths: panels.map((panel) => panel.getBoundingClientRect().width),
       focusedPanelId: panels.find((panel) => panel.dataset.focused === 'true')?.dataset.panelId,
       rightmostPanelId: panels.at(-1)?.dataset.panelId,
     };
   });
+}
+
+type FitMeasurement = Awaited<ReturnType<typeof measureFit>>;
+
+function maxDevicePixelOverflow(fit: FitMeasurement, edgeAllowance: number) {
+  return Math.max(
+    devicePixelOverflow(fit.canvasRight, fit.visibleRight, edgeAllowance, fit.devicePixelRatio),
+    devicePixelOverflow(fit.rightmostRight, fit.visibleRight, edgeAllowance, fit.devicePixelRatio),
+  );
 }
 
 for (const viewportWidth of [640, 1200]) {
@@ -57,7 +83,7 @@ for (const viewportWidth of [640, 1200]) {
       const component = await mount(PanelStructuralColumnFitHarness, {
         props: { viewportWidth, zoomFactor, persistedCanvasWidth: 1800 },
       });
-      const geometryTolerance = zoomFactor + 0.5;
+      const edgeAllowance = zoomFactor;
 
       for (const count of [2, 3, 4]) {
         await addColumn(component, count);
@@ -71,20 +97,15 @@ for (const viewportWidth of [640, 1200]) {
           .poll(async () => (await measureFit(component)).insetScrollWidth)
           .toBeLessThanOrEqual((await measureFit(component)).insetClientWidth);
         await expect
-          .poll(async () => {
-            const fit = await measureFit(component);
-            return Math.max(
-              fit.canvasRight - fit.visibleRight,
-              fit.rightmostRight - fit.visibleRight,
-            );
-          })
-          .toBeLessThanOrEqual(geometryTolerance);
+          .poll(async () => maxDevicePixelOverflow(await measureFit(component), edgeAllowance))
+          .toBeLessThanOrEqual(MAX_ENDPOINT_ROUNDING_PIXELS);
         const fit = await measureFit(component);
 
         expect(Math.abs(fit.handleCenter - fit.renderedCanvasRight)).toBeLessThanOrEqual(1);
         expect(fit.canvasWidth).toBeLessThanOrEqual(fit.availableWidth);
-        expect(fit.canvasRight).toBeLessThanOrEqual(fit.visibleRight + geometryTolerance);
-        expect(fit.rightmostRight).toBeLessThanOrEqual(fit.visibleRight + geometryTolerance);
+        expect(maxDevicePixelOverflow(fit, edgeAllowance)).toBeLessThanOrEqual(
+          MAX_ENDPOINT_ROUNDING_PIXELS,
+        );
         expect(Math.max(...fit.panelWidths) - Math.min(...fit.panelWidths)).toBeLessThanOrEqual(
           0.5,
         );
