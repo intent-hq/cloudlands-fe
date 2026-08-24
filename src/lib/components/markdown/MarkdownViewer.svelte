@@ -9,6 +9,7 @@
   import { TableRow } from '@tiptap/extension-table-row';
   import { TableHeader } from '@tiptap/extension-table-header';
   import { TableCell } from '@tiptap/extension-table-cell';
+  import Image from '@tiptap/extension-image';
   import { safeLowlight } from '$lib/utils/safe-lowlight';
   import { logger } from '$lib/utils/client-logger';
   import { processMarkdownToHTML } from '$lib/utils/markdown-processor';
@@ -16,6 +17,7 @@
   import { TasksBlock } from '$lib/components/tiptap/TasksBlock';
   import { handleLink } from '$features/navigation/link-handler';
   import { getWorkspaceRouteContext } from '$lib/utils/workspace-route-context';
+  import ImageLightbox from '$lib/components/ui/ImageLightbox.svelte';
 
   import {
     openWorkspaceFile,
@@ -111,6 +113,9 @@
   let editor: Editor | null = null;
   let processedContent = $state('');
   let lastProcessedContent = '';
+  // The rendered HTML also depends on workspaceId (short-form intent://local/file/
+  // image links resolve against it), so it participates in the memoization guard
+  let lastProcessedWorkspaceId: string | undefined;
 
   // PERF: Track streaming state to avoid expensive TipTap updates during streaming
   let isCurrentlyStreaming = false;
@@ -125,13 +130,14 @@
   // Process markdown to HTML (full processing with TipTap)
   async function updateContentFull(markdown: string) {
     // Skip if content hasn't actually changed
-    if (markdown === lastProcessedContent) {
+    if (markdown === lastProcessedContent && workspaceId === lastProcessedWorkspaceId) {
       return;
     }
 
     if (!markdown) {
       processedContent = '';
       lastProcessedContent = '';
+      lastProcessedWorkspaceId = workspaceId;
       return;
     }
 
@@ -141,9 +147,11 @@
         skipIfHTML: false,
         preserveAnchors: true,
         taskBlockRenderMode,
+        workspaceId,
       });
       processedContent = html;
       lastProcessedContent = markdown;
+      lastProcessedWorkspaceId = workspaceId;
 
       // Update editor content if it exists
       if (editor && !editor.isDestroyed) {
@@ -161,18 +169,20 @@
       );
       processedContent = `<p>${escaped}</p>`;
       lastProcessedContent = markdown;
+      lastProcessedWorkspaceId = workspaceId;
     }
   }
 
   // PERF: Lightweight streaming update - uses innerHTML directly instead of TipTap
   async function updateContentStreaming(markdown: string) {
     // Skip if content hasn't actually changed
-    if (markdown === lastProcessedContent) {
+    if (markdown === lastProcessedContent && workspaceId === lastProcessedWorkspaceId) {
       return;
     }
 
     if (!markdown) {
       lastProcessedContent = '';
+      lastProcessedWorkspaceId = workspaceId;
       if (streamingContentElement) {
         streamingContentElement.innerHTML = '';
       }
@@ -185,8 +195,10 @@
         skipIfHTML: false,
         preserveAnchors: true,
         taskBlockRenderMode,
+        workspaceId,
       });
       lastProcessedContent = markdown;
+      lastProcessedWorkspaceId = workspaceId;
       processedContent = html;
 
       // PERF: During streaming, update innerHTML directly instead of TipTap's setContent
@@ -208,6 +220,7 @@
         streamingContentElement.innerHTML = `<p>${escaped}</p>`;
       }
       lastProcessedContent = markdown;
+      lastProcessedWorkspaceId = workspaceId;
     }
   }
 
@@ -264,6 +277,12 @@
     }
   });
 
+  // Lightbox state for inline workspace-file images
+  let lightboxOpen = $state(false);
+  let lightboxImageUrl = $state('');
+  let lightboxImageAlt = $state<string | undefined>(undefined);
+  let lightboxOpenerElement = $state<HTMLElement | null>(null);
+
   // PERF: Single reusable link click handler - shared between TipTap and static content
   // Routes all link clicks through the unified link handler for consistent behavior:
   // - Click → embedded browser panel (for http/https)
@@ -272,6 +291,22 @@
   function handleLinkClick(event: MouseEvent): void {
     const target = event.target as HTMLElement;
     const anchor = target.closest('a');
+
+    // Inline workspace-file images open in the lightbox (unless wrapped in a
+    // link, in which case the link wins)
+    if (!anchor && target instanceof HTMLImageElement) {
+      const src = target.getAttribute('src') || '';
+      if (src.startsWith('workspace-file://')) {
+        event.preventDefault();
+        event.stopPropagation();
+        event.stopImmediatePropagation();
+        lightboxImageUrl = src;
+        lightboxImageAlt = target.getAttribute('alt') || undefined;
+        lightboxOpenerElement = target;
+        lightboxOpen = true;
+        return;
+      }
+    }
 
     if (anchor?.href) {
       event.preventDefault();
@@ -415,6 +450,15 @@
             class: 'note-table-cell',
           },
         }),
+        Image.configure({
+          // Inline so a link mark can wrap the image — keeps link-wrapped
+          // images following the link (matching the static/streaming paths)
+          // instead of TipTap dropping the anchor on parse
+          inline: true,
+          HTMLAttributes: {
+            class: 'markdown-image',
+          },
+        }),
         TasksBlock,
       ],
       // Disable the buggy 'delete' core extension that emits delete events.
@@ -552,6 +596,15 @@
 {:else}
   <!-- Complex content - needs TipTap for interactivity (task lists, etc.) -->
   <div class="markdown-viewer {className}" bind:this={editorElement}></div>
+{/if}
+
+{#if lightboxImageUrl}
+  <ImageLightbox
+    bind:open={lightboxOpen}
+    imageUrl={lightboxImageUrl}
+    imageName={lightboxImageAlt}
+    openerElement={lightboxOpenerElement}
+  />
 {/if}
 
 <style>
@@ -961,6 +1014,11 @@
     max-width: 100%;
     height: auto;
     border-radius: 0.375rem;
+  }
+
+  /* Inline workspace file images open in a lightbox on click */
+  .markdown-viewer :global(img[src^='workspace-file://']) {
+    cursor: zoom-in;
   }
 
   /* Task Block - Skeleton loader styled like final checkbox state */
