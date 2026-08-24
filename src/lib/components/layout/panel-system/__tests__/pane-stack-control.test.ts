@@ -30,6 +30,24 @@ afterEach(() => {
 });
 
 describe('pane stack control', () => {
+  it('keeps stacked agent metadata out of the agent panel header', () => {
+    const { container } = render(PaneStackControlHost, {
+      props: { stackCount: 2, initialActiveTabId: 'agent-pane' },
+    });
+    const header = container.querySelector('[data-panel-tabless-header]')!;
+
+    expect(header.querySelectorAll('[data-testid="panel-header-agent-avatar-slot"]')).toHaveLength(
+      1,
+    );
+    expect(header.querySelector('[data-panel-agent-header-identity]')).not.toBeNull();
+    expect(header.textContent).toContain('Build agent');
+    expect(header.textContent).not.toContain('Release plan');
+    expect(header.querySelector('[data-pane-stack]')).toBeNull();
+    expect(header.querySelector('[data-pane-stack-layer]')).toBeNull();
+    expect(header.querySelector('[data-pane-stack-position]')).toBeNull();
+    expect(header.querySelector('[data-pane-stack-overflow-trigger]')).toBeNull();
+  });
+
   it('shows one flat active pane and one complete selector', () => {
     const { container } = render(PaneStackControlHost);
     const stack = container.querySelector('[data-pane-stack]')!;

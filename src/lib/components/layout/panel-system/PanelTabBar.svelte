@@ -1802,37 +1802,29 @@
       ondragend={handlePaneDragEnd}
       data-panel-tabless-header
       data-panel-content-header
-      role="group"
-      aria-label={m.layout_panelTabBar_paneStack_ariaLabel({ count: tabs.length })}
-      data-pane-stack
-      data-pane-stack-size={tabs.length}
+      role={activeTab.type === 'agent' ? undefined : 'group'}
+      aria-label={activeTab.type === 'agent'
+        ? undefined
+        : m.layout_panelTabBar_paneStack_ariaLabel({ count: tabs.length })}
+      data-pane-stack={activeTab.type === 'agent' ? undefined : ''}
+      data-pane-stack-size={activeTab.type === 'agent' ? undefined : tabs.length}
     >
-      <!-- Left: active identity and title only. -->
-      <div
-        class="pane-stack-control flex min-w-0 shrink items-center overflow-hidden"
-        data-panel-header-identity
-      >
+      {#if activeTab.type === 'agent'}
+        <!-- Agent headers show only the current icon and editable name. -->
         <div
-          class="pane-stack-active flex min-w-0 shrink items-center gap-2 overflow-hidden bg-card pl-1"
-          aria-label={m.layout_panelTabBar_activePane_ariaLabel({
-            title: activeTabTitle,
-            position: panePosition(activeTab.id),
-            count: tabs.length,
-          })}
-          aria-current="page"
-          data-pane-stack-active={activeTab.id}
+          class="flex min-w-0 shrink items-center gap-2 overflow-hidden bg-card pl-1"
           data-attention={attentionPaneIds.has(activeTab.id) ? '' : undefined}
+          data-panel-agent-header-identity
         >
           <span
             class="panel-header-leading-surface flex size-6 shrink-0 items-center justify-center self-center"
-            data-testid={activeTab.type === 'agent' ? 'panel-header-agent-avatar-slot' : undefined}
+            data-testid="panel-header-agent-avatar-slot"
             data-panel-header-leading-surface
           >
             {@render panelIdentity(activeTab)}
           </span>
-          <!-- Single content title; type/category is conveyed by the content itself. -->
           <div class="panel-header-title min-w-0 shrink" data-panel-header-title>
-            {#if isTabRenameable(activeTab) && onTabRename}
+            {#if onTabRename}
               <EditableName
                 value={activeTabTitle}
                 onSave={(newName) => handleTabRename(activeTab, newName)}
@@ -1852,32 +1844,82 @@
               </span>
             {/if}
           </div>
-
           {#if attentionPaneIds.has(activeTab.id)}
             <span class="size-1.5 shrink-0 rounded-full bg-primary" aria-hidden="true"></span>
           {/if}
-          <!-- Path (for file-based tabs) -->
-          {#if activeTabPath}
-            {@const lastSlash = activeTabPath.lastIndexOf('/')}
-            {@const dirPath = lastSlash > 0 ? activeTabPath.substring(0, lastSlash) : null}
-            {#if dirPath}
-              <span class="text-xs truncate {isFocused ? 'text-subtle' : 'text-ghost'}">
-                {dirPath}
-              </span>
-            {/if}
-          {/if}
-
-          <!-- Commit hash (for diff tabs with committed changes) -->
-          {#if activeTab.type === 'diff'}
-            {@const change = activeTab.data?.change as { commitHash?: string } | undefined}
-            {#if change?.commitHash}
-              <span class="text-xs font-mono {isFocused ? 'text-subtle' : 'text-ghost'}">
-                @ {change.commitHash.substring(0, 7)}
-              </span>
-            {/if}
-          {/if}
         </div>
-      </div>
+      {:else}
+        <!-- Non-agent panes retain the current flat identity and complete selector. -->
+        <div
+          class="pane-stack-control flex min-w-0 shrink items-center overflow-hidden"
+          data-panel-header-identity
+        >
+          <div
+            class="pane-stack-active flex min-w-0 shrink items-center gap-2 overflow-hidden bg-card pl-1"
+            aria-label={m.layout_panelTabBar_activePane_ariaLabel({
+              title: activeTabTitle,
+              position: panePosition(activeTab.id),
+              count: tabs.length,
+            })}
+            aria-current="page"
+            data-pane-stack-active={activeTab.id}
+            data-attention={attentionPaneIds.has(activeTab.id) ? '' : undefined}
+          >
+            <span
+              class="panel-header-leading-surface flex size-6 shrink-0 items-center justify-center self-center"
+              data-panel-header-leading-surface
+            >
+              {@render panelIdentity(activeTab)}
+            </span>
+            <!-- Single content title; type/category is conveyed by the content itself. -->
+            <div class="panel-header-title min-w-0 shrink" data-panel-header-title>
+              {#if isTabRenameable(activeTab) && onTabRename}
+                <EditableName
+                  value={activeTabTitle}
+                  onSave={(newName) => handleTabRename(activeTab, newName)}
+                  textClass="text-sm shrink font-medium {isFocused
+                    ? 'text-foreground'
+                    : 'text-subtle'}"
+                  title={m.ui_editableName_rename_tooltip()}
+                  maxWidth={240}
+                />
+              {:else}
+                <span
+                  class="block truncate text-sm font-medium {isFocused
+                    ? 'text-foreground'
+                    : 'text-subtle'}"
+                >
+                  {activeTabTitle}
+                </span>
+              {/if}
+            </div>
+
+            {#if attentionPaneIds.has(activeTab.id)}
+              <span class="size-1.5 shrink-0 rounded-full bg-primary" aria-hidden="true"></span>
+            {/if}
+            <!-- Path (for file-based tabs) -->
+            {#if activeTabPath}
+              {@const lastSlash = activeTabPath.lastIndexOf('/')}
+              {@const dirPath = lastSlash > 0 ? activeTabPath.substring(0, lastSlash) : null}
+              {#if dirPath}
+                <span class="text-xs truncate {isFocused ? 'text-subtle' : 'text-ghost'}">
+                  {dirPath}
+                </span>
+              {/if}
+            {/if}
+
+            <!-- Commit hash (for diff tabs with committed changes) -->
+            {#if activeTab.type === 'diff'}
+              {@const change = activeTab.data?.change as { commitHash?: string } | undefined}
+              {#if change?.commitHash}
+                <span class="text-xs font-mono {isFocused ? 'text-subtle' : 'text-ghost'}">
+                  @ {change.commitHash.substring(0, 7)}
+                </span>
+              {/if}
+            {/if}
+          </div>
+        </div>
+      {/if}
 
       <div class="min-w-0 flex-1" aria-hidden="true"></div>
 
@@ -1890,7 +1932,7 @@
         {/if}
         {@render panelActionsDropdown()}
         {@render panelControlsDivider()}
-        {#if tabs.length > 1}
+        {#if tabs.length > 1 && activeTab.type !== 'agent'}
           {@render paneStackSelector()}
         {/if}
         {@render addPanelColumnButton()}
