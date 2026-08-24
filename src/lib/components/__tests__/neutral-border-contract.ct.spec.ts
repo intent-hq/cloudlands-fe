@@ -6,17 +6,25 @@ type Edge = 'top' | 'right';
 
 const probes = [
   ['workspace', '[data-workspace-surface-placeholder] > div:first-child', 'right'],
-  ['panel', '.panel', 'top'],
   ['subscription', '[data-testid="event-subscriptions-card"]', 'top'],
-  ['chat', '[data-testid="pinned-user-prompt"]', 'top'],
   ['launcher', '[data-sidebar-launcher="browser"]', 'top'],
   ['popover', '[data-slot="menu-content"]', 'top'],
   ['dialog', '[data-slot="dialog-content"]', 'top'],
   ['form', '[data-slot="input"]', 'top'],
 ] as const satisfies ReadonlyArray<readonly [string, string, Edge]>;
 
+const transparentBorderProbes = [['panel', '.panel', 'top']] as const satisfies ReadonlyArray<
+  readonly [string, string, Edge]
+>;
+
+const borderlessProbes = [
+  ['chat', '[data-testid="pinned-user-prompt"]', 'top'],
+] as const satisfies ReadonlyArray<readonly [string, string, Edge]>;
+
 const sampledSelectors = [
   ...probes.map(([, selector]) => selector),
+  ...transparentBorderProbes.map(([, selector]) => selector),
+  ...borderlessProbes.map(([, selector]) => selector),
   '[data-testid="panel-border-fixture"] [data-loading-panel] > div:first-child',
   '[data-testid="panel-border-fixture"] [data-loading-panel] > div:last-child',
   '[data-testid="event-subscriptions-outer-header"]',
@@ -86,6 +94,29 @@ test('production neutral borders share color and single-edge geometry', async ({
       expect(styles.every(({ width, ownerCount }) => width === '1px' && ownerCount === 1)).toBe(
         true,
       );
+
+      const transparentBorderStyles = await Promise.all(
+        transparentBorderProbes.map(async ([name, selector, edge]) => ({
+          name,
+          ...(await border(page.locator(selector), edge)),
+        })),
+      );
+      expect(
+        transparentBorderStyles.every(
+          ({ color, width, ownerCount }) =>
+            color === 'rgba(0, 0, 0, 0)' && width === '1px' && ownerCount === 1,
+        ),
+      ).toBe(true);
+
+      const borderlessStyles = await Promise.all(
+        borderlessProbes.map(async ([name, selector, edge]) => ({
+          name,
+          ...(await border(page.locator(selector), edge)),
+        })),
+      );
+      expect(
+        borderlessStyles.every(({ width, ownerCount }) => width === '0px' && ownerCount === 0),
+      ).toBe(true);
 
       const seams = await Promise.all([
         seam(

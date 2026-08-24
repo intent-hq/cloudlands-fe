@@ -57,6 +57,7 @@
   import { invoke } from '$lib/electron-bridge';
   import { selectIsWorkspaceHostLocal } from '$store/renderer/slices/workspace/workspace-selectors';
   import OpenPanelIndicator from '$lib/components/workspace/sidebar/OpenPanelIndicator.svelte';
+  import { isCmdClickModifier } from '$shared/utils/link-helpers';
 
   interface Props {
     agentId: string;
@@ -258,7 +259,11 @@
   // Handle keyboard events on the card button
   function handleCardKeydown(e: KeyboardEvent) {
     if (readOnly) return;
-    if (onclick && (e.key === 'Enter' || e.key === ' ')) {
+    if (e.key === 'Enter' && isCmdClickModifier({ event: e })) {
+      e.preventDefault();
+      e.stopPropagation();
+      handleClick(e);
+    } else if (onclick && (e.key === 'Enter' || e.key === ' ')) {
       e.preventDefault();
       e.stopPropagation();
       handleClick(e);
@@ -548,7 +553,7 @@
       onclick(event);
     } else {
       const sourcePanelId = findSourcePanelId(event.target);
-      const openInAdjacentPanel = event.metaKey || event.ctrlKey;
+      const openInAdjacentPanel = isCmdClickModifier({ event });
       const wsId = $agent$?.workspaceId
         ? String($agent$.workspaceId)
         : workspace?.id

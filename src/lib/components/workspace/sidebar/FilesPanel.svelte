@@ -78,10 +78,10 @@
   interface Props {
     workspaceId: string;
     selectedFile?: string | null;
-    onOpenFile?: (filePath: string) => void;
+    onOpenFile?: (filePath: string, event?: MouseEvent | KeyboardEvent) => void;
     onCreateFile?: (folderPath: string, fileName?: string) => void | Promise<void>;
     onFileRenamed?: (oldPath: string, newPath: string) => void;
-    onSelectAgent?: (agentId: string) => void;
+    onSelectAgent?: (agentId: string, event?: MouseEvent | KeyboardEvent) => void;
     showOnlyChanged?: boolean;
     searchQuery?: string;
     class?: string;

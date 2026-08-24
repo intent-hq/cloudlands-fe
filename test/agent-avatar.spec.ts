@@ -541,6 +541,71 @@ test('keeps every SVG path and circle color identical across states and color mo
   }
 });
 
+test('computes butt caps and miter joins across avatar modes, widths, and zoom levels', async ({
+  page,
+}) => {
+  await mountAvatarHost(page);
+  for (const mode of ['light', 'dark', 'system-light', 'system-dark', 'forced-colors'] as const) {
+    await page.emulateMedia({
+      colorScheme: mode === 'dark' || mode === 'system-dark' ? 'dark' : 'light',
+      forcedColors: mode === 'forced-colors' ? 'active' : 'none',
+      reducedMotion: mode === 'system-dark' ? 'reduce' : 'no-preference',
+    });
+    await page.evaluate((selectedMode) => {
+      document.documentElement.classList.toggle('light', selectedMode === 'light');
+      document.documentElement.classList.toggle('dark', selectedMode === 'dark');
+    }, mode);
+    for (const width of [320, 1280]) {
+      for (const zoom of [1, 2]) {
+        await page.locator('[data-agent-avatar-host]').evaluate(
+          (node, geometry) => {
+            const host = node as HTMLElement;
+            host.style.width = `${geometry.width}px`;
+            host.style.zoom = String(geometry.zoom);
+          },
+          { width, zoom },
+        );
+        const geometry = await page.locator('[data-agent-avatar]').evaluateAll((avatars) =>
+          avatars.flatMap((avatar) =>
+            Array.from(avatar.querySelectorAll('path, rect, circle')).map((shape) => {
+              const style = getComputedStyle(shape);
+              return { linecap: style.strokeLinecap, linejoin: style.strokeLinejoin };
+            }),
+          ),
+        );
+        expect(geometry.length).toBeGreaterThan(0);
+        expect(new Set(geometry.map(({ linecap }) => linecap))).toEqual(new Set(['butt']));
+        expect(new Set(geometry.map(({ linejoin }) => linejoin))).toEqual(new Set(['miter']));
+      }
+    }
+  }
+});
+
+test('keeps Settings Specialists at named standard geometry at 100% and 200%', async ({ page }) => {
+  await mountAvatarHost(page);
+  const settings = page.locator('[data-settings-specialists]');
+  const rows = settings.getByRole('button').filter({ has: page.locator('[data-agent-avatar]') });
+  expect(await rows.count()).toBeGreaterThan(0);
+  for (const zoom of [1, 2]) {
+    await settings.evaluate((node, selectedZoom) => {
+      (node as HTMLElement).style.zoom = String(selectedZoom);
+    }, zoom);
+    for (const avatar of await settings.locator('[data-agent-avatar]').all()) {
+      await expect(avatar).toHaveAttribute('data-avatar-variant', 'standard');
+      const [box, style] = await Promise.all([
+        avatar.boundingBox(),
+        avatar.evaluate((node) => {
+          const computed = getComputedStyle(node);
+          return { padding: computed.paddingLeft, boxSizing: computed.boxSizing };
+        }),
+      ]);
+      expect(box?.width).toBeCloseTo(20 * zoom, 1);
+      expect(box?.height).toBeCloseTo(20 * zoom, 1);
+      expect(style).toEqual({ padding: '2px', boxSizing: 'border-box' });
+    }
+  }
+});
+
 test('matches each theme palette in the catalog at 20px and 200%', async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await mountAvatarHost(page);

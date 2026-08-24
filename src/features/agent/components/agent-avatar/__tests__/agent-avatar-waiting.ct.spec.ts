@@ -96,6 +96,11 @@ test('keeps waiting separate through a live same-node state transition', async (
     expect(colors.question).toBe(colors.permission);
     expect(colors.question).toBe(colors.discussion);
     expect(colors.question).toBe(colors.blocker);
+    const semanticForeground = await systemColor(
+      page,
+      'color',
+      'hsl(var(--agent-avatar-foreground))',
+    );
 
     for (const state of ['waiting', 'running', 'completed'] as const) {
       await component.update({ props: { theme, state } });
@@ -105,10 +110,10 @@ test('keeps waiting separate through a live same-node state transition', async (
       await expect(reactive).toHaveAttribute('data-avatar-state', state);
       if (state === 'completed') {
         expect(await reactive.evaluate((node) => getComputedStyle(node).color)).not.toBe(
-          'rgb(8, 8, 8)',
+          semanticForeground,
         );
       } else {
-        await expect(reactive).toHaveCSS('color', 'rgb(8, 8, 8)');
+        await expect(reactive).toHaveCSS('color', semanticForeground);
       }
       await expect(reactive).toHaveCSS('opacity', '1');
     }

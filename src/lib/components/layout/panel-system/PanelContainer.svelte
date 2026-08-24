@@ -24,7 +24,7 @@
     resizeAdjacentPanels,
   } from './panel-resize';
   import { translatePanel } from './panel-reorder-animation';
-  import { getDraggedPanelId } from './panel-drag';
+  import { getDraggedPane } from './panel-drag';
   import { resize } from '$lib/components/layout/size-transition';
   import { cubicOut } from 'svelte/easing';
   import {
@@ -74,9 +74,8 @@
     onUpdateSizes?: (nodePath: number[], sizes: number[]) => void;
     /** Commit a fixed-width proportional root-divider resize. */
     onResizeRootDivider?: (
-      panelIndex: number,
-      requestedDelta: number,
       previousPanelWidths: readonly number[],
+      finalPanelWidths: readonly number[],
     ) => void;
     /** Handler for dropping a tab to create a split */
     onTabDropToSplit?: (
@@ -92,16 +91,13 @@
       fromPanelId: string,
       insertIndex?: number,
     ) => void;
+    /** Handler for moving the active pane to an adjacent column. */
+    onMoveActivePane?: (panelId: string, direction: 'next' | 'prev') => void;
     /** Handler for reordering a whole panel relative to another panel */
     onPanelMove?: (
       draggedPanelId: string,
       targetPanelId: string,
       position: 'before' | 'after' | 'above' | 'below',
-    ) => void;
-    onPanelMovePreview?: (
-      draggedPanelId: string,
-      targetPanelId: string,
-      position: 'before' | 'after' | 'above' | 'below' | null,
     ) => void;
     /** Handler for dropping a tab on a split handle (container-level insertion) */
     onTabDropToSplitHandle?: (
@@ -154,8 +150,8 @@
     onResizeRootDivider,
     onTabDropToSplit,
     onTabMoveToPanel,
+    onMoveActivePane,
     onPanelMove,
-    onPanelMovePreview,
     onTabDropToSplitHandle,
     onTabRename,
     onCreateAgent,
@@ -223,7 +219,7 @@
   );
 
   function resizePanelChild(nodeToResize: HTMLElement, params: Parameters<typeof resize>[1]) {
-    if (suppressLayoutMotion || getDraggedPanelId()) return { duration: 0 };
+    if (suppressLayoutMotion || getDraggedPane()) return { duration: 0 };
     return resize(nodeToResize, params);
   }
 
@@ -393,6 +389,23 @@
     });
   }
 
+  function measureRootResizeChildWidths(): number[] | null {
+    if (
+      node.type !== 'split' ||
+      !resizesRootDivider ||
+      !containerRef ||
+      rootResizeInlineScale <= 0
+    ) {
+      return null;
+    }
+    const widths = Array.from(
+      containerRef.querySelectorAll<HTMLElement>(':scope > .panel-split-child'),
+    ).map((element) => element.getBoundingClientRect().width / rootResizeInlineScale);
+    return widths.length === node.children.length && widths.every((width) => width > 0)
+      ? widths
+      : null;
+  }
+
   function handleResizeStart() {
     if (resizeCommitMotionFrame !== null) cancelAnimationFrame(resizeCommitMotionFrame);
     resizeCommitMotionFrame = null;
@@ -405,29 +418,23 @@
       resizesRootDivider && renderedContainerWidth > 0 && layoutContainerWidth > 0
         ? renderedContainerWidth / layoutContainerWidth
         : 1;
-    rootResizeStartChildWidths =
-      resizesRootDivider && containerRef
-        ? Array.from(containerRef.querySelectorAll<HTMLElement>(':scope > .panel-split-child')).map(
-            (el) => el.getBoundingClientRect().width / rootResizeInlineScale,
-          )
-        : null;
+    rootResizeStartChildWidths = measureRootResizeChildWidths();
     rootResizeNextChildWidths = rootResizeStartChildWidths ? [...rootResizeStartChildWidths] : null;
     rootResizeRequestedDelta = 0;
   }
 
-  function handleResizeEnd(panelIndex?: number) {
+  function handleResizeEnd() {
     const committedSizes = liveResizeSizes;
     const previousPanelWidths = rootResizeStartChildWidths;
-    const nextPanelWidths = rootResizeNextChildWidths;
+    const nextPanelWidths = measureRootResizeChildWidths() ?? rootResizeNextChildWidths;
     const wasRootResize = resizesRootDivider && previousPanelWidths !== null;
     suppressMotionThroughResizeCommit();
     if (
       wasRootResize &&
       nextPanelWidths !== null &&
-      panelIndex !== undefined &&
       nextPanelWidths.some((width, index) => width !== previousPanelWidths[index])
     ) {
-      onResizeRootDivider?.(panelIndex, rootResizeRequestedDelta, previousPanelWidths);
+      onResizeRootDivider?.(previousPanelWidths, nextPanelWidths);
     }
     liveResizeSizes = null;
     isResizing = false;
@@ -607,8 +614,8 @@
     }
   }
 
-  function handleCornerResizeEnd(handleIndex: number) {
-    handleResizeEnd(handleIndex);
+  function handleCornerResizeEnd(_handleIndex: number) {
+    handleResizeEnd();
   }
 </script>
 
@@ -622,8 +629,10 @@
         {workspaceId}
         {layoutId}
         {availableCanvasWidth}
+        canCreateColumn={panelOrder.length < 4}
         isRightmostPanel={panelOrder.at(-1) === node.panelId}
         isFocused={focusedPanelId === node.panelId}
+        showFocusBorder={panelOrder.length > 1 && zoomedPanelId === null}
         isZoomed={zoomedPanelId === node.panelId}
         onFocus={() => onFocusPanel?.(node.panelId)}
         onTabClick={(tabId) => onTabClick?.(node.panelId, tabId)}
@@ -639,16 +648,18 @@
           onTabDropToSplit?.(node.panelId, tabId, fromPanelId, zone)}
         onTabMoveToPanel={(tabId, fromPanelId, insertIndex?: number) =>
           onTabMoveToPanel?.(node.panelId, tabId, fromPanelId, insertIndex)}
-        onPanelMove={(draggedPanelId, position) =>
-          onPanelMove?.(draggedPanelId, node.panelId, position)}
+        onMovePaneLeft={onMoveActivePane && panelIndex > 0
+          ? () => onMoveActivePane(node.panelId, 'prev')
+          : undefined}
+        onMovePaneRight={onMoveActivePane && panelIndex >= 0 && panelIndex < panelOrder.length - 1
+          ? () => onMoveActivePane(node.panelId, 'next')
+          : undefined}
         onMoveLeft={panelIndex > 0
           ? () => onPanelMove?.(node.panelId, panelOrder[panelIndex - 1], 'before')
           : undefined}
         onMoveRight={panelIndex >= 0 && panelIndex < panelOrder.length - 1
           ? () => onPanelMove?.(node.panelId, panelOrder[panelIndex + 1], 'after')
           : undefined}
-        onPanelMovePreview={(draggedPanelId, targetPanelId, position) =>
-          onPanelMovePreview?.(draggedPanelId, targetPanelId, position)}
         {onTabRename}
         {onCreateAgent}
         {onCreateAgentWithSpecialist}
@@ -656,8 +667,12 @@
         {onCreateTerminal}
         {onOpenBrowser}
         {contained}
-        onSplitHorizontal={() => onSplitPanel?.(node.panelId, 'horizontal')}
+        onSplitHorizontal={panelOrder.length < 4
+          ? () => onSplitPanel?.(node.panelId, 'horizontal')
+          : undefined}
       />
+    {:else}
+      <div class="h-full w-full bg-background text-foreground" data-missing-panel-surface></div>
     {/if}
   </div>
 {:else if node.type === 'split'}
@@ -719,8 +734,8 @@
             {onResizeRootDivider}
             {onTabDropToSplit}
             {onTabMoveToPanel}
+            {onMoveActivePane}
             {onPanelMove}
-            {onPanelMovePreview}
             {onTabDropToSplitHandle}
             {onTabRename}
             {onCreateAgent}
@@ -738,7 +753,7 @@
             immediateResize={resizesRootDivider}
             onResizeStart={handleResizeStart}
             onResize={(delta) => handleResize(item.index, delta)}
-            onResizeEnd={() => handleResizeEnd(item.index)}
+            onResizeEnd={handleResizeEnd}
             onTabDropToHandle={onTabDropToSplitHandle}
           />
           <!-- Corner handles at intersection points -->

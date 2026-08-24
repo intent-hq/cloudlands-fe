@@ -10,6 +10,7 @@ import { createLogger } from '$lib/utils/client-logger';
 import { isBinaryExtension } from '$shared/binary-file-extensions';
 import { m } from '$shared/paraglide/messages.js';
 import {
+  openTab,
   openTabInAdjacentOrSplit,
   openTabInRightmostColumnRequested,
 } from '../../panel-layout/panel-layout-slice';
@@ -37,9 +38,13 @@ function* openWorkspaceTab(
   adjacent: boolean,
   sourcePanelId?: string,
 ): SagaGenerator<void> {
+  if (adjacent) {
+    yield* put(openTabInAdjacentOrSplit(workspaceId, tab, sourcePanelId, { force: true }));
+    return;
+  }
   yield* put(
-    adjacent
-      ? openTabInAdjacentOrSplit(workspaceId, tab, sourcePanelId, { force: true })
+    sourcePanelId
+      ? openTab(workspaceId, tab, sourcePanelId, undefined, true)
       : openTabInRightmostColumnRequested(workspaceId, tab, { force: true }),
   );
 }

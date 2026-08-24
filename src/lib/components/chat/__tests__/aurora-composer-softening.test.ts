@@ -22,9 +22,17 @@ describe('composer Aurora softening layer', () => {
     expect(canvas).toBeGreaterThan(host);
     expect(softening).toBeGreaterThan(canvas);
     expect(prompt).toBeGreaterThan(softening);
+    expect(panel).toContain('class="composer-prompt-layer relative z-10 w-full"');
     expect(panel).toContain(
-      'class="composer-prompt-layer relative z-10 w-full border-t border-border"',
+      'class="composer-aurora-host pointer-events-none absolute -left-4 -right-2 -bottom-4 z-0 overflow-hidden"',
     );
+    expect(panel).toContain(
+      'class="composer-aurora-host absolute inset-x-0 bottom-0 z-0 overflow-hidden rounded-lg"',
+    );
+    expect(panel).toContain('class="pointer-events-none absolute inset-y-0 left-0 z-0"');
+    expect(panel).toContain('style:right="{scrollbarGutterWidth}px"');
+    expect(panel).toContain('class:chief-composer={isChiefWorkspace}');
+    expect(panel).not.toContain('class:pb-3={!hasVisibleTranscriptUtility}');
     expect(softeningLayer).toContain('aria-hidden="true"');
     expect(softeningLayer).toContain('aurora-softening-layer pointer-events-none');
   });

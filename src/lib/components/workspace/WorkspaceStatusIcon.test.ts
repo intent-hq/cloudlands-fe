@@ -19,6 +19,9 @@ describe('WorkspaceStatusIcon', () => {
     expect(indicator.className).toContain(color);
     expect(indicator.className).toContain('forced-colors:text-[CanvasText]');
     expect(indicator.getAttribute('style')).toContain('width: 12px');
+    const dot = view.container.querySelector('[data-workspace-status-dot]');
+    expect(dot).not.toBeNull();
+    expect(dot?.classList.contains('workspace-status-dot')).toBe(true);
     expect(view.container.querySelectorAll('[data-workspace-status-dot]')).toHaveLength(1);
     expect(view.container.querySelector('svg')).toBeNull();
     expect(view.container.querySelectorAll('[data-workspace-status]')).toHaveLength(1);

@@ -2,6 +2,7 @@
   /* eslint-disable max-lines -- splitting this workspace sidebar is outside launcher-only scope */
   import { navigateAfterWorkspaceRemoval } from '$lib/utils/workspace-navigation';
   import { handleLink } from '$features/navigation/link-handler';
+  import { isCmdClickModifier } from '$shared/utils/link-helpers';
   import { WorkspaceId } from '$shared/types/branded-ids';
   import type { AgentSession } from '$shared/types';
   import './multi-select-sidebar-transitions.css';
@@ -508,42 +509,62 @@
     });
   }
 
-  function handleOpenAgentInPanel(agentId: string) {
+  type PaneOpenEvent = MouseEvent | KeyboardEvent;
+
+  function isAdjacentOpen(event?: PaneOpenEvent): boolean {
+    return event ? isCmdClickModifier({ event }) : false;
+  }
+
+  function handleOpenAgentInPanel(agentId: string, event?: PaneOpenEvent) {
     if (!$allWorkspaceAgents.some((agent) => agent.id === agentId)) return;
     const sourcePanelId = selectFocusedPanelId.select(appStore.state, panelLayoutId) ?? undefined;
+    const openInAdjacentPanel = isAdjacentOpen(event);
     appStore.dispatch(
       openAgentTabRequested(workspaceId, {
         agentId,
         sourcePanelId,
         panelLayoutId,
+        ...(openInAdjacentPanel ? { openInAdjacentPanel: true } : {}),
       }),
     );
   }
 
-  function handleOpenNoteInPanel(noteId: string) {
+  function handleOpenNoteInPanel(noteId: string, event?: PaneOpenEvent) {
     const note = $notes.find((n) => n.id === noteId);
     const title = note?.title || m.workspace_addContext_note_label();
-    panelLayoutManager.openUserTab({
+    const tab = {
       type: 'note',
       title,
       closable: true,
       noteId,
       workspaceId,
-    });
+    } as const;
+    if (isAdjacentOpen(event)) {
+      const sourcePanelId = selectFocusedPanelId.select(appStore.state, panelLayoutId) ?? undefined;
+      panelLayoutManager.openTabInAdjacentOrSplit(tab, sourcePanelId, { force: true });
+    } else {
+      panelLayoutManager.openUserTab(tab);
+    }
 
     // Mark note as read when opened to clear unread indicator
     appStore.dispatch(markNoteRead(workspaceId, noteId));
   }
 
-  function handleOpenFileInPanel(filePath: string) {
+  function handleOpenFileInPanel(filePath: string, event?: PaneOpenEvent) {
     const fileName = filePath.split('/').pop() || filePath;
-    panelLayoutManager.openTab({
+    const tab = {
       type: 'file',
       title: fileName,
       closable: true,
       filePath,
       workspaceId,
-    });
+    } as const;
+    if (isAdjacentOpen(event)) {
+      const sourcePanelId = selectFocusedPanelId.select(appStore.state, panelLayoutId) ?? undefined;
+      panelLayoutManager.openTabInAdjacentOrSplit(tab, sourcePanelId, { force: true });
+    } else {
+      panelLayoutManager.openTab(tab);
+    }
   }
 
   function handleOpenCodeReviewInPanel() {
@@ -840,7 +861,7 @@
         onpointerdown={(event) => event.stopPropagation()}
         onclick={(event) => {
           event.stopPropagation();
-          handleOpenAgentInPanel(agent.id);
+          handleOpenAgentInPanel(agent.id, event);
         }}
       >
         <AgentAvatarWithState
@@ -1043,7 +1064,8 @@
                             {workspaceId}
                             openPanelTabs={$allPanelTabs$}
                             activePanelTab={$activeTab$}
-                            onSelect={({ agentId }) => handleOpenAgentInPanel(agentId)}
+                            onSelect={({ agentId, event }) =>
+                              handleOpenAgentInPanel(agentId, event)}
                           />
                         </div>
                       {:else if tabId === 'context'}
@@ -1073,11 +1095,16 @@
                               activeFilePath={effectiveActiveFilePath}
                               activeFileStaged={effectiveActiveFileStaged}
                               isAllChangesViewActive={effectiveIsAllChangesViewActive}
-                              onOpenChange={(change) => {
+                              onOpenChange={(change, event) => {
+                                const sourcePanelId =
+                                  selectFocusedPanelId.select(appStore.state, panelLayoutId) ??
+                                  undefined;
                                 appStore.dispatch(
                                   openWorkspaceDiff(workspaceId, change as never, {
                                     filePath: change.relativePath || change.file,
                                     changeId: change.id,
+                                    openInAdjacentPanel: isAdjacentOpen(event),
+                                    sourcePanelId,
                                   }),
                                 );
                               }}
@@ -1247,7 +1274,7 @@
                           <Button
                             variant="plain"
                             class={LAUNCHER_ICON_BUTTON_CLASS}
-                            onclick={() => handleOpenNoteInPanel(note.id as string)}
+                            onclick={(event) => handleOpenNoteInPanel(note.id as string, event)}
                             aria-label={note.title || m.chat_mentions_untitledNote_label()}
                             data-sidebar-context={note.id}
                             data-launcher-leading-item={index === 0 ? 'true' : undefined}

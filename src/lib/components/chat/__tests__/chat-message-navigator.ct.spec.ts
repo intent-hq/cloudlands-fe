@@ -177,12 +177,13 @@ test.describe('chat message navigator production path', () => {
         .poll(() => page.evaluate(() => document.documentElement.className))
         .toContain(state.theme);
       const header = component.locator('[data-panel-content-header]');
+      const headerContentActions = header.locator('[data-panel-header-content-actions]');
       const headerActions = header.locator('[data-panel-header-actions]');
       const title = header.locator('[data-panel-header-title]');
       const titleText = header.getByText('Navigation agent', { exact: true });
-      const listButton = headerActions.getByTestId('chat-message-navigator-trigger');
-      const downButton = headerActions.getByTestId('chat-scroll-to-bottom-button');
-      const columnButton = headerActions.locator('[data-panel-column-count-trigger]');
+      const listButton = headerContentActions.getByTestId('chat-message-navigator-trigger');
+      const downButton = headerContentActions.getByTestId('chat-scroll-to-bottom-button');
+      const addColumnButton = headerActions.locator('[data-add-panel-column]');
       const panelActionsButton = headerActions.getByTestId('panel-actions-trigger');
       const closeButton = headerActions.getByTestId('panel-close-button');
       await expectUniqueVisible(header);
@@ -190,7 +191,7 @@ test.describe('chat message navigator production path', () => {
       await expectUniqueVisible(titleText);
       await expectUniqueVisible(listButton);
       await expectUniqueVisible(downButton);
-      await expectUniqueVisible(columnButton);
+      await expectUniqueVisible(addColumnButton);
       await expectUniqueVisible(panelActionsButton);
       await expectUniqueVisible(closeButton);
       await expect(downButton).toBeDisabled();
@@ -202,9 +203,6 @@ test.describe('chat message navigator production path', () => {
         'chat-message-navigator-trigger',
         'chat-scroll-to-bottom-button',
         'panel-actions-trigger',
-        'panel-identity-history-trigger',
-        null,
-        null,
         null,
         'panel-close-button',
       ]);
@@ -500,7 +498,9 @@ test.describe('chat message navigator production path', () => {
       await page.keyboard.press('Tab');
       await expect(panelActionsButton).toBeFocused();
       await page.keyboard.press('Tab');
-      await expect(columnButton).toBeFocused();
+      await expect(addColumnButton).toBeFocused();
+      await page.keyboard.press('Tab');
+      await expect(closeButton).toBeFocused();
       await downButton.click();
       await expect(downButton).toBeDisabled();
       await expect
@@ -519,17 +519,19 @@ test.describe('chat message navigator production path', () => {
   }) => {
     const component = await mount(ChatMessageNavigatorIntegrationHost);
     const header = component.locator('[data-panel-content-header]');
+    const headerContentActions = header.locator('[data-panel-header-content-actions]');
     const headerActions = header.locator('[data-panel-header-actions]');
-    const trigger = headerActions.getByTestId('chat-message-navigator-trigger');
-    const downButton = headerActions.getByTestId('chat-scroll-to-bottom-button');
-    const columnButton = headerActions.locator('[data-panel-column-count-trigger]');
+    const trigger = headerContentActions.getByTestId('chat-message-navigator-trigger');
+    const downButton = headerContentActions.getByTestId('chat-scroll-to-bottom-button');
+    const addColumnButton = headerActions.locator('[data-add-panel-column]');
     const outside = headerActions.getByTestId('panel-actions-trigger');
+    const closeButton = headerActions.getByTestId('panel-close-button');
     const title = header.getByText('Navigation agent', { exact: true });
     await expectUniqueVisible(header);
     await expectUniqueVisible(headerActions);
     await expectUniqueVisible(trigger);
     await expectUniqueVisible(downButton);
-    await expectUniqueVisible(columnButton);
+    await expectUniqueVisible(addColumnButton);
     await expectUniqueVisible(outside);
     await expectUniqueVisible(title);
 
@@ -542,7 +544,9 @@ test.describe('chat message navigator production path', () => {
     await page.keyboard.press('Tab');
     await expect(outside).toBeFocused();
     await page.keyboard.press('Tab');
-    await expect(columnButton).toBeFocused();
+    await expect(addColumnButton).toBeFocused();
+    await page.keyboard.press('Tab');
+    await expect(closeButton).toBeFocused();
 
     await trigger.press('Space');
     dialog = await pickerForTrigger(page, trigger);

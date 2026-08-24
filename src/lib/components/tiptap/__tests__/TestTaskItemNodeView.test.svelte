@@ -12,9 +12,10 @@
     editor: Editor;
     getPos: () => number | undefined;
     workspaceId?: string;
+    selected?: boolean;
   }
 
-  let { node, editor, getPos, workspaceId }: Props = $props();
+  let { node, editor, getPos, workspaceId, selected = false }: Props = $props();
 
   // Set up context for drag handling (NodeViewWrapper uses this)
   setContext(NODE_VIEW_CONTEXT_KEY, {
@@ -32,7 +33,7 @@
     node,
     editor,
     getPos,
-    selected: false,
+    selected,
     decorations: [],
     innerDecorations: null as any,
     view: editor.view,

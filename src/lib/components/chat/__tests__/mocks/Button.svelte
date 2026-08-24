@@ -7,19 +7,15 @@
     [key: string]: any;
   }
 
-  let {
-    variant: _variant,
-    size: _size,
-    onclick,
-    class: className,
-    ...restProps
-  }: Props = $props();
+  let { variant: _variant, size: _size, onclick, class: className, ...restProps }: Props = $props();
 </script>
 
 <button
   type="button"
   {onclick}
   class={className}
+  data-variant={_variant}
+  data-size={_size}
   {...restProps}
 >
   <slot />

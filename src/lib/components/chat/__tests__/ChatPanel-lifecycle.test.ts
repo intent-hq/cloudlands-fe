@@ -1899,6 +1899,7 @@ describe('ChatPanel mounted lifecycle', () => {
     expect(area!.classList.contains('hidden')).toBe(true);
     const composer = view.container.querySelector('[data-testid="composer-prompt-layer"]');
     expect(composer?.getAttribute('data-has-transcript-utility')).toBe('false');
-    expect(composer?.classList.contains('pb-3')).toBe(true);
+    expect(composer?.classList.contains('pb-3')).toBe(false);
+    expect(view.container.querySelector('[data-testid="chat-composer-lane"]')).not.toBeNull();
   });
 });

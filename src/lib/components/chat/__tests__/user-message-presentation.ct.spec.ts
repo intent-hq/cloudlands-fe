@@ -45,7 +45,7 @@ for (const state of cases) {
 
     const header = component.locator('[data-panel-content-header]');
     const trigger = header
-      .locator('[data-panel-header-actions]')
+      .locator('[data-panel-header-content-actions]')
       .getByTestId('chat-message-navigator-trigger');
     await expect(trigger).toHaveCount(1);
     await trigger.click();

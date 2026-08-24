@@ -236,9 +236,7 @@ export function reopenPanelOrWorkspaceTab(
   return null;
 }
 
-/**
- * Cmd+T: clear or create the reusable working panel on the current workspace route.
- */
+/** Cmd+T: insert a pristine blank column immediately right of the focused column. */
 export function openNewPanel(
   store: WorkspaceTabNavigationStore,
   currentPath: string,

@@ -37,7 +37,7 @@ describe('editorial conversation presentation contract', () => {
     expect(hasUnqualifiedClassToken(primarySurfaceClasses, 'text-primary-foreground')).toBe(true);
   });
 
-  it('caps transcript, questions, and composer content at the approved 70em measure', () => {
+  it('caps transcript, questions, and composer content at the approved 140em measure', () => {
     const panel = source('src/lib/components/chat/ChatPanel.svelte');
 
     expect(panel).toContain(
@@ -48,7 +48,9 @@ describe('editorial conversation presentation contract', () => {
     expect(panel).toContain("? 'w-full px-1.5!'");
     expect(panel).toContain(": 'w-full px-4 sm:px-6'");
     expect(panel).toContain('conversation-composer relative z-10 w-full');
-    expect(panel).toContain('class="chat-content-measure mx-auto w-full min-w-0"');
+    expect(panel).toContain(
+      'class="composer-prompt-lane chat-content-measure mx-auto w-full min-w-0"',
+    );
     expect(panel).toContain('data-testid="chat-composer-controls-inner"');
     expect(panel).toContain('edgeDocked');
     expect(panel).not.toContain("'px-[5%]'");
@@ -79,8 +81,13 @@ describe('editorial conversation presentation contract', () => {
     expect(pinned).toContain('USER_MESSAGE_TEXT_CLASS');
     expect(pinned).toContain('truncate whitespace-nowrap');
     expect(message).toContain(': USER_MESSAGE_TEXT_CLASS}');
-    expect(surface).toContain('bg-secondary');
+    expect(hasUnqualifiedClassToken(surface, 'bg-sidebar')).toBe(true);
     expect(surface).toContain('text-secondary-foreground');
+    expect(surface).not.toMatch(/(?:dark|light):bg-/);
+    expect(hasUnqualifiedClassToken(surface, 'bg-muted')).toBe(false);
+    expect(hasUnqualifiedClassToken(surface, 'bg-secondary')).toBe(false);
+    expect(hasUnqualifiedClassToken(surface, 'border')).toBe(false);
+    expect(hasUnqualifiedClassToken(surface, 'border-border')).toBe(false);
     expect(hasUnqualifiedClassToken(surface, 'bg-primary')).toBe(false);
     expect(hasUnqualifiedClassToken(surface, 'text-primary-foreground')).toBe(false);
   });
@@ -171,7 +178,7 @@ describe('editorial conversation presentation contract', () => {
     expect(panel).not.toContain('<hr class="border-t border-border/50 mb-3" />');
   });
 
-  it('uses the soft secondary user prompt surface and semantic body typography', () => {
+  it('uses the canonical sidebar user prompt surface and semantic body typography', () => {
     const message = source('src/lib/components/chat/ChatMessage.svelte');
     const markdown = source('src/lib/components/markdown/MarkdownViewer.svelte');
 
@@ -259,18 +266,31 @@ describe('editorial conversation presentation contract', () => {
     expect(message).not.toContain('stickySurfaceClass');
   });
 
-  it('uses the original Thinking indicator without the staged hydration line', () => {
+  it('uses the shared 16px five-arm Intent mark instead of the legacy square spinner', () => {
     const panel = source('src/lib/components/chat/ChatPanel.svelte');
     const status = source('src/lib/components/chat/StreamingStatus.svelte');
     const indicator = source('src/lib/components/chat/StreamingTypingIndicator.svelte');
+    const loader = source('src/lib/components/ui/indicators/IntentMarkLoader.svelte');
+    const indicators = source('src/lib/components/ui/indicators/index.ts');
 
     expect(panel).toContain("import StreamingStatus from './StreamingStatus.svelte'");
     expect(panel).not.toContain('LiveStreamPhaseIndicator');
     expect(status).toContain(
       "import StreamingTypingIndicator from './StreamingTypingIndicator.svelte'",
     );
-    expect(indicator).toContain('--duration: 960ms');
-    expect(indicator).toContain('animation: legacy-spinner-wave');
+    expect(indicators).toContain(
+      "export { default as IntentMarkLoader } from './IntentMarkLoader.svelte';",
+    );
+    expect(indicator).toContain('<IntentMarkLoader {variant} size={16} playing={visible} />');
+    expect(loader.match(/data-mark-arm=/g)).toHaveLength(5);
+    expect(loader).toContain('stroke: currentColor');
+    for (const legacyToken of [
+      'legacy-streaming-spinner',
+      'legacy-spinner-square',
+      'legacy-spinner-wave',
+    ]) {
+      expect(indicator).not.toContain(legacyToken);
+    }
   });
 
   it('renders wake-up details as one compact disclosure surface', () => {
@@ -314,13 +334,11 @@ describe('editorial conversation presentation contract', () => {
     expect(suggestions).not.toContain('faPaperPlane');
   });
 
-  it('supports a top-divider-only docked composer without changing edit-mode chrome', () => {
+  it('supports the nested ChatPanel composer without changing standalone chrome', () => {
     const input = source('src/lib/components/chat/input/SimpleRichInput.svelte');
 
     expect(input).toMatch(/edgeDocked\s*\?/);
-    expect(input).toContain(
-      'rounded-none border-x-0 border-b-0 border-t border-border bg-transparent shadow-none',
-    );
+    expect(input).toContain('rounded-lg border-0 bg-sidebar shadow-none');
     expect(input).toContain('rounded-lg border border-border shadow-(--elevation-raised)');
     expect(input).not.toContain(':global(.panel:not(.focused) .rich-input-container) {');
     expect(input).toContain('@media (prefers-reduced-motion: reduce)');
@@ -398,10 +416,11 @@ describe('editorial conversation presentation contract', () => {
 
     expect(panel).toContain('class="conversation-composer relative z-10 w-full"');
     expect(panel).toContain(
-      'class="pointer-events-none absolute z-0 overflow-hidden {isChiefWorkspace',
+      'class="composer-aurora-host pointer-events-none absolute -left-4 -right-2 -bottom-4 z-0 overflow-hidden"',
     );
-    expect(panel).toContain("'-left-4 -right-2 -bottom-4'");
-    expect(panel).toContain("'-inset-x-2 -bottom-2'");
+    expect(panel).toContain(
+      'class="composer-aurora-host absolute inset-x-0 bottom-0 z-0 overflow-hidden rounded-lg"',
+    );
     expect(panel).toContain('height: calc(100% + 10rem)');
     expect(panel).toContain('class="relative z-20 mt-6 {isChiefWorkspace');
   });

@@ -63,6 +63,12 @@ for (const theme of ['light', 'dark'] as const) {
           ],
         ] as const) {
           const message = component.locator(`[data-message-id="${messageId}"]`);
+          for (const disclosure of await message.getByTestId('response-group-disclosure').all()) {
+            if ((await disclosure.getAttribute('aria-expanded')) === 'false') {
+              await disclosure.evaluate((element) => (element as HTMLElement).click());
+            }
+            await expect(disclosure).toHaveAttribute('aria-expanded', 'true');
+          }
           const rowSets = [
             {
               label: `${messageId}:ungrouped`,

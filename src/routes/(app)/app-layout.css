@@ -7,6 +7,13 @@ body {
   font-family:
     -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
 }
+.panel-layout-container {
+  background-color: hsl(var(--background) / 0.35);
+}
+
+:where(.dark) .panel-layout-container {
+  background-color: transparent;
+}
 
 .panel-layout-container::before {
   content: '';

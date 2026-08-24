@@ -260,6 +260,7 @@
   // Since webview runs in a separate process, keyboard events don't bubble up.
   // We inject a script that captures keyboard shortcuts and logs special messages
   // that we can intercept via the console-message event.
+  // i18n-ignore: This script is an internal webview protocol, not user-facing text.
   const keyboardInterceptorScript = `
     (function() {
       if (window.__augmentKeyboardInterceptorInstalled) return;
@@ -278,17 +279,14 @@
           e.stopPropagation();
           console.log('__INTENT_REFRESH__');
         }
-        // Cmd+[ / Ctrl+[ - go back
-        if (isMod && e.key === '[') {
+        // Forward pane and column bracket shortcuts to the panel system.
+        if (isMod && !e.altKey && ['[', ']', '{', '}'].includes(e.key)) {
           e.preventDefault();
           e.stopPropagation();
-          console.log('__INTENT_GO_BACK__');
-        }
-        // Cmd+] / Ctrl+] - go forward
-        if (isMod && e.key === ']') {
-          e.preventDefault();
-          e.stopPropagation();
-          console.log('__INTENT_GO_FORWARD__');
+          console.log(
+            '__INTENT_PANEL_BRACKET__:' +
+              [e.key, e.shiftKey ? '1' : '0', e.metaKey ? '1' : '0', e.ctrlKey ? '1' : '0'].join(':')
+          );
         }
         // Cmd+Shift+C / Ctrl+Shift+C - copy current browser URL
         if (isMod && e.shiftKey && !e.altKey && (e.key === 'c' || e.key === 'C')) {
@@ -433,33 +431,6 @@
         e.stopPropagation();
         void copyCurrentUrl();
         return;
-      }
-
-      // Only handle shortcuts when this browser panel is focused
-      if (focusRef.current && webviewReady && webviewRef) {
-        try {
-          // Cmd+[ / Ctrl+[ - Go back in browser history
-          if (isMod && e.key === '[' && !e.shiftKey && !e.altKey) {
-            if (webviewRef.canGoBack?.()) {
-              e.preventDefault();
-              e.stopPropagation();
-              goBack();
-              return;
-            }
-          }
-
-          // Cmd+] / Ctrl+] - Go forward in browser history
-          if (isMod && e.key === ']' && !e.shiftKey && !e.altKey) {
-            if (webviewRef.canGoForward?.()) {
-              e.preventDefault();
-              e.stopPropagation();
-              goForward();
-              return;
-            }
-          }
-        } catch {
-          // WebView may have been detached between the guard check and method call
-        }
       }
 
       // Alt+Arrow shortcuts work regardless of focus
@@ -624,12 +595,18 @@
       } else if (message === '__INTENT_REFRESH__') {
         // Cmd+R/F5 was pressed inside webview - refresh the browser
         refresh();
-      } else if (message === '__INTENT_GO_BACK__') {
-        // Cmd+[ was pressed - navigate back in browser history
-        goBack();
-      } else if (message === '__INTENT_GO_FORWARD__') {
-        // Cmd+] was pressed - navigate forward in browser history
-        goForward();
+      } else if (message.startsWith('__INTENT_PANEL_BRACKET__:')) {
+        const [, key, shiftKey, metaKey, ctrlKey] = message.split(':');
+        window.dispatchEvent(
+          new KeyboardEvent('keydown', {
+            key,
+            shiftKey: shiftKey === '1',
+            metaKey: metaKey === '1',
+            ctrlKey: ctrlKey === '1',
+            bubbles: true,
+            cancelable: true,
+          }),
+        );
       } else if (message === '__INTENT_COPY_URL__') {
         // Cmd+Shift+C / Ctrl+Shift+C was pressed - copy current browser URL
         void copyCurrentUrl();

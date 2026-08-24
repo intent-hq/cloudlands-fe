@@ -51,7 +51,7 @@
   }
 
   // Size classes
-  const avatarSize = $derived(size === 'sm' ? 20 : 28);
+  const avatarSize = $derived(size === 'sm' ? undefined : 28);
   const pillPadding = $derived(size === 'sm' ? 'px-2 py-1' : 'px-3 py-1.5');
   const textSize = $derived(size === 'sm' ? 'text-xs' : 'text-sm');
 </script>
@@ -72,7 +72,7 @@
       )}
       title={option.description}
     >
-      <AgentAvatar agentId="blank" size={avatarSize} specialist={option.id} />
+      <AgentAvatar agentId="blank" variant="standard" size={avatarSize} specialist={option.id} />
       <span class={cn('font-medium', textSize)}>{option.name}</span>
     </button>
   {/each}

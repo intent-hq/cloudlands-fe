@@ -29,15 +29,23 @@ describe('editorial workspace shell presentation contract', () => {
     expect(workspace).toContain('position: absolute');
   });
 
-  it('uses one clipped semantic shell for the panel background, radius, and border', () => {
+  it('uses one clipped borderless shell with state-specific panel surfaces', () => {
     const panel = source('../Panel.svelte');
     const container = source('../PanelContainer.svelte');
 
-    expect(panel).toContain('overflow-hidden rounded-lg border border-border');
-    expect(panel).toContain("? 'bg-sidebar text-sidebar-foreground'");
-    expect(panel).toContain(": 'bg-card text-card-foreground'");
+    expect(panel).toContain('overflow-hidden rounded-lg text-foreground');
+    expect(panel).not.toContain('rounded-lg border border-border');
+    expect(panel).toContain(
+      'class:bg-sidebar={panel.pristine === true && panel.tabs.length === 0}',
+    );
+    expect(panel).toContain(
+      'class:bg-background={panel.pristine !== true || panel.tabs.length > 0}',
+    );
     expect(panel).toContain('data-empty-panel-surface={');
-    expect(container).not.toContain("isEmptySurface && 'bg-sidebar text-sidebar-foreground'");
+    expect(container).toContain('class="h-full w-full min-h-0 min-w-0"');
+    expect(container).toContain(
+      'class="h-full w-full bg-background text-foreground" data-missing-panel-surface',
+    );
     expect(panel).toContain('width: 100%');
     expect(panel).toContain('min-width: 0');
     expect(panel).not.toContain('min-width: 30em');
@@ -46,7 +54,13 @@ describe('editorial workspace shell presentation contract', () => {
     expect(panel).not.toContain('.panel:has(:focus-visible)');
     expect(panel).not.toContain('.panel.focused');
     expect(panel).not.toContain("isFocused && 'focused'");
-    expect(panel).not.toContain('outline:');
+    expect(panel).toContain('box-sizing: border-box;\n    border: 1px solid transparent;');
+    expect(panel).toContain(
+      ".panel[data-focus-border-visible='true'] {\n    border-color: hsl(var(--border));",
+    );
+    expect(panel).toContain(
+      "@media (forced-colors: active) {\n    .panel[data-focus-border-visible='true'] {\n      border-color: Highlight;",
+    );
     expect(panel).toContain('data-focused={isFocused}');
     expect(panel).toContain('data-zoomed={isZoomed}');
   });
@@ -73,15 +87,17 @@ describe('editorial workspace shell presentation contract', () => {
   it('renders one content-aware header per panel without the legacy tab strip', () => {
     const tabBar = source('../PanelTabBar.svelte');
 
-    expect(tabBar).toContain('border-b border-border bg-card');
+    expect(tabBar).not.toContain('border-b border-border');
+    expect(tabBar).toContain('h-[var(--panel-header-height)] bg-card');
+    expect(tabBar).toContain('items-center bg-sidebar pr-2.5');
     expect(tabBar).toContain('showTabStrip = false');
     expect(tabBar).toContain("!showTabStrip && 'hidden'");
     expect(tabBar).toContain('data-panel-tab-bar');
     expect(tabBar).toContain('data-panel-tabless-header');
     expect(tabBar).toContain('data-panel-content-header');
-    expect(tabBar).toContain('m.layout_panelTabBar_closePanel_label()');
+    expect(tabBar).toContain('m.layout_panelTabBar_closePane_ariaLabel()');
     expect(tabBar).toContain('{#snippet panelActionsDropdown()}');
-    expect(tabBar).toContain('{#snippet panelCloseButton()}');
+    expect(tabBar).toContain('{#snippet panelCloseButton(tab: PanelTab | null = null)}');
     expect(tabBar).toContain('data-testid="panel-close-button"');
     expect(tabBar).toContain('data-panel-actions-section="display"');
     expect(tabBar).toContain('data-panel-actions-section="actions"');
@@ -101,7 +117,10 @@ describe('editorial workspace shell presentation contract', () => {
     const presets = source('../LayoutPresetDropdown.svelte');
 
     expect(panel).toContain('Tabless panels only split along the horizontal stack.');
-    expect(layout).toContain("handleSplitPanel(focusedId, 'horizontal')");
+    expect(layout).toContain("if (direction !== 'horizontal') return;");
+    expect(layout).toMatch(
+      /moveTabToSplitLevel\(\s*draggedPane\.tabId,\s*draggedPane\.panelId,\s*\[\],\s*placement\.position,\s*'horizontal',\s*\)/,
+    );
     expect(presets).not.toContain("id: 'split-vertical'");
   });
 
@@ -224,9 +243,12 @@ describe('editorial workspace shell presentation contract', () => {
     expect(appLayout).toContain('workspace-frame relative');
     expect(appLayout).not.toContain('<ChiefNotch />');
     expect(appLayout).not.toContain('clip-path: var(--workspace-clip');
-    expect(navigation).toContain('aria-label={m.ui_shortcuts_toggleSpaces_label()}');
+    expect(navigation).toContain('aria-label={m.layout_titleBar_toggleSidebar_ariaLabel()}');
     expect(navigation).toContain('aria-pressed={active}');
-    expect(navigation).toContain('aria-haspopup="dialog"');
+    expect(navigation).not.toContain('aria-haspopup');
+    expect(navigation).not.toContain('aria-expanded');
+    expect(navigation).not.toContain('aria-controls');
+    expect(navigation).not.toContain('SidebarNavHoverCard');
     expect(navigation).toContain('name="dandelion"');
     expect(appLayout).toContain('class="workspace-main flex');
     expect(sidebarPanel).toContain('data-panel-item={$panelItem$}');
@@ -238,6 +260,7 @@ describe('editorial workspace shell presentation contract', () => {
     const appCss = source('../../../../../app.css');
     const appHtml = source('../../../../../app.html');
     const appLayout = source('../../../../../routes/(app)/+layout.svelte');
+    const appLayoutCss = source('../../../../../routes/(app)/app-layout.css');
     const sidebarPanel = source('../../sidebar-nav/SidebarPanel.svelte');
 
     expect(appCss).toMatch(/html,\s*body\s*{[^}]*background-color:\s*transparent;/s);
@@ -245,7 +268,14 @@ describe('editorial workspace shell presentation contract', () => {
     expect(appHtml).toMatch(/html,\s*body,\s*#app\s*{\s*background:\s*transparent;/s);
     expect(appHtml).toMatch(/#splash\s*{[^}]*background:\s*transparent;/s);
     expect(appLayout).toContain('overflow-hidden bg-transparent text-foreground');
+    expect(appLayout.match(/panel-layout-container/g)).toHaveLength(1);
     expect(appLayout).not.toContain('background-color: hsl(var(--background) /');
+    expect(appLayoutCss).toMatch(
+      /\.panel-layout-container\s*{\s*background-color:\s*hsl\(var\(--background\) \/ 0\.35\);\s*}/,
+    );
+    expect(appLayoutCss).toMatch(
+      /:where\(\.dark\) \.panel-layout-container\s*{\s*background-color:\s*transparent;\s*}/,
+    );
     expect(appLayout).toContain('class="workspace-main flex');
     expect(appLayout).toContain("'rounded-xl bg-sidebar border border-border shadow-sm'");
     expect(sidebarPanel).toContain('relative text-sidebar-foreground');

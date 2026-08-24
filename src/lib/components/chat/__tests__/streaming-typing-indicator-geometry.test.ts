@@ -1,10 +1,6 @@
 /** @vitest-environment jsdom */
 import { cleanup, render } from '@testing-library/svelte';
-import { afterEach, describe, expect, it, vi } from 'vitest';
-
-vi.mock('svelte-fa', async () => ({
-  default: (await import('../../ui/__tests__/mocks/Fa.svelte')).default,
-}));
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import StreamingTypingIndicator from '../StreamingTypingIndicator.svelte';
 import {
@@ -13,6 +9,50 @@ import {
   CHAT_OPERATIONAL_SUMMARY_CLASS,
 } from '../operational-disclosure-row';
 
+interface AnimationRecord {
+  options: KeyframeAnimationOptions;
+  cancel: ReturnType<typeof vi.fn>;
+  finish(): void;
+}
+
+const animationRecords: AnimationRecord[] = [];
+let reducedMotion = false;
+
+beforeEach(() => {
+  animationRecords.length = 0;
+  reducedMotion = false;
+  Element.prototype.animate = vi.fn((_frames, options) => {
+    let onfinish: ((event: AnimationPlaybackEvent) => void) | null = null;
+    const animation = {
+      cancel: vi.fn(),
+      currentTime: 0,
+      playState: 'running',
+      get onfinish() {
+        return onfinish;
+      },
+      set onfinish(callback: ((event: AnimationPlaybackEvent) => void) | null) {
+        onfinish = callback;
+      },
+    } as unknown as Animation;
+    animationRecords.push({
+      options: (typeof options === 'number' ? { duration: options } : options) ?? {},
+      cancel: animation.cancel as ReturnType<typeof vi.fn>,
+      finish: () => onfinish?.({} as AnimationPlaybackEvent),
+    });
+    return animation;
+  });
+  Object.defineProperty(window, 'matchMedia', {
+    configurable: true,
+    value: vi.fn(() => ({
+      get matches() {
+        return reducedMotion;
+      },
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    })),
+  });
+});
+
 afterEach(cleanup);
 
 function expectClasses(element: Element, contract: string) {
@@ -20,110 +60,75 @@ function expectClasses(element: Element, contract: string) {
 }
 
 describe('StreamingTypingIndicator geometry matches operational rows', () => {
-  it('uses the shared operational row geometry', () => {
+  it('uses the shared row geometry and a 16px five-arm currentColor mark', () => {
     const { container } = render(StreamingTypingIndicator, {
       props: { visible: true, message: 'Thinking' },
     });
     const row = container.firstElementChild!;
-    expect(row.className).toContain(CHAT_OPERATIONAL_ROW_CLASS);
-  });
-
-  it('uses the shared operational leading slot', () => {
-    const { container } = render(StreamingTypingIndicator, {
-      props: { visible: true, message: 'Thinking' },
-    });
-    const spinner = container.querySelector('.legacy-streaming-spinner')!;
-    expect(spinner.className).toContain(CHAT_OPERATIONAL_LEADING_CLASS);
-  });
-
-  it('uses the shared operational summary geometry', () => {
-    const { container } = render(StreamingTypingIndicator, {
-      props: { visible: true, message: 'Thinking' },
-    });
+    const leading = container.querySelector('[data-operational-leading]')!;
     const summary = container.querySelector('[data-operational-summary]')!;
+    const mark = container.querySelector('[data-slot="intent-mark-loader"]')!;
+
+    expect(row.className).toContain(CHAT_OPERATIONAL_ROW_CLASS);
+    expect(leading.className).toContain(CHAT_OPERATIONAL_LEADING_CLASS);
     expect(summary.className).toContain(CHAT_OPERATIONAL_SUMMARY_CLASS);
+    expectClasses(row, 'type-body grid items-center text-muted-foreground');
+    expect(mark.getAttribute('data-variant')).toBe('bloom');
+    expect(mark.getAttribute('data-playing')).toBe('true');
+    expect(mark.getAttribute('width')).toBe('16');
+    expect(mark.getAttribute('height')).toBe('16');
+    expect(mark.getAttribute('viewBox')).toBe('0 0 256 208');
+    expect(mark.querySelectorAll('[data-mark-arm]')).toHaveLength(5);
+    expect(container.innerHTML).not.toContain('legacy-spinner');
+    expect(container.innerHTML).not.toContain('--color');
   });
 
-  it('uses body typography on the label (type-body)', () => {
+  it('uses primary Thinking copy and muted non-live lifecycle detail', () => {
+    const { container } = render(StreamingTypingIndicator, {
+      props: {
+        visible: true,
+        message: 'Thinking',
+        lifecycleMessage: 'Calling the daemon tool exactly as sent',
+      },
+    });
+    const copy = container.querySelector('[data-testid="streaming-status-copy"]')!;
+    const label = container.querySelector('[data-testid="streaming-status-thinking-label"]')!;
+    const lifecycle = container.querySelector('[data-testid="streaming-status-phase"]')!;
+    expectClasses(copy, 'inline-flex min-w-0 max-w-full items-baseline gap-[0.5ch]');
+    expectClasses(label, 'shrink-0 font-normal text-foreground');
+    expectClasses(lifecycle, 'min-w-0 truncate font-normal text-muted-foreground');
+    expect(copy.textContent).toBe('ThinkingCalling the daemon tool exactly as sent');
+    expect(lifecycle.closest('[role="status"]')).toBeNull();
+    expect(lifecycle.closest('[aria-live]')).toBeNull();
+    expect(container.querySelectorAll('[role="status"]')).toHaveLength(1);
+  });
+
+  it('holds the neutral mark immediately for reduced motion', () => {
+    reducedMotion = true;
     const { container } = render(StreamingTypingIndicator, {
       props: { visible: true, message: 'Thinking' },
     });
-    const row = container.firstElementChild!;
-    expectClasses(row, 'type-body');
+    const mark = container.querySelector<SVGSVGElement>('[data-slot="intent-mark-loader"]')!;
+    expect(mark.dataset.motionState).toBe('neutral');
+    expect(animationRecords).toHaveLength(0);
   });
 
-  it('uses muted row text with a foreground thinking label', () => {
-    const { container } = render(StreamingTypingIndicator, {
+  it('cancels all motion on removal and supports rapid reactivation', async () => {
+    const view = render(StreamingTypingIndicator, {
       props: { visible: true, message: 'Thinking' },
     });
-    const row = container.firstElementChild!;
-    const label = container.querySelector('[data-testid="streaming-status-thinking"]')!;
-    expectClasses(row, 'text-muted-foreground');
-    expectClasses(label, 'text-foreground');
-  });
+    animationRecords[0].finish();
+    expect(animationRecords.filter(({ options }) => options.iterations === Infinity)).toHaveLength(
+      5,
+    );
 
-  it('shows 3.5px spinner squares in the icon slot', () => {
-    const { container } = render(StreamingTypingIndicator, {
+    view.unmount();
+    expect(animationRecords.every(({ cancel }) => cancel.mock.calls.length > 0)).toBe(true);
+
+    const reactivated = render(StreamingTypingIndicator, {
       props: { visible: true, message: 'Thinking' },
     });
-    const spinner = container.querySelector('.legacy-streaming-spinner')!;
-    const style = spinner.getAttribute('style')!;
-    expect(style).toContain('--size: 3.5px');
-  });
-
-  it('adds 1px gap between spinner squares', () => {
-    const { container } = render(StreamingTypingIndicator, {
-      props: { visible: true, message: 'Thinking' },
-    });
-    const spinner = container.querySelector('.legacy-streaming-spinner')!;
-    const style = spinner.getAttribute('style')!;
-    expect(style).toContain('--gap: 1px');
-  });
-
-  it('preserves the legacy-spinner-wave animation classes', () => {
-    const { container } = render(StreamingTypingIndicator, {
-      props: { visible: true, message: 'Thinking' },
-    });
-    const squares = container.querySelectorAll('.legacy-spinner-square');
-    expect(squares.length).toBe(3);
-    // Verify classes are applied (jsdom doesn't process <style> blocks for animation)
-    expect(squares[0].className).toContain('legacy-spinner-square-0');
-    expect(squares[1].className).toContain('legacy-spinner-square-1');
-    expect(squares[2].className).toContain('legacy-spinner-square-2');
-  });
-
-  it('respects prefers-reduced-motion to disable animation', () => {
-    const { container } = render(StreamingTypingIndicator, {
-      props: { visible: true, message: 'Thinking' },
-    });
-
-    // Create a matchMedia mock for reduced motion
-    const originalMatchMedia = window.matchMedia;
-    window.matchMedia = vi.fn().mockImplementation((query) => ({
-      matches: query === '(prefers-reduced-motion: reduce)',
-      media: query,
-      onchange: null,
-      addListener: vi.fn(),
-      removeListener: vi.fn(),
-      addEventListener: vi.fn(),
-      removeEventListener: vi.fn(),
-      dispatchEvent: vi.fn(),
-    }));
-
-    const square = container.querySelector('.legacy-spinner-square-0')!;
-
-    // In reduced motion mode, animation should be none (verified via CSS @media rule)
-    // The test validates the CSS is present; actual animation:none requires DOM render
-    expect(square.className).toContain('legacy-spinner-square');
-
-    window.matchMedia = originalMatchMedia;
-  });
-
-  it('maintains stable baseline alignment with text', () => {
-    const { container } = render(StreamingTypingIndicator, {
-      props: { visible: true, message: 'Thinking' },
-    });
-    const row = container.firstElementChild!;
-    expectClasses(row, 'grid items-center');
+    animationRecords.find(({ cancel }) => cancel.mock.calls.length === 0)?.finish();
+    expect(reactivated.container.querySelector('[data-motion-state="playing"]')).not.toBeNull();
   });
 });

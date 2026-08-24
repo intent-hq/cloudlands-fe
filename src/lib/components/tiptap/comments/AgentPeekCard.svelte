@@ -132,7 +132,7 @@
     >
       <div class="icon-wrapper">
         <AgentAvatar
-          size={24}
+          variant="emphasized"
           agentId={agentData.id}
           class={cn($agentIsResponding$ && 'animate-pulse')}
         />
@@ -175,7 +175,8 @@
       <!-- Header - Always visible (collapsed and expanded) -->
       <div class="flex items-center gap-2 px-3 py-2">
         <AgentAvatar
-          size={isCollapsed ? 18 : 20}
+          variant="standard"
+          size={isCollapsed ? 18 : undefined}
           agentId={agentData.id}
           class={cn($agentIsResponding$ && 'animate-pulse')}
         />

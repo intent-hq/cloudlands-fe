@@ -17,6 +17,7 @@
     type SerializableRect,
   } from '$store/renderer/slices/tab-state/tab-state-slice';
   import { store as appStore } from '$store/renderer/store';
+  import { getDraggedPane } from './panel-drag';
 
   /** Position relative to the split for container-level insertion */
   export type HandleDropZone = 'before' | 'after';
@@ -166,6 +167,7 @@
   let currentZoneInfo = $state<DropZoneInfo | null>(null);
 
   function handleTabDragOver(e: DragEvent) {
+    if (getDraggedPane()) return;
     if (!e.dataTransfer?.types.includes(TAB_DRAG_MIME)) return;
 
     e.preventDefault();
@@ -213,6 +215,7 @@
   }
 
   function handleTabDrop(e: DragEvent) {
+    if (getDraggedPane()) return;
     e.preventDefault();
     e.stopPropagation();
 

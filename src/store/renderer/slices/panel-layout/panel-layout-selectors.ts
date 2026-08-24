@@ -317,6 +317,44 @@ export const selectPanelIds = store.createSelector<[wsId: string], string[]>((st
   return getPanelOrder(ws.root);
 });
 
+export interface PanelColumnStack {
+  panelId: string;
+  panes: PanelTab[];
+  activePaneId: string | null;
+  attentionPaneIds: string[];
+}
+
+function getPanelColumnStacks(layout: WorkspacePanelLayoutState): PanelColumnStack[] {
+  return getPanelOrder(layout.root).flatMap((panelId) => {
+    const panel = layout.panels[panelId];
+    if (!panel) return [];
+    return [
+      {
+        panelId,
+        panes: panel.tabs,
+        activePaneId: panel.activeTabId,
+        attentionPaneIds: panel.attentionTabIds ?? [],
+      },
+    ];
+  });
+}
+
+/** Ordered pane stacks for every visible workspace column. */
+export const selectPanelColumnStacks = store.createSelector<[wsId: string], PanelColumnStack[]>(
+  (state, wsId) =>
+    getPanelColumnStacks(state.panelLayout.byWorkspaceId[wsId] ?? emptyWorkspaceState),
+);
+
+/** Pane stack for one visible workspace column. */
+export const selectPanelColumnStack = store.createSelector<
+  [wsId: string, panelId: string],
+  PanelColumnStack | undefined
+>((state, wsId, panelId) =>
+  getPanelColumnStacks(state.panelLayout.byWorkspaceId[wsId] ?? emptyWorkspaceState).find(
+    (stack) => stack.panelId === panelId,
+  ),
+);
+
 function getPanelNavigatorItems(layout: WorkspacePanelLayoutState) {
   return getPanelOrder(layout.root).flatMap((panelId) => {
     const panel = layout.panels[panelId];
@@ -366,16 +404,4 @@ export const selectLastClosedPanelColumn = store.createSelector<
         createCollection<RecentlyClosedPanelColumn, 'historyId'>('historyId'),
     ).find((closed) => isRecentlyClosedPanelColumnRestorable(workspace, closed)) ?? null
   );
-});
-
-/** Select whether we can go back in layout history */
-export const selectCanGoBack = store.createSelector<[wsId: string], boolean>((state, wsId) => {
-  const ws = state.panelLayout.byWorkspaceId[wsId] ?? emptyWorkspaceState;
-  return ws.historyIndex > 0 && ws.layoutHistory.length > 0;
-});
-
-/** Select whether we can go forward in layout history */
-export const selectCanGoForward = store.createSelector<[wsId: string], boolean>((state, wsId) => {
-  const ws = state.panelLayout.byWorkspaceId[wsId] ?? emptyWorkspaceState;
-  return ws.historyIndex < ws.layoutHistory.length - 1;
 });

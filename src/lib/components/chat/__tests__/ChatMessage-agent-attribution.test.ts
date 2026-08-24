@@ -709,6 +709,8 @@ describe('ChatMessage hook wake attribution', () => {
     expect(surface.getAttribute('data-external-spacing-owner')).toBe('automated-wake-card');
     expect(screen.getByText('ci-watch')).toBeTruthy();
     expect(screen.getByText('woke the agent')).toBeTruthy();
+    expect(screen.getByTestId('automated-wake-text-lane').className).toContain('gap-x-1');
+    expect(screen.getByTestId('automated-wake-primary-label').textContent?.trim()).toBe('ci-watch');
     expect(screen.queryByTestId('automated-wake-details')).toBeNull();
     await expandAutomatedWake();
     expect(screen.getByText('CI is red')).toBeTruthy();

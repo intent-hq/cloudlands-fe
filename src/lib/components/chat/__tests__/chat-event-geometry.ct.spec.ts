@@ -154,7 +154,6 @@ test('matches sent-message disclosures to real finished event rows', async ({ mo
               'line-height',
               'font-weight',
               'color',
-              'gap',
               'align-items',
               'justify-content',
               'overflow-x',
@@ -165,7 +164,13 @@ test('matches sent-message disclosures to real finished event rows', async ({ mo
             const agentRow = element('agent-message-disclosure-header');
             const eventRow = element('event-wakeup-header');
             const agentIcon = element('agent-message-avatar-column');
+            const agentName = element('agent-message-actor-name');
+            const agentActor = element('agent-message-attribution');
+            const agentAction = element('agent-message-disclosure-toggle');
             const eventIcon = eventRow.querySelector('svg')!;
+            const eventSummary = element('event-wakeup-summary');
+            const eventName = element('event-wakeup-agent-name');
+            const eventStatus = element('event-wakeup-status');
             const agentChevron = element('agent-message-chevron-column');
             const eventChevron = element('event-wakeup-chevron-column');
             const preview = element('agent-message-preview');
@@ -177,12 +182,20 @@ test('matches sent-message disclosures to real finished event rows', async ({ mo
               eventSurface: style(eventCard, surfaceProperties),
               agentRow: style(agentRow, rowProperties),
               eventRow: style(eventRow, rowProperties),
+              agentRowGap: getComputedStyle(agentRow).gap,
+              eventRowGap: getComputedStyle(eventRow).gap,
               agentCardRect: rect(agentCard),
               eventCardRect: rect(eventCard),
               agentRowRect: rect(agentRow),
               eventRowRect: rect(eventRow),
               agentIconRect: rect(agentIcon),
+              agentNameRect: rect(agentName),
+              agentActorRect: rect(agentActor),
+              agentActionRect: rect(agentAction),
               eventIconRect: rect(eventIcon),
+              eventSummaryRect: rect(eventSummary),
+              eventNameRect: rect(eventName),
+              eventStatusRect: rect(eventStatus),
               agentChevronRect: rect(agentChevron),
               eventChevronRect: rect(eventChevron),
               ellipsisStyles: [preview, senderName].map((node) => {
@@ -199,7 +212,25 @@ test('matches sent-message disclosures to real finished event rows', async ({ mo
 
           expect(collapsed.agentSurface).toEqual(collapsed.eventSurface);
           expect(collapsed.agentRow).toEqual(collapsed.eventRow);
+          expect(collapsed.agentRowGap).toBe('4px');
+          expect(collapsed.eventRowGap).toBe('8px');
           expect(collapsed.agentRow['justify-content']).toBe('flex-start');
+          expect(collapsed.agentNameRect.left - collapsed.agentIconRect.right).toBeCloseTo(
+            8 * zoom,
+            1,
+          );
+          expect(collapsed.agentActionRect.left - collapsed.agentActorRect.right).toBeCloseTo(
+            4 * zoom,
+            1,
+          );
+          expect(collapsed.eventSummaryRect.left - collapsed.eventIconRect.right).toBeCloseTo(
+            8 * zoom,
+            1,
+          );
+          expect(collapsed.eventStatusRect.left - collapsed.eventNameRect.right).toBeCloseTo(
+            4 * zoom,
+            1,
+          );
           expect(collapsed.agentIconRect.left - collapsed.agentRowRect.left).toBeCloseTo(
             12 * zoom,
             1,
@@ -261,6 +292,10 @@ test('matches sent-message disclosures to real finished event rows', async ({ mo
               await interactionStyle(state, eventToggle),
             );
           }
+          await senderButton.focus();
+          await expect(senderButton).toBeFocused();
+          await agentToggle.focus();
+          await expect(agentToggle).toBeFocused();
 
           await agentToggle.click();
           await eventToggle.click();
@@ -298,56 +333,76 @@ test('matches sent-message disclosures to real finished event rows', async ({ mo
 });
 
 for (const theme of ['light', 'dark'] as const) {
-  test(`uses canonical shared user-message colors and readable content in ${theme} theme`, async ({
-    mount,
-  }) => {
-    const component = await mount(ChatEventGeometryHost, {
-      props: { panelId: `colors-${theme}`, theme },
-    });
-    await component.getByTestId('sticky-scroll').evaluate((node) => node.scrollTo(0, 330));
-    await expect(component.getByTestId('pinned-user-prompt')).toBeVisible();
+  for (const zoom of [1, 2] as const) {
+    for (const chiefVariant of [false, true]) {
+      test(`uses canonical sidebar user-message colors in ${theme} at ${zoom * 100}% (chiefVariant=${chiefVariant})`, async ({
+        mount,
+      }) => {
+        const component = await mount(ChatEventGeometryHost, {
+          props: { panelId: `colors-${theme}-${zoom}-${chiefVariant}`, theme, zoom, chiefVariant },
+        });
+        await component.getByTestId('sticky-scroll').evaluate((node) => node.scrollTo(0, 330));
+        await expect(component.getByTestId('pinned-user-prompt')).toBeVisible();
 
-    const styles = await component.evaluate((root) => {
-      const style = (selector: string, pseudo?: string) =>
-        getComputedStyle(root.querySelector(selector) as Element, pseudo);
-      const resolveToken = (token: string, property: 'backgroundColor' | 'color') => {
-        const probe = document.createElement('span');
-        probe.style[property] = `hsl(${getComputedStyle(root).getPropertyValue(token)})`;
-        root.append(probe);
-        const value = getComputedStyle(probe)[property];
-        probe.remove();
-        return value;
-      };
-      return {
-        surface: resolveToken('--secondary', 'backgroundColor'),
-        surfaceForeground: resolveToken('--secondary-foreground', 'color'),
-        ordinaryBackground: style('[data-testid="sent-card"]').backgroundColor,
-        pinnedBackground: style('[data-testid="pinned-user-prompt"]').backgroundColor,
-        ordinaryText: style('[data-testid="ordinary-user-text"]').color,
-        pinnedText: style('[data-testid="pinned-user-prompt-text"]').color,
-        linkText: style('[data-testid="ordinary-user-link"]').color,
-        codeText: style('[data-testid="ordinary-user-code"]').color,
-        codeBackground: style('[data-testid="ordinary-user-code"]').backgroundColor,
-        selectionBackground: style('[data-testid="pinned-user-prompt-text"]', '::selection')
-          .backgroundColor,
-        selectionText: style('[data-testid="pinned-user-prompt-text"]', '::selection').color,
-      };
-    });
+        const styles = await component.evaluate((root) => {
+          const style = (selector: string, pseudo?: string) =>
+            getComputedStyle(root.querySelector(selector) as Element, pseudo);
+          const resolveToken = (token: string, property: 'backgroundColor' | 'color') => {
+            const probe = document.createElement('span');
+            probe.style[property] = `hsl(${getComputedStyle(root).getPropertyValue(token)})`;
+            root.append(probe);
+            const value = getComputedStyle(probe)[property];
+            probe.remove();
+            return value;
+          };
+          return {
+            surface: resolveToken('--sidebar', 'backgroundColor'),
+            surfaceForeground: resolveToken('--secondary-foreground', 'color'),
+            ordinaryBackground: style('[data-testid="sent-card"]').backgroundColor,
+            ordinaryBorderWidth: style('[data-testid="sent-card"]').borderTopWidth,
+            pinnedBackground: style('[data-testid="pinned-user-prompt"]').backgroundColor,
+            pinnedBorderWidth: style('[data-testid="pinned-user-prompt"]').borderTopWidth,
+            attributedBackground: style(
+              '[data-testid="attributed-message-lane"] [data-testid="user-message-surface"]',
+            ).backgroundColor,
+            eventBackground: style('[data-testid="event-wakeup-card"]').backgroundColor,
+            ordinaryText: style('[data-testid="ordinary-user-text"]').color,
+            pinnedText: style('[data-testid="pinned-user-prompt-text"]').color,
+            linkText: style('[data-testid="ordinary-user-link"]').color,
+            codeText: style('[data-testid="ordinary-user-code"]').color,
+            codeBackground: style('[data-testid="ordinary-user-code"]').backgroundColor,
+            selectionBackground: style('[data-testid="pinned-user-prompt-text"]', '::selection')
+              .backgroundColor,
+            selectionText: style('[data-testid="pinned-user-prompt-text"]', '::selection').color,
+          };
+        });
 
-    expect(styles.ordinaryBackground).toBe(styles.surface);
-    expect(styles.pinnedBackground).toBe(styles.surface);
-    expect(styles.ordinaryText).toBe(styles.surfaceForeground);
-    expect(styles.pinnedText).toBe(styles.surfaceForeground);
-    expect(styles.linkText).toBe(styles.surfaceForeground);
-    expect(styles.codeText).toBe(styles.surfaceForeground);
-    expect(styles.codeBackground).toBe('rgba(0, 0, 0, 0)');
-    expect(contrastRatio(styles.pinnedText, styles.pinnedBackground)).toBeGreaterThanOrEqual(4.5);
-    expect(contrastRatio(styles.linkText, styles.ordinaryBackground)).toBeGreaterThanOrEqual(4.5);
-    expect(contrastRatio(styles.codeText, styles.ordinaryBackground)).toBeGreaterThanOrEqual(4.5);
-    expect(contrastRatio(styles.selectionText, styles.selectionBackground)).toBeGreaterThanOrEqual(
-      4.5,
-    );
-  });
+        expect(styles.ordinaryBackground).toBe(styles.surface);
+        expect(styles.pinnedBackground).toBe(styles.surface);
+        expect(styles.attributedBackground).not.toBe(styles.surface);
+        expect(styles.eventBackground).not.toBe(styles.surface);
+        expect(styles.ordinaryBorderWidth).toBe('0px');
+        expect(styles.pinnedBorderWidth).toBe('0px');
+        expect(styles.ordinaryText).toBe(styles.surfaceForeground);
+        expect(styles.pinnedText).toBe(styles.surfaceForeground);
+        expect(styles.linkText).toBe(styles.surfaceForeground);
+        expect(styles.codeText).toBe(styles.surfaceForeground);
+        expect(styles.codeBackground).toBe('rgba(0, 0, 0, 0)');
+        expect(contrastRatio(styles.pinnedText, styles.pinnedBackground)).toBeGreaterThanOrEqual(
+          4.5,
+        );
+        expect(contrastRatio(styles.linkText, styles.ordinaryBackground)).toBeGreaterThanOrEqual(
+          4.5,
+        );
+        expect(contrastRatio(styles.codeText, styles.ordinaryBackground)).toBeGreaterThanOrEqual(
+          4.5,
+        );
+        expect(
+          contrastRatio(styles.selectionText, styles.selectionBackground),
+        ).toBeGreaterThanOrEqual(4.5);
+      });
+    }
+  }
 }
 
 for (const chiefVariant of [false, true]) {

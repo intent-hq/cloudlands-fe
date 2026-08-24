@@ -194,7 +194,7 @@
           onclick={(e) => handleOpenAgent(e, linkedAgentId)}
           title={m.notes_agentActionBlock_viewAgent_tooltip()}
         >
-          <AgentAvatar agentId={linkedAgentId} size={16} />
+          <AgentAvatar agentId={linkedAgentId} variant="compact" />
         </button>
       {:else}
         <Fa icon={faRobot} size="sm" class="shrink-0 text-muted-foreground" />

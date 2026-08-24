@@ -104,9 +104,9 @@
         <!-- Avatar -->
         <div class="shrink-0">
           {#if isBuiltInSpecialistId(specialist.id)}
-            <AgentAvatar agentId="blank" size={20} specialist={specialist.id} />
+            <AgentAvatar agentId="blank" variant="standard" specialist={specialist.id} />
           {:else}
-            <AgentAvatar agentId="blank" size={20} />
+            <AgentAvatar agentId="blank" variant="standard" />
           {/if}
         </div>
 

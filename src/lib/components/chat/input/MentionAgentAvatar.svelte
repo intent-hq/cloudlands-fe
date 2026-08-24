@@ -28,4 +28,4 @@
   );
 </script>
 
-<AgentAvatarWithState {agentId} size={16} {state} />
+<AgentAvatarWithState {agentId} variant="compact" {state} />

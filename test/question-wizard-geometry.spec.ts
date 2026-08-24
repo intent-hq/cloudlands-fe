@@ -25,6 +25,8 @@ type HostProps = {
   questionCount?: number;
   safeArea?: number;
   longChat?: boolean;
+  longHeader?: boolean;
+  multiSelect?: boolean;
 };
 
 async function mountWizard(
@@ -80,9 +82,40 @@ async function readGeometry(page: Page) {
     const cardStyle = getComputedStyle(
       document.querySelector<HTMLElement>('[data-testid="question-wizard-card"]')!,
     );
+    const inputBoundary = document.querySelector<HTMLElement>(
+      '[data-testid="question-wizard-card"] input',
+    )?.parentElement;
+    const indicator = document.querySelector<HTMLElement>('[data-option-indicator]');
+    const borderWidths = (node: HTMLElement | null | undefined) => {
+      if (!node) return null;
+      const style = getComputedStyle(node);
+      return [
+        style.borderTopWidth,
+        style.borderRightWidth,
+        style.borderBottomWidth,
+        style.borderLeftWidth,
+      ];
+    };
     const boundaryStyle = getComputedStyle(
       document.querySelector<HTMLElement>('[data-testid="conversation-composer-boundary"]')!,
     );
+    const headerNode = document.querySelector<HTMLElement>('[data-question-wizard-header]');
+    const titleNode = document.querySelector<HTMLElement>('[data-question-header-title]');
+    const counterNode = document.querySelector<HTMLElement>('[data-question-step-counter]');
+    const actionsNode = document.querySelector<HTMLElement>('[data-question-header-actions]');
+    const skipNode = [...(footerNode?.querySelectorAll<HTMLElement>('button') ?? [])].find(
+      (button) => button.textContent?.trim() === 'Skip',
+    );
+    const submitNode = footerNode?.querySelector<HTMLElement>('[data-slot="button"]');
+    const compactRect = (node: HTMLElement | null | undefined) => {
+      if (!node) return null;
+      const nodeRect = node.getBoundingClientRect();
+      return {
+        left: nodeRect.left,
+        right: nodeRect.right,
+        centerY: nodeRect.top + nodeRect.height / 2,
+      };
+    };
     return {
       boundary: { left: boundary.left, right: boundary.right, bottom: boundary.bottom },
       wrapper: { bottom: wrapper.bottom },
@@ -96,8 +129,30 @@ async function readGeometry(page: Page) {
         : null,
       safeArea: safeArea.height,
       boxShadow: cardStyle.boxShadow,
-      borderBottomWidth: cardStyle.borderBottomWidth,
+      cardBorderWidths: borderWidths(
+        document.querySelector<HTMLElement>('[data-testid="question-wizard-card"]'),
+      ),
+      inputBorderWidths: borderWidths(inputBoundary),
+      indicatorBorderWidths: borderWidths(indicator),
       boundaryOverflow: `${boundaryStyle.overflowX}/${boundaryStyle.overflowY}`,
+      header: headerNode
+        ? {
+            rect: compactRect(headerNode),
+            title: compactRect(titleNode),
+            counter: compactRect(counterNode),
+            actions: compactRect(actionsNode),
+            titleTruncated: titleNode ? titleNode.scrollWidth > titleNode.clientWidth : false,
+          }
+        : null,
+      footerTypography:
+        skipNode && submitNode
+          ? {
+              skipFontSize: getComputedStyle(skipNode).fontSize,
+              skipLineHeight: getComputedStyle(skipNode).lineHeight,
+              submitFontSize: getComputedStyle(submitNode).fontSize,
+              submitLineHeight: getComputedStyle(submitNode).lineHeight,
+            }
+          : null,
     };
   });
 }
@@ -109,7 +164,7 @@ function expectFlushGeometry(geometry: Awaited<ReturnType<typeof readGeometry>>,
   expect(geometry.card.left).toBeGreaterThanOrEqual(geometry.boundary.left - 1);
   expect(geometry.card.right).toBeLessThanOrEqual(geometry.boundary.right + 1);
   expect(geometry.boxShadow).not.toBe('none');
-  expect(geometry.borderBottomWidth).toBe('1px');
+  expect(geometry.cardBorderWidths).toEqual(['0px', '0px', '0px', '0px']);
   expect(geometry.boundaryOverflow).toBe('visible/visible');
 }
 
@@ -139,7 +194,97 @@ test('expanded card is flush with a compact symmetric footer across rendered geo
     expect(geometry.card.bottom - geometry.footer!.bottom).toBeLessThanOrEqual(2);
     expect(geometry.footer!.topInset).toBeCloseTo(geometry.footer!.bottomInset, 1);
     expect(geometry.footer!.topInset).toBeGreaterThanOrEqual(8);
+    expect(geometry.inputBorderWidths).toEqual(['1px', '1px', '1px', '1px']);
+    if ((scenario.props.optionCount ?? 3) > 1) {
+      expect(geometry.indicatorBorderWidths).toEqual(['1px', '1px', '1px', '1px']);
+    }
   }
+});
+
+test('compact header stays on one row and footer actions share typography', async ({ page }) => {
+  const cases: Array<{
+    viewport: { width: number; height: number };
+    props: HostProps;
+    theme?: 'light' | 'dark';
+    zoom?: number;
+  }> = [
+    { viewport: { width: 960, height: 720 }, props: { questionCount: 3 } },
+    {
+      viewport: { width: 390, height: 560 },
+      props: { questionCount: 1, longHeader: true },
+      theme: 'dark',
+    },
+    {
+      viewport: { width: 960, height: 1200 },
+      props: { questionCount: 1, longHeader: true },
+      zoom: 2,
+    },
+  ];
+
+  for (const scenario of cases) {
+    await mountWizard(page, scenario.viewport, scenario.props, scenario);
+    const geometry = await readGeometry(page);
+    expect(geometry.header).not.toBeNull();
+    expect(geometry.header!.title!.right).toBeLessThanOrEqual(geometry.header!.actions!.left);
+    expect(geometry.header!.title!.centerY).toBeCloseTo(geometry.header!.actions!.centerY, 1);
+    if (scenario.props.questionCount === 1) {
+      expect(geometry.header!.counter).toBeNull();
+    } else {
+      expect(geometry.header!.counter!.right).toBeLessThanOrEqual(geometry.header!.title!.left);
+      expect(geometry.header!.counter!.centerY).toBeCloseTo(geometry.header!.title!.centerY, 1);
+    }
+    if (scenario.props.longHeader) expect(geometry.header!.titleTruncated).toBe(true);
+    expect(geometry.footerTypography!.skipFontSize).toBe(geometry.footerTypography!.submitFontSize);
+    expect(geometry.footerTypography!.skipLineHeight).toBe(
+      geometry.footerTypography!.submitLineHeight,
+    );
+  }
+});
+
+test('single-select rows use native full-row keyboard submission without radio indicators', async ({
+  page,
+}) => {
+  await mountWizard(
+    page,
+    { width: 390, height: 560 },
+    { optionCount: 2, questionCount: 1, multiSelect: false },
+    { theme: 'dark' },
+  );
+
+  const options = page.locator('[data-question-option]');
+  await expect(options).toHaveCount(2);
+  await expect(page.locator('[data-option-indicator]')).toHaveCount(0);
+
+  await options.nth(0).focus();
+  await page.keyboard.press('Enter');
+  await expect(page.getByTestId('panel-boundary')).toHaveAttribute('data-completion-count', '1');
+  await expect(page.getByTestId('panel-boundary')).toHaveAttribute(
+    'data-completed-labels',
+    'Option 1',
+  );
+  await expect(options.nth(0)).toHaveAttribute('aria-pressed', 'true');
+  await expect(options.nth(0)).toBeDisabled();
+  await expect(options.nth(1)).toBeDisabled();
+
+  await mountWizard(
+    page,
+    { width: 390, height: 560 },
+    { optionCount: 2, questionCount: 1, multiSelect: false },
+    { theme: 'dark' },
+  );
+  await options.nth(1).focus();
+  await page.keyboard.press('Space');
+  await expect(page.getByTestId('panel-boundary')).toHaveAttribute('data-completion-count', '1');
+  await expect(page.getByTestId('panel-boundary')).toHaveAttribute(
+    'data-completed-labels',
+    'Option 2',
+  );
+  await expect(options.nth(1)).toHaveAttribute('aria-pressed', 'true');
+
+  const widths = await options.evaluateAll((nodes) =>
+    nodes.map((node) => (node as HTMLElement).getBoundingClientRect().width),
+  );
+  expect(widths.every((width) => width > 300)).toBe(true);
 });
 
 test('collapsed and scrolling states keep the slot flush without clipping or scroll jumps', async ({

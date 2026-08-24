@@ -1,6 +1,36 @@
 import { expect, test } from '@playwright/experimental-ct-svelte';
 import ResponseGroupCollapseHost from './ResponseGroupCollapseHost.svelte';
 
+test('auto-collapses every completed group while later response activity remains', async ({
+  mount,
+  page,
+}) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  const component = await mount(ResponseGroupCollapseHost, {
+    props: { width: 320, zoom: 1, streaming: true },
+  });
+  const lastFocus = component.getByTestId('response-group-focus-last');
+  await lastFocus.focus();
+
+  await component.update({ props: { width: 320, zoom: 1, streaming: false } });
+  for (const position of ['first', 'middle', 'last'] as const) {
+    const group = component.getByTestId(`response-group-${position}`);
+    await expect(group.getByTestId('response-group-disclosure')).toHaveAttribute(
+      'aria-expanded',
+      'false',
+    );
+    await expect(group.locator('[data-operational-expanded-content]')).toHaveCount(0);
+  }
+  await expect(component.getByTestId('response-group-disclosure').last()).toBeFocused();
+  await expect(component.getByTestId('response-after-groups')).toHaveText(
+    'Later response activity',
+  );
+
+  const finalTrigger = component.getByTestId('response-group-disclosure').last();
+  await finalTrigger.click();
+  await expect(finalTrigger).toHaveAttribute('aria-expanded', 'true');
+});
+
 function channel(value: number): number {
   const normalized = value / 255;
   return normalized <= 0.04045 ? normalized / 12.92 : Math.pow((normalized + 0.055) / 1.055, 2.4);

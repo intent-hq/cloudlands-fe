@@ -4,41 +4,90 @@ import {
   groupContentBlocks,
   parseSuggestedPrompts,
   parseSuggestedPromptsFromContentBlocks,
+  type ContentBlockGroup,
 } from '$lib/utils/messageParser';
 import { getPresentedUserMessageText } from '$lib/utils/user-message-presentation';
+
+interface ChatSearchBlock {
+  messageId: string;
+  turnKey: string;
+  blockPath: string;
+  disclosurePath: string[];
+  text: string;
+}
 
 export interface ChatSearchMatch {
   messageId: string;
   matchIndexInMessage: number;
+  occurrenceInBlock: number;
   turnKey: string;
+  blockPath: string;
+  disclosurePath: string[];
 }
 
-export function extractSearchableContent(message: AgentMessage): string {
-  const blocks = message.contentBlocks;
-  if (!blocks?.length) return '';
+export const chatSearchBlockPath = (blockIndex: number, childIndex?: number): string =>
+  childIndex === undefined ? `b:${blockIndex}` : `b:${blockIndex}:c:${childIndex}`;
+
+function buildMessageSearchBlocks(message: AgentMessage, turnKey: string): ChatSearchBlock[] {
+  const contentBlocks = message.contentBlocks;
+  if (!contentBlocks?.length) return [];
+
   if (message.role === 'user') {
-    if (message.metadata?.type === 'event_notification') return '';
-    if (extractAllContent(message).trimStart().startsWith('[WORKSPACE EVENTS]')) return '';
-    return parseSuggestedPrompts(getPresentedUserMessageText(message)).cleanedContent;
+    if (message.metadata?.type === 'event_notification') return [];
+    if (extractAllContent(message).trimStart().startsWith('[WORKSPACE EVENTS]')) return [];
+    return [
+      {
+        messageId: message.id,
+        turnKey,
+        blockPath: '',
+        disclosurePath: [],
+        text: parseSuggestedPrompts(getPresentedUserMessageText(message)).cleanedContent,
+      },
+    ];
   }
 
-  const parsedPromptBlocks = parseSuggestedPromptsFromContentBlocks(blocks, {
+  const parsedPromptBlocks = parseSuggestedPromptsFromContentBlocks(contentBlocks, {
     isStreaming: !!message.isStreaming,
   });
   const grouped = groupContentBlocks(parsedPromptBlocks.contentBlocks, !!message.isStreaming);
-  const lastIndex = grouped.length - 1;
-  const parts: string[] = [];
-  const pushText = (text: string) => parts.push(parseSuggestedPrompts(text).cleanedContent);
-  grouped.forEach((block, index) => {
+  const output: ChatSearchBlock[] = [];
+  const addText = (text: string, blockPath: string, disclosurePath: string[]) => {
+    const cleaned = parseSuggestedPrompts(text).cleanedContent;
+    if (!cleaned.trim()) return;
+    output.push({ messageId: message.id, turnKey, blockPath, disclosurePath, text: cleaned });
+  };
+
+  grouped.forEach((block, blockIndex) => {
+    const path = chatSearchBlockPath(blockIndex);
     if (block.type === 'text') {
-      pushText(block.text || block.content || '');
-    } else if (block.type === 'content_group' && index === lastIndex) {
-      for (const child of block.children) {
-        if (child.type === 'text') pushText(child.text || child.content || '');
-      }
+      addText(block.text || block.content || '', path, []);
+      return;
     }
+    if (block.type !== 'content_group') return;
+    const group = block as ContentBlockGroup;
+    group.children.forEach((child, childIndex) => {
+      if (child.type !== 'text') return;
+      addText(child.text || child.content || '', chatSearchBlockPath(blockIndex, childIndex), [
+        `group:${path}`,
+      ]);
+    });
   });
-  return parts.join('');
+  return output;
+}
+
+function buildChatSearchIndex(
+  messages: AgentMessage[],
+  turnKeyByMessageId: ReadonlyMap<string, string>,
+): ChatSearchBlock[] {
+  return messages.flatMap((message) =>
+    buildMessageSearchBlocks(message, turnKeyByMessageId.get(message.id) ?? message.id),
+  );
+}
+
+export function extractSearchableContent(message: AgentMessage): string {
+  return buildMessageSearchBlocks(message, message.id)
+    .map((block) => block.text)
+    .join('');
 }
 
 export function findChatSearchMatches(
@@ -49,15 +98,24 @@ export function findChatSearchMatches(
   const normalizedQuery = query.trim().toLowerCase();
   if (!normalizedQuery) return [];
   const matches: ChatSearchMatch[] = [];
-  for (const message of messages) {
-    const content = extractSearchableContent(message).toLowerCase();
-    const turnKey = turnKeyByMessageId.get(message.id) ?? message.id;
+  const occurrenceByMessage = new Map<string, number>();
+  for (const block of buildChatSearchIndex(messages, turnKeyByMessageId)) {
+    const content = block.text.toLowerCase();
     let offset = 0;
-    let matchIndexInMessage = 0;
+    let occurrenceInBlock = 0;
     while ((offset = content.indexOf(normalizedQuery, offset)) !== -1) {
-      matches.push({ messageId: message.id, matchIndexInMessage, turnKey });
+      const matchIndexInMessage = occurrenceByMessage.get(block.messageId) ?? 0;
+      matches.push({
+        messageId: block.messageId,
+        matchIndexInMessage,
+        occurrenceInBlock,
+        turnKey: block.turnKey,
+        blockPath: block.blockPath,
+        disclosurePath: block.disclosurePath,
+      });
+      occurrenceByMessage.set(block.messageId, matchIndexInMessage + 1);
       offset += normalizedQuery.length;
-      matchIndexInMessage++;
+      occurrenceInBlock++;
     }
   }
   return matches;

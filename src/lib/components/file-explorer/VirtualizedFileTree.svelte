@@ -38,6 +38,7 @@
   import type { PanelTab } from '$store/renderer/slices/panel-layout/panel-layout-types';
   import { getPanelTabOpenState } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
   import OpenPanelIndicator from '$lib/components/workspace/sidebar/OpenPanelIndicator.svelte';
+  import { isCmdClickModifier } from '$shared/utils/link-helpers';
 
   // Sentinel path for inline creation node
   const CREATING_SENTINEL_PATH = '__creating_new_file__';
@@ -60,11 +61,11 @@
     flattenedNodes: FlattenedFileNode[];
     selectedFile?: string;
     workspaceId?: string;
-    onFileSelect?: (path: string) => void;
+    onFileSelect?: (path: string, event?: MouseEvent | KeyboardEvent) => void;
     onToggleDirectory?: (node: FileNode, flatNode?: FlattenedFileNode) => void;
     onCreateFile?: (folderPath: string, fileName?: string) => void | Promise<void>;
     onRenameFile?: (oldPath: string, newPath: string) => void | Promise<void>;
-    onSelectAgent?: (agentId: string) => void;
+    onSelectAgent?: (agentId: string, event?: MouseEvent | KeyboardEvent) => void;
     getGitStatusColor?: (status?: string) => string;
     isFileModified?: (path: string) => boolean;
     itemHeight?: number;
@@ -491,7 +492,7 @@
           }
         } else {
           // For files, open the file
-          onFileSelect?.(node.path);
+          onFileSelect?.(node.path, e);
         }
         break;
       }
@@ -520,12 +521,14 @@
         e.preventDefault();
         if (!focusedNode) break;
         const node = focusedNode.node;
-        if (onRenameFile) {
+        if (isCmdClickModifier({ event: e }) && node.type === 'file') {
+          onFileSelect?.(node.path, e);
+        } else if (onRenameFile) {
           startEditing(node.path, node.name);
         } else if (node.type === 'directory') {
           requestToggleDirectory(focusedNode);
         } else {
-          onFileSelect?.(node.path);
+          onFileSelect?.(node.path, e);
         }
         break;
       }
@@ -536,7 +539,7 @@
         if (!focusedNode) break;
         const node = focusedNode.node;
         if (node.type === 'file') {
-          onFileSelect?.(node.path);
+          onFileSelect?.(node.path, e);
           // Focus stays in explorer - don't blur
         } else {
           // For directories, toggle expansion
@@ -1060,11 +1063,11 @@
 
   // Handle item click
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  function handleItemClick(flatNode: FlattenedFileNode, index: number) {
+  function handleItemClick(flatNode: FlattenedFileNode, index: number, event: MouseEvent) {
     // Update focused path on click (use path directly for stability)
     focusedPath = flatNode.node.path;
     if (flatNode.node.type === 'file') {
-      onFileSelect?.(flatNode.node.path);
+      onFileSelect?.(flatNode.node.path, event);
     } else {
       requestToggleDirectory(flatNode);
     }
@@ -1230,7 +1233,7 @@
                   iconClass={`opacity-50 [&>svg]:w-2! [&>svg]:mr-1! ${gitColor} transition-transform duration-150 ${flatNode.isExpanded ? '' : 'rotate-90'}`}
                   title={displayName}
                   titleClass={gitColor}
-                  onclick={() => handleItemClick(flatNode, absoluteIndex)}
+                  onclick={(event) => handleItemClick(flatNode, absoluteIndex, event)}
                   size="sm"
                   class="flex-1"
                   actions={onCreateFile
@@ -1258,7 +1261,7 @@
                   titleClass={gitColor}
                   badge={isModified ? '•' : undefined}
                   badgeClass={isModified ? 'text-blue-500' : undefined}
-                  onclick={() => handleItemClick(flatNode, absoluteIndex)}
+                  onclick={(event) => handleItemClick(flatNode, absoluteIndex, event)}
                   size="sm"
                   class="flex-1"
                 >
@@ -1287,10 +1290,10 @@
                       title={m.fileExplorer_tree_openAgent_tooltip()}
                       onclick={(e) => {
                         e.stopPropagation();
-                        onSelectAgent?.(agentId);
+                        onSelectAgent?.(agentId, e);
                       }}
                     >
-                      <AgentAvatar {agentId} size={16} />
+                      <AgentAvatar {agentId} variant="compact" />
                     </button>
                   {/each}
                 </div>

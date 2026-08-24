@@ -165,69 +165,76 @@
               <Fa icon={faExclamationTriangle} class="size-3" />
             {/if}
           </span>
-          {#if live}
-            {@const stopLabel = m.terminal_quakeOverlay_stop_label()}
-            {@const restartLabel = m.workspace_devScripts_restart_ariaLabel({ name: script.name })}
-            <Button
-              variant="plain"
-              size="icon-xs"
-              iconOnly
-              class="size-7 shrink-0"
-              disabled={operation?.pending ?? false}
-              aria-busy={operation?.pending && operation.action === 'stop' ? true : undefined}
-              aria-label={stopLabel}
-              tooltip={stopLabel}
-              tooltipSide="left"
-              onclick={(event) => runScript(script.id, 'stop', event)}
-              data-script-action="stop"
-            >
-              {#if operation?.pending && operation.action === 'stop'}
-                <Fa icon={faSpinner} class="size-3 animate-spin motion-reduce:animate-none" />
-              {:else}
-                <Fa icon={faStop} class="size-3" />
-              {/if}
-            </Button>
-            <Button
-              variant="plain"
-              size="icon-xs"
-              iconOnly
-              class="size-7 shrink-0"
-              disabled={operation?.pending ?? false}
-              aria-busy={operation?.pending && operation.action === 'restart' ? true : undefined}
-              aria-label={restartLabel}
-              tooltip={restartLabel}
-              tooltipSide="left"
-              onclick={(event) => runScript(script.id, 'restart', event)}
-              data-script-action="restart"
-            >
-              {#if operation?.pending && operation.action === 'restart'}
-                <Fa icon={faSpinner} class="size-3 animate-spin motion-reduce:animate-none" />
-              {:else}
-                <Fa icon={faRotateRight} class="size-3" />
-              {/if}
-            </Button>
-          {:else}
-            {@const startLabel = m.workspace_devScripts_start_ariaLabel({ name: script.name })}
-            <Button
-              variant="plain"
-              size="icon-xs"
-              iconOnly
-              class="size-7 shrink-0"
-              disabled={operation?.pending ?? false}
-              aria-busy={operation?.pending || undefined}
-              aria-label={startLabel}
-              tooltip={startLabel}
-              tooltipSide="left"
-              onclick={(event) => runScript(script.id, 'start', event)}
-              data-script-action="start"
-            >
-              {#if operation?.pending}
-                <Fa icon={faSpinner} class="size-3 animate-spin motion-reduce:animate-none" />
-              {:else}
-                <Fa icon={faPlay} class="size-3" />
-              {/if}
-            </Button>
-          {/if}
+          <div
+            class="flex shrink-0 items-center rounded-md bg-secondary/80 px-1"
+            data-script-actions
+          >
+            {#if live}
+              {@const stopLabel = m.terminal_quakeOverlay_stop_label()}
+              {@const restartLabel = m.workspace_devScripts_restart_ariaLabel({
+                name: script.name,
+              })}
+              <Button
+                variant="ghost-light"
+                size="icon-xs"
+                iconOnly
+                class="size-7 shrink-0 text-destructive hover:text-destructive active:bg-accent/80"
+                disabled={operation?.pending ?? false}
+                aria-busy={operation?.pending && operation.action === 'stop' ? true : undefined}
+                aria-label={stopLabel}
+                tooltip={stopLabel}
+                tooltipSide="left"
+                onclick={(event) => runScript(script.id, 'stop', event)}
+                data-script-action="stop"
+              >
+                {#if operation?.pending && operation.action === 'stop'}
+                  <Fa icon={faSpinner} class="size-3 animate-spin motion-reduce:animate-none" />
+                {:else}
+                  <Fa icon={faStop} class="size-3" />
+                {/if}
+              </Button>
+              <Button
+                variant="ghost-light"
+                size="icon-xs"
+                iconOnly
+                class="size-7 shrink-0 active:bg-accent/80"
+                disabled={operation?.pending ?? false}
+                aria-busy={operation?.pending && operation.action === 'restart' ? true : undefined}
+                aria-label={restartLabel}
+                tooltip={restartLabel}
+                tooltipSide="left"
+                onclick={(event) => runScript(script.id, 'restart', event)}
+                data-script-action="restart"
+              >
+                {#if operation?.pending && operation.action === 'restart'}
+                  <Fa icon={faSpinner} class="size-3 animate-spin motion-reduce:animate-none" />
+                {:else}
+                  <Fa icon={faRotateRight} class="size-3" />
+                {/if}
+              </Button>
+            {:else}
+              {@const startLabel = m.workspace_devScripts_start_ariaLabel({ name: script.name })}
+              <Button
+                variant="ghost-light"
+                size="icon-xs"
+                iconOnly
+                class="size-7 shrink-0 active:bg-accent/80"
+                disabled={operation?.pending ?? false}
+                aria-busy={operation?.pending || undefined}
+                aria-label={startLabel}
+                tooltip={startLabel}
+                tooltipSide="left"
+                onclick={(event) => runScript(script.id, 'start', event)}
+                data-script-action="start"
+              >
+                {#if operation?.pending}
+                  <Fa icon={faSpinner} class="size-3 animate-spin motion-reduce:animate-none" />
+                {:else}
+                  <Fa icon={faPlay} class="size-3" />
+                {/if}
+              </Button>
+            {/if}
+          </div>
         </div>
       {:else}
         <p class="px-0 py-1.5 text-sm text-muted-foreground">

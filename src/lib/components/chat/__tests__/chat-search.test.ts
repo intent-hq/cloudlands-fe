@@ -6,15 +6,41 @@ const assistant = (id: string, contentBlocks: AgentMessage['contentBlocks']): Ag
   ({ id, role: 'assistant', contentBlocks }) as AgentMessage;
 
 describe('chat search utilities', () => {
-  it('indexes rendered text and excludes collapsed earlier response groups', () => {
+  it('indexes every response group with the disclosure path needed to reveal it', () => {
     const message = assistant('assistant-1', [
       { type: 'text', text: '<group:Earlier>hidden match</group>' },
       { type: 'text', text: '<group:Latest>visible match</group>' },
     ]);
 
-    expect(findChatSearchMatches([message], 'hidden', new Map())).toEqual([]);
+    expect(findChatSearchMatches([message], 'hidden', new Map())).toEqual([
+      {
+        messageId: 'assistant-1',
+        matchIndexInMessage: 0,
+        occurrenceInBlock: 0,
+        turnKey: 'assistant-1',
+        blockPath: 'b:0:c:0',
+        disclosurePath: ['group:b:0'],
+      },
+    ]);
     expect(findChatSearchMatches([message], 'match', new Map([['assistant-1', 'turn-1']]))).toEqual(
-      [{ messageId: 'assistant-1', matchIndexInMessage: 0, turnKey: 'turn-1' }],
+      [
+        {
+          messageId: 'assistant-1',
+          matchIndexInMessage: 0,
+          occurrenceInBlock: 0,
+          turnKey: 'turn-1',
+          blockPath: 'b:0:c:0',
+          disclosurePath: ['group:b:0'],
+        },
+        {
+          messageId: 'assistant-1',
+          matchIndexInMessage: 1,
+          occurrenceInBlock: 0,
+          turnKey: 'turn-1',
+          blockPath: 'b:1:c:0',
+          disclosurePath: ['group:b:1'],
+        },
+      ],
     );
   });
 

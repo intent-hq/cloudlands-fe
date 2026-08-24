@@ -75,6 +75,10 @@ describe('workspace column layout contract', () => {
       path.join(SRC_ROOT, 'lib/components/layout/panel-system/PanelTabBar.svelte'),
       'utf8',
     );
+    const panel = fs.readFileSync(
+      path.join(SRC_ROOT, 'lib/components/layout/panel-system/Panel.svelte'),
+      'utf8',
+    );
     const titleBar = fs.readFileSync(
       path.join(SRC_ROOT, 'lib/components/layout/WindowTitleBar.svelte'),
       'utf8',
@@ -133,9 +137,17 @@ describe('workspace column layout contract', () => {
     expect(sidebarHeader).not.toContain('data-panel-column-count-trigger');
     expect(progress).not.toContain('data-panel-column-icon');
     expect(sidebarHeader).not.toContain('data-panel-column-icon');
-    expect(panelTabBar).toContain('data-panel-column-count-trigger');
-    expect(panelTabBar).toContain('data-panel-column-icon={value}');
-    expect(panelTabBar).toContain('{@render panelColumnIcon($panelColumnCount$)}');
+    expect(panelTabBar).not.toContain('data-panel-column-count-trigger');
+    expect(panelTabBar).not.toContain('data-panel-column-icon');
+    expect(panelTabBar).toContain('data-add-panel-column');
+    expect(panelTabBar).not.toContain('.panel-header[data-column-focused]');
+    expect(panel).toContain('box-sizing: border-box;\n    border: 1px solid transparent;');
+    expect(panel).toContain(
+      ".panel[data-focus-border-visible='true'] {\n    border-color: hsl(var(--border));",
+    );
+    expect(panel).toContain(
+      "@media (forced-colors: active) {\n    .panel[data-focus-border-visible='true'] {\n      border-color: Highlight;",
+    );
     expect(progress.indexOf('data-workspace-close')).toBeGreaterThan(
       progress.indexOf('<DropdownMenu bind:open={dropdownOpen}>'),
     );

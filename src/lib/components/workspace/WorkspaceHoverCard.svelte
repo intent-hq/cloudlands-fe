@@ -6,7 +6,7 @@
     WorkspaceAgentInfo,
     WorkspaceGitSummary,
   } from '$shared/types';
-  import { PullRequestStatus, WorkspaceStatusEnum } from '$shared/types';
+  import { WorkspaceStatusEnum } from '$shared/types';
   import { formatDistanceToNow } from '$lib/i18n/format';
   import { Skeleton } from '$lib/components/ui/skeleton';
   import AgentAvatarWithState from '$features/agent/components/agent-avatar/AgentAvatarWithState.svelte';
@@ -18,8 +18,6 @@
   import { activeStreamsTracker } from '$features/agent/services/active-streams-tracker';
   import { onMount } from 'svelte';
   import { writable } from 'svelte/store';
-  import Fa from 'svelte-fa';
-  import { faCodeMerge, faCodePullRequest } from '@fortawesome/free-solid-svg-icons';
   import { selectAllWorkspaceAgents } from '$store/renderer/slices/workspace-agents/workspace-agents-selectors';
   import { ensureAgentSessionLoaded } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
   import {
@@ -33,6 +31,8 @@
     selectWorkspaceGitSummary,
   } from '$store/renderer/slices/workspace-summaries/workspace-summaries-selectors';
   import { loadWorkspaceSummariesRequested } from '$store/renderer/slices/workspace-summaries/workspace-summaries-slice';
+  import { selectWorkspaceActivePullRequest } from '$store/renderer/slices/workspace/workspace-selectors';
+  import { selectPrMonitors } from '$store/renderer/slices/pr-monitor/pr-monitor-selectors';
 
   import { getWorkspaceActivityDisplayTime } from '$shared/utils/workspace-activity-time';
   import { store as appStore } from '$store/renderer/store';
@@ -40,6 +40,11 @@
   import { formatInteger } from '$lib/i18n/format';
   import TaskStatusProgress from './TaskStatusProgress.svelte';
   import WorkspaceStatusIcon from './WorkspaceStatusIcon.svelte';
+  import { constructPrUrl } from './sidebar/sidebar-changes-utils';
+  import {
+    buildWorkspacePRPresentationModel,
+    type WorkspacePRPresentationRow,
+  } from './sidebar/workspace-pr-presentation';
   import {
     getWorkspaceStatusPresentation,
     resolveWorkspaceStatusState,
@@ -96,11 +101,6 @@
     }
   }
 
-  function titleCase(value: string | undefined) {
-    if (!value) return null;
-    return value.charAt(0).toUpperCase() + value.slice(1).toLowerCase().replaceAll('_', ' ');
-  }
-
   function pluralize(count: number, singular: string, plural = `${singular}s`) {
     return `${count} ${count === 1 ? singular : plural}`;
   }
@@ -120,55 +120,6 @@
       createdAt: workspace.updatedAt,
       updatedAt: workspace.updatedAt,
     };
-  }
-
-  function getPullRequestDisplayStatus(
-    pr: PullRequestInfo | null,
-    legacyStatus?: PullRequestStatus,
-  ) {
-    return pr?.isDraft ? PullRequestStatus.Draft : (pr?.status ?? legacyStatus ?? null);
-  }
-
-  function formatPullRequestDetails(pr: PullRequestInfo | null, legacyStatus?: PullRequestStatus) {
-    const status = pr?.isDraft ? PullRequestStatus.Draft : (pr?.status ?? legacyStatus);
-    if (!status) return null;
-
-    const parts: string[] = [];
-    if (!pr?.number || status !== PullRequestStatus.Open) parts.push(titleCase(status) ?? status);
-    if (pr?.mergeConflicts) parts.push('conflicts');
-    if (pr?.ciStatus?.failed) parts.push('CI failing');
-    else if (pr?.ciStatus?.pending) parts.push('CI pending');
-    if (pr?.reviewDecision === 'APPROVED') parts.push('approved');
-    if (pr?.reviewDecision === 'CHANGES_REQUESTED') parts.push('changes requested');
-    return parts.length > 0 ? parts.join(' · ') : null;
-  }
-
-  function getPullRequestStatusColor(status: PullRequestStatus | null) {
-    switch (status) {
-      case PullRequestStatus.Open:
-        return 'text-emerald-500';
-      case PullRequestStatus.Merged:
-        return 'text-purple-500';
-      case PullRequestStatus.Closed:
-        return 'text-red-500';
-      default:
-        return 'text-subtle';
-    }
-  }
-
-  function getPullRequestStatusIcon(status: PullRequestStatus | null) {
-    return status === PullRequestStatus.Merged ? faCodeMerge : faCodePullRequest;
-  }
-
-  function getPullRequestDetailsColor(
-    pr: PullRequestInfo | null,
-    status: PullRequestStatus | null,
-  ) {
-    if (pr?.mergeConflicts || pr?.ciStatus?.failed || pr?.reviewDecision === 'CHANGES_REQUESTED') {
-      return 'text-red-500';
-    }
-    if (pr?.ciStatus?.pending) return 'text-amber-500';
-    return getPullRequestStatusColor(status);
   }
 
   function formatGitSummary(summary: WorkspaceGitSummary | null) {
@@ -266,6 +217,7 @@
   const workspaceTasksInitialized$ = selectWorkspaceTasksInitialized(workspaceIdStore);
   const workspaceDiffSummary$ = selectWorkspaceDiffSummary(workspaceIdStore);
   const workspaceGitSummary$ = selectWorkspaceGitSummary(workspaceIdStore);
+  const prMonitors$ = selectPrMonitors(workspaceIdStore);
 
   // Fetch on-demand task/summary data when the hovered workspace changes.
   $effect(() => {
@@ -423,13 +375,37 @@
     return $workspaceTaskProgress$.completed / $workspaceTaskProgress$.total;
   });
 
-  let activePullRequest = $derived(getWorkspacePullRequest(workspace));
-  let pullRequestDisplayStatus = $derived(
-    getPullRequestDisplayStatus(activePullRequest, workspace?.prStatus),
-  );
-  let pullRequestDetailsText = $derived(
-    formatPullRequestDetails(activePullRequest, workspace?.prStatus),
-  );
+  let activePullRequest = $derived.by(() => {
+    if (!workspace) return null;
+    return (
+      selectWorkspaceActivePullRequest.select(appStore.state, workspace.id) ??
+      getWorkspacePullRequest(workspace)
+    );
+  });
+  let workspacePrRows = $derived.by(() => {
+    if (!workspace) return [];
+    const ws = workspace;
+    const workspaceRepo =
+      ws.repositoryOwner && ws.repositoryName
+        ? `${ws.repositoryOwner}/${ws.repositoryName}`
+        : undefined;
+    return buildWorkspacePRPresentationModel({
+      workspacePRs: ws.pullRequests,
+      activePR: activePullRequest,
+      monitors: $prMonitors$,
+      workspaceRepo,
+      buildPrUrl: (prNum, fallbackUrl) =>
+        constructPrUrl(prNum, ws.repositoryOwner, ws.repositoryName, fallbackUrl),
+      getDisplayTitle: (pr) => pr.title,
+    });
+  });
+
+  function getWorkspacePrLabel(pr: WorkspacePRPresentationRow): string {
+    const identity = pr.repo
+      ? m.workspace_card_prBadge_repoLine_tooltip({ repo: pr.repo, number: pr.number })
+      : m.workspace_card_prBadge_label({ number: ` #${pr.number}` });
+    return [identity, pr.title, pr.details].filter(Boolean).join('\n');
+  }
 
   let gitSummaryText = $derived(workspace ? formatGitSummary($workspaceGitSummary$) : null);
 
@@ -455,7 +431,7 @@
 </script>
 
 <div
-  class="bg-popover shadow-(--elevation-overlay) ring-1 ring-border/70 py-3 px-4 w-[320px] shrink-0 max-w-[calc(100vw-1rem)] flex flex-col gap-1.5 text-left"
+  class="bg-card dark:bg-popover shadow-(--elevation-overlay) ring-1 ring-border/70 py-3 px-4 w-[320px] shrink-0 max-w-[calc(100vw-1rem)] flex flex-col gap-1.5 text-left"
 >
   <!-- Header: Title and repo -->
   <div class="w-full" data-workspace-hover-card-header>
@@ -464,27 +440,25 @@
     {:else}
       <div class="flex items-start gap-2" data-workspace-hover-card-title-row>
         <div class="min-w-0 flex-1">
-          <div class="text-sm font-semibold text-foreground truncate">
+          <div class="type-title truncate text-foreground" data-workspace-hover-card-title>
             {workspace?.title || m.workspace_links_untitled_label()}
           </div>
         </div>
         {#if lifecycleText}
-          <div
-            class="shrink-0 rounded-full bg-muted px-2 py-0.5 text-[0.65rem] font-medium text-subtle"
-          >
+          <div class="type-caption shrink-0 rounded-full bg-muted px-2 py-0.5 text-subtle">
             {lifecycleText}
           </div>
         {/if}
       </div>
       <div class="w-full flex items-center -mt-0.5 gap-1" data-workspace-hover-card-repo-row>
         <div
-          class="flex-1 text-muted-foreground text-sm truncate text-left bg-transparent border-none p-0 font-inherit"
+          class="type-body flex-1 truncate border-none bg-transparent p-0 text-left text-muted-foreground"
         >
           {repoDisplayName}
         </div>
       </div>
       <div
-        class="mt-1 flex w-full min-w-0 items-center gap-2 text-sm text-muted-foreground"
+        class="type-caption mt-1 flex w-full min-w-0 items-center gap-2 text-muted-foreground"
         data-workspace-hover-card-status-row
       >
         <WorkspaceStatusIcon status={workspaceStatusState} size={14} decorative />
@@ -503,7 +477,8 @@
       </div>
       {#if statusMessage}
         <div
-          class="mt-2 w-full text-sm text-subtle bg-transparent border-none px-0.5 pt-1 text-left break-words whitespace-pre-wrap transition-all duration-150 leading-snug"
+          class="type-body mt-2 w-full break-words border-none bg-transparent px-0.5 pt-1 text-left whitespace-pre-wrap text-muted-foreground transition-all duration-150"
+          data-workspace-hover-card-status-message
         >
           {statusMessage}
         </div>
@@ -512,7 +487,7 @@
   </div>
 
   {#if !isLoading && workspace}
-    <div class="grid gap-1.5 text-xs text-subtle">
+    <div class="grid gap-1.5 text-subtle">
       {#if runningAgents.length > 0}
         <div class="mt-1 flex w-full min-w-0 flex-col pb-2">
           <div
@@ -535,14 +510,14 @@
                       specialist={agent.specialist as BuiltinSpecialistId | null}
                     />
                   </span>
-                  <span class="min-w-0 truncate text-sm font-medium leading-5 text-foreground">
+                  <span class="type-body min-w-0 truncate text-foreground">
                     {agent.name}
                   </span>
                 </div>
               </div>
             {/each}
             {#if runningAgents.length > 3}
-              <div class="px-1.75 pt-0.75 text-ui text-subtle font-medium">
+              <div class="type-caption px-1.75 pt-0.75 text-subtle">
                 {m.workspace_hoverCard_moreAgents_label({
                   count: formatInteger(runningAgents.length - 3),
                 })}
@@ -561,34 +536,43 @@
         </div>
       {/if}
 
-      {#if activePullRequest}
+      {#if workspacePrRows.length > 0}
         <div
-          class="relative min-w-0 -mx-1 flex w-full items-center gap-2 px-1 py-0.5"
+          class="-mx-1 grid min-w-0 w-full gap-1 px-1 py-0.5"
           aria-label={m.workspace_hoverCard_pullRequest_label()}
+          role="list"
+          data-workspace-hover-card-pr-list
         >
-          <Fa
-            icon={getPullRequestStatusIcon(pullRequestDisplayStatus)}
-            size="xs"
-            class="{getPullRequestStatusColor(pullRequestDisplayStatus)} shrink-0"
-          />
-          <span class="flex min-w-0 flex-1 items-center gap-2 text-left">
-            <span class="min-w-0 flex-1 truncate text-sm text-foreground">
-              {activePullRequest.title || m.workspace_hoverCard_pullRequest_label()}
-            </span>
-            {#if activePullRequest.number}
-              <span class="shrink-0 text-ui text-subtle">#{activePullRequest.number}</span>
-            {/if}
-            {#if pullRequestDetailsText}
-              <span
-                class="max-w-28 shrink-0 truncate text-right text-ui font-medium {getPullRequestDetailsColor(
-                  activePullRequest,
-                  pullRequestDisplayStatus,
-                )}"
-              >
-                {pullRequestDetailsText}
+          {#each workspacePrRows as pr (pr.identity)}
+            <div
+              class="grid min-w-0 gap-y-0.5 rounded-sm px-0.5 py-0.5"
+              aria-label={getWorkspacePrLabel(pr)}
+              role="listitem"
+              data-workspace-hover-card-pr-row
+              data-pr-identity={pr.identity}
+              data-pr-status={pr.status}
+            >
+              <span class="flex min-w-0 items-center gap-2 text-left">
+                <span class="type-body min-w-0 flex-1 truncate text-foreground">
+                  {pr.title || m.workspace_hoverCard_pullRequest_label()}
+                </span>
+                <span class="type-caption shrink-0 text-subtle">#{pr.number}</span>
               </span>
-            {/if}
-          </span>
+              <span class="flex min-w-0 items-center gap-1.5">
+                {#if pr.repoContext}
+                  <span class="type-caption max-w-24 shrink-0 truncate text-subtle"
+                    >{pr.repoContext}</span
+                  >
+                {/if}
+                <span
+                  class="type-caption min-w-0 truncate {pr.foregroundClass}"
+                  data-workspace-hover-card-pr-status
+                >
+                  {pr.details.replaceAll('\n', ' · ')}
+                </span>
+              </span>
+            </div>
+          {/each}
         </div>
       {/if}
 
@@ -597,13 +581,16 @@
           class="-mx-1 flex w-full min-w-0 items-center px-1 py-0.5"
           aria-label={m.workspace_hoverCard_changes_ariaLabel()}
         >
-          <span class="min-w-0 truncate text-sm font-medium leading-5 text-foreground">
+          <span class="type-body min-w-0 truncate text-foreground">
             {changeSummaryLineText}
           </span>
         </div>
       {/if}
 
-      <div class="flex items-center justify-between gap-3">
+      <div
+        class="type-caption flex items-center justify-between gap-3 text-muted-foreground"
+        data-workspace-hover-card-timestamp
+      >
         <span class="min-w-0 truncate text-right"
           >{m.workspace_hoverCard_lastUpdated_label({ time: lastActivityText })}</span
         >

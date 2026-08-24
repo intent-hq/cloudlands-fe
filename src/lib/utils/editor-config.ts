@@ -58,6 +58,7 @@ import { logger } from './client-logger';
 import SmoothScroll from './smoothScroll';
 import { detectFilePathFromClick } from './file-path-detector';
 import { handleLink } from '$features/navigation/link-handler';
+import { isCmdClickModifier } from '$shared/utils/link-helpers';
 import { FilePathDecorations } from '$lib/components/tiptap/FilePathDecorations';
 import { CodeBlockCopyButton } from '$lib/components/tiptap/CodeBlockCopyButton';
 import { handleNoteEditorCopyAsMarkdown } from './selected-note-markdown-copy';
@@ -1075,8 +1076,6 @@ export function createEditorConfig(options: EditorConfigOptions): EditorOptions 
             handleLink(anchor.href, {
               workspaceId: workspace.id,
               sourcePanelId,
-              openInAdjacentPanel: true,
-              openInNewAdjacentPanel: true,
               event,
             });
           }
@@ -1159,7 +1158,7 @@ export function createEditorConfig(options: EditorConfigOptions): EditorOptions 
         const filePath = detectFilePathFromClick(target);
         if (filePath && workspace?.id) {
           event.preventDefault();
-          const openInAdjacentPanel = event.metaKey || event.ctrlKey;
+          const openInAdjacentPanel = isCmdClickModifier({ event });
           logger.debug('[EditorConfig] File path clicked', { filePath, openInAdjacentPanel });
           appStore.dispatch(openWorkspaceFile(workspace.id, filePath, { openInAdjacentPanel }));
           return true;

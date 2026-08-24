@@ -437,7 +437,6 @@ export const faCircleXmark = icon('circle-xmark');
 export const faClipboard = icon('clipboard');
 export const faClipboardCheck = icon('clipboard-check');
 export const faClock = icon('clock');
-export const faClockRotateLeft = icon('clock-rotate-left');
 export const faCloud = icon('cloud');
 export const faCloudArrowUp = icon('cloud-arrow-up');
 export const faCode = icon('code');

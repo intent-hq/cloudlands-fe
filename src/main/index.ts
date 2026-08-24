@@ -890,8 +890,10 @@ app.whenReady().then(async () => {
       { type: 'separator' },
       {
         label: m.menu_select_previous_tab(),
-        accelerator: 'CmdOrCtrl+Shift+[',
+        accelerator: 'CmdOrCtrl+[',
         enabled: inWorkspace,
+        // Let the renderer preserve editor and terminal ownership.
+        registerAccelerator: false,
         click: () => {
           const focusedWindow = BrowserWindow.getFocusedWindow();
           if (focusedWindow && !focusedWindow.isDestroyed()) {
@@ -901,8 +903,10 @@ app.whenReady().then(async () => {
       },
       {
         label: m.menu_select_next_tab(),
-        accelerator: 'CmdOrCtrl+Shift+]',
+        accelerator: 'CmdOrCtrl+]',
         enabled: inWorkspace,
+        // Let the renderer preserve editor and terminal ownership.
+        registerAccelerator: false,
         click: () => {
           const focusedWindow = BrowserWindow.getFocusedWindow();
           if (focusedWindow && !focusedWindow.isDestroyed()) {

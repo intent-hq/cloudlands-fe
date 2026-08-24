@@ -679,7 +679,7 @@
           >
             <AgentAvatar
               agentId="blank"
-              size={20}
+              variant="standard"
               specialist={currentSpecialistInfo ? displayedSpecialist : null}
             />
             <div class="flex flex-col min-w-0 flex-1">
@@ -705,7 +705,7 @@
                 : ''}"
               onclick={() => handleSpecialistSelect(null)}
             >
-              <AgentAvatar agentId="blank" size={20} />
+              <AgentAvatar agentId="blank" variant="standard" />
               <div class="flex flex-col min-w-0">
                 <span class="font-medium text-foreground text-sm"
                   >{m.workspace_initialAgentPicker_general_label()}</span
@@ -727,7 +727,7 @@
                     : ''}"
                   onclick={() => handleSpecialistSelect(specialist.id)}
                 >
-                  <AgentAvatar agentId="blank" size={20} specialist={specialist.id} />
+                  <AgentAvatar agentId="blank" variant="standard" specialist={specialist.id} />
                   <div class="flex flex-col min-w-0">
                     <span class="font-medium text-foreground text-sm">{specialist.name}</span>
                     <span class="text-xs text-subtle truncate">{specialist.description}</span>

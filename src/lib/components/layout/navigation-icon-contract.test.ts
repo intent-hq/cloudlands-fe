@@ -25,6 +25,8 @@ describe('primary navigation icon contract', () => {
       titleBar.indexOf('<WorkspaceViewModeToggle />'),
     );
     expect(spaces).toContain('shortcut="mod+o"');
+    expect(spaces).toContain('label={m.layout_titleBar_toggleSidebar_ariaLabel()}');
+    expect(spaces).toContain('aria-label={m.layout_titleBar_toggleSidebar_ariaLabel()}');
     expect(viewMode).toContain('shortcut="mod+shift+l"');
     expect(spaces).not.toContain('title={m.ui_shortcuts_toggleSpaces_label()}');
     expect(viewMode).not.toContain('title={toggleLabel}');
