@@ -244,6 +244,7 @@
   } from './lazy-turn-height-cache';
   import { createMessageHydrationPolicy, type HydrationMessage } from './message-hydration-policy';
   import {
+    CHIEF_LAZY_MESSAGE_THRESHOLD,
     INITIAL_LAZY_MODE_TRACKER,
     isOlderHistoryPrepend,
     isTurnInRecentWindow,
@@ -2550,17 +2551,28 @@
   const totalTurnCount = $derived($agentMessages$.filter((m) => m.role === 'user').length);
 
   // PERF: Enable lazy loading only for larger conversations, latched across
-  // background older-history prepends (see nextLazyMode). Mutating the plain
-  // (non-$state) tracker inside the derived is safe: re-evaluation with
+  // background older-history prepends (see nextLazyMode). The decision crosses
+  // on either the user-turn count OR the total message count (currentCount) so
+  // assistant-heavy transcripts (Chief-of-staff threads) virtualize despite a
+  // low turn count. Chief threads use a lower message threshold so their
+  // assistant-heavy transcripts engage virtualization much sooner. Mutating the
+  // plain (non-$state) tracker inside the derived is safe: re-evaluation with
   // unchanged inputs is idempotent (`unchanged` → latch), and deriveds are
-  // lazy, so the latch is best-effort — a prepend coalesced with an append
-  // into one observed transition recomputes from the threshold, failing open
-  // to the pre-latch behavior. Do not make the tracker stateful.
+  // lazy, so the latch is best-effort — a prepend coalesced with an append into
+  // one observed transition recomputes from the threshold, failing open to the
+  // pre-latch behavior. Do not make the tracker stateful.
   let lazyModeTracker = INITIAL_LAZY_MODE_TRACKER;
   const shouldUseLazyLoading = $derived.by(() => {
     const currentCount = $agentMessages$.length;
     const currentNewestId = $agentMessages$[currentCount - 1]?.id;
-    lazyModeTracker = nextLazyMode(lazyModeTracker, currentCount, currentNewestId, totalTurnCount);
+    const messageThreshold = isChiefWorkspace ? CHIEF_LAZY_MESSAGE_THRESHOLD : undefined;
+    lazyModeTracker = nextLazyMode(
+      lazyModeTracker,
+      currentCount,
+      currentNewestId,
+      totalTurnCount,
+      messageThreshold,
+    );
     return lazyModeTracker.mode;
   });
 

@@ -231,7 +231,11 @@ describe('editorial workspace shell presentation contract', () => {
     expect(appLayout).toContain('class="workspace-main flex');
     expect(sidebarPanel).toContain('data-panel-item={$panelItem$}');
     expect(sidebarPanel).not.toContain("$panelItem$ === 'chief' ? 'bg-background' : ''");
-    expect(sidebarPanel).toContain("transition:slide={{ axis: 'x', duration: 200 }}");
+    // The panel stays mounted when closed and animates its width instead of
+    // mounting/unmounting via a slide transition.
+    expect(sidebarPanel).not.toContain("transition:slide={{ axis: 'x', duration: 200 }}");
+    expect(sidebarPanel).toContain('data-panel-shell');
+    expect(sidebarPanel).toContain('inert={!isOpen}');
   });
 
   it('owns shell, page, and sidebar surfaces with resolved app theme tokens', () => {
