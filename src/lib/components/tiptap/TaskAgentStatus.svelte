@@ -3,6 +3,7 @@
     selectAgentIsResponding,
     selectAgentSession,
   } from '$store/renderer/slices/agent-session/agent-session-selectors';
+  import { selectHudAgentHasPendingQuestion } from '$store/renderer/slices/hud/hud-selectors';
   import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
 
   import { restoreAgentSessionRequested } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
@@ -11,7 +12,8 @@
   import { onMount, onDestroy } from 'svelte';
   import { taskAgentPollingManager } from './task-agent-polling-manager';
   import AgentAvatarWithState from '$features/agent/components/agent-avatar/AgentAvatarWithState.svelte';
-  import { getAvatarState } from '$features/agent/components/agent-avatar/avatar-state';
+  import { getAvatarStateForSession } from '$features/agent/components/agent-avatar/avatar-state';
+  import { getAgentAvatarStateLabel } from '$features/agent/components/agent-avatar/avatar-state-label';
   import { openAgentTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
   import { store as appStore } from '$store/renderer/store';
   import { m } from '$shared/paraglide/messages.js';
@@ -53,6 +55,8 @@
   const serviceAgent$ = selectAgentSession(agentId);
   // svelte-ignore state_referenced_locally - selector readables must be created at component init; component is mounted per-agent
   const agentIsResponding$ = selectAgentIsResponding(agentId);
+  // svelte-ignore state_referenced_locally - selector readables must be created at component init; component is mounted per-agent
+  const agentHasPendingQuestion$ = selectHudAgentHasPendingQuestion(agentId);
   // Force reactivity with a version counter that updates when we detect changes
   let version = $state(0);
   let timeoutId: ReturnType<typeof setTimeout> | undefined;
@@ -318,54 +322,17 @@
   // Process queue hint from Redux state
   const processQueueHint = $derived(storeAgent?.processQueueHint);
 
-  // Determine agent status - defined before latestContent since it depends on this value
-  type AgentDisplayStatus = 'streaming' | 'active' | 'complete' | 'error' | 'idle' | 'unknown';
-  const agentStatus: AgentDisplayStatus = $derived.by(() => {
-    // Use finalStatus if we have one (agent completed/errored)
-    if (finalStatus === 'complete') return 'complete';
-    if (finalStatus === 'error') return 'error';
-
-    // Use Redux-derived streaming state for real-time updates.
-    if (isStreamActive) return 'streaming';
-
-    if (!storeAgent && !serviceAgent) return 'unknown';
-
-    // Fallback to canonical current-state selector
-    if ($agentIsResponding$) return 'active';
-
-    const status = storeAgent?.status || serviceAgent?.status;
-    if (status === AgentStatus.Completed) return 'complete';
-    if (status === AgentStatus.Error) return 'error';
-
-    return 'idle';
-  });
-
+  const avatarState = $derived(
+    getAvatarStateForSession(agent, { hasQuestion: $agentHasPendingQuestion$ }),
+  );
   const agentStatusLabel = $derived.by(() => {
     if (!agent) {
       return agentFound
         ? m.tiptap_taskAgentStatus_loadingAgent_label()
         : m.tiptap_taskAgentStatus_spinningUp_label();
     }
-    if (agentStatus === 'streaming' || agentStatus === 'active') {
-      return m.tiptap_taskAgentStatus_working_label();
-    }
-    if (agentStatus === 'complete') return m.tiptap_taskAgentStatus_completed_label();
-    if (agentStatus === 'error') return m.tiptap_taskAgentStatus_error_label();
-    return m.tiptap_taskAgentStatus_assigned_label();
+    return getAgentAvatarStateLabel(avatarState);
   });
-  const avatarState = $derived(
-    getAvatarState(
-      {
-        ...agent,
-        isStreaming: agentStatus === 'streaming' || agent?.isStreaming,
-        isResponding: agentStatus === 'active' || $agentIsResponding$,
-      },
-      {
-        isCompleted: agentStatus === 'complete',
-        isFailed: agentStatus === 'error',
-      },
-    ),
-  );
   const indicatorLabel = $derived(
     `${m.chat_msgAttribution_openAgent_title({ name: agent?.name ?? agentId })}: ${agentStatusLabel}`,
   );
@@ -403,17 +370,13 @@
     class="task-agent-status"
     class:compact
     class:indicator
-    class:streaming={agentStatus === 'streaming'}
-    class:active={agentStatus === 'active'}
-    class:complete={agentStatus === 'complete'}
-    class:error={agentStatus === 'error'}
     class:loading={!agent}
     type="button"
     contenteditable="false"
     aria-label={indicator ? indicatorLabel : undefined}
     title={indicator ? indicatorLabel : undefined}
     data-task-agent-indicator={indicator || undefined}
-    data-agent-display-status={agentStatus}
+    data-agent-display-status={agent ? avatarState : 'unknown'}
   >
     {#if !indicator}
       <div class="status-content">
@@ -441,14 +404,8 @@
           <span class="status-text loading-text"
             >{m.tiptap_taskAgentStatus_loadingAgent_label()}</span
           >
-        {:else if agentStatus === 'streaming' || agentStatus === 'active'}
-          <span class="status-text">{m.tiptap_taskAgentStatus_working_label()}</span>
-        {:else if agentStatus === 'complete'}
-          <span class="status-text">{m.tiptap_taskAgentStatus_completed_label()}</span>
-        {:else if agentStatus === 'error'}
-          <span class="status-text">{m.tiptap_taskAgentStatus_error_label()}</span>
         {:else}
-          <span class="status-text">{m.tiptap_taskAgentStatus_assigned_label()}</span>
+          <span class="status-text">{agentStatusLabel}</span>
         {/if}
       </div>
     {/if}

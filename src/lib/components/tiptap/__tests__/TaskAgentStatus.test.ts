@@ -22,6 +22,23 @@ const sessionState = vi.hoisted(() => {
     },
   };
 });
+const questionState = vi.hoisted(() => {
+  let hasQuestion = false;
+  const subscribers = new Set<(value: boolean) => void>();
+  return {
+    set(value: boolean) {
+      hasQuestion = value;
+      subscribers.forEach((subscriber) => subscriber(value));
+    },
+    readable: {
+      subscribe(subscriber: (value: boolean) => void) {
+        subscribers.add(subscriber);
+        subscriber(hasQuestion);
+        return () => subscribers.delete(subscriber);
+      },
+    },
+  };
+});
 const dispatchMock = vi.hoisted(() => vi.fn());
 const pollingManagerMock = vi.hoisted(() => ({ register: vi.fn(), unregister: vi.fn() }));
 
@@ -38,6 +55,9 @@ vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
     }),
     { select: () => Boolean(sessionState.get()?.isResponding) },
   ),
+}));
+vi.mock('$store/renderer/slices/hud/hud-selectors', () => ({
+  selectHudAgentHasPendingQuestion: () => questionState.readable,
 }));
 vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
   selectWorkspaceById: { select: () => ({ id: 'workspace-1' }) },
@@ -74,6 +94,7 @@ function agent(status: AgentStatus, overrides: Partial<AgentSession> = {}): Agen
 describe('TaskAgentStatus indicator', () => {
   beforeEach(() => {
     sessionState.set(undefined);
+    questionState.set(false);
     vi.clearAllMocks();
   });
   afterEach(cleanup);
@@ -83,22 +104,22 @@ describe('TaskAgentStatus indicator', () => {
     [
       'active',
       agent(AgentStatus.Active, { isResponding: true, isStreaming: true }),
-      /Open agent Linked task agent: Working/i,
-      'streaming',
+      /Open agent Linked task agent: Running/i,
+      'running',
       'running',
     ],
     [
-      'complete',
+      'completed',
       agent(AgentStatus.Completed),
       /Open agent Linked task agent: Completed/i,
-      'complete',
+      'completed',
       'completed',
     ],
     [
       'error',
       agent(AgentStatus.Error),
-      /Open agent Linked task agent: Error occurred/i,
-      'error',
+      /Open agent Linked task agent: Failed/i,
+      'failed',
       'failed',
     ],
   ])('renders one accessible %s control', async (_, value, name, status, avatarState) => {
@@ -114,6 +135,36 @@ describe('TaskAgentStatus indicator', () => {
     ).toBe(avatarState);
     expect(control.querySelector('.status-content')).toBeNull();
     expect(container.querySelector('button button')).toBeNull();
+  });
+
+  it('reacts to every canonical live state without remounting', async () => {
+    sessionState.set(agent(AgentStatus.Idle));
+    const { container, getByRole } = render(TaskAgentStatus, {
+      props: { agentId: 'agent-1', compact: true, indicator: true },
+    });
+    const avatar = () => container.querySelector('[data-agent-avatar-with-state]');
+    const expectState = async (state: string, label: RegExp) => {
+      await waitFor(() => expect(avatar()?.getAttribute('data-avatar-state')).toBe(state));
+      expect(avatar()?.getAttribute('aria-label')).toMatch(label);
+      expect(avatar()?.getAttribute('title')).toMatch(label);
+    };
+
+    await expectState('idle', /Idle/i);
+    sessionState.set(agent(AgentStatus.Idle, { isResponding: true }));
+    await expectState('running', /Running/i);
+    sessionState.set(agent(AgentStatus.Waiting, { isWaitingForOtherAgents: true }));
+    await expectState('waiting', /Waiting/i);
+    questionState.set(true);
+    await expectState('question', /Question/i);
+    questionState.set(false);
+    sessionState.set(agent(AgentStatus.Error));
+    await expectState('failed', /Failed/i);
+    sessionState.set(agent(AgentStatus.Completed));
+    await expectState('completed', /Completed/i);
+    sessionState.set(agent(AgentStatus.Idle));
+    await expectState('idle', /Idle/i);
+
+    expect(getByRole('button', { name: /Open agent Linked task agent: Idle/i })).toBeTruthy();
   });
 
   it('never exposes response content and keeps agent navigation', async () => {
