@@ -189,7 +189,10 @@ export function createMessageHydrationPolicy(
 
   return {
     observe(id, element, root) {
-      if (disposed || !records.has(id)) return () => {};
+      // Child rows may mount before the parent effect publishes the composed
+      // message list. Keep that stable registration; visibility reports are
+      // safely ignored until updateMessages() installs the matching record.
+      if (disposed) return () => {};
       registrations.get(id)?.();
       const release = observeLazyTurnVisibility(element, root, (isIntersecting) => {
         reportVisibility(id, isIntersecting);

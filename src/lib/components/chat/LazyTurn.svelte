@@ -30,6 +30,7 @@
   import { WIDTH_TOLERANCE_PX, type LazyTurnHeightCache } from './lazy-turn-height-cache';
   import { observeLazyTurnVisibility } from './lazy-turn-observer';
   import { createHeightLedger, snapshotScroller } from './lazy-turn-scroll-ledger';
+  import type { MessageHydrationPolicy } from './message-hydration-policy';
 
   // PERF: Default estimated height for turns that haven't been measured yet
   // This allows us to start with placeholders instead of rendering all content
@@ -44,11 +45,23 @@
     scrollRoot?: HTMLElement | null;
     /** Panel-scoped, bounded, width-aware height cache. */
     heightCache: LazyTurnHeightCache;
+    /** Optional transcript-level controller for message-granular hydration. */
+    hydrationController?: MessageHydrationPolicy;
+    /** Controller-owned hydration decision for this row. */
+    hydrated?: boolean;
     /** The content to render */
     children: Snippet;
   }
 
-  let { turnKey, forceVisible = false, scrollRoot = null, heightCache, children }: Props = $props();
+  let {
+    turnKey,
+    forceVisible = false,
+    scrollRoot = null,
+    heightCache,
+    hydrationController,
+    hydrated,
+    children,
+  }: Props = $props();
 
   let containerRef = $state<HTMLDivElement>();
 
@@ -63,7 +76,8 @@
   // svelte-ignore state_referenced_locally -- intentional one-shot cache read for the initial turnKey.
   const initialCachedHeight = heightCache.get(turnKey, null);
   // svelte-ignore state_referenced_locally -- initial seed only; shouldRenderContent tracks forceVisible reactively.
-  let isVisible = $state(forceVisible); // Only start visible if forceVisible
+  // svelte-ignore state_referenced_locally -- initial seed only; reactive changes are handled below.
+  let isVisible = $state(forceVisible || hydrated === true);
   let hasBeenMeasured = $state(initialCachedHeight !== undefined);
   let isIntersecting = $state(true);
 
@@ -75,11 +89,18 @@
   // PERF: Only render if forceVisible OR isVisible (IntersectionObserver said we're in view)
   // Previously had fallbacks that caused all items to render initially
   let shouldRenderContent = $derived(forceVisible || isVisible);
+  let shouldStayVisible = $derived(
+    forceVisible || (hydrationController ? hydrated === true : isIntersecting),
+  );
 
-  // A turn can mount as force-visible and age out of that window without a
-  // new intersection notification. Use the last shared-observer state then.
+  // A row can mount as force-visible and age out of that window without a new
+  // intersection notification. In message mode the transcript-level policy
+  // owns the asymmetric frontier; in legacy mode use the last observer state.
   $effect(() => {
-    if (!forceVisible && !isIntersecting && hasBeenMeasured && localCachedHeight !== null) {
+    if (shouldStayVisible) {
+      cancelPendingSwapOut();
+      setVisibleWithScrollCompensation(true);
+    } else if (hasBeenMeasured && localCachedHeight !== null) {
       requestSwapOut();
     }
   });
@@ -110,7 +131,7 @@
       swapOutTimer = null;
       // Conditions re-checked at fire time: the turn may have re-entered,
       // re-entered the force-visible window, or lost its measurement.
-      if (!forceVisible && !isIntersecting && hasBeenMeasured && localCachedHeight !== null) {
+      if (!shouldStayVisible && hasBeenMeasured && localCachedHeight !== null) {
         setVisibleWithScrollCompensation(false);
       }
     }, SWAP_OUT_SETTLE_MS);
@@ -151,19 +172,21 @@
 
     // Observer ownership is shared per scroll root, so a long transcript does
     // not allocate one IntersectionObserver for every turn.
-    const stopObserving = observeLazyTurnVisibility(containerRef, scrollRoot, (next) => {
-      isIntersecting = next;
-      if (next) {
-        // Re-entry cancels any pending swap-out (boundary jitter must not
-        // mature into a swap while the turn keeps touching the viewport).
-        cancelPendingSwapOut();
-        const cached = heightCache.get(turnKey, measuredWidth);
-        if (cached !== undefined && cached !== localCachedHeight) localCachedHeight = cached;
-        setVisibleWithScrollCompensation(true);
-      } else if (!forceVisible && hasBeenMeasured && localCachedHeight !== null) {
-        requestSwapOut();
-      }
-    });
+    const stopObserving = hydrationController
+      ? hydrationController.observe(turnKey, containerRef, scrollRoot)
+      : observeLazyTurnVisibility(containerRef, scrollRoot, (next) => {
+          isIntersecting = next;
+          if (next) {
+            // Re-entry cancels any pending swap-out (boundary jitter must not
+            // mature into a swap while the turn keeps touching the viewport).
+            cancelPendingSwapOut();
+            const cached = heightCache.get(turnKey, measuredWidth);
+            if (cached !== undefined && cached !== localCachedHeight) localCachedHeight = cached;
+            setVisibleWithScrollCompensation(true);
+          } else if (!forceVisible && hasBeenMeasured && localCachedHeight !== null) {
+            requestSwapOut();
+          }
+        });
 
     // PERF: Set up ResizeObserver with debouncing to batch height updates
     // This prevents rapid-fire updates during streaming or animations
@@ -216,7 +239,7 @@
           }
           localCachedHeight = height;
           hasBeenMeasured = true;
-          if (!forceVisible && !isIntersecting) requestSwapOut();
+          if (!shouldStayVisible) requestSwapOut();
           resizeDebounceTimer = null;
         }, 50); // 50ms debounce
       }
@@ -241,7 +264,7 @@
             }
             localCachedHeight = height;
             hasBeenMeasured = true;
-            if (!forceVisible && !isIntersecting) requestSwapOut();
+            if (!shouldStayVisible) requestSwapOut();
           }, 0);
         }
       }
