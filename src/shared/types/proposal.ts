@@ -41,7 +41,7 @@ export interface BulkProposalItem {
 
 export type WorkspaceCreateRepoType = 'local' | 'github' | 'remote';
 
-export type WorkspaceCreateProposalMode = 'sibling';
+type WorkspaceCreateProposalMode = 'sibling';
 
 export interface WorkspaceCreateProposalFields {
   mode?: WorkspaceCreateProposalMode;
