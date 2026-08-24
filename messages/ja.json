@@ -4873,6 +4873,8 @@
   "agent_factory_unknown_error": "不明なエラー",
   "agent_factory_daemon_error": "デーモンエラー",
   "agent_creation_createFailed_error": "エージェントを作成できませんでした",
+  "agent_creation_failed_description": "設定でプロバイダーの構成と選択したモデルを確認してから、もう一度お試しください。",
+  "agent_creation_providerModelMismatch_description": "選択したモデルはこのプロバイダーのものではありません。設定でこのプロバイダーのモデルを選択してから、もう一度お試しください。",
   "agent_creation_taskAgent_name": "タスクエージェント",
   "agent_creation_workspaceUnavailable_error": "エージェント作成にワークスペースが利用できません",
   "agent_creation_noteNotFound_error": "ノートが見つかりません — エージェントを実行できません",

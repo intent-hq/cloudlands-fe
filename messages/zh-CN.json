@@ -4873,6 +4873,8 @@
   "agent_factory_unknown_error": "未知错误",
   "agent_factory_daemon_error": "守护进程错误",
   "agent_creation_createFailed_error": "创建智能体失败",
+  "agent_creation_failed_description": "请在设置中检查提供商配置和所选模型，然后重试。",
+  "agent_creation_providerModelMismatch_description": "所选模型不属于此提供商。请在设置中选择此提供商的模型，然后重试。",
   "agent_creation_taskAgent_name": "任务智能体",
   "agent_creation_workspaceUnavailable_error": "工作区不可用，无法创建智能体",
   "agent_creation_noteNotFound_error": "未找到笔记，无法为其运行智能体",
