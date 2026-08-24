@@ -159,7 +159,7 @@ export interface UnifiedAgentConfig {
   /** Frontend createSession sends the initial prompt after backend creation. */
   skipInitialPrompt?: boolean;
   contextReferences?: any[];
-  imageBlocks?: Array<{ type: 'image'; data: string; mimeType: string }>;
+  imageBlocks?: Array<{ type: 'image'; data?: string; mimeType?: string; attachmentId?: string }>;
   metadata?: Record<string, any>;
   messages?: any[]; // For resuming existing sessions with message history
 

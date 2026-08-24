@@ -186,6 +186,17 @@ const fileBlock = {
   size: 1024,
 };
 
+// Injected in place of the real toImageReferenceBlocks (monorepo#3338):
+// deterministic placement stub — each inline block becomes a reference block.
+const stubToReferences = vi.fn(
+  async (_wsId: string, blocks: Array<{ attachmentId?: string; mimeType?: string }>) =>
+    blocks.map((block, i) => ({
+      type: 'image' as const,
+      attachmentId: block.attachmentId ?? `attach-${i}`,
+      ...(block.mimeType ? { mimeType: block.mimeType } : {}),
+    })),
+);
+
 describe('sendHeldFirstMessage', () => {
   it('sends structured-clone-safe params even when the held message is a $state proxy (monorepo#2576)', async () => {
     // The held first message lives in Svelte `$state` between create and
@@ -198,18 +209,39 @@ describe('sendHeldFirstMessage', () => {
       return { success: true };
     });
 
-    const result = await sendHeldFirstMessage(pending, [fileBlock], request);
+    const result = await sendHeldFirstMessage(pending, [fileBlock], request, stubToReferences);
 
     expect(result).toEqual({ sent: true });
     expect(request).toHaveBeenCalledTimes(1);
+    // Inline images were placed and swapped to attachment references before
+    // the wire call (monorepo#3338).
     expect(request).toHaveBeenCalledWith('agent.sendMessage', {
       agentId: 'agent-1',
       workspaceId: 'ws-1',
       content: 'first message',
-      imageBlocks: [{ type: 'image', data: 'aGVsbG8=', mimeType: 'image/png' }],
+      imageBlocks: [{ type: 'image', attachmentId: 'attach-0', mimeType: 'image/png' }],
       fileBlocks: [fileBlock],
       contextReferences: [{ type: 'file', path: '/tmp/a.ts', title: 'a.ts' }],
     });
+  });
+
+  it('resolves { sent: false, errorDetail } when image placement fails (never a silent drop)', async () => {
+    const request = vi.fn();
+    const failingToReferences = vi.fn(async () => {
+      throw Object.assign(new Error('Internal error'), {
+        data: { detail: 'image-1.png (attachment too large)' },
+      });
+    });
+
+    const result = await sendHeldFirstMessage(
+      heldMessage(),
+      [fileBlock],
+      request,
+      failingToReferences,
+    );
+
+    expect(result).toEqual({ sent: false, errorDetail: 'image-1.png (attachment too large)' });
+    expect(request).not.toHaveBeenCalled();
   });
 
   it('omits empty imageBlocks/fileBlocks/contextReferences instead of sending empty arrays', async () => {
@@ -249,7 +281,12 @@ describe('sendHeldFirstMessage', () => {
       .fn()
       .mockResolvedValue({ success: false, error: 'unknown agent id: agent-1' });
 
-    const result = await sendHeldFirstMessage(heldMessage(), [fileBlock], request);
+    const result = await sendHeldFirstMessage(
+      heldMessage(),
+      [fileBlock],
+      request,
+      stubToReferences,
+    );
 
     expect(result).toEqual({ sent: false, errorDetail: 'unknown agent id: agent-1' });
   });
@@ -260,7 +297,12 @@ describe('sendHeldFirstMessage', () => {
     });
     const request = vi.fn().mockRejectedValue(structured);
 
-    const result = await sendHeldFirstMessage(heldMessage(), [fileBlock], request);
+    const result = await sendHeldFirstMessage(
+      heldMessage(),
+      [fileBlock],
+      request,
+      stubToReferences,
+    );
 
     expect(result).toEqual({ sent: false, errorDetail: 'agent session vanished mid-send' });
   });
@@ -268,7 +310,12 @@ describe('sendHeldFirstMessage', () => {
   it('returns no detail for generic transport fallbacks so callers keep localized copy', async () => {
     const request = vi.fn().mockRejectedValue(new Error('Backend request failed'));
 
-    const result = await sendHeldFirstMessage(heldMessage(), [fileBlock], request);
+    const result = await sendHeldFirstMessage(
+      heldMessage(),
+      [fileBlock],
+      request,
+      stubToReferences,
+    );
 
     expect(result).toEqual({ sent: false, errorDetail: undefined });
   });
@@ -285,6 +332,7 @@ describe('sendHeldFirstMessage', () => {
       heldMessage({ contextReferences: [circular] }),
       [fileBlock],
       request,
+      stubToReferences,
     );
 
     expect(result.sent).toBe(false);

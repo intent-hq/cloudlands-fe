@@ -5,6 +5,7 @@
   import { toast } from 'svelte-sonner';
   import { createLogger } from '$lib/utils/client-logger';
   import type { Workspace } from '$shared/types';
+  import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
   import { parseCompoundModelId as parseCompoundModelIdWithDefault } from '$shared/utils/compound-model-id';
   import {
     selectEffectiveDefaultProviderId,
@@ -947,7 +948,16 @@
    * Process image files by inserting them inline in the editor
    */
   async function processImageFiles(files: File[]) {
-    const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
+    // Images travel as attachment-reference blocks (monorepo#3338): the send
+    // path places the bytes via file.placeAttachment / chunked upload, so
+    // the composer cap matches the daemon's 30 MiB reference-image limit
+    // rather than the old inline-frame budget. The chief virtual workspace
+    // has no attachment registry — its images stay inline, so it keeps the
+    // legacy 10 MB inline-frame cap.
+    const MAX_FILE_SIZE =
+      workspace?.id === CHIEF_WORKSPACE_ID
+        ? 10 * 1024 * 1024 // 10 MB (legacy inline-frame budget)
+        : 30 * 1024 * 1024; // 30 MiB (daemon image-reference cap)
     const addedCount = { value: 0 };
     const oversizedFiles: string[] = [];
 
@@ -961,8 +971,8 @@
       }
 
       if (file.size > MAX_FILE_SIZE) {
-        // Oversized images stay rejected — the inline limit is what the model
-        // can ingest.
+        // Over the daemon's recorded-size cap for reference images —
+        // rejected up front instead of failing at send-time validation.
         oversizedFiles.push(file.name);
         continue;
       }

@@ -1517,7 +1517,7 @@ export interface CreateWorkspaceRequest {
     behaviorPrompt?: string; // Custom behavior instructions (from team coordinator or specialist)
     provider?: string; // ACP provider ID (auggie, claude-code, codex)
     contextReferences?: any[];
-    imageBlocks?: Array<{ type: 'image'; data: string; mimeType: string }>;
+    imageBlocks?: Array<{ type: 'image'; data?: string; mimeType?: string; attachmentId?: string }>;
     metadata?: Record<string, any>;
   };
   /** Linear issue to link to this workspace */

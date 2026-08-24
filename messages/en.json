@@ -1763,6 +1763,7 @@
   "chat_agentSubscriptions_wokenByEvents_tooltip": "Agent was woken by subscription events:",
   "chat_agentSubscriptions_wokenUp_label": "Woken up",
   "chat_attachmentPlacement_tooLargeRemote_error": "{name} is too large to attach — the limit is {maxGb} GB",
+  "chat_imagePlacement_failed_error": "Failed to attach {names} — remove the image or try again",
   "chat_attachmentPreview_placementFailed_tooltip": "Failed to attach {name} — retry or remove it to send",
   "chat_attachmentPreview_remove_ariaLabel": "Remove {name}",
   "chat_attachmentPreview_removeAttachment_ariaLabel": "Remove attachment",

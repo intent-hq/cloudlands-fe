@@ -3935,19 +3935,33 @@
   }
 
   // Extract imageBlocks from any context item with imageData/imageMimeType
-  // (file-type attachments and legacy inline-image items alike), and
-  // attachment-reference fileBlocks from placed-attachment items
-  // (file.placeAttachment — UUID + metadata, no bytes).
+  // (file-type attachments and legacy inline-image items alike) plus
+  // already-placed image items (attachmentId + imageMimeType → reference
+  // arm, monorepo#3338), and attachment-reference fileBlocks from the
+  // remaining placed-attachment items (file.placeAttachment — UUID +
+  // metadata, no bytes). Inline image blocks are placed and swapped to
+  // references by the send saga before the wire call.
   function extractAttachmentBlocks(items: ContextItem[]) {
     const imageBlocks = items
-      .filter((item) => item.imageData && item.imageMimeType)
-      .map((item) => ({
-        type: 'image' as const,
-        data: item.imageData!,
-        mimeType: item.imageMimeType!,
-      }));
+      .filter((item) => (item.imageData || item.attachmentId) && item.imageMimeType)
+      .map((item) =>
+        item.attachmentId
+          ? {
+              type: 'image' as const,
+              attachmentId: item.attachmentId,
+              // The neutral 'image' marker (reference restored without a
+              // persisted mime) stays off the wire — mimeType is optional
+              // on the reference arm.
+              ...(item.imageMimeType!.includes('/') ? { mimeType: item.imageMimeType! } : {}),
+            }
+          : {
+              type: 'image' as const,
+              data: item.imageData!,
+              mimeType: item.imageMimeType!,
+            },
+      );
     const fileBlocks = items
-      .filter((item) => item.attachmentId)
+      .filter((item) => item.attachmentId && !item.imageMimeType)
       .map((item) => ({
         type: 'file' as const,
         attachmentId: item.attachmentId!,
@@ -4191,7 +4205,12 @@
     newText: string,
     model?: string,
     blocks?: {
-      imageBlocks?: Array<{ type: 'image'; data: string; mimeType: string }>;
+      imageBlocks?: Array<{
+        type: 'image';
+        data?: string;
+        mimeType?: string;
+        attachmentId?: string;
+      }>;
       fileBlocks?: Array<{
         type: 'file';
         attachmentId: string;

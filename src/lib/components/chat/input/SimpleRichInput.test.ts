@@ -1801,9 +1801,9 @@ describe('SimpleRichInput non-image attachment placement (unified flow)', () => 
     expect(screen.getByTestId('attachment-retry')).toBeTruthy();
   });
 
-  it('still rejects oversized images with the too-large toast (inline limit kept)', async () => {
+  it('still rejects images over the 30 MiB reference cap with the too-large toast (monorepo#3338)', async () => {
     render(SimpleRichInput, { props: baseProps() });
-    await dropFiles([makeFile('huge.png', 'image/png', 12 * 1024 * 1024)]);
+    await dropFiles([makeFile('huge.png', 'image/png', 31 * 1024 * 1024)]);
 
     const { toast } = await import('svelte-sonner');
     await waitFor(() => {

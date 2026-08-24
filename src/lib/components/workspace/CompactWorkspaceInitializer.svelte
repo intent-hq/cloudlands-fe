@@ -1984,7 +1984,11 @@
       // whole first message (prompt + images + context) out of initialAgent
       // and send it via `agent.sendMessage` with the attachment-reference
       // fileBlocks after placement succeeds (create → place → send).
-      const hasStagedFiles = hasStagedFileItems(contextItems);
+      // Images follow the same create → place → send path (monorepo#3338):
+      // they too need the workspace to exist for placement, and holding
+      // them keeps inline base64 out of the workspace.create frame — the
+      // held send swaps them to attachment-reference blocks.
+      const hasStagedFiles = hasStagedFileItems(contextItems) || imageBlocks.length > 0;
 
       // No client-minted agentId: the daemon assigns the initial agent's id
       // and returns it on the create result (supersedes the fresh-id-per-

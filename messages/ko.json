@@ -1762,6 +1762,7 @@
   "chat_agentSubscriptions_wokenByEvents_tooltip": "에이전트가 구독 이벤트로 깨어났습니다:",
   "chat_agentSubscriptions_wokenUp_label": "깨어남",
   "chat_attachmentPlacement_tooLargeRemote_error": "{name}은(는) 너무 커서 첨부할 수 없습니다 — 최대 {maxGb} GB입니다",
+  "chat_imagePlacement_failed_error": "{names}을(를) 첨부하지 못했습니다 — 이미지를 제거하거나 다시 시도하세요",
   "chat_attachmentPreview_placementFailed_tooltip": "{name} 첨부 실패 — 다시 시도하거나 제거한 후 보내세요",
   "chat_attachmentPreview_remove_ariaLabel": "{name} 제거",
   "chat_attachmentPreview_removeAttachment_ariaLabel": "첨부 파일 제거",

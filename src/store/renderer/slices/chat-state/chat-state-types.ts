@@ -56,9 +56,11 @@ interface SendMessageOptions {
   contextReferences?: ContextReference[];
   /**
    * Image blocks the original send carried, recorded so "Try again" resends
-   * them with the message (#965). Plain base64 data — serializable/redux-safe.
+   * them with the message (#965). Inline arm carries plain base64 data;
+   * reference arm carries the attachment-registry UUID (monorepo#3338) —
+   * serializable/redux-safe either way.
    */
-  imageBlocks?: Array<{ type: 'image'; data: string; mimeType: string }>;
+  imageBlocks?: Array<{ type: 'image'; data?: string; mimeType?: string; attachmentId?: string }>;
   /**
    * Attachment-reference file blocks the original send carried, recorded so
    * "Try again" resends them. UUID + metadata only — no bytes.
@@ -287,8 +289,8 @@ export interface SendMessagePayload {
   serializedContextItems?: SerializableContextItem[];
   workspaceContextStr?: string;
   noteIds?: string[];
-  /** Image blocks extracted from serialized context items */
-  imageBlocks?: Array<{ type: 'image'; data: string; mimeType: string }>;
+  /** Image blocks extracted from serialized context items (inline or reference arm) */
+  imageBlocks?: Array<{ type: 'image'; data?: string; mimeType?: string; attachmentId?: string }>;
   /** Attachment-reference file blocks extracted from context items */
   fileBlocks?: Array<{
     type: 'file';

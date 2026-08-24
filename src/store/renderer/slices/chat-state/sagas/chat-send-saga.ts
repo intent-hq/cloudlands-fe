@@ -15,6 +15,10 @@ import {
   hydrateAgentQueue,
 } from '$features/agent/agent-queue-read-service';
 import { buildRecordedAttempt } from '$features/agent/utils/build-recorded-attempt';
+import {
+  toImageReferenceBlocks,
+  type WireImageBlock,
+} from '$lib/components/chat/input/image-attachment-placement';
 import { appClient } from '$lib/client';
 import { createLogger } from '$lib/utils/client-logger';
 import { m } from '$shared/paraglide/messages.js';
@@ -182,6 +186,33 @@ function* dispatchToLifecycle(
     return;
   }
   const content = workspaceContextStr ? `${workspaceContextStr}\n\n${text.trim()}` : text.trim();
+
+  // Pre-upload inline images (monorepo#3338): place each one into the
+  // workspace's attachment registry (one placement request per image,
+  // chunked when large) and swap the wire blocks to attachment references —
+  // the send/queue frame stays constant-size. The chief workspace is
+  // virtual (no attachment registry), so its sends keep the inline arm.
+  // After success the recorded attempt carries the reference blocks (no
+  // MB-scale base64 parked in Redux; a retry passes references through
+  // untouched). Placement failure fails the send with the per-image reason
+  // (never a silent drop) and records the ORIGINAL inline blocks so "Try
+  // again" re-runs placement.
+  if ((options.imageBlocks?.length ?? 0) > 0 && wsId !== CHIEF_WORKSPACE_ID) {
+    try {
+      options = {
+        ...options,
+        imageBlocks: yield* call(
+          toImageReferenceBlocks,
+          wsId,
+          options.imageBlocks as WireImageBlock[],
+        ),
+      };
+    } catch (error) {
+      yield* put(chatLastAttemptedMessageSet(agentId, buildRecordedAttempt(content, options)));
+      yield* put(chatSendFailed(agentId, error instanceof Error ? error.message : String(error)));
+      return;
+    }
+  }
 
   yield* call(hydrateBeforeSend, agentId, wsId);
   const recordedAttempt = buildRecordedAttempt(content, options);
