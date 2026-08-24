@@ -72,11 +72,9 @@ async function resetCanvasToAutomatic(component: Locator) {
 
 /**
  * Regression (clipped jump-to-end button): the rightmost panel's right edge
- * must stay inside the visible workspace column. WorkspaceColumnsView sizes
- * each column as sidebar + canvasWidth + CONTAINED_PANEL_INLINE_CHROME (16px),
- * matching the contained PanelLayout inset's symmetric `px-2` padding. Before
- * the fix the column omitted the chrome while the inset applied `pl-2`, so the
- * canvas's last 8px were clipped behind the column's overflow-hidden.
+ * must stay inside the visible workspace shell. The shell size includes the
+ * sidebar, canvas width, and contained panel inline chrome, matching the
+ * PanelLayout inset's symmetric `px-2` padding.
  */
 test('keeps the rightmost panel edge inside the visible column (deck mode)', async ({ mount }) => {
   const component = await mount(PanelWorkspaceColumnClipHarness, {

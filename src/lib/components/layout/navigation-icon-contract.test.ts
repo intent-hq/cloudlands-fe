@@ -20,7 +20,6 @@ describe('primary navigation icon contract', () => {
     expect(titleBar).not.toContain('ChiefTrigger');
     expect(titleBar.match(/<SidebarNav \/>/g)).toHaveLength(1);
     expect(titleBar.indexOf('<SidebarNav />')).toBeLessThan(titleBar.indexOf('<WorkspaceTabStrip'));
-    expect(titleBar).not.toContain('WorkspaceViewModeToggle');
     expect(spaces).toContain('shortcut="mod+o"');
     expect(spaces).toContain('label={m.layout_titleBar_toggleSidebar_ariaLabel()}');
     expect(spaces).toContain('aria-label={m.layout_titleBar_toggleSidebar_ariaLabel()}');

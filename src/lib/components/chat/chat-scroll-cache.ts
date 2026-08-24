@@ -2,9 +2,8 @@
  * Process-lifetime, per-`(workspaceId, agentId)` cache of the chat transcript
  * scroll state, saved by `ChatPanel.svelte` on destroy and consulted on mount.
  *
- * Lets a panel unmounted by column windowing (WorkspaceColumnsView replacing
- * an off-screen WorkspaceSurface with a placeholder) come back at the same
- * reading position instead of yanking the user to the bottom.
+ * Lets a remounted panel come back at the same reading position instead of
+ * yanking the user to the bottom.
  *
  * Transient UI state, not domain state — a plain module-scope `Map`, no
  * Redux store, no persistence across app restarts. Keep this module

@@ -1,7 +1,6 @@
 <script lang="ts">
   import { Tooltip as TooltipPrimitive } from 'bits-ui';
   import SidebarNav from '$lib/components/layout/sidebar-nav/SidebarNav.svelte';
-  import WorkspaceViewModeToggle from '$lib/components/layout/WorkspaceViewModeToggle.svelte';
   import WorkspaceRepoLauncher from '$lib/components/layout/WorkspaceRepoLauncher.svelte';
 
   const TooltipProvider = TooltipPrimitive.Provider;
@@ -13,7 +12,6 @@
     data-titlebar-workspace-controls-fixture
   >
     <SidebarNav />
-    <div data-fixture-control="layout"><WorkspaceViewModeToggle /></div>
     <div data-fixture-control="launcher"><WorkspaceRepoLauncher /></div>
   </div>
 </TooltipProvider>

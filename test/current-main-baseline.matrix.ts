@@ -50,8 +50,6 @@ export const approvedRowIds = [
   'WORKSPACE-31',
   'WORKSPACE-36',
   'WORKSPACE-37',
-  'WORKSPACE-39',
-  'WORKSPACE-40',
   'WORKSPACE-42',
   'WORKSPACE-43',
   'WORKSPACE-44',
@@ -90,7 +88,7 @@ const sidebar = [
 const tabs = [
   'test/workspace-tab-strip-status-geometry.spec.ts',
   'src/lib/components/layout/WorkspaceTabStrip.test.ts',
-  'src/lib/components/layout/WorkspaceViewModeToggle.test.ts',
+  'src/lib/components/layout/sidebar-nav/SidebarNav.test.ts',
 ] as const;
 const panel = [
   'src/features/layout/panel-cycle-navigation.test.ts',

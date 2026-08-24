@@ -21,8 +21,6 @@ const virtualModules: Record<string, string> = {
     export const TooltipRich = Tooltip;`,
   '$lib/components/workspace/WorkspaceHoverCard.svelte': `
     export { default } from '/src/lib/components/layout/__tests__/mocks/MockWorkspaceHoverCard.svelte';`,
-  '$lib/components/workspace/workspace-view-transition': `
-    export const getWorkspaceViewTransitionName = (workspaceId) => 'workspace-' + workspaceId;`,
   '$lib/components/workspace/utils/workspace-tab-status-presentation': `
     export const getWorkspaceTabStatusPresentation = (category) => ({
       icon: { iconName: category }, className: '', label: category.toUpperCase(),
@@ -49,8 +47,7 @@ const virtualModules: Record<string, string> = {
       { select: () => globalThis.__workspaceTabScenario.currentId },
     );
     export const selectWorkspaceTabOrder = () =>
-      readable(() => globalThis.__workspaceTabScenario.tabOrder);
-    export const selectWorkspaceViewMode = () => readable(() => 'single');`,
+      readable(() => globalThis.__workspaceTabScenario.tabOrder);`,
   '$store/renderer/slices/workspace/workspace-selectors': `
     const readable = (read) => ({ subscribe(run) { run(read()); return () => {}; } });
     export const selectWorkspaceItems = Object.assign(
@@ -171,7 +168,7 @@ async function mountStrip(
         workspaces: [
           { id: 'active', title: 'Active workspace with a materially longer title' },
           { id: 'inactive', title: 'Inactive workspace with a materially longer title' },
-          { id: 'plain', title: 'Workspace without any status indicators' },
+          { id: 'plain', title: 'Workspace with the default idle status' },
         ],
         statuses: {
           active: statusValue(['running']),
@@ -236,7 +233,7 @@ test('keeps titles, statuses, and close controls disjoint at 160px and constrain
     expect(titleBox.x + titleBox.width).toBeLessThanOrEqual(statusBox.x + 0.5);
     expect(statusBox.x + statusBox.width).toBeLessThanOrEqual(closeBox.x + 0.5);
     expect(closeBox.x + closeBox.width).toBeLessThanOrEqual(activeBox.x + activeBox.width + 0.5);
-    expect(titleBox.width).toBeCloseTo(activeBox.width - 60 * scale, 0);
+    expect(titleBox.width).toBeCloseTo(activeBox.width - 58 * scale, 0);
     await expect(active).toHaveAttribute('data-active', 'true');
     await expect(inactive).toHaveAttribute('data-active', 'false');
     await expect(active.locator('[role="tab"]')).toHaveAttribute(
@@ -256,15 +253,15 @@ test('keeps titles, statuses, and close controls disjoint at 160px and constrain
       inactiveCloseBox.x + 0.5,
     );
     expect(inactiveTitleBox.width).toBeCloseTo(titleBox.width, 0);
-    await expect(inactiveStatus.locator('[data-workspace-tab-status]')).toHaveCount(1);
+    await expect(inactiveStatus.locator('[data-workspace-status]')).toHaveCount(1);
 
-    await expect(plain.locator('[data-workspace-tab-status-cluster]')).toHaveCount(0);
+    await expect(plain.locator('[data-workspace-status="idle"]')).toHaveCount(1);
     const [plainTitleBox, plainCloseBox] = await Promise.all([
       box(plain.locator('[data-workspace-tab-title]')),
       box(plain.locator('[data-workspace-tab-close]')),
     ]);
     expect(plainTitleBox.x + plainTitleBox.width).toBeLessThanOrEqual(plainCloseBox.x + 0.5);
-    expect(plainTitleBox.width).toBeGreaterThan(titleBox.width);
+    expect(plainTitleBox.width).toBeCloseTo(titleBox.width, 0);
 
     await expect(loading).toHaveAttribute('data-workspace-tab-loading', 'true');
     await expect(loading.locator('[data-workspace-tab-status-cluster]')).toHaveCount(0);

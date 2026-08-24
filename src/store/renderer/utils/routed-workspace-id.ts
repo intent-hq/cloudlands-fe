@@ -4,8 +4,8 @@
  * IPC at windows by this same signal (`windowWorkspaceIds`, fed from the
  * route in `afterNavigate`), so hostedness checks must accept it too: a
  * window routed to a workspace can receive a request while that workspace
- * has no layout entry and is missing from the tab strip (e.g. columns-mode
- * route/stack divergence), and judging it not-hosted would leave the request
+ * has no layout entry and is missing from the tab strip (for example, during
+ * route/tab reconciliation), and judging it not-hosted would leave the request
  * to time out as "renderer did not respond" (monorepo#2789). Also the
  * "is this workspace currently displayed" signal for the workspace-inactive
  * UI-focus skip (monorepo#3045).

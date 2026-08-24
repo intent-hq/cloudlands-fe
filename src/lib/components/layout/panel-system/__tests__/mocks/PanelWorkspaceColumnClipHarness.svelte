@@ -154,8 +154,7 @@
 {/if}
 
 {#if mode === 'contained'}
-  <!-- Mirrors WorkspaceColumnsView: column div (stackWidth) > section (overflow-hidden)
-       > WorkspaceLayout row (fixed sidebar + flex-1 content) > PanelLayout. -->
+  <!-- Mirrors the contained workspace shell: fixed sidebar + flex-1 PanelLayout. -->
   <div
     data-testid="workspace-column"
     data-scenario={scenario}
