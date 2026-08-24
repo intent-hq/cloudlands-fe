@@ -247,7 +247,6 @@
     CHIEF_LAZY_MESSAGE_THRESHOLD,
     INITIAL_LAZY_MODE_TRACKER,
     isOlderHistoryPrepend,
-    isTurnInRecentWindow,
     nextLazyMode,
   } from './chat-turn-virtualization';
   import {
@@ -2715,18 +2714,6 @@
   // matches in virtualized message placeholders can be force-rendered during search.
   const messageIdToTurnKey = $derived(conversationTurnIndex.turnKeyByMessageId);
 
-  // Helper to check if a turn should be force-visible (recent or streaming)
-  function isTurnForceVisible(turnKey: string): boolean {
-    if (!shouldUseLazyLoading) return true; // Always visible if lazy loading is disabled
-    const globalIndex = globalTurnIndexMap.get(turnKey);
-    if (globalIndex === undefined) return true; // Unknown turn, render it
-    const totalTurns = globalTurnIndexMap.size;
-    return (
-      isTurnInRecentWindow(globalIndex, totalTurns) ||
-      isTurnTemporarilyMaterialized(temporaryTurnMaterialization, turnKey)
-    );
-  }
-
   // --- Auto-commit status (fetched once, shared across all AutoCommitStatus instances) ---
   let autoCommitStatuses = $state<CommitStatus[]>([]);
 
@@ -3286,11 +3273,12 @@
   const DEEP_OPEN_HIGHLIGHT_TIMEOUT_MS = 8000;
 
   function isMessageForceVisible(messageId: string): boolean {
+    if (!shouldUseLazyLoading) return true;
     const turnKey = messageIdToTurnKey.get(messageId);
     if (!turnKey) return true;
     const isLastTurn = globalTurnIndexMap.get(turnKey) === globalTurnIndexMap.size - 1;
     return (
-      isTurnForceVisible(turnKey) ||
+      isTurnTemporarilyMaterialized(temporaryTurnMaterialization, turnKey) ||
       ($agentSessionIsStreaming$ && isLastTurn) ||
       visibleSearchTurnKeys.has(turnKey) ||
       deepOpenTurnKey === turnKey
@@ -5131,9 +5119,7 @@
                       <div
                         data-message-id={message.id}
                         data-message-role="user"
-                        data-pinnable-user-prompt={!isAutomatedMessage(message)
-                          ? ''
-                          : undefined}
+                        data-pinnable-user-prompt={!isAutomatedMessage(message) ? '' : undefined}
                         data-pinned-prompt-id={message.id}
                         data-send-app-message-id={message.appMessageId}
                         data-message-index={globalIndex}

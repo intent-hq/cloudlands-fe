@@ -12,7 +12,7 @@ const rootedGroups = new WeakMap<HTMLElement, ObserverGroup>();
 const activeGroups = new Set<ObserverGroup>();
 let viewportGroup: ObserverGroup | null = null;
 
-export const LAZY_TURN_PRELOAD_ROOT_MARGIN = '100% 0px';
+const LAZY_TURN_PRELOAD_ROOT_MARGIN = '100% 0px';
 
 function createGroup(root: HTMLElement | null): ObserverGroup {
   const callbacks = new Map<Element, VisibilityCallback>();

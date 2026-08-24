@@ -498,6 +498,11 @@ describe('ChatPanel mounted lifecycle', () => {
           .querySelector('[data-lazy-turn-key="assistant-2"]')
           ?.getAttribute('data-lazy-visible'),
       ).toBe('false');
+      expect(
+        view.container
+          .querySelector('[data-lazy-turn-key="assistant-22"]')
+          ?.getAttribute('data-lazy-visible'),
+      ).toBe('false');
       expect(MockChatIntersectionObserver.instances).toHaveLength(1);
 
       flushFrame();
@@ -531,6 +536,44 @@ describe('ChatPanel mounted lifecycle', () => {
       offsetHeight.mockRestore();
       offsetWidth.mockRestore();
     }
+  });
+
+  it('virtualizes assistant-heavy Chief transcripts within one recent turn', async () => {
+    MockChatIntersectionObserver.instances = [];
+    vi.stubGlobal('IntersectionObserver', MockChatIntersectionObserver);
+    mocks.draftGet.mockResolvedValue(null);
+    mocks.agentMessages.set([
+      {
+        id: 'user-heavy',
+        role: 'user',
+        content: 'coordinate a long run',
+        timestamp: '2026-01-01T00:00:00.000Z',
+      },
+      ...Array.from({ length: 12 }, (_, index) => ({
+        id: `assistant-heavy-${index}`,
+        role: 'assistant',
+        content: `assistant update ${index}`,
+        timestamp: `2026-01-01T00:00:${String(index + 1).padStart(2, '0')}.000Z`,
+      })),
+    ]);
+
+    const view = render(ChatPanel, {
+      props: { workspace: workspace('__chief__'), agentId: 'agent-a' },
+    });
+    await tick();
+    await tick();
+
+    expect(view.container.querySelector('[data-message-id="user-heavy"]')).not.toBeNull();
+    expect(
+      view.container
+        .querySelector('[data-lazy-turn-key="assistant-heavy-0"]')
+        ?.getAttribute('data-lazy-visible'),
+    ).toBe('false');
+    expect(
+      view.container
+        .querySelector('[data-lazy-turn-key="assistant-heavy-11"]')
+        ?.getAttribute('data-lazy-visible'),
+    ).toBe('false');
   });
 
   it('does not attach a new pre-output terminal error to the previous assistant row', async () => {
