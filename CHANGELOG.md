@@ -4,6 +4,18 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.88.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.88.0...v2.88.1) (2026-08-24)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.7.53 ([#1661](https://github.com/intent-hq/cloudlands-fe/issues/1661)) ([25f989f](https://github.com/intent-hq/cloudlands-fe/commit/25f989fac1a8d42c383d51fa33a0b9b45dab4c9b))
+
+
+### ⚡ Performance
+
+* **workspace:** coalesce tab hydration and preserve sessions ([#1656](https://github.com/intent-hq/cloudlands-fe/issues/1656)) ([9f0655e](https://github.com/intent-hq/cloudlands-fe/commit/9f0655e6f1af6ccffe7a0019e53f5d00f2728e1c))
+
 ## [2.88.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.87.1...v2.88.0) (2026-08-24)
 
 
