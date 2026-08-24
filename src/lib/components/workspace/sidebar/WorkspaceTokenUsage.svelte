@@ -341,7 +341,7 @@
             {#each compositionRows as row (row.id)}
               <div class="composition-row min-w-0 py-3">
                 <dt
-                  class="composition-metric flex min-w-0 items-center gap-2 text-[12px] font-medium text-foreground"
+                  class="composition-metric flex min-w-0 items-center gap-3 text-[12px] font-medium text-foreground"
                 >
                   <span class="size-3 shrink-0 rounded-[2px] {row.colorClass}" aria-hidden="true"
                   ></span>
@@ -371,7 +371,7 @@
           <div class="breakdown-grid grid grid-cols-1 border-t border-border dark:border-[#1e1e1e]">
             {#if agentRows.length > 0}
               <section
-                class="breakdown-section h-[76px] min-w-0 px-3 py-2"
+                class="breakdown-section h-[76px] min-w-0 px-4 py-2"
                 aria-labelledby={`${detailsId}-agents`}
                 data-testid="token-usage-by-agent"
               >
@@ -421,7 +421,7 @@
 
             {#if modelRows.length > 0}
               <section
-                class="breakdown-section h-[76px] min-w-0 px-3 py-2"
+                class="breakdown-section h-[76px] min-w-0 px-4 py-2"
                 aria-labelledby={`${detailsId}-models`}
                 data-testid="token-usage-by-model"
               >
@@ -594,8 +594,8 @@
 
     .breakdown-grid::after {
       position: absolute;
-      top: 0.5rem;
-      bottom: 0.5rem;
+      top: 0;
+      bottom: 0;
       left: 50%;
       width: 1px;
       background: hsl(var(--border) / 55%);
