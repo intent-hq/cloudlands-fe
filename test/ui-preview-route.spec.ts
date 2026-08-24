@@ -50,7 +50,14 @@ test('selects direct preview states in the browser-only Vite runtime', async ({ 
     current: window.__INTENT_PREVIEW__?.current(),
     electronApi: 'electronAPI' in window,
   }));
-  expect(discovery.list).toEqual(['button', 'mention-agent-avatar']);
+  expect(discovery.list).toEqual([
+    'button',
+    'mcp-server-form',
+    'mention-agent-avatar',
+    'panel-tab-strip',
+    'streaming-status',
+    'workspace-sidebar',
+  ]);
   expect(discovery.states).toEqual(['default', 'loading', 'disabled', 'destructive']);
   expect(discovery.current).toMatchObject({
     slug: 'button',
@@ -75,6 +82,19 @@ test('selects direct preview states in the browser-only Vite runtime', async ({ 
     await expect(avatarScene).toHaveAttribute('data-preview-ready', 'true');
     await expect(avatarScene).toHaveAttribute('data-preview-state', state);
     await expect(avatar).toHaveAttribute('data-avatar-state', avatarState);
+  }
+
+  for (const [slug, state, productSelector] of [
+    ['workspace-sidebar', 'busy', '[data-workspace-sidebar-preview]'],
+    ['panel-tab-strip', 'many-tabs', '[data-panel-tab-strip-preview]'],
+    ['streaming-status', 'error', '[data-stream-terminal-error="true"]'],
+    ['mcp-server-form', 'validation', '[data-testid="catalog-scene-focus"] input'],
+  ] as const) {
+    await page.goto(`${baseUrl}/sandbox/${slug}?state=${state}&theme=light&width=420&motion=full`);
+    const productScene = page.getByTestId('catalog-scene');
+    await expect(productScene).toHaveAttribute('data-preview-ready', 'true', { timeout: 90_000 });
+    await expect(productScene).toHaveAttribute('data-preview-state', state);
+    await expect(page.locator(productSelector).first()).toBeVisible();
   }
 
   await page.goto(`${baseUrl}/sandbox/button?state=missing&theme=light&width=320&motion=full`);
