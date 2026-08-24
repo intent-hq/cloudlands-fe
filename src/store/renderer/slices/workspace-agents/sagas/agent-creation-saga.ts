@@ -24,6 +24,7 @@ import { openTab, openTabInRightmostColumnRequested } from '../../panel-layout/p
 import { selectEffectiveDefaultProviderId } from '../../provider-catalog/provider-catalog-selectors';
 import { selectActiveProviderId } from '../../provider-settings/provider-settings-selectors';
 import {
+  selectDefaultSpecialistId,
   selectEffectiveBehaviorPrompt,
   selectEffectiveCodingAgent,
   selectEffectiveModel,
@@ -202,10 +203,14 @@ function* runAgentForNote(
   if (!workspace) return;
   const note = yield* selectNoteById.effect(wsId, noteId);
   if (!note) return;
-  let model = yield* selectEffectiveModel.effect('implementor');
-  let behaviorPrompt = yield* selectEffectiveBehaviorPrompt.effect('implementor');
+  // Daemon `specialists.default` setting (non-empty string) wins; fall back
+  // to implementor for backward compatibility when unset.
+  const defaultSpecialistId = yield* selectDefaultSpecialistId.effect();
+  const specialistId = defaultSpecialistId || 'implementor';
+  let model = yield* selectEffectiveModel.effect(specialistId);
+  let behaviorPrompt = yield* selectEffectiveBehaviorPrompt.effect(specialistId);
   if (!behaviorPrompt) {
-    const specialist = SPECIALISTS.find((candidate) => candidate.id === 'implementor');
+    const specialist = SPECIALISTS.find((candidate) => candidate.id === specialistId);
     if (specialist) {
       behaviorPrompt = specialist.defaultBehaviorPrompt;
       if (!model) {
@@ -230,7 +235,7 @@ function* runAgentForNote(
       agentType: createAgentTypeId('task-loop'),
       behaviorPrompt,
       source: 'task-metadata-bar-run',
-      metadata: { taskNoteId: noteId, source: 'task-run', specialist: 'implementor' },
+      metadata: { taskNoteId: noteId, source: 'task-run', specialist: specialistId },
       initialMessage: buildTaskAgentInitialMessage(note),
     });
     if (!result.success || !result.agentId) return;

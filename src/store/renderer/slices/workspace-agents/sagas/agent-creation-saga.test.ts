@@ -6,21 +6,25 @@ vi.mock('$features/agent/services/agent-factory', () => ({
   agentFactory: { createAgent: mocks.createAgent },
 }));
 
-import type { AgentSession, Workspace } from '$shared/types';
+import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
+import type { AgentSession, Note, Workspace } from '$shared/types';
 import { AgentStatus } from '$shared/types';
 import { WorkspaceId } from '$shared/types/branded-ids';
 import { createAgentTypeId } from '$shared/types/agent.types';
 import { agentSessionLaunchAgentRequested } from '../../agent-session/agent-session-slice';
 import { openAgentTabRequested } from '../../app-layout/app-layout-slice';
+import { initialState as specialistsInitialState } from '../../specialists/specialists-slice';
 import {
   createAgentFromConfigRequested,
   createAgentRequested,
   createAgentWithSpecialistRequested,
+  runAgentForNoteRequested,
 } from '../workspace-agents-slice';
 import { agentCreationSaga } from './agent-creation-saga';
 
 const WS = 'ws-create-saga';
 const AGENT = 'agent-created';
+const NOTE = 'note-task-1';
 const settle = async () => {
   await Promise.resolve();
   await Promise.resolve();
@@ -40,24 +44,30 @@ function session(): AgentSession {
   } as AgentSession;
 }
 
-function state() {
+function state(defaultSpecialistId = '') {
   const workspace = { id: WS, title: 'Workspace', repositoryPath: '/tmp/repo' } as Workspace;
+  const note = { id: NOTE, title: 'Task note', content: 'Do the thing' } as Note;
   return {
     workspace: { workspaces: { ids: [WS], map: { [WS]: workspace } } },
     workspaceAgents: { byWorkspaceId: { [WS]: { agentIds: [] } } },
     agentSessions: { byAgentId: {} },
     model: { providerModels: { augment: 'sonnet' } },
     providerSettings: { activeProviderId: 'augment' },
+    specialists: { ...specialistsInitialState, defaultSpecialistId },
+    workspaceNotes: {
+      byWorkspaceId: { [WS]: { notes: createCollection<Note, 'id'>('id', [note]) } },
+    },
+    githubAuth: { isAuthenticated: false },
   };
 }
 
-function start() {
+function start(getState: () => unknown = state) {
   const channel = stdChannel();
   const dispatched: unknown[] = [];
   const task = runSaga(
     {
       channel,
-      getState: state,
+      getState,
       dispatch: (action) => {
         dispatched.push(action);
         channel.put(action);
@@ -205,6 +215,40 @@ describe('agentCreationSaga', () => {
     expect(mocks.createAgent).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({ model: 'sonnet', provider: 'augment' }),
+    );
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('runs a task note with the daemon specialists.default setting when set', async () => {
+    mocks.createAgent.mockResolvedValue({ success: true, agent: session(), agentId: AGENT });
+    const { channel, task } = start(() => state('verifier'));
+    channel.put(runAgentForNoteRequested(WS, NOTE, 'Task note'));
+    await settle();
+
+    expect(mocks.createAgent).toHaveBeenCalledWith(
+      expect.objectContaining({ id: WS }),
+      expect.objectContaining({
+        agentType: 'task-loop',
+        source: 'task-metadata-bar-run',
+        metadata: { taskNoteId: NOTE, source: 'task-run', specialist: 'verifier' },
+      }),
+    );
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('falls back to implementor when specialists.default is unset', async () => {
+    mocks.createAgent.mockResolvedValue({ success: true, agent: session(), agentId: AGENT });
+    const { channel, task } = start();
+    channel.put(runAgentForNoteRequested(WS, NOTE, 'Task note'));
+    await settle();
+
+    expect(mocks.createAgent).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        metadata: { taskNoteId: NOTE, source: 'task-run', specialist: 'implementor' },
+      }),
     );
     task.cancel();
     await task.toPromise();
