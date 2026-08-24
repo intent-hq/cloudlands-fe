@@ -65,7 +65,7 @@ for (const [index, panelType] of panelTypes.entries()) {
     ).toEqual([
       null,
       'panel-actions-trigger',
-      ...(stackCount > 1 ? ['pane-stack-selector-trigger'] : []),
+      ...(stackCount > 1 && panelType !== 'agent' ? ['pane-stack-selector-trigger'] : []),
       null,
       'panel-close-button',
     ]);
@@ -74,11 +74,22 @@ for (const [index, panelType] of panelTypes.entries()) {
       await expect(header.locator('[data-panel-agent-chat-glyph]')).toHaveCount(1);
     }
 
-    const identityBox = await header.locator('[data-panel-header-identity]').boundingBox();
+    const identity = header.locator(
+      panelType === 'agent'
+        ? '[data-panel-agent-header-identity]'
+        : '[data-panel-header-identity]',
+    );
+    const identityBox = await identity.boundingBox();
     const panelControlsBox = await panelControls.boundingBox();
     expect(identityBox).not.toBeNull();
     expect(panelControlsBox).not.toBeNull();
     expect(identityBox!.x + identityBox!.width).toBeLessThanOrEqual(panelControlsBox!.x + 0.5);
+    if (panelType === 'agent') {
+      await expect(header.locator('[data-pane-stack]')).toHaveCount(0);
+      await expect(component.locator('[data-pane-stack-layer]')).toHaveCount(0);
+      await expect(component.locator('[data-pane-stack-position]')).toHaveCount(0);
+      await expect(component.locator('[data-pane-stack-overflow-trigger]')).toHaveCount(0);
+    }
 
     await trigger.focus();
     await page.keyboard.press(key);
