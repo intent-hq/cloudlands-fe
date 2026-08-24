@@ -40,7 +40,10 @@ export const selectSelectedModel = store.createSelector((state, providerId?: str
         : [];
     if (catalogModels.length === 0) return persisted;
 
-    const availableValues = catalogModels.map((model) => model.value);
+    const providerCatalogModels = catalogModels.filter((model) =>
+      isModelValidForProvider(model.value, effectiveProviderId, state.model.defaultProviderId),
+    );
+    const availableValues = providerCatalogModels.map((model) => model.value);
     if (
       findAvailableModelMatch(
         availableValues,
@@ -52,7 +55,7 @@ export const selectSelectedModel = store.createSelector((state, providerId?: str
       return persisted;
     }
 
-    return resolveDefaultModel(catalogModels);
+    return resolveDefaultModel(providerCatalogModels);
   }
 
   const isAvailable = selectAvailableEnabledProviderIds.select(state).includes(effectiveProviderId);

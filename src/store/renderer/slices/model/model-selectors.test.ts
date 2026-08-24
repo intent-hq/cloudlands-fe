@@ -90,6 +90,42 @@ describe('selectSelectedModel', () => {
     expect(selectSelectedModel.select(state)).toBe('claude-fable-5[1m]');
   });
 
+  it('ignores a foreign first row when replacing a stale persisted model', () => {
+    const providerId = 'claude-code';
+    const state = mockState(
+      {
+        availableModels: createCollection<AuggieModel, 'value'>('value', [
+          { value: 'codex:gpt-5.3-codex', label: 'GPT-5.3 Codex' },
+          { value: 'claude-fable-5[1m]', label: 'Claude Fable 5' },
+        ]),
+        availableModelsProviderId: providerId,
+        providerModels: { [providerId]: 'fable-5' },
+        defaultProviderId: providerId,
+      },
+      { activeProviderId: providerId },
+    );
+
+    expect(selectSelectedModel.select(state)).toBe('claude-fable-5[1m]');
+  });
+
+  it('ignores a foreign default row when replacing a stale persisted model', () => {
+    const providerId = 'claude-code';
+    const state = mockState(
+      {
+        availableModels: createCollection<AuggieModel, 'value'>('value', [
+          { value: 'claude-fable-5[1m]', label: 'Claude Fable 5' },
+          { value: 'codex:gpt-5.3-codex', label: 'GPT-5.3 Codex', isDefault: true },
+        ]),
+        availableModelsProviderId: providerId,
+        providerModels: { [providerId]: 'fable-5' },
+        defaultProviderId: providerId,
+      },
+      { activeProviderId: providerId },
+    );
+
+    expect(selectSelectedModel.select(state)).toBe('claude-fable-5[1m]');
+  });
+
   it('preserves a valid provider-specific Claude Code model ID', () => {
     const providerId = 'claude-code';
     const model = 'claude-fable-5[1m]';
