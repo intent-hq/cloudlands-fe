@@ -17,6 +17,7 @@ import {
 } from '../response-group-blocks';
 import { warmImport } from '../../../../test/warm-import';
 import type { ContentBlock } from '$shared/types';
+import ResponseGroupCollapseHost from './ResponseGroupCollapseHost.svelte';
 
 vi.mock('svelte-fa', async () => {
   const MockFa = (await import('../../ui/__tests__/mocks/Fa.svelte')).default;
@@ -275,6 +276,64 @@ describe('ResponseGroup - collapse state model', () => {
       await vi.advanceTimersByTimeAsync(1);
       expect(btn.getAttribute('aria-expanded')).toBe('false');
       expect(details(container)).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('clears a pending automatic collapse when destroyed', async () => {
+    vi.useFakeTimers();
+    const setTimeoutSpy = vi.spyOn(globalThis, 'setTimeout');
+    const clearTimeoutSpy = vi.spyOn(globalThis, 'clearTimeout');
+    try {
+      const { rerender, unmount } = render(ResponseGroup, {
+        props: { name: 'Removed group', isStreaming: true, children },
+      });
+
+      await rerender({ isStreaming: false });
+      const collapseTimerIndex = setTimeoutSpy.mock.calls.findIndex(([, delay]) => delay === 800);
+      expect(collapseTimerIndex).toBeGreaterThanOrEqual(0);
+      const collapseTimer = setTimeoutSpy.mock.results[collapseTimerIndex].value;
+
+      unmount();
+      expect(clearTimeoutSpy).toHaveBeenCalledWith(collapseTimer);
+      await vi.advanceTimersByTimeAsync(800);
+    } finally {
+      setTimeoutSpy.mockRestore();
+      clearTimeoutSpy.mockRestore();
+      vi.useRealTimers();
+    }
+  });
+
+  it('drives sequential groups independently while later response activity continues', async () => {
+    vi.useFakeTimers();
+    try {
+      const { container, rerender } = render(ResponseGroupCollapseHost, {
+        props: { activePosition: 'first' },
+      });
+      const expandedStates = () =>
+        [...container.querySelectorAll('[data-testid="response-group-disclosure"]')].map((node) =>
+          node.getAttribute('aria-expanded'),
+        );
+
+      expect(expandedStates()).toEqual(['true', 'false', 'false']);
+
+      await rerender({ activePosition: 'middle' });
+      await vi.advanceTimersByTimeAsync(800);
+      expect(expandedStates()).toEqual(['false', 'true', 'false']);
+
+      await rerender({ activePosition: 'last' });
+      await vi.advanceTimersByTimeAsync(800);
+      expect(expandedStates()).toEqual(['false', 'false', 'true']);
+
+      await rerender({ activePosition: 'thinking' });
+      expect(
+        container.querySelector('[data-testid="response-after-groups"]')?.textContent,
+      ).toContain('Later Thinking/response activity continues');
+      await vi.advanceTimersByTimeAsync(799);
+      expect(expandedStates()).toEqual(['false', 'false', 'true']);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(expandedStates()).toEqual(['false', 'false', 'false']);
     } finally {
       vi.useRealTimers();
     }

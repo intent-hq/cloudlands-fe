@@ -1,5 +1,5 @@
-export const CHAT_SEARCH_EXPAND_EVENT = 'chatsearchexpand';
-export const CHAT_SEARCH_RESTORE_EVENT = 'chatsearchrestore';
+const CHAT_SEARCH_EXPAND_EVENT = 'chatsearchexpand';
+const CHAT_SEARCH_RESTORE_EVENT = 'chatsearchrestore';
 
 interface SearchDisclosureHandlers {
   onExpand?: () => void;
