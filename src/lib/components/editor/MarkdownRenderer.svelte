@@ -8,6 +8,7 @@
   import { withSyntheticDiffHeaders } from '$lib/utils/diff-patch-utils';
   import { handleLink } from '$features/navigation/link-handler';
   import { getWorkspaceRouteContext } from '$lib/utils/workspace-route-context';
+  import { strikethroughDoubleTilde } from '$lib/utils/marked-strikethrough';
 
   const logger = createLogger('MarkdownRenderer');
   const workspaceId = getWorkspaceRouteContext()?.workspaceId ?? undefined;
@@ -205,6 +206,8 @@
         renderer,
         breaks: true,
         gfm: true,
+        // Restrict strikethrough to the double-tilde form (~~text~~)
+        ...strikethroughDoubleTilde,
       });
 
       const html = marked.parse(content) as string;

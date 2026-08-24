@@ -1,5 +1,6 @@
 import { Marked } from 'marked';
 import { addTasksBlockSupport } from './tiptap-task-block-extension';
+import { strikethroughDoubleTilde } from './marked-strikethrough';
 
 /**
  * Regular expression to match agent anchors in task items
@@ -317,6 +318,9 @@ export const createTiptapTaskListMarked = () => {
       },
     },
   });
+
+  // Restrict strikethrough to the double-tilde form (~~text~~)
+  markedInstance.use(strikethroughDoubleTilde);
 
   // Add choice block support
   // TODO: Re-enable after fixing renderer registration
