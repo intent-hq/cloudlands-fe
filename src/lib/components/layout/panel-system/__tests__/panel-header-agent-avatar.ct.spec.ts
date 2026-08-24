@@ -29,7 +29,7 @@ for (const theme of ['light', 'dark'] as const) {
 
     await component.update({ props: { theme, width: 260, zoom: 2, activeAgent: 'b' } });
     expect(await component.getAttribute('data-active-agent')).toBe('panel-avatar-agent-b');
-    const activeAgent = component.locator('[data-pane-stack-active="tab-b"]');
+    const activeAgent = component.locator('[data-panel-agent-header-identity]');
     await expect(activeAgent).toContainText('Agent B');
     await expect(activeAgent.locator('[data-panel-agent-chat-glyph]')).toHaveCount(1);
     await expect(activeAgent.locator('[data-agent-avatar-with-state]')).toHaveCount(0);

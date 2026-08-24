@@ -49,10 +49,11 @@
 
   store.dispatch(bulkUpsertSessions([session(agentA, 'Agent A'), session(agentB, 'Agent B')]));
   const activeTabId = $derived(activeAgent === 'b' ? 'tab-b' : 'tab-a');
-  const tabs = [
+  const allTabs = [
     { id: 'tab-a', type: 'agent' as const, title: 'Agent A', agentId: agentA, closable: true },
     { id: 'tab-b', type: 'agent' as const, title: 'Agent B', agentId: agentB, closable: true },
   ];
+  const tabs = $derived(activeAgent === 'b' ? [allTabs[1]] : [allTabs[0]]);
 </script>
 
 <section

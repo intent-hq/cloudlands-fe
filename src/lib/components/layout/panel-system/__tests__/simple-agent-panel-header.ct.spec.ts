@@ -21,8 +21,9 @@ test('shows only the current agent identity across root, delegated, single, stac
         const otherName = names[activeAgent === 'root' ? 'delegated' : 'root'];
 
         await expect(identity).toHaveCount(1);
-        await expect(identity.locator('[data-agent-avatar-with-state]')).toHaveCount(1);
-        await expect(identity.locator('svg[data-agent-avatar]')).toHaveCount(1);
+        await expect(identity.locator('[data-panel-agent-chat-glyph]')).toHaveCount(1);
+        await expect(identity.locator('[data-agent-avatar-with-state]')).toHaveCount(0);
+        await expect(identity.locator('svg[data-agent-avatar]')).toHaveCount(0);
         await expect(identity.getByRole('button', { name: currentName })).toHaveCount(1);
         await expect(header).not.toContainText(otherName);
         await expect(header.locator('[data-pane-stack]')).toHaveCount(0);

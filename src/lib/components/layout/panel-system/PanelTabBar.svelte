@@ -1802,8 +1802,10 @@
       ondragend={handlePaneDragEnd}
       data-panel-tabless-header
       data-panel-content-header
-      role={activeTab.type === 'agent' ? undefined : 'group'}
-      aria-label={activeTab.type === 'agent'
+      role={activeTab.type === 'agent' /* i18n-ignore: tab type discriminator */
+        ? undefined
+        : 'group'}
+      aria-label={activeTab.type === 'agent' /* i18n-ignore: tab type discriminator */
         ? undefined
         : m.layout_panelTabBar_paneStack_ariaLabel({ count: tabs.length })}
       data-pane-stack={activeTab.type === 'agent' ? undefined : ''}

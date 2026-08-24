@@ -75,9 +75,7 @@ for (const [index, panelType] of panelTypes.entries()) {
     }
 
     const identity = header.locator(
-      panelType === 'agent'
-        ? '[data-panel-agent-header-identity]'
-        : '[data-panel-header-identity]',
+      panelType === 'agent' ? '[data-panel-agent-header-identity]' : '[data-panel-header-identity]',
     );
     const identityBox = await identity.boundingBox();
     const panelControlsBox = await panelControls.boundingBox();

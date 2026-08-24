@@ -1,5 +1,5 @@
 /** @vitest-environment jsdom */
-import { cleanup, fireEvent, render, screen } from '@testing-library/svelte';
+import { cleanup, render } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 type Listener<T> = (value: T) => void;
@@ -105,15 +105,20 @@ afterEach(() => {
 describe('panel header agent identity', () => {
   it('uses a chat bubble instead of an avatar-state surface in the tabless header', () => {
     const { container } = render(PanelTabBar, {
-      props: { tabs, activeTabId: 'tab-a', panelId: 'panel-1', workspaceId: 'workspace-1' },
+      props: {
+        tabs: [tabs[0]],
+        activeTabId: 'tab-a',
+        panelId: 'panel-1',
+        workspaceId: 'workspace-1',
+      },
     });
     const header = container.querySelector('[data-panel-tabless-header]')!;
-    const activeIdentity = header.querySelector('[data-pane-stack-active="tab-a"]')!;
+    const activeIdentity = header.querySelector('[data-panel-agent-header-identity]')!;
     const leadingSurface = activeIdentity.querySelector(
       '[data-testid="panel-header-agent-avatar-slot"]',
     )!;
 
-    expect(header.querySelector('[data-panel-header-identity]')).not.toBeNull();
+    expect(header.querySelector('[data-panel-agent-header-identity]')).not.toBeNull();
     expect(activeIdentity.textContent).toContain('Agent A');
     expect(leadingSurface.hasAttribute('data-panel-header-leading-surface')).toBe(true);
     expectChatBubbleIdentity(leadingSurface);
@@ -121,30 +126,33 @@ describe('panel header agent identity', () => {
 
   it('updates the chat-bubble identity when the active agent pane changes', async () => {
     const view = render(PanelTabBar, {
-      props: { tabs, activeTabId: 'tab-a', panelId: 'panel-1', workspaceId: 'workspace-1' },
+      props: {
+        tabs: [tabs[0]],
+        activeTabId: 'tab-a',
+        panelId: 'panel-1',
+        workspaceId: 'workspace-1',
+      },
     });
 
     await view.rerender({
-      tabs,
+      tabs: [tabs[1]],
       activeTabId: 'tab-b',
       panelId: 'panel-1',
       workspaceId: 'workspace-1',
     });
-    const activeIdentity = view.container.querySelector('[data-pane-stack-active="tab-b"]')!;
+    const activeIdentity = view.container.querySelector('[data-panel-agent-header-identity]')!;
     expect(activeIdentity.textContent).toContain('Agent B');
     expectChatBubbleIdentity(activeIdentity);
   });
 
-  it('uses chat bubbles without avatar-state surfaces for agent rows in the pane menu', async () => {
+  it('uses chat bubbles without avatar-state surfaces for agent rows in tabs', () => {
     const { container } = render(PanelTabBar, {
       props: { tabs, activeTabId: 'tab-a', panelId: 'panel-1', workspaceId: 'workspace-1' },
     });
-    await fireEvent.click(screen.getByTestId('pane-stack-selector-trigger'));
-    const menu = await screen.findByRole('menu', { name: 'Panes in this stack' });
-    const rows = Array.from(menu.querySelectorAll('[data-pane-stack-item]'));
+    const rows = Array.from(container.querySelectorAll('[data-tab-id]'));
 
-    expect(rows.map((row) => row.getAttribute('data-pane-stack-item'))).toEqual(['tab-a', 'tab-b']);
+    expect(rows.map((row) => row.getAttribute('data-tab-id'))).toEqual(['tab-a', 'tab-b']);
     rows.forEach(expectChatBubbleIdentity);
-    expectChatBubbleIdentity(container.querySelector('[data-panel-tabless-header]')!);
+    expect(container.querySelector('[data-testid="pane-stack-selector-trigger"]')).toBeNull();
   });
 });

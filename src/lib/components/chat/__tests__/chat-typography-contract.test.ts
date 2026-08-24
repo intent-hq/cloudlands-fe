@@ -13,7 +13,9 @@ describe('chat typography contract', () => {
       'conversation-column chat-content-measure mx-auto flex min-h-full w-full min-w-0 flex-col',
     );
     expect(panel).toContain('conversation-composer relative z-10 w-full');
-    expect(panel).toContain('class="chat-content-measure mx-auto w-full min-w-0"');
+    expect(panel).toContain(
+      'class="composer-prompt-lane chat-content-measure mx-auto w-full min-w-0"',
+    );
     expect(panel).toContain('data-testid="chat-composer-controls-inner"');
     expect(panel).toContain('max-width: 70em');
     expect(panel).not.toContain('max-w-[var(--content-measure-');

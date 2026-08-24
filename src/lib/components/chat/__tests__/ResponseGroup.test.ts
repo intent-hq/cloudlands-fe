@@ -141,7 +141,7 @@ describe('ResponseGroup - collapse state model', () => {
     );
   });
 
-  it('constrains expanded prose with asymmetric canonical spacing', () => {
+  it('keeps expanded prose unconstrained with canonical top spacing', () => {
     const blocks = [{ type: 'text', text: 'Expanded prose' }] as ContentBlock[];
     const { container } = render(ResponseGroup, {
       props: { name: 'Constrained group', isStreaming: true, blocks, children },
@@ -149,10 +149,8 @@ describe('ResponseGroup - collapse state model', () => {
     const expanded = container.querySelector('[data-operational-expanded-content]')!;
     const scroller = container.querySelector('.cylinder-scroller') as HTMLElement;
 
-    expect(expanded.className).toContain('pt-2');
-    expect(expanded.className).toContain('pb-4');
-    expect(scroller.style.maxHeight).toContain('160px');
-    expect(scroller.style.maxHeight).toContain('40vh');
+    expect(expanded.className).toContain('pt-4');
+    expect(scroller.style.maxHeight).toBe('');
     expect(scroller.className).toContain('cylinder-scroller');
   });
 
