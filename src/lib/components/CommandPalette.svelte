@@ -91,8 +91,6 @@
     getWorkspaceActivityDisplayTime,
   } from '$shared/utils/workspace-activity-time';
   import { store as appStore } from '$store/renderer/store';
-  import { selectWorkspaceViewMode } from '$store/renderer/slices/tab-state/tab-state-selectors';
-  import { toggleWorkspaceViewModeWithTransition } from '$features/workspace/workspace-view-mode-action';
 
   const logger = createLogger('CommandPalette');
 
@@ -120,8 +118,7 @@
 
   let searchQuery = $state('');
   const workspaceItems = selectWorkspaceItems();
-  const workspaceViewMode$ = selectWorkspaceViewMode();
-  let commands = $derived(COMMAND_PALETTE_COMMANDS($workspaceViewMode$));
+  const commands = COMMAND_PALETTE_COMMANDS;
   const currentChanges$ = selectCurrentChanges(workspaceIdStore);
   const workspaceAgents$ = selectAllWorkspaceAgents(workspaceIdStore);
   const allNotes$ = selectAllNotes(workspaceIdStore);
@@ -802,9 +799,6 @@
         return true;
       case 'open-usage-stats':
         appStore.dispatch(setStatsOverlayOpen(true));
-        return true;
-      case 'workspace-view-mode':
-        void toggleWorkspaceViewModeWithTransition();
         return true;
       default:
         return true;

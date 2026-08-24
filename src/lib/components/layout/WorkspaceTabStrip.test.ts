@@ -38,7 +38,6 @@ vi.mock('$store/renderer/slices/tab-state/tab-state-selectors', () => ({
     select: () => mocks.nextCurrentId,
   }),
   selectWorkspaceTabOrder: () => readable(['ws-1', 'ws-2', 'ws-3']),
-  selectWorkspaceViewMode: () => readable('single'),
 }));
 vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
   selectWorkspaceItems: () =>

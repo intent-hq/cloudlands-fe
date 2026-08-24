@@ -16,7 +16,6 @@
     resolveWorkspaceStatusState,
     type WorkspaceStatusPresentationState,
   } from '$lib/components/workspace/utils/workspace-status-presentation';
-  import { getWorkspaceViewTransitionName } from '$lib/components/workspace/workspace-view-transition';
   import {
     closeWorkspaceTab,
     endDrag,
@@ -33,7 +32,6 @@
   import {
     selectCurrentWorkspaceTabId,
     selectWorkspaceTabOrder,
-    selectWorkspaceViewMode,
   } from '$store/renderer/slices/tab-state/tab-state-selectors';
   import { selectWorkspaceItems } from '$store/renderer/slices/workspace/workspace-selectors';
   import { selectWorkspaceTabStatuses } from '$store/renderer/slices/hud/hud-selectors';
@@ -53,7 +51,6 @@
 
   const currentWorkspaceTabId$ = selectCurrentWorkspaceTabId();
   const workspaceTabOrder$ = selectWorkspaceTabOrder();
-  const workspaceViewMode$ = selectWorkspaceViewMode();
   const workspaceItems$ = selectWorkspaceItems();
   const workspaceTabStatuses$ = selectWorkspaceTabStatuses();
 
@@ -434,7 +431,7 @@
 {#if $workspaceTabOrder$.length > 0}
   <!-- pl-3 keeps the active tab's 12px corner-flare SVG inside the padding box
        so overflow-x-auto does not clip it; -ml-1 gives that back minus 8px so
-       the first tab sits clear of the view-mode toggle instead of flush.
+       the first tab sits clear of the preceding title-bar controls.
        The right margin is conditional: -mr-2.5 keeps the "+" launcher tight
        against the last tab's pr-3 padding when everything fits, but during
        overflow the clipped tab edge is flush with the strip border, so mr-1
@@ -494,9 +491,6 @@
             data-workspace-tab={workspaceId}
             data-active={isCurrent}
             data-dragging={isDragged}
-            style:view-transition-name={$workspaceViewMode$ === 'single'
-              ? getWorkspaceViewTransitionName(workspaceId)
-              : undefined}
             style:left={isDragged && dragSession
               ? `${dragSession.origin.left + dragClientX - dragSession.startClientX}px`
               : undefined}
@@ -620,9 +614,6 @@
             data-workspace-tab={workspaceId}
             data-workspace-tab-loading="true"
             data-active={isCurrent}
-            style:view-transition-name={$workspaceViewMode$ === 'single'
-              ? getWorkspaceViewTransitionName(workspaceId)
-              : undefined}
             use:reportActiveTabBounds={isCurrent}
             use:registerTabSurface={workspaceId}
             role="presentation"

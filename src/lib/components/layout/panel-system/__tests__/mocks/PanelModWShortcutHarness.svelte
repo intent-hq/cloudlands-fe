@@ -57,7 +57,6 @@
       optimisticTabs: [],
       tabOrder: ['other-workspace', workspaceId],
       workspaceStacks: [['other-workspace'], [workspaceId]],
-      viewMode: 'columns',
     }),
   );
   appStore.dispatch(
@@ -119,7 +118,6 @@
         navigationPath = path;
       },
       openNewWorkspace: () => undefined,
-      toggleWorkspaceViewMode: () => undefined,
     });
     shortcutManager.attach();
   });

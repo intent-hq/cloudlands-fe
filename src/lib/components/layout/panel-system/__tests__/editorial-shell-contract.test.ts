@@ -192,12 +192,10 @@ describe('editorial workspace shell presentation contract', () => {
     expect(titlebar).toContain('titlebar-left-drag-handle w-4 shrink-0 self-stretch');
     expect(titlebar).toContain('class="flex min-w-0 items-center gap-1"');
     expect(titlebar).toContain('data-titlebar-fixed-controls');
-    expect(titlebar).toContain("$workspaceViewMode$ === 'columns' ? 'self-center' : 'self-end'");
+    expect(titlebar).toContain('class="flex min-w-0 self-end items-center gap-1');
     expect(titlebar).toContain('data-titlebar-workspace-controls');
     expect(titlebar.indexOf('<SidebarNav />')).toBeLessThan(titlebar.indexOf('<WorkspaceTabStrip'));
-    expect(titlebar).toContain(
-      "style:margin-left={`${$workspaceViewMode$ === 'columns' ? 0 : panelOffset}px`}",
-    );
+    expect(titlebar).toContain('style:margin-left={`${panelOffset}px`}');
     expect(titlebar).toContain('activeTabBounds.left + panelOffset - 6');
     expect(titlebar).toContain('.titlebar-drag-handle');
     expect(titlebar).toContain('.titlebar-left-drag-surface');
@@ -277,7 +275,7 @@ describe('editorial workspace shell presentation contract', () => {
       /:where\(\.dark\) \.panel-layout-container\s*{\s*background-color:\s*transparent;\s*}/,
     );
     expect(appLayout).toContain('class="workspace-main flex');
-    expect(appLayout).toContain("'rounded-xl bg-sidebar border border-border shadow-sm'");
+    expect(appLayout).toContain('rounded-xl bg-sidebar border border-border shadow-sm');
     expect(sidebarPanel).toContain('relative text-sidebar-foreground');
     expect(sidebarPanel).not.toContain('relative bg-sidebar text-sidebar-foreground');
     expect(appLayout).not.toContain('backdrop-filter:');

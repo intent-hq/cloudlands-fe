@@ -112,7 +112,7 @@ export function computeResults(input: ComputeResultsInput): any[] {
       ...commands.filter(
         (c) =>
           c.id !== 'new-workspace' &&
-          (workspaceId || (c.id !== 'new-file' && c.id !== 'workspace-view-mode')),
+          (workspaceId || c.id !== 'new-file'),
       ),
       ...agents,
       ...notes,
