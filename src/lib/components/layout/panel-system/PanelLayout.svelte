@@ -4,9 +4,9 @@
   import { m } from '$shared/paraglide/messages.js';
   import { getPanelLayoutManager, type PanelTab } from '$features/layout/panel-layout-adapter';
   import {
-    getPanelMovePreview,
+    getPaneDropPreview,
     getPanelMovePreviewWidthRatio,
-    getPanelRootEdgeMovePreview,
+    PANE_DROP_PREVIEW_PANEL_ID,
   } from '$features/layout/panel-move-preview';
   import {
     createPanelKeyboardShortcuts,
@@ -26,7 +26,6 @@
     getPanelViewportContentWidth,
   } from './panel-canvas-width';
   import PanelDragPreview from './PanelDragPreview.svelte';
-  import PaneInsertionTargets from './PaneInsertionTargets.svelte';
   import {
     EMPTY_LAYOUT_LOADING_TIMEOUT_MS,
     isLayoutSettledNow,
@@ -57,11 +56,10 @@
   import {
     clearDraggedPaneState,
     getDraggedPane,
-    getPaneInsertionPlacement,
-    getPaneInsertionTargetAtX,
+    getPaneInsertionPlacementAtX,
     getPaneInsertionTargets,
-    type PaneInsertionTarget,
-    type PanelDragPlacement,
+    type DraggedPane,
+    type PaneDropPlacement,
   } from './panel-drag';
   import { selectIsDragging } from '$store/renderer/slices/tab-state/tab-state-selectors';
   import { endDrag } from '$store/renderer/slices/tab-state/tab-state-slice';
@@ -187,19 +185,11 @@
         }
       : $root$,
   );
-  let panelMovePreview = $state<
-    | {
-        kind: 'panel';
-        draggedPanelId: string;
-        targetPanelId: string;
-        position: PanelDragPlacement;
-      }
-    | { kind: 'edge'; draggedPanelId: string; position: PanelDragPlacement }
-    | null
-  >(null);
+  let paneDropPreview = $state<{
+    draggedPane: DraggedPane;
+    placement: PaneDropPlacement;
+  } | null>(null);
   let panelLayoutMotionElement = $state.raw<HTMLDivElement | null>(null);
-  let paneInsertionTargets = $state<PaneInsertionTarget[]>([]);
-  let activePaneInsertionIndex = $state<number | null>(null);
   let panelWorkspaceInset = $state.raw<HTMLDivElement | null>(null);
   const panelRevealScheduler = createLayoutStableRevealScheduler();
   $effect(() => {
@@ -394,20 +384,14 @@
   let panelMoveCommitReleaseFrame: number | null = null;
   let suppressCommittedPanelMoveMotion = $state(false);
   const panelMovePreviewRoot = $derived(
-    panelMovePreview
-      ? panelMovePreview.kind === 'edge'
-        ? getPanelRootEdgeMovePreview(
-            $root$,
-            panelMovePreview.draggedPanelId,
-            panelMovePreview.position,
-          )
-        : getPanelMovePreview(
-            $root$,
-            panelMovePreview.draggedPanelId,
-            panelMovePreview.targetPanelId,
-            panelMovePreview.position,
-          )
+    paneDropPreview
+      ? getPaneDropPreview($root$, paneDropPreview.placement, $panelCanvasWidth$)
       : null,
+  );
+  const paneDropPreviewPanelId = $derived(
+    paneDropPreview?.placement.kind === 'panel' && paneDropPreview.placement.zone === 'center'
+      ? paneDropPreview.placement.targetPanelId
+      : PANE_DROP_PREVIEW_PANEL_ID,
   );
   const panelMovePreviewWidthRatio = $derived(
     panelMovePreviewRoot ? getPanelMovePreviewWidthRatio($root$, panelMovePreviewRoot) : 1,
@@ -424,7 +408,12 @@
   function clearPanelMovePreviewNow() {
     if (panelMovePreviewClearFrame !== null) cancelAnimationFrame(panelMovePreviewClearFrame);
     panelMovePreviewClearFrame = null;
-    panelMovePreview = null;
+    paneDropPreview = null;
+  }
+
+  function setPaneDropPreview(placement: PaneDropPlacement | null) {
+    const draggedPane = getDraggedPane();
+    paneDropPreview = draggedPane && placement ? { draggedPane, placement } : null;
   }
 
   function commitPanelMoveWithoutReplay(commit: () => void) {
@@ -464,11 +453,18 @@
   function handlePaneInsertionDragOver(event: DragEvent) {
     if (!getDraggedPane()) return;
     const geometry = measurePaneInsertionGeometry();
-    if (!geometry) return;
-    paneInsertionTargets = geometry.targets;
-    const target = getPaneInsertionTargetAtX(event.clientX, geometry.layoutRect, geometry.targets);
-    activePaneInsertionIndex = target?.index ?? null;
-    if (!target) return;
+    if (!geometry) {
+      setPaneDropPreview(null);
+      return;
+    }
+    const placement = getPaneInsertionPlacementAtX(
+      event.clientX,
+      geometry.layoutRect,
+      geometry.targets,
+      $panelIds$,
+    );
+    setPaneDropPreview(placement);
+    if (!placement) return;
 
     event.preventDefault();
     event.stopPropagation();
@@ -479,17 +475,19 @@
     const draggedPane = getDraggedPane();
     const geometry = measurePaneInsertionGeometry();
     if (!draggedPane || !geometry) return;
-    const target = getPaneInsertionTargetAtX(event.clientX, geometry.layoutRect, geometry.targets);
-    if (!target) return;
+    const placement = getPaneInsertionPlacementAtX(
+      event.clientX,
+      geometry.layoutRect,
+      geometry.targets,
+      $panelIds$,
+    );
+    if (!placement) return;
 
     event.preventDefault();
     event.stopPropagation();
-    activePaneInsertionIndex = null;
-    paneInsertionTargets = [];
+    clearPanelMovePreviewNow();
     clearDraggedPaneState();
     appStore.dispatch(endDrag());
-    const placement = getPaneInsertionPlacement(target.index, $panelIds$);
-    if (!placement) return;
     if (placement.kind === 'edge') {
       layoutManager.moveTabToSplitLevel(
         draggedPane.tabId,
@@ -511,23 +509,12 @@
   function handlePaneInsertionDragLeave(event: DragEvent) {
     const relatedTarget = event.relatedTarget;
     if (relatedTarget instanceof Node && panelLayoutMotionElement?.contains(relatedTarget)) return;
-    activePaneInsertionIndex = null;
+    clearPanelMovePreviewNow();
   }
 
-  $effect(() => {
-    const dragging = $isDragging$;
-    const panelIds = $panelIds$;
-    if (!dragging || panelIds.length >= 4) {
-      paneInsertionTargets = [];
-      activePaneInsertionIndex = null;
-      return;
-    }
-    const frame = requestAnimationFrame(() => {
-      if (!getDraggedPane()) return;
-      paneInsertionTargets = measurePaneInsertionGeometry()?.targets ?? [];
-    });
-    return () => cancelAnimationFrame(frame);
-  });
+  function handlePaneDropPreview(placement: PaneDropPlacement | null) {
+    setPaneDropPreview(placement);
+  }
 
   $effect.pre(() => {
     if (!panelMovePreviewRoot || suppressCommittedPanelMoveMotion) return;
@@ -550,7 +537,6 @@
   });
 
   $effect(() => {
-    if (!$isDragging$) activePaneInsertionIndex = null;
     if (!$isDragging$ && !suppressCommittedPanelMoveMotion) clearPanelMovePreviewNow();
   });
 
@@ -1316,6 +1302,7 @@
           onResizeRootDivider={handleResizeRootDivider}
           onTabDropToSplit={handleTabDropToSplit}
           onTabMoveToPanel={handleTabMoveToPanel}
+          onPaneDropPreview={handlePaneDropPreview}
           onMoveActivePane={handleMoveActivePane}
           onPanelMove={handlePanelMove}
           onTabDropToSplitHandle={handleTabDropToSplitHandle}
@@ -1327,12 +1314,6 @@
           onOpenBrowser={canOpenBrowserPanel ? handleOpenBrowser : undefined}
         />
       </div>
-      {#if paneInsertionTargets.length > 0}
-        <PaneInsertionTargets
-          targets={paneInsertionTargets}
-          activeIndex={activePaneInsertionIndex}
-        />
-      {/if}
       {#if panelMovePreviewRoot}
         <div
           bind:this={panelDragPreviewElement}
@@ -1341,15 +1322,20 @@
             (contained && !onPanelMovePreviewWidthRatioChange ? panelMovePreviewWidthRatio : 1) *
             100
           }%`}
-          data-panel-layout-drag-preview={panelMovePreview?.position}
-          data-panel-layout-edge-preview={panelMovePreview?.kind === 'edge'
-            ? panelMovePreview.position
+          data-panel-layout-drag-preview={paneDropPreview?.placement.kind === 'panel'
+            ? paneDropPreview.placement.zone
+            : paneDropPreview?.placement.position}
+          data-panel-layout-edge-preview={paneDropPreview?.placement.kind === 'edge'
+            ? paneDropPreview.placement.position
             : undefined}
           aria-hidden="true"
         >
           <PanelDragPreview
             node={panelMovePreviewRoot}
-            draggedPanelId={panelMovePreview?.draggedPanelId ?? ''}
+            draggedPanelId={paneDropPreviewPanelId}
+            draggedPanelSourceId={paneDropPreviewPanelId === PANE_DROP_PREVIEW_PANEL_ID
+              ? paneDropPreview?.draggedPane.panelId
+              : null}
             {contained}
           />
         </div>

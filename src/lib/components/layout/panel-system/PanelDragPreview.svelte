@@ -8,11 +8,13 @@
   let {
     node,
     draggedPanelId,
+    draggedPanelSourceId = null,
     contained = false,
     isRoot = true,
   }: {
     node: PanelLayoutNode;
     draggedPanelId: string;
+    draggedPanelSourceId?: string | null;
     contained?: boolean;
     isRoot?: boolean;
   } = $props();
@@ -75,7 +77,9 @@
   >
     <div
       class="h-full min-h-0 w-full min-w-0 overflow-hidden"
-      use:renderPanelLayoutPreview={node.panelId}
+      use:renderPanelLayoutPreview={node.panelId === draggedPanelId && draggedPanelSourceId
+        ? draggedPanelSourceId
+        : node.panelId}
     ></div>
   </div>
 {:else}
@@ -94,7 +98,13 @@
         class="panel-drag-preview-child min-h-0 min-w-0 overflow-hidden"
         style={getChildStyle(index)}
       >
-        <PanelDragPreview node={child} {draggedPanelId} {contained} isRoot={false} />
+        <PanelDragPreview
+          node={child}
+          {draggedPanelId}
+          {draggedPanelSourceId}
+          {contained}
+          isRoot={false}
+        />
       </div>
     {/each}
   </div>

@@ -4,6 +4,7 @@ import { resolve } from 'node:path';
 import { cleanup, render } from '@testing-library/svelte';
 import { afterEach, describe, expect, it } from 'vitest';
 import PanelDragPreview from '../PanelDragPreview.svelte';
+import { PANE_DROP_PREVIEW_PANEL_ID } from '$features/layout/panel-move-preview';
 
 function addSourcePanel(panelId: string, text: string): HTMLElement {
   const panel = document.createElement('section');
@@ -78,5 +79,26 @@ describe('PanelDragPreview', () => {
 
     source.remove();
     target.remove();
+  });
+
+  it('uses the dragged source snapshot for a projected new-column destination', () => {
+    const source = addSourcePanel('source-panel', 'Source pane');
+    const { container } = render(PanelDragPreview, {
+      props: {
+        draggedPanelId: PANE_DROP_PREVIEW_PANEL_ID,
+        draggedPanelSourceId: 'source-panel',
+        node: { type: 'panel', panelId: PANE_DROP_PREVIEW_PANEL_ID },
+      },
+    });
+
+    const destination = container.querySelector<HTMLElement>('[data-panel-layout-preview-dragged]');
+    const snapshot = destination?.querySelector<HTMLElement>(
+      '[data-panel-layout-preview-snapshot]',
+    );
+    expect(destination?.dataset.panelLayoutPreviewPanel).toBe(PANE_DROP_PREVIEW_PANEL_ID);
+    expect(snapshot?.dataset.panelLayoutPreviewSnapshot).toBe('source-panel');
+    expect(snapshot?.textContent).toContain('Source pane');
+
+    source.remove();
   });
 });

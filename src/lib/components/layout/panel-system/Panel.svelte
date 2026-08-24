@@ -31,7 +31,12 @@
   } from './panel-tab-cache';
   import { selectIsDragging } from '$store/renderer/slices/tab-state/tab-state-selectors';
   import { untrack, type Snippet } from 'svelte';
-  import { PANE_DRAG_MIME, getDraggedPane, getPaneColumnDropZone } from './panel-drag';
+  import {
+    PANE_DRAG_MIME,
+    getDraggedPane,
+    getPaneColumnDropZone,
+    type PaneDropPlacement,
+  } from './panel-drag';
   import { store as appStore } from '$store/renderer/store';
   import { markPanelTouched } from '$store/renderer/slices/panel-layout/panel-layout-slice';
 
@@ -63,6 +68,8 @@
     onTabDrop?: (tabId: string, fromPanelId: string, zone: DropZone) => void;
     /** Handler for moving a tab to this panel's tab bar */
     onTabMoveToPanel?: (tabId: string, fromPanelId: string, insertIndex?: number) => void;
+    /** Reports the one valid destination for the active-pane drag. */
+    onPaneDropPreview?: (placement: PaneDropPlacement | null) => void;
     onMovePaneLeft?: () => void;
     onMovePaneRight?: () => void;
     onMoveLeft?: () => void;
@@ -103,6 +110,7 @@
     isZoomed = false,
     onTabDrop,
     onTabMoveToPanel,
+    onPaneDropPreview,
     onMovePaneLeft,
     onMovePaneRight,
     onMoveLeft,
@@ -247,6 +255,7 @@
 
   // Drop zone state
   let isDragOver = $state(false);
+  let isPaneDragOver = $state(false);
   let activeDropZone = $state<DropZone | null>(null);
 
   // Track global drag state to disable pointer events on content
@@ -256,6 +265,7 @@
   $effect(() => {
     if (!$isDragging) {
       isDragOver = false;
+      isPaneDragOver = false;
       activeDropZone = null;
     }
   });
@@ -297,7 +307,6 @@
   }
 
   function getDropZone(e: DragEvent): DropZone {
-    if (getDraggedPane()) return 'center';
     if (!panelRef) return 'center';
     // Tabless panels only split along the horizontal stack.
     return getPaneColumnDropZone(
@@ -308,13 +317,25 @@
     );
   }
 
+  function getPaneDropPlacement(zone: DropZone): PaneDropPlacement | null {
+    const draggedPane = getDraggedPane();
+    if (!draggedPane) return null;
+    if (zone === 'center' && draggedPane.panelId === panel.id) return null;
+    if (zone !== 'center' && draggedPane.panelId === panel.id && panel.tabs.length === 1) {
+      return null;
+    }
+    return { kind: 'panel', targetPanelId: panel.id, zone };
+  }
+
   function handleDragOver(e: DragEvent) {
     if (!e.dataTransfer?.types.includes(TAB_DRAG_MIME)) return;
 
     e.preventDefault();
     const zone = getDropZone(e);
+    isPaneDragOver = getDraggedPane() !== null;
     isDragOver = true;
     activeDropZone = zone;
+    if (isPaneDragOver) onPaneDropPreview?.(getPaneDropPlacement(zone));
     if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
   }
 
@@ -333,6 +354,8 @@
     }
 
     isDragOver = false;
+    if (isPaneDragOver) onPaneDropPreview?.(null);
+    isPaneDragOver = false;
     activeDropZone = null;
   }
 
@@ -341,6 +364,8 @@
     e.preventDefault();
     e.stopPropagation(); // Prevent drop from reaching content (like editors)
     isDragOver = false;
+    const wasPaneDrag = isPaneDragOver || getDraggedPane() !== null;
+    isPaneDragOver = false;
 
     try {
       const data = e.dataTransfer?.getData(TAB_DRAG_MIME);
@@ -350,6 +375,7 @@
 
       const zone = activeDropZone ?? getDropZone(e);
       activeDropZone = null;
+      if (wasPaneDrag) onPaneDropPreview?.(null);
 
       if (zone === 'center') {
         // Move tab to this panel's tab bar (only if from a different panel)
@@ -366,6 +392,7 @@
         onTabDrop?.(tabId, fromPanelId, zone);
       }
     } catch {
+      if (wasPaneDrag) onPaneDropPreview?.(null);
       activeDropZone = null;
     }
   }
@@ -399,7 +426,7 @@
     aria-label={m.layout_panel_ariaLabel()}
   >
     <!-- Drop zones overlay (positioned below tab bar) -->
-    <PanelDropZones activeZone={activeDropZone} isActive={isDragOver} />
+    <PanelDropZones activeZone={activeDropZone} isActive={isDragOver && !isPaneDragOver} />
     <!-- Tab Bar (shows group label and actions when focused) -->
     <div
       data-panel-header
