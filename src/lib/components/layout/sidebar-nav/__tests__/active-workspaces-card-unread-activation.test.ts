@@ -6,7 +6,9 @@
  * `focusFirstUnreadAgent` and `goto` are the seams under assertion.
  *
  * The row also passes the workspace's pre-navigation `attention === 'unread'`
- * state, since viewing the workspace clears the flag (§5.1).
+ * state as a stable snapshot of the clicked row. Navigation itself must NOT
+ * call `workspace.markSeen` (§5.1): unread is daemon-derived from per-agent
+ * seen markers and clears as each unread agent conversation is read.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/svelte';
@@ -19,13 +21,19 @@ import {
 import { WorkspaceStatus, type Workspace, type WorkspaceId } from '$shared/types';
 import ActiveWorkspacesCardHarness from './mocks/ActiveWorkspacesCardHarness.svelte';
 
-const { gotoMock, focusFirstUnreadAgentMock, openInNewWindowMock } = vi.hoisted(() => ({
-  gotoMock: vi.fn(() => Promise.resolve()),
-  focusFirstUnreadAgentMock: vi.fn(),
-  openInNewWindowMock: vi.fn(() => Promise.resolve()),
-}));
+const { gotoMock, focusFirstUnreadAgentMock, openInNewWindowMock, markWorkspaceSeenMock } =
+  vi.hoisted(() => ({
+    gotoMock: vi.fn(() => Promise.resolve()),
+    focusFirstUnreadAgentMock: vi.fn(),
+    openInNewWindowMock: vi.fn(() => Promise.resolve()),
+    markWorkspaceSeenMock: vi.fn(),
+  }));
 
 vi.mock('$app/navigation', () => ({ goto: gotoMock }));
+
+vi.mock('$features/workspace/mark-workspace-seen', () => ({
+  markWorkspaceSeen: markWorkspaceSeenMock,
+}));
 
 vi.mock('../utils/openWorkspaceInNewWindow', () => ({
   openWorkspaceInNewWindow: openInNewWindowMock,
@@ -90,6 +98,7 @@ describe('ActiveWorkspacesCard unread-row activation', () => {
     gotoMock.mockClear();
     focusFirstUnreadAgentMock.mockClear();
     openInNewWindowMock.mockClear();
+    markWorkspaceSeenMock.mockClear();
   });
 
   it('focuses the unread agent when an Unread row is clicked', async () => {
@@ -102,6 +111,9 @@ describe('ActiveWorkspacesCard unread-row activation', () => {
       expect(gotoMock).toHaveBeenCalledWith('/workspace/ws-unread');
       expect(focusFirstUnreadAgentMock).toHaveBeenCalledWith('ws-unread', true);
     });
+    // Navigating must not mark the workspace seen — only reading each unread
+    // agent conversation (or the explicit "Mark as read" action) clears it.
+    expect(markWorkspaceSeenMock).not.toHaveBeenCalled();
   });
 
   it('focuses the unread agent when Enter activates a highlighted Unread row', async () => {
