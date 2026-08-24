@@ -956,7 +956,12 @@
   {#each groupedBlocks as block, blockIndex (blockKeys[blockIndex])}
     {#if block.type === 'content_group'}
       {@const group = block as ContentBlockGroup}
-      {@const currentChildIndex = getResponseGroupCurrentBlockIndex(group.children)}
+      {@const hasLaterVisibleHistory = group.hasAdjacentReasoningHistory
+        ? getResponseGroupCurrentBlockIndex(group.children.slice(2)) >= 0
+        : true}
+      {@const currentChildIndex = hasLaterVisibleHistory
+        ? getResponseGroupCurrentBlockIndex(group.children)
+        : 0}
       {#snippet currentChild()}
         {@render renderResponseGroupChild(
           group,

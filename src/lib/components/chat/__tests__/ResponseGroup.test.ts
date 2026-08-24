@@ -455,13 +455,14 @@ describe('ResponseGroup - block identity', () => {
         name: 'Planning workspace title setup',
         sourceName: 'Prepping',
         isReasoningPhase: true,
+        hasAdjacentReasoningHistory: true,
         children: [
+          description,
           {
             type: 'thinking',
             id: 'msg_1:0',
             text: 'Assessing delegation and tool availability',
           },
-          description,
         ],
       },
     ]);

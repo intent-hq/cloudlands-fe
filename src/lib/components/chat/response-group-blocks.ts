@@ -76,7 +76,8 @@ function pairAdjacentReasoningGroup(
     name: title,
     sourceName: group.name,
     isReasoningPhase: true,
-    children: precedingHistory ? [precedingHistory, ...children] : children,
+    hasAdjacentReasoningHistory: true,
+    children: precedingHistory ? [children[0], precedingHistory, ...children.slice(1)] : children,
   };
 }
 

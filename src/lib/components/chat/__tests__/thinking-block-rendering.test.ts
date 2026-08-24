@@ -221,6 +221,75 @@ describe('thinking blocks — StreamingMessageContent', () => {
     expect(document.querySelector('[data-reasoning-history-body]')).toBeNull();
   });
 
+  it('renders adjacent-title history in exact DOM order with the description first', async () => {
+    await renderStreaming(
+      [
+        thinking('msg_1:0', '**Retained predecessor reasoning**\n\n**Model-derived group title**'),
+        {
+          type: 'text',
+          id: 'msg_1:1',
+          text: '<group:Prepping>Group description prose.',
+        },
+        thinking('msg_1:2', 'Subsequent commentary'),
+        {
+          type: 'tool_use',
+          id: 'msg_1:3',
+          toolCallId: 'call-1',
+          name: 'view',
+          input: { summary: 'Run the source-order action' },
+        },
+        {
+          type: 'tool_result',
+          id: 'msg_1:4',
+          tool_use_id: 'call-1',
+          output: 'Source-order result',
+        },
+        { type: 'text', id: 'msg_1:5', text: 'Final commentary</group:Prepping>' },
+      ] as ContentBlock[],
+      false,
+    );
+
+    expect(screen.getByTestId('response-group-name').textContent).toBe('Model-derived group title');
+    await fireEvent.click(screen.getByTestId('response-group-disclosure'));
+    const responseGroup = screen.getByTestId('response-group');
+    expect(responseGroup.textContent?.match(/Group description prose\./g)).toHaveLength(1);
+    expect(
+      [...responseGroup.querySelectorAll('[data-response-group-child]')].map((child) => ({
+        type: child.getAttribute('data-message-content-block'),
+        text: child.textContent?.replace(/\s+/g, ' ').trim(),
+      })),
+    ).toEqual([
+      { type: 'text', text: 'Group description prose.' },
+      { type: 'thinking', text: 'Retained predecessor reasoning' },
+      { type: 'thinking', text: 'Subsequent commentary' },
+      { type: 'tool_use', text: expect.stringContaining('Run the source-order action') },
+      { type: 'text', text: 'Final commentary' },
+    ]);
+
+    const toolDisclosure = responseGroup.querySelector(
+      '[data-message-content-block="tool_use"] [data-testid="tool-call-disclosure"]',
+    );
+    expect(toolDisclosure).toBeTruthy();
+    await fireEvent.click(toolDisclosure!);
+    const orderedText = [
+      'Group description prose.',
+      'Retained predecessor reasoning',
+      'Subsequent commentary',
+      'Run the source-order action',
+      'Source-order result',
+      'Final commentary',
+    ].map((text) => screen.getByText(text));
+    expect(
+      orderedText
+        .slice(1)
+        .every((node, index) =>
+          Boolean(
+            orderedText[index].compareDocumentPosition(node) & Node.DOCUMENT_POSITION_FOLLOWING,
+          ),
+        ),
+    ).toBe(true);
+  });
+
   it('renders the alternate-model Prepping wrapper as one reasoning disclosure', async () => {
     const leadingContent = [
       {

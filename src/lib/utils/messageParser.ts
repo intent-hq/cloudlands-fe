@@ -1270,6 +1270,7 @@ export interface ContentBlockGroup {
   /** Renderer-only normalization metadata for alternate-model reasoning groups. */
   isReasoningPhase?: boolean;
   sourceName?: string;
+  hasAdjacentReasoningHistory?: boolean;
 }
 
 export type RenderContentBlock = ContentBlock | ContentBlockGroup;
