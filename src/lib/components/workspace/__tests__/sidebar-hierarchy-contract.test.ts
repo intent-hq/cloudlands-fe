@@ -18,6 +18,7 @@ describe('workspace sidebar hierarchy presentation contract', () => {
     expect(navigation).toContain('data-nav-item={item.id}');
     expect(navigation).toContain('name="dandelion"');
     expect(navigation).not.toContain('name="spaces"');
+    expect(navigation).not.toContain('SidebarNavHoverCard');
     expect(titleBar).toContain('<SidebarNav />');
     expect(titleBar.indexOf('<SidebarNav />')).toBeLessThan(titleBar.indexOf('<WorkspaceTabStrip'));
     expect(titleBar).not.toContain('ChiefTrigger');
@@ -28,17 +29,6 @@ describe('workspace sidebar hierarchy presentation contract', () => {
     expect(titleBar).toContain('activeWorkspaceId={routedWorkspaceId}');
     expect(titleBar).toContain('data-titlebar-settings');
     expect(appLayout).not.toContain('<SidebarNav />');
-  });
-
-  it('uses the recents-only spaces list from the plus hover target', () => {
-    const hoverCard = source('../../layout/sidebar-nav/SidebarNavHoverCard.svelte');
-
-    expect(hoverCard).toContain("$activeCard$ === 'new-workspace'");
-    expect(hoverCard).not.toContain("$activeCard$ === 'home'");
-    expect(hoverCard).toContain('<AllWorkspacesCard recentsOnly />');
-    expect(hoverCard).not.toContain('Find or switch spaces');
-    expect(hoverCard).not.toContain('pinAllWorkspacesPanel');
-    expect(hoverCard).not.toContain('shadow-lg');
   });
 
   it('opens a title-bar workspace tab before navigating from the spaces combobox', () => {
