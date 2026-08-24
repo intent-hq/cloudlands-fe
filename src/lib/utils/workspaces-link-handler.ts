@@ -77,13 +77,10 @@ export function parseIntentLink(url: string): WorkspacesLinkInfo {
     // Raw (un-normalized) path segments after the org-id. The URL parser
     // resolves "." / ".." dot segments, which would silently rewrite
     // traversal-looking file paths instead of rejecting them — so file links
-    // parse from the raw path.
-    const rawSegments = url
-      .replace('intent://', '')
-      .split(/[?#]/)[0]
-      .split('/')
-      .slice(1)
-      .filter((s) => s.length > 0);
+    // parse from the raw path. Empty segments are preserved so doubled or
+    // leading slashes (e.g. file//etc/passwd) fail path validation instead
+    // of being silently collapsed.
+    const rawSegments = url.replace('intent://', '').split(/[?#]/)[0].split('/').slice(1);
 
     // Need at least 2 segments: note/{note-id} or {workspace-id}/note/{note-id}
     if (!orgId || pathSegments.length < 2) {
@@ -107,7 +104,7 @@ export function parseIntentLink(url: string): WorkspacesLinkInfo {
       // Short format: file/{workspace-relative-path} (remaining segments form the path)
       resourceType = 'file';
       resourceId = decodeFilePathSegments(rawSegments.slice(1));
-    } else if (rawSegments.length >= 3 && rawSegments[1] === 'file') {
+    } else if (rawSegments.length >= 3 && rawSegments[0].length > 0 && rawSegments[1] === 'file') {
       // Long format: {workspace-id}/file/{workspace-relative-path}
       workspaceId = rawSegments[0];
       resourceType = 'file';

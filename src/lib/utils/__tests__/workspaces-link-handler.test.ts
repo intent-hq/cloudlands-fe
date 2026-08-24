@@ -130,6 +130,24 @@ describe('workspaces-link-handler', () => {
         expect(result.valid).toBe(false);
         expect(result.error).toContain('Invalid file path');
       });
+
+      it('should reject absolute-looking paths with a leading empty segment', () => {
+        const result = parseIntentLink('intent://local/file//etc/passwd');
+        expect(result.valid).toBe(false);
+        expect(result.error).toContain('Invalid file path');
+      });
+
+      it('should reject doubled-slash path components', () => {
+        const result = parseIntentLink('intent://local/file/a//b');
+        expect(result.valid).toBe(false);
+        expect(result.error).toContain('Invalid file path');
+      });
+
+      it('should reject doubled-slash components in long format links', () => {
+        const result = parseIntentLink('intent://local/workspace-abc-123/file//etc/passwd');
+        expect(result.valid).toBe(false);
+        expect(result.error).toContain('Invalid file path');
+      });
     });
 
     describe('error cases', () => {
