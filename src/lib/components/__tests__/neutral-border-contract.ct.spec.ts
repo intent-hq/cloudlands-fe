@@ -13,17 +13,13 @@ const probes = [
   ['form', '[data-slot="input"]', 'top'],
 ] as const satisfies ReadonlyArray<readonly [string, string, Edge]>;
 
-const transparentBorderProbes = [['panel', '.panel', 'top']] as const satisfies ReadonlyArray<
-  readonly [string, string, Edge]
->;
-
 const borderlessProbes = [
+  ['panel', '[data-panel-id="neutral-border-panel"]', 'top'],
   ['chat', '[data-testid="pinned-user-prompt"]', 'top'],
 ] as const satisfies ReadonlyArray<readonly [string, string, Edge]>;
 
 const sampledSelectors = [
   ...probes.map(([, selector]) => selector),
-  ...transparentBorderProbes.map(([, selector]) => selector),
   ...borderlessProbes.map(([, selector]) => selector),
   '[data-testid="panel-border-fixture"] [data-loading-panel] > div:first-child',
   '[data-testid="panel-border-fixture"] [data-loading-panel] > div:last-child',
@@ -95,19 +91,6 @@ test('production neutral borders share color and single-edge geometry', async ({
         true,
       );
 
-      const transparentBorderStyles = await Promise.all(
-        transparentBorderProbes.map(async ([name, selector, edge]) => ({
-          name,
-          ...(await border(page.locator(selector), edge)),
-        })),
-      );
-      expect(
-        transparentBorderStyles.every(
-          ({ color, width, ownerCount }) =>
-            color === 'rgba(0, 0, 0, 0)' && width === '1px' && ownerCount === 1,
-        ),
-      ).toBe(true);
-
       const borderlessStyles = await Promise.all(
         borderlessProbes.map(async ([name, selector, edge]) => ({
           name,
@@ -117,6 +100,37 @@ test('production neutral borders share color and single-edge geometry', async ({
       expect(
         borderlessStyles.every(({ width, ownerCount }) => width === '0px' && ownerCount === 0),
       ).toBe(true);
+
+      const panelOutlineRule = await page.evaluate(() => {
+        function findPanelOutlineRule(rules: CSSRuleList): CSSStyleRule | null {
+          for (const candidate of rules) {
+            if (
+              candidate instanceof CSSStyleRule &&
+              candidate.selectorText.includes('.panel[data-focus-border-visible=')
+            ) {
+              return candidate;
+            }
+            if ('cssRules' in candidate) {
+              const nested = findPanelOutlineRule((candidate as CSSGroupingRule).cssRules);
+              if (nested) return nested;
+            }
+          }
+          return null;
+        }
+        const rule = Array.from(document.styleSheets)
+          .map((sheet) => findPanelOutlineRule(sheet.cssRules))
+          .find((candidate) => candidate !== null);
+        return rule
+          ? {
+              outline: rule.style.outline,
+              offset: rule.style.outlineOffset,
+            }
+          : null;
+      });
+      expect(panelOutlineRule).toEqual({
+        outline: '1px solid hsl(var(--border))',
+        offset: '-1px',
+      });
 
       const seams = await Promise.all([
         seam(

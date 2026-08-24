@@ -54,7 +54,13 @@ describe('editorial workspace shell presentation contract', () => {
     expect(panel).not.toContain('.panel:has(:focus-visible)');
     expect(panel).not.toContain('.panel.focused');
     expect(panel).not.toContain("isFocused && 'focused'");
-    expect(panel).not.toContain('outline:');
+    expect(panel).not.toContain('border: 1px solid transparent');
+    expect(panel).toContain(
+      ".panel[data-focus-border-visible='true'] {\n    outline: 1px solid hsl(var(--border));\n    outline-offset: -1px;",
+    );
+    expect(panel).toContain(
+      "@media (forced-colors: active) {\n    .panel[data-focus-border-visible='true'] {\n      outline-color: Highlight;",
+    );
     expect(panel).toContain('data-focused={isFocused}');
     expect(panel).toContain('data-zoomed={isZoomed}');
   });
