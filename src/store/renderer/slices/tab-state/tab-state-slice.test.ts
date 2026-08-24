@@ -1,5 +1,26 @@
 import { describe, expect, it } from 'vitest';
-import { closeWorkspaceTab, endDrag, loadScrollPositions, loadWorkspaceTabsState, moveWorkspace, openWorkspaceTab, reopenLastClosedWorkspaceTab, restoreWorkspaceTab, saveScrollPosition, serializeWorkspaceTabsState, setActiveHandleDrop, setWorkspaceViewMode, startDrag, switchToNextWorkspaceTab, switchToPreviousWorkspaceTab, switchToWorkspaceTabByIndex, tabStateReducer, type HandleDropInfo, type PersistedWorkspaceTabsState, type TabState, workspaceTabsHydrated } from './tab-state-slice';
+import {
+  closeWorkspaceTab,
+  endDrag,
+  loadScrollPositions,
+  loadWorkspaceTabsState,
+  moveWorkspace,
+  openWorkspaceTab,
+  reopenLastClosedWorkspaceTab,
+  restoreWorkspaceTab,
+  saveScrollPosition,
+  serializeWorkspaceTabsState,
+  setActiveHandleDrop,
+  startDrag,
+  switchToNextWorkspaceTab,
+  switchToPreviousWorkspaceTab,
+  switchToWorkspaceTabByIndex,
+  tabStateReducer,
+  type HandleDropInfo,
+  type PersistedWorkspaceTabsState,
+  type TabState,
+  workspaceTabsHydrated,
+} from './tab-state-slice';
 
 const makeDropInfo = (zoneType: HandleDropInfo['zoneType']): HandleDropInfo => ({
   handleRect: { x: 0, y: 0, width: 10, height: 10, top: 0, right: 10, bottom: 10, left: 0 },
@@ -21,7 +42,6 @@ describe('tabStateReducer', () => {
     workspaceStacks: [],
     recentlyClosedTabIds: [],
     recentlyClosedTabAt: {},
-    viewMode: 'single',
     version: 0,
     hydratedBackendId: null,
   };
@@ -233,12 +253,7 @@ describe('tabStateReducer', () => {
       tabOrder: ['ws-2', 'ws-1', 'ws-3'],
       workspaceStacks: [['ws-2', 'ws-1'], ['ws-3']],
     });
-  });
-
-  it('sets the workspace view mode only when it changes', () => {
-    const columnsState = tabStateReducer(initialState, setWorkspaceViewMode('columns'));
-    expect(columnsState).toMatchObject({ viewMode: 'columns', version: 1 });
-    expect(tabStateReducer(columnsState, setWorkspaceViewMode('columns'))).toBe(columnsState);
+    expect(serializeWorkspaceTabsState(movedState)).not.toHaveProperty('viewMode');
   });
 
   it('switches between workspace tabs using navigation actions', () => {
@@ -273,7 +288,6 @@ describe('tabStateReducer', () => {
       optimisticTabs: ['optimistic-1'],
       tabOrder: ['ws-2', 'ws-1', 'optimistic-1'],
       workspaceStacks: [['ws-2', 'ws-1'], ['optimistic-1']],
-      viewMode: 'columns',
     };
     const stateWithScrollPositions = makeState({ scrollPositions: { 'tab-1': 100 }, version: 6 });
 
@@ -287,7 +301,6 @@ describe('tabStateReducer', () => {
       unsavedTabs: { 'ws-2': true },
       optimisticTabs: { 'optimistic-1': true },
       workspaceStacks: [['ws-2', 'ws-1'], ['optimistic-1']],
-      viewMode: 'columns',
     });
   });
 
@@ -307,7 +320,6 @@ describe('tabStateReducer', () => {
         optimisticTabs: [],
         tabOrder: ['ws-1'],
         workspaceStacks: [['ws-1']],
-        viewMode: 'single',
       };
 
       const result = tabStateReducer(state, loadWorkspaceTabsState(persisted));
@@ -318,8 +330,8 @@ describe('tabStateReducer', () => {
   });
 
   describe('regression: normalize legacy multi-tab stored layouts', () => {
-    it('normalizes viewMode to single when workspaceStacks has only one stack', () => {
-      const persisted: PersistedWorkspaceTabsState = {
+    it('restores tabs from old saved state that includes viewMode', () => {
+      const persisted: PersistedWorkspaceTabsState & { viewMode: 'columns' } = {
         openTabs: ['ws-1'],
         currentTabId: 'ws-1',
         pinnedTabs: [],
@@ -332,11 +344,12 @@ describe('tabStateReducer', () => {
 
       const result = tabStateReducer(initialState, loadWorkspaceTabsState(persisted));
 
-      expect(result.viewMode).toBe('single');
+      expect(result.openTabs).toEqual({ 'ws-1': true });
+      expect(result.currentTabId).toBe('ws-1');
       expect(result.workspaceStacks).toEqual([['ws-1']]);
     });
 
-    it('preserves columns viewMode when workspaceStacks has multiple stacks', () => {
+    it('preserves multiple saved workspace stacks', () => {
       const persisted: PersistedWorkspaceTabsState = {
         openTabs: ['ws-1', 'ws-2'],
         currentTabId: 'ws-1',
@@ -345,12 +358,10 @@ describe('tabStateReducer', () => {
         optimisticTabs: [],
         tabOrder: ['ws-1', 'ws-2'],
         workspaceStacks: [['ws-1'], ['ws-2']],
-        viewMode: 'columns',
       };
 
       const result = tabStateReducer(initialState, loadWorkspaceTabsState(persisted));
 
-      expect(result.viewMode).toBe('columns');
       expect(result.workspaceStacks).toEqual([['ws-1'], ['ws-2']]);
     });
 
@@ -366,12 +377,11 @@ describe('tabStateReducer', () => {
 
       const result = tabStateReducer(initialState, loadWorkspaceTabsState(persisted));
 
-      expect(result.viewMode).toBe('single');
       expect(result.workspaceStacks).toEqual([['ws-1']]);
       expect(result).not.toHaveProperty('tabOrder');
     });
 
-    it('normalizes workspaceStacks even when viewMode is single', () => {
+    it('normalizes workspaceStacks from saved state', () => {
       const persisted: PersistedWorkspaceTabsState = {
         openTabs: ['ws-1', 'ws-2'],
         currentTabId: 'ws-1',
@@ -380,13 +390,11 @@ describe('tabStateReducer', () => {
         optimisticTabs: [],
         tabOrder: ['ws-1', 'ws-2'],
         workspaceStacks: [['ws-1', 'ws-invalid'], ['ws-2']],
-        viewMode: 'single',
       };
 
       const result = tabStateReducer(initialState, loadWorkspaceTabsState(persisted));
 
       expect(result.workspaceStacks).toEqual([['ws-1'], ['ws-2']]);
-      expect(result.viewMode).toBe('single');
     });
 
     it('prunes the onboarding route sentinel from restored tab state', () => {
@@ -398,7 +406,6 @@ describe('tabStateReducer', () => {
         optimisticTabs: ['new'],
         tabOrder: ['new', 'ws-1'],
         workspaceStacks: [['new'], ['ws-1']],
-        viewMode: 'columns',
       };
 
       const result = tabStateReducer(initialState, loadWorkspaceTabsState(persisted));
@@ -409,7 +416,6 @@ describe('tabStateReducer', () => {
       expect(result.unsavedTabs).toEqual({});
       expect(result.optimisticTabs).toEqual({});
       expect(result.workspaceStacks).toEqual([['ws-1']]);
-      expect(result.viewMode).toBe('single');
     });
   });
 });
