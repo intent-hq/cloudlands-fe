@@ -141,6 +141,8 @@ describe('setupWorkspaceFileProtocolHandler', () => {
     });
     expect(res.status).toBe(200);
     expect(res.headers.get('Content-Type')).toBe('image/png');
+    // Required for renderer fetch() reads across origins (corsEnabled scheme).
+    expect(res.headers.get('Access-Control-Allow-Origin')).toBe('*');
     expect(Buffer.from(await res.arrayBuffer())).toEqual(bytes);
   });
 

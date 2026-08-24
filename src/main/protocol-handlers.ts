@@ -297,6 +297,9 @@ export function setupWorkspaceFileProtocolHandler() {
           'Content-Type': mimeType,
           // Workspace files are mutable — never cache long-term.
           'Cache-Control': 'no-cache',
+          // corsEnabled schemes need this for renderer fetch() reads from
+          // the app:// (or dev HTTP) origin; <img> loads work without it.
+          'Access-Control-Allow-Origin': '*',
         },
       });
     } catch (error) {
