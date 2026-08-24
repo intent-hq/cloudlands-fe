@@ -4491,6 +4491,7 @@
   "ui_reversibleActions_renamed_message": "Se cambió el nombre de {itemType} a \"{newName}\"",
   "ui_linkHandler_invalidFormat_error": "Formato de URL no válido. Se esperaba: {shortFormat} o {longFormat}",
   "ui_linkHandler_emptyResourceId_error": "El ID del recurso no puede estar vacío",
+  "ui_linkHandler_invalidFilePath_error": "Ruta de archivo no válida",
   "ui_linkHandler_unknownResourceType_error": "Tipo de recurso desconocido: {type}",
   "ui_linkHandler_parseFailed_error": "Error al interpretar la URL",
   "ui_linkHandler_invalidLink_title": "Enlace no válido",

@@ -4491,6 +4491,7 @@
   "ui_reversibleActions_renamed_message": "已將{itemType}重新命名為「{newName}」",
   "ui_linkHandler_invalidFormat_error": "URL 格式無效。應為：{shortFormat} 或 {longFormat}",
   "ui_linkHandler_emptyResourceId_error": "資源 ID 不能為空",
+  "ui_linkHandler_invalidFilePath_error": "無效的檔案路徑",
   "ui_linkHandler_unknownResourceType_error": "未知的資源型別：{type}",
   "ui_linkHandler_parseFailed_error": "解析 URL 失敗",
   "ui_linkHandler_invalidLink_title": "無效連結",

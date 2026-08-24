@@ -4491,6 +4491,7 @@
   "ui_reversibleActions_renamed_message": "{itemType} 이름이 \"{newName}\"(으)로 변경됨",
   "ui_linkHandler_invalidFormat_error": "잘못된 URL 형식입니다. 예상 형식: {shortFormat} 또는 {longFormat}",
   "ui_linkHandler_emptyResourceId_error": "리소스 ID는 비워 둘 수 없습니다",
+  "ui_linkHandler_invalidFilePath_error": "잘못된 파일 경로입니다",
   "ui_linkHandler_unknownResourceType_error": "알 수 없는 리소스 유형: {type}",
   "ui_linkHandler_parseFailed_error": "URL을 해석하지 못했습니다",
   "ui_linkHandler_invalidLink_title": "잘못된 링크",
