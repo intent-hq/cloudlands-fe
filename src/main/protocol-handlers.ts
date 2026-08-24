@@ -271,8 +271,21 @@ export function setupWorkspaceFileProtocolHandler() {
           return new Response('File too large', { status: 413 });
         }
         if (chunk.bytesRead > 0) {
-          chunks.push(Buffer.from(chunk.content, 'base64'));
-          offset += chunk.bytesRead;
+          const decoded = Buffer.from(chunk.content, 'base64');
+          if (decoded.byteLength !== chunk.bytesRead) {
+            // Fail closed instead of serving a spliced body if the daemon's
+            // reported bytesRead ever diverges from the decoded content.
+            logger.warn('workspace-file chunk length mismatch', {
+              workspaceId,
+              filePath,
+              bytesRead: chunk.bytesRead,
+              decodedLength: decoded.byteLength,
+            });
+            // i18n-ignore (internal protocol response body)
+            return new Response('Not found', { status: 404 });
+          }
+          chunks.push(decoded);
+          offset += decoded.byteLength;
         }
         if (chunk.bytesRead === 0 || offset >= chunk.size) {
           break;

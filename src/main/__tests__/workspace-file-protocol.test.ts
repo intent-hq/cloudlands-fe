@@ -70,6 +70,19 @@ describe('parseWorkspaceFileRequest', () => {
     expect(parsed).toMatchObject({ ok: true, filePath: 'b.png' });
   });
 
+  it('neutralizes percent-encoded dot segments via URL normalization (pins WHATWG behavior)', () => {
+    // `%2e%2e` segments are consumed during URL parsing and clamp at the
+    // root, so they never reach the traversal check. Pinned so a swap away
+    // from WHATWG `new URL` semantics cannot silently regress containment.
+    expect(parseWorkspaceFileRequest('workspace-file://ws-1/%2e%2e/secret.png')).toMatchObject({
+      ok: true,
+      filePath: 'secret.png',
+    });
+    expect(
+      parseWorkspaceFileRequest('workspace-file://ws-1/a/%2e%2e/%2e%2e/secret.png'),
+    ).toMatchObject({ ok: true, filePath: 'secret.png' });
+  });
+
   it('rejects non-allowlisted extensions with 415', () => {
     for (const p of ['a.svg', 'a.txt', 'a']) {
       expect(parseWorkspaceFileRequest(`workspace-file://ws-1/${p}`)).toMatchObject({
@@ -182,6 +195,15 @@ describe('setupWorkspaceFileProtocolHandler', () => {
     mockRequest.mockRejectedValueOnce(new Error('path is outside the workspace'));
 
     const res = await getHandler()(new Request('workspace-file://ws-1/missing.png'));
+
+    expect(res.status).toBe(404);
+  });
+
+  it('fails closed with 404 when bytesRead disagrees with the decoded content length', async () => {
+    const bytes = Buffer.from('abcdef');
+    mockRequest.mockResolvedValueOnce(chunk(bytes, bytes.length + 3, bytes.length + 3));
+
+    const res = await getHandler()(new Request('workspace-file://ws-1/spliced.png'));
 
     expect(res.status).toBe(404);
   });
