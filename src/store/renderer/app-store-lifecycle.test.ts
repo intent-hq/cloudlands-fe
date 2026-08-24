@@ -3,9 +3,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   startAllAppSagas: vi.fn<() => Array<() => void>>(() => []),
+  stopRetentionFingerprint: vi.fn(),
+  startRetentionFingerprint: vi.fn(),
 }));
 
 vi.mock('./sagas', () => ({ startAllAppSagas: mocks.startAllAppSagas }));
+vi.mock('./retention-fingerprint', () => ({
+  startRetentionFingerprint: mocks.startRetentionFingerprint,
+}));
 
 import { _resetRendererStoreBridge } from './renderer-store-bridge';
 import { startRootStoreLifecycle } from './root-store-lifecycle';
@@ -23,7 +28,12 @@ function createStore(order: string[]): Store<any, any> {
 }
 
 describe('app Store lifecycle', () => {
-  beforeEach(() => mocks.startAllAppSagas.mockReset());
+  beforeEach(() => {
+    mocks.startAllAppSagas.mockReset();
+    mocks.stopRetentionFingerprint.mockReset();
+    mocks.startRetentionFingerprint.mockReset();
+    mocks.startRetentionFingerprint.mockReturnValue(mocks.stopRetentionFingerprint);
+  });
 
   afterEach(() => _resetRendererStoreBridge());
 
@@ -39,6 +49,7 @@ describe('app Store lifecycle', () => {
     const disposeApp = startAppStoreLifecycle(store);
 
     expect(order).toEqual(['store:init', 'sagas:start']);
+    expect(mocks.startRetentionFingerprint).toHaveBeenCalledWith(store);
     disposeApp();
     disposeRoot();
   });
@@ -52,6 +63,7 @@ describe('app Store lifecycle', () => {
     dispose();
     dispose();
 
+    expect(mocks.stopRetentionFingerprint).toHaveBeenCalledOnce();
     expect(stopOne).toHaveBeenCalledOnce();
     expect(stopTwo).toHaveBeenCalledOnce();
   });
@@ -66,10 +78,12 @@ describe('app Store lifecycle', () => {
     const secondDispose = startAppStoreLifecycle(createStore([]), hmrData);
 
     expect(stopFirst).toHaveBeenCalledOnce();
+    expect(mocks.stopRetentionFingerprint).toHaveBeenCalledOnce();
     firstDispose();
     expect(stopSecond).not.toHaveBeenCalled();
     secondDispose();
     secondDispose();
+    expect(mocks.stopRetentionFingerprint).toHaveBeenCalledTimes(2);
     expect(stopSecond).toHaveBeenCalledOnce();
     expect(hmrData.appSagasStop).toBeUndefined();
   });

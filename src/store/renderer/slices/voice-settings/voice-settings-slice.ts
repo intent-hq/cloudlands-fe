@@ -1,8 +1,5 @@
-import {
-  VOICE_VOCABULARY_TERM_MAX_LENGTH,
-  type VoiceOpenAiModel,
-  type VoiceProvider,
-} from "$features/voice/voice-settings-service";
+import type { VoiceOpenAiModel, VoiceProvider } from "$features/voice/voice-settings-service";
+import { VOICE_VOCABULARY_TERM_MAX_LENGTH } from "$features/voice/voice-settings-constants";
 import type { VoiceEngine } from "$features/voice/voice-engine-preference";
 import { createAction } from "@augmentcode/themis/utils/store/create-action";
 import { createReducer } from "@augmentcode/themis/utils/store/create-reducer";

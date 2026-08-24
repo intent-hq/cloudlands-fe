@@ -1,7 +1,8 @@
 import { expect, test, type Browser, type Locator, type Page } from '@playwright/test';
 
 const baseUrl = process.env.UI_PREVIEW_BASE_URL;
-const WARM_FIRST_VISIBLE_BUDGET_MS = 30_000;
+const COLD_FIRST_VISIBLE_BUDGET_MS = 20_000;
+const WARM_FIRST_VISIBLE_BUDGET_MS = 10_000;
 const SERVER_PREWARM_TIMEOUT_MS = 60_000;
 const LEGACY_VISIBLE_TIMEOUT_MS = 60_000;
 const LEGACY_RESOURCE_BUDGET = 1_600;
@@ -18,6 +19,12 @@ interface LoadMetrics {
 
 async function resourceUrls(page: Page): Promise<string[]> {
   return page.evaluate(() => performance.getEntriesByType('resource').map((entry) => entry.name));
+}
+
+function expectNoApplicationRuntimeResources(resources: string[]): void {
+  expect(
+    resources.filter((url) => /\/src\/(?:store\/renderer\/sagas|lib\/client\/live)\//.test(url)),
+  ).toEqual([]);
 }
 
 async function measureLoad(
@@ -54,66 +61,40 @@ const directScenes: DirectScene[] = [
   {
     slug: 'button',
     state: 'loading',
-    resourceBudget: 800,
-    product: (page) => page.getByRole('button', { name: 'Saving' }),
+    resourceBudget: 625,
+    product: (page) => page.locator('[data-testid="catalog-scene-focus"] button').first(),
   },
   {
     slug: 'streaming-status',
     state: 'error',
-    resourceBudget: 825,
+    resourceBudget: 650,
     product: (page) => page.locator('[data-stream-terminal-error="true"]'),
+  },
+  {
+    slug: 'mention-agent-avatar',
+    state: 'waiting',
+    resourceBudget: 650,
+    product: (page) => page.locator('[data-avatar-state="waiting"]'),
   },
   {
     slug: 'mcp-server-form',
     state: 'empty',
-    resourceBudget: 825,
+    resourceBudget: 635,
     product: (page) => page.locator('[data-testid="catalog-scene-focus"] input').first(),
   },
   {
     slug: 'workspace-sidebar',
     state: 'busy',
-    resourceBudget: 925,
+    resourceBudget: 750,
     product: (page) => page.locator('[data-workspace-sidebar-preview]'),
   },
   {
     slug: 'panel-tab-strip',
     state: 'many-tabs',
-    resourceBudget: 925,
+    resourceBudget: 750,
     product: (page) => page.locator('[data-panel-tab-strip-preview]'),
   },
 ];
-
-test.beforeAll(async ({ browser }, testInfo) => {
-  testInfo.setTimeout(directScenes.length * SERVER_PREWARM_TIMEOUT_MS + 5_000);
-  const serverPrewarmLoads: Record<string, unknown> = {};
-  for (const direct of directScenes) {
-    const context = await browser.newContext();
-    const page = await context.newPage();
-    const metrics = await measureLoad(
-      page,
-      `/sandbox/${direct.slug}?state=${direct.state}`,
-      direct.product(page),
-      page.locator('[data-preview-ready=true]'),
-      SERVER_PREWARM_TIMEOUT_MS,
-    );
-    const prewarmMetrics = {
-      requests: metrics.resources.length,
-      firstVisibleMs: metrics.firstVisibleMs,
-      readyMs: metrics.readyMs,
-    };
-    serverPrewarmLoads[direct.slug] = prewarmMetrics;
-    console.info(
-      `ui-preview-load-budget ${JSON.stringify({
-        serverPrewarmLoad: {
-          slug: direct.slug,
-          ...prewarmMetrics,
-        },
-      })}`,
-    );
-    await context.close();
-  }
-  console.info(`ui-preview-load-budget ${JSON.stringify({ serverPrewarmLoads })}`);
-});
 
 async function newMeasuredPage(
   browser: Browser,
@@ -122,9 +103,49 @@ async function newMeasuredPage(
   return { page: await context.newPage(), close: () => context.close() };
 }
 
+test('keeps a true-cold direct Button visible inside the first-use budget', async ({ browser }) => {
+  test.setTimeout(SERVER_PREWARM_TIMEOUT_MS + 5_000);
+  const direct = directScenes[0];
+  const measured = await newMeasuredPage(browser);
+  const metrics = await measureLoad(
+    measured.page,
+    `/sandbox/${direct.slug}?state=${direct.state}`,
+    direct.product(measured.page),
+    measured.page.locator('[data-preview-ready=true]'),
+    SERVER_PREWARM_TIMEOUT_MS,
+  );
+
+  console.info(
+    `ui-preview-load-budget ${JSON.stringify({
+      trueColdButton: {
+        requests: metrics.resources.length,
+        firstVisibleMs: metrics.firstVisibleMs,
+        readyMs: metrics.readyMs,
+      },
+    })}`,
+  );
+  expect(metrics.firstVisibleMs).toBeLessThan(COLD_FIRST_VISIBLE_BUDGET_MS);
+  expect(metrics.readyMs).toBeLessThan(COLD_FIRST_VISIBLE_BUDGET_MS);
+  expect(metrics.resources.length).toBeLessThanOrEqual(direct.resourceBudget);
+  expectNoApplicationRuntimeResources(metrics.resources);
+  await measured.close();
+});
+
 test('keeps warm-server direct scenes inside fresh-browser load budgets', async ({ browser }) => {
-  test.setTimeout(directScenes.length * WARM_FIRST_VISIBLE_BUDGET_MS + 15_000);
+  test.setTimeout(
+    directScenes.length * (SERVER_PREWARM_TIMEOUT_MS + WARM_FIRST_VISIBLE_BUDGET_MS) + 15_000,
+  );
   for (const direct of directScenes) {
+    const prewarm = await newMeasuredPage(browser);
+    await measureLoad(
+      prewarm.page,
+      `/sandbox/${direct.slug}?state=${direct.state}`,
+      direct.product(prewarm.page),
+      prewarm.page.locator('[data-preview-ready=true]'),
+      SERVER_PREWARM_TIMEOUT_MS,
+    );
+    await prewarm.close();
+
     const measured = await newMeasuredPage(browser);
     const scene = measured.page.locator('[data-preview-ready=true]');
     const metrics = await measureLoad(
@@ -133,20 +154,6 @@ test('keeps warm-server direct scenes inside fresh-browser load budgets', async 
       direct.product(measured.page),
       scene,
     );
-
-    expect(metrics.firstVisibleMs).toBeLessThan(WARM_FIRST_VISIBLE_BUDGET_MS);
-    expect(metrics.readyMs).toBeLessThan(WARM_FIRST_VISIBLE_BUDGET_MS);
-    expect(metrics.resources.length).toBeLessThanOrEqual(direct.resourceBudget);
-    expect(
-      metrics.resources.filter((url) =>
-        /CatalogFixtureList\.svelte|catalog-renderers\.ts|CatalogGallery\.svelte/.test(url),
-      ),
-    ).toEqual([]);
-    expect(
-      metrics.resources.filter(
-        (url) => url.includes('.preview.') && !url.includes(`/${direct.slug}.preview.`),
-      ),
-    ).toEqual([]);
 
     const result: Record<string, unknown> = {
       requests: metrics.resources.length,
@@ -168,6 +175,20 @@ test('keeps warm-server direct scenes inside fresh-browser load budgets', async 
       result.stateSwitch = { requests: switchResources, firstVisibleMs: switchMs };
     }
     console.info(`ui-preview-load-budget ${JSON.stringify({ [direct.slug]: result })}`);
+    expect(metrics.firstVisibleMs).toBeLessThan(WARM_FIRST_VISIBLE_BUDGET_MS);
+    expect(metrics.readyMs).toBeLessThan(WARM_FIRST_VISIBLE_BUDGET_MS);
+    expect(metrics.resources.length).toBeLessThanOrEqual(direct.resourceBudget);
+    expectNoApplicationRuntimeResources(metrics.resources);
+    expect(
+      metrics.resources.filter((url) =>
+        /CatalogFixtureList\.svelte|catalog-renderers\.ts|CatalogGallery\.svelte/.test(url),
+      ),
+    ).toEqual([]);
+    expect(
+      metrics.resources.filter(
+        (url) => url.includes('.preview.') && !url.includes(`/${direct.slug}.preview.`),
+      ),
+    ).toEqual([]);
     await measured.close();
   }
 });

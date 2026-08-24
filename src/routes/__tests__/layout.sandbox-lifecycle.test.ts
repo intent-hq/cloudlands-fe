@@ -49,8 +49,13 @@ describe('root +layout.svelte sandbox Store lifecycle', () => {
     const appLayout = readFileSync(path.join(routesRoot, '(app)/+layout.svelte'), 'utf8');
 
     expect(rootLayout).not.toContain('$store/renderer/sagas');
+    expect(rootLayout).not.toContain('$store/renderer/seeders');
     expect(rootLayout).not.toContain('ActionKeyHud');
     expect(appLayout).toContain('$store/renderer/app-store-lifecycle');
+    expect(appLayout).toContain('$store/renderer/seeders');
+    expect(appLayout.indexOf("import '$store/renderer/seeders'")).toBeLessThan(
+      appLayout.indexOf('startAppStoreLifecycle(appStore'),
+    );
     expect(appLayout).toContain('ActionKeyHud');
   });
 });

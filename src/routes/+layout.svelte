@@ -21,8 +21,6 @@
     attachMouseHistoryNavigation,
     handleHistoryNavigateIpc,
   } from '$lib/utils/history-navigation';
-  // Side-effect import: installs bridge-less IPC handlers without running snapshot seeders.
-  import '$store/renderer/seeders';
 
   let { children }: { children?: Snippet } = $props();
 

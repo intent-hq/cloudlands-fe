@@ -1,7 +1,6 @@
 import type { Store } from '@augmentcode/themis/svelte-store';
 
 import type { AppSagaCancel } from './sagas';
-import { startRetentionFingerprint } from './retention-fingerprint';
 import { initAppStore } from './store';
 
 type StopHandler = () => void;
@@ -32,16 +31,12 @@ export function startRootStoreLifecycle(
 
   const storeContext = initAppStore(store);
   let stopAppSagas = lifecycle.startSagas(store);
-  // Diagnostics only — periodic counts of what the renderer retains. Started
-  // last so a failure here cannot prevent the store from coming up.
-  const stopRetentionFingerprint = startRetentionFingerprint(store);
 
   let stopped = false;
   const stop = () => {
     if (stopped) return;
     stopped = true;
     try {
-      stopRetentionFingerprint();
       for (const stop of stopAppSagas) stop();
     } finally {
       storeContext.dispose();
