@@ -4,6 +4,22 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.88.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.87.1...v2.88.0) (2026-08-24)
+
+
+### 🚀 Features
+
+* render inline markdown workspace-file images with lightbox ([#1653](https://github.com/intent-hq/cloudlands-fe/issues/1653)) ([67c2d78](https://github.com/intent-hq/cloudlands-fe/commit/67c2d789b7f3ab5985618125ca1454ad7cefd114))
+* serve workspace image files over a workspace-file:// protocol ([#1650](https://github.com/intent-hq/cloudlands-fe/issues/1650)) ([00671a2](https://github.com/intent-hq/cloudlands-fe/commit/00671a2fe729d8e73f910b9a42079cd5457c332a))
+* support intent file links to open files in the workspace file viewer ([#1651](https://github.com/intent-hq/cloudlands-fe/issues/1651)) ([ddbcb42](https://github.com/intent-hq/cloudlands-fe/commit/ddbcb427ec67e8f24c4757c3d765930532ded650))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.7.52 ([#1657](https://github.com/intent-hq/cloudlands-fe/issues/1657)) ([0bc1b23](https://github.com/intent-hq/cloudlands-fe/commit/0bc1b2303f493f65c4e03b82e6794ea0c9c88e7b))
+* specialist surfaces honor the daemon set in replacement mode ([#1646](https://github.com/intent-hq/cloudlands-fe/issues/1646)) ([dc10b78](https://github.com/intent-hq/cloudlands-fe/commit/dc10b787d16a10efcfe7ecffdafc8260d24c97be))
+* stop treating markdown blockquote lines as CLI commands in messageParser ([#1652](https://github.com/intent-hq/cloudlands-fe/issues/1652)) ([eb4002f](https://github.com/intent-hq/cloudlands-fe/commit/eb4002fb07fef86a524ac75daaa9c7037dc52f73))
+
 ## [2.87.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.87.0...v2.87.1) (2026-08-24)
 
 
