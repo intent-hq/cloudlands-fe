@@ -109,14 +109,14 @@ vi.mock('$features/workspace/navigate-away-if-viewing', async (importOriginal) =
   navigateAwayIfViewing: navigateAwayIfViewingSpy,
 }));
 
-// Fake the mark-workspace-seen helper so the bridge's
-// `workspace:attention-changed` → markWorkspaceSeenIfViewing routing is
-// observable without jsdom location choreography.
-const { markWorkspaceSeenIfViewingSpy } = vi.hoisted(() => ({
-  markWorkspaceSeenIfViewingSpy: vi.fn(),
+// Fake the mark-workspace-seen helper so the attention suite can assert the
+// bridge never auto-clears an unread raise (unread persists until each agent
+// conversation is read — the bridge must not call `workspace.markSeen`).
+const { markWorkspaceSeenSpy } = vi.hoisted(() => ({
+  markWorkspaceSeenSpy: vi.fn(),
 }));
 vi.mock('$features/workspace/mark-workspace-seen', () => ({
-  markWorkspaceSeenIfViewing: markWorkspaceSeenIfViewingSpy,
+  markWorkspaceSeen: markWorkspaceSeenSpy,
 }));
 
 // The bridge now dispatches refreshWorkspaceSubscriptionEntriesRequested instead
@@ -7413,7 +7413,7 @@ describe('daemonEventsBridge (workspace:attention-changed → workspace slice)',
   beforeEach(async () => {
     onBackendNotificationSpy.mockClear();
     backendRequestSpy.mockClear();
-    markWorkspaceSeenIfViewingSpy.mockClear();
+    markWorkspaceSeenSpy.mockClear();
     __resetDaemonEventsBridgeForTests();
     capturedHandlers.length = 0;
   });
@@ -7566,18 +7566,27 @@ describe('daemonEventsBridge (workspace:attention-changed → workspace slice)',
     expect(ws.attention).toBe('unread');
   });
 
-  it('calls markWorkspaceSeenIfViewing when attention transitions to unread', async () => {
-    await seedWorkspace();
-    await primeBridge();
-    const handler = capturedHandlers[0]!;
+  it('never marks the workspace seen on an unread raise — even while viewing it', async () => {
+    // Unread is daemon-derived from per-agent seen markers (§5.1): the badge
+    // persists until each unread agent conversation is read, so the bridge
+    // must not fire `workspace.markSeen` for the on-screen workspace.
+    window.history.pushState({}, '', `/workspace/${WS_ATT}`);
+    try {
+      await seedWorkspace();
+      await primeBridge();
+      const handler = capturedHandlers[0]!;
 
-    handler(attentionChangedNotification('unread'));
+      handler(attentionChangedNotification('unread'));
 
-    expect(markWorkspaceSeenIfViewingSpy).toHaveBeenCalledWith(WS_ATT);
-    expect(markWorkspaceSeenIfViewingSpy).toHaveBeenCalledTimes(1);
+      const ws = await readWorkspace();
+      expect(ws.attention).toBe('unread');
+      expect(markWorkspaceSeenSpy).not.toHaveBeenCalled();
+    } finally {
+      window.history.pushState({}, '', '/');
+    }
   });
 
-  it('does not call markWorkspaceSeenIfViewing for non-unread attention values', async () => {
+  it('does not mark the workspace seen for non-unread attention values either', async () => {
     await seedWorkspace();
     await primeBridge();
     const handler = capturedHandlers[0]!;
@@ -7585,7 +7594,7 @@ describe('daemonEventsBridge (workspace:attention-changed → workspace slice)',
     handler(attentionChangedNotification('none'));
     handler(attentionChangedNotification('review_required'));
 
-    expect(markWorkspaceSeenIfViewingSpy).not.toHaveBeenCalled();
+    expect(markWorkspaceSeenSpy).not.toHaveBeenCalled();
   });
 
   it('prefers data.workspaceId over the envelope workspaceId (self-sufficient payload)', async () => {
@@ -7614,7 +7623,6 @@ describe('daemonEventsBridge (workspace:attention-changed → workspace slice)',
 
     const ws = await readWorkspace();
     expect(ws.attention).toBe('unread');
-    expect(markWorkspaceSeenIfViewingSpy).toHaveBeenCalledWith(WS_ATT);
   });
 });
 

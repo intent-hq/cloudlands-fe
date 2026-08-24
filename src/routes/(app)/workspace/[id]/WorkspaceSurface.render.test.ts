@@ -6,7 +6,6 @@ const mocks = vi.hoisted(() => ({
   loadError: null as null | { kind: 'not_found' | 'error'; message: string },
   workspace: null as null | { id: string; title: string },
   dispatch: vi.fn(),
-  markSeen: vi.fn(),
 }));
 const action = vi.hoisted(() => (type: string) => (...payload: unknown[]) => ({ type, payload }));
 const mockPart = vi.hoisted(() => (marker: string) => async () => {
@@ -88,7 +87,6 @@ vi.mock('$store/renderer/slices/panel-layout/panel-layout-selectors', () => ({
   selectPanelColumnCountsByWorkspaceId: () => readable({}),
   selectPanelLayoutRoot: () => readable(null),
 }));
-vi.mock('$features/workspace/mark-workspace-seen', () => ({ markWorkspaceSeen: mocks.markSeen }));
 vi.mock('$lib/utils/window-events', () => ({ dispatchWindowEvent: vi.fn() }));
 vi.mock('$features/layout/panel-layout-adapter', () => ({
   getPanelLayoutManager: () => ({ openTab: vi.fn() }),
@@ -172,7 +170,6 @@ beforeEach(() => {
   mocks.loadError = null;
   mocks.workspace = null;
   mocks.dispatch.mockClear();
-  mocks.markSeen.mockClear();
 });
 
 describe('WorkspaceSurface terminal shell boundary', () => {

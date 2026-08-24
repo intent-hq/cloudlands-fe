@@ -203,7 +203,6 @@ import {
   navigateAwayIfViewing,
 } from '$features/workspace/navigate-away-if-viewing';
 import { restoreWorkspaceTab } from '$store/renderer/slices/tab-state/tab-state-slice';
-import { markWorkspaceSeenIfViewing } from '$features/workspace/mark-workspace-seen';
 import { applyNoteFromEvent } from '$features/notes/notes-read-service';
 import { applyCommentFromEvent } from '$features/comments/comments-read-service';
 import {
@@ -2137,11 +2136,12 @@ function handleAttentionChangedEvent(event: WorkspaceEvent, envelopeWorkspaceId:
   appStore.dispatch(
     bulkUpdateWorkspaceEntities([updateWorkspaceEntity(workspaceId, { attention })]),
   );
-  // An unread raise for the workspace the user is currently viewing is marked
-  // seen immediately (fire-and-forget `workspace.markSeen`, §5.1) — no
-  // self-blue-dot while the user is looking at it. The daemon answers with a
-  // fresh attention-changed (`none`) that flows back through this handler.
-  if (attention === 'unread') markWorkspaceSeenIfViewing(workspaceId);
+  // An unread raise is NOT auto-cleared for the workspace on screen: unread is
+  // daemon-derived from per-agent seen markers (§5.1) and only reading each
+  // agent's conversation clears it. When the raising agent's conversation is
+  // the visible tab of a focused window, the per-agent turn-finish trigger
+  // (`agent.markSeen`, see mark-agent-seen.ts) already marks it seen; a raise
+  // for any other agent keeps the badge up by design.
 }
 
 /**

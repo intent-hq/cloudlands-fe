@@ -5,6 +5,7 @@ import {
   markAgentSeenAtBoundary,
   markAgentSeenOnTurnFinish,
   markAgentSeenOnUserSend,
+  markAgentSeenOnView,
   newestPersistedMessageId,
 } from '$features/agent/mark-agent-seen';
 import { clearCachedChatScroll } from '$lib/components/chat/chat-scroll-cache';
@@ -38,7 +39,11 @@ import {
   selectDividerBoundaryStateSnapshot,
   type DividerBoundarySnapshot,
 } from '../unread-tracking-selectors';
-import { endDividerSession, recordWatchedStreamingTail } from '../unread-tracking-slice';
+import {
+  endDividerSession,
+  markAgentAsViewed,
+  recordWatchedStreamingTail,
+} from '../unread-tracking-slice';
 import { selectCurrentWorkspaceTabId } from '../../tab-state/tab-state-selectors';
 
 export type DividerSessionBoundary =
@@ -227,6 +232,16 @@ function* handleStreamUpdate(
   }
 }
 
+/**
+ * View trigger: opening an already-finished conversation must clear that
+ * agent's unread — no terminal stream event will arrive for it. The trigger
+ * gates itself (viewed + focused + assistant tail) at fire time.
+ */
+function* handleViewed(action: ReturnType<typeof markAgentAsViewed>): SagaGenerator<void> {
+  const [agentId] = action.payload;
+  if (agentId) yield* call(markAgentSeenOnView, agentId);
+}
+
 export function* unreadTrackingSaga(): SagaGenerator<void> {
   const initialWorkspaceId = yield* selectCurrentWorkspaceTabId.effect();
   const tracker: BoundarySnapshotTracker = {
@@ -239,5 +254,6 @@ export function* unreadTrackingSaga(): SagaGenerator<void> {
     takeEvery(CHIEF_BOUNDARY_ACTIONS, handleChiefBoundary, tracker),
     takeEvery(sendMessage, handleSend),
     takeEvery(agentStreamUpdateReceived, handleStreamUpdate),
+    takeEvery(markAgentAsViewed, handleViewed),
   ]);
 }
