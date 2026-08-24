@@ -64,7 +64,7 @@ describe('TaskProgressControl', () => {
     expect(screen.queryByRole('tooltip', { hidden: true })).toBeNull();
   });
 
-  it('shows one overlapping icon per active task and one aggregate completed icon', () => {
+  it('layers one completed disk behind deeply overlapping active-task crescents', () => {
     const statusTasks: TaskProgressItem[] = [
       ...tasks,
       { id: 'discussion', title: 'Discuss the approach', status: 'discussion_needed' },
@@ -75,24 +75,24 @@ describe('TaskProgressControl', () => {
 
     const icons = screen.getAllByTestId('task-progress-status-icon');
     expect(icons.map((icon) => icon.dataset.taskStatus)).toEqual([
+      'completed',
       'pending',
-      'running',
       'waiting',
       'discussion_needed',
       'blocked',
       'review_required',
-      'completed',
+      'running',
     ]);
     expect(
       icons.map((icon) => icon.querySelector<HTMLElement>('[data-icon]')?.dataset.icon),
     ).toEqual([
+      'check',
       'circle',
-      'spinner',
       'clock',
       'circle-question',
       'triangle-exclamation',
       'eye',
-      'check',
+      'spinner',
     ]);
     expect(
       icons.every(
@@ -101,21 +101,36 @@ describe('TaskProgressControl', () => {
           icon.className.includes('items-center') &&
           icon.className.includes('justify-center') &&
           icon.className.includes('rounded-full') &&
-          icon.className.includes('border-border') &&
-          icon.className.includes('bg-card') &&
-          icon.className.includes('shadow-xs'),
+          !icon.className.includes('border') &&
+          !icon.className.includes('shadow'),
       ),
     ).toBe(true);
-    expect(icons.slice(1).every((icon) => icon.className.includes('-ml-1'))).toBe(true);
-    expect(icons.every((icon) => !icon.className.includes('-ml-1.5'))).toBe(true);
-    expect(icons[1].className).toContain('text-blue-600 dark:text-blue-400');
-    expect(icons.at(-1)?.className).toContain('text-green-600 dark:text-green-400');
-    expect(icons.at(-1)?.dataset.completedCount).toBe('2');
-    expect(icons[1].innerHTML).toContain('motion-reduce:animate-none');
+    expect(icons.slice(1).every((icon) => icon.className.includes('-ml-2.5'))).toBe(true);
+    expect(icons.map((icon) => icon.style.zIndex)).toEqual(['', '1', '2', '3', '4', '5', '6']);
+    expect(icons[0].className).toContain('bg-green-700 text-white');
+    expect(icons[0].dataset.completedCount).toBe('2');
+    expect(icons[1].className).toContain('bg-muted');
+    expect(icons[2].className).toContain('bg-muted');
+    expect(icons.at(-1)?.className).toContain('bg-blue-100 text-blue-700');
+    expect(icons.at(-1)?.innerHTML).toContain('motion-reduce:animate-none');
     const trigger = screen.getByTestId('task-progress-trigger');
     expect(trigger.className).toContain('bg-transparent!');
     expect(trigger.className).toContain('hover:bg-transparent!');
     expect(trigger.className).not.toContain('hover:bg-muted');
+  });
+
+  it('shows exactly one solid completed disk when all tasks are complete', () => {
+    render(TaskProgressControl, {
+      props: { tasks: tasks.map((task) => ({ ...task, status: 'completed' as const })) },
+    });
+
+    const icons = screen.getAllByTestId('task-progress-status-icon');
+    expect(icons).toHaveLength(1);
+    expect(icons[0].dataset.taskStatus).toBe('completed');
+    expect(icons[0].dataset.completedCount).toBe('5');
+    expect(icons[0].className).toContain('bg-green-700 text-white');
+    expect(icons[0].className).not.toContain('border');
+    expect(icons[0].className).not.toContain('shadow');
   });
 
   it('opens the task list directly on hover without a separate tooltip', async () => {

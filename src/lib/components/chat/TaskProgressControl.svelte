@@ -23,6 +23,10 @@
   let collisionBoundary: Element[] = $state([]);
   const activeTasks = $derived(tasks.filter((task) => task.status !== 'completed'));
   const completedTasks = $derived(tasks.filter((task) => task.status === 'completed'));
+  const stackedActiveTasks = $derived([
+    ...activeTasks.filter((task) => task.status !== 'running'),
+    ...activeTasks.filter((task) => task.status === 'running'),
+  ]);
   const orderedTasks = $derived([...activeTasks, ...completedTasks]);
   const progressLabel = $derived(
     m.chat_taskProgress_progress_ariaLabel({
@@ -52,13 +56,16 @@
   }
 
   function triggerStatusClass(status: TaskProgressStatus): string {
-    if (status === 'completed') return 'text-green-600 dark:text-green-400';
-    if (status === 'running') return 'text-blue-600 dark:text-blue-400';
-    if (status === 'waiting') return 'text-muted-foreground';
-    if (status === 'discussion_needed') return 'text-amber-600 dark:text-amber-400';
-    if (status === 'blocked') return 'text-error-foreground';
-    if (status === 'review_required') return 'text-violet-600 dark:text-violet-400';
-    return 'text-muted-foreground/60';
+    if (status === 'completed') return 'bg-green-700 text-white dark:bg-green-600 dark:text-white';
+    if (status === 'running')
+      return 'bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300';
+    if (status === 'waiting') return 'bg-muted text-muted-foreground';
+    if (status === 'discussion_needed')
+      return 'bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300';
+    if (status === 'blocked') return 'bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300';
+    if (status === 'review_required')
+      return 'bg-violet-100 text-violet-700 dark:bg-violet-950 dark:text-violet-300';
+    return 'bg-muted text-muted-foreground/60';
   }
 
   function handleOpenChange(nextOpen: boolean) {
@@ -111,12 +118,29 @@
           onfocus={handleTriggerFocus}
           data-testid="task-progress-trigger"
         >
-          <span class="flex items-center" aria-hidden="true" data-testid="task-progress-icon-stack">
-            {#each activeTasks as task, index (task.id)}
+          <span
+            class="isolate flex items-center"
+            aria-hidden="true"
+            data-testid="task-progress-icon-stack"
+          >
+            {#if completedTasks.length > 0}
               <span
-                class="relative inline-flex size-5 shrink-0 items-center justify-center rounded-full border border-border bg-card shadow-xs {triggerStatusClass(
+                class="relative z-0 inline-flex size-5 shrink-0 items-center justify-center rounded-full {triggerStatusClass(
+                  'completed',
+                )}"
+                data-testid="task-progress-status-icon"
+                data-task-status="completed"
+                data-completed-count={completedTasks.length}
+              >
+                <Fa icon={faCheck} size={10} class="size-2.5!" />
+              </span>
+            {/if}
+            {#each stackedActiveTasks as task, index (task.id)}
+              <span
+                class="relative inline-flex size-5 shrink-0 items-center justify-center rounded-full {triggerStatusClass(
                   task.status,
-                )} {index > 0 ? '-ml-1' : ''}"
+                )} {completedTasks.length > 0 || index > 0 ? '-ml-2.5' : ''}"
+                style:z-index={index + 1}
                 data-testid="task-progress-status-icon"
                 data-task-status={task.status}
               >
@@ -130,18 +154,6 @@
                 />
               </span>
             {/each}
-            {#if completedTasks.length > 0}
-              <span
-                class="relative inline-flex size-5 shrink-0 items-center justify-center rounded-full border border-border bg-card shadow-xs {triggerStatusClass(
-                  'completed',
-                )} {activeTasks.length > 0 ? '-ml-1' : ''}"
-                data-testid="task-progress-status-icon"
-                data-task-status="completed"
-                data-completed-count={completedTasks.length}
-              >
-                <Fa icon={faCheck} size={10} class="size-2.5!" />
-              </span>
-            {/if}
           </span>
         </Button>
       {/snippet}
