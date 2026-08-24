@@ -6,6 +6,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import sharp from 'sharp';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ICON_NAME = 'Intent';
@@ -13,14 +14,15 @@ const SOURCE_PATH = path.join(__dirname, '../src/assets/icons/app-icon/Icon-1024
 const OUTPUT_DIRECTORY = path.join(__dirname, '../build/macos-icon');
 
 export const ICON_DOCUMENT = {
+  fill: { solid: 'extended-srgb:0.03137,0.03137,0.03137,1.00000' },
   groups: [
     {
       layers: [
         {
           glass: false,
           hidden: false,
-          'image-name': 'Icon-1024.png',
-          name: 'Approved release artwork',
+          'image-name': 'Lime-Mark.png',
+          name: 'Approved lime mark',
         },
       ],
       name: ICON_NAME,
@@ -32,7 +34,27 @@ export const ICON_DOCUMENT = {
   'supported-platforms': { squares: ['macOS'] },
 };
 
-export function compileModernMacOSIcon({
+export async function createReleaseMark(sourcePath = SOURCE_PATH) {
+  const source = await sharp(sourcePath).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+  const mark = Buffer.alloc(source.data.length);
+
+  for (let offset = 0; offset < source.data.length; offset += 4) {
+    const red = source.data[offset];
+    const green = source.data[offset + 1];
+    const blue = source.data[offset + 2];
+    // The approved background and bevel are neutral; keep only the lime chroma.
+    if (red - blue <= 2 || green - blue <= 2 || green <= 12) continue;
+
+    mark[offset] = red;
+    mark[offset + 1] = green;
+    mark[offset + 2] = blue;
+    mark[offset + 3] = 255;
+  }
+
+  return sharp(mark, { raw: source.info }).png().toBuffer();
+}
+
+export async function compileModernMacOSIcon({
   execute = execFileSync,
   outputDirectory = OUTPUT_DIRECTORY,
   sourcePath = SOURCE_PATH,
@@ -52,7 +74,10 @@ export function compileModernMacOSIcon({
 
   try {
     fs.mkdirSync(assetsDirectory, { recursive: true });
-    fs.copyFileSync(sourcePath, path.join(assetsDirectory, 'Icon-1024.png'));
+    fs.writeFileSync(
+      path.join(assetsDirectory, 'Lime-Mark.png'),
+      await createReleaseMark(sourcePath),
+    );
     fs.writeFileSync(
       path.join(iconPackage, 'icon.json'),
       `${JSON.stringify(ICON_DOCUMENT, null, 2)}\n`,
@@ -108,12 +133,12 @@ export function compileModernMacOSIcon({
 
 export default function buildModernMacOSIcon(context) {
   if (context.electronPlatformName !== 'darwin') return;
-  compileModernMacOSIcon();
+  return compileModernMacOSIcon();
 }
 
 if (process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url) {
   try {
-    compileModernMacOSIcon();
+    await compileModernMacOSIcon();
   } catch (error) {
     console.error(`ERROR: ${error.message}`);
     process.exitCode = 1;

@@ -2,8 +2,13 @@ import { createHash } from 'node:crypto';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import sharp from 'sharp';
 import { afterEach, describe, expect, it } from 'vitest';
-import buildModernMacOSIcon, { compileModernMacOSIcon, ICON_DOCUMENT } from './build-macos-icon.js';
+import buildModernMacOSIcon, {
+  compileModernMacOSIcon,
+  createReleaseMark,
+  ICON_DOCUMENT,
+} from './build-macos-icon.js';
 
 const temporaryDirectories: string[] = [];
 const approvedReleaseHashes: Record<string, string> = {
@@ -42,9 +47,32 @@ describe('modern macOS icon compiler', () => {
     expect(buildModernMacOSIcon({ electronPlatformName: 'win32' })).toBeUndefined();
   });
 
-  it('compiles the approved artwork without adding visual effects', () => {
-    const outputDirectory = join(temporaryDirectory(), 'output');
+  it('extracts the approved lime mark without changing its colors', async () => {
     const approvedSource = join(process.cwd(), 'src/assets/icons/app-icon/Icon-1024.png');
+    const [source, mark] = await Promise.all([
+      sharp(approvedSource).ensureAlpha().raw().toBuffer({ resolveWithObject: true }),
+      createReleaseMark(approvedSource).then((data) =>
+        sharp(data).ensureAlpha().raw().toBuffer({ resolveWithObject: true }),
+      ),
+    ]);
+
+    expect(mark.info).toMatchObject({ width: source.info.width, height: source.info.height });
+    let opaquePixels = 0;
+    let colorMismatch = false;
+    for (let offset = 0; offset < source.data.length; offset += 4) {
+      if (mark.data[offset + 3] === 0) continue;
+      opaquePixels += 1;
+      colorMismatch ||= !mark.data
+        .subarray(offset, offset + 3)
+        .equals(source.data.subarray(offset, offset + 3));
+    }
+    expect(opaquePixels).toBeGreaterThan(70_000);
+    expect(opaquePixels).toBeLessThan(80_000);
+    expect(colorMismatch).toBe(false);
+  });
+
+  it('compiles a native black background and the approved mark without added effects', async () => {
+    const outputDirectory = join(temporaryDirectory(), 'output');
     const execute = (command: string, args: string[]) => {
       expect(command).toBe('xcrun');
       if (args[0] === '--find') return '/Applications/Xcode.app/usr/bin/actool';
@@ -53,9 +81,7 @@ describe('modern macOS icon compiler', () => {
       expect(readFileSync(join(iconPackage, 'icon.json'), 'utf8')).toBe(
         `${JSON.stringify(ICON_DOCUMENT, null, 2)}\n`,
       );
-      expect(readFileSync(join(iconPackage, 'Assets/Icon-1024.png'))).toEqual(
-        readFileSync(approvedSource),
-      );
+      expect(readFileSync(join(iconPackage, 'Assets/Lime-Mark.png')).length).toBeGreaterThan(0);
       expect(args).toEqual(
         expect.arrayContaining(['--app-icon', 'Intent', '--platform', 'macosx']),
       );
@@ -63,9 +89,12 @@ describe('modern macOS icon compiler', () => {
       return undefined;
     };
 
-    expect(compileModernMacOSIcon({ execute, outputDirectory })).toBe(
+    await expect(compileModernMacOSIcon({ execute, outputDirectory })).resolves.toBe(
       join(outputDirectory, 'Assets.car'),
     );
+    expect(ICON_DOCUMENT.fill).toEqual({
+      solid: 'extended-srgb:0.03137,0.03137,0.03137,1.00000',
+    });
     expect(ICON_DOCUMENT.groups[0]).toMatchObject({
       shadow: { kind: 'none', opacity: 0 },
       specular: false,
@@ -74,15 +103,15 @@ describe('modern macOS icon compiler', () => {
     expect(ICON_DOCUMENT.groups[0].layers[0]).toMatchObject({ glass: false });
   });
 
-  it('fails clearly when the required Xcode icon compiler is unavailable', () => {
-    expect(() =>
+  it('fails clearly when the required Xcode icon compiler is unavailable', async () => {
+    await expect(
       compileModernMacOSIcon({
         execute: () => {
           throw new Error('not found');
         },
         outputDirectory: temporaryDirectory(),
       }),
-    ).toThrow('requires Xcode 26 or newer with actool');
+    ).rejects.toThrow('requires Xcode 26 or newer with actool');
   });
 
   it('packages the modern resource and declares the legacy fallback', () => {
