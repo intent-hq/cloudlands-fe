@@ -35,6 +35,7 @@
     showCloseButton = true,
     closeDisabled = false,
     closeLabel = m.ui_sheet_close_label(),
+    onInteractOutside,
     children,
     ...restProps
   }: WithoutChildrenOrChild<SheetPrimitive.ContentProps> & {
@@ -45,6 +46,16 @@
     closeLabel?: string;
     children: Snippet;
   } = $props();
+
+  // Interactions inside a lightbox stacked above the sheet (see
+  // ImageLightbox's data-image-lightbox-root) are not outside interactions:
+  // closing the lightbox must not also dismiss the sheet.
+  function handleInteractOutside(e: Parameters<NonNullable<typeof onInteractOutside>>[0]) {
+    if (e.target instanceof Element && e.target.closest('[data-image-lightbox-root]')) {
+      e.preventDefault();
+    }
+    onInteractOutside?.(e);
+  }
 </script>
 
 <SheetPrimitive.Portal {...portalProps}>
@@ -55,6 +66,7 @@
     data-side={side}
     class={cn(sheetVariants({ side }), className)}
     {...restProps}
+    onInteractOutside={handleInteractOutside}
   >
     {@render children?.()}
     {#if showCloseButton}
