@@ -2,18 +2,44 @@
  * Tests for workspace-validation utilities
  */
 
-import {
-  describe,
-  it,
-  expect,
-} from 'vitest';
+import { describe, it, expect } from 'vitest';
 import {
   validateBranchPrefix,
   sanitizeBranchPrefix,
   getGitErrorMessage,
+  parseGitHubUrl,
 } from '../workspace-validation';
 
 describe('workspace-validation', () => {
+  describe('parseGitHubUrl', () => {
+    it.each([
+      'https://github.com/intent-hq/intentapp.dev',
+      'https://github.com/intent-hq/intentapp.dev.git',
+      'git@github.com:intent-hq/intentapp.dev.git',
+      'intent-hq/intentapp.dev',
+    ])('parses a dotted repository name from %s', (url) => {
+      expect(parseGitHubUrl(url)).toEqual({ owner: 'intent-hq', repo: 'intentapp.dev' });
+    });
+
+    it('strips a trailing .git suffix', () => {
+      expect(parseGitHubUrl('https://github.com/owner/repo.git')).toEqual({
+        owner: 'owner',
+        repo: 'repo',
+      });
+    });
+
+    it.each([
+      '',
+      'not a github url',
+      'https://github.com/',
+      'https://github.com/owner/',
+      'https://github.com/owner/repo/pull/1',
+      'https://github.com/owner/repo/tree/main',
+    ])('rejects invalid repository URL %j', (url) => {
+      expect(parseGitHubUrl(url)).toBeNull();
+    });
+  });
+
   describe('validateBranchPrefix', () => {
     describe('valid prefixes', () => {
       it('should accept empty string (no prefix)', () => {
@@ -202,21 +228,21 @@ describe('workspace-validation', () => {
       it('should return workspace-creation wording for workspace.create JSON-RPC timeout', () => {
         const result = getGitErrorMessage('JSON-RPC request timed out: workspace.create');
         expect(result).toBe(
-          'Creating this workspace is taking longer than expected. The daemon may still be finishing it in the background — check your workspace list, or try again.'
+          'Creating this workspace is taking longer than expected. The daemon may still be finishing it in the background — check your workspace list, or try again.',
         );
       });
 
       it('should return clone-timeout wording for a git clone timeout', () => {
         const result = getGitErrorMessage('git clone timed out');
         expect(result).toBe(
-          'Cloning this repository timed out. The repository may be very large or your network connection may be slow. Please try again — if the repository was partially downloaded, the next attempt will be faster.'
+          'Cloning this repository timed out. The repository may be very large or your network connection may be slow. Please try again — if the repository was partially downloaded, the next attempt will be faster.',
         );
       });
 
       it('should return git-timeout wording for a git-shaped timeout', () => {
         const result = getGitErrorMessage('git fetch timed out');
         expect(result).toBe(
-          'A git operation timed out. This can happen with large repositories or slow network connections. Please try again.'
+          'A git operation timed out. This can happen with large repositories or slow network connections. Please try again.',
         );
       });
 
