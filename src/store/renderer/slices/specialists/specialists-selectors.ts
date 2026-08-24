@@ -28,6 +28,11 @@ export const selectCustomSpecialistsLoaded = store.createSelector((state): boole
 export const selectFileSpecialistsLoaded = store.createSelector((state): boolean => state.specialists.fileSpecialistsLoaded);
 export const selectBundledSpecialistsLoaded = store.createSelector((state): boolean => state.specialists.bundledSpecialistsLoaded);
 export const selectSpecialistsFolderPath = store.createSelector((state): string | null => state.specialists.specialistsFolderPath);
+/**
+ * Daemon `specialists.default` setting — the specialist applied when none is
+ * chosen (e.g. task Run). `''` when unset.
+ */
+export const selectDefaultSpecialistId = store.createSelector((state): string => state.specialists.defaultSpecialistId ?? '');
 export const selectProviderModelOverrides = store.createSelector((state): Record<string, Record<string, string>> => state.specialists.providerModelOverrides);
 // ============================================================================
 // Visibility gating helpers

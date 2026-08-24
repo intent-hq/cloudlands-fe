@@ -24,6 +24,7 @@ import { openTab, openTabInRightmostColumnRequested } from '../../panel-layout/p
 import { selectEffectiveDefaultProviderId } from '../../provider-catalog/provider-catalog-selectors';
 import { selectActiveProviderId } from '../../provider-settings/provider-settings-selectors';
 import {
+  selectDefaultSpecialistId,
   selectEffectiveBehaviorPrompt,
   selectEffectiveCodingAgent,
   selectEffectiveModel,
@@ -202,10 +203,21 @@ function* runAgentForNote(
   if (!workspace) return;
   const note = yield* selectNoteById.effect(wsId, noteId);
   if (!note) return;
-  let model = yield* selectEffectiveModel.effect('implementor');
-  let behaviorPrompt = yield* selectEffectiveBehaviorPrompt.effect('implementor');
+  // Daemon `specialists.default` setting wins when it resolves to a pickable
+  // specialist — visibility-gated by selectSpecialists (e.g. GitHub-dependent
+  // specialists without auth) and not `hidden` (picker surfaces exclude
+  // hidden specialists via filterPickableSpecialists, so Run does too); fall
+  // back to implementor for backward compatibility when unset or unavailable.
+  const defaultSpecialistId = yield* selectDefaultSpecialistId.effect();
+  const specialists = yield* selectSpecialists.effect();
+  const configured = defaultSpecialistId
+    ? specialists.find((candidate) => candidate.id === defaultSpecialistId && !candidate.hidden)
+    : undefined;
+  const specialistId = configured?.id ?? 'implementor';
+  let model = yield* selectEffectiveModel.effect(specialistId);
+  let behaviorPrompt = yield* selectEffectiveBehaviorPrompt.effect(specialistId);
   if (!behaviorPrompt) {
-    const specialist = SPECIALISTS.find((candidate) => candidate.id === 'implementor');
+    const specialist = SPECIALISTS.find((candidate) => candidate.id === specialistId);
     if (specialist) {
       behaviorPrompt = specialist.defaultBehaviorPrompt;
       if (!model) {
@@ -218,8 +230,14 @@ function* runAgentForNote(
     (agent) => String(agent.workspaceId) === wsId && agent.isInitialAgent,
   );
   const defaultProvider = yield* selectEffectiveDefaultProviderId.effect();
-  const provider = initial ? getAgentProvider(initial, defaultProvider) : undefined;
-  const fallbackModel = yield* selectSelectedModel.effect();
+  // A specialist explicitly pinned to a coding agent runs on it; otherwise
+  // inherit the workspace's initial-agent provider as before.
+  const provider =
+    configured?.codingAgent || (initial ? getAgentProvider(initial, defaultProvider) : undefined);
+  // When the specialist pins a provider but resolves no model, keep the model
+  // empty so the daemon resolves that provider's own default — the globally
+  // selected model may belong to a different provider.
+  const fallbackModel = configured?.codingAgent ? '' : yield* selectSelectedModel.effect();
   try {
     const result = yield* call([agentFactory, agentFactory.createAgent], workspace, {
       name: noteTitle || m.agent_creation_taskAgent_name(),
@@ -230,7 +248,7 @@ function* runAgentForNote(
       agentType: createAgentTypeId('task-loop'),
       behaviorPrompt,
       source: 'task-metadata-bar-run',
-      metadata: { taskNoteId: noteId, source: 'task-run', specialist: 'implementor' },
+      metadata: { taskNoteId: noteId, source: 'task-run', specialist: specialistId },
       initialMessage: buildTaskAgentInitialMessage(note),
     });
     if (!result.success || !result.agentId) return;

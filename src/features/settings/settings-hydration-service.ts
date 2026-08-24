@@ -42,6 +42,7 @@ import {
   loadDefaultReasoningEffortFromStorage,
   loadProviderModelsFromStorage,
 } from '$store/renderer/slices/model/model-slice';
+import { setDefaultSpecialistId } from '$store/renderer/slices/specialists/specialists-slice';
 
 const logger = createLogger('SettingsHydrationService');
 
@@ -86,6 +87,15 @@ function applyOne(change: AppliedSettingChange): void {
     case 'model.defaultReasoningEffort': {
       if (typeof value === 'string') {
         appStore.dispatch(loadDefaultReasoningEffortFromStorage(value));
+      }
+      return;
+    }
+    case 'specialists.default': {
+      // The daemon setting is Option<String>: null/unset clears the default.
+      if (typeof value === 'string') {
+        appStore.dispatch(setDefaultSpecialistId(value.trim()));
+      } else if (value === null) {
+        appStore.dispatch(setDefaultSpecialistId(''));
       }
       return;
     }
