@@ -11,7 +11,6 @@ import { workspaceClient } from '$store/renderer/slices/workspace/utils/workspac
 import { createLogger } from '$lib/utils/client-logger';
 import { WorkspaceId } from '$shared/types/branded-ids';
 
-import { workspaceHydrationRequested } from '$store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice';
 import { closeWorkspaceTab } from '$store/renderer/slices/tab-state/tab-state-slice';
 import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
 import {
@@ -47,12 +46,9 @@ export function useWorkspaceLoader(options: UseWorkspaceLoaderOptions) {
   // dedicated not-found state. Reset whenever a new workspace load starts.
   let loadError: WorkspaceLoadError | null = $state(null);
 
-  // Track the last workspace ID for which hydration was requested.
-  // This prevents the isAlreadyActive guard from short-circuiting during
-  // workspace-to-workspace navigation: pre-population by initializeWorkspaceState
-  // makes workspaceData.id match the new workspace before the loader runs,
-  // but hydration hasn't been requested yet for the new workspace.
-  let lastHydrationRequestedWorkspaceId: string | null = null;
+  // Track the last workspace ID prepared from cache so repeated loader effects
+  // for the same route do not replay the synchronous pre-population writes.
+  let lastPreparedWorkspaceId: string | null = null;
 
   async function loadWorkspace() {
     const { workspaceId, workspaceState, state } = options;
@@ -198,12 +194,10 @@ export function useWorkspaceLoader(options: UseWorkspaceLoaderOptions) {
     // and lets workspace hydration sagas (agent loading, terminal init, etc.)
     // start without waiting for backend confirmation.
     //
-    // STAB-24 fix: Skip the pre-population block when re-running the loader
-    // for the same workspace ID (lastHydrationRequestedWorkspaceId === workspaceId)
-    // to avoid redundant state updates. The hydration request after open remains
-    // session-coalesced by the lifecycle saga.
-    let alreadyRequestedHydration = false;
-    const isReturnVisit = lastHydrationRequestedWorkspaceId === workspaceId;
+    // Skip the pre-population block when re-running the loader for the same
+    // workspace ID to avoid redundant state updates. Workspace lifecycle
+    // hydration is owned by canonical workspace-tab focus changes.
+    const isReturnVisit = lastPreparedWorkspaceId === workspaceId;
     if (ws && !isReturnVisit) {
       logger.info('Pre-populating workspace state from cache before open()', { workspaceId });
       workspaceState.updateState({
@@ -212,9 +206,7 @@ export function useWorkspaceLoader(options: UseWorkspaceLoaderOptions) {
       });
       workspaceState.markInitialized();
       appStore.dispatch(setWorkspaceEntity(ws));
-      appStore.dispatch(workspaceHydrationRequested(ws.id));
-      lastHydrationRequestedWorkspaceId = ws.id;
-      alreadyRequestedHydration = true;
+      lastPreparedWorkspaceId = ws.id;
     }
 
     let openResult = await workspaceClient.open(WorkspaceId(workspaceId));
@@ -262,8 +254,8 @@ export function useWorkspaceLoader(options: UseWorkspaceLoaderOptions) {
           workspaceId,
         });
         appStore.dispatch(removeWorkspaceEntity(workspaceId));
-        if (lastHydrationRequestedWorkspaceId === workspaceId) {
-          lastHydrationRequestedWorkspaceId = null;
+        if (lastPreparedWorkspaceId === workspaceId) {
+          lastPreparedWorkspaceId = null;
         }
       }
       // Backstop: remove the ghost tab from the strip. Dispatching the raw
@@ -309,16 +301,7 @@ export function useWorkspaceLoader(options: UseWorkspaceLoaderOptions) {
 
       // Hydrate Redux with the (potentially fresher) workspace entity.
       appStore.dispatch(setWorkspaceEntity(ws));
-
-      // Request hydration unless it was already requested
-      // during the pre-population block above. The pre-population block only runs
-      // when (ws && !isReturnVisit), so alreadyRequestedHydration is only true for first
-      // visits to a cached workspace. In all other cases (return visits or uncached
-      // first visits), ask the lifecycle saga to hydrate once per open-tab session.
-      if (!alreadyRequestedHydration) {
-        appStore.dispatch(workspaceHydrationRequested(ws.id));
-        lastHydrationRequestedWorkspaceId = ws.id;
-      }
+      lastPreparedWorkspaceId = ws.id;
     } else {
       // This case shouldn't be reached since we throw if ws is null after failed open
       // but keep it as a safety net
