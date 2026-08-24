@@ -13,7 +13,10 @@ import { WorkspaceId } from '$shared/types/branded-ids';
 import { createAgentTypeId } from '$shared/types/agent.types';
 import { agentSessionLaunchAgentRequested } from '../../agent-session/agent-session-slice';
 import { openAgentTabRequested } from '../../app-layout/app-layout-slice';
-import { initialState as specialistsInitialState } from '../../specialists/specialists-slice';
+import {
+  initialState as specialistsInitialState,
+  type FileSpecialist,
+} from '../../specialists/specialists-slice';
 import {
   createAgentFromConfigRequested,
   createAgentRequested,
@@ -44,7 +47,7 @@ function session(): AgentSession {
   } as AgentSession;
 }
 
-function state(defaultSpecialistId = '') {
+function state(defaultSpecialistId = '', fileSpecialists: FileSpecialist[] = []) {
   const workspace = { id: WS, title: 'Workspace', repositoryPath: '/tmp/repo' } as Workspace;
   const note = { id: NOTE, title: 'Task note', content: 'Do the thing' } as Note;
   return {
@@ -53,7 +56,11 @@ function state(defaultSpecialistId = '') {
     agentSessions: { byAgentId: {} },
     model: { providerModels: { augment: 'sonnet' } },
     providerSettings: { activeProviderId: 'augment' },
-    specialists: { ...specialistsInitialState, defaultSpecialistId },
+    specialists: {
+      ...specialistsInitialState,
+      defaultSpecialistId,
+      fileSpecialists: createCollection<FileSpecialist, 'id'>('id', fileSpecialists),
+    },
     workspaceNotes: {
       byWorkspaceId: { [WS]: { notes: createCollection<Note, 'id'>('id', [note]) } },
     },
@@ -241,6 +248,50 @@ describe('agentCreationSaga', () => {
   it('falls back to implementor when specialists.default is unset', async () => {
     mocks.createAgent.mockResolvedValue({ success: true, agent: session(), agentId: AGENT });
     const { channel, task } = start();
+    channel.put(runAgentForNoteRequested(WS, NOTE, 'Task note'));
+    await settle();
+
+    expect(mocks.createAgent).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        metadata: { taskNoteId: NOTE, source: 'task-run', specialist: 'implementor' },
+      }),
+    );
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('runs on the default specialist\u2019s pinned coding agent when one is set', async () => {
+    mocks.createAgent.mockResolvedValue({ success: true, agent: session(), agentId: AGENT });
+    const pinned: FileSpecialist = {
+      id: 'codex-runner',
+      name: 'Codex Runner',
+      description: 'Pinned to codex',
+      codingAgent: 'codex',
+      model: 'gpt-5',
+      behaviorPrompt: 'Run tasks on codex.',
+      filePath: '/tmp/codex-runner.md',
+      source: 'user',
+    };
+    const { channel, task } = start(() => state('codex-runner', [pinned]));
+    channel.put(runAgentForNoteRequested(WS, NOTE, 'Task note'));
+    await settle();
+
+    expect(mocks.createAgent).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        provider: 'codex',
+        model: 'gpt-5',
+        metadata: { taskNoteId: NOTE, source: 'task-run', specialist: 'codex-runner' },
+      }),
+    );
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('falls back to implementor when specialists.default is gated invisible (pr-reviewer without GitHub auth)', async () => {
+    mocks.createAgent.mockResolvedValue({ success: true, agent: session(), agentId: AGENT });
+    const { channel, task } = start(() => state('pr-reviewer'));
     channel.put(runAgentForNoteRequested(WS, NOTE, 'Task note'));
     await settle();
 

@@ -203,10 +203,16 @@ function* runAgentForNote(
   if (!workspace) return;
   const note = yield* selectNoteById.effect(wsId, noteId);
   if (!note) return;
-  // Daemon `specialists.default` setting (non-empty string) wins; fall back
-  // to implementor for backward compatibility when unset.
+  // Daemon `specialists.default` setting wins when it resolves to an
+  // available specialist (selectSpecialists is visibility-gated, e.g.
+  // GitHub-dependent specialists without auth); fall back to implementor
+  // for backward compatibility when unset or unavailable.
   const defaultSpecialistId = yield* selectDefaultSpecialistId.effect();
-  const specialistId = defaultSpecialistId || 'implementor';
+  const specialists = yield* selectSpecialists.effect();
+  const configured = defaultSpecialistId
+    ? specialists.find((candidate) => candidate.id === defaultSpecialistId)
+    : undefined;
+  const specialistId = configured?.id ?? 'implementor';
   let model = yield* selectEffectiveModel.effect(specialistId);
   let behaviorPrompt = yield* selectEffectiveBehaviorPrompt.effect(specialistId);
   if (!behaviorPrompt) {
@@ -223,7 +229,10 @@ function* runAgentForNote(
     (agent) => String(agent.workspaceId) === wsId && agent.isInitialAgent,
   );
   const defaultProvider = yield* selectEffectiveDefaultProviderId.effect();
-  const provider = initial ? getAgentProvider(initial, defaultProvider) : undefined;
+  // A specialist explicitly pinned to a coding agent runs on it; otherwise
+  // inherit the workspace's initial-agent provider as before.
+  const provider =
+    configured?.codingAgent || (initial ? getAgentProvider(initial, defaultProvider) : undefined);
   const fallbackModel = yield* selectSelectedModel.effect();
   try {
     const result = yield* call([agentFactory, agentFactory.createAgent], workspace, {
