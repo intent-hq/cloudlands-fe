@@ -151,6 +151,60 @@ describe('specialists selectors', () => {
     });
   });
 
+  describe('replacement mode (daemon set is authoritative)', () => {
+    const replacementBundled = [
+      {
+        id: 'replacement-one',
+        name: 'Replacement One',
+        description: 'first',
+        defaultBehaviorPrompt: 'prompt one',
+        source: 'bundled' as const,
+      },
+      {
+        id: 'replacement-two',
+        name: 'Replacement Two',
+        description: 'second',
+        defaultBehaviorPrompt: 'prompt two',
+        source: 'bundled' as const,
+      },
+    ];
+
+    it('does not resurrect hardcoded SPECIALISTS once daemon bundled specialists loaded', () => {
+      const state = mockState({ bundledSpecialists: replacementBundled });
+      const ids = selectSpecialists.select(state).map((s) => s.id);
+
+      expect(ids).toEqual(['replacement-one', 'replacement-two']);
+      expect(ids).not.toContain('implementor');
+      expect(ids).not.toContain('verifier');
+    });
+
+    it('does not resurrect hardcoded SPECIALISTS once file specialists loaded', () => {
+      const state = mockState({
+        fileSpecialists: createCollection('id', [
+          {
+            id: 'file-only',
+            name: 'File Only',
+            description: 'from file',
+            model: '',
+            behaviorPrompt: 'prompt',
+            filePath: '/Users/test/.intent/specialists/file-only.md',
+            source: 'user' as const,
+          },
+        ]),
+      });
+      const ids = selectSpecialists.select(state).map((s) => s.id);
+
+      expect(ids).toEqual(['file-only']);
+      expect(ids).not.toContain('implementor');
+    });
+
+    it('keeps the hardcoded fallback before any source has loaded', () => {
+      const ids = selectSpecialists.select(mockState()).map((s) => s.id);
+      expect(ids).toContain('implementor');
+      expect(ids).toContain('verifier');
+    });
+  });
+
   describe('hidden flag propagation through selectSpecialists', () => {
     it('should carry hidden from a file specialist into the merged list', () => {
       const state = mockState({

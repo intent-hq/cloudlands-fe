@@ -163,6 +163,34 @@ describe('specialistsSaga', () => {
     expect(mocks.unsubscribe).toHaveBeenCalledTimes(1);
   });
 
+  it('daemon bundled specialists replace the hardcoded set — no resurrection (replacement mode)', async () => {
+    const dispatch = vi.fn();
+    const task = runSaga(
+      { channel: stdChannel(), dispatch, getState: () => sagaState() },
+      specialistsSaga,
+    );
+    await settle();
+    mocks.subscription?.([
+      {
+        id: 'daemon-only',
+        name: 'Daemon Only',
+        description: 'from daemon',
+        behaviorPrompt: 'prompt',
+        source: 'bundled' as const,
+        hidden: false,
+      },
+    ]);
+    await settle();
+    const bundledAction = dispatch.mock.calls.find(
+      ([action]) => action.type === setBundledSpecialists.type,
+    )?.[0];
+    const ids = bundledAction.payload[0].map((s: { id: string }) => s.id);
+    expect(ids).toEqual(['daemon-only']);
+    expect(ids).not.toContain('builtin');
+    task.cancel();
+    await task.toPromise();
+  });
+
   it('sends exact create payloads while global takeEvery processes repeated writes concurrently', async () => {
     mocks.list.mockResolvedValue([fileDef('builtin')]);
     let release!: () => void;

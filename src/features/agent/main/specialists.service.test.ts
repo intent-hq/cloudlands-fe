@@ -97,6 +97,62 @@ describe('specialists.service — coding agent resolution (D1-B)', () => {
     });
   });
 
+  describe('replacement mode (loaded set is authoritative)', () => {
+    const replacementResult: SpecialistFilesResult = {
+      specialists: [
+        {
+          id: 'replacement-one',
+          filePath: '/bundled/replacement-one.md',
+          frontmatter: { name: 'Replacement One', description: 'first' },
+          behaviorPrompt: 'prompt one',
+          rawContent: '',
+          source: 'bundled' as const,
+        },
+        {
+          id: 'replacement-two',
+          filePath: '/bundled/replacement-two.md',
+          frontmatter: { name: 'Replacement Two', description: 'second' },
+          behaviorPrompt: 'prompt two',
+          rawContent: '',
+          source: 'bundled' as const,
+        },
+      ],
+      errors: [],
+    };
+
+    it('does not resurrect hardcoded specialists once file specialists loaded', async () => {
+      loadBundledSpecialistFiles.mockResolvedValue(replacementResult);
+      const { refreshSpecialistsFromFiles, getAllEffectiveSpecialists, getEffectiveSpecialist } =
+        await import('./specialists.service');
+      await refreshSpecialistsFromFiles();
+
+      const ids = getAllEffectiveSpecialists().map(({ id }) => id);
+      expect(ids).toEqual(['replacement-one', 'replacement-two']);
+      expect(getEffectiveSpecialist('implementor')).toBeNull();
+      expect(getEffectiveSpecialist('verifier')).toBeNull();
+    });
+
+    it('formatSpecialistsForPrompt uses ids from the resolved list, not literal implementor/verifier', async () => {
+      loadBundledSpecialistFiles.mockResolvedValue(replacementResult);
+      const { refreshSpecialistsFromFiles, formatSpecialistsForPrompt } =
+        await import('./specialists.service');
+      await refreshSpecialistsFromFiles();
+
+      const prompt = await formatSpecialistsForPrompt();
+      expect(prompt).toContain('specialist: "replacement-one"');
+      expect(prompt).toContain('specialist: "replacement-two"');
+      expect(prompt).not.toContain('"implementor"');
+      expect(prompt).not.toContain('"verifier"');
+    });
+
+    it('formatSpecialistsForPrompt prefers implementor/verifier when actually present', async () => {
+      const { formatSpecialistsForPrompt } = await import('./specialists.service');
+      const prompt = await formatSpecialistsForPrompt();
+      expect(prompt).toContain('specialist: "implementor"');
+      expect(prompt).toContain('specialist: "verifier"');
+    });
+  });
+
   describe('file-based specialists', () => {
     it('honors an explicit frontmatter codingAgent over the threaded fallback', async () => {
       loadBundledSpecialistFiles.mockResolvedValue({
