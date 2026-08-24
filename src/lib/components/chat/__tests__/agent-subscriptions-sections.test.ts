@@ -1189,8 +1189,8 @@ describe('AgentSubscriptions unified waiting disclosure', () => {
     const dialog = await screen.findByRole('dialog', { name: 'Agent tasks' });
     expect(document.activeElement).toBe(nativeTrigger);
     expect(within(dialog).getByText('Native task running')).toBeTruthy();
-    expect(within(dialog).queryByText('Native task completed')).toBeNull();
-    expect(within(dialog).getByRole('button', { name: '1 task completed' })).toBeTruthy();
+    expect(within(dialog).getByLabelText('Complete: Native task completed')).toBeTruthy();
+    expect(within(dialog).queryByTestId('task-progress-completed-toggle')).toBeNull();
     expect(within(dialog).queryByText('Hidden native fallback')).toBeNull();
     expect(within(dialog).queryByText('Linked workspace task')).toBeNull();
     expect(within(dialog).getByText('Native task running').closest('.shimmer-text')).toBeTruthy();
@@ -1231,7 +1231,8 @@ describe('AgentSubscriptions unified waiting disclosure', () => {
       expect(trigger.getAttribute('aria-label')).toBe('Task progress: 1 of 1 completed'),
     );
     expect(document.activeElement).toBe(trigger);
-    expect(await screen.findByRole('button', { name: '1 task completed' })).toBeTruthy();
+    expect(await screen.findByLabelText('Complete: Live linked task')).toBeTruthy();
+    expect(screen.queryByTestId('task-progress-completed-toggle')).toBeNull();
   });
 
   it('waits for an AgentLite transcript snapshot before showing a linked fallback', async () => {

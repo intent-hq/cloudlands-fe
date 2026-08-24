@@ -39,7 +39,7 @@ afterEach(() => {
 });
 
 describe('TaskProgressControl', () => {
-  it('shows compact progress and reveals one-row active tasks from keyboard focus', async () => {
+  it('shows compact progress and reveals one flat task list from keyboard focus', async () => {
     render(TaskProgressControl, { props: { tasks } });
     const trigger = screen.getByTestId('task-progress-trigger');
     expect(trigger.textContent?.trim()).toBe('');
@@ -54,10 +54,13 @@ describe('TaskProgressControl', () => {
       'pending',
       'running',
       'waiting',
+      'done-1',
+      'done-2',
     ]);
     expect(screen.getByLabelText('In Progress: Move the task progress')).toBeTruthy();
     expect(screen.getByText('Move the task progress').className).toContain('shimmer-text');
-    expect(screen.queryByText('Map the native plan')).toBeNull();
+    expect(screen.getByLabelText('Complete: Map the native plan')).toBeTruthy();
+    expect(screen.queryByTestId('task-progress-completed-toggle')).toBeNull();
     expect(screen.queryByRole('tooltip', { hidden: true })).toBeNull();
   });
 
@@ -91,9 +94,28 @@ describe('TaskProgressControl', () => {
       'eye',
       'check',
     ]);
-    expect(icons.slice(1).every((icon) => icon.className.includes('-ml-1.5'))).toBe(true);
+    expect(
+      icons.every(
+        (icon) =>
+          icon.className.includes('size-5') &&
+          icon.className.includes('items-center') &&
+          icon.className.includes('justify-center') &&
+          icon.className.includes('rounded-full') &&
+          icon.className.includes('border-border') &&
+          icon.className.includes('bg-card') &&
+          icon.className.includes('shadow-xs'),
+      ),
+    ).toBe(true);
+    expect(icons.slice(1).every((icon) => icon.className.includes('-ml-1'))).toBe(true);
+    expect(icons.every((icon) => !icon.className.includes('-ml-1.5'))).toBe(true);
+    expect(icons[1].className).toContain('text-blue-600 dark:text-blue-400');
+    expect(icons.at(-1)?.className).toContain('text-green-600 dark:text-green-400');
     expect(icons.at(-1)?.dataset.completedCount).toBe('2');
     expect(icons[1].innerHTML).toContain('motion-reduce:animate-none');
+    const trigger = screen.getByTestId('task-progress-trigger');
+    expect(trigger.className).toContain('bg-transparent!');
+    expect(trigger.className).toContain('hover:bg-transparent!');
+    expect(trigger.className).not.toContain('hover:bg-muted');
   });
 
   it('opens the task list directly on hover without a separate tooltip', async () => {
@@ -106,14 +128,11 @@ describe('TaskProgressControl', () => {
     expect(screen.queryByRole('tooltip', { hidden: true })).toBeNull();
   });
 
-  it('starts completed tasks collapsed and keeps accordion focus through live movement', async () => {
+  it('keeps the flat list and trigger focus through live task movement', async () => {
     const view = render(TaskProgressControl, { props: { tasks } });
-    await fireEvent.click(screen.getByTestId('task-progress-trigger'));
-    const toggle = await screen.findByRole('button', { name: '2 tasks completed' });
-    expect(toggle.getAttribute('aria-expanded')).toBe('false');
-    await fireEvent.click(toggle);
-    expect(screen.getByText('Map the native plan')).toBeTruthy();
-    toggle.focus();
+    const trigger = screen.getByTestId('task-progress-trigger');
+    trigger.focus();
+    await screen.findByRole('dialog', { name: 'Agent tasks' });
 
     await view.rerender({
       tasks: tasks.map((task) =>
@@ -121,17 +140,17 @@ describe('TaskProgressControl', () => {
       ),
     });
 
-    await waitFor(() => expect(toggle.textContent).toContain('3 tasks completed'));
-    expect(document.activeElement).toBe(toggle);
+    await waitFor(() =>
+      expect(trigger.getAttribute('aria-label')).toBe('Task progress: 3 of 5 completed'),
+    );
+    expect(document.activeElement).toBe(trigger);
     expect(
       screen
         .getAllByTestId('task-progress-status-icon')
         .filter((icon) => icon.dataset.taskStatus === 'completed'),
     ).toHaveLength(1);
-    expect(screen.getByTestId('task-progress-trigger').getAttribute('aria-label')).toBe(
-      'Task progress: 3 of 5 completed',
-    );
     expect(screen.getByText('Move the task progress')).toBeTruthy();
+    expect(screen.queryByTestId('task-progress-completed-toggle')).toBeNull();
     expect(screen.getAllByTestId('task-progress-row').map((row) => row.dataset.taskId)).toEqual([
       'pending',
       'waiting',

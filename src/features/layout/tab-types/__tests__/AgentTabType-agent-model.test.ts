@@ -241,6 +241,8 @@ describe('AgentTabType agent model reactivity', () => {
     const header = await screen.findByTestId('agent-primary-header-actions');
     await waitFor(() => expect(screen.getByTestId('task-progress-trigger')).toBeTruthy());
     expect(header.contains(screen.getByTestId('task-progress-trigger'))).toBe(true);
-    expect(screen.getByTestId('task-progress-trigger').textContent?.trim()).toBe('1/2');
+    expect(screen.getByTestId('task-progress-trigger').getAttribute('aria-label')).toBe(
+      'Task progress: 1 of 2 completed',
+    );
   });
 });

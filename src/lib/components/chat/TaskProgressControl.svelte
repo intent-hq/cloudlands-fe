@@ -1,10 +1,8 @@
 <script lang="ts">
-  import { tick } from 'svelte';
   import { Popover } from 'bits-ui';
   import Fa from 'svelte-fa';
   import {
     faCheck,
-    faChevronRight,
     faCircle,
     faCircleQuestion,
     faClock,
@@ -21,31 +19,17 @@
 
   let { tasks }: { tasks: TaskProgressItem[] } = $props();
   let open = $state(false);
-  let completedOpen = $state(false);
   let triggerElement: HTMLButtonElement | null = $state(null);
-  let completedToggle: HTMLButtonElement | null = $state(null);
   let collisionBoundary: Element[] = $state([]);
-  const controlId = $props.id();
-  const completedContentId = `task-progress-completed-${controlId}`;
   const activeTasks = $derived(tasks.filter((task) => task.status !== 'completed'));
   const completedTasks = $derived(tasks.filter((task) => task.status === 'completed'));
-  const completedLabel = $derived(
-    completedTasks.length === 1
-      ? m.chat_taskProgress_completed_one()
-      : m.chat_taskProgress_completed_many({ count: formatInteger(completedTasks.length) }),
-  );
+  const orderedTasks = $derived([...activeTasks, ...completedTasks]);
   const progressLabel = $derived(
     m.chat_taskProgress_progress_ariaLabel({
       completed: formatInteger(completedTasks.length),
       total: formatInteger(tasks.length),
     }),
   );
-
-  $effect.pre(() => {
-    if (completedTasks.length === 0 && document.activeElement === completedToggle) {
-      triggerElement?.focus({ preventScroll: true });
-    }
-  });
 
   function statusLabel(status: TaskProgressStatus): string {
     if (status === 'completed') return m.workspace_taskStatus_complete_label();
@@ -68,12 +52,12 @@
   }
 
   function triggerStatusClass(status: TaskProgressStatus): string {
-    if (status === 'completed') return 'text-emerald-600 dark:text-emerald-400';
-    if (status === 'running') return 'text-sky-500';
+    if (status === 'completed') return 'text-green-600 dark:text-green-400';
+    if (status === 'running') return 'text-blue-600 dark:text-blue-400';
     if (status === 'waiting') return 'text-muted-foreground';
-    if (status === 'discussion_needed') return 'text-amber-500';
-    if (status === 'blocked') return 'text-destructive';
-    if (status === 'review_required') return 'text-blue-500';
+    if (status === 'discussion_needed') return 'text-amber-600 dark:text-amber-400';
+    if (status === 'blocked') return 'text-error-foreground';
+    if (status === 'review_required') return 'text-violet-600 dark:text-violet-400';
     return 'text-muted-foreground/60';
   }
 
@@ -86,14 +70,6 @@
 
   function handleTriggerFocus() {
     open = true;
-  }
-
-  async function handleTriggerKeydown(event: KeyboardEvent) {
-    if (event.key !== 'ArrowDown' || completedTasks.length === 0) return;
-    event.preventDefault();
-    open = true;
-    await tick();
-    completedToggle?.focus({ preventScroll: true });
   }
 </script>
 
@@ -127,21 +103,20 @@
         <Button
           {...props}
           bind:ref={triggerElement}
-          variant="ghost-light"
+          variant="plain"
           size="xs"
-          class="h-6 min-w-0 px-1! focus-visible:border-border focus-visible:bg-muted focus-visible:ring-0"
+          class="h-6 min-w-0 rounded-full bg-transparent! p-0! hover:bg-transparent! focus-visible:bg-transparent!"
           aria-label={progressLabel}
           aria-expanded={open}
           onfocus={handleTriggerFocus}
-          onkeydown={handleTriggerKeydown}
           data-testid="task-progress-trigger"
         >
           <span class="flex items-center" aria-hidden="true" data-testid="task-progress-icon-stack">
             {#each activeTasks as task, index (task.id)}
               <span
-                class="relative inline-flex size-5 shrink-0 items-center justify-center rounded-full border border-border bg-background shadow-sm {triggerStatusClass(
+                class="relative inline-flex size-5 shrink-0 items-center justify-center rounded-full border border-border bg-card shadow-xs {triggerStatusClass(
                   task.status,
-                )} {index > 0 ? '-ml-1.5' : ''}"
+                )} {index > 0 ? '-ml-1' : ''}"
                 data-testid="task-progress-status-icon"
                 data-task-status={task.status}
               >
@@ -157,9 +132,9 @@
             {/each}
             {#if completedTasks.length > 0}
               <span
-                class="relative inline-flex size-5 shrink-0 items-center justify-center rounded-full border border-border bg-background shadow-sm {triggerStatusClass(
+                class="relative inline-flex size-5 shrink-0 items-center justify-center rounded-full border border-border bg-card shadow-xs {triggerStatusClass(
                   'completed',
-                )} {activeTasks.length > 0 ? '-ml-1.5' : ''}"
+                )} {activeTasks.length > 0 ? '-ml-1' : ''}"
                 data-testid="task-progress-status-icon"
                 data-task-status="completed"
                 data-completed-count={completedTasks.length}
@@ -186,73 +161,25 @@
         data-testid="task-progress-popover"
       >
         <div class="min-w-0" aria-live="polite">
-          {#if activeTasks.length > 0}
-            <ul class="min-w-0" data-testid="task-progress-active-list">
-              {#each activeTasks as task (task.id)}
-                <li
-                  class="grid h-8 min-w-0 grid-cols-[1rem_minmax(0,1fr)] items-center gap-2 overflow-hidden rounded-md px-2 text-muted-foreground transition-[color,opacity] duration-[var(--motion-fast)] motion-reduce:transition-none"
-                  data-testid="task-progress-row"
-                  data-task-id={task.id}
-                  data-task-status={task.status}
-                  aria-label={m.chat_taskProgress_task_ariaLabel({
-                    status: statusLabel(task.status),
-                    title: task.title,
-                  })}
-                  animate:taskProgressFlip
-                  transition:taskProgressRowTransition
-                >
-                  {@render taskRowContent(task)}
-                </li>
-              {/each}
-            </ul>
-          {/if}
-          {#if completedTasks.length > 0}
-            <div class="min-w-0">
-              <button
-                bind:this={completedToggle}
-                type="button"
-                class="flex h-8 w-full min-w-0 items-center gap-2 rounded-md px-2 text-left type-caption text-muted-foreground outline-none transition-colors hover:bg-accent/60 hover:text-accent-foreground focus-visible:bg-accent/60 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/40 motion-reduce:transition-none"
-                aria-expanded={completedOpen}
-                aria-controls={completedContentId}
-                onclick={() => (completedOpen = !completedOpen)}
-                data-testid="task-progress-completed-toggle"
+          <ul class="min-w-0" data-testid="task-progress-list">
+            {#each orderedTasks as task (task.id)}
+              <li
+                class="grid h-8 min-w-0 grid-cols-[1rem_minmax(0,1fr)] items-center gap-2 overflow-hidden rounded-md px-2 text-muted-foreground transition-[color,opacity] duration-[var(--motion-fast)] motion-reduce:transition-none"
+                class:opacity-65={task.status === 'completed'}
+                data-testid="task-progress-row"
+                data-task-id={task.id}
+                data-task-status={task.status}
+                aria-label={m.chat_taskProgress_task_ariaLabel({
+                  status: statusLabel(task.status),
+                  title: task.title,
+                })}
+                animate:taskProgressFlip
+                transition:taskProgressRowTransition
               >
-                <Fa
-                  icon={faChevronRight}
-                  size={10}
-                  class="size-3! shrink-0 transition-transform duration-[var(--motion-fast)] motion-reduce:transition-none {completedOpen
-                    ? 'rotate-90'
-                    : ''}"
-                />
-                <span class="min-w-0 truncate">{completedLabel}</span>
-              </button>
-              {#if completedOpen}
-                <ul
-                  id={completedContentId}
-                  class="min-w-0"
-                  data-testid="task-progress-completed-list"
-                  transition:taskProgressRowTransition
-                >
-                  {#each completedTasks as task (task.id)}
-                    <li
-                      class="grid h-8 min-w-0 grid-cols-[1rem_minmax(0,1fr)] items-center gap-2 overflow-hidden rounded-md px-2 text-muted-foreground opacity-65 transition-[color,opacity] duration-[var(--motion-fast)] motion-reduce:transition-none"
-                      data-testid="task-progress-row"
-                      data-task-id={task.id}
-                      data-task-status={task.status}
-                      aria-label={m.chat_taskProgress_task_ariaLabel({
-                        status: statusLabel(task.status),
-                        title: task.title,
-                      })}
-                      animate:taskProgressFlip
-                      transition:taskProgressRowTransition
-                    >
-                      {@render taskRowContent(task)}
-                    </li>
-                  {/each}
-                </ul>
-              {/if}
-            </div>
-          {/if}
+                {@render taskRowContent(task)}
+              </li>
+            {/each}
+          </ul>
         </div>
       </Popover.Content>
     </Popover.Portal>
