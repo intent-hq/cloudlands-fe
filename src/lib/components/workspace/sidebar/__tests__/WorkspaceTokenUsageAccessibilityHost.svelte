@@ -209,7 +209,7 @@
         data-testid="workspace-sidebar-scroll"
       >
         {#if placement === 'bottom'}
-          <div class="min-h-[calc(100vh-132px)] shrink-0" aria-hidden="true"></div>
+          <div class="sidebar-placement-spacer shrink-0" aria-hidden="true"></div>
         {/if}
         <div class="shrink-0 px-6 pb-2 pt-5" data-workspace-title-region>
           <div class="mb-3 h-8 rounded-md bg-muted/30" aria-hidden="true"></div>
@@ -221,7 +221,7 @@
             <WorkspaceTokenUsage {workspaceId} />
           </div>
         </div>
-        <div class="h-[480px] shrink-0" aria-hidden="true"></div>
+        <div class="sidebar-content-spacer shrink-0" aria-hidden="true"></div>
       </div>
     </aside>
     <main
@@ -243,5 +243,13 @@
 
   .workspace-sidebar-content::-webkit-scrollbar {
     display: none;
+  }
+
+  .sidebar-placement-spacer {
+    min-height: calc(100vh - 132px);
+  }
+
+  .sidebar-content-spacer {
+    height: 480px;
   }
 </style>
