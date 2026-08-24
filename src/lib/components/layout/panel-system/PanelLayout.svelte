@@ -452,19 +452,16 @@
   function handlePaneInsertionDragOver(event: DragEvent) {
     if (!getDraggedPane()) return;
     const geometry = measurePaneInsertionGeometry();
-    if (!geometry) {
-      setPaneDropPreview(null);
-      return;
-    }
+    if (!geometry) return;
     const placement = getPaneInsertionPlacementAtX(
       event.clientX,
       geometry.layoutRect,
       geometry.targets,
       $panelIds$,
     );
-    setPaneDropPreview(placement);
     if (!placement) return;
 
+    setPaneDropPreview(placement);
     event.preventDefault();
     event.stopPropagation();
     if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';

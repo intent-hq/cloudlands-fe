@@ -1,4 +1,6 @@
 /** @vitest-environment jsdom */
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { cleanup, fireEvent, render, screen } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { PanelState, PanelTab } from '$store/renderer/slices/panel-layout/panel-layout-types';
@@ -259,6 +261,45 @@ describe('pane and tab drag MIME routing', () => {
     });
   });
 
+  it('keeps root insertion routing authoritative and stable for one pointer region', () => {
+    const layoutRect = { left: 0, width: 800 } as DOMRect;
+    const panelRects = [
+      { left: 0, width: 400 },
+      { left: 400, width: 400 },
+    ] as DOMRect[];
+    const panelIds = ['panel-a', 'panel-b'];
+    const targets = getPaneInsertionTargets(layoutRect, panelRects);
+    const placements = [395, 395, 396, 397].map((clientX) =>
+      getPaneInsertionPlacementAtX(clientX, layoutRect, targets, panelIds),
+    );
+
+    expect(placements).toEqual(
+      Array.from({ length: 4 }, () => ({
+        kind: 'panel',
+        targetPanelId: 'panel-b',
+        zone: 'left',
+      })),
+    );
+    expect(getPaneInsertionPlacementAtX(397, layoutRect, targets, panelIds)).toEqual(
+      placements.at(-1),
+    );
+  });
+
+  it('lets panel routing own non-gutter dragovers without a root clear publication', () => {
+    const source = readFileSync(
+      resolve(process.cwd(), 'src/lib/components/layout/panel-system/PanelLayout.svelte'),
+      'utf8',
+    );
+    const handler = source.slice(
+      source.indexOf('function handlePaneInsertionDragOver'),
+      source.indexOf('function handlePaneInsertionDrop'),
+    );
+
+    expect(handler).toContain('if (!geometry) return;');
+    expect(handler).toMatch(/if \(!placement\) return;\s+setPaneDropPreview\(placement\)/);
+    expect(handler).not.toContain('setPaneDropPreview(null)');
+  });
+
   it('drags only the active pane from the visible stack header', async () => {
     const { container } = renderTabBar({ panelId: 'source-panel', layoutId: 'workspace-1' });
     const header = container.querySelector<HTMLElement>('[data-panel-tabless-header]')!;
@@ -364,6 +405,43 @@ describe('pane and tab drag MIME routing', () => {
       expect(onPaneDropPreview).toHaveBeenLastCalledWith(null);
     },
   );
+
+  it('keeps a slow pointer stable through side-zone hysteresis and commits its preview', async () => {
+    const onTabMoveToPanel = vi.fn();
+    const onPaneDropPreview = vi.fn();
+    const { container } = render(Panel, {
+      props: {
+        panel: panel(),
+        workspaceId: 'workspace-1',
+        onTabMoveToPanel,
+        onPaneDropPreview,
+      },
+    });
+    const targetPanel = container.querySelector<HTMLElement>('[data-panel-id="target-panel"]')!;
+    targetPanel.getBoundingClientRect = () =>
+      ({ left: 0, top: 0, width: 400, height: 400 }) as DOMRect;
+    const dataTransfer = new TestDataTransfer();
+    dataTransfer.setData(
+      PANE_DRAG_MIME,
+      JSON.stringify({ tabId: 'source-tab', panelId: 'source-panel' }),
+    );
+    setDraggedPane({ tabId: 'source-tab', panelId: 'source-panel' });
+
+    for (const clientX of [81, 81, 80, 79, 78, 77]) {
+      await fireEvent(targetPanel, dragEvent('dragover', dataTransfer, clientX));
+    }
+
+    const previews = onPaneDropPreview.mock.calls.map(([placement]) => placement);
+    expect(previews).toEqual(
+      Array.from({ length: 6 }, () => ({
+        kind: 'panel',
+        targetPanelId: 'target-panel',
+        zone: 'center',
+      })),
+    );
+    await fireEvent(targetPanel, dragEvent('drop', dataTransfer, 77));
+    expect(onTabMoveToPanel).toHaveBeenCalledWith('source-tab', 'source-panel');
+  });
 
   it('clears the active pane preview when the pointer leaves the panel', async () => {
     const onPaneDropPreview = vi.fn();
