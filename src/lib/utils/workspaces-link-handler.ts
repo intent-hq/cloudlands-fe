@@ -104,7 +104,11 @@ export function parseIntentLink(url: string): WorkspacesLinkInfo {
       // Short format: file/{workspace-relative-path} (remaining segments form the path)
       resourceType = 'file';
       resourceId = decodeFilePathSegments(rawSegments.slice(1));
-    } else if (rawSegments.length >= 3 && rawSegments[0].length > 0 && rawSegments[1] === 'file') {
+    } else if (
+      rawSegments.length >= 3 &&
+      isValidWorkspaceIdSegment(rawSegments[0]) &&
+      rawSegments[1] === 'file'
+    ) {
       // Long format: {workspace-id}/file/{workspace-relative-path}
       workspaceId = rawSegments[0];
       resourceType = 'file';
@@ -201,12 +205,36 @@ function decodeFilePathSegments(segments: string[]): string {
 }
 
 /**
- * A safe workspace-relative path has only non-empty components and no ".." traversal.
- * Empty components also reject absolute paths (leading slash) and doubled slashes.
+ * A safe workspace-relative path has only non-empty components and no "." /
+ * ".." dot components. Empty components also reject absolute paths (leading
+ * slash) and doubled slashes; Windows drive-letter prefixes (C:/..., C:foo)
+ * are rejected as absolute/drive-relative.
  */
 function isSafeWorkspaceRelativePath(path: string): boolean {
+  if (/^[A-Za-z]:/.test(path)) {
+    return false;
+  }
   const components = path.split(/[\\/]/);
-  return components.every((component) => component.length > 0 && component !== '..');
+  return components.every(
+    (component) => component.length > 0 && component !== '.' && component !== '..',
+  );
+}
+
+/**
+ * A raw workspace-ID segment must not be a "." / ".." dot component (literal
+ * or percent-encoded) or contain path separators — it is interpolated into
+ * the /workspace/{id} route, where dot segments would resolve away from it.
+ */
+function isValidWorkspaceIdSegment(segment: string): boolean {
+  let decoded: string;
+  try {
+    decoded = decodeURIComponent(segment);
+  } catch {
+    return false;
+  }
+  return (
+    decoded.length > 0 && decoded !== '.' && decoded !== '..' && !/[\\/]/.test(decoded)
+  );
 }
 
 /**

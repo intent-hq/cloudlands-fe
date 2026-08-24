@@ -148,6 +148,28 @@ describe('workspaces-link-handler', () => {
         expect(result.valid).toBe(false);
         expect(result.error).toContain('Invalid file path');
       });
+
+      it('should reject dot workspace-ID segments in long format links', () => {
+        const result = parseIntentLink('intent://local/../file/a.ts');
+        expect(result.valid).toBe(false);
+      });
+
+      it('should reject percent-encoded dot workspace-ID segments', () => {
+        const result = parseIntentLink('intent://local/%2e%2e/file/a.ts');
+        expect(result.valid).toBe(false);
+      });
+
+      it('should reject Windows drive-letter paths', () => {
+        const result = parseIntentLink('intent://local/file/C%3A/Windows/System32/config');
+        expect(result.valid).toBe(false);
+        expect(result.error).toContain('Invalid file path');
+      });
+
+      it('should reject single-dot path components', () => {
+        const result = parseIntentLink('intent://local/file/./a.ts');
+        expect(result.valid).toBe(false);
+        expect(result.error).toContain('Invalid file path');
+      });
     });
 
     describe('error cases', () => {
