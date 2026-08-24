@@ -16,15 +16,15 @@ files:
   - dist/**/*
   # Incremental-compile state for tsc (build:main / build:preload); lives in
   # dist so `rm -rf dist` also clears it, but must not ship in the package.
-  - "!dist/*.tsbuildinfo"
+  - '!dist/*.tsbuildinfo'
   # Dev-startup readiness sentinels (scripts/dev-ready.js); dev-only.
-  - "!dist/.dev-ready-*"
+  - '!dist/.dev-ready-*'
   - package.json
   - node_modules/**/*
   - resources/**/*
-  - "!resources/sidecar/**"
+  - '!resources/sidecar/**'
   # Speech helper ships via mac.extraResources (speech-helper/), not asar.
-  - "!resources/speech-helper/**"
+  - '!resources/speech-helper/**'
 
 # Bundle the intentd binary into the packaged app
 # Runtime path: process.resourcesPath/intentd/intentd (intentd.exe on Windows)
@@ -32,10 +32,10 @@ extraResources:
   - from: resources/sidecar
     to: intentd
     filter:
-      - "**/*"
+      - '**/*'
       # Keep the fetch-sidecar stamp (build machinery with a timestamp) out of
       # packaged builds so identical pinned binaries produce identical artifacts.
-      - "!.intentd-fetch-stamp.json"
+      - '!.intentd-fetch-stamp.json'
   # Version pin for the bundled sidecar, read at runtime from
   # process.resourcesPath/intentd.version (see intentd-version-pin.ts).
   - from: intentd.version
@@ -134,7 +134,7 @@ win:
   # and dropped signDlls (only the executable is signed by default).
   signtoolOptions:
     sign: scripts/windows-sign.cjs
-    publisherName: "Clement Pang"
+    publisherName: 'Clement Pang'
     signingHashAlgorithms: [sha256]
   target:
     - target: nsis
