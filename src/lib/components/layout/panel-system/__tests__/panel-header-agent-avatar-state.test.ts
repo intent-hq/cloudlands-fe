@@ -83,6 +83,15 @@ function expectChatBubbleIdentity(root: ParentNode) {
   expect(root.querySelector('[data-agent-avatar-surface]')).toBeNull();
 }
 
+function expectHeaderChatTextIdentity(root: ParentNode) {
+  const icon = root.querySelector('[data-panel-agent-chat-text-glyph]');
+  expect(icon).not.toBeNull();
+  expect(icon?.getAttribute('transform')).toBe('scale(-1, 1)');
+  expect(root.querySelector('[data-icon="comment"]')).toBeNull();
+  expect(root.querySelector('[data-testid="mock-avatar"]')).toBeNull();
+  expect(root.querySelector('[data-agent-avatar-surface]')).toBeNull();
+}
+
 beforeEach(() => {
   vi.stubGlobal(
     'ResizeObserver',
@@ -121,7 +130,7 @@ describe('panel header agent identity', () => {
     expect(header.querySelector('[data-panel-agent-header-identity]')).not.toBeNull();
     expect(activeIdentity.textContent).toContain('Agent A');
     expect(leadingSurface.hasAttribute('data-panel-header-leading-surface')).toBe(true);
-    expectChatBubbleIdentity(leadingSurface);
+    expectHeaderChatTextIdentity(leadingSurface);
   });
 
   it('updates the chat-bubble identity when the active agent pane changes', async () => {
@@ -142,7 +151,7 @@ describe('panel header agent identity', () => {
     });
     const activeIdentity = view.container.querySelector('[data-panel-agent-header-identity]')!;
     expect(activeIdentity.textContent).toContain('Agent B');
-    expectChatBubbleIdentity(activeIdentity);
+    expectHeaderChatTextIdentity(activeIdentity);
   });
 
   it('uses chat bubbles without avatar-state surfaces for agent rows in tabs', () => {

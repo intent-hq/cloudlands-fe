@@ -10,6 +10,8 @@ for (const theme of ['light', 'dark'] as const) {
     const chatBubble = slot.locator('[data-panel-agent-chat-glyph]');
 
     await expect(chatBubble).toHaveCount(1);
+    await expect(chatBubble).toHaveAttribute('data-panel-agent-chat-text-glyph', 'true');
+    await expect(chatBubble).toHaveAttribute('transform', 'scale(-1, 1)');
     await expect(component.locator('[data-agent-avatar-with-state]')).toHaveCount(0);
     await expect(component.locator('[data-agent-avatar-surface]')).toHaveCount(0);
     const geometry = await chatBubble.evaluate((element) => {

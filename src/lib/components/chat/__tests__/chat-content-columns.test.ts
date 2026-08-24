@@ -14,7 +14,7 @@ describe('chat content column contracts', () => {
     expect(panel).toMatch(
       /class="conversation-column chat-content-measure[^\"]*w-full[^\"]*min-w-0[^\"]*"[\s\S]*?data-testid="chat-transcript-inner"/,
     );
-    expect(panel).toContain('max-width: 70em');
+    expect(panel).toContain('max-width: 140em');
     expect(panel).toContain('data-testid="chat-transcript-scroll-viewport"');
     expect(panel).not.toMatch(/data-testid="chat-transcript-inner"[^>]*overflow-y-auto/);
   });
@@ -33,6 +33,9 @@ describe('chat content column contracts', () => {
       /class="composer-prompt-lane chat-content-measure mx-auto w-full min-w-0"[\s\S]*?data-testid="chat-composer-lane"/,
     );
     expect(panel).toContain('data-testid="chat-composer-controls-inner"');
+    expect(panel).toMatch(
+      /data-testid="chat-composer-lane"[\s\S]*?data-testid="question-wizard-slot"/,
+    );
     expect(panel).toContain('.composer-prompt-layer :global(.rich-input-container)');
   });
 

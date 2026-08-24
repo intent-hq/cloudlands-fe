@@ -37,7 +37,7 @@ describe('editorial conversation presentation contract', () => {
     expect(hasUnqualifiedClassToken(primarySurfaceClasses, 'text-primary-foreground')).toBe(true);
   });
 
-  it('caps transcript, questions, and composer content at the approved 70em measure', () => {
+  it('caps transcript, questions, and composer content at the approved 140em measure', () => {
     const panel = source('src/lib/components/chat/ChatPanel.svelte');
 
     expect(panel).toContain(

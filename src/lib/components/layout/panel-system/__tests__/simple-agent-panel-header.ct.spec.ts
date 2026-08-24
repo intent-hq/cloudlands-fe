@@ -22,6 +22,11 @@ test('shows only the current agent identity across root, delegated, single, stac
 
         await expect(identity).toHaveCount(1);
         await expect(identity.locator('[data-panel-agent-chat-glyph]')).toHaveCount(1);
+        await expect(identity.locator('[data-panel-agent-chat-text-glyph]')).toHaveCount(1);
+        await expect(identity.locator('[data-panel-agent-chat-text-glyph]')).toHaveAttribute(
+          'transform',
+          'scale(-1, 1)',
+        );
         await expect(identity.locator('[data-agent-avatar-with-state]')).toHaveCount(0);
         await expect(identity.locator('svg[data-agent-avatar]')).toHaveCount(0);
         await expect(identity.getByRole('button', { name: currentName })).toHaveCount(1);

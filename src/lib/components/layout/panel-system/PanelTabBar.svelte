@@ -40,6 +40,7 @@
   import { locateItemInSidebarRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
   import type { IconDefinition } from '@fortawesome/fontawesome-common-types';
   import Fa from 'svelte-fa';
+  import ChatTextIcon from 'phosphor-svelte/lib/ChatTextIcon';
   import { Tooltip } from '$lib/components/ui/tooltip';
   import DropdownMenu from '$lib/components/ui/dropdown-menu.svelte';
   import * as Menu from '$lib/components/ui/menu';
@@ -177,7 +178,7 @@
     layoutId,
     availableCanvasWidth,
     isFocused = false,
-    isRightmostPanel = false,
+    isRightmostPanel: _isRightmostPanel = false,
     contentActions = null,
     showTabStrip = false,
     onCreateAgent,
@@ -1240,29 +1241,27 @@
 {/snippet}
 
 {#snippet addPanelColumnButton()}
-  {#if isRightmostPanel}
-    {@const atColumnLimit = $panelColumnCount$ === 4}
-    <Button
-      variant="ghost-light"
-      size="icon-sm"
-      class="aria-disabled:pointer-events-auto"
-      aria-label={atColumnLimit
-        ? m.workspace_sidebarHeader_panelColumns_addLimit_ariaLabel({ count: 4 })
-        : m.workspace_sidebarHeader_panelColumns_add_ariaLabel()}
-      aria-disabled={atColumnLimit}
-      tooltip={atColumnLimit
-        ? m.workspace_sidebarHeader_panelColumns_addLimit_tooltip({ count: 4 })
-        : m.workspace_sidebarHeader_panelColumns_add_tooltip({
-            modifier: addColumnLinkModifierHint,
-          })}
-      tooltipSide="bottom"
-      tooltipDelayDuration={300}
-      onclick={handleAddPanelColumn}
-      data-add-panel-column
-    >
-      <Fa icon={faPlus} size="xs" />
-    </Button>
-  {/if}
+  {@const atColumnLimit = $panelColumnCount$ === 4}
+  <Button
+    variant="ghost-light"
+    size="icon-sm"
+    class="aria-disabled:pointer-events-auto"
+    aria-label={atColumnLimit
+      ? m.workspace_sidebarHeader_panelColumns_addLimit_ariaLabel({ count: 4 })
+      : m.workspace_sidebarHeader_panelColumns_add_ariaLabel()}
+    aria-disabled={atColumnLimit}
+    tooltip={atColumnLimit
+      ? m.workspace_sidebarHeader_panelColumns_addLimit_tooltip({ count: 4 })
+      : m.workspace_sidebarHeader_panelColumns_add_tooltip({
+          modifier: addColumnLinkModifierHint,
+        })}
+    tooltipSide="bottom"
+    tooltipDelayDuration={300}
+    onclick={handleAddPanelColumn}
+    data-add-panel-column
+  >
+    <Fa icon={faPlus} size="xs" />
+  </Button>
 {/snippet}
 
 {#snippet contentActionsDivider()}
@@ -1823,7 +1822,14 @@
             data-testid="panel-header-agent-avatar-slot"
             data-panel-header-leading-surface
           >
-            {@render panelIdentity(activeTab)}
+            <ChatTextIcon
+              size={16}
+              mirrored
+              aria-hidden="true"
+              class="shrink-0 text-muted-foreground"
+              data-panel-agent-chat-glyph
+              data-panel-agent-chat-text-glyph
+            />
           </span>
           <div class="panel-header-title min-w-0 shrink" data-panel-header-title>
             {#if onTabRename}
@@ -1941,7 +1947,7 @@
         {@render panelCloseButton(activeTab)}
       </div>
     </div>
-  {:else if isRightmostPanel || onClosePanel}
+  {:else}
     <div
       class={cn(
         'panel-header group/header relative flex items-center bg-sidebar pr-2.5',

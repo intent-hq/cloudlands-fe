@@ -5578,7 +5578,7 @@
 
 <style>
   .chat-content-measure {
-    max-width: 70em;
+    max-width: 140em;
   }
 
   /* Keep style invalidation local without paint-containing sticky descendants. */

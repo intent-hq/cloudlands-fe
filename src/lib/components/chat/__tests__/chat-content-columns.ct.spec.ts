@@ -3,13 +3,13 @@ import ChatPanelOperationalGeometryHost from './ChatPanelOperationalGeometryHost
 
 const center = (box: { x: number; width: number }) => box.x + box.width / 2;
 
-test('caps and centers separate transcript and composer columns in every wide state', async ({
+test('caps and centers transcript, prompt, and composer at the shared 140em measure', async ({
   mount,
   page,
 }) => {
-  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.setViewportSize({ width: 3000, height: 900 });
   const component = await mount(ChatPanelOperationalGeometryHost, {
-    props: { theme: 'light', zoom: 1, width: 1440 },
+    props: { theme: 'light', zoom: 1, width: 3000 },
   });
   const transcript = component.getByTestId('chat-transcript-inner');
   const composer = component.getByTestId('chat-composer-controls-inner');
@@ -21,10 +21,24 @@ test('caps and centers separate transcript and composer columns in every wide st
 
   for (const theme of ['light', 'dark'] as const) {
     for (const zoom of [1, 2]) {
-      await component.update({ props: { theme, zoom, width: 1440 } });
+      await component.update({ props: { theme, zoom, width: 3000 } });
+      const sharedMeasure = await transcript.evaluate((node) => {
+        const style = getComputedStyle(node);
+        return {
+          fontSize: Number.parseFloat(style.fontSize),
+          maxWidth: Number.parseFloat(style.maxWidth),
+        };
+      });
+      expect(sharedMeasure.maxWidth / sharedMeasure.fontSize).toBeCloseTo(140, 5);
       await expect
-        .poll(async () => (await transcript.boundingBox())!.width)
-        .toBeCloseTo(1050 * zoom, 1);
+        .poll(async () => {
+          const [transcriptBox, composerLaneBox] = await Promise.all([
+            transcript.boundingBox(),
+            composerLane.boundingBox(),
+          ]);
+          return Math.abs(transcriptBox!.width - composerLaneBox!.width);
+        })
+        .toBeLessThanOrEqual(1);
       const [
         transcriptBox,
         composerBox,
@@ -42,8 +56,8 @@ test('caps and centers separate transcript and composer columns in every wide st
         input.boundingBox(),
         aurora.boundingBox(),
       ]);
-      expect(composerLaneBox!.width).toBeCloseTo(1050 * zoom, 1);
-      expect(composerBox!.width).toBeCloseTo((1050 - 48) * zoom, 1);
+      expect(composerLaneBox!.width).toBeCloseTo(transcriptBox!.width, 1);
+      expect(composerBox!.width).toBeCloseTo(transcriptBox!.width - 48 * zoom, 1);
       expect(Math.abs(center(transcriptBox!) - center(composerBox!))).toBeLessThanOrEqual(0.5);
       expect(promptBox!.width).toBeCloseTo(shellBox!.width, 1);
       expect(auroraBox!.x).toBeCloseTo(inputBox!.x, 1);
@@ -53,8 +67,9 @@ test('caps and centers separate transcript and composer columns in every wide st
       await expect(composerLane).toHaveCSS('padding-left', '24px');
       await expect(composerLane).toHaveCSS('padding-right', '24px');
       await expect(composerLane).toHaveCSS('padding-bottom', '24px');
-      await expect(transcript).toHaveCSS('max-width', '1050px');
-      await expect(composerLane).toHaveCSS('max-width', '1050px');
+      expect(
+        await composerLane.evaluate((node) => Number.parseFloat(getComputedStyle(node).maxWidth)),
+      ).toBeCloseTo(sharedMeasure.maxWidth, 5);
     }
   }
 });
