@@ -10,6 +10,19 @@ import DOMPurify from 'dompurify';
 
 const logger = new Logger('html-sanitizer');
 
+// Restrict workspace-file: URLs to img[src]. ALLOWED_URI_REGEXP is
+// attribute-agnostic, so without this hook the scheme would also survive in
+// anchor hrefs; keeping it image-only avoids relying on the main-process
+// shell.openExternal allowlist to keep such links inert.
+DOMPurify.addHook('uponSanitizeAttribute', (node, data) => {
+  if (
+    /^[\s\u0000-\u001f]*workspace-file:/i.test(data.attrValue) &&
+    !(data.attrName === 'src' && node.nodeName === 'IMG')
+  ) {
+    data.keepAttr = false;
+  }
+});
+
 // Configure DOMPurify for our use cases
 const ALLOWED_TAGS = [
   // Text content

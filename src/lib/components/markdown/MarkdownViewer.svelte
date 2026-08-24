@@ -451,6 +451,10 @@
           },
         }),
         Image.configure({
+          // Inline so a link mark can wrap the image — keeps link-wrapped
+          // images following the link (matching the static/streaming paths)
+          // instead of TipTap dropping the anchor on parse
+          inline: true,
           HTMLAttributes: {
             class: 'markdown-image',
           },

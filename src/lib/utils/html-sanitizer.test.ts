@@ -17,6 +17,14 @@ describe('html-sanitizer', () => {
     expect(sanitizeMarkdownHTML(html)).toContain('src="workspace-file://ws-abc/docs/shot.png"');
   });
 
+  it('strips workspace-file:// from anchor hrefs (image-src only scheme)', () => {
+    const html = '<a href="workspace-file://ws-abc/docs/shot.png">open</a>';
+
+    const sanitized = sanitizeMarkdownHTML(html);
+    expect(sanitized).not.toContain('workspace-file://');
+    expect(sanitized).toContain('open');
+  });
+
   it('still strips javascript: image sources', () => {
     const html = '<img src="javascript:alert(1)" alt="x">';
 
