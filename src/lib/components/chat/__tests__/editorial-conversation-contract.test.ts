@@ -207,9 +207,10 @@ describe('editorial conversation presentation contract', () => {
     expect(staticContent).toContain(
       'isAdjacentOperationalClusterRow(groupedBlocks, blockIndex, isVisibleOperationalBlock)',
     );
-    expect(staticContent).toContain(
-      'getOperationalClusterSpacingClass(\n                    group.children,\n                    childIndex,\n                    isVisibleOperationalBlock,',
+    expect(staticContent).toMatch(
+      /{#snippet renderResponseGroupChild\([\s\S]{0,500}?getOperationalClusterSpacingClass\(\s+group\.children,\s+childIndex,\s+isVisibleOperationalBlock,\s+group\.isReasoningPhase,\s+\)/,
     );
+    expect(staticContent.match(/{@render renderResponseGroupChild\(/g)).toHaveLength(2);
     expect(streamingContent).toContain('getOperationalClusterSpacingClass(');
     expect(streamingContent).toContain(
       "getOperationalClusterSpacingClass(\n      group.children,\n      childIndex,\n      (candidate) => candidate.type !== 'tool_result',",
@@ -234,7 +235,7 @@ describe('editorial conversation presentation contract', () => {
     expect(staticContent).toContain('OPERATIONAL_GROUP_CHILD_ROW_CLASS');
     expect(streamingContent).toContain('OPERATIONAL_GROUP_CHILD_ROW_CLASS');
     expect(responseGroup).not.toContain('pl-4.5');
-    expect(staticContent).toMatch(/true,\s+isAdjacentOperationalClusterRow\(\s+group\.children,/);
+    expect(staticContent).toMatch(/true,\s+isAdjacentOperationalClusterRow\(\s*group\.children,/);
     expect(streamingContent).toMatch(
       /true,\s+isAdjacentOperationalClusterRow\(\s+group\.children,/,
     );
