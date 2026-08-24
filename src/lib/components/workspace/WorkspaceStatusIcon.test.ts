@@ -48,4 +48,16 @@ describe('WorkspaceStatusIcon', () => {
     expect(indicator?.hasAttribute('aria-label')).toBe(false);
     expect(indicator?.hasAttribute('title')).toBe(false);
   });
+
+  it('supports a solid in-progress dot without changing the shared default', () => {
+    const solid = render(WorkspaceStatusIcon, {
+      props: { status: 'in_progress', inProgressDot: 'solid' },
+    });
+
+    expect(
+      solid.container
+        .querySelector('[data-workspace-status-dot]')
+        ?.classList.contains('workspace-status-dot-ring'),
+    ).toBe(false);
+  });
 });

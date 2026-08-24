@@ -300,6 +300,21 @@ describe('WorkspaceTabStrip', () => {
     expect(cluster.parentElement).toBe(controls);
   });
 
+  it.each([
+    ['active', 'ws-1'],
+    ['inactive', 'ws-2'],
+  ] as const)('uses a solid 8px in-progress dot in the %s tab', (_state, activeWorkspaceId) => {
+    render(WorkspaceTabStrip, { props: { activeWorkspaceId } });
+    const tab = screen.getByRole('tab', { name: /Alpha/ });
+    const indicator = tab.querySelector<HTMLElement>('[data-workspace-status="in_progress"]');
+    const dot = indicator?.querySelector('[data-workspace-status-dot]');
+
+    expect(indicator?.getAttribute('style')).toContain('width: 14px; height: 14px');
+    expect(indicator?.getAttribute('aria-hidden')).toBe('true');
+    expect(dot?.classList.contains('workspace-status-dot-ring')).toBe(false);
+    expect(tab.getAttribute('aria-label')).toBe('Alpha. RUNNING: 1 (Coordinator)');
+  });
+
   it('dims archived workspace tab titles in current and non-current states', () => {
     const { unmount } = render(WorkspaceTabStrip, { props: { activeWorkspaceId: 'ws-1' } });
     const archivedTitle = screen
@@ -315,9 +330,9 @@ describe('WorkspaceTabStrip', () => {
     render(WorkspaceTabStrip, { props: { activeWorkspaceId: 'ws-3' } });
     const currentArchived = screen.getByRole('tab', { name: /Gamma/ });
     expect(currentArchived.getAttribute('aria-selected')).toBe('true');
-    expect(
-      currentArchived.querySelector('[data-workspace-tab-title]')?.className,
-    ).toContain('opacity-60');
+    expect(currentArchived.querySelector('[data-workspace-tab-title]')?.className).toContain(
+      'opacity-60',
+    );
   });
 
   it('keeps one shared status icon and the trailing close reservation without agent detail', () => {

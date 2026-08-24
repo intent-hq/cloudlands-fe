@@ -10,11 +10,13 @@
     status,
     size = 14,
     decorative = false,
+    inProgressDot = 'ringed',
     class: className,
   }: {
     status: WorkspaceStatusPresentationState;
     size?: number;
     decorative?: boolean;
+    inProgressDot?: 'ringed' | 'solid';
     class?: string;
   } = $props();
 
@@ -40,7 +42,9 @@
     <span
       class={cn(
         'workspace-status-dot',
-        presentation.state === 'in_progress' && 'workspace-status-dot-ring',
+        presentation.state === 'in_progress' &&
+          inProgressDot === 'ringed' &&
+          'workspace-status-dot-ring',
       )}
       data-workspace-status-dot
     ></span>

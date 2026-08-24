@@ -587,7 +587,12 @@
                     class="pointer-events-none flex h-4 max-w-14 shrink-0 items-center justify-end overflow-hidden"
                     data-workspace-tab-status-cluster
                   >
-                    <WorkspaceStatusIcon status={workspaceStatusState} size={14} decorative />
+                    <WorkspaceStatusIcon
+                      status={workspaceStatusState}
+                      size={14}
+                      decorative
+                      inProgressDot="solid"
+                    />
                   </span>
                   <span class="size-5 shrink-0" data-workspace-tab-close-space aria-hidden="true"
                   ></span>
