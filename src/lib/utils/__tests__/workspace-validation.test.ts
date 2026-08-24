@@ -16,6 +16,7 @@ describe('workspace-validation', () => {
       'https://github.com/intent-hq/intentapp.dev',
       'https://github.com/intent-hq/intentapp.dev.git',
       'git@github.com:intent-hq/intentapp.dev.git',
+      'github.com/intent-hq/intentapp.dev',
       'intent-hq/intentapp.dev',
     ])('parses a dotted repository name from %s', (url) => {
       expect(parseGitHubUrl(url)).toEqual({ owner: 'intent-hq', repo: 'intentapp.dev' });
