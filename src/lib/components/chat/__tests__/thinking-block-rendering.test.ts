@@ -449,6 +449,55 @@ describe('thinking blocks — StreamingMessageContent', () => {
     ).toHaveLength(0);
   });
 
+  it('renders every consecutive screenshot title as a compact row without Markdown leakage', async () => {
+    const titles = [
+      'Assessing delegation and tool availability',
+      'Inspecting workspace_api method names',
+      'Searching workspace.set method descriptions',
+      'Planning workspace API title setting',
+    ];
+    await renderStatic([
+      { type: 'text', id: 'msg_1:0', text: '<group:Prepping>Description before history.' },
+      thinking(
+        'msg_1:1',
+        [
+          'Reasoning',
+          `**${titles[0]}**`,
+          `**${titles[1]}**`,
+          `**${titles[2]}**`,
+          `**${titles[3]}**`,
+          'History body after every title.',
+        ].join('\n\n'),
+      ),
+      { type: 'text', id: 'msg_1:2', text: '</group:Prepping>' },
+    ]);
+
+    await fireEvent.click(screen.getByTestId('response-group-disclosure'));
+    const responseGroup = screen.getByTestId('response-group');
+    expect(
+      [...responseGroup.querySelectorAll('[data-testid="reasoning-history-title"]')].map((title) =>
+        title.textContent?.trim(),
+      ),
+    ).toEqual(titles);
+    expect(responseGroup.querySelectorAll('[data-testid="reasoning-history-row"]')).toHaveLength(4);
+    expect(
+      responseGroup.querySelectorAll('[data-testid="reasoning-history-row"] button'),
+    ).toHaveLength(0);
+    expect(responseGroup.querySelector('[data-reasoning-history-body]')?.textContent?.trim()).toBe(
+      'History body after every title.',
+    );
+    expect(
+      responseGroup.querySelector('[data-reasoning-history-body] h1, h2, h3, h4, h5, h6'),
+    ).toBeNull();
+    for (const title of titles) {
+      expect(
+        responseGroup.textContent?.match(new RegExp(title.replace('.', '\\.'), 'g')),
+      ).toHaveLength(1);
+    }
+    expect(responseGroup.textContent?.match(/Description before history\./g)).toHaveLength(1);
+    expect(responseGroup.textContent?.match(/History body after every title\./g)).toHaveLength(1);
+  });
+
   it('uses the reasoning title in the static message path', async () => {
     await renderStatic([
       thinking('msg_1:0', '# Considering task restoration\n\nInspect saved state.'),

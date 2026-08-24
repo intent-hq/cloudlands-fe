@@ -919,6 +919,7 @@
       group.children,
       childIndex,
       (candidate) => candidate.type !== 'tool_result',
+      group.isReasoningPhase,
     )} {isOperationalClusterBlock(childBlock)
       ? OPERATIONAL_GROUP_CHILD_ROW_CLASS
       : OPERATIONAL_GROUP_CHILD_CONTENT_CLASS}"

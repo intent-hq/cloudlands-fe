@@ -71,6 +71,15 @@ describe('operational cluster spacing', () => {
     expect(isAdjacentOperationalClusterRow(blocks('thinking', 'thinking'), 1)).toBe(true);
   });
 
+  it('keeps only consecutive nested history blocks compact when requested', () => {
+    const content = blocks('text', 'thinking', 'thinking', 'tool_use');
+    const compact = (index: number) =>
+      getOperationalClusterSpacingClass(content, index, () => true, true);
+
+    expect(content.map((_, index) => compact(index))).toEqual(['', 'pt-4', '', '']);
+    expect(getOperationalClusterSpacingClass(content, 2)).toBe('pt-14');
+  });
+
   it.each(['tool_use', 'content_group'])(
     'keeps the operational %s-to-Thinking seam flush',
     (previousType) => {

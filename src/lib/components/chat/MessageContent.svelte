@@ -735,6 +735,7 @@
                     group.children,
                     childIndex,
                     isVisibleOperationalBlock,
+                    group.isReasoningPhase,
                   )} ${
                     isOperationalClusterBlock(childBlock)
                       ? OPERATIONAL_GROUP_CHILD_ROW_CLASS

@@ -18,7 +18,9 @@ function markdownInlineToPlainText(value: string): string {
     .replace(/`+([^`]*?)`+/g, '$1')
     .replace(/<[^>]+>/g, '')
     .replace(/\\([\\`*_[\]{}()#+\-.!>])/g, '$1')
-    .replace(/[*_~]/g, '')
+    .replace(/[*~]/g, '')
+    .replace(/(^|[^A-Za-z0-9])_+/g, '$1')
+    .replace(/_+([^A-Za-z0-9]|$)/g, '$1')
     .replace(/\s+/g, ' ')
     .trim();
 }
@@ -69,8 +71,9 @@ export function extractReasoningHistory(content: string): ReasoningHistoryItem[]
     remainder = reasoning.body;
   }
 
-  const strongTitle = extractLeadingStrongReasoningTitle(remainder);
-  if (strongTitle) {
+  while (remainder) {
+    const strongTitle = extractLeadingStrongReasoningTitle(remainder);
+    if (!strongTitle || strongTitle.body.length >= remainder.length) break;
     items.push({ title: strongTitle.title, body: '' });
     remainder = strongTitle.body;
   }
