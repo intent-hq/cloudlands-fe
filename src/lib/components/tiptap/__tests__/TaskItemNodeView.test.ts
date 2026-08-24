@@ -181,6 +181,7 @@ function createMockProps(overrides: any = {}) {
     getPos: overrides.getPos || vi.fn(() => 0),
     updateAttributes: overrides.updateAttributes || vi.fn(),
     deleteNode: overrides.deleteNode || vi.fn(),
+    selected: overrides.selected ?? false,
   } as any;
 }
 
@@ -240,6 +241,31 @@ describe('TaskItemNodeView - Basic Rendering', () => {
     // Chips render with correct counts (tooltip content tested separately)
     expect(dependencyChip).toBeTruthy();
     expect(conflictChip).toBeTruthy();
+  });
+
+  it('keeps a selected compact row flat while retaining control-level focus styling', async () => {
+    linkedNoteState.set({
+      id: 'task-selected',
+      workspaceId: 'workspace-1',
+      title: 'Selected task',
+      metadata: { task: { status: 'not_started' } },
+    });
+    linkedNoteState.setInitialized(true);
+
+    const { container } = render(TestTaskItemNodeView, {
+      props: { ...createLinkedTaskProps('task-selected'), selected: true },
+    });
+
+    const listItem = container.querySelector('li[data-type="taskItem"]') as HTMLElement;
+    const row = container.querySelector('[data-task-item-row]') as HTMLElement;
+    const title = row.querySelector('[data-task-row-title]') as HTMLElement;
+    await waitFor(() => expect(title.textContent).toContain('Selected task'));
+
+    expect(listItem.className).toContain('bg-primary/10');
+    expect(row.className).not.toMatch(/\bborder(?:-|\b)/);
+    expect(row.className).not.toContain('px-');
+    expect(row.className).not.toContain('focus-within:ring');
+    expect(title.className).toContain('focus-visible:ring-2');
   });
 
   it('should render unchecked checkbox for todo status', () => {

@@ -15,13 +15,26 @@
   }: { width?: number; theme?: 'light' | 'dark'; zoom?: number } = $props();
 
   const workspaceId = WorkspaceId('workspace-one-row-task');
-  const note = (id: string, title: string, status: TaskStatus, agentId?: string) =>
+  const note = (
+    id: string,
+    title: string,
+    status: TaskStatus,
+    agentId?: string,
+    withRelations = false,
+  ) =>
     ({
       id: NoteId(id),
       workspaceId,
       title,
       content: `Agent response preview for ${title} must not render.`,
-      metadata: { task: { status, assignedAgentIds: agentId ? [agentId] : undefined } },
+      metadata: {
+        task: {
+          status,
+          assignedAgentIds: agentId ? [agentId] : undefined,
+          unmetDependsOn: withRelations ? [NoteId('task-dependency')] : undefined,
+          conflictsWith: withRelations ? [NoteId('task-conflict')] : undefined,
+        },
+      },
     }) as Note;
   const notes = [
     note(
@@ -31,7 +44,7 @@
       'agent-loading',
     ),
     note('task-running', 'Running assigned task', 'in_progress', 'agent-active'),
-    note('task-waiting', 'Waiting unassigned task', 'waiting'),
+    note('task-waiting', 'Waiting unassigned task', 'waiting', undefined, true),
     note('task-review', 'Review assigned task', 'review_required', 'agent-complete'),
     note('task-complete', 'Complete unassigned task', 'complete'),
     note('task-discussion', 'Discussion needed task', 'discussion_needed'),
@@ -110,6 +123,7 @@
           {editor}
           getPos={() => 0}
           {workspaceId}
+          selected={task.id === 'task-complete'}
         />
       {/each}
       <TestTaskItemNodeView node={missingNode} {editor} getPos={() => 0} {workspaceId} />

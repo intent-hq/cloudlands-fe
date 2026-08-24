@@ -394,13 +394,16 @@
       <div
         data-task-item-row
         data-density="compact"
-        class="my-0.5 flex h-8 w-full min-w-0 items-center gap-1.5 overflow-hidden rounded-xs border border-border bg-transparent px-2 text-left transition-colors {selected
-          ? 'border-primary'
-          : ''}"
+        class="my-0.5 flex h-8 w-full min-w-0 items-center gap-1.5 overflow-hidden bg-transparent text-left transition-colors"
         role="group"
         contenteditable="false"
       >
-        <span class="shrink-0" onclick={(e) => e.stopPropagation()} role="presentation">
+        <span
+          data-task-row-leading
+          class="flex shrink-0 items-center"
+          onclick={(e) => e.stopPropagation()}
+          role="presentation"
+        >
           {#key status}
             <TaskStatusIcon
               status={displayStatus as TaskStatus}
@@ -410,26 +413,28 @@
           {/key}
         </span>
         <span
+          data-task-row-content
+          data-task-row-title
           class="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap font-medium [&_p]:m-0"
         >
           <NodeViewContent />
         </span>
         {#if effectiveAgentId}
-          <TaskAgentStatus agentId={effectiveAgentId} {workspaceId} compact indicator />
+          <div data-task-row-trailing class="ml-auto flex shrink-0 items-center">
+            <TaskAgentStatus agentId={effectiveAgentId} {workspaceId} compact indicator />
+          </div>
         {/if}
       </div>
     {:else}
       <div
         data-task-item-row
         data-density="compact"
-        class="group/task my-0.5 flex h-8 w-full min-w-0 items-center gap-1.5 overflow-hidden rounded-xs border border-border bg-transparent px-2 text-left transition-colors focus-within:ring-2 focus-within:ring-primary {selected
-          ? 'border-primary'
-          : ''}"
+        class="group/task my-0.5 flex h-8 w-full min-w-0 items-center gap-1.5 overflow-hidden bg-transparent text-left transition-colors"
         contenteditable="false"
       >
         <span
           data-task-row-leading
-          class="shrink-0"
+          class="flex shrink-0 items-center"
           onclick={(e) => e.stopPropagation()}
           role="presentation"
         >
@@ -444,8 +449,9 @@
         <button
           type="button"
           data-testid="linked-task-title"
+          data-task-row-content
           data-task-row-title
-          class="min-w-0 flex-1 cursor-pointer overflow-hidden text-ellipsis whitespace-nowrap border-0 bg-transparent p-0 text-left font-medium focus-visible:outline-none {linkedTaskNotFound
+          class="min-w-0 flex-1 cursor-pointer overflow-hidden text-ellipsis whitespace-nowrap border-0 bg-transparent p-0 text-left font-medium outline-none focus-visible:ring-2 focus-visible:ring-primary/40 {linkedTaskNotFound
             ? 'text-muted-foreground italic'
             : ''}"
           onclick={(e) => handleOpenLinkedNote(e)}
