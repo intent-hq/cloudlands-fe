@@ -124,6 +124,10 @@ import {
   type WorkspacePanelLayout,
 } from '../panel-layout-types';
 import {
+  displacedOrphanSliverFixture,
+  narrowOverlappingGeometryFixture,
+} from '../panel-layout-restore.test-fixtures';
+import {
   hydrateWorkspaceLayout,
   isStoredLayoutValid,
   panelLayoutSaga,
@@ -375,7 +379,7 @@ describe('panelLayoutSaga', () => {
 
   afterEach(() => vi.useRealTimers());
 
-  it('validates stored tree references, focus, tabs, and active tab ids', () => {
+  it('validates stored layout data while allowing recoverable placement mismatches', () => {
     expect(isStoredLayoutValid(layout)).toBe(true);
     expect(isStoredLayoutValid({ ...layout, canvasWidth: 1080 })).toBe(true);
     expect(
@@ -413,9 +417,10 @@ describe('panelLayoutSaga', () => {
     ).toBe(true);
     expect(isStoredLayoutValid(null)).toBe(false);
     expect(isStoredLayoutValid({ ...layout, root: { type: 'panel', panelId: 'missing' } })).toBe(
-      false,
+      true,
     );
-    expect(isStoredLayoutValid({ ...layout, focusedPanelId: 'missing' })).toBe(false);
+    expect(isStoredLayoutValid({ ...layout, focusedPanelId: 'missing' })).toBe(true);
+    expect(isStoredLayoutValid(displacedOrphanSliverFixture(WS_1))).toBe(true);
     expect(
       isStoredLayoutValid({
         ...layout,
@@ -720,7 +725,7 @@ describe('panelLayoutSaga', () => {
     });
     expect(workspace.layoutHistory).toEqual([]);
     expect(mocks.saveHistory).not.toHaveBeenCalled();
-    expect(mocks.setJSON).not.toHaveBeenCalled();
+    expect(mocks.setJSON.mock.calls).toEqual([[STORAGE_KEY_1, initialized?.payload.layout]]);
 
     const healed = initialized?.payload.layout as WorkspacePanelLayout;
     run.send(panelLayoutScopeUnmounted(WS_1));
@@ -736,8 +741,57 @@ describe('panelLayoutSaga', () => {
     expect(
       run.dispatch.mock.calls.some(([action]) => action.type === reconcilePanelColumnCount.type),
     ).toBe(false);
-    expect(mocks.setJSON.mock.calls).toEqual([[STORAGE_KEY_1, healed]]);
+    expect(mocks.setJSON).not.toHaveBeenCalled();
     await cancelSaga(run.task);
+  });
+
+  it.each([
+    {
+      name: 'narrow overlapping geometry',
+      stored: narrowOverlappingGeometryFixture(WS_1),
+      expectedOrder: ['narrow-left', 'narrow-middle', 'wide-right'],
+      expectedFocus: 'narrow-middle',
+      expectedActive: ['left-active', 'middle-active', 'right-active'],
+    },
+    {
+      name: 'displaced orphan sliver placement',
+      stored: displacedOrphanSliverFixture(WS_1),
+      expectedOrder: ['anchored-left', 'displaced'],
+      expectedFocus: 'displaced',
+      expectedActive: ['left-active', 'recovered-active'],
+    },
+  ])('repairs and persists $name once, then restores it stably', async (fixture) => {
+    const first = startRestoreSaga(fixture.stored, []);
+    await settle();
+
+    expect(mocks.setJSON).toHaveBeenCalledTimes(1);
+    const repaired = mocks.setJSON.mock.calls[0]?.[1] as WorkspacePanelLayout;
+    const repairedOrder =
+      repaired.root.type === 'panel'
+        ? [repaired.root.panelId]
+        : repaired.root.children.map((child) =>
+            child.type === 'panel' ? child.panelId : 'nested',
+          );
+    expect(repairedOrder).toEqual(fixture.expectedOrder);
+    expect(repaired.root.type === 'split' ? repaired.root.sizes : [100]).toEqual(
+      fixture.expectedOrder.map(() => 100 / fixture.expectedOrder.length),
+    );
+    expect(repaired.focusedPanelId).toBe(fixture.expectedFocus);
+    expect(fixture.expectedOrder.map((panelId) => repaired.panels[panelId].activeTabId)).toEqual(
+      fixture.expectedActive,
+    );
+    await cancelSaga(first.task);
+
+    mocks.setJSON.mockClear();
+    const second = startRestoreSaga(repaired, []);
+    await settle();
+
+    const initialized = second.dispatch.mock.calls.find(
+      ([action]) => action.type === initializeLayout.type,
+    )?.[0].payload.layout;
+    expect(initialized).toEqual(repaired);
+    expect(mocks.setJSON).not.toHaveBeenCalled();
+    await cancelSaga(second.task);
   });
 
   it('derives a legacy one-panel count after a stale same-backend remount', async () => {
@@ -1927,7 +1981,9 @@ describe('panelLayoutSaga', () => {
       expect(workspace.focusedPanelId).toBe('panel-1');
       expect(workspace.layoutHistory).toEqual([]);
       expect(mocks.saveHistory).not.toHaveBeenCalled();
-      expect(mocks.setJSON).not.toHaveBeenCalled();
+      expect(mocks.setJSON.mock.calls).toEqual([
+        [REMOTE_STORAGE_KEY_1, expect.objectContaining({ columnCount: 2, root: workspace.root })],
+      ]);
       await cancelSaga(run.task);
     });
 

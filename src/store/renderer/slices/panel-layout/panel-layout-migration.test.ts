@@ -2,6 +2,10 @@ import { describe, expect, it } from 'vitest';
 
 import { migratePanelLayoutForWorkspace } from './panel-layout-migration';
 import {
+  displacedOrphanSliverFixture,
+  narrowOverlappingGeometryFixture,
+} from './panel-layout-restore.test-fixtures';
+import {
   PANEL_LAYOUT_PERSISTENCE_VERSION,
   type PanelLayoutNode,
   type PanelState,
@@ -171,6 +175,49 @@ describe('migratePanelLayoutForWorkspace', () => {
     expect(twice.root).toMatchObject({ sizes: [40, 60] });
     expect(twice.canvasWidth).toBe(900);
     expect(twice.panels.right.tabs.map((tab) => tab.id)).toEqual(['two', 'three']);
+  });
+
+  it('repairs persisted narrow overlapping geometry without changing pane state', () => {
+    const stored = narrowOverlappingGeometryFixture(WS);
+    const once = migratePanelLayoutForWorkspace(WS, stored);
+
+    expect(order(once)).toEqual(['narrow-left', 'narrow-middle', 'wide-right']);
+    expect(once.root).toMatchObject({ sizes: [100 / 3, 100 / 3, 100 / 3] });
+    expect(once.canvasWidth).toBeNull();
+    expect(once.canvasWidthSource).toBeNull();
+    expect(once.focusedPanelId).toBe('narrow-middle');
+    expect(once.panels['narrow-left']).toMatchObject({
+      activeTabId: 'left-active',
+      attentionTabIds: ['left-background'],
+    });
+    expect(migratePanelLayoutForWorkspace(WS, once)).toEqual(once);
+  });
+
+  it('preserves a narrow ratio when a healthy explicit canvas keeps every pane usable', () => {
+    const stored = narrowOverlappingGeometryFixture(WS);
+    if (stored.root.type !== 'split') throw new Error('Expected horizontal fixture');
+    stored.root.sizes = [5, 20, 75];
+    stored.canvasWidth = 8000;
+
+    expect(migratePanelLayoutForWorkspace(WS, stored)).toEqual(stored);
+  });
+
+  it('places a displaced orphan into a visible stable column without losing pane state', () => {
+    const stored = displacedOrphanSliverFixture(WS);
+    const once = migratePanelLayoutForWorkspace(WS, stored);
+
+    expect(order(once)).toEqual(['anchored-left', 'displaced']);
+    expect(once.root).toMatchObject({ sizes: [50, 50] });
+    expect(once.focusedPanelId).toBe('displaced');
+    expect(once.panels.displaced).toMatchObject({
+      activeTabId: 'recovered-active',
+      attentionTabIds: ['recovered-background'],
+    });
+    expect(once.panels.displaced.tabs.map((candidate) => candidate.id)).toEqual([
+      'recovered-background',
+      'recovered-active',
+    ]);
+    expect(migratePanelLayoutForWorkspace(WS, once)).toEqual(once);
   });
 
   it('preserves equivalent current-version tabs with distinct IDs and keeps the active duplicate', () => {
