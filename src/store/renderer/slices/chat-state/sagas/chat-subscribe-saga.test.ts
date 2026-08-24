@@ -102,7 +102,16 @@ import {
   removePendingAgentDeletion,
   setPendingAgentDeletion,
 } from '$features/agent/utils/pending-agent-deletions';
-import { hasReplayableChatSnapshot } from '$features/agent/utils/chat-subscription-registry';
+import {
+  acquireChatInterestLease,
+  clearAllChatInterestLeases,
+  releaseChatInterestLease,
+} from '$features/agent/utils/chat-interest-leases';
+import {
+  hasChatSubscriptionAcquisitionInFlight,
+  hasReplayableChatSnapshot,
+  hasStandingChatSubscription,
+} from '$features/agent/utils/chat-subscription-registry';
 import { seedStreamFromSnapshot } from '$features/events/daemon-events-bridge.client';
 import { selectTranscriptSnapshotMeta } from '$store/renderer/slices/chat-state/chat-state-selectors';
 import { shouldShowStoppedIndicator } from '$lib/components/chat/message-display-utils';
@@ -213,6 +222,7 @@ describe('chatSubscribeSaga (fake seam, real store)', () => {
     appStore.dispatch(clearAllSessions());
     appStore.dispatch(clearPanelLayout(WS));
     clearPendingAgentDeletions();
+    clearAllChatInterestLeases();
     fakeSubscriptions.length = 0;
     vi.clearAllMocks();
   });
@@ -1534,19 +1544,28 @@ describe('chatSubscribeSaga (fake seam, real store)', () => {
       appStore.dispatch(
         openTab(WS, { type: 'agent', title: 'Agent Sub', closable: true, agentId }),
       );
+      // Old instance's mount-time interest lease (monorepo#3295).
+      acquireChatInterestLease(agentId, 'panel-old');
       const sub = openChat(agentId);
       appStore.dispatch(markAgentAsViewed(agentId));
       sub.handler({ ...transcript([makeMessage('m-reopen', 'hello')]), fromSnapshot: true });
       expect(selectTranscriptSnapshotMeta.select(appStore.state, agentId)?.seq).toBe(1);
 
-      // New instance mounts: both dispatches dedupe against the standing
-      // subscription; the read saga enters loading.
+      // New instance mounts: its lease is acquired synchronously at the top
+      // of onMount, then both dispatches dedupe against the standing
+      // subscription; the read saga enters loading (its hydration holds a
+      // lease of its own).
+      acquireChatInterestLease(agentId, 'panel-new');
       appStore.dispatch(initializeChatRequested(agentId, { wsId: WS }));
       appStore.dispatch(markAgentAsViewed(agentId));
+      acquireChatInterestLease(agentId, 'chat-read:remount');
       appStore.dispatch(transcriptHydrationStarted(agentId));
       expect(chatApi.subscribe.mock.calls.filter(([id]) => id === agentId)).toHaveLength(1);
 
-      // Old instance's onDestroy trailing clear — scoped to the SAME agent.
+      // Old instance's onDestroy: releases its own lease FIRST, then its
+      // trailing scoped clear lands — the remounted instance (and the
+      // in-flight hydration) still hold theirs.
+      releaseChatInterestLease(agentId, 'panel-old');
       appStore.dispatch(clearCurrentlyViewedAgent(agentId));
       await new Promise((resolve) => setTimeout(resolve, 0));
 
@@ -1557,9 +1576,10 @@ describe('chatSubscribeSaga (fake seam, real store)', () => {
       expect(sub.unsubscribe).not.toHaveBeenCalled();
       expect(selectTranscriptSnapshotMeta.select(appStore.state, agentId)).toBeDefined();
 
-      // Hydration settles: the deferred-clear revisit sees the panel's agent
-      // tab still open and keeps the subscription (the spare was for THIS
-      // live panel, not a leak).
+      // Hydration settles and releases its lease; the remounted panel's
+      // lease remains — no last-lease release, so the deferred close never
+      // runs (the spare was for THIS live panel, not a leak).
+      releaseChatInterestLease(agentId, 'chat-read:remount');
       appStore.dispatch(transcriptHydrationSettled(agentId));
       await new Promise((resolve) => setTimeout(resolve, 0));
       expect(sub.unsubscribe).not.toHaveBeenCalled();
@@ -1569,27 +1589,32 @@ describe('chatSubscribeSaga (fake seam, real store)', () => {
   it(
     'runs the deferred close once hydration settles when the panel was genuinely closed mid-load (no leaked subscription, monorepo#2864)',
     async () => {
-      // Genuine final panel close while hydration is still `loading`: the
-      // applied clear's sweep spares the agent (indistinguishable from a
-      // same-agent remount at that instant), but once hydration settles with
-      // no open agent tab and no re-view, the deferred close must run —
-      // otherwise the standing subscription leaks until an unrelated view
-      // switch or session teardown (PR #1462 review).
+      // Genuine final panel close while hydration is still in flight: the
+      // applied clear's sweep spares the agent (its hydration still holds a
+      // lease — indistinguishable from a same-agent remount at that
+      // instant), but once that last lease releases with no re-view, the
+      // deferred close must run — otherwise the standing subscription leaks
+      // until an unrelated view switch or session teardown (PR #1462
+      // review).
       const agentId = 'agent-sub-close-mid-load';
       seedSession(agentId);
       const sub = openChat(agentId);
       appStore.dispatch(markAgentAsViewed(agentId));
+      acquireChatInterestLease(agentId, 'chat-read:mid-load');
       appStore.dispatch(transcriptHydrationStarted(agentId));
 
-      // Panel closes mid-load: no agent tab remains, the trailing clear
-      // applies, and the sweep spares the loading agent (deferred).
+      // Panel closes mid-load: its own lease is gone (released in
+      // onDestroy), the trailing clear applies, and the sweep spares the
+      // still-leased hydration (deferred).
       appStore.dispatch(clearCurrentlyViewedAgent(agentId));
       await new Promise((resolve) => setTimeout(resolve, 0));
       expect(sub.unsubscribe).not.toHaveBeenCalled();
 
-      // Hydration settles: no open tab, agent not re-viewed — the deferred
-      // close tears the subscription down now.
+      // Hydration settles and releases the LAST lease (the read saga's
+      // finally): agent not re-viewed — the deferred close tears the
+      // subscription down now.
       appStore.dispatch(transcriptHydrationSettled(agentId));
+      releaseChatInterestLease(agentId, 'chat-read:mid-load');
       await vi.waitFor(() => expect(sub.unsubscribe).toHaveBeenCalledOnce());
     },
   );
@@ -1597,12 +1622,14 @@ describe('chatSubscribeSaga (fake seam, real store)', () => {
   it(
     'runs the deferred close once hydration fails when the panel was genuinely closed mid-load (monorepo#2864)',
     async () => {
-      // Same leak, failure edge: a hydration that FAILS after the spare must
-      // also revisit the deferred close — `loading` never wedges the spare.
+      // Same leak, failure edge: a hydration that FAILS after the spare
+      // releases its lease in the read saga's finally too — the deferred
+      // close still runs; an in-flight hydration never wedges the spare.
       const agentId = 'agent-sub-close-mid-load-failed';
       seedSession(agentId);
       const sub = openChat(agentId);
       appStore.dispatch(markAgentAsViewed(agentId));
+      acquireChatInterestLease(agentId, 'chat-read:mid-load-fail');
       appStore.dispatch(transcriptHydrationStarted(agentId));
 
       appStore.dispatch(clearCurrentlyViewedAgent(agentId));
@@ -1610,24 +1637,24 @@ describe('chatSubscribeSaga (fake seam, real store)', () => {
       expect(sub.unsubscribe).not.toHaveBeenCalled();
 
       appStore.dispatch(transcriptHydrationFailed(agentId));
+      releaseChatInterestLease(agentId, 'chat-read:mid-load-fail');
       await vi.waitFor(() => expect(sub.unsubscribe).toHaveBeenCalledOnce());
     },
   );
 
   // Cold-open snapshot miss under rapid workspace switching (monorepo#2917) —
   // the viewed-agent swap (handleViewed) used to sweep ALL other same-realm
-  // slots with no hydration-loading spare: when the final workspace
-  // double-mounts two ChatPanels, the second panel's markAgentAsViewed closed
-  // the first panel's still-acquiring cold-open slot (desiredToken cleared +
+  // slots with no spare: when the final workspace double-mounts two
+  // ChatPanels, the second panel's markAgentAsViewed closed the first
+  // panel's still-acquiring cold-open slot (desiredToken cleared +
   // cancelPending), so its chat.subscribe — which issued promptly — resolved
   // straight into an unsubscribe and its seq-0 snapshot was token-dropped.
   // Both of that panel's opens were already consumed (init + its own viewed),
   // so no snapshot was coming: the chat-read saga stranded a full
   // SNAPSHOT_WAIT_MS window and logged the wait-window warning before the
-  // re-request escalation force-cycled a fresh registration. Fixed by
-  // extending the monorepo#2864 spare-then-revisit contract to the swap
-  // sweep: same-realm agents whose hydration is `loading` with a mounted
-  // panel are spared and revisited when the hydration settles/fails.
+  // re-request escalation force-cycled a fresh registration. Fixed by the
+  // spare-then-revisit contract, now lease-based (monorepo#3295): the
+  // mounted sibling panel's interest lease spares it from the sweep.
   it(
     'spares a sibling cold open mid-acquisition from the viewed-agent swap during a double ChatPanel mount (monorepo#2917)',
     async () => {
@@ -1663,13 +1690,17 @@ describe('chatSubscribeSaga (fake seam, real store)', () => {
       appStore.dispatch(
         openTab(WS, { type: 'agent', title: 'C2', closable: true, agentId: finalC2 }),
       );
+      // Each mounting panel acquires its interest lease synchronously at
+      // the top of onMount, before its init/viewed dispatches.
+      acquireChatInterestLease(finalC1, 'panel-c1');
       const c1 = delayNextSubscription(finalC1);
       appStore.dispatch(transcriptHydrationStarted(finalC1));
       appStore.dispatch(markAgentAsViewed(finalC1));
+      acquireChatInterestLease(finalC2, 'panel-c2');
       const c2 = delayNextSubscription(finalC2);
       appStore.dispatch(transcriptHydrationStarted(finalC2));
-      // The second panel's viewed effect — today this closes C1's
-      // still-acquiring slot (no hydration-loading spare in the swap sweep).
+      // The second panel's viewed effect — without the lease spare this
+      // closes C1's still-acquiring slot.
       appStore.dispatch(markAgentAsViewed(finalC2));
 
       // Both WSS acquisitions resolve after the sweep ran.
@@ -1690,9 +1721,9 @@ describe('chatSubscribeSaga (fake seam, real store)', () => {
       // The last-viewed panel hydrates fine…
       expect(selectTranscriptSnapshotMeta.select(appStore.state, finalC2)).toBeDefined();
 
-      // …and the sibling cold open must survive the swap (its hydration is
-      // loading with a mounted panel): the snapshot applies instead of
-      // stranding the read saga for a full wait window.
+      // …and the sibling cold open must survive the swap (its mounted
+      // panel holds a lease): the snapshot applies instead of stranding
+      // the read saga for a full wait window.
       expect(c1.subscription.unsubscribe).not.toHaveBeenCalled();
       expect(selectTranscriptSnapshotMeta.select(appStore.state, finalC1)).toBeDefined();
       expect(selectAgentMessages.select(appStore.state, finalC1).map((m) => m.id)).toContain(
@@ -1700,8 +1731,8 @@ describe('chatSubscribeSaga (fake seam, real store)', () => {
       );
 
       // The spare defers the close, it never cancels it: the sibling's
-      // hydration settles with its panel tab still open — the deferred-clear
-      // revisit keeps the subscription (the spare was for THIS live panel).
+      // hydration settles with its panel still mounted (lease held) — the
+      // subscription stays (the spare was for THIS live panel).
       appStore.dispatch(transcriptHydrationSettled(finalC1));
       await new Promise((resolve) => setTimeout(resolve, 0));
       expect(c1.subscription.unsubscribe).not.toHaveBeenCalled();
@@ -1744,11 +1775,16 @@ describe('chatSubscribeSaga (fake seam, real store)', () => {
         openTab(WS, { type: 'agent', title: 'Second', closable: true, agentId: second }),
       );
 
-      // One synchronous task, no microtask checkpoints: both panels' init +
-      // viewed dispatches land back-to-back, exactly as a single effect
-      // flush delivers them. Over WSS both acquisitions resolve later.
+      // One synchronous task, no microtask checkpoints: both panels'
+      // mount-time leases + init/viewed dispatches land back-to-back,
+      // exactly as a single effect flush delivers them. Over WSS both
+      // acquisitions resolve later. The lease is the only sweep-time signal
+      // that exists this early — the read saga's loading flag lands at
+      // least one microtask later.
+      acquireChatInterestLease(first, 'panel-3073-first');
       const c1 = delayNextSubscription(first);
       appStore.dispatch(markAgentAsViewed(first));
+      acquireChatInterestLease(second, 'panel-3073-second');
       const c2 = delayNextSubscription(second);
       appStore.dispatch(markAgentAsViewed(second));
 
@@ -1801,22 +1837,24 @@ describe('chatSubscribeSaga (fake seam, real store)', () => {
       appStore.dispatch(
         openTab(WS, { type: 'agent', title: 'Sibling', closable: true, agentId: sibling }),
       );
+      acquireChatInterestLease(sibling, 'panel-3073-leak');
       const c = delayNextSubscription(sibling);
       appStore.dispatch(markAgentAsViewed(sibling));
 
       // Same-task sweep while the sibling is still acquiring (hydration
-      // unset, desiredToken held, nothing installed): the spare holds.
+      // unset, desiredToken held, nothing installed): its mount-time lease
+      // spares it.
       openChat(viewed);
       appStore.dispatch(markAgentAsViewed(viewed));
       c.acquisition.resolve(c.subscription.unsubscribe);
       await new Promise((resolve) => setTimeout(resolve, 0));
       expect(c.subscription.unsubscribe).not.toHaveBeenCalled();
 
-      // The sibling's panel closes mid-load; its hydration then starts and
-      // settles with no open tab and no re-view — the deferred close runs.
+      // The sibling's panel closes mid-load (destroy releases its lease —
+      // the LAST one) with no re-view: the deferred close runs at the
+      // release, no settle needed.
       appStore.dispatch(clearPanelLayout(WS));
-      appStore.dispatch(transcriptHydrationStarted(sibling));
-      appStore.dispatch(transcriptHydrationSettled(sibling));
+      releaseChatInterestLease(sibling, 'panel-3073-leak');
       await vi.waitFor(() => expect(c.subscription.unsubscribe).toHaveBeenCalledOnce());
     },
   );
@@ -1873,14 +1911,18 @@ describe('chatSubscribeSaga (fake seam, real store)', () => {
       appStore.dispatch(markAgentAsViewed(prev));
       await vi.waitFor(() => expect(priorSub.unsubscribe).toHaveBeenCalledOnce());
 
-      // Switch-back double mount, one synchronous flush: both panels' init +
-      // viewed dispatches land back-to-back before the read saga can flip
-      // either hydration flag. Over WSS both reopens acquire asynchronously.
+      // Switch-back double mount, one synchronous flush: both panels'
+      // mount-time leases + init/viewed dispatches land back-to-back before
+      // the read saga can flip either hydration flag. Over WSS both reopens
+      // acquire asynchronously.
+      acquireChatInterestLease(first, 'panel-3185-first');
       const c1 = delayNextSubscription(first);
       appStore.dispatch(markAgentAsViewed(first));
+      acquireChatInterestLease(second, 'panel-3185-second');
       const c2 = delayNextSubscription(second);
-      // The second panel's viewed sweep — today it closes the first agent's
-      // still-acquiring warm reopen (stale 'settled' defeats both spares).
+      // The second panel's viewed sweep — without the lease spare it closes
+      // the first agent's still-acquiring warm reopen (the stale 'settled'
+      // flag defeated both heuristic spares).
       appStore.dispatch(markAgentAsViewed(second));
 
       // The read saga's hydration flags land only after the current task.
@@ -1950,10 +1992,12 @@ describe('chatSubscribeSaga (fake seam, real store)', () => {
       appStore.dispatch(markAgentAsViewed(prev));
       await vi.waitFor(() => expect(priorSub.unsubscribe).toHaveBeenCalledOnce());
 
-      // Switch back: the remounting panel's init reopens (acquiring over
-      // WSS); the departing panel's destroy then dispatches its scoped
-      // clear, which APPLIES — the close-all sweep runs while the reopen is
-      // still acquiring under a stale 'settled' hydration flag.
+      // Switch back: the remounting panel acquires its lease at mount and
+      // its init reopens (acquiring over WSS); the departing panel's
+      // destroy then dispatches its scoped clear, which APPLIES — the
+      // close-all sweep runs while the reopen is still acquiring under a
+      // stale 'settled' hydration flag, spared by the lease.
+      acquireChatInterestLease(agentId, 'panel-3185-clear');
       const c = delayNextSubscription(agentId);
       appStore.dispatch(clearCurrentlyViewedAgent(prev));
 
@@ -2005,7 +2049,8 @@ describe('chatSubscribeSaga (fake seam, real store)', () => {
       await vi.waitFor(() => expect(priorSub.unsubscribe).toHaveBeenCalledOnce());
 
       // Warm reopen still acquiring when another agent's viewed sweep runs:
-      // the spare holds (hosted tab).
+      // the spare holds (mount-time lease).
+      acquireChatInterestLease(warm, 'panel-3185-warm-leak');
       const c = delayNextSubscription(warm);
       openChat(viewed);
       appStore.dispatch(markAgentAsViewed(viewed));
@@ -2013,12 +2058,183 @@ describe('chatSubscribeSaga (fake seam, real store)', () => {
       await new Promise((resolve) => setTimeout(resolve, 0));
       expect(c.subscription.unsubscribe).not.toHaveBeenCalled();
 
-      // The panel closes mid-load; hydration then settles with no open tab
-      // and no re-view — the deferred close runs.
+      // The panel closes mid-load: its destroy releases the LAST lease with
+      // no re-view — the deferred close runs.
       appStore.dispatch(clearPanelLayout(WS));
-      appStore.dispatch(transcriptHydrationStarted(warm));
-      appStore.dispatch(transcriptHydrationSettled(warm));
+      releaseChatInterestLease(warm, 'panel-3185-warm-leak');
       await vi.waitFor(() => expect(c.subscription.unsubscribe).toHaveBeenCalledOnce());
+    },
+  );
+
+  // Fifth recurrence in the stranded-window family (monorepo#3295, local UDS
+  // daemon): rapid workspace switching lands on a REVISITED double-mount
+  // workspace right after the previous workspace's panel was torn down
+  // mid-hydration. On a local daemon the first-mounted (viewed) agent's
+  // chat.subscribe acquisition resolves almost immediately, so by the time
+  // the sibling panel's markAgentAsViewed sweep runs (~18ms later) the
+  // reopen is already INSTALLED — no longer "acquiring" — while its
+  // per-agent chat state still reads the PREVIOUS visit's 'settled' (chat
+  // state survives workspace switches, and the read saga flips 'loading'
+  // only after the current task). Neither historical heuristic spare could
+  // match (monorepo#2917's loading spare, monorepo#3073/#3185's acquiring
+  // spare both miss an installed-not-yet-emitted registration under a stale
+  // settled flag), so the sweep closed the registration the viewed panel
+  // was waiting on BEFORE its seq-0 snapshot arrived — stranding that
+  // hydration a full SNAPSHOT_WAIT_MS window. FIXED by lease-based sparing:
+  // the first-mounted panel's interest lease (acquired synchronously at
+  // mount, before any dispatch) spares its installed reopen from the
+  // sibling's sweep regardless of acquisition state or stale flags.
+  it(
+    "double-mount sweep spares the first-mounted viewed agent's leased installed reopen; its seq-0 snapshot applies (monorepo#3295)",
+    async () => {
+      vi.useFakeTimers();
+      try {
+        const prevWs = 'ws-chat-sub-3295-prev';
+        const prior = 'agent-3295-prior';
+        const first = 'agent-3295-first';
+        const second = 'agent-3295-second';
+        seedSession(prior, { workspaceId: prevWs });
+        seedSession(first);
+        seedSession(second);
+        // Both target-workspace agent tabs sit in the restored layout; the
+        // prior workspace's tab persists in ITS layout across the switch.
+        appStore.dispatch(
+          openTab(WS, { type: 'agent', title: 'First', closable: true, agentId: first }),
+        );
+        appStore.dispatch(
+          openTab(WS, { type: 'agent', title: 'Second', closable: true, agentId: second }),
+        );
+        appStore.dispatch(
+          openTab(prevWs, { type: 'agent', title: 'Prior', closable: true, agentId: prior }),
+        );
+
+        // PREVIOUS VISIT of the target workspace: the first agent hydrated
+        // and settled — its per-agent chat state keeps 'settled' across the
+        // switches below. Its panel is then unmounted by the switch (lease
+        // released, none held here).
+        const firstPrior = openChat(first);
+        appStore.dispatch(markAgentAsViewed(first));
+        firstPrior.handler({ ...transcript([]), fromSnapshot: true });
+        appStore.dispatch(transcriptHydrationStarted(first));
+        appStore.dispatch(transcriptHydrationSettled(first));
+
+        // Switch to the prior workspace: its panel mounts (lease first) and
+        // starts hydrating (hydration lease); the viewed swap sweeps
+        // first's settled, unleased subscription.
+        acquireChatInterestLease(prior, 'panel-3295-prior');
+        appStore.dispatch(initializeChatRequested(prior, { wsId: prevWs }));
+        const priorSub = fakeSubscriptions.find((s) => s.agentId === prior);
+        if (!priorSub) throw new Error('no chat.subscribe recorded for prior');
+        appStore.dispatch(markAgentAsViewed(prior));
+        acquireChatInterestLease(prior, 'chat-read:3295-prior');
+        appStore.dispatch(transcriptHydrationStarted(prior));
+        await vi.advanceTimersByTimeAsync(0);
+        expect(firstPrior.unsubscribe).toHaveBeenCalledOnce();
+
+        // ~460ms in, the prior workspace's panel is destroyed MID-HYDRATION
+        // (before its snapshot or settle): it releases its own lease, then
+        // its scoped clear applies (viewed → null) — the close-all sweep
+        // spares the prior agent through its still-held hydration lease.
+        // This teardown is in flight while the next workspace's opens land.
+        await vi.advanceTimersByTimeAsync(460);
+        releaseChatInterestLease(prior, 'panel-3295-prior');
+        appStore.dispatch(clearCurrentlyViewedAgent(prior));
+        expect(priorSub.unsubscribe).not.toHaveBeenCalled();
+
+        // ~90ms later the target workspace double-mounts. Local UDS: the
+        // first-mounted panel acquires its lease at the top of mount, then
+        // its reopen acquisition resolves synchronously — the registration
+        // INSTALLS immediately, its seq-0 snapshot still in flight.
+        await vi.advanceTimersByTimeAsync(90);
+        acquireChatInterestLease(first, 'panel-3295-first');
+        appStore.dispatch(initializeChatRequested(first, { wsId: WS }));
+        const firstSub = fakeSubscriptions.filter((s) => s.agentId === first).at(-1);
+        if (!firstSub || firstSub === firstPrior) {
+          throw new Error('no fresh chat.subscribe recorded for first');
+        }
+        appStore.dispatch(markAgentAsViewed(first));
+        expect(firstSub.unsubscribe).not.toHaveBeenCalled();
+
+        // ~18ms later the sibling panel mounts. The read saga has flipped
+        // neither hydration flag yet (it defers past the current task) and
+        // first's reopen is INSTALLED (not acquiring) under a stale
+        // 'settled' flag — but its mount-time lease spares it from the
+        // sibling's viewed sweep.
+        await vi.advanceTimersByTimeAsync(18);
+        acquireChatInterestLease(second, 'panel-3295-second');
+        const secondSub = openChat(second);
+        appStore.dispatch(markAgentAsViewed(second));
+        appStore.dispatch(transcriptHydrationStarted(first));
+        appStore.dispatch(transcriptHydrationStarted(second));
+        expect(firstSub.unsubscribe).not.toHaveBeenCalled();
+
+        // The daemon's seq-0 snapshots land; both registrations are alive.
+        secondSub.handler({
+          ...transcript([makeMessage('m-3295-second', 'second snapshot')]),
+          fromSnapshot: true,
+        });
+        firstSub.handler({
+          ...transcript([makeMessage('m-3295-first', 'first snapshot')]),
+          fromSnapshot: true,
+        });
+        await vi.advanceTimersByTimeAsync(0);
+
+        // The second-mounted sibling hydrates fine…
+        expect(selectTranscriptSnapshotMeta.select(appStore.state, second)).toBeDefined();
+
+        // …and the FIRST-mounted (viewed) agent no longer strands: its
+        // snapshot meta records, its rows apply, and the replayable
+        // snapshot backs the read saga's fast path — the first bounded
+        // wait window settles instead of sitting out SNAPSHOT_WAIT_MS.
+        expect(firstSub.unsubscribe).not.toHaveBeenCalled();
+        expect(selectTranscriptSnapshotMeta.select(appStore.state, first)).toBeDefined();
+        expect(selectAgentMessages.select(appStore.state, first).map((m) => m.id)).toContain(
+          'm-3295-first',
+        );
+        expect(hasReplayableChatSnapshot(first)).toBe(true);
+      } finally {
+        appStore.dispatch(clearPanelLayout('ws-chat-sub-3295-prev'));
+        vi.useRealTimers();
+      }
+    },
+  );
+
+  it(
+    "closes a sweep-spared agent at its LAST lease release when the final release comes from a cancelled hydration's finally (monorepo#3295)",
+    async () => {
+      // The deferred sweep-close must key on the lease registry, not on
+      // settle/fail actions: a hydration cancelled mid-flight (workspace
+      // unmount races the read saga's bounded wait) dispatches NEITHER
+      // transcriptHydrationSettled nor Failed — its lease release in the
+      // worker's finally is the only signal. If the deferred close did not
+      // run at last-lease release, the subscription would leak until an
+      // unrelated swap or session teardown.
+      const spared = 'agent-3295-cancelled-hydration';
+      const viewed = 'agent-3295-cancelled-viewed';
+      seedSession(spared);
+      seedSession(viewed);
+      const sub = openChat(spared);
+      appStore.dispatch(markAgentAsViewed(spared));
+      // Panel + in-flight hydration both hold leases when the sweep runs.
+      acquireChatInterestLease(spared, 'panel-3295-cancel');
+      acquireChatInterestLease(spared, 'chat-read:3295-cancel');
+      appStore.dispatch(transcriptHydrationStarted(spared));
+
+      openChat(viewed);
+      appStore.dispatch(markAgentAsViewed(viewed));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(sub.unsubscribe).not.toHaveBeenCalled();
+
+      // The panel is destroyed (releases its lease; not the last one — the
+      // hydration still runs). No close yet.
+      releaseChatInterestLease(spared, 'panel-3295-cancel');
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(sub.unsubscribe).not.toHaveBeenCalled();
+
+      // The hydration is CANCELLED: no settle/fail dispatch — only the
+      // finally-block release of the LAST lease. The deferred close runs.
+      releaseChatInterestLease(spared, 'chat-read:3295-cancel');
+      await vi.waitFor(() => expect(sub.unsubscribe).toHaveBeenCalledOnce());
     },
   );
 
@@ -2026,10 +2242,11 @@ describe('chatSubscribeSaga (fake seam, real store)', () => {
     'runs the deferred close once hydration settles when the swap-spared sibling panel closed mid-load (no leaked subscription, monorepo#2917)',
     async () => {
       // Leak guard for the swap-sweep spare, mirroring the applied-clear
-      // sweep's (PR #1462): a sibling spared from the viewed-agent swap whose
-      // panel then genuinely closes mid-load must still be torn down once its
-      // hydration settles — otherwise the standing subscription leaks until
-      // an unrelated swap or session teardown.
+      // sweep's (PR #1462): a sibling spared from the viewed-agent swap
+      // whose consumers then all go away (panel destroyed, hydration
+      // settled) must still be torn down at the last lease release —
+      // otherwise the standing subscription leaks until an unrelated swap
+      // or session teardown.
       const sibling = 'agent-2917-swap-leak-sibling';
       const viewed = 'agent-2917-swap-leak-viewed';
       seedSession(sibling);
@@ -2039,18 +2256,20 @@ describe('chatSubscribeSaga (fake seam, real store)', () => {
       );
       const sub = openChat(sibling);
       appStore.dispatch(markAgentAsViewed(sibling));
+      acquireChatInterestLease(sibling, 'chat-read:2917-leak');
       appStore.dispatch(transcriptHydrationStarted(sibling));
 
-      // The swap spares the sibling: hydration loading + mounted panel tab.
+      // The swap spares the sibling: its in-flight hydration holds a lease.
       openChat(viewed);
       appStore.dispatch(markAgentAsViewed(viewed));
       await new Promise((resolve) => setTimeout(resolve, 0));
       expect(sub.unsubscribe).not.toHaveBeenCalled();
 
-      // The sibling's panel closes mid-load; hydration then settles with no
-      // open tab and no re-view — the deferred close runs now.
+      // The sibling's panel closes mid-load; hydration then settles and
+      // releases the LAST lease with no re-view — the deferred close runs.
       appStore.dispatch(clearPanelLayout(WS));
       appStore.dispatch(transcriptHydrationSettled(sibling));
+      releaseChatInterestLease(sibling, 'chat-read:2917-leak');
       await vi.waitFor(() => expect(sub.unsubscribe).toHaveBeenCalledOnce());
     },
   );
@@ -2059,7 +2278,8 @@ describe('chatSubscribeSaga (fake seam, real store)', () => {
     'runs the deferred close once hydration fails when the swap-spared sibling panel closed mid-load (monorepo#2917)',
     async () => {
       // Same leak, failure edge: a hydration that FAILS after the swap spare
-      // must also revisit the deferred close — `loading` never wedges it.
+      // releases its lease in the read saga's finally too — the deferred
+      // close still runs; an in-flight hydration never wedges it.
       const sibling = 'agent-2917-swap-leak-fail-sibling';
       const viewed = 'agent-2917-swap-leak-fail-viewed';
       seedSession(sibling);
@@ -2069,6 +2289,7 @@ describe('chatSubscribeSaga (fake seam, real store)', () => {
       );
       const sub = openChat(sibling);
       appStore.dispatch(markAgentAsViewed(sibling));
+      acquireChatInterestLease(sibling, 'chat-read:2917-leak-fail');
       appStore.dispatch(transcriptHydrationStarted(sibling));
 
       openChat(viewed);
@@ -2078,16 +2299,19 @@ describe('chatSubscribeSaga (fake seam, real store)', () => {
 
       appStore.dispatch(clearPanelLayout(WS));
       appStore.dispatch(transcriptHydrationFailed(sibling));
+      releaseChatInterestLease(sibling, 'chat-read:2917-leak-fail');
       await vi.waitFor(() => expect(sub.unsubscribe).toHaveBeenCalledOnce());
     },
   );
 
   it(
-    'still sweeps a loading same-realm sibling with no mounted panel on the viewed-agent swap (spare requires a hosting panel tab)',
+    'still sweeps an unleased same-realm sibling on the viewed-agent swap (spare requires a live consumer)',
     async () => {
-      // Swap-invariant guard: the spare is scoped to siblings a live panel is
-      // actively waiting on. A loading agent no panel tab hosts has nothing
-      // waiting on its snapshot, so the swap still closes it — no over-spare.
+      // Swap-invariant guard: the spare is scoped to siblings a live
+      // consumer holds a lease on. An agent with no lease (no mounted
+      // panel, no in-flight hydration) has nothing waiting on its snapshot,
+      // so the swap still closes it — no over-spare. The stale `loading`
+      // hydration flag alone (its lease already released) does not spare.
       const sibling = 'agent-2917-swap-unhosted-sibling';
       const viewed = 'agent-2917-swap-unhosted-viewed';
       seedSession(sibling);
@@ -2105,12 +2329,14 @@ describe('chatSubscribeSaga (fake seam, real store)', () => {
   it(
     "closes a swap-spared sibling's surviving subscription when its tab closes after settle while another agent stays viewed (monorepo#2917)",
     async () => {
-      // Post-settle leak: the swap spares the sibling, its hydration settles
-      // with the tab still open (deferred-clear marker retired, subscription
-      // kept for the live panel), and the tab closes LATER while the new
-      // agent remains viewed. That close's scoped clearCurrentlyViewedAgent
-      // is a reducer no-op (monorepo#1215 guard), so no sweep would reach
-      // the sibling — the scoped-clear branch must close its own slot.
+      // Post-settle leak: the swap spares the sibling (its panel holds a
+      // lease), its hydration settles with the panel still mounted (lease
+      // kept — the marker is retired only at last-lease release), and the
+      // tab closes LATER while the new agent remains viewed. That close's
+      // scoped clearCurrentlyViewedAgent is a reducer no-op (monorepo#1215
+      // guard), so no sweep would reach the sibling — the scoped-clear
+      // branch must close its own slot: the destroying panel released its
+      // lease (the last one) before dispatching the clear.
       const sibling = 'agent-2917-post-settle-sibling';
       const viewed = 'agent-2917-post-settle-viewed';
       seedSession(sibling);
@@ -2118,22 +2344,25 @@ describe('chatSubscribeSaga (fake seam, real store)', () => {
       appStore.dispatch(
         openTab(WS, { type: 'agent', title: 'Sibling', closable: true, agentId: sibling }),
       );
+      acquireChatInterestLease(sibling, 'panel-2917-post-settle');
       const siblingSub = openChat(sibling);
       appStore.dispatch(markAgentAsViewed(sibling));
       appStore.dispatch(transcriptHydrationStarted(sibling));
 
-      // The swap spares the sibling; its hydration then settles with the tab
-      // still open — the subscription survives for the live panel.
+      // The swap spares the sibling; its hydration then settles with the
+      // panel still mounted — the subscription survives for the live panel.
       const viewedSub = openChat(viewed);
       appStore.dispatch(markAgentAsViewed(viewed));
       appStore.dispatch(transcriptHydrationSettled(sibling));
       await new Promise((resolve) => setTimeout(resolve, 0));
       expect(siblingSub.unsubscribe).not.toHaveBeenCalled();
 
-      // The sibling's tab closes; its panel's destroy dispatches the scoped
-      // clear. Another agent is still viewed (reducer no-op) — the sibling's
-      // own subscription must be torn down, the viewed one untouched.
+      // The sibling's tab closes; its panel's destroy releases the lease
+      // FIRST (onDestroy ordering), then dispatches the scoped clear.
+      // Another agent is still viewed (reducer no-op) — the sibling's own
+      // subscription must be torn down, the viewed one untouched.
       appStore.dispatch(clearPanelLayout(WS));
+      releaseChatInterestLease(sibling, 'panel-2917-post-settle');
       appStore.dispatch(clearCurrentlyViewedAgent(sibling));
       await vi.waitFor(() => expect(siblingSub.unsubscribe).toHaveBeenCalledOnce());
       expect(viewedSub.unsubscribe).not.toHaveBeenCalled();
@@ -2145,8 +2374,9 @@ describe('chatSubscribeSaga (fake seam, real store)', () => {
     async () => {
       // Over-close guard for the scoped-clear branch: a panel DEACTIVATION
       // (tab switch) dispatches the same scoped clear as a destroy, but the
-      // tab is still open — the settled sibling's subscription must survive,
-      // exactly like the monorepo#1215 trailing-clear contract.
+      // panel stays mounted (tab cache) and keeps its lease — the settled
+      // sibling's subscription must survive, exactly like the monorepo#1215
+      // trailing-clear contract.
       const sibling = 'agent-2917-deactivate-sibling';
       const viewed = 'agent-2917-deactivate-viewed';
       seedSession(sibling);
@@ -2154,6 +2384,7 @@ describe('chatSubscribeSaga (fake seam, real store)', () => {
       appStore.dispatch(
         openTab(WS, { type: 'agent', title: 'Sibling', closable: true, agentId: sibling }),
       );
+      acquireChatInterestLease(sibling, 'panel-2917-deactivate');
       const siblingSub = openChat(sibling);
       appStore.dispatch(markAgentAsViewed(sibling));
       appStore.dispatch(transcriptHydrationStarted(sibling));
@@ -2164,7 +2395,8 @@ describe('chatSubscribeSaga (fake seam, real store)', () => {
       await new Promise((resolve) => setTimeout(resolve, 0));
       expect(siblingSub.unsubscribe).not.toHaveBeenCalled();
 
-      // Trailing scoped clear with the tab still open: keep the subscription.
+      // Trailing scoped clear with the panel still mounted (lease held):
+      // keep the subscription.
       appStore.dispatch(clearCurrentlyViewedAgent(sibling));
       await new Promise((resolve) => setTimeout(resolve, 0));
       expect(siblingSub.unsubscribe).not.toHaveBeenCalled();
@@ -2174,11 +2406,12 @@ describe('chatSubscribeSaga (fake seam, real store)', () => {
   it(
     'defers a scoped clear that lands while the swap-spared sibling is still loading with an open tab, closing once it settles unhosted (monorepo#2917)',
     async () => {
-      // Loading edge of the scoped-clear branch: the trailing clear arrives
-      // BEFORE the sibling's hydration settles (tab still open) — the branch
-      // re-marks it for the spare-then-revisit contract instead of closing a
-      // subscription a live panel is waiting on. When the tab then closes
-      // and the hydration settles, the deferred close runs.
+      // In-flight edge of the scoped-clear branch: the trailing clear
+      // arrives BEFORE the sibling's hydration settles (its lease still
+      // held) — the branch re-marks it for the spare-then-revisit contract
+      // instead of closing a subscription a live consumer is waiting on.
+      // When the hydration then releases the last lease, the deferred
+      // close runs.
       const sibling = 'agent-2917-loading-clear-sibling';
       const viewed = 'agent-2917-loading-clear-viewed';
       seedSession(sibling);
@@ -2188,6 +2421,7 @@ describe('chatSubscribeSaga (fake seam, real store)', () => {
       );
       const siblingSub = openChat(sibling);
       appStore.dispatch(markAgentAsViewed(sibling));
+      acquireChatInterestLease(sibling, 'chat-read:2917-loading-clear');
       appStore.dispatch(transcriptHydrationStarted(sibling));
 
       openChat(viewed);
@@ -2195,16 +2429,17 @@ describe('chatSubscribeSaga (fake seam, real store)', () => {
       await new Promise((resolve) => setTimeout(resolve, 0));
       expect(siblingSub.unsubscribe).not.toHaveBeenCalled();
 
-      // Scoped clear while still loading, tab open: defer — don't cancel the
-      // in-flight hydration.
+      // Scoped clear while the hydration lease is held: defer — don't
+      // cancel the in-flight hydration.
       appStore.dispatch(clearCurrentlyViewedAgent(sibling));
       await new Promise((resolve) => setTimeout(resolve, 0));
       expect(siblingSub.unsubscribe).not.toHaveBeenCalled();
 
-      // The tab closes, then hydration settles with no host and no re-view —
-      // the deferred close runs.
+      // The tab closes, then hydration settles and releases the LAST lease
+      // with no re-view — the deferred close runs.
       appStore.dispatch(clearPanelLayout(WS));
       appStore.dispatch(transcriptHydrationSettled(sibling));
+      releaseChatInterestLease(sibling, 'chat-read:2917-loading-clear');
       await vi.waitFor(() => expect(siblingSub.unsubscribe).toHaveBeenCalledOnce());
     },
   );
@@ -2233,6 +2468,51 @@ describe('chatSubscribeSaga (fake seam, real store)', () => {
     appStore.dispatch(removeSession(agentId));
     await vi.waitFor(() => expect(sub.unsubscribe).toHaveBeenCalledOnce());
     expect(hasReplayableChatSnapshot(agentId)).toBe(false);
+  });
+
+  it('flips the acquiring flag true on enqueue, false once standing installs, false again on close (registry wiring, monorepo#3295)', async () => {
+    // End-to-end pin of the acquiring-marker wiring the chat-read saga's
+    // dead-wait escalation consults: a missed set-site would strand a cold
+    // open's plain wait, a missed clear-site (install/close/dispose) would
+    // leave a stale acquisition that suppresses a genuine dead-wait escalation.
+    const agentId = 'agent-sub-acquiring-wiring';
+    seedSession(agentId);
+    const { acquisition, subscription } = delayNextSubscription(agentId);
+    // Open enqueued, acquisition still in flight: marked acquiring, not
+    // standing yet.
+    expect(hasChatSubscriptionAcquisitionInFlight(agentId)).toBe(true);
+    expect(hasStandingChatSubscription(agentId)).toBe(false);
+
+    // The registration installs: standing supersedes acquiring.
+    acquisition.resolve(subscription.unsubscribe);
+    await vi.waitFor(() => expect(hasStandingChatSubscription(agentId)).toBe(true));
+    expect(hasChatSubscriptionAcquisitionInFlight(agentId)).toBe(false);
+
+    // Teardown clears standing; nothing is acquiring afterwards.
+    appStore.dispatch(removeSession(agentId));
+    await vi.waitFor(() => expect(subscription.unsubscribe).toHaveBeenCalledOnce());
+    expect(hasStandingChatSubscription(agentId)).toBe(false);
+    expect(hasChatSubscriptionAcquisitionInFlight(agentId)).toBe(false);
+  });
+
+  it('clears the acquiring flag when an in-flight open is cancelled before it installs (monorepo#3295)', async () => {
+    // A close landing while the open is still acquiring must drop the
+    // acquiring marker — otherwise a later hydration would read a stale
+    // acquisition for a registration that never installed.
+    const agentId = 'agent-sub-acquiring-cancel';
+    seedSession(agentId);
+    const { acquisition, subscription } = delayNextSubscription(agentId);
+    expect(hasChatSubscriptionAcquisitionInFlight(agentId)).toBe(true);
+
+    appStore.dispatch(removeSession(agentId));
+    expect(hasChatSubscriptionAcquisitionInFlight(agentId)).toBe(false);
+
+    // The acquisition resolving late must not resurrect the marker or a
+    // standing registration (the open was cancelled).
+    acquisition.resolve(subscription.unsubscribe);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(hasChatSubscriptionAcquisitionInFlight(agentId)).toBe(false);
+    expect(hasStandingChatSubscription(agentId)).toBe(false);
   });
 
   describe('chief-workspace exemption from the viewed-agent swap (monorepo#1421)', () => {
