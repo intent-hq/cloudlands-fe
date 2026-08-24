@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/svelte';
 import type { Workspace } from '$shared/types';
-import { workspaceMounted } from '$store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice';
+import { workspaceHydrationRequested } from '$store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice';
 import { closeWorkspaceTab } from '$store/renderer/slices/tab-state/tab-state-slice';
 import { emptyWorkspaceAgentState } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
 import {
@@ -97,7 +97,8 @@ describe('useWorkspaceLoader', () => {
   it('hydrates Redux from cached workspace data before open completes', async () => {
     const cachedWorkspace = makeWorkspace({ id: 'loader-cache-1', title: 'Cached Workspace' });
     selectWorkspaceByIdMock.mockReturnValue(cachedWorkspace);
-    openMock.mockResolvedValue({ ok: true, data: cachedWorkspace });
+    const open = createDeferred<{ ok: true; data: Workspace }>();
+    openMock.mockReturnValue(open.promise);
 
     render(TestUseWorkspaceLoader, {
       props: {
@@ -110,8 +111,66 @@ describe('useWorkspaceLoader', () => {
 
     await waitFor(() => expect(openMock).toHaveBeenCalledTimes(1));
 
-    expect(dispatchMock.mock.calls[0]?.[0]).toEqual(setWorkspaceEntity(cachedWorkspace));
-    expect(dispatchMock.mock.calls[1]?.[0]).toEqual(workspaceMounted(cachedWorkspace.id));
+    expect(dispatchMock.mock.calls.map(([action]) => action)).toEqual([
+      setWorkspaceEntity(cachedWorkspace),
+      workspaceHydrationRequested(cachedWorkspace.id),
+    ]);
+
+    open.resolve({ ok: true, data: cachedWorkspace });
+    await waitFor(() => expect(dispatchMock).toHaveBeenCalledTimes(3));
+
+    expect(openMock.mock.calls).toEqual([[cachedWorkspace.id]]);
+    expect(dispatchMock.mock.calls.map(([action]) => action)).toEqual([
+      setWorkspaceEntity(cachedWorkspace),
+      workspaceHydrationRequested(cachedWorkspace.id),
+      setWorkspaceEntity(cachedWorkspace),
+    ]);
+  });
+
+  it('opens every A → B → A visit while requesting session-coalesced hydration', async () => {
+    const workspaceA = makeWorkspace({ id: 'loader-revisit-a', title: 'Workspace A' });
+    const workspaceB = makeWorkspace({ id: 'loader-revisit-b', title: 'Workspace B' });
+    selectWorkspaceByIdMock.mockImplementation((id: string) =>
+      id === workspaceA.id ? workspaceA : workspaceB,
+    );
+    openMock.mockImplementation(async (id: string) => ({
+      ok: true,
+      data: id === workspaceA.id ? workspaceA : workspaceB,
+    }));
+
+    const view = render(TestUseWorkspaceLoader, {
+      props: {
+        workspaceId: workspaceA.id,
+        workspaceState: createWorkspaceState(),
+        previousWorkspaceId: null,
+      },
+    });
+    await waitFor(() => expect(openMock).toHaveBeenCalledTimes(1));
+
+    await view.rerender({
+      workspaceId: workspaceB.id,
+      workspaceState: createWorkspaceState(),
+      previousWorkspaceId: workspaceA.id,
+    });
+    await waitFor(() => expect(openMock).toHaveBeenCalledTimes(2));
+
+    await view.rerender({
+      workspaceId: workspaceA.id,
+      workspaceState: createWorkspaceState(),
+      previousWorkspaceId: workspaceB.id,
+    });
+    await waitFor(() => expect(openMock).toHaveBeenCalledTimes(3));
+
+    expect(openMock.mock.calls).toEqual([[workspaceA.id], [workspaceB.id], [workspaceA.id]]);
+    expect(
+      dispatchMock.mock.calls
+        .map(([action]) => action)
+        .filter((action) => action.type === workspaceHydrationRequested.type),
+    ).toEqual([
+      workspaceHydrationRequested(workspaceA.id),
+      workspaceHydrationRequested(workspaceB.id),
+      workspaceHydrationRequested(workspaceA.id),
+    ]);
   });
 
   it('refreshes Redux with the opened workspace entity after open resolves', async () => {
@@ -161,10 +220,10 @@ describe('useWorkspaceLoader', () => {
     });
 
     await waitFor(() => expect(openMock).toHaveBeenCalledTimes(1));
-    expect(dispatchMock).toHaveBeenCalledWith(workspaceMounted(workspace.id));
+    expect(dispatchMock).toHaveBeenCalledWith(workspaceHydrationRequested(workspace.id));
   });
 
-  it('dispatches setWorkspaceEntity → workspaceMounted for a cached workspace without touching initial-agent-config state', async () => {
+  it('dispatches setWorkspaceEntity → hydration request for a cached workspace without touching initial-agent-config state', async () => {
     // Regression: the loader used to read `initialAgentConfig` and pre-dispatch
     // `setInitialAgentId` before `workspaceMounted`. Now that the daemon owns
     // initial-agent creation, the loader must NOT insert any initial-agent
@@ -194,7 +253,7 @@ describe('useWorkspaceLoader', () => {
 
     expect(dispatchMock.mock.calls.slice(0, 2).map(([action]) => action)).toEqual([
       setWorkspaceEntity(cachedWorkspace),
-      workspaceMounted(cachedWorkspace.id),
+      workspaceHydrationRequested(cachedWorkspace.id),
     ]);
   });
 
@@ -396,8 +455,10 @@ describe('useWorkspaceLoader', () => {
     );
 
     // Route loading must not dispatch workspace-scoped cleanup; tab removal owns that boundary.
-    const mountedIndex = actions.findIndex((action) => action.type === workspaceMounted.type);
-    expect(actions[mountedIndex]).toEqual(workspaceMounted(cachedWorkspace.id));
+    const hydrationIndex = actions.findIndex(
+      (action) => action.type === workspaceHydrationRequested.type,
+    );
+    expect(actions[hydrationIndex]).toEqual(workspaceHydrationRequested(cachedWorkspace.id));
     expect(actions.some((action) => action.type === 'workspace-lifecycle/workspaceUnmounted')).toBe(
       false,
     );
@@ -568,7 +629,7 @@ describe('useWorkspaceLoader', () => {
     expect(stateA.updateState).not.toHaveBeenCalled();
     expect(stateA.markInitialized).not.toHaveBeenCalled();
     expect(dispatchMock).not.toHaveBeenCalledWith(setWorkspaceEntity(workspaceA));
-    expect(dispatchMock).not.toHaveBeenCalledWith(workspaceMounted(workspaceA.id));
+    expect(dispatchMock).not.toHaveBeenCalledWith(workspaceHydrationRequested(workspaceA.id));
   });
 
   it('invalidates an outstanding workspace load when the loader is destroyed', async () => {

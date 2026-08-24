@@ -787,7 +787,6 @@
         active={$currentWorkspaceId$ === workspaceId}
         manageTab={false}
         columnMode={true}
-        retainWorkspaceSessionOnUnmount={true}
         onCloseWorkspace={(event) => closeWorkspace(workspaceId, event)}
         onSidebarWidthChange={(width) => updateSidebarWidth(workspaceId, width)}
         onPanelMovePreviewWidthRatioChange={(ratio) =>

@@ -11,7 +11,7 @@ import { workspaceClient } from '$store/renderer/slices/workspace/utils/workspac
 import { createLogger } from '$lib/utils/client-logger';
 import { WorkspaceId } from '$shared/types/branded-ids';
 
-import { workspaceMounted } from '$store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice';
+import { workspaceHydrationRequested } from '$store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice';
 import { closeWorkspaceTab } from '$store/renderer/slices/tab-state/tab-state-slice';
 import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
 import {
@@ -47,12 +47,12 @@ export function useWorkspaceLoader(options: UseWorkspaceLoaderOptions) {
   // dedicated not-found state. Reset whenever a new workspace load starts.
   let loadError: WorkspaceLoadError | null = $state(null);
 
-  // Track the last workspace ID for which workspaceMounted was dispatched.
+  // Track the last workspace ID for which hydration was requested.
   // This prevents the isAlreadyActive guard from short-circuiting during
   // workspace-to-workspace navigation: pre-population by initializeWorkspaceState
   // makes workspaceData.id match the new workspace before the loader runs,
-  // but workspaceMounted hasn't been dispatched yet for the new workspace.
-  let lastMountedWorkspaceId: string | null = null;
+  // but hydration hasn't been requested yet for the new workspace.
+  let lastHydrationRequestedWorkspaceId: string | null = null;
 
   async function loadWorkspace() {
     const { workspaceId, workspaceState, state } = options;
@@ -195,16 +195,15 @@ export function useWorkspaceLoader(options: UseWorkspaceLoaderOptions) {
     // workspace creation via Redux), populate Redux and Svelte state immediately
     // BEFORE the async open() call. This eliminates the blank-page flash
     // that occurs when safeWorkspace is null during the open() round-trip,
-    // and lets workspaceMounted sagas (agent loading, terminal init, etc.)
+    // and lets workspace hydration sagas (agent loading, terminal init, etc.)
     // start without waiting for backend confirmation.
     //
     // STAB-24 fix: Skip the pre-population block when re-running the loader
-    // for the same workspace ID (lastMountedWorkspaceId === workspaceId) to
-    // avoid redundant state updates. workspaceMounted will still be dispatched
-    // later (after the backend open() call) to ensure terminal tabs and other
-    // workspace-scoped state are re-hydrated from the daemon.
-    let alreadyMounted = false;
-    const isReturnVisit = lastMountedWorkspaceId === workspaceId;
+    // for the same workspace ID (lastHydrationRequestedWorkspaceId === workspaceId)
+    // to avoid redundant state updates. The hydration request after open remains
+    // session-coalesced by the lifecycle saga.
+    let alreadyRequestedHydration = false;
+    const isReturnVisit = lastHydrationRequestedWorkspaceId === workspaceId;
     if (ws && !isReturnVisit) {
       logger.info('Pre-populating workspace state from cache before open()', { workspaceId });
       workspaceState.updateState({
@@ -213,9 +212,9 @@ export function useWorkspaceLoader(options: UseWorkspaceLoaderOptions) {
       });
       workspaceState.markInitialized();
       appStore.dispatch(setWorkspaceEntity(ws));
-      appStore.dispatch(workspaceMounted(ws.id));
-      lastMountedWorkspaceId = ws.id;
-      alreadyMounted = true;
+      appStore.dispatch(workspaceHydrationRequested(ws.id));
+      lastHydrationRequestedWorkspaceId = ws.id;
+      alreadyRequestedHydration = true;
     }
 
     let openResult = await workspaceClient.open(WorkspaceId(workspaceId));
@@ -263,8 +262,8 @@ export function useWorkspaceLoader(options: UseWorkspaceLoaderOptions) {
           workspaceId,
         });
         appStore.dispatch(removeWorkspaceEntity(workspaceId));
-        if (lastMountedWorkspaceId === workspaceId) {
-          lastMountedWorkspaceId = null;
+        if (lastHydrationRequestedWorkspaceId === workspaceId) {
+          lastHydrationRequestedWorkspaceId = null;
         }
       }
       // Backstop: remove the ghost tab from the strip. Dispatching the raw
@@ -311,15 +310,14 @@ export function useWorkspaceLoader(options: UseWorkspaceLoaderOptions) {
       // Hydrate Redux with the (potentially fresher) workspace entity.
       appStore.dispatch(setWorkspaceEntity(ws));
 
-      // STAB-24 fix: Dispatch workspaceMounted unless it was already dispatched
+      // Request hydration unless it was already requested
       // during the pre-population block above. The pre-population block only runs
-      // when (ws && !isReturnVisit), so alreadyMounted is only true for first
-      // visits to a cached workspace. In all other cases (return visits or
-      // uncached first visits), we need to dispatch workspaceMounted here to
-      // ensure terminal tabs and other workspace-scoped state are hydrated.
-      if (!alreadyMounted) {
-        appStore.dispatch(workspaceMounted(ws.id));
-        lastMountedWorkspaceId = ws.id;
+      // when (ws && !isReturnVisit), so alreadyRequestedHydration is only true for first
+      // visits to a cached workspace. In all other cases (return visits or uncached
+      // first visits), ask the lifecycle saga to hydrate once per open-tab session.
+      if (!alreadyRequestedHydration) {
+        appStore.dispatch(workspaceHydrationRequested(ws.id));
+        lastHydrationRequestedWorkspaceId = ws.id;
       }
     } else {
       // This case shouldn't be reached since we throw if ws is null after failed open
