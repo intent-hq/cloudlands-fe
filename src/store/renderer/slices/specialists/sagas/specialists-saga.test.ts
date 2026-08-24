@@ -92,17 +92,10 @@ const sagaState = (files: Record<string, ReturnType<typeof mappedFileDef>> = {})
   },
 });
 
+// A successful list carrying only user/project defs means the base set is
+// intentionally empty — no hardcoded resurrection (replacement mode).
 const expectedListActions = (ids: string[]) => [
-  setBundledSpecialists([
-    {
-      id: 'builtin',
-      name: 'Builtin',
-      description: 'Default',
-      defaultBehaviorPrompt: 'Default prompt',
-      source: 'bundled',
-      hidden: true,
-    },
-  ]),
+  setBundledSpecialists([]),
   setBundledSpecialistsLoaded(true),
   setOverridesLoaded(true),
   setCustomSpecialistsLoaded(true),
@@ -161,6 +154,68 @@ describe('specialistsSaga', () => {
     task.cancel();
     await task.toPromise();
     expect(mocks.unsubscribe).toHaveBeenCalledTimes(1);
+  });
+
+  it('daemon bundled specialists replace the hardcoded set — no resurrection (replacement mode)', async () => {
+    const dispatch = vi.fn();
+    const task = runSaga(
+      { channel: stdChannel(), dispatch, getState: () => sagaState() },
+      specialistsSaga,
+    );
+    await settle();
+    mocks.subscription?.([
+      {
+        id: 'daemon-only',
+        name: 'Daemon Only',
+        description: 'from daemon',
+        behaviorPrompt: 'prompt',
+        source: 'bundled' as const,
+        hidden: false,
+      },
+    ]);
+    await settle();
+    const bundledAction = dispatch.mock.calls.find(
+      ([action]) => action.type === setBundledSpecialists.type,
+    )?.[0];
+    const ids = bundledAction.payload[0].map((s: { id: string }) => s.id);
+    expect(ids).toEqual(['daemon-only']);
+    expect(ids).not.toContain('builtin');
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('a user/project-only daemon list keeps the base set empty — no hardcoded resurrection (replacement mode)', async () => {
+    const dispatch = vi.fn();
+    const task = runSaga(
+      { channel: stdChannel(), dispatch, getState: () => sagaState() },
+      specialistsSaga,
+    );
+    await settle();
+    mocks.subscription?.([fileDef('reviewer')]);
+    await settle();
+    const bundledAction = dispatch.mock.calls.find(
+      ([action]) => action.type === setBundledSpecialists.type,
+    )?.[0];
+    expect(bundledAction).toEqual(setBundledSpecialists([]));
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('falls back to the hardcoded set only on a fully empty daemon list', async () => {
+    const dispatch = vi.fn();
+    const task = runSaga(
+      { channel: stdChannel(), dispatch, getState: () => sagaState() },
+      specialistsSaga,
+    );
+    await settle();
+    mocks.subscription?.([]);
+    await settle();
+    const bundledAction = dispatch.mock.calls.find(
+      ([action]) => action.type === setBundledSpecialists.type,
+    )?.[0];
+    expect(bundledAction.payload[0].map((s: { id: string }) => s.id)).toEqual(['builtin']);
+    task.cancel();
+    await task.toPromise();
   });
 
   it('sends exact create payloads while global takeEvery processes repeated writes concurrently', async () => {

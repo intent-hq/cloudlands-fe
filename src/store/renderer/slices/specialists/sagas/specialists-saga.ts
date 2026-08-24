@@ -133,15 +133,14 @@ function toFileSpecialist(def: SpecialistDef): FileSpecialist {
 function* applySpecialistList(defs: SpecialistDef[]) {
   const bundledDefs = defs.filter((def) => def.source === 'bundled');
   const fileDefs = defs.filter((def) => def.source === 'user' || def.source === 'project');
-  const bundledById = new Map(bundledDefs.map((def) => [def.id, def]));
-  const knownIds = new Set(SPECIALISTS.map((specialist) => specialist.id));
-  const bundled = SPECIALISTS.map((builtin) => {
-    const def = bundledById.get(builtin.id);
-    return def ? toBundledSpecialist(def) : bundledFallback(builtin);
-  });
-  for (const def of bundledDefs) {
-    if (!knownIds.has(def.id)) bundled.push(toBundledSpecialist(def));
-  }
+  // The daemon list is authoritative: shipped specialists absent from it must
+  // not resurrect (daemon replacement mode). A successful response with only
+  // user/project defs means the base set is intentionally empty, so the
+  // hardcoded SPECIALISTS fallback only applies to a fully empty list
+  // (specialist.list already folds transport failures to []).
+  const bundled = defs.length
+    ? bundledDefs.map(toBundledSpecialist)
+    : SPECIALISTS.map(bundledFallback);
 
   yield* put(setBundledSpecialists(bundled));
   yield* put(setBundledSpecialistsLoaded(true));

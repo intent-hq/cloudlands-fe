@@ -116,11 +116,16 @@ export const selectSpecialists = store.createSelector((state): Specialist[] => {
     }
     // Wave 2: Electron-store custom specialists are no longer included.
     // They should have been migrated to files on startup.
-    // Last resort fallback: hardcoded SPECIALISTS
-    for (const specialist of SPECIALISTS) {
-        if (!seen.has(specialist.id) && selectIsSpecialistVisible.select(state, specialist.id)) {
-            seen.add(specialist.id);
-            result.push(specialist);
+    // Last resort fallback: hardcoded SPECIALISTS, only before any other
+    // source has produced specialists. Once file/daemon specialists loaded,
+    // the loaded set is authoritative — shipped specialists absent from it
+    // must not resurrect (daemon replacement mode).
+    if (fileSpecialists.length === 0 && bundledSpecialists.length === 0) {
+        for (const specialist of SPECIALISTS) {
+            if (!seen.has(specialist.id) && selectIsSpecialistVisible.select(state, specialist.id)) {
+                seen.add(specialist.id);
+                result.push(specialist);
+            }
         }
     }
 
@@ -132,8 +137,10 @@ export const selectSpecialists = store.createSelector((state): Specialist[] => {
     for (const s of bundledSpecialists) {
         if (!bundledOrder.has(s.id)) bundledOrder.set(s.id, bundledOrder.size);
     }
-    for (const s of SPECIALISTS) {
-        if (!bundledOrder.has(s.id)) bundledOrder.set(s.id, bundledOrder.size);
+    if (bundledSpecialists.length === 0) {
+        for (const s of SPECIALISTS) {
+            if (!bundledOrder.has(s.id)) bundledOrder.set(s.id, bundledOrder.size);
+        }
     }
 
     result.sort((a, b) => {
