@@ -361,22 +361,28 @@ export function createPanelKeyboardShortcuts(
    * Handle a keydown event. Returns true if the event was handled.
    */
   function handleKeyDown(e: KeyboardEvent): boolean {
+    // On Mac, "Mod" is Cmd (metaKey) only — Ctrl is reserved for Emacs bindings and other uses.
+    // On Win/Linux, "Mod" is Ctrl.
+    const isMod = isMac ? e.metaKey && !e.ctrlKey : e.ctrlKey && !e.metaKey;
+    const bracketDirection =
+      e.key === '[' || e.key === '{' ? 'prev' : e.key === ']' || e.key === '}' ? 'next' : null;
+
+    // Column focus is global, including while panel content or a terminal owns focus.
+    if (isMod && e.shiftKey && !e.altKey && bracketDirection) {
+      const handled = focusAdjacentColumn(getLayoutManager(), bracketDirection);
+      if (handled) e.preventDefault();
+      return handled;
+    }
+
     const target = e.target instanceof Element ? e.target : null;
     if (isFocusInTerminal(target as HTMLElement | null) || isFocusInEditableElement(target)) {
       return false;
     }
 
-    // On Mac, "Mod" is Cmd (metaKey) only — Ctrl is reserved for Emacs bindings and other uses.
-    // On Win/Linux, "Mod" is Ctrl.
-    const isMod = isMac ? e.metaKey && !e.ctrlKey : e.ctrlKey && !e.metaKey;
     const layoutManager = getLayoutManager();
 
-    const bracketDirection =
-      e.key === '[' || e.key === '{' ? 'prev' : e.key === ']' || e.key === '}' ? 'next' : null;
-    if (isMod && !e.altKey && bracketDirection) {
-      const handled = e.shiftKey
-        ? focusAdjacentColumn(layoutManager, bracketDirection)
-        : selectAdjacentPane(layoutManager, bracketDirection);
+    if (isMod && !e.shiftKey && !e.altKey && bracketDirection) {
+      const handled = selectAdjacentPane(layoutManager, bracketDirection);
       if (handled) e.preventDefault();
       return handled;
     }

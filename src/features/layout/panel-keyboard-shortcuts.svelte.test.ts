@@ -23,6 +23,25 @@ vi.mock('$store/renderer/slices/panel-layout/panel-layout-selectors', () => ({
 import { createPanelKeyboardShortcuts } from './panel-keyboard-shortcuts.svelte';
 
 describe('fixed-column panel keyboard shortcuts', () => {
+  const editableTargetFactories: Array<[string, () => HTMLElement]> = [
+    ['input', () => document.createElement('input')],
+    [
+      'editor',
+      () => {
+        const target = document.createElement('div');
+        target.setAttribute('contenteditable', 'true');
+        return target;
+      },
+    ],
+    [
+      'terminal',
+      () => {
+        const target = document.createElement('textarea');
+        target.classList.add('xterm-helper-textarea');
+        return target;
+      },
+    ],
+  ];
   const splitPanel = vi.fn();
   const selectNextTab = vi.fn();
   const selectPreviousTab = vi.fn();
@@ -100,7 +119,7 @@ describe('fixed-column panel keyboard shortcuts', () => {
     ['macOS', true, { metaKey: true }],
     ['Windows/Linux', false, { ctrlKey: true }],
   ] as const)(
-    'uses Mod+Shift+brackets to focus adjacent columns on %s',
+    'uses both Mod+Shift bracket variants to focus columns from all targets on %s',
     (_platform, isMac, mod) => {
       const onFocusAdjacentColumn = vi.fn(() => true);
       const shortcuts = createPanelKeyboardShortcuts(() => manager, undefined, undefined, {
@@ -108,9 +127,55 @@ describe('fixed-column panel keyboard shortcuts', () => {
         onFocusAdjacentColumn,
       });
 
-      expect(shortcuts.handleKeyDown(event('}', { ...mod, shiftKey: true }))).toBe(true);
-      expect(shortcuts.handleKeyDown(event('{', { ...mod, shiftKey: true }))).toBe(true);
-      expect(onFocusAdjacentColumn.mock.calls).toEqual([['next'], ['prev']]);
+      const targets: Array<[string, () => HTMLElement]> = [
+        ['ordinary content', () => document.body],
+        ...editableTargetFactories,
+      ];
+      const chords = [
+        [']', 'next'],
+        ['}', 'next'],
+        ['[', 'prev'],
+        ['{', 'prev'],
+      ] as const;
+
+      for (const [_context, createTarget] of targets) {
+        for (const [key, direction] of chords) {
+          const keyEvent = event(key, { ...mod, shiftKey: true }, createTarget());
+          expect(shortcuts.handleKeyDown(keyEvent)).toBe(true);
+          expect(keyEvent.defaultPrevented).toBe(true);
+          expect(onFocusAdjacentColumn).toHaveBeenLastCalledWith(direction);
+        }
+      }
+      shortcuts.cleanup();
+    },
+  );
+
+  it.each([
+    ['macOS', true, { metaKey: true }],
+    ['Windows/Linux', false, { ctrlKey: true }],
+  ] as const)(
+    'leaves unavailable Mod+Shift column directions native on %s',
+    (_platform, isMac, mod) => {
+      const shortcuts = createPanelKeyboardShortcuts(() => manager, undefined, undefined, {
+        isMac,
+      });
+      const targets: Array<[string, () => HTMLElement]> = [
+        ['ordinary content', () => document.body],
+        ...editableTargetFactories,
+      ];
+
+      for (const [_context, createTarget] of targets) {
+        mocks.focusedPanelId = 'p1';
+        const previous = event('[', { ...mod, shiftKey: true }, createTarget());
+        expect(shortcuts.handleKeyDown(previous)).toBe(false);
+        expect(previous.defaultPrevented).toBe(false);
+
+        mocks.focusedPanelId = 'p2';
+        const next = event('}', { ...mod, shiftKey: true }, createTarget());
+        expect(shortcuts.handleKeyDown(next)).toBe(false);
+        expect(next.defaultPrevented).toBe(false);
+      }
+      expect(focusPanel).not.toHaveBeenCalled();
       shortcuts.cleanup();
     },
   );
@@ -159,33 +224,41 @@ describe('fixed-column panel keyboard shortcuts', () => {
     shortcuts.cleanup();
   });
 
-  it.each([
-    ['input', () => document.createElement('input')],
-    [
-      'editor',
-      () => {
-        const target = document.createElement('div');
-        target.setAttribute('contenteditable', 'true');
-        return target;
-      },
-    ],
-    [
-      'terminal',
-      () => {
-        const target = document.createElement('textarea');
-        target.classList.add('xterm-helper-textarea');
-        return target;
-      },
-    ],
-  ])('preserves %s ownership', (_context, createTarget) => {
-    const shortcuts = createPanelKeyboardShortcuts(() => manager, undefined, undefined, {
-      isMac: true,
-    });
+  it.each(editableTargetFactories)(
+    'preserves all other %s shortcut protections',
+    (_context, createTarget) => {
+      const onFocusAdjacentColumn = vi.fn(() => true);
+      const shortcuts = createPanelKeyboardShortcuts(() => manager, undefined, undefined, {
+        isMac: true,
+        onFocusAdjacentColumn,
+      });
+      const target = createTarget();
+      const protectedEvents = [
+        event(']', { metaKey: true }, target),
+        event('PageDown', { metaKey: true, shiftKey: true }, target),
+        event('PageDown', { metaKey: true, altKey: true }, target),
+        event('\\', { metaKey: true }, target),
+        event(';', { metaKey: true }, target),
+      ];
 
-    expect(shortcuts.handleKeyDown(event(']', { metaKey: true }, createTarget()))).toBe(false);
-    expect(selectNextTab).not.toHaveBeenCalled();
-    shortcuts.cleanup();
-  });
+      for (const keyEvent of protectedEvents) {
+        expect(shortcuts.handleKeyDown(keyEvent)).toBe(false);
+        expect(keyEvent.defaultPrevented).toBe(false);
+      }
+      expect(selectNextTab).not.toHaveBeenCalled();
+      expect(onFocusAdjacentColumn).not.toHaveBeenCalled();
+      expect(moveTabToPanel).not.toHaveBeenCalled();
+      expect(splitPanel).not.toHaveBeenCalled();
+      expect(shortcuts.leaderActive).toBe(false);
+
+      shortcuts.activateLeader();
+      const leaderAction = event('x', {}, target);
+      expect(shortcuts.handleKeyDown(leaderAction)).toBe(false);
+      expect(leaderAction.defaultPrevented).toBe(false);
+      expect(shortcuts.leaderActive).toBe(true);
+      shortcuts.cleanup();
+    },
+  );
 
   it('leaves legacy pane aliases and native zoom reset unhandled', () => {
     const shortcuts = createPanelKeyboardShortcuts(() => manager, undefined, undefined, {
