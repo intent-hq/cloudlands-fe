@@ -258,7 +258,10 @@
     }
   });
 
+  let pointerFocusHandled = false;
+
   function handlePanelFocus() {
+    if (pointerFocusHandled || isFocused) return;
     onFocus?.();
   }
 
@@ -278,6 +281,11 @@
 
   function handlePanelPointerDown(event: PointerEvent) {
     if (!isEmptyStateInteraction(event.target)) markUserTouch();
+    // A focusable pointer target emits `focusin` after this capture handler.
+    // Treat both events as one column activation without cancelling either,
+    // so the target keeps its native DOM focus.
+    pointerFocusHandled = true;
+    queueMicrotask(() => (pointerFocusHandled = false));
     if (isFocused) return;
     onFocus?.();
   }

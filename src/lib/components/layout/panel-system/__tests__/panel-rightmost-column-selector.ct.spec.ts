@@ -35,7 +35,7 @@ async function chooseCount(component: Locator, page: Page, count: 1 | 2 | 3 | 4)
   );
 }
 
-test('keeps one real selector on the empty rightmost panel as columns grow', async ({
+test('keeps the rightmost selector and focuses every clicked column as columns grow', async ({
   mount,
   page,
 }) => {
@@ -63,6 +63,13 @@ test('keeps one real selector on the empty rightmost panel as columns grow', asy
   await expectGlyph(component, 3);
   const idsAtThree = await panelIds(component);
   expect(idsAtThree).toHaveLength(3);
+  const layoutState = component.getByTestId('panel-layout-state');
+  for (const panelId of idsAtThree) {
+    const panel = component.locator(`[data-panel-id="${panelId}"]`);
+    await panel.click({ position: { x: 12, y: 90 } });
+    await expect(layoutState).toHaveAttribute('data-focused-panel-id', panelId);
+    await expect(panel).toHaveAttribute('data-focused', 'true');
+  }
   const ownerAtThree = await selectorOwner(component);
   expect(ownerAtThree).toBe(idsAtThree.at(-1));
   expect(ownerAtThree).not.toBe(ownerAtTwo);
