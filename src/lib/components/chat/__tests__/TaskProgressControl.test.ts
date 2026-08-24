@@ -42,8 +42,9 @@ describe('TaskProgressControl', () => {
   it('shows compact progress and reveals one-row active tasks from keyboard focus', async () => {
     render(TaskProgressControl, { props: { tasks } });
     const trigger = screen.getByTestId('task-progress-trigger');
-    expect(trigger.textContent?.trim()).toBe('2/5');
+    expect(trigger.textContent?.trim()).toBe('');
     expect(trigger.getAttribute('aria-label')).toBe('Task progress: 2 of 5 completed');
+    expect(screen.queryByRole('tooltip', { hidden: true })).toBeNull();
 
     trigger.focus();
     const dialog = await screen.findByRole('dialog', { name: 'Agent tasks' });
@@ -57,6 +58,52 @@ describe('TaskProgressControl', () => {
     expect(screen.getByLabelText('In Progress: Move the task progress')).toBeTruthy();
     expect(screen.getByText('Move the task progress').className).toContain('shimmer-text');
     expect(screen.queryByText('Map the native plan')).toBeNull();
+    expect(screen.queryByRole('tooltip', { hidden: true })).toBeNull();
+  });
+
+  it('shows one overlapping icon per active task and one aggregate completed icon', () => {
+    const statusTasks: TaskProgressItem[] = [
+      ...tasks,
+      { id: 'discussion', title: 'Discuss the approach', status: 'discussion_needed' },
+      { id: 'blocked', title: 'Resolve the blocker', status: 'blocked' },
+      { id: 'review', title: 'Review the result', status: 'review_required' },
+    ];
+    render(TaskProgressControl, { props: { tasks: statusTasks } });
+
+    const icons = screen.getAllByTestId('task-progress-status-icon');
+    expect(icons.map((icon) => icon.dataset.taskStatus)).toEqual([
+      'pending',
+      'running',
+      'waiting',
+      'discussion_needed',
+      'blocked',
+      'review_required',
+      'completed',
+    ]);
+    expect(
+      icons.map((icon) => icon.querySelector<HTMLElement>('[data-icon]')?.dataset.icon),
+    ).toEqual([
+      'circle',
+      'spinner',
+      'clock',
+      'circle-question',
+      'triangle-exclamation',
+      'eye',
+      'check',
+    ]);
+    expect(icons.slice(1).every((icon) => icon.className.includes('-ml-1.5'))).toBe(true);
+    expect(icons.at(-1)?.dataset.completedCount).toBe('2');
+    expect(icons[1].innerHTML).toContain('motion-reduce:animate-none');
+  });
+
+  it('opens the task list directly on hover without a separate tooltip', async () => {
+    render(TaskProgressControl, { props: { tasks } });
+    const trigger = screen.getByTestId('task-progress-trigger');
+
+    await fireEvent.pointerEnter(trigger, { pointerType: 'mouse' });
+
+    expect(await screen.findByRole('dialog', { name: 'Agent tasks' })).toBeTruthy();
+    expect(screen.queryByRole('tooltip', { hidden: true })).toBeNull();
   });
 
   it('starts completed tasks collapsed and keeps accordion focus through live movement', async () => {
@@ -76,7 +123,14 @@ describe('TaskProgressControl', () => {
 
     await waitFor(() => expect(toggle.textContent).toContain('3 tasks completed'));
     expect(document.activeElement).toBe(toggle);
-    expect(screen.getByTestId('task-progress-trigger').textContent?.trim()).toBe('3/5');
+    expect(
+      screen
+        .getAllByTestId('task-progress-status-icon')
+        .filter((icon) => icon.dataset.taskStatus === 'completed'),
+    ).toHaveLength(1);
+    expect(screen.getByTestId('task-progress-trigger').getAttribute('aria-label')).toBe(
+      'Task progress: 3 of 5 completed',
+    );
     expect(screen.getByText('Move the task progress')).toBeTruthy();
     expect(screen.getAllByTestId('task-progress-row').map((row) => row.dataset.taskId)).toEqual([
       'pending',

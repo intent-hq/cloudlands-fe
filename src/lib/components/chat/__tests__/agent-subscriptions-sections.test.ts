@@ -1177,8 +1177,8 @@ describe('AgentSubscriptions unified waiting disclosure', () => {
     const linkedTrigger = within(linkedRow).getByTestId('task-progress-trigger');
     const activationButton = within(nativeRow).getAllByRole('button')[0];
 
-    expect(nativeTrigger.textContent?.trim()).toBe('1/2');
-    expect(linkedTrigger.textContent?.trim()).toBe('1/1');
+    expect(nativeTrigger.getAttribute('aria-label')).toBe('Task progress: 1 of 2 completed');
+    expect(linkedTrigger.getAttribute('aria-label')).toBe('Task progress: 1 of 1 completed');
     expect(activationButton.contains(nativeTrigger)).toBe(false);
     expect(nativeRow.querySelector('.agent-card-content')?.className).toContain('mr-24');
     expect(within(nativeRow).getByTestId('agent-card-trailing-slot').className).toContain('w-24');
@@ -1224,10 +1224,12 @@ describe('AgentSubscriptions unified waiting disclosure', () => {
 
     const trigger = within(agentRow('agent-linked')).getByTestId('task-progress-trigger');
     trigger.focus();
-    expect(trigger.textContent?.trim()).toBe('0/1');
+    expect(trigger.getAttribute('aria-label')).toBe('Task progress: 0 of 1 completed');
     appStore.dispatch(applyTaskStatusChanged(wsId, 'task-linked', 'complete'));
 
-    await waitFor(() => expect(trigger.textContent?.trim()).toBe('1/1'));
+    await waitFor(() =>
+      expect(trigger.getAttribute('aria-label')).toBe('Task progress: 1 of 1 completed'),
+    );
     expect(document.activeElement).toBe(trigger);
     expect(await screen.findByRole('button', { name: '1 task completed' })).toBeTruthy();
   });
@@ -1261,8 +1263,8 @@ describe('AgentSubscriptions unified waiting disclosure', () => {
     markTranscriptAuthoritative(agentId);
     await waitFor(() =>
       expect(
-        within(agentRow(agentId)).getByTestId('task-progress-trigger').textContent?.trim(),
-      ).toBe('0/1'),
+        within(agentRow(agentId)).getByTestId('task-progress-trigger').getAttribute('aria-label'),
+      ).toBe('Task progress: 0 of 1 completed'),
     );
   });
 
@@ -1309,7 +1311,7 @@ describe('AgentSubscriptions unified waiting disclosure', () => {
     sessionState.historyById.set(agentId, [persisted]);
     markTranscriptAuthoritative(agentId, 1);
     const trigger = await within(agentRow(agentId)).findByTestId('task-progress-trigger');
-    expect(trigger.textContent?.trim()).toBe('0/2');
+    expect(trigger.getAttribute('aria-label')).toBe('Task progress: 0 of 2 completed');
 
     await fireEvent.click(trigger);
     const dialog = await screen.findByRole('dialog', { name: 'Agent tasks' });

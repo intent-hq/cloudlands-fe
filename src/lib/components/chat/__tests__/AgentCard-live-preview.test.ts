@@ -13,7 +13,7 @@
  *      re-derive previews (monorepo#2843).
  */
 import { beforeEach, afterEach, describe, expect, it } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/svelte';
+import { render, screen, waitFor, within } from '@testing-library/svelte';
 
 import AgentCard from '../AgentCard.svelte';
 import { store as appStore } from '$store/renderer/store';
@@ -128,7 +128,12 @@ describe('AgentCard live preview precedence', () => {
     const activationButton = container.querySelector('[data-testid="agent-list-item"] > button');
     const content = container.querySelector('.agent-card-content');
     const trailing = screen.getByTestId('agent-card-trailing-slot');
-    expect(trigger.textContent?.trim()).toBe('1/2');
+    expect(trigger.getAttribute('aria-label')).toBe('Task progress: 1 of 2 completed');
+    expect(
+      within(trigger)
+        .getAllByTestId('task-progress-status-icon')
+        .map((icon) => icon.dataset.taskStatus),
+    ).toEqual(['running', 'completed']);
     expect(activationButton?.contains(trigger)).toBe(false);
     expect(activationButton?.className).toContain('overflow-hidden');
     expect(content?.className).toContain('mr-10');

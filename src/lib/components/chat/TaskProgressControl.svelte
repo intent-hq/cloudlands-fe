@@ -67,6 +67,16 @@
     return faCircle;
   }
 
+  function triggerStatusClass(status: TaskProgressStatus): string {
+    if (status === 'completed') return 'text-emerald-600 dark:text-emerald-400';
+    if (status === 'running') return 'text-sky-500';
+    if (status === 'waiting') return 'text-muted-foreground';
+    if (status === 'discussion_needed') return 'text-amber-500';
+    if (status === 'blocked') return 'text-destructive';
+    if (status === 'review_required') return 'text-blue-500';
+    return 'text-muted-foreground/60';
+  }
+
   function handleOpenChange(nextOpen: boolean) {
     open = nextOpen;
     if (!nextOpen) return;
@@ -119,18 +129,44 @@
           bind:ref={triggerElement}
           variant="ghost-light"
           size="xs"
-          class="min-w-10 px-1.5! font-mono type-caption tabular-nums focus-visible:border-border focus-visible:bg-muted focus-visible:ring-0"
+          class="h-6 min-w-0 px-1! focus-visible:border-border focus-visible:bg-muted focus-visible:ring-0"
           aria-label={progressLabel}
           aria-expanded={open}
-          tooltip={progressLabel}
-          tooltipSide="bottom"
-          tooltipDelayDuration={300}
           onfocus={handleTriggerFocus}
           onkeydown={handleTriggerKeydown}
           data-testid="task-progress-trigger"
         >
-          <span aria-hidden="true">
-            {formatInteger(completedTasks.length)}/{formatInteger(tasks.length)}
+          <span class="flex items-center" aria-hidden="true" data-testid="task-progress-icon-stack">
+            {#each activeTasks as task, index (task.id)}
+              <span
+                class="relative inline-flex size-5 shrink-0 items-center justify-center rounded-full border border-border bg-background shadow-sm {triggerStatusClass(
+                  task.status,
+                )} {index > 0 ? '-ml-1.5' : ''}"
+                data-testid="task-progress-status-icon"
+                data-task-status={task.status}
+              >
+                <Fa
+                  icon={statusIcon(task.status)}
+                  size={task.status === 'pending' ? 6 : 10}
+                  class="{task.status === 'pending' ? 'size-1.5!' : 'size-2.5!'} {task.status ===
+                  'running'
+                    ? 'motion-safe:animate-spin motion-reduce:animate-none'
+                    : ''}"
+                />
+              </span>
+            {/each}
+            {#if completedTasks.length > 0}
+              <span
+                class="relative inline-flex size-5 shrink-0 items-center justify-center rounded-full border border-border bg-background shadow-sm {triggerStatusClass(
+                  'completed',
+                )} {activeTasks.length > 0 ? '-ml-1.5' : ''}"
+                data-testid="task-progress-status-icon"
+                data-task-status="completed"
+                data-completed-count={completedTasks.length}
+              >
+                <Fa icon={faCheck} size={10} class="size-2.5!" />
+              </span>
+            {/if}
           </span>
         </Button>
       {/snippet}
