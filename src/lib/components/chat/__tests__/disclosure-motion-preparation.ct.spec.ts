@@ -194,10 +194,13 @@ test('accepts live response updates during collapse without stale detached conte
     props: { ...initialProps, responseText: 'Updated live activity while collapsing.' },
   });
   await page.waitForTimeout(240);
-  await expect(component.locator('[data-operational-expanded-content]')).toHaveCount(1);
-  await expect(component.getByTestId('prepared-response-current')).toHaveText(
-    'Updated live activity while collapsing.',
-  );
+  await expect(component.locator('[data-operational-expanded-content]')).toHaveCount(0);
+  const current = component.getByTestId('prepared-response-current');
+  await expect(current).toBeVisible();
+  await expect(current).toHaveText('Updated live activity while collapsing.');
+  expect(
+    await current.evaluate((node) => node.closest('[data-operational-expanded-content]') === null),
+  ).toBe(true);
   await expect(component.getByTestId('prepared-response-body')).toHaveCount(0);
   expect(
     await transcript.evaluate((node) => node.scrollHeight - node.clientHeight - node.scrollTop),
