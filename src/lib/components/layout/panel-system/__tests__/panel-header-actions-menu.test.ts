@@ -298,7 +298,7 @@ describe('mounted panel header actions menu', () => {
       Array.from(populatedActions.querySelectorAll('button')).map((button) =>
         button.getAttribute('aria-label'),
       ),
-    ).toEqual(['More', 'Panel columns: 2', 'Close active pane']);
+    ).toEqual(['More', 'Add column', 'Panel columns: 2', 'Close active pane']);
     populated.unmount();
 
     const empty = render(PanelTabBar, {
@@ -316,7 +316,7 @@ describe('mounted panel header actions menu', () => {
       Array.from(emptyHeader.querySelectorAll('button')).map((button) =>
         button.getAttribute('aria-label'),
       ),
-    ).toEqual(['Panel columns: 2', 'Close panel']);
+    ).toEqual(['Add column', 'Panel columns: 2', 'Close panel']);
   });
 
   it.each(panelTypes)('opens one portalled menu from one click for the %s panel', async (type) => {
