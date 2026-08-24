@@ -9,7 +9,7 @@
 <script lang="ts">
   import Fa from 'svelte-fa';
   import type { Snippet } from 'svelte';
-  import { onDestroy } from 'svelte';
+  import { flushSync, onDestroy } from 'svelte';
   import type { ContentBlock } from '$shared/types';
   import { getContentBlockText } from '$shared/utils/content-block-helpers';
   import { m } from '$shared/paraglide/messages.js';
@@ -76,12 +76,9 @@
 
     if (!isExpanded) return;
     if (contentEl?.contains(document.activeElement)) triggerEl?.focus({ preventScroll: true });
-    if (isStreaming && currentChild) {
-      isClosing = false;
-      isExpanded = false;
-      return;
-    }
-    isClosing = true;
+    flushSync(() => {
+      isClosing = true;
+    });
     isExpanded = false;
   }
 
@@ -206,6 +203,19 @@
     />{/if}
 {/snippet}
 
+{#snippet preview()}
+  <CylinderScroller isActive={isStreaming} constrained={false}>
+    <div class="relative flex flex-col gap-0" data-response-group-content>
+      <span
+        class="operational-group-guide pointer-events-none absolute inset-y-0 w-px -translate-x-1/2 bg-border"
+        data-operational-expanded-guide
+        aria-hidden="true"
+      ></span>
+      {@render currentChild?.()}
+    </div>
+  </CylinderScroller>
+{/snippet}
+
 {#snippet details()}
   <CylinderScroller isActive={isStreaming} constrained={false}>
     <div class="relative flex flex-col gap-0" data-response-group-content>
@@ -214,11 +224,7 @@
         data-operational-expanded-guide
         aria-hidden="true"
       ></span>
-      {#if isExpanded}
-        {@render children()}
-      {:else}
-        {@render currentChild?.()}
-      {/if}
+      {@render children()}
     </div>
   </CylinderScroller>
 {/snippet}
@@ -226,7 +232,8 @@
 <ChatOperationalRow
   {leading}
   {summary}
-  details={isExpanded || (isStreaming && currentChild) ? details : undefined}
+  preview={!isExpanded && isStreaming && currentChild ? preview : undefined}
+  details={isExpanded ? details : undefined}
   interactive
   showChevron={false}
   expanded={isExpanded}
@@ -236,6 +243,7 @@
   summaryTitle={accessibleSummary}
   onclick={toggle}
   {detailsId}
+  previewClass={groupContentClass}
   detailsClass={groupContentClass}
   detailsTransition={safeDisclosureTransition}
   detailsMotion="height-opacity-y"

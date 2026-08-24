@@ -49,6 +49,9 @@
           isStreaming={activePosition === undefined ? streaming : activePosition === position}
           {blocks}
         >
+          {#snippet currentChild()}
+            <button type="button" data-testid="response-group-current-{position}">{chunk}</button>
+          {/snippet}
           <div class="py-2" data-testid="response-group-body-{position}">
             <button type="button" data-testid="response-group-focus-{position}">
               Focusable {position} detail for {chunk}
