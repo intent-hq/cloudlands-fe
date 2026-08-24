@@ -39,6 +39,15 @@ const snapshot: TokenUsage = {
   lastScanAt: '2026-06-17T12:00:00Z',
 };
 
+const crossFilterRows = [
+  {
+    agentId: 'agent-1',
+    model: 'model-a',
+    totals: snapshot.totals,
+    humanMessages: 2,
+    agentMessages: 3,
+  },
+];
 describe('token-usage-slice', () => {
   it('has empty initial state', () => {
     expect(initialState).toEqual({ byWorkspaceId: {} });
@@ -76,6 +85,16 @@ describe('token-usage-slice', () => {
     expect(plain.byWorkspaceId[WS].totals).not.toHaveProperty('thoughtTokens');
   });
 
+  it('preserves present and absent cross-filter matrix states exactly', () => {
+    const present = tokenUsageReducer(
+      initialState,
+      tokenUsageReceived(WS, { ...snapshot, byAgentModel: crossFilterRows }),
+    );
+    expect(present.byWorkspaceId[WS].byAgentModel).toBe(crossFilterRows);
+
+    const legacy = tokenUsageReducer(initialState, tokenUsageReceived(WS, snapshot));
+    expect(legacy.byWorkspaceId[WS]).not.toHaveProperty('byAgentModel');
+  });
   it('tokenUsageFetchFailed marks an existing entry stale and keeps numbers', () => {
     const populated = tokenUsageReducer(initialState, tokenUsageReceived(WS, snapshot));
     const next = tokenUsageReducer(populated, tokenUsageFetchFailed(WS));

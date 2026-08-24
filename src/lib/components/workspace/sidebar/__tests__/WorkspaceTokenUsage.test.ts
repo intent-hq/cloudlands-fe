@@ -222,16 +222,18 @@ describe('WorkspaceTokenUsage', () => {
     expect(screen.queryByTestId('token-usage-breakdown-disclosure')).toBeNull();
     expect(details.querySelector('details')).toBeNull();
     expect(
-      compositionHeading.compareDocumentPosition(agentSection) & Node.DOCUMENT_POSITION_FOLLOWING,
+      agentSection.compareDocumentPosition(modelSection) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
     expect(
-      agentSection.compareDocumentPosition(modelSection) & Node.DOCUMENT_POSITION_FOLLOWING,
+      modelSection.compareDocumentPosition(compositionHeading) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
     expect(screen.getByRole('heading', { name: 'By agent' })).toBeTruthy();
     expect(screen.getByRole('heading', { name: 'By model' })).toBeTruthy();
 
     const composition = compositionHeading.closest('section')!;
-    expect(visibleText(compositionHeading.parentElement!)).toBe('Token composition 9.4M processed');
+    expect(visibleText(compositionHeading.parentElement!)).toContain(
+      'Token composition Active scope Workspace 9.4M processed',
+    );
     const compositionStrip = composition.querySelector('div[aria-hidden="true"]')!;
     const stripSegments = Array.from(compositionStrip.children) as HTMLElement[];
     expect(stripSegments).toHaveLength(3);
@@ -280,17 +282,9 @@ describe('WorkspaceTokenUsage', () => {
     expect(visibleText(agentRows[1])).toBe('Alpha 31K 8.5%');
     expect(
       [...modelRows, ...agentRows].every(
-        (listRow) => listRow.firstElementChild?.children.length === 2,
-      ),
-    ).toBe(true);
-    expect(
-      [...modelRows, ...agentRows].every(
         (listRow) =>
-          listRow.firstElementChild?.firstElementChild?.classList.contains(
-            'breakdown-share-bar',
-          ) === true &&
-          listRow.firstElementChild?.lastElementChild?.classList.contains('breakdown-metadata') ===
-            true,
+          listRow.querySelector('.breakdown-share-bar') !== null &&
+          listRow.querySelector('.breakdown-metadata') !== null,
       ),
     ).toBe(true);
     expect(
@@ -372,11 +366,11 @@ describe('WorkspaceTokenUsage', () => {
     const zeroCache = screen.getByRole('button', { name: 'Model Zero Cache 100 66.7%' });
     const reasoning = screen.getByRole('button', { name: 'Model Reasoning 50 33.3%' });
 
-    expect(visibleText(previewStatus)).toBe('1.1K processed');
+    expect(visibleText(previewStatus)).toBe('Active scope Workspace 1.1K processed');
     expect(visibleText(disclosure)).toContain('1.1K processed');
 
-    await fireEvent.pointerEnter(alpha, { pointerType: 'mouse' });
-    expect(visibleText(previewStatus)).toBe('By agent Alpha 150 processed');
+    await fireEvent.pointerEnter(alpha.closest('li')!, { pointerType: 'mouse' });
+    expect(visibleText(previewStatus)).toBe('Active scope By agent Alpha 150 processed');
     expect(alpha.getAttribute('aria-current')).toBe('true');
     expect(values()).toEqual([
       { value: '70', share: '46.7%' },
@@ -385,8 +379,8 @@ describe('WorkspaceTokenUsage', () => {
       { value: '50', share: '33.3%' },
     ]);
 
-    await fireEvent.pointerEnter(zeroCache, { pointerType: 'mouse' });
-    expect(visibleText(previewStatus)).toBe('By model Model Zero Cache 100 processed');
+    await fireEvent.pointerEnter(zeroCache.closest('li')!, { pointerType: 'mouse' });
+    expect(visibleText(previewStatus)).toBe('Active scope By model Model Zero Cache 100 processed');
     expect(values()).toEqual([
       { value: '0', share: '0%' },
       { value: '80', share: '80%' },
@@ -394,11 +388,11 @@ describe('WorkspaceTokenUsage', () => {
       { value: '0', share: '0%' },
     ]);
 
-    await fireEvent.pointerLeave(zeroCache, { pointerType: 'mouse' });
-    expect(visibleText(previewStatus)).toBe('1.1K processed');
+    await fireEvent.pointerLeave(zeroCache.closest('li')!, { pointerType: 'mouse' });
+    expect(visibleText(previewStatus)).toBe('Active scope Workspace 1.1K processed');
 
     await fireEvent.focus(beta);
-    expect(visibleText(previewStatus)).toBe('By agent Beta 1K processed');
+    expect(visibleText(previewStatus)).toBe('Active scope By agent Beta 1K processed');
     expect(values()).toEqual([
       { value: '300', share: '30%' },
       { value: '400', share: '40%' },
@@ -406,14 +400,14 @@ describe('WorkspaceTokenUsage', () => {
       { value: '0', share: '0%' },
     ]);
 
-    await fireEvent.pointerEnter(zeroCache, { pointerType: 'mouse' });
-    expect(visibleText(previewStatus)).toBe('By model Model Zero Cache 100 processed');
-    await fireEvent.pointerLeave(zeroCache, { pointerType: 'mouse' });
-    expect(visibleText(previewStatus)).toBe('By agent Beta 1K processed');
+    await fireEvent.pointerEnter(zeroCache.closest('li')!, { pointerType: 'mouse' });
+    expect(visibleText(previewStatus)).toBe('Active scope By model Model Zero Cache 100 processed');
+    await fireEvent.pointerLeave(zeroCache.closest('li')!, { pointerType: 'mouse' });
+    expect(visibleText(previewStatus)).toBe('Active scope By agent Beta 1K processed');
 
     await fireEvent.blur(beta);
     await fireEvent.focus(reasoning);
-    expect(visibleText(previewStatus)).toBe('By model Model Reasoning 50 processed');
+    expect(visibleText(previewStatus)).toBe('Active scope By model Model Reasoning 50 processed');
     expect(values()).toEqual([
       { value: '0', share: '0%' },
       { value: '0', share: '0%' },
@@ -422,13 +416,203 @@ describe('WorkspaceTokenUsage', () => {
     ]);
 
     await fireEvent.blur(reasoning);
-    expect(visibleText(previewStatus)).toBe('1.1K processed');
+    expect(visibleText(previewStatus)).toBe('Active scope Workspace 1.1K processed');
     expect(visibleText(disclosure)).toContain('1.1K processed');
 
-    await fireEvent.pointerEnter(alpha, { pointerType: 'touch' });
+    await fireEvent.pointerEnter(alpha.closest('li')!, { pointerType: 'touch' });
     await fireEvent.pointerDown(alpha, { pointerType: 'touch' });
     await fireEvent.focus(alpha);
-    expect(visibleText(previewStatus)).toBe('1.1K processed');
+    expect(visibleText(previewStatus)).toBe('Active scope Workspace 1.1K processed');
+    expect(screen.queryByTestId('token-usage-message-counts')).toBeNull();
+  });
+
+  it('cross-filters the full matrix view by row and category for pointer, focus, and touch', async () => {
+    const matrix = [
+      {
+        agentId: 'agent-alpha',
+        model: 'model-a',
+        totals: {
+          inputTokens: 10,
+          outputTokens: 20,
+          cacheReadTokens: 30,
+          cacheCreationTokens: 40,
+          thoughtTokens: 50,
+          cost: { amount: 1, currency: 'USD' },
+        },
+        humanMessages: 2,
+        agentMessages: 3,
+      },
+      {
+        agentId: 'agent-alpha',
+        model: 'model-b',
+        totals: { inputTokens: 5, outputTokens: 5, cacheReadTokens: 0, cacheCreationTokens: 0 },
+        humanMessages: 1,
+        agentMessages: 1,
+      },
+      {
+        agentId: 'agent-beta',
+        model: 'model-a',
+        totals: {
+          inputTokens: 100,
+          outputTokens: 50,
+          cacheReadTokens: 50,
+          cacheCreationTokens: 0,
+          cost: { amount: 0.5, currency: 'USD' },
+        },
+        humanMessages: 4,
+        agentMessages: 2,
+      },
+      {
+        agentId: 'agent-beta',
+        model: 'model-b',
+        totals: {
+          inputTokens: 300,
+          outputTokens: 250,
+          cacheReadTokens: 150,
+          cacheCreationTokens: 100,
+          cost: { amount: 1.5, currency: 'USD' },
+        },
+        humanMessages: 2,
+        agentMessages: 5,
+      },
+    ];
+    mocks.state.usage = makeUsage({
+      byAgentId: {
+        'agent-alpha': {
+          inputTokens: 15,
+          outputTokens: 25,
+          cacheReadTokens: 30,
+          cacheCreationTokens: 40,
+          thoughtTokens: 50,
+          cost: { amount: 1, currency: 'USD' },
+        },
+        'agent-beta': {
+          inputTokens: 400,
+          outputTokens: 300,
+          cacheReadTokens: 200,
+          cacheCreationTokens: 100,
+          cost: { amount: 2, currency: 'USD' },
+        },
+      },
+      totals: {
+        inputTokens: 415,
+        outputTokens: 325,
+        cacheReadTokens: 230,
+        cacheCreationTokens: 140,
+        thoughtTokens: 50,
+        cost: { amount: 3, currency: 'USD' },
+      },
+      byModel: {
+        'model-a': {
+          inputTokens: 110,
+          outputTokens: 70,
+          cacheReadTokens: 80,
+          cacheCreationTokens: 40,
+          thoughtTokens: 50,
+          cost: { amount: 1.5, currency: 'USD' },
+        },
+        'model-b': {
+          inputTokens: 305,
+          outputTokens: 255,
+          cacheReadTokens: 150,
+          cacheCreationTokens: 100,
+          cost: { amount: 1.5, currency: 'USD' },
+        },
+      },
+      byAgentModel: matrix,
+      lastScanAt: '2026-08-24T00:00:00Z',
+      isStale: false,
+    });
+    mocks.state.agents = [
+      { id: 'agent-alpha', name: 'Alpha' },
+      { id: 'agent-beta', name: 'Beta' },
+    ];
+
+    await renderExpandedTokenUsage();
+
+    const details = screen.getByTestId('token-usage-details');
+    const status = details.querySelector('.preview-status')!;
+    const messageCounts = screen.getByTestId('token-usage-message-counts');
+    const values = () =>
+      Array.from(details.querySelectorAll('.composition-row')).map((row) => ({
+        value: row.querySelector('.composition-value')?.textContent?.trim(),
+        share: row.querySelector('.composition-context')?.textContent?.trim(),
+      }));
+    const agentSection = screen.getByTestId('token-usage-by-agent');
+    const modelSection = screen.getByTestId('token-usage-by-model');
+    const alphaControl = agentSection.querySelectorAll<HTMLButtonElement>(
+      '.breakdown-metadata-control',
+    )[1];
+    const alphaRow = alphaControl.closest('li')!;
+
+    expect(visibleText(messageCounts)).toBe('Human messages 9 Agent messages 11');
+    expect(visibleText(status)).toBe('Active scope Workspace 1.2K processed');
+    expect(
+      agentSection.compareDocumentPosition(
+        screen.getByRole('heading', { name: 'Token composition' }),
+      ) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(agentSection.querySelectorAll('.breakdown-segment').length).toBeGreaterThan(4);
+
+    await fireEvent.pointerEnter(alphaRow, { pointerType: 'mouse' });
+    expect(visibleText(status)).toBe('Active scope By agent Alpha 160 processed');
+    expect(visibleText(messageCounts)).toBe('Human messages 3 Agent messages 4');
+    expect(values()).toEqual([
+      { value: '70', share: '43.8%' },
+      { value: '15', share: '9.4%' },
+      { value: '25', share: '15.6%' },
+      { value: '50', share: '31.3%' },
+    ]);
+    expect(within(agentSection).getAllByRole('listitem')).toHaveLength(2);
+    expect(within(modelSection).getAllByRole('listitem')).toHaveLength(2);
+    expect(screen.getByTestId('token-usage-total-cost').textContent).toContain('$1.00');
+
+    const cachedSegment = screen.getByRole('button', {
+      name: 'Alpha, Cached: 70 tokens, 43.8%',
+    });
+    await fireEvent.pointerEnter(cachedSegment, { pointerType: 'mouse' });
+    expect(visibleText(status)).toBe('Active scope By agent Alpha · Cached 70 processed');
+    expect(visibleText(messageCounts)).toBe('Human messages 3 Agent messages 4');
+    expect(values()).toEqual([
+      { value: '70', share: '100%' },
+      { value: '0', share: '0%' },
+      { value: '0', share: '0%' },
+      { value: '0', share: '0%' },
+    ]);
+    await fireEvent.pointerLeave(cachedSegment, { pointerType: 'mouse' });
+    expect(visibleText(status)).toBe('Active scope By agent Alpha 160 processed');
+    await fireEvent.pointerLeave(alphaRow, { pointerType: 'mouse' });
+    expect(visibleText(status)).toBe('Active scope Workspace 1.2K processed');
+
+    const modelA = Array.from(
+      modelSection.querySelectorAll<HTMLButtonElement>('.breakdown-metadata-control'),
+    ).find((button) => button.textContent?.includes('Model A'))!;
+    await fireEvent.focus(modelA);
+    expect(visibleText(status)).toBe('Active scope By model Model A 350 processed');
+    expect(visibleText(messageCounts)).toBe('Human messages 6 Agent messages 5');
+    expect(within(agentSection).getAllByRole('listitem')).toHaveLength(2);
+    await fireEvent.blur(modelA);
+
+    const betaOut = screen.getByRole('button', { name: 'Beta, Out: 300 tokens, 30%' });
+    const betaControl = Array.from(
+      agentSection.querySelectorAll<HTMLButtonElement>('.breakdown-metadata-control'),
+    ).find((button) => button.textContent?.includes('Beta'))!;
+    await fireEvent.pointerDown(betaOut, { pointerType: 'touch' });
+    expect(visibleText(status)).toBe('Active scope By agent Beta · Out 300 processed');
+    expect(visibleText(messageCounts)).toBe('Human messages 6 Agent messages 7');
+    await fireEvent.pointerDown(betaOut, { pointerType: 'touch' });
+    expect(visibleText(status)).toBe('Active scope By agent Beta 1K processed');
+    await fireEvent.pointerDown(betaControl, { pointerType: 'touch' });
+    expect(visibleText(status)).toBe('Active scope Workspace 1.2K processed');
+
+    const modelB = Array.from(
+      modelSection.querySelectorAll<HTMLButtonElement>('.breakdown-metadata-control'),
+    ).find((button) => button.textContent?.includes('Model B'))!;
+    await fireEvent.pointerDown(modelB, { pointerType: 'touch' });
+    expect(visibleText(status)).toBe('Active scope By model Model B 810 processed');
+    expect(visibleText(messageCounts)).toBe('Human messages 3 Agent messages 6');
+    await fireEvent.pointerDown(modelB, { pointerType: 'touch' });
+    expect(visibleText(status)).toBe('Active scope Workspace 1.2K processed');
   });
 
   it('shows the unknown model bucket in the by-model section', async () => {

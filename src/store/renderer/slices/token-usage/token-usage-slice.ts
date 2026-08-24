@@ -60,6 +60,7 @@ tokenUsageReducer.with(tokenUsageReceived, (state, { payload: [wsId, usage] }) =
     byAgentId: usage.byAgentId,
     totals: usage.totals,
     byModel: usage.byModel,
+    ...(usage.byAgentModel === undefined ? {} : { byAgentModel: usage.byAgentModel }),
     lastScanAt: usage.lastScanAt,
     isStale: false,
   }),

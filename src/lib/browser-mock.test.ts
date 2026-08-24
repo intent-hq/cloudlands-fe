@@ -296,6 +296,7 @@ describe('browser-mock backend:* transport envelope', () => {
       cacheCreationTokens: 0,
     });
     expect(tokenUsage.result?.tokenUsage?.lastScanAt).toBeNull();
+    expect(tokenUsage.result?.tokenUsage?.byAgentModel).toEqual([]);
 
     const context = await api.invoke('backend:request', {
       method: 'workspace.getContext',

@@ -146,7 +146,9 @@ function mockBackendMethodResult(method: string, params?: Record<string, unknown
       cacheReadTokens: 0,
       cacheCreationTokens: 0,
     };
-    return { tokenUsage: { byAgentId: {}, totals, byModel: {}, lastScanAt: null } };
+    return {
+      tokenUsage: { byAgentId: {}, totals, byModel: {}, byAgentModel: [], lastScanAt: null },
+    };
   }
   if (method === 'workspace.getContext') return { items: [] };
   if (method === 'script.list') return { scripts: [] };
