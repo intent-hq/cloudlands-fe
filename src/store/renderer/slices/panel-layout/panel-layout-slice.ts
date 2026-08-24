@@ -3143,44 +3143,21 @@ panelLayoutReducer.with(splitPanel, (state, { payload }) => {
 panelLayoutReducer.with(openBlankWorkingPanel, (state, { payload }) => {
   const { wsId, newPanelId, timestamp } = payload;
   const current = restoreExpandedWorkspaceLayout(getWorkspaceState(state, wsId));
-  const rightmostPanelId = getPanelOrder(current.root).at(-1);
-  if (!rightmostPanelId || !current.panels[rightmostPanelId]) return state;
-  const rightmostPanel = current.panels[rightmostPanelId];
-  if (rightmostPanel.tabs.length === 0 && rightmostPanel.pristine === true) {
-    return setWorkspaceState(state, wsId, {
-      ...current,
-      focusedPanelId: rightmostPanelId,
-      pendingPanelReveal: createPanelRevealRequest(rightmostPanelId, null, newPanelId),
-    });
-  }
-  if (rightmostPanel.tabs.some((tab) => tab.closable === false)) return state;
-
-  const ws = saveToHistory(current, timestamp);
-  const { hidden, closed: removed } = partitionRemovedTabs(rightmostPanel.tabs);
-  const closed = removed.map((tab) => ({
-    tab: { ...tab },
-    panelId: rightmostPanelId,
-    closedAt: timestamp,
-  }));
+  const focusedPanelId = current.focusedPanelId;
+  if (!focusedPanelId) return state;
+  const inserted = insertFixedColumn(
+    saveToHistory(current, timestamp),
+    focusedPanelId,
+    { id: newPanelId, tabs: [], activeTabId: null, pristine: true },
+    'after',
+  );
+  if (!inserted) return state;
   return setWorkspaceState(state, wsId, {
-    ...ws,
-    panels: {
-      ...ws.panels,
-      [rightmostPanelId]: {
-        ...rightmostPanel,
-        tabs: [],
-        activeTabId: null,
-        pristine: true,
-      },
-    },
-    focusedPanelId: rightmostPanelId,
+    ...inserted,
+    expandedPanelId: null,
+    savedSizesBeforeExpand: [],
     pendingFocusTabId: null,
-    pendingPanelReveal: createPanelRevealRequest(rightmostPanelId, null, newPanelId),
-    recentlyClosed: [...closed, ...ws.recentlyClosed].slice(0, MAX_RECENTLY_CLOSED),
-    hiddenTabs: addItems(
-      ws.hiddenTabs,
-      hidden.map((tab) => ({ ...tab })),
-    ),
+    pendingPanelReveal: createPanelRevealRequest(newPanelId, null, newPanelId),
   });
 });
 // --- Close Panel ---

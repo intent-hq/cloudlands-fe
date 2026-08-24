@@ -879,7 +879,7 @@ app.whenReady().then(async () => {
       { type: 'separator' },
       {
         label: m.menu_select_previous_tab(),
-        accelerator: 'CmdOrCtrl+PageUp',
+        accelerator: 'CmdOrCtrl+[',
         enabled: inWorkspace,
         // Let the renderer preserve editor and terminal ownership.
         registerAccelerator: false,
@@ -892,7 +892,7 @@ app.whenReady().then(async () => {
       },
       {
         label: m.menu_select_next_tab(),
-        accelerator: 'CmdOrCtrl+PageDown',
+        accelerator: 'CmdOrCtrl+]',
         enabled: inWorkspace,
         // Let the renderer preserve editor and terminal ownership.
         registerAccelerator: false,

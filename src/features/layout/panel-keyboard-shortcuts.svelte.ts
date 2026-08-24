@@ -2,7 +2,7 @@
  * Panel Keyboard Shortcuts Manager
  *
  * Direct shortcuts (no leader key required):
- * - Mod+PageUp/PageDown: Select the previous/next pane in the active stack
+ * - Mod+[/]: Select the previous/next pane in the active stack
  * - Mod+Shift+PageUp/PageDown: Focus the previous/next column
  * - Mod+Alt+PageUp/PageDown: Move the active pane to the previous/next column
  * - Mod+\: Create a column to the right
@@ -371,6 +371,17 @@ export function createPanelKeyboardShortcuts(
     const isMod = isMac ? e.metaKey && !e.ctrlKey : e.ctrlKey && !e.metaKey;
     const layoutManager = getLayoutManager();
 
+    const bracketDirection =
+      e.key === '[' || e.key === '{' ? 'prev' : e.key === ']' || e.key === '}' ? 'next' : null;
+    if (isMod && !e.altKey && bracketDirection) {
+      const handled = e.shiftKey
+        ? focusAdjacentColumn(layoutManager, bracketDirection)
+        : selectAdjacentPane(layoutManager, bracketDirection);
+      if (handled) e.preventDefault();
+      return handled;
+    }
+
+    // PageUp/PageDown remain compatibility aliases for column focus and pane movement.
     if (isMod && (e.key === 'PageUp' || e.key === 'PageDown')) {
       const direction = e.key === 'PageDown' ? 'next' : 'prev';
       const handled =
@@ -378,9 +389,7 @@ export function createPanelKeyboardShortcuts(
           ? moveActivePane(layoutManager, direction)
           : e.shiftKey && !e.altKey
             ? focusAdjacentColumn(layoutManager, direction)
-            : !e.shiftKey && !e.altKey
-              ? selectAdjacentPane(layoutManager, direction)
-              : false;
+            : false;
       if (handled) e.preventDefault();
       return handled;
     }

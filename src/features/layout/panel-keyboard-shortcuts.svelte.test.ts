@@ -72,8 +72,8 @@ describe('fixed-column panel keyboard shortcuts', () => {
     ['Windows/Linux', false, { ctrlKey: true }],
   ] as const)('uses the platform Mod key for pane selection on %s', (_platform, isMac, mod) => {
     const shortcuts = createPanelKeyboardShortcuts(() => manager, undefined, undefined, { isMac });
-    const next = event('PageDown', mod);
-    const previous = event('PageUp', mod);
+    const next = event(']', mod);
+    const previous = event('[', mod);
 
     expect(shortcuts.handleKeyDown(next)).toBe(true);
     expect(shortcuts.handleKeyDown(previous)).toBe(true);
@@ -91,22 +91,37 @@ describe('fixed-column panel keyboard shortcuts', () => {
   ] as const)('leaves %s pane chords unhandled', (_label, isMac, mod) => {
     const shortcuts = createPanelKeyboardShortcuts(() => manager, undefined, undefined, { isMac });
 
-    expect(shortcuts.handleKeyDown(event('PageDown', mod))).toBe(false);
+    expect(shortcuts.handleKeyDown(event(']', mod))).toBe(false);
     expect(selectNextTab).not.toHaveBeenCalled();
     shortcuts.cleanup();
   });
 
-  it('focuses and moves only when an adjacent column exists', () => {
+  it.each([
+    ['macOS', true, { metaKey: true }],
+    ['Windows/Linux', false, { ctrlKey: true }],
+  ] as const)(
+    'uses Mod+Shift+brackets to focus adjacent columns on %s',
+    (_platform, isMac, mod) => {
+      const onFocusAdjacentColumn = vi.fn(() => true);
+      const shortcuts = createPanelKeyboardShortcuts(() => manager, undefined, undefined, {
+        isMac,
+        onFocusAdjacentColumn,
+      });
+
+      expect(shortcuts.handleKeyDown(event('}', { ...mod, shiftKey: true }))).toBe(true);
+      expect(shortcuts.handleKeyDown(event('{', { ...mod, shiftKey: true }))).toBe(true);
+      expect(onFocusAdjacentColumn.mock.calls).toEqual([['next'], ['prev']]);
+      shortcuts.cleanup();
+    },
+  );
+
+  it('keeps PageUp/PageDown pane-move compatibility aliases', () => {
     const onFocusAdjacentColumn = vi.fn(() => true);
     const shortcuts = createPanelKeyboardShortcuts(() => manager, undefined, undefined, {
       isMac: true,
       onFocusAdjacentColumn,
     });
 
-    expect(shortcuts.handleKeyDown(event('PageDown', { metaKey: true, shiftKey: true }))).toBe(
-      true,
-    );
-    expect(onFocusAdjacentColumn).toHaveBeenCalledWith('next');
     expect(shortcuts.handleKeyDown(event('PageDown', { metaKey: true, altKey: true }))).toBe(true);
     expect(moveTabToPanel).toHaveBeenCalledWith('pane-1', 'p1', 'p2');
 
@@ -125,10 +140,8 @@ describe('fixed-column panel keyboard shortcuts', () => {
       onFocusAdjacentColumn,
     });
 
-    expect(shortcuts.handleKeyDown(event('PageDown', { ctrlKey: true }))).toBe(false);
-    expect(shortcuts.handleKeyDown(event('PageDown', { ctrlKey: true, shiftKey: true }))).toBe(
-      false,
-    );
+    expect(shortcuts.handleKeyDown(event(']', { ctrlKey: true }))).toBe(false);
+    expect(shortcuts.handleKeyDown(event('}', { ctrlKey: true, shiftKey: true }))).toBe(false);
     expect(shortcuts.handleKeyDown(event('\\', { ctrlKey: true }))).toBe(false);
     expect(splitPanel).not.toHaveBeenCalled();
     shortcuts.cleanup();
@@ -169,20 +182,18 @@ describe('fixed-column panel keyboard shortcuts', () => {
       isMac: true,
     });
 
-    expect(shortcuts.handleKeyDown(event('PageDown', { metaKey: true }, createTarget()))).toBe(
-      false,
-    );
+    expect(shortcuts.handleKeyDown(event(']', { metaKey: true }, createTarget()))).toBe(false);
     expect(selectNextTab).not.toHaveBeenCalled();
     shortcuts.cleanup();
   });
 
-  it('leaves browser-history chords and native zoom reset unhandled', () => {
+  it('leaves legacy pane aliases and native zoom reset unhandled', () => {
     const shortcuts = createPanelKeyboardShortcuts(() => manager, undefined, undefined, {
       isMac: true,
     });
 
-    expect(shortcuts.handleKeyDown(event('[', { metaKey: true }))).toBe(false);
-    expect(shortcuts.handleKeyDown(event(']', { metaKey: true }))).toBe(false);
+    expect(shortcuts.handleKeyDown(event('PageUp', { metaKey: true }))).toBe(false);
+    expect(shortcuts.handleKeyDown(event('PageDown', { metaKey: true }))).toBe(false);
     expect(shortcuts.handleKeyDown(event('0', { metaKey: true }))).toBe(false);
     shortcuts.cleanup();
   });

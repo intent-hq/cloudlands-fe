@@ -37,7 +37,7 @@
     isRightmostPanel?: boolean;
     theme?: 'light' | 'dark';
     populated?: boolean;
-    stackCount?: 2 | 4 | 5;
+    stackCount?: 1 | 2 | 3 | 4 | 5;
   } = $props();
 
   const disposeStore = startRootStoreLifecycle(store, { startSagas: () => [] });
@@ -79,6 +79,7 @@
 
   let displayCount = $state(0);
   let contentCount = $state(0);
+  let navigationCount = $state(0);
   let zoomCount = $state(0);
   let splitCount = $state(0);
   let moveLeftCount = $state(0);
@@ -110,6 +111,17 @@
   <Menu.CommandItem label="Content display action" onclick={() => (displayCount += 1)} />
 {/snippet}
 
+{#snippet contentNavigationAction()}
+  <button
+    type="button"
+    class="size-7 shrink-0"
+    aria-label="Content navigation"
+    onclick={() => (navigationCount += 1)}
+  >
+    <span aria-hidden="true">N</span>
+  </button>
+{/snippet}
+
 {#snippet contentCommandAction()}
   <Menu.CommandItem label="Content command action" onclick={() => (contentCount += 1)} />
 {/snippet}
@@ -121,6 +133,7 @@
   data-testid="panel-actions-host"
   data-display-count={displayCount}
   data-content-count={contentCount}
+  data-navigation-count={navigationCount}
   data-zoom-count={zoomCount}
   data-split-count={splitCount}
   data-move-left-count={moveLeftCount}
@@ -135,7 +148,11 @@
     panelId="panel-actions"
     {workspaceId}
     {isRightmostPanel}
-    contentActions={{ display: contentDisplayAction, actions: contentCommandAction }}
+    contentActions={{
+      primary: contentNavigationAction,
+      display: contentDisplayAction,
+      actions: contentCommandAction,
+    }}
     onZoomToggle={() => (zoomCount += 1)}
     onSplitHorizontal={() => (splitCount += 1)}
     onMoveLeft={() => (moveLeftCount += 1)}

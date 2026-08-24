@@ -30,8 +30,10 @@
     faTableColumns,
     faArrowLeft,
     faArrowRight,
+    faArrowUp,
+    faArrowDown,
     faCheck,
-    faChevronDown,
+    faComment,
   } from '@fortawesome/free-solid-svg-icons';
   import { invoke } from '$lib/electron-bridge';
   import { toast } from '$lib/components/ui/toast';
@@ -39,13 +41,12 @@
   import type { IconDefinition } from '@fortawesome/fontawesome-common-types';
   import Fa from 'svelte-fa';
   import { Tooltip } from '$lib/components/ui/tooltip';
-  import { Popover } from 'bits-ui';
   import DropdownMenu from '$lib/components/ui/dropdown-menu.svelte';
   import * as Menu from '$lib/components/ui/menu';
   import Portal from '$lib/components/ui/Portal.svelte';
   import { tick } from 'svelte';
+  import type { TransitionConfig } from 'svelte/transition';
   import { Button } from '$lib/components/ui/button';
-  import { ButtonGroup } from '$lib/components/ui/button-group';
   import { selectIsDragging } from '$store/renderer/slices/tab-state/tab-state-selectors';
   import { startDrag, endDrag } from '$store/renderer/slices/tab-state/tab-state-slice';
   import {
@@ -53,10 +54,7 @@
     toggleExpandPanel,
   } from '$store/renderer/slices/panel-layout/panel-layout-slice';
   import { selectPanelColumnCount } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
-  import {
-    isPanelColumnCount,
-    type PanelColumnCount,
-  } from '$store/renderer/slices/panel-layout/panel-layout-types';
+  import { isPanelColumnCount } from '$store/renderer/slices/panel-layout/panel-layout-types';
   import {
     PANE_DRAG_MIME,
     clearDraggedPaneState,
@@ -82,19 +80,12 @@
   } from '$store/renderer/slices/workspace/workspace-selectors';
   import { selectAllWorkspaceAgents } from '$store/renderer/slices/workspace-agents/workspace-agents-selectors';
   import { writable } from 'svelte/store';
-  import AgentAvatarWithState from '$features/agent/components/agent-avatar/AgentAvatarWithState.svelte';
-  import {
-    type AvatarState,
-    getAvatarStateForSession,
-  } from '$features/agent/components/agent-avatar/avatar-state';
-  import { selectPermissionRequests } from '$store/renderer/slices/permission/permission-selectors';
   import { tabTypeRegistry } from '$features/layout/tab-types/registry';
   import { stripWorkspacePrefix } from '$lib/utils/file-utils';
   import { toNativePath } from '$lib/utils/path-utils';
   import { writeTextToClipboard } from '$lib/utils/clipboard';
   import { createLogger } from '$lib/utils/client-logger';
   import { SHORTCUTS, formatShortcut } from '$lib/utils/shortcuts';
-  import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-session-selectors';
   import { m } from '$shared/paraglide/messages.js';
   import { store as appStore } from '$store/renderer/store';
   import type { PanelHeaderActions } from './panel-header-context.svelte';
@@ -117,21 +108,20 @@
   const copyBrowserUrlShortcutHint = isMac ? '⇧⌘C' : 'Ctrl+Shift+C';
   const closePaneShortcutHint = formatShortcut(SHORTCUTS.CLOSE_TAB.key);
   const createColumnRightShortcutHint = formatShortcut(SHORTCUTS.CREATE_COLUMN_RIGHT.key);
+  const addColumnLinkModifierHint = formatShortcut('mod');
   const movePaneLeftShortcutHint = formatShortcut(SHORTCUTS.MOVE_PANE_PREVIOUS_COLUMN.key);
   const movePaneRightShortcutHint = formatShortcut(SHORTCUTS.MOVE_PANE_NEXT_COLUMN.key);
+  const previousPaneShortcutHint = formatShortcut(SHORTCUTS.PREVIOUS_PANE.key);
+  const nextPaneShortcutHint = formatShortcut(SHORTCUTS.NEXT_PANE.key);
+  const MAX_VISIBLE_PANE_STACK_LINES = 6;
+  const PANE_STACK_LINE_BOTTOM_Y = 12;
+  const PANE_STACK_LINE_GAP = 2;
   const CONTEXT_MENU_MARGIN = 8;
   const CONTEXT_MENU_OFFSET = 4;
   const CONTEXT_MENU_FALLBACK_WIDTH = 224;
   const CONTEXT_MENU_FALLBACK_HEIGHT = 360;
   const PANEL_HEADER_INTERACTIVE_SELECTOR =
     'button, a, input, textarea, select, [role="button"], [role="tab"], [contenteditable="true"]';
-  const PANEL_COLUMN_COUNTS = [1, 2, 3, 4] as const satisfies readonly PanelColumnCount[];
-  const PANEL_COLUMN_DIVIDER_SLOTS = [0, 1, 2] as const;
-
-  function panelColumnDividerX(value: PanelColumnCount, index: number): number {
-    const positionCount = Math.max(value, index + 2);
-    return 3 + (18 * (index + 1)) / positionCount;
-  }
 
   interface Props {
     tabs: PanelTab[];
@@ -216,10 +206,6 @@
   }: Props = $props();
 
   const isDragging = selectIsDragging();
-  const allPermissionRequests = selectPermissionRequests();
-  const activeAgentIdStore = writable<string>('');
-  const activeAgentSession$ = selectAgentSession(activeAgentIdStore);
-
   // Context menu state
   let contextMenuTab = $state<{
     source: 'tab' | 'panel';
@@ -258,13 +244,6 @@
   // UI updates when agents rename or their session metadata changes.
   const workspaceAgents$ = selectAllWorkspaceAgents(workspaceIdStore);
   const panelColumnCount$ = selectPanelColumnCount(panelLayoutIdStore);
-  let panelColumnButtonRefs = $state<Record<PanelColumnCount, HTMLButtonElement | null>>({
-    1: null,
-    2: null,
-    3: null,
-    4: null,
-  });
-  let preserveStructuralColumnFocus = false;
 
   // Reactive store subscription for specialist names - ensures re-render when specialists change
   const specialists$ = selectSpecialists();
@@ -324,32 +303,6 @@
   }
 
   /**
-   * Get the avatar state for an agent tab.
-   * Uses canonical agent-session selectors for live running/waiting state.
-   */
-  function getAgentAvatarState(tab: PanelTab): AvatarState {
-    if (tab.type !== 'agent' || !tab.agentId) return 'idle';
-    if (tab.agentId === activeTab?.agentId) return activeAgentAvatarState;
-    const agent = $workspaceAgents$.find((a) => a.id === tab.agentId);
-    if (!agent) return 'idle';
-    return getAvatarStateForSession(agent, {
-      hasPermissionRequest: $allPermissionRequests.some((r) => r.sessionId === tab.agentId),
-    });
-  }
-
-  /**
-   * Get the specialist ID for an agent tab (for avatar overlay)
-   * Uses $workspaceAgents$ for reactive updates when session metadata changes
-   * Returns any specialist ID (team coordinators included), or null if no specialist
-   */
-  function getAgentSpecialistType(tab: PanelTab): string | null {
-    if (tab.type !== 'agent' || !tab.agentId) return null;
-    const agent = $workspaceAgents$.find((a) => a.id === tab.agentId);
-    const specialistId = agent?.metadata?.specialist || (agent as any)?.agentMetadata?.specialist;
-    return specialistId || null;
-  }
-
-  /**
    * Get the full file path relative to workspace root, for display in header
    */
   function getTabPath(tab: PanelTab): string | null {
@@ -381,15 +334,13 @@
   const inactiveAttentionCount = $derived(
     tabs.filter((tab) => tab.id !== activeTabId && attentionPaneIds.has(tab.id)).length,
   );
-
-  function handlePanelColumnCountChange(count: number) {
-    if (isPanelColumnCount(count)) {
-      preserveStructuralColumnFocus = count > $panelColumnCount$;
-      appStore.dispatch(
-        setPanelColumnCount(layoutId ?? workspaceId, count, undefined, availableCanvasWidth),
-      );
-    }
-  }
+  const activePaneIndex = $derived(tabs.findIndex((tab) => tab.id === activeTabId));
+  const previousPane = $derived(activePaneIndex > 0 ? tabs[activePaneIndex - 1] : undefined);
+  const nextPane = $derived(
+    activePaneIndex >= 0 && activePaneIndex < tabs.length - 1
+      ? tabs[activePaneIndex + 1]
+      : undefined,
+  );
 
   function handleAddPanelColumn() {
     const nextCount = $panelColumnCount$ + 1;
@@ -397,23 +348,6 @@
     appStore.dispatch(
       setPanelColumnCount(layoutId ?? workspaceId, nextCount, undefined, availableCanvasWidth),
     );
-  }
-
-  function handlePanelColumnPopoverOpenAutoFocus(event: Event) {
-    event.preventDefault();
-    panelColumnButtonRefs[$panelColumnCount$]?.focus();
-  }
-
-  function handlePanelColumnPopoverCloseAutoFocus(event: Event) {
-    if (!preserveStructuralColumnFocus) return;
-    event.preventDefault();
-    preserveStructuralColumnFocus = false;
-  }
-
-  function panelColumnCountLabel(value: PanelColumnCount) {
-    return value === 1
-      ? m.workspace_sidebarHeader_panelColumns_count_one({ count: value })
-      : m.workspace_sidebarHeader_panelColumns_count_many({ count: value });
   }
 
   function activatePane(tabId: string) {
@@ -1082,21 +1016,16 @@
 
   // Get the currently active tab
   const activeTab = $derived(tabs.find((t) => t.id === activeTabId) || tabs[0] || null);
-  $effect(() => {
-    activeAgentIdStore.set(
-      activeTab?.type === 'agent' && activeTab.agentId ? activeTab.agentId : '',
-    );
-  });
-  const activeAgentAvatarState = $derived.by((): AvatarState => {
-    const agentId = activeTab?.type === 'agent' ? activeTab.agentId : null;
-    const session = $activeAgentSession$;
-    if (!agentId || !session || session.id !== agentId) return 'idle';
 
-    return getAvatarStateForSession(session, {
-      isActive: true,
-      hasPermissionRequest: $allPermissionRequests.some((request) => request.sessionId === agentId),
-    });
-  });
+  function paneStackLineMotion(_node: Element, { offset }: { offset: number }): TransitionConfig {
+    const reducedMotion =
+      typeof window !== 'undefined' &&
+      window.matchMedia?.('(prefers-reduced-motion: reduce)').matches === true;
+    return {
+      duration: reducedMotion ? 0 : 160,
+      css: (t) => `opacity: ${t}; transform: translateY(${(1 - t) * offset}px);`,
+    };
+  }
 
   /**
    * Check if a tab can be renamed.
@@ -1310,110 +1239,6 @@
   </DropdownMenu>
 {/snippet}
 
-{#snippet panelColumnIcon(value: PanelColumnCount)}
-  <svg
-    class="panel-column-icon size-4! shrink-0"
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    stroke-width="1"
-    stroke-linejoin="round"
-    aria-hidden="true"
-    data-panel-column-icon={value}
-  >
-    <rect
-      x="3"
-      y="3"
-      width="18"
-      height="18"
-      rx="1.5"
-      stroke-width="1"
-      vector-effect="non-scaling-stroke"
-      data-panel-column-icon-outline
-    />
-    {#each PANEL_COLUMN_DIVIDER_SLOTS as index}
-      <g
-        class="panel-column-divider"
-        style="transform: translateX({panelColumnDividerX(value, index)}px)"
-        data-active={index < value - 1}
-        data-panel-column-divider={index}
-      >
-        <line x1="0" x2="0" y1="3" y2="21" stroke-width="1" vector-effect="non-scaling-stroke" />
-      </g>
-    {/each}
-  </svg>
-{/snippet}
-
-{#snippet panelColumnCountMenu()}
-  {#if isRightmostPanel}
-    <Popover.Root>
-      <Popover.Trigger>
-        {#snippet child({ props })}
-          <Button
-            {...props}
-            variant="ghost-light"
-            size="icon-sm"
-            aria-label={m.workspace_sidebarHeader_panelColumns_currentCount_ariaLabel({
-              count: $panelColumnCount$,
-            })}
-            tooltip={m.workspace_sidebarHeader_panelColumns_currentCount_tooltip({
-              count: $panelColumnCount$,
-            })}
-            tooltipSide="bottom"
-            tooltipDelayDuration={300}
-            data-panel-column-count-trigger
-          >
-            {@render panelColumnIcon($panelColumnCount$)}
-          </Button>
-        {/snippet}
-      </Popover.Trigger>
-      <Popover.Portal>
-        <Popover.Content
-          role="dialog"
-          align="end"
-          side="bottom"
-          sideOffset={4}
-          collisionPadding={8}
-          trapFocus={false}
-          aria-label={m.workspace_sidebarHeader_panelColumns_ariaLabel()}
-          onOpenAutoFocus={handlePanelColumnPopoverOpenAutoFocus}
-          onCloseAutoFocus={handlePanelColumnPopoverCloseAutoFocus}
-          class="z-(--layer-popover) w-72 overflow-auto rounded-(--radius-medium) border border-border bg-popover p-3 text-popover-foreground shadow-(--elevation-overlay) outline-none"
-          style="max-height: var(--bits-popover-content-available-height); max-width: min(calc(100vw - var(--space-4)), calc(var(--bits-popover-content-available-width) - var(--space-2)));"
-          data-panel-column-count-popover
-        >
-          <p class="type-caption text-muted-foreground">
-            {m.workspace_sidebarHeader_panelColumns_description()}
-          </p>
-          <div class="mt-3 flex items-center justify-between gap-3">
-            <span class="type-caption font-medium">
-              {m.workspace_sidebarHeader_panelColumns_label()}
-            </span>
-            <ButtonGroup
-              aria-label={m.workspace_sidebarHeader_panelColumns_ariaLabel()}
-              data-panel-column-count-group
-            >
-              {#each PANEL_COLUMN_COUNTS as count}
-                <Button
-                  bind:ref={panelColumnButtonRefs[count]}
-                  variant={count === $panelColumnCount$ ? 'secondary' : 'outline'}
-                  size="sm"
-                  aria-label={panelColumnCountLabel(count)}
-                  aria-pressed={count === $panelColumnCount$}
-                  data-state={count === $panelColumnCount$ ? 'active' : undefined}
-                  onclick={() => handlePanelColumnCountChange(count)}
-                >
-                  {count}
-                </Button>
-              {/each}
-            </ButtonGroup>
-          </div>
-        </Popover.Content>
-      </Popover.Portal>
-    </Popover.Root>
-  {/if}
-{/snippet}
-
 {#snippet addPanelColumnButton()}
   {#if isRightmostPanel}
     {@const atColumnLimit = $panelColumnCount$ === 4}
@@ -1427,7 +1252,9 @@
       aria-disabled={atColumnLimit}
       tooltip={atColumnLimit
         ? m.workspace_sidebarHeader_panelColumns_addLimit_tooltip({ count: 4 })
-        : m.workspace_sidebarHeader_panelColumns_add_tooltip()}
+        : m.workspace_sidebarHeader_panelColumns_add_tooltip({
+            modifier: addColumnLinkModifierHint,
+          })}
       tooltipSide="bottom"
       tooltipDelayDuration={300}
       onclick={handleAddPanelColumn}
@@ -1436,6 +1263,25 @@
       <Fa icon={faPlus} size="xs" />
     </Button>
   {/if}
+{/snippet}
+
+{#snippet contentActionsDivider()}
+  {#if contentActions?.primary}
+    <span
+      class="mx-1 h-4 border-l border-border/70"
+      aria-hidden="true"
+      data-panel-content-actions-divider
+    ></span>
+  {/if}
+{/snippet}
+
+{#snippet panelControlsDivider()}
+  <span
+    class="mx-1 h-4 border-l border-border/70"
+    aria-hidden="true"
+    data-panel-content-actions-divider
+    data-panel-controls-divider
+  ></span>
 {/snippet}
 
 {#snippet panelCloseButton(tab: PanelTab | null = null)}
@@ -1470,13 +1316,12 @@
 
 {#snippet panelIdentity(tab: PanelTab, compact = false)}
   {@const resourceKind = getResourceIconKind(tab.type)}
-  {#if tab.type === 'agent' && tab.agentId}
-    <AgentAvatarWithState
-      agentId={tab.agentId}
-      variant={compact ? 'standard' : 'emphasized'}
-      state={getAgentAvatarState(tab)}
-      specialist={getAgentSpecialistType(tab) as
-        import('$lib/constants/specialists').BuiltinSpecialistId | null}
+  {#if tab.type === 'agent'}
+    <Fa
+      icon={faComment}
+      size={compact ? 14 : 16}
+      class="shrink-0 text-muted-foreground"
+      data-panel-agent-chat-glyph
     />
   {:else if resourceKind}
     <ResourceIconTile kind={resourceKind} variant={compact ? 'standard' : 'emphasized'} />
@@ -1502,34 +1347,63 @@
     <Menu.Root bind:open={paneStackMenuOpen}>
       <Menu.Trigger>
         {#snippet child({ props })}
-          <Button
-            {...props}
-            variant="outline"
-            size="sm"
-            class={cn(
-              'h-6 min-w-10 gap-1 rounded-md border-border bg-muted px-1.5 text-xs text-muted-foreground shadow-none',
-              inactiveAttentionCount > 0 && 'border-primary text-foreground',
-            )}
-            aria-label={m.layout_panelTabBar_paneSelector_ariaLabel({
-              count: tabs.length,
-            })}
-            tooltip={m.layout_panelTabBar_paneSelector_ariaLabel({
-              count: tabs.length,
-            })}
-            tooltipSide="bottom"
-            tooltipDelayDuration={300}
-            data-testid="pane-stack-selector-trigger"
-            data-pane-stack-selector-trigger
-            data-attention={inactiveAttentionCount > 0 ? '' : undefined}
-          >
-            {m.layout_panelTabBar_paneSelector_label({ count: tabs.length })}
-            <span aria-hidden="true" data-pane-stack-selector-chevron>
-              <Fa icon={faChevronDown} size="xs" class="size-2.5!" />
-            </span>
-            {#if inactiveAttentionCount > 0}
-              <span class="size-1.5 rounded-full bg-primary" aria-hidden="true"></span>
-            {/if}
-          </Button>
+          {@const selectorLabel = m.layout_panelTabBar_paneSelector_ariaLabel({
+            count: tabs.length,
+          })}
+          <Tooltip content={selectorLabel} side="bottom" delayDuration={300}>
+            <button
+              {...props}
+              type="button"
+              class={cn(
+                'relative flex size-7 shrink-0 items-center justify-center rounded-sm border-0 bg-transparent p-0 text-muted-foreground shadow-none outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background',
+                inactiveAttentionCount > 0 && 'text-foreground',
+              )}
+              aria-label={selectorLabel}
+              data-testid="pane-stack-selector-trigger"
+              data-pane-stack-selector-trigger
+              data-attention={inactiveAttentionCount > 0 ? '' : undefined}
+            >
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 14 14"
+                fill="none"
+                aria-hidden="true"
+                class="pane-stack-glyph shrink-0"
+                data-pane-stack-glyph
+                data-pane-stack-visible-lines={Math.min(tabs.length, MAX_VISIBLE_PANE_STACK_LINES)}
+                data-pane-stack-total={tabs.length}
+              >
+                {#each Array.from({ length: Math.min(tabs.length, MAX_VISIBLE_PANE_STACK_LINES) }, (_, index) => index + 1) as line (line)}
+                  {@const targetY = PANE_STACK_LINE_BOTTOM_Y - (line - 1) * PANE_STACK_LINE_GAP}
+                  {@const offset = line * PANE_STACK_LINE_GAP}
+                  <g
+                    transition:paneStackLineMotion={{ offset }}
+                    data-pane-stack-line={line}
+                    data-pane-stack-line-target-y={targetY}
+                    data-pane-stack-line-transition-offset={offset}
+                  >
+                    <line
+                      x1="2"
+                      x2="12"
+                      y1={targetY}
+                      y2={targetY}
+                      stroke="currentColor"
+                      stroke-width="1.25"
+                      stroke-linecap="round"
+                      vector-effect="non-scaling-stroke"
+                    />
+                  </g>
+                {/each}
+              </svg>
+              {#if inactiveAttentionCount > 0}
+                <span
+                  class="absolute right-0.5 top-0.5 size-1.5 rounded-full bg-primary"
+                  aria-hidden="true"
+                ></span>
+              {/if}
+            </button>
+          </Tooltip>
         {/snippet}
       </Menu.Trigger>
       <Menu.Content
@@ -1541,6 +1415,23 @@
         aria-label={m.layout_panelTabBar_paneMenu_ariaLabel()}
         data-pane-stack-menu
       >
+        <Menu.CommandItem
+          icon={faArrowUp}
+          label={m.layout_panelTabBar_openPaneAbove_label()}
+          shortcut={previousPaneShortcutHint}
+          disabled={!previousPane}
+          onclick={() => previousPane && activatePane(previousPane.id)}
+          data-pane-stack-open-above
+        />
+        <Menu.CommandItem
+          icon={faArrowDown}
+          label={m.layout_panelTabBar_openPaneBelow_label()}
+          shortcut={nextPaneShortcutHint}
+          disabled={!nextPane}
+          onclick={() => nextPane && activatePane(nextPane.id)}
+          data-pane-stack-open-below
+        />
+        <Menu.Separator />
         <div class="max-h-64 overflow-y-auto overscroll-contain" data-pane-stack-list>
           {#each tabs as tab (tab.id)}
             {@const current = tab.id === activeTabId}
@@ -1572,9 +1463,6 @@
               {/if}
             </Menu.Item>
           {/each}
-        </div>
-        <div class="type-caption border-t border-border px-2 pt-1.5 text-muted-foreground">
-          {m.layout_panelTabBar_paneMenu_shortcutHint()}
         </div>
       </Menu.Content>
     </Menu.Root>
@@ -1659,14 +1547,12 @@
             <div
               class={cn('flex items-center gap-1.5 pl-2.5 pr-2 py-1 h-9 text-ui whitespace-nowrap')}
             >
-              {#if tab.type === 'agent' && tab.agentId}
-                <AgentAvatarWithState
-                  agentId={tab.agentId}
-                  variant="compact"
-                  state={getAgentAvatarState(tab)}
-                  specialist={getAgentSpecialistType(tab) as
-                    import('$lib/constants/specialists').BuiltinSpecialistId | null}
-                  class="shrink-0"
+              {#if tab.type === 'agent'}
+                <Fa
+                  icon={faComment}
+                  size={16}
+                  class="shrink-0 text-muted-foreground"
+                  data-panel-agent-chat-glyph
                 />
               {:else if resourceKind}
                 <ResourceIconTile kind={resourceKind} />
@@ -1888,8 +1774,9 @@
         class="panel-actions flex items-center gap-0 px-1 opacity-30 group-hover/tabbar:opacity-100 focus-within:opacity-100 transition-opacity z-20"
         data-panel-header-actions
       >
-        {@render contentActions?.primary?.()}
         {@render panelActionsDropdown()}
+        {@render contentActionsDivider()}
+        {@render contentActions?.primary?.()}
         {@render panelCloseButton(activeTab)}
       </div>
     </div>
@@ -1913,17 +1800,18 @@
       ondragend={handlePaneDragEnd}
       data-panel-tabless-header
       data-panel-content-header
+      role="group"
+      aria-label={m.layout_panelTabBar_paneStack_ariaLabel({ count: tabs.length })}
+      data-pane-stack
+      data-pane-stack-size={tabs.length}
     >
-      <!-- Left: flat active pane identity and complete pane selector. -->
+      <!-- Left: active identity and title only. -->
       <div
-        class="pane-stack-control flex min-w-0 flex-1 items-center gap-1 overflow-hidden"
-        role="group"
-        aria-label={m.layout_panelTabBar_paneStack_ariaLabel({ count: tabs.length })}
-        data-pane-stack
-        data-pane-stack-size={tabs.length}
+        class="pane-stack-control flex min-w-0 shrink items-center overflow-hidden"
+        data-panel-header-identity
       >
         <div
-          class="pane-stack-active flex min-w-0 flex-1 items-center gap-2 bg-card pl-1"
+          class="pane-stack-active flex min-w-0 shrink items-center gap-2 overflow-hidden bg-card pl-1"
           aria-label={m.layout_panelTabBar_activePane_ariaLabel({
             title: activeTabTitle,
             position: panePosition(activeTab.id),
@@ -1987,15 +1875,23 @@
             {/if}
           {/if}
         </div>
-        {@render paneStackSelector()}
       </div>
 
-      <!-- Right: stable content controls, grouped actions, and close. -->
+      <div class="min-w-0 flex-1" aria-hidden="true"></div>
+
+      <!-- Right: all actions at the far edge in stable order. -->
       <div class="flex shrink-0 items-center gap-0" data-panel-header-actions>
-        {@render contentActions?.primary?.()}
+        {#if contentActions?.primary}
+          <span class="flex items-center" data-panel-header-content-actions>
+            {@render contentActions.primary()}
+          </span>
+        {/if}
         {@render panelActionsDropdown()}
+        {@render panelControlsDivider()}
+        {#if tabs.length > 1}
+          {@render paneStackSelector()}
+        {/if}
         {@render addPanelColumnButton()}
-        {@render panelColumnCountMenu()}
         {@render panelCloseButton(activeTab)}
       </div>
     </div>
@@ -2013,7 +1909,6 @@
       <div class="min-w-0 flex-1" aria-hidden="true"></div>
       <div class="flex shrink-0 items-center gap-0" data-panel-header-actions>
         {@render addPanelColumnButton()}
-        {@render panelColumnCountMenu()}
         {@render panelCloseButton()}
       </div>
     </div>
@@ -2419,46 +2314,20 @@
     );
   }
 
-  .panel-header[data-column-focused] {
-    box-shadow: inset 0 -2px hsl(var(--primary) / 0.55);
-  }
-
   .panel-header-leading-surface {
     position: relative;
     top: 0.5px;
   }
 
-  .panel-column-icon {
-    transform-box: fill-box;
-    transform-origin: center;
-  }
-
-  .panel-column-divider {
-    opacity: 0;
-    transition:
-      transform var(--motion-fast) var(--ease-standard),
-      opacity var(--motion-fast) var(--ease-standard);
-  }
-
-  .panel-column-divider[data-active='true'] {
-    opacity: 1;
+  .pane-stack-glyph {
+    color: currentColor;
+    overflow: visible;
   }
 
   @media (forced-colors: active) {
-    .panel-header[data-column-focused] {
-      box-shadow: none;
-      outline: 2px solid Highlight;
-      outline-offset: -2px;
-    }
-
-    .panel-column-icon {
-      color: ButtonText;
-    }
-  }
-
-  @media (prefers-reduced-motion: reduce) {
-    .panel-column-divider {
-      transition: none;
+    .pane-stack-glyph {
+      color: CanvasText;
+      forced-color-adjust: auto;
     }
   }
 </style>

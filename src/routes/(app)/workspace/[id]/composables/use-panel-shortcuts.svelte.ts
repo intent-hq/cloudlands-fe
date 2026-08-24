@@ -16,8 +16,8 @@
  * - Cmd+Alt+1/2/3: Layout presets (focus/split/full)
  *
  * Note: Panel-specific shortcuts are in panel-keyboard-shortcuts.svelte.ts:
- * - Mod+PageUp/PageDown: Select the previous/next pane
- * - Mod+Shift+PageUp/PageDown: Focus the previous/next column
+ * - Mod+[/]: Select the previous/next pane
+ * - Mod+Shift+[/]: Focus the previous/next column
  * - Mod+Alt+PageUp/PageDown: Move the active pane between columns
  * - Mod+\: Create a column to the right
  */

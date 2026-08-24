@@ -82,10 +82,10 @@ describe('shortcut registry', () => {
   });
 
   it('lists the direct pane and column model without browser-history bindings', () => {
-    expect(SHORTCUTS.PREVIOUS_PANE.key).toBe('mod+pageup');
-    expect(SHORTCUTS.NEXT_PANE.key).toBe('mod+pagedown');
-    expect(SHORTCUTS.FOCUS_PREVIOUS_COLUMN.key).toBe('mod+shift+pageup');
-    expect(SHORTCUTS.FOCUS_NEXT_COLUMN.key).toBe('mod+shift+pagedown');
+    expect(SHORTCUTS.PREVIOUS_PANE.key).toBe('mod+[');
+    expect(SHORTCUTS.NEXT_PANE.key).toBe('mod+]');
+    expect(SHORTCUTS.FOCUS_PREVIOUS_COLUMN.key).toBe('mod+shift+[');
+    expect(SHORTCUTS.FOCUS_NEXT_COLUMN.key).toBe('mod+shift+]');
     expect(SHORTCUTS.MOVE_PANE_PREVIOUS_COLUMN.key).toBe('mod+alt+pageup');
     expect(SHORTCUTS.MOVE_PANE_NEXT_COLUMN.key).toBe('mod+alt+pagedown');
     expect(SHORTCUTS.CREATE_COLUMN_RIGHT.key).toBe('mod+\\');
@@ -95,8 +95,10 @@ describe('shortcut registry', () => {
     expect(navigationKeys).not.toContain('mod+]');
     expect(SHORTCUT_CATEGORIES.panel.shortcuts).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ key: 'mod+pageup', label: 'Previous Pane' }),
-        expect.objectContaining({ key: 'mod+pagedown', label: 'Next Pane' }),
+        expect.objectContaining({ key: 'mod+[', label: 'Previous Pane' }),
+        expect.objectContaining({ key: 'mod+]', label: 'Next Pane' }),
+        expect.objectContaining({ key: 'mod+shift+[', label: 'Focus Previous Column' }),
+        expect.objectContaining({ key: 'mod+shift+]', label: 'Focus Next Column' }),
         expect.objectContaining({ key: 'mod+\\', label: 'Create Column to Right' }),
       ]),
     );

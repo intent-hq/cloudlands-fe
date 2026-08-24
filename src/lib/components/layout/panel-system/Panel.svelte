@@ -40,6 +40,7 @@
   interface Props {
     panel: PanelState;
     isFocused?: boolean;
+    showFocusBorder?: boolean;
     workspaceId: string;
     layoutId: string;
     availableCanvasWidth?: number;
@@ -82,6 +83,7 @@
   let {
     panel,
     isFocused = false,
+    showFocusBorder = false,
     workspaceId,
     layoutId,
     availableCanvasWidth,
@@ -381,6 +383,7 @@
     data-panel-id={panel.id}
     data-layout-id={layoutId}
     data-focused={isFocused}
+    data-focus-border-visible={isFocused && showFocusBorder}
     data-zoomed={isZoomed}
     data-pristine={panel.pristine === true}
     data-empty-panel-surface={panel.pristine === true && panel.tabs.length === 0
@@ -507,11 +510,23 @@
     position: relative;
     width: 100%;
     min-width: 0;
+    box-sizing: border-box;
+    border: 1px solid transparent;
     box-shadow: var(--elevation-raised);
 
     /* Container query setup for responsive panel headers */
     container-type: size;
     container-name: panel;
+  }
+
+  .panel[data-focus-border-visible='true'] {
+    border-color: hsl(var(--border));
+  }
+
+  @media (forced-colors: active) {
+    .panel[data-focus-border-visible='true'] {
+      border-color: Highlight;
+    }
   }
 
   .panel-content {

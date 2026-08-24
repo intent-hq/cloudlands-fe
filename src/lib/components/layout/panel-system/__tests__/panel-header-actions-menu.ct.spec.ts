@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/experimental-ct-svelte';
 import type { PanelTabType } from '$store/renderer/slices/panel-layout/panel-layout-types';
+import { SHORTCUTS, formatShortcut } from '$lib/utils/shortcuts';
 import PanelHeaderActionsHost from './mocks/PanelHeaderActionsHost.svelte';
 
 const panelTypes: PanelTabType[] = ['agent', 'note', 'browser', 'terminal', 'changes'];
@@ -10,8 +11,9 @@ for (const [index, panelType] of panelTypes.entries()) {
     mount,
     page,
   }) => {
+    const stackCount = stackCounts[index % 3];
     const component = await mount(PanelHeaderActionsHost, {
-      props: { panelType, width: 240, zoom: 2, stackCount: stackCounts[index % 3] },
+      props: { panelType, width: 240, zoom: 2, stackCount },
     });
     const trigger = component.locator(
       '[data-panel-tabless-header] [data-testid="panel-actions-trigger"]',
@@ -19,34 +21,51 @@ for (const [index, panelType] of panelTypes.entries()) {
     const close = component.locator(
       '[data-panel-tabless-header] [data-testid="panel-close-button"]',
     );
-    const actions = component.locator('[data-panel-tabless-header] [data-panel-header-actions]');
-    const stack = component.locator('[data-panel-tabless-header] [data-pane-stack]');
+    const header = component.locator('[data-panel-tabless-header]');
+    const contentActions = header.locator('[data-panel-header-content-actions]');
+    const panelControls = header.locator('[data-panel-header-actions]');
     const key = index % 2 === 0 ? 'Enter' : 'Space';
 
-    const actionGeometry = await actions.evaluate((node) => {
+    const actionGeometry = await header.evaluate((node) => {
       const trigger = node.querySelector<HTMLElement>('[data-testid="panel-actions-trigger"]')!;
       const close = node.querySelector<HTMLElement>('[data-testid="panel-close-button"]')!;
       const closeGlyph = close.querySelector<SVGElement>('svg')!;
       return {
-        borderBottomWidth: getComputedStyle(node.closest('[data-panel-tabless-header]')!)
-          .borderBottomWidth,
-        gap: getComputedStyle(node).columnGap,
+        borderBottomWidth: getComputedStyle(node).borderBottomWidth,
         trigger: [getComputedStyle(trigger).width, getComputedStyle(trigger).height],
         close: [getComputedStyle(close).width, getComputedStyle(close).height],
         closeGlyph: [getComputedStyle(closeGlyph).width, getComputedStyle(closeGlyph).height],
       };
     });
     expect(actionGeometry.borderBottomWidth).toBe('0px');
-    expect(actionGeometry.gap).toBe('0px');
     expect(actionGeometry.trigger).toEqual(['28px', '28px']);
     expect(actionGeometry.close).toEqual(['28px', '28px']);
     expect(actionGeometry.closeGlyph).toEqual(['14px', '14px']);
+    await expect(contentActions.locator('[data-panel-content-actions-divider]')).toHaveCount(0);
+    await expect(panelControls.locator('[data-panel-controls-divider]')).toHaveCount(1);
+    expect(
+      await contentActions
+        .locator('button')
+        .evaluateAll((buttons) => buttons.map((button) => button.getAttribute('aria-label'))),
+    ).toEqual(['Content navigation']);
+    expect(
+      await panelControls
+        .locator('button')
+        .evaluateAll((buttons) => buttons.map((button) => button.getAttribute('data-testid'))),
+    ).toEqual([
+      null,
+      'panel-actions-trigger',
+      ...(stackCount > 1 ? ['pane-stack-selector-trigger'] : []),
+      null,
+      'panel-close-button',
+    ]);
+    await expect(header.locator('[data-panel-column-count-trigger]')).toHaveCount(0);
 
-    const stackBox = await stack.boundingBox();
-    const actionsBox = await actions.boundingBox();
-    expect(stackBox).not.toBeNull();
-    expect(actionsBox).not.toBeNull();
-    expect(stackBox!.x + stackBox!.width).toBeLessThanOrEqual(actionsBox!.x + 0.5);
+    const identityBox = await header.locator('[data-panel-header-identity]').boundingBox();
+    const panelControlsBox = await panelControls.boundingBox();
+    expect(identityBox).not.toBeNull();
+    expect(panelControlsBox).not.toBeNull();
+    expect(identityBox!.x + identityBox!.width).toBeLessThanOrEqual(panelControlsBox!.x + 0.5);
 
     await trigger.focus();
     await page.keyboard.press(key);
@@ -79,6 +98,9 @@ for (const [index, panelType] of panelTypes.entries()) {
     await trigger.click();
     await page.getByRole('menuitem', { name: 'Content command action' }).click();
     await expect(component).toHaveAttribute('data-content-count', '1');
+
+    await contentActions.getByRole('button', { name: 'Content navigation' }).click();
+    await expect(component).toHaveAttribute('data-navigation-count', '1');
 
     await trigger.click();
     await page.getByRole('menuitem', { name: /Zoom Panel/i }).click();
@@ -122,28 +144,54 @@ for (const stackCount of stackCounts) {
     });
     const host = component;
     const header = component.locator('[data-panel-tabless-header]');
-    const stack = header.locator('[data-pane-stack]');
-    const active = stack.locator('[data-pane-stack-active]');
-    const listTrigger = stack.locator('[data-pane-stack-selector-trigger]');
-    const actions = header.locator('[data-panel-header-actions]');
+    const stack = header;
+    const active = header.locator('[data-pane-stack-active]');
+    const listTrigger = header.locator('[data-pane-stack-selector-trigger]');
+    const contentActions = header.locator('[data-panel-header-content-actions]');
+    const panelControls = header.locator('[data-panel-header-actions]');
+    const navigation = contentActions.getByRole('button', { name: 'Content navigation' });
+    const moreTrigger = panelControls.getByTestId('panel-actions-trigger');
 
     await expect(active).toBeVisible();
     await expect(active).toContainText('note panel 1');
+    if (stackCount === 1) {
+      await expect(listTrigger).toHaveCount(0);
+      await expect(panelControls.locator('[data-panel-controls-divider]')).toHaveCount(1);
+      const addColumn = panelControls.getByRole('button', { name: 'Add column' });
+      await navigation.focus();
+      await page.keyboard.press('Tab');
+      await expect(moreTrigger).toBeFocused();
+      await page.keyboard.press('Tab');
+      await expect(addColumn).toBeFocused();
+      await page.keyboard.press('Tab');
+      await expect(panelControls.getByTestId('panel-close-button')).toBeFocused();
+      return;
+    }
     await expect(listTrigger).toBeVisible();
-    await expect(listTrigger).toHaveText(`${stackCount}`);
+    await expect(listTrigger).toHaveText('');
     await expect(stack.locator('[data-pane-stack-layer]')).toHaveCount(0);
-    await expect(listTrigger.locator('[data-pane-stack-selector-chevron]')).toBeVisible();
+    await expect(listTrigger.locator('[data-pane-stack-selector-chevron]')).toHaveCount(0);
+    await expect(listTrigger.locator('[data-pane-stack-line]')).toHaveCount(stackCount);
+    const selectorStyle = await listTrigger.evaluate((node) => {
+      const style = getComputedStyle(node);
+      return { backgroundColor: style.backgroundColor, borderWidth: style.borderWidth };
+    });
+    expect(selectorStyle.backgroundColor).toBe('rgba(0, 0, 0, 0)');
+    expect(selectorStyle.borderWidth).toBe('0px');
 
     const boxes = await Promise.all(
-      [host, header, stack, active, listTrigger, actions].map((locator) => locator.boundingBox()),
+      [host, header, active, navigation, moreTrigger, listTrigger, panelControls].map((locator) =>
+        locator.boundingBox(),
+      ),
     );
-    const [hostBox, headerBox, stackBox, activeBox, listBox, actionsBox] = boxes;
+    const [hostBox, headerBox, activeBox, navigationBox, moreBox, listBox, panelControlsBox] =
+      boxes;
     expect(boxes.every(Boolean)).toBe(true);
     expect(headerBox!.x).toBeGreaterThanOrEqual(hostBox!.x);
     expect(headerBox!.x + headerBox!.width).toBeLessThanOrEqual(hostBox!.x + hostBox!.width + 0.5);
-    expect(stackBox!.x + stackBox!.width).toBeLessThanOrEqual(actionsBox!.x + 0.5);
-    expect(listBox!.x).toBeGreaterThanOrEqual(stackBox!.x - 0.5);
-    expect(activeBox!.x + activeBox!.width).toBeLessThanOrEqual(listBox!.x + 0.5);
+    expect(activeBox!.x + activeBox!.width).toBeLessThanOrEqual(panelControlsBox!.x + 0.5);
+    expect(navigationBox!.x + navigationBox!.width).toBeLessThanOrEqual(moreBox!.x + 0.5);
+    expect(listBox!.x).toBeGreaterThanOrEqual(panelControlsBox!.x - 0.5);
 
     for (let index = 1; index <= stackCount; index += 1) {
       if (index % 2 === 0) {
@@ -181,6 +229,25 @@ test('keeps the header flat and the complete selector operable at wide width', a
   await expect(stack.locator('[data-pane-stack-layer]')).toHaveCount(0);
   await trigger.click();
   const menu = page.getByRole('menu', { name: 'Panes in this stack' });
+  const above = menu.getByRole('menuitem', { name: 'Open panel above' });
+  const below = menu.getByRole('menuitem', { name: 'Open panel below' });
+  await expect(above).toHaveAttribute('aria-disabled', 'true');
+  await expect(below).not.toHaveAttribute('aria-disabled', 'true');
+  await expect(above).toContainText(formatShortcut(SHORTCUTS.PREVIOUS_PANE.key));
+  await expect(below).toContainText(formatShortcut(SHORTCUTS.NEXT_PANE.key));
+  await expect(
+    menu.getByText('Use Up or Down to move, Enter to select, and Escape to close.'),
+  ).toHaveCount(0);
+  await below.click();
+  await expect(component).toHaveAttribute('data-active-tab', 'note-tab-2');
+  await trigger.click();
+  await expect(menu.getByRole('menuitem', { name: 'Open panel above' })).not.toHaveAttribute(
+    'aria-disabled',
+    'true',
+  );
+  await menu.getByRole('menuitem', { name: 'Open panel above' }).click();
+  await expect(component).toHaveAttribute('data-active-tab', 'note-tab-1');
+  await trigger.click();
   await expect(menu.locator('[data-pane-stack-item]')).toHaveCount(5);
   await menu.locator('[data-pane-stack-item="note-tab-5"]').click();
   await expect(component).toHaveAttribute('data-active-tab', 'note-tab-5');

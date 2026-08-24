@@ -106,7 +106,7 @@ describe('workspaceNavigationTabSaga', () => {
 
     expect(dispatch.mock.calls.map(([action]) => action.type)).toEqual([
       'panelLayout/openTabInRightmostColumnRequested',
-      'panelLayout/openTabInRightmostColumnRequested',
+      'panelLayout/openTab',
       'panelLayout/openTabInRightmostColumnRequested',
       'panelLayout/openTabInRightmostColumnRequested',
     ]);
@@ -117,6 +117,8 @@ describe('workspaceNavigationTabSaga', () => {
     });
     expect(dispatch.mock.calls[1]?.[0]).toMatchObject({
       payload: {
+        panelId: 'panel-agent',
+        force: true,
         tab: {
           type: 'chat-changes',
           data: {
@@ -171,7 +173,7 @@ describe('workspaceNavigationTabSaga', () => {
     await task.toPromise();
   });
 
-  it('keeps an unmodified agent note open rightmost and preserves adjacent file metadata', async () => {
+  it('keeps an unmodified agent note in its source panel and preserves adjacent file metadata', async () => {
     vi.spyOn(Date, 'now').mockReturnValue(42);
     const channel = stdChannel();
     const dispatch = vi.fn();
@@ -217,9 +219,10 @@ describe('workspaceNavigationTabSaga', () => {
     await settle();
 
     expect(dispatch.mock.calls[0]?.[0]).toMatchObject({
-      type: 'panelLayout/openTabInRightmostColumnRequested',
+      type: 'panelLayout/openTab',
       payload: {
         wsId: 'ws-1',
+        panelId: 'panel-1',
         force: true,
         tab: {
           type: 'note',
@@ -251,7 +254,7 @@ describe('workspaceNavigationTabSaga', () => {
     vi.restoreAllMocks();
   });
 
-  it('uses source context only for explicit adjacent commit and diff routing', async () => {
+  it('uses source context for adjacent commit and same-panel diff routing', async () => {
     const change = {
       id: 'change-1',
       file: 'src/foo.ts',
@@ -296,9 +299,10 @@ describe('workspaceNavigationTabSaga', () => {
       },
     });
     expect(dispatch.mock.calls[1]?.[0]).toMatchObject({
-      type: 'panelLayout/openTabInRightmostColumnRequested',
+      type: 'panelLayout/openTab',
       payload: {
         wsId: 'ws-1',
+        panelId: 'panel-b',
         force: true,
         tab: {
           type: 'diff',

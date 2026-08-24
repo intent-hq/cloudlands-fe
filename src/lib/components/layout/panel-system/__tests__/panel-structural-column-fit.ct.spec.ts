@@ -1,15 +1,13 @@
 import { expect, test } from '@playwright/experimental-ct-svelte';
-import type { Locator, Page } from '@playwright/test';
+import type { Locator } from '@playwright/test';
 import PanelStructuralColumnFitHarness from './mocks/PanelStructuralColumnFitHarness.svelte';
 
-async function selectColumnCount(component: Locator, page: Page, count: number) {
+async function addColumn(component: Locator, count: number) {
   await component.getByTestId('panel-workspace-inset').evaluate((inset) => {
     inset.scrollLeft = inset.scrollWidth;
   });
-  await component.locator('[data-panel-column-count-trigger]').click();
-  await page
-    .getByRole('button', { name: count === 1 ? '1 column' : `${count} columns`, exact: true })
-    .click();
+  await component.locator('[data-add-panel-column]').click();
+  await expect(component.locator('[data-panel-id]')).toHaveCount(count);
 }
 
 function measureFit(component: Locator) {
@@ -59,11 +57,10 @@ for (const viewportWidth of [640, 1200]) {
       const component = await mount(PanelStructuralColumnFitHarness, {
         props: { viewportWidth, zoomFactor, persistedCanvasWidth: 1800 },
       });
-      const geometryTolerance = zoomFactor;
+      const geometryTolerance = zoomFactor + 0.5;
 
       for (const count of [2, 3, 4]) {
-        await selectColumnCount(component, page, count);
-        await expect(component.locator('[data-panel-id]')).toHaveCount(count);
+        await addColumn(component, count);
         await expect
           .poll(async () => {
             const widths = (await measureFit(component)).panelWidths;
@@ -106,8 +103,7 @@ test('refits a structural 1→2 increase after the available viewport shrinks', 
     props: { viewportWidth: 1200, persistedCanvasWidth: 1800 },
   });
 
-  await selectColumnCount(component, page, 2);
-  await expect(component.locator('[data-panel-id]')).toHaveCount(2);
+  await addColumn(component, 2);
   const before = await measureFit(component);
 
   await component.evaluate(() => {

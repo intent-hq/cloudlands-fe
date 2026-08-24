@@ -41,8 +41,9 @@ describe('pane stack control', () => {
     expect(active.getAttribute('data-pane-stack-active')).toBe('note-pane');
     expect(active.textContent).toContain('Release plan');
     expect(active.querySelector('[data-pane-stack-position]')).toBeNull();
-    expect(trigger.textContent?.trim()).toBe('5');
-    expect(trigger.querySelector('[data-pane-stack-selector-chevron]')).toBeTruthy();
+    expect(trigger.textContent?.trim()).toBe('');
+    expect(trigger.querySelector('[data-pane-stack-selector-chevron]')).toBeNull();
+    expect(trigger.querySelectorAll('[data-pane-stack-line]')).toHaveLength(5);
     expect(container.querySelector('[data-panel-identity-back]')).toBeNull();
     expect(container.querySelector('[data-panel-identity-forward]')).toBeNull();
   });
@@ -61,7 +62,7 @@ describe('pane stack control', () => {
   it('opens the complete list from the keyboard and restores trigger focus on dismiss', async () => {
     render(PaneStackControlHost);
     const trigger = screen.getByTestId('pane-stack-selector-trigger');
-    expect(trigger.textContent?.trim()).toBe('5');
+    expect(trigger.textContent?.trim()).toBe('');
     expect(trigger.getAttribute('aria-label')).toBe('Show pane list. Total panes: 5.');
 
     trigger.focus();
@@ -75,7 +76,9 @@ describe('pane stack control', () => {
     expect(
       menu.querySelector('[data-pane-stack-item="note-pane"]')?.getAttribute('aria-current'),
     ).toBe('page');
-    expect(menu.textContent).toContain(
+    expect(screen.getByRole('menuitem', { name: 'Open panel above' })).toBeTruthy();
+    expect(screen.getByRole('menuitem', { name: 'Open panel below' })).toBeTruthy();
+    expect(menu.textContent).not.toContain(
       'Use Up or Down to move, Enter to select, and Escape to close.',
     );
 

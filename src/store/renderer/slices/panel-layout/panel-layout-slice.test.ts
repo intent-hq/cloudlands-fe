@@ -1530,78 +1530,72 @@ describe('panelLayoutReducer', () => {
   });
 
   describe('openBlankWorkingPanel', () => {
-    it.each([
-      [
-        'a non-closable tab',
-        [{ id: 'protected', type: 'note', title: 'Protected', closable: false }],
-      ],
-      [
-        'mixed protected and normal tabs',
-        [
-          { id: 'protected', type: 'note', title: 'Protected', closable: false },
-          { id: 'normal', type: 'file', title: 'Normal', closable: true },
-        ],
-      ],
-    ])('is a no-op for %s', (_case, tabs) => {
+    it('inserts a pristine blank column after the focused panel without clearing it', () => {
       const state = stateWithPanel('working');
       state.byWorkspaceId[WS].panels.working = {
         id: 'working',
-        tabs: tabs as any,
+        tabs: [{ id: 'protected', type: 'note', title: 'Protected', closable: false } as any],
         activeTabId: 'protected',
       };
-
-      const result = panelLayoutReducer(state, openBlankWorkingPanel(WS, 10));
-
-      expect(result).toBe(state);
-      expect(result.byWorkspaceId[WS].panels.working.tabs.map((tab) => tab.id)).toEqual(
-        tabs.map((tab) => tab.id),
-      );
-      expect(result.byWorkspaceId[WS].layoutHistory).toEqual([]);
-      expect(result.byWorkspaceId[WS].recentlyClosed).toEqual([]);
-    });
-
-    it('hides owned browsers and records normal tabs in stable order', () => {
-      const state = stateWithPanel('working');
-      state.byWorkspaceId[WS].panels.working = {
-        id: 'working',
-        tabs: [
-          { id: 'first', type: 'note', title: 'First', closable: true } as any,
-          {
-            id: 'owned',
-            type: 'browser',
-            title: 'Owned',
-            browserUrl: 'https://example.com',
-            ownerAgentId: 'agent-1',
-            closable: true,
-          } as any,
-          { id: 'second', type: 'file', title: 'Second', closable: true } as any,
-        ],
-        activeTabId: 'owned',
-      };
-
-      const result = panelLayoutReducer(state, openBlankWorkingPanel(WS, 10)).byWorkspaceId[WS];
-
-      expect(result.panels.working).toMatchObject({ tabs: [], activeTabId: null, pristine: true });
-      expect(getItems(result.hiddenTabs).map((tab) => tab.id)).toEqual(['owned']);
-      expect(result.recentlyClosed.map((entry) => entry.tab.id)).toEqual(['first', 'second']);
-      expect(result.layoutHistory).toHaveLength(1);
-    });
-
-    it('keeps the pristine-panel fast path as a focus-only operation', () => {
-      const state = stateWithPanel('working');
-      state.byWorkspaceId[WS].panels.working.pristine = true;
-      state.byWorkspaceId[WS].focusedPanelId = null;
 
       const action = openBlankWorkingPanel(WS, 10);
       const result = panelLayoutReducer(state, action).byWorkspaceId[WS];
 
-      expect(result.focusedPanelId).toBe('working');
+      expect(getPanelOrder(result.root)).toEqual(['working', action.payload.newPanelId]);
+      expect(result.panels.working.tabs.map((tab) => tab.id)).toEqual(['protected']);
+      expect(result.panels[action.payload.newPanelId]).toMatchObject({
+        tabs: [],
+        activeTabId: null,
+        pristine: true,
+      });
+      expect(result.focusedPanelId).toBe(action.payload.newPanelId);
       expect(result.pendingPanelReveal).toEqual({
-        panelId: 'working',
+        panelId: action.payload.newPanelId,
         tabId: null,
         requestId: action.payload.newPanelId,
       });
-      expect(result.layoutHistory).toEqual([]);
+      expect(result.layoutHistory).toHaveLength(1);
+      expect(result.recentlyClosed).toEqual([]);
+    });
+
+    it('does not reuse an existing pristine panel', () => {
+      const state = stateWithPanel('working');
+      state.byWorkspaceId[WS].panels.working.pristine = true;
+
+      const action = openBlankWorkingPanel(WS, 10);
+      const result = panelLayoutReducer(state, action).byWorkspaceId[WS];
+
+      expect(getPanelOrder(result.root)).toEqual(['working', action.payload.newPanelId]);
+      expect(result.panels.working.pristine).toBe(true);
+      expect(result.panels[action.payload.newPanelId].pristine).toBe(true);
+    });
+
+    it('is a no-op without a focused panel', () => {
+      const state = stateWithPanel('working');
+      state.byWorkspaceId[WS].focusedPanelId = null;
+
+      expect(panelLayoutReducer(state, openBlankWorkingPanel(WS, 10))).toBe(state);
+    });
+
+    it('is a no-op at the four-column cap', () => {
+      const state = stateWithPanel('p1');
+      const workspace = state.byWorkspaceId[WS];
+      workspace.root = {
+        type: 'split',
+        direction: 'horizontal',
+        children: ['p1', 'p2', 'p3', 'p4'].map((panelId) => ({
+          type: 'panel' as const,
+          panelId,
+        })),
+        sizes: [25, 25, 25, 25],
+      };
+      workspace.panels = Object.fromEntries(
+        ['p1', 'p2', 'p3', 'p4'].map((id) => [id, { id, tabs: [], activeTabId: null }]),
+      );
+      workspace.focusedPanelId = 'p2';
+      workspace.columnCount = 4;
+
+      expect(panelLayoutReducer(state, openBlankWorkingPanel(WS, 10))).toBe(state);
     });
   });
 

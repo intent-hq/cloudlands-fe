@@ -30,9 +30,7 @@ vi.mock('../../shared/generated/ipc-client', () => ({
 }));
 
 // Entry-point URL resolution (loopback rewrite/probe/tunnel); echoes by default
-const resolveBrowserLinkForOpenMock = vi.hoisted(() =>
-  vi.fn(async (url: string) => ({ url })),
-);
+const resolveBrowserLinkForOpenMock = vi.hoisted(() => vi.fn(async (url: string) => ({ url })));
 vi.mock('$lib/utils/browser-link-open', () => ({
   resolveBrowserLinkForOpen: resolveBrowserLinkForOpenMock,
 }));
@@ -405,7 +403,15 @@ describe('handleLink – path-like targets → workspace file viewer', () => {
       event,
     });
 
-    expect(reduxDispatchMock).toHaveBeenCalledWith(
+    expect(reduxDispatchMock).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        type: 'panelLayout/focusPanel',
+        payload: expect.objectContaining({ wsId: TEST_WORKSPACE_ID, panelId: 'panel-chat' }),
+      }),
+    );
+    expect(reduxDispatchMock).toHaveBeenNthCalledWith(
+      2,
       openWorkspaceFile(TEST_WORKSPACE_ID, 'src/scoped.ts', {
         line: undefined,
         openInAdjacentPanel: false,
@@ -427,6 +433,12 @@ describe('handleLink – path-like targets → workspace file viewer', () => {
       event,
     });
 
+    expect(reduxDispatchMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'panelLayout/focusPanel',
+        payload: expect.objectContaining({ wsId: TEST_WORKSPACE_ID, panelId: 'panel-chat' }),
+      }),
+    );
     expect(getPanelLayoutManagerMock).toHaveBeenCalledWith('ws-1');
     expect(openBrowserPanelMock).toHaveBeenCalledWith(
       'https://example.com/docs',
@@ -442,6 +454,12 @@ describe('handleLink – path-like targets → workspace file viewer', () => {
       sourcePanelId: 'panel-chat',
     });
 
+    expect(reduxDispatchMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'panelLayout/focusPanel',
+        payload: expect.objectContaining({ wsId: TEST_WORKSPACE_ID, panelId: 'panel-chat' }),
+      }),
+    );
     expect(handleIntentLinkMock).toHaveBeenCalledWith('intent://local/note/spec', {
       workspaceId: TEST_WORKSPACE_ID,
       sourcePanelId: 'panel-chat',

@@ -632,6 +632,7 @@
         canCreateColumn={panelOrder.length < 4}
         isRightmostPanel={panelOrder.at(-1) === node.panelId}
         isFocused={focusedPanelId === node.panelId}
+        showFocusBorder={panelOrder.length > 1 && zoomedPanelId === null}
         isZoomed={zoomedPanelId === node.panelId}
         onFocus={() => onFocusPanel?.(node.panelId)}
         onTabClick={(tabId) => onTabClick?.(node.panelId, tabId)}

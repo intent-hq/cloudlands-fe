@@ -172,9 +172,12 @@ describe('Settings migration', () => {
     expect(
       readFileSync('src/lib/components/workspace/WorkspaceSidebarHeader.svelte', 'utf8'),
     ).not.toContain('data-panel-column-count-trigger');
-    expect(
-      readFileSync('src/lib/components/layout/panel-system/PanelTabBar.svelte', 'utf8'),
-    ).toContain('data-panel-column-count-trigger');
+    const panelTabBar = readFileSync(
+      'src/lib/components/layout/panel-system/PanelTabBar.svelte',
+      'utf8',
+    );
+    expect(panelTabBar).not.toContain('data-panel-column-count-trigger');
+    expect(panelTabBar).toContain('data-add-panel-column');
     recorder.restore();
   });
 

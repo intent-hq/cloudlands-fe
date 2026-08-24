@@ -130,13 +130,13 @@ export const SHORTCUTS = {
     },
   },
   GO_BACK: {
-    key: 'mod+[ / mod+←',
+    key: 'mod+←',
     get label() {
       return m.ui_shortcuts_goBack_label();
     },
   },
   GO_FORWARD: {
-    key: 'mod+] / mod+→',
+    key: 'mod+→',
     get label() {
       return m.ui_shortcuts_goForward_label();
     },
@@ -425,25 +425,25 @@ export const SHORTCUTS = {
     },
   },
   PREVIOUS_PANE: {
-    key: 'mod+pageup',
+    key: 'mod+[',
     get label() {
       return m.ui_shortcuts_prevTab_label();
     },
   },
   NEXT_PANE: {
-    key: 'mod+pagedown',
+    key: 'mod+]',
     get label() {
       return m.ui_shortcuts_nextTab_label();
     },
   },
   FOCUS_PREVIOUS_COLUMN: {
-    key: 'mod+shift+pageup',
+    key: 'mod+shift+[',
     get label() {
       return m.ui_shortcuts_prevPanel_label();
     },
   },
   FOCUS_NEXT_COLUMN: {
-    key: 'mod+shift+pagedown',
+    key: 'mod+shift+]',
     get label() {
       return m.ui_shortcuts_nextPanel_label();
     },

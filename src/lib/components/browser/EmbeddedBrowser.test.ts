@@ -119,6 +119,38 @@ describe('EmbeddedBrowser', () => {
     });
   });
 
+  describe('panel bracket shortcuts', () => {
+    it.each([
+      ['macOS pane', '__INTENT_PANEL_BRACKET__:]:0:1:0', ']', false, true, false],
+      ['macOS column', '__INTENT_PANEL_BRACKET__:{:1:1:0', '{', true, true, false],
+      ['Windows/Linux pane', '__INTENT_PANEL_BRACKET__:[:0:0:1', '[', false, false, true],
+      ['Windows/Linux column', '__INTENT_PANEL_BRACKET__:}:1:0:1', '}', true, false, true],
+    ] as const)(
+      'forwards one %s chord to the panel handler',
+      async (_label, message, key, shiftKey, metaKey, ctrlKey) => {
+        const { container } = render(EmbeddedBrowser, {
+          props: { url: 'about:blank', workspaceId: 'workspace-1' },
+        });
+        const webview = container.querySelector('webview')!;
+        const seen: KeyboardEvent[] = [];
+        const listener = (event: KeyboardEvent) => seen.push(event);
+        window.addEventListener('keydown', listener);
+
+        const consoleEvent = new Event('console-message');
+        Object.defineProperty(consoleEvent, 'message', { value: message });
+        webview.dispatchEvent(consoleEvent);
+        await Promise.resolve();
+        window.removeEventListener('keydown', listener);
+
+        expect(seen).toHaveLength(1);
+        expect(seen[0].key).toBe(key);
+        expect(seen[0].shiftKey).toBe(shiftKey);
+        expect(seen[0].metaKey).toBe(metaKey);
+        expect(seen[0].ctrlKey).toBe(ctrlKey);
+      },
+    );
+  });
+
   describe('owner chip', () => {
     const renderWithOwner = (extraProps: Record<string, unknown> = {}) =>
       render(EmbeddedBrowser, {
@@ -156,7 +188,9 @@ describe('EmbeddedBrowser', () => {
       const devtools = getByLabelText('Toggle developer tools');
       const actions = devtools.closest('.gap-0\\.5');
       expect(actions?.contains(chip)).toBe(true);
-      expect(chip.compareDocumentPosition(devtools) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      expect(
+        chip.compareDocumentPosition(devtools) & Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
     });
 
     it('navigates to the owning agent on click', async () => {
