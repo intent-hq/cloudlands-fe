@@ -35,6 +35,18 @@ for (const theme of ['light', 'dark'] as const) {
         const prose = baseline.locator('[data-assistant-prose]');
 
         await expect(groupSummary).toBeVisible();
+        const expandedGeometryGroups = component.locator(
+          '[data-testid="expanded-group-prose"], [data-testid="expanded-group-operational-rows"]',
+        );
+        for (const disclosure of await expandedGeometryGroups
+          .getByTestId('response-group-disclosure')
+          .all()) {
+          if ((await disclosure.getAttribute('aria-expanded')) === 'false') {
+            await disclosure.evaluate((element) => (element as HTMLElement).click());
+          }
+          await expect(disclosure).toHaveAttribute('aria-expanded', 'true');
+        }
+        await expect(groupButton).toHaveAttribute('aria-expanded', 'false');
         await expect(prose).toHaveCount(4);
 
         const operationalRows = baseline.locator(
