@@ -237,7 +237,7 @@
     <button
       bind:this={disclosureElement}
       type="button"
-      class="summary-control group grid h-11 w-full max-w-[19rem] min-w-0 grid-cols-[minmax(2.75rem,3.25rem)_max-content_1px_max-content_auto_auto] items-center gap-x-1.5 overflow-hidden rounded-[7px] border border-border bg-card/45 px-3 text-left text-foreground shadow-sm outline-none transition-colors hover:bg-muted/20 focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none dark:border-[#1e1e1e] dark:bg-[#131313] dark:hover:bg-muted/30"
+      class="summary-control group grid h-10 w-full max-w-[19rem] min-w-0 grid-cols-[minmax(2.75rem,3.25rem)_max-content_1px_max-content_auto_auto] items-center gap-x-1.5 overflow-hidden rounded-[7px] border border-border bg-card/45 px-3 text-left text-foreground shadow-sm outline-none transition-colors hover:bg-muted/20 focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none dark:border-[#1e1e1e] dark:bg-[#131313] dark:hover:bg-muted/30"
       data-testid="token-usage-disclosure"
       aria-label={expanded
         ? m.workspace_tokenUsage_collapse_ariaLabel()
@@ -343,11 +343,12 @@
                 <dt
                   class="composition-metric flex min-w-0 items-center gap-2 text-[12px] font-medium text-foreground"
                 >
-                  <span class="size-2.5 shrink-0 {row.colorClass}" aria-hidden="true"></span>
+                  <span class="size-3 shrink-0 rounded-[2px] {row.colorClass}" aria-hidden="true"
+                  ></span>
                   <span class="truncate uppercase tracking-[0.08em]">{row.label}</span>
                 </dt>
                 <dd
-                  class="composition-description truncate text-[10px] uppercase tracking-[0.06em] text-muted-foreground"
+                  class="composition-description truncate text-[11px] uppercase tracking-[0.02em] text-muted-foreground"
                 >
                   {row.description}
                 </dd>
@@ -370,13 +371,13 @@
           <div class="breakdown-grid grid grid-cols-1 border-t border-border dark:border-[#1e1e1e]">
             {#if agentRows.length > 0}
               <section
-                class="breakdown-section h-20 min-w-0 px-3 py-2"
+                class="breakdown-section h-[76px] min-w-0 px-3 py-2"
                 aria-labelledby={`${detailsId}-agents`}
                 data-testid="token-usage-by-agent"
               >
                 <h4
                   id={`${detailsId}-agents`}
-                  class="mb-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground"
+                  class="mb-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground"
                 >
                   {m.workspace_tokenUsage_byAgent_label()}
                 </h4>
@@ -420,13 +421,13 @@
 
             {#if modelRows.length > 0}
               <section
-                class="breakdown-section h-20 min-w-0 px-3 py-2"
+                class="breakdown-section h-[76px] min-w-0 px-3 py-2"
                 aria-labelledby={`${detailsId}-models`}
                 data-testid="token-usage-by-model"
               >
                 <h4
                   id={`${detailsId}-models`}
-                  class="mb-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground"
+                  class="mb-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground"
                 >
                   {m.workspace_tokenUsage_byModel_label()}
                 </h4>
@@ -509,8 +510,8 @@
     color: #9ac55f;
   }
 
-  :global(.dark) .breakdown-section + .breakdown-section {
-    border-color: #1e1e1e;
+  :global(.dark) .breakdown-grid::after {
+    background: rgb(30 30 30 / 55%);
   }
 
   .composition-row {
@@ -518,7 +519,7 @@
     grid-template-areas: 'metric description value context';
     grid-template-columns: minmax(4.25rem, 0.85fr) minmax(3.5rem, 1fr) 3rem 2.5rem;
     align-items: center;
-    column-gap: 0.375rem;
+    column-gap: 0.25rem;
   }
 
   .composition-metric {
@@ -588,11 +589,22 @@
   @container token-details (min-width: 280px) {
     .breakdown-grid {
       grid-template-columns: repeat(2, minmax(0, 1fr));
+      position: relative;
+    }
+
+    .breakdown-grid::after {
+      position: absolute;
+      top: 0.5rem;
+      bottom: 0.5rem;
+      left: 50%;
+      width: 1px;
+      background: hsl(var(--border) / 55%);
+      content: '';
+      pointer-events: none;
     }
 
     .breakdown-section + .breakdown-section {
       border-top: 0;
-      border-left: 1px solid hsl(var(--border));
     }
   }
 </style>
