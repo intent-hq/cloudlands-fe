@@ -2244,7 +2244,7 @@ describe('panelLayoutReducer', () => {
       expect(result.focusedPanelId).toBe(targetPanelId);
     });
 
-    it('keeps the emptied source as the one pristine column after a stack move', () => {
+    it('removes the emptied source column after a stack move', () => {
       let state = stateWithPanel('p1', [{ id: 'move', type: 'note', title: 'Move' }]);
       state = panelLayoutReducer(state, splitPanel(WS, 'p1', 'horizontal', undefined, 1));
       const targetPanelId = getPanelOrder(state.byWorkspaceId[WS].root)[1];
@@ -2260,9 +2260,18 @@ describe('panelLayoutReducer', () => {
         moveTabToPanel(WS, 'move', 'p1', targetPanelId, undefined, 2),
       ).byWorkspaceId[WS];
 
-      expect(result.panels.p1).toMatchObject({ tabs: [], activeTabId: null, pristine: true });
-      expect(getPanelOrder(result.root)).toEqual(['p1', targetPanelId]);
+      expect(result.panels.p1).toBeUndefined();
+      expect(getPanelOrder(result.root)).toEqual([targetPanelId]);
       expect(result.panels[targetPanelId].tabs.map((tab) => tab.id)).toEqual(['target', 'move']);
+    });
+
+    it('keeps a center drop on its source stack unchanged', () => {
+      const state = twoColumnState();
+
+      expect(panelLayoutReducer(state, moveTabToPanel(WS, 'move', 'p1', 'p1', undefined, 2))).toBe(
+        state,
+      );
+      expect(state.byWorkspaceId[WS].panels.p1.tabs.map((tab) => tab.id)).toEqual(['move', 'stay']);
     });
 
     it('collapses an emptied source when another empty column remains', () => {
@@ -2288,7 +2297,7 @@ describe('panelLayoutReducer', () => {
       expect(result.panels[emptyPanelId].tabs).toEqual([]);
     });
 
-    it('collapses the source column after its final pane creates a new column', () => {
+    it('moves the source column after the target when it contains the final pane', () => {
       let state = stateWithPanel('p1', [{ id: 'move', type: 'note', title: 'Move' }]);
       state = panelLayoutReducer(state, splitPanel(WS, 'p1', 'horizontal', undefined, 1));
       const targetPanelId = getPanelOrder(state.byWorkspaceId[WS].root)[1];
@@ -2296,9 +2305,9 @@ describe('panelLayoutReducer', () => {
 
       const result = panelLayoutReducer(state, action).byWorkspaceId[WS];
 
-      expect(result.panels.p1).toBeUndefined();
-      expect(getPanelOrder(result.root)).toEqual([targetPanelId, action.payload.newPanelId]);
-      expect(result.panels[action.payload.newPanelId].tabs.map((tab) => tab.id)).toEqual(['move']);
+      expect(result.panels[action.payload.newPanelId]).toBeUndefined();
+      expect(getPanelOrder(result.root)).toEqual([targetPanelId, 'p1']);
+      expect(result.panels.p1.tabs.map((tab) => tab.id)).toEqual(['move']);
     });
 
     it.each([

@@ -1,42 +1,47 @@
 import {
   countHorizontalPanelColumns,
-  getPanelOrder,
-  insertFixedColumnInLayout,
   movePanelInLayout,
   movePanelToRootEdgeInLayout,
+  projectPaneMoveInLayout,
+  type PaneMoveProjection,
+  type PaneMoveTarget,
   type PanelMovePosition,
 } from '$store/renderer/slices/panel-layout/panel-layout-tabless';
-import type { PanelLayoutNode } from '$store/renderer/slices/panel-layout/panel-layout-types';
-import type { PaneDropPlacement } from '$lib/components/layout/panel-system/panel-drag';
+import type {
+  PanelLayoutNode,
+  PanelState,
+} from '$store/renderer/slices/panel-layout/panel-layout-types';
+import type {
+  DraggedPane,
+  PaneDropPlacement,
+} from '$lib/components/layout/panel-system/panel-drag';
 
 export const PANE_DROP_PREVIEW_PANEL_ID = '__pane-drop-preview__';
 
+export type PaneDropPreview = PaneMoveProjection;
+
+function toPaneMoveTarget(placement: PaneDropPlacement): PaneMoveTarget {
+  if (placement.kind === 'edge') return placement;
+  return {
+    kind: 'panel',
+    targetPanelId: placement.targetPanelId,
+    position:
+      placement.zone === 'center' ? 'center' : placement.zone === 'left' ? 'before' : 'after',
+  };
+}
+
 export function getPaneDropPreview(
-  root: PanelLayoutNode,
+  layout: { root: PanelLayoutNode; panels: Record<string, PanelState> },
+  draggedPane: DraggedPane,
   placement: PaneDropPlacement,
   canvasWidth: number | null | undefined,
-): PanelLayoutNode {
-  if (placement.kind === 'panel' && placement.zone === 'center') return root;
-
-  const panelIds = getPanelOrder(root);
-  const targetPanelId =
-    placement.kind === 'edge'
-      ? placement.position === 'before'
-        ? panelIds[0]
-        : panelIds.at(-1)
-      : placement.targetPanelId;
-  const position =
-    placement.kind === 'edge' ? placement.position : placement.zone === 'left' ? 'before' : 'after';
-  if (!targetPanelId) return root;
-
-  return (
-    insertFixedColumnInLayout(
-      root,
-      PANE_DROP_PREVIEW_PANEL_ID,
-      targetPanelId,
-      position,
-      canvasWidth,
-    ) ?? root
+): PaneDropPreview | null {
+  return projectPaneMoveInLayout(
+    { ...layout, canvasWidth },
+    draggedPane.tabId,
+    draggedPane.panelId,
+    toPaneMoveTarget(placement),
+    PANE_DROP_PREVIEW_PANEL_ID,
   );
 }
 

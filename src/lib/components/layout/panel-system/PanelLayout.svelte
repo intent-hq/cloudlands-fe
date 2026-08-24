@@ -382,15 +382,19 @@
   let panelMoveCommitVersion = 0;
   let panelMoveCommitReleaseFrame: number | null = null;
   let suppressCommittedPanelMoveMotion = $state(false);
-  const panelMovePreviewRoot = $derived(
+  const panelMovePreview = $derived(
     paneDropPreview
-      ? getPaneDropPreview($root$, paneDropPreview.placement, $panelCanvasWidth$)
+      ? getPaneDropPreview(
+          { root: $root$, panels: $panels$ },
+          paneDropPreview.draggedPane,
+          paneDropPreview.placement,
+          $panelCanvasWidth$,
+        )
       : null,
   );
+  const panelMovePreviewRoot = $derived(panelMovePreview?.root ?? null);
   const paneDropPreviewPanelId = $derived(
-    paneDropPreview?.placement.kind === 'panel' && paneDropPreview.placement.zone === 'center'
-      ? paneDropPreview.placement.targetPanelId
-      : PANE_DROP_PREVIEW_PANEL_ID,
+    panelMovePreview?.destinationPanelId ?? PANE_DROP_PREVIEW_PANEL_ID,
   );
   const panelMovePreviewWidthRatio = $derived(
     panelMovePreviewRoot ? getPanelMovePreviewWidthRatio($root$, panelMovePreviewRoot) : 1,
