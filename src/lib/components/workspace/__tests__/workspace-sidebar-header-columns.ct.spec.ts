@@ -23,6 +23,7 @@ for (const theme of ['light', 'dark'] as const) {
         });
         const header = component.locator('[data-panel-tabless-header]');
         const controls = header.locator('[data-panel-header-actions]');
+        const addColumnTrigger = controls.locator('[data-add-panel-column]');
         const columnTrigger = controls.locator('[data-panel-column-count-trigger]');
         const actionsTrigger = controls.locator('[data-testid="panel-actions-trigger"]');
         const closeTrigger = controls.locator('[data-testid="panel-close-button"]');
@@ -32,7 +33,7 @@ for (const theme of ['light', 'dark'] as const) {
           await controls
             .locator('button')
             .evaluateAll((buttons) => buttons.map((button) => button.getAttribute('aria-label'))),
-        ).toEqual(['More', 'Panel columns: 2', 'Close active pane']);
+        ).toEqual(['More', 'Add column', 'Panel columns: 2', 'Close active pane']);
         const [headerBox, titleBox, controlsBox] = await Promise.all([
           header.boundingBox(),
           header.locator('[data-panel-header-title]').boundingBox(),
@@ -43,7 +44,11 @@ for (const theme of ['light', 'dark'] as const) {
           headerBox!.x + headerBox!.width + 0.5,
         );
         await expect(columnTrigger).toHaveAccessibleName('Panel columns: 2');
-        for (const action of [columnTrigger, actionsTrigger, closeTrigger]) {
+        await expect(header).toHaveAttribute('data-column-focused', '');
+        expect(await header.evaluate((node) => getComputedStyle(node).boxShadow)).toContain(
+          'inset',
+        );
+        for (const action of [addColumnTrigger, columnTrigger, actionsTrigger, closeTrigger]) {
           const box = await action.boundingBox();
           expect(box!.width / zoom).toBeCloseTo(28, 0);
           expect(box!.height / zoom).toBeCloseTo(28, 0);
@@ -111,13 +116,19 @@ for (const theme of ['light', 'dark'] as const) {
         props: { theme, zoom, populated: false, initialCount: 4 },
       });
       const header = component.locator('[data-empty-panel-header]');
+      const addColumn = header.locator('[data-add-panel-column]');
       const trigger = header.locator('[data-panel-column-count-trigger]');
       const close = header.locator('[data-testid="panel-close-button"]');
       expect(
         await header
           .locator('button')
           .evaluateAll((buttons) => buttons.map((button) => button.getAttribute('aria-label'))),
-      ).toEqual(['Panel columns: 4', 'Close panel']);
+      ).toEqual([
+        'Add column unavailable: maximum of 4 columns',
+        'Panel columns: 4',
+        'Close panel',
+      ]);
+      await expect(addColumn).toHaveAttribute('aria-disabled', 'true');
       const [headerBox, triggerBox, iconBox, closeBox] = await Promise.all([
         header.boundingBox(),
         trigger.boundingBox(),
@@ -224,17 +235,32 @@ test('keeps the divider glyph visible and equal in forced colors at 200% zoom', 
     props: { initialCount: 4, zoom: 2 },
   });
   const trigger = component.locator('[data-panel-column-count-trigger]');
+  const addColumn = component.locator('[data-add-panel-column]');
   const icon = trigger.locator('[data-panel-column-icon="4"]');
   const outline = icon.locator('[data-panel-column-icon-outline]');
   const dividers = icon.locator('[data-panel-column-divider][data-active="true"] line');
 
   await expect(outline).toHaveCount(1);
   await expect(dividers).toHaveCount(3);
-  const [iconBox, triggerBox] = await Promise.all([icon.boundingBox(), trigger.boundingBox()]);
+  const header = component.locator('[data-panel-tabless-header]');
+  const [iconBox, triggerBox, addColumnBox] = await Promise.all([
+    icon.boundingBox(),
+    trigger.boundingBox(),
+    addColumn.boundingBox(),
+  ]);
   expect(iconBox!.width / 2).toBeCloseTo(16, 1);
   expect(iconBox!.height / 2).toBeCloseTo(16, 1);
   expect(triggerBox!.width / 2).toBeCloseTo(28, 0);
   expect(triggerBox!.height / 2).toBeCloseTo(28, 0);
+  expect(addColumnBox!.width / 2).toBeCloseTo(28, 0);
+  expect(addColumnBox!.height / 2).toBeCloseTo(28, 0);
+  await expect(addColumn).toHaveAttribute('aria-disabled', 'true');
+  expect(
+    await header.evaluate((node) => {
+      const style = getComputedStyle(node);
+      return [style.outlineStyle, style.outlineWidth, style.outlineOffset];
+    }),
+  ).toEqual(['solid', '2px', '-2px']);
   await expect(icon).toHaveAttribute('stroke', 'currentColor');
   await expect(icon).toHaveAttribute('stroke-width', '1');
   await expect(outline).toHaveAttribute('vector-effect', 'non-scaling-stroke');

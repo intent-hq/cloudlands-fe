@@ -391,6 +391,14 @@
     }
   }
 
+  function handleAddPanelColumn() {
+    const nextCount = $panelColumnCount$ + 1;
+    if (!isPanelColumnCount(nextCount)) return;
+    appStore.dispatch(
+      setPanelColumnCount(layoutId ?? workspaceId, nextCount, undefined, availableCanvasWidth),
+    );
+  }
+
   function handlePanelColumnPopoverOpenAutoFocus(event: Event) {
     event.preventDefault();
     panelColumnButtonRefs[$panelColumnCount$]?.focus();
@@ -1406,6 +1414,30 @@
   {/if}
 {/snippet}
 
+{#snippet addPanelColumnButton()}
+  {#if isRightmostPanel}
+    {@const atColumnLimit = $panelColumnCount$ === 4}
+    <Button
+      variant="ghost-light"
+      size="icon-sm"
+      class="aria-disabled:pointer-events-auto"
+      aria-label={atColumnLimit
+        ? m.workspace_sidebarHeader_panelColumns_addLimit_ariaLabel({ count: 4 })
+        : m.workspace_sidebarHeader_panelColumns_add_ariaLabel()}
+      aria-disabled={atColumnLimit}
+      tooltip={atColumnLimit
+        ? m.workspace_sidebarHeader_panelColumns_addLimit_tooltip({ count: 4 })
+        : m.workspace_sidebarHeader_panelColumns_add_tooltip()}
+      tooltipSide="bottom"
+      tooltipDelayDuration={300}
+      onclick={handleAddPanelColumn}
+      data-add-panel-column
+    >
+      <Fa icon={faPlus} size="xs" />
+    </Button>
+  {/if}
+{/snippet}
+
 {#snippet panelCloseButton(tab: PanelTab | null = null)}
   {#if (tab && onTabClose) || (!tab && onClosePanel)}
     {@const isOwnedBrowser = tab?.type === 'browser' && tab.ownerAgentId}
@@ -1873,6 +1905,7 @@
         'panel-header group/header relative flex h-[var(--panel-header-height)] cursor-grab items-center bg-card pr-2.5 active:cursor-grabbing',
         isFocused && 'focused',
       )}
+      data-column-focused={isFocused ? '' : undefined}
       oncontextmenu={(event) => handlePanelContextMenu(event, activeTab.id)}
       ondblclick={handlePanelHeaderDoubleClick}
       draggable="true"
@@ -1961,19 +1994,25 @@
       <div class="flex shrink-0 items-center gap-0" data-panel-header-actions>
         {@render contentActions?.primary?.()}
         {@render panelActionsDropdown()}
+        {@render addPanelColumnButton()}
         {@render panelColumnCountMenu()}
         {@render panelCloseButton(activeTab)}
       </div>
     </div>
   {:else if isRightmostPanel || onClosePanel}
     <div
-      class="panel-header group/header relative flex items-center bg-sidebar pr-2.5"
+      class={cn(
+        'panel-header group/header relative flex items-center bg-sidebar pr-2.5',
+        isFocused && 'focused',
+      )}
       style:height="var(--panel-header-height)"
+      data-column-focused={isFocused ? '' : undefined}
       data-panel-tabless-header
       data-empty-panel-header
     >
       <div class="min-w-0 flex-1" aria-hidden="true"></div>
       <div class="flex shrink-0 items-center gap-0" data-panel-header-actions>
+        {@render addPanelColumnButton()}
         {@render panelColumnCountMenu()}
         {@render panelCloseButton()}
       </div>
@@ -2380,6 +2419,10 @@
     );
   }
 
+  .panel-header[data-column-focused] {
+    box-shadow: inset 0 -2px hsl(var(--primary) / 0.55);
+  }
+
   .panel-header-leading-surface {
     position: relative;
     top: 0.5px;
@@ -2402,6 +2445,12 @@
   }
 
   @media (forced-colors: active) {
+    .panel-header[data-column-focused] {
+      box-shadow: none;
+      outline: 2px solid Highlight;
+      outline-offset: -2px;
+    }
+
     .panel-column-icon {
       color: ButtonText;
     }

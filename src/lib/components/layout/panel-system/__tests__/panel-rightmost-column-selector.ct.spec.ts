@@ -15,6 +15,14 @@ async function selectorOwner(component: Locator) {
   );
 }
 
+async function addButtonOwner(component: Locator) {
+  const button = component.locator('[data-add-panel-column]');
+  await expect(button).toHaveCount(1);
+  return button.evaluate((element) =>
+    element.closest('[data-panel-id]')?.getAttribute('data-panel-id'),
+  );
+}
+
 async function expectGlyph(component: Locator, count: 1 | 2 | 3 | 4) {
   const icon = component.locator(`[data-panel-column-icon="${count}"]`);
   await expect(icon).toHaveCount(1);
@@ -69,6 +77,12 @@ test('keeps the rightmost selector and focuses every clicked column as columns g
     await panel.click({ position: { x: 12, y: 90 } });
     await expect(layoutState).toHaveAttribute('data-focused-panel-id', panelId);
     await expect(panel).toHaveAttribute('data-focused', 'true');
+    const focusedHeader = panel.locator('[data-panel-tabless-header]');
+    await expect(focusedHeader).toHaveAttribute('data-column-focused', '');
+    expect(await focusedHeader.evaluate((node) => getComputedStyle(node).boxShadow)).toContain(
+      'inset',
+    );
+    await expect(component.locator('[data-column-focused]')).toHaveCount(1);
   }
   const ownerAtThree = await selectorOwner(component);
   expect(ownerAtThree).toBe(idsAtThree.at(-1));
@@ -97,4 +111,37 @@ test('keeps the rightmost selector and focuses every clicked column as columns g
   await expect(rightmostAtFour.locator('[data-panel-content-header]')).toHaveCount(1);
   await expect(component.locator('[data-panel-column-count-trigger]')).toHaveCount(1);
   await expectGlyph(component, 4);
+});
+
+test('adds and focuses empty rightmost columns until the four-column limit', async ({
+  mount,
+  page,
+}) => {
+  const component = await mount(PanelRightmostColumnSelectorHarness);
+  const addButton = component.locator('[data-add-panel-column]');
+  const layoutState = component.getByTestId('panel-layout-state');
+
+  await expect(addButton).toHaveAccessibleName('Add column');
+  for (const count of [2, 3, 4]) {
+    await addButton.click();
+    await expect(layoutState).toHaveAttribute('data-column-count', String(count));
+    const ids = await panelIds(component);
+    const rightmostPanelId = ids.at(-1)!;
+    await expect(layoutState).toHaveAttribute('data-focused-panel-id', rightmostPanelId);
+    expect(await addButtonOwner(component)).toBe(rightmostPanelId);
+    await expect(component.locator(`[data-panel-id="${rightmostPanelId}"]`)).toHaveAttribute(
+      'data-empty-panel-surface',
+      'true',
+    );
+  }
+
+  await expect(addButton).toHaveAttribute('aria-disabled', 'true');
+  await expect(addButton).toHaveAccessibleName('Add column unavailable: maximum of 4 columns');
+  await addButton.focus();
+  await expect(page.getByRole('tooltip')).toContainText(
+    'Column limit reached. You can use up to 4 columns.',
+  );
+  await addButton.evaluate((button: HTMLButtonElement) => button.click());
+  await expect(layoutState).toHaveAttribute('data-column-count', '4');
+  expect(await panelIds(component)).toHaveLength(4);
 });
