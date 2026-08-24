@@ -48,7 +48,9 @@ describe('editorial conversation presentation contract', () => {
     expect(panel).toContain("? 'w-full px-1.5!'");
     expect(panel).toContain(": 'w-full px-4 sm:px-6'");
     expect(panel).toContain('conversation-composer relative z-10 w-full');
-    expect(panel).toContain('class="chat-content-measure mx-auto w-full min-w-0"');
+    expect(panel).toContain(
+      'class="composer-prompt-lane chat-content-measure mx-auto w-full min-w-0"',
+    );
     expect(panel).toContain('data-testid="chat-composer-controls-inner"');
     expect(panel).toContain('edgeDocked');
     expect(panel).not.toContain("'px-[5%]'");
@@ -415,10 +417,10 @@ describe('editorial conversation presentation contract', () => {
 
     expect(panel).toContain('class="conversation-composer relative z-10 w-full"');
     expect(panel).toContain(
-      'class="pointer-events-none absolute z-0 overflow-hidden {isChiefWorkspace',
+      'class="composer-aurora-host pointer-events-none absolute z-0 overflow-hidden {isChiefWorkspace',
     );
     expect(panel).toContain("'-left-4 -right-2 -bottom-4'");
-    expect(panel).toContain("'-inset-x-2 -bottom-2'");
+    expect(panel).toContain("'inset-x-0 bottom-0'");
     expect(panel).toContain('height: calc(100% + 10rem)');
     expect(panel).toContain('class="relative z-20 mt-6 {isChiefWorkspace');
   });

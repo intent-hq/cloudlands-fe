@@ -25,6 +25,13 @@ describe('panel content insets', () => {
     expect(panel).toContain(": 'w-full px-4! sm:px-6!'");
     expect(panel).toContain("? 'w-full px-1.5'");
     expect(panel).toContain(": 'w-full px-4 sm:px-6'");
+    expect(panel).toContain('--composer-lane-inset: 1rem');
+    expect(panel).toContain('--composer-lane-inset: 1.5rem');
+    expect(panel).toContain('--composer-lane-inset: 0.25rem');
+    expect(panel).toContain('--composer-lane-inset: 0.5rem');
+    expect(panel).toContain(
+      'padding: 0.5rem var(--composer-lane-inset) var(--composer-lane-inset)',
+    );
     expect(input).toContain("contentInsetClassName ?? (edgeDocked ? 'px-4 sm:px-6' : 'px-2')");
     expect(input.match(/\{contentInsetClasses\}/g)?.length).toBe(3);
   });

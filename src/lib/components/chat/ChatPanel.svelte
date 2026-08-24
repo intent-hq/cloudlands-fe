@@ -5469,6 +5469,7 @@
   <div
     bind:this={composerElement}
     class="conversation-composer relative z-10 w-full"
+    class:chief-composer={isChiefWorkspace}
     class:input-flash={showInputFlash}
     data-streaming={$agentSessionIsStreaming$}
     data-testid="chat-composer-shell"
@@ -5479,9 +5480,9 @@
          8px overflow-clip-margin), touching the app window's left/bottom edges. -->
     {#if $agentSessionIsStreaming$}
       <div
-        class="pointer-events-none absolute z-0 overflow-hidden {isChiefWorkspace
+        class="composer-aurora-host pointer-events-none absolute z-0 overflow-hidden {isChiefWorkspace
           ? '-left-4 -right-2 -bottom-4'
-          : '-inset-x-2 -bottom-2'}"
+          : 'inset-x-0 bottom-0'}"
         style="height: calc(100% + 10rem);"
         data-testid="composer-aurora-host"
         transition:fade
@@ -5492,64 +5493,65 @@
     {/if}
 
     <div
-      class="composer-prompt-layer relative z-10 w-full border-t border-border"
-      class:pb-3={!hasVisibleTranscriptUtility}
+      class="composer-prompt-layer relative z-10 w-full"
       style:padding-inline-end="{scrollbarGutterWidth}px"
       data-testid="composer-prompt-layer"
       data-has-transcript-utility={hasVisibleTranscriptUtility}
     >
       <div
-        class="chat-content-measure mx-auto w-full min-w-0"
-        data-testid="chat-composer-controls-inner"
+        class="composer-prompt-lane chat-content-measure mx-auto w-full min-w-0"
+        data-testid="chat-composer-lane"
       >
-        {#if pendingQuestions}
-          {#key pendingQuestions.messageId}
-            <div class="w-full" data-testid="question-wizard-slot">
-              <QuestionWizard
-                questions={pendingQuestions.questions}
-                collapsed={questionWizardCollapsed}
-                onToggleCollapsed={(collapsed) => (questionWizardCollapsed = collapsed)}
-                onComplete={handleQuestionWizardComplete}
-                onDismiss={handleQuestionWizardDismiss}
-              />
-            </div>
-          {/key}
-        {/if}
-        {#if (!pendingQuestions && !pendingQuestionRecoveryLoading) || questionWizardCollapsed}
-          {#if draftManager.gateVisible}
-            <ChatDraftLoadingGate />
+        <div class="w-full min-w-0" data-testid="chat-composer-controls-inner">
+          {#if pendingQuestions}
+            {#key pendingQuestions.messageId}
+              <div class="w-full" data-testid="question-wizard-slot">
+                <QuestionWizard
+                  questions={pendingQuestions.questions}
+                  collapsed={questionWizardCollapsed}
+                  onToggleCollapsed={(collapsed) => (questionWizardCollapsed = collapsed)}
+                  onComplete={handleQuestionWizardComplete}
+                  onDismiss={handleQuestionWizardDismiss}
+                />
+              </div>
+            {/key}
           {/if}
-          <SimpleRichInput
-            bind:this={inputComponent}
-            bind:contextItems
-            bind:value={inputValue}
-            onvaluechange={(value) => {
-              if (workspace?.id && agentId) {
-                appStore.dispatch(setChatDraft(workspace.id, agentId, value));
-              }
-            }}
-            onsubmit={handleSend}
-            onforcesubmit={handleForceSubmit}
-            onstop={handleStop}
-            onHistoryPrev={handleHistoryPrev}
-            onHistoryNext={handleHistoryNext}
-            disabled={!workspace || !$agentSession$}
-            inputLocked={draftManager.gateActive}
-            isStreaming={$agentSessionIsStreaming$}
-            isResponding={$agentIsResponding$}
-            {workspace}
-            currentContext={currentMainPanelContext}
-            {agentId}
-            selectedModel={hydratedInputModel}
-            compactMode={isCompactMode}
-            editorClassName={isChiefWorkspace ? 'w-full px-1.5!' : 'w-full px-4! sm:px-6!'}
-            contentInsetClassName={isChiefWorkspace ? 'w-full px-1.5' : 'w-full px-4 sm:px-6'}
-            edgeDocked
-            externalDropTarget
-            requiresModelSwitchConfirmation={!canChangeProvider}
-            providerId={inputProviderId}
-          />
-        {/if}
+          {#if (!pendingQuestions && !pendingQuestionRecoveryLoading) || questionWizardCollapsed}
+            {#if draftManager.gateVisible}
+              <ChatDraftLoadingGate />
+            {/if}
+            <SimpleRichInput
+              bind:this={inputComponent}
+              bind:contextItems
+              bind:value={inputValue}
+              onvaluechange={(value) => {
+                if (workspace?.id && agentId) {
+                  appStore.dispatch(setChatDraft(workspace.id, agentId, value));
+                }
+              }}
+              onsubmit={handleSend}
+              onforcesubmit={handleForceSubmit}
+              onstop={handleStop}
+              onHistoryPrev={handleHistoryPrev}
+              onHistoryNext={handleHistoryNext}
+              disabled={!workspace || !$agentSession$}
+              inputLocked={draftManager.gateActive}
+              isStreaming={$agentSessionIsStreaming$}
+              isResponding={$agentIsResponding$}
+              {workspace}
+              currentContext={currentMainPanelContext}
+              {agentId}
+              selectedModel={hydratedInputModel}
+              compactMode={isCompactMode}
+              editorClassName={isChiefWorkspace ? 'w-full px-1.5!' : 'w-full px-4! sm:px-6!'}
+              contentInsetClassName={isChiefWorkspace ? 'w-full px-1.5' : 'w-full px-4 sm:px-6'}
+              edgeDocked
+              externalDropTarget
+              requiresModelSwitchConfirmation={!canChangeProvider}
+              providerId={inputProviderId}
+            />
+          {/if}
+        </div>
       </div>
     </div>
   </div>
@@ -5629,7 +5631,29 @@
     animation: input-flash 0.6s ease-out;
   }
 
-  /* The full-width prompt layer owns the docked divider. */
+  .conversation-composer {
+    --composer-lane-inset: 1rem;
+  }
+
+  .conversation-composer.chief-composer {
+    --composer-lane-inset: 0.25rem;
+  }
+
+  .composer-prompt-lane {
+    padding: 0.5rem var(--composer-lane-inset) var(--composer-lane-inset);
+  }
+
+  @media (min-width: 640px) {
+    .conversation-composer {
+      --composer-lane-inset: 1.5rem;
+    }
+
+    .conversation-composer.chief-composer {
+      --composer-lane-inset: 0.5rem;
+    }
+  }
+
+  /* The prompt lane owns the outer inset around the nested composer surface. */
   .composer-prompt-layer :global(.rich-input-container) {
     border-top-width: 0;
   }

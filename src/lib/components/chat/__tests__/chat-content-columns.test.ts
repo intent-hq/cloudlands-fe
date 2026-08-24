@@ -25,16 +25,14 @@ describe('chat content column contracts', () => {
     expect(CHAT_TRANSCRIPT_OVERFLOW_CLASS).toContain('overflow-x-hidden');
   });
 
-  it('keeps the prompt divider full width around a separate capped controls column', () => {
-    expect(panel).toContain(
-      'class="composer-prompt-layer relative z-10 w-full border-t border-border"',
-    );
-    expect(panel).toContain('class:pb-3={!hasVisibleTranscriptUtility}');
+  it('keeps the prompt layer full width around one capped, inset composer lane', () => {
+    expect(panel).toContain('class="composer-prompt-layer relative z-10 w-full"');
     expect(panel).toContain('bind:visible={hasVisibleTranscriptUtility}');
     expect(panel).toContain('style:padding-inline-end="{scrollbarGutterWidth}px"');
     expect(panel).toMatch(
-      /class="chat-content-measure mx-auto w-full min-w-0"[\s\S]*?data-testid="chat-composer-controls-inner"/,
+      /class="composer-prompt-lane chat-content-measure mx-auto w-full min-w-0"[\s\S]*?data-testid="chat-composer-lane"/,
     );
+    expect(panel).toContain('data-testid="chat-composer-controls-inner"');
     expect(panel).toContain('.composer-prompt-layer :global(.rich-input-container)');
   });
 
