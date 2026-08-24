@@ -53,12 +53,29 @@ function pairAdjacentReasoningGroup(
 ): ContentBlockGroup | null {
   if (preceding.type !== 'thinking' || !isReasoningPhaseGroupName(group.name)) return null;
 
+  const precedingReasoning = extractReasoningHeading(preceding.text ?? preceding.content ?? '');
+  const normalizedGroup = normalizeResponseGroup(group);
+  if (!group.isStreaming && !precedingReasoning.heading && !normalizedGroup.name) {
+    const precedingHistory = reasoningWithText(preceding, precedingReasoning.body);
+    if (!precedingHistory) return null;
+
+    const [firstChild, ...remainingChildren] = normalizedGroup.children;
+    const children =
+      firstChild?.type === 'text'
+        ? [firstChild, precedingHistory, ...remainingChildren]
+        : [precedingHistory, ...normalizedGroup.children];
+    return {
+      ...normalizedGroup,
+      hasAdjacentReasoningHistory: true,
+      children,
+    };
+  }
+
   const description = group.children[0];
   if (description?.type !== 'text' || !(description.text ?? description.content ?? '').trim()) {
     return null;
   }
 
-  const precedingReasoning = extractReasoningHeading(preceding.text ?? preceding.content ?? '');
   if (!precedingReasoning.heading) return null;
 
   const title = extractStandaloneReasoningTitle(precedingReasoning.body);

@@ -468,6 +468,43 @@ describe('ResponseGroup - block identity', () => {
     ]);
   });
 
+  it('pairs a completed headingless predecessor with a headingless reasoning phase', () => {
+    const preceding = {
+      type: 'thinking',
+      id: 'msg_1:0',
+      text: 'Inspect the current state before making the smallest safe change.',
+    } as ContentBlock;
+    const tool = {
+      type: 'tool_use',
+      id: 'msg_1:1',
+      toolCallId: 'call-1',
+      name: 'view',
+      input: { path: 'src/example.ts' },
+    } as ContentBlock;
+    const laterReasoning = {
+      type: 'thinking',
+      id: 'msg_1:2',
+      text: 'The focused check confirms the repair.',
+    } as ContentBlock;
+    const group = {
+      type: 'content_group' as const,
+      name: 'Prepping',
+      isStreaming: false,
+      children: [tool, laterReasoning],
+    };
+
+    expect(normalizeResponseGroups([preceding, group])).toEqual([
+      {
+        ...group,
+        name: '',
+        sourceName: 'Prepping',
+        isReasoningPhase: true,
+        hasAdjacentReasoningHistory: true,
+        children: [preceding, tool, laterReasoning],
+      },
+    ]);
+  });
+
   it('does not pair ordinary authored groups or adjacent prose', () => {
     const titledReasoning = {
       type: 'thinking',

@@ -421,6 +421,64 @@ describe('thinking blocks — StreamingMessageContent', () => {
     expect(responseGroup.textContent?.match(/Then I will read the current spec/g)).toHaveLength(1);
   });
 
+  it.each([
+    ['MessageContent', renderStatic],
+    ['StreamingMessageContent', (content: ContentBlock[]) => renderStreaming(content, false)],
+  ])(
+    'collapses a sanitized persisted headingless phase into one disclosure in %s',
+    async (_renderer, renderMessage) => {
+      const content = [
+        thinking(
+          'sanitized:0',
+          'I am inspecting the current state before I choose the smallest safe change.',
+        ),
+        { type: 'text', id: 'sanitized:1', text: '<group:Prepping>' },
+        {
+          type: 'tool_use',
+          id: 'sanitized:2',
+          toolCallId: 'sanitized-call',
+          name: 'view',
+          input: { path: 'src/example.ts' },
+        },
+        {
+          type: 'tool_result',
+          id: 'sanitized:3',
+          tool_use_id: 'sanitized-call',
+          output: 'Sanitized tool result',
+        },
+        thinking('sanitized:4', 'The focused check confirms that the narrow repair is sufficient.'),
+        {
+          type: 'text',
+          id: 'sanitized:5',
+          text: '</group:Prepping>Sanitized final response.',
+        },
+      ] as ContentBlock[];
+
+      await renderMessage(content);
+
+      expect(screen.getAllByTestId('response-group-disclosure')).toHaveLength(1);
+      expect(screen.queryByTestId('reasoning-disclosure')).toBeNull();
+      expect(document.body.textContent?.match(/Reasoning/g)).toHaveLength(1);
+      expect(document.body.textContent).toContain('Sanitized final response.');
+
+      await fireEvent.click(screen.getByTestId('response-group-disclosure'));
+      const responseGroup = screen.getByTestId('response-group');
+      expect(
+        [...responseGroup.querySelectorAll('[data-response-group-child]')].map((child) =>
+          child.getAttribute('data-message-content-block'),
+        ),
+      ).toEqual(['thinking', 'tool_use', 'thinking']);
+      expect(responseGroup.textContent).toContain(
+        'I am inspecting the current state before I choose the smallest safe change.',
+      );
+      expect(responseGroup.textContent).toContain(
+        'The focused check confirms that the narrow repair is sufficient.',
+      );
+      await fireEvent.click(screen.getByTestId('tool-call-disclosure'));
+      expect(responseGroup.textContent).toContain('Sanitized tool result');
+    },
+  );
+
   it('keeps the exact screenshot history shape in the static message path', async () => {
     await renderStatic([
       { type: 'text', id: 'msg_1:0', text: '<group:Prepping>Group description prose.' },
