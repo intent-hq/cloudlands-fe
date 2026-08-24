@@ -208,8 +208,7 @@ for (const stackCount of stackCounts) {
       await expect(menu.locator('[data-pane-stack-item]')).toHaveCount(stackCount);
       const item = menu.locator(`[data-pane-stack-item="note-tab-${index}"]`);
       if (index % 2 === 0) {
-        await item.focus();
-        await page.keyboard.press('Enter');
+        await item.press('Enter');
       } else {
         await item.click();
       }
