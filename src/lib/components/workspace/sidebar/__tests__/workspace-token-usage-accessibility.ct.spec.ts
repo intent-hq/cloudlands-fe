@@ -140,7 +140,8 @@ test('renders the full reference table as a wide overlay from the real workspace
   expect(contentBox).not.toBeNull();
   expect(sidebarBox!.width).toBeCloseTo(352, 0);
   expect(sidebarRegionBox!.width).toBeCloseTo(304, 0);
-  expect(closedBox!.height).toBeLessThanOrEqual(44);
+  expect(closedBox!.height).toBeGreaterThanOrEqual(38);
+  expect(closedBox!.height).toBeLessThanOrEqual(40);
   expect(disclosureBox!.width).toBeCloseTo(304, 0);
   expect(summaryMetrics.borderRadius).toBeGreaterThanOrEqual(6);
   expect(summaryMetrics.borderRadius).toBeLessThanOrEqual(8);
@@ -236,6 +237,7 @@ test('renders the full reference table as a wide overlay from the real workspace
     breakdownLists,
     breakdownItemVisibility,
     breakdownBars,
+    breakdownDivider,
   ] = await Promise.all([
     details.boundingBox(),
     sidebar.boundingBox(),
@@ -254,6 +256,7 @@ test('renders the full reference table as a wide overlay from the real workspace
           row.querySelector(selector)!.getBoundingClientRect().toJSON();
         const swatchElement = row.querySelector('.composition-metric [aria-hidden="true"]')!;
         const metricLabel = row.querySelector('.composition-metric span.truncate')!;
+        const descriptionElement = row.querySelector('.composition-description')!;
         const valueElement = row.querySelector('.composition-value')!;
         const contextElement = row.querySelector('.composition-context')!;
         return {
@@ -263,6 +266,12 @@ test('renders the full reference table as a wide overlay from the real workspace
           metric: box('.composition-metric'),
           metricTransform: getComputedStyle(metricLabel).textTransform,
           description: box('.composition-description'),
+          descriptionFontSize: Number.parseFloat(getComputedStyle(descriptionElement).fontSize),
+          descriptionLetterSpacing: Number.parseFloat(
+            getComputedStyle(descriptionElement).letterSpacing,
+          ),
+          descriptionClientWidth: descriptionElement.clientWidth,
+          descriptionScrollWidth: descriptionElement.scrollWidth,
           value: box('.composition-value'),
           context: box('.composition-context'),
           valueAlign: getComputedStyle(valueElement).textAlign,
@@ -307,6 +316,17 @@ test('renders the full reference table as a wide overlay from the real workspace
         borderRadius: Number.parseFloat(getComputedStyle(bar).borderRadius),
       })),
     ),
+    details.locator('.breakdown-grid').evaluate((grid) => {
+      const divider = getComputedStyle(grid, '::after');
+      const secondSection = grid.querySelector('.breakdown-section + .breakdown-section')!;
+      return {
+        top: Number.parseFloat(divider.top),
+        bottom: Number.parseFloat(divider.bottom),
+        height: Number.parseFloat(divider.height),
+        backgroundColor: divider.backgroundColor,
+        secondSectionBorderLeftWidth: getComputedStyle(secondSection).borderLeftWidth,
+      };
+    }),
   ]);
 
   expect(detailsBox).not.toBeNull();
@@ -322,14 +342,21 @@ test('renders the full reference table as a wide overlay from the real workspace
   expect(modelBox).not.toBeNull();
   expect(Math.abs(agentBox!.y - modelBox!.y)).toBeLessThanOrEqual(1);
   expect(agentBox!.width).toBeCloseTo(modelBox!.width, 0);
-  expect(detailsBox!.height).toBeGreaterThanOrEqual(300);
-  expect(detailsBox!.height).toBeLessThanOrEqual(320);
-  expect(detailsBox!.height / detailsBox!.width).toBeGreaterThanOrEqual(0.68);
-  expect(detailsBox!.height / detailsBox!.width).toBeLessThanOrEqual(0.71);
-  expect(agentBox!.height).toBeGreaterThanOrEqual(76);
-  expect(agentBox!.height).toBeLessThanOrEqual(84);
-  expect(modelBox!.height).toBeGreaterThanOrEqual(76);
-  expect(modelBox!.height).toBeLessThanOrEqual(84);
+  expect(detailsBox!.height).toBeGreaterThanOrEqual(312);
+  expect(detailsBox!.height).toBeLessThanOrEqual(315);
+  expect(detailsBox!.height / detailsBox!.width).toBeGreaterThanOrEqual(0.69);
+  expect(detailsBox!.height / detailsBox!.width).toBeLessThanOrEqual(0.7);
+  expect(agentBox!.height).toBeGreaterThanOrEqual(75);
+  expect(agentBox!.height).toBeLessThanOrEqual(77);
+  expect(modelBox!.height).toBeGreaterThanOrEqual(75);
+  expect(modelBox!.height).toBeLessThanOrEqual(77);
+  expect(breakdownDivider).toMatchObject({
+    top: 8,
+    bottom: 8,
+    height: 60,
+    backgroundColor: 'rgba(30, 30, 30, 0.55)',
+    secondSectionBorderLeftWidth: '0px',
+  });
   expect(
     breakdownLists.every(
       ({ clientHeight, maxHeight, overflowY, scrollbarWidth, scrollHeight }) =>
@@ -352,7 +379,7 @@ test('renders the full reference table as a wide overlay from the real workspace
   expect(
     breakdownBars.every(
       ({ height, borderRadius }) =>
-        height >= 8 && height <= 10 && borderRadius > 0 && borderRadius <= 3,
+        height >= 9.5 && height <= 10.5 && borderRadius > 0 && borderRadius <= 3,
     ),
   ).toBe(true);
   const agentList = agentSection.locator('.breakdown-list');
@@ -383,6 +410,10 @@ test('renders the full reference table as a wide overlay from the real workspace
         metric,
         metricTransform,
         description,
+        descriptionFontSize,
+        descriptionLetterSpacing,
+        descriptionClientWidth,
+        descriptionScrollWidth,
         value,
         context,
         valueAlign,
@@ -391,11 +422,18 @@ test('renders the full reference table as a wide overlay from the real workspace
         contextDisplay,
       }) =>
         row.height <= 44 &&
-        swatch.width > 0 &&
-        swatch.height > 0 &&
+        swatch.width >= 11.5 &&
+        swatch.width <= 12.5 &&
+        swatch.height >= 11.5 &&
+        swatch.height <= 12.5 &&
         Math.abs(swatch.width - swatch.height) <= 1 &&
-        swatchRadius === 0 &&
+        swatchRadius > 0 &&
+        swatchRadius <= 2 &&
         metricTransform === 'uppercase' &&
+        descriptionFontSize === 11 &&
+        descriptionLetterSpacing >= 0 &&
+        descriptionLetterSpacing <= 0.25 &&
+        descriptionScrollWidth <= descriptionClientWidth &&
         descriptionDisplay !== 'none' &&
         contextDisplay !== 'none' &&
         valueAlign === 'right' &&
