@@ -5,8 +5,15 @@ export const PANE_DRAG_MIME = 'application/x-panel-tab';
 const PANE_DRAG_IMAGE_ATTRIBUTE = 'data-pane-drag-image';
 
 export type PaneDropZone = 'left' | 'center' | 'right';
-export type PaneLayoutEdgePlacement = 'before' | 'after';
 export type PanelDragPlacement = 'before' | 'after' | 'above' | 'below';
+export interface PaneInsertionTarget {
+  index: number;
+  left: number;
+  width: number;
+}
+export type PaneInsertionPlacement =
+  | { kind: 'edge'; position: 'before' | 'after' }
+  | { kind: 'panel'; targetPanelId: string; zone: 'left' };
 export interface DraggedPane {
   tabId: string;
   panelId: string;
@@ -14,8 +21,64 @@ export interface DraggedPane {
 
 const PANE_SIDE_ZONE_RATIO = 0.2;
 const PLACEMENT_HYSTERESIS = 0.03;
-const MIN_LAYOUT_EDGE_SIZE = 40;
-const MAX_LAYOUT_EDGE_SIZE = 80;
+const PANE_INSERTION_GUTTER_SIZE = 40;
+
+export function getPaneInsertionTargets(
+  layoutRect: Pick<DOMRect, 'left' | 'width'>,
+  panelRects: readonly Pick<DOMRect, 'left' | 'width'>[],
+  canCreateColumn = true,
+): PaneInsertionTarget[] {
+  if (!canCreateColumn || layoutRect.width <= 0 || panelRects.length === 0) return [];
+
+  const panelEdges = panelRects.map((rect) => ({ left: rect.left, right: rect.left + rect.width }));
+  const firstEdge = panelEdges[0];
+  const lastEdge = panelEdges.at(-1);
+  if (!firstEdge || !lastEdge) return [];
+  const boundaries = [
+    firstEdge.left,
+    ...panelEdges.slice(1).map((edge, index) => (panelEdges[index].right + edge.left) / 2),
+    lastEdge.right,
+  ].map((position) =>
+    Math.max(layoutRect.left, Math.min(layoutRect.left + layoutRect.width, position)),
+  );
+  const minimumSpacing = boundaries
+    .slice(1)
+    .reduce(
+      (minimum, position, index) => Math.min(minimum, position - boundaries[index]),
+      Infinity,
+    );
+  const width = Math.min(
+    PANE_INSERTION_GUTTER_SIZE,
+    layoutRect.width,
+    Number.isFinite(minimumSpacing) ? Math.max(1, minimumSpacing / 2) : layoutRect.width,
+  );
+  const maximumLeft = Math.max(0, layoutRect.width - width);
+
+  return boundaries.map((position, index) => ({
+    index,
+    left: Math.max(0, Math.min(maximumLeft, position - layoutRect.left - width / 2)),
+    width,
+  }));
+}
+
+export function getPaneInsertionTargetAtX(
+  clientX: number,
+  layoutRect: Pick<DOMRect, 'left'>,
+  targets: readonly PaneInsertionTarget[],
+): PaneInsertionTarget | null {
+  const x = clientX - layoutRect.left;
+  return targets.find((target) => x >= target.left && x <= target.left + target.width) ?? null;
+}
+
+export function getPaneInsertionPlacement(
+  targetIndex: number,
+  panelIds: readonly string[],
+): PaneInsertionPlacement | null {
+  if (targetIndex === 0) return { kind: 'edge', position: 'before' };
+  if (targetIndex === panelIds.length) return { kind: 'edge', position: 'after' };
+  const targetPanelId = panelIds[targetIndex];
+  return targetPanelId ? { kind: 'panel', targetPanelId, zone: 'left' } : null;
+}
 
 export function getPaneColumnDropZone(
   clientX: number,
@@ -44,22 +107,6 @@ export function getPaneColumnDropZone(
   if (xRatio < PANE_SIDE_ZONE_RATIO) return 'left';
   if (xRatio > 1 - PANE_SIDE_ZONE_RATIO) return 'right';
   return 'center';
-}
-
-export function getPaneLayoutEdgePlacement(
-  clientX: number,
-  rect: Pick<DOMRect, 'left' | 'width'>,
-  canCreateColumn = true,
-): PaneLayoutEdgePlacement | null {
-  if (!canCreateColumn) return null;
-  const horizontalBand = Math.min(
-    MAX_LAYOUT_EDGE_SIZE,
-    Math.max(MIN_LAYOUT_EDGE_SIZE, rect.width * 0.1),
-  );
-  const right = rect.left + rect.width;
-  if (clientX <= rect.left + horizontalBand) return 'before';
-  if (clientX >= right - horizontalBand) return 'after';
-  return null;
 }
 
 let draggedPane: DraggedPane | null = null;

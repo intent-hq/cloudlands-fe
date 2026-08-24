@@ -2870,6 +2870,8 @@
   "layout_panelDropZones_splitTop_label": "Scinder en haut",
   "layout_panelDropZones_splitBottom_label": "Scinder en bas",
   "layout_panelDropZones_addToPanel_label": "Ajouter au panneau",
+  "layout_panelDropZones_newColumn_label": "Nouvelle colonne",
+  "layout_panelDropZones_moveToStack_label": "Déplacer vers la pile",
   "layout_panelSplitHandle_resize_ariaLabel": "Redimensionner le panneau",
   "layout_panelSplitHandle_addRowAbove_label": "Ajouter une ligne au-dessus",
   "layout_panelSplitHandle_addRowBelow_label": "Ajouter une ligne en dessous",

@@ -31,7 +31,7 @@
   } from './panel-tab-cache';
   import { selectIsDragging } from '$store/renderer/slices/tab-state/tab-state-selectors';
   import { untrack, type Snippet } from 'svelte';
-  import { PANE_DRAG_MIME, getPaneColumnDropZone } from './panel-drag';
+  import { PANE_DRAG_MIME, getDraggedPane, getPaneColumnDropZone } from './panel-drag';
   import { store as appStore } from '$store/renderer/store';
   import { markPanelTouched } from '$store/renderer/slices/panel-layout/panel-layout-slice';
 
@@ -295,6 +295,7 @@
   }
 
   function getDropZone(e: DragEvent): DropZone {
+    if (getDraggedPane()) return 'center';
     if (!panelRef) return 'center';
     // Tabless panels only split along the horizontal stack.
     return getPaneColumnDropZone(

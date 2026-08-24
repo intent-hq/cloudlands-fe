@@ -2870,6 +2870,8 @@
   "layout_panelDropZones_splitTop_label": "上に分割",
   "layout_panelDropZones_splitBottom_label": "下に分割",
   "layout_panelDropZones_addToPanel_label": "パネルに追加",
+  "layout_panelDropZones_newColumn_label": "新しい列",
+  "layout_panelDropZones_moveToStack_label": "スタックに移動",
   "layout_panelSplitHandle_resize_ariaLabel": "パネルのサイズを変更",
   "layout_panelSplitHandle_addRowAbove_label": "上に行を追加",
   "layout_panelSplitHandle_addRowBelow_label": "下に行を追加",

@@ -26,6 +26,7 @@
     getPanelViewportContentWidth,
   } from './panel-canvas-width';
   import PanelDragPreview from './PanelDragPreview.svelte';
+  import PaneInsertionTargets from './PaneInsertionTargets.svelte';
   import {
     EMPTY_LAYOUT_LOADING_TIMEOUT_MS,
     isLayoutSettledNow,
@@ -56,8 +57,10 @@
   import {
     clearDraggedPaneState,
     getDraggedPane,
-    getPaneLayoutEdgePlacement,
-    type PaneLayoutEdgePlacement,
+    getPaneInsertionPlacement,
+    getPaneInsertionTargetAtX,
+    getPaneInsertionTargets,
+    type PaneInsertionTarget,
     type PanelDragPlacement,
   } from './panel-drag';
   import { selectIsDragging } from '$store/renderer/slices/tab-state/tab-state-selectors';
@@ -195,7 +198,8 @@
     | null
   >(null);
   let panelLayoutMotionElement = $state.raw<HTMLDivElement | null>(null);
-  let paneLayoutEdgeDropPosition = $state<PaneLayoutEdgePlacement | null>(null);
+  let paneInsertionTargets = $state<PaneInsertionTarget[]>([]);
+  let activePaneInsertionIndex = $state<number | null>(null);
   let panelWorkspaceInset = $state.raw<HTMLDivElement | null>(null);
   const panelRevealScheduler = createLayoutStableRevealScheduler();
   $effect(() => {
@@ -442,54 +446,88 @@
     });
   }
 
-  function handleLayoutEdgeDragOver(event: DragEvent) {
-    const draggedPane = getDraggedPane();
-    if (!draggedPane || !panelLayoutMotionElement) {
-      paneLayoutEdgeDropPosition = null;
-      return;
-    }
-    const position = getPaneLayoutEdgePlacement(
-      event.clientX,
-      panelLayoutMotionElement.getBoundingClientRect(),
-      $panelIds$.length < 4,
+  function measurePaneInsertionGeometry() {
+    if (!panelLayoutMotionElement || $panelIds$.length >= 4) return null;
+    const panelElements = Array.from(
+      panelLayoutMotionElement.querySelectorAll<HTMLElement>('[data-panel-id]'),
     );
-    paneLayoutEdgeDropPosition = position;
-    if (!position) return;
+    const panelRects = $panelIds$.map((panelId) =>
+      panelElements.find((element) => element.dataset.panelId === panelId)?.getBoundingClientRect(),
+    );
+    if (panelRects.some((rect) => !rect)) return null;
+
+    const layoutRect = panelLayoutMotionElement.getBoundingClientRect();
+    const targets = getPaneInsertionTargets(layoutRect, panelRects as DOMRect[]);
+    return { layoutRect, targets };
+  }
+
+  function handlePaneInsertionDragOver(event: DragEvent) {
+    if (!getDraggedPane()) return;
+    const geometry = measurePaneInsertionGeometry();
+    if (!geometry) return;
+    paneInsertionTargets = geometry.targets;
+    const target = getPaneInsertionTargetAtX(event.clientX, geometry.layoutRect, geometry.targets);
+    activePaneInsertionIndex = target?.index ?? null;
+    if (!target) return;
 
     event.preventDefault();
     event.stopPropagation();
     if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
   }
 
-  function handleLayoutEdgeDrop(event: DragEvent) {
+  function handlePaneInsertionDrop(event: DragEvent) {
     const draggedPane = getDraggedPane();
-    if (!draggedPane || !panelLayoutMotionElement) return;
-    const position = getPaneLayoutEdgePlacement(
-      event.clientX,
-      panelLayoutMotionElement.getBoundingClientRect(),
-      $panelIds$.length < 4,
-    );
-    if (!position) return;
+    const geometry = measurePaneInsertionGeometry();
+    if (!draggedPane || !geometry) return;
+    const target = getPaneInsertionTargetAtX(event.clientX, geometry.layoutRect, geometry.targets);
+    if (!target) return;
 
     event.preventDefault();
     event.stopPropagation();
-    paneLayoutEdgeDropPosition = null;
+    activePaneInsertionIndex = null;
+    paneInsertionTargets = [];
     clearDraggedPaneState();
     appStore.dispatch(endDrag());
-    layoutManager.moveTabToSplitLevel(
+    const placement = getPaneInsertionPlacement(target.index, $panelIds$);
+    if (!placement) return;
+    if (placement.kind === 'edge') {
+      layoutManager.moveTabToSplitLevel(
+        draggedPane.tabId,
+        draggedPane.panelId,
+        [],
+        placement.position,
+        'horizontal',
+      );
+      return;
+    }
+    layoutManager.moveTabToSplit(
       draggedPane.tabId,
       draggedPane.panelId,
-      [],
-      position,
-      'horizontal',
+      placement.targetPanelId,
+      placement.zone,
     );
   }
 
-  function handleLayoutEdgeDragLeave(event: DragEvent) {
+  function handlePaneInsertionDragLeave(event: DragEvent) {
     const relatedTarget = event.relatedTarget;
     if (relatedTarget instanceof Node && panelLayoutMotionElement?.contains(relatedTarget)) return;
-    paneLayoutEdgeDropPosition = null;
+    activePaneInsertionIndex = null;
   }
+
+  $effect(() => {
+    const dragging = $isDragging$;
+    const panelIds = $panelIds$;
+    if (!dragging || panelIds.length >= 4) {
+      paneInsertionTargets = [];
+      activePaneInsertionIndex = null;
+      return;
+    }
+    const frame = requestAnimationFrame(() => {
+      if (!getDraggedPane()) return;
+      paneInsertionTargets = measurePaneInsertionGeometry()?.targets ?? [];
+    });
+    return () => cancelAnimationFrame(frame);
+  });
 
   $effect.pre(() => {
     if (!panelMovePreviewRoot || suppressCommittedPanelMoveMotion) return;
@@ -512,7 +550,7 @@
   });
 
   $effect(() => {
-    if (!$isDragging$) paneLayoutEdgeDropPosition = null;
+    if (!$isDragging$) activePaneInsertionIndex = null;
     if (!$isDragging$ && !suppressCommittedPanelMoveMotion) clearPanelMovePreviewNow();
   });
 
@@ -1241,9 +1279,9 @@
       bind:this={panelLayoutMotionElement}
       class="relative h-full w-full min-w-0"
       data-panel-layout-motion
-      ondragovercapture={handleLayoutEdgeDragOver}
-      ondropcapture={handleLayoutEdgeDrop}
-      ondragleave={handleLayoutEdgeDragLeave}
+      ondragovercapture={handlePaneInsertionDragOver}
+      ondropcapture={handlePaneInsertionDrop}
+      ondragleave={handlePaneInsertionDragLeave}
       transition:resize={{ axis: 'x', duration: layoutMotionDuration }}
     >
       <div class:opacity-0={panelMovePreviewRoot !== null} class="h-full w-full min-w-0">
@@ -1290,23 +1328,11 @@
           onOpenBrowser={canOpenBrowserPanel ? handleOpenBrowser : undefined}
         />
       </div>
-      {#if paneLayoutEdgeDropPosition}
-        <div
-          class={cn(
-            'pointer-events-none absolute inset-y-0 z-50 flex w-20 items-center justify-center border-primary bg-primary/15',
-            paneLayoutEdgeDropPosition === 'before' ? 'left-0 border-r' : 'right-0 border-l',
-          )}
-          data-pane-layout-edge-target={paneLayoutEdgeDropPosition}
-          aria-hidden="true"
-        >
-          <span
-            class="rounded-md bg-background/90 px-2 py-1 text-sm font-medium text-primary shadow-sm"
-          >
-            {paneLayoutEdgeDropPosition === 'before'
-              ? m.layout_panelDropZones_splitLeft_label()
-              : m.layout_panelDropZones_splitRight_label()}
-          </span>
-        </div>
+      {#if paneInsertionTargets.length > 0}
+        <PaneInsertionTargets
+          targets={paneInsertionTargets}
+          activeIndex={activePaneInsertionIndex}
+        />
       {/if}
       {#if panelMovePreviewRoot}
         <div

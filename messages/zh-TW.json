@@ -2870,6 +2870,8 @@
   "layout_panelDropZones_splitTop_label": "向上拆分",
   "layout_panelDropZones_splitBottom_label": "向下拆分",
   "layout_panelDropZones_addToPanel_label": "新增到面板",
+  "layout_panelDropZones_newColumn_label": "新增欄",
+  "layout_panelDropZones_moveToStack_label": "移至堆疊",
   "layout_panelSplitHandle_resize_ariaLabel": "調整面板大小",
   "layout_panelSplitHandle_addRowAbove_label": "在上方新增行",
   "layout_panelSplitHandle_addRowBelow_label": "在下方新增行",

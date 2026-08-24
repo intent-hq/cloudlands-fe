@@ -2871,6 +2871,8 @@
   "layout_panelDropZones_splitTop_label": "Split top",
   "layout_panelDropZones_splitBottom_label": "Split bottom",
   "layout_panelDropZones_addToPanel_label": "Add to panel",
+  "layout_panelDropZones_newColumn_label": "New column",
+  "layout_panelDropZones_moveToStack_label": "Move to stack",
   "layout_panelSplitHandle_resize_ariaLabel": "Resize panel",
   "layout_panelSplitHandle_addRowAbove_label": "Add row above",
   "layout_panelSplitHandle_addRowBelow_label": "Add row below",

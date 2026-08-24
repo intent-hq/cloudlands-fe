@@ -114,7 +114,9 @@ import {
   PANE_DRAG_MIME,
   getDraggedPane,
   getPaneColumnDropZone,
-  getPaneLayoutEdgePlacement,
+  getPaneInsertionPlacement,
+  getPaneInsertionTargetAtX,
+  getPaneInsertionTargets,
   setDraggedPane,
 } from '../panel-drag';
 
@@ -198,6 +200,59 @@ afterEach(() => {
 });
 
 describe('pane and tab drag MIME routing', () => {
+  it('creates one non-overlapping insertion gutter at every column boundary', () => {
+    const layoutRect = { left: 100, width: 600 } as DOMRect;
+    const panelRects = [
+      { left: 100, width: 190 },
+      { left: 300, width: 190 },
+      { left: 500, width: 200 },
+    ] as DOMRect[];
+
+    const targets = getPaneInsertionTargets(layoutRect, panelRects);
+
+    expect(targets).toEqual([
+      { index: 0, left: 0, width: 40 },
+      { index: 1, left: 175, width: 40 },
+      { index: 2, left: 375, width: 40 },
+      { index: 3, left: 560, width: 40 },
+    ]);
+    expect(getPaneInsertionTargetAtX(295, layoutRect, targets)?.index).toBe(1);
+    expect(getPaneInsertionTargetAtX(450, layoutRect, targets)).toBeNull();
+    expect(getPaneInsertionTargets(layoutRect, panelRects, false)).toEqual([]);
+  });
+
+  it('keeps insertion gutters separate in narrow layouts', () => {
+    const targets = getPaneInsertionTargets(
+      { left: 0, width: 60 } as DOMRect,
+      [
+        { left: 0, width: 20 },
+        { left: 20, width: 20 },
+        { left: 40, width: 20 },
+      ] as DOMRect[],
+    );
+
+    expect(targets.map(({ left, width }) => ({ left, width }))).toEqual([
+      { left: 0, width: 10 },
+      { left: 15, width: 10 },
+      { left: 35, width: 10 },
+      { left: 50, width: 10 },
+    ]);
+  });
+
+  it('maps each preview boundary to the same outer or interior drop placement', () => {
+    const panelIds = ['panel-a', 'panel-b', 'panel-c'];
+
+    expect(panelIds.map((_, index) => getPaneInsertionPlacement(index, panelIds))).toEqual([
+      { kind: 'edge', position: 'before' },
+      { kind: 'panel', targetPanelId: 'panel-b', zone: 'left' },
+      { kind: 'panel', targetPanelId: 'panel-c', zone: 'left' },
+    ]);
+    expect(getPaneInsertionPlacement(panelIds.length, panelIds)).toEqual({
+      kind: 'edge',
+      position: 'after',
+    });
+  });
+
   it('drags only the active pane from the visible stack header', async () => {
     const { container } = renderTabBar({ panelId: 'source-panel', layoutId: 'workspace-1' });
     const header = container.querySelector<HTMLElement>('[data-panel-tabless-header]')!;
@@ -245,9 +300,11 @@ describe('pane and tab drag MIME routing', () => {
       PANE_DRAG_MIME,
       JSON.stringify({ tabId: 'source-tab', panelId: 'source-panel' }),
     );
+    setDraggedPane({ tabId: 'source-tab', panelId: 'source-panel' });
 
-    await fireEvent(targetPanel, dragEvent('dragover', dataTransfer, 200, 20));
-    await fireEvent(targetPanel, dragEvent('drop', dataTransfer, 200, 20));
+    await fireEvent(targetPanel, dragEvent('dragover', dataTransfer, 10, 20));
+    expect(container.textContent).toContain('Move to stack');
+    await fireEvent(targetPanel, dragEvent('drop', dataTransfer, 10, 20));
 
     expect(onTabMoveToPanel).toHaveBeenCalledWith('source-tab', 'source-panel');
     expect(dataTransfer.dropEffect).toBe('move');
@@ -348,7 +405,7 @@ describe('pane and tab drag MIME routing', () => {
     );
 
     await fireEvent(targetPanel, dragEvent('dragover', dataTransfer, 10, 200));
-    expect(container.textContent).toContain('Add to panel');
+    expect(container.textContent).toContain('Move to stack');
     await fireEvent(targetPanel, dragEvent('drop', dataTransfer, 10, 200));
 
     expect(onTabDrop).not.toHaveBeenCalled();
@@ -566,23 +623,26 @@ describe('pane drop geometry', () => {
     expect(getPaneColumnDropZone(60, rect, true, 'center')).toBe('left');
   });
 
-  it('disables side and outer-edge creation at four columns', () => {
+  it('disables side and insertion-gutter creation at four columns', () => {
     const columnRect = { left: 0, width: 400 } as DOMRect;
     const layoutRect = { left: 100, width: 800 } as DOMRect;
+    const panelRects = [{ left: 100, width: 800 }] as DOMRect[];
 
     expect(getPaneColumnDropZone(10, columnRect, false)).toBe('center');
     expect(getPaneColumnDropZone(390, columnRect, false)).toBe('center');
-    expect(getPaneLayoutEdgePlacement(102, layoutRect, false)).toBeNull();
-    expect(getPaneLayoutEdgePlacement(898, layoutRect, false)).toBeNull();
+    expect(getPaneInsertionTargets(layoutRect, panelRects, false)).toEqual([]);
   });
 
-  it('captures only the narrow left and end-of-canvas bands', () => {
-    const rect = { left: 100, width: 800 } as DOMRect;
+  it('resolves outer edges and the interior divider to their exact boundaries', () => {
+    const layoutRect = { left: 100, width: 800 } as DOMRect;
+    const targets = getPaneInsertionTargets(layoutRect, [
+      { left: 100, width: 390 },
+      { left: 500, width: 400 },
+    ] as DOMRect[]);
 
-    expect(getPaneLayoutEdgePlacement(102, rect)).toBe('before');
-    expect(getPaneLayoutEdgePlacement(898, rect)).toBe('after');
-    expect(getPaneLayoutEdgePlacement(500, rect)).toBeNull();
-    expect(getPaneLayoutEdgePlacement(179, rect)).toBe('before');
-    expect(getPaneLayoutEdgePlacement(181, rect)).toBeNull();
+    expect(getPaneInsertionTargetAtX(102, layoutRect, targets)?.index).toBe(0);
+    expect(getPaneInsertionTargetAtX(495, layoutRect, targets)?.index).toBe(1);
+    expect(getPaneInsertionTargetAtX(898, layoutRect, targets)?.index).toBe(2);
+    expect(getPaneInsertionTargetAtX(300, layoutRect, targets)).toBeNull();
   });
 });

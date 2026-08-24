@@ -33,7 +33,7 @@
   const zoneLabels = {
     left: () => m.layout_panelDropZones_splitLeft_label(),
     right: () => m.layout_panelDropZones_splitRight_label(),
-    center: () => m.layout_panelDropZones_addToPanel_label(),
+    center: () => m.layout_panelDropZones_moveToStack_label(),
   } as const;
 </script>
 
