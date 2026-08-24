@@ -1,61 +1,133 @@
-import { describe, expect, it, vi } from 'vitest';
+/** @vitest-environment jsdom */
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { inspectLazyTurnObserverOwnership } from '../lazy-turn-observer';
 import {
   createMessageHydrationPolicy,
-  deriveMessageHydrationFrontier,
-  shouldStartAsMessagePlaceholder,
+  type HydrationMessage,
+  type MessageHydrationPolicy,
 } from '../message-hydration-policy';
 
 const assistant = (id: string) => ({ id, role: 'assistant' as const });
 const user = (id: string) => ({ id, role: 'user' as const });
 
+class MockIntersectionObserver {
+  static instances: MockIntersectionObserver[] = [];
+  callback: IntersectionObserverCallback;
+  observed = new Set<Element>();
+  disconnect = vi.fn(() => this.observed.clear());
+  unobserve = vi.fn((element: Element) => this.observed.delete(element));
+
+  constructor(callback: IntersectionObserverCallback) {
+    this.callback = callback;
+    MockIntersectionObserver.instances.push(this);
+  }
+
+  observe(element: Element) {
+    this.observed.add(element);
+  }
+
+  fire(entries: Array<{ target: Element; isIntersecting: boolean }>) {
+    this.callback(entries as IntersectionObserverEntry[], this as unknown as IntersectionObserver);
+  }
+}
+
 describe('message hydration policy', () => {
+  const policies: MessageHydrationPolicy[] = [];
+
+  beforeEach(() => {
+    policies.length = 0;
+    MockIntersectionObserver.instances = [];
+    vi.stubGlobal('IntersectionObserver', MockIntersectionObserver);
+  });
+
+  afterEach(() => {
+    policies.forEach((policy) => policy.dispose());
+    expect(inspectLazyTurnObserverOwnership()).toEqual({ rootCount: 0, targetCount: 0 });
+    vi.unstubAllGlobals();
+  });
+
+  function createPolicy(
+    messages: readonly HydrationMessage[],
+    onTransition: (transition: string) => void = () => {},
+  ) {
+    const policy = createMessageHydrationPolicy(messages, {
+      onHydrate: (id) => onTransition(`hydrate:${id}`),
+      onDehydrate: (id) => onTransition(`dehydrate:${id}`),
+    });
+    policies.push(policy);
+    return policy;
+  }
+
+  function observe(policy: MessageHydrationPolicy, ids: readonly string[], root = document.body) {
+    return new Map(
+      ids.map((id) => {
+        const element = document.createElement('div');
+        policy.observe(id, element, root);
+        return [id, element] as const;
+      }),
+    );
+  }
+
   it('starts eligible non-user messages as placeholders but keeps users hydrated', () => {
-    expect(shouldStartAsMessagePlaceholder(assistant('a'))).toBe(true);
-    expect(shouldStartAsMessagePlaceholder(user('u'))).toBe(false);
-    const policy = createMessageHydrationPolicy([assistant('a'), user('u'), assistant('b')]);
+    const policy = createPolicy([assistant('a'), user('u'), assistant('b')]);
     expect(policy.getHydratedIds()).toEqual(['u']);
   });
 
   it('hydrates displayport rows and derives the oldest adjacent frontier', () => {
-    const policy = createMessageHydrationPolicy([
-      assistant('old'),
-      assistant('near'),
-      assistant('new'),
+    const transitions: string[] = [];
+    const policy = createPolicy(
+      [assistant('old'), assistant('near'), assistant('new')],
+      (transition) => transitions.push(transition),
+    );
+    const elements = observe(policy, ['old', 'near', 'new']);
+
+    MockIntersectionObserver.instances[0].fire([
+      { target: elements.get('near')!, isIntersecting: true },
     ]);
-    expect(policy.reportVisibility('near', true)).toEqual([
-      { id: 'near', hydrated: true, reason: 'displayport' },
-      { id: 'new', hydrated: true, reason: 'displayport' },
-    ]);
-    expect(policy.getFrontier()).toBe('near');
-    expect(deriveMessageHydrationFrontier(policy.getStates(), ['new', 'near'])).toBe('near');
+
+    expect(transitions).toEqual(['hydrate:near', 'hydrate:new']);
+    expect(policy.getHydratedIds()).toEqual(['near', 'new']);
   });
 
   it('retains newer hydrated rows while dehydrating only older rows', () => {
-    const policy = createMessageHydrationPolicy([
-      assistant('old'),
-      assistant('frontier'),
-      assistant('new'),
+    const transitions: string[] = [];
+    const policy = createPolicy(
+      [assistant('old'), assistant('frontier'), assistant('new')],
+      (transition) => transitions.push(transition),
+    );
+    const elements = observe(policy, ['old', 'frontier', 'new']);
+    const observer = MockIntersectionObserver.instances[0];
+    observer.fire([
+      { target: elements.get('old')!, isIntersecting: true },
+      { target: elements.get('frontier')!, isIntersecting: true },
+      { target: elements.get('new')!, isIntersecting: true },
     ]);
-    policy.reportVisibility('old', true);
-    policy.reportVisibility('frontier', true);
-    policy.reportVisibility('new', true);
-    const transitions = policy.reportObserverEntries([
-      { id: 'old', isIntersecting: false },
-      { id: 'frontier', isIntersecting: true },
-      { id: 'new', isIntersecting: false },
+    transitions.length = 0;
+
+    observer.fire([
+      { target: elements.get('old')!, isIntersecting: false },
+      { target: elements.get('frontier')!, isIntersecting: true },
+      { target: elements.get('new')!, isIntersecting: false },
     ]);
-    expect(transitions).toEqual([{ id: 'old', hydrated: false, reason: 'dehydrate' }]);
+
+    expect(transitions).toEqual(['dehydrate:old']);
     expect(policy.getHydratedIds()).toEqual(['frontier', 'new']);
-    expect(policy.getState('new')?.canDehydrate).toBe(false);
   });
 
   it('hydrates a newer placeholder added after the frontier is established', () => {
-    const policy = createMessageHydrationPolicy([assistant('frontier')]);
-    policy.reportVisibility('frontier', true);
-
-    expect(policy.updateMessages([assistant('frontier'), assistant('new')])).toEqual([
-      { id: 'new', hydrated: true, reason: 'frontier' },
+    const transitions: string[] = [];
+    const policy = createPolicy([assistant('frontier')], (transition) =>
+      transitions.push(transition),
+    );
+    const elements = observe(policy, ['frontier']);
+    MockIntersectionObserver.instances[0].fire([
+      { target: elements.get('frontier')!, isIntersecting: true },
     ]);
+    transitions.length = 0;
+
+    policy.updateMessages([assistant('frontier'), assistant('new')]);
+
+    expect(transitions).toEqual(['hydrate:new']);
     expect(policy.getHydratedIds()).toEqual(['frontier', 'new']);
   });
 
@@ -63,75 +135,102 @@ describe('message hydration policy', () => {
     const messages = Array.from({ length: 200 }, (_, index) =>
       index === 20 ? user('user-anchor') : assistant(`assistant-${index}`),
     );
-    const policy = createMessageHydrationPolicy(messages);
+    const transitions: string[] = [];
+    const policy = createPolicy(messages, (transition) => transitions.push(transition));
+    const elements = observe(policy, ['assistant-190', 'assistant-195']);
+    const observer = MockIntersectionObserver.instances[0];
 
     expect(policy.getHydratedIds()).toEqual(['user-anchor']);
-    policy.reportVisibility('assistant-190', true);
+    observer.fire([{ target: elements.get('assistant-190')!, isIntersecting: true }]);
     expect(policy.getHydratedIds()).toEqual([
       'user-anchor',
       ...Array.from({ length: 10 }, (_, index) => `assistant-${index + 190}`),
     ]);
+    transitions.length = 0;
 
-    const transitions = policy.reportObserverEntries([
-      { id: 'assistant-190', isIntersecting: false },
-      { id: 'assistant-195', isIntersecting: true },
+    observer.fire([
+      { target: elements.get('assistant-190')!, isIntersecting: false },
+      { target: elements.get('assistant-195')!, isIntersecting: true },
     ]);
 
     expect(transitions).toEqual(
-      Array.from({ length: 5 }, (_, index) => ({
-        id: `assistant-${index + 190}`,
-        hydrated: false,
-        reason: 'dehydrate' as const,
-      })),
+      Array.from({ length: 5 }, (_, index) => `dehydrate:assistant-${index + 190}`),
     );
     expect(policy.getHydratedIds()).toEqual([
       'user-anchor',
       ...Array.from({ length: 5 }, (_, index) => `assistant-${index + 195}`),
     ]);
-    expect(policy.isHydrated('user-anchor')).toBe(true);
-    expect(policy.getState('assistant-194')?.canDehydrate).toBe(true);
-    expect(policy.getState('assistant-195')?.canDehydrate).toBe(false);
   });
 
   it('makes mixed observer entry/exit ordering deterministic and enter-safe', () => {
-    const first = createMessageHydrationPolicy([assistant('old'), assistant('new')]);
-    const second = createMessageHydrationPolicy([assistant('old'), assistant('new')]);
-    first.reportVisibility('old', true);
-    second.reportVisibility('old', true);
-    const entries = [
-      { id: 'old', isIntersecting: false },
-      { id: 'new', isIntersecting: true },
-    ];
-    first.reportObserverEntries(entries);
-    second.reportObserverEntries([...entries].reverse());
-    expect(first.getFrontier()).toBe('new');
-    expect(second.getFrontier()).toBe('new');
+    const firstTransitions: string[] = [];
+    const secondTransitions: string[] = [];
+    const first = createPolicy([assistant('old'), assistant('new')], (transition) =>
+      firstTransitions.push(transition),
+    );
+    const firstElements = observe(first, ['old', 'new'], document.createElement('div'));
+    const second = createPolicy([assistant('old'), assistant('new')], (transition) =>
+      secondTransitions.push(transition),
+    );
+    const secondElements = observe(second, ['old', 'new'], document.createElement('div'));
+    const [firstObserver, secondObserver] = MockIntersectionObserver.instances;
+    firstObserver.fire([{ target: firstElements.get('old')!, isIntersecting: true }]);
+    secondObserver.fire([{ target: secondElements.get('old')!, isIntersecting: true }]);
+    firstTransitions.length = 0;
+    secondTransitions.length = 0;
+
+    firstObserver.fire([
+      { target: firstElements.get('old')!, isIntersecting: false },
+      { target: firstElements.get('new')!, isIntersecting: true },
+    ]);
+    secondObserver.fire([
+      { target: secondElements.get('new')!, isIntersecting: true },
+      { target: secondElements.get('old')!, isIntersecting: false },
+    ]);
+
+    expect(firstTransitions).toEqual(['dehydrate:old']);
+    expect(secondTransitions).toEqual(firstTransitions);
     expect(first.getHydratedIds()).toEqual(second.getHydratedIds());
   });
 
   it('never dehydrates user messages and supports forced rows', () => {
-    const policy = createMessageHydrationPolicy(
-      [user('user'), assistant('old'), assistant('forced')],
-      { forcedMessageIds: ['forced'] },
+    const transitions: string[] = [];
+    const policy = createPolicy(
+      [user('user'), assistant('forced'), assistant('frontier')],
+      (transition) => transitions.push(transition),
     );
-    policy.reportVisibility('forced', true);
-    policy.reportObserverEntries([
-      { id: 'user', isIntersecting: false },
-      { id: 'forced', isIntersecting: false },
+    policy.setForced('forced', true);
+    const elements = observe(policy, ['frontier']);
+    MockIntersectionObserver.instances[0].fire([
+      { target: elements.get('frontier')!, isIntersecting: true },
     ]);
-    expect(policy.getHydratedIds()).toEqual(['user', 'forced']);
+
+    expect(policy.getHydratedIds()).toEqual(['user', 'forced', 'frontier']);
+    expect(transitions).toEqual(['hydrate:forced', 'hydrate:frontier']);
   });
 
   it('cleans up removed rows, callbacks, and all state on dispose', () => {
-    const onHydrate = vi.fn();
-    const policy = createMessageHydrationPolicy([assistant('a'), assistant('b')], { onHydrate });
-    policy.reportVisibility('a', true);
-    expect(onHydrate).toHaveBeenCalledWith('a');
-    policy.removeMessage('a');
-    expect(policy.getState('a')).toBeUndefined();
+    const transitions: string[] = [];
+    const policy = createPolicy([assistant('a'), assistant('b')], (transition) =>
+      transitions.push(transition),
+    );
+    const elements = observe(policy, ['a', 'b']);
+    const observer = MockIntersectionObserver.instances[0];
+    observer.fire([{ target: elements.get('a')!, isIntersecting: true }]);
+    expect(transitions).toEqual(['hydrate:a', 'hydrate:b']);
+
+    policy.updateMessages([assistant('b')]);
+    expect(observer.unobserve).toHaveBeenCalledWith(elements.get('a'));
+    expect(policy.getHydratedIds()).toEqual(['b']);
     policy.dispose();
-    expect(policy.getStates()).toEqual([]);
-    expect(policy.reportVisibility('b', true)).toEqual([]);
-    expect(policy.getFrontier()).toBeUndefined();
+    expect(observer.disconnect).toHaveBeenCalledOnce();
+    expect(policy.getHydratedIds()).toEqual([]);
+
+    transitions.length = 0;
+    policy.setForced('b', true);
+    policy.updateMessages([assistant('b')]);
+    observer.fire([{ target: elements.get('b')!, isIntersecting: true }]);
+    expect(transitions).toEqual([]);
+    expect(policy.getHydratedIds()).toEqual([]);
   });
 });

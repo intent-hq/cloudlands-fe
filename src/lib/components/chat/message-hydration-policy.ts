@@ -8,7 +8,7 @@
  * with the component; this module only reports deterministic transitions.
  */
 
-import { LAZY_TURN_PRELOAD_ROOT_MARGIN, observeLazyTurnVisibility } from './lazy-turn-observer';
+import { observeLazyTurnVisibility } from './lazy-turn-observer';
 
 export interface HydrationMessage {
   id: string;
@@ -16,46 +16,16 @@ export interface HydrationMessage {
   isUser?: boolean;
 }
 
-export interface VisibilityReport {
-  id: string;
-  isIntersecting: boolean;
-}
-
-export interface HydrationTransition {
-  id: string;
-  hydrated: boolean;
-  reason: 'displayport' | 'frontier' | 'dehydrate' | 'force';
-}
-
-export interface MessageHydrationState {
-  id: string;
-  index: number;
-  isUser: boolean;
-  forced: boolean;
-  isIntersecting: boolean;
-  hydrated: boolean;
-  canDehydrate: boolean;
-}
-
-export interface MessageHydrationPolicyOptions {
-  forcedMessageIds?: Iterable<string>;
-  forceHydrate?: (message: HydrationMessage, index: number) => boolean;
+interface MessageHydrationPolicyOptions {
   onHydrate?: (id: string) => void;
   onDehydrate?: (id: string) => void;
 }
 
 export interface MessageHydrationPolicy {
   observe(id: string, element: Element, root: HTMLElement | null): () => void;
-  reportVisibility(id: string, isIntersecting: boolean): HydrationTransition[];
-  reportObserverEntries(entries: Iterable<VisibilityReport>): HydrationTransition[];
-  setForced(id: string, forced: boolean): HydrationTransition[];
-  updateMessages(messages: readonly HydrationMessage[]): HydrationTransition[];
-  removeMessage(id: string): HydrationTransition[];
-  getFrontier(): string | undefined;
-  getState(id: string): MessageHydrationState | undefined;
-  getStates(): MessageHydrationState[];
+  setForced(id: string, forced: boolean): void;
+  updateMessages(messages: readonly HydrationMessage[]): void;
   getHydratedIds(): string[];
-  isHydrated(id: string): boolean;
   dispose(): void;
 }
 
@@ -67,33 +37,12 @@ interface MessageRecord extends HydrationMessage {
   hydrated: boolean;
 }
 
-export const DEFAULT_MESSAGE_HYDRATION_ROOT_MARGIN = LAZY_TURN_PRELOAD_ROOT_MARGIN;
-
-export function isUserHydrationMessage(message: HydrationMessage): boolean {
+function isUserHydrationMessage(message: HydrationMessage): boolean {
   return message.role === 'user' || message.isUser === true;
 }
 
-export function shouldStartAsMessagePlaceholder(
-  message: HydrationMessage,
-  forced = false,
-): boolean {
+function shouldStartAsMessagePlaceholder(message: HydrationMessage, forced = false): boolean {
   return !isUserHydrationMessage(message) && !forced;
-}
-
-export function deriveMessageHydrationFrontier(
-  messages: readonly HydrationMessage[],
-  adjacentMessageIds: Iterable<string>,
-): string | undefined {
-  const adjacent = new Set(adjacentMessageIds);
-  let frontier: HydrationMessage | undefined;
-  let frontierIndex = Number.POSITIVE_INFINITY;
-  messages.forEach((message, index) => {
-    if (adjacent.has(message.id) && index < frontierIndex) {
-      frontier = message;
-      frontierIndex = index;
-    }
-  });
-  return frontier?.id;
 }
 
 function sortByIndex(records: Iterable<MessageRecord>): MessageRecord[] {
@@ -104,14 +53,13 @@ export function createMessageHydrationPolicy(
   messages: readonly HydrationMessage[],
   options: MessageHydrationPolicyOptions = {},
 ): MessageHydrationPolicy {
-  const forcedIds = new Set(options.forcedMessageIds ?? []);
   const records = new Map<string, MessageRecord>();
   const registrations = new Map<string, () => void>();
   let frontierId: string | undefined;
   let disposed = false;
 
   function makeRecord(message: HydrationMessage, index: number): MessageRecord {
-    const forced = forcedIds.has(message.id) || Boolean(options.forceHydrate?.(message, index));
+    const forced = false;
     const isUser = isUserHydrationMessage(message);
     return {
       ...message,
@@ -146,8 +94,7 @@ export function createMessageHydrationPolicy(
     );
   }
 
-  function reconcile(reason: HydrationTransition['reason']): HydrationTransition[] {
-    const transitions: HydrationTransition[] = [];
+  function reconcile(): void {
     const boundary = frontierIndex();
     for (const record of sortByIndex(records.values())) {
       const isAtOrNewerThanFrontier = boundary !== undefined && record.index >= boundary;
@@ -155,36 +102,21 @@ export function createMessageHydrationPolicy(
         record.isUser || record.forced || record.isIntersecting || isAtOrNewerThanFrontier;
       if (shouldHydrate && !record.hydrated) {
         record.hydrated = true;
-        transitions.push({ id: record.id, hydrated: true, reason });
         options.onHydrate?.(record.id);
       } else if (!shouldHydrate && record.hydrated && canDehydrate(record)) {
         record.hydrated = false;
-        transitions.push({ id: record.id, hydrated: false, reason: 'dehydrate' });
         options.onDehydrate?.(record.id);
       }
     }
-    return transitions;
   }
 
-  function reportObserverEntries(entries: Iterable<VisibilityReport>): HydrationTransition[] {
-    if (disposed) return [];
-    const reports = new Map<string, boolean>();
-    for (const entry of entries) {
-      if (!records.has(entry.id)) continue;
-      // An entry is retained when a batch contains both sides of a boundary;
-      // this makes delivery independent of browser entry ordering.
-      reports.set(entry.id, Boolean(entry.isIntersecting) || reports.get(entry.id) === true);
-    }
-    for (const record of sortByIndex(records.values())) {
-      const next = reports.get(record.id);
-      if (next !== undefined) record.isIntersecting = next;
-    }
+  function reportVisibility(id: string, isIntersecting: boolean): void {
+    if (disposed) return;
+    const record = records.get(id);
+    if (!record) return;
+    record.isIntersecting = isIntersecting;
     recomputeFrontier();
-    return reconcile('displayport');
-  }
-
-  function reportVisibility(id: string, isIntersecting: boolean): HydrationTransition[] {
-    return reportObserverEntries([{ id, isIntersecting }]);
+    reconcile();
   }
 
   return {
@@ -204,19 +136,15 @@ export function createMessageHydrationPolicy(
         release();
       };
     },
-    reportVisibility(id, isIntersecting) {
-      return reportVisibility(id, isIntersecting);
-    },
-    reportObserverEntries,
     setForced(id, forced) {
-      if (disposed) return [];
+      if (disposed) return;
       const record = records.get(id);
-      if (!record || record.forced === forced) return [];
+      if (!record || record.forced === forced) return;
       record.forced = forced;
-      return reconcile('force');
+      reconcile();
     },
     updateMessages(nextMessages) {
-      if (disposed) return [];
+      if (disposed) return;
       const previous = new Map(records);
       const nextIds = new Set(nextMessages.map((message) => message.id));
       for (const [id, release] of registrations) {
@@ -240,49 +168,12 @@ export function createMessageHydrationPolicy(
         }
       });
       recomputeFrontier();
-      return reconcile('frontier');
-    },
-    removeMessage(id) {
-      if (disposed || !records.delete(id)) return [];
-      registrations.get(id)?.();
-      registrations.delete(id);
-      recomputeFrontier();
-      return reconcile('frontier');
-    },
-    getFrontier() {
-      return frontierId;
-    },
-    getState(id) {
-      const record = records.get(id);
-      if (!record) return undefined;
-      return {
-        id: record.id,
-        index: record.index,
-        isUser: record.isUser,
-        forced: record.forced,
-        isIntersecting: record.isIntersecting,
-        hydrated: record.hydrated,
-        canDehydrate: canDehydrate(record),
-      };
-    },
-    getStates() {
-      return sortByIndex(records.values()).map((record) => ({
-        id: record.id,
-        index: record.index,
-        isUser: record.isUser,
-        forced: record.forced,
-        isIntersecting: record.isIntersecting,
-        hydrated: record.hydrated,
-        canDehydrate: canDehydrate(record),
-      }));
+      reconcile();
     },
     getHydratedIds() {
       return sortByIndex(records.values())
         .filter((record) => record.hydrated)
         .map((record) => record.id);
-    },
-    isHydrated(id) {
-      return records.get(id)?.hydrated ?? false;
     },
     dispose() {
       disposed = true;
@@ -293,5 +184,3 @@ export function createMessageHydrationPolicy(
     },
   };
 }
-
-export const createMessageHydrationController = createMessageHydrationPolicy;

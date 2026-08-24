@@ -83,7 +83,7 @@ describe('LazyTurn lifecycle', () => {
         heightCache,
         scrollRoot,
         hydrationController,
-        hydrated: hydrationController.isHydrated('displayport-row'),
+        hydrated: hydrationController.getHydratedIds().includes('displayport-row'),
         children,
       },
     });
@@ -101,7 +101,7 @@ describe('LazyTurn lifecycle', () => {
         heightCache,
         scrollRoot,
         hydrationController,
-        hydrated: hydrationController.isHydrated('displayport-row'),
+        hydrated: hydrationController.getHydratedIds().includes('displayport-row'),
         children,
       });
       await tick();
