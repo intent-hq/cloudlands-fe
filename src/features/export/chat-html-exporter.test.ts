@@ -198,4 +198,40 @@ describe('exportChatToHtml', () => {
     const html = exportChatToHtml(messages, { title: 'Test Chat' });
     expect(html).toContain('<!DOCTYPE html>');
   });
+
+  it('should not strike single-tilde prose in exported markdown (no MarkdownRenderer mounted)', () => {
+    // The double-tilde-only strikethrough override must apply on the export
+    // path via content-renderer's own module-scope marked.use(), without
+    // relying on MarkdownRenderer.svelte having been loaded first.
+    const messages: AgentMessage[] = [
+      {
+        id: 'msg-1',
+        role: 'assistant',
+        contentBlocks: [
+          { type: 'text', text: 'costs ~$130K over 10 months and a trim ~$300K later' },
+        ],
+        timestamp: new Date('2024-01-01T12:00:00Z'),
+      },
+    ];
+
+    const html = exportChatToHtml(messages, { title: 'Test Chat' });
+    expect(html).not.toContain('<del>');
+    expect(html).not.toContain('<s>');
+    expect(html).toContain('~$130K');
+    expect(html).toContain('~$300K');
+  });
+
+  it('should still strike double-tilde spans in exported markdown', () => {
+    const messages: AgentMessage[] = [
+      {
+        id: 'msg-1',
+        role: 'assistant',
+        contentBlocks: [{ type: 'text', text: 'this is ~~struck~~ text' }],
+        timestamp: new Date('2024-01-01T12:00:00Z'),
+      },
+    ];
+
+    const html = exportChatToHtml(messages, { title: 'Test Chat' });
+    expect(html).toContain('<del>struck</del>');
+  });
 });
