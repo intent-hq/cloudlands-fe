@@ -35,7 +35,7 @@
   {#each ['active', 'inactive'] as tab}
     <div class={tab === 'active' ? 'bg-sidebar' : 'bg-sidebar/50'} data-workspace-tab-kind={tab}>
       <span data-status="in_progress">
-        <WorkspaceStatusIcon status="in_progress" size={14} decorative inProgressDot="solid" />
+        <WorkspaceStatusIcon status="in_progress" size={14} decorative />
       </span>
       <span data-status="idle">
         <WorkspaceStatusIcon status="idle" size={14} decorative />

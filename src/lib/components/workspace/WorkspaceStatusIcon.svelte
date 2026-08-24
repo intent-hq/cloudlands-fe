@@ -10,13 +10,11 @@
     status,
     size = 14,
     decorative = false,
-    inProgressDot = 'ringed',
     class: className,
   }: {
     status: WorkspaceStatusPresentationState;
     size?: number;
     decorative?: boolean;
-    inProgressDot?: 'ringed' | 'solid';
     class?: string;
   } = $props();
 
@@ -39,15 +37,7 @@
   data-workspace-status-icon={presentation.icon?.iconName}
 >
   {#if presentation.visual === 'dot'}
-    <span
-      class={cn(
-        'workspace-status-dot',
-        presentation.state === 'in_progress' &&
-          inProgressDot === 'ringed' &&
-          'workspace-status-dot-ring',
-      )}
-      data-workspace-status-dot
-    ></span>
+    <span class="workspace-status-dot" data-workspace-status-dot></span>
   {:else if presentation.icon}
     <Fa icon={presentation.icon} class="size-full!" />
   {/if}
@@ -72,14 +62,6 @@
     border-radius: 9999px;
     outline: none;
     background-color: currentColor;
-    box-shadow: none;
-  }
-
-  .workspace-status-dot-ring {
-    box-shadow: inset 0 0 0 1px hsl(var(--background));
-  }
-
-  :global(.dark) .workspace-status-dot-ring {
     box-shadow: none;
   }
 

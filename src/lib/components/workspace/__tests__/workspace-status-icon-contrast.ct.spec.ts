@@ -1,21 +1,20 @@
-import { expect, test, type Locator } from '@playwright/experimental-ct-svelte';
+import { expect, test } from '@playwright/experimental-ct-svelte';
 import WorkspaceStatusIconContrastHost from './WorkspaceStatusIconContrastHost.svelte';
 
-const tabs = ['active', 'inactive'] as const;
-
-function dot(host: Locator, tab: (typeof tabs)[number], status: 'in_progress' | 'idle'): Locator {
-  return host.locator(
-    `[data-workspace-tab-kind="${tab}"] [data-status="${status}"] [data-workspace-status-dot]`,
-  );
-}
-
-test('keeps workspace-tab running dots solid without changing geometry or other modes', async ({
+test('keeps every running workspace dot solid without changing geometry or other modes', async ({
   mount,
   page,
 }) => {
   const component = await mount(WorkspaceStatusIconContrastHost, {
     props: { theme: 'light', zoom: 1, width: 'wide' },
   });
+  const runningDots = component.locator(
+    '[data-workspace-status="in_progress"] [data-workspace-status-dot]',
+  );
+  const idleDots = component.locator('[data-workspace-status="idle"] [data-workspace-status-dot]');
+
+  await expect(runningDots).toHaveCount(3);
+  await expect(idleDots).toHaveCount(2);
 
   for (const theme of ['light', 'dark'] as const) {
     for (const width of ['narrow', 'wide'] as const) {
@@ -30,18 +29,18 @@ test('keeps workspace-tab running dots solid without changing geometry or other 
             .poll(() => page.evaluate(() => document.documentElement.classList.contains('dark')))
             .toBe(theme === 'dark');
 
-          for (const tab of tabs) {
-            const running = dot(component, tab, 'in_progress');
-            const idle = dot(component, tab, 'idle');
+          for (const running of await runningDots.all()) {
             const runningStyle = await running.evaluate((element) => {
               const style = getComputedStyle(element);
               const bounds = element.getBoundingClientRect();
               return {
                 animationName: style.animationName,
                 backgroundColor: style.backgroundColor,
+                borderWidth: style.borderWidth,
                 boxShadow: style.boxShadow,
                 color: style.color,
                 height: style.height,
+                outlineStyle: style.outlineStyle,
                 renderedHeight: bounds.height,
                 renderedWidth: bounds.width,
                 width: style.width,
@@ -49,36 +48,36 @@ test('keeps workspace-tab running dots solid without changing geometry or other 
             });
 
             expect(runningStyle.backgroundColor).toBe(runningStyle.color);
+            expect(runningStyle.borderWidth).toBe('0px');
             expect(runningStyle.boxShadow).toBe('none');
+            expect(runningStyle.outlineStyle).toBe('none');
             expect(runningStyle.width).toBe('8px');
             expect(runningStyle.height).toBe('8px');
             expect(runningStyle.renderedWidth).toBe(8 * zoom);
             expect(runningStyle.renderedHeight).toBe(8 * zoom);
             expect(runningStyle.animationName).toBe('none');
-            await expect(idle).toHaveCSS('box-shadow', 'none');
+          }
+          for (const idle of await idleDots.all()) {
             await expect(idle).toHaveCSS('width', '8px');
             await expect(idle).toHaveCSS('height', '8px');
+            await expect(idle).toHaveCSS('box-shadow', 'none');
           }
         }
       }
     }
   }
 
-  const nonTabRunning = component.locator('[data-non-tab-status] [data-workspace-status-dot]');
-  await component.update({ props: { theme: 'light', zoom: 1, width: 'wide' } });
-  await expect(nonTabRunning).toHaveCSS('box-shadow', /1px inset$/);
-  await component.update({ props: { theme: 'dark', zoom: 1, width: 'wide' } });
-  await expect(nonTabRunning).toHaveCSS('box-shadow', 'none');
-
   await page.emulateMedia({ forcedColors: 'active', reducedMotion: 'reduce' });
   await component.update({ props: { theme: 'light', zoom: 1, width: 'narrow' } });
-  for (const tab of tabs) {
-    const running = dot(component, tab, 'in_progress');
+  for (const running of await runningDots.all()) {
+    await expect(running).toHaveCSS('border-width', '0px');
     await expect(running).toHaveCSS('box-shadow', 'none');
+    await expect(running).toHaveCSS('outline-style', 'none');
     expect(await running.evaluate((element) => getComputedStyle(element).backgroundColor)).not.toBe(
       'rgba(0, 0, 0, 0)',
     );
-    await expect(dot(component, tab, 'idle')).toHaveCSS('box-shadow', 'none');
   }
-  await expect(nonTabRunning).toHaveCSS('box-shadow', 'none');
+  for (const idle of await idleDots.all()) {
+    await expect(idle).toHaveCSS('box-shadow', 'none');
+  }
 });

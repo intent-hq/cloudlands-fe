@@ -311,7 +311,7 @@ describe('WorkspaceTabStrip', () => {
 
     expect(indicator?.getAttribute('style')).toContain('width: 14px; height: 14px');
     expect(indicator?.getAttribute('aria-hidden')).toBe('true');
-    expect(dot?.classList.contains('workspace-status-dot-ring')).toBe(false);
+    expect(dot?.classList.contains('workspace-status-dot')).toBe(true);
     expect(tab.getAttribute('aria-label')).toBe('Alpha. RUNNING: 1 (Coordinator)');
   });
 

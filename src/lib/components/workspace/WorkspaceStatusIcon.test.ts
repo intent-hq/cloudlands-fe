@@ -21,7 +21,7 @@ describe('WorkspaceStatusIcon', () => {
     expect(indicator.getAttribute('style')).toContain('width: 12px');
     const dot = view.container.querySelector('[data-workspace-status-dot]');
     expect(dot).not.toBeNull();
-    expect(dot?.classList.contains('workspace-status-dot-ring')).toBe(status === 'in_progress');
+    expect(dot?.classList.contains('workspace-status-dot')).toBe(true);
     expect(view.container.querySelectorAll('[data-workspace-status-dot]')).toHaveLength(1);
     expect(view.container.querySelector('svg')).toBeNull();
     expect(view.container.querySelectorAll('[data-workspace-status]')).toHaveLength(1);
@@ -47,17 +47,5 @@ describe('WorkspaceStatusIcon', () => {
     expect(indicator?.getAttribute('aria-hidden')).toBe('true');
     expect(indicator?.hasAttribute('aria-label')).toBe(false);
     expect(indicator?.hasAttribute('title')).toBe(false);
-  });
-
-  it('supports a solid in-progress dot without changing the shared default', () => {
-    const solid = render(WorkspaceStatusIcon, {
-      props: { status: 'in_progress', inProgressDot: 'solid' },
-    });
-
-    expect(
-      solid.container
-        .querySelector('[data-workspace-status-dot]')
-        ?.classList.contains('workspace-status-dot-ring'),
-    ).toBe(false);
   });
 });
