@@ -113,6 +113,9 @@
   let editor: Editor | null = null;
   let processedContent = $state('');
   let lastProcessedContent = '';
+  // The rendered HTML also depends on workspaceId (short-form intent://local/file/
+  // image links resolve against it), so it participates in the memoization guard
+  let lastProcessedWorkspaceId: string | undefined;
 
   // PERF: Track streaming state to avoid expensive TipTap updates during streaming
   let isCurrentlyStreaming = false;
@@ -127,13 +130,14 @@
   // Process markdown to HTML (full processing with TipTap)
   async function updateContentFull(markdown: string) {
     // Skip if content hasn't actually changed
-    if (markdown === lastProcessedContent) {
+    if (markdown === lastProcessedContent && workspaceId === lastProcessedWorkspaceId) {
       return;
     }
 
     if (!markdown) {
       processedContent = '';
       lastProcessedContent = '';
+      lastProcessedWorkspaceId = workspaceId;
       return;
     }
 
@@ -147,6 +151,7 @@
       });
       processedContent = html;
       lastProcessedContent = markdown;
+      lastProcessedWorkspaceId = workspaceId;
 
       // Update editor content if it exists
       if (editor && !editor.isDestroyed) {
@@ -164,18 +169,20 @@
       );
       processedContent = `<p>${escaped}</p>`;
       lastProcessedContent = markdown;
+      lastProcessedWorkspaceId = workspaceId;
     }
   }
 
   // PERF: Lightweight streaming update - uses innerHTML directly instead of TipTap
   async function updateContentStreaming(markdown: string) {
     // Skip if content hasn't actually changed
-    if (markdown === lastProcessedContent) {
+    if (markdown === lastProcessedContent && workspaceId === lastProcessedWorkspaceId) {
       return;
     }
 
     if (!markdown) {
       lastProcessedContent = '';
+      lastProcessedWorkspaceId = workspaceId;
       if (streamingContentElement) {
         streamingContentElement.innerHTML = '';
       }
@@ -191,6 +198,7 @@
         workspaceId,
       });
       lastProcessedContent = markdown;
+      lastProcessedWorkspaceId = workspaceId;
       processedContent = html;
 
       // PERF: During streaming, update innerHTML directly instead of TipTap's setContent
@@ -212,6 +220,7 @@
         streamingContentElement.innerHTML = `<p>${escaped}</p>`;
       }
       lastProcessedContent = markdown;
+      lastProcessedWorkspaceId = workspaceId;
     }
   }
 
