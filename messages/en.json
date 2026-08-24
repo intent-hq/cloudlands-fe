@@ -4502,6 +4502,7 @@
   "ui_reversibleActions_renamed_message": "Renamed {itemType} to \"{newName}\"",
   "ui_linkHandler_invalidFormat_error": "Invalid URL format. Expected: {shortFormat} or {longFormat}",
   "ui_linkHandler_emptyResourceId_error": "Resource ID cannot be empty",
+  "ui_linkHandler_invalidFilePath_error": "Invalid file path",
   "ui_linkHandler_unknownResourceType_error": "Unknown resource type: {type}",
   "ui_linkHandler_parseFailed_error": "Failed to parse URL",
   "ui_linkHandler_invalidLink_title": "Invalid Link",

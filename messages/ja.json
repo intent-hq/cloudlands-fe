@@ -4501,6 +4501,7 @@
   "ui_reversibleActions_renamed_message": "{itemType} の名前を「{newName}」に変更しました",
   "ui_linkHandler_invalidFormat_error": "無効な URL 形式です。期待される形式: {shortFormat} または {longFormat}",
   "ui_linkHandler_emptyResourceId_error": "リソース ID を空にすることはできません",
+  "ui_linkHandler_invalidFilePath_error": "無効なファイルパスです",
   "ui_linkHandler_unknownResourceType_error": "不明なリソースタイプ: {type}",
   "ui_linkHandler_parseFailed_error": "URL を解析できませんでした",
   "ui_linkHandler_invalidLink_title": "無効なリンク",

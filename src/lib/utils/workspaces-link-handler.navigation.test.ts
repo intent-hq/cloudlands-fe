@@ -1,5 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { openWorkspaceNote } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
+import {
+  openWorkspaceFile,
+  openWorkspaceNote,
+} from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
 
 const mocks = vi.hoisted(() => ({
   backendRequest: vi.fn(),
@@ -60,6 +63,54 @@ describe('handleIntentLink panel navigation', () => {
         openInAdjacentPanel: true,
         openInNewAdjacentPanel: true,
         sourcePanelId: 'panel-note',
+      }),
+    );
+  });
+
+  it('opens a short file link in the owning chat workspace', async () => {
+    await handleIntentLink('intent://local/file/src/lib/utils/foo.ts', {
+      workspaceId: 'owning-workspace',
+      sourcePanelId: 'panel-chat',
+    });
+
+    expect(mocks.dispatch).toHaveBeenCalledWith(
+      openWorkspaceFile('owning-workspace', 'src/lib/utils/foo.ts', {
+        openInAdjacentPanel: false,
+        sourcePanelId: 'panel-chat',
+      }),
+    );
+    expect(mocks.backendRequest).not.toHaveBeenCalled();
+    expect(mocks.navigateToRoute).not.toHaveBeenCalled();
+  });
+
+  it('opens a same-workspace long file link without route navigation', async () => {
+    await handleIntentLink('intent://local/owning-workspace/file/README.md', {
+      workspaceId: 'owning-workspace',
+      sourcePanelId: 'panel-chat',
+      openInAdjacentPanel: true,
+    });
+
+    expect(mocks.dispatch).toHaveBeenCalledWith(
+      openWorkspaceFile('owning-workspace', 'README.md', {
+        openInAdjacentPanel: true,
+        sourcePanelId: 'panel-chat',
+      }),
+    );
+    expect(mocks.navigateToRoute).not.toHaveBeenCalled();
+  });
+
+  it('navigates to the target workspace for a cross-workspace file link', async () => {
+    await handleIntentLink('intent://local/other-workspace/file/docs/guide.md', {
+      workspaceId: 'owning-workspace',
+      sourcePanelId: 'panel-chat',
+      openInAdjacentPanel: true,
+    });
+
+    expect(mocks.navigateToRoute).toHaveBeenCalledWith('/workspace/other-workspace');
+    expect(mocks.dispatch).toHaveBeenCalledWith(
+      openWorkspaceFile('other-workspace', 'docs/guide.md', {
+        openInAdjacentPanel: false,
+        sourcePanelId: undefined,
       }),
     );
   });

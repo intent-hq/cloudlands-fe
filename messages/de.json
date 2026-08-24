@@ -4501,6 +4501,7 @@
   "ui_reversibleActions_renamed_message": "{itemType} umbenannt in \"{newName}\"",
   "ui_linkHandler_invalidFormat_error": "Ungültiges URL-Format. Erwartet: {shortFormat} oder {longFormat}",
   "ui_linkHandler_emptyResourceId_error": "Ressourcen-ID darf nicht leer sein",
+  "ui_linkHandler_invalidFilePath_error": "Ungültiger Dateipfad",
   "ui_linkHandler_unknownResourceType_error": "Unbekannter Ressourcentyp: {type}",
   "ui_linkHandler_parseFailed_error": "URL konnte nicht verarbeitet werden",
   "ui_linkHandler_invalidLink_title": "Ungültiger Link",
