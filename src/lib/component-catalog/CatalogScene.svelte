@@ -2,6 +2,7 @@
   import { tick, type Component } from 'svelte';
   import { loadPreview, setActivePreview } from './preview-discovery';
   import { resolvePreviewState, type PreviewState } from './preview-definition';
+  import { waitForCaptureStability } from './capture-stability';
 
   let {
     slug,
@@ -16,8 +17,15 @@
   let availableStates = $state<string[]>([]);
   let Preview = $state<Component<Record<string, unknown>> | null>(null);
   let scene = $state<PreviewState<Record<string, unknown>> | null>(null);
+  let sceneElement = $state<HTMLElement>();
+  let stabilityStatus = $state<'waiting' | 'stable' | 'error'>('waiting');
+  let stabilityError = $state('');
+  let captureMotion = $state<'full' | 'reduced'>('full');
   const width = $derived(Math.min(1600, Math.max(240, Math.round(requestedWidth))));
-  let disposeSetup: (() => void) | undefined;
+
+  function describeError(error: unknown): string {
+    return error instanceof Error ? error.message : String(error);
+  }
 
   function previewUrl(nextState: string, nextWidth = width): string {
     if (typeof window === 'undefined') return `?state=${nextState}&width=${nextWidth}`;
@@ -32,16 +40,57 @@
     const nextState = requestedState;
     const nextWidth = width;
     let cancelled = false;
+    let disposeSetup: (() => void) | undefined;
+    let setupDisposed = false;
+    const stabilityController = new AbortController();
+
+    const cleanupSetup = (): unknown => {
+      if (setupDisposed) return;
+      setupDisposed = true;
+      try {
+        disposeSetup?.();
+      } catch (cleanupError) {
+        return cleanupError;
+      }
+    };
+
+    const failScene = (stage: 'import' | 'setup' | 'preparation', cause: unknown) => {
+      if (cancelled) return;
+      const cleanupError = cleanupSetup();
+      status = 'error';
+      stabilityStatus = 'error';
+      Preview = null;
+      scene = null;
+      error = `Preview ${stage} failed: ${describeError(cause)}`;
+      if (cleanupError) error += ` Cleanup failed: ${describeError(cleanupError)}`;
+      setActivePreview(null);
+    };
 
     status = 'loading';
     error = '';
+    title = '';
+    stateName = '';
+    availableStates = [];
+    Preview = null;
+    scene = null;
+    stabilityStatus = 'waiting';
+    stabilityError = '';
+    captureMotion = 'full';
     setActivePreview(null);
 
     void (async () => {
-      const loaded = await loadPreview(nextSlug);
+      let loaded;
+      try {
+        // eslint-disable-next-line intent/no-component-async-data-fetch -- Preview modules are local UI fixtures, not domain data.
+        loaded = await loadPreview(nextSlug);
+      } catch (loadError) {
+        failScene('import', loadError);
+        return;
+      }
       if (cancelled) return;
       if (!loaded) {
         status = 'error';
+        stabilityStatus = 'error';
         stateName = nextState ?? '';
         error = `No executable preview is available for “${nextSlug}”.`;
         return;
@@ -52,25 +101,52 @@
       const resolved = resolvePreviewState(loaded.definition, nextState);
       if (!resolved.ok) {
         status = 'error';
+        stabilityStatus = 'error';
         stateName = resolved.requestedState;
         error = `Unknown state “${resolved.requestedState}”.`;
         return;
       }
 
       stateName = resolved.name;
-      disposeSetup = resolved.state.setup?.() || undefined;
+      try {
+        disposeSetup = resolved.state.setup?.() || undefined;
+      } catch (setupError) {
+        failScene('setup', setupError);
+        return;
+      }
       scene = resolved.state;
       Preview = loaded.component;
-      await tick();
+      try {
+        await tick();
+      } catch (preparationError) {
+        failScene('preparation', preparationError);
+        return;
+      }
       if (cancelled) return;
       status = 'ready';
       setActivePreview({ slug: nextSlug, state: stateName, width: nextWidth, status: 'ready' });
+
+      try {
+        if (!sceneElement) throw new Error('Preview scene element is unavailable.');
+        const stability = await waitForCaptureStability(sceneElement, {
+          signal: stabilityController.signal,
+        });
+        if (cancelled) return;
+        captureMotion = stability.reducedMotion ? 'reduced' : 'full';
+        stabilityStatus = 'stable';
+      } catch (preparationError) {
+        if (cancelled || stabilityController.signal.aborted) return;
+        const cleanupError = cleanupSetup();
+        stabilityStatus = 'error';
+        stabilityError = `Preview capture preparation failed: ${describeError(preparationError)}`;
+        if (cleanupError) stabilityError += ` Cleanup failed: ${describeError(cleanupError)}`;
+      }
     })();
 
     return () => {
       cancelled = true;
-      disposeSetup?.();
-      disposeSetup = undefined;
+      stabilityController.abort();
+      cleanupSetup();
       setActivePreview(null);
     };
   });
@@ -84,6 +160,10 @@
   data-preview-width={width}
   data-preview-status={status}
   data-preview-ready={status === 'ready' ? 'true' : 'false'}
+  data-preview-stability={stabilityStatus}
+  data-preview-stable={stabilityStatus === 'stable' ? 'true' : 'false'}
+  data-preview-capture-motion={captureMotion}
+  bind:this={sceneElement}
 >
   <header class="rounded-lg border border-border bg-card p-4">
     <p class="text-xs font-medium uppercase tracking-wide text-muted-foreground">Named preview</p>
@@ -120,6 +200,11 @@
       {/if}
     </div>
   {:else}
+    {#if stabilityStatus === 'error'}
+      <div class="rounded-lg border border-destructive bg-card p-4" role="alert">
+        <p class="font-medium">{stabilityError}</p>
+      </div>
+    {/if}
     <div
       class="preview-frame max-w-full overflow-auto rounded-lg border border-border bg-background p-6"
     >
