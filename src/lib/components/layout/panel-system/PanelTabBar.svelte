@@ -31,6 +31,7 @@
     faArrowLeft,
     faArrowRight,
     faCheck,
+    faChevronDown,
   } from '@fortawesome/free-solid-svg-icons';
   import { invoke } from '$lib/electron-bridge';
   import { toast } from '$lib/components/ui/toast';
@@ -124,9 +125,6 @@
   const CONTEXT_MENU_FALLBACK_HEIGHT = 360;
   const PANEL_HEADER_INTERACTIVE_SELECTOR =
     'button, a, input, textarea, select, [role="button"], [role="tab"], [contenteditable="true"]';
-  const MAX_VISIBLE_PANE_LAYERS = 2;
-  const ONE_PANE_LAYER_MIN_WIDTH = 212;
-  const TWO_PANE_LAYERS_MIN_WIDTH = 300;
   const PANEL_COLUMN_COUNTS = [1, 2, 3, 4] as const satisfies readonly PanelColumnCount[];
   const PANEL_COLUMN_DIVIDER_SLOTS = [0, 1, 2] as const;
 
@@ -232,8 +230,6 @@
   let contextMenuElement = $state<HTMLDivElement | null>(null);
 
   let paneStackMenuOpen = $state(false);
-  let paneStackElement = $state<HTMLElement | null>(null);
-  let maxVisiblePaneLayers = $state(MAX_VISIBLE_PANE_LAYERS);
 
   // Tab rename state - tracks which tab is being renamed inline
   let renamingTabId = $state<string | null>(null);
@@ -382,39 +378,9 @@
   }
 
   const attentionPaneIds = $derived(new Set(attentionTabIds));
-  const inactivePaneLayers = $derived(tabs.filter((tab) => tab.id !== activeTabId));
-  const visiblePaneLayers = $derived(
-    maxVisiblePaneLayers === 0 ? [] : inactivePaneLayers.slice(-maxVisiblePaneLayers),
+  const inactiveAttentionCount = $derived(
+    tabs.filter((tab) => tab.id !== activeTabId && attentionPaneIds.has(tab.id)).length,
   );
-  const paneOverflowCount = $derived(inactivePaneLayers.length - visiblePaneLayers.length);
-  const hiddenPaneIds = $derived(
-    new Set(inactivePaneLayers.slice(0, paneOverflowCount).map((tab) => tab.id)),
-  );
-  const hiddenAttentionCount = $derived(
-    attentionTabIds.filter((tabId) => hiddenPaneIds.has(tabId)).length,
-  );
-
-  function visiblePaneLayerLimit(width: number): number {
-    if (width <= 0) return MAX_VISIBLE_PANE_LAYERS;
-    if (width >= TWO_PANE_LAYERS_MIN_WIDTH) return MAX_VISIBLE_PANE_LAYERS;
-    if (width >= ONE_PANE_LAYER_MIN_WIDTH) return 1;
-    return 0;
-  }
-
-  $effect(() => {
-    const element = paneStackElement;
-    if (!element) return;
-
-    const update = (width = element.clientWidth) => {
-      maxVisiblePaneLayers = visiblePaneLayerLimit(width);
-    };
-    update();
-    if (typeof ResizeObserver === 'undefined') return;
-
-    const observer = new ResizeObserver(([entry]) => update(entry?.contentRect.width));
-    observer.observe(element);
-    return () => observer.disconnect();
-  });
 
   function handlePanelColumnCountChange(count: number) {
     if (isPanelColumnCount(count)) {
@@ -449,13 +415,6 @@
 
   function panePosition(tabId: string): number {
     return tabs.findIndex((tab) => tab.id === tabId) + 1;
-  }
-
-  function paneLayerLabel(tab: PanelTab): string {
-    const values = { title: getTabTitle(tab), position: panePosition(tab.id), count: tabs.length };
-    return attentionPaneIds.has(tab.id)
-      ? m.layout_panelTabBar_paneLayerAttention_ariaLabel(values)
-      : m.layout_panelTabBar_paneLayer_ariaLabel(values);
   }
 
   function handleTabClose(e: MouseEvent, tabId: string) {
@@ -1506,115 +1465,88 @@
   {/if}
 {/snippet}
 
-{#snippet paneStackOverflowMenu()}
-  {#if tabs.length > 1}
-    <span class="pane-stack-overflow relative z-3 -mr-2 shrink-0 self-center">
-      <Menu.Root bind:open={paneStackMenuOpen}>
-        <Menu.Trigger>
-          {#snippet child({ props })}
-            <Button
-              {...props}
-              variant="outline"
-              size="sm"
-              class={cn(
-                'h-6 min-w-9 rounded-md border-border bg-muted px-1.5 text-xs text-muted-foreground shadow-none',
-                hiddenAttentionCount > 0 && 'border-primary text-foreground',
-              )}
-              aria-label={m.layout_panelTabBar_paneOverflow_ariaLabel({
-                count: tabs.length,
-                overflow: paneOverflowCount,
-              })}
-              tooltip={m.layout_panelTabBar_paneOverflow_ariaLabel({
-                count: tabs.length,
-                overflow: paneOverflowCount,
-              })}
-              tooltipSide="bottom"
-              tooltipDelayDuration={300}
-              data-testid="pane-stack-overflow-trigger"
-              data-pane-stack-overflow-trigger
-              data-attention={hiddenAttentionCount > 0 ? '' : undefined}
-            >
-              {m.layout_panelTabBar_paneOverflow_label({ count: tabs.length })}
-              {#if hiddenAttentionCount > 0}
-                <span class="size-1.5 rounded-full bg-primary" aria-hidden="true"></span>
-              {/if}
-            </Button>
-          {/snippet}
-        </Menu.Trigger>
-        <Menu.Content
-          align="start"
-          side="bottom"
-          collisionPadding={8}
-          class="w-64 max-w-[calc(100vw-1rem)] p-1.5"
-          maxHeight="min(28rem, calc(100dvh - 1rem))"
-          aria-label={m.layout_panelTabBar_paneMenu_ariaLabel()}
-          data-pane-stack-menu
-        >
-          <div class="max-h-64 overflow-y-auto overscroll-contain" data-pane-stack-list>
-            {#each tabs as tab (tab.id)}
-              {@const current = tab.id === activeTabId}
-              <Menu.Item
-                class={cn('min-h-8', current && 'bg-accent/60 text-accent-foreground')}
-                aria-current={current ? 'page' : undefined}
-                aria-label={attentionPaneIds.has(tab.id)
-                  ? m.layout_panelTabBar_paneMenuAttention_ariaLabel({ title: getTabTitle(tab) })
-                  : getTabTitle(tab)}
-                onclick={() => activatePane(tab.id)}
-                data-pane-stack-item={tab.id}
-                data-attention={attentionPaneIds.has(tab.id) ? '' : undefined}
-              >
-                <span class="flex size-5 shrink-0 items-center justify-center">
-                  {@render panelIdentity(tab, true)}
-                </span>
-                <span class="min-w-0 flex-1 truncate">{getTabTitle(tab)}</span>
-                {#if attentionPaneIds.has(tab.id)}
-                  <span class="size-1.5 shrink-0 rounded-full bg-primary" aria-hidden="true"></span>
-                {/if}
-                {#if current}
-                  <span
-                    class="flex size-4 shrink-0 items-center justify-center"
-                    aria-hidden="true"
-                    data-pane-stack-current-check
-                  >
-                    <Fa icon={faCheck} size="xs" class="text-primary" />
-                  </span>
-                {/if}
-              </Menu.Item>
-            {/each}
-          </div>
-          <div class="type-caption border-t border-border px-2 pt-1.5 text-muted-foreground">
-            {m.layout_panelTabBar_paneMenu_shortcutHint()}
-          </div>
-        </Menu.Content>
-      </Menu.Root>
-    </span>
-  {/if}
-{/snippet}
-
-{#snippet paneStackLayers()}
-  {#each visiblePaneLayers as tab, index (tab.id)}
-    <Tooltip content={getTabTitle(tab)} side="bottom" delayDuration={300}>
-      <Button
-        variant="outline"
-        size="sm"
-        class={cn(
-          'pane-stack-layer relative -mr-2 flex h-6 min-w-10 max-w-24 items-center gap-1 overflow-hidden rounded-md border border-border bg-muted py-0.5 pl-2 pr-3 text-xs text-muted-foreground shadow-sm transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:z-20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-          attentionPaneIds.has(tab.id) && 'border-primary text-foreground',
-        )}
-        style={`z-index: ${index + 1}`}
-        aria-label={paneLayerLabel(tab)}
-        onclick={() => activatePane(tab.id)}
-        data-pane-stack-layer={tab.id}
-        data-attention={attentionPaneIds.has(tab.id) ? '' : undefined}
+{#snippet paneStackSelector()}
+  <span class="pane-stack-selector relative z-10 shrink-0 self-center">
+    <Menu.Root bind:open={paneStackMenuOpen}>
+      <Menu.Trigger>
+        {#snippet child({ props })}
+          <Button
+            {...props}
+            variant="outline"
+            size="sm"
+            class={cn(
+              'h-6 min-w-10 gap-1 rounded-md border-border bg-muted px-1.5 text-xs text-muted-foreground shadow-none',
+              inactiveAttentionCount > 0 && 'border-primary text-foreground',
+            )}
+            aria-label={m.layout_panelTabBar_paneSelector_ariaLabel({
+              count: tabs.length,
+            })}
+            tooltip={m.layout_panelTabBar_paneSelector_ariaLabel({
+              count: tabs.length,
+            })}
+            tooltipSide="bottom"
+            tooltipDelayDuration={300}
+            data-testid="pane-stack-selector-trigger"
+            data-pane-stack-selector-trigger
+            data-attention={inactiveAttentionCount > 0 ? '' : undefined}
+          >
+            {m.layout_panelTabBar_paneSelector_label({ count: tabs.length })}
+            <span aria-hidden="true" data-pane-stack-selector-chevron>
+              <Fa icon={faChevronDown} size="xs" class="size-2.5!" />
+            </span>
+            {#if inactiveAttentionCount > 0}
+              <span class="size-1.5 rounded-full bg-primary" aria-hidden="true"></span>
+            {/if}
+          </Button>
+        {/snippet}
+      </Menu.Trigger>
+      <Menu.Content
+        align="start"
+        side="bottom"
+        collisionPadding={8}
+        class="w-64 max-w-[calc(100vw-1rem)] p-1.5"
+        maxHeight="min(28rem, calc(100dvh - 1rem))"
+        aria-label={m.layout_panelTabBar_paneMenu_ariaLabel()}
+        data-pane-stack-menu
       >
-        {#if attentionPaneIds.has(tab.id)}
-          <span class="size-1.5 shrink-0 rounded-full bg-primary" aria-hidden="true"></span>
-        {/if}
-        <span class="truncate">{getTabTitle(tab)}</span>
-      </Button>
-    </Tooltip>
-  {/each}
-  {@render paneStackOverflowMenu()}
+        <div class="max-h-64 overflow-y-auto overscroll-contain" data-pane-stack-list>
+          {#each tabs as tab (tab.id)}
+            {@const current = tab.id === activeTabId}
+            <Menu.Item
+              class={cn('min-h-8', current && 'bg-accent/60 text-accent-foreground')}
+              aria-current={current ? 'page' : undefined}
+              aria-label={attentionPaneIds.has(tab.id)
+                ? m.layout_panelTabBar_paneMenuAttention_ariaLabel({ title: getTabTitle(tab) })
+                : getTabTitle(tab)}
+              onclick={() => activatePane(tab.id)}
+              data-pane-stack-item={tab.id}
+              data-attention={attentionPaneIds.has(tab.id) ? '' : undefined}
+            >
+              <span class="flex size-5 shrink-0 items-center justify-center">
+                {@render panelIdentity(tab, true)}
+              </span>
+              <span class="min-w-0 flex-1 truncate">{getTabTitle(tab)}</span>
+              {#if attentionPaneIds.has(tab.id)}
+                <span class="size-1.5 shrink-0 rounded-full bg-primary" aria-hidden="true"></span>
+              {/if}
+              {#if current}
+                <span
+                  class="flex size-4 shrink-0 items-center justify-center"
+                  aria-hidden="true"
+                  data-pane-stack-current-check
+                >
+                  <Fa icon={faCheck} size="xs" class="text-primary" />
+                </span>
+              {/if}
+            </Menu.Item>
+          {/each}
+        </div>
+        <div class="type-caption border-t border-border px-2 pt-1.5 text-muted-foreground">
+          {m.layout_panelTabBar_paneMenu_shortcutHint()}
+        </div>
+      </Menu.Content>
+    </Menu.Root>
+  </span>
 {/snippet}
 
 <svelte:window onkeydown={handlePaneDragKeyDown} />
@@ -1949,18 +1881,16 @@
       data-panel-tabless-header
       data-panel-content-header
     >
-      <!-- Left: visible pane layers with the active pane in front. -->
+      <!-- Left: flat active pane identity and complete pane selector. -->
       <div
-        bind:this={paneStackElement}
-        class="pane-stack-control flex min-w-0 flex-1 items-center overflow-hidden"
+        class="pane-stack-control flex min-w-0 flex-1 items-center gap-1 overflow-hidden"
         role="group"
         aria-label={m.layout_panelTabBar_paneStack_ariaLabel({ count: tabs.length })}
         data-pane-stack
         data-pane-stack-size={tabs.length}
       >
-        {@render paneStackLayers()}
         <div
-          class="pane-stack-active relative z-10 flex min-w-24 flex-1 items-center gap-2 rounded-md bg-card pl-1"
+          class="pane-stack-active flex min-w-0 flex-1 items-center gap-2 bg-card pl-1"
           aria-label={m.layout_panelTabBar_activePane_ariaLabel({
             title: activeTabTitle,
             position: panePosition(activeTab.id),
@@ -2003,16 +1933,6 @@
           {#if attentionPaneIds.has(activeTab.id)}
             <span class="size-1.5 shrink-0 rounded-full bg-primary" aria-hidden="true"></span>
           {/if}
-          {#if tabs.length > 1}
-            <span
-              class="type-caption shrink-0 text-muted-foreground"
-              aria-hidden="true"
-              data-pane-stack-position
-            >
-              {panePosition(activeTab.id)}/{tabs.length}
-            </span>
-          {/if}
-
           <!-- Path (for file-based tabs) -->
           {#if activeTabPath}
             {@const lastSlash = activeTabPath.lastIndexOf('/')}
@@ -2034,6 +1954,7 @@
             {/if}
           {/if}
         </div>
+        {@render paneStackSelector()}
       </div>
 
       <!-- Right: stable content controls, grouped actions, and close. -->
@@ -2464,16 +2385,6 @@
     top: 0.5px;
   }
 
-  .pane-stack-layer,
-  .pane-stack-active,
-  .pane-stack-overflow {
-    transform: translateY(0);
-  }
-
-  .pane-stack-layer:nth-of-type(odd) {
-    transform: translateY(1px);
-  }
-
   .panel-column-icon {
     transform-box: fill-box;
     transform-origin: center;
@@ -2491,21 +2402,12 @@
   }
 
   @media (forced-colors: active) {
-    .pane-stack-layer,
-    .pane-stack-active {
-      border: 1px solid ButtonText;
-    }
-
     .panel-column-icon {
       color: ButtonText;
     }
   }
 
   @media (prefers-reduced-motion: reduce) {
-    .pane-stack-layer {
-      transition: none;
-    }
-
     .panel-column-divider {
       transition: none;
     }

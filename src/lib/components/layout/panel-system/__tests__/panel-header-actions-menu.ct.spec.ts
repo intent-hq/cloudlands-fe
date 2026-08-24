@@ -3,7 +3,7 @@ import type { PanelTabType } from '$store/renderer/slices/panel-layout/panel-lay
 import PanelHeaderActionsHost from './mocks/PanelHeaderActionsHost.svelte';
 
 const panelTypes: PanelTabType[] = ['agent', 'note', 'browser', 'terminal', 'changes'];
-const stackCounts = [2, 4, 5] as const;
+const stackCounts = [1, 2, 3, 4, 5] as const;
 
 for (const [index, panelType] of panelTypes.entries()) {
   test(`keeps the ${panelType} panel menu portalled and operable at narrow 200% zoom`, async ({
@@ -124,34 +124,26 @@ for (const stackCount of stackCounts) {
     const header = component.locator('[data-panel-tabless-header]');
     const stack = header.locator('[data-pane-stack]');
     const active = stack.locator('[data-pane-stack-active]');
-    const position = active.locator('[data-pane-stack-position]');
-    const listTrigger = stack.locator('[data-pane-stack-overflow-trigger]');
+    const listTrigger = stack.locator('[data-pane-stack-selector-trigger]');
     const actions = header.locator('[data-panel-header-actions]');
 
     await expect(active).toBeVisible();
     await expect(active).toContainText('note panel 1');
-    await expect(position).toHaveText(`1/${stackCount}`);
     await expect(listTrigger).toBeVisible();
     await expect(listTrigger).toHaveText(`${stackCount}`);
     await expect(stack.locator('[data-pane-stack-layer]')).toHaveCount(0);
+    await expect(listTrigger.locator('[data-pane-stack-selector-chevron]')).toBeVisible();
 
     const boxes = await Promise.all(
-      [host, header, stack, active, position, listTrigger, actions].map((locator) =>
-        locator.boundingBox(),
-      ),
+      [host, header, stack, active, listTrigger, actions].map((locator) => locator.boundingBox()),
     );
-    const [hostBox, headerBox, stackBox, activeBox, positionBox, listBox, actionsBox] = boxes;
+    const [hostBox, headerBox, stackBox, activeBox, listBox, actionsBox] = boxes;
     expect(boxes.every(Boolean)).toBe(true);
     expect(headerBox!.x).toBeGreaterThanOrEqual(hostBox!.x);
     expect(headerBox!.x + headerBox!.width).toBeLessThanOrEqual(hostBox!.x + hostBox!.width + 0.5);
     expect(stackBox!.x + stackBox!.width).toBeLessThanOrEqual(actionsBox!.x + 0.5);
     expect(listBox!.x).toBeGreaterThanOrEqual(stackBox!.x - 0.5);
-    expect(activeBox!.x + activeBox!.width).toBeLessThanOrEqual(
-      stackBox!.x + stackBox!.width + 0.5,
-    );
-    expect(positionBox!.x + positionBox!.width).toBeLessThanOrEqual(
-      activeBox!.x + activeBox!.width + 0.5,
-    );
+    expect(activeBox!.x + activeBox!.width).toBeLessThanOrEqual(listBox!.x + 0.5);
 
     for (let index = 1; index <= stackCount; index += 1) {
       if (index % 2 === 0) {
@@ -163,27 +155,34 @@ for (const stackCount of stackCounts) {
       const menu = page.getByRole('menu', { name: 'Panes in this stack' });
       await expect(menu).toBeVisible();
       await expect(menu.locator('[data-pane-stack-item]')).toHaveCount(stackCount);
-      await menu.locator(`[data-pane-stack-item="note-tab-${index}"]`).click();
+      const item = menu.locator(`[data-pane-stack-item="note-tab-${index}"]`);
+      if (index % 2 === 0) {
+        await item.focus();
+        await page.keyboard.press('Enter');
+      } else {
+        await item.click();
+      }
       await expect(component).toHaveAttribute('data-active-tab', `note-tab-${index}`);
-      await expect(position).toHaveText(`${index}/${stackCount}`);
+      await expect(active).toContainText(`note panel ${index}`);
+      await expect(listTrigger).toBeFocused();
     }
   });
 }
 
-test('keeps two direct rear previews operable when width permits', async ({ mount }) => {
+test('keeps the header flat and the complete selector operable at wide width', async ({
+  mount,
+  page,
+}) => {
   const component = await mount(PanelHeaderActionsHost, {
     props: { panelType: 'note', width: 560, zoom: 1, stackCount: 5 },
   });
   const stack = component.locator('[data-pane-stack]');
-  const layers = stack.locator('[data-pane-stack-layer]');
-  await expect(layers).toHaveCount(2);
-
-  const firstLayer = layers.first();
-  const firstId = await firstLayer.getAttribute('data-pane-stack-layer');
-  expect(firstId).not.toBeNull();
-  await firstLayer.click();
-  await expect(component).toHaveAttribute('data-active-tab', firstId!);
-
-  await expect(stack.locator('[data-pane-stack-overflow-trigger]')).toBeVisible();
-  await expect(stack.locator('[data-pane-stack-active]')).toContainText('note panel');
+  const trigger = stack.locator('[data-pane-stack-selector-trigger]');
+  await expect(stack.locator('[data-pane-stack-layer]')).toHaveCount(0);
+  await trigger.click();
+  const menu = page.getByRole('menu', { name: 'Panes in this stack' });
+  await expect(menu.locator('[data-pane-stack-item]')).toHaveCount(5);
+  await menu.locator('[data-pane-stack-item="note-tab-5"]').click();
+  await expect(component).toHaveAttribute('data-active-tab', 'note-tab-5');
+  await expect(stack.locator('[data-pane-stack-active]')).toContainText('note panel 5');
 });

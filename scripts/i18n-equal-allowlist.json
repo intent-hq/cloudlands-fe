@@ -164,7 +164,7 @@
   "layout_panelTabBar_bgBadge_label": ["ja", "ko", "de"],
   "layout_panelTabBar_fileManagerExplorer_label": ["de"],
   "layout_panelTabBar_fileManagerFinder_label": ["ja", "ko", "de", "fr", "es"],
-  "layout_panelTabBar_paneOverflow_label": "*",
+  "layout_panelTabBar_paneSelector_label": "*",
   "layout_panel_ariaLabel": ["de", "es"],
   "layout_sidebarNav_assistant_label": ["fr"],
   "layout_sidebarNav_hud_label": ["zh-CN", "zh-TW", "ja", "ko", "de", "fr", "es"],
