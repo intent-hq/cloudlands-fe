@@ -109,10 +109,14 @@
 
 {#if open}
   <Portal target="body" zIndex={1000}>
-    <!-- Backdrop -->
+    <!-- Backdrop. The inline pointer-events opt-in keeps the lightbox clickable
+         while a modal dialog's interaction lock sets pointer-events: none on body;
+         the marker attribute lets dialog-content ignore interactions in here. -->
     <div
       bind:this={dialogElement}
+      data-image-lightbox-root
       class="fixed inset-0 bg-black/80 backdrop-blur-sm z-[1000] flex items-center justify-center cursor-zoom-out"
+      style="pointer-events: auto;"
       onclick={handleBackdropClick}
       onkeydown={handleKeydown}
       role="dialog"
