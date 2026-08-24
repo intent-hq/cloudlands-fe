@@ -56,10 +56,10 @@
 
   interface Props {
     workspaceId: string;
-    onFileSelect?: (path: string) => void;
+    onFileSelect?: (path: string, event?: MouseEvent | KeyboardEvent) => void;
     onCreateFile?: (folderPath: string, fileName?: string) => void | Promise<void>;
     onRenameFile?: (oldPath: string, newPath: string) => void;
-    onSelectAgent?: (agentId: string) => void;
+    onSelectAgent?: (agentId: string, event?: MouseEvent | KeyboardEvent) => void;
     /** Callback when external files are dropped onto the tree */
     onExternalFilesDrop?: (files: File[], targetPath: string | null) => void;
     selectedFile?: string;
@@ -182,7 +182,7 @@
           if (searchSelectedIndex >= 0 && searchResults[searchSelectedIndex]) {
             const result = searchResults[searchSelectedIndex];
             selectedFile = result.path;
-            onFileSelect?.(result.path);
+            onFileSelect?.(result.path, e);
           }
           return;
       }
@@ -205,6 +205,8 @@
           key: ' ',
           bubbles: true,
           cancelable: true,
+          metaKey: e.metaKey,
+          ctrlKey: e.ctrlKey,
         });
         virtualizedTreeRef.handleKeydown(spaceEvent);
         return;
@@ -631,9 +633,9 @@
                     selected={searchSelectedIndex === i}
                     title={result.name}
                     subtitle={result.relativePath}
-                    onclick={() => {
+                    onclick={(event) => {
                       selectedFile = result.path;
-                      onFileSelect?.(result.path);
+                      onFileSelect?.(result.path, event);
                     }}
                     size="sm"
                   >
@@ -657,9 +659,9 @@
         flattenedNodes={filteredFlattenedNodes}
         {selectedFile}
         {workspaceId}
-        onFileSelect={(path) => {
+        onFileSelect={(path, event) => {
           selectedFile = path;
-          onFileSelect?.(path);
+          onFileSelect?.(path, event);
         }}
         onToggleDirectory={(node, flatNode) => toggleFlattenedDirectory(node.path, flatNode)}
         {onCreateFile}

@@ -3794,8 +3794,7 @@ panelLayoutReducer.with(openTabInAdjacentOrSplit, (state, { payload }) => {
 
   const panelOrder = getPanelOrder(ws.root).filter((panelId) => ws.panels[panelId]);
   const sourceIndex = effectiveSourcePanelId ? panelOrder.indexOf(effectiveSourcePanelId) : -1;
-  const sourceIsRightmost = sourceIndex >= 0 && sourceIndex === panelOrder.length - 1;
-  if (sourceIsRightmost && panelOrder.length < 4 && effectiveSourcePanelId) {
+  if (sourceIndex >= 0 && panelOrder.length < 4 && effectiveSourcePanelId) {
     const saved = saveToHistory(ws, timestamp);
     const inserted = insertFixedColumn(
       saved,

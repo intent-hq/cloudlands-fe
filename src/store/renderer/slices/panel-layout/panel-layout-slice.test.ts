@@ -1212,7 +1212,7 @@ describe('panelLayoutReducer', () => {
       expect(result.panels[emptyPanelId].tabs[0]).toMatchObject({ noteId: 'spec' });
     });
 
-    it('reuses the next fixed column instead of creating a third column', () => {
+    it('inserts a new fixed column immediately right of a middle source', () => {
       const state = emptyState();
       state.byWorkspaceId[WS] = {
         ...emptyWorkspaceState,
@@ -1248,19 +1248,24 @@ describe('panelLayoutReducer', () => {
           WS,
           { type: 'note', title: 'Linked', noteId: 'linked', closable: true },
           'p1',
-          undefined,
+          { newPanelId: 'p-new', newTabId: 'linked-tab' },
           1234,
         ),
       );
       const panels = Object.values(result.byWorkspaceId[WS].panels);
       const root = result.byWorkspaceId[WS].root;
 
-      expect(panels).toHaveLength(2);
-      expect(root).toMatchObject({ type: 'split', direction: 'horizontal' });
-      expect(root.type === 'split' ? root.children : []).toHaveLength(2);
-      expect(result.byWorkspaceId[WS].columnCount).toBe(2);
-      expect(result.byWorkspaceId[WS].panels.p2.tabs).toHaveLength(2);
-      expect(result.byWorkspaceId[WS].panels.p2.tabs.at(-1)).toMatchObject({ noteId: 'linked' });
+      expect(panels).toHaveLength(3);
+      expect(root).toMatchObject({
+        type: 'split',
+        direction: 'horizontal',
+        children: [{ panelId: 'p1' }, { panelId: 'p-new' }, { panelId: 'p2' }],
+      });
+      expect(result.byWorkspaceId[WS].columnCount).toBe(3);
+      expect(result.byWorkspaceId[WS].panels.p2.tabs).toHaveLength(1);
+      expect(result.byWorkspaceId[WS].panels['p-new'].tabs).toEqual([
+        expect.objectContaining({ id: 'linked-tab', noteId: 'linked' }),
+      ]);
     });
 
     it('reuses the rightmost fixed column when the source is already rightmost', () => {

@@ -27,11 +27,26 @@ describe('MarkdownViewer panel navigation', () => {
         expect.objectContaining({
           workspaceId: 'owning-workspace',
           sourcePanelId: 'panel-chat',
-          openInAdjacentPanel: true,
-          openInNewAdjacentPanel: true,
           rawHref: 'src/scoped.ts',
         }),
       ),
+    );
+    expect(handleLink.mock.calls[0]?.[1]).not.toHaveProperty('openInAdjacentPanel');
+    expect(handleLink.mock.calls[0]?.[1]).not.toHaveProperty('openInNewAdjacentPanel');
+  });
+
+  it('forwards modified Enter for a focused markdown link', async () => {
+    const MarkdownViewer = (await import('../MarkdownViewer.svelte')).default;
+    render(MarkdownViewer, {
+      props: { content: '[Open note](intent://local/note/spec)', workspaceId: 'owning-workspace' },
+    });
+
+    const link = await screen.findByRole('link', { name: 'Open note' });
+    await fireEvent.keyDown(link, { key: 'Enter', ctrlKey: true });
+
+    expect(handleLink).toHaveBeenCalledWith(
+      expect.stringContaining('intent://local/note/spec'),
+      expect.objectContaining({ event: expect.any(KeyboardEvent) }),
     );
   });
 });

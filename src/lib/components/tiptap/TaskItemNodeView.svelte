@@ -43,6 +43,7 @@
   import { store as appStore } from '$store/renderer/store';
   import { m } from '$shared/paraglide/messages.js';
   import { getWorkspaceRouteContext } from '$lib/utils/workspace-route-context';
+  import { isCmdClickModifier } from '$shared/utils/link-helpers';
 
   const logger = createLogger('TaskItemNodeView');
   const TASK_LINK_REGEX = /^intent:\/\/local\/task\/(.+)$/;
@@ -180,9 +181,9 @@
     }
   }
 
-  async function handleOpenLinkedNote(event?: MouseEvent) {
+  async function handleOpenLinkedNote(event?: MouseEvent | KeyboardEvent) {
     if (linkedTaskNoteId) {
-      const openInAdjacentPanel = true;
+      const openInAdjacentPanel = event ? isCmdClickModifier({ event }) : false;
       // Find the panel ID by looking up the DOM for the data-panel-id attribute
       const target = event?.target as HTMLElement | null;
       const panelElement = target?.closest('[data-panel-id]');
@@ -197,7 +198,6 @@
       await navigateToNote(linkedTaskNoteId, {
         workspaceId: (linkedTaskNote?.workspaceId as string | undefined) ?? workspaceId,
         openInAdjacentPanel,
-        openInNewAdjacentPanel: true,
         sourcePanelId,
       });
     }
@@ -449,6 +449,12 @@
             ? 'text-muted-foreground italic'
             : ''}"
           onclick={(e) => handleOpenLinkedNote(e)}
+          onkeydown={(event) => {
+            if (event.key === 'Enter' && isCmdClickModifier({ event })) {
+              event.preventDefault();
+              void handleOpenLinkedNote(event);
+            }
+          }}
         >
           {linkedTaskTitle}
         </button>

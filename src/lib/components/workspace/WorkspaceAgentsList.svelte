@@ -27,7 +27,7 @@
   interface Props {
     agents?: AgentSession[];
     selectedAgentId?: string | null;
-    onSelect?: (detail: { agentId: string }) => void;
+    onSelect?: (detail: { agentId: string; event?: MouseEvent | KeyboardEvent }) => void;
     onCreate?: () => void;
     onCreateWithSpecialist?: (specialistId: string | null) => void;
     runningAgentIds?: string[];
@@ -108,8 +108,8 @@
     expandedAgentIds = next;
   }
 
-  function handleAgentClick(agentId: string) {
-    onSelect?.({ agentId });
+  function handleAgentClick(agentId: string, event: MouseEvent | KeyboardEvent) {
+    onSelect?.({ agentId, event });
   }
 
   function getAgentPanelState(agentId: string) {
@@ -135,7 +135,7 @@
       updatedAt={agent.updatedAt}
       hidePreview
       panelRow
-      onclick={() => handleAgentClick(agent.id)}
+      onclick={(event) => handleAgentClick(agent.id, event)}
     />
 
     {@const children = directChildrenByAgentId.get(agent.id) ?? []}
@@ -232,7 +232,7 @@
             updatedAt={agent.updatedAt}
             hidePreview
             panelRow
-            onclick={() => handleAgentClick(agent.id)}
+            onclick={(event) => handleAgentClick(agent.id, event)}
           />
         </div>
       {/snippet}
@@ -309,7 +309,7 @@
             updatedAt={agent.updatedAt}
             hidePreview
             panelRow
-            onclick={() => handleAgentClick(agent.id)}
+            onclick={(event) => handleAgentClick(agent.id, event)}
           />
         </div>
       {/if}

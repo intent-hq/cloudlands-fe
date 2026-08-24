@@ -337,13 +337,14 @@ async function openFilePathLink(
 async function openLinkActionMenu(
   url: string,
   gitHubRef: GitHubIssueOrPrRef,
-  event: MouseEvent,
+  event: MouseEvent | KeyboardEvent,
   workspaceId?: WorkspaceId,
 ): Promise<boolean> {
   try {
     const { showLinkActionMenu } = await import('./link-action-menu-state.svelte');
     const anchorElement = event.target instanceof HTMLElement ? event.target : null;
-    let { clientX: x, clientY: y } = event;
+    let x = event instanceof MouseEvent ? event.clientX : 0;
+    let y = event instanceof MouseEvent ? event.clientY : 0;
     if (x === 0 && y === 0 && anchorElement) {
       const rect = anchorElement.getBoundingClientRect();
       x = rect.left;

@@ -95,7 +95,7 @@
     /** Whether the active file is from the staged list (true) or unstaged list (false) */
     activeFileStaged?: boolean | null;
     isAllChangesViewActive?: boolean;
-    onOpenChange?: (change: TrackedChange) => void;
+    onOpenChange?: (change: TrackedChange, event?: MouseEvent | KeyboardEvent) => void;
     onOpenFullPanel?: () => void;
     onOpenNote?: (noteId: string) => void;
     /** Callback to open the code review panel */
@@ -774,7 +774,7 @@
             ? stagedChanges.find((c) => c.relativePath === focusedFile!.path)
             : unstagedChanges.find((c) => c.relativePath === focusedFile!.path);
           if (change) {
-            handleFileClick(focusedFile.path, undefined, focusedFile.staged);
+            handleFileClick(focusedFile.path, undefined, focusedFile.staged, e);
           }
         }
         break;
@@ -985,9 +985,14 @@
     }
   }
 
-  function handleFileClick(path: string, _commitHash?: string, staged?: boolean) {
+  function handleFileClick(
+    path: string,
+    _commitHash?: string,
+    staged?: boolean,
+    event?: MouseEvent | KeyboardEvent,
+  ) {
     const change = findChange(path, staged ?? false);
-    if (change) onOpenChange?.(change);
+    if (change) onOpenChange?.(change, event);
   }
 
   // Determine if trunk can be changed (only before first push)

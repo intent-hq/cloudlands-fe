@@ -59,13 +59,16 @@
   import { getPanelTabOpenState } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
   import OpenPanelIndicator from './OpenPanelIndicator.svelte';
   import ResourceIconTile from '$lib/components/shared/ResourceIconTile.svelte';
+  import { isCmdClickModifier } from '$shared/utils/link-helpers';
+
+  type PaneOpenEvent = MouseEvent | KeyboardEvent;
 
   interface Props {
     notes: Note[];
     workspaceId: string;
     selectedNoteId?: string | null;
-    onOpenNote?: (noteId: string) => void;
-    onOpenAgent?: (agentId: string) => void;
+    onOpenNote?: (noteId: string, event?: PaneOpenEvent) => void;
+    onOpenAgent?: (agentId: string, event?: PaneOpenEvent) => void;
     onReorderNotes?: (noteIds: string[]) => void;
     onCreateNote?: () => void;
     loading?: boolean;
@@ -356,7 +359,7 @@
   function getActiveAgentsForNote(note: Note): Array<{
     agentId: string;
     state: AvatarState;
-    onClick: () => void;
+    onClick: (event: PaneOpenEvent) => void;
     specialist?: 'spec-writer' | 'implementor' | 'verifier' | null;
   }> {
     const assignedAgentIds = note.metadata?.task?.assignedAgentIds || [];
@@ -365,7 +368,7 @@
     const activeAgents: Array<{
       agentId: string;
       state: AvatarState;
-      onClick: () => void;
+      onClick: (event: PaneOpenEvent) => void;
       specialist?: 'spec-writer' | 'implementor' | 'verifier' | null;
     }> = [];
 
@@ -402,7 +405,7 @@
       activeAgents.push({
         agentId,
         state,
-        onClick: () => openAgent(agentId),
+        onClick: (event) => openAgent(agentId, event),
         specialist,
       });
     }
@@ -411,10 +414,17 @@
   }
 
   // Open agent in drawer
-  function openAgent(agentId: string) {
+  function openAgent(agentId: string, event?: PaneOpenEvent) {
     if (onOpenAgent) {
-      onOpenAgent(agentId);
+      onOpenAgent(agentId, event);
     }
+  }
+
+  function handleModifiedEnter(event: KeyboardEvent, open: (event: KeyboardEvent) => void): void {
+    if (event.key !== 'Enter' || !isCmdClickModifier({ event })) return;
+    event.preventDefault();
+    event.stopPropagation();
+    open(event);
   }
 
   function getNotePanelState(noteId: string) {
@@ -564,7 +574,9 @@
                   {indentSize}
                   badge={isCollapsed && hasChildren ? childNotes.length : undefined}
                   badgeClass="text-ui px-1 py-0"
-                  onclick={() => onOpenNote?.(note.id)}
+                  onclick={(event) => onOpenNote?.(note.id, event)}
+                  onkeydown={(event) =>
+                    handleModifiedEnter(event, (keyEvent) => onOpenNote?.(note.id, keyEvent))}
                   class="cursor-pointer flex-1"
                 >
                   {#snippet iconSnippet()}
@@ -590,6 +602,7 @@
                         type="button"
                         class="cursor-pointer hover:opacity-80 transition-opacity"
                         onclick={onClick}
+                        onkeydown={(event) => handleModifiedEnter(event, onClick)}
                         title={m.workspace_notesPanel_openAgent_tooltip()}
                       >
                         <AgentAvatarWithState {agentId} variant="compact" {state} {specialist} />
@@ -625,7 +638,9 @@
                   {indentSize}
                   badge={isCollapsed && hasChildren ? childNotes.length : undefined}
                   badgeClass="text-ui px-1 py-0"
-                  onclick={() => onOpenNote?.(note.id)}
+                  onclick={(event) => onOpenNote?.(note.id, event)}
+                  onkeydown={(event) =>
+                    handleModifiedEnter(event, (keyEvent) => onOpenNote?.(note.id, keyEvent))}
                   class="cursor-pointer"
                 >
                   {#snippet iconSnippet()}
@@ -706,7 +721,9 @@
                   {indentSize}
                   badge={isCollapsed && hasChildren ? childNotes.length : undefined}
                   badgeClass="text-ui px-1 py-0"
-                  onclick={() => onOpenNote?.(note.id)}
+                  onclick={(event) => onOpenNote?.(note.id, event)}
+                  onkeydown={(event) =>
+                    handleModifiedEnter(event, (keyEvent) => onOpenNote?.(note.id, keyEvent))}
                   class="cursor-pointer flex-1"
                 >
                   {#snippet iconSnippet()}
@@ -729,6 +746,7 @@
                         type="button"
                         class="cursor-pointer hover:opacity-80 transition-opacity"
                         onclick={onClick}
+                        onkeydown={(event) => handleModifiedEnter(event, onClick)}
                         title={m.workspace_notesPanel_openAgent_tooltip()}
                       >
                         <AgentAvatarWithState {agentId} variant="compact" {state} {specialist} />
