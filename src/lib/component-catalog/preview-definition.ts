@@ -19,10 +19,32 @@ export interface LoadedPreview {
   definition: PreviewDefinition<Record<string, unknown>>;
 }
 
+export function validatePreviewDefinition<Props>(
+  definition: PreviewDefinition<Props>,
+  expectedId?: string,
+): PreviewDefinition<Props> {
+  if (expectedId !== undefined && definition.id !== expectedId) {
+    throw new Error(
+      `Preview slug “${expectedId}” does not match definition id “${definition.id}”.`,
+    );
+  }
+
+  const states = definition.states && Object.keys(definition.states);
+  if (!states || states.length === 0) {
+    throw new Error(`Preview “${definition.id}” must define at least one state.`);
+  }
+  if (!Object.prototype.hasOwnProperty.call(definition.states, definition.defaultState)) {
+    throw new Error(
+      `Preview “${definition.id}” default state “${definition.defaultState}” is not defined.`,
+    );
+  }
+  return definition;
+}
+
 export function definePreview<Props>(
   definition: PreviewDefinition<Props>,
 ): PreviewDefinition<Props> {
-  return definition;
+  return validatePreviewDefinition(definition);
 }
 
 export function resolvePreviewState<Props>(
