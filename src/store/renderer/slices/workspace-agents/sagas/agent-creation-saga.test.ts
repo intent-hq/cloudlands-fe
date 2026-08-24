@@ -289,6 +289,56 @@ describe('agentCreationSaga', () => {
     await task.toPromise();
   });
 
+  it('keeps the model empty when the pinned specialist resolves no model (daemon resolves provider default)', async () => {
+    mocks.createAgent.mockResolvedValue({ success: true, agent: session(), agentId: AGENT });
+    const pinned: FileSpecialist = {
+      id: 'codex-runner',
+      name: 'Codex Runner',
+      description: 'Pinned to codex, no model',
+      codingAgent: 'codex',
+      model: '',
+      behaviorPrompt: 'Run tasks on codex.',
+      filePath: '/tmp/codex-runner.md',
+      source: 'user',
+    };
+    const { channel, task } = start(() => state('codex-runner', [pinned]));
+    channel.put(runAgentForNoteRequested(WS, NOTE, 'Task note'));
+    await settle();
+
+    expect(mocks.createAgent).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ provider: 'codex', model: '' }),
+    );
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('falls back to implementor when specialists.default is a hidden specialist', async () => {
+    mocks.createAgent.mockResolvedValue({ success: true, agent: session(), agentId: AGENT });
+    const hidden: FileSpecialist = {
+      id: 'chief-of-staff',
+      name: 'Chief of Staff',
+      description: 'Hidden from pickers',
+      model: '',
+      behaviorPrompt: 'Coordinate.',
+      filePath: '/tmp/chief-of-staff.md',
+      source: 'user',
+      hidden: true,
+    };
+    const { channel, task } = start(() => state('chief-of-staff', [hidden]));
+    channel.put(runAgentForNoteRequested(WS, NOTE, 'Task note'));
+    await settle();
+
+    expect(mocks.createAgent).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        metadata: { taskNoteId: NOTE, source: 'task-run', specialist: 'implementor' },
+      }),
+    );
+    task.cancel();
+    await task.toPromise();
+  });
+
   it('falls back to implementor when specialists.default is gated invisible (pr-reviewer without GitHub auth)', async () => {
     mocks.createAgent.mockResolvedValue({ success: true, agent: session(), agentId: AGENT });
     const { channel, task } = start(() => state('pr-reviewer'));

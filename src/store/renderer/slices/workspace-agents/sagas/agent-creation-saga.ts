@@ -203,14 +203,15 @@ function* runAgentForNote(
   if (!workspace) return;
   const note = yield* selectNoteById.effect(wsId, noteId);
   if (!note) return;
-  // Daemon `specialists.default` setting wins when it resolves to an
-  // available specialist (selectSpecialists is visibility-gated, e.g.
-  // GitHub-dependent specialists without auth); fall back to implementor
-  // for backward compatibility when unset or unavailable.
+  // Daemon `specialists.default` setting wins when it resolves to a pickable
+  // specialist — visibility-gated by selectSpecialists (e.g. GitHub-dependent
+  // specialists without auth) and not `hidden` (picker surfaces exclude
+  // hidden specialists via filterPickableSpecialists, so Run does too); fall
+  // back to implementor for backward compatibility when unset or unavailable.
   const defaultSpecialistId = yield* selectDefaultSpecialistId.effect();
   const specialists = yield* selectSpecialists.effect();
   const configured = defaultSpecialistId
-    ? specialists.find((candidate) => candidate.id === defaultSpecialistId)
+    ? specialists.find((candidate) => candidate.id === defaultSpecialistId && !candidate.hidden)
     : undefined;
   const specialistId = configured?.id ?? 'implementor';
   let model = yield* selectEffectiveModel.effect(specialistId);
@@ -233,7 +234,10 @@ function* runAgentForNote(
   // inherit the workspace's initial-agent provider as before.
   const provider =
     configured?.codingAgent || (initial ? getAgentProvider(initial, defaultProvider) : undefined);
-  const fallbackModel = yield* selectSelectedModel.effect();
+  // When the specialist pins a provider but resolves no model, keep the model
+  // empty so the daemon resolves that provider's own default — the globally
+  // selected model may belong to a different provider.
+  const fallbackModel = configured?.codingAgent ? '' : yield* selectSelectedModel.effect();
   try {
     const result = yield* call([agentFactory, agentFactory.createAgent], workspace, {
       name: noteTitle || m.agent_creation_taskAgent_name(),
