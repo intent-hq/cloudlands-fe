@@ -498,7 +498,8 @@ describe('pane and tab drag MIME routing', () => {
     );
 
     await fireEvent(targetPanel, dragEvent('dragover', dataTransfer, 10, 200));
-    expect(container.textContent).toContain('Move to stack');
+    expect(container.textContent).not.toContain('Move to stack');
+    expect(container.querySelector('[data-panel-drop-destination]')).toBeNull();
     await fireEvent(targetPanel, dragEvent('drop', dataTransfer, 10, 200));
 
     expect(onTabDrop).not.toHaveBeenCalled();

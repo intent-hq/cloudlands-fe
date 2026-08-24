@@ -69,8 +69,11 @@ describe('PanelDragPreview', () => {
       '[data-panel-layout-preview-dragged]',
     );
     expect(draggedPreview).toBe(snapshots[0].parentElement?.parentElement);
-    expect(draggedPreview?.children).toHaveLength(1);
-    expect(container.querySelector('[data-panel-layout-preview-drag-emphasis]')).toBeNull();
+    expect(draggedPreview?.children).toHaveLength(2);
+    const destinations = container.querySelectorAll<HTMLElement>('[data-panel-drop-destination]');
+    expect(destinations).toHaveLength(1);
+    expect(destinations[0].parentElement).toBe(draggedPreview);
+    expect(destinations[0].classList).toContain('panel-drop-destination');
     expect(
       [...(draggedPreview?.classList ?? [])].some(
         (className) => className.startsWith('border') || className.startsWith('bg-'),
@@ -98,6 +101,22 @@ describe('PanelDragPreview', () => {
     expect(destination?.dataset.panelLayoutPreviewPanel).toBe(PANE_DROP_PREVIEW_PANEL_ID);
     expect(snapshot?.dataset.panelLayoutPreviewSnapshot).toBe('source-panel');
     expect(snapshot?.textContent).toContain('Source pane');
+    expect(destination?.querySelectorAll('[data-panel-drop-destination]')).toHaveLength(1);
+
+    const sourceText = readFileSync(
+      resolve(process.cwd(), 'src/lib/components/layout/panel-system/PanelDragPreview.svelte'),
+      'utf8',
+    );
+    expect(sourceText).toContain('background: hsl(var(--card) / 0.42)');
+    expect(sourceText).toContain('border: 1px solid hsl(var(--border))');
+    expect(sourceText).toContain('pointer-events: none');
+    expect(sourceText).toContain('@media (prefers-reduced-motion: no-preference)');
+    expect(sourceText).toContain('@media (forced-colors: active)');
+    expect(sourceText).toContain('outline: 2px solid CanvasText');
+    expect(sourceText).not.toContain('var(--primary)');
+    expect(sourceText).not.toContain('var(--accent)');
+    expect(sourceText).not.toContain('var(--success)');
+    expect(sourceText).not.toContain('box-shadow');
 
     source.remove();
   });

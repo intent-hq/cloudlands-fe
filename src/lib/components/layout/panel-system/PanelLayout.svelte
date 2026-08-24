@@ -31,7 +31,6 @@
     isLayoutSettledNow,
     shouldRenderPanelContainer as computeShouldRenderPanelContainer,
   } from './panel-render-gate';
-  import HandleDropOverlay from './HandleDropOverlay.svelte';
   import { terminalManager } from '$features/terminal/terminal-manager.svelte';
   import { terminalHistoryTracker } from '$features/terminal/terminal-history-tracker';
   import { appClient } from '$lib/client';
@@ -1402,10 +1401,6 @@
       {/if}
     </div>
   </div>
-{/if}
-<!-- Global overlay for split handle drop zones (renders outside overflow:hidden containers) -->
-{#if active}
-  <HandleDropOverlay />
 {/if}
 
 <style>

@@ -81,6 +81,9 @@
         ? draggedPanelSourceId
         : node.panelId}
     ></div>
+    {#if node.panelId === draggedPanelId}
+      <div class="panel-drop-destination" data-panel-drop-destination></div>
+    {/if}
   </div>
 {:else}
   <div
@@ -118,5 +121,39 @@
   .panel-drag-preview-split.contained,
   .panel-drag-preview-split.contained.horizontal > .panel-drag-preview-child {
     min-width: 0;
+  }
+
+  .panel-drop-destination {
+    position: absolute;
+    inset: 0;
+    border: 1px solid hsl(var(--border));
+    border-radius: 0.5rem;
+    background: hsl(var(--card) / 0.42);
+    pointer-events: none;
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .panel-drop-destination {
+      animation: panel-drop-destination-in 140ms ease-out;
+      transition: opacity 140ms ease-out;
+    }
+  }
+
+  @keyframes panel-drop-destination-in {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+
+  @media (forced-colors: active) {
+    .panel-drop-destination {
+      border-color: CanvasText;
+      background: Canvas;
+      outline: 2px solid CanvasText;
+      outline-offset: -3px;
+    }
   }
 </style>

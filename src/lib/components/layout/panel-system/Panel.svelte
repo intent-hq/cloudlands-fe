@@ -16,7 +16,6 @@
   import PanelTabBar from './PanelTabBar.svelte';
   import PanelContentRenderer from './PanelContentRenderer.svelte';
   import PanelEmptyState from './PanelEmptyState.svelte';
-  import PanelDropZones from './PanelDropZones.svelte';
   import { createPanelHeaderContext } from './panel-header-context.svelte';
   import { createPanelFileDropContext } from './panel-file-drop-context.svelte';
   import type { PanelFileDropHandler } from './panel-file-drop-context.svelte';
@@ -254,7 +253,6 @@
   const TAB_DRAG_MIME = PANE_DRAG_MIME;
 
   // Drop zone state
-  let isDragOver = $state(false);
   let isPaneDragOver = $state(false);
   let activeDropZone = $state<DropZone | null>(null);
 
@@ -264,7 +262,6 @@
   // Reset local drop zone state when global drag ends
   $effect(() => {
     if (!$isDragging) {
-      isDragOver = false;
       isPaneDragOver = false;
       activeDropZone = null;
     }
@@ -333,7 +330,6 @@
     e.preventDefault();
     const zone = getDropZone(e);
     isPaneDragOver = getDraggedPane() !== null;
-    isDragOver = true;
     activeDropZone = zone;
     if (isPaneDragOver) onPaneDropPreview?.(getPaneDropPlacement(zone));
     if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
@@ -353,7 +349,6 @@
       if (pointerStillInside) return;
     }
 
-    isDragOver = false;
     if (isPaneDragOver) onPaneDropPreview?.(null);
     isPaneDragOver = false;
     activeDropZone = null;
@@ -363,7 +358,6 @@
     markUserTouch();
     e.preventDefault();
     e.stopPropagation(); // Prevent drop from reaching content (like editors)
-    isDragOver = false;
     const wasPaneDrag = isPaneDragOver || getDraggedPane() !== null;
     isPaneDragOver = false;
 
@@ -425,8 +419,6 @@
     role="region"
     aria-label={m.layout_panel_ariaLabel()}
   >
-    <!-- Drop zones overlay (positioned below tab bar) -->
-    <PanelDropZones activeZone={activeDropZone} isActive={isDragOver && !isPaneDragOver} />
     <!-- Tab Bar (shows group label and actions when focused) -->
     <div
       data-panel-header
