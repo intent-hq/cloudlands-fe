@@ -249,6 +249,16 @@ protocol.registerSchemesAsPrivileged([
       stream: true,
     },
   },
+  {
+    scheme: 'workspace-file',
+    privileges: {
+      standard: true,
+      secure: true,
+      supportFetchAPI: true,
+      corsEnabled: true,
+      stream: true,
+    },
+  },
 ]);
 
 // Complete the IPC interceptor setup (for unhandled rejection tracking)
@@ -356,6 +366,7 @@ import {
 import {
   setupAppProtocolHandler,
   setupWorkspaceAssetProtocolHandler,
+  setupWorkspaceFileProtocolHandler,
 } from './protocol-handlers.js';
 
 const logger = new Logger('Main');
@@ -1449,6 +1460,9 @@ app.whenReady().then(async () => {
 
   // workspace-asset:// is needed in both dev and production (note images)
   setupWorkspaceAssetProtocolHandler();
+
+  // workspace-file:// is needed in both dev and production (workspace file images)
+  setupWorkspaceFileProtocolHandler();
 
   // Patch ipcMain to automatically track all handlers for cleanup
   // In production, ipcMain.handle may be non-writable (as set above). The cleanup manager
