@@ -12,13 +12,9 @@
   import '@fontsource/jetbrains-mono/700-italic.css';
   import '@fontsource/doto/700.css';
   import { onDestroy, onMount, type Snippet } from 'svelte';
-  import { afterNavigate } from '$app/navigation';
-  import { page } from '$app/state';
-  import ActionKeyHud from '$features/hardware-console/actions/ActionKeyHud.svelte';
   import { wireSplashGate } from '$features/backend/splash-gate';
   import { store as appStore } from '$store/renderer/store';
   import { startRootStoreLifecycle } from '$store/renderer/root-store-lifecycle';
-  import { startAllAppSagas } from '$store/renderer/sagas';
   import { selectResolvedLocale } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
   import { IPC_CHANNELS } from '$shared/ipc-registry';
   import {
@@ -30,30 +26,9 @@
 
   let { children }: { children?: Snippet } = $props();
 
-  function isSandboxRoute(pathname: string): boolean {
-    return pathname === '/sandbox' || pathname.startsWith('/sandbox/');
-  }
-
-  function startRouteSagas(store: Parameters<typeof startAllAppSagas>[0]) {
-    let sandboxRoute = isSandboxRoute(page.url.pathname);
-    let stopAppSagas = sandboxRoute ? [] : startAllAppSagas(store);
-
-    afterNavigate(({ to }) => {
-      if (!to) return;
-      const nextSandboxRoute = isSandboxRoute(to.url.pathname);
-      if (nextSandboxRoute === sandboxRoute) return;
-
-      for (const stop of stopAppSagas) stop();
-      sandboxRoute = nextSandboxRoute;
-      stopAppSagas = sandboxRoute ? [] : startAllAppSagas(store);
-    });
-
-    return [() => stopAppSagas.forEach((stop) => stop())];
-  }
-
   const disposeStore = startRootStoreLifecycle(
     appStore,
-    { startSagas: startRouteSagas },
+    { startSagas: () => [] },
     import.meta.hot?.data,
   );
   onDestroy(disposeStore);
@@ -89,7 +64,4 @@
 
 {#key $resolvedLocale$}
   {@render children?.()}
-
-  <!-- Global hardware-console action HUD; product chrome remains scoped to (app). -->
-  <ActionKeyHud />
 {/key}
