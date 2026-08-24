@@ -32,14 +32,7 @@ for (const theme of ['light', 'dark'] as const) {
           await controls
             .locator('button')
             .evaluateAll((buttons) => buttons.map((button) => button.getAttribute('aria-label'))),
-        ).toEqual([
-          'More',
-          'Panel history',
-          'Go back',
-          'Go forward',
-          'Panel columns: 2',
-          'Close panel',
-        ]);
+        ).toEqual(['More', 'Panel columns: 2', 'Close active pane']);
         const [headerBox, titleBox, controlsBox] = await Promise.all([
           header.boundingBox(),
           header.locator('[data-panel-header-title]').boundingBox(),
@@ -219,7 +212,7 @@ test('updates the workspace-scoped count and keeps keyboard focus order', async 
 
   await trigger.focus();
   await page.keyboard.press('Tab');
-  await expect(page.locator(':focus')).toHaveAttribute('aria-label', 'Close panel');
+  await expect(page.locator(':focus')).toHaveAttribute('aria-label', 'Close active pane');
 });
 
 test('keeps the divider glyph visible and equal in forced colors at 200% zoom', async ({

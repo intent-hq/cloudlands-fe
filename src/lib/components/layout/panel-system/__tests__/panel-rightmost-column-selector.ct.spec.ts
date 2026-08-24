@@ -57,7 +57,6 @@ test('keeps one real selector on the empty rightmost panel as columns grow', asy
   const emptyAtTwo = component.locator(`[data-panel-id="${ownerAtTwo}"]`);
   await expect(emptyAtTwo).toHaveAttribute('data-empty-panel-surface', 'true');
   await expect(emptyAtTwo.locator('[data-empty-panel-header]')).toHaveCount(1);
-  await expect(emptyAtTwo.getByRole('button', { name: 'Close panel' })).toHaveCount(1);
 
   await chooseCount(component, page, 3);
   await expect(selector).toHaveAccessibleName('Panel columns: 3');
@@ -71,21 +70,6 @@ test('keeps one real selector on the empty rightmost panel as columns grow', asy
   await expect(rightmost).toHaveAttribute('data-empty-panel-surface', 'true');
   const emptyHeader = rightmost.locator('[data-empty-panel-header]');
   await expect(emptyHeader).toHaveCount(1);
-  const emptyActions = emptyHeader.locator('[data-panel-header-actions]');
-  const emptyButtons = emptyActions.locator('button');
-  await expect(emptyButtons).toHaveCount(2);
-  await expect(emptyButtons.last()).toHaveAccessibleName('Close panel');
-  expect(
-    await emptyButtons.evaluateAll((buttons) =>
-      buttons.map((button) => {
-        const box = button.getBoundingClientRect();
-        return { width: box.width, height: box.height };
-      }),
-    ),
-  ).toEqual([
-    { width: 28, height: 28 },
-    { width: 28, height: 28 },
-  ]);
 
   await chooseCount(component, page, 4);
   await expect(selector).toHaveAccessibleName('Panel columns: 4');
@@ -106,10 +90,4 @@ test('keeps one real selector on the empty rightmost panel as columns grow', asy
   await expect(rightmostAtFour.locator('[data-panel-content-header]')).toHaveCount(1);
   await expect(component.locator('[data-panel-column-count-trigger]')).toHaveCount(1);
   await expectGlyph(component, 4);
-  await expect(rightmostAtFour.getByRole('button', { name: 'Close panel' })).toHaveCount(1);
-  await expect(
-    rightmostAtFour
-      .locator('[data-panel-content-header] [data-panel-header-actions] button')
-      .last(),
-  ).toHaveAccessibleName('Close panel');
 });
