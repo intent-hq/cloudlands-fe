@@ -140,6 +140,21 @@ describe('ResponseGroup - collapse state model', () => {
     );
   });
 
+  it('constrains expanded prose with asymmetric canonical spacing', () => {
+    const blocks = [{ type: 'text', text: 'Expanded prose' }] as ContentBlock[];
+    const { container } = render(ResponseGroup, {
+      props: { name: 'Constrained group', isStreaming: true, blocks, children },
+    });
+    const expanded = container.querySelector('[data-operational-expanded-content]')!;
+    const scroller = container.querySelector('.cylinder-scroller') as HTMLElement;
+
+    expect(expanded.className).toContain('pt-2');
+    expect(expanded.className).toContain('pb-4');
+    expect(scroller.style.maxHeight).toContain('160px');
+    expect(scroller.style.maxHeight).toContain('40vh');
+    expect(scroller.className).toContain('cylinder-scroller');
+  });
+
   for (const position of ['first', 'middle', 'last'] as const) {
     it(`fully removes the ${position} streaming group body after manual collapse`, async () => {
       const blocks = [{ type: 'text', text: `${position} activity` }] as ContentBlock[];
@@ -147,7 +162,6 @@ describe('ResponseGroup - collapse state model', () => {
         props: {
           name: `${position} group`,
           isStreaming: true,
-          isLast: position === 'last',
           blocks,
           children,
         },
@@ -246,27 +260,64 @@ describe('ResponseGroup - collapse state model', () => {
     }
   });
 
-  it('auto-collapses a non-last group after streaming ends', async () => {
-    const { container, rerender } = render(ResponseGroup, {
-      props: { name: 'Group', isStreaming: true, children },
-    });
-    const btn = header(container);
-    expect(btn.getAttribute('aria-expanded')).toBe('true');
+  it('auto-collapses exactly 800 ms after its own stream completes', async () => {
+    vi.useFakeTimers();
+    try {
+      const { container, rerender } = render(ResponseGroup, {
+        props: { name: 'Current group', isStreaming: true, children },
+      });
+      const btn = header(container);
 
-    await rerender({ isStreaming: false });
-    await waitFor(() => expect(btn.getAttribute('aria-expanded')).toBe('false'), { timeout: 3000 });
-    expect(details(container)).toBeNull();
+      await rerender({ isStreaming: false });
+      await vi.advanceTimersByTimeAsync(799);
+      expect(btn.getAttribute('aria-expanded')).toBe('true');
+
+      await vi.advanceTimersByTimeAsync(1);
+      expect(btn.getAttribute('aria-expanded')).toBe('false');
+      expect(details(container)).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
-  it('keeps the last streaming group open after completion without a manual collapse', async () => {
-    const { container, rerender } = render(ResponseGroup, {
-      props: { name: 'Group', isLast: true, isStreaming: true, children },
+  it('keeps a completed group manually reopenable after automatic collapse', async () => {
+    vi.useFakeTimers();
+    try {
+      const blocks = [{ type: 'text', text: 'Visible summary' }] as ContentBlock[];
+      const { container, rerender } = render(ResponseGroup, {
+        props: { name: 'Final group', isStreaming: true, blocks, children },
+      });
+      const btn = header(container);
+
+      await rerender({ isStreaming: false });
+      await vi.advanceTimersByTimeAsync(800);
+      expect(btn.getAttribute('aria-expanded')).toBe('false');
+
+      await fireEvent.click(btn);
+      expect(btn.getAttribute('aria-expanded')).toBe('true');
+      expect(details(container)).not.toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('restores only search-owned expansion and preserves explicit user disclosure', async () => {
+    const { container } = render(ResponseGroup, {
+      props: { name: 'Searchable group', searchPath: 'b:0', children },
     });
     const btn = header(container);
+    const group = container.querySelector('[data-chat-search-disclosure-id="group:b:0"]')!;
 
-    await rerender({ isStreaming: false });
+    group.dispatchEvent(new CustomEvent('chatsearchexpand'));
+    await waitFor(() => expect(btn.getAttribute('aria-expanded')).toBe('true'));
+    group.dispatchEvent(new CustomEvent('chatsearchrestore'));
+    await waitFor(() => expect(btn.getAttribute('aria-expanded')).toBe('false'));
+
+    await fireEvent.click(btn);
     expect(btn.getAttribute('aria-expanded')).toBe('true');
-    expect(details(container)).not.toBeNull();
+    group.dispatchEvent(new CustomEvent('chatsearchexpand'));
+    group.dispatchEvent(new CustomEvent('chatsearchrestore'));
+    expect(btn.getAttribute('aria-expanded')).toBe('true');
   });
 });
 

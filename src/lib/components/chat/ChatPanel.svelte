@@ -296,6 +296,7 @@
     findChatSearchMatches,
     type ChatSearchMatch,
   } from './chat-search';
+  import { requestSearchDisclosure } from './chat-search-disclosure';
   import { resolveHydratedInputModel } from './input-hydration';
   import {
     deriveQueuedMessagesVisibility,
@@ -950,6 +951,8 @@
   let searchInputRef: HTMLInputElement | null = $state(null);
   let panelElement: HTMLElement | null = $state(null);
   let currentSearchIndex = $state(0);
+  let searchOpenedDisclosures: Array<{ messageId: string; disclosureId: string }> = [];
+  let searchHighlightRequest = 0;
 
   // Tracks DOM focus within the panel wrapper. Combined with the `isPanelFocused`
   // prop (from the panel-system parent) so keyboard shortcuts that are scoped to a
@@ -1018,12 +1021,9 @@
   // Mirroring those exact transforms (instead of re-encoding them as a regex)
   // keeps the search index in lockstep with the renderer automatically.
   //
-  // Additionally:
-  //   - Only the last top-level content_group stays expanded after streaming
-  //     (`isLast={blockIndex === groupedBlocks.length - 1}` in
-  //     MessageContent.svelte); earlier groups collapse and their children are
-  //     removed from the DOM by ResponseGroup's `{#if isExpanded || showCylinder}`
-  //     gate, so matches inside them have no text nodes to highlight.
+  // Additionally, completed content groups are indexed with disclosure paths.
+  // Search can temporarily reveal the exact group that owns a match, then
+  // restore only the disclosure state that search changed.
   //   - Event-notification user messages are rendered as an EventWakeupBanner
   //     summary (+ optional AgentCards) instead of a ChatMessage, so the raw
   //     text never reaches the DOM.
@@ -1071,22 +1071,75 @@
     triggerHighlight();
   }
 
-  // Trigger highlighting (called from event handlers, not effects)
-  // Async: awaits Svelte's pending DOM updates so that any LazyTurn force-rendered
-  // by the visibleSearchTurnKeys change has actually rendered its message content
-  // before we run querySelector('[data-message-id="..."]').
+  async function restoreSearchDisclosures(
+    container: HTMLDivElement | undefined,
+    keepMessageId: string | undefined,
+    keep: ReadonlySet<string>,
+  ) {
+    if (!container) return;
+    const remaining: Array<{ messageId: string; disclosureId: string }> = [];
+    for (const opened of [...searchOpenedDisclosures].reverse()) {
+      if (opened.messageId === keepMessageId && keep.has(opened.disclosureId)) {
+        remaining.unshift(opened);
+        continue;
+      }
+      const message = container.querySelector(
+        `[data-message-id="${CSS.escape(opened.messageId)}"]`,
+      );
+      const disclosure = message?.querySelector(
+        `[data-chat-search-disclosure-id="${CSS.escape(opened.disclosureId)}"]`,
+      );
+      if (disclosure) requestSearchDisclosure(disclosure, false);
+      await tick();
+    }
+    searchOpenedDisclosures = remaining;
+  }
+
+  async function revealSearchMatch(
+    match: ChatSearchMatch | undefined,
+    container: HTMLDivElement | undefined,
+  ) {
+    const required = new Set(match?.disclosurePath ?? []);
+    await restoreSearchDisclosures(container, match?.messageId, required);
+    if (!match || !container) return;
+    const message = container.querySelector(`[data-message-id="${CSS.escape(match.messageId)}"]`);
+    if (!message) return;
+    for (const id of match.disclosurePath) {
+      const disclosure = message.querySelector(
+        `[data-chat-search-disclosure-id="${CSS.escape(id)}"]`,
+      );
+      if (!disclosure) continue;
+      if (disclosure.getAttribute('data-chat-search-expanded') !== 'true') {
+        requestSearchDisclosure(disclosure, true);
+        if (
+          !searchOpenedDisclosures.some(
+            (opened) => opened.messageId === match.messageId && opened.disclosureId === id,
+          )
+        ) {
+          searchOpenedDisclosures.push({ messageId: match.messageId, disclosureId: id });
+        }
+        await tick();
+        await new Promise(requestAnimationFrame);
+      }
+    }
+  }
+
+  // Trigger highlighting after LazyTurn materialization and disclosure reveal.
   async function triggerHighlight() {
-    // Use untrack to read reactive values without creating dependencies
+    const request = ++searchHighlightRequest;
     const query = untrack(() => debouncedSearchQuery);
     const index = untrack(() => currentSearchIndex);
     const isShowing = untrack(() => showSearch);
     const matches = untrack(() => allSearchMatches);
     const container = untrack(() => scrollContainer);
     await tick();
-    // Use requestAnimationFrame to ensure DOM is ready
-    requestAnimationFrame(() => {
-      doHighlightSearchMatches(query, index, matches, isShowing, container);
-    });
+    if (request !== searchHighlightRequest) return;
+    await revealSearchMatch(isShowing ? matches[index] : undefined, container);
+    if (request !== searchHighlightRequest) return;
+    await tick();
+    await new Promise(requestAnimationFrame);
+    if (request !== searchHighlightRequest) return;
+    doHighlightSearchMatches(query, index, matches, isShowing, container);
   }
 
   // Use CSS Custom Highlight API for search highlighting
@@ -1117,35 +1170,38 @@
     const allRanges: Range[] = [];
     let currentRange: Range | null = null;
 
-    // Group matches by messageId
-    const matchesByMessage = new Map<string, number[]>();
-    matches.forEach((m, globalIndex) => {
-      if (!matchesByMessage.has(m.messageId)) {
-        matchesByMessage.set(m.messageId, []);
-      }
-      matchesByMessage.get(m.messageId)!.push(globalIndex);
-    });
-
-    // PERF: Index message elements once instead of running querySelector per message.
-    // Previous implementation did a full container subtree scan for every message with
-    // matches; this collapses that to a single walk.
+    // Index materialized messages once. Only the active match's search-owned
+    // disclosure ancestors need to be present.
     const messageElById = new Map<string, Element>();
     for (const el of container.querySelectorAll('[data-message-id]')) {
       const id = (el as HTMLElement).dataset.messageId;
       if (id && !messageElById.has(id)) messageElById.set(id, el);
     }
 
-    for (const [messageId, globalIndices] of matchesByMessage) {
-      const messageEl = messageElById.get(messageId);
-      if (!messageEl) continue;
+    const matchesByBlock = new Map<
+      string,
+      Array<{ match: ChatSearchMatch; globalIndex: number }>
+    >();
+    matches.forEach((match, globalIndex) => {
+      const key = `${match.messageId}\u0000${match.blockPath}`;
+      const group = matchesByBlock.get(key) ?? [];
+      group.push({ match, globalIndex });
+      matchesByBlock.set(key, group);
+    });
 
-      // Walk all text nodes once, concatenating them into `fullText` and recording
-      // each node's cumulative start offset. Running indexOf on the concatenated text
-      // (instead of per-node) ensures we find matches that span multiple text nodes
-      // — e.g. a query landing across syntax-highlighter token boundaries inside a
-      // code block. Without this, the per-node scan miscounts against the catalog
-      // and subsequent matches in the same message get mislabelled global indices.
-      const walker = document.createTreeWalker(messageEl, NodeFilter.SHOW_TEXT, {
+    for (const blockMatches of matchesByBlock.values()) {
+      const first = blockMatches[0].match;
+      const messageEl = messageElById.get(first.messageId);
+      if (!messageEl) continue;
+      const selector = `[data-chat-search-block-path="${CSS.escape(first.blockPath)}"]`;
+      const blockEl = first.blockPath
+        ? messageEl.matches(selector)
+          ? messageEl
+          : messageEl.querySelector(selector)
+        : messageEl;
+      if (!blockEl) continue;
+
+      const walker = document.createTreeWalker(blockEl, NodeFilter.SHOW_TEXT, {
         acceptNode: (n) => {
           const parent = (n as Text).parentElement;
           if (!parent) return NodeFilter.FILTER_REJECT;
@@ -1174,29 +1230,23 @@
 
       const fullText = parts.join('');
       const lowerFullText = fullText.toLowerCase();
-      const maxMatches = globalIndices.length;
+      const maxOccurrence = Math.max(...blockMatches.map(({ match }) => match.occurrenceInBlock));
+      const rangesByOccurrence: Range[] = [];
       let searchPos = 0;
-      let matchCountInMessage = 0;
-
-      while (matchCountInMessage < maxMatches) {
+      while (rangesByOccurrence.length <= maxOccurrence) {
         const hit = lowerFullText.indexOf(lowerQuery, searchPos);
         if (hit === -1) break;
         const hitEnd = hit + lowerQuery.length;
-        const globalIndex = globalIndices[matchCountInMessage];
-
         const range = createRangeForSpan(textNodes, nodeStarts, hit, hitEnd);
-        if (range) {
-          if (globalIndex === currentIndex) {
-            currentRange = range;
-          } else {
-            allRanges.push(range);
-          }
-        }
-
-        matchCountInMessage++;
-        // Advance by query length (non-overlapping) — matches allSearchMatches'
-        // counting so global indices stay aligned with the catalog.
+        if (range) rangesByOccurrence.push(range);
         searchPos = hitEnd;
+      }
+
+      for (const { match, globalIndex } of blockMatches) {
+        const range = rangesByOccurrence[match.occurrenceInBlock];
+        if (!range) continue;
+        if (globalIndex === currentIndex) currentRange = range;
+        else allRanges.push(range);
       }
     }
 

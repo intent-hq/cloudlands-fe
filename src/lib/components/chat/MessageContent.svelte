@@ -65,6 +65,7 @@
     OPERATIONAL_GROUP_CHILD_ROW_CLASS,
   } from './operational-disclosure-row';
   import { dedupeKeys, getResponseGroupBlockKeys } from './response-group-blocks';
+  import { chatSearchBlockPath } from './chat-search';
   import NavLink from './NavLink.svelte';
   import ProposalCard from './proposals/ProposalCard.svelte';
   import { applySpecialistProposal } from './proposals/specialist-proposal-actions';
@@ -686,14 +687,17 @@
       )}
       data-operational-cluster-row={isOperationalClusterBlock(block) ? block.type : undefined}
       data-message-content-block={block.type}
+      data-chat-search-block-path={block.type === 'text'
+        ? chatSearchBlockPath(blockIndex)
+        : undefined}
     >
       {#if block.type === 'content_group'}
         {@const group = block as ContentBlockGroup}
         <ResponseGroup
           name={group.name}
           isStreaming={group.isStreaming}
-          isLast={blockIndex === groupedBlocks.length - 1}
           blocks={group.children}
+          searchPath={chatSearchBlockPath(blockIndex)}
           adjacentOperationalRow={isAdjacentOperationalClusterRow(
             groupedBlocks,
             blockIndex,
@@ -718,6 +722,7 @@
                     ? undefined
                     : 'calc(var(--operational-row-inline-padding) + var(--operational-leading-slot-size) + var(--operational-leading-gap))'}
                   data-message-content-block={childBlock.type}
+                  data-chat-search-block-path={chatSearchBlockPath(blockIndex, childIndex)}
                   data-response-group-child
                 >
                   {@render renderContentBlock(

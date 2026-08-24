@@ -29,26 +29,25 @@
   interface Props {
     name: string;
     isStreaming?: boolean;
-    /** When true, the group stays expanded after streaming ends (e.g., last group in response) */
-    isLast?: boolean;
     children: Snippet;
     blocks?: ContentBlock[];
     adjacentOperationalRow?: boolean;
+    searchPath?: string;
     class?: string;
   }
 
   let {
     name,
     isStreaming = false,
-    isLast = false,
     children,
     blocks,
     adjacentOperationalRow = false,
+    searchPath,
     class: className = '',
   }: Props = $props();
 
   // svelte-ignore state_referenced_locally -- intentional initial seed; the streaming-edge effect below manages transitions.
-  let isExpanded = $state(isStreaming || (isLast && !isStreaming));
+  let isExpanded = $state(isStreaming);
   let isClosing = $state(false);
   let isInitialized = false;
   let desiredExpanded = false;
@@ -59,6 +58,7 @@
   const instanceId = $props.id();
   const detailsId = `response-group-details-${instanceId}`;
   let userCollapsed = false;
+  let searchOwnsExpansion = false;
 
   function setExpanded(nextExpanded: boolean) {
     desiredExpanded = nextExpanded;
@@ -84,13 +84,14 @@
     }
 
     if (currentlyStreaming && !prevStreaming) {
+      searchOwnsExpansion = false;
       if (!userCollapsed) setExpanded(true);
       if (collapseTimer) {
         clearTimeout(collapseTimer);
         collapseTimer = null;
       }
     } else if (prevStreaming && !currentlyStreaming) {
-      if (!userCollapsed && !isLast) {
+      if (!userCollapsed) {
         collapseTimer = setTimeout(() => {
           setExpanded(false);
           collapseTimer = null;
@@ -113,9 +114,27 @@
       collapseTimer = null;
     }
 
+    searchOwnsExpansion = false;
     const nextExpanded = !desiredExpanded;
     userCollapsed = !nextExpanded;
     setExpanded(nextExpanded);
+  }
+
+  function expandForSearch() {
+    if (desiredExpanded) return;
+    if (collapseTimer) {
+      clearTimeout(collapseTimer);
+      collapseTimer = null;
+    }
+    searchOwnsExpansion = true;
+    setExpanded(true);
+  }
+
+  function restoreSearchExpansion() {
+    if (!searchOwnsExpansion) return;
+    searchOwnsExpansion = false;
+    if (isStreaming && !userCollapsed) return;
+    setExpanded(false);
   }
 
   // Keep the collapsed row to one inert, current inline summary.
@@ -186,6 +205,10 @@
   disclosureTestId="response-group-disclosure"
   summaryTestId="response-group-summary"
   class={className}
+  searchDisclosureId={searchPath ? `group:${searchPath}` : undefined}
+  summarySearchPath={searchPath ? `${searchPath}:summary` : undefined}
+  onSearchExpand={expandForSearch}
+  onSearchRestore={restoreSearchExpansion}
 />
 
 <style>

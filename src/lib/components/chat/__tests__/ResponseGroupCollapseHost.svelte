@@ -7,7 +7,14 @@
     width = 260,
     zoom = 2,
     chunk = 'initial chunk',
-  }: { theme?: 'light' | 'dark'; width?: number; zoom?: number; chunk?: string } = $props();
+    streaming = true,
+  }: {
+    theme?: 'light' | 'dark';
+    width?: number;
+    zoom?: number;
+    chunk?: string;
+    streaming?: boolean;
+  } = $props();
 
   const positions = ['first', 'middle', 'last'] as const;
   const blocks = $derived([
@@ -33,7 +40,7 @@
     <div class="h-20" aria-hidden="true"></div>
     {#each positions as position}
       <div data-testid="response-group-{position}">
-        <ResponseGroup name={`${position} group`} isStreaming isLast={position === 'last'} {blocks}>
+        <ResponseGroup name={`${position} group`} isStreaming={streaming} {blocks}>
           <div class="py-2" data-testid="response-group-body-{position}">
             <button type="button" data-testid="response-group-focus-{position}">
               Focusable {position} detail for {chunk}
@@ -42,5 +49,6 @@
         </ResponseGroup>
       </div>
     {/each}
+    <div data-testid="response-after-groups">Later response activity</div>
   </div>
 </section>
