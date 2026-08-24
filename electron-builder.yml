@@ -76,6 +76,9 @@ mac:
   extraResources:
     - from: build/macos-icon/Assets.car
       to: Assets.car
+    # Runtime Dock icon. Finder and Applications continue to use Assets.car/icon.icns.
+    - from: src/assets/icons/app-icon/Icon-1024.png
+      to: app-icon.png
     - from: resources/speech-helper
       to: speech-helper
   # Microphone usage string shown by the one-time macOS TCC prompt
