@@ -4491,6 +4491,7 @@
   "ui_reversibleActions_renamed_message": "{itemType} renommé en \"{newName}\"",
   "ui_linkHandler_invalidFormat_error": "Format d'URL non valide. Attendu : {shortFormat} ou {longFormat}",
   "ui_linkHandler_emptyResourceId_error": "L'ID de ressource ne peut pas être vide",
+  "ui_linkHandler_invalidFilePath_error": "Chemin de fichier non valide",
   "ui_linkHandler_unknownResourceType_error": "Type de ressource inconnu : {type}",
   "ui_linkHandler_parseFailed_error": "Impossible d'analyser l'URL",
   "ui_linkHandler_invalidLink_title": "Lien non valide",

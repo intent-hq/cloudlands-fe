@@ -66,6 +66,72 @@ describe('workspaces-link-handler', () => {
     // The parser only supports note and task resources, not workspace navigation.
     // These tests were removed because they test functionality that doesn't exist.
 
+    describe('file links', () => {
+      it('should parse short format file links', () => {
+        const result = parseIntentLink('intent://local/file/README.md');
+        expect(result.valid).toBe(true);
+        expect(result.type).toBe('file');
+        expect(result.orgId).toBe('local');
+        expect(result.workspaceId).toBeUndefined();
+        expect(result.resourceId).toBe('README.md');
+      });
+
+      it('should join nested path segments', () => {
+        const result = parseIntentLink('intent://local/file/src/lib/utils/foo.ts');
+        expect(result.valid).toBe(true);
+        expect(result.type).toBe('file');
+        expect(result.resourceId).toBe('src/lib/utils/foo.ts');
+      });
+
+      it('should percent-decode path segments', () => {
+        const result = parseIntentLink('intent://local/file/docs/my%20file%20(1).png');
+        expect(result.valid).toBe(true);
+        expect(result.resourceId).toBe('docs/my file (1).png');
+      });
+
+      it('should parse long format file links with workspace ID', () => {
+        const result = parseIntentLink('intent://local/workspace-abc-123/file/a/b.png');
+        expect(result.valid).toBe(true);
+        expect(result.type).toBe('file');
+        expect(result.workspaceId).toBe('workspace-abc-123');
+        expect(result.resourceId).toBe('a/b.png');
+      });
+
+      it('should reject empty file path', () => {
+        const result = parseIntentLink('intent://local/file/');
+        expect(result.valid).toBe(false);
+      });
+
+      it('should reject long format file link without a path', () => {
+        const result = parseIntentLink('intent://local/workspace-abc-123/file');
+        expect(result.valid).toBe(false);
+      });
+
+      it('should reject traversal path components', () => {
+        const result = parseIntentLink('intent://local/file/../etc/passwd');
+        expect(result.valid).toBe(false);
+        expect(result.error).toContain('Invalid file path');
+      });
+
+      it('should reject percent-encoded traversal components', () => {
+        const result = parseIntentLink('intent://local/file/a/%2e%2e/b');
+        expect(result.valid).toBe(false);
+        expect(result.error).toContain('Invalid file path');
+      });
+
+      it('should reject encoded-slash absolute paths', () => {
+        const result = parseIntentLink('intent://local/file/%2Fetc%2Fpasswd');
+        expect(result.valid).toBe(false);
+        expect(result.error).toContain('Invalid file path');
+      });
+
+      it('should reject traversal in long format links', () => {
+        const result = parseIntentLink('intent://local/workspace-abc-123/file/../secret.txt');
+        expect(result.valid).toBe(false);
+        expect(result.error).toContain('Invalid file path');
+      });
+    });
+
     describe('error cases', () => {
       it('should reject empty URL', () => {
         const result = parseIntentLink('');
@@ -85,11 +151,11 @@ describe('workspaces-link-handler', () => {
       });
 
       it('should reject unknown resource type', () => {
-        // "file" is not recognized as "note", so the parser tries the long format
-        // where "file" would be workspace-id and needs 3+ segments
-        const result = parseIntentLink('intent://local/file/some-file');
+        // "agent" is not a recognized resource type, so the parser tries the long
+        // format where "agent" would be workspace-id and the second segment must
+        // be a known resource type
+        const result = parseIntentLink('intent://local/agent/some-agent');
         expect(result.valid).toBe(false);
-        // Parser sees "file" as potential workspace ID but "some-file" != "note"
         expect(result.error).toContain('Invalid URL format');
       });
     });
