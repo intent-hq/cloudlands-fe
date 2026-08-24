@@ -162,10 +162,15 @@ describe('getPaneDropPreview', () => {
   });
 
   it('merges into the target stack and removes a one-pane source column', () => {
-    const preview = project(
-      makeLayout({ left: ['left-pane'], source: ['drag'], target: ['target-pane'] }, [20, 30, 50]),
-      { kind: 'panel', targetPanelId: 'target', zone: 'center' },
+    const layout = makeLayout(
+      { left: ['left-pane'], source: ['drag'], target: ['target-pane'] },
+      [20, 30, 50],
     );
+    const preview = project(layout, {
+      kind: 'panel',
+      targetPanelId: 'target',
+      zone: 'center',
+    });
 
     expect(getPanelOrder(preview.root)).toEqual(['left', 'target']);
     expect(preview.root).toMatchObject({
@@ -175,6 +180,9 @@ describe('getPaneDropPreview', () => {
     expect(preview.panels.target.tabs.map((tab) => tab.id)).toEqual(['target-pane', 'drag']);
     expect(preview.panels.target.activeTabId).toBe('drag');
     expect(countPane(preview, 'drag')).toBe(1);
+    expect(
+      getPanelMovePreviewWidthRatio(layout.root, preview.root, 1000, preview.canvasWidth),
+    ).toBeCloseTo(0.6968);
   });
 
   it('reveals the next underlying pane when merging from a multi-pane source', () => {

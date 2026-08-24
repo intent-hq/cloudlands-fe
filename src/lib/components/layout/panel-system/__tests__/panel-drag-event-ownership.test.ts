@@ -44,8 +44,21 @@ function dragEvent(clientX: number): DragEvent {
 async function mountLayout() {
   appStore.dispatch(
     initializeLayout(WORKSPACE_ID, {
-      root: { type: 'panel', panelId: 'target-panel' },
+      root: {
+        type: 'split',
+        direction: 'horizontal',
+        sizes: [50, 50],
+        children: [
+          { type: 'panel', panelId: 'source-panel' },
+          { type: 'panel', panelId: 'target-panel' },
+        ],
+      },
       panels: {
+        'source-panel': {
+          id: 'source-panel',
+          tabs: [{ id: 'source-tab', type: 'note', title: 'Source', closable: true }],
+          activeTabId: 'source-tab',
+        },
         'target-panel': {
           id: 'target-panel',
           tabs: [
@@ -75,6 +88,18 @@ async function mountLayout() {
     return element!;
   });
   const layout = result.container.querySelector<HTMLElement>('[data-panel-layout-motion]')!;
+  const sourcePanel = result.container.querySelector<HTMLElement>(
+    '[data-panel-id="source-panel"]',
+  )!;
+  sourcePanel.getBoundingClientRect = () =>
+    ({
+      left: -408,
+      right: -8,
+      top: 0,
+      bottom: 400,
+      width: PANEL_WIDTH,
+      height: 400,
+    }) as DOMRect;
   panel.getBoundingClientRect = () =>
     ({
       left: 0,
@@ -128,6 +153,15 @@ afterEach(() => {
 });
 
 describe('pane drag event ownership', () => {
+  it('does not render a projected overlay for a stable self target', async () => {
+    const panel = await mountLayout();
+    setDraggedPane({ tabId: 'one', panelId: 'target-panel' });
+
+    await fireEvent(panel, dragEvent(200));
+
+    expect(document.querySelector('[data-panel-layout-drag-preview]')).toBeNull();
+  });
+
   it('does not alternate the target for repeated stationary non-gutter dragovers', async () => {
     expect(await probeNonGutterSequence([200, 200, 200])).toEqual(['center', 'center', 'center']);
   });

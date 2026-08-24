@@ -65,7 +65,16 @@ export function getPanelRootEdgeMovePreview(
 export function getPanelMovePreviewWidthRatio(
   root: PanelLayoutNode,
   previewRoot: PanelLayoutNode,
+  canvasWidth?: number | null,
+  previewCanvasWidth?: number | null,
 ): number {
+  if (
+    typeof canvasWidth === 'number' &&
+    canvasWidth > 0 &&
+    typeof previewCanvasWidth === 'number'
+  ) {
+    return previewCanvasWidth / canvasWidth;
+  }
   const currentColumns = countHorizontalPanelColumns(root);
   const previewColumns = countHorizontalPanelColumns(previewRoot);
   return currentColumns > 0 ? previewColumns / currentColumns : 1;

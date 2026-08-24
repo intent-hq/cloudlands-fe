@@ -392,12 +392,22 @@
         )
       : null,
   );
-  const panelMovePreviewRoot = $derived(panelMovePreview?.root ?? null);
+  const visiblePanelMovePreview = $derived(
+    panelMovePreview?.changed === true ? panelMovePreview : null,
+  );
+  const panelMovePreviewRoot = $derived(visiblePanelMovePreview?.root ?? null);
   const paneDropPreviewPanelId = $derived(
-    panelMovePreview?.destinationPanelId ?? PANE_DROP_PREVIEW_PANEL_ID,
+    visiblePanelMovePreview?.destinationPanelId ?? PANE_DROP_PREVIEW_PANEL_ID,
   );
   const panelMovePreviewWidthRatio = $derived(
-    panelMovePreviewRoot ? getPanelMovePreviewWidthRatio($root$, panelMovePreviewRoot) : 1,
+    visiblePanelMovePreview
+      ? getPanelMovePreviewWidthRatio(
+          $root$,
+          visiblePanelMovePreview.root,
+          $panelCanvasWidth$,
+          visiblePanelMovePreview.canvasWidth,
+        )
+      : 1,
   );
   let reportedPanelMovePreviewWidthRatio = 1;
 
@@ -1314,7 +1324,7 @@
           onOpenBrowser={canOpenBrowserPanel ? handleOpenBrowser : undefined}
         />
       </div>
-      {#if panelMovePreviewRoot}
+      {#if visiblePanelMovePreview}
         <div
           bind:this={panelDragPreviewElement}
           class="pointer-events-none absolute inset-y-0 left-0 z-40"
@@ -1331,7 +1341,8 @@
           aria-hidden="true"
         >
           <PanelDragPreview
-            node={panelMovePreviewRoot}
+            node={visiblePanelMovePreview.root}
+            panels={visiblePanelMovePreview.panels}
             draggedPanelId={paneDropPreviewPanelId}
             draggedPanelSourceId={paneDropPreviewPanelId === PANE_DROP_PREVIEW_PANEL_ID
               ? paneDropPreview?.draggedPane.panelId

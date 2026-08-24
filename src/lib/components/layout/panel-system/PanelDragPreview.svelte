@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { PanelLayoutNode } from '$features/layout/panel-layout-adapter';
+  import type { PanelLayoutNode, PanelState } from '$features/layout/panel-layout-adapter';
   import { cn } from '$lib/utils';
   import PanelDragPreview from './PanelDragPreview.svelte';
   import { renderPanelLayoutPreview } from './panel-stack-preview';
@@ -7,12 +7,14 @@
 
   let {
     node,
+    panels,
     draggedPanelId,
     draggedPanelSourceId = null,
     contained = false,
     isRoot = true,
   }: {
     node: PanelLayoutNode;
+    panels: Record<string, PanelState>;
     draggedPanelId: string;
     draggedPanelSourceId?: string | null;
     contained?: boolean;
@@ -70,21 +72,30 @@
 </script>
 
 {#if node.type === 'panel'}
-  <div
-    class={cn('relative h-full min-h-0 w-full min-w-0', node.panelId === draggedPanelId && 'z-10')}
-    data-panel-layout-preview-panel={node.panelId}
-    data-panel-layout-preview-dragged={node.panelId === draggedPanelId ? '' : undefined}
-  >
+  {@const panel = panels[node.panelId]}
+  {#if panel}
     <div
-      class="h-full min-h-0 w-full min-w-0 overflow-hidden"
-      use:renderPanelLayoutPreview={node.panelId === draggedPanelId && draggedPanelSourceId
-        ? draggedPanelSourceId
-        : node.panelId}
-    ></div>
-    {#if node.panelId === draggedPanelId}
-      <div class="panel-drop-destination" data-panel-drop-destination></div>
-    {/if}
-  </div>
+      class={cn(
+        'relative h-full min-h-0 w-full min-w-0',
+        node.panelId === draggedPanelId && 'z-10',
+      )}
+      data-panel-layout-preview-panel={node.panelId}
+      data-panel-layout-preview-dragged={node.panelId === draggedPanelId ? '' : undefined}
+      data-panel-layout-preview-active-pane={panel.activeTabId}
+      data-panel-layout-preview-stack-size={panel.tabs.length}
+    >
+      <div
+        class="h-full min-h-0 w-full min-w-0 overflow-hidden"
+        use:renderPanelLayoutPreview={{
+          panel,
+          sourcePanelId: node.panelId === draggedPanelId ? draggedPanelSourceId : node.panelId,
+        }}
+      ></div>
+      {#if node.panelId === draggedPanelId}
+        <div class="panel-drop-destination" data-panel-drop-destination></div>
+      {/if}
+    </div>
+  {/if}
 {:else}
   <div
     bind:this={splitElement}
@@ -103,6 +114,7 @@
       >
         <PanelDragPreview
           node={child}
+          {panels}
           {draggedPanelId}
           {draggedPanelSourceId}
           {contained}
