@@ -115,12 +115,15 @@ test('never spawns a horizontal scrollbar in the transcript scroll viewport', as
     .getByTestId('queued-messages-container')
     .evaluate((node) => Number.parseFloat(getComputedStyle(node, '::before').width));
 
-  // Preconditions: scrollbar-gutter reserves space, so the viewport content box
-  // is narrower than the panel-wide divider, which still overflows the content
-  // box (the intent-hq/monorepo#2969 repro) — the overflow-x contract, not a
-  // narrower divider, is what must neutralize it.
-  expect(metrics.clientWidth).toBeLessThan(metrics.offsetWidth);
-  expect(metrics.scrollWidth).toBeGreaterThan(metrics.clientWidth);
+  // Preconditions: classic scrollbars can reserve a vertical gutter, while
+  // overlay scrollbars do not. In both environments, the content box cannot
+  // exceed the border box and the scroll geometry still includes the full-width
+  // divider (the intent-hq/monorepo#2969 repro).
+  expect(metrics.clientWidth).toBeLessThanOrEqual(metrics.offsetWidth);
+  expect(metrics.scrollWidth).toBeCloseTo(dividerWidth, 1);
+  if (metrics.clientWidth < metrics.offsetWidth) {
+    expect(metrics.scrollWidth).toBeGreaterThan(metrics.clientWidth);
+  }
   // Regression (intent-hq/monorepo#2969): the horizontal axis must not be
   // user-scrollable. The computed-style check is the primary pin — headless CT
   // renders no classic scrollbar, so the height check below only guards
