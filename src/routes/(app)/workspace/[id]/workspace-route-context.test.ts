@@ -7,10 +7,10 @@ const surfaceSource = readFileSync(resolve(__dirname, 'WorkspaceSurface.svelte')
 const rootLayoutSource = readFileSync(resolve(process.cwd(), 'src/routes/+layout.svelte'), 'utf8');
 
 describe('workspace route context installation', () => {
-  it('keys the workspace page by page.params.id', () => {
+  it('keeps the workspace surface mounted when page.params.id changes', () => {
     expect(pageSource).toContain('page.params?.id');
-    expect(pageSource).toContain('{#key routeWorkspaceId}');
     expect(pageSource).toContain('<WorkspaceSurface {workspaceId} />');
+    expect(pageSource).not.toContain('{#key routeWorkspaceId}');
     expect(pageSource).not.toContain('window.location.pathname');
   });
 
@@ -24,9 +24,10 @@ describe('workspace route context installation', () => {
     expect(surfaceSource).toContain('{#key surfaceWorkspaceId}');
   });
 
-  it('retains workspace-scoped Redux data for persistent column surfaces', () => {
-    expect(surfaceSource).toContain('retainWorkspaceSessionOnUnmount?: boolean');
-    expect(surfaceSource).toContain('if (workspaceId && !retainWorkspaceSessionOnUnmount)');
-    expect(surfaceSource).toContain('if (!retainWorkspaceSessionOnUnmount)');
+  it('leaves workspace session cleanup to open-tab removal', () => {
+    expect(surfaceSource).not.toContain('workspaceUnmounted');
+    expect(surfaceSource).not.toContain('setAgents(workspaceId, [])');
+    expect(surfaceSource).not.toContain('setAgentsLoaded(workspaceId, false)');
+    expect(surfaceSource).not.toContain('retainWorkspaceSessionOnUnmount');
   });
 });

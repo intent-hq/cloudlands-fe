@@ -5,8 +5,7 @@
   import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
   import WorkspaceSurface from './WorkspaceSurface.svelte';
 
-  const routeWorkspaceId = $derived((page.params?.id as string | undefined) ?? '');
-  const workspaceId = $derived(routeWorkspaceId);
+  const workspaceId = $derived((page.params?.id as string | undefined) ?? '');
   const workspaceIdStore = writable(workspaceId);
   $effect(() => workspaceIdStore.set(workspaceId));
   const workspace$ = selectWorkspaceById(workspaceIdStore);
@@ -20,6 +19,4 @@
   >
 </svelte:head>
 
-{#key routeWorkspaceId}
-  <WorkspaceSurface {workspaceId} />
-{/key}
+<WorkspaceSurface {workspaceId} />

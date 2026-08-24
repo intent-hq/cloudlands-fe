@@ -54,8 +54,6 @@
 
   import { createNoteRequested } from '$store/renderer/slices/note-read-tracking/note-read-tracking-slice';
   import { markWorkspaceSeen } from '$features/workspace/mark-workspace-seen';
-  import { workspaceUnmounted } from '$store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice';
-
   import { setOnboardingActive } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
 
   // Components
@@ -87,8 +85,6 @@
   import {
     createAgentRequested,
     createAgentWithSpecialistRequested,
-    setAgents,
-    setAgentsLoaded,
   } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
   import MultiSelectTabbedSidebar from '$lib/components/workspace/MultiSelectTabbedSidebar.svelte';
   import { m } from '$shared/paraglide/messages.js';
@@ -106,7 +102,6 @@
     active?: boolean;
     manageTab?: boolean;
     columnMode?: boolean;
-    retainWorkspaceSessionOnUnmount?: boolean;
     onCloseWorkspace?: (event: MouseEvent) => void;
     onSidebarWidthChange?: (width: number) => void;
     onPanelMovePreviewWidthRatioChange?: (ratio: number) => void;
@@ -119,7 +114,6 @@
     active = true,
     manageTab = true,
     columnMode = false,
-    retainWorkspaceSessionOnUnmount = false,
     onCloseWorkspace,
     onSidebarWidthChange,
     onPanelMovePreviewWidthRatioChange,
@@ -850,23 +844,11 @@
   onDestroy(() => {
     logger.debug('Starting workspace page cleanup', { workspaceId });
 
-    // Dispatch workspaceUnmounted so sagas can clean up (cancel agent loading,
-    // terminal loading, spec panel, window event watchers for this workspace).
-    if (workspaceId && !retainWorkspaceSessionOnUnmount) {
-      appStore.dispatch(workspaceUnmounted(workspaceId));
-    }
-
     // Cancel any pending loads
     workspaceLoader.clearLoadingState();
 
     // Clear workspace state reference
     workspaceState = null;
-
-    // Clear all local state
-    if (!retainWorkspaceSessionOnUnmount) {
-      appStore.dispatch(setAgents(workspaceId, []));
-      appStore.dispatch(setAgentsLoaded(workspaceId, false));
-    }
 
     // Dispose all managed resources (timers, intervals, etc.)
     cleanupManager.dispose();

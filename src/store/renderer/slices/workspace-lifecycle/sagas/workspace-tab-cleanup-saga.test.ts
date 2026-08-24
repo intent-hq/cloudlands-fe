@@ -4,10 +4,13 @@ import { runSaga, stdChannel } from 'redux-saga';
 import {
   closeWorkspaceTab,
   openWorkspaceTab,
-  switchToNextWorkspaceTab,
   tabStateReducer,
 } from '../../tab-state/tab-state-slice';
-import { workspaceUnmounted } from '../workspace-lifecycle-slice';
+import {
+  workspaceDeleted,
+  workspaceHydrationRequested,
+  workspaceUnmounted,
+} from '../workspace-lifecycle-slice';
 import { workspaceTabCleanupSaga } from './workspace-tab-cleanup-saga';
 
 const settle = async () => {
@@ -44,47 +47,131 @@ function createHarness(openWorkspaceIds: string[] = []) {
   return { dispatch, getState: reduxStore.getState, task };
 }
 
-function cleanupActions(harness: ReturnType<typeof createHarness>) {
+function lifecycleActions(harness: ReturnType<typeof createHarness>) {
   return harness.dispatch.mock.calls
     .map(([action]) => action)
-    .filter((action) => action.type === workspaceUnmounted.type);
+    .filter(
+      (action) =>
+        action.type === workspaceUnmounted.type || action.type === workspaceHydrationRequested.type,
+    );
 }
 
 describe('workspaceTabCleanupSaga', () => {
-  it('does not clean up during initial selector observation', async () => {
+  it('hydrates the initially focused workspace', async () => {
     const harness = createHarness(['ws-A', 'ws-B']);
     await settle();
 
-    expect(cleanupActions(harness)).toEqual([]);
+    expect(lifecycleActions(harness)).toEqual([workspaceHydrationRequested('ws-B')]);
     harness.task.cancel();
     await harness.task.toPromise();
   });
 
-  it('does not clean up when the active tab changes among open workspaces', async () => {
-    const harness = createHarness(['ws-A', 'ws-B']);
+  it('emits exact lifecycle actions for A → B → A focus changes', async () => {
+    const harness = createHarness(['ws-B', 'ws-A']);
     await settle();
 
-    expect(harness.getState().tabState.currentTabId).toBe('ws-B');
-    expect(Object.keys(harness.getState().tabState.openTabs)).toEqual(['ws-A', 'ws-B']);
-    harness.dispatch(switchToNextWorkspaceTab());
+    harness.dispatch(openWorkspaceTab('ws-B'));
+    await settle();
+    harness.dispatch(openWorkspaceTab('ws-A'));
     await settle();
 
-    expect(harness.getState().tabState.currentTabId).toBe('ws-A');
-    expect(Object.keys(harness.getState().tabState.openTabs)).toEqual(['ws-A', 'ws-B']);
-    expect(cleanupActions(harness)).toEqual([]);
+    expect(lifecycleActions(harness)).toEqual([
+      workspaceHydrationRequested('ws-A'),
+      workspaceUnmounted('ws-A'),
+      workspaceHydrationRequested('ws-B'),
+      workspaceUnmounted('ws-B'),
+      workspaceHydrationRequested('ws-A'),
+    ]);
     harness.task.cancel();
     await harness.task.toPromise();
   });
 
-  it('cleans up each workspace ID removed from the tab set once', async () => {
+  it('does not emit another lifecycle action for same-tab selection', async () => {
+    const harness = createHarness(['ws-A']);
+    await settle();
+    harness.dispatch(openWorkspaceTab('ws-A'));
+    await settle();
+
+    expect(lifecycleActions(harness)).toEqual([workspaceHydrationRequested('ws-A')]);
+    harness.task.cancel();
+    await harness.task.toPromise();
+  });
+
+  it('unmounts an actively closed workspace once before hydrating the next focus', async () => {
+    const harness = createHarness(['ws-A', 'ws-B']);
+    await settle();
+    harness.dispatch(closeWorkspaceTab('ws-B', 1));
+    await settle();
+
+    expect(lifecycleActions(harness)).toEqual([
+      workspaceHydrationRequested('ws-B'),
+      workspaceUnmounted('ws-B'),
+      workspaceHydrationRequested('ws-A'),
+    ]);
+    harness.task.cancel();
+    await harness.task.toPromise();
+  });
+
+  it('unmounts a background workspace when its tab closes', async () => {
     const harness = createHarness(['ws-A', 'ws-B']);
     await settle();
     harness.dispatch(closeWorkspaceTab('ws-A', 1));
     await settle();
 
-    expect(cleanupActions(harness)).toEqual([workspaceUnmounted('ws-A')]);
+    expect(lifecycleActions(harness)).toEqual([
+      workspaceHydrationRequested('ws-B'),
+      workspaceUnmounted('ws-A'),
+    ]);
     harness.task.cancel();
     await harness.task.toPromise();
   });
 
+  it('unmounts a background workspace when it is deleted', async () => {
+    const harness = createHarness(['ws-A', 'ws-B']);
+    await settle();
+    harness.dispatch(workspaceDeleted('ws-A', []));
+    await settle();
+
+    expect(lifecycleActions(harness)).toEqual([
+      workspaceHydrationRequested('ws-B'),
+      workspaceUnmounted('ws-A'),
+    ]);
+    harness.task.cancel();
+    await harness.task.toPromise();
+  });
+
+  it('hydrates a recreated same-ID workspace after background deletion', async () => {
+    const harness = createHarness(['ws-A', 'ws-B']);
+    await settle();
+    harness.dispatch(workspaceDeleted('ws-A', []));
+    await settle();
+    harness.dispatch(openWorkspaceTab('ws-A'));
+    await settle();
+
+    expect(lifecycleActions(harness)).toEqual([
+      workspaceHydrationRequested('ws-B'),
+      workspaceUnmounted('ws-A'),
+      workspaceUnmounted('ws-B'),
+      workspaceHydrationRequested('ws-A'),
+    ]);
+    harness.task.cancel();
+    await harness.task.toPromise();
+  });
+
+  it('does not unmount twice when active deletion is followed by tab removal', async () => {
+    const harness = createHarness(['ws-A', 'ws-B']);
+    await settle();
+    harness.dispatch(workspaceDeleted('ws-B', []));
+    await settle();
+    harness.dispatch(closeWorkspaceTab('ws-B', 1));
+    await settle();
+
+    expect(lifecycleActions(harness)).toEqual([
+      workspaceHydrationRequested('ws-B'),
+      workspaceUnmounted('ws-B'),
+      workspaceHydrationRequested('ws-A'),
+    ]);
+    harness.task.cancel();
+    await harness.task.toPromise();
+  });
 });
