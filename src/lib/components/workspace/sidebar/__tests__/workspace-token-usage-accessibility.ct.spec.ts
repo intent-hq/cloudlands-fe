@@ -238,6 +238,9 @@ test('renders the full reference table as a wide overlay from the real workspace
     breakdownItemVisibility,
     breakdownBars,
     breakdownDivider,
+    compositionAlignment,
+    breakdownAlignment,
+    breakdownText,
   ] = await Promise.all([
     details.boundingBox(),
     sidebar.boundingBox(),
@@ -327,6 +330,36 @@ test('renders the full reference table as a wide overlay from the real workspace
         secondSectionBorderLeftWidth: getComputedStyle(secondSection).borderLeftWidth,
       };
     }),
+    composition.evaluate((section) => {
+      const heading = section.querySelector('h4')!.getBoundingClientRect();
+      const bar = section.querySelector('div[aria-hidden="true"]')!.getBoundingClientRect();
+      const row = section.querySelector('.composition-row')!.getBoundingClientRect();
+      const swatch = section
+        .querySelector('.composition-metric [aria-hidden="true"]')!
+        .getBoundingClientRect();
+      const label = section
+        .querySelector('.composition-metric span.truncate')!
+        .getBoundingClientRect();
+      return {
+        headingLeft: heading.left,
+        barLeft: bar.left,
+        rowLeft: row.left,
+        swatchLabelGap: label.left - swatch.right,
+      };
+    }),
+    details.locator('.breakdown-section').evaluateAll((sections) =>
+      sections.map((section) => ({
+        headingLeft: section.querySelector('h4')!.getBoundingClientRect().left,
+        barLeft: section.querySelector('.breakdown-share-bar')!.getBoundingClientRect().left,
+        metadataLeft: section.querySelector('.breakdown-metadata')!.getBoundingClientRect().left,
+      })),
+    ),
+    details.locator('.breakdown-metadata > span:nth-child(n + 2)').evaluateAll((cells) =>
+      cells.map((cell) => ({
+        clientWidth: cell.clientWidth,
+        scrollWidth: cell.scrollWidth,
+      })),
+    ),
   ]);
 
   expect(detailsBox).not.toBeNull();
@@ -351,12 +384,41 @@ test('renders the full reference table as a wide overlay from the real workspace
   expect(modelBox!.height).toBeGreaterThanOrEqual(75);
   expect(modelBox!.height).toBeLessThanOrEqual(77);
   expect(breakdownDivider).toMatchObject({
-    top: 8,
-    bottom: 8,
-    height: 60,
+    top: 0,
+    bottom: 0,
+    height: 76,
     backgroundColor: 'rgba(30, 30, 30, 0.55)',
     secondSectionBorderLeftWidth: '0px',
   });
+  expect(compositionAlignment.swatchLabelGap).toBeCloseTo(12, 0);
+  expect(
+    Math.max(
+      compositionAlignment.headingLeft,
+      compositionAlignment.barLeft,
+      compositionAlignment.rowLeft,
+    ) -
+      Math.min(
+        compositionAlignment.headingLeft,
+        compositionAlignment.barLeft,
+        compositionAlignment.rowLeft,
+      ),
+  ).toBeLessThanOrEqual(1);
+  expect(
+    breakdownAlignment.every(
+      ({ headingLeft, barLeft, metadataLeft }) =>
+        Math.max(headingLeft, barLeft, metadataLeft) -
+          Math.min(headingLeft, barLeft, metadataLeft) <=
+        1,
+    ),
+  ).toBe(true);
+  expect(breakdownAlignment[0].headingLeft).toBeCloseTo(compositionAlignment.headingLeft, 0);
+  expect(breakdownAlignment[1].headingLeft).toBeCloseTo(
+    detailsBox!.x + detailsBox!.width / 2 + 16,
+    0,
+  );
+  expect(breakdownText.every(({ clientWidth, scrollWidth }) => scrollWidth <= clientWidth)).toBe(
+    true,
+  );
   expect(
     breakdownLists.every(
       ({ clientHeight, maxHeight, overflowY, scrollbarWidth, scrollHeight }) =>
