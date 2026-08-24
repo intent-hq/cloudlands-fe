@@ -89,7 +89,12 @@ export async function sendMessage(
       selectedText?: string;
       [key: string]: unknown;
     }>;
-    imageBlocks?: Array<{ type: 'image'; data: string; mimeType: string }>;
+    imageBlocks?: Array<{
+      type: 'image';
+      data?: string;
+      mimeType?: string;
+      attachmentId?: string;
+    }>;
     /**
      * Attachment-reference file blocks (PROTOCOL §5.5): the attachment
      * registry UUID plus chip metadata — no bytes cross the wire.
@@ -468,10 +473,7 @@ export async function sendMessage(
                         // as fresh as this echo, so seeding over it would
                         // re-add a just-drained row (monorepo#2481).
                         if (getAgentQueueEventSnapshotSeq(agentId) === queueSeqAtSend) {
-                          const existing = selectAgentQueueMessages.select(
-                            appStore.state,
-                            agentId,
-                          );
+                          const existing = selectAgentQueueMessages.select(appStore.state, agentId);
                           const next = existing.some((m) => m.id === queuedMessage.id)
                             ? existing
                             : [...existing, queuedMessage];

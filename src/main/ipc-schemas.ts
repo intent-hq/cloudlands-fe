@@ -193,8 +193,18 @@ export const WorkspaceCreateSchema = z.object({
       specialist: z.string().optional(), // Specialist or team coordinator ID (flexible to support any specialist)
       behaviorPrompt: z.string().optional(), // Custom behavior instructions (from team coordinator or specialist)
       contextReferences: z.array(z.any()).optional(),
+      // Inline arm (data + mimeType) or attachment-registry reference arm
+      // (attachmentId, monorepo#3338) — exactly one of data / attachmentId
+      // per block, enforced daemon-side.
       imageBlocks: z
-        .array(z.object({ type: z.literal('image'), data: z.string(), mimeType: z.string() }))
+        .array(
+          z.object({
+            type: z.literal('image'),
+            data: z.string().optional(),
+            mimeType: z.string().optional(),
+            attachmentId: z.string().optional(),
+          }),
+        )
         .optional(),
       metadata: z.record(z.any()).optional(),
     })

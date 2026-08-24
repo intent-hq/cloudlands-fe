@@ -1762,6 +1762,7 @@
   "chat_agentSubscriptions_wokenByEvents_tooltip": "El agente fue activado por eventos de suscripción:",
   "chat_agentSubscriptions_wokenUp_label": "Activado",
   "chat_attachmentPlacement_tooLargeRemote_error": "{name} es demasiado grande para adjuntar — el límite es de {maxGb} GB",
+  "chat_imagePlacement_failed_error": "No se pudo adjuntar {names} — elimina la imagen o inténtalo de nuevo",
   "chat_attachmentPreview_placementFailed_tooltip": "No se pudo adjuntar {name} — reintenta o elimínalo para enviar",
   "chat_attachmentPreview_remove_ariaLabel": "Quitar {name}",
   "chat_attachmentPreview_removeAttachment_ariaLabel": "Quitar archivo adjunto",

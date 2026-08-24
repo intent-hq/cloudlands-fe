@@ -51,8 +51,8 @@ export interface QueuedMessage {
   queuedAt: string;
   /** Optional context items attached to the message */
   contextItems?: QueuedMessageContextItem[];
-  /** Optional image blocks attached to the message */
-  imageBlocks?: Array<{ type: 'image'; data: string; mimeType: string }>;
+  /** Optional image blocks attached to the message (inline data or attachment reference) */
+  imageBlocks?: Array<{ type: 'image'; data?: string; mimeType?: string; attachmentId?: string }>;
   /** Optional attachment-reference file blocks attached to the message */
   fileBlocks?: Array<{
     type: 'file';

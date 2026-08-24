@@ -49,6 +49,7 @@
   } from './message-display-utils';
   import ImageLightbox from '$lib/components/ui/ImageLightbox.svelte';
   import EditRegenerateConfirmDialog from './EditRegenerateConfirmDialog.svelte';
+  import { resolveAttachmentImageUrl } from './attachment-image-url';
   import { isImageBlock } from '$shared/types/content-block.guards';
   import type { ContentBlock } from '$shared/types/content-block';
   import AgentMessageAttributionHeader from './AgentMessageAttributionHeader.svelte';
@@ -783,7 +784,8 @@
 
   // Extract image blocks from contentBlocks, substituting cached full blocks
   // for slim-truncated ones (§5.5) so a hydrated attachment renders/opens at
-  // full resolution.
+  // full resolution. Includes attachment-reference blocks (attachmentId, no
+  // bytes — monorepo#3338); those resolve to workspace-file:// URLs below.
   const imageBlocks = $derived.by(() => {
     if (!message?.contentBlocks || !Array.isArray(message.contentBlocks)) {
       return [];
@@ -792,8 +794,35 @@
       message.contentBlocks,
       message?.id ?? messageId,
       $hydratedBlocks$,
-    ).filter((block: any) => block.type === 'image' && block.data && block.mimeType);
+    ).filter(
+      (block: any) =>
+        block.type === 'image' && ((block.data && block.mimeType) || block.attachmentId),
+    );
   });
+
+  // Resolved workspace-file:// URLs for attachment-reference image blocks,
+  // keyed by attachmentId. Registry rows are immutable so each id resolves
+  // once (module-level cache dedupes across messages); a failed resolve
+  // leaves the key unset and the thumbnail renders a placeholder.
+  let referenceImageUrls = $state<Record<string, string>>({});
+  $effect(() => {
+    const wsId = getOwningWorkspaceId();
+    if (!wsId) return;
+    for (const block of imageBlocks) {
+      const attachmentId = (block as ContentBlock).attachmentId;
+      if (!attachmentId || referenceImageUrls[attachmentId] !== undefined) continue;
+      void resolveAttachmentImageUrl(wsId, attachmentId).then((url) => {
+        if (url) referenceImageUrls = { ...referenceImageUrls, [attachmentId]: url };
+      });
+    }
+  });
+
+  /** Renderable src for an image block: inline data URL or resolved reference URL. */
+  function imageBlockSrc(block: ContentBlock): string | null {
+    if (block.attachmentId) return referenceImageUrls[block.attachmentId] ?? null;
+    if (block.data && block.mimeType) return `data:${block.mimeType};base64,${block.data}`;
+    return null;
+  }
 
   // Truncated attachment awaiting hydration before its lightbox opens.
   // Keeps the pre-click thumbnail block so the settle effect can still open
@@ -813,13 +842,27 @@
 
   // Open image in lightbox. A slim-truncated attachment (thumbnail-only data,
   // §5.5) first fetches the original via agent.getMessageBlock; the effect
-  // below opens the lightbox once hydration settles.
+  // below opens the lightbox once hydration settles. Attachment-reference
+  // blocks open their resolved workspace-file:// URL directly (full bytes
+  // served by the protocol handler — no hydration round-trip needed).
   function openImageLightbox(
-    imageBlock: ContentBlock & { data: string; mimeType: string },
+    imageBlock: ContentBlock,
     openerElement: HTMLButtonElement,
     index: number = 0,
   ) {
     if (readOnly) return;
+    if (imageBlock.attachmentId) {
+      const url = referenceImageUrls[imageBlock.attachmentId];
+      if (!url) return;
+      lightboxImageUrl = url;
+      lightboxImageName =
+        imageBlock.fileName ||
+        m.chat_chatMessage_attachedImage_fallback({ number: formatInteger(index + 1) });
+      lightboxOpenerElement = openerElement;
+      lightboxOpen = true;
+      return;
+    }
+    if (!isImageBlock(imageBlock)) return;
     const hydrationMessageId = message?.id ?? messageId;
     if (imageBlock.dataTruncated === true && agentId && hydrationMessageId && imageBlock.id) {
       pendingLightboxHydration = {
@@ -828,9 +871,7 @@
         index,
         thumbnailBlock: imageBlock,
       };
-      appStore.dispatch(
-        messageBlockHydrationRequested(agentId, hydrationMessageId, imageBlock.id),
-      );
+      appStore.dispatch(messageBlockHydrationRequested(agentId, hydrationMessageId, imageBlock.id));
       return;
     }
     lightboxImageUrl = `data:${imageBlock.mimeType};base64,${imageBlock.data}`;
@@ -1109,7 +1150,19 @@
     // Extract image blocks from contentBlocks and add as context items
     if (message?.contentBlocks && Array.isArray(message.contentBlocks)) {
       message.contentBlocks.forEach((block: any, index: number) => {
-        if (block.type === 'image' && block.data && block.mimeType) {
+        if (block.type === 'image' && block.attachmentId) {
+          // Attachment-reference image block (monorepo#3338): restore as a
+          // placed image item (UUID + mime marker, no bytes) so the edit
+          // re-sends the same reference without re-uploading.
+          contextItemsForEdit.push({
+            id: `image-attachment-${block.attachmentId}`,
+            type: 'file',
+            label: `Image ${index + 1}`,
+            description: block.mimeType || 'image',
+            attachmentId: block.attachmentId,
+            imageMimeType: block.mimeType || 'image/png',
+          });
+        } else if (block.type === 'image' && block.data && block.mimeType) {
           contextItemsForEdit.push({
             id: `image-${message.id}-${index}`,
             type: 'file',
@@ -1171,15 +1224,26 @@
   // handleCancelEdit exits edit mode.
   function handleConfirmEditSubmit() {
     showEditConfirm = false;
+    // An attachmentId item marked as an image (imageMimeType) re-sends as an
+    // image-reference block (monorepo#3338); inline imageData items re-send
+    // inline (the edit saga places them and swaps to references).
     const imageBlocks: ImageBlock[] = editContextItems
-      .filter((item) => item.imageData && item.imageMimeType)
-      .map((item) => ({
-        type: 'image' as const,
-        data: item.imageData!,
-        mimeType: item.imageMimeType!,
-      }));
+      .filter((item) => (item.imageData || item.attachmentId) && item.imageMimeType)
+      .map((item) =>
+        item.attachmentId
+          ? {
+              type: 'image' as const,
+              attachmentId: item.attachmentId,
+              mimeType: item.imageMimeType!,
+            }
+          : {
+              type: 'image' as const,
+              data: item.imageData!,
+              mimeType: item.imageMimeType!,
+            },
+      );
     const fileBlocks: FileBlock[] = editContextItems
-      .filter((item) => item.attachmentId)
+      .filter((item) => item.attachmentId && !item.imageMimeType)
       .map((item) => ({
         type: 'file' as const,
         attachmentId: item.attachmentId!,
@@ -1517,15 +1581,14 @@
               {#if imageBlocks.length > 0 && !isSticky}
                 <div class="flex flex-wrap gap-1.5 mt-2">
                   {#each imageBlocks as imageBlock, i (i)}
+                    {@const src = imageBlockSrc(imageBlock)}
                     <button
                       type="button"
                       class="relative group/image p-0 border-0 bg-transparent cursor-pointer overflow-hidden w-10 h-10 shrink-0 focus:outline-none focus:ring-2 focus:ring-primary rounded"
                       class:animate-pulse={isAttachmentHydrationLoading(imageBlock.id)}
                       aria-busy={isAttachmentHydrationLoading(imageBlock.id)}
                       onclick={(e) => {
-                        if (isImageBlock(imageBlock)) {
-                          openImageLightbox(imageBlock, e.currentTarget, i);
-                        }
+                        openImageLightbox(imageBlock, e.currentTarget, i);
                       }}
                       onkeydown={(e) => {
                         if (e.key === 'Enter' || e.key === ' ') {
@@ -1538,11 +1601,19 @@
                         total: formatInteger(imageBlocks.length),
                       })}
                     >
-                      <img
-                        src="data:{imageBlock.mimeType};base64,{imageBlock.data}"
-                        alt={m.chat_chatMessage_attachedImage_alt({ number: formatInteger(i + 1) })}
-                        class="w-full h-full rounded border border-border object-cover hover:opacity-90 transition-opacity"
-                      />
+                      {#if src}
+                        <img
+                          {src}
+                          alt={m.chat_chatMessage_attachedImage_alt({
+                            number: formatInteger(i + 1),
+                          })}
+                          class="w-full h-full rounded border border-border object-cover hover:opacity-90 transition-opacity"
+                        />
+                      {:else}
+                        <!-- Reference still resolving (or its file is gone):
+                         neutral placeholder tile instead of a broken img. -->
+                        <div class="w-full h-full rounded border border-border bg-muted/50"></div>
+                      {/if}
                     </button>
                   {/each}
                 </div>

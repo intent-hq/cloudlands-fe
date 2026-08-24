@@ -1762,6 +1762,7 @@
   "chat_agentSubscriptions_wokenByEvents_tooltip": "Agent wurde durch Abonnement-Ereignisse geweckt:",
   "chat_agentSubscriptions_wokenUp_label": "Aufgeweckt",
   "chat_attachmentPlacement_tooLargeRemote_error": "{name} ist zu groß zum Anhängen — das Limit beträgt {maxGb} GB",
+  "chat_imagePlacement_failed_error": "{names} konnte nicht angehängt werden — entfernen Sie das Bild oder versuchen Sie es erneut",
   "chat_attachmentPreview_placementFailed_tooltip": "Anhängen von {name} fehlgeschlagen — erneut versuchen oder entfernen, um zu senden",
   "chat_attachmentPreview_remove_ariaLabel": "{name} entfernen",
   "chat_attachmentPreview_removeAttachment_ariaLabel": "Anhang entfernen",

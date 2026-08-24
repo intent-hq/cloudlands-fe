@@ -1762,6 +1762,7 @@
   "chat_agentSubscriptions_wokenByEvents_tooltip": "エージェントはサブスクリプションイベントで起動されました:",
   "chat_agentSubscriptions_wokenUp_label": "起動済み",
   "chat_attachmentPlacement_tooLargeRemote_error": "{name} は大きすぎて添付できません — 上限は {maxGb} GB です",
+  "chat_imagePlacement_failed_error": "{names} を添付できませんでした — 画像を削除するか、もう一度お試しください",
   "chat_attachmentPreview_placementFailed_tooltip": "{name} の添付に失敗しました — 再試行するか削除してから送信してください",
   "chat_attachmentPreview_remove_ariaLabel": "{name} を削除",
   "chat_attachmentPreview_removeAttachment_ariaLabel": "添付ファイルを削除",
