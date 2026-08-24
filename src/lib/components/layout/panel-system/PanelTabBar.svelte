@@ -1268,7 +1268,7 @@
 {#snippet contentActionsDivider()}
   {#if contentActions?.primary}
     <span
-      class="mx-1 h-4 border-l border-border/70"
+      class="mx-1 h-4 border-l border-border"
       aria-hidden="true"
       data-panel-content-actions-divider
     ></span>
@@ -1277,7 +1277,7 @@
 
 {#snippet panelControlsDivider()}
   <span
-    class="mx-1 h-4 border-l border-border/70"
+    class="mx-1 h-4 border-l border-border"
     aria-hidden="true"
     data-panel-content-actions-divider
     data-panel-controls-divider
@@ -1351,9 +1351,11 @@
             count: tabs.length,
           })}
           <Tooltip content={selectorLabel} side="bottom" delayDuration={300}>
-            <button
+            <Button
               {...props}
-              type="button"
+              variant="plain"
+              size="icon-sm"
+              iconOnly
               class={cn(
                 'relative flex size-7 shrink-0 items-center justify-center rounded-sm border-0 bg-transparent p-0 text-muted-foreground shadow-none outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background',
                 inactiveAttentionCount > 0 && 'text-foreground',
@@ -1369,7 +1371,7 @@
                 viewBox="0 0 14 14"
                 fill="none"
                 aria-hidden="true"
-                class="pane-stack-glyph shrink-0"
+                class="pane-stack-glyph size-3.5! shrink-0"
                 data-pane-stack-glyph
                 data-pane-stack-visible-lines={Math.min(tabs.length, MAX_VISIBLE_PANE_STACK_LINES)}
                 data-pane-stack-total={tabs.length}
@@ -1402,7 +1404,7 @@
                   aria-hidden="true"
                 ></span>
               {/if}
-            </button>
+            </Button>
           </Tooltip>
         {/snippet}
       </Menu.Trigger>

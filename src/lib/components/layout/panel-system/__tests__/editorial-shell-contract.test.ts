@@ -112,7 +112,9 @@ describe('editorial workspace shell presentation contract', () => {
 
     expect(panel).toContain('Tabless panels only split along the horizontal stack.');
     expect(layout).toContain("if (direction !== 'horizontal') return;");
-    expect(layout).toContain("position,\n      'horizontal',");
+    expect(layout).toMatch(
+      /moveTabToSplitLevel\(\s*draggedPane\.tabId,\s*draggedPane\.panelId,\s*\[\],\s*placement\.position,\s*'horizontal',\s*\)/,
+    );
     expect(presets).not.toContain("id: 'split-vertical'");
   });
 

@@ -172,11 +172,17 @@ describe('workspace sidebar hierarchy presentation contract', () => {
     expect(sidebar).toContain('m.ui_openCombo_openInApp_tooltip()');
     expect(sidebar).not.toContain('m.ui_openCombo_open_label()');
     expect(sidebar).not.toContain('faChevronDown');
-    expect(sidebar).toContain('handleOpenAgentInPanel(agent.id);');
-    expect(sidebar).toContain('onSelect={({ agentId }) => handleOpenAgentInPanel(agentId)}');
+    expect(sidebar).toContain('const sourcePanelId = selectFocusedPanelId.select(');
+    expect(sidebar).toContain('openAgentTabRequested(workspaceId, {');
+    expect(sidebar).toContain('sourcePanelId,');
+    expect(sidebar).toContain('handleOpenAgentInPanel(agent.id, event);');
+    expect(sidebar).toContain('onSelect={({ agentId, event }) =>');
+    expect(sidebar).toContain('handleOpenAgentInPanel(agentId, event)}');
     expect(sidebar).toContain('onOpenAgent={handleOpenAgentInPanel}');
     expect(sidebar).toContain('onSelectAgent={handleOpenAgentInPanel}');
-    expect(sidebar).toContain('onclick={() => handleOpenNoteInPanel(note.id as string)}');
+    expect(sidebar).toContain(
+      'onclick={(event) => handleOpenNoteInPanel(note.id as string, event)}',
+    );
     expect(sidebar).toContain('rounded-sm outline-none transition-colors');
     expect(sidebar).toContain('rounded-lg border border-border bg-sidebar');
     expect(sidebar).not.toContain('focus-visible:ring-0');

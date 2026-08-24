@@ -187,10 +187,17 @@ for (const stackCount of stackCounts) {
     await expect(listTrigger.locator('[data-pane-stack-line]')).toHaveCount(stackCount);
     const selectorStyle = await listTrigger.evaluate((node) => {
       const style = getComputedStyle(node);
-      return { backgroundColor: style.backgroundColor, borderWidth: style.borderWidth };
+      const glyphStyle = getComputedStyle(node.querySelector('[data-pane-stack-glyph]')!);
+      return {
+        backgroundColor: style.backgroundColor,
+        borderWidth: style.borderWidth,
+        glyphWidth: glyphStyle.width,
+        glyphHeight: glyphStyle.height,
+      };
     });
     expect(selectorStyle.backgroundColor).toBe('rgba(0, 0, 0, 0)');
     expect(selectorStyle.borderWidth).toBe('0px');
+    expect([selectorStyle.glyphWidth, selectorStyle.glyphHeight]).toEqual(['14px', '14px']);
 
     const boxes = await Promise.all(
       [host, header, active, navigation, moreTrigger, listTrigger, panelControls].map((locator) =>

@@ -39,13 +39,13 @@ describe('sendWorkspaceCommand', () => {
     const mainSource = readFileSync(resolve(process.cwd(), 'src/main/index.ts'), 'utf8');
 
     expect(mainSource).toMatch(
-      /label: m\.menu_select_previous_tab\(\),[\s\S]*?accelerator: 'CmdOrCtrl\+PageUp',[\s\S]*?registerAccelerator: false/,
+      /label: m\.menu_select_previous_tab\(\),\s*accelerator: 'CmdOrCtrl\+\[',[\s\S]*?registerAccelerator: false/,
     );
     expect(mainSource).toMatch(
-      /label: m\.menu_select_next_tab\(\),[\s\S]*?accelerator: 'CmdOrCtrl\+PageDown',[\s\S]*?registerAccelerator: false/,
+      /label: m\.menu_select_next_tab\(\),\s*accelerator: 'CmdOrCtrl\+\]',[\s\S]*?registerAccelerator: false/,
     );
-    expect(mainSource).not.toContain("accelerator: 'CmdOrCtrl+Shift+['");
-    expect(mainSource).not.toContain("accelerator: 'CmdOrCtrl+Shift+]'");
+    expect(mainSource).not.toContain("accelerator: 'CmdOrCtrl+PageUp'");
+    expect(mainSource).not.toContain("accelerator: 'CmdOrCtrl+PageDown'");
   });
 
   it('emits every workspace menu channel with the exact workspace payload', () => {
