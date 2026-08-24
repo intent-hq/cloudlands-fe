@@ -9,7 +9,7 @@
   destructive action gated behind a confirmation dialog; confirming hands off
   to `onDismiss` — the host calls `agent.dismissQuestions`, which persists
   the dismissal (survives reload) and releases the question hold. On the last
-  question Send hands the full answers array to `onComplete`. Single-question
+  question an option submits immediately; typed text uses Send. Single-question
   wizards hide the step counter, progress segments, and Back button — none
   carry information when there is only one step.
 -->
@@ -54,6 +54,9 @@
   }
 
   let idx = $state(0);
+  // The host normally unmounts this component after completion. Keep a local,
+  // synchronous latch so rapid clicks cannot complete or replace an answer twice.
+  let completed = $state(false);
   // Dismiss is destructive and persistent — gate it behind a confirm dialog.
   let confirmingDismiss = $state(false);
   // Intentional initial capture: the host remounts the wizard ({#key} on the
@@ -67,8 +70,9 @@
   const isMulti = $derived(!!current?.multiSelect);
   // Single-question wizards drop the counter, segments, and Back button.
   const multiStep = $derived(questions.length > 1);
-  // Single-select mid-flow advances on selection — no Next button.
-  const showNext = $derived(isMulti || isLast);
+  // Single-select options submit immediately. The final Send action remains
+  // available only for typed custom answers; multi-select stays explicit.
+  const showNext = $derived(isMulti || (isLast && draft.text.trim().length > 0));
   const nextDisabled = $derived(
     (isMulti || isLast) && draft.sel.length === 0 && !draft.text.trim(),
   );
@@ -98,6 +102,8 @@
 
   function advance() {
     if (idx >= questions.length - 1) {
+      if (completed) return;
+      completed = true;
       onComplete?.(buildAnswers());
       return;
     }
@@ -105,24 +111,25 @@
   }
 
   function selectOption(oi: number) {
-    if (optionsLocked) return;
+    if (optionsLocked || completed) return;
     if (isMulti) {
       draft.sel = draft.sel.includes(oi) ? draft.sel.filter((x) => x !== oi) : [...draft.sel, oi];
       draft.skipped = false;
       return;
     }
-    draft.sel = draft.sel.includes(oi) ? [] : [oi];
+    draft.sel = [oi];
     draft.skipped = false;
-    if (isLast) return;
     advance();
   }
 
   function handleNext() {
+    if (completed) return;
     if (nextDisabled) return;
     advance();
   }
 
   function handleSkip() {
+    if (completed) return;
     draft.sel = [];
     draft.text = '';
     draft.skipped = true;
@@ -130,6 +137,7 @@
   }
 
   function handleBack() {
+    if (completed) return;
     idx = Math.max(idx - 1, 0);
   }
 
@@ -141,7 +149,7 @@
 </script>
 
 <div
-  class="min-w-0 overflow-hidden rounded-(--radius-large) border border-border bg-card shadow-(--elevation-raised)"
+  class="min-w-0 overflow-hidden rounded-(--radius-large) border-0 bg-card shadow-(--elevation-raised)"
   data-question-wizard
   data-testid="question-wizard-card"
 >
@@ -221,7 +229,7 @@
               <button
                 type="button"
                 aria-pressed={selected}
-                disabled={optionsLocked}
+                disabled={optionsLocked || completed}
                 data-question-option
                 data-selected={selected}
                 class="flex min-w-0 w-full items-start gap-2.5 border-0 bg-transparent px-2 py-2.5 text-left font-[inherit] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring {selected

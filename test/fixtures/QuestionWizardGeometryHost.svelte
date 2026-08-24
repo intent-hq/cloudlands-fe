@@ -1,5 +1,7 @@
 <script lang="ts">
-  import QuestionWizard from '$lib/components/chat/questions/QuestionWizard.svelte';
+  import QuestionWizard, {
+    type QuestionAnswer,
+  } from '$lib/components/chat/questions/QuestionWizard.svelte';
   import type { Question } from '$shared/types/question-resource';
 
   let {
@@ -37,11 +39,20 @@
       multiSelect: multiSelect ?? optionCount > 1,
     })),
   );
+  let completionCount = $state(0);
+  let completedLabels = $state('');
+
+  function handleComplete(answers: QuestionAnswer[]) {
+    completionCount += 1;
+    completedLabels = answers.flatMap((answer) => answer.selectedLabels).join(',');
+  }
 </script>
 
 <main
   class="flex h-full min-h-0 w-full min-w-0 flex-col bg-background text-foreground"
   data-testid="panel-boundary"
+  data-completion-count={completionCount}
+  data-completed-labels={completedLabels}
 >
   <div class="min-h-0 flex-1 overflow-y-auto" data-testid="chat-scroll-region">
     <div style:height={longChat ? '960px' : '24px'} data-testid="transcript-content"></div>
@@ -51,7 +62,7 @@
     data-testid="conversation-composer-boundary"
   >
     <div class="w-full" data-testid="question-wizard-slot">
-      <QuestionWizard {questions} {collapsed} onDismiss={() => {}} />
+      <QuestionWizard {questions} {collapsed} onComplete={handleComplete} onDismiss={() => {}} />
     </div>
   </div>
   <div style:height={`${safeArea}px`} class="shrink-0" data-testid="platform-safe-area"></div>

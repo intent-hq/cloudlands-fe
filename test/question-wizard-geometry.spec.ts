@@ -82,6 +82,20 @@ async function readGeometry(page: Page) {
     const cardStyle = getComputedStyle(
       document.querySelector<HTMLElement>('[data-testid="question-wizard-card"]')!,
     );
+    const inputBoundary = document.querySelector<HTMLElement>(
+      '[data-testid="question-wizard-card"] input',
+    )?.parentElement;
+    const indicator = document.querySelector<HTMLElement>('[data-option-indicator]');
+    const borderWidths = (node: HTMLElement | null | undefined) => {
+      if (!node) return null;
+      const style = getComputedStyle(node);
+      return [
+        style.borderTopWidth,
+        style.borderRightWidth,
+        style.borderBottomWidth,
+        style.borderLeftWidth,
+      ];
+    };
     const boundaryStyle = getComputedStyle(
       document.querySelector<HTMLElement>('[data-testid="conversation-composer-boundary"]')!,
     );
@@ -115,7 +129,11 @@ async function readGeometry(page: Page) {
         : null,
       safeArea: safeArea.height,
       boxShadow: cardStyle.boxShadow,
-      borderBottomWidth: cardStyle.borderBottomWidth,
+      cardBorderWidths: borderWidths(
+        document.querySelector<HTMLElement>('[data-testid="question-wizard-card"]'),
+      ),
+      inputBorderWidths: borderWidths(inputBoundary),
+      indicatorBorderWidths: borderWidths(indicator),
       boundaryOverflow: `${boundaryStyle.overflowX}/${boundaryStyle.overflowY}`,
       header: headerNode
         ? {
@@ -146,7 +164,7 @@ function expectFlushGeometry(geometry: Awaited<ReturnType<typeof readGeometry>>,
   expect(geometry.card.left).toBeGreaterThanOrEqual(geometry.boundary.left - 1);
   expect(geometry.card.right).toBeLessThanOrEqual(geometry.boundary.right + 1);
   expect(geometry.boxShadow).not.toBe('none');
-  expect(geometry.borderBottomWidth).toBe('1px');
+  expect(geometry.cardBorderWidths).toEqual(['0px', '0px', '0px', '0px']);
   expect(geometry.boundaryOverflow).toBe('visible/visible');
 }
 
@@ -176,6 +194,10 @@ test('expanded card is flush with a compact symmetric footer across rendered geo
     expect(geometry.card.bottom - geometry.footer!.bottom).toBeLessThanOrEqual(2);
     expect(geometry.footer!.topInset).toBeCloseTo(geometry.footer!.bottomInset, 1);
     expect(geometry.footer!.topInset).toBeGreaterThanOrEqual(8);
+    expect(geometry.inputBorderWidths).toEqual(['1px', '1px', '1px', '1px']);
+    if ((scenario.props.optionCount ?? 3) > 1) {
+      expect(geometry.indicatorBorderWidths).toEqual(['1px', '1px', '1px', '1px']);
+    }
   }
 });
 
@@ -219,7 +241,7 @@ test('compact header stays on one row and footer actions share typography', asyn
   }
 });
 
-test('single-select rows use native full-row keyboard selection without radio indicators', async ({
+test('single-select rows use native full-row keyboard submission without radio indicators', async ({
   page,
 }) => {
   await mountWizard(
@@ -235,11 +257,28 @@ test('single-select rows use native full-row keyboard selection without radio in
 
   await options.nth(0).focus();
   await page.keyboard.press('Enter');
+  await expect(page.getByTestId('panel-boundary')).toHaveAttribute('data-completion-count', '1');
+  await expect(page.getByTestId('panel-boundary')).toHaveAttribute(
+    'data-completed-labels',
+    'Option 1',
+  );
   await expect(options.nth(0)).toHaveAttribute('aria-pressed', 'true');
+  await expect(options.nth(0)).toBeDisabled();
+  await expect(options.nth(1)).toBeDisabled();
 
+  await mountWizard(
+    page,
+    { width: 390, height: 560 },
+    { optionCount: 2, questionCount: 1, multiSelect: false },
+    { theme: 'dark' },
+  );
   await options.nth(1).focus();
   await page.keyboard.press('Space');
-  await expect(options.nth(0)).toHaveAttribute('aria-pressed', 'false');
+  await expect(page.getByTestId('panel-boundary')).toHaveAttribute('data-completion-count', '1');
+  await expect(page.getByTestId('panel-boundary')).toHaveAttribute(
+    'data-completed-labels',
+    'Option 2',
+  );
   await expect(options.nth(1)).toHaveAttribute('aria-pressed', 'true');
 
   const widths = await options.evaluateAll((nodes) =>
