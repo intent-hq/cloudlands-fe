@@ -4,6 +4,21 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.87.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.86.5...v2.87.0) (2026-08-24)
+
+
+### 🚀 Features
+
+* run task uses the specialists.default daemon setting ([#1640](https://github.com/intent-hq/cloudlands-fe/issues/1640)) ([591f0c0](https://github.com/intent-hq/cloudlands-fe/commit/591f0c0f227842379a0c929e08344226d2326e7a))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.7.49 ([#1643](https://github.com/intent-hq/cloudlands-fe/issues/1643)) ([6eb89b1](https://github.com/intent-hq/cloudlands-fe/commit/6eb89b1da29fa0809fbbc376f77676208b257bdb))
+* bump intentd sidecar to v0.7.50 ([#1645](https://github.com/intent-hq/cloudlands-fe/issues/1645)) ([5e6b2dc](https://github.com/intent-hq/cloudlands-fe/commit/5e6b2dc5d2fecaa73a2d5686e68cb060a8124345))
+* close only the lightbox when clicking its backdrop above a modal dialog ([#1639](https://github.com/intent-hq/cloudlands-fe/issues/1639)) ([7d00722](https://github.com/intent-hq/cloudlands-fe/commit/7d0072274d46045fe4d67a207c51ec0a1aa30657))
+* require double tildes for strikethrough in marked pipelines ([#1641](https://github.com/intent-hq/cloudlands-fe/issues/1641)) ([803aced](https://github.com/intent-hq/cloudlands-fe/commit/803aced8c8b18e3ec75fca02aff6865551060888))
+
 ## [2.86.5](https://github.com/intent-hq/cloudlands-fe/compare/v2.86.4...v2.86.5) (2026-08-24)
 
 
