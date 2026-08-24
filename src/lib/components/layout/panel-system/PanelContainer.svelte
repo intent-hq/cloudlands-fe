@@ -74,9 +74,8 @@
     onUpdateSizes?: (nodePath: number[], sizes: number[]) => void;
     /** Commit a fixed-width proportional root-divider resize. */
     onResizeRootDivider?: (
-      panelIndex: number,
-      requestedDelta: number,
       previousPanelWidths: readonly number[],
+      finalPanelWidths: readonly number[],
     ) => void;
     /** Handler for dropping a tab to create a split */
     onTabDropToSplit?: (
@@ -390,6 +389,23 @@
     });
   }
 
+  function measureRootResizeChildWidths(): number[] | null {
+    if (
+      node.type !== 'split' ||
+      !resizesRootDivider ||
+      !containerRef ||
+      rootResizeInlineScale <= 0
+    ) {
+      return null;
+    }
+    const widths = Array.from(
+      containerRef.querySelectorAll<HTMLElement>(':scope > .panel-split-child'),
+    ).map((element) => element.getBoundingClientRect().width / rootResizeInlineScale);
+    return widths.length === node.children.length && widths.every((width) => width > 0)
+      ? widths
+      : null;
+  }
+
   function handleResizeStart() {
     if (resizeCommitMotionFrame !== null) cancelAnimationFrame(resizeCommitMotionFrame);
     resizeCommitMotionFrame = null;
@@ -402,29 +418,23 @@
       resizesRootDivider && renderedContainerWidth > 0 && layoutContainerWidth > 0
         ? renderedContainerWidth / layoutContainerWidth
         : 1;
-    rootResizeStartChildWidths =
-      resizesRootDivider && containerRef
-        ? Array.from(containerRef.querySelectorAll<HTMLElement>(':scope > .panel-split-child')).map(
-            (el) => el.getBoundingClientRect().width / rootResizeInlineScale,
-          )
-        : null;
+    rootResizeStartChildWidths = measureRootResizeChildWidths();
     rootResizeNextChildWidths = rootResizeStartChildWidths ? [...rootResizeStartChildWidths] : null;
     rootResizeRequestedDelta = 0;
   }
 
-  function handleResizeEnd(panelIndex?: number) {
+  function handleResizeEnd() {
     const committedSizes = liveResizeSizes;
     const previousPanelWidths = rootResizeStartChildWidths;
-    const nextPanelWidths = rootResizeNextChildWidths;
+    const nextPanelWidths = measureRootResizeChildWidths() ?? rootResizeNextChildWidths;
     const wasRootResize = resizesRootDivider && previousPanelWidths !== null;
     suppressMotionThroughResizeCommit();
     if (
       wasRootResize &&
       nextPanelWidths !== null &&
-      panelIndex !== undefined &&
       nextPanelWidths.some((width, index) => width !== previousPanelWidths[index])
     ) {
-      onResizeRootDivider?.(panelIndex, rootResizeRequestedDelta, previousPanelWidths);
+      onResizeRootDivider?.(previousPanelWidths, nextPanelWidths);
     }
     liveResizeSizes = null;
     isResizing = false;
@@ -604,8 +614,8 @@
     }
   }
 
-  function handleCornerResizeEnd(handleIndex: number) {
-    handleResizeEnd(handleIndex);
+  function handleCornerResizeEnd(_handleIndex: number) {
+    handleResizeEnd();
   }
 </script>
 
@@ -742,7 +752,7 @@
             immediateResize={resizesRootDivider}
             onResizeStart={handleResizeStart}
             onResize={(delta) => handleResize(item.index, delta)}
-            onResizeEnd={() => handleResizeEnd(item.index)}
+            onResizeEnd={handleResizeEnd}
             onTabDropToHandle={onTabDropToSplitHandle}
           />
           <!-- Corner handles at intersection points -->

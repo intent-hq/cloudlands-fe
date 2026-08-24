@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { resizePanelWidthsAtDivider } from '../../../../shared/panel-layout-sizing';
 import {
   appendHorizontalColumn,
   countHorizontalPanelColumns,
@@ -14,7 +15,7 @@ import {
   removePanelPreservingHorizontalWidths,
   resizePanelTreeAtHorizontalIndex,
   resizePanelTreeRightEdge,
-  resizeRootHorizontalDivider,
+  commitRootHorizontalPanelWidths,
 } from './panel-layout-tabless';
 
 describe('tabless panel layout', () => {
@@ -540,9 +541,11 @@ describe('tabless panel layout', () => {
         })),
       };
 
-      const resized = resizeRootHorizontalDivider(root, panelIndex, delta, widths);
+      const preview = resizePanelWidthsAtDivider(widths, panelIndex, delta);
+      const resized = commitRootHorizontalPanelWidths(root, widths, preview.panelWidths);
 
-      expect(resized.acceptedDelta).toBe(delta);
+      expect(preview.acceptedDelta).toBe(delta);
+      expect(resized.changed).toBe(true);
       expect(resized.panelWidths).toEqual(expected.map((width) => expect.closeTo(width, 8)));
       expect(resized.panelWidths.reduce((sum, width) => sum + width, 0)).toBeCloseTo(1184, 8);
       expect(resized.node).toMatchObject({
@@ -551,7 +554,7 @@ describe('tabless panel layout', () => {
     },
   );
 
-  it('water-fills minimum widths and applies only the accepted delta', () => {
+  it('commits water-filled minimum widths exactly', () => {
     const widths = [400, 120, 480];
     const root = {
       type: 'split' as const,
@@ -563,9 +566,9 @@ describe('tabless panel layout', () => {
       })),
     };
 
-    const resized = resizeRootHorizontalDivider(root, 0, 500, widths);
+    const resized = commitRootHorizontalPanelWidths(root, widths, [800, 100, 100]);
 
-    expect(resized.acceptedDelta).toBe(400);
+    expect(resized.changed).toBe(true);
     expect(resized.panelWidths).toEqual([800, 100, 100]);
   });
 
@@ -581,9 +584,10 @@ describe('tabless panel layout', () => {
       })),
     };
 
-    const resized = resizeRootHorizontalDivider(root, 0, 0, widths);
+    const finalWidths = [100, 426.31578947, 473.68421053];
+    const resized = commitRootHorizontalPanelWidths(root, widths, finalWidths);
 
-    expect(resized.acceptedDelta).toBe(0);
+    expect(resized.changed).toBe(true);
     expect(resized.panelWidths).toEqual([
       100,
       expect.closeTo(426.31578947, 8),
@@ -605,10 +609,10 @@ describe('tabless panel layout', () => {
       ],
     };
 
-    expect(resizeRootHorizontalDivider(root, 0, 100, [400, 400])).toEqual({
+    expect(commitRootHorizontalPanelWidths(root, [400, 400], [500, 300])).toEqual({
       node: root,
       panelWidths: [400, 400],
-      acceptedDelta: 0,
+      changed: false,
     });
   });
 

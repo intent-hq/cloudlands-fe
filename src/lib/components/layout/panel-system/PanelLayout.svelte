@@ -844,12 +844,11 @@
   }
 
   function handleResizeRootDivider(
-    panelIndex: number,
-    requestedDelta: number,
     previousPanelWidths: readonly number[],
+    finalPanelWidths: readonly number[],
   ) {
     markPristinePanelsTouched();
-    layoutManager.resizeRootDivider(panelIndex, requestedDelta, previousPanelWidths);
+    layoutManager.resizeRootDivider(previousPanelWidths, finalPanelWidths);
   }
 
   function handlePanelCanvasWidthChange(width: number) {

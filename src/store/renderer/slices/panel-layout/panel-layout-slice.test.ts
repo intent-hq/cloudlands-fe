@@ -4193,7 +4193,7 @@ describe('panelLayoutReducer', () => {
 
       const resized = panelLayoutReducer(
         state,
-        resizePanelLayoutAtRootDivider(WS, 1, 200, [300, 400, 300]),
+        resizePanelLayoutAtRootDivider(WS, [300, 400, 300], [300, 600, 100]),
       );
 
       expect(resized.byWorkspaceId[WS].canvasWidth).toBe(1016);
@@ -4204,6 +4204,56 @@ describe('panelLayoutReducer', () => {
         splitPanel(WS, 'p1', 'horizontal', undefined, 1234),
       );
       expect(snapshotted.byWorkspaceId[WS].layoutHistory[0].canvasWidth).toBe(1016);
+    });
+
+    it('commits the exact live preview widths instead of reconstructing mouse-up widths', () => {
+      const state = stateWithPanel('p1');
+      state.byWorkspaceId[WS] = {
+        ...state.byWorkspaceId[WS],
+        root: {
+          type: 'split',
+          direction: 'horizontal',
+          children: [
+            { type: 'panel', panelId: 'p1' },
+            { type: 'panel', panelId: 'p2' },
+            { type: 'panel', panelId: 'p3' },
+          ],
+          sizes: [30, 40, 30],
+        },
+        panels: {
+          p1: { id: 'p1', tabs: [], activeTabId: null },
+          p2: { id: 'p2', tabs: [], activeTabId: null },
+          p3: { id: 'p3', tabs: [], activeTabId: null },
+        },
+        columnCount: 3,
+        canvasWidth: 1016,
+      };
+      const previousWidths = [300, 400, 300];
+      const finalPreviewWidths = [398, 344, 258];
+      const reconstructedMouseUpWidths = [400, 342.857142857, 257.142857143];
+
+      expect(finalPreviewWidths).not.toEqual(reconstructedMouseUpWidths);
+      const resized = panelLayoutReducer(
+        state,
+        resizePanelLayoutAtRootDivider(WS, previousWidths, finalPreviewWidths),
+      );
+
+      const root = resized.byWorkspaceId[WS].root;
+      expect(root.type).toBe('split');
+      if (root.type !== 'split') throw new Error('Expected horizontal split');
+      expect(root.sizes).toEqual([
+        expect.closeTo(39.8, 8),
+        expect.closeTo(34.4, 8),
+        expect.closeTo(25.8, 8),
+      ]);
+      expect(resized.byWorkspaceId[WS].canvasWidth).toBe(1016);
+      expect(resized.byWorkspaceId[WS].layoutHistory).toBe(state.byWorkspaceId[WS].layoutHistory);
+      expect(
+        panelLayoutReducer(
+          state,
+          resizePanelLayoutAtRootDivider(WS, previousWidths, previousWidths),
+        ),
+      ).toBe(state);
     });
 
     it('keeps the full canvas fixed without folding gutters into panel sizes', () => {
@@ -4228,7 +4278,7 @@ describe('panelLayoutReducer', () => {
 
       const result = panelLayoutReducer(
         state,
-        resizePanelLayoutAtRootDivider(WS, 0, 100, [645, 397]),
+        resizePanelLayoutAtRootDivider(WS, [645, 397], [745, 297]),
       );
       const root = result.byWorkspaceId[WS].root;
 

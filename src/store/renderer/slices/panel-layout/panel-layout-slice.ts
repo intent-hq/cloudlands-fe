@@ -58,7 +58,7 @@ import {
   appendHorizontalPanelToLayout,
   insertFixedColumnInLayout,
   removePanelPreservingHorizontalWidths,
-  resizeRootHorizontalDivider,
+  commitRootHorizontalPanelWidths,
   resizePanelTreeRightEdge,
   type PanelMovePosition,
 } from './panel-layout-tabless';
@@ -679,7 +679,7 @@ export const resizePanelLayoutRightEdge = createAction<
 
 /** Resize a root divider while preserving the current total canvas width. */
 export const resizePanelLayoutAtRootDivider = createAction<
-  [wsId: string, panelIndex: number, requestedDelta: number, previousPanelWidths: readonly number[]]
+  [wsId: string, previousPanelWidths: readonly number[], finalPanelWidths: readonly number[]]
 >('panelLayout/resizePanelLayoutAtRootDivider');
 
 export const toggleExpandPanel = createAction<[wsId: string, panelId: string]>(
@@ -3343,15 +3343,10 @@ panelLayoutReducer.with(
 );
 panelLayoutReducer.with(
   resizePanelLayoutAtRootDivider,
-  (state, { payload: [wsId, panelIndex, requestedDelta, previousPanelWidths] }) => {
+  (state, { payload: [wsId, previousPanelWidths, finalPanelWidths] }) => {
     const ws = getWorkspaceState(state, wsId);
-    const resized = resizeRootHorizontalDivider(
-      ws.root,
-      panelIndex,
-      requestedDelta,
-      previousPanelWidths,
-    );
-    if (resized.acceptedDelta === 0) return state;
+    const resized = commitRootHorizontalPanelWidths(ws.root, previousPanelWidths, finalPanelWidths);
+    if (!resized.changed) return state;
     const acceptedCanvasWidth =
       resized.panelWidths.reduce((sum, width) => sum + width, 0) +
       PANEL_SPLIT_GUTTER_WIDTH * Math.max(0, resized.panelWidths.length - 1);
