@@ -24,7 +24,7 @@ import {
 } from './attachment-placement';
 
 /** Inline image block (bytes on the wire — the legacy arm). */
-export interface InlineImageBlock {
+interface InlineImageBlock {
   type: 'image';
   data: string;
   mimeType: string;
@@ -146,7 +146,7 @@ export async function placeImageAttachment(
 }
 
 /** Generated file name for a pasted/dropped image with no original name. */
-export function imageAttachmentFileName(mimeType: string | undefined, index: number): string {
+function imageAttachmentFileName(mimeType: string | undefined, index: number): string {
   const ext = (mimeType && MIME_EXTENSIONS[mimeType.toLowerCase()]) || 'png';
   return `image-${Date.now()}-${index + 1}.${ext}`;
 }

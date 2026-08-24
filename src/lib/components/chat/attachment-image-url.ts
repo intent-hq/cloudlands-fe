@@ -12,7 +12,7 @@ import { createLogger } from '$lib/utils/client-logger';
 const logger = createLogger('AttachmentImageUrl');
 
 /** Build a `workspace-file://` URL with each path segment percent-encoded. */
-export function workspaceFileUrl(workspaceId: string, relativePath: string): string {
+function workspaceFileUrl(workspaceId: string, relativePath: string): string {
   const encoded = relativePath
     .split('/')
     .filter((segment) => segment.length > 0)
