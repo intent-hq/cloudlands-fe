@@ -169,6 +169,19 @@ export function getResponseGroupCurrentBlockIndex(blocks: readonly ContentBlock[
   return -1;
 }
 
+export function getResponseGroupCurrentChildIndex(
+  group: Pick<ContentBlockGroup, 'children' | 'hasAdjacentReasoningHistory'>,
+): number {
+  if (
+    group.hasAdjacentReasoningHistory &&
+    getResponseGroupCurrentBlockIndex(group.children.slice(2)) < 0
+  ) {
+    return group.children.length > 0 ? 0 : -1;
+  }
+
+  return getResponseGroupCurrentBlockIndex(group.children);
+}
+
 export function getResponseGroupCurrentBlock(
   blocks: readonly ContentBlock[] | undefined,
 ): ContentBlock | undefined {

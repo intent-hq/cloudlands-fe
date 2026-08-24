@@ -77,7 +77,7 @@
   import {
     dedupeKeys,
     getResponseGroupBlockKeys,
-    getResponseGroupCurrentBlockIndex,
+    getResponseGroupCurrentChildIndex,
     normalizeResponseGroups,
   } from './response-group-blocks';
   import { chatSearchBlockPath } from './chat-search';
@@ -957,12 +957,7 @@
   {#each groupedBlocks as block, blockIndex (blockKeys[blockIndex])}
     {#if block.type === 'content_group'}
       {@const group = block as ContentBlockGroup}
-      {@const hasLaterVisibleHistory = group.hasAdjacentReasoningHistory
-        ? getResponseGroupCurrentBlockIndex(group.children.slice(2)) >= 0
-        : true}
-      {@const currentChildIndex = hasLaterVisibleHistory
-        ? getResponseGroupCurrentBlockIndex(group.children)
-        : 0}
+      {@const currentChildIndex = getResponseGroupCurrentChildIndex(group)}
       {#snippet currentChild()}
         {@render renderResponseGroupChild(
           group,

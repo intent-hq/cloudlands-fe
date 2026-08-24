@@ -49,9 +49,13 @@ async function renderStreaming(content: ContentBlock[], isStreaming: boolean) {
   return render(StreamingMessageContent, { props: { content, isStreaming } });
 }
 
-async function renderStatic(content: ContentBlock[]) {
+async function renderMessage(content: ContentBlock[], isStreaming: boolean) {
   const MessageContent = (await import('../MessageContent.svelte')).default;
-  return render(MessageContent, { props: { content } });
+  return render(MessageContent, { props: { content, isStreaming } });
+}
+
+async function renderStatic(content: ContentBlock[]) {
+  return renderMessage(content, false);
 }
 
 describe('thinking blocks — StreamingMessageContent', () => {
@@ -110,116 +114,128 @@ describe('thinking blocks — StreamingMessageContent', () => {
     expect(screen.queryByTestId('markdown-viewer')).toBeNull();
   });
 
-  it('shows one current live-group child until the user expands the full history', async () => {
-    const content = [
-      { type: 'text', id: 'msg_1:0', text: '<group:Working>' },
-      { type: 'text', id: 'msg_1:1', text: 'Earlier answer' },
-      thinking('msg_1:2', 'Current thought'),
-    ];
-    const view = await renderStreaming(content, true);
-    const groupDisclosure = screen.getByTestId('response-group-disclosure');
-    const visibleChildTypes = () =>
-      [...document.querySelectorAll('[data-response-group-child]')].map((child) =>
-        child.getAttribute('data-message-content-block'),
+  it.each([
+    ['MessageContent', renderMessage],
+    ['StreamingMessageContent', renderStreaming],
+  ])(
+    'shows one current live-group child until the user expands full history in %s',
+    async (_renderer, renderMessageContent) => {
+      const content = [
+        { type: 'text', id: 'msg_1:0', text: '<group:Working>' },
+        { type: 'text', id: 'msg_1:1', text: 'Earlier answer' },
+        thinking('msg_1:2', 'Current thought'),
+      ];
+      const view = await renderMessageContent(content, true);
+      const groupDisclosure = screen.getByTestId('response-group-disclosure');
+      const visibleChildTypes = () =>
+        [...document.querySelectorAll('[data-response-group-child]')].map((child) =>
+          child.getAttribute('data-message-content-block'),
+        );
+
+      expect(groupDisclosure.getAttribute('aria-expanded')).toBe('false');
+      expect(screen.getByTestId('response-group-name').textContent).toBe('Working');
+      expect(visibleChildTypes()).toEqual(['thinking']);
+      expect(screen.getAllByTestId('reasoning-disclosure')).toHaveLength(1);
+
+      await view.rerender({
+        content: [
+          ...content,
+          { type: 'tool_result', id: 'msg_1:3', tool_use_id: 'missing', output: 'hidden' },
+        ],
+        isStreaming: true,
+      });
+      expect(visibleChildTypes()).toEqual(['thinking']);
+
+      const tool = {
+        type: 'tool_use',
+        id: 'msg_1:4',
+        name: 'view',
+        input: { path: 'src/example.ts' },
+        toolCallId: 'tool-1',
+      } as ContentBlock;
+      await view.rerender({ content: [...content, tool], isStreaming: true });
+      expect(visibleChildTypes()).toEqual(['tool_use']);
+
+      const withAnswer = [
+        ...content,
+        tool,
+        { type: 'tool_result', id: 'msg_1:5', tool_use_id: 'tool-1', output: 'done' },
+        { type: 'text', id: 'msg_1:6', text: 'Current answer' },
+      ] as ContentBlock[];
+      await view.rerender({ content: withAnswer, isStreaming: true });
+      expect(visibleChildTypes()).toEqual(['text']);
+      expect(document.body.textContent).toContain('Current answer');
+      expect(document.body.textContent).not.toContain('Earlier answer');
+
+      await fireEvent.click(groupDisclosure);
+      expect(groupDisclosure.getAttribute('aria-expanded')).toBe('true');
+      expect(visibleChildTypes()).toEqual(['text', 'thinking', 'tool_use', 'text']);
+      expect(document.querySelector('[data-reasoning-history]')).toBeNull();
+      expect(document.body.textContent).toContain('Earlier answer');
+      const toolDisclosure = document.querySelector(
+        '[data-message-content-block="tool_use"] [data-testid="tool-call-disclosure"]',
+      );
+      expect(toolDisclosure).toBeTruthy();
+      await fireEvent.click(toolDisclosure!);
+      expect(document.body.textContent).toContain('done');
+
+      const latestThought = thinking('msg_1:7', 'Latest thought');
+      await view.rerender({ content: [...withAnswer, latestThought], isStreaming: true });
+      expect(groupDisclosure.getAttribute('aria-expanded')).toBe('true');
+      expect(visibleChildTypes()).toEqual(['text', 'thinking', 'tool_use', 'text', 'thinking']);
+
+      await fireEvent.click(groupDisclosure);
+      expect(groupDisclosure.getAttribute('aria-expanded')).toBe('false');
+      expect(visibleChildTypes()).toEqual(['thinking']);
+
+      await view.rerender({ content: [...withAnswer, latestThought], isStreaming: false });
+      expect(visibleChildTypes()).toEqual([]);
+    },
+  );
+
+  it.each([
+    ['MessageContent', renderMessage],
+    ['StreamingMessageContent', renderStreaming],
+  ])(
+    'pairs the adjacent title and description into one live preview in %s',
+    async (_renderer, renderMessageContent) => {
+      await renderMessageContent(
+        [
+          thinking(
+            '01a03064:0',
+            '\n\n**Assessing delegation and tool availability**\n\n**Planning workspace title setup**',
+          ),
+          {
+            type: 'text',
+            id: '01a03064:1',
+            text: '<group:Prepping>\nI’ll first title the workspace, read the existing spec, and inspect the project’s dark-mode surface before drafting the implementation plan.',
+          },
+        ],
+        true,
       );
 
-    expect(groupDisclosure.getAttribute('aria-expanded')).toBe('false');
-    expect(screen.getByTestId('response-group-name').textContent).toBe('Working');
-    expect(visibleChildTypes()).toEqual(['thinking']);
-    expect(screen.getByTestId('reasoning-disclosure').textContent?.trim()).toBe('Thinking...');
+      const disclosure = screen.getByTestId('response-group-disclosure');
+      expect(screen.getAllByRole('button')).toHaveLength(1);
+      expect(screen.queryByTestId('reasoning-disclosure')).toBeNull();
+      expect(screen.getByTestId('response-group-name').textContent).toBe(
+        'Planning workspace title setup',
+      );
+      expect(document.body.textContent).not.toContain('Thinking...');
+      expect(document.body.textContent?.match(/Planning workspace title setup/g)).toHaveLength(1);
+      expect(document.body.textContent?.match(/I’ll first title the workspace/g)).toHaveLength(1);
+      expect(document.body.textContent).not.toContain('Assessing delegation and tool availability');
 
-    await view.rerender({
-      content: [
-        ...content,
-        { type: 'tool_result', id: 'msg_1:3', tool_use_id: 'missing', output: 'hidden' },
-      ],
-      isStreaming: true,
-    });
-    expect(visibleChildTypes()).toEqual(['thinking']);
-
-    const tool = {
-      type: 'tool_use',
-      id: 'msg_1:4',
-      name: 'view',
-      input: { path: 'src/example.ts' },
-      toolCallId: 'tool-1',
-    } as ContentBlock;
-    await view.rerender({ content: [...content, tool], isStreaming: true });
-    expect(visibleChildTypes()).toEqual(['tool_use']);
-
-    const withAnswer = [
-      ...content,
-      tool,
-      { type: 'tool_result', id: 'msg_1:5', tool_use_id: 'tool-1', output: 'done' },
-      { type: 'text', id: 'msg_1:6', text: 'Current answer' },
-    ] as ContentBlock[];
-    await view.rerender({ content: withAnswer, isStreaming: true });
-    expect(visibleChildTypes()).toEqual(['text']);
-    expect(document.body.textContent).toContain('Current answer');
-    expect(document.body.textContent).not.toContain('Earlier answer');
-
-    await fireEvent.click(groupDisclosure);
-    expect(groupDisclosure.getAttribute('aria-expanded')).toBe('true');
-    expect(visibleChildTypes()).toEqual(['text', 'thinking', 'tool_use', 'text']);
-    expect(document.querySelector('[data-reasoning-history]')).toBeNull();
-    expect(document.body.textContent).toContain('Earlier answer');
-    const toolDisclosure = document.querySelector(
-      '[data-message-content-block="tool_use"] [data-testid="tool-call-disclosure"]',
-    );
-    expect(toolDisclosure).toBeTruthy();
-    await fireEvent.click(toolDisclosure!);
-    expect(document.body.textContent).toContain('done');
-
-    const latestThought = thinking('msg_1:7', 'Latest thought');
-    await view.rerender({ content: [...withAnswer, latestThought], isStreaming: true });
-    expect(groupDisclosure.getAttribute('aria-expanded')).toBe('true');
-    expect(visibleChildTypes()).toEqual(['text', 'thinking', 'tool_use', 'text', 'thinking']);
-
-    await fireEvent.click(groupDisclosure);
-    expect(groupDisclosure.getAttribute('aria-expanded')).toBe('false');
-    expect(visibleChildTypes()).toEqual(['thinking']);
-
-    await view.rerender({ content: [...withAnswer, latestThought], isStreaming: false });
-    expect(visibleChildTypes()).toEqual([]);
-  });
-
-  it('pairs the persisted adjacent title and description into one live disclosure', async () => {
-    await renderStreaming(
-      [
-        thinking(
-          '01a03064:0',
-          '\n\n**Assessing delegation and tool availability**\n\n**Planning workspace title setup**',
-        ),
-        {
-          type: 'text',
-          id: '01a03064:1',
-          text: '<group:Prepping>\nI’ll first title the workspace, read the existing spec, and inspect the project’s dark-mode surface before drafting the implementation plan.',
-        },
-      ],
-      true,
-    );
-
-    const disclosure = screen.getByTestId('response-group-disclosure');
-    expect(screen.getAllByRole('button')).toHaveLength(1);
-    expect(screen.queryByTestId('reasoning-disclosure')).toBeNull();
-    expect(screen.getByTestId('response-group-name').textContent).toBe(
-      'Planning workspace title setup',
-    );
-    expect(document.body.textContent).not.toContain('Thinking...');
-    expect(document.body.textContent?.match(/Planning workspace title setup/g)).toHaveLength(1);
-    expect(document.body.textContent?.match(/I’ll first title the workspace/g)).toHaveLength(1);
-    expect(document.body.textContent).not.toContain('Assessing delegation and tool availability');
-
-    await fireEvent.click(disclosure);
-    expect(
-      document.body.textContent?.match(/Assessing delegation and tool availability/g),
-    ).toHaveLength(1);
-    expect(document.body.textContent?.match(/I’ll first title the workspace/g)).toHaveLength(1);
-    const historyRow = screen.getByTestId('reasoning-history-row');
-    expect(historyRow.textContent?.trim()).toBe('Assessing delegation and tool availability');
-    expect(historyRow.querySelector('button, [aria-expanded]')).toBeNull();
-    expect(document.querySelector('[data-reasoning-history-body]')).toBeNull();
-  });
+      await fireEvent.click(disclosure);
+      expect(
+        document.body.textContent?.match(/Assessing delegation and tool availability/g),
+      ).toHaveLength(1);
+      expect(document.body.textContent?.match(/I’ll first title the workspace/g)).toHaveLength(1);
+      const historyRow = screen.getByTestId('reasoning-history-row');
+      expect(historyRow.textContent?.trim()).toBe('Assessing delegation and tool availability');
+      expect(historyRow.querySelector('button, [aria-expanded]')).toBeNull();
+      expect(document.querySelector('[data-reasoning-history-body]')).toBeNull();
+    },
+  );
 
   it('renders adjacent-title history in exact DOM order with the description first', async () => {
     await renderStreaming(

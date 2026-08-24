@@ -68,6 +68,7 @@
   import {
     dedupeKeys,
     getResponseGroupBlockKeys,
+    getResponseGroupCurrentChildIndex,
     normalizeResponseGroups,
   } from './response-group-blocks';
   import { chatSearchBlockPath } from './chat-search';
@@ -698,6 +699,41 @@
   {/if}
 {/snippet}
 
+{#snippet renderResponseGroupChild(
+  group: ContentBlockGroup,
+  groupIndex: number,
+  childBlock: ContentBlock,
+  childIndex: number,
+)}
+  <div
+    class={`${getOperationalClusterSpacingClass(
+      group.children,
+      childIndex,
+      isVisibleOperationalBlock,
+      group.isReasoningPhase,
+    )} ${
+      isOperationalClusterBlock(childBlock)
+        ? OPERATIONAL_GROUP_CHILD_ROW_CLASS
+        : OPERATIONAL_GROUP_CHILD_CONTENT_CLASS
+    }`}
+    style:padding-left={isOperationalClusterBlock(childBlock)
+      ? undefined
+      : 'calc(var(--operational-row-inline-padding) + var(--operational-leading-slot-size) + var(--operational-leading-gap))'}
+    data-message-content-block={childBlock.type}
+    data-chat-search-block-path={chatSearchBlockPath(groupIndex, childIndex)}
+    data-response-group-child
+  >
+    {@render renderContentBlock(
+      childBlock,
+      `${groupIndex}-${childIndex}`,
+      groupIndex,
+      true,
+      isAdjacentOperationalClusterRow(group.children, childIndex, isVisibleOperationalBlock),
+      group.isReasoningPhase,
+    )}
+  </div>
+{/snippet}
+
 <div class="flex flex-col gap-0" style="contain: layout style paint;" data-operational-stack>
   {#each groupedBlocks as block, blockIndex (blockKeys[blockIndex])}
     <div
@@ -714,12 +750,22 @@
     >
       {#if block.type === 'content_group'}
         {@const group = block as ContentBlockGroup}
+        {@const currentChildIndex = getResponseGroupCurrentChildIndex(group)}
+        {#snippet currentChild()}
+          {@render renderResponseGroupChild(
+            group,
+            blockIndex,
+            group.children[currentChildIndex],
+            currentChildIndex,
+          )}
+        {/snippet}
         <ResponseGroup
           name={group.name}
           isStreaming={group.isStreaming}
           blocks={group.children}
           searchPath={chatSearchBlockPath(blockIndex)}
           reasoningPhase={group.isReasoningPhase}
+          currentChild={currentChildIndex >= 0 ? currentChild : undefined}
           adjacentOperationalRow={isAdjacentOperationalClusterRow(
             groupedBlocks,
             blockIndex,
@@ -730,37 +776,7 @@
             {@const childKeys = getResponseGroupBlockKeys(group.children)}
             {#each group.children as childBlock, childIndex (childKeys[childIndex])}
               {#if childBlock.type !== 'tool_result'}
-                <div
-                  class={`${getOperationalClusterSpacingClass(
-                    group.children,
-                    childIndex,
-                    isVisibleOperationalBlock,
-                    group.isReasoningPhase,
-                  )} ${
-                    isOperationalClusterBlock(childBlock)
-                      ? OPERATIONAL_GROUP_CHILD_ROW_CLASS
-                      : OPERATIONAL_GROUP_CHILD_CONTENT_CLASS
-                  }`}
-                  style:padding-left={isOperationalClusterBlock(childBlock)
-                    ? undefined
-                    : 'calc(var(--operational-row-inline-padding) + var(--operational-leading-slot-size) + var(--operational-leading-gap))'}
-                  data-message-content-block={childBlock.type}
-                  data-chat-search-block-path={chatSearchBlockPath(blockIndex, childIndex)}
-                  data-response-group-child
-                >
-                  {@render renderContentBlock(
-                    childBlock,
-                    `${blockIndex}-${childIndex}`,
-                    blockIndex,
-                    true,
-                    isAdjacentOperationalClusterRow(
-                      group.children,
-                      childIndex,
-                      isVisibleOperationalBlock,
-                    ),
-                    group.isReasoningPhase,
-                  )}
-                </div>
+                {@render renderResponseGroupChild(group, blockIndex, childBlock, childIndex)}
               {/if}
             {/each}
           {/snippet}
