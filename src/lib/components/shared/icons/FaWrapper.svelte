@@ -1,8 +1,5 @@
 <script lang="ts">
-  import {
-    getPhosphorIconComponent,
-    type IconDefinition,
-  } from '$lib/icons/phosphor-icons';
+  import { getPhosphorIconComponent, type IconDefinition } from '$lib/icons/phosphor-icons';
 
   type IconSize = 'xs' | 'sm' | 'lg' | `${number}x`;
   type FlipDir = 'horizontal' | 'vertical' | 'both';
@@ -31,6 +28,7 @@
     primaryOpacity?: string | number;
     secondaryOpacity?: string | number;
     swapOpacity?: boolean;
+    'data-panel-agent-chat-glyph'?: boolean;
   }
 
   let {
@@ -55,6 +53,7 @@
     primaryOpacity,
     secondaryOpacity,
     swapOpacity,
+    'data-panel-agent-chat-glyph': dataPanelAgentChatGlyph,
   }: Props = $props();
 
   function normalizeSize(s?: number | string): NormalizedSize | undefined {
@@ -83,8 +82,7 @@
       transforms.push(`translate(${translateX ?? 0}px, ${translateY ?? 0}px)`);
     if (scale) transforms.push(`scale(${scale})`);
     if (flip === 'vertical' || flip === 'both') transforms.push('scaleY(-1)');
-    if (rotate)
-      transforms.push(`rotate(${typeof rotate === 'number' ? `${rotate}deg` : rotate})`);
+    if (rotate) transforms.push(`rotate(${typeof rotate === 'number' ? `${rotate}deg` : rotate})`);
     return transforms.join(' ');
   });
   const computedStyle = $derived(
@@ -98,9 +96,7 @@
       .join('; '),
   );
   const computedClass = $derived(
-    [className, spin ? 'animate-spin' : '', pulse ? 'animate-pulse' : '']
-      .filter(Boolean)
-      .join(' '),
+    [className, spin ? 'animate-spin' : '', pulse ? 'animate-pulse' : ''].filter(Boolean).join(' '),
   );
 </script>
 
@@ -114,6 +110,7 @@
   {mirrored}
   data-icon={icon.iconName}
   data-weight={iconWeight}
+  data-panel-agent-chat-glyph={dataPanelAgentChatGlyph ? '' : undefined}
   aria-label={title}
   aria-hidden={title ? undefined : 'true'}
 />

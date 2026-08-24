@@ -142,9 +142,11 @@ describe('workspace column layout contract', () => {
     expect(panelTabBar).toContain('data-add-panel-column');
     expect(panelTabBar).not.toContain('.panel-header[data-column-focused]');
     expect(panel).toContain('box-sizing: border-box;\n    border: 1px solid transparent;');
-    expect(panel).toContain(".panel[data-focused='true'] {\n    border-color: hsl(var(--border));");
     expect(panel).toContain(
-      "@media (forced-colors: active) {\n    .panel[data-focused='true'] {\n      border-color: Highlight;",
+      ".panel[data-focus-border-visible='true'] {\n    border-color: hsl(var(--border));",
+    );
+    expect(panel).toContain(
+      "@media (forced-colors: active) {\n    .panel[data-focus-border-visible='true'] {\n      border-color: Highlight;",
     );
     expect(progress.indexOf('data-workspace-close')).toBeGreaterThan(
       progress.indexOf('<DropdownMenu bind:open={dropdownOpen}>'),

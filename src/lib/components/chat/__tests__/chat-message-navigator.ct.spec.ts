@@ -184,8 +184,7 @@ test.describe('chat message navigator production path', () => {
       const listButton = headerContentActions.getByTestId('chat-message-navigator-trigger');
       const downButton = headerContentActions.getByTestId('chat-scroll-to-bottom-button');
       const addColumnButton = headerActions.locator('[data-add-panel-column]');
-      const panelActionsButton = headerContentActions.getByTestId('panel-actions-trigger');
-      const paneSelector = headerActions.getByTestId('pane-stack-selector-trigger');
+      const panelActionsButton = headerActions.getByTestId('panel-actions-trigger');
       const closeButton = headerActions.getByTestId('panel-close-button');
       await expectUniqueVisible(header);
       await expectUniqueVisible(headerActions);
@@ -194,18 +193,16 @@ test.describe('chat message navigator production path', () => {
       await expectUniqueVisible(downButton);
       await expectUniqueVisible(addColumnButton);
       await expectUniqueVisible(panelActionsButton);
-      await expectUniqueVisible(paneSelector);
       await expectUniqueVisible(closeButton);
       await expect(downButton).toBeDisabled();
       expect(
-        await header
+        await headerActions
           .locator('button')
           .evaluateAll((buttons) => buttons.map((button) => button.getAttribute('data-testid'))),
       ).toEqual([
-        'panel-actions-trigger',
         'chat-message-navigator-trigger',
         'chat-scroll-to-bottom-button',
-        'pane-stack-selector-trigger',
+        'panel-actions-trigger',
         null,
         'panel-close-button',
       ]);
@@ -499,7 +496,7 @@ test.describe('chat message navigator production path', () => {
       await page.keyboard.press('Tab');
       await expect(downButton).toBeFocused();
       await page.keyboard.press('Tab');
-      await expect(paneSelector).toBeFocused();
+      await expect(panelActionsButton).toBeFocused();
       await page.keyboard.press('Tab');
       await expect(addColumnButton).toBeFocused();
       await page.keyboard.press('Tab');
@@ -527,8 +524,7 @@ test.describe('chat message navigator production path', () => {
     const trigger = headerContentActions.getByTestId('chat-message-navigator-trigger');
     const downButton = headerContentActions.getByTestId('chat-scroll-to-bottom-button');
     const addColumnButton = headerActions.locator('[data-add-panel-column]');
-    const outside = headerContentActions.getByTestId('panel-actions-trigger');
-    const paneSelector = headerActions.getByTestId('pane-stack-selector-trigger');
+    const outside = headerActions.getByTestId('panel-actions-trigger');
     const closeButton = headerActions.getByTestId('panel-close-button');
     const title = header.getByText('Navigation agent', { exact: true });
     await expectUniqueVisible(header);
@@ -537,7 +533,6 @@ test.describe('chat message navigator production path', () => {
     await expectUniqueVisible(downButton);
     await expectUniqueVisible(addColumnButton);
     await expectUniqueVisible(outside);
-    await expectUniqueVisible(paneSelector);
     await expectUniqueVisible(title);
 
     await trigger.focus();
@@ -547,9 +542,7 @@ test.describe('chat message navigator production path', () => {
     await expect(dialog).toHaveCount(0);
     await expect(trigger).toBeFocused();
     await page.keyboard.press('Tab');
-    await expect(downButton).toBeFocused();
-    await page.keyboard.press('Tab');
-    await expect(paneSelector).toBeFocused();
+    await expect(outside).toBeFocused();
     await page.keyboard.press('Tab');
     await expect(addColumnButton).toBeFocused();
     await page.keyboard.press('Tab');

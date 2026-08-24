@@ -60,6 +60,9 @@ for (const [index, panelType] of panelTypes.entries()) {
       'panel-close-button',
     ]);
     await expect(header.locator('[data-panel-column-count-trigger]')).toHaveCount(0);
+    if (panelType === 'agent') {
+      await expect(header.locator('[data-panel-agent-chat-glyph]')).toHaveCount(1);
+    }
 
     const identityBox = await header.locator('[data-panel-header-identity]').boundingBox();
     const panelControlsBox = await panelControls.boundingBox();
