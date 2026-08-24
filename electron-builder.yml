@@ -5,8 +5,10 @@ directories:
   buildResources: build
 
 # Code signing hooks
+# beforePack: Compiles the native macOS 26 icon resource before resources are copied
 # afterPack: Signs intentd sidecar BEFORE main app signing (prevents seal invalidation)
 # afterSign: Submits signed app to Apple for notarization
+beforePack: scripts/build-macos-icon.js
 afterPack: scripts/sign-sidecar.js
 afterSign: scripts/notarize.js
 
@@ -72,11 +74,16 @@ mac:
   # scripts/build-speech-helper.cjs; signed by the afterPack hook).
   # Runtime path: process.resourcesPath/speech-helper/intent-speech-helper
   extraResources:
+    - from: build/macos-icon/Assets.car
+      to: Assets.car
     - from: resources/speech-helper
       to: speech-helper
   # Microphone usage string shown by the one-time macOS TCC prompt
   # (voice dictation; pairs with com.apple.security.device.audio-input)
   extendInfo:
+    # macOS 26 uses the native Assets.car icon. Older versions use icon.icns.
+    CFBundleIconName: Intent
+    CFBundleIconFile: icon.icns
     NSMicrophoneUsageDescription: Intent uses the microphone to transcribe your voice into text for dictation.
     # Speech recognition usage string for the OS dictation engine (local
     # Speech.framework transcription via the bundled speech helper).
