@@ -817,6 +817,137 @@ describe('cycle-unread-agents last-active pick (intent-hq/monorepo#1779)', () =>
   });
 });
 
+describe('cycle-unread-agents per-agent unread walk (new daemons)', () => {
+  /** The actionHudShown payloads dispatched, in order. */
+  function hudDispatches(dispatch: ReturnType<typeof vi.fn>): unknown[] {
+    return dispatch.mock.calls
+      .map(([action]) => action as { type: string; payload: unknown })
+      .filter((action) => action.type === 'hardwareConsole/actionHudShown')
+      .map((action) => action.payload);
+  }
+
+  it('visits every unread top-level agent of a workspace, in foreground order', () => {
+    const state = makeState({
+      agentsByWorkspace: { 'ws-1': { ids: ['a-1', 'a-2', 'a-3'], activeAgentId: null } },
+      unreadWorkspaceIds: ['ws-1'],
+      sessionOverrides: {
+        'a-1': { hasUnread: true, lastMessageId: 'm-1' },
+        'a-2': { hasUnread: false, lastMessageId: 'm-2' },
+        'a-3': { hasUnread: true, lastMessageId: 'm-3' },
+      },
+    });
+    const { context, dispatch } = makeContext(state);
+    const definition = getActionKeyDefinition('cycle-unread-agents');
+    definition.execute(context);
+    definition.execute(context);
+    definition.execute(context);
+    expect(activeAgentDispatches(dispatch)).toEqual([
+      ['ws-1', 'a-1'],
+      ['ws-1', 'a-3'],
+      ['ws-1', 'a-1'],
+    ]);
+  });
+
+  it('groups the walk by workspace across mixed new/old-daemon workspaces', () => {
+    // ws-1 serves per-agent unread (two stops); ws-2's sessions omit
+    // lastMessageId (older daemon) so it keeps the single last-active stop.
+    const state = makeState({
+      workspaces: ['ws-1', 'ws-2'],
+      agentsByWorkspace: {
+        'ws-1': { ids: ['a-1', 'a-2'], activeAgentId: null },
+        'ws-2': { ids: ['b-1', 'b-2'], activeAgentId: null },
+      },
+      unreadWorkspaceIds: ['ws-1', 'ws-2'],
+      sessionOverrides: {
+        'a-1': { hasUnread: true, lastMessageId: 'm-1' },
+        'a-2': { hasUnread: true, lastMessageId: 'm-2' },
+        'b-2': { lastActivity: '2026-08-01T10:00:00.000Z' },
+      },
+    });
+    const { context, dispatch } = makeContext(state);
+    const definition = getActionKeyDefinition('cycle-unread-agents');
+    definition.execute(context);
+    definition.execute(context);
+    definition.execute(context);
+    expect(activeAgentDispatches(dispatch)).toEqual([
+      ['ws-1', 'a-1'],
+      ['ws-1', 'a-2'],
+      ['ws-2', 'b-2'],
+    ]);
+  });
+
+  it('counts per-agent stops individually in the HUD remaining count', () => {
+    // Visiting a-1 marks only a-1 seen: its unread sibling a-2 stays a
+    // candidate, unlike the fallback's workspace-clearing count.
+    const state = makeState({
+      agentsByWorkspace: { 'ws-1': { ids: ['a-1', 'a-2', 'a-3'], activeAgentId: null } },
+      unreadWorkspaceIds: ['ws-1'],
+      sessionOverrides: {
+        'a-1': { hasUnread: true, lastMessageId: 'm-1' },
+        'a-2': { hasUnread: true, lastMessageId: 'm-2' },
+        'a-3': { hasUnread: true, lastMessageId: 'm-3' },
+      },
+    });
+    const { context, dispatch } = makeContext(state);
+    getActionKeyDefinition('cycle-unread-agents').execute(context);
+    expect(hudDispatches(dispatch)).toEqual([
+      [m.hardwareConsole_actionKey_cycleUnreadAgents_hudRemaining_many({ count: 2 })],
+    ]);
+  });
+
+  it('mixed count: per-agent stops count individually, fallback workspaces as one', () => {
+    // Step lands on a-1 (per-agent, new daemon). Remaining: a-2 (per-agent
+    // sibling) + ws-2's single fallback stop = 2, regardless of ws-2's
+    // agent count.
+    const state = makeState({
+      workspaces: ['ws-1', 'ws-2'],
+      agentsByWorkspace: {
+        'ws-1': { ids: ['a-1', 'a-2'], activeAgentId: null },
+        'ws-2': { ids: ['b-1', 'b-2'], activeAgentId: null },
+      },
+      unreadWorkspaceIds: ['ws-1', 'ws-2'],
+      sessionOverrides: {
+        'a-1': { hasUnread: true, lastMessageId: 'm-1' },
+        'a-2': { hasUnread: true, lastMessageId: 'm-2' },
+      },
+    });
+    const { context, dispatch } = makeContext(state);
+    getActionKeyDefinition('cycle-unread-agents').execute(context);
+    expect(hudDispatches(dispatch)).toEqual([
+      [m.hardwareConsole_actionKey_cycleUnreadAgents_hudRemaining_many({ count: 2 })],
+    ]);
+  });
+
+  it('a seen-but-unread-workspace new-daemon workspace falls back to one last-active stop', () => {
+    // The daemon serves lastMessageId but every agent is already seen: the
+    // workspace-level unread flag still yields the single fallback stop.
+    const state = makeState({
+      agentsByWorkspace: { 'ws-1': { ids: ['a-1', 'a-2'], activeAgentId: null } },
+      unreadWorkspaceIds: ['ws-1'],
+      sessionOverrides: {
+        'a-1': { hasUnread: false, lastMessageId: 'm-1' },
+        'a-2': {
+          hasUnread: false,
+          lastMessageId: 'm-2',
+          stopReasonTimestamp: '2026-08-01T10:00:00.000Z',
+        },
+      },
+    });
+    const { context, dispatch } = makeContext(state);
+    const definition = getActionKeyDefinition('cycle-unread-agents');
+    definition.execute(context);
+    definition.execute(context);
+    expect(activeAgentDispatches(dispatch)).toEqual([
+      ['ws-1', 'a-2'],
+      ['ws-1', 'a-2'],
+    ]);
+    expect(hudDispatches(dispatch)).toEqual([
+      [m.hardwareConsole_actionKey_cycleUnreadAgents_label()],
+      [m.hardwareConsole_actionKey_cycleUnreadAgents_label()],
+    ]);
+  });
+});
+
 describe('cycle-unread-agents unhydrated workspaces (intent-hq/monorepo#2438)', () => {
   /** The hydrateAgentsRequested workspace ids dispatched, in order. */
   function hydrateDispatches(dispatch: ReturnType<typeof vi.fn>): unknown[] {
