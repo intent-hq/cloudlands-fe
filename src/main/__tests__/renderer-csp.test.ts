@@ -35,7 +35,7 @@ describe('renderer Content Security Policy', () => {
       .map((directive) => directive.trim())
       .find((directive) => directive.startsWith('connect-src '));
     expect(connectSrc).toBe(
-      "connect-src 'self' https: wss: http://localhost:* http://127.0.0.1:* ws://localhost:* ws://127.0.0.1:*",
+      "connect-src 'self' https: wss: http://localhost:* http://127.0.0.1:* ws://localhost:* ws://127.0.0.1:* workspace-file:",
     );
   });
 });
