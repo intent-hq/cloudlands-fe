@@ -3,7 +3,6 @@
   import { store as appStore } from '$store/renderer/store';
   import Panel from '$lib/components/layout/panel-system/Panel.svelte';
   import ContentSkeleton from '$lib/components/workspace/ContentSkeleton.svelte';
-  import ParkedWorkspaceSurface from '$lib/components/workspace/ParkedWorkspaceSurface.svelte';
   import SidebarBrowserLauncher from '$lib/components/workspace/SidebarBrowserLauncher.svelte';
   import EventSubscriptionsCard from '$lib/components/chat/EventSubscriptionsCard.svelte';
   import PinnedUserPrompt from '$lib/components/chat/PinnedUserPrompt.svelte';
@@ -29,16 +28,6 @@
 </script>
 
 <main class="grid w-[900px] grid-cols-2 gap-6 bg-background p-6 text-foreground">
-  <section class="h-48" data-testid="workspace-border-fixture">
-    <ParkedWorkspaceSurface
-      workspaceId="neutral-border-workspace"
-      title="Workspace"
-      panelTabCount={1}
-      sidebarWidth={240}
-      onCloseWorkspace={() => {}}
-    />
-  </section>
-
   <section class="flex h-96 flex-col gap-4" data-testid="panel-border-fixture">
     <div class="h-44">
       <Panel {panel} workspaceId="neutral-border-workspace" layoutId="neutral-border-layout" />

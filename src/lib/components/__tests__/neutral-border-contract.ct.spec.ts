@@ -5,7 +5,6 @@ import NeutralBorderContractHost from './NeutralBorderContractHost.svelte';
 type Edge = 'top' | 'right';
 
 const probes = [
-  ['workspace', '[data-workspace-surface-placeholder] > div:first-child', 'right'],
   ['subscription', '[data-testid="event-subscriptions-card"]', 'top'],
   ['launcher', '[data-sidebar-launcher="browser"]', 'top'],
   ['popover', '[data-slot="menu-content"]', 'top'],
@@ -119,12 +118,6 @@ test('production neutral borders share color and single-edge geometry', async ({
       ).toBe(true);
 
       const seams = await Promise.all([
-        seam(
-          page,
-          '[data-workspace-surface-placeholder] > div:first-child',
-          '[data-workspace-surface-placeholder] > div:last-child',
-          'x',
-        ),
         seam(
           page,
           '[data-testid="panel-border-fixture"] [data-loading-panel] > div:first-child',

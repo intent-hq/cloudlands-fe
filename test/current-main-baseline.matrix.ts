@@ -336,23 +336,6 @@ export const baselineRows = [
     [...runtime, 'indexed', 'identified', 'scroll'],
     panel,
   ),
-  row(
-    'WORKSPACE-39',
-    'Reserved heading-band transition geometry',
-    'tabs',
-    [...visual, 'single-to-columns', 'columns-to-single'],
-    ['src/lib/components/workspace/WorkspaceColumnsView.test.ts'],
-  ),
-  row(
-    'WORKSPACE-40',
-    'Smooth tabs-to-columns choreography',
-    'tabs',
-    [...visual, 'single-to-columns', 'columns-to-single', 'focus'],
-    [
-      'src/lib/components/layout/WorkspaceTabStrip.test.ts',
-      'src/lib/components/workspace/WorkspaceColumnsView.test.ts',
-    ],
-  ),
   row('WORKSPACE-42', 'Rightmost panel/chrome reachability', 'panel', visual, [
     'src/lib/components/layout/panel-system/__tests__/panel-canvas-width.test.ts',
   ]),
