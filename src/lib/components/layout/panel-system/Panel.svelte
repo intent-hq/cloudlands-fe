@@ -510,6 +510,8 @@
     position: relative;
     width: 100%;
     min-width: 0;
+    box-sizing: border-box;
+    border: 1px solid transparent;
     box-shadow: var(--elevation-raised);
 
     /* Container query setup for responsive panel headers */
@@ -518,13 +520,12 @@
   }
 
   .panel[data-focus-border-visible='true'] {
-    outline: 1px solid hsl(var(--border));
-    outline-offset: -1px;
+    border-color: hsl(var(--border));
   }
 
   @media (forced-colors: active) {
     .panel[data-focus-border-visible='true'] {
-      outline-color: Highlight;
+      border-color: Highlight;
     }
   }
 

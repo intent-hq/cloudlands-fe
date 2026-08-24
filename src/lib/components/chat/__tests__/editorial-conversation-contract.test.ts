@@ -334,13 +334,11 @@ describe('editorial conversation presentation contract', () => {
     expect(suggestions).not.toContain('faPaperPlane');
   });
 
-  it('supports a top-divider-only docked composer without changing edit-mode chrome', () => {
+  it('supports the nested ChatPanel composer without changing standalone chrome', () => {
     const input = source('src/lib/components/chat/input/SimpleRichInput.svelte');
 
     expect(input).toMatch(/edgeDocked\s*\?/);
-    expect(input).toContain(
-      'rounded-none border-x-0 border-b-0 border-t border-border bg-transparent shadow-none',
-    );
+    expect(input).toContain('rounded-lg border-0 bg-sidebar shadow-none');
     expect(input).toContain('rounded-lg border border-border shadow-(--elevation-raised)');
     expect(input).not.toContain(':global(.panel:not(.focused) .rich-input-container) {');
     expect(input).toContain('@media (prefers-reduced-motion: reduce)');
@@ -418,10 +416,11 @@ describe('editorial conversation presentation contract', () => {
 
     expect(panel).toContain('class="conversation-composer relative z-10 w-full"');
     expect(panel).toContain(
-      'class="composer-aurora-host pointer-events-none absolute z-0 overflow-hidden {isChiefWorkspace',
+      'class="composer-aurora-host pointer-events-none absolute -left-4 -right-2 -bottom-4 z-0 overflow-hidden"',
     );
-    expect(panel).toContain("'-left-4 -right-2 -bottom-4'");
-    expect(panel).toContain("'inset-x-0 bottom-0'");
+    expect(panel).toContain(
+      'class="composer-aurora-host absolute inset-x-0 bottom-0 z-0 overflow-hidden rounded-lg"',
+    );
     expect(panel).toContain('height: calc(100% + 10rem)');
     expect(panel).toContain('class="relative z-20 mt-6 {isChiefWorkspace');
   });

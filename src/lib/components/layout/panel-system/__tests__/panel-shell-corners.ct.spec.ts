@@ -31,10 +31,12 @@ async function shellStyles(panel: Locator, page: Page, expectedBackgroundClass =
         style.borderBottomWidth,
         style.borderLeftWidth,
       ],
-      outlineColor: style.outlineColor,
-      outlineOffset: style.outlineOffset,
-      outlineStyle: style.outlineStyle,
-      outlineWidth: style.outlineWidth,
+      borderColors: [
+        style.borderTopColor,
+        style.borderRightColor,
+        style.borderBottomColor,
+        style.borderLeftColor,
+      ],
       radii: [
         style.borderTopLeftRadius,
         style.borderTopRightRadius,
@@ -78,13 +80,12 @@ for (const theme of ['light', 'dark'] as const) {
           const styles = await shellStyles(panel, page);
           expect(styles.background).toBe(styles.expectedBackground);
           expect(styles.emptyStateBackground).toBe(styles.expectedBackground);
-          expect(styles.borders).toEqual(['0px', '0px', '0px', '0px']);
+          expect(styles.borders).toEqual(['1px', '1px', '1px', '1px']);
           expect(styles.focused).toBe(index === 0 ? 'true' : 'false');
           expect(styles.focusBorderVisible).toBe(index === 0 ? 'true' : 'false');
-          if (index === 0) expect(styles.outlineColor).toBe(styles.expectedBorder);
-          expect(styles.outlineOffset).toBe(index === 0 ? '-1px' : '0px');
-          expect(styles.outlineStyle).toBe(index === 0 ? 'solid' : 'none');
-          expect(styles.outlineWidth).toBe(index === 0 ? '1px' : '0px');
+          expect(new Set(styles.borderColors)).toEqual(
+            new Set([index === 0 ? styles.expectedBorder : 'rgba(0, 0, 0, 0)']),
+          );
           expect(new Set(styles.radii).size).toBe(1);
           expect(Number.parseFloat(styles.radii[0])).toBeGreaterThan(0);
           expect(styles.overflow).toEqual(['hidden', 'hidden']);
@@ -126,13 +127,12 @@ for (const theme of ['light', 'dark'] as const) {
       const styles = await shellStyles(panel, page, 'bg-background');
       expect(styles.background).toBe(styles.expectedBackground);
       expect(styles.emptyStateBackground).toBeNull();
-      expect(styles.borders).toEqual(['0px', '0px', '0px', '0px']);
+      expect(styles.borders).toEqual(['1px', '1px', '1px', '1px']);
       expect(styles.focused).toBe(index === 0 ? 'true' : 'false');
       expect(styles.focusBorderVisible).toBe(index === 0 ? 'true' : 'false');
-      if (index === 0) expect(styles.outlineColor).toBe(styles.expectedBorder);
-      expect(styles.outlineOffset).toBe(index === 0 ? '-1px' : '0px');
-      expect(styles.outlineStyle).toBe(index === 0 ? 'solid' : 'none');
-      expect(styles.outlineWidth).toBe(index === 0 ? '1px' : '0px');
+      expect(new Set(styles.borderColors)).toEqual(
+        new Set([index === 0 ? styles.expectedBorder : 'rgba(0, 0, 0, 0)']),
+      );
       expect(styles.ownsEmptySurface).toBeNull();
     }
   });

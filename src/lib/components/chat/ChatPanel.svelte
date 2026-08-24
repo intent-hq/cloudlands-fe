@@ -5479,17 +5479,36 @@
          the sidebar frame's pl-2/pb-2 window inset (the ancestors clip with an
          8px overflow-clip-margin), touching the app window's left/bottom edges. -->
     {#if $agentSessionIsStreaming$}
-      <div
-        class="composer-aurora-host pointer-events-none absolute z-0 overflow-hidden {isChiefWorkspace
-          ? '-left-4 -right-2 -bottom-4'
-          : 'inset-x-0 bottom-0'}"
-        style="height: calc(100% + 10rem);"
-        data-testid="composer-aurora-host"
-        transition:fade
-      >
-        <AuroraBackground {agentId} />
-        <AuroraSofteningLayer />
-      </div>
+      {#if isChiefWorkspace}
+        <div
+          class="composer-aurora-host pointer-events-none absolute -left-4 -right-2 -bottom-4 z-0 overflow-hidden"
+          style="height: calc(100% + 10rem);"
+          data-testid="composer-aurora-host"
+          transition:fade
+        >
+          <AuroraBackground {agentId} />
+          <AuroraSofteningLayer />
+        </div>
+      {:else}
+        <div
+          class="pointer-events-none absolute inset-y-0 left-0 z-0"
+          style:right="{scrollbarGutterWidth}px"
+        >
+          <div class="composer-prompt-lane chat-content-measure mx-auto h-full w-full min-w-0">
+            <div class="relative h-full w-full min-w-0">
+              <div
+                class="composer-aurora-host absolute inset-x-0 bottom-0 z-0 overflow-hidden rounded-lg"
+                style="height: calc(100% + 10rem);"
+                data-testid="composer-aurora-host"
+                transition:fade
+              >
+                <AuroraBackground {agentId} />
+                <AuroraSofteningLayer />
+              </div>
+            </div>
+          </div>
+        </div>
+      {/if}
     {/if}
 
     <div

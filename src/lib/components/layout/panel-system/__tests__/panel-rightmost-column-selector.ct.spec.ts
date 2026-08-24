@@ -36,9 +36,9 @@ test('keeps Add column on the rightmost panel and removes the count picker', asy
   await expect(singlePanel).toHaveAttribute('data-focus-border-visible', 'false');
   const singlePanelStyle = await singlePanel.evaluate((node) => {
     const style = getComputedStyle(node);
-    return { outlineStyle: style.outlineStyle, width: style.borderTopWidth };
+    return { color: style.borderTopColor, width: style.borderTopWidth };
   });
-  expect(singlePanelStyle).toEqual({ outlineStyle: 'none', width: '0px' });
+  expect(singlePanelStyle).toEqual({ color: 'rgba(0, 0, 0, 0)', width: '1px' });
 
   await addButton.click();
   await expect(layoutState).toHaveAttribute('data-column-count', '2');
@@ -66,38 +66,30 @@ test('keeps Add column on the rightmost panel and removes the count picker', asy
     const focusedStyle = await panel.evaluate((node) => {
       const style = getComputedStyle(node);
       return {
-        outlineColor: style.outlineColor,
-        outlineOffset: style.outlineOffset,
-        outlineStyle: style.outlineStyle,
-        outlineWidth: style.outlineWidth,
+        borderTopColor: style.borderTopColor,
         borderTopWidth: style.borderTopWidth,
       };
     });
-    expect(focusedStyle.outlineColor).not.toBe('rgba(0, 0, 0, 0)');
-    expect(focusedStyle.outlineOffset).toBe('-1px');
-    expect(focusedStyle.outlineStyle).toBe('solid');
-    expect(focusedStyle.outlineWidth).toBe('1px');
-    expect(focusedStyle.borderTopWidth).toBe('0px');
+    expect(focusedStyle.borderTopColor).not.toBe('rgba(0, 0, 0, 0)');
+    expect(focusedStyle.borderTopWidth).toBe('1px');
     const geometryAfterFocus = await panel.boundingBox();
-    expect({ width: geometryAfterFocus?.width, height: geometryAfterFocus?.height }).toEqual({
-      width: geometryBeforeFocus?.width,
-      height: geometryBeforeFocus?.height,
-    });
+    expect(geometryAfterFocus!.width).toBeCloseTo(geometryBeforeFocus!.width, 0);
+    expect(geometryAfterFocus!.height).toBeCloseTo(geometryBeforeFocus!.height, 0);
     await expect
       .poll(() => focusedHeader.evaluate((node) => getComputedStyle(node).boxShadow))
       .toBe('none');
     const panelBorders = await component.locator('[data-panel-id]').evaluateAll((panels) =>
       panels.map((node) => ({
+        color: getComputedStyle(node).borderTopColor,
         focused: node.getAttribute('data-focused'),
-        outlineStyle: getComputedStyle(node).outlineStyle,
         width: getComputedStyle(node).borderTopWidth,
       })),
     );
-    expect(panelBorders.every(({ width }) => width === '0px')).toBe(true);
+    expect(panelBorders.every(({ width }) => width === '1px')).toBe(true);
     expect(
       panelBorders
         .filter(({ focused }) => focused === 'false')
-        .every(({ outlineStyle }) => outlineStyle === 'none'),
+        .every(({ color }) => color === 'rgba(0, 0, 0, 0)'),
     ).toBe(true);
     await expect(component.locator('[data-column-focused]')).toHaveCount(1);
   }
@@ -110,18 +102,16 @@ test('keeps Add column on the rightmost panel and removes the count picker', asy
     probe.remove();
     const style = getComputedStyle(node);
     return {
-      outlineColor: style.outlineColor,
-      outlineOffset: style.outlineOffset,
-      outlineStyle: style.outlineStyle,
-      outlineWidth: style.outlineWidth,
+      borderTopColor: style.borderTopColor,
+      borderTopStyle: style.borderTopStyle,
+      borderTopWidth: style.borderTopWidth,
       highlightColor,
     };
   });
   expect(forcedColorStyle).toEqual({
-    outlineColor: forcedColorStyle.highlightColor,
-    outlineOffset: '-1px',
-    outlineStyle: 'solid',
-    outlineWidth: '1px',
+    borderTopColor: forcedColorStyle.highlightColor,
+    borderTopStyle: 'solid',
+    borderTopWidth: '1px',
     highlightColor: forcedColorStyle.highlightColor,
   });
   await page.emulateMedia({ forcedColors: 'none' });

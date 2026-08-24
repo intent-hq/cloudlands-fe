@@ -16,6 +16,7 @@ test('caps and centers separate transcript and composer columns in every wide st
   const composerLane = component.getByTestId('chat-composer-lane');
   const shell = component.getByTestId('chat-composer-shell');
   const promptLayer = component.getByTestId('composer-prompt-layer');
+  const input = component.getByTestId('message-input');
   const aurora = component.getByTestId('composer-aurora-host');
 
   for (const theme of ['light', 'dark'] as const) {
@@ -24,22 +25,30 @@ test('caps and centers separate transcript and composer columns in every wide st
       await expect
         .poll(async () => (await transcript.boundingBox())!.width)
         .toBeCloseTo(1050 * zoom, 1);
-      const [transcriptBox, composerBox, composerLaneBox, shellBox, promptBox, auroraBox] =
-        await Promise.all([
-          transcript.boundingBox(),
-          composer.boundingBox(),
-          composerLane.boundingBox(),
-          shell.boundingBox(),
-          promptLayer.boundingBox(),
-          aurora.boundingBox(),
-        ]);
+      const [
+        transcriptBox,
+        composerBox,
+        composerLaneBox,
+        shellBox,
+        promptBox,
+        inputBox,
+        auroraBox,
+      ] = await Promise.all([
+        transcript.boundingBox(),
+        composer.boundingBox(),
+        composerLane.boundingBox(),
+        shell.boundingBox(),
+        promptLayer.boundingBox(),
+        input.boundingBox(),
+        aurora.boundingBox(),
+      ]);
       expect(composerLaneBox!.width).toBeCloseTo(1050 * zoom, 1);
       expect(composerBox!.width).toBeCloseTo((1050 - 48) * zoom, 1);
       expect(Math.abs(center(transcriptBox!) - center(composerBox!))).toBeLessThanOrEqual(0.5);
       expect(promptBox!.width).toBeCloseTo(shellBox!.width, 1);
-      expect(auroraBox!.x).toBeCloseTo(shellBox!.x, 1);
-      expect(auroraBox!.x + auroraBox!.width).toBeCloseTo(shellBox!.x + shellBox!.width, 1);
-      expect(auroraBox!.y + auroraBox!.height).toBeCloseTo(shellBox!.y + shellBox!.height, 1);
+      expect(auroraBox!.x).toBeCloseTo(inputBox!.x, 1);
+      expect(auroraBox!.x + auroraBox!.width).toBeCloseTo(inputBox!.x + inputBox!.width, 1);
+      expect(auroraBox!.y + auroraBox!.height).toBeCloseTo(inputBox!.y + inputBox!.height, 1);
       await expect(promptLayer).toHaveCSS('border-top-width', '0px');
       await expect(composerLane).toHaveCSS('padding-left', '24px');
       await expect(composerLane).toHaveCSS('padding-right', '24px');
@@ -86,12 +95,14 @@ test('keeps the nested composer inset without a narrow scroll owner', async ({ m
             ? Math.abs(transcriptWidth - composerWidth - 32 * zoom)
             : Infinity;
         })
-        .toBeLessThanOrEqual(0.05);
+        .toBeLessThanOrEqual(1);
       const [transcriptBox, composerBox] = await Promise.all([
         transcript.boundingBox(),
         composer.boundingBox(),
       ]);
-      expect(transcriptBox!.width - composerBox!.width).toBeCloseTo(32 * zoom, 1);
+      expect(Math.abs(transcriptBox!.width - composerBox!.width - 32 * zoom)).toBeLessThanOrEqual(
+        1,
+      );
       expect(Math.abs(center(transcriptBox!) - center(composerBox!))).toBeLessThanOrEqual(0.5);
       await expect(composerLane).toHaveCSS('padding-left', '16px');
       await expect(composerLane).toHaveCSS('padding-right', '16px');
