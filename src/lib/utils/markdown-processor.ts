@@ -3,6 +3,7 @@ import { createTiptapTaskListMarked } from './tiptap-task-list-extension';
 import { renderTaskBlocksAsReadableMarkdown } from './tiptap-task-block-extension';
 import { normalizeAnchorPositions } from './anchor-normalization';
 import { sanitizeMarkdownHTML } from './html-sanitizer';
+import { rewriteIntentFileImageSrcs } from './workspace-file-image';
 import { toPromptToken } from '$lib/services/mentions/format';
 import { NotesPrimitivesSerializer } from './notes-primitives-serializer';
 import type { MarkdownWorkerResponse } from './markdown-worker';
@@ -440,6 +441,8 @@ export async function processMarkdownToHTML(
     processPrimitives?: boolean;
     /** How raw @@@task proposal blocks should render */
     taskBlockRenderMode?: 'placeholder' | 'content';
+    /** Workspace ID used to resolve short-form intent://local/file/... image links */
+    workspaceId?: string;
   } = {},
 ): Promise<string> {
   const {
@@ -448,6 +451,7 @@ export async function processMarkdownToHTML(
     preserveAnchors = true,
     processPrimitives = true,
     taskBlockRenderMode = 'placeholder',
+    workspaceId,
   } = options;
 
   // Handle empty content
@@ -473,7 +477,7 @@ export async function processMarkdownToHTML(
   // Check cache first — use a fast hash + length instead of the full content string as key.
   // Including content.length virtually eliminates hash collision risk (different-length
   // strings that produce the same 53-bit hash would be needed).
-  const cacheKey = `${fastHash(content)}:${content.length}|${allowEmpty}|${skipIfHTML}|${preserveAnchors}|${processPrimitives}|${taskBlockRenderMode}`;
+  const cacheKey = `${fastHash(content)}:${content.length}|${allowEmpty}|${skipIfHTML}|${preserveAnchors}|${processPrimitives}|${taskBlockRenderMode}|${workspaceId ?? ''}`;
   const cached = getCachedMarkdown(cacheKey);
   if (cached !== null) {
     return cached;
@@ -551,6 +555,10 @@ export async function processMarkdownToHTML(
 
     // Convert canonical @-tokens to mention chips so TipTap re-parses them as mentions
     htmlOut = injectMentionSpans(htmlOut);
+
+    // Rewrite intent://.../file/... image sources to workspace-file:// URLs so
+    // inline markdown images referencing workspace files render in the transcript
+    htmlOut = rewriteIntentFileImageSrcs(htmlOut, workspaceId);
     const t5 = isLargeContent ? performance.now() : 0;
 
     // Debug: Check if primitive divs survived marked parsing

@@ -235,8 +235,9 @@ export function sanitizeMarkdownHTML(html: string): string {
       'open', // details element open state
       'tabindex', // for focusable elements like mention chips
     ],
-    // Allow workspace-asset:// protocol for embedded images in notes
+    // Allow workspace-asset:// (embedded note images) and workspace-file://
+    // (inline workspace file images) protocols
     ALLOWED_URI_REGEXP:
-      /^(?:(?:https?|mailto|tel|sms|intent|workspace-asset):|[^a-z]|[a-z+.\-]+(?:[^a-z+.\-:]|$))/i,
+      /^(?:(?:https?|mailto|tel|sms|intent|workspace-asset|workspace-file):|[^a-z]|[a-z+.\-]+(?:[^a-z+.\-:]|$))/i,
   });
 }
