@@ -9,8 +9,9 @@
  */
 import { cleanup, fireEvent, render, screen } from '@testing-library/svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { ContentBlock } from '$shared/types';
+import type { AgentMessage, ContentBlock } from '$shared/types';
 import { warmImport } from '../../../../test/warm-import';
+import { findChatSearchMatches } from '../chat-search';
 
 vi.mock('svelte-fa', async () => {
   const MockFa = (await import('../../ui/__tests__/mocks/Fa.svelte')).default;
@@ -199,20 +200,24 @@ describe('thinking blocks — StreamingMessageContent', () => {
   ])(
     'pairs the adjacent title and description into one live preview in %s',
     async (_renderer, renderMessageContent) => {
-      await renderMessageContent(
-        [
-          thinking(
-            '01a03064:0',
-            '\n\n**Assessing delegation and tool availability**\n\n**Planning workspace title setup**',
-          ),
-          {
-            type: 'text',
-            id: '01a03064:1',
-            text: '<group:Prepping>\nI’ll first title the workspace, read the existing spec, and inspect the project’s dark-mode surface before drafting the implementation plan.',
-          },
-        ],
-        true,
-      );
+      const content = [
+        thinking(
+          '01a03064:0',
+          '\n\n**Assessing delegation and tool availability**\n\n**Planning workspace title setup**',
+        ),
+        {
+          type: 'text' as const,
+          id: '01a03064:1',
+          text: '<group:Prepping>\nI’ll first title the workspace, read the existing spec, and inspect the project’s dark-mode surface before drafting the implementation plan.',
+        },
+      ];
+      const message = {
+        id: 'assistant-adjacent-preview',
+        role: 'assistant',
+        contentBlocks: content,
+        isStreaming: true,
+      } as AgentMessage;
+      await renderMessageContent(content, true);
 
       const disclosure = screen.getByTestId('response-group-disclosure');
       expect(screen.getAllByRole('button')).toHaveLength(1);
@@ -224,12 +229,21 @@ describe('thinking blocks — StreamingMessageContent', () => {
       expect(document.body.textContent?.match(/Planning workspace title setup/g)).toHaveLength(1);
       expect(document.body.textContent?.match(/I’ll first title the workspace/g)).toHaveLength(1);
       expect(document.body.textContent).not.toContain('Assessing delegation and tool availability');
+      expect(findChatSearchMatches([message], 'dark-mode surface', new Map())).toEqual([
+        {
+          messageId: 'assistant-adjacent-preview',
+          matchIndexInMessage: 0,
+          turnKey: 'assistant-adjacent-preview',
+        },
+      ]);
+      expect(findChatSearchMatches([message], 'Assessing delegation', new Map())).toEqual([]);
 
       await fireEvent.click(disclosure);
       expect(
         document.body.textContent?.match(/Assessing delegation and tool availability/g),
       ).toHaveLength(1);
       expect(document.body.textContent?.match(/I’ll first title the workspace/g)).toHaveLength(1);
+      expect(findChatSearchMatches([message], 'Assessing delegation', new Map())).toEqual([]);
       const historyRow = screen.getByTestId('reasoning-history-row');
       expect(historyRow.textContent?.trim()).toBe('Assessing delegation and tool availability');
       expect(historyRow.querySelector('button, [aria-expanded]')).toBeNull();

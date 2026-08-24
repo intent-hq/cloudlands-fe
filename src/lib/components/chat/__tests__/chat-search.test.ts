@@ -2,46 +2,74 @@ import { describe, expect, it } from 'vitest';
 import type { AgentMessage } from '$shared/types';
 import { collectSearchRanges, findChatSearchMatches } from '../chat-search';
 
-const assistant = (id: string, contentBlocks: AgentMessage['contentBlocks']): AgentMessage =>
-  ({ id, role: 'assistant', contentBlocks }) as AgentMessage;
+const assistant = (
+  id: string,
+  contentBlocks: AgentMessage['contentBlocks'],
+  isStreaming = false,
+): AgentMessage => ({ id, role: 'assistant', contentBlocks, isStreaming }) as AgentMessage;
 
 describe('chat search utilities', () => {
-  it('indexes every response group with the disclosure path needed to reveal it', () => {
+  it('indexes only the visible preview of completed response groups', () => {
     const message = assistant('assistant-1', [
-      { type: 'text', text: '<group:Earlier>hidden match</group>' },
-      { type: 'text', text: '<group:Latest>visible match</group>' },
+      { type: 'text', text: '<group:Completed>visible summary' },
+      { type: 'text', text: 'hidden detail</group>' },
     ]);
 
-    expect(findChatSearchMatches([message], 'hidden', new Map())).toEqual([
+    expect(findChatSearchMatches([message], 'hidden', new Map())).toEqual([]);
+    expect(findChatSearchMatches([message], 'summary', new Map([['assistant-1', 'turn-1']]))).toEqual([
       {
         messageId: 'assistant-1',
         matchIndexInMessage: 0,
         occurrenceInBlock: 0,
-        turnKey: 'assistant-1',
-        blockPath: 'b:0:c:0',
-        disclosurePath: ['group:b:0'],
+        turnKey: 'turn-1',
+        blockPath: 'b:0:summary',
+        disclosurePath: [],
       },
     ]);
-    expect(findChatSearchMatches([message], 'match', new Map([['assistant-1', 'turn-1']]))).toEqual(
+  });
+
+  it('indexes only the current visible child in a live response group', () => {
+    const message = assistant(
+      'assistant-live',
+      [
+        { type: 'text', text: '<group:Live>hidden earlier detail' },
+        { type: 'text', text: 'current live detail' },
+        { type: 'tool_result', tool_use_id: 'tool-1', output: 'not a visible row' },
+      ],
+      true,
+    );
+
+    expect(findChatSearchMatches([message], 'earlier', new Map())).toEqual([]);
+    expect(findChatSearchMatches([message], 'current live', new Map())).toEqual([
+      {
+        messageId: 'assistant-live',
+        matchIndexInMessage: 0,
+        occurrenceInBlock: 0,
+        turnKey: 'assistant-live',
+        blockPath: 'b:0:c:1',
+        disclosurePath: [],
+      },
+    ]);
+  });
+
+  it('indexes the adjacent description selected by both live renderers', () => {
+    const message = assistant(
+      'assistant-adjacent-preview',
       [
         {
-          messageId: 'assistant-1',
-          matchIndexInMessage: 0,
-          occurrenceInBlock: 0,
-          turnKey: 'turn-1',
-          blockPath: 'b:0:c:0',
-          disclosurePath: ['group:b:0'],
+          type: 'thinking',
+          text: '**Hidden predecessor reasoning**\n\n**Rendered group title**',
         },
         {
-          messageId: 'assistant-1',
-          matchIndexInMessage: 1,
-          occurrenceInBlock: 0,
-          turnKey: 'turn-1',
-          blockPath: 'b:1:c:0',
-          disclosurePath: ['group:b:1'],
+          type: 'text',
+          text: '<group:Prepping>Rendered adjacent description',
         },
       ],
+      true,
     );
+
+    expect(findChatSearchMatches([message], 'adjacent description', new Map())).toHaveLength(1);
+    expect(findChatSearchMatches([message], 'Hidden predecessor', new Map())).toEqual([]);
   });
 
   it('excludes the alternate reasoning description and history while collapsed', () => {
@@ -72,6 +100,33 @@ describe('chat search utilities', () => {
 
     expect(findChatSearchMatches([message], 'Visible', new Map())).toHaveLength(1);
     expect(findChatSearchMatches([message], 'queued at', new Map())).toEqual([]);
+  });
+
+  it('preserves ordinary text, event exclusions, and suggested-prompt cleanup', () => {
+    const ordinary = assistant('assistant-ordinary', [
+      {
+        type: 'text',
+        text: 'Searchable prose.\n\n<!-- suggested-prompts\nHidden suggested action\n-->',
+      },
+    ]);
+    const event = {
+      id: 'user-event',
+      role: 'user',
+      contentBlocks: [{ type: 'text', text: 'Hidden event payload' }],
+      metadata: { type: 'event_notification' },
+    } as AgentMessage;
+    const workspaceEvents = {
+      id: 'user-workspace-events',
+      role: 'user',
+      contentBlocks: [{ type: 'text', text: '[WORKSPACE EVENTS] Hidden workspace payload' }],
+    } as AgentMessage;
+
+    expect(findChatSearchMatches([ordinary], 'Searchable prose', new Map())).toHaveLength(1);
+    expect(findChatSearchMatches([ordinary], 'Hidden suggested action', new Map())).toEqual([]);
+    expect(findChatSearchMatches([event], 'Hidden event payload', new Map())).toEqual([]);
+    expect(findChatSearchMatches([workspaceEvents], 'Hidden workspace payload', new Map())).toEqual(
+      [],
+    );
   });
 
   it('creates a range for a match spanning multiple text nodes', () => {

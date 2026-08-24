@@ -1,10 +1,10 @@
 import type { AgentMessage } from '$shared/types';
 import { extractAllContent } from '$shared/types';
+import { getContentBlockText } from '$shared/utils/content-block-helpers';
 import {
   groupContentBlocks,
   parseSuggestedPrompts,
   parseSuggestedPromptsFromContentBlocks,
-  type ContentBlockGroup,
 } from '$lib/utils/messageParser';
 import { getPresentedUserMessageText } from '$lib/utils/user-message-presentation';
 interface ChatSearchBlock {
@@ -14,7 +14,11 @@ interface ChatSearchBlock {
   disclosurePath: string[];
   text: string;
 }
-import { normalizeResponseGroups } from './response-group-blocks';
+import {
+  getResponseGroupCurrentChildIndex,
+  getResponseGroupPreviewBlock,
+  normalizeResponseGroups,
+} from './response-group-blocks';
 
 export interface ChatSearchMatch {
   messageId: string;
@@ -66,13 +70,17 @@ function buildMessageSearchBlocks(message: AgentMessage, turnKey: string): ChatS
       return;
     }
     if (block.type !== 'content_group') return;
-    const group = block as ContentBlockGroup;
-    group.children.forEach((child, childIndex) => {
-      if (child.type !== 'text') return;
-      addText(child.text || child.content || '', chatSearchBlockPath(blockIndex, childIndex), [
-        `group:${path}`,
-      ]);
-    });
+    if (block.isStreaming) {
+      const currentChildIndex = getResponseGroupCurrentChildIndex(block);
+      const currentBlock = block.children[currentChildIndex];
+      if (currentBlock) {
+        addText(getContentBlockText(currentBlock), chatSearchBlockPath(blockIndex, currentChildIndex), []);
+      }
+      return;
+    }
+    if (block.isReasoningPhase) return;
+    const previewBlock = getResponseGroupPreviewBlock(block.children);
+    if (previewBlock) addText(getContentBlockText(previewBlock), `${path}:summary`, []);
   });
   return output;
 }
