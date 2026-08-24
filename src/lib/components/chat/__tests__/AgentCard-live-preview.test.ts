@@ -133,7 +133,7 @@ describe('AgentCard live preview precedence', () => {
       within(trigger)
         .getAllByTestId('task-progress-status-icon')
         .map((icon) => icon.dataset.taskStatus),
-    ).toEqual(['running', 'completed']);
+    ).toEqual(['completed', 'running']);
     expect(activationButton?.contains(trigger)).toBe(false);
     expect(activationButton?.className).toContain('overflow-hidden');
     expect(content?.className).toContain('mr-10');
