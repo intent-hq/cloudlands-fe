@@ -374,18 +374,19 @@ export function createPanelKeyboardShortcuts(
       return handled;
     }
 
+    // Pane selection is global when that direction is available, including from editable content.
+    if (isMod && !e.shiftKey && !e.altKey && bracketDirection) {
+      const handled = selectAdjacentPane(getLayoutManager(), bracketDirection);
+      if (handled) e.preventDefault();
+      return handled;
+    }
+
     const target = e.target instanceof Element ? e.target : null;
     if (isFocusInTerminal(target as HTMLElement | null) || isFocusInEditableElement(target)) {
       return false;
     }
 
     const layoutManager = getLayoutManager();
-
-    if (isMod && !e.shiftKey && !e.altKey && bracketDirection) {
-      const handled = selectAdjacentPane(layoutManager, bracketDirection);
-      if (handled) e.preventDefault();
-      return handled;
-    }
 
     // PageUp/PageDown remain compatibility aliases for column focus and pane movement.
     if (isMod && (e.key === 'PageUp' || e.key === 'PageDown')) {

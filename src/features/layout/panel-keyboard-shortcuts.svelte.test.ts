@@ -25,6 +25,7 @@ import { createPanelKeyboardShortcuts } from './panel-keyboard-shortcuts.svelte'
 describe('fixed-column panel keyboard shortcuts', () => {
   const editableTargetFactories: Array<[string, () => HTMLElement]> = [
     ['input', () => document.createElement('input')],
+    ['textarea', () => document.createElement('textarea')],
     [
       'editor',
       () => {
@@ -89,19 +90,31 @@ describe('fixed-column panel keyboard shortcuts', () => {
   it.each([
     ['macOS', true, { metaKey: true }],
     ['Windows/Linux', false, { ctrlKey: true }],
-  ] as const)('uses the platform Mod key for pane selection on %s', (_platform, isMac, mod) => {
-    const shortcuts = createPanelKeyboardShortcuts(() => manager, undefined, undefined, { isMac });
-    const next = event(']', mod);
-    const previous = event('[', mod);
+  ] as const)(
+    'uses both unshifted bracket pane shortcuts from all targets on %s',
+    (_platform, isMac, mod) => {
+      const shortcuts = createPanelKeyboardShortcuts(() => manager, undefined, undefined, {
+        isMac,
+      });
+      const targets: Array<[string, () => HTMLElement]> = [
+        ['ordinary content', () => document.body],
+        ...editableTargetFactories,
+      ];
 
-    expect(shortcuts.handleKeyDown(next)).toBe(true);
-    expect(shortcuts.handleKeyDown(previous)).toBe(true);
-    expect(next.defaultPrevented).toBe(true);
-    expect(previous.defaultPrevented).toBe(true);
-    expect(selectNextTab).toHaveBeenCalledWith('p1');
-    expect(selectPreviousTab).toHaveBeenCalledWith('p1');
-    shortcuts.cleanup();
-  });
+      for (const [_context, createTarget] of targets) {
+        const next = event(']', mod, createTarget());
+        const previous = event('[', mod, createTarget());
+
+        expect(shortcuts.handleKeyDown(next)).toBe(true);
+        expect(shortcuts.handleKeyDown(previous)).toBe(true);
+        expect(next.defaultPrevented).toBe(true);
+        expect(previous.defaultPrevented).toBe(true);
+        expect(selectNextTab).toHaveBeenLastCalledWith('p1');
+        expect(selectPreviousTab).toHaveBeenLastCalledWith('p1');
+      }
+      shortcuts.cleanup();
+    },
+  );
 
   it.each([
     ['macOS Control', true, { ctrlKey: true }],
@@ -212,6 +225,36 @@ describe('fixed-column panel keyboard shortcuts', () => {
     shortcuts.cleanup();
   });
 
+  it.each([
+    ['macOS', true, { metaKey: true }],
+    ['Windows/Linux', false, { ctrlKey: true }],
+  ] as const)(
+    'leaves unavailable unshifted pane directions native on %s',
+    (_platform, isMac, mod) => {
+      mocks.focusedPanel = { id: 'p1', activeTabId: 'pane-1', tabs: [{ id: 'pane-1' }] };
+      const shortcuts = createPanelKeyboardShortcuts(() => manager, undefined, undefined, {
+        isMac,
+      });
+      const targets: Array<[string, () => HTMLElement]> = [
+        ['ordinary content', () => document.body],
+        ...editableTargetFactories,
+      ];
+
+      for (const [_context, createTarget] of targets) {
+        const next = event(']', mod, createTarget());
+        const previous = event('[', mod, createTarget());
+
+        expect(shortcuts.handleKeyDown(next)).toBe(false);
+        expect(shortcuts.handleKeyDown(previous)).toBe(false);
+        expect(next.defaultPrevented).toBe(false);
+        expect(previous.defaultPrevented).toBe(false);
+      }
+      expect(selectNextTab).not.toHaveBeenCalled();
+      expect(selectPreviousTab).not.toHaveBeenCalled();
+      shortcuts.cleanup();
+    },
+  );
+
   it('creates a column to the right below the four-column limit', () => {
     const shortcuts = createPanelKeyboardShortcuts(() => manager, undefined, undefined, {
       isMac: false,
@@ -234,7 +277,6 @@ describe('fixed-column panel keyboard shortcuts', () => {
       });
       const target = createTarget();
       const protectedEvents = [
-        event(']', { metaKey: true }, target),
         event('PageDown', { metaKey: true, shiftKey: true }, target),
         event('PageDown', { metaKey: true, altKey: true }, target),
         event('\\', { metaKey: true }, target),
