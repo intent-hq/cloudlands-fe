@@ -322,6 +322,23 @@ describe('WorkspaceHoverCard', () => {
     await waitFor(() => expect(screen.getByText('Loaded Workspace Agent')).toBeTruthy());
   });
 
+  it('keeps loading and null inputs mutually exclusive with loaded content', async () => {
+    const WorkspaceHoverCard = (await import('../WorkspaceHoverCard.svelte')).default;
+    const view = render(WorkspaceHoverCard, {
+      props: { workspace: null, isLoading: true, loadWorkspaceData: false },
+    });
+
+    expect(view.container.querySelectorAll('[data-slot="skeleton"]')).toHaveLength(3);
+    expect(view.container.querySelector('[data-workspace-hover-card-status-row]')).toBeNull();
+
+    await view.rerender({ workspace: null, isLoading: false, loadWorkspaceData: false });
+    expect(view.container.querySelectorAll('[data-slot="skeleton"]')).toHaveLength(1);
+
+    await view.rerender({ workspace: baseWorkspace, isLoading: false, loadWorkspaceData: false });
+    expect(view.container.querySelector('[data-slot="skeleton"]')).toBeNull();
+    expect(view.container.querySelector('[data-workspace-hover-card-status-row]')).toBeTruthy();
+  });
+
   it('renders live session names and statuses for member agent IDs', async () => {
     mocks.agentSessionsByWorkspace['ws-1'] = [
       {
@@ -447,6 +464,24 @@ describe('WorkspaceHoverCard', () => {
     expect(
       [...avatars].every((avatar) => avatar.getAttribute('data-avatar-state') === 'unread'),
     ).toBe(true);
+  });
+
+  it('does not repeat a streaming agent in the unread stack', async () => {
+    mocks.streamingAgentIds.push('agent-streaming');
+    const { container } = await renderHoverCard({
+      attention: 'unread',
+      agentSummary: { agentIds: ['agent-streaming', 'agent-unread'] },
+    });
+
+    const stack = container.querySelector('[data-workspace-hover-card-agent-stack]');
+    const avatars = stack?.querySelectorAll('[data-agent-avatar-with-state]') ?? [];
+    expect(avatars).toHaveLength(1);
+    expect(avatars[0]?.getAttribute('data-avatar-state')).toBe('unread');
+    expect(
+      stack
+        ?.querySelector('[data-agent-avatar-stack-item]')
+        ?.getAttribute('data-agent-avatar-stack-agent-id'),
+    ).toBe('agent-unread');
   });
 
   it('does not render status placeholder text when the workspace status message is empty', async () => {
