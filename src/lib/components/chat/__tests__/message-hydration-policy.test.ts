@@ -24,6 +24,7 @@ describe('message hydration policy', () => {
     ]);
     expect(policy.reportVisibility('near', true)).toEqual([
       { id: 'near', hydrated: true, reason: 'displayport' },
+      { id: 'new', hydrated: true, reason: 'displayport' },
     ]);
     expect(policy.getFrontier()).toBe('near');
     expect(deriveMessageHydrationFrontier(policy.getStates(), ['new', 'near'])).toBe('near');
@@ -48,6 +49,16 @@ describe('message hydration policy', () => {
     expect(policy.getState('new')?.canDehydrate).toBe(false);
   });
 
+  it('hydrates a newer placeholder added after the frontier is established', () => {
+    const policy = createMessageHydrationPolicy([assistant('frontier')]);
+    policy.reportVisibility('frontier', true);
+
+    expect(policy.updateMessages([assistant('frontier'), assistant('new')])).toEqual([
+      { id: 'new', hydrated: true, reason: 'frontier' },
+    ]);
+    expect(policy.getHydratedIds()).toEqual(['frontier', 'new']);
+  });
+
   it('makes mixed observer entry/exit ordering deterministic and enter-safe', () => {
     const first = createMessageHydrationPolicy([assistant('old'), assistant('new')]);
     const second = createMessageHydrationPolicy([assistant('old'), assistant('new')]);
@@ -70,7 +81,6 @@ describe('message hydration policy', () => {
       { forcedMessageIds: ['forced'] },
     );
     policy.reportVisibility('forced', true);
-    policy.reportVisibility('user', true);
     policy.reportObserverEntries([
       { id: 'user', isIntersecting: false },
       { id: 'forced', isIntersecting: false },

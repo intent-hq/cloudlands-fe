@@ -148,8 +148,11 @@ export function createMessageHydrationPolicy(
 
   function reconcile(reason: HydrationTransition['reason']): HydrationTransition[] {
     const transitions: HydrationTransition[] = [];
+    const boundary = frontierIndex();
     for (const record of sortByIndex(records.values())) {
-      const shouldHydrate = record.isUser || record.forced || record.isIntersecting;
+      const isAtOrNewerThanFrontier = boundary !== undefined && record.index >= boundary;
+      const shouldHydrate =
+        record.isUser || record.forced || record.isIntersecting || isAtOrNewerThanFrontier;
       if (shouldHydrate && !record.hydrated) {
         record.hydrated = true;
         transitions.push({ id: record.id, hydrated: true, reason });
