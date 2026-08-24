@@ -653,7 +653,7 @@
                               <Button
                                 variant="plain"
                                 type="button"
-                                class="breakdown-segment h-full min-w-[2px] rounded-none border-0 p-0 outline-none transition-opacity focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring motion-reduce:transition-none {segment.colorClass}"
+                                class="breakdown-segment h-full rounded-none border-0 p-0 outline-none transition-opacity focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring motion-reduce:transition-none {segment.colorClass}"
                                 style={`width: ${segment.share * 100}%`}
                                 data-segment-active={targetKey(segmentTarget(row, segment.id)) ===
                                 targetKey(activeTarget)
@@ -753,7 +753,7 @@
                               <Button
                                 variant="plain"
                                 type="button"
-                                class="breakdown-segment h-full min-w-[2px] rounded-none border-0 p-0 outline-none transition-opacity focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring motion-reduce:transition-none {segment.colorClass}"
+                                class="breakdown-segment h-full rounded-none border-0 p-0 outline-none transition-opacity focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring motion-reduce:transition-none {segment.colorClass}"
                                 style={`width: ${segment.share * 100}%`}
                                 data-segment-active={targetKey(segmentTarget(row, segment.id)) ===
                                 targetKey(activeTarget)
@@ -969,6 +969,10 @@
 
   .breakdown-metadata-control {
     margin-top: 0.375rem;
+  }
+
+  :global(.breakdown-segment) {
+    min-width: 2px;
   }
 
   :global(.breakdown-segment[data-segment-active='true']) {
