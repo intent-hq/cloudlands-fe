@@ -4,16 +4,17 @@ import { strikethroughDoubleTilde } from '../marked-strikethrough';
 import { createTiptapTaskListMarked } from '../tiptap-task-list-extension';
 
 /**
- * Mirrors the global-singleton configuration in MarkdownRenderer.svelte
- * (gfm + breaks + the strikethrough override spread into the same use call),
- * which also covers features/export/content-renderer.ts.
+ * Mirrors the global-singleton configuration: the strikethrough override is
+ * applied at module scope (MarkdownRenderer.svelte module context and
+ * features/export/content-renderer.ts), and MarkdownRenderer's $effect later
+ * applies gfm + breaks + its custom renderer.
  */
 function createGlobalLikeMarked() {
   const instance = new Marked();
+  instance.use(strikethroughDoubleTilde);
   instance.use({
     breaks: true,
     gfm: true,
-    ...strikethroughDoubleTilde,
   });
   return instance;
 }
@@ -75,5 +76,27 @@ describe.each(parsers)('double-tilde strikethrough via %s', (_name, factory) => 
     const html = parse('a ~~~three~~~ b');
     expect(html).not.toContain('<del>');
     expect(html).not.toContain('<s>');
+  });
+
+  it('handles escaped tildes inside a span like default marked', () => {
+    // Default marked yields <del>keep ~~ this</del> for this input; the
+    // override must consume the backslash escape instead of closing early.
+    const html = parse('~~keep \\~~ this~~');
+    expect(html).toContain('<del>keep ~~ this</del>');
+  });
+
+  it('keeps default flanking: delimiter followed by punctuation after a word does not open', () => {
+    // Default marked renders this literally (left delimiter is followed by
+    // punctuation and preceded by a word character); the override must not
+    // widen flanking behavior.
+    const html = parse('word~~!text~~');
+    expect(html).not.toContain('<del>');
+    expect(html).not.toContain('<s>');
+    expect(html).toContain('word~~!text~~');
+  });
+
+  it('keeps default flanking: plain intraword double-tilde still strikes', () => {
+    const html = parse('word~~text~~');
+    expect(html).toContain('word<del>text</del>');
   });
 });

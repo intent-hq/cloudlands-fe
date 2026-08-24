@@ -1,5 +1,14 @@
-<script lang="ts">
+<script lang="ts" module>
   import { marked, type Tokens } from 'marked';
+  import { strikethroughDoubleTilde } from '$lib/utils/marked-strikethrough';
+
+  // Restrict strikethrough to the double-tilde form (~~text~~) on the global
+  // marked singleton at module load — not inside the $effect below — so other
+  // consumers of the singleton are covered even before an instance mounts.
+  marked.use(strikethroughDoubleTilde);
+</script>
+
+<script lang="ts">
   import CodeBlock from './CodeBlock.svelte';
   import AugmentCodeSnippet from './AugmentCodeSnippet.svelte';
   import MermaidRenderer from '$lib/components/markdown/MermaidRenderer.svelte';
@@ -8,7 +17,6 @@
   import { withSyntheticDiffHeaders } from '$lib/utils/diff-patch-utils';
   import { handleLink } from '$features/navigation/link-handler';
   import { getWorkspaceRouteContext } from '$lib/utils/workspace-route-context';
-  import { strikethroughDoubleTilde } from '$lib/utils/marked-strikethrough';
 
   const logger = createLogger('MarkdownRenderer');
   const workspaceId = getWorkspaceRouteContext()?.workspaceId ?? undefined;
@@ -206,8 +214,6 @@
         renderer,
         breaks: true,
         gfm: true,
-        // Restrict strikethrough to the double-tilde form (~~text~~)
-        ...strikethroughDoubleTilde,
       });
 
       const html = marked.parse(content) as string;

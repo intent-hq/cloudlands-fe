@@ -1,21 +1,20 @@
-import type { MarkedExtension, Tokens } from 'marked';
+import { Tokenizer, type MarkedExtension, type Tokens } from 'marked';
+
+const defaultDel = Tokenizer.prototype.del;
 
 /**
- * Matches only double-tilde strikethrough spans (`~~text~~`).
+ * Marked extension that restricts strikethrough to the double-tilde form
+ * (`~~text~~`).
  *
- * marked's default GFM `del` tokenizer matches one OR two tildes (`^(~~?)…`),
- * so prose containing two incidental single tildes (e.g. "~$130K … ~$300K")
- * gets a huge span struck through. This regex requires exactly two tildes on
- * each side: the span must start and end with a non-space, non-tilde
- * character, and the closing `~~` must not be followed by another tilde.
- */
-const DOUBLE_TILDE_DEL_REGEX = /^~~(?=[^\s~])([\s\S]*?[^\s~])~~(?!~)/;
-
-/**
- * Marked extension that restricts strikethrough to the double-tilde form.
+ * marked's default GFM `del` tokenizer accepts one OR two tildes as the
+ * delimiter, so prose containing two incidental single tildes (e.g.
+ * "~$130K … ~$300K") gets a huge span struck through. The override rejects
+ * single-tilde delimiters and otherwise delegates to the default tokenizer,
+ * so every other `del` semantic (delimiter flanking rules, backslash-escape
+ * handling, masked source scanning) matches default marked exactly.
  *
- * Apply with `marked.use(strikethroughDoubleTilde)` (or spread into an
- * existing `use({...})` call) on every marked instance/configuration.
+ * Apply with `marked.use(strikethroughDoubleTilde)` on every marked
+ * instance/configuration.
  *
  * IMPORTANT: when there is no double-tilde match the tokenizer returns
  * `undefined`, NOT `false` — in marked, returning `false` from a tokenizer
@@ -24,17 +23,12 @@ const DOUBLE_TILDE_DEL_REGEX = /^~~(?=[^\s~])([\s\S]*?[^\s~])~~(?!~)/;
  */
 export const strikethroughDoubleTilde: MarkedExtension = {
   tokenizer: {
-    del(src: string): Tokens.Del | undefined {
-      const match = DOUBLE_TILDE_DEL_REGEX.exec(src);
-      if (!match) {
+    del(src: string, maskedSrc: string, prevChar?: string): Tokens.Del | undefined {
+      if (!src.startsWith('~~')) {
         return undefined;
       }
-      return {
-        type: 'del',
-        raw: match[0],
-        text: match[1],
-        tokens: this.lexer.inlineTokens(match[1]),
-      };
+      const token = defaultDel.call(this, src, maskedSrc, prevChar);
+      return token?.raw.startsWith('~~') ? token : undefined;
     },
   },
 };
