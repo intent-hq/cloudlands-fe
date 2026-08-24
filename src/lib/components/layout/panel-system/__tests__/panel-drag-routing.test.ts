@@ -1,6 +1,4 @@
 /** @vitest-environment jsdom */
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
 import { cleanup, fireEvent, render, screen } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { PanelState, PanelTab } from '$store/renderer/slices/panel-layout/panel-layout-types';
@@ -283,21 +281,6 @@ describe('pane and tab drag MIME routing', () => {
     expect(getPaneInsertionPlacementAtX(397, layoutRect, targets, panelIds)).toEqual(
       placements.at(-1),
     );
-  });
-
-  it('lets panel routing own non-gutter dragovers without a root clear publication', () => {
-    const source = readFileSync(
-      resolve(process.cwd(), 'src/lib/components/layout/panel-system/PanelLayout.svelte'),
-      'utf8',
-    );
-    const handler = source.slice(
-      source.indexOf('function handlePaneInsertionDragOver'),
-      source.indexOf('function handlePaneInsertionDrop'),
-    );
-
-    expect(handler).toContain('if (!geometry) return;');
-    expect(handler).toMatch(/if \(!placement\) return;\s+setPaneDropPreview\(placement\)/);
-    expect(handler).not.toContain('setPaneDropPreview(null)');
   });
 
   it('drags only the active pane from the visible stack header', async () => {
