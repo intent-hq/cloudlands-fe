@@ -1620,15 +1620,24 @@ class EmbeddedBrowserCdpService {
 
     try {
       return await this.screenshotViaCdp(webContentsId);
-    } catch (error) {
+    } catch (cdpError) {
       // The Page domain can hang (or fail) on some guests while the rest of
       // the debugger session works; degrade to capturePage() instead of
       // hanging the action until the caller's budget kills it (#3154).
       logger.warn('CDP screenshot failed; falling back to webContents.capturePage()', {
         webContentsId,
-        error: error instanceof Error ? error.message : String(error),
+        error: cdpError instanceof Error ? cdpError.message : String(cdpError),
       });
-      return this.capturePageFallback(webContentsId);
+      try {
+        return await this.capturePageFallback(webContentsId);
+      } catch (fallbackError) {
+        const cdpMessage = cdpError instanceof Error ? cdpError.message : String(cdpError);
+        const fallbackMessage =
+          fallbackError instanceof Error ? fallbackError.message : String(fallbackError);
+        throw new Error(
+          `Screenshot capture failed: CDP stage: ${cdpMessage}; Electron fallback stage: ${fallbackMessage}`,
+        );
+      }
     }
   }
 

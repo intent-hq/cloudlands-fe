@@ -71,7 +71,7 @@ function fakeWebview(id: number, url: string) {
 function fakeCdpWebview(
   id: number,
   cdpResponses: Record<string, unknown | 'hang' | Error>,
-  capturePageImage = { width: 320, height: 240 },
+  capturePageImage: { width: number; height: number } | 'hang' = { width: 320, height: 240 },
 ) {
   const sendCommand = vi.fn((method: string) => {
     const response = cdpResponses[method];
@@ -79,10 +79,13 @@ function fakeCdpWebview(
     if (response instanceof Error) return Promise.reject(response);
     return Promise.resolve(response);
   });
-  const capturePage = vi.fn(async () => ({
-    getSize: () => capturePageImage,
-    toJPEG: () => Buffer.from('fallback-jpeg-bytes'),
-  }));
+  const capturePage = vi.fn(async () => {
+    if (capturePageImage === 'hang') return new Promise<never>(() => {});
+    return {
+      getSize: () => capturePageImage,
+      toJPEG: () => Buffer.from('fallback-jpeg-bytes'),
+    };
+  });
   return {
     ...fakeWebview(id, 'http://cdp/'),
     debugger: {
@@ -660,9 +663,31 @@ describe('screenshot Page-domain hang fallback (#3154)', () => {
     mocks.fromId.mockReturnValue(wc);
     service.registerTab('tab-fallback-fail', 65);
 
-    await expect(service.screenshot('tab-fallback-fail')).rejects.toThrow('capture failed');
+    await expect(service.screenshot('tab-fallback-fail')).rejects.toThrow(
+      'Screenshot capture failed: CDP stage: Page.getLayoutMetrics failed: Page domain unavailable; Electron fallback stage: capture failed',
+    );
     expect(wc.capturePage).toHaveBeenCalledTimes(1);
     service.unregisterTab('tab-fallback-fail');
   });
-});
 
+  it('bounds a stalled capturePage() fallback and reports both failed stages', async () => {
+    const service = await loadService();
+    const wc = fakeCdpWebview(
+      66,
+      { 'Page.getLayoutMetrics': new Error('Page domain unavailable') },
+      'hang',
+    );
+    mocks.fromId.mockReturnValue(wc);
+    service.registerTab('tab-fallback-hang', 66);
+
+    const pending = service.screenshot('tab-fallback-hang');
+    pending.catch(() => {});
+    await vi.advanceTimersByTimeAsync(5_100);
+
+    await expect(pending).rejects.toThrow(
+      'Screenshot capture failed: CDP stage: Page.getLayoutMetrics failed: Page domain unavailable; Electron fallback stage: Electron capturePage timed out after 5000ms',
+    );
+    expect(wc.capturePage).toHaveBeenCalledTimes(1);
+    service.unregisterTab('tab-fallback-hang');
+  });
+});
