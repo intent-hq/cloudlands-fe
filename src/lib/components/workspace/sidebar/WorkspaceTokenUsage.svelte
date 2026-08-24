@@ -26,11 +26,26 @@
     workspaceId: string;
   }
 
+  type BreakdownKind = 'agent' | 'model';
+
+  interface BreakdownRow {
+    id: string;
+    kind: BreakdownKind;
+    kindLabel: string;
+    label: string;
+    title: string;
+    tokens: number;
+    totals: TokenUsageTotals;
+  }
+
   let { workspaceId }: Props = $props();
   let expanded = $state(false);
   let disclosureElement: HTMLButtonElement | undefined = $state();
   let detailsElement: HTMLElement | undefined = $state();
   let overlayStyle = $state('position: fixed; visibility: hidden;');
+  let hoveredPreviewKey: string | null = $state(null);
+  let focusedPreviewKey: string | null = $state(null);
+  let suppressTouchFocusPreview = false;
 
   const overlayWidth = 452;
   const overlayGap = 8;
@@ -51,7 +66,6 @@
 
   const totals = $derived($usage$.totals);
   const cachedTokens = $derived(totals.cacheReadTokens + totals.cacheCreationTokens);
-  const thoughtTokens = $derived(totals.thoughtTokens ?? 0);
   const processedTokens = $derived(tokenCount(totals));
   const hasData = $derived(processedTokens > 0);
   const isUpdating = $derived($usage$.isStale);
@@ -88,11 +102,14 @@
 
   const modelRows = $derived(
     Object.entries($usage$.byModel)
-      .map(([model, modelTotals]) => ({
+      .map(([model, modelTotals]): BreakdownRow => ({
         id: model,
+        kind: 'model',
+        kindLabel: m.workspace_tokenUsage_byModel_label(),
         label: formatModelLabel(model),
         title: model,
         tokens: tokenCount(modelTotals),
+        totals: modelTotals,
       }))
       .filter((row) => row.tokens > 0)
       .sort((a, b) => b.tokens - a.tokens),
@@ -103,8 +120,10 @@
   );
   const agentRows = $derived(
     Object.entries($usage$.byAgentId)
-      .map(([agentId, entry]) => ({
+      .map(([agentId, entry]): BreakdownRow => ({
         id: agentId,
+        kind: 'agent',
+        kindLabel: m.workspace_tokenUsage_byAgent_label(),
         label:
           agentNameById.get(agentId) ||
           m.workspace_tokenUsage_agentFallback_label({ id: agentId.substring(0, 8) }),
@@ -112,6 +131,7 @@
           agentNameById.get(agentId) ||
           m.workspace_tokenUsage_agentFallback_label({ id: agentId.substring(0, 8) }),
         tokens: tokenCount(entry),
+        totals: entry,
       }))
       .filter((row) => row.tokens > 0)
       .sort((a, b) => b.tokens - a.tokens),
@@ -120,13 +140,21 @@
   const totalCost = $derived(costLabel(totals.cost));
   const modelTokenTotal = $derived(modelRows.reduce((sum, row) => sum + row.tokens, 0));
   const agentTokenTotal = $derived(agentRows.reduce((sum, row) => sum + row.tokens, 0));
-  const compositionRows = $derived.by(() =>
-    [
+  const activePreviewKey = $derived(hoveredPreviewKey ?? focusedPreviewKey);
+  const activePreviewRow = $derived(
+    [...agentRows, ...modelRows].find((row) => previewKey(row) === activePreviewKey) ?? null,
+  );
+  const previewTotals = $derived(activePreviewRow?.totals ?? totals);
+  const previewProcessedTokens = $derived(tokenCount(previewTotals));
+
+  function compositionFor(entry: TokenUsageTotals) {
+    const entryProcessedTokens = tokenCount(entry);
+    return [
       {
         id: 'cached',
         label: m.workspace_tokenUsage_cached_label(),
         description: m.workspace_tokenUsage_cached_description(),
-        tokens: cachedTokens,
+        tokens: entry.cacheReadTokens + entry.cacheCreationTokens,
         colorClass: 'bg-success token-cache-fill',
         contextClass: 'text-success token-cache-text',
       },
@@ -134,7 +162,7 @@
         id: 'input',
         label: m.workspace_tokenUsage_in_label(),
         description: m.workspace_tokenUsage_in_description(),
-        tokens: totals.inputTokens,
+        tokens: entry.inputTokens,
         colorClass: 'bg-cyan-500',
         contextClass: 'text-cyan-600 dark:text-cyan-400',
       },
@@ -142,7 +170,7 @@
         id: 'output',
         label: m.workspace_tokenUsage_out_label(),
         description: m.workspace_tokenUsage_out_description(),
-        tokens: totals.outputTokens,
+        tokens: entry.outputTokens,
         colorClass: 'bg-sky-300',
         contextClass: 'text-sky-600 dark:text-sky-300',
       },
@@ -150,12 +178,44 @@
         id: 'reasoning',
         label: m.workspace_tokenUsage_thinking_label(),
         description: m.workspace_tokenUsage_thinking_description(),
-        tokens: thoughtTokens,
+        tokens: entry.thoughtTokens ?? 0,
         colorClass: 'bg-violet-500',
         contextClass: 'text-violet-600 dark:text-violet-400',
       },
-    ].map((row) => ({ ...row, share: share(row.tokens, processedTokens) })),
-  );
+    ].map((row) => ({ ...row, share: share(row.tokens, entryProcessedTokens) }));
+  }
+
+  const workspaceCompositionRows = $derived(compositionFor(totals));
+  const compositionRows = $derived(compositionFor(previewTotals));
+
+  function previewKey(row: BreakdownRow): string {
+    return `${row.kind}:${row.id}`;
+  }
+
+  function handleRowPointerEnter(row: BreakdownRow, event: PointerEvent) {
+    if (event.pointerType === 'touch') return;
+    hoveredPreviewKey = previewKey(row);
+  }
+
+  function handleRowPointerLeave(row: BreakdownRow) {
+    if (hoveredPreviewKey === previewKey(row)) hoveredPreviewKey = null;
+  }
+
+  function handleRowPointerDown(event: PointerEvent) {
+    suppressTouchFocusPreview = event.pointerType === 'touch';
+    if (suppressTouchFocusPreview) {
+      hoveredPreviewKey = null;
+      focusedPreviewKey = null;
+    }
+  }
+
+  function handleRowFocus(row: BreakdownRow) {
+    if (!suppressTouchFocusPreview) focusedPreviewKey = previewKey(row);
+  }
+
+  function handleRowBlur(row: BreakdownRow) {
+    if (focusedPreviewKey === previewKey(row)) focusedPreviewKey = null;
+  }
 
   function updateOverlayPosition() {
     if (!expanded || !disclosureElement || !detailsElement) return;
@@ -189,6 +249,7 @@
   }
 
   function handleDocumentKeydown(event: KeyboardEvent) {
+    suppressTouchFocusPreview = false;
     if (!expanded || event.key !== 'Escape') return;
     event.preventDefault();
     expanded = false;
@@ -212,6 +273,8 @@
   $effect(() => {
     if (!expanded) {
       overlayStyle = 'position: fixed; visibility: hidden;';
+      hoveredPreviewKey = null;
+      focusedPreviewKey = null;
       return;
     }
 
@@ -249,7 +312,7 @@
     >
       <span id={titleId} class="sr-only">{m.workspace_tokenUsage_title()}</span>
       <span class="flex h-2 min-w-0 overflow-hidden rounded-sm bg-muted" aria-hidden="true">
-        {#each compositionRows as row (row.id)}
+        {#each workspaceCompositionRows as row (row.id)}
           {#if row.tokens > 0}
             <span class="min-w-[2px] {row.colorClass}" style:width={`${row.share * 100}%`}></span>
           {/if}
@@ -310,7 +373,7 @@
         data-testid="token-usage-details"
       >
         <section class="px-4 py-2.5" aria-labelledby={`${detailsId}-composition`}>
-          <div class="flex items-baseline justify-between gap-3">
+          <div class="flex min-w-0 items-baseline justify-between gap-3">
             <h4
               id={`${detailsId}-composition`}
               class="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground"
@@ -318,10 +381,21 @@
               {m.workspace_tokenUsage_composition_label()}
             </h4>
             <span
-              class="shrink-0 text-[10px] font-medium uppercase tracking-[0.1em] text-muted-foreground"
+              id={`${detailsId}-preview-status`}
+              class="preview-status flex min-w-0 items-baseline justify-end gap-1.5 text-[10px] font-medium uppercase tracking-[0.1em] text-muted-foreground"
+              aria-live="polite"
+              aria-atomic="true"
             >
-              <span class="tabular-nums">{formatCompactNumber(processedTokens)}</span>
-              {m.workspace_tokenUsage_processed_label()}
+              {#if activePreviewRow}
+                <span class="shrink-0">{activePreviewRow.kindLabel}</span>
+                <span class="preview-scope-label truncate" title={activePreviewRow.title}
+                  >{activePreviewRow.label}</span
+                >
+              {/if}
+              <span class="shrink-0">
+                <span class="tabular-nums">{formatCompactNumber(previewProcessedTokens)}</span>
+                {m.workspace_tokenUsage_processed_label()}
+              </span>
             </span>
           </div>
           <div
@@ -348,7 +422,7 @@
                   <span class="truncate uppercase tracking-[0.08em]">{row.label}</span>
                 </dt>
                 <dd
-                  class="composition-description truncate text-[11px] uppercase tracking-[0.02em] text-muted-foreground"
+                  class="composition-description truncate text-[11px] tracking-[0.02em] text-muted-foreground"
                 >
                   {row.description}
                 </dd>
@@ -371,7 +445,7 @@
           <div class="breakdown-grid grid grid-cols-1 border-t border-border dark:border-[#1e1e1e]">
             {#if agentRows.length > 0}
               <section
-                class="breakdown-section h-[76px] min-w-0 px-4 py-2"
+                class="breakdown-section h-[116px] min-w-0 px-4 py-2"
                 aria-labelledby={`${detailsId}-agents`}
                 data-testid="token-usage-by-agent"
               >
@@ -382,37 +456,52 @@
                   {m.workspace_tokenUsage_byAgent_label()}
                 </h4>
                 <ol
-                  class="breakdown-list h-10 max-h-10 overflow-y-auto overscroll-contain outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                  class="breakdown-list h-20 max-h-20 overflow-y-auto overscroll-contain outline-none"
+                  class:breakdown-list-overflow={agentRows.length > 2}
                 >
                   {#each agentRows as row (row.id)}
                     <li class="breakdown-item h-10 min-w-0">
-                      <span
-                        class="breakdown-share-bar block h-2.5 overflow-hidden rounded-[3px] bg-muted"
-                        aria-hidden="true"
+                      <button
+                        type="button"
+                        class="breakdown-item-control block h-full w-full min-w-0 rounded-[3px] text-left outline-none transition-colors motion-reduce:transition-none"
+                        data-preview-active={previewKey(row) === activePreviewKey
+                          ? 'true'
+                          : undefined}
+                        aria-current={previewKey(row) === activePreviewKey ? 'true' : undefined}
+                        onpointerenter={(event) => handleRowPointerEnter(row, event)}
+                        onpointerleave={() => handleRowPointerLeave(row)}
+                        onpointerdown={handleRowPointerDown}
+                        onfocus={() => handleRowFocus(row)}
+                        onblur={() => handleRowBlur(row)}
                       >
                         <span
-                          class="token-cache-fill block h-full bg-success/80"
-                          style:width={`${share(row.tokens, agentTokenTotal) * 100}%`}
-                        ></span>
-                      </span>
-                      <span
-                        class="breakdown-metadata mt-1.5 grid min-w-0 grid-cols-[minmax(0,1fr)_2.75rem_2.25rem] items-center gap-x-1"
-                      >
-                        <span
-                          class="truncate text-[11px] leading-4 text-foreground"
-                          title={row.title}>{row.label}</span
+                          class="breakdown-share-bar block h-2.5 overflow-hidden rounded-[3px] bg-muted"
+                          aria-hidden="true"
                         >
-                        <span
-                          class="text-right text-[11px] font-medium leading-4 tabular-nums text-foreground"
-                        >
-                          {formatCompactNumber(row.tokens)}
+                          <span
+                            class="token-cache-fill block h-full bg-success/80"
+                            style:width={`${share(row.tokens, agentTokenTotal) * 100}%`}
+                          ></span>
                         </span>
                         <span
-                          class="token-cache-text text-right text-[11px] leading-4 tabular-nums text-success"
+                          class="breakdown-metadata mt-1.5 grid min-w-0 grid-cols-[minmax(0,1fr)_2.75rem_2.25rem] items-center gap-x-1"
                         >
-                          {shareLabel(share(row.tokens, agentTokenTotal))}
+                          <span
+                            class="truncate text-[11px] leading-4 text-foreground"
+                            title={row.title}>{row.label}</span
+                          >
+                          <span
+                            class="text-right text-[11px] font-medium leading-4 tabular-nums text-foreground"
+                          >
+                            {formatCompactNumber(row.tokens)}
+                          </span>
+                          <span
+                            class="token-cache-text text-right text-[11px] leading-4 tabular-nums text-success"
+                          >
+                            {shareLabel(share(row.tokens, agentTokenTotal))}
+                          </span>
                         </span>
-                      </span>
+                      </button>
                     </li>
                   {/each}
                 </ol>
@@ -421,7 +510,7 @@
 
             {#if modelRows.length > 0}
               <section
-                class="breakdown-section h-[76px] min-w-0 px-4 py-2"
+                class="breakdown-section h-[116px] min-w-0 px-4 py-2"
                 aria-labelledby={`${detailsId}-models`}
                 data-testid="token-usage-by-model"
               >
@@ -432,37 +521,52 @@
                   {m.workspace_tokenUsage_byModel_label()}
                 </h4>
                 <ol
-                  class="breakdown-list h-10 max-h-10 overflow-y-auto overscroll-contain outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                  class="breakdown-list h-20 max-h-20 overflow-y-auto overscroll-contain outline-none"
+                  class:breakdown-list-overflow={modelRows.length > 2}
                 >
                   {#each modelRows as row (row.id)}
                     <li class="breakdown-item h-10 min-w-0">
-                      <span
-                        class="breakdown-share-bar block h-2.5 overflow-hidden rounded-[3px] bg-muted"
-                        aria-hidden="true"
+                      <button
+                        type="button"
+                        class="breakdown-item-control block h-full w-full min-w-0 rounded-[3px] text-left outline-none transition-colors motion-reduce:transition-none"
+                        data-preview-active={previewKey(row) === activePreviewKey
+                          ? 'true'
+                          : undefined}
+                        aria-current={previewKey(row) === activePreviewKey ? 'true' : undefined}
+                        onpointerenter={(event) => handleRowPointerEnter(row, event)}
+                        onpointerleave={() => handleRowPointerLeave(row)}
+                        onpointerdown={handleRowPointerDown}
+                        onfocus={() => handleRowFocus(row)}
+                        onblur={() => handleRowBlur(row)}
                       >
                         <span
-                          class="token-cache-fill block h-full bg-success/80"
-                          style:width={`${share(row.tokens, modelTokenTotal) * 100}%`}
-                        ></span>
-                      </span>
-                      <span
-                        class="breakdown-metadata mt-1.5 grid min-w-0 grid-cols-[minmax(0,1fr)_2.75rem_2.25rem] items-center gap-x-1"
-                      >
-                        <span
-                          class="truncate text-[11px] leading-4 text-foreground"
-                          title={row.title}>{row.label}</span
+                          class="breakdown-share-bar block h-2.5 overflow-hidden rounded-[3px] bg-muted"
+                          aria-hidden="true"
                         >
-                        <span
-                          class="text-right text-[11px] font-medium leading-4 tabular-nums text-foreground"
-                        >
-                          {formatCompactNumber(row.tokens)}
+                          <span
+                            class="token-cache-fill block h-full bg-success/80"
+                            style:width={`${share(row.tokens, modelTokenTotal) * 100}%`}
+                          ></span>
                         </span>
                         <span
-                          class="token-cache-text text-right text-[11px] leading-4 tabular-nums text-success"
+                          class="breakdown-metadata mt-1.5 grid min-w-0 grid-cols-[minmax(0,1fr)_2.75rem_2.25rem] items-center gap-x-1"
                         >
-                          {shareLabel(share(row.tokens, modelTokenTotal))}
+                          <span
+                            class="truncate text-[11px] leading-4 text-foreground"
+                            title={row.title}>{row.label}</span
+                          >
+                          <span
+                            class="text-right text-[11px] font-medium leading-4 tabular-nums text-foreground"
+                          >
+                            {formatCompactNumber(row.tokens)}
+                          </span>
+                          <span
+                            class="token-cache-text text-right text-[11px] leading-4 tabular-nums text-success"
+                          >
+                            {shareLabel(share(row.tokens, modelTokenTotal))}
+                          </span>
                         </span>
-                      </span>
+                      </button>
                     </li>
                   {/each}
                 </ol>
@@ -545,6 +649,31 @@
   .breakdown-list {
     scrollbar-color: hsl(var(--muted-foreground) / 0.45) transparent;
     scrollbar-width: thin;
+  }
+
+  .breakdown-list-overflow {
+    scrollbar-gutter: stable;
+  }
+
+  .breakdown-item-control[data-preview-active='true'] {
+    background: hsl(var(--muted) / 45%);
+    box-shadow: inset 2px 0 hsl(var(--ring) / 70%);
+  }
+
+  .breakdown-item-control:focus-visible {
+    box-shadow:
+      inset 2px 0 hsl(var(--ring) / 80%),
+      inset 0 0 0 1px hsl(var(--ring) / 55%);
+  }
+
+  @media (hover: hover) {
+    .breakdown-item-control:hover {
+      background: hsl(var(--muted) / 35%);
+    }
+  }
+
+  .preview-scope-label {
+    max-width: 9rem;
   }
 
   .breakdown-list::-webkit-scrollbar {
