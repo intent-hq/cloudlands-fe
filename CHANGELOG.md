@@ -4,6 +4,21 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.89.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.88.3...v2.89.0) (2026-08-24)
+
+
+### 🚀 Features
+
+* hardware unread cycle visits each unread top-level agent ([#1658](https://github.com/intent-hq/cloudlands-fe/issues/1658)) ([323c9b7](https://github.com/intent-hq/cloudlands-fe/commit/323c9b7ec9e98c5a16886b84ad8d4a83665771d2))
+* pre-upload images via attachment path and send image-reference blocks ([#1655](https://github.com/intent-hq/cloudlands-fe/issues/1655)) ([98066fc](https://github.com/intent-hq/cloudlands-fe/commit/98066fc8b021412c8ebcf66b0c101ebe7635e2bd))
+* stop clearing workspace unread on plain workspace view ([#1659](https://github.com/intent-hq/cloudlands-fe/issues/1659)) ([7c87ca9](https://github.com/intent-hq/cloudlands-fe/commit/7c87ca9cdc12fd64ce7fe4473eb1a6fecad575ca))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.7.55 ([#1672](https://github.com/intent-hq/cloudlands-fe/issues/1672)) ([c46a5a1](https://github.com/intent-hq/cloudlands-fe/commit/c46a5a1a8bb48126b1fffc3578abd938304d4d49))
+* polish desktop UI ([#1552](https://github.com/intent-hq/cloudlands-fe/issues/1552)) ([668dd5c](https://github.com/intent-hq/cloudlands-fe/commit/668dd5c2cda44d449b5a0b77ff67050dce2aaf0c))
+
 ## [2.88.3](https://github.com/intent-hq/cloudlands-fe/compare/v2.88.2...v2.88.3) (2026-08-24)
 
 
