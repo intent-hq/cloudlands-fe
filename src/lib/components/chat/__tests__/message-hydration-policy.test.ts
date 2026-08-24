@@ -59,6 +59,40 @@ describe('message hydration policy', () => {
     expect(policy.getHydratedIds()).toEqual(['frontier', 'new']);
   });
 
+  it('keeps newer rows hydrated while scrolling toward the tail of a long transcript', () => {
+    const messages = Array.from({ length: 200 }, (_, index) =>
+      index === 20 ? user('user-anchor') : assistant(`assistant-${index}`),
+    );
+    const policy = createMessageHydrationPolicy(messages);
+
+    expect(policy.getHydratedIds()).toEqual(['user-anchor']);
+    policy.reportVisibility('assistant-190', true);
+    expect(policy.getHydratedIds()).toEqual([
+      'user-anchor',
+      ...Array.from({ length: 10 }, (_, index) => `assistant-${index + 190}`),
+    ]);
+
+    const transitions = policy.reportObserverEntries([
+      { id: 'assistant-190', isIntersecting: false },
+      { id: 'assistant-195', isIntersecting: true },
+    ]);
+
+    expect(transitions).toEqual(
+      Array.from({ length: 5 }, (_, index) => ({
+        id: `assistant-${index + 190}`,
+        hydrated: false,
+        reason: 'dehydrate' as const,
+      })),
+    );
+    expect(policy.getHydratedIds()).toEqual([
+      'user-anchor',
+      ...Array.from({ length: 5 }, (_, index) => `assistant-${index + 195}`),
+    ]);
+    expect(policy.isHydrated('user-anchor')).toBe(true);
+    expect(policy.getState('assistant-194')?.canDehydrate).toBe(true);
+    expect(policy.getState('assistant-195')?.canDehydrate).toBe(false);
+  });
+
   it('makes mixed observer entry/exit ordering deterministic and enter-safe', () => {
     const first = createMessageHydrationPolicy([assistant('old'), assistant('new')]);
     const second = createMessageHydrationPolicy([assistant('old'), assistant('new')]);
