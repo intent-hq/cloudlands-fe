@@ -6,7 +6,7 @@ async function addColumn(component: Locator, count: number) {
   await component.getByTestId('panel-workspace-inset').evaluate((inset) => {
     inset.scrollLeft = inset.scrollWidth;
   });
-  await component.locator('[data-add-panel-column]').click();
+  await component.locator('[data-add-panel-column]').first().click();
   await expect(component.locator('[data-panel-id]')).toHaveCount(count);
 }
 
