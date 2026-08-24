@@ -3,28 +3,39 @@ import type { Locator, Page } from '@playwright/test';
 import PanelWorkspaceColumnClipHarness from './mocks/PanelWorkspaceColumnClipHarness.svelte';
 
 async function shellStyles(panel: Locator, page: Page, expectedBackgroundClass = 'bg-sidebar') {
-  const expectedBackground = await page.evaluate((backgroundClass) => {
-    const probe = document.createElement('div');
-    probe.className = backgroundClass;
-    document.body.append(probe);
-    const color = getComputedStyle(probe).backgroundColor;
-    probe.remove();
-    return color;
+  const expected = await page.evaluate((backgroundClass) => {
+    const backgroundProbe = document.createElement('div');
+    backgroundProbe.className = backgroundClass;
+    const borderProbe = document.createElement('div');
+    borderProbe.className = 'border border-border';
+    document.body.append(backgroundProbe, borderProbe);
+    const background = getComputedStyle(backgroundProbe).backgroundColor;
+    const border = getComputedStyle(borderProbe).borderTopColor;
+    backgroundProbe.remove();
+    borderProbe.remove();
+    return { background, border };
   }, expectedBackgroundClass);
-  return panel.evaluate((element, background) => {
+  return panel.evaluate((element, expected) => {
     const style = getComputedStyle(element);
     const parentStyle = getComputedStyle(element.parentElement!);
     const contentStyle = getComputedStyle(element.querySelector('.panel-content')!);
     const emptyState = element.querySelector('[data-panel-empty-state]');
     return {
       background: style.backgroundColor,
-      expectedBackground: background,
+      expectedBackground: expected.background,
+      expectedBorder: expected.border,
       emptyStateBackground: emptyState ? getComputedStyle(emptyState).backgroundColor : null,
       borders: [
         style.borderTopWidth,
         style.borderRightWidth,
         style.borderBottomWidth,
         style.borderLeftWidth,
+      ],
+      borderColors: [
+        style.borderTopColor,
+        style.borderRightColor,
+        style.borderBottomColor,
+        style.borderLeftColor,
       ],
       radii: [
         style.borderTopLeftRadius,
@@ -36,8 +47,10 @@ async function shellStyles(panel: Locator, page: Page, expectedBackgroundClass =
       contentOverflow: [contentStyle.overflowX, contentStyle.overflowY],
       parentBackground: parentStyle.backgroundColor,
       ownsEmptySurface: element.getAttribute('data-empty-panel-surface'),
+      focused: element.getAttribute('data-focused'),
+      focusBorderVisible: element.getAttribute('data-focus-border-visible'),
     };
-  }, expectedBackground);
+  }, expected);
 }
 
 for (const theme of ['light', 'dark'] as const) {
@@ -63,11 +76,16 @@ for (const theme of ['light', 'dark'] as const) {
 
         const panels = component.locator('.panel');
         await expect(panels).toHaveCount(2);
-        for (const panel of await panels.all()) {
+        for (const [index, panel] of (await panels.all()).entries()) {
           const styles = await shellStyles(panel, page);
           expect(styles.background).toBe(styles.expectedBackground);
           expect(styles.emptyStateBackground).toBe(styles.expectedBackground);
-          expect(styles.borders).toEqual(['0px', '0px', '0px', '0px']);
+          expect(styles.borders).toEqual(['1px', '1px', '1px', '1px']);
+          expect(styles.focused).toBe(index === 0 ? 'true' : 'false');
+          expect(styles.focusBorderVisible).toBe(index === 0 ? 'true' : 'false');
+          expect(new Set(styles.borderColors)).toEqual(
+            new Set([index === 0 ? styles.expectedBorder : 'rgba(0, 0, 0, 0)']),
+          );
           expect(new Set(styles.radii).size).toBe(1);
           expect(Number.parseFloat(styles.radii[0])).toBeGreaterThan(0);
           expect(styles.overflow).toEqual(['hidden', 'hidden']);
@@ -105,11 +123,16 @@ for (const theme of ['light', 'dark'] as const) {
       node.setAttribute('data-test-theme', mode);
     }, theme);
 
-    for (const panel of await component.locator('.panel').all()) {
+    for (const [index, panel] of (await component.locator('.panel').all()).entries()) {
       const styles = await shellStyles(panel, page, 'bg-background');
       expect(styles.background).toBe(styles.expectedBackground);
       expect(styles.emptyStateBackground).toBeNull();
-      expect(styles.borders).toEqual(['0px', '0px', '0px', '0px']);
+      expect(styles.borders).toEqual(['1px', '1px', '1px', '1px']);
+      expect(styles.focused).toBe(index === 0 ? 'true' : 'false');
+      expect(styles.focusBorderVisible).toBe(index === 0 ? 'true' : 'false');
+      expect(new Set(styles.borderColors)).toEqual(
+        new Set([index === 0 ? styles.expectedBorder : 'rgba(0, 0, 0, 0)']),
+      );
       expect(styles.ownsEmptySurface).toBeNull();
     }
   });

@@ -13,13 +13,17 @@ const probes = [
   ['form', '[data-slot="input"]', 'top'],
 ] as const satisfies ReadonlyArray<readonly [string, string, Edge]>;
 
+const transparentBorderProbes = [['panel', '.panel', 'top']] as const satisfies ReadonlyArray<
+  readonly [string, string, Edge]
+>;
+
 const borderlessProbes = [
-  ['panel', '.panel', 'top'],
   ['chat', '[data-testid="pinned-user-prompt"]', 'top'],
 ] as const satisfies ReadonlyArray<readonly [string, string, Edge]>;
 
 const sampledSelectors = [
   ...probes.map(([, selector]) => selector),
+  ...transparentBorderProbes.map(([, selector]) => selector),
   ...borderlessProbes.map(([, selector]) => selector),
   '[data-testid="panel-border-fixture"] [data-loading-panel] > div:first-child',
   '[data-testid="panel-border-fixture"] [data-loading-panel] > div:last-child',
@@ -90,6 +94,19 @@ test('production neutral borders share color and single-edge geometry', async ({
       expect(styles.every(({ width, ownerCount }) => width === '1px' && ownerCount === 1)).toBe(
         true,
       );
+
+      const transparentBorderStyles = await Promise.all(
+        transparentBorderProbes.map(async ([name, selector, edge]) => ({
+          name,
+          ...(await border(page.locator(selector), edge)),
+        })),
+      );
+      expect(
+        transparentBorderStyles.every(
+          ({ color, width, ownerCount }) =>
+            color === 'rgba(0, 0, 0, 0)' && width === '1px' && ownerCount === 1,
+        ),
+      ).toBe(true);
 
       const borderlessStyles = await Promise.all(
         borderlessProbes.map(async ([name, selector, edge]) => ({
