@@ -318,7 +318,9 @@ describe('collectUnreadWorkspaceStops (intent-hq/monorepo#2438)', () => {
       {},
       { 'ws-2': { attention: 'unread' } },
     );
-    expect(collectUnreadWorkspaceStops(state)).toEqual([{ wsId: 'ws-2', agentId: null }]);
+    expect(collectUnreadWorkspaceStops(state)).toEqual([
+      { wsId: 'ws-2', agentId: null, clearsWorkspace: true },
+    ]);
   });
 
   it('emits the last active agent for an unread workspace with hydrated sessions', () => {
@@ -331,7 +333,9 @@ describe('collectUnreadWorkspaceStops (intent-hq/monorepo#2438)', () => {
       {},
       { 'ws-1': { attention: 'unread' } },
     );
-    expect(collectUnreadWorkspaceStops(state)).toEqual([{ wsId: 'ws-1', agentId: 'a-2' }]);
+    expect(collectUnreadWorkspaceStops(state)).toEqual([
+      { wsId: 'ws-1', agentId: 'a-2', clearsWorkspace: true },
+    ]);
   });
 
   it('mixes agent and workspace-level stops in workspace order', () => {
@@ -346,9 +350,9 @@ describe('collectUnreadWorkspaceStops (intent-hq/monorepo#2438)', () => {
       },
     );
     expect(collectUnreadWorkspaceStops(state)).toEqual([
-      { wsId: 'ws-1', agentId: null },
-      { wsId: 'ws-2', agentId: 'b-1' },
-      { wsId: 'ws-3', agentId: null },
+      { wsId: 'ws-1', agentId: null, clearsWorkspace: true },
+      { wsId: 'ws-2', agentId: 'b-1', clearsWorkspace: true },
+      { wsId: 'ws-3', agentId: null, clearsWorkspace: true },
     ]);
   });
 
@@ -359,7 +363,9 @@ describe('collectUnreadWorkspaceStops (intent-hq/monorepo#2438)', () => {
       {},
       { 'ws-1': { attention: 'unread' } },
     );
-    expect(collectUnreadWorkspaceStops(state)).toEqual([{ wsId: 'ws-1', agentId: null }]);
+    expect(collectUnreadWorkspaceStops(state)).toEqual([
+      { wsId: 'ws-1', agentId: null, clearsWorkspace: true },
+    ]);
   });
 
   it('skips non-unread and non-key-assignable workspaces', () => {
@@ -373,5 +379,83 @@ describe('collectUnreadWorkspaceStops (intent-hq/monorepo#2438)', () => {
       },
     );
     expect(collectUnreadWorkspaceStops(state)).toEqual([]);
+  });
+});
+
+describe('collectUnreadWorkspaceStops per-agent unread walk (new daemons)', () => {
+  it('emits one stop per unread top-level agent, in foreground order', () => {
+    const state = makeState(
+      { 'ws-1': ['a-1', 'a-2', 'a-3'] },
+      {
+        'a-1': makeSession('a-1', { hasUnread: true, lastMessageId: 'm-1' }),
+        'a-2': makeSession('a-2', { hasUnread: false, lastMessageId: 'm-2' }),
+        'a-3': makeSession('a-3', { hasUnread: true, lastMessageId: 'm-3' }),
+      },
+      {},
+      { 'ws-1': { attention: 'unread' } },
+    );
+    expect(collectUnreadWorkspaceStops(state)).toEqual([
+      { wsId: 'ws-1', agentId: 'a-1', clearsWorkspace: false },
+      { wsId: 'ws-1', agentId: 'a-3', clearsWorkspace: false },
+    ]);
+  });
+
+  it('groups per-agent stops by workspace and keeps the older-daemon fallback per workspace', () => {
+    // ws-1 serves per-agent unread; ws-2's sessions omit lastMessageId
+    // (older daemon, hasUnread derives false) so it keeps the single
+    // last-active stop.
+    const state = makeState(
+      { 'ws-1': ['a-1', 'a-2'], 'ws-2': ['b-1', 'b-2'] },
+      {
+        'a-1': makeSession('a-1', { hasUnread: true, lastMessageId: 'm-1' }),
+        'a-2': makeSession('a-2', { hasUnread: true, lastMessageId: 'm-2' }),
+        'b-1': makeSession('b-1', { lastActivity: '2026-08-01T08:00:00.000Z' }),
+        'b-2': makeSession('b-2', { lastActivity: '2026-08-01T10:00:00.000Z' }),
+      },
+      {},
+      { 'ws-1': { attention: 'unread' }, 'ws-2': { attention: 'unread' } },
+    );
+    expect(collectUnreadWorkspaceStops(state)).toEqual([
+      { wsId: 'ws-1', agentId: 'a-1', clearsWorkspace: false },
+      { wsId: 'ws-1', agentId: 'a-2', clearsWorkspace: false },
+      { wsId: 'ws-2', agentId: 'b-2', clearsWorkspace: true },
+    ]);
+  });
+
+  it('falls back to the last-active stop when no hydrated session is flagged unread', () => {
+    // The daemon serves lastMessageId but every agent is marked seen: the
+    // workspace-level unread flag still yields a stop, with the fallback's
+    // workspace-clearing semantics.
+    const state = makeState(
+      { 'ws-1': ['a-1', 'a-2'] },
+      {
+        'a-1': makeSession('a-1', { hasUnread: false, lastMessageId: 'm-1' }),
+        'a-2': makeSession('a-2', {
+          hasUnread: false,
+          lastMessageId: 'm-2',
+          stopReasonTimestamp: '2026-08-01T10:00:00.000Z',
+        }),
+      },
+      {},
+      { 'ws-1': { attention: 'unread' } },
+    );
+    expect(collectUnreadWorkspaceStops(state)).toEqual([
+      { wsId: 'ws-1', agentId: 'a-2', clearsWorkspace: true },
+    ]);
+  });
+
+  it('per-agent stops stay top-level — an unread sub-agent is never its own stop', () => {
+    const state = makeState(
+      { 'ws-1': ['a-1'] },
+      {
+        'a-1': makeSession('a-1', { hasUnread: true, lastMessageId: 'm-1' }),
+        'sub-1': makeSession('sub-1', { hasUnread: true, lastMessageId: 'm-2' }),
+      },
+      { 'ws-1': ['sub-1'] },
+      { 'ws-1': { attention: 'unread' } },
+    );
+    expect(collectUnreadWorkspaceStops(state)).toEqual([
+      { wsId: 'ws-1', agentId: 'a-1', clearsWorkspace: false },
+    ]);
   });
 });

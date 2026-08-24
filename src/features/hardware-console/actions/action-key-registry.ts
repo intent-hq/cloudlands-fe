@@ -221,16 +221,20 @@ function inProgressAgents(state: ActionKeyState): CycleAgentEntry[] {
  * question → discussion (`sessionAttentionPriority`; an agent with several
  * signals classifies at its highest bucket), following the
  * `cycle-attention-agents` configured scope so the settings toggle also
- * governs this portion; then (b) one stop per unread workspace
- * (`collectUnreadWorkspaceStops`) — its last active top-level agent when
- * sessions are hydrated (intent-hq/monorepo#1779), else a workspace-level
- * stop (intent-hq/monorepo#2438) — since visiting the workspace clears its
- * whole unread flag anyway. `attentionAgentIds` records walk (a)
- * membership independent of dedup position, for the remaining-stop count.
+ * governs this portion; then (b) the unread-workspace stops
+ * (`collectUnreadWorkspaceStops`) — one per unread top-level agent when the
+ * daemon serves per-agent unread, else the workspace's single fallback
+ * stop: its last active top-level agent when sessions are hydrated
+ * (intent-hq/monorepo#1779), else a workspace-level stop
+ * (intent-hq/monorepo#2438). `attentionAgentIds` records walk (a)
+ * membership independent of dedup position, and `workspaceClearingWsIds`
+ * the workspaces whose stop keeps the workspace-clearing semantics — both
+ * for the remaining-stop count.
  */
 function collectUnreadCycleEntries(state: ActionKeyState): {
   entries: CycleStopEntry[];
   attentionAgentIds: Set<string>;
+  workspaceClearingWsIds: Set<string>;
 } {
   const unreadEntries = collectUnreadWorkspaceStops(state);
   const attentionEntries = collectCycleAgents(
@@ -260,7 +264,13 @@ function collectUnreadCycleEntries(state: ActionKeyState): {
     seen.add(key);
     return true;
   });
-  return { entries, attentionAgentIds: new Set(attentionEntries.map((entry) => entry.agentId)) };
+  return {
+    entries,
+    attentionAgentIds: new Set(attentionEntries.map((entry) => entry.agentId)),
+    workspaceClearingWsIds: new Set(
+      unreadEntries.filter((entry) => entry.clearsWorkspace).map((entry) => entry.wsId),
+    ),
+  };
 }
 
 /**
@@ -447,19 +457,21 @@ export const ACTION_KEY_REGISTRY: readonly ActionKeyDefinition[] = [
           ? m.hardwareConsole_actionKey_cycleUnreadAgents_hudRemaining_one({ count: remaining })
           : m.hardwareConsole_actionKey_cycleUnreadAgents_hudRemaining_many({ count: remaining }),
     countRemaining: (state, entries, next) => {
-      // Stepping to `next` visits its workspace, which clears the whole
-      // workspace's unread flag — that workspace's unread entry (one per
-      // unread workspace) stops being a candidate along with it. Attention
-      // entries persist individually until handled, so they always count as
-      // their own stop.
-      const { attentionAgentIds } = collectUnreadCycleEntries(state);
+      // Per-agent unread stops (new daemons) count individually — visiting
+      // one agent marks only that agent seen, so its unread siblings stay
+      // candidates. Fallback stops (older-daemon last-active, unhydrated
+      // workspace-level) keep the workspace-clearing semantics: stepping
+      // anywhere into their workspace clears the whole unread flag, so that
+      // workspace's stop drops out along with it. Attention entries persist
+      // individually until handled, so they always count as their own stop.
+      const { attentionAgentIds, workspaceClearingWsIds } = collectUnreadCycleEntries(state);
       const nextKey = cycleStopKey(next);
-      return entries.filter(
-        (entry) =>
-          cycleStopKey(entry) !== nextKey &&
-          ((entry.agentId !== null && attentionAgentIds.has(entry.agentId)) ||
-            entry.wsId !== next.wsId),
-      ).length;
+      return entries.filter((entry) => {
+        if (cycleStopKey(entry) === nextKey) return false;
+        if (entry.agentId !== null && attentionAgentIds.has(entry.agentId)) return true;
+        if (!workspaceClearingWsIds.has(entry.wsId)) return true;
+        return entry.wsId !== next.wsId;
+      }).length;
     },
     collect: (state) => collectUnreadCycleEntries(state).entries,
   }),

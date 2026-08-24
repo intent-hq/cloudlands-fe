@@ -250,27 +250,59 @@ export function collectCycleAgents(
   return entries.map((item) => item.entry);
 }
 
+/** One unread-walk stop, tagged with its remaining-count semantics. */
+export interface UnreadStopEntry extends CycleStopEntry {
+  /**
+   * True when stepping into this stop's workspace is treated as clearing
+   * the whole workspace's unread flag, so the remaining count collapses the
+   * workspace to one stop: the older-daemon last-active fallback and the
+   * unhydrated workspace-level stop. False for per-agent stops (new
+   * daemons), which are marked seen — and counted — individually.
+   */
+  clearsWorkspace: boolean;
+}
+
 /**
- * One stop per unread key-assignable workspace, in workspace order (unread
- * is workspace-level, BE-owned `workspace.attention`). When the workspace
- * has hydrated cyclable top-level sessions, the stop is its last active
- * agent (`getLastIdleTime` recency, falling back to the first foreground
- * agent — intent-hq/monorepo#1779). When none are hydrated yet (sessions
+ * The unread-workspace stops, grouped by workspace in workspace order
+ * (unread is workspace-level, BE-owned `workspace.attention`). Per
+ * workspace: when hydrated cyclable top-level sessions carry the per-agent
+ * unread flag (`hasUnread`, FE-derived from the §5.5 `lastMessageId`
+ * freshness field — older daemons omit it, deriving `false`), one stop per
+ * unread agent in foreground order, so the walk visits every unread agent.
+ * Otherwise the older-daemon fallback: the single last active agent
+ * (`getLastIdleTime` recency, falling back to the first foreground agent —
+ * intent-hq/monorepo#1779). When no sessions are hydrated yet (sessions
  * hydrate lazily), the stop is workspace-level (`agentId: null`) so the
  * walk never misses an unread workspace (intent-hq/monorepo#2438).
  */
-export function collectUnreadWorkspaceStops(state: AgentCycleState): CycleStopEntry[] {
+export function collectUnreadWorkspaceStops(state: AgentCycleState): UnreadStopEntry[] {
   const unreadWorkspaceIds: string[] = getItems(state.workspace.workspaces)
     .filter((workspace) => workspace.attention === 'unread' && isKeyAssignableWorkspace(workspace))
     .map((workspace) => workspace.id);
   const unreadIdSet = new Set(unreadWorkspaceIds);
-  const hydratedByWsId = new Map(
-    pickLastActivePerWorkspace(
-      state,
-      collectCycleAgents(state, isSessionCyclable).filter((entry) => unreadIdSet.has(entry.wsId)),
-    ).map((entry) => [entry.wsId, entry] as const),
+  const cyclable = collectCycleAgents(state, isSessionCyclable).filter((entry) =>
+    unreadIdSet.has(entry.wsId),
   );
-  return unreadWorkspaceIds.map(
-    (wsId) => hydratedByWsId.get(wsId) ?? ({ wsId, agentId: null } satisfies CycleStopEntry),
+  const unreadAgentsByWsId = new Map<string, CycleAgentEntry[]>();
+  for (const entry of cyclable) {
+    if (state.agentSessions.byAgentId[entry.agentId]?.hasUnread !== true) continue;
+    const list = unreadAgentsByWsId.get(entry.wsId) ?? [];
+    list.push(entry);
+    unreadAgentsByWsId.set(entry.wsId, list);
+  }
+  const lastActiveByWsId = new Map(
+    pickLastActivePerWorkspace(state, cyclable).map((entry) => [entry.wsId, entry] as const),
   );
+  return unreadWorkspaceIds.flatMap((wsId): UnreadStopEntry[] => {
+    const perAgent = unreadAgentsByWsId.get(wsId);
+    if (perAgent !== undefined) {
+      return perAgent.map((entry) => ({ ...entry, clearsWorkspace: false }));
+    }
+    const lastActive = lastActiveByWsId.get(wsId);
+    return [
+      lastActive !== undefined
+        ? { ...lastActive, clearsWorkspace: true }
+        : { wsId, agentId: null, clearsWorkspace: true },
+    ];
+  });
 }
