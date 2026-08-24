@@ -564,7 +564,11 @@ jobs:
         # (and caches the bundle under playwright/.cache) during test
         # loading, before the changed-file filter applies; on a fresh CI
         # checkout `git diff HEAD` is empty, so zero tests are selected and
-        # --pass-with-no-tests exits green without running any. The test
+        # --pass-with-no-tests exits green without running any. Caveat:
+        # --only-changed also scans UNTRACKED non-ignored files, so every
+        # generated input (e.g. the paraglide output, which self-ignores)
+        # must stay gitignored — a non-ignored generated file imported by
+        # CT specs would silently make this step run those tests. The test
         # step below reuses the cached bundle (validated by source mtimes,
         # which don't change between steps) under a much smaller heap.
         env:
@@ -585,6 +589,10 @@ jobs:
         run: |
           set -euo pipefail
           (
+            # Shed the inherited errexit/pipefail: a transient free/ps
+            # failure or a SIGPIPE from head must not silently kill the
+            # sampler for the rest of the run.
+            set +e +o pipefail
             while true; do
               echo "[mem] $(date -u +%H:%M:%S) $(free -m | awk '/^Mem:/{printf "used=%sMiB free=%sMiB avail=%sMiB", $3, $4, $7}')"
               ps -eo rss,comm --sort=-rss | head -4 | tail -3 | awk '{printf "[mem]   top-rss: %s %dMiB\n", $2, $1/1024}'
