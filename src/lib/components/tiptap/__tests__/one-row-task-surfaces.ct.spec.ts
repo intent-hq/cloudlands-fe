@@ -146,10 +146,10 @@ for (const zoom of [1, 2]) {
 test('keeps status, title, assign, and agent controls keyboard accessible', async ({ mount }) => {
   const component = await mount(OneRowTaskSurfaceHarness);
   const respondingAgentControl = component
-    .locator('[data-task-agent-indicator][data-agent-display-status="responding"]')
+    .locator('[data-task-agent-indicator][data-agent-display-status="running"]')
     .first();
   await expect(respondingAgentControl).toHaveAccessibleName(
-    'Open agent Active task agent: Responding',
+    'Open agent Active task agent: Running',
   );
   const controls = [
     component.getByTitle('Status: waiting').first(),

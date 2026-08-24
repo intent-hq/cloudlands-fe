@@ -5,11 +5,7 @@
 import { store } from '../../store';
 import type { StoreState } from '../../types';
 import { extractAllContent, type AgentMessage, type AgentSession } from '$shared/types';
-import {
-  CHIEF_WORKSPACE_ID,
-  type ChiefThreadPreview,
-  type SidebarNavItem,
-} from './sidebar-nav-types';
+import { CHIEF_WORKSPACE_ID, type ChiefThreadPreview } from './sidebar-nav-types';
 import { getChiefThreadTitle } from './chief-thread-title';
 import { m } from '$shared/paraglide/messages.js';
 import {
