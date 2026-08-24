@@ -4,6 +4,13 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.86.4](https://github.com/intent-hq/cloudlands-fe/compare/v2.86.3...v2.86.4) (2026-08-24)
+
+
+### 🐛 Bug Fixes
+
+* replace heuristic chat sweep-sparing with interest leases to end the stranded-window family ([#1635](https://github.com/intent-hq/cloudlands-fe/issues/1635)) ([650fb8e](https://github.com/intent-hq/cloudlands-fe/commit/650fb8e9cb239afee88c2e2c361a5920d7d40f7a))
+
 ## [2.86.3](https://github.com/intent-hq/cloudlands-fe/compare/v2.86.2...v2.86.3) (2026-08-23)
 
 
