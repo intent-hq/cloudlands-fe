@@ -8,7 +8,7 @@ body {
     -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
 }
 .panel-layout-container {
-  background-color: hsl(var(--app-background) / 0.3);
+  background-color: hsl(var(--background) / 0.35);
 }
 
 :where(.dark) .panel-layout-container {

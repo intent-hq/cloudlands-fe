@@ -262,9 +262,11 @@ describe('editorial workspace shell presentation contract', () => {
     expect(appLayout.match(/panel-layout-container/g)).toHaveLength(1);
     expect(appLayout).not.toContain('background-color: hsl(var(--background) /');
     expect(appLayoutCss).toMatch(
-      /\.panel-layout-container\s*{\s*background-color:\s*var\(--app-shell-translucency\);\s*}/,
+      /\.panel-layout-container\s*{\s*background-color:\s*hsl\(var\(--background\) \/ 0\.35\);\s*}/,
     );
-    expect(appLayoutCss.match(/app-shell-translucency/g)).toHaveLength(1);
+    expect(appLayoutCss).toMatch(
+      /:where\(\.dark\) \.panel-layout-container\s*{\s*background-color:\s*transparent;\s*}/,
+    );
     expect(appLayout).toContain('class="workspace-main flex');
     expect(appLayout).toContain("'rounded-xl bg-sidebar border border-border shadow-sm'");
     expect(sidebarPanel).toContain('relative text-sidebar-foreground');
