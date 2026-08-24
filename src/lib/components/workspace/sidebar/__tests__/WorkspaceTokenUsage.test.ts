@@ -278,14 +278,19 @@ describe('WorkspaceTokenUsage', () => {
     expect(agentRows).toHaveLength(2);
     expect(visibleText(agentRows[0])).toBe('Beta 332.4K 91.5%');
     expect(visibleText(agentRows[1])).toBe('Alpha 31K 8.5%');
-    expect([...modelRows, ...agentRows].every((listRow) => listRow.children.length === 2)).toBe(
-      true,
-    );
+    expect(
+      [...modelRows, ...agentRows].every(
+        (listRow) => listRow.firstElementChild?.children.length === 2,
+      ),
+    ).toBe(true);
     expect(
       [...modelRows, ...agentRows].every(
         (listRow) =>
-          listRow.firstElementChild?.classList.contains('breakdown-share-bar') === true &&
-          listRow.lastElementChild?.classList.contains('breakdown-metadata') === true,
+          listRow.firstElementChild?.firstElementChild?.classList.contains(
+            'breakdown-share-bar',
+          ) === true &&
+          listRow.firstElementChild?.lastElementChild?.classList.contains('breakdown-metadata') ===
+            true,
       ),
     ).toBe(true);
     expect(
@@ -297,6 +302,133 @@ describe('WorkspaceTokenUsage', () => {
 
     expect(text).not.toContain('redits');
     expect(row.textContent).not.toContain('redits');
+  });
+
+  it('previews exact agent and model totals on pointer or keyboard focus and then resets', async () => {
+    mocks.state.usage = makeUsage({
+      byAgentId: {
+        'agent-alpha': {
+          inputTokens: 10,
+          outputTokens: 20,
+          cacheReadTokens: 30,
+          cacheCreationTokens: 40,
+          thoughtTokens: 50,
+        },
+        'agent-beta': {
+          inputTokens: 400,
+          outputTokens: 300,
+          cacheReadTokens: 200,
+          cacheCreationTokens: 100,
+          thoughtTokens: 0,
+        },
+      },
+      totals: {
+        inputTokens: 410,
+        outputTokens: 320,
+        cacheReadTokens: 230,
+        cacheCreationTokens: 140,
+        thoughtTokens: 50,
+      },
+      byModel: {
+        'model-zero-cache': {
+          inputTokens: 80,
+          outputTokens: 20,
+          cacheReadTokens: 0,
+          cacheCreationTokens: 0,
+          thoughtTokens: 0,
+        },
+        'model-reasoning': {
+          inputTokens: 0,
+          outputTokens: 0,
+          cacheReadTokens: 0,
+          cacheCreationTokens: 0,
+          thoughtTokens: 50,
+        },
+      },
+      lastScanAt: 5000,
+      isStale: false,
+    });
+    mocks.state.agents = [
+      { id: 'agent-alpha', name: 'Alpha' },
+      { id: 'agent-beta', name: 'Beta' },
+    ];
+
+    await renderExpandedTokenUsage();
+
+    const disclosure = screen.getByTestId('token-usage-disclosure');
+    const composition = screen
+      .getByRole('heading', { name: 'Token composition' })
+      .closest('section')!;
+    const previewStatus = document.getElementById(
+      'workspace-token-usage-details-ws-1-preview-status',
+    )!;
+    const values = () =>
+      Array.from(composition.querySelectorAll('.composition-row')).map((row) => ({
+        value: row.querySelector('.composition-value')?.textContent?.trim(),
+        share: row.querySelector('.composition-context')?.textContent?.trim(),
+      }));
+    const alpha = screen.getByRole('button', { name: 'Alpha 150 13%' });
+    const beta = screen.getByRole('button', { name: 'Beta 1K 87%' });
+    const zeroCache = screen.getByRole('button', { name: 'Model Zero Cache 100 66.7%' });
+    const reasoning = screen.getByRole('button', { name: 'Model Reasoning 50 33.3%' });
+
+    expect(visibleText(previewStatus)).toBe('1.1K processed');
+    expect(visibleText(disclosure)).toContain('1.1K processed');
+
+    await fireEvent.pointerEnter(alpha, { pointerType: 'mouse' });
+    expect(visibleText(previewStatus)).toBe('By agent Alpha 150 processed');
+    expect(alpha.getAttribute('aria-current')).toBe('true');
+    expect(values()).toEqual([
+      { value: '70', share: '46.7%' },
+      { value: '10', share: '6.7%' },
+      { value: '20', share: '13.3%' },
+      { value: '50', share: '33.3%' },
+    ]);
+
+    await fireEvent.pointerEnter(zeroCache, { pointerType: 'mouse' });
+    expect(visibleText(previewStatus)).toBe('By model Model Zero Cache 100 processed');
+    expect(values()).toEqual([
+      { value: '0', share: '0%' },
+      { value: '80', share: '80%' },
+      { value: '20', share: '20%' },
+      { value: '0', share: '0%' },
+    ]);
+
+    await fireEvent.pointerLeave(zeroCache, { pointerType: 'mouse' });
+    expect(visibleText(previewStatus)).toBe('1.1K processed');
+
+    await fireEvent.focus(beta);
+    expect(visibleText(previewStatus)).toBe('By agent Beta 1K processed');
+    expect(values()).toEqual([
+      { value: '300', share: '30%' },
+      { value: '400', share: '40%' },
+      { value: '300', share: '30%' },
+      { value: '0', share: '0%' },
+    ]);
+
+    await fireEvent.pointerEnter(zeroCache, { pointerType: 'mouse' });
+    expect(visibleText(previewStatus)).toBe('By model Model Zero Cache 100 processed');
+    await fireEvent.pointerLeave(zeroCache, { pointerType: 'mouse' });
+    expect(visibleText(previewStatus)).toBe('By agent Beta 1K processed');
+
+    await fireEvent.blur(beta);
+    await fireEvent.focus(reasoning);
+    expect(visibleText(previewStatus)).toBe('By model Model Reasoning 50 processed');
+    expect(values()).toEqual([
+      { value: '0', share: '0%' },
+      { value: '0', share: '0%' },
+      { value: '0', share: '0%' },
+      { value: '50', share: '100%' },
+    ]);
+
+    await fireEvent.blur(reasoning);
+    expect(visibleText(previewStatus)).toBe('1.1K processed');
+    expect(visibleText(disclosure)).toContain('1.1K processed');
+
+    await fireEvent.pointerEnter(alpha, { pointerType: 'touch' });
+    await fireEvent.pointerDown(alpha, { pointerType: 'touch' });
+    await fireEvent.focus(alpha);
+    expect(visibleText(previewStatus)).toBe('1.1K processed');
   });
 
   it('shows the unknown model bucket in the by-model section', async () => {

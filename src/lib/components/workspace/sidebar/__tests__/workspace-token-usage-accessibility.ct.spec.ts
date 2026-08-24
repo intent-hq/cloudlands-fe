@@ -23,11 +23,11 @@ test('exposes compact values and keeps summary text readable on hover', async ({
   });
   const disclosure = component.locator('button[aria-controls^="workspace-token-usage-details-"]');
 
-  await expect(disclosure).toHaveAccessibleDescription('1K processed 70% Cached');
+  await expect(disclosure).toHaveAccessibleDescription('1K processed 64% Cached');
   await disclosure.focus();
   await disclosure.press('Space');
   await expect(disclosure).toHaveAccessibleName('Collapse token usage details');
-  await expect(disclosure).toHaveAccessibleDescription('1K processed 70% Cached');
+  await expect(disclosure).toHaveAccessibleDescription('1K processed 64% Cached');
   await disclosure.press('Enter');
   await expect(disclosure).toHaveAccessibleName('Expand token usage details');
   await disclosure.click();
@@ -85,6 +85,97 @@ test('exposes compact values and keeps summary text readable on hover', async ({
       ).toBeGreaterThanOrEqual(4.5);
     }
   }
+});
+
+test('previews exact ranked totals with accessible pointer, focus, theme, and touch behavior', async ({
+  mount,
+  page,
+}) => {
+  await page.setViewportSize({ width: 1100, height: 720 });
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  const component = await mount(WorkspaceTokenUsageAccessibilityHost, {
+    props: { theme: 'light', width: 304 },
+  });
+  const disclosure = component.getByTestId('token-usage-disclosure');
+  await disclosure.click();
+
+  const details = component.getByTestId('token-usage-details');
+  const previewStatus = details.locator('.preview-status');
+  const compositionRows = details.locator('.composition-row');
+  const agentAlpha = component.getByTestId('token-usage-by-agent').getByRole('button').first();
+  const modelButtons = component.getByTestId('token-usage-by-model').getByRole('button');
+  const longModel = modelButtons.first();
+  const finalModel = modelButtons.last();
+  const compositionValues = () =>
+    compositionRows.evaluateAll((rows) =>
+      rows.map((row) => ({
+        value: row.querySelector('.composition-value')?.textContent?.trim(),
+        share: row.querySelector('.composition-context')?.textContent?.trim(),
+      })),
+    );
+
+  await expect(previewStatus).toHaveText(/1K\s+processed/);
+
+  for (const theme of ['light', 'dark'] as const) {
+    await component.update({ props: { theme, width: 304 } });
+    await agentAlpha.dispatchEvent('pointerenter', { pointerType: 'mouse' });
+    await expect(previewStatus).toContainText('By agent Agent alpha-01 750 processed');
+    await expect(agentAlpha).toHaveAttribute('aria-current', 'true');
+    expect(await compositionValues()).toEqual([
+      { value: '550', share: '73.3%' },
+      { value: '50', share: '6.7%' },
+      { value: '150', share: '20%' },
+      { value: '0', share: '0%' },
+    ]);
+    const activeStyle = await agentAlpha.evaluate((element) => ({
+      background: getComputedStyle(element).backgroundColor,
+      boxShadow: getComputedStyle(element).boxShadow,
+      transitionDuration: Number.parseFloat(getComputedStyle(element).transitionDuration),
+    }));
+    expect(activeStyle.background).not.toBe('rgba(0, 0, 0, 0)');
+    expect(activeStyle.boxShadow).not.toBe('none');
+    expect(activeStyle.transitionDuration).toBeLessThanOrEqual(0.001);
+    await agentAlpha.dispatchEvent('pointerleave', { pointerType: 'mouse' });
+    await expect(previewStatus).toHaveText(/1K\s+processed/);
+  }
+
+  await finalModel.focus();
+  await expect(finalModel).toBeFocused();
+  await expect(previewStatus).toContainText('By model Model Production Final 50 processed');
+  expect(await compositionValues()).toEqual([
+    { value: '30', share: '60%' },
+    { value: '5', share: '10%' },
+    { value: '15', share: '30%' },
+    { value: '0', share: '0%' },
+  ]);
+  await expect(
+    details.locator('div[aria-hidden="true"]').first().locator(':scope > span'),
+  ).toHaveCount(3);
+
+  await longModel.focus();
+  const scopeLabel = previewStatus.locator('.preview-scope-label');
+  await expect(scopeLabel).toHaveAttribute(
+    'title',
+    'provider/this-is-an-extraordinarily-long-model-name-for-truncation',
+  );
+  expect(
+    await scopeLabel.evaluate((element) => ({
+      isTruncated: element.scrollWidth > element.clientWidth,
+      textOverflow: getComputedStyle(element).textOverflow,
+    })),
+  ).toEqual({ isTruncated: true, textOverflow: 'ellipsis' });
+  await finalModel.focus();
+  await finalModel.blur();
+  await expect(previewStatus).toHaveText(/1K\s+processed/);
+
+  await agentAlpha.dispatchEvent('pointerenter', { pointerType: 'touch' });
+  await agentAlpha.dispatchEvent('pointerdown', { pointerType: 'touch' });
+  await agentAlpha.focus();
+  await expect(previewStatus).toHaveText(/1K\s+processed/);
+
+  await page.keyboard.press('Tab');
+  await longModel.focus();
+  await expect(previewStatus).toContainText('By model');
 });
 
 test('renders the full reference table as a wide overlay from the real workspace sidebar', async ({
@@ -197,16 +288,16 @@ test('renders the full reference table as a wide overlay from the real workspace
   await expect(compositionRows.locator('.composition-metric [aria-hidden="true"]')).toHaveCount(4);
   await expect(agentSection).toBeVisible();
   await expect(modelSection).toBeVisible();
-  await expect(agentRows).toHaveCount(2);
-  await expect(modelRows).toHaveCount(2);
+  await expect(agentRows).toHaveCount(4);
+  await expect(modelRows).toHaveCount(4);
   await expect(agentRows.first()).toBeVisible();
   await expect(modelRows.first()).toBeVisible();
   await expect(agentRows.nth(0)).toContainText('750 75%');
-  await expect(agentRows.nth(1)).toContainText('250 25%');
-  await expect(modelRows.nth(0)).toContainText('750 75%');
+  await expect(agentRows.nth(1)).toContainText('150 15%');
+  await expect(modelRows.nth(0)).toContainText('600 60%');
   await expect(modelRows.nth(1)).toContainText('250 25%');
-  await expect(agentRows.locator('[aria-hidden="true"] > [style*="width"]')).toHaveCount(2);
-  await expect(modelRows.locator('[aria-hidden="true"] > [style*="width"]')).toHaveCount(2);
+  await expect(agentRows.locator('[aria-hidden="true"] > [style*="width"]')).toHaveCount(4);
+  await expect(modelRows.locator('[aria-hidden="true"] > [style*="width"]')).toHaveCount(4);
   await expect(
     composition.locator('div[aria-hidden="true"]').first().locator(':scope > span').first(),
   ).toHaveClass(/bg-success/);
@@ -270,6 +361,7 @@ test('renders the full reference table as a wide overlay from the real workspace
           metricTransform: getComputedStyle(metricLabel).textTransform,
           description: box('.composition-description'),
           descriptionFontSize: Number.parseFloat(getComputedStyle(descriptionElement).fontSize),
+          descriptionTransform: getComputedStyle(descriptionElement).textTransform,
           descriptionLetterSpacing: Number.parseFloat(
             getComputedStyle(descriptionElement).letterSpacing,
           ),
@@ -289,7 +381,7 @@ test('renders the full reference table as a wide overlay from the real workspace
     modelSection.boundingBox(),
     details.locator('.breakdown-section li').evaluateAll((rows) =>
       rows.map((row) => {
-        const metadata = row.lastElementChild!;
+        const metadata = row.querySelector('.breakdown-metadata')!;
         const [name, value, context] = Array.from(metadata.children).map((child) =>
           child.getBoundingClientRect().toJSON(),
         );
@@ -375,18 +467,18 @@ test('renders the full reference table as a wide overlay from the real workspace
   expect(modelBox).not.toBeNull();
   expect(Math.abs(agentBox!.y - modelBox!.y)).toBeLessThanOrEqual(1);
   expect(agentBox!.width).toBeCloseTo(modelBox!.width, 0);
-  expect(detailsBox!.height).toBeGreaterThanOrEqual(312);
-  expect(detailsBox!.height).toBeLessThanOrEqual(315);
-  expect(detailsBox!.height / detailsBox!.width).toBeGreaterThanOrEqual(0.69);
-  expect(detailsBox!.height / detailsBox!.width).toBeLessThanOrEqual(0.7);
-  expect(agentBox!.height).toBeGreaterThanOrEqual(75);
-  expect(agentBox!.height).toBeLessThanOrEqual(77);
-  expect(modelBox!.height).toBeGreaterThanOrEqual(75);
-  expect(modelBox!.height).toBeLessThanOrEqual(77);
+  expect(detailsBox!.height).toBeGreaterThanOrEqual(352);
+  expect(detailsBox!.height).toBeLessThanOrEqual(355);
+  expect(detailsBox!.height / detailsBox!.width).toBeGreaterThanOrEqual(0.77);
+  expect(detailsBox!.height / detailsBox!.width).toBeLessThanOrEqual(0.79);
+  expect(agentBox!.height).toBeGreaterThanOrEqual(115);
+  expect(agentBox!.height).toBeLessThanOrEqual(117);
+  expect(modelBox!.height).toBeGreaterThanOrEqual(115);
+  expect(modelBox!.height).toBeLessThanOrEqual(117);
   expect(breakdownDivider).toMatchObject({
     top: 0,
     bottom: 0,
-    height: 76,
+    height: 116,
     backgroundColor: 'rgba(30, 30, 30, 0.55)',
     secondSectionBorderLeftWidth: '0px',
   });
@@ -422,9 +514,9 @@ test('renders the full reference table as a wide overlay from the real workspace
   expect(
     breakdownLists.every(
       ({ clientHeight, maxHeight, overflowY, scrollbarWidth, scrollHeight }) =>
-        clientHeight >= 40 &&
-        clientHeight <= 44 &&
-        maxHeight === 40 &&
+        clientHeight >= 80 &&
+        clientHeight <= 84 &&
+        maxHeight === 80 &&
         overflowY === 'auto' &&
         scrollbarWidth === 'thin' &&
         scrollHeight > clientHeight,
@@ -435,7 +527,8 @@ test('renders the full reference table as a wide overlay from the real workspace
       ({ listBox, firstRowBox, secondRowBox }) =>
         firstRowBox.top >= listBox.top - 1 &&
         firstRowBox.bottom <= listBox.bottom + 1 &&
-        secondRowBox.top >= listBox.bottom - 1,
+        secondRowBox.top >= listBox.top - 1 &&
+        secondRowBox.bottom <= listBox.bottom + 1,
     ),
   ).toBe(true);
   expect(
@@ -444,12 +537,14 @@ test('renders the full reference table as a wide overlay from the real workspace
         height >= 9.5 && height <= 10.5 && borderRadius > 0 && borderRadius <= 3,
     ),
   ).toBe(true);
-  const agentList = agentSection.locator('.breakdown-list');
   const modelList = modelSection.locator('.breakdown-list');
-  await agentList.focus();
-  await expect(agentList).toBeFocused();
-  await agentList.press('PageDown');
-  await agentList.press('End');
+  const agentButtons = agentRows.getByRole('button');
+  await agentButtons.first().focus();
+  await expect(agentButtons.first()).toBeFocused();
+  await agentButtons.first().press('Tab');
+  await agentButtons.nth(1).press('Tab');
+  await agentButtons.nth(2).press('Tab');
+  await expect(agentButtons.last()).toBeFocused();
   await modelList.hover();
   await page.mouse.wheel(0, 1000);
   await expect
@@ -473,6 +568,7 @@ test('renders the full reference table as a wide overlay from the real workspace
         metricTransform,
         description,
         descriptionFontSize,
+        descriptionTransform,
         descriptionLetterSpacing,
         descriptionClientWidth,
         descriptionScrollWidth,
@@ -493,6 +589,7 @@ test('renders the full reference table as a wide overlay from the real workspace
         swatchRadius <= 2 &&
         metricTransform === 'uppercase' &&
         descriptionFontSize === 11 &&
+        descriptionTransform === 'none' &&
         descriptionLetterSpacing >= 0 &&
         descriptionLetterSpacing <= 0.25 &&
         descriptionScrollWidth <= descriptionClientWidth &&

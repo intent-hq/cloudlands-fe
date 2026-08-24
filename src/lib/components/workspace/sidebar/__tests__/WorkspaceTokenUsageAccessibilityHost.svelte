@@ -19,37 +19,61 @@
   store.dispatch(
     tokenUsageReceived(workspaceId, {
       byAgentId: {
-        'agent-alpha': {
+        'alpha-01': {
           inputTokens: 50,
           outputTokens: 150,
           cacheReadTokens: 500,
           cacheCreationTokens: 50,
         },
-        'agent-beta': {
-          inputTokens: 50,
-          outputTokens: 50,
-          cacheReadTokens: 100,
-          cacheCreationTokens: 50,
+        'beta-02': {
+          inputTokens: 30,
+          outputTokens: 70,
+          cacheReadTokens: 40,
+          cacheCreationTokens: 10,
+        },
+        'gamma-03': {
+          inputTokens: 15,
+          outputTokens: 35,
+          cacheReadTokens: 20,
+          cacheCreationTokens: 5,
+        },
+        'production-final': {
+          inputTokens: 5,
+          outputTokens: 5,
+          cacheReadTokens: 10,
+          cacheCreationTokens: 5,
         },
       },
       totals: {
         inputTokens: 100,
-        outputTokens: 200,
-        cacheReadTokens: 600,
-        cacheCreationTokens: 100,
+        outputTokens: 260,
+        cacheReadTokens: 570,
+        cacheCreationTokens: 70,
       },
       byModel: {
         'provider/this-is-an-extraordinarily-long-model-name-for-truncation': {
           inputTokens: 50,
           outputTokens: 150,
-          cacheReadTokens: 500,
-          cacheCreationTokens: 50,
+          cacheReadTokens: 360,
+          cacheCreationTokens: 40,
         },
         'model-beta': {
-          inputTokens: 50,
-          outputTokens: 50,
-          cacheReadTokens: 100,
-          cacheCreationTokens: 50,
+          inputTokens: 30,
+          outputTokens: 60,
+          cacheReadTokens: 140,
+          cacheCreationTokens: 20,
+        },
+        'model-gamma': {
+          inputTokens: 15,
+          outputTokens: 35,
+          cacheReadTokens: 45,
+          cacheCreationTokens: 5,
+        },
+        'model-production-final': {
+          inputTokens: 5,
+          outputTokens: 15,
+          cacheReadTokens: 25,
+          cacheCreationTokens: 5,
         },
       },
       lastScanAt: '2026-08-22T00:00:00Z',
