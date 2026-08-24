@@ -174,7 +174,7 @@ describe('TaskItemNodeView workspace ownership', () => {
     expect(viewA.container.textContent).toContain('Task from A');
   });
 
-  it('uses the owner for status, delegation, and adjacent-panel navigation', async () => {
+  it('uses the owner for status, delegation, and source-panel navigation', async () => {
     mocks.setWorkspace('workspace-b', true, [taskNote('workspace-b', 'Task from B')]);
     const view = render(TestTaskItemNodeView, { props: linkedProps('workspace-b') });
     const panel = document.createElement('div');
@@ -193,8 +193,7 @@ describe('TaskItemNodeView workspace ownership', () => {
     });
     expect(mocks.navigate).toHaveBeenCalledWith('shared-task', {
       workspaceId: 'workspace-b',
-      openInAdjacentPanel: true,
-      openInNewAdjacentPanel: true,
+      openInAdjacentPanel: false,
       sourcePanelId: 'panel-b',
     });
   });

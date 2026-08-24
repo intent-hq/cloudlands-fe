@@ -435,7 +435,7 @@ describe('TaskItemNodeView - Action Button', () => {
 });
 
 describe('TaskItemNodeView - Reactivity', () => {
-  it('opens linked task notes beside their source panel by default', async () => {
+  it('opens linked task notes in their source panel by default', async () => {
     const noteId = 'task-linked';
     linkedNoteState.set({
       id: noteId,
@@ -453,8 +453,38 @@ describe('TaskItemNodeView - Reactivity', () => {
 
     expect(navigateToNoteMock).toHaveBeenCalledWith(noteId, {
       workspaceId: 'workspace-1',
+      openInAdjacentPanel: false,
+      sourcePanelId: 'panel-note',
+    });
+  });
+
+  it('opens linked task notes beside their source panel on Mod-click and Mod+Enter', async () => {
+    const noteId = 'task-linked';
+    linkedNoteState.set({
+      id: noteId,
+      workspaceId: 'workspace-1',
+      title: 'Linked task',
+      metadata: { task: { status: 'not_started' } },
+    });
+    const { container } = render(TestTaskItemNodeView, { props: createLinkedTaskProps(noteId) });
+    const panel = document.createElement('div');
+    panel.dataset.panelId = 'panel-note';
+    container.parentElement?.insertBefore(panel, container);
+    panel.appendChild(container);
+    const title = container.querySelector('[data-testid="linked-task-title"]')!;
+
+    await fireEvent.click(title, { ctrlKey: true, metaKey: true });
+    expect(navigateToNoteMock).toHaveBeenLastCalledWith(noteId, {
+      workspaceId: 'workspace-1',
       openInAdjacentPanel: true,
-      openInNewAdjacentPanel: true,
+      sourcePanelId: 'panel-note',
+    });
+
+    navigateToNoteMock.mockClear();
+    await fireEvent.keyDown(title, { key: 'Enter', ctrlKey: true, metaKey: true });
+    expect(navigateToNoteMock).toHaveBeenCalledWith(noteId, {
+      workspaceId: 'workspace-1',
+      openInAdjacentPanel: true,
       sourcePanelId: 'panel-note',
     });
   });
