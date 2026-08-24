@@ -98,7 +98,9 @@
   // Determine icon based on file type
   const icon = $derived.by(() => {
     const mimeType = type || imageMimeType || '';
-    if (mimeType.startsWith('image/')) return faImage;
+    // 'image' (no subtype) is the neutral marker for an attachment-reference
+    // image restored without a persisted mime (monorepo#3338).
+    if (mimeType.startsWith('image')) return faImage;
     if (
       mimeType.includes('javascript') ||
       mimeType.includes('typescript') ||
@@ -111,7 +113,7 @@
 
   // Format file size
 
-  const isImage = $derived(type.startsWith('image/') || !!imageMimeType?.startsWith('image/'));
+  const isImage = $derived(type.startsWith('image/') || !!imageMimeType?.startsWith('image'));
 
   // Chip tooltip: only failed placements explain themselves on hover; the
   // daemon's failure detail (when captured) is appended after the generic copy.

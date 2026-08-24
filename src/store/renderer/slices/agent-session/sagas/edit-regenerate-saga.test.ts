@@ -153,6 +153,30 @@ describe('editRegenerateSaga', () => {
     await task.toPromise();
   });
 
+  it('keeps inline image blocks for the chief workspace (no attachment registry)', async () => {
+    mocks.editAndRegenerate.mockResolvedValue({ success: true });
+    const imageBlocks = [{ type: 'image' as const, data: 'aGk=', mimeType: 'image/png' }];
+    const { channel, task } = start();
+    const action = agentSessionEditAndRegenerateRequested(AGENT, '__chief__', 'm3', 'edited', {
+      imageBlocks,
+    });
+    channel.put(action);
+    await expect(action.promise).resolves.toBeUndefined();
+
+    // The chief virtual workspace has no attachment registry — its edits
+    // must NOT pre-upload; inline blocks ride the wire unchanged.
+    expect(mocks.toImageReferenceBlocks).not.toHaveBeenCalled();
+    expect(mocks.editAndRegenerate).toHaveBeenCalledWith({
+      agentId: AGENT,
+      workspaceId: '__chief__',
+      messageId: 'm3',
+      content: 'edited',
+      imageBlocks,
+    });
+    task.cancel();
+    await task.toPromise();
+  });
+
   it('omits imageBlocks/fileBlocks from the wire call when the edit carries none', async () => {
     mocks.editAndRegenerate.mockResolvedValue({ success: true });
     const { channel, dispatched, task } = start();

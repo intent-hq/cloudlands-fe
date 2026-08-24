@@ -1160,7 +1160,11 @@
             label: `Image ${index + 1}`,
             description: block.mimeType || 'image',
             attachmentId: block.attachmentId,
-            imageMimeType: block.mimeType || 'image/png',
+            // `imageMimeType` doubles as the image marker downstream; a
+            // reference persisted without a mime keeps the neutral 'image'
+            // marker rather than fabricating one — the wire mimeType is
+            // optional on the reference arm and is omitted at re-send.
+            imageMimeType: block.mimeType || 'image',
           });
         } else if (block.type === 'image' && block.data && block.mimeType) {
           contextItemsForEdit.push({
@@ -1234,7 +1238,10 @@
           ? {
               type: 'image' as const,
               attachmentId: item.attachmentId,
-              mimeType: item.imageMimeType!,
+              // The neutral 'image' marker (reference restored without a
+              // mime) stays off the wire — mimeType is optional on the
+              // reference arm.
+              ...(item.imageMimeType!.includes('/') ? { mimeType: item.imageMimeType! } : {}),
             }
           : {
               type: 'image' as const,

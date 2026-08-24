@@ -12,6 +12,7 @@ import {
   chatQueuedRetryRecordsCleared,
   chatSendStarted,
 } from '../../chat-state/chat-state-slice';
+import { CHIEF_WORKSPACE_ID } from '../../sidebar-nav/sidebar-nav-types';
 import { agentSessionEditAndRegenerateRequested, replaceMessages } from '../agent-session-slice';
 import { selectAgentSession } from '../agent-session-selectors';
 
@@ -40,9 +41,11 @@ function* editAndRegenerate(action: EditAction): SagaGenerator<void> {
     // (monorepo#3338) — blocks already carrying an attachmentId (restored
     // from the original message) pass through without re-uploading. A
     // placement failure aborts BEFORE the destructive daemon-side
-    // truncation, surfacing the per-image reason.
+    // truncation, surfacing the per-image reason. The chief virtual
+    // workspace has no attachment registry, so its edits keep the inline
+    // arm (mirrors chat-send-saga's gate).
     let options = rawOptions;
-    if ((options?.imageBlocks?.length ?? 0) > 0) {
+    if ((options?.imageBlocks?.length ?? 0) > 0 && wsId !== CHIEF_WORKSPACE_ID) {
       options = {
         ...options,
         imageBlocks: yield* call(

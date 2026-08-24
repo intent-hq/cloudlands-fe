@@ -234,10 +234,14 @@ export async function sendMessage(
         const userContentBlocks: ContentBlock[] = [{ type: 'text' as const, text: content }];
         if (options.imageBlocks) {
           for (const img of options.imageBlocks) {
+            // Carry whichever arm the block arrived on (inline data or
+            // attachment reference, monorepo#3338) so the optimistic row
+            // renders its thumbnails before the daemon echo.
             userContentBlocks.push({
               type: 'image' as const,
-              data: img.data,
-              mimeType: img.mimeType,
+              ...(img.data !== undefined ? { data: img.data } : {}),
+              ...(img.mimeType !== undefined ? { mimeType: img.mimeType } : {}),
+              ...(img.attachmentId !== undefined ? { attachmentId: img.attachmentId } : {}),
             });
           }
         }

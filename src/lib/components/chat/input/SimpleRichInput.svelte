@@ -5,6 +5,7 @@
   import { toast } from 'svelte-sonner';
   import { createLogger } from '$lib/utils/client-logger';
   import type { Workspace } from '$shared/types';
+  import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
   import { parseCompoundModelId as parseCompoundModelIdWithDefault } from '$shared/utils/compound-model-id';
   import {
     selectEffectiveDefaultProviderId,
@@ -950,8 +951,13 @@
     // Images travel as attachment-reference blocks (monorepo#3338): the send
     // path places the bytes via file.placeAttachment / chunked upload, so
     // the composer cap matches the daemon's 30 MiB reference-image limit
-    // rather than the old inline-frame budget.
-    const MAX_FILE_SIZE = 30 * 1024 * 1024; // 30 MiB (daemon image-reference cap)
+    // rather than the old inline-frame budget. The chief virtual workspace
+    // has no attachment registry — its images stay inline, so it keeps the
+    // legacy 10 MB inline-frame cap.
+    const MAX_FILE_SIZE =
+      workspace?.id === CHIEF_WORKSPACE_ID
+        ? 10 * 1024 * 1024 // 10 MB (legacy inline-frame budget)
+        : 30 * 1024 * 1024; // 30 MiB (daemon image-reference cap)
     const addedCount = { value: 0 };
     const oversizedFiles: string[] = [];
 

@@ -3899,7 +3899,10 @@
           ? {
               type: 'image' as const,
               attachmentId: item.attachmentId,
-              mimeType: item.imageMimeType!,
+              // The neutral 'image' marker (reference restored without a
+              // persisted mime) stays off the wire — mimeType is optional
+              // on the reference arm.
+              ...(item.imageMimeType!.includes('/') ? { mimeType: item.imageMimeType! } : {}),
             }
           : {
               type: 'image' as const,
