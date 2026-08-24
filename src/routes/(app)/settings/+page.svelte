@@ -422,7 +422,14 @@
       </button>
     </div>
 
-    <SettingsSidebarNav {activeTab} onSelect={setActiveTab} />
+    <SettingsSidebarNav {activeTab} onSelect={setActiveTab}>
+      {#snippet agentsNavigation()}
+        <AIBehaviorSidebar
+          activeView={aiBehaviorView}
+          onSelect={(view) => (aiBehaviorView = view)}
+        />
+      {/snippet}
+    </SettingsSidebarNav>
 
     <div class="shrink-0 border-t border-border dark:border-border px-5 py-4 text-xs text-subtle">
       <div class="flex w-full items-baseline justify-between gap-2">
@@ -455,7 +462,9 @@
   <div class="flex min-w-0 flex-1 flex-col">
     <div class="min-h-0 flex-1 overflow-auto">
       <main
-        class="mx-auto flex min-h-full max-w-4xl flex-col pr-8 pl-6 py-12"
+        class="mx-auto flex min-h-full {activeTab === 'agents'
+          ? 'max-w-6xl xl:h-full xl:min-h-0 xl:py-8'
+          : 'max-w-4xl'} flex-col pr-8 pl-6 py-12"
         aria-labelledby="settings-page-title"
       >
         <h1 id="settings-page-title" class="sr-only">{m.settings_page_title()}</h1>
@@ -501,12 +510,8 @@
             id="default-model"
             data-highlight-id="quickActions.defaultModel"
             use:highlightTarget
-            class="grid min-w-0 grow grid-cols-[13rem_minmax(0,1fr)] gap-4 xl:gap-6"
+            class="min-w-0 grow xl:flex xl:min-h-0 xl:flex-1 xl:flex-col"
           >
-            <AIBehaviorSidebar
-              activeView={aiBehaviorView}
-              onSelect={(view) => (aiBehaviorView = view)}
-            />
             <AIBehaviorEditor
               activeView={aiBehaviorView}
               workspaceId={settingsWorkspaceId}

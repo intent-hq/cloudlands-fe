@@ -94,11 +94,11 @@ describe('specialists selectors', () => {
   });
 
   describe('visibility gating', () => {
-    it('should include ralph without any feature flag', () => {
+    it('should not include ralph in the shipped catalog', () => {
       const state = mockState();
       const ids = selectSpecialists.select(state).map((specialist) => specialist.id);
 
-      expect(ids).toContain('ralph');
+      expect(ids).not.toContain('ralph');
     });
 
     it('should hide GitHub-dependent specialists when GitHub is not authenticated', () => {
