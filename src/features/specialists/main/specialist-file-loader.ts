@@ -384,9 +384,9 @@ export function parseRoleScalar(raw: string | undefined): SpecialistRole | undef
  * Parse a frontmatter `teamAgents` scalar (single-line JSON array of
  * specialist ids) with the same lenient read semantics as `modelOptions`:
  * an unparseable scalar or non-array reads as omitted; unusable entries
- * (non-strings, empty strings) are skipped individually; a literal `[]`
- * yields an explicit empty list, and a non-empty array whose entries are ALL
- * unusable reads as omitted.
+ * (non-strings, blank/whitespace-only strings) are skipped individually; a
+ * literal `[]` yields an explicit empty list, and a non-empty array whose
+ * entries are ALL unusable reads as omitted.
  * Exported for testing purposes.
  */
 export function parseTeamAgentsScalar(raw: string | undefined): string[] | undefined {
@@ -399,7 +399,9 @@ export function parseTeamAgentsScalar(raw: string | undefined): string[] | undef
   }
   if (!Array.isArray(parsed)) return undefined;
   if (parsed.length === 0) return [];
-  const ids = parsed.filter((entry): entry is string => typeof entry === 'string' && entry !== '');
+  const ids = parsed.filter(
+    (entry): entry is string => typeof entry === 'string' && entry.trim() !== '',
+  );
   return ids.length > 0 ? ids : undefined;
 }
 

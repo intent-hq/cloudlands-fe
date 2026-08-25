@@ -251,9 +251,10 @@
   // Avatar row for the team card: the orchestrator's declared teamAgents,
   // resolved against the specialist set for their `icon` metadata. Unknown
   // ids still render (AgentAvatar degrades to its fallback design); absent
-  // teamAgents yields an empty row (orchestrator avatar only).
+  // teamAgents yields an empty row (orchestrator avatar only). Duplicate ids
+  // are collapsed — they would break the keyed each rendering the row.
   const teamAgentAvatars = $derived(
-    (orchestrator?.teamAgents ?? []).map((id) => ({
+    [...new Set(orchestrator?.teamAgents ?? [])].map((id) => ({
       id,
       icon: $specialists$.find((s) => s.id === id)?.icon,
     })),
@@ -309,6 +310,17 @@
         selectedSpecialist = null;
         onSpecialistChange?.(null);
       }
+    }
+  });
+
+  // Team mode always creates with the live orchestrator: if a refresh swaps
+  // which specialist resolves as orchestrator while team mode is selected
+  // (the previous selection may still exist as a non-orchestrator), re-sync
+  // selectedSpecialist so creation matches the rendered card.
+  $effect(() => {
+    if (isTeamMode && orchestratorId !== null && selectedSpecialist !== orchestratorId) {
+      selectedSpecialist = orchestratorId;
+      onSpecialistChange?.(orchestratorId);
     }
   });
 
@@ -725,6 +737,7 @@
               agentId="blank"
               variant="standard"
               specialist={currentSpecialistInfo ? displayedSpecialist : null}
+              icon={currentSpecialistInfo?.icon}
             />
             <div class="flex flex-col min-w-0 flex-1">
               <span class="font-medium text-foreground text-sm leading-tight"
@@ -771,7 +784,12 @@
                     : ''}"
                   onclick={() => handleSpecialistSelect(specialist.id)}
                 >
-                  <AgentAvatar agentId="blank" variant="standard" specialist={specialist.id} />
+                  <AgentAvatar
+                    agentId="blank"
+                    variant="standard"
+                    specialist={specialist.id}
+                    icon={specialist.icon}
+                  />
                   <div class="flex flex-col min-w-0">
                     <span class="font-medium text-foreground text-sm">{specialist.name}</span>
                     <span class="text-xs text-subtle truncate">{specialist.description}</span>

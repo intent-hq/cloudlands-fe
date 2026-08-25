@@ -522,6 +522,8 @@ Prompt.`;
       expect(parseTeamAgentsScalar('{"a":1}')).toBeUndefined();
       expect(parseTeamAgentsScalar('["good","",42]')).toEqual(['good']);
       expect(parseTeamAgentsScalar('["",42]')).toBeUndefined();
+      expect(parseTeamAgentsScalar('["good"," "]')).toEqual(['good']);
+      expect(parseTeamAgentsScalar('[" "]')).toBeUndefined();
       expect(parseTeamAgentsScalar(undefined)).toBeUndefined();
       expect(parseTeamAgentsScalar('')).toBeUndefined();
     });
