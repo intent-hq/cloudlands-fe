@@ -1184,7 +1184,7 @@ describe('AgentSubscriptions unified waiting disclosure', () => {
     expect(
       within(nativeTrigger)
         .getAllByTestId('task-progress-status-icon')
-        .every((icon) => icon.className.includes('size-4')),
+        .every((icon) => icon.className.includes('size-3.5') && !icon.className.includes('size-4')),
     ).toBe(true);
     expect(activationButton.contains(nativeTrigger)).toBe(false);
     expect(nativeRow.querySelector('.agent-card-content')?.className).toContain('mr-24');

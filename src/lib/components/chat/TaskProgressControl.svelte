@@ -78,7 +78,7 @@
 
 {#snippet statusIndicator(status: TaskProgressStatus, testId: string, completedCount?: number)}
   <span
-    class="inline-flex size-4 shrink-0 items-center justify-center rounded-full {statusIndicatorClass(
+    class="inline-flex size-3.5 shrink-0 items-center justify-center rounded-full leading-none {statusIndicatorClass(
       status,
     )}"
     aria-hidden="true"
@@ -99,8 +99,9 @@
 {#snippet taskRowContent(task: TaskProgressItem)}
   {@render statusIndicator(task.status, 'task-progress-row-status-icon')}
   <span
-    class="min-w-0 truncate"
-    class:line-through={task.status === 'completed'}
+    class="min-w-0 truncate {task.status === 'completed'
+      ? 'text-muted-foreground line-through decoration-muted-foreground/30'
+      : 'text-popover-foreground'}"
     title={task.title}
   >
     {#if task.status === 'running'}
@@ -145,7 +146,7 @@
             {#each stackedActiveTasks as task, index (task.id)}
               <span
                 class="relative inline-flex shrink-0 {completedTasks.length > 0 || index > 0
-                  ? '-ml-2'
+                  ? '-ml-1.75'
                   : ''}"
                 style:z-index={index + 1}
                 data-testid="task-progress-stack-item"
@@ -168,15 +169,15 @@
         collisionPadding={8}
         trapFocus={false}
         onOpenAutoFocus={(event) => event.preventDefault()}
-        class="z-(--layer-popover) w-80 max-w-[min(calc(100vw-var(--space-4)),calc(var(--bits-popover-content-available-width)-var(--space-2)))] overflow-hidden rounded-(--radius-medium) border border-border bg-popover p-1 text-popover-foreground shadow-(--elevation-overlay) outline-none"
+        class="type-body z-(--layer-popover) w-72 max-w-[min(calc(100vw-var(--space-4)),calc(var(--bits-popover-content-available-width)-var(--space-2)))] overflow-hidden rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-(--elevation-overlay) outline-none"
         data-testid="task-progress-popover"
       >
         <div class="min-w-0" aria-live="polite">
           <ul class="min-w-0" data-testid="task-progress-list">
             {#each orderedTasks as task (task.id)}
               <li
-                class="grid h-8 min-w-0 grid-cols-[1rem_minmax(0,1fr)] items-center gap-2 overflow-hidden rounded-md px-2 text-muted-foreground transition-[color,opacity] duration-[var(--motion-fast)] motion-reduce:transition-none"
-                class:opacity-65={task.status === 'completed'}
+                class="flex h-7 min-w-0 items-center gap-2 overflow-hidden rounded-md px-2 text-popover-foreground transition-[color,opacity] duration-[var(--motion-fast)] motion-reduce:transition-none"
+                class:opacity-70={task.status === 'completed'}
                 data-testid="task-progress-row"
                 data-task-id={task.id}
                 data-task-status={task.status}

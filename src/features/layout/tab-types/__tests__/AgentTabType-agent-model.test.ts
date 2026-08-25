@@ -250,7 +250,7 @@ describe('AgentTabType agent model reactivity', () => {
     expect(
       screen
         .getAllByTestId('task-progress-status-icon')
-        .every((icon) => icon.className.includes('size-4')),
+        .every((icon) => icon.className.includes('size-3.5') && !icon.className.includes('size-4')),
     ).toBe(true);
   });
 });

@@ -50,6 +50,14 @@ describe('TaskProgressControl', () => {
     const dialog = await screen.findByRole('dialog', { name: 'Agent tasks' });
     expect(document.activeElement).toBe(trigger);
     expect(dialog).toBeTruthy();
+    expect(dialog.className).toContain('type-body');
+    expect(dialog.className).toContain('w-72');
+    expect(dialog.className).toContain('rounded-md');
+    expect(dialog.className).toContain('border-border');
+    expect(dialog.className).toContain('bg-popover');
+    expect(dialog.className).toContain('shadow-(--elevation-overlay)');
+    expect(dialog.className).not.toContain('w-80');
+    expect(dialog.className).not.toContain('rounded-(--radius-medium)');
     expect(screen.getAllByTestId('task-progress-row').map((row) => row.dataset.taskId)).toEqual([
       'pending',
       'running',
@@ -60,6 +68,22 @@ describe('TaskProgressControl', () => {
     expect(screen.getByLabelText('In Progress: Move the task progress')).toBeTruthy();
     expect(screen.getByText('Move the task progress').className).toContain('shimmer-text');
     expect(screen.getByLabelText('Complete: Map the native plan')).toBeTruthy();
+    expect(
+      screen.getAllByTestId('task-progress-row').every((row) => row.className.includes('h-7')),
+    ).toBe(true);
+    expect(
+      screen.getAllByTestId('task-progress-row').every((row) => !row.className.includes('h-8')),
+    ).toBe(true);
+    expect(screen.getByText('Inspect the panel').className).toContain('text-popover-foreground');
+    expect(screen.getByText('Inspect the panel').className).not.toContain('text-muted-foreground');
+    expect(screen.getByText('Map the native plan').className).toContain('text-muted-foreground');
+    expect(screen.getByText('Map the native plan').className).toContain('line-through');
+    expect(screen.getByText('Map the native plan').className).toContain(
+      'decoration-muted-foreground/30',
+    );
+    expect(screen.getByText('Map the native plan').closest('li')?.className).toContain(
+      'opacity-70',
+    );
     expect(screen.queryByTestId('task-progress-completed-toggle')).toBeNull();
     expect(screen.queryByRole('tooltip', { hidden: true })).toBeNull();
   });
@@ -98,15 +122,18 @@ describe('TaskProgressControl', () => {
     expect(
       icons.every(
         (icon) =>
-          icon.className.includes('size-4') &&
+          icon.className.includes('size-3.5') &&
           icon.className.includes('items-center') &&
           icon.className.includes('justify-center') &&
+          icon.className.includes('leading-none') &&
           icon.className.includes('rounded-full') &&
+          !icon.className.includes('size-4') &&
           !icon.className.includes('border') &&
           !icon.className.includes('shadow'),
       ),
     ).toBe(true);
-    expect(stackItems.slice(1).every((item) => item.className.includes('-ml-2'))).toBe(true);
+    expect(stackItems.slice(1).every((item) => item.className.includes('-ml-1.75'))).toBe(true);
+    expect(stackItems.slice(1).every((item) => !item.className.includes('-ml-2'))).toBe(true);
     expect(stackItems.map((item) => item.style.zIndex)).toEqual(['', '1', '2', '3', '4', '5', '6']);
     expect(icons[0].className).toContain('bg-primary text-primary-foreground');
     expect(icons[0].dataset.completedCount).toBe('2');
@@ -145,7 +172,8 @@ describe('TaskProgressControl', () => {
     );
     const rowIcons = screen.getAllByTestId('task-progress-row-status-icon');
     expect(rowIcons).toHaveLength(statusTasks.length);
-    expect(rowIcons.every((icon) => icon.className.includes('size-4'))).toBe(true);
+    expect(rowIcons.every((icon) => icon.className.includes('size-3.5'))).toBe(true);
+    expect(rowIcons.every((icon) => !icon.className.includes('size-4'))).toBe(true);
     for (const rowIcon of rowIcons) {
       const stackIcon = stackByStatus.get(rowIcon.dataset.taskStatus);
       expect(stackIcon).toBeTruthy();
