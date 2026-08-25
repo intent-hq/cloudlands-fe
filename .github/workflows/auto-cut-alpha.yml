@@ -87,9 +87,12 @@
 #   releases.
 # - Merge happens ONLY when GitHub already reports the PR clean: not a
 #   draft, mergeable, required check "CI Gate" green on the current head,
-#   and no unresolved review threads. Anything else logs and exits 0 (push
-#   runs first retry transient states within their bounded wait) — the next
-#   scheduled run retries. Never force-merges.
+#   and no unresolved review threads with human participation. Threads
+#   whose comments are all bot-authored never block — a bot nit on the
+#   Release PR must not wedge the release train; humans engage by replying
+#   (which makes the thread blocking) or resolving it. Anything else logs
+#   and exits 0 (push runs first retry transient states within their
+#   bounded wait) — the next scheduled run retries. Never force-merges.
 # - The PR branch is never updated from here: release-please owns the
 #   Release PR branch content and force-refreshes it on every release-worthy
 #   push to main.
@@ -383,7 +386,7 @@ jobs:
           # so the caller can sleep 30s and retry; every other case logs and
           # exits 0 — the next scheduled run retries. Hard guardrails below
           # (fork/identity, hold-release, pin PR, conflicts, failed gate,
-          # unresolved threads) exit directly and are never retried.
+          # unresolved human threads) exit directly and are never retried.
           transient() {
             if [[ "$EVENT_NAME" == "push" ]] && (( $(date +%s) < deadline )); then
               echo "$1 — retrying in 30s."
@@ -736,13 +739,27 @@ jobs:
 
             # --paginate walks every reviewThreads page (an unresolved
             # thread past the first page must still block the merge); --jq
-            # emits one per-page count, summed by awk.
+            # emits one per-page count, summed by awk. Only unresolved
+            # threads with human participation block: a thread whose
+            # comments are ALL bot-authored (author __typename "Bot") is
+            # ignored, so a bot nit can never wedge the release train. A
+            # null (deleted) comment author — or a thread with no readable
+            # comments — counts as human (fail safe: unknown authorship
+            # blocks). Comment authors are read via comments(first: 100)
+            # with no nested pagination (--paginate follows only the
+            # reviewThreads pageInfo), so a thread with more than 100
+            # comments (totalCount > 100) is treated as human too:
+            # authorship past the first page is unverifiable in one read,
+            # and unverifiable authorship must block, never skip.
             unresolved=$(gh api graphql --paginate \
               -f query='query($owner: String!, $repo: String!, $pr: Int!, $endCursor: String) {
                 repository(owner: $owner, name: $repo) {
                   pullRequest(number: $pr) {
                     reviewThreads(first: 100, after: $endCursor) {
-                      nodes { isResolved }
+                      nodes {
+                        isResolved
+                        comments(first: 100) { totalCount nodes { author { __typename } } }
+                      }
                       pageInfo { hasNextPage endCursor }
                     }
                   }
@@ -751,10 +768,13 @@ jobs:
               -f owner="${GITHUB_REPOSITORY%/*}" \
               -f repo="${GITHUB_REPOSITORY#*/}" \
               -F pr="$number" \
-              --jq '[.data.repository.pullRequest.reviewThreads.nodes[] | select(.isResolved | not)] | length' \
+              --jq '[.data.repository.pullRequest.reviewThreads.nodes[]
+                | select(.isResolved | not)
+                | select((.comments.totalCount <= 100 and ([.comments.nodes[].author.__typename] | length > 0 and all(. == "Bot"))) | not)]
+              | length' \
               | awk '{ sum += $1 } END { print sum + 0 }')
             if [[ "$unresolved" -ne 0 ]]; then
-              echo "Release PR #$number has $unresolved unresolved review thread(s); skipping."
+              echo "Release PR #$number has $unresolved unresolved human review thread(s); skipping."
               exit 0
             fi
 
