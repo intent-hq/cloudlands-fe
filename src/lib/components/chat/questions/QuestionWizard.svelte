@@ -149,7 +149,7 @@
 </script>
 
 <div
-  class="min-w-0 overflow-hidden rounded-(--radius-large) border-0 bg-card shadow-(--elevation-raised)"
+  class="min-w-0 overflow-hidden rounded-(--radius-large) border-0 bg-card"
   data-question-wizard
   data-testid="question-wizard-card"
 >

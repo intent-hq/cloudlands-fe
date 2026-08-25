@@ -163,7 +163,7 @@ function expectFlushGeometry(geometry: Awaited<ReturnType<typeof readGeometry>>,
   expect(geometry.safeArea).toBeCloseTo(safeArea, 1);
   expect(geometry.card.left).toBeGreaterThanOrEqual(geometry.boundary.left - 1);
   expect(geometry.card.right).toBeLessThanOrEqual(geometry.boundary.right + 1);
-  expect(geometry.boxShadow).not.toBe('none');
+  expect(geometry.boxShadow).toBe('none');
   expect(geometry.cardBorderWidths).toEqual(['0px', '0px', '0px', '0px']);
   expect(geometry.boundaryOverflow).toBe('visible/visible');
 }
@@ -256,6 +256,14 @@ test('single-select rows use native full-row keyboard submission without radio i
   await expect(page.locator('[data-option-indicator]')).toHaveCount(0);
 
   await options.nth(0).focus();
+  await expect
+    .poll(() => options.nth(0).evaluate((node) => getComputedStyle(node).boxShadow))
+    .not.toBe('none');
+  await expect
+    .poll(() =>
+      page.getByTestId('question-wizard-card').evaluate((node) => getComputedStyle(node).boxShadow),
+    )
+    .toBe('none');
   await page.keyboard.press('Enter');
   await expect(page.getByTestId('panel-boundary')).toHaveAttribute('data-completion-count', '1');
   await expect(page.getByTestId('panel-boundary')).toHaveAttribute(
@@ -291,16 +299,24 @@ test('collapsed and scrolling states keep the slot flush without clipping or scr
   page,
 }) => {
   test.setTimeout(120_000);
-  await mountWizard(
-    page,
-    { width: 390, height: 420 },
-    { collapsed: true, optionCount: 3, questionCount: 3, safeArea: 12 },
-    { theme: 'dark' },
-  );
-  const collapsed = await readGeometry(page);
-  expectFlushGeometry(collapsed, 12);
-  expect(collapsed.footer).toBeNull();
-  expect(collapsed.card.height).toBeLessThan(64);
+  const cases = [
+    { viewport: { width: 390, height: 420 } },
+    { viewport: { width: 390, height: 420 }, theme: 'dark' as const },
+    { viewport: { width: 960, height: 840 }, zoom: 2 },
+  ];
+
+  for (const scenario of cases) {
+    await mountWizard(
+      page,
+      scenario.viewport,
+      { collapsed: true, optionCount: 3, questionCount: 3, safeArea: 12 },
+      scenario,
+    );
+    const collapsed = await readGeometry(page);
+    expectFlushGeometry(collapsed, 12 * (scenario.zoom ?? 1));
+    expect(collapsed.footer).toBeNull();
+    expect(collapsed.card.height).toBeLessThan(64 * (scenario.zoom ?? 1));
+  }
 
   await mountWizard(page, { width: 960, height: 560 }, { longChat: true, safeArea: 12 });
   const scrolling = await page.evaluate(() => {
@@ -323,4 +339,22 @@ test('collapsed and scrolling states keep the slot flush without clipping or scr
   expect(scrolling.reachedBottom).toBe(true);
   expect(scrolling.composerTopAfter).toBeCloseTo(scrolling.composerTopBefore, 1);
   expectFlushGeometry(await readGeometry(page), 12);
+});
+
+test('dismiss confirmation dialog keeps overlay elevation while the card stays flat', async ({
+  page,
+}) => {
+  await mountWizard(page, { width: 960, height: 720 }, { questionCount: 1 });
+  await page.getByRole('button', { name: 'Dismiss' }).click();
+
+  const dialog = page.getByRole('dialog');
+  await expect(dialog).toBeVisible();
+  await expect
+    .poll(() => dialog.evaluate((node) => getComputedStyle(node).boxShadow))
+    .not.toBe('none');
+  await expect
+    .poll(() =>
+      page.getByTestId('question-wizard-card').evaluate((node) => getComputedStyle(node).boxShadow),
+    )
+    .toBe('none');
 });
