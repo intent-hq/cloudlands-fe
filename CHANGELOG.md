@@ -4,6 +4,33 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.90.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.89.0...v2.90.0) (2026-08-25)
+
+
+### 🚀 Features
+
+* **backend:** prefer prettyHostname when labeling remote connections ([#1682](https://github.com/intent-hq/cloudlands-fe/issues/1682)) ([370b339](https://github.com/intent-hq/cloudlands-fe/commit/370b339c60b4ff73392b8d9c9bc18303eab79dda))
+* refine agent settings layout and remove Ralph ([#1671](https://github.com/intent-hq/cloudlands-fe/issues/1671)) ([24bb31b](https://github.com/intent-hq/cloudlands-fe/commit/24bb31b4b33cf87787c1d81b7baddc9cc48ca10e))
+* render stalled-stream indicator with Cancel affordance ([#1679](https://github.com/intent-hq/cloudlands-fe/issues/1679)) ([a1d0d45](https://github.com/intent-hq/cloudlands-fe/commit/a1d0d4505214f242ece400a3e6dd79713d09e27f))
+* retry a stalled turn from the streaming-status warn row ([#1680](https://github.com/intent-hq/cloudlands-fe/issues/1680)) ([862b256](https://github.com/intent-hq/cloudlands-fe/commit/862b256d0d042526b1f6cb5e41667a2667e7d4ca))
+* **settings:** render daemon tokenImpact annotations on agent feature toggles ([#1683](https://github.com/intent-hq/cloudlands-fe/issues/1683)) ([fff35ff](https://github.com/intent-hq/cloudlands-fe/commit/fff35ffac8fb36f6a43d0e74129026f4164b659c))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.7.56 ([#1685](https://github.com/intent-hq/cloudlands-fe/issues/1685)) ([0759c31](https://github.com/intent-hq/cloudlands-fe/commit/0759c31db6e3d1bbdc50e7210df63970b7b07ce0))
+* **chat:** chain-scoped older-history indicator, walk-termination tests, and scrollback reset on transcript discard ([#1681](https://github.com/intent-hq/cloudlands-fe/issues/1681)) ([9e3e145](https://github.com/intent-hq/cloudlands-fe/commit/9e3e145ec198047452e2f6959d28371aff95bfcf))
+* **chat:** inset rich blocks to match assistant prose margins ([#1678](https://github.com/intent-hq/cloudlands-fe/issues/1678)) ([b5ae3ee](https://github.com/intent-hq/cloudlands-fe/commit/b5ae3ee8d24ea1e022b04650c30f850971df7b42))
+* drive disclosure motion from tick so bottom lock holds during rapid toggles ([#1687](https://github.com/intent-hq/cloudlands-fe/issues/1687)) ([fede74b](https://github.com/intent-hq/cloudlands-fe/commit/fede74b4b34ce50e1a0441ffeb539b87182f1ce5))
+* keep offscreen webview guests painting so screenshot cannot hang ([#1674](https://github.com/intent-hq/cloudlands-fe/issues/1674)) ([351dff9](https://github.com/intent-hq/cloudlands-fe/commit/351dff9169ff13d2850b392e1d5be8f556bfbe81))
+* reconcile provider model before agent creation ([#1665](https://github.com/intent-hq/cloudlands-fe/issues/1665)) ([192868f](https://github.com/intent-hq/cloudlands-fe/commit/192868fc115ec398032fbfd8b14ee1cd51b511a8))
+* regroup message-resumed agents out of the finished section ([#1686](https://github.com/intent-hq/cloudlands-fe/issues/1686)) ([073b850](https://github.com/intent-hq/cloudlands-fe/commit/073b850b7ffc15ac53a7a8a71b36b394169b771d))
+
+
+### ⚡ Performance
+
+* **chat:** virtualize messages and retain sidebar panels ([#1668](https://github.com/intent-hq/cloudlands-fe/issues/1668)) ([1611c8b](https://github.com/intent-hq/cloudlands-fe/commit/1611c8b5a59ba7b5ed2b7ef2350c24ce57ae1139))
+
 ## [2.89.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.88.3...v2.89.0) (2026-08-24)
 
 
