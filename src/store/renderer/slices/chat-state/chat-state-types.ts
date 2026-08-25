@@ -7,6 +7,12 @@ export interface StatusEvent {
   message: string;
   level: 'info' | 'warn' | 'error';
   timestamp: number;
+  /**
+   * Additive on the daemon's `stalled` status event (monorepo#3402): the
+   * silence already measured when the event was emitted, so the live
+   * "No model activity for N" counter can anchor at `timestamp - silentMs`.
+   */
+  silentMs?: number;
 }
 
 export interface StreamStatusContext {

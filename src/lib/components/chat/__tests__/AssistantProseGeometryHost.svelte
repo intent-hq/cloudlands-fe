@@ -38,6 +38,12 @@
   const tool = [
     { type: 'tool_use', id: 'tool-1', name: 'read_file', input: { path: 'src/example.ts' } },
   ] as ContentBlock[];
+  const richBlock = [
+    {
+      type: 'text',
+      text: 'Prose beside a rich block\n\n```ts\nconst inset = true;\n```',
+    },
+  ] as ContentBlock[];
 
   const operationalRows = [
     { type: 'thinking', id: 'thinking-first', text: '# First reasoning\n\nFirst detail' },
@@ -188,6 +194,10 @@
     </div>
     <div data-testid="expanded-group-operational-rows">
       <MessageContent content={expandedGroupOperationalRows} />
+    </div>
+    <div data-testid="static-rich-block"><MessageContent content={richBlock} /></div>
+    <div data-testid="streaming-rich-block">
+      <StreamingMessageContent content={richBlock} isStreaming />
     </div>
     <div data-testid="single-operational-cluster">
       <MessageContent content={tool} />

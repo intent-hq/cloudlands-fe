@@ -254,6 +254,27 @@ describe('OffscreenWebviewHost', () => {
     }
   });
 
+  // Regression (monorepo#3366): guests parked outside the viewport
+  // (left:-10000px) get viewport-culled by the compositor — no BeginFrames,
+  // so CDP screenshot and capturePage hang. The host container must stay
+  // in-viewport (1x1 clip at the origin), hidden via overflow + opacity.
+  it('hosts guests in-viewport in a clipped invisible container, not parked offscreen', async () => {
+    layoutsStore.set({ 'ws-bg': browserLayout([{ id: 'tab-bg' }]) });
+    const { container } = render(OffscreenWebviewHost, {
+      props: { excludedWorkspaceIds: new Set() },
+    });
+    await waitFor(() => expect(mountedTabIds(container)).toEqual(['tab-bg']));
+    const host = container.querySelector('[data-offscreen-webview-host]') as HTMLElement;
+    expect(host.style.left).not.toBe('-10000px');
+    expect(host.className).toContain('left-0');
+    expect(host.className).toContain('top-0');
+    expect(host.className).toContain('overflow-hidden');
+    expect(host.className).toContain('opacity-0');
+    expect(host.className).toContain('pointer-events-none');
+    // inert keeps the focusable webviews out of the tab order.
+    expect(host.hasAttribute('inert')).toBe(true);
+  });
+
   it('skips tabs with non-loadable URLs', async () => {
     layoutsStore.set({
       'ws-bg': browserLayout([{ id: 'tab-js', url: 'javascript:alert(1)' }]),

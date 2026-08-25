@@ -794,4 +794,80 @@ describe('embedded browser CDP workspace routing', () => {
     embeddedBrowserCdp.clearAgentTabs('agent-quit');
     embeddedBrowserCdp.clearAgentTabs('agent-quit-2');
   });
+
+  // Regression (monorepo#3366): on a guest whose compositor produces no
+  // frames, both the CDP Page-domain commands AND the capturePage()
+  // fallback hang forever. The fallback must be bounded so screenshot
+  // fails fast with a clear error instead of eating the caller's whole
+  // 30s reverse-request budget.
+  describe('screenshot capturePage fallback (monorepo#3366)', () => {
+    function screenshotWebContents(overrides: Record<string, unknown> = {}) {
+      const wc = {
+        isDestroyed: () => false,
+        once: vi.fn(),
+        debugger: {
+          isAttached: () => true,
+          // Page domain hangs (never settles) — forces the CDP timeouts.
+          sendCommand: vi.fn(() => new Promise(() => {})),
+          on: vi.fn(),
+        },
+        capturePage: vi.fn(() => new Promise(() => {})),
+        ...overrides,
+      };
+      mocks.fromId.mockReturnValue(wc);
+      return wc;
+    }
+
+    it('bounds the capturePage fallback instead of hanging when the guest is not painting', async () => {
+      vi.useFakeTimers();
+      try {
+        const wc = screenshotWebContents();
+        embeddedBrowserCdp.registerTab('tab-shot-hang', 401);
+
+        const pending = embeddedBrowserCdp.screenshot('tab-shot-hang');
+        const guarded = pending.catch((error: Error) => error);
+        // CDP Page.getLayoutMetrics timeout (5s) → fallback capturePage
+        // timeout (5s): total stays far below the 30s caller budget.
+        await vi.advanceTimersByTimeAsync(5_000);
+        await vi.advanceTimersByTimeAsync(5_000);
+        const error = await guarded;
+        expect(error).toBeInstanceOf(Error);
+        expect((error as Error).message).toContain('capturePage timed out');
+        expect(wc.capturePage).toHaveBeenCalledWith(undefined, {
+          stayHidden: true,
+          stayAwake: true,
+        });
+      } finally {
+        vi.useRealTimers();
+        embeddedBrowserCdp.unregisterTab('tab-shot-hang');
+      }
+    });
+
+    it('returns the capturePage image when the fallback settles in time', async () => {
+      const image = {
+        getSize: () => ({ width: 1280, height: 800 }),
+        toJPEG: () => Buffer.from('jpeg-bytes'),
+      };
+      const wc = screenshotWebContents({ capturePage: vi.fn().mockResolvedValue(image) });
+      embeddedBrowserCdp.registerTab('tab-shot-ok', 402);
+      vi.useFakeTimers();
+      try {
+        const pending = embeddedBrowserCdp.screenshot('tab-shot-ok');
+        // Only the CDP path times out; the fallback resolves immediately.
+        await vi.advanceTimersByTimeAsync(5_000);
+        await expect(pending).resolves.toEqual({
+          base64: Buffer.from('jpeg-bytes').toString('base64'),
+          width: 1280,
+          height: 800,
+        });
+        expect(wc.capturePage).toHaveBeenCalledWith(undefined, {
+          stayHidden: true,
+          stayAwake: true,
+        });
+      } finally {
+        vi.useRealTimers();
+        embeddedBrowserCdp.unregisterTab('tab-shot-ok');
+      }
+    });
+  });
 });

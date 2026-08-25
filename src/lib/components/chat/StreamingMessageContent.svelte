@@ -645,6 +645,20 @@
   isLastBlock: boolean,
   insetProse = false,
 )}
+  {#if insetProse}
+    <div class={OPERATIONAL_ASSISTANT_PROSE_INSET_CLASS}>
+      {@render renderParsedContentBlockBody(parsedBlock, isLastBlock, insetProse)}
+    </div>
+  {:else}
+    {@render renderParsedContentBlockBody(parsedBlock, isLastBlock, insetProse)}
+  {/if}
+{/snippet}
+
+{#snippet renderParsedContentBlockBody(
+  parsedBlock: ParsedContent,
+  isLastBlock: boolean,
+  insetProse: boolean,
+)}
   {#if parsedBlock.type === 'augment_code_snippet'}
     <AugmentCodeSnippet
       code={parsedBlock.content}
@@ -710,10 +724,7 @@
       language={parsedBlock.metadata?.language || 'plaintext'}
     />
   {:else if parsedBlock.type === 'text'}
-    <div
-      class={insetProse ? OPERATIONAL_ASSISTANT_PROSE_INSET_CLASS : undefined}
-      data-assistant-prose={insetProse ? 'streaming-markdown' : undefined}
-    >
+    <div data-assistant-prose={insetProse ? 'streaming-markdown' : undefined}>
       <MarkdownViewer
         content={parsedBlock.content || ''}
         isStreaming={isStreaming && isLastBlock}
@@ -723,10 +734,7 @@
       />
     </div>
   {:else}
-    <div
-      class={insetProse ? OPERATIONAL_ASSISTANT_PROSE_INSET_CLASS : undefined}
-      data-assistant-prose={insetProse ? 'streaming-fallback' : undefined}
-    >
+    <div data-assistant-prose={insetProse ? 'streaming-fallback' : undefined}>
       <MarkdownViewer
         content={parsedBlock.content || ''}
         isStreaming={isStreaming && isLastBlock}

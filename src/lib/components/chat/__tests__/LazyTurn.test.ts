@@ -5,11 +5,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import LazyTurn from '../LazyTurn.svelte';
 import { createLazyTurnHeightCache } from '../lazy-turn-height-cache';
 import { inspectLazyTurnObserverOwnership } from '../lazy-turn-observer';
+import { createMessageHydrationPolicy } from '../message-hydration-policy';
 
 class MockIntersectionObserver {
   static instances: MockIntersectionObserver[] = [];
   callback: IntersectionObserverCallback;
   observed = new Set<Element>();
+  disconnect = vi.fn(() => this.observed.clear());
   constructor(callback: IntersectionObserverCallback) {
     this.callback = callback;
     MockIntersectionObserver.instances.push(this);
@@ -19,9 +21,6 @@ class MockIntersectionObserver {
   }
   unobserve(element: Element) {
     this.observed.delete(element);
-  }
-  disconnect() {
-    this.observed.clear();
   }
   fire(isIntersecting: boolean) {
     this.callback(
@@ -34,12 +33,12 @@ class MockIntersectionObserver {
 class MockResizeObserver {
   static instances: MockResizeObserver[] = [];
   callback: ResizeObserverCallback;
+  disconnect = vi.fn();
   constructor(callback: ResizeObserverCallback) {
     this.callback = callback;
     MockResizeObserver.instances.push(this);
   }
   observe() {}
-  disconnect() {}
   fire(height: number, width: number) {
     this.callback(
       [{ contentRect: { height, width } } as unknown as ResizeObserverEntry],
@@ -70,6 +69,49 @@ describe('LazyTurn lifecycle', () => {
     expect(inspectLazyTurnObserverOwnership()).toEqual({ rootCount: 0, targetCount: 0 });
     vi.useRealTimers();
     vi.unstubAllGlobals();
+  });
+
+  it('starts as an empty placeholder and hydrates when it approaches the displayport', async () => {
+    const scrollRoot = document.createElement('div');
+    const heightCache = createLazyTurnHeightCache('displayport');
+    const hydrationController = createMessageHydrationPolicy([
+      { id: 'displayport-row', role: 'assistant' },
+    ]);
+    const view = render(LazyTurn, {
+      props: {
+        turnKey: 'displayport-row',
+        heightCache,
+        scrollRoot,
+        hydrationController,
+        hydrated: hydrationController.getHydratedIds().includes('displayport-row'),
+        children,
+      },
+    });
+    try {
+      const container = view.container.querySelector<HTMLElement>('.lazy-turn');
+      expect(container?.dataset.lazyVisible).toBe('false');
+      expect(view.queryByTestId('turn-content')).toBeNull();
+      expect(container?.querySelector<HTMLElement>('.lazy-turn-placeholder')?.style.height).toBe(
+        '200px',
+      );
+
+      MockIntersectionObserver.instances[0].fire(true);
+      await view.rerender({
+        turnKey: 'displayport-row',
+        heightCache,
+        scrollRoot,
+        hydrationController,
+        hydrated: hydrationController.getHydratedIds().includes('displayport-row'),
+        children,
+      });
+      await tick();
+
+      expect(container?.dataset.lazyVisible).toBe('true');
+      expect(view.queryByTestId('turn-content')).not.toBeNull();
+    } finally {
+      hydrationController.dispose();
+      view.unmount();
+    }
   });
 
   it('hands an aged force-visible turn to its mounted observer after measurement', async () => {
@@ -138,6 +180,30 @@ describe('LazyTurn lifecycle', () => {
     vi.runAllTimers();
 
     expect(heightCache.get('turn-unmount', 640)).toBeUndefined();
+  });
+
+  it('releases the shared observer and pending swap-out timer on unmount', async () => {
+    vi.useFakeTimers();
+    const heightCache = createLazyTurnHeightCache('cleanup');
+    heightCache.set('turn-cleanup', 240, 640);
+    const scrollRoot = document.createElement('div');
+    const view = render(LazyTurn, {
+      props: { turnKey: 'turn-cleanup', heightCache, scrollRoot, children },
+    });
+
+    await tick();
+    const observer = MockIntersectionObserver.instances[0];
+    observer.fire(true);
+    await tick();
+    observer.fire(false);
+    expect(vi.getTimerCount()).toBeGreaterThan(0);
+
+    view.unmount();
+
+    expect(observer.observed.size).toBe(0);
+    expect(observer.disconnect).toHaveBeenCalledOnce();
+    expect(MockResizeObserver.instances[0].disconnect).toHaveBeenCalledOnce();
+    expect(vi.getTimerCount()).toBe(0);
   });
 
   it('rejects a pending initial measurement after turn-key reuse', async () => {
