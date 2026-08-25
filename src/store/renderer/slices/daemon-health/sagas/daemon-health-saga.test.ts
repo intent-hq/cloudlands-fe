@@ -160,6 +160,93 @@ describe('daemonHealthSaga', () => {
     await task.toPromise();
   });
 
+  it('re-toasts after a cleared mismatch with the new version (mismatch→cleared→mismatch)', async () => {
+    invoke.mockImplementation(async (channel: string) => {
+      if (channel === BACKEND.GET_STATUS) {
+        return {
+          status: 'connected',
+          transport: { mode: 'external-uds', versionMismatch: true, daemonVersion: '2.0.0' },
+        };
+      }
+      return undefined;
+    });
+    const { task } = startHealthSaga();
+    await settle();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(mocks.toastWarning).toHaveBeenCalledTimes(1);
+    expect(mocks.toastWarning.mock.calls[0]![0]).toContain('v2.0.0');
+
+    // A repeated mismatch payload does not re-toast.
+    statusHandler!({
+      status: 'connected',
+      transport: { mode: 'external-uds', versionMismatch: true, daemonVersion: '2.0.0' },
+    });
+    await settle();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(mocks.toastWarning).toHaveBeenCalledTimes(1);
+
+    // The mismatch clears (e.g. daemon upgraded back to the pinned version).
+    statusHandler!({
+      status: 'connected',
+      transport: { mode: 'external-uds', versionMismatch: false, daemonVersion: '2.1.0' },
+    });
+    await settle();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(mocks.toastWarning).toHaveBeenCalledTimes(1);
+
+    // A later genuine mismatch notifies again, with the current version.
+    statusHandler!({
+      status: 'connected',
+      transport: { mode: 'external-uds', versionMismatch: true, daemonVersion: '3.0.0' },
+    });
+    await settle();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(mocks.toastWarning).toHaveBeenCalledTimes(2);
+    expect(mocks.toastWarning.mock.calls[1]![0]).toContain('v3.0.0');
+
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('keeps suppressing the generic mismatch toast for orphaned sidecars after the latch resets', async () => {
+    invoke.mockImplementation(async (channel: string) => {
+      if (channel === BACKEND.GET_STATUS) {
+        return {
+          status: 'connected',
+          transport: { mode: 'external-uds', versionMismatch: false },
+        };
+      }
+      return undefined;
+    });
+    const { task } = startHealthSaga();
+    await settle();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(mocks.toastWarning).not.toHaveBeenCalled();
+
+    // An orphaned sidecar with a mismatch only gets the actionable orphan
+    // offer — never the generic mismatch toast, even with a fresh latch.
+    statusHandler!({
+      status: 'connected',
+      transport: {
+        mode: 'external-uds',
+        versionMismatch: true,
+        daemonVersion: '1.0.0',
+        isOrphanedSidecar: true,
+      },
+    });
+    await settle();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(mocks.toastWarning).toHaveBeenCalledTimes(1);
+    const [, options] = mocks.toastWarning.mock.calls[0] as [
+      string,
+      { action?: { label: string } },
+    ];
+    expect(options.action?.label).toBeTruthy();
+
+    task.cancel();
+    await task.toPromise();
+  });
+
   it('offers orphaned-sidecar restart once (with action) and suppresses the mismatch toast (#2444)', async () => {
     invoke.mockImplementation(async (channel: string) => {
       if (channel === BACKEND.GET_STATUS) {

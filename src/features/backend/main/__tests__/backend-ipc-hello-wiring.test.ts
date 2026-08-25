@@ -10,7 +10,14 @@
  */
 
 import { BrowserWindow, ipcMain } from 'electron';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+
+import {
+  __resetConnectionModeForTesting,
+  getDaemonVersionInfo,
+  setConnectionMode,
+  setDaemonVersionInfo,
+} from '../connection-mode';
 
 const {
   ctorOptions,
@@ -73,9 +80,14 @@ vi.mock('../intentd-sidecar', () => ({
     startupFailedListeners.push(listener);
     return () => {};
   }),
+  getLocalDaemonProtocolVersion: vi.fn(() => null),
   getSidecarRunLog: vi.fn(() => mockRunLog),
   getSidecarStartupFailure: vi.fn(() => mockStartupFailure.current),
   spawnSidecarOnDemand: vi.fn(),
+}));
+
+vi.mock('../intentd-version-pin', () => ({
+  readPinnedVersion: vi.fn(() => '0.1.0'),
 }));
 
 vi.mock('../../../browser/main/browser-exec-reverse', () => ({
@@ -181,5 +193,100 @@ describe('backend.ipc sidecar run-log bridge', () => {
       }),
     );
     mockStartupFailure.current = null;
+  });
+});
+
+describe('backend.ipc daemon version refresh on hello (#3448)', () => {
+  afterEach(async () => {
+    __resetConnectionModeForTesting();
+    const { __setActiveConnectionMetaForTesting } = await import('../backend.ipc');
+    __setActiveConnectionMetaForTesting(null);
+  });
+
+  async function getOnHelloResult(): Promise<(result: unknown) => void> {
+    const { getBackendClient } = await import('../backend.ipc');
+    getBackendClient();
+    return ctorOptions[0].onHelloResult as (result: unknown) => void;
+  }
+
+  it('refreshes the stored version info and re-broadcasts backend:status (local external-uds)', async () => {
+    const onHelloResult = await getOnHelloResult();
+    setConnectionMode('external');
+    setDaemonVersionInfo({ daemonVersion: '0.1.0', pinnedVersion: '0.1.0', versionMismatch: false });
+
+    const send = vi.fn();
+    vi.mocked(BrowserWindow.getAllWindows).mockReturnValueOnce([
+      { id: 1, isDestroyed: () => false, webContents: { send } } as never,
+    ]);
+
+    onHelloResult({ clientId: 'cli-x', server: { version: '0.2.0' } });
+
+    expect(getDaemonVersionInfo()).toEqual({
+      daemonVersion: '0.2.0',
+      pinnedVersion: '0.1.0',
+      versionMismatch: true,
+    });
+    expect(send).toHaveBeenCalledWith(
+      'backend:status',
+      expect.objectContaining({
+        transport: expect.objectContaining({
+          mode: 'external-uds',
+          daemonVersion: '0.2.0',
+          versionMismatch: true,
+        }),
+      }),
+    );
+  });
+
+  it('does not let a remote backend hello overwrite the local daemon version info', async () => {
+    const onHelloResult = await getOnHelloResult();
+    const { __setActiveConnectionMetaForTesting } = await import('../backend.ipc');
+    setConnectionMode('external');
+    setDaemonVersionInfo({ daemonVersion: '0.1.0', pinnedVersion: '0.1.0', versionMismatch: false });
+    __setActiveConnectionMetaForTesting({ id: 'conn-1', host: 'remote', port: 443 });
+
+    const send = vi.fn();
+    vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([
+      { id: 1, isDestroyed: () => false, webContents: { send } } as never,
+    ]);
+
+    onHelloResult({ server: { version: '9.9.9' } });
+
+    expect(getDaemonVersionInfo()).toEqual({
+      daemonVersion: '0.1.0',
+      pinnedVersion: '0.1.0',
+      versionMismatch: false,
+    });
+    expect(send).not.toHaveBeenCalledWith(
+      'backend:status',
+      expect.objectContaining({ transport: expect.anything() }),
+    );
+    vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([]);
+  });
+
+  it('leaves stored info unchanged and skips the broadcast for a malformed server.version', async () => {
+    const onHelloResult = await getOnHelloResult();
+    setConnectionMode('external');
+    setDaemonVersionInfo({ daemonVersion: '0.1.0', pinnedVersion: '0.1.0', versionMismatch: false });
+
+    const send = vi.fn();
+    vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([
+      { id: 1, isDestroyed: () => false, webContents: { send } } as never,
+    ]);
+
+    onHelloResult({ server: {} });
+    onHelloResult({ server: { version: 42 } });
+    onHelloResult({});
+
+    expect(getDaemonVersionInfo()).toEqual({
+      daemonVersion: '0.1.0',
+      pinnedVersion: '0.1.0',
+      versionMismatch: false,
+    });
+    expect(send).not.toHaveBeenCalledWith(
+      'backend:status',
+      expect.objectContaining({ transport: expect.anything() }),
+    );
+    vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([]);
   });
 });
