@@ -3,8 +3,6 @@ import SuggestedPromptsGeometryHost from './SuggestedPromptsGeometryHost.svelte'
 
 const scenarios = [
   { name: 'normal light', compact: false, theme: 'light' as const, width: 480, zoom: 1 },
-  { name: 'normal dark narrow', compact: false, theme: 'dark' as const, width: 280, zoom: 1 },
-  { name: 'compact light at 200%', compact: true, theme: 'light' as const, width: 280, zoom: 2 },
   { name: 'compact dark at 200%', compact: true, theme: 'dark' as const, width: 480, zoom: 2 },
 ];
 

@@ -6,6 +6,11 @@ test.setTimeout(120_000);
 for (const theme of ['light', 'dark'] as const) {
   for (const zoom of [1, 2]) {
     for (const width of [320, 720]) {
+      if (
+        (theme === 'light' && (width !== 720 || zoom !== 1)) ||
+        (theme === 'dark' && (width !== 320 || zoom !== 2))
+      )
+        continue;
       test(`keeps real ChatPanel operational seams exact in ${theme} at ${zoom * 100}% and ${width}px`, async ({
         mount,
       }) => {

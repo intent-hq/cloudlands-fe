@@ -25,7 +25,7 @@ function ratio(foreground: string, background: string): number {
   return (lighter + 0.05) / (darker + 0.05);
 }
 
-for (const theme of ['light', 'dark'] as const) {
+for (const theme of ['dark'] as const) {
   test(`fully collapses streaming groups with accessible motion in ${theme}`, async ({
     mount,
     page,

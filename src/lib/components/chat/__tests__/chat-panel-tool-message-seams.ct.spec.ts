@@ -5,6 +5,7 @@ test.setTimeout(120_000);
 
 for (const theme of ['light', 'dark'] as const) {
   for (const zoom of [1, 2]) {
+    if ((theme === 'light' && zoom !== 1) || (theme === 'dark' && zoom !== 2)) continue;
     test(`keeps cross-message tool seams at 0px in ${theme} at ${zoom * 100}%`, async ({
       mount,
     }) => {

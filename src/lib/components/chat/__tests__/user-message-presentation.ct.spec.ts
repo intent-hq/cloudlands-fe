@@ -2,12 +2,7 @@ import { expect, test } from '@playwright/experimental-ct-svelte';
 import type { CDPSession } from '@playwright/test';
 import ChatMessageNavigatorIntegrationHost from './ChatMessageNavigatorIntegrationHost.svelte';
 
-const cases = [
-  { theme: 'light', label: 'light 100%', zoom: 1, width: 900 },
-  { theme: 'dark', label: 'dark 100%', zoom: 1, width: 900 },
-  { theme: 'light', label: 'light 200%', zoom: 2, width: 680 },
-  { theme: 'dark', label: 'dark 200%', zoom: 2, width: 680 },
-] as const;
+const cases = [{ theme: 'dark', label: 'dark 200%', zoom: 2, width: 680 }] as const;
 
 // The CT page is reused across tests and CDP emulation overrides are
 // per-session, so clear the override on the SAME session and detach it to

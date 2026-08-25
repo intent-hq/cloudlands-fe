@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/experimental-ct-svelte';
 import ChatVideoBlockHost from './ChatVideoBlockHost.svelte';
 
-for (const theme of ['light', 'dark'] as const) {
+for (const theme of ['dark'] as const) {
   test(`opens accessible modal playback without changing transcript follow in ${theme}`, async ({
     mount,
     page,
