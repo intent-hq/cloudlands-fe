@@ -822,7 +822,7 @@
           </div>
           {#if crossFilterAvailable}
             <dl
-              class="message-counts mt-2 grid grid-cols-2 gap-x-4 border-y border-border/80 py-1.5 text-[10px] dark:border-[#1e1e1e]"
+              class="message-counts mt-2 grid grid-cols-2 gap-x-4 border-y border-border py-1.5 text-[10px] dark:border-[#1e1e1e]"
               data-testid="token-usage-message-counts"
             >
               <div class="flex min-w-0 justify-between gap-2">
