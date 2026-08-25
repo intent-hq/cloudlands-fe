@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   deleteAgent: vi.fn(),
   cancelDelete: vi.fn(),
   dismissQuestions: vi.fn(),
+  restore: vi.fn(),
   warning: vi.fn(),
   error: vi.fn(),
 }));
@@ -20,6 +21,7 @@ vi.mock('$lib/client', () => ({
       delete: mocks.deleteAgent,
       cancelDelete: mocks.cancelDelete,
       dismissQuestions: mocks.dismissQuestions,
+      restore: mocks.restore,
     },
   },
 }));
@@ -43,6 +45,7 @@ import {
   deleteAgentSessionRequested,
   renameAgentSessionRequested,
   restoreAgentSessionRequested,
+  restoreRetiredAgentRequested,
   saveAgentSessionRequested,
   undoAgentDeletionRequested,
 } from '../../workspace-agents/workspace-agents-slice';
@@ -124,6 +127,38 @@ describe('agentMutationSaga', () => {
     expect(mocks.get).toHaveBeenCalledWith(A1);
     const upsert = dispatched.find((candidate) => candidate.type === bulkUpsertSessions.type);
     expect(upsert.payload[0][0]).toEqual(expect.objectContaining({ id: A1, messages }));
+    await stop(task);
+  });
+
+  it('un-retires through agent.restore and clears retiredAt locally on success', async () => {
+    const existing = session(A1, { retiredAt: '2026-01-02T00:00:00.000Z' });
+    mocks.restore.mockResolvedValue({ success: true });
+    const { channel, dispatched, task } = start({ [A1]: existing });
+    const action = restoreRetiredAgentRequested(WS, A1);
+    channel.put(action);
+
+    await expect(action.promise).resolves.toBeUndefined();
+    expect(mocks.restore).toHaveBeenCalledWith(A1, WS);
+    const upsert = dispatched.find((candidate) => candidate.type === bulkUpsertSessions.type);
+    expect(upsert.payload[0][0]).toEqual(
+      expect.objectContaining({ id: A1, retiredAt: undefined }),
+    );
+    await stop(task);
+  });
+
+  it('surfaces an agent.restore daemon failure as an error toast and rejects', async () => {
+    const existing = session(A1, { retiredAt: '2026-01-02T00:00:00.000Z' });
+    mocks.restore.mockResolvedValue({ success: false, error: 'not retired' });
+    const { channel, dispatched, task } = start({ [A1]: existing });
+    const action = restoreRetiredAgentRequested(WS, A1);
+    channel.put(action);
+
+    await expect(action.promise).rejects.toThrow('not retired');
+    await settle();
+    expect(mocks.error).toHaveBeenCalled();
+    expect(
+      dispatched.find((candidate) => candidate.type === bulkUpsertSessions.type),
+    ).toBeUndefined();
     await stop(task);
   });
 

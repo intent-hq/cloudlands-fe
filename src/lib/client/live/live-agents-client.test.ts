@@ -1133,6 +1133,68 @@ describe('LiveAgentsClient reads thread daemon activity flags (PROTOCOL §5.5)',
     });
   });
 
+  it('list omits includeRetired by default and forwards it verbatim when set (§5.5 soft retire)', async () => {
+    backend.onRequest('agent.list', () => ({ agents: [] }));
+    const client = new LiveAgentsClient();
+
+    await client.list('ws-1');
+    expect(backend.requests[0]).toEqual({
+      method: 'agent.list',
+      params: { workspaceId: 'ws-1' },
+    });
+
+    await client.list('ws-1', { includeRetired: true });
+    expect(backend.requests[1]).toEqual({
+      method: 'agent.list',
+      params: { workspaceId: 'ws-1', includeRetired: true },
+    });
+  });
+
+  it('list carries retiredAt verbatim (§5.5 soft retire)', async () => {
+    backend.onRequest('agent.list', () => ({
+      agents: [
+        {
+          id: 'agent-retired',
+          workspaceId: 'ws-1',
+          name: 'Old timer',
+          status: 'idle',
+          retiredAt: '2026-08-20T00:00:00.000Z',
+        },
+        { id: 'agent-active', workspaceId: 'ws-1', name: 'Active', status: 'active' },
+      ],
+    }));
+    const client = new LiveAgentsClient();
+
+    const agents = await client.list('ws-1', { includeRetired: true });
+    expect(agents[0]).toMatchObject({ id: 'agent-retired', retiredAt: '2026-08-20T00:00:00.000Z' });
+    expect(agents[1].retiredAt).toBeUndefined();
+  });
+
+  it('restore forwards agent.restore and folds success/error into a MutationResult (§5.5)', async () => {
+    backend.onRequest('agent.restore', () => ({ success: true }));
+    const client = new LiveAgentsClient();
+
+    const result = await client.restore('agent-retired', 'ws-1');
+    expect(result).toEqual({ success: true });
+    expect(backend.requests[0]).toEqual({
+      method: 'agent.restore',
+      params: { agentId: 'agent-retired', workspaceId: 'ws-1' },
+    });
+
+    resetMockBackend();
+    backend = installMockBackend();
+    backend.onRequest('agent.restore', () => {
+      throw new BackendError(buildErrorPayload(-32602, 'agent not retired'));
+    });
+    const failure = await new LiveAgentsClient().restore('agent-retired');
+    expect(failure.success).toBe(false);
+    expect(failure.error).toMatch(/not retired/);
+    expect(backend.requests[0]).toEqual({
+      method: 'agent.restore',
+      params: { agentId: 'agent-retired' },
+    });
+  });
+
   it('list and get preserve the AgentLite specialist metadata and model verbatim', async () => {
     const coordinator = {
       id: 'agent-coordinator',

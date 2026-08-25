@@ -46,7 +46,10 @@
     reportStreamLifecycle,
     streamTurnCorrelation,
   } from '$lib/utils/stream-lifecycle-telemetry';
-  import { saveAgentSessionRequested } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
+  import {
+    restoreRetiredAgentRequested,
+    saveAgentSessionRequested,
+  } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
   import {
     agentSessionDismissQuestionsRequested,
     agentSessionEditAndRegenerateRequested,
@@ -448,6 +451,10 @@
   // Latched "New messages" divider viewing session (entry-only, frozen).
   const dividerSession$ = selectDividerSession(agentIdStore);
   const isDelegatedBackgroundTaskAgent = $derived(isDelegatedBackgroundTaskSession($agentSession$));
+
+  // Retired sessions (PROTOCOL v7.5+, retiredAt set) are read-only: the transcript
+  // stays viewable but the composer is replaced with a restore affordance.
+  const isRetiredSession = $derived(!!$agentSession$?.retiredAt);
 
   // Derive error state: combine transient chatError with persisted agent status.
   // After a reload, chatError is null but agent status may be Error — use
@@ -5451,6 +5458,27 @@
         class="chat-content-measure mx-auto w-full min-w-0"
         data-testid="chat-composer-controls-inner"
       >
+        {#if isRetiredSession}
+          <div
+            class="flex w-full items-center justify-between gap-3 px-4 py-3 text-sm text-muted-foreground sm:px-6"
+            data-testid="chat-retired-banner"
+          >
+            <span class="min-w-0 truncate">{m.chat_chatPanel_retiredReadOnly_label()}</span>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              data-testid="chat-retired-restore"
+              onclick={() => {
+                if (workspace?.id && agentId) {
+                  appStore.dispatch(restoreRetiredAgentRequested(workspace.id, agentId));
+                }
+              }}
+            >
+              {m.workspace_agentsList_restoreRetired_button()}
+            </Button>
+          </div>
+        {:else}
         {#if pendingQuestions}
           {#key pendingQuestions.messageId}
             <div class="w-full" data-testid="question-wizard-slot">
@@ -5498,6 +5526,7 @@
             requiresModelSwitchConfirmation={!canChangeProvider}
             providerId={inputProviderId}
           />
+        {/if}
         {/if}
       </div>
     </div>

@@ -5502,6 +5502,7 @@ describe('daemonEventsBridge (workspace:created → recycled-ID purge + rehydrat
     // The bridge re-hydrates from the daemon's canonical list (PROTOCOL §5.5).
     expect(backendRequestSpy).toHaveBeenCalledWith('agent.list', {
       workspaceId: RECYCLED_WS,
+      includeRetired: true,
     });
   });
 
@@ -5979,7 +5980,10 @@ describe('daemonEventsBridge (delete grace window schedule/cancel events, monore
       PENDING_AGENT,
     );
     // Reconcile refetch also runs — covers a window that never held a snapshot.
-    expect(backendRequestSpy).toHaveBeenCalledWith('agent.list', { workspaceId: PENDING_WS });
+    expect(backendRequestSpy).toHaveBeenCalledWith('agent.list', {
+      workspaceId: PENDING_WS,
+      includeRetired: true,
+    });
   });
 
   it('agent:delete-cancelled without a local snapshot still refetches the canonical list', async () => {
@@ -6001,7 +6005,10 @@ describe('daemonEventsBridge (delete grace window schedule/cancel events, monore
     });
     await flush();
 
-    expect(backendRequestSpy).toHaveBeenCalledWith('agent.list', { workspaceId: PENDING_WS });
+    expect(backendRequestSpy).toHaveBeenCalledWith('agent.list', {
+      workspaceId: PENDING_WS,
+      includeRetired: true,
+    });
   });
 
   // Owned-tab lifecycle (monorepo#2857): the deletion COMMIT destroys the

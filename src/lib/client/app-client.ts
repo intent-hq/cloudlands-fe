@@ -491,7 +491,14 @@ export interface AgentCancelDeleteResult extends MutationResult {
 }
 
 export interface AgentsClient {
-  list(workspaceId: string): Promise<AgentSession[]>;
+  /**
+   * Agents of one workspace (`agent.list`, §5.5). Soft-retired sessions
+   * (`retiredAt` set, v7.5) are excluded from the default read daemon-side;
+   * `options.includeRetired: true` serves every row, retired ones carrying
+   * the presence-detected `retiredAt` ISO timestamp. The flag only rides the
+   * wire when supplied so older daemons see an omitted param.
+   */
+  list(workspaceId: string, options?: { includeRetired?: boolean }): Promise<AgentSession[]>;
   get(agentId: string): Promise<AgentSession | null>;
   /**
    * One page of an agent's retained transcript (`agent.getConversation`, §5.5).
@@ -773,6 +780,12 @@ export interface AgentsClient {
    * never scheduled) — a non-error, race-safe outcome.
    */
   cancelDelete(agentId: string, workspaceId?: string): Promise<AgentCancelDeleteResult>;
+  /**
+   * Un-retire a soft-retired session (`agent.restore`, §5.5 soft retire,
+   * v7.5). Clears `retiredAt` and emits `agent:restored`, which reconciles
+   * the list. Idempotent — restoring an already-active agent succeeds.
+   */
+  restore(agentId: string, workspaceId?: string): Promise<MutationResult>;
   /**
    * Retry a failed agent spawn (`agent.retry`). Only valid when the agent
    * status is `error` (after spawn exhaustion); returns `{ ok: false, error }`

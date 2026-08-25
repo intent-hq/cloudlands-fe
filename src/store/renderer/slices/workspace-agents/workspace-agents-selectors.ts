@@ -111,7 +111,8 @@ export function resolveEmptyLayoutAgent(
     (agent) =>
       String(agent.workspaceId) === workspaceId &&
       agent.status !== 'deleted' &&
-      !agent.pendingDeleteAt,
+      !agent.pendingDeleteAt &&
+      !agent.retiredAt,
   );
   if (allowInitialAgent) {
     const initialAgent = [...eligibleAgents]
@@ -130,6 +131,7 @@ export function resolveEmptyLayoutAgent(
         String(agent.workspaceId) === workspaceId &&
         agent.status !== 'deleted' &&
         !agent.pendingDeleteAt &&
+        !agent.retiredAt &&
         agent.isInitialAgent !== true &&
         agent.metadata?.isInitialAgent !== true &&
         agent.agentMetadata?.isInitialAgent !== true &&

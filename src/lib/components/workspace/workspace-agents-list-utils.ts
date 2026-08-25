@@ -19,6 +19,10 @@ export function isCoordinatorAgentSession(agent: AgentSession): boolean {
   return (agent.metadata?.specialist ?? agent.agentMetadata?.specialist) === 'spec-writer';
 }
 
+export function isRetiredAgentSession(agent: AgentSession): boolean {
+  return !!agent.retiredAt;
+}
+
 /**
  * Virtualize only flat lists (no delegations — tree heights are variable) with more
  * top-level foreground agents than the threshold. Coordinator workspaces keep the
