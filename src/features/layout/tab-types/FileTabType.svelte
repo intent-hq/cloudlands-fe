@@ -168,6 +168,45 @@
         : `${repoPath}/${tab.filePath}`
       : null,
   );
+  const workspaceMediaUrl = $derived.by(() => {
+    const filePath = tab.filePath;
+    if (!filePath || !workspaceId || isOutsideWorkspace || !/^[A-Za-z0-9._-]+$/.test(workspaceId)) {
+      return null;
+    }
+
+    const normalizedPath = filePath.replace(/\\/g, '/');
+    let relativePath = normalizedPath;
+    if (isAbsolutePath(filePath)) {
+      if (!repoPath) return null;
+      const normalizedRoot = repoPath.replace(/\\/g, '/').replace(/\/+$/, '');
+      const caseInsensitive =
+        /^[A-Za-z]:\//.test(normalizedRoot) || normalizedRoot.startsWith('//');
+      const comparedPath = caseInsensitive ? normalizedPath.toLowerCase() : normalizedPath;
+      const comparedRoot = caseInsensitive ? normalizedRoot.toLowerCase() : normalizedRoot;
+      if (!comparedPath.startsWith(`${comparedRoot}/`)) return null;
+      relativePath = normalizedPath.slice(normalizedRoot.length + 1);
+    }
+
+    const segments = relativePath.split('/');
+    if (
+      segments.length === 0 ||
+      segments.some(
+        (segment) =>
+          !segment ||
+          segment === '.' ||
+          segment === '..' ||
+          segment.includes('\0') ||
+          segment.includes('/') ||
+          segment.includes('\\'),
+      ) ||
+      /^[A-Za-z]:/.test(segments[0]) ||
+      !/\.(?:png|jpe?g|gif|webp|mp4|webm)$/i.test(segments[segments.length - 1])
+    ) {
+      return null;
+    }
+
+    return `workspace-file://${workspaceId}/${segments.map(encodeURIComponent).join('/')}`;
+  });
   const fileLanguage = $derived(tab.filePath ? getLanguageFromPath(tab.filePath) : 'plaintext');
   const isMarkdownFile = $derived(fileLanguage === 'markdown');
   let markdownPreview = $state(true); // default to rich text for markdown files
@@ -220,7 +259,8 @@
     // path. Do not block the read while the workspace entity/root hydrates —
     // doing so leaves activity-opened tabs stuck at "Preparing to load file".
     // The effect runs again with the resolved absolute path once hydration lands.
-    if (filePath && wsId && !isOutsideWorkspace) {
+    const waitingForAbsoluteRoot = isAbsolutePath(filePath) && !repoPath;
+    if (filePath && wsId && !isOutsideWorkspace && !workspaceMediaUrl && !waitingForAbsoluteRoot) {
       appStore.dispatch(loadFileContentRequested(wsId, filePath, absolutePath ?? filePath));
     }
   });
@@ -415,6 +455,8 @@
         <p>{m.layout_fileTab_outsideWorkspace_label()}</p>
         <p class="text-xs">{tab.filePath}</p>
       </div>
+    {:else if workspaceMediaUrl}
+      <FileViewer filePath={tab.filePath} sourceUrl={workspaceMediaUrl} />
     {:else if fileLoading}
       <div class="flex flex-col h-full">
         <div class="flex-1 p-4 space-y-2">

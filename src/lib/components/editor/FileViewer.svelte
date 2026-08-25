@@ -17,12 +17,13 @@
 
   interface Props {
     filePath: string;
-    fileContent: string | ArrayBuffer;
+    fileContent?: string | ArrayBuffer;
+    sourceUrl?: string;
     language?: string;
     isBinary?: boolean;
   }
 
-  let { filePath, fileContent, language, isBinary }: Props = $props();
+  let { filePath, fileContent = '', sourceUrl, language, isBinary }: Props = $props();
 
   // Determine file type from extension
   const getFileType = (path: string): string => {
@@ -90,8 +91,25 @@
   let imageRotation = $state(0);
   let copied = $state(false);
 
+  const imageMimeType = (path: string): string => {
+    const ext = path.split('.').pop()?.toLowerCase();
+    if (ext === 'jpg' || ext === 'jpeg') return 'image/jpeg';
+    if (ext === 'png') return 'image/png';
+    if (ext === 'gif') return 'image/gif';
+    if (ext === 'webp') return 'image/webp';
+    return 'application/octet-stream';
+  };
+
+  const videoMimeType = (path: string): string | undefined => {
+    const ext = path.split('.').pop()?.toLowerCase();
+    if (ext === 'mp4') return 'video/mp4';
+    if (ext === 'webm') return 'video/webm';
+    return undefined;
+  };
+
   // Convert content to appropriate format
   const getImageSrc = (): string => {
+    if (sourceUrl) return sourceUrl;
     if (typeof fileContent === 'string') {
       // If it's already a base64 string or URL
       if (fileContent.startsWith('data:') || fileContent.startsWith('http')) {
@@ -99,22 +117,38 @@
       }
       // If isBinary is true, the content is already base64 encoded
       if (isBinary) {
-        const ext = filePath.split('.').pop()?.toLowerCase();
-        return `data:image/${ext};base64,${fileContent}`;
+        return `data:${imageMimeType(filePath)};base64,${fileContent}`;
       }
       // Otherwise, assume it's raw content that needs encoding
-      const ext = filePath.split('.').pop()?.toLowerCase();
-      return `data:image/${ext};base64,${fileContent}`;
+      return `data:${imageMimeType(filePath)};base64,${fileContent}`;
     }
     // Handle ArrayBuffer
     if (fileContent instanceof ArrayBuffer) {
       const bytes = new Uint8Array(fileContent);
       const binary = bytes.reduce((acc, byte) => acc + String.fromCharCode(byte), '');
       const base64 = btoa(binary);
-      const ext = filePath.split('.').pop()?.toLowerCase();
-      return `data:image/${ext};base64,${base64}`;
+      return `data:${imageMimeType(filePath)};base64,${base64}`;
     }
     return '';
+  };
+
+  const getVideoSrc = (): string => {
+    if (sourceUrl) return sourceUrl;
+    const mimeType = videoMimeType(filePath);
+    if (!mimeType) return '';
+    if (typeof fileContent === 'string') {
+      if (fileContent.startsWith('data:') || fileContent.startsWith('https://')) {
+        return fileContent;
+      }
+      return `data:${mimeType};base64,${fileContent}`;
+    }
+    const bytes = new Uint8Array(fileContent);
+    const chunks: string[] = [];
+    const chunkSize = 0x8000;
+    for (let offset = 0; offset < bytes.length; offset += chunkSize) {
+      chunks.push(String.fromCharCode(...bytes.subarray(offset, offset + chunkSize)));
+    }
+    return `data:${mimeType};base64,${btoa(chunks.join(''))}`;
   };
 
   const getSvgSrc = (): string => {
@@ -310,8 +344,14 @@
     <!-- Video Player -->
     <div class="flex-1 flex items-center justify-center bg-black">
       <!-- svelte-ignore a11y_media_has_caption -->
-      <video controls class="max-w-full max-h-full">
-        <source src={getImageSrc()} />
+      <video
+        src={getVideoSrc()}
+        controls
+        preload="metadata"
+        playsinline
+        class="max-w-full max-h-full"
+        data-testid="file-video"
+      >
         {m.editor_fileViewer_videoUnsupported_label()}
       </video>
     </div>

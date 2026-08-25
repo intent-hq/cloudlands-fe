@@ -143,6 +143,7 @@
       normalizeAgentVideoContentBlocks(
         dedupeResourceBlocks(parsedPromptBlocks.contentBlocks),
         role,
+        workspaceId,
       ),
     ).filter((block) => {
       // Agent Q&A questions are wizard-only: they never render in the

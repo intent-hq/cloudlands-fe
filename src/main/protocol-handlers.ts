@@ -229,12 +229,42 @@ export function setupWorkspaceAssetProtocolHandler() {
 /** Decoded bytes requested per daemon `file.readChunk` call (the daemon's 16 MiB cap). */
 export const WORKSPACE_FILE_CHUNK_BYTES = 16 * 1024 * 1024;
 
-/** The handler buffers the whole file in memory, so refuse files beyond this size. */
+/** Refuse workspace media beyond this size, including ranged video requests. */
 export const WORKSPACE_FILE_MAX_BYTES = 128 * 1024 * 1024;
 
-// Serves workspace file images via workspace-file://{workspaceId}/{percent-encoded-path},
+type WorkspaceFileChunk = { content: string; bytesRead: number; size: number };
+
+type ParsedByteRange =
+  { kind: 'closed'; start: number; end: number | null } | { kind: 'suffix'; length: number };
+
+function parseByteRangeHeader(value: string): ParsedByteRange | null {
+  const match = /^bytes=(\d*)-(\d*)$/.exec(value);
+  if (!match || (!match[1] && !match[2])) return null;
+  if (!match[1]) {
+    const length = Number(match[2]);
+    return Number.isSafeInteger(length) && length > 0 ? { kind: 'suffix', length } : null;
+  }
+
+  const start = Number(match[1]);
+  const end = match[2] ? Number(match[2]) : null;
+  if (!Number.isSafeInteger(start) || start < 0) return null;
+  if (end !== null && (!Number.isSafeInteger(end) || end < start)) return null;
+  return { kind: 'closed', start, end };
+}
+
+class WorkspaceFileReadError extends Error {
+  constructor(
+    readonly status: 404 | 413,
+    message: string,
+  ) {
+    super(message);
+  }
+}
+
+// Serves workspace file images and narrowly allowlisted videos via
+// workspace-file://{workspaceId}/{percent-encoded-path},
 // backed by the daemon's `file.readChunk` (PROTOCOL §5.9) so reads stay contained
-// within the workspace root. Image-allowlist only — SVG is excluded in v1.
+// within the workspace root. SVG and active/arbitrary formats remain excluded.
 export function setupWorkspaceFileProtocolHandler() {
   protocol.handle('workspace-file', async (request) => {
     const parsed = parseWorkspaceFileRequest(request.url);
@@ -252,55 +282,116 @@ export function setupWorkspaceFileProtocolHandler() {
     try {
       const { getBackendClient } = await import('../features/backend/main/backend.ipc');
       const client = getBackendClient();
-      const chunks: Buffer[] = [];
-      let offset = 0;
-      for (;;) {
+      const rangeHeader = request.headers.get('range');
+      const requestedRange = rangeHeader ? parseByteRangeHeader(rangeHeader) : undefined;
+      if (rangeHeader && !requestedRange) {
+        return new Response('Invalid range', {
+          status: 416,
+          headers: { 'Accept-Ranges': 'bytes', 'Content-Range': 'bytes */*' },
+        });
+      }
+
+      async function readChunk(offset: number, length: number): Promise<WorkspaceFileChunk> {
         const chunk = (await client.request('file.readChunk', {
           workspaceId,
           path: filePath,
           offset,
-          length: WORKSPACE_FILE_CHUNK_BYTES,
-        })) as { content: string; bytesRead: number; size: number };
-        if (chunk.size > WORKSPACE_FILE_MAX_BYTES) {
-          logger.warn('Refused oversized workspace-file request', {
-            workspaceId,
-            filePath,
-            size: chunk.size,
-          });
-          // i18n-ignore (internal protocol response body)
-          return new Response('File too large', { status: 413 });
+          length,
+        })) as WorkspaceFileChunk;
+        if (
+          !Number.isSafeInteger(chunk.size) ||
+          chunk.size < 0 ||
+          !Number.isSafeInteger(chunk.bytesRead) ||
+          chunk.bytesRead < 0 ||
+          chunk.bytesRead > length ||
+          offset + chunk.bytesRead > chunk.size ||
+          typeof chunk.content !== 'string'
+        ) {
+          throw new WorkspaceFileReadError(404, 'invalid file.readChunk response');
         }
+        if (chunk.size > WORKSPACE_FILE_MAX_BYTES) {
+          throw new WorkspaceFileReadError(413, 'File too large');
+        }
+        return chunk;
+      }
+
+      let expectedSize: number | undefined;
+      let start = 0;
+      let endExclusive: number | undefined;
+      if (requestedRange) {
+        const probe = await readChunk(0, 1);
+        expectedSize = probe.size;
+        if (expectedSize === 0) {
+          return new Response('Range not satisfiable', {
+            status: 416,
+            headers: { 'Accept-Ranges': 'bytes', 'Content-Range': 'bytes */0' },
+          });
+        }
+        if (requestedRange.kind === 'suffix') {
+          start = Math.max(expectedSize - requestedRange.length, 0);
+          endExclusive = expectedSize;
+        } else {
+          start = requestedRange.start;
+          if (start >= expectedSize) {
+            return new Response('Range not satisfiable', {
+              status: 416,
+              headers: {
+                'Accept-Ranges': 'bytes',
+                'Content-Range': `bytes */${expectedSize}`,
+              },
+            });
+          }
+          endExclusive = Math.min((requestedRange.end ?? expectedSize - 1) + 1, expectedSize);
+        }
+      }
+
+      const chunks: Buffer[] = [];
+      let offset = start;
+      for (;;) {
+        const remaining =
+          endExclusive === undefined ? WORKSPACE_FILE_CHUNK_BYTES : endExclusive - offset;
+        if (remaining <= 0) break;
+        const chunk = await readChunk(offset, Math.min(WORKSPACE_FILE_CHUNK_BYTES, remaining));
+        if (expectedSize !== undefined && chunk.size !== expectedSize) {
+          throw new WorkspaceFileReadError(404, 'file size changed during read');
+        }
+        expectedSize = chunk.size;
         if (chunk.bytesRead > 0) {
           const decoded = Buffer.from(chunk.content, 'base64');
           if (decoded.byteLength !== chunk.bytesRead) {
-            // Fail closed instead of serving a spliced body if the daemon's
-            // reported bytesRead ever diverges from the decoded content.
-            logger.warn('workspace-file chunk length mismatch', {
-              workspaceId,
-              filePath,
-              bytesRead: chunk.bytesRead,
-              decodedLength: decoded.byteLength,
-            });
-            // i18n-ignore (internal protocol response body)
-            return new Response('Not found', { status: 404 });
+            throw new WorkspaceFileReadError(404, 'workspace-file chunk length mismatch');
           }
           chunks.push(decoded);
           offset += decoded.byteLength;
         }
-        if (chunk.bytesRead === 0 || offset >= chunk.size) {
-          break;
+        const targetEnd = endExclusive ?? chunk.size;
+        if (offset >= targetEnd) break;
+        if (chunk.bytesRead === 0) {
+          throw new WorkspaceFileReadError(404, 'unexpected end of workspace file');
         }
       }
+
+      const body = Buffer.concat(chunks);
+      const commonHeaders = {
+        'Content-Type': mimeType,
+        'Cache-Control': 'no-cache',
+        'Access-Control-Allow-Origin': '*',
+        'Accept-Ranges': 'bytes',
+        'Content-Length': String(body.byteLength),
+      };
+      if (requestedRange && expectedSize !== undefined) {
+        return new Response(new Uint8Array(body), {
+          status: 206,
+          headers: {
+            ...commonHeaders,
+            'Content-Range': `bytes ${start}-${start + body.byteLength - 1}/${expectedSize}`,
+          },
+        });
+      }
+
       return new Response(new Uint8Array(Buffer.concat(chunks)), {
         status: 200,
-        headers: {
-          'Content-Type': mimeType,
-          // Workspace files are mutable — never cache long-term.
-          'Cache-Control': 'no-cache',
-          // corsEnabled schemes need this for renderer fetch() reads from
-          // the app:// (or dev HTTP) origin; <img> loads work without it.
-          'Access-Control-Allow-Origin': '*',
-        },
+        headers: commonHeaders,
       });
     } catch (error) {
       logger.warn('Daemon file.readChunk failed', {
@@ -309,6 +400,9 @@ export function setupWorkspaceFileProtocolHandler() {
         error: error instanceof Error ? error.message : String(error),
       });
       // i18n-ignore (internal protocol response body)
+      if (error instanceof WorkspaceFileReadError && error.status === 413) {
+        return new Response('File too large', { status: 413 });
+      }
       return new Response('File not found', { status: 404 });
     }
   });

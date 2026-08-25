@@ -477,7 +477,7 @@ describe('FileTabType Redux integration', () => {
     expect(screen.queryByTestId('code-editor')).toBeNull();
   });
 
-  it('keeps binary files in FileViewer instead of CodeEditor', async () => {
+  it('keeps allowlisted binary images in FileViewer without a text read', async () => {
     mockReduxState.files['assets/logo.png'] = {
       localContent: '',
       originalContent: '',
@@ -492,8 +492,68 @@ describe('FileTabType Redux integration', () => {
 
     const viewer = await screen.findByTestId('file-viewer');
     expect(viewer.getAttribute('data-file-path')).toBe('assets/logo.png');
-    expect(viewer.getAttribute('data-is-binary')).toBe('true');
+    expect(viewer.getAttribute('data-source-url')).toBe('workspace-file://ws-1/assets/logo.png');
+    expect(actionMocks.loadFileContentRequested).not.toHaveBeenCalled();
     expect(screen.queryByTestId('code-editor')).toBeNull();
+  });
+
+  it.each([
+    [
+      '.demo-artifacts/20260824T234627Z-frontend-preview/frontend-preview.png',
+      'workspace-file://ws-1/.demo-artifacts/20260824T234627Z-frontend-preview/frontend-preview.png',
+    ],
+    ['artifacts/my clip.webp', 'workspace-file://ws-1/artifacts/my%20clip.webp'],
+    ['.demo-artifacts/run/preview.mp4', 'workspace-file://ws-1/.demo-artifacts/run/preview.mp4'],
+    [
+      '.demo-artifacts/20260824T234627Z-frontend-preview/frontend-preview.webm',
+      'workspace-file://ws-1/.demo-artifacts/20260824T234627Z-frontend-preview/frontend-preview.webm',
+    ],
+  ])(
+    'renders trusted workspace media %s without a UTF-8 file.read',
+    async (filePath, sourceUrl) => {
+      renderFileTab({ ...fileTab, id: `tab-${filePath}`, title: filePath, filePath });
+
+      const viewer = await screen.findByTestId('file-viewer');
+      expect(viewer.getAttribute('data-source-url')).toBe(sourceUrl);
+      expect(actionMocks.loadFileContentRequested).not.toHaveBeenCalled();
+      expect(dispatchMock).not.toHaveBeenCalledWith(
+        expect.objectContaining({ type: 'files/loadFileContentRequested' }),
+      );
+      expect(screen.queryByTestId('code-editor')).toBeNull();
+    },
+  );
+
+  it('routes an absolute in-workspace video through its workspace-relative media URL', async () => {
+    renderFileTab({
+      ...fileTab,
+      id: 'tab-absolute-video',
+      title: 'preview.webm',
+      filePath: '/repo/.demo-artifacts/run/preview.webm',
+    });
+
+    const viewer = await screen.findByTestId('file-viewer');
+    expect(viewer.getAttribute('data-source-url')).toBe(
+      'workspace-file://ws-1/.demo-artifacts/run/preview.webm',
+    );
+    expect(actionMocks.loadFileContentRequested).not.toHaveBeenCalled();
+  });
+
+  it('does not route unsupported media extensions through workspace-file', async () => {
+    renderFileTab({
+      ...fileTab,
+      id: 'tab-unsupported-video',
+      title: 'preview.mov',
+      filePath: 'artifacts/preview.mov',
+    });
+
+    await waitFor(() =>
+      expect(actionMocks.loadFileContentRequested).toHaveBeenCalledWith(
+        'ws-1',
+        'artifacts/preview.mov',
+        '/repo/artifacts/preview.mov',
+      ),
+    );
+    expect(screen.queryByTestId('file-viewer')).toBeNull();
   });
 
   it('renders Redux file content, dispatches edits, and saves current content', async () => {

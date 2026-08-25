@@ -4,7 +4,8 @@ import type { MessageRole } from './agent-message';
 
 export type VideoSource =
   | { kind: 'inline'; data: string; mimeType: string }
-  | { kind: 'remote'; url: string; mimeType?: string };
+  | { kind: 'remote'; url: string; mimeType?: string }
+  | { kind: 'workspace'; url: string; mimeType: 'video/mp4' | 'video/webm' };
 
 /**
  * Unified ContentBlock Type Definition
@@ -211,6 +212,84 @@ function getRemoteVideoSource(
   };
 }
 
+function getWorkspaceVideoSource(
+  value: unknown,
+  currentWorkspaceId: string | undefined,
+): Extract<VideoSource, { kind: 'workspace' }> | null {
+  if (
+    typeof value !== 'string' ||
+    !value.startsWith('intent://local/') ||
+    !currentWorkspaceId ||
+    !/^[A-Za-z0-9._-]+$/.test(currentWorkspaceId) ||
+    value.includes('?') ||
+    value.includes('#')
+  ) {
+    return null;
+  }
+
+  const segments = value.slice('intent://'.length).split('/');
+  const rest = segments.slice(1);
+  let workspaceId: string;
+  let encodedPath: string[];
+  if (rest[0] === 'file') {
+    workspaceId = currentWorkspaceId;
+    encodedPath = rest.slice(1);
+  } else if (rest.length >= 3 && rest[1] === 'file') {
+    try {
+      workspaceId = decodeURIComponent(rest[0]);
+    } catch {
+      return null;
+    }
+    if (workspaceId !== currentWorkspaceId) return null;
+    encodedPath = rest.slice(2);
+  } else {
+    return null;
+  }
+
+  const decodedPath: string[] = [];
+  for (const segment of encodedPath) {
+    let decoded: string;
+    try {
+      decoded = decodeURIComponent(segment);
+    } catch {
+      return null;
+    }
+    if (
+      !decoded ||
+      decoded === '.' ||
+      decoded === '..' ||
+      decoded.includes('/') ||
+      decoded.includes('\\') ||
+      decoded.includes('\0')
+    ) {
+      return null;
+    }
+    decodedPath.push(decoded);
+  }
+  if (decodedPath.length === 0 || /^[A-Za-z]:/.test(decodedPath[0])) return null;
+
+  const fileName = decodedPath[decodedPath.length - 1].toLowerCase();
+  const mimeType = fileName.endsWith('.mp4')
+    ? 'video/mp4'
+    : fileName.endsWith('.webm')
+      ? 'video/webm'
+      : null;
+  if (!mimeType) return null;
+  return {
+    kind: 'workspace',
+    url: `workspace-file://${workspaceId}/${decodedPath.map(encodeURIComponent).join('/')}`,
+    mimeType,
+  };
+}
+
+function getTrustedVideoSource(
+  value: unknown,
+  mimeValue: unknown,
+  workspaceId: string | undefined,
+): Exclude<VideoSource, { kind: 'inline' }> | null {
+  return getRemoteVideoSource(value, mimeValue) ?? getWorkspaceVideoSource(value, workspaceId);
+}
+
 function videoBlock(
   candidate: Record<string, unknown>,
   source: VideoSource,
@@ -225,7 +304,10 @@ function videoBlock(
   };
 }
 
-function normalizeVideoCandidate(value: unknown): VideoContentBlock | null {
+function normalizeVideoCandidate(
+  value: unknown,
+  workspaceId: string | undefined,
+): VideoContentBlock | null {
   if (!isRecord(value)) return null;
   const type = value.type;
 
@@ -242,41 +324,41 @@ function normalizeVideoCandidate(value: unknown): VideoContentBlock | null {
     if (mimeType && typeof resource.blob === 'string' && resource.blob) {
       return videoBlock(value, { kind: 'inline', data: resource.blob, mimeType }, resource.name);
     }
-    const source = getRemoteVideoSource(resource.uri, resource.mimeType);
+    const source = getTrustedVideoSource(resource.uri, resource.mimeType, workspaceId);
     return source ? videoBlock(value, source, resource.name) : null;
   }
 
   if (type === 'resource_link') {
-    const source = getRemoteVideoSource(value.uri, value.mimeType);
+    const source = getTrustedVideoSource(value.uri, value.mimeType, workspaceId);
     return source ? videoBlock(value, source, value.name) : null;
   }
 
   if (type === 'file') {
-    const source = getRemoteVideoSource(value.url ?? value.uri, value.mimeType);
+    const source = getTrustedVideoSource(value.url ?? value.uri, value.mimeType, workspaceId);
     return source ? videoBlock(value, source, value.fileName) : null;
   }
 
   return null;
 }
 
-function normalizeNestedVideoBlocks(value: unknown): unknown {
+function normalizeNestedVideoBlocks(value: unknown, workspaceId: string | undefined): unknown {
   if (!Array.isArray(value)) return value;
   let changed = false;
   const normalized = value.map((item) => {
-    const next = normalizeAssistantVideoBlock(item);
+    const next = normalizeAssistantVideoBlock(item, workspaceId);
     if (next !== item) changed = true;
     return next;
   });
   return changed ? normalized : value;
 }
 
-function normalizeAssistantVideoBlock(value: unknown): unknown {
-  const video = normalizeVideoCandidate(value);
+function normalizeAssistantVideoBlock(value: unknown, workspaceId: string | undefined): unknown {
+  const video = normalizeVideoCandidate(value, workspaceId);
   if (video) return video;
   if (!isRecord(value) || value.type !== 'tool_result') return value;
 
-  const output = normalizeNestedVideoBlocks(value.output);
-  const content = normalizeNestedVideoBlocks(value.content);
+  const output = normalizeNestedVideoBlocks(value.output, workspaceId);
+  const content = normalizeNestedVideoBlocks(value.content, workspaceId);
   if (output === value.output && content === value.content) return value;
   return { ...value, output, content };
 }
@@ -285,11 +367,12 @@ function normalizeAssistantVideoBlock(value: unknown): unknown {
 export function normalizeAgentVideoContentBlocks(
   blocks: readonly ContentBlock[],
   role: MessageRole,
+  workspaceId?: string,
 ): ContentBlock[] {
   if (role !== 'assistant') return blocks as ContentBlock[];
   let changed = false;
   const normalized = blocks.map((block) => {
-    const next = normalizeAssistantVideoBlock(block) as ContentBlock;
+    const next = normalizeAssistantVideoBlock(block, workspaceId) as ContentBlock;
     if (next !== block) changed = true;
     return next;
   });
@@ -299,7 +382,7 @@ export function normalizeAgentVideoContentBlocks(
 function videoSourceIdentity(source: VideoSource): string {
   return source.kind === 'inline'
     ? `inline:${source.mimeType}:${source.data}`
-    : `remote:${source.url}`;
+    : `${source.kind}:${source.url}`;
 }
 
 /** Keep the first occurrence of each normalized video source, including nested tool results. */
