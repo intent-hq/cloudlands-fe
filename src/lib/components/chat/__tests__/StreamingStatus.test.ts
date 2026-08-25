@@ -487,7 +487,7 @@ describe('StreamingStatus stalled state (monorepo#3402)', () => {
     const announcement = screen.getByTestId('stalled-announcement');
     expect(announcement.getAttribute('role')).toBe('status');
     const announcedText = announcement.textContent;
-    expect(announcedText).toBe('No model activity detected. You can cancel the response.');
+    expect(announcedText).toBe('No model activity detected. You can retry or cancel the response.');
 
     const message = screen.getByTestId('stalled-message');
     expect(message.getAttribute('aria-live')).toBeNull();
@@ -511,6 +511,38 @@ describe('StreamingStatus stalled state (monorepo#3402)', () => {
 
     await fireEvent.click(screen.getByTestId('stalled-cancel'));
     expect(onStop).toHaveBeenCalledOnce();
+  });
+
+  it('renders the Retry button in the stalled row and invokes the callback on click', async () => {
+    const onStalledRetry = vi.fn();
+    render(StreamingStatus, {
+      props: {
+        isStreaming: true,
+        onStop: vi.fn(),
+        onStalledRetry,
+        statusEvents: [stalledEvent(1_000)],
+      },
+    });
+
+    await fireEvent.click(screen.getByTestId('stalled-retry'));
+    expect(onStalledRetry).toHaveBeenCalledOnce();
+  });
+
+  it('omits the Retry button when no onStalledRetry callback is provided', () => {
+    render(StreamingStatus, {
+      props: { isStreaming: true, onStop: vi.fn(), statusEvents: [stalledEvent(1_000)] },
+    });
+
+    expect(screen.queryByTestId('stalled-retry')).toBeNull();
+  });
+
+  it('does not render the Retry button outside the stalled state', () => {
+    const { container } = render(StreamingStatus, {
+      props: { isStreaming: true, onStop: vi.fn(), onStalledRetry: vi.fn(), statusEvents: [] },
+    });
+
+    expect(container.querySelector('[data-stream-stalled="true"]')).toBeNull();
+    expect(screen.queryByTestId('stalled-retry')).toBeNull();
   });
 
   it('clears on a resumed event and falls back to the thinking indicator', async () => {

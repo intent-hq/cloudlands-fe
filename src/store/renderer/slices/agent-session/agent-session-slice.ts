@@ -1105,6 +1105,17 @@ export const agentSessionRetryWithModelRequested = createAsyncAction<
   void
 >('agentSessions/retryWithModel', 'agentSessions/retryWithModelRequested');
 
+/**
+ * Saga-owned retry-from-stalled side effect trigger (monorepo#3402): cancels
+ * the hung turn, waits for the stop to settle, then re-sends the identical
+ * last user input. A no-op when the stall is no longer active by the time
+ * the command runs (resumed event, stream delta, or turn end).
+ */
+export const agentSessionRetryFromStalledRequested = createAsyncAction<
+  [agentId: string, wsId: string],
+  void
+>('agentSessions/retryFromStalled', 'agentSessions/retryFromStalledRequested');
+
 /** Saga-owned fork-session side effect trigger. Resolves with the forked agent id. */
 export const agentSessionForkSessionRequested = createAsyncAction<
   [agentId: string, wsId: string, options?: AgentSessionForkOptions],

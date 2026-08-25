@@ -52,6 +52,7 @@
     agentSessionEditAndRegenerateRequested,
     agentSessionForkSessionRequested,
     agentSessionRegenerateFromMessageRequested,
+    agentSessionRetryFromStalledRequested,
     agentSessionRetryLastMessageRequested,
     agentSessionRetryWithModelRequested,
     agentSessionStopChatRequested,
@@ -4115,6 +4116,13 @@
     appStore.dispatch(agentSessionRetryWithModelRequested(agentId, workspace.id, model));
   }
 
+  // Handle retrying from a stalled turn: cancel it and re-send the same input
+  // (monorepo#3402). The saga no-ops if the stall cleared before it runs.
+  function handleStalledRetry() {
+    if (!workspace) return;
+    appStore.dispatch(agentSessionRetryFromStalledRequested(agentId, workspace.id));
+  }
+
   // Handle changing the specialist for an agent
   // The specialist can be changed at any time - even after messages have been sent.
   // The new specialist behavior will apply to subsequent messages.
@@ -4805,6 +4813,7 @@
                           onRetry={handleRetry}
                           onRetryWithModel={handleRetryWithModel}
                           onStop={handleStop}
+                          onStalledRetry={handleStalledRetry}
                           seed={agentId}
                           statusEvents={$chatStatusEvents$}
                           streamingStartTime={$chatStreamingStartTime$}
@@ -4830,6 +4839,7 @@
                         onRetry={handleRetry}
                         onRetryWithModel={handleRetryWithModel}
                         onStop={handleStop}
+                        onStalledRetry={handleStalledRetry}
                         seed={agentId}
                         statusEvents={$chatStatusEvents$}
                         streamingStartTime={$chatStreamingStartTime$}
@@ -4912,6 +4922,7 @@
                           onRetry={handleRetry}
                           onRetryWithModel={handleRetryWithModel}
                           onStop={handleStop}
+                          onStalledRetry={handleStalledRetry}
                           seed={agentId}
                           statusEvents={$chatStatusEvents$}
                           streamingStartTime={$chatStreamingStartTime$}
@@ -4937,6 +4948,7 @@
                         onRetry={handleRetry}
                         onRetryWithModel={handleRetryWithModel}
                         onStop={handleStop}
+                        onStalledRetry={handleStalledRetry}
                         seed={agentId}
                         statusEvents={$chatStatusEvents$}
                         streamingStartTime={$chatStreamingStartTime$}
@@ -4967,6 +4979,7 @@
                   onRetry={handleRetry}
                   onRetryWithModel={handleRetryWithModel}
                   onStop={handleStop}
+                  onStalledRetry={handleStalledRetry}
                   seed={agentId}
                   statusEvents={$chatStatusEvents$}
                   streamingStartTime={$chatStreamingStartTime$}
@@ -5252,6 +5265,7 @@
                           onRetry={handleRetry}
                           onRetryWithModel={handleRetryWithModel}
                           onStop={handleStop}
+                          onStalledRetry={handleStalledRetry}
                           seed={agentId}
                           statusEvents={$chatStatusEvents$}
                           streamingStartTime={$chatStreamingStartTime$}
@@ -5331,6 +5345,7 @@
                                 onRetry={handleRetry}
                                 onRetryWithModel={handleRetryWithModel}
                                 onStop={handleStop}
+                                onStalledRetry={handleStalledRetry}
                                 seed={agentId}
                                 statusEvents={$chatStatusEvents$}
                                 streamingStartTime={$chatStreamingStartTime$}
@@ -5404,6 +5419,7 @@
                     onRetry={handleRetry}
                     onRetryWithModel={handleRetryWithModel}
                     onStop={handleStop}
+                    onStalledRetry={handleStalledRetry}
                     seed={agentId}
                     statusEvents={$chatStatusEvents$}
                     streamingStartTime={$chatStreamingStartTime$}
