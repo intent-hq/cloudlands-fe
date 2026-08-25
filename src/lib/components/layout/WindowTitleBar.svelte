@@ -90,7 +90,7 @@
   );
 
   function handleActiveTabBoundsChange(bounds: { left: number; width: number } | null) {
-    activeTabBounds = bounds ? { left: bounds.left - panelOffset, width: bounds.width } : null;
+    activeTabBounds = bounds;
   }
 
   function handleActiveTabTrackingChange(tracking: boolean) {
@@ -319,6 +319,8 @@
           onActiveTabBoundsChange={handleActiveTabBoundsChange}
           onActiveTabTrackingChange={handleActiveTabTrackingChange}
           activeWorkspaceId={routedWorkspaceId}
+          alignFirstTabToPanel={Boolean($panelItem$)}
+          horizontalPositionTrackingKey={panelOffset}
         />
         {#if !$onboardingActive$}
           <WorkspaceRepoLauncher />
@@ -337,7 +339,7 @@
     {#if activeTabBounds}
       <div
         class="pointer-events-none absolute -bottom-px z-[60] h-px bg-sidebar motion-reduce:transition-none"
-        style:left={`${activeTabBounds.left + panelOffset - 6}px`}
+        style:left={`${activeTabBounds.left - 6}px`}
         style:width={`${Math.max(0, activeTabBounds.width + 13)}px`}
         style:transition={activeTabTracking
           ? 'none'

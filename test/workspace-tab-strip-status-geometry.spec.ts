@@ -152,14 +152,20 @@ test.afterAll(async () => server?.close());
 
 async function mountStrip(
   page: Page,
-  options: { viewport: number; zoom: number; reduced: boolean },
+  options: {
+    viewport: number;
+    zoom: number;
+    reduced: boolean;
+    panelOpen?: boolean;
+    panelWidth?: number;
+  },
 ) {
   await page.setViewportSize({ width: options.viewport, height: 360 });
   await page.emulateMedia({ reducedMotion: options.reduced ? 'reduce' : 'no-preference' });
   await page.goto(`${baseUrl}src/app.html`);
   await page.addStyleTag({ url: `${baseUrl}src/app.css` });
   await page.addStyleTag({ content: 'body { margin: 0; overflow: hidden; }' });
-  await page.evaluate(async ({ zoom }) => {
+  await page.evaluate(async ({ zoom, panelOpen, panelWidth }) => {
     Object.assign(globalThis, { process: { env: { NODE_ENV: 'test' } } });
     Object.assign(globalThis, {
       __workspaceTabScenario: {
@@ -186,9 +192,42 @@ async function mountStrip(
     ]);
     document.body.replaceChildren();
     const target = document.createElement('div');
-    target.style.cssText = `width:100%; padding:24px; zoom:${zoom};`;
     document.body.append(target);
-    mount(Strip, { target });
+    if (panelOpen === undefined || panelWidth === undefined) {
+      target.style.cssText = `width:100%; padding:24px; zoom:${zoom};`;
+      mount(Strip, { target });
+    } else {
+      target.style.cssText = `width:100%; zoom:${zoom};`;
+      const controls = document.createElement('div');
+      controls.dataset.titlebarWorkspaceControls = '';
+      controls.style.cssText = `display:flex;align-items:center;gap:4px;margin-left:${panelOpen ? panelWidth + 8 : 116}px;width:fit-content;`;
+      target.append(controls);
+      mount(Strip, { target: controls, props: { alignFirstTabToPanel: panelOpen } });
+
+      const launcher = document.createElement('button');
+      launcher.dataset.workspaceRepoLauncher = '';
+      launcher.style.cssText = 'width:32px;height:32px;';
+      controls.append(launcher);
+
+      const frame = document.createElement('div');
+      frame.style.cssText = 'display:flex;padding-left:8px;width:100%;';
+      const sidebar = document.createElement('div');
+      sidebar.dataset.sidebarPanelFrame = '';
+      sidebar.style.cssText = `flex:0 0 ${panelOpen ? panelWidth : 0}px;`;
+      const main = document.createElement('main');
+      main.className = 'workspace-main';
+      main.style.cssText = 'height:200px;min-width:0;flex:1;';
+      frame.append(sidebar, main);
+      target.append(frame);
+
+      Object.assign(globalThis, {
+        __setWorkspacePanelWidth(width: number) {
+          if (!panelOpen) return;
+          sidebar.style.flexBasis = `${width}px`;
+          controls.style.marginLeft = `${width + 8}px`;
+        },
+      });
+    }
     await tick();
     await new Promise<void>((resolveFrame) => requestAnimationFrame(() => resolveFrame()));
   }, options);
@@ -199,6 +238,50 @@ async function box(locator: Locator) {
   expect(value).not.toBeNull();
   return value!;
 }
+
+test('aligns the first tab with the open workspace panel across resize and zoom', async ({
+  page,
+}) => {
+  for (const zoom of [1, 2]) {
+    await mountStrip(page, {
+      viewport: 1400,
+      zoom,
+      reduced: true,
+      panelOpen: true,
+      panelWidth: 288,
+    });
+
+    for (const panelWidth of [288, 420]) {
+      await page.evaluate((width) => {
+        (
+          globalThis as typeof globalThis & { __setWorkspacePanelWidth: (value: number) => void }
+        ).__setWorkspacePanelWidth(width);
+      }, panelWidth);
+      const [firstTab, workspaceMain] = await Promise.all([
+        box(page.locator('[data-workspace-tab]').first()),
+        box(page.locator('.workspace-main')),
+      ]);
+      expect(Math.abs(firstTab.x - workspaceMain.x) / zoom).toBeLessThanOrEqual(1);
+    }
+  }
+});
+
+test('preserves the collapsed-sidebar first-tab clearance across zoom', async ({ page }) => {
+  for (const zoom of [1, 2]) {
+    await mountStrip(page, {
+      viewport: 1400,
+      zoom,
+      reduced: true,
+      panelOpen: false,
+      panelWidth: 288,
+    });
+    const [firstTab, controls] = await Promise.all([
+      box(page.locator('[data-workspace-tab]').first()),
+      box(page.locator('[data-titlebar-workspace-controls]')),
+    ]);
+    expect(firstTab.x - controls.x).toBeCloseTo(8 * zoom, 0);
+  }
+});
 
 test('keeps titles, statuses, and close controls disjoint at 160px and constrained widths', async ({
   page,
