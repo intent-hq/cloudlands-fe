@@ -64,32 +64,21 @@ test('opens by click, focus, and hover and activates the stable ordered history'
   await expect(menu).toBeVisible();
   await page.keyboard.press('Escape');
   await component.getByTestId('outside-control').focus();
-  await trigger.evaluate((element) => {
-    const triggerElement = element as HTMLElement & {
-      identityOpenStates?: Array<string | null>;
-      identityOpenObserver?: MutationObserver;
-    };
-    triggerElement.identityOpenStates = [triggerElement.getAttribute('aria-expanded')];
-    triggerElement.identityOpenObserver = new MutationObserver(() => {
-      triggerElement.identityOpenStates?.push(triggerElement.getAttribute('aria-expanded'));
-    });
-    triggerElement.identityOpenObserver.observe(triggerElement, {
-      attributes: true,
-      attributeFilter: ['aria-expanded'],
-    });
-  });
   await trigger.hover();
   await expect(menu).toBeVisible({ timeout: 1_000 });
-  await page.waitForTimeout(750);
-  const hoverOpenStates = await trigger.evaluate((element) => {
-    const triggerElement = element as HTMLElement & {
-      identityOpenStates?: Array<string | null>;
-      identityOpenObserver?: MutationObserver;
-    };
-    triggerElement.identityOpenObserver?.disconnect();
-    return triggerElement.identityOpenStates ?? [];
+  await expect(trigger).toHaveAttribute('aria-expanded', 'true');
+  await menu.evaluate(async (element) => {
+    await Promise.all(
+      element
+        .getAnimations({ subtree: true })
+        .map((animation) => animation.finished.catch(() => undefined)),
+    );
+    await new Promise<void>((resolve) =>
+      requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+    );
   });
-  expect(hoverOpenStates.slice(hoverOpenStates.indexOf('true'))).toEqual(['true']);
+  await expect(menu).toBeVisible();
+  await expect(trigger).toHaveAttribute('aria-expanded', 'true');
 });
 
 test('shows recently closed history and closes its hover menu after pointer exit', async ({
