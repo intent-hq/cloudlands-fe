@@ -28,7 +28,10 @@
 <section class:dark={theme === 'dark'} style:width="{width}px" style:zoom>
   <div class="bg-background p-4 text-foreground" data-testid="suggested-prompts-geometry-host">
     <SuggestedPrompts
-      prompts={['Review the implementation and verify the focused behavior.']}
+      prompts={[
+        'Review the change.',
+        'Review the implementation carefully and verify every focused behavior before continuing.',
+      ]}
       onSelect={() => {}}
       showShortcutHints
       {compact}
