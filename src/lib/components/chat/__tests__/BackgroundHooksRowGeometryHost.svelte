@@ -12,11 +12,15 @@
     width = 720,
     zoom = 1,
     running = false,
+    embedded = false,
+    hookCount = 1,
   }: {
     theme?: 'light' | 'dark';
     width?: number;
     zoom?: number;
     running?: boolean;
+    embedded?: boolean;
+    hookCount?: number;
   } = $props();
 
   const componentId = $props.id();
@@ -25,19 +29,19 @@
   const disposeStore = startRootStoreLifecycle(store, { startSagas: () => [] });
 
   $effect(() => {
-    const hook: BackgroundHook = {
-      hookId: 'geometry-hook',
+    const hooks: BackgroundHook[] = Array.from({ length: hookCount }, (_, index) => ({
+      hookId: `geometry-hook-${index}`,
       workspaceId,
       agentId,
-      name: 'Watch deployment checks without overflowing the panel',
+      name: `Watch deployment checks without overflowing the panel ${index + 1}`,
       delayMs: 60000,
       state: running ? 'running' : 'scheduled',
       createdAt: '2099-08-25T12:00:00.000Z',
       nextRunAt: '2099-08-25T12:10:00.000Z',
       expiresAt: '2099-08-25T13:00:00.000Z',
       runCount: 12,
-    };
-    store.dispatch(backgroundHooksUpdated(workspaceId, [hook]));
+    }));
+    store.dispatch(backgroundHooksUpdated(workspaceId, hooks));
   });
 
   onDestroy(() => {
@@ -55,5 +59,5 @@
   style:zoom
   data-testid="background-hooks-geometry-host"
 >
-  <BackgroundHooksRow {workspaceId} {agentId} />
+  <BackgroundHooksRow {workspaceId} {agentId} {embedded} />
 </section>

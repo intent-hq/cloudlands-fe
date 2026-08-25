@@ -95,12 +95,46 @@ describe('BackgroundHooksRow', () => {
     const icon = screen.getByTestId('background-hook-icon').querySelector('svg');
     expect(summary.textContent).toContain('ci-watch');
     expect(card.tagName).toBe('SECTION');
+    expect(card.className).toContain('mx-2');
+    expect(card.className).toContain('my-2');
     expect(card.className).toContain('rounded-lg');
+    expect(card.className).toContain('border');
     expect(card.className).toContain('border-border');
+    expect(card.className).toContain('bg-card');
+    expect(card.className).toContain('shadow-sm');
     expect(card.getAttribute('aria-labelledby')).toBe('background-hook-title-hook-1');
+    expect(document.getElementById('background-hook-title-hook-1')?.className).toContain(
+      'font-medium',
+    );
     expect(icon?.getAttribute('data-icon')).toBe('hourglass-medium');
     expect(icon?.getAttribute('width')).toBe('16');
     expect(icon?.getAttribute('height')).toBe('16');
+  });
+
+  it('renders embedded hooks as full-width flat rows with one shared divider', () => {
+    hooksState.hooks = [makeHook(), makeHook({ hookId: 'hook-2', name: 'release-watch' })];
+    render(BackgroundHooksRow, {
+      props: { workspaceId: 'ws-1', agentId: 'agent-1', embedded: true },
+    });
+
+    const row = screen.getByTestId('background-hooks-row');
+    expect(row.className).not.toContain('divide-y');
+    for (const card of screen.getAllByTestId('background-hook-card')) {
+      expect(card.className).toContain('background-hook-card--embedded');
+      expect(card.className).toContain('m-0');
+      expect(card.className).toContain('w-full');
+      expect(card.className).toContain('rounded-none');
+      expect(card.className).toContain('bg-transparent');
+      expect(card.className).toContain('shadow-none');
+      expect(card.className).not.toContain('rounded-lg');
+      expect(card.className).not.toContain('border-border');
+      expect(card.className).not.toContain('bg-card');
+      expect(card.className).not.toContain('shadow-sm');
+    }
+    for (const title of document.querySelectorAll('[id^="background-hook-title-"]')) {
+      expect(title.className).toContain('font-normal');
+      expect(title.className).not.toContain('font-medium');
+    }
   });
 
   it('gives hook chips a pointer cursor', () => {

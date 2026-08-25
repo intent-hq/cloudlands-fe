@@ -60,7 +60,7 @@
   let {
     workspaceId,
     agentId,
-    embedded: _embedded = false,
+    embedded = false,
     visible = $bindable(false),
     count = $bindable(0),
   }: Props = $props();
@@ -181,7 +181,9 @@
       {@const detailsId = `background-hook-details-${hook.hookId}`}
       {@const titleId = `background-hook-title-${hook.hookId}`}
       <section
-        class="background-hook-card mx-2 my-2 min-w-0 max-w-full overflow-hidden rounded-lg border border-border bg-card shadow-sm"
+        class="background-hook-card min-w-0 max-w-full overflow-hidden {embedded
+          ? 'background-hook-card--embedded m-0 w-full rounded-none bg-transparent shadow-none'
+          : 'mx-2 my-2 rounded-lg border border-border bg-card shadow-sm'}"
         data-hook-state={hook.state}
         data-testid="background-hook-card"
         data-subscription-motion-row="hook"
@@ -215,8 +217,11 @@
                 data-icon="hourglass-medium"
               />
             </span>
-            <span id={titleId} class="min-w-0 flex-1 truncate font-medium text-foreground"
-              >{hook.name}</span
+            <span
+              id={titleId}
+              class="min-w-0 flex-1 truncate text-foreground {embedded
+                ? 'font-normal'
+                : 'font-medium'}">{hook.name}</span
             >
             <span class="min-w-0 shrink truncate text-muted-foreground">{stateLabel(hook)}</span>
             {#if hook.nextRunAt}<span class="shrink-0 text-muted-foreground">{nextRunIn(hook)}</span
@@ -385,6 +390,19 @@
 
   .background-hook-card {
     container-type: inline-size;
+  }
+
+  .background-hook-card--embedded {
+    margin: 0;
+    border-width: 0;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+    width: 100%;
+  }
+
+  .background-hook-card--embedded + .background-hook-card--embedded {
+    border-top: 1px solid hsl(var(--border));
   }
 
   @container (max-width: 32rem) {
