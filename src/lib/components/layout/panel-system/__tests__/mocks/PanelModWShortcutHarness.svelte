@@ -112,7 +112,7 @@
       isMac: initialIsMac,
       register: (shortcut) => shortcutManager.register(shortcut),
       store: appStore,
-      getCurrentPath: () => '/',
+      getCurrentPath: () => `/workspace/${workspaceId}`,
       navigate: (path) => {
         navigationCount += 1;
         navigationPath = path;
