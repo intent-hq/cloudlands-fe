@@ -21,7 +21,7 @@ describe('panel lifecycle motion', () => {
     expect(layout).toContain('const stableContainerRoot = $derived(');
     expect(layout).toContain("direction: 'horizontal' as const");
     expect(layout).toContain('children: [$root$]');
-    expect(layout).toContain('node={stableContainerRoot}');
+    expect(layout).toContain('node={viewportOuterResizeRoot}');
     expect(container).toContain('{#each getSplitLayoutItems() as item (item.key)}');
     expect(container).toContain(
       'animate:translatePanel={{ duration: layoutMotionDuration, easing: cubicOut }}',
