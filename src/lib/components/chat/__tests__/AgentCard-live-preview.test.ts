@@ -129,11 +129,18 @@ describe('AgentCard live preview precedence', () => {
     const content = container.querySelector('.agent-card-content');
     const trailing = screen.getByTestId('agent-card-trailing-slot');
     expect(trigger.getAttribute('aria-label')).toBe('Task progress: 1 of 2 completed');
+    expect(trigger.className).toContain('h-7');
+    expect(trigger.className).toContain('w-fit');
     expect(
       within(trigger)
         .getAllByTestId('task-progress-status-icon')
         .map((icon) => icon.dataset.taskStatus),
     ).toEqual(['completed', 'running']);
+    expect(
+      within(trigger)
+        .getAllByTestId('task-progress-status-icon')
+        .every((icon) => icon.className.includes('size-4')),
+    ).toBe(true);
     expect(activationButton?.contains(trigger)).toBe(false);
     expect(activationButton?.className).toContain('overflow-hidden');
     expect(content?.className).toContain('mr-10');

@@ -74,6 +74,7 @@ describe('TaskProgressControl', () => {
     render(TaskProgressControl, { props: { tasks: statusTasks } });
 
     const icons = screen.getAllByTestId('task-progress-status-icon');
+    const stackItems = screen.getAllByTestId('task-progress-stack-item');
     expect(icons.map((icon) => icon.dataset.taskStatus)).toEqual([
       'completed',
       'pending',
@@ -97,7 +98,7 @@ describe('TaskProgressControl', () => {
     expect(
       icons.every(
         (icon) =>
-          icon.className.includes('size-5') &&
+          icon.className.includes('size-4') &&
           icon.className.includes('items-center') &&
           icon.className.includes('justify-center') &&
           icon.className.includes('rounded-full') &&
@@ -105,18 +106,52 @@ describe('TaskProgressControl', () => {
           !icon.className.includes('shadow'),
       ),
     ).toBe(true);
-    expect(icons.slice(1).every((icon) => icon.className.includes('-ml-2.5'))).toBe(true);
-    expect(icons.map((icon) => icon.style.zIndex)).toEqual(['', '1', '2', '3', '4', '5', '6']);
-    expect(icons[0].className).toContain('bg-green-700 text-white');
+    expect(stackItems.slice(1).every((item) => item.className.includes('-ml-2'))).toBe(true);
+    expect(stackItems.map((item) => item.style.zIndex)).toEqual(['', '1', '2', '3', '4', '5', '6']);
+    expect(icons[0].className).toContain('bg-primary text-primary-foreground');
     expect(icons[0].dataset.completedCount).toBe('2');
     expect(icons[1].className).toContain('bg-muted');
     expect(icons[2].className).toContain('bg-muted');
-    expect(icons.at(-1)?.className).toContain('bg-blue-100 text-blue-700');
+    expect(icons.slice(3).every((icon) => icon.className.includes('primary'))).toBe(true);
+    expect(icons.at(-1)?.className).toContain('bg-primary/20 text-primary');
+    expect(icons.every((icon) => !/(green|blue|amber|red|violet)-/.test(icon.className))).toBe(
+      true,
+    );
     expect(icons.at(-1)?.innerHTML).toContain('motion-reduce:animate-none');
     const trigger = screen.getByTestId('task-progress-trigger');
-    expect(trigger.className).toContain('bg-transparent!');
-    expect(trigger.className).toContain('hover:bg-transparent!');
-    expect(trigger.className).not.toContain('hover:bg-muted');
+    expect(trigger.className).toContain('h-7');
+    expect(trigger.className).toContain('w-fit');
+    expect(trigger.className).toContain('gap-0');
+    expect(trigger.className).toContain('p-0');
+    expect(trigger.className).toContain('m-0');
+    expect(trigger.className).not.toMatch(/(?:min-w-|p[lrxy]-|m[lrxy]-)/);
+  });
+
+  it('reuses the compact status indicators in every flat row', async () => {
+    const statusTasks: TaskProgressItem[] = [
+      ...tasks,
+      { id: 'discussion', title: 'Discuss the approach', status: 'discussion_needed' },
+      { id: 'blocked', title: 'Resolve the blocker', status: 'blocked' },
+      { id: 'review', title: 'Review the result', status: 'review_required' },
+    ];
+    render(TaskProgressControl, { props: { tasks: statusTasks } });
+    screen.getByTestId('task-progress-trigger').focus();
+    await screen.findByRole('dialog', { name: 'Agent tasks' });
+
+    const stackByStatus = new Map(
+      screen
+        .getAllByTestId('task-progress-status-icon')
+        .map((icon) => [icon.dataset.taskStatus, icon]),
+    );
+    const rowIcons = screen.getAllByTestId('task-progress-row-status-icon');
+    expect(rowIcons).toHaveLength(statusTasks.length);
+    expect(rowIcons.every((icon) => icon.className.includes('size-4'))).toBe(true);
+    for (const rowIcon of rowIcons) {
+      const stackIcon = stackByStatus.get(rowIcon.dataset.taskStatus);
+      expect(stackIcon).toBeTruthy();
+      expect(rowIcon.className).toBe(stackIcon?.className);
+      expect(rowIcon.innerHTML).toBe(stackIcon?.innerHTML);
+    }
   });
 
   it('shows exactly one solid completed disk when all tasks are complete', () => {
@@ -128,7 +163,7 @@ describe('TaskProgressControl', () => {
     expect(icons).toHaveLength(1);
     expect(icons[0].dataset.taskStatus).toBe('completed');
     expect(icons[0].dataset.completedCount).toBe('5');
-    expect(icons[0].className).toContain('bg-green-700 text-white');
+    expect(icons[0].className).toContain('bg-primary text-primary-foreground');
     expect(icons[0].className).not.toContain('border');
     expect(icons[0].className).not.toContain('shadow');
   });

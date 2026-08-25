@@ -10,7 +10,6 @@
     faSpinner,
     faTriangleExclamation,
   } from '@fortawesome/free-solid-svg-icons';
-  import Button from '$lib/components/ui/button/button.svelte';
   import ShimmerOverlay from '$lib/components/ui/ShimmerOverlay.svelte';
   import { formatInteger } from '$lib/i18n/format';
   import { m } from '$shared/paraglide/messages.js';
@@ -55,17 +54,14 @@
     return faCircle;
   }
 
-  function triggerStatusClass(status: TaskProgressStatus): string {
-    if (status === 'completed') return 'bg-green-700 text-white dark:bg-green-600 dark:text-white';
-    if (status === 'running')
-      return 'bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300';
-    if (status === 'waiting') return 'bg-muted text-muted-foreground';
-    if (status === 'discussion_needed')
-      return 'bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300';
-    if (status === 'blocked') return 'bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300';
-    if (status === 'review_required')
-      return 'bg-violet-100 text-violet-700 dark:bg-violet-950 dark:text-violet-300';
-    return 'bg-muted text-muted-foreground/60';
+  function statusIndicatorClass(status: TaskProgressStatus): string {
+    if (status === 'completed') return 'bg-primary text-primary-foreground';
+    if (status === 'running') return 'bg-primary/20 text-primary';
+    if (status === 'discussion_needed') return 'bg-primary/15 text-primary/90';
+    if (status === 'blocked') return 'bg-primary/25 text-primary';
+    if (status === 'review_required') return 'bg-primary/10 text-primary/80';
+    if (status === 'waiting') return 'bg-muted text-muted-foreground/80';
+    return 'bg-muted text-muted-foreground/50';
   }
 
   function handleOpenChange(nextOpen: boolean) {
@@ -80,16 +76,28 @@
   }
 </script>
 
-{#snippet taskRowContent(task: TaskProgressItem)}
-  <span class="inline-flex size-4 items-center justify-center" aria-hidden="true">
+{#snippet statusIndicator(status: TaskProgressStatus, testId: string, completedCount?: number)}
+  <span
+    class="inline-flex size-4 shrink-0 items-center justify-center rounded-full {statusIndicatorClass(
+      status,
+    )}"
+    aria-hidden="true"
+    data-testid={testId}
+    data-task-status={status}
+    data-completed-count={completedCount}
+  >
     <Fa
-      icon={statusIcon(task.status)}
-      size={task.status === 'pending' ? 7 : 13}
-      class="{task.status === 'pending'
-        ? 'size-2! opacity-50'
-        : 'size-3.5! opacity-70'} {task.status === 'running' ? 'motion-safe:animate-pulse' : ''}"
+      icon={statusIcon(status)}
+      size={status === 'pending' ? 6 : 8}
+      class="{status === 'pending' ? 'size-1.5!' : 'size-2!'} {status === 'running'
+        ? 'motion-safe:animate-spin motion-reduce:animate-none'
+        : ''}"
     />
   </span>
+{/snippet}
+
+{#snippet taskRowContent(task: TaskProgressItem)}
+  {@render statusIndicator(task.status, 'task-progress-row-status-icon')}
   <span
     class="min-w-0 truncate"
     class:line-through={task.status === 'completed'}
@@ -107,12 +115,11 @@
   <Popover.Root bind:open onOpenChange={handleOpenChange}>
     <Popover.Trigger openOnHover openDelay={120} closeDelay={180}>
       {#snippet child({ props })}
-        <Button
+        <button
           {...props}
-          bind:ref={triggerElement}
-          variant="plain"
-          size="xs"
-          class="h-6 min-w-0 rounded-full bg-transparent! p-0! hover:bg-transparent! focus-visible:bg-transparent!"
+          bind:this={triggerElement}
+          type="button"
+          class="relative m-0 inline-flex h-7 w-fit shrink-0 items-center justify-center gap-0 rounded-md border border-transparent bg-transparent p-0 text-muted-foreground outline-none transition-[border-color,box-shadow] duration-[var(--motion-fast)] focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40 motion-reduce:transition-none"
           aria-label={progressLabel}
           aria-expanded={open}
           onfocus={handleTriggerFocus}
@@ -125,37 +132,29 @@
           >
             {#if completedTasks.length > 0}
               <span
-                class="relative z-0 inline-flex size-5 shrink-0 items-center justify-center rounded-full {triggerStatusClass(
-                  'completed',
-                )}"
-                data-testid="task-progress-status-icon"
-                data-task-status="completed"
-                data-completed-count={completedTasks.length}
+                class="relative z-0 inline-flex shrink-0"
+                data-testid="task-progress-stack-item"
               >
-                <Fa icon={faCheck} size={10} class="size-2.5!" />
+                {@render statusIndicator(
+                  'completed',
+                  'task-progress-status-icon',
+                  completedTasks.length,
+                )}
               </span>
             {/if}
             {#each stackedActiveTasks as task, index (task.id)}
               <span
-                class="relative inline-flex size-5 shrink-0 items-center justify-center rounded-full {triggerStatusClass(
-                  task.status,
-                )} {completedTasks.length > 0 || index > 0 ? '-ml-2.5' : ''}"
+                class="relative inline-flex shrink-0 {completedTasks.length > 0 || index > 0
+                  ? '-ml-2'
+                  : ''}"
                 style:z-index={index + 1}
-                data-testid="task-progress-status-icon"
-                data-task-status={task.status}
+                data-testid="task-progress-stack-item"
               >
-                <Fa
-                  icon={statusIcon(task.status)}
-                  size={task.status === 'pending' ? 6 : 10}
-                  class="{task.status === 'pending' ? 'size-1.5!' : 'size-2.5!'} {task.status ===
-                  'running'
-                    ? 'motion-safe:animate-spin motion-reduce:animate-none'
-                    : ''}"
-                />
+                {@render statusIndicator(task.status, 'task-progress-status-icon')}
               </span>
             {/each}
           </span>
-        </Button>
+        </button>
       {/snippet}
     </Popover.Trigger>
     <Popover.Portal>

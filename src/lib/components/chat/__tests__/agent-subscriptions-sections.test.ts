@@ -1179,6 +1179,13 @@ describe('AgentSubscriptions unified waiting disclosure', () => {
 
     expect(nativeTrigger.getAttribute('aria-label')).toBe('Task progress: 1 of 2 completed');
     expect(linkedTrigger.getAttribute('aria-label')).toBe('Task progress: 1 of 1 completed');
+    expect(nativeTrigger.className).toContain('h-7');
+    expect(nativeTrigger.className).toContain('w-fit');
+    expect(
+      within(nativeTrigger)
+        .getAllByTestId('task-progress-status-icon')
+        .every((icon) => icon.className.includes('size-4')),
+    ).toBe(true);
     expect(activationButton.contains(nativeTrigger)).toBe(false);
     expect(nativeRow.querySelector('.agent-card-content')?.className).toContain('mr-24');
     expect(within(nativeRow).getByTestId('agent-card-trailing-slot').className).toContain('w-24');
