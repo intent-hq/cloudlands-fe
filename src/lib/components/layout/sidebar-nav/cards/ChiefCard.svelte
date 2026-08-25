@@ -40,6 +40,7 @@
     setActiveAgentId,
   } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
   import { selectAgentsLoaded } from '$store/renderer/slices/workspace-agents/workspace-agents-selectors';
+  import { selectHasResolvableProvider } from '$store/renderer/slices/model/model-selectors';
   import { createAgentTypeId } from '$shared/types/agent.types';
   import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
   import {
@@ -60,6 +61,7 @@
   const currentChiefThread$ = selectCurrentChiefThread();
   const chiefActiveAgentId$ = selectChiefActiveAgentId();
   const chiefAgentsLoaded$ = selectAgentsLoaded(CHIEF_WORKSPACE_ID);
+  const hasResolvableProvider$ = selectHasResolvableProvider();
 
   interface Props {
     expanded?: boolean;
@@ -155,18 +157,22 @@
     ) {
       return;
     }
-    hasAutoStartedRef = true;
-
     // Existing conversations keep the system prompt they were created with.
     // Migrate the visible selection to a current-identity thread, or create
     // one when this installation only has legacy generic-agent threads.
     if ($currentChiefThread$) {
+      hasAutoStartedRef = true;
       const agentId = $currentChiefThread$.agentId;
       selectedAgentId = agentId;
       appStore.dispatch(setChiefActiveAgentId(agentId));
       appStore.dispatch(setActiveAgentId(CHIEF_WORKSPACE_ID, agentId));
       return;
     }
+    // No resolvable provider/model (fresh backend, providers.active unset):
+    // agent.create would be rejected by the daemon, so skip silently and let
+    // this effect retry once a provider is configured.
+    if (!$hasResolvableProvider$) return;
+    hasAutoStartedRef = true;
     void createNewThread();
   });
 

@@ -74,6 +74,19 @@ export const selectHasResolvableModel = store.createSelector(
   },
 );
 
+/**
+ * Whether launching an agent with unpinned config would carry a resolvable
+ * provider or model. Mirrors the launch saga's resolution (`launchAgent`):
+ * `model` falls back to `selectSelectedModel` and `provider` to the active
+ * provider id, so when both resolve to '' (fresh backend, `providers.active`
+ * unset) the daemon rejects `agent.create` with "no default provider/model
+ * is configured". Auto-start flows (e.g. the Chief thread) gate on this to
+ * skip silently until a provider is configured.
+ */
+export const selectHasResolvableProvider = store.createSelector((state): boolean => {
+  return selectActiveProviderId.select(state) !== '' || selectHasResolvableModel.select(state);
+});
+
 const selectAvailableModelsCollection = store.createSelector(
   (state): Collection<AuggieModel, 'value'> => {
     return state.model.availableModels;

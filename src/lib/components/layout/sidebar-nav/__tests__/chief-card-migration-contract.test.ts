@@ -52,4 +52,18 @@ describe('Chief card migration contract', () => {
   it('shares one in-flight Chief launch across mounted card hosts', () => {
     expect(source).toContain('ensureChiefThreadCreation');
   });
+
+  it('gates thread auto-start on a resolvable provider without latching the skip', () => {
+    expect(source).toContain('const hasResolvableProvider$ = selectHasResolvableProvider()');
+    expect(source).toContain('if (!$hasResolvableProvider$) return;');
+    // The provider-less skip must not set hasAutoStartedRef, so the effect
+    // re-runs and auto-starts once a provider is configured. Selecting an
+    // existing thread stays ungated (no agent.create involved).
+    expect(source.indexOf('hasAutoStartedRef = true')).toBeGreaterThan(
+      source.indexOf('if ($currentChiefThread$)'),
+    );
+    expect(source.indexOf('if (!$hasResolvableProvider$) return;')).toBeLessThan(
+      source.indexOf('void createNewThread();'),
+    );
+  });
 });
