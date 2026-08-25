@@ -147,13 +147,16 @@ describe('agentMutationSaga', () => {
   });
 
   it('surfaces an agent.restore daemon failure as an error toast and rejects', async () => {
+    // Per §5.5 a non-retired restore is a no-op success; the documented failure
+    // shape is a thrown wire error (e.g. cross-workspace NotFound) that
+    // LiveAgentsClient.restore folds into { success: false, error }.
     const existing = session(A1, { retiredAt: '2026-01-02T00:00:00.000Z' });
-    mocks.restore.mockResolvedValue({ success: false, error: 'not retired' });
+    mocks.restore.mockResolvedValue({ success: false, error: 'agent not found' });
     const { channel, dispatched, task } = start({ [A1]: existing });
     const action = restoreRetiredAgentRequested(WS, A1);
     channel.put(action);
 
-    await expect(action.promise).rejects.toThrow('not retired');
+    await expect(action.promise).rejects.toThrow('agent not found');
     await settle();
     expect(mocks.error).toHaveBeenCalled();
     expect(

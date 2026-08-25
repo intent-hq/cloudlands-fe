@@ -83,13 +83,11 @@ function normalizeAgent(raw: Record<string, unknown>): AgentSession {
     updatedAt: String(raw.updatedAt ?? now),
   } as AgentSession;
   // `retiredAt` (§5.5 soft retire, v7.5) is presence-detected on the wire:
-  // set on retired rows, omitted (never null) on active ones. Only a real
-  // string survives normalization so downstream `retiredAt` truthiness checks
-  // stay reliable.
+  // set on retired rows, omitted (never null) on active ones. Pure presence
+  // pass-through — assign only when a non-empty string is present; a
+  // divergent shape (null, empty string) is not healed away client-side.
   if (typeof raw.retiredAt === 'string' && raw.retiredAt.length > 0) {
     session.retiredAt = raw.retiredAt;
-  } else {
-    delete session.retiredAt;
   }
   // Per-agent unread (monorepo#1597): derived here so every AgentLite ingest
   // path — list/get reads, new-message pushes, and the agent:updated marker

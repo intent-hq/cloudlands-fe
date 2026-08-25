@@ -90,7 +90,9 @@ function newestUserMessageTimestamp(agent: AgentSession): number | null {
 
 /** Resolve the daemon-owned initial agent without inventing a replacement. */
 export function resolveCanonicalInitialAgent(agents: AgentSession[]): AgentSession | null {
-  const ordered = [...agents].sort(byCreatedOrder);
+  // Retired sessions (§5.5 soft retire) are read-only archive rows — never
+  // resolve one as the workspace's initial agent (mirrors resolveEmptyLayoutAgent).
+  const ordered = agents.filter((agent) => !agent.retiredAt).sort(byCreatedOrder);
   return (
     ordered.find((agent) => agent.isInitialAgent === true) ??
     ordered.find((agent) => agent.metadata?.isInitialAgent === true) ??

@@ -903,7 +903,8 @@
     chatTranscriptBottomInsetClass({
       isChiefWorkspace,
       isCompactMode,
-      showQueue: queuedMessagesVisibility.showQueue,
+      // Mirrors the render gate: retired sessions hide the queue block.
+      showQueue: queuedMessagesVisibility.showQueue && !isRetiredSession,
     }),
   );
 
@@ -4081,6 +4082,12 @@
     appStore.dispatch(agentSessionRetryWithModelRequested(agentId, workspace.id, model));
   }
 
+  // Retired sessions (PROTOCOL §5.5) are read-only: withhold the mutating
+  // retry callbacks so StreamingStatus never renders Retry/Retry-with-model
+  // affordances that would hit the daemon's retired-session guard.
+  const gatedRetry = $derived(isRetiredSession ? undefined : handleRetry);
+  const gatedRetryWithModel = $derived(isRetiredSession ? undefined : handleRetryWithModel);
+
   // Handle changing the specialist for an agent
   // The specialist can be changed at any time - even after messages have been sent.
   // The new specialist behavior will apply to subsequent messages.
@@ -4768,8 +4775,8 @@
                           failedAt={effectiveFailedAt}
                           modelUnavailable={$chatModelUnavailable$}
                           {hasPendingPermission}
-                          onRetry={handleRetry}
-                          onRetryWithModel={handleRetryWithModel}
+                          onRetry={gatedRetry}
+                          onRetryWithModel={gatedRetryWithModel}
                           onStop={handleStop}
                           seed={agentId}
                           statusEvents={$chatStatusEvents$}
@@ -4793,8 +4800,8 @@
                         failedAt={effectiveFailedAt}
                         modelUnavailable={$chatModelUnavailable$}
                         {hasPendingPermission}
-                        onRetry={handleRetry}
-                        onRetryWithModel={handleRetryWithModel}
+                        onRetry={gatedRetry}
+                        onRetryWithModel={gatedRetryWithModel}
                         onStop={handleStop}
                         seed={agentId}
                         statusEvents={$chatStatusEvents$}
@@ -4875,8 +4882,8 @@
                           failedAt={effectiveFailedAt}
                           modelUnavailable={$chatModelUnavailable$}
                           {hasPendingPermission}
-                          onRetry={handleRetry}
-                          onRetryWithModel={handleRetryWithModel}
+                          onRetry={gatedRetry}
+                          onRetryWithModel={gatedRetryWithModel}
                           onStop={handleStop}
                           seed={agentId}
                           statusEvents={$chatStatusEvents$}
@@ -4900,8 +4907,8 @@
                         failedAt={effectiveFailedAt}
                         modelUnavailable={$chatModelUnavailable$}
                         {hasPendingPermission}
-                        onRetry={handleRetry}
-                        onRetryWithModel={handleRetryWithModel}
+                        onRetry={gatedRetry}
+                        onRetryWithModel={gatedRetryWithModel}
                         onStop={handleStop}
                         seed={agentId}
                         statusEvents={$chatStatusEvents$}
@@ -4930,8 +4937,8 @@
                   failedAt={effectiveFailedAt}
                   modelUnavailable={$chatModelUnavailable$}
                   {hasPendingPermission}
-                  onRetry={handleRetry}
-                  onRetryWithModel={handleRetryWithModel}
+                  onRetry={gatedRetry}
+                  onRetryWithModel={gatedRetryWithModel}
                   onStop={handleStop}
                   seed={agentId}
                   statusEvents={$chatStatusEvents$}
@@ -5187,8 +5194,10 @@
                                 messageId={message.id}
                                 ownsMessageIdentity={false}
                                 {workspace}
-                                onEditSubmit={(newText, model, blocks) =>
-                                  handleEditMessage(message.id, newText, model, blocks)}
+                                onEditSubmit={isRetiredSession
+                                  ? undefined
+                                  : (newText, model, blocks) =>
+                                      handleEditMessage(message.id, newText, model, blocks)}
                                 onEditStateChange={(isEditing) =>
                                   handleTurnEditStateChange(turnKey, isEditing)}
                                 editModel={turn.assistantMessages[0]?.metadata?.model ??
@@ -5232,8 +5241,8 @@
                               failedAt={effectiveFailedAt}
                               modelUnavailable={$chatModelUnavailable$}
                               {hasPendingPermission}
-                              onRetry={handleRetry}
-                              onRetryWithModel={handleRetryWithModel}
+                              onRetry={gatedRetry}
+                              onRetryWithModel={gatedRetryWithModel}
                               onStop={handleStop}
                               seed={agentId}
                               statusEvents={$chatStatusEvents$}
@@ -5280,9 +5289,13 @@
                               ownsMessageIdentity={false}
                               {workspace}
                               isStreaming={isCurrentlyStreaming}
-                              onEditSubmit={(newText, model, blocks) =>
-                                handleEditMessage(message.id, newText, model, blocks)}
-                              onRegenerate={() => handleRegenerateFromMessage(message.id)}
+                              onEditSubmit={isRetiredSession
+                                ? undefined
+                                : (newText, model, blocks) =>
+                                    handleEditMessage(message.id, newText, model, blocks)}
+                              onRegenerate={isRetiredSession
+                                ? undefined
+                                : () => handleRegenerateFromMessage(message.id)}
                               onFork={() => handleForkFromMessage(message.id)}
                               backendSessionId={auggieSessionId}
                               suppressCoordinationStoppedIndicator={turn.userMessage
@@ -5304,8 +5317,8 @@
                                 failedAt={effectiveFailedAt}
                                 modelUnavailable={$chatModelUnavailable$}
                                 {hasPendingPermission}
-                                onRetry={handleRetry}
-                                onRetryWithModel={handleRetryWithModel}
+                                onRetry={gatedRetry}
+                                onRetryWithModel={gatedRetryWithModel}
                                 onStop={handleStop}
                                 seed={agentId}
                                 statusEvents={$chatStatusEvents$}
@@ -5377,8 +5390,8 @@
                     failedAt={effectiveFailedAt}
                     modelUnavailable={$chatModelUnavailable$}
                     {hasPendingPermission}
-                    onRetry={handleRetry}
-                    onRetryWithModel={handleRetryWithModel}
+                    onRetry={gatedRetry}
+                    onRetryWithModel={gatedRetryWithModel}
                     onStop={handleStop}
                     seed={agentId}
                     statusEvents={$chatStatusEvents$}
@@ -5451,8 +5464,10 @@
             {/key}
           {/if}
 
-          <!-- Queued messages remain in the same scroll/follow surface. -->
-          {#if queuedMessagesVisibility.showQueue}
+          <!-- Queued messages remain in the same scroll/follow surface.
+               Hidden on retired sessions: the queue's edit/remove/send-now
+               controls all mutate daemon state a retired agent rejects. -->
+          {#if queuedMessagesVisibility.showQueue && !isRetiredSession}
             <div
               class="relative z-20 mt-6 {isChiefWorkspace
                 ? 'w-full'

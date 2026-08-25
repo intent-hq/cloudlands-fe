@@ -216,7 +216,7 @@
       </div>
     {/each}
   </div>
-{:else if topLevelForegroundAgents.length === 0 && standaloneBackgroundAgents.length === 0}
+{:else if topLevelForegroundAgents.length === 0 && standaloneBackgroundAgents.length === 0 && retiredAgents.length === 0}
   <ListEmpty
     message={hasActiveSearch
       ? m.workspace_agentsList_noSearchResults_label()
