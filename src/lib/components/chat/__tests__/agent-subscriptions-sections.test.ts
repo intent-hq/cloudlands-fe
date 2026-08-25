@@ -864,6 +864,65 @@ describe('AgentSubscriptions unified waiting disclosure', () => {
     expect(visibleAgentIds()).toEqual(['agent-failed', 'agent-done']);
   });
 
+  it('moves a message-resumed agent out of the finished group while its turn runs (monorepo#3405)', async () => {
+    const wsId = 'ws-finished-resumed';
+    const agents = [
+      'agent-a',
+      'agent-b',
+      'agent-resumed',
+      'agent-c',
+      'agent-d',
+      'agent-e',
+      'agent-f',
+    ];
+    seedSession('agent-a', '2026-01-02T00:00:00.000Z', 'completed', wsId);
+    seedSession('agent-b', '2026-01-03T00:00:00.000Z', 'completed', wsId);
+    // Resumed by an interrupt message: still listed in the delegation group's
+    // completedAgentIds, but the live session shows a running turn again.
+    seedSession('agent-resumed', '2026-01-04T00:00:00.000Z', 'responding', wsId, {
+      isResponding: true,
+    });
+    const wire = snapshot(
+      [groupSubscription('group-resume', wsId, agents)],
+      [delegationGroup('group-resume', agents, ['agent-a', 'agent-b', 'agent-resumed'])],
+    );
+    await renderWithSnapshot(wsId, wire);
+
+    await expandWaitingAgents();
+    const summary = screen.getByTestId('finished-agent-summary');
+    expect(summary.textContent?.trim()).toBe('2 agents finished');
+    // The resumed agent renders as an active ungrouped row, sorted into the
+    // active tier ahead of the idle/waiting rows.
+    expect(visibleAgentIds()).toEqual([
+      'agent-resumed',
+      'agent-c',
+      'agent-d',
+      'agent-e',
+      'agent-f',
+    ]);
+    expect(
+      within(agentRow('agent-resumed')).getByTestId('mock-avatar-with-state').dataset.state,
+    ).not.toBe('completed');
+    await fireEvent.click(summary);
+    const finishedIds = within(screen.getByTestId('finished-agent-list'))
+      .getAllByTestId('agent-list-item')
+      .map((row) => row.getAttribute('data-agent-id'));
+    expect(finishedIds).toEqual(['agent-b', 'agent-a']);
+
+    // Once the resumed turn settles, the agent returns to the finished group.
+    seedSession('agent-resumed', '2026-01-05T00:00:00.000Z', 'completed', wsId);
+    await refetch(wsId, wire);
+    await waitFor(() =>
+      expect(screen.getByTestId('finished-agent-summary').textContent?.trim()).toBe(
+        '3 agents finished',
+      ),
+    );
+    const settledFinishedIds = within(screen.getByTestId('finished-agent-list'))
+      .getAllByTestId('agent-list-item')
+      .map((row) => row.getAttribute('data-agent-id'));
+    expect(settledFinishedIds).toEqual(['agent-resumed', 'agent-b', 'agent-a']);
+  });
+
   it('renders every agent instead of truncating the list to +n', async () => {
     const wsId = 'ws-waiting-full-list';
     const agents = Array.from({ length: 8 }, (_, index) => `agent-${index + 1}`);
