@@ -40,10 +40,6 @@ export const selectWorkspaceTabOrder = store.createSelector((state) => {
   return state.tabState.workspaceStacks.flatMap((stack) => stack);
 });
 
-export const selectWorkspaceStacks = store.createSelector((state) => {
-  return state.tabState.workspaceStacks;
-});
-
 export const selectActiveWorkspaceIds = store.createSelector((state): string[] => {
   return Object.keys(state.tabState.openTabs).filter(
     (workspaceId) => state.tabState.openTabs[workspaceId] === true,
