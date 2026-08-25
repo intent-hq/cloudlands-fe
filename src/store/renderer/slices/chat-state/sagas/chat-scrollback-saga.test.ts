@@ -641,6 +641,38 @@ describe('chatScrollbackSaga (on-demand history paging)', () => {
     await run.task.toPromise();
   });
 
+  it('a resumed:false snapshot clears a stranded fetching flag even while the wire call hangs', async () => {
+    const run = harness();
+    run.dispatch(bulkUpsertSessions([session({ messages: [message('m-10', 10)] })]));
+    // Transport died mid-fetch: the promise never settles, so the saga's
+    // finally-settle can never clear the flag — the reducer's atomic reset
+    // on the discard snapshot must.
+    mocks.getConversation.mockReturnValueOnce(new Promise(() => {}));
+    run.channel.put(olderHistoryPageRequested(WS, AGENT));
+    await settle();
+    expect(run.chat()?.fetchingOlderHistory).toBe(true);
+
+    // Dispatch (not a bare channel put): the reducers must see the snapshot
+    // — the atomic reset under test lives there, not in the saga chain.
+    run.dispatch(
+      chatTranscriptSnapshotApplied(AGENT, {
+        truncated: false,
+        totalMessages: 3,
+        resumed: false,
+      }),
+    );
+    await settle();
+
+    expect(run.chat()?.fetchingOlderHistory).toBe(false);
+    expect(run.chat()?.fetchingGapFill).toBe(false);
+    expect(run.chat()?.fetchingHistorySeek).toBe(false);
+    expect(run.chat()?.scrollbackOlderToken).toBeNull();
+    expect(run.chat()?.scrollbackGapToken).toBeNull();
+    expect(run.history()).toBeUndefined();
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
   // ── Far-flick seek (aroundIndex) ────────────────────────────────────────
 
   it('seek REPLACES the segment with the landing page, opens the gap, persists both cursors', async () => {

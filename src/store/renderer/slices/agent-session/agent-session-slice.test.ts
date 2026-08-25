@@ -50,6 +50,7 @@ import {
   chatSendStarted,
   chatInitialized,
   chatReset,
+  chatTranscriptSnapshotApplied,
   streamCompleted,
 } from '../chat-state/chat-state-slice';
 import { splitUnloadedRows } from '$lib/components/chat/chat-scrollback-composition';
@@ -6027,6 +6028,55 @@ describe('history segment (scrollback)', () => {
     it('clearHistorySegment is a no-op when no segment exists', () => {
       const state = withSession();
       expect(agentSessionReducer(state, clearHistorySegment('a1'))).toBe(state);
+    });
+  });
+
+  describe('transcript discard (§7.1 resumed:false snapshot)', () => {
+    it('drops the history segment in the same dispatch as the snapshot', () => {
+      let state = withSession();
+      state = agentSessionReducer(state, prependHistoryMessages('a1', [histMsg(0)]));
+      state = agentSessionReducer(
+        state,
+        chatTranscriptSnapshotApplied('a1', {
+          truncated: true,
+          totalMessages: 20,
+          resumed: false,
+        }),
+      );
+      expect(getHistory(state, 'a1')).toBeUndefined();
+    });
+
+    it('a resumed:true or plain snapshot keeps the segment', () => {
+      let state = withSession();
+      state = agentSessionReducer(state, prependHistoryMessages('a1', [histMsg(0)]));
+      state = agentSessionReducer(
+        state,
+        chatTranscriptSnapshotApplied('a1', {
+          truncated: true,
+          totalMessages: 20,
+          resumed: true,
+        }),
+      );
+      expect(getHistory(state, 'a1')).toBeDefined();
+      state = agentSessionReducer(
+        state,
+        chatTranscriptSnapshotApplied('a1', { truncated: true, totalMessages: 20 }),
+      );
+      expect(getHistory(state, 'a1')).toBeDefined();
+    });
+
+    it('is a no-op when the discarded agent has no segment', () => {
+      const state = withSession();
+      expect(
+        agentSessionReducer(
+          state,
+          chatTranscriptSnapshotApplied('a1', {
+            truncated: false,
+            totalMessages: 0,
+            resumed: false,
+          }),
+        ),
+      ).toBe(state);
     });
   });
 

@@ -1152,6 +1152,23 @@ chatStateReducer.with(chatTranscriptSnapshotApplied, (state, { payload: [agentId
     // A snapshot from the CURRENT subscription is exactly what the
     // switch-back reveal gate waits for — reveal the transcript.
     awaitingSwitchBackSnapshot: false,
+    // §7.1 `resumed: false` discard: the retained transcript (history
+    // segment included) is dropped, so the whole scrollback walk resets
+    // ATOMICALLY with the snapshot — stranded fetching flags from a wire
+    // call that died with the socket would otherwise freeze the spacer
+    // reconcile and suppress every walk driver forever. The saga's
+    // `clearHistorySegment` chain still runs (and is idempotent here);
+    // the `historySeekUnsupported` latch is a daemon capability, not walk
+    // state, and survives.
+    ...(meta.resumed === false
+      ? {
+          fetchingOlderHistory: false,
+          fetchingGapFill: false,
+          fetchingHistorySeek: false,
+          scrollbackOlderToken: null,
+          scrollbackGapToken: null,
+        }
+      : {}),
   });
 });
 chatStateReducer.with(

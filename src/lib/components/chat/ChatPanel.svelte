@@ -2061,6 +2061,44 @@
     });
   });
 
+  // Transcript discard (§7.1 `resumed: false` seq-0 snapshot, e.g. after an
+  // intentd restart): the store dropped the retained transcript and the
+  // reducers reset the walk cursors + fetching flags atomically — but the
+  // panel-local walk geometry (spacers, seek debounce, landing-pending) was
+  // sized against the discarded rows and would strand the viewport inside a
+  // phantom spacer over an empty store. Zero it all and re-anchor to the
+  // fresh tail. Keyed on the snapshot seq so only a NEW discard fires; the
+  // first observation per agent only records the baseline (a mount over an
+  // already-discarded snapshot has nothing to reset).
+  let discardBaselineAgentId: string | undefined;
+  let discardBaselineSeq = -1;
+  $effect(() => {
+    const meta = $transcriptSnapshotMeta$;
+    const currentAgentId = agentId;
+    untrack(() => {
+      if (currentAgentId !== discardBaselineAgentId) {
+        discardBaselineAgentId = currentAgentId;
+        discardBaselineSeq = meta?.seq ?? -1;
+        return;
+      }
+      const seq = meta?.seq ?? -1;
+      if (seq === discardBaselineSeq) return;
+      const isNewDiscard = discardBaselineSeq !== -1 && meta?.resumed === false;
+      discardBaselineSeq = seq;
+      if (!isNewDiscard) return;
+      cancelSeekDebounce();
+      seekLandingPending = false;
+      pendingSeekTargetOrdinal = null;
+      virtualSpacerHeight = 0;
+      virtualSpacerBelowHeight = 0;
+      shouldFollowBottom = true;
+      tick().then(() => {
+        if (isComponentDestroyed || !scrollContainer) return;
+        followToBottom(scrollContainer);
+      });
+    });
+  });
+
   // ── Virtual scrollbar: spacer above the resident rows ─────────────────
   // Sized to the ESTIMATED unloaded extent (unloaded rows x smoothed average
   // row height) so the scrollbar represents the full conversation. The
