@@ -326,7 +326,11 @@ describe('FileTabType Redux integration', () => {
           return [directoryNode('20260824T234627Z-frontend-preview')];
         }
         if (path === '.demo-artifacts/20260824T234627Z-frontend-preview') {
-          return [fileNode('frontend-preview.png'), fileNode('frontend-preview.webm')];
+          return [
+            fileNode('frontend-preview.png'),
+            fileNode('frontend-preview.gif'),
+            fileNode('frontend-preview.webm'),
+          ];
         }
         return [];
       });
@@ -534,6 +538,10 @@ describe('FileTabType Redux integration', () => {
     [
       'frontend-preview.webm',
       '.demo-artifacts/20260824T234627Z-frontend-preview/frontend-preview.webm',
+    ],
+    [
+      'frontend-preview.gif',
+      '.demo-artifacts/20260824T234627Z-frontend-preview/frontend-preview.gif',
     ],
   ])(
     'retargets noncanonical media %s before rendering its final binary URL',

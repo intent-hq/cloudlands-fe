@@ -15,6 +15,7 @@ const packageJson = JSON.parse(readFileSync(join(__dirname, 'package.json'), 'ut
 const paraglideProject = join(__dirname, 'project.inlang');
 const paraglideOutdir = join(__dirname, 'src/shared/paraglide');
 const messagesDir = join(__dirname, 'messages');
+const normalizeWatcherPath = (file) => file.replace(/\\/g, '/');
 
 function canReuseGeneratedParaglide() {
   const outputs = ['messages.js', 'runtime.js'].map((file) => join(paraglideOutdir, file));
@@ -39,11 +40,12 @@ const reuseGeneratedParaglide = () => ({
     this.addWatchFile(join(paraglideProject, 'settings.json'));
   },
   async watchChange(file) {
-    const normalizedFile = file.replace(/\\/g, '/');
-    const normalizedMessagesDir = messagesDir.replace(/\\/g, '/');
+    const normalizedFile = normalizeWatcherPath(file);
+    const normalizedMessagesDir = normalizeWatcherPath(messagesDir);
+    const normalizedProjectSettings = normalizeWatcherPath(join(paraglideProject, 'settings.json'));
     const isMessage =
       normalizedFile.startsWith(`${normalizedMessagesDir}/`) && normalizedFile.endsWith('.json');
-    const isProjectSettings = normalizedFile === join(paraglideProject, 'settings.json');
+    const isProjectSettings = normalizedFile === normalizedProjectSettings;
     if (!isMessage && !isProjectSettings) return;
 
     await compile({

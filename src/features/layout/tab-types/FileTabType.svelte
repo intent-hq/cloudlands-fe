@@ -257,7 +257,7 @@
         resolvedWorkspaceMediaPath = requestedPath;
         return;
       }
-      if (!/\.(?:png|jpe?g|webp|mp4|webm)$/i.test(requestedPath)) {
+      if (!/\.(?:png|jpe?g|gif|webp|mp4|webm)$/i.test(requestedPath)) {
         resolvedWorkspaceMediaPath = requestedPath;
         return;
       }

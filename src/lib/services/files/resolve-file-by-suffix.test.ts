@@ -26,13 +26,14 @@ describe('resolveFileBySuffix', () => {
     vi.restoreAllMocks();
   });
 
-  it.each(['frontend-preview.png', 'frontend-preview.webm'])(
+  it.each(['frontend-preview.png', 'frontend-preview.gif', 'frontend-preview.webm'])(
     'finds an ignored nested %s only through bounded artifact directory listings',
     async (name) => {
       const list = mockArtifactTree({
         '.demo-artifacts': [directory('20260824T234627Z-frontend-preview')],
         '.demo-artifacts/20260824T234627Z-frontend-preview': [
           file('frontend-preview.png'),
+          file('frontend-preview.gif'),
           file('frontend-preview.webm'),
         ],
       });

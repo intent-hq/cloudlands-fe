@@ -22,7 +22,7 @@ const ARTIFACT_MAX_DEPTH = 4;
 const ARTIFACT_MAX_ENTRIES = 256;
 const ARTIFACT_MAX_CALLS = 24;
 const ARTIFACT_MAX_LATENCY_MS = 750;
-const MEDIA_EXTENSION_PATTERN = /\.(?:jpe?g|png|webp|mp4|webm)$/i;
+const MEDIA_EXTENSION_PATTERN = /\.(?:jpe?g|png|gif|webp|mp4|webm)$/i;
 
 /** Suffix-resolution outcome: matching candidates plus an incomplete-result signal. */
 export interface SuffixResolution {

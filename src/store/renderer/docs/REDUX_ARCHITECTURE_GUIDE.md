@@ -18,29 +18,33 @@ The renderer app uses one configured `Store` instance from
 `@augmentcode/themis/svelte-store`.
 These files are the repository-specific map for how that instance is assembled:
 
-| File                                     | Role                                                                                                                                         |
-| ---------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
-| `src/store/renderer/configured-store.ts` | Creates the configured Store from app reducers and middleware.                                                                               |
-| `src/store/renderer/reducer.ts`          | Registers app-owned reducer domains. Package-owned internals are managed by the package.                                                     |
-| `src/store/renderer/sagas.ts`            | Defines the function-only ordered app saga array and the `startAllAppSagas(store)` startup helper.                                           |
-| `src/store/renderer/store.ts`            | Re-exports the configured Store, inferred state types, debug helpers, and a temporary bridge for remaining compatibility surfaces.           |
-| `src/routes/+layout.svelte`              | Initializes the configured Store, calls `startAllAppSagas(appStore)`, and disposes saga cancels plus the Store context during root teardown. |
+| File                                        | Role                                                                                                                               |
+| ------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| `src/store/renderer/configured-store.ts`    | Creates the configured Store from app reducers and middleware.                                                                     |
+| `src/store/renderer/reducer.ts`             | Registers app-owned reducer domains. Package-owned internals are managed by the package.                                           |
+| `src/store/renderer/sagas.ts`               | Defines the function-only ordered app saga array and the `startAllAppSagas(store)` startup helper.                                 |
+| `src/store/renderer/store.ts`               | Re-exports the configured Store, inferred state types, debug helpers, and a temporary bridge for remaining compatibility surfaces. |
+| `src/store/renderer/app-store-lifecycle.ts` | Starts app sagas and app-only diagnostics, then disposes them together.                                                            |
+| `src/routes/+layout.svelte`                 | Owns the shared root lifecycle that initializes and disposes the Store context. It does not start app sagas.                       |
+| `src/routes/(app)/+layout.svelte`           | Starts and disposes `app-store-lifecycle.ts` for production app routes.                                                            |
 
 ## Side effects
 
-Root-owned sagas are the only business side-effect layer. Store middleware is
-limited to the five infrastructure/diagnostic entries in `middleware.ts`: store
-guards, action batching, logging, state-reference checks, and structured-clone
-checks. Do not add API, IPC, storage, timer, subscription, toast, navigation, or
-persistence work through middleware or a new renderer bridge.
+App-route-owned sagas are the only business side-effect layer. Store middleware
+is limited to the five infrastructure/diagnostic entries in `middleware.ts`:
+store guards, action batching, logging, state-reference checks, and
+structured-clone checks. Do not add API, IPC, storage, timer, subscription,
+toast, navigation, or persistence work through middleware or a new renderer
+bridge.
 
 Keep this shape aligned with the skills:
 
 - App reducers are passed to the `Store` constructor.
 - App sagas are functions listed in startup order in `src/store/renderer/sagas.ts`.
-- After Store init/root setup, the root layout calls `startAllAppSagas(store)`,
-  which starts each listed saga with `store.runSaga(sagaFn)` and returns cancel
-  functions for teardown.
+- The shared root layout initializes the Store context without app sagas.
+- The app route layout calls `startAppStoreLifecycle(store)`. That lifecycle calls
+  `startAllAppSagas(store)`, starts each listed saga with `store.runSaga(sagaFn)`,
+  and owns the cancel functions for app-route teardown.
 - `store.init()` does not auto-start app sagas.
 - State types should be inferred from the configured Store instance.
 - Package-owned internal reducers and saga-manager behavior are not app APIs.
@@ -87,7 +91,8 @@ files.
    slice types in dedicated `*-types.ts` modules when needed.
 4. Register new app reducers in `src/store/renderer/reducer.ts`.
 5. Add new app saga functions to the ordered array in `src/store/renderer/sagas.ts`;
-   `startAllAppSagas(store)` includes that array in root startup after Store init.
+   `app-store-lifecycle.ts` starts that array for `src/routes/(app)/+layout.svelte`
+   after the shared Store lifecycle initializes the Store context.
 6. Add or update colocated tests for changed reducers, selectors, or sagas.
 7. Run the checks required by the applicable skills and report exact results.
 
