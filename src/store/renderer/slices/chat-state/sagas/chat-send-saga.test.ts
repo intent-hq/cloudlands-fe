@@ -52,6 +52,7 @@ import type { AgentSession, QueuedMessage, Workspace } from '$shared/types';
 import { AgentStatus, WorkspaceStatusEnum } from '$shared/types';
 import {
   agentSessionReducer,
+  agentSessionRetryFromStalledRequested,
   agentSessionRetryLastMessageRequested,
   agentSessionRetryWithModelRequested,
   agentSessionStopChatRequested,
@@ -78,6 +79,8 @@ import {
   chatStateReducer,
   refreshChatTranscriptRequested,
   sendMessage,
+  streamActivityReceived,
+  streamStatusReceived,
   transcriptHydrationSettled,
 } from '../chat-state-slice';
 import { chatSendSaga } from './chat-send-saga';
@@ -153,7 +156,9 @@ function harness(
     channel,
     dispatch,
     task,
-    setChat: (action: ReturnType<typeof chatLastAttemptedMessageSet>) => {
+    setChat: (
+      action: ReturnType<typeof chatLastAttemptedMessageSet> | ReturnType<typeof streamStatusReceived>,
+    ) => {
       chatState = chatStateReducer(chatState, action);
     },
     settleTranscript: (agentId = AGENT) => {
@@ -793,6 +798,79 @@ describe('chatSendSaga', () => {
       expect.any(Object),
     );
     expect(mocks.toastInfo).not.toHaveBeenCalled();
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('retry-from-stalled stops the hung turn and re-sends the last attempt with interrupt priority', async () => {
+    mocks.stop.mockResolvedValue({ success: true });
+    mocks.send.mockResolvedValue(undefined);
+    const run = harness();
+    run.setChat(
+      streamStatusReceived(
+        AGENT,
+        { phase: 'stalled', message: 'No model activity', level: 'warn', timestamp: Date.now() },
+        false,
+      ),
+    );
+    run.setChat(chatLastAttemptedMessageSet(AGENT, { text: 'stalled send', options: {} }));
+
+    const retry = agentSessionRetryFromStalledRequested(AGENT, WS);
+    run.channel.put(retry);
+    await expect(retry.promise).resolves.toBeUndefined();
+
+    expect(mocks.stop).toHaveBeenCalledWith(AGENT);
+    expect(mocks.send).toHaveBeenCalledWith(
+      AGENT,
+      'stalled send',
+      expect.objectContaining({ id: WS }),
+      expect.objectContaining({ priority: 'interrupt' }),
+    );
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('retry-from-stalled is a no-op when the stall is no longer active', async () => {
+    const run = harness();
+    // Stalled event followed by a later stream chunk: stall superseded.
+    run.setChat(
+      streamStatusReceived(
+        AGENT,
+        { phase: 'stalled', message: 'No model activity', level: 'warn', timestamp: 1_000 },
+        false,
+      ),
+    );
+    run.setChat(chatLastAttemptedMessageSet(AGENT, { text: 'stalled send', options: {} }));
+    run.dispatch(streamActivityReceived(AGENT, true, 2_000));
+
+    const retry = agentSessionRetryFromStalledRequested(AGENT, WS);
+    run.channel.put(retry);
+    await expect(retry.promise).resolves.toBeUndefined();
+
+    expect(mocks.stop).not.toHaveBeenCalled();
+    expect(mocks.send).not.toHaveBeenCalled();
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('retry-from-stalled with no recorded attempt stops the turn and toasts', async () => {
+    mocks.stop.mockResolvedValue({ success: true });
+    const run = harness();
+    run.setChat(
+      streamStatusReceived(
+        AGENT,
+        { phase: 'stalled', message: 'No model activity', level: 'warn', timestamp: Date.now() },
+        false,
+      ),
+    );
+
+    const retry = agentSessionRetryFromStalledRequested(AGENT, WS);
+    run.channel.put(retry);
+    await expect(retry.promise).resolves.toBeUndefined();
+
+    expect(mocks.stop).toHaveBeenCalledWith(AGENT);
+    expect(mocks.send).not.toHaveBeenCalled();
+    await vi.waitFor(() => expect(mocks.toastInfo).toHaveBeenCalledTimes(1));
     run.task.cancel();
     await run.task.toPromise();
   });

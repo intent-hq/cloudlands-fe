@@ -19,12 +19,14 @@ import {
   toImageReferenceBlocks,
   type WireImageBlock,
 } from '$lib/components/chat/input/image-attachment-placement';
+import { getActiveStalledEvent } from '$lib/components/chat/streaming-status-utils';
 import { appClient } from '$lib/client';
 import { createLogger } from '$lib/utils/client-logger';
 import { m } from '$shared/paraglide/messages.js';
 import type { AgentSession } from '$shared/types';
 import { takeEveryByContextFIFO } from '../../../utils/context-saga-effects';
 import {
+  agentSessionRetryFromStalledRequested,
   agentSessionRetryLastMessageRequested,
   agentSessionRetryWithModelRequested,
   agentSessionStopChatRequested,
@@ -62,7 +64,12 @@ import {
   sendMessage,
   transcriptHydrationSettled,
 } from '../chat-state-slice';
-import { selectChatLastAttemptedMessage, selectTranscriptHydration } from '../chat-state-selectors';
+import {
+  selectChatLastAttemptedMessage,
+  selectChatLastChunkTime,
+  selectChatStatusEvents,
+  selectTranscriptHydration,
+} from '../chat-state-selectors';
 import type { SendMessagePayload } from '../chat-state-types';
 
 const logger = createLogger('ChatSendSaga');
@@ -73,13 +80,21 @@ type RemoveAction = ReturnType<typeof removeQueuedMessageRequested>;
 type StopAction = ReturnType<typeof agentSessionStopChatRequested>;
 type RetryAction = ReturnType<typeof agentSessionRetryLastMessageRequested>;
 type RetryModelAction = ReturnType<typeof agentSessionRetryWithModelRequested>;
-type ChatCommand = SendAction | RemoveAction | StopAction | RetryAction | RetryModelAction;
+type RetryFromStalledAction = ReturnType<typeof agentSessionRetryFromStalledRequested>;
+type ChatCommand =
+  | SendAction
+  | RemoveAction
+  | StopAction
+  | RetryAction
+  | RetryModelAction
+  | RetryFromStalledAction;
 
 const ORDINARY_CHAT_COMMANDS = [
   sendMessage,
   removeQueuedMessageRequested,
   agentSessionRetryLastMessageRequested,
   agentSessionRetryWithModelRequested,
+  agentSessionRetryFromStalledRequested,
 ];
 
 type LifecycleSendOptions = {
@@ -343,6 +358,22 @@ function* handleRemove(action: RemoveAction): SagaGenerator<void> {
   }
 }
 
+/**
+ * Stop the agent's in-flight turn, bracketing the RPC with the
+ * chatStopInitiated/chatStopCompleted interrupt flags. chatStopCompleted is
+ * put exactly once on every path (success, throw, cancellation).
+ */
+function* performStop(agentId: string): SagaGenerator<void> {
+  yield* put(chatStopInitiated(agentId));
+  try {
+    const result = yield* call([appClient.agents, appClient.agents.stop], agentId);
+    if (!result.success)
+      logger.warn('Agent stop was not acknowledged', { agentId, error: result.error });
+  } finally {
+    yield* put(chatStopCompleted(agentId));
+  }
+}
+
 function* handleStop(action: StopAction): SagaGenerator<void> {
   const [agentId] = action.payload;
   let settled = false;
@@ -353,22 +384,16 @@ function* handleStop(action: StopAction): SagaGenerator<void> {
       settled = true;
       return;
     }
-    yield* put(chatStopInitiated(agentId));
     try {
-      const result = yield* call([appClient.agents, appClient.agents.stop], agentId);
-      if (!result.success)
-        logger.warn('Agent stop was not acknowledged', { agentId, error: result.error });
-      yield* put(chatStopCompleted(agentId));
+      yield* call(performStop, agentId);
       yield* put(action.success(undefined as void));
       settled = true;
     } catch (error) {
-      yield* put(chatStopCompleted(agentId));
       yield* put(action.failure(error instanceof Error ? error : new Error(String(error))));
       settled = true;
     }
   } finally {
     if (!settled && (yield* cancelled())) {
-      yield* put(chatStopCompleted(agentId));
       yield* put(action.failure(new Error(CANCELLED_ERROR)));
     }
   }
@@ -432,10 +457,77 @@ function* handleRetryWithModel(action: RetryModelAction): SagaGenerator<void> {
   yield* call(retryLastMessage, action, action.payload[2]);
 }
 
+/**
+ * Retry from the stalled state (monorepo#3402): cancel the hung turn and
+ * re-send the identical last user input. Guarded on the stall still being
+ * active when the command runs — a resumed event, a stream delta, or turn
+ * end between the click and this handler makes it a silent no-op, so no
+ * duplicate send can race a recovering turn. The re-send goes out through
+ * the direct-send arm with `priority: 'interrupt'` (like force-send) so a
+ * turn the daemon still considers in flight is preempted instead of the
+ * retry auto-queueing behind it (docs/protocol/07-agent-streaming.md).
+ */
+function* handleRetryFromStalled(action: RetryFromStalledAction): SagaGenerator<void> {
+  const [agentId, wsId] = action.payload;
+  let settled = false;
+  try {
+    const statusEvents = yield* selectChatStatusEvents.effect(agentId);
+    const lastChunkTime = yield* selectChatLastChunkTime.effect(agentId);
+    if (!getActiveStalledEvent(statusEvents, lastChunkTime)) {
+      logger.info('Stalled retry skipped; stall no longer active', { agentId });
+      yield* put(action.success(undefined as void));
+      settled = true;
+      return;
+    }
+    const lastAttempted = yield* selectChatLastAttemptedMessage.effect(agentId);
+    if (!lastAttempted || !hasSendableMessageContent(lastAttempted.text, lastAttempted.options)) {
+      // Nothing recorded to re-send — just cancel the hung turn.
+      yield* call(showNothingToRetry);
+      yield* call(performStop, agentId);
+      yield* put(action.success(undefined as void));
+      settled = true;
+      return;
+    }
+    yield* call(performStop, agentId);
+    yield* call(
+      dispatchToLifecycle,
+      agentId,
+      wsId,
+      lastAttempted.text,
+      undefined,
+      {
+        imageBlocks: lastAttempted.options?.imageBlocks,
+        fileBlocks: lastAttempted.options?.fileBlocks,
+        noteIds: lastAttempted.options?.noteIds,
+        messageMetadata: lastAttempted.options?.messageMetadata,
+        model: lastAttempted.options?.model,
+        priority: 'interrupt' as const,
+      },
+      true,
+    );
+    yield* put(action.success(undefined as void));
+    settled = true;
+  } catch (error) {
+    yield* put(action.failure(error instanceof Error ? error : new Error(String(error))));
+    settled = true;
+  } finally {
+    if (!settled && (yield* cancelled())) {
+      yield* put(action.failure(new Error(CANCELLED_ERROR)));
+    }
+  }
+}
+
 function getCommandAgentId(action: ChatCommand): string {
   return action.type === sendMessage.type
     ? (action as SendAction).payload.agentId
-    : (action as RemoveAction | StopAction | RetryAction | RetryModelAction).payload[0];
+    : (
+        action as
+          | RemoveAction
+          | StopAction
+          | RetryAction
+          | RetryModelAction
+          | RetryFromStalledAction
+      ).payload[0];
 }
 
 function* rejectCommand(action: ChatCommand, error: Error): SagaGenerator<void> {
@@ -445,6 +537,8 @@ function* rejectCommand(action: ChatCommand, error: Error): SagaGenerator<void> 
     yield* put((action as RetryAction).failure(error));
   } else if (action.type === agentSessionRetryWithModelRequested.type) {
     yield* put((action as RetryModelAction).failure(error));
+  } else if (action.type === agentSessionRetryFromStalledRequested.type) {
+    yield* put((action as RetryFromStalledAction).failure(error));
   }
 }
 
@@ -458,6 +552,8 @@ function* runChatCommand(action: ChatCommand): SagaGenerator<void> {
       yield* call(handleStop, action as StopAction);
     } else if (action.type === agentSessionRetryLastMessageRequested.type) {
       yield* call(handleRetry, action as RetryAction);
+    } else if (action.type === agentSessionRetryFromStalledRequested.type) {
+      yield* call(handleRetryFromStalled, action as RetryFromStalledAction);
     } else {
       yield* call(handleRetryWithModel, action as RetryModelAction);
     }

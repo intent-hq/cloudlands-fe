@@ -487,7 +487,7 @@ describe('StreamingStatus stalled state (monorepo#3402)', () => {
     const announcement = screen.getByTestId('stalled-announcement');
     expect(announcement.getAttribute('role')).toBe('status');
     const announcedText = announcement.textContent;
-    expect(announcedText).toBe('No model activity detected. You can cancel the response.');
+    expect(announcedText).toBe('No model activity detected. You can retry or cancel the response.');
 
     const message = screen.getByTestId('stalled-message');
     expect(message.getAttribute('aria-live')).toBeNull();
