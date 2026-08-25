@@ -20,7 +20,9 @@
 import type { AppliedSettingChange } from '$lib/client/app-client';
 import { appClient } from '$lib/client';
 import { createLogger } from '$lib/utils/client-logger';
+import { LOCAL_CONNECTION_ID } from '$shared/types/connections';
 import { store as appStore } from '$store/renderer/store';
+import { getActiveBackendId } from '$store/renderer/utils/backend-storage-namespace';
 import { settingsChanged } from '$store/renderer/slices/settings-events/settings-events-slice';
 import {
   ensureEnabledIfUnset,
@@ -216,6 +218,13 @@ function resolveDefaultProviderCandidate(
 }
 
 function seedDefaultProviderEnablement(): void {
+  // Local sidecar only: the monorepo#1947 migration exists for pre-2.17 LOCAL
+  // installs whose default provider never got a persisted enablement entry. A
+  // remote backend's daemon has no such legacy state, and the renderer-side
+  // candidate (activeProviderId / model.providerModels) can still reflect the
+  // local machine mid-switch — seeding would write that stale local default
+  // into the fresh remote daemon's `providers.enabled`.
+  if (getActiveBackendId(appStore.state) !== LOCAL_CONNECTION_ID) return;
   const { activeProviderId, enabledProviders } = appStore.state.providerSettings;
   const providerModels = appStore.state.model?.providerModels ?? {};
   const candidate = resolveDefaultProviderCandidate(activeProviderId, providerModels);

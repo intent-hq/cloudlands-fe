@@ -26,6 +26,7 @@ testStore.getExistingStoreContext = function () {
   return this.storeContext;
 };
 import { applySettingsChanges, BG_MODEL_MIGRATION_MARKER_KEY } from './settings-hydration-service';
+import { connectionsListReceived } from '$store/renderer/slices/connections/connections-slice';
 import {
   hydrateActiveProvider,
   loadEnabledProvidersFromStorage,
@@ -460,6 +461,25 @@ describe('settings-hydration-service (boot read + applySettingsChanges)', () => 
       applySettingsChanges([{ path: 'providers.enabled', value: {} }]);
       await vi.waitFor(() => expect(updateSpy).toHaveBeenCalledTimes(2));
       expect(enabledProviders()).toEqual({ auggie: true });
+    });
+
+    it('never seeds on a remote backend, even when stale local state names a candidate', async () => {
+      appStore.dispatch(connectionsListReceived({ connections: [], activeId: 'remote-1' }));
+      try {
+        // Stale renderer state from the local session: active provider set,
+        // no enablement entry — the exact shape that would seed locally.
+        applySettingsChanges([
+          { path: 'providers.active', value: 'auggie' },
+          { path: 'providers.enabled', value: {} },
+        ]);
+
+        await flushAsync();
+        expect(enabledProviders()).toEqual({});
+        expect(catalogSpy).not.toHaveBeenCalled();
+        expect(updateSpy).not.toHaveBeenCalled();
+      } finally {
+        appStore.dispatch(connectionsListReceived({ connections: [], activeId: 'local' }));
+      }
     });
   });
 });
