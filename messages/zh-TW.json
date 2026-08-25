@@ -5846,6 +5846,7 @@
   "layout_daemonStatus_connectToAnother_action": "連線到另一個 intentd…",
   "layout_daemonStatus_localConnection_label": "本機（本地）",
   "layout_daemonStatus_connectionActive_label": "活躍",
+  "layout_daemonStatus_open_action": "開啟",
   "layout_daemonStatus_switch_action": "切換",
   "layout_daemonStatus_forget_action": "忘記",
   "modals_connect_title": "連線到另一個 intentd",

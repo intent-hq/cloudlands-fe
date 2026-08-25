@@ -5846,6 +5846,7 @@
   "layout_daemonStatus_connectToAnother_action": "다른 intentd에 연결…",
   "layout_daemonStatus_localConnection_label": "이 컴퓨터(로컬)",
   "layout_daemonStatus_connectionActive_label": "활성",
+  "layout_daemonStatus_open_action": "열기",
   "layout_daemonStatus_switch_action": "전환",
   "layout_daemonStatus_forget_action": "삭제",
   "modals_connect_title": "다른 intentd에 연결",

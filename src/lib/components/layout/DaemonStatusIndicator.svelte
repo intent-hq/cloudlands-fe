@@ -136,6 +136,7 @@
     protocolMismatchModalDismissed,
   } from '$store/renderer/slices/connections/connections-slice';
   import {
+    openConnectionRequested,
     switchConnectionRequested,
     forgetConnectionRequested,
   } from '$store/renderer/slices/connections/connections-slice';
@@ -346,6 +347,18 @@
   function openConnectModal() {
     dropdownOpen = false;
     connectModalOpen = true;
+  }
+
+  async function handleOpenConnection(id: string) {
+    dropdownOpen = false;
+    try {
+      const action = openConnectionRequested(id);
+      appStore.dispatch(action);
+      await action.promise;
+    } catch {
+      // The failure is surfaced via the slice's op-status/error; nothing more
+      // to do here (the list/active refresh arrives via connections:changed).
+    }
   }
 
   async function handleSwitchConnection(id: string) {
@@ -752,7 +765,7 @@
         </div>
       {/if}
 
-      <!-- Multi-backend connect: add action + connections list (Switch/Forget) -->
+      <!-- Multi-backend connect: add action + connections list (Open/Switch/Forget) -->
       <div class="h-px bg-border my-1"></div>
       <div class="px-1 pb-1">
         <button
@@ -770,7 +783,7 @@
           {#each $connections$ as conn (conn.id)}
             {@const isActive = conn.id === $activeConnectionId$}
             <!--
-              Each connection row is a real submenu (Menu.Sub), so Switch/Forget
+              Each connection row is a real submenu (Menu.Sub), so Open/Switch/Forget
               pop out as a side flyout that opens on hover/click with bits-ui's
               pointer-grace (it stays open while the pointer travels into it).
               The flyout portals to body so the parent menu's overflow scroll
@@ -821,6 +834,12 @@
                 </span>
               </Menu.SubTrigger>
               <Menu.SubContent side="left" align="start" class="min-w-28">
+                <Menu.Item
+                  class="cursor-pointer text-xs"
+                  onSelect={() => handleOpenConnection(conn.id)}
+                >
+                  {m.layout_daemonStatus_open_action()}
+                </Menu.Item>
                 <Menu.Item
                   class="cursor-pointer text-xs"
                   disabled={isActive}

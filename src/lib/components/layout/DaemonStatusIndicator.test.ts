@@ -1165,7 +1165,7 @@ describe('DaemonStatusIndicator', () => {
       await fireEvent.click(screen.getByRole('button', { name: 'intentd: healthy' }));
 
       // The row is a submenu trigger: collapsed with menu-popup semantics, and no
-      // Switch/Forget rendered until it is opened (no inline expansion).
+      // Open/Switch/Forget rendered until it is opened (no inline expansion).
       const remoteRow = screen.getByText('desk:4180').closest('[role="menuitem"]');
       expect(remoteRow?.getAttribute('aria-haspopup')).toBe('menu');
       expect(remoteRow?.getAttribute('aria-expanded')).toBe('false');
@@ -1174,6 +1174,7 @@ describe('DaemonStatusIndicator', () => {
       // Opening the row flips aria-expanded and reveals the flyout actions.
       await fireEvent.click(remoteRow!);
       expect(remoteRow?.getAttribute('aria-expanded')).toBe('true');
+      expect(screen.getByText('Open')).toBeTruthy();
       expect(screen.getByText('Switch')).toBeTruthy();
       expect(screen.getByText('Forget')).toBeTruthy();
 
@@ -1185,23 +1186,52 @@ describe('DaemonStatusIndicator', () => {
       expect(parentContent?.contains(flyout)).toBe(false);
     });
 
-    it('expands local to Switch only (Forget hidden); remote to Switch + Forget', async () => {
+    it('expands local to Open + Switch (Forget hidden); remote to all three actions', async () => {
       mockStoreState = { daemonHealth: { ...healthy }, connections: withConnections('local') };
 
       const DaemonStatusIndicator = (await import('./DaemonStatusIndicator.svelte')).default;
       render(DaemonStatusIndicator);
       await fireEvent.click(screen.getByRole('button', { name: 'intentd: healthy' }));
 
-      // Local: Switch present, Forget absent (un-forgettable).
+      // Local: Open + Switch present, Forget absent (un-forgettable).
       await fireEvent.click(screen.getByText('This machine (local)'));
+      expect(screen.getAllByText('Open')).toHaveLength(1);
       expect(screen.getAllByText('Switch')).toHaveLength(1);
       expect(screen.queryByText('Forget')).toBeNull();
 
-      // Remote: both Switch and Forget present in its flyout.
+      // Remote: Open, Switch, and Forget present in its flyout.
       await fireEvent.click(screen.getByText('desk:4180'));
       const forget = screen.getByText('Forget');
       const flyout = forget.closest('[data-slot="menu-sub-content"]')!;
+      expect(within(flyout as HTMLElement).getByText('Open')).toBeTruthy();
       expect(within(flyout as HTMLElement).getByText('Switch')).toBeTruthy();
+    });
+
+    it('dispatches openConnectionRequested for an active saved remote and closes the dropdown', async () => {
+      mockStoreState = { daemonHealth: { ...healthy }, connections: withConnections('r1') };
+
+      const DaemonStatusIndicator = (await import('./DaemonStatusIndicator.svelte')).default;
+      render(DaemonStatusIndicator);
+      await fireEvent.click(screen.getByRole('button', { name: 'intentd: healthy — desk:4180' }));
+
+      const menuRow = screen
+        .getAllByText('desk:4180')
+        .map((el) => el.closest('[role="menuitem"]'))
+        .find((row) => row?.getAttribute('aria-haspopup') === 'menu');
+      await fireEvent.click(menuRow!);
+
+      const openItem = screen.getByText('Open').closest('[role="menuitem"]');
+      expect(openItem?.getAttribute('aria-disabled')).not.toBe('true');
+      await fireEvent.click(openItem!);
+
+      expect(mockDispatch).toHaveBeenCalledWith(
+        expect.objectContaining({
+          payload: ['r1'],
+          type: 'connections/openRequested',
+          asyncActionType: 'connections/open',
+        }),
+      );
+      expect(screen.queryByText('Connections')).toBeNull();
     });
 
     it('dispatches switchConnectionRequested when Switch is chosen on a non-active remote', async () => {

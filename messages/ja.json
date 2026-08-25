@@ -5846,6 +5846,7 @@
   "layout_daemonStatus_connectToAnother_action": "別の intentd に接続…",
   "layout_daemonStatus_localConnection_label": "このマシン（ローカル）",
   "layout_daemonStatus_connectionActive_label": "アクティブ",
+  "layout_daemonStatus_open_action": "開く",
   "layout_daemonStatus_switch_action": "切り替え",
   "layout_daemonStatus_forget_action": "削除",
   "modals_connect_title": "別の intentd に接続",
