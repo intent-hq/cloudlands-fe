@@ -175,6 +175,33 @@ describe('switchBackend hostname labeling', () => {
     );
   });
 
+  it('prefers a trimmed prettyHostname over hostname when host.status carries both', async () => {
+    hostStatus.value = {
+      hostname: 'studio.local',
+      prettyHostname: '  Clement’s Mac Studio  ',
+      os: 'macos',
+      arch: 'aarch64',
+    };
+    const mod = await loadModule();
+
+    await mod.switchBackend('remote-1');
+
+    await vi.waitFor(() =>
+      expect(store.setHostname).toHaveBeenCalledWith('remote-1', 'Clement’s Mac Studio'),
+    );
+  });
+
+  it('falls back to hostname when prettyHostname is blank', async () => {
+    hostStatus.value = { hostname: 'studio.local', prettyHostname: '   ' };
+    const mod = await loadModule();
+
+    await mod.switchBackend('remote-1');
+
+    await vi.waitFor(() =>
+      expect(store.setHostname).toHaveBeenCalledWith('remote-1', 'studio.local'),
+    );
+  });
+
   it('does not persist a hostname when host.status omits it (keeps host:port fallback)', async () => {
     hostStatus.value = { os: 'linux', arch: 'x86_64' }; // no hostname field
     const mod = await loadModule();

@@ -892,14 +892,21 @@ function probeBackendReachable(client: JsonRpcClient, timeoutMs: number): Promis
 
 /**
  * Pull the hostname out of a `host.status` result (PROTOCOL §5.14 — returns
- * `{ hostname, os, arch, ... }`). Returns a trimmed non-empty hostname, else
- * `null` so callers keep the `host:port` fallback.
+ * `{ hostname, prettyHostname?, os, arch, ... }`). Prefers a trimmed non-empty
+ * `prettyHostname` (the human-friendly machine name, e.g. macOS ComputerName)
+ * over the network `hostname`; returns `null` when neither is present so
+ * callers keep the `host:port` fallback.
  */
 function extractHostname(result: unknown): string | null {
   if (result && typeof result === 'object') {
-    const value = (result as { hostname?: unknown }).hostname;
-    if (typeof value === 'string' && value.trim().length > 0) {
-      return value.trim();
+    const { hostname, prettyHostname } = result as {
+      hostname?: unknown;
+      prettyHostname?: unknown;
+    };
+    for (const value of [prettyHostname, hostname]) {
+      if (typeof value === 'string' && value.trim().length > 0) {
+        return value.trim();
+      }
     }
   }
   return null;
