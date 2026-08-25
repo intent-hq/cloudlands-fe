@@ -5,7 +5,7 @@ import WorkspaceStatusIcon from './WorkspaceStatusIcon.svelte';
 describe('WorkspaceStatusIcon', () => {
   it.each([
     ['in_progress', 'In progress', 'workspace-status-color-active'],
-    ['unread', 'UNREAD', 'workspace-status-color-unread'],
+    ['unread', 'Unread', 'workspace-status-color-unread'],
     ['idle', 'Idle', 'text-muted-foreground/35'],
     ['not_started', 'Not started', 'text-muted-foreground/35'],
   ] as const)('renders one accessible semantic %s dot', (status, label, color) => {

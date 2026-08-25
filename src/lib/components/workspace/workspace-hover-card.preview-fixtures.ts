@@ -91,7 +91,7 @@ export const workspaceHoverCardStateMatrix: readonly StateMatrixEntry[] = [
     family: 'Semantic status',
     states: 'all 10 displayStatus values; absent; unknown',
     expected:
-      'Each canonical value uses its named presentation; absent and unknown values fall back to Not started.',
+      'Each canonical value uses normally cased product language in the right column only; absent and unknown values fall back to Not started.',
     coverage: 'semantic-status preview; status presentation tests',
     conflicts: 'Exactly one semantic status renders.',
   },
@@ -309,7 +309,7 @@ const scenes: Record<string, WorkspaceHoverCardPreviewProps> = {
   },
   'idle-complete': {
     family: 'Idle or complete',
-    expected: 'Resolved and quiet states retain the same hierarchy with a zero agent count.',
+    expected: 'Resolved and quiet states retain the same hierarchy without a numeric header count.',
     cards: [
       scenario('idle', 'Idle', 'No optional activity rows; recency stays pinned.', {
         tasks: [],
@@ -438,7 +438,8 @@ const scenes: Record<string, WorkspaceHoverCardPreviewProps> = {
   },
   'semantic-status': {
     family: 'Semantic status',
-    expected: 'Every canonical status plus both fallback inputs.',
+    expected:
+      'Every normally cased canonical status appears only in the right column, plus both fallback inputs.',
     cards: [
       ...statuses.map((status) =>
         scenario(`status-${status.replaceAll('_', '-')}`, status, `Renders ${status}.`, {

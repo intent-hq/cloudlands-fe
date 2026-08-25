@@ -442,7 +442,9 @@
         {:else}
           <div class="flex items-start gap-2" data-workspace-hover-card-title-row>
             <div class="min-w-0 flex-1">
-              <div class="type-title line-clamp-2 text-base font-semibold leading-5 text-foreground">
+              <div
+                class="type-title line-clamp-2 text-base font-semibold leading-5 text-foreground"
+              >
                 {workspace?.title || m.workspace_links_untitled_label()}
               </div>
             </div>
@@ -460,13 +462,6 @@
             >
               {repoDisplayName}
             </div>
-          </div>
-          <div
-            class="type-caption mt-1 flex w-full min-w-0 items-center gap-2 text-sm text-muted-foreground"
-            data-workspace-hover-card-status-row
-          >
-            <WorkspaceStatusIcon status={workspaceStatusState} size={14} decorative />
-            <span class="min-w-0 truncate">{workspaceStatusPresentation.label}</span>
           </div>
           {#if statusMessage}
             <div
@@ -498,7 +493,9 @@
               class="flex w-full min-w-0 items-center py-0.5"
               aria-label={m.workspace_hoverCard_changes_ariaLabel()}
             >
-              <span class="type-body min-w-0 truncate text-sm font-medium leading-5 text-foreground">
+              <span
+                class="type-body min-w-0 truncate text-sm font-medium leading-5 text-foreground"
+              >
                 {changeSummaryLineText}
               </span>
             </div>
@@ -523,27 +520,16 @@
         class="workspace-hover-card__activity flex min-h-0 min-w-0 flex-col border-t border-border/70 px-4 py-3.5"
         data-workspace-hover-card-activity
       >
-        <div
-          class="flex min-h-6 items-center justify-between gap-3"
-          data-workspace-hover-card-agent-summary
-        >
-          <div class="flex min-w-0 items-center gap-2">
-            <span
-              class="h-2 w-2 shrink-0 rounded-full bg-current {workspaceStatusPresentation.className}"
-              aria-hidden="true"
-              data-workspace-hover-card-agent-summary-dot
-            ></span>
-            <span class="min-w-0 truncate text-sm font-medium text-foreground">
+        <div class="flex min-h-6 items-center gap-3" data-workspace-hover-card-agent-summary>
+          <div
+            class="type-caption flex min-w-0 items-center gap-2"
+            data-workspace-hover-card-status-row
+          >
+            <WorkspaceStatusIcon status={workspaceStatusState} size={14} decorative />
+            <span class="min-w-0 truncate text-sm font-medium normal-case text-foreground">
               {workspaceStatusPresentation.label}
             </span>
           </div>
-          <span
-            class="min-w-6 shrink-0 rounded-full bg-muted px-2 py-0.5 text-center text-ui font-medium text-subtle"
-            aria-label={m.workspace_hoverCard_runningAgents_ariaLabel()}
-            data-workspace-hover-card-agent-count
-          >
-            {formatInteger(runningAgents.length)}
-          </span>
         </div>
 
         <div class="my-2 border-t border-border/70" data-workspace-hover-card-divider></div>
@@ -570,7 +556,9 @@
                         specialist={agent.specialist as BuiltinSpecialistId | null}
                       />
                     </span>
-                    <span class="type-body min-w-0 truncate text-sm font-medium leading-5 text-foreground">
+                    <span
+                      class="type-body min-w-0 truncate text-sm font-medium leading-5 text-foreground"
+                    >
                       {agent.name}
                     </span>
                   </div>

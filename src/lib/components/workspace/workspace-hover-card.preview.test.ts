@@ -41,6 +41,8 @@ describe('workspace hover-card preview audit', () => {
     ).toEqual(['idle', 'complete']);
     expect(states.dense.props.cards[0]?.agents).toHaveLength(5);
     expect(states.narrow.props.layout).toBe('narrow');
+    expect(states['semantic-status'].props.expected).toContain('right column');
+    expect(states['idle-complete'].props.expected).toContain('without a numeric header count');
   });
 
   it('has an explicit expected result, coverage route, and conflict rule for every family', () => {

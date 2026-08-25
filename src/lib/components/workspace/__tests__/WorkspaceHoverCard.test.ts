@@ -387,20 +387,25 @@ describe('WorkspaceHoverCard', () => {
     expect(status.className).not.toMatch(/line-clamp|truncate|text-ellipsis/);
   });
 
-  it('renders title, repository, and named semantic status as three ordered rows', async () => {
+  it('renders identity on the left and the normally cased semantic status only on the right', async () => {
     const { container } = await renderHoverCard({ displayStatus: 'in_progress' });
     const header = container.querySelector('[data-workspace-hover-card-header]');
     const rows = header?.querySelectorAll(
-      '[data-workspace-hover-card-title-row], [data-workspace-hover-card-repo-row], [data-workspace-hover-card-status-row]',
+      '[data-workspace-hover-card-title-row], [data-workspace-hover-card-repo-row]',
     );
+    const identity = container.querySelector('[data-workspace-hover-card-identity]');
+    const activity = container.querySelector('[data-workspace-hover-card-activity]');
     const statusRow = container.querySelector('[data-workspace-hover-card-status-row]');
 
-    expect(rows).toHaveLength(3);
+    expect(rows).toHaveLength(2);
     expect([...rows!].map((row) => normalizedText(row))).toEqual([
       'Hover Card Workspace',
       'augment/intent',
-      'In progress',
     ]);
+    expect(identity?.querySelector('[data-workspace-hover-card-status-row]')).toBeNull();
+    expect(activity?.querySelector('[data-workspace-hover-card-status-row]')).toBe(statusRow);
+    expect(normalizedText(statusRow!)).toBe('In progress');
+    expect(statusRow?.lastElementChild?.className).toContain('normal-case');
     expect(statusRow?.querySelector('[data-workspace-status="in_progress"]')).toBeTruthy();
     expect(statusRow?.querySelector('[data-workspace-status]')?.getAttribute('aria-hidden')).toBe(
       'true',
@@ -597,9 +602,7 @@ describe('WorkspaceHoverCard', () => {
     expect(screen.getByLabelText('Workspace task progress')).toBeTruthy();
     const runningAgentList = screen.getByRole('list', { name: 'Running agents' });
     expect(runningAgentList.querySelectorAll('[role="listitem"]')).toHaveLength(2);
-    expect(
-      document.querySelector('[data-workspace-hover-card-agent-count]')?.textContent?.trim(),
-    ).toBe('2');
+    expect(document.querySelector('[data-workspace-hover-card-agent-count]')).toBeNull();
     expect(screen.getByText('Planner')).toBeTruthy();
     expect(screen.getByText('Implementor')).toBeTruthy();
     expect(screen.queryByText('3 agents · 2 active · 1 running · 1 unread')).toBeNull();
@@ -790,9 +793,7 @@ describe('WorkspaceHoverCard', () => {
     expect(screen.getAllByRole('listitem')).toHaveLength(3);
     expect(screen.getByText('+2 more')).toBeTruthy();
     expect(container.querySelector('[data-workspace-hover-card-overflow]')).toBeTruthy();
-    expect(
-      container.querySelector('[data-workspace-hover-card-agent-count]')?.textContent?.trim(),
-    ).toBe('5');
+    expect(container.querySelector('[data-workspace-hover-card-agent-count]')).toBeNull();
   });
 
   it('degrades cleanly when optional metadata is absent', async () => {

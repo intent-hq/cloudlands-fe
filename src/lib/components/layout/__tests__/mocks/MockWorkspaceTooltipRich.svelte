@@ -7,6 +7,7 @@
     class: className,
     contentClass,
     contentContainerClass,
+    disableHoverableContent = false,
     disabled = false,
   }: any = $props();
   let open = $state(false);
@@ -18,6 +19,7 @@
   data-tooltip-delay={delayDuration}
   data-tooltip-content-class={contentClass}
   data-tooltip-container-class={contentContainerClass}
+  data-tooltip-disable-hoverable-content={disableHoverableContent}
   data-testid="workspace-tab-tooltip-root"
   role="group"
   onmouseenter={() => {
