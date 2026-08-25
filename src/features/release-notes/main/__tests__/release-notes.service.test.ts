@@ -55,6 +55,23 @@ function mockFetchOk(body: string, htmlUrl = 'https://github.com/example/release
   })) as unknown as typeof fetch;
 }
 
+function release(tag: string, body: string, extra: Record<string, unknown> = {}) {
+  return {
+    tag_name: tag,
+    body,
+    html_url: `https://github.com/example/releases/tag/${tag}`,
+    ...extra,
+  };
+}
+
+function mockReleaseList(items: unknown[]) {
+  return vi.fn(async () => ({
+    ok: true,
+    status: 200,
+    json: async () => items,
+  })) as unknown as typeof fetch;
+}
+
 describe('release-notes service', () => {
   beforeEach(async () => {
     testUserDataPath = await fs.mkdtemp(path.join(os.tmpdir(), 'release-notes-test-'));
@@ -97,16 +114,22 @@ describe('release-notes service', () => {
     });
 
     it('returns null on a 404 (unpublished version)', async () => {
-      vi.stubGlobal('fetch', vi.fn(async () => ({ ok: false, status: 404 })));
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async () => ({ ok: false, status: 404 })),
+      );
       const { fetchReleaseNotes } = await import('../release-notes.service');
 
       expect(await fetchReleaseNotes('99.0.0')).toBeNull();
     });
 
     it('returns null when the fetch rejects (offline)', async () => {
-      vi.stubGlobal('fetch', vi.fn(async () => {
-        throw new Error('network down');
-      }));
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async () => {
+          throw new Error('network down');
+        }),
+      );
       const { fetchReleaseNotes } = await import('../release-notes.service');
 
       expect(await fetchReleaseNotes('2.1.0')).toBeNull();
@@ -118,6 +141,92 @@ describe('release-notes service', () => {
 
       expect(await fetchReleaseNotes('2.1.0')).toBeNull();
     });
+  });
+
+  describe('fetchReleaseNotesRange', () => {
+    it('combines skipped versions in numeric newest-first order within the range', async () => {
+      vi.stubGlobal(
+        'fetch',
+        mockReleaseList([
+          release('v2.2.0', '## 2.2.0'),
+          release('v2.10.0', '## 2.10.0'),
+          release('v2.4.0', '## 2.4.0'),
+          release('v2.11.0', 'too new'),
+          release('v2.1.0', 'lower bound'),
+        ]),
+      );
+      const { fetchReleaseNotesRange } = await import('../release-notes.service');
+
+      expect(await fetchReleaseNotesRange('2.1.0', '2.10.0')).toEqual({
+        version: '2.10.0',
+        notes: '## 2.10.0\n\n---\n\n## 2.4.0\n\n---\n\n## 2.2.0',
+        url: 'https://github.com/example/releases/tag/v2.10.0',
+      });
+    });
+
+    it('excludes rolling, draft, malformed, prerelease-tagged, and empty releases', async () => {
+      vi.stubGlobal(
+        'fetch',
+        mockReleaseList([
+          release('stable', 'rolling'),
+          release('v2.3.0', 'draft', { draft: true }),
+          release('2.3.0', 'missing prefix'),
+          release('v2.3', 'malformed'),
+          release('v2.3.0-beta.1', 'prerelease tag'),
+          release('v2.2.0', '   '),
+          release('v2.1.0', '## Included'),
+        ]),
+      );
+      const { fetchReleaseNotesRange } = await import('../release-notes.service');
+
+      expect(await fetchReleaseNotesRange('2.0.0', '2.3.0')).toEqual({
+        version: '2.3.0',
+        notes: '## Included',
+        url: 'https://github.com/intent-hq/cloudlands-releases/releases/tag/v2.3.0',
+      });
+    });
+
+    it('lists releases from the public repo without authentication', async () => {
+      const fetchSpy = mockReleaseList([release('v2.1.0', 'notes')]);
+      vi.stubGlobal('fetch', fetchSpy);
+      const { fetchReleaseNotesRange } = await import('../release-notes.service');
+
+      await fetchReleaseNotesRange('2.0.0', '2.1.0');
+
+      expect(fetchSpy).toHaveBeenCalledWith(
+        'https://api.github.com/repos/intent-hq/cloudlands-releases/releases?per_page=100&page=1',
+        expect.objectContaining({ headers: { Accept: 'application/vnd.github+json' } }),
+      );
+    });
+
+    it('returns null on an API failure', async () => {
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async () => ({ ok: false, status: 503 })),
+      );
+      const { fetchReleaseNotesRange } = await import('../release-notes.service');
+
+      expect(await fetchReleaseNotesRange('2.0.0', '2.1.0')).toBeNull();
+    });
+
+    it.each(['malformed', '2.1.0'])(
+      'falls back to the current release when the previous version is %s',
+      async (previousVersion) => {
+        const fetchSpy = mockFetchOk('## Current');
+        vi.stubGlobal('fetch', fetchSpy);
+        const { fetchReleaseNotesRange } = await import('../release-notes.service');
+
+        expect(await fetchReleaseNotesRange(previousVersion, '2.1.0')).toEqual({
+          version: '2.1.0',
+          notes: '## Current',
+          url: 'https://github.com/example/releases/tag/v2.1.0',
+        });
+        expect(fetchSpy).toHaveBeenCalledWith(
+          'https://api.github.com/repos/intent-hq/cloudlands-releases/releases/tags/v2.1.0',
+          expect.any(Object),
+        );
+      },
+    );
   });
 
   describe('checkForReleaseNotesOnStartup', () => {
@@ -162,7 +271,10 @@ describe('release-notes service', () => {
 
     it('leaves the pref untouched when the fetch fails, so a later startup retries', async () => {
       await writePref('2.0.0');
-      vi.stubGlobal('fetch', vi.fn(async () => ({ ok: false, status: 404 })));
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async () => ({ ok: false, status: 404 })),
+      );
       const { checkForReleaseNotesOnStartup } = await import('../release-notes.service');
       const show = vi.fn();
 
