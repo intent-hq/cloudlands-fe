@@ -107,7 +107,7 @@ export const workspaceHoverCardStateMatrix: readonly StateMatrixEntry[] = [
     family: 'Status message',
     states: 'absent; whitespace; short; multiline; long; unbroken',
     expected:
-      'Absent and whitespace render no row; other values preserve line breaks and wrap inside a bounded region.',
+      'Absent and whitespace render no row; other values truncate to one constrained line while the title preserves the full text.',
     coverage: 'messages and long-content previews; component tests',
     conflicts: 'No placeholder appears for an empty message.',
   },
@@ -371,13 +371,15 @@ const scenes: Record<string, WorkspaceHoverCardPreviewProps> = {
   },
   narrow: {
     family: 'Narrow',
-    expected: 'The activity column stacks below identity without changing information order.',
+    expected:
+      'The activity column stacks below identity; long descriptions truncate without overflow.',
     layout: 'narrow',
     cards: [
       (() => {
         const ws = workspace('narrow', {
           displayStatus: 'in_progress',
-          statusMessage: 'Responsive narrow-width check.',
+          statusMessage:
+            'This long workspace description confirms that the narrow stacked card shows an ellipsis instead of overflowing its available width.',
           agentSummary: { agentIds: ['narrow-agent'] },
           activePullRequest: pr(76, { title: 'Keep narrow hover cards readable' }),
         });
@@ -502,7 +504,7 @@ const scenes: Record<string, WorkspaceHoverCardPreviewProps> = {
   },
   messages: {
     family: 'Status message',
-    expected: 'Empty values stay absent; meaningful values wrap.',
+    expected: 'Empty values stay absent; meaningful values truncate with an ellipsis.',
     cards: [
       scenario('message-absent', 'Absent', 'No message row.', {
         workspace: workspace('message-absent', { statusMessage: undefined }),
@@ -515,12 +517,17 @@ const scenes: Record<string, WorkspaceHoverCardPreviewProps> = {
           statusMessage: 'Ready for focused visual review.',
         }),
       }),
-      scenario('message-multiline', 'Multiline', 'Line break is preserved.', {
-        workspace: workspace('message-multiline', {
-          statusMessage: 'Implementation complete.\nVerification is in progress.',
-        }),
-      }),
-      scenario('message-unbroken', 'Long unbroken', 'Breaks within card width.', {
+      scenario(
+        'message-multiline',
+        'Multiline',
+        'Visible text truncates; title preserves full text.',
+        {
+          workspace: workspace('message-multiline', {
+            statusMessage: 'Implementation complete.\nVerification is in progress.',
+          }),
+        },
+      ),
+      scenario('message-unbroken', 'Long unbroken', 'Ellipsis stays within card width.', {
         workspace: workspace('message-unbroken', {
           statusMessage: 'averylongunbrokenstatusmessage'.repeat(8),
         }),
@@ -732,7 +739,7 @@ const scenes: Record<string, WorkspaceHoverCardPreviewProps> = {
       scenario(
         'long-content',
         'Long vertical content',
-        'Title/repo/PR truncate; message wraps; agent and task density stays bounded.',
+        'Title/repo/description/PR truncate; agent and task density stays bounded.',
         {
           workspace: workspace('long-content', {
             title:
@@ -740,7 +747,7 @@ const scenes: Record<string, WorkspaceHoverCardPreviewProps> = {
             repositoryOwner: 'very-long-preview-organization',
             repositoryName: 'very-long-repository-name-for-responsive-clamping',
             statusMessage:
-              'This deterministic message is long enough to wrap across several lines while all optional rows remain readable below it.',
+              'This deterministic workspace description is long enough to require a visible ellipsis while all optional rows remain readable below it.',
             activePullRequest: pr(99, {
               title:
                 'A long pull request title that must truncate without moving the number or metadata',

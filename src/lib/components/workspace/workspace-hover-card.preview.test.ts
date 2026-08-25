@@ -45,6 +45,16 @@ describe('workspace hover-card preview audit', () => {
     expect(states['idle-complete'].props.expected).toContain('without a numeric header count');
   });
 
+  it('keeps long description regression fixtures in wide and narrow layouts', () => {
+    const states = workspaceHoverCardPreview.states;
+    const wideDescription = states['long-content'].props.cards[0]?.workspace?.statusMessage;
+    const narrowDescription = states.narrow.props.cards[0]?.workspace?.statusMessage;
+
+    expect(wideDescription?.length).toBeGreaterThan(80);
+    expect(narrowDescription?.length).toBeGreaterThan(80);
+    expect(states.narrow.props.layout).toBe('narrow');
+  });
+
   it('has an explicit expected result, coverage route, and conflict rule for every family', () => {
     expect(workspaceHoverCardStateMatrix.map(({ family }) => family)).toEqual([
       'Input',

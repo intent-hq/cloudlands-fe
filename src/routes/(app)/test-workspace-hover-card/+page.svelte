@@ -465,7 +465,7 @@
             anchor="--workspace-hover-card-right-edge"
             position="right"
             anchorElement={rightEdgeTriggerElement}
-            class="w-auto border-0 bg-transparent shadow-xl"
+            class="w-auto overflow-visible! rounded-lg border-0! bg-background! shadow-none!"
           >
             <WorkspaceHoverCard
               workspace={rightEdgePlacementWorkspace}
@@ -477,7 +477,7 @@
             anchor="--workspace-hover-card-bottom-edge"
             position="right"
             anchorElement={bottomTriggerElement}
-            class="w-auto border-0 bg-transparent shadow-xl"
+            class="w-auto overflow-visible! rounded-lg border-0! bg-background! shadow-none!"
           >
             <WorkspaceHoverCard
               workspace={bottomPlacementWorkspace}

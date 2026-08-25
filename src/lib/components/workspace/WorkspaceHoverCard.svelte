@@ -430,7 +430,7 @@
 </script>
 
 <div
-  class="workspace-hover-card shrink-0 overflow-hidden rounded-xl bg-card text-left shadow-(--elevation-overlay) ring-1 ring-border/70 dark:bg-popover"
+  class="workspace-hover-card shrink-0 overflow-hidden rounded-lg bg-background text-left shadow-(--elevation-overlay) ring-1 ring-border/70"
   data-workspace-hover-card-layout="two-column"
 >
   <div class="workspace-hover-card__columns grid min-h-0" data-workspace-hover-card-columns>
@@ -465,7 +465,8 @@
           </div>
           {#if statusMessage}
             <div
-              class="type-body mt-3 max-h-24 w-full overflow-y-auto break-words border-none bg-transparent px-0.5 text-left text-sm leading-snug whitespace-pre-wrap text-subtle"
+              class="type-body mt-3 min-w-0 w-full truncate border-none bg-transparent px-0.5 text-left text-sm leading-snug text-subtle"
+              title={statusMessage}
               data-workspace-hover-card-message
               data-workspace-hover-card-status-message
             >
@@ -525,7 +526,12 @@
             class="type-caption flex min-w-0 items-center gap-2"
             data-workspace-hover-card-status-row
           >
-            <WorkspaceStatusIcon status={workspaceStatusState} size={14} decorative />
+            <WorkspaceStatusIcon
+              status={workspaceStatusState}
+              size={14}
+              decorative
+              class={workspaceStatusState === 'blocked' ? 'text-foreground' : undefined}
+            />
             <span class="min-w-0 truncate text-sm font-medium normal-case text-foreground">
               {workspaceStatusPresentation.label}
             </span>

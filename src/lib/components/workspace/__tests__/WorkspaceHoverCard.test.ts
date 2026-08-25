@@ -8,6 +8,7 @@ import type { AgentSession, Workspace } from '$shared/types';
 import { PullRequestStatus, WorkspaceStatusEnum } from '$shared/types';
 import type { PrMonitorRow } from '$features/pr-monitor/pr-monitor-service';
 import { warmImport } from '../../../../test/warm-import';
+import workspaceCardSource from '../WorkspaceCard.svelte?raw';
 
 const mocks = vi.hoisted(() => {
   const dispatch = vi.fn();
@@ -369,22 +370,23 @@ describe('WorkspaceHoverCard', () => {
     expect(rows[0].getAttribute('aria-label')).not.toContain('Waiting');
   });
 
-  it('renders the workspace status message prominently without truncation classes', async () => {
+  it('truncates long workspace descriptions and preserves the full text in a title', async () => {
+    const description =
+      'Reviewing the richer workspace hover card before wiring it into wide and narrow layouts without allowing the description to overflow.';
     await renderHoverCard({
-      statusMessage: 'Reviewing the richer workspace hover card before wiring it into lists.',
+      statusMessage: description,
     });
 
-    const status = screen.getByText(
-      'Reviewing the richer workspace hover card before wiring it into lists.',
-    );
+    const status = screen.getByText(description);
     expect(status.className).toContain('type-body');
-    expect(status.className).toContain('whitespace-pre-wrap');
+    expect(status.className).toContain('min-w-0');
+    expect(status.className).toContain('w-full');
+    expect(status.className).toContain('truncate');
     expect(status.className).toContain('leading-snug');
     expect(status.className).toContain('bg-transparent');
     expect(status.className).toContain('text-subtle');
-    expect(status.className).toContain('max-h-24');
-    expect(status.className).toContain('overflow-y-auto');
-    expect(status.className).not.toMatch(/line-clamp|truncate|text-ellipsis/);
+    expect(status.className).not.toContain('overflow-y-auto');
+    expect(status.getAttribute('title')).toBe(description);
   });
 
   it('renders identity on the left and the normally cased semantic status only on the right', async () => {
@@ -455,6 +457,8 @@ describe('WorkspaceHoverCard', () => {
     expect(view.container.querySelector('[data-workspace-status]')).toBe(workspaceIcon);
     expect(workspaceIcon?.getAttribute('data-workspace-status')).toBe('blocked');
     expect(workspaceIcon?.getAttribute('data-workspace-status-icon')).toBe('xmark');
+    expect(workspaceIcon?.className).toContain('text-foreground');
+    expect(workspaceIcon?.className).not.toMatch(/text-(?:destructive|muted-foreground|subtle)/);
   });
 
   it('uses named card-stack agent indicators for unread cover-card summaries', async () => {
@@ -505,24 +509,35 @@ describe('WorkspaceHoverCard', () => {
     const root = container.firstElementChild as HTMLElement;
     expect(root.getAttribute('data-workspace-hover-card-layout')).toBe('two-column');
     expect(root.className).toContain('shrink-0');
+    expect(root.className).toContain('overflow-hidden');
     expect(root.className.split(/\s+/)).not.toContain('border');
     expect(root.className.split(/\s+/)).not.toContain('border-border');
-    expect(root.className.split(/\s+/)).toContain('bg-card');
-    expect(root.className.split(/\s+/)).toContain('dark:bg-popover');
-    expect(root.className).toContain('rounded-xl');
+    expect(root.className.split(/\s+/)).toContain('bg-background');
+    expect(root.className.split(/\s+/)).not.toContain('bg-card');
+    expect(root.className.split(/\s+/)).not.toContain('dark:bg-popover');
+    expect(root.className).toContain('rounded-lg');
     expect(root.className).toContain('shadow-(--elevation-overlay)');
     expect(root.className).toContain('ring-1');
+    expect(root.className).toContain('ring-border/70');
 
     const columns = container.querySelector('[data-workspace-hover-card-columns]');
     const identity = container.querySelector('[data-workspace-hover-card-identity]');
     const activity = container.querySelector('[data-workspace-hover-card-activity]');
     expect(columns?.children[0]).toBe(identity);
     expect(columns?.children[1]).toBe(activity);
+    expect(identity?.className).not.toMatch(/(?:^|\s)bg-/);
+    expect(activity?.className).not.toMatch(/(?:^|\s)bg-/);
     expect(identity?.querySelector('[data-workspace-hover-card-recency]')).toBeTruthy();
     expect(activity?.className.split(/\s+/)).toContain('border-solid');
     expect(activity?.className.split(/\s+/)).not.toContain('border-t');
     expect(activity?.querySelector('[data-workspace-hover-card-agent-summary]')).toBeTruthy();
     expect(activity?.querySelector('[data-workspace-hover-card-divider]')).toBeTruthy();
+  });
+
+  it('keeps the sidebar wrapper from clipping or repainting the rounded surface', () => {
+    expect(workspaceCardSource).toContain(
+      'class="w-auto overflow-visible! rounded-lg border-0! bg-background! shadow-none!"',
+    );
   });
 
   it('uses shared type roles for a clear content hierarchy', async () => {

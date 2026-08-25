@@ -42,7 +42,7 @@
         anchor="--workspace-hover-card-preview"
         position="right"
         anchorElement={placementTrigger}
-        class="w-auto border-0 bg-transparent shadow-xl"
+        class="w-auto overflow-visible! rounded-lg border-0! bg-background! shadow-none!"
       >
         <WorkspaceHoverCard
           workspace={cards[0].workspace}
