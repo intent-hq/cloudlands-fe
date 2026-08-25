@@ -74,6 +74,29 @@ export const selectHasResolvableModel = store.createSelector(
   },
 );
 
+/**
+ * Whether launching an agent with unpinned config would carry a resolvable
+ * provider or model. Mirrors the launch saga's resolution (`launchAgent`):
+ * `model` falls back to `selectSelectedModel` and `provider` to the active
+ * provider id, so when both resolve to '' (fresh backend, `providers.active`
+ * unset) the daemon rejects `agent.create` with "no default provider/model
+ * is configured". Auto-start flows (e.g. the Chief thread) gate on this to
+ * skip silently until a provider is configured.
+ *
+ * Known corner: the daemon's own `derived_default_provider` can also resolve
+ * from a compound daemon-side `model.default` (config-file/CLI only) with
+ * `providers.active` unset. The FE cannot see that config, so this selector
+ * reports false there and gated auto-starts skip even though the daemon
+ * would accept the call — accepted as unreachable through the app UI.
+ */
+export const selectHasResolvableProvider = store.createSelector((state): boolean => {
+  // With no active provider id the model resolution keys off provider '' and
+  // `selectHasResolvableModel` is false too, so today this reduces to
+  // `activeProviderId !== ''`. The disjunct stays as a defensive mirror of
+  // the saga's fallback pair — do not read it as model-only resolvability.
+  return selectActiveProviderId.select(state) !== '' || selectHasResolvableModel.select(state);
+});
+
 const selectAvailableModelsCollection = store.createSelector(
   (state): Collection<AuggieModel, 'value'> => {
     return state.model.availableModels;

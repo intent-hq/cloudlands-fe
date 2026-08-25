@@ -52,4 +52,12 @@ describe('Chief card migration contract', () => {
   it('shares one in-flight Chief launch across mounted card hosts', () => {
     expect(source).toContain('ensureChiefThreadCreation');
   });
+
+  it('gates thread auto-start on a resolvable provider', () => {
+    // Presence only. The behavioral contract — no launch while provider-less,
+    // exactly one launch after a provider is configured (skip does not latch
+    // hasAutoStartedRef) — is pinned by chief-card-autostart-gate.test.ts.
+    expect(source).toContain('const hasResolvableProvider$ = selectHasResolvableProvider()');
+    expect(source).toContain('if (!$hasResolvableProvider$) return;');
+  });
 });
