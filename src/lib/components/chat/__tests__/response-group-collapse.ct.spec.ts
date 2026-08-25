@@ -31,6 +31,58 @@ test('auto-collapses every completed group while later response activity remains
   await expect(finalTrigger).toHaveAttribute('aria-expanded', 'true');
 });
 
+test('keeps only the terminal completed group open until later visible content follows', async ({
+  mount,
+  page,
+}) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  const component = await mount(ResponseGroupCollapseHost, {
+    props: {
+      width: 320,
+      zoom: 1,
+      streaming: true,
+      terminalPosition: 'last',
+      afterGroupsVisible: false,
+    },
+  });
+
+  await component.update({
+    props: {
+      width: 320,
+      zoom: 1,
+      streaming: false,
+      terminalPosition: 'last',
+      afterGroupsVisible: false,
+    },
+  });
+  await expect(component.getByTestId('response-group-disclosure').nth(0)).toHaveAttribute(
+    'aria-expanded',
+    'false',
+  );
+  await expect(component.getByTestId('response-group-disclosure').nth(1)).toHaveAttribute(
+    'aria-expanded',
+    'false',
+  );
+  await expect(component.getByTestId('response-group-disclosure').nth(2)).toHaveAttribute(
+    'aria-expanded',
+    'true',
+  );
+
+  await component.update({
+    props: {
+      width: 320,
+      zoom: 1,
+      streaming: false,
+      terminalPosition: null,
+      afterGroupsVisible: true,
+    },
+  });
+  await expect(component.getByTestId('response-group-disclosure').nth(2)).toHaveAttribute(
+    'aria-expanded',
+    'false',
+  );
+});
+
 function channel(value: number): number {
   const normalized = value / 255;
   return normalized <= 0.04045 ? normalized / 12.92 : Math.pow((normalized + 0.055) / 1.055, 2.4);

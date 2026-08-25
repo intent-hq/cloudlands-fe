@@ -11,6 +11,8 @@
     chunk = 'initial chunk',
     streaming = true,
     activePosition,
+    terminalPosition,
+    afterGroupsVisible = true,
   }: {
     theme?: 'light' | 'dark';
     width?: number;
@@ -18,6 +20,8 @@
     chunk?: string;
     streaming?: boolean;
     activePosition?: Position | 'thinking';
+    terminalPosition?: Position | null;
+    afterGroupsVisible?: boolean;
   } = $props();
 
   const positions = ['first', 'middle', 'last'] as const satisfies readonly Position[];
@@ -47,6 +51,7 @@
         <ResponseGroup
           name={`${position} group`}
           isStreaming={activePosition === undefined ? streaming : activePosition === position}
+          isTerminal={terminalPosition === position}
           {blocks}
         >
           <div class="py-2" data-testid="response-group-body-{position}">
@@ -57,10 +62,12 @@
         </ResponseGroup>
       </div>
     {/each}
-    <div data-testid="response-after-groups">
-      {activePosition === 'thinking'
-        ? 'Later Thinking/response activity continues'
-        : 'Later response activity'}
-    </div>
+    {#if afterGroupsVisible}
+      <div data-testid="response-after-groups">
+        {activePosition === 'thinking'
+          ? 'Later Thinking/response activity continues'
+          : 'Later response activity'}
+      </div>
+    {/if}
   </div>
 </section>
