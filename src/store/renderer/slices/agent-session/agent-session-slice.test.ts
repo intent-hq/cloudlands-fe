@@ -52,6 +52,7 @@ import {
   chatReset,
   streamCompleted,
 } from '../chat-state/chat-state-slice';
+import { splitUnloadedRows } from '$lib/components/chat/chat-scrollback-composition';
 import { eventReceived } from '../workspace-events/workspace-events-slice';
 import { workspaceDeleted } from '../workspace-lifecycle/workspace-lifecycle-slice';
 import {
@@ -5728,6 +5729,56 @@ describe('history segment (scrollback)', () => {
         ),
       );
       expect(getHistory(state, 'a1')!.holeRowsEstimate).toBe(250);
+    });
+
+    it('capped serial walk: hole estimate grows by exactly the pruned count so the above split shrinks monotonically to 0', () => {
+      // Regression (termination bookkeeping): with the segment pinned at
+      // HISTORY_SEGMENT_MAX, every prepended page cap-prunes its row count
+      // into the history→tail hole. If holeRowsEstimate under-counted, the
+      // above split would stall and the settle-chained walk could not
+      // terminate before exhaustion.
+      const TOTAL_HISTORY = 2000;
+      const PAGE = 200;
+      const totalMessages = TOTAL_HISTORY + 1;
+      let state = withSession('a1', [makeUniqueMessage('tail-1', 'user', ts(TOTAL_HISTORY))]);
+
+      const aboveSplit = (s: AgentSessionState) => {
+        const segment = getHistory(s, 'a1')!;
+        return splitUnloadedRows({
+          totalMessages,
+          residentCount: segment.messages.length + 1,
+          exhausted: false,
+          startOrdinalEstimate: segment.startOrdinalEstimate ?? null,
+          gapToTail: segment.gapToTail,
+          holeRowsEstimate: segment.holeRowsEstimate ?? null,
+        }).above;
+      };
+
+      let cursor = TOTAL_HISTORY;
+      let prepended = 0;
+      let previousAbove = Number.POSITIVE_INFINITY;
+      while (cursor > 0) {
+        const start = cursor - PAGE;
+        state = agentSessionReducer(
+          state,
+          prependHistoryMessages(
+            'a1',
+            Array.from({ length: PAGE }, (_, i) => histMsg(start + i)),
+          ),
+        );
+        cursor = start;
+        prepended += PAGE;
+        const segment = getHistory(state, 'a1')!;
+        // Exact bookkeeping: every row pruned past the cap is in the hole.
+        expect(segment.holeRowsEstimate ?? 0).toBe(Math.max(0, prepended - HISTORY_SEGMENT_MAX));
+        // The above split must equal the unfetched-older row count exactly
+        // and strictly decrease with every page (monotonic termination).
+        const above = aboveSplit(state);
+        expect(above).toBe(cursor);
+        expect(above).toBeLessThan(previousAbove);
+        previousAbove = above;
+      }
+      expect(aboveSplit(state)).toBe(0);
     });
 
     it('does not track a hole estimate on seek-seeded segments (start ordinal anchors the split)', () => {
