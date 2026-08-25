@@ -194,7 +194,7 @@ describe('editorial workspace shell presentation contract', () => {
     expect(titlebar).toContain('data-titlebar-workspace-controls');
     expect(titlebar.indexOf('<SidebarNav />')).toBeLessThan(titlebar.indexOf('<WorkspaceTabStrip'));
     expect(titlebar).toContain('style:margin-left={`${panelOffset}px`}');
-    expect(titlebar).toContain('activeTabBounds.left + panelOffset - 6');
+    expect(titlebar).toContain('activeTabBounds.left - 6');
     expect(titlebar).toContain('.titlebar-drag-handle');
     expect(titlebar).toContain('.titlebar-left-drag-surface');
     expect(titlebar).toContain('.titlebar-left-drag-handle');
