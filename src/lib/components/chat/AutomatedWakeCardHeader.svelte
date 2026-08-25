@@ -1,4 +1,14 @@
 <script lang="ts">
+  /**
+   * AutomatedWakeCardHeader
+   *
+   * The whole header bar is a toggle hit-target for the disclosure; the
+   * chevron button carries the disclosure semantics (aria-expanded /
+   * aria-controls) and keyboard activation. The PR chip stays a sibling
+   * interactive control — the row handler ignores clicks originating from
+   * any button so neither action can activate the other and the card never
+   * nests interactive controls.
+   */
   import Fa from 'svelte-fa';
   import { faBolt, faChevronDown, faCodePullRequest } from '@fortawesome/free-solid-svg-icons';
   import type { Workspace } from '$shared/types';
@@ -52,13 +62,22 @@
       forceExternal: true,
     });
   }
+
+  function handleRowClick(event: MouseEvent) {
+    // Sibling buttons (PR chip, chevron toggle) own their own clicks.
+    if ((event.target as HTMLElement | null)?.closest('button')) return;
+    ontoggle();
+  }
 </script>
 
+<!-- svelte-ignore a11y_click_events_have_key_events (keyboard toggle lives on the chevron button) -->
+<!-- svelte-ignore a11y_no_static_element_interactions (row is an enlarged hit-target for the chevron toggle) -->
 <div
-  class={SUBSCRIPTION_DISCLOSURE_ROW_CLASS}
+  class="{SUBSCRIPTION_DISCLOSURE_ROW_CLASS} cursor-pointer"
   data-testid="automated-wake-header"
   data-wake-kind={presentation.kind}
   data-wake-state={presentation.state}
+  onclick={handleRowClick}
 >
   <Fa
     icon={presentation.kind === 'hook' ? faBolt : faCodePullRequest}
