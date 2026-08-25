@@ -47,4 +47,32 @@ describe('LazyTurn shared observer ownership', () => {
     });
     release();
   });
+
+  it('delivers mixed observer entries with entries first and registration order within each side', () => {
+    const root = document.createElement('div');
+    const old = document.createElement('div');
+    const newer = document.createElement('div');
+    const calls: string[] = [];
+    const releaseOld = observeLazyTurnVisibility(old, root, (visible) =>
+      calls.push(`old:${visible}`),
+    );
+    const releaseNewer = observeLazyTurnVisibility(newer, root, (visible) =>
+      calls.push(`newer:${visible}`),
+    );
+    const observer = MockIntersectionObserver.instances[0];
+
+    observer.callback(
+      [
+        { target: newer, isIntersecting: false },
+        { target: newer, isIntersecting: true },
+        { target: old, isIntersecting: false },
+        { target: old, isIntersecting: true },
+      ] as IntersectionObserverEntry[],
+      observer as unknown as IntersectionObserver,
+    );
+
+    expect(calls).toEqual(['old:true', 'newer:true', 'old:false', 'newer:false']);
+    releaseOld();
+    releaseNewer();
+  });
 });

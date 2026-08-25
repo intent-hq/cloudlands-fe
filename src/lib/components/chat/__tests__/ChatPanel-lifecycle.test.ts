@@ -306,6 +306,33 @@ type Frame = { id: number; callback: FrameRequestCallback };
 let frames: Frame[];
 let nextFrameId: number;
 
+class MockChatIntersectionObserver {
+  static instances: MockChatIntersectionObserver[] = [];
+  callback: IntersectionObserverCallback;
+  observed = new Set<Element>();
+
+  constructor(callback: IntersectionObserverCallback) {
+    this.callback = callback;
+    MockChatIntersectionObserver.instances.push(this);
+  }
+
+  observe(element: Element) {
+    this.observed.add(element);
+  }
+
+  unobserve(element: Element) {
+    this.observed.delete(element);
+  }
+
+  disconnect() {
+    this.observed.clear();
+  }
+
+  fire(entries: Array<{ target: Element; isIntersecting: boolean }>) {
+    this.callback(entries as IntersectionObserverEntry[], this as unknown as IntersectionObserver);
+  }
+}
+
 function workspace(id: string): Workspace {
   return {
     id: id as Workspace['id'],
@@ -432,6 +459,123 @@ afterEach(() => {
 });
 
 describe('ChatPanel mounted lifecycle', () => {
+  it('keeps user rows and newer off-screen assistant messages hydrated by message order', async () => {
+    MockChatIntersectionObserver.instances = [];
+    vi.stubGlobal('IntersectionObserver', MockChatIntersectionObserver);
+    const offsetHeight = vi
+      .spyOn(HTMLElement.prototype, 'offsetHeight', 'get')
+      .mockReturnValue(240);
+    const offsetWidth = vi.spyOn(HTMLElement.prototype, 'offsetWidth', 'get').mockReturnValue(800);
+    mocks.draftGet.mockResolvedValue(null);
+    mocks.agentMessages.set(
+      Array.from({ length: 24 }, (_, index) => [
+        {
+          id: `user-${index}`,
+          role: 'user',
+          content: `question ${index}`,
+          timestamp: `2026-01-01T00:${String(index).padStart(2, '0')}:00.000Z`,
+        },
+        {
+          id: `assistant-${index}`,
+          role: 'assistant',
+          content: `answer ${index}`,
+          timestamp: `2026-01-01T00:${String(index).padStart(2, '0')}:30.000Z`,
+        },
+      ]).flat(),
+    );
+    const view = render(ChatPanel, {
+      props: { workspace: workspace('workspace-a'), agentId: 'agent-a' },
+    });
+    let unmounted = false;
+
+    try {
+      await tick();
+      await tick();
+
+      expect(view.container.querySelectorAll('[data-message-role="user"]')).toHaveLength(24);
+      expect(
+        view.container
+          .querySelector('[data-lazy-turn-key="assistant-2"]')
+          ?.getAttribute('data-lazy-visible'),
+      ).toBe('false');
+      expect(
+        view.container
+          .querySelector('[data-lazy-turn-key="assistant-22"]')
+          ?.getAttribute('data-lazy-visible'),
+      ).toBe('false');
+      expect(MockChatIntersectionObserver.instances).toHaveLength(1);
+
+      flushFrame();
+      await vi.advanceTimersByTimeAsync(1);
+      const observer = MockChatIntersectionObserver.instances[0];
+      const older = view.container.querySelector('[data-lazy-turn-key="assistant-5"]')!;
+      const frontier = view.container.querySelector('[data-lazy-turn-key="assistant-10"]')!;
+      const newer = view.container.querySelector('[data-lazy-turn-key="assistant-18"]')!;
+
+      observer.fire([{ target: older, isIntersecting: true }]);
+      await tick();
+      expect(newer.getAttribute('data-lazy-visible')).toBe('true');
+
+      observer.fire([
+        { target: frontier, isIntersecting: true },
+        { target: older, isIntersecting: false },
+        { target: newer, isIntersecting: false },
+      ]);
+      await vi.advanceTimersByTimeAsync(260);
+      await tick();
+
+      expect(older.getAttribute('data-lazy-visible')).toBe('false');
+      expect(newer.getAttribute('data-lazy-visible')).toBe('true');
+      expect(view.container.querySelector('[data-message-id="user-5"]')).not.toBeNull();
+      expect(view.container.querySelector('[data-message-id="assistant-18"]')).not.toBeNull();
+      view.unmount();
+      unmounted = true;
+      expect(observer.observed.size).toBe(0);
+    } finally {
+      if (!unmounted) view.unmount();
+      offsetHeight.mockRestore();
+      offsetWidth.mockRestore();
+    }
+  });
+
+  it('virtualizes assistant-heavy Chief transcripts within one recent turn', async () => {
+    MockChatIntersectionObserver.instances = [];
+    vi.stubGlobal('IntersectionObserver', MockChatIntersectionObserver);
+    mocks.draftGet.mockResolvedValue(null);
+    mocks.agentMessages.set([
+      {
+        id: 'user-heavy',
+        role: 'user',
+        content: 'coordinate a long run',
+        timestamp: '2026-01-01T00:00:00.000Z',
+      },
+      ...Array.from({ length: 12 }, (_, index) => ({
+        id: `assistant-heavy-${index}`,
+        role: 'assistant',
+        content: `assistant update ${index}`,
+        timestamp: `2026-01-01T00:00:${String(index + 1).padStart(2, '0')}.000Z`,
+      })),
+    ]);
+
+    const view = render(ChatPanel, {
+      props: { workspace: workspace('__chief__'), agentId: 'agent-a' },
+    });
+    await tick();
+    await tick();
+
+    expect(view.container.querySelector('[data-message-id="user-heavy"]')).not.toBeNull();
+    expect(
+      view.container
+        .querySelector('[data-lazy-turn-key="assistant-heavy-0"]')
+        ?.getAttribute('data-lazy-visible'),
+    ).toBe('false');
+    expect(
+      view.container
+        .querySelector('[data-lazy-turn-key="assistant-heavy-11"]')
+        ?.getAttribute('data-lazy-visible'),
+    ).toBe('false');
+  });
+
   it('does not attach a new pre-output terminal error to the previous assistant row', async () => {
     mocks.draftGet.mockResolvedValue(null);
     mocks.agentMessages.set([
