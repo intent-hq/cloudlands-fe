@@ -60,6 +60,29 @@ function slash(path) {
   return path.split(sep).join('/');
 }
 
+function canonicalExistingPath(path) {
+  let candidate = path;
+  while (true) {
+    try {
+      return realpathSync(candidate);
+    } catch (error) {
+      if (error?.code !== 'ENOENT') throw error;
+      const parent = dirname(candidate);
+      if (parent === candidate) throw error;
+      candidate = parent;
+    }
+  }
+}
+
+function assertCanonicalPathInsideRoot(path, root, displayPath) {
+  const canonicalRoot = realpathSync(root);
+  const canonicalPath = canonicalExistingPath(path);
+  const rel = relative(canonicalRoot, canonicalPath);
+  if (rel === '..' || rel.startsWith(`..${sep}`) || isAbsolute(rel)) {
+    throw new Error(`path is outside the frontend package: ${displayPath}`);
+  }
+}
+
 export function parseArgs(argv) {
   const result = { dryRun: false, help: false, paths: [] };
   for (const arg of argv) {
@@ -80,15 +103,20 @@ export function normalizeInputPath(input, root = REPO_ROOT) {
   if (rel === '..' || rel.startsWith('../') || isAbsolute(rel)) {
     throw new Error(`path is outside the frontend package: ${input}`);
   }
+  assertCanonicalPathInsideRoot(absolute, root, input);
   return rel || '.';
 }
 
 function walk(directory, root, files) {
+  assertCanonicalPathInsideRoot(directory, root, slash(relative(root, directory)) || '.');
   for (const entry of readdirSync(directory, { withFileTypes: true })) {
     if (entry.isDirectory() && SKIP_DIRS.has(entry.name)) continue;
     const absolute = join(directory, entry.name);
     if (entry.isDirectory()) walk(absolute, root, files);
-    else if (entry.isFile()) files.push(slash(relative(root, absolute)));
+    else if (entry.isFile()) {
+      assertCanonicalPathInsideRoot(absolute, root, slash(relative(root, absolute)));
+      files.push(slash(relative(root, absolute)));
+    }
   }
 }
 
@@ -381,6 +409,7 @@ export async function acquireVerificationLock(options = {}) {
   const lockPath = options.lockPath ?? defaultLockPath();
   const timeoutMs = options.timeoutMs ?? 30_000;
   const pollMs = options.pollMs ?? 250;
+  const statLock = options.statLock ?? statSync;
   const token = randomUUID();
   const started = Date.now();
   while (true) {
@@ -402,7 +431,12 @@ export async function acquireVerificationLock(options = {}) {
         const owner = JSON.parse(readFileSync(join(lockPath, 'owner.json'), 'utf8'));
         stale = !processIsAlive(owner.pid);
       } catch {
-        stale = Date.now() - statSync(lockPath).mtimeMs > 4 * 60 * 60 * 1000;
+        try {
+          stale = Date.now() - statLock(lockPath).mtimeMs > 4 * 60 * 60 * 1000;
+        } catch (statError) {
+          if (statError?.code === 'ENOENT') continue;
+          throw statError;
+        }
       }
       if (stale) {
         rmSync(lockPath, { recursive: true, force: true });

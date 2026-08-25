@@ -1,4 +1,11 @@
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  mkdirSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -50,6 +57,17 @@ describe('verify-changed arguments and paths', () => {
       'src/nested/b.svelte',
     ]);
     expect(() => expandInputPaths(['../outside.ts'], root)).toThrow('outside');
+  });
+
+  it('rejects symlinks outside the package and keeps in-package and missing paths', () => {
+    const root = fixtureRoot({ 'src/a.ts': '' });
+    const outside = fixtureRoot({ 'outside.ts': '' });
+    symlinkSync(outside, join(root, 'external'), 'dir');
+    symlinkSync(join(root, 'src'), join(root, 'internal'), 'dir');
+
+    expect(() => expandInputPaths(['external'], root)).toThrow('outside');
+    expect(expandInputPaths(['internal'], root)).toEqual(['internal/a.ts']);
+    expect(expandInputPaths(['src/deleted.ts'], root)).toEqual(['src/deleted.ts']);
   });
 });
 
@@ -145,5 +163,40 @@ describe('expensive-check coordination', () => {
       'another expensive frontend verification',
     );
     expect(JSON.parse(readFileSync(join(lockPath, 'owner.json'), 'utf8')).token).toBe('other');
+  });
+
+  it('retries when the lock disappears before its metadata can be inspected', async () => {
+    const parent = temporaryDirectory();
+    const lockPath = join(parent, 'lock');
+    mkdirSync(lockPath);
+
+    const release = await acquireVerificationLock({
+      lockPath,
+      timeoutMs: 15,
+      pollMs: 5,
+      statLock(path: string) {
+        rmSync(path, { recursive: true, force: true });
+        return statSync(path);
+      },
+    });
+
+    expect(readFileSync(join(lockPath, 'owner.json'), 'utf8')).toContain(String(process.pid));
+    release();
+  });
+
+  it('preserves unexpected lock inspection errors', async () => {
+    const lockPath = temporaryDirectory();
+    const error = Object.assign(new Error('lock inspection failed'), { code: 'EACCES' });
+
+    await expect(
+      acquireVerificationLock({
+        lockPath,
+        timeoutMs: 15,
+        pollMs: 5,
+        statLock() {
+          throw error;
+        },
+      }),
+    ).rejects.toBe(error);
   });
 });
