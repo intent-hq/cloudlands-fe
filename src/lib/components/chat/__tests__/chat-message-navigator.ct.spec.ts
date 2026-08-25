@@ -258,7 +258,7 @@ test.describe('chat message navigator production path', () => {
       await expect(downButton).toHaveAttribute('data-icon-size', '16');
 
       const target = page.locator('[data-message-id="user-6"]');
-      await expect(target).toHaveCount(0);
+      await expect(target).toHaveCount(1);
       expect(await duplicateLiveMessageIdentityPairs(page)).toEqual([]);
       await listButton.click();
       const dialog = await pickerForTrigger(page, listButton);
@@ -428,6 +428,13 @@ test.describe('chat message navigator production path', () => {
       await expect(option).toHaveAttribute('data-navigation-message-id', 'user-6');
       expect(await classifyMessageIdentityNodes(page, 'user-6')).toEqual([
         {
+          ancestry: 'other',
+          connected: true,
+          lifecycle: 'transcript-row',
+          transitionState: undefined,
+          visible: true,
+        },
+        {
           ancestry: 'dialog',
           connected: true,
           lifecycle: 'navigation-option',
@@ -444,10 +451,10 @@ test.describe('chat message navigator production path', () => {
       expect(await duplicateLiveMessageIdentityPairs(page)).toEqual([]);
       expect(await classifyMessageIdentityNodes(page, 'user-6')).toEqual([
         {
-          ancestry: 'transcript',
+          ancestry: 'other',
           connected: true,
           lifecycle: 'transcript-row',
-          transitionState: 'true',
+          transitionState: undefined,
           visible: true,
         },
       ]);

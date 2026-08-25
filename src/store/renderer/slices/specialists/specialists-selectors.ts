@@ -129,18 +129,17 @@ export const selectSpecialists = store.createSelector((state): Specialist[] => {
         }
     }
 
-    // Stable sort: bundled specialists in their original order first,
+    // Stable sort: built-in specialists in catalog order first,
     // then custom (user/project) specialists sorted alphabetically by name.
     // This prevents the list from reordering when a specialist is re-saved.
     const bundledOrder = new Map<string, number>();
-    // Build order from bundled + hardcoded fallback (both represent "built-in" order)
-    for (const s of bundledSpecialists) {
+    // Seed from the catalog so file-only overrides retain their built-in position,
+    // then append any daemon-provided built-ins that are not in the catalog.
+    for (const s of SPECIALISTS) {
         if (!bundledOrder.has(s.id)) bundledOrder.set(s.id, bundledOrder.size);
     }
-    if (bundledSpecialists.length === 0) {
-        for (const s of SPECIALISTS) {
-            if (!bundledOrder.has(s.id)) bundledOrder.set(s.id, bundledOrder.size);
-        }
+    for (const s of bundledSpecialists) {
+        if (!bundledOrder.has(s.id)) bundledOrder.set(s.id, bundledOrder.size);
     }
 
     result.sort((a, b) => {
@@ -227,9 +226,14 @@ export const selectEffectiveBehaviorPrompt = store.createSelector((state, specia
     // Wave 2: File specialists already have the correct prompt baked in.
     return specialist.defaultBehaviorPrompt;
 });
-/** Check if a specialist is built-in (bundled) */
+function isKnownBuiltIn(specialistId: string, bundledSpecialists: Specialist[]): boolean {
+    return bundledSpecialists.some((s: Specialist) => s.id === specialistId) ||
+        SPECIALISTS.some((s: Specialist) => s.id === specialistId);
+}
+
+/** Check if a specialist is built-in (bundled or shipped in the catalog) */
 export const selectIsBuiltIn = store.createSelector((state, specialistId: string): boolean => {
-    return state.specialists.bundledSpecialists.some((s: Specialist) => s.id === specialistId);
+    return isKnownBuiltIn(specialistId, state.specialists.bundledSpecialists);
 });
 /** Check if a specialist is file-based */
 export const selectIsFileBased = store.createSelector((state, specialistId: string): boolean => {
@@ -242,7 +246,7 @@ export const selectIsFileBased = store.createSelector((state, specialistId: stri
  * equal) never reads as "Modified" (monorepo#1450).
  */
 export const selectHasOverrides = store.createSelector((state, specialistId: string): boolean => {
-    const isBuiltIn = state.specialists.bundledSpecialists.some((s: Specialist) => s.id === specialistId);
+    const isBuiltIn = isKnownBuiltIn(specialistId, state.specialists.bundledSpecialists);
     if (!isBuiltIn) return false;
     const file = getItem(state.specialists.fileSpecialists, specialistId);
     if (!file || file.source !== 'user') return false;

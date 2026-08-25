@@ -15,6 +15,7 @@
     faExclamationTriangle,
     faCopy,
     faCheck,
+    faStop,
   } from '@fortawesome/free-solid-svg-icons';
   import { Button } from '$lib/components/ui/button';
   import { cn } from '$lib/utils/cn';
@@ -22,7 +23,8 @@
   import {
     deriveErrorDisplay,
     formatElapsed,
-    getLatestStatusEvent,
+    getActiveStalledEvent,
+    getLatestThinkingStatusEvent,
     getStatusMarkVariant,
   } from './streaming-status-utils';
   import { m } from '$shared/paraglide/messages.js';
@@ -70,6 +72,8 @@
     onRetryWithModel?: (model: string) => void;
     /** Callback to stop streaming */
     onStop?: () => void;
+    /** Callback to cancel the stalled turn and re-send the last input (monorepo#3402) */
+    onStalledRetry?: () => void;
     /** Seed for spinner colors (typically agent ID) */
     seed?: string;
     /** Additional class names */
@@ -79,7 +83,6 @@
   let {
     isStreaming = false,
     isProcessing = false,
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     lastChunkTime = null,
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     receivedFirstChunk = false,
@@ -95,8 +98,8 @@
     hasPendingPermission = false,
     onRetry,
     onRetryWithModel,
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     onStop,
+    onStalledRetry,
     seed,
     class: className = '',
   }: Props = $props();
@@ -115,10 +118,23 @@
   let visible = $derived(
     error || modelUnavailable || ((isStreaming || isProcessing) && !hasPendingPermission),
   );
-  let thinkingVisible = $derived(
-    status === 'normal' && (isStreaming || isProcessing) && !hasPendingPermission,
+  // Daemon-reported mid-turn stall (monorepo#3402): only meaningful while the
+  // turn is still active — turn end/failure clears statusEvents or flips
+  // status away from 'normal', so the stalled row can never outlive the turn.
+  let stalledEvent = $derived(
+    status === 'normal' && (isStreaming || isProcessing) && !hasPendingPermission
+      ? getActiveStalledEvent(statusEvents, lastChunkTime)
+      : null,
   );
-  let latestStatusEvent = $derived(getLatestStatusEvent(statusEvents));
+  let thinkingVisible = $derived(
+    status === 'normal' &&
+      (isStreaming || isProcessing) &&
+      !hasPendingPermission &&
+      !stalledEvent,
+  );
+  // Skips stalled events: an active stall has its own row, and a superseded
+  // one must not leak its stale message into the returning thinking indicator.
+  let latestStatusEvent = $derived(getLatestThinkingStatusEvent(statusEvents));
   let markVariant = $derived(getStatusMarkVariant(latestStatusEvent?.phase));
 
   let nowMs = $state(Date.now());
@@ -131,7 +147,7 @@
   }
 
   $effect(() => {
-    if (!thinkingVisible || !latestStatusEvent) {
+    if ((!thinkingVisible || !latestStatusEvent) && !stalledEvent) {
       clearElapsedInterval();
       return;
     }
@@ -148,6 +164,16 @@
       ? m.chat_streamingStatus_elapsedAgo_label({
           duration: formatElapsed(nowMs - latestStatusEvent.timestamp),
         })
+      : null,
+  );
+
+  // Live "No model activity for N" copy. The daemon emits the stalled event
+  // only after measuring `silentMs` of silence, so anchor at
+  // `timestamp - silentMs` to reflect the actual silence duration rather
+  // than starting the counter at the emission time.
+  let stalledElapsed = $derived(
+    stalledEvent
+      ? formatElapsed(nowMs - (stalledEvent.timestamp - (stalledEvent.silentMs ?? 0)))
       : null,
   );
 
@@ -185,6 +211,53 @@
   {seed}
   class="mt-2 {className}"
 />
+
+{#if stalledEvent}
+  <div
+    data-stream-stalled="true"
+    class={cn(
+      'type-caption mt-2 flex items-center gap-2 rounded-md border border-warning/20 bg-warning/5 py-2 pl-2 pr-1',
+      className,
+    )}
+    in:fade={{ duration: 200, easing: cubicOut }}
+    out:fade={{ duration: 150, easing: cubicOut }}
+  >
+    <!-- Static live announcement: announced once when the stall appears. The
+         visible label ticks every second and must stay out of the live region
+         so assistive tech doesn't re-announce it for the entire stall. -->
+    <span role="status" class="sr-only" data-testid="stalled-announcement"
+      >{m.chat_streamingStatus_stalledAnnouncement_label()}</span
+    >
+    <Fa icon={faExclamationTriangle} class="shrink-0 text-warning/70" />
+    <span class="min-w-0 flex-1 truncate text-warning" data-testid="stalled-message"
+      >{m.chat_streamingStatus_stalled_label({ duration: stalledElapsed ?? '' })}</span
+    >
+    {#if onStalledRetry}
+      <Button
+        variant="ghost-light"
+        size="sm"
+        onclick={onStalledRetry}
+        class="type-caption h-7 shrink-0 gap-1.5 px-2 text-muted-foreground"
+        data-testid="stalled-retry"
+      >
+        <Fa icon={faRotateRight} class="size-3" />
+        {m.chat_streamingStatus_stalledRetry_label()}
+      </Button>
+    {/if}
+    {#if onStop}
+      <Button
+        variant="ghost-light"
+        size="sm"
+        onclick={onStop}
+        class="type-caption h-7 shrink-0 gap-1.5 px-2 text-muted-foreground"
+        data-testid="stalled-cancel"
+      >
+        <Fa icon={faStop} class="size-3" />
+        {m.chat_streamingStatus_stalledCancel_label()}
+      </Button>
+    {/if}
+  </div>
+{/if}
 
 {#if visible}
   {#if status !== 'normal'}

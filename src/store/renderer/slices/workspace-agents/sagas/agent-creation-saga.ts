@@ -55,6 +55,24 @@ function creationError(error: unknown, fallback = m.agent_creation_createFailed_
   return new Error(error ? String(error) : fallback);
 }
 
+function isProviderModelMismatch(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : typeof error === 'string' ? error : '';
+  return /\bmodel\b.+\bdoes not belong to provider\b/i.test(message);
+}
+
+async function showCreationError(error: unknown): Promise<void> {
+  try {
+    const { toast } = await import('svelte-sonner');
+    toast.error(m.agent_creation_createFailed_error(), {
+      description: isProviderModelMismatch(error)
+        ? m.agent_creation_providerModelMismatch_description()
+        : m.agent_creation_failed_description(),
+    });
+  } catch (toastError) {
+    logger.error('Failed to surface agent creation error', toastError);
+  }
+}
+
 function* validateWorkspace(wsId: string): SagaGenerator<Workspace | null> {
   if (wsId === CHIEF_WORKSPACE_ID) return createChiefVirtualWorkspace();
   const workspace = yield* selectWorkspaceById.effect(wsId);
@@ -125,6 +143,7 @@ function* createBasicAgent(action: ReturnType<typeof createAgentRequested>): Sag
     });
     if (!result.success || !result.agent) {
       logger.error('Failed to create agent', { workspaceId: wsId, error: result.error });
+      yield* call(showCreationError, result.error);
       return;
     }
     yield* call(registerCreatedAgent, wsId, result.agent, agents);
@@ -137,6 +156,7 @@ function* createBasicAgent(action: ReturnType<typeof createAgentRequested>): Sag
     );
   } catch (error) {
     logger.error('Failed to create agent', { workspaceId: wsId, error });
+    yield* call(showCreationError, error);
   }
 }
 
@@ -180,6 +200,7 @@ function* createSpecialistAgent(
     });
     if (!result.success || !result.agent) {
       logger.error('Failed to create specialist agent', { workspaceId: wsId, error: result.error });
+      yield* call(showCreationError, result.error);
       return;
     }
     yield* call(registerCreatedAgent, wsId, result.agent, agents);
@@ -192,6 +213,7 @@ function* createSpecialistAgent(
     );
   } catch (error) {
     logger.error('Failed to create specialist agent', { workspaceId: wsId, error });
+    yield* call(showCreationError, error);
   }
 }
 
@@ -251,10 +273,19 @@ function* runAgentForNote(
       metadata: { taskNoteId: noteId, source: 'task-run', specialist: specialistId },
       initialMessage: buildTaskAgentInitialMessage(note),
     });
-    if (!result.success || !result.agentId) return;
+    if (!result.success || !result.agentId) {
+      logger.error('Failed to run agent for note', {
+        workspaceId: wsId,
+        noteId,
+        error: result.error,
+      });
+      yield* call(showCreationError, result.error);
+      return;
+    }
     yield* put(openAgentTabRequested(wsId, { agentId: result.agentId }));
   } catch (error) {
     logger.error('Failed to run agent for note', { workspaceId: wsId, noteId, error });
+    yield* call(showCreationError, error);
   }
 }
 
@@ -278,7 +309,9 @@ function* createFromConfig(
     yield* put(action.success(result.agent));
     settled = true;
   } catch (error) {
-    yield* put(action.failure(creationError(error)));
+    const failure = creationError(error);
+    yield* call(showCreationError, failure);
+    yield* put(action.failure(failure));
     settled = true;
   } finally {
     if (!settled && (yield* cancelled())) {

@@ -117,7 +117,6 @@ describe('B2 caller metadata regression', () => {
       ],
       toggle: [
         'src/lib/component-catalog/renderers/BasicCatalogPreview.svelte',
-        'src/lib/components/layout/WorkspaceViewModeToggle.svelte',
         'src/lib/components/settings/AdditionalAgentsSettings.svelte',
         'src/lib/components/settings/AgentFeaturesSettings.svelte',
         'src/lib/components/settings/HardwareConsoleSettings.svelte',

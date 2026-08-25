@@ -55,7 +55,6 @@ export const toggleMetadata = {
   owner: '007-B2',
   callers: [
     'src/lib/component-catalog/renderers/BasicCatalogPreview.svelte',
-    'src/lib/components/layout/WorkspaceViewModeToggle.svelte',
     'src/lib/components/settings/AdditionalAgentsSettings.svelte',
     'src/lib/components/settings/AgentFeaturesSettings.svelte',
     'src/lib/components/settings/HardwareConsoleSettings.svelte',

@@ -4,7 +4,6 @@
   import AllWorkspacesCard from './cards/AllWorkspacesCard.svelte';
   import ChiefCard from './cards/ChiefCard.svelte';
   import SettingsCard from './cards/SettingsCard.svelte';
-  import { slide } from 'svelte/transition';
   import { onDestroy } from 'svelte';
   import Fa from 'svelte-fa';
   import {
@@ -35,6 +34,7 @@
   import {
     isCombinedWorkspacePanelItem,
     type AllSpacesViewMode,
+    type SidebarNavItem,
   } from '$store/renderer/slices/sidebar-nav/sidebar-nav-types';
   import { store as appStore } from '$store/renderer/store';
 
@@ -55,14 +55,49 @@
   const MIN_SPLIT = 0.15;
   const MAX_SPLIT = 0.85;
 
+  // ── Keep the panel mounted across open/close ──
+  // Nothing renders until the panel is first opened; after that it stays
+  // mounted (hidden, width 0) when closed so its heavy children are not torn
+  // down and rebuilt on every toggle. The width animates instead of the panel
+  // mounting/unmounting.
+  const isOpen = $derived(Boolean($panelItem$) && !$onboardingActive$);
+
+  // Last opened item, preserved while the panel is hidden so its content stays
+  // mounted. Content reads `displayedPanelItem`, which falls back to it while
+  // the live panel item is null (closed).
+  let lastPanelItem = $state<SidebarNavItem | null>(null);
+  $effect(() => {
+    if (isOpen && $panelItem$) lastPanelItem = $panelItem$;
+  });
+  const displayedPanelItem = $derived($panelItem$ ?? lastPanelItem);
+
+  // Render once the panel has ever been opened, then keep it in the tree.
+  const shouldRender = $derived(isOpen || lastPanelItem !== null);
+
+  // Drive the open/close width animation without unmounting. Deferring the
+  // expand by a frame lets the collapsed state paint first so the very first
+  // open still animates.
+  let expanded = $state(false);
+  $effect(() => {
+    if (!isOpen) {
+      expanded = false;
+      return;
+    }
+    if (expanded) return;
+    const raf = requestAnimationFrame(() => {
+      expanded = true;
+    });
+    return () => cancelAnimationFrame(raf);
+  });
+
   // Chief and All Workspaces open the same combined panel:
   // workspace list on top, Chief chat below, separated by a resizable divider.
   const isCombinedWorkspace = $derived(
-    $panelItem$ !== null && isCombinedWorkspacePanelItem($panelItem$),
+    displayedPanelItem !== null && isCombinedWorkspacePanelItem(displayedPanelItem),
   );
 
   const panelMeta = $derived.by(() => {
-    switch ($panelItem$) {
+    switch (displayedPanelItem) {
       case 'active':
         return { title: m.layout_sidebarNav_activeWorkspaces_title(), description: '' };
       case 'settings':
@@ -229,13 +264,17 @@
   });
 </script>
 
-{#if $panelItem$ && !$onboardingActive$}
-  <!-- Outer wrapper animates width; inner content stays at full static width -->
+{#if shouldRender}
+  <!-- Outer wrapper animates width; the panel stays mounted while hidden so its
+       children are not torn down and rebuilt on every open/close. -->
   <div
     class="shrink-0 h-full overflow-clip [overflow-clip-margin:0.5rem]"
     data-sidebar-panel
     data-panel-item={$panelItem$}
-    transition:slide={{ axis: 'x', duration: 200 }}
+    data-panel-shell
+    data-resizing={isResizing}
+    style="width: {expanded ? liveWidth : 0}px;"
+    inert={!isOpen}
   >
     <div
       class="sidebar-panel h-full flex flex-col relative text-sidebar-foreground"
@@ -417,9 +456,9 @@
           bind:this={contentEl}
           onscroll={updateScrollFades}
         >
-          {#if $panelItem$ === 'active'}
+          {#if displayedPanelItem === 'active'}
             <ActiveWorkspacesCard expanded={true} />
-          {:else if $panelItem$ === 'settings'}
+          {:else if displayedPanelItem === 'settings'}
             <SettingsCard />
           {/if}
         </div>
@@ -453,6 +492,22 @@
 <style>
   .sidebar-panel {
     container-type: inline-size;
+  }
+
+  /* The panel shell animates its width open/closed while staying mounted.
+     Disabled during a manual width drag so the handle tracks the pointer. */
+  [data-panel-shell] {
+    transition: width var(--motion-standard) var(--ease-standard);
+  }
+
+  [data-panel-shell][data-resizing='true'] {
+    transition: none;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    [data-panel-shell] {
+      transition: none;
+    }
   }
 
   .sidebar-panel-content {

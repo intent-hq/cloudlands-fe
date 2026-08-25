@@ -23,9 +23,7 @@ describe('editorial workspace shell presentation contract', () => {
 
     expect(workspace).toContain('workspace-sidebar-panel workspace-sidebar-{sidebarSide}');
     expect(workspace).toContain('@media (max-width: 639px)');
-    expect(workspace).toContain(
-      '.upper-area:not(.workspace-column-layout) :global(.workspace-sidebar-panel)',
-    );
+    expect(workspace).toContain('.upper-area :global(.workspace-sidebar-panel)');
     expect(workspace).toContain('position: absolute');
   });
 
@@ -192,13 +190,11 @@ describe('editorial workspace shell presentation contract', () => {
     expect(titlebar).toContain('titlebar-left-drag-handle w-4 shrink-0 self-stretch');
     expect(titlebar).toContain('class="flex min-w-0 items-center gap-1"');
     expect(titlebar).toContain('data-titlebar-fixed-controls');
-    expect(titlebar).toContain("$workspaceViewMode$ === 'columns' ? 'self-center' : 'self-end'");
+    expect(titlebar).toContain('class="flex min-w-0 self-end items-center gap-1');
     expect(titlebar).toContain('data-titlebar-workspace-controls');
     expect(titlebar.indexOf('<SidebarNav />')).toBeLessThan(titlebar.indexOf('<WorkspaceTabStrip'));
-    expect(titlebar).toContain(
-      "style:margin-left={`${$workspaceViewMode$ === 'columns' ? 0 : panelOffset}px`}",
-    );
-    expect(titlebar).toContain('activeTabBounds.left + panelOffset - 6');
+    expect(titlebar).toContain('style:margin-left={`${panelOffset}px`}');
+    expect(titlebar).toContain('activeTabBounds.left - 6');
     expect(titlebar).toContain('.titlebar-drag-handle');
     expect(titlebar).toContain('.titlebar-left-drag-surface');
     expect(titlebar).toContain('.titlebar-left-drag-handle');
@@ -253,7 +249,11 @@ describe('editorial workspace shell presentation contract', () => {
     expect(appLayout).toContain('class="workspace-main flex');
     expect(sidebarPanel).toContain('data-panel-item={$panelItem$}');
     expect(sidebarPanel).not.toContain("$panelItem$ === 'chief' ? 'bg-background' : ''");
-    expect(sidebarPanel).toContain("transition:slide={{ axis: 'x', duration: 200 }}");
+    // The panel stays mounted when closed and animates its width instead of
+    // mounting/unmounting via a slide transition.
+    expect(sidebarPanel).not.toContain("transition:slide={{ axis: 'x', duration: 200 }}");
+    expect(sidebarPanel).toContain('data-panel-shell');
+    expect(sidebarPanel).toContain('inert={!isOpen}');
   });
 
   it('owns shell, page, and sidebar surfaces with resolved app theme tokens', () => {
@@ -277,7 +277,7 @@ describe('editorial workspace shell presentation contract', () => {
       /:where\(\.dark\) \.panel-layout-container\s*{\s*background-color:\s*transparent;\s*}/,
     );
     expect(appLayout).toContain('class="workspace-main flex');
-    expect(appLayout).toContain("'rounded-xl bg-sidebar border border-border shadow-sm'");
+    expect(appLayout).toContain('rounded-xl bg-sidebar border border-border shadow-sm');
     expect(sidebarPanel).toContain('relative text-sidebar-foreground');
     expect(sidebarPanel).not.toContain('relative bg-sidebar text-sidebar-foreground');
     expect(appLayout).not.toContain('backdrop-filter:');

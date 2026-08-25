@@ -2,12 +2,29 @@
 // payoff only after the transcript is long enough to offset placeholder swaps.
 export const LAZY_TURN_THRESHOLD = 20;
 
+// Turn count counts user messages, but the render/dehydration cost is carried
+// by assistant messages. Assistant-heavy transcripts — Chief-of-staff threads
+// especially, where one user turn spawns long tool/sub-agent runs — stay under
+// the turn threshold while carrying far more render weight than a same-turn
+// regular chat. Virtualize when the total message count crosses this bound too,
+// so those threads engage lazy loading instead of materializing every row.
+export const LAZY_MESSAGE_THRESHOLD = 40;
+
+// Chief-of-staff threads are the most assistant-heavy surface and render inside
+// the constrained sidebar, so they benefit from engaging virtualization much
+// sooner than a full-panel chat. Callers pass this via `messageThreshold`.
+export const CHIEF_LAZY_MESSAGE_THRESHOLD = 10;
+
 // Keep a small tail mounted so streaming and short upward reads near the
 // bottom do not cross the materialization boundary on every turn.
 export const FORCE_VISIBLE_TURN_COUNT = 3;
 
-export function shouldVirtualizeTurns(turnCount: number): boolean {
-  return turnCount > LAZY_TURN_THRESHOLD;
+export function shouldVirtualizeTurns(
+  turnCount: number,
+  messageCount = 0,
+  messageThreshold = LAZY_MESSAGE_THRESHOLD,
+): boolean {
+  return turnCount > LAZY_TURN_THRESHOLD || messageCount > messageThreshold;
 }
 
 export function isTurnInRecentWindow(globalIndex: number, totalTurns: number): boolean {
@@ -62,17 +79,26 @@ export const INITIAL_LAZY_MODE_TRACKER: LazyModeTracker = {
  * sub-threshold reveal followed by a large backfill renders the whole
  * transcript unvirtualized until the next genuine append flips the mode and
  * rewraps non-recent turns in one pass (while the user is at the bottom).
+ *
+ * `currentCount` is the total message count, which doubles as the message-count
+ * virtualization signal (see `LAZY_MESSAGE_THRESHOLD`): an assistant-heavy
+ * transcript virtualizes even when its user-turn count stays under the turn
+ * threshold. `messageThreshold` lets a caller (Chief-of-staff) engage that
+ * signal sooner; it defaults to the shared bound.
  */
 export function nextLazyMode(
   tracker: LazyModeTracker,
   currentCount: number,
   currentNewestId: string | undefined,
   turnCount: number,
+  messageThreshold = LAZY_MESSAGE_THRESHOLD,
 ): LazyModeTracker {
   const unchanged = currentCount === tracker.count && currentNewestId === tracker.newestId;
   const latch =
     unchanged ||
     isOlderHistoryPrepend(tracker.count, tracker.newestId, currentCount, currentNewestId);
-  const mode = latch ? tracker.mode : shouldVirtualizeTurns(turnCount);
+  const mode = latch
+    ? tracker.mode
+    : shouldVirtualizeTurns(turnCount, currentCount, messageThreshold);
   return { count: currentCount, newestId: currentNewestId, mode };
 }

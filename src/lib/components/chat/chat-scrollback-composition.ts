@@ -197,6 +197,53 @@ export function shouldChainOlderHistoryOnSettle(
   return settled && shouldRequestOlderHistory(params);
 }
 
+/**
+ * Quiet window (ms) after the older-history walk stops before the top
+ * "Loading older messages" indicator hides. Long enough to bridge the
+ * settle→chain gap of a back-to-back restart (a scroll-triggered refire
+ * lands well inside it), short enough that the indicator disappears
+ * promptly once the walk truly stops.
+ */
+export const OLDER_HISTORY_INDICATOR_QUIET_MS = 300;
+
+export interface OlderHistoryIndicatorParams {
+  /** An older-history page fetch is in flight. */
+  fetching: boolean;
+  /** The settle-chain re-evaluation (tick + double-rAF) has not run yet. */
+  chainEvaluationPending: boolean;
+  /** The indicator is currently rendered. */
+  visible: boolean;
+  /** The quiet-window hide timer is armed. */
+  hideArmed: boolean;
+}
+
+export type OlderHistoryIndicatorAction = 'show' | 'arm-hide' | 'none';
+
+/**
+ * Chain-scoped visibility for the "Loading older messages" indicator. The
+ * raw fetching flag toggles false between every page of a settle-chained
+ * walk, so rendering it directly blinks the indicator once per page. The
+ * walk instead counts as ACTIVE while a fetch is in flight OR the settle
+ * re-evaluation is pending:
+ *
+ * - Active → `'show'` (also cancels an armed hide, so a chain refire inside
+ *   the quiet window keeps the indicator up); `'none'` when it is already
+ *   visible with no hide armed.
+ * - Inactive and visible with no hide armed → `'arm-hide'`: hide only after
+ *   `OLDER_HISTORY_INDICATOR_QUIET_MS` of quiet, absorbing chain restarts
+ *   the pending flag cannot see (a scroll-triggered refire).
+ * - Otherwise `'none'`: hidden stays hidden; an armed hide keeps counting.
+ */
+export function olderHistoryIndicatorAction(
+  params: OlderHistoryIndicatorParams,
+): OlderHistoryIndicatorAction {
+  const { fetching, chainEvaluationPending, visible, hideArmed } = params;
+  if (fetching || chainEvaluationPending) {
+    return visible && !hideArmed ? 'none' : 'show';
+  }
+  return visible && !hideArmed ? 'arm-hide' : 'none';
+}
+
 export interface VirtualSpacerParams {
   /** Snapshot `totalMessages` (0 when no snapshot has arrived yet). */
   totalMessages: number;

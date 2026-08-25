@@ -21,8 +21,6 @@ const virtualModules: Record<string, string> = {
     export const TooltipRich = Tooltip;`,
   '$lib/components/workspace/WorkspaceHoverCard.svelte': `
     export { default } from '/src/lib/components/layout/__tests__/mocks/MockWorkspaceHoverCard.svelte';`,
-  '$lib/components/workspace/workspace-view-transition': `
-    export const getWorkspaceViewTransitionName = (workspaceId) => 'workspace-' + workspaceId;`,
   '$lib/components/workspace/utils/workspace-tab-status-presentation': `
     export const getWorkspaceTabStatusPresentation = (category) => ({
       icon: { iconName: category }, className: '', label: category.toUpperCase(),
@@ -49,8 +47,7 @@ const virtualModules: Record<string, string> = {
       { select: () => globalThis.__workspaceTabScenario.currentId },
     );
     export const selectWorkspaceTabOrder = () =>
-      readable(() => globalThis.__workspaceTabScenario.tabOrder);
-    export const selectWorkspaceViewMode = () => readable(() => 'single');`,
+      readable(() => globalThis.__workspaceTabScenario.tabOrder);`,
   '$store/renderer/slices/workspace/workspace-selectors': `
     const readable = (read) => ({ subscribe(run) { run(read()); return () => {}; } });
     export const selectWorkspaceItems = Object.assign(
@@ -155,14 +152,20 @@ test.afterAll(async () => server?.close());
 
 async function mountStrip(
   page: Page,
-  options: { viewport: number; zoom: number; reduced: boolean },
+  options: {
+    viewport: number;
+    zoom: number;
+    reduced: boolean;
+    panelOpen?: boolean;
+    panelWidth?: number;
+  },
 ) {
   await page.setViewportSize({ width: options.viewport, height: 360 });
   await page.emulateMedia({ reducedMotion: options.reduced ? 'reduce' : 'no-preference' });
   await page.goto(`${baseUrl}src/app.html`);
   await page.addStyleTag({ url: `${baseUrl}src/app.css` });
   await page.addStyleTag({ content: 'body { margin: 0; overflow: hidden; }' });
-  await page.evaluate(async ({ zoom }) => {
+  await page.evaluate(async ({ zoom, panelOpen, panelWidth }) => {
     Object.assign(globalThis, { process: { env: { NODE_ENV: 'test' } } });
     Object.assign(globalThis, {
       __workspaceTabScenario: {
@@ -171,7 +174,7 @@ async function mountStrip(
         workspaces: [
           { id: 'active', title: 'Active workspace with a materially longer title' },
           { id: 'inactive', title: 'Inactive workspace with a materially longer title' },
-          { id: 'plain', title: 'Workspace without any status indicators' },
+          { id: 'plain', title: 'Workspace with the default idle status' },
         ],
         statuses: {
           active: statusValue(['running']),
@@ -189,9 +192,42 @@ async function mountStrip(
     ]);
     document.body.replaceChildren();
     const target = document.createElement('div');
-    target.style.cssText = `width:100%; padding:24px; zoom:${zoom};`;
     document.body.append(target);
-    mount(Strip, { target });
+    if (panelOpen === undefined || panelWidth === undefined) {
+      target.style.cssText = `width:100%; padding:24px; zoom:${zoom};`;
+      mount(Strip, { target });
+    } else {
+      target.style.cssText = `width:100%; zoom:${zoom};`;
+      const controls = document.createElement('div');
+      controls.dataset.titlebarWorkspaceControls = '';
+      controls.style.cssText = `display:flex;align-items:center;gap:4px;margin-left:${panelOpen ? panelWidth + 8 : 116}px;width:fit-content;`;
+      target.append(controls);
+      mount(Strip, { target: controls, props: { alignFirstTabToPanel: panelOpen } });
+
+      const launcher = document.createElement('button');
+      launcher.dataset.workspaceRepoLauncher = '';
+      launcher.style.cssText = 'width:32px;height:32px;';
+      controls.append(launcher);
+
+      const frame = document.createElement('div');
+      frame.style.cssText = 'display:flex;padding-left:8px;width:100%;';
+      const sidebar = document.createElement('div');
+      sidebar.dataset.sidebarPanelFrame = '';
+      sidebar.style.cssText = `flex:0 0 ${panelOpen ? panelWidth : 0}px;`;
+      const main = document.createElement('main');
+      main.className = 'workspace-main';
+      main.style.cssText = 'height:200px;min-width:0;flex:1;';
+      frame.append(sidebar, main);
+      target.append(frame);
+
+      Object.assign(globalThis, {
+        __setWorkspacePanelWidth(width: number) {
+          if (!panelOpen) return;
+          sidebar.style.flexBasis = `${width}px`;
+          controls.style.marginLeft = `${width + 8}px`;
+        },
+      });
+    }
     await tick();
     await new Promise<void>((resolveFrame) => requestAnimationFrame(() => resolveFrame()));
   }, options);
@@ -202,6 +238,50 @@ async function box(locator: Locator) {
   expect(value).not.toBeNull();
   return value!;
 }
+
+test('aligns the first tab with the open workspace panel across resize and zoom', async ({
+  page,
+}) => {
+  for (const zoom of [1, 2]) {
+    await mountStrip(page, {
+      viewport: 1400,
+      zoom,
+      reduced: true,
+      panelOpen: true,
+      panelWidth: 288,
+    });
+
+    for (const panelWidth of [288, 420]) {
+      await page.evaluate((width) => {
+        (
+          globalThis as typeof globalThis & { __setWorkspacePanelWidth: (value: number) => void }
+        ).__setWorkspacePanelWidth(width);
+      }, panelWidth);
+      const [firstTab, workspaceMain] = await Promise.all([
+        box(page.locator('[data-workspace-tab]').first()),
+        box(page.locator('.workspace-main')),
+      ]);
+      expect(Math.abs(firstTab.x - workspaceMain.x) / zoom).toBeLessThanOrEqual(1);
+    }
+  }
+});
+
+test('preserves the collapsed-sidebar first-tab clearance across zoom', async ({ page }) => {
+  for (const zoom of [1, 2]) {
+    await mountStrip(page, {
+      viewport: 1400,
+      zoom,
+      reduced: true,
+      panelOpen: false,
+      panelWidth: 288,
+    });
+    const [firstTab, controls] = await Promise.all([
+      box(page.locator('[data-workspace-tab]').first()),
+      box(page.locator('[data-titlebar-workspace-controls]')),
+    ]);
+    expect(firstTab.x - controls.x).toBeCloseTo(8 * zoom, 0);
+  }
+});
 
 test('keeps titles, statuses, and close controls disjoint at 160px and constrained widths', async ({
   page,
@@ -236,7 +316,7 @@ test('keeps titles, statuses, and close controls disjoint at 160px and constrain
     expect(titleBox.x + titleBox.width).toBeLessThanOrEqual(statusBox.x + 0.5);
     expect(statusBox.x + statusBox.width).toBeLessThanOrEqual(closeBox.x + 0.5);
     expect(closeBox.x + closeBox.width).toBeLessThanOrEqual(activeBox.x + activeBox.width + 0.5);
-    expect(titleBox.width).toBeCloseTo(activeBox.width - 60 * scale, 0);
+    expect(titleBox.width).toBeCloseTo(activeBox.width - 58 * scale, 0);
     await expect(active).toHaveAttribute('data-active', 'true');
     await expect(inactive).toHaveAttribute('data-active', 'false');
     await expect(active.locator('[role="tab"]')).toHaveAttribute(
@@ -256,15 +336,15 @@ test('keeps titles, statuses, and close controls disjoint at 160px and constrain
       inactiveCloseBox.x + 0.5,
     );
     expect(inactiveTitleBox.width).toBeCloseTo(titleBox.width, 0);
-    await expect(inactiveStatus.locator('[data-workspace-tab-status]')).toHaveCount(1);
+    await expect(inactiveStatus.locator('[data-workspace-status]')).toHaveCount(1);
 
-    await expect(plain.locator('[data-workspace-tab-status-cluster]')).toHaveCount(0);
+    await expect(plain.locator('[data-workspace-status="idle"]')).toHaveCount(1);
     const [plainTitleBox, plainCloseBox] = await Promise.all([
       box(plain.locator('[data-workspace-tab-title]')),
       box(plain.locator('[data-workspace-tab-close]')),
     ]);
     expect(plainTitleBox.x + plainTitleBox.width).toBeLessThanOrEqual(plainCloseBox.x + 0.5);
-    expect(plainTitleBox.width).toBeGreaterThan(titleBox.width);
+    expect(plainTitleBox.width).toBeCloseTo(titleBox.width, 0);
 
     await expect(loading).toHaveAttribute('data-workspace-tab-loading', 'true');
     await expect(loading.locator('[data-workspace-tab-status-cluster]')).toHaveCount(0);

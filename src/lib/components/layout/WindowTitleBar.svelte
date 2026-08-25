@@ -32,7 +32,6 @@
   } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
   import { navigateBackFromSettings, navigateToSettings } from '$lib/utils/workspace-navigation';
   import IntentNavigationIcon from '$lib/icons/IntentNavigationIcon.svelte';
-  import { selectWorkspaceViewMode } from '$store/renderer/slices/tab-state/tab-state-selectors';
   import {
     TITLEBAR_NAVIGATION_CONTROL_CLASS,
     TITLEBAR_NAVIGATION_GLYPH_CLASS,
@@ -41,7 +40,6 @@
   import DaemonStatusIndicator from './DaemonStatusIndicator.svelte';
   import WorkspaceTabStrip from './WorkspaceTabStrip.svelte';
   import WorkspaceRepoLauncher from './WorkspaceRepoLauncher.svelte';
-  import WorkspaceViewModeToggle from './WorkspaceViewModeToggle.svelte';
   import SidebarNav from './sidebar-nav/SidebarNav.svelte';
   import {
     selectOnboardingActive,
@@ -51,10 +49,9 @@
 
   interface Props {
     workspaceId?: string;
-    overlayWorkspaceColumns?: boolean;
   }
 
-  let { workspaceId, overlayWorkspaceColumns = false }: Props = $props();
+  let { workspaceId }: Props = $props();
   let activeTabBounds = $state<{ left: number; width: number } | null>(null);
   let activeTabTracking = $state(false);
   const routedWorkspaceId = $derived(
@@ -64,7 +61,6 @@
   );
   const panelItem$ = selectPanelItem();
   const panelWidth$ = selectPanelWidth();
-  const workspaceViewMode$ = selectWorkspaceViewMode();
   const onboardingActive$ = selectOnboardingActive();
 
   // Where the workspace controls naturally start (left edge, titlebar coords).
@@ -94,7 +90,7 @@
   );
 
   function handleActiveTabBoundsChange(bounds: { left: number; width: number } | null) {
-    activeTabBounds = bounds ? { left: bounds.left - panelOffset, width: bounds.width } : null;
+    activeTabBounds = bounds;
   }
 
   function handleActiveTabTrackingChange(tracking: boolean) {
@@ -282,7 +278,6 @@
 <!-- Counter-scale wrapper to maintain fixed position relative to macOS traffic lights -->
 <div
   class="window-title-bar-wrapper"
-  class:workspace-columns-titlebar={overlayWorkspaceColumns}
   style:height="{getCounterScaledTitlebarHeight($zoomFactor)}px"
   aria-label={m.layout_titleBar_ariaLabel()}
 >
@@ -316,28 +311,19 @@
         <SidebarNav />
       </div>
       <div
-        class={cn(
-          'flex min-w-0 items-center gap-1 transition-[margin-left] duration-200 ease-[cubic-bezier(0.215,0.61,0.355,1)] motion-reduce:transition-none',
-          $workspaceViewMode$ === 'columns' ? 'self-center' : 'self-end',
-        )}
-        style:margin-left={`${$workspaceViewMode$ === 'columns' ? 0 : panelOffset}px`}
+        class="flex min-w-0 self-end items-center gap-1 transition-[margin-left] duration-200 ease-[cubic-bezier(0.215,0.61,0.355,1)] motion-reduce:transition-none"
+        style:margin-left={`${panelOffset}px`}
         data-titlebar-workspace-controls
       >
+        <WorkspaceTabStrip
+          onActiveTabBoundsChange={handleActiveTabBoundsChange}
+          onActiveTabTrackingChange={handleActiveTabTrackingChange}
+          activeWorkspaceId={routedWorkspaceId}
+          alignFirstTabToPanel={Boolean($panelItem$)}
+          horizontalPositionTrackingKey={panelOffset}
+        />
         {#if !$onboardingActive$}
-          <WorkspaceViewModeToggle />
-        {/if}
-        {#if $workspaceViewMode$ === 'single'}
-          <WorkspaceTabStrip
-            onActiveTabBoundsChange={handleActiveTabBoundsChange}
-            onActiveTabTrackingChange={handleActiveTabTrackingChange}
-            activeWorkspaceId={routedWorkspaceId}
-          />
-          {#if !$onboardingActive$}
-            <WorkspaceRepoLauncher />
-          {/if}
-        {/if}
-        {#if $workspaceViewMode$ === 'columns'}
-          {@render titlebarUtilities(false)}
+          <WorkspaceRepoLauncher />
         {/if}
       </div>
       <div
@@ -347,15 +333,13 @@
     </div>
 
     <!-- Right column: global status and settings -->
-    {#if $workspaceViewMode$ === 'single'}
-      <div class="app-no-drag flex items-center justify-end pr-4 gap-1">
-        {@render titlebarUtilities(true)}
-      </div>
-    {/if}
-    {#if activeTabBounds && $workspaceViewMode$ === 'single'}
+    <div class="app-no-drag flex items-center justify-end pr-4 gap-1">
+      {@render titlebarUtilities(true)}
+    </div>
+    {#if activeTabBounds}
       <div
         class="pointer-events-none absolute -bottom-px z-[60] h-px bg-sidebar motion-reduce:transition-none"
-        style:left={`${activeTabBounds.left + panelOffset - 6}px`}
+        style:left={`${activeTabBounds.left - 6}px`}
         style:width={`${Math.max(0, activeTabBounds.width + 13)}px`}
         style:transition={activeTabTracking
           ? 'none'
@@ -378,18 +362,6 @@
 
   .window-title-bar {
     background: transparent;
-  }
-
-  .window-title-bar-wrapper.workspace-columns-titlebar {
-    position: absolute;
-    inset: 0 0 auto;
-    width: 100%;
-    pointer-events: none;
-  }
-
-  .workspace-columns-titlebar [data-titlebar-fixed-controls],
-  .workspace-columns-titlebar [data-titlebar-workspace-controls] {
-    pointer-events: auto;
   }
 
   .window-title-bar {

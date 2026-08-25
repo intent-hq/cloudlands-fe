@@ -224,18 +224,6 @@
     "why": "sig:fence4,html-comment"
   },
   {
-    "id": "019ffd76-3a07-7c33-bf7a-49b07411637e",
-    "workspace": "process-setup",
-    "size": 2514,
-    "features": [
-      "prompts",
-      "fence4",
-      "html-comment"
-    ],
-    "suspicious": false,
-    "why": "sig:fence4,html-comment,prompts"
-  },
-  {
     "id": "019fffe3-6b17-7722-845b-88708676d3fa",
     "workspace": "collapsed-view",
     "size": 41297,

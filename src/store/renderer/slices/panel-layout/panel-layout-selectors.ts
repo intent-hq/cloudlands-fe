@@ -48,14 +48,6 @@ export const selectPendingPanelReveal = store.createSelector((state, wsId: strin
   return workspace.pendingPanelReveal ?? null;
 });
 
-export const selectPanelRevealRequestsByWorkspaceId = store.createSelector((state) =>
-  Object.fromEntries(
-    Object.entries(state.panelLayout.byWorkspaceId).flatMap(([workspaceId, layout]) =>
-      layout.pendingPanelReveal ? [[workspaceId, layout.pendingPanelReveal]] : [],
-    ),
-  ),
-);
-
 export type PanelTabIdentityRequest = Pick<PanelTab, 'type'> &
   Partial<Omit<PanelTab, 'id' | 'type'>>;
 
@@ -339,13 +331,13 @@ function getPanelColumnStacks(layout: WorkspacePanelLayoutState): PanelColumnSta
   });
 }
 
-/** Ordered pane stacks for every visible workspace column. */
+/** Ordered pane stacks for every workspace panel layout. */
 export const selectPanelColumnStacks = store.createSelector<[wsId: string], PanelColumnStack[]>(
   (state, wsId) =>
     getPanelColumnStacks(state.panelLayout.byWorkspaceId[wsId] ?? emptyWorkspaceState),
 );
 
-/** Pane stack for one visible workspace column. */
+/** Pane stack for one workspace panel layout. */
 export const selectPanelColumnStack = store.createSelector<
   [wsId: string, panelId: string],
   PanelColumnStack | undefined
@@ -371,16 +363,6 @@ export const selectPanelNavigatorItems = store.createSelector<
   { id: string; title: string; type?: PanelTabType }[]
 >((state, wsId) =>
   getPanelNavigatorItems(state.panelLayout.byWorkspaceId[wsId] ?? emptyWorkspaceState),
-);
-
-/** Generic panel order and titles for every mounted workspace. */
-export const selectPanelNavigatorItemsByWorkspaceId = store.createSelector((state) =>
-  Object.fromEntries(
-    Object.entries(state.panelLayout.byWorkspaceId).map(([workspaceId, layout]) => [
-      workspaceId,
-      getPanelNavigatorItems(layout),
-    ]),
-  ),
 );
 
 // ============================================================================

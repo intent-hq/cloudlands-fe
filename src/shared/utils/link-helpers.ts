@@ -23,7 +23,7 @@ interface ModifierFlags {
 export interface LinkHandlerOptions {
   /** Workspace ID for panel layout manager lookup. When undefined, HTTP/HTTPS links fall back to the external browser. */
   workspaceId?: WorkspaceId;
-  /** Panel where the navigation originated. Used to resolve stacked workspace-column layouts. */
+  /** Panel where the navigation originated. Used to resolve stacked panel layouts. */
   sourcePanelId?: string;
   /** The raw (unresolved) `href` attribute of the clicked anchor, e.g. `src/main.rs`.
    *  Used to detect schemeless path-like targets that the DOM resolves against the app's own origin. */

@@ -11,15 +11,6 @@ const defaultCommands = [
   { id: 'new-terminal', label: 'New Terminal', icon },
   { id: 'new-note', label: 'New Note', icon },
   { id: 'new-file', label: 'New File', icon, shortcut: '⌘N' },
-  {
-    id: 'workspace-view-mode',
-    label: 'Switch to horizontal workspace view',
-    description: 'Show open workspaces side by side in columns.',
-    searchText: 'tab horizontal stacked columns workspace view layout',
-    navigationIcon: 'spaces' as const,
-    icon,
-    shortcut: '⇧⌘L',
-  },
 ];
 
 function makeInput(overrides: Partial<ComputeResultsInput> = {}): ComputeResultsInput {
@@ -88,23 +79,6 @@ describe('computeResults', () => {
     const items = results.filter((r: any) => r.type === 'agent');
     expect(items.length).toBe(1);
     expect(items[0].label).toBe('Build Server');
-  });
-
-  it.each(['tab', 'horizontal', 'stacked', 'columns', 'workspace', 'view', 'layout'])(
-    'finds the workspace view command by the %s alias',
-    (query) => {
-      const results = computeResults(makeInput({ query }));
-      expect(results).toContainEqual(
-        expect.objectContaining({ id: 'workspace-view-mode', shortcut: '⇧⌘L' }),
-      );
-    },
-  );
-
-  it('hides the workspace view command without an active workspace', () => {
-    const results = computeResults(
-      makeInput({ workspaceId: undefined, query: 'workspace layout' }),
-    );
-    expect(results).not.toContainEqual(expect.objectContaining({ id: 'workspace-view-mode' }));
   });
 
   it('includes workspace items in search results', () => {

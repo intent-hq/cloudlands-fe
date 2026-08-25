@@ -16,7 +16,6 @@
     resolveWorkspaceStatusState,
     type WorkspaceStatusPresentationState,
   } from '$lib/components/workspace/utils/workspace-status-presentation';
-  import { getWorkspaceViewTransitionName } from '$lib/components/workspace/workspace-view-transition';
   import {
     closeWorkspaceTab,
     endDrag,
@@ -33,7 +32,6 @@
   import {
     selectCurrentWorkspaceTabId,
     selectWorkspaceTabOrder,
-    selectWorkspaceViewMode,
   } from '$store/renderer/slices/tab-state/tab-state-selectors';
   import { selectWorkspaceItems } from '$store/renderer/slices/workspace/workspace-selectors';
   import { selectWorkspaceTabStatuses } from '$store/renderer/slices/hud/hud-selectors';
@@ -47,13 +45,20 @@
     onActiveTabBoundsChange?: (bounds: { left: number; width: number } | null) => void;
     onActiveTabTrackingChange?: (tracking: boolean) => void;
     activeWorkspaceId?: string | null;
+    alignFirstTabToPanel?: boolean;
+    horizontalPositionTrackingKey?: number;
   }
 
-  let { onActiveTabBoundsChange, onActiveTabTrackingChange, activeWorkspaceId }: Props = $props();
+  let {
+    onActiveTabBoundsChange,
+    onActiveTabTrackingChange,
+    activeWorkspaceId,
+    alignFirstTabToPanel = false,
+    horizontalPositionTrackingKey = 0,
+  }: Props = $props();
 
   const currentWorkspaceTabId$ = selectCurrentWorkspaceTabId();
   const workspaceTabOrder$ = selectWorkspaceTabOrder();
-  const workspaceViewMode$ = selectWorkspaceViewMode();
   const workspaceItems$ = selectWorkspaceItems();
   const workspaceTabStatuses$ = selectWorkspaceTabStatuses();
 
@@ -87,10 +92,10 @@
   // Active tab bounds drive the parent border mask that hides the sidebar
   // border under the active tab. Svelte's animate:flip moves tabs via CSS
   // transform, which ResizeObserver does not fire on, so during the flip the
-  // mask stays put while the tab slides. Poll via rAF for the flip window
-  // whenever tab order changes so the mask tracks the moving tab.
+  // mask stays put while the tab slides. Poll via rAF for the full layout
+  // transition whenever tab order or title-bar positioning changes.
   const activeTabBoundsPollers = new Set<() => void>();
-  const FLIP_ANIMATION_FRAMES = 14;
+  const ACTIVE_TAB_TRACKING_DURATION_MS = 240;
 
   onMount(() => {
     activeStreamsTracker.startPolling();
@@ -117,17 +122,19 @@
 
   $effect(() => {
     void renderedTabOrder;
+    void alignFirstTabToPanel;
+    void horizontalPositionTrackingKey;
     if (activeTabBoundsPollers.size === 0) return;
     onActiveTabTrackingChange?.(true);
-    let framesLeft = FLIP_ANIMATION_FRAMES;
+    let startedAt: number | null = null;
     let frame: number | null = null;
     let cancelled = false;
-    const tick = () => {
+    const tick = (timestamp: number) => {
       frame = null;
       if (cancelled) return;
+      startedAt ??= timestamp;
       activeTabBoundsPollers.forEach((poll) => poll());
-      framesLeft -= 1;
-      if (framesLeft > 0) {
+      if (timestamp - startedAt < ACTIVE_TAB_TRACKING_DURATION_MS) {
         frame = requestAnimationFrame(tick);
       } else {
         onActiveTabTrackingChange?.(false);
@@ -433,8 +440,9 @@
 
 {#if $workspaceTabOrder$.length > 0}
   <!-- pl-3 keeps the active tab's 12px corner-flare SVG inside the padding box
-       so overflow-x-auto does not clip it; -ml-1 gives that back minus 8px so
-       the first tab sits clear of the view-mode toggle instead of flush.
+       so overflow-x-auto does not clip it. With an open sidebar, -ml-3 returns
+       all 12px so the first tab aligns with the workspace panel; otherwise,
+       -ml-1 preserves the 8px clearance from the preceding title-bar controls.
        The right margin is conditional: -mr-2.5 keeps the "+" launcher tight
        against the last tab's pr-3 padding when everything fits, but during
        overflow the clipped tab edge is flush with the strip border, so mr-1
@@ -445,7 +453,8 @@
   <div
     bind:this={stripElement}
     class={cn(
-      'flex w-fit min-w-0 max-w-[100%] items-center gap-0.5 overflow-x-auto pl-3 -ml-1 pr-3 scrollbar-none',
+      'flex w-fit min-w-0 max-w-[100%] items-center gap-0.5 overflow-x-auto pl-3 pr-3 scrollbar-none',
+      alignFirstTabToPanel ? '-ml-3' : '-ml-1',
       isOverflowing ? 'mr-1' : '-mr-2.5',
     )}
     aria-label={m.layout_workspaceTabStrip_openSpaces_ariaLabel()}
@@ -494,9 +503,6 @@
             data-workspace-tab={workspaceId}
             data-active={isCurrent}
             data-dragging={isDragged}
-            style:view-transition-name={$workspaceViewMode$ === 'single'
-              ? getWorkspaceViewTransitionName(workspaceId)
-              : undefined}
             style:left={isDragged && dragSession
               ? `${dragSession.origin.left + dragClientX - dragSession.startClientX}px`
               : undefined}
@@ -620,9 +626,6 @@
             data-workspace-tab={workspaceId}
             data-workspace-tab-loading="true"
             data-active={isCurrent}
-            style:view-transition-name={$workspaceViewMode$ === 'single'
-              ? getWorkspaceViewTransitionName(workspaceId)
-              : undefined}
             use:reportActiveTabBounds={isCurrent}
             use:registerTabSurface={workspaceId}
             role="presentation"

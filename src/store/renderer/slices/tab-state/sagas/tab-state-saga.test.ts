@@ -11,7 +11,15 @@ vi.mock('../../../utils/safe-local-storage-saga', () => ({
   },
 }));
 
-import { loadScrollPositions, loadWorkspaceTabsState, openWorkspaceTab, saveScrollPosition, TAB_SCROLL_POSITIONS_STORAGE_KEY, WORKSPACE_TABS_STORAGE_KEY, workspaceTabsHydrated } from '../tab-state-slice';
+import {
+  loadScrollPositions,
+  loadWorkspaceTabsState,
+  openWorkspaceTab,
+  saveScrollPosition,
+  TAB_SCROLL_POSITIONS_STORAGE_KEY,
+  WORKSPACE_TABS_STORAGE_KEY,
+  workspaceTabsHydrated,
+} from '../tab-state-slice';
 import { LOCAL_CONNECTION_ID } from '$shared/types/connections';
 import { connectionsListReceived } from '../../connections/connections-slice';
 import { tabStateSaga } from './tab-state-saga';
@@ -24,8 +32,9 @@ const persistedTabs = {
   optimisticTabs: ['optimistic-1'],
   tabOrder: ['ws-1'],
   workspaceStacks: [['ws-1']],
-  viewMode: 'columns' as const,
 };
+
+const legacyPersistedTabs = { ...persistedTabs, viewMode: 'columns' as const };
 
 const state = {
   tabState: {
@@ -37,7 +46,6 @@ const state = {
     optimisticTabs: { 'optimistic-1': true },
     tabOrder: ['ws-1'],
     workspaceStacks: [['ws-1']],
-    viewMode: 'columns' as const,
   },
   workspace: { hasLoaded: true },
   connections: { activeId: LOCAL_CONNECTION_ID },
@@ -57,9 +65,9 @@ const settle = async () => {
 describe('tabStateSaga', () => {
   beforeEach(() => vi.clearAllMocks());
 
-  it('hydrates scroll positions before the exact persisted workspace-tab snapshot', async () => {
+  it('hydrates scroll positions before an old persisted workspace-tab snapshot', async () => {
     storage.getJSON.mockImplementation((key: string) =>
-      key === TAB_SCROLL_POSITIONS_STORAGE_KEY ? { 'ws-1-note': 42 } : persistedTabs,
+      key === TAB_SCROLL_POSITIONS_STORAGE_KEY ? { 'ws-1-note': 42 } : legacyPersistedTabs,
     );
     const dispatch = vi.fn();
     const task = runSaga({ channel: stdChannel(), dispatch, getState: () => state }, tabStateSaga);
@@ -67,7 +75,7 @@ describe('tabStateSaga', () => {
 
     expect(dispatch.mock.calls.map(([action]) => action)).toEqual([
       loadScrollPositions({ 'ws-1-note': 42 }),
-      loadWorkspaceTabsState(persistedTabs),
+      loadWorkspaceTabsState(legacyPersistedTabs),
       workspaceTabsHydrated(LOCAL_CONNECTION_ID),
     ]);
     task.cancel();
@@ -159,7 +167,6 @@ describe('tabStateSaga', () => {
         optimisticTabs: [],
         tabOrder: ['ws-2'],
         workspaceStacks: [['ws-2']],
-        viewMode: 'single',
       });
 
       backendId = 'remote-backend';

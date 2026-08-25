@@ -11,7 +11,6 @@ export const selectOnboardingActive = value(false);
 export const selectExpandedItem = value(null);
 export const selectIsCardPinned = value(false);
 export const selectContextMenuOpen = value(false);
-export const selectWorkspaceViewMode = value('single');
 
 export const store = {
   state: { sidebarNav: { deferredLeave: null } },
@@ -27,4 +26,3 @@ export const setExpandedItem = action('sidebarNav/setExpandedItem');
 export const setDeferredLeave = action('sidebarNav/setDeferredLeave');
 export const clearDeferredLeave = action('sidebarNav/clearDeferredLeave');
 export const setShowCreateModal = action('sidebarNav/setShowCreateModal');
-export const setWorkspaceViewModeWithTransition = async () => undefined;

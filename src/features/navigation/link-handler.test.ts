@@ -420,7 +420,7 @@ describe('handleLink – path-like targets → workspace file viewer', () => {
     );
   });
 
-  it('opens browser links in the workspace-column layout and source panel', async () => {
+  it('opens browser links in the current workspace and source panel', async () => {
     const panel = document.createElement('div');
     panel.dataset.panelId = 'panel-chat';
     const anchor = document.createElement('a');

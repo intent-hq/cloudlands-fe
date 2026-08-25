@@ -183,11 +183,16 @@ function* fetchOlderPageWorker(
   const tail: AgentMessage[] = yield* selectAgentMessages.effect(agentId);
   const anchor = oldestRowId(history) ?? oldestRowId(tail);
   if (!anchor) return;
+  const epoch = chat.scrollbackDiscardEpoch;
   yield* put(scrollbackFetchStarted(agentId, 'older'));
   let continuation: string | null = null;
   try {
     const page = yield* fetchPage(agentId, token, anchor);
     if (yield* call(isAgentDeletionPending, agentId)) return;
+    // A §7.1 discard landed while the wire call was in flight: the page was
+    // fetched against the discarded transcript — drop it entirely (the
+    // reducer already reset the flags/cursors atomically with the snapshot).
+    if (yield* discardedSince(agentId, epoch)) return;
     if (page.messages.length > 0) {
       yield* put(prependHistoryMessages(agentId, page.messages));
     }
@@ -198,8 +203,10 @@ function* fetchOlderPageWorker(
   } catch (error) {
     logger.error('Failed to fetch older scrollback page', error);
   } finally {
-    yield* put(scrollbackOlderPageSettled(agentId, continuation));
-    yield* dropContinuationIfSegmentGone(agentId);
+    if (!(yield* discardedSince(agentId, epoch))) {
+      yield* put(scrollbackOlderPageSettled(agentId, continuation));
+      yield* dropContinuationIfSegmentGone(agentId);
+    }
   }
 }
 
@@ -218,11 +225,14 @@ function* fetchGapFillWorker(
   const anchor = newestRowId(history);
   if (!anchor) return;
   const token = chat.scrollbackGapToken;
+  const epoch = chat.scrollbackDiscardEpoch;
   yield* put(scrollbackFetchStarted(agentId, 'gap'));
   let continuation: string | null = null;
   try {
     const page = yield* fetchPage(agentId, token, anchor);
     if (yield* call(isAgentDeletionPending, agentId)) return;
+    // Mid-flight §7.1 discard: drop the stale page (see fetchOlderPageWorker).
+    if (yield* discardedSince(agentId, epoch)) return;
     if (page.messages.length > 0) {
       yield* put(appendHistoryMessages(agentId, page.messages));
     }
@@ -230,8 +240,10 @@ function* fetchGapFillWorker(
   } catch (error) {
     logger.error('Failed to fetch scrollback gap-refill page', error);
   } finally {
-    yield* put(scrollbackGapPageSettled(agentId, continuation));
-    yield* dropContinuationIfSegmentGone(agentId);
+    if (!(yield* discardedSince(agentId, epoch))) {
+      yield* put(scrollbackGapPageSettled(agentId, continuation));
+      yield* dropContinuationIfSegmentGone(agentId);
+    }
   }
 }
 
@@ -261,6 +273,7 @@ function* historySeekWorker(
   // segment. The panel re-classifies once the in-flight fetch settles.
   if (chat.fetchingOlderHistory || chat.fetchingGapFill) return;
   const target = Math.max(0, Math.round(targetOrdinal));
+  const epoch = chat.scrollbackDiscardEpoch;
   yield* put(scrollbackFetchStarted(agentId, 'seek'));
   let tokens: { nextToken: string | null; prevToken: string | null } = {
     nextToken: null,
@@ -277,6 +290,9 @@ function* historySeekWorker(
       target,
     );
     if (yield* call(isAgentDeletionPending, agentId)) return;
+    // Mid-flight §7.1 discard: the landing was fetched against the discarded
+    // transcript — drop it (see fetchOlderPageWorker).
+    if (yield* discardedSince(agentId, epoch)) return;
     if (page.prevToken === null) {
       // No forward cursor: either the daemon predates `aroundIndex` (its
       // router ignores unknown params and returned the legacy NEWEST page),
@@ -315,8 +331,16 @@ function* historySeekWorker(
       logger.error('Failed to fetch scrollback seek page', error);
     }
   } finally {
-    yield* put(scrollbackSeekSettled(agentId, tokens, unsupported));
-    yield* dropContinuationIfSegmentGone(agentId);
+    // After a mid-flight discard the settle only runs to latch
+    // `historySeekUnsupported` (a daemon capability, not walk state — it
+    // survives the discard); a stale token settle must not overwrite the
+    // post-discard walk.
+    if (!(yield* discardedSince(agentId, epoch))) {
+      yield* put(scrollbackSeekSettled(agentId, tokens, unsupported));
+      yield* dropContinuationIfSegmentGone(agentId);
+    } else if (unsupported) {
+      yield* put(scrollbackSeekSettled(agentId, { nextToken: null, prevToken: null }, true));
+    }
   }
 }
 
@@ -427,6 +451,19 @@ function* recoverPendingQuestionWorker(
   } finally {
     inFlight.delete(key);
   }
+}
+
+/**
+ * True when a §7.1 `resumed: false` discard landed after the caller captured
+ * `epoch` (before its wire call). The discard reducer already reset the
+ * fetching flags + cursors atomically with the snapshot, so a worker
+ * observing a bumped epoch must drop its result wholesale — no page
+ * mutation, no settle — or it would recreate a history segment / persist a
+ * cursor minted against the discarded transcript.
+ */
+function* discardedSince(agentId: string, epoch: number): SagaGenerator<boolean> {
+  const chat = yield* selectChatAgentState.effect(agentId);
+  return chat.scrollbackDiscardEpoch !== epoch;
 }
 
 /**

@@ -8,6 +8,8 @@ import {
   estimateVirtualSpacerHeight,
   isConversationStartLoaded,
   mapScrollTopToOrdinal,
+  OLDER_HISTORY_INDICATOR_QUIET_MS,
+  olderHistoryIndicatorAction,
   reconcileVirtualSpacer,
   restateFrozenSpacers,
   SCROLLBACK_PAGE_ROWS,
@@ -949,5 +951,132 @@ describe('reconcileVirtualSpacer with explicit unloadedRows (dual-spacer mode)',
     const result = reconcileVirtualSpacer(base);
     expect(result.applied).toBe(true);
     expect(result.spacerHeight).toBe(700 * 100);
+  });
+});
+
+describe('olderHistoryIndicatorAction (chain-scoped loading indicator)', () => {
+  it('shows when a fetch starts while hidden', () => {
+    expect(
+      olderHistoryIndicatorAction({
+        fetching: true,
+        chainEvaluationPending: false,
+        visible: false,
+        hideArmed: false,
+      }),
+    ).toBe('show');
+  });
+
+  it('is a no-op while fetching and already visible with no hide armed', () => {
+    expect(
+      olderHistoryIndicatorAction({
+        fetching: true,
+        chainEvaluationPending: false,
+        visible: true,
+        hideArmed: false,
+      }),
+    ).toBe('none');
+  });
+
+  it('keeps the indicator up through the settle gap (chain re-evaluation pending)', () => {
+    // Fetch settled but the tick + double-rAF re-evaluation has not run yet:
+    // this is exactly the window that used to blink the raw-flag indicator.
+    expect(
+      olderHistoryIndicatorAction({
+        fetching: false,
+        chainEvaluationPending: true,
+        visible: true,
+        hideArmed: false,
+      }),
+    ).toBe('none');
+  });
+
+  it('cancels an armed hide when the chain refires inside the quiet window', () => {
+    expect(
+      olderHistoryIndicatorAction({
+        fetching: true,
+        chainEvaluationPending: false,
+        visible: true,
+        hideArmed: true,
+      }),
+    ).toBe('show');
+    expect(
+      olderHistoryIndicatorAction({
+        fetching: false,
+        chainEvaluationPending: true,
+        visible: true,
+        hideArmed: true,
+      }),
+    ).toBe('show');
+  });
+
+  it('arms the quiet-window hide only once the walk is fully inactive', () => {
+    expect(
+      olderHistoryIndicatorAction({
+        fetching: false,
+        chainEvaluationPending: false,
+        visible: true,
+        hideArmed: false,
+      }),
+    ).toBe('arm-hide');
+  });
+
+  it('lets an armed hide keep counting (no re-arm, no early hide)', () => {
+    expect(
+      olderHistoryIndicatorAction({
+        fetching: false,
+        chainEvaluationPending: false,
+        visible: true,
+        hideArmed: true,
+      }),
+    ).toBe('none');
+  });
+
+  it('hidden stays hidden while inactive', () => {
+    expect(
+      olderHistoryIndicatorAction({
+        fetching: false,
+        chainEvaluationPending: false,
+        visible: false,
+        hideArmed: false,
+      }),
+    ).toBe('none');
+  });
+
+  it('stays continuously visible across a multi-page serial walk (no blink)', () => {
+    // Drive the state machine through 3 chained pages exactly as ChatPanel
+    // does: fetch → settle (evaluation pending) → chain refire → …, then a
+    // final settle whose evaluation does NOT refire. The indicator must
+    // never receive 'arm-hide' before the final quiet point.
+    let visible = false;
+    let hideArmed = false;
+    const apply = (fetching: boolean, chainEvaluationPending: boolean) => {
+      const action = olderHistoryIndicatorAction({
+        fetching,
+        chainEvaluationPending,
+        visible,
+        hideArmed,
+      });
+      if (action === 'show') {
+        visible = true;
+        hideArmed = false;
+      } else if (action === 'arm-hide') {
+        hideArmed = true;
+      }
+      return action;
+    };
+    expect(apply(true, false)).toBe('show'); // page 1 fetch
+    for (let page = 0; page < 2; page += 1) {
+      expect(apply(false, true)).toBe('none'); // settle: evaluation pending
+      expect(apply(true, false)).toBe('none'); // chain refired next page
+      expect(visible).toBe(true);
+    }
+    expect(apply(false, true)).toBe('none'); // final settle
+    expect(apply(false, false)).toBe('arm-hide'); // evaluation ran, no refire
+    expect(visible).toBe(true); // still up until the quiet window elapses
+  });
+
+  it('quiet window hides within the ~500ms budget', () => {
+    expect(OLDER_HISTORY_INDICATOR_QUIET_MS).toBeGreaterThan(0);
+    expect(OLDER_HISTORY_INDICATOR_QUIET_MS).toBeLessThanOrEqual(500);
   });
 });

@@ -254,7 +254,6 @@
   "settings_voice_inputDevice_unnamed": ["fr"],
   "settings_wsApi_port_label": ["de", "fr"],
   "shared_agentAttribution_agent_fallback": ["de", "fr"],
-  "specialists_builtin_ralph_name": ["zh-CN", "zh-TW", "ja", "ko", "de", "fr", "es"],
   "stats_monthCard_bestMonthValue_label": ["zh-CN", "zh-TW", "ja", "ko", "de", "fr", "es"],
   "stats_monthCard_deltaVs_label": ["fr", "es"],
   "stats_monthCard_trend_label": ["de"],

@@ -43,19 +43,30 @@ const FEATURE_PATHS = [
 ];
 
 // PROTOCOL §5.12 settings.list response with all twelve agentFeatures.* entries
-// plus the prMonitor.debounceSeconds (§6.9) and agents.maxTopLevelAgents numbers
+// plus the prMonitor.debounceSeconds (§6.9) and agents.maxTopLevelAgents numbers.
+// Entries are FLAT SettingDefinitionWithValue objects — the daemon merges `value`
+// into the definition itself (no nested `definition` key; that shape is settings.get's).
 function listResponse() {
   return {
     settings: [
       ...FEATURE_PATHS.map((path) => ({
         path,
+        label: path,
+        description: '',
+        category: 'agentFeatures',
+        type: 'boolean',
+        defaultValue: true,
         value: true,
-        definition: { path, type: 'boolean', scope: 'user' },
       })),
       {
         path: 'prMonitor.debounceSeconds',
+        label: 'PR monitor debounce',
+        description: '',
+        category: 'prMonitor',
+        type: 'number',
+        min: 10,
+        defaultValue: 60,
         value: 60,
-        definition: { path: 'prMonitor.debounceSeconds', type: 'number', scope: 'user' },
       },
       {
         path: 'agents.maxTopLevelAgents',
@@ -212,6 +223,29 @@ describe('AgentFeaturesSettings wire contract (PROTOCOL §5.12)', () => {
     await waitFor(() => {
       expect(toggle.getAttribute('aria-checked')).toBe('false');
     });
+  });
+
+  it('renders the daemon-provided tokenImpact annotation from settings.list (§5.12)', async () => {
+    mocks.mockBackendRequest.mockImplementation(async (method: string) => {
+      if (method === 'settings.list') {
+        const response = listResponse();
+        return {
+          settings: response.settings.map((s) =>
+            s.path === 'agentFeatures.backgroundHooks'
+              ? { ...s, tokenImpact: '~620 tokens/session' }
+              : s,
+          ),
+        };
+      }
+      throw new Error(`Unexpected method: ${method}`);
+    });
+
+    render(AgentFeaturesSettings);
+
+    const impact = await screen.findByText('~620 tokens/session');
+    expect(impact.className).toContain('text-ghost');
+    // Entries without the optional field render no annotation.
+    expect(screen.queryAllByText(/tokens\/(session|turn)/)).toHaveLength(1);
   });
 
   it('issues settings.update for agentFeatures.peerAgents when its toggle changes', async () => {

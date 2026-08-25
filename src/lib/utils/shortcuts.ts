@@ -167,13 +167,6 @@ export const SHORTCUTS = {
       return m.ui_shortcuts_search_label();
     },
   },
-  WORKSPACE_VIEW_MODE: {
-    key: 'mod+shift+l',
-    get label() {
-      return m.ui_shortcuts_workspaceViewMode_label();
-    },
-  },
-
   // ============================================================================
   // Dock / Agent Navigation
   // ============================================================================
@@ -579,13 +572,6 @@ export const SHORTCUT_CATEGORIES: Record<
         key: 'mod+o',
         get label() {
           return m.ui_shortcuts_toggleSpaces_label();
-        },
-        contexts: ['global'],
-      },
-      {
-        key: SHORTCUTS.WORKSPACE_VIEW_MODE.key,
-        get label() {
-          return SHORTCUTS.WORKSPACE_VIEW_MODE.label;
         },
         contexts: ['global'],
       },

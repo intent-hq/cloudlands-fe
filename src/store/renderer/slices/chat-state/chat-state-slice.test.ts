@@ -1243,6 +1243,75 @@ describe('chatState selectors', () => {
     expect(state.byAgentId[AGENT]?.transcriptSnapshot).toBeUndefined();
   });
 
+  it('a resumed:false snapshot resets the whole scrollback walk atomically', () => {
+    // Mid-walk state: an in-flight older fetch (its wire call died with the
+    // socket) plus persisted cursors from earlier settles.
+    let state = chatStateReducer(initialState, scrollbackFetchStarted(AGENT, 'older'));
+    state = chatStateReducer(state, scrollbackFetchStarted(AGENT, 'gap'));
+    state = chatStateReducer(state, scrollbackFetchStarted(AGENT, 'seek'));
+    state = chatStateReducer(
+      state,
+      scrollbackSeekSettled(AGENT, { nextToken: 'older-1', prevToken: 'newer-1' }, true),
+    );
+    state = chatStateReducer(state, scrollbackFetchStarted(AGENT, 'seek'));
+
+    state = chatStateReducer(
+      state,
+      chatTranscriptSnapshotApplied(AGENT, {
+        truncated: true,
+        totalMessages: 20,
+        resumed: false,
+      }),
+    );
+    const agent = state.byAgentId[AGENT];
+    expect(agent.fetchingOlderHistory).toBe(false);
+    expect(agent.fetchingGapFill).toBe(false);
+    expect(agent.fetchingHistorySeek).toBe(false);
+    expect(agent.scrollbackOlderToken).toBeNull();
+    expect(agent.scrollbackGapToken).toBeNull();
+    // Daemon capability latch, not walk state — survives the reset.
+    expect(agent.historySeekUnsupported).toBe(true);
+    expect(agent.transcriptSnapshot?.resumed).toBe(false);
+    // The epoch bump invalidates workers still awaiting their wire call.
+    expect(agent.scrollbackDiscardEpoch).toBe(1);
+
+    state = chatStateReducer(
+      state,
+      chatTranscriptSnapshotApplied(AGENT, {
+        truncated: true,
+        totalMessages: 20,
+        resumed: false,
+      }),
+    );
+    expect(state.byAgentId[AGENT].scrollbackDiscardEpoch).toBe(2);
+  });
+
+  it('a resumed:true (or plain) snapshot leaves the walk state untouched', () => {
+    let state = chatStateReducer(initialState, scrollbackFetchStarted(AGENT, 'older'));
+    state = chatStateReducer(
+      state,
+      scrollbackSeekSettled(AGENT, { nextToken: 'older-1', prevToken: 'newer-1' }),
+    );
+    state = chatStateReducer(
+      state,
+      chatTranscriptSnapshotApplied(AGENT, {
+        truncated: true,
+        totalMessages: 20,
+        resumed: true,
+      }),
+    );
+    expect(state.byAgentId[AGENT].scrollbackOlderToken).toBe('older-1');
+    expect(state.byAgentId[AGENT].scrollbackGapToken).toBe('newer-1');
+
+    state = chatStateReducer(state, scrollbackFetchStarted(AGENT, 'older'));
+    state = chatStateReducer(
+      state,
+      chatTranscriptSnapshotApplied(AGENT, { truncated: true, totalMessages: 21 }),
+    );
+    expect(state.byAgentId[AGENT].fetchingOlderHistory).toBe(true);
+    expect(state.byAgentId[AGENT].scrollbackOlderToken).toBe('older-1');
+  });
+
   describe('far-flick seek state (aroundIndex)', () => {
     it('initial state carries the seek flags off', () => {
       expect(emptyChatAgentState.fetchingHistorySeek).toBe(false);

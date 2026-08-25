@@ -31,6 +31,7 @@ import {
   chatReset,
   chatStreamingReconciled,
   chatInitialized,
+  chatTranscriptSnapshotApplied,
   streamCompleted,
   streamTimedOut,
 } from '../chat-state/chat-state-slice';
@@ -1105,6 +1106,17 @@ export const agentSessionRetryWithModelRequested = createAsyncAction<
   void
 >('agentSessions/retryWithModel', 'agentSessions/retryWithModelRequested');
 
+/**
+ * Saga-owned retry-from-stalled side effect trigger (monorepo#3402): cancels
+ * the hung turn, waits for the stop to settle, then re-sends the identical
+ * last user input. A no-op when the stall is no longer active by the time
+ * the command runs (resumed event, stream delta, or turn end).
+ */
+export const agentSessionRetryFromStalledRequested = createAsyncAction<
+  [agentId: string, wsId: string],
+  void
+>('agentSessions/retryFromStalled', 'agentSessions/retryFromStalledRequested');
+
 /** Saga-owned fork-session side effect trigger. Resolves with the forked agent id. */
 export const agentSessionForkSessionRequested = createAsyncAction<
   [agentId: string, wsId: string, options?: AgentSessionForkOptions],
@@ -1635,3 +1647,12 @@ agentSessionReducer.with(
 agentSessionReducer.with(clearHistorySegment, (state, { payload: [agentId] }) =>
   removeHistorySegment(state, agentId),
 );
+// Cross-slice: a §7.1 `resumed: false` seq-0 snapshot discards the retained
+// transcript, so the history segment — unanchored against the fresh
+// transcript — is dropped in the SAME dispatch the chat-state reducer resets
+// the walk cursors and fetching flags in (atomic walk reset; the scrollback
+// saga's clearHistorySegment chain still runs and is idempotent here).
+agentSessionReducer.with(chatTranscriptSnapshotApplied, (state, { payload: [agentId, meta] }) => {
+  if (meta.resumed !== false) return state;
+  return removeHistorySegment(state, agentId);
+});

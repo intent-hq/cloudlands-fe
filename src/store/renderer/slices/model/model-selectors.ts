@@ -11,7 +11,7 @@ import {
   selectActiveProviderId,
   selectAvailableEnabledProviderIds,
 } from '../provider-settings/provider-settings-selectors';
-import { resolveDefaultModel } from './model-selection-utils';
+import { findAvailableModelMatch, resolveDefaultModel } from './model-selection-utils';
 import type { ModelLoadingState } from './model-types';
 import { selectEffectiveDefaultProviderId } from '../provider-catalog/provider-catalog-selectors';
 
@@ -33,7 +33,30 @@ function getEffectiveProviderId(state: any, providerId?: string): string {
 export const selectSelectedModel = store.createSelector((state, providerId?: string): string => {
   const effectiveProviderId = getEffectiveProviderId(state, providerId);
   const persisted = state.model.providerModels[effectiveProviderId];
-  if (persisted) return persisted;
+  if (persisted) {
+    const catalogModels =
+      state.model.availableModelsProviderId === effectiveProviderId
+        ? getItems<AuggieModel, 'value'>(state.model.availableModels)
+        : [];
+    if (catalogModels.length === 0) return persisted;
+
+    const providerCatalogModels = catalogModels.filter((model) =>
+      isModelValidForProvider(model.value, effectiveProviderId, state.model.defaultProviderId),
+    );
+    const availableValues = providerCatalogModels.map((model) => model.value);
+    if (
+      findAvailableModelMatch(
+        availableValues,
+        effectiveProviderId,
+        persisted,
+        state.model.defaultProviderId,
+      )
+    ) {
+      return persisted;
+    }
+
+    return resolveDefaultModel(providerCatalogModels);
+  }
 
   const isAvailable = selectAvailableEnabledProviderIds.select(state).includes(effectiveProviderId);
   if (!isAvailable) return '';

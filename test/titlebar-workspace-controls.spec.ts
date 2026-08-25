@@ -25,14 +25,6 @@ test.beforeAll(async () => {
           replacement: resolve(process.cwd(), 'test/fixtures/titlebar-control-store.ts'),
         },
         {
-          find: '$store/renderer/slices/tab-state/tab-state-selectors',
-          replacement: resolve(process.cwd(), 'test/fixtures/titlebar-control-store.ts'),
-        },
-        {
-          find: '$features/workspace/workspace-view-mode-action',
-          replacement: resolve(process.cwd(), 'test/fixtures/titlebar-control-store.ts'),
-        },
-        {
           find: '$store/renderer/store',
           replacement: resolve(process.cwd(), 'test/fixtures/titlebar-control-store.ts'),
         },
@@ -90,7 +82,6 @@ test('mounts accepted control geometry and shortcut tooltips', async ({ page }, 
         await mountControls(page, theme, zoom);
         const controls = [
           page.locator('[data-titlebar-spaces-control]'),
-          page.locator('[data-fixture-control="layout"] button'),
           page.locator('[data-workspace-repo-launcher] button'),
         ];
         for (const control of controls) {
@@ -106,7 +97,6 @@ test('mounts accepted control geometry and shortcut tooltips', async ({ page }, 
         await expect(sidebarControl).not.toHaveAttribute('aria-controls');
         const glyphs = [
           page.locator('[data-titlebar-spaces-control] svg'),
-          page.locator('[data-fixture-control="layout"] svg'),
           page.locator('[data-workspace-repo-launcher] svg'),
         ];
         for (const glyph of glyphs) {

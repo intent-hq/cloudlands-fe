@@ -23,6 +23,7 @@ import {
   mapScrollTopToOrdinal,
   reconcileVirtualSpacer,
   restateFrozenSpacers,
+  shouldChainOlderHistoryOnSettle,
   shouldRequestOlderHistory,
   splitUnloadedRows,
   VIRTUAL_ROW_HEIGHT_MIN_PX,
@@ -780,6 +781,73 @@ describe('full-walk scrollback harness', () => {
     // The blank must clear within ONE landed page (a page's worth of rows
     // far exceeds the serial band the viewport can park in).
     expect(pages, `blank persisted through ${pages} pages: ${JSON.stringify(trace)}`).toBe(1);
+  });
+
+  // ── Capped-walk termination (viewport parked inside the above spacer) ───
+  // Regression: with the segment pinned at HISTORY_SEGMENT_MAX every
+  // prepended page cap-prunes its rows into the history→tail hole, so
+  // residency stops growing. Termination then depends ENTIRELY on the
+  // count-derived restatement shrinking the above spacer past the parked
+  // viewport — if holeRowsEstimate under-counted, the settle chain would
+  // only stop at exhaustion (an unbounded walk on huge conversations).
+  it('capped settle chain terminates when the restated above spacer drops below the viewport, not at exhaustion', () => {
+    const conversation = buildConversation(4000);
+    const sim = new WalkSim(conversation, 20);
+    sim.scrollTop = Math.max(0, sim.scrollHeight() - VIEWPORT_PX);
+    sim.reconcile();
+
+    // Serial-walk until cap pruning opens the hole (the capped regime).
+    let guard = 0;
+    while (!sim.meta.gapToTail && guard < 20) {
+      guard += 1;
+      sim.fetchOlderPage();
+    }
+    expect(sim.meta.gapToTail).toBe(true);
+
+    // Park the viewport mid-spacer: no anchor row is visible, so nothing
+    // repositions the viewport — only the spacer restatement can end the
+    // chain (the unbounded-walk regime).
+    sim.scrollTop = Math.round(sim.above / 2);
+    expect(sim.captureAnchor()).toBeNull();
+
+    const chainParams = () => ({
+      scrollTop: sim.scrollTop,
+      threshold: TOP_THRESHOLD_PX,
+      canScroll: sim.scrollHeight() > VIEWPORT_PX,
+      fetching: false,
+      exhausted: sim.meta.oldestReached,
+      historyCount: sim.meta.historyCount,
+      tailCount: sim.meta.tailCount,
+      tailTruncated: sim.fetchCursor > 0 || sim.meta.historyCount > 0,
+      totalMessages: conversation.length,
+      spacerAbove: sim.above,
+    });
+
+    const residentBefore = sim.meta.historyCount + sim.meta.tailCount;
+    let pages = 0;
+    let previousAbove = sim.above;
+    while (shouldChainOlderHistoryOnSettle(true, chainParams()) && pages < 50) {
+      pages += 1;
+      sim.fetchOlderPage();
+      // Monotonic shrinkage: every capped page must shrink the restated
+      // above spacer (the pruned rows moved into the hole estimate).
+      expect(sim.above, `page ${pages} did not shrink the above spacer`).toBeLessThan(
+        previousAbove,
+      );
+      previousAbove = sim.above;
+      // Cap keeps residency flat — growth would mask a bookkeeping bug.
+      expect(sim.meta.historyCount + sim.meta.tailCount).toBe(residentBefore);
+    }
+
+    // The chain walked several pages, then stopped because the restated
+    // above spacer dropped below the viewport — NOT because it exhausted
+    // the conversation.
+    expect(pages).toBeGreaterThan(1);
+    expect(pages).toBeLessThan(50);
+    expect(sim.meta.oldestReached).toBe(false);
+    expect(sim.fetchCursor).toBeGreaterThan(0);
+    expect(sim.scrollTop).toBeGreaterThan(TOP_THRESHOLD_PX + sim.above);
+    expect(shouldChainOlderHistoryOnSettle(true, chainParams())).toBe(false);
   });
 
   // ── Downward regression (QA repro on the walk-removal build) ────────────
