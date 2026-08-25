@@ -1,174 +1,52 @@
-/**
- * Test message duplication prevention
- * Ensures messages aren't duplicated on stream completion or page refresh
- */
+import type { AgentMessage } from '$shared/types';
+import {
+  deduplicateAgentMessages,
+  insertAgentMessageWithDedup,
+  replaceAgentMessageByIdWithDedup,
+} from '$shared/utils/message-dedup';
+import { describe, expect, it } from 'vitest';
 
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+function message(id: string, text: string, overrides: Partial<AgentMessage> = {}): AgentMessage {
+  return {
+    id,
+    role: 'assistant',
+    timestamp: '2026-08-25T00:00:00.000Z',
+    contentBlocks: [{ type: 'text', text }],
+    ...overrides,
+  };
+}
 
-describe('Message Duplication Prevention', () => {
-  let mockMessageStore: any;
-  let mockStreamHandler: any;
-
-  beforeEach(() => {
-    mockMessageStore = {
-      messages: new Map(),
-      addMessage: vi.fn((agentId, msg) => {
-        if (!mockMessageStore.messages.has(agentId)) {
-          mockMessageStore.messages.set(agentId, []);
-        }
-        mockMessageStore.messages.get(agentId).push(msg);
-      }),
-      updateMessage: vi.fn((agentId, msgId, updates) => {
-        const messages = mockMessageStore.messages.get(agentId) || [];
-        const msg = messages.find((m: any) => m.id === msgId);
-        if (msg) {
-          Object.assign(msg, updates);
-        }
-      }),
-      getMessages: vi.fn((agentId) => mockMessageStore.messages.get(agentId) || []),
-    };
-
-    mockStreamHandler = {
-      isStreaming: false,
-      messageId: null,
-      startStream: vi.fn((msgId) => {
-        mockStreamHandler.isStreaming = true;
-        mockStreamHandler.messageId = msgId;
-      }),
-      completeStream: vi.fn(() => {
-        mockStreamHandler.isStreaming = false;
-      }),
-    };
-  });
-
-  it('should not duplicate message on stream completion', () => {
-    const agentId = 'agent_1';
-    const messageId = 'msg_1';
-
-    // Add initial message
-    mockMessageStore.addMessage(agentId, {
-      id: messageId,
-      role: 'assistant',
-      contentBlocks: [{ type: 'text', text: 'Hello' }],
-    });
-
-    expect(mockMessageStore.getMessages(agentId)).toHaveLength(1);
-
-    // Simulate stream completion
-    mockStreamHandler.completeStream();
-
-    // Message should still be 1, not duplicated
-    expect(mockMessageStore.getMessages(agentId)).toHaveLength(1);
-  });
-
-  it('should update existing message instead of creating new one on stream complete', () => {
-    const agentId = 'agent_1';
-    const messageId = 'msg_1';
-
-    mockMessageStore.addMessage(agentId, {
-      id: messageId,
-      role: 'assistant',
-      contentBlocks: [{ type: 'text', text: 'Hello' }],
+describe('Message duplication prevention', () => {
+  it('collapses a streaming placeholder into its finalized daemon message', () => {
+    const streaming = message('local-stream', 'Final response', {
+      appMessageId: 'app-message-1',
       isStreaming: true,
     });
-
-    // Update message on stream complete
-    mockMessageStore.updateMessage(agentId, messageId, {
+    const final = message('msg-daemon-final', 'Final response', {
+      appMessageId: 'app-message-1',
       isStreaming: false,
-      contentBlocks: [{ type: 'text', text: 'Hello world' }],
+      metadata: { model: 'test-model' },
     });
 
-    const messages = mockMessageStore.getMessages(agentId);
-    expect(messages).toHaveLength(1);
-    expect(messages[0].isStreaming).toBe(false);
-    expect(messages[0].contentBlocks[0].text).toBe('Hello world');
+    expect(deduplicateAgentMessages([streaming, final])).toMatchObject([
+      { id: 'msg-daemon-final', isStreaming: false, metadata: { model: 'test-model' } },
+    ]);
   });
 
-  it('should not duplicate message on page refresh', () => {
-    const agentId = 'agent_1';
-    const messageId = 'msg_1';
+  it('updates an existing streamed message without adding a second row', () => {
+    const current = [message('msg-1', 'Hello', { isStreaming: true })];
+    const updated = message('msg-1', 'Hello world', { isStreaming: false });
+    const result = replaceAgentMessageByIdWithDedup(current, 'msg-1', updated);
 
-    // Add message
-    mockMessageStore.addMessage(agentId, {
-      id: messageId,
-      role: 'assistant',
-      contentBlocks: [{ type: 'text', text: 'Response' }],
-    });
-
-    expect(mockMessageStore.getMessages(agentId)).toHaveLength(1);
-
-    // Simulate page refresh - message should be restored from store
-    const restoredMessages = mockMessageStore.getMessages(agentId);
-    expect(restoredMessages).toHaveLength(1);
-    expect(restoredMessages[0].id).toBe(messageId);
+    expect(result).toHaveLength(1);
+    expect(result[0]).toMatchObject({ id: 'msg-1', isStreaming: false });
+    expect(result[0].contentBlocks).toEqual([{ type: 'text', text: 'Hello world' }]);
   });
 
-  it('should handle multiple messages without duplication', () => {
-    const agentId = 'agent_1';
+  it('keeps distinct user sends even when their text is the same', () => {
+    const first = message('user-msg-1', 'Yes', { role: 'user', appMessageId: 'app-user-1' });
+    const second = message('user-msg-2', 'Yes', { role: 'user', appMessageId: 'app-user-2' });
 
-    // Add user message
-    mockMessageStore.addMessage(agentId, {
-      id: 'msg_1',
-      role: 'user',
-      contentBlocks: [{ type: 'text', text: 'Hello' }],
-    });
-
-    // Add assistant message
-    mockMessageStore.addMessage(agentId, {
-      id: 'msg_2',
-      role: 'assistant',
-      contentBlocks: [{ type: 'text', text: 'Hi there' }],
-    });
-
-    expect(mockMessageStore.getMessages(agentId)).toHaveLength(2);
-
-    // Add another user message
-    mockMessageStore.addMessage(agentId, {
-      id: 'msg_3',
-      role: 'user',
-      contentBlocks: [{ type: 'text', text: 'How are you?' }],
-    });
-
-    expect(mockMessageStore.getMessages(agentId)).toHaveLength(3);
-  });
-
-  it('should prevent duplicate when stream completes with same content', () => {
-    const agentId = 'agent_1';
-    const messageId = 'msg_1';
-    const content = [{ type: 'text', text: 'Final response' }];
-
-    // Add message
-    mockMessageStore.addMessage(agentId, {
-      id: messageId,
-      role: 'assistant',
-      contentBlocks: content,
-    });
-
-    // Try to add same message again (simulating duplicate on stream complete)
-    const beforeCount = mockMessageStore.getMessages(agentId).length;
-
-    // Update instead of add
-    mockMessageStore.updateMessage(agentId, messageId, {
-      contentBlocks: content,
-    });
-
-    const afterCount = mockMessageStore.getMessages(agentId).length;
-    expect(beforeCount).toBe(afterCount);
-  });
-
-  it('should track message count correctly across operations', () => {
-    const agentId = 'agent_1';
-
-    mockMessageStore.addMessage(agentId, { id: 'msg_1', role: 'user' });
-    expect(mockMessageStore.getMessages(agentId)).toHaveLength(1);
-
-    mockMessageStore.addMessage(agentId, { id: 'msg_2', role: 'assistant' });
-    expect(mockMessageStore.getMessages(agentId)).toHaveLength(2);
-
-    mockMessageStore.updateMessage(agentId, 'msg_2', { isStreaming: false });
-    expect(mockMessageStore.getMessages(agentId)).toHaveLength(2);
-
-    mockMessageStore.addMessage(agentId, { id: 'msg_3', role: 'user' });
-    expect(mockMessageStore.getMessages(agentId)).toHaveLength(3);
+    expect(insertAgentMessageWithDedup([first], second)).toEqual([first, second]);
   });
 });
