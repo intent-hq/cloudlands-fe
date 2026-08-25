@@ -2,7 +2,7 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { cleanup, render } from '@testing-library/svelte';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import PanelDragPreview from '../PanelDragPreview.svelte';
 import { PANE_DROP_PREVIEW_PANEL_ID } from '$features/layout/panel-move-preview';
 import type { PanelState } from '$store/renderer/slices/panel-layout/panel-layout-types';
@@ -35,9 +35,16 @@ function addSourcePanel(state: PanelState): HTMLElement {
   return panel;
 }
 
+beforeEach(() => {
+  vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockImplementation(function () {
+    return this.classList.contains('panel-drag-preview-split') ? 1000 : 0;
+  });
+});
+
 afterEach(() => {
   cleanup();
   document.querySelectorAll('.actual-panel-shell').forEach((panel) => panel.remove());
+  vi.restoreAllMocks();
 });
 
 describe('PanelDragPreview', () => {
@@ -87,6 +94,13 @@ describe('PanelDragPreview', () => {
     ]);
     expect(container.querySelector('[data-panel-id]')).toBeNull();
     expect(snapshots.every((snapshot) => snapshot.inert)).toBe(true);
+    const previewColumns = container.querySelector<HTMLElement>(
+      '[data-panel-layout-preview-split="horizontal"]',
+    )!.children;
+    expect([...previewColumns].map((column) => (column as HTMLElement).style.flex)).toEqual([
+      '0 0 500px',
+      '0 0 500px',
+    ]);
     expect(snapshots[1].querySelector('input')?.value).toBe('source state');
     expect(snapshots[0].style.animation).toBe('none');
     const draggedPreview = container.querySelector<HTMLElement>(
@@ -214,6 +228,14 @@ describe('PanelDragPreview', () => {
       container.querySelector(`[data-panel-layout-preview-panel="${PANE_DROP_PREVIEW_PANEL_ID}"]`)
         ?.textContent,
     ).toContain('drag content');
+    const previewColumns = container.querySelector<HTMLElement>(
+      '[data-panel-layout-preview-split="horizontal"]',
+    )!.children;
+    expect([...previewColumns].map((column) => (column as HTMLElement).style.flex)).toEqual([
+      '0 0 330px',
+      '0 0 330px',
+      '0 0 340px',
+    ]);
 
     source.remove();
     target.remove();

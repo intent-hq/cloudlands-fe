@@ -2,7 +2,11 @@
   /* eslint-disable max-lines */
   import { setContext, onMount, onDestroy, tick, untrack } from 'svelte';
   import { m } from '$shared/paraglide/messages.js';
-  import { getPanelLayoutManager, type PanelTab } from '$features/layout/panel-layout-adapter';
+  import {
+    getPanelLayoutManager,
+    type PanelLayoutNode,
+    type PanelTab,
+  } from '$features/layout/panel-layout-adapter';
   import {
     getPaneDropPreview,
     getPanelMovePreviewWidthRatio,
@@ -95,10 +99,12 @@
   } from '$store/renderer/slices/panel-layout/panel-layout-slice';
   import { store as appStore } from '$store/renderer/store';
   import {
+    allocateViewportPanelWidths,
     getAutomaticPanelCanvasWidth,
     getPanelDefaultWidth,
     type PanelCanvasSizing,
   } from '$shared/panel-layout-sizing';
+  import { resizePanelTreeRightEdge } from '$store/renderer/slices/panel-layout/panel-layout-tabless';
 
   const logger = createLogger('PanelLayout');
 
@@ -247,6 +253,8 @@
   let panelOuterResizeDelta = $state(0);
   let panelOuterResizeCommittedDelta = $state(0);
   let panelOuterResizeCommittedWidth = $state<number | null>(null);
+  let viewportOuterResizeCommittedRoot = $state<PanelLayoutNode | null>(null);
+  let viewportOuterResizeClearFrame: number | null = null;
   let panelOuterResizeStartReferenceSize: number | null = null;
   const effectivePreferredCanvasWidth = $derived(
     panelOuterResizeCommittedWidth ?? $panelCanvasWidth$,
@@ -273,16 +281,16 @@
     getPanelCanvasWidths(
       panelViewportWidth,
       panelColumnPreferredWidths,
-      effectivePreferredCanvasWidthSource === 'explicit' ? 'content' : canvasSizing,
-      null,
-      null,
+      canvasSizing,
+      effectivePreferredCanvasWidth,
+      effectivePreferredCanvasWidthSource,
     ),
   );
   const expandedAutomaticViewportWidth = $derived(
     $expandedPanelId$ !== null &&
       canvasSizing === 'viewport' &&
       $panelCanvasWidthSource$ !== 'explicit'
-      ? Math.max(panelViewportWidth, $panelCanvasWidth$ ?? 0, allocatedPanelCanvas.defaultWidth)
+      ? allocatedPanelCanvas.defaultWidth
       : null,
   );
   const effectivePanelCanvasWidth = $derived(
@@ -294,9 +302,29 @@
       : $panelCanvasWidthSource$,
   );
   const panelGeometryCanvasWidth = $derived(
-    (panelOuterResizeCommittedWidth ??
-      expandedAutomaticViewportWidth ??
-      allocatedPanelCanvas.defaultWidth) + panelOuterResizeDelta,
+    canvasSizing === 'viewport'
+      ? allocatedPanelCanvas.defaultWidth
+      : (panelOuterResizeCommittedWidth ??
+          expandedAutomaticViewportWidth ??
+          allocatedPanelCanvas.defaultWidth) + panelOuterResizeDelta,
+  );
+  const viewportOuterResizeRoot = $derived(
+    viewportOuterResizeCommittedRoot ??
+      (canvasSizing === 'viewport' && panelOuterResizeDelta !== 0
+        ? resizePanelTreeRightEdge(
+            stableContainerRoot,
+            panelOuterResizeStartReferenceSize ?? panelRootReferenceSize,
+            (panelOuterResizeStartReferenceSize ?? panelRootReferenceSize) + panelOuterResizeDelta,
+          )
+        : stableContainerRoot),
+  );
+  const viewportOuterResizeWidths = $derived(
+    canvasSizing === 'viewport' &&
+      (panelOuterResizeDelta !== 0 || viewportOuterResizeCommittedRoot !== null) &&
+      viewportOuterResizeRoot.type === 'split' &&
+      viewportOuterResizeRoot.direction === 'horizontal'
+      ? allocateViewportPanelWidths(viewportOuterResizeRoot.sizes, panelViewportWidth).panelWidths
+      : allocatedPanelCanvas.panelWidths,
   );
   let retainedRootPanel = $state<{ panelId: string; width: number } | null>(null);
 
@@ -346,6 +374,9 @@
     markPristinePanelsTouched();
     panelOuterResizeCommittedWidth = null;
     panelOuterResizeCommittedDelta = 0;
+    viewportOuterResizeCommittedRoot = null;
+    if (viewportOuterResizeClearFrame !== null) cancelAnimationFrame(viewportOuterResizeClearFrame);
+    viewportOuterResizeClearFrame = null;
     panelOuterResizeStartReferenceSize = panelRootReferenceSize > 0 ? panelRootReferenceSize : null;
   }
 
@@ -356,7 +387,8 @@
     const gutterWidth =
       startReferenceSize !== null ? Math.max(0, previousWidth - startReferenceSize) : 0;
     panelOuterResizeCommittedWidth = nextWidth;
-    panelOuterResizeCommittedDelta = nextWidth - previousWidth;
+    if (canvasSizing === 'viewport') viewportOuterResizeCommittedRoot = viewportOuterResizeRoot;
+    panelOuterResizeCommittedDelta = canvasSizing === 'viewport' ? 0 : nextWidth - previousWidth;
     appStore.dispatch(
       resizePanelLayoutRightEdge(
         effectiveLayoutId,
@@ -367,11 +399,20 @@
       ),
     );
     panelOuterResizeDelta = 0;
+    if (viewportOuterResizeCommittedRoot !== null) {
+      viewportOuterResizeClearFrame = requestAnimationFrame(() => {
+        viewportOuterResizeCommittedRoot = null;
+        viewportOuterResizeClearFrame = null;
+      });
+    }
   }
 
   function handlePanelCanvasResizeCancel() {
     panelOuterResizeCommittedWidth = null;
     panelOuterResizeCommittedDelta = 0;
+    viewportOuterResizeCommittedRoot = null;
+    if (viewportOuterResizeClearFrame !== null) cancelAnimationFrame(viewportOuterResizeClearFrame);
+    viewportOuterResizeClearFrame = null;
     panelOuterResizeStartReferenceSize = null;
     panelOuterResizeDelta = 0;
   }
@@ -1260,6 +1301,7 @@
   onDestroy(() => {
     panelMoveCommitVersion += 1;
     if (panelMoveCommitReleaseFrame !== null) cancelAnimationFrame(panelMoveCommitReleaseFrame);
+    if (viewportOuterResizeClearFrame !== null) cancelAnimationFrame(viewportOuterResizeClearFrame);
     clearPanelMovePreviewNow();
     if (reportedPanelMovePreviewWidthRatio !== 1) onPanelMovePreviewWidthRatioChange?.(1);
     browserFocusOwnership.destroy();
@@ -1281,7 +1323,7 @@
     >
       <div class:opacity-0={panelMovePreviewRoot !== null} class="h-full w-full min-w-0">
         <PanelContainer
-          node={stableContainerRoot}
+          node={viewportOuterResizeRoot}
           panels={$panels$}
           panelOrder={$panelIds$}
           focusedPanelId={active ? $focusedPanelId$ : null}
@@ -1293,8 +1335,10 @@
           suppressLayoutMotion={suppressCommittedPanelMoveMotion}
           {retainedRootPanelWidth}
           rootPanelReferenceSize={panelGeometryCanvasWidth > 0 ? panelGeometryCanvasWidth : null}
-          rootHorizontalPanelWidths={allocatedPanelCanvas.panelWidths}
-          rootCanvasResizeDelta={panelOuterResizeDelta + panelOuterResizeCommittedDelta}
+          rootHorizontalPanelWidths={viewportOuterResizeWidths}
+          rootCanvasResizeDelta={canvasSizing === 'viewport'
+            ? 0
+            : panelOuterResizeDelta + panelOuterResizeCommittedDelta}
           availableCanvasWidth={panelViewportWidth}
           onFocusPanel={handleFocusPanel}
           onTabClick={handleTabClick}

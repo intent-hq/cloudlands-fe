@@ -1,6 +1,7 @@
 import {
   allocateAutomaticPanelWidths,
   allocatePanelWidths,
+  allocateViewportPanelWidths,
   DEFAULT_PANEL_WIDTH,
   getAutomaticPanelCanvasWidth,
   MIN_PANEL_CANVAS_WIDTH,
@@ -58,10 +59,12 @@ export function getPanelCanvasWidths(
       : null;
   const gapWidth = PANEL_SPLIT_GUTTER_WIDTH * Math.max(0, preferredWidths.length - 1);
   let allocation =
-    sizing === 'viewport' && explicitCanvasWidth === null
-      ? allocateAutomaticPanelWidths(preferredWidths.length, viewportWidth)
+    sizing === 'viewport'
+      ? explicitCanvasWidth === null
+        ? allocateAutomaticPanelWidths(preferredWidths.length, viewportWidth)
+        : allocateViewportPanelWidths(preferredWidths, viewportWidth)
       : allocatePanelWidths(preferredWidths, 0);
-  if (explicitCanvasWidth !== null) {
+  if (explicitCanvasWidth !== null && sizing === 'content') {
     const preferredTotal = preferredWidths.reduce((sum, width) => sum + width, 0);
     const contentWidth = Math.max(0, explicitCanvasWidth - gapWidth);
     const scale = preferredTotal > 0 ? contentWidth / preferredTotal : 0;
