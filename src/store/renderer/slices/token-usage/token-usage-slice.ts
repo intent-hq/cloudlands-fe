@@ -37,18 +37,11 @@ export const tokenUsageFetchFailed = createAction<[wsId: string]>(
   'tokenUsage/tokenUsageFetchFailed',
 );
 
-/** Drop the workspace entry (workspace closed/removed). */
-export const clearWorkspaceTokenUsage = createAction<[wsId: string]>(
-  'tokenUsage/clearWorkspaceTokenUsage',
-);
-
 // ---------------------------------------------------------------------------
 // Workspace-scoped helpers
 // ---------------------------------------------------------------------------
 
-const { setWorkspaceState, clearWorkspaceState } = createWorkspaceScopedHelpers(
-  emptyWorkspaceTokenUsageState,
-);
+const { setWorkspaceState } = createWorkspaceScopedHelpers(emptyWorkspaceTokenUsageState);
 
 // ---------------------------------------------------------------------------
 // Reducer
@@ -69,6 +62,3 @@ tokenUsageReducer.with(tokenUsageFetchFailed, (state, { payload: [wsId] }) => {
   if (!ws || ws.isStale) return state;
   return setWorkspaceState(state, wsId, { ...ws, isStale: true });
 });
-tokenUsageReducer.with(clearWorkspaceTokenUsage, (state, { payload: [wsId] }) =>
-  clearWorkspaceState(state, wsId),
-);

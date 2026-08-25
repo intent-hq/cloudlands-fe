@@ -18,7 +18,6 @@ import {
   insertAgentMessageWithDedup,
   normalizeAgentMessage,
   normalizeDateValue,
-  replaceAgentMessageByIdWithDedup,
 } from '$shared/utils/message-dedup';
 import { getAgentAttentionRequest } from '$shared/utils/agent-attention';
 import { eventReceived } from '../workspace-events/workspace-events-slice';
@@ -352,24 +351,6 @@ function addMessageToSession(
   const insertedMessages = insertAgentMessageWithDedup(currentList, message);
   if (insertedMessages === currentList) return state;
   const nextMessages = pruneMessages(orderMessagesForConversation(insertedMessages));
-  return setSession(state, agentId, {
-    ...session,
-    messages: nextMessages,
-  });
-}
-
-function replaceSessionMessageById(
-  state: AgentSessionState,
-  agentId: string,
-  oldId: string,
-  newMessage: AgentMessage,
-): AgentSessionState {
-  const session = getSession(state, agentId);
-  if (!session) return state;
-  if (!session.messages.some((message) => message.id === oldId)) return state;
-  const currentList = session.messages;
-  const nextMessages = replaceAgentMessageByIdWithDedup(currentList, oldId, newMessage);
-  if (nextMessages === currentList) return state;
   return setSession(state, agentId, {
     ...session,
     messages: nextMessages,
@@ -1028,25 +1009,6 @@ export const replaceMessages = createAction<[agentId: string, messages: AgentMes
   'agentSessions/replaceMessages',
 );
 
-/** Atomically remove a single message by ID */
-export const removeMessage = createAction<[agentId: string, messageId: string]>(
-  'agentSessions/removeMessage',
-);
-
-/**
- * Swaps the message at the matched index in place. Does not re-sort — the
- * caller must ensure the new message is semantically close enough to the old
- * one (same logical turn). Used by the saga's content-match dedup to preserve
- * canonical-ID without reordering.
- *
- * If a duplicate message already exists (same ID, or equivalent canonical
- * assistant content from the same turn), that stale entry is dropped so the
- * list never contains duplicate logical messages.
- */
-export const replaceMessageById = createAction<
-  [agentId: string, oldId: string, newMessage: AgentMessage]
->('agentSessions/replaceMessageById');
-
 /** Non-message field updates */
 export const updateSession = createAction<[agentId: string, updates: Partial<AgentSession>]>(
   'agentSessions/updateSession',
@@ -1177,14 +1139,6 @@ export const bulkUpsertSessions = createAction<
   [sessions: AgentSession[], options?: BulkUpsertSessionsOptions]
 >('agentSessions/bulkUpsertSessions');
 
-/** Remove all sessions for a workspace */
-export const removeWorkspaceSessions = createAction<[wsId: string]>(
-  'agentSessions/removeWorkspaceSessions',
-);
-
-/** Clear all sessions */
-export const clearAllSessions = createAction('agentSessions/clearAllSessions');
-
 /**
  * Prepend OLDER rows to the scrollback history segment (normalize/dedup/sort).
  * Past `HISTORY_SEGMENT_MAX`, prunes from the NEWEST side of history and sets
@@ -1265,16 +1219,6 @@ agentSessionReducer.with(replaceMessages, (state, { payload: [agentId, messages]
   if (nextMessages === session.messages) return state;
   return setSession(state, agentId, { ...session, messages: nextMessages });
 });
-agentSessionReducer.with(removeMessage, (state, { payload: [agentId, messageId] }) => {
-  const session = getSession(state, agentId);
-  if (!session) return state;
-  const nextMessages = session.messages.filter((message) => message.id !== messageId);
-  if (nextMessages.length === session.messages.length) return state;
-  return setSession(state, agentId, { ...session, messages: nextMessages });
-});
-agentSessionReducer.with(replaceMessageById, (state, { payload: [agentId, oldId, newMessage] }) =>
-  replaceSessionMessageById(state, agentId, oldId, newMessage),
-);
 agentSessionReducer.with(updateSession, (state, { payload: [agentId, updates] }) => {
   const session = getSession(state, agentId);
   if (!session) return state;
@@ -1330,20 +1274,6 @@ agentSessionReducer.with(bulkUpsertSessions, (state, { payload: [sessions, optio
   }
   return next;
 });
-agentSessionReducer.with(removeWorkspaceSessions, (state, { payload: [wsId] }) => {
-  const agentIds = state.agentIdsByWorkspace[wsId] ?? [];
-  if (agentIds.length === 0 && !state.agentIdsByWorkspace[wsId]) return state;
-  const byAgentId = { ...state.byAgentId };
-  for (const id of agentIds) {
-    delete byAgentId[id];
-  }
-
-  const { [wsId]: _, ...restWorkspaces } = state.agentIdsByWorkspace;
-  return removeHistorySegmentsFor(
-    { ...state, byAgentId, agentIdsByWorkspace: restWorkspaces },
-    agentIds,
-  );
-});
 agentSessionReducer.with(workspaceDeleted, (state, { payload: [wsId, agentIds] }) => {
   const indexedAgentIds = state.agentIdsByWorkspace[wsId] ?? [];
   const doomed = new Set<string>([...indexedAgentIds, ...agentIds]);
@@ -1363,7 +1293,6 @@ agentSessionReducer.with(workspaceDeleted, (state, { payload: [wsId, agentIds] }
     doomed,
   );
 });
-agentSessionReducer.with(clearAllSessions, () => initialState);
 // -----------------------------------------------------------------------
 // Cross-slice: handle workspace-agents actions directly (replaces bridge saga)
 // -----------------------------------------------------------------------
@@ -1449,12 +1378,6 @@ agentSessionReducer.with(chatStreamingReconciled, (state, { payload: { agentId }
 agentSessionReducer.with(chatInitialized, (state, { payload: [agentId, data] }) => {
   const session = getSession(state, agentId);
   if (!session) return state;
-  // chatInitialized may only CLEAR streaming flags, never SET them.
-  // Setting isStreaming=true is chatSendStarted's responsibility.
-  // The saga captures a streaming-state snapshot that can be stale by
-  // the time chatInitialized is dispatched — if agent:idle already
-  // cleared the flags, re-introducing isStreaming=true causes the UI
-  // to think the agent is still streaming and blocks follow-up messages.
   if (!data.isStreaming) {
     if (!session.isStreaming && !session.isProcessing) return state;
     return updateSessionFields(state, agentId, { isStreaming: false, isProcessing: false });

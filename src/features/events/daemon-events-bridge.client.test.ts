@@ -198,11 +198,7 @@ import { store as appStore } from '$store/renderer/store';
 import { agentStreamSaga } from '$store/renderer/slices/agent-session/sagas/agent-stream-saga';
 import { githubAuthSaga } from '$store/renderer/slices/github-auth/sagas/github-auth-saga';
 import { lifecycleReadSaga } from '$store/renderer/slices/workspace-lifecycle/sagas/lifecycle-read-saga';
-import {
-  bulkUpsertSessions,
-  clearAllSessions,
-  upsertSession,
-} from '$store/renderer/slices/agent-session/agent-session-slice';
+import { bulkUpsertSessions, upsertSession } from '$store/renderer/slices/agent-session/agent-session-slice';
 import { selectAgentIsResponding } from '$store/renderer/slices/agent-session/agent-session-selectors';
 import { selectEnabledProviderIds } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
 import {
@@ -214,7 +210,6 @@ import {
 import { selectContextItems } from '$store/renderer/slices/context/context-selectors';
 import {
   chatQueuedRetryRecordSet,
-  chatReset,
   chatSendFailed,
   chatSendStarted,
   chatStopCompleted,
@@ -227,7 +222,7 @@ import {
 } from '$features/agent/agent-failure-registry';
 import type { StatusEvent } from '$store/renderer/slices/chat-state/chat-state-types';
 import {
-  clearAgentQueue,
+  replaceAgentQueue,
   removeQueuedMessageFromAgentQueue,
 } from '$store/renderer/slices/agent-queue/agent-queue-slice';
 import { selectAgentQueueMessages } from '$store/renderer/slices/agent-queue/agent-queue-selectors';
@@ -241,6 +236,7 @@ import {
 } from '$store/renderer/slices/mcp-settings/mcp-settings-slice';
 import type { McpServerStatus } from '$store/renderer/slices/mcp-settings/mcp-settings-types';
 import { upsertScript } from '$store/renderer/slices/scripts/scripts-slice';
+import { workspaceDeleted } from '$store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice';
 import type { ScriptOutputBuffer } from '$store/renderer/slices/scripts/scripts-types';
 import { addTerminal } from '$store/renderer/slices/terminals/terminals-slice';
 import { selectTerminalsForWorkspace } from '$store/renderer/slices/terminals/terminals-selectors';
@@ -264,6 +260,27 @@ function readStatusEvents(): StatusEvent[] {
   };
   return state.chatState?.byAgentId[AGENT]?.statusEvents ?? [];
 }
+
+function clearAllSessions() {
+  const sessionState = appStore.state.agentSessions;
+  const chatAgentIds = Object.keys(appStore.state.chatState.byAgentId);
+  const indexedAgentIds = new Set<string>();
+  for (const [workspaceId, agentIds] of Object.entries(sessionState.agentIdsByWorkspace)) {
+    for (const agentId of agentIds) indexedAgentIds.add(agentId);
+    appStore.dispatch(workspaceDeleted(workspaceId, agentIds));
+  }
+  const remainingAgentIds = [...Object.keys(sessionState.byAgentId), ...chatAgentIds].filter(
+    (agentId) => !indexedAgentIds.has(agentId),
+  );
+  return workspaceDeleted('__test-reset__', remainingAgentIds);
+}
+
+const chatReset = (agentId?: string) =>
+  workspaceDeleted(
+    '__test-chat-reset__',
+    agentId ? [agentId] : Object.keys(appStore.state.chatState.byAgentId),
+  );
+const clearAgentQueue = (agentId: string) => replaceAgentQueue(agentId, []);
 
 const MESSAGE_ID = 'msg_assistant_1';
 const STREAM_ID = 'stream_1';
@@ -2940,11 +2957,15 @@ describe('daemonEventsBridge (Agent Q&A live delivery — trailingBlocks on agen
 });
 
 describe('daemonEventsBridge (queue wire contract — agent:queue:updated → replaceAgentQueue)', () => {
+  let queueAgentSequence = 0;
+  let AGENT = '';
+
   beforeAll(() => {
     appStore.init();
   });
 
   beforeEach(async () => {
+    AGENT = `agent-queue-bridge-${++queueAgentSequence}`;
     appStore.dispatch(clearAllSessions());
     appStore.dispatch(clearAgentQueue(AGENT));
     appStore.dispatch(chatReset(AGENT));
@@ -2952,7 +2973,7 @@ describe('daemonEventsBridge (queue wire contract — agent:queue:updated → re
     backendRequestSpy.mockClear();
     __resetDaemonEventsBridgeForTests();
     capturedHandlers.length = 0;
-    seedSession();
+    seedSession({ id: AGENT });
   });
 
   afterEach(() => vi.clearAllMocks());

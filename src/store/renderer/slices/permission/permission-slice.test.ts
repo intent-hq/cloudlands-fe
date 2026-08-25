@@ -7,15 +7,12 @@ import {
   createCollection,
   getItems,
 } from "@augmentcode/themis/utils/collections/collection-utils";
-import {
-  permissionReducer,
-  permissionRequestReceived,
-  setPendingRequests,
-  removePermissionRequest,
-  initialState,
-  type PermissionState,
-  type PermissionRequest,
-} from "./permission-slice";
+import { permissionReducer, permissionRequestReceived, removePermissionRequest, initialState, type PermissionState, type PermissionRequest } from "./permission-slice";
+import { selectPermissionRequestsCollection } from "./permission-selectors";
+import type { StoreState } from "../../types";
+
+const asStoreState = (permission: PermissionState): StoreState =>
+  ({ permission }) as unknown as StoreState;
 
 const makeRequest = (overrides: Partial<PermissionRequest> = {}): PermissionRequest => ({
   requestId: "req-1",
@@ -33,6 +30,13 @@ describe("permissionReducer", () => {
   it("should return initial state", () => {
     const state = permissionReducer(undefined, { type: "@@INIT" });
     expect(state).toEqual(initialState);
+  });
+
+  it("selects the permission request collection", () => {
+    const request = makeRequest();
+    const state = permissionReducer(initialState, permissionRequestReceived(request));
+
+    expect(selectPermissionRequestsCollection.select(asStoreState(state))).toEqual(state.requests);
   });
 
   describe("permissionRequestReceived", () => {
@@ -53,40 +57,6 @@ describe("permissionReducer", () => {
         prev,
         permissionRequestReceived(makeRequest({ requestId: "req-2" })),
       );
-      expect(getItems(state.requests)).toHaveLength(2);
-    });
-  });
-
-  describe("setPendingRequests", () => {
-    it("should add pending requests avoiding duplicates", () => {
-      const existing = makeRequest({ requestId: "req-1" });
-      const prev: PermissionState = {
-        requests: createCollection<PermissionRequest, "requestId">("requestId", [existing]),
-      };
-      const incoming = [
-        makeRequest({ requestId: "req-1" }), // duplicate
-        makeRequest({ requestId: "req-2" }), // new
-      ];
-      const state = permissionReducer(prev, setPendingRequests(incoming));
-      expect(getItems(state.requests)).toHaveLength(2);
-      expect(getItems(state.requests).map((r) => r.requestId)).toEqual(["req-1", "req-2"]);
-    });
-
-    it("should return same state if no new requests", () => {
-      const existing = makeRequest({ requestId: "req-1" });
-      const prev: PermissionState = {
-        requests: createCollection<PermissionRequest, "requestId">("requestId", [existing]),
-      };
-      const state = permissionReducer(prev, setPendingRequests([existing]));
-      expect(state).toBe(prev);
-    });
-
-    it("should add all requests when state is empty", () => {
-      const requests = [
-        makeRequest({ requestId: "req-1" }),
-        makeRequest({ requestId: "req-2" }),
-      ];
-      const state = permissionReducer(initialState, setPendingRequests(requests));
       expect(getItems(state.requests)).toHaveLength(2);
     });
   });

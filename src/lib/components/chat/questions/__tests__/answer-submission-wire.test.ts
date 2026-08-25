@@ -33,10 +33,8 @@ vi.mock('$lib/client/live/backend-transport', () => ({
 import { fireEvent, render, screen } from '@testing-library/svelte';
 import { store as appStore } from '$store/renderer/store';
 import { setWorkspaceEntity } from '$store/renderer/slices/workspace/workspace-slice';
-import {
-  bulkUpsertSessions,
-  clearAllSessions,
-} from '$store/renderer/slices/agent-session/agent-session-slice';
+import { bulkUpsertSessions } from '$store/renderer/slices/agent-session/agent-session-slice';
+import { workspaceDeleted } from '$store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice';
 import { agentMutationSaga } from '$store/renderer/slices/agent-session/sagas/agent-mutation-saga';
 import { sendMessage } from '$store/renderer/slices/chat-state/chat-state-slice';
 import { chatSendSaga } from '$store/renderer/slices/chat-state/sagas/chat-send-saga';
@@ -251,7 +249,7 @@ describe('wizard completion → agent.sendMessage wire shape', () => {
     );
   });
   afterEach(() => {
-    appStore.dispatch(clearAllSessions());
+    appStore.dispatch(workspaceDeleted(WS, [AGENT]));
   });
 
   it('sends ONE flattened plain-text user message tagged with the answer metadata', async () => {

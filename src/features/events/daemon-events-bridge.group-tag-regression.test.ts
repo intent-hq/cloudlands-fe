@@ -44,10 +44,8 @@ vi.mock('$lib/client/live/backend-transport', () => ({
 
 import { store as appStore } from '$store/renderer/store';
 import { agentStreamSaga } from '$store/renderer/slices/agent-session/sagas/agent-stream-saga';
-import {
-  bulkUpsertSessions,
-  clearAllSessions,
-} from '$store/renderer/slices/agent-session/agent-session-slice';
+import { bulkUpsertSessions } from '$store/renderer/slices/agent-session/agent-session-slice';
+import { workspaceDeleted } from '$store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice';
 import {
   __resetDaemonEventsBridgeForTests,
   routeDaemonEventsNotification,
@@ -57,6 +55,8 @@ import { groupContentBlocks } from '$lib/utils/messageParser';
 const WS = 'ws-group-regression';
 const AGENT = 'agent-group-regression';
 const MESSAGE_ID = '01a014bc-beb5-7ac1-aea7-ac220436f7ca';
+const clearAllSessions = () =>
+  workspaceDeleted(WS, Object.keys(appStore.state.agentSessions.byAgentId));
 
 /** PROTOCOL §6.3 `events.event` notification envelope. */
 function notification(eventType: string, data: Record<string, unknown>) {

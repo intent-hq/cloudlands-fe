@@ -14,7 +14,6 @@ import type {
   AgentStatus,
   Subscription,
   DelegationGroupStatus,
-  WokenUpInfo,
 } from './agent-subscription-ui-types';
 
 // ---------------------------------------------------------------------------
@@ -54,19 +53,6 @@ export const setSubscriptionSnapshot = createAction(
       waitingState: 'idle' | 'waiting' | 'woken' | 'completed';
     },
   ) => ({ workspaceId, agentId, data }),
-);
-
-export const setWokenUp = createAction(
-  'agentSubscriptionUI/setWokenUp',
-  (workspaceId: string, agentId: string, info: WokenUpInfo) => ({
-    workspaceId,
-    agentId,
-    info,
-  }),
-);
-
-export const clearWokenUp = createAction<[workspaceId: string, agentId: string]>(
-  'agentSubscriptionUI/clearWokenUp',
 );
 
 export const resetSubscriptionUI = createAction<[workspaceId: string, agentId: string]>(
@@ -173,55 +159,6 @@ agentSubscriptionUIReducer.with(markAgentAsViewed, (state, { payload: [agentId] 
     entries[key] = { ...entry, snapshotFetched: false };
   }
   return changed ? { ...state, entries } : state;
-});
-agentSubscriptionUIReducer.with(setWokenUp, (state, { payload }) => {
-  const key = makeKey(payload.workspaceId, payload.agentId);
-  const existing = state.entries[key] ?? emptyEntry;
-  return {
-    ...state,
-    entries: {
-      ...state.entries,
-      [key]: {
-        ...existing,
-        waitingState: 'woken',
-        wokenUpInfo: payload.info,
-      },
-    },
-  };
-});
-agentSubscriptionUIReducer.with(clearWokenUp, (state, { payload: [workspaceId, agentId] }) => {
-  const key = makeKey(workspaceId, agentId);
-  const existing = state.entries[key];
-  if (!existing) return state;
-  // Don't override 'completed' state — let the cleanup timer handle it
-  if (existing.waitingState === 'completed') {
-    return {
-      ...state,
-      entries: {
-        ...state.entries,
-        [key]: {
-          ...existing,
-          wokenUpInfo: null,
-        },
-      },
-    };
-  }
-  return {
-    ...state,
-    entries: {
-      ...state.entries,
-      [key]: {
-        ...existing,
-        waitingState:
-          existing.waitingState === 'woken'
-            ? existing.subscriptions.length > 0 || existing.delegationGroups.length > 0
-              ? 'waiting'
-              : 'idle'
-            : existing.waitingState,
-        wokenUpInfo: null,
-      },
-    },
-  };
 });
 agentSubscriptionUIReducer.with(
   resetSubscriptionUI,

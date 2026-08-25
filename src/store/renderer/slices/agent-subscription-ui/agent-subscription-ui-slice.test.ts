@@ -9,8 +9,6 @@ import {
   emptyEntry,
   makeKey,
   setSubscriptionSnapshot,
-  setWokenUp,
-  clearWokenUp,
   resetSubscriptionUI,
   removeWatchedAgent,
   subscriptionSnapshotFetchFailed,
@@ -185,95 +183,6 @@ describe('agentSubscriptionUIReducer', () => {
       const afterView = agentSubscriptionUIReducer(latched, markAgentAsViewed(AGENT));
       expect(afterView).toBe(latched);
       expect(afterView.entries[makeKey(WS, 'agent-other')].snapshotFetched).toBe(true);
-    });
-  });
-
-  describe('setWokenUp', () => {
-    it('sets woken state and info', () => {
-      const info = { eventCount: 3, eventTypes: ['file:changed'], timestamp: 1000 };
-      const state = agentSubscriptionUIReducer(initialState, setWokenUp(WS, AGENT, info));
-      const key = makeKey(WS, AGENT);
-      expect(state.entries[key].waitingState).toBe('woken');
-      expect(state.entries[key].wokenUpInfo).toEqual(info);
-    });
-  });
-
-  describe('clearWokenUp', () => {
-    it('clears woken state back to idle when no subscriptions', () => {
-      const info = { eventCount: 1, eventTypes: [], timestamp: 1000 };
-      let state = agentSubscriptionUIReducer(initialState, setWokenUp(WS, AGENT, info));
-      state = agentSubscriptionUIReducer(state, clearWokenUp(WS, AGENT));
-      const key = makeKey(WS, AGENT);
-      expect(state.entries[key].waitingState).toBe('idle');
-      expect(state.entries[key].wokenUpInfo).toBeNull();
-    });
-
-    it('clears woken state back to waiting when subscriptions exist', () => {
-      let state = agentSubscriptionUIReducer(
-        initialState,
-        setSubscriptionSnapshot(WS, AGENT, {
-          subscriptions: [sub],
-          delegationGroups: [],
-          agentStatuses: {},
-          waitingState: 'waiting',
-        }),
-      );
-      const info = { eventCount: 1, eventTypes: [], timestamp: 1000 };
-      state = agentSubscriptionUIReducer(state, setWokenUp(WS, AGENT, info));
-      state = agentSubscriptionUIReducer(state, clearWokenUp(WS, AGENT));
-      const key = makeKey(WS, AGENT);
-      expect(state.entries[key].waitingState).toBe('waiting');
-      expect(state.entries[key].wokenUpInfo).toBeNull();
-    });
-
-    it('clears woken state back to waiting when delegation groups exist', () => {
-      let state = agentSubscriptionUIReducer(
-        initialState,
-        setSubscriptionSnapshot(WS, AGENT, {
-          subscriptions: [],
-          delegationGroups: [group],
-          agentStatuses: {},
-          waitingState: 'waiting',
-        }),
-      );
-      const info = { eventCount: 1, eventTypes: [], timestamp: 1000 };
-      state = agentSubscriptionUIReducer(state, setWokenUp(WS, AGENT, info));
-      state = agentSubscriptionUIReducer(state, clearWokenUp(WS, AGENT));
-      expect(state.entries[makeKey(WS, AGENT)].waitingState).toBe('waiting');
-    });
-
-    it('preserves waiting state if not woken', () => {
-      let state = agentSubscriptionUIReducer(
-        initialState,
-        setSubscriptionSnapshot(WS, AGENT, {
-          subscriptions: [],
-          delegationGroups: [],
-          agentStatuses: {},
-          waitingState: 'waiting',
-        }),
-      );
-      state = agentSubscriptionUIReducer(state, clearWokenUp(WS, AGENT));
-      expect(state.entries[makeKey(WS, AGENT)].waitingState).toBe('waiting');
-    });
-
-    it('preserves completed state and does not override it', () => {
-      let state = agentSubscriptionUIReducer(
-        initialState,
-        setSubscriptionSnapshot(WS, AGENT, {
-          subscriptions: [],
-          delegationGroups: [],
-          agentStatuses: {},
-          waitingState: 'completed',
-        }),
-      );
-      state = agentSubscriptionUIReducer(state, clearWokenUp(WS, AGENT));
-      expect(state.entries[makeKey(WS, AGENT)].waitingState).toBe('completed');
-      expect(state.entries[makeKey(WS, AGENT)].wokenUpInfo).toBeNull();
-    });
-
-    it('returns same reference when key does not exist', () => {
-      const state = agentSubscriptionUIReducer(initialState, clearWokenUp('no', 'exist'));
-      expect(state).toBe(initialState);
     });
   });
 

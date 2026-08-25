@@ -24,8 +24,7 @@ export const initialState: AgentLockState = {
   byWorkspaceId: {},
 };
 
-const { getWorkspaceState, setWorkspaceState, clearWorkspaceState } =
-  createWorkspaceScopedHelpers(emptyWorkspaceState);
+const { clearWorkspaceState } = createWorkspaceScopedHelpers(emptyWorkspaceState);
 
 // ---------------------------------------------------------------------------
 // Actions
@@ -36,37 +35,11 @@ export const recomputeAgentLocks = createAction<[workspaceId: string]>(
   'agentLock/recomputeAgentLocks',
 );
 
-/** Set the computed lock state for a workspace */
-export const setAgentLockState = createAction(
-  'agentLock/setAgentLockState',
-  (
-    workspaceId: string,
-    lockedAgentIds: Record<string, true>,
-    lockedFilePaths: Record<string, true>,
-  ) => ({
-    workspaceId,
-    lockedAgentIds,
-    lockedFilePaths,
-  }),
-);
-
 // ---------------------------------------------------------------------------
 // Reducer
 // ---------------------------------------------------------------------------
 
 export const agentLockReducer = createReducer<AgentLockState>(initialState);
-agentLockReducer.with(setAgentLockState, (state, action) => {
-  const { workspaceId, lockedAgentIds, lockedFilePaths } = action.payload;
-  const ws = getWorkspaceState(state, workspaceId);
-  // Return same reference if nothing changed
-  if (ws.lockedAgentIds === lockedAgentIds && ws.lockedFilePaths === lockedFilePaths) {
-    return state;
-  }
-  return setWorkspaceState(state, workspaceId, {
-    lockedAgentIds,
-    lockedFilePaths,
-  });
-});
 agentLockReducer.with(workspaceUnmounted, (state, { payload: [wsId] }) =>
   clearWorkspaceState(state, wsId),
 );

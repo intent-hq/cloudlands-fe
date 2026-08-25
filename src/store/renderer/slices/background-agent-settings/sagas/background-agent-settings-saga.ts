@@ -7,12 +7,7 @@ import {
   selectBgDefaultModel,
   selectBgTypeOverrides,
 } from '../background-agent-settings-selectors';
-import {
-  clearTypeOverride,
-  resetSettings,
-  setDefaultModel,
-  setTypeOverride,
-} from '../background-agent-settings-slice';
+import { setDefaultModel, setTypeOverride } from '../background-agent-settings-slice';
 
 const logger = createLogger('BackgroundAgentSettingsSaga');
 
@@ -35,7 +30,7 @@ function* persistBackgroundAgentSettingsWorker() {
 /** Unregistered until the S20 middleware cutover. */
 export function* backgroundAgentSettingsSaga() {
   const channel = yield* actionChannel(
-    [setDefaultModel, setTypeOverride, clearTypeOverride, resetSettings],
+    [setDefaultModel, setTypeOverride],
     buffers.sliding(1),
   );
   try {

@@ -8,15 +8,11 @@ import {
   chatStateReducer,
   initialState,
   emptyChatAgentState,
-  chatInitialized,
   chatInitFailed,
   chatSendStarted,
   chatSendFailed,
-  chatInterrupted,
   chatStopInitiated,
   chatStopCompleted,
-  chatReset,
-  chatStreamingReconciled,
   chatModelUnavailableCleared,
   chatRebindStarted,
   chatRebindEnded,
@@ -133,33 +129,9 @@ describe('chatStateReducer', () => {
     expect(chatStateReducer(undefined, { type: '@@INIT' })).toEqual(initialState);
   });
 
-  it('chatInitialized sets agent state (isStreaming/isProcessing now on agent-session)', () => {
-    const state = chatStateReducer(
-      initialState,
-      chatInitialized(AGENT, {
-        isStreaming: false,
-        lastAttemptedMessage: null,
-      }),
-    );
-    const agent = state.byAgentId[AGENT];
-    expect(agent.agentId).toBe(AGENT);
-    expect(agent.error).toBeNull();
-    // isStreaming/isProcessing are no longer on chat-state
-    expect(agent).not.toHaveProperty('isStreaming');
-    expect(agent).not.toHaveProperty('isProcessing');
-  });
-
   it('chatInitFailed sets error', () => {
     const state = chatStateReducer(initialState, chatInitFailed(AGENT, 'oops'));
-    const agent = state.byAgentId[AGENT];
-    expect(agent.error).toBe('oops');
-  });
-
-  it('chatInitFailed clears stale model-unavailable state so init errors are visible', () => {
-    const state = chatStateReducer(stateWithModelUnavailable(), chatInitFailed(AGENT, 'oops'));
-    const agent = state.byAgentId[AGENT];
-    expect(agent.error).toBe('oops');
-    expect(agent.modelUnavailable).toBeNull();
+    expect(state.byAgentId[AGENT].error).toBe('oops');
   });
 
   it('chatSendStarted sets UI flags (isStreaming/isProcessing now on agent-session)', () => {
@@ -211,14 +183,6 @@ describe('chatStateReducer', () => {
     expect(agent.lastAttemptedMessage).toEqual(attempted);
   });
 
-  it('chatInterrupted clears streaming start time', () => {
-    const s1 = chatStateReducer(initialState, chatSendStarted(AGENT));
-    const s2 = chatStateReducer(s1, chatInterrupted(AGENT));
-    const agent = s2.byAgentId[AGENT];
-    expect(agent.streamingStartTime).toBeNull();
-    expect(agent.error).toBeNull();
-  });
-
   it('chatStopInitiated sets isInterrupting', () => {
     const state = chatStateReducer(initialState, chatStopInitiated(AGENT));
     expect(state.byAgentId[AGENT].isInterrupting).toBe(true);
@@ -231,12 +195,6 @@ describe('chatStateReducer', () => {
     const agent = s3.byAgentId[AGENT];
     expect(agent.isInterrupting).toBe(false);
     expect(agent.streamingStartTime).toBeNull();
-  });
-
-  it('chatReset returns to empty state', () => {
-    const s1 = chatStateReducer(initialState, chatSendStarted(AGENT));
-    const s2 = chatStateReducer(s1, chatReset(AGENT));
-    expect(s2.byAgentId[AGENT]).toEqual(emptyChatAgentState);
   });
 
   it('streamEnded clears streaming metadata', () => {
@@ -827,12 +785,6 @@ describe('chatStateReducer', () => {
     expect(s.byAgentId[AGENT].modelUnavailable).toBeNull();
   });
 
-  it('chatStreamingReconciled sets streamingStartTime when not already set', () => {
-    const s = chatStateReducer(initialState, chatStreamingReconciled(AGENT));
-    const agent = s.byAgentId[AGENT];
-    expect(agent.streamingStartTime).toBeDefined();
-  });
-
   it('streamStatusReceived appends status event', () => {
     const s1 = chatStateReducer(initialState, chatSendStarted(AGENT));
     const event = { phase: 'connecting', message: 'test', level: 'info' as const, timestamp: 1000 };
@@ -1036,17 +988,6 @@ describe('chatStateReducer', () => {
       expect(s.byAgentId[AGENT].lastAttemptedMessage).toBeNull();
     });
 
-    it('reload reconcile (lastMessageTime 0) still clears on any idle (#973)', () => {
-      // Fresh state after a window reload has lastMessageTime 0 — every idle
-      // timestamp postdates it, so the reconcile finalize is preserved.
-      let s = chatStateReducer(
-        initialState,
-        chatInitialized(AGENT, { isStreaming: false, lastAttemptedMessage: { text: 'pre-reload' } }),
-      );
-      s = chatStateReducer(s, agentIdleEvent(AGENT));
-      expect(s.byAgentId[AGENT].lastAttemptedMessage).toBeNull();
-    });
-
     it('agent:idle preserves the record while a failure banner is visible (error set)', () => {
       const attempted = { text: 'failed send' };
       let s = chatStateReducer(initialState, chatLastAttemptedMessageSet(AGENT, attempted));
@@ -1111,11 +1052,6 @@ describe('chatState selectors', () => {
   it('selectChatError returns null for clean state', () => {
     const storeState = asStoreState(initialState);
     expect(selectChatError.select(storeState, AGENT)).toBeNull();
-  });
-
-  it('selectChatError returns error message', () => {
-    const state = chatStateReducer(initialState, chatInitFailed(AGENT, 'bad'));
-    expect(selectChatError.select(asStoreState(state), AGENT)).toBe('bad');
   });
 
   it('selectChatAgentState returns empty state for unknown', () => {
@@ -1431,12 +1367,6 @@ describe('chatState selectors', () => {
       const before = switchedAwayState();
       const state = chatStateReducer(before, chatSwitchBackRevealTimedOut(AGENT));
       expect(state).toBe(before);
-    });
-
-    it('clears on chatReset', () => {
-      let state = chatStateReducer(switchedAwayState(), markAgentAsViewed(AGENT));
-      state = chatStateReducer(state, chatReset(AGENT));
-      expect(selectAwaitingSwitchBackSnapshot.select(asStoreState(state), AGENT)).toBe(false);
     });
 
     it('re-view while already armed keeps state identity (no churn)', () => {

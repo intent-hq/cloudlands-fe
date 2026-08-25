@@ -1,13 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { TokenUsage } from "../../../../features/token-usage/token-usage-types";
-import {
-  clearWorkspaceTokenUsage,
-  fetchWorkspaceTokenUsage,
-  initialState,
-  tokenUsageFetchFailed,
-  tokenUsageReceived,
-  tokenUsageReducer,
-} from "./token-usage-slice";
+import { fetchWorkspaceTokenUsage, initialState, tokenUsageFetchFailed, tokenUsageReceived, tokenUsageReducer } from "./token-usage-slice";
 
 const WS = "ws-1";
 
@@ -94,16 +87,6 @@ describe("token-usage-slice", () => {
     const populated = tokenUsageReducer(initialState, tokenUsageReceived(WS, snapshot));
     const stale = tokenUsageReducer(populated, tokenUsageFetchFailed(WS));
     expect(tokenUsageReducer(stale, tokenUsageFetchFailed(WS))).toBe(stale);
-  });
-
-  it("clearWorkspaceTokenUsage removes the workspace entry", () => {
-    const populated = tokenUsageReducer(initialState, tokenUsageReceived(WS, snapshot));
-    const next = tokenUsageReducer(populated, clearWorkspaceTokenUsage(WS));
-    expect(next.byWorkspaceId[WS]).toBeUndefined();
-  });
-
-  it("clearWorkspaceTokenUsage is a no-op for unknown workspaces", () => {
-    expect(tokenUsageReducer(initialState, clearWorkspaceTokenUsage(WS))).toBe(initialState);
   });
 
   it("only touches the targeted workspace entry", () => {
