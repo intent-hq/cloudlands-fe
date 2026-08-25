@@ -54,10 +54,13 @@ import {
   spawnSidecarOnDemand,
 } from './intentd-sidecar';
 import {
+  getConnectionMode,
+  getDaemonVersionInfo,
   getOrphanedSidecarInfo,
   setDaemonVersionInfo,
   setOrphanedSidecarInfo,
 } from './connection-mode';
+import { computeDaemonVersionRefresh } from './daemon-version-refresh';
 import { detectOrphanedSidecar } from './intentd-orphan';
 import { defaultKill, restartOrphanedSidecar } from './orphan-recovery';
 import * as connectionsStore from './connections-store';
@@ -463,6 +466,27 @@ export function getBackendClient(): JsonRpcClient {
       handleHelloProtocolVersion(
         typeof obj?.protocolVersion === 'string' ? obj.protocolVersion : null,
       );
+      // #3448: refresh the adopted external daemon's version info from the
+      // live `server.version` on every (re)connect — the startup probe only
+      // latches it once, so a daemon upgrade would otherwise stay stale. The
+      // hello resolves AFTER the `connected` status broadcast, so a refresh
+      // must re-broadcast the transport payload itself.
+      const refreshed = computeDaemonVersionRefresh({
+        helloResult: result,
+        isLocalBackend: activeConnectionMeta === null,
+        transport: instance.getConfig().transport,
+        connectionMode: getConnectionMode(),
+        pinnedVersion: getPinnedVersion(),
+        current: getDaemonVersionInfo(),
+      });
+      if (refreshed) {
+        setDaemonVersionInfo(refreshed);
+        broadcast(BACKEND.STATUS, {
+          status: instance.getStatus(),
+          transport: formatTransportInfo(instance.getConfig(), getPinnedVersion()),
+          reconnectAttempts: instance.getReconnectAttempts(),
+        });
+      }
     },
   });
   instance.on('notification', (notification: JsonRpcNotification) => {
