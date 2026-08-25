@@ -136,6 +136,12 @@ artifact path or a `file://` link. Close the clean session, do not commit the me
 remove it when it is no longer needed. Do not load saved browser state or inspect
 cookies, credentials, or unrelated tabs.
 
+Before linking any generated image or video, verify that the actual file exists in the
+message's owning workspace. Use its exact workspace-relative path or its contained
+absolute workspace path. Never invent an `artifacts/...` path, substitute a similarly
+named file, or read a sibling workspace. If the expected artifact is absent, report it
+as missing instead of emitting a link.
+
 ```bash
 playwright-cli -s=ui-preview-chat open 'http://127.0.0.1:5290/sandbox/button?state=destructive&theme=dark&width=420&motion=reduced'
 playwright-cli -s=ui-preview-chat resize 1100 850
