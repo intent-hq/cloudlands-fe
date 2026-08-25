@@ -185,7 +185,9 @@ describe('WorkspaceAgentsList single-line rows', () => {
 
     // Clicking the row still opens the (read-only) conversation.
     await fireEvent.click(retiredRow!);
-    expect(onSelect).toHaveBeenCalledWith({ agentId: retired.id });
+    expect(onSelect).toHaveBeenCalledWith(
+      expect.objectContaining({ agentId: retired.id }),
+    );
 
     // The restore affordance dispatches the un-retire callback without selecting.
     const restoreButton = view.container.querySelector<HTMLElement>(

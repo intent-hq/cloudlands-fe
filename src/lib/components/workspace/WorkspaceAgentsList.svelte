@@ -390,7 +390,7 @@
             updatedAt={agent.updatedAt}
             hidePreview
             panelRow
-            onclick={() => handleAgentClick(agent.id)}
+            onclick={(event) => handleAgentClick(agent.id, event)}
             headerActions={retiredActions}
           />
         </div>
