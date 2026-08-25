@@ -101,9 +101,13 @@ export function safeDisclosureTransition(
         }
       }
       previousT = t;
-      if (t === 1) {
+      if (t === 1 && phase !== 'outro') {
         // Fully shown (intro end, or an interrupted outro reset to its start):
         // restore the natural styles and release the followed-bottom lease.
+        // The phase guard keeps a pure `out:` play (phase starts as 'outro')
+        // from settling on a first tick whose rAF timestamp lands exactly on
+        // the start time (easing(0) = 0 ⇒ t = 1) — re-acquisition only exists
+        // on the `direction === 'both'` reversal path.
         clearFrameStyles();
         settleBottomMutation();
         phase = 'idle';
