@@ -68,6 +68,8 @@
     "test:unit": "vitest run --config vitest.config.ts",
     "test:unit:watch": "vitest",
     "test:playwright": "pnpm exec playwright test",
+    "test:playwright:manual:catalog": "pnpm exec playwright test --config=playwright.manual.config.ts test/catalog-manual-review.capture.spec.ts",
+    "test:playwright:manual:baseline": "pnpm exec playwright test --config=playwright.manual.config.ts test/current-main-baseline.spec.ts",
     "test:ct": "node scripts/run-ct-tests.mjs",
     "test:playwright:ui": "pnpm exec playwright test --ui",
     "test:playwright:headed": "pnpm exec playwright test --headed",
