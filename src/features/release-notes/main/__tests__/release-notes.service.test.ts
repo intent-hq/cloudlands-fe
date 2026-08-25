@@ -72,6 +72,18 @@ function mockReleaseList(items: unknown[]) {
   })) as unknown as typeof fetch;
 }
 
+function mockReleasePages(pages: unknown[][]) {
+  return vi.fn(async () => {
+    const items = pages.shift();
+    if (!items) throw new Error('unexpected release page');
+    return {
+      ok: true,
+      status: 200,
+      json: async () => items,
+    };
+  }) as unknown as typeof fetch;
+}
+
 describe('release-notes service', () => {
   beforeEach(async () => {
     testUserDataPath = await fs.mkdtemp(path.join(os.tmpdir(), 'release-notes-test-'));
@@ -196,6 +208,60 @@ describe('release-notes service', () => {
       expect(fetchSpy).toHaveBeenCalledWith(
         'https://api.github.com/repos/intent-hq/cloudlands-releases/releases?per_page=100&page=1',
         expect.objectContaining({ headers: { Accept: 'application/vnd.github+json' } }),
+      );
+    });
+
+    it('stops after processing the first page that reaches the lower bound', async () => {
+      const boundaryPage = [
+        release('v2.3.0', '## 2.3.0'),
+        release('v2.0.0', 'lower bound'),
+        release('v2.2.0', '## 2.2.0'),
+        ...Array.from({ length: 97 }, (_, index) => release(`stable-${index}`, 'rolling')),
+      ];
+      const fetchSpy = mockReleasePages([
+        boundaryPage,
+        [release('v1.99.0', 'older than lower bound')],
+      ]);
+      vi.stubGlobal('fetch', fetchSpy);
+      const { fetchReleaseNotesRange } = await import('../release-notes.service');
+
+      expect(await fetchReleaseNotesRange('2.0.0', '2.3.0')).toEqual({
+        version: '2.3.0',
+        notes: '## 2.3.0\n\n---\n\n## 2.2.0',
+        url: 'https://github.com/example/releases/tag/v2.3.0',
+      });
+      expect(fetchSpy).toHaveBeenCalledTimes(1);
+    });
+
+    it('continues pagination while the previous-version boundary has not been reached', async () => {
+      const newerPage = [
+        release('v2.4.0', 'newer than current'),
+        ...Array.from({ length: 99 }, (_, index) => release(`stable-${index}`, 'rolling')),
+      ];
+      const boundaryPage = [
+        release('v2.2.0', '## 2.2.0'),
+        release('v2.1.0', '## 2.1.0'),
+        release('v2.0.0', 'lower bound'),
+        ...Array.from({ length: 97 }, (_, index) => release(`beta-${index}`, 'rolling')),
+      ];
+      const fetchSpy = mockReleasePages([
+        newerPage,
+        boundaryPage,
+        [release('v1.99.0', 'older than lower bound')],
+      ]);
+      vi.stubGlobal('fetch', fetchSpy);
+      const { fetchReleaseNotesRange } = await import('../release-notes.service');
+
+      expect(await fetchReleaseNotesRange('2.0.0', '2.2.0')).toEqual({
+        version: '2.2.0',
+        notes: '## 2.2.0\n\n---\n\n## 2.1.0',
+        url: 'https://github.com/example/releases/tag/v2.2.0',
+      });
+      expect(fetchSpy).toHaveBeenCalledTimes(2);
+      expect(fetchSpy).toHaveBeenNthCalledWith(
+        2,
+        'https://api.github.com/repos/intent-hq/cloudlands-releases/releases?per_page=100&page=2',
+        expect.any(Object),
       );
     });
 

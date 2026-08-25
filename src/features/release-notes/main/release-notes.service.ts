@@ -145,9 +145,11 @@ export async function fetchReleaseNotesRange(
         return null;
       }
 
+      let reachedLowerBound = false;
       for (const item of pageReleases as GitHubRelease[]) {
         if (item?.draft === true || typeof item?.tag_name !== 'string') continue;
         const parts = parseVersion(item.tag_name, 'v');
+        if (parts && compareVersions(parts, previous) <= 0) reachedLowerBound = true;
         const notes = typeof item.body === 'string' ? item.body.trim() : '';
         if (
           !parts ||
@@ -167,7 +169,7 @@ export async function fetchReleaseNotesRange(
         });
       }
 
-      if (pageReleases.length < RELEASES_PER_PAGE) break;
+      if (reachedLowerBound || pageReleases.length < RELEASES_PER_PAGE) break;
     }
 
     releases.sort((left, right) => compareVersions(right.parts, left.parts));
