@@ -2,7 +2,7 @@
  * @vitest-environment jsdom
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import GitWorkspaceSettings from './GitWorkspaceSettings.svelte';
 import { warmImport } from '../../../test/warm-import';
 
@@ -86,7 +86,7 @@ describe('GitWorkspaceSettings — git credential toggle (§5.12)', () => {
     cleanup();
   });
 
-  it('delegates the outer surface and padding to SettingsSection', async () => {
+  it('renders grouped surfaces with internally padded setting rows', async () => {
     mocks.mockSettingsList.mockResolvedValue([...baseSettings]);
 
     const { container } = render(GitWorkspaceSettings);
@@ -96,7 +96,7 @@ describe('GitWorkspaceSettings — git credential toggle (§5.12)', () => {
     expect(root?.className).toContain('gap-4');
     expect(root?.className).not.toContain('bg-card');
     expect(root?.className).not.toContain('rounded');
-    expect(root?.querySelector('.px-6')).toBeNull();
+    expect(root?.querySelector('.px-6')).not.toBeNull();
   });
 
   it('renders the toggle checked when the daemon reports the setting as true', async () => {
@@ -471,8 +471,8 @@ describe('GitWorkspaceSettings — path picker fields (PathSettingField)', () =>
     );
     render(GitWorkspaceSettings);
 
-    await waitFor(() => screen.getByRole('button', { name: 'Choose folder' }));
-    const [clearWorktrees] = screen.getAllByRole('button', {
+    const worktreesInput = await waitFor(() => screen.getByLabelText('Worktrees Location'));
+    const clearWorktrees = within(worktreesInput.parentElement!).getByRole('button', {
       name: 'Clear path and restore default',
     });
     await fireEvent.click(clearWorktrees);
@@ -508,8 +508,8 @@ describe('GitWorkspaceSettings — path picker fields (PathSettingField)', () =>
     mocks.mockSettingsList.mockResolvedValue(withValues({ 'workspace.sshKeyPath': REDACTED }));
     render(GitWorkspaceSettings);
 
-    await waitFor(() => screen.getByRole('button', { name: 'Choose file' }));
-    const [, clearSsh] = screen.getAllByRole('button', {
+    const sshKeyInput = await waitFor(() => screen.getByLabelText('SSH Key Path'));
+    const clearSsh = within(sshKeyInput.parentElement!).getByRole('button', {
       name: 'Clear path and restore default',
     });
     await fireEvent.click(clearSsh);

@@ -35,7 +35,7 @@ for (const theme of ['light', 'dark'] as const) {
           }),
         );
 
-        expect(geometry).toHaveLength(8);
+        expect(geometry).toHaveLength(7);
         expect(geometry.every(({ overflows }) => !overflows)).toBe(true);
         for (const row of geometry) {
           expect(row.rowHeight).toBeCloseTo(36 * zoom, 1);
@@ -45,8 +45,22 @@ for (const theme of ['light', 'dark'] as const) {
           expect(row.labelCenterDelta).toBeLessThanOrEqual(0.5 * zoom);
         }
 
-        const selected = component.getByRole('button', { name: 'Tools' });
+        const selected = component.getByRole('button', { name: 'System' });
         await expect(selected).toHaveAttribute('aria-current', 'page');
+        const agentsSection = component.locator('[data-settings-agents-section]');
+        await expect(agentsSection).not.toHaveClass(/border|mt-|pt-/);
+        const [advancedBox, agentsHeadingBox, shellBox] = await Promise.all([
+          component.getByRole('button', { name: 'Advanced' }).boundingBox(),
+          component.getByRole('heading', { name: 'Agents' }).boundingBox(),
+          component.getByTestId('sidebar-shell').boundingBox(),
+        ]);
+        expect(agentsHeadingBox!.y - (advancedBox!.y + advancedBox!.height)).toBeCloseTo(
+          0,
+          1,
+        );
+        expect(agentsHeadingBox!.y + agentsHeadingBox!.height).toBeLessThanOrEqual(
+          shellBox!.y + shellBox!.height,
+        );
         await component.getByRole('button', { name: 'Advanced' }).focus();
         await expect(component.getByRole('button', { name: 'Advanced' })).toBeFocused();
       });

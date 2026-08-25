@@ -563,8 +563,8 @@ describe('AIBehaviorEditor full-height layouts', () => {
     );
     expect(editorContainer?.className).toContain('full-height-editor-container');
     expect(editorContainer?.className).not.toContain('specialist-editor-container');
-    expect(within(promptColumn).getByRole('heading', { name: 'All agents' })).toBeTruthy();
-    expect(screen.getAllByRole('heading', { name: 'All agents' })).toHaveLength(1);
+    expect(within(promptColumn).getByRole('heading', { name: 'All Agents' })).toBeTruthy();
+    expect(screen.getAllByRole('heading', { name: 'All Agents' })).toHaveLength(1);
     expect(within(promptColumn).queryByRole('heading', { name: 'Agent instructions' })).toBeNull();
     expect(
       within(promptColumn).queryByText('Custom instructions that will be included for all agents.'),
@@ -616,7 +616,7 @@ describe('AIBehaviorEditor full-height layouts', () => {
     expect(screen.queryByRole('button', { name: 'Reset all to default' })).toBeNull();
   });
 
-  it('places unsaved-instructions Undo beside the All agents title', async () => {
+  it('places unsaved-instructions Undo beside the All Agents title', async () => {
     render(AIBehaviorEditor, { activeView: { type: 'system-prompt' } });
 
     const promptColumn = screen.getByTestId('all-agents-prompt-column');
@@ -626,7 +626,7 @@ describe('AIBehaviorEditor full-height layouts', () => {
     await fireEvent.input(textarea, { target: { value: 'Edited instructions' } });
 
     const header = within(promptColumn).getByTestId('agent-rules-header');
-    const heading = within(header).getByRole('heading', { name: 'All agents' });
+    const heading = within(header).getByRole('heading', { name: 'All Agents' });
     const undo = within(header).getByRole('button', { name: 'Undo changes' });
     expect(heading.parentElement).toBe(header);
     expect(header.contains(undo)).toBe(true);

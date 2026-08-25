@@ -44,7 +44,7 @@ const APP_UI_TARGETS: AppUiTarget[] = [
     tab: 'agents',
     hashAliases: ['agents', 'specialists', 'all-agents'],
     scrollSelector: '#specialists',
-    highlightSelector: '[data-highlight-id="specialists"]',
+    highlightSelector: '[data-highlight-id="agents"]',
     label: 'Settings: Agents',
     route: '/settings?tab=agents#specialists',
     description: 'Agent and specialist settings.',
@@ -53,8 +53,8 @@ const APP_UI_TARGETS: AppUiTarget[] = [
     id: 'create-specialist',
     tab: 'agents',
     hashAliases: ['create-specialist'],
-    scrollSelector: '#specialists',
-    highlightSelector: '[data-highlight-id="specialists"]',
+    scrollSelector: '#create-specialist',
+    highlightSelector: '[data-highlight-id="create-specialist"]',
     label: 'Settings: Create specialist',
     route: '/settings?tab=agents&view=create-specialist#create-specialist',
     description: 'Create-specialist entry point.',
@@ -80,18 +80,28 @@ const APP_UI_TARGETS: AppUiTarget[] = [
     description: 'Connected integrations settings.',
   }),
   ...[
-    ['mcp-servers', 'MCP Servers', 'MCP server configuration.', 'tools'],
-    ['git-workspace', 'Git & Workspace', 'Git and workspace defaults.', 'git-workspace'],
-    ['cli-optimization', 'CLI Optimization', 'RTK/CLI optimization settings.', 'tools'],
-    ['utility-default-model', 'Quick Actions', 'Utility/default model settings.', 'tools'],
-    ['notifications', 'Notifications', 'Notification preferences.', 'general'],
-    ['open-in', 'Open In', 'External editor/app launch preferences.', 'general'],
+    ['voice', 'Voice Dictation', 'Voice dictation settings.', 'connections'],
+    ['mcp-servers', 'MCP Servers', 'MCP server configuration.', 'connections'],
+    ['git-workspace', 'Git & Workspace', 'Git and workspace defaults.', 'system'],
+    ['cli-optimization', 'CLI Optimization', 'RTK/CLI optimization settings.', 'system'],
+    ['workspace-api', 'Workspace API', 'Workspace API output settings.', 'system'],
+    ['utility-default-model', 'Quick Actions', 'Utility/default model settings.', 'providers'],
+    ['notifications', 'Notifications', 'Notification preferences.', 'behavior'],
+    ['open-in', 'Open In', 'External editor/app launch preferences.', 'behavior'],
     [
       'github-link-action',
       'GitHub Links',
       'GitHub issue and pull request link behavior.',
-      'general',
+      'behavior',
     ],
+    ['agent-features', 'Agent Features', 'Agent feature settings.', 'behavior'],
+    ['font-style', 'Font style', 'Font style settings.', 'appearance'],
+    ['agent-backend', 'Agent Backend', 'Agent backend settings.', 'advanced'],
+    ['websocket-api', 'WebSocket API', 'WebSocket API settings.', 'advanced'],
+    ['connection', 'Connection', 'Daemon connection details.', 'advanced'],
+    ['hardware', 'Hardware', 'Hardware integration settings.', 'advanced'],
+    ['data', 'Data', 'Data import settings.', 'advanced'],
+    ['developer', 'Developer', 'Development-only settings.', 'advanced'],
   ].map(([id, label, description, tab]) =>
     settingsTarget({
       id,
@@ -109,7 +119,7 @@ const APP_UI_TARGETS: AppUiTarget[] = [
     tab: 'appearance',
     hashAliases: ['appearance', 'theme'],
     scrollSelector: '#theme',
-    highlightSelector: '[data-highlight-id="theme"]',
+    highlightSelector: '[data-highlight-id="appearance"]',
     label: 'Settings: Appearance',
     route: '/settings?tab=appearance#theme',
     description: 'Theme mode controls.',
@@ -136,7 +146,7 @@ const APP_UI_TARGETS: AppUiTarget[] = [
     tab: 'advanced',
     hashAliases: ['general', 'reset'],
     scrollSelector: '#reset',
-    highlightSelector: '[data-highlight-id="reset"]',
+    highlightSelector: '[data-highlight-id="general"]',
     label: 'Settings: Advanced',
     route: '/settings?tab=advanced#reset',
     description: 'Advanced settings and reset controls.',
@@ -171,6 +181,20 @@ function normalizeHash(hash: string): string {
   return decodeURIComponent(rawHash.replace(/^#/, '')).trim();
 }
 
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function matchesIdPattern(value: string, pattern: string): boolean {
+  const placeholders = pattern.match(/\{[^}]+\}/g);
+  if (!placeholders?.length) return value === pattern;
+  const source = pattern
+    .split(/\{[^}]+\}/g)
+    .map(escapeRegExp)
+    .join('[^/]+');
+  return new RegExp(`^${source}$`).test(value);
+}
+
 function getRouteHash(route: string): string | null {
   try {
     const url = new URL(route, 'app://intent');
@@ -184,9 +208,19 @@ function getRouteHash(route: string): string | null {
 export function resolveHashToTarget(hash: string): AppUiTarget | undefined {
   const normalized = normalizeHash(hash);
   if (!normalized) return undefined;
-  return APP_UI_TARGETS.find(
+  const exactTarget = APP_UI_TARGETS.find(
     (target) => target.id === normalized || target.hashAliases?.includes(normalized),
   );
+  if (exactTarget) return exactTarget;
+
+  const dynamicTarget = APP_UI_TARGETS.find(
+    (target) =>
+      target.route &&
+      target.dynamic &&
+      target.idPattern &&
+      matchesIdPattern(normalized, target.idPattern),
+  );
+  return dynamicTarget ? { ...dynamicTarget, id: normalized } : undefined;
 }
 
 export function getAppUiTargets(): AppUiTarget[] {
@@ -199,7 +233,8 @@ export function getAppUiTargets(): AppUiTarget[] {
 export function getHighlightIdFromRoute(route: string): string | null {
   const hash = getRouteHash(route);
   if (!hash) return null;
-  return resolveHashToTarget(hash)?.id ?? hash;
+  const target = resolveHashToTarget(hash);
+  return target?.dynamic ? hash : (target?.id ?? hash);
 }
 
 function getRoutePathname(route: string): string {

@@ -5,10 +5,9 @@
     faGear,
     faGlobe,
     faPlug,
-    faRobot,
+    faSliders,
     faTerminal,
     faWandMagicSparkles,
-    faWrench,
   } from '@fortawesome/free-solid-svg-icons';
   import type { Snippet } from 'svelte';
   import Fa from 'svelte-fa';
@@ -16,22 +15,23 @@
   type SettingsTab =
     | 'general'
     | 'appearance'
+    | 'behavior'
     | 'providers'
-    | 'agents'
     | 'connections'
-    | 'git-workspace'
-    | 'tools'
-    | 'advanced';
+    | 'system'
+    | 'advanced'
+    | 'agents';
+  type LegacySettingsTab = 'git-workspace' | 'tools';
 
   interface Props {
-    activeTab: SettingsTab;
+    activeTab: SettingsTab | LegacySettingsTab;
     onSelect: (tab: SettingsTab) => void;
     agentsNavigation?: Snippet;
   }
 
   let { activeTab, onSelect, agentsNavigation }: Props = $props();
 
-  const items = [
+  const primaryItems = [
     {
       id: 'general',
       icon: faGear,
@@ -47,17 +47,17 @@
       },
     },
     {
+      id: 'behavior',
+      icon: faSliders,
+      get label() {
+        return m.settings_section_behavior();
+      },
+    },
+    {
       id: 'providers',
       icon: faTerminal,
       get label() {
         return m.settings_sidebar_providers_label();
-      },
-    },
-    {
-      id: 'agents',
-      icon: faRobot,
-      get label() {
-        return m.settings_sidebar_agents_label();
       },
     },
     {
@@ -68,17 +68,10 @@
       },
     },
     {
-      id: 'git-workspace',
+      id: 'system',
       icon: faCodeBranch,
       get label() {
-        return m.settings_sidebar_gitWorkspace_label();
-      },
-    },
-    {
-      id: 'tools',
-      icon: faWrench,
-      get label() {
-        return m.settings_sidebar_tools_label();
+        return m.settings_sidebar_system_label();
       },
     },
     {
@@ -92,17 +85,18 @@
 </script>
 
 <nav
-  class="flex min-h-0 w-full flex-1 flex-col gap-0.5 overflow-y-auto px-3 py-4"
+  class="flex min-h-0 w-full flex-1 flex-col gap-0 overflow-y-auto px-3 py-4"
   aria-label={m.settings_page_title()}
 >
-  {#each items as item (item.id)}
+  {#each primaryItems as item (item.id)}
     <button
       type="button"
       onclick={() => onSelect(item.id as SettingsTab)}
       aria-current={activeTab === item.id ? 'page' : undefined}
       data-settings-tab={item.id}
       class="flex w-full cursor-pointer items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring
-        {activeTab === item.id && !(item.id === 'agents' && agentsNavigation)
+        {item.id === 'advanced' ? '' : 'mb-0.5'}
+        {activeTab === item.id
         ? 'bg-muted font-medium text-foreground shadow-xs'
         : 'text-muted-foreground hover:bg-muted/50 hover:text-foreground'}"
     >
@@ -114,10 +108,16 @@
       </span>
       <span>{item.label}</span>
     </button>
-    {#if item.id === 'agents' && activeTab === 'agents' && agentsNavigation}
-      <div class="mb-1 ml-5 border-l border-border pl-2" data-settings-agents-submenu>
-        {@render agentsNavigation()}
-      </div>
-    {/if}
   {/each}
+
+  <section data-settings-agents-section class="pt-8">
+    <h2 class="text-[11px] font-semibold uppercase text-muted-foreground/50">
+      {m.settings_sidebar_agents_label()}
+    </h2>
+    <div class="flex flex-col gap-0.5 mt-2">
+      {#if agentsNavigation}
+        {@render agentsNavigation()}
+      {/if}
+    </div>
+  </section>
 </nav>

@@ -9,7 +9,7 @@ export const SETTINGS_TABS = [
   },
   {
     id: 'agents',
-    label: 'Agents',
+    label: 'All Agents',
     heading: '',
     stateOwners: ['Redux specialists', 'Redux model', 'Redux providerSettings', 'local draft'],
     saveModes: ['autosave', 'explicit destructive confirmation'],
@@ -25,7 +25,7 @@ export const SETTINGS_TABS = [
   },
   {
     id: 'setup',
-    label: 'Tools',
+    label: 'System',
     heading: '',
     stateOwners: ['daemon settings', 'Redux MCP', 'Redux externalEditors', 'local pairing'],
     saveModes: ['immediate', 'blur-or-enter', 'explicit'],
@@ -41,7 +41,7 @@ export const SETTINGS_TABS = [
   },
   {
     id: 'notifications',
-    label: 'General',
+    label: 'Behavior',
     heading: 'Notifications',
     stateOwners: ['Redux notifications'],
     saveModes: ['immediate'],
@@ -66,9 +66,9 @@ const VIEWPORTS = {
 
 const SETTINGS_TAB_QUERY: Partial<Record<SettingsTabId, string>> = {
   accounts: 'providers',
-  setup: 'tools',
+  setup: 'system',
   'fonts-colors': 'appearance',
-  notifications: 'general',
+  notifications: 'behavior',
 };
 
 const CAPTURE_CASES = [

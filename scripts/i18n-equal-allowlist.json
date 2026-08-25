@@ -339,5 +339,6 @@
   "workspace_tokenUsage_agentFallback_label": ["de", "fr"],
   "workspace_tokenUsage_agent_label": ["de", "fr"],
   "workspace_transfer_gitBranch_label": ["de"],
-  "workspace_transfer_tableName_label": ["fr"]
+  "workspace_transfer_tableName_label": ["fr"],
+  "settings_section_git": "*"
 }

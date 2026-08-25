@@ -2,6 +2,7 @@
  * @vitest-environment jsdom
  */
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
+import { readFileSync } from 'node:fs';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { appClient } from '$lib/client';
 import { SPECIALISTS } from '$lib/constants/specialists';
@@ -87,7 +88,10 @@ vi.mock('$lib/components/settings/ConnectionsSettings.svelte', async () => ({
   default: (await import('$lib/components/chat/__tests__/mocks/SlotOnly.svelte')).default,
 }));
 vi.mock('$lib/components/settings/GitWorkspaceSettings.svelte', async () => ({
-  default: (await import('$lib/components/chat/__tests__/mocks/SlotOnly.svelte')).default,
+  default: (await import('./mocks/GitWorkspaceSettingsFixture.svelte')).default,
+}));
+vi.mock('$lib/components/settings/LanguageSettings.svelte', async () => ({
+  default: (await import('./mocks/SettingsStateFixture.svelte')).default,
 }));
 vi.mock('$lib/components/settings/OpenInAppsSettings.svelte', async () => ({
   default: (await import('$lib/components/chat/__tests__/mocks/SlotOnly.svelte')).default,
@@ -341,26 +345,38 @@ function renderSettings(
   });
 }
 
-async function exerciseFixtureSaveMode(saveMode: string) {
+async function exerciseFixtureSaveMode(saveMode: string, fixture: HTMLElement) {
+  const fixtureScreen = within(fixture);
   if (saveMode === 'immediate') {
-    await fireEvent.click(screen.getByRole('button', { name: 'Apply immediately' }));
+    await fireEvent.click(fixtureScreen.getByRole('button', { name: 'Apply immediately' }));
   } else if (saveMode === 'autosave') {
-    await fireEvent.input(screen.getByRole('textbox', { name: 'Autosave value' }), {
+    await fireEvent.input(fixtureScreen.getByRole('textbox', { name: 'Autosave value' }), {
       target: { value: 'saved draft' },
     });
   } else if (saveMode === 'blur-or-enter') {
-    const input = screen.getByRole('textbox', { name: 'Blur or Enter value' });
+    const input = fixtureScreen.getByRole('textbox', { name: 'Blur or Enter value' });
     await fireEvent.input(input, { target: { value: 'saved on blur' } });
     await fireEvent.blur(input);
   } else if (saveMode === 'explicit') {
-    await fireEvent.click(screen.getByRole('button', { name: 'Save changes' }));
+    await fireEvent.click(fixtureScreen.getByRole('button', { name: 'Save changes' }));
   } else {
-    await fireEvent.click(screen.getByRole('button', { name: 'Review save' }));
-    await fireEvent.click(screen.getByRole('button', { name: 'Confirm fixture save' }));
+    await fireEvent.click(fixtureScreen.getByRole('button', { name: 'Review save' }));
+    await fireEvent.click(fixtureScreen.getByRole('button', { name: 'Confirm fixture save' }));
   }
   await waitFor(() =>
-    expect(screen.getByTestId('fixture-save-state').textContent).toContain('saved:success'),
+    expect(fixtureScreen.getByTestId('fixture-save-state').textContent).toContain('saved:success'),
   );
+}
+
+function expectElementOrder(ids: string[]) {
+  const elements = ids.map((id) => document.getElementById(id));
+  expect(elements.every(Boolean)).toBe(true);
+  for (let index = 1; index < elements.length; index += 1) {
+    expect(
+      elements[index - 1]!.compareDocumentPosition(elements[index]!) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  }
 }
 
 describe('settings deterministic capture fixtures', () => {
@@ -413,7 +429,8 @@ describe('settings deterministic capture fixtures', () => {
       expect(window.innerHeight).toBe(height);
       if (heading) expect(screen.getByRole('heading', { name: heading })).toBeTruthy();
 
-      const renderedState = screen.getByTestId('settings-state-fixture');
+      const renderedState = screen.getAllByTestId('settings-state-fixture')[0];
+      const fixtureScreen = within(renderedState);
       expect(renderedState.dataset.tab).toBe(tab);
       expect(renderedState.dataset.state).toBe(state);
       expect(renderedState.dataset.stateOwner).toBe(stateOwner);
@@ -427,45 +444,51 @@ describe('settings deterministic capture fixtures', () => {
       expect(renderedState.dataset.ownerValue).toBe(state);
       expect(renderedState.dataset.saveMode).toBe(saveMode);
       await waitFor(() => expect(renderedState.dataset.catalogSize).toBe('2'));
-      expect(screen.getByText(`Fixture state: ${state}`)).toBeTruthy();
+      expect(fixtureScreen.getByText(`Fixture state: ${state}`)).toBeTruthy();
 
       if (state === 'loading' || state === 'success')
-        expect(screen.getByRole('status')).toBeTruthy();
+        expect(fixtureScreen.getByRole('status')).toBeTruthy();
       if (state === 'empty') {
-        await fireEvent.click(screen.getByRole('button', { name: /Add .* item/ }));
+        await fireEvent.click(fixtureScreen.getByRole('button', { name: /Add .* item/ }));
         await waitFor(() =>
-          expect(screen.getByTestId('fixture-action-state').textContent).toContain('add:success'),
+          expect(fixtureScreen.getByTestId('fixture-action-state').textContent).toContain(
+            'add:success',
+          ),
         );
       }
       if (state === 'validation') {
-        expect(screen.getByRole('alert')).toBeTruthy();
+        expect(fixtureScreen.getByRole('alert')).toBeTruthy();
         expect(
-          screen.getByRole('textbox', { name: 'Fixture value' }).getAttribute('aria-invalid'),
+          fixtureScreen
+            .getByRole('textbox', { name: 'Fixture value' })
+            .getAttribute('aria-invalid'),
         ).toBe('true');
       }
       if (state === 'error') {
-        await fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+        await fireEvent.click(fixtureScreen.getByRole('button', { name: 'Retry' }));
         await waitFor(() =>
-          expect(screen.getByTestId('fixture-action-state').textContent).toContain('retry:success'),
+          expect(fixtureScreen.getByTestId('fixture-action-state').textContent).toContain(
+            'retry:success',
+          ),
         );
       }
       if (state === 'disabled') {
         expect(
-          (screen.getByRole('button', { name: 'Unavailable setting' }) as HTMLButtonElement)
+          (fixtureScreen.getByRole('button', { name: 'Unavailable setting' }) as HTMLButtonElement)
             .disabled,
         ).toBe(true);
       }
       if (state === 'confirmation') {
-        expect(screen.getByRole('dialog', { name: 'Confirm settings change' })).toBeTruthy();
-        await fireEvent.click(screen.getByRole('button', { name: 'Confirm state change' }));
+        expect(fixtureScreen.getByRole('dialog', { name: 'Confirm settings change' })).toBeTruthy();
+        await fireEvent.click(fixtureScreen.getByRole('button', { name: 'Confirm state change' }));
         await waitFor(() =>
-          expect(screen.getByTestId('fixture-action-state').textContent).toContain(
+          expect(fixtureScreen.getByTestId('fixture-action-state').textContent).toContain(
             'confirm:success',
           ),
         );
       }
 
-      await exerciseFixtureSaveMode(saveMode);
+      await exerciseFixtureSaveMode(saveMode, renderedState);
       expect(renderedState.dataset.state).toBe('success');
       expect(renderedState.dataset.ownerValue).toBe('success');
 
@@ -501,7 +524,7 @@ describe('settings tab route and focus behavior', () => {
   it.each([
     ['providers', null],
     ['agents', null],
-    ['tools', null],
+    ['system', 'Git'],
     ['fonts-colors', 'Appearance'],
     ['notifications', 'Notifications'],
     ['general', 'Updates'],
@@ -561,23 +584,27 @@ describe('settings tab route and focus behavior', () => {
   });
 
   it.each([
-    ['accounts', 'Providers'],
-    ['agents', 'Agents'],
-    ['setup', 'Tools'],
-    ['fonts-colors', 'Appearance'],
-    ['notifications', 'General'],
-    ['general', 'General'],
-    ['connections', 'Connections'],
-    ['interface-system', 'Appearance'],
-    ['unknown', 'General'],
-  ])('maps ?tab=%s to %s', async (tab, label) => {
+    ['accounts', 'Providers', 'page'],
+    ['agents', 'All Agents', 'true'],
+    ['setup', 'System', 'page'],
+    ['tools', 'System', 'page'],
+    ['git-workspace', 'System', 'page'],
+    ['fonts-colors', 'Appearance', 'page'],
+    ['notifications', 'Behavior', 'page'],
+    ['general', 'General', 'page'],
+    ['connections', 'Connections', 'page'],
+    ['interface-system', 'Appearance', 'page'],
+    ['unknown', 'General', 'page'],
+  ])('maps ?tab=%s to %s', async (tab, label, current) => {
     renderSettings(`/settings?tab=${tab}`);
     await waitFor(() =>
-      expect(screen.getByRole('button', { name: label }).getAttribute('aria-current')).toBe('page'),
+      expect(screen.getByRole('button', { name: label }).getAttribute('aria-current')).toBe(
+        current,
+      ),
     );
   });
 
-  it('renders the Agent Backend section on Advanced and no longer on Tools', async () => {
+  it('renders Agent Backend only on Advanced while the legacy Tools tab resolves to System', async () => {
     const advanced = renderSettings('/settings?tab=advanced');
     await waitFor(() => expect(advanced.container.querySelector('#agent-backend')).not.toBeNull());
     expect(screen.getByRole('heading', { name: 'Agent Backend' })).toBeTruthy();
@@ -585,8 +612,56 @@ describe('settings tab route and focus behavior', () => {
     cleanup();
 
     const tools = renderSettings('/settings?tab=tools');
-    await waitFor(() => expect(tools.container.querySelector('#mcp-servers')).not.toBeNull());
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'System' }).getAttribute('aria-current')).toBe(
+        'page',
+      ),
+    );
     expect(tools.container.querySelector('#agent-backend')).toBeNull();
+  });
+
+  it.each([
+    ['general', ['language', 'updates']],
+    ['appearance', ['theme', 'font-style']],
+    ['behavior', ['notifications', 'open-in', 'github-link-action', 'agent-features']],
+    ['providers', ['providers', 'utility-default-model']],
+    ['connections', ['integrations', 'mcp-servers', 'voice']],
+    ['system', ['git', 'shell', 'cli-optimization', 'workspace', 'workspace-api']],
+    ['advanced', ['agent-backend', 'websocket-api', 'data', 'reset', 'developer']],
+  ])('renders %s sections in the requested order', (tab, ids) => {
+    renderSettings(`/settings?tab=${tab}`);
+    expectElementOrder(ids);
+  });
+
+  it('keeps provider groups and conditional Advanced sections in requested source order', () => {
+    const providerSource = readFileSync(
+      'src/lib/components/settings/ProviderSelector.svelte',
+      'utf8',
+    );
+    const pageSource = readFileSync('src/routes/(app)/settings/+page.svelte', 'utf8');
+    const messages = JSON.parse(readFileSync('messages/en.json', 'utf8')) as Record<string, string>;
+    const providerGroups = ["{ id: 'enabled'", "{ id: 'discovered'", "{ id: 'supported'"];
+    const advancedIds = [
+      'id="agent-backend"',
+      'id="websocket-api"',
+      'id="connection"',
+      'id="hardware"',
+      'id="data"',
+      'id="reset"',
+      'id="developer"',
+    ];
+
+    const providerPositions = providerGroups.map((group) => providerSource.indexOf(group));
+    expect(providerPositions.every((position) => position >= 0)).toBe(true);
+    expect(providerPositions).toEqual([...providerPositions].sort((a, b) => a - b));
+    expect([
+      messages.settings_providers_groupEnabled_label,
+      messages.settings_providers_groupDiscovered_label,
+      messages.settings_providers_groupSupported_label,
+    ]).toEqual(['Enabled', 'Available', 'Not Detected']);
+    const advancedPositions = advancedIds.map((id) => pageSource.indexOf(id));
+    expect(advancedPositions.every((position) => position >= 0)).toBe(true);
+    expect(advancedPositions).toEqual([...advancedPositions].sort((a, b) => a - b));
   });
 
   it.each([
@@ -610,7 +685,11 @@ describe('settings tab route and focus behavior', () => {
     expect(screen.getByRole('button', { name: 'Providers' }).getAttribute('aria-current')).toBe(
       'page',
     );
-    expect(screen.getByRole('button', { name: 'Agents' }).hasAttribute('aria-current')).toBe(false);
+    expect(screen.getByRole('heading', { level: 2, name: 'Agents' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Agents' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'All Agents' }).hasAttribute('aria-current')).toBe(
+      false,
+    );
   });
 
   it('renders compact agent selection only inside the existing settings sidebar', async () => {
@@ -641,14 +720,14 @@ describe('settings tab route and focus behavior', () => {
       ]),
     );
     const navigation = screen.getByRole('navigation', { name: 'Settings' });
-    const agentNavigation = navigation.querySelector('[data-settings-agents-submenu]');
+    const agentNavigation = navigation.querySelector('[data-settings-agents-section]');
     await waitFor(() =>
       expect(
         within(navigation).getByRole('button', { name: 'Sidebar Custom Project' }),
       ).toBeTruthy(),
     );
-    const agents = within(navigation).getByRole('button', { name: 'Agents' });
-    const allAgents = within(navigation).getByRole('button', { name: 'All agents' });
+    const agentsHeading = within(navigation).getByRole('heading', { level: 2, name: 'Agents' });
+    const allAgents = within(navigation).getByRole('button', { name: 'All Agents' });
     const implementor = within(navigation).getByRole('button', { name: 'Implementor' });
     const customSpecialist = within(navigation).getByRole('button', {
       name: 'Sidebar Custom Project',
@@ -656,22 +735,40 @@ describe('settings tab route and focus behavior', () => {
     const createSpecialist = within(navigation).getByRole('button', {
       name: 'Create Specialist',
     });
-    const connections = within(navigation).getByRole('button', { name: 'Connections' });
-    const navigationButtons = within(navigation).getAllByRole('button');
+    const advanced = within(navigation).getByRole('button', { name: 'Advanced' });
 
     expect(agentNavigation).not.toBeNull();
+    expect(within(navigation).queryByRole('button', { name: 'Agents' })).toBeNull();
     expect(agentNavigation?.contains(allAgents)).toBe(true);
     expect(agentNavigation?.contains(implementor)).toBe(true);
     expect(agentNavigation?.contains(customSpecialist)).toBe(true);
     expect(agentNavigation?.contains(createSpecialist)).toBe(true);
-    expect(navigationButtons.indexOf(agents)).toBeLessThan(navigationButtons.indexOf(allAgents));
-    expect(navigationButtons.indexOf(createSpecialist)).toBeLessThan(
-      navigationButtons.indexOf(connections),
+    expect(advanced.compareDocumentPosition(agentsHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
     );
+    expect(
+      agentsHeading.compareDocumentPosition(allAgents) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+    expect(agentNavigation?.className).not.toMatch(/border|m[lt]-|p[lt]-/);
+    expect(navigation.querySelector('[data-settings-agents-submenu]')).toBeNull();
     expect(within(navigation).queryByText('Specialists')).toBeNull();
-    expect(agentNavigation?.querySelectorAll('[data-icon], svg, img')).toHaveLength(1);
+    expect(agentNavigation?.querySelectorAll('[data-agent-avatar]')).toHaveLength(2);
     expect(createSpecialist.querySelectorAll('[data-icon="plus"]')).toHaveLength(1);
-    expect(allAgents.querySelector('[data-icon], svg, img')).toBeNull();
+    const allAgentsIcon = allAgents.querySelector('[data-settings-all-agents-icon]');
+    expect(allAgentsIcon?.getAttribute('aria-hidden')).toBe('true');
+    expect(allAgentsIcon?.className).toContain('size-4');
+    expect(allAgentsIcon?.querySelector('[data-icon="globe"]')).not.toBeNull();
+    expect(
+      implementor.querySelector('[data-agent-avatar][data-avatar-design="implementor"]'),
+    ).not.toBeNull();
+    expect(
+      customSpecialist.querySelector('[data-agent-avatar][data-avatar-design^="fallback-"]'),
+    ).not.toBeNull();
+    for (const avatar of agentNavigation?.querySelectorAll('[data-agent-avatar]') ?? []) {
+      expect(avatar.getAttribute('aria-hidden')).toBe('true');
+      expect(avatar.getAttribute('data-avatar-variant')).toBe('compact');
+      expect(avatar.classList.contains('shrink-0')).toBe(true);
+    }
     expect(agentNavigation?.querySelectorAll('[data-specialist-modified-marker]')).toHaveLength(1);
     expect(implementor.querySelector('[data-specialist-modified-marker]')?.textContent).toBe('*');
     expect(implementor.querySelector('[data-specialist-modified-marker]')?.className).toContain(
@@ -685,18 +782,20 @@ describe('settings tab route and focus behavior', () => {
     expect(allAgents.querySelector('[data-specialist-modified-marker]')).toBeNull();
     expect(createSpecialist.querySelector('[data-specialist-modified-marker]')).toBeNull();
 
-    for (const specialist of agentNavigation?.querySelectorAll('button') ?? []) {
-      if (specialist !== createSpecialist) {
-        expect(specialist.querySelector('[data-icon], svg, img')).toBeNull();
-      }
+    for (const row of agentNavigation?.querySelectorAll('[data-settings-agent-row]') ?? []) {
+      expect(row.parentElement).toBe(agentNavigation);
+      expect(row.className).toContain('rounded-lg');
+      expect(row.className).toContain('px-2.5');
+      expect(row.className).toContain('py-2');
+      expect(row.className).not.toMatch(/border|ml-|pl-/);
     }
-    expect(agents.querySelector('[data-slot="settings-sidebar-icon"] [data-icon]')).not.toBeNull();
-    expect(agents.getAttribute('aria-current')).toBe('page');
-    expect(agents.className).not.toContain('bg-muted font-medium');
-    expect(agents.className).not.toContain('shadow-xs');
+
+    expect(implementor.querySelectorAll('[data-agent-avatar]')).toHaveLength(1);
+    expect(customSpecialist.querySelectorAll('[data-agent-avatar]')).toHaveLength(1);
     expect(allAgents.getAttribute('aria-current')).toBe('true');
-    expect(allAgents.className).toContain('bg-muted text-foreground');
-    expect(implementor.className).not.toContain('bg-muted text-foreground');
+    expect(allAgents.className).toContain('bg-muted');
+    expect(allAgents.className).toContain('shadow-xs');
+    expect(implementor.className).not.toContain('shadow-xs');
     expect(container.querySelector('main [data-settings-agents-submenu]')).toBeNull();
     expect(container.querySelector('main #default-model')?.children).toHaveLength(1);
     expect(container.querySelector('main #default-model')?.className).not.toContain('grid-cols');
@@ -705,17 +804,18 @@ describe('settings tab route and focus behavior', () => {
 
     expect(screen.getByTestId('ai-behavior-view').textContent).toContain('specialist:implementor');
     expect(implementor.getAttribute('aria-current')).toBe('true');
-    expect(implementor.className).toContain('bg-muted text-foreground');
+    expect(implementor.className).toContain('bg-muted');
+    expect(implementor.className).toContain('shadow-xs');
     expect(allAgents.hasAttribute('aria-current')).toBe(false);
-    expect(allAgents.className).not.toContain('bg-muted text-foreground');
-    expect(agents.className).not.toContain('shadow-xs');
+    expect(allAgents.className).not.toContain('shadow-xs');
 
     await fireEvent.click(createSpecialist);
 
     expect(screen.getByTestId('ai-behavior-view').textContent).toContain('create-specialist');
     expect(createSpecialist.getAttribute('aria-current')).toBe('true');
-    expect(createSpecialist.className).toContain('bg-muted text-foreground');
-    expect(implementor.className).not.toContain('bg-muted text-foreground');
+    expect(createSpecialist.className).toContain('bg-muted');
+    expect(createSpecialist.className).toContain('shadow-xs');
+    expect(implementor.className).not.toContain('shadow-xs');
 
     await fireEvent.click(allAgents);
 
@@ -762,16 +862,49 @@ describe('settings tab route and focus behavior', () => {
     );
   });
 
-  it('collapses the nested agent navigation when another settings category is selected', async () => {
+  it('keeps flat Agents rows visible and activates the selected Agents view', async () => {
     renderSettings('/settings?tab=agents');
     const navigation = screen.getByRole('navigation', { name: 'Settings' });
 
-    expect(within(navigation).getByRole('button', { name: 'All agents' })).toBeTruthy();
+    expect(within(navigation).getByRole('button', { name: 'All Agents' })).toBeTruthy();
 
     await fireEvent.click(within(navigation).getByRole('button', { name: 'Providers' }));
 
+    expect(navigation.querySelector('[data-settings-agents-section]')).not.toBeNull();
     expect(navigation.querySelector('[data-settings-agents-submenu]')).toBeNull();
-    expect(within(navigation).queryByRole('button', { name: 'All agents' })).toBeNull();
+    expect(within(navigation).getByRole('button', { name: 'All Agents' })).toBeTruthy();
+    expect(within(navigation).getByRole('button', { name: 'Implementor' })).toBeTruthy();
+    expect(within(navigation).getByRole('button', { name: 'Create Specialist' })).toBeTruthy();
+
+    await fireEvent.click(within(navigation).getByRole('button', { name: 'Implementor' }));
+
+    expect(
+      within(navigation).getByRole('button', { name: 'Implementor' }).getAttribute('aria-current'),
+    ).toBe('true');
+    expect(screen.getByTestId('ai-behavior-view').textContent).toContain('specialist:implementor');
+  });
+
+  it('keeps Providers and All Agents default-model entry points on shared state', async () => {
+    appStore.dispatch(hydrateActiveProvider('codex'));
+    appStore.dispatch(setSelectedModel({ providerId: 'codex', model: 'codex:shared-fixture' }));
+    renderSettings('/settings?tab=providers');
+
+    const providersDefault = document.getElementById('utility-default-model')!;
+    expect(within(providersDefault).getAllByText('Default model')).toHaveLength(2);
+    expect(selectSelectedModel.select(appStore.state, 'codex')).toBe('codex:shared-fixture');
+
+    await fireEvent.click(screen.getByRole('button', { name: 'All Agents' }));
+
+    const agentsDefault = await screen.findByTestId('all-agents-default-model-row');
+    expect(within(agentsDefault).getAllByText('Default model')).toHaveLength(2);
+    expect(selectSelectedModel.select(appStore.state, 'codex')).toBe('codex:shared-fixture');
+
+    appStore.dispatch(setSelectedModel({ providerId: 'codex', model: 'codex:updated-fixture' }));
+    await fireEvent.click(screen.getByRole('button', { name: 'Providers' }));
+    expect(selectSelectedModel.select(appStore.state, 'codex')).toBe('codex:updated-fixture');
+    expect(
+      within(document.getElementById('utility-default-model')!).getAllByText('Default model'),
+    ).toHaveLength(2);
   });
 
   it('activates a clicked sidebar item while preserving params and hash', async () => {
@@ -793,11 +926,7 @@ describe('settings tab route and focus behavior', () => {
     ['/settings?view=create-specialist', 'create-specialist'],
   ])('opens the requested Agents query view for %s', async (url, expectedView) => {
     renderSettings(url);
-    await waitFor(() =>
-      expect(screen.getByRole('button', { name: 'Agents' }).getAttribute('aria-current')).toBe(
-        'page',
-      ),
-    );
+    await waitFor(() => expect(screen.getByRole('heading', { name: 'Agents' })).toBeTruthy());
     expect(screen.getByTestId('ai-behavior-view').textContent).toContain(expectedView);
   });
 
@@ -810,9 +939,9 @@ describe('settings tab route and focus behavior', () => {
       renderSettings(url);
 
       await waitFor(() =>
-        expect(screen.getByRole('button', { name: 'Agents' }).getAttribute('aria-current')).toBe(
-          'page',
-        ),
+        expect(
+          screen.getByRole('button', { name: 'All Agents' }).getAttribute('aria-current'),
+        ).toBe('true'),
       );
       const workspaceId = screen.getByTestId('ai-behavior-workspace-id');
       expect(workspaceId.dataset.workspaceIdKind).toBe(kind);
@@ -853,23 +982,29 @@ describe('settings back and footer behavior', () => {
 
 describe('settings hash target integration', () => {
   it.each([
-    ['default-model', 'quickActions.defaultModel', 'Agents'],
-    ['utility-default-model', 'utility-default-model', 'Tools'],
-    ['notifications', 'notifications', 'General'],
-    ['color-theme', 'color-theme', 'Appearance'],
-    ['note-font', 'note-font', 'Appearance'],
-    ['agent-chat-font', 'agent-chat-font', 'Appearance'],
-    ['code-font', 'code-font', 'Appearance'],
+    ['default-model', 'quickActions.defaultModel', 'All Agents', 'true'],
+    ['utility-default-model', 'utility-default-model', 'Providers', 'page'],
+    ['open-in', 'open-in', 'Behavior', 'page'],
+    ['github-link-action', 'github-link-action', 'Behavior', 'page'],
+    ['notifications', 'notifications', 'Behavior', 'page'],
+    ['agent-features', 'agent-features', 'Behavior', 'page'],
+    ['mcp-servers', 'mcp-servers', 'Connections', 'page'],
+    ['cli-optimization', 'cli-optimization', 'System', 'page'],
+    ['workspace-api', 'workspace-api', 'System', 'page'],
+    ['color-theme', 'color-theme', 'Appearance', 'page'],
+    ['note-font', 'note-font', 'Appearance', 'page'],
+    ['agent-chat-font', 'agent-chat-font', 'Appearance', 'page'],
+    ['code-font', 'code-font', 'Appearance', 'page'],
   ])(
     'activates the registry tab and highlight target for /settings#%s',
-    async (hash, expectedId, tabLabel) => {
+    async (hash, expectedId, tabLabel, expectedCurrent) => {
       const target = resolveHashToTarget(hash);
       expect(target?.id).toBe(expectedId);
 
       renderSettings(`/settings#${hash}`);
 
       const expectedTab = screen.getByRole('button', { name: tabLabel });
-      await waitFor(() => expect(expectedTab.getAttribute('aria-current')).toBe('page'));
+      await waitFor(() => expect(expectedTab.getAttribute('aria-current')).toBe(expectedCurrent));
 
       const targetElement = await waitFor(() => {
         const element = document.querySelector<HTMLElement>(target?.highlightSelector ?? '');

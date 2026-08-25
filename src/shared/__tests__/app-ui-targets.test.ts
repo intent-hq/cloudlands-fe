@@ -24,13 +24,16 @@ describe('app UI targets registry', () => {
     const expectedTabs = {
       providers: 'providers',
       integrations: 'connections',
-      'mcp-servers': 'tools',
-      'git-workspace': 'git-workspace',
-      'cli-optimization': 'tools',
-      'utility-default-model': 'tools',
-      notifications: 'general',
-      'open-in': 'general',
-      'github-link-action': 'general',
+      voice: 'connections',
+      'mcp-servers': 'connections',
+      'git-workspace': 'system',
+      'cli-optimization': 'system',
+      'workspace-api': 'system',
+      'utility-default-model': 'providers',
+      notifications: 'behavior',
+      'open-in': 'behavior',
+      'github-link-action': 'behavior',
+      'agent-features': 'behavior',
       appearance: 'appearance',
       'color-theme': 'appearance',
       'note-font': 'appearance',
@@ -69,6 +72,19 @@ describe('app UI targets registry', () => {
     expect(targets.find((target) => target.id === 'specialist-entry')?.route).toBe(
       '/settings?tab=agents&specialist={specialistId}#specialist-{specialistId}',
     );
+  });
+
+  it('resolves dynamic specialist hashes to the Agents specialist target', () => {
+    const route = '/settings?tab=agents&specialist=implementor#specialist-implementor';
+
+    expect(resolveHashToTarget('specialist-implementor')).toMatchObject({
+      id: 'specialist-implementor',
+      tab: 'agents',
+      category: 'specialist',
+      dynamic: true,
+    });
+    expect(getHighlightIdFromRoute(route)).toBe('specialist-implementor');
+    expect(isResolvableNavTarget(route)).toBe(true);
   });
 
   it('resolves the default-model hash to the canonical background agent target', () => {
