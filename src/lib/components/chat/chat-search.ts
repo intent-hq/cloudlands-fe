@@ -16,7 +16,6 @@ interface ChatSearchBlock {
 }
 import {
   getResponseGroupCurrentChildIndex,
-  getResponseGroupPreviewBlock,
   normalizeResponseGroups,
 } from './response-group-blocks';
 
@@ -83,8 +82,12 @@ function buildMessageSearchBlocks(message: AgentMessage, turnKey: string): ChatS
       return;
     }
     if (block.isReasoningPhase) return;
-    const previewBlock = getResponseGroupPreviewBlock(block.children);
-    if (previewBlock) addText(getContentBlockText(previewBlock), `${path}:summary`, []);
+    block.children.forEach((child, childIndex) => {
+      if (child.type !== 'text') return;
+      addText(child.text || child.content || '', chatSearchBlockPath(blockIndex, childIndex), [
+        `group:${path}`,
+      ]);
+    });
   });
   return output;
 }

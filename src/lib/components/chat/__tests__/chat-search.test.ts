@@ -9,13 +9,22 @@ const assistant = (
 ): AgentMessage => ({ id, role: 'assistant', contentBlocks, isStreaming }) as AgentMessage;
 
 describe('chat search utilities', () => {
-  it('indexes only the visible preview of completed response groups', () => {
+  it('indexes completed response group text with the disclosure path needed to reveal it', () => {
     const message = assistant('assistant-1', [
       { type: 'text', text: '<group:Completed>visible summary' },
       { type: 'text', text: 'hidden detail</group>' },
     ]);
 
-    expect(findChatSearchMatches([message], 'hidden', new Map())).toEqual([]);
+    expect(findChatSearchMatches([message], 'hidden', new Map())).toEqual([
+      {
+        messageId: 'assistant-1',
+        matchIndexInMessage: 0,
+        occurrenceInBlock: 0,
+        turnKey: 'assistant-1',
+        blockPath: 'b:0:c:1',
+        disclosurePath: ['group:b:0'],
+      },
+    ]);
     expect(
       findChatSearchMatches([message], 'summary', new Map([['assistant-1', 'turn-1']])),
     ).toEqual([
@@ -24,8 +33,8 @@ describe('chat search utilities', () => {
         matchIndexInMessage: 0,
         occurrenceInBlock: 0,
         turnKey: 'turn-1',
-        blockPath: 'b:0:summary',
-        disclosurePath: [],
+        blockPath: 'b:0:c:0',
+        disclosurePath: ['group:b:0'],
       },
     ]);
   });
