@@ -26,6 +26,8 @@ export interface SystemStatusWirePayload {
   maxAgents?: number;
   /** New in PR #244, may be missing on older daemons. */
   version?: string;
+  /** Source commit embedded in the daemon build. May be missing on older or metadata-free builds. */
+  buildCommit?: string;
   /** New in PR #244, may be missing on older daemons. */
   uptimeSeconds?: number;
   /** Daemon process CPU usage in percent (sysinfo convention, may exceed 100%). May be missing on older daemons. */
@@ -91,6 +93,8 @@ export interface BackendTransportInfo {
   target?: string;
   /** Version reported by an adopted external daemon (version handshake). */
   daemonVersion?: string;
+  /** Source commit reported by an adopted external daemon, when available. */
+  daemonBuildCommit?: string;
   /** True when the adopted daemon's version differs from the bundled intentd.version pin (warn-only). */
   versionMismatch?: boolean;
   /** The bundled intentd.version pin, reported in every transport mode. */
@@ -113,6 +117,8 @@ export interface DaemonHealthStats {
   listenMode: string;
   port?: number | null;
   version?: string;
+  /** Source commit embedded in the running daemon build. */
+  buildCommit?: string;
   /** Optional for backward compatibility with older daemons. */
   protocolVersion?: string;
   uptimeSeconds?: number;

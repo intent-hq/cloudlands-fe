@@ -125,7 +125,12 @@ describe('startIntentdSidecar connection-mode resolution', () => {
       JSON.stringify({
         jsonrpc: '2.0',
         id: 1,
-        result: { running: true, version: '0.1.0', protocolVersion: '1' },
+        result: {
+          running: true,
+          version: '0.1.0',
+          buildCommit: '0123456789abcdef',
+          protocolVersion: '1',
+        },
       }),
     );
     await startIntentdSidecar({ INTENTD_SIDECAR: '1' }, false, '/resources', '/cwd');
@@ -172,7 +177,12 @@ describe('startIntentdSidecar version-mismatch matrix (daemon-present × version
       JSON.stringify({
         jsonrpc: '2.0',
         id: 1,
-        result: { running: true, version: '0.1.0', protocolVersion: '1' },
+        result: {
+          running: true,
+          version: '0.1.0',
+          buildCommit: '0123456789abcdef',
+          protocolVersion: '1',
+        },
       }),
     );
     await startIntentdSidecar({ INTENTD_SIDECAR: '1' }, false, '/resources', '/cwd');
@@ -180,6 +190,7 @@ describe('startIntentdSidecar version-mismatch matrix (daemon-present × version
     expect(mockSpawn).not.toHaveBeenCalled();
     expect(getDaemonVersionInfo()).toEqual({
       daemonVersion: '0.1.0',
+      daemonBuildCommit: '0123456789abcdef',
       pinnedVersion: '0.1.0',
       versionMismatch: false,
     });

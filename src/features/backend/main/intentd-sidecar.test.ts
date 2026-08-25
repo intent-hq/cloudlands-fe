@@ -320,21 +320,36 @@ describe('probeDaemonVersion', () => {
     vi.clearAllMocks();
   });
 
-  it('returns alive with version and protocolVersion from system.status', async () => {
+  it('returns alive with version, buildCommit, and protocolVersion from system.status', async () => {
     const socketPath = path.join(tmpDir, 'i.sock');
     server = await startMockDaemon(socketPath, {
       kind: 'result',
-      result: { running: true, version: '0.1.0', protocolVersion: '1' },
+      result: {
+        running: true,
+        version: '0.1.0',
+        buildCommit: '0123456789abcdef',
+        protocolVersion: '1',
+      },
     });
     const probe = await probeDaemonVersion(socketPath);
-    expect(probe).toEqual({ alive: true, version: '0.1.0', protocolVersion: '1' });
+    expect(probe).toEqual({
+      alive: true,
+      version: '0.1.0',
+      buildCommit: '0123456789abcdef',
+      protocolVersion: '1',
+    });
   });
 
   it('returns alive without versions when the response lacks them', async () => {
     const socketPath = path.join(tmpDir, 'i.sock');
     server = await startMockDaemon(socketPath, { kind: 'result', result: { running: true } });
     const probe = await probeDaemonVersion(socketPath);
-    expect(probe).toEqual({ alive: true, version: undefined, protocolVersion: undefined });
+    expect(probe).toEqual({
+      alive: true,
+      version: undefined,
+      buildCommit: undefined,
+      protocolVersion: undefined,
+    });
   });
 
   it('returns alive when the daemon responds with unparsable data', async () => {

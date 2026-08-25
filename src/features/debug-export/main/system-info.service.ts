@@ -8,6 +8,7 @@ import { app } from 'electron';
 import os from 'os';
 import { Logger } from '../../../shared/logger';
 import { allSamples, type MemorySnapshot, type ProcessKind } from '../../../main/memory-monitor';
+import { BUILD_CONFIG } from '../../../main/build-config.generated.js';
 
 const logger = new Logger('SystemInfoService');
 
@@ -25,6 +26,8 @@ interface SystemProcessInfo {
 interface SystemInfo {
   timestamp: string;
   appVersion: string;
+  /** Frontend source commit embedded at build time. Omitted when unavailable. */
+  appBuildCommit?: string;
   electronVersion: string;
   platform: string;
   arch: string;
@@ -50,7 +53,10 @@ interface SystemInfo {
  * Generate system information
  * @param memorySnapshot Capture-time process reading, or `null` when unavailable
  */
-export function generateSystemInfo(memorySnapshot: MemorySnapshot | null = null): SystemInfo {
+export function generateSystemInfo(
+  memorySnapshot: MemorySnapshot | null = null,
+  appBuildCommit = BUILD_CONFIG.GIT_COMMIT_HASH,
+): SystemInfo {
   const totalMemory = os.totalmem();
   const freeMemory = os.freemem();
 
@@ -66,6 +72,7 @@ export function generateSystemInfo(memorySnapshot: MemorySnapshot | null = null)
   const info: SystemInfo = {
     timestamp: new Date().toISOString(),
     appVersion: app.getVersion(),
+    ...(appBuildCommit ? { appBuildCommit } : {}),
     electronVersion: process.versions.electron,
     platform: process.platform,
     arch: process.arch,

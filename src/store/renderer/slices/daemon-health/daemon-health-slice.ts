@@ -269,6 +269,7 @@ daemonHealthReducer.with(systemStatusSuccess, (state, { payload: [wirePayload, r
     listenMode: wirePayload.listenMode,
     port: wirePayload.port ?? null,
     version: wirePayload.version,
+    buildCommit: wirePayload.buildCommit,
     protocolVersion: wirePayload.protocolVersion,
     uptimeSeconds: wirePayload.uptimeSeconds,
     cpuPercent: wirePayload.cpuPercent,
