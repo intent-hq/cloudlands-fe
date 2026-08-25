@@ -153,17 +153,77 @@ function chunk(bytes: Buffer, bytesRead: number, size: number) {
   return { content: bytes.toString('base64'), bytesRead, size };
 }
 
+function appRequest(url: string, headers: Record<string, string> = {}): Request {
+  return new Request(url, { headers: { Origin: 'app://workspaces', ...headers } });
+}
+
 describe('setupWorkspaceFileProtocolHandler', () => {
   beforeEach(() => {
     protocolHandle.mockClear();
     mockRequest.mockReset();
   });
 
+  it('rejects hostile, null, and arbitrary localhost origins before daemon access', async () => {
+    const handler = getHandler();
+
+    for (const origin of ['https://evil.example', 'null', 'http://localhost:5190']) {
+      const res = await handler(
+        new Request('workspace-file://ws-secret/images/pic.png', {
+          headers: { Origin: origin },
+        }),
+      );
+      expect(res.status).toBe(403);
+      expect(res.headers.get('Access-Control-Allow-Origin')).toBeNull();
+    }
+
+    expect(mockRequest).not.toHaveBeenCalled();
+  });
+
+  it('allows only the configured development renderer origin', async () => {
+    vi.stubEnv('NODE_ENV', 'development');
+    vi.stubEnv('DEV_PORT', '5197');
+    try {
+      const bytes = Buffer.from('dev');
+      mockRequest.mockResolvedValueOnce(chunk(bytes, bytes.length, bytes.length));
+
+      const allowed = await getHandler()(
+        new Request('workspace-file://ws-1/dev.png', {
+          headers: { Origin: 'http://127.0.0.1:5197' },
+        }),
+      );
+      expect(allowed.status).toBe(200);
+      expect(allowed.headers.get('Access-Control-Allow-Origin')).toBe(
+        'http://127.0.0.1:5197',
+      );
+
+      const denied = await getHandler()(
+        new Request('workspace-file://ws-1/dev.png', {
+          headers: { Origin: 'http://127.0.0.1:5198' },
+        }),
+      );
+      expect(denied.status).toBe(403);
+      expect(mockRequest).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it('keeps origin-less media loads non-CORS-readable', async () => {
+    const bytes = Buffer.from('image');
+    mockRequest.mockResolvedValueOnce(chunk(bytes, bytes.length, bytes.length));
+
+    const res = await getHandler()(new Request('workspace-file://ws-1/direct.png'));
+
+    expect(res.status).toBe(200);
+    expect(res.headers.get('Access-Control-Allow-Origin')).toBeNull();
+    expect(res.headers.get('Vary')).toBe('Origin');
+  });
+
   it('serves a single-chunk image with the exact file.readChunk wire params', async () => {
     const bytes = Buffer.from([0x89, 0x50, 0x4e, 0x47]);
     mockRequest.mockResolvedValueOnce(chunk(bytes, bytes.length, bytes.length));
 
-    const res = await getHandler()(new Request('workspace-file://ws-1/images/pic.png'));
+    const res = await getHandler()(appRequest('workspace-file://ws-1/images/pic.png'));
 
     expect(mockRequest).toHaveBeenCalledTimes(1);
     expect(mockRequest).toHaveBeenCalledWith('file.readChunk', {
@@ -174,8 +234,8 @@ describe('setupWorkspaceFileProtocolHandler', () => {
     });
     expect(res.status).toBe(200);
     expect(res.headers.get('Content-Type')).toBe('image/png');
-    // Required for renderer fetch() reads across origins (corsEnabled scheme).
-    expect(res.headers.get('Access-Control-Allow-Origin')).toBe('*');
+    expect(res.headers.get('Access-Control-Allow-Origin')).toBe('app://workspaces');
+    expect(res.headers.get('Vary')).toBe('Origin');
     expect(res.headers.get('Accept-Ranges')).toBe('bytes');
     expect(res.headers.get('Content-Length')).toBe(String(bytes.length));
     expect(Buffer.from(await res.arrayBuffer())).toEqual(bytes);
@@ -188,9 +248,7 @@ describe('setupWorkspaceFileProtocolHandler', () => {
       .mockResolvedValueOnce(chunk(allBytes.subarray(2, 6), 4, allBytes.length));
 
     const res = await getHandler()(
-      new Request('workspace-file://ws-1/artifacts/demo.mp4', {
-        headers: { Range: 'bytes=2-5' },
-      }),
+      appRequest('workspace-file://ws-1/artifacts/demo.mp4', { Range: 'bytes=2-5' }),
     );
 
     expect(mockRequest).toHaveBeenNthCalledWith(1, 'file.readChunk', {
@@ -209,6 +267,7 @@ describe('setupWorkspaceFileProtocolHandler', () => {
     expect(res.headers.get('Content-Type')).toBe('video/mp4');
     expect(res.headers.get('Content-Range')).toBe('bytes 2-5/10');
     expect(res.headers.get('Content-Length')).toBe('4');
+    expect(res.headers.get('Access-Control-Allow-Origin')).toBe('app://workspaces');
     expect(Buffer.from(await res.arrayBuffer()).toString()).toBe('2345');
   });
 
@@ -219,9 +278,7 @@ describe('setupWorkspaceFileProtocolHandler', () => {
       .mockResolvedValueOnce(chunk(allBytes.subarray(7), 3, allBytes.length));
 
     const res = await getHandler()(
-      new Request('workspace-file://ws-1/artifacts/demo.webm', {
-        headers: { Range: 'bytes=-3' },
-      }),
+      appRequest('workspace-file://ws-1/artifacts/demo.webm', { Range: 'bytes=-3' }),
     );
 
     expect(mockRequest.mock.calls[1][1]).toMatchObject({ offset: 7, length: 3 });
@@ -234,14 +291,14 @@ describe('setupWorkspaceFileProtocolHandler', () => {
   it('rejects invalid and unsatisfiable ranges safely', async () => {
     const handler = getHandler();
     const invalid = await handler(
-      new Request('workspace-file://ws-1/demo.mp4', { headers: { Range: 'bytes=0-1,4-5' } }),
+      appRequest('workspace-file://ws-1/demo.mp4', { Range: 'bytes=0-1,4-5' }),
     );
     expect(invalid.status).toBe(416);
     expect(mockRequest).not.toHaveBeenCalled();
 
     mockRequest.mockResolvedValueOnce(chunk(Buffer.from('x'), 1, 4));
     const unsatisfiable = await handler(
-      new Request('workspace-file://ws-1/demo.mp4', { headers: { Range: 'bytes=4-' } }),
+      appRequest('workspace-file://ws-1/demo.mp4', { Range: 'bytes=4-' }),
     );
     expect(unsatisfiable.status).toBe(416);
     expect(unsatisfiable.headers.get('Content-Range')).toBe('bytes */4');
@@ -255,7 +312,7 @@ describe('setupWorkspaceFileProtocolHandler', () => {
       .mockResolvedValueOnce(chunk(first, first.length, size))
       .mockResolvedValueOnce(chunk(second, second.length, size));
 
-    const res = await getHandler()(new Request('workspace-file://ws-1/big.webp'));
+    const res = await getHandler()(appRequest('workspace-file://ws-1/big.webp'));
 
     expect(mockRequest).toHaveBeenCalledTimes(2);
     expect(mockRequest.mock.calls[1][1]).toMatchObject({ offset: first.length });
@@ -267,7 +324,7 @@ describe('setupWorkspaceFileProtocolHandler', () => {
   it('serves an empty file as an empty 200 body', async () => {
     mockRequest.mockResolvedValueOnce({ content: '', bytesRead: 0, size: 0 });
 
-    const res = await getHandler()(new Request('workspace-file://ws-1/empty.gif'));
+    const res = await getHandler()(appRequest('workspace-file://ws-1/empty.gif'));
 
     expect(res.status).toBe(200);
     expect((await res.arrayBuffer()).byteLength).toBe(0);
@@ -276,10 +333,10 @@ describe('setupWorkspaceFileProtocolHandler', () => {
   it('rejects traversal and non-image URLs without issuing an RPC', async () => {
     const handler = getHandler();
 
-    const traversal = await handler(new Request('workspace-file://ws-1/a%2F..%2Fx.png'));
+    const traversal = await handler(appRequest('workspace-file://ws-1/a%2F..%2Fx.png'));
     expect(traversal.status).toBe(403);
 
-    const nonImage = await handler(new Request('workspace-file://ws-1/notes.md'));
+    const nonImage = await handler(appRequest('workspace-file://ws-1/notes.md'));
     expect(nonImage.status).toBe(415);
 
     expect(mockRequest).not.toHaveBeenCalled();
@@ -289,7 +346,7 @@ describe('setupWorkspaceFileProtocolHandler', () => {
     const bytes = Buffer.from('x');
     mockRequest.mockResolvedValueOnce(chunk(bytes, 1, WORKSPACE_FILE_MAX_BYTES + 1));
 
-    const res = await getHandler()(new Request('workspace-file://ws-1/huge.jpeg'));
+    const res = await getHandler()(appRequest('workspace-file://ws-1/huge.jpeg'));
 
     expect(res.status).toBe(413);
   });
@@ -297,7 +354,7 @@ describe('setupWorkspaceFileProtocolHandler', () => {
   it('maps daemon errors to 404', async () => {
     mockRequest.mockRejectedValueOnce(new Error('path is outside the workspace'));
 
-    const res = await getHandler()(new Request('workspace-file://ws-1/missing.png'));
+    const res = await getHandler()(appRequest('workspace-file://ws-1/missing.png'));
 
     expect(res.status).toBe(404);
   });
@@ -306,7 +363,7 @@ describe('setupWorkspaceFileProtocolHandler', () => {
     const bytes = Buffer.from('abcdef');
     mockRequest.mockResolvedValueOnce(chunk(bytes, bytes.length + 3, bytes.length + 3));
 
-    const res = await getHandler()(new Request('workspace-file://ws-1/spliced.png'));
+    const res = await getHandler()(appRequest('workspace-file://ws-1/spliced.png'));
 
     expect(res.status).toBe(404);
   });

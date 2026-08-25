@@ -5,6 +5,7 @@ import path from 'path';
 import * as fs from 'fs';
 import { safeResolvePath } from './utils/safe-resolve-path';
 import { parseWorkspaceFileRequest } from './utils/workspace-file-url';
+import { isTrustedRendererUrl } from './ipc-authorization';
 
 // ---- Shared Helpers ----
 
@@ -237,6 +238,41 @@ type WorkspaceFileChunk = { content: string; bytesRead: number; size: number };
 type ParsedByteRange =
   { kind: 'closed'; start: number; end: number | null } | { kind: 'suffix'; length: number };
 
+type WorkspaceFileRequestAuthorization =
+  | { ok: true; corsHeaders: Record<string, string> }
+  | { ok: false; reason: string };
+
+function trustedRendererOrigin(value: string): string | null {
+  try {
+    const url = new URL(value);
+    if (!isTrustedRendererUrl(value) || url.search || url.hash) return null;
+
+    if (url.protocol === 'app:') {
+      return url.pathname === '' || url.pathname === '/' ? 'app://workspaces' : null;
+    }
+
+    return url.pathname === '/' ? url.origin : null;
+  } catch {
+    return null;
+  }
+}
+
+function authorizeWorkspaceFileRequest(request: Request): WorkspaceFileRequestAuthorization {
+  const origin = request.headers.get('origin');
+  if (origin === null) return { ok: true, corsHeaders: { Vary: 'Origin' } };
+
+  const trustedOrigin = trustedRendererOrigin(origin);
+  if (!trustedOrigin) return { ok: false, reason: 'untrusted origin' };
+
+  return {
+    ok: true,
+    corsHeaders: {
+      'Access-Control-Allow-Origin': trustedOrigin,
+      Vary: 'Origin',
+    },
+  };
+}
+
 function parseByteRangeHeader(value: string): ParsedByteRange | null {
   const match = /^bytes=(\d*)-(\d*)$/.exec(value);
   if (!match || (!match[1] && !match[2])) return null;
@@ -267,6 +303,16 @@ class WorkspaceFileReadError extends Error {
 // within the workspace root. SVG and active/arbitrary formats remain excluded.
 export function setupWorkspaceFileProtocolHandler() {
   protocol.handle('workspace-file', async (request) => {
+    const authorization = authorizeWorkspaceFileRequest(request);
+    if (!authorization.ok) {
+      logger.warn('Rejected workspace-file request authorization', {
+        reason: authorization.reason,
+      });
+      // i18n-ignore (internal protocol response body)
+      return new Response('Forbidden', { status: 403, headers: { Vary: 'Origin' } });
+    }
+
+    const { corsHeaders } = authorization;
     const parsed = parseWorkspaceFileRequest(request.url);
     if (!parsed.ok) {
       logger.warn('Rejected workspace-file request', {
@@ -275,7 +321,10 @@ export function setupWorkspaceFileProtocolHandler() {
         reason: parsed.reason,
       });
       // i18n-ignore (internal protocol response body)
-      return new Response('Invalid workspace file URL', { status: parsed.status });
+      return new Response('Invalid workspace file URL', {
+        status: parsed.status,
+        headers: corsHeaders,
+      });
     }
 
     const { workspaceId, filePath, mimeType } = parsed;
@@ -287,7 +336,11 @@ export function setupWorkspaceFileProtocolHandler() {
       if (rangeHeader && !requestedRange) {
         return new Response('Invalid range', {
           status: 416,
-          headers: { 'Accept-Ranges': 'bytes', 'Content-Range': 'bytes */*' },
+          headers: {
+            ...corsHeaders,
+            'Accept-Ranges': 'bytes',
+            'Content-Range': 'bytes */*',
+          },
         });
       }
 
@@ -324,7 +377,11 @@ export function setupWorkspaceFileProtocolHandler() {
         if (expectedSize === 0) {
           return new Response('Range not satisfiable', {
             status: 416,
-            headers: { 'Accept-Ranges': 'bytes', 'Content-Range': 'bytes */0' },
+            headers: {
+              ...corsHeaders,
+              'Accept-Ranges': 'bytes',
+              'Content-Range': 'bytes */0',
+            },
           });
         }
         if (requestedRange.kind === 'suffix') {
@@ -336,6 +393,7 @@ export function setupWorkspaceFileProtocolHandler() {
             return new Response('Range not satisfiable', {
               status: 416,
               headers: {
+                ...corsHeaders,
                 'Accept-Ranges': 'bytes',
                 'Content-Range': `bytes */${expectedSize}`,
               },
@@ -373,9 +431,9 @@ export function setupWorkspaceFileProtocolHandler() {
 
       const body = Buffer.concat(chunks);
       const commonHeaders = {
+        ...corsHeaders,
         'Content-Type': mimeType,
         'Cache-Control': 'no-cache',
-        'Access-Control-Allow-Origin': '*',
         'Accept-Ranges': 'bytes',
         'Content-Length': String(body.byteLength),
       };
@@ -401,9 +459,9 @@ export function setupWorkspaceFileProtocolHandler() {
       });
       // i18n-ignore (internal protocol response body)
       if (error instanceof WorkspaceFileReadError && error.status === 413) {
-        return new Response('File too large', { status: 413 });
+        return new Response('File too large', { status: 413, headers: corsHeaders });
       }
-      return new Response('File not found', { status: 404 });
+      return new Response('File not found', { status: 404, headers: corsHeaders });
     }
   });
 }
