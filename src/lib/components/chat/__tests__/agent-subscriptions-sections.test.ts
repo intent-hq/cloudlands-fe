@@ -902,7 +902,7 @@ describe('AgentSubscriptions unified waiting disclosure', () => {
     ]);
     expect(
       within(agentRow('agent-resumed')).getByTestId('mock-avatar-with-state').dataset.state,
-    ).not.toBe('completed');
+    ).toBe('running');
     await fireEvent.click(summary);
     const finishedIds = within(screen.getByTestId('finished-agent-list'))
       .getAllByTestId('agent-list-item')
@@ -910,7 +910,12 @@ describe('AgentSubscriptions unified waiting disclosure', () => {
     expect(finishedIds).toEqual(['agent-b', 'agent-a']);
 
     // Once the resumed turn settles, the agent returns to the finished group.
-    seedSession('agent-resumed', '2026-01-05T00:00:00.000Z', 'completed', wsId);
+    // The daemon may not eagerly clear activity flags when a turn ends, so seed
+    // a stale isResponding alongside the terminal status: isAgentRunningState's
+    // terminal-status short-circuit must keep the agent in the finished set.
+    seedSession('agent-resumed', '2026-01-05T00:00:00.000Z', 'completed', wsId, {
+      isResponding: true,
+    });
     await refetch(wsId, wire);
     await waitFor(() =>
       expect(screen.getByTestId('finished-agent-summary').textContent?.trim()).toBe(

@@ -36,7 +36,10 @@
     type AgentAvatarStackItem,
   } from '$features/agent/components/agent-avatar/AgentAvatarStack.svelte';
   import { getAvatarStateForSession } from '$features/agent/components/agent-avatar/avatar-state';
-  import { isAgentRunningState } from '$shared/utils/agent-runtime-state';
+  import {
+    isAgentRunningState,
+    toAgentRuntimeStateInput,
+  } from '$shared/utils/agent-runtime-state';
   import type { AgentSession } from '$shared/types';
 
   import {
@@ -257,23 +260,12 @@
     }
     return ids;
   });
-  // Whether the agent's live session shows a running turn right now. Mirrors
-  // the session→runtime-input mapping in getAvatarStateForSession so a row's
+  // Whether the agent's live session shows a running turn right now. Uses the
+  // same session→runtime-input mapping as getAvatarStateForSession so a row's
   // grouping always agrees with the state its avatar renders.
   function isSessionRunning(session: AgentSession | undefined): boolean {
     if (!session) return false;
-    return isAgentRunningState({
-      isStreaming: session.isStreaming,
-      isProcessing: session.isProcessing,
-      isResponding: session.isResponding,
-      turnInFlight: session.turnInFlight,
-      liveTurnOpen: (session as AgentSession & { liveTurnOpen?: boolean }).liveTurnOpen,
-      isWaitingOnTool: session.isWaitingOnTool,
-      isWaitingForOtherAgents: session.isWaitingForOtherAgents,
-      lastToolUse: session.lastToolUse,
-      activationState: session.activationState,
-      status: session.status,
-    });
+    return isAgentRunningState(toAgentRuntimeStateInput(session));
   }
   // Effective finished set: delegation-group completion lists never un-complete
   // when an agent is re-woken by a message, so an agent whose live session

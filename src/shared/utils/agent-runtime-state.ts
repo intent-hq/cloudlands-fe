@@ -1,4 +1,5 @@
 import { AgentStatus } from '$shared/types/agent.types';
+import type { AgentSession } from '$shared/types/agent-session';
 
 export interface AgentRuntimeStateInput {
   status?: AgentStatus | string;
@@ -61,4 +62,24 @@ export function isAgentRunningState(input: AgentRuntimeStateInput): boolean {
     input.status === 'responding' ||
     input.status === 'streaming'
   );
+}
+
+/**
+ * Map an AgentSession to the runtime-state input shape. Single source for the
+ * session→input mapping so every consumer (avatar state, list grouping)
+ * evaluates the predicates above against the same fields.
+ */
+export function toAgentRuntimeStateInput(session: AgentSession): AgentRuntimeStateInput {
+  return {
+    isStreaming: session.isStreaming,
+    isProcessing: session.isProcessing,
+    isResponding: session.isResponding,
+    turnInFlight: session.turnInFlight,
+    liveTurnOpen: (session as AgentSession & { liveTurnOpen?: boolean }).liveTurnOpen,
+    isWaitingOnTool: session.isWaitingOnTool,
+    isWaitingForOtherAgents: session.isWaitingForOtherAgents,
+    lastToolUse: session.lastToolUse,
+    activationState: session.activationState,
+    status: session.status,
+  };
 }
