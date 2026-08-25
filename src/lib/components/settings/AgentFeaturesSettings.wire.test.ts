@@ -208,6 +208,29 @@ describe('AgentFeaturesSettings wire contract (PROTOCOL §5.12)', () => {
     });
   });
 
+  it('renders the daemon-provided tokenImpact annotation from settings.list (§5.12)', async () => {
+    mocks.mockBackendRequest.mockImplementation(async (method: string) => {
+      if (method === 'settings.list') {
+        const response = listResponse();
+        return {
+          settings: response.settings.map((s) =>
+            s.path === 'agentFeatures.backgroundHooks'
+              ? { ...s, tokenImpact: '~620 tokens/session' }
+              : s,
+          ),
+        };
+      }
+      throw new Error(`Unexpected method: ${method}`);
+    });
+
+    render(AgentFeaturesSettings);
+
+    const impact = await screen.findByText('~620 tokens/session');
+    expect(impact.className).toContain('text-muted-foreground/60');
+    // Entries without the optional field render no annotation.
+    expect(screen.queryAllByText(/tokens\/(session|turn)/)).toHaveLength(1);
+  });
+
   it('issues settings.update for prMonitor.debounceSeconds when the debounce is saved (§6.9)', async () => {
     mocks.mockBackendRequest.mockImplementation(async (method: string) => {
       if (method === 'settings.list') return listResponse();

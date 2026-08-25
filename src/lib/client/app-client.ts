@@ -1020,6 +1020,8 @@ export interface SettingDefinitionWithValue {
   max?: number;
   defaultValue?: unknown;
   sensitive?: boolean;
+  /** Approximate prompt-token cost of the gated feature (e.g. "~620 tokens/session"); absent when unannotated. */
+  tokenImpact?: string;
   value: unknown;
 }
 
