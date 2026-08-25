@@ -8,7 +8,17 @@ import { app } from 'electron';
 import os from 'os';
 import { Logger } from '../../../shared/logger';
 import { allSamples, type MemorySnapshot, type ProcessKind } from '../../../main/memory-monitor';
-import { BUILD_CONFIG } from '../../../main/build-config.generated.js';
+
+interface GeneratedBuildConfigModule {
+  BUILD_CONFIG: { GIT_COMMIT_HASH: string };
+}
+
+const BUILD_CONFIG_MODULE_PATH = '../../../main/build-config.generated.js';
+const DEFAULT_APP_BUILD_COMMIT = await import(/* @vite-ignore */ BUILD_CONFIG_MODULE_PATH)
+  .then((generated) => (generated as GeneratedBuildConfigModule).BUILD_CONFIG.GIT_COMMIT_HASH)
+  // The generated module is deliberately absent from clean source checkouts.
+  // Production and development entry points generate it before compiling.
+  .catch(() => '');
 
 const logger = new Logger('SystemInfoService');
 
@@ -55,7 +65,7 @@ interface SystemInfo {
  */
 export function generateSystemInfo(
   memorySnapshot: MemorySnapshot | null = null,
-  appBuildCommit = BUILD_CONFIG.GIT_COMMIT_HASH,
+  appBuildCommit = DEFAULT_APP_BUILD_COMMIT,
 ): SystemInfo {
   const totalMemory = os.totalmem();
   const freeMemory = os.freemem();

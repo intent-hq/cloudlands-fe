@@ -1635,6 +1635,7 @@ class EmbeddedBrowserCdpService {
         const fallbackMessage =
           fallbackError instanceof Error ? fallbackError.message : String(fallbackError);
         throw new Error(
+          // i18n-ignore (agent-facing operational diagnostic, not user-facing)
           `Screenshot capture failed: CDP stage: ${cdpMessage}; Electron fallback stage: ${fallbackMessage}`,
         );
       }

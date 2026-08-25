@@ -693,7 +693,7 @@ describe('screenshot Page-domain hang fallback (#3154)', () => {
     await vi.advanceTimersByTimeAsync(5_100);
 
     await expect(pending).rejects.toThrow(
-      'Screenshot capture failed: CDP stage: Page.getLayoutMetrics failed: Page domain unavailable; Electron fallback stage: Electron capturePage timed out after 5000ms',
+      'Screenshot capture failed: CDP stage: Page.getLayoutMetrics failed: Page domain unavailable; Electron fallback stage: capturePage timed out after 5000ms: the tab is not painting (its surface may be hidden or occluded).',
     );
     expect(wc.capturePage).toHaveBeenCalledTimes(1);
     service.unregisterTab('tab-fallback-hang');
