@@ -33,7 +33,7 @@ afterEach(() => {
 });
 
 describe('ChatMessageNavigator', () => {
-  it('keeps the list button immediately before the stable down arrow', () => {
+  it('keeps the mirrored chat button immediately before the stable down arrow', () => {
     renderNavigator(true);
     const controls = screen.getByTestId('chat-header-navigation-controls');
     const buttons = controls.querySelectorAll('button');
@@ -41,7 +41,10 @@ describe('ChatMessageNavigator', () => {
     expect(buttons[0]).toBe(screen.getByTestId('chat-message-navigator-trigger'));
     expect(buttons[1]).toBe(screen.getByTestId('chat-scroll-to-bottom-button'));
     expect((buttons[1] as HTMLButtonElement).disabled).toBe(true);
-    expect(buttons[0].querySelector('[data-icon]')?.classList.contains('size-3.5!')).toBe(true);
+    const chatIcon = buttons[0].querySelector('[data-chat-message-navigator-chat-icon]');
+    expect(chatIcon?.classList.contains('size-3.5!')).toBe(true);
+    expect(chatIcon?.getAttribute('transform')).toBe('scale(-1, 1)');
+    expect(buttons[0].querySelector('[data-icon]')).toBeNull();
     expect(buttons[1].querySelector('[data-icon]')?.classList.contains('size-4!')).toBe(true);
   });
 

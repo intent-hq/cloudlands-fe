@@ -1,8 +1,7 @@
 <script lang="ts">
   import { Popover } from 'bits-ui';
   import { Input } from '$lib/components/ui/input';
-  import Fa from 'svelte-fa';
-  import { faList } from '@fortawesome/free-solid-svg-icons';
+  import ChatTextIcon from 'phosphor-svelte/lib/ChatTextIcon';
   import { Button } from '$lib/components/ui/button';
   import { Tooltip } from '$lib/components/ui/tooltip';
   import { cn } from '$lib/utils';
@@ -223,7 +222,13 @@
           onpointercancel={() => (pointerDownOnTrigger = false)}
           data-testid="chat-message-navigator-trigger"
         >
-          <Fa icon={faList} size={14} class="size-3.5!" />
+          <ChatTextIcon
+            size={14}
+            mirrored
+            aria-hidden="true"
+            class="size-3.5!"
+            data-chat-message-navigator-chat-icon
+          />
         </Button>
       {/snippet}
     </Popover.Trigger>
