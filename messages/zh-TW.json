@@ -1804,6 +1804,7 @@
   "workspace_tokenUsage_thinking_label": "思考",
   "workspace_tokenUsage_thinking_description": "內部權杖",
   "workspace_tokenUsage_tokens_label": "Token",
+  "workspace_tokenUsage_tokensUsed_label": "已用 Token",
   "workspace_tokenUsage_title": "Token 用量",
   "workspace_tokenUsage_totalCost_label": "總費用",
   "workspace_tokenUsage_updating_ariaLabel": "Token 用量更新中",

@@ -1804,6 +1804,7 @@
   "workspace_tokenUsage_thinking_label": "Razonamiento",
   "workspace_tokenUsage_thinking_description": "Tokens internos",
   "workspace_tokenUsage_tokens_label": "Fichas",
+  "workspace_tokenUsage_tokensUsed_label": "fichas usadas",
   "workspace_tokenUsage_title": "Uso de tokens",
   "workspace_tokenUsage_totalCost_label": "Coste total",
   "workspace_tokenUsage_updating_ariaLabel": "El uso de tokens se está actualizando",

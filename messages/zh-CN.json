@@ -1804,6 +1804,7 @@
   "workspace_tokenUsage_thinking_label": "思考",
   "workspace_tokenUsage_thinking_description": "内部令牌",
   "workspace_tokenUsage_tokens_label": "令牌",
+  "workspace_tokenUsage_tokensUsed_label": "已用令牌",
   "workspace_tokenUsage_title": "令牌用量",
   "workspace_tokenUsage_totalCost_label": "总费用",
   "workspace_tokenUsage_updating_ariaLabel": "令牌用量更新中",

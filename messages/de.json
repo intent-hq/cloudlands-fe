@@ -1804,6 +1804,7 @@
   "workspace_tokenUsage_thinking_label": "Denken",
   "workspace_tokenUsage_thinking_description": "Interne Tokens",
   "workspace_tokenUsage_tokens_label": "Tokenmenge",
+  "workspace_tokenUsage_tokensUsed_label": "verwendete Token",
   "workspace_tokenUsage_title": "Token-Verbrauch",
   "workspace_tokenUsage_totalCost_label": "Gesamtkosten",
   "workspace_tokenUsage_updating_ariaLabel": "Token-Verbrauch wird aktualisiert",

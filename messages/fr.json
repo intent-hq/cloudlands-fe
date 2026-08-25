@@ -1804,6 +1804,7 @@
   "workspace_tokenUsage_thinking_label": "Réflexion",
   "workspace_tokenUsage_thinking_description": "Jetons internes",
   "workspace_tokenUsage_tokens_label": "Jetons",
+  "workspace_tokenUsage_tokensUsed_label": "jetons utilisés",
   "workspace_tokenUsage_title": "Utilisation des jetons",
   "workspace_tokenUsage_totalCost_label": "Coût total",
   "workspace_tokenUsage_updating_ariaLabel": "L'utilisation des jetons est en cours de mise à jour",

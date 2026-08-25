@@ -1804,6 +1804,7 @@
   "workspace_tokenUsage_thinking_label": "사고",
   "workspace_tokenUsage_thinking_description": "내부 토큰",
   "workspace_tokenUsage_tokens_label": "토큰",
+  "workspace_tokenUsage_tokensUsed_label": "사용된 토큰",
   "workspace_tokenUsage_title": "토큰 사용량",
   "workspace_tokenUsage_totalCost_label": "총 비용",
   "workspace_tokenUsage_updating_ariaLabel": "토큰 사용량 업데이트 중",

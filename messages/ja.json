@@ -1804,6 +1804,7 @@
   "workspace_tokenUsage_thinking_label": "思考",
   "workspace_tokenUsage_thinking_description": "内部トークン",
   "workspace_tokenUsage_tokens_label": "トークン",
+  "workspace_tokenUsage_tokensUsed_label": "使用済みトークン",
   "workspace_tokenUsage_title": "トークン使用量",
   "workspace_tokenUsage_totalCost_label": "合計コスト",
   "workspace_tokenUsage_updating_ariaLabel": "トークン使用量を更新中",
