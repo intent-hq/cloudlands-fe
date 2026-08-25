@@ -38,6 +38,7 @@
   import { store as appStore } from '$store/renderer/store';
   import { m } from '$shared/paraglide/messages.js';
   import { formatInteger } from '$lib/i18n/format';
+  import Fa from 'svelte-fa';
   import TaskStatusProgress from './TaskStatusProgress.svelte';
   import WorkspaceStatusIcon from './WorkspaceStatusIcon.svelte';
   import { constructPrUrl } from './sidebar/sidebar-changes-utils';
@@ -478,7 +479,7 @@
               statuses={taskStatuses}
               progress={taskProgressRatio}
               loading={!$workspaceTasksInitialized$}
-              animationKey={String(workspace.id)}
+              motion={false}
               ariaLabel={m.workspace_hoverCard_taskProgress_ariaLabel()}
               size="compact"
               fallback={$workspaceTaskProgress$}
@@ -552,9 +553,13 @@
                   class="flex min-h-8 w-full min-w-0 items-center justify-between gap-2 py-0.5 text-left"
                   role="listitem"
                   aria-label={`${agent.name} ${formatRunningAgentMetadata(agent)}`}
+                  data-workspace-hover-card-agent-row
                 >
                   <div class="flex min-w-0 flex-1 items-center gap-2">
-                    <span class="grid h-6 w-6 shrink-0 place-items-center">
+                    <span
+                      class="grid h-6 w-6 shrink-0 place-items-center"
+                      data-workspace-hover-card-agent-icon
+                    >
                       <AgentAvatarWithState
                         agentId={agent.id}
                         variant="standard"
@@ -596,7 +601,9 @@
           {/if}
 
           {#if workspacePrRows.length > 0}
-            <div class="my-2 border-t border-border"></div>
+            {#if runningAgents.length > 0 || hoverCardStackItems.length > 0}
+              <div class="my-2 border-t border-border" data-workspace-hover-card-pr-divider></div>
+            {/if}
             <div
               class="grid min-w-0 w-full gap-1 py-0.5"
               aria-label={m.workspace_hoverCard_pullRequest_label()}
@@ -605,30 +612,41 @@
             >
               {#each workspacePrRows as pr (pr.identity)}
                 <div
-                  class="grid min-w-0 gap-y-0.5 rounded-sm py-0.5"
+                  class="flex min-h-8 w-full min-w-0 items-start gap-2 rounded-sm py-0.5 text-left"
                   aria-label={getWorkspacePrLabel(pr)}
                   role="listitem"
                   data-workspace-hover-card-pr-row
                   data-pr-identity={pr.identity}
                   data-pr-status={pr.status}
                 >
-                  <span class="flex min-w-0 items-center gap-2 text-left">
-                    <span class="type-body min-w-0 flex-1 truncate text-foreground">
-                      {pr.title || m.workspace_hoverCard_pullRequest_label()}
-                    </span>
-                    <span class="type-caption shrink-0 text-subtle">#{pr.number}</span>
+                  <span
+                    class="grid h-6 w-6 shrink-0 place-items-center"
+                    aria-hidden="true"
+                    data-workspace-hover-card-pr-icon
+                  >
+                    <Fa icon={pr.statusIcon} size="xs" class="shrink-0 {pr.foregroundClass}" />
                   </span>
-                  <span class="flex min-w-0 items-center gap-1.5">
-                    {#if pr.repoContext}
-                      <span class="type-caption max-w-24 shrink-0 truncate text-subtle"
-                        >{pr.repoContext}</span
+                  <span class="grid min-w-0 flex-1 gap-y-0.5">
+                    <span class="flex min-w-0 items-baseline gap-2">
+                      <span
+                        class="type-body min-w-0 flex-1 truncate text-sm font-medium leading-5 text-foreground"
                       >
-                    {/if}
-                    <span
-                      class="type-caption min-w-0 truncate {pr.foregroundClass}"
-                      data-workspace-hover-card-pr-status
-                    >
-                      {pr.details.replaceAll('\n', ' · ')}
+                        {pr.title || m.workspace_hoverCard_pullRequest_label()}
+                      </span>
+                      <span class="type-caption shrink-0 text-subtle">#{pr.number}</span>
+                    </span>
+                    <span class="flex min-w-0 items-center gap-1.5">
+                      {#if pr.repoContext}
+                        <span class="type-caption max-w-24 shrink-0 truncate text-subtle"
+                          >{pr.repoContext}</span
+                        >
+                      {/if}
+                      <span
+                        class="type-caption min-w-0 truncate {pr.foregroundClass}"
+                        data-workspace-hover-card-pr-status
+                      >
+                        {pr.details.replaceAll('\n', ' · ')}
+                      </span>
                     </span>
                   </span>
                 </div>

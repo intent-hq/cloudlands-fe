@@ -626,6 +626,19 @@ describe('WorkspaceHoverCard', () => {
     const prList = screen.getByRole('list', { name: 'Pull request' });
     expect(prList.className).toContain('gap-1');
     expect(prList.className).toContain('py-0.5');
+    const agentRow = document.querySelector('[data-workspace-hover-card-agent-row]');
+    const prRow = document.querySelector('[data-workspace-hover-card-pr-row]');
+    const agentIcon = document.querySelector('[data-workspace-hover-card-agent-icon]');
+    const prIcon = document.querySelector('[data-workspace-hover-card-pr-icon]');
+    for (const rowClass of ['min-h-8', 'gap-2', 'py-0.5']) {
+      expect(agentRow?.className).toContain(rowClass);
+      expect(prRow?.className).toContain(rowClass);
+    }
+    for (const iconClass of ['h-6', 'w-6', 'shrink-0', 'place-items-center']) {
+      expect(agentIcon?.className).toContain(iconClass);
+      expect(prIcon?.className).toContain(iconClass);
+    }
+    expect(document.querySelector('[data-workspace-hover-card-pr-divider]')).toBeTruthy();
     expect(screen.getByText('Add hover card')).toBeTruthy();
     expect(screen.getByText('#12')).toBeTruthy();
     expect(screen.getByText(/checks running/).className).toContain('text-success');
@@ -694,8 +707,16 @@ describe('WorkspaceHoverCard', () => {
       'augment/intent#12',
       'augment/intent#13',
     ]);
-    expect(rows.every((row) => row.querySelector('svg') === null)).toBe(true);
-    expect(rows.every((row) => row.querySelector('[aria-hidden="true"]') === null)).toBe(true);
+    const icons = rows.map((row) => row.querySelector('[data-workspace-hover-card-pr-icon]'));
+    expect(icons.every((icon) => icon?.querySelector('svg'))).toBe(true);
+    expect(icons.every((icon) => icon?.getAttribute('aria-hidden') === 'true')).toBe(true);
+    expect(
+      icons.every((icon) => icon?.className.includes('h-6') && icon.className.includes('w-6')),
+    ).toBe(true);
+    expect(rows.every((row) => row.className.includes('min-h-8'))).toBe(true);
+    expect(rows.every((row) => row.className.includes('gap-2'))).toBe(true);
+    expect(rows.every((row) => row.className.includes('py-0.5'))).toBe(true);
+    expect(screen.getByText('Open workspace PR').className).toContain('truncate');
     expect(rows[0].querySelector('[data-workspace-hover-card-pr-status]')?.className).toContain(
       'text-success',
     );
@@ -705,6 +726,48 @@ describe('WorkspaceHoverCard', () => {
     expect(screen.getByText('other-org/tooling')).toBeTruthy();
     expect(screen.getByText('Cross-repo monitor')).toBeTruthy();
     expect(rows.every((row) => row.getAttribute('aria-label')?.includes('#'))).toBe(true);
+  });
+
+  it('keeps one right-column divider when a waiting workspace only has PR content', async () => {
+    const { container } = await renderHoverCard({
+      displayStatus: 'waiting',
+      activePullRequest: {
+        id: 'pr-14',
+        number: 14,
+        url: 'https://github.com/augment/intent/pull/14',
+        title: 'Keep one section divider',
+        status: PullRequestStatus.Open,
+        createdAt: '2026-05-05T00:00:00.000Z',
+        updatedAt: '2026-05-05T00:00:00.000Z',
+      },
+    });
+
+    const activity = container.querySelector('[data-workspace-hover-card-activity]');
+    expect(activity?.querySelectorAll('.border-t.border-border')).toHaveLength(1);
+    expect(activity?.querySelector('[data-workspace-hover-card-divider]')).toBeTruthy();
+    expect(activity?.querySelector('[data-workspace-hover-card-pr-divider]')).toBeNull();
+    expect(screen.getByText('Keep one section divider')).toBeTruthy();
+  });
+
+  it('keeps hover-card task progress static while preserving its data and proportions', async () => {
+    mocks.tasksByWorkspace['ws-1'] = [
+      { id: 't-1', title: 'Complete', status: 'complete' },
+      { id: 't-2', title: 'Running', status: 'in_progress' },
+      { id: 't-3', title: 'Pending', status: 'not_started' },
+    ];
+
+    const { container } = await renderHoverCard();
+    const progressbar = screen.getByRole('progressbar', { name: 'Workspace task progress' });
+    const segments = container.querySelectorAll<HTMLElement>('[data-task-progress-style]');
+
+    expect(progressbar.getAttribute('data-task-status-motion')).toBe('static');
+    expect(progressbar.getAttribute('aria-valuenow')).toBe('33');
+    expect(progressbar.getAttribute('aria-valuetext')).toContain('1 complete');
+    expect(progressbar.className).not.toContain('flame-progress-enter');
+    expect(Array.from(segments, (segment) => segment.style.flexGrow)).toEqual(['1', '1', '1']);
+    expect(
+      [...segments].every((segment) => !segment.classList.contains('flame-status-segment')),
+    ).toBe(true);
   });
 
   it.each([
