@@ -4,10 +4,12 @@
  * orphan (executable inside our resourcesPath) from an external daemon.
  */
 import { describe, expect, it, beforeEach, afterEach } from 'vitest';
-import { spawn } from 'node:child_process';
+import { spawn, type ChildProcess } from 'node:child_process';
+import { once } from 'node:events';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import { setTimeout as delay } from 'node:timers/promises';
 
 import {
   detectOrphanedSidecar,
@@ -30,6 +32,37 @@ afterEach(() => {
 /** Env pointing the data-dir resolver at the temp dir. */
 function envFor(dataDir: string): NodeJS.ProcessEnv {
   return { INTENTD_DATA_DIR: dataDir };
+}
+
+/**
+ * Spawn `exePath` and resolve only once the child has actually exec'd
+ * (Node's 'spawn' event — on failure 'error' fires instead and rejects).
+ * Asserting right after `spawn()` returns is racy under full-suite load
+ * (monorepo#2872): spawn failures surface only via the async 'error'
+ * event, so a child that never exec'd — fork/exec transiently refused
+ * with EAGAIN/ENOMEM under the pid/memory pressure of many worker
+ * processes spawning at once — leaves `child.pid` unset and detection
+ * fail-safes to null before the error is even observable. Transient exec
+ * failures are retried with a fresh child until the deadline; ETXTBSY is
+ * included for the copy-then-exec pattern (exec fails if any process
+ * briefly holds a write fd on the fresh binary, e.g. fd-table inheritance
+ * by concurrent forks in a threads-pool run).
+ */
+async function spawnLiveProcess(exePath: string, args: string[]): Promise<ChildProcess> {
+  const deadline = Date.now() + 10_000;
+  for (;;) {
+    const child = spawn(exePath, args, { stdio: 'ignore' });
+    try {
+      await once(child, 'spawn');
+      return child;
+    } catch (error) {
+      child.kill('SIGKILL');
+      const code = (error as NodeJS.ErrnoException).code;
+      const transient = code === 'ETXTBSY' || code === 'EAGAIN' || code === 'ENOMEM';
+      if (!transient || Date.now() >= deadline) throw error;
+      await delay(50);
+    }
+  }
 }
 
 describe('readDaemonPidFromPidfile', () => {
@@ -82,14 +115,14 @@ describe('getProcessExecutablePath', () => {
     expect(getProcessExecutablePath(2 ** 30, process.platform)).toBeNull();
   });
 
-  it('strips the " (deleted)" suffix and flags a deleted executable (linux)', () => {
+  it('strips the " (deleted)" suffix and flags a deleted executable (linux)', async () => {
     if (process.platform !== 'linux') return;
     // Run a copied binary, then delete it while the process is alive: the
     // kernel reports `<path> (deleted)` in /proc/<pid>/exe.
     const exePath = path.join(tmpDir, 'deleted-me');
     fs.copyFileSync('/bin/sleep', exePath);
     fs.chmodSync(exePath, 0o755);
-    const child = spawn(exePath, ['30'], { stdio: 'ignore' });
+    const child = await spawnLiveProcess(exePath, ['30']);
     try {
       fs.rmSync(exePath);
       const exe = getProcessExecutablePath(child.pid!, 'linux');
@@ -190,7 +223,7 @@ describe('detectOrphanedSidecar', () => {
     expect(detectOrphanedSidecar(envFor(tmpDir), tmpDir, 'linux')).toBeNull();
   });
 
-  it('classifies a live process running from inside resources as an orphan', () => {
+  it('classifies a live process running from inside resources as an orphan', async () => {
     const platform = process.platform;
     if (platform !== 'linux' && platform !== 'darwin') return;
     // Copy a real binary into the fake bundle and run it, standing in for a
@@ -200,7 +233,7 @@ describe('detectOrphanedSidecar', () => {
     fs.mkdirSync(path.dirname(exe), { recursive: true });
     fs.copyFileSync('/bin/sleep', exe);
     fs.chmodSync(exe, 0o755);
-    const child = spawn(exe, ['30'], { stdio: 'ignore' });
+    const child = await spawnLiveProcess(exe, ['30']);
     try {
       fs.writeFileSync(path.join(tmpDir, 'intentd.pid'), String(child.pid));
       const info = detectOrphanedSidecar(envFor(tmpDir), resources, platform);
@@ -211,12 +244,12 @@ describe('detectOrphanedSidecar', () => {
     }
   });
 
-  it('does NOT classify a live process running outside resources', () => {
+  it('does NOT classify a live process running outside resources', async () => {
     const platform = process.platform;
     if (platform !== 'linux' && platform !== 'darwin') return;
     const resources = path.join(tmpDir, 'resources');
     fs.mkdirSync(resources, { recursive: true });
-    const child = spawn('/bin/sleep', ['30'], { stdio: 'ignore' });
+    const child = await spawnLiveProcess('/bin/sleep', ['30']);
     try {
       fs.writeFileSync(path.join(tmpDir, 'intentd.pid'), String(child.pid));
       expect(detectOrphanedSidecar(envFor(tmpDir), resources, platform)).toBeNull();
