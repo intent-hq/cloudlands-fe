@@ -1,19 +1,59 @@
-import { takeLatestFromSelector, type SelectorChannelPayload } from '@augmentcode/themis/saga';
-import { all, put, type SagaGenerator } from 'typed-redux-saga';
+import { buffers } from 'redux-saga';
+import { actionChannel, put, take, type SagaGenerator } from 'typed-redux-saga';
 
-import { selectActiveWorkspaceIds } from '../../tab-state/tab-state-selectors';
-import { workspaceUnmounted } from '../workspace-lifecycle-slice';
+import {
+  selectActiveWorkspaceIds,
+  selectCurrentWorkspaceTabId,
+} from '../../tab-state/tab-state-selectors';
+import { CURRENT_WORKSPACE_TAB_SELECTION_ACTIONS } from '../../tab-state/tab-state-slice';
+import {
+  workspaceDeleted,
+  workspaceHydrationRequested,
+  workspaceUnmounted,
+} from '../workspace-lifecycle-slice';
 
 export function* workspaceTabCleanupSaga(): SagaGenerator<void> {
-  let previousIds = yield* selectActiveWorkspaceIds.effect();
-
-  yield* takeLatestFromSelector(
-    selectActiveWorkspaceIds,
-    function* ({ payload }: SelectorChannelPayload<string[]>): SagaGenerator<void> {
-      const currentIds = new Set(payload);
-      const removedIds = previousIds.filter((workspaceId) => !currentIds.has(workspaceId));
-      previousIds = payload;
-      yield* all(removedIds.map((workspaceId) => put(workspaceUnmounted(workspaceId))));
-    },
+  const lifecycleChanges = yield* actionChannel(
+    [...CURRENT_WORKSPACE_TAB_SELECTION_ACTIONS, workspaceDeleted],
+    buffers.expanding(),
   );
+  let previousFocusedId = yield* selectCurrentWorkspaceTabId.effect();
+  let previousIds = yield* selectActiveWorkspaceIds.effect();
+  const unmountedWorkspaceIds = new Set<string>();
+
+  try {
+    if (previousFocusedId) yield* put(workspaceHydrationRequested(previousFocusedId));
+
+    while (true) {
+      const action = yield* take(lifecycleChanges);
+      const currentFocusedId = yield* selectCurrentWorkspaceTabId.effect();
+      const currentIds = yield* selectActiveWorkspaceIds.effect();
+      const currentIdSet = new Set(currentIds);
+      const focusChanged = currentFocusedId !== previousFocusedId;
+      const unmountedIds = new Set<string>();
+
+      if (focusChanged && previousFocusedId) unmountedIds.add(previousFocusedId);
+      for (const workspaceId of previousIds) {
+        if (!currentIdSet.has(workspaceId)) unmountedIds.add(workspaceId);
+      }
+      if (action.type === workspaceDeleted.type) {
+        unmountedIds.add((action as ReturnType<typeof workspaceDeleted>).payload[0]);
+      }
+
+      previousFocusedId = currentFocusedId;
+      previousIds = currentIds;
+
+      for (const workspaceId of unmountedIds) {
+        if (unmountedWorkspaceIds.has(workspaceId)) continue;
+        unmountedWorkspaceIds.add(workspaceId);
+        yield* put(workspaceUnmounted(workspaceId));
+      }
+      if (focusChanged && currentFocusedId) {
+        unmountedWorkspaceIds.delete(currentFocusedId);
+        yield* put(workspaceHydrationRequested(currentFocusedId));
+      }
+    }
+  } finally {
+    lifecycleChanges.close();
+  }
 }

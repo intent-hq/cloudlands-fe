@@ -94,7 +94,10 @@ describe('Spinner', () => {
 
   it('publishes deterministic dark, compact, and reduced-motion fixtures', () => {
     expect(() => parseUiComponentMetadata(spinnerMetadata)).not.toThrow();
-    expect(new Set(spinnerMetadata.exports)).toEqual(new Set(Object.keys(indicatorsApi)));
+    expect(spinnerMetadata.exports).toContain('IntentMarkVariant');
+    expect(new Set(spinnerMetadata.exports.filter((name) => name !== 'IntentMarkVariant'))).toEqual(
+      new Set(Object.keys(indicatorsApi)),
+    );
     expect(spinnerMetadata).toMatchObject({
       id: 'spinner',
       publicImport: '$lib/components/ui/indicators',

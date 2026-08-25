@@ -1,6 +1,10 @@
 import { call, cancelled, put, takeEvery, type SagaGenerator } from 'typed-redux-saga';
 
 import { appClient } from '$lib/client';
+import {
+  toImageReferenceBlocks,
+  type WireImageBlock,
+} from '$lib/components/chat/input/image-attachment-placement';
 import { createLogger } from '$lib/utils/client-logger';
 import { m } from '$shared/paraglide/messages.js';
 import {
@@ -8,6 +12,7 @@ import {
   chatQueuedRetryRecordsCleared,
   chatSendStarted,
 } from '../../chat-state/chat-state-slice';
+import { CHIEF_WORKSPACE_ID } from '../../sidebar-nav/sidebar-nav-types';
 import { agentSessionEditAndRegenerateRequested, replaceMessages } from '../agent-session-slice';
 import { selectAgentSession } from '../agent-session-selectors';
 
@@ -29,9 +34,27 @@ async function showEditError(message: string): Promise<void> {
 }
 
 function* editAndRegenerate(action: EditAction): SagaGenerator<void> {
-  const [agentId, wsId, messageId, newText, options] = action.payload;
+  const [agentId, wsId, messageId, newText, rawOptions] = action.payload;
   let settled = false;
   try {
+    // Pre-upload any inline image blocks and swap to attachment references
+    // (monorepo#3338) — blocks already carrying an attachmentId (restored
+    // from the original message) pass through without re-uploading. A
+    // placement failure aborts BEFORE the destructive daemon-side
+    // truncation, surfacing the per-image reason. The chief virtual
+    // workspace has no attachment registry, so its edits keep the inline
+    // arm (mirrors chat-send-saga's gate).
+    let options = rawOptions;
+    if ((options?.imageBlocks?.length ?? 0) > 0 && wsId !== CHIEF_WORKSPACE_ID) {
+      options = {
+        ...options,
+        imageBlocks: yield* call(
+          toImageReferenceBlocks,
+          wsId,
+          options!.imageBlocks as WireImageBlock[],
+        ),
+      };
+    }
     const result = yield* call([appClient.agents, appClient.agents.editAndRegenerate], {
       agentId,
       workspaceId: wsId,

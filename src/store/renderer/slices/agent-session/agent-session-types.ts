@@ -32,7 +32,7 @@ export interface AgentSessionSendMessageOptions {
   agentId?: string;
   contextReferences?: AgentSessionContextReference[];
   /** Image content blocks riding the message (PROTOCOL §5.5) — plain base64. */
-  imageBlocks?: Array<{ type: 'image'; data: string; mimeType: string }>;
+  imageBlocks?: Array<{ type: 'image'; data?: string; mimeType?: string; attachmentId?: string }>;
   /**
    * Attachment-reference file blocks riding the message (PROTOCOL §5.5) —
    * registry UUID + metadata only, never bytes.

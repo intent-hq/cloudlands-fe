@@ -27,6 +27,7 @@
     isRightmostPanel = true,
     theme = 'light',
     populated = true,
+    stackCount = 2,
   }: {
     panelType?: PanelTabType;
     width?: number;
@@ -36,6 +37,7 @@
     isRightmostPanel?: boolean;
     theme?: 'light' | 'dark';
     populated?: boolean;
+    stackCount?: 1 | 2 | 3 | 4 | 5;
   } = $props();
 
   const disposeStore = startRootStoreLifecycle(store, { startSagas: () => [] });
@@ -77,25 +79,27 @@
 
   let displayCount = $state(0);
   let contentCount = $state(0);
+  let navigationCount = $state(0);
   let zoomCount = $state(0);
   let splitCount = $state(0);
   let moveLeftCount = $state(0);
   let moveRightCount = $state(0);
   let closeCount = $state(0);
 
-  const activeTab = $derived<PanelTab>({
-    id: `${panelType}-tab`,
-    type: panelType,
-    title: `${panelType} panel`,
-    closable: true,
-    agentId: panelType === 'agent' ? 'panel-menu-agent' : undefined,
-  });
-  const alternateTab = $derived<PanelTab>({
-    id: `${panelType}-alternate-tab`,
-    type: panelType,
-    title: `${panelType} alternate panel`,
-    closable: true,
-    agentId: panelType === 'agent' ? 'panel-menu-alternate-agent' : undefined,
+  const tabs = $derived<PanelTab[]>(
+    Array.from({ length: stackCount }, (_, index) => ({
+      id: `${panelType}-tab-${index + 1}`,
+      type: panelType,
+      title: `${panelType} panel ${index + 1}`,
+      closable: true,
+      agentId: panelType === 'agent' ? `panel-menu-agent-${index + 1}` : undefined,
+    })),
+  );
+  // svelte-ignore state_referenced_locally - the prop seeds the test harness state
+  let activeTabId = $state(`${panelType}-tab-1`);
+
+  $effect(() => {
+    if (!tabs.some((tab) => tab.id === activeTabId)) activeTabId = tabs[0]?.id ?? '';
   });
 
   $effect(() => {
@@ -105,6 +109,17 @@
 
 {#snippet contentDisplayAction()}
   <Menu.CommandItem label="Content display action" onclick={() => (displayCount += 1)} />
+{/snippet}
+
+{#snippet contentNavigationAction()}
+  <button
+    type="button"
+    class="size-7 shrink-0"
+    aria-label="Content navigation"
+    onclick={() => (navigationCount += 1)}
+  >
+    <span aria-hidden="true">N</span>
+  </button>
 {/snippet}
 
 {#snippet contentCommandAction()}
@@ -118,24 +133,32 @@
   data-testid="panel-actions-host"
   data-display-count={displayCount}
   data-content-count={contentCount}
+  data-navigation-count={navigationCount}
   data-zoom-count={zoomCount}
   data-split-count={splitCount}
   data-move-left-count={moveLeftCount}
   data-move-right-count={moveRightCount}
   data-close-count={closeCount}
   data-current-count={$count$}
+  data-active-tab={activeTabId}
 >
   <PanelTabBar
-    tabs={populated ? [activeTab, alternateTab] : []}
-    activeTabId={populated ? activeTab.id : null}
+    tabs={populated ? tabs : []}
+    activeTabId={populated ? activeTabId : null}
     panelId="panel-actions"
     {workspaceId}
     {isRightmostPanel}
-    contentActions={{ display: contentDisplayAction, actions: contentCommandAction }}
+    contentActions={{
+      primary: contentNavigationAction,
+      display: contentDisplayAction,
+      actions: contentCommandAction,
+    }}
     onZoomToggle={() => (zoomCount += 1)}
     onSplitHorizontal={() => (splitCount += 1)}
     onMoveLeft={() => (moveLeftCount += 1)}
     onMoveRight={() => (moveRightCount += 1)}
+    onTabClick={(tabId) => (activeTabId = tabId)}
+    onTabClose={() => (closeCount += 1)}
     onClosePanel={() => (closeCount += 1)}
     isFocused
   />

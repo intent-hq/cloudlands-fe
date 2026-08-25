@@ -5,6 +5,8 @@
  * Formats:
  * - intent://local/note/{note-id} - Note in current workspace (backward compatible)
  * - intent://local/{workspace-id}/note/{note-id} - Note in specific workspace (cross-workspace)
+ * - intent://local/file/{path} - Workspace-relative file in current workspace
+ * - intent://local/{workspace-id}/file/{path} - File in specific workspace (cross-workspace)
  *
  * Currently org-id is a placeholder "local" since we don't have org concept yet.
  * This reserves the URL slot for future use.
@@ -14,7 +16,10 @@ import { toast } from 'svelte-sonner';
 import { noteUrl } from '$shared/constants/intent-links';
 import { store as appStore } from '$store/renderer/store';
 import { m } from '$shared/paraglide/messages.js';
-import { openWorkspaceNote } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
+import {
+  openWorkspaceFile,
+  openWorkspaceNote,
+} from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
 import { selectCurrentWorkspaceTabId } from '$store/renderer/slices/tab-state/tab-state-selectors';
 
 // URL-pattern examples shown in parse errors; passed as message params because
@@ -32,10 +37,10 @@ function invalidFormatError(): string {
 }
 
 export interface WorkspacesLinkInfo {
-  type: 'note' | 'task' | 'unknown';
+  type: 'note' | 'task' | 'file' | 'unknown';
   orgId: string; // Reserved for future, currently "local"
   workspaceId?: string; // Target workspace ID (undefined = current workspace)
-  resourceId: string; // noteId
+  resourceId: string; // noteId, or decoded workspace-relative file path for file links
   valid: boolean;
   error?: string;
 }
@@ -52,6 +57,8 @@ export class NotFoundError extends Error {
  * Formats:
  * - intent://local/note/{note-id} - Note in current workspace
  * - intent://local/{workspace-id}/note/{note-id} - Note in specific workspace
+ * - intent://local/file/{path} - Workspace-relative file in current workspace
+ * - intent://local/{workspace-id}/file/{path} - File in specific workspace
  */
 export function parseIntentLink(url: string): WorkspacesLinkInfo {
   try {
@@ -66,6 +73,14 @@ export function parseIntentLink(url: string): WorkspacesLinkInfo {
       .replace(/^\/+/, '')
       .split('/')
       .filter((s) => s.length > 0);
+
+    // Raw (un-normalized) path segments after the org-id. The URL parser
+    // resolves "." / ".." dot segments, which would silently rewrite
+    // traversal-looking file paths instead of rejecting them — so file links
+    // parse from the raw path. Empty segments are preserved so doubled or
+    // leading slashes (e.g. file//etc/passwd) fail path validation instead
+    // of being silently collapsed.
+    const rawSegments = url.replace('intent://', '').split(/[?#]/)[0].split('/').slice(1);
 
     // Need at least 2 segments: note/{note-id} or {workspace-id}/note/{note-id}
     if (!orgId || pathSegments.length < 2) {
@@ -85,7 +100,20 @@ export function parseIntentLink(url: string): WorkspacesLinkInfo {
     let resourceType: string;
     let resourceId: string;
 
-    if (pathSegments[0] === 'note' || pathSegments[0] === 'task') {
+    if (rawSegments[0] === 'file') {
+      // Short format: file/{workspace-relative-path} (remaining segments form the path)
+      resourceType = 'file';
+      resourceId = decodeFilePathSegments(rawSegments.slice(1));
+    } else if (
+      rawSegments.length >= 3 &&
+      isValidWorkspaceIdSegment(rawSegments[0]) &&
+      rawSegments[1] === 'file'
+    ) {
+      // Long format: {workspace-id}/file/{workspace-relative-path}
+      workspaceId = rawSegments[0];
+      resourceType = 'file';
+      resourceId = decodeFilePathSegments(rawSegments.slice(2));
+    } else if (pathSegments[0] === 'note' || pathSegments[0] === 'task') {
       // Short format: note/{note-id} or task/{note-id}
       resourceType = pathSegments[0];
       resourceId = pathSegments[1];
@@ -129,6 +157,27 @@ export function parseIntentLink(url: string): WorkspacesLinkInfo {
       };
     }
 
+    if (resourceType === 'file') {
+      // Reject traversal-looking or absolute paths (e.g. "..", encoded slashes)
+      if (!isSafeWorkspaceRelativePath(resourceId)) {
+        return {
+          type: 'unknown',
+          orgId,
+          workspaceId,
+          resourceId: '',
+          valid: false,
+          error: m.ui_linkHandler_invalidFilePath_error(),
+        };
+      }
+      return {
+        type: 'file',
+        orgId,
+        workspaceId,
+        resourceId,
+        valid: true,
+      };
+    }
+
     return {
       type: 'unknown',
       orgId,
@@ -146,6 +195,46 @@ export function parseIntentLink(url: string): WorkspacesLinkInfo {
       error: error instanceof Error ? error.message : m.ui_linkHandler_parseFailed_error(),
     };
   }
+}
+
+/**
+ * Percent-decode file path segments and join them into a workspace-relative path
+ */
+function decodeFilePathSegments(segments: string[]): string {
+  return segments.map((segment) => decodeURIComponent(segment)).join('/');
+}
+
+/**
+ * A safe workspace-relative path has only non-empty components and no "." /
+ * ".." dot components. Empty components also reject absolute paths (leading
+ * slash) and doubled slashes; Windows drive-letter prefixes (C:/..., C:foo)
+ * are rejected as absolute/drive-relative.
+ */
+function isSafeWorkspaceRelativePath(path: string): boolean {
+  if (/^[A-Za-z]:/.test(path)) {
+    return false;
+  }
+  const components = path.split(/[\\/]/);
+  return components.every(
+    (component) => component.length > 0 && component !== '.' && component !== '..',
+  );
+}
+
+/**
+ * A raw workspace-ID segment must not be a "." / ".." dot component (literal
+ * or percent-encoded) or contain path separators — it is interpolated into
+ * the /workspace/{id} route, where dot segments would resolve away from it.
+ */
+function isValidWorkspaceIdSegment(segment: string): boolean {
+  let decoded: string;
+  try {
+    decoded = decodeURIComponent(segment);
+  } catch {
+    return false;
+  }
+  return (
+    decoded.length > 0 && decoded !== '.' && decoded !== '..' && !/[\\/]/.test(decoded)
+  );
 }
 
 /**
@@ -182,6 +271,9 @@ export async function handleIntentLink(
       case 'task':
         // Both note and task links navigate to notes (task notes are notes with task metadata)
         await navigateToNote(info, options);
+        break;
+      case 'file':
+        await navigateToFile(info, options);
         break;
       default:
         toast.error(m.ui_linkHandler_unsupportedLink_title(), {
@@ -295,6 +387,49 @@ async function navigateToNote(
     openWorkspaceNote(sourceWorkspaceId, info.resourceId, {
       openInAdjacentPanel: options.openInAdjacentPanel ?? false,
       openInNewAdjacentPanel: options.openInNewAdjacentPanel ?? false,
+      sourcePanelId: options.sourcePanelId,
+    }),
+  );
+}
+
+/**
+ * Private: Navigate to a workspace file (opens the file viewer tab)
+ */
+async function navigateToFile(
+  info: WorkspacesLinkInfo,
+  options: IntentLinkNavigationOptions,
+): Promise<void> {
+  const sourceWorkspaceId =
+    options.workspaceId ?? selectCurrentWorkspaceTabId.select(appStore.state) ?? undefined;
+
+  // If the link includes a workspace ID, we can navigate even without a current workspace.
+  if (info.workspaceId) {
+    const isCrossWorkspace = !sourceWorkspaceId || info.workspaceId !== sourceWorkspaceId;
+
+    if (isCrossWorkspace) {
+      // Navigate to the target workspace first, then open the file there
+      // (navigateToRoute no-ops in the HUD pop-out window — never leaves /hud)
+      const { navigateToRoute } = await import('./navigation.client');
+      await navigateToRoute(`/workspace/${info.workspaceId}`);
+    }
+
+    appStore.dispatch(
+      openWorkspaceFile(info.workspaceId, info.resourceId, {
+        openInAdjacentPanel: isCrossWorkspace ? false : (options.openInAdjacentPanel ?? false),
+        sourcePanelId: isCrossWorkspace ? undefined : options.sourcePanelId,
+      }),
+    );
+    return;
+  }
+
+  // Short-form link (no workspace ID) - requires current workspace
+  if (!sourceWorkspaceId) {
+    throw new NotFoundError(m.ui_linkHandler_noSpaceOpen_error());
+  }
+
+  appStore.dispatch(
+    openWorkspaceFile(sourceWorkspaceId, info.resourceId, {
+      openInAdjacentPanel: options.openInAdjacentPanel ?? false,
       sourcePanelId: options.sourcePanelId,
     }),
   );

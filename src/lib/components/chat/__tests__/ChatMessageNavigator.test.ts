@@ -23,6 +23,10 @@ function renderNavigator(isAtBottom = false, navigationMessages = messages) {
   return { ...view, onSelectMessage, onScrollToBottom };
 }
 
+function afterAnimationFrame() {
+  return new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+}
+
 afterEach(() => {
   cleanup();
   vi.useRealTimers();
@@ -217,6 +221,7 @@ describe('ChatMessageNavigator', () => {
     trigger.focus();
     expect(screen.getByTestId('chat-message-navigator-panel')).toBeTruthy();
     option.focus();
+    await afterAnimationFrame();
     downButton.focus();
     await fireEvent.focusIn(downButton);
     await waitFor(() => expect(screen.queryByTestId('chat-message-navigator-panel')).toBeNull());
@@ -261,6 +266,7 @@ describe('ChatMessageNavigator', () => {
       clientX: 10,
       clientY: 10,
     });
+    await afterAnimationFrame();
     downButton.focus();
     await fireEvent.focusIn(downButton);
     await waitFor(() => expect(screen.queryByTestId('chat-message-navigator-panel')).toBeNull());
@@ -311,6 +317,7 @@ describe('ChatMessageNavigator', () => {
       { type: 'pointerover', pointerType: 'mouse', x: 11, y: 10 },
     ]);
 
+    await afterAnimationFrame();
     downButton.focus();
     await fireEvent.focusIn(downButton);
     await waitFor(() => expect(screen.queryByTestId('chat-message-navigator-panel')).toBeNull());

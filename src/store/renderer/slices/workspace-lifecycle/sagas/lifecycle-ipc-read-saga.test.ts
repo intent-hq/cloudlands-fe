@@ -27,7 +27,11 @@ import { refreshAcceptChangesStatus } from '../../changes/changes-slice';
 import { CACHE_TTL_MS, fetchEditors } from '../../external-editors/external-editors-slice';
 import { loadGithubRepos } from '../../github-repos/github-repos-slice';
 import { loadKnownRepos } from '../../known-repos/known-repos-slice';
-import { workspaceMounted } from '../workspace-lifecycle-slice';
+import {
+  workspaceHydrationRequested,
+  workspaceMounted,
+  workspaceUnmounted,
+} from '../workspace-lifecycle-slice';
 import { lifecycleIpcReadSaga } from './lifecycle-ipc-read-saga';
 
 const WS = 'ws-ipc-lifecycle';
@@ -100,6 +104,12 @@ function start(
     lifecycleIpcReadSaga,
   );
   return { channel, actions, task };
+}
+
+function startHydrationHarness() {
+  return start(state(), (action, channel) => {
+    if (action.type === workspaceMounted.type) channel.put(action);
+  });
 }
 
 async function stop(task: ReturnType<typeof runSaga>) {
@@ -351,6 +361,59 @@ describe('lifecycleIpcReadSaga', () => {
     await settle();
 
     expect(run.actions).toEqual(workspaceMountFanOut(WS));
+    await stop(run.task);
+  });
+
+  it('hydrates the first workspace visit and coalesces a revisit in the same session', async () => {
+    const run = startHydrationHarness();
+    run.channel.put(workspaceHydrationRequested(WS));
+    await settle();
+    run.channel.put(workspaceHydrationRequested(WS));
+    await settle();
+
+    expect(run.actions).toEqual([workspaceMounted(WS), ...workspaceMountFanOut(WS)]);
+    await stop(run.task);
+  });
+
+  it('permits fresh hydration after the workspace session is closed and reopened', async () => {
+    const run = startHydrationHarness();
+    run.channel.put(workspaceHydrationRequested(WS));
+    await settle();
+    run.channel.put(workspaceUnmounted(WS));
+    await settle();
+    run.channel.put(workspaceHydrationRequested(WS));
+    await settle();
+
+    expect(run.actions).toEqual([
+      workspaceMounted(WS),
+      ...workspaceMountFanOut(WS),
+      workspaceMounted(WS),
+      ...workspaceMountFanOut(WS),
+    ]);
+    await stop(run.task);
+  });
+
+  it('coalesces rapid repeated hydration triggers per workspace', async () => {
+    const secondWorkspaceId = 'ws-ipc-lifecycle-rapid-second';
+    const run = startHydrationHarness();
+    run.channel.put(workspaceHydrationRequested(WS));
+    run.channel.put(workspaceHydrationRequested(WS));
+    run.channel.put(workspaceHydrationRequested(secondWorkspaceId));
+    run.channel.put(workspaceHydrationRequested(WS));
+    await settle();
+
+    expect(run.actions.filter((action) => action.type === workspaceMounted.type)).toEqual([
+      workspaceMounted(WS),
+      workspaceMounted(secondWorkspaceId),
+    ]);
+    expect(run.actions.filter((action) => action.payload?.[0] === WS)).toEqual([
+      workspaceMounted(WS),
+      ...workspaceMountFanOut(WS),
+    ]);
+    expect(run.actions.filter((action) => action.payload?.[0] === secondWorkspaceId)).toEqual([
+      workspaceMounted(secondWorkspaceId),
+      ...workspaceMountFanOut(secondWorkspaceId),
+    ]);
     await stop(run.task);
   });
 

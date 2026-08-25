@@ -468,13 +468,34 @@ describe('SimpleRichInput action bar layout', () => {
     expect(screen.getByTestId('message-input').className).not.toContain('focus-within:ring-2');
   });
 
-  it('keeps the prompt surface transparent when edge-docked', () => {
+  it('uses the nested sidebar surface only when edge-docked', () => {
     render(SimpleRichInput, {
       props: { value: '', contextItems: [], edgeDocked: true },
     });
 
-    expect(screen.getByTestId('message-input').className).toContain('bg-transparent');
-    expect(screen.getByTestId('message-input').className).not.toContain('bg-card');
+    const edgeDockedInput = screen.getByTestId('message-input');
+    expect(edgeDockedInput.className).toContain('rounded-lg');
+    expect(edgeDockedInput.className).toContain('border-0');
+    expect(edgeDockedInput.className).toContain('bg-sidebar');
+    expect(edgeDockedInput.className).not.toContain('bg-transparent');
+    expect(document.querySelector('[data-chat-input-action-bar]')?.className).toContain(
+      'flex-wrap',
+    );
+    expect(document.querySelector('[data-chat-input-submit-actions]')?.className).toContain(
+      'justify-end',
+    );
+
+    cleanup();
+    render(SimpleRichInput, { props: { value: '', contextItems: [] } });
+    const standaloneInput = screen.getByTestId('message-input');
+    expect(standaloneInput.className).toContain('border-border');
+    expect(standaloneInput.className).not.toContain('bg-sidebar');
+    expect(document.querySelector('[data-chat-input-action-bar]')?.className).not.toContain(
+      'flex-wrap',
+    );
+    expect(document.querySelector('[data-chat-input-submit-actions]')?.className).toContain(
+      'shrink-0',
+    );
   });
 });
 
@@ -1780,9 +1801,9 @@ describe('SimpleRichInput non-image attachment placement (unified flow)', () => 
     expect(screen.getByTestId('attachment-retry')).toBeTruthy();
   });
 
-  it('still rejects oversized images with the too-large toast (inline limit kept)', async () => {
+  it('still rejects images over the 30 MiB reference cap with the too-large toast (monorepo#3338)', async () => {
     render(SimpleRichInput, { props: baseProps() });
-    await dropFiles([makeFile('huge.png', 'image/png', 12 * 1024 * 1024)]);
+    await dropFiles([makeFile('huge.png', 'image/png', 31 * 1024 * 1024)]);
 
     const { toast } = await import('svelte-sonner');
     await waitFor(() => {

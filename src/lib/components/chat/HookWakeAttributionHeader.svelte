@@ -39,10 +39,10 @@
 </script>
 
 <div
-  class="type-caption flex items-center gap-1.5 rounded-md {className}"
+  class="type-caption flex items-center gap-1 rounded-md {className}"
   data-testid="hook-wake-attribution"
 >
-  <Fa icon={faBolt} class="w-3 h-3 text-ghost" />
+  <Fa icon={faBolt} class="mr-0.5 h-3 w-3 text-ghost" />
   <span
     class="text-foreground min-w-0 truncate font-medium"
     title={attribution.rawName || attribution.displayName}

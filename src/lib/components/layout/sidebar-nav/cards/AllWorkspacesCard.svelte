@@ -340,7 +340,8 @@
 
   function handleMarkAsRead(e: MouseEvent, workspaceId: string) {
     e.stopPropagation();
-    // Daemon round-trip (`workspace.markSeen`, §5.1): the resulting
+    // Explicit mark-all gesture (`workspace.markSeen`, §5.1): the daemon marks
+    // every top-level agent conversation seen and the resulting
     // `workspace:attention-changed` event clears the dot on all clients.
     markWorkspaceSeen(workspaceId);
   }

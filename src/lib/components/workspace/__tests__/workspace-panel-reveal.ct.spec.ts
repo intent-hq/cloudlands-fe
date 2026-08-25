@@ -306,8 +306,8 @@ test('updates geometry for fit, overflow, scroll, resize, open, close, and reord
 });
 
 for (const route of [
-  { name: 'file', trigger: '[data-open-file]', expectedPanelCount: '2' },
-  { name: 'note', trigger: '[data-open-note]', expectedPanelCount: '2' },
+  { name: 'file', trigger: '[data-open-file]', expectedPanelCount: '3' },
+  { name: 'note', trigger: '[data-open-note]', expectedPanelCount: '3' },
   { name: 'agent', trigger: '[data-open-agent]', expectedPanelCount: '3' },
   { name: 'changes', trigger: '[data-open-changes]', expectedPanelCount: '2' },
 ]) {

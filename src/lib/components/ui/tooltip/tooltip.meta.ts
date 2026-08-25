@@ -56,7 +56,6 @@ export const tooltipMetadata = parseUiComponentMetadata({
     'src/lib/components/layout/WindowTitleBar.svelte',
     'src/lib/components/layout/panel-system/PanelLayoutHeader.svelte',
     'src/lib/components/layout/panel-system/PanelTabBar.svelte',
-    'src/lib/components/layout/sidebar-nav/SidebarNavHoverCard.svelte',
     'src/lib/components/layout/sidebar-nav/SidebarPanel.svelte',
     'src/lib/components/layout/sidebar-nav/cards/ChiefCard.svelte',
     'src/lib/components/modals/PullConflictDialog.svelte',

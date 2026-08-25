@@ -82,7 +82,7 @@ describe('PanelEmptyState', () => {
     await fireEvent.click(newPanel);
 
     expect(layoutManager.splitPanel).toHaveBeenCalledWith('panel-1', 'horizontal');
-    expect(screen.queryByText('Split Panel Horizontally')).toBeNull();
+    expect(screen.queryByText('Create Column to Right')).toBeNull();
   });
 
   it('runs the available tool and help actions', async () => {

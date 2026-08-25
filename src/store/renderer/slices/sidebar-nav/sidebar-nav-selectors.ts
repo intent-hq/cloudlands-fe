@@ -5,11 +5,7 @@
 import { store } from '../../store';
 import type { StoreState } from '../../types';
 import { extractAllContent, type AgentMessage, type AgentSession } from '$shared/types';
-import {
-  CHIEF_WORKSPACE_ID,
-  type ChiefThreadPreview,
-  type SidebarNavItem,
-} from './sidebar-nav-types';
+import { CHIEF_WORKSPACE_ID, type ChiefThreadPreview } from './sidebar-nav-types';
 import { getChiefThreadTitle } from './chief-thread-title';
 import { m } from '$shared/paraglide/messages.js';
 import {
@@ -92,8 +88,6 @@ function toChiefThreadPreview(session: AgentSession): ChiefThreadPreview {
 }
 
 // ── Direct state selectors ──
-export const selectExpandedItem = store.createSelector((state) => state.sidebarNav.expandedItem);
-
 export const selectIsCardPinned = store.createSelector((state) => state.sidebarNav.isCardPinned);
 
 export const selectPanelItem = store.createSelector((state) => state.sidebarNav.panelItem);
@@ -150,17 +144,6 @@ export const selectStatsOverlayOpen = store.createSelector(
 );
 
 // ── Derived selectors ──
-
-/** The active visible card (either hovered or expanded) */
-export const selectActiveCard = store.createSelector((state): SidebarNavItem | null => {
-  const { expandedItem, hoveredItem } = state.sidebarNav;
-  return expandedItem ?? hoveredItem;
-});
-
-/** Whether any context menu is open (prevents hover card auto-close) */
-export const selectContextMenuOpen = store.createSelector(
-  (state) => state.sidebarNav.contextMenuOpenCount > 0,
-);
 
 /** Latest Chief thread preview for the sidebar hover card. */
 export const selectChiefThreadPreview = store.createSelector((state): ChiefThreadPreview | null => {

@@ -47,6 +47,8 @@ test('matches adjacent tool-row geometry and keeps the explicit 8px top margin',
                 leadingCenterY: (leadingBox.top + leadingBox.bottom) / 2 - box.top,
                 iconCenterX: (iconBox.left + iconBox.right) / 2,
                 iconCenterY: (iconBox.top + iconBox.bottom) / 2 - box.top,
+                iconWidth: iconBox.width,
+                iconHeight: iconBox.height,
                 labelStart: summaryBox.left,
                 baseline,
                 marginTop: style.marginTop,
@@ -77,7 +79,7 @@ test('matches adjacent tool-row geometry and keeps the explicit 8px top margin',
                 thinkingRow,
                 '[data-operational-leading]',
                 '[data-operational-summary]',
-                '.legacy-spinner-track',
+                '[data-slot="intent-mark-loader"]',
               ),
               after: measure(
                 afterRow,
@@ -93,10 +95,10 @@ test('matches adjacent tool-row geometry and keeps the explicit 8px top margin',
                 thinkingRow.getBoundingClientRect().bottom,
               text: thinkingRow.textContent,
               primaryColor: getComputedStyle(
-                root.querySelector('[data-testid="streaming-status-thinking"]')!,
+                root.querySelector('[data-testid="streaming-status-thinking-label"]')!,
               ).color,
               secondaryColor: getComputedStyle(
-                root.querySelector('[data-testid="streaming-status-lifecycle"]')!,
+                root.querySelector('[data-testid="streaming-status-phase"]')!,
               ).color,
             };
           });
@@ -110,6 +112,8 @@ test('matches adjacent tool-row geometry and keeps the explicit 8px top margin',
           expect(geometry.thinking.paddingInline).toEqual(['8px', '8px']);
           expect(geometry.thinking.columnGap).toBe('8px');
           expect(geometry.thinking.summary).toEqual(['0px', 'hidden', 'ellipsis', 'nowrap']);
+          expect(geometry.thinking.iconWidth).toBeCloseTo(16 * zoom, 1);
+          expect(geometry.thinking.iconHeight).toBeCloseTo(16 * zoom, 1);
           expect(geometry.text).toContain('Thinking');
           expect(geometry.text).toContain('Sent prompt…');
           expect(geometry.text).not.toContain('·');
@@ -132,44 +136,67 @@ test('matches adjacent tool-row geometry and keeps the explicit 8px top margin',
             }
           }
 
-          await expect(component.getByRole('status')).toHaveAccessibleName('Thinking');
-          await expect(component.getByRole('status')).toHaveAttribute('aria-live', 'polite');
-          await expect(component.getByRole('status')).toHaveAttribute('aria-atomic', 'true');
+          const mark = component.getByRole('status', { name: 'Loading' });
+          await expect(mark).toHaveAttribute('viewBox', '0 0 256 208');
+          await expect(mark.locator('[data-mark-arm]')).toHaveCount(5);
+          const semanticColors = await mark.evaluate((node) => ({
+            color: getComputedStyle(node).color,
+            stroke: getComputedStyle(node.querySelector('[data-mark-arm]')!).stroke,
+          }));
+          expect(semanticColors.stroke).toBe(semanticColors.color);
         }
       }
     }
   }
 });
 
-test('preserves the square animation and disables it for reduced motion', async ({
+test('runs the mark only while active and holds neutral for reduced motion', async ({
   mount,
   page,
 }) => {
   const component = await mount(StreamingTypingOperationalGeometryHost);
-  const square = component.locator('.legacy-spinner-square-0');
-  const motion = await square.evaluate((node) => {
-    const animation = node.getAnimations()[0];
-    if (!animation) return null;
-    animation.pause();
-    animation.currentTime = 0;
-    const startTransform = getComputedStyle(node).transform;
-    animation.currentTime = 480;
-    const middleTransform = getComputedStyle(node).transform;
-    return { startTransform, middleTransform };
-  });
+  const mark = component.locator('[data-slot="intent-mark-loader"]');
+  await expect(mark).toHaveAttribute('data-motion-state', 'playing');
+  expect(
+    await mark.evaluate(
+      (node) =>
+        node
+          .getAnimations({ subtree: true })
+          .filter((animation) => animation.effect?.getTiming().iterations === Infinity).length,
+    ),
+  ).toBe(5);
 
-  expect(motion).not.toBeNull();
-  expect(motion?.startTransform).not.toBe(motion?.middleTransform);
+  await mark.evaluate(
+    (node) => ((window as typeof window & { thinkingRoot?: Element }).thinkingRoot = node),
+  );
+  await component.update({ props: { mode: 'permission' } });
+  await expect(mark).toHaveAttribute('data-playing', 'false');
+  await expect(mark).toHaveAttribute('data-motion-state', 'settling');
+  await component.update({ props: { mode: 'streaming' } });
+  await expect(mark).toHaveAttribute('data-playing', 'true');
+  await expect(mark).toHaveAttribute('data-motion-state', 'playing');
+  expect(
+    await mark.evaluate(
+      (node) => (window as typeof window & { thinkingRoot?: Element }).thinkingRoot === node,
+    ),
+  ).toBe(true);
+
+  await component.update({ props: { mode: 'error' } });
+  await expect(mark).toHaveAttribute('data-motion-state', 'settling');
+  await expect(component.getByRole('alert')).toContainText('Provider stopped the response');
+  await expect(mark).toHaveCount(0);
+  await component.update({ props: { mode: 'processing' } });
+  await expect(component.locator('[data-slot="intent-mark-loader"]')).toHaveAttribute(
+    'data-motion-state',
+    'playing',
+  );
 
   await page.emulateMedia({ reducedMotion: 'reduce' });
-  await expect(square).toHaveCSS('animation-name', 'none');
-  await expect(square).toHaveCSS('transform', 'none');
-  await expect(component.locator('.legacy-spinner-square')).toHaveCount(3);
-  for (const staticSquare of await component.locator('.legacy-spinner-square').all()) {
-    const box = await staticSquare.boundingBox();
-    expect(box?.width).toBeGreaterThan(0);
-    expect(box?.height).toBeGreaterThan(0);
-  }
+  const reducedMark = component.locator('[data-slot="intent-mark-loader"]');
+  await expect(reducedMark).toHaveAttribute('data-motion-state', 'neutral');
+  expect(await reducedMark.evaluate((node) => node.getAnimations({ subtree: true }).length)).toBe(
+    0,
+  );
 });
 
 test('updates localized phases, omits missing detail, and truncates without overflow', async ({
@@ -184,10 +211,9 @@ test('updates localized phases, omits missing detail, and truncates without over
     },
   });
 
-  await expect(component.getByTestId('streaming-status-thinking')).toHaveText('Thinking');
-  const lifecycle = component.getByTestId('streaming-status-lifecycle');
+  await expect(component.getByTestId('streaming-status-thinking-label')).toHaveText('Thinking');
+  const lifecycle = component.getByTestId('streaming-status-phase');
   await expect(lifecycle).toHaveText('Solicitud enviada al modelo…');
-  await expect(lifecycle).toHaveAttribute('title', 'Solicitud enviada al modelo…');
 
   const truncation = await lifecycle.evaluate((node) => {
     const style = getComputedStyle(node);
@@ -216,13 +242,13 @@ test('updates localized phases, omits missing detail, and truncates without over
       zoom: 2,
     },
   });
-  await expect(component.getByTestId('streaming-status-lifecycle')).toHaveText(
+  await expect(component.getByTestId('streaming-status-phase')).toHaveText(
     'Transmitiendo respuesta…',
   );
 
   await component.update({
     props: { mode: 'streaming', phaseMessage: null, width: 160, zoom: 2 },
   });
-  await expect(component.getByTestId('streaming-status-lifecycle')).toHaveCount(0);
-  await expect(component.getByRole('status')).toHaveAccessibleName('Thinking');
+  await expect(component.getByTestId('streaming-status-phase')).toHaveCount(0);
+  await expect(component.getByRole('status')).toHaveAccessibleName('Loading');
 });

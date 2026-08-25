@@ -797,7 +797,12 @@ export class UnifiedAgentFactory {
     agent: AgentSession,
     message: string,
     contextReferences?: any[],
-    imageBlocks?: Array<{ type: 'image'; data: string; mimeType: string }>,
+    imageBlocks?: Array<{
+      type: 'image';
+      data?: string;
+      mimeType?: string;
+      attachmentId?: string;
+    }>,
     userAppMessageId?: string,
   ): Promise<void> {
     logger.info('sendInitialMessage called', {
@@ -836,6 +841,19 @@ export class UnifiedAgentFactory {
 
       // Send message via the BackendTransport seam (only in frontend)
       if (!isBackend) {
+        // Pre-upload inline images and swap to attachment-reference blocks
+        // (monorepo#3338) so the send frame stays constant-size. The chief
+        // workspace is virtual (no attachment registry) and keeps the
+        // inline arm. A placement failure throws into the catch below.
+        let wireImageBlocks = imageBlocks;
+        if (imageBlocks?.length && agent.workspaceId !== CHIEF_WORKSPACE_ID) {
+          const { toImageReferenceBlocks } =
+            await import('$lib/components/chat/input/image-attachment-placement');
+          wireImageBlocks = await toImageReferenceBlocks(
+            agent.workspaceId,
+            imageBlocks as import('$lib/components/chat/input/image-attachment-placement').WireImageBlock[],
+          );
+        }
         // PROTOCOL.md §5.5 `agent.sendMessage` — one direct daemon call over
         // the BackendTransport seam. Streaming/terminal state arrives via the
         // daemon events bridge (events.subscribe → Redux); legacy-only fields
@@ -848,7 +866,7 @@ export class UnifiedAgentFactory {
           workspaceId: agent.workspaceId,
           content: message.trim(),
           contextReferences: contextReferences || [],
-          imageBlocks,
+          imageBlocks: wireImageBlocks,
           userAppMessageId,
         });
       }

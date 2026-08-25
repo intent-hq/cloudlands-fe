@@ -1,5 +1,5 @@
 import { cleanup, render, screen } from '@testing-library/svelte';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { AgentStatus } from '$shared/types/agent.types';
@@ -30,6 +30,30 @@ const tabSource = readFileSync(
   resolve(process.cwd(), 'src/features/layout/components/panel-tabs/Tab.svelte'),
   'utf8',
 );
+const settingsSidebarSource = readFileSync(
+  resolve(process.cwd(), 'src/lib/components/settings/AIBehaviorSidebar.svelte'),
+  'utf8',
+);
+
+function productAvatarTags(): Array<{ path: string; tag: string }> {
+  const root = resolve(process.cwd(), 'src');
+  return readdirSync(root, { recursive: true, withFileTypes: true })
+    .filter(
+      (entry) =>
+        entry.isFile() &&
+        entry.name.endsWith('.svelte') &&
+        !entry.parentPath.includes('/__tests__/') &&
+        !entry.parentPath.includes('/mocks/'),
+    )
+    .flatMap((entry) => {
+      const path = resolve(entry.parentPath, entry.name);
+      const contents = readFileSync(path, 'utf8');
+      return Array.from(contents.matchAll(/<AgentAvatar(?:WithState)?\b[^>]*>/gs), ([tag]) => ({
+        path,
+        tag,
+      }));
+    });
+}
 
 type Rgb = readonly [number, number, number];
 
@@ -139,7 +163,10 @@ describe('AgentAvatarWithState', () => {
     expect(source).toContain('--agent-avatar-background-forced: Highlight');
     expect(source).toContain('--agent-avatar-background-forced: Field');
     expect(source).toContain('--agent-avatar-background-forced: Mark');
-    expect(source).toContain('color: #080808');
+    expect(source).toContain('color: hsl(var(--agent-avatar-foreground))');
+    expect(tokenSource).toContain('--theme-light-agent-avatar-foreground:');
+    expect(tokenSource).toContain('--theme-dark-agent-avatar-foreground:');
+    expect(tokenSource).toContain('--agent-avatar-foreground:');
     expect(source.match(/^\s+color:/gm)).toHaveLength(4);
     expect(source).toMatch(/transition: background-color/);
     expect(source).toContain('@media (forced-colors: active)');
@@ -239,6 +266,16 @@ describe('AgentAvatarWithState', () => {
     expect(tabSource).toContain('<AgentAvatarStack');
     expect(tabSource).toContain('variant="emphasized"');
     expect(tabSource).toContain('overflowId=');
+  });
+
+  it('keeps visible product consumers off zero-clear-space canonical numeric sizes', () => {
+    expect(avatarSource).toContain('.agent-avatar--legacy {\n    padding: 1px;');
+    expect(avatarSource).not.toContain('padding: 0;');
+    expect(settingsSidebarSource).toContain('variant="standard"');
+    expect(settingsSidebarSource).not.toMatch(/<AgentAvatar[^>]*\bsize=/s);
+    for (const { path, tag } of productAvatarTags()) {
+      expect(tag, path).not.toMatch(/\bsize=\{(?:16|20|24|40)\}/);
+    }
   });
 
   it('uses the card-stack rounded-square silhouette for every overlap layer', () => {

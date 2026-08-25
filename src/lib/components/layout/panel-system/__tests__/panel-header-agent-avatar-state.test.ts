@@ -1,74 +1,10 @@
 /** @vitest-environment jsdom */
-import { cleanup, render, waitFor } from '@testing-library/svelte';
+import { cleanup, render } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 type Listener<T> = (value: T) => void;
 
-const mocks = vi.hoisted(() => {
-  function channel<T>(initial: T) {
-    let value = initial;
-    const listeners = new Set<Listener<T>>();
-    return {
-      subscribe(run: Listener<T>) {
-        listeners.add(run);
-        run(value);
-        return () => listeners.delete(run);
-      },
-      set(next: T) {
-        value = next;
-        listeners.forEach((run) => run(value));
-      },
-      get: () => value,
-    };
-  }
-
-  const sessions = channel<Record<string, any>>({});
-  const responding = channel<Record<string, boolean>>({});
-  const blockedWaiting = channel<Record<string, boolean>>({});
-  const attention = channel<Record<string, any>>({});
-  const permissions = channel<any[]>([]);
-  const agents = channel<any[]>([]);
-
-  function keyed<T>(
-    keyStore: { subscribe: (run: Listener<string>) => () => void },
-    source: { subscribe: (run: Listener<Record<string, T>>) => () => void },
-  ) {
-    return {
-      subscribe(run: Listener<T | undefined>) {
-        let key = '';
-        let values: Record<string, T> = {};
-        const emit = () => run(values[key]);
-        const unsubscribeKey = keyStore.subscribe((next) => {
-          key = next;
-          emit();
-        });
-        const unsubscribeSource = source.subscribe((next) => {
-          values = next;
-          emit();
-        });
-        return () => {
-          unsubscribeKey();
-          unsubscribeSource();
-        };
-      },
-    };
-  }
-
-  const dispatch = vi.fn((action: any) => {
-    const [agentId, value] = action.payload ?? [];
-    if (action.type === 'test/session') sessions.set({ ...sessions.get(), [agentId]: value });
-    if (action.type === 'test/responding') {
-      responding.set({ ...responding.get(), [agentId]: value });
-    }
-    if (action.type === 'test/blocked-waiting') {
-      blockedWaiting.set({ ...blockedWaiting.get(), [agentId]: value });
-    }
-    if (action.type === 'test/attention') attention.set({ ...attention.get(), [agentId]: value });
-    if (action.type === 'test/permissions') permissions.set(value);
-  });
-
-  return { agents, attention, blockedWaiting, dispatch, keyed, permissions, responding, sessions };
-});
+const mocks = vi.hoisted(() => ({ dispatch: vi.fn() }));
 
 const constantReadable = <T>(value: T) => ({
   subscribe(run: Listener<T>) {
@@ -111,16 +47,16 @@ vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
   selectIsWorkspaceHostLocal: () => constantReadable(true),
 }));
 vi.mock('$store/renderer/slices/workspace-agents/workspace-agents-selectors', () => ({
-  selectAllWorkspaceAgents: () => mocks.agents,
+  selectAllWorkspaceAgents: () => constantReadable([]),
 }));
 vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
-  selectAgentSession: (key: any) => mocks.keyed(key, mocks.sessions),
-  selectAgentIsResponding: (key: any) => mocks.keyed(key, mocks.responding),
-  selectAgentIsBlockedWaiting: (key: any) => mocks.keyed(key, mocks.blockedWaiting),
-  selectAgentAttentionRequest: (key: any) => mocks.keyed(key, mocks.attention),
+  selectAgentSession: () => constantReadable(null),
+  selectAgentIsResponding: () => constantReadable(false),
+  selectAgentIsBlockedWaiting: () => constantReadable(false),
+  selectAgentAttentionRequest: () => constantReadable(null),
 }));
 vi.mock('$store/renderer/slices/permission/permission-selectors', () => ({
-  selectPermissionRequests: () => mocks.permissions,
+  selectPermissionRequests: () => constantReadable([]),
 }));
 vi.mock('$lib/components/ui/toast', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 vi.mock('$features/agent/components/agent-avatar/AgentAvatar.svelte', async () => ({
@@ -136,21 +72,24 @@ vi.mock('svelte-fa', async () => ({
 }));
 
 import PanelTabBar from '../PanelTabBar.svelte';
-import { store as appStore } from '$store/renderer/store';
-
 const tabs = [
   { id: 'tab-a', type: 'agent' as const, title: 'Agent A', agentId: 'agent-a', closable: true },
   { id: 'tab-b', type: 'agent' as const, title: 'Agent B', agentId: 'agent-b', closable: true },
 ];
 
-function session(id: string, changes: Record<string, unknown> = {}) {
-  return { id, name: id, status: 'idle', messages: [], ...changes };
+function expectChatBubbleIdentity(root: ParentNode) {
+  expect(root.querySelector('[data-icon="comment"]')).not.toBeNull();
+  expect(root.querySelector('[data-testid="mock-avatar"]')).toBeNull();
+  expect(root.querySelector('[data-agent-avatar-surface]')).toBeNull();
 }
 
-function stateAvatar(container: HTMLElement) {
-  return container.querySelector<HTMLElement>(
-    '[data-testid="panel-header-agent-avatar-slot"] [data-testid="mock-avatar"]',
-  )!;
+function expectHeaderChatTextIdentity(root: ParentNode) {
+  const icon = root.querySelector('[data-panel-agent-chat-text-glyph]');
+  expect(icon).not.toBeNull();
+  expect(icon?.getAttribute('transform')).toBe('scale(-1, 1)');
+  expect(root.querySelector('[data-icon="comment"]')).toBeNull();
+  expect(root.querySelector('[data-testid="mock-avatar"]')).toBeNull();
+  expect(root.querySelector('[data-agent-avatar-surface]')).toBeNull();
 }
 
 beforeEach(() => {
@@ -164,12 +103,6 @@ beforeEach(() => {
   );
   Element.prototype.scrollIntoView = vi.fn();
   mocks.dispatch.mockClear();
-  mocks.agents.set(tabs.map((tab) => session(tab.agentId)));
-  mocks.sessions.set({ 'agent-a': session('agent-a'), 'agent-b': session('agent-b') });
-  mocks.responding.set({});
-  mocks.blockedWaiting.set({});
-  mocks.attention.set({});
-  mocks.permissions.set([]);
   document.documentElement.className = '';
 });
 
@@ -178,135 +111,57 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-describe('panel header agent avatar state', () => {
-  it('uses the named emphasized surface and reacts without remounting', async () => {
+describe('panel header agent identity', () => {
+  it('uses a chat bubble instead of an avatar-state surface in the tabless header', () => {
     const { container } = render(PanelTabBar, {
-      props: { tabs, activeTabId: 'tab-a', panelId: 'panel-1', workspaceId: 'workspace-1' },
+      props: {
+        tabs: [tabs[0]],
+        activeTabId: 'tab-a',
+        panelId: 'panel-1',
+        workspaceId: 'workspace-1',
+      },
     });
-    const avatar = stateAvatar(container);
-    expect(avatar.dataset.state).toBe('idle');
-    expect(avatar.dataset.avatarVariant).toBe('emphasized');
-    expect(avatar.hasAttribute('data-agent-avatar-surface')).toBe(true);
+    const header = container.querySelector('[data-panel-tabless-header]')!;
+    const activeIdentity = header.querySelector('[data-panel-agent-header-identity]')!;
+    const leadingSurface = activeIdentity.querySelector(
+      '[data-testid="panel-header-agent-avatar-slot"]',
+    )!;
 
-    appStore.dispatch({
-      type: 'test/session',
-      payload: ['agent-a', session('agent-a', { status: 'active', isResponding: true })],
-    });
-    await waitFor(() => expect(avatar.dataset.state).toBe('running'));
-
-    appStore.dispatch({ type: 'test/session', payload: ['agent-a', session('agent-a')] });
-    await waitFor(() => expect(avatar.dataset.state).toBe('idle'));
-    expect(stateAvatar(container)).toBe(avatar);
+    expect(header.querySelector('[data-panel-agent-header-identity]')).not.toBeNull();
+    expect(activeIdentity.textContent).toContain('Agent A');
+    expect(leadingSurface.hasAttribute('data-panel-header-leading-surface')).toBe(true);
+    expectHeaderChatTextIdentity(leadingSurface);
   });
 
-  it('switches the reactive key and preserves wait, failure, permission, and attention precedence', async () => {
-    appStore.dispatch({
-      type: 'test/session',
-      payload: ['agent-b', session('agent-b', { status: 'active', isResponding: true })],
-    });
+  it('updates the chat-bubble identity when the active agent pane changes', async () => {
     const view = render(PanelTabBar, {
-      props: { tabs, activeTabId: 'tab-a', panelId: 'panel-1', workspaceId: 'workspace-1' },
+      props: {
+        tabs: [tabs[0]],
+        activeTabId: 'tab-a',
+        panelId: 'panel-1',
+        workspaceId: 'workspace-1',
+      },
     });
-    expect(stateAvatar(view.container).dataset.agentId).toBe('agent-a');
 
     await view.rerender({
-      tabs,
+      tabs: [tabs[1]],
       activeTabId: 'tab-b',
       panelId: 'panel-1',
       workspaceId: 'workspace-1',
     });
-    await waitFor(() => expect(stateAvatar(view.container).dataset.state).toBe('running'));
-
-    appStore.dispatch({
-      type: 'test/session',
-      payload: ['agent-b', session('agent-b', { status: 'Waiting', isResponding: false })],
-    });
-    await waitFor(() => expect(stateAvatar(view.container).dataset.state).toBe('waiting'));
-
-    appStore.dispatch({
-      type: 'test/session',
-      payload: ['agent-b', session('agent-b', { status: 'error' })],
-    });
-    await waitFor(() => expect(stateAvatar(view.container).dataset.state).toBe('failed'));
-
-    appStore.dispatch({ type: 'test/session', payload: ['agent-b', session('agent-b')] });
-    appStore.dispatch({ type: 'test/permissions', payload: [null, [{ sessionId: 'agent-b' }]] });
-    await waitFor(() => expect(stateAvatar(view.container).dataset.state).toBe('needs-permission'));
-
-    appStore.dispatch({ type: 'test/permissions', payload: [null, []] });
-    appStore.dispatch({
-      type: 'test/session',
-      payload: [
-        'agent-b',
-        session('agent-b', {
-          attentionRequestKind: 'blocker',
-          attentionRequestReason: 'Blocked',
-        }),
-      ],
-    });
-    await waitFor(() =>
-      expect(stateAvatar(view.container).dataset.state).toBe('attention-blocker'),
-    );
+    const activeIdentity = view.container.querySelector('[data-panel-agent-header-identity]')!;
+    expect(activeIdentity.textContent).toContain('Agent B');
+    expectHeaderChatTextIdentity(activeIdentity);
   });
 
-  it.each([
-    ['responding', { status: 'active', isResponding: true }, 'running'],
-    [
-      'live AgentLite tool payload',
-      {
-        status: 'active',
-        isActive: true,
-        isResponding: true,
-        isWaitingOnTool: true,
-        turnInFlight: true,
-        lastStreamActivityAt: '2026-08-17T12:04:59.000Z',
-        lastToolUse: { name: 'view', status: 'running' },
-      },
-      'running',
-    ],
-    ['in-flight tool', { status: 'Waiting', isWaitingOnTool: true }, 'running'],
-    ['blocked wait', { status: 'Waiting' }, 'waiting'],
-    [
-      'active orchestration peer wait',
-      { status: 'active', isResponding: true, isWaitingForOtherAgents: true },
-      'running',
-    ],
-    ['settled peer wait', { status: 'idle', isWaitingForOtherAgents: true }, 'waiting'],
-    ['stale Waiting status', { status: 'Waiting', isResponding: true }, 'running'],
-  ])('renders %s through the canonical panel-header state', async (_name, fields, expected) => {
+  it('uses chat bubbles without avatar-state surfaces for agent rows in tabs', () => {
     const { container } = render(PanelTabBar, {
       props: { tabs, activeTabId: 'tab-a', panelId: 'panel-1', workspaceId: 'workspace-1' },
     });
+    const rows = Array.from(container.querySelectorAll('[data-tab-id]'));
 
-    appStore.dispatch({
-      type: 'test/session',
-      payload: ['agent-a', session('agent-a', fields)],
-    });
-
-    await waitFor(() => expect(stateAvatar(container).dataset.state).toBe(expected));
+    expect(rows.map((row) => row.getAttribute('data-tab-id'))).toEqual(['tab-a', 'tab-b']);
+    rows.forEach(expectChatBubbleIdentity);
+    expect(container.querySelector('[data-testid="pane-stack-selector-trigger"]')).toBeNull();
   });
-
-  it.each([{ theme: 'light' }, { theme: 'dark' }])(
-    'keeps a centered 24px surface at narrow 200% in $theme',
-    async ({ theme }) => {
-      document.documentElement.className = theme === 'dark' ? 'dark' : '';
-      const { container } = render(PanelTabBar, {
-        props: { tabs, activeTabId: 'tab-a', panelId: 'panel-1', workspaceId: 'workspace-1' },
-      });
-      container.style.width = '280px';
-      container.style.zoom = '2';
-      const slot = container.querySelector<HTMLElement>(
-        '[data-testid="panel-header-agent-avatar-slot"]',
-      )!;
-      const avatar = stateAvatar(container);
-      expect(slot.className).toContain('size-6');
-      expect(slot.className).toContain('items-center');
-      expect(slot.className).toContain('justify-center');
-      expect(avatar.dataset.avatarVariant).toBe('emphasized');
-      expect(avatar.hasAttribute('data-agent-avatar-surface')).toBe(true);
-      expect(avatar.style.width).toBe('24px');
-      expect(avatar.style.height).toBe('24px');
-      expect(slot.className).toContain('self-center');
-    },
-  );
 });

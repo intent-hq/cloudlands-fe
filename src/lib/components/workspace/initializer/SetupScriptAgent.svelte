@@ -106,7 +106,7 @@
   <!-- Header -->
   <div class="flex items-center justify-between px-3 py-2 border-b border-border bg-muted/30">
     <div class="flex items-center gap-2">
-      <AgentAvatar size={20} {agentId} />
+      <AgentAvatar variant="standard" {agentId} />
       <span class="text-sm font-medium">{m.workspace_setupScriptAgent_title()}</span>
       {#if isGenerating}
         <div class="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>

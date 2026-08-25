@@ -43,8 +43,8 @@
     notes: Note[];
     workspaceId: string;
     selectedNoteId?: string | null;
-    onOpenNote?: (noteId: string) => void;
-    onOpenAgent?: (agentId: string) => void;
+    onOpenNote?: (noteId: string, event?: MouseEvent | KeyboardEvent) => void;
+    onOpenAgent?: (agentId: string, event?: MouseEvent | KeyboardEvent) => void;
     onReorderNotes?: (noteIds: string[]) => void;
     onCreateNote?: () => void;
     loading?: boolean;

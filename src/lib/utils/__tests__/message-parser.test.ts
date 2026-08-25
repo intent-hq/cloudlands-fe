@@ -781,6 +781,32 @@ not valid json
       });
     });
   });
+
+  describe('markdown blockquotes', () => {
+    it('keeps blockquote lines in a single text block (no command hijacking)', () => {
+      const input = '> Hi Mark,\n>\n> Apologies for the delay.';
+      const result = parseAgentMessage(input);
+      expect(result).toHaveLength(1);
+      expect(result[0].type).toBe('text');
+      expect(result[0].content).toBe('> Hi Mark,\n>\n> Apologies for the delay.');
+    });
+
+    it('keeps blockquotes inside surrounding prose as text', () => {
+      const input = 'They wrote:\n\n> This is a quote.\n\nEnd of message.';
+      const result = parseAgentMessage(input);
+      expect(result.every((b) => b.type === 'text')).toBe(true);
+      const combined = result.map((b) => b.content).join('\n\n');
+      expect(combined).toContain('> This is a quote.');
+    });
+
+    it('still detects $-prefixed command lines', () => {
+      const input = '$ ls -la';
+      const result = parseAgentMessage(input);
+      expect(result).toHaveLength(1);
+      expect(result[0].type).toBe('command');
+      expect(result[0].metadata?.command).toBe('ls -la');
+    });
+  });
 });
 
 describe('parseSuggestedPrompts', () => {

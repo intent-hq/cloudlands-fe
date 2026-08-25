@@ -605,7 +605,7 @@
           <div class="p-3 space-y-2">
             <!-- Header with avatar and name -->
             <div class="flex items-center gap-2">
-              <AgentAvatar size={24} agentId={hoveredAgent.agentId} />
+              <AgentAvatar variant="emphasized" agentId={hoveredAgent.agentId} />
               <div class="flex-1 min-w-0">
                 <div class="font-medium text-sm truncate">{hoveredAgent.name}</div>
                 {#if hoveredAgent.specialist}

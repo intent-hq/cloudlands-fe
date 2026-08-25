@@ -230,6 +230,17 @@
           }),
         },
         {
+          label: 'Multiple PRs without icon tags',
+          description: 'Keeps every PR title, number, and status while omitting repeated icons.',
+          workspace: workspace('multiple-prs', 'Review related pull requests', {
+            pullRequests: [
+              pr({ number: 52, title: 'Open renderer update', status: PullRequestStatus.Open }),
+              pr({ number: 51, title: 'Merged daemon support', status: PullRequestStatus.Merged }),
+              pr({ number: 50, title: 'Closed prototype', status: PullRequestStatus.Closed }),
+            ],
+          }),
+        },
+        {
           label: 'Draft PR',
           description: 'Draft state overrides the base PR status.',
           workspace: workspace('draft-pr', 'Draft workspace update', {

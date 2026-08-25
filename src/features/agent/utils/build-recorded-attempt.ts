@@ -21,7 +21,12 @@ export function buildRecordedAttempt(
   options: {
     noteIds?: string[];
     model?: string;
-    imageBlocks?: Array<{ type: 'image'; data: string; mimeType: string }>;
+    imageBlocks?: Array<{
+      type: 'image';
+      data?: string;
+      mimeType?: string;
+      attachmentId?: string;
+    }>;
     fileBlocks?: Array<{
       type: 'file';
       attachmentId: string;
@@ -37,9 +42,7 @@ export function buildRecordedAttempt(
     ...(options.model !== undefined ? { model: options.model } : {}),
     ...(options.imageBlocks !== undefined ? { imageBlocks: options.imageBlocks } : {}),
     ...(options.fileBlocks !== undefined ? { fileBlocks: options.fileBlocks } : {}),
-    ...(options.messageMetadata !== undefined
-      ? { messageMetadata: options.messageMetadata }
-      : {}),
+    ...(options.messageMetadata !== undefined ? { messageMetadata: options.messageMetadata } : {}),
   };
   return {
     text,

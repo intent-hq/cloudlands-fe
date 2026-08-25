@@ -1,4 +1,5 @@
 import { m } from '$shared/paraglide/messages.js';
+import type { IntentMarkVariant } from '$lib/components/ui/indicators';
 
 /**
  * Format duration with human-readable units:
@@ -52,6 +53,23 @@ export interface StatusEvent {
   message: string;
   level: 'info' | 'warn' | 'error';
   timestamp: number;
+}
+
+const PULSE_PHASES = new Set(['launch', 'init', 'session-create', 'session-load', 'prompt']);
+const TWIST_PHASES = new Set(['tool-call', 'tool-waiting']);
+
+export function getLatestStatusEvent(statusEvents: readonly StatusEvent[]): StatusEvent | null {
+  let latest: StatusEvent | null = null;
+  for (const event of statusEvents) {
+    if (!latest || event.timestamp >= latest.timestamp) latest = event;
+  }
+  return latest;
+}
+
+export function getStatusMarkVariant(phase: string | null | undefined): IntentMarkVariant {
+  if (phase && PULSE_PHASES.has(phase)) return 'pulse';
+  if (phase && TWIST_PHASES.has(phase)) return 'twist';
+  return 'bloom';
 }
 
 /** Select the newest non-empty lifecycle message without trusting arrival order. */

@@ -11,9 +11,23 @@ const mocks = vi.hoisted(() => ({
   stop: vi.fn(),
   rename: vi.fn(),
   toastInfo: vi.fn(),
+  // Image pre-upload (monorepo#3338): default maps each inline block to a
+  // deterministic reference block; individual tests override to assert the
+  // failure path.
+  toImageReferenceBlocks: vi.fn(
+    async (_wsId: string, blocks: Array<{ attachmentId?: string; mimeType?: string }>) =>
+      blocks.map((block, i) => ({
+        type: 'image' as const,
+        attachmentId: block.attachmentId ?? `attach-${i}`,
+        ...(block.mimeType ? { mimeType: block.mimeType } : {}),
+      })),
+  ),
 }));
 vi.mock('$features/agent/agent-send', () => ({ sendMessage: mocks.send }));
 vi.mock('svelte-sonner', () => ({ toast: { info: mocks.toastInfo } }));
+vi.mock('$lib/components/chat/input/image-attachment-placement', () => ({
+  toImageReferenceBlocks: mocks.toImageReferenceBlocks,
+}));
 vi.mock('$lib/client', () => ({
   appClient: {
     agents: {
@@ -222,13 +236,18 @@ describe('chatSendSaga', () => {
     await settle();
 
     expect(mocks.send).toHaveBeenCalledTimes(1);
+    // Inline image blocks are pre-uploaded and swapped to attachment
+    // references before the wire call (monorepo#3338).
+    expect(mocks.toImageReferenceBlocks).toHaveBeenCalledWith(WS, [
+      { type: 'image', data: 'abc', mimeType: 'image/png' },
+    ]);
     expect(mocks.send).toHaveBeenNthCalledWith(
       1,
       AGENT,
       'first',
       expect.objectContaining({ id: WS }),
       {
-        imageBlocks: [{ type: 'image', data: 'abc', mimeType: 'image/png' }],
+        imageBlocks: [{ type: 'image', attachmentId: 'attach-0', mimeType: 'image/png' }],
         noteIds: ['note-1'],
         userAppMessageId: 'app-message-first',
         priority: 'interrupt',
@@ -457,9 +476,7 @@ describe('chatSendSaga', () => {
     // record (the way the sendQueuedNow failure paths do) — that would break
     // the failure banner's "Try again".
     expect(run.dispatch).not.toHaveBeenCalledWith(chatLastAttemptedMessageSet(AGENT, null));
-    expect(run.dispatch).toHaveBeenCalledWith(
-      chatSendFailed(AGENT, 'Agent not found: agent-send'),
-    );
+    expect(run.dispatch).toHaveBeenCalledWith(chatSendFailed(AGENT, 'Agent not found: agent-send'));
     run.task.cancel();
     await run.task.toPromise();
   });
@@ -486,8 +503,10 @@ describe('chatSendSaga', () => {
     );
     await settle();
 
+    // Queued sends carry the converted reference blocks too — the retry
+    // record matches the wire payload (no re-upload on retry).
     expect(mocks.queue).toHaveBeenCalledWith(AGENT, 'later', {
-      imageBlocks: [{ type: 'image', data: 'abc', mimeType: 'image/png' }],
+      imageBlocks: [{ type: 'image', attachmentId: 'attach-0', mimeType: 'image/png' }],
     });
     expect(mocks.send).not.toHaveBeenCalled();
     expect(run.dispatch).toHaveBeenCalledWith(
@@ -496,7 +515,9 @@ describe('chatSendSaga', () => {
         'queued-1',
         {
           text: 'later',
-          options: { imageBlocks: [{ type: 'image', data: 'abc', mimeType: 'image/png' }] },
+          options: {
+            imageBlocks: [{ type: 'image', attachmentId: 'attach-0', mimeType: 'image/png' }],
+          },
         },
         'turn-queued',
       ),

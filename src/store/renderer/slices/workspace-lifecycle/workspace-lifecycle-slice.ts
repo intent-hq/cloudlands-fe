@@ -1,7 +1,14 @@
 import { createAction } from '@augmentcode/themis/utils/store/create-action';
 
-export const workspaceMounted = createAction<[wsId: string]>('workspace-lifecycle/workspaceMounted');
-export const workspaceUnmounted = createAction<[wsId: string]>('workspace-lifecycle/workspaceUnmounted');
+export const workspaceHydrationRequested = createAction<[wsId: string]>(
+  'workspace-lifecycle/workspaceHydrationRequested',
+);
+export const workspaceMounted = createAction<[wsId: string]>(
+  'workspace-lifecycle/workspaceMounted',
+);
+export const workspaceUnmounted = createAction<[wsId: string]>(
+  'workspace-lifecycle/workspaceUnmounted',
+);
 /**
  * The workspace was permanently deleted upstream (daemon `workspace:deleted`).
  * Unlike `workspaceUnmounted` (session-end cleanup), this purges every trace of

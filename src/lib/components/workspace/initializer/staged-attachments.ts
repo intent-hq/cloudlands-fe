@@ -15,6 +15,10 @@ import {
   extractPlacementErrorDetail,
   placeAttachmentViaTransport,
 } from '$lib/components/chat/input/attachment-placement';
+import {
+  toImageReferenceBlocks,
+  type WireImageBlock,
+} from '$lib/components/chat/input/image-attachment-placement';
 
 /** A staged (not-yet-placed) non-image file item awaiting redemption. */
 function isStagedFileItem(item: ContextItem): boolean {
@@ -155,11 +159,27 @@ export async function sendHeldFirstMessage(
   pending: HeldFirstMessage,
   fileBlocks: FileBlock[],
   request: typeof backendRequest = backendRequest,
+  toReferences: typeof toImageReferenceBlocks = toImageReferenceBlocks,
 ): Promise<SendHeldFirstMessageResult> {
   const hasContent = pending.content.length > 0;
   const hasBlocks =
     pending.imageBlocks.length > 0 || fileBlocks.length > 0 || pending.contextReferences.length > 0;
   if (!pending.agentId || (!hasContent && !hasBlocks)) return { sent: true };
+
+  // Pre-upload inline images into the (now-existing) workspace's attachment
+  // registry and swap the wire blocks to references (monorepo#3338) — one
+  // placement request per image, chunked when large, so the first-message
+  // frame stays constant-size. A placement failure resolves
+  // `{ sent: false, errorDetail }` like any other send failure: the held
+  // message stays pending and the create button resumes the flow.
+  let imageBlocks: ImageBlock[] = pending.imageBlocks;
+  if (imageBlocks.length > 0) {
+    try {
+      imageBlocks = await toReferences(pending.workspaceId, imageBlocks as WireImageBlock[]);
+    } catch (error) {
+      return { sent: false, errorDetail: extractPlacementErrorDetail(error) };
+    }
+  }
 
   try {
     // JSON round-trip strips reactive Proxies (and anything else structured
@@ -172,7 +192,7 @@ export async function sendHeldFirstMessage(
         agentId: pending.agentId,
         workspaceId: pending.workspaceId,
         content: pending.content,
-        imageBlocks: pending.imageBlocks.length > 0 ? pending.imageBlocks : undefined,
+        imageBlocks: imageBlocks.length > 0 ? imageBlocks : undefined,
         fileBlocks: fileBlocks.length > 0 ? fileBlocks : undefined,
         contextReferences:
           pending.contextReferences.length > 0 ? pending.contextReferences : undefined,

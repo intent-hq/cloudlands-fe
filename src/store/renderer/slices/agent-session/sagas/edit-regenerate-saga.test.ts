@@ -4,11 +4,24 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({
   editAndRegenerate: vi.fn(),
   toastError: vi.fn(),
+  // Image pre-upload (monorepo#3338): inline blocks become reference blocks
+  // before the wire call; already-reference blocks pass through unchanged.
+  toImageReferenceBlocks: vi.fn(
+    async (_wsId: string, blocks: Array<{ attachmentId?: string; mimeType?: string }>) =>
+      blocks.map((block, i) => ({
+        type: 'image' as const,
+        attachmentId: block.attachmentId ?? `attach-${i}`,
+        ...(block.mimeType ? { mimeType: block.mimeType } : {}),
+      })),
+  ),
 }));
 vi.mock('$lib/client', () => ({
   appClient: { agents: { editAndRegenerate: mocks.editAndRegenerate } },
 }));
 vi.mock('svelte-sonner', () => ({ toast: { error: mocks.toastError } }));
+vi.mock('$lib/components/chat/input/image-attachment-placement', () => ({
+  toImageReferenceBlocks: mocks.toImageReferenceBlocks,
+}));
 
 import type { AgentMessage, AgentSession } from '$shared/types';
 import { AgentStatus } from '$shared/types';
@@ -115,22 +128,51 @@ describe('editRegenerateSaga', () => {
     await expect(action.promise).resolves.toBeUndefined();
 
     // Attachment blocks ride the wire call (PROTOCOL §5.5) — model omitted
-    // when not supplied.
+    // when not supplied. Inline image blocks are pre-uploaded and swapped to
+    // reference blocks first (monorepo#3338).
+    const referenceImageBlocks = [
+      { type: 'image', attachmentId: 'attach-0', mimeType: 'image/png' },
+    ];
+    expect(mocks.toImageReferenceBlocks).toHaveBeenCalledWith(WS, imageBlocks);
     expect(mocks.editAndRegenerate).toHaveBeenCalledWith({
       agentId: AGENT,
       workspaceId: WS,
       messageId: 'm3',
       content: 'edited',
-      imageBlocks,
+      imageBlocks: referenceImageBlocks,
       fileBlocks,
     });
     // The "Try again" record carries the same blocks so a retry resends them.
     expect(dispatched).toContainEqual(
       chatLastAttemptedMessageSet(AGENT, {
         text: 'edited',
-        options: { imageBlocks, fileBlocks },
+        options: { imageBlocks: referenceImageBlocks, fileBlocks },
       }),
     );
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('keeps inline image blocks for the chief workspace (no attachment registry)', async () => {
+    mocks.editAndRegenerate.mockResolvedValue({ success: true });
+    const imageBlocks = [{ type: 'image' as const, data: 'aGk=', mimeType: 'image/png' }];
+    const { channel, task } = start();
+    const action = agentSessionEditAndRegenerateRequested(AGENT, '__chief__', 'm3', 'edited', {
+      imageBlocks,
+    });
+    channel.put(action);
+    await expect(action.promise).resolves.toBeUndefined();
+
+    // The chief virtual workspace has no attachment registry — its edits
+    // must NOT pre-upload; inline blocks ride the wire unchanged.
+    expect(mocks.toImageReferenceBlocks).not.toHaveBeenCalled();
+    expect(mocks.editAndRegenerate).toHaveBeenCalledWith({
+      agentId: AGENT,
+      workspaceId: '__chief__',
+      messageId: 'm3',
+      content: 'edited',
+      imageBlocks,
+    });
     task.cancel();
     await task.toPromise();
   });

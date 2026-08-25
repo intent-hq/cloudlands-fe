@@ -1,144 +1,135 @@
-/**
- * Shared state for panel drag-and-drop reordering.
- *
- * `dragover` events cannot read `dataTransfer` payloads (only types), so the
- * dragged panel id is mirrored here to let drop targets skip self-drops while
- * a panel drag is in flight.
- */
+/** Shared state and geometry for pane drag-and-drop. */
 
-import type { PanelDragLayoutSnapshot } from '$store/renderer/slices/panel-layout/panel-layout-types';
+/** Custom MIME type shared by visible pane headers and the legacy tab strip. */
+export const PANE_DRAG_MIME = 'application/x-panel-tab';
+const PANE_DRAG_IMAGE_ATTRIBUTE = 'data-pane-drag-image';
 
-/** Custom MIME type for dragging a whole panel (vs. a tab). */
-export const PANEL_DRAG_MIME = 'application/x-panel-id';
-const PANEL_DRAG_IMAGE_ATTRIBUTE = 'data-panel-drag-image';
-
+export type PaneDropZone = 'left' | 'center' | 'right';
 export type PanelDragPlacement = 'before' | 'after' | 'above' | 'below';
+export interface PaneInsertionTarget {
+  index: number;
+  left: number;
+  width: number;
+}
+export type PaneInsertionPlacement =
+  | { kind: 'edge'; position: 'before' | 'after' }
+  | { kind: 'panel'; targetPanelId: string; zone: 'left' };
+export interface DraggedPane {
+  tabId: string;
+  panelId: string;
+}
 
-const PANEL_STACK_ZONE_RATIO = 0.28;
-const PLACEMENT_HYSTERESIS = 0.04;
-const MIN_LAYOUT_EDGE_SIZE = 40;
-const MAX_LAYOUT_EDGE_SIZE = 80;
+const PANE_SIDE_ZONE_RATIO = 0.2;
+const PLACEMENT_HYSTERESIS = 0.03;
+const PANE_INSERTION_GUTTER_SIZE = 40;
 
-export function getPanelColumnDragPlacement(
+export function getPaneInsertionTargets(
+  layoutRect: Pick<DOMRect, 'left' | 'width'>,
+  panelRects: readonly Pick<DOMRect, 'left' | 'width'>[],
+  canCreateColumn = true,
+): PaneInsertionTarget[] {
+  if (!canCreateColumn || layoutRect.width <= 0 || panelRects.length === 0) return [];
+
+  const panelEdges = panelRects.map((rect) => ({ left: rect.left, right: rect.left + rect.width }));
+  const firstEdge = panelEdges[0];
+  const lastEdge = panelEdges.at(-1);
+  if (!firstEdge || !lastEdge) return [];
+  const boundaries = [
+    firstEdge.left,
+    ...panelEdges.slice(1).map((edge, index) => (panelEdges[index].right + edge.left) / 2),
+    lastEdge.right,
+  ].map((position) =>
+    Math.max(layoutRect.left, Math.min(layoutRect.left + layoutRect.width, position)),
+  );
+  const minimumSpacing = boundaries
+    .slice(1)
+    .reduce(
+      (minimum, position, index) => Math.min(minimum, position - boundaries[index]),
+      Infinity,
+    );
+  const width = Math.min(
+    PANE_INSERTION_GUTTER_SIZE,
+    layoutRect.width,
+    Number.isFinite(minimumSpacing) ? Math.max(1, minimumSpacing / 2) : layoutRect.width,
+  );
+  const maximumLeft = Math.max(0, layoutRect.width - width);
+
+  return boundaries.map((position, index) => ({
+    index,
+    left: Math.max(0, Math.min(maximumLeft, position - layoutRect.left - width / 2)),
+    width,
+  }));
+}
+
+export function getPaneInsertionTargetAtX(
+  clientX: number,
+  layoutRect: Pick<DOMRect, 'left'>,
+  targets: readonly PaneInsertionTarget[],
+): PaneInsertionTarget | null {
+  const x = clientX - layoutRect.left;
+  return targets.find((target) => x >= target.left && x <= target.left + target.width) ?? null;
+}
+
+export function getPaneInsertionPlacement(
+  targetIndex: number,
+  panelIds: readonly string[],
+): PaneInsertionPlacement | null {
+  if (targetIndex === 0) return { kind: 'edge', position: 'before' };
+  if (targetIndex === panelIds.length) return { kind: 'edge', position: 'after' };
+  const targetPanelId = panelIds[targetIndex];
+  return targetPanelId ? { kind: 'panel', targetPanelId, zone: 'left' } : null;
+}
+
+export function getPaneColumnDropZone(
   clientX: number,
   rect: Pick<DOMRect, 'left' | 'width'>,
-  previous: PanelDragPlacement | null = null,
-): 'before' | 'after' {
+  canCreateColumn = true,
+  previous: PaneDropZone | null = null,
+): PaneDropZone {
+  if (!canCreateColumn) return 'center';
   const xRatio = Math.max(
     0,
     Math.min(1, rect.width > 0 ? (clientX - rect.left) / rect.width : 0.5),
   );
-  if (previous === 'before' && xRatio <= 0.5 + PLACEMENT_HYSTERESIS) return 'before';
-  if (previous === 'after' && xRatio >= 0.5 - PLACEMENT_HYSTERESIS) return 'after';
-  return xRatio < 0.5 ? 'before' : 'after';
+  if (previous === 'left' && xRatio <= PANE_SIDE_ZONE_RATIO + PLACEMENT_HYSTERESIS) {
+    return 'left';
+  }
+  if (previous === 'right' && xRatio >= 1 - PANE_SIDE_ZONE_RATIO - PLACEMENT_HYSTERESIS) {
+    return 'right';
+  }
+  if (
+    previous === 'center' &&
+    xRatio >= PANE_SIDE_ZONE_RATIO - PLACEMENT_HYSTERESIS &&
+    xRatio <= 1 - PANE_SIDE_ZONE_RATIO + PLACEMENT_HYSTERESIS
+  ) {
+    return 'center';
+  }
+  if (xRatio < PANE_SIDE_ZONE_RATIO) return 'left';
+  if (xRatio > 1 - PANE_SIDE_ZONE_RATIO) return 'right';
+  return 'center';
 }
 
-export function getPanelDragPlacement(
-  clientX: number,
-  clientY: number,
-  rect: Pick<DOMRect, 'left' | 'top' | 'width' | 'height'>,
-  previous: PanelDragPlacement | null = null,
-): PanelDragPlacement {
-  const xRatio = Math.max(
-    0,
-    Math.min(1, rect.width > 0 ? (clientX - rect.left) / rect.width : 0.5),
-  );
-  const yRatio = Math.max(
-    0,
-    Math.min(1, rect.height > 0 ? (clientY - rect.top) / rect.height : 0.5),
-  );
-  if (previous === 'above' && yRatio <= PANEL_STACK_ZONE_RATIO + PLACEMENT_HYSTERESIS) {
-    return 'above';
-  }
-  if (previous === 'below' && yRatio >= 1 - PANEL_STACK_ZONE_RATIO - PLACEMENT_HYSTERESIS) {
-    return 'below';
-  }
-  if (yRatio < PANEL_STACK_ZONE_RATIO) return 'above';
-  if (yRatio > 1 - PANEL_STACK_ZONE_RATIO) return 'below';
+let draggedPane: DraggedPane | null = null;
 
-  if (previous === 'before' && xRatio <= 0.5 + PLACEMENT_HYSTERESIS) return 'before';
-  if (previous === 'after' && xRatio >= 0.5 - PLACEMENT_HYSTERESIS) return 'after';
-  return xRatio < 0.5 ? 'before' : 'after';
+export function setDraggedPane(pane: DraggedPane | null): void {
+  draggedPane = pane;
 }
 
-export function getPanelLayoutEdgePlacement(
-  clientX: number,
-  clientY: number,
-  rect: Pick<DOMRect, 'left' | 'top' | 'width' | 'height'>,
-): PanelDragPlacement | null {
-  const horizontalBand = Math.min(
-    MAX_LAYOUT_EDGE_SIZE,
-    Math.max(MIN_LAYOUT_EDGE_SIZE, rect.width * 0.1),
-  );
-  const verticalBand = Math.min(
-    MAX_LAYOUT_EDGE_SIZE,
-    Math.max(MIN_LAYOUT_EDGE_SIZE, rect.height * 0.1),
-  );
-  const right = rect.left + rect.width;
-  const bottom = rect.top + rect.height;
-  const candidates: Array<[PanelDragPlacement, number]> = [];
-
-  if (clientX <= rect.left + horizontalBand) {
-    candidates.push(['before', Math.abs(clientX - rect.left) / horizontalBand]);
-  }
-  if (clientX >= right - horizontalBand) {
-    candidates.push(['after', Math.abs(right - clientX) / horizontalBand]);
-  }
-  if (clientY <= rect.top + verticalBand) {
-    candidates.push(['above', Math.abs(clientY - rect.top) / verticalBand]);
-  }
-  if (clientY >= bottom - verticalBand) {
-    candidates.push(['below', Math.abs(bottom - clientY) / verticalBand]);
-  }
-
-  return (
-    candidates.reduce<[PanelDragPlacement, number] | null>(
-      (nearest, candidate) => (!nearest || candidate[1] < nearest[1] ? candidate : nearest),
-      null,
-    )?.[0] ?? null
-  );
-}
-
-let draggedPanelId: string | null = null;
-export type ActivePanelDragSnapshot = PanelDragLayoutSnapshot & { layoutId: string };
-let panelDragSnapshot: ActivePanelDragSnapshot | null = null;
-
-export function setDraggedPanelId(id: string | null): void {
-  draggedPanelId = id;
-  if (id === null) {
-    panelDragSnapshot = null;
-  }
-}
-
-export function setPanelDragSnapshot(layoutId: string, layout: PanelDragLayoutSnapshot): void {
-  panelDragSnapshot = { layoutId, ...layout };
-}
-
-export function takePanelDragSnapshot(): ActivePanelDragSnapshot | null {
-  const snapshot = panelDragSnapshot;
-  panelDragSnapshot = null;
-  return snapshot;
-}
-
-export function clearDraggedPanelState(): void {
-  draggedPanelId = null;
-  panelDragSnapshot = null;
+export function clearDraggedPaneState(): void {
+  draggedPane = null;
   if (typeof document === 'undefined') return;
-  document
-    .querySelectorAll('.panel-drag-source')
-    .forEach((element) => element.classList.remove('panel-drag-source'));
-  document.querySelectorAll(`[${PANEL_DRAG_IMAGE_ATTRIBUTE}]`).forEach((element) => {
+  document.querySelectorAll(`[${PANE_DRAG_IMAGE_ATTRIBUTE}]`).forEach((element) => {
     element.remove();
   });
 }
 
-export function getDraggedPanelId(): string | null {
-  return draggedPanelId;
+export function getDraggedPane(): DraggedPane | null {
+  return draggedPane;
 }
 
-export function createPanelDragImage(title: string): HTMLElement {
+export function createPaneDragImage(title: string): HTMLElement {
   const image = document.createElement('div');
-  image.setAttribute(PANEL_DRAG_IMAGE_ATTRIBUTE, '');
+  image.setAttribute(PANE_DRAG_IMAGE_ATTRIBUTE, '');
   image.textContent = title;
   Object.assign(image.style, {
     position: 'fixed',

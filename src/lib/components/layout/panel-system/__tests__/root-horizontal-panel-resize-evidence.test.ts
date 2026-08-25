@@ -31,6 +31,11 @@ let sagaTask: Task | undefined;
 let sagaChannel: ReturnType<typeof stdChannel> | undefined;
 let storage = new Map<string, string>();
 
+function storageWriteCount(): number {
+  // eslint-disable-next-line themis/direct-local-storage-usage -- Test inspects the mocked boundary.
+  return vi.mocked(localStorage.setItem).mock.calls.length;
+}
+
 class TestResizeObserver {
   static instances = new Set<TestResizeObserver>();
   constructor(private callback: ResizeObserverCallback) {
@@ -322,8 +327,10 @@ describe('root horizontal resize release evidence', () => {
     await settleSaga();
     const persistedWidths = widthsAfterDelta(0, 88);
     const trace = await releaseAndSample(splitHandle(0), 100, [188], persistedWidths);
+    const writesBeforePersist = storageWriteCount();
     sagaChannel!.put({ type: resizePanelLayoutAtRootDivider.type, payload: [WORKSPACE_ID] });
     await settleSaga();
+    expect(storageWriteCount()).toBe(writesBeforePersist + 1);
 
     const serialized = JSON.parse(storage.get(STORAGE_KEY) ?? 'null');
     const persistedCanvasWidth = canvasWidth();
@@ -362,6 +369,14 @@ describe('root horizontal resize release evidence', () => {
     );
     result.unmount();
 
+    sagaChannel!.put(panelLayoutScopeUnmounted(WORKSPACE_ID));
+    await settleSaga();
+    sagaChannel!.put(panelLayoutScopeMounted(WORKSPACE_ID));
+    await settleSaga();
+    const secondRestore = await mount('columns', persistedCanvasWidth);
+    expectWidths(persistedWidths);
+    secondRestore.unmount();
+
     storage.set(
       STORAGE_KEY,
       JSON.stringify({
@@ -393,5 +408,24 @@ describe('root horizontal resize release evidence', () => {
     });
     expect(document.querySelector('[data-panel-id="legacy"]')).not.toBeNull();
     legacy.unmount();
+  });
+
+  it('does not persist or alter history for a no-op divider drag', async () => {
+    await mount('columns');
+    startProductionSaga();
+    await settleSaga();
+    const workspaceBefore = appStore.state.panelLayout.byWorkspaceId[WORKSPACE_ID];
+    const writesBefore = storageWriteCount();
+
+    fireEvent.mouseDown(splitHandle(0), { clientX: 100 });
+    fireEvent.mouseUp(document, { clientX: 100 });
+    await tick();
+    await settleSaga();
+
+    expect(appStore.state.panelLayout.byWorkspaceId[WORKSPACE_ID]).toBe(workspaceBefore);
+    expect(appStore.state.panelLayout.byWorkspaceId[WORKSPACE_ID].layoutHistory).toBe(
+      workspaceBefore.layoutHistory,
+    );
+    expect(storageWriteCount()).toBe(writesBefore);
   });
 });

@@ -116,7 +116,10 @@ describe('WorkspaceAgentsList single-line rows', () => {
     expect(backgroundRow?.querySelector('[data-agent-background-badge]')).toBeTruthy();
 
     await fireEvent.keyDown(longRow!, { key: 'Enter' });
-    expect(onSelect).toHaveBeenCalledWith({ agentId: longName.id });
+    expect(onSelect).toHaveBeenCalledWith({
+      agentId: longName.id,
+      event: expect.any(KeyboardEvent),
+    });
     longRow?.focus();
     expect(document.activeElement).toBe(longRow);
 

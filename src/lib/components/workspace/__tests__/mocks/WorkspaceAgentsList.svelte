@@ -4,7 +4,10 @@
   let {
     agents = [],
     onSelect,
-  }: { agents?: AgentSession[]; onSelect?: (detail: { agentId: string }) => void } = $props();
+  }: {
+    agents?: AgentSession[];
+    onSelect?: (detail: { agentId: string; event?: MouseEvent | KeyboardEvent }) => void;
+  } = $props();
 </script>
 
 <div data-testid="workspace-agents-list">
@@ -14,7 +17,7 @@
       data-expanded-agent-specialist={agent.metadata?.specialist ||
         agent.agentMetadata?.specialist ||
         undefined}
-      onclick={() => onSelect?.({ agentId: agent.id })}>{agent.name}</button
+      onclick={(event) => onSelect?.({ agentId: agent.id, event })}>{agent.name}</button
     >
   {/each}
 </div>

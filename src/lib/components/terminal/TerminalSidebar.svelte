@@ -959,7 +959,11 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
                 class="shrink-0 flex-none"
                 style="min-width: 16px; min-height: 16px; width: 16px; height: 16px;"
               >
-                <AgentAvatarWithState agentId={$_scriptDetectAgentId$} state="running" size={16} />
+                <AgentAvatarWithState
+                  agentId={$_scriptDetectAgentId$}
+                  state="running"
+                  variant="compact"
+                />
               </div>
               <span class="text-ui">{m.terminal_sidebar_askingAgent_label()}</span>
             </button>

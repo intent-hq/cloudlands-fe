@@ -1,6 +1,10 @@
 import { migratePanelCanvasWidth } from './panel-layout-width-provenance';
 import { panelTabsAreEquivalent } from './panel-tab-identity';
-import { MIN_PANEL_SIZE_PERCENT } from '../../../../shared/panel-layout-sizing';
+import {
+  MIN_PANEL_CANVAS_WIDTH,
+  MIN_PANEL_SIZE_PERCENT,
+  PANEL_SPLIT_GUTTER_WIDTH,
+} from '../../../../shared/panel-layout-sizing';
 import {
   PANEL_LAYOUT_PERSISTENCE_VERSION,
   isPanelColumnCount,
@@ -35,13 +39,42 @@ function hasValidGeometry(node: unknown): boolean {
     candidate.children.length === 0 ||
     !Array.isArray(candidate.sizes) ||
     candidate.sizes.length !== candidate.children.length ||
-    candidate.sizes.some(
-      (size) => typeof size !== 'number' || !Number.isFinite(size) || size < MIN_PANEL_SIZE_PERCENT,
-    )
+    candidate.sizes.some((size) => typeof size !== 'number' || !Number.isFinite(size) || size <= 0)
   ) {
     return false;
   }
   return candidate.children.every(hasValidGeometry);
+}
+
+function hasUsableGeometry(node: PanelLayoutNode, availableWidth: number | null): boolean {
+  if (!hasValidGeometry(node)) return false;
+  if (node.type === 'panel') return true;
+  if (availableWidth === null || node.direction === 'vertical') {
+    return (
+      node.sizes.every((size) => size >= MIN_PANEL_SIZE_PERCENT) &&
+      node.children.every((child) => hasUsableGeometry(child, availableWidth))
+    );
+  }
+
+  const contentWidth = Math.max(
+    0,
+    availableWidth - PANEL_SPLIT_GUTTER_WIDTH * Math.max(0, node.children.length - 1),
+  );
+  const sizeTotal = node.sizes.reduce((sum, size) => sum + size, 0);
+  const childWidths = node.sizes.map((size) => (size / sizeTotal) * contentWidth);
+  return (
+    childWidths.every((width) => width >= MIN_PANEL_CANVAS_WIDTH) &&
+    node.children.every((child, index) => hasUsableGeometry(child, childWidths[index]))
+  );
+}
+
+function explicitCanvasWidth(layout: WorkspacePanelLayout): number | null {
+  return layout.canvasWidthSource === 'explicit' &&
+    typeof layout.canvasWidth === 'number' &&
+    Number.isFinite(layout.canvasWidth) &&
+    layout.canvasWidth > 0
+    ? layout.canvasWidth
+    : null;
 }
 
 function cleanPanel(
@@ -72,8 +105,19 @@ function cleanPanel(
   const activeTabId = tabs.some((tab) => tab.id === panel.activeTabId)
     ? panel.activeTabId
     : (tabs[0]?.id ?? null);
+  const validTabIds = new Set(tabs.map((tab) => tab.id));
+  const attentionTabIds = Array.isArray(panel.attentionTabIds)
+    ? [...new Set(panel.attentionTabIds)].filter(
+        (tabId) => validTabIds.has(tabId) && tabId !== activeTabId,
+      )
+    : undefined;
   const { pinned: _pinned, ...clean } = panel as PanelState & { pinned?: unknown };
-  return { ...clean, tabs, activeTabId };
+  return {
+    ...clean,
+    tabs,
+    activeTabId,
+    ...(attentionTabIds === undefined ? {} : { attentionTabIds }),
+  };
 }
 
 function fixedColumnRoot(panelIds: string[]): PanelLayoutNode {
@@ -105,7 +149,7 @@ function isCurrentFixedLayout(
     layout.version !== PANEL_LAYOUT_PERSISTENCE_VERSION ||
     !isPanelColumnCount(layout.columnCount) ||
     orderedIds.length !== layout.columnCount ||
-    !hasValidGeometry(layout.root)
+    !hasUsableGeometry(layout.root, explicitCanvasWidth(layout))
   ) {
     return false;
   }
@@ -207,6 +251,8 @@ export function migratePanelLayoutForWorkspace(
   const rightmostId = visibleIds[visibleIds.length - 1];
   const rightmost = visiblePanels[rightmostId];
   const tabs = [...rightmost.tabs];
+  const attentionTabIds = new Set(rightmost.attentionTabIds ?? []);
+  let hasAttentionMetadata = rightmost.attentionTabIds !== undefined;
   const overflowIds = [...rootedIds.slice(targetCount), ...orphanIds.slice(visibleOrphanCount)];
   const hasOverflow = overflowIds.length > 0;
   const visibleTabs = Object.values(visiblePanels).flatMap((panel) => panel.tabs);
@@ -226,18 +272,29 @@ export function migratePanelLayoutForWorkspace(
       tabs.push(tab);
       visibleTabs.push(tab);
     }
+    if (panel.attentionTabIds !== undefined) hasAttentionMetadata = true;
+    for (const tabId of panel.attentionTabIds ?? []) attentionTabIds.add(tabId);
     if (panelId === layout.focusedPanelId) overflowActiveTabId = panel.activeTabId;
   }
+  const activeTabId =
+    overflowActiveTabId && tabs.some((tab) => tab.id === overflowActiveTabId)
+      ? overflowActiveTabId
+      : rightmost.activeTabId;
+  const mergedTabIds = new Set(tabs.map((tab) => tab.id));
   visiblePanels[rightmostId] = {
     ...rightmost,
     tabs,
-    activeTabId:
-      overflowActiveTabId && tabs.some((tab) => tab.id === overflowActiveTabId)
-        ? overflowActiveTabId
-        : rightmost.activeTabId,
+    activeTabId,
+    ...(hasAttentionMetadata
+      ? {
+          attentionTabIds: [...attentionTabIds].filter(
+            (tabId) => mergedTabIds.has(tabId) && tabId !== activeTabId,
+          ),
+        }
+      : {}),
     pristine: hasOverflow && tabs.length > 0 ? false : rightmost.pristine,
   };
-  const width = hasValidGeometry(layout.root)
+  const width = hasUsableGeometry(layout.root, explicitCanvasWidth(layout))
     ? migratePanelCanvasWidth(layout.canvasWidth, layout.canvasWidthSource)
     : { canvasWidth: null, canvasWidthSource: null };
   return {

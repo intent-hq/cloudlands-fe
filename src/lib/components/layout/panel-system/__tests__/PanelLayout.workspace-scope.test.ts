@@ -35,9 +35,6 @@ vi.mock('$store/renderer/slices/panel-layout/panel-layout-selectors', () => ({
   selectRestoreStatus: readableSelector('pending'),
   selectRecentlyClosed: readableSelector([]),
 }));
-vi.mock('$store/renderer/slices/terminals/terminals-selectors', () => ({
-  selectIsTerminalOverlayOpen: readableSelector(true),
-}));
 vi.mock('$store/renderer/slices/ui-layout/ui-layout-selectors', () => ({
   selectIsCollapsed: readableSelector(false),
   selectResizablePanelSize: () => readableSelector(null)(),

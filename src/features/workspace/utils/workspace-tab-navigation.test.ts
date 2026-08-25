@@ -519,7 +519,7 @@ describe('global workspace tab navigation', () => {
       expect(shortcut).toMatchObject({
         key: 'w',
         global: true,
-        description: 'Close Panel Tab',
+        description: 'Close Active Pane',
       });
       expect(Boolean(shortcut.meta)).toBe(meta);
       expect(Boolean(shortcut.ctrl)).toBe(ctrl);
@@ -733,49 +733,66 @@ describe('global workspace tab navigation', () => {
   });
 
   describe('openNewPanel', () => {
-    it('clears the existing reusable working panel and focuses it', () => {
+    it('inserts a pristine blank column to the right of a focused single column', () => {
       const store = makeStore('ws-2', layoutWith([makePanel('p1', ['t1'])], 'p1'));
 
-      expect(openNewPanel(store, '/workspace/ws-2')).toBe('p1');
+      const newPanelId = openNewPanel(store, '/workspace/ws-2')!;
 
       const ws = store.state.panelLayout.byWorkspaceId['ws-2'];
-      expect(Object.keys(ws.panels)).toEqual(['p1']);
-      expect(ws.panels.p1).toMatchObject({ tabs: [], pristine: true });
-      expect(ws.panels.p1).not.toHaveProperty('pinned');
-      expect(ws.focusedPanelId).toBe('p1');
+      expect(ws.root).toMatchObject({
+        type: 'split',
+        children: [{ panelId: 'p1' }, { panelId: newPanelId }],
+      });
+      expect(ws.panels.p1.tabs.map((tab) => tab.id)).toEqual(['t1']);
+      expect(ws.panels[newPanelId]).toMatchObject({ tabs: [], activeTabId: null, pristine: true });
+      expect(ws.focusedPanelId).toBe(newPanelId);
+      expect(ws.layoutHistory).toHaveLength(1);
     });
 
-    it('opens a blank working column without collapsing existing fixed columns', () => {
-      const store = makeStore(
-        'ws-2',
-        layoutWith([makePanel('p1', ['t1']), makePanel('p2', ['t2'])], null),
-      );
+    it.each([
+      ['left', 'p1', ['p1', 'new', 'p2', 'p3']],
+      ['middle', 'p2', ['p1', 'p2', 'new', 'p3']],
+      ['right', 'p3', ['p1', 'p2', 'p3', 'new']],
+    ] as const)('inserts immediately right of the focused %s column', (_name, focused, order) => {
+      const panels = ['p1', 'p2', 'p3'].map((id) => makePanel(id, [`${id}-tab`]));
+      const store = makeStore('ws-2', layoutWith(panels, focused));
 
-      expect(openNewPanel(store, '/workspace/ws-2')).toBe('p2');
-      expect(Object.keys(store.state.panelLayout.byWorkspaceId['ws-2'].panels)).toEqual([
-        'p1',
-        'p2',
-      ]);
-      expect(store.state.panelLayout.byWorkspaceId['ws-2'].panels.p1.tabs).toHaveLength(1);
-      expect(store.state.panelLayout.byWorkspaceId['ws-2'].panels.p2.tabs).toHaveLength(0);
-      expect(
-        store.state.panelLayout.byWorkspaceId['ws-2'].layoutHistory.at(-1)?.panels.p2.tabs,
-      ).toHaveLength(1);
+      const newPanelId = openNewPanel(store, '/workspace/ws-2')!;
+      const workspace = store.state.panelLayout.byWorkspaceId['ws-2'];
+      expect(workspace.root).toMatchObject({
+        children: order.map((id) => ({ panelId: id === 'new' ? newPanelId : id })),
+      });
+      expect(workspace.focusedPanelId).toBe(newPanelId);
+      expect(workspace.panels[newPanelId]).toMatchObject({ tabs: [], pristine: true });
+      expect(workspace.panels.p1.tabs).toHaveLength(1);
+      expect(workspace.panels.p2.tabs).toHaveLength(1);
+      expect(workspace.panels.p3.tabs).toHaveLength(1);
     });
 
-    it('reports the unchanged focused panel when the rightmost panel is protected', () => {
-      const protectedPanel = makePanel('p2', ['protected']);
+    it('does not reuse pristine columns or clear protected panels', () => {
+      const pristinePanel = makePanel('p2');
+      pristinePanel.pristine = true;
+      const protectedPanel = makePanel('p3', ['protected']);
       protectedPanel.tabs[0].closable = false;
       const store = makeStore(
         'ws-2',
-        layoutWith([makePanel('p1', ['focused']), protectedPanel], 'p1'),
+        layoutWith([makePanel('p1', ['t1']), pristinePanel, protectedPanel], 'p1'),
       );
 
-      expect(openNewPanel(store, '/workspace/ws-2')).toBe('p1');
+      const newPanelId = openNewPanel(store, '/workspace/ws-2')!;
       const workspace = store.state.panelLayout.byWorkspaceId['ws-2'];
-      expect(workspace.focusedPanelId).toBe('p1');
-      expect(workspace.panels.p2.tabs.map((tab) => tab.id)).toEqual(['protected']);
-      expect(workspace.layoutHistory).toEqual([]);
+      expect(workspace.panels.p2).toMatchObject({ tabs: [], pristine: true });
+      expect(workspace.panels.p3.tabs.map((tab) => tab.id)).toEqual(['protected']);
+      expect(workspace.panels[newPanelId]).toMatchObject({ tabs: [], pristine: true });
+    });
+
+    it('leaves a four-column layout and focus unchanged', () => {
+      const panels = ['p1', 'p2', 'p3', 'p4'].map((id) => makePanel(id, [`${id}-tab`]));
+      const store = makeStore('ws-2', layoutWith(panels, 'p2'));
+      const before = store.state.panelLayout.byWorkspaceId['ws-2'];
+
+      expect(openNewPanel(store, '/workspace/ws-2')).toBe('p2');
+      expect(store.state.panelLayout.byWorkspaceId['ws-2']).toBe(before);
     });
 
     it('returns null outside workspace routes', () => {
@@ -891,7 +908,6 @@ describe('global workspace tab navigation', () => {
 
   it('does not collide with either panel split chord', () => {
     expect(SHORTCUTS.WORKSPACE_VIEW_MODE.key).toBe('mod+shift+l');
-    expect(SHORTCUTS.WORKSPACE_VIEW_MODE.key).not.toBe(SHORTCUTS.SPLIT_PANEL_HORIZONTAL.key);
-    expect(SHORTCUTS.WORKSPACE_VIEW_MODE.key).not.toBe(SHORTCUTS.SPLIT_PANEL_VERTICAL.key);
+    expect(SHORTCUTS.WORKSPACE_VIEW_MODE.key).not.toBe(SHORTCUTS.CREATE_COLUMN_RIGHT.key);
   });
 });

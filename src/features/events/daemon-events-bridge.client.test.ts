@@ -109,14 +109,14 @@ vi.mock('$features/workspace/navigate-away-if-viewing', async (importOriginal) =
   navigateAwayIfViewing: navigateAwayIfViewingSpy,
 }));
 
-// Fake the mark-workspace-seen helper so the bridge's
-// `workspace:attention-changed` → markWorkspaceSeenIfViewing routing is
-// observable without jsdom location choreography.
-const { markWorkspaceSeenIfViewingSpy } = vi.hoisted(() => ({
-  markWorkspaceSeenIfViewingSpy: vi.fn(),
+// Fake the mark-workspace-seen helper so the attention suite can assert the
+// bridge never auto-clears an unread raise (unread persists until each agent
+// conversation is read — the bridge must not call `workspace.markSeen`).
+const { markWorkspaceSeenSpy } = vi.hoisted(() => ({
+  markWorkspaceSeenSpy: vi.fn(),
 }));
 vi.mock('$features/workspace/mark-workspace-seen', () => ({
-  markWorkspaceSeenIfViewing: markWorkspaceSeenIfViewingSpy,
+  markWorkspaceSeen: markWorkspaceSeenSpy,
 }));
 
 // The bridge now dispatches refreshWorkspaceSubscriptionEntriesRequested instead
@@ -1216,22 +1216,19 @@ describe('daemonEventsBridge (live stream wire contract — agent:stream:* → t
     expect(readStatusEvents()).toEqual([]);
   });
 
-  it('maps agent:stream:status (STAT-1 turn-startup family) to chatState/streamStatusReceived with a localized message keyed off phase (wire message ignored for known phases); first chunk still clears it via the chunk reducer', async () => {
+  it('maps agent:stream:status without rewriting the daemon message; first chunk still clears it via the chunk reducer', async () => {
     await primeBridge();
     const handler = capturedHandlers[0]!;
 
     const promptAt = 1_700_000_000_000;
     // `agent:stream:status` (PROTOCOL §6.5 / §7 pre-first-token family)
-    // arrives before any chunk with the daemon-authoritative phase plus an
-    // English `message`. The bridge renders the catalog string for the phase;
-    // the wire message here deliberately differs to prove it is not passed
-    // through for known phases.
+    // arrives before any chunk with the daemon-authoritative phase and message.
     handler(
       notification('agent:stream:status', {
         agentId: AGENT,
         workspaceId: WS,
         phase: 'prompt',
-        message: 'RAW WIRE MESSAGE (ignored)',
+        message: 'Daemon prompt is ready',
         level: 'info',
         timestamp: promptAt,
       }),
@@ -1241,27 +1238,26 @@ describe('daemonEventsBridge (live stream wire contract — agent:stream:* → t
     expect(events).toHaveLength(1);
     expect(events[0]).toMatchObject({
       phase: 'prompt',
-      message: 'Sent prompt\u2026',
+      message: 'Daemon prompt is ready',
       level: 'info',
       timestamp: promptAt,
     });
 
-    // Subsequent phase (session-load with warn level, e.g. a resume path)
-    // appends — level/phase/timestamp round-trip verbatim, message localizes.
+    // Subsequent phase appends with every daemon-authored field intact.
     handler(
       notification('agent:stream:status', {
         agentId: AGENT,
         workspaceId: WS,
         phase: 'session-load',
-        message: 'RAW WIRE MESSAGE (ignored)',
+        message: 'Loading the saved daemon session',
         level: 'warn',
         timestamp: promptAt + 5,
       }),
     );
     events = readStatusEvents();
     expect(events.map((e) => ({ phase: e.phase, message: e.message, level: e.level }))).toEqual([
-      { phase: 'prompt', message: 'Sent prompt\u2026', level: 'info' },
-      { phase: 'session-load', message: 'Resuming session\u2026', level: 'warn' },
+      { phase: 'prompt', message: 'Daemon prompt is ready', level: 'info' },
+      { phase: 'session-load', message: 'Loading the saved daemon session', level: 'warn' },
     ]);
 
     // Unknown phase → the daemon's wire message is the fallback rendering
@@ -1299,8 +1295,8 @@ describe('daemonEventsBridge (live stream wire contract — agent:stream:* → t
     );
     events = readStatusEvents();
     expect(events.map((e) => ({ phase: e.phase, message: e.message }))).toEqual([
-      { phase: 'prompt', message: 'Sent prompt\u2026' },
-      { phase: 'session-load', message: 'Resuming session\u2026' },
+      { phase: 'prompt', message: 'Daemon prompt is ready' },
+      { phase: 'session-load', message: 'Loading the saved daemon session' },
       { phase: 'some-future-phase', message: 'Daemon-authored fallback text' },
       { phase: 'streaming', message: 'Streaming response\u2026' },
     ]);
@@ -1313,13 +1309,12 @@ describe('daemonEventsBridge (live stream wire contract — agent:stream:* → t
     expect(readStatusEvents()).toEqual([]);
   });
 
-  it('agent:stream:status edge cases: missing message on known phase localizes, warn-level launch keeps wire text, prototype-key phases do not resolve, empty unknown-phase drops', async () => {
+  it('agent:stream:status preserves all usable messages and drops events without one', async () => {
     await primeBridge();
     const handler = capturedHandlers[0]!;
     const at = 1_700_000_000_000;
 
-    // Known phase with a missing wire message still renders the localized
-    // string (the phase alone is self-sufficient for known phases).
+    // A phase without a daemon message has nothing to render and is dropped.
     handler(
       notification('agent:stream:status', {
         agentId: AGENT,
@@ -1330,10 +1325,7 @@ describe('daemonEventsBridge (live stream wire contract — agent:stream:* → t
       }),
     );
     let events = readStatusEvents();
-    expect(events[events.length - 1]).toMatchObject({
-      phase: 'init',
-      message: 'Initializing protocol\u2026',
-    });
+    expect(events).toHaveLength(0);
 
     // Warn-level launch (model-switch restart warning, §6.5 / intentd#647)
     // keeps the daemon-authored wire text instead of the static launch label.
@@ -1354,7 +1346,7 @@ describe('daemonEventsBridge (live stream wire contract — agent:stream:* → t
       level: 'warn',
     });
 
-    // Info-level launch renders the localized static label (wire text ignored).
+    // Info-level launch also keeps dynamic daemon progress text.
     handler(
       notification('agent:stream:status', {
         agentId: AGENT,
@@ -1368,13 +1360,12 @@ describe('daemonEventsBridge (live stream wire contract — agent:stream:* → t
     events = readStatusEvents();
     expect(events[events.length - 1]).toMatchObject({
       phase: 'launch',
-      message: 'Launching agent\u2026',
+      message: 'Still downloading model\u2026',
     });
 
     const countBefore = readStatusEvents().length;
 
-    // A phase matching an inherited Object.prototype key must not resolve a
-    // catalog entry — the wire message is the fallback.
+    // Unknown phases keep their daemon message too.
     handler(
       notification('agent:stream:status', {
         agentId: AGENT,
@@ -1404,36 +1395,26 @@ describe('daemonEventsBridge (live stream wire contract — agent:stream:* → t
     expect(readStatusEvents()).toHaveLength(countBefore + 1);
   });
 
-  it('agent:stream:status: every daemon-emitted phase (PROTOCOL §6.5) renders its own localized catalog string, never the wire message', async () => {
+  it('agent:stream:status preserves the daemon message for every canonical startup phase', async () => {
     await primeBridge();
     const handler = capturedHandlers[0]!;
     const at = 1_700_000_000_000;
 
-    // Exhaustive phase → localized-message pinning for the full §6.5 set.
-    // Each event carries a deliberately-English wire `message` to prove the
-    // daemon text is not what gets rendered for known phases (user sighting:
-    // "Initializing protocol…" / "Resuming session…" leaking in English came
-    // from builds predating the phase-keyed catalog rendering).
-    //
-    // Intentional overlap: prompt/session-load/info-launch are also asserted
-    // by the STAT-1 and edge-case tests above — do not dedupe; this test's
-    // value is the single-pass exhaustive pin (it is also the only direct
-    // coverage of session-create).
-    const phaseExpectations: Array<{ phase: string; localized: string }> = [
-      { phase: 'launch', localized: 'Launching agent\u2026' },
-      { phase: 'init', localized: 'Initializing protocol\u2026' },
-      { phase: 'session-create', localized: 'Creating session\u2026' },
-      { phase: 'session-load', localized: 'Resuming session\u2026' },
-      { phase: 'prompt', localized: 'Sent prompt\u2026' },
+    const phaseExpectations: Array<{ phase: string; message: string }> = [
+      { phase: 'launch', message: 'Daemon launch progress' },
+      { phase: 'init', message: 'Daemon protocol progress' },
+      { phase: 'session-create', message: 'Daemon session creation progress' },
+      { phase: 'session-load', message: 'Daemon session load progress' },
+      { phase: 'prompt', message: 'Daemon prompt progress' },
     ];
 
-    phaseExpectations.forEach(({ phase }, i) => {
+    phaseExpectations.forEach(({ phase, message }, i) => {
       handler(
         notification('agent:stream:status', {
           agentId: AGENT,
           workspaceId: WS,
           phase,
-          message: `DAEMON WIRE TEXT for ${phase} (must not render)`,
+          message,
           level: 'info',
           timestamp: at + i,
         }),
@@ -1441,9 +1422,7 @@ describe('daemonEventsBridge (live stream wire contract — agent:stream:* → t
     });
 
     let events = readStatusEvents();
-    expect(events.map((e) => ({ phase: e.phase, message: e.message }))).toEqual(
-      phaseExpectations.map(({ phase, localized }) => ({ phase, message: localized })),
-    );
+    expect(events.map((e) => ({ phase: e.phase, message: e.message }))).toEqual(phaseExpectations);
 
     // The streaming state (first chunk) is also a catalog string, appended by
     // the chunk reducer — completing the full pre-first-token → streaming set.
@@ -7441,7 +7420,7 @@ describe('daemonEventsBridge (workspace:attention-changed → workspace slice)',
   beforeEach(async () => {
     onBackendNotificationSpy.mockClear();
     backendRequestSpy.mockClear();
-    markWorkspaceSeenIfViewingSpy.mockClear();
+    markWorkspaceSeenSpy.mockClear();
     __resetDaemonEventsBridgeForTests();
     capturedHandlers.length = 0;
   });
@@ -7594,18 +7573,27 @@ describe('daemonEventsBridge (workspace:attention-changed → workspace slice)',
     expect(ws.attention).toBe('unread');
   });
 
-  it('calls markWorkspaceSeenIfViewing when attention transitions to unread', async () => {
-    await seedWorkspace();
-    await primeBridge();
-    const handler = capturedHandlers[0]!;
+  it('never marks the workspace seen on an unread raise — even while viewing it', async () => {
+    // Unread is daemon-derived from per-agent seen markers (§5.1): the badge
+    // persists until each unread agent conversation is read, so the bridge
+    // must not fire `workspace.markSeen` for the on-screen workspace.
+    window.history.pushState({}, '', `/workspace/${WS_ATT}`);
+    try {
+      await seedWorkspace();
+      await primeBridge();
+      const handler = capturedHandlers[0]!;
 
-    handler(attentionChangedNotification('unread'));
+      handler(attentionChangedNotification('unread'));
 
-    expect(markWorkspaceSeenIfViewingSpy).toHaveBeenCalledWith(WS_ATT);
-    expect(markWorkspaceSeenIfViewingSpy).toHaveBeenCalledTimes(1);
+      const ws = await readWorkspace();
+      expect(ws.attention).toBe('unread');
+      expect(markWorkspaceSeenSpy).not.toHaveBeenCalled();
+    } finally {
+      window.history.pushState({}, '', '/');
+    }
   });
 
-  it('does not call markWorkspaceSeenIfViewing for non-unread attention values', async () => {
+  it('does not mark the workspace seen for non-unread attention values either', async () => {
     await seedWorkspace();
     await primeBridge();
     const handler = capturedHandlers[0]!;
@@ -7613,7 +7601,7 @@ describe('daemonEventsBridge (workspace:attention-changed → workspace slice)',
     handler(attentionChangedNotification('none'));
     handler(attentionChangedNotification('review_required'));
 
-    expect(markWorkspaceSeenIfViewingSpy).not.toHaveBeenCalled();
+    expect(markWorkspaceSeenSpy).not.toHaveBeenCalled();
   });
 
   it('prefers data.workspaceId over the envelope workspaceId (self-sufficient payload)', async () => {
@@ -7642,7 +7630,6 @@ describe('daemonEventsBridge (workspace:attention-changed → workspace slice)',
 
     const ws = await readWorkspace();
     expect(ws.attention).toBe('unread');
-    expect(markWorkspaceSeenIfViewingSpy).toHaveBeenCalledWith(WS_ATT);
   });
 });
 

@@ -835,7 +835,6 @@ const LINE_PATTERNS = {
   fileWithLineNumbers: /^\s*\d+[→\t]/,
   // Command execution
   command: /^\$\s+(.+)$/,
-  commandAlt: /^>\s+(.+)$/,
   // Error messages
   error: /^(error|Error|ERROR)[\s:]/i,
   warning: /^(warning|Warning|WARNING)[\s:]/i,
@@ -886,7 +885,7 @@ function processRegularContent(content: string): ParsedContent[] {
     }
 
     // Check for command execution
-    const commandMatch = line.match(LINE_PATTERNS.command) || line.match(LINE_PATTERNS.commandAlt);
+    const commandMatch = line.match(LINE_PATTERNS.command);
     if (commandMatch) {
       flushBlock();
       currentBlock = {

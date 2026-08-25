@@ -498,7 +498,7 @@
         style:top="{span.labelTop - span.top}px"
       >
         {#if span.author?.type === 'agent'}
-          <AgentAvatar size={20} agentId={span.author.id} />
+          <AgentAvatar variant="standard" agentId={span.author.id} />
         {/if}
         <div class="flex flex-col gap-0.5 text-right">
           <div>{formatTimestamp(span.timestamp)}</div>

@@ -31,29 +31,32 @@ import type {
   WorkspaceDiskUsage,
   WorkspaceTask,
   WorkspaceTaskStats,
-} from "$shared/types";
-import type { CommitInfo, TrackedChange } from "$features/file-tracking/types";
-import type { WorkspaceEvent } from "$features/events/types";
-import type { TokenUsage } from "$features/token-usage/token-usage-types";
-import type { ContextItem } from "$features/context/types";
+} from '$shared/types';
+import type { CommitInfo, TrackedChange } from '$features/file-tracking/types';
+import type { WorkspaceEvent } from '$features/events/types';
+import type { TokenUsage } from '$features/token-usage/token-usage-types';
+import type { ContextItem } from '$features/context/types';
 import type {
   TaskAgentAssociation,
   TaskAgentAssociationsByTaskKey,
-} from "$store/renderer/slices/task-agent-associations/task-agent-associations-types";
-import type { TerminalTab } from "$store/renderer/slices/terminals/terminals-slice";
+} from '$store/renderer/slices/task-agent-associations/task-agent-associations-types';
+import type { TerminalTab } from '$store/renderer/slices/terminals/terminals-slice';
 import type {
   ScriptRuntimeState,
   ScriptWithState,
   WorkspaceScript,
-} from "$store/renderer/slices/scripts/scripts-types";
-import type { ScriptCategory, ScriptMode } from "$features/scripts/types";
-import type { SkillInfo } from "$store/renderer/slices/skills/skills-types";
-import type { AuggieModel } from "$features/auggie/auggie-models.client";
-import type { ProviderCatalogResult } from "$shared/provider-catalog";
-import type { RecentUrl } from "$store/renderer/slices/browser/browser-types";
-import type { McpServerConfig, McpServerRuntimeStatus } from "$store/renderer/slices/mcp-settings/mcp-settings-types";
-import type { UserPreferencesState } from "$store/renderer/slices/user-preferences/user-preferences-slice";
-import type { ProviderSettingsState } from "$store/renderer/slices/provider-settings/provider-settings-slice";
+} from '$store/renderer/slices/scripts/scripts-types';
+import type { ScriptCategory, ScriptMode } from '$features/scripts/types';
+import type { SkillInfo } from '$store/renderer/slices/skills/skills-types';
+import type { AuggieModel } from '$features/auggie/auggie-models.client';
+import type { ProviderCatalogResult } from '$shared/provider-catalog';
+import type { RecentUrl } from '$store/renderer/slices/browser/browser-types';
+import type {
+  McpServerConfig,
+  McpServerRuntimeStatus,
+} from '$store/renderer/slices/mcp-settings/mcp-settings-types';
+import type { UserPreferencesState } from '$store/renderer/slices/user-preferences/user-preferences-slice';
+import type { ProviderSettingsState } from '$store/renderer/slices/provider-settings/provider-settings-slice';
 
 /**
  * The daemon-persisted subset of provider settings (`providers.active` /
@@ -63,19 +66,19 @@ import type { ProviderSettingsState } from "$store/renderer/slices/provider-sett
  */
 export type PersistedProviderSettings = Pick<
   ProviderSettingsState,
-  "activeProviderId" | "enabledProviders"
+  'activeProviderId' | 'enabledProviders'
 >;
-import type { SingleWorkspaceSettings } from "$store/renderer/slices/workspace-settings/workspace-settings-slice";
-import type { BackgroundAgentSettingsState } from "$store/renderer/slices/background-agent-settings/background-agent-settings-slice";
-import type { GitHubUser } from "$features/github-auth/types";
-import type { LinearIssueResult } from "$features/linear-auth/renderer/linear-auth.client";
-import type { SentryIssueResult } from "$features/sentry-auth/types";
-import type { ReleaseNotes } from "$store/renderer/slices/release-notes/release-notes-types";
-import type { SystemStatusState } from "$store/renderer/slices/system-status/system-status-slice";
-import type { AutoUpdateState } from "$store/renderer/slices/auto-update/auto-update-types";
-import type { CommentV2 } from "$store/renderer/slices/comments/comments-types";
-import type { AuthorType, CommentType } from "$features/comments/comment-types-v2";
-import type { FileContentEntry } from "$store/renderer/slices/files/files-types";
+import type { SingleWorkspaceSettings } from '$store/renderer/slices/workspace-settings/workspace-settings-slice';
+import type { BackgroundAgentSettingsState } from '$store/renderer/slices/background-agent-settings/background-agent-settings-slice';
+import type { GitHubUser } from '$features/github-auth/types';
+import type { LinearIssueResult } from '$features/linear-auth/renderer/linear-auth.client';
+import type { SentryIssueResult } from '$features/sentry-auth/types';
+import type { ReleaseNotes } from '$store/renderer/slices/release-notes/release-notes-types';
+import type { SystemStatusState } from '$store/renderer/slices/system-status/system-status-slice';
+import type { AutoUpdateState } from '$store/renderer/slices/auto-update/auto-update-types';
+import type { CommentV2 } from '$store/renderer/slices/comments/comments-types';
+import type { AuthorType, CommentType } from '$features/comments/comment-types-v2';
+import type { FileContentEntry } from '$store/renderer/slices/files/files-types';
 
 /** Disposer returned by every `subscribe()` call. */
 export type Unsubscribe = () => void;
@@ -183,8 +186,7 @@ export interface AgentCreateRequest {
  * the agent without choosing any option.
  */
 export type PermissionOutcome =
-  | { outcome: "selected"; optionId: string }
-  | { outcome: "cancelled" };
+  { outcome: 'selected'; optionId: string } | { outcome: 'cancelled' };
 
 /**
  * `agent.respondPermission` outcome (PROTOCOL §8). The daemon returns
@@ -259,7 +261,7 @@ export interface PrStatusSummary {
  * the daemon-owned per-branch PR list.
  */
 export interface PrRefreshResult {
-  outcome: "skipped" | "unchanged" | "linked" | "updated" | "unlinked";
+  outcome: 'skipped' | 'unchanged' | 'linked' | 'updated' | 'unlinked';
   prNumber?: number;
   prUrl?: string;
   prStatus?: PullRequestStatus;
@@ -443,14 +445,21 @@ export interface WorkspacesClient {
 }
 
 /**
- * Image content block attached to a message (PROTOCOL §5.5:
- * `{ type: "image", data, mimeType }`). Shared shape for the optional
- * `imageBlocks` param on `agents.queue`.
+ * Image content block attached to a message (PROTOCOL §5.5). Two arms,
+ * exactly one of `data` / `attachmentId` per block (monorepo#3338):
+ * inline `{ type: "image", data, mimeType }` carries base64 bytes; the
+ * attachment-registry reference `{ type: "image", attachmentId, mimeType? }`
+ * carries the UUID of a placed attachment (`file.placeAttachment` /
+ * `file.attachmentUpload.*`) and the daemon resolves the bytes server-side.
+ * Shared shape for the optional `imageBlocks` param on `agents.queue`.
  */
 export interface ImageBlock {
-  type: "image";
-  data: string;
-  mimeType: string;
+  type: 'image';
+  /** Base64 image bytes (inline arm). */
+  data?: string;
+  mimeType?: string;
+  /** Attachment-registry UUID (reference arm — no bytes on the wire). */
+  attachmentId?: string;
 }
 
 /**
@@ -460,7 +469,7 @@ export interface ImageBlock {
  * paths. Shared shape for the optional `fileBlocks` param on `agents.queue`.
  */
 export interface FileBlock {
-  type: "file";
+  type: 'file';
   attachmentId: string;
   fileName: string;
   mimeType?: string;
@@ -888,11 +897,7 @@ export interface ChatTranscript {
  * timed out, retry pending).
  */
 export type ChatLiveStreamPhase =
-  | "connecting"
-  | "awaiting-snapshot"
-  | "live"
-  | "resyncing"
-  | "delayed";
+  'connecting' | 'awaiting-snapshot' | 'live' | 'resyncing' | 'delayed';
 
 export interface ChatClient {
   /**
@@ -1022,7 +1027,7 @@ export interface SettingDefinitionWithValue {
   label: string;
   description: string;
   category: string;
-  type: "boolean" | "number" | "string" | "enum" | "object";
+  type: 'boolean' | 'number' | 'string' | 'enum' | 'object';
   enumValues?: string[];
   min?: number;
   max?: number;
@@ -1189,7 +1194,7 @@ export interface GitClient {
    */
   commitsWithBoundary(
     workspaceId: string,
-    includeOlder?: boolean
+    includeOlder?: boolean,
   ): Promise<{ commits: CommitInfo[]; boundarySha: string | null; nextToken: string | null }>;
   /**
    * `git.commitDetails` — metadata + per-file `(additions, deletions)` for one
@@ -1200,7 +1205,7 @@ export interface GitClient {
   commitDetails(
     workspaceId: string,
     commitHash: string,
-    opts?: { gitRootId?: string }
+    opts?: { gitRootId?: string },
   ): Promise<CommitDetailsResult | null>;
   prStatus(workspaceId: string): Promise<PrStatusSummary | null>;
   /**
@@ -1287,7 +1292,7 @@ export interface NoteRestoreResult extends MutationResult {
 export interface LineAttributionAuthor {
   id: string;
   name: string;
-  type: "user" | "agent" | "system";
+  type: 'user' | 'agent' | 'system';
   turnNumber?: number;
 }
 
@@ -1421,7 +1426,7 @@ export interface NotesClient {
 }
 
 /** Inline checkbox status vocabulary (`task.updateStatus` / `task.update`). */
-export type TaskCheckboxStatus = "todo" | "in-progress" | "done";
+export type TaskCheckboxStatus = 'todo' | 'in-progress' | 'done';
 
 /** Fields a `task.update` mutation may change on a single checkbox line. */
 export interface TaskUpdatePatch {
@@ -1514,9 +1519,7 @@ export interface TasksClient {
    * `hydrateTaskAgentAssociations`. `task:agent-linked` /
    * `task:agent-unlinked` events (§6.5) drive incremental updates.
    */
-  listAgentLinks(
-    workspaceId: string,
-  ): Promise<Record<string, TaskAgentAssociationsByTaskKey>>;
+  listAgentLinks(workspaceId: string): Promise<Record<string, TaskAgentAssociationsByTaskKey>>;
   /**
    * `task.linkAgent` (PROTOCOL §5.4): persist a task↔agent linkage row. The
    * daemon uses `taskKey ?? taskText` as the association key and echoes the
@@ -1664,7 +1667,7 @@ export interface WorkspaceSetupScript {
   script: string;
   projectType?: string | null;
   updatedAt: number;
-  generatedBy?: "user" | "agent";
+  generatedBy?: 'user' | 'agent';
 }
 
 export interface SetupScriptsClient {
@@ -1715,7 +1718,7 @@ export interface SpecialistDef {
   reasoningEffort?: string;
   prompt?: string;
   behaviorPrompt?: string;
-  source: "project" | "user" | "bundled";
+  source: 'project' | 'user' | 'bundled';
   isCustomized?: boolean;
   path?: string;
   /**
@@ -1742,18 +1745,28 @@ export interface SpecialistsClient {
    * Create a new specialist definition (`specialist.create`, PROTOCOL §5.11).
    * Errors if a specialist with the same id already exists in the target scope.
    */
-  create(id: string, spec: SpecialistDef, scope?: "project" | "user", workspacePath?: string): Promise<SpecialistDef>;
+  create(
+    id: string,
+    spec: SpecialistDef,
+    scope?: 'project' | 'user',
+    workspacePath?: string,
+  ): Promise<SpecialistDef>;
   /**
    * Edit an existing specialist definition (`specialist.edit`, PROTOCOL §5.11).
    * Errors if the specialist does not exist in the target scope.
    */
-  edit(id: string, spec: SpecialistDef, scope: "project" | "user", workspacePath?: string): Promise<SpecialistDef>;
+  edit(
+    id: string,
+    spec: SpecialistDef,
+    scope: 'project' | 'user',
+    workspacePath?: string,
+  ): Promise<SpecialistDef>;
   /**
    * Delete a specialist definition (`specialist.delete`, PROTOCOL §5.11).
    * Errors if the specialist does not exist in the target scope.
    * Bundled definitions are read-only and cannot be deleted.
    */
-  delete(id: string, scope: "project" | "user", workspacePath?: string): Promise<{ success: true }>;
+  delete(id: string, scope: 'project' | 'user', workspacePath?: string): Promise<{ success: true }>;
 }
 
 export interface ModelsClient {
@@ -1773,7 +1786,7 @@ export interface ProvidersClient {
 }
 
 /** Wire `period` mode for `stats.getUsage`. */
-export type UsageStatsPeriod = "24h" | "month" | "year";
+export type UsageStatsPeriod = '24h' | 'month' | 'year';
 
 /** The separate token counters for one `stats.getUsage` aggregation cell. */
 export interface UsageTokenTotals {
@@ -1853,7 +1866,7 @@ export interface VoiceTranscribeContext {
 export interface VoiceTranscribeResult {
   text: string;
   /** The provider that actually served the request. */
-  provider: "elevenlabs" | "openai";
+  provider: 'elevenlabs' | 'openai';
   /** Transcribed audio duration in ms; always present, `null` when unknown. */
   durationMs: number | null;
 }

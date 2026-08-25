@@ -26,6 +26,7 @@
     getPanelViewportContentWidth,
   } from './panel-canvas-width';
   import PanelDragPreview from './PanelDragPreview.svelte';
+  import PaneInsertionTargets from './PaneInsertionTargets.svelte';
   import {
     EMPTY_LAYOUT_LOADING_TIMEOUT_MS,
     isLayoutSettledNow,
@@ -35,9 +36,7 @@
   import { terminalManager } from '$features/terminal/terminal-manager.svelte';
   import { terminalHistoryTracker } from '$features/terminal/terminal-history-tracker';
   import { appClient } from '$lib/client';
-  import { selectIsTerminalOverlayOpen } from '$store/renderer/slices/terminals/terminals-selectors';
-  import { derived, get, writable } from 'svelte/store';
-  import { isFocusInTerminal } from '$lib/utils/keyboardShortcuts';
+  import { derived, writable } from 'svelte/store';
   import { createLogger } from '$lib/utils/client-logger';
   import { hasCapability } from '$lib/utils/platform-capabilities';
   import { dispatchWindowEvent } from '$lib/utils/window-events';
@@ -56,9 +55,12 @@
   import { createBrowserFocusOwnershipReporter } from './browser-focus-ownership';
   import { closePanelWithLastPanelPolicy } from './close-panel';
   import {
-    clearDraggedPanelState,
-    getDraggedPanelId,
-    getPanelLayoutEdgePlacement,
+    clearDraggedPaneState,
+    getDraggedPane,
+    getPaneInsertionPlacement,
+    getPaneInsertionTargetAtX,
+    getPaneInsertionTargets,
+    type PaneInsertionTarget,
     type PanelDragPlacement,
   } from './panel-drag';
   import { selectIsDragging } from '$store/renderer/slices/tab-state/tab-state-selectors';
@@ -76,7 +78,6 @@
     selectExpandedPanelId,
     selectPanels,
     selectFocusedPanelId,
-    selectFocusedPanel,
     selectActiveTab,
     selectAllTabs,
     selectPanelIds,
@@ -90,7 +91,6 @@
   import { renameAgentSessionRequested } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
   import {
     markPanelTouched,
-    movePanelToRootEdge,
     panelLayoutScopeMounted,
     panelLayoutScopeUnmounted,
     consumePanelReveal,
@@ -198,6 +198,8 @@
     | null
   >(null);
   let panelLayoutMotionElement = $state.raw<HTMLDivElement | null>(null);
+  let paneInsertionTargets = $state<PaneInsertionTarget[]>([]);
+  let activePaneInsertionIndex = $state<number | null>(null);
   let panelWorkspaceInset = $state.raw<HTMLDivElement | null>(null);
   const panelRevealScheduler = createLayoutStableRevealScheduler();
   $effect(() => {
@@ -444,57 +446,88 @@
     });
   }
 
-  function handlePanelMovePreview(
-    draggedPanelId: string,
-    targetPanelId: string,
-    position: PanelDragPlacement | null,
-  ) {
-    if (panelMovePreviewClearFrame !== null) cancelAnimationFrame(panelMovePreviewClearFrame);
-    panelMovePreviewClearFrame = null;
-    if (!position) {
-      panelMovePreviewClearFrame = requestAnimationFrame(() => {
-        panelMovePreviewClearFrame = null;
-        panelMovePreview = null;
-      });
-      return;
-    }
-    panelMovePreview = { kind: 'panel', draggedPanelId, targetPanelId, position };
+  function measurePaneInsertionGeometry() {
+    if (!panelLayoutMotionElement || $panelIds$.length >= 4) return null;
+    const panelElements = Array.from(
+      panelLayoutMotionElement.querySelectorAll<HTMLElement>('[data-panel-id]'),
+    );
+    const panelRects = $panelIds$.map((panelId) =>
+      panelElements.find((element) => element.dataset.panelId === panelId)?.getBoundingClientRect(),
+    );
+    if (panelRects.some((rect) => !rect)) return null;
+
+    const layoutRect = panelLayoutMotionElement.getBoundingClientRect();
+    const targets = getPaneInsertionTargets(layoutRect, panelRects as DOMRect[]);
+    return { layoutRect, targets };
   }
 
-  function handleLayoutEdgeDragOver(event: DragEvent) {
-    const draggedPanelId = getDraggedPanelId();
-    if (!draggedPanelId || !panelLayoutMotionElement) return;
-    const position = getPanelLayoutEdgePlacement(
-      event.clientX,
-      event.clientY,
-      panelLayoutMotionElement.getBoundingClientRect(),
-    );
-    if (!position || position === 'above' || position === 'below') return;
+  function handlePaneInsertionDragOver(event: DragEvent) {
+    if (!getDraggedPane()) return;
+    const geometry = measurePaneInsertionGeometry();
+    if (!geometry) return;
+    paneInsertionTargets = geometry.targets;
+    const target = getPaneInsertionTargetAtX(event.clientX, geometry.layoutRect, geometry.targets);
+    activePaneInsertionIndex = target?.index ?? null;
+    if (!target) return;
 
     event.preventDefault();
     event.stopPropagation();
     if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
-    panelMovePreview = { kind: 'edge', draggedPanelId, position };
   }
 
-  function handleLayoutEdgeDrop(event: DragEvent) {
-    const draggedPanelId = getDraggedPanelId();
-    if (!draggedPanelId || !panelLayoutMotionElement) return;
-    const position = getPanelLayoutEdgePlacement(
-      event.clientX,
-      event.clientY,
-      panelLayoutMotionElement.getBoundingClientRect(),
-    );
-    if (!position || position === 'above' || position === 'below') return;
+  function handlePaneInsertionDrop(event: DragEvent) {
+    const draggedPane = getDraggedPane();
+    const geometry = measurePaneInsertionGeometry();
+    if (!draggedPane || !geometry) return;
+    const target = getPaneInsertionTargetAtX(event.clientX, geometry.layoutRect, geometry.targets);
+    if (!target) return;
 
     event.preventDefault();
     event.stopPropagation();
-    commitPanelMoveWithoutReplay(() => {
-      clearDraggedPanelState();
-      appStore.dispatch(endDrag());
-      appStore.dispatch(movePanelToRootEdge(effectiveLayoutId, draggedPanelId, position));
-    });
+    activePaneInsertionIndex = null;
+    paneInsertionTargets = [];
+    clearDraggedPaneState();
+    appStore.dispatch(endDrag());
+    const placement = getPaneInsertionPlacement(target.index, $panelIds$);
+    if (!placement) return;
+    if (placement.kind === 'edge') {
+      layoutManager.moveTabToSplitLevel(
+        draggedPane.tabId,
+        draggedPane.panelId,
+        [],
+        placement.position,
+        'horizontal',
+      );
+      return;
+    }
+    layoutManager.moveTabToSplit(
+      draggedPane.tabId,
+      draggedPane.panelId,
+      placement.targetPanelId,
+      placement.zone,
+    );
   }
+
+  function handlePaneInsertionDragLeave(event: DragEvent) {
+    const relatedTarget = event.relatedTarget;
+    if (relatedTarget instanceof Node && panelLayoutMotionElement?.contains(relatedTarget)) return;
+    activePaneInsertionIndex = null;
+  }
+
+  $effect(() => {
+    const dragging = $isDragging$;
+    const panelIds = $panelIds$;
+    if (!dragging || panelIds.length >= 4) {
+      paneInsertionTargets = [];
+      activePaneInsertionIndex = null;
+      return;
+    }
+    const frame = requestAnimationFrame(() => {
+      if (!getDraggedPane()) return;
+      paneInsertionTargets = measurePaneInsertionGeometry()?.targets ?? [];
+    });
+    return () => cancelAnimationFrame(frame);
+  });
 
   $effect.pre(() => {
     if (!panelMovePreviewRoot || suppressCommittedPanelMoveMotion) return;
@@ -517,6 +550,7 @@
   });
 
   $effect(() => {
+    if (!$isDragging$) activePaneInsertionIndex = null;
     if (!$isDragging$ && !suppressCommittedPanelMoveMotion) clearPanelMovePreviewNow();
   });
 
@@ -579,6 +613,7 @@
     () => layoutManager,
     (direction) => focusCycledPanel(direction),
     () => panelViewportWidth,
+    { onFocusAdjacentColumn: (direction) => focusAdjacentColumn(direction) },
   );
 
   // Register keyboard shortcuts in cache so they can be accessed from outside
@@ -809,12 +844,11 @@
   }
 
   function handleResizeRootDivider(
-    panelIndex: number,
-    requestedDelta: number,
     previousPanelWidths: readonly number[],
+    finalPanelWidths: readonly number[],
   ) {
     markPristinePanelsTouched();
-    layoutManager.resizeRootDivider(panelIndex, requestedDelta, previousPanelWidths);
+    layoutManager.resizeRootDivider(previousPanelWidths, finalPanelWidths);
   }
 
   function handlePanelCanvasWidthChange(width: number) {
@@ -846,6 +880,17 @@
     insertIndex?: number,
   ) {
     layoutManager.moveTabToPanel(tabId, fromPanelId, targetPanelId, insertIndex);
+  }
+
+  function handleMoveActivePane(panelId: string, direction: PanelCycleDirection) {
+    const panelIds = selectPanelIds.select(appStore.state, workspaceId);
+    const panelIndex = panelIds.indexOf(panelId);
+    const targetIndex = panelIndex + (direction === 'next' ? 1 : -1);
+    const targetPanelId = panelIds[targetIndex];
+    const activeTabId = layoutManager.getPanel(panelId)?.activeTabId;
+    if (targetPanelId && activeTabId) {
+      layoutManager.moveTabToPanel(activeTabId, panelId, targetPanelId);
+    }
   }
 
   function handleTabDropToSplitHandle(
@@ -1069,7 +1114,16 @@
     return true;
   }
 
-  const terminalOverlayOpen = selectIsTerminalOverlayOpen(workspaceIdStore);
+  function focusAdjacentColumn(direction: PanelCycleDirection): boolean {
+    const panelIds = selectPanelIds.select(appStore.state, workspaceId);
+    const focusedPanelId = selectFocusedPanelId.select(appStore.state, workspaceId);
+    const targetPanelId = resolveLocalPanelCycleTarget(panelIds, focusedPanelId, direction);
+    if (!targetPanelId) return false;
+    appStore.dispatch(markPanelTouched(effectiveLayoutId, targetPanelId));
+    layoutManager.focusPanel(targetPanelId);
+    dispatchFocusPanelContent(targetPanelId);
+    return true;
+  }
 
   const isMac =
     typeof navigator !== 'undefined' && navigator.platform.toUpperCase().includes('MAC');
@@ -1089,26 +1143,6 @@
     // Note: Mod+/ for keyboard shortcuts cheat sheet is handled globally in +layout.svelte
     // Do NOT add a handler here or it will toggle twice (once per handler)
 
-    // Mod+\ - Split horizontally
-    if (isMod && e.key === '\\' && !e.shiftKey) {
-      e.preventDefault();
-      const focusedId = selectFocusedPanelId.select(appStore.state, workspaceId);
-      if (focusedId) {
-        handleSplitPanel(focusedId, 'horizontal');
-      }
-      return;
-    }
-
-    // Mod+Shift+\ also inserts into the horizontal stack.
-    if (isMod && e.key === '\\' && e.shiftKey) {
-      e.preventDefault();
-      const focusedId = selectFocusedPanelId.select(appStore.state, workspaceId);
-      if (focusedId) {
-        handleSplitPanel(focusedId, 'horizontal');
-      }
-      return;
-    }
-
     // Mod+Shift+M - Toggle zoom on focused panel
     if (isMod && e.shiftKey && (e.key === 'm' || e.key === 'M')) {
       e.preventDefault();
@@ -1122,57 +1156,6 @@
       e.preventDefault();
       e.stopPropagation();
       keyboardShortcuts.executeAction('zoom-toggle');
-      return;
-    }
-
-    // Cmd+PageDown - Next tab in focused panel
-    // Cmd+PageUp - Previous tab in focused panel
-    if (e.metaKey && !e.ctrlKey && (e.key === 'PageDown' || e.key === 'PageUp')) {
-      const panel = selectFocusedPanel.select(appStore.state, workspaceId);
-      if (panel && panel.tabs.length > 1) {
-        e.preventDefault();
-        const currentIndex = panel.tabs.findIndex((t) => t.id === panel.activeTabId);
-        let newIndex: number;
-        if (e.key === 'PageUp') {
-          // Previous tab
-          newIndex = currentIndex <= 0 ? panel.tabs.length - 1 : currentIndex - 1;
-        } else {
-          // Next tab
-          newIndex = currentIndex >= panel.tabs.length - 1 ? 0 : currentIndex + 1;
-        }
-        layoutManager.setActiveTab(panel.tabs[newIndex].id, panel.id);
-      }
-      return;
-    }
-
-    // Mod+Shift+] (or }) or Cmd+Shift+PageDown - Next panel
-    // Mod+Shift+[ (or {) or Cmd+Shift+PageUp - Previous panel
-    // Note: Shift+] produces } and Shift+[ produces { on US keyboards, so we check for both
-    //
-    // IMPORTANT: These shortcuts are context-aware based on which section has focus:
-    // - If terminal is open AND focused: Let terminal handle tab cycling (don't handle here)
-    // - Otherwise: Cycle through panels
-    if (
-      isMod &&
-      e.shiftKey &&
-      (e.key === ']' ||
-        e.key === '}' ||
-        e.key === '[' ||
-        e.key === '{' ||
-        e.key === 'PageDown' ||
-        e.key === 'PageUp')
-    ) {
-      // Check if terminal is open and has focus - let terminal handle its own tab cycling
-      const terminalIsOpen = get(terminalOverlayOpen);
-      const terminalHasFocus = isFocusInTerminal(e.target as HTMLElement);
-
-      if (terminalIsOpen && terminalHasFocus) {
-        // Terminal is focused - don't handle here, let QuakeTerminalOverlay handle it
-        return;
-      }
-
-      const direction = e.key === ']' || e.key === '}' || e.key === 'PageDown' ? 'next' : 'prev';
-      if (focusCycledPanel(direction)) e.preventDefault();
       return;
     }
   }
@@ -1295,8 +1278,9 @@
       bind:this={panelLayoutMotionElement}
       class="relative h-full w-full min-w-0"
       data-panel-layout-motion
-      ondragovercapture={handleLayoutEdgeDragOver}
-      ondropcapture={handleLayoutEdgeDrop}
+      ondragovercapture={handlePaneInsertionDragOver}
+      ondropcapture={handlePaneInsertionDrop}
+      ondragleave={handlePaneInsertionDragLeave}
       transition:resize={{ axis: 'x', duration: layoutMotionDuration }}
     >
       <div class:opacity-0={panelMovePreviewRoot !== null} class="h-full w-full min-w-0">
@@ -1332,8 +1316,8 @@
           onResizeRootDivider={handleResizeRootDivider}
           onTabDropToSplit={handleTabDropToSplit}
           onTabMoveToPanel={handleTabMoveToPanel}
+          onMoveActivePane={handleMoveActivePane}
           onPanelMove={handlePanelMove}
-          onPanelMovePreview={handlePanelMovePreview}
           onTabDropToSplitHandle={handleTabDropToSplitHandle}
           onTabRename={handleTabRename}
           {onCreateAgent}
@@ -1343,6 +1327,12 @@
           onOpenBrowser={canOpenBrowserPanel ? handleOpenBrowser : undefined}
         />
       </div>
+      {#if paneInsertionTargets.length > 0}
+        <PaneInsertionTargets
+          targets={paneInsertionTargets}
+          activeIndex={activePaneInsertionIndex}
+        />
+      {/if}
       {#if panelMovePreviewRoot}
         <div
           bind:this={panelDragPreviewElement}

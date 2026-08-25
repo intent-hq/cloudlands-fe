@@ -91,7 +91,7 @@
     return ownerContent?.dataset.chatMessageNavigatorContent === navigatorId;
   }
 
-  function handleWindowFocusIn(event: FocusEvent) {
+  function handleFocusOutside(event: FocusEvent) {
     if (!open || !(event.target instanceof Node)) return;
     if (triggerElement?.contains(event.target) || isNavigatorContentTarget(event.target)) return;
     pointerDownOnTrigger = false;
@@ -194,8 +194,6 @@
   }
 </script>
 
-<svelte:window onfocusincapture={handleWindowFocusIn} />
-
 <div class="flex shrink-0 items-center gap-0" data-testid="chat-header-navigation-controls">
   <Popover.Root bind:open onOpenChange={handleOpenChange}>
     <Popover.Trigger
@@ -242,6 +240,7 @@
         trapFocus={false}
         onOpenAutoFocus={handleOpenAutoFocus}
         onCloseAutoFocus={handleCloseAutoFocus}
+        onFocusOutside={handleFocusOutside}
         data-chat-message-navigator-content={navigatorId}
         class="z-(--layer-popover) flex min-w-0 max-h-[var(--bits-popover-content-available-height)] w-[28rem] max-w-[min(calc(100vw-var(--space-4)),calc(var(--bits-popover-content-available-width)-var(--space-2)))] flex-col overflow-hidden rounded-(--radius-medium) border border-border bg-popover p-[var(--space-1)] text-popover-foreground shadow-(--elevation-overlay) outline-none"
       >

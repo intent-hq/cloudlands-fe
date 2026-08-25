@@ -64,7 +64,7 @@
       )}
     >
       {#if variant !== 'bare'}
-        <AgentAvatar agentId="blank" size={16} specialist={value} />
+        <AgentAvatar agentId="blank" variant="compact" specialist={value} />
       {/if}
       <span
         class={variant === 'bare'
@@ -94,7 +94,7 @@
         )}
         onclick={() => handleSelect(null)}
       >
-        <AgentAvatar agentId="blank" size={20} specialist={null} />
+        <AgentAvatar agentId="blank" variant="standard" specialist={null} />
         <div class="flex flex-col">
           <span class="font-medium text-foreground">{m.chat_shared_general_fallback()}</span>
           <span class="text-xs text-subtle">{m.chat_shared_noSpecializedBehavior_label()}</span>
@@ -114,7 +114,7 @@
           )}
           onclick={() => handleSelect(specialist.id)}
         >
-          <AgentAvatar agentId="blank" size={20} specialist={specialist.id} />
+          <AgentAvatar agentId="blank" variant="standard" specialist={specialist.id} />
           <div class="flex flex-col min-w-0">
             <span class="font-medium text-foreground">{specialist.name}</span>
             <span class="text-xs text-subtle truncate">{specialist.description}</span>

@@ -28,6 +28,7 @@ declare module 'svelte-fa' {
     primaryOpacity?: string | number;
     secondaryOpacity?: string | number;
     swapOpacity?: boolean;
+    'data-panel-agent-chat-glyph'?: boolean;
   }
 
   export default class Fa extends SvelteComponent<FaProps> {}

@@ -256,18 +256,9 @@ export class PanelLayoutAdapter {
   updateSplitSizes(sizes: number[], splitPath?: number[]) {
     this.dispatch(updateSplitSizes(this.workspaceId, sizes, splitPath));
   }
-  resizeRootDivider(
-    panelIndex: number,
-    requestedDelta: number,
-    previousPanelWidths: readonly number[],
-  ) {
+  resizeRootDivider(previousPanelWidths: readonly number[], finalPanelWidths: readonly number[]) {
     this.dispatch(
-      resizePanelLayoutAtRootDivider(
-        this.workspaceId,
-        panelIndex,
-        requestedDelta,
-        previousPanelWidths,
-      ),
+      resizePanelLayoutAtRootDivider(this.workspaceId, previousPanelWidths, finalPanelWidths),
     );
   }
   toggleExpandPanel(panelId: string) {

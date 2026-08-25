@@ -48,7 +48,11 @@ import { hydrateAgentsRequested } from '../../workspace-agents/workspace-agents-
 import { loadEventsRequested } from '../../workspace-events/workspace-events-slice';
 import { ensureWorkspaceTasksLoaded } from '../../workspace-tasks/workspace-tasks-slice';
 import { initContextForWorkspace } from '../../context/context-slice';
-import { workspaceMounted } from '../workspace-lifecycle-slice';
+import {
+  workspaceHydrationRequested,
+  workspaceMounted,
+  workspaceUnmounted,
+} from '../workspace-lifecycle-slice';
 
 const logger = createLogger('LifecycleIpcReadSaga');
 
@@ -175,12 +179,35 @@ function* workspaceMountedWorker(action: ReturnType<typeof workspaceMounted>): S
   if (workspaceId) yield* fanOutWorkspaceMounted(workspaceId);
 }
 
+function* workspaceHydrationRequestedWorker(
+  hydratedWorkspaceIds: Set<string>,
+  action: ReturnType<typeof workspaceHydrationRequested>,
+): SagaGenerator<void> {
+  const [workspaceId] = action.payload;
+  if (!workspaceId || hydratedWorkspaceIds.has(workspaceId)) return;
+
+  hydratedWorkspaceIds.add(workspaceId);
+  yield* put(workspaceMounted(workspaceId));
+}
+
+function* clearWorkspaceHydrationWorker(
+  hydratedWorkspaceIds: Set<string>,
+  action: ReturnType<typeof workspaceUnmounted>,
+): SagaGenerator<void> {
+  const [workspaceId] = action.payload;
+  if (workspaceId) hydratedWorkspaceIds.delete(workspaceId);
+}
+
 export function* lifecycleIpcReadSaga(): SagaGenerator<void> {
+  const hydratedWorkspaceIds = new Set<string>();
+
   yield* all([
     takeLeading(loadGithubRepos, refreshGithubRepos),
     takeLeading(fetchEditors, refreshEditorsWorker),
     takeLeading(loadKnownRepos, refreshKnownRepos),
     takeLeading(refreshAcceptChangesStatus, refreshAcceptChangesWorker),
+    takeEvery(workspaceHydrationRequested, workspaceHydrationRequestedWorker, hydratedWorkspaceIds),
     takeEvery(workspaceMounted, workspaceMountedWorker),
+    takeEvery(workspaceUnmounted, clearWorkspaceHydrationWorker, hydratedWorkspaceIds),
   ]);
 }

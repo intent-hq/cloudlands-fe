@@ -28,6 +28,7 @@
   import { createTranscriptQuery } from '$lib/utils/palette-transcript-search';
   import { createLogger } from '$lib/utils/client-logger';
   import { m } from '$shared/paraglide/messages.js';
+  import { isCmdClickModifier } from '$shared/utils/link-helpers';
 
   import { selectBrowserRecentUrls } from '$store/renderer/slices/browser/browser-selectors';
   import { initBrowserWorkspace } from '$store/renderer/slices/browser/browser-slice';
@@ -645,7 +646,7 @@
         return;
       }
       // Cmd+Enter opens in adjacent panel
-      const openInAdjacentPanel = e.metaKey || e.ctrlKey;
+      const openInAdjacentPanel = isCmdClickModifier({ event: e });
       const selectedItem = searchResults[selectedIndex];
       if (isSelectableResult(selectedItem)) {
         selectItem(selectedItem, { openInAdjacentPanel });

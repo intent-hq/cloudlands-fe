@@ -8,7 +8,7 @@ vi.mock('$lib/client', () => ({
   appClient: { workspaces: { markSeen: mockMarkSeen } },
 }));
 
-import { markWorkspaceSeen, markWorkspaceSeenIfViewing } from './mark-workspace-seen';
+import { markWorkspaceSeen } from './mark-workspace-seen';
 
 async function flushTicks(count = 5): Promise<void> {
   for (let i = 0; i < count; i++) await Promise.resolve();
@@ -20,7 +20,7 @@ beforeEach(() => {
 
 afterEach(() => vi.clearAllMocks());
 
-describe('markWorkspaceSeen (view/button-triggered clear path)', () => {
+describe('markWorkspaceSeen (explicit mark-all-read gesture)', () => {
   it('fires workspace.markSeen through the appClient seam with the workspace id', async () => {
     markWorkspaceSeen('ws-1');
     await vi.waitFor(() => expect(mockMarkSeen).toHaveBeenCalledWith('ws-1'));
@@ -48,36 +48,6 @@ describe('markWorkspaceSeen (view/button-triggered clear path)', () => {
     await vi.waitFor(() => expect(mockMarkSeen).toHaveBeenCalledWith('ws-1'));
     // Flushing the rejection must not surface an unhandled error.
     await flushTicks();
-  });
-});
-
-describe('markWorkspaceSeenIfViewing (unread raise for the on-screen workspace)', () => {
-  it('marks seen when the workspace route is the one currently viewed', async () => {
-    window.history.pushState({}, '', '/workspace/ws-1');
-    markWorkspaceSeenIfViewing('ws-1');
-    await vi.waitFor(() => expect(mockMarkSeen).toHaveBeenCalledWith('ws-1'));
-  });
-
-  it('matches subroutes of the viewed workspace', async () => {
-    window.history.pushState({}, '', '/workspace/ws-1/settings');
-    markWorkspaceSeenIfViewing('ws-1');
-    await vi.waitFor(() => expect(mockMarkSeen).toHaveBeenCalledWith('ws-1'));
-  });
-
-  it('does nothing when another workspace (or no workspace) is on screen', async () => {
-    window.history.pushState({}, '', '/workspace/ws-2');
-    markWorkspaceSeenIfViewing('ws-1');
-    window.history.pushState({}, '', '/');
-    markWorkspaceSeenIfViewing('ws-1');
-    await flushTicks();
-    expect(mockMarkSeen).not.toHaveBeenCalled();
-  });
-
-  it('does not prefix-match a different workspace id', async () => {
-    window.history.pushState({}, '', '/workspace/ws-11');
-    markWorkspaceSeenIfViewing('ws-1');
-    await flushTicks();
-    expect(mockMarkSeen).not.toHaveBeenCalled();
   });
 });
 

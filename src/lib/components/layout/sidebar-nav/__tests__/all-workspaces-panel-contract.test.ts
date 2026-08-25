@@ -2,10 +2,6 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
-const source = readFileSync(
-  resolve(process.cwd(), 'src/lib/components/layout/sidebar-nav/SidebarNavHoverCard.svelte'),
-  'utf8',
-);
 const panelSource = readFileSync(
   resolve(process.cwd(), 'src/lib/components/layout/sidebar-nav/SidebarPanel.svelte'),
   'utf8',
@@ -15,13 +11,7 @@ const chiefSource = readFileSync(
   'utf8',
 );
 
-describe('All Workspaces dropdown presentation', () => {
-  it('renders a recents-only list without header or pin controls', () => {
-    expect(source).toContain('<AllWorkspacesCard recentsOnly />');
-    expect(source).not.toContain('pinAllWorkspacesPanel');
-    expect(source).not.toContain('Find or switch spaces');
-  });
-
+describe('All Workspaces panel presentation', () => {
   it('keeps Spaces and Chief mounted without root-route special casing', () => {
     expect(panelSource).not.toContain("page.url.pathname === '/'");
     expect(panelSource).toContain('data-combined-panel-spaces');

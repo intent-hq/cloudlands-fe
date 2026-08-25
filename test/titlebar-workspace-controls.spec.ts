@@ -36,10 +36,6 @@ test.beforeAll(async () => {
           find: '$store/renderer/store',
           replacement: resolve(process.cwd(), 'test/fixtures/titlebar-control-store.ts'),
         },
-        {
-          find: /.*\/sidebar-nav\/SidebarNavHoverCard\.svelte$/,
-          replacement: resolve(process.cwd(), 'test/fixtures/EmptyComponent.svelte'),
-        },
         { find: '$lib', replacement: resolve(process.cwd(), 'src/lib') },
         { find: '$store', replacement: resolve(process.cwd(), 'src/store') },
         { find: '$features', replacement: resolve(process.cwd(), 'src/features') },
@@ -103,6 +99,11 @@ test('mounts accepted control geometry and shortcut tooltips', async ({ page }, 
           expect(box?.height).toBeCloseTo(32 * zoom, 0);
           await expect(control).not.toHaveAttribute('title', /.+/);
         }
+        const sidebarControl = controls[0];
+        await expect(sidebarControl).toHaveAttribute('aria-label', 'Toggle sidebar');
+        await expect(sidebarControl).not.toHaveAttribute('aria-haspopup');
+        await expect(sidebarControl).not.toHaveAttribute('aria-expanded');
+        await expect(sidebarControl).not.toHaveAttribute('aria-controls');
         const glyphs = [
           page.locator('[data-titlebar-spaces-control] svg'),
           page.locator('[data-fixture-control="layout"] svg'),
@@ -114,9 +115,11 @@ test('mounts accepted control geometry and shortcut tooltips', async ({ page }, 
           expect(box?.height).toBeCloseTo(16 * zoom, 0);
           expect(await glyph.evaluate((node) => getComputedStyle(node).opacity)).toBe('1');
         }
-        await controls[1].hover();
+        await sidebarControl.hover();
         await expect(page.locator('[data-tooltip-label]')).toBeVisible();
-        await expect(page.locator('[data-tooltip-shortcut]')).toContainText(/L/);
+        await expect(page.locator('[data-tooltip-label]')).toHaveText('Toggle sidebar');
+        await expect(page.locator('[data-tooltip-shortcut]')).toContainText(/(?:⌘|Ctrl\+)O/);
+        await expect(page.locator('.sidebar-hover-card')).toHaveCount(0);
         if (reducedMotion === 'no-preference' && zoom === 1) {
           await testInfo.attach(theme + '-titlebar-controls', {
             body: await page.screenshot(),

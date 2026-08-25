@@ -61,6 +61,7 @@
       workspaceId="panel-identity-workspace"
       isFocused
       onTabRename={() => {}}
+      onTabClose={() => {}}
       onClosePanel={() => {}}
     />
   {:else}

@@ -40,11 +40,12 @@ import {
   markAgentSeenAtBoundary,
   markAgentSeenOnTurnFinish,
   markAgentSeenOnUserSend,
+  markAgentSeenOnView,
   newestPersistedMessageId,
 } from './mark-agent-seen';
 
-function msg(id: string, isStreaming = false): AgentMessage {
-  return { id, role: 'assistant', contentBlocks: [], isStreaming } as unknown as AgentMessage;
+function msg(id: string, isStreaming = false, role = 'assistant'): AgentMessage {
+  return { id, role, contentBlocks: [], isStreaming } as unknown as AgentMessage;
 }
 
 // Distinct agent ids per test: the module keeps a per-agent dedupe map across
@@ -351,5 +352,65 @@ describe('markAgentSeenAtBoundary (immediate, stop-looking boundary)', () => {
     markAgentSeenAtBoundary(['', nextAgentId()]);
     await flushImmediate();
     expect(mockMarkSeen).not.toHaveBeenCalled();
+  });
+});
+
+describe('markAgentSeenOnView (debounced, viewed + focused + assistant-tail gates)', () => {
+  it('clears an already-finished conversation on open (assistant tail)', async () => {
+    const agentId = nextAgentId();
+    seedSession(agentId, { messages: [msg('user-1', false, 'user'), msg('reply-1')] });
+
+    markAgentSeenOnView(agentId);
+    await fireDebounce();
+
+    expect(mockMarkSeen).toHaveBeenCalledTimes(1);
+    expect(mockMarkSeen).toHaveBeenCalledWith({
+      workspaceId: 'ws-1',
+      agentId,
+      messageId: 'reply-1',
+    });
+  });
+
+  it('drops a mid-turn view (newest persisted message is the user send)', async () => {
+    const agentId = nextAgentId();
+    seedSession(agentId, {
+      messages: [msg('reply-1'), msg('user-2', false, 'user'), msg('partial', true)],
+    });
+
+    markAgentSeenOnView(agentId);
+    await fireDebounce();
+    expect(mockMarkSeen).not.toHaveBeenCalled();
+  });
+
+  it('drops the request when the conversation is no longer the viewed one', async () => {
+    const agentId = nextAgentId();
+    seedSession(agentId, {}, { viewed: false });
+    mockState.unreadTracking.currentlyViewedAgentId = 'agent-other';
+
+    markAgentSeenOnView(agentId);
+    await fireDebounce();
+    expect(mockMarkSeen).not.toHaveBeenCalled();
+  });
+
+  it('drops the request when the window is not focused at fire time', async () => {
+    const agentId = nextAgentId();
+    seedSession(agentId);
+    vi.spyOn(document, 'hasFocus').mockReturnValue(false);
+
+    markAgentSeenOnView(agentId);
+    await fireDebounce();
+    expect(mockMarkSeen).not.toHaveBeenCalled();
+  });
+
+  it('dedupes against an id already sent by another trigger', async () => {
+    const agentId = nextAgentId();
+    seedSession(agentId);
+
+    markAgentSeenOnTurnFinish(agentId);
+    await fireDebounce();
+    markAgentSeenOnView(agentId); // same msg-1 — no re-send
+    await fireDebounce();
+
+    expect(mockMarkSeen).toHaveBeenCalledTimes(1);
   });
 });

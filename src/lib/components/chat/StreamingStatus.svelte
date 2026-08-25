@@ -6,6 +6,7 @@
   - Error/Timeout: clear failed state with Try Again button
 -->
 <script lang="ts">
+  import { onDestroy } from 'svelte';
   import { fade } from 'svelte/transition';
   import { cubicOut } from 'svelte/easing';
   import Fa from 'svelte-fa';
@@ -18,7 +19,12 @@
   import { Button } from '$lib/components/ui/button';
   import { cn } from '$lib/utils/cn';
   import RelativeTime from '$lib/components/ui/RelativeTime.svelte';
-  import { deriveErrorDisplay, latestMeaningfulStatusMessage } from './streaming-status-utils';
+  import {
+    deriveErrorDisplay,
+    formatElapsed,
+    getLatestStatusEvent,
+    getStatusMarkVariant,
+  } from './streaming-status-utils';
   import { m } from '$shared/paraglide/messages.js';
   import StreamingTypingIndicator from './StreamingTypingIndicator.svelte';
 
@@ -109,6 +115,41 @@
   let visible = $derived(
     error || modelUnavailable || ((isStreaming || isProcessing) && !hasPendingPermission),
   );
+  let thinkingVisible = $derived(
+    status === 'normal' && (isStreaming || isProcessing) && !hasPendingPermission,
+  );
+  let latestStatusEvent = $derived(getLatestStatusEvent(statusEvents));
+  let markVariant = $derived(getStatusMarkVariant(latestStatusEvent?.phase));
+
+  let nowMs = $state(Date.now());
+  let elapsedInterval: ReturnType<typeof setInterval> | undefined;
+
+  function clearElapsedInterval() {
+    if (elapsedInterval === undefined) return;
+    clearInterval(elapsedInterval);
+    elapsedInterval = undefined;
+  }
+
+  $effect(() => {
+    if (!thinkingVisible || !latestStatusEvent) {
+      clearElapsedInterval();
+      return;
+    }
+    nowMs = Date.now();
+    clearElapsedInterval();
+    elapsedInterval = setInterval(() => (nowMs = Date.now()), 1_000);
+    return clearElapsedInterval;
+  });
+
+  onDestroy(clearElapsedInterval);
+
+  let elapsedTime = $derived(
+    latestStatusEvent
+      ? m.chat_streamingStatus_elapsedAgo_label({
+          duration: formatElapsed(nowMs - latestStatusEvent.timestamp),
+        })
+      : null,
+  );
 
   // Status message: the raw error when one is set, otherwise "Thinking"
   let statusMessage = $derived.by(() => {
@@ -117,8 +158,6 @@
     }
     return m.chat_streamingStatus_thinking_label();
   });
-
-  let lifecycleMessage = $derived(latestMeaningfulStatusMessage(statusEvents));
 
   // Error surface copy: recreate-aware when the daemon flagged the session
   // corrupted (monorepo#940), otherwise identical to the raw-error rendering.
@@ -137,22 +176,25 @@
   }
 </script>
 
+<StreamingTypingIndicator
+  visible={thinkingVisible}
+  message={statusMessage}
+  lifecycleMessage={latestStatusEvent?.message}
+  elapsed={elapsedTime}
+  variant={markVariant}
+  {seed}
+  class="mt-2 {className}"
+/>
+
 {#if visible}
-  {#if status === 'normal'}
-    <StreamingTypingIndicator
-      visible
-      message={statusMessage}
-      detailMessage={lifecycleMessage}
-      {seed}
-      class="mt-2 {className}"
-    />
-  {:else}
+  {#if status !== 'normal'}
     <div
       role={status === 'error' ? 'alert' : undefined}
       aria-live={status === 'error' ? 'assertive' : undefined}
       data-stream-terminal-error="true"
       class={cn(
         'type-caption flex flex-col gap-0 py-2 pr-1',
+        status === 'error' && 'mt-2',
         status === 'model-unavailable' &&
           'rounded-md border border-warning/20 bg-warning/5 pl-2 pr-3',
         className,
@@ -183,19 +225,21 @@
                   </span>
                 {/if}</span
               >
-              <div class="relative flex min-h-5 w-full min-w-0 items-start gap-1.5 py-0">
+              <div
+                class="relative grid min-h-5 w-full min-w-0 grid-cols-[1.75rem_minmax(0,1fr)] items-start gap-x-1.5 py-0"
+              >
                 <Button
-                  variant="plain"
-                  size="icon-xs"
+                  variant="ghost-light"
+                  size="icon-sm"
                   onclick={handleCopyError}
                   iconOnly
                   tooltip={m.error_boundary_copyDetails_tooltip()}
                   aria-label={m.error_boundary_copyDetails_tooltip()}
-                  class="size-4! shrink-0 p-0! text-muted-foreground opacity-30 hover:opacity-100"
+                  class="absolute top-3 left-0 -translate-y-1/2 text-muted-foreground"
                 >
-                  <Fa icon={errorCopied ? faCheck : faCopy} size="xs" class="w-4 shrink-0" />
+                  <Fa icon={errorCopied ? faCheck : faCopy} class="shrink-0" />
                 </Button>
-                <div class="flex min-w-0 flex-1 flex-col">
+                <div class="col-start-2 flex min-w-0 flex-col">
                   <Button
                     variant="plain"
                     class="type-caption h-auto! min-w-0 max-w-full justify-start text-left leading-4 text-muted-foreground"

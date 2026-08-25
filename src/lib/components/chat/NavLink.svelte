@@ -5,6 +5,7 @@
   import { isResolvableNavTarget, resolveHashToTarget } from '$shared/app-ui-targets';
   import { handleLink } from '$features/navigation/link-handler';
   import { WorkspaceId } from '$shared/types/branded-ids';
+  import { isCmdClickModifier } from '$shared/utils/link-helpers';
 
   interface Props {
     target: string;
@@ -51,12 +52,27 @@
       requestAnimationFrame(() => appStore.dispatch(requestUiHighlight(highlightId)));
     }
   }
+
+  function handleKeydown(event: KeyboardEvent) {
+    if (
+      event.key === 'Enter' &&
+      target.trim().startsWith('intent://') &&
+      isCmdClickModifier({ event })
+    ) {
+      event.preventDefault();
+      void handleLink(target.trim(), {
+        workspaceId: workspaceId ? WorkspaceId(workspaceId) : undefined,
+        event,
+      });
+    }
+  }
 </script>
 
 {#if resolvable}
   <a
     href={target}
     onclick={handleClick}
+    onkeydown={handleKeydown}
     class="ws-block-widget type-body my-2 inline-flex min-h-9 w-fit items-center gap-2 rounded-md border border-border bg-card px-3 py-1.5 font-medium text-foreground shadow-(--elevation-raised) transition-[background-color,border-color,color] hover:border-input hover:bg-accent focus-visible:border-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 motion-reduce:transition-none"
   >
     <span>{label || target}</span>

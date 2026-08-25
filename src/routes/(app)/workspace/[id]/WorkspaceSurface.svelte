@@ -53,9 +53,6 @@
   } from '$store/renderer/slices/ui-layout/ui-layout-slice';
 
   import { createNoteRequested } from '$store/renderer/slices/note-read-tracking/note-read-tracking-slice';
-  import { markWorkspaceSeen } from '$features/workspace/mark-workspace-seen';
-  import { workspaceUnmounted } from '$store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice';
-
   import { setOnboardingActive } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
 
   // Components
@@ -87,8 +84,6 @@
   import {
     createAgentRequested,
     createAgentWithSpecialistRequested,
-    setAgents,
-    setAgentsLoaded,
   } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
   import MultiSelectTabbedSidebar from '$lib/components/workspace/MultiSelectTabbedSidebar.svelte';
   import { m } from '$shared/paraglide/messages.js';
@@ -106,7 +101,6 @@
     active?: boolean;
     manageTab?: boolean;
     columnMode?: boolean;
-    retainWorkspaceSessionOnUnmount?: boolean;
     onCloseWorkspace?: (event: MouseEvent) => void;
     onSidebarWidthChange?: (width: number) => void;
     onPanelMovePreviewWidthRatioChange?: (ratio: number) => void;
@@ -119,7 +113,6 @@
     active = true,
     manageTab = true,
     columnMode = false,
-    retainWorkspaceSessionOnUnmount = false,
     onCloseWorkspace,
     onSidebarWidthChange,
     onPanelMovePreviewWidthRatioChange,
@@ -318,13 +311,11 @@
     return () => appStore.dispatch(setOnboardingActive(false));
   });
 
-  $effect(() => {
-    if (!active || !workspaceId || workspaceId === 'new') return;
-    // Viewing a workspace clears its unread attention on the daemon
-    // (fire-and-forget `workspace.markSeen`, PROTOCOL §5.1); the
-    // `workspace:attention-changed` event drives the UI clear.
-    markWorkspaceSeen(workspaceId);
-  });
+  // Viewing a workspace does NOT clear its unread attention: the flag is
+  // daemon-derived from per-agent seen markers (PROTOCOL §5.1) and clears only
+  // as each unread agent conversation is read (`agent.markSeen`, driven by the
+  // per-agent unread-tracking triggers). Explicit "mark as read" gestures call
+  // `workspace.markSeen` (mark every agent seen) from the sidebar cards.
 
   // Load workspace store on mount
   onMount(() => {
@@ -334,22 +325,10 @@
       appStore.dispatch(loadWorkspacesRequested());
     }
 
-    // Re-focusing the window while a workspace is on screen counts as viewing
-    // it — mark it seen so unread raised while the window was backgrounded
-    // clears the moment the user comes back.
-    const handleWindowFocus = () => {
-      if (workspaceId) markWorkspaceSeen(workspaceId);
-    };
-    window.addEventListener('focus', handleWindowFocus);
-
     // The `initial-agent-pending` sessionStorage marker is no longer stashed
     // by the daemon-owned create flow, so the fresh-creation fade-in transition
     // no longer keys off it. Any equivalent signal should come from workspace
     // creation events / navigation state going forward.
-
-    return () => {
-      window.removeEventListener('focus', handleWindowFocus);
-    };
   });
 
   // Create cleanup manager for this component
@@ -850,23 +829,11 @@
   onDestroy(() => {
     logger.debug('Starting workspace page cleanup', { workspaceId });
 
-    // Dispatch workspaceUnmounted so sagas can clean up (cancel agent loading,
-    // terminal loading, spec panel, window event watchers for this workspace).
-    if (workspaceId && !retainWorkspaceSessionOnUnmount) {
-      appStore.dispatch(workspaceUnmounted(workspaceId));
-    }
-
     // Cancel any pending loads
     workspaceLoader.clearLoadingState();
 
     // Clear workspace state reference
     workspaceState = null;
-
-    // Clear all local state
-    if (!retainWorkspaceSessionOnUnmount) {
-      appStore.dispatch(setAgents(workspaceId, []));
-      appStore.dispatch(setAgentsLoaded(workspaceId, false));
-    }
 
     // Dispose all managed resources (timers, intervals, etc.)
     cleanupManager.dispose();

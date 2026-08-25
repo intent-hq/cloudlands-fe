@@ -6,7 +6,6 @@ const mocks = vi.hoisted(() => ({
   loadError: null as null | { kind: 'not_found' | 'error'; message: string },
   workspace: null as null | { id: string; title: string },
   dispatch: vi.fn(),
-  markSeen: vi.fn(),
 }));
 const action = vi.hoisted(() => (type: string) => (...payload: unknown[]) => ({ type, payload }));
 const mockPart = vi.hoisted(() => (marker: string) => async () => {
@@ -88,7 +87,6 @@ vi.mock('$store/renderer/slices/panel-layout/panel-layout-selectors', () => ({
   selectPanelColumnCountsByWorkspaceId: () => readable({}),
   selectPanelLayoutRoot: () => readable(null),
 }));
-vi.mock('$features/workspace/mark-workspace-seen', () => ({ markWorkspaceSeen: mocks.markSeen }));
 vi.mock('$lib/utils/window-events', () => ({ dispatchWindowEvent: vi.fn() }));
 vi.mock('$features/layout/panel-layout-adapter', () => ({
   getPanelLayoutManager: () => ({ openTab: vi.fn() }),
@@ -110,7 +108,7 @@ vi.mock('$store/renderer/slices/note-read-tracking/note-read-tracking-slice', ()
   createNoteRequested: action('notes/createNoteRequested'),
 }));
 vi.mock('$store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice', () => ({
-  workspaceUnmounted: action('workspaceLifecycle/workspaceUnmounted'),
+  workspaceUnmounted: action('workspace-lifecycle/workspaceUnmounted'),
 }));
 vi.mock('$store/renderer/slices/sidebar-nav/sidebar-nav-slice', () => ({
   setOnboardingActive: action('sidebarNav/setOnboardingActive'),
@@ -148,6 +146,7 @@ vi.mock('$lib/components/layout/panel-system', async () => {
 });
 
 import WorkspaceSurfaceColumnsHarness from './__tests__/mocks/WorkspaceSurfaceColumnsHarness.svelte';
+import WorkspaceSurface from './WorkspaceSurface.svelte';
 
 const hosts = [
   { name: 'standalone', count: 1, columnMode: false },
@@ -171,7 +170,6 @@ beforeEach(() => {
   mocks.loadError = null;
   mocks.workspace = null;
   mocks.dispatch.mockClear();
-  mocks.markSeen.mockClear();
 });
 
 describe('WorkspaceSurface terminal shell boundary', () => {
@@ -234,4 +232,25 @@ describe('WorkspaceSurface terminal shell boundary', () => {
       ).toHaveLength(scenario.count);
     },
   );
+});
+
+describe('WorkspaceSurface session lifecycle', () => {
+  it('preserves workspace sessions across A→B→A selection and surface teardown', async () => {
+    const view = render(WorkspaceSurface, { props: { workspaceId: 'workspace-a' } });
+
+    await view.rerender({ workspaceId: 'workspace-b' });
+    await view.rerender({ workspaceId: 'workspace-a' });
+    view.unmount();
+
+    const destructiveActionTypes = new Set([
+      'workspace-lifecycle/workspaceUnmounted',
+      'workspaceAgents/setAgents',
+      'workspaceAgents/setAgentsLoaded',
+    ]);
+    const destructiveActions = mocks.dispatch.mock.calls
+      .map(([dispatched]) => dispatched as { type?: string })
+      .filter((dispatched) => dispatched.type && destructiveActionTypes.has(dispatched.type));
+
+    expect(destructiveActions).toEqual([]);
+  });
 });

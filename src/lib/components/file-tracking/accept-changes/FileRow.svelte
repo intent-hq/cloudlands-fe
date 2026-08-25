@@ -18,6 +18,7 @@
   import type { SidebarMenuEntry } from '$lib/components/ui/sidebar-context-menu/types';
   import { m } from '$shared/paraglide/messages.js';
   import OpenPanelIndicator from '$lib/components/workspace/sidebar/OpenPanelIndicator.svelte';
+  import { isCmdClickModifier } from '$shared/utils/link-helpers';
 
   interface Props {
     file: UIFileChange;
@@ -33,7 +34,12 @@
     selected?: boolean;
     /** Whether this file has keyboard focus */
     focused?: boolean;
-    onFileClick?: (path: string, commitHash?: string, staged?: boolean, event?: MouseEvent) => void;
+    onFileClick?: (
+      path: string,
+      commitHash?: string,
+      staged?: boolean,
+      event?: MouseEvent | KeyboardEvent,
+    ) => void;
     /** Called when file is shift+clicked for multi-select */
     onSelectClick?: (path: string, event: MouseEvent) => void;
     onStage?: (path: string) => void;
@@ -206,6 +212,11 @@
       } else {
         onFileClick?.(file.path, undefined, file.staged, e);
       }
+    }}
+    onkeydown={(event: KeyboardEvent) => {
+      if (event.key !== 'Enter' || !isCmdClickModifier({ event })) return;
+      event.preventDefault();
+      onFileClick?.(file.path, undefined, file.staged, event);
     }}
   >
     <!-- File info -->

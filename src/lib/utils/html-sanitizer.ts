@@ -10,6 +10,19 @@ import DOMPurify from 'dompurify';
 
 const logger = new Logger('html-sanitizer');
 
+// Restrict workspace-file: URLs to img[src]. ALLOWED_URI_REGEXP is
+// attribute-agnostic, so without this hook the scheme would also survive in
+// anchor hrefs; keeping it image-only avoids relying on the main-process
+// shell.openExternal allowlist to keep such links inert.
+DOMPurify.addHook('uponSanitizeAttribute', (node, data) => {
+  if (
+    /^[\s\u0000-\u001f]*workspace-file:/i.test(data.attrValue) &&
+    !(data.attrName === 'src' && node.nodeName === 'IMG')
+  ) {
+    data.keepAttr = false;
+  }
+});
+
 // Configure DOMPurify for our use cases
 const ALLOWED_TAGS = [
   // Text content
@@ -235,8 +248,9 @@ export function sanitizeMarkdownHTML(html: string): string {
       'open', // details element open state
       'tabindex', // for focusable elements like mention chips
     ],
-    // Allow workspace-asset:// protocol for embedded images in notes
+    // Allow workspace-asset:// (embedded note images) and workspace-file://
+    // (inline workspace file images) protocols
     ALLOWED_URI_REGEXP:
-      /^(?:(?:https?|mailto|tel|sms|intent|workspace-asset):|[^a-z]|[a-z+.\-]+(?:[^a-z+.\-:]|$))/i,
+      /^(?:(?:https?|mailto|tel|sms|intent|workspace-asset|workspace-file):|[^a-z]|[a-z+.\-]+(?:[^a-z+.\-:]|$))/i,
   });
 }

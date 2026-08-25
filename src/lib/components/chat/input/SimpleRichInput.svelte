@@ -5,6 +5,7 @@
   import { toast } from 'svelte-sonner';
   import { createLogger } from '$lib/utils/client-logger';
   import type { Workspace } from '$shared/types';
+  import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
   import { parseCompoundModelId as parseCompoundModelIdWithDefault } from '$shared/utils/compound-model-id';
   import {
     selectEffectiveDefaultProviderId,
@@ -143,7 +144,7 @@
     panelFocused?: boolean;
     /** Whether to use compact mode (shorter height for short panels) */
     compactMode?: boolean;
-    /** Dock to a panel edge with only a top divider. */
+    /** Render as the inset ChatPanel composer surface. */
     edgeDocked?: boolean;
     /** Padding/spacing class applied to the rich text editor content. */
     editorClassName?: string;
@@ -947,7 +948,16 @@
    * Process image files by inserting them inline in the editor
    */
   async function processImageFiles(files: File[]) {
-    const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
+    // Images travel as attachment-reference blocks (monorepo#3338): the send
+    // path places the bytes via file.placeAttachment / chunked upload, so
+    // the composer cap matches the daemon's 30 MiB reference-image limit
+    // rather than the old inline-frame budget. The chief virtual workspace
+    // has no attachment registry — its images stay inline, so it keeps the
+    // legacy 10 MB inline-frame cap.
+    const MAX_FILE_SIZE =
+      workspace?.id === CHIEF_WORKSPACE_ID
+        ? 10 * 1024 * 1024 // 10 MB (legacy inline-frame budget)
+        : 30 * 1024 * 1024; // 30 MiB (daemon image-reference cap)
     const addedCount = { value: 0 };
     const oversizedFiles: string[] = [];
 
@@ -961,8 +971,8 @@
       }
 
       if (file.size > MAX_FILE_SIZE) {
-        // Oversized images stay rejected — the inline limit is what the model
-        // can ingest.
+        // Over the daemon's recorded-size cap for reference images —
+        // rejected up front instead of failing at send-time validation.
         oversizedFiles.push(file.name);
         continue;
       }
@@ -1332,7 +1342,7 @@
   class={cn(
     'relative rich-input-container flex flex-col overflow-hidden text-card-foreground transition-[border-color,background-color,box-shadow] duration-(--motion-fast) motion-reduce:transition-none',
     edgeDocked
-      ? 'rounded-none border-x-0 border-b-0 border-t border-border bg-transparent shadow-none'
+      ? 'rounded-lg border-0 bg-sidebar shadow-none'
       : 'rounded-lg border border-border shadow-(--elevation-raised) focus-within:border-ring focus-within:ring-0',
     {
       'border-primary border-dashed': isDragging,
@@ -1525,7 +1535,9 @@
   <input bind:this={fileInput} type="file" multiple class="hidden" onchange={handleFileChange} />
   <!-- Action Bar -->
   <div
-    class="action-bar flex items-center justify-between pb-1.5 pr-1.5! pt-0 text-muted-foreground transition-opacity duration-150 {contentInsetClasses}"
+    class="action-bar flex items-center justify-between pb-1.5 pr-1.5! pt-0 text-muted-foreground transition-opacity duration-150 {edgeDocked
+      ? 'flex-wrap gap-y-1'
+      : ''} {contentInsetClasses}"
     data-chat-input-action-bar
   >
     <div class="flex items-center gap-2 min-w-0" data-chat-input-primary-actions>
@@ -1578,7 +1590,10 @@
       />
     </div>
 
-    <div class="flex items-center gap-1 min-w-0 shrink-0" data-chat-input-submit-actions>
+    <div
+      class="flex items-center gap-1 min-w-0 {edgeDocked ? 'flex-wrap justify-end' : 'shrink-0'}"
+      data-chat-input-submit-actions
+    >
       <div class="relative inline-block">
         <Menu.Root>
           <Menu.Trigger>

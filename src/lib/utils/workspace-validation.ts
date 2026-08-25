@@ -81,22 +81,24 @@ export function parseGitHubUrl(url: string): { owner: string; repo: string } | n
 
   // Handle various GitHub URL formats
   const patterns = [
-    /^https?:\/\/github\.com\/([^\/]+)\/([^\/\.]+)(\.git)?$/i,
-    /^git@github\.com:([^\/]+)\/([^\/\.]+)(\.git)?$/i,
-    /^github\.com\/([^\/]+)\/([^\/\.]+)(\.git)?$/i,
+    /^https?:\/\/github\.com\/([^\/]+)\/([^\/]+)$/i,
+    /^git@github\.com:([^\/]+)\/([^\/]+)$/i,
+    /^github\.com\/([^\/]+)\/([^\/]+)$/i,
   ];
 
   for (const pattern of patterns) {
     const match = trimmed.match(pattern);
     if (match) {
-      return { owner: match[1], repo: match[2].replace(/\.git$/, '') };
+      const repo = match[2].replace(/\.git$/, '');
+      return repo ? { owner: match[1], repo } : null;
     }
   }
 
   // Check for simple owner/repo format
   const simpleMatch = trimmed.match(/^([a-zA-Z0-9\-_]+)\/([a-zA-Z0-9\-_\.]+)$/);
   if (simpleMatch && !trimmed.includes('\\') && !trimmed.includes(':')) {
-    return { owner: simpleMatch[1], repo: simpleMatch[2] };
+    const repo = simpleMatch[2].replace(/\.git$/, '');
+    return repo ? { owner: simpleMatch[1], repo } : null;
   }
 
   return null;

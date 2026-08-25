@@ -25,10 +25,10 @@
  * workspace's first foreground agent.
  *
  * The caller must pass the workspace's `attention === 'unread'` state as
- * `wasUnread`, captured **before** navigation: viewing a workspace fires
- * `workspace.markSeen` (fire-and-forget, §5.1) and the resulting
- * `workspace:attention-changed` clears the flag, so a post-navigation read
- * would frequently see `none` and the feature would misfire as a race.
+ * `wasUnread`, captured **before** navigation — a stable snapshot of the row
+ * the user actually clicked. (Viewing a workspace no longer clears the flag;
+ * it clears agent-by-agent as each unread conversation is read, §5.1 — and
+ * landing on the unread agent here is exactly what triggers that read.)
  *
  * ## Waiting for hydration
  *
@@ -148,8 +148,8 @@ let cancelPendingWatch: (() => void) | null = null;
  * current tab in place.
  *
  * `wasUnread` is the workspace's `attention === 'unread'` state read *before*
- * navigation (see the module doc): `false` short-circuits, so a plain
- * workspace click never moves the tab.
+ * navigation (see the module doc — a stable snapshot of the clicked row):
+ * `false` short-circuits, so a plain workspace click never moves the tab.
  */
 export function focusFirstUnreadAgent(
   workspaceId: string,

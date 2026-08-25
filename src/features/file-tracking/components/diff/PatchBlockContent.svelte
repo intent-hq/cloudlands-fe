@@ -108,7 +108,7 @@
           }}
           title={m.ui_patchBlock_viewAgent_tooltip()}
         >
-          <AgentAvatar agentId={linkedAgentId} size={16} />
+          <AgentAvatar agentId={linkedAgentId} variant="compact" />
         </button>
       {/if}
       <button

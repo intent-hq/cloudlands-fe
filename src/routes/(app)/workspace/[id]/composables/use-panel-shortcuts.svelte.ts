@@ -16,10 +16,10 @@
  * - Cmd+Alt+1/2/3: Layout presets (focus/split/full)
  *
  * Note: Panel-specific shortcuts are in panel-keyboard-shortcuts.svelte.ts:
- * - Cmd+[: Go back in panel history
- * - Cmd+]: Go forward in panel history
- * - Cmd+\: Split horizontally
- * - Cmd+Shift+\: Split vertically
+ * - Mod+[/]: Select the previous/next pane
+ * - Mod+Shift+[/]: Focus the previous/next column
+ * - Mod+Alt+PageUp/PageDown: Move the active pane between columns
+ * - Mod+\: Create a column to the right
  */
 
 import { createLogger } from '$lib/utils/client-logger';
@@ -129,9 +129,6 @@ export function usePanelShortcuts(options: UsePanelShortcutsOptions) {
           return;
         }
       }
-
-      // NOTE: Cmd+[ / Cmd+] are now used for panel layout back/forward navigation
-      // (handled in panel-keyboard-shortcuts.svelte.ts)
     };
 
     logger.debug('Panel shortcuts effect running, attaching keydown listener');
