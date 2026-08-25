@@ -456,6 +456,25 @@ describe('StreamingStatus stalled state (monorepo#3402)', () => {
     expect(screen.getByTestId('stalled-message').textContent).toBe('No model activity for 7s');
   });
 
+  it('anchors the duration at timestamp - silentMs so the measured silence is included', async () => {
+    // The daemon only emits the stalled event after `silentMs` of measured
+    // silence, so the first render must already report that silence instead
+    // of starting the counter at the emission time.
+    vi.useFakeTimers();
+    vi.setSystemTime(100_000);
+    render(StreamingStatus, {
+      props: {
+        isStreaming: true,
+        statusEvents: [{ ...stalledEvent(95_000), silentMs: 90_000 }],
+      },
+    });
+
+    expect(screen.getByTestId('stalled-message').textContent).toBe('No model activity for 1m 35s');
+
+    await vi.advanceTimersByTimeAsync(2_000);
+    expect(screen.getByTestId('stalled-message').textContent).toBe('No model activity for 1m 37s');
+  });
+
   it('announces the stall once via a static live region, keeping the ticking duration non-live', async () => {
     // The visible label updates every second; if it lived in an aria-live
     // region, assistive tech would re-announce it for the entire stall.

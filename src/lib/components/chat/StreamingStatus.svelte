@@ -164,9 +164,14 @@
       : null,
   );
 
-  // Live "No model activity for N" copy, anchored to the stalled event's timestamp.
+  // Live "No model activity for N" copy. The daemon emits the stalled event
+  // only after measuring `silentMs` of silence, so anchor at
+  // `timestamp - silentMs` to reflect the actual silence duration rather
+  // than starting the counter at the emission time.
   let stalledElapsed = $derived(
-    stalledEvent ? formatElapsed(nowMs - stalledEvent.timestamp) : null,
+    stalledEvent
+      ? formatElapsed(nowMs - (stalledEvent.timestamp - (stalledEvent.silentMs ?? 0)))
+      : null,
   );
 
   // Status message: the raw error when one is set, otherwise "Thinking"

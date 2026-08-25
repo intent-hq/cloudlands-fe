@@ -1123,7 +1123,23 @@ function handleStreamStatusEvent(event: WorkspaceEvent): void {
   const level: 'info' | 'warn' | 'error' =
     levelRaw === 'warn' || levelRaw === 'error' ? levelRaw : 'info';
   const timestamp = typeof data.timestamp === 'number' ? data.timestamp : Date.now();
-  appStore.dispatch(streamStatusReceived(agentId, { phase, message, level, timestamp }, false));
+  // `stalled` events carry the additive `silentMs` (monorepo#3402): the
+  // silence already measured at emission, so the UI can anchor its live
+  // counter at `timestamp - silentMs` instead of understating by the
+  // detection threshold.
+  const silentMs =
+    typeof data.silentMs === 'number' && Number.isFinite(data.silentMs) && data.silentMs >= 0
+      ? data.silentMs
+      : undefined;
+  appStore.dispatch(
+    streamStatusReceived(
+      agentId,
+      silentMs !== undefined
+        ? { phase, message, level, timestamp, silentMs }
+        : { phase, message, level, timestamp },
+      false,
+    ),
+  );
 }
 
 /**

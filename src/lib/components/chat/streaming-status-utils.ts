@@ -53,6 +53,8 @@ export interface StatusEvent {
   message: string;
   level: 'info' | 'warn' | 'error';
   timestamp: number;
+  /** Measured silence at emission, additive on `stalled` events (monorepo#3402). */
+  silentMs?: number;
 }
 
 const PULSE_PHASES = new Set(['launch', 'init', 'session-create', 'session-load', 'prompt']);
