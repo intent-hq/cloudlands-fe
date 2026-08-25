@@ -177,6 +177,8 @@
     composeTranscript,
     isConversationStartLoaded,
     mapScrollTopToOrdinal,
+    OLDER_HISTORY_INDICATOR_QUIET_MS,
+    olderHistoryIndicatorAction,
     reconcileVirtualSpacer,
     restateFrozenSpacers,
     shouldRequestOlderHistory,
@@ -2324,6 +2326,45 @@
     return () => container.removeEventListener('scroll', onScroll);
   });
 
+  // Chain-scoped visibility for the top "Loading older messages" indicator:
+  // the raw fetching flag toggles false between every page of the settle
+  // chain below, so rendering it directly blinked once per page. The
+  // indicator instead tracks the WALK — shown while a fetch is in flight or
+  // the settle re-evaluation is pending, hidden only after a short quiet
+  // window once the chain truly stops (olderHistoryIndicatorAction).
+  let olderHistoryIndicatorVisible = $state(false);
+  let olderHistoryChainEvaluationPending = false;
+  let olderHistoryIndicatorHideTimer: ReturnType<typeof setTimeout> | null = null;
+
+  function syncOlderHistoryIndicator(fetching: boolean) {
+    const action = olderHistoryIndicatorAction({
+      fetching,
+      chainEvaluationPending: olderHistoryChainEvaluationPending,
+      visible: olderHistoryIndicatorVisible,
+      hideArmed: olderHistoryIndicatorHideTimer !== null,
+    });
+    if (action === 'show') {
+      if (olderHistoryIndicatorHideTimer !== null) {
+        clearTimeout(olderHistoryIndicatorHideTimer);
+        olderHistoryIndicatorHideTimer = null;
+      }
+      olderHistoryIndicatorVisible = true;
+    } else if (action === 'arm-hide') {
+      olderHistoryIndicatorHideTimer = setTimeout(() => {
+        olderHistoryIndicatorHideTimer = null;
+        if (isComponentDestroyed) return;
+        olderHistoryIndicatorVisible = false;
+      }, OLDER_HISTORY_INDICATOR_QUIET_MS);
+    }
+  }
+
+  // Clear the indicator hide timer on destroy.
+  $effect(() => {
+    return () => {
+      if (olderHistoryIndicatorHideTimer !== null) clearTimeout(olderHistoryIndicatorHideTimer);
+    };
+  });
+
   // Continuous paging: the scroll listener above is edge-triggered, and a
   // prepend + anchor restore emits no scroll event — without this settle
   // re-evaluation the walk strands after one page while the user holds the
@@ -2339,12 +2380,21 @@
     const fetching = $fetchingOlderHistory$;
     const settled = wasFetchingOlderHistory && !fetching;
     wasFetchingOlderHistory = fetching;
+    // The pending flag is raised BEFORE the indicator sync so the settle
+    // gap (fetch false, chain not yet re-evaluated) never arms the hide.
+    if (settled) olderHistoryChainEvaluationPending = true;
+    untrack(() => syncOlderHistoryIndicator(fetching));
     if (!settled) return;
     tick().then(() => {
       requestAnimationFrame(() => {
         requestAnimationFrame(() => {
-          if (isComponentDestroyed || !scrollContainer) return;
-          maybeRequestOlderHistory();
+          olderHistoryChainEvaluationPending = false;
+          if (isComponentDestroyed) return;
+          if (scrollContainer) maybeRequestOlderHistory();
+          // The saga raises the fetching flag synchronously on dispatch, so
+          // this read distinguishes "chain continued" (stay visible) from
+          // "chain stopped" (arm the quiet-window hide).
+          syncOlderHistoryIndicator($fetchingOlderHistory$);
         });
       });
     });
@@ -5034,8 +5084,11 @@
                 {/if}
               {/snippet}
               <!-- Older-history loading affordance: small top indicator while
-                   an on-demand scrollback page fetch is in flight. -->
-              {#if $fetchingOlderHistory$}
+                   the on-demand scrollback walk is active. Chain-scoped, not
+                   per-fetch: it stays up across the settle-chain gaps between
+                   pages and hides after a short quiet window once the walk
+                   stops (see syncOlderHistoryIndicator). -->
+              {#if olderHistoryIndicatorVisible}
                 <div
                   class="flex items-center justify-center gap-2 py-2 text-xs text-muted-foreground"
                   data-testid="chat-older-history-loading"
