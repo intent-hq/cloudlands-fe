@@ -485,7 +485,7 @@
           {m.workspace_tokenUsage_tokens_label()}
         </span>
       </span>
-      <span class="h-5 w-px bg-border/70" aria-hidden="true"></span>
+      <span class="h-5 w-px bg-border" aria-hidden="true"></span>
       <span
         id={cacheId}
         class="flex shrink-0 items-baseline gap-1"
