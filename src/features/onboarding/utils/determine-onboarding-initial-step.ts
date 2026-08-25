@@ -7,7 +7,9 @@
  * the persisted `hasCompletedProviderSetup` flag is a local fast-path taken
  * while the bulk provider check is still pending — provisional, and corrected
  * back to 'welcome' if the check settles with no ready provider and no
- * workspaces exist.
+ * workspaces exist. When the check has ALREADY settled with neither, the
+ * persisted flag is ignored outright: the backend factually has no ready
+ * provider, so provider setup ('welcome') is the only correct landing step.
  */
 
 export type OnboardingInitialStepDecision = {
@@ -32,11 +34,16 @@ export function determineOnboardingInitialStep(inputs: {
    * exists — compute with `hasAvailableWorkspace`, not a bare length check.
    */
   hasWorkspaces: boolean;
+  /** True once the bulk provider check landed at least one status. */
+  providersCheckedOnce: boolean;
 }): OnboardingInitialStepDecision {
   if (inputs.fullFlowRequested) return { step: 'welcome', viaLocalFastPath: false };
   if (inputs.hasReadyProvider || inputs.hasWorkspaces) {
     return { step: 'project', viaLocalFastPath: false };
   }
+  // Settled with no ready provider and no workspaces: the persisted flag is
+  // stale for this backend — land on provider setup, no provisional step.
+  if (inputs.providersCheckedOnce) return { step: 'welcome', viaLocalFastPath: false };
   if (inputs.hasCompletedProviderSetup) return { step: 'project', viaLocalFastPath: true };
   return { step: 'welcome', viaLocalFastPath: false };
 }

@@ -2,7 +2,6 @@
  * Setup Prompt Selectors
  */
 
-import { getItem } from '@augmentcode/themis/utils/collections/collection-utils';
 import { store } from '../../store';
 import { selectWorkspaceItems } from '../workspace/workspace-selectors';
 import type { SetupEvaluation } from './setup-prompt-types';
@@ -45,20 +44,17 @@ export const selectShowRemoteSetupPrompt = store.createSelector((state) => {
 });
 
 /**
- * First-run gate for the LOCAL backend. Drives the silent redirect to the
- * setup wizard and the home page's anti-flash rendering holds:
+ * First-run gate for the ACTIVE backend (local or remote). Drives the silent
+ * redirect to the setup wizard and the home page's anti-flash rendering holds:
  * - 'none'     — no redirect will happen; render the home page normally.
  * - 'pending'  — undecided (workspaces/providers still loading on an empty
- *                local backend); hold rendering so the wizard redirect does
- *                not flash the home page first.
- * - 'redirect' — the local backend has no workspaces and no ready providers;
- *                redirect to the setup wizard.
+ *                backend); hold rendering so the wizard redirect does not
+ *                flash the home page first.
+ * - 'redirect' — the active backend has no workspaces and no ready providers;
+ *                redirect to the setup wizard (provider setup).
  */
-export const selectLocalSetupGate = store.createSelector(
+export const selectBackendSetupGate = store.createSelector(
   (state): 'none' | 'pending' | 'redirect' => {
-    const { connections, activeId } = state.connections;
-    const active = getItem(connections, activeId);
-    if (active && !active.isLocal) return 'none';
     // Same workspace count the saga evaluates (selectWorkspaceItems excludes
     // the chief workspace), so the gate and the evaluation never disagree.
     if (state.workspace.hasLoaded && selectWorkspaceItems.select(state).length > 0) return 'none';
