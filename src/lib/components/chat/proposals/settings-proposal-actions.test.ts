@@ -345,4 +345,46 @@ describe('settings-proposal-actions', () => {
       },
     ]);
   });
+
+  // Backend scoping: a local-storage-set write against a per-backend key must
+  // not touch the local machine's bare key when a remote backend is active.
+  it('namespaces backend-scoped localStorage writes under the active remote backend', async () => {
+    const setItem = vi.mocked(window.localStorage.setItem);
+    setItem.mockClear();
+    mocks.getState.mockReturnValue(
+      makeState({ connections: { activeId: 'remote-1' } } as Partial<StoreState>),
+    );
+
+    await undoSettingsProposalWork([
+      {
+        path: 'legacy.activeProvider',
+        value: 'codex',
+        apply: { kind: 'local-storage-set', key: 'workspaces-active-provider' },
+      },
+    ]);
+
+    expect(setItem).toHaveBeenCalledWith(
+      'backend:remote-1:workspaces-active-provider',
+      JSON.stringify('codex'),
+    );
+    expect(setItem).not.toHaveBeenCalledWith('workspaces-active-provider', expect.anything());
+  });
+
+  it('keeps the bare key for backend-scoped localStorage writes on the local backend', async () => {
+    const setItem = vi.mocked(window.localStorage.setItem);
+    setItem.mockClear();
+    mocks.getState.mockReturnValue(
+      makeState({ connections: { activeId: 'local' } } as Partial<StoreState>),
+    );
+
+    await undoSettingsProposalWork([
+      {
+        path: 'legacy.activeProvider',
+        value: 'codex',
+        apply: { kind: 'local-storage-set', key: 'workspaces-active-provider' },
+      },
+    ]);
+
+    expect(setItem).toHaveBeenCalledWith('workspaces-active-provider', JSON.stringify('codex'));
+  });
 });
