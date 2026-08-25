@@ -21,7 +21,6 @@ const tabState: TabState = {
   workspaceStacks: [['ws-2', 'ws-1'], ['ws-3']],
   recentlyClosedTabIds: [],
   recentlyClosedTabAt: {},
-  viewMode: 'columns',
   version: 1,
   hydratedBackendId: null,
 };
@@ -79,9 +78,9 @@ describe('tab state selectors', () => {
     });
 
     it('is false when hydration settled for a DIFFERENT backend (switch in flight)', () => {
-      expect(selectWorkspaceTabsHydrated.select(withHydration(LOCAL_CONNECTION_ID, 'remote-1'))).toBe(
-        false,
-      );
+      expect(
+        selectWorkspaceTabsHydrated.select(withHydration(LOCAL_CONNECTION_ID, 'remote-1')),
+      ).toBe(false);
     });
   });
 });

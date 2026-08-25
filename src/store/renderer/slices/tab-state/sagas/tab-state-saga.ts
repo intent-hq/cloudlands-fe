@@ -20,7 +20,6 @@ import {
   reopenLastClosedWorkspaceTab,
   restoreWorkspaceTab,
   saveScrollPosition,
-  setWorkspaceViewMode,
   switchToNextWorkspaceTab,
   switchToPreviousWorkspaceTab,
   switchToWorkspaceTabByIndex,
@@ -38,7 +37,6 @@ const TAB_PERSIST_ACTIONS = [
   switchToNextWorkspaceTab,
   switchToPreviousWorkspaceTab,
   switchToWorkspaceTabByIndex,
-  setWorkspaceViewMode,
 ];
 
 const SCROLL_PERSIST_ACTIONS = [saveScrollPosition];
@@ -82,8 +80,7 @@ function isPersistedWorkspaceTabsState(value: unknown): value is PersistedWorksp
     isStringArray(stored.unsavedTabs) &&
     isStringArray(stored.optimisticTabs) &&
     isStringArray(stored.tabOrder) &&
-    isOptionalStringArrayArray(stored.workspaceStacks) &&
-    (stored.viewMode === undefined || stored.viewMode === 'single' || stored.viewMode === 'columns')
+    isOptionalStringArrayArray(stored.workspaceStacks)
   );
 }
 

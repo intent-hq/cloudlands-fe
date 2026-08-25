@@ -10,7 +10,6 @@ import {
   selectCurrentWorkspaceTabId,
   selectLastClosedWorkspaceTab,
   selectWorkspaceTabOrder,
-  selectWorkspaceViewMode,
 } from '$store/renderer/slices/tab-state/tab-state-selectors';
 import {
   closeFocusedPanelTab,
@@ -31,32 +30,9 @@ import { resolveEmptyWindowDestination } from './empty-window-destination';
 import type { KeyboardShortcut } from '$lib/utils/keyboardShortcuts';
 import { m } from '$shared/paraglide/messages.js';
 import { SHORTCUTS, getShortcutChord } from '$lib/utils/shortcuts';
-import { isWorkspaceViewModeRoute } from '$features/workspace/workspace-view-mode-action';
 import { getPanelKeyboardShortcuts } from '$features/layout/panel-keyboard-shortcuts.svelte';
 
 export type WorkspaceTabDirection = 'next' | 'previous';
-
-export function findAdjacentWorkspaceColumnId(
-  stacks: string[][],
-  currentWorkspaceId: string,
-  direction: WorkspaceTabDirection,
-): string | null {
-  const navigableStacks = stacks
-    .map((stack) => stack.filter((workspaceId) => workspaceId !== 'new'))
-    .filter((stack) => stack.length > 0);
-  if (navigableStacks.length < 2) return null;
-  const currentStackIndex = navigableStacks.findIndex((stack) =>
-    stack.includes(currentWorkspaceId),
-  );
-  if (currentStackIndex < 0) return null;
-
-  const currentRowIndex = navigableStacks[currentStackIndex].indexOf(currentWorkspaceId);
-  const offset = direction === 'next' ? 1 : -1;
-  const targetStackIndex =
-    (currentStackIndex + offset + navigableStacks.length) % navigableStacks.length;
-  const targetStack = navigableStacks[targetStackIndex];
-  return targetStack?.[Math.min(currentRowIndex, targetStack.length - 1)] ?? null;
-}
 
 interface WorkspaceTabNavigationStore {
   readonly state: StoreState;
@@ -84,7 +60,6 @@ interface RegisterWorkspaceTabShortcutsOptions {
   getCurrentPath: () => string;
   navigate: (path: string) => unknown;
   openNewWorkspace: () => void;
-  toggleWorkspaceViewMode: () => void;
 }
 
 function navigateToSelectedWorkspace(
@@ -119,10 +94,7 @@ function resolveWorkspaceTabToClose(
   const workspaceId = match?.[1];
   if (workspaceId) return workspaceId === 'new' ? null : workspaceId;
 
-  const isColumnsRoot = currentPath === '/' || currentPath === '/workspace';
-  return isColumnsRoot && selectWorkspaceViewMode.select(store.state) === 'columns'
-    ? selectCurrentWorkspaceTabId.select(store.state)
-    : null;
+  return null;
 }
 
 export function cycleWorkspaceTab(
@@ -271,11 +243,9 @@ export function registerWorkspaceTabShortcuts({
   getCurrentPath,
   navigate,
   openNewWorkspace,
-  toggleWorkspaceViewMode,
 }: RegisterWorkspaceTabShortcutsOptions): void {
   const mod = isMac ? { meta: true } : { ctrl: true };
   const sidebarChord = getShortcutChord('TOGGLE_SIDEBAR', isMac);
-  const workspaceViewModeChord = getShortcutChord('WORKSPACE_VIEW_MODE', isMac);
   const withRoute = (action: (currentPath: string) => unknown) => () => action(getCurrentPath());
 
   register({
@@ -290,13 +260,6 @@ export function registerWorkspaceTabShortcuts({
     global: true,
     description: SHORTCUTS.TOGGLE_SIDEBAR.label,
     action: () => store.dispatch(toggleSidebar()),
-  });
-  register({
-    ...workspaceViewModeChord,
-    description: SHORTCUTS.WORKSPACE_VIEW_MODE.label,
-    ignoreRepeat: true,
-    enabled: () => isWorkspaceViewModeRoute(getCurrentPath()),
-    action: toggleWorkspaceViewMode,
   });
   register({
     ...mod,

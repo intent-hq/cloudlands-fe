@@ -121,8 +121,7 @@ function truncate(text: string, maxChars: number): string {
 /**
  * "Switch To": dismiss the toast, activate the reporting workspace, navigate
  * to it, then open/focus the agent's conversation tab. Explicit tab activation
- * is required in columns view: route navigation alone does not update
- * `currentTabId`, whose change scrolls the target column into view.
+ * keeps tab state synchronized with route navigation.
  */
 export async function switchToAttentionAgent(workspaceId: string, agentId: string): Promise<void> {
   const toast = await getToast();
@@ -202,9 +201,8 @@ export async function showWorkspaceAutoUnarchiveToast(
   const toast = await getToast();
   let title: string | undefined;
   try {
-    const { selectWorkspaceById } = await import(
-      '$store/renderer/slices/workspace/workspace-selectors'
-    );
+    const { selectWorkspaceById } =
+      await import('$store/renderer/slices/workspace/workspace-selectors');
     title = selectWorkspaceById.select(appStore.state, workspaceId)?.title;
   } catch (error) {
     logger.warn('Workspace title resolution failed — toast uses fallback', { workspaceId, error });

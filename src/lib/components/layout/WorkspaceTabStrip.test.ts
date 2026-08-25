@@ -38,7 +38,6 @@ vi.mock('$store/renderer/slices/tab-state/tab-state-selectors', () => ({
     select: () => mocks.nextCurrentId,
   }),
   selectWorkspaceTabOrder: () => readable(['ws-1', 'ws-2', 'ws-3']),
-  selectWorkspaceViewMode: () => readable('single'),
 }));
 vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
   selectWorkspaceItems: () =>
@@ -185,8 +184,10 @@ describe('WorkspaceTabStrip', () => {
         hiddenCategoryCount: 0,
       },
     };
+    let animationFrameTime = 0;
     vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
-      callback(0);
+      animationFrameTime += 16;
+      callback(animationFrameTime);
       return 0;
     });
     vi.stubGlobal(
@@ -412,13 +413,12 @@ describe('WorkspaceTabStrip', () => {
   it('renders accessible tabs with delayed shared workspace hover cards', async () => {
     render(WorkspaceTabStrip);
 
-    expect(screen.getByRole('tablist', { name: 'Open spaces' })).toBeTruthy();
-    // pl-3 preserves the 12px corner-flare clip guard; -ml-1 (not -ml-3) keeps
-    // an 8px net inset so the first tab sits clear of the view-mode toggle.
-    expect(screen.getByRole('tablist', { name: 'Open spaces' }).className).toContain(
-      'pl-3 -ml-1 pr-3',
-    );
-    expect(screen.getByRole('tablist', { name: 'Open spaces' }).className).toContain('-mr-2.5');
+    const tablist = screen.getByRole('tablist', { name: 'Open spaces' });
+    expect(tablist.className).toContain('pl-3');
+    expect(tablist.className).toContain('pr-3');
+    expect(tablist.className).toContain('-ml-1');
+    expect(tablist.className).not.toContain('-ml-3');
+    expect(tablist.className).toContain('-mr-2.5');
     expect(screen.getAllByRole('tab')).toHaveLength(3);
     const alpha = screen.getByRole('tab', { name: /Alpha/ });
     expect(alpha.getAttribute('aria-selected')).toBe('true');
@@ -449,6 +449,35 @@ describe('WorkspaceTabStrip', () => {
 
     await fireEvent.mouseLeave(tooltipRoot);
     await waitFor(() => expect(screen.queryByTestId('workspace-tab-preview')).toBeNull());
+  });
+
+  it('returns the corner-flare padding when aligning the first tab to an open panel', () => {
+    render(WorkspaceTabStrip, { props: { alignFirstTabToPanel: true } });
+
+    const tablist = screen.getByRole('tablist', { name: 'Open spaces' });
+    expect(tablist.className).toContain('pl-3');
+    expect(tablist.className).toContain('-ml-3');
+    expect(tablist.className).not.toContain('-ml-1');
+  });
+
+  it('refreshes the active-tab border bounds when title-bar positioning changes', async () => {
+    const onActiveTabBoundsChange = vi.fn();
+    const { container, rerender } = render(WorkspaceTabStrip, {
+      props: { activeWorkspaceId: 'ws-1', onActiveTabBoundsChange },
+    });
+    container.classList.add('window-title-bar');
+    const activeTab = document.querySelector<HTMLElement>('[data-workspace-tab="ws-1"]')!;
+    activeTab.getBoundingClientRect = () => makeRect(100);
+    onActiveTabBoundsChange.mockClear();
+
+    await rerender({
+      activeWorkspaceId: 'ws-1',
+      onActiveTabBoundsChange,
+      alignFirstTabToPanel: true,
+      horizontalPositionTrackingKey: 288,
+    });
+
+    expect(onActiveTabBoundsChange).toHaveBeenCalledWith({ left: 100, width: 160 });
   });
 
   it('keeps the close control outside the hover trigger and isolated from navigation', async () => {

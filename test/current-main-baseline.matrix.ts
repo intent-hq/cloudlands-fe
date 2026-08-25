@@ -50,8 +50,6 @@ export const approvedRowIds = [
   'WORKSPACE-31',
   'WORKSPACE-36',
   'WORKSPACE-37',
-  'WORKSPACE-39',
-  'WORKSPACE-40',
   'WORKSPACE-42',
   'WORKSPACE-43',
   'WORKSPACE-44',
@@ -90,7 +88,7 @@ const sidebar = [
 const tabs = [
   'test/workspace-tab-strip-status-geometry.spec.ts',
   'src/lib/components/layout/WorkspaceTabStrip.test.ts',
-  'src/lib/components/layout/WorkspaceViewModeToggle.test.ts',
+  'src/lib/components/layout/sidebar-nav/SidebarNav.test.ts',
 ] as const;
 const panel = [
   'src/features/layout/panel-cycle-navigation.test.ts',
@@ -335,23 +333,6 @@ export const baselineRows = [
     'panel',
     [...runtime, 'indexed', 'identified', 'scroll'],
     panel,
-  ),
-  row(
-    'WORKSPACE-39',
-    'Reserved heading-band transition geometry',
-    'tabs',
-    [...visual, 'single-to-columns', 'columns-to-single'],
-    ['src/lib/components/workspace/WorkspaceColumnsView.test.ts'],
-  ),
-  row(
-    'WORKSPACE-40',
-    'Smooth tabs-to-columns choreography',
-    'tabs',
-    [...visual, 'single-to-columns', 'columns-to-single', 'focus'],
-    [
-      'src/lib/components/layout/WorkspaceTabStrip.test.ts',
-      'src/lib/components/workspace/WorkspaceColumnsView.test.ts',
-    ],
   ),
   row('WORKSPACE-42', 'Rightmost panel/chrome reachability', 'panel', visual, [
     'src/lib/components/layout/panel-system/__tests__/panel-canvas-width.test.ts',

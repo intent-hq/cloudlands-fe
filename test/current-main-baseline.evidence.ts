@@ -328,8 +328,11 @@ const semanticSelectors: Record<string, SemanticSelector[]> = {
     ),
   ],
   'WORKSPACE-31': [
-    selector(['route'], 'toggles between single and column workspace views'),
-    selector(['state'], 'restores the destination glyph and keeps the pressed button transparent'),
+    selector(['route'], 'dispatches exactly one sidebar toggle for pointer activation'),
+    selector(
+      ['state'],
+      'renders one 16px dandelion in a 20px optical box and a 32px active target',
+    ),
   ],
   'WORKSPACE-36': [
     selector(
@@ -359,20 +362,6 @@ const semanticSelectors: Record<string, SemanticSelector[]> = {
     selector(
       ['scroll'],
       'ignores long content, sidebar viewport, zoom, and tab-stack mode changes',
-    ),
-  ],
-  'WORKSPACE-39': [
-    selector(
-      [...visualStates, 'single-to-columns', 'columns-to-single'],
-      'affirms heading-band geometry and bidirectional column choreography in every required visual state',
-      [...visualStates, 'single-to-columns', 'columns-to-single'],
-    ),
-  ],
-  'WORKSPACE-40': [
-    selector(
-      [...visualStates, 'single-to-columns', 'columns-to-single'],
-      'affirms heading-band geometry and bidirectional column choreography in every required visual state',
-      [...visualStates, 'single-to-columns', 'columns-to-single'],
     ),
   ],
   'WORKSPACE-43': [
@@ -569,7 +558,7 @@ const mountedRowsByScene: Record<MountedScene, Record<string, string[]>> = {
     ],
   },
   tabs: {
-    'WORKSPACE-31': ['renders and activates the real consolidated Spaces view-mode control'],
+    'WORKSPACE-31': ['renders and activates the real consolidated Spaces control'],
   },
   panel: {
     'WORKSPACE-42': ['keeps the rightmost nested panel inside the reachable scroll canvas'],

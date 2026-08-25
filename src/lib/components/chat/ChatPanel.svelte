@@ -567,8 +567,8 @@
   let composerElement = $state<HTMLDivElement>();
   let inputComponent = $state<SimpleRichInput>();
   // Rehydrate the transcript scroll state cached by the previous instance's
-  // destroy (column windowing unmounts off-screen panels) so a remount keeps
-  // the user's reading position instead of re-entering at the bottom.
+  // destroy so a remount keeps the user's reading position instead of
+  // re-entering at the bottom.
   // svelte-ignore state_referenced_locally -- mount-time snapshot of the identity props.
   const cachedScroll =
     workspace?.id && agentId ? getCachedChatScroll(workspace.id, agentId) : undefined;
@@ -2678,8 +2678,8 @@
       // fits on screen, scroll to the bottom with follow enabled instead
       // (decided inside scrollToNewMessagesDivider).
       if (isFirstMessage && cachedScrollRestoreTop !== null && !hasConsumedCachedScrollRestore) {
-        // Remount after column windowing: land at the previous instance's
-        // reading position instead of the divider/bottom entry scroll.
+        // Land at the previous instance's reading position instead of the
+        // divider/bottom entry scroll.
         tick().then(() => {
           if (isComponentDestroyed) return;
           applyCachedScrollRestore();
@@ -2932,8 +2932,8 @@
       if (scrollContainer) {
         if ($agentMessages$.length > 0) {
           if (cachedScrollRestoreTop !== null) {
-            // Remount after column windowing: restore the previous instance's
-            // reading position (no-op when the hydration effect already did).
+            // Restore the previous instance's reading position (no-op when
+            // the hydration effect already did).
             applyCachedScrollRestore();
           } else {
             shouldFollowBottom = true;
@@ -3718,9 +3718,8 @@
       cachedScrollRestoreRetryFrame = null;
     }
 
-    // Cache the transcript scroll state so a remount after column windowing
-    // (WorkspaceColumnsView unmounting off-screen surfaces) restores the
-    // user's reading position instead of re-entering at the bottom. Guarded
+    // Cache the transcript scroll state so a remount restores the user's
+    // reading position instead of re-entering at the bottom. Guarded
     // so a collapsed container or a pending (unconsumed) restore cannot
     // record a clamped ~0 scrollTop over a useful cached position.
     if (

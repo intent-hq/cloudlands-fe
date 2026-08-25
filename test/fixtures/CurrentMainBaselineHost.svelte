@@ -2,7 +2,7 @@
   import { setContext } from 'svelte';
   import SidebarLauncherHost from './SidebarLauncherHost.svelte';
   import MixedToolRowsHarness from '$lib/components/chat/__tests__/mocks/MixedToolRowsHarness.svelte';
-  import WorkspaceViewModeToggle from '$lib/components/layout/WorkspaceViewModeToggle.svelte';
+  import SidebarNav from '$lib/components/layout/sidebar-nav/SidebarNav.svelte';
   import PanelEmptyState from '$lib/components/layout/panel-system/PanelEmptyState.svelte';
   import PanelDominantBrowserGeometryHarness from '$lib/components/layout/panel-system/__tests__/mocks/PanelDominantBrowserGeometryHarness.svelte';
 
@@ -33,7 +33,7 @@
     </section>
   {:else if scene === 'tabs'}
     <section class="flex h-12 items-center gap-2 p-2" data-baseline-tabs>
-      <WorkspaceViewModeToggle />
+      <SidebarNav />
       <button type="button" class="h-8 rounded border px-3">Panel action</button>
     </section>
   {:else}

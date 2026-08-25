@@ -5,27 +5,7 @@ function source(relativePath: string) {
   return readFileSync(new URL(relativePath, import.meta.url), 'utf8');
 }
 
-describe('panel and workspace lifecycle motion', () => {
-  it('animates keyed workspace tabs and content-sized columns', () => {
-    const tabs = source('../../WorkspaceTabStrip.svelte');
-    const columns = source('../../../workspace/WorkspaceColumnsView.svelte');
-
-    expect(tabs).toContain('data-workspace-tab-motion={workspaceId}');
-    expect(tabs).toContain('animate:flip={{ duration: isDragged ? 0 : 180, easing: cubicOut }}');
-    expect(tabs).not.toContain('in:fly=');
-    expect(tabs).not.toContain('out:fly=');
-    expect(columns).toContain('data-workspace-column-motion={workspaceId}');
-    expect(columns).toContain(
-      'lifecycleMotionReady && columnsReady && anchoredWorkspaceId === null ? 180 : 0',
-    );
-    expect(columns).toContain("transition:resize={{ axis: 'x', duration: layoutMotionDuration }}");
-    expect(columns).not.toContain('isResizingWorkspaceColumn');
-    expect(columns).toContain('onPanelCanvasWidthChange={(width) => updatePanelCanvasWidth');
-    expect(columns).not.toContain('workspace-panel-columns-width:');
-    expect(columns).toContain(':global(body.panel-resizing) [data-workspace-stack]');
-    expect(columns).not.toContain('transition:fade');
-  });
-
+describe('panel lifecycle motion', () => {
   it('keeps the first panel mounted and animates keyed split items', () => {
     const layout = source('../PanelLayout.svelte');
     const container = source('../PanelContainer.svelte');

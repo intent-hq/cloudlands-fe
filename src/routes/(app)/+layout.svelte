@@ -30,10 +30,6 @@
   import StatsOverlay from '$features/stats/StatsOverlay.svelte';
   import DaemonStoppedOverlay from '$features/daemon-status/DaemonStoppedOverlay.svelte';
   import { registerWorkspaceTabShortcuts } from '$features/workspace/utils/workspace-tab-navigation';
-  import {
-    cancelWorkspaceViewModeTransition,
-    toggleWorkspaceViewModeWithTransition,
-  } from '$features/workspace/workspace-view-mode-action';
   import AuggieSetupGate from '$lib/components/AuggieSetupGate.svelte';
   import CommandPalette from '$lib/components/CommandPalette.svelte';
   import DebugPanel from '$lib/components/debug/DebugPanel.svelte';
@@ -42,8 +38,6 @@
   import GitHubAuthModal from '$lib/components/GitHubAuthModal.svelte';
   import KeyboardShortcutsCheatSheet from '$lib/components/layout/KeyboardShortcutsCheatSheet.svelte';
   import WindowTitleBar from '$lib/components/layout/WindowTitleBar.svelte';
-  import { getCounterScaledTitlebarHeight } from '$lib/components/layout/titlebar-geometry';
-  import WorkspaceColumnsView from '$lib/components/workspace/WorkspaceColumnsView.svelte';
   import WorkspaceWarningDialogs from '$lib/components/modals/WorkspaceWarningDialogs.svelte';
   import TransferWorkspaceModalHost from '$lib/components/modals/TransferWorkspaceModalHost.svelte';
   import ImportWorkspaceModalHost from '$lib/components/modals/ImportWorkspaceModalHost.svelte';
@@ -78,7 +72,6 @@
     selectCurrentWorkspaceTabId,
     selectWorkspaceTabOrder,
     selectWorkspaceTabsHydrated,
-    selectWorkspaceViewMode,
   } from '$store/renderer/slices/tab-state/tab-state-selectors';
   import {
     toggleTerminalOverlay,
@@ -90,7 +83,6 @@
     selectWorkspaceItems,
     selectWorkspaceLoading,
   } from '$store/renderer/slices/workspace/workspace-selectors';
-  import { selectZoomFactor } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
   import {
     selectBootRouteGateResolved,
     selectLocalSetupGate,
@@ -145,11 +137,9 @@
   const workspaceHasLoaded = selectWorkspaceHasLoaded();
   const localSetupGate = selectLocalSetupGate();
   const bootGateResolved = selectBootRouteGateResolved();
-  const zoomFactor = selectZoomFactor();
   const currentWorkspaceTabId = selectCurrentWorkspaceTabId();
   const workspaceTabsHydrated = selectWorkspaceTabsHydrated();
   const workspaceTabOrder = selectWorkspaceTabOrder();
-  const workspaceViewMode = selectWorkspaceViewMode();
   const showReleaseNotesModal$ = selectShowReleaseNotesModal();
   const releaseNotes$ = selectReleaseNotes();
   const showCreateModal$ = selectShowCreateModal();
@@ -187,26 +177,15 @@
   }
 
   let currentWorkspaceId = $derived($page.params.id as string | undefined);
-  let showWorkspaceColumns = $derived(
-    $workspaceViewMode === 'columns' &&
-      currentWorkspaceId !== undefined &&
-      currentWorkspaceId !== 'new' &&
-      $page.url.pathname.startsWith('/workspace/'),
-  );
-  let workspaceColumnsOverlap = $state(false);
   const globalModals = selectGlobalModals();
   const featureCodeDialogOpen = selectFeatureCodeDialogOpen();
   const isPaletteOpen$ = selectIsPaletteOpen();
   const paletteQuery$ = selectPaletteQuery();
 
-  // Workspaces whose surfaces render their own webviews. In single-workspace
-  // mode only the routed workspace is displayed; in columns mode the columns
-  // view reports which workspaces render a real surface (virtualized columns
-  // render placeholders, so their tabs still need offscreen keep-alive)
-  // (monorepo#2789 slice 2).
-  let columnsMountedWorkspaceIds = $state<ReadonlySet<string>>(new Set());
+  // The routed workspace renders its own webviews; all other open workspace
+  // browser tabs stay alive in the offscreen host (monorepo#2789 slice 2).
   const offscreenExcludedWorkspaceIds = $derived<ReadonlySet<string>>(
-    showWorkspaceColumns ? columnsMountedWorkspaceIds : new Set(workspaceId ? [workspaceId] : []),
+    new Set(workspaceId ? [workspaceId] : []),
   );
 
   // Interrupted agents modal state
@@ -484,7 +463,6 @@
       getCurrentPath: () => window.location.pathname,
       navigate: (path) => goto(path),
       openNewWorkspace: () => appStore.dispatch(setShowCreateModal(true)),
-      toggleWorkspaceViewMode: () => void toggleWorkspaceViewModeWithTransition(),
     });
 
     // Optionally register config-driven shortcut for opening the command palette
@@ -629,7 +607,7 @@
       const isOnWorkspacePage = $page.url.pathname.startsWith('/workspace/');
       const terminalContextId = resolveTerminalShortcutWorkspaceId({
         isOnWorkspacePage,
-        useSelectedWorkspace: showWorkspaceColumns,
+        useSelectedWorkspace: false,
         selectedWorkspaceId: $currentWorkspaceTabId,
         routeWorkspaceId: currentWorkspaceId,
       });
@@ -892,8 +870,6 @@
 
   // Keep the workspace list warm when navigating away from workspace pages.
   beforeNavigate(({ to }: any) => {
-    cancelWorkspaceViewModeTransition();
-
     if (to && !to.url.pathname.startsWith('/workspace/')) {
       // Load workspaces when navigating to any non-workspace route
       // This ensures workspaces are loaded for tabs, switcher, and other UI components
@@ -938,7 +914,7 @@
     data-testid="app-ready"
   >
     <!-- Title bar at top -->
-    <WindowTitleBar {workspaceId} overlayWorkspaceColumns={showWorkspaceColumns} />
+    <WindowTitleBar {workspaceId} />
 
     <!-- Main Content Area with Sidebar Nav -->
     <ErrorBoundary componentName="MainLayout">
@@ -946,37 +922,19 @@
         <!-- Sidebar Panel (persistent, pushes content) -->
         <div
           class="workspace-sidebar-frame relative z-40 flex min-h-0 shrink-0 bg-transparent"
-          class:workspace-columns-overlap={showWorkspaceColumns && workspaceColumnsOverlap}
-          style:padding-top={showWorkspaceColumns
-            ? `${getCounterScaledTitlebarHeight($zoomFactor)}px`
-            : undefined}
           data-sidebar-panel-frame
         >
           <SidebarPanel />
         </div>
 
         <!-- Workspace content area -->
-        <div
-          class="workspace-frame relative mr-2 flex min-h-0 min-w-0 flex-1 bg-transparent"
-          style:padding-top={showWorkspaceColumns
-            ? `${getCounterScaledTitlebarHeight($zoomFactor)}px`
-            : undefined}
-        >
+        <div class="workspace-frame relative mr-2 flex min-h-0 min-w-0 flex-1 bg-transparent">
           <main
-            class="workspace-main flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden {showWorkspaceColumns
-              ? ''
-              : 'rounded-xl bg-sidebar border border-border shadow-sm'}"
+            class="workspace-main flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-xl bg-sidebar border border-border shadow-sm"
             aria-label={m.layout_appShell_mainContent_ariaLabel()}
           >
             <div class="flex-1 min-h-0 overflow-hidden">
-              {#if showWorkspaceColumns}
-                <WorkspaceColumnsView
-                  onHorizontalOverlapChange={(overlap) => (workspaceColumnsOverlap = overlap)}
-                  onMountedWorkspaceIdsChange={(mounted) => (columnsMountedWorkspaceIds = mounted)}
-                />
-              {:else}
-                {@render children?.()}
-              {/if}
+              {@render children?.()}
             </div>
 
             <!-- Root Quake Terminal Overlay (self-gates on __root__ terminal state) -->

@@ -37,7 +37,6 @@ describe('SidebarNav unified Spaces control', () => {
 
     expect(dispatch).toHaveBeenCalledTimes(1);
     expect(dispatch).toHaveBeenCalledWith(togglePanel('all-workspaces'));
-    expect(dispatch.mock.calls[0]?.[0].type).not.toBe('tabState/setWorkspaceViewMode');
   });
 
   it('does not expose or open a popup from hover, ArrowDown, or context menu', async () => {

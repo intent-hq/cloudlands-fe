@@ -130,8 +130,6 @@
     onCreateAgent?: () => void;
     onCreateAgentWithSpecialist?: (specialistId: string | null) => void;
     onAcceptChanges?: () => void;
-    onCloseWorkspace?: (event: MouseEvent) => void;
-    draggableTitleRegion?: boolean;
     class?: string;
   }
 
@@ -145,8 +143,6 @@
     onCreateAgent,
     onCreateAgentWithSpecialist,
     onAcceptChanges,
-    onCloseWorkspace,
-    draggableTitleRegion = false,
     class: className,
   }: Props = $props();
 
@@ -880,11 +876,10 @@
   class={cn('relative flex h-full flex-col overflow-hidden bg-transparent', className)}
 >
   <!-- Fixed Top Section: Progress Card -->
-  <div class="shrink-0 px-6 pb-2 pt-5" data-workspace-title-region draggable={draggableTitleRegion}>
+  <div class="shrink-0 px-6 pb-2 pt-5" data-workspace-title-region>
     <WorkspaceProgressCard
       {workspaceId}
       onOpenNote={handleOpenNoteInPanel}
-      {onCloseWorkspace}
       hideActionsMenu={!isLauncherOverview}
     />
   </div>
