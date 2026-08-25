@@ -103,7 +103,9 @@
 </script>
 
 <section class:dark={theme === 'dark'} style:zoom data-testid="chat-panel-composer-host">
-  <div class="h-160" style:width="{width}px">
-    <PanelLayout {workspaceId} layoutId={workspaceId} contained />
+  <div class="relative h-160" style:width="{width}px">
+    <div class="absolute inset-0 h-full w-full">
+      <PanelLayout {workspaceId} layoutId={workspaceId} />
+    </div>
   </div>
 </section>

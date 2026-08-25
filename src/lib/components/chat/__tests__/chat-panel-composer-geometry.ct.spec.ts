@@ -1,5 +1,11 @@
 import { expect, test } from '@playwright/experimental-ct-svelte';
 import ChatPanelComposerGeometryHost from './ChatPanelComposerGeometryHost.svelte';
+import {
+  applyAuroraPaintProbe,
+  colorDistance,
+  isPaintProbe,
+  samplePanelBottomPixels,
+} from './aurora-panel-pixels';
 
 test.setTimeout(120_000);
 
@@ -139,8 +145,20 @@ for (const state of states) {
     } else {
       expect(auroraGeometry.edges).toEqual(shellGeometry.edges);
       expect(auroraGeometry.edges).toEqual(panelContentGeometry.edges);
-      expect(auroraGeometry.radii).toEqual(panelGeometry.radii);
-      expect(Number.parseFloat(auroraGeometry.radii[0])).toBeGreaterThan(0);
+      expect(auroraGeometry.radii).toEqual(['0px', '0px']);
+      expect(Number.parseFloat(panelGeometry.radii[0])).toBeGreaterThan(0);
+      await expect(component.getByTestId('panel-workspace-inset')).toBeVisible();
+      await applyAuroraPaintProbe(aurora);
+      const pixels = await samplePanelBottomPixels(component.locator('.panel'));
+      pixels.corners.forEach((corner) => {
+        expect(isPaintProbe(corner)).toBe(false);
+      });
+      pixels.straightEdges.forEach((edge) => {
+        expect(isPaintProbe(edge)).toBe(true);
+        pixels.corners.forEach((corner) => {
+          expect(colorDistance(edge, corner)).toBeGreaterThan(100);
+        });
+      });
     }
     expect(auroraGeometry.overflow).toBe('hidden');
     expect(auroraGeometry.pointerEvents).toBe('none');

@@ -578,6 +578,7 @@
 
   let scrollContainer = $state<HTMLDivElement>();
   let composerElement = $state<HTMLDivElement>();
+  let composerHeight = $state(0);
   let inputComponent = $state<SimpleRichInput>();
   // Rehydrate the transcript scroll state cached by the previous instance's
   // destroy so a remount keeps the user's reading position instead of
@@ -3719,15 +3720,19 @@
     const setupWhenReady = () => {
       readinessFrame = null;
       if (destroyed) return;
-      if (!scrollContainer) {
+      if (!scrollContainer || !composerElement) {
         readinessFrame = requestAnimationFrame(setupWhenReady);
         return;
       }
       observer = new ResizeObserver((entries) => {
         for (const entry of entries) {
-          const newHeight = entry.contentRect.height;
-          if (newHeight !== containerHeight) {
-            containerHeight = newHeight;
+          if (entry.target === scrollContainer) {
+            const newHeight = entry.contentRect.height;
+            if (newHeight !== containerHeight) {
+              containerHeight = newHeight;
+            }
+          } else if (entry.target === composerElement) {
+            composerHeight = entry.contentRect.height;
           }
         }
         if (scrollContainer) {
@@ -3738,6 +3743,7 @@
         }
       });
       observer.observe(scrollContainer);
+      observer.observe(composerElement);
     };
     readinessFrame = requestAnimationFrame(setupWhenReady);
 
@@ -4679,6 +4685,20 @@
   ondragover={panelFileDrop.handleDragOver}
   ondrop={panelFileDrop.handleDrop}
 >
+  <!-- The regular Aurora belongs to the complete chat surface, not the inset
+       composer lane. Its real Panel ancestor owns the exact bottom-corner clip. -->
+  {#if $agentSessionIsStreaming$ && !isChiefWorkspace}
+    <div
+      class="composer-aurora-host regular-panel-aurora-host pointer-events-none absolute inset-x-0 bottom-0 z-0 overflow-hidden"
+      style:height={`calc(${composerHeight}px + 10rem)`}
+      data-testid="composer-aurora-host"
+      transition:fade
+    >
+      <AuroraBackground {agentId} />
+      <AuroraSofteningLayer />
+    </div>
+  {/if}
+
   <!-- Full-panel drop zone overlay (file drags only) -->
   {#if isFileDragOverPanel || isFileDragOverHeader}
     <div
@@ -5714,36 +5734,22 @@
     data-streaming={$agentSessionIsStreaming$}
     data-testid="chat-composer-shell"
   >
-    <!-- Aurora northern lights effect during streaming. The regular host reaches
-         the panel's inner edges and paints beneath the measured scrollbar gutter;
-         the prompt layer keeps controls aligned above it. The inherited panel-shell
-         radius clips the Aurora to the same visible bottom corners as its owner.
-         The chief variant bleeds further left/bottom so the shader crosses the
+    <!-- Aurora northern lights effect during streaming. The regular host is owned
+         by the complete chat surface above. The chief variant remains composer-owned
+         and bleeds further left/bottom so the shader crosses the
          ChiefCard px-2 inset and the sidebar frame's pl-2/pb-2 window inset (the
          ancestors clip with an 8px overflow-clip-margin), touching the app window's
          left/bottom edges. -->
-    {#if $agentSessionIsStreaming$}
-      {#if isChiefWorkspace}
-        <div
-          class="composer-aurora-host pointer-events-none absolute -left-4 -right-2 -bottom-4 z-0 overflow-hidden"
-          style="height: calc(100% + 10rem);"
-          data-testid="composer-aurora-host"
-          transition:fade
-        >
-          <AuroraBackground {agentId} />
-          <AuroraSofteningLayer />
-        </div>
-      {:else}
-        <div
-          class="composer-aurora-host regular-composer-aurora-host pointer-events-none absolute inset-x-0 bottom-0 z-0 overflow-hidden"
-          style="height: calc(100% + 10rem);"
-          data-testid="composer-aurora-host"
-          transition:fade
-        >
-          <AuroraBackground {agentId} />
-          <AuroraSofteningLayer />
-        </div>
-      {/if}
+    {#if $agentSessionIsStreaming$ && isChiefWorkspace}
+      <div
+        class="composer-aurora-host pointer-events-none absolute -left-4 -right-2 -bottom-4 z-0 overflow-hidden"
+        style="height: calc(100% + 10rem);"
+        data-testid="composer-aurora-host"
+        transition:fade
+      >
+        <AuroraBackground {agentId} />
+        <AuroraSofteningLayer />
+      </div>
     {/if}
 
     <div
@@ -5913,11 +5919,6 @@
 
   .conversation-composer.chief-composer {
     --composer-lane-inset: 0.25rem;
-  }
-
-  .regular-composer-aurora-host {
-    border-bottom-left-radius: var(--panel-shell-radius);
-    border-bottom-right-radius: var(--panel-shell-radius);
   }
 
   .composer-prompt-lane {
