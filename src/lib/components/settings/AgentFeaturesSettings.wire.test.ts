@@ -237,7 +237,7 @@ describe('AgentFeaturesSettings wire contract (PROTOCOL §5.12)', () => {
     render(AgentFeaturesSettings);
 
     const impact = await screen.findByText('~620 tokens/session');
-    expect(impact.className).toContain('text-muted-foreground/60');
+    expect(impact.className).toContain('text-ghost');
     // Entries without the optional field render no annotation.
     expect(screen.queryAllByText(/tokens\/(session|turn)/)).toHaveLength(1);
   });

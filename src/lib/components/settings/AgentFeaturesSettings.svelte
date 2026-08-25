@@ -168,7 +168,7 @@
           <p class="text-xs text-subtle mt-1">{feature.description()}</p>
           {#if tokenImpacts[feature.path]}
             <!-- i18n-ignore (daemon-provided wire text, PROTOCOL §5.12 tokenImpact) -->
-            <p class="text-xs text-muted-foreground/60 mt-1">{tokenImpacts[feature.path]}</p>
+            <p class="text-xs text-ghost mt-1">{tokenImpacts[feature.path]}</p>
           {/if}
         </div>
         <Toggle

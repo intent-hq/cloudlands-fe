@@ -252,7 +252,7 @@ describe('AgentFeaturesSettings', () => {
       expect(screen.getAllByText('~620 tokens/session')).toHaveLength(10);
     });
     const perTurn = screen.getByText('~50 tokens/turn');
-    expect(perTurn.className).toContain('text-muted-foreground/60');
+    expect(perTurn.className).toContain('text-ghost');
   });
 
   it('renders no token-impact line when the daemon omits the field (older daemon)', async () => {
