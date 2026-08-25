@@ -24,7 +24,7 @@
     deriveErrorDisplay,
     formatElapsed,
     getActiveStalledEvent,
-    getLatestStatusEvent,
+    getLatestThinkingStatusEvent,
     getStatusMarkVariant,
   } from './streaming-status-utils';
   import { m } from '$shared/paraglide/messages.js';
@@ -129,7 +129,9 @@
       !hasPendingPermission &&
       !stalledEvent,
   );
-  let latestStatusEvent = $derived(getLatestStatusEvent(statusEvents));
+  // Skips stalled events: an active stall has its own row, and a superseded
+  // one must not leak its stale message into the returning thinking indicator.
+  let latestStatusEvent = $derived(getLatestThinkingStatusEvent(statusEvents));
   let markVariant = $derived(getStatusMarkVariant(latestStatusEvent?.phase));
 
   let nowMs = $state(Date.now());

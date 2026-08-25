@@ -93,6 +93,24 @@ export function getActiveStalledEvent(
   return latest;
 }
 
+/**
+ * Latest status event for the thinking indicator's lifecycle line. Skips
+ * `stalled` events entirely: an active stall renders on its own dedicated
+ * warn row, and a superseded one (cleared by a stream delta, which appends
+ * no new status event) must not leak its stale "No model activity…" message
+ * into the returning thinking indicator.
+ */
+export function getLatestThinkingStatusEvent(
+  statusEvents: readonly StatusEvent[],
+): StatusEvent | null {
+  let latest: StatusEvent | null = null;
+  for (const event of statusEvents) {
+    if (event.phase === STALLED_PHASE) continue;
+    if (!latest || event.timestamp >= latest.timestamp) latest = event;
+  }
+  return latest;
+}
+
 /** Select the newest non-empty lifecycle message without trusting arrival order. */
 export function latestMeaningfulStatusMessage(statusEvents: readonly StatusEvent[]): string | null {
   let latestMessage: string | null = null;

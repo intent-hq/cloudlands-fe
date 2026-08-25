@@ -29,6 +29,7 @@ import {
   computeCompletedEvents,
   deriveErrorDisplay,
   getActiveStalledEvent,
+  getLatestThinkingStatusEvent,
   latestMeaningfulStatusMessage,
   shouldAppendStreamingEvent,
   SESSION_CORRUPTED,
@@ -515,6 +516,40 @@ describe('StreamingStatus stalled state (monorepo#3402)', () => {
     expect(screen.getByTestId('streaming-status-thinking')).toBeTruthy();
   });
 
+  it('never leaks the stalled message into the returning thinking indicator after a delta clears it', async () => {
+    // A stream delta clears the stall via lastChunkTime without appending a
+    // new status event, so the stalled event stays the newest entry — the
+    // thinking indicator must fall back to the last non-stalled lifecycle
+    // message instead of showing stale "No model activity…" copy.
+    const events: StatusEvent[] = [
+      { phase: 'streaming', message: 'Streaming response…', level: 'info', timestamp: 500 },
+      stalledEvent(1_000),
+    ];
+    const { container, rerender } = render(StreamingStatus, {
+      props: { isStreaming: true, onStop: vi.fn(), statusEvents: events, lastChunkTime: 600 },
+    });
+
+    expect(container.querySelector('[data-stream-stalled="true"]')).toBeTruthy();
+
+    await rerender({
+      isStreaming: true,
+      onStop: vi.fn(),
+      statusEvents: events,
+      lastChunkTime: 2_000,
+    });
+
+    await waitFor(() =>
+      expect(container.querySelector('[data-stream-stalled="true"]')).toBeNull(),
+    );
+    expect(screen.getByTestId('streaming-status-phase').textContent).toBe('Streaming response…');
+    expect(screen.getByTestId('streaming-status-phase').textContent).not.toContain(
+      'No model activity',
+    );
+    expect(
+      container.querySelector('[data-slot="intent-mark-loader"]')?.getAttribute('data-variant'),
+    ).toBe('bloom');
+  });
+
   it('does not render the stalled row once the turn has ended or failed', () => {
     const events: StatusEvent[] = [stalledEvent(1_000)];
     const idle = render(StreamingStatus, {
@@ -664,6 +699,36 @@ describe('StreamingStatus utilities', () => {
     it('re-triggers on a second stall in the same turn (newer stalled after delta)', () => {
       const second: StatusEvent = { ...stalled, timestamp: 20_000 };
       expect(getActiveStalledEvent([stalled, second], 10_000)).toBe(second);
+    });
+  });
+
+  describe('getLatestThinkingStatusEvent', () => {
+    const stalled: StatusEvent = {
+      phase: STALLED_PHASE,
+      message: 'No model activity for 90s',
+      level: 'warn',
+      timestamp: 5_000,
+    };
+    const streaming: StatusEvent = {
+      phase: 'streaming',
+      message: 'Streaming response…',
+      level: 'info',
+      timestamp: 1_000,
+    };
+
+    it('skips stalled events and returns the newest non-stalled event', () => {
+      expect(getLatestThinkingStatusEvent([streaming, stalled])).toBe(streaming);
+      expect(getLatestThinkingStatusEvent([stalled, streaming])).toBe(streaming);
+    });
+
+    it('returns null when only stalled events exist or the list is empty', () => {
+      expect(getLatestThinkingStatusEvent([stalled])).toBeNull();
+      expect(getLatestThinkingStatusEvent([])).toBeNull();
+    });
+
+    it('matches getLatestStatusEvent semantics when no stalled event is present', () => {
+      const later: StatusEvent = { ...streaming, phase: 'tool-call', timestamp: 2_000 };
+      expect(getLatestThinkingStatusEvent([streaming, later])).toBe(later);
     });
   });
 
