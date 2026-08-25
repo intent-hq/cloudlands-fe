@@ -1,11 +1,17 @@
 import type { Workspace } from '$shared/types';
-import type { UnifiedAgentFactory } from '$features/agent/services/agent-factory';
+import { UnifiedAgentFactory } from '$features/agent/services/agent-factory';
+import { initAppStore, store } from '$store/renderer/store';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { backendRequestMock, createAgentMock } = vi.hoisted(() => ({
-  backendRequestMock: vi.fn(),
-  createAgentMock: vi.fn(),
-}));
+const { backendRequestMock, createAgentMock } = vi.hoisted(() => {
+  if (!globalThis.window) {
+    Object.defineProperty(globalThis, 'window', { value: {}, writable: true, configurable: true });
+  }
+  return {
+    backendRequestMock: vi.fn(),
+    createAgentMock: vi.fn(),
+  };
+});
 
 vi.mock('$lib/client/live/backend-transport', () => ({ backendRequest: backendRequestMock }));
 vi.mock('$lib/client', () => ({ appClient: { agents: { create: createAgentMock } } }));
@@ -22,14 +28,7 @@ describe('Agent creation with context references', () => {
     updatedAt: '2026-08-25T00:00:00.000Z',
   } as Workspace;
 
-  beforeAll(async () => {
-    if (!globalThis.window) {
-      Object.defineProperty(globalThis, 'window', { value: {}, configurable: true });
-    }
-    const [{ UnifiedAgentFactory }, { initAppStore, store }] = await Promise.all([
-      import('$features/agent/services/agent-factory'),
-      import('$store/renderer/store'),
-    ]);
+  beforeAll(() => {
     disposeStore = initAppStore(store).dispose;
     factory = UnifiedAgentFactory.getInstance();
   }, 30_000);

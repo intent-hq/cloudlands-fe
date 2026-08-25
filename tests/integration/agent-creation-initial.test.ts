@@ -1,9 +1,15 @@
 import type { Workspace } from '$shared/types';
 import { AgentStatus } from '$shared/types';
-import type { UnifiedAgentFactory } from '$features/agent/services/agent-factory';
+import { UnifiedAgentFactory } from '$features/agent/services/agent-factory';
+import { initAppStore, store } from '$store/renderer/store';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { createAgentMock } = vi.hoisted(() => ({ createAgentMock: vi.fn() }));
+const { createAgentMock } = vi.hoisted(() => {
+  if (!globalThis.window) {
+    Object.defineProperty(globalThis, 'window', { value: {}, writable: true, configurable: true });
+  }
+  return { createAgentMock: vi.fn() };
+});
 vi.mock('$lib/client', () => ({ appClient: { agents: { create: createAgentMock } } }));
 
 describe('Initial agent creation', () => {
@@ -17,14 +23,7 @@ describe('Initial agent creation', () => {
     updatedAt: '2026-08-25T00:00:00.000Z',
   } as Workspace;
 
-  beforeAll(async () => {
-    if (!globalThis.window) {
-      Object.defineProperty(globalThis, 'window', { value: {}, configurable: true });
-    }
-    const [{ UnifiedAgentFactory }, { initAppStore, store }] = await Promise.all([
-      import('$features/agent/services/agent-factory'),
-      import('$store/renderer/store'),
-    ]);
+  beforeAll(() => {
     disposeStore = initAppStore(store).dispose;
     factory = UnifiedAgentFactory.getInstance();
   }, 30_000);
