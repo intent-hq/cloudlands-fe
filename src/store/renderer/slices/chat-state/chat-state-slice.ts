@@ -62,6 +62,7 @@ export const emptyChatAgentState: ChatAgentState = {
   scrollbackGapToken: null,
   fetchingHistorySeek: false,
   historySeekUnsupported: false,
+  scrollbackDiscardEpoch: 0,
 };
 
 export const initialState: ChatStateSlice = {
@@ -1152,6 +1153,27 @@ chatStateReducer.with(chatTranscriptSnapshotApplied, (state, { payload: [agentId
     // A snapshot from the CURRENT subscription is exactly what the
     // switch-back reveal gate waits for — reveal the transcript.
     awaitingSwitchBackSnapshot: false,
+    // §7.1 `resumed: false` discard: the retained transcript (history
+    // segment included) is dropped, so the whole scrollback walk resets
+    // ATOMICALLY with the snapshot — stranded fetching flags from a wire
+    // call that died with the socket would otherwise freeze the spacer
+    // reconcile and suppress every walk driver forever. The epoch bump
+    // invalidates workers still awaiting their wire call: a page resolving
+    // after the discard must not recreate a segment or persist a cursor
+    // minted against the discarded transcript. The saga's
+    // `clearHistorySegment` chain still runs (and is idempotent here);
+    // the `historySeekUnsupported` latch is a daemon capability, not walk
+    // state, and survives.
+    ...(meta.resumed === false
+      ? {
+          fetchingOlderHistory: false,
+          fetchingGapFill: false,
+          fetchingHistorySeek: false,
+          scrollbackOlderToken: null,
+          scrollbackGapToken: null,
+          scrollbackDiscardEpoch: agent.scrollbackDiscardEpoch + 1,
+        }
+      : {}),
   });
 });
 chatStateReducer.with(

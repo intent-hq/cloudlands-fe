@@ -51,6 +51,11 @@ const mocks = vi.hoisted(() => {
     awaitingUtilityFooter: mutableReadable(false),
     transcriptHydration: mutableReadable('settled'),
     transcriptHydratedOnce: mutableReadable(true),
+    transcriptSnapshotMeta: mutableReadable<
+      { seq: number; truncated: boolean; totalMessages: number; resumed?: boolean } | undefined
+    >(undefined),
+    fetchingOlderHistory: mutableReadable(false),
+    fetchingHistorySeek: mutableReadable(false),
     animateMessageSend: vi.fn(),
     createMessageSendLaunchBubble: vi.fn(),
     pendingQuestions: null as { messageId: string; questions: unknown[] } | null,
@@ -128,8 +133,12 @@ vi.mock('$store/renderer/slices/chat-state/chat-state-selectors', () => ({
   selectChatStatusEvents: mocks.selector([]),
   selectChatStreamingStartTime: mocks.selector(null),
   selectFetchingGapFill: mocks.selector(false),
-  selectFetchingHistorySeek: mocks.selector(false),
-  selectFetchingOlderHistory: mocks.selector(false),
+  selectFetchingHistorySeek: Object.assign(() => mocks.fetchingHistorySeek, {
+    select: () => false,
+  }),
+  selectFetchingOlderHistory: Object.assign(() => mocks.fetchingOlderHistory, {
+    select: () => false,
+  }),
   selectHistoryExhausted: mocks.selector(false),
   selectHistorySeekUnsupported: mocks.selector(false),
   selectPendingQuestionRecovery: mocks.selector(undefined),
@@ -139,7 +148,9 @@ vi.mock('$store/renderer/slices/chat-state/chat-state-selectors', () => ({
   selectTranscriptHydratedOnce: Object.assign(() => mocks.transcriptHydratedOnce, {
     select: () => true,
   }),
-  selectTranscriptSnapshotMeta: mocks.selector(undefined),
+  selectTranscriptSnapshotMeta: Object.assign(() => mocks.transcriptSnapshotMeta, {
+    select: () => undefined,
+  }),
 }));
 vi.mock('$store/renderer/slices/permission/permission-selectors', () => ({
   selectPermissionRequests: mocks.selector([]),
@@ -438,6 +449,9 @@ beforeEach(() => {
   mocks.awaitingUtilityFooter.set(false);
   mocks.transcriptHydration.set('settled');
   mocks.transcriptHydratedOnce.set(true);
+  mocks.transcriptSnapshotMeta.set(undefined);
+  mocks.fetchingOlderHistory.set(false);
+  mocks.fetchingHistorySeek.set(false);
   mocks.dividerSessionValue = { anchorId: null };
   mocks.animateMessageSend.mockResolvedValue(undefined);
   mocks.createMessageSendLaunchBubble.mockImplementation(() => {
@@ -2045,5 +2059,171 @@ describe('ChatPanel mounted lifecycle', () => {
     expect(composer?.getAttribute('data-has-transcript-utility')).toBe('false');
     expect(composer?.classList.contains('pb-3')).toBe(false);
     expect(view.container.querySelector('[data-testid="chat-composer-lane"]')).not.toBeNull();
+  });
+
+  it('resets the viewport on a resumed:false discard across the restart sequence (snapshot cleared first)', async () => {
+    // Full §7.1 daemon-restart sequence: an established snapshot, then
+    // phase→null CLEARS it (subscription teardown resets seq), then the new
+    // subscription's seq-0 resumed:false snapshot lands. The discard reset
+    // must fire on the fresh snapshot — a seq-keyed guard rebaselined by the
+    // intermediate clear would miss it.
+    mocks.draftGet.mockResolvedValue(null);
+    mocks.agentMessages.set([
+      { id: 'm1', role: 'assistant', content: 'hello', timestamp: '2026-01-01T00:00:00.000Z' },
+    ]);
+    mocks.transcriptSnapshotMeta.set({ seq: 1, truncated: true, totalMessages: 50 });
+    const view = render(ChatPanel, {
+      props: { workspace: workspace('workspace-a'), agentId: 'agent-a' },
+    });
+    await tick();
+    const scrollContainer = view.container.querySelector('.overflow-y-auto') as HTMLDivElement;
+    flushFrame();
+    vi.mocked(scrollToBottomUtil).mockClear();
+
+    // Subscription teardown: the snapshot clears (phase→null in the reducer).
+    mocks.transcriptSnapshotMeta.set(undefined);
+    await tick();
+    await tick();
+    expect(scrollToBottomUtil).not.toHaveBeenCalled();
+
+    // Fresh subscription's first snapshot: resumed:false — transcript
+    // discarded. The panel must zero its walk geometry and re-anchor.
+    mocks.transcriptSnapshotMeta.set({
+      seq: 1,
+      truncated: false,
+      totalMessages: 3,
+      resumed: false,
+    });
+    await tick();
+    await tick();
+    expect(scrollToBottomUtil).toHaveBeenCalledWith(scrollContainer);
+  });
+
+  it('fires the discard reset only for NEW resumed:false snapshots after the baseline', async () => {
+    // Mount over an already-discarded snapshot only records the baseline
+    // (nothing to undo — panel-local geometry starts zeroed). Afterwards a
+    // fresh resumed:true snapshot must NOT reset, and a fresh resumed:false
+    // snapshot must.
+    mocks.draftGet.mockResolvedValue(null);
+    mocks.agentMessages.set([
+      { id: 'm1', role: 'assistant', content: 'hello', timestamp: '2026-01-01T00:00:00.000Z' },
+    ]);
+    mocks.transcriptSnapshotMeta.set({
+      seq: 1,
+      truncated: false,
+      totalMessages: 3,
+      resumed: false,
+    });
+    const view = render(ChatPanel, {
+      props: { workspace: workspace('workspace-a'), agentId: 'agent-a' },
+    });
+    await tick();
+    const scrollContainer = view.container.querySelector('.overflow-y-auto') as HTMLDivElement;
+    flushFrame();
+    await tick();
+    vi.mocked(scrollToBottomUtil).mockClear();
+
+    // Fresh (new object identity) resumed:true snapshot: no discard, no reset.
+    mocks.transcriptSnapshotMeta.set({ seq: 2, truncated: false, totalMessages: 4, resumed: true });
+    await tick();
+    await tick();
+    expect(scrollToBottomUtil).not.toHaveBeenCalled();
+
+    // Fresh resumed:false snapshot: a new discard — reset fires.
+    mocks.transcriptSnapshotMeta.set({
+      seq: 3,
+      truncated: false,
+      totalMessages: 2,
+      resumed: false,
+    });
+    await tick();
+    await tick();
+    expect(scrollToBottomUtil).toHaveBeenCalledWith(scrollContainer);
+  });
+
+  it('suppresses the failed-seek fallback when a discard clears the in-flight seek', async () => {
+    // The same dispatch that applies a resumed:false snapshot also clears
+    // fetchingHistorySeek (the atomic reducer reset). The seek-settle
+    // effect (created earlier, flushed earlier) observes that as a settle
+    // and schedules its landing handler one microtask BEFORE the discard
+    // effect's followToBottom — with pendingSeekTargetOrdinal already
+    // nulled it would take the failed-seek fallback and dispatch a
+    // spurious older-history page against the clamped scrollTop. The
+    // discard's re-anchor-pending flag must make it stand down.
+    mocks.draftGet.mockResolvedValue(null);
+    mocks.agentMessages.set([
+      { id: 'm1', role: 'assistant', content: 'hello', timestamp: '2026-01-01T00:00:00.000Z' },
+    ]);
+    mocks.transcriptSnapshotMeta.set({ seq: 1, truncated: true, totalMessages: 50 });
+    const view = render(ChatPanel, {
+      props: { workspace: workspace('workspace-a'), agentId: 'agent-a' },
+    });
+    await tick();
+    const scrollContainer = view.container.querySelector('.overflow-y-auto') as HTMLDivElement;
+    // Overflowing viewport at the top: exactly the geometry where the
+    // fallback's maybeRequestOlderHistory() would dispatch a page.
+    Object.defineProperties(scrollContainer, {
+      scrollHeight: { configurable: true, value: 1000 },
+      clientHeight: { configurable: true, value: 400 },
+    });
+    scrollContainer.scrollTop = 0;
+    flushFrame();
+
+    // A far-flick seek is in flight at discard time.
+    mocks.fetchingHistorySeek.set(true);
+    await tick();
+    mocks.dispatch.mockClear();
+    vi.mocked(scrollToBottomUtil).mockClear();
+
+    // The discard dispatch: clears the fetching flag and applies the
+    // resumed:false snapshot atomically (one reducer write → one flush).
+    mocks.fetchingHistorySeek.set(false);
+    mocks.transcriptSnapshotMeta.set({
+      seq: 1,
+      truncated: true,
+      totalMessages: 50,
+      resumed: false,
+    });
+    await tick();
+    await tick();
+
+    // The fallback stood down; the discard's re-anchor still ran.
+    const olderHistoryDispatches = mocks.dispatch.mock.calls
+      .map(([action]) => action)
+      .filter((action) => action?.type === 'chatState/olderHistoryPageRequested');
+    expect(olderHistoryDispatches).toHaveLength(0);
+    expect(scrollToBottomUtil).toHaveBeenCalledWith(scrollContainer);
+  });
+
+  it('drops the older-history indicator instantly when switching agents mid-walk', async () => {
+    // The indicator state (visible flag, hide timer, pending evaluation)
+    // is panel-local: switching agents mid-walk must not carry the visible
+    // indicator over to the new agent for the quiet window — the switch
+    // flips $fetchingOlderHistory$ to the new agent's false, which used to
+    // read as a spurious settle (evaluation → arm-hide → ~300ms later).
+    mocks.draftGet.mockResolvedValue(null);
+    mocks.agentMessages.set([
+      { id: 'm1', role: 'assistant', content: 'hello', timestamp: '2026-01-01T00:00:00.000Z' },
+    ]);
+    mocks.transcriptSnapshotMeta.set({ seq: 1, truncated: true, totalMessages: 50 });
+    const view = render(ChatPanel, {
+      props: { workspace: workspace('workspace-a'), agentId: 'agent-a' },
+    });
+    await tick();
+
+    // Mid-walk: a fetch is in flight, the indicator shows.
+    mocks.fetchingOlderHistory.set(true);
+    await tick();
+    expect(
+      view.container.querySelector('[data-testid="chat-older-history-loading"]'),
+    ).not.toBeNull();
+
+    // Switch agents; the new agent's fetching flag is false.
+    await view.rerender({ workspace: workspace('workspace-a'), agentId: 'agent-b' });
+    mocks.fetchingOlderHistory.set(false);
+    await tick();
+
+    // Hidden IMMEDIATELY — no quiet-window timer needed.
+    expect(view.container.querySelector('[data-testid="chat-older-history-loading"]')).toBeNull();
   });
 });

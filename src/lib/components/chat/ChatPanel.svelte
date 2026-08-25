@@ -178,6 +178,8 @@
     composeTranscript,
     isConversationStartLoaded,
     mapScrollTopToOrdinal,
+    OLDER_HISTORY_INDICATOR_QUIET_MS,
+    olderHistoryIndicatorAction,
     reconcileVirtualSpacer,
     restateFrozenSpacers,
     shouldRequestOlderHistory,
@@ -2032,6 +2034,13 @@
     if (!settled) return;
     tick().then(() => {
       if (isComponentDestroyed || !scrollContainer) return;
+      // Discard raced this settle: the dispatch that cleared
+      // fetchingHistorySeek was a resumed:false reset, not a landing. The
+      // discard effect below owns the viewport (followToBottom on this
+      // same tick, one microtask later) — the failed-seek fallback must
+      // not dispatch an older-history page against the scrollTop the
+      // just-zeroed spacers clamped to an arbitrary position.
+      if (discardReanchorPending) return;
       const target = pendingSeekTargetOrdinal;
       pendingSeekTargetOrdinal = null;
       seekLandingPending = false;
@@ -2056,6 +2065,65 @@
             above + (target - startOrdinal) * rowHeight - scrollContainer.clientHeight / 2,
           ),
         );
+      });
+    });
+  });
+
+  // Transcript discard (§7.1 `resumed: false` seq-0 snapshot, e.g. after an
+  // intentd restart): the store dropped the retained transcript and the
+  // reducers reset the walk cursors + fetching flags atomically — but the
+  // panel-local walk geometry (spacers, seek debounce, landing-pending) was
+  // sized against the discarded rows and would strand the viewport inside a
+  // phantom spacer over an empty store. Zero it all and re-anchor to the
+  // fresh tail. Keyed on the snapshot's OBJECT IDENTITY (every
+  // chatTranscriptSnapshotApplied mints a fresh meta object) so only a NEW
+  // discarded snapshot fires; the first observation per agent only records
+  // the baseline (a mount over an already-discarded snapshot has nothing to
+  // reset). Identity — not seq — because the restart sequence clears the
+  // snapshot first (phase→null resets seq), and effect batching can flush
+  // the clear + fresh snapshot together, where a seq comparison against the
+  // pre-clear baseline could coincide and miss the discard.
+  let discardBaselineAgentId: string | undefined;
+  let discardBaselineMeta: typeof $transcriptSnapshotMeta$;
+  // Raised synchronously by the discard reset below until its re-anchor
+  // lands. The same dispatch that applies the discard also clears
+  // fetchingHistorySeek (the atomic reducer reset), so with a seek in
+  // flight the seek-settle effect above (created earlier, flushed earlier)
+  // observes a spurious settle and schedules its landing handler one
+  // microtask BEFORE this effect's followToBottom — with
+  // pendingSeekTargetOrdinal already nulled it would take the failed-seek
+  // fallback and dispatch a spurious older-history page. The flag makes it
+  // stand down for the discard's re-anchor.
+  let discardReanchorPending = false;
+  $effect(() => {
+    const meta = $transcriptSnapshotMeta$;
+    const currentAgentId = agentId;
+    untrack(() => {
+      if (currentAgentId !== discardBaselineAgentId) {
+        discardBaselineAgentId = currentAgentId;
+        discardBaselineMeta = meta;
+        // The older-history indicator tracked the PREVIOUS agent's walk:
+        // drop it instantly so switching agents mid-walk cannot carry the
+        // visible indicator (or its armed hide / pending evaluation) over
+        // to the newly selected agent for the quiet window.
+        resetOlderHistoryIndicator();
+        return;
+      }
+      if (meta === discardBaselineMeta) return;
+      const isNewDiscard = meta?.resumed === false;
+      discardBaselineMeta = meta;
+      if (!isNewDiscard) return;
+      cancelSeekDebounce();
+      seekLandingPending = false;
+      pendingSeekTargetOrdinal = null;
+      discardReanchorPending = true;
+      virtualSpacerHeight = 0;
+      virtualSpacerBelowHeight = 0;
+      shouldFollowBottom = true;
+      tick().then(() => {
+        discardReanchorPending = false;
+        if (isComponentDestroyed || !scrollContainer) return;
+        followToBottom(scrollContainer);
       });
     });
   });
@@ -2325,6 +2393,63 @@
     return () => container.removeEventListener('scroll', onScroll);
   });
 
+  // Chain-scoped visibility for the top "Loading older messages" indicator:
+  // the raw fetching flag toggles false between every page of the settle
+  // chain below, so rendering it directly blinked once per page. The
+  // indicator instead tracks the WALK — shown while a fetch is in flight or
+  // the settle re-evaluation is pending, hidden only after a short quiet
+  // window once the chain truly stops (olderHistoryIndicatorAction).
+  let olderHistoryIndicatorVisible = $state(false);
+  let olderHistoryChainEvaluationPending = false;
+  let olderHistoryIndicatorHideTimer: ReturnType<typeof setTimeout> | null = null;
+
+  function syncOlderHistoryIndicator(fetching: boolean) {
+    const action = olderHistoryIndicatorAction({
+      fetching,
+      chainEvaluationPending: olderHistoryChainEvaluationPending,
+      visible: olderHistoryIndicatorVisible,
+      hideArmed: olderHistoryIndicatorHideTimer !== null,
+    });
+    if (action === 'show') {
+      if (olderHistoryIndicatorHideTimer !== null) {
+        clearTimeout(olderHistoryIndicatorHideTimer);
+        olderHistoryIndicatorHideTimer = null;
+      }
+      olderHistoryIndicatorVisible = true;
+    } else if (action === 'arm-hide') {
+      olderHistoryIndicatorHideTimer = setTimeout(() => {
+        olderHistoryIndicatorHideTimer = null;
+        if (isComponentDestroyed) return;
+        olderHistoryIndicatorVisible = false;
+      }, OLDER_HISTORY_INDICATOR_QUIET_MS);
+    }
+  }
+
+  // Drop the indicator instantly (visible flag, armed hide timer, pending
+  // chain evaluation) — the agent-change branch of the discard-baseline
+  // effect above calls this so a mid-walk agent switch never carries the
+  // previous agent's indicator over to the new agent for the quiet window.
+  // Also rebaselines the settle tracker: the switch flips
+  // $fetchingOlderHistory$ to the NEW agent's value, and without the
+  // rebaseline that flip would read as the old agent's walk settling
+  // (spurious settle → evaluation pending → indicator re-shown).
+  function resetOlderHistoryIndicator() {
+    if (olderHistoryIndicatorHideTimer !== null) {
+      clearTimeout(olderHistoryIndicatorHideTimer);
+      olderHistoryIndicatorHideTimer = null;
+    }
+    olderHistoryChainEvaluationPending = false;
+    olderHistoryIndicatorVisible = false;
+    wasFetchingOlderHistory = false;
+  }
+
+  // Clear the indicator hide timer on destroy.
+  $effect(() => {
+    return () => {
+      if (olderHistoryIndicatorHideTimer !== null) clearTimeout(olderHistoryIndicatorHideTimer);
+    };
+  });
+
   // Continuous paging: the scroll listener above is edge-triggered, and a
   // prepend + anchor restore emits no scroll event — without this settle
   // re-evaluation the walk strands after one page while the user holds the
@@ -2340,12 +2465,21 @@
     const fetching = $fetchingOlderHistory$;
     const settled = wasFetchingOlderHistory && !fetching;
     wasFetchingOlderHistory = fetching;
+    // The pending flag is raised BEFORE the indicator sync so the settle
+    // gap (fetch false, chain not yet re-evaluated) never arms the hide.
+    if (settled) olderHistoryChainEvaluationPending = true;
+    untrack(() => syncOlderHistoryIndicator(fetching));
     if (!settled) return;
     tick().then(() => {
       requestAnimationFrame(() => {
         requestAnimationFrame(() => {
-          if (isComponentDestroyed || !scrollContainer) return;
-          maybeRequestOlderHistory();
+          olderHistoryChainEvaluationPending = false;
+          if (isComponentDestroyed) return;
+          if (scrollContainer) maybeRequestOlderHistory();
+          // The saga raises the fetching flag synchronously on dispatch, so
+          // this read distinguishes "chain continued" (stay visible) from
+          // "chain stopped" (arm the quiet-window hide).
+          syncOlderHistoryIndicator($fetchingOlderHistory$);
         });
       });
     });
@@ -5046,8 +5180,11 @@
                 {/if}
               {/snippet}
               <!-- Older-history loading affordance: small top indicator while
-                   an on-demand scrollback page fetch is in flight. -->
-              {#if $fetchingOlderHistory$}
+                   the on-demand scrollback walk is active. Chain-scoped, not
+                   per-fetch: it stays up across the settle-chain gaps between
+                   pages and hides after a short quiet window once the walk
+                   stops (see syncOlderHistoryIndicator). -->
+              {#if olderHistoryIndicatorVisible}
                 <div
                   class="flex items-center justify-center gap-2 py-2 text-xs text-muted-foreground"
                   data-testid="chat-older-history-loading"

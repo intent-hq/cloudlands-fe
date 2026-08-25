@@ -641,6 +641,157 @@ describe('chatScrollbackSaga (on-demand history paging)', () => {
     await run.task.toPromise();
   });
 
+  it('a resumed:false snapshot clears a stranded fetching flag even while the wire call hangs', async () => {
+    const run = harness();
+    run.dispatch(bulkUpsertSessions([session({ messages: [message('m-10', 10)] })]));
+    // Transport died mid-fetch: the promise never settles, so the saga's
+    // finally-settle can never clear the flag — the reducer's atomic reset
+    // on the discard snapshot must.
+    mocks.getConversation.mockReturnValueOnce(new Promise(() => {}));
+    run.channel.put(olderHistoryPageRequested(WS, AGENT));
+    await settle();
+    expect(run.chat()?.fetchingOlderHistory).toBe(true);
+
+    // Dispatch (not a bare channel put): the reducers must see the snapshot
+    // — the atomic reset under test lives there, not in the saga chain.
+    run.dispatch(
+      chatTranscriptSnapshotApplied(AGENT, {
+        truncated: false,
+        totalMessages: 3,
+        resumed: false,
+      }),
+    );
+    await settle();
+
+    expect(run.chat()?.fetchingOlderHistory).toBe(false);
+    expect(run.chat()?.fetchingGapFill).toBe(false);
+    expect(run.chat()?.fetchingHistorySeek).toBe(false);
+    expect(run.chat()?.scrollbackOlderToken).toBeNull();
+    expect(run.chat()?.scrollbackGapToken).toBeNull();
+    expect(run.history()).toBeUndefined();
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('drops an in-flight older page that resolves AFTER a resumed:false discard', async () => {
+    const run = harness();
+    run.dispatch(bulkUpsertSessions([session({ messages: [message('m-10', 10)] })]));
+    let resolvePage!: (value: ReturnType<typeof page>) => void;
+    mocks.getConversation.mockReturnValueOnce(
+      new Promise((done) => {
+        resolvePage = done;
+      }),
+    );
+    run.channel.put(olderHistoryPageRequested(WS, AGENT));
+    await settle();
+    expect(run.chat()?.fetchingOlderHistory).toBe(true);
+
+    // §7.1 discard lands while the wire call is in flight: the reducer
+    // resets the walk atomically (flags + cursors + epoch bump).
+    run.dispatch(
+      chatTranscriptSnapshotApplied(AGENT, {
+        truncated: false,
+        totalMessages: 3,
+        resumed: false,
+      }),
+    );
+    await settle();
+    expect(run.chat()?.fetchingOlderHistory).toBe(false);
+
+    // The stale page resolves afterwards: the worker resumes past its
+    // `yield call` — it must drop the result wholesale, not recreate a
+    // segment of discarded rows or persist a continuation cursor minted
+    // against the discarded transcript.
+    resolvePage(page([message('m-05', 5)], { nextToken: 'stale-older-1' }));
+    await settle();
+
+    expect(run.history()).toBeUndefined();
+    expect(run.chat()?.scrollbackOlderToken).toBeNull();
+    expect(run.chat()?.fetchingOlderHistory).toBe(false);
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('drops an in-flight gap-fill page that resolves AFTER a resumed:false discard', async () => {
+    const run = harness();
+    run.dispatch(bulkUpsertSessions([session({ messages: [message('m-tail', 2000)] })]));
+    const bulk: AgentMessage[] = [];
+    for (let index = 0; index <= HISTORY_SEGMENT_MAX; index++) {
+      bulk.push(message(`m-${String(index + 1000)}`, index + 1000));
+    }
+    run.dispatch(prependHistoryMessages(AGENT, bulk));
+    expect(run.history()?.gapToTail).toBe(true);
+
+    let resolveGap!: (value: ReturnType<typeof page>) => void;
+    mocks.getConversation.mockReturnValueOnce(
+      new Promise((done) => {
+        resolveGap = done;
+      }),
+    );
+    run.channel.put(historyGapFillRequested(WS, AGENT));
+    await settle();
+    expect(run.chat()?.fetchingGapFill).toBe(true);
+
+    run.dispatch(
+      chatTranscriptSnapshotApplied(AGENT, {
+        truncated: false,
+        totalMessages: 3,
+        resumed: false,
+      }),
+    );
+    await settle();
+    expect(run.history()).toBeUndefined();
+
+    resolveGap(page([message('m-1900', 1900)], { prevToken: 'stale-fwd-1' }));
+    await settle();
+
+    expect(run.history()).toBeUndefined();
+    expect(run.chat()?.scrollbackGapToken).toBeNull();
+    expect(run.chat()?.fetchingGapFill).toBe(false);
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('drops an in-flight seek landing that resolves AFTER a resumed:false discard', async () => {
+    const run = harness();
+    run.dispatch(bulkUpsertSessions([session({ messages: [message('m-tail', 2000)] })]));
+    let resolveSeek!: (value: ReturnType<typeof page>) => void;
+    mocks.getConversation.mockReturnValueOnce(
+      new Promise((done) => {
+        resolveSeek = done;
+      }),
+    );
+    run.channel.put(historySeekRequested(WS, AGENT, 500));
+    await settle();
+    expect(run.chat()?.fetchingHistorySeek).toBe(true);
+
+    run.dispatch(
+      chatTranscriptSnapshotApplied(AGENT, {
+        truncated: false,
+        totalMessages: 3,
+        resumed: false,
+      }),
+    );
+    await settle();
+    expect(run.chat()?.fetchingHistorySeek).toBe(false);
+
+    resolveSeek(
+      page([message('m-500', 500)], {
+        totalMessages: 2000,
+        nextToken: 'stale-older',
+        prevToken: 'stale-newer',
+      }),
+    );
+    await settle();
+
+    expect(run.history()).toBeUndefined();
+    expect(run.chat()?.scrollbackOlderToken).toBeNull();
+    expect(run.chat()?.scrollbackGapToken).toBeNull();
+    expect(run.chat()?.fetchingHistorySeek).toBe(false);
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
   // ── Far-flick seek (aroundIndex) ────────────────────────────────────────
 
   it('seek REPLACES the segment with the landing page, opens the gap, persists both cursors', async () => {

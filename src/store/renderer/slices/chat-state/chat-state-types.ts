@@ -240,6 +240,15 @@ export interface ChatAgentState {
   /** True while an `aroundIndex` far-flick seek fetch is in flight. */
   fetchingHistorySeek: boolean;
   /**
+   * Monotonic §7.1 discard counter: bumped atomically by the
+   * `resumed: false` snapshot reducer (the same write that resets the walk
+   * cursors + fetching flags). Scrollback workers capture it before their
+   * wire call and drop the result when it changed mid-flight — a page that
+   * resolves after the discard was fetched against the discarded transcript
+   * and must not recreate a segment or persist a cursor.
+   */
+  scrollbackDiscardEpoch: number;
+  /**
    * True once the daemon rejected `aroundIndex` with INVALID_PARAMS —
    * a daemon predating the param. Seeks are disabled for this agent for the
    * rest of the session (the serial walk covers deep scrolls instead).

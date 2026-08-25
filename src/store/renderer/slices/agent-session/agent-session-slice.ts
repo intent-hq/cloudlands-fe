@@ -31,6 +31,7 @@ import {
   chatReset,
   chatStreamingReconciled,
   chatInitialized,
+  chatTranscriptSnapshotApplied,
   streamCompleted,
   streamTimedOut,
 } from '../chat-state/chat-state-slice';
@@ -1646,3 +1647,12 @@ agentSessionReducer.with(
 agentSessionReducer.with(clearHistorySegment, (state, { payload: [agentId] }) =>
   removeHistorySegment(state, agentId),
 );
+// Cross-slice: a §7.1 `resumed: false` seq-0 snapshot discards the retained
+// transcript, so the history segment — unanchored against the fresh
+// transcript — is dropped in the SAME dispatch the chat-state reducer resets
+// the walk cursors and fetching flags in (atomic walk reset; the scrollback
+// saga's clearHistorySegment chain still runs and is idempotent here).
+agentSessionReducer.with(chatTranscriptSnapshotApplied, (state, { payload: [agentId, meta] }) => {
+  if (meta.resumed !== false) return state;
+  return removeHistorySegment(state, agentId);
+});
