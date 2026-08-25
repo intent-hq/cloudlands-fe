@@ -3,7 +3,6 @@ import {
   SHORTCUTS,
   SHORTCUT_CATEGORIES,
   formatShortcut,
-  getShortcutChord,
   getShortcutsForContext,
   isMacPlatform,
 } from '../shortcuts';

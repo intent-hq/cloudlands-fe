@@ -331,7 +331,6 @@ describe('CommandPalette new actions', () => {
 
     events.forEach((event, index) => window.removeEventListener(event, listeners[index]));
   });
-
 });
 
 describe('CommandPalette duplicate-key regression', () => {

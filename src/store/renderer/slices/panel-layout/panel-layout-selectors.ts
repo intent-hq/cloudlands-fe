@@ -339,13 +339,13 @@ function getPanelColumnStacks(layout: WorkspacePanelLayoutState): PanelColumnSta
   });
 }
 
-/** Ordered pane stacks for every visible workspace column. */
+/** Ordered pane stacks for every workspace panel layout. */
 export const selectPanelColumnStacks = store.createSelector<[wsId: string], PanelColumnStack[]>(
   (state, wsId) =>
     getPanelColumnStacks(state.panelLayout.byWorkspaceId[wsId] ?? emptyWorkspaceState),
 );
 
-/** Pane stack for one visible workspace column. */
+/** Pane stack for one workspace panel layout. */
 export const selectPanelColumnStack = store.createSelector<
   [wsId: string, panelId: string],
   PanelColumnStack | undefined

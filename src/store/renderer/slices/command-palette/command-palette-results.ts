@@ -109,11 +109,7 @@ export function computeResults(input: ComputeResultsInput): any[] {
     }
 
     const allItems = [
-      ...commands.filter(
-        (c) =>
-          c.id !== 'new-workspace' &&
-          (workspaceId || c.id !== 'new-file'),
-      ),
+      ...commands.filter((c) => c.id !== 'new-workspace' && (workspaceId || c.id !== 'new-file')),
       ...agents,
       ...notes,
       ...changes,

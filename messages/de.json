@@ -1415,7 +1415,6 @@
   "workspace_progressCard_statusImage_alt": "Screenshot des Arbeitsbereich-Status",
   "workspace_progressCard_actions_ariaLabel": "Arbeitsbereich-Aktionen",
   "workspace_progressCard_base_label": "Basis {ref}",
-  "workspace_progressCard_closeWorkspace_ariaLabel": "Arbeitsbereich {id} schließen",
   "workspace_progressCard_copied_label": "Kopiert",
   "workspace_progressCard_copyPath_ariaLabel": "Arbeitsbereichspfad kopieren",
   "workspace_checkoutModePill_tooltip": "Checkout-Modus: {label}",

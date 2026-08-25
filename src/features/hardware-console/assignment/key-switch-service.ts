@@ -149,8 +149,8 @@ export function focusWorkspaceSlot(workspaceId: string, deps: KeySwitchDeps = {}
     deps.getCurrentWorkspaceId ?? (() => selectCurrentWorkspaceTabId.select(appStore.state))
   )();
   if (activeWorkspaceId !== workspaceId) {
-    // Mirror the workspace-list click (AllWorkspacesCard.handleClick): open the
-    // workspace tab in tab-state so the columns view scrolls it into view.
+    // Mirror the workspace-list click (AllWorkspacesCard.handleClick) by opening
+    // the workspace tab in tab-state before route navigation.
     appStore.dispatch(openWorkspaceTab(workspaceId));
     const navigate = deps.navigate ?? navigateToRoute;
     void navigate(`/workspace/${workspaceId}`).catch((error: unknown) => {

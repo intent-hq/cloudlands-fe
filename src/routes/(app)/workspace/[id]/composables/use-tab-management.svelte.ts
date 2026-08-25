@@ -19,7 +19,6 @@ export interface UseTabManagementOptions {
   workspaceState: WorkspacePageStateManager | null;
   previousWorkspaceId: string | null;
   onTransitionDetected?: () => void;
-  manageTab?: boolean;
 }
 
 export function useTabManagement(options: UseTabManagementOptions) {
@@ -38,9 +37,7 @@ export function useTabManagement(options: UseTabManagementOptions) {
 
     if (workspaceId && !tabOpened) {
       try {
-        if (options.manageTab !== false) {
-          appStore.dispatch(openWorkspaceTab(workspaceId));
-        }
+        appStore.dispatch(openWorkspaceTab(workspaceId));
         tabOpened = true;
       } catch (error) {
         logger.error('Failed to open workspace tab', { workspaceId, error });

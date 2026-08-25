@@ -8,8 +8,6 @@ export const DEFAULT_WIDTH = 360;
 export const DEFAULT_EXPANDED_WIDTH = 600;
 export const MIN_WIDTH = 280;
 export const MAX_WIDTH = 800;
-export const COLUMN_SIDEBAR_MAX_WIDTH = 400;
-
 // Bottom dock constants
 type DockViewMode = 'agents' | 'terminal';
 

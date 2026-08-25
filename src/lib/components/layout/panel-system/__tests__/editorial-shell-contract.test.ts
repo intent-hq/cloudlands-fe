@@ -23,9 +23,7 @@ describe('editorial workspace shell presentation contract', () => {
 
     expect(workspace).toContain('workspace-sidebar-panel workspace-sidebar-{sidebarSide}');
     expect(workspace).toContain('@media (max-width: 639px)');
-    expect(workspace).toContain(
-      '.upper-area:not(.workspace-column-layout) :global(.workspace-sidebar-panel)',
-    );
+    expect(workspace).toContain('.upper-area :global(.workspace-sidebar-panel)');
     expect(workspace).toContain('position: absolute');
   });
 

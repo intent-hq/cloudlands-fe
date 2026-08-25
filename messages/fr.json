@@ -1415,7 +1415,6 @@
   "workspace_progressCard_statusImage_alt": "Capture d'écran du statut de l'espace de travail",
   "workspace_progressCard_actions_ariaLabel": "Actions de l'espace de travail",
   "workspace_progressCard_base_label": "Base {ref}",
-  "workspace_progressCard_closeWorkspace_ariaLabel": "Fermer l'espace de travail {id}",
   "workspace_progressCard_copied_label": "Copié",
   "workspace_progressCard_copyPath_ariaLabel": "Copier le chemin de l'espace de travail",
   "workspace_checkoutModePill_tooltip": "Mode d'extraction : {label}",

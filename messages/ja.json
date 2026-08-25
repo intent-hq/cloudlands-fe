@@ -1415,7 +1415,6 @@
   "workspace_progressCard_statusImage_alt": "ワークスペースのステータススクリーンショット",
   "workspace_progressCard_actions_ariaLabel": "ワークスペース操作",
   "workspace_progressCard_base_label": "ベース {ref}",
-  "workspace_progressCard_closeWorkspace_ariaLabel": "ワークスペース {id} を閉じる",
   "workspace_progressCard_copied_label": "コピーしました",
   "workspace_progressCard_copyPath_ariaLabel": "ワークスペースのパスをコピー",
   "workspace_checkoutModePill_tooltip": "チェックアウトモード: {label}",

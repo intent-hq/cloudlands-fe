@@ -13,7 +13,7 @@ test.beforeEach(async ({ page }) => {
 
 function measureGeometry(component: Locator) {
   return component.evaluate(() => {
-    const column = document.querySelector('[data-testid="workspace-column"]') as HTMLElement;
+    const column = document.querySelector('[data-testid="panel-column"]') as HTMLElement;
     const inset = document.querySelector('[data-testid="panel-workspace-inset"]') as HTMLElement;
     const canvas = inset?.querySelector('.panel-canvas-resize-handle')
       ?.parentElement as HTMLElement | null;
@@ -65,7 +65,7 @@ async function resetCanvasToAutomatic(component: Locator) {
   await component
     .locator('.panel-canvas-resize-handle')
     .evaluate((handle) => handle.dispatchEvent(new MouseEvent('dblclick', { bubbles: true })));
-  const column = component.getByTestId('workspace-column');
+  const column = component.getByTestId('panel-column');
   await expect(column).toHaveAttribute('data-persisted-canvas-width', 'null');
   await expect(column).toHaveAttribute('data-canvas-width-source', 'null');
 }
@@ -226,7 +226,7 @@ test('keeps an explicit width stable across viewport changes', async ({ mount })
       insetChrome: 0,
     },
   });
-  const column = component.getByTestId('workspace-column');
+  const column = component.getByTestId('panel-column');
 
   await expect.poll(async () => (await measureGeometry(component)).canvasOffsetWidth).toBe(1208);
   await expect(column).toHaveAttribute('data-persisted-canvas-width', '1208');
@@ -237,10 +237,7 @@ test('keeps an explicit width stable across viewport changes', async ({ mount })
   await expect.poll(async () => (await measureGeometry(component)).canvasOffsetWidth).toBe(1208);
 });
 
-test('reflows the workspace column to the retained panel width after close', async ({
-  mount,
-  page,
-}) => {
+test('reflows the panel layout to the retained width after close', async ({ mount, page }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
   const component = await mount(PanelWorkspaceColumnClipHarness, {
     props: {

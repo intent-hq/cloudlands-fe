@@ -16,7 +16,6 @@
     faCodePullRequest,
     faCheck,
     faFileLines,
-    faXmark,
   } from '@fortawesome/free-solid-svg-icons';
   import SidebarIcon from '$lib/components/icons/SidebarIcon.svelte';
   import Tooltip from '$lib/components/ui/tooltip/Tooltip.svelte';
@@ -85,8 +84,6 @@
     workspaceId?: string;
     onOpenNote?: (noteId: string) => void;
     onAcceptChanges?: () => void;
-    /** Column-mode action rendered to the right of the workspace kebab. */
-    onCloseWorkspace?: (event: MouseEvent) => void;
     /** Hides the kebab actions menu (e.g. while a sidebar card is expanded). */
     hideActionsMenu?: boolean;
   }
@@ -95,7 +92,6 @@
     workspaceId,
     onOpenNote: _onOpenNote,
     onAcceptChanges,
-    onCloseWorkspace,
     hideActionsMenu = false,
   }: Props = $props();
 
@@ -980,21 +976,6 @@
               </div>
             {/snippet}
           </DropdownMenu>
-        {/if}
-        {#if onCloseWorkspace}
-          <Button
-            variant="ghost-light"
-            size="icon-sm"
-            aria-label={m.workspace_progressCard_closeWorkspace_ariaLabel({
-              id: workspaceId ?? '',
-            })}
-            data-workspace-close
-            class="opacity-50 group-hover:opacity-70 hover:opacity-100! transition-opacity duration-150 hover:bg-transparent hover:border-none"
-            onpointerdown={(event) => event.stopPropagation()}
-            onclick={onCloseWorkspace}
-          >
-            <Fa icon={faXmark} size={16} class="size-4" />
-          </Button>
         {/if}
       </div>
     </div>

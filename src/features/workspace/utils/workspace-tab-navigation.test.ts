@@ -743,5 +743,4 @@ describe('global workspace tab navigation', () => {
     sidebarShortcut.action();
     expect(store.actions.at(-1)?.type).toBe('uiLayout/toggleSidebar');
   });
-
 });
