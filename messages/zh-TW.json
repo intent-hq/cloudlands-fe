@@ -1213,6 +1213,7 @@
   "workspace_multiSelectSidebar_agentsLauncherOverflow_ariaLabel": "還有 {remaining} 個智慧體，共 {total} 個",
   "workspace_multiSelectSidebar_agentsTab_description": "在此空間中處理你任務的智慧體。",
   "workspace_multiSelectSidebar_agentsTab_label": "智慧體",
+  "workspace_multiSelectSidebar_agentsTabUnread_ariaLabel": "{label}（未讀的智慧體訊息）",
   "workspace_multiSelectSidebar_agentsUnread_ariaLabel": "未讀的智慧體訊息",
   "workspace_multiSelectSidebar_archiveFailed_error": "歸檔空間失敗",
   "workspace_multiSelectSidebar_archivedSpace_toast": "已歸檔空間 {title}",

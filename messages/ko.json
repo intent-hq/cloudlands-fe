@@ -1213,6 +1213,7 @@
   "workspace_multiSelectSidebar_agentsLauncherOverflow_ariaLabel": "에이전트 {remaining}개 더 있음, 총 {total}개",
   "workspace_multiSelectSidebar_agentsTab_description": "이 스페이스에서 작업 중인 에이전트입니다.",
   "workspace_multiSelectSidebar_agentsTab_label": "에이전트",
+  "workspace_multiSelectSidebar_agentsTabUnread_ariaLabel": "{label} (읽지 않은 에이전트 메시지)",
   "workspace_multiSelectSidebar_agentsUnread_ariaLabel": "읽지 않은 에이전트 메시지",
   "workspace_multiSelectSidebar_archiveFailed_error": "스페이스를 보관하지 못했습니다",
   "workspace_multiSelectSidebar_archivedSpace_toast": "스페이스 {title} 보관됨",

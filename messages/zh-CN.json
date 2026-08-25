@@ -1213,6 +1213,7 @@
   "workspace_multiSelectSidebar_agentsLauncherOverflow_ariaLabel": "还有 {remaining} 个智能体，共 {total} 个",
   "workspace_multiSelectSidebar_agentsTab_description": "在此空间中处理你任务的智能体。",
   "workspace_multiSelectSidebar_agentsTab_label": "智能体",
+  "workspace_multiSelectSidebar_agentsTabUnread_ariaLabel": "{label}（未读的智能体消息）",
   "workspace_multiSelectSidebar_agentsUnread_ariaLabel": "未读的智能体消息",
   "workspace_multiSelectSidebar_archiveFailed_error": "归档空间失败",
   "workspace_multiSelectSidebar_archivedSpace_toast": "已归档空间 {title}",

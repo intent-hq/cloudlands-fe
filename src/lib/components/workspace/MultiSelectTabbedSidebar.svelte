@@ -285,6 +285,10 @@
         label,
         icon,
         unread: id === 'agents' && $hasUnreadForegroundAgents$,
+        unreadLabel:
+          id === 'agents'
+            ? m.workspace_multiSelectSidebar_agentsTabUnread_ariaLabel({ label })
+            : undefined,
       }),
     ),
   );
@@ -1333,9 +1337,8 @@
                     >
                     {#if tab.id === 'agents' && $hasUnreadForegroundAgents$}
                       <span
-                        class="mr-auto size-1.5 shrink-0 rounded-full"
-                        style="background-color: hsl(var(--workspace-status-unread));"
-                        role="status"
+                        class="mr-auto size-1.5 shrink-0 rounded-full bg-[hsl(var(--workspace-status-unread))] forced-colors:bg-[CanvasText]"
+                        role="img"
                         aria-label={m.workspace_multiSelectSidebar_agentsUnread_ariaLabel()}
                         data-sidebar-agents-unread-dot
                       ></span>
