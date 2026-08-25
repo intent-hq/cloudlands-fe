@@ -90,7 +90,10 @@ async function resolveFromArtifactRoots(
 ): Promise<SuffixResolution> {
   const requestSuffix = artifactRelativeRequest(requestedPath);
   const basenameOnly = !requestSuffix.includes('/');
-  const queue = ARTIFACT_ROOTS.map((path) => ({ path, depth: 0 }));
+  const queue: Array<{ path: string; depth: number }> = ARTIFACT_ROOTS.map((path) => ({
+    path,
+    depth: 0,
+  }));
   const files: string[] = [];
   const deadline = Date.now() + ARTIFACT_MAX_LATENCY_MS;
   let calls = 0;

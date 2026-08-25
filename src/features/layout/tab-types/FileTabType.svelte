@@ -33,6 +33,8 @@
   import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
   import { invoke } from '$lib/electron-bridge';
   import { appClient } from '$lib/client';
+  import { backendRequest } from '$lib/client/live/backend-transport';
+  import { resolveFileBySuffix } from '$lib/services/files/resolve-file-by-suffix';
   import { LineType } from '$shared/types';
   import { getLanguageFromPath } from '$lib/utils/file-utils';
   import { isAbsolutePath, isAbsolutePathOutsideRoot, isTildePath } from '$lib/utils/path-utils';
@@ -123,6 +125,7 @@
   let codeEditorRef = $state<{ focus: () => boolean } | null>(null);
   let isMounted = $state(true);
   let fileLineChanges = $state<LineChange[]>([]);
+  let resolvedWorkspaceMediaPath = $state<string | null>(null);
 
   // Jump to line from tab data (e.g., when opening from reference block)
   let jumpToLine = $state<{ line?: number; column?: number } | undefined>(undefined);
@@ -168,7 +171,10 @@
         : `${repoPath}/${tab.filePath}`
       : null,
   );
-  const workspaceMediaUrl = $derived.by(() => {
+  const isAllowlistedMediaPath = $derived(
+    !!tab.filePath && /\.(?:png|jpe?g|gif|webp|mp4|webm)$/i.test(tab.filePath),
+  );
+  const workspaceMediaPath = $derived.by(() => {
     const filePath = tab.filePath;
     if (!filePath || !workspaceId || isOutsideWorkspace || !/^[A-Za-z0-9._-]+$/.test(workspaceId)) {
       return null;
@@ -205,11 +211,73 @@
       return null;
     }
 
-    return `workspace-file://${workspaceId}/${segments.map(encodeURIComponent).join('/')}`;
+    return segments.join('/');
   });
+  const workspaceMediaUrl = $derived(
+    resolvedWorkspaceMediaPath && workspaceId
+      ? `workspace-file://${workspaceId}/${resolvedWorkspaceMediaPath
+          .split('/')
+          .map(encodeURIComponent)
+          .join('/')}`
+      : null,
+  );
   const fileLanguage = $derived(tab.filePath ? getLanguageFromPath(tab.filePath) : 'plaintext');
   const isMarkdownFile = $derived(fileLanguage === 'markdown');
   let markdownPreview = $state(true); // default to rich text for markdown files
+
+  // Media cannot use the UTF-8 file.read fallback. Confirm the exact contained
+  // path first, then use the existing bounded ignored-artifact resolver. Hold
+  // rendering until this completes so an incorrect workspace-file URL is not
+  // committed before a unique candidate can retarget the owning tab.
+  $effect(() => {
+    const requestedPath = workspaceMediaPath;
+    const sourceFilePath = tab.filePath;
+    const wsId = workspaceId;
+    const tabId = tab.id;
+    resolvedWorkspaceMediaPath = null;
+    if (!requestedPath || !sourceFilePath || !wsId) return;
+
+    let cancelled = false;
+    const isCurrent = () =>
+      !cancelled && workspaceId === wsId && tab.id === tabId && tab.filePath === sourceFilePath;
+
+    void (async () => {
+      let exactFile = false;
+      try {
+        const stat = await backendRequest<{ isFile?: boolean }>('file.stat', {
+          workspaceId: wsId,
+          path: requestedPath,
+        });
+        exactFile = stat?.isFile === true;
+      } catch {
+        // A missing exact path is the expected entry into suffix recovery.
+      }
+      if (!isCurrent()) return;
+      if (exactFile) {
+        resolvedWorkspaceMediaPath = requestedPath;
+        return;
+      }
+      if (!/\.(?:png|jpe?g|webp|mp4|webm)$/i.test(requestedPath)) {
+        resolvedWorkspaceMediaPath = requestedPath;
+        return;
+      }
+
+      const { candidates, truncated } = await resolveFileBySuffix(wsId, requestedPath);
+      if (!isCurrent()) return;
+      if (!truncated && candidates.length === 1) {
+        appStore.dispatch(updateFileTabPath(wsId, sourceFilePath, candidates[0], tabId));
+        return;
+      }
+
+      // Missing, ambiguous, and truncated results remain on the requested path;
+      // the binary protocol will report absence without falling back to file.read.
+      resolvedWorkspaceMediaPath = requestedPath;
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  });
 
   // Find tracked changes for the file
   function matchesPath(c: TrackedChange, path: string): boolean {
@@ -259,8 +327,14 @@
     // path. Do not block the read while the workspace entity/root hydrates —
     // doing so leaves activity-opened tabs stuck at "Preparing to load file".
     // The effect runs again with the resolved absolute path once hydration lands.
-    const waitingForAbsoluteRoot = isAbsolutePath(filePath) && !repoPath;
-    if (filePath && wsId && !isOutsideWorkspace && !workspaceMediaUrl && !waitingForAbsoluteRoot) {
+    const waitingForAbsoluteRoot = !!filePath && isAbsolutePath(filePath) && !repoPath;
+    if (
+      filePath &&
+      wsId &&
+      !isOutsideWorkspace &&
+      !isAllowlistedMediaPath &&
+      !waitingForAbsoluteRoot
+    ) {
       appStore.dispatch(loadFileContentRequested(wsId, filePath, absolutePath ?? filePath));
     }
   });
@@ -456,7 +530,14 @@
         <p class="text-xs">{tab.filePath}</p>
       </div>
     {:else if workspaceMediaUrl}
-      <FileViewer filePath={tab.filePath} sourceUrl={workspaceMediaUrl} />
+      <FileViewer
+        filePath={resolvedWorkspaceMediaPath ?? tab.filePath}
+        sourceUrl={workspaceMediaUrl}
+      />
+    {:else if isAllowlistedMediaPath}
+      <div class="flex items-center justify-center h-full text-subtle">
+        <p>{m.layout_fileTab_preparing_label()}</p>
+      </div>
     {:else if fileLoading}
       <div class="flex flex-col h-full">
         <div class="flex-1 p-4 space-y-2">
