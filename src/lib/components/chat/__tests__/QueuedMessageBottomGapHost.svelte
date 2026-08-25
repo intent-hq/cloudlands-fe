@@ -90,10 +90,7 @@
       <div class="h-[520px] shrink-0" data-testid="queued-gap-history"></div>
       <div class="mt-auto" data-testid="transcript-utility-stack">
         {#if messages.length > 0}
-          <div
-            class="queued-message-utility-wide mt-6 -mx-4 sm:-mx-6"
-            data-testid="queued-message-utility-area"
-          >
+          <div class="relative z-20 mt-6 w-full" data-testid="queued-message-utility-area">
             <QueuedMessageList
               {messages}
               {heldForQuestions}

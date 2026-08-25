@@ -109,8 +109,13 @@ for (const state of states) {
       return;
     }
     await expect(aurora).toBeVisible();
-    const [inputGeometry, auroraGeometry, shellGeometry] = await Promise.all(
-      [input, aurora, component.getByTestId('chat-composer-shell')].map((locator) =>
+    const [inputGeometry, auroraGeometry, shellGeometry, panelGeometry] = await Promise.all(
+      [
+        input,
+        aurora,
+        component.getByTestId('chat-composer-shell'),
+        component.locator('.panel'),
+      ].map((locator) =>
         locator.evaluate((node) => {
           const box = node.getBoundingClientRect();
           const style = getComputedStyle(node);
@@ -128,6 +133,7 @@ for (const state of states) {
       expect(auroraGeometry.edges[0]).toBeLessThan(inputGeometry.edges[0]);
       expect(auroraGeometry.edges[1]).toBeGreaterThan(inputGeometry.edges[1]);
       expect(auroraGeometry.edges[2]).toBeGreaterThan(inputGeometry.edges[2]);
+      expect(auroraGeometry.radii).toEqual(['0px', '0px']);
     } else {
       const scrollbarGutter = await prompt.evaluate((node) =>
         Number.parseFloat(getComputedStyle(node).paddingInlineEnd),
@@ -135,7 +141,8 @@ for (const state of states) {
       expect(auroraGeometry.edges[0]).toBeCloseTo(shellGeometry.edges[0]);
       expect(auroraGeometry.edges[1]).toBeCloseTo(shellGeometry.edges[1] - scrollbarGutter);
       expect(auroraGeometry.edges[2]).toBeCloseTo(shellGeometry.edges[2]);
-      expect(auroraGeometry.radii).toEqual(['0px', '0px']);
+      expect(auroraGeometry.radii).toEqual(panelGeometry.radii);
+      expect(Number.parseFloat(auroraGeometry.radii[0])).toBeGreaterThan(0);
     }
     expect(auroraGeometry.overflow).toBe('hidden');
     expect(auroraGeometry.pointerEvents).toBe('none');

@@ -111,41 +111,53 @@ test('never spawns a horizontal scrollbar in the transcript scroll viewport', as
     scrollWidth: node.scrollWidth,
     overflowX: getComputedStyle(node).overflowX,
   }));
-  const dividerWidth = await component
-    .getByTestId('queued-messages-container')
-    .evaluate((node) => Number.parseFloat(getComputedStyle(node, '::before').width));
-
-  // Preconditions: classic scrollbars can reserve a vertical gutter, while
-  // overlay scrollbars do not. The centered divider splits any width beyond the
-  // content box equally, and only its positive-side overhang extends scrollWidth.
+  // Classic scrollbars can reserve a vertical gutter, while overlay scrollbars do not.
   expect(metrics.clientWidth).toBeLessThanOrEqual(metrics.offsetWidth);
-  expect(metrics.scrollWidth - metrics.clientWidth).toBeCloseTo(
-    (dividerWidth - metrics.clientWidth) / 2,
-    1,
-  );
+  expect(metrics.scrollWidth).toBeCloseTo(metrics.clientWidth, 1);
   // Regression (intent-hq/monorepo#2969): the horizontal axis must not be
   // user-scrollable. The computed-style check is the primary pin — headless CT
   // renders no classic scrollbar, so the height check below only guards
   // scrollbar-consumed height in headful/classic-scrollbar renderings.
   expect(metrics.overflowX).toBe('hidden');
   expect(metrics.offsetHeight - metrics.clientHeight).toBe(0);
-  // The divider itself still renders full-bleed against the container.
-  expect(dividerWidth).toBeCloseTo(720, 1);
 });
 
-test('spans the panel-width container with the top divider', async ({ mount }) => {
+test('renders no generated top divider', async ({ mount }) => {
   const component = await mount(QueuedMessageGeometryHost, {
     props: { width: 720, contentWidth: 480, zoom: 1, messageCount: 1 },
   });
   const queue = component.getByTestId('queued-messages-container');
   const geometry = await queue.evaluate((node) => ({
     contentWidth: node.getBoundingClientRect().width,
-    dividerWidth: Number.parseFloat(getComputedStyle(node, '::before').width),
+    pseudoContent: getComputedStyle(node, '::before').content,
   }));
 
   expect(geometry.contentWidth).toBeCloseTo(480, 1);
-  expect(geometry.dividerWidth).toBeCloseTo(720, 1);
+  expect(geometry.pseudoContent).toBe('none');
 });
+
+for (const state of [
+  { name: 'narrow at 100%', viewportWidth: 390, width: 360, zoom: 1 },
+  { name: 'wide at 100%', viewportWidth: 900, width: 720, zoom: 1 },
+  { name: 'narrow at 200%', viewportWidth: 390, width: 180, zoom: 2 },
+  { name: 'wide at 200%', viewportWidth: 900, width: 360, zoom: 2 },
+]) {
+  test(`aligns the queue surface with the prompt box at ${state.name}`, async ({ mount, page }) => {
+    await page.setViewportSize({ width: state.viewportWidth, height: 900 });
+    const component = await mount(QueuedMessageGeometryHost, {
+      props: { width: state.width, zoom: state.zoom, alignWithPrompt: true },
+    });
+    const [queue, prompt] = await Promise.all([
+      component.getByTestId('queued-messages-container').boundingBox(),
+      component.getByTestId('queued-message-prompt-bounds').boundingBox(),
+    ]);
+
+    expect(queue).not.toBeNull();
+    expect(prompt).not.toBeNull();
+    expect(queue!.x).toBeCloseTo(prompt!.x, 1);
+    expect(queue!.x + queue!.width).toBeCloseTo(prompt!.x + prompt!.width, 1);
+  });
+}
 
 for (const state of [
   { name: 'one message narrow', width: 240, zoom: 1, messageCount: 1 },

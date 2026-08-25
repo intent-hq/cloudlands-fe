@@ -5657,9 +5657,7 @@
                controls all mutate daemon state a retired agent rejects. -->
           {#if queuedMessagesVisibility.showQueue && !isRetiredSession}
             <div
-              class="relative z-20 mt-6 {isChiefWorkspace
-                ? 'w-full'
-                : 'queued-message-utility-wide -mx-4 sm:-mx-6'}"
+              class="relative z-20 mt-6 {isChiefWorkspace ? 'mx-1 sm:mx-2' : 'w-full'}"
               data-testid="queued-message-utility-area"
             >
               <QueuedMessageList
@@ -5722,7 +5720,7 @@
         </div>
       {:else}
         <div
-          class="composer-aurora-host pointer-events-none absolute bottom-0 left-0 z-0 overflow-hidden"
+          class="composer-aurora-host pointer-events-none absolute bottom-0 left-0 z-0 overflow-hidden rounded-b-lg"
           style:right="{scrollbarGutterWidth}px"
           style="height: calc(100% + 10rem);"
           data-testid="composer-aurora-host"
