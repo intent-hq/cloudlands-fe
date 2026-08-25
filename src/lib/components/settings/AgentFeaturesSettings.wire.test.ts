@@ -42,19 +42,30 @@ const FEATURE_PATHS = [
 ];
 
 // PROTOCOL §5.12 settings.list response with all eleven agentFeatures.* entries
-// plus the prMonitor.debounceSeconds number (§6.9)
+// plus the prMonitor.debounceSeconds number (§6.9). Entries are FLAT
+// SettingDefinitionWithValue objects — the daemon merges `value` into the
+// definition itself (no nested `definition` key; that shape is settings.get's).
 function listResponse() {
   return {
     settings: [
       ...FEATURE_PATHS.map((path) => ({
         path,
+        label: path,
+        description: '',
+        category: 'agentFeatures',
+        type: 'boolean',
+        defaultValue: true,
         value: true,
-        definition: { path, type: 'boolean', scope: 'user' },
       })),
       {
         path: 'prMonitor.debounceSeconds',
+        label: 'PR monitor debounce',
+        description: '',
+        category: 'prMonitor',
+        type: 'number',
+        min: 10,
+        defaultValue: 60,
         value: 60,
-        definition: { path: 'prMonitor.debounceSeconds', type: 'number', scope: 'user' },
       },
     ],
   };
