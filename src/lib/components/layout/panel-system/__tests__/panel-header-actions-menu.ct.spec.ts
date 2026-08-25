@@ -71,7 +71,9 @@ for (const [index, panelType] of panelTypes.entries()) {
     ]);
     await expect(header.locator('[data-panel-column-count-trigger]')).toHaveCount(0);
     if (panelType === 'agent') {
-      await expect(header.locator('[data-panel-agent-chat-glyph]')).toHaveCount(1);
+      const agentAvatar = header.locator('[data-panel-agent-header-identity] [data-agent-avatar]');
+      await expect(agentAvatar).toHaveCount(1);
+      await expect(agentAvatar).toHaveAttribute('data-avatar-variant', 'standard');
     }
 
     const identity = header.locator(
