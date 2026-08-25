@@ -374,9 +374,7 @@ describe('mounted panel header actions menu', () => {
     expect(menu.classList).toContain('w-max');
     expect(menu.classList).toContain('min-w-[min(14rem,calc(100vw-1rem))]');
     expect(menu.classList).toContain('max-w-[calc(100vw-1rem)]');
-    expect(menu.classList).toContain(
-      '[&_[data-slot=menu-command-item]>kbd]:text-muted-foreground/70',
-    );
+    expect(menu.classList).toContain('[&_[data-slot=menu-command-item]>kbd]:text-muted-foreground');
   });
 
   it.each(

@@ -1147,7 +1147,7 @@
   <DropdownMenu
     align="end"
     side="bottom"
-    contentClass="w-max min-w-[min(14rem,calc(100vw-1rem))] max-w-[calc(100vw-1rem)] [&_[data-slot=menu-command-item]>kbd]:text-muted-foreground/70"
+    contentClass="w-max min-w-[min(14rem,calc(100vw-1rem))] max-w-[calc(100vw-1rem)] [&_[data-slot=menu-command-item]>kbd]:text-muted-foreground"
   >
     <!-- i18n-ignore -->
     {#snippet trigger({ props }: { props: Record<string, unknown> })}
