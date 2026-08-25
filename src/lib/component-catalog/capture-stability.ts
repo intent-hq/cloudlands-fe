@@ -1,4 +1,4 @@
-export const DEFAULT_CAPTURE_STABILITY_TIMEOUT_MS = 5_000;
+const DEFAULT_CAPTURE_STABILITY_TIMEOUT_MS = 5_000;
 
 export interface CaptureStabilityOptions {
   signal?: AbortSignal;

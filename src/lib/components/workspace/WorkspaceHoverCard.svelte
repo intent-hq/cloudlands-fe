@@ -450,7 +450,7 @@
             </div>
             {#if lifecycleText}
               <div
-                class="shrink-0 rounded-full bg-muted px-2 py-0.5 text-[0.65rem] font-medium text-subtle"
+                class="type-caption shrink-0 rounded-full bg-muted px-2 py-0.5 font-medium text-subtle"
               >
                 {lifecycleText}
               </div>
@@ -518,7 +518,7 @@
     <!-- Right column: agent state, bounded active rows, and pull request -->
     {#if !isLoading && workspace}
       <div
-        class="workspace-hover-card__activity flex min-h-0 min-w-0 flex-col border-solid border-border/70 px-4 py-3.5"
+        class="workspace-hover-card__activity flex min-h-0 min-w-0 flex-col border-solid border-border px-4 py-3.5"
         data-workspace-hover-card-activity
       >
         <div class="flex min-h-6 items-center gap-3" data-workspace-hover-card-agent-summary>
@@ -538,7 +538,7 @@
           </div>
         </div>
 
-        <div class="my-2 border-t border-border/70" data-workspace-hover-card-divider></div>
+        <div class="my-2 border-t border-border" data-workspace-hover-card-divider></div>
 
         <div class="min-h-0 overflow-y-auto">
           {#if runningAgents.length > 0}
@@ -596,7 +596,7 @@
           {/if}
 
           {#if workspacePrRows.length > 0}
-            <div class="my-2 border-t border-border/70"></div>
+            <div class="my-2 border-t border-border"></div>
             <div
               class="grid min-w-0 w-full gap-1 py-0.5"
               aria-label={m.workspace_hoverCard_pullRequest_label()}
@@ -638,7 +638,7 @@
         </div>
       </div>
     {:else if isLoading}
-      <div class="grid gap-1.5 border-t border-border/70 px-4 py-3.5">
+      <div class="grid gap-1.5 border-t border-border px-4 py-3.5">
         <Skeleton class="h-4 w-48" />
         <Skeleton class="h-4 w-36" />
       </div>

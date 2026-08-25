@@ -31,7 +31,7 @@ import {
   removeWorkspaceSessions,
 } from '$store/renderer/slices/agent-session/agent-session-slice';
 
-export interface HoverCardScenario {
+interface HoverCardScenario {
   key: string;
   label: string;
   expected: string;

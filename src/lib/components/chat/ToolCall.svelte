@@ -24,6 +24,7 @@
   import ToolStatusIcon from './ToolStatusIcon.svelte';
   import ChatOperationalRow from './ChatOperationalRow.svelte';
   import { resolveToolLeadingIcon } from './tool-leading-icon';
+  import { Button } from '$lib/components/ui/button';
 
   interface Props {
     toolUse: ToolUseBlock;
@@ -382,8 +383,9 @@
 
   <!-- Browser screenshots use the same always-visible collapsed preview as Figma results. -->
   {#if !expanded && toolState === 'completed' && browserScreenshotSource && browserScreenshotSource !== failedBrowserScreenshotSource}
-    <button
+    <Button
       type="button"
+      variant="plain"
       class="block w-full cursor-pointer border-0 bg-transparent p-0 px-2 pb-1 text-left"
       onclick={toggleExpanded}
     >
@@ -398,6 +400,6 @@
           }}
         />
       </div>
-    </button>
+    </Button>
   {/if}
 {/if}

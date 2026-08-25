@@ -27,7 +27,8 @@ describe('streaming status preview', () => {
 
   it.each(['streaming', 'waiting'] as const)('renders the %s operational state', (state) => {
     render(StreamingStatus, { props: preview.states[state].props });
-    expect(screen.getByRole('status', { name: 'Thinking' })).toBeTruthy();
+    expect(screen.getByRole('status', { name: 'Loading' })).toBeTruthy();
+    expect(screen.getByTestId('streaming-status-thinking-label').textContent).toBe('Thinking');
   });
 
   it.each(['error', 'long-content'] as const)('renders the %s terminal state', (state) => {

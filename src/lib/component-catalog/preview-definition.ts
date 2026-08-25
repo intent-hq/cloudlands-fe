@@ -1,6 +1,6 @@
 import type { Component } from 'svelte';
 
-export type PreviewSetup = () => void | (() => void);
+type PreviewSetup = () => void | (() => void);
 
 export interface PreviewState<Props> {
   props: Props;

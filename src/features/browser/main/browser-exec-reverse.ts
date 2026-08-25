@@ -160,6 +160,7 @@ async function rewriteScreenshotAssets(
               () =>
                 reject(
                   new Error(
+                    // i18n-ignore (internal timeout error returned to the agent tool caller)
                     `Asset persistence timed out after ${SCREENSHOT_ASSET_SAVE_TIMEOUT_MS}ms`,
                   ),
                 ),
