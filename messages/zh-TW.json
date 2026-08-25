@@ -2044,7 +2044,7 @@
   "chat_richInput_addedImages_toast_many": "已將 {count} 張圖片新增到上下文",
   "chat_richInput_attachmentPlaceFailed_error": "無法將 {name} 放入工作區",
   "chat_richInput_attachmentPlaceFailedDetail_error": "無法將 {name} 放入工作區：{detail}",
-  "chat_richInput_askAnything_placeholder": "隨便問，或輸入 @ 新增上下文",
+  "chat_richInput_askAnything_placeholder": "隨便問",
   "chat_richInput_attachFiles_label": "附加檔案",
   "chat_richInput_cancel_label": "取消",
   "chat_richInput_dropFiles_label": "將檔案拖放到此處",

@@ -318,12 +318,14 @@ describe('SimpleRichInput draft change notification', () => {
     expect(onvaluechange).toHaveBeenLastCalledWith('draft that must survive remounts');
   });
 
-  it('uses the concise chat placeholder by default', () => {
+  it('shows the localized placeholder only after focus', async () => {
     render(SimpleRichInput, { props: { value: '', contextItems: [] } });
+    const editor = screen.getByTestId('tiptap-editor');
 
-    expect(screen.getByTestId('tiptap-editor').getAttribute('placeholder')).toBe(
-      'Ask anything or type @ for context',
-    );
+    expect(editor.getAttribute('placeholder')).toBe('');
+    await fireEvent.focusIn(editor);
+
+    expect(editor.getAttribute('placeholder')).toBe('Ask anything');
   });
 });
 
@@ -1134,7 +1136,7 @@ describe('SimpleRichInput Stop-button visibility', () => {
   });
 });
 
-describe('SimpleRichInput compact panel height', () => {
+describe('SimpleRichInput automatic composer geometry', () => {
   const props = {
     value: '',
     contextItems: [],
@@ -1148,12 +1150,12 @@ describe('SimpleRichInput compact panel height', () => {
     selectedModel: 'gpt5.4',
   };
 
-  function renderInPanel(height: number) {
+  function renderInPanel(height: number, overrides: Record<string, unknown> = {}) {
     const panel = document.createElement('div');
     panel.className = 'group/panel';
     Object.defineProperty(panel, 'clientHeight', { configurable: true, value: height });
     document.body.append(panel);
-    return render(SimpleRichInput, { target: panel, props });
+    return render(SimpleRichInput, { target: panel, props: { ...props, ...overrides } });
   }
 
   beforeEach(() => {
@@ -1176,24 +1178,129 @@ describe('SimpleRichInput compact panel height', () => {
     document.body.innerHTML = '';
   });
 
-  it('uses the 65px composer in a short stacked panel', async () => {
+  it('uses the 56px idle minimum and restores 65px after keyboard focus in a compact panel', async () => {
     renderInPanel(560);
+    const editor = screen.getByTestId('tiptap-editor');
+    const composer = screen.getByTestId('message-input');
 
     await waitFor(() => {
-      expect(screen.getByTestId('message-input').getAttribute('style')).toContain(
-        'min-height: 65px',
-      );
+      expect(composer.getAttribute('style')).toContain('min-height: 56px');
     });
+    expect(editor.getAttribute('placeholder')).toBe('');
+
+    editor.focus();
+    await fireEvent.keyDown(editor, { key: 'Enter' });
+
+    await waitFor(() => expect(composer.getAttribute('style')).toContain('min-height: 65px'));
+    expect(editor.getAttribute('placeholder')).toBe('Ask anything');
   });
 
-  it('keeps the roomier composer in a tall panel', async () => {
+  it('uses the 80px idle minimum and restores 100px while focused in a tall panel', async () => {
     renderInPanel(720);
+    const editor = screen.getByTestId('tiptap-editor');
+    const composer = screen.getByTestId('message-input');
 
     await waitFor(() => {
-      expect(screen.getByTestId('message-input').getAttribute('style')).toContain(
-        'min-height: 100px',
-      );
+      expect(composer.getAttribute('style')).toContain('min-height: 80px');
     });
+    await fireEvent.focusIn(editor);
+
+    await waitFor(() => expect(composer.getAttribute('style')).toContain('min-height: 100px'));
+    expect(editor.getAttribute('placeholder')).toBe('Ask anything');
+
+    await fireEvent.focusOut(editor);
+    await waitFor(() => expect(composer.getAttribute('style')).toContain('min-height: 80px'));
+    expect(editor.getAttribute('placeholder')).toBe('');
+  });
+
+  it.each([
+    { mode: 'draft', overrides: { value: 'preserved draft' } },
+    {
+      mode: 'context',
+      overrides: { contextItems: [{ id: 'note-1', type: 'note', label: 'Spec' }] },
+    },
+    {
+      mode: 'attachment',
+      overrides: {
+        contextItems: [
+          {
+            id: 'attachment-1',
+            type: 'file',
+            label: 'trace.json',
+            attachmentId: 'att-1',
+            placementStatus: 'placed',
+          },
+        ],
+      },
+    },
+  ])(
+    'keeps active geometry without an empty-state placeholder for $mode content',
+    async ({ overrides }) => {
+      renderInPanel(720, overrides);
+
+      await waitFor(() => {
+        expect(screen.getByTestId('message-input').getAttribute('style')).toContain(
+          'min-height: 100px',
+        );
+      });
+      expect(screen.getByTestId('tiptap-editor').getAttribute('placeholder')).toBe('');
+    },
+  );
+
+  it('keeps a manual resize when focus changes', async () => {
+    renderInPanel(720);
+    const composer = screen.getByTestId('message-input');
+    const editor = screen.getByTestId('tiptap-editor');
+    const editorWrapper = composer.querySelector('.editor-wrapper');
+    Object.defineProperty(composer, 'offsetHeight', { configurable: true, value: 80 });
+
+    const resizeHandle = screen.getByRole('button', { name: /Resize input area/ });
+    await fireEvent.mouseDown(resizeHandle, {
+      clientY: 100,
+    });
+    await waitFor(() => expect(resizeHandle.getAttribute('data-resizing')).toBe('true'));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    document.dispatchEvent(new MouseEvent('mousemove', { bubbles: true, clientY: 50 }));
+    await waitFor(() => expect(composer.getAttribute('style')).toContain('height: 130px'));
+    await fireEvent.mouseUp(document);
+
+    await fireEvent.focusIn(editor);
+    expect(composer.getAttribute('style')).toContain('height: 130px');
+    expect(composer.getAttribute('style')).not.toContain('min-height');
+    expect(editorWrapper?.className).toContain('pt-1');
+  });
+
+  it('affirms idle and focused geometry in every required visual state', async () => {
+    const observed = await exerciseVisualStates(async (configuration) => {
+      const height = configuration.width < 500 ? 560 : 720;
+      const view = renderInPanel(height);
+      const composer = view.getByTestId('message-input');
+      const editor = view.getByTestId('tiptap-editor');
+      const editorWrapper = composer.querySelector('.editor-wrapper');
+      const idleHeight = height > 640 ? 80 : 56;
+      const activeHeight = height > 640 ? 100 : 65;
+
+      await waitFor(() => {
+        expect(composer.getAttribute('style')).toContain(`min-height: ${idleHeight}px`);
+      });
+      expect(editor.getAttribute('placeholder')).toBe('');
+      expect(editorWrapper?.className).toContain('pt-1');
+
+      return {
+        ...view,
+        target: editor,
+        assertCapability: async () => {
+          await waitFor(() => {
+            expect(composer.getAttribute('style')).toContain(`min-height: ${activeHeight}px`);
+          });
+          expect(editor.getAttribute('placeholder')).toBe('Ask anything');
+          expect(editorWrapper?.className).toContain('pt-1');
+          expect(composer.className).toContain('motion-reduce:transition-none');
+        },
+      };
+    });
+
+    expect(observed).toEqual(configuredVisualStates);
   });
 });
 

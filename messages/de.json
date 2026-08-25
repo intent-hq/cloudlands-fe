@@ -2044,7 +2044,7 @@
   "chat_richInput_addedImages_toast_many": "{count} Bilder zum Kontext hinzugefügt",
   "chat_richInput_attachmentPlaceFailed_error": "{name} konnte nicht im Workspace abgelegt werden",
   "chat_richInput_attachmentPlaceFailedDetail_error": "{name} konnte nicht im Workspace abgelegt werden: {detail}",
-  "chat_richInput_askAnything_placeholder": "Fragen Sie etwas oder tippen Sie @ für Kontext",
+  "chat_richInput_askAnything_placeholder": "Fragen Sie etwas",
   "chat_richInput_attachFiles_label": "Dateien anhängen",
   "chat_richInput_cancel_label": "Abbrechen",
   "chat_richInput_dropFiles_label": "Dateien hier ablegen",

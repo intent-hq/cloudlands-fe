@@ -497,6 +497,7 @@
   // Resize functionality
   let isResizing = $state(false);
   let containerHeight = $state<number | null>(null); // null = use auto-expand mode
+  let isComposerFocused = $state(false);
   let initialY = 0;
   let initialHeight = 0;
 
@@ -506,19 +507,27 @@
 
   // Height constraints for auto-expand
   const MIN_HEIGHT = 65;
+  const IDLE_MIN_HEIGHT = 56;
+  const DEFAULT_HEIGHT = 100;
+  const IDLE_DEFAULT_HEIGHT = 80;
   const COMPACT_PANEL_THRESHOLD = 640; // Keep the composer compact in short and stacked panels
   const MAX_HEIGHT_PERCENTAGE = 0.8; // Max 80% of parent panel
   const MAX_HEIGHT_ABSOLUTE = 800; // Absolute max in pixels
   const FALLBACK_MAX_HEIGHT = 300;
 
-  // Use 65px for short panels, larger default for taller panels
+  const hasComposerContent = $derived(
+    value.trim().length > 0 || contextItems.length > 0 || hasInlineImages,
+  );
+  const isEmptyAndUnfocused = $derived(!isComposerFocused && !hasComposerContent);
+  const visiblePlaceholder = $derived(isComposerFocused && !hasComposerContent ? placeholder : '');
+
+  // Empty, unfocused composers use the shorter idle minimum. Focus or content
+  // restores the existing active geometry.
   let dynamicDefaultHeight = $derived.by(() => {
     if (parentPanelHeight && parentPanelHeight > COMPACT_PANEL_THRESHOLD) {
-      // Taller panel - use a larger default (but still reasonable)
-      return 100;
+      return isEmptyAndUnfocused ? IDLE_DEFAULT_HEIGHT : DEFAULT_HEIGHT;
     }
-    // Short panel or unknown - use minimum
-    return MIN_HEIGHT;
+    return isEmptyAndUnfocused ? IDLE_MIN_HEIGHT : MIN_HEIGHT;
   });
 
   // Calculate max height based on parent panel (80% of panel height, capped)
@@ -1259,6 +1268,17 @@
     isResizing = false;
   }
 
+  function handleFocusIn() {
+    isComposerFocused = true;
+  }
+
+  function handleFocusOut(event: FocusEvent) {
+    const nextTarget = event.relatedTarget;
+    if (!(nextTarget instanceof Node) || !containerRef?.contains(nextTarget)) {
+      isComposerFocused = false;
+    }
+  }
+
   // Add global mouse event listeners for resize
   $effect(() => {
     if (isResizing) {
@@ -1356,6 +1376,8 @@
   ondragover={externalDropTarget ? undefined : handleDragOver}
   ondrop={externalDropTarget ? undefined : handleDrop}
   onpaste={handlePaste}
+  onfocusin={handleFocusIn}
+  onfocusout={handleFocusOut}
   role="region"
   aria-label={m.chat_richInput_dropSupport_ariaLabel()}
   data-testid="message-input"
@@ -1448,7 +1470,7 @@
   <!-- svelte-ignore a11y_click_events_have_key_events -->
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div
-    class="editor-wrapper relative min-h-0 cursor-text {isAutoExpand
+    class="editor-wrapper relative min-h-0 cursor-text pt-1 {isAutoExpand
       ? 'flex-1 overflow-y-auto'
       : 'flex-1 overflow-hidden'} {editMode ? 'pr-5' : ''}"
     onclick={() => tiptap?.focus()}
@@ -1461,7 +1483,7 @@
       maxHeight={isAutoExpand ? 9999 : 9999}
       {autoFocus}
       {value}
-      {placeholder}
+      placeholder={visiblePlaceholder}
       disabled={disabled || isEnhancing}
       editableWhileDisabled={editableWhileDisabled && !isEnhancing}
       {inputLocked}
@@ -1811,15 +1833,5 @@
       opacity: 0.5;
       transform: none;
     }
-  }
-
-  /* Hide placeholder when panel is not focused */
-  :global(.panel:not(.focused) .rich-input-container .is-editor-empty::before) {
-    opacity: 0;
-    transition: opacity 150ms;
-  }
-  :global(.panel.focused .rich-input-container .is-editor-empty::before) {
-    opacity: 1;
-    transition: opacity 150ms;
   }
 </style>
