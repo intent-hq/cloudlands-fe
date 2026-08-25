@@ -11,6 +11,7 @@
     chunk = 'initial chunk',
     streaming = true,
     activePosition,
+    livePreview = true,
   }: {
     theme?: 'light' | 'dark';
     width?: number;
@@ -18,6 +19,7 @@
     chunk?: string;
     streaming?: boolean;
     activePosition?: Position | 'thinking';
+    livePreview?: boolean;
   } = $props();
 
   const positions = ['first', 'middle', 'last'] as const satisfies readonly Position[];
@@ -44,14 +46,15 @@
     <div class="h-20" aria-hidden="true"></div>
     {#each positions as position}
       <div data-testid="response-group-{position}">
+        {#snippet currentChild()}
+          <button type="button" data-testid="response-group-current-{position}">{chunk}</button>
+        {/snippet}
         <ResponseGroup
           name={`${position} group`}
           isStreaming={activePosition === undefined ? streaming : activePosition === position}
           {blocks}
+          currentChild={livePreview && activePosition === undefined ? currentChild : undefined}
         >
-          {#snippet currentChild()}
-            <button type="button" data-testid="response-group-current-{position}">{chunk}</button>
-          {/snippet}
           <div class="py-2" data-testid="response-group-body-{position}">
             <button type="button" data-testid="response-group-focus-{position}">
               Focusable {position} detail for {chunk}

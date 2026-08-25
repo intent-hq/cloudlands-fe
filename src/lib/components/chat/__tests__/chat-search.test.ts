@@ -16,7 +16,9 @@ describe('chat search utilities', () => {
     ]);
 
     expect(findChatSearchMatches([message], 'hidden', new Map())).toEqual([]);
-    expect(findChatSearchMatches([message], 'summary', new Map([['assistant-1', 'turn-1']]))).toEqual([
+    expect(
+      findChatSearchMatches([message], 'summary', new Map([['assistant-1', 'turn-1']])),
+    ).toEqual([
       {
         messageId: 'assistant-1',
         matchIndexInMessage: 0,

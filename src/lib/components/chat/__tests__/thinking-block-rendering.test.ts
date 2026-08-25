@@ -233,7 +233,10 @@ describe('thinking blocks — StreamingMessageContent', () => {
         {
           messageId: 'assistant-adjacent-preview',
           matchIndexInMessage: 0,
+          occurrenceInBlock: 0,
           turnKey: 'assistant-adjacent-preview',
+          blockPath: 'b:0:c:0',
+          disclosurePath: [],
         },
       ]);
       expect(findChatSearchMatches([message], 'Assessing delegation', new Map())).toEqual([]);

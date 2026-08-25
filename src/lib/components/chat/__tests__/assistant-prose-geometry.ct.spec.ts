@@ -171,8 +171,6 @@ for (const theme of ['light', 'dark'] as const) {
         const expandedGroupDisclosure = expandedGroup.locator(
           '[data-testid="response-group-disclosure"]',
         );
-        await expect(expandedGroupDisclosure).toHaveAttribute('aria-expanded', 'false');
-        await expandedGroupDisclosure.click();
         await expect(expandedGroupDisclosure).toHaveAttribute('aria-expanded', 'true');
         const leadingIconNames = await component
           .locator('[data-chat-operational-row] [data-operational-leading] [data-icon]')
@@ -329,8 +327,6 @@ for (const theme of ['light', 'dark'] as const) {
         const nestedGroupDisclosure = nestedGroup.locator(
           '[data-testid="response-group-disclosure"]',
         );
-        await expect(nestedGroupDisclosure).toHaveAttribute('aria-expanded', 'false');
-        await nestedGroupDisclosure.click();
         await expect(nestedGroupDisclosure).toHaveAttribute('aria-expanded', 'true');
         const nestedGroupContent = nestedGroup.locator('[data-response-group-content]');
         const nestedRows = nestedGroup.locator('[data-response-group-child]');

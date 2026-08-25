@@ -74,7 +74,11 @@ function buildMessageSearchBlocks(message: AgentMessage, turnKey: string): ChatS
       const currentChildIndex = getResponseGroupCurrentChildIndex(block);
       const currentBlock = block.children[currentChildIndex];
       if (currentBlock) {
-        addText(getContentBlockText(currentBlock), chatSearchBlockPath(blockIndex, currentChildIndex), []);
+        addText(
+          getContentBlockText(currentBlock),
+          chatSearchBlockPath(blockIndex, currentChildIndex),
+          [],
+        );
       }
       return;
     }

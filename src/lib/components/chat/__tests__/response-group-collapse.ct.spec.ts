@@ -7,7 +7,7 @@ test('auto-collapses every completed group while later response activity remains
 }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
   const component = await mount(ResponseGroupCollapseHost, {
-    props: { width: 320, zoom: 1, streaming: true },
+    props: { width: 320, zoom: 1, streaming: true, livePreview: false },
   });
   const lastFocus = component.getByTestId('response-group-focus-last');
   await lastFocus.focus();

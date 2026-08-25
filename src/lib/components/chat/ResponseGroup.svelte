@@ -114,7 +114,7 @@
           collapseTimer = null;
         }, 800);
       }
-    } else if (disclosureOverride !== 'expanded-completed') {
+    } else if (!searchOwnsExpansion && disclosureOverride !== 'expanded-completed') {
       setExpanded(false);
     }
     prevStreaming = currentlyStreaming;
