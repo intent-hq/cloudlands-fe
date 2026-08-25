@@ -39,8 +39,8 @@ function isValidWorkspaceId(id: string): boolean {
  *
  * Returns null when the URL is not a workspace file link, the path is unsafe
  * (traversal, empty or absolute segments, drive letters), the extension is not
- * in the image allowlist, or no workspace ID can be resolved (short form with
- * no `currentWorkspaceId`).
+ * in the image allowlist, or the workspace ID cannot be resolved and verified
+ * against `currentWorkspaceId`.
  */
 export function intentFileImageUrlToWorkspaceFileUrl(
   intentUrl: string,
@@ -64,7 +64,9 @@ export function intentFileImageUrlToWorkspaceFileUrl(
     pathSegments = rest.slice(1);
   } else if (rest.length >= 3 && rest[1] === 'file') {
     // Long form: {workspace-id}/file/{workspace-relative-path}
-    workspaceId = decodeSegment(rest[0]) ?? undefined;
+    const decodedWorkspaceId = decodeSegment(rest[0]);
+    if (!decodedWorkspaceId || decodedWorkspaceId !== currentWorkspaceId) return null;
+    workspaceId = decodedWorkspaceId;
     pathSegments = rest.slice(2);
   } else {
     return null;
