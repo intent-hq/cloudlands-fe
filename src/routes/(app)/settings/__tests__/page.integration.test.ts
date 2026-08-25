@@ -684,6 +684,42 @@ describe('settings tab route and focus behavior', () => {
     expect(within(customSpecialist).getByText('Project')).toBeTruthy();
     expect(allAgents.querySelector('[data-specialist-modified-marker]')).toBeNull();
     expect(createSpecialist.querySelector('[data-specialist-modified-marker]')).toBeNull();
+
+    appStore.dispatch(
+      setFileSpecialists([
+        {
+          id: 'sidebar-custom',
+          name: 'Sidebar Custom',
+          description: 'Project specialist',
+          model: '',
+          behaviorPrompt: 'Custom prompt',
+          filePath: '/repo/.intent/specialists/sidebar-custom.md',
+          source: 'project',
+        },
+      ]),
+    );
+    await waitFor(() =>
+      expect(implementor.querySelector('[data-specialist-modified-marker]')).toBeNull(),
+    );
+
+    appStore.dispatch(
+      setFileSpecialists([
+        {
+          id: implementorDefinition.id,
+          name: implementorDefinition.name,
+          description: implementorDefinition.description,
+          model: '',
+          behaviorPrompt: `${implementorDefinition.defaultBehaviorPrompt}\nModified again`,
+          roleReminder: implementorDefinition.roleReminder,
+          filePath: '/Users/test/.intent/specialists/implementor.md',
+          source: 'user',
+        },
+      ]),
+    );
+    await waitFor(() =>
+      expect(implementor.querySelector('[data-specialist-modified-marker]')?.textContent).toBe('*'),
+    );
+
     for (const specialist of agentNavigation?.querySelectorAll('button') ?? []) {
       if (specialist !== createSpecialist) {
         expect(specialist.querySelector('[data-icon], svg, img')).toBeNull();

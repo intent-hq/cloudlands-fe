@@ -3,6 +3,7 @@
   import { faPlus } from '@fortawesome/free-solid-svg-icons';
   import {
     filterSpecialistsByGitHubAuth,
+    selectFileSpecialists,
     selectHasOverrides,
     selectSpecialists,
     selectSpecialistSourceLabel,
@@ -25,10 +26,16 @@
   let { activeView, onSelect }: Props = $props();
 
   const specialists = selectSpecialists();
+  const fileSpecialists$ = selectFileSpecialists();
   const isGitHubAuth$ = selectGitHubAuthIsAuthenticated();
   const visibleSpecialists = $derived.by(() =>
     filterSpecialistsByGitHubAuth($specialists, $isGitHubAuth$),
   );
+
+  function getHasOverrides(id: string): boolean {
+    void $fileSpecialists$; // track file specialist changes for reactivity
+    return selectHasOverrides.select(appStore.state, id);
+  }
 
   // Check if item is selected
   function isSelected(view: AIBehaviorView): boolean {
@@ -57,7 +64,7 @@
   <!-- Specialists section -->
   <div class="min-w-0">
     {#each visibleSpecialists as specialist (specialist.id)}
-      {@const hasOverrides = selectHasOverrides.select(appStore.state, specialist.id)}
+      {@const hasOverrides = getHasOverrides(specialist.id)}
       {@const sourceLabel = selectSpecialistSourceLabel.select(appStore.state, specialist.id)}
 
       <button
