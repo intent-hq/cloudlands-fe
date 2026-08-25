@@ -69,7 +69,10 @@ test('keeps one larger identity geometry across panel types, themes, widths, and
           expect(geometry.headerHeight).toBeCloseTo(32, 1);
           expect(geometry.leadingWidth).toBeCloseTo(24, 1);
           expect(geometry.leadingHeight).toBeCloseTo(24, 1);
-          expect(geometry.leadingGlyphContentWidth).toBeCloseTo(16, 1);
+          expect(geometry.leadingGlyphContentWidth).toBeCloseTo(
+            identityType === 'agent' ? 20 : 16,
+            1,
+          );
           expect(geometry.leadingCenterDelta).toBeLessThanOrEqual(0.6);
           expect(geometry.titleFontSize).toBe(geometry.bodyFontSize);
           expect(geometry.titleLineHeight).toBe(geometry.bodyLineHeight);

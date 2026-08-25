@@ -1,6 +1,12 @@
 import { expect, test } from '@playwright/experimental-ct-svelte';
 import type { Locator } from '@playwright/test';
 import ChatPanelOperationalGeometryHost from './ChatPanelOperationalGeometryHost.svelte';
+import {
+  applyAuroraPaintProbe,
+  colorDistance,
+  isPaintProbe,
+  samplePanelBottomPixels,
+} from './aurora-panel-pixels';
 
 const center = (box: { x: number; width: number }) => box.x + box.width / 2;
 
@@ -13,6 +19,22 @@ const bottomSurfaceGeometry = (locator: Locator) =>
       radii: [style.borderBottomLeftRadius, style.borderBottomRightRadius],
     };
   });
+
+async function expectPanelToClipFlushAurora(aurora: Locator, panel: Locator) {
+  const [auroraGeometry, panelGeometry] = await Promise.all([
+    bottomSurfaceGeometry(aurora),
+    bottomSurfaceGeometry(panel),
+  ]);
+  expect(auroraGeometry.radii).toEqual(['0px', '0px']);
+  expect(Number.parseFloat(panelGeometry.radii[0])).toBeGreaterThan(0);
+  await applyAuroraPaintProbe(aurora);
+  const pixels = await samplePanelBottomPixels(panel);
+  pixels.corners.forEach((corner) => expect(isPaintProbe(corner)).toBe(false));
+  pixels.straightEdges.forEach((edge) => {
+    expect(isPaintProbe(edge)).toBe(true);
+    pixels.corners.forEach((corner) => expect(colorDistance(edge, corner)).toBeGreaterThan(100));
+  });
+}
 
 test('caps and centers transcript, prompt, and composer at the shared 140em measure', async ({
   mount,
@@ -60,16 +82,15 @@ test('caps and centers transcript, prompt, and composer at the shared 140em meas
       expect(composerBox!.width).toBeCloseTo(transcriptBox!.width - 48 * zoom, 1);
       expect(Math.abs(center(transcriptBox!) - center(composerBox!))).toBeLessThanOrEqual(0.5);
       expect(promptBox!.width).toBeCloseTo(shellBox!.width, 1);
-      const [auroraGeometry, shellGeometry, panelContentGeometry, panelGeometry] =
-        await Promise.all([
-          bottomSurfaceGeometry(aurora),
-          bottomSurfaceGeometry(shell),
-          bottomSurfaceGeometry(component.locator('.panel > .panel-content')),
-          bottomSurfaceGeometry(component.locator('.panel')),
-        ]);
+      const panel = component.locator('.panel');
+      const [auroraGeometry, shellGeometry, panelContentGeometry] = await Promise.all([
+        bottomSurfaceGeometry(aurora),
+        bottomSurfaceGeometry(shell),
+        bottomSurfaceGeometry(component.locator('.panel > .panel-content')),
+      ]);
       expect(auroraGeometry.edges).toEqual(shellGeometry.edges);
       expect(auroraGeometry.edges).toEqual(panelContentGeometry.edges);
-      expect(auroraGeometry.radii).toEqual(panelGeometry.radii);
+      await expectPanelToClipFlushAurora(aurora, panel);
       await expect(promptLayer).toHaveCSS('border-top-width', '0px');
       await expect(composerLane).toHaveCSS('padding-left', '24px');
       await expect(composerLane).toHaveCSS('padding-right', '24px');
@@ -137,16 +158,15 @@ test('keeps the nested composer inset without a narrow scroll owner', async ({ m
       );
       await expect(viewport).toHaveCSS('overflow-y', 'auto');
       await expect(transcript).toHaveCSS('overflow-y', 'visible');
-      const [auroraGeometry, shellGeometry, panelContentGeometry, panelGeometry] =
-        await Promise.all([
-          bottomSurfaceGeometry(aurora),
-          bottomSurfaceGeometry(shell),
-          bottomSurfaceGeometry(component.locator('.panel > .panel-content')),
-          bottomSurfaceGeometry(component.locator('.panel')),
-        ]);
+      const panel = component.locator('.panel');
+      const [auroraGeometry, shellGeometry, panelContentGeometry] = await Promise.all([
+        bottomSurfaceGeometry(aurora),
+        bottomSurfaceGeometry(shell),
+        bottomSurfaceGeometry(component.locator('.panel > .panel-content')),
+      ]);
       expect(auroraGeometry.edges).toEqual(shellGeometry.edges);
       expect(auroraGeometry.edges).toEqual(panelContentGeometry.edges);
-      expect(auroraGeometry.radii).toEqual(panelGeometry.radii);
+      await expectPanelToClipFlushAurora(aurora, panel);
     }
   }
 });

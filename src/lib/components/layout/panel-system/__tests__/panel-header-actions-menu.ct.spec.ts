@@ -73,7 +73,7 @@ for (const [index, panelType] of panelTypes.entries()) {
     if (panelType === 'agent') {
       const agentAvatar = header.locator('[data-panel-agent-header-identity] [data-agent-avatar]');
       await expect(agentAvatar).toHaveCount(1);
-      await expect(agentAvatar).toHaveAttribute('data-avatar-variant', 'standard');
+      await expect(agentAvatar).toHaveAttribute('data-avatar-variant', 'emphasized');
     }
 
     const identity = header.locator(

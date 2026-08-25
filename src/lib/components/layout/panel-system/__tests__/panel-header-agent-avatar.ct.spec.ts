@@ -97,16 +97,29 @@ for (const theme of ['light', 'dark'] as const) {
           return { agent: measure('agent'), resource: measure('resource') };
         }, zoom);
 
-        expect(geometry.agent).toEqual({
-          ...geometry.resource,
-          artWidth: 20,
-          artHeight: 20,
-        });
-        expect(geometry.agent).toMatchObject({
+        const exactSurfaceGeometry = {
           slotWidth: 24,
           slotHeight: 24,
           surfaceWidth: 24,
           surfaceHeight: 24,
+        };
+        expect(geometry.agent).toMatchObject({
+          ...exactSurfaceGeometry,
+          artWidth: 20,
+          artHeight: 20,
+        });
+        expect(geometry.resource).toMatchObject({
+          ...exactSurfaceGeometry,
+          artWidth: 16,
+          artHeight: 16,
+        });
+        expect(geometry.agent).toEqual({
+          ...geometry.resource,
+          ...exactSurfaceGeometry,
+          artWidth: 20,
+          artHeight: 20,
+        });
+        expect(geometry.agent).toMatchObject({
           clipped: false,
           focused: state.focused,
           attention: state.attention ? 1 : 0,
