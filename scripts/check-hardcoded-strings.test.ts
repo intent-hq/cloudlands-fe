@@ -55,18 +55,28 @@ describe('hardcoded user-facing string gate', () => {
         'card/CardHarness.svelte': '<span>Harness only demo text</span>',
         'combobox/combobox.test-harness.svelte': '<span>Test harness demo text</span>',
         'badge/badge.fixtures.ts': "export const label = 'Fixture demo sentence';",
+        'button/button.preview.ts': "export const title = 'Button preview sentence';",
+        'chat/streaming-status.preview-fixtures.ts':
+          "export const message = 'Streaming preview fixture sentence';",
+        'workspace/workspace-sidebar.preview.svelte': '<span>Workspace preview sentence</span>',
         'badge/badge.meta.ts': "export const description = 'Catalog metadata sentence';",
         'card/operate-patterns.playwright.config.ts': "export const name = 'Desktop Chrome';",
+        'chat/streaming-status.preview-fixtures.svelte':
+          '<span>Product preview fixtures sentence</span>',
         'card/Card.svelte': '<span>Rendered product text</span>',
       },
       (dir) => {
         const result = runGate([dir]);
         expect(result.exitCode).toBe(1);
-        expect(result.output).toContain('Excluded 5 scaffolding file(s)');
+        expect(result.output).toContain('Excluded 8 scaffolding file(s)');
         expect(result.output).toContain('[template text] "Rendered product text"');
+        expect(result.output).toContain('[template text] "Product preview fixtures sentence"');
         expect(result.output).not.toContain('Harness only demo text');
         expect(result.output).not.toContain('Test harness demo text');
         expect(result.output).not.toContain('Fixture demo sentence');
+        expect(result.output).not.toContain('Button preview sentence');
+        expect(result.output).not.toContain('Streaming preview fixture sentence');
+        expect(result.output).not.toContain('Workspace preview sentence');
         expect(result.output).not.toContain('Catalog metadata sentence');
         expect(result.output).not.toContain('Desktop Chrome');
       },

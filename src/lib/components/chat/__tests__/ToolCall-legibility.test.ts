@@ -241,7 +241,10 @@ describe('ToolCall collapsed browser screenshot preview', () => {
     const image = screen.getByRole('img', { name: 'Browser screenshot' });
     expect(image.getAttribute('src')).toBe('workspace-asset://workspace-1/screenshot-1');
 
-    await fireEvent.click(screen.getByRole('button', { name: 'Browser screenshot' }));
+    const screenshotButton = screen.getByRole('button', { name: 'Browser screenshot' });
+    expect(screenshotButton.getAttribute('data-slot')).toBe('button');
+    expect(screenshotButton.className).toContain('h-auto');
+    await fireEvent.click(screenshotButton);
 
     expect(screen.queryByRole('img', { name: 'Browser screenshot' })).toBeNull();
     expect(screen.getByTestId('tool-call-disclosure').getAttribute('aria-expanded')).toBe('true');
