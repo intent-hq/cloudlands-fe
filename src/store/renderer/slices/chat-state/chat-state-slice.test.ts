@@ -1272,6 +1272,18 @@ describe('chatState selectors', () => {
     // Daemon capability latch, not walk state — survives the reset.
     expect(agent.historySeekUnsupported).toBe(true);
     expect(agent.transcriptSnapshot?.resumed).toBe(false);
+    // The epoch bump invalidates workers still awaiting their wire call.
+    expect(agent.scrollbackDiscardEpoch).toBe(1);
+
+    state = chatStateReducer(
+      state,
+      chatTranscriptSnapshotApplied(AGENT, {
+        truncated: true,
+        totalMessages: 20,
+        resumed: false,
+      }),
+    );
+    expect(state.byAgentId[AGENT].scrollbackDiscardEpoch).toBe(2);
   });
 
   it('a resumed:true (or plain) snapshot leaves the walk state untouched', () => {

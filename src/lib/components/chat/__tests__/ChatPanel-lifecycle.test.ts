@@ -51,6 +51,9 @@ const mocks = vi.hoisted(() => {
     awaitingUtilityFooter: mutableReadable(false),
     transcriptHydration: mutableReadable('settled'),
     transcriptHydratedOnce: mutableReadable(true),
+    transcriptSnapshotMeta: mutableReadable<
+      { seq: number; truncated: boolean; totalMessages: number; resumed?: boolean } | undefined
+    >(undefined),
     animateMessageSend: vi.fn(),
     createMessageSendLaunchBubble: vi.fn(),
     pendingQuestions: null as { messageId: string; questions: unknown[] } | null,
@@ -139,7 +142,9 @@ vi.mock('$store/renderer/slices/chat-state/chat-state-selectors', () => ({
   selectTranscriptHydratedOnce: Object.assign(() => mocks.transcriptHydratedOnce, {
     select: () => true,
   }),
-  selectTranscriptSnapshotMeta: mocks.selector(undefined),
+  selectTranscriptSnapshotMeta: Object.assign(() => mocks.transcriptSnapshotMeta, {
+    select: () => undefined,
+  }),
 }));
 vi.mock('$store/renderer/slices/permission/permission-selectors', () => ({
   selectPermissionRequests: mocks.selector([]),
@@ -438,6 +443,7 @@ beforeEach(() => {
   mocks.awaitingUtilityFooter.set(false);
   mocks.transcriptHydration.set('settled');
   mocks.transcriptHydratedOnce.set(true);
+  mocks.transcriptSnapshotMeta.set(undefined);
   mocks.dividerSessionValue = { anchorId: null };
   mocks.animateMessageSend.mockResolvedValue(undefined);
   mocks.createMessageSendLaunchBubble.mockImplementation(() => {
@@ -2045,5 +2051,85 @@ describe('ChatPanel mounted lifecycle', () => {
     expect(composer?.getAttribute('data-has-transcript-utility')).toBe('false');
     expect(composer?.classList.contains('pb-3')).toBe(false);
     expect(view.container.querySelector('[data-testid="chat-composer-lane"]')).not.toBeNull();
+  });
+
+  it('resets the viewport on a resumed:false discard across the restart sequence (snapshot cleared first)', async () => {
+    // Full §7.1 daemon-restart sequence: an established snapshot, then
+    // phase→null CLEARS it (subscription teardown resets seq), then the new
+    // subscription's seq-0 resumed:false snapshot lands. The discard reset
+    // must fire on the fresh snapshot — a seq-keyed guard rebaselined by the
+    // intermediate clear would miss it.
+    mocks.draftGet.mockResolvedValue(null);
+    mocks.agentMessages.set([
+      { id: 'm1', role: 'assistant', content: 'hello', timestamp: '2026-01-01T00:00:00.000Z' },
+    ]);
+    mocks.transcriptSnapshotMeta.set({ seq: 1, truncated: true, totalMessages: 50 });
+    const view = render(ChatPanel, {
+      props: { workspace: workspace('workspace-a'), agentId: 'agent-a' },
+    });
+    await tick();
+    const scrollContainer = view.container.querySelector('.overflow-y-auto') as HTMLDivElement;
+    flushFrame();
+    vi.mocked(scrollToBottomUtil).mockClear();
+
+    // Subscription teardown: the snapshot clears (phase→null in the reducer).
+    mocks.transcriptSnapshotMeta.set(undefined);
+    await tick();
+    await tick();
+    expect(scrollToBottomUtil).not.toHaveBeenCalled();
+
+    // Fresh subscription's first snapshot: resumed:false — transcript
+    // discarded. The panel must zero its walk geometry and re-anchor.
+    mocks.transcriptSnapshotMeta.set({
+      seq: 1,
+      truncated: false,
+      totalMessages: 3,
+      resumed: false,
+    });
+    await tick();
+    await tick();
+    expect(scrollToBottomUtil).toHaveBeenCalledWith(scrollContainer);
+  });
+
+  it('fires the discard reset only for NEW resumed:false snapshots after the baseline', async () => {
+    // Mount over an already-discarded snapshot only records the baseline
+    // (nothing to undo — panel-local geometry starts zeroed). Afterwards a
+    // fresh resumed:true snapshot must NOT reset, and a fresh resumed:false
+    // snapshot must.
+    mocks.draftGet.mockResolvedValue(null);
+    mocks.agentMessages.set([
+      { id: 'm1', role: 'assistant', content: 'hello', timestamp: '2026-01-01T00:00:00.000Z' },
+    ]);
+    mocks.transcriptSnapshotMeta.set({
+      seq: 1,
+      truncated: false,
+      totalMessages: 3,
+      resumed: false,
+    });
+    const view = render(ChatPanel, {
+      props: { workspace: workspace('workspace-a'), agentId: 'agent-a' },
+    });
+    await tick();
+    const scrollContainer = view.container.querySelector('.overflow-y-auto') as HTMLDivElement;
+    flushFrame();
+    await tick();
+    vi.mocked(scrollToBottomUtil).mockClear();
+
+    // Fresh (new object identity) resumed:true snapshot: no discard, no reset.
+    mocks.transcriptSnapshotMeta.set({ seq: 2, truncated: false, totalMessages: 4, resumed: true });
+    await tick();
+    await tick();
+    expect(scrollToBottomUtil).not.toHaveBeenCalled();
+
+    // Fresh resumed:false snapshot: a new discard — reset fires.
+    mocks.transcriptSnapshotMeta.set({
+      seq: 3,
+      truncated: false,
+      totalMessages: 2,
+      resumed: false,
+    });
+    await tick();
+    await tick();
+    expect(scrollToBottomUtil).toHaveBeenCalledWith(scrollContainer);
   });
 });

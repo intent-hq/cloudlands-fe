@@ -2067,24 +2067,28 @@
   // panel-local walk geometry (spacers, seek debounce, landing-pending) was
   // sized against the discarded rows and would strand the viewport inside a
   // phantom spacer over an empty store. Zero it all and re-anchor to the
-  // fresh tail. Keyed on the snapshot seq so only a NEW discard fires; the
-  // first observation per agent only records the baseline (a mount over an
-  // already-discarded snapshot has nothing to reset).
+  // fresh tail. Keyed on the snapshot's OBJECT IDENTITY (every
+  // chatTranscriptSnapshotApplied mints a fresh meta object) so only a NEW
+  // discarded snapshot fires; the first observation per agent only records
+  // the baseline (a mount over an already-discarded snapshot has nothing to
+  // reset). Identity — not seq — because the restart sequence clears the
+  // snapshot first (phase→null resets seq), and effect batching can flush
+  // the clear + fresh snapshot together, where a seq comparison against the
+  // pre-clear baseline could coincide and miss the discard.
   let discardBaselineAgentId: string | undefined;
-  let discardBaselineSeq = -1;
+  let discardBaselineMeta: typeof $transcriptSnapshotMeta$;
   $effect(() => {
     const meta = $transcriptSnapshotMeta$;
     const currentAgentId = agentId;
     untrack(() => {
       if (currentAgentId !== discardBaselineAgentId) {
         discardBaselineAgentId = currentAgentId;
-        discardBaselineSeq = meta?.seq ?? -1;
+        discardBaselineMeta = meta;
         return;
       }
-      const seq = meta?.seq ?? -1;
-      if (seq === discardBaselineSeq) return;
-      const isNewDiscard = discardBaselineSeq !== -1 && meta?.resumed === false;
-      discardBaselineSeq = seq;
+      if (meta === discardBaselineMeta) return;
+      const isNewDiscard = meta?.resumed === false;
+      discardBaselineMeta = meta;
       if (!isNewDiscard) return;
       cancelSeekDebounce();
       seekLandingPending = false;
