@@ -23,6 +23,7 @@
    */
   import { onMount } from 'svelte';
   import { Toggle } from '$lib/components/ui/toggle';
+  import { Button } from '$lib/components/ui/button';
   import { Input } from '$lib/components/ui/input';
   import { toast } from '$lib/components/ui/toast';
   import { appClient } from '$lib/client';
@@ -294,16 +295,16 @@
               />
             </div>
             {#if Number(editedMaxAgents) !== persistedMaxAgents}
-              <button
-                type="button"
+              <Button
+                variant="secondary"
+                size="xs"
                 onclick={handleMaxAgentsSave}
                 disabled={maxAgentsSaving || !isMaxAgentsValid || !values['agentFeatures.peerAgents']}
-                class="px-3 py-1 text-xs font-medium text-foreground bg-accent hover:bg-accent/80 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {maxAgentsSaving
                   ? m.settings_agentFeatures_maxTopLevelAgents_saving()
                   : m.settings_agentFeatures_maxTopLevelAgents_save()}
-              </button>
+              </Button>
             {/if}
           </div>
         </div>
