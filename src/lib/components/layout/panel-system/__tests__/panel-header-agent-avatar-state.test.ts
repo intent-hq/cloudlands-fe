@@ -83,13 +83,12 @@ function expectChatBubbleIdentity(root: ParentNode) {
   expect(root.querySelector('[data-agent-avatar-surface]')).toBeNull();
 }
 
-function expectHeaderChatTextIdentity(root: ParentNode) {
-  const icon = root.querySelector('[data-panel-agent-chat-text-glyph]');
-  expect(icon).not.toBeNull();
-  expect(icon?.getAttribute('transform')).toBe('scale(-1, 1)');
-  expect(root.querySelector('[data-icon="comment"]')).toBeNull();
-  expect(root.querySelector('[data-testid="mock-avatar"]')).toBeNull();
-  expect(root.querySelector('[data-agent-avatar-surface]')).toBeNull();
+function expectHeaderAvatarIdentity(root: ParentNode, agentId: string) {
+  const avatar = root.querySelector<HTMLElement>('[data-testid="mock-avatar"]');
+  expect(avatar?.dataset.agentId).toBe(agentId);
+  expect(avatar?.dataset.avatarVariant).toBe('compact');
+  expect(avatar?.hasAttribute('data-agent-avatar-surface')).toBe(true);
+  expect(root.querySelector('[data-panel-agent-chat-glyph]')).toBeNull();
 }
 
 beforeEach(() => {
@@ -112,7 +111,7 @@ afterEach(() => {
 });
 
 describe('panel header agent identity', () => {
-  it('uses a chat bubble instead of an avatar-state surface in the tabless header', () => {
+  it('uses the active agent avatar in the tabless header', () => {
     const { container } = render(PanelTabBar, {
       props: {
         tabs: [tabs[0]],
@@ -130,10 +129,10 @@ describe('panel header agent identity', () => {
     expect(header.querySelector('[data-panel-agent-header-identity]')).not.toBeNull();
     expect(activeIdentity.textContent).toContain('Agent A');
     expect(leadingSurface.hasAttribute('data-panel-header-leading-surface')).toBe(true);
-    expectHeaderChatTextIdentity(leadingSurface);
+    expectHeaderAvatarIdentity(leadingSurface, 'agent-a');
   });
 
-  it('updates the chat-bubble identity when the active agent pane changes', async () => {
+  it('updates the avatar identity when the active agent pane changes', async () => {
     const view = render(PanelTabBar, {
       props: {
         tabs: [tabs[0]],
@@ -151,7 +150,7 @@ describe('panel header agent identity', () => {
     });
     const activeIdentity = view.container.querySelector('[data-panel-agent-header-identity]')!;
     expect(activeIdentity.textContent).toContain('Agent B');
-    expectHeaderChatTextIdentity(activeIdentity);
+    expectHeaderAvatarIdentity(activeIdentity, 'agent-b');
   });
 
   it('uses chat bubbles without avatar-state surfaces for agent rows in tabs', () => {

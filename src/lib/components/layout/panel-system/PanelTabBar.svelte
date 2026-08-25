@@ -40,7 +40,6 @@
   import { locateItemInSidebarRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
   import type { IconDefinition } from '@fortawesome/fontawesome-common-types';
   import Fa from 'svelte-fa';
-  import ChatTextIcon from 'phosphor-svelte/lib/ChatTextIcon';
   import { Tooltip } from '$lib/components/ui/tooltip';
   import DropdownMenu from '$lib/components/ui/dropdown-menu.svelte';
   import * as Menu from '$lib/components/ui/menu';
@@ -1822,14 +1821,7 @@
             data-testid="panel-header-agent-avatar-slot"
             data-panel-header-leading-surface
           >
-            <ChatTextIcon
-              size={16}
-              mirrored
-              aria-hidden="true"
-              class="shrink-0 text-muted-foreground"
-              data-panel-agent-chat-glyph
-              data-panel-agent-chat-text-glyph
-            />
+            <AgentAvatar agentId={activeTab.agentId} variant="compact" />
           </span>
           <div class="panel-header-title min-w-0 shrink" data-panel-header-title>
             {#if onTabRename}
