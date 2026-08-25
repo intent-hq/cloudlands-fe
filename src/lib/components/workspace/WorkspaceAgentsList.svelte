@@ -20,6 +20,7 @@
     isRetiredAgentSession as isRetiredAgent,
     shouldVirtualizeWorkspaceAgentRows,
     WORKSPACE_AGENT_ROW_HEIGHT,
+    WORKSPACE_AGENTS_VIRTUALIZATION_THRESHOLD,
   } from './workspace-agents-list-utils';
   import { m } from '$shared/paraglide/messages.js';
   import type { PanelTab } from '$store/renderer/slices/panel-layout/panel-layout-types';
@@ -102,6 +103,10 @@
   // Fall back to the regular list when delegations exist (tree heights are variable)
   // or a coordinator is present (its section headers need the regular rendering).
   const shouldUseVirtual = $derived(shouldVirtualizeWorkspaceAgentRows(filteredAgentRows));
+  // The retired bin is always flat with uniform-height rows, so a length check suffices.
+  const shouldVirtualizeRetired = $derived(
+    retiredAgents.length > WORKSPACE_AGENTS_VIRTUALIZATION_THRESHOLD,
+  );
   // The selectable row and lazy placeholder share this exact single-line height.
   const itemHeight = WORKSPACE_AGENT_ROW_HEIGHT;
   const containerHeight = 600;
@@ -357,44 +362,84 @@
     </Button>
   </div>
 
-  <div class="flex flex-col gap-0.5 pt-1" data-agent-retired-section>
-    {#each retiredAgents as agent (agent.id)}
-      {@const panelState = getAgentPanelState(agent.id)}
-      {#if hasActiveSearch || showRetiredAgents}
-        {#snippet retiredActions()}
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon-xs"
-            aria-label={m.workspace_agentsList_restoreRetired_ariaLabel()}
-            title={m.workspace_agentsList_restoreRetired_button()}
-            class="inline-flex h-6 w-6 cursor-pointer items-center justify-center rounded text-ghost opacity-0 transition-opacity hover:text-muted-foreground/70 focus-visible:opacity-100 group-hover/watch:opacity-100 group-focus-within/watch:opacity-100"
-            data-testid="agent-restore-retired"
-            onclick={(e) => {
-              e.stopPropagation();
-              onRestoreRetired?.({ agentId: agent.id });
-            }}
-          >
-            <Fa icon={faRotateLeft} class="h-3.5! w-3.5!" />
-          </Button>
-        {/snippet}
-        <div transition:slide={{ axis: 'y', duration: 150 }} class="opacity-70">
-          <LazyAgentCard
-            cacheKey={agent.id}
-            agentId={agent.id}
-            agentName={agent.name}
-            isBackground={isBackgroundAgent(agent)}
-            selected={agent.id === selectedAgentId}
-            openPanelCount={panelState.count}
-            activeInPanel={panelState.isActive}
-            updatedAt={agent.updatedAt}
-            hidePreview
-            panelRow
-            onclick={(event) => handleAgentClick(agent.id, event)}
-            headerActions={retiredActions}
-          />
-        </div>
-      {/if}
-    {/each}
-  </div>
+  {#if shouldVirtualizeRetired}
+    {#if hasActiveSearch || showRetiredAgents}
+      <!-- Virtual scrolling for large retired sets (flat, uniform-height rows) -->
+      <div class="max-h-150 overflow-hidden pt-1" data-agent-retired-section>
+        <VirtualList
+          items={retiredAgents}
+          {itemHeight}
+          {containerHeight}
+          getKey={(agent: AgentSession) => agent.id}
+        >
+          {#snippet children({ item: agent }: { item: AgentSession })}
+            {@const panelState = getAgentPanelState(agent.id)}
+            <div class="w-full opacity-70">
+              <AgentCard
+                agentId={agent.id}
+                agentName={agent.name}
+                isBackground={isBackgroundAgent(agent)}
+                selected={agent.id === selectedAgentId}
+                openPanelCount={panelState.count}
+                activeInPanel={panelState.isActive}
+                updatedAt={agent.updatedAt}
+                hidePreview
+                panelRow
+                onclick={(event) => handleAgentClick(agent.id, event)}
+              >
+                {#snippet headerActions()}
+                  {@render retiredActions(agent.id)}
+                {/snippet}
+              </AgentCard>
+            </div>
+          {/snippet}
+        </VirtualList>
+      </div>
+    {/if}
+  {:else}
+    <div class="flex flex-col gap-0.5 pt-1" data-agent-retired-section>
+      {#each retiredAgents as agent (agent.id)}
+        {@const panelState = getAgentPanelState(agent.id)}
+        {#if hasActiveSearch || showRetiredAgents}
+          {#snippet rowActions()}
+            {@render retiredActions(agent.id)}
+          {/snippet}
+          <div transition:slide={{ axis: 'y', duration: 150 }} class="opacity-70">
+            <LazyAgentCard
+              cacheKey={agent.id}
+              agentId={agent.id}
+              agentName={agent.name}
+              isBackground={isBackgroundAgent(agent)}
+              selected={agent.id === selectedAgentId}
+              openPanelCount={panelState.count}
+              activeInPanel={panelState.isActive}
+              updatedAt={agent.updatedAt}
+              hidePreview
+              panelRow
+              onclick={(event) => handleAgentClick(agent.id, event)}
+              headerActions={rowActions}
+            />
+          </div>
+        {/if}
+      {/each}
+    </div>
+  {/if}
 {/if}
+
+{#snippet retiredActions(agentId: string)}
+  <Button
+    type="button"
+    variant="ghost"
+    size="icon-xs"
+    aria-label={m.workspace_agentsList_restoreRetired_ariaLabel()}
+    title={m.workspace_agentsList_restoreRetired_button()}
+    class="inline-flex h-6 w-6 cursor-pointer items-center justify-center rounded text-ghost opacity-0 transition-opacity hover:text-muted-foreground/70 focus-visible:opacity-100 group-hover/watch:opacity-100 group-focus-within/watch:opacity-100"
+    data-testid="agent-restore-retired"
+    onclick={(e) => {
+      e.stopPropagation();
+      onRestoreRetired?.({ agentId });
+    }}
+  >
+    <Fa icon={faRotateLeft} class="h-3.5! w-3.5!" />
+  </Button>
+{/snippet}
