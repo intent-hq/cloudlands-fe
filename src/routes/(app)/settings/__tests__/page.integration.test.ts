@@ -1,7 +1,7 @@
 /**
  * @vitest-environment jsdom
  */
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { appClient } from '$lib/client';
 import { SPECIALISTS } from '$lib/constants/specialists';
@@ -12,7 +12,10 @@ import { hydrateActiveProvider } from '$store/renderer/slices/provider-settings/
 import { selectGitHubAuthError } from '$store/renderer/slices/github-auth/github-auth-selectors';
 import { setGitHubAuthError } from '$store/renderer/slices/github-auth/github-auth-slice';
 import { selectBundledSpecialists } from '$store/renderer/slices/specialists/specialists-selectors';
-import { setBundledSpecialists } from '$store/renderer/slices/specialists/specialists-slice';
+import {
+  setBundledSpecialists,
+  setFileSpecialists,
+} from '$store/renderer/slices/specialists/specialists-slice';
 import { selectSelectedModel } from '$store/renderer/slices/model/model-selectors';
 import { setSelectedModel } from '$store/renderer/slices/model/model-slice';
 import { selectMcpError } from '$store/renderer/slices/mcp-settings/mcp-settings-selectors';
@@ -79,10 +82,6 @@ vi.mock('$lib/components/settings/ProviderSelector.svelte', async () => ({
 }));
 vi.mock('$lib/components/settings/AIBehaviorEditor.svelte', async () => ({
   default: (await import('./mocks/SettingsStateFixture.svelte')).default,
-}));
-vi.mock('$lib/components/settings/AIBehaviorSidebar.svelte', async () => ({
-  default: (await import('$lib/components/workspace/sidebar/__tests__/mocks/MockSimple.svelte'))
-    .default,
 }));
 vi.mock('$lib/components/settings/ConnectionsSettings.svelte', async () => ({
   default: (await import('$lib/components/chat/__tests__/mocks/SlotOnly.svelte')).default,
@@ -510,9 +509,55 @@ describe('settings tab route and focus behavior', () => {
     const { container } = renderSettings(`/settings?tab=${tab}`);
     const content = container.querySelector('main');
 
-    expect(content?.className).toContain('max-w-4xl');
+    expect(content?.className).toContain(tab === 'agents' ? 'max-w-6xl' : 'max-w-4xl');
     expect(content?.className).toContain('flex-col');
     if (heading) expect(screen.getByRole('heading', { name: heading })).toBeTruthy();
+  });
+
+  it('widens the settings content for every Agents editor view', async () => {
+    appStore.dispatch(setBundledSpecialists([...SPECIALISTS]));
+    const { container } = renderSettings('/settings?tab=agents');
+    const content = container.querySelector('main');
+    const editorSection = container.querySelector('#default-model');
+    const navigation = screen.getByRole('navigation', { name: 'Settings' });
+
+    expect(content?.className).toContain('max-w-6xl');
+    expect(content?.className).not.toContain('max-w-4xl');
+    expect(content?.className).toContain('xl:h-full');
+    expect(content?.className).toContain('xl:min-h-0');
+    expect(content?.className).toContain('xl:py-8');
+    expect(editorSection?.className).toContain('xl:min-h-0');
+    expect(editorSection?.className).toContain('xl:flex-1');
+    expect(editorSection?.className).toContain('xl:flex-col');
+
+    await fireEvent.click(within(navigation).getByRole('button', { name: 'Implementor' }));
+
+    expect(content?.className).toContain('max-w-6xl');
+    expect(content?.className).not.toContain('max-w-4xl');
+    expect(content?.className).toContain('xl:h-full');
+    expect(content?.className).toContain('xl:min-h-0');
+    expect(content?.className).toContain('xl:py-8');
+    expect(editorSection?.className).toContain('xl:min-h-0');
+    expect(editorSection?.className).toContain('xl:flex-1');
+    expect(editorSection?.className).toContain('xl:flex-col');
+
+    await fireEvent.click(within(navigation).getByRole('button', { name: 'Create Specialist' }));
+
+    expect(content?.className).toContain('max-w-6xl');
+    expect(content?.className).not.toContain('max-w-4xl');
+    expect(content?.className).toContain('xl:h-full');
+    expect(content?.className).toContain('xl:min-h-0');
+    expect(content?.className).toContain('xl:py-8');
+    expect(editorSection?.className).toContain('xl:min-h-0');
+    expect(editorSection?.className).toContain('xl:flex-1');
+    expect(editorSection?.className).toContain('xl:flex-col');
+
+    await fireEvent.click(within(navigation).getByRole('button', { name: 'Implementor' }));
+    await fireEvent.click(within(navigation).getByRole('button', { name: 'Providers' }));
+
+    expect(content?.className).toContain('max-w-4xl');
+    expect(content?.className).not.toContain('max-w-6xl');
+    expect(content?.className).not.toContain('xl:h-full');
   });
 
   it.each([
@@ -566,6 +611,167 @@ describe('settings tab route and focus behavior', () => {
       'page',
     );
     expect(screen.getByRole('button', { name: 'Agents' }).hasAttribute('aria-current')).toBe(false);
+  });
+
+  it('renders compact agent selection only inside the existing settings sidebar', async () => {
+    const implementorDefinition = SPECIALISTS.find(({ id }) => id === 'implementor')!;
+    const { container } = renderSettings('/settings?tab=agents');
+    appStore.dispatch(setBundledSpecialists([]));
+    appStore.dispatch(
+      setFileSpecialists([
+        {
+          id: implementorDefinition.id,
+          name: implementorDefinition.name,
+          description: implementorDefinition.description,
+          model: '',
+          behaviorPrompt: `${implementorDefinition.defaultBehaviorPrompt}\nModified`,
+          roleReminder: implementorDefinition.roleReminder,
+          filePath: '/Users/test/.intent/specialists/implementor.md',
+          source: 'user',
+        },
+        {
+          id: 'sidebar-custom',
+          name: 'Sidebar Custom',
+          description: 'Project specialist',
+          model: '',
+          behaviorPrompt: 'Custom prompt',
+          filePath: '/repo/.intent/specialists/sidebar-custom.md',
+          source: 'project',
+        },
+      ]),
+    );
+    const navigation = screen.getByRole('navigation', { name: 'Settings' });
+    const agentNavigation = navigation.querySelector('[data-settings-agents-submenu]');
+    await waitFor(() =>
+      expect(
+        within(navigation).getByRole('button', { name: 'Sidebar Custom Project' }),
+      ).toBeTruthy(),
+    );
+    const agents = within(navigation).getByRole('button', { name: 'Agents' });
+    const allAgents = within(navigation).getByRole('button', { name: 'All agents' });
+    const implementor = within(navigation).getByRole('button', { name: 'Implementor' });
+    const customSpecialist = within(navigation).getByRole('button', {
+      name: 'Sidebar Custom Project',
+    });
+    const createSpecialist = within(navigation).getByRole('button', {
+      name: 'Create Specialist',
+    });
+    const connections = within(navigation).getByRole('button', { name: 'Connections' });
+    const navigationButtons = within(navigation).getAllByRole('button');
+
+    expect(agentNavigation).not.toBeNull();
+    expect(agentNavigation?.contains(allAgents)).toBe(true);
+    expect(agentNavigation?.contains(implementor)).toBe(true);
+    expect(agentNavigation?.contains(customSpecialist)).toBe(true);
+    expect(agentNavigation?.contains(createSpecialist)).toBe(true);
+    expect(navigationButtons.indexOf(agents)).toBeLessThan(navigationButtons.indexOf(allAgents));
+    expect(navigationButtons.indexOf(createSpecialist)).toBeLessThan(
+      navigationButtons.indexOf(connections),
+    );
+    expect(within(navigation).queryByText('Specialists')).toBeNull();
+    expect(agentNavigation?.querySelectorAll('[data-icon], svg, img')).toHaveLength(1);
+    expect(createSpecialist.querySelectorAll('[data-icon="plus"]')).toHaveLength(1);
+    expect(allAgents.querySelector('[data-icon], svg, img')).toBeNull();
+    expect(agentNavigation?.querySelectorAll('[data-specialist-modified-marker]')).toHaveLength(1);
+    expect(implementor.querySelector('[data-specialist-modified-marker]')?.textContent).toBe('*');
+    expect(implementor.querySelector('[data-specialist-modified-marker]')?.className).toContain(
+      'text-ui',
+    );
+    expect(implementor.querySelector('[data-specialist-modified-marker]')?.className).toContain(
+      'text-muted-foreground',
+    );
+    expect(customSpecialist.querySelector('[data-specialist-modified-marker]')).toBeNull();
+    expect(within(customSpecialist).getByText('Project')).toBeTruthy();
+    expect(allAgents.querySelector('[data-specialist-modified-marker]')).toBeNull();
+    expect(createSpecialist.querySelector('[data-specialist-modified-marker]')).toBeNull();
+
+    for (const specialist of agentNavigation?.querySelectorAll('button') ?? []) {
+      if (specialist !== createSpecialist) {
+        expect(specialist.querySelector('[data-icon], svg, img')).toBeNull();
+      }
+    }
+    expect(agents.querySelector('[data-slot="settings-sidebar-icon"] [data-icon]')).not.toBeNull();
+    expect(agents.getAttribute('aria-current')).toBe('page');
+    expect(agents.className).not.toContain('bg-muted font-medium');
+    expect(agents.className).not.toContain('shadow-xs');
+    expect(allAgents.getAttribute('aria-current')).toBe('true');
+    expect(allAgents.className).toContain('bg-muted text-foreground');
+    expect(implementor.className).not.toContain('bg-muted text-foreground');
+    expect(container.querySelector('main [data-settings-agents-submenu]')).toBeNull();
+    expect(container.querySelector('main #default-model')?.children).toHaveLength(1);
+    expect(container.querySelector('main #default-model')?.className).not.toContain('grid-cols');
+
+    await fireEvent.click(implementor);
+
+    expect(screen.getByTestId('ai-behavior-view').textContent).toContain('specialist:implementor');
+    expect(implementor.getAttribute('aria-current')).toBe('true');
+    expect(implementor.className).toContain('bg-muted text-foreground');
+    expect(allAgents.hasAttribute('aria-current')).toBe(false);
+    expect(allAgents.className).not.toContain('bg-muted text-foreground');
+    expect(agents.className).not.toContain('shadow-xs');
+
+    await fireEvent.click(createSpecialist);
+
+    expect(screen.getByTestId('ai-behavior-view').textContent).toContain('create-specialist');
+    expect(createSpecialist.getAttribute('aria-current')).toBe('true');
+    expect(createSpecialist.className).toContain('bg-muted text-foreground');
+    expect(implementor.className).not.toContain('bg-muted text-foreground');
+
+    await fireEvent.click(allAgents);
+
+    expect(screen.getByTestId('ai-behavior-view').textContent).toContain('system-prompt');
+    expect(allAgents.getAttribute('aria-current')).toBe('true');
+
+    appStore.dispatch(
+      setFileSpecialists([
+        {
+          id: 'sidebar-custom',
+          name: 'Sidebar Custom',
+          description: 'Project specialist',
+          model: '',
+          behaviorPrompt: 'Custom prompt',
+          filePath: '/repo/.intent/specialists/sidebar-custom.md',
+          source: 'project',
+        },
+      ]),
+    );
+    await waitFor(() =>
+      expect(within(navigation).queryByRole('button', { name: 'Implementor' })).toBeNull(),
+    );
+
+    appStore.dispatch(
+      setFileSpecialists([
+        {
+          id: implementorDefinition.id,
+          name: implementorDefinition.name,
+          description: implementorDefinition.description,
+          model: '',
+          behaviorPrompt: `${implementorDefinition.defaultBehaviorPrompt}\nModified again`,
+          roleReminder: implementorDefinition.roleReminder,
+          filePath: '/Users/test/.intent/specialists/implementor.md',
+          source: 'user',
+        },
+      ]),
+    );
+    await waitFor(() =>
+      expect(
+        within(navigation)
+          .getByRole('button', { name: 'Implementor' })
+          .querySelector('[data-specialist-modified-marker]')?.textContent,
+      ).toBe('*'),
+    );
+  });
+
+  it('collapses the nested agent navigation when another settings category is selected', async () => {
+    renderSettings('/settings?tab=agents');
+    const navigation = screen.getByRole('navigation', { name: 'Settings' });
+
+    expect(within(navigation).getByRole('button', { name: 'All agents' })).toBeTruthy();
+
+    await fireEvent.click(within(navigation).getByRole('button', { name: 'Providers' }));
+
+    expect(navigation.querySelector('[data-settings-agents-submenu]')).toBeNull();
+    expect(within(navigation).queryByRole('button', { name: 'All agents' })).toBeNull();
   });
 
   it('activates a clicked sidebar item while preserving params and hash', async () => {

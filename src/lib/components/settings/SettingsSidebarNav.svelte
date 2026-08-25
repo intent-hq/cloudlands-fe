@@ -10,6 +10,7 @@
     faWandMagicSparkles,
     faWrench,
   } from '@fortawesome/free-solid-svg-icons';
+  import type { Snippet } from 'svelte';
   import Fa from 'svelte-fa';
 
   type SettingsTab =
@@ -25,9 +26,10 @@
   interface Props {
     activeTab: SettingsTab;
     onSelect: (tab: SettingsTab) => void;
+    agentsNavigation?: Snippet;
   }
 
-  let { activeTab, onSelect }: Props = $props();
+  let { activeTab, onSelect, agentsNavigation }: Props = $props();
 
   const items = [
     {
@@ -100,7 +102,7 @@
       aria-current={activeTab === item.id ? 'page' : undefined}
       data-settings-tab={item.id}
       class="flex w-full cursor-pointer items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring
-        {activeTab === item.id
+        {activeTab === item.id && !(item.id === 'agents' && agentsNavigation)
         ? 'bg-muted font-medium text-foreground shadow-xs'
         : 'text-muted-foreground hover:bg-muted/50 hover:text-foreground'}"
     >
@@ -112,5 +114,10 @@
       </span>
       <span>{item.label}</span>
     </button>
+    {#if item.id === 'agents' && activeTab === 'agents' && agentsNavigation}
+      <div class="mb-1 ml-5 border-l border-border pl-2" data-settings-agents-submenu>
+        {@render agentsNavigation()}
+      </div>
+    {/if}
   {/each}
 </nav>

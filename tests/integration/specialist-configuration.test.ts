@@ -198,7 +198,6 @@ describe('Specialist Configuration', () => {
         'ui-designer',
         'developer',
         'chief-of-staff',
-        'ralph',
       ];
 
       for (const specialist of SPECIALISTS) {
@@ -286,7 +285,6 @@ describe('Specialist Configuration', () => {
 
       expect(ids).toContain('pr-reviewer');
     });
-
   });
 
   describe('getEffectiveSpecialist coding agent resolution', () => {

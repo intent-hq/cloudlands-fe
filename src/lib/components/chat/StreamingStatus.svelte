@@ -72,6 +72,8 @@
     onRetryWithModel?: (model: string) => void;
     /** Callback to stop streaming */
     onStop?: () => void;
+    /** Callback to cancel the stalled turn and re-send the last input (monorepo#3402) */
+    onStalledRetry?: () => void;
     /** Seed for spinner colors (typically agent ID) */
     seed?: string;
     /** Additional class names */
@@ -97,6 +99,7 @@
     onRetry,
     onRetryWithModel,
     onStop,
+    onStalledRetry,
     seed,
     class: className = '',
   }: Props = $props();
@@ -229,6 +232,18 @@
     <span class="min-w-0 flex-1 truncate text-warning" data-testid="stalled-message"
       >{m.chat_streamingStatus_stalled_label({ duration: stalledElapsed ?? '' })}</span
     >
+    {#if onStalledRetry}
+      <Button
+        variant="ghost-light"
+        size="sm"
+        onclick={onStalledRetry}
+        class="type-caption h-7 shrink-0 gap-1.5 px-2 text-muted-foreground"
+        data-testid="stalled-retry"
+      >
+        <Fa icon={faRotateRight} class="size-3" />
+        {m.chat_streamingStatus_stalledRetry_label()}
+      </Button>
+    {/if}
     {#if onStop}
       <Button
         variant="ghost-light"

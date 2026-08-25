@@ -7,9 +7,10 @@
  * file (reset paths) or suppress the Modified indicators (badge/banner).
  *
  * Dependency-light on purpose: bundled specialists are passed in as a
- * parameter — no store or selector imports.
+ * parameter, with the shipped catalog as a fallback when the daemon returns
+ * only the winning user row — no store or selector imports.
  */
-import type { Specialist } from '$lib/constants/specialists';
+import { SPECIALISTS, type Specialist } from '$lib/constants/specialists';
 import type { SpecialistModelOption } from '$shared/specialist-file-types';
 import type { FileSpecialist } from '$store/renderer/slices/specialists/specialists-slice';
 
@@ -66,7 +67,9 @@ export function isRedundantBuiltInOverride(
 ): boolean {
   if (fileSpec.source !== 'user') return false;
   if (!options?.ignoreModelPin && (fileSpec.model || fileSpec.codingAgent)) return false;
-  const bundled = bundledSpecialists.find((s) => s.id === fileSpec.id);
+  const bundled =
+    bundledSpecialists.find((s) => s.id === fileSpec.id) ??
+    SPECIALISTS.find((s) => s.id === fileSpec.id);
   if (!bundled) return false;
   return (
     normalized(fileSpec.name) === normalized(bundled.name) &&

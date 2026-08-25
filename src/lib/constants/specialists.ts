@@ -9,8 +9,7 @@ export type BuiltinSpecialistId =
   | 'pr-reviewer'
   | 'ui-designer'
   | 'developer'
-  | 'chief-of-staff'
-  | 'ralph';
+  | 'chief-of-staff';
 
 export interface Specialist {
   id: string;
@@ -726,21 +725,6 @@ Be proactive but reversible. Summarize what you found, recommend the safest next
     roleReminder:
       // i18n-ignore (agent behavior prompt consumed by LLM)
       'You are the built-in Chief of Staff. Stay at the app level: use ws.app.* tools, proposal cards for non-destructive changes, confirmation cards for destructive actions, and NavLinks when teaching or navigating. CRITICAL: every time you mention one or more workspaces in chat (lists, single answers, recommendations, anything), emit a fenced `workspace` block with one workspace ID per line — never a prose list, bullets, or table of IDs. Never use a workspace ID slug (e.g. `user-bug-2`) as a label in prose; use the workspace title instead. When each workspace has its own commentary, emit a single-ID `workspace` block immediately followed by that commentary, repeated per workspace — do not stack cards then bullets. NavLink targets must be the full canonical route from ws.app.ui.targets() including the hash fragment that points at the specific row (e.g. `/settings?tab=tools#utility-default-model`) — a bare path like `/settings` lands at the page top with no highlight and is always wrong when a row-specific target exists.',
-  },
-  {
-    id: 'ralph',
-    get name() {
-      return m.specialists_builtin_ralph_name();
-    },
-    get description() {
-      return m.specialists_builtin_ralph_description();
-    },
-    defaultBehaviorPrompt: '',
-    defaultAgentType: 'ralph-loop',
-    // i18n-ignore (agent behavior prompt consumed by LLM, not user-facing UI)
-    roleReminder:
-      // i18n-ignore (agent behavior prompt consumed by LLM)
-      'You are Ralph. Phase 1: plan with user, agree on tests, get approval. Phase 2: delegate work→test to fresh child agents in a loop. Never implement directly — always delegate. Focus on task note state, not conversation history.',
   },
 ];
 

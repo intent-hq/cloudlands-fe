@@ -6,10 +6,11 @@
  * opus4.7) when the active provider is unavailable — see spec "Fix:
  * Augment/Auggie leaks as default provider & model".
  */
-import { cleanup, fireEvent, render, screen } from '@testing-library/svelte';
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/svelte';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { flushSync } from 'svelte';
+import { compile } from 'svelte/compiler';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => {
@@ -41,21 +42,25 @@ const mocks = vi.hoisted(() => {
     fileSpecialists$: writable<unknown[]>([]),
     defaultEffort$: writable<string>(''),
     effectivePrompt: { value: '' },
+    hasOverrides: { value: false },
+    specialistFilePath: { value: undefined as string | undefined },
     explicitEffort: { value: undefined as string | undefined },
     isFileBased: { value: false },
     fileSpecialist: {
-      value: undefined as {
-        id: string;
-        name: string;
-        description: string;
-        codingAgent?: string;
-        model?: string;
-        roleReminder?: string;
-        modelOptions?: unknown[];
-        reasoningEffort?: string;
-        behaviorPrompt: string;
-        source: 'project' | 'user';
-      } | undefined,
+      value: undefined as
+        | {
+            id: string;
+            name: string;
+            description: string;
+            codingAgent?: string;
+            model?: string;
+            roleReminder?: string;
+            modelOptions?: unknown[];
+            reasoningEffort?: string;
+            behaviorPrompt: string;
+            source: 'project' | 'user';
+          }
+        | undefined,
     },
     effortLevels: { value: {} as Record<string, string[] | undefined> },
     workspace: undefined as
@@ -65,8 +70,19 @@ const mocks = vi.hoisted(() => {
     // selectModelDisplayName lookup that gates default-effort clearing.
     catalogModels: { value: [] as string[] },
     dispatched: [] as { type: string; payload: unknown[] }[],
+    getUserRule: vi.fn(async () => ({ content: 'Original instructions' })),
+    updateUserRule: vi.fn(async () => ({ success: true })),
   };
 });
+
+vi.mock('$lib/client', () => ({
+  appClient: {
+    settings: {
+      getUserRule: mocks.getUserRule,
+      updateUserRule: mocks.updateUserRule,
+    },
+  },
+}));
 
 vi.mock('$store/renderer/store', async () => {
   const { createAppStoreMockModule } =
@@ -95,9 +111,9 @@ vi.mock('$store/renderer/slices/specialists/specialists-selectors', () => ({
     select: (_state: unknown, id: string) =>
       mocks.fileSpecialist.value?.id === id ? mocks.fileSpecialist.value : undefined,
   },
-  selectHasOverrides: { select: () => false },
+  selectHasOverrides: { select: () => mocks.hasOverrides.value },
   selectBundledSpecialists: { select: () => [] },
-  selectSpecialistFilePath: { select: () => undefined },
+  selectSpecialistFilePath: { select: () => mocks.specialistFilePath.value },
   selectSpecialistSourceLabel: {
     select: (_state: unknown, id: string) =>
       mocks.fileSpecialist.value?.id === id
@@ -183,12 +199,13 @@ vi.mock('$store/renderer/slices/model/model-selectors', () => ({
   },
 }));
 
-vi.mock('./AgentRulesEditor.svelte', async () => ({
-  default: (await import('../workspace/initializer/__tests__/mocks/MockComponent.svelte')).default,
-}));
-
 vi.mock('$lib/components/chat/input/ModelPicker.svelte', async () => ({
   default: (await import('../workspace/initializer/__tests__/mocks/MockModelPicker.svelte'))
+    .default,
+}));
+
+vi.mock('$features/external-editors/components/OpenComboButton.svelte', async () => ({
+  default: (await import('$features/layout/tab-types/__tests__/mocks/MockOpenComboButton.svelte'))
     .default,
 }));
 
@@ -202,7 +219,6 @@ const editorSource = readFileSync(
   join(process.cwd(), 'src/lib/components/settings/AIBehaviorEditor.svelte'),
   'utf8',
 );
-
 describe('AIBehaviorEditor workspace ownership', () => {
   it('accepts an explicit owner without reading the legacy active workspace', () => {
     expect(editorSource).toContain('workspaceId?: WorkspaceId | null');
@@ -411,6 +427,473 @@ describe('AIBehaviorEditor default model reasoning', () => {
   });
 });
 
+describe('AIBehaviorEditor full-height layouts', () => {
+  const specialist = {
+    id: 'implementor',
+    name: 'Implementor',
+    description: 'Implements tasks',
+    defaultBehaviorPrompt: 'bundled prompt',
+  };
+
+  afterEach(() => {
+    cleanup();
+    mocks.specialists$.set([]);
+    mocks.fileSpecialists$.set([]);
+    mocks.fileSpecialist.value = undefined;
+    mocks.effectivePrompt.value = '';
+    mocks.hasOverrides.value = false;
+    mocks.specialistFilePath.value = undefined;
+    mocks.dispatched.length = 0;
+  });
+
+  it('overrides the compiled scoped grid for every full-height editor view at desktop widths', () => {
+    const compiledStyles = compile(editorSource, {
+      filename: 'AIBehaviorEditor.svelte',
+      generate: 'client',
+      css: 'external',
+    }).css?.code;
+    expect(compiledStyles).toBeTruthy();
+
+    const scopeClass = compiledStyles?.match(/\.svelte-[\w-]+/)?.[0].slice(1);
+    expect(scopeClass).toBeTruthy();
+
+    const scopedStyles = document.createElement('style');
+    scopedStyles.textContent = compiledStyles ?? '';
+    document.head.appendChild(scopedStyles);
+
+    const specialistContainer = document.createElement('div');
+    specialistContainer.className = `editor-container full-height-editor-container specialist-editor-container ${scopeClass}`;
+    const allAgentsContainer = document.createElement('div');
+    allAgentsContainer.className = `editor-container full-height-editor-container ${scopeClass}`;
+    const createSpecialistContainer = document.createElement('div');
+    createSpecialistContainer.className = `editor-container full-height-editor-container ${scopeClass}`;
+    const standardContainer = document.createElement('div');
+    standardContainer.className = `editor-container ${scopeClass}`;
+    document.body.append(
+      specialistContainer,
+      allAgentsContainer,
+      createSpecialistContainer,
+      standardContainer,
+    );
+
+    const desktopStyles = document.createElement('style');
+
+    try {
+      expect(getComputedStyle(specialistContainer).display).toBe('grid');
+      expect(getComputedStyle(allAgentsContainer).display).toBe('grid');
+      expect(getComputedStyle(createSpecialistContainer).display).toBe('grid');
+      expect(getComputedStyle(standardContainer).display).toBe('grid');
+
+      const desktopRule = Array.from(scopedStyles.sheet?.cssRules ?? []).find(
+        (rule): rule is CSSMediaRule =>
+          rule.type === CSSRule.MEDIA_RULE &&
+          (rule as CSSMediaRule).conditionText.includes('1280px'),
+      );
+      expect(desktopRule).toBeDefined();
+
+      // jsdom does not evaluate viewport media queries, so activate the actual
+      // compiled desktop declarations directly to exercise their scoped cascade.
+      desktopStyles.textContent = Array.from(desktopRule?.cssRules ?? [])
+        .map((rule) => rule.cssText)
+        .join('\n');
+      document.head.appendChild(desktopStyles);
+
+      expect(getComputedStyle(specialistContainer).display).toBe('flex');
+      expect(getComputedStyle(specialistContainer).flexDirection).toBe('column');
+      expect(getComputedStyle(specialistContainer).gridTemplateRows).toBe('none');
+      expect(getComputedStyle(specialistContainer).flexGrow).toBe('1');
+      expect(getComputedStyle(allAgentsContainer).display).toBe('flex');
+      expect(getComputedStyle(allAgentsContainer).flexDirection).toBe('column');
+      expect(getComputedStyle(allAgentsContainer).gridTemplateRows).toBe('none');
+      expect(getComputedStyle(allAgentsContainer).flexGrow).toBe('1');
+      expect(getComputedStyle(createSpecialistContainer).display).toBe('flex');
+      expect(getComputedStyle(createSpecialistContainer).flexDirection).toBe('column');
+      expect(getComputedStyle(createSpecialistContainer).gridTemplateRows).toBe('none');
+      expect(getComputedStyle(createSpecialistContainer).flexGrow).toBe('1');
+      expect(getComputedStyle(standardContainer).display).toBe('grid');
+      expect(getComputedStyle(standardContainer).gridTemplateRows).toBe(
+        'min-content min-content 1fr min-content',
+      );
+    } finally {
+      desktopStyles.remove();
+      scopedStyles.remove();
+      specialistContainer.remove();
+      allAgentsContainer.remove();
+      createSpecialistContainer.remove();
+      standardContainer.remove();
+    }
+  });
+
+  it('places global instructions before the description, defaults, and quiet reset action', async () => {
+    mocks.fileSpecialists$.set([
+      {
+        id: 'custom-reviewer',
+        name: 'Reviewer',
+        description: 'Reviews tasks',
+        codingAgent: 'codex',
+        model: 'codex:gpt-5.3-codex',
+        behaviorPrompt: 'Review carefully',
+        source: 'user',
+      },
+    ]);
+    render(AIBehaviorEditor, { activeView: { type: 'system-prompt' } });
+
+    const layout = screen.getByTestId('all-agents-editor-layout');
+    const promptColumn = screen.getByTestId('all-agents-prompt-column');
+    const defaultsColumn = screen.getByTestId('all-agents-defaults-column');
+    const description = within(defaultsColumn).getByText(
+      'Custom instructions that will be included for all agents.',
+    );
+    const modelRow = within(defaultsColumn).getByTestId('all-agents-default-model-row');
+    const reset = within(defaultsColumn).getByRole('button', { name: 'Reset all to default' });
+    const editorContainer = layout.parentElement;
+
+    expect(Array.from(layout.children)).toEqual([promptColumn, defaultsColumn]);
+    expect(layout.className).toContain('grid-cols-1');
+    expect(layout.className).toContain('xl:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]');
+    expect(layout.className).toContain('xl:h-full');
+    expect(layout.className).toContain('xl:min-h-0');
+    expect(layout.className).toContain('xl:flex-1');
+    expect(promptColumn.className).toContain('min-w-0');
+    expect(promptColumn.className).toContain('xl:flex-col');
+    expect(defaultsColumn.className).toContain('min-w-0');
+    expect(defaultsColumn.classList.contains('xl:pt-8')).toBe(true);
+    expect(Array.from(defaultsColumn.classList).some((className) => /^pt-/.test(className))).toBe(
+      false,
+    );
+    expect(editorContainer?.className).toContain('full-height-editor-container');
+    expect(editorContainer?.className).not.toContain('specialist-editor-container');
+    expect(within(promptColumn).getByRole('heading', { name: 'All agents' })).toBeTruthy();
+    expect(screen.getAllByRole('heading', { name: 'All agents' })).toHaveLength(1);
+    expect(within(promptColumn).queryByRole('heading', { name: 'Agent instructions' })).toBeNull();
+    expect(
+      within(promptColumn).queryByText('Custom instructions that will be included for all agents.'),
+    ).toBeNull();
+    expect(Array.from(defaultsColumn.children)).toEqual([description, modelRow, reset]);
+    expect(within(defaultsColumn).getByText('Default model')).toBeTruthy();
+    expect(within(defaultsColumn).getByTestId('mock-model-picker')).toBeTruthy();
+    expect(reset.parentElement).toBe(defaultsColumn);
+    expect(reset.className).toContain('self-start');
+    expect(reset.className).toContain('text-muted-foreground');
+    expect(reset.className).not.toContain('border');
+    expect(reset.className).not.toContain('rounded');
+    expect(reset.className).not.toContain('bg-');
+
+    await fireEvent.click(reset);
+    expect(mocks.dispatched.at(-1)).toEqual({
+      type: 'specialists/saveFileSpecialist',
+      payload: [
+        {
+          id: 'custom-reviewer',
+          name: 'Reviewer',
+          description: 'Reviews tasks',
+          codingAgent: 'codex',
+          model: undefined,
+          roleReminder: undefined,
+          modelOptions: undefined,
+          reasoningEffort: undefined,
+          behaviorPrompt: 'Review carefully',
+          scope: 'user',
+          workspacePath: undefined,
+        },
+      ],
+    });
+  });
+
+  it('hides Reset all to default when every specialist inherits', () => {
+    mocks.fileSpecialists$.set([
+      {
+        id: 'inheriting-reviewer',
+        name: 'Reviewer',
+        description: 'Reviews tasks',
+        behaviorPrompt: 'Review carefully',
+        source: 'user',
+      },
+    ]);
+
+    render(AIBehaviorEditor, { activeView: { type: 'system-prompt' } });
+
+    expect(screen.queryByRole('button', { name: 'Reset all to default' })).toBeNull();
+  });
+
+  it('places unsaved-instructions Undo beside the All agents title', async () => {
+    render(AIBehaviorEditor, { activeView: { type: 'system-prompt' } });
+
+    const promptColumn = screen.getByTestId('all-agents-prompt-column');
+    const textarea = (await within(promptColumn).findByRole('textbox')) as HTMLTextAreaElement;
+    expect(textarea.value).toBe('Original instructions');
+
+    await fireEvent.input(textarea, { target: { value: 'Edited instructions' } });
+
+    const header = within(promptColumn).getByTestId('agent-rules-header');
+    const heading = within(header).getByRole('heading', { name: 'All agents' });
+    const undo = within(header).getByRole('button', { name: 'Undo changes' });
+    expect(heading.parentElement).toBe(header);
+    expect(header.contains(undo)).toBe(true);
+    expect(header.className).toContain('items-center');
+    expect(heading.compareDocumentPosition(undo) & Node.DOCUMENT_POSITION_FOLLOWING).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    );
+
+    await fireEvent.click(undo);
+    expect(textarea.value).toBe('Original instructions');
+    expect(within(header).queryByRole('button', { name: 'Undo changes' })).toBeNull();
+  });
+
+  it('places the wider prompt column before specialist details in a responsive grid', async () => {
+    mocks.specialists$.set([specialist]);
+    render(AIBehaviorEditor, { activeView: { type: 'specialist', id: 'implementor' } });
+
+    const layout = screen.getByTestId('specialist-editor-layout');
+    const promptColumn = screen.getByTestId('specialist-prompt-column');
+    const detailsColumn = screen.getByTestId('specialist-details-column');
+    const editorContainer = layout.parentElement;
+    const textarea = within(promptColumn).getByRole('textbox');
+    const promptHeading = within(promptColumn).getByRole('heading', { name: 'Implementor' });
+    const textareaRegion = textarea.parentElement;
+    const autoSaveContainer = textareaRegion?.parentElement;
+
+    expect(Array.from(layout.children)).toEqual([promptColumn, detailsColumn]);
+    expect(layout.className).toContain('grid-cols-1');
+    expect(layout.className).toContain('xl:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]');
+    expect(layout.className).toContain('xl:h-full');
+    expect(layout.className).toContain('xl:min-h-0');
+    expect(layout.className).toContain('xl:flex-1');
+    expect(layout.className).toContain('xl:items-stretch');
+    expect(editorContainer?.className).toContain('specialist-editor-container');
+    expect(editorContainer?.className).toContain('xl:h-full');
+    expect(editorContainer?.className).toContain('xl:min-h-0');
+    expect(editorContainer?.className).toContain('xl:flex-col');
+    expect(promptColumn.className).toContain('min-w-0');
+    expect(promptColumn.className).toContain('h-full');
+    expect(promptColumn.className).toContain('xl:flex-col');
+    expect(detailsColumn.className).toContain('min-w-0');
+    expect(detailsColumn.classList.contains('xl:pt-8')).toBe(true);
+    expect(Array.from(detailsColumn.classList).some((className) => /^pt-/.test(className))).toBe(
+      false,
+    );
+    expect(autoSaveContainer?.className).toContain('h-full');
+    expect(autoSaveContainer?.className).toContain('xl:min-h-0');
+    expect(autoSaveContainer?.className).toContain('xl:flex-1');
+    expect(textareaRegion?.className).toContain('min-h-0');
+    expect(textareaRegion?.className).toContain('grow');
+    expect(textarea.className).toContain('grow');
+    expect(promptHeading.compareDocumentPosition(textarea) & Node.DOCUMENT_POSITION_FOLLOWING).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    );
+    expect(within(promptColumn).queryByText('System prompt')).toBeNull();
+    expect(textarea.tagName).toBe('TEXTAREA');
+    expect(screen.getAllByRole('heading', { name: 'Implementor' })).toHaveLength(1);
+    expect(within(detailsColumn).queryByRole('heading', { name: 'Implementor' })).toBeNull();
+    expect(within(detailsColumn).queryByText('Implementor')).toBeNull();
+    expect(screen.queryByText('Modified')).toBeNull();
+    expect(within(detailsColumn).getByText('Implements tasks')).toBeTruthy();
+    expect(within(detailsColumn).queryByText('~/.intent/specialists/implementor.md')).toBeNull();
+    expect(detailsColumn.textContent).not.toContain('This is a built-in specialist');
+    expect(within(detailsColumn).getByTestId('mock-model-picker')).toBeTruthy();
+    const advancedSummary = within(detailsColumn).getByText('Advanced', { selector: 'summary' });
+    const advancedDetails = advancedSummary.closest('details');
+    expect(advancedDetails).toBeTruthy();
+    expect(advancedDetails?.open).toBe(false);
+    expect(advancedSummary.className).toContain('text-ui');
+    expect(advancedSummary.className).toContain('text-muted-foreground');
+    expect(advancedSummary.className).toContain('cursor-pointer');
+
+    await fireEvent.click(advancedSummary);
+
+    expect(advancedDetails?.open).toBe(true);
+    expect(
+      within(advancedDetails as HTMLElement).getByRole('button', { name: 'Add model option' }),
+    ).toBeTruthy();
+  });
+
+  it('orders Modified, Reset, and Open-in in the single specialist prompt header', async () => {
+    mocks.hasOverrides.value = true;
+    mocks.effectivePrompt.value = 'customized prompt';
+    mocks.specialistFilePath.value = '/Users/example/.intent/specialists/implementor.md';
+    mocks.specialists$.set([specialist]);
+    render(AIBehaviorEditor, { activeView: { type: 'specialist', id: 'implementor' } });
+
+    const promptColumn = screen.getByTestId('specialist-prompt-column');
+    const detailsColumn = screen.getByTestId('specialist-details-column');
+    const header = within(promptColumn).getByTestId('specialist-prompt-header');
+    const heading = within(promptColumn).getByRole('heading', { name: 'Implementor' });
+    const modifiedBadge = within(promptColumn).getByText('Modified');
+    const reset = within(promptColumn).getByRole('button', { name: 'Reset' });
+    const open = within(promptColumn).getByTestId('open-combo-button');
+
+    expect(screen.getAllByRole('heading', { name: 'Implementor' })).toHaveLength(1);
+    expect(screen.getAllByText('Modified')).toHaveLength(1);
+    expect(screen.getAllByRole('button', { name: 'Reset' })).toHaveLength(1);
+    expect(screen.getAllByTestId('open-combo-button')).toHaveLength(1);
+    expect(heading.parentElement).toBe(header);
+    expect(modifiedBadge.parentElement).toBe(header);
+    expect(reset.parentElement).toBe(header);
+    expect(open.closest('.ml-auto')?.parentElement).toBe(header);
+    expect(header.className).toContain('flex-wrap');
+    expect(heading.compareDocumentPosition(modifiedBadge) & Node.DOCUMENT_POSITION_FOLLOWING).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    );
+    expect(modifiedBadge.compareDocumentPosition(reset) & Node.DOCUMENT_POSITION_FOLLOWING).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    );
+    expect(reset.compareDocumentPosition(open) & Node.DOCUMENT_POSITION_FOLLOWING).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    );
+    expect(modifiedBadge.className).toContain('bg-primary/15');
+    expect(open.getAttribute('data-file-path')).toBe(
+      '/Users/example/.intent/specialists/implementor.md',
+    );
+    expect(editorSource).toContain('<Fa icon={faPencil} class="w-2.5 h-2.5" />');
+    expect(within(detailsColumn).queryByText('Implementor')).toBeNull();
+    expect(within(detailsColumn).queryByText('Modified')).toBeNull();
+    expect(within(detailsColumn).queryByRole('button', { name: 'Reset' })).toBeNull();
+    expect(within(detailsColumn).queryByTestId('open-combo-button')).toBeNull();
+    expect(within(detailsColumn).queryByText('~/.intent/specialists/implementor.md')).toBeNull();
+    expect(detailsColumn.textContent).not.toContain("You've customized this built-in specialist");
+    expect(detailsColumn.textContent).not.toContain('Click Reset to restore defaults.');
+
+    await fireEvent.click(reset);
+    expect(mocks.dispatched.at(-1)).toEqual({
+      type: 'specialists/deleteFileSpecialist',
+      payload: [{ id: 'implementor', scope: 'user' }],
+    });
+  });
+
+  it('updates the prompt heading when the selected specialist changes', async () => {
+    const reviewer = {
+      ...specialist,
+      id: 'reviewer',
+      name: 'Reviewer',
+      description: 'Reviews tasks',
+    };
+    mocks.specialists$.set([specialist, reviewer]);
+    const { rerender } = render(AIBehaviorEditor, {
+      activeView: { type: 'specialist', id: 'implementor' },
+    });
+
+    const promptColumn = screen.getByTestId('specialist-prompt-column');
+    expect(within(promptColumn).getByRole('heading', { name: 'Implementor' })).toBeTruthy();
+
+    await rerender({ activeView: { type: 'specialist', id: 'reviewer' } });
+
+    expect(within(promptColumn).getByRole('heading', { name: 'Reviewer' })).toBeTruthy();
+    expect(within(promptColumn).queryByRole('heading', { name: 'Implementor' })).toBeNull();
+    expect(within(promptColumn).queryByText('System prompt')).toBeNull();
+    expect(screen.getAllByRole('heading', { name: 'Reviewer' })).toHaveLength(1);
+    expect(
+      within(screen.getByTestId('specialist-details-column')).queryByText('Reviewer'),
+    ).toBeNull();
+  });
+
+  it('keeps the editable specialist name only in the prompt heading and saves renames', async () => {
+    mocks.fileSpecialist.value = {
+      ...specialist,
+      behaviorPrompt: 'custom prompt',
+      source: 'user',
+    };
+    mocks.specialists$.set([specialist]);
+    mocks.fileSpecialists$.set([mocks.fileSpecialist.value]);
+    const onSpecialistDeleted = vi.fn();
+    render(AIBehaviorEditor, {
+      activeView: { type: 'specialist', id: 'implementor' },
+      onSpecialistDeleted,
+    });
+
+    const promptColumn = screen.getByTestId('specialist-prompt-column');
+    const detailsColumn = screen.getByTestId('specialist-details-column');
+    const nameInput = within(promptColumn).getByRole('textbox', {
+      name: 'Name',
+    }) as HTMLInputElement;
+    const promptTextarea = within(promptColumn)
+      .getAllByRole('textbox')
+      .find((textbox) => textbox.tagName === 'TEXTAREA');
+    const descriptionInput = within(detailsColumn).getByRole('textbox') as HTMLInputElement;
+
+    expect(nameInput.value).toBe('Implementor');
+    expect(screen.getAllByDisplayValue('Implementor')).toHaveLength(1);
+    expect(promptTextarea?.tagName).toBe('TEXTAREA');
+    expect(descriptionInput.value).toBe('Implements tasks');
+    expect(within(detailsColumn).queryByDisplayValue('Implementor')).toBeNull();
+    expect(within(detailsColumn).queryByRole('heading')).toBeNull();
+
+    await fireEvent.input(nameInput, { target: { value: 'Renamed Implementor' } });
+    await fireEvent.blur(nameInput);
+
+    expect(mocks.dispatched.at(-1)).toEqual({
+      type: 'specialists/saveFileSpecialist',
+      payload: [
+        {
+          id: 'implementor',
+          name: 'Renamed Implementor',
+          description: 'Implements tasks',
+          codingAgent: '',
+          model: undefined,
+          roleReminder: undefined,
+          modelOptions: undefined,
+          reasoningEffort: undefined,
+          behaviorPrompt: '',
+          scope: 'user',
+          workspacePath: undefined,
+        },
+      ],
+    });
+
+    nameInput.focus();
+    await fireEvent.input(nameInput, { target: { value: 'Keyboard Renamed Implementor' } });
+    await fireEvent.keyDown(nameInput, { key: 'Enter' });
+
+    expect(mocks.dispatched.at(-1)).toEqual({
+      type: 'specialists/saveFileSpecialist',
+      payload: [
+        expect.objectContaining({ id: 'implementor', name: 'Keyboard Renamed Implementor' }),
+      ],
+    });
+
+    await fireEvent.click(within(detailsColumn).getByRole('button', { name: 'Delete specialist' }));
+
+    expect(mocks.dispatched.at(-1)).toEqual({
+      type: 'specialists/deleteFileSpecialist',
+      payload: [{ id: 'implementor', scope: 'user', workspacePath: undefined }],
+    });
+    expect(onSpecialistDeleted).toHaveBeenCalledOnce();
+  });
+
+  it('uses the full-height prompt-first two-column layout for Create Specialist', () => {
+    const { container } = render(AIBehaviorEditor, {
+      activeView: { type: 'create-specialist' },
+    });
+
+    const layout = screen.getByTestId('create-specialist-editor-layout');
+    const promptColumn = screen.getByTestId('create-specialist-prompt-column');
+    const detailsColumn = screen.getByTestId('create-specialist-details-column');
+
+    expect(layout.className).toContain('xl:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]');
+    expect(layout.firstElementChild).toBe(promptColumn);
+    expect(layout.lastElementChild).toBe(detailsColumn);
+    expect(within(promptColumn).getByRole('heading', { name: 'Create Specialist' })).toBeTruthy();
+    expect(
+      within(promptColumn).getByPlaceholderText('Instructions for this specialist...'),
+    ).toBeTruthy();
+    expect(within(promptColumn).queryByText('System prompt')).toBeNull();
+    expect(detailsColumn.textContent).not.toContain('Creates a file in');
+    expect(detailsColumn.textContent).not.toContain('~/.intent/specialists/');
+    expect(within(detailsColumn).getByPlaceholderText('e.g., Code Reviewer')).toBeTruthy();
+    expect(within(detailsColumn).getByRole('button', { name: 'Discard' })).toBeTruthy();
+    expect(
+      (
+        within(detailsColumn).getByRole('button', {
+          name: 'Create Specialist',
+        }) as HTMLButtonElement
+      ).disabled,
+    ).toBe(true);
+    expect(container.querySelector('.editor-container')?.className).toContain('xl:h-full');
+    expect(container.querySelector('.editor-container')?.className).toContain(
+      'full-height-editor-container',
+    );
+  });
+});
+
 describe('AIBehaviorEditor specialist prompt reactivity', () => {
   const specialist = {
     id: 'implementor',
@@ -543,7 +1026,9 @@ describe('AIBehaviorEditor create-specialist model reasoning', () => {
 
     await fireEvent.click(screen.getByTestId('pick-reasoning'));
     expect(screen.getByTestId('picker-reasoning').textContent).toBe('high');
-    await fireEvent.input(screen.getAllByRole('textbox')[0], { target: { value: 'Reviewer' } });
+    await fireEvent.input(screen.getByPlaceholderText('e.g., Code Reviewer'), {
+      target: { value: 'Reviewer' },
+    });
     await fireEvent.click(screen.getByRole('button', { name: 'Create Specialist' }));
 
     const save = mocks.dispatched.find((a) => a.type === 'specialists/saveFileSpecialist')
