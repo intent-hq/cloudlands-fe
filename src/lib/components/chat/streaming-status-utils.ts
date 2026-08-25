@@ -58,7 +58,7 @@ export interface StatusEvent {
 const PULSE_PHASES = new Set(['launch', 'init', 'session-create', 'session-load', 'prompt']);
 const TWIST_PHASES = new Set(['tool-call', 'tool-waiting']);
 
-export function getLatestStatusEvent(statusEvents: readonly StatusEvent[]): StatusEvent | null {
+function getLatestStatusEvent(statusEvents: readonly StatusEvent[]): StatusEvent | null {
   let latest: StatusEvent | null = null;
   for (const event of statusEvents) {
     if (!latest || event.timestamp >= latest.timestamp) latest = event;
