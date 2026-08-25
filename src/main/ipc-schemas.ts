@@ -1084,6 +1084,10 @@ export const ConnectionsForgetSchema = z.object({
   id: z.string().min(1, 'Connection ID is required'),
 });
 
+export const ConnectionsOpenSchema = z.object({
+  id: z.string().min(1, 'Connection ID is required'),
+});
+
 export const ConnectionsSwitchSchema = z.object({
   id: z.string().min(1, 'Connection ID is required'),
 });

@@ -22,6 +22,8 @@ const mockGetPath = vi.fn();
 const { FakeBrowserWindow } = vi.hoisted(() => {
   class FakeBrowserWindow {
     static instances: FakeBrowserWindow[] = [];
+    static focused: FakeBrowserWindow | null = null;
+    backendId = 'local';
     destroyed = false;
     bounds: { x: number; y: number; width: number; height: number };
     handlers = new Map<string, (...args: unknown[]) => void>();
@@ -41,6 +43,16 @@ const { FakeBrowserWindow } = vi.hoisted(() => {
 
     static getAllWindows(): FakeBrowserWindow[] {
       return FakeBrowserWindow.instances.filter((w) => !w.destroyed);
+    }
+
+    static getFocusedWindow(): FakeBrowserWindow | null {
+      return FakeBrowserWindow.focused;
+    }
+
+    static fromWebContents(
+      webContents: FakeBrowserWindow['webContents'],
+    ): FakeBrowserWindow | null {
+      return FakeBrowserWindow.instances.find((w) => w.webContents === webContents) ?? null;
     }
 
     isDestroyed() {
@@ -71,6 +83,11 @@ const { FakeBrowserWindow } = vi.hoisted(() => {
     isFullScreen() {
       return false;
     }
+    restore = vi.fn();
+    show = vi.fn();
+    focus = vi.fn(() => {
+      FakeBrowserWindow.focused = this;
+    });
     emit(event: string, ...args: unknown[]) {
       this.handlers.get(event)?.(...args);
     }
@@ -106,13 +123,21 @@ vi.mock('../utils/resolve-app-title', () => ({
 
 import {
   _resetWindowSessionsCacheForTests,
+  captureWindowSessionsSnapshot,
   captureAndCloseWindowsForBackendSwitch,
+  closeWindowsForBackend,
   clearBackendSwitchWindowTeardownGuard,
   clearWindowSessionsSnapshot,
+  createWindow,
+  ensureLocalWindowBeforeClosingBackend,
   getWindowSessionsPath,
+  getBackendIdForWebContents,
+  getFocusedWindowBackendId,
   isBackendSwitchWindowTeardownInProgress,
   loadWindowSessions,
+  openOrFocusWindowsForBackend,
   restoreWindowsForBackend,
+  saveAllWindowSessions,
   saveWindowSessions,
   type WindowSession,
 } from '../window';
@@ -120,8 +145,10 @@ import {
 function seedLiveWindow(
   url: string,
   bounds = { x: 0, y: 0, width: 1200, height: 800 },
+  backendId = 'local',
 ): FakeBrowserWindow {
   const w = new FakeBrowserWindow(bounds);
+  w.backendId = backendId;
   w.setURLForTest(url);
   return w;
 }
@@ -138,6 +165,7 @@ describe('multi-backend window sessions', () => {
     mockGetPath.mockReset();
     mockGetPath.mockReturnValue(tmpDir);
     FakeBrowserWindow.instances = [];
+    FakeBrowserWindow.focused = null;
     _resetWindowSessionsCacheForTests();
   });
 
@@ -151,7 +179,7 @@ describe('multi-backend window sessions', () => {
       FakeBrowserWindow.instances = [];
       _resetWindowSessionsCacheForTests();
       const remoteBounds = { x: 30, y: 40, width: 1000, height: 700 };
-      seedLiveWindow('app://workspaces/work/remote', remoteBounds);
+      seedLiveWindow('app://workspaces/work/remote', remoteBounds, 'remote-1');
       await saveWindowSessions('remote-1');
 
       const map = readMap();
@@ -169,7 +197,7 @@ describe('multi-backend window sessions', () => {
       FakeBrowserWindow.instances = [];
       _resetWindowSessionsCacheForTests();
       const remoteBounds = { x: 5, y: 6, width: 1100, height: 720 };
-      seedLiveWindow('app://workspaces/work/r', remoteBounds);
+      seedLiveWindow('app://workspaces/work/r', remoteBounds, 'remote-1');
       await saveWindowSessions('remote-1');
 
       expect(loadWindowSessions('local')).toEqual([{ route: '/work/l', bounds: localBounds }]);
@@ -190,6 +218,42 @@ describe('multi-backend window sessions', () => {
       await saveWindowSessions('local');
       expect(readMap()).toEqual({ local: [{ route: '/work/default', bounds }] });
       expect(loadWindowSessions('local')).toEqual([{ route: '/work/default', bounds }]);
+    });
+
+    it('persists concurrently open local and remote windows without activeId', async () => {
+      const localBounds = { x: 10, y: 20, width: 1200, height: 800 };
+      const remoteBounds = { x: 30, y: 40, width: 1000, height: 700 };
+      seedLiveWindow('app://workspaces/work/local', localBounds, 'local');
+      seedLiveWindow('app://workspaces/work/remote', remoteBounds, 'remote-1');
+
+      await saveAllWindowSessions();
+
+      expect(readMap()).toEqual({
+        local: [{ route: '/work/local', bounds: localBounds }],
+        'remote-1': [{ route: '/work/remote', bounds: remoteBounds }],
+      });
+    });
+
+    it('does not restore a remote layout after its last window is explicitly closed', async () => {
+      const local = seedLiveWindow('app://workspaces/work/local', undefined, 'local');
+      const remote = seedLiveWindow('app://workspaces/work/closed', undefined, 'remote-1');
+      await saveAllWindowSessions();
+
+      captureWindowSessionsSnapshot.call(remote as never);
+      remote.destroy();
+
+      expect(loadWindowSessions('remote-1')).toBeNull();
+      await saveAllWindowSessions();
+      expect(readMap()).toEqual({
+        local: [{ route: '/work/local', bounds: local.bounds }],
+      });
+
+      openOrFocusWindowsForBackend('remote-1');
+      const remoteWindows = FakeBrowserWindow.getAllWindows().filter(
+        (window) => window.backendId === 'remote-1',
+      );
+      expect(remoteWindows).toHaveLength(1);
+      expect(remoteWindows[0].webContents.getURL()).not.toContain('/work/closed');
     });
   });
 
@@ -214,7 +278,7 @@ describe('multi-backend window sessions', () => {
       // Saving a remote backend must migrate the legacy local layout into the
       // map (under `local`) rather than dropping it.
       const remoteBounds = { x: 9, y: 9, width: 1000, height: 700 };
-      seedLiveWindow('app://workspaces/work/remote', remoteBounds);
+      seedLiveWindow('app://workspaces/work/remote', remoteBounds, 'remote-1');
       await saveWindowSessions('remote-1');
 
       expect(readMap()).toEqual({
@@ -257,6 +321,50 @@ describe('multi-backend window sessions', () => {
   });
 
   describe('restoreWindowsForBackend', () => {
+    it('stamps restored windows with their saved backend bucket', () => {
+      const bounds = { x: 100, y: 100, width: 1024, height: 768 };
+      fs.writeFileSync(
+        getWindowSessionsPath(),
+        JSON.stringify({
+          'remote-a': [{ route: '/work/a', bounds }],
+          'remote-b': [{ route: '/work/b', bounds }],
+        }),
+        'utf-8',
+      );
+
+      restoreWindowsForBackend('remote-a');
+      restoreWindowsForBackend('remote-b');
+
+      const live = FakeBrowserWindow.getAllWindows();
+      expect(getBackendIdForWebContents(live[0].webContents as never)).toBe('remote-a');
+      expect(getBackendIdForWebContents(live[1].webContents as never)).toBe('remote-b');
+    });
+
+    it('stamps a fresh window without a backend id as local', () => {
+      createWindow();
+
+      const [window] = FakeBrowserWindow.getAllWindows();
+      expect(getBackendIdForWebContents(window.webContents as never)).toBe('local');
+    });
+
+    it('defaults an unbound IPC sender to local', () => {
+      expect(getBackendIdForWebContents({} as never)).toBe('local');
+    });
+
+    it('always stamps a restored HUD window as local', () => {
+      const bounds = { x: 100, y: 100, width: 1024, height: 768 };
+      fs.writeFileSync(
+        getWindowSessionsPath(),
+        JSON.stringify({ 'remote-a': [{ route: '/hud', bounds }] }),
+        'utf-8',
+      );
+
+      restoreWindowsForBackend('remote-a');
+
+      const [window] = FakeBrowserWindow.getAllWindows();
+      expect(getBackendIdForWebContents(window.webContents as never)).toBe('local');
+    });
+
     it('restores the incoming backend layout', () => {
       const remoteBounds = { x: 100, y: 100, width: 1024, height: 768 };
       fs.writeFileSync(
@@ -279,6 +387,82 @@ describe('multi-backend window sessions', () => {
       const live = FakeBrowserWindow.getAllWindows();
       expect(live).toHaveLength(1);
       expect(live[0].isDestroyed()).toBe(false);
+    });
+
+    it('adds saved remote sessions without destroying an existing local window', () => {
+      const bounds = { x: 100, y: 100, width: 1024, height: 768 };
+      const local = seedLiveWindow('app://workspaces/work/local', bounds);
+      (local as unknown as { backendId: string }).backendId = 'local';
+      fs.writeFileSync(
+        getWindowSessionsPath(),
+        JSON.stringify({ 'remote-1': [{ route: '/work/remote', bounds }] }),
+        'utf-8',
+      );
+
+      openOrFocusWindowsForBackend('remote-1');
+
+      const live = FakeBrowserWindow.getAllWindows();
+      expect(local.isDestroyed()).toBe(false);
+      expect(live).toHaveLength(2);
+      expect(getBackendIdForWebContents(live[1].webContents as never)).toBe('remote-1');
+    });
+
+    it('focuses an existing backend window instead of restoring duplicates', () => {
+      const remote = seedLiveWindow('app://workspaces/work/remote');
+      (remote as unknown as { backendId: string }).backendId = 'remote-1';
+
+      openOrFocusWindowsForBackend('remote-1');
+
+      expect(FakeBrowserWindow.getAllWindows()).toHaveLength(1);
+      expect(remote.show).toHaveBeenCalledOnce();
+      expect(remote.focus).toHaveBeenCalledOnce();
+    });
+
+    it('resolves the focused window backend for menu and quit consumers', () => {
+      const local = seedLiveWindow('app://workspaces/work/local', undefined, 'local');
+      const remote = seedLiveWindow('app://workspaces/work/remote', undefined, 'remote-1');
+
+      local.focus();
+      expect(getFocusedWindowBackendId()).toBe('local');
+      remote.focus();
+      expect(getFocusedWindowBackendId()).toBe('remote-1');
+    });
+
+    it('closes only windows belonging to the forgotten backend', () => {
+      const local = seedLiveWindow('app://workspaces/work/local', undefined, 'local');
+      const remote = seedLiveWindow('app://workspaces/work/remote', undefined, 'remote-1');
+
+      closeWindowsForBackend('remote-1');
+
+      expect(local.isDestroyed()).toBe(false);
+      expect(remote.isDestroyed()).toBe(true);
+      expect(FakeBrowserWindow.getAllWindows()).toEqual([local]);
+    });
+
+    it('opens local before closing the last backend windows', () => {
+      const remote = seedLiveWindow('app://workspaces/work/remote', undefined, 'remote-1');
+
+      ensureLocalWindowBeforeClosingBackend('remote-1');
+
+      const beforeClose = FakeBrowserWindow.getAllWindows();
+      expect(beforeClose).toHaveLength(2);
+      expect(getBackendIdForWebContents(beforeClose[1].webContents as never)).toBe('local');
+
+      closeWindowsForBackend('remote-1');
+      expect(remote.isDestroyed()).toBe(true);
+      expect(FakeBrowserWindow.getAllWindows()).toEqual([beforeClose[1]]);
+    });
+
+    it('does not open local when another backend window will survive', () => {
+      const forgotten = seedLiveWindow('app://workspaces/work/a', undefined, 'remote-1');
+      const surviving = seedLiveWindow('app://workspaces/work/b', undefined, 'remote-2');
+
+      ensureLocalWindowBeforeClosingBackend('remote-1');
+      closeWindowsForBackend('remote-1');
+
+      expect(forgotten.isDestroyed()).toBe(true);
+      expect(surviving.isDestroyed()).toBe(false);
+      expect(FakeBrowserWindow.getAllWindows()).toEqual([surviving]);
     });
   });
 

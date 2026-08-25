@@ -5846,6 +5846,7 @@
   "layout_daemonStatus_connectToAnother_action": "Se connecter à un autre intentd…",
   "layout_daemonStatus_localConnection_label": "Cet ordinateur (local)",
   "layout_daemonStatus_connectionActive_label": "Actif",
+  "layout_daemonStatus_open_action": "Ouvrir",
   "layout_daemonStatus_switch_action": "Basculer",
   "layout_daemonStatus_forget_action": "Oublier",
   "modals_connect_title": "Se connecter à un autre intentd",

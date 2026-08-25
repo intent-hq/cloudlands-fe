@@ -2,7 +2,7 @@
  * Connections IPC bridge — mock fallback for the multi-backend connect channels.
  *
  * Bridges the `connections:*` request/response channels (`list`,
- * `capture-fingerprint`, `add`, `forget`, `switch`) so the connections service
+ * `capture-fingerprint`, `add`, `forget`, `open`, `switch`) so the connections service
  * thunks resolve in bridge-less builds (browser mock) and tests instead of
  * rejecting with UnbridgedMockIpcChannelError.
  *
@@ -26,6 +26,8 @@ import type {
   AddConnectionResult,
   ForgetConnectionParams,
   ForgetConnectionResult,
+  OpenConnectionParams,
+  OpenConnectionResult,
   SwitchConnectionParams,
   SwitchConnectionResult,
   ConnectionBootFallbackEvent,
@@ -85,6 +87,11 @@ registerMockIpcHandler(CONNECTION_CHANNELS.FORGET, async (arg): Promise<ForgetCo
   const { id } = arg as ForgetConnectionParams;
   connections = connections.filter((c) => c.id !== id || c.isLocal);
   if (activeId === id) activeId = LOCAL_CONNECTION_ID;
+  return { id };
+});
+
+registerMockIpcHandler(CONNECTION_CHANNELS.OPEN, async (arg): Promise<OpenConnectionResult> => {
+  const { id } = arg as OpenConnectionParams;
   return { id };
 });
 

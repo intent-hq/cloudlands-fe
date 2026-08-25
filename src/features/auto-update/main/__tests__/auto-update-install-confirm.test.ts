@@ -56,7 +56,7 @@ vi.mock('../../../../main/quit-confirmation', () => ({
 }));
 
 vi.mock('../../../../main/window', () => ({
-  saveWindowSessions: vi.fn(async () => {}),
+  saveAllWindowSessions: vi.fn(async () => {}),
 }));
 
 let testUserDataPath: string;
@@ -65,7 +65,7 @@ let testUserDataPath: string;
 async function setupDownloadedService() {
   const svc = await import('../auto-update.service');
   const { confirmQuitWithRunningAgents } = await import('../../../../main/quit-confirmation');
-  const { saveWindowSessions } = await import('../../../../main/window');
+  const { saveAllWindowSessions } = await import('../../../../main/window');
   const { default: electronUpdater } = await import('electron-updater');
 
   const mockWindow = {
@@ -84,7 +84,7 @@ async function setupDownloadedService() {
   return {
     svc,
     confirmMock: confirmQuitWithRunningAgents as Mock,
-    saveMock: saveWindowSessions as Mock,
+    saveMock: saveAllWindowSessions as Mock,
     quitAndInstallMock: electronUpdater.autoUpdater.quitAndInstall as Mock,
   };
 }
@@ -123,7 +123,7 @@ describe('AutoUpdateService.installUpdate confirmation gating', () => {
     expect(quitAndInstallMock).toHaveBeenCalledWith(false, true);
   });
 
-  it('confirm proceeds: confirmation runs BEFORE saveWindowSessions, then flag + quitAndInstall(false, true)', async () => {
+  it('confirm proceeds: confirmation runs before saving all backend windows and installing', async () => {
     const { svc, confirmMock, saveMock, quitAndInstallMock } = await setupDownloadedService();
     confirmMock.mockResolvedValue(true);
 

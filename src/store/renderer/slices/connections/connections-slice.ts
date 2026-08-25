@@ -2,7 +2,7 @@
  * Connections Slice
  *
  * Actions + reducer for the multi-backend connect feature. Tracks the
- * connections list, the active backend, the in-flight add/switch operation
+ * connections list, the active backend, the in-flight add/open/switch operation
  * status, and the last pinned-cert mismatch.
  *
  * The list + active selection are authoritative from main: they are set from
@@ -24,6 +24,7 @@ import type {
   ConnectionRecord,
   ConnectionsState,
   ConnectionsListResult,
+  OpenConnectionResult,
   ConnectionAuthRejectedEvent,
   ConnectionCertMismatchEvent,
   ConnectionProtocolMismatchEvent,
@@ -59,19 +60,19 @@ export const connectionsListReceived = createAction<[result: ConnectionsListResu
 );
 
 /**
- * An add/switch operation started (thunk invoked its IPC channel). Moves
+ * An add/open/switch operation started (its saga invoked the IPC channel). Moves
  * status to 'connecting' and clears any prior error.
  */
 export const connectOperationStarted = createAction('connections/operationStarted');
 
 /**
- * The in-flight add/switch operation succeeded. Status returns to 'idle'; the
+ * The in-flight add/open/switch operation succeeded. Status returns to 'idle'; the
  * list/active refresh arrives separately via the `connections:changed` push.
  */
 export const connectOperationSettled = createAction('connections/operationSettled');
 
 /**
- * The in-flight add/switch operation failed. Status moves to 'error' and the
+ * The in-flight add/open/switch operation failed. Status moves to 'error' and the
  * message is stored for the UI.
  */
 export const connectOperationFailed = createAction<[error: string]>('connections/operationFailed');
@@ -132,13 +133,18 @@ export const captureFingerprintRequested = createAsyncAction<
 
 /**
  * Saga-owned connection add request. Resolves with the token-free record plus
- * whether main already switched to it (active re-pair rebuilds the live client
- * in the add handler — the caller must then skip its own follow-up switch).
+ * whether main rebuilt an active connection's client in place.
  */
 export const addConnectionRequested = createAsyncAction<
   [params: AddConnectionParams],
   AddConnectionResult
 >('connections/add', 'connections/addRequested');
+
+/** Saga-owned non-destructive open/focus request for one backend. */
+export const openConnectionRequested = createAsyncAction<[id: string], OpenConnectionResult>(
+  'connections/open',
+  'connections/openRequested',
+);
 
 /** Saga-owned stored-connection removal request. */
 export const forgetConnectionRequested = createAsyncAction<[id: string], void>(

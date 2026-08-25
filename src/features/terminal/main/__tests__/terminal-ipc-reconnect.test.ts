@@ -14,6 +14,8 @@ import * as os from 'os';
 const mocks = vi.hoisted(() => ({
   handlers: new Map<string, Function>(),
   backendRequest: vi.fn(),
+  remoteBackendRequest: vi.fn(),
+  backendId: { value: 'local' },
   clientOn: vi.fn(),
   mainDispatch: vi.fn(),
 }));
@@ -28,6 +30,12 @@ vi.mock('electron', () => ({
 
 vi.mock('../../../backend/main/backend.ipc', () => ({
   getBackendClient: () => ({ request: mocks.backendRequest, on: mocks.clientOn }),
+  getBackendClientForConnection: (id: string) => ({
+    request: id === 'remote-1' ? mocks.remoteBackendRequest : mocks.backendRequest,
+    on: mocks.clientOn,
+  }),
+  getBackendIdForIpcSender: () => mocks.backendId.value,
+  getPrimaryBackendId: () => 'local',
   onBackendReconnected: vi.fn(() => () => {}),
   // T9: the registry attaches its notification listener via the stable
   // forwarder now; these tests don't exercise event delivery, so a no-op
@@ -68,6 +76,7 @@ describe('terminal.ipc PROFESSIONAL_CREATE reconnect (monorepo#1330)', () => {
     vi.resetModules();
     vi.clearAllMocks();
     mocks.handlers.clear();
+    mocks.backendId.value = 'local';
     let ptySeq = 0;
     mocks.backendRequest.mockImplementation(async (method: string) => {
       switch (method) {
@@ -80,6 +89,7 @@ describe('terminal.ipc PROFESSIONAL_CREATE reconnect (monorepo#1330)', () => {
           return {};
       }
     });
+    mocks.remoteBackendRequest.mockImplementation(mocks.backendRequest.getMockImplementation()!);
   });
 
   it('reconnects when the caller passes the original local id (working baseline)', async () => {
@@ -121,5 +131,19 @@ describe('terminal.ipc PROFESSIONAL_CREATE reconnect (monorepo#1330)', () => {
       reconnected: true,
     });
     expect(countCreateCalls()).toBe(1);
+  });
+
+  it('routes a remote-bound window PTY to the remote daemon client', async () => {
+    mocks.backendId.value = 'remote-1';
+    const { create } = await setup();
+
+    await expect(create({}, { workspaceId: WS, cwd: '/remote/workspace' })).resolves.toMatchObject({
+      success: true,
+    });
+    expect(mocks.remoteBackendRequest).toHaveBeenCalledWith(
+      'terminal.create',
+      expect.objectContaining({ workspaceId: WS, cwd: '/remote/workspace' }),
+    );
+    expect(mocks.backendRequest).not.toHaveBeenCalledWith('terminal.create', expect.anything());
   });
 });

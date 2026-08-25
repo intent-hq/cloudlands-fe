@@ -43,8 +43,10 @@ import * as path from 'path';
 
 interface FakeWindow {
   id: number;
+  backendId: string;
   destroyed: boolean;
   isDestroyed(): boolean;
+  focus(): void;
   webContents: { send: ReturnType<typeof vi.fn> };
 }
 
@@ -70,6 +72,8 @@ vi.mock('electron', () => ({
   },
   BrowserWindow: {
     getAllWindows: () => (electronState.windows as FakeWindow[]).filter((w) => !w.isDestroyed()),
+    fromWebContents: (webContents: FakeWindow['webContents']) =>
+      (electronState.windows as FakeWindow[]).find((w) => w.webContents === webContents) ?? null,
   },
   safeStorage: {
     isEncryptionAvailable: () => true,
@@ -167,14 +171,16 @@ const REMOTE_INPUT = {
 const FINGERPRINT = 'AA:BB:CC:DD';
 
 /** Add a live renderer-window double; returns its `send` spy. */
-function openWindow(): ReturnType<typeof vi.fn> {
+function openWindow(backendId = 'local'): ReturnType<typeof vi.fn> {
   const send = vi.fn();
   const win: FakeWindow = {
     id: electronState.windows.length + 1,
+    backendId,
     destroyed: false,
     isDestroyed() {
       return this.destroyed;
     },
+    focus: vi.fn(),
     webContents: { send },
   };
   electronState.windows.push(win);
@@ -200,11 +206,18 @@ async function loadModule() {
   const captureAndClose = vi.fn(async () => {
     for (const w of electronState.windows as FakeWindow[]) w.destroyed = true;
   });
-  const restore = vi.fn(async () => {
-    openWindow();
+  const restore = vi.fn(async (backendId: string) => {
+    openWindow(backendId);
   });
-  mod.__setBackendWindowHooksForTesting({ captureAndClose, restore });
-  return { mod, captureAndClose, restore };
+  const openOrFocus = vi.fn(async (backendId: string) => {
+    const existing = (electronState.windows as FakeWindow[]).find(
+      (window) => !window.isDestroyed() && window.backendId === backendId,
+    );
+    if (existing) existing.focus();
+    else openWindow(backendId);
+  });
+  mod.__setBackendWindowHooksForTesting({ captureAndClose, restore, openOrFocus });
+  return { mod, captureAndClose, restore, openOrFocus };
 }
 
 /** Invoke a registered IPC handler by channel (params validated as in prod). */
@@ -238,6 +251,31 @@ afterEach(async () => {
 // ---------------------------------------------------------------------------
 
 describe('multi-backend connect — end-to-end journey', () => {
+  it('opens a remote window without destroying the local window or client', async () => {
+    const { mod, captureAndClose, restore, openOrFocus } = await loadModule();
+    mod.registerBackendHandlers();
+    openWindow('local');
+    const localClient = mod.getBackendClient();
+
+    const added = await invoke<{ connection: { id: string } }>('connections:add', {
+      ...REMOTE_INPUT,
+      fingerprint: FINGERPRINT,
+    });
+    const remoteId = added.connection.id;
+
+    await expect(invoke('connections:open', { id: remoteId })).resolves.toEqual({ id: remoteId });
+
+    const live = (electronState.windows as FakeWindow[]).filter((window) => !window.isDestroyed());
+    expect(live.map((window) => window.backendId)).toEqual(['local', remoteId]);
+    expect(captureAndClose).not.toHaveBeenCalled();
+    expect(restore).not.toHaveBeenCalled();
+    expect(openOrFocus).toHaveBeenCalledWith(remoteId);
+    expect(mod.getBackendClient()).toBe(localClient);
+    expect(mod.getBackendClientForConnection('local')).toBe(localClient);
+    expect(mod.getBackendClientForConnection(remoteId)).toBeDefined();
+    await expect(invoke('connections:list')).resolves.toMatchObject({ activeId: 'local' });
+  });
+
   it('adds a remote, confirms its fingerprint, switches (close+reload), and back to local', async () => {
     const { mod, captureAndClose, restore } = await loadModule();
     mod.registerBackendHandlers();
@@ -322,11 +360,11 @@ describe('multi-backend connect — end-to-end journey', () => {
     await expect(invoke('connections:list')).resolves.toMatchObject({ activeId: 'local' });
   });
 
-  it('re-pairing a pre-existing ACTIVE duplicate collapses the duplicates and reconnects (switched: true)', async () => {
+  it('re-pairing an active duplicate refreshes its client without window teardown', async () => {
     // Earlier app versions allowed repeated host:port entries. Seed such a file
     // where a NON-first duplicate is the active backend, then re-pair the same
     // host:port: the collapse must keep the ACTIVE record's id so the add
-    // handler takes the active-reconnect path (full switch, switched: true)
+    // handler takes the active client-refresh path (switched: true)
     // instead of treating it as a non-active upsert.
     await fs.writeFile(
       path.join(tmpDir, 'backend-connections.json'),
@@ -351,10 +389,10 @@ describe('multi-backend connect — end-to-end journey', () => {
     );
 
     // The ACTIVE duplicate's id survived the collapse and the live client was
-    // rebuilt via a switch to itself (windows closed + restored on the same id).
+    // rebuilt without closing or restoring windows.
     expect(result).toMatchObject({ connection: { id: 'dup-2' }, switched: true });
-    expect(captureAndClose).toHaveBeenCalledWith('dup-2');
-    expect(restore).toHaveBeenCalledWith('dup-2');
+    expect(captureAndClose).not.toHaveBeenCalled();
+    expect(restore).not.toHaveBeenCalled();
 
     // The rebuilt client carries the rotated token, and only one record remains.
     const config = mod.getBackendClient().getConfig() as Record<string, unknown>;

@@ -5846,6 +5846,7 @@
   "layout_daemonStatus_connectToAnother_action": "Conectar a otro intentd…",
   "layout_daemonStatus_localConnection_label": "Este equipo (local)",
   "layout_daemonStatus_connectionActive_label": "Activo",
+  "layout_daemonStatus_open_action": "Abrir",
   "layout_daemonStatus_switch_action": "Cambiar",
   "layout_daemonStatus_forget_action": "Olvidar",
   "modals_connect_title": "Conectar a otro intentd",

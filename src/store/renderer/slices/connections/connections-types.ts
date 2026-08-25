@@ -24,6 +24,7 @@ export type {
   CaptureFingerprintResult,
   ConnectionRecord,
   ConnectionsListResult,
+  OpenConnectionResult,
   ConnectionAuthRejectedEvent,
   ConnectionCertMismatchEvent,
   ConnectionProtocolMismatchEvent,
@@ -32,7 +33,7 @@ export type {
 /**
  * Status of the current connect/switch operation (add or switch).
  *   - `idle`       → no operation in flight.
- *   - `connecting` → an add/switch invoke is pending.
+ *   - `connecting` → an add/open/switch invoke is pending.
  *   - `error`      → the last operation failed (see `error`).
  */
 type ConnectionOpStatus = 'idle' | 'connecting' | 'error';
@@ -52,9 +53,9 @@ export interface ConnectionsState {
    * work (e.g. workspace-tab reconciliation) gates on this flag.
    */
   hasReceivedList: boolean;
-  /** Status of the in-flight add/switch operation. */
+  /** Status of the in-flight add/open/switch operation. */
   status: ConnectionOpStatus;
-  /** Error message from the last failed add/switch operation, or null. */
+  /** Error message from the last failed add/open/switch operation, or null. */
   error: string | null;
   /**
    * Last cert-mismatch push (`connections:cert-mismatch`), or null. A pinned

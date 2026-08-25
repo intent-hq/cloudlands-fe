@@ -30,6 +30,8 @@ import type {
   ConnectionsListResult,
   ForgetConnectionParams,
   ForgetConnectionResult,
+  OpenConnectionParams,
+  OpenConnectionResult,
   SwitchConnectionParams,
   SwitchConnectionResult,
 } from '$shared/types/connections';
@@ -44,6 +46,7 @@ import {
   connectionsListReceived,
   forgetConnectionRequested,
   loadConnectionsRequested,
+  openConnectionRequested,
   protocolMismatchReceived,
   switchConnectionRequested,
 } from '../connections-slice';
@@ -120,6 +123,12 @@ async function invokeAddConnection(params: AddConnectionParams): Promise<AddConn
   const api = getApi();
   if (!api) throw new Error('electronAPI is not available');
   return (await api.invoke(CONNECTIONS.ADD, params)) as AddConnectionResult;
+}
+
+async function invokeOpenConnection(params: OpenConnectionParams): Promise<OpenConnectionResult> {
+  const api = getApi();
+  if (!api) throw new Error('electronAPI is not available');
+  return (await api.invoke(CONNECTIONS.OPEN, params)) as OpenConnectionResult;
 }
 
 async function invokeForgetConnection(
@@ -218,6 +227,28 @@ function* forgetConnection(
   }
 }
 
+function* openConnection(action: ReturnType<typeof openConnectionRequested>): SagaGenerator<void> {
+  let settled = false;
+  yield* put(connectOperationStarted());
+  try {
+    const result = yield* call(invokeOpenConnection, { id: action.payload[0] });
+    yield* put(connectOperationSettled());
+    yield* put(action.success(result));
+    settled = true;
+  } catch (error) {
+    const resolved = toError(error);
+    yield* put(connectOperationFailed(resolved.message));
+    yield* put(action.failure(resolved));
+    settled = true;
+  } finally {
+    if (!settled && (yield* cancelled())) {
+      const resolved = new Error('Connection open was cancelled');
+      yield* put(connectOperationFailed(resolved.message));
+      yield* put(action.failure(resolved));
+    }
+  }
+}
+
 function* switchConnection(
   action: ReturnType<typeof switchConnectionRequested>,
 ): SagaGenerator<void> {
@@ -262,6 +293,7 @@ function* watchConnectionsActions(): SagaGenerator<void> {
     takeLeading(loadConnectionsRequested, hydrateConnections),
     takeLeading(captureFingerprintRequested, captureFingerprint),
     takeLeading(addConnectionRequested, addConnection),
+    takeLeading(openConnectionRequested, openConnection),
     takeLeading(forgetConnectionRequested, forgetConnection),
     takeLeading(switchConnectionRequested, switchConnection),
   ]);

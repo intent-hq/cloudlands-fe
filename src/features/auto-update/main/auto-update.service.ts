@@ -16,8 +16,7 @@ import { DEFAULTS } from '../../../shared/constants';
 import { Logger } from '../../../shared/logger';
 import { m } from '../../../shared/paraglide/messages.js';
 import { confirmQuitWithRunningAgents } from '../../../main/quit-confirmation';
-import { saveWindowSessions } from '../../../main/window';
-import { getActiveId } from '../../backend/main/connections-store';
+import { saveAllWindowSessions } from '../../../main/window';
 import { broadcastToRenderers } from './auto-update-broadcast';
 import { isUpdateChannel, type UpdateChannel, type UpdateState, type UpdateStatus } from '../types';
 
@@ -684,9 +683,8 @@ class AutoUpdateService {
       }
 
       logger.info('Saving window sessions before installing update...');
-      // Persist under the currently-active backend (T21) so the update-restart
-      // restores the same backend's windows rather than clobbering local's slot.
-      await saveWindowSessions(await getActiveId());
+      // Persist every live backend. activeId remains only the boot restore default.
+      await saveAllWindowSessions();
       isInstallingUpdate = true;
 
       logger.info('Installing update and restarting...');

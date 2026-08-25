@@ -140,6 +140,7 @@ describe('SYSTEM_CHANNELS.EXECUTE_COMMAND → host.exec (shell shim, PROTOCOL.md
 
     expect(hostExecMock).toHaveBeenCalledWith(SHELL_CMD, {
       args: [SHELL_FLAG, 'git rev-parse --abbrev-ref HEAD'],
+      backendId: 'local',
       cwd: '/ws/repo',
       workspaceId: 'amber-forest',
       timeoutMs: 30_000,
@@ -207,6 +208,7 @@ describe('SYSTEM_CHANNELS.EXECUTE_COMMAND → host.exec (shell shim, PROTOCOL.md
       SHELL_CMD,
       {
         args: [SHELL_FLAG, 'git commit --amend -m "fix: typo"'],
+        backendId: 'local',
         cwd: '/ws/repo',
         workspaceId: 'amber-forest',
         timeoutMs: 30_000,
@@ -253,8 +255,10 @@ describe('SYSTEM_CHANNELS.EXECUTE_COMMAND → host.exec (shell shim, PROTOCOL.md
     // containment check (parity with the web bridge's `if (cwd)`).
     expect(hostExecMock).toHaveBeenCalledWith(SHELL_CMD, {
       args: [SHELL_FLAG, 'git --version'],
+      backendId: 'local',
       cwd: '',
       timeoutMs: 30_000,
+      workspaceId: undefined,
     });
     expect(result.success).toBe(true);
   });
