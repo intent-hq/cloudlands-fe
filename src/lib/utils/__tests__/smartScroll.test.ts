@@ -648,9 +648,45 @@ describe('followBottom policy', () => {
     // Fresh outro config: Svelte discards the cached options after introend,
     // so a `transition:` outro re-enters safeDisclosureTransition here.
     const outro = safeDisclosureTransition(child, {}, { direction: 'both' });
+    expect(outro.tick).toBeDefined();
 
     // Throttled rAF delivers the whole outro as one tick at its end.
     outro.tick?.(0, 1);
+    runSettleTail();
+
+    expect(animationFrames).toHaveLength(0);
+    action.destroy();
+  });
+
+  it('recovers a fresh outro whose first tick lands exactly on its start time', () => {
+    const child = document.createElement('div');
+    container.append(child);
+    vi.spyOn(window, 'getComputedStyle').mockReturnValue({
+      height: '40px',
+      opacity: '1',
+      paddingTop: '0px',
+      paddingBottom: '0px',
+      marginTop: '0px',
+      marginBottom: '0px',
+    } as CSSStyleDeclaration);
+    vi.stubGlobal(
+      'matchMedia',
+      vi.fn(() => ({ matches: false })),
+    );
+    const action = followBottom(container, { follow: true });
+    const outro = safeDisclosureTransition(child, {}, { direction: 'both' });
+    expect(outro.tick).toBeDefined();
+
+    // rAF timestamp exactly on the start time: easing(0) = 0 ⇒ t = 1, which
+    // the t < 1 first-tick guard excludes — the early settle fires and the
+    // falling ticks re-acquire through the reversal path.
+    outro.tick?.(1, 0);
+    scrollHeight -= 20;
+    outro.tick?.(0.5, 0.5);
+    expect(scrollTop).toBe(580);
+    scrollHeight -= 20;
+    outro.tick?.(0, 1);
+    expect(scrollTop).toBe(560);
     runSettleTail();
 
     expect(animationFrames).toHaveLength(0);
@@ -674,6 +710,7 @@ describe('followBottom policy', () => {
     );
     const action = followBottom(container, { follow: true });
     const intro = safeDisclosureTransition(child, {}, { direction: 'both' });
+    expect(intro.tick).toBeDefined();
 
     intro.tick?.(0, 1);
     scrollHeight += 20;
