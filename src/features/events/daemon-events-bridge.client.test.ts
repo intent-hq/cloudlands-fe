@@ -1395,6 +1395,64 @@ describe('daemonEventsBridge (live stream wire contract — agent:stream:* → t
     expect(readStatusEvents()).toHaveLength(countBefore + 1);
   });
 
+  it('agent:stream:status carries silentMs through on stalled events and omits it elsewhere', async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+    const at = 1_700_000_000_000;
+
+    // `stalled` (monorepo#3402) carries the additive `silentMs` — the silence
+    // already measured at emission — so the UI can anchor its live counter at
+    // `timestamp - silentMs` instead of starting at 1s.
+    handler(
+      notification('agent:stream:status', {
+        agentId: AGENT,
+        workspaceId: WS,
+        phase: 'stalled',
+        message: 'No model activity for 90s',
+        level: 'warn',
+        silentMs: 90_000,
+        timestamp: at,
+      }),
+    );
+    let events = readStatusEvents();
+    expect(events[events.length - 1]).toMatchObject({
+      phase: 'stalled',
+      level: 'warn',
+      timestamp: at,
+      silentMs: 90_000,
+    });
+
+    // A non-numeric silentMs is dropped rather than stored.
+    handler(
+      notification('agent:stream:status', {
+        agentId: AGENT,
+        workspaceId: WS,
+        phase: 'stalled',
+        message: 'No model activity for 90s',
+        level: 'warn',
+        silentMs: 'not-a-number',
+        timestamp: at + 1,
+      }),
+    );
+    events = readStatusEvents();
+    expect(events[events.length - 1].silentMs).toBeUndefined();
+
+    // Events without the field (resumed, startup phases) carry no silentMs.
+    handler(
+      notification('agent:stream:status', {
+        agentId: AGENT,
+        workspaceId: WS,
+        phase: 'resumed',
+        message: 'Model activity resumed',
+        level: 'info',
+        timestamp: at + 2,
+      }),
+    );
+    events = readStatusEvents();
+    expect(events[events.length - 1]).toMatchObject({ phase: 'resumed' });
+    expect(events[events.length - 1].silentMs).toBeUndefined();
+  });
+
   it('agent:stream:status preserves the daemon message for every canonical startup phase', async () => {
     await primeBridge();
     const handler = capturedHandlers[0]!;
