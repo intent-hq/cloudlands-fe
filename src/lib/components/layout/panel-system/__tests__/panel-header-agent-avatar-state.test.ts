@@ -86,7 +86,7 @@ function expectChatBubbleIdentity(root: ParentNode) {
 function expectHeaderAvatarIdentity(root: ParentNode, agentId: string) {
   const avatar = root.querySelector<HTMLElement>('[data-testid="mock-avatar"]');
   expect(avatar?.dataset.agentId).toBe(agentId);
-  expect(avatar?.dataset.avatarVariant).toBe('compact');
+  expect(avatar?.dataset.avatarVariant).toBe('standard');
   expect(avatar?.hasAttribute('data-agent-avatar-surface')).toBe(true);
   expect(root.querySelector('[data-panel-agent-chat-glyph]')).toBeNull();
 }
