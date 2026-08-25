@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { tick } from 'svelte';
   import { Popover } from 'bits-ui';
   import { Input } from '$lib/components/ui/input';
   import ChatTextIcon from 'phosphor-svelte/lib/ChatTextIcon';
@@ -85,8 +86,9 @@
   }
 
   async function selectMessage(messageId: string) {
-    await onSelectMessage(messageId);
     open = false;
+    await tick();
+    await onSelectMessage(messageId);
   }
 
   function handleSearchKeydown(event: KeyboardEvent) {

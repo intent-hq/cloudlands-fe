@@ -178,6 +178,7 @@ describe('ChatMessageNavigator', () => {
     input = await screen.findByRole('combobox', { name: 'Filter user messages' });
     await waitFor(() => expect(document.activeElement).toBe(input));
     onSelectMessage.mockImplementation(async () => {
+      expect(screen.queryByTestId('chat-message-navigator-panel')).toBeNull();
       downButton.focus();
       return true;
     });
