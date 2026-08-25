@@ -4,6 +4,19 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.91.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.90.0...v2.91.0) (2026-08-25)
+
+
+### 🚀 Features
+
+* show blue unread dot for unread top-level agents in the sidebar ([#1688](https://github.com/intent-hq/cloudlands-fe/issues/1688)) ([b0cc913](https://github.com/intent-hq/cloudlands-fe/commit/b0cc913afcdc4f74d4904b96bca5056f9d98c4ad))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.7.57 ([#1694](https://github.com/intent-hq/cloudlands-fe/issues/1694)) ([dbf05f6](https://github.com/intent-hq/cloudlands-fe/commit/dbf05f6ed4212246b99ee51681a4b97de09391c6))
+* refresh external-daemon version info on every client.hello ([#1691](https://github.com/intent-hq/cloudlands-fe/issues/1691)) ([c1f8fac](https://github.com/intent-hq/cloudlands-fe/commit/c1f8fac2b7fda41ac58e2f0eb3a87ce82bcc119a))
+
 ## [2.90.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.89.0...v2.90.0) (2026-08-25)
 
 
