@@ -226,6 +226,28 @@ describe('AgentAvatarWithState', () => {
     }
   });
 
+  it('renders a blue unread dot for the unread state only', async () => {
+    expect(source).toContain('background-color: hsl(var(--workspace-status-unread))');
+    expect(source).toMatch(
+      /forced-colors: active[\s\S]*agent-avatar-unread-dot[\s\S]*background-color: CanvasText/,
+    );
+
+    const props = {
+      agentId: 'unread-agent',
+      specialist: 'implementor',
+      state: 'unread' as AvatarState,
+      variant: 'standard' as const,
+    };
+    const view = render(AgentAvatarWithState, { props });
+    expect(view.container.querySelector('[data-avatar-unread-dot]')).not.toBeNull();
+    expect(view.container.querySelectorAll('svg')).toHaveLength(1);
+
+    for (const state of agentAvatarCatalogStates.filter((value) => value !== 'unread')) {
+      await view.rerender({ ...props, state });
+      expect(view.container.querySelector('[data-avatar-unread-dot]'), state).toBeNull();
+    }
+  });
+
   it('reacts from idle through waiting-for-agent and running to settled without remount', async () => {
     const props = {
       agentId: 'reactive-agent',
