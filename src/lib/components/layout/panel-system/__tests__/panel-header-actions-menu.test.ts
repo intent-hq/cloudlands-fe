@@ -365,6 +365,20 @@ describe('mounted panel header actions menu', () => {
     );
   });
 
+  it('sizes the grouped action menu from content within a viewport cap', async () => {
+    const { container } = renderHeader('note');
+
+    await fireEvent.click(panelTrigger(container));
+    const menu = await screen.findByRole('menu');
+
+    expect(menu.classList).toContain('w-max');
+    expect(menu.classList).toContain('min-w-[min(14rem,calc(100vw-1rem))]');
+    expect(menu.classList).toContain('max-w-[calc(100vw-1rem)]');
+    expect(menu.classList).toContain(
+      '[&_[data-slot=menu-command-item]>kbd]:text-muted-foreground/70',
+    );
+  });
+
   it.each(
     panelTypes.flatMap(
       (type) =>

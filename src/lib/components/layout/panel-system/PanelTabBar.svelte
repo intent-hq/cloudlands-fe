@@ -1144,7 +1144,11 @@
 </script>
 
 {#snippet panelActionsDropdown()}
-  <DropdownMenu align="end" side="bottom" contentClass="w-56">
+  <DropdownMenu
+    align="end"
+    side="bottom"
+    contentClass="w-max min-w-[min(14rem,calc(100vw-1rem))] max-w-[calc(100vw-1rem)] [&_[data-slot=menu-command-item]>kbd]:text-muted-foreground/70"
+  >
     <!-- i18n-ignore -->
     {#snippet trigger({ props }: { props: Record<string, unknown> })}
       <Tooltip content={m.ui_breadcrumb_more_label()} side="bottom" delayDuration={300}>
