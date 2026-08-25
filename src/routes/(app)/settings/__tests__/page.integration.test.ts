@@ -616,7 +616,7 @@ describe('settings tab route and focus behavior', () => {
   it('renders compact agent selection only inside the existing settings sidebar', async () => {
     const implementorDefinition = SPECIALISTS.find(({ id }) => id === 'implementor')!;
     const { container } = renderSettings('/settings?tab=agents');
-    appStore.dispatch(setBundledSpecialists([...SPECIALISTS]));
+    appStore.dispatch(setBundledSpecialists([]));
     appStore.dispatch(
       setFileSpecialists([
         {
@@ -685,41 +685,6 @@ describe('settings tab route and focus behavior', () => {
     expect(allAgents.querySelector('[data-specialist-modified-marker]')).toBeNull();
     expect(createSpecialist.querySelector('[data-specialist-modified-marker]')).toBeNull();
 
-    appStore.dispatch(
-      setFileSpecialists([
-        {
-          id: 'sidebar-custom',
-          name: 'Sidebar Custom',
-          description: 'Project specialist',
-          model: '',
-          behaviorPrompt: 'Custom prompt',
-          filePath: '/repo/.intent/specialists/sidebar-custom.md',
-          source: 'project',
-        },
-      ]),
-    );
-    await waitFor(() =>
-      expect(implementor.querySelector('[data-specialist-modified-marker]')).toBeNull(),
-    );
-
-    appStore.dispatch(
-      setFileSpecialists([
-        {
-          id: implementorDefinition.id,
-          name: implementorDefinition.name,
-          description: implementorDefinition.description,
-          model: '',
-          behaviorPrompt: `${implementorDefinition.defaultBehaviorPrompt}\nModified again`,
-          roleReminder: implementorDefinition.roleReminder,
-          filePath: '/Users/test/.intent/specialists/implementor.md',
-          source: 'user',
-        },
-      ]),
-    );
-    await waitFor(() =>
-      expect(implementor.querySelector('[data-specialist-modified-marker]')?.textContent).toBe('*'),
-    );
-
     for (const specialist of agentNavigation?.querySelectorAll('button') ?? []) {
       if (specialist !== createSpecialist) {
         expect(specialist.querySelector('[data-icon], svg, img')).toBeNull();
@@ -756,6 +721,45 @@ describe('settings tab route and focus behavior', () => {
 
     expect(screen.getByTestId('ai-behavior-view').textContent).toContain('system-prompt');
     expect(allAgents.getAttribute('aria-current')).toBe('true');
+
+    appStore.dispatch(
+      setFileSpecialists([
+        {
+          id: 'sidebar-custom',
+          name: 'Sidebar Custom',
+          description: 'Project specialist',
+          model: '',
+          behaviorPrompt: 'Custom prompt',
+          filePath: '/repo/.intent/specialists/sidebar-custom.md',
+          source: 'project',
+        },
+      ]),
+    );
+    await waitFor(() =>
+      expect(within(navigation).queryByRole('button', { name: 'Implementor' })).toBeNull(),
+    );
+
+    appStore.dispatch(
+      setFileSpecialists([
+        {
+          id: implementorDefinition.id,
+          name: implementorDefinition.name,
+          description: implementorDefinition.description,
+          model: '',
+          behaviorPrompt: `${implementorDefinition.defaultBehaviorPrompt}\nModified again`,
+          roleReminder: implementorDefinition.roleReminder,
+          filePath: '/Users/test/.intent/specialists/implementor.md',
+          source: 'user',
+        },
+      ]),
+    );
+    await waitFor(() =>
+      expect(
+        within(navigation)
+          .getByRole('button', { name: 'Implementor' })
+          .querySelector('[data-specialist-modified-marker]')?.textContent,
+      ).toBe('*'),
+    );
   });
 
   it('collapses the nested agent navigation when another settings category is selected', async () => {

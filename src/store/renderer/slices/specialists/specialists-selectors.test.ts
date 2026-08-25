@@ -13,6 +13,7 @@ import {
   selectBundledSpecialistsLoaded,
   selectSpecialistsFolderPath,
   selectHasOverrides,
+  selectIsBuiltIn,
   selectEffectiveCodingAgent,
   selectEffectiveModel,
   selectExplicitModel,
@@ -202,6 +203,63 @@ describe('specialists selectors', () => {
       const ids = selectSpecialists.select(mockState()).map((s) => s.id);
       expect(ids).toContain('implementor');
       expect(ids).toContain('verifier');
+    });
+  });
+
+  describe('collapsed built-in overrides', () => {
+    const implementor = SPECIALISTS.find(({ id }) => id === 'implementor')!;
+
+    function userFile(behaviorPrompt = `${implementor.defaultBehaviorPrompt}\nModified`) {
+      return {
+        id: implementor.id,
+        name: implementor.name,
+        description: implementor.description,
+        model: '',
+        behaviorPrompt,
+        roleReminder: implementor.roleReminder,
+        filePath: '/Users/test/.intent/specialists/implementor.md',
+        source: 'user' as const,
+      };
+    }
+
+    it('recognizes a shipped built-in and its differing user override without a bundled row', () => {
+      const state = mockState({
+        fileSpecialists: createCollection('id', [userFile()]),
+      });
+
+      expect(selectIsBuiltIn.select(state, 'implementor')).toBe(true);
+      expect(selectHasOverrides.select(state, 'implementor')).toBe(true);
+      expect(selectSpecialists.select(state).map(({ id }) => id)).toEqual(['implementor']);
+    });
+
+    it('uses shipped defaults to suppress an identical leftover user file', () => {
+      const state = mockState({
+        fileSpecialists: createCollection('id', [userFile(implementor.defaultBehaviorPrompt)]),
+      });
+
+      expect(selectIsBuiltIn.select(state, 'implementor')).toBe(true);
+      expect(selectHasOverrides.select(state, 'implementor')).toBe(false);
+    });
+
+    it('does not label project-scope or custom specialists as modified built-ins', () => {
+      const projectImplementor = { ...userFile(), source: 'project' as const };
+      const custom = {
+        id: 'custom-specialist',
+        name: 'Custom Specialist',
+        description: 'Custom description',
+        model: '',
+        behaviorPrompt: 'Custom prompt',
+        filePath: '/Users/test/.intent/specialists/custom-specialist.md',
+        source: 'user' as const,
+      };
+      const state = mockState({
+        fileSpecialists: createCollection('id', [projectImplementor, custom]),
+      });
+
+      expect(selectIsBuiltIn.select(state, 'implementor')).toBe(true);
+      expect(selectHasOverrides.select(state, 'implementor')).toBe(false);
+      expect(selectIsBuiltIn.select(state, custom.id)).toBe(false);
+      expect(selectHasOverrides.select(state, custom.id)).toBe(false);
     });
   });
 

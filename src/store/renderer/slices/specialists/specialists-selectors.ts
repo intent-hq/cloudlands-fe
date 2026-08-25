@@ -227,9 +227,14 @@ export const selectEffectiveBehaviorPrompt = store.createSelector((state, specia
     // Wave 2: File specialists already have the correct prompt baked in.
     return specialist.defaultBehaviorPrompt;
 });
-/** Check if a specialist is built-in (bundled) */
+function isKnownBuiltIn(specialistId: string, bundledSpecialists: Specialist[]): boolean {
+    return bundledSpecialists.some((s: Specialist) => s.id === specialistId) ||
+        SPECIALISTS.some((s: Specialist) => s.id === specialistId);
+}
+
+/** Check if a specialist is built-in (bundled or shipped in the catalog) */
 export const selectIsBuiltIn = store.createSelector((state, specialistId: string): boolean => {
-    return state.specialists.bundledSpecialists.some((s: Specialist) => s.id === specialistId);
+    return isKnownBuiltIn(specialistId, state.specialists.bundledSpecialists);
 });
 /** Check if a specialist is file-based */
 export const selectIsFileBased = store.createSelector((state, specialistId: string): boolean => {
@@ -242,7 +247,7 @@ export const selectIsFileBased = store.createSelector((state, specialistId: stri
  * equal) never reads as "Modified" (monorepo#1450).
  */
 export const selectHasOverrides = store.createSelector((state, specialistId: string): boolean => {
-    const isBuiltIn = state.specialists.bundledSpecialists.some((s: Specialist) => s.id === specialistId);
+    const isBuiltIn = isKnownBuiltIn(specialistId, state.specialists.bundledSpecialists);
     if (!isBuiltIn) return false;
     const file = getItem(state.specialists.fileSpecialists, specialistId);
     if (!file || file.source !== 'user') return false;
