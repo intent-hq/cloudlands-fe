@@ -32,6 +32,7 @@ import {
   type SpecialistFilesResult,
   type SpecialistFileScope,
   type SpecialistModelOption,
+  type SpecialistRole,
   type SpecialistSource,
   SPECIALISTS_FOLDER,
   SPECIALIST_FILE_EXTENSIONS,
@@ -370,6 +371,39 @@ export function parseModelOptionsScalar(
 }
 
 /**
+ * Parse a frontmatter `role` scalar with lenient read semantics (PROTOCOL
+ * §5.11): only the known enum values are kept; unknown/empty values read as
+ * an omitted key (standard specialist) — the parse never rejects.
+ * Exported for testing purposes.
+ */
+export function parseRoleScalar(raw: string | undefined): SpecialistRole | undefined {
+  return raw === 'orchestrator' || raw === 'internal' ? raw : undefined;
+}
+
+/**
+ * Parse a frontmatter `teamAgents` scalar (single-line JSON array of
+ * specialist ids) with the same lenient read semantics as `modelOptions`:
+ * an unparseable scalar or non-array reads as omitted; unusable entries
+ * (non-strings, empty strings) are skipped individually; a literal `[]`
+ * yields an explicit empty list, and a non-empty array whose entries are ALL
+ * unusable reads as omitted.
+ * Exported for testing purposes.
+ */
+export function parseTeamAgentsScalar(raw: string | undefined): string[] | undefined {
+  if (raw === undefined || raw.trim() === '') return undefined;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return undefined;
+  }
+  if (!Array.isArray(parsed)) return undefined;
+  if (parsed.length === 0) return [];
+  const ids = parsed.filter((entry): entry is string => typeof entry === 'string' && entry !== '');
+  return ids.length > 0 ? ids : undefined;
+}
+
+/**
  * Parse a specialist file from its content.
  * Exported for testing purposes.
  */
@@ -416,6 +450,9 @@ export function parseSpecialistFile(
     hidden: frontmatter.hidden === 'true' ? true : undefined,
     modelOptions: parseModelOptionsScalar(frontmatter.modelOptions),
     reasoningEffort: frontmatter.reasoningEffort || undefined,
+    role: parseRoleScalar(frontmatter.role),
+    teamAgents: parseTeamAgentsScalar(frontmatter.teamAgents),
+    icon: frontmatter.icon || undefined,
   };
 
   return {
@@ -539,6 +576,9 @@ export async function writeSpecialistFile(specialist: {
   hidden?: boolean;
   modelOptions?: SpecialistModelOption[];
   reasoningEffort?: string;
+  role?: SpecialistRole;
+  teamAgents?: string[];
+  icon?: string;
   behaviorPrompt: string;
   scope?: SpecialistFileScope;
   workspacePath?: string;
@@ -591,6 +631,20 @@ export async function writeSpecialistFile(specialist: {
 
     if (specialist.reasoningEffort) {
       frontmatterParts.push(`reasoningEffort: "${escapeYamlValue(specialist.reasoningEffort)}"`);
+    }
+
+    if (specialist.role) {
+      frontmatterParts.push(`role: "${escapeYamlValue(specialist.role)}"`);
+    }
+
+    // Single-line JSON-array scalar like modelOptions: an explicit [] is
+    // written verbatim; undefined writes no key.
+    if (specialist.teamAgents !== undefined) {
+      frontmatterParts.push(`teamAgents: ${JSON.stringify(specialist.teamAgents)}`);
+    }
+
+    if (specialist.icon) {
+      frontmatterParts.push(`icon: "${escapeYamlValue(specialist.icon)}"`);
     }
 
     const content = `---\n${frontmatterParts.join('\n')}\n---\n\n${specialist.behaviorPrompt}`;

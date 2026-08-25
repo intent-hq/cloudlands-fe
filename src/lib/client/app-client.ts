@@ -1718,6 +1718,22 @@ export interface SpecialistDef {
    * specialist inherits the model default (never `null`/`""` on the wire).
    */
   reasoningEffort?: string;
+  /**
+   * Orchestration role (additive, PROTOCOL §5.11): 'orchestrator' powers the
+   * New Workspace modal's team card; 'internal' is excluded from the modal's
+   * single-agent dropdown only. Omitted for standard specialists.
+   */
+  role?: 'orchestrator' | 'internal';
+  /**
+   * Specialist ids the orchestrator delegates to (additive, PROTOCOL §5.11).
+   * Advisory/render-only; omitted when not declared.
+   */
+  teamAgents?: string[];
+  /**
+   * Built-in avatar design id (additive, PROTOCOL §5.11). Free string on the
+   * wire; unknown/absent values degrade to the client's fallback design.
+   */
+  icon?: string;
   prompt?: string;
   behaviorPrompt?: string;
   source: 'project' | 'user' | 'bundled';

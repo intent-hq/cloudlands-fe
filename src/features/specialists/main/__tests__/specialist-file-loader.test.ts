@@ -25,6 +25,8 @@ import {
 import {
   parseSpecialistFile,
   parseModelOptionsScalar,
+  parseRoleScalar,
+  parseTeamAgentsScalar,
   writeSpecialistFile,
   loadSpecialistFile,
   loadProjectSpecialistFiles,
@@ -484,6 +486,64 @@ Prompt.`;
     });
   });
 
+  describe('role/teamAgents/icon frontmatter (PROTOCOL §5.11 lenient reads)', () => {
+    it('should parse known role values and the icon scalar', () => {
+      const content = `---
+name: "Orchestrator"
+description: "Coordinates"
+role: "orchestrator"
+teamAgents: ["implementor","verifier"]
+icon: "coordinator"
+---
+
+Prompt.`;
+
+      const result = parseSpecialistFile('/path/to/orchestrator.md', content);
+      expect('error' in result).toBe(false);
+      if (!('error' in result)) {
+        expect(result.frontmatter.role).toBe('orchestrator');
+        expect(result.frontmatter.teamAgents).toEqual(['implementor', 'verifier']);
+        expect(result.frontmatter.icon).toBe('coordinator');
+      }
+    });
+
+    it('should read unknown role values as an omitted key (never rejects)', () => {
+      expect(parseRoleScalar('orchestrator')).toBe('orchestrator');
+      expect(parseRoleScalar('internal')).toBe('internal');
+      expect(parseRoleScalar('sidekick')).toBeUndefined();
+      expect(parseRoleScalar('')).toBeUndefined();
+      expect(parseRoleScalar(undefined)).toBeUndefined();
+    });
+
+    it('should apply modelOptions-style lenient reads to teamAgents', () => {
+      expect(parseTeamAgentsScalar('["a","b"]')).toEqual(['a', 'b']);
+      expect(parseTeamAgentsScalar('[]')).toEqual([]);
+      expect(parseTeamAgentsScalar('not json')).toBeUndefined();
+      expect(parseTeamAgentsScalar('{"a":1}')).toBeUndefined();
+      expect(parseTeamAgentsScalar('["good","",42]')).toEqual(['good']);
+      expect(parseTeamAgentsScalar('["",42]')).toBeUndefined();
+      expect(parseTeamAgentsScalar(undefined)).toBeUndefined();
+      expect(parseTeamAgentsScalar('')).toBeUndefined();
+    });
+
+    it('should leave role/teamAgents/icon undefined when absent', () => {
+      const content = `---
+name: "Plain"
+description: "No metadata"
+---
+
+Prompt.`;
+
+      const result = parseSpecialistFile('/path/to/plain.md', content);
+      expect('error' in result).toBe(false);
+      if (!('error' in result)) {
+        expect(result.frontmatter.role).toBeUndefined();
+        expect(result.frontmatter.teamAgents).toBeUndefined();
+        expect(result.frontmatter.icon).toBeUndefined();
+      }
+    });
+  });
+
   describe('Persistence and migration', () => {
     it('should round-trip codingAgent when writing and loading a specialist file', async () => {
       await writeSpecialistFile({
@@ -603,6 +663,40 @@ Prompt.`;
       const noEffort = await loadSpecialistFile('no-effort');
       expect(noEffort?.rawContent).not.toContain('reasoningEffort:');
       expect(noEffort?.frontmatter.reasoningEffort).toBeUndefined();
+    });
+
+    it('should round-trip role/teamAgents/icon and omit the keys when unset', async () => {
+      await writeSpecialistFile({
+        id: 'role-round-trip',
+        name: 'Role Round Trip',
+        description: 'Role round-trip test specialist',
+        role: 'orchestrator',
+        teamAgents: ['implementor', 'verifier'],
+        icon: 'coordinator',
+        behaviorPrompt: 'Role prompt',
+      });
+
+      const loaded = await loadSpecialistFile('role-round-trip');
+      expect(loaded?.rawContent).toContain('role: "orchestrator"');
+      expect(loaded?.rawContent).toContain('teamAgents: ["implementor","verifier"]');
+      expect(loaded?.rawContent).toContain('icon: "coordinator"');
+      expect(loaded?.frontmatter.role).toBe('orchestrator');
+      expect(loaded?.frontmatter.teamAgents).toEqual(['implementor', 'verifier']);
+      expect(loaded?.frontmatter.icon).toBe('coordinator');
+
+      await writeSpecialistFile({
+        id: 'no-role',
+        name: 'No Role',
+        description: 'No role metadata',
+        behaviorPrompt: 'Prompt',
+      });
+      const noRole = await loadSpecialistFile('no-role');
+      expect(noRole?.rawContent).not.toContain('role:');
+      expect(noRole?.rawContent).not.toContain('teamAgents:');
+      expect(noRole?.rawContent).not.toContain('icon:');
+      expect(noRole?.frontmatter.role).toBeUndefined();
+      expect(noRole?.frontmatter.teamAgents).toBeUndefined();
+      expect(noRole?.frontmatter.icon).toBeUndefined();
     });
 
     it('should write and load project-level specialists from the workspace path', async () => {
