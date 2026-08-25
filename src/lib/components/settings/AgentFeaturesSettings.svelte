@@ -5,10 +5,9 @@
    *
    * Reads/writes the daemon-owned `agentFeatures.*` settings via
    * settings.list / settings.update (PROTOCOL §5.12), following the
-   * WorkspaceApiSettings pattern. All eleven booleans default true:
-   * backgroundHooks, hostExec, scripts, terminalAccess, browserAutomation,
-   * richChatBlocks, structuredQuestions, attentionRequests, stateSnapshot,
-   * prMonitor, taskGraph.
+   * WorkspaceApiSettings pattern. Twelve booleans, each coerced to its own
+   * daemon default when absent (see agent-feature-definitions.ts): all
+   * default on except `peerAgents`, the one opt-in toggle.
    *
    * Toggles are captured at agent-session creation, so changes apply to
    * newly created sessions only — existing sessions keep the surface they
@@ -17,7 +16,10 @@
    * The PR-monitor toggle carries a companion numeric input directly
    * beneath it for `prMonitor.debounceSeconds` (§6.9, min 10 / max 86400;
    * disabled while the feature is off). `prMonitor.pollSeconds` deliberately
-   * gets NO UI — it is config-file only.
+   * gets NO UI — it is config-file only. The peer-agents toggle likewise
+   * carries a companion numeric input for `agents.maxTopLevelAgents` (min 1,
+   * no max, default 20; the runaway-spawn guard on the peer-spawn path,
+   * disabled while the feature is off).
    */
   import { onMount } from 'svelte';
   import { Toggle } from '$lib/components/ui/toggle';
@@ -27,6 +29,7 @@
   import { m } from '$shared/paraglide/messages.js';
 
   import {
+    FEATURE_DEFAULTS,
     FEATURE_PATHS,
     FEATURES,
     type FeaturePath,
@@ -38,21 +41,30 @@
   const MIN_DEBOUNCE_SECONDS = 10;
   const MAX_DEBOUNCE_SECONDS = 86400;
 
-  // All features default on, so an absent settings.list entry coerces to on.
-  function coerceValue(value: unknown): boolean {
-    return value !== false;
+  // i18n-ignore (wire setting path, not user-facing text)
+  const MAX_AGENTS_PATH = 'agents.maxTopLevelAgents';
+  // Daemon-side registered bound for agents.maxTopLevelAgents (min 1, no max).
+  const MIN_MAX_TOP_LEVEL_AGENTS = 1;
+  const DEFAULT_MAX_TOP_LEVEL_AGENTS = 20;
+
+  // An absent settings.list entry coerces to the feature's daemon default.
+  function coerceValue(path: FeaturePath, value: unknown): boolean {
+    return typeof value === 'boolean' ? value : FEATURE_DEFAULTS[path];
   }
 
   let loading = $state(true);
-  // Seed from daemon defaults (PROTOCOL §5.12: all on)
-  let values = $state<Record<FeaturePath, boolean>>(
-    Object.fromEntries(FEATURE_PATHS.map((path) => [path, true])) as Record<FeaturePath, boolean>,
-  );
+  // Seed from per-feature daemon defaults (PROTOCOL §5.12)
+  let values = $state<Record<FeaturePath, boolean>>({ ...FEATURE_DEFAULTS });
 
   // Debounce window (§6.9): persisted seconds + input mirror, min 10.
   let persistedDebounce = $state<number>(60);
   let editedDebounce = $state<string>('60');
   let debounceSaving = $state(false);
+
+  // Top-level agent cap: persisted count + input mirror, min 1.
+  let persistedMaxAgents = $state<number>(DEFAULT_MAX_TOP_LEVEL_AGENTS);
+  let editedMaxAgents = $state<string>(String(DEFAULT_MAX_TOP_LEVEL_AGENTS));
+  let maxAgentsSaving = $state(false);
 
   onMount(async () => {
     await loadSettings();
@@ -64,7 +76,7 @@
       const settings = await appClient.settings.list();
       for (const path of FEATURE_PATHS) {
         const entry = settings.find((s: { path: string; value: unknown }) => s.path === path);
-        values[path] = coerceValue(entry?.value);
+        values[path] = coerceValue(path, entry?.value);
       }
       const debounce = settings.find(
         (s: { path: string; value: unknown }) => s.path === DEBOUNCE_PATH,
@@ -72,6 +84,13 @@
       if (typeof debounce?.value === 'number') {
         persistedDebounce = debounce.value;
         editedDebounce = String(debounce.value);
+      }
+      const maxAgents = settings.find(
+        (s: { path: string; value: unknown }) => s.path === MAX_AGENTS_PATH,
+      );
+      if (typeof maxAgents?.value === 'number') {
+        persistedMaxAgents = maxAgents.value;
+        editedMaxAgents = String(maxAgents.value);
       }
     } catch (error) {
       toast.error(
@@ -92,7 +111,7 @@
       const applied = result.find((r: { path: string; value: unknown }) => r.path === path);
       if (applied && applied.value !== checked) {
         toast.error(m.settings_agentFeatures_rollbackError());
-        values[path] = coerceValue(applied.value);
+        values[path] = coerceValue(path, applied.value);
         return;
       }
 
@@ -144,6 +163,42 @@
       editedDebounce = String(persistedDebounce);
     } finally {
       debounceSaving = false;
+    }
+  }
+
+  async function handleMaxAgentsSave() {
+    const newValue = Number(editedMaxAgents);
+    if (!Number.isInteger(newValue) || newValue < MIN_MAX_TOP_LEVEL_AGENTS) {
+      return; // invalid input, do nothing
+    }
+
+    try {
+      maxAgentsSaving = true;
+      const result = await appClient.settings.update([{ path: MAX_AGENTS_PATH, value: newValue }]);
+
+      // Check if the daemon rolled back the setting on failure
+      const applied = result.find(
+        (r: { path: string; value: unknown }) => r.path === MAX_AGENTS_PATH,
+      );
+      if (applied && applied.value !== newValue) {
+        const rolledBackValue =
+          typeof applied.value === 'number' ? applied.value : persistedMaxAgents;
+        toast.error(m.settings_agentFeatures_rollbackError());
+        persistedMaxAgents = rolledBackValue;
+        editedMaxAgents = String(rolledBackValue);
+        return;
+      }
+
+      persistedMaxAgents = newValue;
+    } catch (error) {
+      toast.error(
+        m.settings_agentFeatures_saveError({
+          error: error instanceof Error ? error.message : String(error),
+        }),
+      );
+      editedMaxAgents = String(persistedMaxAgents);
+    } finally {
+      maxAgentsSaving = false;
     }
   }
 </script>
@@ -214,6 +269,47 @@
         {#if !isDebounceValid}
           <p class="text-xs text-amber-500/90 mt-1">
             {m.settings_agentFeatures_prMonitorDebounce_invalid()}
+          </p>
+        {/if}
+      {/if}
+      {#if feature.path === 'agentFeatures.peerAgents'}
+        <!-- i18n-ignore (template expression, not user-facing text) -->
+        {@const maxAgentsNum = Number(editedMaxAgents)}
+        <!-- i18n-ignore (template expression, not user-facing text) -->
+        {@const isMaxAgentsValid =
+          Number.isInteger(maxAgentsNum) && maxAgentsNum >= MIN_MAX_TOP_LEVEL_AGENTS}
+        <div class="mt-3 flex items-center justify-between gap-3">
+          <span class="text-sm text-muted-foreground"
+            >{m.settings_agentFeatures_maxTopLevelAgents_label()}</span
+          >
+          <div class="flex items-center gap-2">
+            <div class="shrink-0 w-24">
+              <Input
+                type="number"
+                min={MIN_MAX_TOP_LEVEL_AGENTS}
+                bind:value={editedMaxAgents}
+                disabled={loading || maxAgentsSaving || !values['agentFeatures.peerAgents']}
+                aria-label={m.settings_agentFeatures_maxTopLevelAgents_ariaLabel()}
+                class="h-9 text-sm"
+              />
+            </div>
+            {#if Number(editedMaxAgents) !== persistedMaxAgents}
+              <button
+                type="button"
+                onclick={handleMaxAgentsSave}
+                disabled={maxAgentsSaving || !isMaxAgentsValid || !values['agentFeatures.peerAgents']}
+                class="px-3 py-1 text-xs font-medium text-foreground bg-accent hover:bg-accent/80 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {maxAgentsSaving
+                  ? m.settings_agentFeatures_maxTopLevelAgents_saving()
+                  : m.settings_agentFeatures_maxTopLevelAgents_save()}
+              </button>
+            {/if}
+          </div>
+        </div>
+        {#if !isMaxAgentsValid}
+          <p class="text-xs text-amber-500/90 mt-1">
+            {m.settings_agentFeatures_maxTopLevelAgents_invalid()}
           </p>
         {/if}
       {/if}
