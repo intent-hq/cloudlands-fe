@@ -180,8 +180,16 @@ test('updates the workspace-scoped count and keeps keyboard focus order', async 
   await expect(trigger).toBeFocused();
 
   await trigger.click();
+  await expect(dialog).toBeVisible();
   await expect(twoButton).toBeFocused();
-  await page.keyboard.press('Shift+Tab');
+  await dialog.evaluate(
+    () =>
+      new Promise<void>((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+      ),
+  );
+  await expect(twoButton).toBeFocused();
+  await twoButton.press('Shift+Tab');
   await expect(oneButton).toBeFocused();
   await page.keyboard.press('Enter');
   await expect(component).toHaveAttribute('data-current-count', '1');
