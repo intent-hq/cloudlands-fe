@@ -451,7 +451,7 @@ describe('WorkspaceTabStrip', () => {
     await waitFor(() => expect(screen.queryByTestId('workspace-tab-preview')).toBeNull());
   });
 
-  it('squares only the first active tab leading edge against an open panel', async () => {
+  it('keeps the first active tab top curve while suppressing only its panel-side flare', async () => {
     const { rerender } = render(WorkspaceTabStrip, {
       props: { activeWorkspaceId: 'ws-1', alignFirstTabToPanel: true },
     });
@@ -461,23 +461,23 @@ describe('WorkspaceTabStrip', () => {
     expect(tablist.className).toContain('pl-3');
     expect(tablist.className).toContain('-ml-3');
     expect(tablist.className).not.toContain('-ml-1');
-    expect(firstTab.getAttribute('data-workspace-tab-leading-edge')).toBe('flush');
-    expect(firstTab.classList).toContain('rounded-tr-md');
-    expect(firstTab.classList).not.toContain('rounded-t-md');
+    expect(firstTab.getAttribute('data-workspace-tab-leading-shape')).toBe('panel-aligned');
+    expect(firstTab.classList).toContain('rounded-t-md');
+    expect(firstTab.classList).not.toContain('rounded-tr-md');
     expect(firstTab.querySelector('[data-workspace-tab-leading-flare]')).toBeNull();
     expect(firstTab.querySelector('[data-workspace-tab-trailing-flare]')).toBeTruthy();
 
     await rerender({ activeWorkspaceId: 'ws-2', alignFirstTabToPanel: true });
     const secondTab = document.querySelector('[data-workspace-tab="ws-2"]')!;
-    expect(firstTab.getAttribute('data-workspace-tab-leading-edge')).toBe('curved');
-    expect(secondTab.getAttribute('data-workspace-tab-leading-edge')).toBe('curved');
+    expect(firstTab.getAttribute('data-workspace-tab-leading-shape')).toBe('flared');
+    expect(secondTab.getAttribute('data-workspace-tab-leading-shape')).toBe('flared');
     expect(secondTab.classList).toContain('rounded-t-md');
     expect(secondTab.querySelector('[data-workspace-tab-leading-flare]')).toBeTruthy();
     expect(secondTab.querySelector('[data-workspace-tab-trailing-flare]')).toBeTruthy();
 
     await rerender({ activeWorkspaceId: 'ws-1', alignFirstTabToPanel: false });
     expect(tablist.className).toContain('-ml-1');
-    expect(firstTab.getAttribute('data-workspace-tab-leading-edge')).toBe('curved');
+    expect(firstTab.getAttribute('data-workspace-tab-leading-shape')).toBe('flared');
     expect(firstTab.classList).toContain('rounded-t-md');
     expect(firstTab.querySelector('[data-workspace-tab-leading-flare]')).toBeTruthy();
     expect(firstTab.querySelector('[data-workspace-tab-trailing-flare]')).toBeTruthy();

@@ -226,8 +226,9 @@ async function mountStrip(
       sidebar.dataset.sidebarPanelFrame = '';
       sidebar.style.cssText = `flex:0 0 ${panelOpen ? panelWidth : 0}px;`;
       const main = document.createElement('main');
-      main.className = 'workspace-main';
-      main.style.cssText = 'height:200px;min-width:0;flex:1;';
+      main.className =
+        'workspace-main flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-xl bg-sidebar border border-border shadow-sm';
+      main.style.cssText = 'height:200px;';
       frame.append(sidebar, main);
       target.append(frame);
 
@@ -284,24 +285,70 @@ async function settle(page: Page) {
 async function expectActiveLeadingEdge(
   page: Page,
   workspaceId: string,
-  expected: 'flush' | 'curved',
+  expected: 'panel-aligned' | 'flared',
   zoom: number,
+  assertHeight = true,
 ) {
   const tab = page.locator(`[data-workspace-tab="${workspaceId}"]`);
-  await expect(tab).toHaveAttribute('data-workspace-tab-leading-edge', expected);
+  await expect(tab).toHaveAttribute('data-workspace-tab-leading-shape', expected);
   const leadingRadius = await tab.evaluate((node) =>
     Number.parseFloat(getComputedStyle(node).borderTopLeftRadius),
   );
-  if (expected === 'flush') expect(leadingRadius).toBe(0);
-  else expect(leadingRadius).toBeGreaterThan(0);
+  expect(leadingRadius).toBeGreaterThan(0);
   await expect(tab.locator('[data-workspace-tab-leading-flare]')).toHaveCount(
-    expected === 'flush' ? 0 : 1,
+    expected === 'panel-aligned' ? 0 : 1,
   );
   await expect(tab.locator('[data-workspace-tab-trailing-flare]')).toHaveCount(1);
-  expect((await box(tab)).height).toBeCloseTo(32 * zoom, 0);
+  if (assertHeight) expect((await box(tab)).height).toBeCloseTo(32 * zoom, 0);
+  return leadingRadius;
 }
 
-test('squares only the first active tab at an open panel boundary across the geometry matrix', async ({
+async function expectSinglePixelLeadingSeam(page: Page, zoom: number) {
+  const tab = page.locator('[data-workspace-tab="active"]');
+  const panel = page.locator('.workspace-main');
+  const [tabBox, panelBox, styles, screenshot] = await Promise.all([
+    box(tab),
+    box(panel),
+    tab.evaluate((node) => {
+      const tabStyle = getComputedStyle(node);
+      const panelStyle = getComputedStyle(document.querySelector('.workspace-main')!);
+      return {
+        borderColor: tabStyle.borderLeftColor,
+        tabBorderWidth: Number.parseFloat(tabStyle.borderLeftWidth),
+        panelBorderWidth: Number.parseFloat(panelStyle.borderLeftWidth),
+      };
+    }),
+    page.screenshot({ animations: 'disabled', caret: 'hide' }),
+  ]);
+  expect(tabBox.x).toBeCloseTo(panelBox.x, 0);
+  expect(tabBox.y + tabBox.height).toBeCloseTo(panelBox.y, 0);
+  expect(styles.tabBorderWidth).toBe(1);
+  expect(styles.panelBorderWidth).toBe(1);
+
+  const channels = styles.borderColor
+    .match(/[\d.]+/g)
+    ?.slice(0, 3)
+    .map(Number);
+  expect(channels).toHaveLength(3);
+  const sharp = (await import('sharp')).default;
+  const { data, info } = await sharp(screenshot).raw().toBuffer({ resolveWithObject: true });
+  const matchesBorder = (x: number, y: number) => {
+    const offset = (y * info.width + x) * info.channels;
+    return channels!.every((value, index) => Math.abs(data[offset + index] - value) <= 12);
+  };
+  const left = Math.round(tabBox.x);
+  const bottom = Math.round(tabBox.y + tabBox.height);
+  for (let y = bottom - 4 * zoom; y < bottom; y += 1) {
+    const borderPixels = Array.from(
+      { length: 2 * zoom + 3 },
+      (_, index) => left - 1 + index,
+    ).filter((x) => matchesBorder(x, y)).length;
+    expect(borderPixels).toBeGreaterThanOrEqual(1);
+    expect(borderPixels).toBeLessThanOrEqual(zoom + 1);
+  }
+}
+
+test('keeps the first active top curve and a single-stroke panel seam across the geometry matrix', async ({
   page,
 }) => {
   test.setTimeout(120_000);
@@ -333,7 +380,8 @@ test('squares only the first active tab at an open panel boundary across the geo
           box(page.locator('.workspace-main')),
         ]);
         expect(Math.abs(firstTab.x - workspaceMain.x) / scenario.zoom).toBeLessThanOrEqual(1);
-        await expectActiveLeadingEdge(page, 'active', 'flush', scenario.zoom);
+        await expectActiveLeadingEdge(page, 'active', 'panel-aligned', scenario.zoom);
+        await expectSinglePixelLeadingSeam(page, scenario.zoom);
       }
 
       const strip = page.locator('[data-workspace-tab-strip]');
@@ -349,7 +397,12 @@ test('squares only the first active tab at an open panel boundary across the geo
         ).__setCurrentWorkspaceTabId('inactive');
       });
       await settle(page);
-      await expectActiveLeadingEdge(page, 'inactive', 'curved', scenario.zoom);
+      const normalActiveRadius = await expectActiveLeadingEdge(
+        page,
+        'inactive',
+        'flared',
+        scenario.zoom,
+      );
 
       await page.evaluate(() => {
         (
@@ -360,7 +413,70 @@ test('squares only the first active tab at an open panel boundary across the geo
         ).__setCurrentWorkspaceTabId('active');
         return globalThis.__remountWorkspaceTabStrip();
       });
-      await expectActiveLeadingEdge(page, 'active', 'flush', scenario.zoom);
+      const panelAlignedRadius = await expectActiveLeadingEdge(
+        page,
+        'active',
+        'panel-aligned',
+        scenario.zoom,
+      );
+      expect(panelAlignedRadius).toBe(normalActiveRadius);
+      await expectSinglePixelLeadingSeam(page, scenario.zoom);
+
+      await page.locator('[data-workspace-tab="active"]').evaluate((node) => {
+        node.dispatchEvent(
+          new DragEvent('dragstart', {
+            bubbles: true,
+            dataTransfer: new DataTransfer(),
+            clientX: node.getBoundingClientRect().x + 20,
+            clientY: node.getBoundingClientRect().y + 16,
+          }),
+        );
+      });
+      await expectActiveLeadingEdge(page, 'active', 'flared', scenario.zoom, false);
+      await page.locator('[data-workspace-tab="active"]').evaluate((node) => {
+        node.dispatchEvent(new DragEvent('dragend', { bubbles: true }));
+      });
+      await settle(page);
+      await page.locator('[data-workspace-tab-motion="active"]').evaluate(async (node) => {
+        await Promise.all(
+          node.getAnimations({ subtree: true }).map((animation) => animation.finished),
+        );
+      });
+      await expectActiveLeadingEdge(page, 'active', 'panel-aligned', scenario.zoom);
+      await expectSinglePixelLeadingSeam(page, scenario.zoom);
+
+      await page.evaluate(() => {
+        const scenarioState = (
+          globalThis as typeof globalThis & {
+            __workspaceTabScenario: { currentId: string; tabOrder: string[] };
+            __remountWorkspaceTabStrip: () => Promise<void>;
+          }
+        ).__workspaceTabScenario;
+        scenarioState.currentId = 'loading';
+        scenarioState.tabOrder = ['loading', 'active', 'inactive', 'plain'];
+        return globalThis.__remountWorkspaceTabStrip();
+      });
+      await expect(page.locator('[data-workspace-tab="loading"]')).toHaveAttribute(
+        'data-workspace-tab-loading',
+        'true',
+      );
+      expect(await expectActiveLeadingEdge(page, 'loading', 'panel-aligned', scenario.zoom)).toBe(
+        normalActiveRadius,
+      );
+
+      await page.evaluate(() => {
+        const scenarioState = (
+          globalThis as typeof globalThis & {
+            __workspaceTabScenario: { currentId: string; tabOrder: string[] };
+            __remountWorkspaceTabStrip: () => Promise<void>;
+          }
+        ).__workspaceTabScenario;
+        scenarioState.currentId = 'active';
+        scenarioState.tabOrder = ['active', 'inactive', 'plain', 'loading'];
+        return globalThis.__remountWorkspaceTabStrip();
+      });
+      await expectActiveLeadingEdge(page, 'active', 'panel-aligned', scenario.zoom);
+      await expectSinglePixelLeadingSeam(page, scenario.zoom);
 
       await page.evaluate(() =>
         (
@@ -369,7 +485,7 @@ test('squares only the first active tab at an open panel boundary across the geo
           }
         ).__setWorkspacePanelOpen(false),
       );
-      await expectActiveLeadingEdge(page, 'active', 'curved', scenario.zoom);
+      await expectActiveLeadingEdge(page, 'active', 'flared', scenario.zoom);
 
       await page.evaluate(() =>
         (
@@ -378,7 +494,7 @@ test('squares only the first active tab at an open panel boundary across the geo
           }
         ).__setWorkspacePanelOpen(true),
       );
-      await expectActiveLeadingEdge(page, 'active', 'flush', scenario.zoom);
+      await expectActiveLeadingEdge(page, 'active', 'panel-aligned', scenario.zoom);
 
       const transitionSeconds = await page
         .locator('[data-workspace-tab="active"]')

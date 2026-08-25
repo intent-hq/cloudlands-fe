@@ -471,7 +471,7 @@
       {@const isCurrent =
         workspaceId ===
         (activeWorkspaceId === undefined ? $currentWorkspaceTabId$ : activeWorkspaceId)}
-      {@const hasFlushLeadingEdge =
+      {@const suppressesLeadingFlare =
         alignFirstTabToPanel && tabIndex === 0 && isCurrent && !isDragged}
       <div
         class="min-w-0 shrink-0"
@@ -498,17 +498,14 @@
             class={cn(
               'group/workspace-tab flex h-8 w-40 max-w-[40vw] shrink-0 items-center border transition-[background-color,border-color,box-shadow] motion-reduce:transition-none',
               isCurrent
-                ? cn(
-                    hasFlushLeadingEdge ? 'rounded-tr-md' : 'rounded-t-md',
-                    'border-border border-b-transparent bg-sidebar text-foreground',
-                  )
+                ? 'rounded-t-md border-border border-b-transparent bg-sidebar text-foreground'
                 : 'rounded-md border-transparent text-muted-foreground hover:bg-sidebar/50 hover:text-foreground',
               isDragged ? 'pointer-events-none fixed z-50 cursor-grabbing shadow-lg' : 'relative',
             )}
             data-workspace-tab={workspaceId}
             data-active={isCurrent}
             data-dragging={isDragged}
-            data-workspace-tab-leading-edge={hasFlushLeadingEdge ? 'flush' : 'curved'}
+            data-workspace-tab-leading-shape={suppressesLeadingFlare ? 'panel-aligned' : 'flared'}
             style:left={isDragged && dragSession
               ? `${dragSession.origin.left + dragClientX - dragSession.startClientX}px`
               : undefined}
@@ -530,7 +527,7 @@
                      curve terminates on the panel's top border. The right flare's `-12.5px`
                      offset + 1px seam-fill rect compensates for the arc-stroke straddling the
                      right-edge pixel boundary so no gap shows between flare and tab side. -->
-              {#if !hasFlushLeadingEdge}
+              {#if !suppressesLeadingFlare}
                 <svg
                   class="pointer-events-none absolute left-[-12px] -bottom-0.5 size-[12px] overflow-visible text-sidebar"
                   viewBox="0 0 12 12"
@@ -630,22 +627,19 @@
             class={cn(
               'group/workspace-tab relative flex h-8 w-40 max-w-[40vw] shrink-0 items-center border transition-[background-color,border-color,box-shadow,opacity,transform] motion-reduce:transition-none',
               isCurrent
-                ? cn(
-                    hasFlushLeadingEdge ? 'rounded-tr-md' : 'rounded-t-md',
-                    'border-border border-b-transparent bg-sidebar text-foreground',
-                  )
+                ? 'rounded-t-md border-border border-b-transparent bg-sidebar text-foreground'
                 : 'rounded-md border-transparent text-muted-foreground',
             )}
             data-workspace-tab={workspaceId}
             data-workspace-tab-loading="true"
             data-active={isCurrent}
-            data-workspace-tab-leading-edge={hasFlushLeadingEdge ? 'flush' : 'curved'}
+            data-workspace-tab-leading-shape={suppressesLeadingFlare ? 'panel-aligned' : 'flared'}
             use:reportActiveTabBounds={isCurrent}
             use:registerTabSurface={workspaceId}
             role="presentation"
           >
             {#if isCurrent}
-              {#if !hasFlushLeadingEdge}
+              {#if !suppressesLeadingFlare}
                 <svg
                   class="pointer-events-none absolute left-[-12px] -bottom-0.5 size-[12px] overflow-visible text-sidebar"
                   viewBox="0 0 12 12"
