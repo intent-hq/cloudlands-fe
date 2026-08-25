@@ -1,8 +1,8 @@
 /**
  * Release Notes Service (main process)
  *
- * Fetches the GitHub release notes for the running app version and decides
- * whether the first launch after an update should surface them.
+ * Fetches GitHub release notes and decides whether the first launch after an
+ * update should surface the cumulative notes since the last shown version.
  *
  * The release notes live on the public `intent-hq/cloudlands-releases` repo,
  * tagged `vX.Y.Z` (the same tag serves beta and stable — stable is a promotion
@@ -220,7 +220,7 @@ export async function checkForReleaseNotesOnStartup(
   const lastSeen = await getLocalPref<string>(LAST_SEEN_RELEASE_NOTES_VERSION_KEY);
   if (lastSeen === currentVersion) return null;
 
-  const notes = await fetchReleaseNotes(currentVersion);
+  const notes = await fetchReleaseNotesRange(lastSeen ?? '', currentVersion);
   if (!notes) {
     // Fail-soft: leave the pref untouched so a later startup retries.
     logger.info('Release notes unavailable — will retry on a later startup', {

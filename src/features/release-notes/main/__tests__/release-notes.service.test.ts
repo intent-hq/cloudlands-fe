@@ -256,17 +256,44 @@ describe('release-notes service', () => {
       expect(fetchSpy).not.toHaveBeenCalled();
     });
 
-    it('shows the notes and advances the pref when the version changed', async () => {
+    it('shows the cumulative notes and advances the pref when versions were skipped', async () => {
       await writePref('2.0.0');
-      vi.stubGlobal('fetch', mockFetchOk('## 2.1.0'));
+      appVersion = '2.3.0';
+      vi.stubGlobal(
+        'fetch',
+        mockReleaseList([
+          release('v2.2.0', '## 2.2.0'),
+          release('v2.3.0', '## 2.3.0'),
+          release('v2.1.0', '## 2.1.0'),
+        ]),
+      );
       const { checkForReleaseNotesOnStartup } = await import('../release-notes.service');
       const show = vi.fn();
 
       const notes = await checkForReleaseNotesOnStartup(show);
 
-      expect(notes?.version).toBe('2.1.0');
+      expect(notes).toEqual({
+        version: '2.3.0',
+        notes: '## 2.3.0\n\n---\n\n## 2.2.0\n\n---\n\n## 2.1.0',
+        url: 'https://github.com/example/releases/tag/v2.3.0',
+      });
       expect(show).toHaveBeenCalledWith(notes);
-      expect(await readPref()).toBe('2.1.0');
+      expect(show).toHaveBeenCalledTimes(1);
+      expect(await readPref()).toBe('2.3.0');
+    });
+
+    it('keeps the prior pref when handing the payload off fails', async () => {
+      await writePref('2.0.0');
+      vi.stubGlobal('fetch', mockReleaseList([release('v2.1.0', '## 2.1.0')]));
+      const { checkForReleaseNotesOnStartup } = await import('../release-notes.service');
+
+      await expect(
+        checkForReleaseNotesOnStartup(() => {
+          throw new Error('renderer handoff failed');
+        }),
+      ).rejects.toThrow('renderer handoff failed');
+
+      expect(await readPref()).toBe('2.0.0');
     });
 
     it('leaves the pref untouched when the fetch fails, so a later startup retries', async () => {
@@ -294,7 +321,7 @@ describe('release-notes service', () => {
       // the pref must still advance.
       ipcHandlers.clear();
       await writePref('2.0.0');
-      vi.stubGlobal('fetch', mockFetchOk('## 2.1.0'));
+      vi.stubGlobal('fetch', mockReleaseList([release('v2.1.0', '## 2.1.0')]));
       const { initializeReleaseNotesOnStartup, setupReleaseNotesIPC } =
         await import('../release-notes.ipc');
       setupReleaseNotesIPC();
