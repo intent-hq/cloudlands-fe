@@ -3,16 +3,25 @@ import ChatPanelComposerGeometryHost from './ChatPanelComposerGeometryHost.svelt
 
 test.setTimeout(120_000);
 
+const regularStates = (['light', 'dark'] as const).flatMap((theme) =>
+  [1, 2].flatMap((zoom) =>
+    [
+      { width: 720, size: 'wide' },
+      { width: 180, size: 'narrow' },
+    ].map(({ width, size }) => ({
+      name: `regular ${size} ${theme} at ${zoom * 100}%`,
+      theme,
+      zoom,
+      width,
+      chief: false,
+      streaming: true,
+      draft: size === 'narrow' ? 'Long streaming draft '.repeat(12) : 'Short draft',
+    })),
+  ),
+);
+
 const states = [
-  {
-    name: 'regular wide light at 100%',
-    theme: 'light' as const,
-    zoom: 1,
-    width: 720,
-    chief: false,
-    streaming: true,
-    draft: 'Short draft',
-  },
+  ...regularStates,
   {
     name: 'Chief wide dark at 100%',
     theme: 'dark' as const,
@@ -21,15 +30,6 @@ const states = [
     chief: true,
     streaming: false,
     draft: '',
-  },
-  {
-    name: 'regular narrow dark at 200%',
-    theme: 'dark' as const,
-    zoom: 2,
-    width: 180,
-    chief: false,
-    streaming: true,
-    draft: 'Long streaming draft '.repeat(12),
   },
   {
     name: 'Chief narrow light at 200%',
@@ -109,38 +109,36 @@ for (const state of states) {
       return;
     }
     await expect(aurora).toBeVisible();
-    const [inputGeometry, auroraGeometry, shellGeometry, panelGeometry] = await Promise.all(
-      [
-        input,
-        aurora,
-        component.getByTestId('chat-composer-shell'),
-        component.locator('.panel'),
-      ].map((locator) =>
-        locator.evaluate((node) => {
-          const box = node.getBoundingClientRect();
-          const style = getComputedStyle(node);
-          return {
-            edges: [box.left, box.right, box.bottom],
-            radii: [style.borderBottomLeftRadius, style.borderBottomRightRadius],
-            overflow: style.overflow,
-            pointerEvents: style.pointerEvents,
-            z: style.zIndex,
-          };
-        }),
-      ),
-    );
+    const [inputGeometry, auroraGeometry, shellGeometry, panelContentGeometry, panelGeometry] =
+      await Promise.all(
+        [
+          input,
+          aurora,
+          component.getByTestId('chat-composer-shell'),
+          component.locator('.panel > .panel-content'),
+          component.locator('.panel'),
+        ].map((locator) =>
+          locator.evaluate((node) => {
+            const box = node.getBoundingClientRect();
+            const style = getComputedStyle(node);
+            return {
+              edges: [box.left, box.right, box.bottom],
+              radii: [style.borderBottomLeftRadius, style.borderBottomRightRadius],
+              overflow: style.overflow,
+              pointerEvents: style.pointerEvents,
+              z: style.zIndex,
+            };
+          }),
+        ),
+      );
     if (state.chief) {
       expect(auroraGeometry.edges[0]).toBeLessThan(inputGeometry.edges[0]);
       expect(auroraGeometry.edges[1]).toBeGreaterThan(inputGeometry.edges[1]);
       expect(auroraGeometry.edges[2]).toBeGreaterThan(inputGeometry.edges[2]);
       expect(auroraGeometry.radii).toEqual(['0px', '0px']);
     } else {
-      const scrollbarGutter = await prompt.evaluate((node) =>
-        Number.parseFloat(getComputedStyle(node).paddingInlineEnd),
-      );
-      expect(auroraGeometry.edges[0]).toBeCloseTo(shellGeometry.edges[0]);
-      expect(auroraGeometry.edges[1]).toBeCloseTo(shellGeometry.edges[1] - scrollbarGutter);
-      expect(auroraGeometry.edges[2]).toBeCloseTo(shellGeometry.edges[2]);
+      expect(auroraGeometry.edges).toEqual(shellGeometry.edges);
+      expect(auroraGeometry.edges).toEqual(panelContentGeometry.edges);
       expect(auroraGeometry.radii).toEqual(panelGeometry.radii);
       expect(Number.parseFloat(auroraGeometry.radii[0])).toBeGreaterThan(0);
     }

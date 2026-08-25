@@ -5702,7 +5702,9 @@
     data-testid="chat-composer-shell"
   >
     <!-- Aurora northern lights effect during streaming. The regular host reaches
-         the composer shell edges while preserving the measured scrollbar gutter.
+         the panel's inner edges and paints beneath the measured scrollbar gutter;
+         the prompt layer keeps controls aligned above it. The inherited panel-shell
+         radius clips the Aurora to the same visible bottom corners as its owner.
          The chief variant bleeds further left/bottom so the shader crosses the
          ChiefCard px-2 inset and the sidebar frame's pl-2/pb-2 window inset (the
          ancestors clip with an 8px overflow-clip-margin), touching the app window's
@@ -5720,8 +5722,7 @@
         </div>
       {:else}
         <div
-          class="composer-aurora-host pointer-events-none absolute bottom-0 left-0 z-0 overflow-hidden rounded-b-lg"
-          style:right="{scrollbarGutterWidth}px"
+          class="composer-aurora-host regular-composer-aurora-host pointer-events-none absolute inset-x-0 bottom-0 z-0 overflow-hidden"
           style="height: calc(100% + 10rem);"
           data-testid="composer-aurora-host"
           transition:fade
@@ -5899,6 +5900,11 @@
 
   .conversation-composer.chief-composer {
     --composer-lane-inset: 0.25rem;
+  }
+
+  .regular-composer-aurora-host {
+    border-bottom-left-radius: var(--panel-shell-radius);
+    border-bottom-right-radius: var(--panel-shell-radius);
   }
 
   .composer-prompt-lane {

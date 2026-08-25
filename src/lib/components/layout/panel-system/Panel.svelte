@@ -375,7 +375,7 @@
   <div
     bind:this={panelRef}
     class={cn(
-      'panel group/panel relative flex flex-col h-full overflow-hidden rounded-lg text-foreground',
+      'panel group/panel relative flex flex-col h-full overflow-hidden rounded-(--panel-shell-radius) text-foreground',
     )}
     class:bg-sidebar={panel.pristine === true && panel.tabs.length === 0}
     class:bg-background={panel.pristine !== true || panel.tabs.length > 0}
@@ -507,6 +507,7 @@
 
 <style>
   .panel {
+    --panel-shell-radius: var(--radius-large);
     position: relative;
     width: 100%;
     min-width: 0;

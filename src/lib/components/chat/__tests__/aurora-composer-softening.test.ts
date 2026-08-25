@@ -6,6 +6,10 @@ const panel = readFileSync(
   resolve(process.cwd(), 'src/lib/components/chat/ChatPanel.svelte'),
   'utf8',
 );
+const panelShell = readFileSync(
+  resolve(process.cwd(), 'src/lib/components/layout/panel-system/Panel.svelte'),
+  'utf8',
+);
 const softeningLayer = readFileSync(
   resolve(process.cwd(), 'src/lib/components/chat/AuroraSofteningLayer.svelte'),
   'utf8',
@@ -27,10 +31,13 @@ describe('composer Aurora softening layer', () => {
       'class="composer-aurora-host pointer-events-none absolute -left-4 -right-2 -bottom-4 z-0 overflow-hidden"',
     );
     expect(panel).toContain(
-      'class="composer-aurora-host absolute inset-x-0 bottom-0 z-0 overflow-hidden rounded-lg"',
+      'class="composer-aurora-host regular-composer-aurora-host pointer-events-none absolute inset-x-0 bottom-0 z-0 overflow-hidden"',
     );
-    expect(panel).toContain('class="pointer-events-none absolute inset-y-0 left-0 z-0"');
-    expect(panel).toContain('style:right="{scrollbarGutterWidth}px"');
+    expect(panel).not.toContain('style:right="{scrollbarGutterWidth}px"');
+    expect(panel).toContain('border-bottom-left-radius: var(--panel-shell-radius)');
+    expect(panel).toContain('border-bottom-right-radius: var(--panel-shell-radius)');
+    expect(panelShell).toContain('rounded-(--panel-shell-radius)');
+    expect(panelShell).toContain('--panel-shell-radius: var(--radius-large)');
     expect(panel).toContain('class:chief-composer={isChiefWorkspace}');
     expect(panel).not.toContain('class:pb-3={!hasVisibleTranscriptUtility}');
     expect(softeningLayer).toContain('aria-hidden="true"');

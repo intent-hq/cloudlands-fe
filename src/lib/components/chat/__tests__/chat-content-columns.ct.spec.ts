@@ -1,7 +1,18 @@
 import { expect, test } from '@playwright/experimental-ct-svelte';
+import type { Locator } from '@playwright/test';
 import ChatPanelOperationalGeometryHost from './ChatPanelOperationalGeometryHost.svelte';
 
 const center = (box: { x: number; width: number }) => box.x + box.width / 2;
+
+const bottomSurfaceGeometry = (locator: Locator) =>
+  locator.evaluate((node) => {
+    const box = node.getBoundingClientRect();
+    const style = getComputedStyle(node);
+    return {
+      edges: [box.left, box.right, box.bottom],
+      radii: [style.borderBottomLeftRadius, style.borderBottomRightRadius],
+    };
+  });
 
 test('caps and centers transcript, prompt, and composer at the shared 140em measure', async ({
   mount,
@@ -16,7 +27,6 @@ test('caps and centers transcript, prompt, and composer at the shared 140em meas
   const composerLane = component.getByTestId('chat-composer-lane');
   const shell = component.getByTestId('chat-composer-shell');
   const promptLayer = component.getByTestId('composer-prompt-layer');
-  const input = component.getByTestId('message-input');
   const aurora = component.getByTestId('composer-aurora-host');
 
   for (const theme of ['light', 'dark'] as const) {
@@ -39,30 +49,27 @@ test('caps and centers transcript, prompt, and composer at the shared 140em meas
           return Math.abs(transcriptBox!.width - composerLaneBox!.width);
         })
         .toBeLessThanOrEqual(1);
-      const [
-        transcriptBox,
-        composerBox,
-        composerLaneBox,
-        shellBox,
-        promptBox,
-        inputBox,
-        auroraBox,
-      ] = await Promise.all([
+      const [transcriptBox, composerBox, composerLaneBox, shellBox, promptBox] = await Promise.all([
         transcript.boundingBox(),
         composer.boundingBox(),
         composerLane.boundingBox(),
         shell.boundingBox(),
         promptLayer.boundingBox(),
-        input.boundingBox(),
-        aurora.boundingBox(),
       ]);
       expect(composerLaneBox!.width).toBeCloseTo(transcriptBox!.width, 1);
       expect(composerBox!.width).toBeCloseTo(transcriptBox!.width - 48 * zoom, 1);
       expect(Math.abs(center(transcriptBox!) - center(composerBox!))).toBeLessThanOrEqual(0.5);
       expect(promptBox!.width).toBeCloseTo(shellBox!.width, 1);
-      expect(auroraBox!.x).toBeCloseTo(inputBox!.x, 1);
-      expect(auroraBox!.x + auroraBox!.width).toBeCloseTo(inputBox!.x + inputBox!.width, 1);
-      expect(auroraBox!.y + auroraBox!.height).toBeCloseTo(inputBox!.y + inputBox!.height, 1);
+      const [auroraGeometry, shellGeometry, panelContentGeometry, panelGeometry] =
+        await Promise.all([
+          bottomSurfaceGeometry(aurora),
+          bottomSurfaceGeometry(shell),
+          bottomSurfaceGeometry(component.locator('.panel > .panel-content')),
+          bottomSurfaceGeometry(component.locator('.panel')),
+        ]);
+      expect(auroraGeometry.edges).toEqual(shellGeometry.edges);
+      expect(auroraGeometry.edges).toEqual(panelContentGeometry.edges);
+      expect(auroraGeometry.radii).toEqual(panelGeometry.radii);
       await expect(promptLayer).toHaveCSS('border-top-width', '0px');
       await expect(composerLane).toHaveCSS('padding-left', '24px');
       await expect(composerLane).toHaveCSS('padding-right', '24px');
@@ -94,6 +101,8 @@ test('keeps the nested composer inset without a narrow scroll owner', async ({ m
   const composer = component.getByTestId('chat-composer-controls-inner');
   const composerLane = component.getByTestId('chat-composer-lane');
   const viewport = component.getByTestId('chat-transcript-scroll-viewport');
+  const aurora = component.getByTestId('composer-aurora-host');
+  const shell = component.getByTestId('chat-composer-shell');
 
   for (const theme of ['light', 'dark'] as const) {
     for (const zoom of [1, 2]) {
@@ -128,6 +137,16 @@ test('keeps the nested composer inset without a narrow scroll owner', async ({ m
       );
       await expect(viewport).toHaveCSS('overflow-y', 'auto');
       await expect(transcript).toHaveCSS('overflow-y', 'visible');
+      const [auroraGeometry, shellGeometry, panelContentGeometry, panelGeometry] =
+        await Promise.all([
+          bottomSurfaceGeometry(aurora),
+          bottomSurfaceGeometry(shell),
+          bottomSurfaceGeometry(component.locator('.panel > .panel-content')),
+          bottomSurfaceGeometry(component.locator('.panel')),
+        ]);
+      expect(auroraGeometry.edges).toEqual(shellGeometry.edges);
+      expect(auroraGeometry.edges).toEqual(panelContentGeometry.edges);
+      expect(auroraGeometry.radii).toEqual(panelGeometry.radii);
     }
   }
 });

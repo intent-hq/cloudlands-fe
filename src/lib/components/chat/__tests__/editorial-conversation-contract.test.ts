@@ -419,7 +419,7 @@ describe('editorial conversation presentation contract', () => {
       'class="composer-aurora-host pointer-events-none absolute -left-4 -right-2 -bottom-4 z-0 overflow-hidden"',
     );
     expect(panel).toContain(
-      'class="composer-aurora-host absolute inset-x-0 bottom-0 z-0 overflow-hidden rounded-lg"',
+      'class="composer-aurora-host regular-composer-aurora-host pointer-events-none absolute inset-x-0 bottom-0 z-0 overflow-hidden"',
     );
     expect(panel).toContain('height: calc(100% + 10rem)');
     expect(panel).toContain('class="relative z-20 mt-6 {isChiefWorkspace');
