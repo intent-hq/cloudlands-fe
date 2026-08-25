@@ -85,10 +85,14 @@
   } from '$store/renderer/slices/workspace/workspace-selectors';
   import {
     selectBootRouteGateResolved,
-    selectLocalSetupGate,
+    selectBackendSetupGate,
   } from '$store/renderer/slices/setup-prompt/setup-prompt-selectors';
   import { bootRouteGateResolved } from '$store/renderer/slices/setup-prompt/setup-prompt-slice';
-  import { decideBootRoute, getBootRoutePathname } from '$lib/utils/boot-route-gate';
+  import {
+    BOOT_ROUTE_HOLD_TIMEOUT_MS,
+    decideBootRoute,
+    getBootRoutePathname,
+  } from '$lib/utils/boot-route-gate';
   import {
     loadWorkspacesRequested,
     recordWorkspaceView,
@@ -135,7 +139,7 @@
   const workspaceId = $derived(workspaceIdFromRoute(routePathname, routeWorkspaceId) ?? undefined);
   const workspaceItems = selectWorkspaceItems();
   const workspaceHasLoaded = selectWorkspaceHasLoaded();
-  const localSetupGate = selectLocalSetupGate();
+  const backendSetupGate = selectBackendSetupGate();
   const bootGateResolved = selectBootRouteGateResolved();
   const currentWorkspaceTabId = selectCurrentWorkspaceTabId();
   const workspaceTabsHydrated = selectWorkspaceTabsHydrated();
@@ -200,22 +204,35 @@
   // /workspace/new, which renders onboarding. Gate boot (and legacy `/`)
   // loads on the backend-derived setup evaluation: land on an existing
   // workspace when the backend has one, and only fall through to onboarding
-  // when the local backend genuinely needs first-run setup (no workspaces and
-  // no ready providers). The decision logic lives in decideBootRoute
-  // (boot-route-gate); it fires at most once per full page load, so
-  // deliberate in-app navigation to `/` or /workspace/new is unaffected.
-  // While it holds, WorkspaceSurface suppresses onboarding so the wizard
-  // never flashes before a redirect.
+  // when the active backend (local or remote) genuinely needs first-run setup
+  // (no workspaces and no ready providers). The decision logic lives in
+  // decideBootRoute (boot-route-gate); it fires at most once per full page
+  // load, so deliberate in-app navigation to `/` or /workspace/new is
+  // unaffected. While it holds, WorkspaceSurface suppresses onboarding so the
+  // wizard never flashes before a redirect. The hold is bounded: if nothing
+  // settles within BOOT_ROUTE_HOLD_TIMEOUT_MS (e.g. provider probes failing
+  // forever, so neither a check settlement nor an evaluation ever arrives),
+  // bootHoldTimedOut flips and decideBootRoute resolves best-effort instead
+  // of holding a blank surface indefinitely.
+  let bootHoldTimedOut = $state(false);
+  $effect(() => {
+    if ($bootGateResolved) return;
+    const timer = setTimeout(() => {
+      bootHoldTimedOut = true;
+    }, BOOT_ROUTE_HOLD_TIMEOUT_MS);
+    return () => clearTimeout(timer);
+  });
   $effect(() => {
     const decision = decideBootRoute({
       bootPathname: getBootRoutePathname(),
       currentPathname: window.location.pathname,
       gateResolved: $bootGateResolved,
-      localSetupGate: $localSetupGate,
+      setupGate: $backendSetupGate,
       workspaceHasLoaded: $workspaceHasLoaded,
       workspaces: $workspaceItems,
       tabsHydrated: $workspaceTabsHydrated,
       currentTabId: $currentWorkspaceTabId,
+      holdTimedOut: bootHoldTimedOut,
     });
     if (decision.kind !== 'resolve') return;
     untrack(() => {
