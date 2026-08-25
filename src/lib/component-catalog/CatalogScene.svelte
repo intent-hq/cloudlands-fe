@@ -123,8 +123,6 @@
         return;
       }
       if (cancelled) return;
-      status = 'ready';
-      setActivePreview({ slug: nextSlug, state: stateName, width: nextWidth, status: 'ready' });
 
       try {
         if (!sceneElement) throw new Error('Preview scene element is unavailable.');
@@ -134,6 +132,8 @@
         if (cancelled) return;
         captureMotion = stability.reducedMotion ? 'reduced' : 'full';
         stabilityStatus = 'stable';
+        status = 'ready';
+        setActivePreview({ slug: nextSlug, state: stateName, width: nextWidth, status: 'ready' });
       } catch (preparationError) {
         if (cancelled || stabilityController.signal.aborted) return;
         const cleanupError = cleanupSetup();
