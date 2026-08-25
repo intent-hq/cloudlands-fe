@@ -96,14 +96,14 @@ describe('WorkspaceTokenUsage', () => {
       'workspace-token-usage-processed-ws-1 workspace-token-usage-cache-ws-1',
     );
     expect(document.getElementById('workspace-token-usage-processed-ws-1')?.textContent).toContain(
-      '1K processed',
+      '1K tokens used',
     );
     expect(document.getElementById('workspace-token-usage-cache-ws-1')?.textContent).toContain(
       '70% Cached',
     );
     expect(document.getElementById(detailsId!)).toBeNull();
     expect(visibleText(disclosure)).toContain('Token usage');
-    expect(visibleText(disclosure)).toContain('1K processed');
+    expect(visibleText(disclosure)).toContain('1K tokens used');
     expect(visibleText(disclosure)).toContain('70% Cached');
 
     await fireEvent.click(disclosure);
@@ -130,7 +130,7 @@ describe('WorkspaceTokenUsage', () => {
     expect(document.getElementById(detailsId!)).toBeNull();
   });
 
-  it('renders the full inspiration hierarchy with proportional stacked navigators', async () => {
+  it('renders the minimal reference hierarchy with proportional stacked navigators', async () => {
     mocks.state.usage = makeUsage({
       byAgentId: {
         'agent-a': {
@@ -227,18 +227,13 @@ describe('WorkspaceTokenUsage', () => {
     expect(
       modelSection.compareDocumentPosition(compositionHeading) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
-    expect(screen.getByRole('heading', { name: 'By agent' })).toBeTruthy();
-    expect(screen.getByRole('heading', { name: 'By model' })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'By agent' }).classList).toContain('sr-only');
+    expect(screen.getByRole('heading', { name: 'By model' }).classList).toContain('sr-only');
+    expect(compositionHeading.classList).toContain('sr-only');
 
     const composition = compositionHeading.closest('section')!;
-    expect(visibleText(compositionHeading.parentElement!)).toContain(
-      'Token composition Active scope Workspace 9.4M processed',
-    );
-    const compositionStrip = composition.querySelector('div[aria-hidden="true"]')!;
-    const stripSegments = Array.from(compositionStrip.children) as HTMLElement[];
-    expect(stripSegments).toHaveLength(3);
-    expect(stripSegments[0].classList.contains('bg-success')).toBe(true);
-    expect(stripSegments.every((segment) => segment.style.width.endsWith('%'))).toBe(true);
+    expect(composition.querySelector('.preview-status')?.classList).toContain('sr-only');
+    expect(composition.querySelector('.composition-strip')).toBeNull();
     const compositionRows = Array.from(composition.querySelectorAll('.composition-row'));
     expect(compositionRows).toHaveLength(4);
     const compositionValues = compositionRows.map((compositionRow) => ({
@@ -379,7 +374,7 @@ describe('WorkspaceTokenUsage', () => {
     });
 
     expect(visibleText(previewStatus)).toBe('Active scope Workspace 1.1K processed');
-    expect(visibleText(disclosure)).toContain('1.1K processed');
+    expect(visibleText(disclosure)).toContain('1.1K tokens used');
 
     await fireEvent.pointerEnter(alpha, { pointerType: 'mouse' });
     expect(visibleText(previewStatus)).toBe('Active scope By agent Alpha 150 processed');
@@ -429,7 +424,7 @@ describe('WorkspaceTokenUsage', () => {
 
     await fireEvent.blur(reasoning);
     expect(visibleText(previewStatus)).toBe('Active scope Workspace 1.1K processed');
-    expect(visibleText(disclosure)).toContain('1.1K processed');
+    expect(visibleText(disclosure)).toContain('1.1K tokens used');
 
     await fireEvent.pointerEnter(alpha, { pointerType: 'touch' });
     await fireEvent.pointerDown(alpha, { pointerType: 'touch' });
@@ -696,7 +691,7 @@ describe('WorkspaceTokenUsage', () => {
 
     await renderExpandedTokenUsage();
 
-    expect(visibleText(screen.getByTestId('token-usage-disclosure'))).toContain('4.2K processed');
+    expect(visibleText(screen.getByTestId('token-usage-disclosure'))).toContain('4.2K tokens used');
 
     const modelSection = screen.getByTestId('token-usage-by-model');
     const agentSection = screen.getByTestId('token-usage-by-agent');
@@ -731,7 +726,7 @@ describe('WorkspaceTokenUsage', () => {
 
     await renderExpandedTokenUsage();
 
-    expect(visibleText(screen.getByTestId('token-usage-disclosure'))).toContain('30 processed');
+    expect(visibleText(screen.getByTestId('token-usage-disclosure'))).toContain('30 tokens used');
     const modelSection = screen.getByTestId('token-usage-by-model');
     expect(visibleText(modelSection)).toBe('By model Model Big 100%');
     const composition = screen

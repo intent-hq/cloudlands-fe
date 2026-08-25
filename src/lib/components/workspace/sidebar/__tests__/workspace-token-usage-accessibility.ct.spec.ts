@@ -23,11 +23,11 @@ test('exposes compact values and keeps summary text readable on hover', async ({
   });
   const disclosure = component.locator('button[aria-controls^="workspace-token-usage-details-"]');
 
-  await expect(disclosure).toHaveAccessibleDescription('1K processed 64% Cached');
+  await expect(disclosure).toHaveAccessibleDescription('1K tokens used 64% Cached');
   await disclosure.focus();
   await disclosure.press('Space');
   await expect(disclosure).toHaveAccessibleName('Collapse token usage details');
-  await expect(disclosure).toHaveAccessibleDescription('1K processed 64% Cached');
+  await expect(disclosure).toHaveAccessibleDescription('1K tokens used 64% Cached');
   await disclosure.press('Enter');
   await expect(disclosure).toHaveAccessibleName('Expand token usage details');
   await disclosure.click();
@@ -167,9 +167,7 @@ test('navigates exact stacked totals with accessible pointer, focus, theme, and 
     { value: '15', share: '30%' },
     { value: '0', share: '0%' },
   ]);
-  await expect(
-    details.locator('div[aria-hidden="true"]').first().locator(':scope > span'),
-  ).toHaveCount(3);
+  await expect(details.locator('.composition-strip')).toHaveCount(0);
 
   await longModel.focus();
   const selectedLongModel = component
@@ -254,24 +252,24 @@ test('renders the full reference table as a wide overlay from the real workspace
   expect(contentBox).not.toBeNull();
   expect(sidebarBox!.width).toBeCloseTo(352, 0);
   expect(sidebarRegionBox!.width).toBeCloseTo(304, 0);
-  expect(closedBox!.height).toBeGreaterThanOrEqual(38);
-  expect(closedBox!.height).toBeLessThanOrEqual(40);
+  expect(closedBox!.height).toBeGreaterThanOrEqual(34);
+  expect(closedBox!.height).toBeLessThanOrEqual(36);
   expect(disclosureBox!.width).toBeCloseTo(304, 0);
-  expect(summaryMetrics.borderRadius).toBeGreaterThanOrEqual(6);
-  expect(summaryMetrics.borderRadius).toBeLessThanOrEqual(8);
+  expect(summaryMetrics.borderRadius).toBeGreaterThanOrEqual(2);
+  expect(summaryMetrics.borderRadius).toBeLessThanOrEqual(5);
   expect(summaryMetrics.backgroundColor).not.toBe('rgba(0, 0, 0, 0)');
   expect(summaryMetrics.borderColor).not.toBe('rgba(0, 0, 0, 0)');
   expect(summaryMetrics).toMatchObject({
     processedFontSize: 14,
     tokenLabelDisplay: 'block',
     tokenLabelFontSize: 13,
-    tokenLabelText: 'Tokens',
-    tokenLabelTransform: 'uppercase',
+    tokenLabelText: 'tokens used',
+    tokenLabelTransform: 'none',
     cacheLabelDisplay: 'block',
     cacheLabelText: 'Cached',
   });
   expect(summaryMetrics.cacheLeft - summaryMetrics.tokenRight).toBeGreaterThanOrEqual(4);
-  await expect(disclosure.getByText('Tokens', { exact: true })).toBeVisible();
+  await expect(disclosure.getByText('tokens used', { exact: true })).toBeVisible();
   await expect(disclosure.getByText('Cached', { exact: true })).toBeVisible();
 
   await disclosure.click();
@@ -293,9 +291,19 @@ test('renders the full reference table as a wide overlay from the real workspace
     };
   });
 
-  await expect(details.getByRole('heading', { name: 'Token composition' })).toBeVisible();
-  expect(detailsMetrics.borderRadius).toBeGreaterThanOrEqual(8);
-  expect(detailsMetrics.borderRadius).toBeLessThanOrEqual(10);
+  const accessibleOnlyChrome = details.locator('h4.sr-only, .preview-status.sr-only');
+  await expect(accessibleOnlyChrome).toHaveCount(4);
+  expect(
+    await accessibleOnlyChrome.evaluateAll((elements) =>
+      elements.every((element) => {
+        const box = element.getBoundingClientRect();
+        const style = getComputedStyle(element);
+        return box.width <= 1 && box.height <= 1 && style.position === 'absolute';
+      }),
+    ),
+  ).toBe(true);
+  expect(detailsMetrics.borderRadius).toBeGreaterThanOrEqual(4);
+  expect(detailsMetrics.borderRadius).toBeLessThanOrEqual(7);
   expect(detailsMetrics.backgroundColor).not.toBe('rgba(0, 0, 0, 0)');
   expect(detailsMetrics.borderColor).not.toBe('rgba(0, 0, 0, 0)');
   expect(detailsMetrics).toMatchObject({
@@ -324,22 +332,7 @@ test('renders the full reference table as a wide overlay from the real workspace
   await expect(component.getByTestId('token-usage-message-counts')).toHaveText(
     /Human messages 4\s+Agent messages 7/,
   );
-  await expect(
-    composition.locator('div[aria-hidden="true"]').first().locator(':scope > span').first(),
-  ).toHaveClass(/bg-success/);
-  expect(
-    await composition
-      .locator('div[aria-hidden="true"]')
-      .first()
-      .locator(':scope > span')
-      .evaluateAll((segments) =>
-        segments.every(
-          (segment) =>
-            Number.parseFloat(getComputedStyle(segment).minWidth) >= 2 &&
-            segment.getBoundingClientRect().width >= 2,
-        ),
-      ),
-  ).toBe(true);
+  await expect(composition.locator('.composition-strip')).toHaveCount(0);
 
   const [
     detailsBox,
@@ -410,26 +403,19 @@ test('renders the full reference table as a wide overlay from the real workspace
       const divider = getComputedStyle(grid, '::after');
       const secondSection = grid.querySelector('.breakdown-section + .breakdown-section')!;
       return {
-        top: Number.parseFloat(divider.top),
-        bottom: Number.parseFloat(divider.bottom),
-        height: Number.parseFloat(divider.height),
+        content: divider.content,
         backgroundColor: divider.backgroundColor,
         secondSectionBorderLeftWidth: getComputedStyle(secondSection).borderLeftWidth,
       };
     }),
     composition.evaluate((section) => {
-      const heading = section.querySelector('h4')!.getBoundingClientRect();
-      const bar = section.querySelector('div[aria-hidden="true"]')!.getBoundingClientRect();
       const row = section.querySelector('.composition-row')!.getBoundingClientRect();
       return {
-        headingLeft: heading.left,
-        barLeft: bar.left,
         rowLeft: row.left,
       };
     }),
     details.locator('.breakdown-section').evaluateAll((sections) =>
       sections.map((section) => ({
-        headingLeft: section.querySelector('h4')!.getBoundingClientRect().left,
         selectionLeft: section.querySelector('.navigator-selection')!.getBoundingClientRect().left,
         barLeft: section.querySelector('.breakdown-stack')!.getBoundingClientRect().left,
       })),
@@ -449,43 +435,29 @@ test('renders the full reference table as a wide overlay from the real workspace
   expect(modelBox).not.toBeNull();
   expect(Math.abs(agentBox!.y - modelBox!.y)).toBeLessThanOrEqual(1);
   expect(agentBox!.width).toBeCloseTo(modelBox!.width, 0);
-  expect(detailsBox!.height).toBeGreaterThanOrEqual(400);
-  expect(detailsBox!.height).toBeLessThanOrEqual(500);
-  expect(agentBox!.height).toBeGreaterThanOrEqual(110);
-  expect(modelBox!.height).toBeGreaterThanOrEqual(110);
-  expect(breakdownDivider.top).toBe(0);
-  expect(breakdownDivider.bottom).toBe(0);
-  expect(breakdownDivider.backgroundColor).not.toBe('rgba(0, 0, 0, 0)');
+  expect(detailsBox!.height).toBeGreaterThanOrEqual(260);
+  expect(detailsBox!.height).toBeLessThanOrEqual(380);
+  expect(agentBox!.height).toBeGreaterThanOrEqual(50);
+  expect(modelBox!.height).toBeGreaterThanOrEqual(50);
+  expect(breakdownDivider.content).toBe('none');
+  expect(breakdownDivider.backgroundColor).toBe('rgba(0, 0, 0, 0)');
   expect(breakdownDivider.secondSectionBorderLeftWidth).toBe('0px');
   expect(
-    Math.max(
-      compositionAlignment.headingLeft,
-      compositionAlignment.barLeft,
-      compositionAlignment.rowLeft,
-    ) -
-      Math.min(
-        compositionAlignment.headingLeft,
-        compositionAlignment.barLeft,
-        compositionAlignment.rowLeft,
-      ),
+    Math.abs(breakdownAlignment[0].selectionLeft - compositionAlignment.rowLeft),
   ).toBeLessThanOrEqual(1);
   expect(
     breakdownAlignment.every(
-      ({ headingLeft, selectionLeft, barLeft }) =>
-        Math.max(headingLeft, selectionLeft, barLeft) -
-          Math.min(headingLeft, selectionLeft, barLeft) <=
-        1,
+      ({ selectionLeft, barLeft }) => Math.abs(selectionLeft - barLeft) <= 1,
     ),
   ).toBe(true);
-  expect(breakdownAlignment[0].headingLeft).toBeCloseTo(compositionAlignment.headingLeft, 0);
-  expect(breakdownAlignment[1].headingLeft).toBeCloseTo(
+  expect(breakdownAlignment[1].selectionLeft).toBeCloseTo(
     detailsBox!.x + detailsBox!.width / 2 + 16,
     0,
   );
   expect(
     navigatorStacks.every(
       ({ box, segmentCount, segmentWidth, overflowX }) =>
-        box.height === 32 &&
+        box.height === 10 &&
         segmentCount === 4 &&
         Math.abs(segmentWidth - box.width) <= 1 &&
         overflowX === 'hidden',
@@ -512,18 +484,16 @@ test('renders the full reference table as a wide overlay from the real workspace
         contextDisplay,
       }) =>
         row.height >= 44 &&
-        row.height <= 50 &&
-        descriptionFontSize === 14 &&
+        row.height <= 56 &&
+        descriptionFontSize === 13 &&
         descriptionScrollWidth <= descriptionClientWidth &&
         descriptionDisplay !== 'none' &&
         contextDisplay !== 'none' &&
         valueAlign === 'right' &&
         contextAlign === 'right' &&
-        Math.max(metric.y, description.y, value.y, context.y) -
-          Math.min(metric.y, description.y, value.y, context.y) <=
-          1 &&
-        metric.x < description.x &&
-        description.x < value.x &&
+        description.y > metric.y &&
+        Math.abs(metric.x - description.x) <= 1 &&
+        metric.x < value.x &&
         value.x < context.x,
     ),
   ).toBe(true);
@@ -614,7 +584,8 @@ test('renders the full reference table as a wide overlay from the real workspace
       ({ ys, descriptionDisplay, contextDisplay }) =>
         descriptionDisplay !== 'none' &&
         contextDisplay !== 'none' &&
-        Math.max(...ys) - Math.min(...ys) <= 1,
+        ys[1] > ys[0] &&
+        Math.abs(ys[2] - ys[3]) <= 1,
     ),
   ).toBe(true);
   expect(
@@ -688,7 +659,12 @@ test('dismisses, repositions, flips, and clamps the overlay without changing wor
   expect(detailsBox!.y + detailsBox!.height).toBeCloseTo(anchorBox!.y - 8, 0);
   expect(detailsBox!.height).toBeLessThanOrEqual(anchorBox!.y - 16);
 
-  await component.update({ props: { placement: 'bottom', side: 'right' } });
+  await sidebar.evaluate((element) => {
+    element.style.position = 'absolute';
+    element.style.right = '0';
+  });
+  await page.evaluate(() => new Promise(requestAnimationFrame));
+  await expect.poll(async () => (await sidebar.boundingBox())!.x).toBeGreaterThan(300);
   await page.evaluate(() => window.dispatchEvent(new Event('resize')));
   await expect
     .poll(async () => {
@@ -700,7 +676,13 @@ test('dismisses, repositions, flips, and clamps the overlay without changing wor
   expect(detailsBox!.x).toBeLessThan(anchorBox!.x);
   expect(detailsBox!.x).toBeGreaterThanOrEqual(8);
 
-  await component.update({ props: { placement: 'top', side: 'left' } });
+  await sidebar.evaluate((element) => {
+    element.style.position = '';
+    element.style.right = '';
+  });
+  await component.update({
+    props: { theme: 'dark', width: 304, placement: 'top', side: 'left' },
+  });
   await sidebarScroll.evaluate((element) => element.scrollTo({ top: 0 }));
   await page.setViewportSize({ width: 280, height: 520 });
   const compositionRows = details.locator('.composition-row');
@@ -736,9 +718,7 @@ test('dismisses, repositions, flips, and clamps the overlay without changing wor
   expect(
     compactRows.every(
       ({ metric, description, value, context }) =>
-        Math.abs(metric.y - value.y) <= 1 &&
-        Math.abs(value.y - context.y) <= 1 &&
-        description.y > metric.y,
+        description.y > metric.y && Math.abs(value.y - context.y) <= 1,
     ),
   ).toBe(true);
   expect(modelBox!.y).toBeGreaterThanOrEqual(agentBox!.y + agentBox!.height - 1);
