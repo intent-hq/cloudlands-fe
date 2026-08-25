@@ -308,17 +308,23 @@ describe('setupWorkspaceFileProtocolHandler', () => {
     const first = Buffer.from('first-half');
     const second = Buffer.from('second');
     const size = first.length + second.length;
+    const concatSpy = vi.spyOn(Buffer, 'concat');
     mockRequest
       .mockResolvedValueOnce(chunk(first, first.length, size))
       .mockResolvedValueOnce(chunk(second, second.length, size));
 
-    const res = await getHandler()(appRequest('workspace-file://ws-1/big.webp'));
+    try {
+      const res = await getHandler()(appRequest('workspace-file://ws-1/big.webp'));
 
-    expect(mockRequest).toHaveBeenCalledTimes(2);
-    expect(mockRequest.mock.calls[1][1]).toMatchObject({ offset: first.length });
-    expect(res.status).toBe(200);
-    expect(res.headers.get('Content-Type')).toBe('image/webp');
-    expect(Buffer.from(await res.arrayBuffer())).toEqual(Buffer.concat([first, second]));
+      expect(mockRequest).toHaveBeenCalledTimes(2);
+      expect(mockRequest.mock.calls[1][1]).toMatchObject({ offset: first.length });
+      expect(concatSpy).toHaveBeenCalledTimes(1);
+      expect(res.status).toBe(200);
+      expect(res.headers.get('Content-Type')).toBe('image/webp');
+      expect(Buffer.from(await res.arrayBuffer()).toString()).toBe('first-halfsecond');
+    } finally {
+      concatSpy.mockRestore();
+    }
   });
 
   it('serves an empty file as an empty 200 body', async () => {

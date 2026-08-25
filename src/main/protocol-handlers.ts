@@ -430,6 +430,7 @@ export function setupWorkspaceFileProtocolHandler() {
       }
 
       const body = Buffer.concat(chunks);
+      const responseBody = new Uint8Array(body.buffer, body.byteOffset, body.byteLength);
       const commonHeaders = {
         ...corsHeaders,
         'Content-Type': mimeType,
@@ -438,7 +439,7 @@ export function setupWorkspaceFileProtocolHandler() {
         'Content-Length': String(body.byteLength),
       };
       if (requestedRange && expectedSize !== undefined) {
-        return new Response(new Uint8Array(body), {
+        return new Response(responseBody, {
           status: 206,
           headers: {
             ...commonHeaders,
@@ -447,7 +448,7 @@ export function setupWorkspaceFileProtocolHandler() {
         });
       }
 
-      return new Response(new Uint8Array(Buffer.concat(chunks)), {
+      return new Response(responseBody, {
         status: 200,
         headers: commonHeaders,
       });
