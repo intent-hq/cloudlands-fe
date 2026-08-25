@@ -202,6 +202,33 @@ function migrateLegacyBackgroundModel(
  * rows need no entry (always enabled).
  */
 let enablementSeedInFlight = false;
+let enablementSeedDeferred = false;
+
+/**
+ * Boot race guard: `connections.activeId` stays at its boot-time local default
+ * until the connections saga's async `connections:list` IPC resolves, while
+ * the settings snapshot can hydrate first — so the local-only gate in
+ * `seedDefaultProviderEnablement` cannot trust `getActiveBackendId` yet (a
+ * remote boot would pass it and seed stale local renderer state into the
+ * remote daemon). Defer the seed until `hasReceivedList` flips, then re-run
+ * the full gate against the settled active backend.
+ */
+function deferEnablementSeedUntilConnectionsList(): void {
+  if (enablementSeedDeferred) return;
+  enablementSeedDeferred = true;
+  let settled = false;
+  const unsubscribe = appStore.getReadableState().subscribe((state) => {
+    if (settled || !state.connections?.hasReceivedList) return;
+    settled = true;
+    // Microtask: the subscriber fires synchronously on subscribe, before
+    // `unsubscribe` is assigned.
+    queueMicrotask(() => {
+      unsubscribe();
+      enablementSeedDeferred = false;
+      seedDefaultProviderEnablement();
+    });
+  });
+}
 
 function resolveDefaultProviderCandidate(
   activeProviderId: string,
@@ -218,19 +245,28 @@ function resolveDefaultProviderCandidate(
 }
 
 function seedDefaultProviderEnablement(): void {
+  const state = appStore.state;
+  const { activeProviderId, enabledProviders } = state.providerSettings;
+  const providerModels = state.model?.providerModels ?? {};
+  const candidate = resolveDefaultProviderCandidate(activeProviderId, providerModels);
+  // Cheap sync gate: only hit the wire when some default-provider candidate
+  // actually lacks an entry. The async body re-resolves against the catalog.
+  if (!candidate || enabledProviders[candidate] !== undefined) return;
+  // The backend gate below cannot be trusted until the connections list has
+  // landed (activeId is still the boot-time local default) — defer and re-run
+  // once it settles. Absent slice (bridge-less test stores) counts as local,
+  // matching getActiveBackendId's own fallback.
+  if (state.connections && !state.connections.hasReceivedList) {
+    deferEnablementSeedUntilConnectionsList();
+    return;
+  }
   // Local sidecar only: the monorepo#1947 migration exists for pre-2.17 LOCAL
   // installs whose default provider never got a persisted enablement entry. A
   // remote backend's daemon has no such legacy state, and the renderer-side
   // candidate (activeProviderId / model.providerModels) can still reflect the
   // local machine mid-switch — seeding would write that stale local default
   // into the fresh remote daemon's `providers.enabled`.
-  if (getActiveBackendId(appStore.state) !== LOCAL_CONNECTION_ID) return;
-  const { activeProviderId, enabledProviders } = appStore.state.providerSettings;
-  const providerModels = appStore.state.model?.providerModels ?? {};
-  const candidate = resolveDefaultProviderCandidate(activeProviderId, providerModels);
-  // Cheap sync gate: only hit the wire when some default-provider candidate
-  // actually lacks an entry. The async body re-resolves against the catalog.
-  if (!candidate || enabledProviders[candidate] !== undefined) return;
+  if (getActiveBackendId(state) !== LOCAL_CONNECTION_ID) return;
   if (enablementSeedInFlight) return;
   enablementSeedInFlight = true;
   void (async () => {

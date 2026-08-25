@@ -264,6 +264,43 @@ describe('settings-hydration-service (boot read + applySettingsChanges)', () => 
     });
   });
 
+  describe('enablement seeding boot race (settings hydrate before connections:list)', () => {
+    // Must run before any connectionsListReceived dispatch: the singleton
+    // store's hasReceivedList only ever flips to true, so this file gets
+    // exactly one shot at the pre-list boot window.
+    it('defers the seed until connections:list lands and never seeds a remote backend', async () => {
+      catalogSpy.mockResolvedValue({ providers: [] });
+      // Stale renderer state from the local machine: active provider set, no
+      // enablement entry — the shape that passed the old gate during boot.
+      appStore.dispatch(hydrateActiveProvider(''));
+      appStore.dispatch(loadEnabledProvidersFromStorage({}));
+      appStore.dispatch(loadProviderModelsFromStorage({}));
+      const connections = () =>
+        (appStore.state as { connections: { hasReceivedList: boolean } }).connections;
+      expect(connections().hasReceivedList).toBe(false);
+
+      applySettingsChanges([
+        { path: 'providers.active', value: 'auggie' },
+        { path: 'providers.enabled', value: {} },
+      ]);
+      // Deferred: no wire traffic while the active backend is still unknown.
+      for (let i = 0; i < 5; i++) await Promise.resolve();
+      expect(catalogSpy).not.toHaveBeenCalled();
+      expect(updateSpy).not.toHaveBeenCalled();
+
+      // connections:list resolves on a remote backend — the re-run gate must
+      // reject the seed instead of writing stale local state to the remote.
+      appStore.dispatch(connectionsListReceived({ connections: [], activeId: 'remote-1' }));
+      for (let i = 0; i < 5; i++) await Promise.resolve();
+      expect(catalogSpy).not.toHaveBeenCalled();
+      expect(updateSpy).not.toHaveBeenCalled();
+      expect(
+        (appStore.state as { providerSettings: { enabledProviders: Record<string, boolean> } })
+          .providerSettings.enabledProviders,
+      ).toEqual({});
+    });
+  });
+
   describe('default-provider enablement seeding (monorepo#1947)', () => {
     type ProviderState = {
       providerSettings: { enabledProviders: Record<string, boolean> };
@@ -302,10 +339,13 @@ describe('settings-hydration-service (boot read + applySettingsChanges)', () => 
     beforeEach(() => {
       catalogSpy.mockResolvedValue(CATALOG);
       // Reset the slice map so no enablement state bleeds between tests (the
-      // app store is a module singleton).
+      // app store is a module singleton), and settle the connections list on
+      // the local sidecar so the seed's boot-race defer path stays out of the
+      // way (that path has its own describe above).
       appStore.dispatch(hydrateActiveProvider(''));
       appStore.dispatch(loadEnabledProvidersFromStorage({}));
       appStore.dispatch(loadProviderModelsFromStorage({}));
+      appStore.dispatch(connectionsListReceived({ connections: [], activeId: 'local' }));
     });
 
     it('seeds an unset default provider to true and persists the map back (pre-2.17 upgrade)', async () => {
