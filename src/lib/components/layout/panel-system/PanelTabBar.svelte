@@ -1825,7 +1825,7 @@
             data-testid="panel-header-agent-avatar-slot"
             data-panel-header-leading-surface
           >
-            <AgentAvatar agentId={activeTab.agentId} variant="standard" />
+            <AgentAvatar agentId={activeTab.agentId} variant="emphasized" />
           </span>
           <div class="panel-header-title min-w-0 shrink" data-panel-header-title>
             {#if onTabRename}
