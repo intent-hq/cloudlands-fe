@@ -1229,7 +1229,7 @@
                     ? undefined
                     : m.ui_vscodePanel_expand_ariaLabel()}
                   aria-labelledby={isAgentLauncherTab(tab.id)
-                    ? `sidebar-launcher-label-${tab.id}-${workspaceId} sidebar-launcher-agent-count-${workspaceId}`
+                    ? `sidebar-launcher-label-${tab.id}-${workspaceId} sidebar-launcher-agent-count-${workspaceId}${$hasUnreadForegroundAgents$ ? ` sidebar-launcher-agents-unread-${workspaceId}` : ''}`
                     : undefined}
                 ></Button>
                 <div
@@ -1337,6 +1337,7 @@
                     >
                     {#if tab.id === 'agents' && $hasUnreadForegroundAgents$}
                       <span
+                        id={`sidebar-launcher-agents-unread-${workspaceId}`}
                         class="mr-auto size-1.5 shrink-0 rounded-full bg-[hsl(var(--workspace-status-unread))] forced-colors:bg-[CanvasText]"
                         role="img"
                         aria-label={m.workspace_multiSelectSidebar_agentsUnread_ariaLabel()}
