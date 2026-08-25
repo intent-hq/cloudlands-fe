@@ -747,10 +747,10 @@ jobs:
             # comments — counts as human (fail safe: unknown authorship
             # blocks). Comment authors are read via comments(first: 100)
             # with no nested pagination (--paginate follows only the
-            # reviewThreads pageInfo): past 100 comments the remaining
-            # authors go unchecked, acceptable because a thread that long
-            # has human participation in practice — and the failure mode
-            # is blocking, never skipping a human thread.
+            # reviewThreads pageInfo), so a thread with more than 100
+            # comments (totalCount > 100) is treated as human too:
+            # authorship past the first page is unverifiable in one read,
+            # and unverifiable authorship must block, never skip.
             unresolved=$(gh api graphql --paginate \
               -f query='query($owner: String!, $repo: String!, $pr: Int!, $endCursor: String) {
                 repository(owner: $owner, name: $repo) {
@@ -758,7 +758,7 @@ jobs:
                     reviewThreads(first: 100, after: $endCursor) {
                       nodes {
                         isResolved
-                        comments(first: 100) { nodes { author { __typename } } }
+                        comments(first: 100) { totalCount nodes { author { __typename } } }
                       }
                       pageInfo { hasNextPage endCursor }
                     }
@@ -770,7 +770,7 @@ jobs:
               -F pr="$number" \
               --jq '[.data.repository.pullRequest.reviewThreads.nodes[]
                 | select(.isResolved | not)
-                | select(([.comments.nodes[].author.__typename] | length > 0 and all(. == "Bot")) | not)]
+                | select((.comments.totalCount <= 100 and ([.comments.nodes[].author.__typename] | length > 0 and all(. == "Bot"))) | not)]
               | length' \
               | awk '{ sum += $1 } END { print sum + 0 }')
             if [[ "$unresolved" -ne 0 ]]; then
