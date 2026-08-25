@@ -4885,6 +4885,8 @@
   "agent_factory_unknown_error": "Unknown error",
   "agent_factory_daemon_error": "Daemon error",
   "agent_creation_createFailed_error": "Failed to create agent",
+  "agent_creation_failed_description": "Check your provider setup and selected model in Settings, then try again.",
+  "agent_creation_providerModelMismatch_description": "The selected model does not belong to this provider. Choose a model for this provider in Settings, then try again.",
   "agent_creation_taskAgent_name": "Task Agent",
   "agent_creation_workspaceUnavailable_error": "Workspace is not available for agent creation",
   "agent_creation_noteNotFound_error": "Note not found — cannot run an agent for it",

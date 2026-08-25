@@ -4884,6 +4884,8 @@
   "agent_factory_unknown_error": "Error desconocido",
   "agent_factory_daemon_error": "Error del daemon",
   "agent_creation_createFailed_error": "Error al crear el agente",
+  "agent_creation_failed_description": "Compruebe la configuración del proveedor y el modelo seleccionado en Configuración. A continuación, inténtelo de nuevo.",
+  "agent_creation_providerModelMismatch_description": "El modelo seleccionado no pertenece a este proveedor. Elija un modelo para este proveedor en Configuración y vuelva a intentarlo.",
   "agent_creation_taskAgent_name": "Agente de tareas",
   "agent_creation_workspaceUnavailable_error": "El espacio de trabajo no está disponible para crear agentes",
   "agent_creation_noteNotFound_error": "Nota no encontrada: no se puede ejecutar un agente para ella",

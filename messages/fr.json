@@ -4884,6 +4884,8 @@
   "agent_factory_unknown_error": "Erreur inconnue",
   "agent_factory_daemon_error": "Erreur du démon",
   "agent_creation_createFailed_error": "Impossible de créer l'agent",
+  "agent_creation_failed_description": "Vérifiez la configuration de votre fournisseur et le modèle sélectionné dans les paramètres, puis réessayez.",
+  "agent_creation_providerModelMismatch_description": "Le modèle sélectionné n'appartient pas à ce fournisseur. Choisissez un modèle pour ce fournisseur dans les paramètres, puis réessayez.",
   "agent_creation_taskAgent_name": "Agent de tâche",
   "agent_creation_workspaceUnavailable_error": "L'espace de travail n'est pas disponible pour la création d'agents",
   "agent_creation_noteNotFound_error": "Note introuvable — impossible d'exécuter un agent pour celle-ci",

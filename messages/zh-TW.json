@@ -4884,6 +4884,8 @@
   "agent_factory_unknown_error": "未知錯誤",
   "agent_factory_daemon_error": "常駐程式錯誤",
   "agent_creation_createFailed_error": "建立智慧體失敗",
+  "agent_creation_failed_description": "請在設定中檢查提供者設定和所選模型，然後再試一次。",
+  "agent_creation_providerModelMismatch_description": "所選模型不屬於此提供者。請在設定中選擇此提供者的模型，然後再試一次。",
   "agent_creation_taskAgent_name": "任務智慧體",
   "agent_creation_workspaceUnavailable_error": "工作區不可用，無法建立智慧體",
   "agent_creation_noteNotFound_error": "找不到筆記，無法為其執行智慧體",

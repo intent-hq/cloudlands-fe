@@ -1,10 +1,11 @@
 import { runSaga, stdChannel } from 'redux-saga';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-const mocks = vi.hoisted(() => ({ createAgent: vi.fn() }));
+const mocks = vi.hoisted(() => ({ createAgent: vi.fn(), toastError: vi.fn() }));
 vi.mock('$features/agent/services/agent-factory', () => ({
   agentFactory: { createAgent: mocks.createAgent },
 }));
+vi.mock('svelte-sonner', () => ({ toast: { error: mocks.toastError } }));
 
 import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
 import type { AgentSession, Note, Workspace } from '$shared/types';
@@ -29,6 +30,7 @@ const WS = 'ws-create-saga';
 const AGENT = 'agent-created';
 const NOTE = 'note-task-1';
 const settle = async () => {
+  await vi.dynamicImportSettled();
   await Promise.resolve();
   await Promise.resolve();
   await Promise.resolve();
@@ -153,6 +155,40 @@ describe('agentCreationSaga', () => {
     await task.toPromise();
   });
 
+  it('surfaces a safe localized error when fire-and-forget creation fails', async () => {
+    mocks.createAgent.mockResolvedValue({
+      success: false,
+      error: 'backend rejected request with secret details',
+    });
+    const { channel, task } = start();
+    channel.put(createAgentRequested(WS));
+    await settle();
+
+    expect(mocks.toastError).toHaveBeenCalledWith('Failed to create agent', {
+      description: 'Check your provider setup and selected model in Settings, then try again.',
+    });
+    expect(JSON.stringify(mocks.toastError.mock.calls)).not.toContain('secret details');
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('gives provider and model guidance for a confirmed mismatch', async () => {
+    mocks.createAgent.mockResolvedValue({
+      success: false,
+      error: 'agent.create: model fable-5 does not belong to provider claude-code',
+    });
+    const { channel, task } = start();
+    channel.put(createAgentWithSpecialistRequested(WS, null));
+    await settle();
+
+    expect(mocks.toastError).toHaveBeenCalledWith('Failed to create agent', {
+      description:
+        'The selected model does not belong to this provider. Choose a model for this provider in Settings, then try again.',
+    });
+    task.cancel();
+    await task.toPromise();
+  });
+
   it('settles create-from-config success and preserves launch options', async () => {
     mocks.createAgent.mockResolvedValue({ success: true, agent: session(), agentId: AGENT });
     const { channel, dispatched, task } = start();
@@ -223,6 +259,23 @@ describe('agentCreationSaga', () => {
       expect.anything(),
       expect.objectContaining({ model: 'sonnet', provider: 'augment' }),
     );
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('surfaces create-from-config failures and still rejects its promise', async () => {
+    mocks.createAgent.mockResolvedValue({ success: false, error: 'request failed' });
+    const { channel, task } = start();
+    const action = createAgentFromConfigRequested(WS, {
+      name: 'Configured',
+      workspaceId: WorkspaceId(WS),
+      agentType: createAgentTypeId('chat'),
+      source: 'test',
+    });
+    channel.put(action);
+
+    await expect(action.promise).rejects.toThrow('request failed');
+    expect(mocks.toastError).toHaveBeenCalledOnce();
     task.cancel();
     await task.toPromise();
   });

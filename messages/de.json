@@ -4884,6 +4884,8 @@
   "agent_factory_unknown_error": "Unbekannter Fehler",
   "agent_factory_daemon_error": "Daemon-Fehler",
   "agent_creation_createFailed_error": "Agent konnte nicht erstellt werden",
+  "agent_creation_failed_description": "Prüfen Sie die Einrichtung Ihres Anbieters und das ausgewählte Modell in den Einstellungen. Versuchen Sie es dann erneut.",
+  "agent_creation_providerModelMismatch_description": "Das ausgewählte Modell gehört nicht zu diesem Anbieter. Wählen Sie in den Einstellungen ein Modell für diesen Anbieter aus und versuchen Sie es erneut.",
   "agent_creation_taskAgent_name": "Aufgaben-Agent",
   "agent_creation_workspaceUnavailable_error": "Arbeitsbereich ist für die Agenten-Erstellung nicht verfügbar",
   "agent_creation_noteNotFound_error": "Notiz nicht gefunden – dafür kann kein Agent gestartet werden",
