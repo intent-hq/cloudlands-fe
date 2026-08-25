@@ -411,12 +411,19 @@ describe('specialists selectors', () => {
       expect(customIds).toEqual(['alpha-custom', 'zebra-custom']);
     });
 
-    it('should keep bundled order stable when a file overrides a bundled specialist', () => {
-      const bundled = SPECIALISTS;
+    it('keeps a collapsed built-in override in catalog order without resurrecting omitted ids', () => {
+      const bundled = [
+        SPECIALISTS.find((specialist) => specialist.id === 'spec-writer')!,
+        SPECIALISTS.find((specialist) => specialist.id === 'verifier')!,
+        {
+          ...SPECIALISTS[0],
+          id: 'daemon-extra',
+          name: 'Daemon Extra',
+        },
+      ];
       const state = mockState({
         bundledSpecialists: bundled,
         fileSpecialists: createCollection('id', [
-          // Override implementor (bundled) + add a custom one
           {
             id: 'implementor',
             name: 'Implementor',
@@ -427,24 +434,36 @@ describe('specialists selectors', () => {
             source: 'user' as const,
           },
           {
-            id: 'my-custom',
-            name: 'My Custom',
+            id: 'zebra-custom',
+            name: 'Zebra Custom',
             description: 'custom',
             model: 'gpt-4',
             behaviorPrompt: 'prompt',
-            filePath: '/Users/test/.intent/specialists/my-custom.md',
+            filePath: '/Users/test/.intent/specialists/zebra-custom.md',
+            source: 'user' as const,
+          },
+          {
+            id: 'alpha-custom',
+            name: 'Alpha Custom',
+            description: 'custom',
+            model: 'gpt-4',
+            behaviorPrompt: 'prompt',
+            filePath: '/Users/test/.intent/specialists/alpha-custom.md',
             source: 'user' as const,
           },
         ]),
       });
 
       const ids = selectSpecialists.select(state).map((s) => s.id);
-      // Bundled order preserved even though implementor was overridden by file
-      expect(ids[0]).toBe('spec-writer');
-      expect(ids[1]).toBe('implementor');
-      expect(ids[2]).toBe('verifier');
-      // Custom at the very end (after all bundled/hardcoded)
-      expect(ids[ids.length - 1]).toBe('my-custom');
+      expect(ids).toEqual([
+        'spec-writer',
+        'implementor',
+        'verifier',
+        'daemon-extra',
+        'alpha-custom',
+        'zebra-custom',
+      ]);
+      expect(ids).not.toContain('ui-designer');
     });
   });
 

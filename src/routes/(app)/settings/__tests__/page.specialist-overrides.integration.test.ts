@@ -76,35 +76,68 @@ afterAll(() => {
 describe('settings collapsed built-in override chrome', () => {
   it('shows the sidebar marker, Modified badge, and Reset from only the winning user row', async () => {
     const implementor = SPECIALISTS.find(({ id }) => id === 'implementor')!;
-    appStore.dispatch(setBundledSpecialists([]));
-    appStore.dispatch(
-      setFileSpecialists([
-        {
-          id: implementor.id,
-          name: implementor.name,
-          description: implementor.description,
-          model: '',
-          behaviorPrompt: `${implementor.defaultBehaviorPrompt}\nModified`,
-          roleReminder: implementor.roleReminder,
-          filePath: '/Users/test/.intent/specialists/implementor.md',
-          source: 'user',
-        },
-      ]),
-    );
+    const specWriter = SPECIALISTS.find(({ id }) => id === 'spec-writer')!;
+    const verifier = SPECIALISTS.find(({ id }) => id === 'verifier')!;
+    const custom = {
+      id: 'alpha-custom',
+      name: 'Alpha Custom',
+      description: 'Custom specialist',
+      model: '',
+      behaviorPrompt: 'Custom prompt',
+      filePath: '/Users/test/.intent/specialists/alpha-custom.md',
+      source: 'user' as const,
+    };
+    const override = {
+      id: implementor.id,
+      name: implementor.name,
+      description: implementor.description,
+      model: '',
+      behaviorPrompt: `${implementor.defaultBehaviorPrompt}\nModified`,
+      roleReminder: implementor.roleReminder,
+      filePath: '/Users/test/.intent/specialists/implementor.md',
+      source: 'user' as const,
+    };
+    appStore.dispatch(setBundledSpecialists([specWriter, verifier]));
+    appStore.dispatch(setFileSpecialists([override, custom]));
 
     render(SettingsPage, { context: new Map([['redux-store-context', storeContext]]) });
 
     const navigation = screen.getByRole('navigation', { name: 'Settings' });
+    const sidebarOrder = () =>
+      [specWriter.name, implementor.name, verifier.name, custom.name].map((name) =>
+        within(navigation)
+          .getAllByRole('button')
+          .indexOf(within(navigation).getByRole('button', { name })),
+      );
     const implementorButton = within(navigation).getByRole('button', { name: 'Implementor' });
     expect(implementorButton.querySelector('[data-specialist-modified-marker]')?.textContent).toBe(
       '*',
     );
-    expect(within(navigation).queryByRole('button', { name: 'Verifier' })).toBeNull();
+    expect(sidebarOrder()).toEqual([...sidebarOrder()].sort((a, b) => a - b));
 
     await fireEvent.click(implementorButton);
 
     await waitFor(() => expect(screen.getByText('Modified')).toBeTruthy());
     expect(screen.getByRole('button', { name: 'Reset' })).toBeTruthy();
+
+    appStore.dispatch(
+      setFileSpecialists([
+        { ...override, behaviorPrompt: `${override.behaviorPrompt}\nSaved` },
+        custom,
+      ]),
+    );
+    await waitFor(() => expect(sidebarOrder()).toEqual([...sidebarOrder()].sort((a, b) => a - b)));
+
+    appStore.dispatch(setBundledSpecialists([specWriter, implementor, verifier]));
+    appStore.dispatch(setFileSpecialists([custom]));
+    await waitFor(() =>
+      expect(
+        within(navigation)
+          .getByRole('button', { name: 'Implementor' })
+          .querySelector('[data-specialist-modified-marker]'),
+      ).toBeNull(),
+    );
+    expect(sidebarOrder()).toEqual([...sidebarOrder()].sort((a, b) => a - b));
   });
 
   it('keeps a custom user specialist editable without built-in override chrome', async () => {

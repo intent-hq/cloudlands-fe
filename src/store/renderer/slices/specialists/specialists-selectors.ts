@@ -129,18 +129,17 @@ export const selectSpecialists = store.createSelector((state): Specialist[] => {
         }
     }
 
-    // Stable sort: bundled specialists in their original order first,
+    // Stable sort: built-in specialists in catalog order first,
     // then custom (user/project) specialists sorted alphabetically by name.
     // This prevents the list from reordering when a specialist is re-saved.
     const bundledOrder = new Map<string, number>();
-    // Build order from bundled + hardcoded fallback (both represent "built-in" order)
-    for (const s of bundledSpecialists) {
+    // Seed from the catalog so file-only overrides retain their built-in position,
+    // then append any daemon-provided built-ins that are not in the catalog.
+    for (const s of SPECIALISTS) {
         if (!bundledOrder.has(s.id)) bundledOrder.set(s.id, bundledOrder.size);
     }
-    if (bundledSpecialists.length === 0) {
-        for (const s of SPECIALISTS) {
-            if (!bundledOrder.has(s.id)) bundledOrder.set(s.id, bundledOrder.size);
-        }
+    for (const s of bundledSpecialists) {
+        if (!bundledOrder.has(s.id)) bundledOrder.set(s.id, bundledOrder.size);
     }
 
     result.sort((a, b) => {
