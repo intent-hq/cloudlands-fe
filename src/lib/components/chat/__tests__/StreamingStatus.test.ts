@@ -447,8 +447,6 @@ describe('StreamingStatus stalled state (monorepo#3402)', () => {
 
     const row = container.querySelector('[data-stream-stalled="true"]') as HTMLElement;
     expect(row).toBeTruthy();
-    expect(row.getAttribute('role')).toBe('status');
-    expect(row.getAttribute('aria-live')).toBe('polite');
     expect(row.className).toContain('border-warning/20');
     expect(row.className).toContain('bg-warning/5');
     expect(screen.getByTestId('stalled-message').textContent).toBe('No model activity for 5s');
@@ -456,6 +454,30 @@ describe('StreamingStatus stalled state (monorepo#3402)', () => {
 
     await vi.advanceTimersByTimeAsync(2_000);
     expect(screen.getByTestId('stalled-message').textContent).toBe('No model activity for 7s');
+  });
+
+  it('announces the stall once via a static live region, keeping the ticking duration non-live', async () => {
+    // The visible label updates every second; if it lived in an aria-live
+    // region, assistive tech would re-announce it for the entire stall.
+    vi.useFakeTimers();
+    vi.setSystemTime(100_000);
+    render(StreamingStatus, {
+      props: { isStreaming: true, onStop: vi.fn(), statusEvents: [stalledEvent(95_000)] },
+    });
+
+    const announcement = screen.getByTestId('stalled-announcement');
+    expect(announcement.getAttribute('role')).toBe('status');
+    const announcedText = announcement.textContent;
+    expect(announcedText).toBe('No model activity detected. You can cancel the response.');
+
+    const message = screen.getByTestId('stalled-message');
+    expect(message.getAttribute('aria-live')).toBeNull();
+    expect(message.getAttribute('role')).toBeNull();
+    expect(message.closest('[aria-live]')).toBeNull();
+
+    await vi.advanceTimersByTimeAsync(3_000);
+    expect(announcement.textContent).toBe(announcedText);
+    expect(message.textContent).toBe('No model activity for 8s');
   });
 
   it('dispatches the stop action when Cancel is clicked', async () => {

@@ -2219,6 +2219,7 @@
   "chat_streamingStatus_took_label": "dauerte {duration}",
   "chat_streamingStatus_elapsedAgo_label": "vor {duration}",
   "chat_streamingStatus_stalled_label": "Keine Modellaktivität seit {duration}",
+  "chat_streamingStatus_stalledAnnouncement_label": "Keine Modellaktivität erkannt. Sie können die Antwort abbrechen.",
   "chat_streamingStatus_stalledCancel_label": "Abbrechen",
   "chat_suggestedActions_explain_label": "Diese Codebasis erklären",
   "chat_suggestedActions_explain_prompt": "Geben Sie mir einen groben Überblick über diese Codebasis. Was sind die Hauptkomponenten und wie arbeiten sie zusammen?",

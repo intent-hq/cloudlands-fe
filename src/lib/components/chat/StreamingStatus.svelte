@@ -206,8 +206,6 @@
 
 {#if stalledEvent}
   <div
-    role="status"
-    aria-live="polite"
     data-stream-stalled="true"
     class={cn(
       'type-caption mt-2 flex items-center gap-2 rounded-md border border-warning/20 bg-warning/5 py-2 pl-2 pr-1',
@@ -216,6 +214,12 @@
     in:fade={{ duration: 200, easing: cubicOut }}
     out:fade={{ duration: 150, easing: cubicOut }}
   >
+    <!-- Static live announcement: announced once when the stall appears. The
+         visible label ticks every second and must stay out of the live region
+         so assistive tech doesn't re-announce it for the entire stall. -->
+    <span role="status" class="sr-only" data-testid="stalled-announcement"
+      >{m.chat_streamingStatus_stalledAnnouncement_label()}</span
+    >
     <Fa icon={faExclamationTriangle} class="shrink-0 text-warning/70" />
     <span class="min-w-0 flex-1 truncate text-warning" data-testid="stalled-message"
       >{m.chat_streamingStatus_stalled_label({ duration: stalledElapsed ?? '' })}</span
