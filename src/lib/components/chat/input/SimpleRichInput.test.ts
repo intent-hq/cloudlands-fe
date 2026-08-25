@@ -1187,6 +1187,12 @@ describe('SimpleRichInput automatic composer geometry', () => {
       expect(composer.getAttribute('style')).toContain('min-height: 56px');
     });
     expect(editor.getAttribute('placeholder')).toBe('');
+    expect(composer.className).toContain(
+      'transition-[border-color,background-color,box-shadow,min-height]',
+    );
+    expect(composer.className).toContain('duration-(--motion-fast)');
+    expect(composer.className).toContain('ease-(--ease-standard)');
+    expect(composer.className).toContain('motion-reduce:transition-none');
 
     editor.focus();
     await fireEvent.keyDown(editor, { key: 'Enter' });
@@ -1211,6 +1217,20 @@ describe('SimpleRichInput automatic composer geometry', () => {
     await fireEvent.focusOut(editor);
     await waitFor(() => expect(composer.getAttribute('style')).toContain('min-height: 80px'));
     expect(editor.getAttribute('placeholder')).toBe('');
+  });
+
+  it('settles rapid focus changes at the active automatic height', async () => {
+    renderInPanel(720);
+    const editor = screen.getByTestId('tiptap-editor');
+    const composer = screen.getByTestId('message-input');
+
+    await waitFor(() => expect(composer.getAttribute('style')).toContain('min-height: 80px'));
+    await fireEvent.focusIn(editor);
+    await fireEvent.focusOut(editor);
+    await fireEvent.focusIn(editor);
+
+    await waitFor(() => expect(composer.getAttribute('style')).toContain('min-height: 100px'));
+    expect(editor.getAttribute('placeholder')).toBe('Ask anything');
   });
 
   it.each([
@@ -1267,6 +1287,8 @@ describe('SimpleRichInput automatic composer geometry', () => {
     await fireEvent.focusIn(editor);
     expect(composer.getAttribute('style')).toContain('height: 130px');
     expect(composer.getAttribute('style')).not.toContain('min-height');
+    expect(composer.className).toContain('transition-[border-color,background-color,box-shadow]');
+    expect(composer.className).not.toContain('box-shadow,min-height');
     expect(editorWrapper?.className).toContain('pt-1');
   });
 

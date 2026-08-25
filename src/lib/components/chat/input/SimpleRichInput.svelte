@@ -1360,7 +1360,10 @@
 <div
   bind:this={containerRef}
   class={cn(
-    'relative rich-input-container flex flex-col overflow-hidden text-card-foreground transition-[border-color,background-color,box-shadow] duration-(--motion-fast) motion-reduce:transition-none',
+    'relative rich-input-container flex flex-col overflow-hidden text-card-foreground duration-(--motion-fast) ease-(--ease-standard) motion-reduce:transition-none',
+    isAutoExpand
+      ? 'transition-[border-color,background-color,box-shadow,min-height]'
+      : 'transition-[border-color,background-color,box-shadow]',
     edgeDocked
       ? 'rounded-lg border-0 bg-sidebar shadow-none'
       : 'rounded-lg border border-border shadow-(--elevation-raised) focus-within:border-ring focus-within:ring-0',
