@@ -306,7 +306,6 @@
     ].map((row) => ({ ...row, share: share(row.tokens, entryProcessedTokens) }));
   }
 
-  const workspaceCompositionRows = $derived(compositionFor(totals));
   const compositionRows = $derived(compositionFor(previewTotals));
 
   function scopeLabel(target: ScopeTarget | null): string {
@@ -452,7 +451,7 @@
       bind:ref={disclosureElement}
       variant="plain"
       type="button"
-      class="summary-control group grid h-10 w-full max-w-xs min-w-0 grid-cols-[minmax(2.75rem,3.25rem)_max-content_1px_max-content_auto_auto] items-center gap-x-1.5 overflow-hidden rounded-md border border-border bg-card/45 px-3 text-left text-foreground shadow-sm outline-none transition-colors hover:bg-muted/20 focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none dark:hover:bg-muted/30"
+      class="summary-control group flex h-9 w-full max-w-xs min-w-0 items-center gap-2 overflow-hidden rounded-sm border border-muted bg-card/25 px-2.5 text-left text-foreground shadow-none outline-none transition-colors hover:bg-muted/20 focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none dark:hover:bg-muted/30"
       data-testid="token-usage-disclosure"
       aria-label={expanded
         ? m.workspace_tokenUsage_collapse_ariaLabel()
@@ -463,39 +462,23 @@
       onclick={() => (expanded = !expanded)}
     >
       <span id={titleId} class="sr-only">{m.workspace_tokenUsage_title()}</span>
-      <span class="flex h-2 min-w-0 overflow-hidden rounded-sm bg-muted" aria-hidden="true">
-        {#each workspaceCompositionRows as row (row.id)}
-          {#if row.tokens > 0}
-            <span
-              class="summary-composition-segment {row.colorClass}"
-              style:width={`${row.share * 100}%`}
-            ></span>
-          {/if}
-        {/each}
-      </span>
       <span id={processedId} class="flex min-w-0 items-baseline gap-1 whitespace-nowrap">
-        <span class="text-sm font-semibold tabular-nums text-foreground">
+        <span class="text-sm font-medium tabular-nums text-foreground">
           {formatCompactNumber(processedTokens)}
         </span>
-        <span class="sr-only">{m.workspace_tokenUsage_processed_label()}</span>
-        <span
-          class="summary-token-label text-xs font-medium uppercase tracking-widest text-muted-foreground"
-          aria-hidden="true"
-        >
-          {m.workspace_tokenUsage_tokens_label()}
+        <span class="summary-token-label truncate text-xs text-muted-foreground">
+          {m.workspace_tokenUsage_tokensUsed_label()}
         </span>
       </span>
-      <span class="h-5 w-px bg-border" aria-hidden="true"></span>
       <span
         id={cacheId}
-        class="flex shrink-0 items-baseline gap-1"
+        class="ml-auto flex shrink-0 items-baseline gap-1"
         title={m.workspace_tokenUsage_cacheEfficiency_label()}
       >
-        <span class="token-cache-text text-sm font-semibold tabular-nums text-success">
+        <span class="token-cache-text text-sm font-medium tabular-nums text-success">
           {shareLabel(cacheShare)}
         </span>
-        <span
-          class="summary-cache-label text-xs font-medium uppercase tracking-widest text-muted-foreground"
+        <span class="summary-cache-label text-xs text-muted-foreground"
           >{m.workspace_tokenUsage_cached_label()}</span
         >
       </span>
@@ -522,7 +505,7 @@
       <section
         bind:this={detailsElement}
         id={detailsId}
-        class="token-usage-details fixed overflow-x-hidden overflow-y-auto rounded-lg border border-border bg-card shadow-lg"
+        class="token-usage-details fixed overflow-x-hidden overflow-y-auto rounded-md border border-muted bg-card shadow-sm"
         style={overlayStyle}
         aria-labelledby={titleId}
         data-testid="token-usage-details"
@@ -531,19 +514,16 @@
           <div class="breakdown-grid grid grid-cols-1">
             {#if agentRows.length > 0}
               <section
-                class="breakdown-section min-w-0 px-4 py-4"
+                class="breakdown-section min-w-0 px-4 py-3"
                 aria-labelledby={`${detailsId}-agents`}
                 data-testid="token-usage-by-agent"
               >
-                <h4
-                  id={`${detailsId}-agents`}
-                  class="text-xs font-semibold uppercase tracking-widest text-muted-foreground"
-                >
+                <h4 id={`${detailsId}-agents`} class="sr-only">
                   {m.workspace_tokenUsage_byAgent_label()}
                 </h4>
                 {#if selectedAgentRow}
                   <div
-                    class="navigator-selection mt-3 flex min-w-0 items-baseline justify-between gap-3"
+                    class="navigator-selection flex min-w-0 items-baseline justify-between gap-3"
                   >
                     <span
                       class="truncate text-sm font-medium text-foreground"
@@ -557,7 +537,7 @@
                   </div>
                 {/if}
                 <ol
-                  class="breakdown-stack mt-2 flex h-8 w-full overflow-hidden rounded-md bg-muted/60"
+                  class="breakdown-stack mt-1.5 flex h-2.5 w-full overflow-hidden rounded-sm bg-muted/60"
                 >
                   {#each agentRows as row (row.id)}
                     <li
@@ -596,19 +576,16 @@
 
             {#if modelRows.length > 0}
               <section
-                class="breakdown-section min-w-0 px-4 py-4"
+                class="breakdown-section min-w-0 px-4 py-3"
                 aria-labelledby={`${detailsId}-models`}
                 data-testid="token-usage-by-model"
               >
-                <h4
-                  id={`${detailsId}-models`}
-                  class="text-xs font-semibold uppercase tracking-widest text-muted-foreground"
-                >
+                <h4 id={`${detailsId}-models`} class="sr-only">
                   {m.workspace_tokenUsage_byModel_label()}
                 </h4>
                 {#if selectedModelRow}
                   <div
-                    class="navigator-selection mt-3 flex min-w-0 items-baseline justify-between gap-3"
+                    class="navigator-selection flex min-w-0 items-baseline justify-between gap-3"
                   >
                     <span
                       class="truncate text-sm font-medium text-foreground"
@@ -622,7 +599,7 @@
                   </div>
                 {/if}
                 <ol
-                  class="breakdown-stack mt-2 flex h-8 w-full overflow-hidden rounded-md bg-muted/60"
+                  class="breakdown-stack mt-1.5 flex h-2.5 w-full overflow-hidden rounded-sm bg-muted/60"
                 >
                   {#each modelRows as row (row.id)}
                     <li
@@ -661,36 +638,29 @@
           </div>
         {/if}
 
-        <section
-          class="border-t border-border px-4 py-4"
-          aria-labelledby={`${detailsId}-composition`}
-        >
-          <div class="flex min-w-0 items-baseline justify-between gap-3">
-            <h4 id={`${detailsId}-composition`} class="text-sm font-medium text-foreground">
-              {m.workspace_tokenUsage_composition_label()}
-            </h4>
-            <span
-              id={`${detailsId}-preview-status`}
-              class="preview-status flex min-w-0 items-baseline justify-end gap-1.5 text-sm text-muted-foreground"
-              aria-live="polite"
-              aria-atomic="true"
-            >
-              <span class="shrink-0">{m.workspace_tokenUsage_activeScope_label()}</span>
-              {#if activeTarget}
-                <span class="shrink-0">{scopeKindLabel(activeTarget)}</span>
-              {/if}
-              <span class="preview-scope-label truncate" title={scopeTitle(activeTarget)}
-                >{scopeLabel(activeTarget)}</span
-              >
-              <span class="shrink-0">
-                <span class="tabular-nums">{formatCompactNumber(previewProcessedTokens)}</span>
-                {m.workspace_tokenUsage_processed_label()}
-              </span>
+        <section class="px-4 pb-3 pt-1" aria-labelledby={`${detailsId}-composition`}>
+          <h4 id={`${detailsId}-composition`} class="sr-only">
+            {m.workspace_tokenUsage_composition_label()}
+          </h4>
+          <span
+            id={`${detailsId}-preview-status`}
+            class="preview-status sr-only"
+            aria-live="polite"
+            aria-atomic="true"
+          >
+            <span>{m.workspace_tokenUsage_activeScope_label()}</span>
+            {#if activeTarget}
+              <span>{scopeKindLabel(activeTarget)}</span>
+            {/if}
+            <span title={scopeTitle(activeTarget)}>{scopeLabel(activeTarget)}</span>
+            <span>
+              <span>{formatCompactNumber(previewProcessedTokens)}</span>
+              {m.workspace_tokenUsage_processed_label()}
             </span>
-          </div>
+          </span>
           {#if crossFilterAvailable}
             <dl
-              class="message-counts mt-4 grid grid-cols-2 gap-x-6 text-sm"
+              class="message-counts grid grid-cols-2 gap-x-6 text-sm"
               data-testid="token-usage-message-counts"
             >
               <div class="flex min-w-0 justify-between gap-2">
@@ -707,23 +677,15 @@
               </div>
             </dl>
           {/if}
-          <div
-            class="composition-strip mt-4 flex h-3 w-full overflow-hidden rounded-sm bg-muted"
-            aria-hidden="true"
-          >
+          <dl class="mt-1.5">
             {#each compositionRows as row (row.id)}
-              {#if row.tokens > 0}
-                <span class={row.colorClass} style:width={`${row.share * 100}%`}></span>
-              {/if}
-            {/each}
-          </div>
-          <dl class="mt-2">
-            {#each compositionRows as row (row.id)}
-              <div class="composition-row min-w-0 py-3.5">
+              <div class="composition-row min-w-0 py-2">
                 <dt class="composition-metric min-w-0 text-sm font-medium text-foreground">
                   <span class="truncate">{row.label}</span>
                 </dt>
-                <dd class="composition-description truncate text-sm text-muted-foreground">
+                <dd
+                  class="composition-description min-w-0 text-xs leading-tight text-muted-foreground"
+                >
                   {row.description}
                 </dd>
                 <dd
@@ -763,11 +725,6 @@
     z-index: 60;
   }
 
-  .summary-composition-segment,
-  .composition-strip > span {
-    min-width: 2px;
-  }
-
   .token-cache-fill {
     background-color: hsl(var(--success));
   }
@@ -778,10 +735,13 @@
 
   .composition-row {
     display: grid;
-    grid-template-areas: 'metric description value context';
-    grid-template-columns: minmax(4.75rem, 0.8fr) minmax(6.5rem, 1.2fr) 3.5rem 3rem;
+    grid-template-areas:
+      'metric value context'
+      'description value context';
+    grid-template-columns: minmax(0, 1fr) 3.5rem 3rem;
     align-items: center;
-    column-gap: 0.25rem;
+    column-gap: 0.5rem;
+    row-gap: 0.125rem;
   }
 
   .composition-metric {
@@ -809,15 +769,15 @@
   }
 
   :global(.breakdown-item-control) {
-    background: hsl(var(--muted-foreground) / 18%);
+    background: hsl(var(--muted-foreground) / 14%);
   }
 
   :global(.dark) :global(.breakdown-item-control) {
-    background: hsl(var(--muted-foreground) / 24%);
+    background: hsl(var(--muted-foreground) / 20%);
   }
 
   :global(.breakdown-item-control[data-preview-active='true']) {
-    background: hsl(var(--success));
+    background: hsl(var(--success) / 82%);
   }
 
   .breakdown-stack-item + .breakdown-stack-item {
@@ -834,29 +794,13 @@
     }
   }
 
-  .preview-scope-label {
-    max-width: 9rem;
-  }
-
-  @container token-details (max-width: 279px) {
-    .composition-row {
-      grid-template-areas:
-        'metric value context'
-        'description description description';
-      grid-template-columns: minmax(0, 1fr) 3.25rem 2.75rem;
-      row-gap: 0.125rem;
-    }
-  }
-
   @container token-summary (max-width: 319px) {
     .summary-control {
-      grid-template-columns: minmax(2.25rem, 1fr) auto 1px auto auto auto;
-      column-gap: 0.375rem;
       padding-inline: 0.5rem;
     }
   }
 
-  @container token-summary (max-width: 295px) {
+  @container token-summary (max-width: 239px) {
     .summary-token-label {
       display: none;
     }
@@ -872,17 +816,6 @@
     .breakdown-grid {
       grid-template-columns: repeat(2, minmax(0, 1fr));
       position: relative;
-    }
-
-    .breakdown-grid::after {
-      position: absolute;
-      top: 0;
-      bottom: 0;
-      left: 50%;
-      width: 1px;
-      background: hsl(var(--border) / 55%);
-      content: '';
-      pointer-events: none;
     }
 
     .breakdown-section + .breakdown-section {
