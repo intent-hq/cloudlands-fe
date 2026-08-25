@@ -517,7 +517,7 @@
     <!-- Right column: agent state, bounded active rows, and pull request -->
     {#if !isLoading && workspace}
       <div
-        class="workspace-hover-card__activity flex min-h-0 min-w-0 flex-col border-t border-border/70 px-4 py-3.5"
+        class="workspace-hover-card__activity flex min-h-0 min-w-0 flex-col border-solid border-border/70 px-4 py-3.5"
         data-workspace-hover-card-activity
       >
         <div class="flex min-h-6 items-center gap-3" data-workspace-hover-card-agent-summary>
@@ -653,8 +653,7 @@
   }
 
   .workspace-hover-card__activity {
-    border-top-width: 0;
-    border-left-width: 1px;
+    border-width: 0 0 0 1px;
   }
 
   @container (max-width: 31.99rem) {
@@ -664,8 +663,7 @@
     }
 
     .workspace-hover-card__activity {
-      border-top-width: 1px;
-      border-left-width: 0;
+      border-width: 1px 0 0;
     }
   }
 </style>

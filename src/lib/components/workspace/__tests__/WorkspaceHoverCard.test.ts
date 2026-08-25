@@ -519,6 +519,8 @@ describe('WorkspaceHoverCard', () => {
     expect(columns?.children[0]).toBe(identity);
     expect(columns?.children[1]).toBe(activity);
     expect(identity?.querySelector('[data-workspace-hover-card-recency]')).toBeTruthy();
+    expect(activity?.className.split(/\s+/)).toContain('border-solid');
+    expect(activity?.className.split(/\s+/)).not.toContain('border-t');
     expect(activity?.querySelector('[data-workspace-hover-card-agent-summary]')).toBeTruthy();
     expect(activity?.querySelector('[data-workspace-hover-card-divider]')).toBeTruthy();
   });
