@@ -365,7 +365,7 @@ describe('WorkspaceHoverCard', () => {
     const rows = screen.getAllByRole('listitem');
     expect(rows).toHaveLength(2);
     expect(screen.getByText('Live Named Agent')).toBeTruthy();
-    expect(rows[0].getAttribute('aria-label')).toContain('Processing');
+    expect(rows[0].getAttribute('aria-label')).toContain('In progress');
     expect(rows[0].getAttribute('aria-label')).not.toContain('Waiting');
   });
 
@@ -379,8 +379,11 @@ describe('WorkspaceHoverCard', () => {
     );
     expect(status.className).toContain('type-body');
     expect(status.className).toContain('whitespace-pre-wrap');
+    expect(status.className).toContain('leading-snug');
     expect(status.className).toContain('bg-transparent');
-    expect(status.className).toContain('text-muted-foreground');
+    expect(status.className).toContain('text-subtle');
+    expect(status.className).toContain('max-h-24');
+    expect(status.className).toContain('overflow-y-auto');
     expect(status.className).not.toMatch(/line-clamp|truncate|text-ellipsis/);
   });
 
@@ -491,21 +494,28 @@ describe('WorkspaceHoverCard', () => {
     expect(container.textContent).not.toContain('Add workspace status');
   });
 
-  it('uses unbordered square elevated styling', async () => {
+  it('uses a neutral rounded elevated two-column shell', async () => {
     const { container } = await renderHoverCard();
 
     const root = container.firstElementChild as HTMLElement;
-    expect(root.className).toContain('w-[320px]');
+    expect(root.getAttribute('data-workspace-hover-card-layout')).toBe('two-column');
     expect(root.className).toContain('shrink-0');
-    expect(root.className).toContain('max-w-[calc(100vw-1rem)]');
-    expect(root.className).not.toMatch(/min-w-\[/);
     expect(root.className.split(/\s+/)).not.toContain('border');
     expect(root.className.split(/\s+/)).not.toContain('border-border');
-    expect(root.className).not.toMatch(/rounded/);
     expect(root.className.split(/\s+/)).toContain('bg-card');
     expect(root.className.split(/\s+/)).toContain('dark:bg-popover');
+    expect(root.className).toContain('rounded-xl');
     expect(root.className).toContain('shadow-(--elevation-overlay)');
     expect(root.className).toContain('ring-1');
+
+    const columns = container.querySelector('[data-workspace-hover-card-columns]');
+    const identity = container.querySelector('[data-workspace-hover-card-identity]');
+    const activity = container.querySelector('[data-workspace-hover-card-activity]');
+    expect(columns?.children[0]).toBe(identity);
+    expect(columns?.children[1]).toBe(activity);
+    expect(identity?.querySelector('[data-workspace-hover-card-recency]')).toBeTruthy();
+    expect(activity?.querySelector('[data-workspace-hover-card-agent-summary]')).toBeTruthy();
+    expect(activity?.querySelector('[data-workspace-hover-card-divider]')).toBeTruthy();
   });
 
   it('uses shared type roles for a clear content hierarchy', async () => {
@@ -587,6 +597,9 @@ describe('WorkspaceHoverCard', () => {
     expect(screen.getByLabelText('Workspace task progress')).toBeTruthy();
     const runningAgentList = screen.getByRole('list', { name: 'Running agents' });
     expect(runningAgentList.querySelectorAll('[role="listitem"]')).toHaveLength(2);
+    expect(
+      document.querySelector('[data-workspace-hover-card-agent-count]')?.textContent?.trim(),
+    ).toBe('2');
     expect(screen.getByText('Planner')).toBeTruthy();
     expect(screen.getByText('Implementor')).toBeTruthy();
     expect(screen.queryByText('3 agents · 2 active · 1 running · 1 unread')).toBeNull();
@@ -760,6 +773,26 @@ describe('WorkspaceHoverCard', () => {
     expect(screen.queryByText('Background')).toBeNull();
     expect(screen.queryByText('3 agents · 3 active')).toBeNull();
     expect(screen.queryByText('Active')).toBeNull();
+  });
+
+  it('bounds dense active work at three rows with numeric overflow', async () => {
+    mocks.agentSessionsByWorkspace['ws-1'] = Array.from({ length: 5 }, (_, index) => ({
+      id: `agent-${index + 1}`,
+      name: `Agent ${index + 1}`,
+      status: 'running',
+      messages: [],
+    })) as AgentSession[];
+
+    const { container } = await renderHoverCard({
+      agentSummary: { agentIds: ['agent-1', 'agent-2', 'agent-3', 'agent-4', 'agent-5'] },
+    });
+
+    expect(screen.getAllByRole('listitem')).toHaveLength(3);
+    expect(screen.getByText('+2 more')).toBeTruthy();
+    expect(container.querySelector('[data-workspace-hover-card-overflow]')).toBeTruthy();
+    expect(
+      container.querySelector('[data-workspace-hover-card-agent-count]')?.textContent?.trim(),
+    ).toBe('5');
   });
 
   it('degrades cleanly when optional metadata is absent', async () => {

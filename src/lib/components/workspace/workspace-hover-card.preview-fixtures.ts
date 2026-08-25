@@ -51,6 +51,7 @@ export interface WorkspaceHoverCardPreviewProps {
   expected: string;
   cards: HoverCardScenario[];
   placement?: 'right-edge' | 'bottom-edge';
+  layout?: 'standard' | 'narrow';
 }
 
 export interface StateMatrixEntry {
@@ -106,7 +107,7 @@ export const workspaceHoverCardStateMatrix: readonly StateMatrixEntry[] = [
     family: 'Status message',
     states: 'absent; whitespace; short; multiline; long; unbroken',
     expected:
-      'Absent and whitespace render no row; other values preserve line breaks and wrap without truncation.',
+      'Absent and whitespace render no row; other values preserve line breaks and wrap inside a bounded region.',
     coverage: 'messages and long-content previews; component tests',
     conflicts: 'No placeholder appears for an empty message.',
   },
@@ -155,16 +156,16 @@ export const workspaceHoverCardStateMatrix: readonly StateMatrixEntry[] = [
     family: 'Media',
     states: 'absent; present; failed asset',
     expected:
-      'The hover card renders no status image in all cases; media stays on the progress card pending a design decision.',
+      'The hover card renders no status image in all cases; media stays on the progress card.',
     coverage: 'media preview',
     conflicts: 'A failed or missing image must not add a broken media element.',
   },
   {
     family: 'Layout',
-    states: 'light; dark; 320 px; narrow; tall; right flip; bottom clamp; scroll/resize',
+    states: 'light; dark; two-column; narrow stack; dense; right flip; bottom clamp; scroll/resize',
     expected:
-      'Theme follows catalog query; card targets 320 px and clamps to the viewport; HoverCard repositions on resize and scroll.',
-    coverage: 'long-content and placement previews; HoverCard tests',
+      'Theme follows catalog query; the card uses two columns when space permits, stacks when narrow, stays height-bounded, and clamps to the viewport.',
+    coverage: 'dense, narrow, and placement previews; HoverCard tests',
     conflicts: 'The card must not clip beyond collision padding.',
   },
   {
@@ -262,6 +263,138 @@ const mixedTasks = [
 ];
 
 const scenes: Record<string, WorkspaceHoverCardPreviewProps> = {
+  working: {
+    family: 'Working',
+    expected: 'Identity stays primary while active work and the selected PR remain scannable.',
+    cards: [
+      (() => {
+        const ws = workspace('working', {
+          displayStatus: 'in_progress',
+          statusMessage: 'Implementing the approved two-column hover-card polish.',
+          agentSummary: { agentIds: ['working-implementor', 'working-verifier'] },
+          activePullRequest: pr(73, {
+            title: 'Polish workspace hover cards',
+            ciStatus: { total: 5, passed: 4, failed: 0, pending: 1 },
+          }),
+        });
+        return scenario('working', 'Working', 'Two active rows, mixed progress, and open PR.', {
+          workspace: ws,
+          tasks: mixedTasks,
+          taskStats: { total: 5, completed: 1, inProgress: 3 },
+          agents: [
+            agent(ws.id, 'working-implementor', AgentStatus.Active),
+            agent(ws.id, 'working-verifier', 'responding' as AgentSession['status']),
+          ],
+        });
+      })(),
+    ],
+  },
+  'stopped-blocked': {
+    family: 'Stopped or blocked',
+    expected: 'Failure semantics stay clear without a colored frame.',
+    cards: [
+      scenario('stopped', 'Stopped', 'Failure uses semantic text and dot color only.', {
+        workspace: workspace('stopped', {
+          displayStatus: 'failed',
+          statusMessage: 'The active implementation agent stopped unexpectedly.',
+        }),
+      }),
+      scenario('blocked', 'Blocked', 'Blocked copy remains visible with optional data absent.', {
+        workspace: workspace('blocked', {
+          displayStatus: 'blocked',
+          statusMessage: 'Waiting for access to the required repository.',
+        }),
+      }),
+    ],
+  },
+  'idle-complete': {
+    family: 'Idle or complete',
+    expected: 'Resolved and quiet states retain the same hierarchy with a zero agent count.',
+    cards: [
+      scenario('idle', 'Idle', 'No optional activity rows; recency stays pinned.', {
+        tasks: [],
+        taskStats: { total: 0, completed: 0, inProgress: 0 },
+      }),
+      scenario('complete', 'Complete', 'Complete progress and merged PR remain compact.', {
+        workspace: workspace('complete', {
+          displayStatus: 'complete',
+          statusMessage: 'Implementation and focused verification are complete.',
+          activePullRequest: pr(74, {
+            title: 'Polish workspace hover cards',
+            status: PullRequestStatus.Merged,
+          }),
+        }),
+        tasks: [task('complete-one', 'complete'), task('complete-two', 'complete')],
+        taskStats: { total: 2, completed: 2, inProgress: 0 },
+      }),
+    ],
+  },
+  dense: {
+    family: 'Dense',
+    expected: 'Long optional content stays bounded; only three active rows render.',
+    cards: [
+      (() => {
+        const agentIds = ['dense-one', 'dense-two', 'dense-three', 'dense-four', 'dense-five'];
+        const ws = workspace('dense', {
+          displayStatus: 'needs_attention',
+          title: 'A dense workspace title that confirms the identity column remains stable',
+          statusMessage:
+            'This longer status message verifies that dense cards stay bounded while meaningful workspace context remains readable and available inside the identity column.',
+          agentSummary: { agentIds },
+          activePullRequest: pr(75, {
+            title: 'A long pull request title that must not displace its number or terminal status',
+            reviewDecision: 'CHANGES_REQUESTED',
+          }),
+        });
+        return scenario(
+          'dense',
+          'Dense',
+          'Three active rows, +2 overflow, selected PR, and changes.',
+          {
+            workspace: ws,
+            tasks: mixedTasks,
+            taskStats: { total: 5, completed: 1, inProgress: 3 },
+            agents: agentIds.map((id) => agent(ws.id, id, AgentStatus.Active)),
+            diffSummary: {
+              schemaVersion: 1,
+              updatedAt: PREVIEW_FIXTURE_TIMESTAMPS.updatedAt,
+              totalFiles: 12,
+              totalAdditions: 144,
+              totalDeletions: 55,
+              files: [],
+            },
+            gitSummary: { ahead: 4, behind: 1, hasUnpushed: true },
+          },
+        );
+      })(),
+    ],
+  },
+  narrow: {
+    family: 'Narrow',
+    expected: 'The activity column stacks below identity without changing information order.',
+    layout: 'narrow',
+    cards: [
+      (() => {
+        const ws = workspace('narrow', {
+          displayStatus: 'in_progress',
+          statusMessage: 'Responsive narrow-width check.',
+          agentSummary: { agentIds: ['narrow-agent'] },
+          activePullRequest: pr(76, { title: 'Keep narrow hover cards readable' }),
+        });
+        return scenario(
+          'narrow',
+          'Narrow stack',
+          'Identity appears before activity and PR details.',
+          {
+            workspace: ws,
+            tasks: [task('narrow-progress', 'in_progress'), task('narrow-todo', 'not_started')],
+            taskStats: { total: 2, completed: 0, inProgress: 1 },
+            agents: [agent(ws.id, 'narrow-agent', AgentStatus.Active)],
+          },
+        );
+      })(),
+    ],
+  },
   readiness: {
     family: 'Input readiness',
     expected: 'Skeleton precedence and loaded replacement.',
@@ -686,7 +819,7 @@ export const workspaceHoverCardPreview: PreviewDefinition<WorkspaceHoverCardPrev
   definePreview({
     id: 'workspace-hover-card',
     title: 'Workspace hover card',
-    defaultState: 'semantic-status',
+    defaultState: 'working',
     states: Object.fromEntries(
       Object.entries(scenes).map(([name, props]) => [
         name,

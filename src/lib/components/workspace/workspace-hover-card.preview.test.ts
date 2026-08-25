@@ -7,8 +7,13 @@ import {
 describe('workspace hover-card preview audit', () => {
   it('registers representative named states without a Cartesian product', () => {
     expect(workspaceHoverCardPreview.id).toBe('workspace-hover-card');
-    expect(workspaceHoverCardPreview.defaultState).toBe('semantic-status');
+    expect(workspaceHoverCardPreview.defaultState).toBe('working');
     expect(Object.keys(workspaceHoverCardPreview.states)).toEqual([
+      'working',
+      'stopped-blocked',
+      'idle-complete',
+      'dense',
+      'narrow',
       'readiness',
       'identity-lifecycle',
       'semantic-status',
@@ -22,6 +27,20 @@ describe('workspace hover-card preview audit', () => {
       'long-content',
       'placement',
     ]);
+  });
+
+  it('provides the approved representative two-column scenes', () => {
+    const states = workspaceHoverCardPreview.states;
+
+    expect(states.working.props.cards[0]?.workspace?.displayStatus).toBe('in_progress');
+    expect(
+      states['stopped-blocked'].props.cards.map(({ workspace }) => workspace?.displayStatus),
+    ).toEqual(['failed', 'blocked']);
+    expect(
+      states['idle-complete'].props.cards.map(({ workspace }) => workspace?.displayStatus),
+    ).toEqual(['idle', 'complete']);
+    expect(states.dense.props.cards[0]?.agents).toHaveLength(5);
+    expect(states.narrow.props.layout).toBe('narrow');
   });
 
   it('has an explicit expected result, coverage route, and conflict rule for every family', () => {

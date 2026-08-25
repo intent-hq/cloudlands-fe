@@ -13,7 +13,13 @@
   import WorkspaceHoverCard from './WorkspaceHoverCard.svelte';
   import type { WorkspaceHoverCardPreviewProps } from './workspace-hover-card.preview-fixtures';
 
-  let { family, expected, cards, placement }: WorkspaceHoverCardPreviewProps = $props();
+  let {
+    family,
+    expected,
+    cards,
+    placement,
+    layout = 'standard',
+  }: WorkspaceHoverCardPreviewProps = $props();
   let placementTrigger: HTMLDivElement | null = $state(null);
 </script>
 
@@ -54,7 +60,12 @@
             <h3 class="text-sm font-semibold">{card.label}</h3>
             <p class="text-xs leading-5 text-muted-foreground">{card.expected}</p>
           </div>
-          <div class="flex min-h-52 min-w-0 justify-center bg-muted/20 p-3">
+          <div
+            class="flex min-h-52 min-w-0 justify-center bg-muted/20 p-3 {layout === 'narrow'
+              ? 'max-w-[300px]'
+              : ''}"
+            data-preview-layout={layout}
+          >
             <WorkspaceHoverCard
               workspace={card.workspace}
               isLoading={card.isLoading}
