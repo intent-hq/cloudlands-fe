@@ -5,11 +5,7 @@
  * instruction IDs available in the instruction registry.
  */
 
-import {
-  describe,
-  it,
-  expect,
-} from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { getAvailableInstructionIds } from '../../../features/agent/main/instructions';
 import type { AgentTypeId } from '../agent.types';
 
@@ -28,7 +24,6 @@ describe('AgentTypeId', () => {
       'common',
       'debug',
       'pr-description',
-      'ralph-loop',
       'setup-script-generator',
       'task-breakdown',
       'task-debug',
@@ -82,7 +77,6 @@ describe('AgentTypeId', () => {
       'common',
       'debug',
       'pr-description',
-      'ralph-loop',
       'setup-script-generator',
       'task-breakdown',
       'task-debug',
