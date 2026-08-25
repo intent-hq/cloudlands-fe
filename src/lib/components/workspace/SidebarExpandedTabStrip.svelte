@@ -8,6 +8,7 @@
     id: string;
     label: string;
     icon: IconDefinition;
+    unread?: boolean;
   }
 
   interface Props {
@@ -108,8 +109,16 @@
         tooltipDelayDuration={0}
         data-tab-action={active ? 'close' : 'activate'}
       >
-        <span class="sidebar-expanded-tab-icon" data-sidebar-tab-strip-icon>
+        <span class="sidebar-expanded-tab-icon relative" data-sidebar-tab-strip-icon>
           <Fa icon={tab.icon} />
+          {#if tab.unread}
+            <span
+              class="pointer-events-none absolute -top-0.5 -right-0.5 size-1.5 rounded-full"
+              style="background-color: hsl(var(--workspace-status-unread));"
+              data-sidebar-tab-unread-dot
+              aria-hidden="true"
+            ></span>
+          {/if}
         </span>
         {#if active}
           <span class="sr-only" aria-hidden="true" data-sidebar-tab-close data-visible="true"

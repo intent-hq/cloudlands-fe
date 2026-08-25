@@ -1213,6 +1213,7 @@
   "workspace_multiSelectSidebar_agentsLauncherOverflow_ariaLabel": "{remaining} weitere Agenten, insgesamt {total} Agenten",
   "workspace_multiSelectSidebar_agentsTab_description": "Agenten, die in diesem Space an Ihrer Aufgabe arbeiten.",
   "workspace_multiSelectSidebar_agentsTab_label": "Agenten",
+  "workspace_multiSelectSidebar_agentsUnread_ariaLabel": "Ungelesene Agentennachrichten",
   "workspace_multiSelectSidebar_archiveFailed_error": "Space konnte nicht archiviert werden",
   "workspace_multiSelectSidebar_archivedSpace_toast": "Space {title} archiviert",
   "workspace_multiSelectSidebar_browser_label": "Browser",

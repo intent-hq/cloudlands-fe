@@ -1213,6 +1213,7 @@
   "workspace_multiSelectSidebar_agentsLauncherOverflow_ariaLabel": "他 {remaining} 個、エージェント合計 {total} 個",
   "workspace_multiSelectSidebar_agentsTab_description": "このスペースでタスクに取り組んでいるエージェントです。",
   "workspace_multiSelectSidebar_agentsTab_label": "エージェント",
+  "workspace_multiSelectSidebar_agentsUnread_ariaLabel": "未読のエージェントメッセージ",
   "workspace_multiSelectSidebar_archiveFailed_error": "スペースをアーカイブできませんでした",
   "workspace_multiSelectSidebar_archivedSpace_toast": "スペース {title} をアーカイブしました",
   "workspace_multiSelectSidebar_browser_label": "ブラウザー",

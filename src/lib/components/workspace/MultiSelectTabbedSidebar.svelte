@@ -39,6 +39,7 @@
   import {
     selectAllWorkspaceAgents,
     selectIsLoadingAgents,
+    selectWorkspaceHasUnreadForegroundAgents,
   } from '$store/renderer/slices/workspace-agents/workspace-agents-selectors';
   import { selectAgentIsRunning } from '$store/renderer/slices/agent-session/agent-session-selectors';
   import { workspaceClient } from '$store/renderer/slices/workspace/utils/workspace.client';
@@ -193,6 +194,7 @@
   const notesLoading$ = selectNotesLoading(workspaceIdStore);
   const allWorkspaceAgents = selectAllWorkspaceAgents(workspaceIdStore);
   const agentsLoading = selectIsLoadingAgents(workspaceIdStore);
+  const hasUnreadForegroundAgents$ = selectWorkspaceHasUnreadForegroundAgents(workspaceIdStore);
   const hudQuestionsByAgentId$ = selectHudQuestionsByAgentId();
 
   function getLauncherAvatarState(agent: AgentSession): AvatarState {
@@ -278,7 +280,12 @@
   let contextSearchQuery = $state('');
   const expandedStripTabs = $derived(
     TAB_DEFINITIONS.filter((definition) => definition.id !== 'overview').map(
-      ({ id, label, icon }) => ({ id, label, icon }),
+      ({ id, label, icon }) => ({
+        id,
+        label,
+        icon,
+        unread: id === 'agents' && $hasUnreadForegroundAgents$,
+      }),
     ),
   );
   let sidebarTabSwitchDirection = $state<'left' | 'right' | 'none'>('none');
@@ -1324,6 +1331,15 @@
                         tab.id === 'changes' ? 'min-w-0 flex-1' : '',
                       )}>{tab.label}</span
                     >
+                    {#if tab.id === 'agents' && $hasUnreadForegroundAgents$}
+                      <span
+                        class="mr-auto size-1.5 shrink-0 rounded-full"
+                        style="background-color: hsl(var(--workspace-status-unread));"
+                        role="status"
+                        aria-label={m.workspace_multiSelectSidebar_agentsUnread_ariaLabel()}
+                        data-sidebar-agents-unread-dot
+                      ></span>
+                    {/if}
                     {#if tab.id === 'changes' && $activePrSummary$}
                       {@const pr = $activePrSummary$}
                       {@const prStatus = getActivePrStatusPresentation(pr.status)}
