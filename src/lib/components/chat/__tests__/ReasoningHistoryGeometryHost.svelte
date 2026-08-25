@@ -30,7 +30,11 @@
   ];
 </script>
 
-<section class="dark w-[720px] bg-background text-foreground" data-testid="history-geometry-host">
+<section
+  class="dark bg-background text-foreground"
+  style="width: 720px"
+  data-testid="history-geometry-host"
+>
   <div data-testid="history-geometry"><MessageContent content={history} /></div>
   <div data-testid="ordinary-reasoning-geometry"><MessageContent content={ordinary} /></div>
 </section>
