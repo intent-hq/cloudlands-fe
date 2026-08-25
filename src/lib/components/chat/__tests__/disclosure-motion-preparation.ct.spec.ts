@@ -89,6 +89,20 @@ for (const config of [
     expect(
       Math.max(...samples.map((sample) => Math.abs(sample.bottomDistance))),
     ).toBeLessThanOrEqual(8);
+
+    // Regression (monorepo#3379): repeat a rapid disclosure round and require
+    // the same bottom lock — the css/WAAPI-driven motion drifted 14-22px here.
+    await startSampling(component);
+    for (let click = 0; click < 4; click += 1) {
+      await trigger.evaluate((node) => (node as HTMLElement).click());
+      await page.waitForTimeout(40);
+    }
+    const repeatSamples = await finishSampling(page);
+    await expect(trigger).toHaveAttribute('aria-expanded', 'true');
+    expect(repeatSamples).toHaveLength(48);
+    expect(
+      Math.max(...repeatSamples.map((sample) => Math.abs(sample.bottomDistance))),
+    ).toBeLessThanOrEqual(8);
     await expect(component.getByTestId('disclosure-bottom-state')).toContainText('locked:0');
     expect(
       await details.evaluate((node) => ({

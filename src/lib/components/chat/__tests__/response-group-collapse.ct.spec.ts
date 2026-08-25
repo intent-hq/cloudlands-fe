@@ -75,18 +75,31 @@ for (const theme of ['light', 'dark'] as const) {
       await expect(body).toHaveCount(1);
 
       if (position === 'first') {
+        // The disclosure motion is tick-driven (inline style writes, not
+        // WAAPI keyframes — see disclosure-motion.ts), so observe the style
+        // mutations across the collapse instead of reading keyframes.
         const motion = await trigger.evaluate(async (element) => {
-          element.click();
-          await new Promise(requestAnimationFrame);
           const details = element
             .closest('[data-operational-row-container]')
-            ?.querySelector('[data-operational-expanded-content]');
-          const frames = details?.getAnimations()[0]?.effect?.getKeyframes() ?? [];
-          return frames.map((frame) => ({
-            height: String(frame.height ?? ''),
-            opacity: String(frame.opacity ?? ''),
-            transform: String(frame.transform ?? ''),
-          }));
+            ?.querySelector('[data-operational-expanded-content]') as HTMLElement | null;
+          if (!details) return [];
+          const frames: { height: string; opacity: string; transform: string }[] = [];
+          const record = () => {
+            frames.push({
+              height: details.style.height,
+              opacity: details.style.opacity,
+              transform: details.style.transform,
+            });
+          };
+          const observer = new MutationObserver(record);
+          observer.observe(details, { attributes: true, attributeFilter: ['style'] });
+          element.click();
+          for (let frame = 0; frame < 120 && details.isConnected; frame += 1) {
+            await new Promise(requestAnimationFrame);
+          }
+          if (observer.takeRecords().length > 0) record();
+          observer.disconnect();
+          return frames;
         });
         expect(motion.some((frame) => frame.height === '0px')).toBe(true);
         expect(motion.some((frame) => frame.opacity === '0')).toBe(true);
