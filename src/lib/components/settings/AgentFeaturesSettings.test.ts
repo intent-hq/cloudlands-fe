@@ -254,7 +254,7 @@ describe('AgentFeaturesSettings', () => {
     render(AgentFeaturesSettings);
 
     await waitFor(() => {
-      expect(screen.getAllByText('~620 tokens/session')).toHaveLength(10);
+      expect(screen.getAllByText('~620 tokens/session')).toHaveLength(11);
     });
     const perTurn = screen.getByText('~50 tokens/turn');
     expect(perTurn.className).toContain('text-ghost');
@@ -264,7 +264,7 @@ describe('AgentFeaturesSettings', () => {
     render(AgentFeaturesSettings);
 
     await waitFor(() => {
-      expect(screen.getAllByRole('switch')).toHaveLength(11);
+      expect(screen.getAllByRole('switch')).toHaveLength(12);
     });
     expect(screen.queryByText(/tokens\/(session|turn)/)).toBeNull();
   });
