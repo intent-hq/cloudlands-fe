@@ -48,6 +48,9 @@
   let values = $state<Record<FeaturePath, boolean>>(
     Object.fromEntries(FEATURE_PATHS.map((path) => [path, true])) as Record<FeaturePath, boolean>,
   );
+  // Daemon-provided approximate token cost per toggle (§5.12 `tokenImpact`);
+  // absent on older daemons or unannotated entries → no line rendered.
+  let tokenImpacts = $state<Partial<Record<FeaturePath, string>>>({});
 
   // Debounce window (§6.9): persisted seconds + input mirror, min 10.
   let persistedDebounce = $state<number>(60);
@@ -65,6 +68,7 @@
       for (const path of FEATURE_PATHS) {
         const entry = settings.find((s: { path: string; value: unknown }) => s.path === path);
         values[path] = coerceValue(entry?.value);
+        tokenImpacts[path] = typeof entry?.tokenImpact === 'string' ? entry.tokenImpact : undefined;
       }
       const debounce = settings.find(
         (s: { path: string; value: unknown }) => s.path === DEBOUNCE_PATH,
@@ -162,6 +166,10 @@
         <div>
           <p class="text-sm font-medium text-foreground">{feature.label()}</p>
           <p class="text-xs text-subtle mt-1">{feature.description()}</p>
+          {#if tokenImpacts[feature.path]}
+            <!-- i18n-ignore (daemon-provided wire text, PROTOCOL §5.12 tokenImpact) -->
+            <p class="text-xs text-ghost mt-1">{tokenImpacts[feature.path]}</p>
+          {/if}
         </div>
         <Toggle
           pressed={values[feature.path]}

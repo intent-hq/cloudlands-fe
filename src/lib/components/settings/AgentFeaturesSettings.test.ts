@@ -236,6 +236,34 @@ describe('AgentFeaturesSettings', () => {
     });
   });
 
+  it('renders the dimmed tokenImpact text when the daemon provides it (§5.12)', async () => {
+    mocks.mockSettingsList.mockResolvedValue(
+      FEATURE_PATHS.map((path) => ({
+        path,
+        value: true,
+        tokenImpact:
+          path === 'agentFeatures.stateSnapshot' ? '~50 tokens/turn' : '~620 tokens/session',
+      })),
+    );
+
+    render(AgentFeaturesSettings);
+
+    await waitFor(() => {
+      expect(screen.getAllByText('~620 tokens/session')).toHaveLength(10);
+    });
+    const perTurn = screen.getByText('~50 tokens/turn');
+    expect(perTurn.className).toContain('text-ghost');
+  });
+
+  it('renders no token-impact line when the daemon omits the field (older daemon)', async () => {
+    render(AgentFeaturesSettings);
+
+    await waitFor(() => {
+      expect(screen.getAllByRole('switch')).toHaveLength(11);
+    });
+    expect(screen.queryByText(/tokens\/(session|turn)/)).toBeNull();
+  });
+
   it('shows toast.error and reverts when the daemon returns a rolled-back value', async () => {
     // Daemon rolled back to true when toggling off
     mocks.mockSettingsUpdate.mockResolvedValueOnce([
