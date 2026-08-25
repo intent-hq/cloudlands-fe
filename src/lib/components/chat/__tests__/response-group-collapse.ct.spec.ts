@@ -152,4 +152,63 @@ for (const theme of ['light', 'dark'] as const) {
     await firstTrigger.click();
     await expect(firstTrigger).toHaveAttribute('aria-expanded', 'false');
   });
+
+  test(`keeps tick-driven collapse motion in ${theme}`, async ({ mount, page }) => {
+    await page.emulateMedia({ reducedMotion: 'no-preference' });
+    const component = await mount(ResponseGroupCollapseHost, {
+      props: { theme, width: 260, zoom: 2, livePreview: false },
+    });
+    const first = component.getByTestId('response-group-first');
+    const trigger = first.getByTestId('response-group-disclosure');
+    const body = first.locator('[data-operational-expanded-content]');
+    await expect(trigger).toHaveAttribute('aria-expanded', 'true');
+    await expect(body).toHaveCount(1);
+
+    const motion = await trigger.evaluate(async (element) => {
+      const details = element
+        .closest('[data-operational-row-container]')
+        ?.querySelector('[data-operational-expanded-content]') as HTMLElement | null;
+      if (!details) return [];
+      const frames: { height: string; opacity: string; transform: string }[] = [];
+      const record = () => {
+        frames.push({
+          height: details.style.height,
+          opacity: details.style.opacity,
+          transform: details.style.transform,
+        });
+      };
+      const observer = new MutationObserver(record);
+      observer.observe(details, { attributes: true, attributeFilter: ['style'] });
+      element.click();
+      for (let frame = 0; frame < 120 && details.isConnected; frame += 1) {
+        await new Promise(requestAnimationFrame);
+      }
+      if (observer.takeRecords().length > 0) record();
+      observer.disconnect();
+      return frames;
+    });
+    expect(motion.some((frame) => frame.height === '0px')).toBe(true);
+    expect(motion.some((frame) => frame.opacity === '0')).toBe(true);
+    expect(motion.some((frame) => frame.transform.includes('-4px'))).toBe(true);
+    await expect(trigger).toHaveAttribute('aria-expanded', 'false');
+    await expect(body).toHaveCount(0);
+    await expect(first.locator('.cylinder-scroller')).toHaveCount(0);
+
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    const middleTrigger = component
+      .getByTestId('response-group-middle')
+      .getByTestId('response-group-disclosure');
+    await middleTrigger.click();
+    await expect(middleTrigger).toHaveAttribute('aria-expanded', 'false');
+    await middleTrigger.click();
+    await expect(middleTrigger).toHaveAttribute('aria-expanded', 'true');
+    await expect
+      .poll(() =>
+        component
+          .getByTestId('response-group-middle')
+          .locator('[data-operational-expanded-content]')
+          .evaluate((element) => element.getAnimations().map((animation) => animation.playState)),
+      )
+      .toEqual([]);
+  });
 }
