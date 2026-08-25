@@ -415,6 +415,16 @@
 </script>
 
 {#snippet renderParsedContentBlock(parsedBlock: ParsedContent, insetProse = false)}
+  {#if insetProse}
+    <div class={OPERATIONAL_ASSISTANT_PROSE_INSET_CLASS}>
+      {@render renderParsedContentBlockBody(parsedBlock, insetProse)}
+    </div>
+  {:else}
+    {@render renderParsedContentBlockBody(parsedBlock, insetProse)}
+  {/if}
+{/snippet}
+
+{#snippet renderParsedContentBlockBody(parsedBlock: ParsedContent, insetProse: boolean)}
   {#if parsedBlock.type === 'augment_code_snippet'}
     <AugmentCodeSnippet
       code={parsedBlock.content}
@@ -479,10 +489,7 @@
       language={parsedBlock.metadata?.language || 'plaintext'}
     />
   {:else}
-    <div
-      class={insetProse ? OPERATIONAL_ASSISTANT_PROSE_INSET_CLASS : undefined}
-      data-assistant-prose={insetProse ? 'static-markdown' : undefined}
-    >
+    <div data-assistant-prose={insetProse ? 'static-markdown' : undefined}>
       <MarkdownViewer
         content={parsedBlock.content || ''}
         {isStreaming}

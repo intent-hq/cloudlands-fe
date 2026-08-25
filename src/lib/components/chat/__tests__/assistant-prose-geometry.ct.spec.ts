@@ -186,6 +186,27 @@ for (const theme of ['light', 'dark'] as const) {
           expect(childX).toBeCloseTo(groupX, 1);
         }
 
+        for (const fixtureId of ['static-rich-block', 'streaming-rich-block']) {
+          const fixture = component.locator(`[data-testid="${fixtureId}"]`);
+          const richProse = fixture.locator('[data-assistant-prose]');
+          await expect(richProse).toHaveCount(1);
+          const proseX = await richProse
+            .locator(':scope > *')
+            .first()
+            .evaluate((element) => {
+              const box = element.getBoundingClientRect();
+              return box.x + window.scrollX;
+            });
+          const codeBlock = fixture.locator('.code-block-container');
+          await expect(codeBlock).toBeVisible();
+          const codeX = await codeBlock.evaluate((element) => {
+            const box = element.getBoundingClientRect();
+            return box.x + window.scrollX;
+          });
+          expect(proseX).toBeCloseTo(groupX, 1);
+          expect(codeX).toBeCloseTo(proseX, 1);
+        }
+
         const laneBox = await baseline.evaluate((element) => {
           const box = element.getBoundingClientRect();
           return { x: box.x + window.scrollX, width: box.width };
