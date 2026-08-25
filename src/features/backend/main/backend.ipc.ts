@@ -468,9 +468,11 @@ export function getBackendClient(): JsonRpcClient {
       );
       // #3448: refresh the adopted external daemon's version info from the
       // live `server.version` on every (re)connect — the startup probe only
-      // latches it once, so a daemon upgrade would otherwise stay stale. The
-      // hello resolves AFTER the `connected` status broadcast, so a refresh
-      // must re-broadcast the transport payload itself.
+      // latches it once, so a daemon upgrade would otherwise stay stale. For
+      // the handshake hello this runs BEFORE `finishConnect` emits
+      // `connected`, so that broadcast already carries the refreshed info;
+      // the explicit re-broadcast below covers caller-issued hellos while
+      // connected (no status event follows those).
       const refreshed = computeDaemonVersionRefresh({
         helloResult: result,
         isLocalBackend: activeConnectionMeta === null,
