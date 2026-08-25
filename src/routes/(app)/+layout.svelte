@@ -88,7 +88,11 @@
     selectBackendSetupGate,
   } from '$store/renderer/slices/setup-prompt/setup-prompt-selectors';
   import { bootRouteGateResolved } from '$store/renderer/slices/setup-prompt/setup-prompt-slice';
-  import { decideBootRoute, getBootRoutePathname } from '$lib/utils/boot-route-gate';
+  import {
+    BOOT_ROUTE_HOLD_TIMEOUT_MS,
+    decideBootRoute,
+    getBootRoutePathname,
+  } from '$lib/utils/boot-route-gate';
   import {
     loadWorkspacesRequested,
     recordWorkspaceView,
@@ -205,7 +209,19 @@
   // decideBootRoute (boot-route-gate); it fires at most once per full page
   // load, so deliberate in-app navigation to `/` or /workspace/new is
   // unaffected. While it holds, WorkspaceSurface suppresses onboarding so the
-  // wizard never flashes before a redirect.
+  // wizard never flashes before a redirect. The hold is bounded: if nothing
+  // settles within BOOT_ROUTE_HOLD_TIMEOUT_MS (e.g. provider probes failing
+  // forever, so neither a check settlement nor an evaluation ever arrives),
+  // bootHoldTimedOut flips and decideBootRoute resolves best-effort instead
+  // of holding a blank surface indefinitely.
+  let bootHoldTimedOut = $state(false);
+  $effect(() => {
+    if ($bootGateResolved) return;
+    const timer = setTimeout(() => {
+      bootHoldTimedOut = true;
+    }, BOOT_ROUTE_HOLD_TIMEOUT_MS);
+    return () => clearTimeout(timer);
+  });
   $effect(() => {
     const decision = decideBootRoute({
       bootPathname: getBootRoutePathname(),
@@ -216,6 +232,7 @@
       workspaces: $workspaceItems,
       tabsHydrated: $workspaceTabsHydrated,
       currentTabId: $currentWorkspaceTabId,
+      holdTimedOut: bootHoldTimedOut,
     });
     if (decision.kind !== 'resolve') return;
     untrack(() => {

@@ -34,7 +34,10 @@ export function determineOnboardingInitialStep(inputs: {
    * exists — compute with `hasAvailableWorkspace`, not a bare length check.
    */
   hasWorkspaces: boolean;
-  /** True once the bulk provider check landed at least one status. */
+  /**
+   * True once a bulk provider check has COMPLETED (full sweep settled) with
+   * at least one status landed — not merely the first status arriving.
+   */
   providersCheckedOnce: boolean;
 }): OnboardingInitialStepDecision {
   if (inputs.fullFlowRequested) return { step: 'welcome', viaLocalFastPath: false };
@@ -54,11 +57,14 @@ export type FastPathSettlement = 'pending' | 'keep' | 'correct';
  * Resolve a provisional local fast-path against the (possibly settled) bulk
  * provider check: 'keep' once a ready provider or workspaces confirm it,
  * 'correct' (route back to provider setup) when the check settled with
- * neither, 'pending' while the check has not landed any statuses yet.
+ * neither, 'pending' while no bulk check has completed yet.
  */
 export function resolveFastPathSettlement(inputs: {
   hasReadyProvider: boolean;
-  /** True once the bulk provider check landed at least one status. */
+  /**
+   * True once a bulk provider check has COMPLETED (full sweep settled) with
+   * at least one status landed — not merely the first status arriving.
+   */
   providersCheckedOnce: boolean;
   hasWorkspaces: boolean;
 }): FastPathSettlement {

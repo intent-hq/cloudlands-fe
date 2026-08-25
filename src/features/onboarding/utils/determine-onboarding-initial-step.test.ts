@@ -129,7 +129,7 @@ describe('determineOnboardingInitialStep', () => {
 });
 
 describe('resolveFastPathSettlement', () => {
-  it('pending while the bulk check has not landed statuses', () => {
+  it('pending while no bulk check has completed', () => {
     expect(
       resolveFastPathSettlement({
         hasReadyProvider: false,
