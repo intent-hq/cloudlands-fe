@@ -465,12 +465,14 @@
     ondragover={handleDragOver}
     ondrop={handleDrop}
   >
-    {#each renderedTabOrder as workspaceId (workspaceId)}
+    {#each renderedTabOrder as workspaceId, tabIndex (workspaceId)}
       {@const workspace = workspaceById.get(workspaceId)}
       {@const isDragged = draggedWorkspaceId === workspaceId}
       {@const isCurrent =
         workspaceId ===
         (activeWorkspaceId === undefined ? $currentWorkspaceTabId$ : activeWorkspaceId)}
+      {@const hasFlushLeadingEdge =
+        alignFirstTabToPanel && tabIndex === 0 && isCurrent && !isDragged}
       <div
         class="min-w-0 shrink-0"
         data-workspace-tab-motion={workspaceId}
@@ -496,13 +498,17 @@
             class={cn(
               'group/workspace-tab flex h-8 w-40 max-w-[40vw] shrink-0 items-center border transition-[background-color,border-color,box-shadow] motion-reduce:transition-none',
               isCurrent
-                ? 'rounded-t-md border-border border-b-transparent bg-sidebar text-foreground'
+                ? cn(
+                    hasFlushLeadingEdge ? 'rounded-tr-md' : 'rounded-t-md',
+                    'border-border border-b-transparent bg-sidebar text-foreground',
+                  )
                 : 'rounded-md border-transparent text-muted-foreground hover:bg-sidebar/50 hover:text-foreground',
               isDragged ? 'pointer-events-none fixed z-50 cursor-grabbing shadow-lg' : 'relative',
             )}
             data-workspace-tab={workspaceId}
             data-active={isCurrent}
             data-dragging={isDragged}
+            data-workspace-tab-leading-edge={hasFlushLeadingEdge ? 'flush' : 'curved'}
             style:left={isDragged && dragSession
               ? `${dragSession.origin.left + dragClientX - dragSession.startClientX}px`
               : undefined}
@@ -524,23 +530,27 @@
                      curve terminates on the panel's top border. The right flare's `-12.5px`
                      offset + 1px seam-fill rect compensates for the arc-stroke straddling the
                      right-edge pixel boundary so no gap shows between flare and tab side. -->
-              <svg
-                class="pointer-events-none absolute left-[-12px] -bottom-0.5 size-[12px] overflow-visible text-sidebar"
-                viewBox="0 0 12 12"
-                aria-hidden="true"
-              >
-                <path d="M 0 12 L 12 12 L 12 0 A 12 12 0 0 1 0 12 Z" fill="currentColor" />
-                <path
-                  class="stroke-border"
-                  d="M 12 0 A 12 12 0 0 1 0 12"
-                  fill="none"
-                  stroke-width="1"
-                />
-              </svg>
+              {#if !hasFlushLeadingEdge}
+                <svg
+                  class="pointer-events-none absolute left-[-12px] -bottom-0.5 size-[12px] overflow-visible text-sidebar"
+                  viewBox="0 0 12 12"
+                  aria-hidden="true"
+                  data-workspace-tab-leading-flare
+                >
+                  <path d="M 0 12 L 12 12 L 12 0 A 12 12 0 0 1 0 12 Z" fill="currentColor" />
+                  <path
+                    class="stroke-border"
+                    d="M 12 0 A 12 12 0 0 1 0 12"
+                    fill="none"
+                    stroke-width="1"
+                  />
+                </svg>
+              {/if}
               <svg
                 class="pointer-events-none absolute right-[-12.5px] -bottom-0.5 size-[12px] overflow-visible text-sidebar"
                 viewBox="0 0 12 12"
                 aria-hidden="true"
+                data-workspace-tab-trailing-flare
               >
                 <path d="M 12 12 L 0 12 L 0 0 A 12 12 0 0 0 12 12 Z" fill="currentColor" />
                 <rect x="-1" width="1" height="100%" fill="currentColor" />
@@ -620,34 +630,42 @@
             class={cn(
               'group/workspace-tab relative flex h-8 w-40 max-w-[40vw] shrink-0 items-center border transition-[background-color,border-color,box-shadow,opacity,transform] motion-reduce:transition-none',
               isCurrent
-                ? 'rounded-t-md border-border border-b-transparent bg-sidebar text-foreground'
+                ? cn(
+                    hasFlushLeadingEdge ? 'rounded-tr-md' : 'rounded-t-md',
+                    'border-border border-b-transparent bg-sidebar text-foreground',
+                  )
                 : 'rounded-md border-transparent text-muted-foreground',
             )}
             data-workspace-tab={workspaceId}
             data-workspace-tab-loading="true"
             data-active={isCurrent}
+            data-workspace-tab-leading-edge={hasFlushLeadingEdge ? 'flush' : 'curved'}
             use:reportActiveTabBounds={isCurrent}
             use:registerTabSurface={workspaceId}
             role="presentation"
           >
             {#if isCurrent}
-              <svg
-                class="pointer-events-none absolute left-[-12px] -bottom-0.5 size-[12px] overflow-visible text-sidebar"
-                viewBox="0 0 12 12"
-                aria-hidden="true"
-              >
-                <path d="M 0 12 L 12 12 L 12 0 A 12 12 0 0 1 0 12 Z" fill="currentColor" />
-                <path
-                  class="stroke-border"
-                  d="M 12 0 A 12 12 0 0 1 0 12"
-                  fill="none"
-                  stroke-width="1"
-                />
-              </svg>
+              {#if !hasFlushLeadingEdge}
+                <svg
+                  class="pointer-events-none absolute left-[-12px] -bottom-0.5 size-[12px] overflow-visible text-sidebar"
+                  viewBox="0 0 12 12"
+                  aria-hidden="true"
+                  data-workspace-tab-leading-flare
+                >
+                  <path d="M 0 12 L 12 12 L 12 0 A 12 12 0 0 1 0 12 Z" fill="currentColor" />
+                  <path
+                    class="stroke-border"
+                    d="M 12 0 A 12 12 0 0 1 0 12"
+                    fill="none"
+                    stroke-width="1"
+                  />
+                </svg>
+              {/if}
               <svg
                 class="pointer-events-none absolute right-[-12.5px] -bottom-0.5 size-[12px] overflow-visible text-sidebar"
                 viewBox="0 0 12 12"
                 aria-hidden="true"
+                data-workspace-tab-trailing-flare
               >
                 <path d="M 12 12 L 0 12 L 0 0 A 12 12 0 0 0 12 12 Z" fill="currentColor" />
                 <rect x="-1" width="1" height="100%" fill="currentColor" />
