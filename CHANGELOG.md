@@ -4,6 +4,20 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.92.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.91.0...v2.92.0) (2026-08-25)
+
+
+### 🚀 Features
+
+* expose agents.maxTopLevelAgents and agentFeatures.peerAgents in settings UI ([#1673](https://github.com/intent-hq/cloudlands-fe/issues/1673)) ([1db17cb](https://github.com/intent-hq/cloudlands-fe/commit/1db17cb1f8cef407cb90ffcfbf09d92679ad9562))
+* retired agents bin with restore and read-only conversations ([#1675](https://github.com/intent-hq/cloudlands-fe/issues/1675)) ([7ec7832](https://github.com/intent-hq/cloudlands-fe/commit/7ec78321222f80c598147b6e872d7b59de73c425))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.7.58 ([#1703](https://github.com/intent-hq/cloudlands-fe/issues/1703)) ([6a6d0f6](https://github.com/intent-hq/cloudlands-fe/commit/6a6d0f6dd5ebbf063e7b5706d2e49900e79b5c07))
+* make automated-wake header bar fully clickable ([#1693](https://github.com/intent-hq/cloudlands-fe/issues/1693)) ([82c5b6e](https://github.com/intent-hq/cloudlands-fe/commit/82c5b6e1de9130cae811332302132699b3c89515))
+
 ## [2.91.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.90.0...v2.91.0) (2026-08-25)
 
 
