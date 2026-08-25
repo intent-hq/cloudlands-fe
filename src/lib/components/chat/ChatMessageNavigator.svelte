@@ -26,11 +26,7 @@
   let triggerElement: HTMLElement | null = $state(null);
   let contentElement: HTMLElement | null = $state(null);
   let collisionBoundary: Element[] = $state([]);
-  let pointerDownOnTrigger = $state(false);
   let preserveOutsideFocusOnClose = $state(false);
-  let reopenOnNextPointerIntent = $state(false);
-  let suppressNextTriggerClick = $state(false);
-  let lastTriggerPointerPosition: { pointerId: number; x: number; y: number } | null = $state(null);
   const navigatorId = $props.id();
   const listboxId = `chat-message-navigator-listbox-${navigatorId}`;
   const filteredMessages = $derived.by(() => {
@@ -44,13 +40,9 @@
 
   function handleOpenChange(nextOpen: boolean) {
     open = nextOpen;
-    if (!nextOpen) {
-      suppressNextTriggerClick = false;
-      return;
-    }
+    if (!nextOpen) return;
     const panel = triggerElement?.closest('[data-panel-id]');
     collisionBoundary = panel ? [panel] : [];
-    reopenOnNextPointerIntent = false;
     query = '';
     activeIndex = 0;
     onOpen?.();
@@ -59,17 +51,6 @@
   function handleInput(event: Event) {
     query = (event.currentTarget as HTMLInputElement).value;
     activeIndex = 0;
-  }
-
-  function handleTriggerFocus(event: FocusEvent) {
-    const previousTarget = event.relatedTarget;
-    if (
-      pointerDownOnTrigger ||
-      (previousTarget instanceof Element && previousTarget.closest('[data-popover-content]'))
-    ) {
-      return;
-    }
-    handleOpenChange(true);
   }
 
   function handleTriggerKeydown(event: KeyboardEvent) {
@@ -93,67 +74,8 @@
   function handleFocusOutside(event: FocusEvent) {
     if (!open || !(event.target instanceof Node)) return;
     if (triggerElement?.contains(event.target) || isNavigatorContentTarget(event.target)) return;
-    pointerDownOnTrigger = false;
     preserveOutsideFocusOnClose = true;
-    reopenOnNextPointerIntent = true;
     handleOpenChange(false);
-  }
-
-  function rememberTriggerPointerPosition(event: PointerEvent) {
-    lastTriggerPointerPosition = {
-      pointerId: event.pointerId,
-      x: event.clientX,
-      y: event.clientY,
-    };
-  }
-
-  function reopenFromPointerIntent() {
-    pointerDownOnTrigger = true;
-    triggerElement?.focus({ preventScroll: true });
-    pointerDownOnTrigger = false;
-    handleOpenChange(true);
-  }
-
-  function handleTriggerPointerOver(event: PointerEvent) {
-    if (event.pointerType === 'touch') return;
-    const enteredFromOutside =
-      !(event.relatedTarget instanceof Node) || !triggerElement?.contains(event.relatedTarget);
-    rememberTriggerPointerPosition(event);
-    if (reopenOnNextPointerIntent && enteredFromOutside) {
-      reopenFromPointerIntent();
-      suppressNextTriggerClick = true;
-    }
-  }
-
-  function handleTriggerPointerDown() {
-    pointerDownOnTrigger = true;
-    if (suppressNextTriggerClick) {
-      suppressNextTriggerClick = false;
-      open = false;
-    }
-  }
-
-  function handleTriggerPointerEnter(event: PointerEvent) {
-    if (event.pointerType === 'touch') return;
-    rememberTriggerPointerPosition(event);
-  }
-
-  function handleTriggerPointerMove(event: PointerEvent) {
-    if (event.pointerType === 'touch') return;
-    const moved =
-      lastTriggerPointerPosition !== null &&
-      (lastTriggerPointerPosition.pointerId !== event.pointerId ||
-        lastTriggerPointerPosition.x !== event.clientX ||
-        lastTriggerPointerPosition.y !== event.clientY);
-    rememberTriggerPointerPosition(event);
-    if (reopenOnNextPointerIntent && moved) reopenFromPointerIntent();
-  }
-
-  function handleTriggerPointerLeave(event: PointerEvent) {
-    if (event.pointerType !== 'touch') {
-      lastTriggerPointerPosition = null;
-      suppressNextTriggerClick = false;
-    }
   }
 
   function handleCloseAutoFocus(event: Event) {
@@ -195,16 +117,7 @@
 
 <div class="flex shrink-0 items-center gap-0" data-testid="chat-header-navigation-controls">
   <Popover.Root bind:open onOpenChange={handleOpenChange}>
-    <Popover.Trigger
-      bind:ref={triggerElement}
-      openOnHover
-      openDelay={120}
-      closeDelay={180}
-      onpointerover={handleTriggerPointerOver}
-      onpointerenter={handleTriggerPointerEnter}
-      onpointermove={handleTriggerPointerMove}
-      onpointerleave={handleTriggerPointerLeave}
-    >
+    <Popover.Trigger bind:ref={triggerElement}>
       {#snippet child({ props })}
         <Button
           {...props}
@@ -215,11 +128,7 @@
           tooltipSide="bottom"
           tooltipDelayDuration={300}
           aria-expanded={open}
-          onfocus={handleTriggerFocus}
           onkeydown={handleTriggerKeydown}
-          onpointerdown={handleTriggerPointerDown}
-          onpointerup={() => (pointerDownOnTrigger = false)}
-          onpointercancel={() => (pointerDownOnTrigger = false)}
           data-testid="chat-message-navigator-trigger"
         >
           <ChatTextIcon
