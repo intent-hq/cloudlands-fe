@@ -271,6 +271,8 @@ describe('OffscreenWebviewHost', () => {
     expect(host.className).toContain('overflow-hidden');
     expect(host.className).toContain('opacity-0');
     expect(host.className).toContain('pointer-events-none');
+    // inert keeps the focusable webviews out of the tab order.
+    expect(host.hasAttribute('inert')).toBe(true);
   });
 
   it('skips tabs with non-loadable URLs', async () => {
