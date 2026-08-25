@@ -5562,7 +5562,10 @@
                 {/each}
               {/each}
               {#if showEndOfListStreamingStatus}
-                <div class={isCompactMode ? 'mb-2' : 'mb-16'}>
+                <div
+                  class="pt-1 {isCompactMode ? 'mb-2' : 'mb-16'}"
+                  data-testid="end-of-list-streaming-status"
+                >
                   <StreamingStatus
                     isStreaming={$agentSessionIsStreaming$}
                     isProcessing={$agentIsResponding$}

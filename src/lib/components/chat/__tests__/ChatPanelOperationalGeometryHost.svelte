@@ -20,7 +20,14 @@
     zoom = 1,
     width = 560,
     seamOnly = false,
-  }: { theme?: 'light' | 'dark'; zoom?: number; width?: number; seamOnly?: boolean } = $props();
+    detachedStatus = false,
+  }: {
+    theme?: 'light' | 'dark';
+    zoom?: number;
+    width?: number;
+    seamOnly?: boolean;
+    detachedStatus?: boolean;
+  } = $props();
   const workspaceId = 'chat-panel-operational-geometry';
   const agentId = 'chat-panel-operational-agent';
   const timestamp = '2026-08-17T12:00:00.000Z';
@@ -380,13 +387,14 @@
   ];
   // svelte-ignore state_referenced_locally -- each CT mount uses one immutable fixture scenario.
   const messages = seamOnly ? seamMessages : alignmentMessages;
+  // svelte-ignore state_referenced_locally -- each CT mount uses one immutable fixture scenario.
   const session = {
     id: agentId,
     workspaceId,
     name: 'Operational geometry agent',
     status: 'active',
     isActive: true,
-    isStreaming: true,
+    isStreaming: !detachedStatus,
     isProcessing: true,
     isResponding: true,
     messages,
