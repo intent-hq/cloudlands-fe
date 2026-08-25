@@ -39,6 +39,7 @@
   import {
     selectAllWorkspaceAgents,
     selectIsLoadingAgents,
+    selectWorkspaceHasUnreadForegroundAgents,
   } from '$store/renderer/slices/workspace-agents/workspace-agents-selectors';
   import { selectAgentIsRunning } from '$store/renderer/slices/agent-session/agent-session-selectors';
   import { workspaceClient } from '$store/renderer/slices/workspace/utils/workspace.client';
@@ -193,6 +194,7 @@
   const notesLoading$ = selectNotesLoading(workspaceIdStore);
   const allWorkspaceAgents = selectAllWorkspaceAgents(workspaceIdStore);
   const agentsLoading = selectIsLoadingAgents(workspaceIdStore);
+  const hasUnreadForegroundAgents$ = selectWorkspaceHasUnreadForegroundAgents(workspaceIdStore);
   const hudQuestionsByAgentId$ = selectHudQuestionsByAgentId();
 
   function getLauncherAvatarState(agent: AgentSession): AvatarState {
@@ -278,7 +280,16 @@
   let contextSearchQuery = $state('');
   const expandedStripTabs = $derived(
     TAB_DEFINITIONS.filter((definition) => definition.id !== 'overview').map(
-      ({ id, label, icon }) => ({ id, label, icon }),
+      ({ id, label, icon }) => ({
+        id,
+        label,
+        icon,
+        unread: id === 'agents' && $hasUnreadForegroundAgents$,
+        unreadLabel:
+          id === 'agents'
+            ? m.workspace_multiSelectSidebar_agentsTabUnread_ariaLabel({ label })
+            : undefined,
+      }),
     ),
   );
   let sidebarTabSwitchDirection = $state<'left' | 'right' | 'none'>('none');
@@ -1218,7 +1229,7 @@
                     ? undefined
                     : m.ui_vscodePanel_expand_ariaLabel()}
                   aria-labelledby={isAgentLauncherTab(tab.id)
-                    ? `sidebar-launcher-label-${tab.id}-${workspaceId} sidebar-launcher-agent-count-${workspaceId}`
+                    ? `sidebar-launcher-label-${tab.id}-${workspaceId} sidebar-launcher-agent-count-${workspaceId}${$hasUnreadForegroundAgents$ ? ` sidebar-launcher-agents-unread-${workspaceId}` : ''}`
                     : undefined}
                 ></Button>
                 <div
@@ -1324,6 +1335,15 @@
                         tab.id === 'changes' ? 'min-w-0 flex-1' : '',
                       )}>{tab.label}</span
                     >
+                    {#if tab.id === 'agents' && $hasUnreadForegroundAgents$}
+                      <span
+                        id={`sidebar-launcher-agents-unread-${workspaceId}`}
+                        class="mr-auto size-1.5 shrink-0 rounded-full bg-[hsl(var(--workspace-status-unread))] forced-colors:bg-[CanvasText]"
+                        role="img"
+                        aria-label={m.workspace_multiSelectSidebar_agentsUnread_ariaLabel()}
+                        data-sidebar-agents-unread-dot
+                      ></span>
+                    {/if}
                     {#if tab.id === 'changes' && $activePrSummary$}
                       {@const pr = $activePrSummary$}
                       {@const prStatus = getActivePrStatusPresentation(pr.status)}

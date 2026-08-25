@@ -139,6 +139,7 @@ vi.mock('$store/renderer/slices/workspace-agents/workspace-agents-selectors', ()
   selectAllWorkspaceAgents: mocks.selectorFrom(() => mocks.agents),
   selectForegroundWorkspaceAgents: mocks.selector([]),
   selectIsLoadingAgents: mocks.selectorFrom(() => mocks.agentsLoading),
+  selectWorkspaceHasUnreadForegroundAgents: mocks.selector(false),
 }));
 vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
   selectAgentIsResponding: mocks.selector(false),

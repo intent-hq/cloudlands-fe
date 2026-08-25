@@ -1214,6 +1214,8 @@
   "workspace_multiSelectSidebar_agentsLauncherOverflow_ariaLabel": "{remaining} more agents, {total} agents total",
   "workspace_multiSelectSidebar_agentsTab_description": "Agents working on your task in this space.",
   "workspace_multiSelectSidebar_agentsTab_label": "Agents",
+  "workspace_multiSelectSidebar_agentsTabUnread_ariaLabel": "{label} (unread agent messages)",
+  "workspace_multiSelectSidebar_agentsUnread_ariaLabel": "Unread agent messages",
   "workspace_multiSelectSidebar_archiveFailed_error": "Failed to archive space",
   "workspace_multiSelectSidebar_archivedSpace_toast": "Archived space {title}",
   "workspace_multiSelectSidebar_browser_label": "Browser",

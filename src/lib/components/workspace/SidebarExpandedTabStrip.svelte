@@ -8,6 +8,8 @@
     id: string;
     label: string;
     icon: IconDefinition;
+    unread?: boolean;
+    unreadLabel?: string;
   }
 
   interface Props {
@@ -78,6 +80,7 @@
     {@const expanded = tab.id === expandedTabId}
     {@const preview = tab.id === previewedTabId}
     {@const raised = tab.id === raisedTabId}
+    {@const idleLabel = (tab.unread && tab.unreadLabel) || tab.label}
     <div
       role="group"
       class="sidebar-expanded-tab min-w-0 cursor-pointer"
@@ -103,13 +106,20 @@
         }}
         aria-expanded={expanded}
         aria-current={active ? 'page' : undefined}
-        aria-label={active ? closeLabel : tab.label}
-        tooltip={active ? closeLabel : tab.label}
+        aria-label={active ? closeLabel : idleLabel}
+        tooltip={active ? closeLabel : idleLabel}
         tooltipDelayDuration={0}
         data-tab-action={active ? 'close' : 'activate'}
       >
-        <span class="sidebar-expanded-tab-icon" data-sidebar-tab-strip-icon>
+        <span class="sidebar-expanded-tab-icon relative" data-sidebar-tab-strip-icon>
           <Fa icon={tab.icon} />
+          {#if tab.unread}
+            <span
+              class="pointer-events-none absolute -top-0.5 -right-0.5 size-1.5 rounded-full bg-[hsl(var(--workspace-status-unread))] forced-colors:bg-[CanvasText]"
+              data-sidebar-tab-unread-dot
+              aria-hidden="true"
+            ></span>
+          {/if}
         </span>
         {#if active}
           <span class="sr-only" aria-hidden="true" data-sidebar-tab-close data-visible="true"

@@ -52,6 +52,9 @@
   data-avatar-variant={usesNamedVariant ? variant : undefined}
 >
   <AgentAvatar {agentId} {specialist} {provider} {variant} {size} />
+  {#if state === 'unread'}
+    <span class="agent-avatar-unread-dot" data-avatar-unread-dot></span>
+  {/if}
 </span>
 
 <style>
@@ -102,6 +105,17 @@
     --agent-avatar-background: hsl(var(--agent-avatar-surface-attention));
   }
 
+  .agent-avatar-unread-dot {
+    position: absolute;
+    inset-inline-end: 3px;
+    inset-block-end: 3px;
+    width: 6px;
+    height: 6px;
+    border-radius: 9999px;
+    background-color: hsl(var(--workspace-status-unread));
+    pointer-events: none;
+  }
+
   @media (forced-colors: active) {
     .agent-avatar-with-state {
       --agent-avatar-background-forced: Canvas;
@@ -136,6 +150,9 @@
     .agent-avatar-with-state--attention-discussion {
       --agent-avatar-background-forced: Mark;
       background-color: Mark;
+    }
+    .agent-avatar-unread-dot {
+      background-color: CanvasText;
     }
   }
 

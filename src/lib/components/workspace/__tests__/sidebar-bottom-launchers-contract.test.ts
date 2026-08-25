@@ -58,7 +58,8 @@ describe('workspace sidebar bottom launchers', () => {
     const sidebar = source('../MultiSelectTabbedSidebar.svelte');
     const strip = source('../SidebarExpandedTabStrip.svelte');
 
-    expect(sidebar).toContain('({ id, label, icon }) => ({ id, label, icon })');
+    expect(sidebar).toContain('({ id, label, icon }) => ({');
+    expect(sidebar).toContain("unread: id === 'agents' && $hasUnreadForegroundAgents$,");
     expect(strip).toContain('<Fa icon={tab.icon} />');
     expect(strip).toContain('data-sidebar-tab-strip-icon');
     expect(strip).toContain('sidebar-expanded-tab-indicator');

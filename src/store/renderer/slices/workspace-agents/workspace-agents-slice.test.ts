@@ -25,6 +25,7 @@ import {
   selectWorkspaceAgentSession,
   selectWorkspaceForegroundAgentIds,
   selectWorkspaceHasAgent,
+  selectWorkspaceHasUnreadForegroundAgents,
 } from './workspace-agents-selectors';
 import {
   addAgent,
@@ -314,6 +315,34 @@ describe('workspace-agents selectors', () => {
     expect(selectInitialAgentId.select(state, WS_1)).toBeNull();
     expect(selectRecentlyCreatedAgents.select(state, WS_1)).toEqual([]);
     expect(selectEmptyLayoutAgent.select(state, WS_1)).toBeNull();
+    expect(selectWorkspaceHasUnreadForegroundAgents.select(state, WS_1)).toBe(false);
+  });
+
+  it('reports unread foreground agents while ignoring background-only unread', () => {
+    const stateFor = (sessions: AgentSession[]) =>
+      mockState(workspaceAgentsReducer(initialState, setAgents(WS_1, sessions)), sessions);
+    const unreadForeground = { ...mockAgent('agent-foreground'), hasUnread: true };
+    const readForeground = { ...mockAgent('agent-foreground'), hasUnread: false };
+    const unreadBackground = { ...mockBackgroundAgent('agent-background'), hasUnread: true };
+
+    expect(
+      selectWorkspaceHasUnreadForegroundAgents.select(
+        stateFor([unreadForeground, unreadBackground]),
+        WS_1,
+      ),
+    ).toBe(true);
+    expect(
+      selectWorkspaceHasUnreadForegroundAgents.select(
+        stateFor([readForeground, unreadBackground]),
+        WS_1,
+      ),
+    ).toBe(false);
+    expect(
+      selectWorkspaceHasUnreadForegroundAgents.select(stateFor([unreadBackground]), WS_1),
+    ).toBe(false);
+    expect(
+      selectWorkspaceHasUnreadForegroundAgents.select(stateFor([readForeground]), WS_1),
+    ).toBe(false);
   });
 
   it('resolves the primary agent with the newest valid user-message timestamp', () => {
