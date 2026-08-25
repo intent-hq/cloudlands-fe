@@ -750,6 +750,29 @@ describe('ChatMessage hook wake attribution', () => {
     expect(screen.getByTestId('automated-wake-header')).toBeTruthy();
   });
 
+  it('toggles the disclosure from anywhere on the header bar', async () => {
+    render(ChatMessage, { props: { message: hookWakeMessage({ rowMetadata: true }) } });
+
+    const header = screen.getByTestId('automated-wake-header');
+    expect(header.className).toContain('cursor-pointer');
+    const toggle = screen.getByTestId('automated-wake-toggle');
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+
+    // Empty row space toggles open.
+    await fireEvent.click(header);
+    expect(toggle.getAttribute('aria-expanded')).toBe('true');
+    expect(screen.getByText('CI is red')).toBeTruthy();
+
+    // Hook name label toggles closed again.
+    await fireEvent.click(screen.getByTestId('automated-wake-primary-label'));
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    expect(screen.queryByTestId('automated-wake-details')).toBeNull();
+
+    // Status text toggles open again.
+    await fireEvent.click(screen.getByTestId('wake-status'));
+    expect(toggle.getAttribute('aria-expanded')).toBe('true');
+  });
+
   it('hides the trailing state note (old wording) from the rendered body', async () => {
     render(ChatMessage, {
       props: {
@@ -1003,6 +1026,25 @@ describe('ChatMessage PR-monitor wake attribution', () => {
     expect(handleLinkMock).toHaveBeenCalledTimes(1);
     expect(handleLinkMock.mock.calls[0][0]).toBe('https://github.example/pr/42');
     expect(handleLinkMock.mock.calls[0][1]).toMatchObject({ forceExternal: true });
+    // Chip click stays sibling to the disclosure — it never toggles the card.
+    expect(screen.getByTestId('automated-wake-toggle').getAttribute('aria-expanded')).toBe('false');
+    expect(screen.queryByTestId('automated-wake-details')).toBeNull();
+  });
+
+  it('toggles the disclosure from the header bar without opening the PR', async () => {
+    render(ChatMessage, { props: { message: prMonitorWakeMessage({ rowMetadata: true }) } });
+
+    const toggle = screen.getByTestId('automated-wake-toggle');
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+
+    await fireEvent.click(screen.getByTestId('automated-wake-header'));
+    expect(toggle.getAttribute('aria-expanded')).toBe('true');
+    expect(screen.getByText('Checks failed')).toBeTruthy();
+
+    await fireEvent.click(screen.getByTestId('wake-status'));
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    expect(screen.queryByTestId('automated-wake-details')).toBeNull();
+    expect(handleLinkMock).not.toHaveBeenCalled();
   });
 
   it('falls back to the GitHub PR URL when metadata has no url', async () => {
