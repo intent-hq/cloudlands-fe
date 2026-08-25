@@ -6,6 +6,7 @@ import {
   hasAgentActiveTurnEvidence,
   isAgentBlockedWaitingState,
   isAgentRunningState,
+  toAgentRuntimeStateInput,
   type AgentRuntimeStateInput,
 } from '$shared/utils/agent-runtime-state';
 import { store as appStore } from '$store/renderer/store';
@@ -182,27 +183,13 @@ export function getAvatarStateForSession(
     session.status === AgentStatus.Deleted ||
     String(session.status).toLowerCase() === 'failed';
 
-  return getAvatarState(
-    {
-      isStreaming: session.isStreaming,
-      isProcessing: session.isProcessing,
-      isResponding: session.isResponding,
-      turnInFlight: session.turnInFlight,
-      liveTurnOpen: (session as AgentSession & { liveTurnOpen?: boolean }).liveTurnOpen,
-      isWaitingOnTool: session.isWaitingOnTool,
-      isWaitingForOtherAgents: session.isWaitingForOtherAgents,
-      lastToolUse: session.lastToolUse,
-      activationState: session.activationState,
-      status: session.status,
-    },
-    {
-      ...options,
-      hasUnread: options.hasUnread ?? session.hasUnread,
-      isCompleted: options.isCompleted ?? completedStatus,
-      isFailed: options.isFailed ?? failedStatus,
-      attentionKind: options.attentionKind ?? attentionRequest?.kind ?? null,
-    },
-  );
+  return getAvatarState(toAgentRuntimeStateInput(session), {
+    ...options,
+    hasUnread: options.hasUnread ?? session.hasUnread,
+    isCompleted: options.isCompleted ?? completedStatus,
+    isFailed: options.isFailed ?? failedStatus,
+    attentionKind: options.attentionKind ?? attentionRequest?.kind ?? null,
+  });
 }
 
 /**
