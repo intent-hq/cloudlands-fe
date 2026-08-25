@@ -2219,6 +2219,8 @@
   "chat_streamingStatus_tryAgain_label": "Try again",
   "chat_streamingStatus_took_label": "took {duration}",
   "chat_streamingStatus_elapsedAgo_label": "{duration} ago",
+  "chat_streamingStatus_stalled_label": "No model activity for {duration}",
+  "chat_streamingStatus_stalledCancel_label": "Cancel",
   "chat_suggestedActions_explain_label": "Explain this codebase",
   "chat_suggestedActions_explain_prompt": "Give me a high-level overview of this codebase. What are the main components and how do they work together?",
   "chat_suggestedActions_implement_label": "Help me implement a feature",

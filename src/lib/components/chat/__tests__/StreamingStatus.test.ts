@@ -19,6 +19,7 @@ vi.mock('@fortawesome/free-solid-svg-icons', () => ({
   faRotateRight: { iconName: 'rotate-right' },
   faCopy: { iconName: 'copy' },
   faCheck: { iconName: 'check' },
+  faStop: { iconName: 'stop' },
 }));
 
 import StreamingStatus from '../StreamingStatus.svelte';
@@ -27,9 +28,11 @@ import {
   formatElapsed,
   computeCompletedEvents,
   deriveErrorDisplay,
+  getActiveStalledEvent,
   latestMeaningfulStatusMessage,
   shouldAppendStreamingEvent,
   SESSION_CORRUPTED,
+  STALLED_PHASE,
   type StatusEvent,
 } from '../streaming-status-utils';
 
@@ -419,6 +422,124 @@ describe('StreamingStatus rendered UI', () => {
   });
 });
 
+describe('StreamingStatus stalled state (monorepo#3402)', () => {
+  const stalledEvent = (timestamp: number): StatusEvent => ({
+    phase: STALLED_PHASE,
+    message: 'No model activity for 90s',
+    level: 'warn',
+    timestamp,
+  });
+
+  it('renders the warn-styled stalled row with live elapsed copy and hides the thinking indicator', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(100_000);
+    const { container } = render(StreamingStatus, {
+      props: {
+        isStreaming: true,
+        onStop: vi.fn(),
+        statusEvents: [
+          { phase: 'streaming', message: 'Streaming response…', level: 'info', timestamp: 5_000 },
+          stalledEvent(95_000),
+        ],
+      },
+    });
+
+    const row = container.querySelector('[data-stream-stalled="true"]') as HTMLElement;
+    expect(row).toBeTruthy();
+    expect(row.getAttribute('role')).toBe('status');
+    expect(row.getAttribute('aria-live')).toBe('polite');
+    expect(row.className).toContain('border-warning/20');
+    expect(row.className).toContain('bg-warning/5');
+    expect(screen.getByTestId('stalled-message').textContent).toBe('No model activity for 5s');
+    expect(screen.queryByTestId('streaming-status-thinking')).toBeNull();
+
+    await vi.advanceTimersByTimeAsync(2_000);
+    expect(screen.getByTestId('stalled-message').textContent).toBe('No model activity for 7s');
+  });
+
+  it('dispatches the stop action when Cancel is clicked', async () => {
+    const onStop = vi.fn();
+    render(StreamingStatus, {
+      props: {
+        isStreaming: true,
+        onStop,
+        statusEvents: [stalledEvent(1_000)],
+      },
+    });
+
+    await fireEvent.click(screen.getByTestId('stalled-cancel'));
+    expect(onStop).toHaveBeenCalledOnce();
+  });
+
+  it('clears on a resumed event and falls back to the thinking indicator', async () => {
+    const events: StatusEvent[] = [stalledEvent(1_000)];
+    const { container, rerender } = render(StreamingStatus, {
+      props: { isStreaming: true, onStop: vi.fn(), statusEvents: events },
+    });
+
+    expect(container.querySelector('[data-stream-stalled="true"]')).toBeTruthy();
+
+    await rerender({
+      isStreaming: true,
+      onStop: vi.fn(),
+      statusEvents: [
+        ...events,
+        { phase: 'resumed', message: 'Model activity resumed', level: 'info', timestamp: 2_000 },
+      ],
+    });
+
+    await waitFor(() =>
+      expect(container.querySelector('[data-stream-stalled="true"]')).toBeNull(),
+    );
+    expect(screen.getByTestId('streaming-status-thinking')).toBeTruthy();
+  });
+
+  it('clears when a new stream delta arrives after the stalled event', async () => {
+    const events: StatusEvent[] = [stalledEvent(1_000)];
+    const { container, rerender } = render(StreamingStatus, {
+      props: { isStreaming: true, onStop: vi.fn(), statusEvents: events, lastChunkTime: 500 },
+    });
+
+    expect(container.querySelector('[data-stream-stalled="true"]')).toBeTruthy();
+
+    await rerender({
+      isStreaming: true,
+      onStop: vi.fn(),
+      statusEvents: events,
+      lastChunkTime: 2_000,
+    });
+
+    await waitFor(() =>
+      expect(container.querySelector('[data-stream-stalled="true"]')).toBeNull(),
+    );
+    expect(screen.getByTestId('streaming-status-thinking')).toBeTruthy();
+  });
+
+  it('does not render the stalled row once the turn has ended or failed', () => {
+    const events: StatusEvent[] = [stalledEvent(1_000)];
+    const idle = render(StreamingStatus, {
+      props: { isStreaming: false, isProcessing: false, statusEvents: events },
+    });
+    expect(idle.container.querySelector('[data-stream-stalled="true"]')).toBeNull();
+    cleanup();
+
+    const failed = render(StreamingStatus, {
+      props: { isStreaming: true, error: 'Stream timeout', statusEvents: events },
+    });
+    expect(failed.container.querySelector('[data-stream-stalled="true"]')).toBeNull();
+    expect(screen.getByTestId('error-title').textContent).toBe('Response failed');
+  });
+
+  it('omits the Cancel button when no onStop handler is provided', () => {
+    const { container } = render(StreamingStatus, {
+      props: { isStreaming: true, statusEvents: [stalledEvent(1_000)] },
+    });
+
+    expect(container.querySelector('[data-stream-stalled="true"]')).toBeTruthy();
+    expect(screen.queryByTestId('stalled-cancel')).toBeNull();
+  });
+});
+
 describe('StreamingStatus utilities', () => {
   describe('latestMeaningfulStatusMessage', () => {
     it('selects the latest localized non-empty phase by timestamp', () => {
@@ -495,6 +616,54 @@ describe('StreamingStatus utilities', () => {
       expect(formatElapsed(60000)).toBe('1m 0s');
       expect(formatElapsed(90499)).toBe('1m 30s');
       expect(formatElapsed(3661000)).toBe('1h 1m 1s');
+    });
+  });
+
+  describe('getActiveStalledEvent', () => {
+    const stalled: StatusEvent = {
+      phase: STALLED_PHASE,
+      message: 'No model activity for 90s',
+      level: 'warn',
+      timestamp: 5_000,
+    };
+
+    it('returns the stalled event when it is the newest status event', () => {
+      expect(getActiveStalledEvent([stalled], null)).toBe(stalled);
+      expect(
+        getActiveStalledEvent(
+          [{ phase: 'streaming', message: 'Streaming…', level: 'info', timestamp: 1_000 }, stalled],
+          null,
+        ),
+      ).toBe(stalled);
+    });
+
+    it('returns null when a later event supersedes the stall (e.g. resumed)', () => {
+      expect(
+        getActiveStalledEvent(
+          [stalled, { phase: 'resumed', message: 'Resumed', level: 'info', timestamp: 6_000 }],
+          null,
+        ),
+      ).toBeNull();
+    });
+
+    it('returns null when a stream delta arrived after the stall', () => {
+      expect(getActiveStalledEvent([stalled], 6_000)).toBeNull();
+      expect(getActiveStalledEvent([stalled], 4_000)).toBe(stalled);
+    });
+
+    it('returns null when there are no events or the latest is not stalled', () => {
+      expect(getActiveStalledEvent([], null)).toBeNull();
+      expect(
+        getActiveStalledEvent(
+          [{ phase: 'streaming', message: 'Streaming…', level: 'info', timestamp: 9_000 }],
+          null,
+        ),
+      ).toBeNull();
+    });
+
+    it('re-triggers on a second stall in the same turn (newer stalled after delta)', () => {
+      const second: StatusEvent = { ...stalled, timestamp: 20_000 };
+      expect(getActiveStalledEvent([stalled, second], 10_000)).toBe(second);
     });
   });
 

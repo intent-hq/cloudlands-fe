@@ -72,6 +72,27 @@ export function getStatusMarkVariant(phase: string | null | undefined): IntentMa
   return 'bloom';
 }
 
+/** Phase emitted by the daemon when mid-turn silence crosses the stall threshold. */
+export const STALLED_PHASE = 'stalled';
+
+/**
+ * Select the active `stalled` status event, if any (monorepo#3402). The
+ * stalled presentation is active only while the stalled event is still the
+ * newest status event — a `resumed` event, a locally appended status (tool
+ * call, first-chunk "streaming"), or turn end/failure (which clears the
+ * events) all supersede it — and no stream delta arrived after it
+ * (`lastChunkTime` is bumped on every `agent:stream:chunk`).
+ */
+export function getActiveStalledEvent(
+  statusEvents: readonly StatusEvent[],
+  lastChunkTime: number | null | undefined,
+): StatusEvent | null {
+  const latest = getLatestStatusEvent(statusEvents);
+  if (!latest || latest.phase !== STALLED_PHASE) return null;
+  if (typeof lastChunkTime === 'number' && lastChunkTime > latest.timestamp) return null;
+  return latest;
+}
+
 /** Select the newest non-empty lifecycle message without trusting arrival order. */
 export function latestMeaningfulStatusMessage(statusEvents: readonly StatusEvent[]): string | null {
   let latestMessage: string | null = null;
