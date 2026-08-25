@@ -53,17 +53,11 @@ describe('Chief card migration contract', () => {
     expect(source).toContain('ensureChiefThreadCreation');
   });
 
-  it('gates thread auto-start on a resolvable provider without latching the skip', () => {
+  it('gates thread auto-start on a resolvable provider', () => {
+    // Presence only. The behavioral contract — no launch while provider-less,
+    // exactly one launch after a provider is configured (skip does not latch
+    // hasAutoStartedRef) — is pinned by chief-card-autostart-gate.test.ts.
     expect(source).toContain('const hasResolvableProvider$ = selectHasResolvableProvider()');
     expect(source).toContain('if (!$hasResolvableProvider$) return;');
-    // The provider-less skip must not set hasAutoStartedRef, so the effect
-    // re-runs and auto-starts once a provider is configured. Selecting an
-    // existing thread stays ungated (no agent.create involved).
-    expect(source.indexOf('hasAutoStartedRef = true')).toBeGreaterThan(
-      source.indexOf('if ($currentChiefThread$)'),
-    );
-    expect(source.indexOf('if (!$hasResolvableProvider$) return;')).toBeLessThan(
-      source.indexOf('void createNewThread();'),
-    );
   });
 });
