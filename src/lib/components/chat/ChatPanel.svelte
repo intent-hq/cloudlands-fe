@@ -5700,10 +5700,12 @@
     data-streaming={$agentSessionIsStreaming$}
     data-testid="chat-composer-shell"
   >
-    <!-- Aurora northern lights effect during streaming. The chief variant bleeds
-         further left/bottom so the shader crosses the ChiefCard px-2 inset and
-         the sidebar frame's pl-2/pb-2 window inset (the ancestors clip with an
-         8px overflow-clip-margin), touching the app window's left/bottom edges. -->
+    <!-- Aurora northern lights effect during streaming. The regular host reaches
+         the composer shell edges while preserving the measured scrollbar gutter.
+         The chief variant bleeds further left/bottom so the shader crosses the
+         ChiefCard px-2 inset and the sidebar frame's pl-2/pb-2 window inset (the
+         ancestors clip with an 8px overflow-clip-margin), touching the app window's
+         left/bottom edges. -->
     {#if $agentSessionIsStreaming$}
       {#if isChiefWorkspace}
         <div
@@ -5717,22 +5719,14 @@
         </div>
       {:else}
         <div
-          class="pointer-events-none absolute inset-y-0 left-0 z-0"
+          class="composer-aurora-host pointer-events-none absolute bottom-0 left-0 z-0 overflow-hidden"
           style:right="{scrollbarGutterWidth}px"
+          style="height: calc(100% + 10rem);"
+          data-testid="composer-aurora-host"
+          transition:fade
         >
-          <div class="composer-prompt-lane chat-content-measure mx-auto h-full w-full min-w-0">
-            <div class="relative h-full w-full min-w-0">
-              <div
-                class="composer-aurora-host absolute inset-x-0 bottom-0 z-0 overflow-hidden rounded-lg"
-                style="height: calc(100% + 10rem);"
-                data-testid="composer-aurora-host"
-                transition:fade
-              >
-                <AuroraBackground {agentId} />
-                <AuroraSofteningLayer />
-              </div>
-            </div>
-          </div>
+          <AuroraBackground {agentId} />
+          <AuroraSofteningLayer />
         </div>
       {/if}
     {/if}

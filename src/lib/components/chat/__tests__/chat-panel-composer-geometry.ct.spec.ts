@@ -10,7 +10,7 @@ const states = [
     zoom: 1,
     width: 720,
     chief: false,
-    streaming: false,
+    streaming: true,
     draft: 'Short draft',
   },
   {
@@ -109,8 +109,8 @@ for (const state of states) {
       return;
     }
     await expect(aurora).toBeVisible();
-    const clipping = await Promise.all(
-      [input, aurora].map((locator) =>
+    const [inputGeometry, auroraGeometry, shellGeometry] = await Promise.all(
+      [input, aurora, component.getByTestId('chat-composer-shell')].map((locator) =>
         locator.evaluate((node) => {
           const box = node.getBoundingClientRect();
           const style = getComputedStyle(node);
@@ -118,21 +118,28 @@ for (const state of states) {
             edges: [box.left, box.right, box.bottom],
             radii: [style.borderBottomLeftRadius, style.borderBottomRightRadius],
             overflow: style.overflow,
+            pointerEvents: style.pointerEvents,
             z: style.zIndex,
           };
         }),
       ),
     );
     if (state.chief) {
-      expect(clipping[1].edges[0]).toBeLessThan(clipping[0].edges[0]);
-      expect(clipping[1].edges[1]).toBeGreaterThan(clipping[0].edges[1]);
-      expect(clipping[1].edges[2]).toBeGreaterThan(clipping[0].edges[2]);
+      expect(auroraGeometry.edges[0]).toBeLessThan(inputGeometry.edges[0]);
+      expect(auroraGeometry.edges[1]).toBeGreaterThan(inputGeometry.edges[1]);
+      expect(auroraGeometry.edges[2]).toBeGreaterThan(inputGeometry.edges[2]);
     } else {
-      expect(clipping[1].edges).toEqual(clipping[0].edges);
-      expect(clipping[1].radii).toEqual(clipping[0].radii);
+      const scrollbarGutter = await prompt.evaluate((node) =>
+        Number.parseFloat(getComputedStyle(node).paddingInlineEnd),
+      );
+      expect(auroraGeometry.edges[0]).toBeCloseTo(shellGeometry.edges[0]);
+      expect(auroraGeometry.edges[1]).toBeCloseTo(shellGeometry.edges[1] - scrollbarGutter);
+      expect(auroraGeometry.edges[2]).toBeCloseTo(shellGeometry.edges[2]);
+      expect(auroraGeometry.radii).toEqual(['0px', '0px']);
     }
-    expect(clipping[1].overflow).toBe('hidden');
-    expect(Number(clipping[1].z)).toBeLessThan(
+    expect(auroraGeometry.overflow).toBe('hidden');
+    expect(auroraGeometry.pointerEvents).toBe('none');
+    expect(Number(auroraGeometry.z)).toBeLessThan(
       Number(await prompt.evaluate((node) => getComputedStyle(node).zIndex)),
     );
     expect((await aurora.boundingBox())!.y).toBeLessThan((await input.boundingBox())!.y);
