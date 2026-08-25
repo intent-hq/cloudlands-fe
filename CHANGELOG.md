@@ -4,6 +4,13 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.93.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.92.0...v2.93.0) (2026-08-25)
+
+
+### 🚀 Features
+
+* support per-window backend connections ([#1572](https://github.com/intent-hq/cloudlands-fe/issues/1572)) ([eb03c0f](https://github.com/intent-hq/cloudlands-fe/commit/eb03c0f564653632a6684e3a97b39c172a81557d))
+
 ## [2.92.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.91.0...v2.92.0) (2026-08-25)
 
 
