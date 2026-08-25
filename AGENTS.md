@@ -244,6 +244,18 @@ produced — manual install/testing only.
 
 ## Verification
 
+Use `pnpm run verify:changed -- <paths...>` during local work. With no paths, it reads
+staged, unstaged, deleted, and untracked frontend files. Add `--dry-run` to inspect the
+selected commands without running them. The command runs scoped Prettier and ESLint,
+related Vitest tests, directly imported colocated component tests, and only the
+renderer/main/preload TypeScript boundaries that changed. Ambiguous or high-risk files
+select a conservative suite instead of silently skipping coverage.
+
+Expensive component and type checks share a host-wide lock. The command waits for at
+most 30 seconds by default and never stops the process that owns the lock. Set
+`VERIFY_CHANGED_LOCK_TIMEOUT_MS` to a bounded value of at most 300000 when a longer
+queue is useful.
+
 After any structural change (moving files, changing imports, extracting modules):
 
 ```bash
