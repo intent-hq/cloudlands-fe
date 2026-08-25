@@ -112,6 +112,25 @@ vi.mock('$store/renderer/slices/specialists/specialists-selectors', () => ({
   selectUserOverrides: () => mocks.readable({ modelOverrides: {} }),
   selectEffectiveBehaviorPrompt: { select: () => undefined },
   filterPickableSpecialists: (specialists: unknown[]) => specialists,
+  selectOrchestratorSpecialist: Object.assign(
+    () =>
+      mocks.readable({
+        id: 'spec-writer',
+        name: 'Coordinator',
+        description: '',
+        role: 'orchestrator',
+      }),
+    {
+      select: () => ({
+        id: 'spec-writer',
+        name: 'Coordinator',
+        description: '',
+        role: 'orchestrator',
+      }),
+    },
+  ),
+  filterModalPickableSpecialists: (specialists: Array<{ role?: string }>) =>
+    specialists.filter((s) => s.role !== 'internal'),
 }));
 
 vi.mock('$store/renderer/slices/github-auth/github-auth-selectors', () => ({

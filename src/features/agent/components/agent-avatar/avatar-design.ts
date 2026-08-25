@@ -39,9 +39,23 @@ export function getFallbackAgentAvatarDesign(agentId: string): FallbackAgentAvat
   return stringToSeededRandom(agentId).pick([...fallbackAgentAvatarDesigns]);
 }
 
+/** Whether a specialist `icon` value names one of the built-in avatar designs. */
+export function isBuiltinAgentAvatarDesign(value: string): value is BuiltinAgentAvatarDesign {
+  return (builtinAgentAvatarDesigns as readonly string[]).includes(value);
+}
+
+/**
+ * Resolve the avatar design for an agent. Precedence: a valid specialist
+ * `icon` (PROTOCOL §5.11) → the hard-coded specialist-id map → the seeded
+ * fallback. Unknown/absent icons degrade to the pre-icon behavior.
+ */
 export function getAgentAvatarDesign(
   agentId: string,
   specialist?: string | null,
+  icon?: string | null,
 ): AgentAvatarDesign {
+  if (icon && isBuiltinAgentAvatarDesign(icon)) {
+    return icon;
+  }
   return builtinSpecialistAvatarDesigns[specialist ?? ''] ?? getFallbackAgentAvatarDesign(agentId);
 }
