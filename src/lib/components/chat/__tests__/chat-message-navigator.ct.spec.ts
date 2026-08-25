@@ -466,7 +466,7 @@ test.describe('chat message navigator production path', () => {
         .poll(() => page.evaluate(() => navigator.clipboard.readText()))
         .toBe('Virtualized target six');
       await expect(downButton).toBeEnabled();
-      const transcript = component.locator('.conversation-column');
+      const transcript = component.getByTestId('chat-transcript-inner');
       await expectUniqueVisible(transcript);
       const scrollContainer = transcript.locator('..');
       const [targetBox, scrollBox] = await Promise.all([
@@ -587,7 +587,8 @@ test.describe('chat message navigator production path', () => {
     dialog = await pickerForTrigger(page, trigger);
     await expect(dialog.getByRole('combobox', { name: 'Filter user messages' })).toBeFocused();
     await dialog.hover();
-    await page.waitForTimeout(200);
+    await expect.poll(() => dialog.evaluate((node) => node.matches(':hover'))).toBe(true);
+    await expect(trigger).toHaveAttribute('aria-expanded', 'true');
     await expect(dialog).toBeVisible();
     await title.click();
     await expect(dialog).toHaveCount(0);
