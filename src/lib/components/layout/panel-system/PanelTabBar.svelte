@@ -1147,7 +1147,7 @@
   <DropdownMenu
     align="end"
     side="bottom"
-    contentClass="w-max min-w-[min(14rem,calc(100vw-1rem))] max-w-[calc(100vw-1rem)] [&_[data-slot=menu-command-item]>kbd]:text-muted-foreground"
+    contentClass="panel-actions-menu-content w-max [&_[data-slot=menu-command-item]>kbd]:text-muted-foreground"
   >
     <!-- i18n-ignore -->
     {#snippet trigger({ props }: { props: Record<string, unknown> })}
@@ -2351,6 +2351,11 @@
 {/if}
 
 <style>
+  :global(.panel-actions-menu-content) {
+    min-width: min(14rem, calc(100vw - 1rem));
+    max-width: calc(100vw - 1rem);
+  }
+
   /* CSS variables for panel tab bar heights */
   .panel-tab-wrapper {
     --panel-header-height: clamp(2rem, 3rem, 10cqh);

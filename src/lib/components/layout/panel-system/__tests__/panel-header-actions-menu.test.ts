@@ -1,9 +1,16 @@
 /** @vitest-environment jsdom */
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { createRawSnippet } from 'svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { PanelTab } from '$store/renderer/slices/panel-layout/panel-layout-types';
 import { SHORTCUTS, formatShortcut } from '$lib/utils/shortcuts';
+
+const panelTabBarSource = readFileSync(
+  path.resolve(process.cwd(), 'src/lib/components/layout/panel-system/PanelTabBar.svelte'),
+  'utf8',
+);
 
 const mocks = vi.hoisted(() => {
   let columnCount = 2;
@@ -372,8 +379,9 @@ describe('mounted panel header actions menu', () => {
     const menu = await screen.findByRole('menu');
 
     expect(menu.classList).toContain('w-max');
-    expect(menu.classList).toContain('min-w-[min(14rem,calc(100vw-1rem))]');
-    expect(menu.classList).toContain('max-w-[calc(100vw-1rem)]');
+    expect(menu.classList).toContain('panel-actions-menu-content');
+    expect(panelTabBarSource).toContain('min-width: min(14rem, calc(100vw - 1rem))');
+    expect(panelTabBarSource).toContain('max-width: calc(100vw - 1rem)');
     expect(menu.classList).toContain('[&_[data-slot=menu-command-item]>kbd]:text-muted-foreground');
   });
 
