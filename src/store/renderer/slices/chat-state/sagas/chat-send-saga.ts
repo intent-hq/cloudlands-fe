@@ -457,6 +457,13 @@ function* handleRetryWithModel(action: RetryModelAction): SagaGenerator<void> {
   yield* call(retryLastMessage, action, action.payload[2]);
 }
 
+function matchesUserStop(agentId: string) {
+  return (action: { type: string; payload?: unknown }) =>
+    action.type === agentSessionStopChatRequested.type &&
+    Array.isArray(action.payload) &&
+    action.payload[0] === agentId;
+}
+
 /**
  * Retry from the stalled state (monorepo#3402): cancel the hung turn and
  * re-send the identical last user input. Guarded on the stall still being
@@ -488,23 +495,35 @@ function* handleRetryFromStalled(action: RetryFromStalledAction): SagaGenerator<
       settled = true;
       return;
     }
-    yield* call(performStop, agentId);
-    yield* call(
-      dispatchToLifecycle,
-      agentId,
-      wsId,
-      lastAttempted.text,
-      undefined,
-      {
-        imageBlocks: lastAttempted.options?.imageBlocks,
-        fileBlocks: lastAttempted.options?.fileBlocks,
-        noteIds: lastAttempted.options?.noteIds,
-        messageMetadata: lastAttempted.options?.messageMetadata,
-        model: lastAttempted.options?.model,
-        priority: 'interrupt' as const,
-      },
-      true,
-    );
+    // A user Cancel (agentSessionStopChatRequested) races the retry: it is
+    // handled by a separate takeEvery, so without this guard the retry would
+    // still re-send after the user chose to stop. Losing the race abandons
+    // the re-send; the concurrent stop handler owns cancelling the turn.
+    const { stoppedByUser } = yield* race({
+      retried: call(function* retrySequence(): SagaGenerator<void> {
+        yield* call(performStop, agentId);
+        yield* call(
+          dispatchToLifecycle,
+          agentId,
+          wsId,
+          lastAttempted.text,
+          undefined,
+          {
+            imageBlocks: lastAttempted.options?.imageBlocks,
+            fileBlocks: lastAttempted.options?.fileBlocks,
+            noteIds: lastAttempted.options?.noteIds,
+            messageMetadata: lastAttempted.options?.messageMetadata,
+            model: lastAttempted.options?.model,
+            priority: 'interrupt' as const,
+          },
+          true,
+        );
+      }),
+      stoppedByUser: take(matchesUserStop(agentId)),
+    });
+    if (stoppedByUser) {
+      logger.info('Stalled retry abandoned; user requested stop', { agentId });
+    }
     yield* put(action.success(undefined as void));
     settled = true;
   } catch (error) {

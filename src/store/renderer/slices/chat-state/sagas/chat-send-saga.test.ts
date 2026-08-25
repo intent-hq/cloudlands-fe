@@ -830,6 +830,46 @@ describe('chatSendSaga', () => {
     await run.task.toPromise();
   });
 
+  it('retry-from-stalled abandons the re-send when the user cancels mid-retry', async () => {
+    // The retry's own stop RPC hangs while the user clicks Cancel: the
+    // concurrent agentSessionStopChatRequested must win the race so no
+    // message is re-sent after the user chose to stop.
+    let releaseRetryStop!: (value: { success: boolean }) => void;
+    mocks.stop
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            releaseRetryStop = resolve;
+          }),
+      )
+      .mockResolvedValue({ success: true });
+    mocks.send.mockResolvedValue(undefined);
+    const run = harness();
+    run.setChat(
+      streamStatusReceived(
+        AGENT,
+        { phase: 'stalled', message: 'No model activity', level: 'warn', timestamp: Date.now() },
+        false,
+      ),
+    );
+    run.setChat(chatLastAttemptedMessageSet(AGENT, { text: 'stalled send', options: {} }));
+
+    const retry = agentSessionRetryFromStalledRequested(AGENT, WS);
+    run.channel.put(retry);
+    await settle();
+    expect(mocks.stop).toHaveBeenCalledTimes(1);
+
+    const stop = agentSessionStopChatRequested(AGENT);
+    run.channel.put(stop);
+    releaseRetryStop({ success: true });
+
+    await expect(retry.promise).resolves.toBeUndefined();
+    await expect(stop.promise).resolves.toBeUndefined();
+    expect(mocks.send).not.toHaveBeenCalled();
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
   it('retry-from-stalled is a no-op when the stall is no longer active', async () => {
     const run = harness();
     // Stalled event followed by a later stream chunk: stall superseded.
