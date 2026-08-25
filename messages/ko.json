@@ -2465,6 +2465,7 @@
   "chat_proposalCard_detectingPrBranch_label": "PR 브랜치 감지 중…",
   "chat_proposalCard_detectingBranch_label": "브랜치 감지 중…",
   "chat_proposalCard_createWorkspace_label": "작업 공간 만들기",
+  "chat_proposalCard_createNewWorkspace_title": "새 작업 공간 만들기",
   "chat_proposalCard_proposalFile_fallback": "제안",
   "chat_proposalCard_creatingWorkspace_label": "작업 공간 만드는 중…",
   "chat_proposalCard_workspaceCreationFailed_label": "작업 공간 생성 실패",

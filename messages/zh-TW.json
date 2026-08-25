@@ -2465,6 +2465,7 @@
   "chat_proposalCard_detectingPrBranch_label": "正在偵測 PR 分支…",
   "chat_proposalCard_detectingBranch_label": "正在偵測分支…",
   "chat_proposalCard_createWorkspace_label": "建立工作區",
+  "chat_proposalCard_createNewWorkspace_title": "建立新工作區",
   "chat_proposalCard_proposalFile_fallback": "提案",
   "chat_proposalCard_creatingWorkspace_label": "正在建立工作區…",
   "chat_proposalCard_workspaceCreationFailed_label": "建立工作區失敗",

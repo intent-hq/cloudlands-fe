@@ -939,6 +939,133 @@ describe('ProposalCard', () => {
     });
   });
 
+  it('renders the localized sibling heading without changing the Chief heading', () => {
+    const { unmount } = render(ProposalCard, {
+      props: {
+        proposal: makeWorkspaceProposal({
+          workspaceCreate: {
+            mode: 'sibling',
+            title: 'Investigate follow-up',
+            repoPath: '/repo/current',
+          },
+        }),
+      },
+    });
+
+    expect(screen.getByRole('heading', { name: 'Create new workspace' })).toBeTruthy();
+    unmount();
+
+    render(ProposalCard, { props: { proposal: makeWorkspaceProposal() } });
+    expect(screen.getByRole('heading', { name: 'Create workspace: Review PR #647' })).toBeTruthy();
+    expect(screen.queryByRole('heading', { name: 'Create new workspace' })).toBeNull();
+  });
+
+  it('matches the locked sibling Repo field to the Base branch soft filled surface', () => {
+    render(ProposalCard, {
+      props: {
+        proposal: makeWorkspaceProposal({
+          workspaceCreate: {
+            mode: 'sibling',
+            title: 'Investigate follow-up',
+            repoPath: '/repo/current',
+            branch: 'main',
+          },
+        }),
+      },
+    });
+
+    const repoClasses = screen.getByTestId('proposal-repo-locked').className.split(/\s+/);
+    expect(repoClasses).toEqual(
+      expect.arrayContaining([
+        'rounded-md',
+        'bg-muted/40',
+        'px-2',
+        'py-1',
+        'text-sm',
+        'leading-5',
+        'font-normal',
+        'text-foreground',
+      ]),
+    );
+    expect(repoClasses).not.toContain('border');
+    expect(getBranchPicker().getAttribute('data-presentation')).toBe('metadata');
+  });
+
+  it('shows the sibling shortcut hint only while a title or prompt editor has focus', async () => {
+    const { unmount } = render(ProposalCard, {
+      props: {
+        proposal: makeWorkspaceProposal({
+          workspaceCreate: {
+            mode: 'sibling',
+            title: 'Investigate follow-up',
+            initialPrompt: 'Inspect the separate issue.',
+            repoPath: '/repo/current',
+          },
+        }),
+      },
+    });
+    const title = screen.getByTestId('proposal-workspace-title');
+    const prompt = screen.getByPlaceholderText('What would you like to work on?');
+    const createButton = screen.getByRole('button', { name: /Create workspace/ });
+    const shortcutHint = () => screen.queryByText(/^(?:⌘|Ctrl)\+↵$/);
+
+    expect(shortcutHint()).toBeNull();
+    await fireEvent.focus(title);
+    expect(shortcutHint()).toBeTruthy();
+
+    await fireEvent.blur(title, { relatedTarget: prompt });
+    expect(shortcutHint()).toBeTruthy();
+    await fireEvent.focus(prompt);
+    expect(shortcutHint()).toBeTruthy();
+
+    await fireEvent.blur(prompt, { relatedTarget: createButton });
+    await fireEvent.focus(createButton);
+    expect(shortcutHint()).toBeNull();
+    unmount();
+
+    render(ProposalCard, {
+      props: {
+        proposal: makeWorkspaceProposal({
+          workspaceCreate: {
+            mode: 'sibling',
+            title: 'Disabled follow-up',
+            repoPath: '/repo/current',
+          },
+        }),
+        disabled: true,
+      },
+    });
+    await fireEvent.focus(screen.getByTestId('proposal-workspace-title'));
+    expect(shortcutHint()).toBeNull();
+  });
+
+  it('keeps Ctrl+Enter workspace submission from the focused sibling prompt', async () => {
+    const { container } = render(ProposalCard, {
+      props: {
+        proposal: makeWorkspaceProposal({
+          workspaceCreate: {
+            mode: 'sibling',
+            title: 'Investigate follow-up',
+            initialPrompt: 'Inspect the separate issue.',
+            repoPath: '/repo/current',
+          },
+        }),
+      },
+    });
+    const applyListener = vi.fn();
+    container
+      .querySelector('[data-proposal-kind]')
+      ?.addEventListener('proposalapply', applyListener as EventListener);
+    const prompt = screen.getByPlaceholderText('What would you like to work on?');
+
+    await fireEvent.focus(prompt);
+    await fireEvent.keyDown(prompt, { key: 'Enter' });
+    expect(applyListener).not.toHaveBeenCalled();
+
+    await fireEvent.keyDown(prompt, { key: 'Enter', ctrlKey: true });
+    expect(applyListener).toHaveBeenCalledTimes(1);
+  });
+
   it('discards sibling mode without applying workspace creation', async () => {
     const onApply = vi.fn();
     const onDiscard = vi.fn();

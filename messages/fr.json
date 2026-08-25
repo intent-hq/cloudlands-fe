@@ -2465,6 +2465,7 @@
   "chat_proposalCard_detectingPrBranch_label": "Détection de la branche de la PR…",
   "chat_proposalCard_detectingBranch_label": "Détection de la branche…",
   "chat_proposalCard_createWorkspace_label": "Créer un espace de travail",
+  "chat_proposalCard_createNewWorkspace_title": "Créer un nouvel espace de travail",
   "chat_proposalCard_proposalFile_fallback": "proposition",
   "chat_proposalCard_creatingWorkspace_label": "Création de l'espace de travail…",
   "chat_proposalCard_workspaceCreationFailed_label": "Échec de la création de l'espace de travail",

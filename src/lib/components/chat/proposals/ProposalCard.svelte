@@ -78,6 +78,7 @@
   let syncedWorkspaceProposal: Proposal | undefined;
   let workspaceTitle = $state('');
   let workspaceInitialPrompt = $state('');
+  let workspaceShortcutEditorFocused = $state(false);
   let workspaceRepoPath = $state('');
   let workspaceRepoType = $state<WorkspaceCreateRepoType>('local');
   let workspaceGithubUrl = $state('');
@@ -164,6 +165,9 @@
   const actionDisabled = $derived(
     disabled || isApplying || isUndoing || isApplied || isAwaitingPrBranchLookup || prBranchLoading,
   );
+  const showWorkspaceShortcutHint = $derived(
+    isSiblingWorkspaceCreate && workspaceShortcutEditorFocused && !actionDisabled,
+  );
   const metadataIdPrefix = $derived(`proposal-${toDomId(proposalId)}`);
   const cardClass = $derived.by(() => {
     if (isWorkspaceCreate) {
@@ -203,6 +207,7 @@
     const workspaceCreate = getWorkspaceCreateFields();
     workspaceTitle = workspaceCreate.title ?? '';
     workspaceInitialPrompt = workspaceCreate.initialPrompt ?? '';
+    workspaceShortcutEditorFocused = false;
     workspaceRepoPath = workspaceCreate.repoPath ?? '';
     workspaceRepoType = workspaceCreate.repoType ?? 'local';
     workspaceGithubUrl = workspaceCreate.githubUrl ?? '';
@@ -598,6 +603,21 @@
     handleApply();
   }
 
+  function handleWorkspaceEditorFocus() {
+    if (isSiblingWorkspaceCreate && !actionDisabled) workspaceShortcutEditorFocused = true;
+  }
+
+  function handleWorkspaceEditorBlur(event: FocusEvent) {
+    const nextElement = event.relatedTarget;
+    if (
+      nextElement instanceof HTMLElement &&
+      nextElement.hasAttribute('data-workspace-shortcut-editor')
+    ) {
+      return;
+    }
+    workspaceShortcutEditorFocused = false;
+  }
+
   function cardKeyboardShortcut(node: HTMLElement) {
     node.addEventListener('keydown', handleCardKeydown);
     return {
@@ -748,15 +768,23 @@
       {:else}
         <div class="space-y-4">
           {#if isSiblingWorkspaceCreate}
-            <Input
-              bind:value={workspaceTitle}
-              aria-label={m.workspace_page_space_title()}
-              placeholder={m.ui_editableName_placeholder()}
-              maxlength={100}
-              disabled={actionDisabled}
-              data-testid="proposal-workspace-title"
-              class="font-medium"
-            />
+            <div class="space-y-2">
+              <h3 class="type-body font-medium leading-snug text-foreground">
+                {m.chat_proposalCard_createNewWorkspace_title()}
+              </h3>
+              <Input
+                bind:value={workspaceTitle}
+                aria-label={m.workspace_page_space_title()}
+                placeholder={m.ui_editableName_placeholder()}
+                maxlength={100}
+                disabled={actionDisabled}
+                data-testid="proposal-workspace-title"
+                data-workspace-shortcut-editor
+                class="font-medium"
+                onfocus={handleWorkspaceEditorFocus}
+                onblur={handleWorkspaceEditorBlur}
+              />
+            </div>
           {:else}
             <h3 class="type-body font-medium leading-snug text-foreground">
               {proposal.preview.title}
@@ -771,7 +799,10 @@
             doesExpandToFit
             noFocusStyle
             disabled={actionDisabled}
+            data-workspace-shortcut-editor={isSiblingWorkspaceCreate ? '' : undefined}
             class="resize-y"
+            onfocus={handleWorkspaceEditorFocus}
+            onblur={handleWorkspaceEditorBlur}
           />
 
           <div class="space-y-1.5">
@@ -790,7 +821,7 @@
               </span>
               {#if isSiblingWorkspaceCreate}
                 <div
-                  class="type-body min-w-0 truncate rounded-(--radius-small) border border-border bg-muted/30 px-2 py-1.5 text-muted-foreground"
+                  class="min-w-0 truncate rounded-md bg-muted/40 px-2 py-1 text-sm leading-5 font-normal text-foreground"
                   data-testid="proposal-repo-locked"
                   title={createdRepoLabel}
                 >
@@ -941,7 +972,7 @@
                       ? m.chat_shared_retry_label()
                       : m.chat_proposalCard_createWorkspace_label()}
               </span>
-              {#if !isApplying && !isFailed}
+              {#if isSiblingWorkspaceCreate ? showWorkspaceShortcutHint : !isApplying && !isFailed}
                 <span class="opacity-50">{shortcutModifier}+↵</span>
               {/if}
             </Button>
