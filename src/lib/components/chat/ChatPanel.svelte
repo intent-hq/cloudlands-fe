@@ -2033,6 +2033,13 @@
     if (!settled) return;
     tick().then(() => {
       if (isComponentDestroyed || !scrollContainer) return;
+      // Discard raced this settle: the dispatch that cleared
+      // fetchingHistorySeek was a resumed:false reset, not a landing. The
+      // discard effect below owns the viewport (followToBottom on this
+      // same tick, one microtask later) — the failed-seek fallback must
+      // not dispatch an older-history page against the scrollTop the
+      // just-zeroed spacers clamped to an arbitrary position.
+      if (discardReanchorPending) return;
       const target = pendingSeekTargetOrdinal;
       pendingSeekTargetOrdinal = null;
       seekLandingPending = false;
@@ -2077,6 +2084,16 @@
   // pre-clear baseline could coincide and miss the discard.
   let discardBaselineAgentId: string | undefined;
   let discardBaselineMeta: typeof $transcriptSnapshotMeta$;
+  // Raised synchronously by the discard reset below until its re-anchor
+  // lands. The same dispatch that applies the discard also clears
+  // fetchingHistorySeek (the atomic reducer reset), so with a seek in
+  // flight the seek-settle effect above (created earlier, flushed earlier)
+  // observes a spurious settle and schedules its landing handler one
+  // microtask BEFORE this effect's followToBottom — with
+  // pendingSeekTargetOrdinal already nulled it would take the failed-seek
+  // fallback and dispatch a spurious older-history page. The flag makes it
+  // stand down for the discard's re-anchor.
+  let discardReanchorPending = false;
   $effect(() => {
     const meta = $transcriptSnapshotMeta$;
     const currentAgentId = agentId;
@@ -2084,6 +2101,11 @@
       if (currentAgentId !== discardBaselineAgentId) {
         discardBaselineAgentId = currentAgentId;
         discardBaselineMeta = meta;
+        // The older-history indicator tracked the PREVIOUS agent's walk:
+        // drop it instantly so switching agents mid-walk cannot carry the
+        // visible indicator (or its armed hide / pending evaluation) over
+        // to the newly selected agent for the quiet window.
+        resetOlderHistoryIndicator();
         return;
       }
       if (meta === discardBaselineMeta) return;
@@ -2093,10 +2115,12 @@
       cancelSeekDebounce();
       seekLandingPending = false;
       pendingSeekTargetOrdinal = null;
+      discardReanchorPending = true;
       virtualSpacerHeight = 0;
       virtualSpacerBelowHeight = 0;
       shouldFollowBottom = true;
       tick().then(() => {
+        discardReanchorPending = false;
         if (isComponentDestroyed || !scrollContainer) return;
         followToBottom(scrollContainer);
       });
@@ -2398,6 +2422,24 @@
         olderHistoryIndicatorVisible = false;
       }, OLDER_HISTORY_INDICATOR_QUIET_MS);
     }
+  }
+
+  // Drop the indicator instantly (visible flag, armed hide timer, pending
+  // chain evaluation) — the agent-change branch of the discard-baseline
+  // effect above calls this so a mid-walk agent switch never carries the
+  // previous agent's indicator over to the new agent for the quiet window.
+  // Also rebaselines the settle tracker: the switch flips
+  // $fetchingOlderHistory$ to the NEW agent's value, and without the
+  // rebaseline that flip would read as the old agent's walk settling
+  // (spurious settle → evaluation pending → indicator re-shown).
+  function resetOlderHistoryIndicator() {
+    if (olderHistoryIndicatorHideTimer !== null) {
+      clearTimeout(olderHistoryIndicatorHideTimer);
+      olderHistoryIndicatorHideTimer = null;
+    }
+    olderHistoryChainEvaluationPending = false;
+    olderHistoryIndicatorVisible = false;
+    wasFetchingOlderHistory = false;
   }
 
   // Clear the indicator hide timer on destroy.
