@@ -48,7 +48,7 @@ let connections: ConnectionRecord[] = [LOCAL_ENTRY];
 let activeId: string = LOCAL_CONNECTION_ID;
 
 registerMockIpcHandler(CONNECTION_CHANNELS.LIST, async (): Promise<ConnectionsListResult> => {
-  return { connections: [...connections], activeId };
+  return { connections: [...connections], activeId, windowBackendId: LOCAL_CONNECTION_ID };
 });
 
 registerMockIpcHandler(

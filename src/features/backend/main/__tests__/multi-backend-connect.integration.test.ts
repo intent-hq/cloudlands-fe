@@ -221,10 +221,14 @@ async function loadModule() {
 }
 
 /** Invoke a registered IPC handler by channel (params validated as in prod). */
-function invoke<T = unknown>(channel: string, params?: unknown): Promise<T> {
+function invoke<T = unknown>(
+  channel: string,
+  params?: unknown,
+  sender?: FakeWindow['webContents'],
+): Promise<T> {
   const handler = electronState.handlers.get(channel);
   if (!handler) throw new Error(`no handler registered for ${channel}`);
-  return Promise.resolve(handler({}, params)) as Promise<T>;
+  return Promise.resolve(handler(sender ? { sender } : {}, params)) as Promise<T>;
 }
 
 let tmpDir: string;
@@ -273,7 +277,13 @@ describe('multi-backend connect — end-to-end journey', () => {
     expect(mod.getBackendClient()).toBe(localClient);
     expect(mod.getBackendClientForConnection('local')).toBe(localClient);
     expect(mod.getBackendClientForConnection(remoteId)).toBeDefined();
-    await expect(invoke('connections:list')).resolves.toMatchObject({ activeId: 'local' });
+    const [localWindow, remoteWindow] = live;
+    await expect(
+      invoke('connections:list', undefined, localWindow.webContents),
+    ).resolves.toMatchObject({ activeId: 'local', windowBackendId: 'local' });
+    await expect(
+      invoke('connections:list', undefined, remoteWindow.webContents),
+    ).resolves.toMatchObject({ activeId: 'local', windowBackendId: remoteId });
   });
 
   it('adds a remote, confirms its fingerprint, switches (close+reload), and back to local', async () => {
@@ -285,6 +295,7 @@ describe('multi-backend connect — end-to-end journey', () => {
     await expect(invoke('connections:list')).resolves.toEqual({
       connections: [expect.objectContaining({ id: 'local', isLocal: true })],
       activeId: 'local',
+      windowBackendId: 'local',
       protocolMismatch: null,
       authRejected: null,
     });
