@@ -259,9 +259,14 @@ function* refreshAgentStats(agentId: string, forceRefresh: boolean): SagaGenerat
 }
 
 function* hydrateAgents(workspaceId: string): SagaGenerator<void> {
+  // `includeRetired` (§5.5 soft retire, v7.5): retired rows are excluded from
+  // the default read daemon-side, but the sidebar's Retired bin needs them —
+  // they arrive carrying `retiredAt` and are partitioned out of the active
+  // sections in the UI rather than dropped here.
   const listed: Awaited<ReturnType<typeof appClient.agents.list>> = yield* call(
     [appClient.agents, appClient.agents.list],
     workspaceId,
+    { includeRetired: true },
   );
   const fetched = [] as typeof listed;
   for (const agent of listed) {
@@ -291,8 +296,11 @@ function* hydrateAgents(workspaceId: string): SagaGenerator<void> {
   const activeAgentId = yield* selectActiveAgentId.effect(workspaceId);
   const agentIds = yield* selectWorkspaceAgentIds.effect(workspaceId);
   if (activeAgentId && agentIds.includes(activeAgentId)) return;
-  if (agents.length === 0) return;
-  const firstForeground = agents.find((agent) => !agent.isBackground) ?? agents[0];
+  // Retired rows are hydrated for the sidebar's Retired bin but never
+  // auto-selected — the fallback active agent must be a working one.
+  const selectable = agents.filter((agent) => !agent.retiredAt);
+  if (selectable.length === 0) return;
+  const firstForeground = selectable.find((agent) => !agent.isBackground) ?? selectable[0];
   yield* put(setActiveAgentId(workspaceId, String(firstForeground.id)));
 }
 

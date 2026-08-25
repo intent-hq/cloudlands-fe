@@ -36,6 +36,7 @@
     refreshUnreadNotes,
   } from '$store/renderer/slices/note-read-tracking/note-read-tracking-slice';
   import { initializeNotes } from '$store/renderer/slices/workspace-notes/workspace-notes-slice';
+  import { restoreRetiredAgentRequested } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
   import {
     selectAllWorkspaceAgents,
     selectIsLoadingAgents,
@@ -1072,6 +1073,9 @@
                             activePanelTab={$activeTab$}
                             onSelect={({ agentId, event }) =>
                               handleOpenAgentInPanel(agentId, event)}
+                            onRestoreRetired={({ agentId }) => {
+                              appStore.dispatch(restoreRetiredAgentRequested(workspaceId, agentId));
+                            }}
                           />
                         </div>
                       {:else if tabId === 'context'}

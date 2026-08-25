@@ -36,6 +36,7 @@ import {
   removeAgent,
   renameAgentSessionRequested,
   restoreAgentSessionRequested,
+  restoreRetiredAgentRequested,
   saveAgentSessionRequested,
   stopAgentSessionRequested,
   undoAgentDeletionRequested,
@@ -113,6 +114,44 @@ function* softHide(wsId: string, agentId: string): SagaGenerator<void> {
 function* restoreHiddenSession(wsId: string, session: AgentSession): SagaGenerator<void> {
   yield* call(persistSession, session);
   yield* put(refreshWorkspaceSubscriptionEntriesRequested(wsId));
+}
+
+/**
+ * Un-retire a soft-retired agent (`agent.restore`, §5.5 soft retire). The
+ * daemon clears `retiredAt` and emits `agent:restored`; the events bridge
+ * refreshes the metadata, which moves the agent out of the Retired bin. The
+ * local patch below makes the move immediate rather than event-latency-bound.
+ */
+function* restoreRetiredAgent(
+  action: ReturnType<typeof restoreRetiredAgentRequested>,
+): SagaGenerator<void> {
+  const [wsId, agentId] = action.payload;
+  let settled = false;
+  try {
+    const result = yield* call([appClient.agents, appClient.agents.restore], agentId, wsId);
+    if (!result.success) {
+      const failure = new Error(result.error || m.agent_mutation_restoreRetiredFailed_error());
+      yield* call(showError, failure.message);
+      yield* put(action.failure(failure));
+      settled = true;
+      return;
+    }
+    const existing = yield* selectAgentSession.effect(agentId);
+    if (existing?.retiredAt) {
+      yield* call(persistSession, { ...existing, retiredAt: undefined });
+    }
+    yield* put(action.success(undefined as never));
+    settled = true;
+  } catch (error) {
+    yield* put(
+      action.failure(mutationError(error, m.agent_mutation_restoreRetiredFailed_error())),
+    );
+    settled = true;
+  } finally {
+    if (!settled && (yield* cancelled())) {
+      yield* put(action.failure(new Error(m.agent_mutation_restoreRetiredFailed_error())));
+    }
+  }
 }
 
 function* restoreAgent(
@@ -497,6 +536,7 @@ function* deleteImmediately(
 export function* agentMutationSaga(): SagaGenerator<void> {
   yield* all([
     takeEvery(restoreAgentSessionRequested, restoreAgent),
+    takeEvery(restoreRetiredAgentRequested, restoreRetiredAgent),
     takeEvery(activateAgentRequested, activateAgent),
     takeEvery(saveAgentSessionRequested, saveAgent),
     takeEvery(renameAgentSessionRequested, renameAgent),

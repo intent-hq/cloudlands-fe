@@ -159,7 +159,7 @@
     if (!workspaceId) return [];
 
     return $workspaceAgents$
-      .filter((s) => !s.id?.startsWith('terminal-'))
+      .filter((s) => !s.id?.startsWith('terminal-') && !s.retiredAt)
       .map((s) => {
         // Get the latest message content
         const messages = s.messages || [];

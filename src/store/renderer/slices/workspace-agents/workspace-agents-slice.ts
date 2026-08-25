@@ -365,6 +365,17 @@ export const restoreAgentSessionRequested = createAsyncAction<
   AgentSession | null
 >('workspaceAgents/restoreAgentSession', 'workspaceAgents/restoreAgentSessionRequested');
 
+/**
+ * Un-retire a soft-retired agent via `agent.restore` (§5.5). Distinct from
+ * `restoreAgentSessionRequested`, which re-materializes a hidden session from
+ * the daemon — this clears `retiredAt` daemon-side and the refreshed metadata
+ * moves the agent out of the sidebar's Retired bin.
+ */
+export const restoreRetiredAgentRequested = createAsyncAction<
+  [wsId: string, agentId: string],
+  void
+>('workspaceAgents/restoreRetiredAgent', 'workspaceAgents/restoreRetiredAgentRequested');
+
 export const workspaceAgentsReducer = createReducer<WorkspaceAgentsState>(initialState);
 workspaceAgentsReducer.with(setAgents, (state, { payload: [wsId, agents] }) => {
   const workspaceState = getWorkspaceState(state, wsId);

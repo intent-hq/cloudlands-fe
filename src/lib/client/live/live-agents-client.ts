@@ -82,6 +82,13 @@ function normalizeAgent(raw: Record<string, unknown>): AgentSession {
     createdAt: String(raw.createdAt ?? now),
     updatedAt: String(raw.updatedAt ?? now),
   } as AgentSession;
+  // `retiredAt` (§5.5 soft retire, v7.5) is presence-detected on the wire:
+  // set on retired rows, omitted (never null) on active ones. Pure presence
+  // pass-through — assign only when a non-empty string is present; a
+  // divergent shape (null, empty string) is not healed away client-side.
+  if (typeof raw.retiredAt === 'string' && raw.retiredAt.length > 0) {
+    session.retiredAt = raw.retiredAt;
+  }
   // Per-agent unread (monorepo#1597): derived here so every AgentLite ingest
   // path — list/get reads, new-message pushes, and the agent:updated marker
   // convergence after agent.markSeen — recomputes it through one seam.
@@ -90,8 +97,16 @@ function normalizeAgent(raw: Record<string, unknown>): AgentSession {
 }
 
 export class LiveAgentsClient implements AgentsClient {
-  async list(workspaceId: string): Promise<AgentSession[]> {
-    const result = await backendRequest<{ agents?: unknown[] }>('agent.list', { workspaceId });
+  async list(
+    workspaceId: string,
+    options?: { includeRetired?: boolean },
+  ): Promise<AgentSession[]> {
+    // `includeRetired` (§5.5 soft retire, v7.5) only rides the wire when the
+    // caller supplied it, so older daemons see an omitted param and the
+    // default read stays byte-identical (retired rows excluded daemon-side).
+    const params: Record<string, unknown> = { workspaceId };
+    if (options?.includeRetired !== undefined) params.includeRetired = options.includeRetired;
+    const result = await backendRequest<{ agents?: unknown[] }>('agent.list', params);
     const agents = Array.isArray(result?.agents) ? result.agents : [];
     return agents.map((a) => normalizeAgent(a as Record<string, unknown>));
   }
@@ -622,6 +637,15 @@ export class LiveAgentsClient implements AgentsClient {
     } catch (error) {
       return { success: false, error: mutationErrorMessage(error) };
     }
+  }
+  async restore(agentId: string, workspaceId?: string): Promise<MutationResult> {
+    // `agent.restore` (§5.5 soft retire, v7.5) clears `retiredAt` and emits
+    // `agent:restored`, which reconciles the list. Idempotent — restoring an
+    // active agent succeeds. `workspaceId` is optional on the wire; it only
+    // rides along when the caller supplied it.
+    const params: Record<string, unknown> = { agentId };
+    if (workspaceId !== undefined) params.workspaceId = workspaceId;
+    return runMutation('agent.restore', params);
   }
   async retry(
     agentId: string,

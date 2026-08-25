@@ -18,6 +18,7 @@ import {
   selectIsInitialSpecWriteInProgress,
   selectIsLoadingAgents,
   selectRecentlyCreatedAgents,
+  resolveCanonicalInitialAgent,
   resolveEmptyLayoutAgent,
   selectEmptyLayoutAgent,
   selectWorkspaceAgentIsSoftDeleted,
@@ -446,6 +447,18 @@ describe('workspace-agents selectors', () => {
     } as AgentSession;
 
     expect(resolveEmptyLayoutAgent([excluded], WS_1)).toBeNull();
+  });
+
+  it('resolveCanonicalInitialAgent skips retired sessions (§5.5 soft retire)', () => {
+    const retiredInitial = {
+      ...mockAgent('agent-retired'),
+      isInitialAgent: true,
+      retiredAt: '2026-03-19T01:00:00.000Z',
+    } as AgentSession;
+    const active = mockAgent('agent-active');
+
+    expect(resolveCanonicalInitialAgent([retiredInitial, active])).toBe(active);
+    expect(resolveCanonicalInitialAgent([retiredInitial])).toBeNull();
   });
 
   it('returns per-workspace agent values (sessions from agent-session slice)', () => {

@@ -3654,6 +3654,15 @@ export function routeDaemonEventsNotification(
   if (type === 'agent:updated') {
     handleAgentUpdatedEvent(event);
   }
+  // `agent:retired` / `agent:restored` (§6.5) — retire is a soft archive: the
+  // row survives with `retiredAt` set, restore clears it. Both are pure
+  // metadata mutations on a live row, so the same metadata-only `agent.get`
+  // refresh converges `retiredAt` on the session (transcript preserved) and
+  // the sidebar moves the agent into/out of the Retired bin without a
+  // whole-list refetch.
+  if (type === 'agent:retired' || type === 'agent:restored') {
+    handleAgentUpdatedEvent(event);
+  }
   // `agent:attention-requested` (requestDiscussion / reportBlocker) — the
   // daemon persists the attention-request fields on the session and also
   // emits `agent:updated`, but re-fetch here too so the sidebar/footer

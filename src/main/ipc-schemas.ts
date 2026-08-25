@@ -34,6 +34,7 @@ export const WORKSPACE_EVENT_TYPE_LITERALS = [
   'agent:created',
   'agent:deleted',
   'agent:restored',
+  'agent:retired',
   'agent:renamed',
   'agent:idle',
   'agent:status-changed',

@@ -46,7 +46,10 @@
     reportStreamLifecycle,
     streamTurnCorrelation,
   } from '$lib/utils/stream-lifecycle-telemetry';
-  import { saveAgentSessionRequested } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
+  import {
+    restoreRetiredAgentRequested,
+    saveAgentSessionRequested,
+  } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
   import {
     agentSessionDismissQuestionsRequested,
     agentSessionEditAndRegenerateRequested,
@@ -453,6 +456,10 @@
   // Latched "New messages" divider viewing session (entry-only, frozen).
   const dividerSession$ = selectDividerSession(agentIdStore);
   const isDelegatedBackgroundTaskAgent = $derived(isDelegatedBackgroundTaskSession($agentSession$));
+
+  // Retired sessions (PROTOCOL v7.5+, retiredAt set) are read-only: the transcript
+  // stays viewable but the composer is replaced with a restore affordance.
+  const isRetiredSession = $derived(!!$agentSession$?.retiredAt);
 
   // Derive error state: combine transient chatError with persisted agent status.
   // After a reload, chatError is null but agent status may be Error — use
@@ -910,7 +917,8 @@
     chatTranscriptBottomInsetClass({
       isChiefWorkspace,
       isCompactMode,
-      showQueue: queuedMessagesVisibility.showQueue,
+      // Mirrors the render gate: retired sessions hide the queue block.
+      showQueue: queuedMessagesVisibility.showQueue && !isRetiredSession,
     }),
   );
 
@@ -4256,6 +4264,14 @@
     appStore.dispatch(agentSessionRetryFromStalledRequested(agentId, workspace.id));
   }
 
+  // Retired sessions (PROTOCOL §5.5) are read-only: withhold the mutating
+  // retry callbacks so StreamingStatus never renders Retry/Retry-with-model
+  // or stalled-retry affordances that would hit the daemon's retired-session
+  // guard.
+  const gatedRetry = $derived(isRetiredSession ? undefined : handleRetry);
+  const gatedRetryWithModel = $derived(isRetiredSession ? undefined : handleRetryWithModel);
+  const gatedStalledRetry = $derived(isRetiredSession ? undefined : handleStalledRetry);
+
   // Handle changing the specialist for an agent
   // The specialist can be changed at any time - even after messages have been sent.
   // The new specialist behavior will apply to subsequent messages.
@@ -4943,10 +4959,10 @@
                           failedAt={effectiveFailedAt}
                           modelUnavailable={$chatModelUnavailable$}
                           {hasPendingPermission}
-                          onRetry={handleRetry}
-                          onRetryWithModel={handleRetryWithModel}
+                          onRetry={gatedRetry}
+                          onRetryWithModel={gatedRetryWithModel}
                           onStop={handleStop}
-                          onStalledRetry={handleStalledRetry}
+                          onStalledRetry={gatedStalledRetry}
                           seed={agentId}
                           statusEvents={$chatStatusEvents$}
                           streamingStartTime={$chatStreamingStartTime$}
@@ -4969,10 +4985,10 @@
                         failedAt={effectiveFailedAt}
                         modelUnavailable={$chatModelUnavailable$}
                         {hasPendingPermission}
-                        onRetry={handleRetry}
-                        onRetryWithModel={handleRetryWithModel}
+                        onRetry={gatedRetry}
+                        onRetryWithModel={gatedRetryWithModel}
                         onStop={handleStop}
-                        onStalledRetry={handleStalledRetry}
+                        onStalledRetry={gatedStalledRetry}
                         seed={agentId}
                         statusEvents={$chatStatusEvents$}
                         streamingStartTime={$chatStreamingStartTime$}
@@ -5052,10 +5068,10 @@
                           failedAt={effectiveFailedAt}
                           modelUnavailable={$chatModelUnavailable$}
                           {hasPendingPermission}
-                          onRetry={handleRetry}
-                          onRetryWithModel={handleRetryWithModel}
+                          onRetry={gatedRetry}
+                          onRetryWithModel={gatedRetryWithModel}
                           onStop={handleStop}
-                          onStalledRetry={handleStalledRetry}
+                          onStalledRetry={gatedStalledRetry}
                           seed={agentId}
                           statusEvents={$chatStatusEvents$}
                           streamingStartTime={$chatStreamingStartTime$}
@@ -5078,10 +5094,10 @@
                         failedAt={effectiveFailedAt}
                         modelUnavailable={$chatModelUnavailable$}
                         {hasPendingPermission}
-                        onRetry={handleRetry}
-                        onRetryWithModel={handleRetryWithModel}
+                        onRetry={gatedRetry}
+                        onRetryWithModel={gatedRetryWithModel}
                         onStop={handleStop}
-                        onStalledRetry={handleStalledRetry}
+                        onStalledRetry={gatedStalledRetry}
                         seed={agentId}
                         statusEvents={$chatStatusEvents$}
                         streamingStartTime={$chatStreamingStartTime$}
@@ -5109,10 +5125,10 @@
                   failedAt={effectiveFailedAt}
                   modelUnavailable={$chatModelUnavailable$}
                   {hasPendingPermission}
-                  onRetry={handleRetry}
-                  onRetryWithModel={handleRetryWithModel}
+                  onRetry={gatedRetry}
+                  onRetryWithModel={gatedRetryWithModel}
                   onStop={handleStop}
-                  onStalledRetry={handleStalledRetry}
+                  onStalledRetry={gatedStalledRetry}
                   seed={agentId}
                   statusEvents={$chatStatusEvents$}
                   streamingStartTime={$chatStreamingStartTime$}
@@ -5356,8 +5372,10 @@
                             messageId={message.id}
                             ownsMessageIdentity={false}
                             {workspace}
-                            onEditSubmit={(newText, model, blocks) =>
-                              handleEditMessage(message.id, newText, model, blocks)}
+                            onEditSubmit={isRetiredSession
+                              ? undefined
+                              : (newText, model, blocks) =>
+                                  handleEditMessage(message.id, newText, model, blocks)}
                             onEditStateChange={(isEditing) =>
                               handleTurnEditStateChange(turnKey, isEditing)}
                             editModel={turn.assistantMessages[0]?.metadata?.model ??
@@ -5398,10 +5416,10 @@
                           failedAt={effectiveFailedAt}
                           modelUnavailable={$chatModelUnavailable$}
                           {hasPendingPermission}
-                          onRetry={handleRetry}
-                          onRetryWithModel={handleRetryWithModel}
+                          onRetry={gatedRetry}
+                          onRetryWithModel={gatedRetryWithModel}
                           onStop={handleStop}
-                          onStalledRetry={handleStalledRetry}
+                          onStalledRetry={gatedStalledRetry}
                           seed={agentId}
                           statusEvents={$chatStatusEvents$}
                           streamingStartTime={$chatStreamingStartTime$}
@@ -5454,9 +5472,13 @@
                               ownsMessageIdentity={false}
                               {workspace}
                               isStreaming={isCurrentlyStreaming}
-                              onEditSubmit={(newText, model, blocks) =>
-                                handleEditMessage(message.id, newText, model, blocks)}
-                              onRegenerate={() => handleRegenerateFromMessage(message.id)}
+                              onEditSubmit={isRetiredSession
+                                ? undefined
+                                : (newText, model, blocks) =>
+                                    handleEditMessage(message.id, newText, model, blocks)}
+                              onRegenerate={isRetiredSession
+                                ? undefined
+                                : () => handleRegenerateFromMessage(message.id)}
                               onFork={() => handleForkFromMessage(message.id)}
                               backendSessionId={auggieSessionId}
                               suppressCoordinationStoppedIndicator={turn.userMessage
@@ -5478,10 +5500,10 @@
                                 failedAt={effectiveFailedAt}
                                 modelUnavailable={$chatModelUnavailable$}
                                 {hasPendingPermission}
-                                onRetry={handleRetry}
-                                onRetryWithModel={handleRetryWithModel}
+                                onRetry={gatedRetry}
+                                onRetryWithModel={gatedRetryWithModel}
                                 onStop={handleStop}
-                                onStalledRetry={handleStalledRetry}
+                                onStalledRetry={gatedStalledRetry}
                                 seed={agentId}
                                 statusEvents={$chatStatusEvents$}
                                 streamingStartTime={$chatStreamingStartTime$}
@@ -5552,10 +5574,10 @@
                     failedAt={effectiveFailedAt}
                     modelUnavailable={$chatModelUnavailable$}
                     {hasPendingPermission}
-                    onRetry={handleRetry}
-                    onRetryWithModel={handleRetryWithModel}
+                    onRetry={gatedRetry}
+                    onRetryWithModel={gatedRetryWithModel}
                     onStop={handleStop}
-                    onStalledRetry={handleStalledRetry}
+                    onStalledRetry={gatedStalledRetry}
                     seed={agentId}
                     statusEvents={$chatStatusEvents$}
                     streamingStartTime={$chatStreamingStartTime$}
@@ -5627,8 +5649,10 @@
             {/key}
           {/if}
 
-          <!-- Queued messages remain in the same scroll/follow surface. -->
-          {#if queuedMessagesVisibility.showQueue}
+          <!-- Queued messages remain in the same scroll/follow surface.
+               Hidden on retired sessions: the queue's edit/remove/send-now
+               controls all mutate daemon state a retired agent rejects. -->
+          {#if queuedMessagesVisibility.showQueue && !isRetiredSession}
             <div
               class="relative z-20 mt-6 {isChiefWorkspace
                 ? 'w-full'
@@ -5724,53 +5748,75 @@
         data-testid="chat-composer-lane"
       >
         <div class="w-full min-w-0" data-testid="chat-composer-controls-inner">
-          {#if pendingQuestions}
-            {#key pendingQuestions.messageId}
-              <div class="w-full" data-testid="question-wizard-slot">
-                <QuestionWizard
-                  questions={pendingQuestions.questions}
-                  collapsed={questionWizardCollapsed}
-                  onToggleCollapsed={(collapsed) => (questionWizardCollapsed = collapsed)}
-                  onComplete={handleQuestionWizardComplete}
-                  onDismiss={handleQuestionWizardDismiss}
-                />
-              </div>
-            {/key}
-          {/if}
-          {#if (!pendingQuestions && !pendingQuestionRecoveryLoading) || questionWizardCollapsed}
-            {#if draftManager.gateVisible}
-              <ChatDraftLoadingGate />
+          {#if isRetiredSession}
+            <div
+              class="flex w-full items-center justify-between gap-3 px-4 py-3 text-sm text-muted-foreground sm:px-6"
+              data-testid="chat-retired-banner"
+            >
+              <span class="min-w-0 truncate">{m.chat_chatPanel_retiredReadOnly_label()}</span>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                data-testid="chat-retired-restore"
+                onclick={() => {
+                  if (workspace?.id && agentId) {
+                    appStore.dispatch(restoreRetiredAgentRequested(workspace.id, agentId));
+                  }
+                }}
+              >
+                {m.workspace_agentsList_restoreRetired_button()}
+              </Button>
+            </div>
+          {:else}
+            {#if pendingQuestions}
+              {#key pendingQuestions.messageId}
+                <div class="w-full" data-testid="question-wizard-slot">
+                  <QuestionWizard
+                    questions={pendingQuestions.questions}
+                    collapsed={questionWizardCollapsed}
+                    onToggleCollapsed={(collapsed) => (questionWizardCollapsed = collapsed)}
+                    onComplete={handleQuestionWizardComplete}
+                    onDismiss={handleQuestionWizardDismiss}
+                  />
+                </div>
+              {/key}
             {/if}
-            <SimpleRichInput
-              bind:this={inputComponent}
-              bind:contextItems
-              bind:value={inputValue}
-              onvaluechange={(value) => {
-                if (workspace?.id && agentId) {
-                  appStore.dispatch(setChatDraft(workspace.id, agentId, value));
-                }
-              }}
-              onsubmit={handleSend}
-              onforcesubmit={handleForceSubmit}
-              onstop={handleStop}
-              onHistoryPrev={handleHistoryPrev}
-              onHistoryNext={handleHistoryNext}
-              disabled={!workspace || !$agentSession$}
-              inputLocked={draftManager.gateActive}
-              isStreaming={$agentSessionIsStreaming$}
-              isResponding={$agentIsResponding$}
-              {workspace}
-              currentContext={currentMainPanelContext}
-              {agentId}
-              selectedModel={hydratedInputModel}
-              compactMode={isCompactMode}
-              editorClassName={isChiefWorkspace ? 'w-full px-1.5!' : 'w-full px-4! sm:px-6!'}
-              contentInsetClassName={isChiefWorkspace ? 'w-full px-1.5' : 'w-full px-4 sm:px-6'}
-              edgeDocked
-              externalDropTarget
-              requiresModelSwitchConfirmation={!canChangeProvider}
-              providerId={inputProviderId}
-            />
+            {#if (!pendingQuestions && !pendingQuestionRecoveryLoading) || questionWizardCollapsed}
+              {#if draftManager.gateVisible}
+                <ChatDraftLoadingGate />
+              {/if}
+              <SimpleRichInput
+                bind:this={inputComponent}
+                bind:contextItems
+                bind:value={inputValue}
+                onvaluechange={(value) => {
+                  if (workspace?.id && agentId) {
+                    appStore.dispatch(setChatDraft(workspace.id, agentId, value));
+                  }
+                }}
+                onsubmit={handleSend}
+                onforcesubmit={handleForceSubmit}
+                onstop={handleStop}
+                onHistoryPrev={handleHistoryPrev}
+                onHistoryNext={handleHistoryNext}
+                disabled={!workspace || !$agentSession$}
+                inputLocked={draftManager.gateActive}
+                isStreaming={$agentSessionIsStreaming$}
+                isResponding={$agentIsResponding$}
+                {workspace}
+                currentContext={currentMainPanelContext}
+                {agentId}
+                selectedModel={hydratedInputModel}
+                compactMode={isCompactMode}
+                editorClassName={isChiefWorkspace ? 'w-full px-1.5!' : 'w-full px-4! sm:px-6!'}
+                contentInsetClassName={isChiefWorkspace ? 'w-full px-1.5' : 'w-full px-4 sm:px-6'}
+                edgeDocked
+                externalDropTarget
+                requiresModelSwitchConfirmation={!canChangeProvider}
+                providerId={inputProviderId}
+              />
+            {/if}
           {/if}
         </div>
       </div>
