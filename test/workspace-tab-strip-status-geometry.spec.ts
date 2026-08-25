@@ -245,7 +245,6 @@ async function mountStrip(
         if (component) await unmount(component);
         component = mount(Strip, {
           target: controls,
-          props: { alignFirstTabToPanel: currentPanelOpen },
         });
         controls.append(launcher);
         await tick();
@@ -282,73 +281,38 @@ async function settle(page: Page) {
   await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())));
 }
 
-async function expectActiveLeadingEdge(
+async function expectNormalActiveShape(
   page: Page,
   workspaceId: string,
-  expected: 'panel-aligned' | 'flared',
   zoom: number,
   assertHeight = true,
 ) {
   const tab = page.locator(`[data-workspace-tab="${workspaceId}"]`);
-  await expect(tab).toHaveAttribute('data-workspace-tab-leading-shape', expected);
-  const leadingRadius = await tab.evaluate((node) =>
-    Number.parseFloat(getComputedStyle(node).borderTopLeftRadius),
-  );
-  expect(leadingRadius).toBeGreaterThan(0);
-  await expect(tab.locator('[data-workspace-tab-leading-flare]')).toHaveCount(
-    expected === 'panel-aligned' ? 0 : 1,
-  );
+  expect(await tab.getAttribute('data-workspace-tab-leading-shape')).toBeNull();
+  const radii = await tab.evaluate((node) => {
+    const style = getComputedStyle(node);
+    return {
+      leading: Number.parseFloat(style.borderTopLeftRadius),
+      trailing: Number.parseFloat(style.borderTopRightRadius),
+    };
+  });
+  expect(radii.leading).toBeGreaterThan(0);
+  expect(radii.trailing).toBe(radii.leading);
+  await expect(tab.locator('[data-workspace-tab-leading-flare]')).toHaveCount(1);
   await expect(tab.locator('[data-workspace-tab-trailing-flare]')).toHaveCount(1);
   if (assertHeight) expect((await box(tab)).height).toBeCloseTo(32 * zoom, 0);
-  return leadingRadius;
+  return radii;
 }
 
-async function expectSinglePixelLeadingSeam(page: Page, zoom: number) {
+async function expectPanelGutter(page: Page, zoom: number) {
   const tab = page.locator('[data-workspace-tab="active"]');
   const panel = page.locator('.workspace-main');
-  const [tabBox, panelBox, styles, screenshot] = await Promise.all([
-    box(tab),
-    box(panel),
-    tab.evaluate((node) => {
-      const tabStyle = getComputedStyle(node);
-      const panelStyle = getComputedStyle(document.querySelector('.workspace-main')!);
-      return {
-        borderColor: tabStyle.borderLeftColor,
-        tabBorderWidth: Number.parseFloat(tabStyle.borderLeftWidth),
-        panelBorderWidth: Number.parseFloat(panelStyle.borderLeftWidth),
-      };
-    }),
-    page.screenshot({ animations: 'disabled', caret: 'hide' }),
-  ]);
-  expect(tabBox.x).toBeCloseTo(panelBox.x, 0);
+  const [tabBox, panelBox] = await Promise.all([box(tab), box(panel)]);
+  expect(tabBox.x - panelBox.x).toBeCloseTo(8 * zoom, 0);
   expect(tabBox.y + tabBox.height).toBeCloseTo(panelBox.y, 0);
-  expect(styles.tabBorderWidth).toBe(1);
-  expect(styles.panelBorderWidth).toBe(1);
-
-  const channels = styles.borderColor
-    .match(/[\d.]+/g)
-    ?.slice(0, 3)
-    .map(Number);
-  expect(channels).toHaveLength(3);
-  const sharp = (await import('sharp')).default;
-  const { data, info } = await sharp(screenshot).raw().toBuffer({ resolveWithObject: true });
-  const matchesBorder = (x: number, y: number) => {
-    const offset = (y * info.width + x) * info.channels;
-    return channels!.every((value, index) => Math.abs(data[offset + index] - value) <= 12);
-  };
-  const left = Math.round(tabBox.x);
-  const bottom = Math.round(tabBox.y + tabBox.height);
-  for (let y = bottom - 4 * zoom; y < bottom; y += 1) {
-    const borderPixels = Array.from(
-      { length: 2 * zoom + 3 },
-      (_, index) => left - 1 + index,
-    ).filter((x) => matchesBorder(x, y)).length;
-    expect(borderPixels).toBeGreaterThanOrEqual(1);
-    expect(borderPixels).toBeLessThanOrEqual(zoom + 1);
-  }
 }
 
-test('keeps the first active top curve and a single-stroke panel seam across the geometry matrix', async ({
+test('keeps the normal first-tab curve, both flares, and 8px panel gutter across the geometry matrix', async ({
   page,
 }) => {
   test.setTimeout(120_000);
@@ -379,9 +343,9 @@ test('keeps the first active top curve and a single-stroke panel seam across the
           box(page.locator('[data-workspace-tab]').first()),
           box(page.locator('.workspace-main')),
         ]);
-        expect(Math.abs(firstTab.x - workspaceMain.x) / scenario.zoom).toBeLessThanOrEqual(1);
-        await expectActiveLeadingEdge(page, 'active', 'panel-aligned', scenario.zoom);
-        await expectSinglePixelLeadingSeam(page, scenario.zoom);
+        expect(firstTab.x - workspaceMain.x).toBeCloseTo(8 * scenario.zoom, 0);
+        await expectNormalActiveShape(page, 'active', scenario.zoom);
+        await expectPanelGutter(page, scenario.zoom);
       }
 
       const strip = page.locator('[data-workspace-tab-strip]');
@@ -397,12 +361,7 @@ test('keeps the first active top curve and a single-stroke panel seam across the
         ).__setCurrentWorkspaceTabId('inactive');
       });
       await settle(page);
-      const normalActiveRadius = await expectActiveLeadingEdge(
-        page,
-        'inactive',
-        'flared',
-        scenario.zoom,
-      );
+      const normalActiveRadii = await expectNormalActiveShape(page, 'inactive', scenario.zoom);
 
       await page.evaluate(() => {
         (
@@ -413,14 +372,9 @@ test('keeps the first active top curve and a single-stroke panel seam across the
         ).__setCurrentWorkspaceTabId('active');
         return globalThis.__remountWorkspaceTabStrip();
       });
-      const panelAlignedRadius = await expectActiveLeadingEdge(
-        page,
-        'active',
-        'panel-aligned',
-        scenario.zoom,
-      );
-      expect(panelAlignedRadius).toBe(normalActiveRadius);
-      await expectSinglePixelLeadingSeam(page, scenario.zoom);
+      const firstTabRadii = await expectNormalActiveShape(page, 'active', scenario.zoom);
+      expect(firstTabRadii).toEqual(normalActiveRadii);
+      await expectPanelGutter(page, scenario.zoom);
 
       await page.locator('[data-workspace-tab="active"]').evaluate((node) => {
         node.dispatchEvent(
@@ -432,7 +386,7 @@ test('keeps the first active top curve and a single-stroke panel seam across the
           }),
         );
       });
-      await expectActiveLeadingEdge(page, 'active', 'flared', scenario.zoom, false);
+      await expectNormalActiveShape(page, 'active', scenario.zoom, false);
       await page.locator('[data-workspace-tab="active"]').evaluate((node) => {
         node.dispatchEvent(new DragEvent('dragend', { bubbles: true }));
       });
@@ -442,8 +396,8 @@ test('keeps the first active top curve and a single-stroke panel seam across the
           node.getAnimations({ subtree: true }).map((animation) => animation.finished),
         );
       });
-      await expectActiveLeadingEdge(page, 'active', 'panel-aligned', scenario.zoom);
-      await expectSinglePixelLeadingSeam(page, scenario.zoom);
+      await expectNormalActiveShape(page, 'active', scenario.zoom);
+      await expectPanelGutter(page, scenario.zoom);
 
       await page.evaluate(() => {
         const scenarioState = (
@@ -460,8 +414,8 @@ test('keeps the first active top curve and a single-stroke panel seam across the
         'data-workspace-tab-loading',
         'true',
       );
-      expect(await expectActiveLeadingEdge(page, 'loading', 'panel-aligned', scenario.zoom)).toBe(
-        normalActiveRadius,
+      expect(await expectNormalActiveShape(page, 'loading', scenario.zoom)).toEqual(
+        normalActiveRadii,
       );
 
       await page.evaluate(() => {
@@ -475,8 +429,8 @@ test('keeps the first active top curve and a single-stroke panel seam across the
         scenarioState.tabOrder = ['active', 'inactive', 'plain', 'loading'];
         return globalThis.__remountWorkspaceTabStrip();
       });
-      await expectActiveLeadingEdge(page, 'active', 'panel-aligned', scenario.zoom);
-      await expectSinglePixelLeadingSeam(page, scenario.zoom);
+      await expectNormalActiveShape(page, 'active', scenario.zoom);
+      await expectPanelGutter(page, scenario.zoom);
 
       await page.evaluate(() =>
         (
@@ -485,7 +439,7 @@ test('keeps the first active top curve and a single-stroke panel seam across the
           }
         ).__setWorkspacePanelOpen(false),
       );
-      await expectActiveLeadingEdge(page, 'active', 'flared', scenario.zoom);
+      await expectNormalActiveShape(page, 'active', scenario.zoom);
 
       await page.evaluate(() =>
         (
@@ -494,7 +448,8 @@ test('keeps the first active top curve and a single-stroke panel seam across the
           }
         ).__setWorkspacePanelOpen(true),
       );
-      await expectActiveLeadingEdge(page, 'active', 'panel-aligned', scenario.zoom);
+      await expectNormalActiveShape(page, 'active', scenario.zoom);
+      await expectPanelGutter(page, scenario.zoom);
 
       const transitionSeconds = await page
         .locator('[data-workspace-tab="active"]')
@@ -550,6 +505,7 @@ test('keeps titles, statuses, and close controls disjoint at 160px and constrain
       box(activeStatus),
       box(activeClose),
     ]);
+    expect(activeBox.width).toBeCloseTo(Math.min(160, options.viewport * 0.4) * scale, 0);
     expect(titleBox.x - activeBox.x).toBeCloseTo(12 * scale, 0);
     expect(titleBox.x + titleBox.width).toBeLessThanOrEqual(statusBox.x + 0.5);
     expect(statusBox.x + statusBox.width).toBeLessThanOrEqual(closeBox.x + 0.5);

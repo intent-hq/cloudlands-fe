@@ -45,7 +45,6 @@
     onActiveTabBoundsChange?: (bounds: { left: number; width: number } | null) => void;
     onActiveTabTrackingChange?: (tracking: boolean) => void;
     activeWorkspaceId?: string | null;
-    alignFirstTabToPanel?: boolean;
     horizontalPositionTrackingKey?: number;
   }
 
@@ -53,7 +52,6 @@
     onActiveTabBoundsChange,
     onActiveTabTrackingChange,
     activeWorkspaceId,
-    alignFirstTabToPanel = false,
     horizontalPositionTrackingKey = 0,
   }: Props = $props();
 
@@ -122,7 +120,6 @@
 
   $effect(() => {
     void renderedTabOrder;
-    void alignFirstTabToPanel;
     void horizontalPositionTrackingKey;
     if (activeTabBoundsPollers.size === 0) return;
     onActiveTabTrackingChange?.(true);
@@ -440,9 +437,8 @@
 
 {#if $workspaceTabOrder$.length > 0}
   <!-- pl-3 keeps the active tab's 12px corner-flare SVG inside the padding box
-       so overflow-x-auto does not clip it. With an open sidebar, -ml-3 returns
-       all 12px so the first tab aligns with the workspace panel; otherwise,
-       -ml-1 preserves the 8px clearance from the preceding title-bar controls.
+       so overflow-x-auto does not clip it. The normal -ml-1 offset preserves
+       the first tab's 8px clearance from the workspace/sidebar boundary.
        The right margin is conditional: -mr-2.5 keeps the "+" launcher tight
        against the last tab's pr-3 padding when everything fits, but during
        overflow the clipped tab edge is flush with the strip border, so mr-1
@@ -453,8 +449,7 @@
   <div
     bind:this={stripElement}
     class={cn(
-      'flex w-fit min-w-0 max-w-[100%] items-center gap-0.5 overflow-x-auto pl-3 pr-3 scrollbar-none',
-      alignFirstTabToPanel ? '-ml-3' : '-ml-1',
+      'flex w-fit min-w-0 max-w-[100%] items-center gap-0.5 overflow-x-auto pl-3 pr-3 -ml-1 scrollbar-none',
       isOverflowing ? 'mr-1' : '-mr-2.5',
     )}
     aria-label={m.layout_workspaceTabStrip_openSpaces_ariaLabel()}
@@ -465,14 +460,12 @@
     ondragover={handleDragOver}
     ondrop={handleDrop}
   >
-    {#each renderedTabOrder as workspaceId, tabIndex (workspaceId)}
+    {#each renderedTabOrder as workspaceId (workspaceId)}
       {@const workspace = workspaceById.get(workspaceId)}
       {@const isDragged = draggedWorkspaceId === workspaceId}
       {@const isCurrent =
         workspaceId ===
         (activeWorkspaceId === undefined ? $currentWorkspaceTabId$ : activeWorkspaceId)}
-      {@const suppressesLeadingFlare =
-        alignFirstTabToPanel && tabIndex === 0 && isCurrent && !isDragged}
       <div
         class="min-w-0 shrink-0"
         data-workspace-tab-motion={workspaceId}
@@ -505,7 +498,6 @@
             data-workspace-tab={workspaceId}
             data-active={isCurrent}
             data-dragging={isDragged}
-            data-workspace-tab-leading-shape={suppressesLeadingFlare ? 'panel-aligned' : 'flared'}
             style:left={isDragged && dragSession
               ? `${dragSession.origin.left + dragClientX - dragSession.startClientX}px`
               : undefined}
@@ -527,22 +519,20 @@
                      curve terminates on the panel's top border. The right flare's `-12.5px`
                      offset + 1px seam-fill rect compensates for the arc-stroke straddling the
                      right-edge pixel boundary so no gap shows between flare and tab side. -->
-              {#if !suppressesLeadingFlare}
-                <svg
-                  class="pointer-events-none absolute left-[-12px] -bottom-0.5 size-[12px] overflow-visible text-sidebar"
-                  viewBox="0 0 12 12"
-                  aria-hidden="true"
-                  data-workspace-tab-leading-flare
-                >
-                  <path d="M 0 12 L 12 12 L 12 0 A 12 12 0 0 1 0 12 Z" fill="currentColor" />
-                  <path
-                    class="stroke-border"
-                    d="M 12 0 A 12 12 0 0 1 0 12"
-                    fill="none"
-                    stroke-width="1"
-                  />
-                </svg>
-              {/if}
+              <svg
+                class="pointer-events-none absolute left-[-12px] -bottom-0.5 size-[12px] overflow-visible text-sidebar"
+                viewBox="0 0 12 12"
+                aria-hidden="true"
+                data-workspace-tab-leading-flare
+              >
+                <path d="M 0 12 L 12 12 L 12 0 A 12 12 0 0 1 0 12 Z" fill="currentColor" />
+                <path
+                  class="stroke-border"
+                  d="M 12 0 A 12 12 0 0 1 0 12"
+                  fill="none"
+                  stroke-width="1"
+                />
+              </svg>
               <svg
                 class="pointer-events-none absolute right-[-12.5px] -bottom-0.5 size-[12px] overflow-visible text-sidebar"
                 viewBox="0 0 12 12"
@@ -633,28 +623,25 @@
             data-workspace-tab={workspaceId}
             data-workspace-tab-loading="true"
             data-active={isCurrent}
-            data-workspace-tab-leading-shape={suppressesLeadingFlare ? 'panel-aligned' : 'flared'}
             use:reportActiveTabBounds={isCurrent}
             use:registerTabSurface={workspaceId}
             role="presentation"
           >
             {#if isCurrent}
-              {#if !suppressesLeadingFlare}
-                <svg
-                  class="pointer-events-none absolute left-[-12px] -bottom-0.5 size-[12px] overflow-visible text-sidebar"
-                  viewBox="0 0 12 12"
-                  aria-hidden="true"
-                  data-workspace-tab-leading-flare
-                >
-                  <path d="M 0 12 L 12 12 L 12 0 A 12 12 0 0 1 0 12 Z" fill="currentColor" />
-                  <path
-                    class="stroke-border"
-                    d="M 12 0 A 12 12 0 0 1 0 12"
-                    fill="none"
-                    stroke-width="1"
-                  />
-                </svg>
-              {/if}
+              <svg
+                class="pointer-events-none absolute left-[-12px] -bottom-0.5 size-[12px] overflow-visible text-sidebar"
+                viewBox="0 0 12 12"
+                aria-hidden="true"
+                data-workspace-tab-leading-flare
+              >
+                <path d="M 0 12 L 12 12 L 12 0 A 12 12 0 0 1 0 12 Z" fill="currentColor" />
+                <path
+                  class="stroke-border"
+                  d="M 12 0 A 12 12 0 0 1 0 12"
+                  fill="none"
+                  stroke-width="1"
+                />
+              </svg>
               <svg
                 class="pointer-events-none absolute right-[-12.5px] -bottom-0.5 size-[12px] overflow-visible text-sidebar"
                 viewBox="0 0 12 12"

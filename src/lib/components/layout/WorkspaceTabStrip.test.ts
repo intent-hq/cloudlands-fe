@@ -451,33 +451,30 @@ describe('WorkspaceTabStrip', () => {
     await waitFor(() => expect(screen.queryByTestId('workspace-tab-preview')).toBeNull());
   });
 
-  it('keeps the first active tab top curve while suppressing only its panel-side flare', async () => {
+  it('keeps the normal first-tab curve, flares, and strip gutter across switching', async () => {
     const { rerender } = render(WorkspaceTabStrip, {
-      props: { activeWorkspaceId: 'ws-1', alignFirstTabToPanel: true },
+      props: { activeWorkspaceId: 'ws-1' },
     });
 
     const tablist = screen.getByRole('tablist', { name: 'Open spaces' });
     const firstTab = document.querySelector('[data-workspace-tab="ws-1"]')!;
     expect(tablist.className).toContain('pl-3');
-    expect(tablist.className).toContain('-ml-3');
-    expect(tablist.className).not.toContain('-ml-1');
-    expect(firstTab.getAttribute('data-workspace-tab-leading-shape')).toBe('panel-aligned');
+    expect(tablist.className).toContain('-ml-1');
+    expect(tablist.className).not.toContain('-ml-3');
+    expect(firstTab.hasAttribute('data-workspace-tab-leading-shape')).toBe(false);
     expect(firstTab.classList).toContain('rounded-t-md');
-    expect(firstTab.classList).not.toContain('rounded-tr-md');
-    expect(firstTab.querySelector('[data-workspace-tab-leading-flare]')).toBeNull();
+    expect(firstTab.querySelector('[data-workspace-tab-leading-flare]')).toBeTruthy();
     expect(firstTab.querySelector('[data-workspace-tab-trailing-flare]')).toBeTruthy();
 
-    await rerender({ activeWorkspaceId: 'ws-2', alignFirstTabToPanel: true });
+    await rerender({ activeWorkspaceId: 'ws-2' });
     const secondTab = document.querySelector('[data-workspace-tab="ws-2"]')!;
-    expect(firstTab.getAttribute('data-workspace-tab-leading-shape')).toBe('flared');
-    expect(secondTab.getAttribute('data-workspace-tab-leading-shape')).toBe('flared');
+    expect(firstTab.hasAttribute('data-workspace-tab-leading-shape')).toBe(false);
+    expect(secondTab.hasAttribute('data-workspace-tab-leading-shape')).toBe(false);
     expect(secondTab.classList).toContain('rounded-t-md');
     expect(secondTab.querySelector('[data-workspace-tab-leading-flare]')).toBeTruthy();
     expect(secondTab.querySelector('[data-workspace-tab-trailing-flare]')).toBeTruthy();
 
-    await rerender({ activeWorkspaceId: 'ws-1', alignFirstTabToPanel: false });
-    expect(tablist.className).toContain('-ml-1');
-    expect(firstTab.getAttribute('data-workspace-tab-leading-shape')).toBe('flared');
+    await rerender({ activeWorkspaceId: 'ws-1' });
     expect(firstTab.classList).toContain('rounded-t-md');
     expect(firstTab.querySelector('[data-workspace-tab-leading-flare]')).toBeTruthy();
     expect(firstTab.querySelector('[data-workspace-tab-trailing-flare]')).toBeTruthy();
@@ -496,7 +493,6 @@ describe('WorkspaceTabStrip', () => {
     await rerender({
       activeWorkspaceId: 'ws-1',
       onActiveTabBoundsChange,
-      alignFirstTabToPanel: true,
       horizontalPositionTrackingKey: 288,
     });
 

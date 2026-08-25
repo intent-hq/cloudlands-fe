@@ -319,7 +319,6 @@
           onActiveTabBoundsChange={handleActiveTabBoundsChange}
           onActiveTabTrackingChange={handleActiveTabTrackingChange}
           activeWorkspaceId={routedWorkspaceId}
-          alignFirstTabToPanel={Boolean($panelItem$)}
           horizontalPositionTrackingKey={panelOffset}
         />
         {#if !$onboardingActive$}
