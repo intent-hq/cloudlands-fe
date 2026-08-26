@@ -93,17 +93,11 @@ function pairAdjacentReasoningGroup(
   if (!title) return null;
 
   const precedingHistory = reasoningWithText(preceding, precedingReasoning.heading);
-  const children = group.children.flatMap((child) => {
-    if (child.type !== 'thinking') return [child];
-    const normalized = reasoningWithText(child, child.text ?? child.content ?? '');
-    return normalized ? [normalized] : [];
-  });
+  const children = normalizedGroup.children;
 
   return {
-    ...group,
+    ...normalizedGroup,
     name: title,
-    sourceName: group.name,
-    isReasoningPhase: true,
     hasAdjacentReasoningHistory: true,
     children: precedingHistory ? [children[0], precedingHistory, ...children.slice(1)] : children,
   };

@@ -444,12 +444,22 @@ describe('ResponseGroup - block identity', () => {
       id: 'msg_1:1',
       text: 'I’ll first title the workspace, read the existing spec, and inspect the project.',
     } as ContentBlock;
+    const groupReasoning = {
+      type: 'thinking',
+      id: 'msg_1:2',
+      text: 'Reasoning\n\n**Operation body**',
+    } as ContentBlock;
     const group = {
       type: 'content_group' as const,
       name: 'Prepping',
       isStreaming: true,
-      children: [description],
+      children: [description, groupReasoning],
     };
+
+    expect(normalizeResponseGroup(group).children).toEqual([
+      description,
+      { ...groupReasoning, text: '**Operation body**' },
+    ]);
 
     expect(normalizeResponseGroups([preceding, group])).toEqual([
       {
@@ -465,6 +475,7 @@ describe('ResponseGroup - block identity', () => {
             id: 'msg_1:0',
             text: 'Assessing delegation and tool availability',
           },
+          { ...groupReasoning, text: '**Operation body**' },
         ],
       },
     ]);

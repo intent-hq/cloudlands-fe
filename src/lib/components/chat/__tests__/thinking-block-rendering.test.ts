@@ -426,6 +426,56 @@ describe('thinking blocks — StreamingMessageContent', () => {
     ).toBe(true);
   });
 
+  it.each([
+    ['MessageContent', renderStatic],
+    ['StreamingMessageContent', (content: ContentBlock[]) => renderStreaming(content, false)],
+  ])(
+    'normalizes adjacent-title group reasoning without a duplicate generic row in %s',
+    async (_, renderMessageContent) => {
+      await renderMessageContent([
+        thinking(
+          'adjacent-normalized:0',
+          '**Retained predecessor reasoning**\n\n**Model-provided group title**',
+        ),
+        {
+          type: 'text',
+          id: 'adjacent-normalized:1',
+          text: '<group:Prepping>Group description prose.',
+        },
+        thinking('adjacent-normalized:2', 'Reasoning\n\n**Operation body**'),
+        { type: 'text', id: 'adjacent-normalized:3', text: '</group:Prepping>' },
+      ]);
+
+      const disclosure = screen.getByTestId('response-group-disclosure');
+      expect(screen.getByTestId('response-group-name').textContent).toBe(
+        'Model-provided group title',
+      );
+      expect(screen.getAllByRole('button')).toHaveLength(1);
+
+      await fireEvent.click(disclosure);
+
+      const responseGroup = screen.getByTestId('response-group');
+      expect(responseGroup.textContent?.match(/Model-provided group title/g)).toHaveLength(1);
+      expect(responseGroup.textContent?.match(/Group description prose\./g)).toHaveLength(1);
+      expect(responseGroup.textContent?.match(/Reasoning/g)).toBeNull();
+      expect(
+        [...responseGroup.querySelectorAll('[data-testid="reasoning-history-title"]')].map(
+          (title) => title.textContent?.trim(),
+        ),
+      ).toEqual(['Retained predecessor reasoning', 'Operation body']);
+      expect(
+        [...responseGroup.querySelectorAll('[data-response-group-child]')].map((child) => ({
+          type: child.getAttribute('data-message-content-block'),
+          text: child.textContent?.replace(/\s+/g, ' ').trim(),
+        })),
+      ).toEqual([
+        { type: 'text', text: 'Group description prose.' },
+        { type: 'thinking', text: 'Retained predecessor reasoning' },
+        { type: 'thinking', text: 'Operation body' },
+      ]);
+    },
+  );
+
   it('renders the alternate-model Prepping wrapper as one reasoning disclosure', async () => {
     const leadingContent = [
       {
