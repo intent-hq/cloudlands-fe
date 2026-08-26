@@ -524,7 +524,7 @@ describe('AIBehaviorEditor full-height layouts', () => {
     }
   });
 
-  it('places global instructions before the description, defaults, and quiet reset action', async () => {
+  it('places global instructions and their description before defaults and the quiet reset action', async () => {
     mocks.fileSpecialists$.set([
       {
         id: 'custom-reviewer',
@@ -541,7 +541,7 @@ describe('AIBehaviorEditor full-height layouts', () => {
     const layout = screen.getByTestId('all-agents-editor-layout');
     const promptColumn = screen.getByTestId('all-agents-prompt-column');
     const defaultsColumn = screen.getByTestId('all-agents-defaults-column');
-    const description = within(defaultsColumn).getByText(
+    const description = within(promptColumn).getByText(
       'Custom instructions that will be included for all agents.',
     );
     const modelRow = within(defaultsColumn).getByTestId('all-agents-default-model-row');
@@ -557,17 +557,17 @@ describe('AIBehaviorEditor full-height layouts', () => {
     expect(promptColumn.className).toContain('min-w-0');
     expect(promptColumn.className).toContain('xl:flex-col');
     expect(defaultsColumn.className).toContain('min-w-0');
-    expect(defaultsColumn.classList.contains('xl:pt-8')).toBe(true);
+    expect(defaultsColumn.classList.contains('xl:pt-8')).toBe(false);
     expect(Array.from(defaultsColumn.classList).some((className) => /^pt-/.test(className))).toBe(
       false,
     );
     expect(editorContainer?.className).toContain('full-height-editor-container');
     expect(editorContainer?.className).not.toContain('specialist-editor-container');
     expect(within(promptColumn).queryByRole('heading')).toBeNull();
-    expect(
-      within(promptColumn).queryByText('Custom instructions that will be included for all agents.'),
-    ).toBeNull();
-    expect(Array.from(defaultsColumn.children)).toEqual([description, modelRow, reset]);
+    expect(screen.getAllByText('Custom instructions that will be included for all agents.')).toEqual([
+      description,
+    ]);
+    expect(Array.from(defaultsColumn.children)).toEqual([modelRow, reset]);
     expect(within(defaultsColumn).getByText('Default model')).toBeTruthy();
     expect(within(defaultsColumn).getByTestId('mock-model-picker')).toBeTruthy();
     expect(reset.parentElement).toBe(defaultsColumn);
@@ -614,7 +614,7 @@ describe('AIBehaviorEditor full-height layouts', () => {
     expect(screen.queryByRole('button', { name: 'Reset all to default' })).toBeNull();
   });
 
-  it('places unsaved-instructions Undo beside the All Agents title', async () => {
+  it('places unsaved-instructions Undo beside the description', async () => {
     render(AIBehaviorEditor, { activeView: { type: 'system-prompt' } });
 
     const promptColumn = screen.getByTestId('all-agents-prompt-column');
@@ -624,12 +624,14 @@ describe('AIBehaviorEditor full-height layouts', () => {
     await fireEvent.input(textarea, { target: { value: 'Edited instructions' } });
 
     const header = within(promptColumn).getByTestId('agent-rules-header');
-    const heading = within(header).getByRole('heading', { name: 'All Agents' });
+    const description = within(header).getByText(
+      'Custom instructions that will be included for all agents.',
+    );
     const undo = within(header).getByRole('button', { name: 'Undo changes' });
-    expect(heading.parentElement).toBe(header);
+    expect(description.parentElement).toBe(header);
     expect(header.contains(undo)).toBe(true);
-    expect(header.className).toContain('items-center');
-    expect(heading.compareDocumentPosition(undo) & Node.DOCUMENT_POSITION_FOLLOWING).toBe(
+    expect(header.className).toContain('items-start');
+    expect(description.compareDocumentPosition(undo) & Node.DOCUMENT_POSITION_FOLLOWING).toBe(
       Node.DOCUMENT_POSITION_FOLLOWING,
     );
 

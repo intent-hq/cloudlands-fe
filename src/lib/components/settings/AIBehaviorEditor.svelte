@@ -681,18 +681,10 @@
         data-testid="all-agents-prompt-column"
         class="min-h-0 min-w-0 h-full xl:flex xl:flex-col"
       >
-        <AgentRulesEditor
-          title={m.settings_section_globalInstructions()}
-          showTitle={false}
-          showDescription={false}
-          class="xl:min-h-0 xl:flex-1"
-        />
+        <AgentRulesEditor class="xl:min-h-0 xl:flex-1" />
       </div>
 
-      <div data-testid="all-agents-defaults-column" class="flex min-w-0 flex-col gap-6 xl:pt-8">
-        <p class="text-sm text-muted-foreground">
-          {m.settings_agentRules_description()}
-        </p>
+      <div data-testid="all-agents-defaults-column" class="flex min-w-0 flex-col gap-6">
         <DefaultAgentModelSettings testId="all-agents-default-model-row" />
         {#if anySpecialistHasExplicitModel}
           <button
