@@ -14,6 +14,7 @@
   import { fetchWorkspaceTokenUsage } from '$store/renderer/slices/token-usage/token-usage-slice';
   import { selectAllWorkspaceAgents } from '$store/renderer/slices/workspace-agents/workspace-agents-selectors';
   import { Button } from '$lib/components/ui/button';
+  import { portal } from '$lib/actions/portal';
   import { formatCompactNumber } from '$lib/utils/format-compact-number';
   import { formatCurrency, formatNumber } from '$lib/i18n/format';
   import { formatModelLabel } from '$features/token-usage/utils/format-model-label';
@@ -509,6 +510,7 @@
 
     {#if expanded}
       <section
+        use:portal={'body'}
         bind:this={detailsElement}
         id={detailsId}
         class="token-usage-details fixed overflow-x-hidden overflow-y-auto rounded-md border border-muted bg-card font-normal shadow-sm"
@@ -758,7 +760,7 @@
 <style>
   .token-usage-details {
     container: token-details / inline-size;
-    z-index: 60;
+    z-index: var(--layer-popover);
   }
 
   .composition-row,

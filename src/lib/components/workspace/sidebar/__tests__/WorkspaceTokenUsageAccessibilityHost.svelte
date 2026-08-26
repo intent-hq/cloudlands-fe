@@ -199,9 +199,10 @@
     class:flex-row-reverse={side === 'right'}
   >
     <aside
-      class="workspace-sidebar-panel relative h-full shrink-0 bg-sidebar"
+      class="workspace-sidebar-panel relative h-full shrink-0 overflow-hidden bg-sidebar"
       style:width={`${width + 48}px`}
       style:max-width="100vw"
+      style:transform="translateZ(0)"
       data-testid="workspace-sidebar"
     >
       <div
@@ -213,10 +214,11 @@
         {/if}
         <div class="mt-auto shrink-0 px-6 pb-4 pt-5">
           <div
-            class="relative flex h-24 flex-col justify-end rounded-lg border border-border bg-sidebar p-2"
+            class="relative flex h-24 flex-col justify-end overflow-hidden rounded-lg border border-border bg-sidebar p-2"
             data-testid="token-usage-test-width"
             style:width={`${width}px`}
             style:max-width="100%"
+            style:transform="translateZ(0)"
           >
             <div class="flex h-7 min-w-0 items-center gap-2 pl-2" data-sidebar-label-row>
               <span class="min-w-0 flex-1 truncate text-sm font-semibold">Agents</span>

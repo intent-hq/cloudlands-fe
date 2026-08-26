@@ -101,17 +101,15 @@ test('navigates exact stacked totals with accessible pointer, focus, theme, and 
   const disclosure = component.getByTestId('token-usage-disclosure');
   await disclosure.click();
 
-  const details = component.getByTestId('token-usage-details');
+  const details = page.getByTestId('token-usage-details');
   const previewStatus = details.locator('.preview-status');
   const compositionRows = details.locator('.token-composition-row');
   const messageRows = details.locator('.message-composition-row');
-  const agentSection = component.getByTestId('token-usage-by-agent');
+  const agentSection = page.getByTestId('token-usage-by-agent');
   const agentButtons = agentSection.locator('.breakdown-item-control');
   const agentAlpha = agentButtons.first();
   const agentBeta = agentButtons.nth(1);
-  const modelButtons = component
-    .getByTestId('token-usage-by-model')
-    .locator('.breakdown-item-control');
+  const modelButtons = page.getByTestId('token-usage-by-model').locator('.breakdown-item-control');
   const longModel = modelButtons.first();
   const finalModel = modelButtons.last();
   const compositionValues = () =>
@@ -196,7 +194,7 @@ test('navigates exact stacked totals with accessible pointer, focus, theme, and 
   );
 
   await longModel.focus();
-  const selectedLongModel = component
+  const selectedLongModel = page
     .getByTestId('token-usage-by-model')
     .locator('.navigator-selection [title]');
   await expect(selectedLongModel).toHaveAttribute(
@@ -289,9 +287,9 @@ test('renders the full reference table as a wide overlay from the real workspace
 
   await disclosure.click();
   await page.mouse.move(1000, 700);
-  const agentSection = component.getByTestId('token-usage-by-agent');
-  const modelSection = component.getByTestId('token-usage-by-model');
-  const details = component.getByTestId('token-usage-details');
+  const agentSection = page.getByTestId('token-usage-by-agent');
+  const modelSection = page.getByTestId('token-usage-by-model');
+  const details = page.getByTestId('token-usage-details');
   const composition = details.locator('section[aria-labelledby$="-composition"]');
   const compositionHeader = composition.locator('.composition-header');
   const compositionStrip = composition.locator('.composition-strip');
@@ -340,7 +338,7 @@ test('renders the full reference table as a wide overlay from the real workspace
   expect(detailsMetrics.borderColor).not.toBe('rgba(0, 0, 0, 0)');
   expect(detailsMetrics).toMatchObject({
     position: 'fixed',
-    zIndex: 60,
+    zIndex: 40,
   });
   await expect(details).toContainText('By agent Agent alpha-01 750 processed');
   await expect(compositionRows).toHaveCount(6);
@@ -804,6 +802,60 @@ test('renders the full reference table as a wide overlay from the real workspace
   });
 });
 
+test('portals the complete overlay beyond transformed overflow containment on both sidebar sides', async ({
+  mount,
+  page,
+}) => {
+  const component = await mount(WorkspaceTokenUsageAccessibilityHost, {
+    props: { theme: 'light', width: 304, placement: 'top', side: 'left' },
+  });
+  const disclosure = component.getByTestId('token-usage-disclosure');
+
+  for (const testCase of [
+    { side: 'left' as const, viewportWidth: 1100, viewportHeight: 720 },
+    { side: 'right' as const, viewportWidth: 1100, viewportHeight: 720 },
+    { side: 'left' as const, viewportWidth: 280, viewportHeight: 520 },
+    { side: 'right' as const, viewportWidth: 248, viewportHeight: 480 },
+  ]) {
+    await page.setViewportSize({
+      width: testCase.viewportWidth,
+      height: testCase.viewportHeight,
+    });
+    await component.update({
+      props: { theme: 'light', width: 304, placement: 'top', side: testCase.side },
+    });
+    await page.evaluate(() => window.dispatchEvent(new Event('resize')));
+    await disclosure.click();
+
+    const details = page.getByTestId('token-usage-details');
+    await expect(details).toBeVisible();
+    const [detailsBox, sidebarBox, portalParent] = await Promise.all([
+      details.boundingBox(),
+      component.getByTestId('workspace-sidebar').boundingBox(),
+      details.evaluate((element) => element.parentElement?.tagName),
+    ]);
+
+    expect(portalParent).toBe('BODY');
+    expect(detailsBox!.x).toBeGreaterThanOrEqual(8);
+    expect(detailsBox!.y).toBeGreaterThanOrEqual(8);
+    expect(detailsBox!.x + detailsBox!.width).toBeLessThanOrEqual(testCase.viewportWidth - 8);
+    expect(detailsBox!.y + detailsBox!.height).toBeLessThanOrEqual(testCase.viewportHeight - 8);
+
+    if (testCase.viewportWidth === 1100) {
+      if (testCase.side === 'left') {
+        expect(detailsBox!.x + detailsBox!.width).toBeGreaterThan(
+          sidebarBox!.x + sidebarBox!.width,
+        );
+      } else {
+        expect(detailsBox!.x).toBeLessThan(sidebarBox!.x);
+      }
+    }
+
+    await disclosure.click();
+    await expect(details).toHaveCount(0);
+  }
+});
+
 test('dismisses, repositions, flips, and clamps the overlay without changing workspace geometry', async ({
   mount,
   page,
@@ -818,7 +870,7 @@ test('dismisses, repositions, flips, and clamps the overlay without changing wor
   const disclosure = component.getByTestId('token-usage-disclosure');
 
   await disclosure.click();
-  let details = component.getByTestId('token-usage-details');
+  let details = page.getByTestId('token-usage-details');
   const beforeScroll = await details.boundingBox();
   await sidebarScroll.evaluate((element) => element.scrollTo({ top: 20 }));
   await expect
@@ -837,7 +889,7 @@ test('dismisses, repositions, flips, and clamps the overlay without changing wor
   await expect(details).toHaveCount(0);
 
   await disclosure.click();
-  details = component.getByTestId('token-usage-details');
+  details = page.getByTestId('token-usage-details');
   await disclosure.press('Escape');
   await expect(details).toHaveCount(0);
   await expect(disclosure).toBeFocused();
@@ -846,7 +898,7 @@ test('dismisses, repositions, flips, and clamps the overlay without changing wor
   await component.update({ props: { placement: 'bottom', side: 'left' } });
   await page.setViewportSize({ width: 700, height: 360 });
   await disclosure.click();
-  details = component.getByTestId('token-usage-details');
+  details = page.getByTestId('token-usage-details');
   let [anchorBox, detailsBox] = await Promise.all([
     disclosure.boundingBox(),
     details.boundingBox(),
@@ -882,8 +934,8 @@ test('dismisses, repositions, flips, and clamps the overlay without changing wor
   await sidebarScroll.evaluate((element) => element.scrollTo({ top: 0 }));
   await page.setViewportSize({ width: 280, height: 520 });
   const compositionRows = details.locator('.token-composition-row');
-  const agentSection = component.getByTestId('token-usage-by-agent');
-  const modelSection = component.getByTestId('token-usage-by-model');
+  const agentSection = page.getByTestId('token-usage-by-agent');
+  const modelSection = page.getByTestId('token-usage-by-model');
   const [summaryBox280, compactBox280, compactRows, agentBox, modelBox, pageDimensions280] =
     await Promise.all([
       disclosure.boundingBox(),
