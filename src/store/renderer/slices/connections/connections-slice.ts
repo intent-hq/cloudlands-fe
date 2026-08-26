@@ -27,6 +27,8 @@ import type {
   KeychainSyncStateResult,
   KeychainSyncUiStatus,
   OpenConnectionResult,
+  UpdateConnectionParams,
+  UpdateConnectionResult,
   ConnectionAuthRejectedEvent,
   ConnectionCertMismatchEvent,
   ConnectionProtocolMismatchEvent,
@@ -143,6 +145,12 @@ export const addConnectionRequested = createAsyncAction<
   [params: AddConnectionParams],
   AddConnectionResult
 >('connections/add', 'connections/addRequested');
+
+/** Saga-owned remote metadata update request. */
+export const updateConnectionRequested = createAsyncAction<
+  [params: UpdateConnectionParams],
+  UpdateConnectionResult
+>('connections/update', 'connections/updateRequested');
 
 /** Saga-owned non-destructive open/focus request for one backend. */
 export const openConnectionRequested = createAsyncAction<[id: string], OpenConnectionResult>(

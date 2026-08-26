@@ -15,6 +15,8 @@ import type {
 import { initialState, connectionsReducer, protocolMismatchReceived } from './connections-slice';
 import {
   selectConnections,
+  selectRemoteConnections,
+  selectConnectionOpenStatus,
   selectActiveConnectionId,
   selectActiveConnection,
   selectCurrentConnectionId,
@@ -40,10 +42,12 @@ const LOCAL: ConnectionRecord = {
 const REMOTE: ConnectionRecord = {
   id: 'remote-1',
   label: 'Studio Mac',
+  accent: 'violet',
   host: '10.0.0.5',
   port: 8443,
   fingerprint: 'AB:CD',
   isLocal: false,
+  status: 'connected',
 };
 
 function stateWith(overrides: Partial<ConnectionsState>): StoreState {
@@ -71,6 +75,13 @@ describe('connections selectors', () => {
     expect(selectConnectionStatus.select(state)).toBe('error');
     expect(selectConnectionError.select(state)).toBe('boom');
     expect(selectConnectionCertMismatch.select(state)).toBeNull();
+  });
+
+  it('selects remote machines and their transient open state', () => {
+    const state = stateWith({ connections: [LOCAL, REMOTE] });
+    expect(selectRemoteConnections.select(state)).toEqual([REMOTE]);
+    expect(selectConnectionOpenStatus.select(state, REMOTE.id)).toBe('connected');
+    expect(selectConnectionOpenStatus.select(state, 'missing')).toBe('not-open');
   });
 
   describe('selectActiveConnection', () => {

@@ -50,6 +50,7 @@ const NOW = 1_700_000_000_000;
 function rec(overrides: Partial<KeychainSyncRecord> = {}): KeychainSyncRecord {
   return {
     label: 'Studio Mac',
+    accent: 'blue',
     host: '192.168.1.10',
     hosts: ['192.168.1.10'],
     port: 8443,
@@ -183,8 +184,13 @@ describe('payload schema', () => {
     const parsed = parsePayload(payload);
     expect(parsed).toMatchObject({
       kind: 'record',
-      record: { hosts: ['h'], hostname: null, detectHosts: true },
+      record: { accent: 'blue', hosts: ['h'], hostname: null, detectHosts: true },
     });
+  });
+
+  it('rejects accents outside the shared palette', () => {
+    const payload = JSON.stringify({ ...rec(), v: 1, accent: 'chartreuse' });
+    expect(parsePayload(payload).kind).toBe('invalid');
   });
 });
 

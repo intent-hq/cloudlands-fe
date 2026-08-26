@@ -36,6 +36,7 @@ vi.mock('../json-rpc-client', () => {
   class FakeJsonRpcClient {
     private readonly id = ++seq;
     private readonly config: unknown;
+    private status = 'disconnected';
     private readonly listeners = new Map<string, Array<(arg: unknown) => void>>();
     constructor(opts: { config: unknown }) {
       this.config = opts.config;
@@ -51,6 +52,7 @@ vi.mock('../json-rpc-client', () => {
       return this;
     }
     emit(event: string, arg?: unknown): void {
+      if (event === 'status' && typeof arg === 'string') this.status = arg;
       for (const h of this.listeners.get(event) ?? []) h(arg);
     }
     start(): void {
@@ -70,7 +72,7 @@ vi.mock('../json-rpc-client', () => {
       return this.config;
     }
     getStatus(): string {
-      return 'disconnected';
+      return this.status;
     }
     getReconnectAttempts(): number {
       return 0;
@@ -109,6 +111,7 @@ const store = vi.hoisted(() => ({
   getActiveId: vi.fn(),
   setActiveId: vi.fn(),
   add: vi.fn(),
+  updateMetadata: vi.fn(),
   forget: vi.fn(),
   getDecryptedToken: vi.fn(),
   setHostname: vi.fn(),
@@ -121,6 +124,7 @@ vi.mock('../connections-store', () => ({
   getActiveId: store.getActiveId,
   setActiveId: store.setActiveId,
   add: store.add,
+  updateMetadata: store.updateMetadata,
   forget: store.forget,
   getDecryptedToken: store.getDecryptedToken,
   setHostname: store.setHostname,
@@ -527,7 +531,10 @@ describe('connections:* IPC handlers', () => {
     expect(handler).toBeDefined();
 
     await expect(handler!({}, undefined)).resolves.toEqual({
-      connections: [LOCAL, REMOTE],
+      connections: [
+        { ...LOCAL, status: 'disconnected' },
+        { ...REMOTE, status: 'not-open' },
+      ],
       activeId: 'local',
       windowBackendId: 'local',
       // No remote handshake has mismatched, so there is no sticky mismatch (#823).
@@ -666,6 +673,80 @@ describe('connections:* IPC handlers', () => {
     expect(store.add).toHaveBeenCalledWith(
       expect.not.objectContaining({ syncExcluded: expect.anything() }),
     );
+  });
+
+  it('connections:update changes only remote presentation metadata and broadcasts', async () => {
+    const updated = { ...REMOTE, label: 'Editing Mac', accent: 'violet' as const };
+    store.updateMetadata.mockResolvedValue(updated);
+    const send = installWindow();
+    const { mod } = await loadModule();
+    mod.registerBackendHandlers();
+    const handler = findHandler('connections:update');
+
+    await expect(
+      handler!({}, { id: REMOTE.id, label: 'Editing Mac', accent: 'violet' }),
+    ).resolves.toEqual({ connection: updated });
+    expect(store.updateMetadata).toHaveBeenCalledWith(REMOTE.id, {
+      label: 'Editing Mac',
+      accent: 'violet',
+    });
+    expect(send).toHaveBeenCalledWith('connections:changed', expect.any(Object));
+  });
+
+  it('connections:update rejects invalid accent metadata before touching the store', async () => {
+    const { mod } = await loadModule();
+    mod.registerBackendHandlers();
+    const handler = findHandler('connections:update');
+
+    await expect(
+      handler!({}, { id: REMOTE.id, label: 'Editing Mac', accent: 'chartreuse' }),
+    ).rejects.toThrow();
+    expect(store.updateMetadata).not.toHaveBeenCalled();
+  });
+
+  it('connections:list reports pooled status without opening saved remotes', async () => {
+    const { mod } = await loadModule();
+    mod.getBackendClient();
+    mod.registerBackendHandlers();
+    const handler = findHandler('connections:list');
+
+    await expect(handler!({}, undefined)).resolves.toMatchObject({
+      connections: [
+        { id: LOCAL.id, status: 'disconnected' },
+        { id: REMOTE.id, status: 'not-open' },
+      ],
+    });
+    expect(mod.getBackendClientForConnection(REMOTE.id)).toBeUndefined();
+  });
+
+  it('pooled-client status transitions rebroadcast refreshed connection state', async () => {
+    const send = installWindow();
+    const { mod } = await loadModule();
+    mod.getBackendClient();
+    const remote = (await mod.connectBackendClient(REMOTE.id)) as unknown as {
+      emit(event: string, arg: unknown): void;
+    };
+    mod.registerBackendHandlers();
+
+    remote.emit('status', 'connecting');
+    await vi.waitFor(() => {
+      const changed = send.mock.calls.filter(([channel]) => channel === 'connections:changed');
+      expect(changed.at(-1)?.[1]).toMatchObject({
+        connections: expect.arrayContaining([
+          expect.objectContaining({ id: REMOTE.id, status: 'connecting' }),
+        ]),
+      });
+    });
+
+    remote.emit('status', 'connected');
+    await vi.waitFor(() => {
+      const changed = send.mock.calls.filter(([channel]) => channel === 'connections:changed');
+      expect(changed.at(-1)?.[1]).toMatchObject({
+        connections: expect.arrayContaining([
+          expect.objectContaining({ id: REMOTE.id, status: 'connected' }),
+        ]),
+      });
+    });
   });
 
   it('connections:add upserting a NON-active connection does not reconnect', async () => {

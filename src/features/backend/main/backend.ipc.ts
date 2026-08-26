@@ -100,6 +100,7 @@ import type {
   SelfPublishedStateResult,
   SwitchConnectionResult,
   UnpublishSelfResult,
+  UpdateConnectionResult,
 } from '../../../shared/types/connections';
 import { compareProtocolMajor } from './protocol-compat';
 import {
@@ -115,6 +116,7 @@ import {
   ConnectionsSyncGetStateSchema,
   ConnectionsSyncSetEnabledSchema,
   ConnectionsUnpublishSelfSchema,
+  ConnectionsUpdateSchema,
 } from '../../../main/ipc-schemas';
 import { createValidatedHandler } from '../../../main/ipc-validation-middleware';
 import { getBackendIdForWebContents, getFocusedWindowBackendId } from '../../../main/window';
@@ -627,6 +629,7 @@ export function getBackendClient(): JsonRpcClient {
     );
     // Same stable-forwarder pipe for `status`; see `backendStatusForwarder`.
     backendStatusForwarder.emit('status', connectionId, status);
+    refreshConnectionsForStatusChange();
   });
   // On reconnect the daemon has already dropped every in-memory subscription
   // (see intentd's event-bus lifecycle); broadcast a distinct `{ status:
@@ -823,6 +826,7 @@ function createAdditionalBackendClient(id: string, config: BackendConnectionConf
       id,
     );
     backendStatusForwarder.emit('status', id, status);
+    refreshConnectionsForStatusChange();
   });
   instance.on('reconnected', () => {
     broadcast(
@@ -1464,7 +1468,12 @@ async function listConnections(
   // into a rejecting remote) still surfaces the advisory / actionable state
   // (cloudlands-fe#823 pattern).
   return {
-    connections: connections.filter((c) => !isSelfConnectionRecord(c, selfKeys)),
+    connections: connections
+      .filter((c) => !isSelfConnectionRecord(c, selfKeys))
+      .map((connection) => ({
+        ...connection,
+        status: backendClients.get(connection.id)?.getStatus() ?? 'not-open',
+      })),
     activeId,
     windowBackendId,
     protocolMismatch: activeProtocolMismatch,
@@ -1490,6 +1499,15 @@ async function broadcastConnectionsChanged(): Promise<void> {
       });
     }
   }
+}
+
+/** Push a fresh list after a pooled client's transient status changes. */
+function refreshConnectionsForStatusChange(): void {
+  void broadcastConnectionsChanged().catch((error) => {
+    logger.warn('Failed to refresh connection statuses', {
+      error: error instanceof Error ? error.message : String(error),
+    });
+  });
 }
 
 /**
@@ -2184,6 +2202,21 @@ function registerConnectionsHandlers(): void {
           return { connection, switched: false } satisfies AddConnectionResult;
         }),
       CONNECTIONS.ADD,
+    ),
+  );
+
+  // Update remote-only presentation metadata. The store mutation deliberately
+  // has no token parameter, so this operation cannot expose or rewrite auth.
+  ipcMain.handle(
+    CONNECTIONS.UPDATE,
+    createValidatedHandler(
+      ConnectionsUpdateSchema,
+      async (_event, { id, label, accent }) => {
+        const connection = await connectionsStore.updateMetadata(id, { label, accent });
+        await broadcastConnectionsChanged();
+        return { connection } satisfies UpdateConnectionResult;
+      },
+      CONNECTIONS.UPDATE,
     ),
   );
 

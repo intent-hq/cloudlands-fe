@@ -38,6 +38,8 @@ import type {
   SetKeychainSyncEnabledParams,
   SwitchConnectionParams,
   SwitchConnectionResult,
+  UpdateConnectionParams,
+  UpdateConnectionResult,
 } from '$shared/types/connections';
 import {
   addConnectionRequested,
@@ -57,6 +59,7 @@ import {
   protocolMismatchReceived,
   setKeychainSyncEnabledRequested,
   switchConnectionRequested,
+  updateConnectionRequested,
 } from '../connections-slice';
 
 const CONNECTIONS = IPC_CHANNELS.CONNECTIONS;
@@ -138,6 +141,14 @@ async function invokeAddConnection(params: AddConnectionParams): Promise<AddConn
   const api = getApi();
   if (!api) throw new Error('electronAPI is not available');
   return (await api.invoke(CONNECTIONS.ADD, params)) as AddConnectionResult;
+}
+
+async function invokeUpdateConnection(
+  params: UpdateConnectionParams,
+): Promise<UpdateConnectionResult> {
+  const api = getApi();
+  if (!api) throw new Error('electronAPI is not available');
+  return (await api.invoke(CONNECTIONS.UPDATE, params)) as UpdateConnectionResult;
 }
 
 async function invokeOpenConnection(params: OpenConnectionParams): Promise<OpenConnectionResult> {
@@ -256,6 +267,23 @@ function* forgetConnection(
   }
 }
 
+function* updateConnection(
+  action: ReturnType<typeof updateConnectionRequested>,
+): SagaGenerator<void> {
+  let settled = false;
+  try {
+    const result = yield* call(invokeUpdateConnection, action.payload[0]);
+    yield* put(action.success(result));
+    settled = true;
+  } catch (error) {
+    yield* put(action.failure(toError(error)));
+    settled = true;
+  } finally {
+    if (!settled && (yield* cancelled()))
+      yield* put(action.failure(new Error('Connection update was cancelled')));
+  }
+}
+
 function* openConnection(action: ReturnType<typeof openConnectionRequested>): SagaGenerator<void> {
   let settled = false;
   yield* put(connectOperationStarted());
@@ -359,6 +387,7 @@ function* watchConnectionsActions(): SagaGenerator<void> {
     takeLeading(loadConnectionsRequested, hydrateConnections),
     takeLeading(captureFingerprintRequested, captureFingerprint),
     takeLeading(addConnectionRequested, addConnection),
+    takeLeading(updateConnectionRequested, updateConnection),
     takeLeading(openConnectionRequested, openConnection),
     takeLeading(forgetConnectionRequested, forgetConnection),
     takeLeading(switchConnectionRequested, switchConnection),

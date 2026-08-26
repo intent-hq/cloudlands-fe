@@ -862,6 +862,7 @@ export const IPC_CHANNELS = {
     LIST: 'connections:list',
     CAPTURE_FINGERPRINT: 'connections:capture-fingerprint',
     ADD: 'connections:add',
+    UPDATE: 'connections:update',
     OPEN: 'connections:open',
     FORGET: 'connections:forget',
     SWITCH: 'connections:switch',

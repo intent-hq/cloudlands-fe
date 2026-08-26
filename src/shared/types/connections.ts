@@ -48,6 +48,29 @@ export const KEYCHAIN_SYNC_STATUS_EVENT = 'connections:sync-status-changed';
  */
 export const LOCAL_CONNECTION_ID = 'local';
 
+/** Stable semantic identifiers for the per-machine visual accent palette. */
+export const CONNECTION_ACCENTS = [
+  'blue',
+  'indigo',
+  'violet',
+  'rose',
+  'orange',
+  'emerald',
+  'teal',
+] as const;
+
+export type ConnectionAccent = (typeof CONNECTION_ACCENTS)[number];
+
+/** Deterministic fallback for records written before accent metadata existed. */
+export const DEFAULT_CONNECTION_ACCENT: ConnectionAccent = 'blue';
+
+/** Transient state derived only from an already-created backend client. */
+export type ConnectionOpenStatus = 'connecting' | 'connected' | 'disconnected' | 'not-open';
+
+export function isConnectionAccent(value: unknown): value is ConnectionAccent {
+  return typeof value === 'string' && (CONNECTION_ACCENTS as readonly string[]).includes(value);
+}
+
 // ============================================================================
 // Core types
 // ============================================================================
@@ -64,6 +87,8 @@ export const LOCAL_CONNECTION_ID = 'local';
 export interface ConnectionRecord {
   id: string;
   label: string;
+  /** Palette-backed remote identity accent; `null` for local. */
+  accent?: ConnectionAccent | null;
   /** Remote host/IP; `null` for the local UDS entry. */
   host: string | null;
   /**
@@ -96,6 +121,8 @@ export interface ConnectionRecord {
   syncExcluded?: boolean;
   /** True for the synthesized local sidecar entry. */
   isLocal: boolean;
+  /** Present on list/broadcast payloads; never persisted. */
+  status?: ConnectionOpenStatus;
 }
 
 /**
@@ -158,6 +185,8 @@ export interface CaptureFingerprintResult {
  */
 export interface AddConnectionParams {
   label: string;
+  /** Absent callers receive {@link DEFAULT_CONNECTION_ACCENT}. */
+  accent?: ConnectionAccent;
   host: string;
   port: number;
   fingerprint: string;
@@ -187,6 +216,18 @@ export interface AddConnectionResult {
    * opening never performs a whole-app switch.
    */
   switched: boolean;
+}
+
+/** `connections:update` params. Never carries or mutates the bearer token. */
+export interface UpdateConnectionParams {
+  id: string;
+  label: string;
+  accent: ConnectionAccent;
+}
+
+/** `connections:update` result: the updated, token-free record. */
+export interface UpdateConnectionResult {
+  connection: ConnectionRecord;
 }
 
 /** `connections:open` params. */

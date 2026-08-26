@@ -94,6 +94,7 @@ describe('connections-store', () => {
     expect(list[1]).toMatchObject({
       id: rec.id,
       label: 'Studio Mac',
+      accent: 'blue',
       host: '192.168.1.10',
       port: 8443,
       fingerprint: 'AA:BB:CC',
@@ -101,6 +102,67 @@ describe('connections-store', () => {
     });
     expect(list[1]).not.toHaveProperty('token');
     expect(list[1]).not.toHaveProperty('encToken');
+  });
+
+  it('persists palette accents and defaults records written before accents existed', async () => {
+    const store = await import('../connections-store');
+    const rec = await store.add({ ...sampleConn, accent: 'orange' });
+    expect(rec.accent).toBe('orange');
+    await store.__drainWriteChainForTesting();
+
+    const file = path.join(tmpDir, 'backend-connections.json');
+    const parsed = JSON.parse(await fs.readFile(file, 'utf8'));
+    expect(parsed.connections[0].accent).toBe('orange');
+    delete parsed.connections[0].accent;
+    await fs.writeFile(file, JSON.stringify(parsed), 'utf8');
+
+    vi.resetModules();
+    mockElectron();
+    const reloaded = await import('../connections-store');
+    expect((await reloaded.list()).find((connection) => connection.id === rec.id)?.accent).toBe(
+      'blue',
+    );
+  });
+
+  it('updateMetadata changes name and accent without rewriting the bearer token', async () => {
+    const store = await import('../connections-store');
+    const rec = await store.add(sampleConn);
+    await store.__drainWriteChainForTesting();
+    const file = path.join(tmpDir, 'backend-connections.json');
+    const before = JSON.parse(await fs.readFile(file, 'utf8')).connections[0];
+
+    const updated = await store.updateMetadata(rec.id, {
+      label: '  Editing Mac  ',
+      accent: 'violet',
+    });
+    expect(updated).toMatchObject({ id: rec.id, label: 'Editing Mac', accent: 'violet' });
+    expect(await store.getDecryptedToken(rec.id)).toBe('secret-token');
+
+    const after = JSON.parse(await fs.readFile(file, 'utf8')).connections[0];
+    expect(after.encToken).toEqual(before.encToken);
+    expect(after).toMatchObject({ label: 'Editing Mac', accent: 'violet' });
+    expect((await store.listSyncRecords())[0]).toMatchObject({
+      label: 'Editing Mac',
+      accent: 'violet',
+    });
+  });
+
+  it('updateMetadata rejects local, unknown, blank-name, and invalid-accent updates', async () => {
+    const store = await import('../connections-store');
+    const rec = await store.add(sampleConn);
+
+    await expect(
+      store.updateMetadata(store.LOCAL_CONNECTION_ID, { label: 'Local', accent: 'blue' }),
+    ).rejects.toThrow(/local/i);
+    await expect(
+      store.updateMetadata('missing', { label: 'Missing', accent: 'blue' }),
+    ).rejects.toThrow(/unknown/i);
+    await expect(store.updateMetadata(rec.id, { label: '   ', accent: 'blue' })).rejects.toThrow(
+      /label/i,
+    );
+    await expect(
+      store.updateMetadata(rec.id, { label: 'Studio Mac', accent: 'chartreuse' as never }),
+    ).rejects.toThrow(/accent/i);
   });
 
   it('forget removes a remote but rejects forgetting local', async () => {

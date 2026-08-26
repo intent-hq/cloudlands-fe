@@ -21,6 +21,7 @@ import {
   openConnectionRequested,
   setKeychainSyncEnabledRequested,
   switchConnectionRequested,
+  updateConnectionRequested,
 } from '../connections-slice';
 import { connectionsSaga } from './connections-saga';
 import { getItems } from '@augmentcode/themis/utils/collections/collection-utils';
@@ -36,6 +37,7 @@ const LOCAL: ConnectionRecord = {
 const REMOTE: ConnectionRecord = {
   id: 'remote-1',
   label: 'Studio Mac',
+  accent: 'blue',
   host: '10.0.0.5',
   port: 8443,
   fingerprint: 'AB:CD',
@@ -79,6 +81,8 @@ describe('connectionsSaga', () => {
       if (channel === CONNECTION_CHANNELS.CAPTURE_FINGERPRINT)
         return { fingerprint: 'AB:CD', tokenValid: true };
       if (channel === CONNECTION_CHANNELS.ADD) return { connection: REMOTE, switched: false };
+      if (channel === CONNECTION_CHANNELS.UPDATE)
+        return { connection: { ...REMOTE, ...(params as object) } };
       if (channel === CONNECTION_CHANNELS.OPEN) return { id: (params as { id: string }).id };
       if (channel === CONNECTION_CHANNELS.FORGET) return { id: (params as { id: string }).id };
       if (channel === CONNECTION_CHANNELS.SWITCH)
@@ -213,6 +217,21 @@ describe('connectionsSaga', () => {
       port: REMOTE.port,
       fingerprint: REMOTE.fingerprint,
       token: 'secret',
+    });
+
+    const update = updateConnectionRequested({
+      id: REMOTE.id,
+      label: 'Editing Mac',
+      accent: 'violet',
+    });
+    run.channel.put(update);
+    await expect(update.promise).resolves.toEqual({
+      connection: { ...REMOTE, id: REMOTE.id, label: 'Editing Mac', accent: 'violet' },
+    });
+    expect(invoke).toHaveBeenCalledWith(CONNECTION_CHANNELS.UPDATE, {
+      id: REMOTE.id,
+      label: 'Editing Mac',
+      accent: 'violet',
     });
 
     const open = openConnectionRequested(REMOTE.id);
