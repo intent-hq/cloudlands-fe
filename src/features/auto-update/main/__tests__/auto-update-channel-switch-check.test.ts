@@ -870,4 +870,55 @@ describe("'disabled' update channel", () => {
     expect(service.getState().status).not.toBe('error');
     expect(service.getState().error).toBeNull();
   });
+
+  it("late old-feed events after a direct switch to 'disabled' mid-check cannot re-arm update state", async () => {
+    // Direct stable → disabled while a startup/hourly/focus check is in
+    // flight: neutralizeStaleFeedArtifact() is a no-op at 'checking', and the
+    // old-feed check's events land AFTER the switch. Without a disabled gate
+    // in the handlers, 'update-available' repopulates updateInfo (renderer
+    // offers Download) and 'update-downloaded' re-arms quit-install —
+    // defeating "nothing installs on quit" (PR #1713 review).
+    const { setChannelHandler, service, updater } = await setup();
+
+    updaterHandlers['checking-for-update']();
+    expect(service.getState().status).toBe('checking');
+
+    await setChannelHandler({}, { channel: 'disabled' });
+    expect(updater.autoInstallOnAppQuit).toBe(false);
+
+    // The old-feed check settles late: found an update, then (fast cache
+    // re-resolve / autoDownload) reports it downloaded.
+    updaterHandlers['update-available']({ version: '2.1.0', releaseDate: '2026-01-01' });
+    expect(service.getState().status).not.toBe('available');
+    expect(service.getState().updateInfo).toBeNull();
+
+    updaterHandlers['update-downloaded']({ version: '2.1.0' });
+    expect(updater.autoInstallOnAppQuit).toBe(false);
+    expect(service.getState().status).not.toBe('downloaded');
+    expect(service.getState().updateInfo).toBeNull();
+    expect(service.getState().status).toBe('idle');
+
+    // The DOWNLOAD IPC path is gated too (defense in depth).
+    await expect(service.downloadUpdate()).rejects.toThrow();
+  });
+
+  it("an expected cancel settling while 'disabled' returns the state to idle, not stuck", async () => {
+    // Epoch-cancelled autoDownload after a switch to 'disabled': the
+    // expected-cancel early return in 'update-cancelled' must not leave the
+    // status stuck at 'available'/'downloading' with no recheck ever coming.
+    const { setChannelHandler, service, updater, downloadMock } = await setup();
+
+    updaterHandlers['update-available']({ version: '2.1.0', releaseDate: '2026-01-01' });
+    downloadMock.mockReturnValue(new Promise(() => {}));
+    void service.downloadUpdate();
+    expect(service.getState().status).toBe('downloading');
+
+    await setChannelHandler({}, { channel: 'disabled' });
+    // Switch-time neutralization already reset to idle; the late
+    // 'update-cancelled' from the token cancel must keep it there.
+    updaterHandlers['update-cancelled']({ version: '2.1.0' });
+    expect(service.getState().status).toBe('idle');
+    expect(service.getState().error).toBeNull();
+    expect(updater.autoInstallOnAppQuit).toBe(false);
+  });
 });

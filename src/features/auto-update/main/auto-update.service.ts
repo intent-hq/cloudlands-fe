@@ -220,6 +220,22 @@ class AutoUpdateService {
       // 'update-not-available' would incorrectly show the manual "up to
       // date" toast because `isManualCheck` stayed latched from this check.
       this.isManualCheck = false;
+      // A direct switch to 'disabled' while a check was in flight (status
+      // 'checking' — neutralizeStaleFeedArtifact() has nothing to discard
+      // then) cannot invalidate this handler: the old-feed result lands
+      // HERE, after the switch. Arming 'available' would let the renderer
+      // offer a Download of the opted-out artifact — and no future check
+      // runs while disabled to ever clean it up. Discard the event instead;
+      // the epoch mismatch in checkForUpdates() cancels the autoDownload
+      // this result may have started (PR #1713 review).
+      if (this.state.channel === 'disabled') {
+        logger.info('Discarding late update-available event; updates are disabled', {
+          version: info.version,
+        });
+        this.state.updateInfo = null;
+        this.updateStatus('idle');
+        return;
+      }
       logger.info('Update available', { version: info.version });
       // A re-check while this same version is already downloaded must not
       // regress the UI to 'available' (a new Download click): keep
@@ -297,9 +313,23 @@ class AutoUpdateService {
     });
 
     autoUpdater.on('update-downloaded', (info: ElectronUpdateInfo) => {
-      logger.info('Update downloaded', { version: info.version });
       this.downloadCancellationToken = null;
       this.expectingDownloadCancel = false;
+      // Same late-event race as 'update-available' above, narrower window: a
+      // fast cache re-resolve can fire this before the in-flight check's
+      // promise settles (i.e. before the epoch cancel runs). Re-arming
+      // quit-install here would install the opted-out artifact on quit —
+      // keep it disarmed and drop the artifact instead (PR #1713 review).
+      if (this.state.channel === 'disabled') {
+        logger.info('Discarding late update-downloaded event; updates are disabled', {
+          version: info.version,
+        });
+        autoUpdater.autoInstallOnAppQuit = false;
+        this.state.updateInfo = null;
+        this.updateStatus('idle');
+        return;
+      }
+      logger.info('Update downloaded', { version: info.version });
       // Re-enable quit-install for this fresh artifact: a channel switch
       // while downloaded/downloading disables autoInstallOnAppQuit so the
       // stale artifact cannot install; this download validated against the
@@ -670,6 +700,12 @@ class AutoUpdateService {
   }
 
   async downloadUpdate(): Promise<void> {
+    // Defense in depth: the event-handler gates keep status away from
+    // 'available' while disabled, so this should be unreachable — but a
+    // download of an opted-out artifact must never start regardless.
+    if (this.state.channel === 'disabled') {
+      throw new Error('Updates are disabled');
+    }
     if (this.state.status !== 'available') {
       throw new Error('No update available to download');
     }
