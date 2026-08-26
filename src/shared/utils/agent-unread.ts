@@ -11,10 +11,16 @@
  * convergence — recomputes it through one seam.
  *
  * Background agents (`isBackground` / `metadata.isBackground`) and delegated
- * child agents (`metadata.createdByAgentId` set — same predicate as
- * `getParentAgentId` in workspace-agents-list-utils) always derive `false`:
- * the unread blue dot (agent avatar + bottom-bar Agents launcher) is reserved
- * for top-level foreground agents.
+ * child agents (`metadata.createdByAgentId` set) always derive `false`: the
+ * unread blue dot (agent avatar + bottom-bar Agents launcher) is reserved for
+ * top-level foreground agents. The child check follows the dangling-parent
+ * semantics of `isTopLevelAgent` in hud-selectors — a delegated agent stays
+ * suppressed even when its parent left the list — which is stricter than the
+ * Agents-panel tree's nesting (that additionally requires the parent to be
+ * present, so an orphaned child renders as a top-level row yet never shows
+ * the dot). Unlike `isTopLevelAgent`, this derivation has no agent-id input,
+ * so a (malformed) self-referencing `createdByAgentId` also suppresses the
+ * dot.
  *
  * Dependency-light per AGENTS.md: pure function, no stores or services.
  */

@@ -8263,9 +8263,29 @@ describe('daemonEventsBridge (agent:last-message §6.5 — preview projections a
     expect(appStore.state.agentSessions.byAgentId[AGENT]!.hasUnread).toBe(false);
   });
 
+  it('keeps hasUnread=false for a background agent (metadata.isBackground, the wire location per PROTOCOL §5.5) on an assistant echo', async () => {
+    seedSession({ metadata: { isBackground: true }, hasUnread: false });
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(
+      notification('agent:last-message', {
+        agentId: AGENT,
+        messageId: 'msg-a5',
+        role: 'assistant',
+        lastMessageRole: 'assistant',
+        lastMessageId: 'msg-a5',
+        lastAgentResponse: 'background work done',
+      }),
+    );
+    await flush();
+
+    expect(appStore.state.agentSessions.byAgentId[AGENT]!.hasUnread).toBe(false);
+  });
+
   it('keeps hasUnread=false for a delegated child agent on an assistant echo', async () => {
     seedSession({
-      metadata: { createdByAgentId: 'agent-parent' } as AgentSession['metadata'],
+      metadata: { createdByAgentId: 'agent-parent' },
       hasUnread: false,
     });
     await primeBridge();
