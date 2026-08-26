@@ -100,6 +100,30 @@ describe('switchTimingSaga', () => {
     run.task.cancel();
   });
 
+  it('records live-stream phase transitions as first-occurrence gates', async () => {
+    const state: ChatAgentTestState = { transcriptHydration: 'loading' };
+    const run = harness(() => state);
+    const debugSpy = vi.spyOn(console, 'debug').mockImplementation(() => {});
+
+    run.channel.put(initializeChatRequested(AGENT, { wsId: WS }));
+    await settle();
+    run.channel.put(chatLiveStreamPhaseChanged(AGENT, 'connecting'));
+    run.channel.put(chatLiveStreamPhaseChanged(AGENT, 'awaiting-snapshot'));
+    run.channel.put(chatLiveStreamPhaseChanged(AGENT, 'live'));
+    state.transcriptHydration = 'settled';
+    run.channel.put(transcriptHydrationSettled(AGENT));
+    await settle();
+
+    expect(hasOpenAgentView(AGENT)).toBe(false);
+    expect(debugSpy).toHaveBeenCalledTimes(1);
+    const data = debugSpy.mock.calls[0][1] as { gates: Record<string, number> };
+    expect(data.gates).toHaveProperty('phaseConnecting');
+    expect(data.gates).toHaveProperty('phaseAwaitingSnapshot');
+    expect(data.gates).toHaveProperty('phaseLive');
+
+    run.task.cancel();
+  });
+
   it('discards the open record when the live stream phase drops to null', async () => {
     const run = harness(() => ({ transcriptHydration: 'loading' }));
 

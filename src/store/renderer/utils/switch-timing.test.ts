@@ -45,6 +45,7 @@ describe('switch-timing', () => {
       outcome: 'revealed',
       revealMs: 175,
       gates: { hydrationStarted: 50, hydrationSettled: 150 },
+      slowestGate: 'hydrationSettled',
     });
     expect(hasOpenAgentView(AGENT)).toBe(false);
     // Finalize is one-shot.
