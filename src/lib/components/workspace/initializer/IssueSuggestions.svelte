@@ -1780,6 +1780,7 @@
               >
               {#each visibleLinearAssigned as issue (issue.id)}
                 <TooltipRich
+                  class="flex w-full min-w-0"
                   side="top"
                   align="start"
                   delayDuration={400}
@@ -1852,6 +1853,7 @@
               >
               {#each visibleLinearCreated as issue (issue.id)}
                 <TooltipRich
+                  class="flex w-full min-w-0"
                   side="top"
                   align="start"
                   delayDuration={400}
@@ -1920,6 +1922,7 @@
             <!-- Server-side search results (flat list) -->
             {#each visibleLinearSearch as issue (issue.id)}
               <TooltipRich
+                class="flex w-full min-w-0"
                 side="top"
                 align="start"
                 delayDuration={400}
@@ -2008,6 +2011,7 @@
           <!-- GitHub issues -->
           {#each visibleGitHubIssues as issue (issue.id)}
             <TooltipRich
+              class="flex w-full min-w-0"
               side="top"
               align="start"
               delayDuration={400}
@@ -2072,6 +2076,7 @@
           <!-- GitHub PRs -->
           {#each visibleGitHubPRs as pr (pr.id)}
             <TooltipRich
+              class="flex w-full min-w-0"
               side="top"
               align="start"
               delayDuration={400}

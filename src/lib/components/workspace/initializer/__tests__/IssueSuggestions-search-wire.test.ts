@@ -77,7 +77,7 @@ vi.mock('$lib/components/ui/skeleton', async () => ({
   Skeleton: (await import('./mocks/MockComponent.svelte')).default,
 }));
 vi.mock('$lib/components/ui/tooltip', async () => ({
-  TooltipRich: (await import('./mocks/MockComponent.svelte')).default,
+  TooltipRich: (await import('./mocks/MockTooltipRich.svelte')).default,
 }));
 vi.mock('$lib/components/ui/Header.svelte', async () => ({
   default: (await import('./mocks/MockComponent.svelte')).default,
@@ -138,6 +138,7 @@ const ghPull = (id: string, number: number) => ({
 // billed to the first test's timeout (intent-hq/monorepo#1464).
 warmImport(() => import('../../../ui/__tests__/mocks/Fa.svelte'));
 warmImport(() => import('./mocks/MockComponent.svelte'));
+warmImport(() => import('./mocks/MockTooltipRich.svelte'));
 
 describe('IssueSuggestions server-side search + pagination wire contract', () => {
   beforeEach(() => {
@@ -240,6 +241,43 @@ describe('IssueSuggestions server-side search + pagination wire contract', () =>
 
     // Exhausted: the sentinel is gone once nextToken is null
     expect(container.querySelector('[aria-hidden="true"].h-px')).toBeNull();
+  });
+
+  it('row trigger wrappers carry width-constraining classes so long titles truncate', async () => {
+    registerMockIpcHandler('git-tracking:search-github-issues', () => ({
+      success: true,
+      data: [ghIssue('i-1', 1)],
+      nextToken: null,
+    }));
+    registerMockIpcHandler('git-tracking:search-pull-requests', () => ({
+      success: true,
+      data: [ghPull('p-1', 10)],
+      nextToken: null,
+    }));
+
+    for (const initialSource of ['github-issues', 'github-prs'] as const) {
+      const { container } = render(IssueSuggestions, {
+        props: {
+          repositoryOwner: 'owner-a',
+          repositoryName: 'repo-a',
+          initiallyExpanded: true,
+          initialSource,
+          hideSourceTabs: true,
+        },
+      });
+      await settle();
+
+      const wrappers = container.querySelectorAll('span[data-mock-tooltip-trigger]');
+      expect(wrappers.length).toBeGreaterThan(0);
+      for (const wrapper of wrappers) {
+        expect(wrapper.classList.contains('flex')).toBe(true);
+        expect(wrapper.classList.contains('w-full')).toBe(true);
+        expect(wrapper.classList.contains('min-w-0')).toBe(true);
+        // tailwind-merge must drop the default inline-flex in favor of flex
+        expect(wrapper.classList.contains('inline-flex')).toBe(false);
+      }
+      cleanup();
+    }
   });
 
   it('debounced typing sends a server search with the exact request shape (GH PRs)', async () => {
