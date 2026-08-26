@@ -902,6 +902,15 @@ function handleStreamActivityEvent(event: WorkspaceEvent, workspaceId: string): 
   // untouched. (Ended-turn stragglers never reach here — dropped above.)
   const eventTimestamp = (event as { timestamp?: unknown }).timestamp;
   withHydratedSession(agentId, () => {
+    // Re-check at execution time: `withHydratedSession` defers this callback
+    // across an async hydration fetch when the session isn't known yet, and
+    // the turn's terminal `agent:stream:end` may stamp the ended-turn map
+    // (synchronously) in that window — a then-stale ping must not re-open
+    // the liveness the terminal fold just closed.
+    const endedAtDispatch = previewTurnEndedMessageIdByAgent.get(agentId);
+    if (endedAtDispatch !== undefined && messageId <= endedAtDispatch) {
+      return;
+    }
     if (isNewTurn) {
       appStore.dispatch(updateAgentDigest(workspaceId, agentId, null));
       appStore.dispatch(updateSession(agentId, { lastToolUse: undefined }));

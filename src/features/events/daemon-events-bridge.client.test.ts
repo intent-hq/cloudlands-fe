@@ -2318,6 +2318,53 @@ describe('daemonEventsBridge (agent:stream:activity — push-applied live previe
     handler(notification('agent:stream:activity', { agentId: AGENT, messageId: 'msg_assistant_2' }));
     expect(readLiveTurnFields().liveTurnOpen).toBe(true);
   });
+
+  // Interleaving hardening: the arrival-time straggler check passes for a
+  // mid-turn ping, but `withHydratedSession` defers the dispatch across the
+  // async hydration fetch — if the turn's terminal `agent:stream:end` lands
+  // (stamping the ended-turn map synchronously) before hydration resolves,
+  // the deferred callback must re-check at execution time rather than
+  // re-open the liveness the terminal fold just closed.
+  it('a ping deferred across hydration does not re-open liveness once the turn ended mid-flight', async () => {
+    appStore.dispatch(clearAllSessions());
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    let resolveHydration!: () => void;
+    ensureAgentSessionSpy.mockImplementationOnce(async () => {
+      await new Promise<void>((resolve) => {
+        resolveHydration = resolve;
+      });
+      appStore.dispatch(
+        bulkUpsertSessions([
+          {
+            id: AGENT,
+            backendSessionId: 'backend-1',
+            workspaceId: WS,
+            name: 'A',
+            status: AgentStatus.RuntimeIdle,
+            messages: [],
+            isStreaming: false,
+            createdAt: '2026-01-01T00:00:00.000Z',
+            updatedAt: '2026-01-01T00:00:00.000Z',
+          } as AgentSession,
+        ]),
+      );
+    });
+
+    // Mid-turn ping for an unknown session: arrival-time guard passes, the
+    // dispatch is parked behind the hydration fetch.
+    handler(notification('agent:stream:activity', { agentId: AGENT, messageId: MESSAGE_ID }));
+    // The turn ends while hydration is still in flight (the map stamp in
+    // handleStreamEndEvent is synchronous).
+    handler(notification('agent:stream:end', { agentId: AGENT, messageId: MESSAGE_ID }));
+
+    resolveHydration();
+    await flush();
+
+    expect(readLiveTurnFields().liveTurnOpen).not.toBe(true);
+    expect(selectAgentIsResponding.select(appStore.state, AGENT)).toBe(false);
+  });
 });
 
 // Regression (intentd#336): a user interrupt (agent.stop, or agent.sendMessage
