@@ -5941,6 +5941,7 @@
   "chat_monitoredPrs_status_blocked": "已打开，但因 {reason} 被阻止。",
   "chat_monitoredPrs_status_draft": "草稿拉取请求。",
   "chat_monitoredPrs_status_unknown": "已打开；仍在检查是否可以合并。",
+  "chat_monitoredPrs_status_mergeQueue": "已打开；已加入合并队列。",
   "chat_monitoredPrs_blocker_conflicts": "合并冲突",
   "chat_monitoredPrs_blocker_behind": "分支落后",
   "chat_monitoredPrs_blocker_checksFailing": "必需检查失败",

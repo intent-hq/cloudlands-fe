@@ -5941,6 +5941,7 @@
   "chat_monitoredPrs_status_blocked": "Offen, aber blockiert durch {reason}.",
   "chat_monitoredPrs_status_draft": "Pull-Request-Entwurf.",
   "chat_monitoredPrs_status_unknown": "Offen; die Merge-Bereitschaft wird noch geprüft.",
+  "chat_monitoredPrs_status_mergeQueue": "Offen; zum Zusammenführen eingereiht.",
   "chat_monitoredPrs_blocker_conflicts": "Merge-Konflikte",
   "chat_monitoredPrs_blocker_behind": "einen veralteten Branch",
   "chat_monitoredPrs_blocker_checksFailing": "fehlgeschlagene erforderliche Prüfungen",

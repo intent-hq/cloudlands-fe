@@ -5941,6 +5941,7 @@
   "chat_monitoredPrs_status_blocked": "Open, but blocked by {reason}.",
   "chat_monitoredPrs_status_draft": "Draft pull request.",
   "chat_monitoredPrs_status_unknown": "Open; merge readiness is still being checked.",
+  "chat_monitoredPrs_status_mergeQueue": "Open; queued to merge.",
   "chat_monitoredPrs_blocker_conflicts": "merge conflicts",
   "chat_monitoredPrs_blocker_behind": "the branch being behind",
   "chat_monitoredPrs_blocker_checksFailing": "required checks failing",
