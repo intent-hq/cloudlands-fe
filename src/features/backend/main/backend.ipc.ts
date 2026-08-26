@@ -1018,6 +1018,40 @@ export async function reconcileActiveConnectionOnBoot(): Promise<void> {
   }
   if (activeId === LOCAL_CONNECTION_ID) return; // Already local — no-op.
 
+  // A persisted activeId pointing at this machine's own (hidden) self entry —
+  // e.g. selected on another device before this machine's list started hiding
+  // it, then synced back — resolves to local: that record IS this daemon, and
+  // the hidden entry must never be restored as a WSS "remote". Silent (no
+  // boot-fallback notice — nothing is unreachable) and fail-soft: a detection
+  // error just takes the normal restore path.
+  let isSelfEntry = false;
+  try {
+    const [records, selfFingerprint] = await Promise.all([
+      connectionsStore.list(),
+      getStoredSelfFingerprint(),
+    ]);
+    const target = records.find((c) => c.id === activeId);
+    isSelfEntry = target !== undefined && isSelfConnectionRecord(target, selfFingerprint);
+  } catch (error) {
+    logger.warn('Could not evaluate self-entry redirect at boot (fail-soft)', {
+      id: activeId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+  if (isSelfEntry) {
+    logger.info('Persisted active backend is this machine\u2019s own self entry; using local', {
+      id: activeId,
+    });
+    try {
+      await connectionsStore.setActiveId(LOCAL_CONNECTION_ID);
+    } catch (error) {
+      logger.warn('Failed to persist local active backend for self-entry redirect', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+    return;
+  }
+
   // Resolve the remote's config + label BEFORE building anything, so a bad
   // record (forgotten remote, missing token) falls back cleanly to local.
   let config: BackendConnectionConfig;
@@ -1254,13 +1288,37 @@ async function refreshRemoteHosts(id: string): Promise<void> {
   }
 }
 
-/** The connections list + persisted and window-scoped selections surfaced to the renderer. */
+/**
+ * Whether a stored record is THIS machine's own published self entry: its
+ * fingerprint matches the persisted self cert fingerprint (normalized, so the
+ * comparison mirrors the store's fingerprint-keyed dedupe). The local
+ * pseudo-entry never matches (its fingerprint is null).
+ */
+function isSelfConnectionRecord(
+  record: { fingerprint?: string | null },
+  selfFingerprint: string | null,
+): boolean {
+  if (selfFingerprint === null) return false;
+  const key = normalizeFingerprint(record.fingerprint);
+  return key !== null && key === selfFingerprint;
+}
+
+/**
+ * The connections list + persisted and window-scoped selections surfaced to
+ * the renderer. The machine's own published self entry is hidden here —
+ * connecting to yourself over WSS is meaningless when the same daemon is
+ * already reachable as `local` — while the record stays in the store so the
+ * keychain reconcile keeps pushing it to the user's OTHER devices (where it
+ * must appear). Presentation-only: `getSelfPublishedState` still reports it
+ * as published. Fail-soft: a self-fingerprint read error hides nothing.
+ */
 async function listConnections(
   windowBackendId: string = LOCAL_CONNECTION_ID,
 ): Promise<ConnectionsListResult> {
-  const [connections, activeId] = await Promise.all([
+  const [connections, activeId, selfFingerprint] = await Promise.all([
     connectionsStore.list(),
     connectionsStore.getActiveId(),
+    getStoredSelfFingerprint().catch(() => null),
   ]);
   // Replay any sticky protocol mismatch / auth rejection for the active
   // backend so a renderer that missed the one-shot broadcast (e.g. a window
@@ -1268,7 +1326,7 @@ async function listConnections(
   // into a rejecting remote) still surfaces the advisory / actionable state
   // (cloudlands-fe#823 pattern).
   return {
-    connections,
+    connections: connections.filter((c) => !isSelfConnectionRecord(c, selfFingerprint)),
     activeId,
     windowBackendId,
     protocolMismatch: activeProtocolMismatch,
@@ -2149,8 +2207,7 @@ async function publishSelfBackend(): Promise<PublishSelfResult> {
   await setStoredSelfFingerprint(info.certFingerprint);
   await setAutoPublishSuppressed(false);
   await broadcastConnectionsChanged();
-  const connection =
-    (await connectionsStore.list()).find((c) => c.id === record.id) ?? record;
+  const connection = (await connectionsStore.list()).find((c) => c.id === record.id) ?? record;
   return { connection } satisfies PublishSelfResult;
 }
 

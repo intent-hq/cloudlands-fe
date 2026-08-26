@@ -1031,9 +1031,10 @@ describe('self-publish IPC', () => {
     const { mod } = await loadModule();
     mod.registerBackendHandlers();
 
-    await expect(
-      findHandler('connections:self-published-state')!({}, undefined),
-    ).resolves.toEqual({ published: true, suppressed: false });
+    await expect(findHandler('connections:self-published-state')!({}, undefined)).resolves.toEqual({
+      published: true,
+      suppressed: false,
+    });
   });
 
   it('connections:self-published-state matches by the persisted fingerprint when the probe fails', async () => {
@@ -1043,9 +1044,10 @@ describe('self-publish IPC', () => {
     const { mod } = await loadModule();
     mod.registerBackendHandlers();
 
-    await expect(
-      findHandler('connections:self-published-state')!({}, undefined),
-    ).resolves.toEqual({ published: true, suppressed: false });
+    await expect(findHandler('connections:self-published-state')!({}, undefined)).resolves.toEqual({
+      published: true,
+      suppressed: false,
+    });
   });
 
   it('connections:self-published-state reports unpublished + the suppression marker', async () => {
@@ -1055,9 +1057,10 @@ describe('self-publish IPC', () => {
     mod.registerBackendHandlers();
 
     // No stored record carries the self fingerprint → not published.
-    await expect(
-      findHandler('connections:self-published-state')!({}, undefined),
-    ).resolves.toEqual({ published: false, suppressed: true });
+    await expect(findHandler('connections:self-published-state')!({}, undefined)).resolves.toEqual({
+      published: false,
+      suppressed: true,
+    });
   });
 
   it('connections:forget of the self entry sets the "do not auto-publish" marker', async () => {
@@ -1081,6 +1084,93 @@ describe('self-publish IPC', () => {
 
     await findHandler('connections:forget')!({}, { id: 'remote-1' });
     expect(localPrefs.values.has('selfPublishSuppressed')).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Hide the self entry from the owning machine's connections list: the record
+// stays in the store (keychain sync pushes it to OTHER devices) but never
+// renders on the machine it describes — connecting to yourself is meaningless.
+// ---------------------------------------------------------------------------
+
+describe('connections:list hides the self entry on the owning machine', () => {
+  const SELF_ENTRY = {
+    id: 'self-1',
+    label: "Clement's Mac Studio",
+    host: '192.168.1.10',
+    port: 5181,
+    fingerprint: '11:22:33:44',
+    isLocal: false,
+  };
+
+  it('filters the record whose fingerprint matches the persisted self fingerprint', async () => {
+    localPrefs.values.set('selfBackendFingerprint', '11:22:33:44');
+    store.list.mockResolvedValue([LOCAL, REMOTE, SELF_ENTRY]);
+    const { mod } = await loadModule();
+    mod.registerBackendHandlers();
+
+    await expect(findHandler('connections:list')!({}, undefined)).resolves.toMatchObject({
+      connections: [LOCAL, REMOTE],
+    });
+  });
+
+  it('matches the fingerprint case-insensitively (store dedupe normalization)', async () => {
+    localPrefs.values.set('selfBackendFingerprint', '11:22:33:44');
+    store.list.mockResolvedValue([
+      LOCAL,
+      { ...SELF_ENTRY, fingerprint: '11:22:33:44'.toLowerCase() },
+    ]);
+    const { mod } = await loadModule();
+    mod.registerBackendHandlers();
+
+    await expect(findHandler('connections:list')!({}, undefined)).resolves.toMatchObject({
+      connections: [LOCAL],
+    });
+  });
+
+  it('hides nothing when no self fingerprint was ever persisted', async () => {
+    store.list.mockResolvedValue([LOCAL, REMOTE, SELF_ENTRY]);
+    const { mod } = await loadModule();
+    mod.registerBackendHandlers();
+
+    await expect(findHandler('connections:list')!({}, undefined)).resolves.toMatchObject({
+      connections: [LOCAL, REMOTE, SELF_ENTRY],
+    });
+  });
+
+  it('filters the connections:changed broadcast payload too', async () => {
+    localPrefs.values.set('selfBackendFingerprint', '11:22:33:44');
+    store.add.mockResolvedValue(REMOTE);
+    store.list.mockResolvedValue([LOCAL, REMOTE, SELF_ENTRY]);
+    const send = installWindow();
+    const { mod } = await loadModule();
+    mod.registerBackendHandlers();
+
+    await findHandler('connections:add')!(
+      {},
+      { label: 'Studio Mac', host: '10.0.0.5', port: 8443, fingerprint: 'AA:BB:CC:DD', token: 't' },
+    );
+    const changed = send.mock.calls.find(([c]) => c === 'connections:changed');
+    expect(changed?.[1]).toMatchObject({ connections: [LOCAL, REMOTE] });
+  });
+
+  it('is presentation-only: self-published-state still reports published while the list hides it', async () => {
+    localPrefs.values.set('selfBackendFingerprint', '11:22:33:44');
+    store.list.mockResolvedValue([LOCAL, SELF_ENTRY]);
+    rpc.handler = async (method) => {
+      if (method === 'server.pairingInfo') throw new Error('probe down');
+      return {};
+    };
+    const { mod } = await loadModule();
+    mod.registerBackendHandlers();
+
+    await expect(findHandler('connections:list')!({}, undefined)).resolves.toMatchObject({
+      connections: [LOCAL],
+    });
+    await expect(findHandler('connections:self-published-state')!({}, undefined)).resolves.toEqual({
+      published: true,
+      suppressed: false,
+    });
   });
 });
 
