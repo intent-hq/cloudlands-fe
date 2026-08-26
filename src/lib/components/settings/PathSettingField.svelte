@@ -29,10 +29,6 @@
     ariaLabel?: string;
     /** Title for the native dialog and the remote picker modal. */
     pickerTitle?: string;
-    /** Aria-label for the picker button; defaults per mode. */
-    browseAriaLabel?: string;
-    /** Aria-label for the clear (reset-to-default) button. */
-    clearAriaLabel?: string;
     /** OK/Cancel confirmation shown before any picker opens; Cancel aborts. */
     confirm?: { title: string; message: string };
     /** Fired with the picked path, or '' when cleared. */
@@ -53,8 +49,6 @@
     defaultPath,
     ariaLabel,
     pickerTitle,
-    browseAriaLabel,
-    clearAriaLabel,
     confirm,
     onchange,
     pickerOpen = $bindable(false),
@@ -63,14 +57,11 @@
   let confirmOpen = $state(false);
 
   const resolvedBrowseAriaLabel = $derived(
-    browseAriaLabel ??
-      (mode === 'file'
-        ? m.settings_pathField_browseFile_ariaLabel()
-        : m.settings_pathField_browseDirectory_ariaLabel()),
+    mode === 'file'
+      ? m.settings_pathField_browseFile_ariaLabel()
+      : m.settings_pathField_browseDirectory_ariaLabel(),
   );
-  const resolvedClearAriaLabel = $derived(
-    clearAriaLabel ?? m.settings_pathField_clear_ariaLabel(),
-  );
+  const resolvedClearAriaLabel = $derived(m.settings_pathField_clear_ariaLabel());
 
   function commit(path: string) {
     value = path;

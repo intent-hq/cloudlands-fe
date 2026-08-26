@@ -4,7 +4,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { tick } from 'svelte';
-import ProviderPathConfig from './ProviderPathConfig.svelte';
+import ProviderPathConfigHost from './__tests__/ProviderPathConfigHost.svelte';
 import { warmImport } from '../../../test/warm-import';
 
 const mocks = vi.hoisted(() => ({
@@ -53,10 +53,6 @@ const flush = async () => {
   await tick();
 };
 
-async function openPopup(providerName: string) {
-  await fireEvent.click(screen.getByTitle(`Configure ${providerName} path`));
-}
-
 // Pre-warm the component module graph so the cold dynamic import is not
 // billed to the first test's timeout (intent-hq/monorepo#1464).
 warmImport(() => import('../workspace/sidebar/__tests__/mocks/MockSimple.svelte'));
@@ -75,14 +71,12 @@ describe('ProviderPathConfig', () => {
     cleanup();
   });
 
-  it('supports a controlled open state without rendering the folder trigger', () => {
-    render(ProviderPathConfig, {
+  it('renders from a controlled open host without a folder trigger', () => {
+    render(ProviderPathConfigHost, {
       props: {
         providerId: 'claude-code',
         providerName: 'Claude Code',
         cliCommand: 'claude-agent-acp',
-        open: true,
-        showTrigger: false,
       },
     });
 
@@ -90,13 +84,12 @@ describe('ProviderPathConfig', () => {
     expect(screen.getByText('Claude Code CLI Path')).toBeTruthy();
   });
 
-  it('anchors the trigger-less controlled panel on-screen instead of off-page', async () => {
-    // Regression: with showTrigger=false there is no Menu.Trigger, so without
-    // a customAnchor bits-ui's floating layer never gets a reference element,
-    // isPositioned stays false, and the content wrapper keeps the off-page
-    // measuring transform translate(0, -200%) forever (rendering the panel
-    // off-screen in a real browser). With the anchor wired, positioning
-    // resolves and the measuring transform is replaced.
+  it('anchors the controlled triggerless panel on-screen instead of off-page', async () => {
+    // Regression: without Menu.Trigger or a customAnchor, bits-ui's floating
+    // layer never gets a reference element, isPositioned stays false, and the
+    // content wrapper keeps the off-page measuring transform
+    // translate(0, -200%) forever. With the anchor wired, positioning resolves
+    // and the measuring transform is replaced.
     //
     // jsdom returns an empty list from getClientRects() for every element,
     // which trips bits-ui's isReferenceHidden guard before positioning runs;
@@ -109,13 +102,11 @@ describe('ProviderPathConfig', () => {
         return [rect] as unknown as DOMRectList;
       });
     try {
-      render(ProviderPathConfig, {
+      render(ProviderPathConfigHost, {
         props: {
           providerId: 'claude-code',
           providerName: 'Claude Code',
           cliCommand: 'claude-agent-acp',
-          open: true,
-          showTrigger: false,
         },
       });
 
@@ -132,8 +123,8 @@ describe('ProviderPathConfig', () => {
     }
   });
 
-  it('renders the full auto-detected path wrapped, not truncated', async () => {
-    render(ProviderPathConfig, {
+  it('renders the full auto-detected path wrapped, not truncated', () => {
+    render(ProviderPathConfigHost, {
       props: {
         providerId: 'claude-code',
         providerName: 'Claude Code',
@@ -142,8 +133,6 @@ describe('ProviderPathConfig', () => {
         isInstalled: true,
       },
     });
-    await openPopup('Claude Code');
-
     const code = screen.getByText(LONG_PATH);
     expect(code.textContent).toBe(LONG_PATH);
     expect(code.className).toContain('break-all');
@@ -151,8 +140,8 @@ describe('ProviderPathConfig', () => {
     expect(screen.getByText('Auto-detected at')).toBeTruthy();
   });
 
-  it('keeps the auto-detected row visible and marked when an override is configured', async () => {
-    render(ProviderPathConfig, {
+  it('keeps the auto-detected row visible and marked when an override is configured', () => {
+    render(ProviderPathConfigHost, {
       props: {
         providerId: 'claude-code',
         providerName: 'Claude Code',
@@ -162,18 +151,16 @@ describe('ProviderPathConfig', () => {
         isInstalled: true,
       },
     });
-    await openPopup('Claude Code');
-
     const input = screen.getByPlaceholderText(LONG_PATH) as HTMLInputElement;
     expect(input.value).toBe('/custom/bin/claude-agent-acp');
     expect(screen.getByText(LONG_PATH)).toBeTruthy();
     expect(screen.getByText('(overridden by the path above)')).toBeTruthy();
   });
 
-  it('renders the overridable unsloth CLI row and the read-only opencode runtime row (unsloth)', async () => {
+  it('renders the overridable unsloth CLI row and the read-only opencode runtime row (unsloth)', () => {
     const opencodePath = '/Users/clement/.opencode/bin/opencode';
     const unslothPath = '/Users/clement/.local/bin/unsloth';
-    render(ProviderPathConfig, {
+    render(ProviderPathConfigHost, {
       props: {
         providerId: 'unsloth',
         providerName: 'Unsloth',
@@ -184,8 +171,6 @@ describe('ProviderPathConfig', () => {
         isInstalled: true,
       },
     });
-    await openPopup('Unsloth');
-
     expect(screen.getByText('Auto-detected unsloth at')).toBeTruthy();
     expect(screen.getByText(unslothPath)).toBeTruthy();
     expect(screen.getByText('opencode runtime at')).toBeTruthy();
@@ -194,10 +179,10 @@ describe('ProviderPathConfig', () => {
     expect(screen.queryByText('Auto-detected at')).toBeNull();
   });
 
-  it('marks only the overridable unsloth CLI row as overridden for dual-binary providers', async () => {
+  it('marks only the overridable unsloth CLI row as overridden for dual-binary providers', () => {
     const opencodePath = '/Users/clement/.opencode/bin/opencode';
     const unslothPath = '/Users/clement/.local/bin/unsloth';
-    render(ProviderPathConfig, {
+    render(ProviderPathConfigHost, {
       props: {
         providerId: 'unsloth',
         providerName: 'Unsloth',
@@ -209,8 +194,6 @@ describe('ProviderPathConfig', () => {
         isInstalled: true,
       },
     });
-    await openPopup('Unsloth');
-
     const input = screen.getByPlaceholderText(unslothPath) as HTMLInputElement;
     expect(input.value).toBe('/custom/bin/unsloth');
     expect(screen.getByText(unslothPath)).toBeTruthy();
@@ -218,9 +201,9 @@ describe('ProviderPathConfig', () => {
     expect(screen.getAllByText('(overridden by the path above)')).toHaveLength(1);
   });
 
-  it('shows only the runtime row when the unsloth CLI did not resolve', async () => {
+  it('shows only the runtime row when the unsloth CLI did not resolve', () => {
     const opencodePath = '/Users/clement/.opencode/bin/opencode';
-    render(ProviderPathConfig, {
+    render(ProviderPathConfigHost, {
       props: {
         providerId: 'unsloth',
         providerName: 'Unsloth',
@@ -230,8 +213,6 @@ describe('ProviderPathConfig', () => {
         isInstalled: false,
       },
     });
-    await openPopup('Unsloth');
-
     expect(screen.getByPlaceholderText('Path to unsloth')).toBeTruthy();
     expect(screen.getByText('opencode runtime at')).toBeTruthy();
     expect(screen.getByText(opencodePath)).toBeTruthy();
@@ -239,9 +220,9 @@ describe('ProviderPathConfig', () => {
     expect(screen.queryByText('Auto-detected unsloth at')).toBeNull();
   });
 
-  it('shows the runtime row without a path when the runtime binary did not resolve', async () => {
+  it('shows the runtime row without a path when the runtime binary did not resolve', () => {
     const unslothPath = '/Users/clement/.local/bin/unsloth';
-    render(ProviderPathConfig, {
+    render(ProviderPathConfigHost, {
       props: {
         providerId: 'unsloth',
         providerName: 'Unsloth',
@@ -251,16 +232,14 @@ describe('ProviderPathConfig', () => {
         isInstalled: true,
       },
     });
-    await openPopup('Unsloth');
-
     expect(screen.getByText('Auto-detected unsloth at')).toBeTruthy();
     expect(screen.getByText('opencode runtime')).toBeTruthy();
     expect(screen.getByText("(follows the opencode provider's configuration)")).toBeTruthy();
     expect(screen.queryByText('opencode runtime at')).toBeNull();
   });
 
-  it('renders the path as a readonly field with a file picker, not a free-text input', async () => {
-    render(ProviderPathConfig, {
+  it('renders the path as a readonly field with a file picker, not a free-text input', () => {
+    render(ProviderPathConfigHost, {
       props: {
         providerId: 'claude-code',
         providerName: 'Claude Code',
@@ -269,8 +248,6 @@ describe('ProviderPathConfig', () => {
         isInstalled: true,
       },
     });
-    await openPopup('Claude Code');
-
     const input = screen.getByPlaceholderText(LONG_PATH) as HTMLInputElement;
     expect(input.readOnly).toBe(true);
     expect(screen.getByRole('button', { name: 'Choose file' })).toBeTruthy();
@@ -279,7 +256,7 @@ describe('ProviderPathConfig', () => {
   it('picking a file read-merge-writes the override into providers.paths', async () => {
     mocks.mockSettingsGet.mockResolvedValue({ value: { codex: '/old/codex' } });
     const onPathChange = vi.fn();
-    render(ProviderPathConfig, {
+    render(ProviderPathConfigHost, {
       props: {
         providerId: 'claude-code',
         providerName: 'Claude Code',
@@ -289,8 +266,6 @@ describe('ProviderPathConfig', () => {
         onPathChange,
       },
     });
-    await openPopup('Claude Code');
-
     await fireEvent.click(screen.getByRole('button', { name: 'Choose file' }));
     await flush();
 
@@ -324,7 +299,7 @@ describe('ProviderPathConfig', () => {
     // step below uses Escape, which is layout-independent.
     const queryMenu = () => screen.queryByRole('menu', { hidden: true });
 
-    render(ProviderPathConfig, {
+    render(ProviderPathConfigHost, {
       props: {
         providerId: 'claude-code',
         providerName: 'Claude Code',
@@ -333,7 +308,6 @@ describe('ProviderPathConfig', () => {
         isInstalled: true,
       },
     });
-    await openPopup('Claude Code');
     expect(queryMenu()).toBeTruthy();
 
     // The service mock routes to openModal (remote case).
@@ -372,7 +346,7 @@ describe('ProviderPathConfig', () => {
       value: { 'claude-code': '/custom/bin/claude-agent-acp', codex: '/old/codex' },
     });
     const onPathChange = vi.fn();
-    render(ProviderPathConfig, {
+    render(ProviderPathConfigHost, {
       props: {
         providerId: 'claude-code',
         providerName: 'Claude Code',
@@ -383,8 +357,6 @@ describe('ProviderPathConfig', () => {
         onPathChange,
       },
     });
-    await openPopup('Claude Code');
-
     await fireEvent.click(screen.getByRole('button', { name: 'Clear path and restore default' }));
     await flush();
 

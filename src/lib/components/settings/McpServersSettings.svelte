@@ -58,9 +58,6 @@
   const advancedSaveStatus$ = selectMcpAdvancedSaveStatus();
   const advancedSaveError$ = selectMcpAdvancedSaveError();
 
-  // Props
-  let { isAuggieProvider = true }: { isAuggieProvider?: boolean } = $props();
-
   // UI state
   let showAddPanel = $state(false);
   let addMode = $state<'form' | 'import'>('form');
@@ -344,25 +341,14 @@
   );
 </script>
 
-<div class="flex flex-col gap-6">
+<section class="bg-card rounded-xl divide-y divide-border overflow-hidden">
   <!-- Enable User MCP Servers Toggle -->
-  <section>
+  <div class="px-6 py-5">
     <div class="flex items-center justify-between">
       <div>
         <p class="text-sm font-medium text-foreground">{m.settings_mcpServers_title()}</p>
-        <p class="text-xs text-subtle">
-          {m.settings_mcpServers_description()}
-          <button
-            type="button"
-            class="text-primary hover:underline cursor-pointer"
-            onclick={(e) => {
-              handleLink('https://docs.augmentcode.com/setup-augment/mcp', {
-                workspaceId,
-                event: e,
-              });
-            }}>{m.settings_mcpServers_learnMore()}</button
-          >
-        </p>
+        <p class="text-xs text-subtle">{m.settings_mcpServers_description()}</p>
+        <p class="text-xs text-subtle">{m.settings_mcpServers_newAgentsOnlyNote()}</p>
       </div>
       <Toggle
         pressed={$enabled$}
@@ -373,25 +359,14 @@
         ariaLabel={m.settings_mcpServers_title()}
       />
     </div>
-    {#if !isAuggieProvider}
-      <p class="text-xs text-subtle mt-2">
-        {m.settings_mcpServers_auggieOnlyNote()}
-      </p>
-    {/if}
-  </section>
+  </div>
 
   {#if $enabled$}
-    <div transition:slide={{ duration: 200 }} class="space-y-6">
-      <div class="mx-0 px-3 py-2 bg-muted/50 rounded-md border border-border">
-        <p class="text-xs text-subtle">
-          {m.settings_mcpServers_newAgentsOnlyNote()}
-        </p>
-      </div>
-
+    <div transition:slide={{ duration: 200 }} class="px-6 py-5 space-y-6">
       <!-- Combined MCP Servers Section -->
-      <section class="bg-card rounded-xl overflow-hidden">
+      <section>
         <!-- Header with Add button -->
-        <div class="flex items-center justify-between px-6 py-4 border-b border-border">
+        <div class="flex items-center justify-between py-4">
           <div>
             <p class="text-sm font-medium text-foreground">
               {m.settings_mcpServers_sectionTitle()}
@@ -419,7 +394,7 @@
         <!-- Expandable Add Panel -->
         {#if showAddPanel}
           <div transition:slide={{ duration: 200 }} class="border-b border-border">
-            <div class="px-6 py-4">
+            <div class="py-4">
               <Header size={2} title={m.settings_mcpServers_addPanelTitle()} class="mb-3" />
               <!-- Mode Toggle -->
               <div class="flex gap-1 p-1 bg-muted rounded-lg w-fit mb-4">
@@ -461,7 +436,7 @@
         <!-- Edit Panel (when editing a server) -->
         {#if editingServer && editFormState}
           <div transition:slide={{ duration: 200 }} class="border-b border-border bg-muted/20">
-            <div class="px-6 py-4">
+            <div class="py-4">
               <h3 class="text-sm font-medium mb-4">
                 {m.settings_mcpServers_editServerTitle({ name: editingServer.name })}
               </h3>
@@ -476,7 +451,7 @@
         {/if}
 
         <!-- Configured Servers List -->
-        <div class="px-6 py-4">
+        <div class="py-4">
           {#if $loading$}
             <!-- Skeleton loaders for configured servers -->
             <div class="space-y-3 mb-6">
@@ -495,7 +470,7 @@
               {/each}
             </div>
             <!-- Skeleton loaders for quick install -->
-            <div class="pt-4 border-t border-border">
+            <div class="pt-4">
               <div class="flex items-center gap-2 mb-3">
                 <Skeleton class="h-4 w-20" />
                 <Skeleton class="h-3 w-16" />
@@ -579,7 +554,7 @@
           {/if}
 
           <!-- Easy MCP Installation (below configured servers) -->
-          <div class="pt-4 border-t border-border">
+          <div class="pt-4">
             <div class="flex items-center gap-2 mb-3">
               <span class="text-sm font-medium text-foreground"
                 >{m.settings_mcpServers_quickInstall()}</span
@@ -700,10 +675,10 @@
       </section>
 
       <!-- Advanced: Settings JSON Editor (daemon `mcp.servers` structured config) -->
-      <section class="bg-card rounded-xl overflow-hidden">
+      <section>
         <button
           type="button"
-          class="w-full flex items-center justify-between px-6 py-4 hover:bg-muted/30 transition-colors cursor-pointer"
+          class="w-full flex items-center justify-between py-4 hover:bg-muted/30 transition-colors cursor-pointer"
           onclick={handleToggleAdvanced}
         >
           <div class="text-left">
@@ -725,7 +700,7 @@
         {#if showAdvanced}
           <div
             transition:slide={{ duration: 200 }}
-            class="px-6 pb-4 space-y-3 border-t border-border pt-4"
+            class="pb-4 space-y-3 border-t border-border pt-4"
           >
             <textarea
               class="w-full h-64 px-3 py-2 bg-background border border-border rounded-md text-sm font-mono text-foreground resize-y focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/10"
@@ -776,16 +751,16 @@
       </section>
     </div>
   {/if}
+</section>
 
-  <!-- Import success toast -->
-  {#if showImportSuccess}
-    <div
-      class="fixed bottom-4 right-4 px-4 py-3 bg-green-600 text-white text-sm rounded-lg shadow-lg z-50"
-      transition:slide={{ duration: 150 }}
-    >
-      {importedCount === 1
-        ? m.settings_mcpServers_importSuccess_one()
-        : m.settings_mcpServers_importSuccess_many({ count: formatInteger(importedCount) })}
-    </div>
-  {/if}
-</div>
+<!-- Import success toast -->
+{#if showImportSuccess}
+  <div
+    class="fixed bottom-4 right-4 px-4 py-3 bg-green-600 text-white text-sm rounded-lg shadow-lg z-50"
+    transition:slide={{ duration: 150 }}
+  >
+    {importedCount === 1
+      ? m.settings_mcpServers_importSuccess_one()
+      : m.settings_mcpServers_importSuccess_many({ count: formatInteger(importedCount) })}
+  </div>
+{/if}

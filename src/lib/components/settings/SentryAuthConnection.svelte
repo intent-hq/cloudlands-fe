@@ -7,7 +7,6 @@
     selectSentryError,
   } from '$store/renderer/slices/sentry-auth/sentry-auth-selectors';
   import {
-    initializeSentryAuth,
     connectSentry,
     logoutSentry,
     clearSentryError,
@@ -17,18 +16,11 @@
   import { Button } from '$lib/components/ui/button';
   import { Input } from '$lib/components/ui/input';
   import { faCheck } from '@fortawesome/free-solid-svg-icons';
-  import { onMount } from 'svelte';
   import Fa from 'svelte-fa';
   import { m } from '$shared/paraglide/messages.js';
   import { store as appStore } from '$store/renderer/store';
   import { getWorkspaceRouteContext } from '$lib/utils/workspace-route-context';
 
-  interface Props {
-    /** Skip initialization if parent already initialized the store */
-    skipInitialize?: boolean;
-  }
-
-  let { skipInitialize = false }: Props = $props();
   const workspaceId = getWorkspaceRouteContext()?.workspaceId ?? undefined;
   const isAuthenticated$ = selectSentryIsAuthenticated();
   const organization$ = selectSentryOrganization();
@@ -40,12 +32,6 @@
   let sentryOrg = $state('');
   let sentryToken = $state('');
   let pendingConnect = $state(false);
-
-  onMount(() => {
-    if (!skipInitialize) {
-      appStore.dispatch(initializeSentryAuth());
-    }
-  });
 
   // When connect completes successfully, clear the form
   $effect(() => {

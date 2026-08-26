@@ -58,6 +58,8 @@ afterEach(cleanup);
 describe('ColorThemeSettings', () => {
   it('uses canonical radio choices with selected and roving-focus semantics', async () => {
     render(ColorThemeSettings);
+    expect(screen.getByText('Color Palette')).toBeTruthy();
+    expect(screen.getByRole('group', { name: 'Color Palette' })).toBeTruthy();
     const defaultChoice = screen.getByRole('radio', { name: 'Default' });
     const presetChoice = screen.getByRole('radio', { name: themePresets[0].label });
 

@@ -29,34 +29,39 @@ const APP_UI_TARGETS: AppUiTarget[] = [
   },
   settingsTarget({
     id: 'quickActions.defaultModel',
-    tab: 'agents',
+    tab: 'agent-behavior',
     // The hash is UI-only, so the pre-rename alias stays resolvable for chat
     // NavLinks and bookmarks minted before monorepo#1729.
-    hashAliases: ['default-model', 'quickActions.defaultModel', 'backgroundAgents.defaultModel'],
-    scrollSelector: '#default-model',
+    hashAliases: [
+      'default-model',
+      'global-instructions',
+      'quickActions.defaultModel',
+      'backgroundAgents.defaultModel',
+    ],
+    scrollSelector: '#global-instructions',
     highlightSelector: '[data-highlight-id="quickActions.defaultModel"]',
     label: 'Settings: Default model',
-    route: '/settings?tab=agents#default-model',
+    route: '/settings?tab=agent-behavior#global-instructions',
     description: 'Default AI behavior model selection.',
   }),
   settingsTarget({
     id: 'agents',
-    tab: 'agents',
+    tab: 'agent-behavior',
     hashAliases: ['agents', 'specialists', 'all-agents'],
-    scrollSelector: '#specialists',
-    highlightSelector: '[data-highlight-id="specialists"]',
-    label: 'Settings: Agents',
-    route: '/settings?tab=agents#specialists',
-    description: 'Agent and specialist settings.',
+    scrollSelector: '#global-instructions',
+    highlightSelector: '[data-highlight-id="quickActions.defaultModel"]',
+    label: 'Settings: Agent Behavior',
+    route: '/settings?tab=agent-behavior#global-instructions',
+    description: 'Global agent instructions and defaults.',
   }),
   settingsTarget({
     id: 'create-specialist',
-    tab: 'agents',
+    tab: 'specialists',
     hashAliases: ['create-specialist'],
-    scrollSelector: '#specialists',
-    highlightSelector: '[data-highlight-id="specialists"]',
+    scrollSelector: '#create-specialist',
+    highlightSelector: '[data-highlight-id="create-specialist"]',
     label: 'Settings: Create specialist',
-    route: '/settings?tab=agents&view=create-specialist#create-specialist',
+    route: '/settings?tab=specialists&view=create-specialist#create-specialist',
     description: 'Create-specialist entry point.',
   }),
   settingsTarget({
@@ -80,18 +85,34 @@ const APP_UI_TARGETS: AppUiTarget[] = [
     description: 'Connected integrations settings.',
   }),
   ...[
-    ['mcp-servers', 'MCP Servers', 'MCP server configuration.', 'tools'],
-    ['git-workspace', 'Git & Workspace', 'Git and workspace defaults.', 'git-workspace'],
-    ['cli-optimization', 'CLI Optimization', 'RTK/CLI optimization settings.', 'tools'],
-    ['utility-default-model', 'Quick Actions', 'Utility/default model settings.', 'tools'],
-    ['notifications', 'Notifications', 'Notification preferences.', 'general'],
-    ['open-in', 'Open In', 'External editor/app launch preferences.', 'general'],
+    ['voice', 'Voice Dictation', 'Voice dictation settings.', 'input'],
+    ['keyboard-shortcuts', 'Keyboard Shortcuts', 'Keyboard shortcuts reference.', 'input'],
+    ['mcp-servers', 'MCP Servers', 'MCP server configuration.', 'connections'],
+    ['git-workspace', 'Git & Workspace', 'Git and workspace defaults.', 'setup'],
+    ['git', 'Git', 'Git defaults.', 'setup'],
+    ['shell', 'Shell', 'Shell and CLI optimization settings.', 'setup'],
+    ['workspace', 'Workspace', 'Workspace defaults.', 'setup'],
+    ['cli-optimization', 'CLI Optimization', 'RTK/CLI optimization settings.', 'setup'],
+    ['workspace-api', 'Workspace API', 'Workspace API output settings.', 'advanced'],
+    ['utility-default-model', 'Quick Actions', 'Utility/default model settings.', 'providers'],
+    ['notifications', 'Notifications', 'Notification preferences.', 'app-behavior'],
+    ['updates', 'Updates', 'Application update preferences.', 'app-behavior'],
+    ['open-in', 'Open In', 'External editor/app launch preferences.', 'app-behavior'],
     [
       'github-link-action',
       'GitHub Links',
       'GitHub issue and pull request link behavior.',
-      'general',
+      'app-behavior',
     ],
+    ['agent-features', 'Agent Features', 'Agent feature settings.', 'agent-behavior'],
+    ['font-style', 'Font style', 'Font style settings.', 'display'],
+    ['language', 'Language', 'Application language settings.', 'display'],
+    ['agent-backend', 'Agent Backend', 'Agent backend settings.', 'advanced'],
+    ['websocket-api', 'WebSocket API', 'WebSocket API settings.', 'advanced'],
+    ['connection', 'Connection', 'Daemon connection details.', 'advanced'],
+    ['hardware', 'Hardware', 'Hardware integration settings.', 'advanced'],
+    ['data', 'Data', 'Data import settings.', 'advanced'],
+    ['developer', 'Developer', 'Development-only settings.', 'advanced'],
   ].map(([id, label, description, tab]) =>
     settingsTarget({
       id,
@@ -106,12 +127,12 @@ const APP_UI_TARGETS: AppUiTarget[] = [
   ),
   settingsTarget({
     id: 'appearance',
-    tab: 'appearance',
+    tab: 'display',
     hashAliases: ['appearance', 'theme'],
     scrollSelector: '#theme',
-    highlightSelector: '[data-highlight-id="theme"]',
+    highlightSelector: '[data-highlight-id="appearance"]',
     label: 'Settings: Appearance',
-    route: '/settings?tab=appearance#theme',
+    route: '/settings?tab=display#theme',
     description: 'Theme mode controls.',
   }),
   ...[
@@ -122,12 +143,12 @@ const APP_UI_TARGETS: AppUiTarget[] = [
   ].map(([id, label, description]) =>
     settingsTarget({
       id,
-      tab: 'appearance',
+      tab: 'display',
       hashAliases: [id],
       scrollSelector: `#${id}`,
       highlightSelector: `[data-highlight-id="${id}"]`,
       label: `Settings: ${label}`,
-      route: `/settings?tab=appearance#${id}`,
+      route: `/settings?tab=display#${id}`,
       description,
     }),
   ),
@@ -136,7 +157,7 @@ const APP_UI_TARGETS: AppUiTarget[] = [
     tab: 'advanced',
     hashAliases: ['general', 'reset'],
     scrollSelector: '#reset',
-    highlightSelector: '[data-highlight-id="reset"]',
+    highlightSelector: '[data-highlight-id="general"]',
     label: 'Settings: Advanced',
     route: '/settings?tab=advanced#reset',
     description: 'Advanced settings and reset controls.',
@@ -154,10 +175,10 @@ const APP_UI_TARGETS: AppUiTarget[] = [
   },
   {
     id: 'specialist-entry',
-    tab: 'agents',
+    tab: 'specialists',
     highlightSelector: '[data-highlight-id^="specialist-"]',
     label: 'Specialist entry',
-    route: '/settings?tab=agents&specialist={specialistId}#specialist-{specialistId}',
+    route: '/settings?tab=specialists&specialist={specialistId}#specialist-{specialistId}',
     category: 'specialist',
     description: 'A specific specialist row in settings.',
     dynamic: true,
@@ -169,6 +190,20 @@ function normalizeHash(hash: string): string {
   const hashIndex = hash.indexOf('#');
   const rawHash = hashIndex >= 0 ? hash.slice(hashIndex + 1) : hash;
   return decodeURIComponent(rawHash.replace(/^#/, '')).trim();
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function matchesIdPattern(value: string, pattern: string): boolean {
+  const placeholders = pattern.match(/\{[^}]+\}/g);
+  if (!placeholders?.length) return value === pattern;
+  const source = pattern
+    .split(/\{[^}]+\}/g)
+    .map(escapeRegExp)
+    .join('[^/]+');
+  return new RegExp(`^${source}$`).test(value);
 }
 
 function getRouteHash(route: string): string | null {
@@ -184,9 +219,19 @@ function getRouteHash(route: string): string | null {
 export function resolveHashToTarget(hash: string): AppUiTarget | undefined {
   const normalized = normalizeHash(hash);
   if (!normalized) return undefined;
-  return APP_UI_TARGETS.find(
+  const exactTarget = APP_UI_TARGETS.find(
     (target) => target.id === normalized || target.hashAliases?.includes(normalized),
   );
+  if (exactTarget) return exactTarget;
+
+  const dynamicTarget = APP_UI_TARGETS.find(
+    (target) =>
+      target.route &&
+      target.dynamic &&
+      target.idPattern &&
+      matchesIdPattern(normalized, target.idPattern),
+  );
+  return dynamicTarget ? { ...dynamicTarget, id: normalized } : undefined;
 }
 
 export function getAppUiTargets(): AppUiTarget[] {
@@ -199,7 +244,8 @@ export function getAppUiTargets(): AppUiTarget[] {
 export function getHighlightIdFromRoute(route: string): string | null {
   const hash = getRouteHash(route);
   if (!hash) return null;
-  return resolveHashToTarget(hash)?.id ?? hash;
+  const target = resolveHashToTarget(hash);
+  return target?.dynamic ? hash : (target?.id ?? hash);
 }
 
 function getRoutePathname(route: string): string {

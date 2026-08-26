@@ -18,18 +18,10 @@
     selectLinearRequiresDaemonAuth,
   } from '$store/renderer/slices/linear-auth/linear-auth-selectors';
   import {
-    initializeLinearAuth,
     connectLinear,
     logoutLinear,
   } from '$store/renderer/slices/linear-auth/linear-auth-slice';
   import Input from '$lib/components/ui/input/input.svelte';
-
-  interface Props {
-    /** Skip initialization if parent already initialized the store */
-    skipInitialize?: boolean;
-  }
-
-  let { skipInitialize = false }: Props = $props();
 
   const isAuthenticated$ = selectLinearIsAuthenticated();
   const isAuthenticating$ = selectLinearIsAuthenticating();
@@ -50,9 +42,6 @@
   const LINEAR_ISSUE_FILTER_STORAGE_KEY = 'linearIssueFilter';
 
   onMount(() => {
-    if (!skipInitialize) {
-      appStore.dispatch(initializeLinearAuth());
-    }
     loadFilter();
   });
 

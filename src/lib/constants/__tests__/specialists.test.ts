@@ -45,7 +45,7 @@ describe('SPECIALISTS', () => {
     const chief = getSpecialistById('chief-of-staff');
     expect(chief?.defaultBehaviorPrompt).toMatch(/### NavLink Format/);
     expect(chief?.defaultBehaviorPrompt).toMatch(/ws\.app\.ui\.targets\(\)/);
-    expect(chief?.defaultBehaviorPrompt).toMatch(/\/settings\?tab=tools#utility-default-model/);
+    expect(chief?.defaultBehaviorPrompt).toMatch(/\/settings\?tab=providers#utility-default-model/);
     expect(chief?.defaultBehaviorPrompt).toMatch(/bare path/i);
     expect(chief?.roleReminder).toMatch(/canonical route/i);
     expect(chief?.roleReminder).toMatch(/hash fragment/i);

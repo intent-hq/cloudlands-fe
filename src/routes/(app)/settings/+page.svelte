@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { browser } from '$app/environment';
   import { page } from '$app/state';
   import {
     selectIsReadyToInstall,
@@ -22,6 +23,7 @@
   import OpenInAppsSettings from '$lib/components/settings/OpenInAppsSettings.svelte';
   import LanguageSettings from '$lib/components/settings/LanguageSettings.svelte';
   import GitHubLinkSettings from '$lib/components/settings/GitHubLinkSettings.svelte';
+  import KeyboardShortcutsSettings from '$lib/components/settings/KeyboardShortcutsSettings.svelte';
   import McpServersSettings from '$lib/components/settings/McpServersSettings.svelte';
   import BackgroundAgentSettings from '$lib/components/settings/BackgroundAgentSettings.svelte';
   import ColorThemeSettings from '$lib/components/settings/ColorThemeSettings.svelte';
@@ -32,12 +34,12 @@
   import WorkspaceApiSettings from '$lib/components/settings/WorkspaceApiSettings.svelte';
   import AgentBackendSettings from '$lib/components/settings/AgentBackendSettings.svelte';
   import AgentFeaturesSettings from '$lib/components/settings/AgentFeaturesSettings.svelte';
+  import DefaultAgentModelSettings from '$lib/components/settings/DefaultAgentModelSettings.svelte';
   import Button from '$lib/components/ui/button/button.svelte';
   import CopyButton from '$lib/components/ui/CopyButton.svelte';
   import { highlightTarget } from '$lib/components/ui/highlight/highlight-target';
   import Toggle from '$lib/components/ui/toggle/toggle.svelte';
   import { selectDaemonTransport } from '$store/renderer/slices/daemon-health/daemon-health-selectors';
-  import { selectIsProviderActive } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
   import { selectThemePreference } from '$store/renderer/slices/theme/theme-selectors';
   import { requestThemePreferenceChange } from '$store/renderer/slices/theme/theme-slice';
   import type { ThemePreference } from '$store/renderer/slices/theme/theme-types';
@@ -63,6 +65,7 @@
 
   import { Select } from '$lib/components/ui/select';
   import { m } from '$shared/paraglide/messages.js';
+  import { resolveHashToTarget } from '$shared/app-ui-targets';
 
   import { isMacPlatform } from '$lib/utils/shortcuts';
   import { isElectronPlatform } from '$lib/utils/platform-capabilities';
@@ -100,54 +103,67 @@
   );
 
   type SettingsTab =
-    | 'general'
-    | 'appearance'
+    | 'display'
+    | 'app-behavior'
+    | 'agent-behavior'
     | 'providers'
-    | 'agents'
     | 'connections'
-    | 'git-workspace'
-    | 'tools'
-    | 'advanced';
+    | 'setup'
+    | 'advanced'
+    | 'input'
+    | 'specialists';
 
   const validTabs: SettingsTab[] = [
-    'general',
-    'appearance',
+    'display',
+    'app-behavior',
+    'agent-behavior',
     'providers',
-    'agents',
     'connections',
-    'git-workspace',
-    'tools',
+    'setup',
     'advanced',
+    'input',
+    'specialists',
   ];
 
+  function isSettingsTab(tab: string): tab is SettingsTab {
+    return validTabs.includes(tab as SettingsTab);
+  }
+
   const hashToTab: Record<string, SettingsTab> = {
-    'default-model': 'agents',
-    specialists: 'agents',
-    agents: 'agents',
-    'all-agents': 'agents',
-    'create-specialist': 'agents',
-    'quickActions.defaultModel': 'agents',
-    'backgroundAgents.defaultModel': 'agents',
+    'default-model': 'agent-behavior',
+    'global-instructions': 'agent-behavior',
+    specialists: 'agent-behavior',
+    agents: 'agent-behavior',
+    'all-agents': 'agent-behavior',
+    'create-specialist': 'specialists',
+    'quickActions.defaultModel': 'agent-behavior',
+    'backgroundAgents.defaultModel': 'agent-behavior',
     providers: 'providers',
     integrations: 'connections',
-    voice: 'connections',
-    'git-workspace': 'git-workspace',
-    notifications: 'general',
-    theme: 'appearance',
-    appearance: 'appearance',
-    'font-style': 'appearance',
-    'color-theme': 'appearance',
-    'note-font': 'appearance',
-    'agent-chat-font': 'appearance',
-    'code-font': 'appearance',
-    'open-in': 'general',
-    'github-link-action': 'general',
-    'mcp-servers': 'tools',
-    'cli-optimization': 'tools',
-    'workspace-api': 'tools',
-    'agent-features': 'tools',
+    voice: 'input',
+    'keyboard-shortcuts': 'input',
+    'git-workspace': 'setup',
+    git: 'setup',
+    shell: 'setup',
+    workspace: 'setup',
+    notifications: 'app-behavior',
+    updates: 'app-behavior',
+    language: 'display',
+    theme: 'display',
+    appearance: 'display',
+    'font-style': 'display',
+    'color-theme': 'display',
+    'note-font': 'display',
+    'agent-chat-font': 'display',
+    'code-font': 'display',
+    'open-in': 'app-behavior',
+    'github-link-action': 'app-behavior',
+    'mcp-servers': 'connections',
+    'cli-optimization': 'setup',
+    'workspace-api': 'advanced',
+    'agent-features': 'agent-behavior',
     'agent-backend': 'advanced',
-    'utility-default-model': 'tools',
+    'utility-default-model': 'providers',
     hardware: 'advanced',
     'websocket-api': 'advanced',
     connection: 'advanced',
@@ -157,28 +173,31 @@
     developer: 'advanced',
   };
 
-  function resolveLegacyTab(tabParam: string, targetId: string): SettingsTab | undefined {
-    if (tabParam === 'accounts') {
-      return targetId === 'integrations' || targetId === 'voice' ? 'connections' : 'providers';
-    }
-    if (tabParam === 'fonts-colors' || tabParam === 'interface-system') return 'appearance';
-    if (tabParam === 'setup') {
-      const targetTab = hashToTab[targetId];
-      // `advanced` is here because Agent Backend moved off Tools: a shipped
-      // `?tab=setup#agent-backend` link must still land on the tab that now
-      // renders that anchor, not on a Tools pane without it.
-      return targetTab === 'git-workspace' || targetTab === 'general' || targetTab === 'advanced'
-        ? targetTab
-        : 'tools';
-    }
+  function resolveHashTab(targetId: string): SettingsTab | undefined {
+    const targetTab = hashToTab[targetId] ?? resolveHashToTarget(targetId)?.tab;
+    return targetTab && isSettingsTab(targetTab) ? targetTab : undefined;
+  }
+
+  function resolveLegacyTab(tabParam: string): SettingsTab | undefined {
+    if (tabParam === 'accounts') return 'providers';
+    if (
+      tabParam === 'general' ||
+      tabParam === 'appearance' ||
+      tabParam === 'fonts-colors' ||
+      tabParam === 'interface-system'
+    )
+      return 'display';
+    if (tabParam === 'behavior' || tabParam === 'notifications') return 'app-behavior';
+    if (tabParam === 'agents') return 'agent-behavior';
+    if (tabParam === 'system' || tabParam === 'tools' || tabParam === 'git-workspace')
+      return 'setup';
   }
 
   function resolveTabFromUrl(tabParam: string | null, targetId: string): SettingsTab {
-    if (tabParam && validTabs.includes(tabParam as SettingsTab)) {
-      return tabParam as SettingsTab;
-    }
-    if (tabParam) return resolveLegacyTab(tabParam, targetId) ?? hashToTab[targetId] ?? 'general';
-    return hashToTab[targetId] ?? 'general';
+    const targetTab = resolveHashTab(targetId);
+    if (targetTab) return targetTab;
+    if (tabParam && isSettingsTab(tabParam)) return tabParam;
+    return (tabParam && resolveLegacyTab(tabParam)) || 'display';
   }
 
   function getInitialTab(): SettingsTab {
@@ -211,29 +230,63 @@
   });
 
   // Get specialist ID from URL query parameter for auto-selecting
-  const initialSpecialistId = $derived(page.url.searchParams.get('specialist'));
+  const specialistIdFromUrl = $derived(page.url.searchParams.get('specialist'));
   const settingsWorkspaceId = $derived(
     workspaceIdFromRouteParam(page.url.searchParams.get('workspaceId') ?? undefined),
   );
   // Get view parameter for direct navigation (e.g., ?view=create-specialist)
-  const initialView = $derived(page.url.searchParams.get('view'));
+  const viewFromUrl = $derived(page.url.searchParams.get('view'));
 
   // Agents sidebar view state
   let aiBehaviorView = $state<AIBehaviorView>({ type: 'system-prompt' });
 
-  // Initialize view from URL parameter if present (only on initial load)
-  let hasInitializedFromUrl = false;
-  $effect(() => {
-    if (hasInitializedFromUrl) return;
-    if (initialView === 'create-specialist') {
-      setActiveTab('agents');
-      aiBehaviorView = { type: 'create-specialist' };
-      hasInitializedFromUrl = true;
-    } else if (initialSpecialistId) {
-      setActiveTab('agents');
-      aiBehaviorView = { type: 'specialist', id: initialSpecialistId };
-      hasInitializedFromUrl = true;
+  function selectAiBehaviorView(view: AIBehaviorView) {
+    aiBehaviorView = view;
+    const tab = view.type === 'system-prompt' ? 'agent-behavior' : 'specialists';
+    activeTab = tab;
+
+    if (browser) {
+      const url = new URL(window.location.href);
+      url.searchParams.set('tab', tab);
+      url.searchParams.delete('specialist');
+      url.searchParams.delete('view');
+
+      if (view.type === 'specialist') {
+        url.searchParams.set('specialist', view.id);
+        url.hash = `specialist-${view.id}`;
+      } else if (view.type === 'create-specialist') {
+        url.searchParams.set('view', 'create-specialist');
+        url.hash = 'create-specialist';
+      } else {
+        url.hash = 'global-instructions';
+      }
+
+      window.history.replaceState(window.history.state, '', url.toString());
     }
+  }
+
+  function showGlobalInstructions() {
+    selectAiBehaviorView({ type: 'system-prompt' });
+  }
+
+  // Keep canonical Specialists query views in sync across mounted navigations.
+  $effect(() => {
+    const nextView: AIBehaviorView | undefined =
+      viewFromUrl === 'create-specialist'
+        ? { type: 'create-specialist' }
+        : specialistIdFromUrl
+          ? { type: 'specialist', id: specialistIdFromUrl }
+          : undefined;
+    if (!nextView) return;
+
+    untrack(() => {
+      if (activeTab !== 'specialists') setActiveTab('specialists');
+      const isCurrentView =
+        nextView.type === 'specialist'
+          ? aiBehaviorView.type === 'specialist' && aiBehaviorView.id === nextView.id
+          : aiBehaviorView.type === nextView.type;
+      if (!isCurrentView) aiBehaviorView = nextView;
+    });
   });
 
   // Check if we're in development mode
@@ -257,9 +310,6 @@
   // Component refs for reset functionality
   let gitWorkspaceSettingsRef: GitWorkspaceSettings | undefined = $state();
   let colorThemeSettingsRef: ColorThemeSettings | undefined = $state();
-
-  // Check if the active provider is Auggie (only Auggie supports integrations and MCP servers)
-  const isAuggieProvider$ = selectIsProviderActive('auggie');
 
   // Theme options
   const themeOptions = [
@@ -324,7 +374,7 @@
     const targetId = window.location.hash.slice(1);
 
     // Switch to the correct tab if needed
-    const targetTab = hashToTab[targetId];
+    const targetTab = resolveHashTab(targetId);
     if (targetTab && targetTab !== activeTab) {
       activeTab = targetTab;
     }
@@ -332,7 +382,10 @@
     // Scroll to hash target after tab switch
     hashScrollTimer = setTimeout(() => {
       hashScrollTimer = undefined;
-      const targetEl = document.getElementById(targetId);
+      const target = resolveHashToTarget(targetId);
+      const targetEl = target?.scrollSelector
+        ? document.querySelector<HTMLElement>(target.scrollSelector)
+        : document.getElementById(targetId);
       if (targetEl) {
         const scrollContainer = targetEl.closest('.overflow-auto');
         if (scrollContainer) {
@@ -433,7 +486,8 @@
       {#snippet agentsNavigation()}
         <AIBehaviorSidebar
           activeView={aiBehaviorView}
-          onSelect={(view) => (aiBehaviorView = view)}
+          onSelect={selectAiBehaviorView}
+          isActive={activeTab === 'specialists'}
         />
       {/snippet}
     </SettingsSidebarNav>
@@ -469,7 +523,7 @@
   <div class="flex min-w-0 flex-1 flex-col">
     <div class="min-h-0 flex-1 overflow-auto">
       <main
-        class="mx-auto flex min-h-full {activeTab === 'agents'
+        class="mx-auto flex min-h-full {activeTab === 'specialists'
           ? 'max-w-6xl xl:h-full xl:min-h-0 xl:py-8'
           : 'max-w-4xl'} flex-col pr-8 pl-6 py-12"
         aria-labelledby="settings-page-title"
@@ -477,19 +531,45 @@
         <h1 id="settings-page-title" class="sr-only">{m.settings_page_title()}</h1>
         <!-- Providers -->
         {#if activeTab === 'providers'}
-          <div id="providers" class="mb-12 scroll-mt-20">
+          <div
+            id="providers"
+            data-highlight-id="providers"
+            use:highlightTarget
+            class="mb-12 scroll-mt-20"
+          >
             <ProviderSelector />
-            <p class="text-xs text-subtle mt-2">
-              {m.settings_section_aiCodingClis_hint()}
-            </p>
+          </div>
+          <div
+            id="utility-default-model"
+            data-highlight-id="utility-default-model"
+            use:highlightTarget
+            class="mb-12"
+          >
+            <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
+              {m.settings_section_defaults()}
+            </h2>
+            <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
+              <section class="px-6 py-5"><DefaultAgentModelSettings /></section>
+              <section class="px-6 py-5">
+                <h3 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-5">
+                  {m.settings_section_quickActions()}
+                </h3>
+                <BackgroundAgentSettings />
+              </section>
+            </div>
           </div>
         {/if}
 
         <!-- Connections -->
         {#if activeTab === 'connections'}
-          <div id="integrations" class="mb-6 scroll-mt-20">
+          <div
+            id="integrations"
+            data-highlight-id="integrations"
+            use:highlightTarget
+            class="mb-6 scroll-mt-20"
+          >
             <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
-              {m.settings_section_connections()}
+              {m.settings_tab_accounts()}
             </h2>
             <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
               <section class="px-6 py-5">
@@ -510,108 +590,54 @@
             </div>
           </div>
 
-          <!-- Voice dictation -->
-          <div id="voice" class="mb-6 scroll-mt-20">
-            <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
-              {m.settings_section_voice()}
-            </h2>
-            <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
-              <section class="px-6 py-5">
-                <VoiceSettings />
-              </section>
-            </div>
-          </div>
-        {/if}
-
-        <!-- Agents Tab -->
-        {#if activeTab === 'agents'}
-          <div
-            id="default-model"
-            data-highlight-id="quickActions.defaultModel"
-            use:highlightTarget
-            class="min-w-0 grow xl:flex xl:min-h-0 xl:flex-1 xl:flex-col"
-          >
-            <AIBehaviorEditor
-              activeView={aiBehaviorView}
-              workspaceId={settingsWorkspaceId}
-              onSpecialistCreated={(id) => (aiBehaviorView = { type: 'specialist', id })}
-              onSpecialistDeleted={() => (aiBehaviorView = { type: 'system-prompt' })}
-              onDiscard={() => (aiBehaviorView = { type: 'system-prompt' })}
-            />
-          </div>
-        {/if}
-
-        <!-- Git & Workspace -->
-        {#if activeTab === 'git-workspace'}
-          <!-- Git & Workspace -->
-          <div id="git-workspace" class="mb-12">
-            <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
-              {m.settings_section_gitWorkspace()}
-            </h2>
-            <GitWorkspaceSettings bind:this={gitWorkspaceSettingsRef} />
-          </div>
-        {/if}
-
-        <!-- Tools -->
-        {#if activeTab === 'tools'}
-          <!-- MCP Servers -->
-          <div id="mcp-servers" class="mb-12">
+          <div id="mcp-servers" data-highlight-id="mcp-servers" use:highlightTarget class="mb-12">
             <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
               {m.settings_section_mcpServers()}
             </h2>
-            <McpServersSettings isAuggieProvider={$isAuggieProvider$} />
+            <McpServersSettings />
           </div>
+        {/if}
 
-          <!-- RTK -->
-          <div id="cli-optimization" class="mb-12">
-            <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
-              {m.settings_section_cliOptimization()}
-            </h2>
-            <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
-              <section class="px-6 py-5">
-                <RtkSettings />
-              </section>
-            </div>
-          </div>
-
-          <!-- Workspace API Output -->
-          <div id="workspace-api" class="mb-12">
-            <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
-              {m.settings_section_workspaceApi()}
-            </h2>
-            <WorkspaceApiSettings />
-          </div>
-
-          <!-- Agent Features -->
-          <div id="agent-features" class="mb-12">
-            <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
-              {m.settings_section_agentFeatures()}
-            </h2>
-            <AgentFeaturesSettings />
-          </div>
-
-          <!-- Quick Actions -->
-          <div
-            id="utility-default-model"
-            data-highlight-id="utility-default-model"
-            use:highlightTarget
-            class="mb-12"
-          >
-            <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
-              {m.settings_section_quickActions()}
-            </h2>
-            <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
-              <section class="px-6 py-5">
-                <BackgroundAgentSettings />
-              </section>
+        <!-- Hidden specialist editor destination -->
+        {#if activeTab === 'specialists'}
+          <div class="min-w-0 grow xl:flex xl:min-h-0 xl:flex-1 xl:flex-col">
+            <div
+              id="specialist-editor"
+              class="min-w-0 grow xl:flex xl:min-h-0 xl:flex-1 xl:flex-col"
+            >
+              <AIBehaviorEditor
+                activeView={aiBehaviorView}
+                workspaceId={settingsWorkspaceId}
+                onSpecialistCreated={(id) => selectAiBehaviorView({ type: 'specialist', id })}
+                onSpecialistDeleted={showGlobalInstructions}
+                onDiscard={showGlobalInstructions}
+              />
             </div>
           </div>
         {/if}
 
-        <!-- Appearance -->
-        {#if activeTab === 'appearance'}
+        <!-- Setup -->
+        {#if activeTab === 'setup'}
+          <div id="git-workspace" data-highlight-id="git-workspace" use:highlightTarget>
+            <GitWorkspaceSettings bind:this={gitWorkspaceSettingsRef}>
+              {#snippet shellAdditions()}
+                <div id="cli-optimization" data-highlight-id="cli-optimization" use:highlightTarget>
+                  <h3
+                    class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3"
+                  >
+                    {m.settings_section_cliOptimization()}
+                  </h3>
+                  <RtkSettings />
+                </div>
+              {/snippet}
+            </GitWorkspaceSettings>
+          </div>
+        {/if}
+
+        <!-- Display -->
+        {#if activeTab === 'display'}
           <!-- Theme -->
-          <div id="theme" class="mb-12">
+          <div id="theme" data-highlight-id="appearance" use:highlightTarget class="mb-12">
             <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
               {m.settings_section_appearance()}
             </h2>
@@ -640,7 +666,7 @@
           </div>
 
           <!-- Font Style -->
-          <div id="font-style" class="mb-12">
+          <div id="font-style" data-highlight-id="font-style" use:highlightTarget class="mb-12">
             <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
               {m.settings_section_fontStyle()}
             </h2>
@@ -736,12 +762,9 @@
               </section>
             </div>
           </div>
-        {/if}
 
-        <!-- General Tab -->
-        {#if activeTab === 'general'}
           <!-- Language -->
-          <div id="language" class="mb-12">
+          <div id="language" data-highlight-id="language" use:highlightTarget class="mb-12">
             <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
               {m.settings_language_section_title()}
             </h2>
@@ -751,9 +774,12 @@
               </section>
             </div>
           </div>
+        {/if}
 
+        <!-- App Behavior -->
+        {#if activeTab === 'app-behavior'}
           <!-- Updates -->
-          <div id="updates" class="mb-12">
+          <div id="updates" data-highlight-id="updates" use:highlightTarget class="mb-12">
             <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
               {m.settings_section_updates()}
             </h2>
@@ -787,7 +813,27 @@
             </div>
           </div>
 
-          <!-- Notifications -->
+          <div id="open-in" data-highlight-id="open-in" use:highlightTarget class="mb-12">
+            <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
+              {m.settings_section_openIn()}
+            </h2>
+            <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
+              <section class="px-6 py-5"><OpenInAppsSettings /></section>
+            </div>
+          </div>
+          <div
+            id="github-link-action"
+            data-highlight-id="github-link-action"
+            use:highlightTarget
+            class="mb-12"
+          >
+            <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
+              {m.settings_githubLinks_section_title()}
+            </h2>
+            <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
+              <section class="px-6 py-5"><GitHubLinkSettings /></section>
+            </div>
+          </div>
           <div
             id="notifications"
             data-highlight-id="notifications"
@@ -798,32 +844,64 @@
               {m.settings_section_notifications()}
             </h2>
             <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
-              <section class="px-6 py-5">
-                <NotificationSettings />
-              </section>
+              <section class="px-6 py-5"><NotificationSettings /></section>
+            </div>
+          </div>
+        {/if}
+
+        <!-- Agent Behavior -->
+        {#if activeTab === 'agent-behavior'}
+          <div
+            id="global-instructions"
+            data-highlight-id="quickActions.defaultModel"
+            use:highlightTarget
+            class="mb-12 min-w-0"
+          >
+            <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
+              {m.settings_section_globalInstructions()}
+            </h2>
+            <AIBehaviorEditor
+              activeView={{ type: 'system-prompt' }}
+              workspaceId={settingsWorkspaceId}
+            />
+          </div>
+
+          <div
+            id="agent-features"
+            data-highlight-id="agent-features"
+            use:highlightTarget
+            class="mb-12"
+          >
+            <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
+              {m.settings_section_agentFeatures()}
+            </h2>
+            <AgentFeaturesSettings />
+          </div>
+        {/if}
+
+        <!-- Input -->
+        {#if activeTab === 'input'}
+          <div
+            id="keyboard-shortcuts"
+            data-highlight-id="keyboard-shortcuts"
+            use:highlightTarget
+            class="mb-12"
+          >
+            <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
+              {m.settings_section_keyboardShortcuts()}
+            </h2>
+            <div class="rounded-xl bg-card px-6 py-5">
+              <KeyboardShortcutsSettings />
             </div>
           </div>
 
-          <!-- Open In Apps -->
-          <div id="open-in" class="mb-12">
+          <div id="voice" data-highlight-id="voice" use:highlightTarget class="mb-12 scroll-mt-20">
             <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
-              {m.settings_section_openIn()}
+              {m.settings_section_voice()}
             </h2>
             <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
               <section class="px-6 py-5">
-                <OpenInAppsSettings />
-              </section>
-            </div>
-          </div>
-
-          <!-- GitHub links -->
-          <div id="github-link-action" class="mb-12">
-            <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
-              {m.settings_githubLinks_section_title()}
-            </h2>
-            <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
-              <section class="px-6 py-5">
-                <GitHubLinkSettings />
+                <VoiceSettings />
               </section>
             </div>
           </div>
@@ -832,7 +910,12 @@
         <!-- Advanced -->
         {#if activeTab === 'advanced'}
           <!-- Agent Backend -->
-          <div id="agent-backend" class="mb-12">
+          <div
+            id="agent-backend"
+            data-highlight-id="agent-backend"
+            use:highlightTarget
+            class="mb-12"
+          >
             <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
               {m.settings_section_agentBackend()}
             </h2>
@@ -853,12 +936,29 @@
             <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
               {m.settings_section_websocketApi()}
             </h2>
-            <WebSocketApiSettings />
+            <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
+              <section class="px-6 py-5">
+                <WebSocketApiSettings />
+              </section>
+            </div>
+          </div>
+
+          <!-- Workspace API Output -->
+          <div
+            id="workspace-api"
+            data-highlight-id="workspace-api"
+            use:highlightTarget
+            class="mb-12"
+          >
+            <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
+              {m.settings_section_workspaceApi()}
+            </h2>
+            <WorkspaceApiSettings />
           </div>
 
           <!-- Connection (UDS only; hidden for WS/unknown transports) -->
           {#if udsSocketPath}
-            <div id="connection" class="mb-12">
+            <div id="connection" data-highlight-id="connection" use:highlightTarget class="mb-12">
               <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
                 {m.settings_section_connection()}
               </h2>
@@ -882,7 +982,7 @@
 
           <!-- Hardware / Creator Micro (only when a supported device is detectable) -->
           {#if showHardwareSection}
-            <div id="hardware" class="mb-12">
+            <div id="hardware" data-highlight-id="hardware" use:highlightTarget class="mb-12">
               <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
                 {m.settings_section_hardware()}
               </h2>
@@ -891,7 +991,7 @@
           {/if}
 
           <!-- Data -->
-          <div id="data" class="mb-12">
+          <div id="data" data-highlight-id="data" use:highlightTarget class="mb-12">
             <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
               {m.settings_section_data()}
             </h2>
@@ -899,7 +999,7 @@
           </div>
 
           <!-- Reset -->
-          <div id="reset" class="mb-12">
+          <div id="reset" data-highlight-id="general" use:highlightTarget class="mb-12">
             <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
               {m.settings_section_reset()}
             </h2>
@@ -924,7 +1024,7 @@
 
           <!-- Developer Section (only in dev mode; dev-only UI is not translated) -->
           {#if isDevMode}
-            <div id="developer" class="mb-12">
+            <div id="developer" data-highlight-id="developer" use:highlightTarget class="mb-12">
               <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
                 <!-- i18n-ignore (dev-only) -->
                 Developer

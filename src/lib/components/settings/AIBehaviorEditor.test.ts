@@ -524,7 +524,7 @@ describe('AIBehaviorEditor full-height layouts', () => {
     }
   });
 
-  it('places global instructions before the description, defaults, and quiet reset action', async () => {
+  it('places global instructions beside the description, defaults, and quiet reset action', async () => {
     mocks.fileSpecialists$.set([
       {
         id: 'custom-reviewer',
@@ -557,15 +557,13 @@ describe('AIBehaviorEditor full-height layouts', () => {
     expect(promptColumn.className).toContain('min-w-0');
     expect(promptColumn.className).toContain('xl:flex-col');
     expect(defaultsColumn.className).toContain('min-w-0');
-    expect(defaultsColumn.classList.contains('xl:pt-8')).toBe(true);
+    expect(defaultsColumn.classList.contains('xl:pt-8')).toBe(false);
     expect(Array.from(defaultsColumn.classList).some((className) => /^pt-/.test(className))).toBe(
       false,
     );
     expect(editorContainer?.className).toContain('full-height-editor-container');
     expect(editorContainer?.className).not.toContain('specialist-editor-container');
-    expect(within(promptColumn).getByRole('heading', { name: 'All agents' })).toBeTruthy();
-    expect(screen.getAllByRole('heading', { name: 'All agents' })).toHaveLength(1);
-    expect(within(promptColumn).queryByRole('heading', { name: 'Agent instructions' })).toBeNull();
+    expect(within(promptColumn).queryByRole('heading')).toBeNull();
     expect(
       within(promptColumn).queryByText('Custom instructions that will be included for all agents.'),
     ).toBeNull();
@@ -616,28 +614,29 @@ describe('AIBehaviorEditor full-height layouts', () => {
     expect(screen.queryByRole('button', { name: 'Reset all to default' })).toBeNull();
   });
 
-  it('places unsaved-instructions Undo beside the All agents title', async () => {
+  it('shows unsaved-instructions Undo only in the prompt column', async () => {
     render(AIBehaviorEditor, { activeView: { type: 'system-prompt' } });
 
     const promptColumn = screen.getByTestId('all-agents-prompt-column');
+    const defaultsColumn = screen.getByTestId('all-agents-defaults-column');
     const textarea = (await within(promptColumn).findByRole('textbox')) as HTMLTextAreaElement;
     expect(textarea.value).toBe('Original instructions');
+    expect(within(promptColumn).queryByTestId('agent-rules-header')).toBeNull();
 
     await fireEvent.input(textarea, { target: { value: 'Edited instructions' } });
 
     const header = within(promptColumn).getByTestId('agent-rules-header');
-    const heading = within(header).getByRole('heading', { name: 'All agents' });
+    const description = within(defaultsColumn).getByText(
+      'Custom instructions that will be included for all agents.',
+    );
     const undo = within(header).getByRole('button', { name: 'Undo changes' });
-    expect(heading.parentElement).toBe(header);
     expect(header.contains(undo)).toBe(true);
     expect(header.className).toContain('items-center');
-    expect(heading.compareDocumentPosition(undo) & Node.DOCUMENT_POSITION_FOLLOWING).toBe(
-      Node.DOCUMENT_POSITION_FOLLOWING,
-    );
+    expect(defaultsColumn.firstElementChild).toBe(description);
 
     await fireEvent.click(undo);
     expect(textarea.value).toBe('Original instructions');
-    expect(within(header).queryByRole('button', { name: 'Undo changes' })).toBeNull();
+    expect(within(promptColumn).queryByTestId('agent-rules-header')).toBeNull();
   });
 
   it('places the wider prompt column before specialist details in a responsive grid', async () => {

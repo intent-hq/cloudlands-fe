@@ -16,6 +16,7 @@
     onclick?: (e: MouseEvent) => void;
     title?: string;
     ariaLabel?: string;
+    ariaDescribedby?: string;
     // New props for toggle group (inline/side-by-side style)
     options?: Option[];
     value?: string;
@@ -36,6 +37,7 @@
     onclick,
     title,
     ariaLabel,
+    ariaDescribedby,
     options,
     value,
     onChange,
@@ -81,6 +83,7 @@
     role="switch"
     aria-checked={pressed}
     aria-label={ariaLabel || (pressed ? onLabel : offLabel)}
+    aria-describedby={ariaDescribedby}
     data-state={pressed ? 'on' : 'off'}
     {disabled}
     title={title || (pressed ? onLabel : offLabel)}
@@ -106,6 +109,7 @@
     role="switch"
     aria-checked={pressed}
     aria-label={ariaLabel || (pressed ? onLabel : offLabel)}
+    aria-describedby={ariaDescribedby}
     data-state={pressed ? 'on' : 'off'}
     {disabled}
     title={title || (pressed ? onLabel : offLabel)}
@@ -136,6 +140,7 @@
   <div
     role="group"
     aria-label={ariaLabel}
+    aria-describedby={ariaDescribedby}
     class="inline-flex items-center gap-px rounded-(--radius-medium) border border-border bg-card p-0.5 shadow-(--elevation-raised)"
   >
     {#each options as option (option.value)}
@@ -162,6 +167,7 @@
     bind:pressed
     onPressedChange={handlePressedChange}
     aria-label={ariaLabel}
+    aria-describedby={ariaDescribedby}
     {disabled}
     {title}
     {onclick}
