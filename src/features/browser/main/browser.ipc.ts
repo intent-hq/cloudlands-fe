@@ -29,7 +29,11 @@ import {
   wrapTunnelProviderWithOwnership,
 } from './tunnel-forward-ownership';
 import { ensureWorkspaceForwardCleanup } from './workspace-forward-cleanup.service';
-import { getBackendClient, isSameHostBackendActive } from '../../backend/main/backend.ipc';
+import {
+  getBackendClient,
+  isRemoteBackendActive,
+  isSameHostBackendActive,
+} from '../../backend/main/backend.ipc';
 import { DirectRelay } from '../../backend/main/direct-relay';
 import { TunnelManager } from '../../backend/main/tunnel-manager';
 import { sendToWorkspaceWindows } from '../../system/main/system.ipc';
@@ -173,7 +177,11 @@ const ResolveUrlSchema = z.object({
  */
 function getDaemonLoopbackContext(): LoopbackRewriteContext {
   try {
-    return loopbackContextFromTransport(isSameHostBackendActive(), getBackendClient().getConfig());
+    return loopbackContextFromTransport(
+      isSameHostBackendActive(),
+      getBackendClient().getConfig(),
+      isRemoteBackendActive(),
+    );
   } catch (err) {
     logger.warn('Could not resolve daemon loopback context; assuming local daemon', {
       error: (err as Error).message,
@@ -207,6 +215,7 @@ function getBrowserTunnelProvider(): TunnelManager | DirectRelay {
     daemonIsRemote = loopbackContextFromTransport(
       isSameHostBackendActive(),
       getBackendClient().getConfig(),
+      isRemoteBackendActive(),
     ).daemonIsRemote;
   } catch (err) {
     throw new Error(

@@ -14,7 +14,8 @@
  *
  * Only the hostname is rewritten — scheme, port, path, query, and hash are
  * preserved. This module is pure (no Electron/transport imports); the executor
- * wiring supplies `{ daemonIsRemote, daemonHost }` from transport state.
+ * wiring supplies `{ daemonIsRemote, daemonHost }` from backend identity and
+ * transport state.
  */
 
 const DAEMON_LOCALHOST = 'daemon.localhost';
@@ -70,15 +71,16 @@ export interface TransportConfigForLoopback {
 }
 
 /**
- * Resolve the rewrite context from the active backend transport. `sameHost`
- * is `isSameHostBackendActive()` (UDS ⇒ same host by construction); for the
- * env/dev `ws`/`tcp` transports — which `isSameHostBackendActive()` reports as
- * not-same-host — a loopback target host still means the daemon runs on this
- * machine, so it resolves as local. Pure and never throws.
+ * Resolve the rewrite context from the active backend identity and transport.
+ * Saved-remote identity takes precedence over loopback host inference: a WSS
+ * endpoint may be localhost because an SSH forward carries it to another
+ * machine. Without saved-remote identity, env/dev loopback `ws`/`tcp` targets
+ * remain local. Pure and never throws.
  */
 export function loopbackContextFromTransport(
   sameHost: boolean,
   config?: TransportConfigForLoopback,
+  savedRemote = false,
 ): LoopbackRewriteContext {
   if (sameHost || config?.transport === 'uds') return { daemonIsRemote: false };
   let host: string | undefined;
@@ -91,7 +93,7 @@ export function loopbackContextFromTransport(
   } else if (config?.transport === 'wss' || config?.transport === 'tcp') {
     host = config.host;
   }
-  if (host && classifyLoopbackHost(host) === 'bare-loopback') {
+  if (!savedRemote && host && classifyLoopbackHost(host) === 'bare-loopback') {
     return { daemonIsRemote: false };
   }
   return host ? { daemonIsRemote: true, daemonHost: host } : { daemonIsRemote: true };

@@ -12,6 +12,7 @@ const mocks = vi.hoisted(() => ({
   TunnelManager: vi.fn(),
   DirectRelay: vi.fn(),
   getBackendClient: vi.fn(),
+  isRemoteBackendActive: vi.fn(),
   isSameHostBackendActive: vi.fn(),
 }));
 
@@ -30,6 +31,7 @@ vi.mock('../../system/main/system.ipc', () => ({
 }));
 vi.mock('../../backend/main/backend.ipc', () => ({
   getBackendClient: mocks.getBackendClient,
+  isRemoteBackendActive: mocks.isRemoteBackendActive,
   isSameHostBackendActive: mocks.isSameHostBackendActive,
   // Used by the workspace-forward-cleanup service behind the provider seam.
   onBackendNotification: vi.fn(() => () => {}),
@@ -77,6 +79,7 @@ describe('browser:resolve-url IPC handler', () => {
     vi.resetModules();
     fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200 });
     vi.stubGlobal('fetch', fetchMock);
+    mocks.isRemoteBackendActive.mockReturnValue(false);
     mocks.isSameHostBackendActive.mockReturnValue(false);
     mocks.getBackendClient.mockReturnValue({
       getConfig: () => ({ transport: 'tcp', host: '10.0.0.5' }),
@@ -311,6 +314,7 @@ describe('browser:resolve-url IPC handler', () => {
 describe('browser tunnel-backend selection seam', () => {
   beforeEach(() => {
     vi.resetModules();
+    mocks.isRemoteBackendActive.mockReturnValue(false);
     mocks.isSameHostBackendActive.mockReturnValue(false);
     mocks.getBackendClient.mockReturnValue({
       getConfig: () => ({ transport: 'tcp', host: '10.0.0.5' }),
@@ -339,6 +343,18 @@ describe('browser tunnel-backend selection seam', () => {
     expect(mocks.TunnelManager).toHaveBeenCalledTimes(1);
   });
 
+  it('selects TunnelManager for a saved remote reached through loopback WSS', async () => {
+    mocks.isRemoteBackendActive.mockReturnValue(true);
+    mocks.getBackendClient.mockReturnValue({
+      getConfig: () => ({ transport: 'wss', host: '127.0.0.1' }),
+    });
+    const getProvider = await getInjectedTunnelProviderGetter();
+    const provider = getProvider() as { backend: string };
+    expect(provider.backend).toBe('tunnel');
+    expect(mocks.TunnelManager).toHaveBeenCalledTimes(1);
+    expect(mocks.DirectRelay).not.toHaveBeenCalled();
+  });
+
   it('selects the direct relay (DirectRelay) for a local daemon, as a lazy singleton', async () => {
     mocks.isSameHostBackendActive.mockReturnValue(true);
     const getProvider = await getInjectedTunnelProviderGetter();
@@ -348,6 +364,17 @@ describe('browser tunnel-backend selection seam', () => {
     expect(mocks.TunnelManager).not.toHaveBeenCalled();
     expect(getProvider()).toBe(provider);
     expect(mocks.DirectRelay).toHaveBeenCalledTimes(1);
+  });
+
+  it('selects DirectRelay for an intentional loopback development transport', async () => {
+    mocks.getBackendClient.mockReturnValue({
+      getConfig: () => ({ transport: 'tcp', host: 'localhost' }),
+    });
+    const getProvider = await getInjectedTunnelProviderGetter();
+    const provider = getProvider() as { backend: string };
+    expect(provider.backend).toBe('direct');
+    expect(mocks.DirectRelay).toHaveBeenCalledTimes(1);
+    expect(mocks.TunnelManager).not.toHaveBeenCalled();
   });
 
   it('throws instead of picking a backend when the connection state is unreadable', async () => {

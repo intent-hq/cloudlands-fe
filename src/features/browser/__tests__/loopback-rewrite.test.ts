@@ -162,6 +162,9 @@ describe('loopbackContextFromTransport', () => {
       daemonIsRemote: true,
       daemonHost: '10.0.0.5',
     });
+    expect(
+      loopbackContextFromTransport(false, { transport: 'wss', host: 'remote.example.test' }),
+    ).toEqual({ daemonIsRemote: true, daemonHost: 'remote.example.test' });
   });
 
   it('resolves the remote host from the ws URL', () => {
@@ -177,6 +180,15 @@ describe('loopbackContextFromTransport', () => {
     expect(loopbackContextFromTransport(false, { transport: 'tcp', host: 'localhost' })).toEqual({
       daemonIsRemote: false,
     });
+  });
+
+  it('keeps saved remotes remote when their WSS transport endpoint is loopback', () => {
+    expect(
+      loopbackContextFromTransport(false, { transport: 'wss', host: 'localhost' }, true),
+    ).toEqual({ daemonIsRemote: true, daemonHost: 'localhost' });
+    expect(
+      loopbackContextFromTransport(false, { transport: 'wss', host: '127.0.0.1' }, true),
+    ).toEqual({ daemonIsRemote: true, daemonHost: '127.0.0.1' });
   });
 
   it('degrades to remote-without-host for missing or unparseable targets', () => {
