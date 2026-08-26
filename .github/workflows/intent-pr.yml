@@ -3,6 +3,14 @@ name: Intent PR Checks
 on:
   pull_request:
     branches: ['main']
+  # Merge-queue runs (intent-hq/monorepo#2893): the queue tests the actual
+  # merged tree before it lands on main, so merge_group runs the same heavy
+  # jobs as pull_request CI. Merge groups are created by the repo's own
+  # ruleset from already-filed PRs, so they need no same-repo fork guard.
+  # pr-title / conflict-markers / release-fast-path are PR-metadata /
+  # PR-diff checks that stay pull_request-only — the gate accepts their
+  # skip on merge_group (release PRs therefore run full CI in the queue).
+  merge_group:
 
 # Cancel in progress workflows on pull_requests.
 # https://docs.github.com/en/actions/using-jobs/using-concurrency#example-using-a-fallback-value
@@ -49,7 +57,9 @@ jobs:
     runs-on: ubuntu-latest
     # Same-repo PRs only (see fork-PR hardening note above); a skip here also
     # skips the routed heavy jobs through their needs.route.result guard.
-    if: github.event.pull_request.head.repo.full_name == github.repository
+    # Runs on merge_group (see the trigger comment) — merge groups come from
+    # the repo's own ruleset, so no same-repo guard applies there.
+    if: github.event_name == 'merge_group' || github.event.pull_request.head.repo.full_name == github.repository
     timeout-minutes: 5
     permissions:
       contents: read
@@ -113,7 +123,9 @@ jobs:
     runs-on: ubuntu-latest
     # Same-repo PRs only (see fork-PR hardening note above); guarded directly
     # rather than through needs so it isn't delayed behind the route probe.
-    if: github.event.pull_request.head.repo.full_name == github.repository
+    # PR-metadata check: pull_request-only, skipped on merge_group (the gate
+    # accepts the skip there).
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
     permissions:
       pull-requests: read
     steps:
@@ -167,8 +179,10 @@ jobs:
     name: Conflict Markers
     # Seconds-long job: pinned to ubuntu-latest (see pr-title).
     runs-on: ubuntu-latest
-    # Same-repo PRs only (see fork-PR hardening note above).
-    if: github.event.pull_request.head.repo.full_name == github.repository
+    # Same-repo PRs only (see fork-PR hardening note above). PR-diff check:
+    # pull_request-only, skipped on merge_group (the gate accepts the skip
+    # there).
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
     timeout-minutes: 5
     permissions:
       contents: read
@@ -486,7 +500,9 @@ jobs:
     # The explicit same-repo guard is required here (fork-PR hardening note):
     # `!cancelled()` overrides the default skip propagation from needs, so a
     # skipped release-fast-path alone would not skip this matrix on fork PRs.
-    if: ${{ !cancelled() && github.event.pull_request.head.repo.full_name == github.repository && needs.release-fast-path.outputs.fast_path != 'true' }}
+    # Merge groups come from the repo's own ruleset, so the guard passes
+    # there via the event check.
+    if: ${{ !cancelled() && (github.event_name == 'merge_group' || github.event.pull_request.head.repo.full_name == github.repository) && needs.release-fast-path.outputs.fast_path != 'true' }}
     runs-on: ubuntu-latest
     strategy:
       # Let the sibling shards finish so one flaky leg doesn't hide the
@@ -641,17 +657,19 @@ jobs:
 
   # Single required status check for branch protection: fans in pr-title,
   # conflict-markers, and the heavy jobs (checks / build-web / test /
-  # test-ct). pr-title / conflict-markers must succeed outright on every PR.
-  # The heavy jobs must succeed outright too, EXCEPT on release-fast-path PRs
-  # (fast_path == 'true'), where their job-level skip is the expected outcome
-  # (see release-fast-path). The acceptance keys on the fast-path OUTPUT —
-  # never on the skipped status itself — so a skip from any other cause (a
-  # route failure, or a failed release-fast-path job leaving the output
-  # empty) still fails the gate: fail-safe, not fail-open (mirrors intentd's
-  # event/shape-aware gate reasoning, adapted to this workflow's
-  # pull_request-only trigger). test-ct is a shard matrix: its needs.result
-  # aggregates the legs (success only when every shard passes; a job-level
-  # skip reports 'skipped' for the whole matrix, same as before).
+  # test-ct). pr-title / conflict-markers must succeed outright on every PR;
+  # on merge_group they are job-skipped (PR-metadata checks, already
+  # validated on the PR) and the gate accepts the skip — event-aware, so PR
+  # semantics stay unweakened. The heavy jobs must succeed outright too,
+  # EXCEPT on release-fast-path PRs (fast_path == 'true'), where their
+  # job-level skip is the expected outcome (see release-fast-path). The
+  # acceptance keys on the fast-path OUTPUT — never on the skipped status
+  # itself — so a skip from any other cause (a route failure, or a failed
+  # release-fast-path job leaving the output empty) still fails the gate:
+  # fail-safe, not fail-open (mirrors intentd's event/shape-aware gate
+  # reasoning). test-ct is a shard matrix: its needs.result aggregates the
+  # legs (success only when every shard passes; a job-level skip reports
+  # 'skipped' for the whole matrix, same as before).
   gate:
     name: CI Gate
     # Seconds-long job: pinned to ubuntu-latest (see pr-title).
@@ -673,11 +691,26 @@ jobs:
         env:
           FAST_PATH: ${{ needs.release-fast-path.outputs.fast_path }}
         run: |
-          if [ "${{ needs.pr-title.result }}" != "success" ] || \
-             [ "${{ needs.conflict-markers.result }}" != "success" ]; then
-            echo "One or more required jobs failed"
-            exit 1
+          # pr-title / conflict-markers are PR-metadata checks that only run
+          # on pull_request; on merge_group they skip (already validated on
+          # the PR) and the gate accepts that.
+          if [ "${{ github.event_name }}" = "merge_group" ]; then
+            check_pr_meta() {
+              if [ "$2" != "success" ] && [ "$2" != "skipped" ]; then
+                echo "$1 result '$2' not acceptable on merge_group"
+                exit 1
+              fi
+            }
+          else
+            check_pr_meta() {
+              if [ "$2" != "success" ]; then
+                echo "$1 result '$2' not acceptable"
+                exit 1
+              fi
+            }
           fi
+          check_pr_meta "pr-title" "${{ needs.pr-title.result }}"
+          check_pr_meta "conflict-markers" "${{ needs.conflict-markers.result }}"
           # Heavy jobs: success, or skipped ONLY via the release-PR fast path.
           check_heavy() {
             if [ "$2" = "success" ]; then
