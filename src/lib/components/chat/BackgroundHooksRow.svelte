@@ -6,7 +6,7 @@
    * (PROTOCOL §5.40): one responsive card per scheduled/running hook with a
    * live time-to-next-run countdown (a component-local 1s interval ticks a
    * reactive "now" while any rendered hook carries a `nextRunAt`/`expiresAt`)
-   * and a spinning hourglass while a run is in flight. Card details and the
+   * and a static hourglass for both live states. Card details and the
    * overflow menu offer "Run now" (`hook.runNow`),
    * "View script" (opens a workspace panel tab), and "Cancel" (`hook.cancel`).
    * Hidden entirely when the agent has no active hooks.
@@ -211,9 +211,7 @@
               <HourglassMedium
                 size={16}
                 weight="regular"
-                class="h-4 w-4 {hook.state === 'running'
-                  ? 'animate-spin motion-reduce:animate-none'
-                  : ''}"
+                class="h-4 w-4"
                 data-icon="hourglass-medium"
               />
             </span>
@@ -331,7 +329,8 @@
               </div>
             </dl>
             {#if hook.lastError}<div
-                class="break-words border-t border-border px-3 py-2 text-destructive"
+                class="break-words border-t border-border px-3 py-2 text-error-foreground"
+                data-testid="background-hook-last-error"
               >
                 {hook.lastError}
               </div>{/if}

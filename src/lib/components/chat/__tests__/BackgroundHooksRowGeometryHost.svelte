@@ -14,6 +14,7 @@
     running = false,
     embedded = false,
     hookCount = 1,
+    lastError = false,
   }: {
     theme?: 'light' | 'dark';
     width?: number;
@@ -21,6 +22,7 @@
     running?: boolean;
     embedded?: boolean;
     hookCount?: number;
+    lastError?: boolean;
   } = $props();
 
   const componentId = $props.id();
@@ -40,6 +42,7 @@
       nextRunAt: '2099-08-25T12:10:00.000Z',
       expiresAt: '2099-08-25T13:00:00.000Z',
       runCount: 12,
+      ...(lastError ? { lastError: 'Deployment failed' } : {}),
     }));
     store.dispatch(backgroundHooksUpdated(workspaceId, hooks));
   });

@@ -1,7 +1,37 @@
-import { expect, test } from '@playwright/experimental-ct-svelte';
+import { expect, test, type Locator } from '@playwright/experimental-ct-svelte';
 import BackgroundHooksRowGeometryHost from './BackgroundHooksRowGeometryHost.svelte';
 
 test.setTimeout(120_000);
+
+async function iconMotion(component: Locator) {
+  return component
+    .getByTestId('background-hook-icon')
+    .locator('svg')
+    .evaluate((node: SVGElement) => {
+      const style = getComputedStyle(node);
+      return {
+        animation: style.animationName,
+        transform: style.transform,
+        transition: style.transitionDuration,
+      };
+    });
+}
+
+async function expectSemanticError(component: Locator) {
+  const error = component.getByTestId('background-hook-last-error');
+  await expect(error).toHaveClass(/(?:^|\s)text-error-foreground(?:\s|$)/);
+  await expect(error).not.toHaveClass(/(?:^|\s)text-destructive(?:\s|$)/);
+  const colors = await error.evaluate((node) => {
+    const probe = document.createElement('span');
+    probe.style.color = 'hsl(var(--error-foreground))';
+    node.append(probe);
+    const actual = getComputedStyle(node).color;
+    const semantic = getComputedStyle(probe).color;
+    probe.remove();
+    return { actual, semantic };
+  });
+  expect(colors.actual).toBe(colors.semantic);
+}
 
 for (const theme of ['light', 'dark'] as const) {
   for (const zoom of [1, 2]) {
@@ -115,6 +145,30 @@ for (const theme of ['light', 'dark'] as const) {
   }
 }
 
+for (const theme of ['light', 'dark'] as const) {
+  for (const zoom of [1, 2]) {
+    for (const embedded of [false, true]) {
+      for (const running of [false, true]) {
+        test(`keeps the ${running ? 'running' : 'scheduled'} ${embedded ? 'embedded' : 'standalone'} hourglass and error token static in ${theme} at ${zoom * 100}%`, async ({
+          mount,
+        }) => {
+          const component = await mount(BackgroundHooksRowGeometryHost, {
+            props: { theme, zoom, embedded, running, lastError: true },
+          });
+          const summary = component.getByTestId('background-hook-summary');
+          await summary.click();
+
+          const motion = await iconMotion(component);
+          expect(motion.animation).toBe('none');
+          expect(motion.transform).toBe('none');
+
+          await expectSemanticError(component);
+        });
+      }
+    }
+  }
+}
+
 test('uses one internal separator between embedded hooks without gaps or doubled strokes', async ({
   mount,
 }) => {
@@ -145,7 +199,7 @@ test('uses one internal separator between embedded hooks without gaps or doubled
 test('supports keyboard disclosure and reduced motion', async ({ mount, page }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
   const component = await mount(BackgroundHooksRowGeometryHost, {
-    props: { width: 320, zoom: 2, running: true },
+    props: { width: 320, zoom: 2, running: true, lastError: true },
   });
   const summary = component.getByTestId('background-hook-summary');
   await summary.focus();
@@ -154,13 +208,11 @@ test('supports keyboard disclosure and reduced motion', async ({ mount, page }) 
   await summary.press('Space');
   await expect(summary).toHaveAttribute('aria-expanded', 'false');
 
-  const motion = await component
-    .getByTestId('background-hook-icon')
-    .locator('svg')
-    .evaluate((node) => ({
-      animation: getComputedStyle(node).animationName,
-      transition: getComputedStyle(node).transitionDuration,
-    }));
+  const motion = await iconMotion(component);
   expect(motion.animation).toBe('none');
+  expect(motion.transform).toBe('none');
   expect(Number.parseFloat(motion.transition)).toBeLessThan(0.001);
+
+  await summary.press('Enter');
+  await expectSemanticError(component);
 });

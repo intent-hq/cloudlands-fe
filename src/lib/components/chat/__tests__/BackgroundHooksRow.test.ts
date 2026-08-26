@@ -211,17 +211,45 @@ describe('BackgroundHooksRow', () => {
     expect(screen.getByTestId('background-hook-details').textContent).toContain('Runs 1');
   });
 
-  it('keeps the running hourglass motion-safe and disables Run now', async () => {
+  it.each([
+    ['scheduled', false],
+    ['scheduled', true],
+    ['running', false],
+    ['running', true],
+  ] as const)('keeps the %s hourglass static when embedded is %s', (state, embedded) => {
+    hooksState.hooks = [makeHook({ state })];
+    render(BackgroundHooksRow, {
+      props: { workspaceId: 'ws-1', agentId: 'agent-1', embedded },
+    });
+
+    const icon = screen.getByTestId('background-hook-icon').querySelector('svg');
+    expect(icon?.getAttribute('class')?.trim()).toBe('h-4 w-4');
+    expect(icon?.classList.contains('animate-spin')).toBe(false);
+    expect(icon?.classList.contains('motion-reduce:animate-none')).toBe(false);
+    expect(screen.getByTestId('background-hook-summary').textContent).toContain(
+      state === 'running' ? 'Running' : 'Scheduled',
+    );
+  });
+
+  it('disables Run now while a hook is running', async () => {
     hooksState.hooks = [makeHook({ state: 'running' })];
     render(BackgroundHooksRow, { props: { workspaceId: 'ws-1', agentId: 'agent-1' } });
 
-    const icon = screen.getByTestId('background-hook-icon').querySelector('svg');
-    expect(icon?.classList.contains('animate-spin')).toBe(true);
-    expect(icon?.classList.contains('motion-reduce:animate-none')).toBe(true);
     await fireEvent.click(screen.getByTestId('background-hook-summary'));
     expect(screen.getByTestId('background-hook-run-now-action').hasAttribute('disabled')).toBe(
       true,
     );
+  });
+
+  it('uses the solid semantic error foreground for last-run failures', async () => {
+    hooksState.hooks = [makeHook({ lastError: 'Deployment failed' })];
+    render(BackgroundHooksRow, { props: { workspaceId: 'ws-1', agentId: 'agent-1' } });
+
+    await fireEvent.click(screen.getByTestId('background-hook-summary'));
+    const error = screen.getByTestId('background-hook-last-error');
+    expect(error.textContent).toContain('Deployment failed');
+    expect(error.classList.contains('text-error-foreground')).toBe(true);
+    expect(error.classList.contains('text-destructive')).toBe(false);
   });
 
   it('preserves Run now and Cancel actions in the expanded footer', async () => {
