@@ -424,6 +424,7 @@ describe('WorkspaceTabStrip', () => {
     expect(alpha.getAttribute('aria-selected')).toBe('true');
     expect(document.querySelector('[data-tooltip-delay="500"]')).toBeTruthy();
     const tooltipRoot = alpha.closest<HTMLElement>('[data-testid="workspace-tab-tooltip-root"]')!;
+    expect(tooltipRoot.getAttribute('data-tooltip-disable-hoverable-content')).toBe('true');
     await fireEvent.mouseEnter(tooltipRoot);
     const alphaHover = document.querySelector('[data-workspace-tab-hover-content="ws-1"]')!;
     expect(alphaHover.querySelector('[data-workspace-hover-card]')).toBeTruthy();
@@ -447,6 +448,11 @@ describe('WorkspaceTabStrip', () => {
     expect(screen.queryByText('feature/alpha')).toBeNull();
     expect(screen.queryByText('Ctrl Tab')).toBeNull();
 
+    await fireEvent.mouseLeave(tooltipRoot);
+    await waitFor(() => expect(screen.queryByTestId('workspace-tab-preview')).toBeNull());
+
+    await fireEvent.mouseEnter(tooltipRoot);
+    expect(screen.getByTestId('workspace-tab-preview')).toBeTruthy();
     await fireEvent.mouseLeave(tooltipRoot);
     await waitFor(() => expect(screen.queryByTestId('workspace-tab-preview')).toBeNull());
   });

@@ -79,7 +79,7 @@
 </script>
 
 <section
-  class="flex h-140 flex-col overflow-hidden rounded-lg border border-border bg-sidebar text-sidebar-foreground"
+  class="flex h-[560px] flex-col overflow-hidden rounded-lg border border-border bg-sidebar text-sidebar-foreground"
   style:width={`${width}px`}
   data-workspace-sidebar-preview
   data-preview-width={width}

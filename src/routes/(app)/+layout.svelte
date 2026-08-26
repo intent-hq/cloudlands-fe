@@ -328,7 +328,7 @@
     const appClient = new LiveAppClient();
     const disposeInterruptedAgents = installInterruptedAgentsService(appClient, (agents) => {
       interruptedAgents = agents;
-      showInterruptedAgentsModal = true;
+      showInterruptedAgentsModal = agents.length > 0;
     });
 
     // Initialize quit-confirmation service (in-app modal for quit/restart)
@@ -1065,12 +1065,16 @@
 
   <SetupPromptDialog />
 
-  <!-- Release Notes Modal (shown after update) -->
-  <ReleaseNotesModal
-    open={$showReleaseNotesModal$}
-    releaseNotes={$releaseNotes$}
-    onClose={() => appStore.dispatch(closeReleaseNotesModal())}
-  />
+  <!-- Interrupted-agent recovery owns the startup modal slot. Keeping release
+       notes in Redux while this component is unmounted avoids consuming the
+       queued payload through the dialog's close callback. -->
+  {#if !showInterruptedAgentsModal}
+    <ReleaseNotesModal
+      open={$showReleaseNotesModal$}
+      releaseNotes={$releaseNotes$}
+      onClose={() => appStore.dispatch(closeReleaseNotesModal())}
+    />
+  {/if}
 
   <FeatureCodeDialog
     open={$featureCodeDialogOpen}

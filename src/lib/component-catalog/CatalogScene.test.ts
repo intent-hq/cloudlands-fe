@@ -29,7 +29,6 @@ function deferred<T>() {
   });
   return { promise, resolve };
 }
-
 describe('CatalogScene', () => {
   beforeEach(() => {
     mocks.loadPreview.mockReset();
@@ -64,6 +63,12 @@ describe('CatalogScene', () => {
       expect(screen.getByTestId('catalog-scene').dataset.previewStable).toBe('true'),
     );
     expect(screen.getByTestId('catalog-scene').dataset.previewCaptureMotion).toBe('reduced');
+    expect(mocks.setActivePreview).toHaveBeenLastCalledWith({
+      slug: 'button',
+      state: 'loading',
+      width: 420,
+      status: 'ready',
+    });
 
     await preview.rerender({ slug: 'button', requestedState: 'disabled', requestedWidth: 320 });
     await waitFor(() =>
@@ -90,7 +95,6 @@ describe('CatalogScene', () => {
     );
 
     stability.resolve({ imageCount: 0, reducedMotion: true });
-
     await waitFor(() =>
       expect(screen.getByTestId('catalog-scene').dataset.previewReady).toBe('true'),
     );

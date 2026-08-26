@@ -2,7 +2,7 @@
  * Workspace import relay (main process) — the "Import Workspace from File…"
  * flow. Reads a transfer zip picked via a file-open dialog, pulls its
  * `manifest.json` (central-directory read, nothing extracted), hashes the
- * archive, then streams it into the CURRENT backend per PROTOCOL §5.1:
+ * archive, then streams it into the invoking window's backend per PROTOCOL §5.1:
  * `workspace.import.begin` → seq-numbered base64 `workspace.import.chunk`
  * calls (respecting the begin result's `maxChunkBytes`) →
  * `workspace.import.commit`.
@@ -32,8 +32,6 @@ export interface ImportFileSource extends ZipByteSource {
 
 /** Injectable seams so unit tests never stand up sockets/dialogs/disk. */
 export interface ImportRelayDeps {
-  /** The CURRENT backend's client — the import target. */
-  getClient(): RelayRpcClient;
   /** Returns the chosen path, or undefined when the user cancelled. */
   showOpenDialog(): Promise<string | undefined>;
   openFile(filePath: string): Promise<ImportFileSource>;
@@ -61,7 +59,8 @@ interface ImportSession {
 }
 
 export interface WorkspaceImportRelay {
-  start(params: ImportStartParams): Promise<ImportStartResult>;
+  /** `client` is the invoking window's backend client — the import target. */
+  start(params: ImportStartParams, client: RelayRpcClient): Promise<ImportStartResult>;
   cancel(): Promise<ImportCancelResult>;
 }
 
@@ -143,7 +142,10 @@ export function createWorkspaceImportRelay(deps: ImportRelayDeps): WorkspaceImpo
     }
   }
 
-  async function start(params: ImportStartParams): Promise<ImportStartResult> {
+  async function start(
+    params: ImportStartParams,
+    client: RelayRpcClient,
+  ): Promise<ImportStartResult> {
     if (session) {
       return { success: false, error: 'an import is already in progress' };
     }
@@ -162,7 +164,6 @@ export function createWorkspaceImportRelay(deps: ImportRelayDeps): WorkspaceImpo
       }
       lastFilePath = filePath;
 
-      const client = deps.getClient();
       current.client = client;
       file = await deps.openFile(filePath);
       const sizeBytes = await file.size();
@@ -186,7 +187,14 @@ export function createWorkspaceImportRelay(deps: ImportRelayDeps): WorkspaceImpo
         if (!Number.isFinite(begin.maxChunkBytes) || begin.maxChunkBytes <= 0) {
           throw new Error('invalid maxChunkBytes from workspace.import.begin');
         }
-        await uploadChunks(client, file, sizeBytes, begin.maxChunkBytes, begin.importId, isCancelled);
+        await uploadChunks(
+          client,
+          file,
+          sizeBytes,
+          begin.maxChunkBytes,
+          begin.importId,
+          isCancelled,
+        );
         if (isCancelled()) throw new Error('cancelled');
         deps.broadcastProgress({
           phase: 'committing',
@@ -198,7 +206,11 @@ export function createWorkspaceImportRelay(deps: ImportRelayDeps): WorkspaceImpo
         const commit = await client.request<{
           workspace?: { id?: string; title?: string; name?: string };
           interruptedAgents?: string[];
-        }>('workspace.import.commit', { importId: begin.importId }, { timeoutMs: COMMIT_TIMEOUT_MS });
+        }>(
+          'workspace.import.commit',
+          { importId: begin.importId },
+          { timeoutMs: COMMIT_TIMEOUT_MS },
+        );
         current.importId = undefined;
         if (isCancelled()) {
           // The cancel raced the commit and lost: the backend already holds

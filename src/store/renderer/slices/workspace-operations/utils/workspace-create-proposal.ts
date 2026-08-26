@@ -35,6 +35,7 @@ export function buildCreateWorkspaceRequestFromProposal(
   editedFields: Record<string, unknown> | undefined,
 ): CreateWorkspaceRequest {
   const params = (proposal.payload.params ?? {}) as Partial<CreateWorkspaceRequest>;
+  const siblingScoped = proposal.preview.workspaceCreate?.mode === 'sibling';
   const initialAgent = recordValue(params.initialAgent) as Partial<InitialAgentRequest> | undefined;
   const specialist = specialistOverride(editedFields?.specialist, initialAgent?.specialist);
   const metadata = recordValue(initialAgent?.metadata) ?? {};
@@ -47,9 +48,18 @@ export function buildCreateWorkspaceRequestFromProposal(
   // proposal payload so it never reaches the wire.
   const { agentId: _droppedAgentId, ...initialAgentFields } = initialAgent ?? {};
 
-  const githubUrl = stringOverride(editedFields?.githubUrl, params.githubUrl);
-  const clonePath = stringOverride(editedFields?.clonePath, params.clonePath);
-  const repositoryPath = stringOverride(editedFields?.repoPath, params.repositoryPath);
+  const githubUrl = stringOverride(
+    siblingScoped ? undefined : editedFields?.githubUrl,
+    params.githubUrl,
+  );
+  const clonePath = stringOverride(
+    siblingScoped ? undefined : editedFields?.clonePath,
+    params.clonePath,
+  );
+  const repositoryPath = stringOverride(
+    siblingScoped ? undefined : editedFields?.repoPath,
+    params.repositoryPath,
+  );
   // Picked repo (githubUrl with no clone destination): the daemon hydrates the
   // checkout from its repo cache — the request carries githubUrl + branch
   // fields ONLY, never a clonePath or repositoryPath.
@@ -64,12 +74,16 @@ export function buildCreateWorkspaceRequestFromProposal(
 
   return {
     ...params,
+    title: stringOverride(editedFields?.title, params.title),
     repositoryPath: isGithubPick ? undefined : repositoryPath,
     githubUrl,
     clonePath: isGithubPick ? undefined : clonePath,
     baseRef: stringOverride(editedFields?.branch, params.baseRef),
-    isNewRepo: booleanOverride(editedFields?.isNewRepo, params.isNewRepo),
-    scope: stringOverride(editedFields?.scope, params.scope),
+    isNewRepo: booleanOverride(
+      siblingScoped ? undefined : editedFields?.isNewRepo,
+      params.isNewRepo,
+    ),
+    scope: stringOverride(siblingScoped ? undefined : editedFields?.scope, params.scope),
     initialAgent: {
       ...initialAgentFields,
       name: initialAgent?.name ?? 'Coordinator',

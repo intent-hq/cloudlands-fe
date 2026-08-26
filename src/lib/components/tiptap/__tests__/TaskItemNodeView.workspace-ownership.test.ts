@@ -194,6 +194,7 @@ describe('TaskItemNodeView workspace ownership', () => {
     expect(mocks.navigate).toHaveBeenCalledWith('shared-task', {
       workspaceId: 'workspace-b',
       openInAdjacentPanel: false,
+      openInNewAdjacentPanel: false,
       sourcePanelId: 'panel-b',
     });
   });

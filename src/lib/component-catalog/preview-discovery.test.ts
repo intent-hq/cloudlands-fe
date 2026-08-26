@@ -22,7 +22,9 @@ function loader(id: string, states: Record<string, { props: Record<string, unkno
 describe('preview discovery', () => {
   it('finds colocated previews without a shared registry entry', () => {
     const ids = listPreviewIds();
-    expect(ids).toEqual(expect.arrayContaining(['button', 'mention-agent-avatar']));
+    expect(ids).toEqual(
+      expect.arrayContaining(['button', 'mention-agent-avatar', 'workspace-hover-card']),
+    );
     expect(ids).toEqual([...ids].sort());
   });
 

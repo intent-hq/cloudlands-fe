@@ -56,6 +56,7 @@ test('selects direct preview states in the browser-only Vite runtime', async ({ 
     'mention-agent-avatar',
     'panel-tab-strip',
     'streaming-status',
+    'workspace-hover-card',
     'workspace-sidebar',
   ]);
   expect(discovery.states).toEqual(['default', 'loading', 'disabled', 'destructive']);
@@ -89,6 +90,7 @@ test('selects direct preview states in the browser-only Vite runtime', async ({ 
     ['panel-tab-strip', 'many-tabs', '[data-panel-tab-strip-preview]'],
     ['streaming-status', 'error', '[data-stream-terminal-error="true"]'],
     ['mcp-server-form', 'validation', '[data-testid="catalog-scene-focus"] input'],
+    ['workspace-hover-card', 'working', '[data-workspace-hover-card-preview]'],
   ] as const) {
     await page.goto(`${baseUrl}/sandbox/${slug}?state=${state}&theme=light&width=420&motion=full`);
     const productScene = page.getByTestId('catalog-scene');
@@ -96,7 +98,6 @@ test('selects direct preview states in the browser-only Vite runtime', async ({ 
     await expect(productScene).toHaveAttribute('data-preview-state', state);
     await expect(page.locator(productSelector).first()).toBeVisible();
   }
-
   await page.goto(`${baseUrl}/sandbox/button?state=missing&theme=light&width=320&motion=full`);
   await expect(page.getByRole('alert')).toContainText('Unknown state “missing”.', {
     timeout: 90_000,

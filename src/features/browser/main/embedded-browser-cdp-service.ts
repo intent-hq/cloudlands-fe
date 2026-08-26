@@ -1087,9 +1087,7 @@ class EmbeddedBrowserCdpService {
     const webContentsId = this.resolveTabId(tabId);
     if (webContentsId === undefined) return;
     const bounds = this.tabViewBounds.get(tabId);
-    const scale = bounds
-      ? Math.min(1, bounds.width / size.width, bounds.height / size.height)
-      : 1;
+    const scale = bounds ? Math.min(1, bounds.width / size.width, bounds.height / size.height) : 1;
     void this.sendCommand(webContentsId, 'Emulation.setDeviceMetricsOverride', {
       width: size.width,
       height: size.height,

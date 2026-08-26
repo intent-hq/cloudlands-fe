@@ -60,6 +60,9 @@ describe('hardcoded user-facing string gate', () => {
           "export const message = 'Streaming preview fixture sentence';",
         'workspace/workspace-sidebar.preview.svelte': '<span>Workspace preview sentence</span>',
         'badge/badge.meta.ts': "export const description = 'Catalog metadata sentence';",
+        'badge/badge.preview.ts': "export const title = 'Preview title sentence';",
+        'badge/badge.preview-fixtures.ts': "export const label = 'Preview fixture sentence';",
+        'badge/badge.preview.svelte': '<span>Preview component sentence</span>',
         'card/operate-patterns.playwright.config.ts': "export const name = 'Desktop Chrome';",
         'chat/streaming-status.preview-fixtures.svelte':
           '<span>Product preview fixtures sentence</span>',
@@ -68,7 +71,7 @@ describe('hardcoded user-facing string gate', () => {
       (dir) => {
         const result = runGate([dir]);
         expect(result.exitCode).toBe(1);
-        expect(result.output).toContain('Excluded 8 scaffolding file(s)');
+        expect(result.output).toContain('Excluded 11 scaffolding file(s)');
         expect(result.output).toContain('[template text] "Rendered product text"');
         expect(result.output).toContain('[template text] "Product preview fixtures sentence"');
         expect(result.output).not.toContain('Harness only demo text');
@@ -78,6 +81,9 @@ describe('hardcoded user-facing string gate', () => {
         expect(result.output).not.toContain('Streaming preview fixture sentence');
         expect(result.output).not.toContain('Workspace preview sentence');
         expect(result.output).not.toContain('Catalog metadata sentence');
+        expect(result.output).not.toContain('Preview title sentence');
+        expect(result.output).not.toContain('Preview fixture sentence');
+        expect(result.output).not.toContain('Preview component sentence');
         expect(result.output).not.toContain('Desktop Chrome');
       },
     );

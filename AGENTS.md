@@ -34,21 +34,21 @@ src/
 FE docs live in the monorepo's `docs/fe/` — the `../../docs/fe/` paths below resolve
 in a monorepo checkout, where this repo mounts at `packages/cloudlands-fe/`.
 
-| Working on…         | Open                                                                                       |
-| ------------------- | ------------------------------------------------------------------------------------------ |
-| agents              | ../../docs/fe/agent-message-dedup-and-stream-sagas.md, ../../docs/fe/RULES_SYSTEM.md       |
-| state/store         | ../../docs/fe/STATE_MANAGEMENT.md, src/store/renderer/docs/                                |
-| component design    | ../../docs/fe/COMPONENTS_DESIGN.md                                                         |
-| panels/layout       | ../../docs/fe/panel-system-refactoring.md, ../../docs/fe/PANEL_TAB_UX_SPEC.md              |
-| PR descriptions     | ../../docs/fe/PR_DESCRIPTION_GUIDE.md                                                      |
-| browser/CDP         | ../../docs/fe/BROWSER_PANEL_SPEC.md, ../../docs/fe/CDP_MCP_TOOLS.md                        |
-| module boundaries   | ../../docs/fe/MODULE_BOUNDARY_GUIDE.md                                                     |
-| debugging           | ../../docs/fe/TROUBLESHOOTING_GUIDE.md, ../../docs/fe/IPC_DEBUG_GUIDE.md                   |
-| error handling      | ../../docs/fe/ERROR_HANDLING_SYSTEM.md                                                     |
-| TypeScript/types    | ../../docs/fe/TYPE_SYSTEM_GUIDE.md                                                         |
-| events/IPC          | ../../docs/fe/EVENT_SYSTEM.md                                                              |
-| keybindings         | ../../docs/fe/KEYBINDINGS.md                                                               |
-| deploying/releasing | ../../docs/fe/DEPLOYING.md                                                                 |
+| Working on…         | Open                                                                                 |
+| ------------------- | ------------------------------------------------------------------------------------ |
+| agents              | ../../docs/fe/agent-message-dedup-and-stream-sagas.md, ../../docs/fe/RULES_SYSTEM.md |
+| state/store         | ../../docs/fe/STATE_MANAGEMENT.md, src/store/renderer/docs/                          |
+| component design    | ../../docs/fe/COMPONENTS_DESIGN.md                                                   |
+| panels/layout       | ../../docs/fe/panel-system-refactoring.md, ../../docs/fe/PANEL_TAB_UX_SPEC.md        |
+| PR descriptions     | ../../docs/fe/PR_DESCRIPTION_GUIDE.md                                                |
+| browser/CDP         | ../../docs/fe/BROWSER_PANEL_SPEC.md, ../../docs/fe/CDP_MCP_TOOLS.md                  |
+| module boundaries   | ../../docs/fe/MODULE_BOUNDARY_GUIDE.md                                               |
+| debugging           | ../../docs/fe/TROUBLESHOOTING_GUIDE.md, ../../docs/fe/IPC_DEBUG_GUIDE.md             |
+| error handling      | ../../docs/fe/ERROR_HANDLING_SYSTEM.md                                               |
+| TypeScript/types    | ../../docs/fe/TYPE_SYSTEM_GUIDE.md                                                   |
+| events/IPC          | ../../docs/fe/EVENT_SYSTEM.md                                                        |
+| keybindings         | ../../docs/fe/KEYBINDINGS.md                                                         |
+| deploying/releasing | ../../docs/fe/DEPLOYING.md                                                           |
 
 ## Key conventions
 
@@ -61,7 +61,7 @@ in a monorepo checkout, where this repo mounts at `packages/cloudlands-fe/`.
 - **Never import from a feature's **`main/`** subtree in renderer code** (or vice-versa).
 - **Don't export utility functions from orchestration modules** — extract to a dedicated `utils/` file.
 - **Keep utilities dependency-light** — no stores, services, or side effects.
-- **Never quote the literal breaking-change footer token** — release-please treats `BREAKING CHANGE:` / `BREAKING-CHANGE:` (and `Release-As:`) appearing anywhere in a commit body as a real footer, and squash merges fold every branch commit message into the squash body, so a commit that merely *quotes* the token causes a false major bump (or, for `Release-As:`, a forced pinned version); this accidentally cut v3.0.0 — see intent-hq/monorepo#2988. Never write the literal token in commit messages, PR titles/bodies, or review comments unless an actual breaking change is intended — when describing the mechanism, write "the breaking-change footer token" or similar instead.
+- **Never quote the literal breaking-change footer token** — release-please treats `BREAKING CHANGE:` / `BREAKING-CHANGE:` (and `Release-As:`) appearing anywhere in a commit body as a real footer, and squash merges fold every branch commit message into the squash body, so a commit that merely _quotes_ the token causes a false major bump (or, for `Release-As:`, a forced pinned version); this accidentally cut v3.0.0 — see intent-hq/monorepo#2988. Never write the literal token in commit messages, PR titles/bodies, or review comments unless an actual breaking change is intended — when describing the mechanism, write "the breaking-change footer token" or similar instead.
 
 ## Internationalization (i18n)
 
@@ -274,7 +274,6 @@ pnpm tsc -p tsconfig.preload.json --noEmit  # preload
 
 `pnpm run check` must run alongside plain `tsc` because Svelte component consumers are not fully type-checked by `tsc` alone. All three typechecks must pass. The main typecheck requires `pnpm run generate:build-config` to have been run at least once.
 
-
 ## Frontend philosophy & testing
 
 The renderer is a **thin presenter** over the daemon. Correctness, business rules, and
@@ -384,12 +383,12 @@ payloads must mirror the documented contract.
 
 Reuse the existing infrastructure instead of inventing parallel harnesses:
 
-| Use…                                              | For…                                                                                              |
-| ------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
-| `src/shared/ipc-mock-router.ts`                   | Single in-memory mock router — register per-channel `invoke` handlers and emit mock events.       |
-| `src/shared/ipc/request-validation.ts` (+ schemas)| Zod schemas + `validateIpcRequest` / `tryValidateIpcRequest` to assert the request matches contract. |
-| `src/shared/ipc/__tests__/contracts.test.ts`      | Reference pattern for asserting IPC contracts and request schemas — extend it for new methods.    |
-| `src/test-setup.ts`                               | Vitest global setup (Electron mocks, jsdom shims, temp workspace dir). New suites get this for free. |
+| Use…                                               | For…                                                                                                 |
+| -------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| `src/shared/ipc-mock-router.ts`                    | Single in-memory mock router — register per-channel `invoke` handlers and emit mock events.          |
+| `src/shared/ipc/request-validation.ts` (+ schemas) | Zod schemas + `validateIpcRequest` / `tryValidateIpcRequest` to assert the request matches contract. |
+| `src/shared/ipc/__tests__/contracts.test.ts`       | Reference pattern for asserting IPC contracts and request schemas — extend it for new methods.       |
+| `src/test-setup.ts`                                | Vitest global setup (Electron mocks, jsdom shims, temp workspace dir). New suites get this for free. |
 
 Run the targeted suite with `pnpm vitest run <files>` (see [Verification](#verification)
 above) before opening a PR.

@@ -26,7 +26,6 @@ function expectNoApplicationRuntimeResources(resources: string[]): void {
     resources.filter((url) => /\/src\/(?:store\/renderer\/sagas|lib\/client\/live)\//.test(url)),
   ).toEqual([]);
 }
-
 async function measureLoad(
   page: Page,
   path: string,
@@ -145,7 +144,6 @@ test('keeps warm-server direct scenes inside fresh-browser load budgets', async 
       SERVER_PREWARM_TIMEOUT_MS,
     );
     await prewarm.close();
-
     const measured = await newMeasuredPage(browser);
     const scene = measured.page.locator('[data-preview-ready=true]');
     const metrics = await measureLoad(
