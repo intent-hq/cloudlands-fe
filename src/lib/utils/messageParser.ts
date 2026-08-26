@@ -1707,10 +1707,21 @@ function canWithholdOpenBlock(body: string[]): boolean {
     .slice(0, -1)
     .map((line) => line.trim())
     .filter(Boolean);
-  const current = body.at(-1)?.trim() ?? '';
+  let current = body.at(-1)?.trim() ?? '';
   if (completed.some(looksLikeBodyText)) return false;
+  // A fused closer deferred on the unterminated final line (`Run -->`) is a
+  // valid candidate awaiting its newline: judge the remainder, not the raw
+  // line (which always matches the embedded-arrow pattern).
+  let currentIsFusedRemainder = false;
+  const fusedMatch = current.match(SUGGESTED_PROMPTS_TRAILING_CLOSER_REGEX);
+  if (fusedMatch && !SUGGESTED_PROMPTS_OPENER_REGEX.test(fusedMatch[1])) {
+    current = fusedMatch[1].trim();
+    currentIsFusedRemainder = true;
+  }
   if (current && /\S[ \t]*--+>/.test(current)) return false;
-  const currentIsPartialCloser = /^-{1,2}$/.test(current);
+  // A fused remainder is a complete prompt candidate, never a partial closer
+  // awaiting more dashes — count it even when it is only dashes.
+  const currentIsPartialCloser = !currentIsFusedRemainder && /^-{1,2}$/.test(current);
   const promptCount = completed.length + (current && !currentIsPartialCloser ? 1 : 0);
   return promptCount <= MAX_SUGGESTED_PROMPTS;
 }
@@ -1787,6 +1798,11 @@ function scanSuggestedPrompts(
 
     const trailingCloserMatch = line.match(SUGGESTED_PROMPTS_TRAILING_CLOSER_REGEX);
     if (trailingCloserMatch && !SUGGESTED_PROMPTS_OPENER_REGEX.test(trailingCloserMatch[1])) {
+      // While streaming, a fused closer on the unterminated final line is
+      // ambiguous: the next chunk may extend it into an embedded arrow
+      // (`Run -->` → `Run --> tests`). Keep the block open until the newline
+      // confirms the line; the withholding pass below keeps it hidden.
+      if (isStreaming && i === lines.length - 1) continue;
       const body = [...lines.slice(openerIndex + 1, i), trailingCloserMatch[1]];
       const prompts = body.some((bodyLine) => looksLikeBodyText(bodyLine.trim()))
         ? null
