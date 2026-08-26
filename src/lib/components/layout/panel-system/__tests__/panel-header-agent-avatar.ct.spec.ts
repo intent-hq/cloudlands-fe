@@ -17,7 +17,8 @@ for (const theme of ['light', 'dark'] as const) {
       const agentCase = component.locator('[data-panel-header-case="agent"]');
       const resourceCase = component.locator('[data-panel-header-case="resource"]');
       const agentSlot = agentCase.getByTestId('panel-header-agent-avatar-slot');
-      const avatar = agentSlot.locator('svg[data-agent-avatar]');
+      const avatar = agentSlot.locator('[data-agent-avatar-with-state]');
+      const avatarArt = avatar.locator('svg[data-agent-avatar]');
       const resourceSlot = resourceCase.locator('[data-panel-header-leading-surface]');
       const resourceTile = resourceSlot.locator('[data-resource-icon-tile]');
 
@@ -25,8 +26,8 @@ for (const theme of ['light', 'dark'] as const) {
       await expect(avatar).toHaveAttribute('data-avatar-variant', 'emphasized');
       await expect(resourceTile).toHaveAttribute('data-resource-icon-variant', 'emphasized');
       await expect(agentSlot.locator('[data-panel-agent-chat-glyph]')).toHaveCount(0);
-      await expect(component.locator('[data-agent-avatar-with-state]')).toHaveCount(0);
-      const initialDesign = await avatar.getAttribute('data-avatar-design');
+      await expect(component.locator('[data-agent-avatar-with-state]')).toHaveCount(1);
+      const initialDesign = await avatarArt.getAttribute('data-avatar-design');
 
       for (const state of states) {
         await component.update({ props: { theme, zoom, activeAgent: 'a', ...state } });
@@ -40,11 +41,11 @@ for (const theme of ['light', 'dark'] as const) {
               '[data-panel-header-leading-surface]',
             )!;
             const surface = slot.querySelector<HTMLElement>(
-              caseName === 'agent' ? '[data-agent-avatar]' : '[data-resource-icon-tile]',
+              caseName === 'agent' ? '[data-agent-avatar-with-state]' : '[data-resource-icon-tile]',
             )!;
             const art =
               caseName === 'agent'
-                ? surface
+                ? surface.querySelector<HTMLElement>('svg[data-agent-avatar]')!
                 : surface.querySelector<HTMLElement>('[data-resource-icon-glyph]')!;
             const title = panelCase.querySelector<HTMLElement>('[data-panel-header-title]')!;
             const headerRect = header.getBoundingClientRect();
@@ -53,20 +54,18 @@ for (const theme of ['light', 'dark'] as const) {
             const artRect = art.getBoundingClientRect();
             const titleRect = title.getBoundingClientRect();
             const titleText = title.querySelector<HTMLElement>('span') ?? title;
-            const surfaceStyle = getComputedStyle(surface);
+            const artStyle = getComputedStyle(art);
             const scale = selectedZoom;
             const artWidth =
-              caseName === 'agent'
-                ? surfaceRect.width / scale -
-                  Number.parseFloat(surfaceStyle.paddingLeft) -
-                  Number.parseFloat(surfaceStyle.paddingRight)
-                : artRect.width / scale;
+              artRect.width / scale -
+              (caseName === 'agent'
+                ? Number.parseFloat(artStyle.paddingLeft) + Number.parseFloat(artStyle.paddingRight)
+                : 0);
             const artHeight =
-              caseName === 'agent'
-                ? surfaceRect.height / scale -
-                  Number.parseFloat(surfaceStyle.paddingTop) -
-                  Number.parseFloat(surfaceStyle.paddingBottom)
-                : artRect.height / scale;
+              artRect.height / scale -
+              (caseName === 'agent'
+                ? Number.parseFloat(artStyle.paddingTop) + Number.parseFloat(artStyle.paddingBottom)
+                : 0);
             return {
               headerHeight: headerRect.height / scale,
               slotWidth: slotRect.width / scale,
@@ -134,8 +133,10 @@ for (const theme of ['light', 'dark'] as const) {
       const activeAgent = component.locator('[data-panel-agent-header-identity]');
       await expect(activeAgent).toContainText('Agent B');
       await expect(activeAgent.locator('svg[data-agent-avatar]')).toHaveCount(1);
-      expect(await avatar.getAttribute('data-avatar-design')).not.toBe(initialDesign);
-      await expect(activeAgent.locator('[data-agent-avatar-with-state]')).toHaveCount(0);
+      expect(
+        await activeAgent.locator('svg[data-agent-avatar]').getAttribute('data-avatar-design'),
+      ).not.toBe(initialDesign);
+      await expect(activeAgent.locator('[data-agent-avatar-with-state]')).toHaveCount(1);
 
       const oppositeTheme = theme === 'light' ? 'dark' : 'light';
       await component.update({
@@ -143,7 +144,7 @@ for (const theme of ['light', 'dark'] as const) {
       });
       await expect(component).toHaveAttribute('data-theme', oppositeTheme);
       await expect(agentSlot.locator('svg[data-agent-avatar]')).toHaveCount(1);
-      await expect(component.locator('[data-agent-avatar-with-state]')).toHaveCount(0);
+      await expect(component.locator('[data-agent-avatar-with-state]')).toHaveCount(1);
     });
   }
 }

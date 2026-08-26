@@ -73,6 +73,7 @@
   } from '$store/renderer/slices/specialists/specialists-selectors';
   import { selectGitHubAuthIsAuthenticated } from '$store/renderer/slices/github-auth/github-auth-selectors';
   import AgentAvatar from '$features/agent/components/agent-avatar/AgentAvatar.svelte';
+  import PanelHeaderAgentAvatar from './PanelHeaderAgentAvatar.svelte';
   import { navigateToSettings } from '$lib/utils/workspace-navigation';
   import {
     selectIsWorkspaceHostLocal,
@@ -1825,7 +1826,11 @@
             data-testid="panel-header-agent-avatar-slot"
             data-panel-header-leading-surface
           >
-            <AgentAvatar agentId={activeTab.agentId} variant="emphasized" />
+            {#if activeTab.agentId}
+              {#key activeTab.agentId}
+                <PanelHeaderAgentAvatar agentId={activeTab.agentId} />
+              {/key}
+            {/if}
           </span>
           <div class="panel-header-title min-w-0 shrink" data-panel-header-title>
             {#if onTabRename}
@@ -1848,9 +1853,6 @@
               </span>
             {/if}
           </div>
-          {#if attentionPaneIds.has(activeTab.id)}
-            <span class="size-1.5 shrink-0 rounded-full bg-primary" aria-hidden="true"></span>
-          {/if}
         </div>
       {:else}
         <!-- Non-agent panes retain the current flat identity and complete selector. -->

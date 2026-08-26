@@ -51,12 +51,20 @@ vi.mock('$store/renderer/slices/workspace-agents/workspace-agents-selectors', ()
 }));
 vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
   selectAgentSession: () => constantReadable(null),
-  selectAgentIsResponding: () => constantReadable(false),
+  selectAgentProvider: () => constantReadable(undefined),
+  selectAgentIsResponding: Object.assign(() => constantReadable(false), {
+    select: () => false,
+  }),
+  selectAgentMessageById: { select: () => undefined },
   selectAgentIsBlockedWaiting: () => constantReadable(false),
   selectAgentAttentionRequest: () => constantReadable(null),
 }));
+vi.mock('$store/renderer/slices/hud/hud-selectors', () => ({
+  selectHudAgentHasPendingQuestion: () => constantReadable(false),
+}));
 vi.mock('$store/renderer/slices/permission/permission-selectors', () => ({
   selectPermissionRequests: () => constantReadable([]),
+  selectPendingCount: () => constantReadable(0),
 }));
 vi.mock('$lib/components/ui/toast', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 vi.mock('$features/agent/components/agent-avatar/AgentAvatar.svelte', async () => ({
