@@ -3,6 +3,7 @@
  */
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { readFileSync } from 'node:fs';
+import { SvelteURL } from 'svelte/reactivity';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { appClient } from '$lib/client';
 import { SPECIALISTS } from '$lib/constants/specialists';
@@ -151,7 +152,7 @@ beforeEach(() => {
   registerMockIpcHandler(IPC_CHANNELS.BACKEND.GET_STATUS, () => ({ status: 'connected' }));
   (globalThis as typeof globalThis & { __APP_VERSION__: string }).__APP_VERSION__ = '2.0.10';
   window.history.pushState({}, '', '/settings#default-model');
-  mocks.page.url = new URL(window.location.href);
+  mocks.page.url = new SvelteURL(window.location.href);
   (
     window.localStorage.getItem as unknown as { mockReturnValue(value: string | null): void }
   ).mockReturnValue(null);
@@ -333,7 +334,7 @@ function renderSettings(
   catalog: SettingsCatalog = [...SETTINGS_PROTOCOL_FIXTURES.list.response.settings],
 ) {
   window.history.pushState({}, '', url);
-  mocks.page.url = new URL(window.location.href);
+  mocks.page.url.href = window.location.href;
   const requestedTab = mocks.page.url.searchParams.get('tab');
   const fixture = fixtureId
     ? SETTINGS_CAPTURE_FIXTURES.find(({ id }) => id === fixtureId)
@@ -964,6 +965,47 @@ describe('settings tab route and focus behavior', () => {
   ])('opens the requested Specialists query view for %s', async (url, expectedView) => {
     renderSettings(url);
     expect((await screen.findByTestId('ai-behavior-view')).textContent).toContain(expectedView);
+  });
+
+  it('syncs canonical Specialists query views while Settings remains mounted', async () => {
+    const replaceState = vi.spyOn(window.history, 'replaceState');
+    renderSettings('/settings?tab=specialists&specialist=implementor#specialist-implementor');
+    expect((await screen.findByTestId('ai-behavior-view')).textContent).toContain(
+      'specialist:implementor',
+    );
+
+    window.history.pushState(
+      {},
+      '',
+      '/settings?tab=specialists&specialist=reviewer#specialist-reviewer',
+    );
+    mocks.page.url.href = window.location.href;
+    await waitFor(() =>
+      expect(screen.getByTestId('ai-behavior-view').textContent).toContain('specialist:reviewer'),
+    );
+
+    window.history.pushState(
+      {},
+      '',
+      '/settings?tab=specialists&view=create-specialist#create-specialist',
+    );
+    mocks.page.url.href = window.location.href;
+    await waitFor(() =>
+      expect(screen.getByTestId('ai-behavior-view').textContent).toContain('create-specialist'),
+    );
+
+    window.history.pushState(
+      {},
+      '',
+      '/settings?tab=specialists&specialist=implementor#specialist-implementor',
+    );
+    mocks.page.url.href = window.location.href;
+    await waitFor(() =>
+      expect(screen.getByTestId('ai-behavior-view').textContent).toContain(
+        'specialist:implementor',
+      ),
+    );
+    expect(replaceState).not.toHaveBeenCalled();
   });
 
   it.each([

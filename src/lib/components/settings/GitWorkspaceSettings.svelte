@@ -296,6 +296,7 @@
               size="xs"
               class="mb-auto"
               ariaLabel={m.settings_gitWorkspace_gitCredentials_label()}
+              ariaDescribedby="git-credentials-description"
             />
           </div>
         </section>

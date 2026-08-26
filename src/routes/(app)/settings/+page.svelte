@@ -230,12 +230,12 @@
   });
 
   // Get specialist ID from URL query parameter for auto-selecting
-  const initialSpecialistId = $derived(page.url.searchParams.get('specialist'));
+  const specialistIdFromUrl = $derived(page.url.searchParams.get('specialist'));
   const settingsWorkspaceId = $derived(
     workspaceIdFromRouteParam(page.url.searchParams.get('workspaceId') ?? undefined),
   );
   // Get view parameter for direct navigation (e.g., ?view=create-specialist)
-  const initialView = $derived(page.url.searchParams.get('view'));
+  const viewFromUrl = $derived(page.url.searchParams.get('view'));
 
   // Agents sidebar view state
   let aiBehaviorView = $state<AIBehaviorView>({ type: 'system-prompt' });
@@ -269,19 +269,24 @@
     selectAiBehaviorView({ type: 'system-prompt' });
   }
 
-  // Initialize view from URL parameter if present (only on initial load)
-  let hasInitializedFromUrl = false;
+  // Keep canonical Specialists query views in sync across mounted navigations.
   $effect(() => {
-    if (hasInitializedFromUrl) return;
-    if (initialView === 'create-specialist') {
-      setActiveTab('specialists');
-      aiBehaviorView = { type: 'create-specialist' };
-      hasInitializedFromUrl = true;
-    } else if (initialSpecialistId) {
-      setActiveTab('specialists');
-      aiBehaviorView = { type: 'specialist', id: initialSpecialistId };
-      hasInitializedFromUrl = true;
-    }
+    const nextView: AIBehaviorView | undefined =
+      viewFromUrl === 'create-specialist'
+        ? { type: 'create-specialist' }
+        : specialistIdFromUrl
+          ? { type: 'specialist', id: specialistIdFromUrl }
+          : undefined;
+    if (!nextView) return;
+
+    untrack(() => {
+      if (activeTab !== 'specialists') setActiveTab('specialists');
+      const isCurrentView =
+        nextView.type === 'specialist'
+          ? aiBehaviorView.type === 'specialist' && aiBehaviorView.id === nextView.id
+          : aiBehaviorView.type === nextView.type;
+      if (!isCurrentView) aiBehaviorView = nextView;
+    });
   });
 
   // Check if we're in development mode

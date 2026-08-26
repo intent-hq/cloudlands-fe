@@ -27,9 +27,15 @@ describe('Toggle', () => {
     for (const variant of ['switch', 'indicator'] as const) {
       const onChange = vi.fn();
       const { getByRole, unmount } = render(Toggle, {
-        props: { variant, ariaLabel: `${variant} mode`, onChange },
+        props: {
+          variant,
+          ariaLabel: `${variant} mode`,
+          ariaDescribedby: `${variant}-description`,
+          onChange,
+        },
       });
       const control = getByRole('switch', { name: `${variant} mode` });
+      expect(control.getAttribute('aria-describedby')).toBe(`${variant}-description`);
       await fireEvent.click(control);
       expect(onChange).toHaveBeenLastCalledWith(true);
       unmount();

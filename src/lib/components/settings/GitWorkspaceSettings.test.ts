@@ -193,11 +193,12 @@ describe('GitWorkspaceSettings — git credential toggle (§5.12)', () => {
 
     render(GitWorkspaceSettings);
 
-    await waitFor(() => screen.getByRole('switch', { name: GIT_CRED_LABEL }));
+    const toggle = await waitFor(() => screen.getByRole('switch', { name: GIT_CRED_LABEL }));
     const description = screen.getByText(/credential helper scoped to HTTPS\s+github\.com remotes/);
     expect(description).toBeTruthy();
     expect(description.closest('[title]')).toBeNull();
     expect(description.id).toBe('git-credentials-description');
+    expect(toggle.getAttribute('aria-describedby')).toBe(description.id);
   });
 });
 
