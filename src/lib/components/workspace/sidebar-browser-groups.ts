@@ -29,14 +29,21 @@ export interface SidebarBrowserGroup {
 }
 
 /**
- * Resolve an owner agent's display name from the workspace agent sessions,
- * falling back to a shortened agent id when the session is unknown (e.g.
- * the agent list has not loaded yet).
+ * Resolve an owner agent's display name: the live workspace agent session
+ * when it is loaded (it tracks renames), else the name persisted with the
+ * tab (`PanelTab.ownerAgentName`, monorepo#3438 — the store often lacks
+ * idle/unloaded owners), else a shortened agent id.
  */
-export function resolveOwnerName(ownerAgentId: string, agents: AgentSession[]): string {
+export function resolveOwnerName(
+  ownerAgentId: string,
+  agents: AgentSession[],
+  persistedName?: string,
+): string {
   const session = agents.find((agent) => String(agent.id) === ownerAgentId);
   const name = session?.name?.trim();
   if (name) return name;
+  const fallback = persistedName?.trim();
+  if (fallback) return fallback;
   // "agent-<uuid>" → "agent-<first8>…" keeps the fallback readable.
   return ownerAgentId.length > 14 ? `${ownerAgentId.slice(0, 14)}…` : ownerAgentId;
 }
@@ -53,17 +60,21 @@ export function groupBrowserTabsByOwner(
   const owned = new Map<string, SidebarBrowserGroup>();
   const unclaimed: SidebarBrowserGroup = { ownerAgentId: null, ownerName: null, entries: [] };
 
-  const groupFor = (ownerAgentId: string): SidebarBrowserGroup => {
+  const groupFor = (ownerAgentId: string, persistedName?: string): SidebarBrowserGroup => {
     let group = owned.get(ownerAgentId);
     if (!group) {
-      group = { ownerAgentId, ownerName: resolveOwnerName(ownerAgentId, agents), entries: [] };
+      group = {
+        ownerAgentId,
+        ownerName: resolveOwnerName(ownerAgentId, agents, persistedName),
+        entries: [],
+      };
       owned.set(ownerAgentId, group);
     }
     return group;
   };
 
   for (const { tab, panelId, active } of visible) {
-    const target = tab.ownerAgentId ? groupFor(tab.ownerAgentId) : unclaimed;
+    const target = tab.ownerAgentId ? groupFor(tab.ownerAgentId, tab.ownerAgentName) : unclaimed;
     target.entries.push({ tab, panelId, active, hidden: false });
   }
   // Hidden tabs are always owned (only owned tabs hide on close), but a
@@ -71,7 +82,7 @@ export function groupBrowserTabsByOwner(
   // rather than disappearing.
   for (const tab of hidden) {
     if (tab.type !== 'browser') continue;
-    const target = tab.ownerAgentId ? groupFor(tab.ownerAgentId) : unclaimed;
+    const target = tab.ownerAgentId ? groupFor(tab.ownerAgentId, tab.ownerAgentName) : unclaimed;
     target.entries.push({ tab, active: false, hidden: true });
   }
 

@@ -4395,6 +4395,67 @@ describe('panelLayoutReducer', () => {
       expect(panelLayoutReducer(state, setTabOwnerAgent(WS, 'missing', 'agent-1'))).toBe(state);
       expect(panelLayoutReducer(state, setTabOwnerAgent(WS, 't2', 'agent-1'))).toBe(state);
     });
+
+    // monorepo#3438: the owner's display name persists with the tab so the
+    // sidebar owner group can label it without an agent-store lookup.
+    it('records the owner display name alongside the owner', () => {
+      const state = stateWithPanel('p1', [browserTab]);
+      const result = panelLayoutReducer(
+        state,
+        setTabOwnerAgent(WS, 'b1', 'agent-1', undefined, 'Docs Writer'),
+      );
+      expect(result.byWorkspaceId[WS].panels.p1.tabs[0]).toMatchObject({
+        ownerAgentId: 'agent-1',
+        ownerAgentName: 'Docs Writer',
+      });
+    });
+
+    it('keeps a previously recorded name when the update omits one', () => {
+      const state = stateWithPanel('p1', [browserTab]);
+      const named = panelLayoutReducer(
+        state,
+        setTabOwnerAgent(WS, 'b1', 'agent-1', undefined, 'Docs Writer'),
+      );
+      const resized = panelLayoutReducer(
+        named,
+        setTabOwnerAgent(WS, 'b1', 'agent-1', { width: 640, height: 480 }),
+      );
+      expect(resized.byWorkspaceId[WS].panels.p1.tabs[0]).toMatchObject({
+        ownerAgentName: 'Docs Writer',
+        emulatedSize: { width: 640, height: 480 },
+      });
+    });
+
+    it('updates the name on a repeat notification and no-ops when unchanged', () => {
+      const state = stateWithPanel('p1', [browserTab]);
+      const named = panelLayoutReducer(
+        state,
+        setTabOwnerAgent(WS, 'b1', 'agent-1', undefined, 'Old Name'),
+      );
+      const renamed = panelLayoutReducer(
+        named,
+        setTabOwnerAgent(WS, 'b1', 'agent-1', undefined, 'New Name'),
+      );
+      expect(renamed.byWorkspaceId[WS].panels.p1.tabs[0].ownerAgentName).toBe('New Name');
+      const repeat = panelLayoutReducer(
+        renamed,
+        setTabOwnerAgent(WS, 'b1', 'agent-1', undefined, 'New Name'),
+      );
+      expect(repeat).toBe(renamed);
+    });
+
+    it('records the owner display name on a hidden owned tab', () => {
+      const state = stateWithPanel('p1', [
+        { ...browserTab, ownerAgentId: 'agent-1' } as any,
+        { id: 't2', type: 'note', title: 'A' },
+      ]);
+      const hidden = panelLayoutReducer(state, closeTab(WS, 'b1', 'p1', 1000));
+      const named = panelLayoutReducer(
+        hidden,
+        setTabOwnerAgent(WS, 'b1', 'agent-1', undefined, 'Docs Writer'),
+      );
+      expect(getItems(named.byWorkspaceId[WS].hiddenTabs)[0].ownerAgentName).toBe('Docs Writer');
+    });
   });
 
   // Conversation-footer reveal uses another fixed column when available and

@@ -486,6 +486,7 @@ async function executeAction(
     replaceTabId?: string,
     emulatedSize?: { width: number; height: number },
     visible?: boolean,
+    ownerAgentName?: string,
   ) => { success: boolean; message: string; tabId?: string },
   agentId?: string,
   workspaceId?: string,
@@ -945,6 +946,12 @@ async function executeAction(
         // focus). User (agentId-less) opens are always visible and never
         // carry the flag.
         const visible = agentId ? action.visible === true : undefined;
+        // Owner display name for agent opens (monorepo#3438), best-effort:
+        // persisted with the tab so the sidebar owner group can label it
+        // without an agent-store lookup.
+        const openOwnerName = agentId
+          ? await resolveAgentDisplayName(agentId, workspaceId)
+          : undefined;
         // The short call form is for user (agentId-less) opens only — agent
         // opens always compute a defined emulatedSize above, so they always
         // take the long form, which carries `visible` through.
@@ -968,6 +975,7 @@ async function executeAction(
                 replaceTargetTabId,
                 emulatedSize,
                 visible,
+                openOwnerName,
               );
         // The id the caller can address: the adopted existing tab on a
         // replace, otherwise the pre-generated id of the new tab.
@@ -994,7 +1002,12 @@ async function executeAction(
           // ownerAgentId open-payload for — sync it so the layout persists
           // the ownership (monorepo#2857).
           if (replaceTargetTabId) {
-            embeddedBrowserCdp.notifyTabOwnerChanged(effectiveTabId, workspaceId, agentId);
+            embeddedBrowserCdp.notifyTabOwnerChanged(
+              effectiveTabId,
+              workspaceId,
+              agentId,
+              openOwnerName,
+            );
           }
         }
         // Await the renderer's registration of the tab so the returned
@@ -1093,8 +1106,14 @@ async function executeAction(
           };
         }
         // Persist the new owner on the panel-layout tab so ownership
-        // survives restart (monorepo#2857).
-        embeddedBrowserCdp.notifyTabOwnerChanged(action.tabId, workspaceId, agentId);
+        // survives restart (monorepo#2857), with the owner's display name
+        // (best-effort) for the sidebar owner group (monorepo#3438).
+        embeddedBrowserCdp.notifyTabOwnerChanged(
+          action.tabId,
+          workspaceId,
+          agentId,
+          await resolveAgentDisplayName(agentId, workspaceId),
+        );
         return {
           action: 'claimTab',
           success: true,
@@ -1326,6 +1345,7 @@ export async function executeActions(
     replaceTabId?: string,
     emulatedSize?: { width: number; height: number },
     visible?: boolean,
+    ownerAgentName?: string,
   ) => { success: boolean; message: string; tabId?: string },
   agentId?: string,
   workspaceId?: string,

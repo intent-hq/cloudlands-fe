@@ -1472,6 +1472,93 @@ describe('browserIpcSaga', () => {
     await task.toPromise();
   });
 
+  // monorepo#3438: the owner's display name rides the open and owner-changed
+  // payloads and persists with the tab so the sidebar can label the owner
+  // group without an agent-store lookup.
+  it('persists the ownerAgentName from an agent open payload on the new tab', async () => {
+    const actions: unknown[] = [];
+    const task = start((action) => actions.push(action));
+
+    await emit({
+      url: 'https://named.test',
+      workspaceId: 'ws-1',
+      ownerAgentId: 'agent-1',
+      ownerAgentName: 'Docs Writer',
+    });
+
+    expect(actions).toMatchObject([
+      {
+        type: 'panelLayout/openTabInRightmostColumnRequested',
+        payload: {
+          wsId: 'ws-1',
+          agentDriven: true,
+          tab: {
+            ...TAB('https://named.test'),
+            ownerAgentId: 'agent-1',
+            ownerAgentName: 'Docs Writer',
+          },
+        },
+      },
+    ]);
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('ignores an ownerAgentName without an ownerAgentId on an open payload', async () => {
+    const actions: unknown[] = [];
+    const task = start((action) => actions.push(action));
+
+    await emit({
+      url: 'https://user.test',
+      workspaceId: 'ws-1',
+      ownerAgentName: 'Docs Writer',
+    });
+
+    expect(actions).toMatchObject([
+      {
+        type: 'panelLayout/openTabInRightmostColumnRequested',
+        payload: { wsId: 'ws-1', tab: TAB('https://user.test') },
+      },
+    ]);
+    expect((actions[0] as any).payload.tab.ownerAgentName).toBeUndefined();
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('persists the ownerAgentName from a tab-owner-changed event', async () => {
+    const actions: unknown[] = [];
+    const task = start((action) => actions.push(action));
+    state = {
+      panelLayout: {
+        byWorkspaceId: {
+          'ws-1': {
+            panels: { one: { tabs: [{ id: 'tab-1', type: 'browser' }] } },
+          },
+        },
+      },
+    };
+
+    await emit(
+      {
+        workspaceId: 'ws-1',
+        tabId: 'tab-1',
+        ownerAgentId: 'agent-1',
+        ownerAgentName: 'Docs Writer',
+        emulatedSize: { width: 390, height: 844 },
+      },
+      'browser:tab-owner-changed',
+    );
+
+    expect(actions).toMatchObject([
+      {
+        type: 'panelLayout/setTabOwnerAgent',
+        payload: ['ws-1', 'tab-1', 'agent-1', { width: 390, height: 844 }, 'Docs Writer'],
+      },
+    ]);
+    task.cancel();
+    await task.toPromise();
+  });
+
   describe('background hydration for hosted-but-unvisited workspaces (monorepo#2789)', () => {
     const startWithReducer = () => {
       const actions: unknown[] = [];

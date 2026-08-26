@@ -958,6 +958,7 @@ describe('browser-action-executor', () => {
         undefined,
         { width: 1280, height: 800 },
         true,
+        undefined,
       );
       expect(result.results[0]?.warning).toContain('no UI focus was attempted');
     });
@@ -1093,6 +1094,7 @@ describe('browser-action-executor', () => {
         'tab-existing',
         { width: 1280, height: 800 },
         false,
+        undefined,
       );
       expect(embeddedBrowserCdp.waitForTabRegistration).toHaveBeenCalledExactlyOnceWith(
         'tab-existing',
@@ -1392,6 +1394,7 @@ describe('browser-action-executor', () => {
         undefined,
         { width: 1280, height: 800 },
         false,
+        undefined,
       );
     });
 
@@ -2168,6 +2171,7 @@ describe('browser-action-executor', () => {
         undefined,
         { width: 1280, height: 800 },
         false,
+        undefined,
       );
     });
 
@@ -2251,6 +2255,7 @@ describe('browser-action-executor', () => {
         undefined,
         { width: 1280, height: 800 },
         false,
+        undefined,
       );
       // The new tab is owned at open time so it counts as the agent's own; a
       // non-tunneled open clears any stale requested-URL identity, and the
@@ -2297,6 +2302,7 @@ describe('browser-action-executor', () => {
         undefined,
         { width: 1280, height: 800 },
         true,
+        undefined,
       );
     });
 
@@ -2909,6 +2915,7 @@ describe('browser-action-executor', () => {
         'tab-1',
         'ws-1',
         'agent-1',
+        undefined,
       );
       expect(result.results[0]?.result).toMatchObject({
         tabId: 'tab-1',
