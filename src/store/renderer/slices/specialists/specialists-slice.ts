@@ -4,7 +4,11 @@ import {
   createCollection,
   type Collection,
 } from '@augmentcode/themis/utils/collections/collection-utils';
-import type { SpecialistFileScope, SpecialistModelOption } from '$shared/specialist-file-types';
+import type {
+  SpecialistFileScope,
+  SpecialistModelOption,
+  SpecialistRole,
+} from '$shared/specialist-file-types';
 
 // ============================================================================
 // Types (re-exported for consumers)
@@ -52,6 +56,16 @@ export interface FileSpecialist {
    */
   resolvedModel?: string;
   resolvedProvider?: string;
+  /**
+   * Orchestration role (PROTOCOL §5.11 `role`): 'orchestrator' powers the
+   * New Workspace modal's team card; 'internal' is excluded from the modal's
+   * single-agent dropdown only. Undefined for standard specialists.
+   */
+  role?: SpecialistRole;
+  /** Specialist ids the orchestrator delegates to (advisory/render-only). */
+  teamAgents?: string[];
+  /** Built-in avatar design id; unknown/absent degrades to the fallback. */
+  icon?: string;
 }
 
 export interface FileSpecialistWritePayload {

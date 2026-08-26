@@ -17,6 +17,7 @@ export interface AppIconResolutionOptions {
   nodeEnv?: string;
   platform: NodeJS.Platform;
   iconsDirectory?: string;
+  resourcesDirectory?: string;
   fileExists?: (filePath: string) => boolean;
 }
 
@@ -40,10 +41,16 @@ export function resolveAppDockIconPath(options: AppIconResolutionOptions): strin
     isPackaged,
     nodeEnv,
     iconsDirectory = ICONS_DIRECTORY,
+    resourcesDirectory = process.resourcesPath,
     fileExists = fs.existsSync,
   } = options;
-  if (isPackaged || nodeEnv !== 'development') return undefined;
 
-  const iconPath = path.join(iconsDirectory, 'dev-icon.png');
+  const iconPath = isPackaged
+    ? path.join(resourcesDirectory, 'app-icon.png')
+    : nodeEnv === 'development'
+      ? path.join(iconsDirectory, 'dev-icon.png')
+      : undefined;
+  if (!iconPath) return undefined;
+
   return fileExists(iconPath) ? iconPath : undefined;
 }

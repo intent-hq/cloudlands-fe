@@ -16,8 +16,7 @@ import { DEFAULTS } from '../../../shared/constants';
 import { Logger } from '../../../shared/logger';
 import { m } from '../../../shared/paraglide/messages.js';
 import { confirmQuitWithRunningAgents } from '../../../main/quit-confirmation';
-import { saveWindowSessions } from '../../../main/window';
-import { getActiveId } from '../../backend/main/connections-store';
+import { saveAllWindowSessions } from '../../../main/window';
 import { broadcastToRenderers } from './auto-update-broadcast';
 import { isUpdateChannel, type UpdateChannel, type UpdateState, type UpdateStatus } from '../types';
 
@@ -221,6 +220,22 @@ class AutoUpdateService {
       // 'update-not-available' would incorrectly show the manual "up to
       // date" toast because `isManualCheck` stayed latched from this check.
       this.isManualCheck = false;
+      // A direct switch to 'disabled' while a check was in flight (status
+      // 'checking' — neutralizeStaleFeedArtifact() has nothing to discard
+      // then) cannot invalidate this handler: the old-feed result lands
+      // HERE, after the switch. Arming 'available' would let the renderer
+      // offer a Download of the opted-out artifact — and no future check
+      // runs while disabled to ever clean it up. Discard the event instead;
+      // the epoch mismatch in checkForUpdates() cancels the autoDownload
+      // this result may have started (PR #1713 review).
+      if (this.state.channel === 'disabled') {
+        logger.info('Discarding late update-available event; updates are disabled', {
+          version: info.version,
+        });
+        this.state.updateInfo = null;
+        this.updateStatus('idle');
+        return;
+      }
       logger.info('Update available', { version: info.version });
       // A re-check while this same version is already downloaded must not
       // regress the UI to 'available' (a new Download click): keep
@@ -298,9 +313,23 @@ class AutoUpdateService {
     });
 
     autoUpdater.on('update-downloaded', (info: ElectronUpdateInfo) => {
-      logger.info('Update downloaded', { version: info.version });
       this.downloadCancellationToken = null;
       this.expectingDownloadCancel = false;
+      // Same late-event race as 'update-available' above, narrower window: a
+      // fast cache re-resolve can fire this before the in-flight check's
+      // promise settles (i.e. before the epoch cancel runs). Re-arming
+      // quit-install here would install the opted-out artifact on quit —
+      // keep it disarmed and drop the artifact instead (PR #1713 review).
+      if (this.state.channel === 'disabled') {
+        logger.info('Discarding late update-downloaded event; updates are disabled', {
+          version: info.version,
+        });
+        autoUpdater.autoInstallOnAppQuit = false;
+        this.state.updateInfo = null;
+        this.updateStatus('idle');
+        return;
+      }
+      logger.info('Update downloaded', { version: info.version });
       // Re-enable quit-install for this fresh artifact: a channel switch
       // while downloaded/downloading disables autoInstallOnAppQuit so the
       // stale artifact cannot install; this download validated against the
@@ -360,6 +389,23 @@ class AutoUpdateService {
     }
     this.state.channel = channel;
 
+    if (channel === 'disabled') {
+      // No /disabled feed exists: leave the feed URL untouched and suppress
+      // all update activity (the check entry points gate on the channel).
+      // Disarm quit-install unconditionally and neutralize whatever the
+      // previous channel produced — an in-flight download is cancelled and a
+      // downloaded artifact must not install on quit. The epoch bump makes a
+      // check that was in flight at switch time cancel (rather than store)
+      // the autoDownload token its late-arriving result carries. All of this
+      // runs synchronously, before the prefs-write await below.
+      autoUpdater.autoInstallOnAppQuit = false;
+      this.channelSwitchEpoch++;
+      this.neutralizeStaleFeedArtifact();
+      await this.persistChannelSetting(channel);
+      logger.info('Update channel set to disabled; update activity suppressed');
+      return;
+    }
+
     // Persist the channel choice BEFORE the baseUrl guard so the preference
     // survives even if AUTO_UPDATE_URL is missing
     await this.persistChannelSetting(channel);
@@ -380,6 +426,13 @@ class AutoUpdateService {
   }
 
   private async checkForUpdates(): Promise<UpdateState> {
+    // 'disabled' suppresses every automatic check path funneling through
+    // here (startup timer, periodic interval, focus/resume staleness check).
+    if (this.state.channel === 'disabled') {
+      logger.debug('Skipping update check - updates are disabled');
+      return this.state;
+    }
+
     // Defense in depth (intent-hq/monorepo#1848): an uninitialized service
     // has no electron-updater event handlers attached, so no terminal event
     // would ever close the check session — the watchdog's misleading
@@ -505,6 +558,17 @@ class AutoUpdateService {
     // query the feed so a newer version can supersede the pending artifact.
     // A same-version answer keeps the 'downloaded' UI (no "up to date" toast,
     // no regression to a Download prompt) — see setupEventHandlers().
+
+    // Updates disabled: never hit the network, but a user-initiated check
+    // deserves an answer — broadcast an error status explaining why nothing
+    // happened (the menu sites show the toast surface, so this is visible)
+    // rather than skipping silently like the automatic paths.
+    if (this.state.channel === 'disabled') {
+      logger.info('Manual check skipped: updates are disabled');
+      this.state.error = m.autoUpdate_service_channelDisabled_error();
+      this.updateStatus('error');
+      return this.state;
+    }
 
     // If currently downloading, notify the user of progress
     if (this.state.status === 'downloading') {
@@ -636,6 +700,12 @@ class AutoUpdateService {
   }
 
   async downloadUpdate(): Promise<void> {
+    // Defense in depth: the event-handler gates keep status away from
+    // 'available' while disabled, so this should be unreachable — but a
+    // download of an opted-out artifact must never start regardless.
+    if (this.state.channel === 'disabled') {
+      throw new Error('Updates are disabled');
+    }
     if (this.state.status !== 'available') {
       throw new Error('No update available to download');
     }
@@ -684,9 +754,8 @@ class AutoUpdateService {
       }
 
       logger.info('Saving window sessions before installing update...');
-      // Persist under the currently-active backend (T21) so the update-restart
-      // restores the same backend's windows rather than clobbering local's slot.
-      await saveWindowSessions(await getActiveId());
+      // Persist every live backend. activeId remains only the boot restore default.
+      await saveAllWindowSessions();
       isInstallingUpdate = true;
 
       logger.info('Installing update and restarting...');
@@ -733,8 +802,16 @@ class AutoUpdateService {
     if (status !== 'available' && status !== 'not-available' && status !== 'error') return;
     this.channelSwitchRecheckQueued = false;
     queueMicrotask(() => {
-      logger.info('Running queued channel-switch update check against new feed');
       this.neutralizeStaleFeedArtifact();
+      // The user may have switched to 'disabled' after the recheck was
+      // queued (e.g. beta → disabled while the old-feed check was still in
+      // flight): the old-feed outcome is neutralized above, but no fresh
+      // check runs and no error toast appears — the user asked for silence.
+      if (this.state.channel === 'disabled') {
+        logger.debug('Skipping queued channel-switch recheck - updates are disabled');
+        return;
+      }
+      logger.info('Running queued channel-switch update check against new feed');
       void this.checkForUpdatesManual().catch((error) => {
         logger.debug('Queued channel-switch update check failed', {
           error: (error as Error).message,

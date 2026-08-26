@@ -70,11 +70,17 @@ vi.mock('../../../../main/browser-ipc-broadcast-adapter', () => ({
 
 vi.mock('../../../backend/main/backend.ipc', () => ({
   getBackendClient: () => ({ request: vi.fn() }),
+  getBackendIdForIpcSender: vi.fn((sender: { backendId?: string }) => sender.backendId ?? 'local'),
 }));
 
 vi.mock('../../../../shared/main/host-exec', () => ({ hostExec: vi.fn() }));
 vi.mock('../../../../shared/main/host-exec-stream', () => ({ hostExecStream: vi.fn() }));
-vi.mock('../../../../main/window', () => ({ forwardRendererConsoleToMainLog: vi.fn() }));
+vi.mock('../../../../main/window', () => ({
+  forwardRendererConsoleToMainLog: vi.fn(),
+  stampWindowWithBackend: vi.fn((window: { backendId?: string }, backendId: string) => {
+    window.backendId = backendId;
+  }),
+}));
 
 import { WINDOW_CHANNELS } from '../../../../shared/ipc/channels';
 import { _resetHudWindowRefForTests } from '../../../../main/hud-window';
@@ -142,6 +148,27 @@ describe('HUD window singleton via WINDOW.OPEN_NEW', () => {
     await openNew({ sender: {} }, { route: '/workspace/ws-2' });
     expect(electronMocks.constructed).toHaveLength(2);
   });
+
+  it.each([WINDOW_CHANNELS.CREATE, WINDOW_CHANNELS.OPEN_NEW])(
+    '%s inherits the opener backend for remote and local app windows',
+    async (channel) => {
+      const openWindow = handlerFor(channel);
+      await openWindow({ sender: { backendId: 'remote-a' } }, { route: '/workspace/remote' });
+      await openWindow({ sender: { backendId: 'local' } }, { route: '/workspace/local' });
+
+      expect(electronMocks.constructed[0].backendId).toBe('remote-a');
+      expect(electronMocks.constructed[1].backendId).toBe('local');
+    },
+  );
+
+  it.each(['/hud', '/workspace/__chief__'])(
+    'keeps the local-only %s route on the local backend',
+    async (route) => {
+      await handlerFor(WINDOW_CHANNELS.OPEN_NEW)({ sender: { backendId: 'remote-a' } }, { route });
+
+      expect(electronMocks.constructed[0].backendId).toBe('local');
+    },
+  );
 
   it('WINDOW.CREATE funnels through the same singleton as OPEN_NEW', async () => {
     await handlerFor(WINDOW_CHANNELS.OPEN_NEW)({ sender: {} }, { route: '/hud' });

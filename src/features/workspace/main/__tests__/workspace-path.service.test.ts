@@ -8,16 +8,25 @@
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { requestSpy, notificationHandlers, reconnectHandlers, remoteActive } = vi.hoisted(() => ({
+const {
+  requestSpy,
+  compatibilityRequestSpy,
+  backendState,
+  notificationHandlers,
+  reconnectHandlers,
+} = vi.hoisted(() => ({
   requestSpy: vi.fn(),
+  compatibilityRequestSpy: vi.fn(),
+  backendState: { primaryId: 'local' },
   notificationHandlers: [] as Array<(n: unknown) => void>,
   reconnectHandlers: [] as Array<() => void>,
-  remoteActive: { value: false },
 }));
 
 vi.mock('../../../backend/main/backend.ipc', () => ({
-  getBackendClient: () => ({ request: requestSpy }),
-  isRemoteBackendActive: () => remoteActive.value,
+  getBackendClient: () => ({ request: compatibilityRequestSpy }),
+  getBackendClientForConnection: (id: string) =>
+    id === 'local' ? { request: requestSpy } : undefined,
+  getPrimaryBackendId: () => backendState.primaryId,
   onBackendNotification: (handler: (n: unknown) => void) => {
     notificationHandlers.push(handler);
     return () => {};
@@ -69,9 +78,9 @@ function flush(): Promise<void> {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  backendState.primaryId = 'local';
   notificationHandlers.length = 0;
   reconnectHandlers.length = 0;
-  remoteActive.value = false;
   __resetWorkspacePathServiceForTesting();
 });
 
@@ -108,11 +117,22 @@ describe('workspace-path.service', () => {
     expect(await getWorkspacePath('nope')).toBeNull();
   });
 
-  it('returns null when a remote backend is active, without any RPC', async () => {
-    remoteActive.value = true;
+  it('uses the local pooled client when the compatibility client is remote', async () => {
+    backendState.primaryId = 'remote-1';
+    compatibilityRequestSpy.mockRejectedValue(new Error('remote compatibility client used'));
+    mockDaemon({ 'ws-local': { worktreePath: '/local/checkouts/ws-local' } });
+
+    expect(await getWorkspacePath('ws-local', 'local')).toBe('/local/checkouts/ws-local');
+    expect(requestSpy).toHaveBeenCalledWith('workspace.get', { workspaceId: 'ws-local' });
+    expect(compatibilityRequestSpy).not.toHaveBeenCalled();
+  });
+
+  it('does not start a local path subscription for a remote-bound window', async () => {
     mockDaemon({ 'ws-1': { worktreePath: '/checkouts/ws-1' } });
-    expect(await getWorkspacePath('ws-1')).toBeNull();
-    expect(getCallCount()).toBe(0);
+    expect(await getWorkspacePath('ws-1', 'remote-1')).toBeNull();
+    expect(requestSpy).not.toHaveBeenCalled();
+    expect(notificationHandlers).toHaveLength(0);
+    expect(reconnectHandlers).toHaveLength(0);
   });
 
   it('returns null for remote workspaces (isRemote / environmentConfig)', async () => {

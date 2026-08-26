@@ -6,6 +6,10 @@ import { isGithubLinkDefaultAction } from '$shared/utils/link-helpers';
 import { isUpdateChannel } from '$features/auto-update/types';
 import { appClient } from '$lib/client';
 import { store as appStore } from '$store/renderer/store';
+import {
+  getActiveBackendId,
+  namespaceBackendKey,
+} from '$store/renderer/utils/backend-storage-namespace';
 import type { ThemePreference } from '$store/renderer/slices/theme/theme-types';
 import { selectProposalAppliedState } from '$store/renderer/slices/settings-proposal-history/settings-proposal-history-selectors';
 import type {
@@ -213,10 +217,26 @@ async function readDaemonSettingValue(definition: AppSettingDefinition): Promise
   return deepGet(entry?.value, definition.valuePath) ?? definition.defaultValue;
 }
 
+/**
+ * localStorage keys that hold per-backend state: the local sidecar keeps the
+ * bare legacy key, remote backends get the `backend:<id>:` prefix (matching
+ * the persistence sagas). Reading or rolling back a proposal on a remote
+ * backend must not touch the local machine's value.
+ */
+const BACKEND_SCOPED_STORAGE_KEYS = new Set([
+  'workspaces-active-provider',
+  'workspace-list:completedProviderSetup',
+]);
+
+function resolveLocalStorageKey(key: string): string {
+  if (!BACKEND_SCOPED_STORAGE_KEYS.has(key)) return key;
+  return namespaceBackendKey(key, getActiveBackendId(appStore.state));
+}
+
 function readLocalStorageValue(definition: AppSettingDefinition): unknown {
   if (typeof window === 'undefined' || !definition.storageKey) return definition.defaultValue;
   const parsed = parseLocalStorageValue(
-    window.localStorage.getItem(definition.storageKey),
+    window.localStorage.getItem(resolveLocalStorageKey(definition.storageKey)),
     definition,
   );
   return deepGet(parsed, definition.valuePath) ?? definition.defaultValue;
@@ -239,11 +259,12 @@ async function writeDaemonSetting(
 
 function writeLocalStorageValue(key: string, value: unknown): void {
   if (typeof window === 'undefined') return;
+  const storageKey = resolveLocalStorageKey(key);
   if (value === null || value === undefined) {
-    window.localStorage.removeItem(key);
+    window.localStorage.removeItem(storageKey);
     return;
   }
-  window.localStorage.setItem(key, JSON.stringify(value));
+  window.localStorage.setItem(storageKey, JSON.stringify(value));
 }
 
 async function readCurrentSettingValue(definition: AppSettingDefinition): Promise<unknown> {

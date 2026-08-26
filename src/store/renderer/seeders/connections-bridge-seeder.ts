@@ -2,7 +2,7 @@
  * Connections IPC bridge — mock fallback for the multi-backend connect channels.
  *
  * Bridges the `connections:*` request/response channels (`list`,
- * `capture-fingerprint`, `add`, `forget`, `switch`) so the connections service
+ * `capture-fingerprint`, `add`, `forget`, `open`, `switch`) so the connections service
  * thunks resolve in bridge-less builds (browser mock) and tests instead of
  * rejecting with UnbridgedMockIpcChannelError.
  *
@@ -26,9 +26,13 @@ import type {
   AddConnectionResult,
   ForgetConnectionParams,
   ForgetConnectionResult,
+  OpenConnectionParams,
+  OpenConnectionResult,
   SwitchConnectionParams,
   SwitchConnectionResult,
   ConnectionBootFallbackEvent,
+  KeychainSyncStateResult,
+  SetKeychainSyncEnabledParams,
 } from '$shared/types/connections';
 
 /** The always-present, non-forgettable local sidecar entry. */
@@ -46,7 +50,7 @@ let connections: ConnectionRecord[] = [LOCAL_ENTRY];
 let activeId: string = LOCAL_CONNECTION_ID;
 
 registerMockIpcHandler(CONNECTION_CHANNELS.LIST, async (): Promise<ConnectionsListResult> => {
-  return { connections: [...connections], activeId };
+  return { connections: [...connections], activeId, windowBackendId: LOCAL_CONNECTION_ID };
 });
 
 registerMockIpcHandler(
@@ -88,6 +92,11 @@ registerMockIpcHandler(CONNECTION_CHANNELS.FORGET, async (arg): Promise<ForgetCo
   return { id };
 });
 
+registerMockIpcHandler(CONNECTION_CHANNELS.OPEN, async (arg): Promise<OpenConnectionResult> => {
+  const { id } = arg as OpenConnectionParams;
+  return { id };
+});
+
 registerMockIpcHandler(CONNECTION_CHANNELS.SWITCH, async (arg): Promise<SwitchConnectionResult> => {
   const { id } = arg as SwitchConnectionParams;
   if (connections.some((c) => c.id === id)) activeId = id;
@@ -101,5 +110,27 @@ registerMockIpcHandler(
   CONNECTION_CHANNELS.GET_BOOT_FALLBACK,
   async (): Promise<{ bootFallback: ConnectionBootFallbackEvent | null }> => {
     return { bootFallback: null };
+  },
+);
+
+// iCloud-keychain sync (T4). The browser/mock environment has no macOS
+// keychain, so sync reads as unsupported; the pref round-trips in memory so
+// the toggle wiring stays testable.
+let keychainSyncEnabled = false;
+
+function keychainSyncState(): KeychainSyncStateResult {
+  return { supported: false, enabled: keychainSyncEnabled, status: null };
+}
+
+registerMockIpcHandler(
+  CONNECTION_CHANNELS.SYNC_GET_STATE,
+  async (): Promise<KeychainSyncStateResult> => keychainSyncState(),
+);
+
+registerMockIpcHandler(
+  CONNECTION_CHANNELS.SYNC_SET_ENABLED,
+  async (arg): Promise<KeychainSyncStateResult> => {
+    keychainSyncEnabled = (arg as SetKeychainSyncEnabledParams).enabled;
+    return keychainSyncState();
   },
 );

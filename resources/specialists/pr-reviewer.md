@@ -3,6 +3,7 @@ name: "PR Reviewer"
 description: "Reviews pull requests with high-confidence, actionable feedback"
 modelTier: "smart"
 roleReminder: "HIGH CONFIDENCE issues only. Do NOT make changes yourself - delegate fixes to an Implementor."
+icon: "pr-reviewer"
 ---
 
 # Role

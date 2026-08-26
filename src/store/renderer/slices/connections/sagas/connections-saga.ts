@@ -17,6 +17,7 @@ import {
   CONNECTION_AUTH_REJECTED_EVENT,
   CONNECTION_CERT_MISMATCH_EVENT,
   CONNECTION_PROTOCOL_MISMATCH_EVENT,
+  KEYCHAIN_SYNC_STATUS_EVENT,
 } from '$shared/types/connections';
 import type {
   AddConnectionParams,
@@ -30,6 +31,11 @@ import type {
   ConnectionsListResult,
   ForgetConnectionParams,
   ForgetConnectionResult,
+  KeychainSyncStateResult,
+  KeychainSyncUiStatus,
+  OpenConnectionParams,
+  OpenConnectionResult,
+  SetKeychainSyncEnabledParams,
   SwitchConnectionParams,
   SwitchConnectionResult,
 } from '$shared/types/connections';
@@ -43,8 +49,13 @@ import {
   connectOperationStarted,
   connectionsListReceived,
   forgetConnectionRequested,
+  keychainSyncStateReceived,
+  keychainSyncStatusReceived,
   loadConnectionsRequested,
+  loadKeychainSyncStateRequested,
+  openConnectionRequested,
   protocolMismatchReceived,
+  setKeychainSyncEnabledRequested,
   switchConnectionRequested,
 } from '../connections-slice';
 
@@ -54,7 +65,8 @@ type ConnectionsEvent =
   | { kind: 'changed'; payload: ConnectionsChangedEvent }
   | { kind: 'cert-mismatch'; payload: ConnectionCertMismatchEvent }
   | { kind: 'protocol-mismatch'; payload: ConnectionProtocolMismatchEvent }
-  | { kind: 'auth-rejected'; payload: ConnectionAuthRejectedEvent };
+  | { kind: 'auth-rejected'; payload: ConnectionAuthRejectedEvent }
+  | { kind: 'sync-status'; payload: KeychainSyncUiStatus };
 
 function getApi(): Window['electronAPI'] | undefined {
   return typeof window !== 'undefined' ? window.electronAPI : undefined;
@@ -94,6 +106,12 @@ function createConnectionsEventChannel(): EventChannel<ConnectionsEvent> {
           emit({ kind: 'auth-rejected', payload }),
         ),
       ],
+      [
+        KEYCHAIN_SYNC_STATUS_EVENT,
+        api.on(KEYCHAIN_SYNC_STATUS_EVENT, (payload: KeychainSyncUiStatus) =>
+          emit({ kind: 'sync-status', payload }),
+        ),
+      ],
     ];
 
     return () => {
@@ -122,6 +140,12 @@ async function invokeAddConnection(params: AddConnectionParams): Promise<AddConn
   return (await api.invoke(CONNECTIONS.ADD, params)) as AddConnectionResult;
 }
 
+async function invokeOpenConnection(params: OpenConnectionParams): Promise<OpenConnectionResult> {
+  const api = getApi();
+  if (!api) throw new Error('electronAPI is not available');
+  return (await api.invoke(CONNECTIONS.OPEN, params)) as OpenConnectionResult;
+}
+
 async function invokeForgetConnection(
   params: ForgetConnectionParams,
 ): Promise<ForgetConnectionResult> {
@@ -136,6 +160,20 @@ async function invokeSwitchConnection(
   const api = getApi();
   if (!api) throw new Error('electronAPI is not available');
   return (await api.invoke(CONNECTIONS.SWITCH, params)) as SwitchConnectionResult;
+}
+
+async function invokeSyncGetState(): Promise<KeychainSyncStateResult> {
+  const api = getApi();
+  if (!api) throw new Error('electronAPI is not available');
+  return (await api.invoke(CONNECTIONS.SYNC_GET_STATE)) as KeychainSyncStateResult;
+}
+
+async function invokeSyncSetEnabled(
+  params: SetKeychainSyncEnabledParams,
+): Promise<KeychainSyncStateResult> {
+  const api = getApi();
+  if (!api) throw new Error('electronAPI is not available');
+  return (await api.invoke(CONNECTIONS.SYNC_SET_ENABLED, params)) as KeychainSyncStateResult;
 }
 
 function* hydrateConnections(
@@ -218,6 +256,28 @@ function* forgetConnection(
   }
 }
 
+function* openConnection(action: ReturnType<typeof openConnectionRequested>): SagaGenerator<void> {
+  let settled = false;
+  yield* put(connectOperationStarted());
+  try {
+    const result = yield* call(invokeOpenConnection, { id: action.payload[0] });
+    yield* put(connectOperationSettled());
+    yield* put(action.success(result));
+    settled = true;
+  } catch (error) {
+    const resolved = toError(error);
+    yield* put(connectOperationFailed(resolved.message));
+    yield* put(action.failure(resolved));
+    settled = true;
+  } finally {
+    if (!settled && (yield* cancelled())) {
+      const resolved = new Error('Connection open was cancelled');
+      yield* put(connectOperationFailed(resolved.message));
+      yield* put(action.failure(resolved));
+    }
+  }
+}
+
 function* switchConnection(
   action: ReturnType<typeof switchConnectionRequested>,
 ): SagaGenerator<void> {
@@ -242,6 +302,42 @@ function* switchConnection(
   }
 }
 
+function* loadKeychainSyncState(
+  action: ReturnType<typeof loadKeychainSyncStateRequested>,
+): SagaGenerator<void> {
+  let settled = false;
+  try {
+    const result = yield* call(invokeSyncGetState);
+    yield* put(keychainSyncStateReceived(result));
+    yield* put(action.success(result));
+    settled = true;
+  } catch (error) {
+    yield* put(action.failure(toError(error)));
+    settled = true;
+  } finally {
+    if (!settled && (yield* cancelled()))
+      yield* put(action.failure(new Error('Keychain sync state load was cancelled')));
+  }
+}
+
+function* setKeychainSyncEnabled(
+  action: ReturnType<typeof setKeychainSyncEnabledRequested>,
+): SagaGenerator<void> {
+  let settled = false;
+  try {
+    const result = yield* call(invokeSyncSetEnabled, { enabled: action.payload[0] });
+    yield* put(keychainSyncStateReceived(result));
+    yield* put(action.success(result));
+    settled = true;
+  } catch (error) {
+    yield* put(action.failure(toError(error)));
+    settled = true;
+  } finally {
+    if (!settled && (yield* cancelled()))
+      yield* put(action.failure(new Error('Keychain sync toggle was cancelled')));
+  }
+}
+
 function* consumeConnectionsEvents(channel: EventChannel<ConnectionsEvent>): SagaGenerator<void> {
   try {
     while (true) {
@@ -250,6 +346,7 @@ function* consumeConnectionsEvents(channel: EventChannel<ConnectionsEvent>): Sag
       if (event.kind === 'changed') yield* put(connectionsListReceived(event.payload));
       else if (event.kind === 'cert-mismatch') yield* put(certMismatchReceived(event.payload));
       else if (event.kind === 'auth-rejected') yield* put(authRejectedReceived(event.payload));
+      else if (event.kind === 'sync-status') yield* put(keychainSyncStatusReceived(event.payload));
       else yield* put(protocolMismatchReceived(event.payload));
     }
   } finally {
@@ -262,8 +359,11 @@ function* watchConnectionsActions(): SagaGenerator<void> {
     takeLeading(loadConnectionsRequested, hydrateConnections),
     takeLeading(captureFingerprintRequested, captureFingerprint),
     takeLeading(addConnectionRequested, addConnection),
+    takeLeading(openConnectionRequested, openConnection),
     takeLeading(forgetConnectionRequested, forgetConnection),
     takeLeading(switchConnectionRequested, switchConnection),
+    takeLeading(loadKeychainSyncStateRequested, loadKeychainSyncState),
+    takeLeading(setKeychainSyncEnabledRequested, setKeychainSyncEnabled),
   ]);
 }
 

@@ -628,6 +628,7 @@
         hasReadyProvider: hasReadyProvider($providerStatusMap$),
         hasCompletedProviderSetup: selectHasCompletedProviderSetup.select(appStore.state),
         hasWorkspaces: hasAvailableWorkspace($workspaceItems$),
+        providersCheckedOnce: $providersCheckedOnce$,
       });
       if (fullFlowRequested) {
         appStore.dispatch(setOnboardingFullFlowRequested(false));

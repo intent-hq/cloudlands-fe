@@ -631,6 +631,39 @@ describe('workspaceOperationsSaga', () => {
     await run.task.toPromise();
   });
 
+  it('coalesces duplicate sibling activation and reuses its stable key on retry', async () => {
+    const proposal = createProposal('sibling-create');
+    proposal.payload.params = {
+      ...proposal.payload.params,
+      idempotencyKey: 'sibling-stable-key',
+    };
+    proposal.preview.workspaceCreate = { mode: 'sibling', title: 'New space' };
+    mocks.create
+      .mockResolvedValueOnce({ ok: false, error: 'connection lost' })
+      .mockResolvedValueOnce({ ok: true, data: { workspace: workspace('ws-sibling') } });
+    const run = harness([]);
+    const action = applyWorkspaceProposal({ proposal, editedFields: { title: 'Edited space' } });
+
+    run.send(action);
+    run.send(action);
+    await settle();
+    expect(mocks.create).toHaveBeenCalledTimes(1);
+
+    run.send(action);
+    await settle();
+    expect(mocks.create).toHaveBeenCalledTimes(2);
+    expect(mocks.create.mock.calls.map(([request]) => request.idempotencyKey)).toEqual([
+      'sibling-stable-key',
+      'sibling-stable-key',
+    ]);
+    expect(run.state().proposalLifecycle['sibling-create']).toMatchObject({
+      status: 'applied',
+      result: { workspaceId: 'ws-sibling' },
+    });
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
   it('honors selected bulk ids and fails empty archive selections loudly', async () => {
     mocks.archive.mockResolvedValue({
       ok: true,

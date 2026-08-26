@@ -126,6 +126,40 @@ vi.mock('../connections-store', () => ({
   setHostname: store.setHostname,
   setHosts: store.setHosts,
   getDetectHosts: store.getDetectHosts,
+  // Keychain-sync lifecycle wiring (T3); inert in these suites.
+  onConnectionsMutated: () => () => {},
+}));
+
+// Keychain-sync lifecycle: controllable double for the T4 settings IPC. The
+// registered handle is captured so tests can drive getStatus/requestReconcile
+// and the onStatusChanged broadcast seam directly.
+const keychainSync = vi.hoisted(() => ({
+  enabled: false,
+  status: null as unknown,
+  requestReconcile: vi.fn(),
+  resetStatus: vi.fn(),
+  initOptions: null as { onStatusChanged?: (status: unknown) => void } | null,
+}));
+vi.mock('../keychain-sync-lifecycle', () => ({
+  KEYCHAIN_SYNC_ENABLED_KEY: 'keychainSyncEnabled',
+  isKeychainSyncEnabled: vi.fn(async () => keychainSync.enabled),
+  initKeychainSyncLifecycle: vi.fn((options) => {
+    keychainSync.initOptions = options;
+    return {
+      getStatus: () => keychainSync.status,
+      requestReconcile: keychainSync.requestReconcile,
+      resetStatus: keychainSync.resetStatus.mockImplementation(() => {
+        keychainSync.status = null;
+      }),
+      dispose: () => {},
+    };
+  }),
+}));
+
+const localPrefs = vi.hoisted(() => ({ setLocalPref: vi.fn(async () => {}) }));
+vi.mock('../../../../main/local-prefs', () => ({
+  setLocalPref: localPrefs.setLocalPref,
+  getLocalPref: vi.fn(async () => undefined),
 }));
 
 // ---------------------------------------------------------------------------
@@ -160,8 +194,24 @@ async function loadModule() {
   const restore = vi.fn(() => {
     lifecycle.events.push({ type: 'restore', seq: 0 });
   });
-  mod.__setBackendWindowHooksForTesting({ captureAndClose, restore });
-  return { mod, captureAndClose, restore };
+  const openOrFocus = vi.fn();
+  const ensureLocalWindowBeforeClose = vi.fn();
+  const closeForBackend = vi.fn();
+  mod.__setBackendWindowHooksForTesting({
+    captureAndClose,
+    restore,
+    openOrFocus,
+    ensureLocalWindowBeforeClose,
+    closeForBackend,
+  });
+  return {
+    mod,
+    captureAndClose,
+    restore,
+    openOrFocus,
+    ensureLocalWindowBeforeClose,
+    closeForBackend,
+  };
 }
 
 /** Install a single fake renderer window and return its `send` spy. */
@@ -171,6 +221,34 @@ function installWindow() {
     { id: 1, isDestroyed: () => false, webContents: { send } } as never,
   ]);
   return send;
+}
+
+function installBackendWindows() {
+  const localSender = { id: 'local-sender' };
+  const remoteSender = { id: 'remote-sender' };
+  const localSend = vi.fn();
+  const remoteSend = vi.fn();
+  const localWindow = {
+    id: 1,
+    backendId: 'local',
+    isDestroyed: () => false,
+    webContents: { ...localSender, send: localSend },
+  };
+  const remoteWindow = {
+    id: 2,
+    backendId: 'remote-1',
+    isDestroyed: () => false,
+    webContents: { ...remoteSender, send: remoteSend },
+  };
+  vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([localWindow, remoteWindow] as never);
+  vi.mocked(BrowserWindow.fromWebContents).mockImplementation((sender) => {
+    if (sender === localSender) return localWindow as never;
+    if (sender === remoteSender) return remoteWindow as never;
+    if (sender === localWindow.webContents) return localWindow as never;
+    if (sender === remoteWindow.webContents) return remoteWindow as never;
+    return null;
+  });
+  return { localSender, remoteSender, localSend, remoteSend, localWindow, remoteWindow };
 }
 
 function findHandler(channel: string) {
@@ -192,7 +270,14 @@ beforeEach(() => {
   store.setHostname.mockResolvedValue(undefined);
   store.setHosts.mockResolvedValue(undefined);
   store.getDetectHosts.mockResolvedValue(true);
+  keychainSync.enabled = false;
+  keychainSync.status = null;
+  keychainSync.initOptions = null;
   vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([]);
+  Object.defineProperty(BrowserWindow, 'getFocusedWindow', {
+    value: vi.fn(() => null),
+    configurable: true,
+  });
 });
 
 afterEach(() => {
@@ -428,6 +513,7 @@ describe('connections:* IPC handlers', () => {
     await expect(handler!({}, undefined)).resolves.toEqual({
       connections: [LOCAL, REMOTE],
       activeId: 'local',
+      windowBackendId: 'local',
       // No remote handshake has mismatched, so there is no sticky mismatch (#823).
       protocolMismatch: null,
       // No auth rejection has fired, so there is no sticky rejection either.
@@ -544,7 +630,7 @@ describe('connections:* IPC handlers', () => {
     expect(restore).not.toHaveBeenCalled();
   });
 
-  it('connections:add upserting the ACTIVE connection reconnects via switchBackend', async () => {
+  it('connections:add refreshes an active client without tearing down windows', async () => {
     store.add.mockResolvedValue(REMOTE);
     store.getActiveId.mockResolvedValue('remote-1');
     const send = installWindow();
@@ -563,30 +649,64 @@ describe('connections:* IPC handlers', () => {
     };
     await expect(handler!({}, params)).resolves.toEqual({ connection: REMOTE, switched: true });
 
-    // Full dispose + rebuild so the refreshed token takes effect immediately.
-    // (The fake client's seq counter is file-global, so assert relative order
-    // plus that the disposed client predates the newly constructed one.)
-    expect(lifecycle.events.map((e) => e.type)).toEqual([
-      'capture',
-      'dispose',
-      'construct',
-      'start',
-      'restore',
-    ]);
+    // Client-only dispose + rebuild so the refreshed token takes effect without
+    // destroying local or other-backend windows.
+    expect(lifecycle.events.map((e) => e.type)).toEqual(['dispose', 'construct', 'start']);
     const disposed = lifecycle.events.find((e) => e.type === 'dispose')!;
     const constructed = lifecycle.events.find((e) => e.type === 'construct')!;
     expect(disposed.seq).toBeLessThan(constructed.seq);
-    expect(captureAndClose).toHaveBeenCalledWith('remote-1');
-    expect(restore).toHaveBeenCalledWith('remote-1');
-    expect(store.setActiveId).toHaveBeenCalledWith('remote-1');
+    expect(captureAndClose).not.toHaveBeenCalled();
+    expect(restore).not.toHaveBeenCalled();
+    expect(store.setActiveId).not.toHaveBeenCalled();
     expect(send.mock.calls.some(([c]) => c === 'connections:changed')).toBe(true);
   });
 
-  it('connections:forget of a non-active connection just broadcasts', async () => {
+  it('connections:open keeps the local client and windows while opening the remote', async () => {
+    const { mod, captureAndClose, openOrFocus } = await loadModule();
+    const local = mod.getBackendClient();
+    mod.registerBackendHandlers();
+    const handler = findHandler('connections:open');
+
+    await expect(handler!({}, { id: 'remote-1' })).resolves.toEqual({ id: 'remote-1' });
+
+    const remote = mod.getBackendClientForConnection('remote-1');
+    expect(remote).toBeDefined();
+    expect(remote).not.toBe(local);
+    expect(remote?.request).toHaveBeenCalledWith('host.status');
+    expect(mod.getBackendClient()).toBe(local);
+    expect(mod.getBackendClientForConnection('local')).toBe(local);
+    expect(captureAndClose).not.toHaveBeenCalled();
+    expect(openOrFocus).toHaveBeenCalledWith('remote-1');
+    expect(store.setActiveId).not.toHaveBeenCalled();
+  });
+
+  it('connections:open drops only a failed remote and leaves local usable', async () => {
+    rpc.handler = async (method) => {
+      if (method === 'host.status') throw new Error('remote rejected');
+      return {};
+    };
+    const { mod, captureAndClose, openOrFocus } = await loadModule();
+    const local = mod.getBackendClient();
+    mod.registerBackendHandlers();
+    const handler = findHandler('connections:open');
+
+    await expect(handler!({}, { id: 'remote-1' })).rejects.toThrow('remote rejected');
+
+    expect(mod.getBackendClient()).toBe(local);
+    expect(mod.getBackendClientForConnection('local')).toBe(local);
+    expect(mod.getBackendClientForConnection('remote-1')).toBeUndefined();
+    expect(captureAndClose).not.toHaveBeenCalled();
+    expect(openOrFocus).not.toHaveBeenCalled();
+  });
+
+  it('connections:forget closes and disconnects only that secondary backend', async () => {
     store.getActiveId.mockResolvedValue('local');
     store.forget.mockResolvedValue(undefined);
     const send = installWindow();
-    const { mod, captureAndClose, restore } = await loadModule();
+    const { mod, captureAndClose, restore, ensureLocalWindowBeforeClose, closeForBackend } =
+      await loadModule();
+    const local = mod.getBackendClient();
+    const remote = await mod.connectBackendClient('remote-1');
     mod.registerBackendHandlers();
     const handler = findHandler('connections:forget');
 
@@ -595,24 +715,45 @@ describe('connections:* IPC handlers', () => {
     // Was not the live backend → no full switch/window teardown.
     expect(captureAndClose).not.toHaveBeenCalled();
     expect(restore).not.toHaveBeenCalled();
+    expect(ensureLocalWindowBeforeClose).toHaveBeenCalledWith('remote-1');
+    expect(closeForBackend).toHaveBeenCalledWith('remote-1');
+    expect(ensureLocalWindowBeforeClose.mock.invocationCallOrder[0]).toBeLessThan(
+      closeForBackend.mock.invocationCallOrder[0],
+    );
+    expect(mod.getBackendClient()).toBe(local);
+    expect(mod.getBackendClientForConnection('remote-1')).toBeUndefined();
+    expect(lifecycle.events.filter((event) => event.type === 'dispose')).toEqual([
+      expect.objectContaining({ seq: expect.any(Number) }),
+    ]);
+    expect(remote).not.toBe(local);
     expect(send.mock.calls.some(([c]) => c === 'connections:changed')).toBe(true);
   });
 
-  it('connections:forget of the ACTIVE connection falls back to a switch to local', async () => {
+  it('connections:forget of the active connection retargets primary without global teardown', async () => {
     store.getActiveId.mockResolvedValue('remote-1');
     store.forget.mockResolvedValue(undefined);
     installWindow();
-    const { mod, captureAndClose, restore } = await loadModule();
-    mod.getBackendClient();
+    const { mod, captureAndClose, restore, ensureLocalWindowBeforeClose, closeForBackend } =
+      await loadModule();
+    await mod.switchBackend('remote-1');
+    lifecycle.events = [];
+    captureAndClose.mockClear();
+    restore.mockClear();
     mod.registerBackendHandlers();
     const handler = findHandler('connections:forget');
 
     await expect(handler!({}, { id: 'remote-1' })).resolves.toEqual({ id: 'remote-1' });
     expect(store.forget).toHaveBeenCalledWith('remote-1');
-    // Fell back to local: active id flipped + windows switched from remote → local.
-    expect(store.setActiveId).toHaveBeenCalledWith('local');
-    expect(captureAndClose).toHaveBeenCalledWith('remote-1');
-    expect(restore).toHaveBeenCalledWith('local');
+    expect(ensureLocalWindowBeforeClose).toHaveBeenCalledWith('remote-1');
+    expect(closeForBackend).toHaveBeenCalledWith('remote-1');
+    expect(ensureLocalWindowBeforeClose.mock.invocationCallOrder[0]).toBeLessThan(
+      closeForBackend.mock.invocationCallOrder[0],
+    );
+    expect(captureAndClose).not.toHaveBeenCalled();
+    expect(restore).not.toHaveBeenCalled();
+    expect(mod.getBackendClientForConnection('remote-1')).toBeUndefined();
+    expect(mod.getBackendClientForConnection('local')).toBe(mod.getBackendClient());
+    expect(lifecycle.events.map((event) => event.type)).toEqual(['dispose', 'construct', 'start']);
   });
 
   it('connections:switch routes through switchBackend', async () => {
@@ -641,6 +782,118 @@ describe('connections:* IPC handlers', () => {
     const handler = findHandler('connections:switch');
 
     await expect(handler!({}, {})).rejects.toThrow();
+  });
+
+  it('rejects invalid params (missing id on open) via the Zod schema', async () => {
+    const { mod } = await loadModule();
+    mod.registerBackendHandlers();
+    const handler = findHandler('connections:open');
+
+    await expect(handler!({}, {})).rejects.toThrow();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Keychain-sync settings IPC (T4)
+// ---------------------------------------------------------------------------
+
+describe('keychain-sync settings IPC (T4)', () => {
+  const onMac = process.platform === 'darwin';
+
+  it('connections:sync-get-state returns supported + pref + lifecycle status', async () => {
+    keychainSync.enabled = true;
+    keychainSync.status = { state: 'active' };
+    const { mod } = await loadModule();
+    mod.registerBackendHandlers();
+    const handler = findHandler('connections:sync-get-state');
+    expect(handler).toBeDefined();
+
+    await expect(handler!({}, undefined)).resolves.toEqual({
+      supported: onMac,
+      enabled: true,
+      status: { state: 'active' },
+    });
+  });
+
+  it('connections:sync-get-state reports null status before the first reconcile', async () => {
+    const { mod } = await loadModule();
+    mod.registerBackendHandlers();
+    const handler = findHandler('connections:sync-get-state');
+
+    await expect(handler!({}, undefined)).resolves.toEqual({
+      supported: onMac,
+      enabled: false,
+      status: null,
+    });
+  });
+
+  it('connections:sync-set-enabled persists the pref and requests a reconcile on enable', async () => {
+    const { mod } = await loadModule();
+    mod.registerBackendHandlers();
+    const handler = findHandler('connections:sync-set-enabled');
+    expect(handler).toBeDefined();
+
+    keychainSync.enabled = true; // what isKeychainSyncEnabled reads back after the write
+    await expect(handler!({}, { enabled: true })).resolves.toEqual({
+      supported: onMac,
+      enabled: true,
+      status: null,
+    });
+    expect(localPrefs.setLocalPref).toHaveBeenCalledWith('keychainSyncEnabled', true);
+    expect(keychainSync.requestReconcile).toHaveBeenCalledTimes(1);
+  });
+
+  it('connections:sync-set-enabled(false) persists without requesting a reconcile', async () => {
+    const { mod } = await loadModule();
+    mod.registerBackendHandlers();
+    const handler = findHandler('connections:sync-set-enabled');
+
+    await expect(handler!({}, { enabled: false })).resolves.toEqual({
+      supported: onMac,
+      enabled: false,
+      status: null,
+    });
+    expect(localPrefs.setLocalPref).toHaveBeenCalledWith('keychainSyncEnabled', false);
+    expect(keychainSync.requestReconcile).not.toHaveBeenCalled();
+    expect(keychainSync.resetStatus).not.toHaveBeenCalled();
+  });
+
+  it('connections:sync-set-enabled(true) clears the stale pre-disable status (PR #1715 review)', async () => {
+    // A verdict left over from before the last disable must not leak into the
+    // re-enable response — the UI should fall back to "checking" (status null)
+    // until the fresh reconcile lands.
+    keychainSync.status = { state: 'unavailable', reason: 'unavailable', message: 'locked' };
+    const { mod } = await loadModule();
+    mod.registerBackendHandlers();
+    const handler = findHandler('connections:sync-set-enabled');
+
+    keychainSync.enabled = true;
+    await expect(handler!({}, { enabled: true })).resolves.toEqual({
+      supported: onMac,
+      enabled: true,
+      status: null,
+    });
+    expect(keychainSync.resetStatus).toHaveBeenCalledTimes(1);
+    expect(keychainSync.requestReconcile).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects invalid params (non-boolean enabled) via the Zod schema', async () => {
+    const { mod } = await loadModule();
+    mod.registerBackendHandlers();
+    const handler = findHandler('connections:sync-set-enabled');
+
+    await expect(handler!({}, { enabled: 'yes' })).rejects.toThrow();
+    expect(localPrefs.setLocalPref).not.toHaveBeenCalled();
+  });
+
+  it('broadcasts connections:sync-status-changed to every window on a status change', async () => {
+    const send = installWindow();
+    const { mod } = await loadModule();
+    mod.registerBackendHandlers();
+
+    const status = { state: 'unavailable', reason: 'unavailable', message: 'locked' };
+    keychainSync.initOptions?.onStatusChanged?.(status);
+    expect(send).toHaveBeenCalledWith('connections:sync-status-changed', status);
   });
 });
 
@@ -864,5 +1117,264 @@ describe('forget/add active-id decisions inside the switch queue (monorepo#2228)
 
     await expect(forgetHandler({}, { id: 'remote-1' })).rejects.toThrow(/cannot forget/i);
     await expect(mod.switchBackend('remote-1')).resolves.toEqual({ activeId: 'remote-1' });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Additive backend client pool
+// ---------------------------------------------------------------------------
+
+describe('backend client pool', () => {
+  it('keeps the local primary client unchanged when a remote connects', async () => {
+    const { mod } = await loadModule();
+    const local = mod.getBackendClient();
+
+    const remote = await mod.connectBackendClient('remote-1');
+
+    expect(remote).not.toBe(local);
+    expect(mod.getBackendClient()).toBe(local);
+    expect(mod.getBackendClientForConnection('local')).toBe(local);
+    expect(mod.getBackendClientForConnection('remote-1')).toBe(remote);
+    expect(lifecycle.events.map((event) => event.type)).toEqual([
+      'construct',
+      'start',
+      'construct',
+      'start',
+    ]);
+  });
+
+  it('treats the focused remote window as current for menu and quit gates', async () => {
+    const { localWindow, remoteWindow } = installBackendWindows();
+    const { mod } = await loadModule();
+    mod.getBackendClient();
+    await mod.connectBackendClient('remote-1');
+
+    vi.mocked(BrowserWindow.getFocusedWindow).mockReturnValue(remoteWindow as never);
+    expect(mod.isRemoteBackendActive()).toBe(true);
+    expect(mod.isSameHostBackendActive()).toBe(false);
+    expect(mod.getFocusedBackendClient()).toBe(mod.getBackendClientForConnection('remote-1'));
+
+    vi.mocked(BrowserWindow.getFocusedWindow).mockReturnValue(localWindow as never);
+    expect(mod.isRemoteBackendActive()).toBe(false);
+    expect(mod.getFocusedBackendClient()).toBe(mod.getBackendClientForConnection('local'));
+  });
+
+  it('deduplicates concurrent connects for the same connection id', async () => {
+    const { mod } = await loadModule();
+
+    const [first, second] = await Promise.all([
+      mod.connectBackendClient('remote-1'),
+      mod.connectBackendClient('remote-1'),
+    ]);
+
+    expect(second).toBe(first);
+    expect(lifecycle.events.map((event) => event.type)).toEqual(['construct', 'start']);
+  });
+
+  it('disconnects one remote without disposing the local primary client', async () => {
+    const { mod } = await loadModule();
+    const local = mod.getBackendClient();
+    await mod.connectBackendClient('remote-1');
+    lifecycle.events = [];
+
+    mod.disconnectBackendClient('remote-1');
+
+    expect(lifecycle.events.map((event) => event.type)).toEqual(['dispose']);
+    expect(mod.getBackendClient()).toBe(local);
+    expect(mod.getBackendClientForConnection('local')).toBe(local);
+    expect(mod.getBackendClientForConnection('remote-1')).toBeUndefined();
+  });
+
+  it('scopes main-process reconnect listeners to their backend', async () => {
+    const { mod } = await loadModule();
+    const local = mod.getBackendClient() as unknown as { emit(event: string): void };
+    const remote = (await mod.connectBackendClient('remote-1')) as unknown as {
+      emit(event: string): void;
+    };
+    const onLocalReconnect = vi.fn();
+    const onRemoteReconnect = vi.fn();
+    mod.onBackendReconnected(onLocalReconnect, 'local');
+    mod.onBackendReconnected(onRemoteReconnect, 'remote-1');
+
+    local.emit('reconnected');
+    expect(onLocalReconnect).toHaveBeenCalledTimes(1);
+    expect(onRemoteReconnect).not.toHaveBeenCalled();
+
+    remote.emit('reconnected');
+    expect(onLocalReconnect).toHaveBeenCalledTimes(1);
+    expect(onRemoteReconnect).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('per-window backend IPC routing', () => {
+  it('reports the calling window backend without changing the persisted active selection', async () => {
+    const { mod } = await loadModule();
+    const { localSender, remoteSender } = installBackendWindows();
+    mod.registerBackendHandlers();
+    const list = findHandler('connections:list')!;
+
+    await expect(list({ sender: localSender }, undefined)).resolves.toMatchObject({
+      activeId: 'local',
+      windowBackendId: 'local',
+    });
+    await expect(list({ sender: remoteSender }, undefined)).resolves.toMatchObject({
+      activeId: 'local',
+      windowBackendId: 'remote-1',
+    });
+    expect(store.setActiveId).not.toHaveBeenCalled();
+  });
+
+  it('tailors connections:changed to each recipient window', async () => {
+    store.add.mockResolvedValue(REMOTE);
+    const { mod } = await loadModule();
+    const { localSender, localSend, remoteSend } = installBackendWindows();
+    mod.registerBackendHandlers();
+
+    await findHandler('connections:add')!(
+      { sender: localSender },
+      {
+        label: 'Studio Mac',
+        host: '10.0.0.5',
+        port: 8443,
+        fingerprint: 'AA:BB:CC:DD',
+        token: 'secret-token',
+      },
+    );
+
+    expect(localSend).toHaveBeenCalledWith(
+      'connections:changed',
+      expect.objectContaining({ activeId: 'local', windowBackendId: 'local' }),
+    );
+    expect(remoteSend).toHaveBeenCalledWith(
+      'connections:changed',
+      expect.objectContaining({ activeId: 'local', windowBackendId: 'remote-1' }),
+    );
+    expect(store.setActiveId).not.toHaveBeenCalled();
+  });
+
+  it('routes requests, subscriptions, unsubscriptions, and status to the sender client', async () => {
+    const { mod } = await loadModule();
+    const localClient = mod.getBackendClient();
+    const remoteClient = await mod.connectBackendClient('remote-1');
+    const { localSender, remoteSender } = installBackendWindows();
+    mod.registerBackendHandlers();
+
+    const request = findHandler('backend:request')!;
+    const subscribe = findHandler('backend:subscribe')!;
+    const unsubscribe = findHandler('backend:unsubscribe')!;
+    const getStatus = findHandler('backend:get-status')!;
+
+    await request(
+      { sender: localSender },
+      { method: 'workspace.list', params: { archived: false }, timeoutMs: 1_000 },
+    );
+    await request(
+      { sender: remoteSender },
+      { method: 'workspace.get', params: { id: 'remote-workspace' } },
+    );
+    expect(localClient.request).toHaveBeenCalledWith(
+      'workspace.list',
+      { archived: false },
+      { timeoutMs: 1_000 },
+    );
+    expect(remoteClient.request).toHaveBeenCalledWith(
+      'workspace.get',
+      { id: 'remote-workspace' },
+      { timeoutMs: undefined },
+    );
+
+    await subscribe({ sender: localSender }, { eventTypes: ['workspace:*'] });
+    await subscribe({ sender: remoteSender }, { eventTypes: ['agent:*'] });
+    await unsubscribe({ sender: localSender }, { subscriptionId: 'local-sub' });
+    await unsubscribe({ sender: remoteSender }, { subscriptionId: 'remote-sub' });
+    expect(localClient.request).toHaveBeenCalledWith('events.subscribe', {
+      eventTypes: ['workspace:*'],
+    });
+    expect(remoteClient.request).toHaveBeenCalledWith('events.subscribe', {
+      eventTypes: ['agent:*'],
+    });
+    expect(localClient.request).toHaveBeenCalledWith('events.unsubscribe', {
+      subscriptionId: 'local-sub',
+    });
+    expect(remoteClient.request).toHaveBeenCalledWith('events.unsubscribe', {
+      subscriptionId: 'remote-sub',
+    });
+
+    await expect(getStatus({ sender: localSender }, undefined)).resolves.toMatchObject({
+      transport: { mode: 'sidecar-uds' },
+    });
+    await expect(getStatus({ sender: remoteSender }, undefined)).resolves.toMatchObject({
+      transport: { mode: 'external-ws', target: 'wss:10.0.0.5:8443' },
+    });
+  });
+
+  it('keeps a remote request failure isolated from local requests', async () => {
+    const { mod } = await loadModule();
+    const localClient = mod.getBackendClient();
+    const remoteClient = await mod.connectBackendClient('remote-1');
+    const { localSender, remoteSender } = installBackendWindows();
+    mod.registerBackendHandlers();
+    const request = findHandler('backend:request')!;
+    vi.mocked(remoteClient.request).mockRejectedValueOnce(new Error('remote unavailable'));
+
+    await expect(
+      request({ sender: remoteSender }, { method: 'workspace.list' }),
+    ).resolves.toMatchObject({ ok: false, error: { message: 'remote unavailable' } });
+    await expect(
+      request({ sender: localSender }, { method: 'workspace.list' }),
+    ).resolves.toMatchObject({ ok: true });
+    expect(localClient.request).toHaveBeenCalledWith('workspace.list', undefined, {
+      timeoutMs: undefined,
+    });
+  });
+
+  it('delivers notifications and status only to windows bound to the emitting client', async () => {
+    const { mod } = await loadModule();
+    const localClient = mod.getBackendClient() as unknown as {
+      emit(event: string, arg: unknown): void;
+    };
+    const remoteClient = (await mod.connectBackendClient('remote-1')) as unknown as {
+      emit(event: string, arg: unknown): void;
+    };
+    const { localSend, remoteSend } = installBackendWindows();
+
+    localClient.emit('notification', { method: 'events.event', params: { backend: 'local' } });
+    remoteClient.emit('notification', { method: 'events.event', params: { backend: 'remote' } });
+    localClient.emit('status', 'connected');
+    remoteClient.emit('status', 'disconnected');
+
+    expect(localSend).toHaveBeenCalledWith('backend:notification', {
+      method: 'events.event',
+      params: { backend: 'local' },
+    });
+    expect(localSend).not.toHaveBeenCalledWith(
+      'backend:notification',
+      expect.objectContaining({ params: { backend: 'remote' } }),
+    );
+    expect(remoteSend).toHaveBeenCalledWith('backend:notification', {
+      method: 'events.event',
+      params: { backend: 'remote' },
+    });
+    expect(remoteSend).not.toHaveBeenCalledWith(
+      'backend:notification',
+      expect.objectContaining({ params: { backend: 'local' } }),
+    );
+    expect(localSend).toHaveBeenCalledWith(
+      'backend:status',
+      expect.objectContaining({
+        status: 'connected',
+        transport: expect.objectContaining({ mode: 'sidecar-uds' }),
+      }),
+    );
+    expect(remoteSend).toHaveBeenCalledWith(
+      'backend:status',
+      expect.objectContaining({
+        status: 'disconnected',
+        transport: expect.objectContaining({
+          mode: 'external-ws',
+          target: 'wss:10.0.0.5:8443',
+        }),
+      }),
+    );
   });
 });

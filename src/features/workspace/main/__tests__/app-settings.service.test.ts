@@ -9,7 +9,7 @@ const { requestSpy, loggerSpies, clientListeners, reconnectHandlers } = vi.hoist
     error: vi.fn(),
   },
   clientListeners: new Map<string, Set<(...args: unknown[]) => void>>(),
-  reconnectHandlers: [] as Array<() => void>,
+  reconnectHandlers: [] as Array<(backendId?: string) => void>,
 }));
 
 vi.mock('../../../backend/main/backend.ipc', () => {
@@ -35,12 +35,18 @@ vi.mock('../../../backend/main/backend.ipc', () => {
   };
   return {
     getBackendClient: () => client,
-    onBackendReconnected: (handler: () => void) => {
-      reconnectHandlers.push(handler);
+    getBackendClientForConnection: (id: string) => (id === 'local' ? client : undefined),
+    getPrimaryBackendId: () => 'local',
+    onBackendReconnected: (handler: () => void, backendId = 'local') => {
+      reconnectHandlers.push((emittingBackendId = 'local') => {
+        if (emittingBackendId === backendId) handler();
+      });
       return () => {};
     },
-    onBackendNotification: register('notification'),
-    onBackendStatus: register('status'),
+    onBackendNotification: (handler: (...args: unknown[]) => void, backendId = 'local') =>
+      register(backendId === 'local' ? 'notification' : `${backendId}:notification`)(handler),
+    onBackendStatus: (handler: (...args: unknown[]) => void, backendId = 'local') =>
+      register(backendId === 'local' ? 'status' : `${backendId}:status`)(handler),
   };
 });
 
@@ -56,6 +62,11 @@ vi.mock('../../../../shared/logger', () => ({
 /** Emit an event on the mocked JsonRpcClient. */
 function emit(event: string, ...args: unknown[]): void {
   for (const cb of clientListeners.get(event) ?? []) cb(...args);
+}
+
+function emitForBackend(backendId: string, event: string, ...args: unknown[]): void {
+  const key = backendId === 'local' ? event : `${backendId}:${event}`;
+  for (const cb of clientListeners.get(key) ?? []) cb(...args);
 }
 
 /** The `settings.get` wire calls issued so far (ignores events.subscribe). */
@@ -321,6 +332,33 @@ describe('app-settings.service (daemon-backed hydration cache)', () => {
       eventTypes: ['settings:changed'],
     });
     expect(getBranchPrefix()).toBe('release/');
+  });
+
+  it('keeps the local cache and listener isolated from a remote backend reconnect', async () => {
+    mockDaemon({
+      'workspace.branchPrefix': 'local/',
+      'workspace.worktreesLocation': '/tmp/local',
+      'workspace.sshKeyPath': '/local/id',
+    });
+    const { initAppSettingsService, getBranchPrefix } = await import('../app-settings.service');
+    await initAppSettingsService();
+    requestSpy.mockClear();
+
+    for (const handler of reconnectHandlers) handler('remote-1');
+    emitForBackend('remote-1', 'notification', {
+      method: 'events.event',
+      params: {
+        subscriptionId: 'sub-1',
+        event: {
+          type: 'settings:changed',
+          data: { changes: [{ path: 'workspace.branchPrefix', value: 'remote/' }] },
+        },
+      },
+    });
+    await flush();
+
+    expect(requestSpy).not.toHaveBeenCalled();
+    expect(getBranchPrefix()).toBe('local/');
   });
 
   it('on reconnect, the re-subscribe completes before the re-fetch begins', async () => {

@@ -29,20 +29,21 @@
   );
 
   // Options: blank + visible specialists
-  const options = $derived.by<Array<{ id: string | null; name: string; description: string }>>(
-    () => [
-      {
-        id: null,
-        name: m.chat_specialistSwitcher_blank_label(),
-        description: m.chat_specialistSwitcher_noPresetBehavior_description(),
-      },
-      ...visibleSpecialists.map((s) => ({
-        id: s.id,
-        name: s.name,
-        description: s.description,
-      })),
-    ],
-  );
+  const options = $derived.by<
+    Array<{ id: string | null; name: string; description: string; icon?: string }>
+  >(() => [
+    {
+      id: null,
+      name: m.chat_specialistSwitcher_blank_label(),
+      description: m.chat_specialistSwitcher_noPresetBehavior_description(),
+    },
+    ...visibleSpecialists.map((s) => ({
+      id: s.id,
+      name: s.name,
+      description: s.description,
+      icon: s.icon,
+    })),
+  ]);
 
   function handleSelect(id: string | null) {
     if (id !== value) {
@@ -72,7 +73,13 @@
       )}
       title={option.description}
     >
-      <AgentAvatar agentId="blank" variant="standard" size={avatarSize} specialist={option.id} />
+      <AgentAvatar
+        agentId="blank"
+        variant="standard"
+        size={avatarSize}
+        specialist={option.id}
+        icon={option.icon}
+      />
       <span class={cn('font-medium', textSize)}>{option.name}</span>
     </button>
   {/each}

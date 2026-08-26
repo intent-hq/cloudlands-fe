@@ -14,11 +14,16 @@
  * secret-safe (never logged / never echoed on the wire).
  */
 import { Logger } from '../logger';
-import { getBackendClient } from '../../features/backend/main/backend.ipc';
+import {
+  getBackendClient,
+  getBackendClientForConnection,
+} from '../../features/backend/main/backend.ipc';
 
 const logger = new Logger('HostExec');
 
 export interface HostExecOptions {
+  /** Backend pool entry that receives this request; defaults to the compatibility client. */
+  backendId?: string;
   /** Positional arguments passed to `command`. No shell interpolation. */
   args?: string[];
   /** Working directory; requires `workspaceId` and must be inside its root. */
@@ -74,7 +79,11 @@ export async function hostExec(
   }
 
   try {
-    return await getBackendClient().request<HostExecResult>('host.exec', params);
+    const client = options.backendId
+      ? getBackendClientForConnection(options.backendId)
+      : getBackendClient();
+    if (!client) throw new Error(`backend client is not connected: ${options.backendId}`);
+    return await client.request<HostExecResult>('host.exec', params);
   } catch (error) {
     logger.debug('host.exec request failed', {
       command,

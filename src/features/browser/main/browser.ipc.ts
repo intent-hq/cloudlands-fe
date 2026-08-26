@@ -49,8 +49,10 @@ const logger = new Logger('BrowserIPC');
  * genuinely new tab. `ownerAgentId` (agent opens) is persisted with the tab
  * so ownership survives restart (monorepo#2857), and `emulatedSize` (agent
  * opens) rides along so the emulated viewport survives restart too.
- * `visible: false` (agent opens, monorepo#3045) creates the tab hidden —
- * no panel mount, webview kept alive offscreen.
+ * `ownerAgentName` (agent opens, best-effort) is persisted so the sidebar
+ * owner group can label the tab without an agent-store lookup
+ * (monorepo#3438). `visible: false` (agent opens, monorepo#3045) creates the
+ * tab hidden — no panel mount, webview kept alive offscreen.
  */
 function openBrowserTab(
   url: string,
@@ -63,6 +65,7 @@ function openBrowserTab(
   replaceTabId?: string,
   emulatedSize?: { width: number; height: number },
   visible?: boolean,
+  ownerAgentName?: string,
 ): { success: boolean; message: string; tabId?: string } {
   const workspacePayload = workspaceCommandPayload(workspaceId);
   if (!workspacePayload) {
@@ -108,6 +111,7 @@ function openBrowserTab(
       ...(requestedUrl === undefined ? {} : { requestedUrl }),
       ...(pin === undefined ? {} : { pin }),
       ...(ownerAgentId === undefined ? {} : { ownerAgentId }),
+      ...(ownerAgentName === undefined ? {} : { ownerAgentName }),
       ...(replaceTabId === undefined ? {} : { replaceTabId }),
       ...(emulatedSize === undefined ? {} : { emulatedSize }),
       ...(visible === undefined ? {} : { visible }),
@@ -300,6 +304,7 @@ export async function executeBrowserActions(
       replaceTabId,
       emulatedSize,
       visible,
+      ownerAgentName,
     ) =>
       openBrowserTab(
         url,
@@ -312,6 +317,7 @@ export async function executeBrowserActions(
         replaceTabId,
         emulatedSize,
         visible,
+        ownerAgentName,
       ),
     agentId,
     workspaceId,

@@ -5,8 +5,10 @@ directories:
   buildResources: build
 
 # Code signing hooks
+# beforePack: Compiles the native macOS 26 icon resource before resources are copied
 # afterPack: Signs intentd sidecar BEFORE main app signing (prevents seal invalidation)
 # afterSign: Submits signed app to Apple for notarization
+beforePack: scripts/build-macos-icon.js
 afterPack: scripts/sign-sidecar.js
 afterSign: scripts/notarize.js
 
@@ -14,15 +16,17 @@ files:
   - dist/**/*
   # Incremental-compile state for tsc (build:main / build:preload); lives in
   # dist so `rm -rf dist` also clears it, but must not ship in the package.
-  - "!dist/*.tsbuildinfo"
+  - '!dist/*.tsbuildinfo'
   # Dev-startup readiness sentinels (scripts/dev-ready.js); dev-only.
-  - "!dist/.dev-ready-*"
+  - '!dist/.dev-ready-*'
   - package.json
   - node_modules/**/*
   - resources/**/*
-  - "!resources/sidecar/**"
+  - '!resources/sidecar/**'
   # Speech helper ships via mac.extraResources (speech-helper/), not asar.
-  - "!resources/speech-helper/**"
+  - '!resources/speech-helper/**'
+  # Keychain helper ships via mac.extraResources (keychain-helper/), not asar.
+  - '!resources/keychain-helper/**'
 
 # Bundle the intentd binary into the packaged app
 # Runtime path: process.resourcesPath/intentd/intentd (intentd.exe on Windows)
@@ -30,10 +34,10 @@ extraResources:
   - from: resources/sidecar
     to: intentd
     filter:
-      - "**/*"
+      - '**/*'
       # Keep the fetch-sidecar stamp (build machinery with a timestamp) out of
       # packaged builds so identical pinned binaries produce identical artifacts.
-      - "!.intentd-fetch-stamp.json"
+      - '!.intentd-fetch-stamp.json'
   # Version pin for the bundled sidecar, read at runtime from
   # process.resourcesPath/intentd.version (see intentd-version-pin.ts).
   - from: intentd.version
@@ -68,15 +72,38 @@ mac:
   gatekeeperAssess: false
   entitlements: build/entitlements.mac.plist
   entitlementsInherit: build/entitlements.mac.plist
+  # The keychain sync helper is signed by the afterPack hook (sign-sidecar.js)
+  # with RESTRICTED keychain entitlements (application-identifier +
+  # keychain-access-groups) and an embedded provisioning profile. Exclude it
+  # from electron-builder's own deep-sign pass, which would otherwise re-sign
+  # the bundle with the main app entitlements above and destroy that signature.
+  # The pre-signed bundle is sealed as-is into the outer app signature.
+  signIgnore:
+    - 'Resources/keychain-helper/intent-keychain-helper\.app'
   # Bundle the macOS speech transcription helper (built by
   # scripts/build-speech-helper.cjs; signed by the afterPack hook).
   # Runtime path: process.resourcesPath/speech-helper/intent-speech-helper
   extraResources:
+    - from: build/macos-icon/Assets.car
+      to: Assets.car
+    # Runtime Dock icon. Finder and Applications continue to use Assets.car/icon.icns.
+    - from: src/assets/icons/app-icon/Icon-1024.png
+      to: app-icon.png
     - from: resources/speech-helper
       to: speech-helper
+    # Bundle the iCloud-keychain sync helper (built by
+    # scripts/build-keychain-helper.cjs; signed — with an embedded Developer ID
+    # provisioning profile when available — by the afterPack hook).
+    # Runtime path: process.resourcesPath/keychain-helper/
+    #   intent-keychain-helper.app/Contents/MacOS/intent-keychain-helper
+    - from: resources/keychain-helper
+      to: keychain-helper
   # Microphone usage string shown by the one-time macOS TCC prompt
   # (voice dictation; pairs with com.apple.security.device.audio-input)
   extendInfo:
+    # macOS 26 uses the native Assets.car icon. Older versions use icon.icns.
+    CFBundleIconName: Intent
+    CFBundleIconFile: icon.icns
     NSMicrophoneUsageDescription: Intent uses the microphone to transcribe your voice into text for dictation.
     # Speech recognition usage string for the OS dictation engine (local
     # Speech.framework transcription via the bundled speech helper).
@@ -127,7 +154,7 @@ win:
   # and dropped signDlls (only the executable is signed by default).
   signtoolOptions:
     sign: scripts/windows-sign.cjs
-    publisherName: "Clement Pang"
+    publisherName: 'Clement Pang'
     signingHashAlgorithms: [sha256]
   target:
     - target: nsis

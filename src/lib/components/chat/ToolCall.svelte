@@ -24,6 +24,7 @@
   import ToolStatusIcon from './ToolStatusIcon.svelte';
   import ChatOperationalRow from './ChatOperationalRow.svelte';
   import { resolveToolLeadingIcon } from './tool-leading-icon';
+  import { Button } from '$lib/components/ui/button';
 
   interface Props {
     toolUse: ToolUseBlock;
@@ -79,6 +80,20 @@
   const parsedResult = $derived(
     result ? parseToolResult(toolUse.name, toolUse.input || {}, result) : null,
   );
+  const browserScreenshotSource = $derived.by(() => {
+    if (parsedResult?.type !== 'browser') return null;
+
+    const assetUrl = parsedResult.screenshotUrl?.trim();
+    if (assetUrl && /^(?:https?:\/\/|workspace-asset:\/\/)/i.test(assetUrl)) return assetUrl;
+
+    const base64 = parsedResult.screenshotBase64?.trim();
+    if (base64 && /^[A-Za-z0-9+/]+={0,2}$/.test(base64)) {
+      return `data:image/png;base64,${base64}`;
+    }
+
+    return null;
+  });
+  let failedBrowserScreenshotSource = $state<string | null>(null);
 
   // PERF: Classify tool - memoized with $derived
   // Pass result to extract metadata (e.g., note title) for better display
@@ -364,5 +379,27 @@
         />
       </div>
     </button>
+  {/if}
+
+  <!-- Browser screenshots use the same always-visible collapsed preview as Figma results. -->
+  {#if !expanded && toolState === 'completed' && browserScreenshotSource && browserScreenshotSource !== failedBrowserScreenshotSource}
+    <Button
+      type="button"
+      variant="plain"
+      class="block w-full cursor-pointer border-0 bg-transparent p-0 px-2 pb-1 text-left"
+      onclick={toggleExpanded}
+    >
+      <div class="overflow-hidden rounded border border-border">
+        <img
+          src={browserScreenshotSource}
+          alt={m.chat_toolDetails_browserScreenshot_alt()}
+          class="h-auto w-full bg-white object-contain"
+          style="max-height: 200px; max-width: 400px"
+          onerror={() => {
+            failedBrowserScreenshotSource = browserScreenshotSource;
+          }}
+        />
+      </div>
+    </Button>
   {/if}
 {/if}

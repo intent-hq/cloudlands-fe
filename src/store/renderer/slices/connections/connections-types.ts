@@ -14,6 +14,7 @@ import type {
   ConnectionAuthRejectedEvent,
   ConnectionCertMismatchEvent,
   ConnectionProtocolMismatchEvent,
+  KeychainSyncStateResult,
 } from '$shared/types/connections';
 import type { Collection } from '@augmentcode/themis/utils/collections/collection-utils';
 
@@ -24,15 +25,18 @@ export type {
   CaptureFingerprintResult,
   ConnectionRecord,
   ConnectionsListResult,
+  OpenConnectionResult,
   ConnectionAuthRejectedEvent,
   ConnectionCertMismatchEvent,
   ConnectionProtocolMismatchEvent,
+  KeychainSyncStateResult,
+  KeychainSyncUiStatus,
 } from '$shared/types/connections';
 
 /**
  * Status of the current connect/switch operation (add or switch).
  *   - `idle`       → no operation in flight.
- *   - `connecting` → an add/switch invoke is pending.
+ *   - `connecting` → an add/open/switch invoke is pending.
  *   - `error`      → the last operation failed (see `error`).
  */
 type ConnectionOpStatus = 'idle' | 'connecting' | 'error';
@@ -45,6 +49,8 @@ export interface ConnectionsState {
   connections: Collection<ConnectionRecord, 'id'>;
   /** id of the active connection (`LOCAL_CONNECTION_ID` for the local sidecar). */
   activeId: string;
+  /** Backend bound to this renderer window. */
+  windowBackendId: string;
   /**
    * True once at least one `connectionsListReceived` has landed. Until then
    * `activeId` is still the boot-time `LOCAL_CONNECTION_ID` default and must
@@ -52,9 +58,9 @@ export interface ConnectionsState {
    * work (e.g. workspace-tab reconciliation) gates on this flag.
    */
   hasReceivedList: boolean;
-  /** Status of the in-flight add/switch operation. */
+  /** Status of the in-flight add/open/switch operation. */
   status: ConnectionOpStatus;
-  /** Error message from the last failed add/switch operation, or null. */
+  /** Error message from the last failed add/open/switch operation, or null. */
   error: string | null;
   /**
    * Last cert-mismatch push (`connections:cert-mismatch`), or null. A pinned
@@ -68,7 +74,7 @@ export interface ConnectionsState {
    * token, or the WS API is disabled) — retrying with the same token cannot
    * succeed, so the UI surfaces a "re-pair or switch" state instead of the
    * generic cannot-connect overlay. Latched per connection id: selectors gate
-   * visibility on the active connection, and a new add/switch operation clears
+   * visibility on this window's connection, and a new add/switch operation clears
    * it (a re-pair refreshes the token; a switch changes the target).
    */
   authRejected: ConnectionAuthRejectedEvent | null;
@@ -77,7 +83,7 @@ export interface ConnectionsState {
    * remote's `protocolVersion` differs in major version from the local
    * intentd's — warn-but-allow (the connection still proceeds). Kept while the
    * mismatched backend stays active so the daemon-status menu can show a
-   * persistent warning; selectors gate visibility on the active connection id.
+   * persistent warning; selectors gate visibility on this window's connection id.
    */
   protocolMismatch: ConnectionProtocolMismatchEvent | null;
   /**
@@ -88,4 +94,10 @@ export interface ConnectionsState {
    * only the persistent menu warning shows; the menu warning ignores this flag.
    */
   protocolMismatchModalDismissed: boolean;
+  /**
+   * iCloud-keychain backend sync state (`connections:sync-get-state` result),
+   * or null before the settings UI first loads it. `status` inside is
+   * refreshed live by the `connections:sync-status-changed` push.
+   */
+  keychainSync: KeychainSyncStateResult | null;
 }

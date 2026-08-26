@@ -2,7 +2,7 @@
  * ConnectBackendModal Component Tests
  *
  * Covers the two-step add flow: enter host/port/token → capture fingerprint →
- * confirm → store + switch. The saga-owned request actions are mocked so the
+ * confirm → store + open. The saga-owned request actions are mocked so the
  * flow is observable without real IPC.
  */
 
@@ -13,7 +13,7 @@ const mocks = vi.hoisted(() => ({
   dispatch: vi.fn(),
   captureFingerprintRequested: vi.fn(),
   addConnectionRequested: vi.fn(),
-  switchConnectionRequested: vi.fn(),
+  openConnectionRequested: vi.fn(),
   openExternalUrl: vi.fn(),
 }));
 
@@ -28,7 +28,7 @@ vi.mock('$store/renderer/store', () => ({
 vi.mock('$store/renderer/slices/connections/connections-slice', () => ({
   captureFingerprintRequested: mocks.captureFingerprintRequested,
   addConnectionRequested: mocks.addConnectionRequested,
-  switchConnectionRequested: mocks.switchConnectionRequested,
+  openConnectionRequested: mocks.openConnectionRequested,
 }));
 
 vi.mock('$lib/utils/open-external', () => ({
@@ -64,9 +64,9 @@ describe('ConnectBackendModal', () => {
         switched: false,
       }),
     }));
-    mocks.switchConnectionRequested.mockImplementation((id) => ({
+    mocks.openConnectionRequested.mockImplementation((id) => ({
       payload: [id],
-      promise: Promise.resolve(),
+      promise: Promise.resolve({ id }),
     }));
   });
 
@@ -88,7 +88,7 @@ describe('ConnectBackendModal', () => {
     expect(screen.getByRole('button', { name: 'Confirm & connect' })).toBeTruthy();
   });
 
-  it('stores and switches to the connection on confirm', async () => {
+  it('stores and opens the connection on confirm', async () => {
     const ConnectBackendModal = (await import('./ConnectBackendModal.svelte')).default;
     render(ConnectBackendModal, { props: { open: true } });
 
@@ -105,7 +105,7 @@ describe('ConnectBackendModal', () => {
       token: 'secret-token',
       detectHosts: true,
     });
-    await vi.waitFor(() => expect(mocks.switchConnectionRequested).toHaveBeenCalledWith('r1'));
+    await vi.waitFor(() => expect(mocks.openConnectionRequested).toHaveBeenCalledWith('r1'));
   });
 
   it('passes detectHosts: false when the detect-all-IPs option is unticked', async () => {
@@ -123,7 +123,7 @@ describe('ConnectBackendModal', () => {
     );
   });
 
-  it('skips the redundant switch when main already re-paired the active backend', async () => {
+  it('opens the backend after main re-pairs an active connection', async () => {
     mocks.addConnectionRequested.mockImplementationOnce((params) => ({
       payload: [params],
       promise: Promise.resolve({
@@ -148,9 +148,9 @@ describe('ConnectBackendModal', () => {
     await fireEvent.click(screen.getByRole('button', { name: 'Confirm & connect' }));
 
     await vi.waitFor(() => expect(mocks.addConnectionRequested).toHaveBeenCalled());
-    // The modal closes without dispatching a second teardown/reconnect cycle.
+    // Opening is non-destructive even though main already refreshed the client.
     await vi.waitFor(() => expect(screen.queryByLabelText('Host')).toBeNull());
-    expect(mocks.switchConnectionRequested).not.toHaveBeenCalled();
+    expect(mocks.openConnectionRequested).toHaveBeenCalledWith('r1');
   });
 
   it('surfaces a capture error inline and stays on the details step', async () => {

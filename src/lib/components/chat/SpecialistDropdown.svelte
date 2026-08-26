@@ -36,6 +36,7 @@
   const visibleSpecialists = $derived.by(() =>
     filterPickableSpecialists($allSpecialists, $isGitHubAuth$),
   );
+  const selectedIcon = $derived($allSpecialists.find((s) => s.id === value)?.icon ?? null);
 
   // Get current specialist info
   const currentSpecialist = $derived(value ? $allSpecialists.find((s) => s.id === value) : null);
@@ -64,7 +65,7 @@
       )}
     >
       {#if variant !== 'bare'}
-        <AgentAvatar agentId="blank" variant="compact" specialist={value} />
+        <AgentAvatar agentId="blank" variant="compact" specialist={value} icon={selectedIcon} />
       {/if}
       <span
         class={variant === 'bare'
@@ -114,7 +115,12 @@
           )}
           onclick={() => handleSelect(specialist.id)}
         >
-          <AgentAvatar agentId="blank" variant="standard" specialist={specialist.id} />
+          <AgentAvatar
+            agentId="blank"
+            variant="standard"
+            specialist={specialist.id}
+            icon={specialist.icon}
+          />
           <div class="flex flex-col min-w-0">
             <span class="font-medium text-foreground">{specialist.name}</span>
             <span class="text-xs text-subtle truncate">{specialist.description}</span>

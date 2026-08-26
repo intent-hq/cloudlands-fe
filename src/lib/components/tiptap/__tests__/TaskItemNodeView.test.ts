@@ -480,6 +480,7 @@ describe('TaskItemNodeView - Reactivity', () => {
     expect(navigateToNoteMock).toHaveBeenCalledWith(noteId, {
       workspaceId: 'workspace-1',
       openInAdjacentPanel: false,
+      openInNewAdjacentPanel: false,
       sourcePanelId: 'panel-note',
     });
   });
@@ -503,6 +504,7 @@ describe('TaskItemNodeView - Reactivity', () => {
     expect(navigateToNoteMock).toHaveBeenLastCalledWith(noteId, {
       workspaceId: 'workspace-1',
       openInAdjacentPanel: true,
+      openInNewAdjacentPanel: true,
       sourcePanelId: 'panel-note',
     });
 
@@ -511,6 +513,7 @@ describe('TaskItemNodeView - Reactivity', () => {
     expect(navigateToNoteMock).toHaveBeenCalledWith(noteId, {
       workspaceId: 'workspace-1',
       openInAdjacentPanel: true,
+      openInNewAdjacentPanel: true,
       sourcePanelId: 'panel-note',
     });
   });

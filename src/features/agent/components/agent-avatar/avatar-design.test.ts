@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
+  builtinAgentAvatarDesigns,
   builtinSpecialistAvatarDesigns,
   fallbackAgentAvatarDesigns,
   getAgentAvatarDesign,
   getFallbackAgentAvatarDesign,
+  isBuiltinAgentAvatarDesign,
 } from './avatar-design';
 import { agentAvatarCatalogIdentities } from './agent-avatar.catalog';
 
@@ -51,6 +53,33 @@ describe('agent avatar design selection', () => {
     expect(new Set(agentAvatarCatalogIdentities.map(({ design }) => design)).size).toBe(13);
     for (const identity of agentAvatarCatalogIdentities) {
       expect(getAgentAvatarDesign(identity.agentId, identity.specialist)).toBe(identity.design);
+    }
+  });
+
+  it.each(builtinAgentAvatarDesigns)(
+    'resolves icon %s ahead of the specialist-id map and the seeded fallback',
+    (icon) => {
+      expect(getAgentAvatarDesign('agent-a', 'implementor', icon)).toBe(icon);
+      expect(getAgentAvatarDesign('agent-a', 'custom-specialist', icon)).toBe(icon);
+      expect(getAgentAvatarDesign('agent-a', null, icon)).toBe(icon);
+    },
+  );
+
+  it('degrades unknown or absent icons to the id map, then the seeded fallback', () => {
+    for (const icon of [undefined, null, '', 'not-a-design', 'fallback-glasses']) {
+      expect(getAgentAvatarDesign('agent-a', 'implementor', icon)).toBe('implementor');
+      expect(getAgentAvatarDesign('agent-a', 'custom-specialist', icon)).toBe(
+        getFallbackAgentAvatarDesign('agent-a'),
+      );
+    }
+  });
+
+  it('validates icon values against the built-in design set only', () => {
+    for (const design of builtinAgentAvatarDesigns) {
+      expect(isBuiltinAgentAvatarDesign(design)).toBe(true);
+    }
+    for (const value of ['', 'not-a-design', 'fallback-glasses', 'spec-writer']) {
+      expect(isBuiltinAgentAvatarDesign(value)).toBe(false);
     }
   });
 });

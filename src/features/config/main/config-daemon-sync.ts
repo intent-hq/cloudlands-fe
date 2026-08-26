@@ -23,6 +23,7 @@
 
 import type { ConfigManager } from '../../../shared/services/config-manager';
 import { Logger } from '../../../shared/logger';
+import type { JsonRpcClient } from '../../backend/main/json-rpc-client';
 
 const logger = new Logger('ConfigDaemonSync');
 
@@ -34,28 +35,40 @@ const SECRET_DAEMON_KEYS = [] as const;
 
 const ALL_DAEMON_KEYS = [...NON_SECRET_DAEMON_KEYS, ...SECRET_DAEMON_KEYS] as const;
 
-async function daemonGet(path: string): Promise<unknown> {
+type SettingsClient = Pick<JsonRpcClient, 'request'>;
+
+async function resolveClient(client?: SettingsClient): Promise<SettingsClient> {
+  if (client) return client;
   const { getBackendClient } = await import('../../backend/main/backend.ipc');
-  const result = (await getBackendClient().request('settings.get', { path })) as {
+  return getBackendClient();
+}
+
+export async function readDaemonKey(path: string, client?: SettingsClient): Promise<unknown> {
+  const result = (await (await resolveClient(client)).request('settings.get', { path })) as {
     value?: unknown;
   } | null;
   return result?.value;
 }
 
-async function daemonUpdate(changes: Array<{ path: string; value: unknown }>): Promise<void> {
+async function daemonUpdate(
+  changes: Array<{ path: string; value: unknown }>,
+  client?: SettingsClient,
+): Promise<void> {
   if (changes.length === 0) return;
-  const { getBackendClient } = await import('../../backend/main/backend.ipc');
-  await getBackendClient().request('settings.update', { changes });
+  await (await resolveClient(client)).request('settings.update', { changes });
 }
 
 /**
  * Hydrate ConfigManager's non-secret daemon-owned sub-keys from the daemon.
  * Secrets are skipped so plaintext never enters `ConfigManager`.
  */
-export async function hydrateFromDaemon(configManager: ConfigManager): Promise<void> {
+export async function hydrateFromDaemon(
+  configManager: ConfigManager,
+  client?: SettingsClient,
+): Promise<void> {
   for (const path of NON_SECRET_DAEMON_KEYS) {
     try {
-      const value = await daemonGet(path);
+      const value = await readDaemonKey(path, client);
       if (value !== undefined && value !== null) {
         configManager.set(path, value as never);
       }
@@ -72,10 +85,14 @@ export function isDaemonOwnedKey(path: string): boolean {
 /**
  * Push a single daemon-owned sub-key to the daemon via `settings.update`.
  */
-export async function pushDaemonKey(path: string, value: unknown): Promise<void> {
+export async function pushDaemonKey(
+  path: string,
+  value: unknown,
+  client?: SettingsClient,
+): Promise<void> {
   if (!isDaemonOwnedKey(path)) return;
   try {
-    await daemonUpdate([{ path, value }]);
+    await daemonUpdate([{ path, value }], client);
   } catch (error) {
     logger.error(`Failed to push ${path} to daemon`, error as Error);
     throw error;
@@ -88,7 +105,10 @@ export async function pushDaemonKey(path: string, value: unknown): Promise<void>
  * on user-rules changes so rules land on the daemon-authoritative store.
  * Secrets are omitted (ConfigManager holds no plaintext to push).
  */
-export async function pushAllDaemonKeys(configManager: ConfigManager): Promise<void> {
+export async function pushAllDaemonKeys(
+  configManager: ConfigManager,
+  client?: SettingsClient,
+): Promise<void> {
   const changes: Array<{ path: string; value: unknown }> = [];
   for (const path of NON_SECRET_DAEMON_KEYS) {
     const value = configManager.get(path);
@@ -96,5 +116,5 @@ export async function pushAllDaemonKeys(configManager: ConfigManager): Promise<v
       changes.push({ path, value });
     }
   }
-  await daemonUpdate(changes);
+  await daemonUpdate(changes, client);
 }

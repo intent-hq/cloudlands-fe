@@ -24,6 +24,7 @@ build/icon-dev.svg
 build/icon.icns
 build/icon.ico
 build/icon.iconset/
+build/macos-icon/
 
 # Exception: Include CDP MCP server build output
 !cdp-mcp-server/dist/
@@ -111,6 +112,9 @@ resources/sidecar/
 
 # Speech helper staging directory (build-speech-helper.cjs output)
 resources/speech-helper/
+
+# Keychain helper staging directory (build-keychain-helper.cjs output)
+resources/keychain-helper/
 
 # Generated production-only Paraglide bundle
 static/generated/

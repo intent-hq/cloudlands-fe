@@ -37,6 +37,9 @@
     // Loaded at runtime by cdp-mcp-server/server.ts via a computed path and copied
     // into dist by scripts/build-cdp-mcp.js — not imported as a module
     "cdp-mcp-server/cdp-helpers.js",
+    // Discovered at runtime by preview-discovery.ts through import.meta.glob;
+    // knip cannot infer that each module's named definition and default component are used.
+    "src/**/*.preview.{ts,svelte}",
     // Compile-time type-assertion file, checked by tsc (pnpm run check), never imported
     "src/store/renderer/utils/context-saga-effects.typecheck.ts"
   ],

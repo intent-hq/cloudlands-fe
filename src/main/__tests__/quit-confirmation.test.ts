@@ -3,11 +3,10 @@
  * (src/main/quit-confirmation.ts). All collaborators are injected, so no
  * electron dialog or backend client is touched.
  *
- * The confirmation aggregates two agent sources before deciding anything: the
- * active client (remote when a remote backend is pinned) and — only while a
- * remote is active — a best-effort query of the startup/default backend. Each
- * source is grouped by whether quitting shuts its daemon down, so the framing
- * follows daemon ownership rather than the startup connection mode alone.
+ * The confirmation aggregates every live pooled backend with windows before
+ * deciding anything, plus a best-effort startup/default-backend probe when the
+ * local sidecar has no window. Each source is grouped by whether quitting shuts
+ * its daemon down, so the framing follows daemon ownership rather than focus.
  *
  * The last suite drops the `listLocalRespondingAgents` override so the real
  * probe runs against a faked JsonRpcClient.
@@ -117,9 +116,8 @@ function makeDeps(options: {
   const dialogOptions = { message: 'agents working' } as MessageBoxOptions;
   const tabsOnlyDialogOptions = { message: 'tabs connected' } as MessageBoxOptions;
   const deps = {
-    getBackendClient: vi.fn(() => client),
+    getBackendTargets: vi.fn(() => [{ id: options.remoteActive ? 'remote-1' : 'local', client }]),
     getConnectionMode: vi.fn(() => options.mode ?? ('sidecar' as ConnectionMode)),
-    isRemoteBackendActive: vi.fn(() => options.remoteActive ?? false),
     listRespondingAgents: vi.fn(async () => options.agents),
     listLocalRespondingAgents: vi.fn(async () => options.localAgents ?? []),
     listDisruptedBrowserTabs: vi.fn(async () => options.browserTabs ?? []),
@@ -208,12 +206,25 @@ describe('confirmQuitWithRunningAgents — local only (no remote pinned)', () =>
     });
   });
 
-  it('never queries the local daemon separately when no remote is pinned', async () => {
+  it('does not query the local daemon separately when its pooled client is live', async () => {
     const { deps } = makeDeps({ agents: AGENTS, mode: 'sidecar', localAgents: LOCAL_AGENTS });
 
     await confirmQuitWithRunningAgents(deps);
 
     expect(deps.listLocalRespondingAgents).not.toHaveBeenCalled();
+  });
+
+  it('still probes a running local sidecar when no backend has a window', async () => {
+    const { deps } = makeDeps({ agents: [], localAgents: LOCAL_AGENTS, mode: 'sidecar' });
+    deps.getBackendTargets.mockReturnValue([]);
+
+    await confirmQuitWithRunningAgents(deps);
+
+    expect(deps.listLocalRespondingAgents).toHaveBeenCalledTimes(1);
+    expect(deps.buildQuitDialogOptions).toHaveBeenCalledWith({
+      keepRunning: [],
+      interrupted: LOCAL_AGENTS,
+    });
   });
 });
 
@@ -368,6 +379,34 @@ describe('confirmQuitWithRunningAgents — overlapping sources', () => {
       keepRunning: AGENTS,
       interrupted: LOCAL_AGENTS,
     });
+  });
+
+  it('aggregates local and every remote backend regardless of focus', async () => {
+    const { deps } = makeDeps({ agents: [], mode: 'sidecar' });
+    const localClient = { getStatus: () => 'connected' } as RunningAgentsRpc;
+    const remoteAClient = { getStatus: () => 'connected' } as RunningAgentsRpc;
+    const remoteBClient = { getStatus: () => 'connected' } as RunningAgentsRpc;
+    const remoteAAgents = [AGENTS[0]];
+    const remoteBAgents = [AGENTS[1]];
+    deps.getBackendTargets.mockReturnValue([
+      { id: 'local', client: localClient },
+      { id: 'remote-a', client: remoteAClient },
+      { id: 'remote-b', client: remoteBClient },
+    ]);
+    deps.listRespondingAgents.mockImplementation(async (target) => {
+      if (target === localClient) return LOCAL_AGENTS;
+      if (target === remoteAClient) return remoteAAgents;
+      return remoteBAgents;
+    });
+
+    await confirmQuitWithRunningAgents(deps);
+
+    expect(deps.listRespondingAgents).toHaveBeenCalledTimes(3);
+    expect(deps.buildQuitDialogOptions).toHaveBeenCalledWith({
+      keepRunning: [...remoteAAgents, ...remoteBAgents],
+      interrupted: LOCAL_AGENTS,
+    });
+    expect(deps.listLocalRespondingAgents).not.toHaveBeenCalled();
   });
 });
 

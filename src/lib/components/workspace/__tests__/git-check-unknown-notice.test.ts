@@ -64,6 +64,18 @@ vi.mock('$store/renderer/slices/specialists/specialists-selectors', () => ({
   selectEffectiveModel: { select: vi.fn(() => undefined) },
   selectEffectiveCodingAgent: { select: vi.fn(() => undefined) },
   selectUserOverrides: { select: vi.fn(() => ({ modelOverrides: {} })) },
+  selectOrchestratorSpecialist: Object.assign(
+    () =>
+      mocks.readable(() => ({ id: 'spec-writer', name: 'Coordinator', description: '', role: 'orchestrator' })),
+    {
+      select: vi.fn(() => ({
+        id: 'spec-writer',
+        name: 'Coordinator',
+        description: '',
+        role: 'orchestrator',
+      })),
+    },
+  ),
 }));
 
 vi.mock('$features/setup-scripts', async (importOriginal) => ({

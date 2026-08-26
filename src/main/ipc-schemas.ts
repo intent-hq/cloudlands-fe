@@ -1018,6 +1018,9 @@ export const SpecialistWriteSchema = z
       )
       .optional(),
     reasoningEffort: z.string().optional(),
+    role: z.enum(['orchestrator', 'internal']).optional(),
+    teamAgents: z.array(z.string().min(1, 'Team agent id must be non-empty')).optional(),
+    icon: z.string().optional(),
     behaviorPrompt: z.string().min(1, 'Behavior prompt is required'),
     scope: z.enum(['user', 'project']).optional(),
     workspacePath: z.string().optional(),
@@ -1084,8 +1087,18 @@ export const ConnectionsForgetSchema = z.object({
   id: z.string().min(1, 'Connection ID is required'),
 });
 
+export const ConnectionsOpenSchema = z.object({
+  id: z.string().min(1, 'Connection ID is required'),
+});
+
 export const ConnectionsSwitchSchema = z.object({
   id: z.string().min(1, 'Connection ID is required'),
+});
+
+export const ConnectionsSyncGetStateSchema = EmptySchema;
+
+export const ConnectionsSyncSetEnabledSchema = z.object({
+  enabled: z.boolean(),
 });
 
 // ============================================================================
