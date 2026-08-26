@@ -12,6 +12,13 @@ import { app } from 'electron';
 import * as fs from 'fs';
 import * as path from 'path';
 
+import {
+  containConsoleStreamError,
+  isClosedConsoleStreamError,
+  isConsoleStreamAvailable,
+  protectConsoleStream,
+} from '../../shared/logger';
+
 const MAX_LOG_SIZE = 10 * 1024 * 1024; // 10 MB
 
 const ANSI_REGEX = /\x1b\[[0-9;]*[a-zA-Z]/g;
@@ -170,13 +177,51 @@ function writeToLog(text: string): void {
   }
 }
 
+type StreamWriteCallback = (error?: Error | null) => void;
+
+function writeCallbackOf(args: unknown[]): StreamWriteCallback | undefined {
+  const last = args[args.length - 1];
+  return typeof last === 'function' ? (last as StreamWriteCallback) : undefined;
+}
+
+function completeWriteCallback(args: unknown[]): void {
+  // Preserve the stream API's asynchronous completion contract: callers may
+  // queue another write from the callback without re-entering write().
+  const callback = writeCallbackOf(args);
+  if (callback !== undefined) process.nextTick(callback);
+}
+
+function forwardToStream(
+  stream: NodeJS.WriteStream,
+  originalWrite: (chunk: string | Uint8Array, ...args: unknown[]) => boolean,
+  chunk: string | Uint8Array,
+  args: unknown[],
+): boolean {
+  if (!isConsoleStreamAvailable(stream)) {
+    // The stream is known-broken (e.g. the launcher's pipe went away): keep
+    // teeing to the file but stop forwarding, and report success so writers
+    // relying on the callback do not stall (monorepo#3152).
+    completeWriteCallback(args);
+    return true;
+  }
+  try {
+    return originalWrite(chunk, ...args);
+  } catch (error) {
+    if (!isClosedConsoleStreamError(error)) throw error;
+    containConsoleStreamError(error, stream);
+    completeWriteCallback(args);
+    return true;
+  }
+}
+
 /**
  * Set up console log capture for the main process.
  *
  * Call this early in the main process entry point (after electron imports,
  * before most other initialization). It monkey-patches process.stdout.write
  * and process.stderr.write to tee output to a log file while preserving
- * normal terminal output.
+ * normal terminal output. Once a stream is known-broken (closed pipe), its
+ * output keeps teeing to the file but is no longer forwarded.
  */
 export function setupConsoleLogCapture(): void {
   const logsDir = path.join(app.getPath('userData'), 'logs');
@@ -189,6 +234,10 @@ export function setupConsoleLogCapture(): void {
   const timestamp = new Date().toISOString();
   writeToLog(`\n--- Session started at ${timestamp} ---\n`);
 
+  // Contain async closed-pipe errors instead of surfacing uncaughtException
+  protectConsoleStream(process.stdout);
+  protectConsoleStream(process.stderr);
+
   // Monkey-patch stdout.write
   const originalStdoutWrite = process.stdout.write.bind(process.stdout);
   (process.stdout as any).write = function (
@@ -197,7 +246,7 @@ export function setupConsoleLogCapture(): void {
   ): boolean {
     const text = typeof chunk === 'string' ? chunk : chunk.toString();
     writeToLog(text);
-    return (originalStdoutWrite as any)(chunk, ...args);
+    return forwardToStream(process.stdout, originalStdoutWrite as any, chunk, args);
   };
 
   // Monkey-patch stderr.write
@@ -208,7 +257,7 @@ export function setupConsoleLogCapture(): void {
   ): boolean {
     const text = typeof chunk === 'string' ? chunk : chunk.toString();
     writeToLog(text);
-    return (originalStderrWrite as any)(chunk, ...args);
+    return forwardToStream(process.stderr, originalStderrWrite as any, chunk, args);
   };
 
   // Close the file descriptor on app quit

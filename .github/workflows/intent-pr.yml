@@ -22,6 +22,19 @@ env:
   LINUX_BURST_THRESHOLD: 8
 
 jobs:
+  # Fork-PR hardening: external (fork) PRs are not accepted (contribution
+  # policy: issues on intent-hq/monorepo) and get NO CI — in particular,
+  # nothing from a fork may ever reach the self-hosted tinybox runner. Every
+  # job in this workflow carries the same-repo guard, either directly via an
+  # `if:` on `github.event.pull_request.head.repo.full_name ==
+  # github.repository` or transitively through `needs` on a guarded job
+  # (checks / build-web / test skip when the guarded route job skips, via
+  # their existing `needs.route.result == 'success'` condition) — EXCEPT the
+  # gate, which deliberately still runs on fork PRs so the required "CI
+  # Gate" context fails red there (a skipped job would SATISFY a required
+  # check; see the gate job's comment). Fork PRs are auto-closed by
+  # close-fork-prs.yml.
+
   # Decides where the heavy jobs (checks / build-web / test) run: the local
   # tinybox runner normally, or GH-hosted larger runners when the tinybox
   # queue is backed up (ported from intentd's ci.yml route job). Runs on a
@@ -34,6 +47,9 @@ jobs:
   # not routed — they pin directly to ubuntu-latest.
   route:
     runs-on: ubuntu-latest
+    # Same-repo PRs only (see fork-PR hardening note above); a skip here also
+    # skips the routed heavy jobs through their needs.route.result guard.
+    if: github.event.pull_request.head.repo.full_name == github.repository
     timeout-minutes: 5
     permissions:
       contents: read
@@ -95,6 +111,9 @@ jobs:
     # Seconds-long job: pinned to the smallest GH-hosted runner rather than
     # routed — not worth a tinybox slot or a burst decision.
     runs-on: ubuntu-latest
+    # Same-repo PRs only (see fork-PR hardening note above); guarded directly
+    # rather than through needs so it isn't delayed behind the route probe.
+    if: github.event.pull_request.head.repo.full_name == github.repository
     permissions:
       pull-requests: read
     steps:
@@ -148,6 +167,8 @@ jobs:
     name: Conflict Markers
     # Seconds-long job: pinned to ubuntu-latest (see pr-title).
     runs-on: ubuntu-latest
+    # Same-repo PRs only (see fork-PR hardening note above).
+    if: github.event.pull_request.head.repo.full_name == github.repository
     timeout-minutes: 5
     permissions:
       contents: read
@@ -210,7 +231,8 @@ jobs:
     name: Release PR Fast Path
     # Seconds-long job: pinned to ubuntu-latest (see pr-title).
     runs-on: ubuntu-latest
-    if: github.event_name == 'pull_request'
+    # Same-repo PRs only (see fork-PR hardening note above).
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
     timeout-minutes: 5
     permissions:
       contents: read
@@ -461,7 +483,10 @@ jobs:
   test-ct:
     name: Component Tests (shard ${{ matrix.shard }}/4)
     needs: [release-fast-path]
-    if: ${{ !cancelled() && needs.release-fast-path.outputs.fast_path != 'true' }}
+    # The explicit same-repo guard is required here (fork-PR hardening note):
+    # `!cancelled()` overrides the default skip propagation from needs, so a
+    # skipped release-fast-path alone would not skip this matrix on fork PRs.
+    if: ${{ !cancelled() && github.event.pull_request.head.repo.full_name == github.repository && needs.release-fast-path.outputs.fast_path != 'true' }}
     runs-on: ubuntu-latest
     strategy:
       # Let the sibling shards finish so one flaky leg doesn't hide the
@@ -632,6 +657,15 @@ jobs:
     # Seconds-long job: pinned to ubuntu-latest (see pr-title).
     runs-on: ubuntu-latest
     permissions: {}
+    # Deliberately UNGUARDED (the one exception to the fork-PR hardening
+    # note): a job skipped by its own `if:` reports a skipped conclusion,
+    # which SATISFIES a required status check — a skipped gate would leave a
+    # fork PR mergeable, resting the hardening entirely on close-fork-prs.yml.
+    # Instead the gate always runs (it has permissions:{}, no checkout, and
+    # executes no fork code, so this is safe): on fork PRs the needed jobs
+    # are skipped by their guards, so the required "CI Gate" context fails
+    # naturally — a red fail-safe backstop even if the close workflow is
+    # disabled, delayed, or fails.
     if: always()
     needs: [release-fast-path, pr-title, conflict-markers, checks, build-web, test, test-ct]
     steps:

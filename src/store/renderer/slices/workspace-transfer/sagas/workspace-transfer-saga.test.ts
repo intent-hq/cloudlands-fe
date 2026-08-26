@@ -18,6 +18,7 @@ import {
   workspaceTransferReducer,
 } from '../workspace-transfer-slice';
 import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
+import { m } from '$shared/paraglide/messages.js';
 import { switchConnectionRequested } from '../../connections/connections-slice';
 import type { ConnectionRecord, ConnectionsState } from '../../connections/connections-types';
 import type { TransferPlan, WorkspaceTransferState } from '../workspace-transfer-types';
@@ -203,6 +204,27 @@ describe('workspaceTransferSaga — steps 3–4', () => {
     expect(h.state().runStatus).toBe('failed');
     expect(h.state().runError).toBe('destination unavailable');
     expect(h.state().failurePhase).toBe('preflight');
+    h.task.cancel();
+  });
+
+  it('maps a not-session-owner rejection to the localized message', async () => {
+    mocks.invoke.mockResolvedValue({
+      success: false,
+      error: 'the transfer session belongs to another window',
+      code: 'not-session-owner',
+    });
+    const h = harness(
+      workspaceTransferReducer(
+        confirmLoadedState({ kind: 'server', connectionId: 'conn-1' }),
+        transferStartRequested(),
+      ),
+    );
+
+    h.channel.put(transferStartRequested());
+    await settle();
+
+    expect(h.state().runStatus).toBe('failed');
+    expect(h.state().runError).toBe(m.workspace_transfer_notSessionOwner_error());
     h.task.cancel();
   });
 

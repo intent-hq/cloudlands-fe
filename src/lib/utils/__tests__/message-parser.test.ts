@@ -1243,6 +1243,54 @@ Some trailing content.`;
     }
   });
 
+  it('defers a fused closer on the unterminated final line while streaming (monorepo#3155)', () => {
+    // Chunk boundary inside an embedded arrow: `Run -->` must not surface a
+    // prompt chip that the next chunk (`Run --> tests`) invalidates.
+    const fused = 'Done.\n\n<!-- suggested-prompts\nRun -->';
+    const withheld = parseSuggestedPrompts(fused, { isStreaming: true });
+    expect(withheld.prompts).toEqual([]);
+    expect(withheld.cleanedContent).toBe('Done.');
+
+    const extended = 'Done.\n\n<!-- suggested-prompts\nRun --> tests\n';
+    const revealed = parseSuggestedPrompts(extended, { isStreaming: true });
+    expect(revealed.prompts).toEqual([]);
+    expect(revealed.cleanedContent).toBe(extended);
+    // Finalization agrees with what the reveal showed — no flash either way.
+    expect(parseSuggestedPrompts(extended).cleanedContent).toBe(extended);
+  });
+
+  it('accepts a fused closer while streaming once its line is newline-terminated', () => {
+    const confirmed = 'Done.\n\n<!-- suggested-prompts\nRun tests -->\n';
+    const result = parseSuggestedPrompts(confirmed, { isStreaming: true });
+    expect(result.prompts).toEqual(['Run tests']);
+    expect(result.cleanedContent).toBe('Done.');
+  });
+
+  it('accepts a fused closer on the final line when not streaming', () => {
+    const finalized = 'Done.\n\n<!-- suggested-prompts\nRun tests -->';
+    const result = parseSuggestedPrompts(finalized);
+    expect(result.prompts).toEqual(['Run tests']);
+    expect(result.cleanedContent).toBe('Done.');
+  });
+
+  it('counts a dash-only fused remainder as a prompt so an over-cap block is not withheld', () => {
+    // With 4 completed prompts, a fused `- -->` remainder is a 5th prompt
+    // candidate (never a partial closer): the block exceeds the cap, so it
+    // must stay visible while streaming — finalization rejects it too.
+    const content = 'Done.\n\n<!-- suggested-prompts\nOne\nTwo\nThree\nFour\n- -->';
+    const streaming = parseSuggestedPrompts(content, { isStreaming: true });
+    expect(streaming.prompts).toEqual([]);
+    expect(streaming.cleanedContent).toBe(content);
+    expect(parseSuggestedPrompts(content).cleanedContent).toBe(content);
+  });
+
+  it('leaves a fused final line visible when its remainder is an embedded arrow', () => {
+    const content = 'Done.\n\n<!-- suggested-prompts\nA --> B -->';
+    const result = parseSuggestedPrompts(content, { isStreaming: true });
+    expect(result.prompts).toEqual([]);
+    expect(result.cleanedContent).toBe(content);
+  });
+
   it('restores malformed and incomplete blocks when streaming finalizes', () => {
     const incomplete = 'Done.\n\n<!-- suggested-prompts\nOnly one prompt';
     expect(parseSuggestedPrompts(incomplete, { isStreaming: true }).cleanedContent).toBe('Done.');
