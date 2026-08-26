@@ -24,6 +24,8 @@ import type {
   ConnectionRecord,
   ConnectionsState,
   ConnectionsListResult,
+  KeychainSyncStateResult,
+  KeychainSyncUiStatus,
   OpenConnectionResult,
   ConnectionAuthRejectedEvent,
   ConnectionCertMismatchEvent,
@@ -45,6 +47,7 @@ export const initialState: ConnectionsState = {
   authRejected: null,
   protocolMismatch: null,
   protocolMismatchModalDismissed: false,
+  keychainSync: null,
 };
 
 // ---------------------------------------------------------------------------
@@ -159,6 +162,36 @@ export const switchConnectionRequested = createAsyncAction<[id: string], void>(
   'connections/switchRequested',
 );
 
+/**
+ * iCloud-keychain sync state received — from the `connections:sync-get-state`
+ * invoke or the `connections:sync-set-enabled` result (both carry the full
+ * `KeychainSyncStateResult`).
+ */
+export const keychainSyncStateReceived = createAction<[result: KeychainSyncStateResult]>(
+  'connections/keychainSyncStateReceived',
+);
+
+/**
+ * A `connections:sync-status-changed` push arrived — a reconcile's
+ * availability verdict changed. Ignored until the full state has been loaded
+ * (`keychainSync` is null before that, and status alone cannot seed it).
+ */
+export const keychainSyncStatusReceived = createAction<[status: KeychainSyncUiStatus]>(
+  'connections/keychainSyncStatusReceived',
+);
+
+/** Saga-owned keychain-sync state hydration (settings UI mount). */
+export const loadKeychainSyncStateRequested = createAsyncAction<[], KeychainSyncStateResult>(
+  'connections/loadKeychainSyncState',
+  'connections/loadKeychainSyncStateRequested',
+);
+
+/** Saga-owned keychain-sync opt-in toggle request. */
+export const setKeychainSyncEnabledRequested = createAsyncAction<
+  [enabled: boolean],
+  KeychainSyncStateResult
+>('connections/setKeychainSyncEnabled', 'connections/setKeychainSyncEnabledRequested');
+
 // ---------------------------------------------------------------------------
 // Reducer
 // ---------------------------------------------------------------------------
@@ -206,4 +239,13 @@ connectionsReducer.with(protocolMismatchReceived, (state, { payload: [event] }) 
 });
 connectionsReducer.with(protocolMismatchModalDismissed, (state) => {
   return { ...state, protocolMismatchModalDismissed: true };
+});
+connectionsReducer.with(keychainSyncStateReceived, (state, { payload: [result] }) => {
+  return { ...state, keychainSync: result };
+});
+connectionsReducer.with(keychainSyncStatusReceived, (state, { payload: [status] }) => {
+  // Status alone cannot seed the state — `supported`/`enabled` are unknown
+  // until the first full load, so a push arriving before it is dropped.
+  if (!state.keychainSync) return state;
+  return { ...state, keychainSync: { ...state.keychainSync, status } };
 });

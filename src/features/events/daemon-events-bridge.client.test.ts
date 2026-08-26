@@ -2245,6 +2245,126 @@ describe('daemonEventsBridge (agent:stream:activity — push-applied live previe
 
     expect(readAgentSessionField('digest')).toBe('Turn B digest');
   });
+
+  function readLiveTurnFields(): {
+    liveTurnOpen?: boolean;
+    liveTurnOpenedAt?: string;
+    updatedAt?: string;
+  } {
+    const session = readSession() as
+      | (AgentSession & { liveTurnOpen?: boolean; liveTurnOpenedAt?: string })
+      | undefined;
+    return {
+      liveTurnOpen: session?.liveTurnOpen,
+      liveTurnOpenedAt: session?.liveTurnOpenedAt,
+      updatedAt: session?.updatedAt as string | undefined,
+    };
+  }
+
+  // The ping is self-sufficient evidence of a live turn: a delegated agent
+  // whose running `agent:status-changed` edge predates hydration (or was
+  // missed) must still read as live while pings stream in, so the footer
+  // preview animates without an `agent.get` refetch.
+  it('an activity ping opens the sticky liveTurnOpen bit on a non-live session (updatedAt untouched)', async () => {
+    appStore.dispatch(clearAllSessions());
+    seedSession({ status: AgentStatus.RuntimeIdle, isStreaming: false });
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+    expect(selectAgentIsResponding.select(appStore.state, AGENT)).toBe(false);
+
+    handler(notification('agent:stream:activity', { agentId: AGENT, messageId: MESSAGE_ID }));
+
+    const fields = readLiveTurnFields();
+    expect(fields.liveTurnOpen).toBe(true);
+    // Stamped from the event envelope's own daemon timestamp.
+    expect(fields.liveTurnOpenedAt).toBe('2026-01-02T00:00:00.000Z');
+    // updatedAt is daemon-owned and per-turn (STAB-19) — the ping must not
+    // synthesize or advance it.
+    expect(fields.updatedAt).toBe('2026-01-01T00:00:00.000Z');
+    expect(selectAgentIsResponding.select(appStore.state, AGENT)).toBe(true);
+  });
+
+  it('agent:idle still closes the bit, and a straggler same-turn ping cannot re-open it', async () => {
+    appStore.dispatch(clearAllSessions());
+    seedSession({ status: AgentStatus.RuntimeIdle, isStreaming: false });
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(notification('agent:stream:activity', { agentId: AGENT, messageId: MESSAGE_ID }));
+    expect(readLiveTurnFields().liveTurnOpen).toBe(true);
+
+    // Terminal choreography: stream:end then the canonical idle fold.
+    handler(notification('agent:stream:end', { agentId: AGENT, messageId: MESSAGE_ID }));
+    handler(notification('agent:idle', { agentId: AGENT, status: 'idle', isActive: false }));
+    expect(readLiveTurnFields().liveTurnOpen).toBe(false);
+    expect(selectAgentIsResponding.select(appStore.state, AGENT)).toBe(false);
+
+    // A same-turn activity straggler delivered after the terminal event must
+    // not resurrect the liveness bit the choreography just closed — even when
+    // it carries a lastToolUse.status "running" hint, which
+    // isAgentRunningState would otherwise read as active evidence.
+    handler(
+      notification('agent:stream:activity', {
+        agentId: AGENT,
+        messageId: MESSAGE_ID,
+        lastToolUse: { name: 'shell', status: 'running' },
+      }),
+    );
+    expect(readLiveTurnFields().liveTurnOpen).toBe(false);
+    expect(readAgentSessionField('lastToolUse')).toBeUndefined();
+    expect(selectAgentIsResponding.select(appStore.state, AGENT)).toBe(false);
+
+    // A genuinely NEW turn's ping re-opens it.
+    handler(notification('agent:stream:activity', { agentId: AGENT, messageId: 'msg_assistant_2' }));
+    expect(readLiveTurnFields().liveTurnOpen).toBe(true);
+  });
+
+  // Interleaving hardening: the arrival-time straggler check passes for a
+  // mid-turn ping, but `withHydratedSession` defers the dispatch across the
+  // async hydration fetch — if the turn's terminal `agent:stream:end` lands
+  // (stamping the ended-turn map synchronously) before hydration resolves,
+  // the deferred callback must re-check at execution time rather than
+  // re-open the liveness the terminal fold just closed.
+  it('a ping deferred across hydration does not re-open liveness once the turn ended mid-flight', async () => {
+    appStore.dispatch(clearAllSessions());
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    let resolveHydration!: () => void;
+    ensureAgentSessionSpy.mockImplementationOnce(async () => {
+      await new Promise<void>((resolve) => {
+        resolveHydration = resolve;
+      });
+      appStore.dispatch(
+        bulkUpsertSessions([
+          {
+            id: AGENT,
+            backendSessionId: 'backend-1',
+            workspaceId: WS,
+            name: 'A',
+            status: AgentStatus.RuntimeIdle,
+            messages: [],
+            isStreaming: false,
+            createdAt: '2026-01-01T00:00:00.000Z',
+            updatedAt: '2026-01-01T00:00:00.000Z',
+          } as AgentSession,
+        ]),
+      );
+    });
+
+    // Mid-turn ping for an unknown session: arrival-time guard passes, the
+    // dispatch is parked behind the hydration fetch.
+    handler(notification('agent:stream:activity', { agentId: AGENT, messageId: MESSAGE_ID }));
+    // The turn ends while hydration is still in flight (the map stamp in
+    // handleStreamEndEvent is synchronous).
+    handler(notification('agent:stream:end', { agentId: AGENT, messageId: MESSAGE_ID }));
+
+    resolveHydration();
+    await flush();
+
+    expect(readLiveTurnFields().liveTurnOpen).not.toBe(true);
+    expect(selectAgentIsResponding.select(appStore.state, AGENT)).toBe(false);
+  });
 });
 
 // Regression (intentd#336): a user interrupt (agent.stop, or agent.sendMessage

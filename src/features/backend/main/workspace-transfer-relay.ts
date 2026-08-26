@@ -2,8 +2,9 @@
  * Workspace transfer relay (main process) — wizard steps 3–4 execution.
  *
  * Drives the FE-mediated transfer per PROTOCOL §5.1: `workspace.export.start`
- * on the SOURCE (the live backend client), after a server TARGET has completed
- * an authenticated `host.status` preflight, then either
+ * on the SOURCE (the invoking window's backend client, passed per start), after
+ * a server TARGET has completed an authenticated `host.status` preflight, then
+ * either
  *   - relays the sealed archive chunk-by-chunk (`workspace.export.read` →
  *     `workspace.import.chunk`) into a second, short-lived JsonRpcClient
  *     pinned to the chosen TARGET connection and commits
@@ -48,7 +49,6 @@ export interface TargetClientHandle {
 
 /** Injectable seams so unit tests never stand up sockets/dialogs/disk. */
 export interface TransferRelayDeps {
-  getSourceClient(): RelayRpcClient;
   createTargetClient(connectionId: string): Promise<TargetClientHandle>;
   /** Returns the chosen path, or undefined when the user cancelled. */
   showSaveDialog(defaultFileName: string): Promise<string | undefined>;
@@ -93,8 +93,8 @@ const BUILD_TIMEOUT_MS = 600_000;
 interface RelaySession {
   workspaceId: string;
   /** The SOURCE daemon's client, pinned at start() time — a backend switch
-   * swaps the shared client, and finalize/cancel must keep talking to the
-   * daemon that owns this exportId. */
+   * rebinds windows to other clients, and finalize/cancel must keep talking
+   * to the daemon that owns this exportId. */
   source: RelayRpcClient;
   exportId: string;
   /** True once `workspace.export.start` has been sent and agents may be stopped. */
@@ -110,7 +110,8 @@ interface RelaySession {
 }
 
 export interface WorkspaceTransferRelay {
-  start(params: TransferStartParams): Promise<TransferStartResult>;
+  /** `source` is the invoking window's backend client — the transfer SOURCE. */
+  start(params: TransferStartParams, source: RelayRpcClient): Promise<TransferStartResult>;
   finalize(params: TransferFinalizeParams): Promise<TransferFinalizeResult>;
   cancel(): Promise<TransferCancelResult>;
 }
@@ -344,7 +345,10 @@ export function createWorkspaceTransferRelay(deps: TransferRelayDeps): Workspace
     }
   }
 
-  async function start(params: TransferStartParams): Promise<TransferStartResult> {
+  async function start(
+    params: TransferStartParams,
+    source: RelayRpcClient,
+  ): Promise<TransferStartResult> {
     if (session && !session.committed && !session.cancelled) {
       return {
         success: false,
@@ -359,7 +363,6 @@ export function createWorkspaceTransferRelay(deps: TransferRelayDeps): Workspace
       await abortExport(session.source, session.exportId);
     }
     const { workspaceId, destination } = params;
-    const source = deps.getSourceClient();
     const current: RelaySession = {
       workspaceId,
       source,

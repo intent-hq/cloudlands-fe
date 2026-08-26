@@ -125,6 +125,8 @@ vi.mock('../connections-store', () => ({
   setActiveId: store.setActiveId,
   getDecryptedToken: store.getDecryptedToken,
   setHostname: store.setHostname,
+  // Keychain-sync lifecycle wiring (T3); inert in these suites.
+  onConnectionsMutated: () => () => {},
 }));
 
 // ---------------------------------------------------------------------------

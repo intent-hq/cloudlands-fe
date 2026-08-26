@@ -151,6 +151,12 @@
     color: hsl(var(--muted-foreground) / 0.6);
   }
 
+  /* Cumulative startup notes separate each release body with a thematic break. */
+  .release-notes-body :global(.markdown-viewer hr) {
+    margin: 2rem 0;
+    border-color: hsl(var(--border));
+  }
+
   /* PR-number links → subtle inline chips */
   .release-notes-body :global(.markdown-viewer a[href*='/pull/']) {
     display: inline-block;

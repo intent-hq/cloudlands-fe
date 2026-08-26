@@ -3,9 +3,10 @@
  *
  * Binds the import relay engine (`workspace-import-relay.ts`) to the Electron
  * IPC surface: `transfer:import-start` / `transfer:import-cancel` invokes,
- * progress pushed on `transfer:import-progress`. Production deps: the live
- * backend client as the TARGET, Electron's open dialog, and a plain fs file
- * handle for random-access archive reads.
+ * progress pushed on `transfer:import-progress`. Production deps: the
+ * invoking window's backend client as the TARGET (resolved per start from the
+ * IPC event sender), Electron's open dialog, and a plain fs file handle for
+ * random-access archive reads.
  */
 
 import { promises as fs } from 'node:fs';
@@ -16,7 +17,8 @@ import type {
   ImportProgressEvent,
   ImportStartParams,
 } from '../../../shared/types/workspace-transfer';
-import { getBackendClient } from './backend.ipc';
+import { getBackendClientForIpcEvent } from './backend.ipc';
+import type { JsonRpcClient } from './json-rpc-client';
 import {
   createWorkspaceImportRelay,
   type ImportFileSource,
@@ -80,7 +82,6 @@ async function openFile(filePath: string): Promise<ImportFileSource> {
 function getRelay(): WorkspaceImportRelay {
   if (!relay) {
     relay = createWorkspaceImportRelay({
-      getClient: () => getBackendClient(),
       showOpenDialog,
       openFile,
       broadcastProgress,
@@ -98,8 +99,16 @@ export function registerWorkspaceImportHandlers(): void {
   if (handlersRegistered) return;
   handlersRegistered = true;
 
-  ipcMain.handle(TRANSFER.IMPORT_START, async (_event, params?: ImportStartParams) => {
-    return getRelay().start(params ?? {});
+  ipcMain.handle(TRANSFER.IMPORT_START, async (event, params?: ImportStartParams) => {
+    // The TARGET is the backend bound to the invoking window — not the global
+    // primary client, which may point at a different daemon.
+    let client: JsonRpcClient;
+    try {
+      client = getBackendClientForIpcEvent(event).client;
+    } catch (error) {
+      return { success: false, error: error instanceof Error ? error.message : String(error) };
+    }
+    return getRelay().start(params ?? {}, client);
   });
 
   ipcMain.handle(TRANSFER.IMPORT_CANCEL, async () => {

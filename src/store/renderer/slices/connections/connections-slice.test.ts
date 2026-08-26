@@ -16,6 +16,8 @@ import {
   certMismatchReceived,
   certMismatchCleared,
   authRejectedReceived,
+  keychainSyncStateReceived,
+  keychainSyncStatusReceived,
   protocolMismatchReceived,
   protocolMismatchModalDismissed,
 } from './connections-slice';
@@ -25,6 +27,7 @@ import type {
   ConnectionAuthRejectedEvent,
   ConnectionCertMismatchEvent,
   ConnectionProtocolMismatchEvent,
+  KeychainSyncStateResult,
 } from './connections-types';
 import { getItems } from '@augmentcode/themis/utils/collections/collection-utils';
 
@@ -221,6 +224,38 @@ describe('connectionsReducer', () => {
         }),
       );
       expect(next.protocolMismatch).toEqual(PROTOCOL_MISMATCH);
+    });
+  });
+
+  describe('keychain sync (T4)', () => {
+    const SYNC_STATE: KeychainSyncStateResult = {
+      supported: true,
+      enabled: true,
+      status: { state: 'active' },
+    };
+
+    it('keychainSyncStateReceived stores the full state', () => {
+      const next = connectionsReducer(initialState, keychainSyncStateReceived(SYNC_STATE));
+      expect(next.keychainSync).toEqual(SYNC_STATE);
+    });
+
+    it('keychainSyncStatusReceived refreshes only the status of a loaded state', () => {
+      const state = { ...initialState, keychainSync: SYNC_STATE };
+      const status = {
+        state: 'unavailable',
+        reason: 'unavailable',
+        message: 'keychain locked',
+      } as const;
+      const next = connectionsReducer(state, keychainSyncStatusReceived(status));
+      expect(next.keychainSync).toEqual({ supported: true, enabled: true, status });
+    });
+
+    it('keychainSyncStatusReceived before the first load is dropped', () => {
+      const next = connectionsReducer(
+        initialState,
+        keychainSyncStatusReceived({ state: 'active' }),
+      );
+      expect(next.keychainSync).toBeNull();
     });
   });
 });

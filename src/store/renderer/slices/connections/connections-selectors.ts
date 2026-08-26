@@ -81,3 +81,11 @@ export const selectProtocolMismatchModal = store.createSelector((state) => {
   if (!protocolMismatch || protocolMismatch.id !== activeId) return null;
   return protocolMismatchModalDismissed ? null : protocolMismatch;
 });
+
+/**
+ * iCloud-keychain sync state (supported/enabled/status), or null before the
+ * settings UI first loads it. Drives the T4 settings toggle + status line.
+ */
+export const selectKeychainSyncState = store.createSelector(
+  (state) => state.connections.keychainSync,
+);

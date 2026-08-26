@@ -64,6 +64,13 @@ import { computeDaemonVersionRefresh } from './daemon-version-refresh';
 import { detectOrphanedSidecar } from './intentd-orphan';
 import { defaultKill, restartOrphanedSidecar } from './orphan-recovery';
 import * as connectionsStore from './connections-store';
+import {
+  initKeychainSyncLifecycle,
+  isKeychainSyncEnabled,
+  KEYCHAIN_SYNC_ENABLED_KEY,
+  type KeychainSyncLifecycle,
+} from './keychain-sync-lifecycle';
+import { setLocalPref } from '../../../main/local-prefs';
 import { registerBrowserExecReverseHandler } from '../../browser/main/browser-exec-reverse';
 import { LOCAL_CONNECTION_ID } from '../../../shared/types/connections';
 import type {
@@ -76,6 +83,7 @@ import type {
   ConnectionsChangedEvent,
   ConnectionsListResult,
   ForgetConnectionResult,
+  KeychainSyncStateResult,
   OpenConnectionResult,
   SwitchConnectionResult,
 } from '../../../shared/types/connections';
@@ -87,6 +95,8 @@ import {
   ConnectionsListSchema,
   ConnectionsOpenSchema,
   ConnectionsSwitchSchema,
+  ConnectionsSyncGetStateSchema,
+  ConnectionsSyncSetEnabledSchema,
 } from '../../../main/ipc-schemas';
 import { createValidatedHandler } from '../../../main/ipc-validation-middleware';
 import { getBackendIdForWebContents, getFocusedWindowBackendId } from '../../../main/window';
@@ -273,6 +283,13 @@ let activeAuthRejected: ConnectionAuthRejectedEvent | null = null;
  * that first list fetch so it never re-pops on a later refresh.
  */
 let bootFallbackNotice: ConnectionBootFallbackEvent | null = null;
+
+/**
+ * Handle for the keychain-sync lifecycle (T3), set once in
+ * {@link registerBackendHandlers}. The T4 settings IPC reads its last-known
+ * availability status and requests an immediate reconcile on enable.
+ */
+let keychainSyncLifecycle: KeychainSyncLifecycle | null = null;
 
 /**
  * Bounded timeout for the boot reconnect attempt against a persisted remote
@@ -853,7 +870,8 @@ function broadcast(channel: string, payload: unknown, backendId?: string): void 
   }
 }
 
-function getBackendClientForIpcEvent(event?: Electron.IpcMainInvokeEvent): {
+/** Resolve a renderer invoke event to the client bound to its window's backend. */
+export function getBackendClientForIpcEvent(event?: Electron.IpcMainInvokeEvent): {
   backendId: string;
   client: JsonRpcClient;
 } {
@@ -1788,6 +1806,27 @@ export function registerBackendHandlers(): void {
 
   registerConnectionsHandlers();
 
+  // Keychain sync (T3): opt-in pref-gated, fail-soft, fully async. When a
+  // reconcile pulls remote changes into the store, refresh every renderer via
+  // the existing connections:changed broadcast. Availability changes push
+  // connections:sync-status-changed so the settings UI stays live (T4).
+  keychainSyncLifecycle = initKeychainSyncLifecycle({
+    onRemoteApplied: () => broadcastConnectionsChanged(),
+    onStatusChanged: (status) => {
+      for (const win of BrowserWindow.getAllWindows()) {
+        if (win.isDestroyed()) continue;
+        try {
+          win.webContents.send(CONNECTIONS.SYNC_STATUS_CHANGED, status);
+        } catch (error) {
+          logger.warn('Failed to broadcast keychain sync status', {
+            windowId: win.id,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
+      }
+    },
+  });
+
   logger.info('Backend bridge IPC handlers registered');
 }
 
@@ -1946,6 +1985,47 @@ function registerConnectionsHandlers(): void {
     bootFallbackNotice = null;
     return { bootFallback };
   });
+
+  // Keychain sync settings surface (T4): read the opt-in pref + last-known
+  // availability, and flip the pref. Enabling requests an immediate reconcile
+  // so the settings UI gets a live availability verdict; disabling stops sync
+  // but never touches existing keychain items.
+  ipcMain.handle(
+    CONNECTIONS.SYNC_GET_STATE,
+    createValidatedHandler(
+      ConnectionsSyncGetStateSchema,
+      async () => getKeychainSyncState(),
+      CONNECTIONS.SYNC_GET_STATE,
+    ),
+  );
+
+  ipcMain.handle(
+    CONNECTIONS.SYNC_SET_ENABLED,
+    createValidatedHandler(
+      ConnectionsSyncSetEnabledSchema,
+      async (_event, { enabled }) => {
+        await setLocalPref(KEYCHAIN_SYNC_ENABLED_KEY, enabled);
+        if (enabled) {
+          // Drop the pre-disable verdict so the returned state (and any
+          // sync-get-state until the fresh reconcile lands) shows "checking"
+          // instead of a stale status (PR #1715 review).
+          keychainSyncLifecycle?.resetStatus();
+          keychainSyncLifecycle?.requestReconcile();
+        }
+        return getKeychainSyncState();
+      },
+      CONNECTIONS.SYNC_SET_ENABLED,
+    ),
+  );
+}
+
+/** Assemble the `connections:sync-get-state` / `sync-set-enabled` result. */
+async function getKeychainSyncState(): Promise<KeychainSyncStateResult> {
+  return {
+    supported: process.platform === 'darwin',
+    enabled: await isKeychainSyncEnabled(),
+    status: keychainSyncLifecycle?.getStatus() ?? null,
+  };
 }
 
 /** Dispose the shared client (used on shutdown and backend switch). */

@@ -193,7 +193,7 @@ export class LiveWorkspacesClient implements WorkspacesClient {
         'workspace.create',
         {
           ...request,
-          idempotencyKey: newIdempotencyKey(),
+          idempotencyKey: request.idempotencyKey ?? newIdempotencyKey(),
         },
         { timeoutMs: CREATE_TIMEOUT_MS },
       );

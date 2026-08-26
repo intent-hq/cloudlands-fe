@@ -97,7 +97,6 @@ function makeDeps(
 ) {
   const progress: ImportProgressEvent[] = [];
   const deps: ImportRelayDeps = {
-    getClient: () => client.client,
     showOpenDialog: vi.fn(async () => '/tmp/in.zip'),
     openFile: vi.fn(async () => file.file),
     broadcastProgress: (e) => progress.push(e),
@@ -114,7 +113,7 @@ describe('workspace import relay', () => {
     const { deps, progress } = makeDeps(client, file);
     const relay = createWorkspaceImportRelay(deps);
 
-    const result = await relay.start({});
+    const result = await relay.start({}, client.client);
 
     expect(result).toEqual({
       success: true,
@@ -151,7 +150,7 @@ describe('workspace import relay', () => {
     });
     const relay = createWorkspaceImportRelay(deps);
 
-    const result = await relay.start({});
+    const result = await relay.start({}, client.client);
 
     expect(result).toEqual({ success: false, canceled: true });
     expect(client.calls).toHaveLength(0);
@@ -167,7 +166,7 @@ describe('workspace import relay', () => {
     const { deps } = makeDeps(client, file);
     const relay = createWorkspaceImportRelay(deps);
 
-    const result = await relay.start({});
+    const result = await relay.start({}, client.client);
 
     expect(result).toEqual({ success: false, error: daemonError });
     const methods = client.calls.map((c) => c.method);
@@ -183,7 +182,7 @@ describe('workspace import relay', () => {
     const { deps } = makeDeps(client, file);
     const relay = createWorkspaceImportRelay(deps);
 
-    const result = await relay.start({});
+    const result = await relay.start({}, client.client);
 
     expect(result).toEqual({ success: false, error: 'link dropped' });
     const abort = client.calls.find((c) => c.method === 'workspace.import.abort');
@@ -199,7 +198,7 @@ describe('workspace import relay', () => {
     const { deps } = makeDeps(client, file);
     const relay = createWorkspaceImportRelay(deps);
 
-    const result = await relay.start({});
+    const result = await relay.start({}, client.client);
 
     expect(result).toEqual({ success: false, error: 'sha mismatch' });
     expect(client.calls.some((c) => c.method === 'workspace.import.abort')).toBe(true);
@@ -222,7 +221,7 @@ describe('workspace import relay', () => {
       return result as never;
     };
 
-    const result = await relay.start({});
+    const result = await relay.start({}, client.client);
 
     expect(result).toEqual({ success: false, canceled: true });
     expect(client.calls.some((c) => c.method === 'workspace.import.abort')).toBe(true);
@@ -239,12 +238,12 @@ describe('workspace import relay', () => {
     const { deps } = makeDeps(failing, file, { showOpenDialog: openDialog, openFile });
     const relay = createWorkspaceImportRelay(deps);
 
-    await relay.start({});
+    await relay.start({}, failing.client);
     expect(openDialog).toHaveBeenCalledTimes(1);
 
     const second = makeFile();
     openFile.mockResolvedValueOnce(second.file);
-    await relay.start({ reuseLastFile: true });
+    await relay.start({ reuseLastFile: true }, failing.client);
 
     expect(openDialog).toHaveBeenCalledTimes(1);
     expect(openFile).toHaveBeenLastCalledWith('/tmp/in.zip');
@@ -265,7 +264,7 @@ describe('workspace import relay', () => {
     const { deps } = makeDeps(client, file);
     const relay = createWorkspaceImportRelay(deps);
 
-    const result = await relay.start({});
+    const result = await relay.start({}, client.client);
 
     expect(result).toMatchObject({ success: true });
     const seqOnes = client.calls.filter(
@@ -284,7 +283,7 @@ describe('workspace import relay', () => {
       const { deps } = makeDeps(client, file);
       const relay = createWorkspaceImportRelay(deps);
 
-      const result = await relay.start({});
+      const result = await relay.start({}, client.client);
 
       expect(result).toEqual({
         success: false,
@@ -308,7 +307,7 @@ describe('workspace import relay', () => {
     });
     relay = createWorkspaceImportRelay(deps);
 
-    const result = await relay.start({});
+    const result = await relay.start({}, client.client);
 
     expect(result).toEqual({ success: false, canceled: true });
     expect(client.calls).toHaveLength(0);
@@ -332,11 +331,11 @@ describe('workspace import relay', () => {
     const { deps } = makeDeps(client, file);
     const relay = createWorkspaceImportRelay(deps);
 
-    const first = relay.start({});
+    const first = relay.start({}, client.client);
     await vi.waitFor(() => {
       if (!commitStarted) throw new Error('commit not reached yet');
     });
-    const second = await relay.start({});
+    const second = await relay.start({}, client.client);
     expect(second).toEqual({ success: false, error: 'an import is already in progress' });
 
     releaseCommit?.();

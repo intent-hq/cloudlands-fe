@@ -62,6 +62,9 @@ vi.mock('electron', () => ({
     getPath: () => electronState.userDataDir,
     isPackaged: false,
     emit: () => {},
+    // Keychain-sync lifecycle focus trigger (T3); inert here (pref off).
+    on: () => {},
+    removeListener: () => {},
   },
   ipcMain: {
     handle: (channel: string, handler: (event: unknown, data: unknown) => unknown) => {
