@@ -4,11 +4,13 @@
   let {
     trigger,
     children,
-  }: { trigger?: Snippet; content?: Snippet; children?: Snippet } = $props();
+    class: className = '',
+  }: { trigger?: Snippet; content?: Snippet; children?: Snippet; class?: string } = $props();
 </script>
 
+<!-- Mirrors the real TooltipRich trigger: a wrapper span carrying the class prop. -->
 {#if trigger}
-  {@render trigger()}
+  <span data-tooltip-trigger class={className}>{@render trigger()}</span>
 {/if}
 {#if children}
   {@render children()}
