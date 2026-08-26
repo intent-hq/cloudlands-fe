@@ -466,7 +466,7 @@
           </div>
           {#if statusMessage}
             <div
-              class="type-body mt-3 min-w-0 w-full truncate border-none bg-transparent px-0.5 text-left text-sm leading-snug text-subtle"
+              class="type-body mt-3 min-w-0 w-full line-clamp-3 border-none bg-transparent px-0.5 text-left text-sm leading-snug text-subtle"
               title={statusMessage}
               data-workspace-hover-card-message
               data-workspace-hover-card-status-message
@@ -539,8 +539,6 @@
           </div>
         </div>
 
-        <div class="my-2 border-t border-border" data-workspace-hover-card-divider></div>
-
         <div class="min-h-0 overflow-y-auto">
           {#if runningAgents.length > 0}
             <div
@@ -550,12 +548,12 @@
             >
               {#each runningAgents.slice(0, 3) as agent (agent.id)}
                 <div
-                  class="flex min-h-8 w-full min-w-0 items-center justify-between gap-2 py-0.5 text-left"
+                  class="flex min-h-8 w-full min-w-0 items-center py-0.5 text-left"
                   role="listitem"
                   aria-label={`${agent.name} ${formatRunningAgentMetadata(agent)}`}
                   data-workspace-hover-card-agent-row
                 >
-                  <div class="flex min-w-0 flex-1 items-center gap-2">
+                  <div class="workspace-hover-card__detail-row flex min-w-0 flex-1 items-center">
                     <span
                       class="grid h-6 w-6 shrink-0 place-items-center"
                       data-workspace-hover-card-agent-icon
@@ -573,9 +571,6 @@
                       {agent.name}
                     </span>
                   </div>
-                  <span class="type-caption shrink-0 text-ui text-subtle">
-                    {formatRunningAgentStatus(agent)}
-                  </span>
                 </div>
               {/each}
               {#if runningAgents.length > 3}
@@ -601,9 +596,6 @@
           {/if}
 
           {#if workspacePrRows.length > 0}
-            {#if runningAgents.length > 0 || hoverCardStackItems.length > 0}
-              <div class="my-2 border-t border-border" data-workspace-hover-card-pr-divider></div>
-            {/if}
             <div
               class="grid min-w-0 w-full gap-1 py-0.5"
               aria-label={m.workspace_hoverCard_pullRequest_label()}
@@ -612,7 +604,7 @@
             >
               {#each workspacePrRows as pr (pr.identity)}
                 <div
-                  class="flex min-h-8 w-full min-w-0 items-start gap-2 rounded-sm py-0.5 text-left"
+                  class="workspace-hover-card__detail-row flex min-h-8 w-full min-w-0 items-start rounded-sm py-0.5 text-left"
                   aria-label={getWorkspacePrLabel(pr)}
                   role="listitem"
                   data-workspace-hover-card-pr-row
@@ -678,6 +670,10 @@
 
   .workspace-hover-card__activity {
     border-width: 0 0 0 1px;
+  }
+
+  .workspace-hover-card__detail-row {
+    column-gap: 0.375rem;
   }
 
   @container (max-width: 31.99rem) {

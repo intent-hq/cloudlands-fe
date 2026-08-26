@@ -2,6 +2,8 @@ import { expect, test } from '@playwright/experimental-ct-svelte';
 import type { Workspace } from '$shared/types';
 import { WorkspaceStatus } from '$shared/types';
 import { WorkspaceId } from '$shared/types/branded-ids';
+import WorkspaceHoverCard from './WorkspaceHoverCard.svelte';
+import { workspaceHoverCardPreview } from './workspace-hover-card.preview-fixtures';
 import WorkspaceSidebarPreview from './workspace-sidebar.preview.svelte';
 
 const timestamp = '2026-08-25T12:00:00.000Z';
@@ -91,3 +93,109 @@ for (const theme of ['light', 'dark'] as const) {
     expect(bounds!.y + bounds!.height).toBeLessThanOrEqual(612);
   });
 }
+
+test('uses three natural description lines and one compact detail-row gap', async ({
+  mount,
+  page,
+}) => {
+  await page.setViewportSize({ width: 900, height: 700 });
+  const state = workspaceHoverCardPreview.states['long-content'];
+  const card = state.props.cards[0]!;
+  await mount(WorkspaceHoverCard, {
+    props: {
+      workspace: card.workspace,
+      activeAgentIds: card.activeAgentIds,
+      loadAgentSessions: false,
+      loadWorkspaceData: false,
+    },
+  });
+
+  const description = page.locator('[data-workspace-hover-card-status-message]');
+  const agentRows = page.locator('[data-workspace-hover-card-agent-row]');
+  const agentDetailRows = agentRows.locator('.workspace-hover-card__detail-row');
+  const prRow = page.locator('[data-workspace-hover-card-pr-row]');
+  const activity = page.locator('[data-workspace-hover-card-activity]');
+
+  await expect(description).toBeVisible();
+  expect(
+    await description.evaluate((node) => {
+      const element = node as HTMLElement;
+      const style = getComputedStyle(element);
+      const lineHeight = Number.parseFloat(style.lineHeight);
+      return {
+        lineClamp: style.webkitLineClamp,
+        isTruncated: element.scrollHeight > element.clientHeight,
+        renderedLines: Math.round(element.clientHeight / lineHeight),
+      };
+    }),
+  ).toEqual({ lineClamp: '3', isTruncated: true, renderedLines: 3 });
+
+  await expect(agentRows).toHaveCount(3);
+  expect((await agentRows.allTextContents()).map((text) => text.trim())).toEqual([
+    'Agent',
+    'Agent',
+    'Agent',
+  ]);
+  expect(await agentRows.first().getAttribute('aria-label')).toContain('Running');
+  expect(
+    await agentDetailRows.evaluateAll((rows) => rows.map((row) => getComputedStyle(row).columnGap)),
+  ).toEqual(['6px', '6px', '6px']);
+  expect(await prRow.evaluate((row) => getComputedStyle(row).columnGap)).toBe('6px');
+  await expect(prRow.locator('[data-workspace-hover-card-pr-status]')).not.toHaveText('');
+
+  const iconGeometry = await Promise.all(
+    [
+      agentRows.first().locator('[data-workspace-hover-card-agent-icon]'),
+      prRow.locator('[data-workspace-hover-card-pr-icon]'),
+    ].map(async (icon) => icon.boundingBox()),
+  );
+  expect(iconGeometry.every((bounds) => bounds?.width === 24)).toBe(true);
+  expect(iconGeometry[0]!.x).toBeCloseTo(iconGeometry[1]!.x, 1);
+  expect(
+    await activity
+      .locator(':scope > div')
+      .evaluateAll((rows) => rows.map((row) => getComputedStyle(row).borderTopWidth)),
+  ).toEqual(['0px', '0px']);
+  await expect(activity.locator('[data-workspace-hover-card-divider]')).toHaveCount(0);
+  await expect(activity.locator('[data-workspace-hover-card-pr-divider]')).toHaveCount(0);
+});
+
+test('keeps short descriptions at one line and stacks responsively when narrow', async ({
+  mount,
+  page,
+}) => {
+  await page.setViewportSize({ width: 420, height: 700 });
+  await mount(WorkspaceHoverCard, {
+    props: {
+      workspace: { ...workspace, statusMessage: 'Short description.' },
+      loadAgentSessions: false,
+      loadWorkspaceData: false,
+    },
+  });
+
+  const description = page.locator('[data-workspace-hover-card-status-message]');
+  const columns = page.locator('[data-workspace-hover-card-columns]');
+  const activity = page.locator('[data-workspace-hover-card-activity]');
+  const geometry = await description.evaluate((node) => {
+    const element = node as HTMLElement;
+    const style = getComputedStyle(element);
+    return {
+      height: element.clientHeight,
+      lineHeight: Number.parseFloat(style.lineHeight),
+      lineClamp: style.webkitLineClamp,
+    };
+  });
+
+  expect(geometry.lineClamp).toBe('3');
+  expect(geometry.height).toBeCloseTo(geometry.lineHeight, 0);
+  expect(
+    await columns.evaluate((node) => getComputedStyle(node).gridTemplateColumns.split(' ').length),
+  ).toBe(1);
+  expect(await activity.evaluate((node) => getComputedStyle(node).borderLeftWidth)).toBe('0px');
+  expect(await activity.evaluate((node) => getComputedStyle(node).borderTopWidth)).toBe('1px');
+  expect(
+    await activity
+      .locator(':scope > div')
+      .evaluateAll((rows) => rows.map((row) => getComputedStyle(row).borderTopWidth)),
+  ).toEqual(['0px', '0px']);
+});

@@ -370,7 +370,7 @@ describe('WorkspaceHoverCard', () => {
     expect(rows[0].getAttribute('aria-label')).not.toContain('Waiting');
   });
 
-  it('truncates long workspace descriptions and preserves the full text in a title', async () => {
+  it('clamps long workspace descriptions to three lines without forcing short copy taller', async () => {
     const description =
       'Reviewing the richer workspace hover card before wiring it into wide and narrow layouts without allowing the description to overflow.';
     await renderHoverCard({
@@ -381,7 +381,9 @@ describe('WorkspaceHoverCard', () => {
     expect(status.className).toContain('type-body');
     expect(status.className).toContain('min-w-0');
     expect(status.className).toContain('w-full');
-    expect(status.className).toContain('truncate');
+    expect(status.className).toContain('line-clamp-3');
+    expect(status.className).not.toContain('truncate');
+    expect(status.className).not.toMatch(/(?:^|\s)(?:h|min-h|max-h)-/);
     expect(status.className).toContain('leading-snug');
     expect(status.className).toContain('bg-transparent');
     expect(status.className).toContain('text-subtle');
@@ -531,7 +533,9 @@ describe('WorkspaceHoverCard', () => {
     expect(activity?.className.split(/\s+/)).toContain('border-solid');
     expect(activity?.className.split(/\s+/)).not.toContain('border-t');
     expect(activity?.querySelector('[data-workspace-hover-card-agent-summary]')).toBeTruthy();
-    expect(activity?.querySelector('[data-workspace-hover-card-divider]')).toBeTruthy();
+    expect(activity?.querySelectorAll('.border-t.border-border')).toHaveLength(0);
+    expect(activity?.querySelector('[data-workspace-hover-card-divider]')).toBeNull();
+    expect(activity?.querySelector('[data-workspace-hover-card-pr-divider]')).toBeNull();
   });
 
   it('keeps the sidebar wrapper from clipping or repainting the rounded surface', () => {
@@ -628,17 +632,22 @@ describe('WorkspaceHoverCard', () => {
     expect(prList.className).toContain('py-0.5');
     const agentRow = document.querySelector('[data-workspace-hover-card-agent-row]');
     const prRow = document.querySelector('[data-workspace-hover-card-pr-row]');
+    const agentRowContent = agentRow?.firstElementChild;
     const agentIcon = document.querySelector('[data-workspace-hover-card-agent-icon]');
     const prIcon = document.querySelector('[data-workspace-hover-card-pr-icon]');
-    for (const rowClass of ['min-h-8', 'gap-2', 'py-0.5']) {
+    for (const rowClass of ['min-h-8', 'py-0.5']) {
       expect(agentRow?.className).toContain(rowClass);
       expect(prRow?.className).toContain(rowClass);
     }
+    expect(agentRowContent?.className).toContain('workspace-hover-card__detail-row');
+    expect(prRow?.className).toContain('workspace-hover-card__detail-row');
+    expect(agentRowContent?.className).not.toContain('gap-2');
+    expect(prRow?.className).not.toContain('gap-2');
     for (const iconClass of ['h-6', 'w-6', 'shrink-0', 'place-items-center']) {
       expect(agentIcon?.className).toContain(iconClass);
       expect(prIcon?.className).toContain(iconClass);
     }
-    expect(document.querySelector('[data-workspace-hover-card-pr-divider]')).toBeTruthy();
+    expect(document.querySelector('[data-workspace-hover-card-pr-divider]')).toBeNull();
     expect(screen.getByText('Add hover card')).toBeTruthy();
     expect(screen.getByText('#12')).toBeTruthy();
     expect(screen.getByText(/checks running/).className).toContain('text-success');
@@ -714,7 +723,10 @@ describe('WorkspaceHoverCard', () => {
       icons.every((icon) => icon?.className.includes('h-6') && icon.className.includes('w-6')),
     ).toBe(true);
     expect(rows.every((row) => row.className.includes('min-h-8'))).toBe(true);
-    expect(rows.every((row) => row.className.includes('gap-2'))).toBe(true);
+    expect(rows.every((row) => row.className.includes('workspace-hover-card__detail-row'))).toBe(
+      true,
+    );
+    expect(rows.every((row) => !row.className.includes('gap-2'))).toBe(true);
     expect(rows.every((row) => row.className.includes('py-0.5'))).toBe(true);
     expect(screen.getByText('Open workspace PR').className).toContain('truncate');
     expect(rows[0].querySelector('[data-workspace-hover-card-pr-status]')?.className).toContain(
@@ -728,14 +740,14 @@ describe('WorkspaceHoverCard', () => {
     expect(rows.every((row) => row.getAttribute('aria-label')?.includes('#'))).toBe(true);
   });
 
-  it('keeps one right-column divider when a waiting workspace only has PR content', async () => {
+  it('renders no right-column horizontal rules when a waiting workspace only has PR content', async () => {
     const { container } = await renderHoverCard({
       displayStatus: 'waiting',
       activePullRequest: {
         id: 'pr-14',
         number: 14,
         url: 'https://github.com/augment/intent/pull/14',
-        title: 'Keep one section divider',
+        title: 'Review divider-free density',
         status: PullRequestStatus.Open,
         createdAt: '2026-05-05T00:00:00.000Z',
         updatedAt: '2026-05-05T00:00:00.000Z',
@@ -743,10 +755,10 @@ describe('WorkspaceHoverCard', () => {
     });
 
     const activity = container.querySelector('[data-workspace-hover-card-activity]');
-    expect(activity?.querySelectorAll('.border-t.border-border')).toHaveLength(1);
-    expect(activity?.querySelector('[data-workspace-hover-card-divider]')).toBeTruthy();
+    expect(activity?.querySelectorAll('.border-t.border-border')).toHaveLength(0);
+    expect(activity?.querySelector('[data-workspace-hover-card-divider]')).toBeNull();
     expect(activity?.querySelector('[data-workspace-hover-card-pr-divider]')).toBeNull();
-    expect(screen.getByText('Keep one section divider')).toBeTruthy();
+    expect(screen.getByText('Review divider-free density')).toBeTruthy();
   });
 
   it('keeps hover-card task progress static while preserving its data and proportions', async () => {
@@ -820,11 +832,11 @@ describe('WorkspaceHoverCard', () => {
     expect(container.textContent).not.toContain(' · ');
   });
 
-  it('renders running and background agent statuses as compact rows', async () => {
+  it('keeps agent state accessible without rendering visible state labels', async () => {
     mocks.agentSessionsByWorkspace['ws-1'] = [
       {
         id: 'agent-running',
-        name: 'Running Agent',
+        name: 'Planner',
         status: 'running',
         messages: [],
       } as AgentSession,
@@ -836,7 +848,7 @@ describe('WorkspaceHoverCard', () => {
       } as AgentSession,
       {
         id: 'agent-waiting',
-        name: 'Waiting Agent',
+        name: 'Reviewer',
         status: 'waiting',
         messages: [],
       } as AgentSession,
@@ -849,10 +861,14 @@ describe('WorkspaceHoverCard', () => {
     expect(screen.getByRole('list', { name: 'Running agents' })).toBeTruthy();
     const agentRows = screen.getAllByRole('listitem');
     expect(agentRows).toHaveLength(3);
-    expect(screen.getByText('Running Agent')).toBeTruthy();
+    expect(screen.getByText('Planner')).toBeTruthy();
     expect(screen.getByText('Worker Agent')).toBeTruthy();
-    expect(screen.getByText('Waiting Agent')).toBeTruthy();
+    expect(screen.getByText('Reviewer')).toBeTruthy();
+    expect(agentRows[0].getAttribute('aria-label')).toBe('Planner Running');
     expect(agentRows[1].getAttribute('aria-label')).toBe('Worker Agent Running');
+    expect(agentRows[2].getAttribute('aria-label')).toBe('Reviewer Waiting');
+    expect(screen.queryByText('Running')).toBeNull();
+    expect(screen.queryByText('Waiting')).toBeNull();
     expect(screen.queryByText('Background')).toBeNull();
     expect(screen.queryByText('3 agents · 3 active')).toBeNull();
     expect(screen.queryByText('Active')).toBeNull();

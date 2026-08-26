@@ -107,7 +107,7 @@ export const workspaceHoverCardStateMatrix: readonly StateMatrixEntry[] = [
     family: 'Status message',
     states: 'absent; whitespace; short; multiline; long; unbroken',
     expected:
-      'Absent and whitespace render no row; other values truncate to one constrained line while the title preserves the full text.',
+      'Absent and whitespace render no row; other values use natural height up to three lines, then show an ellipsis while the title preserves the full text.',
     coverage: 'messages and long-content previews; component tests',
     conflicts: 'No placeholder appears for an empty message.',
   },
