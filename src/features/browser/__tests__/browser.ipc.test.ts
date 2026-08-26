@@ -5,6 +5,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
+import type { BackendConnectionConfig } from '../../backend/main/backend-connection';
 
 const mocks = vi.hoisted(() => ({
   forwardPort: vi.fn(),
@@ -265,12 +266,12 @@ describe('browser:resolve-url IPC handler', () => {
     const localClient = {
       getConfig: () => ({ transport: 'uds' as const, socketPath: '/tmp/intentd.sock' }),
     };
-    const remoteConfig = {
-      transport: 'wss' as const,
+    const remoteConfig: BackendConnectionConfig = {
+      transport: 'wss',
       host: 'saved-remote.example.com',
       port: 443,
       token: 'remote-token',
-      certificateFingerprint: 'sha256:remote-fingerprint',
+      fingerprint: 'AA:BB:CC:DD',
     };
     const remoteClient = { getConfig: () => remoteConfig };
     mocks.getPrimaryBackendId.mockReturnValue('local');
