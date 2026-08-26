@@ -112,6 +112,7 @@ test('navigates exact stacked totals with accessible pointer, focus, theme, and 
         share: row.querySelector('.composition-context')?.textContent?.trim(),
       })),
     );
+  const themeCompositionColors: string[][] = [];
 
   await expect(previewStatus).toContainText('By agent Agent alpha-01 750 processed');
   await expect(agentAlpha).toHaveAttribute('aria-current', 'true');
@@ -127,6 +128,14 @@ test('navigates exact stacked totals with accessible pointer, focus, theme, and 
       { value: '150', share: '20%' },
       { value: '0', share: '0%' },
     ]);
+    const compositionSegments = details.locator('.composition-strip-segment');
+    await expect(compositionSegments).toHaveCount(3);
+    themeCompositionColors.push(
+      await compositionSegments.evaluateAll((segments) =>
+        segments.map((segment) => getComputedStyle(segment).backgroundColor),
+      ),
+    );
+    expect(new Set(themeCompositionColors.at(-1)).size).toBe(3);
     const activeStyle = await agentAlpha.evaluate((element) => ({
       background: getComputedStyle(element).backgroundColor,
       transitionDuration: Number.parseFloat(getComputedStyle(element).transitionDuration),
@@ -136,6 +145,7 @@ test('navigates exact stacked totals with accessible pointer, focus, theme, and 
     await agentAlpha.dispatchEvent('pointerleave', { pointerType: 'mouse' });
     await expect(previewStatus).toContainText('By agent Agent alpha-01 750 processed');
   }
+  expect(themeCompositionColors[0]).not.toEqual(themeCompositionColors[1]);
 
   await agentBeta.focus();
   await expect(agentBeta).toBeFocused();
@@ -160,7 +170,10 @@ test('navigates exact stacked totals with accessible pointer, focus, theme, and 
     { value: '15', share: '30%' },
     { value: '0', share: '0%' },
   ]);
-  await expect(details.locator('.composition-strip')).toHaveCount(0);
+  await expect(details.locator('.composition-strip-segment')).toHaveCount(3);
+  await expect(details.locator('.composition-strip')).toHaveAccessibleName(
+    /Token composition, Cached context: 30 tokens, 60%.*Input context: 5 tokens, 10%.*Model output: 15 tokens, 30%/,
+  );
 
   await longModel.focus();
   const selectedLongModel = component
@@ -261,11 +274,14 @@ test('renders the full reference table as a wide overlay from the real workspace
   await expect(disclosure.getByText('Cached', { exact: true })).toHaveCount(0);
 
   await disclosure.click();
+  await page.mouse.move(1000, 700);
   const agentSection = component.getByTestId('token-usage-by-agent');
   const modelSection = component.getByTestId('token-usage-by-model');
   const details = component.getByTestId('token-usage-details');
   const composition = details.locator('section[aria-labelledby$="-composition"]');
   const compositionHeader = composition.locator('.composition-header');
+  const compositionStrip = composition.locator('.composition-strip');
+  const compositionSegments = compositionStrip.locator('.composition-strip-segment');
   const compositionRows = details.locator('.composition-row');
   const tokenCompositionRows = details.locator('.token-composition-row');
   const messageCompositionRows = details.locator('.message-composition-row');
@@ -281,6 +297,9 @@ test('renders the full reference table as a wide overlay from the real workspace
       zIndex: Number.parseInt(style.zIndex, 10),
     };
   });
+  await expect
+    .poll(() => disclosure.evaluate((element) => getComputedStyle(element).backgroundColor))
+    .toBe(summaryMetrics.backgroundColor);
 
   const accessibleOnlyChrome = details.locator('h4.sr-only, .preview-status.sr-only');
   await expect(accessibleOnlyChrome).toHaveCount(4);
@@ -303,6 +322,11 @@ test('renders the full reference table as a wide overlay from the real workspace
   });
   await expect(details).toContainText('By agent Agent alpha-01 750 processed');
   await expect(compositionRows).toHaveCount(6);
+  await expect(compositionStrip).toHaveRole('img');
+  await expect(compositionStrip).toHaveAccessibleName(
+    /Token composition, Cached context: 550 tokens, 73.3%.*Input context: 50 tokens, 6.7%.*Model output: 150 tokens, 20%/,
+  );
+  await expect(compositionSegments).toHaveCount(3);
   await expect(compositionHeader).toHaveText(/Metric\s+Value\s+Share/);
   await expect(compositionRows.nth(0)).toContainText('Cached context');
   await expect(compositionRows.nth(1)).toContainText('Input context');
@@ -327,7 +351,6 @@ test('renders the full reference table as a wide overlay from the real workspace
   await expect(agentRows.locator('.breakdown-item-control')).toHaveCount(4);
   await expect(modelRows.locator('.breakdown-item-control')).toHaveCount(4);
   await expect(component.getByTestId('token-usage-message-counts')).toHaveCount(0);
-  await expect(composition.locator('.composition-strip')).toHaveCount(0);
 
   const [
     detailsBox,
@@ -343,6 +366,8 @@ test('renders the full reference table as a wide overlay from the real workspace
     compositionAlignment,
     compositionHeaderAlignment,
     breakdownAlignment,
+    compositionBar,
+    visibleTextWeights,
   ] = await Promise.all([
     details.boundingBox(),
     sidebar.boundingBox(),
@@ -442,10 +467,43 @@ test('renders the full reference table as a wide overlay from the real workspace
           section: section.getBoundingClientRect().toJSON(),
           selection: selection.getBoundingClientRect().toJSON(),
           bar: section.querySelector('.breakdown-stack')!.getBoundingClientRect().toJSON(),
+          percentage: selection.lastElementChild!.getBoundingClientRect().toJSON(),
+          percentTextAlign: getComputedStyle(selection.lastElementChild!).textAlign,
           percentColor: getComputedStyle(selection.lastElementChild!).color,
           percentFontWeight: getComputedStyle(selection.lastElementChild!).fontWeight,
         };
       }),
+    ),
+    compositionStrip.evaluate((strip) => {
+      const box = strip.getBoundingClientRect();
+      const segments = Array.from(
+        strip.querySelectorAll<HTMLElement>('.composition-strip-segment'),
+      );
+      return {
+        box: box.toJSON(),
+        borderRadius: getComputedStyle(strip).borderRadius,
+        overflowX: getComputedStyle(strip).overflowX,
+        segments: segments.map((segment) => ({
+          metric: segment.dataset.metric,
+          box: segment.getBoundingClientRect().toJSON(),
+          color: getComputedStyle(segment).backgroundColor,
+        })),
+      };
+    }),
+    details.evaluate((element) =>
+      Array.from(element.querySelectorAll<HTMLElement>('*'))
+        .filter(
+          (candidate) =>
+            !candidate.closest('.sr-only') &&
+            Array.from(candidate.childNodes).some(
+              (node) => node.nodeType === Node.TEXT_NODE && node.textContent?.trim(),
+            ) &&
+            getComputedStyle(candidate).display !== 'none',
+        )
+        .map((candidate) => ({
+          text: candidate.textContent?.trim(),
+          weight: getComputedStyle(candidate).fontWeight,
+        })),
     ),
   ]);
 
@@ -474,10 +532,12 @@ test('renders the full reference table as a wide overlay from the real workspace
   ).toBeLessThanOrEqual(1);
   expect(
     breakdownAlignment.every(
-      ({ section, selection, bar, percentFontWeight }) =>
+      ({ section, selection, bar, percentage, percentTextAlign, percentFontWeight }) =>
         Math.abs(bar.left - selection.left) <= 1 &&
         bar.top >= selection.top + selection.height + 5 &&
         bar.right <= section.right + 1 &&
+        Math.abs(percentage.right - bar.right) <= 1 &&
+        percentTextAlign === 'right' &&
         percentFontWeight === '400',
     ),
   ).toBe(true);
@@ -518,6 +578,35 @@ test('renders the full reference table as a wide overlay from the real workspace
         lastRight <= box.x + box.width + 1,
     ),
   ).toBe(true);
+  expect(compositionBar.box.height).toBe(10);
+  expect(compositionBar.borderRadius).toBe('2px');
+  expect(compositionBar.overflowX).toBe('hidden');
+  expect(compositionBar.segments.map(({ metric }) => metric)).toEqual([
+    'cached',
+    'input',
+    'output',
+  ]);
+  expect(new Set(compositionBar.segments.map(({ color }) => color)).size).toBe(3);
+  expect(compositionBar.segments[0].box.width / compositionBar.box.width).toBeCloseTo(550 / 750, 2);
+  expect(compositionBar.segments[1].box.width / compositionBar.box.width).toBeCloseTo(50 / 750, 2);
+  expect(compositionBar.segments[2].box.width / compositionBar.box.width).toBeCloseTo(150 / 750, 2);
+  expect(
+    compositionBar.segments.every((segment, index, segments) =>
+      index === 0
+        ? Math.abs(segment.box.x - compositionBar.box.x) <= 0.01
+        : Math.abs(segment.box.x - (segments[index - 1].box.x + segments[index - 1].box.width)) <=
+          0.01,
+    ),
+  ).toBe(true);
+  expect(
+    Math.abs(
+      compositionBar.segments.at(-1)!.box.x +
+        compositionBar.segments.at(-1)!.box.width -
+        (compositionBar.box.x + compositionBar.box.width),
+    ),
+  ).toBeLessThanOrEqual(1);
+  expect(visibleTextWeights.length).toBeGreaterThan(0);
+  expect(visibleTextWeights.every(({ weight }) => weight === '400')).toBe(true);
   expect(compositionHeaderAlignment).toHaveLength(3);
   expect(compositionHeaderAlignment[0].x).toBeCloseTo(desktopRows[0].metric.x, 0);
   expect(compositionHeaderAlignment[1].right).toBeCloseTo(
@@ -538,13 +627,25 @@ test('renders the full reference table as a wide overlay from the real workspace
       buttonBoxShadow: getComputedStyle(button).boxShadow,
       stackOutlineStyle: getComputedStyle(stack).outlineStyle,
       stackOutlineWidth: getComputedStyle(stack).outlineWidth,
+      stackOutlineColor: getComputedStyle(stack).outlineColor,
+      activeColor: getComputedStyle(button).backgroundColor,
+      ringColor: (() => {
+        const probe = document.createElement('span');
+        probe.style.color = 'hsl(var(--ring))';
+        document.body.append(probe);
+        const color = getComputedStyle(probe).color;
+        probe.remove();
+        return color;
+      })(),
     };
   });
-  expect(focusedBarStyle).toEqual({
+  expect(focusedBarStyle).toMatchObject({
     buttonBoxShadow: 'none',
     stackOutlineStyle: 'solid',
     stackOutlineWidth: '2px',
   });
+  expect(focusedBarStyle.stackOutlineColor).toBe(focusedBarStyle.ringColor);
+  expect(focusedBarStyle.stackOutlineColor).not.toBe(focusedBarStyle.activeColor);
   expect(
     desktopRows.every(
       ({
