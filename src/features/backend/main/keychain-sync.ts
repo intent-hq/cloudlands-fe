@@ -459,6 +459,11 @@ function isExpiredTombstone(record: KeychainSyncRecord, now: number): boolean {
 export interface ReconcileOptions {
   client?: KeychainClient;
   now?: number;
+  /** Cooperative cancellation, checked before each account's writes. When it
+   * returns true the pass stops early (already-applied accounts stay applied;
+   * the rest are untouched). The lifecycle uses it so disabling sync while a
+   * reconcile is in flight halts further pull/push side effects. */
+  shouldAbort?: () => boolean | Promise<boolean>;
 }
 
 /**
@@ -516,7 +521,14 @@ export async function reconcile(
   }
 
   async function push(account: string, record: KeychainSyncRecord): Promise<void> {
-    const pushed = await client.upsert(account, serializeRecord(record));
+    // Pre-sync records carry the epoch-old clock 0 (see listSyncRecords).
+    // Stamp them at push time so the keychain never holds a zero-clock item:
+    // otherwise two machines that both hold differing zero-clock copies of
+    // the same target hit the equal-clock in-sync skip and stay divergent
+    // until an unrelated mutation. With the stamp, the first pusher wins and
+    // the other machine pulls on its next reconcile.
+    const toPush = record.updatedAt === 0 ? { ...record, updatedAt: now } : record;
+    const pushed = await client.upsert(account, serializeRecord(toPush));
     if (pushed.ok) {
       result.pushed.push(account);
     } else {
@@ -537,6 +549,10 @@ export async function reconcile(
 
   const accounts = new Set<string>([...remote.keys(), ...local.keys()]);
   for (const account of accounts) {
+    if (options.shouldAbort && (await options.shouldAbort())) {
+      logger.info('keychain sync reconcile aborted mid-pass');
+      break;
+    }
     if (frozen.has(account)) continue;
     const r = remote.get(account);
     const l = local.get(account);
@@ -567,18 +583,36 @@ export async function reconcile(
       continue;
     }
 
-    // Identical clocks with both sides live = in sync. Otherwise strictly
-    // newer wins; on an exact live/tombstone tie the tombstone wins so both
-    // machines converge on the same outcome.
-    if (r.updatedAt === l.updatedAt && r.deleted !== true && l.deleted !== true) continue;
+    // Identical clocks with both sides live = in sync. Exception: the
+    // epoch-old clock 0 (pre-sync records) — two machines with differing
+    // zero-clock copies would otherwise skip here forever; instead fall
+    // through so the local copy is pushed with a fresh stamp and the other
+    // machine pulls it on its next pass. Otherwise strictly newer wins; on an
+    // exact live/tombstone tie the tombstone wins so both machines converge
+    // on the same outcome.
+    if (
+      r.updatedAt === l.updatedAt &&
+      r.updatedAt !== 0 &&
+      r.deleted !== true &&
+      l.deleted !== true
+    )
+      continue;
     const remoteWins =
       r.updatedAt > l.updatedAt || (r.updatedAt === l.updatedAt && r.deleted === true);
 
     if (remoteWins) {
+      if (r.deleted === true && isExpiredTombstone(r, now)) {
+        // The delete-propagation window closed while this machine was
+        // offline: an expired tombstone is dead history and must never
+        // delete a live local record. Purge the stale keychain item and
+        // push the local survivor so it becomes the record of note again.
+        await purge(account);
+        await push(account, l);
+        continue;
+      }
       await adapter.applyRemote(account, r);
       if (r.deleted === true) {
         result.deletedLocally.push(account);
-        if (isExpiredTombstone(r, now)) await purge(account);
       } else {
         result.pulled.push(account);
       }

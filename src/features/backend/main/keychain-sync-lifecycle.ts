@@ -116,7 +116,12 @@ export function initKeychainSyncLifecycle(
       // The pref gate lives INSIDE the run so a toggle-off between schedule
       // and fire still results in a no-op (fully inert when disabled).
       if (disposed || !(await isEnabled())) return;
-      const result = await runReconcile(storeSyncAdapter);
+      // Re-checked before each account's writes so a toggle-off (or dispose)
+      // while the helper call is in flight halts further pull/push side
+      // effects instead of syncing on after the UI says sync is off.
+      const result = await runReconcile(storeSyncAdapter, {
+        shouldAbort: async () => disposed || !(await isEnabled()),
+      });
       const previous = lastStatus;
       lastStatus = result.status;
       if (

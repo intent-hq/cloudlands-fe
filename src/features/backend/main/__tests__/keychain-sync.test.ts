@@ -351,6 +351,79 @@ describe('reconcile', () => {
     expect(result.pushed).toEqual([]);
   });
 
+  it('two divergent zero-clock (pre-sync) records: local pushed with a fresh stamp', async () => {
+    // Both machines hold pre-sync records (updatedAt 0) with different
+    // content. The plain equal-clock skip would leave them divergent forever;
+    // instead the local copy is pushed re-stamped to `now`, so the other
+    // machine pulls it on its next pass and both converge.
+    const remoteRecord = rec({ label: 'Old A', token: 'token-a', updatedAt: 0 });
+    const localRecord = rec({ label: 'Old B', token: 'token-b', updatedAt: 0 });
+    const { client, upserts } = fakeClient([item(remoteRecord)]);
+    const { adapter, applied } = fakeAdapter([localRecord]);
+
+    const result = await reconcile(adapter, { client, now: NOW });
+
+    expect(result.pushed).toEqual([ACCOUNT]);
+    expect(applied).toEqual([]);
+    expect(parsePayload(upserts[0].payload)).toEqual({
+      kind: 'record',
+      record: { ...localRecord, updatedAt: NOW },
+    });
+  });
+
+  it('a local-only zero-clock record is pushed re-stamped (keychain never holds clock 0)', async () => {
+    const { client, upserts } = fakeClient([]);
+    const { adapter } = fakeAdapter([rec({ updatedAt: 0 })]);
+
+    const result = await reconcile(adapter, { client, now: NOW });
+
+    expect(result.pushed).toEqual([ACCOUNT]);
+    expect(parsePayload(upserts[0].payload)).toEqual({
+      kind: 'record',
+      record: rec({ updatedAt: NOW }),
+    });
+  });
+
+  it('expired remote tombstone vs local live: local survives, stale tombstone purged', async () => {
+    // A Mac offline beyond the TTL must NOT lose its live connection to an
+    // expired tombstone, even one with a newer clock — the delete-propagation
+    // window has closed. The tombstone is purged and the survivor pushed.
+    const localRecord = rec({ updatedAt: NOW - TOMBSTONE_TTL_MS - 10_000 });
+    const stone = tombstone({
+      updatedAt: NOW - TOMBSTONE_TTL_MS - 5000,
+      deletedAt: NOW - TOMBSTONE_TTL_MS - 5000,
+    });
+    const { client, upserts, deletes } = fakeClient([item(stone)]);
+    const { adapter, applied } = fakeAdapter([localRecord]);
+
+    const result = await reconcile(adapter, { client, now: NOW });
+
+    expect(applied).toEqual([]);
+    expect(result.deletedLocally).toEqual([]);
+    expect(result.purged).toEqual([ACCOUNT]);
+    expect(deletes).toEqual([ACCOUNT]);
+    expect(result.pushed).toEqual([ACCOUNT]);
+    expect(parsePayload(upserts[0].payload)).toEqual({ kind: 'record', record: localRecord });
+  });
+
+  it('shouldAbort stops the pass before further writes', async () => {
+    const a = rec({ updatedAt: NOW - 1000 });
+    const b = rec({ host: '10.0.0.2', port: 9000, updatedAt: NOW - 1000 });
+    const { client, upserts } = fakeClient([]);
+    const { adapter } = fakeAdapter([a, b]);
+
+    let calls = 0;
+    const result = await reconcile(adapter, {
+      client,
+      now: NOW,
+      // First account proceeds; the pass aborts before the second.
+      shouldAbort: () => calls++ >= 1,
+    });
+
+    expect(upserts).toHaveLength(1);
+    expect(result.pushed).toHaveLength(1);
+  });
+
   it('equal clocks, tombstone vs live: the tombstone wins deterministically', async () => {
     const stone = tombstone({ updatedAt: NOW - 1000 });
     const { client } = fakeClient([item(stone)]);

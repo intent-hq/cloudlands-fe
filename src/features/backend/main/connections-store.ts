@@ -408,7 +408,12 @@ export async function setHosts(id: string, hosts: string[]): Promise<void> {
     const conn = state.connections.find((c) => c.id === id);
     if (!conn) return false; // unknown id: nothing to update
     if (conn.detectHosts === false) return false; // user opted out of IP detection
-    conn.hosts = dedupeHosts([conn.host, ...hosts]).filter((h) => h !== conn.host.trim());
+    const extras = dedupeHosts([conn.host, ...hosts]).filter((h) => h !== conn.host.trim());
+    // Unchanged list: skip the write so the LWW clock is not artificially
+    // bumped (a re-stamp would let this stale record win over a newer remote
+    // edit in keychain sync).
+    if (JSON.stringify(extras) === JSON.stringify(conn.hosts ?? [])) return false;
+    conn.hosts = extras;
     conn.updatedAt = Date.now();
     await writeState(state);
     return true;
@@ -442,6 +447,10 @@ export async function setHostname(id: string, hostname: string): Promise<void> {
   const changed = await mutate(async (state) => {
     const conn = state.connections.find((c) => c.id === id);
     if (!conn) return false; // unknown id: nothing to label
+    // Unchanged hostname (the common every-connect case): skip the write so
+    // the LWW clock is not artificially bumped, which would let this stale
+    // record win over a newer remote edit in keychain sync.
+    if (conn.hostname === trimmed) return false;
     conn.hostname = trimmed;
     conn.updatedAt = Date.now();
     await writeState(state);

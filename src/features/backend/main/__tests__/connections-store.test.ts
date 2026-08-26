@@ -474,6 +474,37 @@ describe('connections-store keychain sync surface', () => {
     }
   });
 
+  it('setHostname/setHosts with unchanged values do not bump the LWW clock or notify', async () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(1_700_000_000_000);
+      const store = await import('../connections-store');
+      const rec = await store.add(sampleConn);
+      await store.setHostname(rec.id, 'studio.local');
+      await store.setHosts(rec.id, ['10.0.0.5']);
+      await store.__drainWriteChainForTesting();
+
+      const listener = vi.fn();
+      const unsubscribe = store.onConnectionsMutated(listener);
+
+      // The routine every-connect refresh with identical values must not
+      // re-stamp updatedAt — that would let this stale record win over a
+      // newer remote edit in keychain sync.
+      vi.setSystemTime(1_700_000_005_000);
+      await store.setHostname(rec.id, 'studio.local');
+      await store.setHosts(rec.id, [' 10.0.0.5 ']); // dedupes to the same list
+      await store.__drainWriteChainForTesting();
+
+      const file = path.join(tmpDir, 'backend-connections.json');
+      const parsed = JSON.parse(await fs.readFile(file, 'utf8'));
+      expect(parsed.connections[0].updatedAt).toBe(1_700_000_000_000);
+      expect(listener).not.toHaveBeenCalled();
+      unsubscribe();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('forget writes a tombstone (token-free) and re-adding the target clears it', async () => {
     const store = await import('../connections-store');
     const rec = await store.add(sampleConn);

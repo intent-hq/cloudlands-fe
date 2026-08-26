@@ -114,7 +114,10 @@ describe('keychain-sync lifecycle triggers', () => {
     expect(reconcileFn).not.toHaveBeenCalled();
     await vi.advanceTimersByTimeAsync(DEBOUNCE);
     expect(reconcileFn).toHaveBeenCalledTimes(1);
-    expect(reconcileFn).toHaveBeenCalledWith(storeSyncAdapter);
+    expect(reconcileFn).toHaveBeenCalledWith(
+      storeSyncAdapter,
+      expect.objectContaining({ shouldAbort: expect.any(Function) }),
+    );
   });
 
   it('pref off = fully inert: no reconcile on startup, focus, or mutation', async () => {
@@ -123,6 +126,31 @@ describe('keychain-sync lifecycle triggers', () => {
     fireMutation();
     await vi.advanceTimersByTimeAsync(FOCUS_MIN * 2);
     expect(reconcileFn).not.toHaveBeenCalled();
+  });
+
+  it('passes a shouldAbort that reflects a mid-flight pref toggle-off', async () => {
+    // Disabling sync while the reconcile is in flight must halt further
+    // pull/push side effects: the shouldAbort seam handed to reconcile()
+    // re-reads the pref on every call.
+    let enabled = true;
+    let capturedAbort: (() => Promise<boolean>) | null = null;
+    const reconcileFn = vi.fn(
+      async (_adapter: unknown, opts?: { shouldAbort?: () => Promise<boolean> }) => {
+        capturedAbort = opts?.shouldAbort ?? null;
+        return reconcileResult();
+      },
+    );
+    lifecycle = initKeychainSyncLifecycle({
+      isEnabled: async () => enabled,
+      reconcileFn: reconcileFn as never,
+      debounceMs: DEBOUNCE,
+      focusMinIntervalMs: FOCUS_MIN,
+    });
+    await vi.advanceTimersByTimeAsync(DEBOUNCE);
+    expect(capturedAbort).not.toBeNull();
+    await expect(capturedAbort!()).resolves.toBe(false);
+    enabled = false; // toggle off mid-flight
+    await expect(capturedAbort!()).resolves.toBe(true);
   });
 
   it('a store mutation schedules an async push reconcile', async () => {
