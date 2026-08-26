@@ -10,6 +10,7 @@
 
 import { createAction } from '@augmentcode/themis/utils/store/create-action';
 import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
+import type { TransferFailurePhase } from '$shared/types/workspace-transfer';
 import type {
   TransferDestination,
   TransferPlan,
@@ -29,6 +30,7 @@ export const initialState: WorkspaceTransferState = {
   runStatus: 'idle',
   progress: null,
   runError: null,
+  failurePhase: null,
   restartAgents: false,
   downloadFilePath: null,
   interruptedAgents: [],
@@ -84,8 +86,10 @@ export const transferRunSucceeded = createAction<
   [payload: { interruptedAgents: string[]; downloadFilePath: string | null }]
 >('workspaceTransfer/runSucceeded');
 
-/** Saga: the relay failed; the result screen shows the reason + retry. */
-export const transferRunFailed = createAction<[error: string]>('workspaceTransfer/runFailed');
+/** Saga: the relay failed; the result screen shows the reason, impact, and retry. */
+export const transferRunFailed = createAction<
+  [payload: { error: string; failurePhase: TransferFailurePhase | null }]
+>('workspaceTransfer/runFailed');
 
 /** Saga: the user dismissed the save dialog — return to the confirm step. */
 export const transferRunCancelled = createAction('workspaceTransfer/runCancelled');
@@ -118,12 +122,15 @@ export const transferFinalizeFailed = createAction<[error: string]>(
 );
 
 export const workspaceTransferReducer = createReducer<WorkspaceTransferState>(initialState);
-workspaceTransferReducer.with(openTransferModal, (state, { payload: [{ workspaceId, workspaceTitle }] }) => ({
-  ...initialState,
-  open: true,
-  workspaceId,
-  workspaceTitle,
-}));
+workspaceTransferReducer.with(
+  openTransferModal,
+  (state, { payload: [{ workspaceId, workspaceTitle }] }) => ({
+    ...initialState,
+    open: true,
+    workspaceId,
+    workspaceTitle,
+  }),
+);
 workspaceTransferReducer.with(closeTransferModal, () => initialState);
 workspaceTransferReducer.with(selectTransferDestination, (state, { payload: [destination] }) => ({
   ...state,
@@ -160,6 +167,7 @@ workspaceTransferReducer.with(transferStartRequested, (state) => {
     runStatus: 'running',
     progress: null,
     runError: null,
+    failurePhase: null,
     downloadFilePath: null,
     interruptedAgents: [],
     finalizeStatus: 'idle',
@@ -183,10 +191,13 @@ workspaceTransferReducer.with(
     };
   },
 );
-workspaceTransferReducer.with(transferRunFailed, (state, { payload: [error] }) => {
-  if (!state.open || state.step !== 'transferring') return state;
-  return { ...state, step: 'result', runStatus: 'failed', runError: error };
-});
+workspaceTransferReducer.with(
+  transferRunFailed,
+  (state, { payload: [{ error, failurePhase }] }) => {
+    if (!state.open || state.step !== 'transferring') return state;
+    return { ...state, step: 'result', runStatus: 'failed', runError: error, failurePhase };
+  },
+);
 workspaceTransferReducer.with(transferRunCancelled, (state) => {
   if (!state.open || state.step !== 'transferring') return state;
   return { ...state, step: 'confirm', runStatus: 'idle', progress: null, runError: null };

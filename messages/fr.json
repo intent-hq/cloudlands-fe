@@ -6029,6 +6029,7 @@
   "workspace_transfer_resumeFailed_many": "{count} agents n'ont pas pu être redémarrés sur la destination. Reprenez-les manuellement là-bas.",
   "workspace_transfer_result_failed_title": "Échec du transfert",
   "workspace_transfer_result_downloadFailed_title": "Échec du téléchargement",
+  "workspace_transfer_result_preflightFailed_message": "Le transfert n'a pas démarré : {error}. L'espace source est inchangé et ses agents n'ont pas été arrêtés.",
   "workspace_transfer_result_failed_message": "Le transfert ne s'est pas terminé : {error}. L'espace source est inchangé et reste utilisable ; ses agents ont été arrêtés.",
   "workspace_transfer_result_downloadFailed_message": "Le téléchargement ne s'est pas terminé : {error}. L'espace est inchangé et reste utilisable ; ses agents ont été arrêtés.",
   "workspace_transfer_retry_label": "Réessayer",

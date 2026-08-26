@@ -34,6 +34,7 @@
   import { m } from '$shared/paraglide/messages.js';
   import { formatBytesBinary, formatInteger } from '$lib/i18n/format';
   import { formatConnectionLabel } from '$lib/components/layout/DaemonStatusIndicator.svelte';
+  import type { TransferFailurePhase } from '$shared/types/workspace-transfer';
   import type { ConnectionRecord } from '$store/renderer/slices/connections/connections-types';
   import type {
     TransferDestination,
@@ -58,6 +59,7 @@
     runStatus?: TransferRunStatus;
     progress?: TransferProgress | null;
     runError?: string | null;
+    failurePhase?: TransferFailurePhase | null;
     restartAgents?: boolean;
     downloadFilePath?: string | null;
     interruptedAgents?: string[];
@@ -87,6 +89,7 @@
     runStatus = 'idle',
     progress = null,
     runError = null,
+    failurePhase = null,
     restartAgents = false,
     downloadFilePath = null,
     interruptedAgents = [],
@@ -547,7 +550,9 @@
             <p class="text-xs text-subtle" data-testid="transfer-failed-reason">
               {isDownload
                 ? m.workspace_transfer_result_downloadFailed_message({ error: runError ?? '' })
-                : m.workspace_transfer_result_failed_message({ error: runError ?? '' })}
+                : failurePhase === 'preflight'
+                  ? m.workspace_transfer_result_preflightFailed_message({ error: runError ?? '' })
+                  : m.workspace_transfer_result_failed_message({ error: runError ?? '' })}
             </p>
           {/if}
         {/if}

@@ -12,9 +12,11 @@
  * renderer, preload, and main.
  */
 
-
 /** Where the transfer goes (mirrors the renderer's `TransferDestination`). */
 type TransferRelayDestination = { kind: 'server'; connectionId: string } | { kind: 'download' };
+
+/** Whether a failed relay may have stopped source agents or failed before export began. */
+export type TransferFailurePhase = 'preflight' | 'post-export';
 
 /** `transfer:start` params. */
 export interface TransferStartParams {
@@ -53,6 +55,8 @@ export interface TransferStartResult {
   /** True when the user dismissed the save dialog (download destination). */
   canceled?: boolean;
   error?: string;
+  /** Present on failure so the renderer can describe source-agent impact accurately. */
+  failurePhase?: TransferFailurePhase;
   /** Download destination: where the archive was written. */
   filePath?: string;
   /**

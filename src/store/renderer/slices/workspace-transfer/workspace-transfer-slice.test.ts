@@ -179,13 +179,18 @@ describe('workspaceTransferReducer — steps 3–4', () => {
   });
 
   it('retry from a failed result restarts the run and clears prior outcome', () => {
-    const failed = workspaceTransferReducer(transferringState(), transferRunFailed('boom'));
+    const failed = workspaceTransferReducer(
+      transferringState(),
+      transferRunFailed({ error: 'boom', failurePhase: 'preflight' }),
+    );
     expect(failed.step).toBe('result');
     expect(failed.runStatus).toBe('failed');
+    expect(failed.failurePhase).toBe('preflight');
     const retried = workspaceTransferReducer(failed, transferStartRequested());
     expect(retried.step).toBe('transferring');
     expect(retried.runStatus).toBe('running');
     expect(retried.runError).toBeNull();
+    expect(retried.failurePhase).toBeNull();
   });
 
   it('progress frames update only while running', () => {
@@ -196,7 +201,10 @@ describe('workspaceTransferReducer — steps 3–4', () => {
     expect(state.progress).toEqual(relayProgress);
 
     // Ignored after the run settled.
-    const settled = workspaceTransferReducer(state, transferRunFailed('x'));
+    const settled = workspaceTransferReducer(
+      state,
+      transferRunFailed({ error: 'x', failurePhase: 'post-export' }),
+    );
     expect(
       workspaceTransferReducer(settled, transferProgressReceived(relayProgress)).progress,
     ).toEqual(settled.progress);
@@ -249,12 +257,13 @@ describe('workspaceTransferReducer — steps 3–4', () => {
   it('finalize is rejected while transferring or after failure', () => {
     const transferring = transferringState();
     expect(
-      workspaceTransferReducer(
-        transferring,
-        transferFinalizeRequested({ switchToTarget: false }),
-      ).finalizeStatus,
+      workspaceTransferReducer(transferring, transferFinalizeRequested({ switchToTarget: false }))
+        .finalizeStatus,
     ).toBe('idle');
-    const failed = workspaceTransferReducer(transferring, transferRunFailed('x'));
+    const failed = workspaceTransferReducer(
+      transferring,
+      transferRunFailed({ error: 'x', failurePhase: 'post-export' }),
+    );
     expect(
       workspaceTransferReducer(failed, transferFinalizeRequested({ switchToTarget: false }))
         .finalizeStatus,

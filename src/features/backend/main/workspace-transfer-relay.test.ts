@@ -4,7 +4,7 @@
  * All seams are injected — no sockets, dialogs, or disk. A fake source client
  * scripts the export lifecycle (`events.subscribe` → `export.start` →
  * `:ready`/`:failed` notifications → seq-numbered `export.read` chunks); a
- * fake target records the `import.begin/chunk/commit` sequence.
+ * fake target records the `host.status → import.begin/chunk/commit` sequence.
  */
 
 import { describe, expect, it, vi } from 'vitest';
@@ -34,7 +34,10 @@ const READY_DATA = {
 };
 
 /** Fake source: scripted RPC results + manual notification emission. */
-function makeSource(overrides: Record<string, (params: any) => unknown> = {}) {
+function makeSource(
+  overrides: Record<string, (params: any) => unknown> = {},
+  order: string[] = [],
+) {
   const listeners = new Set<Listener>();
   const calls: Array<{ method: string; params: any }> = [];
   const handlers: Record<string, (params: any) => unknown> = {
@@ -54,6 +57,7 @@ function makeSource(overrides: Record<string, (params: any) => unknown> = {}) {
   const client: RelayRpcClient = {
     async request(method, params) {
       calls.push({ method, params });
+      order.push(`source:${method}`);
       const handler = handlers[method];
       if (!handler) throw new Error(`unexpected method ${method}`);
       const result = handler(params);
@@ -77,9 +81,13 @@ function makeSource(overrides: Record<string, (params: any) => unknown> = {}) {
 }
 
 /** Fake target: records calls; scripted per-method results. */
-function makeTarget(overrides: Record<string, (params: any) => unknown> = {}) {
-  const calls: Array<{ method: string; params: any }> = [];
+function makeTarget(
+  overrides: Record<string, (params: any) => unknown> = {},
+  order: string[] = [],
+) {
+  const calls: Array<{ method: string; params: any; options?: { timeoutMs?: number } }> = [];
   const handlers: Record<string, (params: any) => unknown> = {
+    'host.status': () => ({ ready: true }),
     'workspace.import.begin': () => ({ importId: 'import-1', maxChunkBytes: 11 }),
     'workspace.import.chunk': ({ seq }: { seq: number }) => ({ importId: 'import-1', seq }),
     'workspace.import.commit': () => ({
@@ -92,8 +100,9 @@ function makeTarget(overrides: Record<string, (params: any) => unknown> = {}) {
   };
   const dispose = vi.fn();
   const client: RelayRpcClient = {
-    async request(method, params) {
-      calls.push({ method, params });
+    async request(method, params, options) {
+      calls.push({ method, params, options });
+      order.push(`target:${method}`);
       const handler = handlers[method];
       if (!handler) throw new Error(`unexpected method ${method}`);
       const result = handler(params);
@@ -143,8 +152,9 @@ async function emitWhenStarted(
 
 describe('workspace-transfer relay — server destination', () => {
   it('relays start → ready → chunks → commit and reports counters', async () => {
-    const source = makeSource();
-    const target = makeTarget();
+    const order: string[] = [];
+    const source = makeSource({}, order);
+    const target = makeTarget({}, order);
     const { deps, progress } = makeDeps(source, target);
     const relay = createWorkspaceTransferRelay(deps);
 
@@ -156,6 +166,15 @@ describe('workspace-transfer relay — server destination', () => {
     const result = await startPromise;
 
     expect(result).toEqual({ success: true, interruptedAgents: ['agent-9'] });
+    expect(target.calls[0]).toEqual({
+      method: 'host.status',
+      params: undefined,
+      options: { timeoutMs: 15_000 },
+    });
+    expect(order.indexOf('target:host.status')).toBeLessThan(
+      order.indexOf('source:workspace.export.start'),
+    );
+    expect(deps.createTargetClient).toHaveBeenCalledOnce();
     const begin = target.calls.find((c) => c.method === 'workspace.import.begin');
     expect(begin?.params).toEqual({
       manifest: READY_DATA.manifest,
@@ -236,7 +255,7 @@ describe('workspace-transfer relay — server destination', () => {
     expect(result).toMatchObject({ success: false, error: 'git bundle failed' });
     // export.start resolved with the id, so abort targets it best-effort.
     expect(source.calls.some((c) => c.method === 'workspace.export.abort')).toBe(true);
-    expect(target.calls).toEqual([]);
+    expect(target.calls.map((c) => c.method)).toEqual(['host.status']);
   });
 
   it('aborts both sides and disposes the target when import.begin rejects (version mismatch)', async () => {
@@ -255,6 +274,7 @@ describe('workspace-transfer relay — server destination', () => {
     const result = await startPromise;
 
     expect(result).toMatchObject({ success: false, error: 'versions must match exactly' });
+    expect(result).toMatchObject({ failurePhase: 'post-export' });
     expect(source.calls.some((c) => c.method === 'workspace.export.abort')).toBe(true);
     // begin failed before a session existed — no import.abort possible.
     expect(target.calls.filter((c) => c.method === 'workspace.import.abort')).toEqual([]);
@@ -283,7 +303,7 @@ describe('workspace-transfer relay — server destination', () => {
     expect(target.dispose).toHaveBeenCalledOnce();
   });
 
-  it('fails when the target client cannot be created; source aborted', async () => {
+  it('fails before export when the target connection config cannot create a client', async () => {
     const source = makeSource();
     const { deps } = makeDeps(source, undefined, {
       createTargetClient: vi.fn(async () => {
@@ -292,15 +312,137 @@ describe('workspace-transfer relay — server destination', () => {
     });
     const relay = createWorkspaceTransferRelay(deps);
 
-    const startPromise = relay.start({
+    const result = await relay.start({
       workspaceId: 'ws-1',
       destination: { kind: 'server', connectionId: 'conn-9' },
     });
-    await emitWhenStarted(source, 'workspace:transfer:ready', READY_DATA);
+
+    expect(result).toMatchObject({
+      success: false,
+      error: 'unknown connection conn-9',
+      failurePhase: 'preflight',
+    });
+    expect(source.calls).toEqual([]);
+  });
+
+  it('fails an unreachable target preflight without touching the source and disposes the client', async () => {
+    const source = makeSource();
+    const target = makeTarget({
+      'host.status': () => new Error('connect ECONNREFUSED 10.0.0.2:5181'),
+    });
+    const { deps } = makeDeps(source, target);
+    const relay = createWorkspaceTransferRelay(deps);
+
+    const result = await relay.start({
+      workspaceId: 'ws-1',
+      destination: { kind: 'server', connectionId: 'conn-1' },
+    });
+
+    expect(result).toEqual({
+      success: false,
+      error: 'connect ECONNREFUSED 10.0.0.2:5181',
+      failurePhase: 'preflight',
+    });
+    expect(source.calls).toEqual([]);
+    expect(target.dispose).toHaveBeenCalledOnce();
+  });
+
+  it.each([
+    ['authentication', 'WebSocket upgrade rejected with HTTP 401 (authentication rejected)'],
+    ['certificate', 'Pinned certificate mismatch'],
+  ])('fails %s rejection before export and disposes the target client', async (_kind, message) => {
+    const source = makeSource();
+    const target = makeTarget({ 'host.status': () => new Error(message) });
+    const { deps } = makeDeps(source, target);
+    const relay = createWorkspaceTransferRelay(deps);
+
+    const result = await relay.start({
+      workspaceId: 'ws-1',
+      destination: { kind: 'server', connectionId: 'conn-1' },
+    });
+
+    expect(result).toMatchObject({ success: false, error: message, failurePhase: 'preflight' });
+    expect(source.calls).toEqual([]);
+    expect(target.dispose).toHaveBeenCalledOnce();
+  });
+
+  it('bounds a target preflight that never connects and disposes the target client', async () => {
+    vi.useFakeTimers();
+    try {
+      const source = makeSource();
+      const target = makeTarget({ 'host.status': () => new Promise(() => undefined) });
+      const { deps } = makeDeps(source, target);
+      const relay = createWorkspaceTransferRelay(deps);
+
+      const startPromise = relay.start({
+        workspaceId: 'ws-1',
+        destination: { kind: 'server', connectionId: 'conn-1' },
+      });
+      for (let tick = 0; tick < 5; tick++) await Promise.resolve();
+      await vi.advanceTimersByTimeAsync(15_001);
+      const result = await startPromise;
+
+      expect(result).toEqual({
+        success: false,
+        error: 'Timed out connecting to the transfer destination',
+        failurePhase: 'preflight',
+      });
+      expect(source.calls).toEqual([]);
+      expect(target.dispose).toHaveBeenCalledOnce();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('cancel during target preflight makes no source call and disposes the target client', async () => {
+    const source = makeSource();
+    const target = makeTarget({ 'host.status': () => new Promise(() => undefined) });
+    const { deps } = makeDeps(source, target);
+    const relay = createWorkspaceTransferRelay(deps);
+
+    const startPromise = relay.start({
+      workspaceId: 'ws-1',
+      destination: { kind: 'server', connectionId: 'conn-1' },
+    });
+    await vi.waitFor(() => {
+      if (!target.calls.some((c) => c.method === 'host.status'))
+        throw new Error('not preflighting');
+    });
+    await relay.cancel();
     const result = await startPromise;
 
-    expect(result).toMatchObject({ success: false, error: 'unknown connection conn-9' });
-    expect(source.calls.some((c) => c.method === 'workspace.export.abort')).toBe(true);
+    expect(result).toEqual({ success: false, canceled: true });
+    expect(source.calls).toEqual([]);
+    expect(target.dispose).toHaveBeenCalledOnce();
+  });
+
+  it('retry after a failed preflight starts from a clean relay session', async () => {
+    const source = makeSource();
+    const rejected = makeTarget({ 'host.status': () => new Error('destination unavailable') });
+    const reachable = makeTarget();
+    const targetFactory = vi
+      .fn<TransferRelayDeps['createTargetClient']>()
+      .mockResolvedValueOnce(rejected.handle)
+      .mockResolvedValueOnce(reachable.handle);
+    const { deps } = makeDeps(source, undefined, { createTargetClient: targetFactory });
+    const relay = createWorkspaceTransferRelay(deps);
+
+    const first = await relay.start({
+      workspaceId: 'ws-1',
+      destination: { kind: 'server', connectionId: 'conn-1' },
+    });
+    expect(first).toMatchObject({ success: false, failurePhase: 'preflight' });
+    expect(source.calls).toEqual([]);
+
+    const secondPromise = relay.start({
+      workspaceId: 'ws-1',
+      destination: { kind: 'server', connectionId: 'conn-1' },
+    });
+    await emitWhenStarted(source, 'workspace:transfer:ready', READY_DATA);
+    await expect(secondPromise).resolves.toMatchObject({ success: true });
+    expect(targetFactory).toHaveBeenCalledTimes(2);
+    expect(rejected.dispose).toHaveBeenCalledOnce();
+    expect(reachable.dispose).toHaveBeenCalledOnce();
   });
 
   it('a new start aborts a stale committed-but-unfinalized export on the old source', async () => {
@@ -506,7 +648,10 @@ describe('workspace-transfer relay — finalize', () => {
     const { deps } = makeDeps(source);
     const relay = createWorkspaceTransferRelay(deps);
     const result = await relay.finalize({ archiveSource: true });
-    expect(result).toMatchObject({ success: false, error: expect.stringContaining('no committed') });
+    expect(result).toMatchObject({
+      success: false,
+      error: expect.stringContaining('no committed'),
+    });
   });
 
   it('finalize talks to the source pinned at start, not the switched shared client', async () => {
@@ -537,7 +682,8 @@ describe('workspace-transfer relay — finalize', () => {
 describe('workspace-transfer relay — cancel', () => {
   it('cancel mid-build aborts the export and start resolves canceled', async () => {
     const source = makeSource();
-    const { deps } = makeDeps(source);
+    const target = makeTarget();
+    const { deps } = makeDeps(source, target);
     const relay = createWorkspaceTransferRelay(deps);
 
     const startPromise = relay.start({

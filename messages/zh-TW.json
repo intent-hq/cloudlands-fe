@@ -6029,6 +6029,7 @@
   "workspace_transfer_resumeFailed_many": "{count} 個代理程式無法於目標端重新啟動。請在目標端手動恢復。",
   "workspace_transfer_result_failed_title": "傳輸失敗",
   "workspace_transfer_result_downloadFailed_title": "下載失敗",
+  "workspace_transfer_result_preflightFailed_message": "傳輸未開始：{error}。來源空間未變更，其代理程式也未停止。",
   "workspace_transfer_result_failed_message": "傳輸未完成：{error}。來源空間未變更且仍可使用；其代理程式已停止。",
   "workspace_transfer_result_downloadFailed_message": "下載未完成：{error}。空間未變更且仍可使用；其代理程式已停止。",
   "workspace_transfer_retry_label": "重試",

@@ -7,6 +7,8 @@
  * destination pick + plan confirm; execution is a later surface).
  */
 
+import type { TransferFailurePhase } from '$shared/types/workspace-transfer';
+
 /** Per-table row stats for one workspace-scoped table included in a transfer. */
 interface TransferTableStat {
   name: string;
@@ -121,6 +123,8 @@ export interface WorkspaceTransferState {
   runStatus: TransferRunStatus;
   progress: TransferProgress | null;
   runError: string | null;
+  /** Failure location used to state whether source agents were stopped. */
+  failurePhase: TransferFailurePhase | null;
   /** Step 3 toggle: resolve transferred interrupted agents on the target. */
   restartAgents: boolean;
   /** Download destination: where the archive was written (result screen). */

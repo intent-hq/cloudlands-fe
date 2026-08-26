@@ -40,12 +40,10 @@ export const selectTransferPlanError = store.createSelector(
  * the local entry; when local is active it is excluded by the activeId check,
  * leaving only remotes (unchanged behavior).
  */
-export const selectTransferTargetConnections = store.createSelector(
-  (state): ConnectionRecord[] => {
-    const { connections, activeId } = state.connections;
-    return getItems(connections).filter((c) => c.id !== activeId);
-  },
-);
+export const selectTransferTargetConnections = store.createSelector((state): ConnectionRecord[] => {
+  const { connections, activeId } = state.connections;
+  return getItems(connections).filter((c) => c.id !== activeId);
+});
 
 export const selectTransferRunStatus = store.createSelector(
   (state) => state.workspaceTransfer.runStatus,
@@ -57,6 +55,10 @@ export const selectTransferProgress = store.createSelector(
 
 export const selectTransferRunError = store.createSelector(
   (state) => state.workspaceTransfer.runError,
+);
+
+export const selectTransferFailurePhase = store.createSelector(
+  (state) => state.workspaceTransfer.failurePhase,
 );
 
 export const selectTransferRestartAgents = store.createSelector(
