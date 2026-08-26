@@ -25,6 +25,15 @@ test('exposes compact values and keeps summary text readable on hover', async ({
 
   await expect(disclosure).toHaveAccessibleDescription('1K tokens used');
   await disclosure.focus();
+  const disclosureFocus = await disclosure.evaluate((element) => {
+    const probe = document.createElement('span');
+    probe.style.color = 'hsl(var(--ring))';
+    document.body.append(probe);
+    const ringColor = getComputedStyle(probe).color;
+    probe.remove();
+    return { boxShadow: getComputedStyle(element).boxShadow, ringColor };
+  });
+  expect(disclosureFocus.boxShadow).toContain(disclosureFocus.ringColor);
   await disclosure.press('Space');
   await expect(disclosure).toHaveAccessibleName('Collapse token usage details');
   await expect(disclosure).toHaveAccessibleDescription('1K tokens used');
@@ -130,12 +139,23 @@ test('navigates exact stacked totals with accessible pointer, focus, theme, and 
     ]);
     const compositionSegments = details.locator('.composition-strip-segment');
     await expect(compositionSegments).toHaveCount(3);
-    themeCompositionColors.push(
-      await compositionSegments.evaluateAll((segments) =>
-        segments.map((segment) => getComputedStyle(segment).backgroundColor),
-      ),
+    const segmentColors = await compositionSegments.evaluateAll((segments) =>
+      segments.map((segment) => ({
+        metric: (segment as HTMLElement).dataset.metric,
+        color: getComputedStyle(segment).backgroundColor,
+      })),
     );
+    const keyColors = await compositionRows.locator('.composition-key').evaluateAll((keys) =>
+      keys.map((key) => ({
+        metric: (key as HTMLElement).dataset.metric,
+        color: getComputedStyle(key).backgroundColor,
+      })),
+    );
+    themeCompositionColors.push(segmentColors.map(({ color }) => color));
     expect(new Set(themeCompositionColors.at(-1)).size).toBe(3);
+    expect(new Set(keyColors.map(({ color }) => color)).size).toBe(4);
+    expect(segmentColors).toEqual(keyColors.filter(({ metric }) => metric !== 'reasoning'));
+    await expect(messageRows.locator('.composition-key')).toHaveCount(0);
     const activeStyle = await agentAlpha.evaluate((element) => ({
       background: getComputedStyle(element).backgroundColor,
       transitionDuration: Number.parseFloat(getComputedStyle(element).transitionDuration),
@@ -298,8 +318,16 @@ test('renders the full reference table as a wide overlay from the real workspace
     };
   });
   await expect
-    .poll(() => disclosure.evaluate((element) => getComputedStyle(element).backgroundColor))
-    .toBe(summaryMetrics.backgroundColor);
+    .poll(() =>
+      disclosure.evaluate((element) => {
+        const style = getComputedStyle(element);
+        return { backgroundColor: style.backgroundColor, borderColor: style.borderColor };
+      }),
+    )
+    .toEqual({
+      backgroundColor: 'rgba(0, 0, 0, 0)',
+      borderColor: 'rgba(0, 0, 0, 0)',
+    });
 
   const accessibleOnlyChrome = details.locator('h4.sr-only, .preview-status.sr-only');
   await expect(accessibleOnlyChrome).toHaveCount(4);
@@ -336,7 +364,8 @@ test('renders the full reference table as a wide overlay from the real workspace
   await expect(compositionRows.nth(5)).toContainText('Reasoning tokens');
   await expect(messageCompositionRows.nth(0)).toHaveText(/Human messages\s+4/);
   await expect(messageCompositionRows.nth(1)).toHaveText(/Agent messages\s+7/);
-  await expect(compositionRows.locator('.composition-metric [aria-hidden="true"]')).toHaveCount(0);
+  await expect(tokenCompositionRows.locator('.composition-key[aria-hidden="true"]')).toHaveCount(4);
+  await expect(messageCompositionRows.locator('.composition-key')).toHaveCount(0);
   await expect(composition.locator('.composition-description')).toHaveCount(0);
   await expect(agentSection).toBeVisible();
   await expect(modelSection).toBeVisible();

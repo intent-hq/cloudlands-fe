@@ -666,8 +666,15 @@
           <dl>
             {#each compositionRows as row (row.id)}
               <div class="composition-row token-composition-row min-w-0 py-1">
-                <dt class="composition-metric min-w-0 truncate text-sm font-normal text-foreground">
-                  {row.label}
+                <dt
+                  class="composition-metric flex min-w-0 items-center gap-2 text-sm font-normal text-foreground"
+                >
+                  <span
+                    class="composition-key size-1.5 shrink-0 rounded-full"
+                    data-metric={row.id}
+                    aria-hidden="true"
+                  ></span>
+                  <span class="min-w-0 truncate">{row.label}</span>
                 </dt>
                 <dd
                   class="composition-value text-right text-sm font-normal tabular-nums text-muted-foreground"
@@ -731,6 +738,11 @@
     container: token-summary / inline-size;
   }
 
+  :global(.summary-control[aria-expanded='true']) {
+    border-color: transparent;
+    background: transparent;
+  }
+
   .token-usage-details {
     container: token-details / inline-size;
     z-index: 60;
@@ -782,20 +794,29 @@
     flex: 0 0 auto;
   }
 
-  .composition-strip-segment[data-metric='cached'] {
+  .composition-strip-segment[data-metric='cached'],
+  .composition-key[data-metric='cached'] {
     background: hsl(var(--success) / 82%);
   }
 
-  .composition-strip-segment[data-metric='input'] {
-    background: hsl(var(--foreground) / 18%);
+  .composition-strip-segment[data-metric='input'],
+  .composition-key[data-metric='input'] {
+    background: hsl(217 72% 53% / 84%);
   }
 
-  .composition-strip-segment[data-metric='output'] {
-    background: hsl(var(--foreground) / 32%);
+  .composition-strip-segment[data-metric='output'],
+  .composition-key[data-metric='output'] {
+    background: hsl(var(--info) / 82%);
   }
 
-  .composition-strip-segment[data-metric='reasoning'] {
-    background: hsl(var(--foreground) / 48%);
+  .composition-strip-segment[data-metric='reasoning'],
+  .composition-key[data-metric='reasoning'] {
+    background: hsl(var(--warning) / 88%);
+  }
+
+  :global(.dark) .composition-strip-segment[data-metric='input'],
+  :global(.dark) .composition-key[data-metric='input'] {
+    background: hsl(213 88% 68% / 84%);
   }
 
   .breakdown-stack-item:first-child {
