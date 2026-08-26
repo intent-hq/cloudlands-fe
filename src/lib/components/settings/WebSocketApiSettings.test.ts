@@ -2,7 +2,7 @@
  * @vitest-environment jsdom
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import WebSocketApiSettings from './WebSocketApiSettings.svelte';
 
 // Mock appClient - use vi.hoisted to avoid hoisting issues
@@ -39,29 +39,63 @@ vi.mock('svelte-sonner', () => ({
 
 // Mock the store so selectActiveConnectionId resolves; tests flip
 // `connectionState.activeId` and call `connectionState.emit()` to simulate a
-// connection switch while the component stays mounted.
+// connection switch while the component stays mounted. Dispatches of the
+// keychain-sync async actions resolve `connectionState.syncState` through the
+// createAsyncAction `.promise` contract.
 const connectionState = vi.hoisted(() => ({
   activeId: 'local',
   emit: () => {},
+  syncState: { supported: true, enabled: true, status: null } as {
+    supported: boolean;
+    enabled: boolean;
+    status: unknown;
+  },
+  dispatched: [] as { type: string }[],
 }));
 
 vi.mock('$store/renderer/store', async () => {
   const { createAppStoreMock } = await import('$store/renderer/utils/test-helpers/store-mock');
   const store = createAppStoreMock({
     state: () => ({ connections: { activeId: connectionState.activeId } }),
+    dispatch: (action: { type: string }) => {
+      connectionState.dispatched.push(action);
+      return { ...action, promise: Promise.resolve(connectionState.syncState) };
+    },
   });
   connectionState.emit = () => store.emitState();
   return { store };
 });
 
+// Publish-self IPC surface (renderer → main via window.electronAPI.invoke).
+const ipcMocks = vi.hoisted(() => ({
+  selfState: { published: false, suppressed: false },
+  invoke: vi.fn(),
+}));
+
+function installElectronApi() {
+  ipcMocks.invoke.mockImplementation(async (channel: string) => {
+    if (channel === 'connections:self-published-state') return { ...ipcMocks.selfState };
+    if (channel === 'connections:publish-self') {
+      return { connection: { id: 'mock-self' } };
+    }
+    throw new Error(`unexpected invoke: ${channel}`);
+  });
+  (window as unknown as { electronAPI: unknown }).electronAPI = { invoke: ipcMocks.invoke };
+}
+
 describe('WebSocketApiSettings', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     connectionState.activeId = 'local';
+    connectionState.syncState = { supported: true, enabled: true, status: null };
+    connectionState.dispatched.length = 0;
+    ipcMocks.selfState = { published: false, suppressed: false };
+    installElectronApi();
   });
 
   afterEach(() => {
     cleanup();
+    delete (window as unknown as { electronAPI?: unknown }).electronAPI;
   });
 
   it('shows toast.error when settings.update rejects on toggle enable', async () => {
@@ -350,6 +384,177 @@ describe('WebSocketApiSettings', () => {
       });
       expect(mocks.mockPairingInfo).not.toHaveBeenCalled();
       expect(mockToast.error).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('publish-self offer on WSS toggle-on', () => {
+    const PAIRING = {
+      token: 'tok-1234567890',
+      port: 5181,
+      certFingerprint: 'AA:BB',
+      localIps: ['192.168.1.2'],
+      hostname: 'my-mac',
+    };
+
+    /** Render with WSS off, then toggle it on (settings.update accepted). */
+    async function toggleOn() {
+      mocks.mockSettingsList.mockResolvedValue([
+        { path: 'server.wsApi.enabled', value: false },
+        { path: 'server.wsApi.port', value: 5181 },
+      ]);
+      render(WebSocketApiSettings);
+      await waitFor(() => expect(screen.getByRole('switch')).toBeTruthy());
+
+      mocks.mockSettingsUpdate.mockResolvedValueOnce([
+        { path: 'server.wsApi.enabled', value: true },
+      ]);
+      mocks.mockSettingsList.mockResolvedValue([
+        { path: 'server.wsApi.enabled', value: true },
+        { path: 'server.wsApi.port', value: 5181 },
+      ]);
+      mocks.mockPairingInfo.mockResolvedValue(PAIRING);
+      await fireEvent.click(screen.getByRole('switch'));
+    }
+
+    it('opens the publish modal when sync is supported and self is unpublished', async () => {
+      await toggleOn();
+
+      await waitFor(() => {
+        expect(screen.getByText('Add this backend to iCloud Keychain?')).toBeTruthy();
+      });
+      // Spec rationale copy is present.
+      expect(screen.getByText(/connect immediately after install/)).toBeTruthy();
+      expect(screen.getByText(/IP address changes sync automatically/)).toBeTruthy();
+    });
+
+    it('does not open the modal on unsupported platforms (non-macOS)', async () => {
+      connectionState.syncState = { supported: false, enabled: false, status: null };
+      await toggleOn();
+
+      await waitFor(() => {
+        expect(ipcMocks.invoke).toHaveBeenCalledWith('connections:self-published-state');
+      });
+      expect(screen.queryByText('Add this backend to iCloud Keychain?')).toBeNull();
+    });
+
+    it('does not open the modal when self is already published', async () => {
+      ipcMocks.selfState = { published: true, suppressed: false };
+      await toggleOn();
+
+      await waitFor(() => {
+        expect(ipcMocks.invoke).toHaveBeenCalledWith('connections:self-published-state');
+      });
+      expect(screen.queryByText('Add this backend to iCloud Keychain?')).toBeNull();
+    });
+
+    it('does not open the modal when auto-publish is suppressed', async () => {
+      ipcMocks.selfState = { published: false, suppressed: true };
+      await toggleOn();
+
+      await waitFor(() => {
+        expect(ipcMocks.invoke).toHaveBeenCalledWith('connections:self-published-state');
+      });
+      expect(screen.queryByText('Add this backend to iCloud Keychain?')).toBeNull();
+    });
+
+    it('confirm publishes and shows a success toast (sync already on)', async () => {
+      await toggleOn();
+      await waitFor(() =>
+        expect(screen.getByText('Add this backend to iCloud Keychain?')).toBeTruthy(),
+      );
+
+      const dialog = screen.getByRole('dialog');
+      await fireEvent.click(within(dialog).getByRole('button', { name: 'Add to iCloud Keychain' }));
+
+      await waitFor(() => {
+        expect(ipcMocks.invoke).toHaveBeenCalledWith('connections:publish-self');
+        expect(mockToast.success).toHaveBeenCalledWith('Backend published to iCloud Keychain');
+      });
+      // Sync was already on — no enable dispatch beyond the state load.
+      expect(
+        connectionState.dispatched.some((a) =>
+          a.type.startsWith('connections/setKeychainSyncEnabled'),
+        ),
+      ).toBe(false);
+    });
+
+    it('confirm with sync off enables keychain sync first, then publishes', async () => {
+      connectionState.syncState = { supported: true, enabled: false, status: null };
+      await toggleOn();
+      await waitFor(() =>
+        expect(screen.getByText('Add this backend to iCloud Keychain?')).toBeTruthy(),
+      );
+      // The sync-off note is shown.
+      expect(screen.getByText(/Confirming will also turn it on/)).toBeTruthy();
+
+      // The enable dispatch resolves with sync on.
+      connectionState.syncState = { supported: true, enabled: true, status: null };
+      const dialog = screen.getByRole('dialog');
+      await fireEvent.click(within(dialog).getByRole('button', { name: 'Add to iCloud Keychain' }));
+
+      await waitFor(() => {
+        expect(
+          connectionState.dispatched.some((a) =>
+            a.type.startsWith('connections/setKeychainSyncEnabled'),
+          ),
+        ).toBe(true);
+        expect(ipcMocks.invoke).toHaveBeenCalledWith('connections:publish-self');
+        expect(mockToast.success).toHaveBeenCalled();
+      });
+    });
+
+    it('decline closes the modal without publishing', async () => {
+      await toggleOn();
+      await waitFor(() =>
+        expect(screen.getByText('Add this backend to iCloud Keychain?')).toBeTruthy(),
+      );
+
+      await fireEvent.click(screen.getByRole('button', { name: 'Not now' }));
+
+      await waitFor(() => {
+        expect(screen.queryByText('Add this backend to iCloud Keychain?')).toBeNull();
+      });
+      expect(ipcMocks.invoke).not.toHaveBeenCalledWith('connections:publish-self');
+    });
+
+    it('shows an error toast when publish fails and keeps the modal open', async () => {
+      await toggleOn();
+      await waitFor(() =>
+        expect(screen.getByText('Add this backend to iCloud Keychain?')).toBeTruthy(),
+      );
+
+      ipcMocks.invoke.mockImplementation(async (channel: string) => {
+        if (channel === 'connections:publish-self') throw new Error('keychain write failed');
+        return { ...ipcMocks.selfState };
+      });
+      const dialog = screen.getByRole('dialog');
+      await fireEvent.click(within(dialog).getByRole('button', { name: 'Add to iCloud Keychain' }));
+
+      await waitFor(() => {
+        expect(mockToast.error).toHaveBeenCalledWith(
+          expect.stringContaining('keychain write failed'),
+        );
+      });
+      expect(screen.getByText('Add this backend to iCloud Keychain?')).toBeTruthy();
+    });
+
+    it('shows the publish row with a re-publish label when suppressed', async () => {
+      // Suppressed + sync on: no auto-modal, but the explicit button offers
+      // re-publish (spec: re-publishing clears the suppression, button-only).
+      ipcMocks.selfState = { published: false, suppressed: true };
+      await toggleOn();
+
+      const button = await waitFor(() => screen.getByRole('button', { name: 'Re-publish' }));
+      await fireEvent.click(button);
+
+      await waitFor(() => {
+        expect(ipcMocks.invoke).toHaveBeenCalledWith('connections:publish-self');
+        expect(mockToast.success).toHaveBeenCalled();
+      });
+      // Once published, the row is gone.
+      await waitFor(() => {
+        expect(screen.queryByRole('button', { name: 'Re-publish' })).toBeNull();
+      });
     });
   });
 });

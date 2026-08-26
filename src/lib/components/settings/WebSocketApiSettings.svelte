@@ -40,7 +40,17 @@
   import { appClient } from '$lib/client';
   import { m } from '$shared/paraglide/messages.js';
   import { selectActiveConnectionId } from '$store/renderer/slices/connections/connections-selectors';
+  import {
+    loadKeychainSyncStateRequested,
+    setKeychainSyncEnabledRequested,
+  } from '$store/renderer/slices/connections/connections-slice';
+  import { store as appStore } from '$store/renderer/store';
+  import { IPC_CHANNELS } from '$shared/ipc-registry';
   import { LOCAL_CONNECTION_ID } from '$shared/types/connections';
+  import type { PublishSelfResult, SelfPublishedStateResult } from '$shared/types/connections';
+  import PublishSelfBackendModal from '$lib/components/modals/PublishSelfBackendModal.svelte';
+
+  const CONNECTIONS = IPC_CHANNELS.CONNECTIONS;
 
   const activeConnectionId$ = selectActiveConnectionId();
   const isRemote = $derived($activeConnectionId$ !== LOCAL_CONNECTION_ID);
@@ -63,6 +73,17 @@
   let showQr = $state(false);
   let qrDataUrl = $state('');
   let qrTimer: ReturnType<typeof setTimeout> | null = null;
+
+  // Publish-self state (spec: offer to put this backend into iCloud Keychain
+  // when the WSS API is enabled). Loaded alongside the WSS status; fail-soft —
+  // when it cannot be read, neither the modal nor the button appears.
+  let publishStateLoaded = $state(false);
+  let syncSupported = $state(false);
+  let syncEnabled = $state(false);
+  let selfPublished = $state(false);
+  let publishSuppressed = $state(false);
+  let showPublishModal = $state(false);
+  let publishBusy = $state(false);
 
   const maskedToken = $derived(
     token ? '•'.repeat(Math.max(0, token.length - 8)) + token.slice(-8) : '',
@@ -110,6 +131,7 @@
         certFingerprint = info.certFingerprint;
         localIps = info.localIps;
         _hostname = info.hostname;
+        await refreshPublishState();
       }
     } catch (error) {
       toast.error(
@@ -141,6 +163,7 @@
       enabled = checked;
       if (checked) {
         await loadStatus();
+        maybeOfferPublish();
       }
     } catch (error) {
       toast.error(
@@ -149,6 +172,94 @@
         }),
       );
       enabled = !checked;
+    }
+  }
+
+  function getApi(): Window['electronAPI'] | undefined {
+    return typeof window !== 'undefined' ? window.electronAPI : undefined;
+  }
+
+  /** Load keychain-sync + self-published state (gates the modal and button). */
+  async function refreshPublishState() {
+    const api = getApi();
+    if (!api) return;
+    try {
+      const [sync, self] = await Promise.all([
+        appStore.dispatch(loadKeychainSyncStateRequested()).promise,
+        api.invoke(CONNECTIONS.SELF_PUBLISHED_STATE) as Promise<SelfPublishedStateResult>,
+      ]);
+      syncSupported = sync.supported;
+      syncEnabled = sync.enabled;
+      selfPublished = self.published;
+      publishSuppressed = self.suppressed;
+      publishStateLoaded = true;
+    } catch {
+      // Fail-soft: without a readable state, offer neither modal nor button.
+      publishStateLoaded = false;
+    }
+  }
+
+  /**
+   * After a successful toggle-on on the local connection: offer to publish
+   * this backend, asked every toggle-on (no decline persistence). Never on
+   * non-macOS, when a self entry already exists, or when the "do not
+   * auto-publish" marker is set (re-publishing is button-only).
+   */
+  function maybeOfferPublish() {
+    if (isRemote || !publishStateLoaded) return;
+    if (syncSupported && !selfPublished && !publishSuppressed) showPublishModal = true;
+  }
+
+  async function publishSelf() {
+    const api = getApi();
+    if (!api) throw new Error('electronAPI is not available');
+    await (api.invoke(CONNECTIONS.PUBLISH_SELF) as Promise<PublishSelfResult>);
+    selfPublished = true;
+    publishSuppressed = false;
+    toast.success(m.settings_wsApi_publishSelf_success());
+  }
+
+  async function handlePublishConfirm() {
+    try {
+      publishBusy = true;
+      if (!syncEnabled) {
+        try {
+          const sync = await appStore.dispatch(setKeychainSyncEnabledRequested(true)).promise;
+          syncEnabled = sync.enabled;
+        } catch (error) {
+          toast.error(
+            m.settings_wsApi_publishSelf_syncEnableError({
+              error: error instanceof Error ? error.message : String(error),
+            }),
+          );
+          return;
+        }
+      }
+      await publishSelf();
+      showPublishModal = false;
+    } catch (error) {
+      toast.error(
+        m.settings_wsApi_publishSelf_error({
+          error: error instanceof Error ? error.message : String(error),
+        }),
+      );
+    } finally {
+      publishBusy = false;
+    }
+  }
+
+  async function handlePublishButton() {
+    try {
+      publishBusy = true;
+      await publishSelf();
+    } catch (error) {
+      toast.error(
+        m.settings_wsApi_publishSelf_error({
+          error: error instanceof Error ? error.message : String(error),
+        }),
+      );
+    } finally {
+      publishBusy = false;
     }
   }
 
@@ -374,6 +485,33 @@
           </div>
         </section>
 
+        <!-- Publish this backend to iCloud Keychain (local + macOS + sync on
+             + not currently published; re-publish clears the suppression) -->
+        {#if publishStateLoaded && syncSupported && syncEnabled && !selfPublished}
+          <section data-publish-self-row>
+            <div class="flex items-center justify-between">
+              <div>
+                <p class="text-sm font-medium text-foreground">
+                  {m.settings_wsApi_publishSelf_label()}
+                </p>
+                <p class="text-xs text-subtle mt-1">
+                  {m.settings_wsApi_publishSelf_description()}
+                </p>
+              </div>
+              <button
+                type="button"
+                onclick={handlePublishButton}
+                disabled={publishBusy}
+                class="px-3 py-1.5 text-sm font-medium text-foreground bg-muted hover:bg-muted/80 rounded-lg transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {publishSuppressed
+                  ? m.settings_wsApi_publishSelf_republish_label()
+                  : m.settings_wsApi_publishSelf_button_label()}
+              </button>
+            </div>
+          </section>
+        {/if}
+
         <!-- TLS Certificate Fingerprint -->
         {#if certFingerprint}
           <section>
@@ -434,6 +572,13 @@
     {/if}
   {/if}
 </div>
+
+<PublishSelfBackendModal
+  bind:open={showPublishModal}
+  {syncEnabled}
+  busy={publishBusy}
+  onConfirm={handlePublishConfirm}
+/>
 
 {#if showQr}
   <!-- QR Code overlay -->
