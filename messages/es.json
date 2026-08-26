@@ -1717,6 +1717,7 @@
   "chat_agentCard_delegatedBy_label": "· Delegado por {name}",
   "chat_agentCard_menu_delete_label": "Eliminar",
   "chat_agentCard_menu_harnessVersion_label": "Harness v{version}",
+  "chat_agentCard_menu_specialist_label": "Especialista: {name}",
   "chat_harnessFeaturesModal_description": "Capacidades con las que se creó esta sesión de agente. Esta instantánea es de solo lectura y permanece fija durante toda la sesión.",
   "chat_harnessFeaturesModal_title": "Harness v{version}",
   "chat_agentCard_menu_open_label": "Abrir",

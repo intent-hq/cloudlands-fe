@@ -1717,6 +1717,7 @@
   "chat_agentCard_delegatedBy_label": "· 由 {name} 委派",
   "chat_agentCard_menu_delete_label": "刪除",
   "chat_agentCard_menu_harnessVersion_label": "Harness v{version}",
+  "chat_agentCard_menu_specialist_label": "專家：{name}",
   "chat_harnessFeaturesModal_description": "此智慧體工作階段建立時啟用的功能。此快照為唯讀，在工作階段存續期間保持不變。",
   "chat_harnessFeaturesModal_title": "Harness v{version}",
   "chat_agentCard_menu_open_label": "開啟",
