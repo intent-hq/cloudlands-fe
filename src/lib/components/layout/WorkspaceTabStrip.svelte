@@ -577,6 +577,7 @@
       'flex w-fit min-w-0 max-w-[100%] items-center gap-0.5 overflow-x-auto pl-3 pr-3 scrollbar-none',
       alignFirstTabToPanel ? '-ml-3' : '-ml-1',
       isOverflowing ? 'mr-1' : '-mr-2.5',
+      draggedWorkspaceId && 'cursor-grabbing',
     )}
     aria-label={m.layout_workspaceTabStrip_openSpaces_ariaLabel()}
     role="tablist"
@@ -610,18 +611,18 @@
             workspace.title?.trim() || m.layout_workspaceTabStrip_untitled_label()}
           {#if isDragged}
             <div
-              class="h-full w-full rounded-md border border-border bg-sidebar/35"
+              class="invisible h-full w-full"
               aria-hidden="true"
               data-workspace-tab-placeholder={workspaceId}
             ></div>
           {/if}
           <div
             class={cn(
-              'group/workspace-tab flex h-8 w-40 max-w-[40vw] shrink-0 items-center border transition-[background-color,border-color,box-shadow] motion-reduce:transition-none',
+              'group/workspace-tab flex h-8 w-40 max-w-[40vw] shrink-0 items-center border transition-[background-color,border-color] motion-reduce:transition-none',
               isCurrent
-                ? 'rounded-t-md border-border border-b-transparent bg-sidebar text-foreground'
+                ? 'rounded-t-md border-border border-b-0 bg-sidebar text-foreground shadow-none'
                 : 'rounded-md border-transparent text-muted-foreground hover:bg-sidebar/50 hover:text-foreground',
-              isDragged ? 'pointer-events-none fixed z-50 cursor-grabbing shadow-lg' : 'relative',
+              isDragged ? 'pointer-events-none fixed z-50 cursor-grabbing' : 'relative',
             )}
             data-workspace-tab={workspaceId}
             data-active={isCurrent}
@@ -692,7 +693,7 @@
               <button
                 type="button"
                 use:registerTabButton={workspaceId}
-                class="flex h-full w-full min-w-0 touch-none cursor-pointer select-none items-center gap-1 truncate rounded-[inherit] pl-3 pr-1 text-left text-xs font-medium outline-none! active:cursor-grabbing focus-visible:text-foreground forced-colors:focus-visible:text-[HighlightText]"
+                class="flex h-full w-full min-w-0 touch-none cursor-grab select-none items-center gap-1 truncate rounded-[inherit] pl-3 pr-1 text-left text-xs font-medium outline-none! active:cursor-grabbing focus-visible:text-foreground forced-colors:focus-visible:text-[HighlightText]"
                 onclick={(event) => handleTabClick(event, workspaceId)}
                 onkeydown={(event) => handleTabKeydown(event, workspaceId)}
                 role="tab"
@@ -739,9 +740,9 @@
         {:else}
           <div
             class={cn(
-              'group/workspace-tab relative flex h-8 w-40 max-w-[40vw] shrink-0 items-center border transition-[background-color,border-color,box-shadow,opacity,transform] motion-reduce:transition-none',
+              'group/workspace-tab relative flex h-8 w-40 max-w-[40vw] shrink-0 items-center border transition-[background-color,border-color,opacity,transform] motion-reduce:transition-none',
               isCurrent
-                ? 'rounded-t-md border-border border-b-transparent bg-sidebar text-foreground'
+                ? 'rounded-t-md border-border border-b-0 bg-sidebar text-foreground shadow-none'
                 : 'rounded-md border-transparent text-muted-foreground',
             )}
             data-workspace-tab={workspaceId}
@@ -817,6 +818,19 @@
 {/if}
 
 <style>
+  [data-workspace-tab][data-active='true'] {
+    border-bottom-width: 0;
+    box-shadow: none;
+  }
+
+  button[data-workspace-tab-hover-trigger] {
+    cursor: grab;
+  }
+
+  button[data-workspace-tab-hover-trigger]:active {
+    cursor: grabbing;
+  }
+
   button[data-workspace-tab-hover-trigger]:focus-visible [data-workspace-tab-title] {
     text-decoration-line: underline;
     text-decoration-thickness: 2px;

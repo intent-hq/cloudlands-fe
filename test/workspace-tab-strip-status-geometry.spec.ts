@@ -378,6 +378,23 @@ test('focus, close hover, and drag keep the right-side geometry stable', async (
   const status = active.locator('[data-workspace-tab-status-cluster]');
   const close = active.locator('[data-workspace-tab-close]');
   const before = await Promise.all([box(title), box(status), box(close)]);
+  const activeEdgeStyle = () =>
+    active.evaluate((node) => {
+      const style = getComputedStyle(node);
+      return {
+        borderBottomWidth: style.borderBottomWidth,
+        boxShadow: style.boxShadow,
+        position: style.position,
+        zIndex: style.zIndex,
+      };
+    });
+
+  expect(await activeEdgeStyle()).toEqual({
+    borderBottomWidth: '0px',
+    boxShadow: 'none',
+    position: 'relative',
+    zIndex: 'auto',
+  });
 
   const tab = active.locator('[role="tab"]');
   await tab.focus();
@@ -389,6 +406,12 @@ test('focus, close hover, and drag keep the right-side geometry stable', async (
   await page.mouse.down();
   await page.mouse.move(tabBox.x + 34, tabBox.y + tabBox.height / 2);
   await expect(active).toHaveAttribute('data-dragging', 'true');
+  expect(await activeEdgeStyle()).toEqual({
+    borderBottomWidth: '0px',
+    boxShadow: 'none',
+    position: 'fixed',
+    zIndex: '50',
+  });
   const [dragTitle, dragStatus, dragClose] = await Promise.all([
     box(title),
     box(status),
@@ -396,10 +419,27 @@ test('focus, close hover, and drag keep the right-side geometry stable', async (
   ]);
   expect(dragTitle.x + dragTitle.width).toBeLessThanOrEqual(dragStatus.x + 0.5);
   expect(dragStatus.x + dragStatus.width).toBeLessThanOrEqual(dragClose.x + 0.5);
-  await page.mouse.up();
+  await page.keyboard.press('Escape');
+  await expect(active).toHaveAttribute('data-dragging', 'false');
+  expect(await activeEdgeStyle()).toEqual({
+    borderBottomWidth: '0px',
+    boxShadow: 'none',
+    position: 'relative',
+    zIndex: 'auto',
+  });
+  expect(await Promise.all([box(title), box(status), box(close)])).toEqual(before);
+  expect(
+    await page.evaluate(() =>
+      (
+        globalThis as typeof globalThis & {
+          __workspaceTabScenario: { actions: Array<{ type: string }> };
+        }
+      ).__workspaceTabScenario.actions.filter((action) => action.type === 'move'),
+    ),
+  ).toEqual([]);
 });
 
-test('drag keeps one horizontal real tab and drops it at the proposed placeholder', async ({
+test('drag keeps one horizontal real tab and drops it at the invisible reserved slot', async ({
   page,
 }) => {
   await mountStrip(page, { viewport: 900, zoom: 1, reduced: false });
@@ -411,6 +451,11 @@ test('drag keeps one horizontal real tab and drops it at the proposed placeholde
   const startX = tabBounds.x + 28;
   const dragX = loading.x + loading.width + 4;
   const pointerY = origin.y + origin.height / 2;
+  const strip = page.locator('[data-workspace-tab-strip]');
+  const close = active.locator('[data-workspace-tab-close]');
+
+  await expect(activeTab).toHaveCSS('cursor', 'grab');
+  await expect(close).toHaveCSS('cursor', 'pointer');
 
   await page.mouse.move(startX, pointerY);
   await page.mouse.down();
@@ -423,11 +468,34 @@ test('drag keeps one horizontal real tab and drops it at the proposed placeholde
     expect(tracked.y).toBeCloseTo(origin.y, 1);
   }
 
-  const placeholder = page.locator('[data-workspace-tab-placeholder="active"]');
-  await expect(placeholder).toBeVisible();
+  const reservedSlot = page.locator('[data-workspace-tab-placeholder="active"]');
+  await expect(reservedSlot).toHaveCount(1);
+  await expect(reservedSlot).toBeHidden();
+  await expect(reservedSlot).toHaveCSS('visibility', 'hidden');
+  await expect(strip).toHaveCSS('cursor', 'grabbing');
   await expect(active).toHaveCSS('position', 'fixed');
+  await expect(active).toHaveCSS('border-bottom-width', '0px');
+  await expect(active).toHaveCSS('box-shadow', 'none');
   const dragged = await box(active);
-  const proposed = await box(placeholder);
+  const proposed = await box(reservedSlot);
+  expect({ width: proposed.width, height: proposed.height }).toEqual({
+    width: origin.width,
+    height: origin.height,
+  });
+  expect(
+    await reservedSlot.evaluate((node) => {
+      const style = getComputedStyle(node);
+      return {
+        backgroundColor: style.backgroundColor,
+        borderWidth: style.borderWidth,
+        outlineStyle: style.outlineStyle,
+      };
+    }),
+  ).toEqual({
+    backgroundColor: 'rgba(0, 0, 0, 0)',
+    borderWidth: '0px',
+    outlineStyle: 'none',
+  });
   expect(dragged.x).toBeCloseTo(origin.x + dragX - startX, 1);
   expect(dragged.y).toBeCloseTo(origin.y, 1);
   expect(
@@ -458,8 +526,14 @@ test('drag keeps one horizontal real tab and drops it at the proposed placeholde
     ),
   ).toBe('active');
 
-  await expect(placeholder).toHaveCount(0);
-  await expect(active).not.toHaveCSS('position', 'fixed');
+  await expect(reservedSlot).toHaveCount(0);
+  await expect(strip).toHaveCSS('cursor', 'auto');
+  await expect(activeTab).toHaveCSS('cursor', 'grab');
+  await expect(close).toHaveCSS('cursor', 'pointer');
+  await expect(active).toHaveCSS('position', 'relative');
+  await expect(active).toHaveCSS('z-index', 'auto');
+  await expect(active).toHaveCSS('border-bottom-width', '0px');
+  await expect(active).toHaveCSS('box-shadow', 'none');
   const dropped = await box(active);
   expect(dropped.x).toBeCloseTo(proposed.x, 1);
   expect(dropped.x).not.toBeCloseTo(origin.x, 1);

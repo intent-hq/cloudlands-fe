@@ -397,8 +397,9 @@ describe('WorkspaceTabStrip', () => {
     const placeholder = loadingTab.querySelector('[class~="bg-sidebar-foreground/10"]')!;
     expect(loadingTab.classList).toContain('rounded-t-md');
     expect(loadingTab.classList).toContain('border-border');
-    expect(loadingTab.classList).toContain('border-b-transparent');
+    expect(loadingTab.classList).toContain('border-b-0');
     expect(loadingTab.classList).toContain('bg-sidebar');
+    expect(loadingTab.classList).toContain('shadow-none');
     expect(loadingTab.classList).not.toContain('shadow-xs');
     expect(loadingTab.classList).not.toContain('backdrop-blur-xl');
     expect(placeholder.classList).toContain('bg-sidebar-foreground/10');
@@ -663,21 +664,38 @@ describe('WorkspaceTabStrip', () => {
     setTabGeometry();
     mocks.dispatch.mockClear();
     const source = document.querySelector<HTMLElement>('[data-workspace-tab="ws-1"]')!;
+    const tab = tabButton(source);
+    const strip = screen.getByRole('tablist', { name: 'Open spaces' });
 
-    await fireEvent(tabButton(source), makePointerEvent('pointerdown', 80));
-    await fireEvent(tabButton(source), makePointerEvent('pointermove', 82));
+    expect(tab.className).toContain('cursor-grab');
+    expect(source.querySelector<HTMLElement>('[data-workspace-tab-close]')!.className).toContain(
+      'cursor-pointer',
+    );
+
+    await fireEvent(tab, makePointerEvent('pointerdown', 80));
+    await fireEvent(tab, makePointerEvent('pointermove', 82));
     expect(source.className).not.toContain('fixed');
-    await fireEvent(tabButton(source), makePointerEvent('pointermove', 88));
+    expect(strip.className).not.toContain('cursor-grabbing');
+    await fireEvent(tab, makePointerEvent('pointermove', 88));
     expect(source.className).toContain('fixed');
+    expect(source.className).toContain('border-b-0');
+    expect(source.className).toContain('shadow-none');
+    expect(source.className).not.toContain('shadow-lg');
+    expect(strip.className).toContain('cursor-grabbing');
     expect(source.style.left).toBe('8px');
     expect(source.style.top).toBe('20px');
-    expect(document.querySelector('[data-workspace-tab-placeholder="ws-1"]')).toBeTruthy();
+    const reservedSlot = document.querySelector<HTMLElement>(
+      '[data-workspace-tab-placeholder="ws-1"]',
+    );
+    expect(reservedSlot).toBeTruthy();
+    expect(reservedSlot!.className).toContain('invisible');
+    expect(reservedSlot!.className).not.toMatch(/border|bg-|outline/);
 
-    await fireEvent(tabButton(source), makePointerEvent('pointermove', 120, -900));
+    await fireEvent(tab, makePointerEvent('pointermove', 120, -900));
     expect(source.style.left).toBe('40px');
     expect(source.style.top).toBe('20px');
 
-    await fireEvent(tabButton(source), makePointerEvent('pointermove', 250, 900));
+    await fireEvent(tab, makePointerEvent('pointermove', 250, 900));
 
     expect(source.style.left).toBe('170px');
     expect(source.style.top).toBe('20px');
@@ -789,11 +807,17 @@ describe('WorkspaceTabStrip', () => {
     expect(screen.getByText('Moved Alpha to position 3')).toBeTruthy();
     expect(renderedTabOrder()).toEqual(['ws-2', 'ws-3', 'ws-1']);
     expect(source.className).not.toContain('fixed');
+    expect(source.className).toContain('border-b-0');
+    expect(source.className).toContain('shadow-none');
+    expect(source.className).not.toContain('shadow-lg');
     expect(source.className).not.toContain(
       'transition-[background-color,border-color,box-shadow,opacity,transform]',
     );
     expect(source.style.left).toBe('');
     expect(document.querySelector('[data-workspace-tab-placeholder]')).toBeNull();
+    expect(screen.getByRole('tablist', { name: 'Open spaces' }).className).not.toContain(
+      'cursor-grabbing',
+    );
   });
 
   it('moves the final tab to the first endpoint with one persisted action', async () => {
@@ -836,6 +860,12 @@ describe('WorkspaceTabStrip', () => {
 
     expect(renderedTabOrder()).toEqual(['ws-1', 'ws-2', 'ws-3']);
     expect(document.querySelector('[data-workspace-tab-placeholder]')).toBeNull();
+    expect(source.className).toContain('border-b-0');
+    expect(source.className).toContain('shadow-none');
+    expect(source.className).not.toContain('shadow-lg');
+    expect(screen.getByRole('tablist', { name: 'Open spaces' }).className).not.toContain(
+      'cursor-grabbing',
+    );
     expect(
       mocks.dispatch.mock.calls.some(([action]) => action.type === 'tabState/moveWorkspace'),
     ).toBe(false);
