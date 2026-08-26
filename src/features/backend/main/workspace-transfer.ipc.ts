@@ -13,7 +13,7 @@
 
 import { createWriteStream, promises as fs } from 'node:fs';
 import type { WriteStream } from 'node:fs';
-import { BrowserWindow, dialog, ipcMain } from 'electron';
+import { BrowserWindow, dialog, ipcMain, webContents } from 'electron';
 import { Logger } from '$shared/logger';
 import { IPC_CHANNELS } from '$shared/ipc-registry';
 import type {
@@ -102,6 +102,13 @@ async function openFileSink(filePath: string): Promise<FileSink> {
   };
 }
 
+/** A session owner is gone once its WebContents no longer exists (window
+ * closed) — its leftover session is then released for other windows. */
+function isOwnerGone(ownerId: number): boolean {
+  const contents = webContents.fromId(ownerId);
+  return !contents || contents.isDestroyed();
+}
+
 function getRelay(): WorkspaceTransferRelay {
   if (!relay) {
     relay = createWorkspaceTransferRelay({
@@ -109,6 +116,7 @@ function getRelay(): WorkspaceTransferRelay {
       showSaveDialog,
       openFileSink,
       broadcastProgress,
+      isOwnerGone,
       logger: {
         info: (msg, meta) => logger.info(msg, meta),
         warn: (msg, meta) => logger.warn(msg, meta),
@@ -135,17 +143,17 @@ export function registerWorkspaceTransferHandlers(): void {
     } catch (error) {
       return { success: false, error: error instanceof Error ? error.message : String(error) };
     }
-    return getRelay().start(params, source);
+    return getRelay().start(params, source, event.sender.id);
   });
 
-  ipcMain.handle(TRANSFER.FINALIZE, async (_event, params: TransferFinalizeParams) => {
+  ipcMain.handle(TRANSFER.FINALIZE, async (event, params: TransferFinalizeParams) => {
     if (!params || typeof params.archiveSource !== 'boolean') {
       return { success: false, error: 'archiveSource is required' };
     }
-    return getRelay().finalize(params);
+    return getRelay().finalize(params, event.sender.id);
   });
 
-  ipcMain.handle(TRANSFER.CANCEL, async () => {
-    return getRelay().cancel();
+  ipcMain.handle(TRANSFER.CANCEL, async (event) => {
+    return getRelay().cancel(event.sender.id);
   });
 }
