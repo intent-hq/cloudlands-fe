@@ -113,6 +113,8 @@ describe('WorkspaceTokenUsage', () => {
     const details = document.getElementById(detailsId!);
     expect(details).not.toBeNull();
     expect(details?.getAttribute('aria-labelledby')).toBe('workspace-token-usage-title-ws-1');
+    expect(details?.parentElement).toBe(document.body);
+    expect(screen.getByTestId('workspace-token-usage').contains(details)).toBe(false);
 
     await fireEvent.keyDown(document, { key: 'Escape' });
     expect(disclosure.getAttribute('aria-expanded')).toBe('false');
@@ -202,7 +204,7 @@ describe('WorkspaceTokenUsage', () => {
     await renderExpandedTokenUsage();
 
     const row = screen.getByTestId('workspace-token-usage');
-    expect(visibleText(row)).toContain('9.4M processed');
+    expect(visibleText(screen.getByTestId('token-usage-details'))).toContain('9.4M processed');
     expect(
       screen.getByTestId('token-usage-disclosure').querySelector('[aria-hidden="true"]')
         ?.textContent,
