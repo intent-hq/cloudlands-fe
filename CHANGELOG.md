@@ -4,6 +4,25 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.98.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.97.1...v2.98.0) (2026-08-26)
+
+
+### 🚀 Features
+
+* adopt slim note.list projection + targeted note.get refetch ([#1750](https://github.com/intent-hq/cloudlands-fe/issues/1750)) ([ffc42ab](https://github.com/intent-hq/cloudlands-fe/commit/ffc42abd3c7a43483c3fc97589cbd605d9a208d0))
+* publish self backend to iCloud Keychain when WSS API is enabled ([#1744](https://github.com/intent-hq/cloudlands-fe/issues/1744)) ([f03009b](https://github.com/intent-hq/cloudlands-fe/commit/f03009b91c1415a1f9a45860f7704d5472535555))
+* show queued-to-merge status on the monitored-PR row ([#1747](https://github.com/intent-hq/cloudlands-fe/issues/1747)) ([7e57536](https://github.com/intent-hq/cloudlands-fe/commit/7e5753631de6452c59f3ee7466f888adccf996f9))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.8.1 ([#1748](https://github.com/intent-hq/cloudlands-fe/issues/1748)) ([7580336](https://github.com/intent-hq/cloudlands-fe/commit/75803367ff9754497d823ed502ff2a698da97826))
+* bump intentd sidecar to v0.8.2 ([#1755](https://github.com/intent-hq/cloudlands-fe/issues/1755)) ([99aea27](https://github.com/intent-hq/cloudlands-fe/commit/99aea27d61d2d4a32efa305b628ad548d0e26e94))
+* filter WorkspaceHoverCard unread avatars to top-level agents ([#1753](https://github.com/intent-hq/cloudlands-fe/issues/1753)) ([0ed00b0](https://github.com/intent-hq/cloudlands-fe/commit/0ed00b0a0912852d34f2c58ccce4c0b0b64fd413))
+* keep automated wake header on one line with ellipsis truncation ([#1751](https://github.com/intent-hq/cloudlands-fe/issues/1751)) ([cea7233](https://github.com/intent-hq/cloudlands-fe/commit/cea7233da5128b757f79a14011e09254f7e23fbb))
+* reorder Status view sections to canonical lifecycle order ([#1752](https://github.com/intent-hq/cloudlands-fe/issues/1752)) ([b95bfbb](https://github.com/intent-hq/cloudlands-fe/commit/b95bfbb804ab950127459c67dfc496b9468d181f))
+* resolve remote localhost links with originating backend ([#1719](https://github.com/intent-hq/cloudlands-fe/issues/1719)) ([84fbf86](https://github.com/intent-hq/cloudlands-fe/commit/84fbf86433a94d8b34d0d91d7ebfde7da0b5dcb8))
+
 ## [2.97.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.97.0...v2.97.1) (2026-08-26)
 
 
