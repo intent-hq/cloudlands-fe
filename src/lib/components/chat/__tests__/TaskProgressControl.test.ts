@@ -16,6 +16,33 @@ const tasks: TaskProgressItem[] = [
   { id: 'done-2', title: 'Add the fallback', status: 'completed' },
 ];
 
+const allStatusTasks: TaskProgressItem[] = [
+  { id: 'pending', title: 'Inspect the panel', status: 'pending' },
+  { id: 'running', title: 'Move the task progress', status: 'running' },
+  { id: 'completed', title: 'Map the native plan', status: 'completed' },
+  { id: 'waiting', title: 'Wait for review', status: 'waiting' },
+  { id: 'discussion', title: 'Discuss the approach', status: 'discussion_needed' },
+  { id: 'blocked', title: 'Resolve the blocker', status: 'blocked' },
+  { id: 'review', title: 'Review the result', status: 'review_required' },
+];
+
+const expectedStatusClasses = {
+  pending:
+    'bg-[hsl(var(--agent-avatar-surface-neutral))] text-[hsl(var(--agent-avatar-foreground))]',
+  running:
+    'bg-[hsl(var(--agent-avatar-surface-active))] text-[hsl(var(--agent-avatar-foreground))]',
+  completed:
+    'bg-[hsl(var(--agent-avatar-surface-completed))] text-[hsl(var(--agent-avatar-foreground-completed))]',
+  waiting:
+    'bg-[hsl(var(--agent-avatar-surface-waiting))] text-[hsl(var(--agent-avatar-foreground))]',
+  discussion_needed:
+    'bg-[hsl(var(--agent-avatar-surface-attention))] text-[hsl(var(--agent-avatar-foreground))]',
+  blocked:
+    'bg-[hsl(var(--agent-avatar-surface-failed))] text-[hsl(var(--agent-avatar-foreground))]',
+  review_required:
+    'bg-[hsl(var(--workspace-status-unread))] text-[hsl(var(--agent-avatar-foreground))]',
+} as const;
+
 beforeEach(() => {
   Object.defineProperty(Element.prototype, 'getAnimations', {
     configurable: true,
@@ -35,6 +62,7 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  document.documentElement.classList.remove('dark', 'light');
   vi.restoreAllMocks();
 });
 
@@ -54,7 +82,8 @@ describe('TaskProgressControl', () => {
     expect(closest).toHaveBeenCalledWith('[data-panel-id]');
     expect(document.activeElement).toBe(trigger);
     expect(dialog).toBeTruthy();
-    expect(dialog.className).toContain('type-body');
+    expect(dialog.className).toContain('type-caption');
+    expect(dialog.className).not.toContain('type-body');
     expect(dialog.className).toContain('w-72');
     expect(dialog.className).toContain('rounded-md');
     expect(dialog.className).toContain('border-border');
@@ -73,10 +102,15 @@ describe('TaskProgressControl', () => {
     expect(screen.getByText('Move the task progress').className).toContain('shimmer-text');
     expect(screen.getByLabelText('Complete: Map the native plan')).toBeTruthy();
     expect(
-      screen.getAllByTestId('task-progress-row').every((row) => row.className.includes('h-7')),
-    ).toBe(true);
-    expect(
-      screen.getAllByTestId('task-progress-row').every((row) => !row.className.includes('h-8')),
+      screen
+        .getAllByTestId('task-progress-row')
+        .every(
+          (row) =>
+            row.className.includes('min-h-7') &&
+            row.className.includes('items-start') &&
+            row.className.includes('py-1') &&
+            !row.className.split(' ').includes('h-7'),
+        ),
     ).toBe(true);
     expect(screen.getByText('Inspect the panel').className).toContain('text-popover-foreground');
     expect(screen.getByText('Inspect the panel').className).not.toContain('text-muted-foreground');
@@ -146,19 +180,15 @@ describe('TaskProgressControl', () => {
     expect(
       stackItems.map((item) => item.style.zIndex || item.className.match(/z-[0-9]+/)?.[0]),
     ).toEqual(['z-0', '1', '2', '6', '5']);
-    expect(icons[0].className).toContain('bg-primary text-primary-foreground');
+    expect(icons[0].className).toContain(expectedStatusClasses.completed);
     expect(icons[0].dataset.completedCount).toBe('2');
-    expect(icons[1].className).toContain('bg-muted');
-    expect(icons[2].className).toContain('bg-muted');
-    expect(icons[3].className).toContain('primary');
-    expect(icons.at(-1)?.className).toContain('bg-primary/20 text-primary');
-    expect(icons.every((icon) => !/(green|blue|amber|red|violet)-/.test(icon.className))).toBe(
-      true,
-    );
+    expect(icons[1].className).toContain(expectedStatusClasses.pending);
+    expect(icons[2].className).toContain(expectedStatusClasses.waiting);
+    expect(icons[3].className).toContain(expectedStatusClasses.running);
+    expect(icons.at(-1)?.innerHTML).toContain('motion-safe:animate-spin');
     expect(icons.at(-1)?.innerHTML).toContain('motion-reduce:animate-none');
     const overflow = screen.getByTestId('task-progress-overflow-indicator');
-    expect(overflow.className).toContain('bg-muted');
-    expect(overflow.className).toContain('text-muted-foreground/70');
+    expect(overflow.className).toContain(expectedStatusClasses.pending);
     expect(overflow.dataset.overflowCount).toBe('3');
     const trigger = screen.getByTestId('task-progress-trigger');
     expect(trigger.className).toContain('h-(--row-action-target-compact)');
@@ -171,26 +201,80 @@ describe('TaskProgressControl', () => {
   });
 
   it('reuses the compact status indicators in every flat row', async () => {
-    const statusTasks: TaskProgressItem[] = [
-      ...tasks,
-      { id: 'discussion', title: 'Discuss the approach', status: 'discussion_needed' },
-      { id: 'blocked', title: 'Resolve the blocker', status: 'blocked' },
-      { id: 'review', title: 'Review the result', status: 'review_required' },
-    ];
-    render(TaskProgressControl, { props: { tasks: statusTasks } });
+    render(TaskProgressControl, { props: { tasks: allStatusTasks } });
     screen.getByTestId('task-progress-trigger').focus();
     await screen.findByRole('dialog', { name: 'Agent tasks' });
 
     const rowIcons = screen.getAllByTestId('task-progress-row-status-icon');
-    expect(rowIcons).toHaveLength(statusTasks.length);
+    expect(rowIcons).toHaveLength(allStatusTasks.length);
     expect(rowIcons.every((icon) => icon.className.includes('size-3.5'))).toBe(true);
     expect(rowIcons.every((icon) => !icon.className.includes('size-4'))).toBe(true);
     expect(rowIcons.map((icon) => icon.dataset.taskStatus)).toEqual(
-      statusTasks
+      allStatusTasks
         .filter((task) => task.status !== 'completed')
-        .concat(statusTasks.filter((task) => task.status === 'completed'))
+        .concat(allStatusTasks.filter((task) => task.status === 'completed'))
         .map((task) => task.status),
     );
+    for (const icon of rowIcons) {
+      const status = icon.dataset.taskStatus as keyof typeof expectedStatusClasses;
+      expect(icon.className).toContain(expectedStatusClasses[status]);
+      expect(icon.className).toContain('mt-0.5');
+    }
+  });
+
+  it.each(['light', 'dark'] as const)(
+    'uses exact opaque semantic token mappings without primary-green styling in %s mode',
+    async (theme) => {
+      document.documentElement.classList.toggle('dark', theme === 'dark');
+      document.documentElement.classList.toggle('light', theme === 'light');
+      render(TaskProgressControl, { props: { tasks: allStatusTasks } });
+      screen.getByTestId('task-progress-trigger').focus();
+      await screen.findByRole('dialog', { name: 'Agent tasks' });
+
+      const indicators = [
+        ...screen.getAllByTestId('task-progress-status-icon'),
+        ...screen.getAllByTestId('task-progress-row-status-icon'),
+        screen.getByTestId('task-progress-overflow-indicator'),
+      ];
+      for (const indicator of indicators) {
+        const backgroundClass = indicator.className
+          .split(' ')
+          .find((className) => className.startsWith('bg-'));
+        expect(backgroundClass).toMatch(
+          /^bg-\[hsl\(var\(--(?:agent-avatar-surface-[a-z-]+|workspace-status-unread)\)\)\]$/,
+        );
+        expect(backgroundClass).not.toContain('/');
+        expect(indicator.className).not.toMatch(/(?:primary|green|opacity-)/);
+      }
+    },
+  );
+
+  it('clamps normal and shimmered titles to two lines with full accessible text', async () => {
+    const longPendingTitle = 'Inspect every part of the panel before completing the visual review';
+    const longRunningTitle = 'Move the running task progress title into exactly two compact lines';
+    render(TaskProgressControl, {
+      props: {
+        tasks: [
+          { id: 'long-pending', title: longPendingTitle, status: 'pending' },
+          { id: 'long-running', title: longRunningTitle, status: 'running' },
+        ],
+      },
+    });
+    screen.getByTestId('task-progress-trigger').focus();
+    await screen.findByRole('dialog', { name: 'Agent tasks' });
+
+    const pendingTitle = screen.getByText(longPendingTitle);
+    const runningShimmer = screen.getByText(longRunningTitle);
+    const runningTitle = runningShimmer.parentElement;
+    expect(pendingTitle.className).toContain('line-clamp-2');
+    expect(pendingTitle.className).not.toContain('truncate');
+    expect(runningTitle?.className).toContain('line-clamp-2');
+    expect(runningShimmer.className).toContain('line-clamp-2');
+    expect(runningShimmer.className).not.toContain('truncate');
+    expect(pendingTitle.getAttribute('title')).toBe(longPendingTitle);
+    expect(runningTitle?.getAttribute('title')).toBe(longRunningTitle);
+    expect(screen.getByLabelText(`Not Started: ${longPendingTitle}`)).toBeTruthy();
+    expect(screen.getByLabelText(`In Progress: ${longRunningTitle}`)).toBeTruthy();
   });
 
   it('shows exactly one solid completed disk when all tasks are complete', () => {
@@ -202,7 +286,7 @@ describe('TaskProgressControl', () => {
     expect(icons).toHaveLength(1);
     expect(icons[0].dataset.taskStatus).toBe('completed');
     expect(icons[0].dataset.completedCount).toBe('5');
-    expect(icons[0].className).toContain('bg-primary text-primary-foreground');
+    expect(icons[0].className).toContain(expectedStatusClasses.completed);
     expect(icons[0].className).not.toContain('border');
     expect(icons[0].className).not.toContain('shadow');
   });

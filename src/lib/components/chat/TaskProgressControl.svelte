@@ -69,13 +69,25 @@
   }
 
   function statusIndicatorClass(status: TaskProgressStatus): string {
-    if (status === 'completed') return 'bg-primary text-primary-foreground';
-    if (status === 'running') return 'bg-primary/20 text-primary';
-    if (status === 'discussion_needed') return 'bg-primary/15 text-primary/90';
-    if (status === 'blocked') return 'bg-primary/25 text-primary';
-    if (status === 'review_required') return 'bg-primary/10 text-primary/80';
-    if (status === 'waiting') return 'bg-muted text-muted-foreground/80';
-    return 'bg-muted text-muted-foreground/50';
+    if (status === 'completed') {
+      return 'bg-[hsl(var(--agent-avatar-surface-completed))] text-[hsl(var(--agent-avatar-foreground-completed))]';
+    }
+    if (status === 'running') {
+      return 'bg-[hsl(var(--agent-avatar-surface-active))] text-[hsl(var(--agent-avatar-foreground))]';
+    }
+    if (status === 'discussion_needed') {
+      return 'bg-[hsl(var(--agent-avatar-surface-attention))] text-[hsl(var(--agent-avatar-foreground))]';
+    }
+    if (status === 'blocked') {
+      return 'bg-[hsl(var(--agent-avatar-surface-failed))] text-[hsl(var(--agent-avatar-foreground))]';
+    }
+    if (status === 'review_required') {
+      return 'bg-[hsl(var(--workspace-status-unread))] text-[hsl(var(--agent-avatar-foreground))]';
+    }
+    if (status === 'waiting') {
+      return 'bg-[hsl(var(--agent-avatar-surface-waiting))] text-[hsl(var(--agent-avatar-foreground))]';
+    }
+    return 'bg-[hsl(var(--agent-avatar-surface-neutral))] text-[hsl(var(--agent-avatar-foreground))]';
   }
 
   function handleOpenChange(nextOpen: boolean) {
@@ -90,9 +102,14 @@
   }
 </script>
 
-{#snippet statusIndicator(status: TaskProgressStatus, testId: string, completedCount?: number)}
+{#snippet statusIndicator(
+  status: TaskProgressStatus,
+  testId: string,
+  completedCount?: number,
+  className = '',
+)}
   <span
-    class="inline-flex size-3.5 shrink-0 items-center justify-center rounded-full leading-none {statusIndicatorClass(
+    class="inline-flex size-3.5 shrink-0 items-center justify-center rounded-full leading-none {className} {statusIndicatorClass(
       status,
     )}"
     aria-hidden="true"
@@ -111,15 +128,15 @@
 {/snippet}
 
 {#snippet taskRowContent(task: TaskProgressItem)}
-  {@render statusIndicator(task.status, 'task-progress-row-status-icon')}
+  {@render statusIndicator(task.status, 'task-progress-row-status-icon', undefined, 'mt-0.5')}
   <span
-    class="min-w-0 truncate {task.status === 'completed'
+    class="line-clamp-2 min-w-0 flex-1 {task.status === 'completed'
       ? 'text-muted-foreground'
       : 'text-popover-foreground'}"
     title={task.title}
   >
     {#if task.status === 'running'}
-      <ShimmerOverlay duration={3} class="block min-w-0 truncate">{task.title}</ShimmerOverlay>
+      <ShimmerOverlay duration={3} class="line-clamp-2 min-w-0">{task.title}</ShimmerOverlay>
     {:else}
       {task.title}
     {/if}
@@ -178,7 +195,7 @@
                 data-task-status="overflow"
               >
                 <span
-                  class="inline-flex size-3.5 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground/70 leading-none"
+                  class="inline-flex size-3.5 shrink-0 items-center justify-center rounded-full bg-[hsl(var(--agent-avatar-surface-neutral))] text-[hsl(var(--agent-avatar-foreground))] leading-none"
                   aria-hidden="true"
                   data-testid="task-progress-overflow-indicator"
                   data-overflow-count={overflowCount}
@@ -202,7 +219,7 @@
         collisionPadding={8}
         trapFocus={false}
         onOpenAutoFocus={(event) => event.preventDefault()}
-        class="type-body z-(--layer-popover) flex max-h-[var(--bits-popover-content-available-height)] w-72 max-w-[min(calc(100vw-var(--space-4)),calc(var(--bits-popover-content-available-width)-var(--space-2)))] flex-col overflow-hidden rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-(--elevation-overlay) outline-none"
+        class="type-caption z-(--layer-popover) flex max-h-[var(--bits-popover-content-available-height)] w-72 max-w-[min(calc(100vw-var(--space-4)),calc(var(--bits-popover-content-available-width)-var(--space-2)))] flex-col overflow-hidden rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-(--elevation-overlay) outline-none"
         data-testid="task-progress-popover"
       >
         <div
@@ -213,7 +230,7 @@
           <ul class="min-w-0" data-testid="task-progress-list">
             {#each orderedTasks as task (task.id)}
               <li
-                class="flex h-7 min-w-0 items-center gap-2 overflow-hidden rounded-md px-2 text-popover-foreground transition-colors duration-[var(--motion-fast)] motion-reduce:transition-none"
+                class="flex min-h-7 min-w-0 items-start gap-2 overflow-hidden rounded-md px-2 py-1 text-popover-foreground transition-colors duration-[var(--motion-fast)] motion-reduce:transition-none"
                 data-testid="task-progress-row"
                 data-task-id={task.id}
                 data-task-status={task.status}
