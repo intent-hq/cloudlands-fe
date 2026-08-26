@@ -310,8 +310,7 @@ type ParsedByteRange =
   { kind: 'closed'; start: number; end: number | null } | { kind: 'suffix'; length: number };
 
 type WorkspaceFileRequestAuthorization =
-  | { ok: true; corsHeaders: Record<string, string> }
-  | { ok: false; reason: string };
+  { ok: true; corsHeaders: Record<string, string> } | { ok: false; reason: string };
 
 function trustedRendererOrigin(value: string): string | null {
   try {

@@ -400,9 +400,7 @@ describe('setupWorkspaceFileProtocolHandler', () => {
         }),
       );
       expect(allowed.status).toBe(200);
-      expect(allowed.headers.get('Access-Control-Allow-Origin')).toBe(
-        'http://127.0.0.1:5197',
-      );
+      expect(allowed.headers.get('Access-Control-Allow-Origin')).toBe('http://127.0.0.1:5197');
 
       const denied = await getHandler()(
         new Request('workspace-file://ws-1/dev.png', {

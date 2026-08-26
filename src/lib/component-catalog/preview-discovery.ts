@@ -72,7 +72,7 @@ export interface ActivePreview {
   status: 'ready';
 }
 
-export interface PreviewBrowserApi {
+interface PreviewBrowserApi {
   list: () => string[];
   states: (slug: string) => Promise<string[]>;
   current: () => ActivePreview | null;
