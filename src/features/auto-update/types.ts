@@ -6,7 +6,7 @@
 
 // 'disabled' is a pseudo-channel: it is persisted like the others but has no
 // feed (no /disabled directory exists) and suppresses all update activity.
-const UPDATE_CHANNELS = ['stable', 'beta', 'alpha', 'disabled'] as const;
+export const UPDATE_CHANNELS = ['stable', 'beta', 'alpha', 'disabled'] as const;
 
 export type UpdateChannel = (typeof UPDATE_CHANNELS)[number];
 
