@@ -524,7 +524,9 @@ export function createWorkspaceTransferRelay(deps: TransferRelayDeps): Workspace
     } catch (error) {
       return { success: false, error: errText(error), resumeFailed };
     }
-    session = null;
+    // An owner-gone takeover may have replaced the session mid-await; only
+    // clear the session this finalize actually acted on.
+    if (session === current) session = null;
     return { success: true, ...(resumeFailed.length > 0 ? { resumeFailed } : {}) };
   }
 

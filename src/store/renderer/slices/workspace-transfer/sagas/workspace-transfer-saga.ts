@@ -21,6 +21,7 @@ import { formatDate } from '$lib/i18n/format';
 import { m } from '$shared/paraglide/messages.js';
 import { IPC_CHANNELS } from '$shared/ipc-registry';
 import type {
+  SessionOwnershipErrorCode,
   TransferFinalizeResult,
   TransferProgressEvent,
   TransferStartResult,
@@ -58,7 +59,7 @@ function toMessage(error: unknown): string {
 }
 
 /** Localized message for a failed relay result, keyed by machine code. */
-function failureMessage(result: { error?: string; code?: string }): string {
+function failureMessage(result: { error?: string; code?: SessionOwnershipErrorCode }): string {
   if (result.code === 'not-session-owner') return m.workspace_transfer_notSessionOwner_error();
   return result.error ?? m.workspace_transfer_unknown_error();
 }
