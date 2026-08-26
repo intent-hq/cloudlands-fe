@@ -136,29 +136,20 @@ function setTabGeometry() {
   }
 }
 
-function makeDataTransfer() {
-  return {
-    effectAllowed: 'none',
-    dropEffect: 'none',
-    setData: vi.fn(),
-    getData: vi.fn(() => 'ws-1'),
-    setDragImage: vi.fn(),
-  };
-}
-
-function makeDragEvent(
-  type: string,
-  dataTransfer: ReturnType<typeof makeDataTransfer>,
-  clientX: number,
-  clientY = 20,
-) {
+function makePointerEvent(type: string, clientX: number, clientY = 20, pointerId = 1) {
   const event = new Event(type, { bubbles: true, cancelable: true });
   Object.defineProperties(event, {
+    button: { value: 0 },
     clientX: { value: clientX },
     clientY: { value: clientY },
-    dataTransfer: { value: dataTransfer },
+    isPrimary: { value: true },
+    pointerId: { value: pointerId },
   });
   return event;
+}
+
+function tabButton(source: HTMLElement) {
+  return source.querySelector<HTMLElement>('[role="tab"]')!;
 }
 
 function renderedTabOrder() {
@@ -197,6 +188,9 @@ describe('WorkspaceTabStrip', () => {
         disconnect() {}
       },
     );
+    HTMLElement.prototype.setPointerCapture = vi.fn();
+    HTMLElement.prototype.hasPointerCapture = vi.fn(() => true);
+    HTMLElement.prototype.releasePointerCapture = vi.fn();
   });
 
   it('affirms tab status and full-surface activation in every required visual state', async () => {
@@ -668,22 +662,22 @@ describe('WorkspaceTabStrip', () => {
     render(WorkspaceTabStrip);
     setTabGeometry();
     mocks.dispatch.mockClear();
-    const strip = screen.getByRole('tablist', { name: 'Open spaces' });
     const source = document.querySelector<HTMLElement>('[data-workspace-tab="ws-1"]')!;
-    const dataTransfer = makeDataTransfer();
 
-    await fireEvent(source, makeDragEvent('dragstart', dataTransfer, 80));
-    expect(dataTransfer.setDragImage).toHaveBeenCalledOnce();
+    await fireEvent(tabButton(source), makePointerEvent('pointerdown', 80));
+    await fireEvent(tabButton(source), makePointerEvent('pointermove', 82));
+    expect(source.className).not.toContain('fixed');
+    await fireEvent(tabButton(source), makePointerEvent('pointermove', 88));
     expect(source.className).toContain('fixed');
-    expect(source.style.left).toBe('0px');
+    expect(source.style.left).toBe('8px');
     expect(source.style.top).toBe('20px');
     expect(document.querySelector('[data-workspace-tab-placeholder="ws-1"]')).toBeTruthy();
 
-    await fireEvent(strip, makeDragEvent('dragover', dataTransfer, 120, -900));
+    await fireEvent(tabButton(source), makePointerEvent('pointermove', 120, -900));
     expect(source.style.left).toBe('40px');
     expect(source.style.top).toBe('20px');
 
-    await fireEvent(strip, makeDragEvent('dragover', dataTransfer, 250, 900));
+    await fireEvent(tabButton(source), makePointerEvent('pointermove', 250, 900));
 
     expect(source.style.left).toBe('170px');
     expect(source.style.top).toBe('20px');
@@ -704,18 +698,32 @@ describe('WorkspaceTabStrip', () => {
     expect(screen.getByRole('tab', { name: /Alpha/ }).getAttribute('aria-selected')).toBe('true');
   });
 
-  it('uses the pointer-down grab offset when native dragstart omits coordinates', async () => {
+  it('opens a tab once when pointer movement stays below the drag threshold', async () => {
     render(WorkspaceTabStrip);
     setTabGeometry();
-    const strip = screen.getByRole('tablist', { name: 'Open spaces' });
+    mocks.dispatch.mockClear();
     const source = document.querySelector<HTMLElement>('[data-workspace-tab="ws-1"]')!;
-    const dataTransfer = makeDataTransfer();
 
-    await fireEvent.pointerDown(source, { button: 0, clientX: 30 });
-    await fireEvent(source, makeDragEvent('dragstart', dataTransfer, 0, 0));
-    expect(source.style.left).toBe('0px');
+    await fireEvent(tabButton(source), makePointerEvent('pointerdown', 80));
+    await fireEvent(tabButton(source), makePointerEvent('pointermove', 82));
+    await fireEvent(tabButton(source), makePointerEvent('pointerup', 82));
 
-    await fireEvent(strip, makeDragEvent('dragover', dataTransfer, 100));
+    expect(mocks.dispatch).toHaveBeenCalledTimes(1);
+    expect(mocks.dispatch).toHaveBeenCalledWith({
+      type: 'tabState/openWorkspaceTab',
+      payload: ['ws-1'],
+    });
+    expect(mocks.goto).toHaveBeenCalledOnce();
+    expect(mocks.goto).toHaveBeenCalledWith('/workspace/ws-1');
+  });
+
+  it('uses the pointer-down grab offset after crossing the movement threshold', async () => {
+    render(WorkspaceTabStrip);
+    setTabGeometry();
+    const source = document.querySelector<HTMLElement>('[data-workspace-tab="ws-1"]')!;
+
+    await fireEvent(tabButton(source), makePointerEvent('pointerdown', 30));
+    await fireEvent(tabButton(source), makePointerEvent('pointermove', 100));
     expect(source.style.left).toBe('70px');
   });
 
@@ -732,7 +740,6 @@ describe('WorkspaceTabStrip', () => {
     };
     const strip = screen.getByRole('tablist', { name: 'Open spaces' });
     const source = document.querySelector<HTMLElement>('[data-workspace-tab="ws-2"]')!;
-    const dataTransfer = makeDataTransfer();
     Object.defineProperties(strip, {
       scrollLeft: { value: 100, writable: true },
       scrollWidth: { value: 800 },
@@ -740,14 +747,14 @@ describe('WorkspaceTabStrip', () => {
     });
     strip.getBoundingClientRect = () => makeRect(0, 0, 300);
 
-    await fireEvent(source, makeDragEvent('dragstart', dataTransfer, 242));
+    await fireEvent(tabButton(source), makePointerEvent('pointerdown', 242));
     mocks.dispatch.mockClear();
-    await fireEvent(strip, makeDragEvent('dragover', dataTransfer, 295));
+    await fireEvent(tabButton(source), makePointerEvent('pointermove', 295));
     runFrames(4);
     const rightEdgeScroll = strip.scrollLeft;
     expect(rightEdgeScroll).toBeGreaterThan(100);
 
-    await fireEvent(strip, makeDragEvent('dragover', dataTransfer, 5));
+    await fireEvent(tabButton(source), makePointerEvent('pointermove', 5));
     runFrames(3);
     expect(strip.scrollLeft).toBeLessThan(rightEdgeScroll);
     expect(
@@ -758,14 +765,12 @@ describe('WorkspaceTabStrip', () => {
   it('persists only the released order and leaves the dropped tab at that slot', async () => {
     render(WorkspaceTabStrip);
     setTabGeometry();
-    const strip = screen.getByRole('tablist', { name: 'Open spaces' });
     const source = document.querySelector<HTMLElement>('[data-workspace-tab="ws-1"]')!;
-    const dataTransfer = makeDataTransfer();
 
-    await fireEvent(source, makeDragEvent('dragstart', dataTransfer, 80));
+    await fireEvent(tabButton(source), makePointerEvent('pointerdown', 80));
     mocks.dispatch.mockClear();
-    await fireEvent(strip, makeDragEvent('dragover', dataTransfer, 430));
-    await fireEvent(strip, makeDragEvent('drop', dataTransfer, 430));
+    await fireEvent(tabButton(source), makePointerEvent('pointermove', 430));
+    await fireEvent(tabButton(source), makePointerEvent('pointerup', 430));
 
     expect(mocks.dispatch).not.toHaveBeenCalledWith({
       type: 'tabState/openWorkspaceTab',
@@ -794,16 +799,14 @@ describe('WorkspaceTabStrip', () => {
   it('moves the final tab to the first endpoint with one persisted action', async () => {
     render(WorkspaceTabStrip);
     setTabGeometry();
-    const strip = screen.getByRole('tablist', { name: 'Open spaces' });
     const source = document.querySelector<HTMLElement>('[data-workspace-tab="ws-3"]')!;
-    const dataTransfer = makeDataTransfer();
 
-    await fireEvent(source, makeDragEvent('dragstart', dataTransfer, 404));
+    await fireEvent(tabButton(source), makePointerEvent('pointerdown', 404));
     mocks.dispatch.mockClear();
-    await fireEvent(strip, makeDragEvent('dragover', dataTransfer, -20));
+    await fireEvent(tabButton(source), makePointerEvent('pointermove', -20));
     expect(renderedTabOrder()).toEqual(['ws-3', 'ws-1', 'ws-2']);
 
-    await fireEvent(strip, makeDragEvent('drop', dataTransfer, -20));
+    await fireEvent(tabButton(source), makePointerEvent('pointerup', -20));
 
     expect(
       mocks.dispatch.mock.calls
@@ -822,16 +825,14 @@ describe('WorkspaceTabStrip', () => {
   it('restores the original order without persistence when the drag is cancelled', async () => {
     render(WorkspaceTabStrip);
     setTabGeometry();
-    const strip = screen.getByRole('tablist', { name: 'Open spaces' });
     const source = document.querySelector<HTMLElement>('[data-workspace-tab="ws-1"]')!;
-    const dataTransfer = makeDataTransfer();
 
-    await fireEvent(source, makeDragEvent('dragstart', dataTransfer, 80));
+    await fireEvent(tabButton(source), makePointerEvent('pointerdown', 80));
     mocks.dispatch.mockClear();
-    await fireEvent(strip, makeDragEvent('dragover', dataTransfer, 430));
+    await fireEvent(tabButton(source), makePointerEvent('pointermove', 430));
     expect(renderedTabOrder()).toEqual(['ws-2', 'ws-3', 'ws-1']);
 
-    await fireEvent(source, makeDragEvent('dragend', dataTransfer, 430));
+    await fireEvent.keyDown(window, { key: 'Escape' });
 
     expect(renderedTabOrder()).toEqual(['ws-1', 'ws-2', 'ws-3']);
     expect(document.querySelector('[data-workspace-tab-placeholder]')).toBeNull();
@@ -871,13 +872,11 @@ describe('WorkspaceTabStrip', () => {
   it('does not expose stacked drop states at any vertical pointer position', async () => {
     render(WorkspaceTabStrip);
     setTabGeometry();
-    const strip = screen.getByRole('tablist', { name: 'Open spaces' });
     const source = document.querySelector<HTMLElement>('[data-workspace-tab="ws-1"]')!;
-    const dataTransfer = makeDataTransfer();
 
-    await fireEvent(source, makeDragEvent('dragstart', dataTransfer, 80));
-    await fireEvent(strip, makeDragEvent('dragover', dataTransfer, 250, -500));
-    await fireEvent(strip, makeDragEvent('dragover', dataTransfer, 250, 500));
+    await fireEvent(tabButton(source), makePointerEvent('pointerdown', 80));
+    await fireEvent(tabButton(source), makePointerEvent('pointermove', 250, -500));
+    await fireEvent(tabButton(source), makePointerEvent('pointermove', 250, 500));
 
     expect(document.querySelector('[data-workspace-drop-placement]')).toBeNull();
     expect(document.querySelector('[data-workspace-stack-preview]')).toBeNull();
