@@ -6052,6 +6052,8 @@
   "workspace_transfer_finalizing_message": "Finalizando…",
   "workspace_transfer_finalizeFailed_error": "No se pudo finalizar la transferencia: {error}",
   "workspace_transfer_unknown_error": "Error desconocido",
+  "workspace_transfer_notSessionOwner_error": "Esta transferencia se inició en otra ventana.",
+  "workspace_import_notSessionOwner_error": "Esta importación se inició en otra ventana.",
   "workspace_transfer_close_label": "Cerrar",
   "workspace_branchSelector_refreshBranches_ariaLabel": "Actualizar ramas",
   "layout_allCard_showMore_label": "Mostrar más",

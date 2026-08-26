@@ -16,7 +16,11 @@ import { createLogger } from '$lib/utils/client-logger';
 import { navigateToRoute } from '$lib/utils/navigation.client';
 import { m } from '$shared/paraglide/messages.js';
 import { IPC_CHANNELS } from '$shared/ipc-registry';
-import type { ImportProgressEvent, ImportStartResult } from '$shared/types/workspace-transfer';
+import type {
+  ImportProgressEvent,
+  ImportStartResult,
+  SessionOwnershipErrorCode,
+} from '$shared/types/workspace-transfer';
 import { takeEveryFromElectronChannel } from '../../../utils/ipc-channel';
 import {
   closeImportModal,
@@ -38,6 +42,12 @@ const TRANSFER = IPC_CHANNELS.TRANSFER;
 
 function toMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+/** Localized message for a failed relay result, keyed by machine code. */
+function failureMessage(result: { error?: string; code?: SessionOwnershipErrorCode }): string {
+  if (result.code === 'not-session-owner') return m.workspace_import_notSessionOwner_error();
+  return result.error ?? m.workspace_transfer_unknown_error();
 }
 
 async function invokeImport<T>(channel: string, params?: unknown): Promise<T> {
@@ -70,7 +80,7 @@ function* runImport(action: ReturnType<typeof importStartRequested>): SagaGenera
     } else if (result.canceled) {
       yield* put(importRunCancelled());
     } else {
-      yield* put(importRunFailed(result.error ?? m.workspace_transfer_unknown_error()));
+      yield* put(importRunFailed(failureMessage(result)));
     }
   } catch (error) {
     logger.error('transfer:import-start failed', { error });

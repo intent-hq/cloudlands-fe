@@ -6052,6 +6052,8 @@
   "workspace_transfer_finalizing_message": "仕上げ中…",
   "workspace_transfer_finalizeFailed_error": "転送を完了できませんでした: {error}",
   "workspace_transfer_unknown_error": "不明なエラー",
+  "workspace_transfer_notSessionOwner_error": "この転送は別のウィンドウで開始されました。",
+  "workspace_import_notSessionOwner_error": "このインポートは別のウィンドウで開始されました。",
   "workspace_transfer_close_label": "閉じる",
   "workspace_branchSelector_refreshBranches_ariaLabel": "ブランチを更新",
   "layout_allCard_showMore_label": "さらに表示",

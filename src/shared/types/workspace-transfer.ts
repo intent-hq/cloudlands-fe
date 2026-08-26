@@ -13,6 +13,13 @@
  */
 
 
+/**
+ * Machine-readable rejection code: the invoking window does not own the
+ * active relay session (transfer/import sessions are pinned to the window
+ * that started them; see monorepo#3519).
+ */
+export type SessionOwnershipErrorCode = 'not-session-owner';
+
 /** Where the transfer goes (mirrors the renderer's `TransferDestination`). */
 type TransferRelayDestination = { kind: 'server'; connectionId: string } | { kind: 'download' };
 
@@ -53,6 +60,8 @@ export interface TransferStartResult {
   /** True when the user dismissed the save dialog (download destination). */
   canceled?: boolean;
   error?: string;
+  /** Set when another window owns the active session. */
+  code?: SessionOwnershipErrorCode;
   /** Download destination: where the archive was written. */
   filePath?: string;
   /**
@@ -79,6 +88,8 @@ export interface TransferFinalizeParams {
 export interface TransferFinalizeResult {
   success: boolean;
   error?: string;
+  /** Set when another window owns the active session. */
+  code?: SessionOwnershipErrorCode;
   /** Agent ids the target failed to resume (fail-soft, never blocks finalize). */
   resumeFailed?: string[];
 }
@@ -87,6 +98,8 @@ export interface TransferFinalizeResult {
 export interface TransferCancelResult {
   success: boolean;
   error?: string;
+  /** Set when another window owns the active session. */
+  code?: SessionOwnershipErrorCode;
 }
 
 /** `transfer:import-start` params. */
@@ -121,6 +134,8 @@ export interface ImportStartResult {
   canceled?: boolean;
   /** Daemon error, verbatim (e.g. version mismatch names both versions). */
   error?: string;
+  /** Set when another window owns the active session. */
+  code?: SessionOwnershipErrorCode;
   /** The imported workspace's id + title, on success. */
   workspaceId?: string;
   workspaceTitle?: string;
@@ -132,4 +147,6 @@ export interface ImportStartResult {
 export interface ImportCancelResult {
   success: boolean;
   error?: string;
+  /** Set when another window owns the active session. */
+  code?: SessionOwnershipErrorCode;
 }
