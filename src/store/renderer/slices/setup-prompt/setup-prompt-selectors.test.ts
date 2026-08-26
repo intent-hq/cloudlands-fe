@@ -13,7 +13,7 @@ import { initialState as setupPromptInitialState } from './setup-prompt-slice';
 import type { SetupPromptState } from './setup-prompt-types';
 import {
   selectActiveSetupEvaluation,
-  selectLocalSetupGate,
+  selectBackendSetupGate,
   selectShowRemoteSetupPrompt,
   selectSetupEvaluation,
 } from './setup-prompt-selectors';
@@ -110,46 +110,60 @@ describe('selectShowRemoteSetupPrompt', () => {
   });
 });
 
-describe('selectLocalSetupGate', () => {
-  it("returns 'none' when the active backend is remote", () => {
-    const state = stateWith({ activeId: 'remote-1' });
-    expect(selectLocalSetupGate.select(state)).toBe('none');
-  });
-
-  it("returns 'none' when the local backend has workspaces", () => {
+describe('selectBackendSetupGate', () => {
+  it("returns 'none' when the backend has workspaces", () => {
     const state = stateWith({ workspaceIds: ['ws-1'] });
-    expect(selectLocalSetupGate.select(state)).toBe('none');
+    expect(selectBackendSetupGate.select(state)).toBe('none');
   });
 
   it("returns 'pending' while the evaluation has not resolved", () => {
-    expect(selectLocalSetupGate.select(stateWith({}))).toBe('pending');
-    expect(selectLocalSetupGate.select(stateWith({ workspaceHasLoaded: false }))).toBe('pending');
+    expect(selectBackendSetupGate.select(stateWith({}))).toBe('pending');
+    expect(selectBackendSetupGate.select(stateWith({ workspaceHasLoaded: false }))).toBe(
+      'pending',
+    );
   });
 
   it("returns 'redirect' when the local backend needs setup", () => {
     const evaluation = { connectionId: LOCAL_CONNECTION_ID, isLocal: true, setupNeeded: true };
     const state = stateWith({ setupPrompt: { evaluation } });
-    expect(selectLocalSetupGate.select(state)).toBe('redirect');
+    expect(selectBackendSetupGate.select(state)).toBe('redirect');
   });
 
-  it("returns 'none' when the local backend does not need setup", () => {
+  it("returns 'redirect' when a remote backend needs setup", () => {
+    const evaluation = { connectionId: 'remote-1', isLocal: false, setupNeeded: true };
+    const state = stateWith({ activeId: 'remote-1', setupPrompt: { evaluation } });
+    expect(selectBackendSetupGate.select(state)).toBe('redirect');
+  });
+
+  it("returns 'pending' on a remote backend while its evaluation has not resolved", () => {
+    const state = stateWith({ activeId: 'remote-1' });
+    expect(selectBackendSetupGate.select(state)).toBe('pending');
+  });
+
+  it('ignores a stale evaluation from a previous backend after a switch', () => {
+    const evaluation = { connectionId: LOCAL_CONNECTION_ID, isLocal: true, setupNeeded: true };
+    const state = stateWith({ activeId: 'remote-1', setupPrompt: { evaluation } });
+    expect(selectBackendSetupGate.select(state)).toBe('pending');
+  });
+
+  it("returns 'none' when the backend does not need setup", () => {
     const evaluation = { connectionId: LOCAL_CONNECTION_ID, isLocal: true, setupNeeded: false };
     const state = stateWith({ setupPrompt: { evaluation } });
-    expect(selectLocalSetupGate.select(state)).toBe('none');
+    expect(selectBackendSetupGate.select(state)).toBe('none');
   });
 
   it('ignores the chief workspace when counting workspaces (matches the saga)', () => {
     const state = stateWith({ workspaceIds: [CHIEF_WORKSPACE_ID] });
-    expect(selectLocalSetupGate.select(state)).toBe('pending');
+    expect(selectBackendSetupGate.select(state)).toBe('pending');
   });
 
   it("resolves 'none' as soon as a ready provider is known, without an evaluation", () => {
     const state = stateWith({ providerStatusMap: { auggie: { available: true } } });
-    expect(selectLocalSetupGate.select(state)).toBe('none');
+    expect(selectBackendSetupGate.select(state)).toBe('none');
 
     const notReady = stateWith({
       providerStatusMap: { auggie: { available: true, authenticated: false } },
     });
-    expect(selectLocalSetupGate.select(notReady)).toBe('pending');
+    expect(selectBackendSetupGate.select(notReady)).toBe('pending');
   });
 });

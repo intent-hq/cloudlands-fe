@@ -10,6 +10,8 @@
   interface Props {
     agentId?: string;
     specialist?: string | null;
+    /** Specialist `icon` metadata; takes precedence over the specialist-id map when valid. */
+    icon?: string | null;
     provider?: string;
     variant?: AgentAvatarVariant;
     /** @deprecated Use a named variant. Numeric sizes remain until consumer migration completes. */
@@ -21,6 +23,7 @@
   let {
     agentId = '',
     specialist = null,
+    icon = null,
     provider = undefined,
     variant = defaultAgentAvatarVariant,
     size = undefined,
@@ -30,7 +33,7 @@
 
   const design = $derived.by(() => {
     void provider;
-    return getAgentAvatarDesign(agentId, specialist);
+    return getAgentAvatarDesign(agentId, specialist, icon);
   });
   const renderedSize = $derived(size ?? agentAvatarGeometry[variant].surface);
   const usesNamedVariant = $derived(size === undefined);

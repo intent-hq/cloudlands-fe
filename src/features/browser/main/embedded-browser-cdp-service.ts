@@ -1251,6 +1251,7 @@ class EmbeddedBrowserCdpService {
     tabId: string,
     workspaceId: string | undefined,
     ownerAgentId: string,
+    ownerAgentName?: string,
   ): void {
     if (!tabId || typeof workspaceId !== 'string' || workspaceId.length === 0) {
       // Without a workspaceId there is no target window to notify, so the
@@ -1267,6 +1268,9 @@ class EmbeddedBrowserCdpService {
       tabId,
       workspaceId,
       ownerAgentId,
+      // Best-effort display name so the sidebar owner group can label the
+      // tab without an agent-store lookup (monorepo#3438).
+      ...(ownerAgentName === undefined ? {} : { ownerAgentName }),
       ...(emulatedSize === undefined ? {} : { emulatedSize: { ...emulatedSize } }),
     });
   }

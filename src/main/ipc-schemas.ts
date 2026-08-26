@@ -1018,6 +1018,9 @@ export const SpecialistWriteSchema = z
       )
       .optional(),
     reasoningEffort: z.string().optional(),
+    role: z.enum(['orchestrator', 'internal']).optional(),
+    teamAgents: z.array(z.string().min(1, 'Team agent id must be non-empty')).optional(),
+    icon: z.string().optional(),
     behaviorPrompt: z.string().min(1, 'Behavior prompt is required'),
     scope: z.enum(['user', 'project']).optional(),
     workspacePath: z.string().optional(),

@@ -33,6 +33,13 @@ export type BrowserOpenTabPayload = WorkspaceCommandPayload & {
    */
   ownerAgentId?: string;
   /**
+   * Owning agent's display name at open time (monorepo#3438); persisted with
+   * the tab so the sidebar owner group can label the tab even when the
+   * renderer's agent store has not (yet) loaded the owner. Best-effort —
+   * absent when the name could not be resolved.
+   */
+  ownerAgentName?: string;
+  /**
    * Emulated viewport for agent opens (monorepo#2857); persisted with the
    * tab so the size survives restart alongside `ownerAgentId`. Absent for
    * user-opened tabs (unowned, always native).
@@ -97,6 +104,13 @@ export type BrowserTabOwnerChangedPayload = WorkspaceCommandPayload & {
   tabId: string;
   /** The agent that now owns the tab (claimTab / agent openTab, monorepo#2857). */
   ownerAgentId: string;
+  /**
+   * The owning agent's display name (monorepo#3438); persisted with the tab
+   * so the sidebar owner group can label it without an agent-store lookup.
+   * Best-effort — absent when the name could not be resolved (the renderer
+   * then keeps any previously persisted name).
+   */
+  ownerAgentName?: string;
   /**
    * The tab's emulated viewport at the time of the change (claim size /
    * resizeTab); persisted with the tab so the size survives restart

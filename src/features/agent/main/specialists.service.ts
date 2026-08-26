@@ -29,6 +29,7 @@ import {
 import {
   mergeSpecialistsByPriority,
   type SpecialistFile,
+  type SpecialistRole,
 } from '../../../shared/specialist-file-types';
 import { isGitHubConfigured } from '../../../main/utils/github-auth-status';
 import { createCache } from '../../../main/utils/cache';
@@ -57,6 +58,12 @@ export interface EffectiveSpecialist {
    * May be explicit (from config) or auto-generated from behaviorPrompt.
    */
   roleReminder?: string;
+  /** Orchestration role (PROTOCOL §5.11 `role`); undefined = standard. */
+  role?: SpecialistRole;
+  /** Specialist ids the orchestrator delegates to (advisory/render-only). */
+  teamAgents?: string[];
+  /** Built-in avatar design id; unknown/absent degrades to the fallback. */
+  icon?: string;
 }
 
 let initPromise: Promise<void> | null = null;
@@ -283,6 +290,9 @@ export function getEffectiveSpecialist(
       behaviorPrompt: fileSpecialist.behaviorPrompt,
       isCustomized: fileSpecialist.source !== 'bundled',
       roleReminder: fileSpecialist.frontmatter.roleReminder,
+      role: fileSpecialist.frontmatter.role,
+      teamAgents: fileSpecialist.frontmatter.teamAgents,
+      icon: fileSpecialist.frontmatter.icon,
     };
   }
 
@@ -305,6 +315,9 @@ export function getEffectiveSpecialist(
         behaviorPrompt: hardcoded.defaultBehaviorPrompt,
         isCustomized: false,
         roleReminder: hardcoded.roleReminder,
+        role: hardcoded.role,
+        teamAgents: hardcoded.teamAgents,
+        icon: hardcoded.icon,
       };
     }
   }
@@ -333,6 +346,9 @@ export function getAllEffectiveSpecialists(
       behaviorPrompt: file.behaviorPrompt,
       isCustomized: file.source !== 'bundled',
       roleReminder: file.frontmatter.roleReminder,
+      role: file.frontmatter.role,
+      teamAgents: file.frontmatter.teamAgents,
+      icon: file.frontmatter.icon,
     }),
   );
 
@@ -352,6 +368,9 @@ export function getAllEffectiveSpecialists(
           behaviorPrompt: s.defaultBehaviorPrompt,
           isCustomized: false,
           roleReminder: s.roleReminder,
+          role: s.role,
+          teamAgents: s.teamAgents,
+          icon: s.icon,
         }));
 
   if (hardcodedFallback.length > 0) {

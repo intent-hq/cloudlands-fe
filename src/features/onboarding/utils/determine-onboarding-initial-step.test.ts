@@ -18,6 +18,7 @@ const base = {
   hasReadyProvider: false,
   hasCompletedProviderSetup: false,
   hasWorkspaces: false,
+  providersCheckedOnce: false,
 };
 
 describe('determineOnboardingInitialStep', () => {
@@ -65,8 +66,42 @@ describe('determineOnboardingInitialStep', () => {
         hasReadyProvider: true,
         hasCompletedProviderSetup: true,
         hasWorkspaces: true,
+        providersCheckedOnce: true,
       }),
     ).toEqual({ step: 'welcome', viaLocalFastPath: false });
+  });
+
+  // The check has SETTLED with no ready provider and no workspaces: the
+  // persisted flag is stale for this backend — no provisional 'project' step,
+  // land directly on provider setup.
+  it('settled check + no ready provider + flag → welcome (flag ignored, no fast-path)', () => {
+    expect(
+      determineOnboardingInitialStep({
+        ...base,
+        hasCompletedProviderSetup: true,
+        providersCheckedOnce: true,
+      }),
+    ).toEqual({ step: 'welcome', viaLocalFastPath: false });
+  });
+
+  it('settled check + ready provider → project regardless of the flag', () => {
+    expect(
+      determineOnboardingInitialStep({
+        ...base,
+        hasReadyProvider: true,
+        providersCheckedOnce: true,
+      }),
+    ).toEqual({ step: 'project', viaLocalFastPath: false });
+  });
+
+  it('settled check + workspaces → project even with no ready provider', () => {
+    expect(
+      determineOnboardingInitialStep({
+        ...base,
+        hasWorkspaces: true,
+        providersCheckedOnce: true,
+      }),
+    ).toEqual({ step: 'project', viaLocalFastPath: false });
   });
 
   // `hasWorkspaces` is fed by `hasAvailableWorkspace` (OnboardingPage), so
@@ -94,7 +129,7 @@ describe('determineOnboardingInitialStep', () => {
 });
 
 describe('resolveFastPathSettlement', () => {
-  it('pending while the bulk check has not landed statuses', () => {
+  it('pending while no bulk check has completed', () => {
     expect(
       resolveFastPathSettlement({
         hasReadyProvider: false,

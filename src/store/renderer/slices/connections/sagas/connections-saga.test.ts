@@ -68,7 +68,11 @@ describe('connectionsSaga', () => {
     callbacks = {};
     invoke = vi.fn(async (channel: string, params?: unknown) => {
       if (channel === CONNECTION_CHANNELS.LIST)
-        return { connections: [LOCAL], activeId: LOCAL_CONNECTION_ID };
+        return {
+          connections: [LOCAL],
+          activeId: LOCAL_CONNECTION_ID,
+          windowBackendId: LOCAL_CONNECTION_ID,
+        };
       if (channel === CONNECTION_CHANNELS.CAPTURE_FINGERPRINT)
         return { fingerprint: 'AB:CD', tokenValid: true };
       if (channel === CONNECTION_CHANNELS.ADD) return { connection: REMOTE, switched: false };
@@ -101,7 +105,12 @@ describe('connectionsSaga', () => {
     };
     invoke.mockImplementation(async (channel: string) =>
       channel === CONNECTION_CHANNELS.LIST
-        ? { connections: [LOCAL, REMOTE], activeId: REMOTE.id, protocolMismatch: mismatch }
+        ? {
+            connections: [LOCAL, REMOTE],
+            activeId: LOCAL.id,
+            windowBackendId: REMOTE.id,
+            protocolMismatch: mismatch,
+          }
         : { fingerprint: 'AB:CD' },
     );
     const run = start();
@@ -109,7 +118,8 @@ describe('connectionsSaga', () => {
 
     expect(invoke).toHaveBeenCalledWith(CONNECTION_CHANNELS.LIST);
     expect(getItems(run.getState().connections.connections)).toEqual([LOCAL, REMOTE]);
-    expect(run.getState().connections.activeId).toBe(REMOTE.id);
+    expect(run.getState().connections.activeId).toBe(LOCAL.id);
+    expect(run.getState().connections.windowBackendId).toBe(REMOTE.id);
     expect(run.getState().connections.protocolMismatch).toEqual(mismatch);
 
     run.task.cancel();
@@ -127,7 +137,12 @@ describe('connectionsSaga', () => {
     };
     invoke.mockImplementation(async (channel: string) =>
       channel === CONNECTION_CHANNELS.LIST
-        ? { connections: [LOCAL, REMOTE], activeId: REMOTE.id, protocolMismatch: mismatch }
+        ? {
+            connections: [LOCAL, REMOTE],
+            activeId: REMOTE.id,
+            windowBackendId: REMOTE.id,
+            protocolMismatch: mismatch,
+          }
         : { fingerprint: 'AB:CD' },
     );
     const run = start();
@@ -146,7 +161,12 @@ describe('connectionsSaga', () => {
     const authRejected = { id: 'remote-1', host: '10.0.0.5', port: 8443, statusCode: 401 };
     invoke.mockImplementation(async (channel: string) =>
       channel === CONNECTION_CHANNELS.LIST
-        ? { connections: [LOCAL, REMOTE], activeId: REMOTE.id, authRejected }
+        ? {
+            connections: [LOCAL, REMOTE],
+            activeId: REMOTE.id,
+            windowBackendId: REMOTE.id,
+            authRejected,
+          }
         : { fingerprint: 'AB:CD' },
     );
     const run = start();
@@ -222,7 +242,11 @@ describe('connectionsSaga', () => {
       CONNECTION_PROTOCOL_MISMATCH_EVENT,
     ]);
 
-    callbacks[CONNECTIONS_CHANGED_EVENT]!({ connections: [LOCAL, REMOTE], activeId: REMOTE.id });
+    callbacks[CONNECTIONS_CHANGED_EVENT]!({
+      connections: [LOCAL, REMOTE],
+      activeId: LOCAL.id,
+      windowBackendId: REMOTE.id,
+    });
     callbacks[CONNECTION_CERT_MISMATCH_EVENT]!({
       id: REMOTE.id,
       host: REMOTE.host,
@@ -246,7 +270,8 @@ describe('connectionsSaga', () => {
     await settle();
 
     expect(getItems(run.getState().connections.connections)).toEqual([LOCAL, REMOTE]);
-    expect(run.getState().connections.activeId).toBe(REMOTE.id);
+    expect(run.getState().connections.activeId).toBe(LOCAL.id);
+    expect(run.getState().connections.windowBackendId).toBe(REMOTE.id);
     expect(run.getState().connections.certMismatch?.actualFingerprint).toBe('EF:01');
     expect(run.getState().connections.protocolMismatch?.remoteProtocolVersion).toBe('2');
     expect(run.getState().connections.authRejected).toEqual({
@@ -268,7 +293,8 @@ describe('connectionsSaga', () => {
 
   it('rejects a failed operation and records its status error', async () => {
     invoke.mockImplementation(async (channel: string) => {
-      if (channel === CONNECTION_CHANNELS.LIST) return { connections: [LOCAL], activeId: LOCAL.id };
+      if (channel === CONNECTION_CHANNELS.LIST)
+        return { connections: [LOCAL], activeId: LOCAL.id, windowBackendId: LOCAL.id };
       if (channel === CONNECTION_CHANNELS.SWITCH) throw new Error('no such connection');
       return {};
     });
@@ -286,7 +312,8 @@ describe('connectionsSaga', () => {
   it('takes only the leading same-action request while other action owners remain independent', async () => {
     let resolveAdd: ((value: { connection: ConnectionRecord }) => void) | undefined;
     invoke.mockImplementation(async (channel: string) => {
-      if (channel === CONNECTION_CHANNELS.LIST) return { connections: [LOCAL], activeId: LOCAL.id };
+      if (channel === CONNECTION_CHANNELS.LIST)
+        return { connections: [LOCAL], activeId: LOCAL.id, windowBackendId: LOCAL.id };
       if (channel === CONNECTION_CHANNELS.ADD)
         return await new Promise<{ connection: ConnectionRecord }>((resolve) => {
           resolveAdd = resolve;
@@ -330,7 +357,8 @@ describe('connectionsSaga', () => {
 
   it('rejects an active awaitable request when the root saga is cancelled', async () => {
     invoke.mockImplementation(async (channel: string) => {
-      if (channel === CONNECTION_CHANNELS.LIST) return { connections: [LOCAL], activeId: LOCAL.id };
+      if (channel === CONNECTION_CHANNELS.LIST)
+        return { connections: [LOCAL], activeId: LOCAL.id, windowBackendId: LOCAL.id };
       if (channel === CONNECTION_CHANNELS.SWITCH) return await new Promise(() => {});
       return {};
     });

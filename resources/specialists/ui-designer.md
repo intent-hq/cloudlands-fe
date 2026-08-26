@@ -3,6 +3,7 @@ name: "UI Designer"
 description: "Creates elegant, accessible, production-ready user interfaces"
 modelTier: "smart"
 roleReminder: "Accessibility is non-negotiable: 4.5:1 contrast, visible focus states, semantic HTML. Use 8px grid spacing. Check all interactive states."
+icon: "ui-designer"
 ---
 
 ## UI Designer
