@@ -165,4 +165,57 @@ describe('groupBrowserTabsByOwner', () => {
 
     expect(groups[0].ownerName).toBe('agent-01234567…');
   });
+
+  // Ordering must not matter: a group created from a name-less tab is
+  // upgraded when a later tab for the same owner carries a persisted name.
+  it('upgrades the group label when a later visible tab carries the persisted name', () => {
+    const groups = groupBrowserTabsByOwner(
+      [
+        { tab: browserTab('t1', 'agent-0123456789abcdef'), panelId: 'p1', active: false },
+        {
+          tab: browserTab('t2', 'agent-0123456789abcdef', 'Fix screenshot timeout'),
+          panelId: 'p1',
+          active: false,
+        },
+      ],
+      [],
+      [],
+    );
+
+    expect(groups).toHaveLength(1);
+    expect(groups[0].ownerName).toBe('Fix screenshot timeout');
+    expect(groups[0].entries).toHaveLength(2);
+  });
+
+  it('upgrades the group label when a hidden tab carries the persisted name', () => {
+    const groups = groupBrowserTabsByOwner(
+      [{ tab: browserTab('t1', 'agent-0123456789abcdef'), panelId: 'p1', active: false }],
+      [browserTab('t2', 'agent-0123456789abcdef', 'Fix screenshot timeout')],
+      [],
+    );
+
+    expect(groups).toHaveLength(1);
+    expect(groups[0].ownerName).toBe('Fix screenshot timeout');
+  });
+
+  it('keeps the first persisted name when later tabs carry a different one', () => {
+    const groups = groupBrowserTabsByOwner(
+      [
+        {
+          tab: browserTab('t1', 'agent-0123456789abcdef', 'First Name'),
+          panelId: 'p1',
+          active: false,
+        },
+        {
+          tab: browserTab('t2', 'agent-0123456789abcdef', 'Second Name'),
+          panelId: 'p1',
+          active: false,
+        },
+      ],
+      [],
+      [],
+    );
+
+    expect(groups[0].ownerName).toBe('First Name');
+  });
 });

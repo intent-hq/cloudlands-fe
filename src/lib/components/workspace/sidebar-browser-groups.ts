@@ -44,7 +44,11 @@ export function resolveOwnerName(
   if (name) return name;
   const fallback = persistedName?.trim();
   if (fallback) return fallback;
-  // "agent-<uuid>" → "agent-<first8>…" keeps the fallback readable.
+  return shortenAgentId(ownerAgentId);
+}
+
+/** "agent-<uuid>" → "agent-<first8>…" keeps the id fallback readable. */
+function shortenAgentId(ownerAgentId: string): string {
   return ownerAgentId.length > 14 ? `${ownerAgentId.slice(0, 14)}…` : ownerAgentId;
 }
 
@@ -69,6 +73,10 @@ export function groupBrowserTabsByOwner(
         entries: [],
       };
       owned.set(ownerAgentId, group);
+    } else if (group.ownerName === shortenAgentId(ownerAgentId)) {
+      // The group was created from a tab without a persisted name; a later
+      // tab for the same owner may carry one — upgrade the id fallback.
+      group.ownerName = resolveOwnerName(ownerAgentId, agents, persistedName);
     }
     return group;
   };
