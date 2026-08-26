@@ -835,6 +835,21 @@
         <!-- Agent Behavior -->
         {#if activeTab === 'agent-behavior'}
           <div
+            id="global-instructions"
+            data-highlight-id="quickActions.defaultModel"
+            use:highlightTarget
+            class="mb-12 min-w-0"
+          >
+            <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
+              {m.settings_section_globalInstructions()}
+            </h2>
+            <AIBehaviorEditor
+              activeView={{ type: 'system-prompt' }}
+              workspaceId={settingsWorkspaceId}
+            />
+          </div>
+
+          <div
             id="agent-features"
             data-highlight-id="agent-features"
             use:highlightTarget
@@ -844,18 +859,6 @@
               {m.settings_section_agentFeatures()}
             </h2>
             <AgentFeaturesSettings />
-          </div>
-
-          <div
-            id="global-instructions"
-            data-highlight-id="quickActions.defaultModel"
-            use:highlightTarget
-            class="mb-12 min-w-0"
-          >
-            <AIBehaviorEditor
-              activeView={{ type: 'system-prompt' }}
-              workspaceId={settingsWorkspaceId}
-            />
           </div>
         {/if}
 

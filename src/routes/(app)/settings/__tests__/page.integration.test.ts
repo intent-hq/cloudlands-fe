@@ -540,7 +540,7 @@ describe('settings tab route and focus behavior', () => {
     ['setup', 'Git'],
     ['display', 'Appearance'],
     ['app-behavior', 'Updates'],
-    ['agent-behavior', 'Agent Features'],
+    ['agent-behavior', 'Global Instructions'],
     ['connections', 'Accounts'],
     ['advanced', 'Agent Backend'],
     ['input', 'Keyboard Shortcuts'],
@@ -640,7 +640,7 @@ describe('settings tab route and focus behavior', () => {
   it.each([
     ['display', ['theme', 'font-style', 'language']],
     ['app-behavior', ['updates', 'open-in', 'github-link-action', 'notifications']],
-    ['agent-behavior', ['agent-features', 'global-instructions']],
+    ['agent-behavior', ['global-instructions', 'agent-features']],
     ['providers', ['providers', 'utility-default-model']],
     ['connections', ['integrations', 'mcp-servers']],
     ['setup', ['git', 'shell', 'cli-optimization', 'workspace']],
