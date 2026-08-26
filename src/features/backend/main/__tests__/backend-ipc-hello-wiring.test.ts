@@ -212,17 +212,26 @@ describe('backend.ipc daemon version refresh on hello (#3448)', () => {
   it('refreshes the stored version info and re-broadcasts backend:status (local external-uds)', async () => {
     const onHelloResult = await getOnHelloResult();
     setConnectionMode('external');
-    setDaemonVersionInfo({ daemonVersion: '0.1.0', pinnedVersion: '0.1.0', versionMismatch: false });
+    setDaemonVersionInfo({
+      daemonVersion: '0.1.0',
+      daemonBuildCommit: 'abc1234',
+      pinnedVersion: '0.1.0',
+      versionMismatch: false,
+    });
 
     const send = vi.fn();
     vi.mocked(BrowserWindow.getAllWindows).mockReturnValueOnce([
       { id: 1, isDestroyed: () => false, webContents: { send } } as never,
     ]);
 
-    onHelloResult({ clientId: 'cli-x', server: { version: '0.2.0' } });
+    onHelloResult({
+      clientId: 'cli-x',
+      server: { version: '0.2.0', buildCommit: 'abc1234' },
+    });
 
     expect(getDaemonVersionInfo()).toEqual({
       daemonVersion: '0.2.0',
+      daemonBuildCommit: 'abc1234',
       pinnedVersion: '0.1.0',
       versionMismatch: true,
     });
@@ -232,17 +241,75 @@ describe('backend.ipc daemon version refresh on hello (#3448)', () => {
         transport: expect.objectContaining({
           mode: 'external-uds',
           daemonVersion: '0.2.0',
+          daemonBuildCommit: 'abc1234',
           versionMismatch: true,
         }),
       }),
     );
   });
 
+  it('detects a build-commit change when the daemon version is unchanged', async () => {
+    const onHelloResult = await getOnHelloResult();
+    setConnectionMode('external');
+    setDaemonVersionInfo({
+      daemonVersion: '0.2.0',
+      daemonBuildCommit: 'abc1234',
+      pinnedVersion: '0.1.0',
+      versionMismatch: true,
+    });
+
+    const send = vi.fn();
+    vi.mocked(BrowserWindow.getAllWindows).mockReturnValueOnce([
+      { id: 1, isDestroyed: () => false, webContents: { send } } as never,
+    ]);
+
+    onHelloResult({ server: { version: '0.2.0', buildCommit: 'def5678' } });
+
+    expect(getDaemonVersionInfo()).toEqual({
+      daemonVersion: '0.2.0',
+      daemonBuildCommit: 'def5678',
+      pinnedVersion: '0.1.0',
+      versionMismatch: true,
+    });
+    expect(send).toHaveBeenCalledWith(
+      'backend:status',
+      expect.objectContaining({
+        transport: expect.objectContaining({ daemonBuildCommit: 'def5678' }),
+      }),
+    );
+  });
+
+  it('accepts an old daemon hello without a build commit', async () => {
+    const onHelloResult = await getOnHelloResult();
+    setConnectionMode('external');
+    setDaemonVersionInfo({
+      daemonVersion: '0.2.0',
+      pinnedVersion: '0.1.0',
+      versionMismatch: true,
+    });
+
+    const send = vi.fn();
+    vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([{ webContents: { send } } as never]);
+
+    onHelloResult({ server: { version: '0.2.0' } });
+
+    expect(getDaemonVersionInfo()).toEqual({
+      daemonVersion: '0.2.0',
+      pinnedVersion: '0.1.0',
+      versionMismatch: true,
+    });
+    expect(send).not.toHaveBeenCalled();
+  });
+
   it('does not let a remote backend hello overwrite the local daemon version info', async () => {
     const onHelloResult = await getOnHelloResult();
     const { __setActiveConnectionMetaForTesting } = await import('../backend.ipc');
     setConnectionMode('external');
-    setDaemonVersionInfo({ daemonVersion: '0.1.0', pinnedVersion: '0.1.0', versionMismatch: false });
+    setDaemonVersionInfo({
+      daemonVersion: '0.1.0',
+      pinnedVersion: '0.1.0',
+      versionMismatch: false,
+    });
     __setActiveConnectionMetaForTesting({ id: 'conn-1', host: 'remote', port: 443 });
 
     const send = vi.fn();
@@ -267,7 +334,11 @@ describe('backend.ipc daemon version refresh on hello (#3448)', () => {
   it('leaves stored info unchanged and skips the broadcast for a malformed server.version', async () => {
     const onHelloResult = await getOnHelloResult();
     setConnectionMode('external');
-    setDaemonVersionInfo({ daemonVersion: '0.1.0', pinnedVersion: '0.1.0', versionMismatch: false });
+    setDaemonVersionInfo({
+      daemonVersion: '0.1.0',
+      pinnedVersion: '0.1.0',
+      versionMismatch: false,
+    });
 
     const send = vi.fn();
     vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([
