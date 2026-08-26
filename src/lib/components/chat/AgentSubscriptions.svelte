@@ -390,6 +390,7 @@
   });
   const taskProgressByAgentId = $derived.by(() => {
     const state = rendererState;
+    if (!state.workspaceTasks) return {};
     const sessionsById = selectAgentSessionsById.select(state);
     const initialized = selectWorkspaceTasksInitialized.select(state, workspaceId);
     const tasks = selectWorkspaceTasks.select(state, workspaceId);
