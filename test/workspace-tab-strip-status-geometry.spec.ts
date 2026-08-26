@@ -401,7 +401,7 @@ test('drag keeps one horizontal real tab and drops it at the proposed placeholde
   const active = page.locator('[data-workspace-tab="active"]');
   const origin = await box(active);
   const loading = await box(page.locator('[data-workspace-tab="loading"]'));
-  const startX = origin.x + origin.width / 2;
+  const startX = origin.x + 28;
   const dragX = loading.x + loading.width + 4;
 
   await active.evaluate(
@@ -421,23 +421,31 @@ test('drag keeps one horizontal real tab and drops it at the proposed placeholde
     },
     { x: startX, y: origin.y + origin.height / 2 },
   );
-  await strip.evaluate(
-    (node, point) => {
-      const dataTransfer = (
-        globalThis as typeof globalThis & { __workspaceDragData?: DataTransfer }
-      ).__workspaceDragData;
-      node.dispatchEvent(
-        new DragEvent('dragover', {
-          bubbles: true,
-          cancelable: true,
-          dataTransfer,
-          clientX: point.x,
-          clientY: point.y,
-        }),
-      );
-    },
-    { x: dragX, y: origin.y + origin.height + 200 },
-  );
+  const dragOver = async (x: number) =>
+    strip.evaluate(
+      (node, point) => {
+        const dataTransfer = (
+          globalThis as typeof globalThis & { __workspaceDragData?: DataTransfer }
+        ).__workspaceDragData;
+        node.dispatchEvent(
+          new DragEvent('dragover', {
+            bubbles: true,
+            cancelable: true,
+            dataTransfer,
+            clientX: point.x,
+            clientY: point.y,
+          }),
+        );
+      },
+      { x, y: origin.y + origin.height + 200 },
+    );
+
+  for (const pointerX of [startX + 44, startX - 16, dragX]) {
+    await dragOver(pointerX);
+    const tracked = await box(active);
+    expect(tracked.x).toBeCloseTo(origin.x + pointerX - startX, 1);
+    expect(tracked.y).toBeCloseTo(origin.y, 1);
+  }
 
   const placeholder = page.locator('[data-workspace-tab-placeholder="active"]');
   await expect(placeholder).toBeVisible();
