@@ -328,9 +328,40 @@ function sameTarget(
   return accountKeyFor(a.host, a.port) === accountKeyFor(b.host, b.port);
 }
 
-/** Drop tombstones matching `host:port` (the backend came back). */
-function clearTombstone(state: PersistedState, host: string, port: number): void {
-  state.tombstones = state.tombstones.filter((t) => !sameTarget(t, { host, port }));
+/**
+ * Normalized cert-fingerprint comparison key (trimmed, case-insensitive), or
+ * null when the record carries no usable fingerprint (legacy/blank).
+ */
+function fingerprintKey(fingerprint: string | undefined | null): string | null {
+  const key = (fingerprint ?? '').trim().toUpperCase();
+  return key === '' ? null : key;
+}
+
+/**
+ * Whether two records identify the same backend MACHINE. The certificate
+ * fingerprint is the canonical identity: when both sides carry one, a match
+ * means the same machine even under a different host:port (DHCP/IP change).
+ * Records without a usable fingerprint fall back to host:port identity, so
+ * fingerprint-less legacy records keep their old dedupe semantics.
+ */
+function sameBackend(
+  a: Pick<StoredConnection, 'host' | 'port' | 'fingerprint'>,
+  b: Pick<StoredConnection, 'host' | 'port' | 'fingerprint'>,
+): boolean {
+  const fa = fingerprintKey(a.fingerprint);
+  const fb = fingerprintKey(b.fingerprint);
+  if (fa !== null && fb !== null && fa === fb) return true;
+  return sameTarget(a, b);
+}
+
+/** Drop tombstones for the same backend — matching `host:port` or the cert
+ * fingerprint — so a machine that came back (possibly under a new address)
+ * is never re-suppressed by its own stale tombstone. */
+function clearTombstone(
+  state: PersistedState,
+  target: Pick<StoredConnection, 'host' | 'port' | 'fingerprint'>,
+): void {
+  state.tombstones = state.tombstones.filter((t) => !sameBackend(t, target));
 }
 
 /**
@@ -343,29 +374,37 @@ export async function list(): Promise<ConnectionRecord[]> {
 }
 
 /**
- * Register a remote connection, deduplicating by `host:port` (upsert). If any
- * stored connections with the same host+port already exist — earlier app
- * versions allowed repeated `host:port` entries — they are collapsed into ONE
- * surviving record: the ACTIVE duplicate when one is active (so the caller's
- * active-reconnect path keys off the right id), else the first. The survivor's
- * `fingerprint`, `encToken`, and `label` are replaced in place (it keeps its
- * `id` and captured `hostname`, inheriting a hostname from a dropped duplicate
- * if it has none), the other duplicates are dropped, and the survivor is
- * returned; otherwise a new record is appended. The plaintext token is
- * encrypted (or marked plaintext) before it hits disk. Returns the token-free
- * record.
+ * Register a remote connection, deduplicating by backend identity (upsert):
+ * the cert fingerprint is canonical (a matching fingerprint is the same
+ * machine even under a different host:port), with normalized `host:port` as
+ * the fallback for fingerprint-less records. If any stored connections match
+ * — earlier app versions allowed repeated `host:port` entries — they are
+ * collapsed into ONE surviving record: the ACTIVE duplicate when one is
+ * active (so the caller's active-reconnect path keys off the right id), else
+ * the first. The survivor's `host`/`port`/`hosts`, `fingerprint`, `encToken`,
+ * and `label` are replaced in place (it keeps its `id` and captured
+ * `hostname`, inheriting a hostname from a dropped duplicate if it has none),
+ * the other duplicates are dropped, and the survivor is returned; otherwise a
+ * new record is appended. The plaintext token is encrypted (or marked
+ * plaintext) before it hits disk. Returns the token-free record.
  */
 export async function add(conn: NewConnection): Promise<ConnectionRecord> {
   const encToken = encryptToken(conn.token);
   const stored = await mutate(async (state) => {
-    // Host comparison is normalized (trim + lowercase, see sameTarget) so a
-    // case-differing re-add upserts the existing record instead of splitting
-    // one backend into two — keychain-sync keys accounts the same way.
-    const duplicates = state.connections.filter((c) => sameTarget(c, conn));
-    clearTombstone(state, conn.host, conn.port);
+    // Identity matching: fingerprint first (canonical machine identity, so a
+    // re-pair after an IP/port change upserts instead of duplicating), then
+    // normalized host:port (trim + lowercase, see sameTarget) — keychain-sync
+    // keys accounts the same way.
+    const duplicates = state.connections.filter((c) => sameBackend(c, conn));
+    clearTombstone(state, conn);
     if (duplicates.length > 0) {
       const survivor = duplicates.find((c) => c.id === state.activeId) ?? duplicates[0];
       survivor.label = conn.label;
+      survivor.host = conn.host;
+      survivor.port = conn.port;
+      // Extras keyed to the old primary may be stale after a host change;
+      // keep them minus the new primary — detectHosts refreshes them later.
+      survivor.hosts = (survivor.hosts ?? []).filter((h) => h.trim() !== conn.host.trim());
       survivor.fingerprint = conn.fingerprint;
       survivor.encToken = encToken;
       survivor.detectHosts = conn.detectHosts ?? true;
@@ -478,7 +517,7 @@ export async function forget(id: string): Promise<void> {
     }
     if (removed) {
       const now = Date.now();
-      clearTombstone(state, removed.host, removed.port);
+      clearTombstone(state, removed);
       state.tombstones.push({
         label: removed.label,
         host: removed.host,
@@ -599,13 +638,18 @@ export async function listSyncRecords(): Promise<KeychainSyncRecord[]> {
 
 /**
  * Apply a remote-won sync record to the local store (LWW loser side of a
- * reconcile). A live record upserts by normalized host:port — the existing
- * record keeps its `id` (so open windows/pool entries stay attached) while
+ * reconcile). A live record upserts by backend identity — cert fingerprint
+ * canonical, normalized host:port as the fingerprint-less fallback — so a
+ * record arriving under a new address collapses into the machine's existing
+ * entry instead of duplicating it. The existing record keeps its `id` (so
+ * open windows/pool entries stay attached) while host/port/
  * label/fingerprint/token/hosts/hostname/detectHosts and the remote's
  * `updatedAt` clock are taken verbatim (NOT re-stamped: the clock must
- * converge across machines). A tombstone removes the backend and remembers
- * the tombstone; if the removed backend was active, the selection falls back
- * to `local` (never touching any other machine-local selection state).
+ * converge across machines). A tombstone removes the backend (matched by the
+ * same identity, so a delete written under an old address still lands) and
+ * remembers the tombstone; if the removed backend was active, the selection
+ * falls back to `local` (never touching any other machine-local selection
+ * state).
  *
  * Deliberately does NOT fire {@link onConnectionsMutated} — pulls must not
  * loop back into pushes. Returns whether anything actually changed so the
@@ -614,12 +658,15 @@ export async function listSyncRecords(): Promise<KeychainSyncRecord[]> {
 export async function applyRemoteSyncRecord(record: KeychainSyncRecord): Promise<boolean> {
   return mutate(async (state) => {
     if (record.deleted === true) {
-      const existing = state.connections.filter((c) => sameTarget(c, record));
+      // Match by backend identity (fingerprint canonical, host:port fallback)
+      // so a tombstone written under an old address still deletes the record
+      // now living under a new one.
+      const existing = state.connections.filter((c) => sameBackend(c, record));
       state.connections = state.connections.filter((c) => !existing.includes(c));
       if (existing.some((c) => c.id === state.activeId)) {
         state.activeId = LOCAL_CONNECTION_ID;
       }
-      clearTombstone(state, record.host, record.port);
+      clearTombstone(state, record);
       state.tombstones.push({
         label: record.label,
         host: record.host,
@@ -635,10 +682,10 @@ export async function applyRemoteSyncRecord(record: KeychainSyncRecord): Promise
       return existing.length > 0;
     }
 
-    clearTombstone(state, record.host, record.port);
+    clearTombstone(state, record);
     const encToken = encryptToken(record.token);
     const extras = record.hosts.filter((h) => h.trim() !== record.host.trim());
-    const duplicates = state.connections.filter((c) => sameTarget(c, record));
+    const duplicates = state.connections.filter((c) => sameBackend(c, record));
     if (duplicates.length > 0) {
       const survivor = duplicates.find((c) => c.id === state.activeId) ?? duplicates[0];
       survivor.label = record.label;
