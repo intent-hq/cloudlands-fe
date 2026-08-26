@@ -27,6 +27,7 @@ describe('SettingsSidebarNav', () => {
     const { container } = render(SettingsSidebarNav, {
       activeTab: 'setup',
       onSelect: vi.fn(),
+      agentsNavigation: createSpecialistsNavigation(),
     });
 
     const specialistsHeading = screen.getByRole('heading', { level: 2, name: 'Specialists' });
@@ -41,8 +42,10 @@ describe('SettingsSidebarNav', () => {
       'Providers',
       'Connections',
       'Setup',
-      'Advanced',
       'Input',
+      'Advanced',
+      'Implementor',
+      'Create Specialist',
     ]);
     expect(screen.getByRole('button', { name: 'Display' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Agent Behavior' })).toBeTruthy();
@@ -52,10 +55,10 @@ describe('SettingsSidebarNav', () => {
     expect(setup.getAttribute('aria-current')).toBe('page');
     expect(setup.className).toContain('bg-muted');
     expect(setup.className).toContain('shadow-xs');
-    const input = screen.getByRole('button', { name: 'Input' });
+    const advanced = screen.getByRole('button', { name: 'Advanced' });
     expect(screen.queryByRole('button', { name: 'Specialists' })).toBeNull();
     const specialistsSection = container.querySelector('[data-settings-specialists-section]')!;
-    expect(input.nextElementSibling).toBe(specialistsSection);
+    expect(advanced.nextElementSibling).toBe(specialistsSection);
     expect(specialistsSection.firstElementChild).toBe(specialistsHeading);
     expect(specialistsSection.className).toContain('mt-8');
     expect(specialistsSection.className).not.toMatch(/border|pt-/);
@@ -63,7 +66,11 @@ describe('SettingsSidebarNav', () => {
 
   it('selects a category when clicked', async () => {
     const onSelect = vi.fn();
-    render(SettingsSidebarNav, { activeTab: 'providers', onSelect });
+    render(SettingsSidebarNav, {
+      activeTab: 'providers',
+      onSelect,
+      agentsNavigation: createSpecialistsNavigation(),
+    });
 
     await fireEvent.click(screen.getByRole('button', { name: 'Agent Behavior' }));
 
@@ -85,8 +92,8 @@ describe('SettingsSidebarNav', () => {
       'Providers',
       'Connections',
       'Setup',
-      'Advanced',
       'Input',
+      'Advanced',
       'Implementor',
       'Create Specialist',
     ]);
@@ -116,19 +123,13 @@ describe('SettingsSidebarNav', () => {
     expect(screen.getByRole('button', { name: 'Providers' }).className).toContain('shadow-xs');
   });
 
-  it('renders only the Specialists heading when specialist rows are not supplied', () => {
-    render(SettingsSidebarNav, { activeTab: 'agent-behavior', onSelect: vi.fn() });
-
-    expect(screen.getByRole('heading', { level: 2, name: 'Specialists' })).toBeTruthy();
-    expect(screen.queryByRole('button', { name: 'Specialists' })).toBeNull();
-  });
-
   it('uses larger icons in a fixed column without changing row geometry', () => {
     const { container } = render(SettingsSidebarNav, {
       activeTab: 'setup',
       onSelect: vi.fn(),
+      agentsNavigation: createSpecialistsNavigation(),
     });
-    const buttons = screen.getAllByRole('button');
+    const buttons = [...container.querySelectorAll('[data-settings-tab]')];
     const iconSlots = [...container.querySelectorAll('[data-slot="settings-sidebar-icon"]')];
 
     expect(iconSlots).toHaveLength(buttons.length);

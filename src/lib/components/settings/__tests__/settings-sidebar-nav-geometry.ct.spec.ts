@@ -50,12 +50,12 @@ for (const theme of ['light', 'dark'] as const) {
         const specialistsSection = component.locator('[data-settings-specialists-section]');
         await expect(specialistsSection).toHaveClass(/mt-8/);
         await expect(specialistsSection).not.toHaveClass(/border|pt-/);
-        const [inputBox, specialistsHeadingBox, shellBox] = await Promise.all([
-          component.getByRole('button', { name: 'Input' }).boundingBox(),
+        const [advancedBox, specialistsHeadingBox, shellBox] = await Promise.all([
+          component.getByRole('button', { name: 'Advanced' }).boundingBox(),
           component.getByRole('heading', { name: 'Specialists' }).boundingBox(),
           component.getByTestId('sidebar-shell').boundingBox(),
         ]);
-        expect(specialistsHeadingBox!.y - (inputBox!.y + inputBox!.height)).toBeCloseTo(
+        expect(specialistsHeadingBox!.y - (advancedBox!.y + advancedBox!.height)).toBeCloseTo(
           32 * zoom,
           1,
         );

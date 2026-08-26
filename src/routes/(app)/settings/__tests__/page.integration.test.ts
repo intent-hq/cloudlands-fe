@@ -678,6 +678,8 @@ describe('settings tab route and focus behavior', () => {
       messages.settings_providers_groupDiscovered_label,
       messages.settings_providers_groupSupported_label,
     ]).toEqual(['Enabled', 'Available', 'Not Detected']);
+    expect(pageSource).not.toContain('settings_section_aiCodingClis_hint');
+    expect(messages).not.toHaveProperty('settings_section_aiCodingClis_hint');
     const advancedPositions = advancedIds.map((id) => pageSource.indexOf(id));
     expect(advancedPositions.every((position) => position >= 0)).toBe(true);
     expect(advancedPositions).toEqual([...advancedPositions].sort((a, b) => a - b));

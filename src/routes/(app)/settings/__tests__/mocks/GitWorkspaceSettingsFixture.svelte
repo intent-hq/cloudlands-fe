@@ -2,10 +2,7 @@
   import type { Snippet } from 'svelte';
   import SettingsStateFixture from './SettingsStateFixture.svelte';
 
-  let {
-    shellAdditions,
-    workspaceAdditions,
-  }: { shellAdditions?: Snippet; workspaceAdditions?: Snippet } = $props();
+  let { shellAdditions }: { shellAdditions?: Snippet } = $props();
 </script>
 
 <div data-settings-git-workspace>
@@ -19,6 +16,5 @@
   </div>
   <div id="workspace">
     <h2>Workspace</h2>
-    {#if workspaceAdditions}{@render workspaceAdditions()}{/if}
   </div>
 </div>

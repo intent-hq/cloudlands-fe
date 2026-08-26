@@ -16,6 +16,11 @@
 
 <section class:dark={theme === 'dark'} style:width="{width}px" style:zoom data-testid="host">
   <div class="flex h-[420px] bg-sidebar text-foreground" data-testid="sidebar-shell">
-    <SettingsSidebarNav {activeTab} onSelect={(tab) => (activeTab = tab)} />
+    <SettingsSidebarNav {activeTab} onSelect={(tab) => (activeTab = tab)}>
+      {#snippet agentsNavigation()}
+        <button type="button" data-settings-agent-row>Implementor</button>
+        <button type="button" data-settings-agent-row>Create Specialist</button>
+      {/snippet}
+    </SettingsSidebarNav>
   </div>
 </section>

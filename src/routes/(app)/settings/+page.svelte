@@ -39,7 +39,6 @@
   import { highlightTarget } from '$lib/components/ui/highlight/highlight-target';
   import Toggle from '$lib/components/ui/toggle/toggle.svelte';
   import { selectDaemonTransport } from '$store/renderer/slices/daemon-health/daemon-health-selectors';
-  import { selectIsProviderActive } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
   import { selectThemePreference } from '$store/renderer/slices/theme/theme-selectors';
   import { requestThemePreferenceChange } from '$store/renderer/slices/theme/theme-slice';
   import type { ThemePreference } from '$store/renderer/slices/theme/theme-types';
@@ -306,9 +305,6 @@
   let gitWorkspaceSettingsRef: GitWorkspaceSettings | undefined = $state();
   let colorThemeSettingsRef: ColorThemeSettings | undefined = $state();
 
-  // Check if the active provider is Auggie (only Auggie supports integrations and MCP servers)
-  const isAuggieProvider$ = selectIsProviderActive('auggie');
-
   // Theme options
   const themeOptions = [
     { value: 'light', label: m.settings_theme_light() },
@@ -530,9 +526,6 @@
             class="mb-12 scroll-mt-20"
           >
             <ProviderSelector />
-            <p class="text-xs text-subtle mt-2">
-              {m.settings_section_aiCodingClis_hint()}
-            </p>
           </div>
           <div
             id="utility-default-model"
@@ -577,7 +570,7 @@
             <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
               {m.settings_section_mcpServers()}
             </h2>
-            <McpServersSettings isAuggieProvider={$isAuggieProvider$} />
+            <McpServersSettings />
           </div>
         {/if}
 

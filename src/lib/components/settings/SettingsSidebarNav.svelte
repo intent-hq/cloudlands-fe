@@ -27,7 +27,7 @@
   interface Props {
     activeTab: SettingsTab;
     onSelect: (tab: SettingsTab) => void;
-    agentsNavigation?: Snippet;
+    agentsNavigation: Snippet;
   }
 
   let { activeTab, onSelect, agentsNavigation }: Props = $props();
@@ -76,17 +76,17 @@
       },
     },
     {
-      id: 'advanced',
-      icon: faGlobe,
-      get label() {
-        return m.settings_sidebar_advanced_label();
-      },
-    },
-    {
       id: 'input',
       icon: faKeyboard,
       get label() {
         return m.settings_sidebar_input_label();
+      },
+    },
+    {
+      id: 'advanced',
+      icon: faGlobe,
+      get label() {
+        return m.settings_sidebar_advanced_label();
       },
     },
   ];
@@ -103,7 +103,7 @@
       aria-current={activeTab === item.id ? 'page' : undefined}
       data-settings-tab={item.id}
       class="flex w-full cursor-pointer items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring
-        {item.id === 'input' ? '' : 'mb-0.5'}
+        {item.id === 'advanced' ? '' : 'mb-0.5'}
         {activeTab === item.id
         ? 'bg-muted font-medium text-foreground shadow-xs'
         : 'text-muted-foreground hover:bg-muted/50 hover:text-foreground'}"
@@ -123,9 +123,7 @@
       {m.settings_sidebar_specialists_label()}
     </h2>
     <div class="flex flex-col gap-0.5 mt-2">
-      {#if agentsNavigation}
-        {@render agentsNavigation()}
-      {/if}
+      {@render agentsNavigation()}
     </div>
   </section>
 </nav>

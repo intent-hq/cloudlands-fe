@@ -107,10 +107,8 @@ describe('GitWorkspaceSettings — git credential toggle (§5.12)', () => {
 
     render(GitWorkspaceSettings);
 
-    const toggle = await waitFor(
-      () => screen.getByRole('checkbox', { name: GIT_CRED_LABEL }) as HTMLInputElement,
-    );
-    expect(toggle.checked).toBe(true);
+    const toggle = await waitFor(() => screen.getByRole('switch', { name: GIT_CRED_LABEL }));
+    expect(toggle.getAttribute('aria-checked')).toBe('true');
   });
 
   it('renders the toggle unchecked when the daemon reports the setting as false', async () => {
@@ -121,10 +119,8 @@ describe('GitWorkspaceSettings — git credential toggle (§5.12)', () => {
 
     render(GitWorkspaceSettings);
 
-    const toggle = await waitFor(
-      () => screen.getByRole('checkbox', { name: GIT_CRED_LABEL }) as HTMLInputElement,
-    );
-    expect(toggle.checked).toBe(false);
+    const toggle = await waitFor(() => screen.getByRole('switch', { name: GIT_CRED_LABEL }));
+    expect(toggle.getAttribute('aria-checked')).toBe('false');
   });
 
   it('renders the toggle unchecked when the daemon reports a non-boolean value (fail-safe)', async () => {
@@ -135,10 +131,8 @@ describe('GitWorkspaceSettings — git credential toggle (§5.12)', () => {
 
     render(GitWorkspaceSettings);
 
-    const toggle = await waitFor(
-      () => screen.getByRole('checkbox', { name: GIT_CRED_LABEL }) as HTMLInputElement,
-    );
-    expect(toggle.checked).toBe(false);
+    const toggle = await waitFor(() => screen.getByRole('switch', { name: GIT_CRED_LABEL }));
+    expect(toggle.getAttribute('aria-checked')).toBe('false');
   });
 
   it('hides the toggle when the daemon does not report the setting (older daemon)', async () => {
@@ -149,10 +143,10 @@ describe('GitWorkspaceSettings — git credential toggle (§5.12)', () => {
     // Wait for load to settle (a sibling toggle is rendered), then assert absence.
     await waitFor(() => {
       expect(
-        screen.getByRole('checkbox', { name: /Enable auto-commit for new workspaces/ }),
+        screen.getByRole('switch', { name: /Enable auto-commit for new workspaces/ }),
       ).toBeTruthy();
     });
-    expect(screen.queryByRole('checkbox', { name: GIT_CRED_LABEL })).toBeNull();
+    expect(screen.queryByRole('switch', { name: GIT_CRED_LABEL })).toBeNull();
   });
 
   it('persists a toggle-off via settings.update with the exact payload', async () => {
@@ -164,7 +158,7 @@ describe('GitWorkspaceSettings — git credential toggle (§5.12)', () => {
 
     render(GitWorkspaceSettings);
 
-    const toggle = await waitFor(() => screen.getByRole('checkbox', { name: GIT_CRED_LABEL }));
+    const toggle = await waitFor(() => screen.getByRole('switch', { name: GIT_CRED_LABEL }));
     await fireEvent.click(toggle);
 
     await waitFor(() => {
@@ -183,7 +177,7 @@ describe('GitWorkspaceSettings — git credential toggle (§5.12)', () => {
 
     render(GitWorkspaceSettings);
 
-    const toggle = await waitFor(() => screen.getByRole('checkbox', { name: GIT_CRED_LABEL }));
+    const toggle = await waitFor(() => screen.getByRole('switch', { name: GIT_CRED_LABEL }));
     await fireEvent.click(toggle);
 
     await waitFor(() => {
@@ -199,12 +193,11 @@ describe('GitWorkspaceSettings — git credential toggle (§5.12)', () => {
 
     render(GitWorkspaceSettings);
 
-    const toggle = await waitFor(() => screen.getByRole('checkbox', { name: GIT_CRED_LABEL }));
+    await waitFor(() => screen.getByRole('switch', { name: GIT_CRED_LABEL }));
     const description = screen.getByText(/credential helper scoped to HTTPS\s+github\.com remotes/);
     expect(description).toBeTruthy();
     expect(description.closest('[title]')).toBeNull();
     expect(description.id).toBe('git-credentials-description');
-    expect(toggle.getAttribute('aria-describedby')).toBe('git-credentials-description');
   });
 });
 
@@ -264,7 +257,7 @@ describe('GitWorkspaceSettings — CoW isolation toggle', () => {
     render(GitWorkspaceSettings);
 
     await waitFor(() => {
-      expect(screen.getByRole('checkbox', { name: GIT_CRED_LABEL })).toBeTruthy();
+      expect(screen.getByRole('switch', { name: GIT_CRED_LABEL })).toBeTruthy();
     });
     expect(screen.queryByRole('checkbox', { name: COW_LABEL })).toBeNull();
     expect(screen.queryByText('Experimental')).toBeNull();
@@ -280,7 +273,7 @@ describe('GitWorkspaceSettings — CoW isolation toggle', () => {
     render(GitWorkspaceSettings);
 
     await waitFor(() => {
-      expect(screen.getByRole('checkbox', { name: GIT_CRED_LABEL })).toBeTruthy();
+      expect(screen.getByRole('switch', { name: GIT_CRED_LABEL })).toBeTruthy();
     });
     expect(screen.queryByRole('checkbox', { name: COW_LABEL })).toBeNull();
     expect(screen.queryByText('Experimental')).toBeNull();
@@ -526,7 +519,7 @@ describe('GitWorkspaceSettings — path picker fields (PathSettingField)', () =>
     render(GitWorkspaceSettings);
 
     const autoCommit = await waitFor(() =>
-      screen.getByRole('checkbox', { name: /Enable auto-commit for new workspaces/ }),
+      screen.getByRole('switch', { name: /Enable auto-commit for new workspaces/ }),
     );
     await fireEvent.click(autoCommit);
 

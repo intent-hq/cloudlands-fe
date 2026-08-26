@@ -8,12 +8,10 @@
   import { validateBranchPrefix, sanitizeBranchPrefix } from '$lib/utils/workspace-validation';
   import PathSettingField from './PathSettingField.svelte';
   import { Select } from '$lib/components/ui/select';
+  import { Toggle } from '$lib/components/ui/toggle';
   import type { Snippet } from 'svelte';
 
-  let {
-    shellAdditions,
-    workspaceAdditions,
-  }: { shellAdditions?: Snippet; workspaceAdditions?: Snippet } = $props();
+  let { shellAdditions }: { shellAdditions?: Snippet } = $props();
 
   // i18n-ignore (file path)
   const WORKTREES_PLACEHOLDER = '~/intent/workspaces';
@@ -84,6 +82,16 @@
 
   function handleShellChange(value: string) {
     defaultShell = value;
+    handleSave();
+  }
+
+  function handleAutoCommitToggle() {
+    autoCommit = !autoCommit;
+    handleSave();
+  }
+
+  function handleGitCredentialToggle() {
+    exposeGitCredential = !exposeGitCredential;
     handleSave();
   }
 
@@ -256,31 +264,40 @@
         </div>
       </section>
       <section class="px-6 py-5">
-        <label class="flex items-center gap-2 text-sm text-foreground cursor-pointer">
-          <input
-            type="checkbox"
-            bind:checked={autoCommit}
-            onchange={handleSave}
-            class="cursor-pointer"
+        <div class="flex items-center justify-between gap-4">
+          <p class="text-sm font-medium text-foreground">
+            {m.settings_gitWorkspace_autoCommit_label()}
+          </p>
+          <Toggle
+            pressed={autoCommit}
+            onclick={handleAutoCommitToggle}
+            variant="indicator"
+            size="xs"
+            class="mb-auto"
+            ariaLabel={m.settings_gitWorkspace_autoCommit_label()}
           />
-          {m.settings_gitWorkspace_autoCommit_label()}
-        </label>
+        </div>
       </section>
       {#if gitCredentialSettingSupported}
         <section class="px-6 py-5">
-          <label class="flex items-center gap-2 text-sm text-foreground cursor-pointer">
-            <input
-              type="checkbox"
-              bind:checked={exposeGitCredential}
-              onchange={handleSave}
-              class="cursor-pointer"
-              aria-describedby="git-credentials-description"
+          <div class="flex items-center justify-between gap-4">
+            <div>
+              <p class="text-sm font-medium text-foreground">
+                {m.settings_gitWorkspace_gitCredentials_label()}
+              </p>
+              <p id="git-credentials-description" class="text-xs text-subtle mt-1">
+                {m.settings_gitWorkspace_gitCredentials_description()}
+              </p>
+            </div>
+            <Toggle
+              pressed={exposeGitCredential}
+              onclick={handleGitCredentialToggle}
+              variant="indicator"
+              size="xs"
+              class="mb-auto"
+              ariaLabel={m.settings_gitWorkspace_gitCredentials_label()}
             />
-            <span>{m.settings_gitWorkspace_gitCredentials_label()}</span>
-          </label>
-          <p id="git-credentials-description" class="text-xs text-subtle mt-0.5 ml-6">
-            {m.settings_gitWorkspace_gitCredentials_description()}
-          </p>
+          </div>
         </section>
       {/if}
     </div>
@@ -363,6 +380,5 @@
         </section>
       {/if}
     </div>
-    {#if workspaceAdditions}<div class="mt-4">{@render workspaceAdditions()}</div>{/if}
   </div>
 </div>
