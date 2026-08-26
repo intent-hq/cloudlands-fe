@@ -1792,6 +1792,11 @@ function scanSuggestedPrompts(
 
     const trailingCloserMatch = line.match(SUGGESTED_PROMPTS_TRAILING_CLOSER_REGEX);
     if (trailingCloserMatch && !SUGGESTED_PROMPTS_OPENER_REGEX.test(trailingCloserMatch[1])) {
+      // While streaming, a fused closer on the unterminated final line is
+      // ambiguous: the next chunk may extend it into an embedded arrow
+      // (`Run -->` → `Run --> tests`). Keep the block open until the newline
+      // confirms the line; the withholding pass below keeps it hidden.
+      if (isStreaming && i === lines.length - 1) continue;
       const body = [...lines.slice(openerIndex + 1, i), trailingCloserMatch[1]];
       blocks.push({
         start: openerStart,

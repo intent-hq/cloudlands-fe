@@ -31,6 +31,8 @@ import type {
   SwitchConnectionParams,
   SwitchConnectionResult,
   ConnectionBootFallbackEvent,
+  KeychainSyncStateResult,
+  SetKeychainSyncEnabledParams,
 } from '$shared/types/connections';
 
 /** The always-present, non-forgettable local sidecar entry. */
@@ -108,5 +110,27 @@ registerMockIpcHandler(
   CONNECTION_CHANNELS.GET_BOOT_FALLBACK,
   async (): Promise<{ bootFallback: ConnectionBootFallbackEvent | null }> => {
     return { bootFallback: null };
+  },
+);
+
+// iCloud-keychain sync (T4). The browser/mock environment has no macOS
+// keychain, so sync reads as unsupported; the pref round-trips in memory so
+// the toggle wiring stays testable.
+let keychainSyncEnabled = false;
+
+function keychainSyncState(): KeychainSyncStateResult {
+  return { supported: false, enabled: keychainSyncEnabled, status: null };
+}
+
+registerMockIpcHandler(
+  CONNECTION_CHANNELS.SYNC_GET_STATE,
+  async (): Promise<KeychainSyncStateResult> => keychainSyncState(),
+);
+
+registerMockIpcHandler(
+  CONNECTION_CHANNELS.SYNC_SET_ENABLED,
+  async (arg): Promise<KeychainSyncStateResult> => {
+    keychainSyncEnabled = (arg as SetKeychainSyncEnabledParams).enabled;
+    return keychainSyncState();
   },
 );

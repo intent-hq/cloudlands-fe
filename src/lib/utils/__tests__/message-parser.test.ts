@@ -1286,6 +1286,65 @@ Some trailing content.`;
     expect(result.cleanedContent).toBe('Done.');
   });
 
+  it('defers a fused closer on the unterminated final line while streaming (monorepo#3155)', () => {
+    // Chunk boundary inside an embedded arrow: `Run -->` must not surface a
+    // prompt chip that the next chunk (`Run --> tests`) invalidates. The
+    // deferred block stays open, so the always-withhold rule keeps it hidden.
+    const fused = 'Done.\n\n<!-- suggested-prompts\nRun -->';
+    const withheld = parseSuggestedPrompts(fused, { isStreaming: true });
+    expect(withheld.prompts).toEqual([]);
+    expect(withheld.cleanedContent).toBe('Done.');
+
+    // Once the next chunk reveals an embedded arrow the block is still open:
+    // it stays withheld while streaming, and finalization restores the text
+    // because the block never closed.
+    const extended = 'Done.\n\n<!-- suggested-prompts\nRun --> tests\n';
+    const stillOpen = parseSuggestedPrompts(extended, { isStreaming: true });
+    expect(stillOpen.prompts).toEqual([]);
+    expect(stillOpen.cleanedContent).toBe('Done.');
+    expect(parseSuggestedPrompts(extended).cleanedContent).toBe(extended);
+  });
+
+  it('accepts a fused closer while streaming once its line is newline-terminated', () => {
+    const confirmed = 'Done.\n\n<!-- suggested-prompts\nRun tests -->\n';
+    const result = parseSuggestedPrompts(confirmed, { isStreaming: true });
+    expect(result.prompts).toEqual(['Run tests']);
+    expect(result.cleanedContent).toBe('Done.');
+  });
+
+  it('accepts a fused closer on the final line when not streaming', () => {
+    const finalized = 'Done.\n\n<!-- suggested-prompts\nRun tests -->';
+    const result = parseSuggestedPrompts(finalized);
+    expect(result.prompts).toEqual(['Run tests']);
+    expect(result.cleanedContent).toBe('Done.');
+  });
+
+  it('strips an over-cap block closed by a fused dash-only remainder and caps its chips', () => {
+    // The fused `- -->` closer is deferred while streaming (block open →
+    // withheld); at finalization the close is accepted, the well-formed block
+    // is stripped, and the fifth candidate falls past the cap.
+    const content = 'Done.\n\n<!-- suggested-prompts\nOne\nTwo\nThree\nFour\n- -->';
+    const streaming = parseSuggestedPrompts(content, { isStreaming: true });
+    expect(streaming.prompts).toEqual([]);
+    expect(streaming.cleanedContent).toBe('Done.');
+    const finalized = parseSuggestedPrompts(content);
+    expect(finalized.prompts).toEqual(['One', 'Two', 'Three', 'Four']);
+    expect(finalized.cleanedContent).toBe('Done.');
+  });
+
+  it('strips a fused final line whose remainder is an embedded arrow without yielding chips', () => {
+    // Streaming defers the fused closer (block open → withheld); finalization
+    // accepts the close and strips the block, but the embedded arrow is
+    // body-shaped so no chips surface.
+    const content = 'Done.\n\n<!-- suggested-prompts\nA --> B -->';
+    const streaming = parseSuggestedPrompts(content, { isStreaming: true });
+    expect(streaming.prompts).toEqual([]);
+    expect(streaming.cleanedContent).toBe('Done.');
+    const finalized = parseSuggestedPrompts(content);
+    expect(finalized.prompts).toEqual([]);
+    expect(finalized.cleanedContent).toBe('Done.');
+  });
+
   it('restores unclosed blocks when streaming finalizes', () => {
     const incomplete = 'Done.\n\n<!-- suggested-prompts\nOnly one prompt';
     expect(parseSuggestedPrompts(incomplete, { isStreaming: true }).cleanedContent).toBe('Done.');

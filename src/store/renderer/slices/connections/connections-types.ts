@@ -14,6 +14,7 @@ import type {
   ConnectionAuthRejectedEvent,
   ConnectionCertMismatchEvent,
   ConnectionProtocolMismatchEvent,
+  KeychainSyncStateResult,
 } from '$shared/types/connections';
 import type { Collection } from '@augmentcode/themis/utils/collections/collection-utils';
 
@@ -28,6 +29,8 @@ export type {
   ConnectionAuthRejectedEvent,
   ConnectionCertMismatchEvent,
   ConnectionProtocolMismatchEvent,
+  KeychainSyncStateResult,
+  KeychainSyncUiStatus,
 } from '$shared/types/connections';
 
 /**
@@ -91,4 +94,10 @@ export interface ConnectionsState {
    * only the persistent menu warning shows; the menu warning ignores this flag.
    */
   protocolMismatchModalDismissed: boolean;
+  /**
+   * iCloud-keychain backend sync state (`connections:sync-get-state` result),
+   * or null before the settings UI first loads it. `status` inside is
+   * refreshed live by the `connections:sync-status-changed` push.
+   */
+  keychainSync: KeychainSyncStateResult | null;
 }

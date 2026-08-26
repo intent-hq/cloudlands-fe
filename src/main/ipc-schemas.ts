@@ -1095,6 +1095,12 @@ export const ConnectionsSwitchSchema = z.object({
   id: z.string().min(1, 'Connection ID is required'),
 });
 
+export const ConnectionsSyncGetStateSchema = EmptySchema;
+
+export const ConnectionsSyncSetEnabledSchema = z.object({
+  enabled: z.boolean(),
+});
+
 // ============================================================================
 // Quit Confirmation Schemas
 //

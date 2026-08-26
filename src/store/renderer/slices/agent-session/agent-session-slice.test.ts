@@ -849,6 +849,23 @@ describe('agent-session-slice reducer', () => {
       expect(getMsgs(state, 'a1')).toHaveLength(1);
     });
 
+    it('applies the sticky liveTurnOpen/liveTurnOpenedAt fields without touching updatedAt', () => {
+      // The daemon-events bridge marks a session live off an
+      // agent:stream:activity ping through updateSession; updatedAt is
+      // daemon-owned (STAB-19) and must stay whatever the session already had.
+      let state = agentSessionReducer(
+        initialState,
+        upsertSession(makeSession('a1', 'ws-1', { updatedAt: '2026-01-01T00:00:00.000Z' })),
+      );
+      state = agentSessionReducer(
+        state,
+        updateSession('a1', { liveTurnOpen: true, liveTurnOpenedAt: '2026-01-02T00:00:00.000Z' }),
+      );
+      expect(state.byAgentId['a1'].liveTurnOpen).toBe(true);
+      expect(state.byAgentId['a1'].liveTurnOpenedAt).toBe('2026-01-02T00:00:00.000Z');
+      expect(state.byAgentId['a1'].updatedAt).toBe('2026-01-01T00:00:00.000Z');
+    });
+
     it('deduplicates same-appMessageId messages in updateSession message arrays', () => {
       const appMessageId = 'app_msg_update';
       let state = agentSessionReducer(initialState, upsertSession(makeSession('a1')));
@@ -1249,6 +1266,63 @@ describe('agent-session-slice reducer', () => {
         } as any),
       );
       expect(state.byAgentId['a1'].liveTurnOpen).toBe(false);
+    });
+
+    it('a fresh running edge clears the previous turn lastToolUse; a mid-turn tick does not', () => {
+      // The persisted lastToolUse (AgentLite §5.5) survives idle, and the
+      // running status-changed edge makes the session live BEFORE the first
+      // activity ping of the new turn wipes it — without the reducer clear,
+      // a tool-only prior turn's tool renders as live during that window.
+      let state = agentSessionReducer(
+        initialState,
+        upsertSession(
+          makeSession('a1', 'ws-1', {
+            lastToolUse: { name: 'view' },
+          } as any),
+        ),
+      );
+      expect((state.byAgentId['a1'] as any).lastToolUse).toEqual({ name: 'view' });
+
+      // Fresh running edge (liveTurnOpen closed → open) clears the stale tool.
+      state = agentSessionReducer(
+        state,
+        eventReceived('ws-1', {
+          id: 'evt-running',
+          type: 'agent:status-changed',
+          timestamp: '2024-01-01T00:00:00.000Z',
+          workspaceId: 'ws-1',
+          data: { agentId: 'a1', status: 'active', isActive: true },
+        } as any),
+      );
+      expect(state.byAgentId['a1'].liveTurnOpen).toBe(true);
+      expect((state.byAgentId['a1'] as any).lastToolUse).toBeUndefined();
+
+      // The new turn's activity ping repopulates the field...
+      state = agentSessionReducer(
+        state,
+        updateSession('a1', { lastToolUse: { name: 'str-replace-editor', status: 'running' } }),
+      );
+      expect((state.byAgentId['a1'] as any).lastToolUse).toEqual({
+        name: 'str-replace-editor',
+        status: 'running',
+      });
+
+      // ...and a mid-turn status tick (slot already open) must NOT wipe it.
+      state = agentSessionReducer(
+        state,
+        eventReceived('ws-1', {
+          id: 'evt-midturn',
+          type: 'agent:status-changed',
+          timestamp: '2024-01-01T00:01:00.000Z',
+          workspaceId: 'ws-1',
+          data: { agentId: 'a1', status: 'active', isActive: true, isStreaming: true },
+        } as any),
+      );
+      expect(state.byAgentId['a1'].liveTurnOpen).toBe(true);
+      expect((state.byAgentId['a1'] as any).lastToolUse).toEqual({
+        name: 'str-replace-editor',
+        status: 'running',
+      });
     });
 
     it('a hydration with isActive:false or a terminal status closes the sticky liveTurnOpen slot', () => {
