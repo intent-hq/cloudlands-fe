@@ -5968,6 +5968,7 @@
   "chat_monitoredPrs_status_blocked": "オープンですが、{reason} によりブロックされています。",
   "chat_monitoredPrs_status_draft": "ドラフトのプルリクエストです。",
   "chat_monitoredPrs_status_unknown": "オープンです。マージ可能か確認中です。",
+  "chat_monitoredPrs_status_mergeQueue": "オープンです。マージ待ちのキューに入っています。",
   "chat_monitoredPrs_blocker_conflicts": "マージ競合",
   "chat_monitoredPrs_blocker_behind": "ブランチの遅れ",
   "chat_monitoredPrs_blocker_checksFailing": "必須チェックの失敗",

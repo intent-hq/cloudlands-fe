@@ -5968,6 +5968,7 @@
   "chat_monitoredPrs_status_blocked": "Abierta, pero bloqueada por {reason}.",
   "chat_monitoredPrs_status_draft": "Pull request en borrador.",
   "chat_monitoredPrs_status_unknown": "Abierta; aún se está comprobando si está lista para fusionar.",
+  "chat_monitoredPrs_status_mergeQueue": "Abierta; en cola para fusionar.",
   "chat_monitoredPrs_blocker_conflicts": "conflictos de fusión",
   "chat_monitoredPrs_blocker_behind": "la rama desactualizada",
   "chat_monitoredPrs_blocker_checksFailing": "comprobaciones obligatorias fallidas",

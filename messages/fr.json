@@ -5968,6 +5968,7 @@
   "chat_monitoredPrs_status_blocked": "Ouverte, mais bloquée par {reason}.",
   "chat_monitoredPrs_status_draft": "Pull request en brouillon.",
   "chat_monitoredPrs_status_unknown": "Ouverte ; la possibilité de fusionner est encore en cours de vérification.",
+  "chat_monitoredPrs_status_mergeQueue": "Ouverte ; en file d'attente pour la fusion.",
   "chat_monitoredPrs_blocker_conflicts": "des conflits de fusion",
   "chat_monitoredPrs_blocker_behind": "une branche en retard",
   "chat_monitoredPrs_blocker_checksFailing": "des vérifications requises en échec",
