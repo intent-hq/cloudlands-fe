@@ -6040,6 +6040,8 @@
   "workspace_transfer_finalizing_message": "Wird abgeschlossen…",
   "workspace_transfer_finalizeFailed_error": "Die Übertragung konnte nicht abgeschlossen werden: {error}",
   "workspace_transfer_unknown_error": "Unbekannter Fehler",
+  "workspace_transfer_notSessionOwner_error": "Diese Übertragung wurde in einem anderen Fenster gestartet.",
+  "workspace_import_notSessionOwner_error": "Dieser Import wurde in einem anderen Fenster gestartet.",
   "workspace_transfer_close_label": "Schließen",
   "workspace_branchSelector_refreshBranches_ariaLabel": "Branches aktualisieren",
   "layout_allCard_showMore_label": "Mehr anzeigen",

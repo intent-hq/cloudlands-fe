@@ -428,6 +428,46 @@ describe('workspace import relay — per-window session affinity (monorepo#3519)
     await expect(first).resolves.toMatchObject({ success: false, canceled: true });
   });
 
+  it('releases an in-flight run whose owner is gone: a new start cancels it and proceeds', async () => {
+    const isOwnerGone = vi.fn(() => false);
+    const client = makeGatedClient();
+    const file = makeFile();
+    const { deps } = makeDeps(client, file, { isOwnerGone });
+    const relay = makeRelay(deps);
+
+    // Orphaned run: held at commit, then its window closes.
+    const orphan = relay.start({}, client.client);
+    await vi.waitFor(() => {
+      if (!client.commitReached()) throw new Error('commit not reached yet');
+    });
+    isOwnerGone.mockReturnValue(true);
+
+    const fresh = makeClient();
+    const second = relay.start({}, fresh.client, OTHER);
+    client.releaseCommit();
+    // The orphan unwinds as cancelled (its cancel raced the commit and lost).
+    await expect(orphan).resolves.toMatchObject({ success: false, canceled: true });
+    isOwnerGone.mockReturnValue(false);
+    await expect(second).resolves.toMatchObject({ success: true });
+  });
+
+  it('keeps rejecting a second start while the in-flight run\'s owner is alive', async () => {
+    const client = makeGatedClient();
+    const file = makeFile();
+    const { deps } = makeDeps(client, file);
+    const relay = makeRelay(deps);
+
+    const first = relay.start({}, client.client);
+    await vi.waitFor(() => {
+      if (!client.commitReached()) throw new Error('commit not reached yet');
+    });
+    const second = await relay.start({}, client.client, OTHER);
+    expect(second).toMatchObject({ success: false, error: expect.stringContaining('already') });
+
+    client.releaseCommit();
+    await expect(first).resolves.toMatchObject({ success: true });
+  });
+
   it('does not reuse another window\'s last file: retry from a second window re-opens the dialog', async () => {
     const failing = makeClient({
       'workspace.import.commit': () => new Error('boom'),

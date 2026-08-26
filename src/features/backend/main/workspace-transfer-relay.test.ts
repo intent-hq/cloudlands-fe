@@ -820,4 +820,72 @@ describe('workspace-transfer relay — per-window session affinity (monorepo#351
     source.emit('workspace:transfer:ready', { ...READY_DATA, workspaceId: 'ws-2' });
     await expect(second).resolves.toMatchObject({ success: true });
   });
+
+  it('releases an in-flight run whose owner is gone: a new start cancels it and proceeds', async () => {
+    const isOwnerGone = vi.fn(() => false);
+    const source = makeSource();
+    const target = makeTarget();
+    const { deps } = makeDeps(source, target, { isOwnerGone });
+    const relay = makeRelay(deps);
+
+    // Orphaned run: mid-build (awaiting :ready), then its window closes.
+    const orphan = relay.start(
+      { workspaceId: 'ws-1', destination: { kind: 'server', connectionId: 'conn-1' } },
+      source.client,
+    );
+    await vi.waitFor(() => {
+      if (!source.started()) throw new Error('not started yet');
+    });
+    isOwnerGone.mockReturnValue(true);
+
+    const second = relay.start(
+      { workspaceId: 'ws-2', destination: { kind: 'server', connectionId: 'conn-1' } },
+      source.client,
+      OTHER,
+    );
+    // The orphan unwinds as cancelled and aborts its own export.
+    await expect(orphan).resolves.toMatchObject({ success: false, canceled: true });
+    await vi.waitFor(() => {
+      if (!source.calls.some((c) => c.method === 'workspace.export.abort')) {
+        throw new Error('orphaned export not aborted yet');
+      }
+    });
+
+    isOwnerGone.mockReturnValue(false);
+    await vi.waitFor(() => {
+      if (source.calls.filter((c) => c.method === 'workspace.export.start').length < 2) {
+        throw new Error('second export not started yet');
+      }
+    });
+    source.emit('workspace:transfer:ready', { ...READY_DATA, workspaceId: 'ws-2' });
+    await expect(second).resolves.toMatchObject({ success: true });
+
+    // The orphan's unwind must not have cleared the successor's session:
+    // the new owner can still finalize.
+    expect(await relay.finalize({ archiveSource: false }, OTHER)).toEqual({ success: true });
+  });
+
+  it('keeps rejecting a second start while the in-flight run\'s owner is alive', async () => {
+    const source = makeSource();
+    const target = makeTarget();
+    const { deps } = makeDeps(source, target);
+    const relay = makeRelay(deps);
+
+    const first = relay.start(
+      { workspaceId: 'ws-1', destination: { kind: 'server', connectionId: 'conn-1' } },
+      source.client,
+    );
+    await vi.waitFor(() => {
+      if (!source.started()) throw new Error('not started yet');
+    });
+    const second = await relay.start(
+      { workspaceId: 'ws-2', destination: { kind: 'server', connectionId: 'conn-1' } },
+      source.client,
+      OTHER,
+    );
+    expect(second).toMatchObject({ success: false, error: expect.stringContaining('already') });
+
+    source.emit('workspace:transfer:ready', READY_DATA);
+    await expect(first).resolves.toMatchObject({ success: true });
+  });
 });

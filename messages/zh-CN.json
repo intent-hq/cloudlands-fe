@@ -6040,6 +6040,8 @@
   "workspace_transfer_finalizing_message": "正在收尾…",
   "workspace_transfer_finalizeFailed_error": "无法完成传输：{error}",
   "workspace_transfer_unknown_error": "未知错误",
+  "workspace_transfer_notSessionOwner_error": "此传输是在另一个窗口中启动的。",
+  "workspace_import_notSessionOwner_error": "此导入是在另一个窗口中启动的。",
   "workspace_transfer_close_label": "关闭",
   "workspace_branchSelector_refreshBranches_ariaLabel": "刷新分支",
   "layout_allCard_showMore_label": "显示更多",

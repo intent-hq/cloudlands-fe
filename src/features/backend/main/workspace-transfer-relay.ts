@@ -333,7 +333,14 @@ export function createWorkspaceTransferRelay(deps: TransferRelayDeps): Workspace
     ownerId: number,
   ): Promise<TransferStartResult> {
     if (session && !session.committed && !session.cancelled) {
-      return { success: false, error: 'a transfer is already in progress' };
+      if (!deps.isOwnerGone(session.ownerId)) {
+        return { success: false, error: 'a transfer is already in progress' };
+      }
+      // The in-flight run's owner window is gone: no renderer remains to
+      // cancel it, so release it here — flag it cancelled (its loop unwinds
+      // and aborts the export itself) and let the new start proceed.
+      session.cancelled = true;
+      session.signalCancel?.();
     }
     // A committed-but-unfinalized session stays pinned to its window: another
     // window must not silently abort it (monorepo#3519). Only its own window
@@ -366,7 +373,7 @@ export function createWorkspaceTransferRelay(deps: TransferRelayDeps): Workspace
     if (destination.kind === 'download') {
       filePath = await deps.showSaveDialog(`${workspaceId}-transfer.zip`);
       if (!filePath) {
-        session = null;
+        if (session === current) session = null;
         return { success: false, canceled: true };
       }
     }
@@ -457,7 +464,8 @@ export function createWorkspaceTransferRelay(deps: TransferRelayDeps): Workspace
           error: errText(error),
         });
       }
-      session = null;
+      // An orphaned run released by a takeover must not clear its successor.
+      if (session === current) session = null;
       return cancelled
         ? { success: false, canceled: true }
         : { success: false, error: errText(error) };

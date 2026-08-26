@@ -6040,6 +6040,8 @@
   "workspace_transfer_finalizing_message": "Finishing up…",
   "workspace_transfer_finalizeFailed_error": "Could not finish the transfer: {error}",
   "workspace_transfer_unknown_error": "Unknown error",
+  "workspace_transfer_notSessionOwner_error": "This transfer was started in another window.",
+  "workspace_import_notSessionOwner_error": "This import was started in another window.",
   "workspace_transfer_close_label": "Close",
   "chat_richInput_enhanced_label": "Enhanced",
   "chat_richInput_enhancing_label": "Enhancing",

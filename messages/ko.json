@@ -6040,6 +6040,8 @@
   "workspace_transfer_finalizing_message": "마무리 중…",
   "workspace_transfer_finalizeFailed_error": "전송을 마칠 수 없습니다: {error}",
   "workspace_transfer_unknown_error": "알 수 없는 오류",
+  "workspace_transfer_notSessionOwner_error": "이 전송은 다른 창에서 시작되었습니다.",
+  "workspace_import_notSessionOwner_error": "이 가져오기는 다른 창에서 시작되었습니다.",
   "workspace_transfer_close_label": "닫기",
   "workspace_branchSelector_refreshBranches_ariaLabel": "브랜치 새로고침",
   "layout_allCard_showMore_label": "더 보기",

@@ -172,7 +172,13 @@ export function createWorkspaceImportRelay(deps: ImportRelayDeps): WorkspaceImpo
     ownerId: number,
   ): Promise<ImportStartResult> {
     if (session) {
-      return { success: false, error: 'an import is already in progress' };
+      if (!deps.isOwnerGone(session.ownerId)) {
+        return { success: false, error: 'an import is already in progress' };
+      }
+      // The in-flight run's owner window is gone: no renderer remains to
+      // cancel it, so release it here — flag it cancelled (its loop observes
+      // the flag and aborts the staged import) and let the new start proceed.
+      session.cancelled = true;
     }
     // The session exists across the open dialog too, so a wizard close while
     // the native dialog is up marks it cancelled and the pick is discarded.
@@ -276,7 +282,8 @@ export function createWorkspaceImportRelay(deps: ImportRelayDeps): WorkspaceImpo
         : { success: false, error: errText(error) };
     } finally {
       await file?.close().catch(() => undefined);
-      session = null;
+      // An orphaned run released by a takeover must not clear its successor.
+      if (session === current) session = null;
     }
   }
 
