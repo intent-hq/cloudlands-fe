@@ -26,6 +26,7 @@ import { randomUUID } from 'crypto';
 import { app, safeStorage } from 'electron';
 import { Logger } from '../../../shared/logger';
 import { LOCAL_CONNECTION_ID, type ConnectionRecord } from '../../../shared/types/connections';
+import { TOMBSTONE_TTL_MS, accountKeyFor, type KeychainSyncRecord } from './keychain-sync';
 
 // Re-export the shared contract types so existing store importers keep a single
 // import site while the canonical definitions live in `shared/types/connections`
@@ -79,6 +80,33 @@ interface StoredConnection {
    */
   detectHosts?: boolean;
   encToken: EncryptedToken;
+  /**
+   * Last-writer-wins conflict clock for keychain sync (ms since epoch),
+   * stamped on every syncable mutation. Absent on records written before sync
+   * existed — treated as 0 (epoch-old) so any synced copy wins over them.
+   */
+  updatedAt?: number;
+}
+
+/**
+ * A forgotten remote connection, kept so keychain sync can propagate the
+ * deletion to other machines (see keychain-sync.ts "tombstones"). Carries the
+ * full identity shape a sync record needs but NEVER a token. Purged from disk
+ * once the corresponding keychain tombstone expires (the reconcile stops
+ * listing it) or when the same host:port is re-added.
+ */
+interface StoredTombstone {
+  label: string;
+  host: string;
+  port: number;
+  fingerprint: string;
+  hostname?: string | null;
+  hosts?: string[];
+  detectHosts?: boolean;
+  /** LWW clock at forget time (ms since epoch). */
+  updatedAt: number;
+  /** When the backend was forgotten (ms since epoch); sync TTL anchor. */
+  deletedAt: number;
 }
 
 /** Fields required to register a new remote connection. */
@@ -95,6 +123,7 @@ export interface NewConnection {
 interface PersistedState {
   connections: StoredConnection[];
   activeId: string;
+  tombstones: StoredTombstone[];
 }
 
 /** In-flight write chain so concurrent writers serialize. */
@@ -169,10 +198,30 @@ function isStoredConnection(value: unknown): value is StoredConnection {
     (c.hosts === undefined ||
       (Array.isArray(c.hosts) && c.hosts.every((h) => typeof h === 'string'))) &&
     (c.detectHosts === undefined || typeof c.detectHosts === 'boolean') &&
+    // `updatedAt` is an optional late addition (keychain sync): absent on
+    // records written before sync existed — treated as epoch-old.
+    (c.updatedAt === undefined || typeof c.updatedAt === 'number') &&
     !!tok &&
     typeof tok === 'object' &&
     typeof tok.encrypted === 'boolean' &&
     typeof tok.value === 'string'
+  );
+}
+
+function isStoredTombstone(value: unknown): value is StoredTombstone {
+  if (!value || typeof value !== 'object') return false;
+  const t = value as Record<string, unknown>;
+  return (
+    typeof t.label === 'string' &&
+    typeof t.host === 'string' &&
+    typeof t.port === 'number' &&
+    typeof t.fingerprint === 'string' &&
+    (t.hostname === undefined || t.hostname === null || typeof t.hostname === 'string') &&
+    (t.hosts === undefined ||
+      (Array.isArray(t.hosts) && t.hosts.every((h) => typeof h === 'string'))) &&
+    (t.detectHosts === undefined || typeof t.detectHosts === 'boolean') &&
+    typeof t.updatedAt === 'number' &&
+    typeof t.deletedAt === 'number'
   );
 }
 
@@ -186,7 +235,10 @@ async function readState(): Promise<PersistedState> {
         ? obj.connections.filter(isStoredConnection)
         : [];
       const activeId = typeof obj.activeId === 'string' ? obj.activeId : LOCAL_CONNECTION_ID;
-      return { connections, activeId };
+      const tombstones = Array.isArray(obj.tombstones)
+        ? obj.tombstones.filter(isStoredTombstone)
+        : [];
+      return { connections, activeId, tombstones };
     }
   } catch (error) {
     const code = (error as NodeJS.ErrnoException).code;
@@ -196,7 +248,7 @@ async function readState(): Promise<PersistedState> {
       });
     }
   }
-  return { connections: [], activeId: LOCAL_CONNECTION_ID };
+  return { connections: [], activeId: LOCAL_CONNECTION_ID, tombstones: [] };
 }
 
 async function writeState(next: PersistedState): Promise<void> {
@@ -238,6 +290,50 @@ function decryptToken(encToken: EncryptedToken): string {
 }
 
 /**
+ * Listeners notified after every LOCAL syncable mutation (add / forget /
+ * setHostname / setHosts) that actually persisted a change. The keychain-sync
+ * lifecycle (T3) uses this to schedule an async push. Remote applications via
+ * {@link applyRemoteSyncRecord} intentionally do NOT notify — that would loop
+ * a pull straight back into a push.
+ */
+const mutationListeners = new Set<() => void>();
+
+/** Subscribe to local syncable mutations; returns an unsubscribe function. */
+export function onConnectionsMutated(listener: () => void): () => void {
+  mutationListeners.add(listener);
+  return () => mutationListeners.delete(listener);
+}
+
+function notifyMutated(): void {
+  for (const listener of mutationListeners) {
+    try {
+      listener();
+    } catch (error) {
+      logger.warn('connections mutation listener failed', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+}
+
+/**
+ * Whether two host:port identities refer to the same backend. Hosts compare
+ * trimmed + case-insensitively, mirroring keychain-sync's `accountKeyFor`, so
+ * a case-differing re-add can never split one backend into two records.
+ */
+function sameTarget(
+  a: Pick<StoredConnection, 'host' | 'port'>,
+  b: Pick<StoredConnection, 'host' | 'port'>,
+): boolean {
+  return accountKeyFor(a.host, a.port) === accountKeyFor(b.host, b.port);
+}
+
+/** Drop tombstones matching `host:port` (the backend came back). */
+function clearTombstone(state: PersistedState, host: string, port: number): void {
+  state.tombstones = state.tombstones.filter((t) => !sameTarget(t, { host, port }));
+}
+
+/**
  * List all connections: the synthesized local entry first, then persisted
  * remotes in insertion order. Tokens are never included.
  */
@@ -262,9 +358,11 @@ export async function list(): Promise<ConnectionRecord[]> {
 export async function add(conn: NewConnection): Promise<ConnectionRecord> {
   const encToken = encryptToken(conn.token);
   const stored = await mutate(async (state) => {
-    const duplicates = state.connections.filter(
-      (c) => c.host === conn.host && c.port === conn.port,
-    );
+    // Host comparison is normalized (trim + lowercase, see sameTarget) so a
+    // case-differing re-add upserts the existing record instead of splitting
+    // one backend into two — keychain-sync keys accounts the same way.
+    const duplicates = state.connections.filter((c) => sameTarget(c, conn));
+    clearTombstone(state, conn.host, conn.port);
     if (duplicates.length > 0) {
       const survivor = duplicates.find((c) => c.id === state.activeId) ?? duplicates[0];
       survivor.label = conn.label;
@@ -272,6 +370,7 @@ export async function add(conn: NewConnection): Promise<ConnectionRecord> {
       survivor.encToken = encToken;
       survivor.detectHosts = conn.detectHosts ?? true;
       survivor.hostname ??= duplicates.find((c) => c.hostname != null)?.hostname ?? null;
+      survivor.updatedAt = Date.now();
       state.connections = state.connections.filter(
         (c) => c === survivor || !duplicates.includes(c),
       );
@@ -286,11 +385,13 @@ export async function add(conn: NewConnection): Promise<ConnectionRecord> {
       fingerprint: conn.fingerprint,
       detectHosts: conn.detectHosts ?? true,
       encToken,
+      updatedAt: Date.now(),
     };
     state.connections.push(record);
     await writeState(state);
     return record;
   });
+  notifyMutated();
   return toRecord(stored);
 }
 
@@ -303,13 +404,16 @@ export async function add(conn: NewConnection): Promise<ConnectionRecord> {
  * resilience nicety, never a hard requirement.
  */
 export async function setHosts(id: string, hosts: string[]): Promise<void> {
-  await mutate((state) => {
+  const changed = await mutate(async (state) => {
     const conn = state.connections.find((c) => c.id === id);
-    if (!conn) return; // unknown id: nothing to update
-    if (conn.detectHosts === false) return; // user opted out of IP detection
+    if (!conn) return false; // unknown id: nothing to update
+    if (conn.detectHosts === false) return false; // user opted out of IP detection
     conn.hosts = dedupeHosts([conn.host, ...hosts]).filter((h) => h !== conn.host.trim());
-    return writeState(state);
+    conn.updatedAt = Date.now();
+    await writeState(state);
+    return true;
   });
+  if (changed) notifyMutated();
 }
 
 /**
@@ -335,29 +439,53 @@ export async function getDetectHosts(id: string): Promise<boolean> {
 export async function setHostname(id: string, hostname: string): Promise<void> {
   const trimmed = hostname.trim();
   if (!trimmed) return;
-  await mutate((state) => {
+  const changed = await mutate(async (state) => {
     const conn = state.connections.find((c) => c.id === id);
-    if (!conn) return; // unknown id: nothing to label
+    if (!conn) return false; // unknown id: nothing to label
     conn.hostname = trimmed;
-    return writeState(state);
+    conn.updatedAt = Date.now();
+    await writeState(state);
+    return true;
   });
+  if (changed) notifyMutated();
 }
 
 /**
  * Forget a remote connection. Rejects the reserved `local` id. If the
  * forgotten connection was active, the active selection falls back to `local`.
+ * Writes a tombstone for the removed backend so keychain sync propagates the
+ * deletion to other machines (replacing any older tombstone for the same
+ * host:port).
  */
 export async function forget(id: string): Promise<void> {
   if (id === LOCAL_CONNECTION_ID) {
     throw new Error('Cannot forget the local connection');
   }
-  await mutate((state) => {
+  const changed = await mutate(async (state) => {
+    const removed = state.connections.find((c) => c.id === id);
     state.connections = state.connections.filter((c) => c.id !== id);
     if (state.activeId === id) {
       state.activeId = LOCAL_CONNECTION_ID;
     }
-    return writeState(state);
+    if (removed) {
+      const now = Date.now();
+      clearTombstone(state, removed.host, removed.port);
+      state.tombstones.push({
+        label: removed.label,
+        host: removed.host,
+        port: removed.port,
+        fingerprint: removed.fingerprint,
+        hostname: removed.hostname ?? null,
+        hosts: removed.hosts,
+        detectHosts: removed.detectHosts,
+        updatedAt: now,
+        deletedAt: now,
+      });
+    }
+    await writeState(state);
+    return removed !== undefined;
   });
+  if (changed) notifyMutated();
 }
 
 /** The currently active backend id; defaults to `local`. */
@@ -390,6 +518,149 @@ export async function getDecryptedToken(id: string): Promise<string | null> {
   const conn = state.connections.find((c) => c.id === id);
   if (!conn) return null;
   return decryptToken(conn.encToken);
+}
+
+// ============================================================================
+// Keychain-sync adapter surface (LocalSyncAdapter backing, see keychain-sync.ts)
+// ============================================================================
+
+/**
+ * Every locally known sync record: live remotes (token decrypted, needed for
+ * pushes) followed by tombstones. Records written before sync existed carry
+ * `updatedAt: 0` (epoch-old) so any synced copy wins over them. A live record
+ * whose token cannot be decrypted is skipped (fail-soft — one corrupt entry
+ * must not abort the whole reconcile). Expired tombstones are pruned from
+ * disk as a side effect (the reconcile never pushes them anyway).
+ *
+ * The local sidecar is never listed: it is synthesized, not persisted, so it
+ * can never leak into the keychain. `activeId` is per-machine state and is
+ * likewise never part of the sync payload.
+ */
+export async function listSyncRecords(): Promise<KeychainSyncRecord[]> {
+  const now = Date.now();
+  const state = await readState();
+  if (state.tombstones.some((t) => t.deletedAt + TOMBSTONE_TTL_MS <= now)) {
+    await mutate((s) => {
+      s.tombstones = s.tombstones.filter((t) => t.deletedAt + TOMBSTONE_TTL_MS > now);
+      return writeState(s);
+    });
+  }
+  const records: KeychainSyncRecord[] = [];
+  for (const conn of state.connections) {
+    let token: string;
+    try {
+      token = decryptToken(conn.encToken);
+    } catch (error) {
+      logger.warn('skipping undecryptable connection in sync listing', {
+        id: conn.id,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      continue;
+    }
+    records.push({
+      label: conn.label,
+      host: conn.host,
+      hosts: candidateHosts(conn),
+      port: conn.port,
+      fingerprint: conn.fingerprint,
+      hostname: conn.hostname ?? null,
+      detectHosts: conn.detectHosts !== false,
+      token,
+      updatedAt: conn.updatedAt ?? 0,
+    });
+  }
+  for (const t of state.tombstones) {
+    if (t.deletedAt + TOMBSTONE_TTL_MS <= now) continue;
+    records.push({
+      label: t.label,
+      host: t.host,
+      hosts: candidateHosts(t),
+      port: t.port,
+      fingerprint: t.fingerprint,
+      hostname: t.hostname ?? null,
+      detectHosts: t.detectHosts !== false,
+      token: '',
+      updatedAt: t.updatedAt,
+      deleted: true,
+      deletedAt: t.deletedAt,
+    });
+  }
+  return records;
+}
+
+/**
+ * Apply a remote-won sync record to the local store (LWW loser side of a
+ * reconcile). A live record upserts by normalized host:port — the existing
+ * record keeps its `id` (so open windows/pool entries stay attached) while
+ * label/fingerprint/token/hosts/hostname/detectHosts and the remote's
+ * `updatedAt` clock are taken verbatim (NOT re-stamped: the clock must
+ * converge across machines). A tombstone removes the backend and remembers
+ * the tombstone; if the removed backend was active, the selection falls back
+ * to `local` (never touching any other machine-local selection state).
+ *
+ * Deliberately does NOT fire {@link onConnectionsMutated} — pulls must not
+ * loop back into pushes. Returns whether anything actually changed so the
+ * lifecycle can refresh the renderer only when needed.
+ */
+export async function applyRemoteSyncRecord(record: KeychainSyncRecord): Promise<boolean> {
+  return mutate(async (state) => {
+    if (record.deleted === true) {
+      const existing = state.connections.filter((c) => sameTarget(c, record));
+      state.connections = state.connections.filter((c) => !existing.includes(c));
+      if (existing.some((c) => c.id === state.activeId)) {
+        state.activeId = LOCAL_CONNECTION_ID;
+      }
+      clearTombstone(state, record.host, record.port);
+      state.tombstones.push({
+        label: record.label,
+        host: record.host,
+        port: record.port,
+        fingerprint: record.fingerprint,
+        hostname: record.hostname,
+        hosts: record.hosts.filter((h) => h.trim() !== record.host.trim()),
+        detectHosts: record.detectHosts,
+        updatedAt: record.updatedAt,
+        deletedAt: record.deletedAt ?? record.updatedAt,
+      });
+      await writeState(state);
+      return existing.length > 0;
+    }
+
+    clearTombstone(state, record.host, record.port);
+    const encToken = encryptToken(record.token);
+    const extras = record.hosts.filter((h) => h.trim() !== record.host.trim());
+    const duplicates = state.connections.filter((c) => sameTarget(c, record));
+    if (duplicates.length > 0) {
+      const survivor = duplicates.find((c) => c.id === state.activeId) ?? duplicates[0];
+      survivor.label = record.label;
+      survivor.host = record.host;
+      survivor.port = record.port;
+      survivor.fingerprint = record.fingerprint;
+      survivor.encToken = encToken;
+      survivor.hostname = record.hostname;
+      survivor.hosts = extras;
+      survivor.detectHosts = record.detectHosts;
+      survivor.updatedAt = record.updatedAt;
+      state.connections = state.connections.filter(
+        (c) => c === survivor || !duplicates.includes(c),
+      );
+    } else {
+      state.connections.push({
+        id: randomUUID(),
+        label: record.label,
+        host: record.host,
+        port: record.port,
+        fingerprint: record.fingerprint,
+        hostname: record.hostname,
+        hosts: extras,
+        detectHosts: record.detectHosts,
+        encToken,
+        updatedAt: record.updatedAt,
+      });
+    }
+    await writeState(state);
+    return true;
+  });
 }
 
 /**

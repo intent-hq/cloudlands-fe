@@ -12,7 +12,7 @@
 <plist version="1.0">
 <dict>
   <key>CFBundleIdentifier</key>
-  <string>app.cloudlands.intent.keychain-helper</string>
+  <string>dev.intentapp.cloudlands-fe.keychain-helper</string>
   <key>CFBundleName</key>
   <string>intent-keychain-helper</string>
   <key>CFBundleExecutable</key>

@@ -64,6 +64,7 @@ import { computeDaemonVersionRefresh } from './daemon-version-refresh';
 import { detectOrphanedSidecar } from './intentd-orphan';
 import { defaultKill, restartOrphanedSidecar } from './orphan-recovery';
 import * as connectionsStore from './connections-store';
+import { initKeychainSyncLifecycle } from './keychain-sync-lifecycle';
 import { registerBrowserExecReverseHandler } from '../../browser/main/browser-exec-reverse';
 import { LOCAL_CONNECTION_ID } from '../../../shared/types/connections';
 import type {
@@ -1787,6 +1788,13 @@ export function registerBackendHandlers(): void {
   });
 
   registerConnectionsHandlers();
+
+  // Keychain sync (T3): opt-in pref-gated, fail-soft, fully async. When a
+  // reconcile pulls remote changes into the store, refresh every renderer via
+  // the existing connections:changed broadcast.
+  initKeychainSyncLifecycle({
+    onRemoteApplied: () => broadcastConnectionsChanged(),
+  });
 
   logger.info('Backend bridge IPC handlers registered');
 }

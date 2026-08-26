@@ -392,10 +392,16 @@ describe('reconcile', () => {
 // Helper-backed client (mocked child_process.spawn)
 // ============================================================================
 
+interface FakeStdin extends EventEmitter {
+  written: string;
+  write: (s: string) => void;
+  end: ReturnType<typeof vi.fn>;
+}
+
 interface FakeChild extends EventEmitter {
   stdout: EventEmitter;
   stderr: EventEmitter;
-  stdin: { written: string; write: (s: string) => void; end: () => void };
+  stdin: FakeStdin;
   kill: ReturnType<typeof vi.fn>;
 }
 
@@ -403,13 +409,13 @@ function fakeChild(): FakeChild {
   const child = new EventEmitter() as FakeChild;
   child.stdout = new EventEmitter();
   child.stderr = new EventEmitter();
-  child.stdin = {
-    written: '',
-    write(s: string) {
-      this.written += s;
-    },
-    end: vi.fn(),
+  const stdin = new EventEmitter() as FakeStdin;
+  stdin.written = '';
+  stdin.write = (s: string) => {
+    stdin.written += s;
   };
+  stdin.end = vi.fn();
+  child.stdin = stdin;
   child.kill = vi.fn();
   return child;
 }
@@ -522,5 +528,40 @@ describe('createHelperKeychainClient', () => {
     const client = createHelperKeychainClient({ platform: 'darwin', helperPath: HELPER });
     const result = await client.list();
     expect(result).toMatchObject({ ok: false, code: 'helper-failed', message: 'ENOENT' });
+  });
+
+  it('EPIPE on stdin (helper exited before draining) yields the structured error, not a crash', async () => {
+    // The helper rejects the payload, prints a structured error, and exits
+    // before reading stdin — the write then fails with EPIPE. An unhandled
+    // 'error' on the stdin stream would crash the process; the client must
+    // instead surface the helper's structured output from 'close'.
+    const child = fakeChild();
+    child.stdin.write = () => {
+      child.stdin.emit('error', Object.assign(new Error('write EPIPE'), { code: 'EPIPE' }));
+    };
+    vi.mocked(spawn).mockImplementationOnce((() => {
+      queueMicrotask(() => {
+        child.stdout.emit(
+          'data',
+          Buffer.from(JSON.stringify({ error: 'bad-arguments', message: 'payload too large' })),
+        );
+        child.emit('close', 1);
+      });
+      return child;
+    }) as unknown as typeof spawn);
+    const client = createHelperKeychainClient({ platform: 'darwin', helperPath: HELPER });
+    const result = await client.upsert(ACCOUNT, '{"payload":"x"}');
+    expect(result).toEqual({ ok: false, code: 'bad-arguments', message: 'payload too large' });
+  });
+
+  it('a synchronous stdin write throw maps to helper-failed instead of escaping the executor', async () => {
+    const child = fakeChild();
+    child.stdin.write = () => {
+      throw Object.assign(new Error('write EPIPE'), { code: 'EPIPE' });
+    };
+    vi.mocked(spawn).mockImplementationOnce((() => child) as unknown as typeof spawn);
+    const client = createHelperKeychainClient({ platform: 'darwin', helperPath: HELPER });
+    const result = await client.upsert(ACCOUNT, '{"payload":"x"}');
+    expect(result).toEqual({ ok: false, code: 'helper-failed', message: 'write EPIPE' });
   });
 });

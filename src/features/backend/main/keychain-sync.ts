@@ -271,10 +271,31 @@ function runHelper(
       }
       resolve({ stdout, exitCode: code ?? -1 });
     });
-    if (stdinBody !== undefined) {
-      child.stdin.write(stdinBody);
+    // A helper that exits before draining stdin makes the pipe emit EPIPE;
+    // without a listener that is an unhandled stream error that crashes the
+    // process instead of surfacing as a structured failure. The 'close'
+    // handler still resolves with whatever the helper printed, so a logged
+    // warning is all that is needed here.
+    child.stdin.on('error', (error: NodeJS.ErrnoException) => {
+      logger.warn('keychain helper stdin error', {
+        code: error.code ?? 'unknown',
+        error: error.message,
+      });
+    });
+    try {
+      if (stdinBody !== undefined) {
+        child.stdin.write(stdinBody);
+      }
+      child.stdin.end();
+    } catch (error) {
+      // Synchronous write/end failure (stream already destroyed): reject as a
+      // structured helper failure rather than throwing out of the executor.
+      if (!settled) {
+        settled = true;
+        clearTimeout(timer);
+        reject(error instanceof Error ? error : new Error(String(error)));
+      }
     }
-    child.stdin.end();
   });
 }
 

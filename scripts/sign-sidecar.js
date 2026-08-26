@@ -93,7 +93,7 @@ async function verifySignature(binaryPath) {
 }
 
 /** Bundle ID of the keychain sync helper (resources/keychain/helper-info.plist). */
-const KEYCHAIN_HELPER_BUNDLE_ID = 'app.cloudlands.intent.keychain-helper';
+const KEYCHAIN_HELPER_BUNDLE_ID = 'dev.intentapp.cloudlands-fe.keychain-helper';
 
 /**
  * Sign the iCloud-keychain sync helper bundle

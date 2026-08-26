@@ -126,6 +126,8 @@ vi.mock('../connections-store', () => ({
   setHostname: store.setHostname,
   setHosts: store.setHosts,
   getDetectHosts: store.getDetectHosts,
+  // Keychain-sync lifecycle wiring (T3); inert in these suites.
+  onConnectionsMutated: () => () => {},
 }));
 
 // ---------------------------------------------------------------------------
