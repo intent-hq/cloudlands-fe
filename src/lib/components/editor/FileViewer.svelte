@@ -137,7 +137,7 @@
     const mimeType = videoMimeType(filePath);
     if (!mimeType) return '';
     if (typeof fileContent === 'string') {
-      if (fileContent.startsWith('data:') || fileContent.startsWith('https://')) {
+      if (fileContent.startsWith('data:') || fileContent.startsWith('http')) {
         return fileContent;
       }
       return `data:${mimeType};base64,${fileContent}`;

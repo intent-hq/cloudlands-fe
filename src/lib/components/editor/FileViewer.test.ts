@@ -84,4 +84,13 @@ describe('FileViewer workspace media', () => {
 
     expect(screen.getByTestId<HTMLVideoElement>('file-video').getAttribute('src')).toBe(sourceUrl);
   });
+
+  it.each(['http://127.0.0.1:3000/preview.mp4', 'https://media.example/preview.mp4'])(
+    'renders the direct video URL %s without base64 wrapping',
+    (videoUrl) => {
+      render(FileViewer, { props: { filePath: 'preview.mp4', fileContent: videoUrl } });
+
+      expect(screen.getByTestId<HTMLVideoElement>('file-video').getAttribute('src')).toBe(videoUrl);
+    },
+  );
 });

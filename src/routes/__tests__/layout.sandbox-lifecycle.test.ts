@@ -47,6 +47,7 @@ describe('root +layout.svelte sandbox Store lifecycle', () => {
     const routesRoot = path.resolve(process.cwd(), 'src/routes');
     const rootLayout = readFileSync(path.join(routesRoot, '+layout.svelte'), 'utf8');
     const appLayout = readFileSync(path.join(routesRoot, '(app)/+layout.svelte'), 'utf8');
+    const hudLayout = readFileSync(path.join(routesRoot, 'hud/+layout.svelte'), 'utf8');
 
     expect(rootLayout).not.toContain('$store/renderer/sagas');
     expect(rootLayout).not.toContain('$store/renderer/seeders');
@@ -57,5 +58,10 @@ describe('root +layout.svelte sandbox Store lifecycle', () => {
       appLayout.indexOf('startAppStoreLifecycle(appStore'),
     );
     expect(appLayout).toContain('ActionKeyHud');
+    expect(hudLayout).toContain('$store/renderer/app-store-lifecycle');
+    expect(hudLayout).toContain('$store/renderer/seeders');
+    expect(hudLayout.indexOf("import '$store/renderer/seeders'")).toBeLessThan(
+      hudLayout.indexOf('startAppStoreLifecycle(appStore'),
+    );
   });
 });
