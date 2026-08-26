@@ -260,6 +260,55 @@ describe('browser:resolve-url IPC handler', () => {
     },
   );
 
+  it('uses the originating pooled saved remote after a non-loopback probe fails', async () => {
+    const sender = { id: 42 };
+    const localClient = {
+      getConfig: () => ({ transport: 'uds' as const, socketPath: '/tmp/intentd.sock' }),
+    };
+    const remoteConfig = {
+      transport: 'wss' as const,
+      host: 'saved-remote.example.com',
+      port: 443,
+      token: 'remote-token',
+      certificateFingerprint: 'sha256:remote-fingerprint',
+    };
+    const remoteClient = { getConfig: () => remoteConfig };
+    mocks.getPrimaryBackendId.mockReturnValue('local');
+    mocks.getBackendClient.mockReturnValue(localClient);
+    mocks.getBackendIdForIpcSender.mockImplementation((candidate) =>
+      candidate === sender ? 'remote-saved' : 'local',
+    );
+    mocks.getBackendClientForConnection.mockImplementation((id: string) =>
+      id === 'remote-saved' ? remoteClient : localClient,
+    );
+    fetchMock.mockRejectedValue(new TypeError('fetch failed'));
+    mocks.forwardPort.mockResolvedValue(54321);
+    const handler = await registerAndGetHandler();
+    const invoke = vi.fn((channel: string, payload: unknown) => {
+      expect(channel).toBe('browser:resolve-url');
+      return handler({ sender }, payload);
+    });
+    vi.stubGlobal('window', { electronAPI: { invoke } });
+    const { resolveBrowserLinkForOpen } = await import('../../../lib/utils/browser-link-open');
+
+    const requestedUrl = 'http://localhost:8080/script-output';
+    const resolved = await resolveBrowserLinkForOpen(requestedUrl);
+
+    expect(mocks.getBackendIdForIpcSender).toHaveBeenCalledWith(sender);
+    expect(fetchMock).toHaveBeenCalledWith('http://saved-remote.example.com:8080', {
+      signal: expect.any(AbortSignal),
+    });
+    expect(mocks.TunnelManager).toHaveBeenCalledTimes(1);
+    expect(mocks.DirectRelay).not.toHaveBeenCalled();
+    expect(mocks.forwardPort).toHaveBeenCalledWith(8080);
+    const tunnelOptions = mocks.TunnelManager.mock.calls[0][0] as { getConfig: () => unknown };
+    expect(tunnelOptions.getConfig()).toEqual(remoteConfig);
+    expect(resolved).toEqual({
+      url: 'http://127.0.0.1:54321/script-output',
+      requestedUrl,
+    });
+  });
+
   it('passes a URL pointing at an active tunnel-local forward through untouched', async () => {
     mocks.activeForwards.mockReturnValue([{ remotePort: 8742, localPort: 50241 }]);
     const handler = await registerAndGetHandler();
