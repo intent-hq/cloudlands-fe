@@ -2472,6 +2472,7 @@
   "chat_proposalCard_detectingPrBranch_label": "PR ブランチを検出中…",
   "chat_proposalCard_detectingBranch_label": "ブランチを検出中…",
   "chat_proposalCard_createWorkspace_label": "ワークスペースを作成",
+  "chat_proposalCard_createNewWorkspace_title": "新しいワークスペースを作成",
   "chat_proposalCard_proposalFile_fallback": "提案",
   "chat_proposalCard_creatingWorkspace_label": "ワークスペースを作成中…",
   "chat_proposalCard_workspaceCreationFailed_label": "ワークスペースの作成に失敗しました",
