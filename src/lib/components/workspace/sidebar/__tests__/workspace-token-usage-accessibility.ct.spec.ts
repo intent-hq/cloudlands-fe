@@ -54,7 +54,7 @@ test('exposes compact values and keeps summary text readable on hover', async ({
     await expect(component).toHaveAttribute('data-theme', theme);
     await disclosure.hover();
     const textColors = await disclosure
-      .locator('#workspace-token-usage-processed-token-usage-accessibility-ct > span')
+      .locator('span[aria-hidden="true"]')
       .evaluateAll((elements) => {
         const paint = (values: string[]): [number, number, number, number] => {
           const canvas = document.createElement('canvas');
@@ -247,11 +247,7 @@ test('renders the full reference table as a wide overlay from the real workspace
       sidebarRegion.boundingBox(),
       workspaceContent.boundingBox(),
       disclosure.evaluate((element) => {
-        const processed = element.querySelector('[id^="workspace-token-usage-processed-"]')!;
-        const tokenLabel = processed.querySelector('.summary-token-label')!;
-        const processedValue = element.querySelector(
-          '[id^="workspace-token-usage-processed-"] > span:not(.sr-only)',
-        )!;
+        const processedValue = element.querySelector('span[aria-hidden="true"]')!;
         const style = getComputedStyle(element);
         return {
           backgroundColor: style.backgroundColor,
@@ -259,11 +255,7 @@ test('renders the full reference table as a wide overlay from the real workspace
           borderColor: style.borderColor,
           processedFontSize: Number.parseFloat(getComputedStyle(processedValue).fontSize),
           processedFontWeight: getComputedStyle(processedValue).fontWeight,
-          tokenLabelDisplay: getComputedStyle(tokenLabel).display,
-          tokenLabelFontSize: Number.parseFloat(getComputedStyle(tokenLabel).fontSize),
-          tokenLabelFontWeight: getComputedStyle(tokenLabel).fontWeight,
-          tokenLabelText: tokenLabel.textContent?.trim(),
-          tokenLabelTransform: getComputedStyle(tokenLabel).textTransform,
+          processedText: processedValue.textContent?.trim(),
         };
       }),
     ]);
@@ -274,23 +266,25 @@ test('renders the full reference table as a wide overlay from the real workspace
   expect(contentBox).not.toBeNull();
   expect(sidebarBox!.width).toBeCloseTo(352, 0);
   expect(sidebarRegionBox!.width).toBeCloseTo(304, 0);
-  expect(closedBox!.height).toBeGreaterThanOrEqual(34);
-  expect(closedBox!.height).toBeLessThanOrEqual(36);
-  expect(disclosureBox!.width).toBeCloseTo(304, 0);
+  expect(closedBox!.height).toBeCloseTo(24, 0);
+  expect(disclosureBox!.height).toBeCloseTo(24, 0);
+  expect(disclosureBox!.width).toBeLessThan(64);
+  expect(
+    Math.abs(
+      disclosureBox!.x + disclosureBox!.width - (sidebarRegionBox!.x + sidebarRegionBox!.width - 8),
+    ),
+  ).toBeLessThanOrEqual(1);
   expect(summaryMetrics.borderRadius).toBeGreaterThanOrEqual(2);
   expect(summaryMetrics.borderRadius).toBeLessThanOrEqual(5);
-  expect(summaryMetrics.backgroundColor).not.toBe('rgba(0, 0, 0, 0)');
-  expect(summaryMetrics.borderColor).not.toBe('rgba(0, 0, 0, 0)');
+  expect(summaryMetrics.backgroundColor).toBe('rgba(0, 0, 0, 0)');
+  expect(summaryMetrics.borderColor).toBe('rgba(0, 0, 0, 0)');
   expect(summaryMetrics).toMatchObject({
-    processedFontSize: 14,
+    processedFontSize: 15,
     processedFontWeight: '400',
-    tokenLabelDisplay: 'block',
-    tokenLabelFontSize: 14,
-    tokenLabelFontWeight: '400',
-    tokenLabelText: 'tokens used',
-    tokenLabelTransform: 'none',
+    processedText: '1K',
   });
-  await expect(disclosure.getByText('tokens used', { exact: true })).toBeVisible();
+  await expect(disclosure).toHaveText(/1K/);
+  await expect(disclosure.getByText('tokens used', { exact: true })).not.toBeVisible();
   await expect(disclosure.getByText('Cached', { exact: true })).toHaveCount(0);
 
   await disclosure.click();
@@ -540,7 +534,7 @@ test('renders the full reference table as a wide overlay from the real workspace
   expect(detailsBox!.width).toBeCloseTo(452, 0);
   expect(detailsBox!.x).toBeCloseTo(disclosureBox!.x, 0);
   expect(detailsBox!.y).toBeCloseTo(disclosureBox!.y + disclosureBox!.height + 8, 0);
-  expect(detailsBox!.width / disclosureBox!.width).toBeCloseTo(1.49, 2);
+  expect(detailsBox!.width).toBeGreaterThan(disclosureBox!.width * 8);
   expect(openSidebarBox).toEqual(sidebarBox);
   expect(openContentBox).toEqual(contentBox);
   expect(dimensions.scrollWidth).toBeLessThanOrEqual(dimensions.clientWidth);
@@ -731,21 +725,16 @@ test('renders the full reference table as a wide overlay from the real workspace
     sidebarRegion.boundingBox(),
     details.boundingBox(),
     disclosure.evaluate((element) => {
-      const tokenLabel = element.querySelector('.summary-token-label')!;
-      const processedValue = element.querySelector(
-        '[id^="workspace-token-usage-processed-"] > span:not(.summary-token-label)',
-      )!;
+      const processedValue = element.querySelector('span[aria-hidden="true"]')!;
       return {
-        tokenLabelDisplay: getComputedStyle(tokenLabel).display,
-        tokenLabelFontSize: getComputedStyle(tokenLabel).fontSize,
         processedFontSize: getComputedStyle(processedValue).fontSize,
+        processedText: processedValue.textContent?.trim(),
       };
     }),
   ]);
   expect(wideSidebarRegion!.width).toBeCloseTo(452, 0);
   expect(wideDetails!.width).toBeCloseTo(452, 0);
-  expect(wideSummaryMetrics.tokenLabelDisplay).toBe('block');
-  expect(wideSummaryMetrics.tokenLabelFontSize).toBe(wideSummaryMetrics.processedFontSize);
+  expect(wideSummaryMetrics).toEqual({ processedFontSize: '15px', processedText: '1K' });
 
   await navigatorButtons.last().blur();
   await component.update({ props: { theme: 'dark', width: 280 } });
@@ -914,7 +903,7 @@ test('dismisses, repositions, flips, and clamps the overlay without changing wor
         scrollWidth: document.documentElement.scrollWidth,
       })),
     ]);
-  expect(summaryBox280!.width).toBeCloseTo(232, 0);
+  expect(summaryBox280!.width).toBeLessThan(64);
   expect(compactBox280!.width).toBeCloseTo(264, 0);
   expect(compactBox280!.x).toBeCloseTo(8, 0);
   expect(compactBox280!.x + compactBox280!.width).toBeCloseTo(272, 0);
@@ -938,7 +927,7 @@ test('dismisses, repositions, flips, and clamps the overlay without changing wor
       scrollWidth: document.documentElement.scrollWidth,
     })),
   ]);
-  expect(summaryBox248!.width).toBeCloseTo(200, 0);
+  expect(summaryBox248!.width).toBeLessThan(64);
   expect(compactBox248!.width).toBeCloseTo(232, 0);
   expect(compactBox248!.x).toBeCloseTo(8, 0);
   expect(compactBox248!.x + compactBox248!.width).toBeCloseTo(240, 0);

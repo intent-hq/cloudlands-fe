@@ -10,6 +10,7 @@
   import { setAgents } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
   import { loadWorkspaceNotesSucceeded } from '$store/renderer/slices/workspace-notes/workspace-notes-slice';
   import { initializeLayout } from '$store/renderer/slices/panel-layout/panel-layout-slice';
+  import { tokenUsageReceived } from '$store/renderer/slices/token-usage/token-usage-slice';
 
   let {
     width = 360,
@@ -74,6 +75,19 @@
   );
   store.dispatch(bulkUpsertSessions(agents, { preserveExplicitRuntimeFlags: false }));
   store.dispatch(setAgents(workspaceId, agents));
+  store.dispatch(
+    tokenUsageReceived(workspaceId, {
+      byAgentId: {},
+      byModel: {},
+      totals: {
+        inputTokens: 123_400,
+        outputTokens: 200,
+        cacheReadTokens: 600,
+        cacheCreationTokens: 100,
+      },
+      lastScanAt: timestamp,
+    }),
+  );
   store.dispatch(
     loadWorkspaceNotesSucceeded([workspaceId], {
       [workspaceId]: Array.from({ length: initialItemCount }, (_, index) => ({

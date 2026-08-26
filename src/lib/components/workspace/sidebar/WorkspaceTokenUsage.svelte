@@ -2,11 +2,11 @@
   /**
    * WorkspaceTokenUsage
    *
-   * Compact token usage disclosure for the workspace sidebar. Shows the
-   * processed total and cache efficiency at a glance, with composition and
-   * ranked agent/model details on demand. Provider-reported cost and reasoning
-   * tokens remain display-only additions to the daemon-owned accounting.
-   * Renders nothing until token data is available (no layout shift).
+   * Compact token usage disclosure for the collapsed Agents launcher. Shows
+   * only the processed total, with composition and ranked agent/model details
+   * on demand. Provider-reported cost and reasoning tokens remain display-only
+   * additions to the daemon-owned accounting. Renders nothing until token data
+   * is available (no layout shift).
    */
   import { onMount, tick } from 'svelte';
   import { writable } from 'svelte/store';
@@ -74,6 +74,13 @@
 
   onMount(() => {
     appStore.dispatch(fetchWorkspaceTokenUsage(workspaceId));
+  });
+
+  $effect(() => {
+    if (!disclosureElement || typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(updateOverlayPosition);
+    observer.observe(disclosureElement.closest('[data-sidebar-label-row]') ?? disclosureElement);
+    return () => observer.disconnect();
   });
 
   const totals = $derived($usage$.totals);
@@ -390,12 +397,30 @@
     overlayStyle = `position: fixed; visibility: visible; top: ${top}px; left: ${left}px; width: ${width}px; max-height: ${availableHeight}px;`;
   }
 
+  function closeOverlay({ restoreFocus = false } = {}) {
+    expanded = false;
+    if (restoreFocus && disclosureElement?.isConnected) disclosureElement.focus();
+  }
+
+  function handleDisclosurePointerDown(event: PointerEvent) {
+    event.stopPropagation();
+  }
+
+  function handleDisclosureKeydown(event: KeyboardEvent) {
+    if (event.key === 'Enter' || event.key === ' ') event.stopPropagation();
+  }
+
+  function handleDisclosureClick(event: MouseEvent) {
+    event.stopPropagation();
+    expanded = !expanded;
+  }
+
   function handleDocumentPointerDown(event: PointerEvent) {
     if (!expanded || !(event.target instanceof Node)) return;
     if (disclosureElement?.contains(event.target) || detailsElement?.contains(event.target)) {
       return;
     }
-    expanded = false;
+    closeOverlay();
   }
 
   function handleDocumentKeydown(event: KeyboardEvent) {
@@ -403,8 +428,7 @@
     touchTarget = null;
     if (!expanded || event.key !== 'Escape') return;
     event.preventDefault();
-    expanded = false;
-    disclosureElement?.focus();
+    closeOverlay({ restoreFocus: true });
   }
 
   onMount(() => {
@@ -419,6 +443,10 @@
       window.removeEventListener('resize', updateOverlayPosition);
       window.removeEventListener('scroll', updateOverlayPosition, true);
     };
+  });
+
+  $effect(() => {
+    if (!hasData && expanded) closeOverlay();
   });
 
   $effect(() => {
@@ -448,12 +476,15 @@
 </script>
 
 {#if hasData}
-  <div class="token-usage-shell w-full min-w-0 text-xs" data-testid="workspace-token-usage">
+  <div
+    class="token-usage-shell pointer-events-auto relative z-20 ml-auto shrink-0 text-xs"
+    data-testid="workspace-token-usage"
+  >
     <Button
       bind:ref={disclosureElement}
       variant="plain"
       type="button"
-      class="summary-control group flex h-9 w-full max-w-xs min-w-0 items-center gap-2 overflow-hidden rounded-sm border border-muted bg-card/25 px-2.5 text-left text-foreground shadow-none outline-none transition-colors hover:bg-muted/20 focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none dark:hover:bg-muted/30"
+      class="summary-control inline-flex h-6 w-auto min-w-0 items-center rounded px-1.5 text-sm font-normal tabular-nums text-muted-foreground outline-none transition-colors hover:bg-background/70 hover:text-foreground focus-visible:bg-background/80 focus-visible:text-foreground focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none"
       data-testid="token-usage-disclosure"
       aria-label={expanded
         ? m.workspace_tokenUsage_collapse_ariaLabel()
@@ -461,29 +492,20 @@
       aria-expanded={expanded}
       aria-controls={detailsId}
       aria-describedby={processedId}
-      onclick={() => (expanded = !expanded)}
+      onpointerdown={handleDisclosurePointerDown}
+      onkeydown={handleDisclosureKeydown}
+      onclick={handleDisclosureClick}
     >
-      <span id={titleId} class="sr-only">{m.workspace_tokenUsage_title()}</span>
-      <span
-        id={processedId}
-        class="flex min-w-0 items-baseline gap-1 whitespace-nowrap text-sm font-normal tabular-nums text-foreground"
-      >
-        <span>{formatCompactNumber(processedTokens)}</span>
-        <span class="summary-token-label truncate">
-          {m.workspace_tokenUsage_tokensUsed_label()}
-        </span>
-      </span>
-      <span class="ml-auto flex w-2 shrink-0 justify-center" aria-live="polite">
+      <span aria-hidden="true">{formatCompactNumber(processedTokens)}</span>
+      <span id={processedId} class="sr-only" aria-live="polite">
+        {formatCompactNumber(processedTokens)}
+        {m.workspace_tokenUsage_tokensUsed_label()}
         {#if isUpdating}
-          <span
-            class="size-1.5 rounded-full bg-blue-500 motion-safe:animate-pulse"
-            title={m.workspace_tokenUsage_updating_ariaLabel()}
-          >
-            <span class="sr-only">{m.workspace_tokenUsage_updating_label()}</span>
-          </span>
+          {m.workspace_tokenUsage_updating_label()}
         {/if}
       </span>
     </Button>
+    <span id={titleId} class="sr-only">{m.workspace_tokenUsage_title()}</span>
 
     {#if expanded}
       <section
@@ -734,15 +756,6 @@
 {/if}
 
 <style>
-  .token-usage-shell {
-    container: token-summary / inline-size;
-  }
-
-  :global(.summary-control[aria-expanded='true']) {
-    border-color: transparent;
-    background: transparent;
-  }
-
   .token-usage-details {
     container: token-details / inline-size;
     z-index: 60;
@@ -857,18 +870,6 @@
   @media (hover: hover) {
     :global(.breakdown-item-control:not([data-preview-active='true']):hover) {
       background: hsl(var(--muted-foreground) / 28%);
-    }
-  }
-
-  @container token-summary (max-width: 319px) {
-    :global(.summary-control) {
-      padding-inline: 0.5rem;
-    }
-  }
-
-  @container token-summary (max-width: 239px) {
-    .summary-token-label {
-      display: none;
     }
   }
 

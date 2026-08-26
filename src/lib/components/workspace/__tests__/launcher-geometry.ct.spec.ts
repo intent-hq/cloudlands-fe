@@ -183,6 +183,24 @@ for (const scenario of [
     await expectOpaque(component.locator('[data-sidebar-card-surface]'));
     await expectOpaque(component.locator('[data-agent-avatar-with-state]'));
     await expectOpaque(component.locator('[data-resource-icon-tile]'));
+
+    const agentsLauncher = component.locator('[data-sidebar-launcher="agents"]');
+    const tokenTrigger = agentsLauncher.getByTestId('token-usage-disclosure');
+    const [agentsLabelBox, tokenTriggerBox, agentsCardBox] = await Promise.all([
+      agentsLauncher.locator('[data-sidebar-launcher-label]').boundingBox(),
+      tokenTrigger.boundingBox(),
+      agentsLauncher.boundingBox(),
+    ]);
+    await expect(tokenTrigger).toHaveText(/124\.3K/);
+    await expect(tokenTrigger).toHaveAccessibleDescription('124.3K tokens used');
+    expect(tokenTriggerBox!.x).toBeGreaterThan(agentsLabelBox!.x + agentsLabelBox!.width);
+    expect(
+      Math.abs(
+        (agentsCardBox!.x + agentsCardBox!.width - tokenTriggerBox!.x - tokenTriggerBox!.width) /
+          scenario.zoom -
+          8,
+      ),
+    ).toBeLessThanOrEqual(1);
   });
 }
 
@@ -232,8 +250,16 @@ test('preserves hover, focus, and click behavior without open-panel markers', as
   await agents.first().focus();
   await page.keyboard.press('Tab');
   await expect(agents.nth(1)).toBeFocused();
+
+  const tokenTrigger = component.getByTestId('token-usage-disclosure');
+  await tokenTrigger.click();
+  await expect(component.getByTestId('token-usage-details')).toBeVisible();
+  await expect(component.locator('[data-sidebar-overlay]')).toHaveCount(0);
+
   await component.getByTestId('agent-panel-toggle').click();
   await expect(component.locator('[data-sidebar-overlay]')).toBeVisible();
+  await expect(component.getByTestId('token-usage-details')).toHaveCount(0);
+  await expect(component.getByTestId('token-usage-disclosure')).toHaveCount(0);
   await expect(component.locator('[data-sidebar-tab-strip]')).toHaveAttribute(
     'data-active-tab',
     'agents',

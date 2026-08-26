@@ -145,4 +145,26 @@ describe('workspace sidebar bottom launchers', () => {
     );
     expect(sidebar).toContain('data-files-open-in');
   });
+
+  it('keeps the only token disclosure in the collapsed Agents label row', () => {
+    const sidebar = source('../MultiSelectTabbedSidebar.svelte');
+    const progress = source('../sidebar/WorkspaceProgressCard.svelte');
+    const overviewStart = sidebar.indexOf('{#if isLauncherOverview}');
+    const overviewEnd = sidebar.indexOf(
+      '{/if}',
+      sidebar.indexOf('<WorkspaceTokenUsage', overviewStart),
+    );
+    const overview = sidebar.slice(overviewStart, overviewEnd);
+
+    expect(progress).not.toContain('WorkspaceTokenUsage');
+    expect(sidebar.match(/<WorkspaceTokenUsage/g)).toHaveLength(1);
+    expect(overview).toContain("{#if tab.id === 'agents'}");
+    expect(overview).toContain('<WorkspaceTokenUsage {workspaceId} />');
+    expect(sidebar.indexOf('<WorkspaceTokenUsage')).toBeGreaterThan(
+      sidebar.indexOf('data-sidebar-label-row'),
+    );
+    expect(sidebar.indexOf('<WorkspaceTokenUsage')).toBeLessThan(
+      sidebar.indexOf("{#if tab.id === 'files'"),
+    );
+  });
 });

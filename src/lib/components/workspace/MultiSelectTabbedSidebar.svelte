@@ -81,6 +81,7 @@
   import SidebarExpandableSearch from './sidebar/SidebarExpandableSearch.svelte';
   import SidebarHeaderAction from './sidebar/SidebarHeaderAction.svelte';
   import WorkspaceProgressCard from './sidebar/WorkspaceProgressCard.svelte';
+  import WorkspaceTokenUsage from './sidebar/WorkspaceTokenUsage.svelte';
   import SidebarLauncherHoverCard from './sidebar/SidebarLauncherHoverCard.svelte';
   import SidebarPrDropdown from './sidebar/SidebarPrDropdown.svelte';
   import WorkspaceAgentsList from './WorkspaceAgentsList.svelte';
@@ -1401,7 +1402,7 @@
                       data-sidebar-launcher-label
                       class={cn(
                         'truncate text-sm font-semibold',
-                        tab.id === 'changes' ? 'min-w-0 flex-1' : '',
+                        tab.id === 'changes' || tab.id === 'agents' ? 'min-w-0 flex-1' : '',
                       )}>{tab.label}</span
                     >
                     {#if tab.id === 'agents' && $hasUnreadForegroundAgents$}
@@ -1420,6 +1421,7 @@
                       <span id={`sidebar-launcher-agent-count-${workspaceId}`} class="sr-only">
                         {launcherAgentCountLabel}
                       </span>
+                      <WorkspaceTokenUsage {workspaceId} />
                     {/if}
                     {#if tab.id === 'files' && $fileExplorerWorkspacePath}
                       <span class="pointer-events-auto relative z-20 cursor-pointer">
