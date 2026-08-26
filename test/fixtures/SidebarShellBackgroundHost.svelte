@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onDestroy } from 'svelte';
+  import { page } from '$app/state';
   import SidebarPanel from '$lib/components/layout/sidebar-nav/SidebarPanel.svelte';
   import { store as appStore } from '$store/renderer/store';
   import {
@@ -17,6 +18,7 @@
 
   // svelte-ignore state_referenced_locally - the host applies its startup theme once
   document.documentElement.classList.toggle('dark', theme === 'dark');
+  Object.assign(page, { url: new URL('http://localhost/workspace/sidebar-shell-0') });
   appStore.init();
   appStore.dispatch(resetWorkspaceState());
   appStore.dispatch(setWorkspaceHasLoaded(true));
@@ -53,6 +55,7 @@
   onDestroy(() => {
     appStore.dispatch(closePanel());
     appStore.dispatch(resetWorkspaceState());
+    Object.assign(page, { url: new URL('http://localhost/') });
     document.documentElement.classList.remove('dark');
   });
 </script>
