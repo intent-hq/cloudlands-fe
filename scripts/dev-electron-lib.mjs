@@ -43,3 +43,32 @@ export function buildWaitOnTargets(devPort, sentinelFiles) {
     ...sentinelFiles,
   ];
 }
+
+/**
+ * Overall wait-on timeout (ms). Without one, a wedged probe (e.g. a future
+ * SvelteKit upgrade relocating the generated nodes, so the http-get target
+ * 404s forever) hangs the launcher silently; with it, wait-on exits non-zero
+ * and prints the stuck targets. A legit cold start resolves in ~1.3 s, so a
+ * 2-minute ceiling only trips on genuine wedges or pathologically slow hosts.
+ */
+export const WAIT_ON_TIMEOUT_MS = 120000;
+
+/**
+ * Augment an environment for the wait-on child so the loopback http-get
+ * probe always bypasses any configured HTTP proxy.
+ *
+ * wait-on passes its axios proxy option through unset, and axios then honors
+ * HTTP_PROXY/http_proxy env vars — on a machine with a proxy configured and
+ * 127.0.0.1 not in NO_PROXY, the probe would route through the proxy and
+ * never succeed. The tcp: target is immune, so only the http-get probe needs
+ * this.
+ *
+ * @param {NodeJS.ProcessEnv} env base environment (typically process.env)
+ * @returns {NodeJS.ProcessEnv} copy with 127.0.0.1 appended to NO_PROXY
+ */
+export function buildWaitOnEnv(env) {
+  return {
+    ...env,
+    NO_PROXY: [env.NO_PROXY ?? env.no_proxy, '127.0.0.1'].filter(Boolean).join(','),
+  };
+}
