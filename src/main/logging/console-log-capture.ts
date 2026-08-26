@@ -184,6 +184,13 @@ function writeCallbackOf(args: unknown[]): StreamWriteCallback | undefined {
   return typeof last === 'function' ? (last as StreamWriteCallback) : undefined;
 }
 
+function completeWriteCallback(args: unknown[]): void {
+  // Preserve the stream API's asynchronous completion contract: callers may
+  // queue another write from the callback without re-entering write().
+  const callback = writeCallbackOf(args);
+  if (callback !== undefined) process.nextTick(callback);
+}
+
 function forwardToStream(
   stream: NodeJS.WriteStream,
   originalWrite: (chunk: string | Uint8Array, ...args: unknown[]) => boolean,
@@ -194,7 +201,7 @@ function forwardToStream(
     // The stream is known-broken (e.g. the launcher's pipe went away): keep
     // teeing to the file but stop forwarding, and report success so writers
     // relying on the callback do not stall (monorepo#3152).
-    writeCallbackOf(args)?.();
+    completeWriteCallback(args);
     return true;
   }
   try {
@@ -202,7 +209,7 @@ function forwardToStream(
   } catch (error) {
     if (!isClosedConsoleStreamError(error)) throw error;
     containConsoleStreamError(error, stream);
-    writeCallbackOf(args)?.();
+    completeWriteCallback(args);
     return true;
   }
 }

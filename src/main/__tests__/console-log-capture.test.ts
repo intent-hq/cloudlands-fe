@@ -202,12 +202,19 @@ describe('broken stream containment (monorepo#3152)', () => {
       throw closedStreamError('EPIPE');
     });
 
-    expect(() => process.stderr.write('first')).not.toThrow();
-    const callback = vi.fn();
-    expect(process.stderr.write('second', callback)).toBe(true);
+    const firstCallback = vi.fn();
+    expect(() => process.stderr.write('first', firstCallback)).not.toThrow();
+    const secondCallback = vi.fn();
+    expect(process.stderr.write('second', 'utf8', secondCallback)).toBe(true);
+
+    // Completion callbacks are invoked asynchronously, per the stream API.
+    expect(firstCallback).not.toHaveBeenCalled();
+    expect(secondCallback).not.toHaveBeenCalled();
+    await new Promise<void>((resolve) => process.nextTick(resolve));
+    expect(firstCallback).toHaveBeenCalledWith();
+    expect(secondCallback).toHaveBeenCalledWith();
 
     expect(forwardedStderr).toHaveBeenCalledTimes(1);
-    expect(callback).toHaveBeenCalledWith();
     const captured = mocks.files.get(LOG_PATH)!.toString();
     expect(captured).toContain('first');
     expect(captured).toContain('second');
