@@ -201,8 +201,8 @@ describe('editorial conversation presentation contract', () => {
 
     expect(staticContent).toContain('<div class="flex flex-col gap-0"');
     expect(streamingContent).toContain('class="relative flex flex-col gap-0"');
-    expect(staticContent).toContain(
-      'getOperationalClusterSpacingClass(\n        groupedBlocks,\n        blockIndex,\n        isVisibleOperationalBlock,',
+    expect(staticContent).toMatch(
+      /getOperationalClusterSpacingClass\(\s+groupedBlocks,\s+blockIndex,\s+isVisibleOperationalBlock,/,
     );
     expect(staticContent).toContain(
       'isAdjacentOperationalClusterRow(groupedBlocks, blockIndex, isVisibleOperationalBlock)',
@@ -210,7 +210,8 @@ describe('editorial conversation presentation contract', () => {
     expect(staticContent).toMatch(
       /{#snippet renderResponseGroupChild\([\s\S]{0,500}?getOperationalClusterSpacingClass\(\s+group\.children,\s+childIndex,\s+isVisibleOperationalBlock,\s+group\.isReasoningPhase,\s+\)/,
     );
-    expect(staticContent.match(/{@render renderResponseGroupChild\(/g)).toHaveLength(2);
+    expect(staticContent.match(/{@render renderResponseGroupChild\(/g)).toHaveLength(3);
+    expect(staticContent).toContain('{#if shouldRenderResponseGroupInline(group)}');
     expect(streamingContent).toContain('getOperationalClusterSpacingClass(');
     expect(streamingContent).toContain(
       "getOperationalClusterSpacingClass(\n      group.children,\n      childIndex,\n      (candidate) => candidate.type !== 'tool_result',",
@@ -218,6 +219,7 @@ describe('editorial conversation presentation contract', () => {
     expect(streamingContent).toContain(
       '{@render renderResponseGroupChild(group, blockIndex, childBlock, childIndex)}',
     );
+    expect(streamingContent).toContain('{#if shouldRenderResponseGroupInline(group)}');
     expect(streamingContent).toContain('isAdjacentOperationalClusterRow(');
     expect(streamingContent).toContain('isVisibleTopLevelBlock,');
     expect(streamingContent).toContain('data-operational-cluster-row=');

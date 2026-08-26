@@ -454,61 +454,118 @@ describe('thinking blocks — StreamingMessageContent', () => {
     expect(responseGroup.textContent?.match(/Then I will read the current spec/g)).toHaveLength(1);
   });
 
+  const persistedHeadinglessPhases = [
+    thinking('dark-mode:0', 'I am locating the theme preference before changing the interface.'),
+    { type: 'text', id: 'dark-mode:1', text: '<group:Prepping>' },
+    {
+      type: 'tool_use',
+      id: 'dark-mode:2',
+      toolCallId: 'theme-call',
+      name: 'view',
+      input: { path: 'src/theme.ts' },
+    },
+    {
+      type: 'tool_result',
+      id: 'dark-mode:3',
+      tool_use_id: 'theme-call',
+      output: 'Sanitized theme source',
+    },
+    thinking('dark-mode:4', 'The saved preference and system fallback use separate paths.'),
+    { type: 'text', id: 'dark-mode:5', text: '</group:Prepping>Theme storage is understood.' },
+    thinking('dark-mode:6', 'I am checking the remaining surfaces before implementation.'),
+    { type: 'text', id: 'dark-mode:7', text: '<group:Prepping>' },
+    {
+      type: 'tool_use',
+      id: 'dark-mode:8',
+      toolCallId: 'surface-call',
+      name: 'view',
+      input: { path: 'src/app.css' },
+    },
+    {
+      type: 'tool_result',
+      id: 'dark-mode:9',
+      tool_use_id: 'surface-call',
+      output: 'Sanitized surface source',
+    },
+    thinking('dark-mode:10', 'The remaining surfaces use shared color tokens.'),
+    { type: 'text', id: 'dark-mode:11', text: '</group:Prepping>Dark-mode review complete.' },
+  ] as ContentBlock[];
+
   it.each([
     ['MessageContent', renderStatic],
     ['StreamingMessageContent', (content: ContentBlock[]) => renderStreaming(content, false)],
   ])(
-    'collapses a sanitized persisted headingless phase into one disclosure in %s',
-    async (_renderer, renderMessage) => {
-      const content = [
-        thinking(
-          'sanitized:0',
-          'I am inspecting the current state before I choose the smallest safe change.',
-        ),
-        { type: 'text', id: 'sanitized:1', text: '<group:Prepping>' },
+    'renders persisted headingless phases inline once and in order in %s',
+    async (_, renderMessage) => {
+      await renderMessage(persistedHeadinglessPhases);
+
+      expect(screen.queryByTestId('response-group-disclosure')).toBeNull();
+      expect(screen.queryByTestId('reasoning-disclosure')).toBeNull();
+      expect(document.querySelector('[data-message-content-block="content_group"]')).toBeNull();
+      expect(document.body.textContent).not.toContain('Reasoning');
+
+      const orderedText = [
+        'I am locating the theme preference',
+        'The saved preference and system fallback',
+        'Theme storage is understood.',
+        'I am checking the remaining surfaces',
+        'The remaining surfaces use shared color tokens.',
+        'Dark-mode review complete.',
+      ];
+      let previousIndex = -1;
+      for (const text of orderedText) {
+        expect(
+          document.body.textContent?.match(new RegExp(text.replaceAll('.', '\\.'), 'g')),
+        ).toHaveLength(1);
+        const index = document.body.textContent?.indexOf(text) ?? -1;
+        expect(index).toBeGreaterThan(previousIndex);
+        previousIndex = index;
+      }
+      expect(document.querySelectorAll('[data-tool-use-id]')).toHaveLength(2);
+    },
+  );
+
+  it.each([
+    ['MessageContent', renderMessage],
+    ['StreamingMessageContent', renderStreaming],
+  ])(
+    'transitions an active headingless phase to inline completed content in %s',
+    async (_, renderMessage) => {
+      const active = [
+        { type: 'text', id: 'lifecycle:0', text: '<group:Prepping>' },
+        thinking('lifecycle:1', 'I am checking the active theme path.'),
         {
           type: 'tool_use',
-          id: 'sanitized:2',
-          toolCallId: 'sanitized-call',
+          id: 'lifecycle:2',
+          toolCallId: 'lifecycle-call',
           name: 'view',
-          input: { path: 'src/example.ts' },
-        },
-        {
-          type: 'tool_result',
-          id: 'sanitized:3',
-          tool_use_id: 'sanitized-call',
-          output: 'Sanitized tool result',
-        },
-        thinking('sanitized:4', 'The focused check confirms that the narrow repair is sufficient.'),
-        {
-          type: 'text',
-          id: 'sanitized:5',
-          text: '</group:Prepping>Sanitized final response.',
+          input: { path: 'src/theme.ts' },
         },
       ] as ContentBlock[];
+      const view = await renderMessage(active, true);
 
-      await renderMessage(content);
-
-      expect(screen.getAllByTestId('response-group-disclosure')).toHaveLength(1);
+      expect(screen.getByTestId('response-group-name').textContent).toBe('Thinking...');
       expect(screen.queryByTestId('reasoning-disclosure')).toBeNull();
-      expect(document.body.textContent?.match(/Reasoning/g)).toHaveLength(1);
-      expect(document.body.textContent).toContain('Sanitized final response.');
 
-      await fireEvent.click(screen.getByTestId('response-group-disclosure'));
-      const responseGroup = screen.getByTestId('response-group');
+      await view.rerender({
+        content: [
+          ...active,
+          thinking('lifecycle:3', 'The active path is now confirmed.'),
+          { type: 'text', id: 'lifecycle:4', text: '</group:Prepping>Theme review complete.' },
+        ],
+        isStreaming: false,
+      });
+
+      expect(screen.queryByTestId('response-group-disclosure')).toBeNull();
+      expect(screen.queryByTestId('reasoning-disclosure')).toBeNull();
+      expect(document.body.textContent).not.toContain('Reasoning');
       expect(
-        [...responseGroup.querySelectorAll('[data-response-group-child]')].map((child) =>
-          child.getAttribute('data-message-content-block'),
-        ),
-      ).toEqual(['thinking', 'tool_use', 'thinking']);
-      expect(responseGroup.textContent).toContain(
-        'I am inspecting the current state before I choose the smallest safe change.',
+        document.body.textContent?.match(/I am checking the active theme path\./g),
+      ).toHaveLength(1);
+      expect(document.body.textContent?.match(/The active path is now confirmed\./g)).toHaveLength(
+        1,
       );
-      expect(responseGroup.textContent).toContain(
-        'The focused check confirms that the narrow repair is sufficient.',
-      );
-      await fireEvent.click(screen.getByTestId('tool-call-disclosure'));
-      expect(responseGroup.textContent).toContain('Sanitized tool result');
+      expect(document.body.textContent?.match(/Theme review complete\./g)).toHaveLength(1);
     },
   );
 

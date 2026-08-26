@@ -119,6 +119,12 @@ export function normalizeResponseGroups(
   return normalized;
 }
 
+export function shouldRenderResponseGroupInline(
+  group: Pick<ContentBlockGroup, 'isReasoningPhase' | 'isStreaming' | 'name'>,
+): boolean {
+  return group.isReasoningPhase === true && !group.isStreaming && !group.name.trim();
+}
+
 export function getResponseGroupBlockKey(block: ContentBlock, index: number): string {
   // A tool owner id is not row identity. Prefer the protocol block id so
   // sibling results owned by one tool call stay stable through finalization.

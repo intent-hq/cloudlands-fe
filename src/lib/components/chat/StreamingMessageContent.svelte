@@ -79,6 +79,7 @@
     getResponseGroupBlockKeys,
     getResponseGroupCurrentChildIndex,
     normalizeResponseGroups,
+    shouldRenderResponseGroupInline,
   } from './response-group-blocks';
   import { chatSearchBlockPath } from './chat-search';
   import { AuggieTextParser } from '$lib/utils/auggie-text-parser';
@@ -957,47 +958,56 @@
   {#each groupedBlocks as block, blockIndex (blockKeys[blockIndex])}
     {#if block.type === 'content_group'}
       {@const group = block as ContentBlockGroup}
-      {@const currentChildIndex = getResponseGroupCurrentChildIndex(group)}
-      {#snippet currentChild()}
-        {@render renderResponseGroupChild(
-          group,
-          blockIndex,
-          group.children[currentChildIndex],
-          currentChildIndex,
-        )}
-      {/snippet}
-      <div
-        class="content-block content-block--group {getOperationalClusterSpacingClass(
-          groupedBlocks,
-          blockIndex,
-          isVisibleTopLevelBlock,
-        )}"
-        data-message-content-block="content_group"
-        use:animateIn={{ animate: isStreaming, key: blockKeys[blockIndex] }}
-      >
-        <ResponseGroup
-          name={group.name}
-          isStreaming={group.isStreaming}
-          blocks={group.children}
-          searchPath={chatSearchBlockPath(blockIndex)}
-          reasoningPhase={group.isReasoningPhase}
-          currentChild={currentChildIndex >= 0 ? currentChild : undefined}
-          adjacentOperationalRow={isAdjacentOperationalClusterRow(
+      {#if shouldRenderResponseGroupInline(group)}
+        {@const childKeys = getResponseGroupBlockKeys(group.children)}
+        {#each group.children as childBlock, childIndex (childKeys[childIndex])}
+          {#if childBlock.type !== 'tool_result'}
+            {@render renderResponseGroupChild(group, blockIndex, childBlock, childIndex)}
+          {/if}
+        {/each}
+      {:else}
+        {@const currentChildIndex = getResponseGroupCurrentChildIndex(group)}
+        {#snippet currentChild()}
+          {@render renderResponseGroupChild(
+            group,
+            blockIndex,
+            group.children[currentChildIndex],
+            currentChildIndex,
+          )}
+        {/snippet}
+        <div
+          class="content-block content-block--group {getOperationalClusterSpacingClass(
             groupedBlocks,
             blockIndex,
             isVisibleTopLevelBlock,
-          )}
+          )}"
+          data-message-content-block="content_group"
+          use:animateIn={{ animate: isStreaming, key: blockKeys[blockIndex] }}
         >
-          {#snippet children()}
-            {@const childKeys = getResponseGroupBlockKeys(group.children)}
-            {#each group.children as childBlock, childIndex (childKeys[childIndex])}
-              {#if childBlock.type !== 'tool_result'}
-                {@render renderResponseGroupChild(group, blockIndex, childBlock, childIndex)}
-              {/if}
-            {/each}
-          {/snippet}
-        </ResponseGroup>
-      </div>
+          <ResponseGroup
+            name={group.name}
+            isStreaming={group.isStreaming}
+            blocks={group.children}
+            searchPath={chatSearchBlockPath(blockIndex)}
+            reasoningPhase={group.isReasoningPhase}
+            currentChild={currentChildIndex >= 0 ? currentChild : undefined}
+            adjacentOperationalRow={isAdjacentOperationalClusterRow(
+              groupedBlocks,
+              blockIndex,
+              isVisibleTopLevelBlock,
+            )}
+          >
+            {#snippet children()}
+              {@const childKeys = getResponseGroupBlockKeys(group.children)}
+              {#each group.children as childBlock, childIndex (childKeys[childIndex])}
+                {#if childBlock.type !== 'tool_result'}
+                  {@render renderResponseGroupChild(group, blockIndex, childBlock, childIndex)}
+                {/if}
+              {/each}
+            {/snippet}
+          </ResponseGroup>
+        </div>
+      {/if}
     {:else if isNavLinkBlock(block as ContentBlock) || resolveCard(block, cardHandlers) || getProposalFromBlock(block as ContentBlock) || ['text', 'tool_use', 'thinking', 'image', 'video'].includes(block.type)}
       <div
         class="content-block content-block--{isNavLinkBlock(block as ContentBlock)

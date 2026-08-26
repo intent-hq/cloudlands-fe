@@ -70,6 +70,7 @@
     getResponseGroupBlockKeys,
     getResponseGroupCurrentChildIndex,
     normalizeResponseGroups,
+    shouldRenderResponseGroupInline,
   } from './response-group-blocks';
   import { chatSearchBlockPath } from './chat-search';
   import NavLink from './NavLink.svelte';
@@ -736,20 +737,16 @@
 
 <div class="flex flex-col gap-0" style="contain: layout style paint;" data-operational-stack>
   {#each groupedBlocks as block, blockIndex (blockKeys[blockIndex])}
-    <div
-      class={getOperationalClusterSpacingClass(
-        groupedBlocks,
-        blockIndex,
-        isVisibleOperationalBlock,
-      )}
-      data-operational-cluster-row={isOperationalClusterBlock(block) ? block.type : undefined}
-      data-message-content-block={block.type}
-      data-chat-search-block-path={block.type === 'text'
-        ? chatSearchBlockPath(blockIndex)
-        : undefined}
-    >
-      {#if block.type === 'content_group'}
-        {@const group = block as ContentBlockGroup}
+    {#if block.type === 'content_group'}
+      {@const group = block as ContentBlockGroup}
+      {#if shouldRenderResponseGroupInline(group)}
+        {@const childKeys = getResponseGroupBlockKeys(group.children)}
+        {#each group.children as childBlock, childIndex (childKeys[childIndex])}
+          {#if childBlock.type !== 'tool_result'}
+            {@render renderResponseGroupChild(group, blockIndex, childBlock, childIndex)}
+          {/if}
+        {/each}
+      {:else}
         {@const currentChildIndex = getResponseGroupCurrentChildIndex(group)}
         {#snippet currentChild()}
           {@render renderResponseGroupChild(
@@ -759,29 +756,52 @@
             currentChildIndex,
           )}
         {/snippet}
-        <ResponseGroup
-          name={group.name}
-          isStreaming={group.isStreaming}
-          blocks={group.children}
-          searchPath={chatSearchBlockPath(blockIndex)}
-          reasoningPhase={group.isReasoningPhase}
-          currentChild={currentChildIndex >= 0 ? currentChild : undefined}
-          adjacentOperationalRow={isAdjacentOperationalClusterRow(
+        <div
+          class={getOperationalClusterSpacingClass(
             groupedBlocks,
             blockIndex,
             isVisibleOperationalBlock,
           )}
+          data-operational-cluster-row={block.type}
+          data-message-content-block={block.type}
         >
-          {#snippet children()}
-            {@const childKeys = getResponseGroupBlockKeys(group.children)}
-            {#each group.children as childBlock, childIndex (childKeys[childIndex])}
-              {#if childBlock.type !== 'tool_result'}
-                {@render renderResponseGroupChild(group, blockIndex, childBlock, childIndex)}
-              {/if}
-            {/each}
-          {/snippet}
-        </ResponseGroup>
-      {:else}
+          <ResponseGroup
+            name={group.name}
+            isStreaming={group.isStreaming}
+            blocks={group.children}
+            searchPath={chatSearchBlockPath(blockIndex)}
+            reasoningPhase={group.isReasoningPhase}
+            currentChild={currentChildIndex >= 0 ? currentChild : undefined}
+            adjacentOperationalRow={isAdjacentOperationalClusterRow(
+              groupedBlocks,
+              blockIndex,
+              isVisibleOperationalBlock,
+            )}
+          >
+            {#snippet children()}
+              {@const childKeys = getResponseGroupBlockKeys(group.children)}
+              {#each group.children as childBlock, childIndex (childKeys[childIndex])}
+                {#if childBlock.type !== 'tool_result'}
+                  {@render renderResponseGroupChild(group, blockIndex, childBlock, childIndex)}
+                {/if}
+              {/each}
+            {/snippet}
+          </ResponseGroup>
+        </div>
+      {/if}
+    {:else}
+      <div
+        class={getOperationalClusterSpacingClass(
+          groupedBlocks,
+          blockIndex,
+          isVisibleOperationalBlock,
+        )}
+        data-operational-cluster-row={isOperationalClusterBlock(block) ? block.type : undefined}
+        data-message-content-block={block.type}
+        data-chat-search-block-path={block.type === 'text'
+          ? chatSearchBlockPath(blockIndex)
+          : undefined}
+      >
         {@render renderContentBlock(
           block as ContentBlock,
           String(blockIndex),
@@ -789,7 +809,7 @@
           false,
           isAdjacentOperationalClusterRow(groupedBlocks, blockIndex, isVisibleOperationalBlock),
         )}
-      {/if}
-    </div>
+      </div>
+    {/if}
   {/each}
 </div>

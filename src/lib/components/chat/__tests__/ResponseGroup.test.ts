@@ -20,6 +20,7 @@ import {
   isReasoningPhaseGroupName,
   normalizeResponseGroup,
   normalizeResponseGroups,
+  shouldRenderResponseGroupInline,
 } from '../response-group-blocks';
 import { extractReasoningHistory } from '../reasoning-heading';
 import { warmImport } from '../../../../test/warm-import';
@@ -504,6 +505,21 @@ describe('ResponseGroup - block identity', () => {
         children: [preceding, tool, laterReasoning],
       },
     ]);
+  });
+
+  it('renders only completed headingless reasoning phases inline', () => {
+    const group = {
+      type: 'content_group' as const,
+      name: '',
+      isStreaming: false,
+      isReasoningPhase: true,
+      children: [],
+    };
+
+    expect(shouldRenderResponseGroupInline(group)).toBe(true);
+    expect(shouldRenderResponseGroupInline({ ...group, isStreaming: true })).toBe(false);
+    expect(shouldRenderResponseGroupInline({ ...group, name: 'Model heading' })).toBe(false);
+    expect(shouldRenderResponseGroupInline({ ...group, isReasoningPhase: false })).toBe(false);
   });
 
   it('does not pair ordinary authored groups or adjacent prose', () => {
