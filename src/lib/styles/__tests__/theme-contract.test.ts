@@ -362,7 +362,8 @@ describe('theme color contract', () => {
       'utf8',
     );
 
-    expect(panel).toContain('rounded-lg text-foreground');
+    expect(panel).toContain('rounded-(--panel-shell-radius) text-foreground');
+    expect(panel).toContain('--panel-shell-radius: var(--radius-large);');
     expect(panel).not.toContain('rounded-lg border border-border');
     expect(panel).toContain(
       'class:bg-sidebar={panel.pristine === true && panel.tabs.length === 0}',
