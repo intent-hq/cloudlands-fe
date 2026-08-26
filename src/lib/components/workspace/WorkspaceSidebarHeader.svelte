@@ -8,6 +8,7 @@
     faBars,
     faEllipsisV,
     faKeyboard,
+    faRightLeft,
     faTableColumns,
   } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
@@ -27,6 +28,7 @@
   } from '$store/renderer/slices/ui-layout/ui-layout-slice';
 
   import { requestDeleteWorkspace } from '$store/renderer/slices/workspace-operations/workspace-operations-slice';
+  import { openTransferModal } from '$store/renderer/slices/workspace-transfer/workspace-transfer-slice';
   import { setWorkspaceEntity } from '$store/renderer/slices/workspace/workspace-slice';
   import {
     markKeySlotUnassigned,
@@ -404,6 +406,27 @@
     };
   });
 
+  const transferAction: MenuAction | null = $derived(
+    workspace
+      ? {
+          label: m.workspace_card_transfer_label(),
+          icon: faRightLeft,
+          onClick: () => {
+            appStore.dispatch(
+              openTransferModal({ workspaceId: workspace.id, workspaceTitle: workspace.title }),
+            );
+          },
+        }
+      : null,
+  );
+
+  const additionalActions: MenuAction[] = $derived([
+    sidebarToggleAction,
+    ...(microKeyAction ? [microKeyAction] : []),
+    ...(transferAction ? [transferAction] : []),
+    sidebarSideAction,
+  ]);
+
   function handleClose() {
     dropdownOpen = false;
   }
@@ -615,9 +638,7 @@
             onClose={handleClose}
             showDeleteOption={true}
             showFileNameCopy={false}
-            additionalActions={microKeyAction
-              ? [sidebarToggleAction, microKeyAction, sidebarSideAction]
-              : [sidebarToggleAction, sidebarSideAction]}
+            {additionalActions}
           />
         </div>
       {/snippet}
