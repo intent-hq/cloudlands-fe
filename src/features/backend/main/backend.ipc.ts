@@ -71,6 +71,14 @@ import {
   type KeychainSyncLifecycle,
 } from './keychain-sync-lifecycle';
 import { setLocalPref } from '../../../main/local-prefs';
+import {
+  extractSelfPairingInfo,
+  getStoredSelfFingerprint,
+  isAutoPublishSuppressed,
+  normalizeFingerprint,
+  setAutoPublishSuppressed,
+  setStoredSelfFingerprint,
+} from './self-publish';
 import { registerBrowserExecReverseHandler } from '../../browser/main/browser-exec-reverse';
 import { LOCAL_CONNECTION_ID } from '../../../shared/types/connections';
 import type {
@@ -85,6 +93,8 @@ import type {
   ForgetConnectionResult,
   KeychainSyncStateResult,
   OpenConnectionResult,
+  PublishSelfResult,
+  SelfPublishedStateResult,
   SwitchConnectionResult,
 } from '../../../shared/types/connections';
 import { compareProtocolMajor } from './protocol-compat';
@@ -94,6 +104,8 @@ import {
   ConnectionsForgetSchema,
   ConnectionsListSchema,
   ConnectionsOpenSchema,
+  ConnectionsPublishSelfSchema,
+  ConnectionsSelfPublishedStateSchema,
   ConnectionsSwitchSchema,
   ConnectionsSyncGetStateSchema,
   ConnectionsSyncSetEnabledSchema,
@@ -1941,6 +1953,28 @@ function registerConnectionsHandlers(): void {
       async (_event, { id }) =>
         enqueueSwitchOperation(async () => {
           const wasActive = (await connectionsStore.getActiveId()) === id;
+          // Forgetting this machine's own published entry is a local
+          // unpublish: set the persistent "do not auto-publish" marker so the
+          // originator honors the removal and never silently re-asserts
+          // (spec "Forget = fingerprint-keyed tombstone"). Cleared only by an
+          // explicit re-publish. Resolved BEFORE the forget so the record's
+          // fingerprint is still readable; fail-soft on any lookup error.
+          try {
+            const [records, selfFingerprint] = await Promise.all([
+              connectionsStore.list(),
+              getStoredSelfFingerprint(),
+            ]);
+            const target = records.find((c) => c.id === id);
+            const targetKey = normalizeFingerprint(target?.fingerprint);
+            if (selfFingerprint !== null && targetKey === selfFingerprint) {
+              await setAutoPublishSuppressed(true);
+            }
+          } catch (error) {
+            logger.warn('Could not evaluate self-entry suppression on forget (fail-soft)', {
+              id,
+              error: error instanceof Error ? error.message : String(error),
+            });
+          }
           await connectionsStore.forget(id); // rejects the reserved local id
           const targetClient = backendClients.get(id);
           const retargetedPrimary =
@@ -2017,6 +2051,30 @@ function registerConnectionsHandlers(): void {
       CONNECTIONS.SYNC_SET_ENABLED,
     ),
   );
+
+  // Self-publish: upsert THIS machine's own backend into the connections
+  // store so the store→keychain reconcile pushes it to the user's other
+  // devices. Main gathers everything from `server.pairingInfo` over the
+  // LOCAL client — the bearer token never crosses to the renderer.
+  ipcMain.handle(
+    CONNECTIONS.PUBLISH_SELF,
+    createValidatedHandler(
+      ConnectionsPublishSelfSchema,
+      async () => publishSelfBackend(),
+      CONNECTIONS.PUBLISH_SELF,
+    ),
+  );
+
+  // Whether a self entry exists + whether auto-publish offers are suppressed
+  // (gates the publish/removal modals and the explicit re-publish button).
+  ipcMain.handle(
+    CONNECTIONS.SELF_PUBLISHED_STATE,
+    createValidatedHandler(
+      ConnectionsSelfPublishedStateSchema,
+      async () => getSelfPublishedState(),
+      CONNECTIONS.SELF_PUBLISHED_STATE,
+    ),
+  );
 }
 
 /** Assemble the `connections:sync-get-state` / `sync-set-enabled` result. */
@@ -2026,6 +2084,110 @@ async function getKeychainSyncState(): Promise<KeychainSyncStateResult> {
     enabled: await isKeychainSyncEnabled(),
     status: keychainSyncLifecycle?.getStatus() ?? null,
   };
+}
+
+/**
+ * Resolve a client guaranteed to target the LOCAL daemon: the pooled local
+ * member when one is connected, else the compatibility client when no remote
+ * is active (lazily created — the standard handler path). `null` when the
+ * whole app is pinned to a remote and no local pool member exists —
+ * `server.pairingInfo` is local-only (UDS; PROTOCOL §5), so there is no
+ * client that could answer it.
+ */
+function getLocalClientForSelfPublish(): JsonRpcClient | null {
+  const pooled = backendClients.get(LOCAL_CONNECTION_ID);
+  if (pooled) return pooled;
+  return activeConnectionMeta === null ? getBackendClient() : null;
+}
+
+/**
+ * `connections:publish-self`: query the local daemon's `server.pairingInfo`,
+ * build the record per the spec Mechanics (label = hostname with `host:port`
+ * fallback, host = first local IP, hosts = all local IPs, port = bound wsApi
+ * port, fingerprint = cert fingerprint, token, detectHosts on), and upsert it
+ * via the store (fingerprint-keyed dedupe; the mutation triggers the keychain
+ * reconcile push). Persists the machine's own cert fingerprint for self
+ * detection and clears the "do not auto-publish" marker — publishing is
+ * explicit user intent. Rejects when the local backend is unreachable
+ * (remote-pinned app), the wsApi listener is off (`port: null`), or there is
+ * no routable local IP to publish.
+ */
+async function publishSelfBackend(): Promise<PublishSelfResult> {
+  const localClient = getLocalClientForSelfPublish();
+  if (!localClient) {
+    throw new Error('publish-self failed: local backend is not connected (remote backend active)');
+  }
+  const info = extractSelfPairingInfo(await localClient.request('server.pairingInfo'));
+  if (!info) {
+    throw new Error('publish-self failed: malformed server.pairingInfo result');
+  }
+  if (info.port === null) {
+    throw new Error('publish-self failed: the WebSocket API is not enabled');
+  }
+  const host = info.localIps[0];
+  if (!host) {
+    throw new Error('publish-self failed: no routable local IP to publish');
+  }
+  const label = info.prettyHostname ?? info.hostname ?? `${host}:${info.port}`;
+  const record = await connectionsStore.add({
+    label,
+    host,
+    port: info.port,
+    fingerprint: info.certFingerprint,
+    token: info.token,
+    detectHosts: true,
+  });
+  // Persist the full candidate-host list + the machine hostname on the
+  // record, matching what post-connect refreshes capture for remotes.
+  if (info.localIps.length > 1) {
+    await connectionsStore.setHosts(record.id, info.localIps);
+  }
+  const hostname = info.prettyHostname ?? info.hostname;
+  if (hostname) {
+    await connectionsStore.setHostname(record.id, hostname);
+  }
+  await setStoredSelfFingerprint(info.certFingerprint);
+  await setAutoPublishSuppressed(false);
+  await broadcastConnectionsChanged();
+  const connection =
+    (await connectionsStore.list()).find((c) => c.id === record.id) ?? record;
+  return { connection } satisfies PublishSelfResult;
+}
+
+/**
+ * `connections:self-published-state`: whether a self entry exists (a stored
+ * record whose fingerprint matches the persisted self fingerprint OR the live
+ * local daemon's cert fingerprint) and whether the persistent "do not
+ * auto-publish" marker is set. The live `server.pairingInfo` probe is
+ * fail-soft — when the local daemon is unreachable (or the app is pinned to a
+ * remote), detection falls back to the persisted fingerprint alone.
+ */
+async function getSelfPublishedState(): Promise<SelfPublishedStateResult> {
+  const [records, storedFingerprint, suppressed] = await Promise.all([
+    connectionsStore.list(),
+    getStoredSelfFingerprint(),
+    isAutoPublishSuppressed(),
+  ]);
+  let liveFingerprint: string | null = null;
+  const localClient = getLocalClientForSelfPublish();
+  if (localClient) {
+    try {
+      const info = extractSelfPairingInfo(await localClient.request('server.pairingInfo'));
+      liveFingerprint = normalizeFingerprint(info?.certFingerprint ?? null);
+    } catch {
+      // Fail-soft: the persisted fingerprint still detects the self entry.
+    }
+  }
+  const selfKeys = new Set(
+    [storedFingerprint, liveFingerprint].filter((key): key is string => key !== null),
+  );
+  const published =
+    selfKeys.size > 0 &&
+    records.some((c) => {
+      const key = normalizeFingerprint(c.fingerprint);
+      return key !== null && selfKeys.has(key);
+    });
+  return { published, suppressed } satisfies SelfPublishedStateResult;
 }
 
 /** Dispose the shared client (used on shutdown and backend switch). */

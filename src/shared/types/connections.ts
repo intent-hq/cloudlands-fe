@@ -337,3 +337,40 @@ export interface KeychainSyncStateResult {
 export interface SetKeychainSyncEnabledParams {
   enabled: boolean;
 }
+
+// ============================================================================
+// Self-publish (publish THIS machine's backend to the synced registry)
+// ============================================================================
+
+/**
+ * `connections:publish-self` result. Main queries `server.pairingInfo` over
+ * the LOCAL client itself, builds the record (label = hostname, host = first
+ * local IP, port = bound wsApi port, fingerprint = cert fingerprint, token —
+ * main-only), and upserts it into the connections store; the store→keychain
+ * reconcile then pushes it to the user's other devices. The bearer token
+ * never appears here — only the stored, token-free record.
+ */
+export interface PublishSelfResult {
+  /** The created/updated token-free record for this machine's backend. */
+  connection: ConnectionRecord;
+}
+
+/**
+ * `connections:self-published-state` result — gates the publish/removal
+ * modals and the explicit re-publish button (spec "Decisions").
+ */
+export interface SelfPublishedStateResult {
+  /**
+   * Whether a self entry currently exists in the connections store: a record
+   * whose fingerprint matches the persisted self fingerprint or the live
+   * local daemon's cert fingerprint.
+   */
+  published: boolean;
+  /**
+   * Whether auto-publish offers are suppressed: the persistent "do not
+   * auto-publish" marker set when this machine's entry was forgotten
+   * elsewhere (tombstone honored) or unpublished locally. Cleared only by an
+   * explicit `connections:publish-self`.
+   */
+  suppressed: boolean;
+}

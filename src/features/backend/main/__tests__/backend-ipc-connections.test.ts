@@ -156,10 +156,25 @@ vi.mock('../keychain-sync-lifecycle', () => ({
   }),
 }));
 
-const localPrefs = vi.hoisted(() => ({ setLocalPref: vi.fn(async () => {}) }));
+// Stateful local-prefs double: the self-publish helpers (self fingerprint +
+// "do not auto-publish" marker) read back what they persisted.
+const localPrefs = vi.hoisted(() => {
+  const values = new Map<string, unknown>();
+  return {
+    values,
+    setLocalPref: vi.fn(async (key: string, value: unknown) => {
+      values.set(key, value);
+    }),
+    getLocalPref: vi.fn(async (key: string) => values.get(key)),
+    deleteLocalPref: vi.fn(async (key: string) => {
+      values.delete(key);
+    }),
+  };
+});
 vi.mock('../../../../main/local-prefs', () => ({
   setLocalPref: localPrefs.setLocalPref,
-  getLocalPref: vi.fn(async () => undefined),
+  getLocalPref: localPrefs.getLocalPref,
+  deleteLocalPref: localPrefs.deleteLocalPref,
 }));
 
 // ---------------------------------------------------------------------------
@@ -273,6 +288,7 @@ beforeEach(() => {
   keychainSync.enabled = false;
   keychainSync.status = null;
   keychainSync.initOptions = null;
+  localPrefs.values.clear();
   vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([]);
   Object.defineProperty(BrowserWindow, 'getFocusedWindow', {
     value: vi.fn(() => null),
@@ -894,6 +910,177 @@ describe('keychain-sync settings IPC (T4)', () => {
     const status = { state: 'unavailable', reason: 'unavailable', message: 'locked' };
     keychainSync.initOptions?.onStatusChanged?.(status);
     expect(send).toHaveBeenCalledWith('connections:sync-status-changed', status);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Self-publish IPC (publish THIS machine's backend to the synced registry)
+// ---------------------------------------------------------------------------
+
+describe('self-publish IPC', () => {
+  const PAIRING_INFO = {
+    token: 'a'.repeat(64),
+    certFingerprint: '11:22:33:44',
+    port: 5181,
+    path: '/ws',
+    localIps: ['192.168.1.10', '10.0.0.5'],
+    hostname: 'my-mac.local',
+    prettyHostname: "Clement's Mac Studio",
+  };
+  const SELF_RECORD = {
+    id: 'self-1',
+    label: "Clement's Mac Studio",
+    host: '192.168.1.10',
+    port: 5181,
+    fingerprint: '11:22:33:44',
+    isLocal: false,
+  };
+
+  function installPairingInfo(overrides: Partial<typeof PAIRING_INFO> | null = {}) {
+    rpc.handler = async (method) => {
+      if (method === 'server.pairingInfo') {
+        if (overrides === null) throw new Error('server.* methods are local-only');
+        return { ...PAIRING_INFO, ...overrides };
+      }
+      return {};
+    };
+  }
+
+  it('connections:publish-self builds the record from pairingInfo and upserts it (token stays in main)', async () => {
+    installPairingInfo();
+    store.add.mockResolvedValue(SELF_RECORD);
+    const send = installWindow();
+    const { mod } = await loadModule();
+    mod.registerBackendHandlers();
+    const handler = findHandler('connections:publish-self')!;
+
+    const result = (await handler({}, undefined)) as { connection: { id: string } };
+
+    // Record per spec Mechanics: label = hostname (pretty preferred), host =
+    // first local IP, port = bound wsApi port, fingerprint + token from
+    // pairingInfo, detectHosts on. The token goes to the store only.
+    expect(store.add).toHaveBeenCalledWith({
+      label: "Clement's Mac Studio",
+      host: '192.168.1.10',
+      port: 5181,
+      fingerprint: '11:22:33:44',
+      token: 'a'.repeat(64),
+      detectHosts: true,
+    });
+    // All local IPs persist as candidate hosts; the hostname persists too.
+    expect(store.setHosts).toHaveBeenCalledWith('self-1', ['192.168.1.10', '10.0.0.5']);
+    expect(store.setHostname).toHaveBeenCalledWith('self-1', "Clement's Mac Studio");
+    // Self fingerprint persisted (normalized) + suppression marker cleared.
+    expect(localPrefs.values.get('selfBackendFingerprint')).toBe('11:22:33:44');
+    expect(localPrefs.values.has('selfPublishSuppressed')).toBe(false);
+    // Returned record is token-free (the store's shape) and the list rebroadcast.
+    expect(result.connection.id).toBe('self-1');
+    expect(result.connection).not.toHaveProperty('token');
+    expect(send.mock.calls.some(([c]) => c === 'connections:changed')).toBe(true);
+  });
+
+  it('connections:publish-self re-publish clears the "do not auto-publish" marker', async () => {
+    installPairingInfo();
+    store.add.mockResolvedValue(SELF_RECORD);
+    localPrefs.values.set('selfPublishSuppressed', true);
+    const { mod } = await loadModule();
+    mod.registerBackendHandlers();
+
+    await findHandler('connections:publish-self')!({}, undefined);
+    expect(localPrefs.values.has('selfPublishSuppressed')).toBe(false);
+  });
+
+  it('connections:publish-self rejects when the WebSocket API is off (port null)', async () => {
+    installPairingInfo({ port: null as never });
+    const { mod } = await loadModule();
+    mod.registerBackendHandlers();
+
+    await expect(findHandler('connections:publish-self')!({}, undefined)).rejects.toThrow(
+      /WebSocket API is not enabled/i,
+    );
+    expect(store.add).not.toHaveBeenCalled();
+    expect(localPrefs.values.has('selfBackendFingerprint')).toBe(false);
+  });
+
+  it('connections:publish-self rejects on a malformed pairingInfo result', async () => {
+    installPairingInfo({ token: '' });
+    const { mod } = await loadModule();
+    mod.registerBackendHandlers();
+
+    await expect(findHandler('connections:publish-self')!({}, undefined)).rejects.toThrow(
+      /malformed server\.pairingInfo/i,
+    );
+    expect(store.add).not.toHaveBeenCalled();
+  });
+
+  it('connections:publish-self rejects when a remote backend is active (no local client)', async () => {
+    installPairingInfo();
+    const { mod } = await loadModule();
+    await mod.switchBackend('remote-1'); // whole app pinned to the remote
+    mod.registerBackendHandlers();
+
+    await expect(findHandler('connections:publish-self')!({}, undefined)).rejects.toThrow(
+      /local backend is not connected/i,
+    );
+    expect(store.add).not.toHaveBeenCalled();
+  });
+
+  it('connections:self-published-state matches a record by the live fingerprint', async () => {
+    installPairingInfo();
+    store.list.mockResolvedValue([LOCAL, { ...REMOTE, fingerprint: '11:22:33:44' }]);
+    const { mod } = await loadModule();
+    mod.registerBackendHandlers();
+
+    await expect(
+      findHandler('connections:self-published-state')!({}, undefined),
+    ).resolves.toEqual({ published: true, suppressed: false });
+  });
+
+  it('connections:self-published-state matches by the persisted fingerprint when the probe fails', async () => {
+    installPairingInfo(null); // local daemon rejects/unreachable → fail-soft
+    localPrefs.values.set('selfBackendFingerprint', '11:22:33:44');
+    store.list.mockResolvedValue([LOCAL, { ...REMOTE, fingerprint: '11:22:33:44' }]);
+    const { mod } = await loadModule();
+    mod.registerBackendHandlers();
+
+    await expect(
+      findHandler('connections:self-published-state')!({}, undefined),
+    ).resolves.toEqual({ published: true, suppressed: false });
+  });
+
+  it('connections:self-published-state reports unpublished + the suppression marker', async () => {
+    installPairingInfo();
+    localPrefs.values.set('selfPublishSuppressed', true);
+    const { mod } = await loadModule();
+    mod.registerBackendHandlers();
+
+    // No stored record carries the self fingerprint → not published.
+    await expect(
+      findHandler('connections:self-published-state')!({}, undefined),
+    ).resolves.toEqual({ published: false, suppressed: true });
+  });
+
+  it('connections:forget of the self entry sets the "do not auto-publish" marker', async () => {
+    store.forget.mockResolvedValue(undefined);
+    localPrefs.values.set('selfBackendFingerprint', '11:22:33:44');
+    store.list.mockResolvedValue([LOCAL, { ...REMOTE, fingerprint: '11:22:33:44' }]);
+    installWindow();
+    const { mod } = await loadModule();
+    mod.registerBackendHandlers();
+
+    await findHandler('connections:forget')!({}, { id: 'remote-1' });
+    expect(localPrefs.values.get('selfPublishSuppressed')).toBe(true);
+  });
+
+  it('connections:forget of an unrelated remote leaves the marker untouched', async () => {
+    store.forget.mockResolvedValue(undefined);
+    localPrefs.values.set('selfBackendFingerprint', '99:88:77:66');
+    installWindow();
+    const { mod } = await loadModule();
+    mod.registerBackendHandlers();
+
+    await findHandler('connections:forget')!({}, { id: 'remote-1' });
+    expect(localPrefs.values.has('selfPublishSuppressed')).toBe(false);
   });
 });
 

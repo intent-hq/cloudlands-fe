@@ -879,6 +879,13 @@ export const IPC_CHANNELS = {
     SYNC_GET_STATE: 'connections:sync-get-state',
     SYNC_SET_ENABLED: 'connections:sync-set-enabled',
     SYNC_STATUS_CHANGED: 'connections:sync-status-changed',
+    // Self-publish: upsert THIS machine's own backend into the connections
+    // store (keychain sync then pushes it to the user's other devices), and
+    // read whether a self entry exists / auto-publish is suppressed. Main
+    // queries `server.pairingInfo` itself over the local client, so the
+    // bearer token never crosses to the renderer.
+    PUBLISH_SELF: 'connections:publish-self',
+    SELF_PUBLISHED_STATE: 'connections:self-published-state',
   },
 
   // Workspace transfer relay (main-process, wizard steps 3–4). The renderer
