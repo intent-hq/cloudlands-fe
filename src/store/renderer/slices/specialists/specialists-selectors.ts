@@ -200,6 +200,16 @@ export const selectSpecialistById = store.createSelector((state, specialistId: s
     if (bundled) {
         return { id: bundled.id, name: bundled.name, description: bundled.description, source: 'builtin' };
     }
+    // Last resort fallback: hardcoded SPECIALISTS, only before any source has
+    // produced specialists (mirrors selectSpecialists) — so built-in ids
+    // resolve during the async startup window, while specialists absent from
+    // the loaded set must not resurrect (daemon replacement mode).
+    if (getItems(state.specialists.fileSpecialists).length === 0 && state.specialists.bundledSpecialists.length === 0) {
+        const catalog = SPECIALISTS.find((s) => s.id === specialistId);
+        if (catalog) {
+            return { id: catalog.id, name: catalog.name, description: catalog.description, source: 'builtin' };
+        }
+    }
     return null;
 });
 /** Get specialist display name by ID */

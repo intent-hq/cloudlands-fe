@@ -1727,6 +1727,7 @@
   "chat_agentCard_delegatedBy_label": "· 由 {name} 委派",
   "chat_agentCard_menu_delete_label": "删除",
   "chat_agentCard_menu_harnessVersion_label": "Harness v{version}",
+  "chat_agentCard_menu_specialist_label": "专家：{name}",
   "chat_harnessFeaturesModal_description": "此智能体会话创建时启用的功能。此快照为只读，在会话生命周期内保持不变。",
   "chat_harnessFeaturesModal_title": "Harness v{version}",
   "chat_agentCard_menu_open_label": "打开",
