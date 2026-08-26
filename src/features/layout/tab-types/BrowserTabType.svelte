@@ -30,7 +30,7 @@
   $effect(() => workspaceIdStore.set(workspaceId));
   const agents$ = selectAllWorkspaceAgents(workspaceIdStore);
   const ownerAgentName = $derived(
-    tab.ownerAgentId ? resolveOwnerName(tab.ownerAgentId, $agents$) : undefined,
+    tab.ownerAgentId ? resolveOwnerName(tab.ownerAgentId, $agents$, tab.ownerAgentName) : undefined,
   );
 </script>
 

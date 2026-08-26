@@ -173,4 +173,56 @@ describe('buildCreateWorkspaceRequestFromProposal', () => {
       },
     });
   });
+
+  it('maps sibling edits exactly while keeping repository fields and idempotency locked', () => {
+    const proposal: WorkspaceCreateProposal = {
+      kind: 'workspace-create',
+      payload: {
+        operation: 'workspace.create',
+        params: {
+          idempotencyKey: 'sibling-proposal-1',
+          title: 'Original follow-up',
+          repositoryPath: '/repo/current',
+          baseRef: 'main',
+          scope: 'apps/current',
+          isNewRepo: false,
+          initialAgent: { prompt: 'Original prompt', specialist: 'planner' },
+        },
+      },
+      preview: {
+        title: 'Create sibling workspace',
+        workspaceCreate: { mode: 'sibling', title: 'Original follow-up' },
+      },
+    };
+
+    const request = buildCreateWorkspaceRequestFromProposal(proposal, {
+      title: 'Edited follow-up',
+      initialPrompt: 'Edited prompt',
+      specialist: 'implementor',
+      branch: 'feature/dependency',
+      repoPath: '/repo/attacker',
+      githubUrl: 'https://github.com/attacker/repo',
+      clonePath: '/tmp/attacker',
+      scope: 'apps/attacker',
+      isNewRepo: true,
+    });
+
+    expect(request).toEqual({
+      idempotencyKey: 'sibling-proposal-1',
+      title: 'Edited follow-up',
+      repositoryPath: '/repo/current',
+      githubUrl: undefined,
+      clonePath: undefined,
+      baseRef: 'feature/dependency',
+      scope: 'apps/current',
+      isNewRepo: false,
+      initialAgent: {
+        name: 'Coordinator',
+        prompt: 'Edited prompt',
+        specialist: 'implementor',
+        agentType: 'workspace',
+        metadata: { specialist: 'implementor', isInitialAgent: true },
+      },
+    });
+  });
 });

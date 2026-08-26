@@ -476,6 +476,7 @@ describe('connections:* IPC handlers', () => {
     await expect(handler!({}, undefined)).resolves.toEqual({
       connections: [LOCAL, REMOTE],
       activeId: 'local',
+      windowBackendId: 'local',
       // No remote handshake has mismatched, so there is no sticky mismatch (#823).
       protocolMismatch: null,
       // No auth rejection has fired, so there is no sticky rejection either.
@@ -1078,6 +1079,51 @@ describe('backend client pool', () => {
 });
 
 describe('per-window backend IPC routing', () => {
+  it('reports the calling window backend without changing the persisted active selection', async () => {
+    const { mod } = await loadModule();
+    const { localSender, remoteSender } = installBackendWindows();
+    mod.registerBackendHandlers();
+    const list = findHandler('connections:list')!;
+
+    await expect(list({ sender: localSender }, undefined)).resolves.toMatchObject({
+      activeId: 'local',
+      windowBackendId: 'local',
+    });
+    await expect(list({ sender: remoteSender }, undefined)).resolves.toMatchObject({
+      activeId: 'local',
+      windowBackendId: 'remote-1',
+    });
+    expect(store.setActiveId).not.toHaveBeenCalled();
+  });
+
+  it('tailors connections:changed to each recipient window', async () => {
+    store.add.mockResolvedValue(REMOTE);
+    const { mod } = await loadModule();
+    const { localSender, localSend, remoteSend } = installBackendWindows();
+    mod.registerBackendHandlers();
+
+    await findHandler('connections:add')!(
+      { sender: localSender },
+      {
+        label: 'Studio Mac',
+        host: '10.0.0.5',
+        port: 8443,
+        fingerprint: 'AA:BB:CC:DD',
+        token: 'secret-token',
+      },
+    );
+
+    expect(localSend).toHaveBeenCalledWith(
+      'connections:changed',
+      expect.objectContaining({ activeId: 'local', windowBackendId: 'local' }),
+    );
+    expect(remoteSend).toHaveBeenCalledWith(
+      'connections:changed',
+      expect.objectContaining({ activeId: 'local', windowBackendId: 'remote-1' }),
+    );
+    expect(store.setActiveId).not.toHaveBeenCalled();
+  });
+
   it('routes requests, subscriptions, unsubscriptions, and status to the sender client', async () => {
     const { mod } = await loadModule();
     const localClient = mod.getBackendClient();

@@ -77,6 +77,18 @@ export function filterSpecialistsByGitHubAuth(specialists: Specialist[], isGitHu
 export function filterPickableSpecialists(specialists: Specialist[], isGitHubAuthenticated: boolean): Specialist[] {
     return filterSpecialistsByGitHubAuth(specialists, isGitHubAuthenticated).filter((s) => !s.hidden);
 }
+/**
+ * Filter specialists for the New Workspace modal's single-agent dropdown:
+ * the pickable set (GitHub gating + `hidden`) minus `role: internal`
+ * specialists. Internal specialists remain visible in the in-workspace
+ * SpecialistDropdown (which uses `filterPickableSpecialists`) and in
+ * Settings.
+ * @param specialists List of specialists to filter
+ * @param isGitHubAuthenticated Whether user is authenticated with GitHub
+ */
+export function filterModalPickableSpecialists(specialists: Specialist[], isGitHubAuthenticated: boolean): Specialist[] {
+    return filterPickableSpecialists(specialists, isGitHubAuthenticated).filter((s) => s.role !== 'internal');
+}
 // ============================================================================
 // Derived: merged specialists list
 // Priority: file (project > user) > bundled > hardcoded SPECIALISTS (last resort)
@@ -104,6 +116,9 @@ export const selectSpecialists = store.createSelector((state): Specialist[] => {
                 resolvedProvider: file.resolvedProvider,
                 modelOptions: file.modelOptions,
                 reasoningEffort: file.reasoningEffort,
+                role: file.role,
+                teamAgents: file.teamAgents,
+                icon: file.icon,
             });
         }
     }
@@ -154,6 +169,18 @@ export const selectSpecialists = store.createSelector((state): Specialist[] => {
     });
 
     return result;
+});
+/**
+ * The specialist that powers the New Workspace modal's team-mode card: the
+ * first `role: 'orchestrator'` entry by id order (ties are deterministic
+ * regardless of list sort). Returns null when no orchestrator exists — the
+ * modal then hides the team card and defaults to single-agent mode.
+ */
+export const selectOrchestratorSpecialist = store.createSelector((state): Specialist | null => {
+    const orchestrators = selectSpecialists.select(state).filter((s) => s.role === 'orchestrator');
+    if (orchestrators.length === 0) return null;
+    orchestrators.sort((a, b) => a.id.localeCompare(b.id));
+    return orchestrators[0];
 });
 // ============================================================================
 // Parameterized selectors

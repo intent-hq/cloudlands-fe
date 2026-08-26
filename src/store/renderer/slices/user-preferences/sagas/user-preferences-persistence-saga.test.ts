@@ -47,6 +47,7 @@ import {
   toggleShowReasoningBlocks,
   toggleSpellcheck,
 } from '../user-preferences-slice';
+import { connectionsListReceived } from '../../connections/connections-slice';
 import {
   hydrateUserPreferencesWorker,
   loadSystemFontsWorker,
@@ -356,5 +357,121 @@ describe('userPreferencesPersistenceSaga', () => {
     await settle();
 
     expect(dispatch.mock.calls).toEqual([]);
+  });
+
+  describe('backend-scoped completedProviderSetup key', () => {
+    const stateFor = (activeId: string, hasCompletedProviderSetup = true) => ({
+      connections: { activeId },
+      userPreferences: { hasCompletedProviderSetup },
+    });
+
+    it('hydrates and persists the flag under the bare key on the local backend', async () => {
+      mocks.getJSON.mockImplementation((key: string) =>
+        key === 'workspace-list:completedProviderSetup' ? true : undefined,
+      );
+      const dispatch = vi.fn();
+      await runSaga(
+        { dispatch, getState: () => stateFor('local') },
+        hydrateUserPreferencesWorker,
+      ).toPromise();
+      expect(dispatch.mock.calls).toContainEqual([setHasCompletedProviderSetup(true)]);
+
+      const channel = stdChannel();
+      const task = runSaga(
+        { channel, dispatch: vi.fn(), getState: () => stateFor('local') },
+        userPreferencesPersistenceSaga,
+      );
+      await settle();
+      mocks.setJSON.mockClear();
+      channel.put(setHasCompletedProviderSetup(true));
+      await settle();
+      expect(mocks.setJSON.mock.calls).toEqual([['workspace-list:completedProviderSetup', true]]);
+      task.cancel();
+      await task.toPromise();
+    });
+
+    it('hydrates and persists the flag under the namespaced key on a remote backend', async () => {
+      const remoteKey = 'backend:remote-1:workspace-list:completedProviderSetup';
+      mocks.getJSON.mockImplementation((key: string) => (key === remoteKey ? true : undefined));
+      const dispatch = vi.fn();
+      await runSaga(
+        { dispatch, getState: () => stateFor('remote-1') },
+        hydrateUserPreferencesWorker,
+      ).toPromise();
+      expect(dispatch.mock.calls).toContainEqual([setHasCompletedProviderSetup(true)]);
+      expect(mocks.getJSON.mock.calls).toContainEqual([remoteKey]);
+      expect(mocks.getJSON.mock.calls).not.toContainEqual([
+        'workspace-list:completedProviderSetup',
+      ]);
+
+      const channel = stdChannel();
+      const task = runSaga(
+        { channel, dispatch: vi.fn(), getState: () => stateFor('remote-1') },
+        userPreferencesPersistenceSaga,
+      );
+      await settle();
+      mocks.setJSON.mockClear();
+      channel.put(setHasCompletedProviderSetup(true));
+      await settle();
+      expect(mocks.setJSON.mock.calls).toEqual([[remoteKey, true]]);
+      task.cancel();
+      await task.toPromise();
+    });
+
+    it('ignores the local bare key when hydrating a remote backend (fresh remote stays unset)', async () => {
+      mocks.getJSON.mockImplementation((key: string) =>
+        key === 'workspace-list:completedProviderSetup' ? true : undefined,
+      );
+      const dispatch = vi.fn();
+      await runSaga(
+        { dispatch, getState: () => stateFor('remote-1') },
+        hydrateUserPreferencesWorker,
+      ).toPromise();
+
+      expect(dispatch.mock.calls).not.toContainEqual([setHasCompletedProviderSetup(true)]);
+    });
+
+    it('re-hydrates the flag from the scoped key when the active backend changes', async () => {
+      const stored: Record<string, unknown> = {
+        'workspace-list:completedProviderSetup': true,
+      };
+      mocks.getJSON.mockImplementation((key: string) => stored[key]);
+      let activeId = 'local';
+      const channel = stdChannel();
+      const dispatch = vi.fn();
+      const task = runSaga(
+        { channel, dispatch, getState: () => stateFor(activeId) },
+        userPreferencesPersistenceSaga,
+      );
+      await settle();
+      dispatch.mockClear();
+
+      activeId = 'remote-1';
+      channel.put(
+        connectionsListReceived({ connections: [], activeId: 'remote-1' } as never),
+      );
+      await settle();
+      // Fresh remote: no scoped value stored, so the flag resets to false.
+      expect(dispatch.mock.calls).toContainEqual([setHasCompletedProviderSetup(false)]);
+
+      dispatch.mockClear();
+      stored['backend:remote-2:workspace-list:completedProviderSetup'] = true;
+      activeId = 'remote-2';
+      channel.put(
+        connectionsListReceived({ connections: [], activeId: 'remote-2' } as never),
+      );
+      await settle();
+      expect(dispatch.mock.calls).toContainEqual([setHasCompletedProviderSetup(true)]);
+
+      // Same backend id again: no re-hydration dispatch.
+      dispatch.mockClear();
+      channel.put(
+        connectionsListReceived({ connections: [], activeId: 'remote-2' } as never),
+      );
+      await settle();
+      expect(dispatch.mock.calls).toEqual([]);
+      task.cancel();
+      await task.toPromise();
+    });
   });
 });

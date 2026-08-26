@@ -46,6 +46,8 @@ export interface ConnectionsState {
   connections: Collection<ConnectionRecord, 'id'>;
   /** id of the active connection (`LOCAL_CONNECTION_ID` for the local sidecar). */
   activeId: string;
+  /** Backend bound to this renderer window. */
+  windowBackendId: string;
   /**
    * True once at least one `connectionsListReceived` has landed. Until then
    * `activeId` is still the boot-time `LOCAL_CONNECTION_ID` default and must
@@ -69,7 +71,7 @@ export interface ConnectionsState {
    * token, or the WS API is disabled) — retrying with the same token cannot
    * succeed, so the UI surfaces a "re-pair or switch" state instead of the
    * generic cannot-connect overlay. Latched per connection id: selectors gate
-   * visibility on the active connection, and a new add/switch operation clears
+   * visibility on this window's connection, and a new add/switch operation clears
    * it (a re-pair refreshes the token; a switch changes the target).
    */
   authRejected: ConnectionAuthRejectedEvent | null;
@@ -78,7 +80,7 @@ export interface ConnectionsState {
    * remote's `protocolVersion` differs in major version from the local
    * intentd's — warn-but-allow (the connection still proceeds). Kept while the
    * mismatched backend stays active so the daemon-status menu can show a
-   * persistent warning; selectors gate visibility on the active connection id.
+   * persistent warning; selectors gate visibility on this window's connection id.
    */
   protocolMismatch: ConnectionProtocolMismatchEvent | null;
   /**

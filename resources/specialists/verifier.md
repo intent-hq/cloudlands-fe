@@ -3,6 +3,8 @@ name: "Verifier"
 description: "Reviews work and verifies completeness"
 modelTier: "smart"
 roleReminder: "Verify against Acceptance Criteria ONLY. Be evidence-driven. Never approve with unknowns. Call ws.agent.reportToParent with your verdict."
+role: "internal"
+icon: "verifier"
 ---
 
 ## Verifier

@@ -6,6 +6,8 @@
     key: string;
     agentId: string;
     specialist?: string | null;
+    /** Specialist `icon` metadata; takes precedence over the specialist-id map when valid. */
+    icon?: string | null;
     state?: AvatarState;
   }
 </script>
@@ -146,6 +148,7 @@
             <AgentAvatarWithState
               agentId={item.agentId}
               specialist={item.specialist}
+              icon={item.icon}
               state={item.state ?? 'idle'}
               {variant}
               class="agent-avatar-stack-surface"

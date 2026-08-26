@@ -44,15 +44,17 @@ cd monorepo
 # so initialize selectively rather than cloning with --recurse-submodules)
 git submodule update --init --recursive packages/cloudlands-fe
 
-cd packages/cloudlands-fe
-pnpm install
-pnpm run dev
+# Fast browser-only component work
+make dev-ui
+
+# Full app with an intentd sidecar
+make dev
 ```
 
-Without a staged `intentd` sidecar, `pnpm run dev` falls back to the mock
-AppClient. For the full stack, run `make dev` from the monorepo root, which
-builds `intentd` and launches the app with it as a sidecar (see
-[intentd sidecar pin](#intentd-sidecar-pin)).
+`make dev-ui` installs the locked frontend dependencies when needed and opens no
+Electron or daemon process. `make dev-ui DEV_PORT=5290` gives a concurrent workspace
+its own strict Vite port. For the full stack, `make dev` builds `intentd` and launches
+the app with it as a sidecar (see [intentd sidecar pin](#intentd-sidecar-pin)).
 
 ### Standalone
 
@@ -62,26 +64,49 @@ mock AppClient when no daemon is present):
 ```bash
 git clone https://github.com/intent-hq/cloudlands-fe.git
 cd cloudlands-fe
-pnpm install
-pnpm run dev
+corepack pnpm install --frozen-lockfile
+corepack pnpm run dev:ui
 ```
+
+Use `corepack pnpm run dev` instead when you need the complete Electron app. Without a
+staged `intentd` sidecar, it falls back to the mock AppClient.
 
 ## Commands
 
-Use `pnpm` (not `npm`). The following scripts are defined in `package.json`:
+Use the repository-pinned `pnpm` through Corepack, not `npm`. The following scripts are
+defined in `package.json`:
 
 ```bash
-pnpm install            # Install dependencies
-pnpm run dev            # Start the app in development (Vite + Electron)
-pnpm run dev:web        # Start the plain-browser development profile
-pnpm run build          # Production build (renderer, main, preload)
-pnpm run build:web      # Build static plain-browser output in dist/web
-pnpm run check          # svelte-check (Svelte + TypeScript diagnostics)
-pnpm run lint           # ESLint
-pnpm run format         # Prettier (write)
-pnpm run test:unit      # Vitest unit suite
-pnpm run test:playwright # Playwright tests
+corepack pnpm install --frozen-lockfile # Install locked dependencies
+corepack pnpm run dev:ui        # Fast named-state component preview
+corepack pnpm run dev:web       # Complete plain-browser renderer
+corepack pnpm run dev           # Complete Vite + Electron app
+corepack pnpm run dev:cdp       # Electron app with CDP support
+corepack pnpm run build         # Production build (renderer, main, preload)
+corepack pnpm run build:web     # Build static plain-browser output in dist/web
+corepack pnpm run check         # Svelte + TypeScript diagnostics
+corepack pnpm run lint          # ESLint
+corepack pnpm run format        # Prettier write pass
+corepack pnpm run test:unit     # Vitest unit suite
+corepack pnpm run test:playwright # Playwright tests
 ```
+
+### Fast named-state previews
+
+Use `dev:ui` for isolated component work, `dev:web` for the complete browser renderer
+and its client connection, and `dev:cdp` for Electron main, preload, native, window, or
+shell work. A direct preview URL controls state, theme, width, and motion:
+
+```text
+http://127.0.0.1:5190/sandbox/button?state=loading&theme=dark&width=420&motion=reduced
+http://127.0.0.1:5190/sandbox/mention-agent-avatar?state=waiting&theme=dark&width=420&motion=reduced
+```
+
+Button provides `default`, `loading`, `disabled`, and `destructive`. Mention agent
+avatar provides `idle`, `waiting`, and `error`. See the monorepo
+[Developer Guide](../../docs/fe/DEVELOPER_GUIDE.md#fast-ui-preview-workflow) for every
+working URL, browser discovery and readiness calls, HMR and hidden-tab guidance, and a
+targeted component-test command.
 
 ### Web runtime configuration
 

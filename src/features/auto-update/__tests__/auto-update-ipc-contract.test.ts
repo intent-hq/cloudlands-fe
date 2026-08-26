@@ -27,6 +27,12 @@ describe('Auto-Update IPC Contracts', () => {
       expect(validated.channel).toBe('alpha');
     });
 
+    it('should accept valid "disabled" channel', () => {
+      const request = { channel: 'disabled' };
+      const validated = SetChannelRequestSchema.parse(request);
+      expect(validated.channel).toBe('disabled');
+    });
+
     it('should reject invalid channel "nightly"', () => {
       const request = { channel: 'nightly' };
       expect(() => SetChannelRequestSchema.parse(request)).toThrow();

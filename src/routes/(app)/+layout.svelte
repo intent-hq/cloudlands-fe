@@ -27,6 +27,7 @@
   } from '$store/renderer/slices/palette/palette-selectors';
   import RadialPromptPickerOverlay from '$features/hardware-console/prompt-picker/RadialPromptPickerOverlay.svelte';
   import EncoderCycleHud from '$features/hardware-console/encoder/EncoderCycleHud.svelte';
+  import ActionKeyHud from '$features/hardware-console/actions/ActionKeyHud.svelte';
   import StatsOverlay from '$features/stats/StatsOverlay.svelte';
   import DaemonStoppedOverlay from '$features/daemon-status/DaemonStoppedOverlay.svelte';
   import { registerWorkspaceTabShortcuts } from '$features/workspace/utils/workspace-tab-navigation';
@@ -85,10 +86,14 @@
   } from '$store/renderer/slices/workspace/workspace-selectors';
   import {
     selectBootRouteGateResolved,
-    selectLocalSetupGate,
+    selectBackendSetupGate,
   } from '$store/renderer/slices/setup-prompt/setup-prompt-selectors';
   import { bootRouteGateResolved } from '$store/renderer/slices/setup-prompt/setup-prompt-slice';
-  import { decideBootRoute, getBootRoutePathname } from '$lib/utils/boot-route-gate';
+  import {
+    BOOT_ROUTE_HOLD_TIMEOUT_MS,
+    decideBootRoute,
+    getBootRoutePathname,
+  } from '$lib/utils/boot-route-gate';
   import {
     loadWorkspacesRequested,
     recordWorkspaceView,
@@ -98,7 +103,7 @@
   import { isFocusInEditableElement, KeyboardShortcutManager } from '$lib/utils/keyboardShortcuts';
   import { configureMonacoWorkers } from '$lib/utils/monaco-workers';
   import { hasCapability } from '$lib/utils/platform-capabilities';
-  import { onMount, untrack } from 'svelte';
+  import { onDestroy, onMount, untrack } from 'svelte';
 
   import { createLinkTooltipHandler } from '$features/navigation/link-handler';
   import { registerAllTabTypes } from '$features/layout/tab-types/register-all';
@@ -113,6 +118,7 @@
   import { selectShowCreateModal } from '$store/renderer/slices/sidebar-nav/sidebar-nav-selectors';
   import NewSpaceModal from '$lib/components/modals/NewSpaceModal.svelte';
   import { store as appStore } from '$store/renderer/store';
+  import { startAppStoreLifecycle } from '$store/renderer/app-store-lifecycle';
   import {
     installInterruptedAgentsService,
     notifyInterruptedAgentsModalClosed,
@@ -130,12 +136,15 @@
   import { workspaceIdFromRoute } from '$lib/utils/workspace-route-context';
   const logger = createLogger('+layout');
 
+  const disposeAppStore = startAppStoreLifecycle(appStore, import.meta.hot?.data);
+  onDestroy(disposeAppStore);
+
   const routePathname = $derived($page.url.pathname);
   const routeWorkspaceId = $derived(($page.params?.id as string | undefined) ?? '');
   const workspaceId = $derived(workspaceIdFromRoute(routePathname, routeWorkspaceId) ?? undefined);
   const workspaceItems = selectWorkspaceItems();
   const workspaceHasLoaded = selectWorkspaceHasLoaded();
-  const localSetupGate = selectLocalSetupGate();
+  const backendSetupGate = selectBackendSetupGate();
   const bootGateResolved = selectBootRouteGateResolved();
   const currentWorkspaceTabId = selectCurrentWorkspaceTabId();
   const workspaceTabsHydrated = selectWorkspaceTabsHydrated();
@@ -200,22 +209,35 @@
   // /workspace/new, which renders onboarding. Gate boot (and legacy `/`)
   // loads on the backend-derived setup evaluation: land on an existing
   // workspace when the backend has one, and only fall through to onboarding
-  // when the local backend genuinely needs first-run setup (no workspaces and
-  // no ready providers). The decision logic lives in decideBootRoute
-  // (boot-route-gate); it fires at most once per full page load, so
-  // deliberate in-app navigation to `/` or /workspace/new is unaffected.
-  // While it holds, WorkspaceSurface suppresses onboarding so the wizard
-  // never flashes before a redirect.
+  // when the active backend (local or remote) genuinely needs first-run setup
+  // (no workspaces and no ready providers). The decision logic lives in
+  // decideBootRoute (boot-route-gate); it fires at most once per full page
+  // load, so deliberate in-app navigation to `/` or /workspace/new is
+  // unaffected. While it holds, WorkspaceSurface suppresses onboarding so the
+  // wizard never flashes before a redirect. The hold is bounded: if nothing
+  // settles within BOOT_ROUTE_HOLD_TIMEOUT_MS (e.g. provider probes failing
+  // forever, so neither a check settlement nor an evaluation ever arrives),
+  // bootHoldTimedOut flips and decideBootRoute resolves best-effort instead
+  // of holding a blank surface indefinitely.
+  let bootHoldTimedOut = $state(false);
+  $effect(() => {
+    if ($bootGateResolved) return;
+    const timer = setTimeout(() => {
+      bootHoldTimedOut = true;
+    }, BOOT_ROUTE_HOLD_TIMEOUT_MS);
+    return () => clearTimeout(timer);
+  });
   $effect(() => {
     const decision = decideBootRoute({
       bootPathname: getBootRoutePathname(),
       currentPathname: window.location.pathname,
       gateResolved: $bootGateResolved,
-      localSetupGate: $localSetupGate,
+      setupGate: $backendSetupGate,
       workspaceHasLoaded: $workspaceHasLoaded,
       workspaces: $workspaceItems,
       tabsHydrated: $workspaceTabsHydrated,
       currentTabId: $currentWorkspaceTabId,
+      holdTimedOut: bootHoldTimedOut,
     });
     if (decision.kind !== 'resolve') return;
     untrack(() => {
@@ -304,7 +326,7 @@
     const appClient = new LiveAppClient();
     const disposeInterruptedAgents = installInterruptedAgentsService(appClient, (agents) => {
       interruptedAgents = agents;
-      showInterruptedAgentsModal = true;
+      showInterruptedAgentsModal = agents.length > 0;
     });
 
     // Initialize quit-confirmation service (in-app modal for quit/restart)
@@ -963,7 +985,8 @@
     }}
   />
 
-  <!-- Product-route hardware-console overlays; HUD routes sit outside this group. -->
+  <!-- Product-route hardware-console overlays; HUD and sandbox routes sit outside this group. -->
+  <ActionKeyHud />
   <RadialPromptPickerOverlay />
   <EncoderCycleHud />
 
@@ -1040,12 +1063,16 @@
 
   <SetupPromptDialog />
 
-  <!-- Release Notes Modal (shown after update) -->
-  <ReleaseNotesModal
-    open={$showReleaseNotesModal$}
-    releaseNotes={$releaseNotes$}
-    onClose={() => appStore.dispatch(closeReleaseNotesModal())}
-  />
+  <!-- Interrupted-agent recovery owns the startup modal slot. Keeping release
+       notes in Redux while this component is unmounted avoids consuming the
+       queued payload through the dialog's close callback. -->
+  {#if !showInterruptedAgentsModal}
+    <ReleaseNotesModal
+      open={$showReleaseNotesModal$}
+      releaseNotes={$releaseNotes$}
+      onClose={() => appStore.dispatch(closeReleaseNotesModal())}
+    />
+  {/if}
 
   <FeatureCodeDialog
     open={$featureCodeDialogOpen}

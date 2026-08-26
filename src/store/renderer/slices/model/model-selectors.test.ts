@@ -4,6 +4,7 @@ import { initialState as providerSettingsInitialState } from '../provider-settin
 import {
   selectAgentModelEffortLevels,
   selectHasResolvableModel,
+  selectHasResolvableProvider,
   selectModelDisplayName,
   selectModelEffortLevels,
   selectSelectedModel,
@@ -229,6 +230,35 @@ describe('selectHasResolvableModel', () => {
     );
 
     expect(selectHasResolvableModel.select(state)).toBe(false);
+  });
+});
+
+describe('selectHasResolvableProvider', () => {
+  it('is false on a fresh backend with no active provider and no model', () => {
+    const state = mockState({}, { activeProviderId: '' });
+
+    expect(selectHasResolvableProvider.select(state)).toBe(false);
+  });
+
+  it('is true once an active provider is configured, even before models load', () => {
+    const state = mockState({}, { activeProviderId: defaultProviderId, enabledProviders: {} });
+
+    expect(selectHasResolvableProvider.select(state)).toBe(true);
+  });
+
+  it('is true when a model is resolvable', () => {
+    const state = mockState(
+      {
+        availableModels: createCollection<AuggieModel, 'value'>('value', [
+          { value: 'opus4.7', label: 'Claude Opus 4.7' },
+        ]),
+        defaultProviderId,
+      },
+      { activeProviderId: defaultProviderId, enabledProviders: {} },
+      { [defaultProviderId]: { available: true } },
+    );
+
+    expect(selectHasResolvableProvider.select(state)).toBe(true);
   });
 });
 

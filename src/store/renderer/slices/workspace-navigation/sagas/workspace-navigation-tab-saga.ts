@@ -37,9 +37,15 @@ function* openWorkspaceTab(
   tab: Omit<PanelTab, 'id'>,
   adjacent: boolean,
   sourcePanelId?: string,
+  allowDuplicate?: boolean,
 ): SagaGenerator<void> {
   if (adjacent) {
-    yield* put(openTabInAdjacentOrSplit(workspaceId, tab, sourcePanelId, { force: true }));
+    yield* put(
+      openTabInAdjacentOrSplit(workspaceId, tab, sourcePanelId, {
+        force: true,
+        ...(allowDuplicate ? { allowDuplicate } : {}),
+      }),
+    );
     return;
   }
   yield* put(
@@ -111,6 +117,7 @@ function* openNote(action: ReturnType<typeof openWorkspaceNote>): SagaGenerator<
     },
     options?.openInAdjacentPanel ?? false,
     options?.sourcePanelId,
+    options?.openInNewAdjacentPanel ?? false,
   );
 }
 

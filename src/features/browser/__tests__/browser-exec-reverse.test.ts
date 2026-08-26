@@ -251,4 +251,35 @@ describe('registerBrowserExecReverseHandler', () => {
     expect(response.result.results[0].result).toEqual(original);
     client.dispose();
   });
+
+  it('bounds stalled asset persistence and returns the usable inline screenshot', async () => {
+    vi.useFakeTimers();
+    try {
+      const { client, socket } = makeClient();
+      const original = { base64: 'AAAA', width: 10, height: 20 };
+      executor.mockResolvedValue({
+        success: true,
+        results: [{ action: 'screenshot', success: true, result: { ...original } }],
+      });
+      const saveAsset = vi.fn(() => new Promise<never>(() => {}));
+      registerBrowserExecReverseHandler(client, { executor, saveAsset });
+
+      socket.receive(
+        `${JSON.stringify({
+          jsonrpc: '2.0',
+          id: 'rev-6',
+          method: BROWSER_EXEC_METHOD,
+          params: { actions: [{ action: 'screenshot' }], workspaceId: 'ws-1' },
+        })}\n`,
+      );
+      await vi.advanceTimersByTimeAsync(5_100);
+
+      expect(saveAsset).toHaveBeenCalledTimes(1);
+      const response = JSON.parse(socket.writes[0]);
+      expect(response.result.results[0].result).toEqual(original);
+      client.dispose();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });

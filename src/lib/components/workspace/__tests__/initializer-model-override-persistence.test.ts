@@ -123,7 +123,29 @@ vi.mock('$store/renderer/slices/specialists/specialists-selectors', () => ({
   selectEffectiveBehaviorPrompt: { select: vi.fn(() => undefined) },
   selectEffectiveModel: { select: vi.fn(() => undefined) },
   selectEffectiveCodingAgent: { select: vi.fn(() => undefined) },
-  filterPickableSpecialists: (specialists: unknown[]) => specialists,
+  selectOrchestratorSpecialist: Object.assign(
+    () =>
+      mocks.readable({
+        id: 'spec-writer',
+        name: 'Coordinator',
+        description: '',
+        role: 'orchestrator',
+        teamAgents: ['implementor', 'verifier'],
+        icon: 'coordinator',
+      }),
+    {
+      select: vi.fn(() => ({
+        id: 'spec-writer',
+        name: 'Coordinator',
+        description: '',
+        role: 'orchestrator',
+        teamAgents: ['implementor', 'verifier'],
+        icon: 'coordinator',
+      })),
+    },
+  ),
+  filterModalPickableSpecialists: (specialists: Array<{ role?: string }>) =>
+    specialists.filter((s) => s.role !== 'internal'),
 }));
 
 vi.mock('$store/renderer/slices/github-auth/github-auth-selectors', () => ({

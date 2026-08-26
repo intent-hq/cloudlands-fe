@@ -861,7 +861,8 @@ function broadcast(channel: string, payload: unknown, backendId?: string): void 
   }
 }
 
-function getBackendClientForIpcEvent(event?: Electron.IpcMainInvokeEvent): {
+/** Resolve a renderer invoke event to the client bound to its window's backend. */
+export function getBackendClientForIpcEvent(event?: Electron.IpcMainInvokeEvent): {
   backendId: string;
   client: JsonRpcClient;
 } {
@@ -1232,8 +1233,10 @@ async function refreshRemoteHosts(id: string): Promise<void> {
   }
 }
 
-/** The connections list + active selection, as surfaced to the renderer. */
-async function listConnections(): Promise<ConnectionsListResult> {
+/** The connections list + persisted and window-scoped selections surfaced to the renderer. */
+async function listConnections(
+  windowBackendId: string = LOCAL_CONNECTION_ID,
+): Promise<ConnectionsListResult> {
   const [connections, activeId] = await Promise.all([
     connectionsStore.list(),
     connectionsStore.getActiveId(),
@@ -1246,15 +1249,30 @@ async function listConnections(): Promise<ConnectionsListResult> {
   return {
     connections,
     activeId,
+    windowBackendId,
     protocolMismatch: activeProtocolMismatch,
     authRejected: activeAuthRejected,
   };
 }
 
-/** Broadcast the current list + active selection to every window. */
+/** Broadcast the current list + selections, tailored to each recipient window. */
 async function broadcastConnectionsChanged(): Promise<void> {
-  const payload: ConnectionsChangedEvent = await listConnections();
-  broadcast(CONNECTIONS.CHANGED, payload);
+  const payload = await listConnections();
+  for (const win of BrowserWindow.getAllWindows()) {
+    if (win.isDestroyed()) continue;
+    const windowPayload: ConnectionsChangedEvent = {
+      ...payload,
+      windowBackendId: getBackendIdForWebContents(win.webContents),
+    };
+    try {
+      win.webContents.send(CONNECTIONS.CHANGED, windowPayload);
+    } catch (error) {
+      logger.warn('Failed to broadcast connections change', {
+        windowId: win.id,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
 }
 
 /**
@@ -1793,7 +1811,14 @@ function registerConnectionsHandlers(): void {
   // List all connections (local first, then remotes) + the active selection.
   ipcMain.handle(
     CONNECTIONS.LIST,
-    createValidatedHandler(ConnectionsListSchema, async () => listConnections(), CONNECTIONS.LIST),
+    createValidatedHandler(
+      ConnectionsListSchema,
+      async (event) =>
+        listConnections(
+          event.sender ? getBackendIdForWebContents(event.sender) : LOCAL_CONNECTION_ID,
+        ),
+      CONNECTIONS.LIST,
+    ),
   );
 
   // Trust-on-first-use: open a `wss` connection, read the presented cert's

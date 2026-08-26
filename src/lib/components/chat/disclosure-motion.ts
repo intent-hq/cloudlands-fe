@@ -91,8 +91,17 @@ export function safeDisclosureTransition(
     duration,
     easing: cubicOut,
     tick: (t, u) => {
-      if (options.direction === 'both' && previousT !== null) {
-        if (t < previousT) {
+      if (options.direction === 'both') {
+        if (previousT === null) {
+          // Svelte discards the cached config after `introend`, so a `both`
+          // outro re-enters here with `phase === 'idle'`. When throttled rAF
+          // delivers the whole outro as a single tick (t === 0), the reversal
+          // detection below never runs and the lease would leak — classify a
+          // first tick below 1 as an outro so that tick settles the lease. A
+          // true intro start (also t === 0) settles harmlessly: its next tick
+          // re-acquires through the reversal path before any growth applies.
+          if (t < 1) phase = 'outro';
+        } else if (t < previousT) {
           acquireBottomMutation();
           phase = 'outro';
         } else if (t > previousT) {

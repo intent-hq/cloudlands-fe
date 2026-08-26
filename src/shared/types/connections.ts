@@ -95,7 +95,10 @@ export interface ConnectionRecord {
  */
 export interface ConnectionsListResult {
   connections: ConnectionRecord[];
+  /** Persisted whole-app selection used for boot restore and explicit switches. */
   activeId: string;
+  /** Backend bound to the renderer window receiving this payload. */
+  windowBackendId: string;
   /**
    * Sticky protocol mismatch for the currently active backend, replayed here so
    * a renderer that missed the one-shot `connections:protocol-mismatch`

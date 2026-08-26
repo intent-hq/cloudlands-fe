@@ -56,11 +56,12 @@ function input(overrides: Partial<BootRouteDecisionInput> = {}): BootRouteDecisi
     bootPathname: '/workspace/new',
     currentPathname: '/workspace/new',
     gateResolved: false,
-    localSetupGate: 'pending',
+    setupGate: 'pending',
     workspaceHasLoaded: false,
     workspaces: [],
     tabsHydrated: true,
     currentTabId: undefined,
+    holdTimedOut: false,
     ...overrides,
   };
 }
@@ -69,7 +70,7 @@ describe('decideBootRoute', () => {
   it('redirects a /workspace/new boot to an existing workspace (the regression)', () => {
     const decision = decideBootRoute(
       input({
-        localSetupGate: 'none',
+        setupGate: 'none',
         workspaceHasLoaded: true,
         workspaces: [{ id: 'ws-1', status: 'Active' }],
       }),
@@ -86,7 +87,7 @@ describe('decideBootRoute', () => {
       input({
         bootPathname: '/',
         currentPathname: '/',
-        localSetupGate: 'none',
+        setupGate: 'none',
         workspaceHasLoaded: true,
         workspaces: [{ id: 'ws-1', status: 'Active' }],
       }),
@@ -101,7 +102,7 @@ describe('decideBootRoute', () => {
   it('prefers the persisted current tab over the first workspace', () => {
     const decision = decideBootRoute(
       input({
-        localSetupGate: 'none',
+        setupGate: 'none',
         workspaceHasLoaded: true,
         workspaces: [
           { id: 'ws-1', status: 'Active' },
@@ -120,7 +121,7 @@ describe('decideBootRoute', () => {
   it('skips archived/deleted workspaces when picking the landing workspace', () => {
     const decision = decideBootRoute(
       input({
-        localSetupGate: 'none',
+        setupGate: 'none',
         workspaceHasLoaded: true,
         workspaces: [
           { id: 'ws-archived', status: 'Archived' },
@@ -137,12 +138,12 @@ describe('decideBootRoute', () => {
   });
 
   it('holds while the setup gate is pending', () => {
-    expect(decideBootRoute(input({ localSetupGate: 'pending' }))).toEqual({ kind: 'hold' });
+    expect(decideBootRoute(input({ setupGate: 'pending' }))).toEqual({ kind: 'hold' });
   });
 
   it("holds until the workspace list loads when the gate is 'none'", () => {
     expect(
-      decideBootRoute(input({ localSetupGate: 'none', workspaceHasLoaded: false })),
+      decideBootRoute(input({ setupGate: 'none', workspaceHasLoaded: false })),
     ).toEqual({ kind: 'hold' });
   });
 
@@ -153,7 +154,7 @@ describe('decideBootRoute', () => {
     expect(
       decideBootRoute(
         input({
-          localSetupGate: 'none',
+          setupGate: 'none',
           workspaceHasLoaded: true,
           workspaces: [
             { id: 'ws-1', status: 'Active' },
@@ -168,7 +169,7 @@ describe('decideBootRoute', () => {
   it('lands on the rehydrated persisted tab once tab hydration settles', () => {
     const decision = decideBootRoute(
       input({
-        localSetupGate: 'none',
+        setupGate: 'none',
         workspaceHasLoaded: true,
         workspaces: [
           { id: 'ws-1', status: 'Active' },
@@ -185,14 +186,14 @@ describe('decideBootRoute', () => {
     });
   });
 
-  it('stays on /workspace/new when the local backend needs first-run setup', () => {
-    const decision = decideBootRoute(input({ localSetupGate: 'redirect' }));
+  it('stays on /workspace/new when the active backend needs first-run setup', () => {
+    const decision = decideBootRoute(input({ setupGate: 'redirect' }));
     expect(decision).toEqual({ kind: 'resolve', target: null, openTabWorkspaceId: null });
   });
 
   it('routes a legacy / boot to /workspace/new when first-run setup is needed', () => {
     const decision = decideBootRoute(
-      input({ bootPathname: '/', currentPathname: '/', localSetupGate: 'redirect' }),
+      input({ bootPathname: '/', currentPathname: '/', setupGate: 'redirect' }),
     );
     expect(decision).toEqual({
       kind: 'resolve',
@@ -203,7 +204,7 @@ describe('decideBootRoute', () => {
 
   it('stays on /workspace/new (creation) when setup is not needed but no workspaces exist', () => {
     const decision = decideBootRoute(
-      input({ localSetupGate: 'none', workspaceHasLoaded: true, workspaces: [] }),
+      input({ setupGate: 'none', workspaceHasLoaded: true, workspaces: [] }),
     );
     expect(decision).toEqual({ kind: 'resolve', target: null, openTabWorkspaceId: null });
   });
@@ -214,7 +215,7 @@ describe('decideBootRoute', () => {
         input({
           bootPathname: '/workspace/ws-2',
           currentPathname: '/workspace/ws-2',
-          localSetupGate: 'none',
+          setupGate: 'none',
           workspaceHasLoaded: true,
           workspaces: [{ id: 'ws-1', status: 'Active' }],
         }),
@@ -227,7 +228,7 @@ describe('decideBootRoute', () => {
       decideBootRoute(
         input({
           gateResolved: true,
-          localSetupGate: 'none',
+          setupGate: 'none',
           workspaceHasLoaded: true,
           workspaces: [{ id: 'ws-1', status: 'Active' }],
         }),
@@ -241,8 +242,60 @@ describe('decideBootRoute', () => {
 
   it('resolves without navigating when something already left the boot route (e.g. initialRoute)', () => {
     const decision = decideBootRoute(
-      input({ currentPathname: '/workspace/ws-9', localSetupGate: 'pending' }),
+      input({ currentPathname: '/workspace/ws-9', setupGate: 'pending' }),
     );
     expect(decision).toEqual({ kind: 'resolve', target: null, openTabWorkspaceId: null });
+  });
+
+  describe('bounded hold fallback (holdTimedOut)', () => {
+    it("resolves best-effort when 'pending' never settles (nothing loaded → stay on /workspace/new)", () => {
+      const decision = decideBootRoute(input({ setupGate: 'pending', holdTimedOut: true }));
+      expect(decision).toEqual({ kind: 'resolve', target: null, openTabWorkspaceId: null });
+    });
+
+    it("lands on a loaded workspace when 'pending' times out but the list arrived", () => {
+      const decision = decideBootRoute(
+        input({
+          setupGate: 'pending',
+          holdTimedOut: true,
+          workspaceHasLoaded: true,
+          workspaces: [{ id: 'ws-1', status: 'Active' }],
+        }),
+      );
+      expect(decision).toEqual({
+        kind: 'resolve',
+        target: '/workspace/ws-1',
+        openTabWorkspaceId: 'ws-1',
+      });
+    });
+
+    it("stops waiting for the workspace list / tab hydration once timed out (gate 'none')", () => {
+      const decision = decideBootRoute(
+        input({
+          setupGate: 'none',
+          holdTimedOut: true,
+          workspaceHasLoaded: false,
+          tabsHydrated: false,
+        }),
+      );
+      expect(decision).toEqual({ kind: 'resolve', target: null, openTabWorkspaceId: null });
+    });
+
+    it("still honors a settled 'redirect' after the timeout", () => {
+      const decision = decideBootRoute(
+        input({ bootPathname: '/', currentPathname: '/', setupGate: 'redirect', holdTimedOut: true }),
+      );
+      expect(decision).toEqual({
+        kind: 'resolve',
+        target: '/workspace/new',
+        openTabWorkspaceId: null,
+      });
+    });
+
+    it('does not affect an already-resolved gate', () => {
+      expect(
+        decideBootRoute(input({ gateResolved: true, holdTimedOut: true })),
+      ).toEqual({ kind: 'inapplicable' });
+    });
   });
 });

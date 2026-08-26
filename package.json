@@ -1,6 +1,6 @@
 {
   "name": "intent",
-  "version": "2.93.0",
+  "version": "2.95.0",
   "description": "Intent",
   "type": "module",
   "main": "dist/main/index.js",
@@ -17,6 +17,7 @@
     "dev:renderer": "cross-env GIT_TERMINAL_PROMPT=0 vite dev --strictPort",
     "dev:renderer:force": "cross-env GIT_TERMINAL_PROMPT=0 vite dev --force --strictPort",
     "dev:web": "cross-env GIT_TERMINAL_PROMPT=0 INTENT_BUILD_TARGET=web vite dev --strictPort",
+    "dev:ui": "cross-env INTENT_UI_PREVIEW=1 pnpm run dev:web",
     "dev:electron": "node scripts/dev-electron.js",
     "dev:electron:cdp": "node scripts/dev-electron.js --cdp",
     "kill:electron": "node scripts/kill-electron.js",
