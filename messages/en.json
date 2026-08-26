@@ -3008,6 +3008,7 @@
   "layout_noteTab_deletedNote_toast": "Deleted \"{title}\"",
   "layout_noteTab_restoreFailed_error": "Failed to restore note",
   "layout_noteTab_deleteFailed_error": "Failed to delete note",
+  "layout_noteTab_contentLoadFailed_error": "Failed to load note content",
   "layout_overviewTab_notImplemented_label": "Overview panel not yet implemented",
   "layout_settingsTab_notImplemented_label": "Settings panel not yet implemented",
   "layout_tabTypes_browser_title": "Browser",

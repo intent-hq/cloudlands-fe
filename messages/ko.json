@@ -3007,6 +3007,7 @@
   "layout_noteTab_deletedNote_toast": "\"{title}\" 삭제됨",
   "layout_noteTab_restoreFailed_error": "노트를 복원하지 못했습니다",
   "layout_noteTab_deleteFailed_error": "노트를 삭제하지 못했습니다",
+  "layout_noteTab_contentLoadFailed_error": "노트 내용을 불러오지 못했습니다",
   "layout_overviewTab_notImplemented_label": "개요 패널은 아직 구현되지 않았습니다",
   "layout_settingsTab_notImplemented_label": "설정 패널은 아직 구현되지 않았습니다",
   "layout_tabTypes_browser_title": "브라우저",

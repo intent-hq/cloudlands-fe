@@ -3007,6 +3007,7 @@
   "layout_noteTab_deletedNote_toast": "已刪除「{title}」",
   "layout_noteTab_restoreFailed_error": "恢復筆記失敗",
   "layout_noteTab_deleteFailed_error": "刪除筆記失敗",
+  "layout_noteTab_contentLoadFailed_error": "載入筆記內容失敗",
   "layout_overviewTab_notImplemented_label": "概覽面板尚未實現",
   "layout_settingsTab_notImplemented_label": "設定面板尚未實現",
   "layout_tabTypes_browser_title": "瀏覽器",

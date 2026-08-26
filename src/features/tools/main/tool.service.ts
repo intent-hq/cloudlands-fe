@@ -22,6 +22,7 @@ import { ToolCategory, ToolError, Tool } from './types';
 import type { CommandResult } from '../types';
 import { WorkspaceService } from '../../workspace/main/workspace.service';
 import { getBackendClient } from '../../backend/main/backend.ipc';
+import { isProjectionRejected } from '../../../shared/utils/note-content';
 import { Logger } from '../../../shared/logger';
 import { executionManager } from './execution-manager';
 import * as path from 'path';
@@ -513,11 +514,23 @@ export class ToolService implements IToolService {
       workspaceId: context.workspaceId,
     });
 
+    // Slim projection (§5.2): the agent-facing list tool returns metadata +
+    // contentPreview; agents fetch full bodies via readNote. Falls back to a
+    // plain full list on daemons that reject the unknown param (-32602).
     let notes: any[];
     try {
-      const result = await getBackendClient().request<{ notes: any[] }>('note.list', {
-        workspaceId: context.workspaceId,
-      });
+      let result: { notes: any[] };
+      try {
+        result = await getBackendClient().request<{ notes: any[] }>('note.list', {
+          workspaceId: context.workspaceId,
+          projection: 'slim',
+        });
+      } catch (error) {
+        if (!isProjectionRejected(error)) throw error;
+        result = await getBackendClient().request<{ notes: any[] }>('note.list', {
+          workspaceId: context.workspaceId,
+        });
+      }
       notes = Array.isArray(result?.notes) ? result.notes : [];
     } catch (error) {
       throw new Error((error as Error).message);
@@ -660,12 +673,21 @@ export class ToolService implements IToolService {
       totalSize = await this.calculateDirectorySize(workspacePath);
     }
 
-    // Get note count
+    // Get note count (slim projection §5.2 — only the row count is needed)
     let noteCount = 0;
     try {
-      const result = await getBackendClient().request<{ notes: any[] }>('note.list', {
-        workspaceId: context.workspaceId,
-      });
+      let result: { notes: any[] };
+      try {
+        result = await getBackendClient().request<{ notes: any[] }>('note.list', {
+          workspaceId: context.workspaceId,
+          projection: 'slim',
+        });
+      } catch (fallbackError) {
+        if (!isProjectionRejected(fallbackError)) throw fallbackError;
+        result = await getBackendClient().request<{ notes: any[] }>('note.list', {
+          workspaceId: context.workspaceId,
+        });
+      }
       noteCount = Array.isArray(result?.notes) ? result.notes.length : 0;
     } catch (error) {
       logger.debug('Error getting note count', { error });

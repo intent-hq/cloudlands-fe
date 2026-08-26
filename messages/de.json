@@ -3007,6 +3007,7 @@
   "layout_noteTab_deletedNote_toast": "\"{title}\" gelöscht",
   "layout_noteTab_restoreFailed_error": "Notiz konnte nicht wiederhergestellt werden",
   "layout_noteTab_deleteFailed_error": "Notiz konnte nicht gelöscht werden",
+  "layout_noteTab_contentLoadFailed_error": "Notizinhalt konnte nicht geladen werden",
   "layout_overviewTab_notImplemented_label": "Übersichts-Panel noch nicht implementiert",
   "layout_settingsTab_notImplemented_label": "Einstellungs-Panel noch nicht implementiert",
   "layout_tabTypes_browser_title": "Browser",

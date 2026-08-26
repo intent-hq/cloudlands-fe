@@ -11,6 +11,7 @@
  *    workspace without an extra parameter; when the cache misses they fall back
  *    to scanning the workspace list.
  */
+import { isProjectionRejected } from '$shared/utils/note-content';
 import type { MutationResult, Unsubscribe } from '../app-client';
 import { backendRequest, onBackendNotification, onBackendReconnected } from './backend-transport';
 
@@ -610,7 +611,18 @@ async function scanForNoteWorkspace(noteId: string): Promise<string | null> {
   let scanComplete = true;
   for (const workspaceId of workspaceIds) {
     try {
-      const result = await backendRequest<{ notes?: unknown[] }>('note.list', { workspaceId });
+      // Only ids are needed — request the slim projection (§5.2), falling back
+      // to a plain full list on daemons that reject the unknown param (-32602).
+      let result: { notes?: unknown[] };
+      try {
+        result = await backendRequest<{ notes?: unknown[] }>('note.list', {
+          workspaceId,
+          projection: 'slim',
+        });
+      } catch (error) {
+        if (!isProjectionRejected(error)) throw error;
+        result = await backendRequest<{ notes?: unknown[] }>('note.list', { workspaceId });
+      }
       const notes = Array.isArray(result?.notes) ? result.notes : [];
       let found = false;
       for (const note of notes) {

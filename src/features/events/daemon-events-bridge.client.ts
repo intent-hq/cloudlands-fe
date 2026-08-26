@@ -2022,8 +2022,8 @@ function handleAttentionRequestedEvent(event: WorkspaceEvent, workspaceId: strin
  * `note:*` (§7 workspace-scoped) carries `{ noteId, path, action, ... }` — the
  * daemon-authoritative "something changed" ping (PROTOCOL §7 note events do
  * NOT embed the full note body). The handler routes to `applyNoteFromEvent`,
- * which fetches the fresh note via `notes.list(workspaceId)` on
- * `note:created`/`note:updated` and dispatches the matching `applyNote*`
+ * which fetches the fresh note via a targeted `notes.get(noteId, workspaceId)`
+ * on `note:created`/`note:updated` and dispatches the matching `applyNote*`
  * action, or dispatches `applyNoteDeleted` immediately on `note:deleted`.
  *
  * Task notes are plain notes (task state lives in note metadata), so these

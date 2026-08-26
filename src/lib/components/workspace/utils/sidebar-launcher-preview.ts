@@ -203,7 +203,10 @@ export function getAgentLauncherPreview(agent: AgentSession): AgentLauncherPrevi
 }
 
 export function getNoteLauncherPreview(note: Note): string {
-  return stripMarkdownFormatting(note.content)
+  // Slim note.list rows carry no content (§5.2) — the hover preview falls
+  // back to contentPreview (first ~500 chars), plenty for a short excerpt.
+  const body = note.content || note.contentPreview || '';
+  return stripMarkdownFormatting(body)
     .replace(/\n{3,}/g, '\n\n')
     .trim();
 }
