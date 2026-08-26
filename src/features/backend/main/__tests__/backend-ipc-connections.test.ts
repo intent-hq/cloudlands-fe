@@ -137,6 +137,7 @@ const keychainSync = vi.hoisted(() => ({
   enabled: false,
   status: null as unknown,
   requestReconcile: vi.fn(),
+  resetStatus: vi.fn(),
   initOptions: null as { onStatusChanged?: (status: unknown) => void } | null,
 }));
 vi.mock('../keychain-sync-lifecycle', () => ({
@@ -147,6 +148,9 @@ vi.mock('../keychain-sync-lifecycle', () => ({
     return {
       getStatus: () => keychainSync.status,
       requestReconcile: keychainSync.requestReconcile,
+      resetStatus: keychainSync.resetStatus.mockImplementation(() => {
+        keychainSync.status = null;
+      }),
       dispose: () => {},
     };
   }),
@@ -851,6 +855,26 @@ describe('keychain-sync settings IPC (T4)', () => {
     });
     expect(localPrefs.setLocalPref).toHaveBeenCalledWith('keychainSyncEnabled', false);
     expect(keychainSync.requestReconcile).not.toHaveBeenCalled();
+    expect(keychainSync.resetStatus).not.toHaveBeenCalled();
+  });
+
+  it('connections:sync-set-enabled(true) clears the stale pre-disable status (PR #1715 review)', async () => {
+    // A verdict left over from before the last disable must not leak into the
+    // re-enable response — the UI should fall back to "checking" (status null)
+    // until the fresh reconcile lands.
+    keychainSync.status = { state: 'unavailable', reason: 'unavailable', message: 'locked' };
+    const { mod } = await loadModule();
+    mod.registerBackendHandlers();
+    const handler = findHandler('connections:sync-set-enabled');
+
+    keychainSync.enabled = true;
+    await expect(handler!({}, { enabled: true })).resolves.toEqual({
+      supported: onMac,
+      enabled: true,
+      status: null,
+    });
+    expect(keychainSync.resetStatus).toHaveBeenCalledTimes(1);
+    expect(keychainSync.requestReconcile).toHaveBeenCalledTimes(1);
   });
 
   it('rejects invalid params (non-boolean enabled) via the Zod schema', async () => {

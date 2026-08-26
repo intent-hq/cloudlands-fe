@@ -77,6 +77,11 @@ export interface KeychainSyncLifecycle {
   getStatus(): KeychainSyncStatus | null;
   /** Request a reconcile through the debounce (pref-gated). */
   requestReconcile(): void;
+  /** Clear the last-known status back to null (the "checking" state). Used
+   * when the pref flips on so a stale pre-disable verdict is never shown;
+   * the next reconcile then always fires onStatusChanged (first-status
+   * rule), even when the fresh verdict equals the cleared one. */
+  resetStatus(): void;
   /** Detach every trigger and cancel any pending debounce. */
   dispose(): void;
 }
@@ -162,6 +167,9 @@ export function initKeychainSyncLifecycle(
   return {
     getStatus: () => lastStatus,
     requestReconcile: schedule,
+    resetStatus(): void {
+      lastStatus = null;
+    },
     dispose(): void {
       disposed = true;
       if (timer !== null) clearTimeout(timer);

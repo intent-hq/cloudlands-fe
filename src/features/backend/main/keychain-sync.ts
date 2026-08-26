@@ -44,7 +44,9 @@ export const KEYCHAIN_PAYLOAD_VERSION = 1;
 export const TOMBSTONE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
 const HELPER_TIMEOUT_MS = 15_000;
-const MAX_HELPER_OUTPUT_BYTES = 8 * 1024 * 1024;
+/** Exact cap on collected helper stdout; overflow is sliced off (truncated
+ * output then degrades to a structured `helper-failed` on parse). */
+export const MAX_HELPER_OUTPUT_BYTES = 8 * 1024 * 1024;
 
 // ============================================================================
 // Payload schema
@@ -251,7 +253,10 @@ function runHelper(
       reject(new Error(`keychain helper timed out after ${HELPER_TIMEOUT_MS}ms`));
     }, HELPER_TIMEOUT_MS);
     child.stdout.on('data', (chunk: Buffer) => {
-      if (stdout.length < MAX_HELPER_OUTPUT_BYTES) stdout += chunk.toString('utf8');
+      const remaining = MAX_HELPER_OUTPUT_BYTES - stdout.length;
+      if (remaining <= 0) return;
+      const text = chunk.toString('utf8');
+      stdout += text.length > remaining ? text.slice(0, remaining) : text;
     });
     child.stderr.on('data', (chunk: Buffer) => {
       stderr += chunk.toString('utf8');

@@ -29,6 +29,7 @@ vi.mock('child_process', async () => {
 import { spawn } from 'child_process';
 import {
   KEYCHAIN_PAYLOAD_VERSION,
+  MAX_HELPER_OUTPUT_BYTES,
   TOMBSTONE_TTL_MS,
   accountKeyFor,
   createHelperKeychainClient,
@@ -563,5 +564,34 @@ describe('createHelperKeychainClient', () => {
     const client = createHelperKeychainClient({ platform: 'darwin', helperPath: HELPER });
     const result = await client.upsert(ACCOUNT, '{"payload":"x"}');
     expect(result).toEqual({ ok: false, code: 'helper-failed', message: 'write EPIPE' });
+  });
+
+  it('caps stdout at exactly MAX_HELPER_OUTPUT_BYTES (overflow chunk is sliced, not appended)', async () => {
+    // Valid list JSON padded to EXACTLY the cap. Delivered as a chunk of
+    // cap−1 bytes followed by one chunk of the final byte plus trailing
+    // garbage: an exact cap keeps just that final byte (parse succeeds),
+    // while the old length-check-before-append kept the whole overflow
+    // chunk and corrupted the output (cap + chunkSize overshoot).
+    const skeleton = JSON.stringify({ items: [], pad: '' });
+    const output = JSON.stringify({
+      items: [],
+      pad: 'x'.repeat(MAX_HELPER_OUTPUT_BYTES - skeleton.length),
+    });
+    expect(output.length).toBe(MAX_HELPER_OUTPUT_BYTES);
+
+    const child = fakeChild();
+    vi.mocked(spawn).mockImplementationOnce((() => {
+      queueMicrotask(() => {
+        child.stdout.emit('data', Buffer.from(output.slice(0, -1), 'utf8'));
+        child.stdout.emit('data', Buffer.from(output.slice(-1) + 'TRAILING GARBAGE', 'utf8'));
+        // A chunk arriving with zero budget left is dropped entirely.
+        child.stdout.emit('data', Buffer.from('MORE GARBAGE', 'utf8'));
+        child.emit('close', 0);
+      });
+      return child;
+    }) as unknown as typeof spawn);
+    const client = createHelperKeychainClient({ platform: 'darwin', helperPath: HELPER });
+    const result = await client.list();
+    expect(result).toEqual({ ok: true, items: [] });
   });
 });

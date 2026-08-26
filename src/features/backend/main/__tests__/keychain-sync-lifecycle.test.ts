@@ -300,6 +300,27 @@ describe('keychain-sync lifecycle triggers', () => {
     });
   });
 
+  it('resetStatus clears getStatus to null and re-fires onStatusChanged on an unchanged verdict', async () => {
+    const onStatusChanged = vi.fn();
+    const reconcileFn = vi.fn(async () => reconcileResult({ status: { state: 'active' } }));
+    init({ enabled: true, reconcileFn, onStatusChanged });
+
+    await vi.advanceTimersByTimeAsync(DEBOUNCE);
+    expect(lifecycle!.getStatus()).toEqual({ state: 'active' });
+    expect(onStatusChanged).toHaveBeenCalledTimes(1);
+
+    // Disable → re-enable (T4 toggle): the stale verdict must not linger.
+    lifecycle!.resetStatus();
+    expect(lifecycle!.getStatus()).toBeNull();
+
+    // The fresh reconcile lands the SAME verdict, but previous === null now,
+    // so the status push still fires and the UI leaves the "checking" line.
+    lifecycle!.requestReconcile();
+    await vi.advanceTimersByTimeAsync(DEBOUNCE);
+    expect(lifecycle!.getStatus()).toEqual({ state: 'active' });
+    expect(onStatusChanged).toHaveBeenCalledTimes(2);
+  });
+
   it('dispose detaches focus + mutation triggers and cancels the pending debounce', async () => {
     const reconcileFn = init({ enabled: true });
     lifecycle!.dispose();

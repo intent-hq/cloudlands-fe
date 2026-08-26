@@ -2004,7 +2004,13 @@ function registerConnectionsHandlers(): void {
       ConnectionsSyncSetEnabledSchema,
       async (_event, { enabled }) => {
         await setLocalPref(KEYCHAIN_SYNC_ENABLED_KEY, enabled);
-        if (enabled) keychainSyncLifecycle?.requestReconcile();
+        if (enabled) {
+          // Drop the pre-disable verdict so the returned state (and any
+          // sync-get-state until the fresh reconcile lands) shows "checking"
+          // instead of a stale status (PR #1715 review).
+          keychainSyncLifecycle?.resetStatus();
+          keychainSyncLifecycle?.requestReconcile();
+        }
         return getKeychainSyncState();
       },
       CONNECTIONS.SYNC_SET_ENABLED,
