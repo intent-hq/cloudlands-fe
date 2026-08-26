@@ -76,6 +76,7 @@ describe('modern macOS icon compiler', () => {
     const execute = (command: string, args: string[]) => {
       expect(command).toBe('xcrun');
       if (args[0] === '--find') return '/Applications/Xcode.app/usr/bin/actool';
+      if (args[0] === 'xcodebuild') return 'Xcode 26.0.1\nBuild version 17A400';
 
       const iconPackage = args[1];
       expect(readFileSync(join(iconPackage, 'icon.json'), 'utf8')).toBe(
@@ -112,6 +113,31 @@ describe('modern macOS icon compiler', () => {
         outputDirectory: temporaryDirectory(),
       }),
     ).rejects.toThrow('requires Xcode 26 or newer with actool');
+  });
+
+  it('fails clearly when the selected Xcode toolchain is too old', async () => {
+    const execute = (_command: string, args: string[]) => {
+      if (args[0] === '--find') return '/Applications/Xcode.app/usr/bin/actool';
+      if (args[0] === 'xcodebuild') return 'Xcode 16.4\nBuild version 16F6';
+      throw new Error('actool must not run with an old Xcode toolchain');
+    };
+
+    await expect(
+      compileModernMacOSIcon({ execute, outputDirectory: temporaryDirectory() }),
+    ).rejects.toThrow(
+      'requires Xcode 26 or newer with actool, but the selected toolchain is Xcode 16.4',
+    );
+  });
+
+  it('selects an installed Xcode 26 toolchain in every hosted macOS packaging job', () => {
+    for (const workflow of ['release-alpha.yml', 'manual-signed-build.yml']) {
+      const config = readFileSync(join(process.cwd(), '.github/workflows', workflow), 'utf8');
+      const selection = config.indexOf('- name: Select Xcode 26');
+      expect(selection, workflow).toBeGreaterThan(config.indexOf('build-macos:'));
+      expect(selection, workflow).toBeLessThan(config.indexOf('- name: Setup pnpm', selection));
+      expect(config, workflow).toContain("-name 'Xcode_26*.app'");
+      expect(config, workflow).toContain('echo "DEVELOPER_DIR=$developer_dir" >> "$GITHUB_ENV"');
+    }
   });
 
   it('packages the modern resource and declares the legacy fallback', () => {

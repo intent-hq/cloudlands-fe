@@ -70,6 +70,23 @@ jobs:
       - name: Checkout dispatched ref
         uses: actions/checkout@v7
 
+      - name: Select Xcode 26
+        run: |
+          xcode=$(find /Applications -maxdepth 1 -type d -name 'Xcode_26*.app' 2>/dev/null | sort -V | tail -n 1 || true)
+          if [ -z "$xcode" ] || [ ! -d "$xcode" ]; then
+            echo "::error::Xcode 26 is required for macOS packaging, but no Xcode_26*.app bundle is installed"
+            exit 1
+          fi
+          developer_dir="$xcode/Contents/Developer"
+          version=$(DEVELOPER_DIR="$developer_dir" xcodebuild -version | head -n 1)
+          if [[ ! "$version" =~ ^Xcode\ 26([.\ ]|$) ]]; then
+            echo "::error::Expected Xcode 26, but $xcode reports '$version'"
+            exit 1
+          fi
+          echo "DEVELOPER_DIR=$developer_dir" >> "$GITHUB_ENV"
+          echo "Selected $xcode ($version)"
+          DEVELOPER_DIR="$developer_dir" xcrun --find actool
+
       - name: Setup pnpm
         uses: pnpm/action-setup@v6
         with:

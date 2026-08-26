@@ -12,6 +12,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ICON_NAME = 'Intent';
 const SOURCE_PATH = path.join(__dirname, '../src/assets/icons/app-icon/Icon-1024.png');
 const OUTPUT_DIRECTORY = path.join(__dirname, '../build/macos-icon');
+const REQUIRED_XCODE_MAJOR = 26;
 
 export const ICON_DOCUMENT = {
   fill: { solid: 'extended-srgb:0.03137,0.03137,0.03137,1.00000' },
@@ -64,6 +65,29 @@ export async function compileModernMacOSIcon({
   } catch {
     throw new Error(
       'Modern macOS icon packaging requires Xcode 26 or newer with actool. Install full Xcode and select it with xcode-select before packaging macOS.',
+    );
+  }
+
+  let xcodeVersion;
+  try {
+    xcodeVersion = String(
+      execute('xcrun', ['xcodebuild', '-version'], { encoding: 'utf8', stdio: 'pipe' }),
+    );
+  } catch {
+    throw new Error(
+      'Modern macOS icon packaging requires Xcode 26 or newer with actool. Could not read the selected Xcode version. Select full Xcode with xcode-select or DEVELOPER_DIR before packaging macOS.',
+    );
+  }
+
+  const versionMatch = xcodeVersion.match(/^Xcode\s+(\d+)(?:\.\d+)*/m);
+  if (!versionMatch) {
+    throw new Error(
+      'Modern macOS icon packaging requires Xcode 26 or newer with actool. Could not determine the selected Xcode version from xcodebuild -version.',
+    );
+  }
+  if (Number(versionMatch[1]) < REQUIRED_XCODE_MAJOR) {
+    throw new Error(
+      `Modern macOS icon packaging requires Xcode 26 or newer with actool, but the selected toolchain is ${versionMatch[0]}. Select Xcode 26 or newer with xcode-select or DEVELOPER_DIR before packaging macOS.`,
     );
   }
 
