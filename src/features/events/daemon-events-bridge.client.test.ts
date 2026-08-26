@@ -2245,6 +2245,70 @@ describe('daemonEventsBridge (agent:stream:activity — push-applied live previe
 
     expect(readAgentSessionField('digest')).toBe('Turn B digest');
   });
+
+  function readLiveTurnFields(): {
+    liveTurnOpen?: boolean;
+    liveTurnOpenedAt?: string;
+    updatedAt?: string;
+  } {
+    const session = readSession() as
+      | (AgentSession & { liveTurnOpen?: boolean; liveTurnOpenedAt?: string })
+      | undefined;
+    return {
+      liveTurnOpen: session?.liveTurnOpen,
+      liveTurnOpenedAt: session?.liveTurnOpenedAt,
+      updatedAt: session?.updatedAt as string | undefined,
+    };
+  }
+
+  // The ping is self-sufficient evidence of a live turn: a delegated agent
+  // whose running `agent:status-changed` edge predates hydration (or was
+  // missed) must still read as live while pings stream in, so the footer
+  // preview animates without an `agent.get` refetch.
+  it('an activity ping opens the sticky liveTurnOpen bit on a non-live session (updatedAt untouched)', async () => {
+    appStore.dispatch(clearAllSessions());
+    seedSession({ status: AgentStatus.RuntimeIdle, isStreaming: false });
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+    expect(selectAgentIsResponding.select(appStore.state, AGENT)).toBe(false);
+
+    handler(notification('agent:stream:activity', { agentId: AGENT, messageId: MESSAGE_ID }));
+
+    const fields = readLiveTurnFields();
+    expect(fields.liveTurnOpen).toBe(true);
+    // Stamped from the event envelope's own daemon timestamp.
+    expect(fields.liveTurnOpenedAt).toBe('2026-01-02T00:00:00.000Z');
+    // updatedAt is daemon-owned and per-turn (STAB-19) — the ping must not
+    // synthesize or advance it.
+    expect(fields.updatedAt).toBe('2026-01-01T00:00:00.000Z');
+    expect(selectAgentIsResponding.select(appStore.state, AGENT)).toBe(true);
+  });
+
+  it('agent:idle still closes the bit, and a straggler same-turn ping cannot re-open it', async () => {
+    appStore.dispatch(clearAllSessions());
+    seedSession({ status: AgentStatus.RuntimeIdle, isStreaming: false });
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(notification('agent:stream:activity', { agentId: AGENT, messageId: MESSAGE_ID }));
+    expect(readLiveTurnFields().liveTurnOpen).toBe(true);
+
+    // Terminal choreography: stream:end then the canonical idle fold.
+    handler(notification('agent:stream:end', { agentId: AGENT, messageId: MESSAGE_ID }));
+    handler(notification('agent:idle', { agentId: AGENT, status: 'idle', isActive: false }));
+    expect(readLiveTurnFields().liveTurnOpen).toBe(false);
+    expect(selectAgentIsResponding.select(appStore.state, AGENT)).toBe(false);
+
+    // A same-turn activity straggler delivered after the terminal event must
+    // not resurrect the liveness bit the choreography just closed.
+    handler(notification('agent:stream:activity', { agentId: AGENT, messageId: MESSAGE_ID }));
+    expect(readLiveTurnFields().liveTurnOpen).toBe(false);
+    expect(selectAgentIsResponding.select(appStore.state, AGENT)).toBe(false);
+
+    // A genuinely NEW turn's ping re-opens it.
+    handler(notification('agent:stream:activity', { agentId: AGENT, messageId: 'msg_assistant_2' }));
+    expect(readLiveTurnFields().liveTurnOpen).toBe(true);
+  });
 });
 
 // Regression (intentd#336): a user interrupt (agent.stop, or agent.sendMessage

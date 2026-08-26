@@ -1048,10 +1048,13 @@ export const replaceMessageById = createAction<
   [agentId: string, oldId: string, newMessage: AgentMessage]
 >('agentSessions/replaceMessageById');
 
-/** Non-message field updates */
-export const updateSession = createAction<[agentId: string, updates: Partial<AgentSession>]>(
-  'agentSessions/updateSession',
-);
+/** Non-message field updates (plus the FE-owned sticky liveness fields). */
+export const updateSession = createAction<
+  [
+    agentId: string,
+    updates: Partial<AgentSession> & Pick<StoredAgentSession, 'liveTurnOpen' | 'liveTurnOpenedAt'>,
+  ]
+>('agentSessions/updateSession');
 
 /** Saga-owned core stop side effect trigger. */
 export const agentSessionStopChatRequested = createAsyncAction<[agentId: string], void>(

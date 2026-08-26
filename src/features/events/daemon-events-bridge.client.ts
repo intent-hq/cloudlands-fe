@@ -339,6 +339,17 @@ const streamsByAgent = new Map<string, StreamState>();
 const previewTurnMessageIdByAgent = new Map<string, string>();
 
 /**
+ * Per-agent messageId of the last turn whose terminal `agent:stream:end` was
+ * applied. An activity ping is self-sufficient evidence of a live turn (it
+ * opens the sticky `liveTurnOpen` bit so a never-hydrated delegated agent's
+ * footer preview goes live without an `agent:status-changed` edge), but a
+ * same-turn straggler ping delivered after the terminal event must not
+ * re-open the bit `agent:idle` / the terminal fold just closed — this map is
+ * how the activity handler tells a mid-turn ping from that straggler.
+ */
+const previewTurnEndedMessageIdByAgent = new Map<string, string>();
+
+/**
  * True once this bridge has delivered an `agent:last-message` event — the
  * §6.5 content-bearing companion the daemon emits alongside EVERY
  * `agent:message`. While false (older daemon), the lean id-only
@@ -869,10 +880,32 @@ function handleStreamActivityEvent(event: WorkspaceEvent, workspaceId: string): 
   if (isNewTurn) {
     previewTurnMessageIdByAgent.set(agentId, messageId);
   }
+  // The ping itself proves a turn is in flight (the daemon only emits it
+  // mid-turn), so open the sticky `liveTurnOpen` bit — the same one the
+  // `agent:status-changed` running fold sets — stamping the event's own
+  // daemon timestamp as the ordering signal. Without this, a delegated agent
+  // whose running edge predates hydration (or was missed) never reads as
+  // live even while pings stream in. `updatedAt` is daemon-owned and left
+  // untouched. Skip the straggler case: a ping for the turn whose terminal
+  // `agent:stream:end` already applied — or for an even earlier turn
+  // (messageId is a UUIDv7, so lexicographic order mirrors turn order, same
+  // as `handleStreamEndEvent`'s guard) — must not re-open the bit the
+  // terminal choreography just closed.
+  const endedMessageId = previewTurnEndedMessageIdByAgent.get(agentId);
+  const isEndedTurnStraggler = endedMessageId !== undefined && messageId <= endedMessageId;
+  const eventTimestamp = (event as { timestamp?: unknown }).timestamp;
   withHydratedSession(agentId, () => {
     if (isNewTurn) {
       appStore.dispatch(updateAgentDigest(workspaceId, agentId, null));
       appStore.dispatch(updateSession(agentId, { lastToolUse: undefined }));
+    }
+    if (!isEndedTurnStraggler) {
+      appStore.dispatch(
+        updateSession(agentId, {
+          liveTurnOpen: true,
+          ...(typeof eventTimestamp === 'string' ? { liveTurnOpenedAt: eventTimestamp } : {}),
+        }),
+      );
     }
     applyStreamPreviewFields(agentId, lastAgentResponse, digest, readLastToolUse(data.lastToolUse));
   });
@@ -1257,6 +1290,10 @@ function handleStreamEndEvent(event: WorkspaceEvent, workspaceId: string): void 
   if (!isStaleTerminalForPreview) {
     if (messageId !== undefined) {
       previewTurnMessageIdByAgent.set(agentId, messageId);
+      // Record the ended turn so a straggler same-turn (or older-turn)
+      // activity ping cannot re-open the sticky liveTurnOpen bit the
+      // terminal choreography closes — see handleStreamActivityEvent.
+      previewTurnEndedMessageIdByAgent.set(agentId, messageId);
     }
     withHydratedSession(agentId, () => {
       applyStreamPreviewFields(
@@ -3903,6 +3940,7 @@ async function reconcileAgentFailureRegistry(): Promise<void> {
 export function disposeDaemonEventsRoutingState(): void {
   streamsByAgent.clear();
   previewTurnMessageIdByAgent.clear();
+  previewTurnEndedMessageIdByAgent.clear();
   daemonEmitsLastMessage = false;
   agentSessionRefreshInFlight.clear();
   agentSessionRefreshFollowUpWanted.clear();

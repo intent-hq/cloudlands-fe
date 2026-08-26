@@ -849,6 +849,23 @@ describe('agent-session-slice reducer', () => {
       expect(getMsgs(state, 'a1')).toHaveLength(1);
     });
 
+    it('applies the sticky liveTurnOpen/liveTurnOpenedAt fields without touching updatedAt', () => {
+      // The daemon-events bridge marks a session live off an
+      // agent:stream:activity ping through updateSession; updatedAt is
+      // daemon-owned (STAB-19) and must stay whatever the session already had.
+      let state = agentSessionReducer(
+        initialState,
+        upsertSession(makeSession('a1', 'ws-1', { updatedAt: '2026-01-01T00:00:00.000Z' })),
+      );
+      state = agentSessionReducer(
+        state,
+        updateSession('a1', { liveTurnOpen: true, liveTurnOpenedAt: '2026-01-02T00:00:00.000Z' }),
+      );
+      expect(state.byAgentId['a1'].liveTurnOpen).toBe(true);
+      expect(state.byAgentId['a1'].liveTurnOpenedAt).toBe('2026-01-02T00:00:00.000Z');
+      expect(state.byAgentId['a1'].updatedAt).toBe('2026-01-01T00:00:00.000Z');
+    });
+
     it('deduplicates same-appMessageId messages in updateSession message arrays', () => {
       const appMessageId = 'app_msg_update';
       let state = agentSessionReducer(initialState, upsertSession(makeSession('a1')));
