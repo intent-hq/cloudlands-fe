@@ -208,6 +208,20 @@
   }
 
   /**
+   * Keep the published self entry fresh after a local change to its published
+   * fields (token rotation, port change): main re-upserts the record from the
+   * live pairing info so keychain sync pushes the new values to the user's
+   * other devices. Strict no-op in main while unpublished or while the "do
+   * not auto-publish" marker is set. Fire-and-forget and fail-soft — the
+   * rotation/port change itself already succeeded.
+   */
+  function refreshSelfEntry() {
+    const api = getApi();
+    if (!api || isRemote) return;
+    void Promise.resolve(api.invoke(CONNECTIONS.REFRESH_SELF)).catch(() => {});
+  }
+
+  /**
    * After a successful toggle-on on the local connection: offer to publish
    * this backend, asked every toggle-on (no decline persistence). Never on
    * non-macOS, when a self entry already exists, or when the "do not
@@ -341,6 +355,9 @@
         } catch {
           // Pairing info refresh failed, but the setting was saved successfully
         }
+        // Propagate the new port to the published self entry (no-op in main
+        // when unpublished/suppressed).
+        refreshSelfEntry();
         toast.success(m.settings_wsApi_portChanged({ port: String(newPort) }));
       } else {
         toast.success(m.settings_wsApi_portSaved());
@@ -363,6 +380,9 @@
       regenerating = true;
       const result = await appClient.server.rotateToken();
       token = result.token;
+      // Propagate the rotated token to the published self entry (no-op in
+      // main when unpublished/suppressed).
+      refreshSelfEntry();
       toast.success(m.settings_wsApi_tokenRegenerated());
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);

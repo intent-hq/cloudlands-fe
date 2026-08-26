@@ -40,6 +40,11 @@ import {
   type ReconcileOptions,
 } from './keychain-sync';
 import { applyRemoteSyncRecord, listSyncRecords, onConnectionsMutated } from './connections-store';
+import {
+  getStoredSelfFingerprint,
+  normalizeFingerprint,
+  setAutoPublishSuppressed,
+} from './self-publish';
 
 const logger = new Logger('KeychainSyncLifecycle');
 
@@ -68,6 +73,27 @@ export const storeSyncAdapter: LocalSyncAdapter = {
   list: () => listSyncRecords(),
   async applyRemote(_account, record) {
     await applyRemoteSyncRecord(record);
+    // A pulled tombstone matching THIS machine's own published entry means
+    // the user forgot it on another device: honor it — the record removal
+    // above already cleared the published state — and set the persistent
+    // "do not auto-publish" marker instead of re-asserting (spec: only an
+    // explicit re-publish clears it). Fail-soft: a marker write failure must
+    // not abort the reconcile.
+    if (record.deleted === true) {
+      try {
+        const selfFingerprint = await getStoredSelfFingerprint();
+        if (
+          selfFingerprint !== null &&
+          normalizeFingerprint(record.fingerprint) === selfFingerprint
+        ) {
+          await setAutoPublishSuppressed(true);
+        }
+      } catch (error) {
+        logger.warn('Could not evaluate self-tombstone suppression (fail-soft)', {
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
   },
 };
 

@@ -1091,6 +1091,168 @@ describe('self-publish IPC', () => {
 });
 
 // ---------------------------------------------------------------------------
+// Self-entry refresh IPC (token rotation / WSS port change freshness)
+// ---------------------------------------------------------------------------
+
+describe('self-entry refresh IPC', () => {
+  const PAIRING_INFO = {
+    token: 'a'.repeat(64),
+    certFingerprint: '11:22:33:44',
+    port: 5181,
+    path: '/ws',
+    localIps: ['192.168.1.10', '10.0.0.5'],
+    hostname: 'my-mac.local',
+    prettyHostname: "Clement's Mac Studio",
+  };
+  const SELF_RECORD = {
+    id: 'self-1',
+    label: "Clement's Mac Studio",
+    host: '192.168.1.10',
+    port: 5181,
+    fingerprint: '11:22:33:44',
+    isLocal: false,
+  };
+
+  function installPairingInfo(overrides: Partial<typeof PAIRING_INFO> | null = {}) {
+    rpc.handler = async (method) => {
+      if (method === 'server.pairingInfo') {
+        if (overrides === null) throw new Error('server.* methods are local-only');
+        return { ...PAIRING_INFO, ...overrides };
+      }
+      return {};
+    };
+  }
+
+  it('re-upserts the published entry from live pairingInfo (token rotation freshness)', async () => {
+    // Published: a stored record carries the self fingerprint.
+    installPairingInfo({ token: 'b'.repeat(64) });
+    store.list.mockResolvedValue([LOCAL, { ...REMOTE, id: 'self-1', fingerprint: '11:22:33:44' }]);
+    store.add.mockResolvedValue(SELF_RECORD);
+    const send = installWindow();
+    const { mod } = await loadModule();
+    mod.registerBackendHandlers();
+
+    const result = await findHandler('connections:refresh-self')!({}, undefined);
+
+    // The rotated token reaches the store; the fingerprint dedupe collapses
+    // the upsert into the existing record with a fresh updatedAt.
+    expect(result).toEqual({ refreshed: true });
+    expect(store.add).toHaveBeenCalledWith({
+      label: "Clement's Mac Studio",
+      host: '192.168.1.10',
+      port: 5181,
+      fingerprint: '11:22:33:44',
+      token: 'b'.repeat(64),
+      detectHosts: true,
+    });
+    expect(store.setHosts).toHaveBeenCalledWith('self-1', ['192.168.1.10', '10.0.0.5']);
+    expect(store.setHostname).toHaveBeenCalledWith('self-1', "Clement's Mac Studio");
+    // A refresh never touches the suppression marker.
+    expect(localPrefs.values.has('selfPublishSuppressed')).toBe(false);
+    expect(send.mock.calls.some(([c]) => c === 'connections:changed')).toBe(true);
+  });
+
+  it('re-upserts under the new port/host after a WSS port change', async () => {
+    installPairingInfo({ port: 6200, localIps: ['192.168.1.99'] });
+    store.list.mockResolvedValue([LOCAL, { ...REMOTE, id: 'self-1', fingerprint: '11:22:33:44' }]);
+    store.add.mockResolvedValue({ ...SELF_RECORD, host: '192.168.1.99', port: 6200 });
+    installWindow();
+    const { mod } = await loadModule();
+    mod.registerBackendHandlers();
+
+    const result = await findHandler('connections:refresh-self')!({}, undefined);
+
+    expect(result).toEqual({ refreshed: true });
+    expect(store.add).toHaveBeenCalledWith(
+      expect.objectContaining({ host: '192.168.1.99', port: 6200, fingerprint: '11:22:33:44' }),
+    );
+  });
+
+  it('matches the published entry by the persisted fingerprint after a cert change', async () => {
+    // The live fingerprint differs from the stored record's, but the persisted
+    // self fingerprint still matches → refresh proceeds.
+    installPairingInfo({ certFingerprint: 'FF:EE:DD:CC' });
+    localPrefs.values.set('selfBackendFingerprint', '11:22:33:44');
+    store.list.mockResolvedValue([LOCAL, { ...REMOTE, id: 'self-1', fingerprint: '11:22:33:44' }]);
+    store.add.mockResolvedValue({ ...SELF_RECORD, fingerprint: 'FF:EE:DD:CC' });
+    installWindow();
+    const { mod } = await loadModule();
+    mod.registerBackendHandlers();
+
+    const result = await findHandler('connections:refresh-self')!({}, undefined);
+
+    expect(result).toEqual({ refreshed: true });
+    // The persisted self fingerprint follows the live one.
+    expect(localPrefs.values.get('selfBackendFingerprint')).toBe('FF:EE:DD:CC');
+  });
+
+  it('is a strict no-op while the "do not auto-publish" marker is set', async () => {
+    installPairingInfo();
+    localPrefs.values.set('selfPublishSuppressed', true);
+    store.list.mockResolvedValue([LOCAL, { ...REMOTE, fingerprint: '11:22:33:44' }]);
+    const { mod } = await loadModule();
+    mod.registerBackendHandlers();
+
+    const result = await findHandler('connections:refresh-self')!({}, undefined);
+
+    expect(result).toEqual({ refreshed: false });
+    expect(rpc.calls).toHaveLength(0); // never even probes pairingInfo
+    expect(store.add).not.toHaveBeenCalled();
+    // The marker stays set — refresh never clears it.
+    expect(localPrefs.values.get('selfPublishSuppressed')).toBe(true);
+  });
+
+  it('is a no-op when no published self entry exists', async () => {
+    installPairingInfo();
+    store.list.mockResolvedValue([LOCAL, REMOTE]); // no self-fingerprint record
+    const { mod } = await loadModule();
+    mod.registerBackendHandlers();
+
+    const result = await findHandler('connections:refresh-self')!({}, undefined);
+
+    expect(result).toEqual({ refreshed: false });
+    expect(store.add).not.toHaveBeenCalled();
+  });
+
+  it('is a fail-soft no-op when the pairing info is unavailable (probe fails)', async () => {
+    installPairingInfo(null);
+    store.list.mockResolvedValue([LOCAL, { ...REMOTE, fingerprint: '11:22:33:44' }]);
+    const { mod } = await loadModule();
+    mod.registerBackendHandlers();
+
+    const result = await findHandler('connections:refresh-self')!({}, undefined);
+
+    expect(result).toEqual({ refreshed: false });
+    expect(store.add).not.toHaveBeenCalled();
+  });
+
+  it('is a no-op when the WSS listener is down (port null)', async () => {
+    installPairingInfo({ port: null as never });
+    store.list.mockResolvedValue([LOCAL, { ...REMOTE, fingerprint: '11:22:33:44' }]);
+    const { mod } = await loadModule();
+    mod.registerBackendHandlers();
+
+    const result = await findHandler('connections:refresh-self')!({}, undefined);
+
+    expect(result).toEqual({ refreshed: false });
+    expect(store.add).not.toHaveBeenCalled();
+  });
+
+  it('is a no-op when a remote backend is active (no local client)', async () => {
+    installPairingInfo();
+    store.list.mockResolvedValue([LOCAL, { ...REMOTE, fingerprint: '11:22:33:44' }]);
+    const { mod } = await loadModule();
+    await mod.switchBackend('remote-1'); // whole app pinned to the remote
+    mod.registerBackendHandlers();
+
+    const result = await findHandler('connections:refresh-self')!({}, undefined);
+
+    expect(result).toEqual({ refreshed: false });
+    expect(store.add).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Hide the self entry from the owning machine's connections list: the record
 // stays in the store (keychain sync pushes it to OTHER devices) but never
 // renders on the machine it describes — connecting to yourself is meaningless.

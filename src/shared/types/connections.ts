@@ -380,3 +380,17 @@ export interface SelfPublishedStateResult {
    */
   selfConnectionId: string | null;
 }
+
+/**
+ * `connections:refresh-self` result. Fired after a local change to the
+ * published self entry's fields (token rotation, WSS port change) so the
+ * stored record — and via keychain sync, the user's other devices — picks up
+ * the new values. `refreshed` is `false` when the refresh was a no-op: no
+ * published self entry exists, the "do not auto-publish" marker is set, the
+ * app is pinned to a remote, or the local pairing info is unavailable. The
+ * refresh never sets or clears the suppression marker.
+ */
+export interface RefreshSelfResult {
+  /** Whether the stored self entry was actually re-upserted. */
+  refreshed: boolean;
+}

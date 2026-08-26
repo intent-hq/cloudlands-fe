@@ -873,4 +873,67 @@ describe('connections-store keychain sync surface', () => {
     expect(JSON.stringify(records)).not.toContain(rec.id);
     expect(JSON.stringify(records)).not.toContain('activeId');
   });
+
+  it('self-refresh port change end to end: the stale keychain account is tombstoned, the record rewritten under the new account', async () => {
+    // The refresh path re-upserts the self record through store.add (same
+    // fingerprint, new port). This drives the REAL store + REAL reconcile
+    // against an in-memory keychain to prove no stale duplicate survives.
+    const store = await import('../connections-store');
+    const sync = await import('../keychain-sync');
+
+    // In-memory keychain client.
+    const keychain = new Map<string, string>();
+    const client: import('../keychain-sync').KeychainClient = {
+      async list() {
+        return {
+          ok: true,
+          items: [...keychain.entries()].map(([account, payload]) => ({ account, payload })),
+        };
+      },
+      async upsert(account, payload) {
+        keychain.set(account, payload);
+        return { ok: true };
+      },
+      async delete(account) {
+        keychain.delete(account);
+        return { ok: true };
+      },
+    };
+    const adapter: import('../keychain-sync').LocalSyncAdapter = {
+      list: () => store.listSyncRecords(),
+      applyRemote: async (_account, record) => {
+        await store.applyRemoteSyncRecord(record);
+      },
+    };
+
+    // Publish at the original address and push to the keychain.
+    await store.add({ ...sampleConn, host: '192.168.1.10', port: 5181 });
+    await sync.reconcile(adapter, { client });
+    const oldAccount = sync.accountKeyFor('192.168.1.10', 5181);
+    expect([...keychain.keys()]).toEqual([oldAccount]);
+
+    // Port change: the refresh re-upserts under the new port — the store's
+    // fingerprint dedupe collapses it into ONE record with a fresh clock.
+    await store.add({ ...sampleConn, host: '192.168.1.10', port: 6200 });
+    expect((await store.list()).filter((c) => !c.isLocal)).toHaveLength(1);
+
+    await sync.reconcile(adapter, { client });
+
+    // The stale account now holds a tombstone; the record lives under the
+    // new account. No live duplicate remains in the keychain.
+    const newAccount = sync.accountKeyFor('192.168.1.10', 6200);
+    const staleParsed = sync.parsePayload(keychain.get(oldAccount)!);
+    expect(staleParsed).toMatchObject({ kind: 'record', record: { deleted: true, token: '' } });
+    const newParsed = sync.parsePayload(keychain.get(newAccount)!);
+    expect(newParsed).toMatchObject({
+      kind: 'record',
+      record: { port: 6200, fingerprint: 'AA:BB:CC', token: 'secret-token' },
+    });
+
+    // And locally the store still holds exactly one live record (the
+    // tombstone pull never resurrects or deletes the moved record).
+    const remotes = (await store.list()).filter((c) => !c.isLocal);
+    expect(remotes).toHaveLength(1);
+    expect(remotes[0]).toMatchObject({ port: 6200 });
+  });
 });

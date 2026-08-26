@@ -547,6 +547,7 @@ const ALLOWED_CHANNELS = [
   "connections:sync-status-changed",
   "connections:publish-self",
   "connections:self-published-state",
+  "connections:refresh-self",
   "transfer:start",
   "transfer:finalize",
   "transfer:cancel",

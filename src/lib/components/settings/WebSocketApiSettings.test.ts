@@ -91,6 +91,7 @@ function installElectronApi() {
     if (channel === 'connections:publish-self') {
       return { connection: { id: 'mock-self' } };
     }
+    if (channel === 'connections:refresh-self') return { refreshed: true };
     throw new Error(`unexpected invoke: ${channel}`);
   });
   (window as unknown as { electronAPI: unknown }).electronAPI = { invoke: ipcMocks.invoke };
@@ -271,6 +272,79 @@ describe('WebSocketApiSettings', () => {
     // Assert: Save button is hidden again
     await waitFor(() => {
       expect(screen.queryByText('Save')).toBeNull();
+    });
+  });
+
+  describe('self-entry refresh triggers (token rotation, port change)', () => {
+    const PAIRING = {
+      token: 'tok-1234567890',
+      port: 5181,
+      certFingerprint: 'AA:BB',
+      localIps: ['192.168.1.2'],
+      hostname: 'my-mac',
+    };
+
+    /** Render with WSS enabled on the local connection. */
+    async function renderEnabled() {
+      mocks.mockSettingsList.mockResolvedValue([
+        { path: 'server.wsApi.enabled', value: true },
+        { path: 'server.wsApi.port', value: 5181 },
+      ]);
+      mocks.mockPairingInfo.mockResolvedValue(PAIRING);
+      render(WebSocketApiSettings);
+      await waitFor(() => expect(mocks.mockPairingInfo).toHaveBeenCalled());
+    }
+
+    it('token regeneration fires connections:refresh-self', async () => {
+      await renderEnabled();
+      mocks.mockRotateToken.mockResolvedValue({ token: 'tok-new' });
+
+      await fireEvent.click(screen.getByTitle('Regenerate token'));
+
+      await waitFor(() => {
+        expect(ipcMocks.invoke).toHaveBeenCalledWith('connections:refresh-self');
+      });
+      expect(mockToast.error).not.toHaveBeenCalled();
+    });
+
+    it('a failed token rotation never fires connections:refresh-self', async () => {
+      await renderEnabled();
+      mocks.mockRotateToken.mockRejectedValue(new Error('daemon says no'));
+
+      await fireEvent.click(screen.getByTitle('Regenerate token'));
+
+      await waitFor(() => expect(mockToast.error).toHaveBeenCalled());
+      expect(ipcMocks.invoke).not.toHaveBeenCalledWith('connections:refresh-self');
+    });
+
+    it('a port save while enabled fires connections:refresh-self', async () => {
+      await renderEnabled();
+      mocks.mockSettingsUpdate.mockResolvedValueOnce([{ path: 'server.wsApi.port', value: 5182 }]);
+      mocks.mockPairingInfo.mockResolvedValue({ ...PAIRING, port: 5182 });
+
+      const portInput = await waitFor(() => screen.getByDisplayValue('5181') as HTMLInputElement);
+      await fireEvent.input(portInput, { target: { value: '5182' } });
+      await fireEvent.click(await waitFor(() => screen.getByText('Save')));
+
+      await waitFor(() => {
+        expect(ipcMocks.invoke).toHaveBeenCalledWith('connections:refresh-self');
+      });
+    });
+
+    it('a port save while WSS is disabled never fires connections:refresh-self', async () => {
+      mocks.mockSettingsList.mockResolvedValue([
+        { path: 'server.wsApi.enabled', value: false },
+        { path: 'server.wsApi.port', value: 5181 },
+      ]);
+      render(WebSocketApiSettings);
+      mocks.mockSettingsUpdate.mockResolvedValueOnce([{ path: 'server.wsApi.port', value: 5182 }]);
+
+      const portInput = await waitFor(() => screen.getByDisplayValue('5181') as HTMLInputElement);
+      await fireEvent.input(portInput, { target: { value: '5182' } });
+      await fireEvent.click(await waitFor(() => screen.getByText('Save')));
+
+      await waitFor(() => expect(mockToast.success).toHaveBeenCalled());
+      expect(ipcMocks.invoke).not.toHaveBeenCalledWith('connections:refresh-self');
     });
   });
 

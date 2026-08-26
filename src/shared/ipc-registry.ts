@@ -886,6 +886,10 @@ export const IPC_CHANNELS = {
     // bearer token never crosses to the renderer.
     PUBLISH_SELF: 'connections:publish-self',
     SELF_PUBLISHED_STATE: 'connections:self-published-state',
+    // Refresh the published self entry after a local change to its published
+    // fields (token rotation, WSS port change). Strict no-op while
+    // unpublished or while the "do not auto-publish" marker is set.
+    REFRESH_SELF: 'connections:refresh-self',
   },
 
   // Workspace transfer relay (main-process, wizard steps 3–4). The renderer

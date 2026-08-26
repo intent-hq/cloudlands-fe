@@ -34,6 +34,7 @@ import type {
   KeychainSyncStateResult,
   SetKeychainSyncEnabledParams,
   PublishSelfResult,
+  RefreshSelfResult,
   SelfPublishedStateResult,
 } from '$shared/types/connections';
 
@@ -164,4 +165,8 @@ registerMockIpcHandler(CONNECTION_CHANNELS.PUBLISH_SELF, async (): Promise<Publi
     isLocal: false,
   };
   return { connection };
+});
+
+registerMockIpcHandler(CONNECTION_CHANNELS.REFRESH_SELF, async (): Promise<RefreshSelfResult> => {
+  return { refreshed: selfPublished };
 });

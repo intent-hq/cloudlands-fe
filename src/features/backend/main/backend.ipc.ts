@@ -78,9 +78,10 @@ import {
   normalizeFingerprint,
   setAutoPublishSuppressed,
   setStoredSelfFingerprint,
+  type SelfPairingInfo,
 } from './self-publish';
 import { registerBrowserExecReverseHandler } from '../../browser/main/browser-exec-reverse';
-import { LOCAL_CONNECTION_ID } from '../../../shared/types/connections';
+import { LOCAL_CONNECTION_ID, type ConnectionRecord } from '../../../shared/types/connections';
 import type {
   AddConnectionResult,
   CaptureFingerprintResult,
@@ -94,6 +95,7 @@ import type {
   KeychainSyncStateResult,
   OpenConnectionResult,
   PublishSelfResult,
+  RefreshSelfResult,
   SelfPublishedStateResult,
   SwitchConnectionResult,
 } from '../../../shared/types/connections';
@@ -105,6 +107,7 @@ import {
   ConnectionsListSchema,
   ConnectionsOpenSchema,
   ConnectionsPublishSelfSchema,
+  ConnectionsRefreshSelfSchema,
   ConnectionsSelfPublishedStateSchema,
   ConnectionsSwitchSchema,
   ConnectionsSyncGetStateSchema,
@@ -2133,6 +2136,18 @@ function registerConnectionsHandlers(): void {
       CONNECTIONS.SELF_PUBLISHED_STATE,
     ),
   );
+
+  // Refresh the published self entry after a local change to its published
+  // fields (token rotation, WSS port change). Strict no-op while unpublished
+  // or while the "do not auto-publish" marker is set.
+  ipcMain.handle(
+    CONNECTIONS.REFRESH_SELF,
+    createValidatedHandler(
+      ConnectionsRefreshSelfSchema,
+      async () => refreshSelfBackend(),
+      CONNECTIONS.REFRESH_SELF,
+    ),
+  );
 }
 
 /** Assemble the `connections:sync-get-state` / `sync-set-enabled` result. */
@@ -2182,10 +2197,30 @@ async function publishSelfBackend(): Promise<PublishSelfResult> {
   if (info.port === null) {
     throw new Error('publish-self failed: the WebSocket API is not enabled');
   }
-  const host = info.localIps[0];
-  if (!host) {
+  if (!info.localIps[0]) {
     throw new Error('publish-self failed: no routable local IP to publish');
   }
+  const record = await upsertSelfRecord({ ...info, port: info.port });
+  await setStoredSelfFingerprint(info.certFingerprint);
+  await setAutoPublishSuppressed(false);
+  await broadcastConnectionsChanged();
+  const connection = (await connectionsStore.list()).find((c) => c.id === record.id) ?? record;
+  return { connection } satisfies PublishSelfResult;
+}
+
+/**
+ * Shared upsert of this machine's self record from validated pairing info
+ * (label = hostname with `host:port` fallback, host = first local IP, hosts =
+ * all local IPs, port = bound wsApi port, fingerprint = cert fingerprint,
+ * token, detectHosts on). The store dedupes by fingerprint — a host/port
+ * change collapses into the existing record with a fresh `updatedAt` — and
+ * the mutation triggers the keychain reconcile push. Callers must have
+ * validated `port` and `localIps[0]` as non-null.
+ */
+async function upsertSelfRecord(
+  info: SelfPairingInfo & { port: number },
+): Promise<ConnectionRecord> {
+  const host = info.localIps[0];
   const label = info.prettyHostname ?? info.hostname ?? `${host}:${info.port}`;
   const record = await connectionsStore.add({
     label,
@@ -2204,11 +2239,65 @@ async function publishSelfBackend(): Promise<PublishSelfResult> {
   if (hostname) {
     await connectionsStore.setHostname(record.id, hostname);
   }
+  return record;
+}
+
+/**
+ * `connections:refresh-self`: re-upsert the published self entry from the
+ * live `server.pairingInfo` so a token rotation or WSS port/host change gets
+ * a fresh `updatedAt` and propagates to the user's other devices via the
+ * keychain reconcile (a host:port change is collapsed by the store's
+ * fingerprint dedupe, and the reconcile tombstones the stale keychain account
+ * — the record is rewritten under the new account).
+ *
+ * Strictly a freshness path, entirely fail-soft: while the "do not
+ * auto-publish" marker is set, while no published self entry exists, when the
+ * app is pinned to a remote, or when the pairing info is unavailable/
+ * incomplete (WSS off, no routable IP) it is a no-op (`refreshed: false`).
+ * Unlike publish it NEVER sets or clears the suppression marker — refreshing
+ * is not user intent to (re-)publish.
+ */
+async function refreshSelfBackend(): Promise<RefreshSelfResult> {
+  if (await isAutoPublishSuppressed()) {
+    return { refreshed: false } satisfies RefreshSelfResult;
+  }
+  const localClient = getLocalClientForSelfPublish();
+  if (!localClient) {
+    return { refreshed: false } satisfies RefreshSelfResult;
+  }
+  let info: ReturnType<typeof extractSelfPairingInfo>;
+  try {
+    info = extractSelfPairingInfo(await localClient.request('server.pairingInfo'));
+  } catch (error) {
+    logger.debug('Could not refresh the self entry from server.pairingInfo (fail-soft)', {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return { refreshed: false } satisfies RefreshSelfResult;
+  }
+  if (!info || info.port === null || !info.localIps[0]) {
+    return { refreshed: false } satisfies RefreshSelfResult;
+  }
+  // Only refresh an entry that is actually published: a stored record whose
+  // fingerprint matches the persisted self fingerprint or the live one.
+  const [records, storedFingerprint] = await Promise.all([
+    connectionsStore.list(),
+    getStoredSelfFingerprint(),
+  ]);
+  const liveFingerprint = normalizeFingerprint(info.certFingerprint);
+  const selfKeys = new Set(
+    [storedFingerprint, liveFingerprint].filter((key): key is string => key !== null),
+  );
+  const published = records.some((c) => {
+    const key = normalizeFingerprint(c.fingerprint);
+    return key !== null && selfKeys.has(key);
+  });
+  if (!published) {
+    return { refreshed: false } satisfies RefreshSelfResult;
+  }
+  await upsertSelfRecord({ ...info, port: info.port });
   await setStoredSelfFingerprint(info.certFingerprint);
-  await setAutoPublishSuppressed(false);
   await broadcastConnectionsChanged();
-  const connection = (await connectionsStore.list()).find((c) => c.id === record.id) ?? record;
-  return { connection } satisfies PublishSelfResult;
+  return { refreshed: true } satisfies RefreshSelfResult;
 }
 
 /**
