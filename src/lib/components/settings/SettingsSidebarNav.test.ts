@@ -31,7 +31,7 @@ describe('SettingsSidebarNav', () => {
     });
 
     const specialistsHeading = screen.getByRole('heading', { level: 2, name: 'Specialists' });
-    expect(specialistsHeading.className).toContain('text-[11px]');
+    expect(specialistsHeading.className).toContain('type-caption');
     expect(specialistsHeading.className).toContain('font-semibold');
     expect(specialistsHeading.className).toContain('uppercase');
     expect(specialistsHeading.className).toContain('tracking-wider');

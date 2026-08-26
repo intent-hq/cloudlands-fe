@@ -230,6 +230,7 @@ describe('Settings migration', () => {
     const recorder = installDispatchRecorder();
     renderGeneral();
 
+    await fireEvent.click(screen.getByRole('button', { name: 'App Behavior' }));
     await fireEvent.click(screen.getByRole('button', { name: 'Select update channel' }));
     await fireEvent.pointerUp(await screen.findByRole('option', { name: 'Disabled' }), {
       button: 0,
