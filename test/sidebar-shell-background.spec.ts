@@ -250,3 +250,58 @@ test('switches every canonical panel shell without a fill frame', async ({ page 
   await page.evaluate(() => document.documentElement.classList.add('dark'));
   expect(await background(page, '.sidebar-panel')).toBe('rgba(0, 0, 0, 0)');
 });
+
+test('clips mounted current-workspace decoration at the collapsed boundary', async ({ page }) => {
+  test.setTimeout(180_000);
+  await page.setViewportSize({ width: 1600, height: 1200 });
+
+  for (const zoom of [1, 2]) {
+    await mountShell(page, { theme: 'dark', width: 720, zoom });
+    const panel = page.locator('[data-sidebar-panel]');
+    const currentRow = page.locator('[data-workspace-card-row]:has([aria-current="page"])');
+
+    await expect(currentRow).toHaveCount(1);
+    await expect(panel).toHaveCSS('overflow-clip-margin', '8px');
+    await panel.evaluate((node) => node.setAttribute('data-mount-probe', 'mounted'));
+
+    await page.evaluate(async () => {
+      const [{ store }, { closePanel }] = await Promise.all([
+        import('/src/store/renderer/store.ts'),
+        import('/src/store/renderer/slices/sidebar-nav/sidebar-nav-slice.ts'),
+      ]);
+      store.dispatch(closePanel());
+    });
+
+    await expect(panel).toHaveCSS('width', '0px');
+    await expect(panel).toHaveCSS('overflow-clip-margin', '0px');
+    await expect(panel).toHaveAttribute('inert', '');
+    await expect(panel).toHaveAttribute('data-mount-probe', 'mounted');
+    await expect(currentRow).toHaveCount(1);
+
+    const visibleHorizontalOverflow = await panel.evaluate((node) => {
+      const current = node.querySelector<HTMLElement>(
+        '[data-workspace-card-row]:has([aria-current="page"])',
+      );
+      if (!current) throw new Error('Missing current workspace row');
+      const panelRect = node.getBoundingClientRect();
+      const currentRect = current.getBoundingClientRect();
+      const clipMargin = Number.parseFloat(getComputedStyle(node).overflowClipMargin) || 0;
+      const paintedRight = Math.min(currentRect.right, panelRect.right + clipMargin);
+      return Math.max(0, paintedRight - panelRect.right);
+    });
+    expect(visibleHorizontalOverflow).toBe(0);
+
+    await page.evaluate(async () => {
+      const [{ store }, { openPanel }] = await Promise.all([
+        import('/src/store/renderer/store.ts'),
+        import('/src/store/renderer/slices/sidebar-nav/sidebar-nav-slice.ts'),
+      ]);
+      store.dispatch(openPanel('all-workspaces'));
+    });
+
+    await expect(panel).toHaveCSS('width', '288px');
+    await expect(panel).toHaveCSS('overflow-clip-margin', '8px');
+    await expect(panel).not.toHaveAttribute('inert', '');
+    await expect(panel).toHaveAttribute('data-mount-probe', 'mounted');
+  }
+});
