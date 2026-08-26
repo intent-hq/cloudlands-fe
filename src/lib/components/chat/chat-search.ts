@@ -17,6 +17,7 @@ interface ChatSearchBlock {
 import {
   getResponseGroupCurrentChildIndex,
   normalizeResponseGroups,
+  shouldRenderResponseGroupInline,
 } from './response-group-blocks';
 
 export interface ChatSearchMatch {
@@ -81,7 +82,20 @@ function buildMessageSearchBlocks(message: AgentMessage, turnKey: string): ChatS
       }
       return;
     }
-    if (block.isReasoningPhase) return;
+    if (block.isReasoningPhase) {
+      const rendersInline = shouldRenderResponseGroupInline(block);
+      if (!rendersInline && block.name.trim().toLowerCase() === 'reasoning') return;
+      const disclosurePath = rendersInline ? [] : [`group:${path}`];
+      block.children.forEach((child, childIndex) => {
+        if (child.type === 'tool_result') return;
+        addText(
+          getContentBlockText(child),
+          chatSearchBlockPath(blockIndex, childIndex),
+          disclosurePath,
+        );
+      });
+      return;
+    }
     block.children.forEach((child, childIndex) => {
       if (child.type !== 'text') return;
       addText(child.text || child.content || '', chatSearchBlockPath(blockIndex, childIndex), [

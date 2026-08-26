@@ -502,6 +502,10 @@ describe('thinking blocks — StreamingMessageContent', () => {
       expect(screen.queryByTestId('response-group-disclosure')).toBeNull();
       expect(screen.queryByTestId('reasoning-disclosure')).toBeNull();
       expect(document.querySelector('[data-message-content-block="content_group"]')).toBeNull();
+      expect(screen.queryByRole('button', { name: 'Reasoning' })).toBeNull();
+      expect(document.querySelector('[aria-expanded][aria-label="Reasoning"]')).toBeNull();
+      expect(document.querySelector('[aria-controls][aria-label="Reasoning"]')).toBeNull();
+      expect(document.querySelector('[data-chat-search-disclosure-id^="group:"]')).toBeNull();
       expect(document.body.textContent).not.toContain('Reasoning');
 
       const orderedText = [

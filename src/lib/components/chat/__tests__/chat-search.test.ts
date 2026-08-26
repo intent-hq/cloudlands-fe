@@ -99,6 +99,51 @@ describe('chat search utilities', () => {
     ).toHaveLength(1);
   });
 
+  it('indexes completed headingless reasoning inline without disclosure state', () => {
+    const message = assistant('inline-headingless', [
+      {
+        type: 'thinking',
+        text: 'Inline headingless search target remains visible without opening anything.',
+      },
+      { type: 'text', text: '<group:Prepping>Visible inline description.' },
+      { type: 'thinking', text: 'Later inline reasoning stays visible in source order.' },
+      { type: 'text', text: '</group:Prepping>Visible final prose.' },
+    ]);
+
+    expect(findChatSearchMatches([message], 'headingless search target', new Map())).toEqual([
+      {
+        messageId: 'inline-headingless',
+        matchIndexInMessage: 0,
+        occurrenceInBlock: 0,
+        turnKey: 'inline-headingless',
+        blockPath: 'b:0:c:1',
+        disclosurePath: [],
+      },
+    ]);
+  });
+
+  it('reveals meaningfully titled completed reasoning while preserving generic exclusions', () => {
+    const message = assistant('titled-reasoning', [
+      { type: 'text', text: '<group:Prepping>Visible titled description.' },
+      {
+        type: 'thinking',
+        text: 'Model-derived reasoning title\n\nHidden titled reasoning search target.',
+      },
+      { type: 'text', text: '</group:Prepping>Visible final prose.' },
+    ]);
+
+    expect(findChatSearchMatches([message], 'titled reasoning search target', new Map())).toEqual([
+      {
+        messageId: 'titled-reasoning',
+        matchIndexInMessage: 0,
+        occurrenceInBlock: 0,
+        turnKey: 'titled-reasoning',
+        blockPath: 'b:0:c:1',
+        disclosurePath: ['group:b:0'],
+      },
+    ]);
+  });
+
   it('does not index exact delivery notes on user messages', () => {
     const note =
       '[SYSTEM NOTE] This message was queued at 2026-01-01T00:00:00Z and waited 8s before delivery.';
