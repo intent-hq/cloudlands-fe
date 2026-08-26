@@ -1712,12 +1712,16 @@ function canWithholdOpenBlock(body: string[]): boolean {
   // A fused closer deferred on the unterminated final line (`Run -->`) is a
   // valid candidate awaiting its newline: judge the remainder, not the raw
   // line (which always matches the embedded-arrow pattern).
+  let currentIsFusedRemainder = false;
   const fusedMatch = current.match(SUGGESTED_PROMPTS_TRAILING_CLOSER_REGEX);
   if (fusedMatch && !SUGGESTED_PROMPTS_OPENER_REGEX.test(fusedMatch[1])) {
     current = fusedMatch[1].trim();
+    currentIsFusedRemainder = true;
   }
   if (current && /\S[ \t]*--+>/.test(current)) return false;
-  const currentIsPartialCloser = /^-{1,2}$/.test(current);
+  // A fused remainder is a complete prompt candidate, never a partial closer
+  // awaiting more dashes — count it even when it is only dashes.
+  const currentIsPartialCloser = !currentIsFusedRemainder && /^-{1,2}$/.test(current);
   const promptCount = completed.length + (current && !currentIsPartialCloser ? 1 : 0);
   return promptCount <= MAX_SUGGESTED_PROMPTS;
 }

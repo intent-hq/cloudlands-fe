@@ -1273,6 +1273,17 @@ Some trailing content.`;
     expect(result.cleanedContent).toBe('Done.');
   });
 
+  it('counts a dash-only fused remainder as a prompt so an over-cap block is not withheld', () => {
+    // With 4 completed prompts, a fused `- -->` remainder is a 5th prompt
+    // candidate (never a partial closer): the block exceeds the cap, so it
+    // must stay visible while streaming — finalization rejects it too.
+    const content = 'Done.\n\n<!-- suggested-prompts\nOne\nTwo\nThree\nFour\n- -->';
+    const streaming = parseSuggestedPrompts(content, { isStreaming: true });
+    expect(streaming.prompts).toEqual([]);
+    expect(streaming.cleanedContent).toBe(content);
+    expect(parseSuggestedPrompts(content).cleanedContent).toBe(content);
+  });
+
   it('leaves a fused final line visible when its remainder is an embedded arrow', () => {
     const content = 'Done.\n\n<!-- suggested-prompts\nA --> B -->';
     const result = parseSuggestedPrompts(content, { isStreaming: true });
