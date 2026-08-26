@@ -2184,6 +2184,7 @@
   "chat_hookWakeAttribution_fallbackName_label": "フック",
   "chat_prMonitorWakeAttribution_wokeAgent_after": "がエージェントを起こしました",
   "chat_prMonitorWakeAttribution_openPr_tooltip": "PRを開く",
+  "chat_prMonitorWakeAttribution_openPrWithLabel_tooltip": "{label}を開く",
   "chat_regularAgentWelcome_generalDescription_label": "このエージェントはワークスペースの完全なコンテキストを持っています。コードや取り組みたいことについて何でも質問してください。",
   "chat_shared_general_fallback": "一般",
   "chat_shared_noSpecializedBehavior_label": "専門的な動作なし",

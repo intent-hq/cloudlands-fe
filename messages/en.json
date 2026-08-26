@@ -2185,6 +2185,7 @@
   "chat_hookWakeAttribution_fallbackName_label": "Hook",
   "chat_prMonitorWakeAttribution_wokeAgent_after": "woke the agent",
   "chat_prMonitorWakeAttribution_openPr_tooltip": "Open PR",
+  "chat_prMonitorWakeAttribution_openPrWithLabel_tooltip": "Open {label}",
   "chat_regularAgentWelcome_generalDescription_label": "This agent has full workspace context. Ask me anything about your code or what you'd like to work on.",
   "chat_shared_general_fallback": "General",
   "chat_shared_noSpecializedBehavior_label": "No specialized behavior",
