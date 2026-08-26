@@ -5350,6 +5350,7 @@
   "autoUpdate_service_urlNotConfigured_error": "未配置自动更新 URL",
   "autoUpdate_service_unknown_error": "未知错误",
   "autoUpdate_service_notInitialized_error": "更新服务未初始化。请重启应用。",
+  "autoUpdate_service_channelDisabled_error": "更新已禁用。请在设置中选择更新频道以启用。",
   "autoUpdate_mutation_downloadFailed_error": "下载更新失败",
   "autoUpdate_mutation_installFailed_error": "安装更新失败",
   "mcp_management_saveServersFailed_error": "保存 MCP 服务器失败",

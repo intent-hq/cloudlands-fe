@@ -5350,6 +5350,7 @@
   "autoUpdate_service_urlNotConfigured_error": "自動更新の URL が設定されていません",
   "autoUpdate_service_unknown_error": "不明なエラー",
   "autoUpdate_service_notInitialized_error": "アップデートサービスが初期化されていません。アプリを再起動してください。",
+  "autoUpdate_service_channelDisabled_error": "アップデートは無効になっています。設定でアップデートチャンネルを選択すると有効になります。",
   "autoUpdate_mutation_downloadFailed_error": "更新をダウンロードできませんでした",
   "autoUpdate_mutation_installFailed_error": "更新をインストールできませんでした",
   "mcp_management_saveServersFailed_error": "MCP サーバーを保存できませんでした",

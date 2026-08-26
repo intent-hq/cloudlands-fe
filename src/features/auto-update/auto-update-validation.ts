@@ -10,5 +10,5 @@ import { z } from 'zod';
  * Schema for SET_CHANNEL request
  */
 export const SetChannelRequestSchema = z.object({
-  channel: z.enum(['stable', 'beta', 'alpha']),
+  channel: z.enum(['stable', 'beta', 'alpha', 'disabled']),
 });

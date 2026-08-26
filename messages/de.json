@@ -5350,6 +5350,7 @@
   "autoUpdate_service_urlNotConfigured_error": "Auto-Update-URL nicht konfiguriert",
   "autoUpdate_service_unknown_error": "Unbekannter Fehler",
   "autoUpdate_service_notInitialized_error": "Der Update-Dienst ist nicht initialisiert. Bitte starten Sie die App neu.",
+  "autoUpdate_service_channelDisabled_error": "Updates sind deaktiviert. Wählen Sie in den Einstellungen einen Update-Kanal, um sie zu aktivieren.",
   "autoUpdate_mutation_downloadFailed_error": "Update konnte nicht heruntergeladen werden",
   "autoUpdate_mutation_installFailed_error": "Update konnte nicht installiert werden",
   "mcp_management_saveServersFailed_error": "MCP-Server konnten nicht gespeichert werden",

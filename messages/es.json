@@ -5350,6 +5350,7 @@
   "autoUpdate_service_urlNotConfigured_error": "URL de actualización automática no configurada",
   "autoUpdate_service_unknown_error": "Error desconocido",
   "autoUpdate_service_notInitialized_error": "El servicio de actualización no está inicializado. Reinicia la aplicación.",
+  "autoUpdate_service_channelDisabled_error": "Las actualizaciones están desactivadas. Selecciona un canal de actualización en Configuración para activarlas.",
   "autoUpdate_mutation_downloadFailed_error": "Error al descargar la actualización",
   "autoUpdate_mutation_installFailed_error": "Error al instalar la actualización",
   "mcp_management_saveServersFailed_error": "Error al guardar los servidores MCP",
