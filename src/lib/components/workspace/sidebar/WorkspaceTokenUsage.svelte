@@ -79,7 +79,6 @@
   });
 
   const totals = $derived($usage$.totals);
-  const cachedTokens = $derived(totals.cacheReadTokens + totals.cacheCreationTokens);
   const processedTokens = $derived(tokenCount(totals));
   const crossFilterAvailable = $derived($usage$.byAgentModel !== undefined);
   const crossFilterRows = $derived($usage$.byAgentModel ?? []);
@@ -88,11 +87,9 @@
   );
   const hasData = $derived(processedTokens > 0 || crossFilterMessageCount > 0);
   const isUpdating = $derived($usage$.isStale);
-  const cacheShare = $derived(share(cachedTokens, processedTokens));
   const detailsId = $derived(`workspace-token-usage-details-${workspaceId}`);
   const titleId = $derived(`workspace-token-usage-title-${workspaceId}`);
   const processedId = $derived(`workspace-token-usage-processed-${workspaceId}`);
-  const cacheId = $derived(`workspace-token-usage-cache-${workspaceId}`);
 
   function tokenCount(entry: TokenUsageTotals): number {
     return (
@@ -276,32 +273,24 @@
         label: m.workspace_tokenUsage_cached_label(),
         description: m.workspace_tokenUsage_cached_description(),
         tokens: entry.cacheReadTokens + entry.cacheCreationTokens,
-        colorClass: 'bg-success token-cache-fill',
-        contextClass: 'text-success token-cache-text',
       },
       {
         id: 'input' as const,
         label: m.workspace_tokenUsage_in_label(),
         description: m.workspace_tokenUsage_in_description(),
         tokens: entry.inputTokens,
-        colorClass: 'bg-cyan-500',
-        contextClass: 'text-cyan-600 dark:text-cyan-400',
       },
       {
         id: 'output' as const,
         label: m.workspace_tokenUsage_out_label(),
         description: m.workspace_tokenUsage_out_description(),
         tokens: entry.outputTokens,
-        colorClass: 'bg-sky-300',
-        contextClass: 'text-sky-600 dark:text-sky-300',
       },
       {
         id: 'reasoning' as const,
         label: m.workspace_tokenUsage_thinking_label(),
         description: m.workspace_tokenUsage_thinking_description(),
         tokens: entry.thoughtTokens ?? 0,
-        colorClass: 'bg-violet-500',
-        contextClass: 'text-violet-600 dark:text-violet-400',
       },
     ].map((row) => ({ ...row, share: share(row.tokens, entryProcessedTokens) }));
   }
@@ -380,7 +369,8 @@
     const spaceAbove = Math.max(0, anchor.top - viewportPadding - overlayGap);
     const opensAbove = detailsElement.scrollHeight > spaceBelow && spaceAbove > spaceBelow;
     const availableHeight = opensAbove ? spaceAbove : spaceBelow;
-    const renderedHeight = Math.min(detailsElement.scrollHeight, availableHeight);
+    const borderHeight = detailsElement.offsetHeight - detailsElement.clientHeight;
+    const renderedHeight = Math.min(detailsElement.scrollHeight + borderHeight, availableHeight);
     const top = opensAbove
       ? Math.max(viewportPadding, anchor.top - overlayGap - renderedHeight)
       : anchor.bottom + overlayGap;
@@ -458,31 +448,20 @@
         : m.workspace_tokenUsage_expand_ariaLabel()}
       aria-expanded={expanded}
       aria-controls={detailsId}
-      aria-describedby={`${processedId} ${cacheId}`}
+      aria-describedby={processedId}
       onclick={() => (expanded = !expanded)}
     >
       <span id={titleId} class="sr-only">{m.workspace_tokenUsage_title()}</span>
-      <span id={processedId} class="flex min-w-0 items-baseline gap-1 whitespace-nowrap">
-        <span class="text-sm font-medium tabular-nums text-foreground">
-          {formatCompactNumber(processedTokens)}
-        </span>
-        <span class="summary-token-label truncate text-xs text-muted-foreground">
+      <span
+        id={processedId}
+        class="flex min-w-0 items-baseline gap-1 whitespace-nowrap text-sm font-normal tabular-nums text-foreground"
+      >
+        <span>{formatCompactNumber(processedTokens)}</span>
+        <span class="summary-token-label truncate">
           {m.workspace_tokenUsage_tokensUsed_label()}
         </span>
       </span>
-      <span
-        id={cacheId}
-        class="ml-auto flex shrink-0 items-baseline gap-1"
-        title={m.workspace_tokenUsage_cacheEfficiency_label()}
-      >
-        <span class="token-cache-text text-sm font-medium tabular-nums text-success">
-          {shareLabel(cacheShare)}
-        </span>
-        <span class="summary-cache-label text-xs text-muted-foreground"
-          >{m.workspace_tokenUsage_cached_label()}</span
-        >
-      </span>
-      <span class="flex w-2 shrink-0 justify-center" aria-live="polite">
+      <span class="ml-auto flex w-2 shrink-0 justify-center" aria-live="polite">
         {#if isUpdating}
           <span
             class="size-1.5 rounded-full bg-blue-500 motion-safe:animate-pulse"
@@ -522,55 +501,54 @@
                   {m.workspace_tokenUsage_byAgent_label()}
                 </h4>
                 {#if selectedAgentRow}
-                  <div
-                    class="navigator-selection flex min-w-0 items-baseline justify-between gap-3"
-                  >
-                    <span
-                      class="truncate text-sm font-medium text-foreground"
-                      title={selectedAgentRow.title}>{selectedAgentRow.label}</span
+                  <div class="navigator-row flex min-w-0 items-center gap-2">
+                    <div class="navigator-selection flex min-w-0 items-baseline gap-1.5">
+                      <span
+                        class="min-w-0 truncate text-sm font-medium text-foreground"
+                        title={selectedAgentRow.title}>{selectedAgentRow.label}</span
+                      >
+                      <span class="shrink-0 text-sm font-normal tabular-nums text-muted-foreground">
+                        {shareLabel(share(selectedAgentRow.tokens, agentTokenTotal))}
+                      </span>
+                    </div>
+                    <ol
+                      class="breakdown-stack ml-auto flex h-2.5 min-w-12 flex-1 overflow-hidden rounded-sm bg-muted/60"
                     >
-                    <span
-                      class="token-cache-text shrink-0 text-sm font-medium tabular-nums text-success"
-                    >
-                      {shareLabel(share(selectedAgentRow.tokens, agentTokenTotal))}
-                    </span>
+                      {#each agentRows as row (row.id)}
+                        <li
+                          class="breakdown-stack-item h-full"
+                          style={`width: ${share(row.tokens, agentTokenTotal) * 100}%`}
+                        >
+                          <Button
+                            variant="plain"
+                            type="button"
+                            class="breakdown-item-control h-full w-full min-w-0 rounded-none border-0 p-0 outline-none transition-colors focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring motion-reduce:transition-none"
+                            data-preview-active={rowKey(rowTarget(row)) ===
+                            rowKey(rowTarget(selectedAgentRow))
+                              ? 'true'
+                              : undefined}
+                            aria-current={rowKey(rowTarget(row)) ===
+                            rowKey(rowTarget(selectedAgentRow))
+                              ? 'true'
+                              : undefined}
+                            aria-label={m.workspace_tokenUsage_segment_ariaLabel({
+                              scope: row.kindLabel,
+                              category: row.label,
+                              tokens: formatCompactNumber(row.tokens),
+                              share: shareLabel(share(row.tokens, agentTokenTotal)),
+                            })}
+                            title={row.title}
+                            onpointerenter={(event) => handleRowPointerEnter(row, event)}
+                            onpointerleave={() => handleRowPointerLeave(row)}
+                            onpointerdown={(event) => handleRowPointerDown(row, event)}
+                            onfocus={() => handleRowFocus(row)}
+                            onblur={(event) => handleRowBlur(row, event)}
+                          ></Button>
+                        </li>
+                      {/each}
+                    </ol>
                   </div>
                 {/if}
-                <ol
-                  class="breakdown-stack mt-1.5 flex h-2.5 w-full overflow-hidden rounded-sm bg-muted/60"
-                >
-                  {#each agentRows as row (row.id)}
-                    <li
-                      class="breakdown-stack-item h-full"
-                      style={`width: ${share(row.tokens, agentTokenTotal) * 100}%`}
-                    >
-                      <Button
-                        variant="plain"
-                        type="button"
-                        class="breakdown-item-control h-full w-full min-w-0 rounded-none border-0 p-0 outline-none transition-colors focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring motion-reduce:transition-none"
-                        data-preview-active={rowKey(rowTarget(row)) ===
-                        rowKey(rowTarget(selectedAgentRow))
-                          ? 'true'
-                          : undefined}
-                        aria-current={rowKey(rowTarget(row)) === rowKey(rowTarget(selectedAgentRow))
-                          ? 'true'
-                          : undefined}
-                        aria-label={m.workspace_tokenUsage_segment_ariaLabel({
-                          scope: row.kindLabel,
-                          category: row.label,
-                          tokens: formatCompactNumber(row.tokens),
-                          share: shareLabel(share(row.tokens, agentTokenTotal)),
-                        })}
-                        title={row.title}
-                        onpointerenter={(event) => handleRowPointerEnter(row, event)}
-                        onpointerleave={() => handleRowPointerLeave(row)}
-                        onpointerdown={(event) => handleRowPointerDown(row, event)}
-                        onfocus={() => handleRowFocus(row)}
-                        onblur={(event) => handleRowBlur(row, event)}
-                      ></Button>
-                    </li>
-                  {/each}
-                </ol>
               </section>
             {/if}
 
@@ -584,55 +562,54 @@
                   {m.workspace_tokenUsage_byModel_label()}
                 </h4>
                 {#if selectedModelRow}
-                  <div
-                    class="navigator-selection flex min-w-0 items-baseline justify-between gap-3"
-                  >
-                    <span
-                      class="truncate text-sm font-medium text-foreground"
-                      title={selectedModelRow.title}>{selectedModelRow.label}</span
+                  <div class="navigator-row flex min-w-0 items-center gap-2">
+                    <div class="navigator-selection flex min-w-0 items-baseline gap-1.5">
+                      <span
+                        class="min-w-0 truncate text-sm font-medium text-foreground"
+                        title={selectedModelRow.title}>{selectedModelRow.label}</span
+                      >
+                      <span class="shrink-0 text-sm font-normal tabular-nums text-muted-foreground">
+                        {shareLabel(share(selectedModelRow.tokens, modelTokenTotal))}
+                      </span>
+                    </div>
+                    <ol
+                      class="breakdown-stack ml-auto flex h-2.5 min-w-12 flex-1 overflow-hidden rounded-sm bg-muted/60"
                     >
-                    <span
-                      class="token-cache-text shrink-0 text-sm font-medium tabular-nums text-success"
-                    >
-                      {shareLabel(share(selectedModelRow.tokens, modelTokenTotal))}
-                    </span>
+                      {#each modelRows as row (row.id)}
+                        <li
+                          class="breakdown-stack-item h-full"
+                          style={`width: ${share(row.tokens, modelTokenTotal) * 100}%`}
+                        >
+                          <Button
+                            variant="plain"
+                            type="button"
+                            class="breakdown-item-control h-full w-full min-w-0 rounded-none border-0 p-0 outline-none transition-colors focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring motion-reduce:transition-none"
+                            data-preview-active={rowKey(rowTarget(row)) ===
+                            rowKey(rowTarget(selectedModelRow))
+                              ? 'true'
+                              : undefined}
+                            aria-current={rowKey(rowTarget(row)) ===
+                            rowKey(rowTarget(selectedModelRow))
+                              ? 'true'
+                              : undefined}
+                            aria-label={m.workspace_tokenUsage_segment_ariaLabel({
+                              scope: row.kindLabel,
+                              category: row.label,
+                              tokens: formatCompactNumber(row.tokens),
+                              share: shareLabel(share(row.tokens, modelTokenTotal)),
+                            })}
+                            title={row.title}
+                            onpointerenter={(event) => handleRowPointerEnter(row, event)}
+                            onpointerleave={() => handleRowPointerLeave(row)}
+                            onpointerdown={(event) => handleRowPointerDown(row, event)}
+                            onfocus={() => handleRowFocus(row)}
+                            onblur={(event) => handleRowBlur(row, event)}
+                          ></Button>
+                        </li>
+                      {/each}
+                    </ol>
                   </div>
                 {/if}
-                <ol
-                  class="breakdown-stack mt-1.5 flex h-2.5 w-full overflow-hidden rounded-sm bg-muted/60"
-                >
-                  {#each modelRows as row (row.id)}
-                    <li
-                      class="breakdown-stack-item h-full"
-                      style={`width: ${share(row.tokens, modelTokenTotal) * 100}%`}
-                    >
-                      <Button
-                        variant="plain"
-                        type="button"
-                        class="breakdown-item-control h-full w-full min-w-0 rounded-none border-0 p-0 outline-none transition-colors focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring motion-reduce:transition-none"
-                        data-preview-active={rowKey(rowTarget(row)) ===
-                        rowKey(rowTarget(selectedModelRow))
-                          ? 'true'
-                          : undefined}
-                        aria-current={rowKey(rowTarget(row)) === rowKey(rowTarget(selectedModelRow))
-                          ? 'true'
-                          : undefined}
-                        aria-label={m.workspace_tokenUsage_segment_ariaLabel({
-                          scope: row.kindLabel,
-                          category: row.label,
-                          tokens: formatCompactNumber(row.tokens),
-                          share: shareLabel(share(row.tokens, modelTokenTotal)),
-                        })}
-                        title={row.title}
-                        onpointerenter={(event) => handleRowPointerEnter(row, event)}
-                        onpointerleave={() => handleRowPointerLeave(row)}
-                        onpointerdown={(event) => handleRowPointerDown(row, event)}
-                        onfocus={() => handleRowFocus(row)}
-                        onblur={(event) => handleRowBlur(row, event)}
-                      ></Button>
-                    </li>
-                  {/each}
-                </ol>
               </section>
             {/if}
           </div>
@@ -658,45 +635,51 @@
               {m.workspace_tokenUsage_processed_label()}
             </span>
           </span>
-          {#if crossFilterAvailable}
-            <dl
-              class="message-counts grid grid-cols-2 gap-x-6 text-sm"
-              data-testid="token-usage-message-counts"
-            >
-              <div class="flex min-w-0 justify-between gap-2">
-                <dt class="truncate text-muted-foreground">
-                  {m.workspace_tokenUsage_humanMessages_label()}
-                </dt>
-                <dd class="font-medium tabular-nums text-foreground">{previewHumanMessages}</dd>
-              </div>
-              <div class="flex min-w-0 justify-between gap-2">
-                <dt class="truncate text-muted-foreground">
-                  {m.workspace_tokenUsage_agentMessages_label()}
-                </dt>
-                <dd class="font-medium tabular-nums text-foreground">{previewAgentMessages}</dd>
-              </div>
-            </dl>
-          {/if}
-          <dl class="mt-1.5">
+          <dl>
             {#each compositionRows as row (row.id)}
-              <div class="composition-row min-w-0 py-2">
-                <dt class="composition-metric min-w-0 text-sm font-medium text-foreground">
-                  <span class="truncate">{row.label}</span>
+              <div class="composition-row token-composition-row min-w-0 py-1">
+                <dt class="composition-metric min-w-0 truncate text-sm font-normal text-foreground">
+                  {row.label} · {row.description}
                 </dt>
                 <dd
-                  class="composition-description min-w-0 text-xs leading-tight text-muted-foreground"
-                >
-                  {row.description}
-                </dd>
-                <dd
-                  class="composition-value text-right text-sm font-medium tabular-nums text-foreground"
+                  class="composition-value text-right text-sm font-normal tabular-nums text-muted-foreground"
                 >
                   {formatCompactNumber(row.tokens)}
                 </dd>
-                <dd class="composition-context text-right text-sm tabular-nums {row.contextClass}">
+                <dd
+                  class="composition-context text-right text-sm font-normal tabular-nums text-muted-foreground"
+                >
                   {shareLabel(row.share)}
                 </dd>
               </div>
+              {#if row.id === 'input' && crossFilterAvailable}
+                <div class="composition-row message-composition-row min-w-0 py-1">
+                  <dt
+                    class="composition-metric min-w-0 truncate text-sm font-normal text-foreground"
+                  >
+                    {m.workspace_tokenUsage_humanMessages_label()}
+                  </dt>
+                  <dd
+                    class="composition-value text-right text-sm font-normal tabular-nums text-muted-foreground"
+                  >
+                    {previewHumanMessages}
+                  </dd>
+                  <dd class="composition-context" aria-hidden="true"></dd>
+                </div>
+                <div class="composition-row message-composition-row min-w-0 py-1">
+                  <dt
+                    class="composition-metric min-w-0 truncate text-sm font-normal text-foreground"
+                  >
+                    {m.workspace_tokenUsage_agentMessages_label()}
+                  </dt>
+                  <dd
+                    class="composition-value text-right text-sm font-normal tabular-nums text-muted-foreground"
+                  >
+                    {previewAgentMessages}
+                  </dd>
+                  <dd class="composition-context" aria-hidden="true"></dd>
+                </div>
+              {/if}
             {/each}
           </dl>
         </section>
@@ -725,31 +708,20 @@
     z-index: 60;
   }
 
-  .token-cache-fill {
-    background-color: hsl(var(--success));
-  }
-
-  .token-cache-text {
-    color: hsl(var(--success));
-  }
-
   .composition-row {
     display: grid;
-    grid-template-areas:
-      'metric value context'
-      'description value context';
+    grid-template-areas: 'metric value context';
     grid-template-columns: minmax(0, 1fr) 3.5rem 3rem;
     align-items: center;
     column-gap: 0.5rem;
-    row-gap: 0.125rem;
+  }
+
+  .navigator-selection {
+    max-width: 60%;
   }
 
   .composition-metric {
     grid-area: metric;
-  }
-
-  .composition-description {
-    grid-area: description;
   }
 
   .composition-value {
@@ -795,7 +767,7 @@
   }
 
   @container token-summary (max-width: 319px) {
-    .summary-control {
+    :global(.summary-control) {
       padding-inline: 0.5rem;
     }
   }

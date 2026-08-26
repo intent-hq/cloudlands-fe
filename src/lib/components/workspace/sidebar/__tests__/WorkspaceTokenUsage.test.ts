@@ -93,18 +93,19 @@ describe('WorkspaceTokenUsage', () => {
     expect(disclosure.getAttribute('aria-expanded')).toBe('false');
     expect(detailsId).toBe('workspace-token-usage-details-ws-1');
     expect(disclosure.getAttribute('aria-describedby')).toBe(
-      'workspace-token-usage-processed-ws-1 workspace-token-usage-cache-ws-1',
+      'workspace-token-usage-processed-ws-1',
     );
     expect(document.getElementById('workspace-token-usage-processed-ws-1')?.textContent).toContain(
       '1K tokens used',
     );
-    expect(document.getElementById('workspace-token-usage-cache-ws-1')?.textContent).toContain(
-      '70% Cached',
-    );
+    expect(document.getElementById('workspace-token-usage-cache-ws-1')).toBeNull();
     expect(document.getElementById(detailsId!)).toBeNull();
     expect(visibleText(disclosure)).toContain('Token usage');
     expect(visibleText(disclosure)).toContain('1K tokens used');
-    expect(visibleText(disclosure)).toContain('70% Cached');
+    expect(visibleText(disclosure)).not.toContain('Cached');
+    expect(disclosure.querySelector('#workspace-token-usage-processed-ws-1')?.classList).toContain(
+      'font-normal',
+    );
 
     await fireEvent.click(disclosure);
     expect(disclosure.getAttribute('aria-expanded')).toBe('true');
@@ -202,7 +203,7 @@ describe('WorkspaceTokenUsage', () => {
 
     const row = screen.getByTestId('workspace-token-usage');
     expect(visibleText(row)).toContain('9.4M processed');
-    expect(visibleText(row)).toContain('98.9% Cached');
+    expect(visibleText(screen.getByTestId('token-usage-disclosure'))).not.toContain('Cached');
     expect(row.textContent).not.toContain('updating');
 
     expect(mocks.dispatch).toHaveBeenCalledTimes(1);
@@ -237,28 +238,30 @@ describe('WorkspaceTokenUsage', () => {
     const compositionRows = Array.from(composition.querySelectorAll('.composition-row'));
     expect(compositionRows).toHaveLength(4);
     const compositionValues = compositionRows.map((compositionRow) => ({
-      metric: compositionRow.querySelector('.composition-metric')?.textContent?.trim(),
-      description: compositionRow.querySelector('.composition-description')?.textContent?.trim(),
+      label: compositionRow.querySelector('.composition-metric')?.textContent?.trim(),
       value: compositionRow.querySelector('.composition-value')?.textContent?.trim(),
       context: compositionRow.querySelector('.composition-context')?.textContent?.trim(),
     }));
     expect(compositionValues).toEqual([
-      {
-        metric: 'Cached',
-        description: 'Read and written context',
-        value: '9.3M',
-        context: '98.9%',
-      },
-      { metric: 'In', description: 'Prompt context', value: '1.2K', context: '0%' },
-      { metric: 'Out', description: 'Model responses', value: '98K', context: '1%' },
-      { metric: 'Reasoning', description: 'Internal tokens', value: '0', context: '0%' },
+      { label: 'Cached · Read and written context', value: '9.3M', context: '98.9%' },
+      { label: 'In · Prompt context', value: '1.2K', context: '0%' },
+      { label: 'Out · Model responses', value: '98K', context: '1%' },
+      { label: 'Reasoning · Internal tokens', value: '0', context: '0%' },
     ]);
+    expect(composition.querySelector('.composition-description')).toBeNull();
     expect(composition.querySelectorAll('.composition-metric [aria-hidden="true"]')).toHaveLength(
       0,
     );
-    expect(new Set(compositionValues.map(({ metric }) => metric)).size).toBe(4);
+    expect(new Set(compositionValues.map(({ label }) => label)).size).toBe(4);
     expect(composition.querySelectorAll('.composition-value')).toHaveLength(4);
     expect(composition.querySelectorAll('.composition-context')).toHaveLength(4);
+    expect(
+      [...composition.querySelectorAll('.composition-value, .composition-context')].every(
+        (cell) =>
+          cell.classList.contains('font-normal') &&
+          cell.classList.contains('text-muted-foreground'),
+      ),
+    ).toBe(true);
     expect(text).toContain('9.4M processed');
 
     const modelRows = within(modelSection).getAllByRole('listitem');
@@ -294,6 +297,16 @@ describe('WorkspaceTokenUsage', () => {
         (listRow as HTMLElement).style.width.endsWith('%'),
       ),
     ).toBe(true);
+    for (const section of [agentSection, modelSection]) {
+      const navigatorRow = section.querySelector('.navigator-row')!;
+      const selection = navigatorRow.querySelector('.navigator-selection')!;
+      const percentage = selection.lastElementChild!;
+      expect(navigatorRow.querySelector('.breakdown-stack')).not.toBeNull();
+      expect(percentage.classList).toContain('font-normal');
+      expect(percentage.classList).toContain('text-muted-foreground');
+      expect(percentage.classList).not.toContain('font-medium');
+      expect(percentage.classList).not.toContain('text-success');
+    }
     expect(details.querySelector('.breakdown-share-bar')).toBeNull();
     expect(details.querySelector('.breakdown-metadata')).toBeNull();
 
@@ -360,7 +373,7 @@ describe('WorkspaceTokenUsage', () => {
       'workspace-token-usage-details-ws-1-preview-status',
     )!;
     const values = () =>
-      Array.from(composition.querySelectorAll('.composition-row')).map((row) => ({
+      Array.from(composition.querySelectorAll('.token-composition-row')).map((row) => ({
         value: row.querySelector('.composition-value')?.textContent?.trim(),
         share: row.querySelector('.composition-context')?.textContent?.trim(),
       }));
@@ -430,7 +443,7 @@ describe('WorkspaceTokenUsage', () => {
     await fireEvent.pointerDown(alpha, { pointerType: 'touch' });
     await fireEvent.focus(alpha);
     expect(visibleText(previewStatus)).toBe('Active scope By agent Alpha 150 processed');
-    expect(screen.queryByTestId('token-usage-message-counts')).toBeNull();
+    expect(composition.querySelector('.message-composition-row')).toBeNull();
     await fireEvent.pointerDown(alpha, { pointerType: 'touch' });
     expect(visibleText(previewStatus)).toBe('Active scope Workspace 1.1K processed');
   });
@@ -541,9 +554,12 @@ describe('WorkspaceTokenUsage', () => {
 
     const details = screen.getByTestId('token-usage-details');
     const status = details.querySelector('.preview-status')!;
-    const messageCounts = screen.getByTestId('token-usage-message-counts');
+    const messageCounts = () =>
+      Array.from(details.querySelectorAll('.message-composition-row')).map((row) =>
+        visibleText(row),
+      );
     const values = () =>
-      Array.from(details.querySelectorAll('.composition-row')).map((row) => ({
+      Array.from(details.querySelectorAll('.token-composition-row')).map((row) => ({
         value: row.querySelector('.composition-value')?.textContent?.trim(),
         share: row.querySelector('.composition-context')?.textContent?.trim(),
       }));
@@ -553,7 +569,20 @@ describe('WorkspaceTokenUsage', () => {
       name: 'By agent, Alpha: 160 tokens, 13.8%',
     });
 
-    expect(visibleText(messageCounts)).toBe('Human messages 6 Agent messages 7');
+    expect(messageCounts()).toEqual(['Human messages 6', 'Agent messages 7']);
+    expect(screen.queryByTestId('token-usage-message-counts')).toBeNull();
+    expect(
+      Array.from(details.querySelectorAll('.composition-row')).map((row) =>
+        row.querySelector('.composition-metric')?.textContent?.trim(),
+      ),
+    ).toEqual([
+      'Cached · Read and written context',
+      'In · Prompt context',
+      'Human messages',
+      'Agent messages',
+      'Out · Model responses',
+      'Reasoning · Internal tokens',
+    ]);
     expect(visibleText(status)).toBe('Active scope By agent Beta 1K processed');
     expect(
       agentSection.compareDocumentPosition(
@@ -565,7 +594,7 @@ describe('WorkspaceTokenUsage', () => {
 
     await fireEvent.pointerEnter(alphaControl, { pointerType: 'mouse' });
     expect(visibleText(status)).toBe('Active scope By agent Alpha 160 processed');
-    expect(visibleText(messageCounts)).toBe('Human messages 3 Agent messages 4');
+    expect(messageCounts()).toEqual(['Human messages 3', 'Agent messages 4']);
     expect(values()).toEqual([
       { value: '70', share: '43.8%' },
       { value: '15', share: '9.4%' },
@@ -584,13 +613,13 @@ describe('WorkspaceTokenUsage', () => {
     });
     await fireEvent.focus(modelA);
     expect(visibleText(status)).toBe('Active scope By model Model A 350 processed');
-    expect(visibleText(messageCounts)).toBe('Human messages 6 Agent messages 5');
+    expect(messageCounts()).toEqual(['Human messages 6', 'Agent messages 5']);
     expect(within(agentSection).getAllByRole('listitem')).toHaveLength(2);
     await fireEvent.blur(modelA);
 
     await fireEvent.pointerDown(alphaControl, { pointerType: 'touch' });
     expect(visibleText(status)).toBe('Active scope By agent Alpha 160 processed');
-    expect(visibleText(messageCounts)).toBe('Human messages 3 Agent messages 4');
+    expect(messageCounts()).toEqual(['Human messages 3', 'Agent messages 4']);
     await fireEvent.pointerDown(alphaControl, { pointerType: 'touch' });
     expect(visibleText(status)).toBe('Active scope By agent Beta 1K processed');
 
@@ -599,7 +628,7 @@ describe('WorkspaceTokenUsage', () => {
     });
     await fireEvent.pointerDown(modelB, { pointerType: 'touch' });
     expect(visibleText(status)).toBe('Active scope By model Model B 810 processed');
-    expect(visibleText(messageCounts)).toBe('Human messages 3 Agent messages 6');
+    expect(messageCounts()).toEqual(['Human messages 3', 'Agent messages 6']);
     await fireEvent.pointerDown(modelB, { pointerType: 'touch' });
     expect(visibleText(status)).toBe('Active scope By agent Beta 1K processed');
   });
@@ -701,7 +730,7 @@ describe('WorkspaceTokenUsage', () => {
       .getByRole('heading', { name: 'Token composition' })
       .closest('section')!;
     const reasoningRow = composition.querySelectorAll('.composition-row')[3];
-    expect(visibleText(reasoningRow)).toBe('Reasoning Internal tokens 4.2K 99.3%');
+    expect(visibleText(reasoningRow)).toBe('Reasoning · Internal tokens 4.2K 99.3%');
   });
 
   it('keeps the pre-thoughtTokens layout when the field is absent', async () => {
@@ -733,7 +762,7 @@ describe('WorkspaceTokenUsage', () => {
       .getByRole('heading', { name: 'Token composition' })
       .closest('section')!;
     const reasoningRow = composition.querySelectorAll('.composition-row')[3];
-    expect(visibleText(reasoningRow)).toBe('Reasoning Internal tokens 0 0%');
+    expect(visibleText(reasoningRow)).toBe('Reasoning · Internal tokens 0 0%');
   });
 
   it('hides model and agent rows whose tokens are all zero', async () => {
