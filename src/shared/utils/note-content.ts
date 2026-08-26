@@ -25,11 +25,14 @@ export function isNoteContentStale(
 
 /**
  * Whether a `note.list` failure is the daemon rejecting the `projection`
- * param as unknown (JSON-RPC -32602 Invalid params, the strict-deserialization
- * response of daemons predating §5.2 `projection`). Duck-typed on the numeric
- * `rpcCode` that both transports (`BackendError`, `JsonRpcError`) thread
- * through for daemon-issued error responses — transport failures carry no
- * `rpcCode` and must NOT trigger a projection-less retry.
+ * param (JSON-RPC -32602 Invalid params). Defense-in-depth only: pre-8.1
+ * daemons extract named params manually and ignore unknown keys, so they
+ * serve full rows rather than rejecting — full rows are a valid superset and
+ * the actual degradation path. An 8.1+ daemon returns -32602 only for a
+ * malformed `projection` value, which this client never sends. Duck-typed on
+ * the numeric `rpcCode` that both transports (`BackendError`, `JsonRpcError`)
+ * thread through for daemon-issued error responses — transport failures carry
+ * no `rpcCode` and must NOT trigger a projection-less retry.
  */
 export function isProjectionRejected(error: unknown): boolean {
   if (!error || typeof error !== 'object') return false;

@@ -3007,6 +3007,7 @@
   "layout_noteTab_deletedNote_toast": "已删除“{title}”",
   "layout_noteTab_restoreFailed_error": "恢复笔记失败",
   "layout_noteTab_deleteFailed_error": "删除笔记失败",
+  "layout_noteTab_contentLoadFailed_error": "加载笔记内容失败",
   "layout_overviewTab_notImplemented_label": "概览面板尚未实现",
   "layout_settingsTab_notImplemented_label": "设置面板尚未实现",
   "layout_tabTypes_browser_title": "浏览器",

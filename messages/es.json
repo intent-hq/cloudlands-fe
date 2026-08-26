@@ -3007,6 +3007,7 @@
   "layout_noteTab_deletedNote_toast": "\"{title}\" eliminada",
   "layout_noteTab_restoreFailed_error": "Error al restaurar la nota",
   "layout_noteTab_deleteFailed_error": "Error al eliminar la nota",
+  "layout_noteTab_contentLoadFailed_error": "Error al cargar el contenido de la nota",
   "layout_overviewTab_notImplemented_label": "Panel de resumen aún no implementado",
   "layout_settingsTab_notImplemented_label": "Panel de configuración aún no implementado",
   "layout_tabTypes_browser_title": "Navegador",

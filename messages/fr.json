@@ -3007,6 +3007,7 @@
   "layout_noteTab_deletedNote_toast": "\"{title}\" supprimé",
   "layout_noteTab_restoreFailed_error": "Impossible de restaurer la note",
   "layout_noteTab_deleteFailed_error": "Impossible de supprimer la note",
+  "layout_noteTab_contentLoadFailed_error": "Impossible de charger le contenu de la note",
   "layout_overviewTab_notImplemented_label": "Panneau de vue d'ensemble pas encore implémenté",
   "layout_settingsTab_notImplemented_label": "Panneau de paramètres pas encore implémenté",
   "layout_tabTypes_browser_title": "Navigateur",

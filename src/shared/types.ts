@@ -833,10 +833,10 @@ export interface Note {
   rev?: number;
   /**
    * Slim `note.list` projection fields (§5.2 `projection: "slim"`): first
-   * ~500 chars of the content and the full content byte length. Present only
-   * on slim rows, where `content` is `""`; `contentLength > 0 && content === ""`
-   * marks a row whose full content has not been fetched yet (see
-   * `isNoteContentStale`).
+   * ~500 chars of the content and the full content length in characters
+   * (Unicode scalar values, not bytes). Present only on slim rows, where
+   * `content` is `""`; `contentLength > 0 && content === ""` marks a row whose
+   * full content has not been fetched yet (see `isNoteContentStale`).
    */
   contentPreview?: string;
   contentLength?: number;

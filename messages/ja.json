@@ -3007,6 +3007,7 @@
   "layout_noteTab_deletedNote_toast": "「{title}」を削除しました",
   "layout_noteTab_restoreFailed_error": "ノートを復元できませんでした",
   "layout_noteTab_deleteFailed_error": "ノートを削除できませんでした",
+  "layout_noteTab_contentLoadFailed_error": "ノートの内容を読み込めませんでした",
   "layout_overviewTab_notImplemented_label": "概要パネルはまだ実装されていません",
   "layout_settingsTab_notImplemented_label": "設定パネルはまだ実装されていません",
   "layout_tabTypes_browser_title": "ブラウザー",

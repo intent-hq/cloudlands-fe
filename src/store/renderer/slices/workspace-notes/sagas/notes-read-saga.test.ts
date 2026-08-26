@@ -260,26 +260,65 @@ describe('notesReadSaga', () => {
     await run.task.toPromise();
   });
 
-  it('uses global leading event reads and suppresses the active result after cleanup', async () => {
-    let resolve!: (value: Note) => void;
-    const get = vi.spyOn(appClient.notes, 'get').mockReturnValue(
-      new Promise((done) => {
-        resolve = done;
-      }),
-    );
+  it('runs per-note event reads concurrently and suppresses the active result after cleanup', async () => {
+    const first = deferred<Note>();
+    const second = deferred<Note>();
+    const get = vi
+      .spyOn(appClient.notes, 'get')
+      .mockImplementation((noteId) => (noteId === 'note-1' ? first.promise : second.promise));
     const run = harness();
-    const event = noteEventReceived(WS, 'note-1', 'note:updated');
 
-    run.channel.put(event);
+    run.channel.put(noteEventReceived(WS, 'note-1', 'note:updated'));
     await settle();
-    run.channel.put(noteEventReceived('ws-ignored', 'note-2', 'note:created'));
+    // A DIFFERENT note's event starts its own concurrent fetch instead of
+    // being dropped by a global leading take while note-1 is in flight.
+    run.channel.put(noteEventReceived('ws-other', 'note-2', 'note:created'));
+    await settle();
+    expect(get.mock.calls).toEqual([
+      ['note-1', WS],
+      ['note-2', 'ws-other'],
+    ]);
+
     run.channel.put(workspaceUnmounted(WS));
     await settle();
-    resolve(note('note-1'));
+    first.resolve(note('note-1'));
     await settle();
 
-    expect(get.mock.calls).toEqual([['note-1', WS]]);
+    // note-1's result raced against its workspace cleanup and is suppressed.
     expect(run.actions).toEqual([]);
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('coalesces a same-note event burst onto one trailing refetch', async () => {
+    const first = deferred<Note>();
+    const get = vi
+      .spyOn(appClient.notes, 'get')
+      .mockReturnValueOnce(first.promise)
+      .mockResolvedValueOnce(note('note-1', { title: 'Final' }));
+    const run = harness([note('note-1')]);
+
+    run.channel.put(noteEventReceived(WS, 'note-1', 'note:updated'));
+    await settle();
+    run.channel.put(noteEventReceived(WS, 'note-1', 'note:updated'));
+    run.channel.put(noteEventReceived(WS, 'note-1', 'note:updated'));
+    await settle();
+    // Single-flight: the burst rides the in-flight fetch.
+    expect(get.mock.calls).toEqual([['note-1', WS]]);
+
+    first.resolve(note('note-1', { title: 'Intermediate' }));
+    await settle();
+
+    // One trailing refetch after the leading fetch settles; the final state
+    // reflects the trailing result.
+    expect(get.mock.calls).toEqual([
+      ['note-1', WS],
+      ['note-1', WS],
+    ]);
+    expect(run.actions).toEqual([
+      applyNoteUpdated(WS, 'note-1', note('note-1', { title: 'Intermediate' })),
+      applyNoteUpdated(WS, 'note-1', note('note-1', { title: 'Final' })),
+    ]);
     run.task.cancel();
     await run.task.toPromise();
   });

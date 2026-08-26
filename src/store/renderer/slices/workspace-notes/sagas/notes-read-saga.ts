@@ -1,4 +1,4 @@
-import { call, put, race, take, takeLeading } from 'typed-redux-saga';
+import { call, put, race, take } from 'typed-redux-saga';
 
 import { appClient } from '$lib/client';
 import { createLogger } from '$lib/utils/client-logger';
@@ -7,7 +7,10 @@ import {
   workspaceMounted,
   workspaceUnmounted,
 } from '../../workspace-lifecycle/workspace-lifecycle-slice';
-import { takeLeadingByWorkspace } from '../../../utils/context-saga-effects';
+import {
+  takeLeadingByWorkspace,
+  takeSingleFlightInContext,
+} from '../../../utils/context-saga-effects';
 import { selectNoteById, selectWorkspaceNotesState } from '../workspace-notes-selectors';
 import {
   applyNoteCreated,
@@ -115,5 +118,13 @@ function* applyNoteEventWorker(action: ReturnType<typeof noteEventReceived>) {
 
 export function* notesReadSaga() {
   yield* takeLeadingByWorkspace(workspaceMounted, hydrateWorkspaceNotesWorker);
-  yield* takeLeading(noteEventReceived, applyNoteEventWorker);
+  // Per-note single-flight with trailing coalesce: events for different notes
+  // run concurrently (a global takeLeading would drop a second note's event
+  // while the first is fetching), while a burst of events for one note
+  // collapses to the in-flight fetch plus at most one trailing refetch.
+  yield* takeSingleFlightInContext(
+    noteEventReceived,
+    (action) => `${action.payload[0]}:${action.payload[1]}`,
+    applyNoteEventWorker,
+  );
 }

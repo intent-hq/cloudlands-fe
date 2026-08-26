@@ -133,6 +133,30 @@ describe("workspaceNotesReducer", () => {
     expect(merged?.contentLength).toBe(8);
   });
 
+  it("lets a slim row win when either rev is missing (cached body cannot be proven current)", () => {
+    const full = mockNote("note-1", WS_1, { content: "Cached body", rev: 3 });
+    const revlessSlim = mockNote("note-1", WS_1, {
+      content: "",
+      contentPreview: "New bo",
+      contentLength: 8,
+      rev: undefined,
+    });
+    const seeded = workspaceNotesReducer(
+      initialState,
+      loadWorkspaceNotesSucceeded([WS_1], { [WS_1]: [full] })
+    );
+    const relisted = workspaceNotesReducer(
+      seeded,
+      loadWorkspaceNotesSucceeded([WS_1], { [WS_1]: [revlessSlim] })
+    );
+
+    // The stale marker stays intact so content surfaces refetch on demand,
+    // instead of grafting a possibly-outdated body under new preview markers.
+    const merged = getItem(relisted.byWorkspaceId[WS_1].notes, "note-1" as Note["id"]);
+    expect(merged?.content).toBe("");
+    expect(merged?.contentLength).toBe(8);
+  });
+
   it("stores slim rows as-is when nothing is cached for the note", () => {
     const slim = mockNote("note-new", WS_1, {
       content: "",

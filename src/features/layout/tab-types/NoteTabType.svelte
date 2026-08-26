@@ -32,6 +32,7 @@
   import NoteWithComments from '$lib/components/workspace/NoteWithComments.svelte';
   import NoteVersionHistory from '$lib/components/workspace/NoteVersionHistory.svelte';
   import SpecWritingOnboarding from '$lib/components/workspace/SpecWritingOnboarding.svelte';
+  import { Button } from '$lib/components/ui/button';
   import { Skeleton } from '$lib/components/ui/skeleton';
   import * as Menu from '$lib/components/ui/menu';
   import OpenComboButton from '$features/external-editors/components/OpenComboButton.svelte';
@@ -76,13 +77,25 @@
   });
 
   // Slim note.list rows carry no content (§5.2); fetch the full body when this
-  // tab shows a note whose content has not been loaded yet.
+  // tab shows a note whose content has not been loaded yet. A failed fetch
+  // leaves the row stale (notes.get swallows errors), so track it locally and
+  // surface an error state with retry instead of a permanent loading state.
   const noteContentStale = $derived(isNoteContentStale($note));
+  let contentLoadFailedNoteId = $state<string | null>(null);
+  const noteContentLoadFailed = $derived(
+    noteContentStale && contentLoadFailedNoteId === tab.noteId,
+  );
   $effect(() => {
-    if (tab.noteId && noteContentStale) {
-      ensureNoteContentLoaded(workspaceId, tab.noteId);
-    }
+    const noteId = tab.noteId;
+    if (!noteId || !noteContentStale || contentLoadFailedNoteId === noteId) return;
+    void ensureNoteContentLoaded(workspaceId, noteId).then((loaded) => {
+      if (!loaded && tab.noteId === noteId) contentLoadFailedNoteId = noteId;
+    });
   });
+
+  function retryNoteContentLoad() {
+    contentLoadFailedNoteId = null;
+  }
 
   // Get actual workspace root for file path
   let actualWorkspaceRoot = $state<string | null>(null);
@@ -150,6 +163,7 @@
   const noteContentState = $derived.by<NoteContentState>(() => {
     if (!tab.noteId) return 'missing';
     if (!$note) return $notesState.loading || !$notesState.initialized ? 'loading' : 'missing';
+    if (noteContentLoadFailed) return 'error';
     if (noteContentStale) return 'loading';
     if (!noteEditable) return 'read-only';
     if (!$note.content?.trim()) return 'empty';
@@ -270,7 +284,14 @@
 
 <NoteContentSurface state={noteContentState}>
   {#if tab.noteId}
-    {#if !$note}
+    {#if noteContentLoadFailed}
+      <div class="flex flex-col items-center justify-center h-full text-subtle gap-3">
+        <p>{m.layout_noteTab_contentLoadFailed_error()}</p>
+        <Button variant="outline" size="sm" onclick={retryNoteContentLoad}>
+          {m.ui_errorToast_retry_label()}
+        </Button>
+      </div>
+    {:else if !$note}
       <div class="flex flex-col h-full">
         <div class="flex-1 p-4 space-y-4">
           <Skeleton class="h-8 w-3/4" />

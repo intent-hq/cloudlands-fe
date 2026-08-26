@@ -1,6 +1,6 @@
 <script module lang="ts">
   export type NoteContentState =
-    'editor' | 'loading' | 'empty' | 'missing' | 'read-only' | 'recent-note';
+    'editor' | 'loading' | 'empty' | 'missing' | 'read-only' | 'recent-note' | 'error';
 </script>
 
 <script lang="ts">

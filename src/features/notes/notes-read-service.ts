@@ -28,22 +28,26 @@ import { createLogger } from '$lib/utils/client-logger';
 const logger = createLogger('NotesReadService');
 
 /**
- * In-flight loads keyed by `note:{workspaceId}:{noteId}:{eventType}`;
- * coalesces concurrent requests. `dirty` marks that another event arrived
- * while the fetch was in flight, triggering one trailing refetch after the
- * current one settles.
+ * In-flight loads keyed by `note:{workspaceId}:{noteId}`; coalesces
+ * concurrent requests. The key deliberately excludes the event type so a
+ * `note:created` immediately followed by `note:updated` (or an editor-open
+ * `ensureNoteContentLoaded`) never runs two concurrent `note.get` calls for
+ * the same note — an older response could otherwise apply after a newer one
+ * and regress the cached row. `dirty` marks that another event arrived while
+ * the fetch was in flight, triggering one trailing refetch after the current
+ * one settles.
  */
-const inFlight = new Map<string, { dirty: boolean }>();
+const inFlight = new Map<string, { dirty: boolean; settled: Promise<void> }>();
 
-function coalesce(key: string, fn: () => Promise<void>): void {
+function coalesce(key: string, fn: () => Promise<void>): Promise<void> {
   const pending = inFlight.get(key);
   if (pending) {
     pending.dirty = true;
-    return;
+    return pending.settled;
   }
-  const entry = { dirty: false };
+  const entry = { dirty: false, settled: Promise.resolve() };
   inFlight.set(key, entry);
-  void (async () => {
+  entry.settled = (async () => {
     try {
       await fn();
     } catch (error) {
@@ -53,9 +57,10 @@ function coalesce(key: string, fn: () => Promise<void>): void {
       // The trailing refetch reuses the leading caller's `fn`; callers must
       // pass an equivalent closure for a given key (the key fully determines
       // the fetch here), or a mid-flight caller's fetch would be dropped.
-      if (entry.dirty) coalesce(key, fn);
+      if (entry.dirty) await coalesce(key, fn);
     }
   })();
+  return entry.settled;
 }
 
 /**
@@ -65,8 +70,8 @@ function coalesce(key: string, fn: () => Promise<void>): void {
  * and `note:updated` fetch the fresh note payload via a targeted `notes.get`
  * (one note, full content — not a whole-workspace list) and dispatch the
  * matching `applyNote*` action. Fetches are coalesced per (workspaceId,
- * noteId, eventType): single-flight with at most one trailing refetch for
- * events that arrive while a fetch is in flight.
+ * noteId): single-flight with at most one trailing refetch for events that
+ * arrive while a fetch is in flight.
  */
 export function applyNoteFromEvent(
   workspaceId: string,
@@ -78,7 +83,7 @@ export function applyNoteFromEvent(
     appStore.dispatch(applyNoteDeleted(workspaceId, noteId));
     return;
   }
-  coalesce(`note:${workspaceId}:${noteId}:${eventType}`, async () => {
+  coalesce(`note:${workspaceId}:${noteId}`, async () => {
     const note = await appClient.notes.get(noteId, workspaceId);
     if (!note || String(note.workspaceId) !== workspaceId) return;
     dispatchNoteApply(workspaceId, note, eventType);
@@ -112,16 +117,26 @@ function dispatchNoteApply(
  * `isNoteContentStale`) — then a targeted full `notes.get` is fetched and
  * upserted. Content surfaces (note editor) call this on open; loads coalesce
  * with the event-refetch path via the shared single-flight map.
+ *
+ * Resolves after the fetch settles with whether the cached row now carries its
+ * full content — `false` means the fetch failed (`notes.get` swallows errors
+ * and returns null) and the row is still stale, so callers can surface an
+ * error/retry state instead of waiting on a store change that never comes.
  */
-export function ensureNoteContentLoaded(workspaceId: string, noteId: string): void {
-  if (!workspaceId || !noteId) return;
+export function ensureNoteContentLoaded(workspaceId: string, noteId: string): Promise<boolean> {
+  if (!workspaceId || !noteId) return Promise.resolve(false);
   const ws = appStore.state.workspaceNotes.byWorkspaceId[workspaceId];
   const cached = ws?.notes ? getItem(ws.notes, NoteId(String(noteId))) : undefined;
-  if (!cached || !isNoteContentStale(cached)) return;
-  coalesce(`note:${workspaceId}:${noteId}:note:updated`, async () => {
+  if (!cached) return Promise.resolve(false);
+  if (!isNoteContentStale(cached)) return Promise.resolve(true);
+  return coalesce(`note:${workspaceId}:${noteId}`, async () => {
     const note = await appClient.notes.get(noteId, workspaceId);
     if (!note || String(note.workspaceId) !== workspaceId) return;
     dispatchNoteApply(workspaceId, note, 'note:updated');
+  }).then(() => {
+    const after = appStore.state.workspaceNotes.byWorkspaceId[workspaceId];
+    const row = after?.notes ? getItem(after.notes, NoteId(String(noteId))) : undefined;
+    return row !== undefined && !isNoteContentStale(row);
   });
 }
 
