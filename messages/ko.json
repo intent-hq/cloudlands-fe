@@ -128,6 +128,7 @@
   "settings_backendSync_saveError": "동기화 설정을 업데이트하지 못했습니다.",
   "settings_backendSync_status_checking": "iCloud 키체인 사용 가능 여부를 확인하는 중…",
   "settings_backendSync_status_active": "동기화가 활성화되어 있습니다.",
+  "settings_backendSync_status_degraded": "마지막 동기화에서 일부 변경 사항을 키체인에 기록하지 못했습니다.",
   "settings_backendSync_status_unavailable": "iCloud 키체인을 사용할 수 없습니다.",
   "settings_openInApps_empty": "설치된 '다음에서 열기' 앱이 감지되지 않았습니다.",
   "settings_openInApps_showToggleAriaLabel": "'다음에서 열기'에 {name} 표시",

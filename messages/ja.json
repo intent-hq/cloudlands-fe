@@ -128,6 +128,7 @@
   "settings_backendSync_saveError": "同期設定を更新できませんでした。",
   "settings_backendSync_status_checking": "iCloud キーチェーンの利用可否を確認しています…",
   "settings_backendSync_status_active": "同期は有効です。",
+  "settings_backendSync_status_degraded": "前回の同期で一部の変更をキーチェーンに書き込めませんでした。",
   "settings_backendSync_status_unavailable": "iCloud キーチェーンを利用できません。",
   "settings_openInApps_empty": "「開く」対象のアプリが見つかりませんでした。",
   "settings_openInApps_showToggleAriaLabel": "「開く」に {name} を表示",

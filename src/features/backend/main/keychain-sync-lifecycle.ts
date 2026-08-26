@@ -76,8 +76,9 @@ export interface KeychainSyncLifecycleOptions {
   /** Broadcast hook fired after a reconcile pulled/deleted local records. */
   onRemoteApplied?: () => void | Promise<void>;
   /** Broadcast hook fired when a reconcile's availability status changed
-   * (first result, or active ⇄ unavailable / different reason). T4 uses it
-   * to push `connections:sync-status-changed` to the settings UI. */
+   * (first result, active ⇄ unavailable / different reason, or a changed
+   * active `errorCount` — the degraded-writes note). T4 uses it to push
+   * `connections:sync-status-changed` to the settings UI. */
   onStatusChanged?: (status: KeychainSyncStatus) => void;
   reconcileFn?: (
     adapter: LocalSyncAdapter,
@@ -191,7 +192,10 @@ export function initKeychainSyncLifecycle(
         previous.state !== result.status.state ||
         (previous.state === 'unavailable' &&
           result.status.state === 'unavailable' &&
-          previous.reason !== result.status.reason)
+          previous.reason !== result.status.reason) ||
+        (previous.state === 'active' &&
+          result.status.state === 'active' &&
+          (previous.errorCount ?? 0) !== (result.status.errorCount ?? 0))
       ) {
         options.onStatusChanged?.(result.status);
       }

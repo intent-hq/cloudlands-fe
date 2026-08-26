@@ -128,6 +128,7 @@
   "settings_backendSync_saveError": "Impossible de mettre à jour le réglage de synchronisation.",
   "settings_backendSync_status_checking": "Vérification de la disponibilité du trousseau iCloud…",
   "settings_backendSync_status_active": "La synchronisation est active.",
+  "settings_backendSync_status_degraded": "Certaines modifications n'ont pas pu être écrites dans le trousseau lors de la dernière synchronisation.",
   "settings_backendSync_status_unavailable": "Le trousseau iCloud n'est pas disponible.",
   "settings_openInApps_empty": "Aucune application « Ouvrir dans » installée détectée.",
   "settings_openInApps_showToggleAriaLabel": "Afficher {name} dans « Ouvrir dans »",

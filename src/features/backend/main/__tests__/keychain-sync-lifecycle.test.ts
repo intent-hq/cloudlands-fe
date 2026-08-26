@@ -331,6 +331,34 @@ describe('keychain-sync lifecycle triggers', () => {
     });
   });
 
+  it('onStatusChanged fires when the active errorCount changes (degraded writes)', async () => {
+    const onStatusChanged = vi.fn();
+    const reconcileFn = vi
+      .fn()
+      .mockResolvedValueOnce(reconcileResult({ status: { state: 'active' } }))
+      .mockResolvedValueOnce(reconcileResult({ status: { state: 'active', errorCount: 2 } }))
+      .mockResolvedValueOnce(reconcileResult({ status: { state: 'active', errorCount: 2 } }))
+      .mockResolvedValueOnce(reconcileResult({ status: { state: 'active' } }));
+    init({ enabled: true, reconcileFn, onStatusChanged });
+
+    await vi.advanceTimersByTimeAsync(DEBOUNCE); // first status → fires
+    expect(onStatusChanged).toHaveBeenCalledTimes(1);
+
+    fireMutation();
+    await vi.advanceTimersByTimeAsync(DEBOUNCE); // active → degraded → fires
+    expect(onStatusChanged).toHaveBeenCalledTimes(2);
+    expect(onStatusChanged).toHaveBeenLastCalledWith({ state: 'active', errorCount: 2 });
+
+    fireMutation();
+    await vi.advanceTimersByTimeAsync(DEBOUNCE); // same count → no fire
+    expect(onStatusChanged).toHaveBeenCalledTimes(2);
+
+    fireMutation();
+    await vi.advanceTimersByTimeAsync(DEBOUNCE); // degraded → clean → fires
+    expect(onStatusChanged).toHaveBeenCalledTimes(3);
+    expect(onStatusChanged).toHaveBeenLastCalledWith({ state: 'active' });
+  });
+
   it('resetStatus clears getStatus to null and re-fires onStatusChanged on an unchanged verdict', async () => {
     const onStatusChanged = vi.fn();
     const reconcileFn = vi.fn(async () => reconcileResult({ status: { state: 'active' } }));

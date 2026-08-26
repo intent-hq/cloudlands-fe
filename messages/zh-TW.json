@@ -128,6 +128,7 @@
   "settings_backendSync_saveError": "無法更新同步設定。",
   "settings_backendSync_status_checking": "正在檢查 iCloud 鑰匙圈可用性…",
   "settings_backendSync_status_active": "同步已啟用。",
+  "settings_backendSync_status_degraded": "上次同步時部分變更未能寫入鑰匙圈。",
   "settings_backendSync_status_unavailable": "iCloud 鑰匙圈無法使用。",
   "settings_openInApps_empty": "未偵測到已安裝的「開啟方式」應用程式。",
   "settings_openInApps_showToggleAriaLabel": "在「開啟方式」中顯示 {name}",

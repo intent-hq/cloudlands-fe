@@ -73,10 +73,16 @@ function item(record: KeychainSyncRecord): KeychainItem {
   return { account: accountKeyFor(record.host, record.port), payload: serializeRecord(record) };
 }
 
-/** In-memory KeychainClient recording writes; list can fail on demand. */
+/** In-memory KeychainClient recording writes; list/upsert/delete can fail on
+ * demand (`upsertErrors` fails only the named accounts). */
 function fakeClient(
   items: KeychainItem[] = [],
-  opts: { listError?: HelperErrorCode; upsertError?: HelperErrorCode } = {},
+  opts: {
+    listError?: HelperErrorCode;
+    upsertError?: HelperErrorCode;
+    upsertErrors?: Record<string, HelperErrorCode>;
+    deleteError?: HelperErrorCode;
+  } = {},
 ) {
   const upserts: { account: string; payload: string }[] = [];
   const deletes: string[] = [];
@@ -86,11 +92,13 @@ function fakeClient(
       return { ok: true, items };
     },
     async upsert(account, payload) {
-      if (opts.upsertError) return { ok: false, code: opts.upsertError, message: 'mock failure' };
+      const code = opts.upsertErrors?.[account] ?? opts.upsertError;
+      if (code) return { ok: false, code, message: 'mock failure' };
       upserts.push({ account, payload });
       return { ok: true };
     },
     async delete(account) {
+      if (opts.deleteError) return { ok: false, code: opts.deleteError, message: 'mock failure' };
       deletes.push(account);
       return { ok: true };
     },
@@ -450,15 +458,89 @@ describe('reconcile', () => {
     expect(upserts).toEqual([]);
   });
 
-  it('push failures are fail-soft: collected in errors, status stays active', async () => {
+  it('push failures are fail-soft: collected in errors, status stays active with the count', async () => {
     const { client } = fakeClient([], { upsertError: 'keychain-error' });
     const { adapter } = fakeAdapter([rec()]);
 
     const result = await reconcile(adapter, { client, now: NOW });
 
-    expect(result.status).toEqual({ state: 'active' });
+    expect(result.status).toEqual({ state: 'active', errorCount: 1 });
     expect(result.pushed).toEqual([]);
     expect(result.errors).toEqual([{ account: ACCOUNT, op: 'upsert', code: 'keychain-error' }]);
+  });
+
+  it('every upsert rejected as unavailable: status flips to unavailable (writes rejected, reads OK)', async () => {
+    // The hardware-confirmed failure mode: list succeeds (0 items) but every
+    // push fails code=unavailable — "Sync is active" must not be shown.
+    const second = rec({ host: '10.0.0.2', port: 9000 });
+    const { client } = fakeClient([], { upsertError: 'unavailable' });
+    const { adapter, applied } = fakeAdapter([rec(), second]);
+
+    const result = await reconcile(adapter, { client, now: NOW });
+
+    expect(result.status).toEqual({
+      state: 'unavailable',
+      reason: 'unavailable',
+      message: expect.stringContaining('writes are being rejected'),
+    });
+    expect(result.pushed).toEqual([]);
+    expect(result.errors).toHaveLength(2);
+    expect(applied).toEqual([]);
+  });
+
+  it('every purge rejected as unavailable: delete ops count as writes too', async () => {
+    const stone = tombstone({ updatedAt: NOW - TOMBSTONE_TTL_MS - 1 });
+    const { client } = fakeClient([item(stone)], { deleteError: 'unavailable' });
+    const { adapter } = fakeAdapter([]);
+
+    const result = await reconcile(adapter, { client, now: NOW });
+
+    expect(result.status).toMatchObject({ state: 'unavailable', reason: 'unavailable' });
+    expect(result.purged).toEqual([]);
+    expect(result.errors).toEqual([{ account: ACCOUNT, op: 'delete', code: 'unavailable' }]);
+  });
+
+  it('partial write failure: status stays active carrying the error count', async () => {
+    const failing = rec({ host: '10.0.0.2', port: 9000 });
+    const { client } = fakeClient([], {
+      upsertErrors: { [accountKeyFor('10.0.0.2', 9000)]: 'unavailable' },
+    });
+    const { adapter } = fakeAdapter([rec(), failing]);
+
+    const result = await reconcile(adapter, { client, now: NOW });
+
+    expect(result.status).toEqual({ state: 'active', errorCount: 1 });
+    expect(result.pushed).toEqual([ACCOUNT]);
+    expect(result.errors).toEqual([
+      { account: accountKeyFor('10.0.0.2', 9000), op: 'upsert', code: 'unavailable' },
+    ]);
+  });
+
+  it('all writes failing with MIXED codes stays active-degraded, not unavailable', async () => {
+    const second = rec({ host: '10.0.0.2', port: 9000 });
+    const { client } = fakeClient([], {
+      upsertErrors: {
+        [ACCOUNT]: 'unavailable',
+        [accountKeyFor('10.0.0.2', 9000)]: 'keychain-error',
+      },
+    });
+    const { adapter } = fakeAdapter([rec(), second]);
+
+    const result = await reconcile(adapter, { client, now: NOW });
+
+    expect(result.status).toEqual({ state: 'active', errorCount: 2 });
+  });
+
+  it('no-op reconcile (nothing to write) with a successful list stays plain active', async () => {
+    const record = rec({ updatedAt: NOW - 1000 });
+    // Writes would fail if attempted — but none are, so the verdict is clean.
+    const { client } = fakeClient([item(record)], { upsertError: 'unavailable' });
+    const { adapter } = fakeAdapter([record]);
+
+    const result = await reconcile(adapter, { client, now: NOW });
+
+    expect(result.status).toEqual({ state: 'active' });
+    expect(result.errors).toEqual([]);
   });
 });
 

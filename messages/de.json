@@ -128,6 +128,7 @@
   "settings_backendSync_saveError": "Synchronisierungseinstellung konnte nicht aktualisiert werden.",
   "settings_backendSync_status_checking": "Verfügbarkeit des iCloud-Schlüsselbunds wird geprüft …",
   "settings_backendSync_status_active": "Synchronisierung ist aktiv.",
+  "settings_backendSync_status_degraded": "Einige Änderungen konnten bei der letzten Synchronisierung nicht in den Schlüsselbund geschrieben werden.",
   "settings_backendSync_status_unavailable": "iCloud-Schlüsselbund ist nicht verfügbar.",
   "settings_openInApps_empty": "Keine installierten „Öffnen in“-Apps erkannt.",
   "settings_openInApps_showToggleAriaLabel": "{name} in „Öffnen in“ anzeigen",

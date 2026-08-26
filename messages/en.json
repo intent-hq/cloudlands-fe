@@ -128,6 +128,7 @@
   "settings_backendSync_saveError": "Failed to update sync setting.",
   "settings_backendSync_status_checking": "Checking iCloud Keychain availability…",
   "settings_backendSync_status_active": "Sync is active.",
+  "settings_backendSync_status_degraded": "Some changes could not be written to the keychain on the last sync.",
   "settings_backendSync_status_unavailable": "iCloud Keychain is unavailable.",
   "settings_openInApps_empty": "No installed Open In apps detected.",
   "settings_openInApps_showToggleAriaLabel": "Show {name} in Open In",

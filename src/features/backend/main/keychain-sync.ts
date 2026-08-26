@@ -416,9 +416,12 @@ export interface LocalSyncAdapter {
 }
 
 /** Sync availability, surfaced to the UI (T4). `reason` is a
- * {@link HelperErrorCode} naming why the keychain cannot be used. */
+ * {@link HelperErrorCode} naming why the keychain cannot be used. An `active`
+ * status carries `errorCount` (> 0, else absent) when the pass completed but
+ * some keychain writes failed — degraded, not unavailable. */
 export type KeychainSyncStatus =
-  { state: 'active' } | { state: 'unavailable'; reason: HelperErrorCode; message: string };
+  | { state: 'active'; errorCount?: number }
+  | { state: 'unavailable'; reason: HelperErrorCode; message: string };
 
 /** What a reconcile pass did, by account key. */
 export interface ReconcileResult {
@@ -481,7 +484,12 @@ export interface ReconcileOptions {
  * keychain) is a clean no-op: the local store is never touched and the result
  * carries the `unavailable` status. Individual push/purge failures after a
  * successful list are fail-soft (collected in `errors`); this function never
- * throws for keychain reasons (adapter errors propagate).
+ * throws for keychain reasons (adapter errors propagate). The final status
+ * still reflects those write failures: every attempted write failing with the
+ * entitlement-flavored `unavailable` code means the keychain is rejecting
+ * writes wholesale (list can succeed on such builds), so the status is
+ * `unavailable` rather than a false "active"; any other failure mix stays
+ * `active` but carries `errorCount` so the UI can show a degraded note.
  */
 export async function reconcile(
   adapter: LocalSyncAdapter,
@@ -622,6 +630,22 @@ export async function reconcile(
       await purge(account);
     } else {
       await push(account, l);
+    }
+  }
+
+  if (result.errors.length > 0) {
+    const anyWriteSucceeded = result.pushed.length > 0 || result.purged.length > 0;
+    if (!anyWriteSucceeded && result.errors.every((e) => e.code === 'unavailable')) {
+      logger.warn('keychain sync degraded to unavailable: every write rejected', {
+        errorCount: result.errors.length,
+      });
+      result.status = {
+        state: 'unavailable',
+        reason: 'unavailable',
+        message: 'keychain writes are being rejected (reads OK); nothing can be pushed',
+      };
+    } else {
+      result.status = { state: 'active', errorCount: result.errors.length };
     }
   }
 

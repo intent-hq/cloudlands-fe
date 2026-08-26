@@ -128,6 +128,7 @@
   "settings_backendSync_saveError": "No se pudo actualizar el ajuste de sincronización.",
   "settings_backendSync_status_checking": "Comprobando la disponibilidad del llavero de iCloud…",
   "settings_backendSync_status_active": "La sincronización está activa.",
+  "settings_backendSync_status_degraded": "Algunos cambios no se pudieron escribir en el llavero durante la última sincronización.",
   "settings_backendSync_status_unavailable": "El llavero de iCloud no está disponible.",
   "settings_openInApps_empty": "No se detectaron aplicaciones de «Abrir en» instaladas.",
   "settings_openInApps_showToggleAriaLabel": "Mostrar {name} en «Abrir en»",

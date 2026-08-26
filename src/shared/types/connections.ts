@@ -320,7 +320,7 @@ type KeychainSyncUnavailableReason =
  * push payload.
  */
 export type KeychainSyncUiStatus =
-  | { state: 'active' }
+  | { state: 'active'; errorCount?: number }
   | { state: 'unavailable'; reason: KeychainSyncUnavailableReason; message: string };
 
 /** Result of `connections:sync-get-state` / `connections:sync-set-enabled`. */

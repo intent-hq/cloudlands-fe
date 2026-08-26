@@ -93,6 +93,28 @@ describe('BackendSyncSettings', () => {
     expect(screen.queryByText(/only available on macos/i)).toBeNull();
   });
 
+  it('shows the degraded note when active with write errors', async () => {
+    mocks.syncState.value = {
+      supported: true,
+      enabled: true,
+      status: { state: 'active', errorCount: 2 },
+    };
+    render(BackendSyncSettings);
+    await waitFor(() => {
+      expect(screen.getByText(/sync is active/i)).toBeTruthy();
+    });
+    expect(screen.getByText(/could not be written to the keychain/i)).toBeTruthy();
+  });
+
+  it('hides the degraded note on a clean active status', async () => {
+    mocks.syncState.value = ACTIVE;
+    render(BackendSyncSettings);
+    await waitFor(() => {
+      expect(screen.getByText(/sync is active/i)).toBeTruthy();
+    });
+    expect(screen.queryByText(/could not be written to the keychain/i)).toBeNull();
+  });
+
   it('shows the checking line while enabled with no verdict yet', async () => {
     mocks.syncState.value = { supported: true, enabled: true, status: null };
     render(BackendSyncSettings);
