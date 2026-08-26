@@ -295,6 +295,19 @@
   }
 
   const compositionRows = $derived(compositionFor(previewTotals));
+  const visibleCompositionRows = $derived(compositionRows.filter((row) => row.tokens > 0));
+  const compositionSummary = $derived(
+    visibleCompositionRows
+      .map((row) =>
+        m.workspace_tokenUsage_segment_ariaLabel({
+          scope: m.workspace_tokenUsage_composition_label(),
+          category: row.label,
+          tokens: formatCompactNumber(row.tokens),
+          share: shareLabel(row.share),
+        }),
+      )
+      .join('; '),
+  );
 
   function scopeLabel(target: ScopeTarget | null): string {
     if (!target) return m.workspace_tokenUsage_workspace_label();
@@ -476,7 +489,7 @@
       <section
         bind:this={detailsElement}
         id={detailsId}
-        class="token-usage-details fixed overflow-x-hidden overflow-y-auto rounded-md border border-muted bg-card shadow-sm"
+        class="token-usage-details fixed overflow-x-hidden overflow-y-auto rounded-md border border-muted bg-card font-normal shadow-sm"
         style={overlayStyle}
         aria-labelledby={titleId}
         data-testid="token-usage-details"
@@ -496,10 +509,12 @@
                   <div class="navigator-row flex min-w-0 flex-col gap-1.5">
                     <div class="navigator-selection flex min-w-0 items-baseline gap-1.5">
                       <span
-                        class="min-w-0 truncate text-sm font-medium text-foreground"
+                        class="min-w-0 truncate text-sm font-normal text-foreground"
                         title={selectedAgentRow.title}>{selectedAgentRow.label}</span
                       >
-                      <span class="shrink-0 text-sm font-normal tabular-nums text-muted-foreground">
+                      <span
+                        class="ml-auto shrink-0 text-right text-sm font-normal tabular-nums text-muted-foreground"
+                      >
                         {shareLabel(share(selectedAgentRow.tokens, agentTokenTotal))}
                       </span>
                     </div>
@@ -556,10 +571,12 @@
                   <div class="navigator-row flex min-w-0 flex-col gap-1.5">
                     <div class="navigator-selection flex min-w-0 items-baseline gap-1.5">
                       <span
-                        class="min-w-0 truncate text-sm font-medium text-foreground"
+                        class="min-w-0 truncate text-sm font-normal text-foreground"
                         title={selectedModelRow.title}>{selectedModelRow.label}</span
                       >
-                      <span class="shrink-0 text-sm font-normal tabular-nums text-muted-foreground">
+                      <span
+                        class="ml-auto shrink-0 text-right text-sm font-normal tabular-nums text-muted-foreground"
+                      >
                         {shareLabel(share(selectedModelRow.tokens, modelTokenTotal))}
                       </span>
                     </div>
@@ -625,6 +642,22 @@
               {m.workspace_tokenUsage_processed_label()}
             </span>
           </span>
+          {#if visibleCompositionRows.length > 0}
+            <div
+              class="composition-strip mb-3 flex h-2.5 w-full min-w-0 overflow-hidden"
+              role="img"
+              aria-label={compositionSummary}
+            >
+              {#each visibleCompositionRows as row (row.id)}
+                <span
+                  class="composition-strip-segment block h-full shrink-0"
+                  data-metric={row.id}
+                  style={`width: ${row.share * 100}%`}
+                  aria-hidden="true"
+                ></span>
+              {/each}
+            </div>
+          {/if}
           <div class="composition-header min-w-0 pb-1 text-xs text-muted-foreground">
             <span>{m.workspace_tokenUsage_metric_label()}</span>
             <span class="text-right">{m.workspace_tokenUsage_value_label()}</span>
@@ -685,7 +718,7 @@
             data-testid="token-usage-total-cost"
           >
             <span class="text-muted-foreground">{m.workspace_tokenUsage_totalCost_label()}</span>
-            <span class="font-medium tabular-nums text-foreground">{previewCost}</span>
+            <span class="font-normal tabular-nums text-foreground">{previewCost}</span>
           </div>
         {/if}
       </section>
@@ -740,6 +773,31 @@
     border-radius: 2px;
   }
 
+  .composition-strip {
+    border-radius: 2px;
+    background: hsl(var(--muted) / 60%);
+  }
+
+  .composition-strip-segment {
+    flex: 0 0 auto;
+  }
+
+  .composition-strip-segment[data-metric='cached'] {
+    background: hsl(var(--success) / 82%);
+  }
+
+  .composition-strip-segment[data-metric='input'] {
+    background: hsl(var(--foreground) / 18%);
+  }
+
+  .composition-strip-segment[data-metric='output'] {
+    background: hsl(var(--foreground) / 32%);
+  }
+
+  .composition-strip-segment[data-metric='reasoning'] {
+    background: hsl(var(--foreground) / 48%);
+  }
+
   .breakdown-stack-item:first-child {
     border-radius: 2px 0 0 2px;
     overflow: hidden;
@@ -773,10 +831,6 @@
   .breakdown-stack:focus-within {
     outline: 2px solid hsl(var(--ring));
     outline-offset: 2px;
-  }
-
-  :global(.summary-control[aria-expanded='true']) {
-    background: hsl(var(--muted) / 30%);
   }
 
   @media (hover: hover) {
