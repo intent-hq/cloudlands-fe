@@ -161,7 +161,7 @@ describe('panel header agent identity', () => {
     expectHeaderAvatarIdentity(activeIdentity, 'agent-b');
   });
 
-  it('uses chat bubbles without avatar-state surfaces for agent rows in tabs', () => {
+  it('keeps chat bubbles in legacy tabs and shows the pane selector', () => {
     const { container } = render(PanelTabBar, {
       props: { tabs, activeTabId: 'tab-a', panelId: 'panel-1', workspaceId: 'workspace-1' },
     });
@@ -169,6 +169,6 @@ describe('panel header agent identity', () => {
 
     expect(rows.map((row) => row.getAttribute('data-tab-id'))).toEqual(['tab-a', 'tab-b']);
     rows.forEach(expectChatBubbleIdentity);
-    expect(container.querySelector('[data-testid="pane-stack-selector-trigger"]')).toBeNull();
+    expect(container.querySelector('[data-testid="pane-stack-selector-trigger"]')).not.toBeNull();
   });
 });

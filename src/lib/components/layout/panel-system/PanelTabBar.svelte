@@ -1450,8 +1450,15 @@
               data-pane-stack-item={tab.id}
               data-attention={attentionPaneIds.has(tab.id) ? '' : undefined}
             >
-              <span class="flex size-5 shrink-0 items-center justify-center">
-                {@render panelIdentity(tab, true)}
+              <span
+                class="flex size-5 shrink-0 items-center justify-center"
+                data-pane-stack-item-identity={tab.type}
+              >
+                {#if tab.type === 'agent' && tab.agentId}
+                  <AgentAvatar agentId={tab.agentId} variant="standard" />
+                {:else}
+                  {@render panelIdentity(tab, true)}
+                {/if}
               </span>
               <span class="min-w-0 flex-1 truncate">{getTabTitle(tab)}</span>
               {#if attentionPaneIds.has(tab.id)}
@@ -1805,19 +1812,22 @@
       ondragend={handlePaneDragEnd}
       data-panel-tabless-header
       data-panel-content-header
-      role={activeTab.type === 'agent' /* i18n-ignore: tab type discriminator */
-        ? undefined
-        : 'group'}
-      aria-label={activeTab.type === 'agent' /* i18n-ignore: tab type discriminator */
-        ? undefined
-        : m.layout_panelTabBar_paneStack_ariaLabel({ count: tabs.length })}
-      data-pane-stack={activeTab.type === 'agent' ? undefined : ''}
-      data-pane-stack-size={activeTab.type === 'agent' ? undefined : tabs.length}
+      role="group"
+      aria-label={m.layout_panelTabBar_paneStack_ariaLabel({ count: tabs.length })}
+      data-pane-stack
+      data-pane-stack-size={tabs.length}
     >
       {#if activeTab.type === 'agent'}
-        <!-- Agent headers show only the current icon and editable name. -->
+        <!-- Agent headers keep the current avatar and editable name. -->
         <div
           class="flex min-w-0 shrink items-center gap-2 overflow-hidden bg-card pl-1"
+          aria-label={m.layout_panelTabBar_activePane_ariaLabel({
+            title: activeTabTitle,
+            position: panePosition(activeTab.id),
+            count: tabs.length,
+          })}
+          aria-current="page"
+          data-pane-stack-active={activeTab.id}
           data-attention={attentionPaneIds.has(activeTab.id) ? '' : undefined}
           data-panel-agent-header-identity
         >
@@ -1938,7 +1948,7 @@
         {/if}
         {@render panelActionsDropdown()}
         {@render panelControlsDivider()}
-        {#if tabs.length > 1 && activeTab.type !== 'agent'}
+        {#if tabs.length > 1}
           {@render paneStackSelector()}
         {/if}
         {@render addPanelColumnButton()}
