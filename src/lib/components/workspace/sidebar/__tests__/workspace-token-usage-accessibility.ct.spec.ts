@@ -32,13 +32,11 @@ test('exposes compact values and keeps summary text readable on hover', async ({
   await expect(disclosure).toHaveAccessibleName('Expand token usage details');
   await disclosure.click();
   await expect(disclosure).toHaveAccessibleName('Collapse token usage details');
+  await expect(disclosure.locator('svg')).toHaveCount(0);
   const reducedDurations = await Promise.all([
     disclosure.evaluate((element) =>
       Number.parseFloat(getComputedStyle(element).transitionDuration),
     ),
-    disclosure
-      .locator('svg')
-      .evaluate((element) => Number.parseFloat(getComputedStyle(element).transitionDuration)),
   ]);
   expect(reducedDurations.every((duration) => duration <= 0.001)).toBe(true);
 
@@ -267,6 +265,7 @@ test('renders the full reference table as a wide overlay from the real workspace
   const modelSection = component.getByTestId('token-usage-by-model');
   const details = component.getByTestId('token-usage-details');
   const composition = details.locator('section[aria-labelledby$="-composition"]');
+  const compositionHeader = composition.locator('.composition-header');
   const compositionRows = details.locator('.composition-row');
   const tokenCompositionRows = details.locator('.token-composition-row');
   const messageCompositionRows = details.locator('.message-composition-row');
@@ -304,12 +303,13 @@ test('renders the full reference table as a wide overlay from the real workspace
   });
   await expect(details).toContainText('By agent Agent alpha-01 750 processed');
   await expect(compositionRows).toHaveCount(6);
-  await expect(compositionRows.nth(0)).toContainText('Cached · Read and written context');
-  await expect(compositionRows.nth(1)).toContainText('In · Prompt context');
+  await expect(compositionHeader).toHaveText(/Metric\s+Value\s+Share/);
+  await expect(compositionRows.nth(0)).toContainText('Cached context');
+  await expect(compositionRows.nth(1)).toContainText('Input context');
   await expect(compositionRows.nth(2)).toContainText('Human messages');
   await expect(compositionRows.nth(3)).toContainText('Agent messages');
-  await expect(compositionRows.nth(4)).toContainText('Out · Model responses');
-  await expect(compositionRows.nth(5)).toContainText('Reasoning · Internal tokens');
+  await expect(compositionRows.nth(4)).toContainText('Model output');
+  await expect(compositionRows.nth(5)).toContainText('Reasoning tokens');
   await expect(messageCompositionRows.nth(0)).toHaveText(/Human messages\s+4/);
   await expect(messageCompositionRows.nth(1)).toHaveText(/Agent messages\s+7/);
   await expect(compositionRows.locator('.composition-metric [aria-hidden="true"]')).toHaveCount(0);
@@ -341,6 +341,7 @@ test('renders the full reference table as a wide overlay from the real workspace
     navigatorStacks,
     breakdownDivider,
     compositionAlignment,
+    compositionHeaderAlignment,
     breakdownAlignment,
   ] = await Promise.all([
     details.boundingBox(),
@@ -387,11 +388,17 @@ test('renders the full reference table as a wide overlay from the real workspace
         const segments = Array.from(stack.children).map((segment) =>
           segment.getBoundingClientRect().toJSON(),
         );
+        const firstStyle = getComputedStyle(stack.firstElementChild!);
+        const lastStyle = getComputedStyle(stack.lastElementChild!);
         return {
           box: stackBox.toJSON(),
           segmentCount: segments.length,
           segmentWidth: segments.reduce((sum, segment) => sum + segment.width, 0),
           overflowX: getComputedStyle(stack).overflowX,
+          borderRadius: getComputedStyle(stack).borderRadius,
+          firstRadius: firstStyle.borderTopLeftRadius,
+          lastRadius: lastStyle.borderTopRightRadius,
+          lastRight: segments.at(-1)!.x + segments.at(-1)!.width,
         };
       }),
     ),
@@ -410,17 +417,20 @@ test('renders the full reference table as a wide overlay from the real workspace
         rowLeft: row.left,
       };
     }),
+    compositionHeader.evaluate((header) =>
+      Array.from(header.children).map((cell) => cell.getBoundingClientRect().toJSON()),
+    ),
     details.locator('.breakdown-section').evaluateAll((sections) =>
-      sections.map((section) => ({
-        selection: section.querySelector('.navigator-selection')!.getBoundingClientRect().toJSON(),
-        bar: section.querySelector('.breakdown-stack')!.getBoundingClientRect().toJSON(),
-        percentColor: getComputedStyle(
-          section.querySelector('.navigator-selection')!.lastElementChild!,
-        ).color,
-        percentFontWeight: getComputedStyle(
-          section.querySelector('.navigator-selection')!.lastElementChild!,
-        ).fontWeight,
-      })),
+      sections.map((section) => {
+        const selection = section.querySelector('.navigator-selection')!;
+        return {
+          section: section.getBoundingClientRect().toJSON(),
+          selection: selection.getBoundingClientRect().toJSON(),
+          bar: section.querySelector('.breakdown-stack')!.getBoundingClientRect().toJSON(),
+          percentColor: getComputedStyle(selection.lastElementChild!).color,
+          percentFontWeight: getComputedStyle(selection.lastElementChild!).fontWeight,
+        };
+      }),
     ),
   ]);
 
@@ -449,9 +459,10 @@ test('renders the full reference table as a wide overlay from the real workspace
   ).toBeLessThanOrEqual(1);
   expect(
     breakdownAlignment.every(
-      ({ selection, bar, percentFontWeight }) =>
-        bar.left >= selection.right + 7 &&
-        Math.abs(selection.top + selection.height / 2 - (bar.top + bar.height / 2)) <= 1 &&
+      ({ section, selection, bar, percentFontWeight }) =>
+        Math.abs(bar.left - selection.left) <= 1 &&
+        bar.top >= selection.top + selection.height + 5 &&
+        bar.right <= section.right + 1 &&
         percentFontWeight === '400',
     ),
   ).toBe(true);
@@ -462,13 +473,36 @@ test('renders the full reference table as a wide overlay from the real workspace
   );
   expect(
     navigatorStacks.every(
-      ({ box, segmentCount, segmentWidth, overflowX }) =>
+      ({
+        box,
+        segmentCount,
+        segmentWidth,
+        overflowX,
+        borderRadius,
+        firstRadius,
+        lastRadius,
+        lastRight,
+      }) =>
         box.height === 10 &&
         segmentCount === 4 &&
         Math.abs(segmentWidth - box.width) <= 1 &&
-        overflowX === 'hidden',
+        overflowX === 'hidden' &&
+        borderRadius === '2px' &&
+        firstRadius === '2px' &&
+        lastRadius === '2px' &&
+        lastRight <= box.x + box.width + 1,
     ),
   ).toBe(true);
+  expect(compositionHeaderAlignment).toHaveLength(3);
+  expect(compositionHeaderAlignment[0].x).toBeCloseTo(desktopRows[0].metric.x, 0);
+  expect(compositionHeaderAlignment[1].right).toBeCloseTo(
+    desktopRows[0].value.x + desktopRows[0].value.width,
+    0,
+  );
+  expect(compositionHeaderAlignment[2].right).toBeCloseTo(
+    desktopRows[0].context.x + desktopRows[0].context.width,
+    0,
+  );
   const navigatorButtons = details.locator('.breakdown-item-control');
   await expect(navigatorButtons).toHaveCount(8);
   await navigatorButtons.last().focus();

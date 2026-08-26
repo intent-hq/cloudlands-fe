@@ -8,9 +8,7 @@
    * tokens remain display-only additions to the daemon-owned accounting.
    * Renders nothing until token data is available (no layout shift).
    */
-  import { faChevronDown } from '@fortawesome/free-solid-svg-icons';
   import { onMount, tick } from 'svelte';
-  import Fa from 'svelte-fa';
   import { writable } from 'svelte/store';
   import { selectWorkspaceTokenUsage } from '$store/renderer/slices/token-usage/token-usage-selectors';
   import { fetchWorkspaceTokenUsage } from '$store/renderer/slices/token-usage/token-usage-slice';
@@ -222,12 +220,17 @@
 
   const modelRows = $derived(crossFilterAvailable ? matrixBreakdownRows('model') : legacyModelRows);
   const agentRows = $derived(crossFilterAvailable ? matrixBreakdownRows('agent') : legacyAgentRows);
+
+  function firstNonzeroRow(rows: BreakdownRow[]): BreakdownRow | undefined {
+    return rows.find((row) => row.tokens > 0) ?? rows[0];
+  }
+
   const defaultTarget = $derived(
     crossFilterAvailable
-      ? agentRows[0]
-        ? rowTarget(agentRows[0])
-        : modelRows[0]
-          ? rowTarget(modelRows[0])
+      ? firstNonzeroRow(agentRows)
+        ? rowTarget(firstNonzeroRow(agentRows)!)
+        : firstNonzeroRow(modelRows)
+          ? rowTarget(firstNonzeroRow(modelRows)!)
           : null
       : null,
   );
@@ -239,12 +242,12 @@
   const selectedAgentRow = $derived(
     (activeTarget?.kind === 'agent'
       ? agentRows.find((row) => row.id === activeTarget.id)
-      : undefined) ?? agentRows[0],
+      : undefined) ?? firstNonzeroRow(agentRows),
   );
   const selectedModelRow = $derived(
     (activeTarget?.kind === 'model'
       ? modelRows.find((row) => row.id === activeTarget.id)
-      : undefined) ?? modelRows[0],
+      : undefined) ?? firstNonzeroRow(modelRows),
   );
   const legacyPreviewRow = $derived(
     [...legacyAgentRows, ...legacyModelRows].find(
@@ -270,26 +273,22 @@
     return [
       {
         id: 'cached' as const,
-        label: m.workspace_tokenUsage_cached_label(),
-        description: m.workspace_tokenUsage_cached_description(),
+        label: m.workspace_tokenUsage_cachedContext_label(),
         tokens: entry.cacheReadTokens + entry.cacheCreationTokens,
       },
       {
         id: 'input' as const,
-        label: m.workspace_tokenUsage_in_label(),
-        description: m.workspace_tokenUsage_in_description(),
+        label: m.workspace_tokenUsage_inputContext_label(),
         tokens: entry.inputTokens,
       },
       {
         id: 'output' as const,
-        label: m.workspace_tokenUsage_out_label(),
-        description: m.workspace_tokenUsage_out_description(),
+        label: m.workspace_tokenUsage_modelOutput_label(),
         tokens: entry.outputTokens,
       },
       {
         id: 'reasoning' as const,
-        label: m.workspace_tokenUsage_thinking_label(),
-        description: m.workspace_tokenUsage_thinking_description(),
+        label: m.workspace_tokenUsage_reasoningTokens_label(),
         tokens: entry.thoughtTokens ?? 0,
       },
     ].map((row) => ({ ...row, share: share(row.tokens, entryProcessedTokens) }));
@@ -471,13 +470,6 @@
           </span>
         {/if}
       </span>
-      <Fa
-        icon={faChevronDown}
-        size="xs"
-        class="shrink-0 text-muted-foreground transition-transform {expanded
-          ? ''
-          : '-rotate-90'} motion-reduce:transition-none"
-      />
     </Button>
 
     {#if expanded}
@@ -501,7 +493,7 @@
                   {m.workspace_tokenUsage_byAgent_label()}
                 </h4>
                 {#if selectedAgentRow}
-                  <div class="navigator-row flex min-w-0 items-center gap-2">
+                  <div class="navigator-row flex min-w-0 flex-col gap-1.5">
                     <div class="navigator-selection flex min-w-0 items-baseline gap-1.5">
                       <span
                         class="min-w-0 truncate text-sm font-medium text-foreground"
@@ -512,7 +504,7 @@
                       </span>
                     </div>
                     <ol
-                      class="breakdown-stack ml-auto flex h-2.5 min-w-12 flex-1 overflow-hidden rounded-sm bg-muted/60"
+                      class="breakdown-stack flex h-2.5 w-full min-w-0 overflow-hidden bg-muted/60"
                     >
                       {#each agentRows as row (row.id)}
                         <li
@@ -562,7 +554,7 @@
                   {m.workspace_tokenUsage_byModel_label()}
                 </h4>
                 {#if selectedModelRow}
-                  <div class="navigator-row flex min-w-0 items-center gap-2">
+                  <div class="navigator-row flex min-w-0 flex-col gap-1.5">
                     <div class="navigator-selection flex min-w-0 items-baseline gap-1.5">
                       <span
                         class="min-w-0 truncate text-sm font-medium text-foreground"
@@ -573,7 +565,7 @@
                       </span>
                     </div>
                     <ol
-                      class="breakdown-stack ml-auto flex h-2.5 min-w-12 flex-1 overflow-hidden rounded-sm bg-muted/60"
+                      class="breakdown-stack flex h-2.5 w-full min-w-0 overflow-hidden bg-muted/60"
                     >
                       {#each modelRows as row (row.id)}
                         <li
@@ -635,11 +627,16 @@
               {m.workspace_tokenUsage_processed_label()}
             </span>
           </span>
+          <div class="composition-header min-w-0 pb-1 text-xs text-muted-foreground">
+            <span>{m.workspace_tokenUsage_metric_label()}</span>
+            <span class="text-right">{m.workspace_tokenUsage_value_label()}</span>
+            <span class="text-right">{m.workspace_tokenUsage_share_label()}</span>
+          </div>
           <dl>
             {#each compositionRows as row (row.id)}
               <div class="composition-row token-composition-row min-w-0 py-1">
                 <dt class="composition-metric min-w-0 truncate text-sm font-normal text-foreground">
-                  {row.label} · {row.description}
+                  {row.label}
                 </dt>
                 <dd
                   class="composition-value text-right text-sm font-normal tabular-nums text-muted-foreground"
@@ -708,7 +705,8 @@
     z-index: 60;
   }
 
-  .composition-row {
+  .composition-row,
+  .composition-header {
     display: grid;
     grid-template-areas: 'metric value context';
     grid-template-columns: minmax(0, 1fr) 3.5rem 3rem;
@@ -717,7 +715,7 @@
   }
 
   .navigator-selection {
-    max-width: 60%;
+    max-width: 100%;
   }
 
   .composition-metric {
@@ -740,6 +738,24 @@
     min-width: 3px;
   }
 
+  .breakdown-stack {
+    border-radius: 2px;
+  }
+
+  .breakdown-stack-item:first-child {
+    border-radius: 2px 0 0 2px;
+    overflow: hidden;
+  }
+
+  .breakdown-stack-item:last-child {
+    border-radius: 0 2px 2px 0;
+    overflow: hidden;
+  }
+
+  .breakdown-stack-item:only-child {
+    border-radius: 2px;
+  }
+
   :global(.breakdown-item-control) {
     background: hsl(var(--muted-foreground) / 14%);
   }
@@ -758,6 +774,10 @@
 
   :global(.breakdown-item-control:focus-visible) {
     box-shadow: inset 0 0 0 2px hsl(var(--ring));
+  }
+
+  :global(.summary-control[aria-expanded='true']) {
+    background: hsl(var(--muted) / 30%);
   }
 
   @media (hover: hover) {

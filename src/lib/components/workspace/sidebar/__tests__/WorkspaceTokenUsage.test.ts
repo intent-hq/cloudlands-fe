@@ -103,6 +103,7 @@ describe('WorkspaceTokenUsage', () => {
     expect(visibleText(disclosure)).toContain('Token usage');
     expect(visibleText(disclosure)).toContain('1K tokens used');
     expect(visibleText(disclosure)).not.toContain('Cached');
+    expect(disclosure.querySelector('svg')).toBeNull();
     expect(disclosure.querySelector('#workspace-token-usage-processed-ws-1')?.classList).toContain(
       'font-normal',
     );
@@ -233,6 +234,8 @@ describe('WorkspaceTokenUsage', () => {
     expect(compositionHeading.classList).toContain('sr-only');
 
     const composition = compositionHeading.closest('section')!;
+    const compositionHeader = composition.querySelector('.composition-header')!;
+    expect(visibleText(compositionHeader)).toBe('Metric Value Share');
     expect(composition.querySelector('.preview-status')?.classList).toContain('sr-only');
     expect(composition.querySelector('.composition-strip')).toBeNull();
     const compositionRows = Array.from(composition.querySelectorAll('.composition-row'));
@@ -243,10 +246,10 @@ describe('WorkspaceTokenUsage', () => {
       context: compositionRow.querySelector('.composition-context')?.textContent?.trim(),
     }));
     expect(compositionValues).toEqual([
-      { label: 'Cached · Read and written context', value: '9.3M', context: '98.9%' },
-      { label: 'In · Prompt context', value: '1.2K', context: '0%' },
-      { label: 'Out · Model responses', value: '98K', context: '1%' },
-      { label: 'Reasoning · Internal tokens', value: '0', context: '0%' },
+      { label: 'Cached context', value: '9.3M', context: '98.9%' },
+      { label: 'Input context', value: '1.2K', context: '0%' },
+      { label: 'Model output', value: '98K', context: '1%' },
+      { label: 'Reasoning tokens', value: '0', context: '0%' },
     ]);
     expect(composition.querySelector('.composition-description')).toBeNull();
     expect(composition.querySelectorAll('.composition-metric [aria-hidden="true"]')).toHaveLength(
@@ -300,8 +303,10 @@ describe('WorkspaceTokenUsage', () => {
     for (const section of [agentSection, modelSection]) {
       const navigatorRow = section.querySelector('.navigator-row')!;
       const selection = navigatorRow.querySelector('.navigator-selection')!;
+      const stack = navigatorRow.querySelector('.breakdown-stack')!;
       const percentage = selection.lastElementChild!;
-      expect(navigatorRow.querySelector('.breakdown-stack')).not.toBeNull();
+      expect(stack.previousElementSibling).toBe(selection);
+      expect(navigatorRow.classList).toContain('flex-col');
       expect(percentage.classList).toContain('font-normal');
       expect(percentage.classList).toContain('text-muted-foreground');
       expect(percentage.classList).not.toContain('font-medium');
@@ -576,12 +581,12 @@ describe('WorkspaceTokenUsage', () => {
         row.querySelector('.composition-metric')?.textContent?.trim(),
       ),
     ).toEqual([
-      'Cached · Read and written context',
-      'In · Prompt context',
+      'Cached context',
+      'Input context',
       'Human messages',
       'Agent messages',
-      'Out · Model responses',
-      'Reasoning · Internal tokens',
+      'Model output',
+      'Reasoning tokens',
     ]);
     expect(visibleText(status)).toBe('Active scope By agent Beta 1K processed');
     expect(
@@ -730,7 +735,7 @@ describe('WorkspaceTokenUsage', () => {
       .getByRole('heading', { name: 'Token composition' })
       .closest('section')!;
     const reasoningRow = composition.querySelectorAll('.composition-row')[3];
-    expect(visibleText(reasoningRow)).toBe('Reasoning · Internal tokens 4.2K 99.3%');
+    expect(visibleText(reasoningRow)).toBe('Reasoning tokens 4.2K 99.3%');
   });
 
   it('keeps the pre-thoughtTokens layout when the field is absent', async () => {
@@ -762,7 +767,7 @@ describe('WorkspaceTokenUsage', () => {
       .getByRole('heading', { name: 'Token composition' })
       .closest('section')!;
     const reasoningRow = composition.querySelectorAll('.composition-row')[3];
-    expect(visibleText(reasoningRow)).toBe('Reasoning · Internal tokens 0 0%');
+    expect(visibleText(reasoningRow)).toBe('Reasoning tokens 0 0%');
   });
 
   it('hides model and agent rows whose tokens are all zero', async () => {
