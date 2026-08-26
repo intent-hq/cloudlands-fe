@@ -31,6 +31,7 @@ vi.mock('../../system/main/system.ipc', () => ({
   })),
 }));
 vi.mock('../../backend/main/backend.ipc', () => ({
+  BACKEND_CLIENT_DISCONNECTED_EVENT: 'backend-client-disconnected',
   getBackendClient: mocks.getBackendClient,
   getBackendClientForConnection: mocks.getBackendClientForConnection,
   getBackendIdForIpcSender: mocks.getBackendIdForIpcSender,
@@ -463,5 +464,53 @@ describe('browser tunnel-backend selection seam', () => {
     const local = getLocalProvider() as { backend: string };
     expect(local.backend).toBe('direct');
     expect(local).not.toBe(remote);
+  });
+
+  it('disposes only the departing pooled client manager and rebuilds it on re-pair', async () => {
+    const remoteA = {
+      getConfig: () => ({ transport: 'wss' as const, host: 'remote-a.example' }),
+    };
+    const remoteB = {
+      getConfig: () => ({ transport: 'wss' as const, host: 'remote-b.example' }),
+    };
+    const local = {
+      getConfig: () => ({ transport: 'uds' as const, socketPath: '/tmp/intentd.sock' }),
+    };
+    mocks.getBackendClientForConnection.mockImplementation((id: string) => {
+      if (id === 'remote-a') return remoteA;
+      if (id === 'remote-b') return remoteB;
+      return local;
+    });
+
+    const handler = await registerAndGetHandler('browser:exec');
+    const { app } = await import('electron');
+    const { executeActions } = await import('../main/browser-action-executor');
+    (executeActions as Mock).mockResolvedValue({ success: true, results: [] });
+    const getProvider = async (backendId: string, workspaceId: string): Promise<unknown> => {
+      mocks.getBackendIdForIpcSender.mockReturnValue(backendId);
+      await handler({}, { actions: [], workspaceId });
+      return ((executeActions as Mock).mock.calls.at(-1)![5] as () => unknown)();
+    };
+
+    const providerA = await getProvider('remote-a', 'workspace-a');
+    const providerB = await getProvider('remote-b', 'workspace-b');
+    const directProvider = await getProvider('local', 'workspace-local');
+    const managerA = mocks.TunnelManager.mock.instances[0] as unknown as { dispose: Mock };
+    const managerB = mocks.TunnelManager.mock.instances[1] as unknown as { dispose: Mock };
+    const direct = mocks.DirectRelay.mock.instances[0] as unknown as { dispose: Mock };
+
+    const listener = (app.on as Mock).mock.calls.find(
+      ([event]) => event === 'backend-client-disconnected',
+    )?.[1] as (client: unknown) => void;
+    expect(listener, 'pooled-client disconnect listener should be registered').toBeDefined();
+    listener(remoteA);
+
+    expect(managerA.dispose).toHaveBeenCalledTimes(1);
+    expect(managerB.dispose).not.toHaveBeenCalled();
+    expect(direct.dispose).not.toHaveBeenCalled();
+    expect(await getProvider('remote-b', 'workspace-b')).toBe(providerB);
+    expect(await getProvider('local', 'workspace-local')).toBe(directProvider);
+    expect(await getProvider('remote-a', 'workspace-a')).not.toBe(providerA);
+    expect(mocks.TunnelManager).toHaveBeenCalledTimes(3);
   });
 });

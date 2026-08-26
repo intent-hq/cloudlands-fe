@@ -28,6 +28,7 @@ import {
 } from './tunnel-forward-ownership';
 import { ensureWorkspaceForwardCleanup } from './workspace-forward-cleanup.service';
 import {
+  BACKEND_CLIENT_DISCONNECTED_EVENT,
   getBackendClientForConnection,
   getBackendIdForIpcSender,
   getBackendClient,
@@ -266,6 +267,22 @@ const forwardOwnership = new ForwardOwnershipRegistry();
 // unchanged — callers treat the provider as a stable singleton.
 const ownershipWrappers = new Map<string, { inner: TunnelProvider; wrapper: TunnelProvider }>();
 
+/** Dispose only the browser tunnel state owned by one departing pooled client. */
+function disposeTunnelManagerForClient(
+  backendClient: BrowserExecutionBackendContext['client'],
+): void {
+  const tunnelManager = tunnelManagers.get(backendClient);
+  if (!tunnelManager) return;
+  tunnelManagers.delete(backendClient);
+  tunnelManager.dispose();
+  // dispose() drops every active forward, whose onForwardDropped hook clears
+  // its ownership entry. Remove wrappers that would otherwise retain/reuse the
+  // disposed manager after this saved remote is re-paired.
+  for (const [key, cached] of ownershipWrappers) {
+    if (cached.inner === tunnelManager) ownershipWrappers.delete(key);
+  }
+}
+
 /** Close a forward on whichever live provider carries it; never constructs one. */
 function closeOwnedForward(remotePort: number): void {
   for (const tunnelManager of tunnelManagers.values()) tunnelManager.closeForward(remotePort);
@@ -367,6 +384,8 @@ export type { ExecutionResult };
  */
 export function registerBrowserHandlers(): void {
   logger.info('Registering browser IPC handlers');
+
+  (app as NodeJS.EventEmitter).on(BACKEND_CLIENT_DISCONNECTED_EVENT, disposeTunnelManagerForClient);
 
   // A backend switch invalidates every tunnel forward (they target the old
   // daemon's loopback); dispose both backends so the next use rebuilds them

@@ -1042,12 +1042,15 @@ describe('backend client pool', () => {
   it('disconnects one remote without disposing the local primary client', async () => {
     const { mod } = await loadModule();
     const local = mod.getBackendClient();
-    await mod.connectBackendClient('remote-1');
+    const remote = await mod.connectBackendClient('remote-1');
     lifecycle.events = [];
+    vi.mocked(app.emit).mockClear();
 
     mod.disconnectBackendClient('remote-1');
 
     expect(lifecycle.events.map((event) => event.type)).toEqual(['dispose']);
+    expect(vi.mocked(app.emit)).toHaveBeenCalledWith(mod.BACKEND_CLIENT_DISCONNECTED_EVENT, remote);
+    expect(vi.mocked(app.emit)).not.toHaveBeenCalledWith('backend-connection-changed');
     expect(mod.getBackendClient()).toBe(local);
     expect(mod.getBackendClientForConnection('local')).toBe(local);
     expect(mod.getBackendClientForConnection('remote-1')).toBeUndefined();

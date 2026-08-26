@@ -20,6 +20,7 @@ vi.mock('../../../system/main/system.ipc', () => ({
 }));
 
 vi.mock('../../../backend/main/backend.ipc', () => ({
+  BACKEND_CLIENT_DISCONNECTED_EVENT: 'backend-client-disconnected',
   getBackendClient: vi.fn(() => mocks.backendClient),
   getBackendClientForConnection: vi.fn(() => mocks.backendClient),
   getBackendIdForIpcSender: vi.fn(() => 'local'),
