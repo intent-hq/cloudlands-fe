@@ -519,13 +519,17 @@
     <!-- Right column: agent state, bounded active rows, and pull request -->
     {#if !isLoading && workspace}
       <div
-        class="workspace-hover-card__activity flex min-h-0 min-w-0 flex-col border-solid border-border px-4 py-3.5"
+        class="workspace-hover-card__activity flex min-h-0 min-w-0 flex-col gap-3 border-solid border-border px-4 py-3.5"
         data-workspace-hover-card-activity
       >
-        <div class="flex min-h-6 items-center gap-3" data-workspace-hover-card-agent-summary>
-          <div
-            class="type-caption flex min-w-0 items-center gap-2"
-            data-workspace-hover-card-status-row
+        <div
+          class="workspace-hover-card__detail-row type-caption grid min-h-8 w-full min-w-0 grid-cols-[1.5rem_minmax(0,1fr)] items-center py-0.5"
+          data-workspace-hover-card-agent-summary
+          data-workspace-hover-card-status-row
+        >
+          <span
+            class="grid h-6 w-6 shrink-0 place-items-center"
+            data-workspace-hover-card-status-icon
           >
             <WorkspaceStatusIcon
               status={workspaceStatusState}
@@ -533,65 +537,76 @@
               decorative
               class={workspaceStatusState === 'blocked' ? 'text-foreground' : undefined}
             />
-            <span class="min-w-0 truncate text-sm font-medium normal-case text-foreground">
-              {workspaceStatusPresentation.label}
-            </span>
-          </div>
+          </span>
+          <span
+            class="min-w-0 truncate text-sm font-medium leading-5 normal-case text-foreground"
+            data-workspace-hover-card-status-text
+          >
+            {workspaceStatusPresentation.label}
+          </span>
         </div>
 
-        <div class="min-h-0 overflow-y-auto">
-          {#if runningAgents.length > 0}
-            <div
-              class="min-w-0 w-full flex flex-col"
-              role="list"
-              aria-label={m.workspace_hoverCard_runningAgents_ariaLabel()}
-            >
-              {#each runningAgents.slice(0, 3) as agent (agent.id)}
+        <div class="flex min-h-0 flex-col gap-3 overflow-y-auto">
+          {#if runningAgents.length > 0 || hoverCardStackItems.length > 0}
+            <div class="grid min-w-0 w-full gap-1" data-workspace-hover-card-agent-section>
+              {#if runningAgents.length > 0}
                 <div
-                  class="flex min-h-8 w-full min-w-0 items-center py-0.5 text-left"
-                  role="listitem"
-                  aria-label={`${agent.name} ${formatRunningAgentMetadata(agent)}`}
-                  data-workspace-hover-card-agent-row
+                  class="min-w-0 w-full flex flex-col"
+                  role="list"
+                  aria-label={m.workspace_hoverCard_runningAgents_ariaLabel()}
+                  data-workspace-hover-card-agent-list
                 >
-                  <div class="workspace-hover-card__detail-row flex min-w-0 flex-1 items-center">
-                    <span
-                      class="grid h-6 w-6 shrink-0 place-items-center"
-                      data-workspace-hover-card-agent-icon
+                  {#each runningAgents.slice(0, 3) as agent (agent.id)}
+                    <div
+                      class="flex min-h-8 w-full min-w-0 items-center py-0.5 text-left"
+                      role="listitem"
+                      aria-label={`${agent.name} ${formatRunningAgentMetadata(agent)}`}
+                      data-workspace-hover-card-agent-row
                     >
-                      <AgentAvatarWithState
-                        agentId={agent.id}
-                        variant="standard"
-                        state={getRunningAgentAvatarState(agent)}
-                        specialist={agent.specialist as BuiltinSpecialistId | null}
-                      />
-                    </span>
-                    <span
-                      class="type-body min-w-0 truncate text-sm font-medium leading-5 text-foreground"
-                    >
-                      {agent.name}
-                    </span>
-                  </div>
+                      <div
+                        class="workspace-hover-card__detail-row grid min-w-0 flex-1 grid-cols-[1.5rem_minmax(0,1fr)] items-center"
+                      >
+                        <span
+                          class="grid h-6 w-6 shrink-0 place-items-center"
+                          data-workspace-hover-card-agent-icon
+                        >
+                          <AgentAvatarWithState
+                            agentId={agent.id}
+                            variant="standard"
+                            state={getRunningAgentAvatarState(agent)}
+                            specialist={agent.specialist as BuiltinSpecialistId | null}
+                          />
+                        </span>
+                        <span
+                          class="type-body min-w-0 truncate text-sm font-medium leading-5 text-foreground"
+                          data-workspace-hover-card-agent-text
+                        >
+                          {agent.name}
+                        </span>
+                      </div>
+                    </div>
+                  {/each}
                 </div>
-              {/each}
-              {#if runningAgents.length > 3}
+                {#if runningAgents.length > 3}
+                  <div
+                    class="pt-1 text-ui text-subtle font-medium"
+                    data-workspace-hover-card-overflow
+                  >
+                    {m.workspace_hoverCard_moreAgents_label({
+                      count: formatInteger(runningAgents.length - 3),
+                    })}
+                  </div>
+                {/if}
+              {/if}
+
+              {#if hoverCardStackItems.length > 0}
                 <div
-                  class="pt-1 text-ui text-subtle font-medium"
-                  data-workspace-hover-card-overflow
+                  class="flex items-center py-1 pl-[var(--agent-avatar-emphasized-ring-width)] pr-[var(--agent-avatar-emphasized-ring-width)]"
+                  data-workspace-hover-card-agent-stack
                 >
-                  {m.workspace_hoverCard_moreAgents_label({
-                    count: formatInteger(runningAgents.length - 3),
-                  })}
+                  <AgentAvatarStack items={hoverCardStackItems} />
                 </div>
               {/if}
-            </div>
-          {/if}
-
-          {#if hoverCardStackItems.length > 0}
-            <div
-              class="flex items-center py-1 pl-[var(--agent-avatar-emphasized-ring-width)] pr-[var(--agent-avatar-emphasized-ring-width)]"
-              data-workspace-hover-card-agent-stack
-            >
-              <AgentAvatarStack items={hoverCardStackItems} />
             </div>
           {/if}
 
@@ -604,7 +619,7 @@
             >
               {#each workspacePrRows as pr (pr.identity)}
                 <div
-                  class="workspace-hover-card__detail-row flex min-h-8 w-full min-w-0 items-start rounded-sm py-0.5 text-left"
+                  class="workspace-hover-card__detail-row grid min-h-8 w-full min-w-0 grid-cols-[1.5rem_minmax(0,1fr)] items-center rounded-sm py-0.5 text-left"
                   aria-label={getWorkspacePrLabel(pr)}
                   role="listitem"
                   data-workspace-hover-card-pr-row
@@ -616,9 +631,9 @@
                     aria-hidden="true"
                     data-workspace-hover-card-pr-icon
                   >
-                    <Fa icon={pr.statusIcon} size="xs" class="shrink-0 {pr.foregroundClass}" />
+                    <Fa icon={pr.statusIcon} size={16} class="shrink-0 {pr.foregroundClass}" />
                   </span>
-                  <span class="grid min-w-0 flex-1 gap-y-0.5">
+                  <span class="grid min-w-0 flex-1 gap-y-0.5" data-workspace-hover-card-pr-text>
                     <span class="flex min-w-0 items-baseline gap-2">
                       <span
                         class="type-body min-w-0 flex-1 truncate text-sm font-medium leading-5 text-foreground"

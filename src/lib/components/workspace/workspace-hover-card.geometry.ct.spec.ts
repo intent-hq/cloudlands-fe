@@ -160,6 +160,95 @@ test('uses three natural description lines and one compact detail-row gap', asyn
   await expect(activity.locator('[data-workspace-hover-card-pr-divider]')).toHaveCount(0);
 });
 
+for (const scene of [
+  { name: 'wide', width: 900 },
+  { name: 'narrow', width: 420 },
+] as const) {
+  test(`aligns activity rows and separates sections in the ${scene.name} scene`, async ({
+    mount,
+    page,
+  }) => {
+    await page.setViewportSize({ width: scene.width, height: 700 });
+    const state = workspaceHoverCardPreview.states['long-content'];
+    const card = state.props.cards[0]!;
+    await mount(WorkspaceHoverCard, {
+      props: {
+        workspace: card.workspace,
+        activeAgentIds: card.activeAgentIds,
+        loadAgentSessions: false,
+        loadWorkspaceData: false,
+      },
+    });
+
+    const statusRow = page.locator('[data-workspace-hover-card-status-row]');
+    const agentRows = page.locator('[data-workspace-hover-card-agent-row]');
+    const agentRow = agentRows.first();
+    const prRow = page.locator('[data-workspace-hover-card-pr-row]');
+    const agentSection = page.locator('[data-workspace-hover-card-agent-section]');
+    const prSection = page.locator('[data-workspace-hover-card-pr-list]');
+    const elements = {
+      statusRow,
+      agentRow,
+      prRow,
+      statusIcon: statusRow.locator('[data-workspace-hover-card-status-icon]'),
+      agentIcon: agentRow.locator('[data-workspace-hover-card-agent-icon]'),
+      prIcon: prRow.locator('[data-workspace-hover-card-pr-icon]'),
+      statusText: statusRow.locator('[data-workspace-hover-card-status-text]'),
+      agentText: agentRow.locator('[data-workspace-hover-card-agent-text]'),
+      prText: prRow.locator('[data-workspace-hover-card-pr-text]'),
+      agentSection,
+      prSection,
+      prGlyph: prRow.locator('[data-workspace-hover-card-pr-icon] svg'),
+      agentAvatar: agentRow.locator('[data-agent-avatar-with-state]'),
+    };
+    const boxes = Object.fromEntries(
+      await Promise.all(
+        Object.entries(elements).map(async ([name, locator]) => [
+          name,
+          await locator.boundingBox(),
+        ]),
+      ),
+    );
+
+    expect(Object.values(boxes).every(Boolean)).toBe(true);
+    const iconStarts = [boxes.statusIcon!.x, boxes.agentIcon!.x, boxes.prIcon!.x];
+    const textStarts = [boxes.statusText!.x, boxes.agentText!.x, boxes.prText!.x];
+    expect(Math.max(...iconStarts) - Math.min(...iconStarts)).toBeLessThanOrEqual(0.5);
+    expect(Math.max(...textStarts) - Math.min(...textStarts)).toBeLessThanOrEqual(0.5);
+    expect([boxes.statusIcon!.width, boxes.agentIcon!.width, boxes.prIcon!.width]).toEqual([
+      24, 24, 24,
+    ]);
+
+    for (const [rowName, iconName, textName] of [
+      ['statusRow', 'statusIcon', 'statusText'],
+      ['agentRow', 'agentIcon', 'agentText'],
+      ['prRow', 'prIcon', 'prText'],
+    ] as const) {
+      const rowCenter = boxes[rowName]!.y + boxes[rowName]!.height / 2;
+      const iconCenter = boxes[iconName]!.y + boxes[iconName]!.height / 2;
+      const textCenter = boxes[textName]!.y + boxes[textName]!.height / 2;
+      expect(iconCenter).toBeCloseTo(rowCenter, 1);
+      expect(textCenter).toBeCloseTo(rowCenter, 1);
+    }
+
+    const agentRowBoxes = await agentRows.evaluateAll((rows) =>
+      rows.map((row) => {
+        const bounds = row.getBoundingClientRect();
+        return { top: bounds.top, bottom: bounds.bottom };
+      }),
+    );
+    const withinAgentGap = agentRowBoxes[1]!.top - agentRowBoxes[0]!.bottom;
+    const statusAgentGap = boxes.agentSection!.y - (boxes.statusRow!.y + boxes.statusRow!.height);
+    const agentPrGap = boxes.prSection!.y - (boxes.agentSection!.y + boxes.agentSection!.height);
+    expect(statusAgentGap).toBe(12);
+    expect(agentPrGap).toBe(12);
+    expect(statusAgentGap).toBeGreaterThan(withinAgentGap);
+    expect(agentPrGap).toBeGreaterThan(withinAgentGap);
+    expect(boxes.prGlyph!.height).toBe(16);
+    expect(boxes.prGlyph!.width).toBeGreaterThanOrEqual(boxes.agentAvatar!.width * 0.75);
+  });
+}
+
 test('keeps short descriptions at one line and stacks responsively when narrow', async ({
   mount,
   page,
