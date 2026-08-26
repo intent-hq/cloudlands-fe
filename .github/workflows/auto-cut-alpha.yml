@@ -56,9 +56,8 @@
 #   tag is younger than 90 minutes, a release build is running and a pin bump
 #   is imminent — cutting now would ship a stale sidecar. The age bound stops
 #   a failed intentd build from deferring fe alphas forever, and the check
-#   fails OPEN on any lookup error (missing INTENTD_READ_PAT, unreachable
-#   manifest, unreadable tags) so an unreadable intentd never blocks fe
-#   releases.
+#   fails OPEN on any lookup error (unreachable manifest, unreadable tags)
+#   so an unreadable intentd never blocks fe releases.
 # - An open pin-bump PR (branch `auto/intentd-pin`) defers the cut: an
 #   in-flight intentd pin must land first so the fe alpha carries the new
 #   sidecar; its merge push then chains straight into a cut via the push
@@ -82,9 +81,8 @@
 #   and the workflow_dispatch bypass is the operator override. Automation
 #   commits (the sidecar pin bump itself, chore(release) squash merges)
 #   are exempt from the freshness test, and the check fails OPEN on any
-#   lookup error (missing INTENTD_READ_PAT, unreadable
-#   pin/tags/comparison) so an unreadable intentd never blocks fe
-#   releases.
+#   lookup error (unreadable pin/tags/comparison) so an unreadable intentd
+#   never blocks fe releases.
 # - Merge happens ONLY when GitHub already reports the PR clean: not a
 #   draft, mergeable, required check "CI Gate" green on the current head,
 #   and no unresolved review threads with human participation. Threads
@@ -102,8 +100,8 @@
 # with the implicit GITHUB_TOKEN under least-privilege job permissions —
 # fine-grained PATs cannot read statusCheckRollup without Checks/
 # Commit-statuses read access. The in-flight intentd check and the
-# BE-dependency freshness guard read a different repo, so they authenticate
-# with INTENTD_READ_PAT. The merge itself
+# BE-dependency freshness guard read the public intent-hq/intentd repo,
+# which the implicit GITHUB_TOKEN also covers. The merge itself
 # authenticates with the RELEASE_PAT PAT, NOT the implicit GITHUB_TOKEN:
 # pushes made with GITHUB_TOKEN do not trigger other workflows, and the
 # merge push to main must trigger release-please.yml to cut the tag.
@@ -256,16 +254,16 @@ jobs:
       # the pin merge's push-triggered run (or the next cron) cuts the alpha
       # with the new sidecar. The 90-minute age bound stops a FAILED intentd
       # build from deferring fe alphas forever (cargo-dist builds take 20-45
-      # min). Strictly fail-open: any lookup problem (missing
-      # INTENTD_READ_PAT, unreachable manifest, unreadable tags) proceeds with
-      # the cut — this guardrail must never block fe releases when intentd is
-      # unreadable.
+      # min). Strictly fail-open: any lookup problem (unreachable manifest,
+      # unreadable tags) proceeds with the cut — this guardrail must never
+      # block fe releases when intentd is unreadable. intent-hq/intentd is
+      # public, so the implicit GITHUB_TOKEN covers its reads.
       - name: Check for an in-flight intentd release build
         id: inflight
         if: steps.token.outputs.enabled == 'true' && steps.throttle.outputs.defer != 'true'
         shell: bash
         env:
-          INTENTD_READ_PAT: ${{ secrets.INTENTD_READ_PAT }}
+          GH_TOKEN: ${{ github.token }}
           MANIFEST_MIRROR_URL: https://github.com/intent-hq/intentd-releases/releases/download/channel-alpha/alpha.json
         run: |
           # Deliberately no `set -e`: every lookup failure must fail OPEN
@@ -273,14 +271,9 @@ jobs:
           set -uo pipefail
           echo "defer=false" >> "$GITHUB_OUTPUT"
 
-          if [[ -z "${INTENTD_READ_PAT:-}" ]]; then
-            echo "INTENTD_READ_PAT is not set; cannot check for an in-flight intentd release (failing open)."
-            exit 0
-          fi
-
           # Latest intentd release tag (release-plz cuts plain vX.Y.Z tags),
           # SemVer-ordered with sort -V across all matching refs.
-          tag=$(GH_TOKEN="$INTENTD_READ_PAT" gh api --paginate \
+          tag=$(gh api --paginate \
             repos/intent-hq/intentd/git/matching-refs/tags/v \
             --jq '.[].ref | sub("^refs/tags/"; "")' 2>/dev/null \
             | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -1) || tag=""
@@ -295,7 +288,7 @@ jobs:
           if [[ -z "$manifest" ]]; then
             echo "Mirror manifest unavailable; falling back to intent-hq/intentd."
             tmp=$(mktemp -d)
-            if GH_TOKEN="$INTENTD_READ_PAT" gh release download channel-alpha \
+            if gh release download channel-alpha \
                 --repo intent-hq/intentd --pattern alpha.json --dir "$tmp" 2>/dev/null; then
               manifest=$(cat "$tmp/alpha.json")
             fi
@@ -321,7 +314,7 @@ jobs:
 
           # The tag is newer than the published alpha: a build is (or was) in
           # flight. The tag commit's date approximates when the build started.
-          tag_date=$(GH_TOKEN="$INTENTD_READ_PAT" gh api \
+          tag_date=$(gh api \
             "repos/intent-hq/intentd/commits/$tag" \
             --jq '.commit.committer.date' 2>/dev/null) || tag_date=""
           if [[ -z "$tag_date" ]]; then
@@ -351,9 +344,6 @@ jobs:
           # applied per-command, only where it is required.
           GH_TOKEN: ${{ github.token }}
           RELEASE_PAT: ${{ secrets.RELEASE_PAT }}
-          # Cross-repo reads for the BE-dependency freshness guard (the same
-          # PAT the in-flight intentd step uses), applied per-command.
-          INTENTD_READ_PAT: ${{ secrets.INTENTD_READ_PAT }}
           # Boolean input; on schedule events the inputs context is empty and
           # this renders "false".
           DRY_RUN: ${{ inputs.dry_run == true }}
@@ -422,11 +412,6 @@ jobs:
           be_dependency_skew() {
             local pin cmp ahead tag_date tag_epoch fe_tag fresh
 
-            if [[ -z "${INTENTD_READ_PAT:-}" ]]; then
-              echo "INTENTD_READ_PAT is not set; skipping the BE-dependency freshness check (failing open)."
-              return 1
-            fi
-
             # The pin this cut would ship: intentd.version at main HEAD
             # (the squash merge cuts the tag on main's tree).
             pin=$(gh api "repos/$GITHUB_REPOSITORY/contents/intentd.version?ref=heads/main" \
@@ -441,7 +426,8 @@ jobs:
             # moved past the pinned tag (ahead_by) and when that tag was
             # cut (its commit's committer date). Only top-level metadata is
             # read, so per_page=1 truncating the commits array is fine.
-            cmp=$(GH_TOKEN="$INTENTD_READ_PAT" gh api \
+            # intentd is public; the ambient GITHUB_TOKEN covers the read.
+            cmp=$(gh api \
               "repos/intent-hq/intentd/compare/v$pin...main?per_page=1" 2>/dev/null) || cmp=""
             ahead=$(jq -er '.ahead_by' <<<"$cmp" 2>/dev/null) || ahead=""
             if ! grep -Eq '^[0-9]+$' <<<"$ahead"; then
