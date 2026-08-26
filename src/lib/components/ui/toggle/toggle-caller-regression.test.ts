@@ -117,7 +117,6 @@ describe('B2 caller metadata regression', () => {
       ],
       toggle: [
         'src/lib/component-catalog/renderers/BasicCatalogPreview.svelte',
-        'src/lib/components/settings/AdditionalAgentsSettings.svelte',
         'src/lib/components/settings/AgentFeaturesSettings.svelte',
         'src/lib/components/settings/HardwareConsoleSettings.svelte',
         'src/lib/components/settings/LegacyImportSettings.svelte',
@@ -168,7 +167,6 @@ describe('B2 caller metadata regression', () => {
       ],
       indicator: [
         { path: 'src/lib/component-catalog/renderers/BasicCatalogPreview.svelte', count: 1 },
-        { path: 'src/lib/components/settings/AdditionalAgentsSettings.svelte', count: 1 },
         { path: 'src/lib/components/settings/AgentFeaturesSettings.svelte', count: 1 },
         { path: 'src/lib/components/settings/HardwareConsoleSettings.svelte', count: 1 },
         { path: 'src/lib/components/settings/LegacyImportSettings.svelte', count: 1 },
