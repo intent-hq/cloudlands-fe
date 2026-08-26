@@ -35,7 +35,11 @@
 
   const operationalContent = (prefix: string, includeStreamingThinking = false) =>
     [
-      { type: 'thinking', id: `${prefix}-thinking-a`, text: 'Inspect the production render path' },
+      {
+        type: 'thinking',
+        id: `${prefix}-thinking-a`,
+        text: 'Inspect the production render path\n\nGeometry detail.',
+      },
       {
         type: 'tool_use',
         id: `${prefix}-view`,
@@ -48,7 +52,11 @@
         tool_use_id: `${prefix}-view`,
         output: 'read complete',
       },
-      { type: 'thinking', id: `${prefix}-thinking-after-view`, text: 'Compare the tool row' },
+      {
+        type: 'thinking',
+        id: `${prefix}-thinking-after-view`,
+        text: 'Compare the tool row\n\nGeometry detail.',
+      },
       {
         type: 'tool_use',
         id: `${prefix}-context`,
@@ -67,7 +75,7 @@
       {
         type: 'thinking',
         id: `${prefix}-thinking-after-context`,
-        text: 'Compare the context row',
+        text: 'Compare the context row\n\nGeometry detail.',
       },
       {
         type: 'text',
@@ -123,7 +131,7 @@
       {
         type: 'thinking',
         id: `${prefix}-thinking-after-group`,
-        text: 'Compare the response group row',
+        text: 'Compare the response group row\n\nGeometry detail.',
       },
       {
         type: 'tool_use',
@@ -137,7 +145,11 @@
         tool_use_id: `${prefix}-command`,
         output: 'command complete',
       },
-      { type: 'thinking', id: `${prefix}-thinking-b`, text: 'Verify every final edge' },
+      {
+        type: 'thinking',
+        id: `${prefix}-thinking-b`,
+        text: 'Verify every final edge\n\nGeometry detail.',
+      },
       {
         type: 'tool_use',
         id: `${prefix}-input-only`,
@@ -211,7 +223,7 @@
   const thinking = (id: string): ContentBlock => ({
     type: 'thinking',
     id,
-    text: `Thinking ${id}`,
+    text: `Thinking ${id}\n\nGeometry detail.`,
   });
   const seamContent = (prefix: string, startsWithThinking = false) =>
     [
@@ -318,7 +330,7 @@
         {
           type: 'thinking',
           id: 'production-following-reasoning',
-          text: 'Trace the higher-level list wrapper',
+          text: 'Trace the higher-level list wrapper\n\nGeometry detail.',
         },
       ]),
       timestamp: '2026-08-17T11:00:02.000Z',

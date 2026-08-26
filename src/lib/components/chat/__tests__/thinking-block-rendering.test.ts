@@ -23,7 +23,7 @@ vi.mock('$lib/components/markdown/MarkdownViewer.svelte', async () => ({
 }));
 
 const storeState = vi.hoisted(() => ({
-  current: {} as Record<string, unknown>,
+  current: { theme: { name: 'light' } } as Record<string, unknown>,
 }));
 
 vi.mock('$store/renderer/store', async () => {
@@ -33,7 +33,7 @@ vi.mock('$store/renderer/store', async () => {
 });
 
 afterEach(() => {
-  storeState.current = {};
+  storeState.current = { theme: { name: 'light' } };
   cleanup();
 });
 
@@ -68,17 +68,113 @@ describe('thinking blocks — StreamingMessageContent', () => {
     expect(screen.getByRole('button').getAttribute('aria-expanded')).toBe('true');
   });
 
-  it('renders a restored headingless block with the localized collapsed fallback', async () => {
+  it('renders a restored headingless block inline without a fallback disclosure', async () => {
     await renderStreaming([thinking('msg_1:0', 'Checking the schema first')], false);
 
-    const toggle = screen.getByRole('button');
-    expect(toggle.getAttribute('aria-expanded')).toBe('false');
-    expect(toggle.textContent?.trim()).toBe('Reasoning');
-    expect(screen.queryByTestId('markdown-viewer')).toBeNull();
-    await fireEvent.click(toggle);
+    expect(screen.queryByRole('button', { name: 'Reasoning' })).toBeNull();
+    expect(screen.queryByTestId('reasoning-tool-call')).toBeNull();
     expect(screen.getByTestId('markdown-viewer').textContent).toContain(
       'Checking the schema first',
     );
+  });
+
+  const persistedStandaloneMessage = {
+    id: 'assistant-dark-mode-sanitized',
+    role: 'assistant',
+    isStreaming: false,
+    contentBlocks: [
+      thinking(
+        'dark-mode-standalone:0',
+        'I am checking the saved theme preference before changing the interface.',
+      ),
+      {
+        type: 'tool_use',
+        id: 'dark-mode-standalone:1',
+        toolCallId: 'theme-source-call',
+        name: 'view',
+        input: { path: 'src/theme.ts' },
+      },
+      {
+        type: 'tool_result',
+        id: 'dark-mode-standalone:2',
+        tool_use_id: 'theme-source-call',
+        output: 'Sanitized theme source',
+      },
+      thinking(
+        'dark-mode-standalone:3',
+        'The saved preference and system fallback use separate paths.',
+      ),
+      { type: 'text', id: 'dark-mode-standalone:4', text: 'Theme storage is understood.' },
+    ] as ContentBlock[],
+  } as AgentMessage;
+
+  it.each([
+    ['MessageContent', renderStatic],
+    ['StreamingMessageContent', (content: ContentBlock[]) => renderStreaming(content, false)],
+  ])(
+    'renders persisted standalone headingless reasoning inline in %s',
+    async (_, renderPersistedMessage) => {
+      await renderPersistedMessage(persistedStandaloneMessage.contentBlocks ?? []);
+
+      expect(screen.queryAllByRole('button', { name: 'Reasoning' })).toHaveLength(0);
+      expect(document.querySelector('[aria-expanded][aria-label="Reasoning"]')).toBeNull();
+      expect(document.querySelector('[aria-controls][aria-label="Reasoning"]')).toBeNull();
+      expect(screen.queryByTestId('reasoning-tool-call')).toBeNull();
+      expect(document.querySelector('[data-message-content-block="thinking"]')).toBeNull();
+      expect(document.querySelectorAll('[data-tool-use-id]')).toHaveLength(1);
+
+      const orderedText = [
+        'I am checking the saved theme preference before changing the interface.',
+        'The saved preference and system fallback use separate paths.',
+        'Theme storage is understood.',
+      ].map((text) => screen.getByText(text));
+      expect(
+        orderedText
+          .slice(1)
+          .every((node, index) =>
+            Boolean(
+              orderedText[index].compareDocumentPosition(node) & Node.DOCUMENT_POSITION_FOLLOWING,
+            ),
+          ),
+      ).toBe(true);
+      for (const text of orderedText) {
+        expect(
+          document.body.textContent?.match(new RegExp(text.textContent ?? '', 'g')),
+        ).toHaveLength(1);
+      }
+
+      expect(
+        findChatSearchMatches([persistedStandaloneMessage], 'saved theme preference', new Map()),
+      ).toEqual([
+        {
+          messageId: 'assistant-dark-mode-sanitized',
+          matchIndexInMessage: 0,
+          occurrenceInBlock: 0,
+          turnKey: 'assistant-dark-mode-sanitized',
+          blockPath: 'b:0',
+          disclosurePath: [],
+        },
+      ]);
+    },
+  );
+
+  it.each([
+    ['MessageContent', renderMessage],
+    ['StreamingMessageContent', renderStreaming],
+  ])('transitions standalone active reasoning to inline content in %s', async (_, renderer) => {
+    const content = [thinking('standalone-lifecycle:0', 'I am checking the active theme path.')];
+    const view = await renderer(content, true);
+
+    expect(screen.getByRole('button', { name: 'Thinking...' }).getAttribute('aria-expanded')).toBe(
+      'true',
+    );
+    expect(screen.getByText('I am checking the active theme path.')).toBeTruthy();
+
+    await view.rerender({ content, isStreaming: false });
+
+    expect(screen.queryByRole('button', { name: 'Reasoning' })).toBeNull();
+    expect(screen.queryByTestId('reasoning-tool-call')).toBeNull();
+    expect(screen.getByText('I am checking the active theme path.')).toBeTruthy();
   });
 
   it('interleaves thinking and text blocks in stream order', async () => {
@@ -91,7 +187,14 @@ describe('thinking blocks — StreamingMessageContent', () => {
     );
 
     const rendered = document.querySelectorAll('.content-block--thinking, .content-block--text');
-    expect([...rendered].map((el) => el.className.includes('thinking'))).toEqual([true, false]);
+    expect([...rendered].map((el) => el.getAttribute('data-message-content-block'))).toEqual([
+      'text',
+      'text',
+    ]);
+    const renderedText = document.body.textContent ?? '';
+    expect(renderedText.indexOf('First I reason')).toBeLessThan(
+      renderedText.indexOf('Then I answer'),
+    );
   });
 
   it('still renders legacy `content`-bearing thinking blocks (FE <think> parser)', async () => {
@@ -671,10 +774,14 @@ describe('thinking blocks — StreamingMessageContent', () => {
       false,
     );
 
-    expect(document.querySelector('.content-block--thinking')).not.toBeNull();
-    await fireEvent.click(screen.getByRole('button'));
+    expect(document.querySelector('.content-block--thinking')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Reasoning' })).toBeNull();
     expect(document.body.textContent).toContain('Hidden reasoning');
-    expect(document.querySelector('.content-block--text')?.textContent).toContain('Visible answer');
+    expect(
+      [...document.querySelectorAll('.content-block--text')].some((block) =>
+        block.textContent?.includes('Visible answer'),
+      ),
+    ).toBe(true);
   });
 
   it('renders thinking blocks on a fresh preferences state', async () => {
@@ -698,8 +805,8 @@ describe('thinking blocks — StreamingMessageContent', () => {
       false,
     );
 
-    expect(document.querySelector('.content-block--thinking')).not.toBeNull();
-    await fireEvent.click(screen.getByRole('button'));
+    expect(document.querySelector('.content-block--thinking')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Reasoning' })).toBeNull();
     expect(document.body.textContent).toContain('legacy hidden reasoning');
     expect(document.body.textContent).toContain('Visible answer');
   });
@@ -818,8 +925,8 @@ describe('thinking blocks — StreamingMessageContent', () => {
       false,
     );
 
-    expect(document.querySelector('.content-block--thinking')).not.toBeNull();
-    await fireEvent.click(screen.getByRole('button'));
+    expect(document.querySelector('.content-block--thinking')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Reasoning' })).toBeNull();
     expect(document.body.textContent).toContain('legacy visible reasoning');
   });
 });

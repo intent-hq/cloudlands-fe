@@ -299,7 +299,9 @@
   });
 
   // Group content blocks by <group:Name> tags at the ContentBlock level.
-  let groupedBlocks = $derived(normalizeResponseGroups(groupContentBlocks(blocks, isStreaming)));
+  let groupedBlocks = $derived(
+    normalizeResponseGroups(groupContentBlocks(blocks, isStreaming), isStreaming),
+  );
 
   // Track tool states
   let toolStates = $state<Map<string, 'running' | 'completed' | 'error'>>(new Map());

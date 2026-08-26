@@ -22,6 +22,17 @@ function reasoningWithText(block: ContentBlock, text: string): ContentBlock | nu
   return { ...rest, type: 'thinking', text } as ContentBlock;
 }
 
+function normalizeStandaloneReasoning(block: ContentBlock, isActive: boolean): ContentBlock | null {
+  if (block.type !== 'thinking' || isActive) return block;
+
+  const text = block.text ?? block.content ?? '';
+  if (extractReasoningHeading(text).heading) return block;
+  if (!text.trim()) return null;
+
+  const { content: _content, ...rest } = block;
+  return { ...rest, type: 'text', text } as ContentBlock;
+}
+
 export function normalizeResponseGroup(block: ContentBlockGroup): ContentBlockGroup {
   if (!isReasoningPhaseGroupName(block.name)) return block;
 
@@ -100,8 +111,19 @@ function pairAdjacentReasoningGroup(
 
 export function normalizeResponseGroups(
   blocks: readonly RenderContentBlock[],
+  isStreaming = false,
 ): RenderContentBlock[] {
   const normalized: RenderContentBlock[] = [];
+  let activeBlockIndex = -1;
+  if (isStreaming) {
+    for (let index = blocks.length - 1; index >= 0; index -= 1) {
+      if (blocks[index].type !== 'tool_result') {
+        activeBlockIndex = index;
+        break;
+      }
+    }
+  }
+
   for (let index = 0; index < blocks.length; index += 1) {
     const block = blocks[index];
     const next = blocks[index + 1];
@@ -114,7 +136,13 @@ export function normalizeResponseGroups(
       }
     }
 
-    normalized.push(block.type === 'content_group' ? normalizeResponseGroup(block) : block);
+    if (block.type === 'content_group') {
+      normalized.push(normalizeResponseGroup(block));
+      continue;
+    }
+
+    const standalone = normalizeStandaloneReasoning(block, index === activeBlockIndex);
+    if (standalone) normalized.push(standalone);
   }
   return normalized;
 }

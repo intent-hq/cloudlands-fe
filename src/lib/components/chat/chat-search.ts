@@ -55,6 +55,7 @@ function buildMessageSearchBlocks(message: AgentMessage, turnKey: string): ChatS
   });
   const grouped = normalizeResponseGroups(
     groupContentBlocks(parsedPromptBlocks.contentBlocks, !!message.isStreaming),
+    !!message.isStreaming,
   );
   const output: ChatSearchBlock[] = [];
   const addText = (text: string, blockPath: string, disclosurePath: string[]) => {

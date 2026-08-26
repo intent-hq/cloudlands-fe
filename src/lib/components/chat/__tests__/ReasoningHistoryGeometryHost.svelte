@@ -25,8 +25,8 @@
   ];
 
   const ordinary: ContentBlock[] = [
-    { type: 'thinking', id: 'ordinary:0', text: 'First ordinary reasoning' },
-    { type: 'thinking', id: 'ordinary:1', text: 'Second ordinary reasoning' },
+    { type: 'thinking', id: 'ordinary:0', text: 'First ordinary reasoning\n\nFirst body.' },
+    { type: 'thinking', id: 'ordinary:1', text: 'Second ordinary reasoning\n\nSecond body.' },
   ];
 </script>
 

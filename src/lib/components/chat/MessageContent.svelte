@@ -188,7 +188,9 @@
   });
 
   // Group content blocks by <group:Name> tags at the ContentBlock level.
-  const groupedBlocks = $derived(normalizeResponseGroups(groupContentBlocks(blocks, isStreaming)));
+  const groupedBlocks = $derived(
+    normalizeResponseGroups(groupContentBlocks(blocks, isStreaming), isStreaming),
+  );
 
   function isVisibleOperationalBlock(block: RenderContentBlock): boolean {
     return block.type !== 'tool_result';
@@ -693,6 +695,7 @@
     {:else}
       <ThinkingBlock
         content={getContentBlockText(block) || m.chat_shared_processing_fallback()}
+        isStreaming={isStreaming && !nested && blockIndex === groupedBlocks.length - 1}
         {workspaceId}
         {adjacentOperationalRow}
       />
