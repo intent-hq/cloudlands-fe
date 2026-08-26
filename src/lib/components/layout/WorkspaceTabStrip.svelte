@@ -25,6 +25,7 @@
   } from '$store/renderer/slices/tab-state/tab-state-slice';
   import {
     getReleasedWorkspaceTabMove,
+    getWorkspaceTabAutoScrollDelta,
     getWorkspaceTabInsertionIndex,
     proposeWorkspaceTabOrder,
     type WorkspaceTabSlot,
@@ -71,14 +72,21 @@
 
   interface WorkspaceTabDragSession {
     originalOrder: string[];
-    startClientX: number;
     pointerOffsetX: number;
     origin: { left: number; top: number; width: number; height: number };
     slots: WorkspaceTabSlot[];
+    startScrollLeft: number;
+  }
+
+  interface WorkspaceTabPointerGrab {
+    workspaceId: string;
+    clientX: number;
+    pointerOffsetX: number;
   }
 
   let draggedWorkspaceId = $state<string | null>(null);
   let dragSession = $state<WorkspaceTabDragSession | null>(null);
+  let pendingDragPointer: WorkspaceTabPointerGrab | null = null;
   let dragClientX = $state(0);
   let proposedTabOrder = $state<string[] | null>(null);
   const renderedTabOrder = $derived(proposedTabOrder ?? $workspaceTabOrder$);
@@ -96,6 +104,7 @@
   // transition whenever tab order or title-bar positioning changes.
   const activeTabBoundsPollers = new Set<() => void>();
   const ACTIVE_TAB_TRACKING_DURATION_MS = 240;
+  let autoScrollFrame: number | null = null;
 
   onMount(() => {
     activeStreamsTracker.startPolling();
@@ -173,7 +182,7 @@
     const strip = node.closest('[data-workspace-tab-strip]');
 
     const clampActiveTabIntoView = () => {
-      if (!strip) return;
+      if (!strip || draggedWorkspaceId) return;
       const tabRect = node.getBoundingClientRect();
       const stripRect = strip.getBoundingClientRect();
       if (tabRect.left < stripRect.left + ACTIVE_TAB_EDGE_GAP) {
@@ -335,6 +344,56 @@
     return first.length === second.length && first.every((id, index) => id === second[index]);
   }
 
+  function stopDragAutoScroll() {
+    if (autoScrollFrame === null) return;
+    cancelAnimationFrame(autoScrollFrame);
+    autoScrollFrame = null;
+  }
+
+  function updateProposedTabOrder(clientX: number) {
+    if (!draggedWorkspaceId || !dragSession) return;
+    const scrollDelta =
+      (stripElement?.scrollLeft ?? dragSession.startScrollLeft) - dragSession.startScrollLeft;
+    const slots = dragSession.slots.map((slot) => ({
+      ...slot,
+      centerX: slot.centerX - scrollDelta,
+    }));
+    const insertionIndex = getWorkspaceTabInsertionIndex(
+      clientX,
+      dragSession.pointerOffsetX,
+      dragSession.origin.width,
+      slots,
+    );
+    const nextOrder = proposeWorkspaceTabOrder(
+      dragSession.originalOrder,
+      draggedWorkspaceId,
+      insertionIndex,
+    );
+    if (!proposedTabOrder || !ordersMatch(nextOrder, proposedTabOrder)) {
+      proposedTabOrder = nextOrder;
+    }
+  }
+
+  function runDragAutoScroll() {
+    autoScrollFrame = null;
+    if (!draggedWorkspaceId || !dragSession || !stripElement) return;
+    const stripRect = stripElement.getBoundingClientRect();
+    const delta = getWorkspaceTabAutoScrollDelta(dragClientX, stripRect.left, stripRect.right);
+    const maxScrollLeft = Math.max(0, stripElement.scrollWidth - stripElement.clientWidth);
+    const nextScrollLeft = Math.max(0, Math.min(maxScrollLeft, stripElement.scrollLeft + delta));
+    if (nextScrollLeft === stripElement.scrollLeft) return;
+    stripElement.scrollLeft = nextScrollLeft;
+    updateProposedTabOrder(dragClientX);
+    queueDragAutoScroll();
+  }
+
+  function queueDragAutoScroll() {
+    if (autoScrollFrame !== null) return;
+    autoScrollFrame = -1;
+    const frame = requestAnimationFrame(runDragAutoScroll);
+    if (autoScrollFrame === -1) autoScrollFrame = frame;
+  }
+
   $effect(() => {
     if (
       !draggedWorkspaceId &&
@@ -345,25 +404,42 @@
     }
   });
 
+  function handleDragPointerDown(event: PointerEvent, workspaceId: string) {
+    if (event.button !== 0) return;
+    const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
+    pendingDragPointer = {
+      workspaceId,
+      clientX: event.clientX,
+      pointerOffsetX: Math.max(0, Math.min(event.clientX - rect.left, rect.width)),
+    };
+  }
+
   function handleDragStart(event: DragEvent, workspaceId: string) {
     if (!event.dataTransfer) return;
     const target = event.currentTarget as HTMLElement;
     const rect = target.getBoundingClientRect();
-    const startClientX = event.clientX;
+    const pointerGrab = pendingDragPointer?.workspaceId === workspaceId ? pendingDragPointer : null;
+    pendingDragPointer = null;
+    const pointerOffsetX =
+      pointerGrab?.pointerOffsetX ?? Math.max(0, Math.min(event.clientX - rect.left, rect.width));
+    const startClientX =
+      event.clientX !== 0 || event.clientY !== 0
+        ? event.clientX
+        : (pointerGrab?.clientX ?? rect.left + pointerOffsetX);
     const originalOrder = [...visibleTabIds];
     draggedWorkspaceId = workspaceId;
     dragClientX = startClientX;
     proposedTabOrder = originalOrder;
     dragSession = {
       originalOrder,
-      startClientX,
-      pointerOffsetX: Math.max(0, Math.min(startClientX - rect.left, rect.width)),
+      pointerOffsetX,
       origin: { left: rect.left, top: rect.top, width: rect.width, height: rect.height },
       slots: originalOrder.flatMap((id) => {
         if (id === workspaceId) return [];
         const slotRect = tabSurfaces.get(id)?.getBoundingClientRect();
         return slotRect ? [{ id, centerX: slotRect.left + slotRect.width / 2 }] : [];
       }),
+      startScrollLeft: stripElement?.scrollLeft ?? 0,
     };
     event.dataTransfer.setData('text/plain', workspaceId);
     event.dataTransfer.effectAllowed = 'move';
@@ -380,19 +456,7 @@
     if (!draggedWorkspaceId || !dragSession) return;
     event.preventDefault();
     handleDragMove(event);
-    const insertionIndex = getWorkspaceTabInsertionIndex(
-      event.clientX,
-      dragSession.pointerOffsetX,
-      dragSession.origin.width,
-      dragSession.slots,
-    );
-    const nextOrder = proposeWorkspaceTabOrder(
-      dragSession.originalOrder,
-      draggedWorkspaceId,
-      insertionIndex,
-    );
-    if (!proposedTabOrder || !ordersMatch(nextOrder, proposedTabOrder))
-      proposedTabOrder = nextOrder;
+    updateProposedTabOrder(dragClientX);
     if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
   }
 
@@ -400,10 +464,13 @@
     if (!draggedWorkspaceId || !dragSession) return;
     if (event.clientX === 0 && event.clientY === 0) return;
     dragClientX = event.clientX;
+    queueDragAutoScroll();
   }
 
   function finishDrag(keepProposedOrder = false) {
     if (!draggedWorkspaceId) return;
+    stopDragAutoScroll();
+    pendingDragPointer = null;
     draggedWorkspaceId = null;
     dragSession = null;
     if (!keepProposedOrder) proposedTabOrder = null;
@@ -504,7 +571,7 @@
             data-active={isCurrent}
             data-dragging={isDragged}
             style:left={isDragged && dragSession
-              ? `${dragSession.origin.left + dragClientX - dragSession.startClientX}px`
+              ? `${dragClientX - dragSession.pointerOffsetX}px`
               : undefined}
             style:top={isDragged && dragSession ? `${dragSession.origin.top}px` : undefined}
             style:width={isDragged && dragSession ? `${dragSession.origin.width}px` : undefined}
@@ -513,6 +580,7 @@
             use:registerTabSurface={workspaceId}
             role="presentation"
             draggable={true}
+            onpointerdown={(event) => handleDragPointerDown(event, workspaceId)}
             ondragstart={(event) => handleDragStart(event, workspaceId)}
             ondrag={handleDragMove}
             ondragend={handleDragEnd}

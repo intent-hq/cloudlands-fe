@@ -8,6 +8,25 @@ export interface WorkspaceTabMove {
   placement: 'before' | 'after';
 }
 
+export function getWorkspaceTabAutoScrollDelta(
+  clientX: number,
+  stripLeft: number,
+  stripRight: number,
+  edgeSize = 48,
+  maxDelta = 18,
+): number {
+  if (stripRight <= stripLeft || edgeSize <= 0 || maxDelta <= 0) return 0;
+  const leftDistance = clientX - stripLeft;
+  if (leftDistance < edgeSize) {
+    return -maxDelta * Math.min(1, Math.max(0, 1 - leftDistance / edgeSize));
+  }
+  const rightDistance = stripRight - clientX;
+  if (rightDistance < edgeSize) {
+    return maxDelta * Math.min(1, Math.max(0, 1 - rightDistance / edgeSize));
+  }
+  return 0;
+}
+
 export function getWorkspaceTabInsertionIndex(
   clientX: number,
   pointerOffsetX: number,
