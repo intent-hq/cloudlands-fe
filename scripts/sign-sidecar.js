@@ -111,6 +111,11 @@ const KEYCHAIN_HELPER_BUNDLE_ID = 'dev.intentapp.cloudlands-fe.keychain-helper';
  * errSecMissingEntitlement, which the helper reports as its structured
  * "unavailable" error (fail-soft).
  *
+ * This signature must survive electron-builder's own signing pass, which
+ * runs after afterPack and re-signs every nested bundle with the main app
+ * entitlements. mac.signIgnore in electron-builder.yml excludes this bundle
+ * from that pass so the entitlements written here are what ships.
+ *
  * @param {string} bundlePath - Absolute path to intent-keychain-helper.app
  * @param {string} identity - Code signing identity
  */

@@ -72,6 +72,14 @@ mac:
   gatekeeperAssess: false
   entitlements: build/entitlements.mac.plist
   entitlementsInherit: build/entitlements.mac.plist
+  # The keychain sync helper is signed by the afterPack hook (sign-sidecar.js)
+  # with RESTRICTED keychain entitlements (application-identifier +
+  # keychain-access-groups) and an embedded provisioning profile. Exclude it
+  # from electron-builder's own deep-sign pass, which would otherwise re-sign
+  # the bundle with the main app entitlements above and destroy that signature.
+  # The pre-signed bundle is sealed as-is into the outer app signature.
+  signIgnore:
+    - 'Resources/keychain-helper/intent-keychain-helper\.app'
   # Bundle the macOS speech transcription helper (built by
   # scripts/build-speech-helper.cjs; signed by the afterPack hook).
   # Runtime path: process.resourcesPath/speech-helper/intent-speech-helper
