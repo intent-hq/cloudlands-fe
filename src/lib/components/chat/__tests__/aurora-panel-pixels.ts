@@ -41,12 +41,17 @@ export async function samplePanelBottomPixels(panel: Locator) {
   const screenshotScale = info.width / geometry.renderedWidth;
   const radius = Math.max(4, Math.round(geometry.radius * renderedScale * screenshotScale));
   const cornerInset = Math.max(1, Math.round(screenshotScale));
+  const insideCornerInset = Math.max(2, Math.round(radius * 0.55));
   const edgeInset = Math.max(4, Math.round(4 * screenshotScale));
 
   return {
-    corners: [
+    outsideCorners: [
       pixel(cornerInset, info.height - cornerInset),
       pixel(info.width - cornerInset - 1, info.height - cornerInset),
+    ],
+    insideCorners: [
+      pixel(insideCornerInset, info.height - insideCornerInset - 1),
+      pixel(info.width - insideCornerInset - 1, info.height - insideCornerInset - 1),
     ],
     straightEdges: [
       pixel(Math.floor(info.width / 2), info.height - edgeInset - 1),

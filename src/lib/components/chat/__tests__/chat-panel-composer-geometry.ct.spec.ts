@@ -145,17 +145,20 @@ for (const state of states) {
     } else {
       expect(auroraGeometry.edges).toEqual(shellGeometry.edges);
       expect(auroraGeometry.edges).toEqual(panelContentGeometry.edges);
-      expect(auroraGeometry.radii).toEqual(['0px', '0px']);
+      expect(auroraGeometry.radii).toEqual(panelGeometry.radii);
       expect(Number.parseFloat(panelGeometry.radii[0])).toBeGreaterThan(0);
       await expect(component.getByTestId('panel-workspace-inset')).toBeVisible();
       await applyAuroraPaintProbe(aurora);
       const pixels = await samplePanelBottomPixels(component.locator('.panel'));
-      pixels.corners.forEach((corner) => {
+      pixels.outsideCorners.forEach((corner) => {
         expect(isPaintProbe(corner)).toBe(false);
+      });
+      pixels.insideCorners.forEach((corner) => {
+        expect(isPaintProbe(corner)).toBe(true);
       });
       pixels.straightEdges.forEach((edge) => {
         expect(isPaintProbe(edge)).toBe(true);
-        pixels.corners.forEach((corner) => {
+        pixels.outsideCorners.forEach((corner) => {
           expect(colorDistance(edge, corner)).toBeGreaterThan(100);
         });
       });
@@ -168,6 +171,37 @@ for (const state of states) {
     expect((await aurora.boundingBox())!.y).toBeLessThan((await input.boundingBox())!.y);
   });
 }
+
+test('keeps the regular Aurora clipped during reduced-motion streaming transitions', async ({
+  mount,
+  page,
+}) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  const props = { theme: 'dark' as const, zoom: 2, width: 180, chief: false, streaming: false };
+  const component = await mount(ChatPanelComposerGeometryHost, { props });
+  const aurora = component.getByTestId('composer-aurora-host');
+  const panel = component.locator('.panel');
+
+  await expect(aurora).toHaveCount(0);
+  await component.update({ props: { ...props, streaming: true } });
+  await expect(aurora).toBeVisible();
+  const [auroraRadii, panelRadii] = await Promise.all(
+    [aurora, panel].map((locator) =>
+      locator.evaluate((node) => {
+        const style = getComputedStyle(node);
+        return [style.borderBottomLeftRadius, style.borderBottomRightRadius];
+      }),
+    ),
+  );
+  expect(auroraRadii).toEqual(panelRadii);
+  await applyAuroraPaintProbe(aurora);
+  const pixels = await samplePanelBottomPixels(panel);
+  pixels.outsideCorners.forEach((corner) => expect(isPaintProbe(corner)).toBe(false));
+  pixels.insideCorners.forEach((corner) => expect(isPaintProbe(corner)).toBe(true));
+
+  await component.update({ props });
+  await expect(aurora).toHaveCount(0);
+});
 
 test('keeps attachments, controls, tab order, and resize behavior inside the nested surface', async ({
   mount,

@@ -1,14 +1,17 @@
 <script lang="ts">
   import { onDestroy, untrack } from 'svelte';
   import { faComment } from '@fortawesome/free-solid-svg-icons';
-  import type { AgentSession } from '$shared/types';
+  import { AgentStatus, type AgentSession } from '$shared/types';
   import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
   import AgentTabType from '$features/layout/tab-types/AgentTabType.svelte';
   import { tabTypeRegistry } from '$features/layout/tab-types/registry';
   import PanelLayout from '$lib/components/layout/panel-system/PanelLayout.svelte';
   import { startRootStoreLifecycle } from '$store/renderer/root-store-lifecycle';
   import { store } from '$store/renderer/store';
-  import { bulkUpsertSessions } from '$store/renderer/slices/agent-session/agent-session-slice';
+  import {
+    bulkUpsertSessions,
+    updateSession,
+  } from '$store/renderer/slices/agent-session/agent-session-slice';
   import {
     initializeLayout,
     setRestoreStatus,
@@ -34,6 +37,7 @@
   } = $props();
 
   const fixture = untrack(() => ({ chief, streaming, draft }));
+  let appliedStreaming = fixture.streaming;
   const workspaceId = fixture.chief ? CHIEF_WORKSPACE_ID : 'chat-panel-composer-geometry';
   const agentId = fixture.chief ? 'chief-composer-agent' : 'regular-composer-agent';
   const timestamp = '2026-08-23T12:00:00.000Z';
@@ -42,7 +46,7 @@
     id: agentId,
     workspaceId,
     name: fixture.chief ? 'Chief' : 'Composer geometry agent',
-    status: fixture.streaming ? 'active' : 'idle',
+    status: fixture.streaming ? AgentStatus.Active : AgentStatus.RuntimeIdle,
     isActive: true,
     isStreaming: fixture.streaming,
     isProcessing: fixture.streaming,
@@ -75,6 +79,19 @@
   );
   store.dispatch(bulkUpsertSessions([session], { preserveExplicitRuntimeFlags: false }));
   store.dispatch(setAgents(workspaceId, [session]));
+  $effect(() => {
+    const nextStreaming = streaming;
+    if (nextStreaming === appliedStreaming) return;
+    appliedStreaming = nextStreaming;
+    store.dispatch(
+      updateSession(agentId, {
+        status: nextStreaming ? AgentStatus.Active : AgentStatus.RuntimeIdle,
+        isStreaming: nextStreaming,
+        isProcessing: nextStreaming,
+        isResponding: nextStreaming,
+      }),
+    );
+  });
   if (fixture.draft) store.dispatch(setChatDraft(workspaceId, agentId, fixture.draft));
   store.dispatch(
     initializeLayout(workspaceId, {

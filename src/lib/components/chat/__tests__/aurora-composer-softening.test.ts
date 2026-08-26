@@ -31,8 +31,8 @@ describe('composer Aurora softening layer', () => {
     );
     expect(panel).toContain('style:height={`calc(${composerHeight}px + 10rem)`}');
     expect(panel).not.toContain('style:right="{scrollbarGutterWidth}px"');
-    expect(panel).not.toContain('border-bottom-left-radius: var(--panel-shell-radius)');
-    expect(panel).not.toContain('border-bottom-right-radius: var(--panel-shell-radius)');
+    expect(panel).toContain('border-bottom-left-radius: var(--panel-shell-radius)');
+    expect(panel).toContain('border-bottom-right-radius: var(--panel-shell-radius)');
     expect(panel.indexOf('regular-panel-aurora-host')).toBeLessThan(
       panel.indexOf('data-testid="chat-transcript-scroll-viewport"'),
     );

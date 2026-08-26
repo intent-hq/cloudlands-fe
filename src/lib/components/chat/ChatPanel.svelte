@@ -4686,7 +4686,7 @@
   ondrop={panelFileDrop.handleDrop}
 >
   <!-- The regular Aurora belongs to the complete chat surface, not the inset
-       composer lane. Its real Panel ancestor owns the exact bottom-corner clip. -->
+       composer lane. It inherits the real Panel radius for its own bottom clip. -->
   {#if $agentSessionIsStreaming$ && !isChiefWorkspace}
     <div
       class="composer-aurora-host regular-panel-aurora-host pointer-events-none absolute inset-x-0 bottom-0 z-0 overflow-hidden"
@@ -5840,6 +5840,11 @@
 </div>
 
 <style>
+  .regular-panel-aurora-host {
+    border-bottom-left-radius: var(--panel-shell-radius);
+    border-bottom-right-radius: var(--panel-shell-radius);
+  }
+
   .chat-content-measure {
     max-width: 140em;
   }

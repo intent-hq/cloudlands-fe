@@ -25,14 +25,17 @@ async function expectPanelToClipFlushAurora(aurora: Locator, panel: Locator) {
     bottomSurfaceGeometry(aurora),
     bottomSurfaceGeometry(panel),
   ]);
-  expect(auroraGeometry.radii).toEqual(['0px', '0px']);
+  expect(auroraGeometry.radii).toEqual(panelGeometry.radii);
   expect(Number.parseFloat(panelGeometry.radii[0])).toBeGreaterThan(0);
   await applyAuroraPaintProbe(aurora);
   const pixels = await samplePanelBottomPixels(panel);
-  pixels.corners.forEach((corner) => expect(isPaintProbe(corner)).toBe(false));
+  pixels.outsideCorners.forEach((corner) => expect(isPaintProbe(corner)).toBe(false));
+  pixels.insideCorners.forEach((corner) => expect(isPaintProbe(corner)).toBe(true));
   pixels.straightEdges.forEach((edge) => {
     expect(isPaintProbe(edge)).toBe(true);
-    pixels.corners.forEach((corner) => expect(colorDistance(edge, corner)).toBeGreaterThan(100));
+    pixels.outsideCorners.forEach((corner) =>
+      expect(colorDistance(edge, corner)).toBeGreaterThan(100),
+    );
   });
 }
 
