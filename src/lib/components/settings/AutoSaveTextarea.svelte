@@ -3,11 +3,10 @@
   import Fa from 'svelte-fa';
   import { m } from '$shared/paraglide/messages.js';
   import { formatNumber } from '$lib/i18n/format';
-  import {
-  faCheck,
-  faRotateLeft,
-} from '@fortawesome/free-solid-svg-icons';
+  import { faCheck } from '@fortawesome/free-solid-svg-icons';
   import Textarea from '../ui/textarea/textarea.svelte';
+
+  const DEBOUNCE_MS = 1000;
 
   interface Props {
     /** Current value (can be a computed/derived value) */
@@ -15,18 +14,11 @@
     /** Original value for change detection */
     originalValue?: string;
     placeholder?: string;
-    label?: string;
-    /** Custom class for the label */
-    labelClass?: string;
-    description?: string;
-    debounceMs?: number;
     minRows?: number;
     /** Maximum character limit (optional) */
     maxLength?: number;
     /** Called when value should be saved */
     onSave: (value: string) => void | Promise<void>;
-    /** Called when reset is clicked (only shown if provided) */
-    onReset?: () => void;
     class?: string;
   }
 
@@ -34,14 +26,9 @@
     value,
     originalValue = '',
     placeholder = '',
-    label,
-    labelClass = 'text-sm font-medium text-foreground',
-    description,
-    debounceMs = 1000,
     minRows = 8,
     maxLength,
     onSave,
-    onReset,
     class: className = '',
   }: Props = $props();
 
@@ -114,7 +101,7 @@
     debounceTimeout = setTimeout(() => {
       debounceTimeout = null;
       save();
-    }, debounceMs);
+    }, DEBOUNCE_MS);
   }
 
   // Flush a pending debounced save immediately (e.g., on blur) so the edit
@@ -132,16 +119,6 @@
     isFocused = false;
   }
 
-  function handleReset() {
-    localValue = originalValue;
-    saveStatus = 'idle';
-    if (debounceTimeout) {
-      clearTimeout(debounceTimeout);
-      debounceTimeout = null;
-    }
-    onReset?.();
-  }
-
   function handleKeyDown(e: KeyboardEvent) {
     if ((e.metaKey || e.ctrlKey) && e.key === 's') {
       e.preventDefault();
@@ -155,30 +132,6 @@
 </script>
 
 <div class="h-full flex flex-col gap-2 {className}">
-  {#if label || hasChanges}
-    <div class="flex items-center justify-between shrink-0">
-      {#if label}
-        <span class={labelClass}>{label}</span>
-      {:else}
-        <div></div>
-      {/if}
-      {#if hasChanges && onReset}
-        <button
-          type="button"
-          onclick={handleReset}
-          class="text-xs text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1 cursor-pointer"
-        >
-          <Fa icon={faRotateLeft} class="w-3 h-3" />
-          {m.settings_autoSave_reset()}
-        </button>
-      {/if}
-    </div>
-  {/if}
-
-  {#if description}
-    <p class="text-xs text-subtle shrink-0">{description}</p>
-  {/if}
-
   <div class="relative grow min-h-0 flex flex-col">
     <Textarea
       bind:value={localValue}
