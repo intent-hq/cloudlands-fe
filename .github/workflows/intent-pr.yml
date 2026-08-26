@@ -29,8 +29,11 @@ jobs:
   # `if:` on `github.event.pull_request.head.repo.full_name ==
   # github.repository` or transitively through `needs` on a guarded job
   # (checks / build-web / test skip when the guarded route job skips, via
-  # their existing `needs.route.result == 'success'` condition). Fork PRs are
-  # auto-closed by close-fork-prs.yml.
+  # their existing `needs.route.result == 'success'` condition) — EXCEPT the
+  # gate, which deliberately still runs on fork PRs so the required "CI
+  # Gate" context fails red there (a skipped job would SATISFY a required
+  # check; see the gate job's comment). Fork PRs are auto-closed by
+  # close-fork-prs.yml.
 
   # Decides where the heavy jobs (checks / build-web / test) run: the local
   # tinybox runner normally, or GH-hosted larger runners when the tinybox
@@ -654,11 +657,16 @@ jobs:
     # Seconds-long job: pinned to ubuntu-latest (see pr-title).
     runs-on: ubuntu-latest
     permissions: {}
-    # always() keeps the gate authoritative on same-repo PRs whatever the
-    # other jobs did; the same-repo guard (fork-PR hardening note) skips it
-    # on fork PRs, so the required "CI Gate" context never reports there and
-    # the PR stays unmergeable until close-fork-prs.yml closes it.
-    if: always() && github.event.pull_request.head.repo.full_name == github.repository
+    # Deliberately UNGUARDED (the one exception to the fork-PR hardening
+    # note): a job skipped by its own `if:` reports a skipped conclusion,
+    # which SATISFIES a required status check — a skipped gate would leave a
+    # fork PR mergeable, resting the hardening entirely on close-fork-prs.yml.
+    # Instead the gate always runs (it has permissions:{}, no checkout, and
+    # executes no fork code, so this is safe): on fork PRs the needed jobs
+    # are skipped by their guards, so the required "CI Gate" context fails
+    # naturally — a red fail-safe backstop even if the close workflow is
+    # disabled, delayed, or fails.
+    if: always()
     needs: [release-fast-path, pr-title, conflict-markers, checks, build-web, test, test-ct]
     steps:
       - name: Check results
