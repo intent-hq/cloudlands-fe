@@ -27,6 +27,7 @@
   import { onDestroy } from 'svelte';
   import { slide } from 'svelte/transition';
   import Toggle from '$lib/components/ui/toggle/toggle.svelte';
+  import { Button } from '$lib/components/ui/button';
   import { Input } from '$lib/components/ui/input';
   import Fa from 'svelte-fa';
   import {
@@ -561,16 +562,11 @@
                   {m.settings_wsApi_publishSelf_description()}
                 </p>
               </div>
-              <button
-                type="button"
-                onclick={handlePublishButton}
-                disabled={publishBusy}
-                class="px-3 py-1.5 text-sm font-medium text-foreground bg-muted hover:bg-muted/80 rounded-lg transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-              >
+              <Button size="sm" onclick={handlePublishButton} disabled={publishBusy}>
                 {publishSuppressed
                   ? m.settings_wsApi_publishSelf_republish_label()
                   : m.settings_wsApi_publishSelf_button_label()}
-              </button>
+              </Button>
             </div>
           </section>
         {/if}
