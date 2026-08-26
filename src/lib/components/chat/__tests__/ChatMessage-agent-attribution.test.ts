@@ -721,6 +721,8 @@ describe('ChatMessage hook wake attribution', () => {
     const status = screen.getByTestId('wake-status');
     expect(status.classList.contains('min-w-0')).toBe(true);
     expect(status.classList.contains('truncate')).toBe(true);
+    // Status shrinks first so the identifying label keeps as much space as fits.
+    expect(status.classList.contains('shrink-[4]')).toBe(true);
     expect(screen.queryByTestId('automated-wake-details')).toBeNull();
     await expandAutomatedWake();
     expect(screen.getByText('CI is red')).toBeTruthy();
@@ -974,6 +976,8 @@ describe('ChatMessage PR-monitor wake attribution', () => {
     expect(chip.className).not.toContain('break-words');
     expect(chip.classList.contains('shrink-0')).toBe(false);
     expect(chip.querySelector('.truncate')).toBeTruthy();
+    // The full label stays discoverable via the tooltip once the chip ellipsizes.
+    expect(chip.getAttribute('title')).toBe('Open intent-hq/monorepo #42');
     const lane = screen.getByTestId('automated-wake-text-lane');
     expect(lane.classList.contains('flex-nowrap')).toBe(true);
     expect(lane.classList.contains('flex-wrap')).toBe(false);

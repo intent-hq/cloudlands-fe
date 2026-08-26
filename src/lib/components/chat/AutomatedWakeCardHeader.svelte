@@ -97,16 +97,17 @@
         {presentation.attribution.displayName}
       </span>
     {:else}
+      {@const chipLabel = getPrMonitorWakeChipLabel(presentation.attribution, workspaceRepo)}
       <Button
         type="button"
         variant="plain"
         class="h-auto min-w-0 max-w-full shrink justify-start overflow-hidden text-left font-inherit text-muted-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         data-testid="pr-monitor-wake-chip"
-        title={m.chat_prMonitorWakeAttribution_openPr_tooltip()}
+        title={m.chat_prMonitorWakeAttribution_openPrWithLabel_tooltip({ label: chipLabel })}
         onclick={openPr}
       >
         <span class="min-w-0 truncate">
-          {getPrMonitorWakeChipLabel(presentation.attribution, workspaceRepo)}
+          {chipLabel}
         </span>
       </Button>
     {/if}
