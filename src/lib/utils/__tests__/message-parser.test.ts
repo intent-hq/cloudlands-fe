@@ -1267,6 +1267,25 @@ Some trailing content.`;
     }
   });
 
+  it('withholds an open streaming block whose body is over-cap or body-shaped', () => {
+    // The old canWithholdOpenBlock heuristic released such tails mid-stream;
+    // now any open block stays withheld because a well-formed close strips it
+    // regardless of content.
+    const overCap = 'Done.\n\n<!-- suggested-prompts\nP1\nP2\nP3\nP4\nP5\nP6';
+    expect(parseSuggestedPrompts(overCap, { isStreaming: true }).cleanedContent).toBe('Done.');
+
+    const bodyShaped = 'Done.\n\n<!-- suggested-prompts\n## Heading\nSome prose here.';
+    expect(parseSuggestedPrompts(bodyShaped, { isStreaming: true }).cleanedContent).toBe('Done.');
+  });
+
+  it('gates chips to zero when a body-shaped line appears beyond the cap', () => {
+    // "Any captured line" means the whole block body, not just the first four.
+    const content = 'Done.\n\n<!-- suggested-prompts\nP1\nP2\nP3\nP4\n## Heading\n-->';
+    const result = parseSuggestedPrompts(content);
+    expect(result.prompts).toEqual([]);
+    expect(result.cleanedContent).toBe('Done.');
+  });
+
   it('restores unclosed blocks when streaming finalizes', () => {
     const incomplete = 'Done.\n\n<!-- suggested-prompts\nOnly one prompt';
     expect(parseSuggestedPrompts(incomplete, { isStreaming: true }).cleanedContent).toBe('Done.');
