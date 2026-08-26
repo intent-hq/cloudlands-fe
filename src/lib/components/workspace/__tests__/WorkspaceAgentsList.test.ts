@@ -106,7 +106,9 @@ describe('WorkspaceAgentsList single-line rows', () => {
     const longRow = view.container.querySelector<HTMLElement>(
       `[data-agent-panel-row="${longName.id}"]`,
     );
-    expect(longRow?.className).toContain('bg-muted/70');
+    expect(longRow?.className).toContain('bg-transparent');
+    expect(longRow?.className).not.toContain('hover:bg-muted');
+    expect(longRow?.getAttribute('aria-current')).toBe('true');
     expect(longRow?.querySelector('[data-agent-row-name]')?.className).toContain('flex-1');
     expect(longRow?.querySelector('[data-panel-open-state="active"]')).toBeTruthy();
     expect(longRow?.querySelector('[data-agent-row-time]')).toBeTruthy();
@@ -185,9 +187,7 @@ describe('WorkspaceAgentsList single-line rows', () => {
 
     // Clicking the row still opens the (read-only) conversation.
     await fireEvent.click(retiredRow!);
-    expect(onSelect).toHaveBeenCalledWith(
-      expect.objectContaining({ agentId: retired.id }),
-    );
+    expect(onSelect).toHaveBeenCalledWith(expect.objectContaining({ agentId: retired.id }));
 
     // The restore affordance dispatches the un-retire callback without selecting.
     const restoreButton = view.container.querySelector<HTMLElement>(

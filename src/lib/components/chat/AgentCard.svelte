@@ -589,13 +589,11 @@
       class="flex w-full min-w-0 max-w-full overflow-hidden text-left gap-2 transition-colors duration-150 {isEditing
         ? 'cursor-text'
         : 'cursor-pointer'} group border {panelRow
-        ? 'h-10 items-center rounded-md border-transparent px-2 py-2 type-body font-normal hover:bg-muted/45 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring'
+        ? 'h-10 items-center rounded-md border-transparent bg-transparent px-2 py-2 type-body font-normal text-foreground hover:bg-transparent active:bg-transparent focus-visible:-outline-offset-2 focus-visible:bg-transparent focus-visible:outline-2 focus-visible:outline-ring focus-visible:ring-0'
         : inline
           ? `type-body items-center rounded-md ${inlineRowClass}`
           : 'px-1.75 pt-1.25 pb-1.5'} {panelRow
-        ? selected
-          ? 'bg-muted/70 text-foreground'
-          : 'bg-transparent'
+        ? ''
         : selected || showBorder
           ? `bg-background border-border ${glowClass} shadow-xs`
           : 'border-transparent'} {typographyClass}"
@@ -604,6 +602,7 @@
       oncontextmenu={isEditing ? undefined : handleContextMenu}
       role={isEditing ? 'presentation' : undefined}
       aria-disabled={isEditing ? undefined : readOnly}
+      aria-current={!isEditing && panelRow && selected ? 'true' : undefined}
       tabindex={isEditing || readOnly ? -1 : undefined}
       data-agent-panel-row={panelRow ? agentId : undefined}
     >
