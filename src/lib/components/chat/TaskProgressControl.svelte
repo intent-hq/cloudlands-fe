@@ -6,6 +6,7 @@
     faCircle,
     faCircleQuestion,
     faClock,
+    faEllipsis,
     faEye,
     faSpinner,
     faTriangleExclamation,
@@ -20,12 +21,25 @@
   let open = $state(false);
   let triggerElement: HTMLButtonElement | null = $state(null);
   let collisionBoundary: Element[] = $state([]);
+  const MAX_STACK_SLOTS = 5;
   const activeTasks = $derived(tasks.filter((task) => task.status !== 'completed'));
   const completedTasks = $derived(tasks.filter((task) => task.status === 'completed'));
-  const stackedActiveTasks = $derived([
-    ...activeTasks.filter((task) => task.status !== 'running'),
-    ...activeTasks.filter((task) => task.status === 'running'),
-  ]);
+  const runningTasks = $derived(activeTasks.filter((task) => task.status === 'running'));
+  const otherActiveTasks = $derived(activeTasks.filter((task) => task.status !== 'running'));
+  const completedStackSlots = $derived(completedTasks.length > 0 ? 1 : 0);
+  const unboundedStackSlots = $derived(activeTasks.length + completedStackSlots);
+  const hasStackOverflow = $derived(unboundedStackSlots > MAX_STACK_SLOTS);
+  const activeStackCapacity = $derived(
+    MAX_STACK_SLOTS - completedStackSlots - (hasStackOverflow ? 1 : 0),
+  );
+  const visibleRunningTasks = $derived(runningTasks.slice(0, activeStackCapacity));
+  const visibleOtherActiveTasks = $derived(
+    otherActiveTasks.slice(0, Math.max(0, activeStackCapacity - visibleRunningTasks.length)),
+  );
+  const stackedActiveTasks = $derived([...visibleOtherActiveTasks, ...visibleRunningTasks]);
+  const overflowCount = $derived(
+    Math.max(0, unboundedStackSlots - completedStackSlots - stackedActiveTasks.length),
+  );
   const orderedTasks = $derived([...activeTasks, ...completedTasks]);
   const progressLabel = $derived(
     m.chat_taskProgress_progress_ariaLabel({
@@ -72,7 +86,7 @@
   }
 
   function handleTriggerFocus() {
-    open = true;
+    handleOpenChange(true);
   }
 </script>
 
@@ -100,7 +114,7 @@
   {@render statusIndicator(task.status, 'task-progress-row-status-icon')}
   <span
     class="min-w-0 truncate {task.status === 'completed'
-      ? 'text-muted-foreground line-through decoration-muted-foreground/30'
+      ? 'text-muted-foreground'
       : 'text-popover-foreground'}"
     title={task.title}
   >
@@ -120,7 +134,7 @@
           {...props}
           bind:this={triggerElement}
           type="button"
-          class="relative m-0 inline-flex h-7 w-fit shrink-0 items-center justify-center gap-0 rounded-md border border-transparent bg-transparent p-0 text-muted-foreground outline-none transition-[border-color,box-shadow] duration-[var(--motion-fast)] focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40 motion-reduce:transition-none"
+          class="relative m-0 inline-flex h-(--row-action-target-compact) min-w-(--row-action-target-compact) w-fit shrink-0 items-center justify-center gap-0 rounded-md border border-transparent bg-transparent p-0 text-muted-foreground outline-none transition-[border-color,box-shadow] duration-[var(--motion-fast)] focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40 motion-reduce:transition-none"
           aria-label={progressLabel}
           aria-expanded={open}
           onfocus={handleTriggerFocus}
@@ -135,6 +149,7 @@
               <span
                 class="relative z-0 inline-flex shrink-0"
                 data-testid="task-progress-stack-item"
+                data-task-status="completed"
               >
                 {@render statusIndicator(
                   'completed',
@@ -148,12 +163,30 @@
                 class="relative inline-flex shrink-0 {completedTasks.length > 0 || index > 0
                   ? '-ml-1.75'
                   : ''}"
-                style:z-index={index + 1}
+                style:z-index={task.status === 'running' ? MAX_STACK_SLOTS + 1 : index + 1}
                 data-testid="task-progress-stack-item"
+                data-task-id={task.id}
               >
                 {@render statusIndicator(task.status, 'task-progress-status-icon')}
               </span>
             {/each}
+            {#if hasStackOverflow}
+              <span
+                class="relative -ml-1.75 inline-flex shrink-0"
+                style:z-index={MAX_STACK_SLOTS}
+                data-testid="task-progress-stack-item"
+                data-task-status="overflow"
+              >
+                <span
+                  class="inline-flex size-3.5 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground/70 leading-none"
+                  aria-hidden="true"
+                  data-testid="task-progress-overflow-indicator"
+                  data-overflow-count={overflowCount}
+                >
+                  <Fa icon={faEllipsis} size={8} class="size-2!" />
+                </span>
+              </span>
+            {/if}
           </span>
         </button>
       {/snippet}
@@ -169,15 +202,18 @@
         collisionPadding={8}
         trapFocus={false}
         onOpenAutoFocus={(event) => event.preventDefault()}
-        class="type-body z-(--layer-popover) w-72 max-w-[min(calc(100vw-var(--space-4)),calc(var(--bits-popover-content-available-width)-var(--space-2)))] overflow-hidden rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-(--elevation-overlay) outline-none"
+        class="type-body z-(--layer-popover) flex max-h-[var(--bits-popover-content-available-height)] w-72 max-w-[min(calc(100vw-var(--space-4)),calc(var(--bits-popover-content-available-width)-var(--space-2)))] flex-col overflow-hidden rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-(--elevation-overlay) outline-none"
         data-testid="task-progress-popover"
       >
-        <div class="min-w-0" aria-live="polite">
+        <div
+          class="min-h-0 min-w-0 max-h-64 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain"
+          aria-live="polite"
+          data-testid="task-progress-scroll-region"
+        >
           <ul class="min-w-0" data-testid="task-progress-list">
             {#each orderedTasks as task (task.id)}
               <li
-                class="flex h-7 min-w-0 items-center gap-2 overflow-hidden rounded-md px-2 text-popover-foreground transition-[color,opacity] duration-[var(--motion-fast)] motion-reduce:transition-none"
-                class:opacity-70={task.status === 'completed'}
+                class="flex h-7 min-w-0 items-center gap-2 overflow-hidden rounded-md px-2 text-popover-foreground transition-colors duration-[var(--motion-fast)] motion-reduce:transition-none"
                 data-testid="task-progress-row"
                 data-task-id={task.id}
                 data-task-status={task.status}

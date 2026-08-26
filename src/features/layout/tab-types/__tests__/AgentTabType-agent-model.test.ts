@@ -244,7 +244,12 @@ describe('AgentTabType agent model reactivity', () => {
     expect(screen.getByTestId('task-progress-trigger').getAttribute('aria-label')).toBe(
       'Task progress: 1 of 2 completed',
     );
-    expect(screen.getByTestId('task-progress-trigger').className).toContain('h-7');
+    expect(screen.getByTestId('task-progress-trigger').className).toContain(
+      'h-(--row-action-target-compact)',
+    );
+    expect(screen.getByTestId('task-progress-trigger').className).toContain(
+      'min-w-(--row-action-target-compact)',
+    );
     expect(screen.getByTestId('task-progress-trigger').className).toContain('w-fit');
     expect(screen.getAllByTestId('task-progress-status-icon')).toHaveLength(2);
     expect(

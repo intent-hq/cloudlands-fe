@@ -44,10 +44,14 @@ describe('TaskProgressControl', () => {
     const trigger = screen.getByTestId('task-progress-trigger');
     expect(trigger.textContent?.trim()).toBe('');
     expect(trigger.getAttribute('aria-label')).toBe('Task progress: 2 of 5 completed');
+    expect(trigger.className).toContain('h-(--row-action-target-compact)');
+    expect(trigger.className).toContain('min-w-(--row-action-target-compact)');
     expect(screen.queryByRole('tooltip', { hidden: true })).toBeNull();
 
+    const closest = vi.spyOn(trigger, 'closest');
     trigger.focus();
     const dialog = await screen.findByRole('dialog', { name: 'Agent tasks' });
+    expect(closest).toHaveBeenCalledWith('[data-panel-id]');
     expect(document.activeElement).toBe(trigger);
     expect(dialog).toBeTruthy();
     expect(dialog.className).toContain('type-body');
@@ -77,18 +81,26 @@ describe('TaskProgressControl', () => {
     expect(screen.getByText('Inspect the panel').className).toContain('text-popover-foreground');
     expect(screen.getByText('Inspect the panel').className).not.toContain('text-muted-foreground');
     expect(screen.getByText('Map the native plan').className).toContain('text-muted-foreground');
-    expect(screen.getByText('Map the native plan').className).toContain('line-through');
-    expect(screen.getByText('Map the native plan').className).toContain(
-      'decoration-muted-foreground/30',
-    );
-    expect(screen.getByText('Map the native plan').closest('li')?.className).toContain(
-      'opacity-70',
+    expect(screen.getByText('Map the native plan').className).not.toContain('line-through');
+    expect(screen.getByText('Map the native plan').className).not.toContain('decoration-');
+    expect(screen.getByText('Map the native plan').closest('li')?.className).not.toContain(
+      'opacity-',
     );
     expect(screen.queryByTestId('task-progress-completed-toggle')).toBeNull();
     expect(screen.queryByRole('tooltip', { hidden: true })).toBeNull();
   });
 
-  it('layers one completed disk behind deeply overlapping active-task crescents', () => {
+  it('uses the canonical 28px action target for one task without enlarging its disk', () => {
+    render(TaskProgressControl, { props: { tasks: [tasks[0]] } });
+
+    const trigger = screen.getByTestId('task-progress-trigger');
+    expect(trigger.className).toContain('h-(--row-action-target-compact)');
+    expect(trigger.className).toContain('min-w-(--row-action-target-compact)');
+    expect(trigger.className).toContain('w-fit');
+    expect(screen.getByTestId('task-progress-status-icon').className).toContain('size-3.5');
+  });
+
+  it('caps mixed-state crescents at five slots with running frontmost and neutral overflow', () => {
     const statusTasks: TaskProgressItem[] = [
       ...tasks,
       { id: 'discussion', title: 'Discuss the approach', status: 'discussion_needed' },
@@ -103,22 +115,11 @@ describe('TaskProgressControl', () => {
       'completed',
       'pending',
       'waiting',
-      'discussion_needed',
-      'blocked',
-      'review_required',
       'running',
     ]);
     expect(
       icons.map((icon) => icon.querySelector<HTMLElement>('[data-icon]')?.dataset.icon),
-    ).toEqual([
-      'check',
-      'circle',
-      'clock',
-      'circle-question',
-      'triangle-exclamation',
-      'eye',
-      'spinner',
-    ]);
+    ).toEqual(['check', 'circle', 'clock', 'spinner']);
     expect(
       icons.every(
         (icon) =>
@@ -132,26 +133,41 @@ describe('TaskProgressControl', () => {
           !icon.className.includes('shadow'),
       ),
     ).toBe(true);
+    expect(stackItems).toHaveLength(5);
+    expect(stackItems.map((item) => item.dataset.taskId ?? item.dataset.taskStatus)).toEqual([
+      'completed',
+      'pending',
+      'waiting',
+      'running',
+      'overflow',
+    ]);
     expect(stackItems.slice(1).every((item) => item.className.includes('-ml-1.75'))).toBe(true);
     expect(stackItems.slice(1).every((item) => !item.className.includes('-ml-2'))).toBe(true);
-    expect(stackItems.map((item) => item.style.zIndex)).toEqual(['', '1', '2', '3', '4', '5', '6']);
+    expect(
+      stackItems.map((item) => item.style.zIndex || item.className.match(/z-[0-9]+/)?.[0]),
+    ).toEqual(['z-0', '1', '2', '6', '5']);
     expect(icons[0].className).toContain('bg-primary text-primary-foreground');
     expect(icons[0].dataset.completedCount).toBe('2');
     expect(icons[1].className).toContain('bg-muted');
     expect(icons[2].className).toContain('bg-muted');
-    expect(icons.slice(3).every((icon) => icon.className.includes('primary'))).toBe(true);
+    expect(icons[3].className).toContain('primary');
     expect(icons.at(-1)?.className).toContain('bg-primary/20 text-primary');
     expect(icons.every((icon) => !/(green|blue|amber|red|violet)-/.test(icon.className))).toBe(
       true,
     );
     expect(icons.at(-1)?.innerHTML).toContain('motion-reduce:animate-none');
+    const overflow = screen.getByTestId('task-progress-overflow-indicator');
+    expect(overflow.className).toContain('bg-muted');
+    expect(overflow.className).toContain('text-muted-foreground/70');
+    expect(overflow.dataset.overflowCount).toBe('3');
     const trigger = screen.getByTestId('task-progress-trigger');
-    expect(trigger.className).toContain('h-7');
+    expect(trigger.className).toContain('h-(--row-action-target-compact)');
+    expect(trigger.className).toContain('min-w-(--row-action-target-compact)');
     expect(trigger.className).toContain('w-fit');
     expect(trigger.className).toContain('gap-0');
     expect(trigger.className).toContain('p-0');
     expect(trigger.className).toContain('m-0');
-    expect(trigger.className).not.toMatch(/(?:min-w-|p[lrxy]-|m[lrxy]-)/);
+    expect(trigger.className).not.toMatch(/(?:p[lrxy]-|m[lrxy]-)/);
   });
 
   it('reuses the compact status indicators in every flat row', async () => {
@@ -165,21 +181,16 @@ describe('TaskProgressControl', () => {
     screen.getByTestId('task-progress-trigger').focus();
     await screen.findByRole('dialog', { name: 'Agent tasks' });
 
-    const stackByStatus = new Map(
-      screen
-        .getAllByTestId('task-progress-status-icon')
-        .map((icon) => [icon.dataset.taskStatus, icon]),
-    );
     const rowIcons = screen.getAllByTestId('task-progress-row-status-icon');
     expect(rowIcons).toHaveLength(statusTasks.length);
     expect(rowIcons.every((icon) => icon.className.includes('size-3.5'))).toBe(true);
     expect(rowIcons.every((icon) => !icon.className.includes('size-4'))).toBe(true);
-    for (const rowIcon of rowIcons) {
-      const stackIcon = stackByStatus.get(rowIcon.dataset.taskStatus);
-      expect(stackIcon).toBeTruthy();
-      expect(rowIcon.className).toBe(stackIcon?.className);
-      expect(rowIcon.innerHTML).toBe(stackIcon?.innerHTML);
-    }
+    expect(rowIcons.map((icon) => icon.dataset.taskStatus)).toEqual(
+      statusTasks
+        .filter((task) => task.status !== 'completed')
+        .concat(statusTasks.filter((task) => task.status === 'completed'))
+        .map((task) => task.status),
+    );
   });
 
   it('shows exactly one solid completed disk when all tasks are complete', () => {
@@ -204,6 +215,32 @@ describe('TaskProgressControl', () => {
 
     expect(await screen.findByRole('dialog', { name: 'Agent tasks' })).toBeTruthy();
     expect(screen.queryByRole('tooltip', { hidden: true })).toBeNull();
+  });
+
+  it('retains every task in a bounded vertically scrollable long-list popover', async () => {
+    const longTasks: TaskProgressItem[] = Array.from({ length: 12 }, (_, index) => ({
+      id: `task-${index}`,
+      title: `Task ${index}`,
+      status: index === 10 ? 'running' : index >= 9 ? 'completed' : 'pending',
+    }));
+    render(TaskProgressControl, { props: { tasks: longTasks } });
+
+    const trigger = screen.getByTestId('task-progress-trigger');
+    expect(trigger.getAttribute('aria-label')).toBe('Task progress: 2 of 12 completed');
+    trigger.focus();
+    const dialog = await screen.findByRole('dialog', { name: 'Agent tasks' });
+    const scrollRegion = screen.getByTestId('task-progress-scroll-region');
+
+    expect(dialog.className).toContain('max-h-[var(--bits-popover-content-available-height)]');
+    expect(scrollRegion.className).toContain('max-h-64');
+    expect(scrollRegion.className).toContain('overflow-y-auto');
+    expect(scrollRegion.className).toContain('overscroll-contain');
+    expect(screen.getAllByTestId('task-progress-row').map((row) => row.dataset.taskId)).toEqual(
+      longTasks
+        .filter((task) => task.status !== 'completed')
+        .concat(longTasks.filter((task) => task.status === 'completed'))
+        .map((task) => task.id),
+    );
   });
 
   it('keeps the flat list and trigger focus through live task movement', async () => {

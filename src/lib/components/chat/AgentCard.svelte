@@ -686,8 +686,8 @@
       <div
         class="agent-card-content flex min-w-0 max-w-full flex-1 overflow-hidden {hasTaskProgress
           ? headerActions
-            ? 'mr-24'
-            : 'mr-10'
+            ? 'mr-25'
+            : 'mr-11'
           : headerActions
             ? 'mr-14'
             : ''} {inline || panelRow ? 'flex-row items-center gap-2' : 'flex-col'}"
@@ -901,8 +901,8 @@
       <div
         class="absolute right-3 top-1/2 z-10 flex h-6 shrink-0 -translate-y-1/2 items-center justify-end {hasTaskProgress
           ? headerActions
-            ? 'w-24'
-            : 'w-10'
+            ? 'w-25'
+            : 'w-11'
           : 'w-14'}"
         data-testid="agent-card-trailing-slot"
       >

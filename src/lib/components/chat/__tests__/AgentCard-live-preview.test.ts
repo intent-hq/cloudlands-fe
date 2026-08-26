@@ -120,6 +120,11 @@ describe('AgentCard live preview precedence', () => {
         taskProgress: [
           { id: 'running', title: 'Run the focused task', status: 'running' },
           { id: 'done', title: 'Finish setup', status: 'completed' },
+          { id: 'pending-1', title: 'Check alignment', status: 'pending' },
+          { id: 'pending-2', title: 'Check spacing', status: 'pending' },
+          { id: 'pending-3', title: 'Check overflow', status: 'pending' },
+          { id: 'pending-4', title: 'Check scrolling', status: 'pending' },
+          { id: 'pending-5', title: 'Check focus', status: 'pending' },
         ],
       },
     });
@@ -128,14 +133,16 @@ describe('AgentCard live preview precedence', () => {
     const activationButton = container.querySelector('[data-testid="agent-list-item"] > button');
     const content = container.querySelector('.agent-card-content');
     const trailing = screen.getByTestId('agent-card-trailing-slot');
-    expect(trigger.getAttribute('aria-label')).toBe('Task progress: 1 of 2 completed');
-    expect(trigger.className).toContain('h-7');
+    expect(trigger.getAttribute('aria-label')).toBe('Task progress: 1 of 7 completed');
+    expect(trigger.className).toContain('h-(--row-action-target-compact)');
+    expect(trigger.className).toContain('min-w-(--row-action-target-compact)');
     expect(trigger.className).toContain('w-fit');
     expect(
       within(trigger)
         .getAllByTestId('task-progress-status-icon')
         .map((icon) => icon.dataset.taskStatus),
-    ).toEqual(['completed', 'running']);
+    ).toEqual(['completed', 'pending', 'pending', 'running']);
+    expect(within(trigger).getAllByTestId('task-progress-stack-item')).toHaveLength(5);
     expect(
       within(trigger)
         .getAllByTestId('task-progress-status-icon')
@@ -143,8 +150,8 @@ describe('AgentCard live preview precedence', () => {
     ).toBe(true);
     expect(activationButton?.contains(trigger)).toBe(false);
     expect(activationButton?.className).toContain('overflow-hidden');
-    expect(content?.className).toContain('mr-10');
-    expect(trailing.className).toContain('w-10');
+    expect(content?.className).toContain('mr-11');
+    expect(trailing.className).toContain('w-11');
     expect(screen.getByTestId('agent-card-name').className).toContain('shrink-0');
     expect(screen.getByTestId('agent-card-preview').className).toContain('truncate');
 
