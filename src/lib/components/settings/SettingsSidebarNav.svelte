@@ -119,7 +119,7 @@
   {/each}
 
   <section data-settings-agents-section data-settings-specialists-section class="mt-8">
-    <h2 class="text-[11px] font-semibold uppercase text-muted-foreground/50 tracking-wider">
+    <h2 class="type-caption font-semibold uppercase text-muted-foreground tracking-wider">
       {m.settings_sidebar_specialists_label()}
     </h2>
     <div class="flex flex-col gap-0.5 mt-2">

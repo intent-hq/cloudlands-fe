@@ -65,8 +65,6 @@ export const SETTINGS_TABS = [
   },
 ] as const;
 
-type SettingsTabId = (typeof SETTINGS_TABS)[number]['id'];
-
 const VIEWPORTS = {
   desktop: { width: 1440, height: 1000 },
   compact: { width: 900, height: 760 },
@@ -80,7 +78,7 @@ const CAPTURE_CASES = [
   ['app-behavior', 'light', 'desktop', 'empty', 'Redux autoUpdate', 'immediate'],
   ['app-behavior', 'light', 'compact', 'confirmation', 'Redux autoUpdate', 'confirmation'],
   ['app-behavior', 'dark', 'desktop', 'success', 'Redux notifications', 'immediate'],
-  ['app-behavior', 'dark', 'compact', 'error', 'Redux notifications', 'immediate'],
+  ['app-behavior', 'dark', 'compact', 'disabled', 'Redux notifications', 'immediate'],
   ['agent-behavior', 'light', 'desktop', 'empty', 'Redux specialists', 'autosave'],
   ['agent-behavior', 'light', 'compact', 'validation', 'local draft', 'autosave'],
   [

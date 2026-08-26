@@ -807,9 +807,9 @@ describe('settings tab route and focus behavior', () => {
       expect(avatar.getAttribute('data-avatar-variant')).toBe('compact');
       expect(avatar.classList.contains('shrink-0')).toBe(true);
     }
-    expect(specialistsNavigation?.querySelectorAll('[data-specialist-modified-marker]')).toHaveLength(
-      1,
-    );
+    expect(
+      specialistsNavigation?.querySelectorAll('[data-specialist-modified-marker]'),
+    ).toHaveLength(1);
     expect(implementor.querySelector('[data-specialist-modified-marker]')?.textContent).toBe('*');
     expect(implementor.querySelector('[data-specialist-modified-marker]')?.className).toContain(
       'text-ui',
@@ -836,7 +836,9 @@ describe('settings tab route and focus behavior', () => {
     expect(implementor.className).not.toContain('shadow-xs');
     expect(container.querySelector('main [data-settings-agents-submenu]')).toBeNull();
     expect(container.querySelector('main #specialist-editor')?.children).toHaveLength(1);
-    expect(container.querySelector('main #specialist-editor')?.className).not.toContain('grid-cols');
+    expect(container.querySelector('main #specialist-editor')?.className).not.toContain(
+      'grid-cols',
+    );
 
     await fireEvent.click(implementor);
 

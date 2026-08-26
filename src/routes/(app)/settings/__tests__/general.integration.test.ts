@@ -90,7 +90,7 @@ let storeContext: ReduxStoreContext | undefined;
 const originalInvoke = window.electronAPI!.invoke;
 let setChannelResponse: { success: boolean; error?: { message: string } };
 
-function renderSettingsTab(tab: 'general' | 'appearance' | 'advanced') {
+function renderSettingsTab(tab: 'general' | 'appearance' | 'app-behavior' | 'advanced') {
   window.history.pushState({}, '', `/settings?tab=${tab}`);
   mocks.page.url = new URL(window.location.href);
   return render(SettingsPage, {
@@ -100,6 +100,7 @@ function renderSettingsTab(tab: 'general' | 'appearance' | 'advanced') {
 
 const renderGeneral = () => renderSettingsTab('general');
 const renderAppearance = () => renderSettingsTab('appearance');
+const renderAppBehavior = () => renderSettingsTab('app-behavior');
 const renderAdvanced = () => renderSettingsTab('advanced');
 
 function installDispatchRecorder() {
@@ -183,7 +184,7 @@ describe('Settings migration', () => {
 
   it('dispatches the exact Redux update-channel action without a direct backend request', async () => {
     const recorder = installDispatchRecorder();
-    renderGeneral();
+    renderAppBehavior();
 
     await fireEvent.click(screen.getByRole('button', { name: 'Select update channel' }));
     await fireEvent.pointerUp(await screen.findByRole('option', { name: 'Beta' }), {
@@ -203,7 +204,7 @@ describe('Settings migration', () => {
 
   it('keeps the channel selector focusable and offers all three channels', async () => {
     const recorder = installDispatchRecorder();
-    renderGeneral();
+    renderAppBehavior();
 
     const trigger = screen.getByRole('button', { name: 'Select update channel' });
     expect(trigger.textContent).toContain('Stable');

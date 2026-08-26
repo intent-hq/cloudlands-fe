@@ -118,6 +118,7 @@ describe('B2 caller metadata regression', () => {
       toggle: [
         'src/lib/component-catalog/renderers/BasicCatalogPreview.svelte',
         'src/lib/components/settings/AgentFeaturesSettings.svelte',
+        'src/lib/components/settings/GitWorkspaceSettings.svelte',
         'src/lib/components/settings/HardwareConsoleSettings.svelte',
         'src/lib/components/settings/LegacyImportSettings.svelte',
         'src/lib/components/settings/McpServersSettings.svelte',
@@ -168,6 +169,7 @@ describe('B2 caller metadata regression', () => {
       indicator: [
         { path: 'src/lib/component-catalog/renderers/BasicCatalogPreview.svelte', count: 1 },
         { path: 'src/lib/components/settings/AgentFeaturesSettings.svelte', count: 1 },
+        { path: 'src/lib/components/settings/GitWorkspaceSettings.svelte', count: 2 },
         { path: 'src/lib/components/settings/HardwareConsoleSettings.svelte', count: 1 },
         { path: 'src/lib/components/settings/LegacyImportSettings.svelte', count: 1 },
         { path: 'src/lib/components/settings/McpServersSettings.svelte', count: 1 },
