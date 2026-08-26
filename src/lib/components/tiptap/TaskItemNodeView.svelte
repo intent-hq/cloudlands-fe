@@ -198,6 +198,7 @@
       await navigateToNote(linkedTaskNoteId, {
         workspaceId: (linkedTaskNote?.workspaceId as string | undefined) ?? workspaceId,
         openInAdjacentPanel,
+        openInNewAdjacentPanel: openInAdjacentPanel,
         sourcePanelId,
       });
     }

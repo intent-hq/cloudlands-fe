@@ -870,7 +870,8 @@ function broadcast(channel: string, payload: unknown, backendId?: string): void 
   }
 }
 
-function getBackendClientForIpcEvent(event?: Electron.IpcMainInvokeEvent): {
+/** Resolve a renderer invoke event to the client bound to its window's backend. */
+export function getBackendClientForIpcEvent(event?: Electron.IpcMainInvokeEvent): {
   backendId: string;
   client: JsonRpcClient;
 } {

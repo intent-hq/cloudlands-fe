@@ -720,3 +720,205 @@ describe('channel-switch immediate update check', () => {
     expect(mockWindow.webContents.send).not.toHaveBeenCalledWith('auto-update:show-toast');
   });
 });
+
+describe("'disabled' update channel", () => {
+  it("SET_CHANNEL('disabled') persists the pref but never points the feed or checks it", async () => {
+    const { setChannelHandler, checkMock, feedMock, mockWindow } = await setup();
+    // initialize()'s internal setChannel call reaches setFeedURL only after
+    // awaiting the prefs write — let it settle before discarding it, or its
+    // late stable feed call lands after mockClear() and fails the assertion.
+    const { __drainLocalPrefsWriteChainForTesting } = await import('../../../../main/local-prefs');
+    await __drainLocalPrefsWriteChainForTesting();
+    await drainAsyncWork();
+    feedMock.mockClear(); // discard initialize()'s internal stable feed call
+
+    const result = await setChannelHandler({}, { channel: 'disabled' });
+    expect(result.success).toBe(true);
+
+    await drainAsyncWork();
+    // There is no /disabled feed and no post-switch check to run — and no
+    // "Checking…" toast that nothing would ever resolve.
+    expect(feedMock).not.toHaveBeenCalled();
+    expect(checkMock).not.toHaveBeenCalled();
+    expect(mockWindow.webContents.send).not.toHaveBeenCalledWith('auto-update:show-toast');
+
+    // The preference is persisted like any other channel.
+    const prefsPath = path.join(testUserDataPath, 'local-prefs.json');
+    await expect
+      .poll(
+        async () => JSON.parse(await fs.readFile(prefsPath, 'utf8')).updateChannel,
+        { timeout: 2000, interval: 50 },
+      )
+      .toBe('disabled');
+  });
+
+  it("switching to 'disabled' with an update downloaded disarms quit-install and drops the artifact", async () => {
+    const { setChannelHandler, checkMock, service, updater } = await setup();
+
+    updaterHandlers['update-available']({ version: '2.1.0', releaseDate: '2026-01-01' });
+    updaterHandlers['update-downloaded']({ version: '2.1.0' });
+    expect(service.getState().status).toBe('downloaded');
+    expect(updater.autoInstallOnAppQuit).toBe(true);
+
+    await setChannelHandler({}, { channel: 'disabled' });
+
+    expect(updater.autoInstallOnAppQuit).toBe(false);
+    expect(service.getState().updateInfo).toBeNull();
+    expect(service.getState().status).toBe('idle');
+    await drainAsyncWork();
+    expect(checkMock).not.toHaveBeenCalled();
+  });
+
+  it("switching to 'disabled' mid-download cancels the in-flight download", async () => {
+    const { setChannelHandler, downloadMock, service, updater } = await setup();
+
+    updaterHandlers['update-available']({ version: '2.1.0', releaseDate: '2026-01-01' });
+    let rejectDownload!: (e: Error) => void;
+    downloadMock.mockImplementation(
+      () =>
+        new Promise((_resolve, reject) => {
+          rejectDownload = reject;
+        }),
+    );
+    const downloadPromise = service.downloadUpdate();
+    expect(service.getState().status).toBe('downloading');
+    const token = downloadMock.mock.calls[0][0] as MockToken;
+
+    await setChannelHandler({}, { channel: 'disabled' });
+
+    expect(token.cancel).toHaveBeenCalledTimes(1);
+    expect(updater.autoInstallOnAppQuit).toBe(false);
+
+    // The cancellation settles like a channel switch: promise resolves and
+    // 'update-cancelled' never surfaces an error state.
+    rejectDownload(new Error('cancelled'));
+    await expect(downloadPromise).resolves.toBeUndefined();
+    updaterHandlers['update-cancelled']({ version: '2.1.0' });
+    expect(service.getState().status).not.toBe('error');
+    expect(service.getState().error).toBeNull();
+  });
+
+  it('automatic checks (focus/resume staleness path) are suppressed while disabled', async () => {
+    const { setChannelHandler, checkMock } = await setup();
+    await setChannelHandler({}, { channel: 'disabled' });
+
+    const { app } = await import('electron');
+    const focusHandler = (app.on as unknown as Mock).mock.calls.find(
+      ([event]) => event === 'browser-window-focus',
+    )?.[1] as () => void;
+    expect(focusHandler).toBeTypeOf('function');
+    focusHandler();
+
+    await drainAsyncWork();
+    expect(checkMock).not.toHaveBeenCalled();
+  });
+
+  it('a manual check while disabled stays off the network and surfaces an informative error', async () => {
+    const { setChannelHandler, checkMock, service, mockWindow } = await setup();
+    await setChannelHandler({}, { channel: 'disabled' });
+
+    const state = await service.checkForUpdatesManual();
+
+    expect(checkMock).not.toHaveBeenCalled();
+    expect(state.status).toBe('error');
+    expect(state.error).toMatch(/disabled/i);
+    // The outcome is broadcast so the toast/menu surface shows why nothing
+    // happened.
+    expect(mockWindow.webContents.send).toHaveBeenCalledWith(
+      'auto-update:status-changed',
+      expect.objectContaining({ status: 'error', error: expect.stringMatching(/disabled/i) }),
+    );
+  });
+
+  it("switching away from 'disabled' re-points the feed and checks it immediately", async () => {
+    const { setChannelHandler, checkMock, feedMock, mockWindow } = await setup();
+    await setChannelHandler({}, { channel: 'disabled' });
+    await drainAsyncWork();
+    expect(checkMock).not.toHaveBeenCalled();
+
+    checkMock.mockReturnValue(new Promise(() => {}));
+    const result = await setChannelHandler({}, { channel: 'beta' });
+    expect(result.success).toBe(true);
+
+    expect(feedMock).toHaveBeenLastCalledWith({
+      provider: 'generic',
+      url: expect.stringMatching(/\/beta$/),
+    });
+    await vi.waitFor(() =>
+      expect(mockWindow.webContents.send).toHaveBeenCalledWith('auto-update:show-toast'),
+    );
+    await vi.waitFor(() => expect(checkMock).toHaveBeenCalledTimes(1));
+  });
+
+  it("a recheck queued before a switch to 'disabled' is dropped when the old check settles", async () => {
+    const { setChannelHandler, checkMock, service } = await setup();
+
+    // A check is in flight against the previous feed; a switch to beta
+    // queues a recheck for when it settles...
+    updaterHandlers['checking-for-update']();
+    checkMock.mockReturnValue(new Promise(() => {}));
+    await setChannelHandler({}, { channel: 'beta' });
+
+    // ...but the user then switches to 'disabled' before it does.
+    await setChannelHandler({}, { channel: 'disabled' });
+
+    updaterHandlers['update-not-available']({ version: '2.0.0' });
+    await drainAsyncWork();
+
+    // The queued recheck is dropped silently: no check, no error state.
+    expect(checkMock).not.toHaveBeenCalled();
+    expect(service.getState().status).not.toBe('error');
+    expect(service.getState().error).toBeNull();
+  });
+
+  it("late old-feed events after a direct switch to 'disabled' mid-check cannot re-arm update state", async () => {
+    // Direct stable → disabled while a startup/hourly/focus check is in
+    // flight: neutralizeStaleFeedArtifact() is a no-op at 'checking', and the
+    // old-feed check's events land AFTER the switch. Without a disabled gate
+    // in the handlers, 'update-available' repopulates updateInfo (renderer
+    // offers Download) and 'update-downloaded' re-arms quit-install —
+    // defeating "nothing installs on quit" (PR #1713 review).
+    const { setChannelHandler, service, updater } = await setup();
+
+    updaterHandlers['checking-for-update']();
+    expect(service.getState().status).toBe('checking');
+
+    await setChannelHandler({}, { channel: 'disabled' });
+    expect(updater.autoInstallOnAppQuit).toBe(false);
+
+    // The old-feed check settles late: found an update, then (fast cache
+    // re-resolve / autoDownload) reports it downloaded.
+    updaterHandlers['update-available']({ version: '2.1.0', releaseDate: '2026-01-01' });
+    expect(service.getState().status).not.toBe('available');
+    expect(service.getState().updateInfo).toBeNull();
+
+    updaterHandlers['update-downloaded']({ version: '2.1.0' });
+    expect(updater.autoInstallOnAppQuit).toBe(false);
+    expect(service.getState().status).not.toBe('downloaded');
+    expect(service.getState().updateInfo).toBeNull();
+    expect(service.getState().status).toBe('idle');
+
+    // The DOWNLOAD IPC path is gated too (defense in depth).
+    await expect(service.downloadUpdate()).rejects.toThrow();
+  });
+
+  it("an expected cancel settling while 'disabled' returns the state to idle, not stuck", async () => {
+    // Epoch-cancelled autoDownload after a switch to 'disabled': the
+    // expected-cancel early return in 'update-cancelled' must not leave the
+    // status stuck at 'available'/'downloading' with no recheck ever coming.
+    const { setChannelHandler, service, updater, downloadMock } = await setup();
+
+    updaterHandlers['update-available']({ version: '2.1.0', releaseDate: '2026-01-01' });
+    downloadMock.mockReturnValue(new Promise(() => {}));
+    void service.downloadUpdate();
+    expect(service.getState().status).toBe('downloading');
+
+    await setChannelHandler({}, { channel: 'disabled' });
+    // Switch-time neutralization already reset to idle; the late
+    // 'update-cancelled' from the token cancel must keep it there.
+    updaterHandlers['update-cancelled']({ version: '2.1.0' });
+    expect(service.getState().status).toBe('idle');
+    expect(service.getState().error).toBeNull();
+    expect(updater.autoInstallOnAppQuit).toBe(false);
+  });
+});

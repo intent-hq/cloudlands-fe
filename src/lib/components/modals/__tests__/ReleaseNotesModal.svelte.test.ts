@@ -141,6 +141,30 @@ describe('ReleaseNotesModal redesigned dialog', () => {
     expect(viewer.textContent).toContain('something changed');
   });
 
+  it('renders cumulative release bodies once with separators', async () => {
+    renderModal(
+      [
+        'Intent v2.20.0',
+        '',
+        '## Current changes',
+        '',
+        '---',
+        '',
+        'Intent v2.19.0',
+        '',
+        '## Previous changes',
+      ].join('\n'),
+    );
+
+    const viewer = await waitForViewer();
+
+    expect(viewer.querySelectorAll('hr')).toHaveLength(1);
+    expect(viewer.textContent?.match(/Current changes/g)).toHaveLength(1);
+    expect(viewer.textContent?.match(/Previous changes/g)).toHaveLength(1);
+    expect(viewer.textContent).not.toContain('Intent v2.20.0');
+    expect(viewer.textContent?.match(/Intent v2\.19\.0/g)).toHaveLength(1);
+  });
+
   it('renders the scoped release-notes container classes', async () => {
     renderModal(markdownBody);
 

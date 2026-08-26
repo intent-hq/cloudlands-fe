@@ -4,6 +4,38 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.95.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.94.0...v2.95.0) (2026-08-26)
+
+
+### 🚀 Features
+
+* add Disabled update channel to opt out of auto-updates ([#1713](https://github.com/intent-hq/cloudlands-fe/issues/1713)) ([c68094e](https://github.com/intent-hq/cloudlands-fe/commit/c68094eed3eed079daa3e38ea60651932c49bed4))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.7.61 ([#1720](https://github.com/intent-hq/cloudlands-fe/issues/1720)) ([aebfc35](https://github.com/intent-hq/cloudlands-fe/commit/aebfc355a2edb5587857d89f5a3f81c92b0ee23c))
+* resolve transfer/import client from the invoking window's backend ([#1716](https://github.com/intent-hq/cloudlands-fe/issues/1716)) ([0035a03](https://github.com/intent-hq/cloudlands-fe/commit/0035a033e8b1832549a90b57288a6a9068c4f6c0))
+
+## [2.94.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.93.1...v2.94.0) (2026-08-26)
+
+
+### 🚀 Features
+
+* metadata-driven New Workspace modal and specialist icons ([#1700](https://github.com/intent-hq/cloudlands-fe/issues/1700)) ([45f1b16](https://github.com/intent-hq/cloudlands-fe/commit/45f1b168165e9ca18b5cc4a6cefbbed587f3975e))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.7.59 ([#1712](https://github.com/intent-hq/cloudlands-fe/issues/1712)) ([0d82d3c](https://github.com/intent-hq/cloudlands-fe/commit/0d82d3c27d3603afa1dd3642d9e335b343d17ff3))
+* bump intentd sidecar to v0.7.60 ([#1714](https://github.com/intent-hq/cloudlands-fe/issues/1714)) ([74f4701](https://github.com/intent-hq/cloudlands-fe/commit/74f4701f413dbf63ce3809f55815a88f99a8d46e))
+* **chief:** gate Chief thread auto-start on a resolvable provider ([#1697](https://github.com/intent-hq/cloudlands-fe/issues/1697)) ([5f6db03](https://github.com/intent-hq/cloudlands-fe/commit/5f6db03c70e688bf4521603373abe3c8091f10c4))
+* label sidebar browser-tab groups with the owner agent's name ([#1711](https://github.com/intent-hq/cloudlands-fe/issues/1711)) ([a9df19c](https://github.com/intent-hq/cloudlands-fe/commit/a9df19c4d7f7d2aff990685f7406bdea82d2734c))
+* release the followed-bottom lease when a disclosure outro delivers a single tick ([#1692](https://github.com/intent-hq/cloudlands-fe/issues/1692)) ([2719427](https://github.com/intent-hq/cloudlands-fe/commit/2719427da7ad2eb356bf224a47739db5bc752460))
+* route into provider setup when the active backend has no ready provider ([#1698](https://github.com/intent-hq/cloudlands-fe/issues/1698)) ([f92ce78](https://github.com/intent-hq/cloudlands-fe/commit/f92ce78c8f7fbdb579d431929c07d8a71eb84b29))
+* route workspace-file:// and workspace-asset:// through the workspace-owning backend ([#1710](https://github.com/intent-hq/cloudlands-fe/issues/1710)) ([b23a2b0](https://github.com/intent-hq/cloudlands-fe/commit/b23a2b09a7db7a77045dca4c383569e3c0f05c4d))
+* **settings:** scope active-provider state and enablement seeding per backend ([#1696](https://github.com/intent-hq/cloudlands-fe/issues/1696)) ([cf211aa](https://github.com/intent-hq/cloudlands-fe/commit/cf211aa29d88f513acabafe241c2401fb3a4b693))
+
 ## [2.93.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.93.0...v2.93.1) (2026-08-25)
 
 
