@@ -682,7 +682,7 @@
         class="min-h-0 min-w-0 h-full xl:flex xl:flex-col"
       >
         <AgentRulesEditor
-          title={m.settings_aiBehavior_sidebar_allAgents()}
+          title={m.settings_section_globalInstructions()}
           showDescription={false}
           class="xl:min-h-0 xl:flex-1"
         />

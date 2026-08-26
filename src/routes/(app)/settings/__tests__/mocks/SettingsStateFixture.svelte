@@ -63,7 +63,7 @@
       {workspaceId ?? 'none'}
     </p>
     {#if activeView.type === 'system-prompt'}
-      <DefaultAgentModelSettings testId="all-agents-default-model-row" />
+      <DefaultAgentModelSettings testId="global-instructions-default-model-row" />
     {/if}
   {/if}
 

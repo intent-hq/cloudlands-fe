@@ -24,21 +24,30 @@ describe('app UI targets registry', () => {
     const expectedTabs = {
       providers: 'providers',
       integrations: 'connections',
-      voice: 'connections',
+      voice: 'input',
+      'keyboard-shortcuts': 'input',
       'mcp-servers': 'connections',
-      'git-workspace': 'system',
-      'cli-optimization': 'system',
-      'workspace-api': 'system',
+      'git-workspace': 'setup',
+      git: 'setup',
+      shell: 'setup',
+      workspace: 'setup',
+      'cli-optimization': 'setup',
+      'workspace-api': 'advanced',
       'utility-default-model': 'providers',
-      notifications: 'behavior',
-      'open-in': 'behavior',
-      'github-link-action': 'behavior',
-      'agent-features': 'behavior',
-      appearance: 'appearance',
-      'color-theme': 'appearance',
-      'note-font': 'appearance',
-      'agent-chat-font': 'appearance',
-      'code-font': 'appearance',
+      notifications: 'app-behavior',
+      updates: 'app-behavior',
+      'open-in': 'app-behavior',
+      'github-link-action': 'app-behavior',
+      'agent-features': 'agent-behavior',
+      agents: 'agent-behavior',
+      'quickActions.defaultModel': 'agent-behavior',
+      appearance: 'display',
+      'font-style': 'display',
+      language: 'display',
+      'color-theme': 'display',
+      'note-font': 'display',
+      'agent-chat-font': 'display',
+      'code-font': 'display',
       general: 'advanced',
     } as const;
 
@@ -59,27 +68,30 @@ describe('app UI targets registry', () => {
     '/settings?tab=setup#notifications',
     '/settings?tab=fonts-colors#theme',
     '/settings?tab=interface-system#color-theme',
+    '/settings?tab=connections#voice',
+    '/settings?tab=system#workspace-api',
+    '/settings?tab=agents#default-model',
   ])('keeps legacy settings URLs resolvable: %s', (route) => {
     expect(isResolvableNavTarget(route)).toBe(true);
   });
 
-  it('preserves agents sub-view query parameters', () => {
+  it('preserves specialist sub-view query parameters', () => {
     const targets = getAppUiTargets();
 
     expect(targets.find((target) => target.id === 'create-specialist')?.route).toBe(
-      '/settings?tab=agents&view=create-specialist#create-specialist',
+      '/settings?tab=specialists&view=create-specialist#create-specialist',
     );
     expect(targets.find((target) => target.id === 'specialist-entry')?.route).toBe(
-      '/settings?tab=agents&specialist={specialistId}#specialist-{specialistId}',
+      '/settings?tab=specialists&specialist={specialistId}#specialist-{specialistId}',
     );
   });
 
-  it('resolves dynamic specialist hashes to the Agents specialist target', () => {
-    const route = '/settings?tab=agents&specialist=implementor#specialist-implementor';
+  it('resolves dynamic specialist hashes to the Specialists target', () => {
+    const route = '/settings?tab=specialists&specialist=implementor#specialist-implementor';
 
     expect(resolveHashToTarget('specialist-implementor')).toMatchObject({
       id: 'specialist-implementor',
-      tab: 'agents',
+      tab: 'specialists',
       category: 'specialist',
       dynamic: true,
     });
@@ -92,8 +104,8 @@ describe('app UI targets registry', () => {
 
     expect(target).toMatchObject({
       id: 'quickActions.defaultModel',
-      tab: 'agents',
-      scrollSelector: '#default-model',
+      tab: 'agent-behavior',
+      scrollSelector: '#global-instructions',
       highlightSelector: '[data-highlight-id="quickActions.defaultModel"]',
     });
   });

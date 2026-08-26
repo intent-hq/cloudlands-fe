@@ -2,9 +2,10 @@
   import { m } from '$shared/paraglide/messages.js';
   import {
     faCodeBranch,
-    faGear,
     faGlobe,
+    faKeyboard,
     faPlug,
+    faRobot,
     faSliders,
     faTerminal,
     faWandMagicSparkles,
@@ -13,18 +14,18 @@
   import Fa from 'svelte-fa';
 
   type SettingsTab =
-    | 'general'
-    | 'appearance'
-    | 'behavior'
+    | 'display'
+    | 'app-behavior'
+    | 'agent-behavior'
     | 'providers'
     | 'connections'
-    | 'system'
+    | 'setup'
     | 'advanced'
-    | 'agents';
-  type LegacySettingsTab = 'git-workspace' | 'tools';
+    | 'input'
+    | 'specialists';
 
   interface Props {
-    activeTab: SettingsTab | LegacySettingsTab;
+    activeTab: SettingsTab;
     onSelect: (tab: SettingsTab) => void;
     agentsNavigation?: Snippet;
   }
@@ -33,24 +34,24 @@
 
   const primaryItems = [
     {
-      id: 'general',
-      icon: faGear,
-      get label() {
-        return m.settings_sidebar_general_label();
-      },
-    },
-    {
-      id: 'appearance',
+      id: 'display',
       icon: faWandMagicSparkles,
       get label() {
-        return m.settings_sidebar_appearance_label();
+        return m.settings_sidebar_display_label();
       },
     },
     {
-      id: 'behavior',
+      id: 'app-behavior',
       icon: faSliders,
       get label() {
-        return m.settings_section_behavior();
+        return m.settings_sidebar_appBehavior_label();
+      },
+    },
+    {
+      id: 'agent-behavior',
+      icon: faRobot,
+      get label() {
+        return m.settings_sidebar_agentBehavior_label();
       },
     },
     {
@@ -68,10 +69,10 @@
       },
     },
     {
-      id: 'system',
+      id: 'setup',
       icon: faCodeBranch,
       get label() {
-        return m.settings_sidebar_system_label();
+        return m.settings_sidebar_setup_label();
       },
     },
     {
@@ -79,6 +80,13 @@
       icon: faGlobe,
       get label() {
         return m.settings_sidebar_advanced_label();
+      },
+    },
+    {
+      id: 'input',
+      icon: faKeyboard,
+      get label() {
+        return m.settings_sidebar_input_label();
       },
     },
   ];
@@ -95,7 +103,7 @@
       aria-current={activeTab === item.id ? 'page' : undefined}
       data-settings-tab={item.id}
       class="flex w-full cursor-pointer items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring
-        {item.id === 'advanced' ? '' : 'mb-0.5'}
+        {item.id === 'input' ? '' : 'mb-0.5'}
         {activeTab === item.id
         ? 'bg-muted font-medium text-foreground shadow-xs'
         : 'text-muted-foreground hover:bg-muted/50 hover:text-foreground'}"
@@ -110,9 +118,9 @@
     </button>
   {/each}
 
-  <section data-settings-agents-section class="pt-8">
-    <h2 class="text-[11px] font-semibold uppercase text-muted-foreground/50">
-      {m.settings_sidebar_agents_label()}
+  <section data-settings-agents-section data-settings-specialists-section class="mt-8">
+    <h2 class="text-[11px] font-semibold uppercase text-muted-foreground/50 tracking-wider">
+      {m.settings_sidebar_specialists_label()}
     </h2>
     <div class="flex flex-col gap-0.5 mt-2">
       {#if agentsNavigation}

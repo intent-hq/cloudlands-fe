@@ -11,7 +11,7 @@
   }
 
   let { theme = 'light', width = 240, zoom = 1 }: Props = $props();
-  let activeTab = $state<SettingsTab>('system');
+  let activeTab = $state<SettingsTab>('setup');
 </script>
 
 <section class:dark={theme === 'dark'} style:width="{width}px" style:zoom data-testid="host">

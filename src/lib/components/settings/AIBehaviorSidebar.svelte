@@ -1,6 +1,6 @@
 <script lang="ts">
   import Fa from 'svelte-fa';
-  import { faGlobe, faPlus } from '@fortawesome/free-solid-svg-icons';
+  import { faPlus } from '@fortawesome/free-solid-svg-icons';
   import AgentAvatar from '$features/agent/components/agent-avatar/AgentAvatar.svelte';
   import {
     filterSpecialistsByGitHubAuth,
@@ -50,32 +50,6 @@
     return true;
   }
 </script>
-
-<!-- System Prompt - fixed at top -->
-<button
-  id="specialists"
-  type="button"
-  onclick={() => onSelect({ type: 'system-prompt' })}
-  data-highlight-id="agents"
-  data-settings-agent-row
-  use:highlightTarget
-  aria-current={isSelected({ type: 'system-prompt' }) ? 'true' : undefined}
-  class="flex w-full min-w-0 cursor-pointer items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring
-    {isSelected({ type: 'system-prompt' })
-    ? 'bg-muted font-medium text-foreground shadow-xs'
-    : 'text-muted-foreground hover:bg-muted/50 hover:text-foreground'}"
->
-  <span
-    data-settings-all-agents-icon
-    aria-hidden="true"
-    class="flex size-4 shrink-0 items-center justify-center opacity-75"
-  >
-    <Fa icon={faGlobe} size="sm" />
-  </span>
-  <span class="truncate">
-    {m.settings_aiBehavior_sidebar_allAgents()}
-  </span>
-</button>
 
 <!-- Specialists -->
 {#each visibleSpecialists as specialist (specialist.id)}

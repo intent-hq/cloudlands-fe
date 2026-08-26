@@ -85,7 +85,10 @@ vi.mock('$lib/components/settings/AIBehaviorEditor.svelte', async () => ({
   default: (await import('./mocks/SettingsStateFixture.svelte')).default,
 }));
 vi.mock('$lib/components/settings/ConnectionsSettings.svelte', async () => ({
-  default: (await import('$lib/components/chat/__tests__/mocks/SlotOnly.svelte')).default,
+  default: (await import('./mocks/SettingsStateFixture.svelte')).default,
+}));
+vi.mock('$lib/components/settings/VoiceSettings.svelte', async () => ({
+  default: (await import('./mocks/SettingsStateFixture.svelte')).default,
 }));
 vi.mock('$lib/components/settings/GitWorkspaceSettings.svelte', async () => ({
   default: (await import('./mocks/GitWorkspaceSettingsFixture.svelte')).default,
@@ -381,8 +384,18 @@ function expectElementOrder(ids: string[]) {
 
 describe('settings deterministic capture fixtures', () => {
   it('covers every tab in light/dark at desktop/compact dimensions with stable IDs', () => {
-    expect(SETTINGS_CAPTURE_FIXTURES).toHaveLength(24);
-    expect(new Set(SETTINGS_CAPTURE_FIXTURES.map(({ id }) => id)).size).toBe(24);
+    expect(SETTINGS_TABS.map(({ id }) => id)).toEqual([
+      'display',
+      'app-behavior',
+      'agent-behavior',
+      'providers',
+      'connections',
+      'setup',
+      'advanced',
+      'input',
+    ]);
+    expect(SETTINGS_CAPTURE_FIXTURES).toHaveLength(32);
+    expect(new Set(SETTINGS_CAPTURE_FIXTURES.map(({ id }) => id)).size).toBe(32);
     for (const tab of SETTINGS_TABS) {
       expect(SETTINGS_CAPTURE_FIXTURES.filter((fixture) => fixture.tab === tab.id)).toHaveLength(4);
     }
@@ -511,7 +524,7 @@ describe('settings deterministic capture fixtures', () => {
 
 describe('settings tab route and focus behavior', () => {
   it('keeps an accessible page name without a visible content-area heading', () => {
-    const { container } = renderSettings('/settings?tab=general');
+    const { container } = renderSettings('/settings?tab=display');
     const main = container.querySelector('main');
     const heading = screen.getByRole('heading', { level: 1, name: 'Settings' });
 
@@ -523,25 +536,28 @@ describe('settings tab route and focus behavior', () => {
 
   it.each([
     ['providers', null],
-    ['agents', null],
-    ['system', 'Git'],
-    ['fonts-colors', 'Appearance'],
-    ['notifications', 'Notifications'],
-    ['general', 'Updates'],
+    ['specialists', null],
+    ['setup', 'Git'],
+    ['display', 'Appearance'],
+    ['app-behavior', 'Updates'],
+    ['agent-behavior', 'Agent Features'],
+    ['connections', 'Accounts'],
+    ['advanced', 'Agent Backend'],
+    ['input', 'Keyboard Shortcuts'],
   ])('uses the shared wide section layout for %s', (tab, heading) => {
     const { container } = renderSettings(`/settings?tab=${tab}`);
     const content = container.querySelector('main');
 
-    expect(content?.className).toContain(tab === 'agents' ? 'max-w-6xl' : 'max-w-4xl');
+    expect(content?.className).toContain(tab === 'specialists' ? 'max-w-6xl' : 'max-w-4xl');
     expect(content?.className).toContain('flex-col');
     if (heading) expect(screen.getByRole('heading', { name: heading })).toBeTruthy();
   });
 
-  it('widens the settings content for every Agents editor view', async () => {
+  it('widens the settings content for every Specialists editor view', async () => {
     appStore.dispatch(setBundledSpecialists([...SPECIALISTS]));
-    const { container } = renderSettings('/settings?tab=agents');
+    const { container } = renderSettings('/settings?tab=specialists');
     const content = container.querySelector('main');
-    const editorSection = container.querySelector('#default-model');
+    const editorSection = container.querySelector('#specialist-editor');
     const navigation = screen.getByRole('navigation', { name: 'Settings' });
 
     expect(content?.className).toContain('max-w-6xl');
@@ -585,16 +601,17 @@ describe('settings tab route and focus behavior', () => {
 
   it.each([
     ['accounts', 'Providers', 'page'],
-    ['agents', 'All Agents', 'true'],
-    ['setup', 'System', 'page'],
-    ['tools', 'System', 'page'],
-    ['git-workspace', 'System', 'page'],
-    ['fonts-colors', 'Appearance', 'page'],
-    ['notifications', 'Behavior', 'page'],
-    ['general', 'General', 'page'],
+    ['agents', 'Agent Behavior', 'page'],
+    ['setup', 'Setup', 'page'],
+    ['tools', 'Setup', 'page'],
+    ['git-workspace', 'Setup', 'page'],
+    ['fonts-colors', 'Display', 'page'],
+    ['notifications', 'App Behavior', 'page'],
+    ['general', 'Display', 'page'],
     ['connections', 'Connections', 'page'],
-    ['interface-system', 'Appearance', 'page'],
-    ['unknown', 'General', 'page'],
+    ['interface-system', 'Display', 'page'],
+    ['input', 'Input', 'page'],
+    ['unknown', 'Display', 'page'],
   ])('maps ?tab=%s to %s', async (tab, label, current) => {
     renderSettings(`/settings?tab=${tab}`);
     await waitFor(() =>
@@ -604,7 +621,7 @@ describe('settings tab route and focus behavior', () => {
     );
   });
 
-  it('renders Agent Backend only on Advanced while the legacy Tools tab resolves to System', async () => {
+  it('renders Agent Backend only on Advanced while the legacy Tools tab resolves to Setup', async () => {
     const advanced = renderSettings('/settings?tab=advanced');
     await waitFor(() => expect(advanced.container.querySelector('#agent-backend')).not.toBeNull());
     expect(screen.getByRole('heading', { name: 'Agent Backend' })).toBeTruthy();
@@ -613,7 +630,7 @@ describe('settings tab route and focus behavior', () => {
 
     const tools = renderSettings('/settings?tab=tools');
     await waitFor(() =>
-      expect(screen.getByRole('button', { name: 'System' }).getAttribute('aria-current')).toBe(
+      expect(screen.getByRole('button', { name: 'Setup' }).getAttribute('aria-current')).toBe(
         'page',
       ),
     );
@@ -621,13 +638,14 @@ describe('settings tab route and focus behavior', () => {
   });
 
   it.each([
-    ['general', ['language', 'updates']],
-    ['appearance', ['theme', 'font-style']],
-    ['behavior', ['notifications', 'open-in', 'github-link-action', 'agent-features']],
+    ['display', ['theme', 'font-style', 'language']],
+    ['app-behavior', ['updates', 'open-in', 'github-link-action', 'notifications']],
+    ['agent-behavior', ['agent-features', 'global-instructions']],
     ['providers', ['providers', 'utility-default-model']],
-    ['connections', ['integrations', 'mcp-servers', 'voice']],
-    ['system', ['git', 'shell', 'cli-optimization', 'workspace', 'workspace-api']],
-    ['advanced', ['agent-backend', 'websocket-api', 'data', 'reset', 'developer']],
+    ['connections', ['integrations', 'mcp-servers']],
+    ['setup', ['git', 'shell', 'cli-optimization', 'workspace']],
+    ['advanced', ['agent-backend', 'websocket-api', 'workspace-api', 'data', 'reset', 'developer']],
+    ['input', ['keyboard-shortcuts', 'voice']],
   ])('renders %s sections in the requested order', (tab, ids) => {
     renderSettings(`/settings?tab=${tab}`);
     expectElementOrder(ids);
@@ -644,6 +662,7 @@ describe('settings tab route and focus behavior', () => {
     const advancedIds = [
       'id="agent-backend"',
       'id="websocket-api"',
+      'id="workspace-api"',
       'id="connection"',
       'id="hardware"',
       'id="data"',
@@ -679,22 +698,41 @@ describe('settings tab route and focus behavior', () => {
     expect(document.querySelector('#agent-backend')).not.toBeNull();
   });
 
+  it.each([
+    ['/settings?tab=input#voice', 'Input', 'voice'],
+    ['/settings?tab=connections#voice', 'Input', 'voice'],
+    ['/settings?tab=advanced#workspace-api', 'Advanced', 'workspace-api'],
+    ['/settings?tab=system#workspace-api', 'Advanced', 'workspace-api'],
+    ['/settings?tab=agent-behavior#agent-features', 'Agent Behavior', 'agent-features'],
+    ['/settings?tab=behavior#agent-features', 'Agent Behavior', 'agent-features'],
+  ])('routes canonical and legacy URL %s to %s', async (url, category, sectionId) => {
+    renderSettings(url);
+
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: category }).getAttribute('aria-current')).toBe(
+        'page',
+      ),
+    );
+    expect(document.getElementById(sectionId)).not.toBeNull();
+  });
+
   it('exposes sidebar navigation buttons with the active page marked', async () => {
     renderSettings('/settings?tab=accounts');
     expect(screen.getByRole('navigation', { name: 'Settings' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Providers' }).getAttribute('aria-current')).toBe(
       'page',
     );
-    expect(screen.getByRole('heading', { level: 2, name: 'Agents' })).toBeTruthy();
-    expect(screen.queryByRole('button', { name: 'Agents' })).toBeNull();
-    expect(screen.getByRole('button', { name: 'All Agents' }).hasAttribute('aria-current')).toBe(
+    expect(screen.getByRole('heading', { level: 2, name: 'Specialists' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Specialists' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'All Agents' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Implementor' }).hasAttribute('aria-current')).toBe(
       false,
     );
   });
 
-  it('renders compact agent selection only inside the existing settings sidebar', async () => {
+  it('renders compact specialist selection only inside the existing settings sidebar', async () => {
     const implementorDefinition = SPECIALISTS.find(({ id }) => id === 'implementor')!;
-    const { container } = renderSettings('/settings?tab=agents');
+    const { container } = renderSettings('/settings?tab=specialists');
     appStore.dispatch(setBundledSpecialists([]));
     appStore.dispatch(
       setFileSpecialists([
@@ -720,14 +758,16 @@ describe('settings tab route and focus behavior', () => {
       ]),
     );
     const navigation = screen.getByRole('navigation', { name: 'Settings' });
-    const agentNavigation = navigation.querySelector('[data-settings-agents-section]');
+    const specialistsNavigation = navigation.querySelector('[data-settings-specialists-section]');
     await waitFor(() =>
       expect(
         within(navigation).getByRole('button', { name: 'Sidebar Custom Project' }),
       ).toBeTruthy(),
     );
-    const agentsHeading = within(navigation).getByRole('heading', { level: 2, name: 'Agents' });
-    const allAgents = within(navigation).getByRole('button', { name: 'All Agents' });
+    const specialistsHeading = within(navigation).getByRole('heading', {
+      level: 2,
+      name: 'Specialists',
+    });
     const implementor = within(navigation).getByRole('button', { name: 'Implementor' });
     const customSpecialist = within(navigation).getByRole('button', {
       name: 'Sidebar Custom Project',
@@ -735,41 +775,39 @@ describe('settings tab route and focus behavior', () => {
     const createSpecialist = within(navigation).getByRole('button', {
       name: 'Create Specialist',
     });
-    const advanced = within(navigation).getByRole('button', { name: 'Advanced' });
+    const input = within(navigation).getByRole('button', { name: 'Input' });
 
-    expect(agentNavigation).not.toBeNull();
-    expect(within(navigation).queryByRole('button', { name: 'Agents' })).toBeNull();
-    expect(agentNavigation?.contains(allAgents)).toBe(true);
-    expect(agentNavigation?.contains(implementor)).toBe(true);
-    expect(agentNavigation?.contains(customSpecialist)).toBe(true);
-    expect(agentNavigation?.contains(createSpecialist)).toBe(true);
-    expect(advanced.compareDocumentPosition(agentsHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBe(
-      Node.DOCUMENT_POSITION_FOLLOWING,
-    );
+    expect(specialistsNavigation).not.toBeNull();
+    expect(within(navigation).queryByRole('button', { name: 'Specialists' })).toBeNull();
+    expect(within(navigation).queryByRole('button', { name: 'All Agents' })).toBeNull();
+    expect(specialistsNavigation?.contains(implementor)).toBe(true);
+    expect(specialistsNavigation?.contains(customSpecialist)).toBe(true);
+    expect(specialistsNavigation?.contains(createSpecialist)).toBe(true);
     expect(
-      agentsHeading.compareDocumentPosition(allAgents) & Node.DOCUMENT_POSITION_FOLLOWING,
+      input.compareDocumentPosition(specialistsHeading) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
-    expect(agentNavigation?.className).not.toMatch(/border|m[lt]-|p[lt]-/);
+    expect(
+      specialistsHeading.compareDocumentPosition(implementor) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+    expect(specialistsNavigation?.className).toContain('mt-8');
+    expect(specialistsNavigation?.className).not.toMatch(/border|ml-|p[lt]-/);
     expect(navigation.querySelector('[data-settings-agents-submenu]')).toBeNull();
-    expect(within(navigation).queryByText('Specialists')).toBeNull();
-    expect(agentNavigation?.querySelectorAll('[data-agent-avatar]')).toHaveLength(2);
+    expect(specialistsNavigation?.querySelectorAll('[data-agent-avatar]')).toHaveLength(2);
     expect(createSpecialist.querySelectorAll('[data-icon="plus"]')).toHaveLength(1);
-    const allAgentsIcon = allAgents.querySelector('[data-settings-all-agents-icon]');
-    expect(allAgentsIcon?.getAttribute('aria-hidden')).toBe('true');
-    expect(allAgentsIcon?.className).toContain('size-4');
-    expect(allAgentsIcon?.querySelector('[data-icon="globe"]')).not.toBeNull();
     expect(
       implementor.querySelector('[data-agent-avatar][data-avatar-design="implementor"]'),
     ).not.toBeNull();
     expect(
       customSpecialist.querySelector('[data-agent-avatar][data-avatar-design^="fallback-"]'),
     ).not.toBeNull();
-    for (const avatar of agentNavigation?.querySelectorAll('[data-agent-avatar]') ?? []) {
+    for (const avatar of specialistsNavigation?.querySelectorAll('[data-agent-avatar]') ?? []) {
       expect(avatar.getAttribute('aria-hidden')).toBe('true');
       expect(avatar.getAttribute('data-avatar-variant')).toBe('compact');
       expect(avatar.classList.contains('shrink-0')).toBe(true);
     }
-    expect(agentNavigation?.querySelectorAll('[data-specialist-modified-marker]')).toHaveLength(1);
+    expect(specialistsNavigation?.querySelectorAll('[data-specialist-modified-marker]')).toHaveLength(
+      1,
+    );
     expect(implementor.querySelector('[data-specialist-modified-marker]')?.textContent).toBe('*');
     expect(implementor.querySelector('[data-specialist-modified-marker]')?.className).toContain(
       'text-ui',
@@ -779,11 +817,10 @@ describe('settings tab route and focus behavior', () => {
     );
     expect(customSpecialist.querySelector('[data-specialist-modified-marker]')).toBeNull();
     expect(within(customSpecialist).getByText('Project')).toBeTruthy();
-    expect(allAgents.querySelector('[data-specialist-modified-marker]')).toBeNull();
     expect(createSpecialist.querySelector('[data-specialist-modified-marker]')).toBeNull();
 
-    for (const row of agentNavigation?.querySelectorAll('[data-settings-agent-row]') ?? []) {
-      expect(row.parentElement).toBe(agentNavigation);
+    for (const row of specialistsNavigation?.querySelectorAll('[data-settings-agent-row]') ?? []) {
+      expect(row.closest('[data-settings-specialists-section]')).toBe(specialistsNavigation);
       expect(row.className).toContain('rounded-lg');
       expect(row.className).toContain('px-2.5');
       expect(row.className).toContain('py-2');
@@ -792,13 +829,12 @@ describe('settings tab route and focus behavior', () => {
 
     expect(implementor.querySelectorAll('[data-agent-avatar]')).toHaveLength(1);
     expect(customSpecialist.querySelectorAll('[data-agent-avatar]')).toHaveLength(1);
-    expect(allAgents.getAttribute('aria-current')).toBe('true');
-    expect(allAgents.className).toContain('bg-muted');
-    expect(allAgents.className).toContain('shadow-xs');
+    expect(implementor.hasAttribute('aria-current')).toBe(false);
+    expect(customSpecialist.hasAttribute('aria-current')).toBe(false);
     expect(implementor.className).not.toContain('shadow-xs');
     expect(container.querySelector('main [data-settings-agents-submenu]')).toBeNull();
-    expect(container.querySelector('main #default-model')?.children).toHaveLength(1);
-    expect(container.querySelector('main #default-model')?.className).not.toContain('grid-cols');
+    expect(container.querySelector('main #specialist-editor')?.children).toHaveLength(1);
+    expect(container.querySelector('main #specialist-editor')?.className).not.toContain('grid-cols');
 
     await fireEvent.click(implementor);
 
@@ -806,8 +842,6 @@ describe('settings tab route and focus behavior', () => {
     expect(implementor.getAttribute('aria-current')).toBe('true');
     expect(implementor.className).toContain('bg-muted');
     expect(implementor.className).toContain('shadow-xs');
-    expect(allAgents.hasAttribute('aria-current')).toBe(false);
-    expect(allAgents.className).not.toContain('shadow-xs');
 
     await fireEvent.click(createSpecialist);
 
@@ -816,11 +850,6 @@ describe('settings tab route and focus behavior', () => {
     expect(createSpecialist.className).toContain('bg-muted');
     expect(createSpecialist.className).toContain('shadow-xs');
     expect(implementor.className).not.toContain('shadow-xs');
-
-    await fireEvent.click(allAgents);
-
-    expect(screen.getByTestId('ai-behavior-view').textContent).toContain('system-prompt');
-    expect(allAgents.getAttribute('aria-current')).toBe('true');
 
     appStore.dispatch(
       setFileSpecialists([
@@ -862,17 +891,17 @@ describe('settings tab route and focus behavior', () => {
     );
   });
 
-  it('keeps flat Agents rows visible and activates the selected Agents view', async () => {
-    renderSettings('/settings?tab=agents');
+  it('keeps flat Specialists rows visible and activates the selected specialist view', async () => {
+    renderSettings('/settings?tab=agent-behavior');
     const navigation = screen.getByRole('navigation', { name: 'Settings' });
 
-    expect(within(navigation).getByRole('button', { name: 'All Agents' })).toBeTruthy();
+    expect(within(navigation).getByRole('heading', { name: 'Specialists' })).toBeTruthy();
+    expect(within(navigation).queryByRole('button', { name: 'All Agents' })).toBeNull();
 
     await fireEvent.click(within(navigation).getByRole('button', { name: 'Providers' }));
 
-    expect(navigation.querySelector('[data-settings-agents-section]')).not.toBeNull();
+    expect(navigation.querySelector('[data-settings-specialists-section]')).not.toBeNull();
     expect(navigation.querySelector('[data-settings-agents-submenu]')).toBeNull();
-    expect(within(navigation).getByRole('button', { name: 'All Agents' })).toBeTruthy();
     expect(within(navigation).getByRole('button', { name: 'Implementor' })).toBeTruthy();
     expect(within(navigation).getByRole('button', { name: 'Create Specialist' })).toBeTruthy();
 
@@ -882,9 +911,11 @@ describe('settings tab route and focus behavior', () => {
       within(navigation).getByRole('button', { name: 'Implementor' }).getAttribute('aria-current'),
     ).toBe('true');
     expect(screen.getByTestId('ai-behavior-view').textContent).toContain('specialist:implementor');
+    expect(window.location.search).toBe('?tab=specialists&specialist=implementor');
+    expect(window.location.hash).toBe('#specialist-implementor');
   });
 
-  it('keeps Providers and All Agents default-model entry points on shared state', async () => {
+  it('keeps Providers and Global Instructions default-model entry points on shared state', async () => {
     appStore.dispatch(hydrateActiveProvider('codex'));
     appStore.dispatch(setSelectedModel({ providerId: 'codex', model: 'codex:shared-fixture' }));
     renderSettings('/settings?tab=providers');
@@ -893,10 +924,12 @@ describe('settings tab route and focus behavior', () => {
     expect(within(providersDefault).getAllByText('Default model')).toHaveLength(2);
     expect(selectSelectedModel.select(appStore.state, 'codex')).toBe('codex:shared-fixture');
 
-    await fireEvent.click(screen.getByRole('button', { name: 'All Agents' }));
+    await fireEvent.click(screen.getByRole('button', { name: 'Agent Behavior' }));
 
-    const agentsDefault = await screen.findByTestId('all-agents-default-model-row');
-    expect(within(agentsDefault).getAllByText('Default model')).toHaveLength(2);
+    const globalInstructionsDefault = await screen.findByTestId(
+      'global-instructions-default-model-row',
+    );
+    expect(within(globalInstructionsDefault).getAllByText('Default model')).toHaveLength(2);
     expect(selectSelectedModel.select(appStore.state, 'codex')).toBe('codex:shared-fixture');
 
     appStore.dispatch(setSelectedModel({ providerId: 'codex', model: 'codex:updated-fixture' }));
@@ -908,15 +941,15 @@ describe('settings tab route and focus behavior', () => {
   });
 
   it('activates a clicked sidebar item while preserving params and hash', async () => {
-    renderSettings('/settings?tab=accounts&specialist=reviewer#integrations');
-    const providers = screen.getByRole('button', { name: 'Providers' });
+    renderSettings('/settings?tab=connections&specialist=reviewer#integrations');
+    const connections = screen.getByRole('button', { name: 'Connections' });
     const advanced = screen.getByRole('button', { name: 'Advanced' });
     advanced.focus();
     await fireEvent.click(advanced);
 
     expect(document.activeElement).toBe(advanced);
     expect(advanced.getAttribute('aria-current')).toBe('page');
-    expect(providers.hasAttribute('aria-current')).toBe(false);
+    expect(connections.hasAttribute('aria-current')).toBe(false);
     expect(window.location.search).toBe('?tab=advanced&specialist=reviewer');
     expect(window.location.hash).toBe('#integrations');
   });
@@ -924,15 +957,14 @@ describe('settings tab route and focus behavior', () => {
   it.each([
     ['/settings?specialist=reviewer', 'specialist:reviewer'],
     ['/settings?view=create-specialist', 'create-specialist'],
-  ])('opens the requested Agents query view for %s', async (url, expectedView) => {
+  ])('opens the requested Specialists query view for %s', async (url, expectedView) => {
     renderSettings(url);
-    await waitFor(() => expect(screen.getByRole('heading', { name: 'Agents' })).toBeTruthy());
-    expect(screen.getByTestId('ai-behavior-view').textContent).toContain(expectedView);
+    expect((await screen.findByTestId('ai-behavior-view')).textContent).toContain(expectedView);
   });
 
   it.each([
-    ['/settings?tab=agents&workspaceId=query-owner', 'value', 'query-owner'],
-    ['/settings?tab=agents', 'null', 'none'],
+    ['/settings?tab=agent-behavior&workspaceId=query-owner', 'value', 'query-owner'],
+    ['/settings?tab=agent-behavior', 'null', 'none'],
   ])(
     'passes the expected workspace identity to AI behavior settings for %s',
     async (url, kind, value) => {
@@ -940,8 +972,8 @@ describe('settings tab route and focus behavior', () => {
 
       await waitFor(() =>
         expect(
-          screen.getByRole('button', { name: 'All Agents' }).getAttribute('aria-current'),
-        ).toBe('true'),
+          screen.getByRole('button', { name: 'Agent Behavior' }).getAttribute('aria-current'),
+        ).toBe('page'),
       );
       const workspaceId = screen.getByTestId('ai-behavior-workspace-id');
       expect(workspaceId.dataset.workspaceIdKind).toBe(kind);
@@ -961,7 +993,7 @@ describe('settings back and footer behavior', () => {
   });
 
   it('renders version and support state when the app is up to date', () => {
-    renderSettings('/settings?tab=general');
+    renderSettings('/settings?tab=display');
     expect(screen.getByText(/v2\.0\.10/)).toBeTruthy();
     expect(screen.getByText('Up to date')).toBeTruthy();
     expect(screen.getByRole('link', { name: 'Support' }).getAttribute('href')).toBe(
@@ -972,7 +1004,7 @@ describe('settings back and footer behavior', () => {
 
   it('dispatches install when an update is ready', async () => {
     appStore.dispatch(simulateSetState({ status: 'downloaded' }));
-    renderSettings('/settings?tab=general');
+    renderSettings('/settings?tab=app-behavior');
     const update = screen.getByRole('button', { name: 'Update available' });
     const dispatchSpy = vi.spyOn(appStore, 'dispatch');
     await fireEvent.click(update);
@@ -982,19 +1014,24 @@ describe('settings back and footer behavior', () => {
 
 describe('settings hash target integration', () => {
   it.each([
-    ['default-model', 'quickActions.defaultModel', 'All Agents', 'true'],
+    ['default-model', 'quickActions.defaultModel', 'Agent Behavior', 'page'],
+    ['global-instructions', 'quickActions.defaultModel', 'Agent Behavior', 'page'],
     ['utility-default-model', 'utility-default-model', 'Providers', 'page'],
-    ['open-in', 'open-in', 'Behavior', 'page'],
-    ['github-link-action', 'github-link-action', 'Behavior', 'page'],
-    ['notifications', 'notifications', 'Behavior', 'page'],
-    ['agent-features', 'agent-features', 'Behavior', 'page'],
+    ['updates', 'updates', 'App Behavior', 'page'],
+    ['open-in', 'open-in', 'App Behavior', 'page'],
+    ['github-link-action', 'github-link-action', 'App Behavior', 'page'],
+    ['notifications', 'notifications', 'App Behavior', 'page'],
+    ['agent-features', 'agent-features', 'Agent Behavior', 'page'],
     ['mcp-servers', 'mcp-servers', 'Connections', 'page'],
-    ['cli-optimization', 'cli-optimization', 'System', 'page'],
-    ['workspace-api', 'workspace-api', 'System', 'page'],
-    ['color-theme', 'color-theme', 'Appearance', 'page'],
-    ['note-font', 'note-font', 'Appearance', 'page'],
-    ['agent-chat-font', 'agent-chat-font', 'Appearance', 'page'],
-    ['code-font', 'code-font', 'Appearance', 'page'],
+    ['cli-optimization', 'cli-optimization', 'Setup', 'page'],
+    ['workspace-api', 'workspace-api', 'Advanced', 'page'],
+    ['keyboard-shortcuts', 'keyboard-shortcuts', 'Input', 'page'],
+    ['voice', 'voice', 'Input', 'page'],
+    ['language', 'language', 'Display', 'page'],
+    ['color-theme', 'color-theme', 'Display', 'page'],
+    ['note-font', 'note-font', 'Display', 'page'],
+    ['agent-chat-font', 'agent-chat-font', 'Display', 'page'],
+    ['code-font', 'code-font', 'Display', 'page'],
   ])(
     'activates the registry tab and highlight target for /settings#%s',
     async (hash, expectedId, tabLabel, expectedCurrent) => {
@@ -1039,7 +1076,7 @@ describe('settings hash target integration', () => {
 
   it('cancels the previous hash scroll when a newer hash is scheduled', async () => {
     vi.useFakeTimers();
-    renderSettings('/settings?tab=fonts-colors#note-font');
+    renderSettings('/settings?tab=display#note-font');
     await Promise.resolve();
     await Promise.resolve();
 
@@ -1051,7 +1088,7 @@ describe('settings hash target integration', () => {
     Object.defineProperty(codeFont, 'offsetTop', { value: 360, configurable: true });
     const pendingBeforeReschedule = vi.getTimerCount();
 
-    window.history.replaceState({}, '', '/settings?tab=fonts-colors#code-font');
+    window.history.replaceState({}, '', '/settings?tab=display#code-font');
     window.dispatchEvent(new HashChangeEvent('hashchange'));
     expect(vi.getTimerCount()).toBe(pendingBeforeReschedule);
     await vi.advanceTimersByTimeAsync(100);
@@ -1062,7 +1099,7 @@ describe('settings hash target integration', () => {
 
   it('cancels a pending hash scroll when the hash is removed', async () => {
     vi.useFakeTimers();
-    renderSettings('/settings?tab=fonts-colors#note-font');
+    renderSettings('/settings?tab=display#note-font');
     await Promise.resolve();
     await Promise.resolve();
     const container = document
@@ -1071,7 +1108,7 @@ describe('settings hash target integration', () => {
     const scrollTo = vi.mocked(container.scrollTo);
     const pendingBeforeRemoval = vi.getTimerCount();
 
-    window.history.replaceState({}, '', '/settings?tab=fonts-colors');
+    window.history.replaceState({}, '', '/settings?tab=display');
     window.dispatchEvent(new HashChangeEvent('hashchange'));
     expect(vi.getTimerCount()).toBe(pendingBeforeRemoval - 1);
     await vi.advanceTimersByTimeAsync(100);
@@ -1081,7 +1118,7 @@ describe('settings hash target integration', () => {
 
   it('cancels a pending hash scroll when the page unmounts', async () => {
     vi.useFakeTimers();
-    const view = renderSettings('/settings?tab=fonts-colors#note-font');
+    const view = renderSettings('/settings?tab=display#note-font');
     await Promise.resolve();
     await Promise.resolve();
     const container = document

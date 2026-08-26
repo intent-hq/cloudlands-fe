@@ -12,7 +12,7 @@ for (const theme of ['light', 'dark'] as const) {
         const component = await mount(SettingsSidebarNavGeometryHost, {
           props: { theme, width, zoom },
         });
-        const rows = component.getByRole('button');
+        const rows = component.locator('[data-settings-tab]');
         const geometry = await rows.evaluateAll((buttons) =>
           buttons.map((button) => {
             const row = button.getBoundingClientRect();
@@ -35,7 +35,7 @@ for (const theme of ['light', 'dark'] as const) {
           }),
         );
 
-        expect(geometry).toHaveLength(7);
+        expect(geometry).toHaveLength(8);
         expect(geometry.every(({ overflows }) => !overflows)).toBe(true);
         for (const row of geometry) {
           expect(row.rowHeight).toBeCloseTo(36 * zoom, 1);
@@ -45,20 +45,21 @@ for (const theme of ['light', 'dark'] as const) {
           expect(row.labelCenterDelta).toBeLessThanOrEqual(0.5 * zoom);
         }
 
-        const selected = component.getByRole('button', { name: 'System' });
+        const selected = component.getByRole('button', { name: 'Setup' });
         await expect(selected).toHaveAttribute('aria-current', 'page');
-        const agentsSection = component.locator('[data-settings-agents-section]');
-        await expect(agentsSection).not.toHaveClass(/border|mt-|pt-/);
-        const [advancedBox, agentsHeadingBox, shellBox] = await Promise.all([
-          component.getByRole('button', { name: 'Advanced' }).boundingBox(),
-          component.getByRole('heading', { name: 'Agents' }).boundingBox(),
+        const specialistsSection = component.locator('[data-settings-specialists-section]');
+        await expect(specialistsSection).toHaveClass(/mt-8/);
+        await expect(specialistsSection).not.toHaveClass(/border|pt-/);
+        const [inputBox, specialistsHeadingBox, shellBox] = await Promise.all([
+          component.getByRole('button', { name: 'Input' }).boundingBox(),
+          component.getByRole('heading', { name: 'Specialists' }).boundingBox(),
           component.getByTestId('sidebar-shell').boundingBox(),
         ]);
-        expect(agentsHeadingBox!.y - (advancedBox!.y + advancedBox!.height)).toBeCloseTo(
-          0,
+        expect(specialistsHeadingBox!.y - (inputBox!.y + inputBox!.height)).toBeCloseTo(
+          32 * zoom,
           1,
         );
-        expect(agentsHeadingBox!.y + agentsHeadingBox!.height).toBeLessThanOrEqual(
+        expect(specialistsHeadingBox!.y + specialistsHeadingBox!.height).toBeLessThanOrEqual(
           shellBox!.y + shellBox!.height,
         );
         await component.getByRole('button', { name: 'Advanced' }).focus();
