@@ -3,8 +3,9 @@
  *
  * Binds the relay engine (`workspace-transfer-relay.ts`) to the Electron IPC
  * surface: `transfer:start` / `transfer:finalize` / `transfer:cancel`
- * invokes, progress pushed on `transfer:progress`. Production deps: the live
- * backend client as the SOURCE, a fresh short-lived JsonRpcClient per TARGET
+ * invokes, progress pushed on `transfer:progress`. Production deps: the
+ * invoking window's backend client as the SOURCE (resolved per start from the
+ * IPC event sender), a fresh short-lived JsonRpcClient per TARGET
  * (built from the connections store via `buildConfigForConnection`, disposed
  * after use), Electron's save dialog, and a plain fs write stream for the
  * download destination.
@@ -20,7 +21,7 @@ import type {
   TransferProgressEvent,
   TransferStartParams,
 } from '../../../shared/types/workspace-transfer';
-import { buildConfigForConnection, getBackendClient } from './backend.ipc';
+import { buildConfigForConnection, getBackendClientForIpcEvent } from './backend.ipc';
 import { JsonRpcClient } from './json-rpc-client';
 import { getOrCreateClientId } from './client-identity';
 import {
@@ -104,7 +105,6 @@ async function openFileSink(filePath: string): Promise<FileSink> {
 function getRelay(): WorkspaceTransferRelay {
   if (!relay) {
     relay = createWorkspaceTransferRelay({
-      getSourceClient: () => getBackendClient(),
       createTargetClient,
       showSaveDialog,
       openFileSink,
@@ -123,11 +123,19 @@ export function registerWorkspaceTransferHandlers(): void {
   if (handlersRegistered) return;
   handlersRegistered = true;
 
-  ipcMain.handle(TRANSFER.START, async (_event, params: TransferStartParams) => {
+  ipcMain.handle(TRANSFER.START, async (event, params: TransferStartParams) => {
     if (!params || typeof params.workspaceId !== 'string' || !params.destination) {
       return { success: false, error: 'workspaceId and destination are required' };
     }
-    return getRelay().start(params);
+    // The SOURCE is the backend bound to the invoking window — not the global
+    // primary client, which may point at a different daemon.
+    let source: JsonRpcClient;
+    try {
+      source = getBackendClientForIpcEvent(event).client;
+    } catch (error) {
+      return { success: false, error: error instanceof Error ? error.message : String(error) };
+    }
+    return getRelay().start(params, source);
   });
 
   ipcMain.handle(TRANSFER.FINALIZE, async (_event, params: TransferFinalizeParams) => {
