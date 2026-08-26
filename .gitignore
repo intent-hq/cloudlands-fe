@@ -112,5 +112,8 @@ resources/sidecar/
 # Speech helper staging directory (build-speech-helper.cjs output)
 resources/speech-helper/
 
+# Keychain helper staging directory (build-keychain-helper.cjs output)
+resources/keychain-helper/
+
 # Generated production-only Paraglide bundle
 static/generated/

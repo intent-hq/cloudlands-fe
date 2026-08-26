@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Bundle Info.plist for intent-keychain-helper.app, staged by
+     scripts/build-keychain-helper.cjs. The helper ships as a minimal .app
+     bundle rather than a bare executable because the restricted keychain
+     entitlements it needs (com.apple.application-identifier,
+     keychain-access-groups) must be authorized by an embedded Developer ID
+     provisioning profile, and profiles can only be embedded in bundles
+     (Contents/embedded.provisionprofile — see scripts/sign-sidecar.js).
+     CFBundleIdentifier must match the App ID the provisioning profile was
+     issued for. -->
+<plist version="1.0">
+<dict>
+  <key>CFBundleIdentifier</key>
+  <string>app.cloudlands.intent.keychain-helper</string>
+  <key>CFBundleName</key>
+  <string>intent-keychain-helper</string>
+  <key>CFBundleExecutable</key>
+  <string>intent-keychain-helper</string>
+  <key>CFBundlePackageType</key>
+  <string>APPL</string>
+  <key>CFBundleInfoDictionaryVersion</key>
+  <string>6.0</string>
+  <key>CFBundleShortVersionString</key>
+  <string>1.0.0</string>
+  <key>CFBundleVersion</key>
+  <string>1</string>
+  <key>LSUIElement</key>
+  <true/>
+</dict>
+</plist>

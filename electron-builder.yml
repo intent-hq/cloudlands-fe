@@ -23,6 +23,8 @@ files:
   - "!resources/sidecar/**"
   # Speech helper ships via mac.extraResources (speech-helper/), not asar.
   - "!resources/speech-helper/**"
+  # Keychain helper ships via mac.extraResources (keychain-helper/), not asar.
+  - "!resources/keychain-helper/**"
 
 # Bundle the intentd binary into the packaged app
 # Runtime path: process.resourcesPath/intentd/intentd (intentd.exe on Windows)
@@ -74,6 +76,13 @@ mac:
   extraResources:
     - from: resources/speech-helper
       to: speech-helper
+    # Bundle the iCloud-keychain sync helper (built by
+    # scripts/build-keychain-helper.cjs; signed — with an embedded Developer ID
+    # provisioning profile when available — by the afterPack hook).
+    # Runtime path: process.resourcesPath/keychain-helper/
+    #   intent-keychain-helper.app/Contents/MacOS/intent-keychain-helper
+    - from: resources/keychain-helper
+      to: keychain-helper
   # Microphone usage string shown by the one-time macOS TCC prompt
   # (voice dictation; pairs with com.apple.security.device.audio-input)
   extendInfo:
