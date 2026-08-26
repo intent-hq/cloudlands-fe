@@ -14,6 +14,7 @@
 
   let {
     width,
+    height = 520,
     zoom,
     theme,
     selectedTab = 'overview',
@@ -23,6 +24,7 @@
     hasPullRequest = false,
   }: {
     width: number;
+    height?: number;
     zoom: number;
     theme: 'light' | 'dark';
     selectedTab?: string;
@@ -140,6 +142,6 @@
   onDestroy(disposeStore);
 </script>
 
-<div data-sidebar-launcher-host style="width: {width}px; height: 520px; zoom: {zoom};">
+<div data-sidebar-launcher-host style="width: {width}px; height: {height}px; zoom: {zoom};">
   <MultiSelectTabbedSidebar {workspaceId} />
 </div>

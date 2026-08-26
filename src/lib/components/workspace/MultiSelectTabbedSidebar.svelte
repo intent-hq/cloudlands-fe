@@ -912,7 +912,7 @@
           {@html '<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->'}
           <div
             role="presentation"
-            class="absolute inset-x-0 z-20 grid min-h-0 min-w-0 overflow-hidden px-4 pb-1 pt-3"
+            class="sidebar-expanded-card-shell absolute inset-x-0 z-20 grid min-h-0 min-w-0 overflow-hidden px-4 pb-1 pt-3"
             style={`top: ${expandedOverlayTop}px; bottom: ${expandedOverlayBottom}px;`}
             data-sidebar-overlay
             data-sidebar-switch-direction={sidebarTabSwitchDirection}
@@ -922,7 +922,7 @@
               {@const { tabId, workspaceId: cardWorkspaceId } = selectedCard}
               {@const tab = TAB_DEFINITIONS.find((t) => t.id === tabId)}
               <div
-                class="sidebar-expanded-card relative z-10 flex h-full min-h-0 w-full min-w-0 flex-col overflow-hidden rounded-lg border border-border bg-sidebar"
+                class="sidebar-expanded-card relative z-10 flex min-h-0 w-full min-w-0 flex-col overflow-hidden rounded-lg border border-border bg-sidebar"
                 data-sidebar-card-surface
                 data-sidebar-card-workspace={cardWorkspaceId}
                 data-sidebar-card-tab={tabId}
@@ -1058,6 +1058,7 @@
                       class="min-h-0 flex-1 pt-2 {tabId === 'files'
                         ? 'overflow-hidden pb-0'
                         : 'overflow-y-auto pb-6'}"
+                      data-sidebar-expanded-scroll
                       use:scrollFade
                     >
                       {#if tabId === 'agents'}
