@@ -184,7 +184,7 @@
 
   // Start editing the agent name
   async function startEditing() {
-    if (readOnly) return;
+    if (readOnly || isEditing) return;
     editingValue = displayName;
     isEditing = true;
     await tick();
@@ -194,25 +194,28 @@
 
   // Save the edited name
   function saveEdit() {
-    if (editingValue.trim() && editingValue.trim() !== displayName) {
+    if (!isEditing) return;
+    const nextName = editingValue.trim();
+    isEditing = false;
+    editingValue = '';
+    if (nextName && nextName !== displayName) {
       const wsId = $agent$?.workspaceId
         ? String($agent$.workspaceId)
         : workspace?.id
           ? String(workspace.id)
           : undefined;
       if (wsId) {
-        const trimmed = editingValue.trim();
         // Capture previous values before the optimistic dispatch so a failed
         // rename can revert back to exactly what the user saw.
         const previousName = displayName;
         const previousNameExplicitlySet = $agent$?.nameExplicitlySet ?? false;
         appStore.dispatch(
           updateAgentSessionFields(agentId, {
-            name: trimmed,
+            name: nextName,
             nameExplicitlySet: true,
           } as any),
         );
-        const action = renameAgentSessionRequested(wsId, agentId, trimmed);
+        const action = renameAgentSessionRequested(wsId, agentId, nextName);
         appStore.dispatch(action);
         action.promise.catch(() => {
           // Revert the optimistic dispatch so Redux matches disk, then notify.
@@ -226,7 +229,6 @@
         });
       }
     }
-    cancelEdit();
   }
 
   // Cancel editing
@@ -237,15 +239,18 @@
 
   // Handle keyboard events during editing
   function handleEditKeydown(e: KeyboardEvent) {
-    if (e.key === 'Enter') {
+    e.stopPropagation();
+    if (e.key === 'Enter' && !e.isComposing) {
       e.preventDefault();
-      e.stopPropagation(); // Prevent bubbling to parent button which would trigger startEditing again
       saveEdit();
     } else if (e.key === 'Escape') {
       e.preventDefault();
-      e.stopPropagation();
       cancelEdit();
     }
+  }
+
+  function isolateEditEvent(e: Event) {
+    e.stopPropagation();
   }
 
   // Handle double-click on name
@@ -578,9 +583,12 @@
     data-agent-id={agentId}
     data-testid="agent-list-item"
   >
-    <button
-      type="button"
-      class="flex w-full min-w-0 max-w-full overflow-hidden text-left gap-2 transition-colors duration-150 cursor-pointer group border {panelRow
+    <svelte:element
+      this={isEditing ? 'div' : 'button'}
+      type={isEditing ? undefined : 'button'}
+      class="flex w-full min-w-0 max-w-full overflow-hidden text-left gap-2 transition-colors duration-150 {isEditing
+        ? 'cursor-text'
+        : 'cursor-pointer'} group border {panelRow
         ? 'h-10 items-center rounded-md border-transparent px-2 py-2 type-body font-normal hover:bg-muted/45 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring'
         : inline
           ? `type-body items-center rounded-md ${inlineRowClass}`
@@ -591,11 +599,12 @@
         : selected || showBorder
           ? `bg-background border-border ${glowClass} shadow-xs`
           : 'border-transparent'} {typographyClass}"
-      onclick={handleClick}
-      onkeydown={handleCardKeydown}
-      oncontextmenu={handleContextMenu}
-      aria-disabled={readOnly}
-      tabindex={readOnly ? -1 : undefined}
+      onclick={isEditing ? undefined : handleClick}
+      onkeydown={isEditing ? undefined : handleCardKeydown}
+      oncontextmenu={isEditing ? undefined : handleContextMenu}
+      role={isEditing ? 'presentation' : undefined}
+      aria-disabled={isEditing ? undefined : readOnly}
+      tabindex={isEditing || readOnly ? -1 : undefined}
       data-agent-panel-row={panelRow ? agentId : undefined}
     >
       <div
@@ -647,10 +656,23 @@
                 bind:this={editInputRef}
                 type="text"
                 bind:value={editingValue}
+                aria-label={m.chat_agentCard_menu_rename_label()}
                 onblur={saveEdit}
-                onkeydown={handleEditKeydown}
+                onkeydowncapture={handleEditKeydown}
+                onkeyupcapture={isolateEditEvent}
+                onfocusincapture={isolateEditEvent}
+                onfocusoutcapture={isolateEditEvent}
+                onpointerdowncapture={isolateEditEvent}
+                onpointerupcapture={isolateEditEvent}
+                onmousedowncapture={isolateEditEvent}
+                onmouseupcapture={isolateEditEvent}
+                onclickcapture={isolateEditEvent}
+                ondblclickcapture={isolateEditEvent}
+                oncontextmenucapture={isolateEditEvent}
+                oncopycapture={isolateEditEvent}
+                oncutcapture={isolateEditEvent}
+                onpastecapture={isolateEditEvent}
                 class="text-sm truncate bg-transparent border-none outline-none! ring-0! focus:ring-0! focus:outline-none! focus-visible:ring-0! focus-visible:outline-none! min-w-0 flex-1 text-foreground"
-                onclick={(e) => e.stopPropagation()}
               />
             {:else}
               <!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -811,7 +833,7 @@
           </div>
         {/if}
       </div>
-    </button>
+    </svelte:element>
     {#if headerActions}
       <div
         class="absolute right-3 top-1/2 z-10 h-6 w-14 shrink-0 -translate-y-1/2"
