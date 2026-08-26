@@ -16,6 +16,11 @@ export const selectRemoteConnections = store.createSelector((state) =>
   getItems(state.connections.connections).filter((connection) => !connection.isLocal),
 );
 
+/** Whether the authoritative connection list has completed its first hydration. */
+export const selectConnectionsLoaded = store.createSelector(
+  (state) => state.connections.hasReceivedList,
+);
+
 /** Transient open state for one saved connection. Unknown/legacy entries are not open. */
 export const selectConnectionOpenStatus = store.createSelector(
   (state, id: string): ConnectionOpenStatus =>

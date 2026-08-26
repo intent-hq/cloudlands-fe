@@ -91,6 +91,9 @@ vi.mock('$lib/components/settings/ConnectionsSettings.svelte', async () => ({
 vi.mock('$lib/components/settings/VoiceSettings.svelte', async () => ({
   default: (await import('./mocks/SettingsStateFixture.svelte')).default,
 }));
+vi.mock('$lib/components/settings/MachinesSettings.svelte', async () => ({
+  default: (await import('$lib/components/chat/__tests__/mocks/SlotOnly.svelte')).default,
+}));
 vi.mock('$lib/components/settings/GitWorkspaceSettings.svelte', async () => ({
   default: (await import('./mocks/GitWorkspaceSettingsFixture.svelte')).default,
 }));
@@ -610,6 +613,7 @@ describe('settings tab route and focus behavior', () => {
     ['notifications', 'App Behavior', 'page'],
     ['general', 'Display', 'page'],
     ['connections', 'Connections', 'page'],
+    ['machines', 'Machines', 'page'],
     ['interface-system', 'Display', 'page'],
     ['input', 'Input', 'page'],
     ['unknown', 'Display', 'page'],
@@ -620,6 +624,16 @@ describe('settings tab route and focus behavior', () => {
         current,
       ),
     );
+  });
+
+  it('maps the compatible #machines hash to the Machines tab', async () => {
+    const { container } = renderSettings('/settings#machines');
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Machines' }).getAttribute('aria-current')).toBe(
+        'page',
+      ),
+    );
+    expect(container.querySelector('#machines')).not.toBeNull();
   });
 
   it('renders Agent Backend only on Advanced while the legacy Tools tab resolves to Setup', async () => {

@@ -1128,6 +1128,7 @@ describe('DaemonStatusIndicator', () => {
     const remoteRecord = {
       id: 'r1',
       label: 'desk:4180',
+      accent: 'teal',
       host: '10.0.0.2',
       port: 4180,
       fingerprint: 'AA:BB',
@@ -1157,6 +1158,21 @@ describe('DaemonStatusIndicator', () => {
 
       const activeIcon = screen.getByLabelText('Active');
       expect(activeIcon.closest('[role="menuitem"]')?.textContent).toContain('desk:4180');
+    });
+
+    it('renders the saved machine accent in the current trigger and connection row', async () => {
+      mockStoreState = {
+        daemonHealth: { ...healthy },
+        connections: withConnections('r1', 'local'),
+      };
+
+      const { container } = render(DaemonStatusIndicatorPreloaded);
+      await fireEvent.click(screen.getByRole('button', { name: 'intentd: healthy — desk:4180' }));
+
+      expect(document.querySelectorAll('[data-connection-accent="teal"]')).toHaveLength(2);
+      expect(container.querySelector('[data-connection-accent="teal"]')?.className).toContain(
+        'bg-teal-600',
+      );
     });
 
     it('checks Local in a local window while the remote is also connected', async () => {

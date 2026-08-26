@@ -143,7 +143,9 @@
     loadKeychainSyncStateRequested,
   } from '$store/renderer/slices/connections/connections-slice';
   import { LOCAL_CONNECTION_ID } from '$shared/types/connections';
+  import { DEFAULT_CONNECTION_ACCENT } from '$shared/types/connections';
   import type { ConnectionRecord } from '$shared/types/connections';
+  import { CONNECTION_ACCENT_CLASSES } from '$lib/utils/connection-accents';
   import { store as appStore } from '$store/renderer/store';
   import type { DaemonHealth } from '$store/renderer/slices/daemon-health/daemon-health-types';
 
@@ -495,6 +497,14 @@
         aria-label={triggerAriaLabel}
       >
         {#if currentRemoteName}
+          <span
+            class={cn(
+              'size-2.5 shrink-0 rounded-full ring-1 ring-background',
+              CONNECTION_ACCENT_CLASSES[$currentConnection$?.accent ?? DEFAULT_CONNECTION_ACCENT],
+            )}
+            aria-hidden="true"
+            data-connection-accent={$currentConnection$?.accent ?? DEFAULT_CONNECTION_ACCENT}
+          ></span>
           <span class="text-xs text-subtle truncate max-w-32">{currentRemoteName}</span>
         {/if}
         <div class={cn('w-2 h-2 rounded-full shrink-0', dotColorClass)}></div>
@@ -575,7 +585,8 @@
                     <span>{versionMismatchTooltip}</span>
                   {/snippet}
                   <div class="flex justify-between gap-2 text-xs w-full whitespace-nowrap">
-                    <span class="text-subtle shrink-0">{m.layout_daemonStatus_version_label()}</span>
+                    <span class="text-subtle shrink-0">{m.layout_daemonStatus_version_label()}</span
+                    >
                     <span class="flex items-center gap-1.5 min-w-0">
                       <!--
                         Keyboard focus inside the menu is menu-managed (bits-ui
@@ -834,6 +845,16 @@
             -->
             <Menu.Sub>
               <Menu.SubTrigger class="w-full cursor-pointer text-xs px-2 py-1.5">
+                {#if !conn.isLocal}
+                  <span
+                    class={cn(
+                      'size-2.5 shrink-0 rounded-full ring-1 ring-background',
+                      CONNECTION_ACCENT_CLASSES[conn.accent ?? DEFAULT_CONNECTION_ACCENT],
+                    )}
+                    aria-hidden="true"
+                    data-connection-accent={conn.accent ?? DEFAULT_CONNECTION_ACCENT}
+                  ></span>
+                {/if}
                 <span class="min-w-0 flex-1 truncate">
                   {conn.isLocal
                     ? m.layout_daemonStatus_localConnection_label()

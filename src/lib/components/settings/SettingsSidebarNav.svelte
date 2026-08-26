@@ -4,6 +4,7 @@
     faCodeBranch,
     faGlobe,
     faKeyboard,
+    faServer,
     faPlug,
     faRobot,
     faSliders,
@@ -19,6 +20,7 @@
     | 'agent-behavior'
     | 'providers'
     | 'connections'
+    | 'machines'
     | 'setup'
     | 'advanced'
     | 'input'
@@ -66,6 +68,13 @@
       icon: faPlug,
       get label() {
         return m.settings_sidebar_connections_label();
+      },
+    },
+    {
+      id: 'machines',
+      icon: faServer,
+      get label() {
+        return m.settings_sidebar_machines_label();
       },
     },
     {

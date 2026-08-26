@@ -16,6 +16,7 @@
   } from '$lib/components/settings/AIBehaviorSidebar.svelte';
   import SettingsSidebarNav from '$lib/components/settings/SettingsSidebarNav.svelte';
   import ConnectionsSettings from '$lib/components/settings/ConnectionsSettings.svelte';
+  import MachinesSettings from '$lib/components/settings/MachinesSettings.svelte';
   import BackendSyncSettings from '$lib/components/settings/BackendSyncSettings.svelte';
   import VoiceSettings from '$lib/components/settings/VoiceSettings.svelte';
   import GitWorkspaceSettings from '$lib/components/settings/GitWorkspaceSettings.svelte';
@@ -108,6 +109,7 @@
     | 'agent-behavior'
     | 'providers'
     | 'connections'
+    | 'machines'
     | 'setup'
     | 'advanced'
     | 'input'
@@ -119,6 +121,7 @@
     'agent-behavior',
     'providers',
     'connections',
+    'machines',
     'setup',
     'advanced',
     'input',
@@ -140,6 +143,7 @@
     'backgroundAgents.defaultModel': 'agent-behavior',
     providers: 'providers',
     integrations: 'connections',
+    machines: 'machines',
     voice: 'input',
     'keyboard-shortcuts': 'input',
     'git-workspace': 'setup',
@@ -595,6 +599,13 @@
               {m.settings_section_mcpServers()}
             </h2>
             <McpServersSettings />
+          </div>
+        {/if}
+
+        <!-- Machines -->
+        {#if activeTab === 'machines'}
+          <div id="machines" class="mb-12 scroll-mt-20">
+            <MachinesSettings />
           </div>
         {/if}
 

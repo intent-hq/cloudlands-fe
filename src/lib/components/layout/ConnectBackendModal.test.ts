@@ -52,6 +52,9 @@ vi.mock('$lib/utils/open-external', () => ({
 }));
 
 async function fillDetails() {
+  await fireEvent.input(screen.getByLabelText('Machine name'), {
+    target: { value: 'Studio Mac' },
+  });
   await fireEvent.input(screen.getByLabelText('Host'), { target: { value: '10.0.0.2' } });
   await fireEvent.input(screen.getByLabelText('Port'), { target: { value: '4180' } });
   await fireEvent.input(screen.getByLabelText('Access token'), {
@@ -123,7 +126,8 @@ describe('ConnectBackendModal', () => {
     await fireEvent.click(screen.getByRole('button', { name: 'Confirm & connect' }));
 
     expect(mocks.addConnectionRequested).toHaveBeenCalledWith({
-      label: '10.0.0.2:4180',
+      label: 'Studio Mac',
+      accent: 'blue',
       host: '10.0.0.2',
       port: 4180,
       fingerprint: 'AA:BB:CC:DD',
@@ -145,6 +149,29 @@ describe('ConnectBackendModal', () => {
 
     expect(mocks.addConnectionRequested).toHaveBeenCalledWith(
       expect.objectContaining({ detectHosts: false }),
+    );
+  });
+
+  it('requires a name and assigns the selected accent', async () => {
+    const ConnectBackendModal = (await import('./ConnectBackendModal.svelte')).default;
+    render(ConnectBackendModal, { props: { open: true, defaultAccent: 'teal' } });
+
+    await fireEvent.input(screen.getByLabelText('Host'), { target: { value: '10.0.0.2' } });
+    await fireEvent.input(screen.getByLabelText('Access token'), { target: { value: 'token' } });
+    expect((screen.getByRole('button', { name: 'Continue' }) as HTMLButtonElement).disabled).toBe(
+      true,
+    );
+
+    await fireEvent.input(screen.getByLabelText('Machine name'), {
+      target: { value: 'Render box' },
+    });
+    await fireEvent.click(screen.getByRole('button', { name: 'Use Rose accent' }));
+    await fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+    await screen.findByText('AA:BB:CC:DD');
+    await fireEvent.click(screen.getByRole('button', { name: 'Confirm & connect' }));
+
+    expect(mocks.addConnectionRequested).toHaveBeenCalledWith(
+      expect.objectContaining({ label: 'Render box', accent: 'rose' }),
     );
   });
 
@@ -262,13 +289,16 @@ describe('ConnectBackendModal', () => {
     expect(mocks.openExternalUrl).toHaveBeenCalledWith('https://github.com/intent-hq/intentd');
   });
 
-  it('keeps Continue disabled until host, a valid port, and token are provided', async () => {
+  it('keeps Continue disabled until name, host, a valid port, and token are provided', async () => {
     const ConnectBackendModal = (await import('./ConnectBackendModal.svelte')).default;
     render(ConnectBackendModal, { props: { open: true } });
 
     const continueBtn = () => screen.getByRole('button', { name: 'Continue' }) as HTMLButtonElement;
     expect(continueBtn().disabled).toBe(true);
 
+    await fireEvent.input(screen.getByLabelText('Machine name'), {
+      target: { value: 'Studio Mac' },
+    });
     await fireEvent.input(screen.getByLabelText('Host'), { target: { value: '10.0.0.2' } });
     await fireEvent.input(screen.getByLabelText('Port'), { target: { value: 'not-a-port' } });
     await fireEvent.input(screen.getByLabelText('Access token'), { target: { value: 't' } });
