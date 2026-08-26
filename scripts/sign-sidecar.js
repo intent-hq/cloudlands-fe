@@ -17,6 +17,7 @@
 
 import { exec, execFile } from 'child_process';
 import { promisify } from 'util';
+import os from 'os';
 import path from 'path';
 import fs from 'fs';
 
@@ -91,6 +92,110 @@ async function verifySignature(binaryPath) {
   }
 }
 
+/** Bundle ID of the keychain sync helper (resources/keychain/helper-info.plist). */
+const KEYCHAIN_HELPER_BUNDLE_ID = 'dev.intentapp.cloudlands-fe.keychain-helper';
+
+/**
+ * Sign the iCloud-keychain sync helper bundle
+ * (Resources/keychain-helper/intent-keychain-helper.app).
+ *
+ * The helper needs the RESTRICTED com.apple.application-identifier +
+ * keychain-access-groups entitlements to use the data-protection keychain
+ * (kSecUseDataProtectionKeychain / kSecAttrSynchronizable). macOS only honors
+ * restricted entitlements when an embedded provisioning profile authorizes
+ * them, so when KEYCHAIN_HELPER_PROVISIONING_PROFILE points at a Developer ID
+ * provisioning profile for the helper's App ID this embeds it
+ * (Contents/embedded.provisionprofile) and signs with matching entitlements
+ * (team ID extracted from the profile). Without the profile the bundle is
+ * signed plainly — it still runs, and the keychain rejects it with
+ * errSecMissingEntitlement, which the helper reports as its structured
+ * "unavailable" error (fail-soft).
+ *
+ * This signature must survive electron-builder's own signing pass, which
+ * runs after afterPack and re-signs every nested bundle with the main app
+ * entitlements. mac.signIgnore in electron-builder.yml excludes this bundle
+ * from that pass so the entitlements written here are what ships.
+ *
+ * @param {string} bundlePath - Absolute path to intent-keychain-helper.app
+ * @param {string} identity - Code signing identity
+ */
+async function signKeychainHelper(bundlePath, identity) {
+  const profilePath = process.env.KEYCHAIN_HELPER_PROVISIONING_PROFILE;
+  if (!profilePath || !fs.existsSync(profilePath)) {
+    if (profilePath) {
+      console.warn(`  KEYCHAIN_HELPER_PROVISIONING_PROFILE not found at ${profilePath}`);
+    }
+    console.log(
+      '  No keychain-helper provisioning profile — signing without restricted entitlements ' +
+        '(keychain sync will report "unavailable" at runtime).',
+    );
+    await signBinary(bundlePath, identity);
+    await verifySignature(bundlePath);
+    return;
+  }
+
+  console.log(`  Embedding provisioning profile: ${profilePath}`);
+  fs.copyFileSync(profilePath, path.join(bundlePath, 'Contents', 'embedded.provisionprofile'));
+
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'keychain-helper-sign-'));
+  try {
+    // Team ID comes from the profile itself so the entitlements always match
+    // what the profile authorizes.
+    const decodedProfile = path.join(tmpDir, 'profile.plist');
+    await execFileAsync('security', ['cms', '-D', '-i', profilePath, '-o', decodedProfile]);
+    const { stdout: teamRaw } = await execFileAsync('plutil', [
+      '-extract',
+      'TeamIdentifier.0',
+      'raw',
+      '-o',
+      '-',
+      decodedProfile,
+    ]);
+    const teamId = teamRaw.trim();
+    if (!/^[A-Z0-9]{10}$/.test(teamId)) {
+      throw new Error(`Could not extract a team ID from the provisioning profile (got "${teamId}")`);
+    }
+
+    const appIdentifier = `${teamId}.${KEYCHAIN_HELPER_BUNDLE_ID}`;
+    const entitlementsPath = path.join(tmpDir, 'entitlements.plist');
+    fs.writeFileSync(
+      entitlementsPath,
+      `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>com.apple.application-identifier</key>
+  <string>${appIdentifier}</string>
+  <key>com.apple.developer.team-identifier</key>
+  <string>${teamId}</string>
+  <key>keychain-access-groups</key>
+  <array>
+    <string>${appIdentifier}</string>
+  </array>
+</dict>
+</plist>
+`,
+    );
+
+    console.log(`  Signing with restricted keychain entitlements (team ${teamId}): ${bundlePath}`);
+    await execFileAsync('codesign', [
+      '--force',
+      '--options',
+      'runtime',
+      '--timestamp',
+      '--entitlements',
+      entitlementsPath,
+      '--sign',
+      identity,
+      bundlePath,
+    ]);
+    console.log('  ✓ Signed successfully');
+    await verifySignature(bundlePath);
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+}
+
 /**
  * afterPack hook for electron-builder
  * @param {Object} context - electron-builder context
@@ -115,6 +220,15 @@ async function signSidecar(context) {
     'Resources',
     'speech-helper',
     'intent-speech-helper',
+  );
+  // Optional iCloud-keychain sync helper bundle (scripts/build-keychain-helper.cjs);
+  // absent when the staging build skipped it (no swiftc / non-mac packaging host).
+  const keychainHelperBundlePath = path.join(
+    appPath,
+    'Contents',
+    'Resources',
+    'keychain-helper',
+    'intent-keychain-helper.app',
   );
 
   console.log('=== Signing intentd sidecar (afterPack) ===');
@@ -168,6 +282,13 @@ async function signSidecar(context) {
     if (fs.existsSync(speechHelperPath)) {
       await signBinary(speechHelperPath, identity);
       await verifySignature(speechHelperPath);
+    }
+
+    // Sign the keychain sync helper bundle when bundled (same seal-ordering
+    // constraint; embeds the provisioning profile + restricted entitlements
+    // when KEYCHAIN_HELPER_PROVISIONING_PROFILE is set).
+    if (fs.existsSync(keychainHelperBundlePath)) {
+      await signKeychainHelper(keychainHelperBundlePath, identity);
     }
 
     console.log('=== Sidecar signing complete ===');
