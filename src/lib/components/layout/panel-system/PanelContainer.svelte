@@ -93,6 +93,8 @@
     ) => void;
     /** Reports the one valid destination for the active-pane drag. */
     onPaneDropPreview?: (placement: PaneDropPlacement | null) => void;
+    /** Idempotently finishes the active-pane drag before layout mutation. */
+    onPaneDragFinish?: () => void;
     /** Handler for moving the active pane to an adjacent column. */
     onMoveActivePane?: (panelId: string, direction: 'next' | 'prev') => void;
     /** Handler for reordering a whole panel relative to another panel */
@@ -153,6 +155,7 @@
     onTabDropToSplit,
     onTabMoveToPanel,
     onPaneDropPreview,
+    onPaneDragFinish,
     onMoveActivePane,
     onPanelMove,
     onTabDropToSplitHandle,
@@ -652,6 +655,7 @@
         onTabMoveToPanel={(tabId, fromPanelId, insertIndex?: number) =>
           onTabMoveToPanel?.(node.panelId, tabId, fromPanelId, insertIndex)}
         {onPaneDropPreview}
+        {onPaneDragFinish}
         onMovePaneLeft={onMoveActivePane && panelIndex > 0
           ? () => onMoveActivePane(node.panelId, 'prev')
           : undefined}
@@ -739,6 +743,7 @@
             {onTabDropToSplit}
             {onTabMoveToPanel}
             {onPaneDropPreview}
+            {onPaneDragFinish}
             {onMoveActivePane}
             {onPanelMove}
             {onTabDropToSplitHandle}

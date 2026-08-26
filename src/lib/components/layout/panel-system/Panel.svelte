@@ -32,12 +32,14 @@
   import { untrack, type Snippet } from 'svelte';
   import {
     PANE_DRAG_MIME,
+    clearDraggedPaneState,
     getDraggedPane,
     getPaneColumnDropZone,
     type PaneDropPlacement,
   } from './panel-drag';
   import { store as appStore } from '$store/renderer/store';
   import { markPanelTouched } from '$store/renderer/slices/panel-layout/panel-layout-slice';
+  import { endDrag } from '$store/renderer/slices/tab-state/tab-state-slice';
 
   export type DropZone = 'left' | 'right' | 'center';
 
@@ -69,6 +71,8 @@
     onTabMoveToPanel?: (tabId: string, fromPanelId: string, insertIndex?: number) => void;
     /** Reports the one valid destination for the active-pane drag. */
     onPaneDropPreview?: (placement: PaneDropPlacement | null) => void;
+    /** Idempotently finishes the active-pane drag before layout mutation. */
+    onPaneDragFinish?: () => void;
     onMovePaneLeft?: () => void;
     onMovePaneRight?: () => void;
     onMoveLeft?: () => void;
@@ -110,6 +114,7 @@
     onTabDrop,
     onTabMoveToPanel,
     onPaneDropPreview,
+    onPaneDragFinish,
     onMovePaneLeft,
     onMovePaneRight,
     onMoveLeft,
@@ -314,7 +319,9 @@
     );
   }
 
-  function getPaneDropPlacement(zone: DropZone): PaneDropPlacement | null {
+  function getPaneDropPlacement(
+    zone: DropZone,
+  ): Extract<PaneDropPlacement, { kind: 'panel' }> | null {
     const draggedPane = getDraggedPane();
     if (!draggedPane) return null;
     if (zone === 'center' && draggedPane.panelId === panel.id) return null;
@@ -354,12 +361,33 @@
     activeDropZone = null;
   }
 
+  function finishPaneDrag() {
+    isPaneDragOver = false;
+    activeDropZone = null;
+    onPaneDropPreview?.(null);
+    if (onPaneDragFinish) onPaneDragFinish();
+    else {
+      clearDraggedPaneState();
+      appStore.dispatch(endDrag());
+    }
+  }
+
   function handleDrop(e: DragEvent) {
-    markUserTouch();
     e.preventDefault();
     e.stopPropagation(); // Prevent drop from reaching content (like editors)
-    const wasPaneDrag = isPaneDragOver || getDraggedPane() !== null;
-    isPaneDragOver = false;
+    const draggedPane = getDraggedPane();
+    if (draggedPane) {
+      const zone = activeDropZone ?? getDropZone(e);
+      const placement = getPaneDropPlacement(zone);
+      finishPaneDrag();
+      if (!placement) return;
+      markUserTouch();
+      if (placement.zone === 'center') onTabMoveToPanel?.(draggedPane.tabId, draggedPane.panelId);
+      else onTabDrop?.(draggedPane.tabId, draggedPane.panelId, placement.zone);
+      return;
+    }
+
+    markUserTouch();
 
     try {
       const data = e.dataTransfer?.getData(TAB_DRAG_MIME);
@@ -369,7 +397,6 @@
 
       const zone = activeDropZone ?? getDropZone(e);
       activeDropZone = null;
-      if (wasPaneDrag) onPaneDropPreview?.(null);
 
       if (zone === 'center') {
         // Move tab to this panel's tab bar (only if from a different panel)
@@ -386,7 +413,6 @@
         onTabDrop?.(tabId, fromPanelId, zone);
       }
     } catch {
-      if (wasPaneDrag) onPaneDropPreview?.(null);
       activeDropZone = null;
     }
   }
@@ -445,6 +471,7 @@
         {onTabClose}
         {onTabReorder}
         {onTabMoveToPanel}
+        {onPaneDragFinish}
         {onMovePaneLeft}
         {onMovePaneRight}
         {onMoveLeft}

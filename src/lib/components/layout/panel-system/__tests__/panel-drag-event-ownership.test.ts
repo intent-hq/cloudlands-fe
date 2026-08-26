@@ -7,7 +7,14 @@ import {
   initializeLayout,
   setRestoreStatus,
 } from '$store/renderer/slices/panel-layout/panel-layout-slice';
-import { PANE_DRAG_MIME, clearDraggedPaneState, setDraggedPane } from '../panel-drag';
+import {
+  PANE_DRAG_MIME,
+  clearDraggedPaneState,
+  createPaneDragImage,
+  getDraggedPane,
+  setDraggedPane,
+} from '../panel-drag';
+import { endDrag, startDrag } from '$store/renderer/slices/tab-state/tab-state-slice';
 
 vi.mock('../Panel.svelte', async () => ({
   default: (await import('./mocks/PaneDragRoutingPanel.svelte')).default,
@@ -17,7 +24,6 @@ import PanelLayout from '../PanelLayout.svelte';
 
 const STORE_CONTEXT = 'redux-store-context';
 const WORKSPACE_ID = 'pane-drag-event-ownership';
-const PREVIEW_PROBE_EVENT = 'pane-drag-preview-probe';
 const PANEL_WIDTH = 400;
 let storeContext: ReduxStoreContext | undefined;
 
@@ -31,8 +37,8 @@ class TestDataTransfer {
   readonly types = [PANE_DRAG_MIME];
 }
 
-function dragEvent(clientX: number): DragEvent {
-  const event = new Event('dragover', { bubbles: true, cancelable: true }) as DragEvent;
+function dragEvent(clientX: number, type = 'dragover'): DragEvent {
+  const event = new Event(type, { bubbles: true, cancelable: true }) as DragEvent;
   Object.defineProperties(event, {
     clientX: { value: clientX },
     clientY: { value: 20 },
@@ -125,27 +131,34 @@ async function mountLayout() {
 async function probeNonGutterSequence(coordinates: readonly number[]): Promise<(string | null)[]> {
   const panel = await mountLayout();
   const probes: (string | null)[] = [];
-  const recordProbe = (event: Event) => probes.push((event as CustomEvent<string | null>).detail);
-  window.addEventListener(PREVIEW_PROBE_EVENT, recordProbe);
 
   await fireEvent(panel, dragEvent(coordinates[0]));
   await waitFor(() =>
     expect(document.querySelector('[data-panel-layout-drag-preview="center"]')).toBeTruthy(),
   );
-  probes.length = 0;
-  for (const clientX of coordinates) await fireEvent(panel, dragEvent(clientX));
+  for (const clientX of coordinates) {
+    await fireEvent(panel, dragEvent(clientX));
+    probes.push(
+      document.querySelector<HTMLElement>('[data-panel-layout-drag-preview]')?.dataset
+        .panelLayoutDragPreview ?? null,
+    );
+  }
 
-  window.removeEventListener(PREVIEW_PROBE_EVENT, recordProbe);
   return probes;
 }
 
 beforeEach(() => {
   vi.stubGlobal('ResizeObserver', TestResizeObserver);
+  Object.defineProperty(HTMLElement.prototype, 'getAnimations', {
+    configurable: true,
+    value: () => [],
+  });
   storeContext = initAppStore(appStore);
 });
 
 afterEach(() => {
   clearDraggedPaneState();
+  appStore.dispatch(endDrag());
   cleanup();
   storeContext?.dispose();
   storeContext = undefined;
@@ -174,5 +187,53 @@ describe('pane drag event ownership', () => {
       'center',
       'center',
     ]);
+  });
+
+  it('updates one live preview through gutter, panel, invalid, and valid regions', async () => {
+    const panel = await mountLayout();
+    const layout = panel.closest<HTMLElement>('[data-panel-layout-motion]')!;
+    const readPreview = () =>
+      document.querySelector<HTMLElement>('[data-panel-layout-drag-preview]')?.dataset
+        .panelLayoutDragPreview ?? null;
+    const previews: (string | null)[] = [];
+
+    for (const [target, clientX] of [
+      [panel, 400],
+      [panel, 340],
+      [panel, 200],
+      [layout, 200],
+      [panel, 340],
+    ] as const) {
+      await fireEvent(target, dragEvent(clientX));
+      previews.push(readPreview());
+    }
+
+    expect(previews).toEqual(['after', 'right', 'center', null, 'right']);
+  });
+
+  it('finishes a center drop before source unmount and starts a second drag normally', async () => {
+    const panel = await mountLayout();
+    appStore.dispatch(startDrag());
+    createPaneDragImage('Source');
+
+    await fireEvent(panel, dragEvent(200));
+    expect(document.querySelector('[data-panel-layout-drag-preview="center"]')).toBeTruthy();
+    await fireEvent(panel, dragEvent(200, 'drop'));
+
+    expect(getDraggedPane()).toBeNull();
+    expect(appStore.state.tabState.isDragging).toBe(false);
+    expect(document.querySelector('[data-pane-drag-image]')).toBeNull();
+    expect(document.querySelector('[data-panel-layout-drag-preview]')).toBeNull();
+    await waitFor(() =>
+      expect(document.querySelector('[data-panel-id="source-panel"]')).toBeNull(),
+    );
+
+    setDraggedPane({ tabId: 'one', panelId: 'target-panel' });
+    appStore.dispatch(startDrag());
+    await fireEvent(panel, dragEvent(0));
+    expect(document.querySelector('[data-panel-layout-drag-preview="before"]')).toBeTruthy();
+    await fireEvent.keyDown(window, { key: 'Escape' });
+    expect(getDraggedPane()).toBeNull();
+    expect(appStore.state.tabState.isDragging).toBe(false);
   });
 });

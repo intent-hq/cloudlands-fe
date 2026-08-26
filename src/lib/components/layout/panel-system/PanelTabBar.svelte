@@ -44,7 +44,7 @@
   import DropdownMenu from '$lib/components/ui/dropdown-menu.svelte';
   import * as Menu from '$lib/components/ui/menu';
   import Portal from '$lib/components/ui/Portal.svelte';
-  import { tick } from 'svelte';
+  import { onDestroy, tick } from 'svelte';
   import type { TransitionConfig } from 'svelte/transition';
   import { Button } from '$lib/components/ui/button';
   import { selectIsDragging } from '$store/renderer/slices/tab-state/tab-state-selectors';
@@ -149,6 +149,8 @@
     onTabReorder?: (fromIndex: number, toIndex: number) => void;
     /** Handler for moving a tab from another panel to this panel's tab bar */
     onTabMoveToPanel?: (tabId: string, fromPanelId: string, insertIndex?: number) => void;
+    /** Idempotently finishes the active-pane drag before layout mutation. */
+    onPaneDragFinish?: () => void;
     onMovePaneLeft?: () => void;
     onMovePaneRight?: () => void;
     onMoveLeft?: () => void;
@@ -190,6 +192,7 @@
     onTabClose,
     onTabReorder,
     onTabMoveToPanel,
+    onPaneDragFinish,
     onMovePaneLeft,
     onMovePaneRight,
     onMoveLeft,
@@ -796,16 +799,26 @@
     appStore.dispatch(startDrag());
   }
 
+  function finishPaneDrag() {
+    if (onPaneDragFinish) onPaneDragFinish();
+    else {
+      clearDraggedPaneState();
+      appStore.dispatch(endDrag());
+    }
+  }
+
   function handlePaneDragEnd() {
-    clearDraggedPaneState();
-    appStore.dispatch(endDrag());
+    finishPaneDrag();
   }
 
   function handlePaneDragKeyDown(e: KeyboardEvent) {
     if (e.key !== 'Escape' || getDraggedPane()?.panelId !== panelId) return;
-    clearDraggedPaneState();
-    appStore.dispatch(endDrag());
+    finishPaneDrag();
   }
+
+  onDestroy(() => {
+    if (getDraggedPane()?.panelId === panelId) finishPaneDrag();
+  });
 
   // Check if a tab drag is happening (from this panel or another)
   function isTabDrag(e: DragEvent): boolean {

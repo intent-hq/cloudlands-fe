@@ -59,6 +59,7 @@
   import {
     clearDraggedPaneState,
     getDraggedPane,
+    getPaneColumnDropZone,
     getPaneInsertionPlacementAtX,
     getPaneInsertionTargets,
     type DraggedPane,
@@ -470,6 +471,17 @@
     paneDropPreview = draggedPane && placement ? { draggedPane, placement } : null;
   }
 
+  function ownsDraggedPane(): boolean {
+    const draggedPane = getDraggedPane();
+    return draggedPane !== null && $panels$[draggedPane.panelId] !== undefined;
+  }
+
+  function finishPaneDrag() {
+    clearPanelMovePreviewNow();
+    clearDraggedPaneState();
+    appStore.dispatch(endDrag());
+  }
+
   function commitPanelMoveWithoutReplay(commit: () => void) {
     if (panelMovePreviewClearFrame !== null) cancelAnimationFrame(panelMovePreviewClearFrame);
     panelMovePreviewClearFrame = null;
@@ -490,7 +502,7 @@
   }
 
   function measurePaneInsertionGeometry() {
-    if (!panelLayoutMotionElement || $panelIds$.length >= 4) return null;
+    if (!panelLayoutMotionElement) return null;
     const panelElements = Array.from(
       panelLayoutMotionElement.querySelectorAll<HTMLElement>('[data-panel-id]'),
     );
@@ -500,45 +512,76 @@
     if (panelRects.some((rect) => !rect)) return null;
 
     const layoutRect = panelLayoutMotionElement.getBoundingClientRect();
-    const targets = getPaneInsertionTargets(layoutRect, panelRects as DOMRect[]);
-    return { layoutRect, targets };
+    const targets = getPaneInsertionTargets(
+      layoutRect,
+      panelRects as DOMRect[],
+      $panelIds$.length < 4,
+    );
+    return { layoutRect, panelElements, targets };
   }
 
-  function handlePaneInsertionDragOver(event: DragEvent) {
-    if (!getDraggedPane()) return;
+  function resolvePaneDropPlacement(event: DragEvent): PaneDropPlacement | null {
+    const draggedPane = getDraggedPane();
+    if (!draggedPane) return null;
     const geometry = measurePaneInsertionGeometry();
-    if (!geometry) return;
-    const placement = getPaneInsertionPlacementAtX(
+    if (!geometry) return null;
+    const insertionPlacement = getPaneInsertionPlacementAtX(
       event.clientX,
       geometry.layoutRect,
       geometry.targets,
       $panelIds$,
     );
+    if (insertionPlacement) return insertionPlacement;
+
+    const eventElement = event.target instanceof Element ? event.target : null;
+    const panelElement = eventElement?.closest<HTMLElement>('[data-panel-id]');
+    const targetPanelId = panelElement?.dataset.panelId;
+    if (!panelElement || !targetPanelId || !geometry.panelElements.includes(panelElement))
+      return null;
+    const targetPanel = $panels$[targetPanelId];
+    if (!targetPanel) return null;
+    const previousPlacement = paneDropPreview?.placement;
+    const previousZone =
+      previousPlacement?.kind === 'panel' && previousPlacement.targetPanelId === targetPanelId
+        ? previousPlacement.zone
+        : null;
+    const zone = getPaneColumnDropZone(
+      event.clientX,
+      panelElement.getBoundingClientRect(),
+      $panelIds$.length < 4,
+      previousZone,
+    );
+    if (zone === 'center' && draggedPane.panelId === targetPanelId) return null;
+    if (
+      zone !== 'center' &&
+      draggedPane.panelId === targetPanelId &&
+      targetPanel.tabs.length === 1
+    ) {
+      return null;
+    }
+    return { kind: 'panel', targetPanelId, zone };
+  }
+
+  function handlePaneInsertionDragOver(event: DragEvent) {
+    if (!getDraggedPane()) return;
+    const placement = resolvePaneDropPlacement(event);
+    setPaneDropPreview(placement);
+    event.stopPropagation();
     if (!placement) return;
 
-    setPaneDropPreview(placement);
     event.preventDefault();
-    event.stopPropagation();
     if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
   }
 
   function handlePaneInsertionDrop(event: DragEvent) {
     const draggedPane = getDraggedPane();
-    const geometry = measurePaneInsertionGeometry();
-    if (!draggedPane || !geometry) return;
-    const placement = getPaneInsertionPlacementAtX(
-      event.clientX,
-      geometry.layoutRect,
-      geometry.targets,
-      $panelIds$,
-    );
-    if (!placement) return;
+    if (!draggedPane) return;
+    const placement = resolvePaneDropPlacement(event);
 
     event.preventDefault();
     event.stopPropagation();
-    clearPanelMovePreviewNow();
-    clearDraggedPaneState();
-    appStore.dispatch(endDrag());
+    finishPaneDrag();
+    if (!placement) return;
     if (placement.kind === 'edge') {
       layoutManager.moveTabToSplitLevel(
         draggedPane.tabId,
@@ -547,6 +590,10 @@
         placement.position,
         'horizontal',
       );
+      return;
+    }
+    if (placement.zone === 'center') {
+      layoutManager.moveTabToPanel(draggedPane.tabId, draggedPane.panelId, placement.targetPanelId);
       return;
     }
     layoutManager.moveTabToSplit(
@@ -565,6 +612,28 @@
 
   function handlePaneDropPreview(placement: PaneDropPlacement | null) {
     setPaneDropPreview(placement);
+  }
+
+  function handleWindowPaneDragLeave(event: DragEvent) {
+    if (!ownsDraggedPane() || event.relatedTarget !== null) return;
+    const target = event.target;
+    if (
+      target !== window &&
+      target !== document &&
+      target !== document.documentElement &&
+      target !== document.body
+    ) {
+      return;
+    }
+    finishPaneDrag();
+  }
+
+  function handleWindowPaneDragEnd() {
+    if (ownsDraggedPane()) finishPaneDrag();
+  }
+
+  function handleWindowPaneDrop() {
+    if (ownsDraggedPane()) finishPaneDrag();
   }
 
   $effect.pre(() => {
@@ -1167,6 +1236,11 @@
 
   // Keyboard shortcuts
   function handleKeyDown(e: KeyboardEvent) {
+    if (e.key === 'Escape' && ownsDraggedPane()) {
+      e.preventDefault();
+      finishPaneDrag();
+      return;
+    }
     if (!active) return;
     // First, let the leader key system handle it
     if (keyboardShortcuts.handleKeyDown(e)) {
@@ -1302,13 +1376,20 @@
     panelMoveCommitVersion += 1;
     if (panelMoveCommitReleaseFrame !== null) cancelAnimationFrame(panelMoveCommitReleaseFrame);
     if (viewportOuterResizeClearFrame !== null) cancelAnimationFrame(viewportOuterResizeClearFrame);
-    clearPanelMovePreviewNow();
+    if (ownsDraggedPane()) finishPaneDrag();
+    else clearPanelMovePreviewNow();
     if (reportedPanelMovePreviewWidthRatio !== 1) onPanelMovePreviewWidthRatioChange?.(1);
     browserFocusOwnership.destroy();
     window.removeEventListener('keydown', handleKeyDown, true);
     keyboardShortcuts.cleanup();
   });
 </script>
+
+<svelte:window
+  ondragend={handleWindowPaneDragEnd}
+  ondragleave={handleWindowPaneDragLeave}
+  ondrop={handleWindowPaneDrop}
+/>
 
 {#snippet panelCanvas()}
   {#if shouldRenderPanelContainer && (!hideEmptyLayout || $allTabs$.length > 0)}
@@ -1357,6 +1438,7 @@
           onTabDropToSplit={handleTabDropToSplit}
           onTabMoveToPanel={handleTabMoveToPanel}
           onPaneDropPreview={handlePaneDropPreview}
+          onPaneDragFinish={finishPaneDrag}
           onMoveActivePane={handleMoveActivePane}
           onPanelMove={handlePanelMove}
           onTabDropToSplitHandle={handleTabDropToSplitHandle}

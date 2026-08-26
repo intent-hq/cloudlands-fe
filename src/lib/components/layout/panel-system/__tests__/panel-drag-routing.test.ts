@@ -117,6 +117,7 @@ import PanelContainer from '../PanelContainer.svelte';
 import PanelTabBar from '../PanelTabBar.svelte';
 import {
   PANE_DRAG_MIME,
+  clearDraggedPaneState,
   getDraggedPane,
   getPaneColumnDropZone,
   getPaneInsertionPlacement,
@@ -388,6 +389,79 @@ describe('pane and tab drag MIME routing', () => {
       expect(onPaneDropPreview).toHaveBeenLastCalledWith(null);
     },
   );
+
+  it.each([
+    ['center', 200],
+    ['left', 60],
+    ['right', 340],
+  ] as const)('finishes a %s pane drop before its layout callback', async (zone, x) => {
+    const order: string[] = [];
+    const onPaneDragFinish = vi.fn(() => {
+      order.push('finish');
+      clearDraggedPaneState();
+    });
+    const onTabMoveToPanel = vi.fn(() => {
+      expect(getDraggedPane()).toBeNull();
+      order.push('move-center');
+    });
+    const onTabDrop = vi.fn(() => {
+      expect(getDraggedPane()).toBeNull();
+      order.push(`move-${zone}`);
+    });
+    const { container } = render(Panel, {
+      props: {
+        panel: panel(),
+        workspaceId: 'workspace-1',
+        onPaneDragFinish,
+        onTabMoveToPanel,
+        onTabDrop,
+      },
+    });
+    const targetPanel = container.querySelector<HTMLElement>('[data-panel-id="target-panel"]')!;
+    targetPanel.getBoundingClientRect = () =>
+      ({ left: 0, top: 0, width: 400, height: 400 }) as DOMRect;
+    const dataTransfer = new TestDataTransfer();
+    dataTransfer.setData(
+      PANE_DRAG_MIME,
+      JSON.stringify({ tabId: 'source-tab', panelId: 'source-panel' }),
+    );
+    setDraggedPane({ tabId: 'source-tab', panelId: 'source-panel' });
+
+    await fireEvent(targetPanel, dragEvent('dragover', dataTransfer, x));
+    await fireEvent(targetPanel, dragEvent('drop', dataTransfer, x));
+
+    expect(onPaneDragFinish).toHaveBeenCalledOnce();
+    expect(order).toEqual(['finish', `move-${zone}`]);
+  });
+
+  it('finishes a rejected self drop without invoking a layout callback', async () => {
+    const onPaneDragFinish = vi.fn(clearDraggedPaneState);
+    const onTabMoveToPanel = vi.fn();
+    const onTabDrop = vi.fn();
+    const { container } = render(Panel, {
+      props: {
+        panel: panel(),
+        workspaceId: 'workspace-1',
+        onPaneDragFinish,
+        onTabMoveToPanel,
+        onTabDrop,
+      },
+    });
+    const targetPanel = container.querySelector<HTMLElement>('[data-panel-id="target-panel"]')!;
+    targetPanel.getBoundingClientRect = () =>
+      ({ left: 0, top: 0, width: 400, height: 400 }) as DOMRect;
+    const dataTransfer = new TestDataTransfer();
+    dataTransfer.setData(PANE_DRAG_MIME, JSON.stringify({ tabId: 'one', panelId: 'target-panel' }));
+    setDraggedPane({ tabId: 'one', panelId: 'target-panel' });
+
+    await fireEvent(targetPanel, dragEvent('dragover', dataTransfer, 200));
+    await fireEvent(targetPanel, dragEvent('drop', dataTransfer, 200));
+
+    expect(onPaneDragFinish).toHaveBeenCalledOnce();
+    expect(onTabMoveToPanel).not.toHaveBeenCalled();
+    expect(onTabDrop).not.toHaveBeenCalled();
+    expect(getDraggedPane()).toBeNull();
+  });
 
   it('keeps a slow pointer stable through side-zone hysteresis and commits its preview', async () => {
     const onTabMoveToPanel = vi.fn();
