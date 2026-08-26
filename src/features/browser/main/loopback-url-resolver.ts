@@ -207,8 +207,8 @@ export async function resolveRewrittenRemoteTarget(
     : `${target.origin} is not directly reachable from this machine`;
   logger.warn(
     rewrite.requiresTunnel
-      ? 'Direct probe skipped for saved remote reached through client loopback'
-      : 'Reachability probe failed for rewritten remote URL',
+      ? 'Direct probe skipped for saved remote reached through client loopback' // i18n-ignore (log message)
+      : 'Reachability probe failed for rewritten remote URL', // i18n-ignore (log message)
     {
       requestedUrl: rewrite.requestedUrl,
       rewrittenUrl: rewrite.url,
@@ -251,8 +251,8 @@ export async function resolveRewrittenRemoteTarget(
       tunneledUrl.port = String(localPort);
       logger.info(
         rewrite.requiresTunnel
-          ? 'Saved remote uses client loopback; forwarding through the daemon tunnel'
-          : 'Rewritten remote origin unreachable; falling back to the daemon tunnel',
+          ? 'Saved remote uses client loopback; forwarding through the daemon tunnel' // i18n-ignore (log message)
+          : 'Rewritten remote origin unreachable; falling back to the daemon tunnel', // i18n-ignore (log message)
         {
           requestedUrl: rewrite.requestedUrl,
           rewrittenUrl: rewrite.url,
@@ -287,9 +287,9 @@ export async function resolveRewrittenRemoteTarget(
     tunneled: false,
     error: rewrite.requiresTunnel
       ? // i18n-ignore (agent-facing protocol error, not user-facing)
-        `The requested URL ${rewrite.requestedUrl} requires the daemon tunnel because the saved remote transport endpoint is client loopback, but port ${port} could not be forwarded (${detail}).`
+        `The requested URL ${rewrite.requestedUrl} requires the daemon tunnel because the saved remote transport endpoint is client loopback, but port ${port} could not be forwarded (${detail}).` // i18n-ignore (agent-facing protocol error)
       : // i18n-ignore (agent-facing protocol error, not user-facing)
-        `The requested URL ${rewrite.requestedUrl} was rewritten to ${rewrite.url} because the daemon runs on a remote machine, ` +
+        `The requested URL ${rewrite.requestedUrl} was rewritten to ${rewrite.url} because the daemon runs on a remote machine, ` + // i18n-ignore (agent-facing protocol error)
         // i18n-ignore (agent-facing protocol error, not user-facing)
         `but ${target.origin} is not reachable from this machine (probe failed within ${REMOTE_REWRITE_PROBE_TIMEOUT_MS}ms: ${detail}). ` +
         // i18n-ignore (agent-facing protocol error, not user-facing)

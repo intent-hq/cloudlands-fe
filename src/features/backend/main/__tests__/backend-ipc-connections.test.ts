@@ -999,6 +999,16 @@ describe('backend client pool', () => {
       'construct',
       'start',
     ]);
+    const { registerBrowserExecReverseHandler } =
+      await import('../../../browser/main/browser-exec-reverse');
+    expect(registerBrowserExecReverseHandler).toHaveBeenCalledWith(
+      local,
+      expect.objectContaining({ savedRemote: false }),
+    );
+    expect(registerBrowserExecReverseHandler).toHaveBeenCalledWith(
+      remote,
+      expect.objectContaining({ savedRemote: true }),
+    );
   });
 
   it('treats the focused remote window as current for menu and quit gates', async () => {

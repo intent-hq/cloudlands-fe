@@ -34,7 +34,14 @@ export type ExecuteBrowserActionsFn = (
   tabId?: string,
   agentId?: string,
   workspaceId?: string,
+  backendContext?: BrowserExecutionBackendContext,
 ) => Promise<ExecutionResult>;
+
+/** Backend identity captured at the reverse-handler or renderer IPC boundary. */
+export interface BrowserExecutionBackendContext {
+  client: JsonRpcClient;
+  savedRemote: boolean;
+}
 
 interface BrowserExecParams {
   actions: unknown[];
@@ -56,6 +63,8 @@ export interface RegisterBrowserExecOptions {
   executor?: ExecuteBrowserActionsFn;
   /** Overridable asset-save call for tests. */
   saveAsset?: SaveAssetFn;
+  /** True when this client belongs to a persisted remote connection. */
+  savedRemote?: boolean;
 }
 
 /**
@@ -64,9 +73,15 @@ export interface RegisterBrowserExecOptions {
  * imported. The daemon-initiated reverse call is the only real trigger, and
  * that path runs in the Electron main process where the import is safe.
  */
-const defaultExecutor: ExecuteBrowserActionsFn = async (actions, tabId, agentId, workspaceId) => {
+const defaultExecutor: ExecuteBrowserActionsFn = async (
+  actions,
+  tabId,
+  agentId,
+  workspaceId,
+  backendContext,
+) => {
   const { executeBrowserActions } = await import('./browser.ipc');
-  return executeBrowserActions(actions, tabId, agentId, workspaceId);
+  return executeBrowserActions(actions, tabId, agentId, workspaceId, backendContext);
 };
 
 /**
@@ -89,7 +104,16 @@ export function registerBrowserExecReverseHandler(
       hasWorkspaceId: !!params.workspaceId,
     });
 
-    const result = await executor(params.actions, params.tabId, params.agentId, params.workspaceId);
+    const result = await executor(
+      params.actions,
+      params.tabId,
+      params.agentId,
+      params.workspaceId,
+      {
+        client,
+        savedRemote: options.savedRemote ?? false,
+      },
+    );
 
     if (params.workspaceId && saveAsset && result.success) {
       await rewriteScreenshotAssets(result, params.workspaceId, saveAsset);

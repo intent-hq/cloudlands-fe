@@ -12,8 +12,9 @@ const mocks = vi.hoisted(() => ({
   TunnelManager: vi.fn(),
   DirectRelay: vi.fn(),
   getBackendClient: vi.fn(),
-  isRemoteBackendActive: vi.fn(),
-  isSameHostBackendActive: vi.fn(),
+  getBackendClientForConnection: vi.fn(),
+  getBackendIdForIpcSender: vi.fn(),
+  getPrimaryBackendId: vi.fn(),
 }));
 
 vi.mock('../main/embedded-browser-cdp-service', () => ({
@@ -31,8 +32,9 @@ vi.mock('../../system/main/system.ipc', () => ({
 }));
 vi.mock('../../backend/main/backend.ipc', () => ({
   getBackendClient: mocks.getBackendClient,
-  isRemoteBackendActive: mocks.isRemoteBackendActive,
-  isSameHostBackendActive: mocks.isSameHostBackendActive,
+  getBackendClientForConnection: mocks.getBackendClientForConnection,
+  getBackendIdForIpcSender: mocks.getBackendIdForIpcSender,
+  getPrimaryBackendId: mocks.getPrimaryBackendId,
   // Used by the workspace-forward-cleanup service behind the provider seam.
   onBackendNotification: vi.fn(() => () => {}),
   onBackendReconnected: vi.fn(() => () => {}),
@@ -79,11 +81,12 @@ describe('browser:resolve-url IPC handler', () => {
     vi.resetModules();
     fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200 });
     vi.stubGlobal('fetch', fetchMock);
-    mocks.isRemoteBackendActive.mockReturnValue(false);
-    mocks.isSameHostBackendActive.mockReturnValue(false);
+    mocks.getBackendIdForIpcSender.mockReturnValue('remote-1');
+    mocks.getPrimaryBackendId.mockReturnValue('remote-1');
     mocks.getBackendClient.mockReturnValue({
       getConfig: () => ({ transport: 'tcp', host: '10.0.0.5' }),
     });
+    mocks.getBackendClientForConnection.mockImplementation(() => mocks.getBackendClient());
     mocks.forwardPort.mockResolvedValue(45678);
     mocks.activeForwards.mockReturnValue([]);
     mocks.TunnelManager.mockImplementation(function (this: Record<string, unknown>) {
@@ -181,7 +184,10 @@ describe('browser:resolve-url IPC handler', () => {
   });
 
   it('rewrites daemon.localhost to 127.0.0.1 when the backend is same-host', async () => {
-    mocks.isSameHostBackendActive.mockReturnValue(true);
+    mocks.getBackendIdForIpcSender.mockReturnValue('local');
+    mocks.getBackendClient.mockReturnValue({
+      getConfig: () => ({ transport: 'uds', socketPath: '/tmp/intentd.sock' }),
+    });
     const handler = await registerAndGetHandler();
     const result = await handler({}, { url: 'http://daemon.localhost:3000/a' });
     expect(result.url).toBe('http://127.0.0.1:3000/a');
@@ -212,12 +218,20 @@ describe('browser:resolve-url IPC handler', () => {
   });
 
   it.each(['localhost', '127.0.0.1'])(
-    'resolves a script/terminal localhost click through TunnelManager for saved remote WSS host %s',
+    'uses the pooled saved remote for a renderer URL while the local backend is primary (%s)',
     async (host) => {
-      mocks.isRemoteBackendActive.mockReturnValue(true);
-      mocks.getBackendClient.mockReturnValue({
+      const localClient = {
+        getConfig: () => ({ transport: 'uds' as const, socketPath: '/tmp/intentd.sock' }),
+      };
+      const remoteClient = {
         getConfig: () => ({ transport: 'wss', host }),
-      });
+      };
+      mocks.getPrimaryBackendId.mockReturnValue('local');
+      mocks.getBackendClient.mockReturnValue(localClient);
+      mocks.getBackendIdForIpcSender.mockReturnValue('remote-loopback');
+      mocks.getBackendClientForConnection.mockImplementation((id: string) =>
+        id === 'remote-loopback' ? remoteClient : localClient,
+      );
       mocks.forwardPort.mockResolvedValue(54321);
       const handler = await registerAndGetHandler();
       const invoke = vi.fn((channel: string, payload: unknown) => handler({}, payload));
@@ -232,6 +246,8 @@ describe('browser:resolve-url IPC handler', () => {
       expect(mocks.TunnelManager).toHaveBeenCalledTimes(1);
       expect(mocks.DirectRelay).not.toHaveBeenCalled();
       expect(mocks.forwardPort).toHaveBeenCalledWith(8080);
+      const tunnelOptions = mocks.TunnelManager.mock.calls[0][0] as { getConfig: () => unknown };
+      expect(tunnelOptions.getConfig()).toEqual({ transport: 'wss', host });
       expect(resolved).toEqual({
         url: 'http://127.0.0.1:54321/script-output',
         requestedUrl,
@@ -262,8 +278,10 @@ describe('browser:resolve-url IPC handler', () => {
   });
 
   it('assumes a local daemon when the backend connection state is unreadable', async () => {
-    mocks.getBackendClient.mockImplementation(() => {
-      throw new Error('no backend client');
+    mocks.getBackendClient.mockReturnValue({
+      getConfig: () => {
+        throw new Error('no backend config');
+      },
     });
     const handler = await registerAndGetHandler();
     const result = await handler({}, { url: 'http://daemon.localhost:3000/' });
@@ -288,7 +306,6 @@ describe('browser:resolve-url IPC handler', () => {
   it('degrades to a non-rewritten passthrough when resolution throws, even a non-Error', async () => {
     vi.doMock('../main/loopback-url-resolver', () => ({
       resolveBrowserUrl: vi.fn().mockImplementation(() => {
-        // eslint-disable-next-line no-throw-literal
         throw 'resolver blew up';
       }),
     }));
@@ -342,11 +359,12 @@ describe('browser:resolve-url IPC handler', () => {
 describe('browser tunnel-backend selection seam', () => {
   beforeEach(() => {
     vi.resetModules();
-    mocks.isRemoteBackendActive.mockReturnValue(false);
-    mocks.isSameHostBackendActive.mockReturnValue(false);
+    mocks.getBackendIdForIpcSender.mockReturnValue('remote-1');
+    mocks.getPrimaryBackendId.mockReturnValue('remote-1');
     mocks.getBackendClient.mockReturnValue({
       getConfig: () => ({ transport: 'tcp', host: '10.0.0.5' }),
     });
+    mocks.getBackendClientForConnection.mockImplementation(() => mocks.getBackendClient());
     mocks.TunnelManager.mockImplementation(function (this: Record<string, unknown>) {
       this.backend = 'tunnel';
       this.dispose = vi.fn();
@@ -372,7 +390,6 @@ describe('browser tunnel-backend selection seam', () => {
   });
 
   it('selects TunnelManager for a saved remote reached through loopback WSS', async () => {
-    mocks.isRemoteBackendActive.mockReturnValue(true);
     mocks.getBackendClient.mockReturnValue({
       getConfig: () => ({ transport: 'wss', host: '127.0.0.1' }),
     });
@@ -384,7 +401,10 @@ describe('browser tunnel-backend selection seam', () => {
   });
 
   it('selects the direct relay (DirectRelay) for a local daemon, as a lazy singleton', async () => {
-    mocks.isSameHostBackendActive.mockReturnValue(true);
+    mocks.getBackendIdForIpcSender.mockReturnValue('local');
+    mocks.getBackendClient.mockReturnValue({
+      getConfig: () => ({ transport: 'uds', socketPath: '/tmp/intentd.sock' }),
+    });
     const getProvider = await getInjectedTunnelProviderGetter();
     const provider = getProvider() as { backend: string };
     expect(provider.backend).toBe('direct');
@@ -395,6 +415,7 @@ describe('browser tunnel-backend selection seam', () => {
   });
 
   it('selects DirectRelay for an intentional loopback development transport', async () => {
+    mocks.getBackendIdForIpcSender.mockReturnValue('local');
     mocks.getBackendClient.mockReturnValue({
       getConfig: () => ({ transport: 'tcp', host: 'localhost' }),
     });
@@ -406,8 +427,10 @@ describe('browser tunnel-backend selection seam', () => {
   });
 
   it('throws instead of picking a backend when the connection state is unreadable', async () => {
-    mocks.getBackendClient.mockImplementation(() => {
-      throw new Error('no backend client');
+    mocks.getBackendClient.mockReturnValue({
+      getConfig: () => {
+        throw new Error('no backend config');
+      },
     });
     const getProvider = await getInjectedTunnelProviderGetter();
     expect(() => getProvider()).toThrow(/Cannot select a tunnel backend/);
@@ -429,11 +452,15 @@ describe('browser tunnel-backend selection seam', () => {
     )?.[1] as () => void;
     expect(listener, 'backend-connection-changed listener should be registered').toBeDefined();
 
-    mocks.isSameHostBackendActive.mockReturnValue(true);
+    mocks.getBackendIdForIpcSender.mockReturnValue('local');
+    mocks.getBackendClient.mockReturnValue({
+      getConfig: () => ({ transport: 'uds', socketPath: '/tmp/intentd.sock' }),
+    });
     listener();
     expect(remoteBackend.dispose).toHaveBeenCalledTimes(1);
 
-    const local = getProvider() as { backend: string };
+    const getLocalProvider = await getInjectedTunnelProviderGetter();
+    const local = getLocalProvider() as { backend: string };
     expect(local.backend).toBe('direct');
     expect(local).not.toBe(remote);
   });

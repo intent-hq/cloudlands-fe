@@ -635,6 +635,7 @@ export function getBackendClient(): JsonRpcClient {
   // this same client so the wire payload stays small (GAP-2b).
   registerBrowserExecReverseHandler(instance, {
     saveAsset: (params) => instance.request<{ url?: string } | undefined>('note.saveAsset', params),
+    savedRemote: connectionId !== LOCAL_CONNECTION_ID,
   });
   client = instance;
   backendClients.set(connectionId, instance);
@@ -761,6 +762,7 @@ function createAdditionalBackendClient(id: string, config: BackendConnectionConf
   });
   registerBrowserExecReverseHandler(instance, {
     saveAsset: (params) => instance.request<{ url?: string } | undefined>('note.saveAsset', params),
+    savedRemote: id !== LOCAL_CONNECTION_ID,
   });
   instance.start();
   return instance;
