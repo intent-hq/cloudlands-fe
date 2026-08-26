@@ -709,8 +709,18 @@ describe('ChatMessage hook wake attribution', () => {
     expect(surface.getAttribute('data-external-spacing-owner')).toBe('automated-wake-card');
     expect(screen.getByText('ci-watch')).toBeTruthy();
     expect(screen.getByText('woke the agent')).toBeTruthy();
-    expect(screen.getByTestId('automated-wake-text-lane').className).toContain('gap-x-1');
-    expect(screen.getByTestId('automated-wake-primary-label').textContent?.trim()).toBe('ci-watch');
+    const textLane = screen.getByTestId('automated-wake-text-lane');
+    expect(textLane.className).toContain('gap-x-1');
+    // Single-line lane: never wraps, labels ellipsize instead.
+    expect(textLane.classList.contains('flex-nowrap')).toBe(true);
+    expect(textLane.classList.contains('flex-wrap')).toBe(false);
+    const primaryLabel = screen.getByTestId('automated-wake-primary-label');
+    expect(primaryLabel.textContent?.trim()).toBe('ci-watch');
+    expect(primaryLabel.classList.contains('truncate')).toBe(true);
+    expect(primaryLabel.classList.contains('shrink-0')).toBe(false);
+    const status = screen.getByTestId('wake-status');
+    expect(status.classList.contains('min-w-0')).toBe(true);
+    expect(status.classList.contains('truncate')).toBe(true);
     expect(screen.queryByTestId('automated-wake-details')).toBeNull();
     await expandAutomatedWake();
     expect(screen.getByText('CI is red')).toBeTruthy();
@@ -959,6 +969,14 @@ describe('ChatMessage PR-monitor wake attribution', () => {
     expect(chip.textContent?.trim()).toBe('intent-hq/monorepo #42');
     // Label sits flush left next to the PR icon (overrides the Button base justify-center)
     expect(chip.className).toContain('justify-start');
+    // Single-line chip: truncates instead of wrapping.
+    expect(chip.className).not.toContain('whitespace-normal');
+    expect(chip.className).not.toContain('break-words');
+    expect(chip.classList.contains('shrink-0')).toBe(false);
+    expect(chip.querySelector('.truncate')).toBeTruthy();
+    const lane = screen.getByTestId('automated-wake-text-lane');
+    expect(lane.classList.contains('flex-nowrap')).toBe(true);
+    expect(lane.classList.contains('flex-wrap')).toBe(false);
     expect(screen.getByText('woke the agent')).toBeTruthy();
     await expandAutomatedWake();
     expect(screen.getByText('Checks failed')).toBeTruthy();

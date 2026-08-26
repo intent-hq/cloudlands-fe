@@ -85,12 +85,12 @@
     class="{SUBSCRIPTION_CHEVRON_SIZE_CLASS} shrink-0 {SUBSCRIPTION_ICON_CLASS}"
   />
   <span
-    class="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-1 overflow-hidden text-left"
+    class="flex min-w-0 flex-1 flex-nowrap items-baseline gap-x-1 overflow-hidden text-left"
     data-testid="automated-wake-text-lane"
   >
     {#if presentation.kind === 'hook'}
       <span
-        class="min-w-0 max-w-full shrink-0 truncate"
+        class="min-w-0 max-w-full shrink truncate"
         title={presentation.attribution.rawName}
         data-testid="automated-wake-primary-label"
       >
@@ -100,16 +100,20 @@
       <Button
         type="button"
         variant="plain"
-        class="h-auto min-w-0 max-w-full shrink-0 justify-start whitespace-normal break-words text-left font-inherit text-muted-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        class="h-auto min-w-0 max-w-full shrink justify-start overflow-hidden text-left font-inherit text-muted-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         data-testid="pr-monitor-wake-chip"
         title={m.chat_prMonitorWakeAttribution_openPr_tooltip()}
         onclick={openPr}
       >
-        {getPrMonitorWakeChipLabel(presentation.attribution, workspaceRepo)}
+        <span class="min-w-0 truncate">
+          {getPrMonitorWakeChipLabel(presentation.attribution, workspaceRepo)}
+        </span>
       </Button>
     {/if}
+    <!-- Status shrinks (and truncates) before the name/chip so the identifying
+         label keeps as much space as fits; full text stays in the title tooltips. -->
     <span
-      class="type-body min-w-0 shrink truncate font-normal text-muted-foreground"
+      class="type-body min-w-0 shrink-[4] truncate font-normal text-muted-foreground"
       data-testid="wake-status"
       title={statusLabel}
     >
