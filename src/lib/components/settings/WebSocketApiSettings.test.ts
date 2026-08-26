@@ -51,6 +51,7 @@ const connectionState = vi.hoisted(() => ({
     status: unknown;
   },
   dispatched: [] as { type: string }[],
+  forgetError: null as Error | null,
 }));
 
 vi.mock('$store/renderer/store', async () => {
@@ -59,6 +60,14 @@ vi.mock('$store/renderer/store', async () => {
     state: () => ({ connections: { activeId: connectionState.activeId } }),
     dispatch: (action: { type: string }) => {
       connectionState.dispatched.push(action);
+      if (action.type.startsWith('connections/forget')) {
+        return {
+          ...action,
+          promise: connectionState.forgetError
+            ? Promise.reject(connectionState.forgetError)
+            : Promise.resolve(undefined),
+        };
+      }
       return { ...action, promise: Promise.resolve(connectionState.syncState) };
     },
   });
@@ -68,7 +77,11 @@ vi.mock('$store/renderer/store', async () => {
 
 // Publish-self IPC surface (renderer → main via window.electronAPI.invoke).
 const ipcMocks = vi.hoisted(() => ({
-  selfState: { published: false, suppressed: false },
+  selfState: { published: false, suppressed: false, selfConnectionId: null } as {
+    published: boolean;
+    suppressed: boolean;
+    selfConnectionId: string | null;
+  },
   invoke: vi.fn(),
 }));
 
@@ -89,7 +102,8 @@ describe('WebSocketApiSettings', () => {
     connectionState.activeId = 'local';
     connectionState.syncState = { supported: true, enabled: true, status: null };
     connectionState.dispatched.length = 0;
-    ipcMocks.selfState = { published: false, suppressed: false };
+    connectionState.forgetError = null;
+    ipcMocks.selfState = { published: false, suppressed: false, selfConnectionId: null };
     installElectronApi();
   });
 
@@ -438,7 +452,7 @@ describe('WebSocketApiSettings', () => {
     });
 
     it('does not open the modal when self is already published', async () => {
-      ipcMocks.selfState = { published: true, suppressed: false };
+      ipcMocks.selfState = { published: true, suppressed: false, selfConnectionId: 'self-1' };
       await toggleOn();
 
       await waitFor(() => {
@@ -448,7 +462,7 @@ describe('WebSocketApiSettings', () => {
     });
 
     it('does not open the modal when auto-publish is suppressed', async () => {
-      ipcMocks.selfState = { published: false, suppressed: true };
+      ipcMocks.selfState = { published: false, suppressed: true, selfConnectionId: null };
       await toggleOn();
 
       await waitFor(() => {
@@ -541,7 +555,7 @@ describe('WebSocketApiSettings', () => {
     it('shows the publish row with a re-publish label when suppressed', async () => {
       // Suppressed + sync on: no auto-modal, but the explicit button offers
       // re-publish (spec: re-publishing clears the suppression, button-only).
-      ipcMocks.selfState = { published: false, suppressed: true };
+      ipcMocks.selfState = { published: false, suppressed: true, selfConnectionId: null };
       await toggleOn();
 
       const button = await waitFor(() => screen.getByRole('button', { name: 'Re-publish' }));
@@ -555,6 +569,128 @@ describe('WebSocketApiSettings', () => {
       await waitFor(() => {
         expect(screen.queryByRole('button', { name: 'Re-publish' })).toBeNull();
       });
+    });
+  });
+
+  describe('removal offer on WSS toggle-off', () => {
+    const PAIRING = {
+      token: 'tok-1234567890',
+      port: 5181,
+      certFingerprint: 'AA:BB',
+      localIps: ['192.168.1.2'],
+      hostname: 'my-mac',
+    };
+
+    /** Render with WSS on (publish state loaded), then toggle it off. */
+    async function toggleOff() {
+      mocks.mockSettingsList.mockResolvedValue([
+        { path: 'server.wsApi.enabled', value: true },
+        { path: 'server.wsApi.port', value: 5181 },
+      ]);
+      mocks.mockPairingInfo.mockResolvedValue(PAIRING);
+      render(WebSocketApiSettings);
+      await waitFor(() => {
+        expect(ipcMocks.invoke).toHaveBeenCalledWith('connections:self-published-state');
+      });
+
+      mocks.mockSettingsUpdate.mockResolvedValueOnce([
+        { path: 'server.wsApi.enabled', value: false },
+      ]);
+      await fireEvent.click(screen.getByRole('switch'));
+      await waitFor(() => {
+        expect(mocks.mockSettingsUpdate).toHaveBeenCalledWith([
+          { path: 'server.wsApi.enabled', value: false },
+        ]);
+      });
+    }
+
+    it('opens the removal modal when a published self entry exists', async () => {
+      ipcMocks.selfState = { published: true, suppressed: false, selfConnectionId: 'self-1' };
+      await toggleOff();
+
+      await waitFor(() => {
+        expect(screen.getByText('Remove this backend from iCloud Keychain?')).toBeTruthy();
+      });
+      // Rationale: other devices can no longer connect; keeping leaves it.
+      expect(screen.getByText(/can no longer connect/)).toBeTruthy();
+    });
+
+    it('does not open the modal when no self entry is published', async () => {
+      ipcMocks.selfState = { published: false, suppressed: false, selfConnectionId: null };
+      await toggleOff();
+
+      expect(screen.queryByText('Remove this backend from iCloud Keychain?')).toBeNull();
+    });
+
+    it('does not open the modal on unsupported platforms (non-macOS)', async () => {
+      connectionState.syncState = { supported: false, enabled: false, status: null };
+      ipcMocks.selfState = { published: true, suppressed: false, selfConnectionId: 'self-1' };
+      await toggleOff();
+
+      expect(screen.queryByText('Remove this backend from iCloud Keychain?')).toBeNull();
+    });
+
+    it('confirm forgets the self entry (tombstone path) and shows a success toast', async () => {
+      ipcMocks.selfState = { published: true, suppressed: false, selfConnectionId: 'self-1' };
+      await toggleOff();
+      await waitFor(() =>
+        expect(screen.getByText('Remove this backend from iCloud Keychain?')).toBeTruthy(),
+      );
+
+      const dialog = screen.getByRole('dialog');
+      await fireEvent.click(
+        within(dialog).getByRole('button', { name: 'Remove from iCloud Keychain' }),
+      );
+
+      await waitFor(() => {
+        const forget = connectionState.dispatched.find(
+          (a) => a.type === 'connections/forgetRequested',
+        ) as { type: string; payload?: unknown[] } | undefined;
+        expect(forget?.payload).toEqual(['self-1']);
+        expect(mockToast.success).toHaveBeenCalledWith('Backend removed from iCloud Keychain');
+      });
+      // The modal closed after the removal.
+      await waitFor(() => {
+        expect(screen.queryByText('Remove this backend from iCloud Keychain?')).toBeNull();
+      });
+    });
+
+    it('decline (Keep) closes the modal without forgetting', async () => {
+      ipcMocks.selfState = { published: true, suppressed: false, selfConnectionId: 'self-1' };
+      await toggleOff();
+      await waitFor(() =>
+        expect(screen.getByText('Remove this backend from iCloud Keychain?')).toBeTruthy(),
+      );
+
+      await fireEvent.click(screen.getByRole('button', { name: 'Keep' }));
+
+      await waitFor(() => {
+        expect(screen.queryByText('Remove this backend from iCloud Keychain?')).toBeNull();
+      });
+      expect(connectionState.dispatched.some((a) => a.type === 'connections/forgetRequested')).toBe(
+        false,
+      );
+    });
+
+    it('shows an error toast when the forget fails and keeps the modal open', async () => {
+      ipcMocks.selfState = { published: true, suppressed: false, selfConnectionId: 'self-1' };
+      connectionState.forgetError = new Error('keychain delete failed');
+      await toggleOff();
+      await waitFor(() =>
+        expect(screen.getByText('Remove this backend from iCloud Keychain?')).toBeTruthy(),
+      );
+
+      const dialog = screen.getByRole('dialog');
+      await fireEvent.click(
+        within(dialog).getByRole('button', { name: 'Remove from iCloud Keychain' }),
+      );
+
+      await waitFor(() => {
+        expect(mockToast.error).toHaveBeenCalledWith(
+          expect.stringContaining('keychain delete failed'),
+        );
+      });
+      expect(screen.getByText('Remove this backend from iCloud Keychain?')).toBeTruthy();
     });
   });
 });

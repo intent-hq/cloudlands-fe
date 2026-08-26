@@ -2238,13 +2238,18 @@ async function getSelfPublishedState(): Promise<SelfPublishedStateResult> {
   const selfKeys = new Set(
     [storedFingerprint, liveFingerprint].filter((key): key is string => key !== null),
   );
-  const published =
-    selfKeys.size > 0 &&
-    records.some((c) => {
-      const key = normalizeFingerprint(c.fingerprint);
-      return key !== null && selfKeys.has(key);
-    });
-  return { published, suppressed } satisfies SelfPublishedStateResult;
+  const selfRecord =
+    selfKeys.size > 0
+      ? records.find((c) => {
+          const key = normalizeFingerprint(c.fingerprint);
+          return key !== null && selfKeys.has(key);
+        })
+      : undefined;
+  return {
+    published: selfRecord !== undefined,
+    suppressed,
+    selfConnectionId: selfRecord?.id ?? null,
+  } satisfies SelfPublishedStateResult;
 }
 
 /** Dispose the shared client (used on shutdown and backend switch). */

@@ -41,6 +41,7 @@
   import { m } from '$shared/paraglide/messages.js';
   import { selectActiveConnectionId } from '$store/renderer/slices/connections/connections-selectors';
   import {
+    forgetConnectionRequested,
     loadKeychainSyncStateRequested,
     setKeychainSyncEnabledRequested,
   } from '$store/renderer/slices/connections/connections-slice';
@@ -49,6 +50,7 @@
   import { LOCAL_CONNECTION_ID } from '$shared/types/connections';
   import type { PublishSelfResult, SelfPublishedStateResult } from '$shared/types/connections';
   import PublishSelfBackendModal from '$lib/components/modals/PublishSelfBackendModal.svelte';
+  import RemoveSelfBackendModal from '$lib/components/modals/RemoveSelfBackendModal.svelte';
 
   const CONNECTIONS = IPC_CHANNELS.CONNECTIONS;
 
@@ -82,8 +84,11 @@
   let syncEnabled = $state(false);
   let selfPublished = $state(false);
   let publishSuppressed = $state(false);
+  let selfConnectionId = $state<string | null>(null);
   let showPublishModal = $state(false);
   let publishBusy = $state(false);
+  let showRemoveModal = $state(false);
+  let removeBusy = $state(false);
 
   const maskedToken = $derived(
     token ? '•'.repeat(Math.max(0, token.length - 8)) + token.slice(-8) : '',
@@ -164,6 +169,8 @@
       if (checked) {
         await loadStatus();
         maybeOfferPublish();
+      } else {
+        maybeOfferRemoval();
       }
     } catch (error) {
       toast.error(
@@ -192,6 +199,7 @@
       syncEnabled = sync.enabled;
       selfPublished = self.published;
       publishSuppressed = self.suppressed;
+      selfConnectionId = self.selfConnectionId;
       publishStateLoaded = true;
     } catch {
       // Fail-soft: without a readable state, offer neither modal nor button.
@@ -208,6 +216,41 @@
   function maybeOfferPublish() {
     if (isRemote || !publishStateLoaded) return;
     if (syncSupported && !selfPublished && !publishSuppressed) showPublishModal = true;
+  }
+
+  /**
+   * After a successful toggle-off on the local connection: offer to remove
+   * this machine's published entry from iCloud Keychain — the record no
+   * longer points at a reachable backend. Declining leaves it in place.
+   * Never on non-macOS or when no published self entry exists (the state
+   * from the last refresh while WSS was on; fail-soft when never loaded).
+   */
+  function maybeOfferRemoval() {
+    if (isRemote || !publishStateLoaded) return;
+    if (syncSupported && selfPublished && selfConnectionId !== null) showRemoveModal = true;
+  }
+
+  async function handleRemoveConfirm() {
+    if (selfConnectionId === null) return;
+    try {
+      removeBusy = true;
+      await appStore.dispatch(forgetConnectionRequested(selfConnectionId)).promise;
+      // Forgetting the self entry tombstones it (keychain sync removes it on
+      // other devices) and sets the "do not auto-publish" marker in main.
+      selfPublished = false;
+      publishSuppressed = true;
+      selfConnectionId = null;
+      showRemoveModal = false;
+      toast.success(m.settings_wsApi_unpublishSelf_success());
+    } catch (error) {
+      toast.error(
+        m.settings_wsApi_unpublishSelf_error({
+          error: error instanceof Error ? error.message : String(error),
+        }),
+      );
+    } finally {
+      removeBusy = false;
+    }
   }
 
   async function publishSelf() {
@@ -578,6 +621,12 @@
   {syncEnabled}
   busy={publishBusy}
   onConfirm={handlePublishConfirm}
+/>
+
+<RemoveSelfBackendModal
+  bind:open={showRemoveModal}
+  busy={removeBusy}
+  onConfirm={handleRemoveConfirm}
 />
 
 {#if showQr}

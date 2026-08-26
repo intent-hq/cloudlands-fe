@@ -342,6 +342,13 @@
   "settings_wsApi_publishSelf_success": "백엔드가 iCloud 키체인에 게시되었습니다",
   "settings_wsApi_publishSelf_error": "백엔드 게시 실패: {error}",
   "settings_wsApi_publishSelf_syncEnableError": "백엔드 동기화 활성화 실패: {error}",
+  "settings_wsApi_unpublishSelf_title": "이 백엔드를 iCloud 키체인에서 제거하시겠습니까?",
+  "settings_wsApi_unpublishSelf_rationale": "WebSocket API가 꺼져서 다른 기기에서 더 이상 이 백엔드에 연결할 수 없습니다. 제거하면 다른 기기에서도 항목이 삭제되며, 유지하면 API를 다시 켤 때를 위해 항목이 그대로 남습니다.",
+  "settings_wsApi_unpublishSelf_confirm_label": "iCloud 키체인에서 제거",
+  "settings_wsApi_unpublishSelf_cancel_label": "유지",
+  "settings_wsApi_unpublishSelf_close_ariaLabel": "닫기",
+  "settings_wsApi_unpublishSelf_success": "백엔드가 iCloud 키체인에서 제거되었습니다",
+  "settings_wsApi_unpublishSelf_error": "백엔드 제거 실패: {error}",
 
   "settings_workspaceApi_loadError": "워크스페이스 API 설정을 불러오지 못했습니다: {error}",
   "settings_workspaceApi_saveError": "워크스페이스 API 설정을 저장하지 못했습니다: {error}",

@@ -145,7 +145,11 @@ let selfPublished = false;
 registerMockIpcHandler(
   CONNECTION_CHANNELS.SELF_PUBLISHED_STATE,
   async (): Promise<SelfPublishedStateResult> => {
-    return { published: selfPublished, suppressed: false };
+    return {
+      published: selfPublished,
+      suppressed: false,
+      selfConnectionId: selfPublished ? 'mock-self' : null,
+    };
   },
 );
 

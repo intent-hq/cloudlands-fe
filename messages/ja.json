@@ -342,6 +342,13 @@
   "settings_wsApi_publishSelf_success": "バックエンドをiCloudキーチェーンに公開しました",
   "settings_wsApi_publishSelf_error": "バックエンドの公開に失敗しました: {error}",
   "settings_wsApi_publishSelf_syncEnableError": "バックエンド同期の有効化に失敗しました: {error}",
+  "settings_wsApi_unpublishSelf_title": "このバックエンドをiCloudキーチェーンから削除しますか？",
+  "settings_wsApi_unpublishSelf_rationale": "WebSocket APIがオフになったため、他のデバイスはこのバックエンドに接続できなくなりました。削除すると他のデバイスからもエントリが消えます。残しておくと、APIを再度オンにしたときにそのまま使えます。",
+  "settings_wsApi_unpublishSelf_confirm_label": "iCloudキーチェーンから削除",
+  "settings_wsApi_unpublishSelf_cancel_label": "残す",
+  "settings_wsApi_unpublishSelf_close_ariaLabel": "閉じる",
+  "settings_wsApi_unpublishSelf_success": "バックエンドをiCloudキーチェーンから削除しました",
+  "settings_wsApi_unpublishSelf_error": "バックエンドの削除に失敗しました: {error}",
 
   "settings_workspaceApi_loadError": "ワークスペース API 設定の読み込みに失敗しました: {error}",
   "settings_workspaceApi_saveError": "ワークスペース API 設定の保存に失敗しました: {error}",

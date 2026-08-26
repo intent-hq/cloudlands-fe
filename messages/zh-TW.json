@@ -342,6 +342,13 @@
   "settings_wsApi_publishSelf_success": "後端已發佈到 iCloud 鑰匙圈",
   "settings_wsApi_publishSelf_error": "發佈後端失敗：{error}",
   "settings_wsApi_publishSelf_syncEnableError": "啟用後端同步失敗：{error}",
+  "settings_wsApi_unpublishSelf_title": "從 iCloud 鑰匙圈移除此後端？",
+  "settings_wsApi_unpublishSelf_rationale": "WebSocket API 已關閉，您的其他裝置無法再連線此後端。移除後，該項目也會從您的其他裝置上刪除；保留則會在您重新開啟 API 時繼續可用。",
+  "settings_wsApi_unpublishSelf_confirm_label": "從 iCloud 鑰匙圈移除",
+  "settings_wsApi_unpublishSelf_cancel_label": "保留",
+  "settings_wsApi_unpublishSelf_close_ariaLabel": "關閉",
+  "settings_wsApi_unpublishSelf_success": "後端已從 iCloud 鑰匙圈移除",
+  "settings_wsApi_unpublishSelf_error": "移除後端失敗：{error}",
 
   "settings_workspaceApi_loadError": "載入工作區 API 設定失敗：{error}",
   "settings_workspaceApi_saveError": "儲存工作區 API 設定失敗：{error}",

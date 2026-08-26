@@ -1034,6 +1034,7 @@ describe('self-publish IPC', () => {
     await expect(findHandler('connections:self-published-state')!({}, undefined)).resolves.toEqual({
       published: true,
       suppressed: false,
+      selfConnectionId: 'remote-1',
     });
   });
 
@@ -1047,6 +1048,7 @@ describe('self-publish IPC', () => {
     await expect(findHandler('connections:self-published-state')!({}, undefined)).resolves.toEqual({
       published: true,
       suppressed: false,
+      selfConnectionId: 'remote-1',
     });
   });
 
@@ -1060,6 +1062,7 @@ describe('self-publish IPC', () => {
     await expect(findHandler('connections:self-published-state')!({}, undefined)).resolves.toEqual({
       published: false,
       suppressed: true,
+      selfConnectionId: null,
     });
   });
 
@@ -1170,6 +1173,7 @@ describe('connections:list hides the self entry on the owning machine', () => {
     await expect(findHandler('connections:self-published-state')!({}, undefined)).resolves.toEqual({
       published: true,
       suppressed: false,
+      selfConnectionId: 'self-1',
     });
   });
 });

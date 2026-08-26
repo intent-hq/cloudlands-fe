@@ -373,4 +373,10 @@ export interface SelfPublishedStateResult {
    * explicit `connections:publish-self`.
    */
   suppressed: boolean;
+  /**
+   * The stored self entry's record id when `published` is true (the removal
+   * modal forgets it through the standard `connections:forget` path); null
+   * when no self entry exists.
+   */
+  selfConnectionId: string | null;
 }
