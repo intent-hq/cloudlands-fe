@@ -242,6 +242,55 @@ describe('AllWorkspacesCard BE displayStatus (Status view)', () => {
     });
   });
 
+  it('renders sections in the canonical lifecycle order', async () => {
+    // Canonical fixed section order: failed, blocked, needs_attention, idle,
+    // not_started, in_progress, complete, pr_open, pr_ready, pr_merged.
+    // In particular: not_started before in_progress, complete before pr_open,
+    // and pr_open before pr_ready (open → mergeable → merged progression).
+    const statuses = [
+      'pr_merged',
+      'pr_ready',
+      'pr_open',
+      'complete',
+      'in_progress',
+      'not_started',
+      'idle',
+      'needs_attention',
+      'blocked',
+      'failed',
+    ] as const;
+    const workspaces = statuses.map((status, i) =>
+      makeWorkspace(`ws-order-${status}`, `Workspace ${i}`, { displayStatus: status }),
+    );
+
+    render(AllWorkspacesCardHarness, {
+      props: {
+        setup: () => {
+          appStore.dispatch(resetWorkspaceState());
+          for (const ws of workspaces) appStore.dispatch(setWorkspaceEntity(ws));
+          appStore.dispatch(setWorkspaceHasLoaded(true));
+          appStore.dispatch(setAllSpacesViewMode('status'));
+        },
+        expanded: true,
+      },
+    });
+
+    await waitFor(() => {
+      expect(getGroupHeaders()).toEqual([
+        'Failed',
+        'Blocked',
+        'Needs Attention',
+        'Idle',
+        'No Code Changes',
+        'In Progress',
+        'Completed',
+        'PR Open',
+        'PR Mergeable',
+        'PR Merged',
+      ]);
+    });
+  });
+
   it('defaults an unknown wire displayStatus to not_started (forward compat)', async () => {
     // A future daemon that adds a new wire value must not make the workspace
     // vanish from the Status view — the guard treats the unknown value as
