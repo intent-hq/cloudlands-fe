@@ -262,10 +262,10 @@ function getBrowserTunnelProvider(
  */
 const forwardOwnership = new ForwardOwnershipRegistry();
 
-// Wrapper memo (keyed by workspace id, '' = app-lifetime) so repeated getter
-// calls hand back the SAME provider object while the underlying backend is
-// unchanged — callers treat the provider as a stable singleton.
-const ownershipWrappers = new Map<string, { inner: TunnelProvider; wrapper: TunnelProvider }>();
+// Wrapper memo per provider + workspace id ('' = app-lifetime). Pooled clients
+// may own the same remote port independently, so their wrappers must remain
+// stable without replacing one another.
+const ownershipWrappers = new Map<TunnelProvider, Map<string, TunnelProvider>>();
 
 /** Dispose only the browser tunnel state owned by one departing pooled client. */
 function disposeTunnelManagerForClient(
@@ -278,13 +278,16 @@ function disposeTunnelManagerForClient(
   // dispose() drops every active forward, whose onForwardDropped hook clears
   // its ownership entry. Remove wrappers that would otherwise retain/reuse the
   // disposed manager after this saved remote is re-paired.
-  for (const [key, cached] of ownershipWrappers) {
-    if (cached.inner === tunnelManager) ownershipWrappers.delete(key);
-  }
+  ownershipWrappers.delete(tunnelManager);
 }
 
-/** Close a forward on whichever live provider carries it; never constructs one. */
-function closeOwnedForward(remotePort: number): void {
+/** Close a forward on its owning provider; never constructs one. */
+function closeOwnedForward(remotePort: number, provider?: TunnelProvider): void {
+  if (provider?.closeForward) {
+    provider.closeForward(remotePort);
+    return;
+  }
+  // Compatibility for registry entries recorded without a provider.
   for (const tunnelManager of tunnelManagers.values()) tunnelManager.closeForward(remotePort);
   directRelay?.closeForward(remotePort);
 }
@@ -303,10 +306,15 @@ function getOwnedBrowserTunnelProvider(
   ensureWorkspaceForwardCleanup({ registry: forwardOwnership, closeForward: closeOwnedForward });
   const inner = getBrowserTunnelProvider(backendContext);
   const key = workspaceId ?? '';
-  const cached = ownershipWrappers.get(key);
-  if (cached && cached.inner === inner) return cached.wrapper;
+  let wrappers = ownershipWrappers.get(inner);
+  if (!wrappers) {
+    wrappers = new Map();
+    ownershipWrappers.set(inner, wrappers);
+  }
+  const cached = wrappers.get(key);
+  if (cached) return cached;
   const wrapper = wrapTunnelProviderWithOwnership(inner, forwardOwnership, workspaceId);
-  ownershipWrappers.set(key, { inner, wrapper });
+  wrappers.set(key, wrapper);
   return wrapper;
 }
 

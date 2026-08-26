@@ -122,10 +122,12 @@ describe('wrapTunnelProviderWithOwnership', () => {
 
   it('records app-lifetime ownership when no workspaceId is given', async () => {
     const registry = new ForwardOwnershipRegistry();
-    const wrapped = wrapTunnelProviderWithOwnership(makeProvider(), registry);
+    const provider = makeProvider();
+    const wrapped = wrapTunnelProviderWithOwnership(provider, registry);
+    const workspaceWrapped = wrapTunnelProviderWithOwnership(provider, registry, 'ws-a');
 
     await wrapped.forwardPort(3000);
-    registry.record(3000, 'ws-a');
+    await workspaceWrapped.forwardPort(3000);
     expect(registry.releaseWorkspace('ws-a')).toEqual([]);
   });
 
@@ -180,6 +182,28 @@ describe('wrapTunnelProviderWithOwnership', () => {
     await wrapped.forwardPort(3000);
     expect(wrapped.closeForward!(3000)).toBe(false);
     expect(registry.releaseWorkspace('ws-a')).toEqual([]);
+  });
+
+  it('keeps same-port ownership isolated when one pooled provider disconnects', async () => {
+    const registry = new ForwardOwnershipRegistry();
+    const providerA = makeProvider();
+    const providerB = makeProvider();
+    const wrappedA = wrapTunnelProviderWithOwnership(providerA, registry, 'ws-a');
+    const wrappedB = wrapTunnelProviderWithOwnership(providerB, registry, 'ws-b');
+    const closeForward = vi.fn((remotePort: number, provider?: TunnelProvider) => {
+      provider?.closeForward?.(remotePort);
+    });
+    ensureWorkspaceForwardCleanup({ registry, closeForward });
+
+    await wrappedA.forwardPort(8080);
+    await wrappedB.forwardPort(8080);
+    await flush();
+    providerA.onForwardDropped!(8080);
+
+    emitEvent('workspace:deleted', { workspaceId: 'ws-b' });
+    expect(closeForward).toHaveBeenCalledWith(8080, providerB);
+    expect(providerB.closeForward).toHaveBeenCalledWith(8080);
+    expect(providerA.closeForward).not.toHaveBeenCalled();
   });
 });
 

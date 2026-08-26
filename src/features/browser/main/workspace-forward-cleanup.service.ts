@@ -37,13 +37,14 @@ import {
 } from '../../backend/main/backend.ipc';
 import type { JsonRpcNotification } from '../../backend/main/json-rpc-client';
 import type { ForwardOwnershipRegistry } from './tunnel-forward-ownership';
+import type { TunnelProvider } from './loopback-url-resolver';
 
 const logger = new Logger('WorkspaceForwardCleanup');
 
 export interface WorkspaceForwardCleanupDeps {
   registry: ForwardOwnershipRegistry;
-  /** Close the forward for `remotePort` on the live provider(s). */
-  closeForward: (remotePort: number) => void;
+  /** Close the forward on the exact provider that owned it. */
+  closeForward: (remotePort: number, provider?: TunnelProvider) => void;
 }
 
 let deps: WorkspaceForwardCleanupDeps | undefined;
@@ -65,10 +66,11 @@ let reconcileFailed = false;
 
 function cleanupWorkspace(workspaceId: string, reason: 'archived' | 'deleted'): void {
   if (!deps) return;
-  const remotePorts = deps.registry.releaseWorkspace(workspaceId);
-  for (const remotePort of remotePorts) {
+  const forwards = deps.registry.releaseWorkspaceForProviders(workspaceId);
+  for (const { provider, remotePort } of forwards) {
     try {
-      deps.closeForward(remotePort);
+      if (provider) deps.closeForward(remotePort, provider);
+      else deps.closeForward(remotePort);
     } catch (error) {
       logger.warn('closing a workspace-owned tunnel forward failed', {
         workspaceId,
@@ -77,7 +79,8 @@ function cleanupWorkspace(workspaceId: string, reason: 'archived' | 'deleted'): 
       });
     }
   }
-  if (remotePorts.length > 0) {
+  if (forwards.length > 0) {
+    const remotePorts = forwards.map(({ remotePort }) => remotePort);
     logger.info('closed workspace-owned tunnel forwards', { workspaceId, reason, remotePorts });
   }
 }

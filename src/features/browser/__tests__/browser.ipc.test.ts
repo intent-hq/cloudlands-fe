@@ -495,9 +495,21 @@ describe('browser tunnel-backend selection seam', () => {
     const providerA = await getProvider('remote-a', 'workspace-a');
     const providerB = await getProvider('remote-b', 'workspace-b');
     const directProvider = await getProvider('local', 'workspace-local');
-    const managerA = mocks.TunnelManager.mock.instances[0] as unknown as { dispose: Mock };
-    const managerB = mocks.TunnelManager.mock.instances[1] as unknown as { dispose: Mock };
+    const managerA = mocks.TunnelManager.mock.instances[0] as unknown as {
+      dispose: Mock;
+      forwardPort: Mock;
+      onForwardDropped?: (remotePort: number) => void;
+    };
+    const managerB = mocks.TunnelManager.mock.instances[1] as unknown as {
+      dispose: Mock;
+      forwardPort: Mock;
+    };
     const direct = mocks.DirectRelay.mock.instances[0] as unknown as { dispose: Mock };
+    managerA.forwardPort = vi.fn(async () => 48080);
+    managerB.forwardPort = vi.fn(async () => 58080);
+    await (providerA as { forwardPort(remotePort: number): Promise<number> }).forwardPort(8080);
+    await (providerB as { forwardPort(remotePort: number): Promise<number> }).forwardPort(8080);
+    managerA.dispose.mockImplementation(() => managerA.onForwardDropped?.(8080));
 
     const listener = (app.on as Mock).mock.calls.find(
       ([event]) => event === 'backend-client-disconnected',
