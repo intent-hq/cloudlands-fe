@@ -1831,7 +1831,7 @@
             position: panePosition(activeTab.id),
             count: tabs.length,
           })}
-          aria-current="page"
+          aria-current="true"
           data-pane-stack-active={activeTab.id}
           data-attention={attentionPaneIds.has(activeTab.id) ? '' : undefined}
           data-panel-agent-header-identity
@@ -1882,7 +1882,7 @@
               position: panePosition(activeTab.id),
               count: tabs.length,
             })}
-            aria-current="page"
+            aria-current="true"
             data-pane-stack-active={activeTab.id}
             data-attention={attentionPaneIds.has(activeTab.id) ? '' : undefined}
           >

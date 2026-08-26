@@ -423,7 +423,10 @@
     ) {
       return true;
     }
-    if (contentBlock.type === 'text') return Boolean(contentBlock.text);
+    if (contentBlock.type === 'text') {
+      const text = contentBlock.text || (contentBlock as any).content || '';
+      return parseSuggestedPrompts(text).cleanedContent.trim().length > 0;
+    }
     if (contentBlock.type === 'image') {
       return Boolean((contentBlock.data || contentBlock.dataTruncated) && contentBlock.mimeType);
     }

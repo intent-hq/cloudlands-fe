@@ -65,7 +65,9 @@ describe('pane stack control', () => {
     expect(header.getAttribute('role')).toBe('group');
     expect(header.getAttribute('aria-label')).toBe('Pane stack size: 2');
     expect(header.getAttribute('data-pane-stack-size')).toBe('2');
-    expect(header.querySelector('[data-pane-stack-active="agent-pane"]')).not.toBeNull();
+    const active = header.querySelector('[data-pane-stack-active="agent-pane"]');
+    expect(active).not.toBeNull();
+    expect(active?.getAttribute('aria-current')).toBe('true');
     expect(screen.getByTestId('pane-stack-selector-trigger')).not.toBeNull();
     expect(header.querySelector('[data-pane-stack-layer]')).toBeNull();
     expect(header.querySelector('[data-pane-stack-position]')).toBeNull();
@@ -114,6 +116,7 @@ describe('pane stack control', () => {
     expect(stack.getAttribute('aria-label')).toBe('Pane stack size: 5');
     expect(stack.querySelector('[data-pane-stack-layer]')).toBeNull();
     expect(active.getAttribute('data-pane-stack-active')).toBe('note-pane');
+    expect(active.getAttribute('aria-current')).toBe('true');
     expect(active.textContent).toContain('Release plan');
     expect(active.querySelector('[data-pane-stack-position]')).toBeNull();
     expect(trigger.textContent?.trim()).toBe('');
