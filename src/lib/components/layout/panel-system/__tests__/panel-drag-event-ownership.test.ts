@@ -125,6 +125,7 @@ async function mountLayout() {
       height: 400,
     }) as DOMRect;
   setDraggedPane({ tabId: 'source-tab', panelId: 'source-panel' });
+  appStore.dispatch(startDrag());
   return panel;
 }
 
@@ -162,6 +163,7 @@ afterEach(() => {
   cleanup();
   storeContext?.dispose();
   storeContext = undefined;
+  vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
 
@@ -189,6 +191,52 @@ describe('pane drag event ownership', () => {
     ]);
   });
 
+  it('coalesces dragover updates to the latest pointer position in one frame', async () => {
+    const panel = await mountLayout();
+    const layout = panel.closest<HTMLElement>('[data-panel-layout-motion]')!;
+    const layoutRect = vi.spyOn(layout, 'getBoundingClientRect');
+
+    panel.dispatchEvent(dragEvent(60));
+    panel.dispatchEvent(dragEvent(340));
+
+    expect(document.querySelector('[data-panel-layout-drag-preview]')).toBeNull();
+    await waitFor(() =>
+      expect(document.querySelector('[data-panel-layout-drag-preview="right"]')).toBeTruthy(),
+    );
+    expect(layoutRect).toHaveBeenCalledOnce();
+  });
+
+  it('reuses drag-session geometry and the rendered preview in an unchanged region', async () => {
+    const panel = await mountLayout();
+    const layout = panel.closest<HTMLElement>('[data-panel-layout-motion]')!;
+    const source = layout.querySelector<HTMLElement>('[data-panel-id="source-panel"]')!;
+    const panelRect = vi.spyOn(panel, 'getBoundingClientRect');
+    const sourceRect = vi.spyOn(source, 'getBoundingClientRect');
+    const layoutRect = vi.spyOn(layout, 'getBoundingClientRect');
+
+    await fireEvent(panel, dragEvent(340));
+    const firstSnapshot = await waitFor(() => {
+      const snapshot = document.querySelector<HTMLElement>('[data-panel-layout-preview-snapshot]');
+      expect(snapshot).toBeTruthy();
+      return snapshot!;
+    });
+    const geometryReads = [
+      panelRect.mock.calls.length,
+      sourceRect.mock.calls.length,
+      layoutRect.mock.calls.length,
+    ];
+
+    await fireEvent(panel, dragEvent(340));
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+
+    expect([
+      panelRect.mock.calls.length,
+      sourceRect.mock.calls.length,
+      layoutRect.mock.calls.length,
+    ]).toEqual(geometryReads);
+    expect(document.querySelector('[data-panel-layout-preview-snapshot]')).toBe(firstSnapshot);
+  });
+
   it('updates one live preview through gutter, panel, invalid, and valid regions', async () => {
     const panel = await mountLayout();
     const layout = panel.closest<HTMLElement>('[data-panel-layout-motion]')!;
@@ -197,14 +245,15 @@ describe('pane drag event ownership', () => {
         .panelLayoutDragPreview ?? null;
     const previews: (string | null)[] = [];
 
-    for (const [target, clientX] of [
-      [panel, 400],
-      [panel, 340],
-      [panel, 200],
-      [layout, 200],
-      [panel, 340],
+    for (const [target, clientX, expected] of [
+      [panel, 400, 'after'],
+      [panel, 340, 'right'],
+      [panel, 200, 'center'],
+      [layout, 200, null],
+      [panel, 340, 'right'],
     ] as const) {
       await fireEvent(target, dragEvent(clientX));
+      await waitFor(() => expect(readPreview()).toBe(expected));
       previews.push(readPreview());
     }
 
@@ -217,7 +266,9 @@ describe('pane drag event ownership', () => {
     createPaneDragImage('Source');
 
     await fireEvent(panel, dragEvent(200));
-    expect(document.querySelector('[data-panel-layout-drag-preview="center"]')).toBeTruthy();
+    await waitFor(() =>
+      expect(document.querySelector('[data-panel-layout-drag-preview="center"]')).toBeTruthy(),
+    );
     await fireEvent(panel, dragEvent(200, 'drop'));
 
     expect(getDraggedPane()).toBeNull();
@@ -231,7 +282,9 @@ describe('pane drag event ownership', () => {
     setDraggedPane({ tabId: 'one', panelId: 'target-panel' });
     appStore.dispatch(startDrag());
     await fireEvent(panel, dragEvent(0));
-    expect(document.querySelector('[data-panel-layout-drag-preview="before"]')).toBeTruthy();
+    await waitFor(() =>
+      expect(document.querySelector('[data-panel-layout-drag-preview="before"]')).toBeTruthy(),
+    );
     await fireEvent.keyDown(window, { key: 'Escape' });
     expect(getDraggedPane()).toBeNull();
     expect(appStore.state.tabState.isDragging).toBe(false);

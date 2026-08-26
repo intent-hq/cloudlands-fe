@@ -38,36 +38,25 @@
   $effect(() => {
     if (node.type !== 'split' || !splitElement) return;
     const element = splitElement;
-    const measure = () => {
-      const children = [...element.children] as HTMLElement[];
-      const resizeTarget = isRoot
-        ? element.closest<HTMLElement>('[data-testid="panel-workspace-inset"]')
-        : element.parentElement;
-      // Measure the content box: the padded inset viewport's client size
-      // would oversize the preview stack (see measurePanelReferenceSize).
-      const availableSize =
-        node.direction === 'horizontal'
-          ? resizeTarget
-            ? getElementContentBoxSize(resizeTarget, 'horizontal')
-            : element.clientWidth
-          : resizeTarget
-            ? getElementContentBoxSize(resizeTarget, 'vertical')
-            : element.clientHeight;
-      const gap = Number.parseFloat(getComputedStyle(element).gap) || 0;
-      panelReferenceSize = getPanelReferenceSize(
-        availableSize,
-        gap * Math.max(0, children.length - 1),
-      );
-    };
-
-    measure();
+    const children = [...element.children] as HTMLElement[];
     const resizeTarget = isRoot
       ? element.closest<HTMLElement>('[data-testid="panel-workspace-inset"]')
       : element.parentElement;
-    if (!resizeTarget) return;
-    const observer = new ResizeObserver(measure);
-    observer.observe(resizeTarget);
-    return () => observer.disconnect();
+    // Preview geometry changes only with its frame-coalesced projection. Measure once
+    // for that projection instead of feeding a drag-only ResizeObserver loop.
+    const availableSize =
+      node.direction === 'horizontal'
+        ? resizeTarget
+          ? getElementContentBoxSize(resizeTarget, 'horizontal')
+          : element.clientWidth
+        : resizeTarget
+          ? getElementContentBoxSize(resizeTarget, 'vertical')
+          : element.clientHeight;
+    const gap = Number.parseFloat(getComputedStyle(element).gap) || 0;
+    panelReferenceSize = getPanelReferenceSize(
+      availableSize,
+      gap * Math.max(0, children.length - 1),
+    );
   });
 </script>
 

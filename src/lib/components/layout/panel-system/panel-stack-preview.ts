@@ -118,7 +118,14 @@ export const renderPanelLayoutPreview: Action<HTMLElement, PanelLayoutPreviewSna
   host,
   options,
 ) => {
+  let renderedPanel: PanelState | null = null;
+  let renderedSourcePanelId: string | null = null;
+
   function render(next: PanelLayoutPreviewSnapshot) {
+    const sourcePanelId = next.sourcePanelId ?? null;
+    if (next.panel === renderedPanel && sourcePanelId === renderedSourcePanelId) return;
+    renderedPanel = next.panel;
+    renderedSourcePanelId = sourcePanelId;
     const activeTabId = next.panel.activeTabId ?? next.panel.tabs[0]?.id ?? null;
     const source =
       findPanelContainingTab(activeTabId) ??
@@ -135,5 +142,8 @@ export const renderPanelLayoutPreview: Action<HTMLElement, PanelLayoutPreviewSna
   }
 
   render(options);
-  return { update: render };
+  return {
+    update: render,
+    destroy: () => host.replaceChildren(),
+  };
 };

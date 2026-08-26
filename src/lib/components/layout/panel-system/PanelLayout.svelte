@@ -421,6 +421,10 @@
   let panelPreviewStartPositions = new Map<string, DOMRect>();
   let panelPreviewAnimationVersion = 0;
   let panelMovePreviewClearFrame: number | null = null;
+  let paneDropPreviewFrame: number | null = null;
+  let pendingPaneDropPoint: { clientX: number; targetPanelId: string | null } | null = null;
+  let paneInsertionGeometry: ReturnType<typeof measurePaneInsertionGeometry> = null;
+  let paneInsertionGeometryKey: string | null = null;
   let panelMoveCommitVersion = 0;
   let panelMoveCommitReleaseFrame: number | null = null;
   let suppressCommittedPanelMoveMotion = $state(false);
@@ -463,12 +467,47 @@
   function clearPanelMovePreviewNow() {
     if (panelMovePreviewClearFrame !== null) cancelAnimationFrame(panelMovePreviewClearFrame);
     panelMovePreviewClearFrame = null;
+    if (paneDropPreviewFrame !== null) cancelAnimationFrame(paneDropPreviewFrame);
+    paneDropPreviewFrame = null;
+    pendingPaneDropPoint = null;
+    panelPreviewAnimationVersion += 1;
+    panelDragPreviewElement
+      ?.getAnimations({ subtree: true })
+      .forEach((animation) => animation.cancel());
+    panelPreviewStartPositions = new Map();
     paneDropPreview = null;
+  }
+
+  function arePaneDropPlacementsEqual(
+    first: PaneDropPlacement | null,
+    second: PaneDropPlacement | null,
+  ): boolean {
+    if (first === second) return true;
+    if (!first || !second || first.kind !== second.kind) return false;
+    if (first.kind === 'edge' && second.kind === 'edge') return first.position === second.position;
+    return (
+      first.kind === 'panel' &&
+      second.kind === 'panel' &&
+      first.targetPanelId === second.targetPanelId &&
+      first.zone === second.zone
+    );
   }
 
   function setPaneDropPreview(placement: PaneDropPlacement | null) {
     const draggedPane = getDraggedPane();
-    paneDropPreview = draggedPane && placement ? { draggedPane, placement } : null;
+    const current = paneDropPreview;
+    if (!draggedPane || !placement) {
+      if (current) paneDropPreview = null;
+      return;
+    }
+    if (
+      current?.draggedPane.tabId === draggedPane.tabId &&
+      current.draggedPane.panelId === draggedPane.panelId &&
+      arePaneDropPlacementsEqual(current.placement, placement)
+    ) {
+      return;
+    }
+    paneDropPreview = { draggedPane, placement };
   }
 
   function ownsDraggedPane(): boolean {
@@ -478,6 +517,8 @@
 
   function finishPaneDrag() {
     clearPanelMovePreviewNow();
+    paneInsertionGeometry = null;
+    paneInsertionGeometryKey = null;
     clearDraggedPaneState();
     appStore.dispatch(endDrag());
   }
@@ -506,8 +547,11 @@
     const panelElements = Array.from(
       panelLayoutMotionElement.querySelectorAll<HTMLElement>('[data-panel-id]'),
     );
+    const panelElementsById = new Map(
+      panelElements.map((element) => [element.dataset.panelId, element] as const),
+    );
     const panelRects = $panelIds$.map((panelId) =>
-      panelElements.find((element) => element.dataset.panelId === panelId)?.getBoundingClientRect(),
+      panelElementsById.get(panelId)?.getBoundingClientRect(),
     );
     if (panelRects.some((rect) => !rect)) return null;
 
@@ -517,27 +561,37 @@
       panelRects as DOMRect[],
       $panelIds$.length < 4,
     );
-    return { layoutRect, panelElements, targets };
+    const panelRectsById = new Map(
+      $panelIds$.map((panelId, index) => [panelId, panelRects[index] as DOMRect] as const),
+    );
+    return { layoutRect, panelElementsById, panelRectsById, targets };
   }
 
-  function resolvePaneDropPlacement(event: DragEvent): PaneDropPlacement | null {
-    const draggedPane = getDraggedPane();
+  function getPaneInsertionGeometry(draggedPane: DraggedPane) {
+    const key = `${draggedPane.panelId}:${draggedPane.tabId}:${$panelIds$.join(',')}`;
+    if (paneInsertionGeometryKey === key && paneInsertionGeometry) return paneInsertionGeometry;
+    paneInsertionGeometryKey = key;
+    paneInsertionGeometry = measurePaneInsertionGeometry();
+    return paneInsertionGeometry;
+  }
+
+  function resolvePaneDropPlacement(
+    clientX: number,
+    targetPanelId: string | null,
+    draggedPane = getDraggedPane(),
+  ): PaneDropPlacement | null {
     if (!draggedPane) return null;
-    const geometry = measurePaneInsertionGeometry();
+    const geometry = getPaneInsertionGeometry(draggedPane);
     if (!geometry) return null;
     const insertionPlacement = getPaneInsertionPlacementAtX(
-      event.clientX,
+      clientX,
       geometry.layoutRect,
       geometry.targets,
       $panelIds$,
     );
     if (insertionPlacement) return insertionPlacement;
 
-    const eventElement = event.target instanceof Element ? event.target : null;
-    const panelElement = eventElement?.closest<HTMLElement>('[data-panel-id]');
-    const targetPanelId = panelElement?.dataset.panelId;
-    if (!panelElement || !targetPanelId || !geometry.panelElements.includes(panelElement))
-      return null;
+    if (!targetPanelId || !geometry.panelElementsById.has(targetPanelId)) return null;
     const targetPanel = $panels$[targetPanelId];
     if (!targetPanel) return null;
     const previousPlacement = paneDropPreview?.placement;
@@ -546,8 +600,8 @@
         ? previousPlacement.zone
         : null;
     const zone = getPaneColumnDropZone(
-      event.clientX,
-      panelElement.getBoundingClientRect(),
+      clientX,
+      geometry.panelRectsById.get(targetPanelId)!,
       $panelIds$.length < 4,
       previousZone,
     );
@@ -564,19 +618,31 @@
 
   function handlePaneInsertionDragOver(event: DragEvent) {
     if (!getDraggedPane()) return;
-    const placement = resolvePaneDropPlacement(event);
-    setPaneDropPreview(placement);
     event.stopPropagation();
-    if (!placement) return;
-
     event.preventDefault();
     if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
+
+    const eventElement = event.target instanceof Element ? event.target : null;
+    pendingPaneDropPoint = {
+      clientX: event.clientX,
+      targetPanelId: eventElement?.closest<HTMLElement>('[data-panel-id]')?.dataset.panelId ?? null,
+    };
+    if (paneDropPreviewFrame !== null) return;
+    paneDropPreviewFrame = requestAnimationFrame(() => {
+      paneDropPreviewFrame = null;
+      const point = pendingPaneDropPoint;
+      pendingPaneDropPoint = null;
+      if (point) setPaneDropPreview(resolvePaneDropPlacement(point.clientX, point.targetPanelId));
+    });
   }
 
   function handlePaneInsertionDrop(event: DragEvent) {
     const draggedPane = getDraggedPane();
     if (!draggedPane) return;
-    const placement = resolvePaneDropPlacement(event);
+    const eventElement = event.target instanceof Element ? event.target : null;
+    const targetPanelId =
+      eventElement?.closest<HTMLElement>('[data-panel-id]')?.dataset.panelId ?? null;
+    const placement = resolvePaneDropPlacement(event.clientX, targetPanelId, draggedPane);
 
     event.preventDefault();
     event.stopPropagation();
@@ -657,7 +723,11 @@
   });
 
   $effect(() => {
-    if (!$isDragging$ && !suppressCommittedPanelMoveMotion) clearPanelMovePreviewNow();
+    if (!$isDragging$ && !suppressCommittedPanelMoveMotion) {
+      clearPanelMovePreviewNow();
+      paneInsertionGeometry = null;
+      paneInsertionGeometryKey = null;
+    }
   });
 
   // Per-workspace "settled" latch: once the layout has been considered

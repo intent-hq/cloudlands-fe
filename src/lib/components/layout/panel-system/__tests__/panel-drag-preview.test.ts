@@ -2,6 +2,7 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { cleanup, render } from '@testing-library/svelte';
+import { tick } from 'svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import PanelDragPreview from '../PanelDragPreview.svelte';
 import { PANE_DROP_PREVIEW_PANEL_ID } from '$features/layout/panel-move-preview';
@@ -160,6 +161,26 @@ describe('PanelDragPreview', () => {
     expect(sourceText).not.toContain('var(--success)');
     expect(sourceText).not.toContain('box-shadow');
 
+    source.remove();
+  });
+
+  it('keeps the same inert snapshot when projected panel inputs are unchanged', async () => {
+    const sourceState = panel('source-panel', ['drag']);
+    const source = addSourcePanel(sourceState);
+    const props = {
+      panels: { 'source-panel': sourceState },
+      draggedPanelId: 'source-panel',
+      node: { type: 'panel' as const, panelId: 'source-panel' },
+    };
+    const result = render(PanelDragPreview, { props });
+    const firstSnapshot = result.container.querySelector('[data-panel-layout-preview-snapshot]');
+
+    await result.rerender({ ...props, panels: { 'source-panel': sourceState } });
+    await tick();
+
+    expect(result.container.querySelector('[data-panel-layout-preview-snapshot]')).toBe(
+      firstSnapshot,
+    );
     source.remove();
   });
 
