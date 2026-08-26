@@ -685,6 +685,9 @@
       </div>
 
       <div data-testid="all-agents-defaults-column" class="flex min-w-0 flex-col gap-6">
+        <p class="text-sm text-muted-foreground">
+          {m.settings_agentRules_description()}
+        </p>
         <DefaultAgentModelSettings testId="all-agents-default-model-row" />
         {#if anySpecialistHasExplicitModel}
           <button

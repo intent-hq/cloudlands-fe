@@ -169,19 +169,18 @@
 
 <svelte:window onkeydown={handleKeyDown} />
 
-<div class="h-full flex flex-col gap-4 {className}">
-  <div data-testid="agent-rules-header" class="flex items-start justify-between gap-4 shrink-0">
-    <p class="text-sm text-muted-foreground">
-      {m.settings_agentRules_description()}
-    </p>
-
-    {#if hasChanges}
+<div class="h-full flex flex-col gap-2 {className}">
+  {#if hasChanges}
+    <div
+      data-testid="agent-rules-header"
+      class="flex min-w-0 shrink-0 flex-wrap items-center gap-2"
+    >
       <Button variant="ghost-light" size="xs" onclick={undoChanges} class="">
         <Fa icon={faRotateLeft} class="w-3 h-3" />
         {m.settings_agentRules_undoChanges()}
       </Button>
-    {/if}
-  </div>
+    </div>
+  {/if}
 
   {#if errorMessage}
     <div
