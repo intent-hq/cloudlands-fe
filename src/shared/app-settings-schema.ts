@@ -2,6 +2,7 @@ import { THEME_PRESET_IDS, THEME_PRESET_MANIFEST } from './theme-presets-manifes
 import { locales } from './paraglide/runtime.js';
 import { SYSTEM_LANGUAGE_PREFERENCE } from './i18n/locale-matcher';
 import { GITHUB_LINK_DEFAULT_ACTIONS } from './utils/link-helpers';
+import { UPDATE_CHANNELS } from '../features/auto-update/types';
 
 type AppSettingValueType =
   'string' | 'boolean' | 'number' | 'object' | 'array' | 'enum' | 'status' | 'readonly';
@@ -95,11 +96,12 @@ const APP_SETTING_DEFINITIONS: readonly AppSettingDefinition[] = [
   {
     path: 'preferences.updateChannel',
     label: 'Update channel',
-    description: 'Release channel for app updates: stable, beta, or alpha.',
+    description:
+      'Release channel for app updates: stable, beta, or alpha — or disabled to turn updates off.',
     category: 'preferences',
     type: 'enum',
-    enumValues: ['stable', 'beta', 'alpha'],
-    enumLabels: { stable: 'Stable', beta: 'Beta', alpha: 'Alpha' },
+    enumValues: UPDATE_CHANNELS,
+    enumLabels: { stable: 'Stable', beta: 'Beta', alpha: 'Alpha', disabled: 'Disabled' },
     source: 'redux',
     defaultValue: 'stable',
     apply: { kind: 'redux-action', action: 'userPreferences/setUpdateChannel' },

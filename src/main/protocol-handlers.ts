@@ -1,4 +1,4 @@
-import { app, protocol } from 'electron';
+import { app, BrowserWindow, protocol } from 'electron';
 import { decodeUrlPath } from './utils/decode-url-path';
 import { logger } from '../shared/logger';
 import path from 'path';
@@ -6,6 +6,58 @@ import * as fs from 'fs';
 import { safeResolvePath } from './utils/safe-resolve-path';
 import { parseWorkspaceFileRequest } from './utils/workspace-file-url';
 import { isTrustedRendererUrl } from './ipc-authorization';
+import { resolveWorkspaceBackendClientWithRetry } from './utils/workspace-backend-client';
+import { LOCAL_CONNECTION_ID } from '../shared/types/connections';
+
+/**
+ * Bounded retry while no hosting window is known yet: the window→workspace
+ * maps are populated by un-awaited renderer IPCs after navigation, so a
+ * cached image can fetch before the main process has recorded the workspace
+ * (monorepo#3501); <img> never retries a 404.
+ */
+const WORKSPACE_BACKEND_RESOLUTION_ATTEMPTS = 5;
+const WORKSPACE_BACKEND_RESOLUTION_RETRY_MS = 200;
+
+/**
+ * Resolve the backend client that owns `workspaceId` (monorepo#3501).
+ * `protocol.handle` does not expose the initiating webContents, so the owning
+ * backend is resolved from the windows hosting the workspace. Fallback to the
+ * app-primary compatibility client applies when no hosting window is found
+ * (after a short retry) or when the stamped backend is the implicit local
+ * one; a stamped named backend without a live pooled client fails closed.
+ * See `./utils/workspace-backend-client`.
+ */
+async function backendClientForWorkspace(workspaceId: string) {
+  const [
+    { getBackendClient, getBackendClientForConnection },
+    { getWindowIdsForWorkspace },
+    { getBackendIdForWindow },
+  ] = await Promise.all([
+    import('../features/backend/main/backend.ipc'),
+    import('../features/system/main/system.ipc'),
+    import('./window'),
+  ]);
+  return resolveWorkspaceBackendClientWithRetry(
+    workspaceId,
+    {
+      getWindowIdsForWorkspace,
+      getBackendIdForWindowId: (windowId) => {
+        const window = BrowserWindow.fromId(windowId);
+        return window && !window.isDestroyed() ? getBackendIdForWindow(window) : null;
+      },
+      getClientForBackend: getBackendClientForConnection,
+      getPrimaryClient: getBackendClient,
+      // The local pooled client and the compatibility client coincide at
+      // startup, so the primary fallback cannot retarget another daemon here;
+      // named/remote backends fail closed instead (wrong-backend bytes risk).
+      isPrimaryFallbackAllowed: (backendId) => backendId === LOCAL_CONNECTION_ID,
+    },
+    {
+      attempts: WORKSPACE_BACKEND_RESOLUTION_ATTEMPTS,
+      delayMs: WORKSPACE_BACKEND_RESOLUTION_RETRY_MS,
+    },
+  );
+}
 
 // ---- Shared Helpers ----
 
@@ -200,11 +252,28 @@ export function setupWorkspaceAssetProtocolHandler() {
       return new Response('Invalid asset URL', { status: 400 });
     }
 
-    // Assets are served by the daemon via `note.readAsset` (PROTOCOL §5.2).
+    // Assets are served by the daemon via `note.readAsset` (PROTOCOL §5.2),
+    // issued on the backend that owns the workspace (monorepo#3501).
     // The legacy local-assets fallback was retired in D6.
+    let backendId: string | null = null;
+    let fallback: string | null = null;
     try {
-      const { getBackendClient } = await import('../features/backend/main/backend.ipc');
-      const result = (await getBackendClient().request('note.readAsset', {
+      const resolved = await backendClientForWorkspace(workspaceId);
+      backendId = resolved.backendId;
+      fallback = resolved.fallback;
+      if (resolved.client === null) {
+        // Fail closed: the workspace's stamped backend is disconnected —
+        // retargeting the primary client could serve wrong-backend bytes.
+        logger.warn('workspace-asset backend disconnected', {
+          workspaceId,
+          assetId,
+          backendId,
+          attemptedBackendIds: resolved.attemptedBackendIds,
+        });
+        // i18n-ignore (internal protocol response body)
+        return new Response('Asset not found', { status: 404 });
+      }
+      const result = (await resolved.client.request('note.readAsset', {
         workspaceId,
         asset: assetId,
       })) as { assetId: string; mimeType: string; data: string; sizeKb: number };
@@ -219,6 +288,8 @@ export function setupWorkspaceAssetProtocolHandler() {
       logger.warn('Daemon note.readAsset failed', {
         workspaceId,
         assetId,
+        backendId,
+        fallback,
         error: error instanceof Error ? error.message : String(error),
       });
       // i18n-ignore (internal protocol response body)
@@ -328,9 +399,10 @@ export function setupWorkspaceFileProtocolHandler() {
     }
 
     const { workspaceId, filePath, mimeType } = parsed;
+    // Bytes come from the backend that owns the workspace (monorepo#3501).
+    let backendId: string | null = null;
+    let fallback: string | null = null;
     try {
-      const { getBackendClient } = await import('../features/backend/main/backend.ipc');
-      const client = getBackendClient();
       const rangeHeader = request.headers.get('range');
       const requestedRange = rangeHeader ? parseByteRangeHeader(rangeHeader) : undefined;
       if (rangeHeader && !requestedRange) {
@@ -343,6 +415,23 @@ export function setupWorkspaceFileProtocolHandler() {
           },
         });
       }
+
+      const resolved = await backendClientForWorkspace(workspaceId);
+      backendId = resolved.backendId;
+      fallback = resolved.fallback;
+      if (resolved.client === null) {
+        // Fail closed: the workspace's stamped backend is disconnected —
+        // retargeting the primary client could serve wrong-backend bytes.
+        logger.warn('workspace-file backend disconnected', {
+          workspaceId,
+          filePath,
+          backendId,
+          attemptedBackendIds: resolved.attemptedBackendIds,
+        });
+        // i18n-ignore (internal protocol response body)
+        return new Response('File not found', { status: 404 });
+      }
+      const client = resolved.client;
 
       async function readChunk(offset: number, length: number): Promise<WorkspaceFileChunk> {
         const chunk = (await client.request('file.readChunk', {
@@ -456,6 +545,8 @@ export function setupWorkspaceFileProtocolHandler() {
       logger.warn('Daemon file.readChunk failed', {
         workspaceId,
         filePath,
+        backendId,
+        fallback,
         error: error instanceof Error ? error.message : String(error),
       });
       // i18n-ignore (internal protocol response body)

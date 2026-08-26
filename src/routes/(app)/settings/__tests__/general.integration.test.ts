@@ -201,7 +201,7 @@ describe('Settings migration', () => {
     recorder.restore();
   });
 
-  it('keeps the channel selector focusable and offers all three channels', async () => {
+  it('keeps the channel selector focusable and offers all four channels', async () => {
     const recorder = installDispatchRecorder();
     renderGeneral();
 
@@ -213,6 +213,7 @@ describe('Settings migration', () => {
 
     expect(await screen.findByRole('option', { name: 'Stable' })).toBeTruthy();
     expect(screen.getByRole('option', { name: 'Beta' })).toBeTruthy();
+    expect(screen.getByRole('option', { name: 'Disabled' })).toBeTruthy();
     await fireEvent.pointerUp(screen.getByRole('option', { name: 'Alpha' }), {
       button: 0,
       pointerType: 'mouse',
@@ -220,6 +221,22 @@ describe('Settings migration', () => {
 
     await waitFor(() => expect(selectUpdateChannel.select(appStore.state)).toBe('alpha'));
     expect(recorder.calls).toContainEqual(setUpdateChannel('alpha'));
+    expect(backendCalls()).toHaveLength(0);
+    recorder.restore();
+  });
+
+  it('renders the Disabled option and dispatches setUpdateChannel(disabled) on selection', async () => {
+    const recorder = installDispatchRecorder();
+    renderGeneral();
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Select update channel' }));
+    await fireEvent.pointerUp(await screen.findByRole('option', { name: 'Disabled' }), {
+      button: 0,
+      pointerType: 'mouse',
+    });
+
+    await waitFor(() => expect(selectUpdateChannel.select(appStore.state)).toBe('disabled'));
+    expect(recorder.calls).toContainEqual(setUpdateChannel('disabled'));
     expect(backendCalls()).toHaveLength(0);
     recorder.restore();
   });
