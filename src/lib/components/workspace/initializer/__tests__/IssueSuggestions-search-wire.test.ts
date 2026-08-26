@@ -267,12 +267,14 @@ describe('IssueSuggestions server-side search + pagination wire contract', () =>
       });
       await settle();
 
-      const wrappers = container.querySelectorAll('span[data-tooltip-trigger]');
+      const wrappers = container.querySelectorAll('span[data-mock-tooltip-trigger]');
       expect(wrappers.length).toBeGreaterThan(0);
       for (const wrapper of wrappers) {
         expect(wrapper.classList.contains('flex')).toBe(true);
         expect(wrapper.classList.contains('w-full')).toBe(true);
         expect(wrapper.classList.contains('min-w-0')).toBe(true);
+        // tailwind-merge must drop the default inline-flex in favor of flex
+        expect(wrapper.classList.contains('inline-flex')).toBe(false);
       }
       cleanup();
     }
