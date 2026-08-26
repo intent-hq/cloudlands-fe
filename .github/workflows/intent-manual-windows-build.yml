@@ -68,16 +68,13 @@ jobs:
       # handles .zip natively — same workaround as release-alpha.yml
       # build-windows (intent-hq/monorepo#1282). Scoped to this step so bash
       # keeps resolving to Git Bash (see PATH workaround above).
+      # intent-hq/intentd is public: the default token covers the release reads
+      # (no PAT needed).
       - name: Fetch pinned intentd sidecar
         shell: bash
         env:
-          INTENTD_READ_PAT: ${{ secrets.INTENTD_READ_PAT }}
-        run: |
-          if [ -z "$INTENTD_READ_PAT" ]; then
-            echo "::error::INTENTD_READ_PAT secret is required to fetch the pinned intentd release"
-            exit 1
-          fi
-          PATH="/c/Windows/System32:$PATH" node scripts/fetch-sidecar.cjs
+          GH_TOKEN: ${{ github.token }}
+        run: PATH="/c/Windows/System32:$PATH" node scripts/fetch-sidecar.cjs
 
       # ── DigiCert signing setup (official action) ──────────────────────
       - name: Check integrated signing configuration
