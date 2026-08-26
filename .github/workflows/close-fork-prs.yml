@@ -1,0 +1,36 @@
+# Auto-close pull requests opened from forks.
+#
+# External (fork) PRs are not accepted on this repository: the contribution
+# policy is to file issues on intent-hq/monorepo instead. Fork PRs also get
+# no CI (intent-pr.yml guards every job on a same-repo head — nothing from a
+# fork may ever reach the self-hosted tinybox runner); this workflow closes
+# them with a pointer at the policy so they don't sit open and unmergeable.
+#
+# Safety: this runs on pull_request_target, which executes in the context of
+# the BASE repository with a token that can write to it — so it must NEVER
+# check out or execute any code from the PR head. It doesn't: the single job
+# only calls the GitHub API via gh. Permissions are pinned to the one scope
+# the close/comment calls need.
+name: Close Fork PRs
+
+on:
+  pull_request_target:
+    types: [opened, reopened]
+
+permissions:
+  pull-requests: write
+
+jobs:
+  close:
+    name: Close fork PR
+    # Same-repo PRs are untouched; only fork-headed PRs are closed.
+    if: github.event.pull_request.head.repo.full_name != github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Close with contribution-policy comment
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+        run: |
+          gh pr close "$PR_URL" --comment "Thanks for your interest in cloudlands-fe! This repository does not accept external pull requests, so this PR is being closed automatically. If you've found a bug or have a feature request, please open an issue on the tracker instead: https://github.com/intent-hq/monorepo/issues."

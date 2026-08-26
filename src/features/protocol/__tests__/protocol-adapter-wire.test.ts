@@ -60,11 +60,35 @@ describe('ProtocolAdapter wire contracts (PROTOCOL.md §5.2/§5.3/§5.4)', () =>
       expect(out).toEqual({ id: 'n1', title: 'T' });
     });
 
-    it('listNotes → note.list flattens { notes } to array', async () => {
+    it('listNotes → note.list requests the slim projection and flattens { notes } to array', async () => {
       mockRequest.mockResolvedValueOnce({ notes: [{ id: 'a' }, { id: 'b' }] });
       const out = await adapter.listNotes('ws-1');
-      expect(mockRequest).toHaveBeenCalledWith('note.list', { workspaceId: 'ws-1' });
+      expect(mockRequest).toHaveBeenCalledWith('note.list', {
+        workspaceId: 'ws-1',
+        projection: 'slim',
+      });
       expect(out).toEqual([{ id: 'a' }, { id: 'b' }]);
+    });
+
+    it('listNotes falls back to a plain full list when the daemon rejects the projection param (-32602)', async () => {
+      mockRequest.mockRejectedValueOnce(
+        Object.assign(new Error('Invalid params'), { rpcCode: -32602 }),
+      );
+      mockRequest.mockResolvedValueOnce({ notes: [{ id: 'a' }] });
+      const out = await adapter.listNotes('ws-1');
+      expect(mockRequest).toHaveBeenNthCalledWith(1, 'note.list', {
+        workspaceId: 'ws-1',
+        projection: 'slim',
+      });
+      expect(mockRequest).toHaveBeenNthCalledWith(2, 'note.list', { workspaceId: 'ws-1' });
+      expect(out).toEqual([{ id: 'a' }]);
+    });
+
+    it('listNotes does NOT retry on a non-projection failure (returns [] via error path)', async () => {
+      mockRequest.mockRejectedValueOnce(new Error('transport down'));
+      const out = await adapter.listNotes('ws-1');
+      expect(mockRequest).toHaveBeenCalledTimes(1);
+      expect(out).toEqual([]);
     });
 
     it('getNote → note.get (IPC style returns Result)', async () => {

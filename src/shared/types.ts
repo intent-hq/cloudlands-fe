@@ -831,6 +831,15 @@ export interface Note {
    * daemons) — callers then omit `expectedVersion` and last-writer-wins applies.
    */
   rev?: number;
+  /**
+   * Slim `note.list` projection fields (§5.2 `projection: "slim"`): first
+   * ~500 chars of the content and the full content length in characters
+   * (Unicode scalar values, not bytes). Present only on slim rows, where
+   * `content` is `""`; `contentLength > 0 && content === ""` marks a row whose
+   * full content has not been fetched yet (see `isNoteContentStale`).
+   */
+  contentPreview?: string;
+  contentLength?: number;
   createdAt: string;
   updatedAt: string;
   is_pinned?: boolean; // Legacy compatibility
@@ -1105,6 +1114,11 @@ export interface AgentMetadata {
   // agent.get / agent.list AgentLite metadata (PROTOCOL §5.5); feeds
   // AgentCard's effectiveCompletionReport preview.
   completionReport?: string;
+  // Id of the parent agent that delegated/created this session (PROTOCOL §5.5,
+  // served on AgentLite metadata). Absent on top-level agents; drives the
+  // Agents-panel tree nesting, hud-selectors' top-level gating, and the
+  // per-agent unread suppression for delegated children.
+  createdByAgentId?: string;
   // Allow additional properties for flexibility with proper typing
   [key: string]: string | number | boolean | null | undefined | any[] | ContextReference[];
 }
@@ -1486,6 +1500,7 @@ export interface WorkspaceUIContext {
 // ============================================================================
 
 export interface CreateWorkspaceRequest {
+  idempotencyKey?: string;
   title?: string;
   statusMessage?: string;
   repositoryPath?: string;

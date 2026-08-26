@@ -9,6 +9,7 @@ const states: NoteContentState[] = [
   'missing',
   'read-only',
   'recent-note',
+  'error',
 ];
 const scenarios = [
   { name: 'light', theme: 'light' as const, width: 480, zoom: 1 },

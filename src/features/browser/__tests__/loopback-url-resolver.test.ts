@@ -112,6 +112,23 @@ describe('resolveBrowserUrl', () => {
     expect(forwardPort).not.toHaveBeenCalled();
   });
 
+  it('skips the client-loopback probe when saved remote daemon links require a tunnel', async () => {
+    const result = await resolveBrowserUrl(
+      'http://localhost:8080/page',
+      {
+        daemonIsRemote: true,
+        daemonHost: 'localhost',
+        daemonLinksRequireTunnel: true,
+      },
+      tunnelProvider,
+    );
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(forwardPort).toHaveBeenCalledWith(8080);
+    expect(result.url).toBe('http://127.0.0.1:45678/page');
+    expect(result.tunneled).toBe(true);
+    expect(result.requestedUrl).toBe('http://localhost:8080/page');
+  });
+
   it('falls back to the daemon tunnel when the probe fails and flags tunneled', async () => {
     fetchMock.mockRejectedValue(new TypeError('fetch failed'));
     const result = await resolveBrowserUrl(
@@ -357,8 +374,16 @@ describe('resolveBrowserUrl', () => {
       // seam wrapTunnelProviderWithOwnership uses to record workspace
       // ownership refcounts (cloudlands-fe#1325), and it is idempotent on the
       // real providers anyway.
-      await resolveBrowserUrl('http://daemon.localhost:8080/page', remoteContext, forwardAwareProvider);
-      await resolveBrowserUrl('http://daemon.localhost:8080/page', remoteContext, forwardAwareProvider);
+      await resolveBrowserUrl(
+        'http://daemon.localhost:8080/page',
+        remoteContext,
+        forwardAwareProvider,
+      );
+      await resolveBrowserUrl(
+        'http://daemon.localhost:8080/page',
+        remoteContext,
+        forwardAwareProvider,
+      );
       expect(forwardPort).toHaveBeenCalledTimes(2);
       expect(forwardPort).toHaveBeenNthCalledWith(1, 8080);
       expect(forwardPort).toHaveBeenNthCalledWith(2, 8080);

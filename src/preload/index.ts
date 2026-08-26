@@ -542,6 +542,12 @@ const ALLOWED_CHANNELS = [
   "connections:protocol-mismatch",
   "connections:auth-rejected",
   "connections:get-boot-fallback",
+  "connections:sync-get-state",
+  "connections:sync-set-enabled",
+  "connections:sync-status-changed",
+  "connections:publish-self",
+  "connections:self-published-state",
+  "connections:refresh-self",
   "transfer:start",
   "transfer:finalize",
   "transfer:cancel",
@@ -704,6 +710,7 @@ const ALLOWED_CHANNELS = [
   "connections:cert-mismatch",
   "connections:protocol-mismatch",
   "connections:auth-rejected",
+  "connections:sync-status-changed",
   "transfer:progress",
   "transfer:import-progress",
   "menu:import-workspace"
@@ -881,6 +888,7 @@ const EVENT_CHANNELS = [
   "connections:cert-mismatch",
   "connections:protocol-mismatch",
   "connections:auth-rejected",
+  "connections:sync-status-changed",
   "transfer:progress",
   "transfer:import-progress",
   "menu:import-workspace"

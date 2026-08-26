@@ -340,10 +340,14 @@ describe('captureRemoteHostname stale-completion guard (monorepo#2221)', () => {
     await mod.switchBackend('remote-1');
     await mod.switchBackend('remote-2');
 
-    // B's own capture persists B's hostname as usual.
+    // B's own capture persists B's hostname as usual. Let its (async)
+    // broadcast fully land before counting the baseline, so the count only
+    // moves if the STALE capture broadcasts.
     await vi.waitFor(() =>
       expect(store.setHostname).toHaveBeenCalledWith('remote-2', 'beta.local'),
     );
+    await new Promise((r) => setTimeout(r, 0));
+    await new Promise((r) => setTimeout(r, 0));
     const broadcastsBeforeLateResult = send.mock.calls.filter(
       ([c]) => c === 'connections:changed',
     ).length;

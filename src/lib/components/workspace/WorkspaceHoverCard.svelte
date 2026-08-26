@@ -248,10 +248,43 @@
     return workspace ? activeStreamsTracker.getStreamingAgentIdsForWorkspace(workspace.id) : [];
   });
 
-  // Attention is workspace-level (BE-owned); treat all member agents as unread.
-  let unreadAgentIds = $derived(
-    workspace?.attention === 'unread' ? (workspace.agentSummary?.agentIds ?? []) : [],
-  );
+  // Attention is workspace-level (BE-owned); mark top-level foreground members
+  // as unread. The daemon's richer `agentSummary.agents` form (PROTOCOL §5.1,
+  // v2.9 `parentAgentId`) is read structurally like hud-selectors' agentInfosOf
+  // — the FE type only declares `agentIds`. Loaded Redux sessions refine the
+  // gate: their derived `hasUnread` wins when present (see deriveAgentHasUnread
+  // for the gating semantics), and background/delegated sessions are
+  // suppressed; unhydrated members fall back to the summary's top-level filter.
+  let unreadAgentIds = $derived.by(() => {
+    if (workspace?.attention !== 'unread') return [];
+    const summary = workspace.agentSummary as
+      | { agents?: unknown; agentIds?: string[] }
+      | undefined;
+    const memberIds = summary?.agentIds ?? [];
+    const parentByAgentId = new Map<string, unknown>();
+    if (Array.isArray(summary?.agents)) {
+      for (const entry of summary.agents) {
+        if (entry && typeof entry === 'object' && typeof (entry as { id?: unknown }).id === 'string') {
+          parentByAgentId.set(
+            (entry as { id: string }).id,
+            (entry as { parentAgentId?: unknown }).parentAgentId,
+          );
+        }
+      }
+    }
+    const sessionsById = new Map($workspaceAgentSessions$.map((session) => [String(session.id), session]));
+    return memberIds.filter((agentId) => {
+      const session = sessionsById.get(String(agentId));
+      if (session) {
+        if (typeof session.hasUnread === 'boolean') return session.hasUnread;
+        if (session.isBackground === true || session.metadata?.isBackground === true) return false;
+        const createdBy = session.metadata?.createdByAgentId;
+        if (typeof createdBy === 'string' && createdBy.length > 0) return false;
+      }
+      const parentAgentId = parentByAgentId.get(agentId);
+      return !(typeof parentAgentId === 'string' && parentAgentId.length > 0);
+    });
+  });
 
   // Filter out streaming agents from unread list
   let unreadOnlyAgentIds = $derived(unreadAgentIds.filter((id) => !streamingAgentIds.includes(id)));

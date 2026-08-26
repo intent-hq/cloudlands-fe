@@ -14,6 +14,7 @@ import {
 } from '../workspace-import-slice';
 import type { WorkspaceImportState } from '../workspace-import-types';
 import { workspaceImportSaga } from './workspace-import-saga';
+import { m } from '$shared/paraglide/messages.js';
 
 const settle = async () => {
   for (let i = 0; i < 6; i++) await Promise.resolve();
@@ -106,6 +107,25 @@ describe('workspaceImportSaga', () => {
 
     expect(h.state().runStatus).toBe('failed');
     expect(h.state().runError).toBe(daemonError);
+    h.task.cancel();
+  });
+
+  it('maps a not-session-owner rejection to the localized message', async () => {
+    stubBridge();
+    mocks.invoke.mockResolvedValue({
+      success: false,
+      error: 'the import session belongs to another window',
+      code: 'not-session-owner',
+    });
+    const h = harness(
+      workspaceImportReducer(initialState, importStartRequested({ reuseLastFile: false })),
+    );
+
+    h.channel.put(importStartRequested({ reuseLastFile: false }));
+    await settle();
+
+    expect(h.state().runStatus).toBe('failed');
+    expect(h.state().runError).toBe(m.workspace_import_notSessionOwner_error());
     h.task.cancel();
   });
 

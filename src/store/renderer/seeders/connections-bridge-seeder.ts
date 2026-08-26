@@ -31,6 +31,11 @@ import type {
   SwitchConnectionParams,
   SwitchConnectionResult,
   ConnectionBootFallbackEvent,
+  KeychainSyncStateResult,
+  SetKeychainSyncEnabledParams,
+  PublishSelfResult,
+  RefreshSelfResult,
+  SelfPublishedStateResult,
 } from '$shared/types/connections';
 
 /** The always-present, non-forgettable local sidecar entry. */
@@ -110,3 +115,58 @@ registerMockIpcHandler(
     return { bootFallback: null };
   },
 );
+
+// iCloud-keychain sync (T4). The browser/mock environment has no macOS
+// keychain, so sync reads as unsupported; the pref round-trips in memory so
+// the toggle wiring stays testable.
+let keychainSyncEnabled = false;
+
+function keychainSyncState(): KeychainSyncStateResult {
+  return { supported: false, enabled: keychainSyncEnabled, status: null };
+}
+
+registerMockIpcHandler(
+  CONNECTION_CHANNELS.SYNC_GET_STATE,
+  async (): Promise<KeychainSyncStateResult> => keychainSyncState(),
+);
+
+registerMockIpcHandler(
+  CONNECTION_CHANNELS.SYNC_SET_ENABLED,
+  async (arg): Promise<KeychainSyncStateResult> => {
+    keychainSyncEnabled = (arg as SetKeychainSyncEnabledParams).enabled;
+    return keychainSyncState();
+  },
+);
+
+// Self-publish (publish THIS machine's backend to the synced registry). The
+// mock environment has no local daemon / keychain, so the state reads as
+// never-published and publish round-trips a synthetic self record in memory.
+let selfPublished = false;
+
+registerMockIpcHandler(
+  CONNECTION_CHANNELS.SELF_PUBLISHED_STATE,
+  async (): Promise<SelfPublishedStateResult> => {
+    return {
+      published: selfPublished,
+      suppressed: false,
+      selfConnectionId: selfPublished ? 'mock-self' : null,
+    };
+  },
+);
+
+registerMockIpcHandler(CONNECTION_CHANNELS.PUBLISH_SELF, async (): Promise<PublishSelfResult> => {
+  selfPublished = true;
+  const connection: ConnectionRecord = {
+    id: 'mock-self',
+    label: 'This machine',
+    host: '127.0.0.1',
+    port: 5181,
+    fingerprint: null,
+    isLocal: false,
+  };
+  return { connection };
+});
+
+registerMockIpcHandler(CONNECTION_CHANNELS.REFRESH_SELF, async (): Promise<RefreshSelfResult> => {
+  return { refreshed: selfPublished };
+});

@@ -25,6 +25,8 @@ files:
   - '!resources/sidecar/**'
   # Speech helper ships via mac.extraResources (speech-helper/), not asar.
   - '!resources/speech-helper/**'
+  # Keychain helper ships via mac.extraResources (keychain-helper/), not asar.
+  - '!resources/keychain-helper/**'
 
 # Bundle the intentd binary into the packaged app
 # Runtime path: process.resourcesPath/intentd/intentd (intentd.exe on Windows)
@@ -70,6 +72,14 @@ mac:
   gatekeeperAssess: false
   entitlements: build/entitlements.mac.plist
   entitlementsInherit: build/entitlements.mac.plist
+  # The keychain sync helper is signed by the afterPack hook (sign-sidecar.js)
+  # with RESTRICTED keychain entitlements (application-identifier +
+  # keychain-access-groups) and an embedded provisioning profile. Exclude it
+  # from electron-builder's own deep-sign pass, which would otherwise re-sign
+  # the bundle with the main app entitlements above and destroy that signature.
+  # The pre-signed bundle is sealed as-is into the outer app signature.
+  signIgnore:
+    - 'Resources/keychain-helper/intent-keychain-helper\.app'
   # Bundle the macOS speech transcription helper (built by
   # scripts/build-speech-helper.cjs; signed by the afterPack hook).
   # Runtime path: process.resourcesPath/speech-helper/intent-speech-helper
@@ -81,6 +91,13 @@ mac:
       to: app-icon.png
     - from: resources/speech-helper
       to: speech-helper
+    # Bundle the iCloud-keychain sync helper (built by
+    # scripts/build-keychain-helper.cjs; signed — with an embedded Developer ID
+    # provisioning profile when available — by the afterPack hook).
+    # Runtime path: process.resourcesPath/keychain-helper/
+    #   intent-keychain-helper.app/Contents/MacOS/intent-keychain-helper
+    - from: resources/keychain-helper
+      to: keychain-helper
   # Microphone usage string shown by the one-time macOS TCC prompt
   # (voice dictation; pairs with com.apple.security.device.audio-input)
   extendInfo:

@@ -7,6 +7,7 @@
 import { spawn } from 'child_process';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
+import { WAIT_ON_TIMEOUT_MS, buildWaitOnEnv, buildWaitOnTargets } from './dev-electron-lib.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const rootDir = dirname(__dirname);
@@ -20,29 +21,33 @@ const devPort = process.env.DEV_PORT || '5190';
 const devInstance = process.env.DEV_INSTANCE || '';
 const devInspectPort = process.env.DEV_INSPECT_PORT || '9229';
 
-console.log(
-  `Waiting for Vite dev server at http://127.0.0.1:${devPort} and main/preload builds...`,
-);
-
 // Wait for the dev server AND the main/preload build sentinels. The sentinels
 // are cleared by dev:base before the concurrent phase starts and written by
 // build:main:dev / build:preload:dev only after their compile completes, so a
 // stale dist/main/index.js left over from a previous (incremental) build can
 // never trigger a premature Electron launch.
-// Probe the TCP listener rather than HTTP `/`: the app intentionally has no
-// root page, so a healthy Vite server returns 404 there.
-// Use 127.0.0.1 to avoid IPv6 binding issues on Linux.
+// The renderer probe additionally requires the generated SvelteKit client
+// (node 0) to be fetchable over HTTP — a bare TCP listener is not enough: if
+// Electron loads the window before Vite can serve the generated client
+// modules, the renderer can stay stuck on a 500 error page that reloads do
+// not recover from (intent-hq/monorepo#3524). See dev-electron-lib.mjs.
+const waitOnTargets = buildWaitOnTargets(devPort, [
+  join(rootDir, 'dist/.dev-ready-main'),
+  join(rootDir, 'dist/.dev-ready-preload'),
+]);
+
+// Log the full target list so a stuck wait is self-diagnosing.
+console.log(`Waiting for (timeout ${WAIT_ON_TIMEOUT_MS}ms):\n  ${waitOnTargets.join('\n  ')}`);
+
 const isWindows = process.platform === 'win32';
 const waitOn = spawn(
   'npx',
-  [
-    'wait-on',
-    `tcp:127.0.0.1:${devPort}`,
-    join(rootDir, 'dist/.dev-ready-main'),
-    join(rootDir, 'dist/.dev-ready-preload'),
-  ],
+  ['wait-on', '--timeout', String(WAIT_ON_TIMEOUT_MS), ...waitOnTargets],
   {
     cwd: rootDir,
+    // NO_PROXY augmentation: keep the loopback http-get probe off any
+    // configured HTTP proxy (see buildWaitOnEnv).
+    env: buildWaitOnEnv(process.env),
     stdio: 'inherit',
     shell: isWindows,
   },

@@ -873,6 +873,23 @@ export const IPC_CHANNELS = {
     // consume-once. The renderer fetches this once on mount and surfaces a
     // non-blocking toast; the notice never becomes connections-slice state.
     GET_BOOT_FALLBACK: 'connections:get-boot-fallback',
+    // iCloud-keychain backend sync (T4): read the opt-in pref + availability
+    // status, and set the pref (enabling requests an immediate reconcile).
+    // SYNC_STATUS_CHANGED is a main→renderer push (also in EVENT_CHANNELS).
+    SYNC_GET_STATE: 'connections:sync-get-state',
+    SYNC_SET_ENABLED: 'connections:sync-set-enabled',
+    SYNC_STATUS_CHANGED: 'connections:sync-status-changed',
+    // Self-publish: upsert THIS machine's own backend into the connections
+    // store (keychain sync then pushes it to the user's other devices), and
+    // read whether a self entry exists / auto-publish is suppressed. Main
+    // queries `server.pairingInfo` itself over the local client, so the
+    // bearer token never crosses to the renderer.
+    PUBLISH_SELF: 'connections:publish-self',
+    SELF_PUBLISHED_STATE: 'connections:self-published-state',
+    // Refresh the published self entry after a local change to its published
+    // fields (token rotation, WSS port change). Strict no-op while
+    // unpublished or while the "do not auto-publish" marker is set.
+    REFRESH_SELF: 'connections:refresh-self',
   },
 
   // Workspace transfer relay (main-process, wizard steps 3–4). The renderer
@@ -1096,6 +1113,8 @@ export const EVENT_CHANNELS = [
   // A 401/403 WebSocket-upgrade rejection (bad token / WS API disabled)
   // surfaced as a distinct auth failure instead of a generic transport error.
   'connections:auth-rejected',
+  // Keychain-sync availability changed after a reconcile (T4 settings UI).
+  'connections:sync-status-changed',
   // Workspace transfer relay progress (main → renderer): byte/chunk counters
   // for the wizard's step-3 progress UI. Never carries archive bytes.
   'transfer:progress',

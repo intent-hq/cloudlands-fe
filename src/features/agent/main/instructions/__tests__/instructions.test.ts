@@ -130,6 +130,19 @@ describe('Agent Instructions', () => {
       expect(common).toContain('Never use `ws.agent.create` for tasks that already have IDs');
     });
 
+    it('teaches scoped and approval-gated sibling workspace handoffs', () => {
+      expect(common).toContain(
+        'ws.workspace.proposeSibling({ title, initialPrompt, specialist?, baseRef? })',
+      );
+      expect(common).toContain('clearly separate from the current request');
+      expect(common).toContain('Make the initialPrompt self-contained');
+      expect(common).toContain('The current repository is inherited and locked');
+      expect(common).toContain('The user must approve it');
+      expect(common).toContain('Never say that the workspace exists before Apply succeeds');
+      expect(common).toContain('delegated or background agent');
+      expect(common).toContain('ws.agent.reportToParent');
+    });
+
     it('forces breakdown agents to use task blocks (not checkbox lists) and to materialize spec tasks', () => {
       expect(taskBreakdown).toContain('Do not use markdown checkbox lists');
       expect(taskBreakdown).toContain('task block');

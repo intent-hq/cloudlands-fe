@@ -48,6 +48,9 @@ export interface PrMonitorSnapshot {
     unresolved: number;
     resolutionRequired?: boolean | null;
   };
+  /** Additive: present (true) when the host reports the PR queued to merge;
+   * absent when not queued or unknown. */
+  isInMergeQueue?: boolean;
   rulesKnown: boolean;
 }
 

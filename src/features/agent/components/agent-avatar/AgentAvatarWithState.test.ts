@@ -293,7 +293,8 @@ describe('AgentAvatarWithState', () => {
   it('keeps visible product consumers off zero-clear-space canonical numeric sizes', () => {
     expect(avatarSource).toContain('.agent-avatar--legacy {\n    padding: 1px;');
     expect(avatarSource).not.toContain('padding: 0;');
-    expect(settingsSidebarSource).not.toContain('<AgentAvatar');
+    expect(settingsSidebarSource).toContain('<AgentAvatar');
+    expect(settingsSidebarSource).toContain('variant="compact"');
     expect(settingsSidebarSource).not.toMatch(/<AgentAvatar[^>]*\bsize=/s);
     for (const { path, tag } of productAvatarTags()) {
       expect(tag, path).not.toMatch(/\bsize=\{(?:16|20|24|40)\}/);

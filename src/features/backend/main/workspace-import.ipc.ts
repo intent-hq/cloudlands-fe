@@ -10,7 +10,7 @@
  */
 
 import { promises as fs } from 'node:fs';
-import { BrowserWindow, dialog, ipcMain } from 'electron';
+import { BrowserWindow, dialog, ipcMain, webContents } from 'electron';
 import { Logger } from '$shared/logger';
 import { IPC_CHANNELS } from '$shared/ipc-registry';
 import type {
@@ -79,12 +79,20 @@ async function openFile(filePath: string): Promise<ImportFileSource> {
   };
 }
 
+/** A session owner is gone once its WebContents no longer exists (window
+ * closed) — its leftover session is then released for other windows. */
+function isOwnerGone(ownerId: number): boolean {
+  const contents = webContents.fromId(ownerId);
+  return !contents || contents.isDestroyed();
+}
+
 function getRelay(): WorkspaceImportRelay {
   if (!relay) {
     relay = createWorkspaceImportRelay({
       showOpenDialog,
       openFile,
       broadcastProgress,
+      isOwnerGone,
       logger: {
         info: (msg, meta) => logger.info(msg, meta),
         warn: (msg, meta) => logger.warn(msg, meta),
@@ -108,10 +116,10 @@ export function registerWorkspaceImportHandlers(): void {
     } catch (error) {
       return { success: false, error: error instanceof Error ? error.message : String(error) };
     }
-    return getRelay().start(params ?? {}, client);
+    return getRelay().start(params ?? {}, client, event.sender.id);
   });
 
-  ipcMain.handle(TRANSFER.IMPORT_CANCEL, async () => {
-    return getRelay().cancel();
+  ipcMain.handle(TRANSFER.IMPORT_CANCEL, async (event) => {
+    return getRelay().cancel(event.sender.id);
   });
 }

@@ -51,7 +51,9 @@
     faPen,
     faStop,
     faTrash,
+    faUserTie,
   } from '@fortawesome/free-solid-svg-icons';
+  import { selectSpecialistName } from '$store/renderer/slices/specialists/specialists-selectors';
   import { store as appStore } from '$store/renderer/store';
   import { m } from '$shared/paraglide/messages.js';
   import { invoke } from '$lib/electron-bridge';
@@ -415,14 +417,30 @@
       },
     });
 
-    // Read-only harness version stamp (PROTOCOL §5.5). Selecting the item
-    // opens the harness-features modal (monorepo#2459) — legacy sessions
-    // without a harnessFeatures snapshot open it too (every catalog feature
-    // renders OFF); sessions from daemons that predate the field omit the
-    // item entirely.
+    // Read-only info stamps. Specialist (monorepo#3498): resolved display
+    // name when the id is known, raw id fallback otherwise; omitted for
+    // agents without a specialist. Harness version (PROTOCOL §5.5): selecting
+    // the item opens the harness-features modal (monorepo#2459) — legacy
+    // sessions without a harnessFeatures snapshot open it too (every catalog
+    // feature renders OFF); sessions from daemons that predate the field omit
+    // the item entirely.
+    const specialistId = specialist;
     const harnessVersion = $agent$?.harnessVersion;
-    if (harnessVersion) {
+    if (specialistId || harnessVersion) {
       items.push({ type: 'separator' });
+    }
+    if (specialistId) {
+      const specialistName =
+        selectSpecialistName.select(appStore.state, specialistId) ?? specialistId;
+      items.push({
+        id: 'specialist',
+        label: m.chat_agentCard_menu_specialist_label({ name: specialistName }),
+        icon: faUserTie,
+        disabled: true,
+        onClick: () => {},
+      });
+    }
+    if (harnessVersion) {
       items.push({
         id: 'harness-version',
         label: m.chat_agentCard_menu_harnessVersion_label({ version: harnessVersion }),

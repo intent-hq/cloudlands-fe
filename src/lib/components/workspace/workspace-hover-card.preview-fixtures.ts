@@ -121,11 +121,13 @@ export const workspaceHoverCardStateMatrix: readonly StateMatrixEntry[] = [
   },
   {
     family: 'Agents',
-    states: 'none; unloaded; active statuses; three; overflow; unread; streaming dedupe',
+    states:
+      'none; unloaded; active statuses; three; overflow; unread; streaming dedupe; delegated/background suppression',
     expected:
-      'Only active agents get rows, capped at three plus overflow; unloaded members stay hidden; unread stack excludes live-streaming IDs.',
+      'Only active agents get rows, capped at three plus overflow; unloaded members stay hidden; unread stack excludes live-streaming IDs and keeps only top-level foreground members.',
     coverage: 'agents preview; component streaming/unread test',
-    conflicts: 'The same live-streaming agent must not also appear as unread.',
+    conflicts:
+      'The same live-streaming agent must not also appear as unread; delegated children and background agents never show the unread dot.',
   },
   {
     family: 'Pull requests',
@@ -610,6 +612,28 @@ const scenes: Record<string, WorkspaceHoverCardPreviewProps> = {
           agentSummary: { agentIds: ['unread-one', 'unread-two'] },
         }),
       }),
+      scenario(
+        'agents-unread-top-level',
+        'Unread top-level only',
+        'Delegated children stay out of the unread stack.',
+        {
+          workspace: workspace('agents-unread-top-level', {
+            attention: 'unread',
+            agentSummary: {
+              agentIds: ['unread-root', 'unread-delegated'],
+              agents: [
+                { id: 'unread-root', name: 'Coordinator', status: 'idle' },
+                {
+                  id: 'unread-delegated',
+                  name: 'Implementor',
+                  status: 'idle',
+                  parentAgentId: 'unread-root',
+                },
+              ],
+            } as Workspace['agentSummary'],
+          }),
+        },
+      ),
     ],
   },
   'pull-requests': {

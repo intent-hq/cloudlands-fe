@@ -480,6 +480,67 @@ describe('WorkspaceHoverCard', () => {
     ).toBe(true);
   });
 
+  it('marks only top-level members as unread when the summary carries delegation parents', async () => {
+    const { container } = await renderHoverCard({
+      attention: 'unread',
+      agentSummary: {
+        agentIds: ['agent-root', 'agent-child'],
+        agents: [
+          { id: 'agent-root', name: 'Coordinator', status: 'idle' },
+          { id: 'agent-child', name: 'Implementor', status: 'idle', parentAgentId: 'agent-root' },
+        ],
+      } as Workspace['agentSummary'],
+    });
+
+    const stack = container.querySelector('[data-workspace-hover-card-agent-stack]');
+    const items = stack?.querySelectorAll('[data-agent-avatar-stack-item]') ?? [];
+    expect(items).toHaveLength(1);
+    expect(items[0]?.getAttribute('data-agent-avatar-stack-agent-id')).toBe('agent-root');
+    expect(
+      items[0]
+        ?.querySelector('[data-agent-avatar-with-state]')
+        ?.getAttribute('data-avatar-state'),
+    ).toBe('unread');
+  });
+
+  it('prefers loaded session unread state and suppresses background and delegated sessions', async () => {
+    mocks.agentSessionsByWorkspace['ws-1'] = [
+      {
+        id: 'agent-seen-root',
+        name: 'Seen Root',
+        status: 'idle',
+        hasUnread: false,
+        messages: [],
+      } as AgentSession,
+      {
+        id: 'agent-background',
+        name: 'Background Agent',
+        status: 'idle',
+        isBackground: true,
+        messages: [],
+      } as AgentSession,
+      {
+        id: 'agent-delegated',
+        name: 'Delegated Agent',
+        status: 'idle',
+        metadata: { createdByAgentId: 'agent-seen-root' },
+        messages: [],
+      } as AgentSession,
+    ];
+
+    const { container } = await renderHoverCard({
+      attention: 'unread',
+      agentSummary: {
+        agentIds: ['agent-seen-root', 'agent-background', 'agent-delegated', 'agent-unloaded'],
+      },
+    });
+
+    const stack = container.querySelector('[data-workspace-hover-card-agent-stack]');
+    const items = stack?.querySelectorAll('[data-agent-avatar-stack-item]') ?? [];
+    expect(items).toHaveLength(1);
+    expect(items[0]?.getAttribute('data-agent-avatar-stack-agent-id')).toBe('agent-unloaded');
+  });
+
   it('does not repeat a streaming agent in the unread stack', async () => {
     mocks.streamingAgentIds.push('agent-streaming');
     const { container } = await renderHoverCard({

@@ -2,16 +2,14 @@
   /**
    * ProviderPathConfig
    *
-   * A dropdown panel for configuring a provider's CLI executable path. It can
-   * render its default folder trigger or be controlled by a parent menu.
+   * A controlled dropdown panel for configuring a provider's CLI executable path.
    */
   import { appClient } from '$lib/client';
-  import { faFolder, faCheck } from '@fortawesome/free-solid-svg-icons';
+  import { faCheck } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import { toast } from 'svelte-sonner';
   import { m } from '$shared/paraglide/messages.js';
   import * as Menu from '$lib/components/ui/menu';
-  import { Button } from '$lib/components/ui/button';
   import PathSettingField from './PathSettingField.svelte';
   import { createLogger } from '$lib/utils/client-logger';
 
@@ -56,10 +54,8 @@
     isInstalled?: boolean;
     /** Callback when path changes */
     onPathChange?: (path: string) => void;
-    /** Whether the path dropdown is open */
-    open?: boolean;
-    /** Whether to render the default folder trigger */
-    showTrigger?: boolean;
+    /** Controlled path dropdown state */
+    open: boolean;
   }
 
   let {
@@ -72,8 +68,7 @@
     runtimeResolvedPath,
     isInstalled = false,
     onPathChange,
-    open = $bindable(false),
-    showTrigger = true,
+    open = $bindable(),
   }: Props = $props();
 
   async function savePath(path: string) {
@@ -111,10 +106,9 @@
   // renders the modal.
   let pickerOpen = $state(false);
 
-  // When the parent controls this menu without rendering the trigger
-  // (showTrigger=false), bits-ui's floating layer has no anchor element and
-  // positions the content off-screen. Render an invisible anchor in the
-  // trigger's place and hand it to Menu.Content as customAnchor.
+  // This panel is opened from the provider overflow menu, so bits-ui has no
+  // trigger element to position against. An invisible custom anchor keeps the
+  // floating content beside the overflow trigger instead of off-screen.
   let anchorEl = $state<HTMLElement | null>(null);
 </script>
 
@@ -129,30 +123,12 @@
     }
   }
 >
-  {#if showTrigger}
-    <Menu.Trigger>
-      {#snippet child({ props })}
-        <span class="contents" {...props}>
-          <Button
-            variant="ghost-light"
-            size="icon-xs"
-            tooltip={m.settings_providerPath_configureTitle({ name: providerName })}
-            title={m.settings_providerPath_configureTitle({ name: providerName })}
-            aria-label={m.settings_providerPath_configureTitle({ name: providerName })}
-          >
-            <Fa icon={faFolder} size={11} />
-          </Button>
-        </span>
-      {/snippet}
-    </Menu.Trigger>
-  {:else}
-    <span bind:this={anchorEl} aria-hidden="true"></span>
-  {/if}
+  <span bind:this={anchorEl} aria-hidden="true"></span>
   <Menu.Content
     align="end"
     side="bottom"
     portal={true}
-    customAnchor={showTrigger ? null : anchorEl}
+    customAnchor={anchorEl}
     interactOutsideBehavior={pickerOpen ? 'ignore' : 'close'}
     escapeKeydownBehavior={pickerOpen ? 'ignore' : 'close'}
     onFocusOutside={(event) => {

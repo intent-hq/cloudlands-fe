@@ -67,8 +67,8 @@
   </div>
 {:else}
   <div class="space-y-6">
-    <GitHubAuthConnection skipInitialize />
-    <LinearAuthConnection skipInitialize />
-    <SentryAuthConnection skipInitialize />
+    <GitHubAuthConnection />
+    <LinearAuthConnection />
+    <SentryAuthConnection />
   </div>
 {/if}

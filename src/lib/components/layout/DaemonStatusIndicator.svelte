@@ -130,6 +130,7 @@
     selectConnectionCertMismatch,
     selectActiveProtocolMismatch,
     selectProtocolMismatchModal,
+    selectKeychainSyncState,
   } from '$store/renderer/slices/connections/connections-selectors';
   import {
     certMismatchCleared,
@@ -139,8 +140,10 @@
     openConnectionRequested,
     switchConnectionRequested,
     forgetConnectionRequested,
+    loadKeychainSyncStateRequested,
   } from '$store/renderer/slices/connections/connections-slice';
   import { LOCAL_CONNECTION_ID } from '$shared/types/connections';
+  import type { ConnectionRecord } from '$shared/types/connections';
   import { store as appStore } from '$store/renderer/store';
   import type { DaemonHealth } from '$store/renderer/slices/daemon-health/daemon-health-types';
 
@@ -156,11 +159,14 @@
   const certMismatch$ = selectConnectionCertMismatch();
   const activeProtocolMismatch$ = selectActiveProtocolMismatch();
   const protocolMismatchModal$ = selectProtocolMismatchModal();
+  const keychainSyncState$ = selectKeychainSyncState();
 
   let dropdownOpen = $state(false);
   let liveUptimeSeconds = $state<number | undefined>(undefined);
   let stopUnslothDialogOpen = $state(false);
   let connectModalOpen = $state(false);
+  let forgetDialogOpen = $state(false);
+  let forgetDialogTarget = $state<{ id: string; label: string } | null>(null);
 
   // Color mapping for health states
   const healthColors: Record<DaemonHealth, string> = {
@@ -382,6 +388,42 @@
       // Refresh + any error surface via the connections service; no-op here.
     }
   }
+
+  // --- Forget confirmation dialog -----------------------------------------
+
+  /**
+   * Forget is destructive (and, with iCloud sync on, propagates to every
+   * synced device), so it confirms first. Opening the dialog also refreshes
+   * the keychain-sync state so the synced-devices sentence gates on the
+   * current supported+enabled values.
+   */
+  function requestForgetConnection(conn: ConnectionRecord) {
+    dropdownOpen = false;
+    forgetDialogTarget = { id: conn.id, label: formatConnectionLabel(conn) };
+    forgetDialogOpen = true;
+    const action = loadKeychainSyncStateRequested();
+    appStore.dispatch(action);
+    action.promise.catch(() => {
+      // Unloadable sync state → the dialog shows the plain confirmation.
+    });
+  }
+
+  function confirmForgetConnection() {
+    if (forgetDialogTarget) void handleForgetConnection(forgetDialogTarget.id);
+  }
+
+  // Base sentence naming the connection, plus the synced-devices notice only
+  // when keychain sync is supported AND enabled on this machine.
+  const forgetDialogDescription = $derived.by(() => {
+    if (!forgetDialogTarget) return '';
+    const base = m.layout_daemonStatus_forgetConfirm_description({
+      name: forgetDialogTarget.label,
+    });
+    const sync = $keychainSyncState$;
+    return sync?.supported && sync.enabled
+      ? `${base} ${m.layout_daemonStatus_forgetConfirmSynced_description()}`
+      : base;
+  });
 
   // --- Cert-mismatch modal actions ---------------------------------------
 
@@ -850,7 +892,7 @@
                 {#if !conn.isLocal}
                   <Menu.Item
                     class="cursor-pointer text-xs text-error-foreground data-[highlighted]:text-error-foreground"
-                    onSelect={() => handleForgetConnection(conn.id)}
+                    onSelect={() => requestForgetConnection(conn)}
                   >
                     {m.layout_daemonStatus_forget_action()}
                   </Menu.Item>
@@ -873,6 +915,18 @@
     confirmText={m.layout_daemonStatus_stopUnsloth_confirm_label()}
     variant="destructive"
     onConfirm={confirmStopUnsloth}
+  />
+{/if}
+
+<!-- Forget-connection confirmation (same canonical body portal). -->
+{#if forgetDialogOpen && forgetDialogTarget}
+  <BulkActionConfirmDialog
+    bind:open={forgetDialogOpen}
+    title={m.layout_daemonStatus_forgetConfirm_title()}
+    description={forgetDialogDescription}
+    confirmText={m.layout_daemonStatus_forgetConfirm_confirm_label()}
+    variant="destructive"
+    onConfirm={confirmForgetConnection}
   />
 {/if}
 

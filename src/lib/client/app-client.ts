@@ -1340,7 +1340,16 @@ export interface LineAttributionClient {
 }
 
 export interface NotesClient {
-  list(workspaceId: string): Promise<Note[]>;
+  /**
+   * Notes of one workspace (`note.list`, §5.2). `options.projection: "slim"`
+   * requests the content-free projection — rows carry `content: ""` plus
+   * `contentPreview`/`contentLength` — for list surfaces that do not render
+   * full bodies. Omitted (or `"full"`) keeps today's full rows; the param only
+   * rides the wire when `"slim"` is requested so older daemons see an
+   * unchanged request, and the live client falls back to a full list when a
+   * daemon rejects the unknown param.
+   */
+  list(workspaceId: string, options?: { projection?: 'full' | 'slim' }): Promise<Note[]>;
   /**
    * Fetch one note. Optional `workspaceId` pins the read to the note's owning
    * workspace — note ids are not globally unique (every workspace has a `spec`

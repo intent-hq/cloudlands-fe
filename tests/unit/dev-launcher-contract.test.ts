@@ -18,6 +18,7 @@ describe('dev launcher macOS bundle safety', () => {
 
 describe('dev Electron child lifecycle', () => {
   const source = readFileSync(join(process.cwd(), 'scripts/dev-electron.js'), 'utf-8');
+  const libSource = readFileSync(join(process.cwd(), 'scripts/dev-electron-lib.mjs'), 'utf-8');
   const scripts = JSON.parse(readFileSync(join(process.cwd(), 'package.json'), 'utf-8')).scripts;
 
   it('reports native signal termination as a failed dev process', () => {
@@ -28,8 +29,13 @@ describe('dev Electron child lifecycle', () => {
   });
 
   it('probes the renderer port without requiring a root HTTP route', () => {
-    expect(source).toContain('`tcp:127.0.0.1:${devPort}`');
-    expect(source).not.toContain('`http://127.0.0.1:${devPort}`');
+    // The wait-on target list is built by buildWaitOnTargets (see
+    // scripts/dev-electron-lib.test.ts for its full contract): a TCP probe of
+    // the listener — never HTTP `/`, which 404s by design — plus an HTTP probe
+    // of the generated SvelteKit client (intent-hq/monorepo#3524).
+    expect(source).toContain('buildWaitOnTargets(devPort,');
+    expect(libSource).toContain('`tcp:127.0.0.1:${devPort}`');
+    expect(libSource).not.toContain('`http://127.0.0.1:${devPort}`');
   });
 
   it('stops the renderer when either Electron dev process fails', () => {

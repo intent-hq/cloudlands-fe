@@ -185,11 +185,12 @@ describe('connections-store', () => {
 
   it('serializes concurrent adds without losing writes', async () => {
     const store = await import('../connections-store');
-    // Distinct host:port targets — same-target adds intentionally upsert.
+    // Distinct backends (distinct fingerprints AND targets) — same-backend
+    // adds intentionally upsert.
     await Promise.all([
-      store.add({ ...sampleConn, port: 8443, label: 'A' }),
-      store.add({ ...sampleConn, port: 8444, label: 'B' }),
-      store.add({ ...sampleConn, port: 8445, label: 'C' }),
+      store.add({ ...sampleConn, port: 8443, fingerprint: 'FP:A', label: 'A' }),
+      store.add({ ...sampleConn, port: 8444, fingerprint: 'FP:B', label: 'B' }),
+      store.add({ ...sampleConn, port: 8445, fingerprint: 'FP:C', label: 'C' }),
     ]);
     const labels = (await store.list())
       .filter((c) => !c.isLocal)
@@ -222,7 +223,11 @@ describe('connections-store', () => {
     // No duplicate: local + the single upserted remote.
     const list = await store.list();
     expect(list).toHaveLength(2);
-    expect(list[1]).toMatchObject({ id: original.id, label: 'Renamed Mac', fingerprint: 'DD:EE:FF' });
+    expect(list[1]).toMatchObject({
+      id: original.id,
+      label: 'Renamed Mac',
+      fingerprint: 'DD:EE:FF',
+    });
 
     // The stored token was replaced.
     expect(await store.getDecryptedToken(original.id)).toBe('fresh-token');
@@ -235,9 +240,31 @@ describe('connections-store', () => {
       path.join(tmpDir, 'backend-connections.json'),
       JSON.stringify({
         connections: [
-          { id: 'dup-1', label: 'First', host: '192.168.1.10', port: 8443, fingerprint: 'AA', encToken: { encrypted: false, value: 'tok-1' } },
-          { id: 'dup-2', label: 'Second', host: '192.168.1.10', port: 8443, fingerprint: 'BB', hostname: 'studio.local', encToken: { encrypted: false, value: 'tok-2' } },
-          { id: 'other', label: 'Other', host: '192.168.1.11', port: 8443, fingerprint: 'CC', encToken: { encrypted: false, value: 'tok-3' } },
+          {
+            id: 'dup-1',
+            label: 'First',
+            host: '192.168.1.10',
+            port: 8443,
+            fingerprint: 'AA',
+            encToken: { encrypted: false, value: 'tok-1' },
+          },
+          {
+            id: 'dup-2',
+            label: 'Second',
+            host: '192.168.1.10',
+            port: 8443,
+            fingerprint: 'BB',
+            hostname: 'studio.local',
+            encToken: { encrypted: false, value: 'tok-2' },
+          },
+          {
+            id: 'other',
+            label: 'Other',
+            host: '192.168.1.11',
+            port: 8443,
+            fingerprint: 'CC',
+            encToken: { encrypted: false, value: 'tok-3' },
+          },
         ],
         activeId: 'local',
       }),
@@ -263,8 +290,22 @@ describe('connections-store', () => {
       path.join(tmpDir, 'backend-connections.json'),
       JSON.stringify({
         connections: [
-          { id: 'dup-1', label: 'First', host: '192.168.1.10', port: 8443, fingerprint: 'AA', encToken: { encrypted: false, value: 'tok-1' } },
-          { id: 'dup-2', label: 'Second', host: '192.168.1.10', port: 8443, fingerprint: 'BB', encToken: { encrypted: false, value: 'tok-2' } },
+          {
+            id: 'dup-1',
+            label: 'First',
+            host: '192.168.1.10',
+            port: 8443,
+            fingerprint: 'AA',
+            encToken: { encrypted: false, value: 'tok-1' },
+          },
+          {
+            id: 'dup-2',
+            label: 'Second',
+            host: '192.168.1.10',
+            port: 8443,
+            fingerprint: 'BB',
+            encToken: { encrypted: false, value: 'tok-2' },
+          },
         ],
         activeId: 'dup-2',
       }),
@@ -285,15 +326,158 @@ describe('connections-store', () => {
     expect(await store.getDecryptedToken('dup-2')).toBe('secret-token');
   });
 
-  it('adding a different host:port still appends a new record', async () => {
+  it('adding a different backend (host:port and fingerprint) still appends a new record', async () => {
     const store = await import('../connections-store');
     const first = await store.add(sampleConn);
-    const samePortOtherHost = await store.add({ ...sampleConn, host: '192.168.1.11' });
-    const sameHostOtherPort = await store.add({ ...sampleConn, port: 9443 });
+    const samePortOtherHost = await store.add({
+      ...sampleConn,
+      host: '192.168.1.11',
+      fingerprint: 'FP:OTHER-HOST',
+    });
+    const sameHostOtherPort = await store.add({
+      ...sampleConn,
+      port: 9443,
+      fingerprint: 'FP:OTHER-PORT',
+    });
 
     expect(samePortOtherHost.id).not.toBe(first.id);
     expect(sameHostOtherPort.id).not.toBe(first.id);
     expect((await store.list()).filter((c) => !c.isLocal)).toHaveLength(3);
+  });
+
+  it('re-adding the same fingerprint under a NEW host:port upserts in place (no duplicate)', async () => {
+    const store = await import('../connections-store');
+    const original = await store.add(sampleConn);
+    await store.setHostname(original.id, 'studio.local');
+    await store.setHosts(original.id, ['10.0.0.5']);
+
+    // Same machine (same cert fingerprint), new DHCP address.
+    const updated = await store.add({
+      label: 'Studio Mac',
+      host: '192.168.1.99',
+      port: 9443,
+      fingerprint: 'aa:bb:cc', // case-insensitive match
+      token: 'fresh-token',
+    });
+
+    // Same record: id + captured hostname preserved, address refreshed.
+    expect(updated.id).toBe(original.id);
+    expect(updated).toMatchObject({
+      host: '192.168.1.99',
+      port: 9443,
+      hostname: 'studio.local',
+    });
+
+    const remotes = (await store.list()).filter((c) => !c.isLocal);
+    expect(remotes).toHaveLength(1);
+    expect(remotes[0]).toMatchObject({ id: original.id, host: '192.168.1.99', port: 9443 });
+    expect(await store.getDecryptedToken(original.id)).toBe('fresh-token');
+  });
+
+  it('fingerprint-less legacy records still dedupe by host:port only', async () => {
+    // Seed two records with EMPTY fingerprints at different targets — blank
+    // fingerprints must never match each other.
+    await fs.writeFile(
+      path.join(tmpDir, 'backend-connections.json'),
+      JSON.stringify({
+        connections: [
+          {
+            id: 'legacy-1',
+            label: 'Legacy A',
+            host: '192.168.1.10',
+            port: 8443,
+            fingerprint: '',
+            encToken: { encrypted: false, value: 'tok-1' },
+          },
+          {
+            id: 'legacy-2',
+            label: 'Legacy B',
+            host: '192.168.1.11',
+            port: 8443,
+            fingerprint: '  ',
+            encToken: { encrypted: false, value: 'tok-2' },
+          },
+        ],
+        activeId: 'local',
+      }),
+      'utf8',
+    );
+    const store = await import('../connections-store');
+
+    // A fingerprint-less add at legacy-1's target upserts it; legacy-2 stays.
+    const updated = await store.add({
+      label: 'Repaired A',
+      host: '192.168.1.10',
+      port: 8443,
+      fingerprint: '',
+      token: 'tok-new',
+    });
+    expect(updated.id).toBe('legacy-1');
+    expect((await store.list()).filter((c) => !c.isLocal)).toHaveLength(2);
+  });
+
+  it('different fingerprints at the SAME host:port are different machines (no upsert, no tombstone match)', async () => {
+    const store = await import('../connections-store');
+    // A machine at this address was forgotten with an OLD certificate…
+    const old = await store.add(sampleConn); // fingerprint AA:BB:CC
+    await store.forget(old.id);
+
+    // …and a NEW backend (fresh cert) reuses the address. It must be a brand
+    // new record, and the old cert's tombstone must not delete it.
+    const fresh = await store.add({ ...sampleConn, fingerprint: 'DD:EE:FF', token: 'tok-new' });
+    expect(fresh.id).not.toBe(old.id);
+    expect((await store.list()).filter((c) => !c.isLocal)).toHaveLength(1);
+
+    // The old-cert tombstone survives (it names a different machine)…
+    await store.__drainWriteChainForTesting();
+    const file = path.join(tmpDir, 'backend-connections.json');
+    const parsed = JSON.parse(await fs.readFile(file, 'utf8'));
+    expect(parsed.tombstones).toHaveLength(1);
+    expect(parsed.tombstones[0].fingerprint).toBe('AA:BB:CC');
+
+    // …and applying it as a remote tombstone must NOT remove the new backend.
+    const changed = await store.applyRemoteSyncRecord({
+      label: sampleConn.label,
+      host: sampleConn.host,
+      hosts: [sampleConn.host],
+      port: sampleConn.port,
+      fingerprint: 'AA:BB:CC',
+      hostname: null,
+      detectHosts: true,
+      token: '',
+      updatedAt: Date.now() + 60_000,
+      deleted: true,
+      deletedAt: Date.now() + 60_000,
+    });
+    expect(changed).toBe(false);
+    expect((await store.list()).filter((c) => !c.isLocal)).toHaveLength(1);
+  });
+
+  it('add stamps past a fingerprint-matching tombstone from a skewed (future) clock', async () => {
+    const store = await import('../connections-store');
+    const rec = await store.add(sampleConn);
+    await store.forget(rec.id);
+    await store.__drainWriteChainForTesting();
+
+    // Simulate the tombstone having been written by a machine whose clock is
+    // ahead: bump its LWW clock into this machine's future.
+    const file = path.join(tmpDir, 'backend-connections.json');
+    const parsed = JSON.parse(await fs.readFile(file, 'utf8'));
+    const futureClock = Date.now() + 60_000;
+    parsed.tombstones[0].updatedAt = futureClock;
+    await fs.writeFile(file, JSON.stringify(parsed), 'utf8');
+    vi.resetModules();
+    mockElectron();
+
+    // An explicit re-publish must outrank the tombstone it supersedes, or the
+    // keychain copy of the tombstone re-deletes the record on next reconcile.
+    const store2 = await import('../connections-store');
+    await store2.add({ ...sampleConn, token: 'tok-new' });
+    await store2.__drainWriteChainForTesting();
+    const after = JSON.parse(await fs.readFile(file, 'utf8'));
+    expect(after.tombstones).toHaveLength(0);
+    expect(after.connections).toHaveLength(1);
+    expect(after.connections[0].updatedAt).toBeGreaterThan(futureClock);
   });
 
   it('records default to a null hostname until one is captured', async () => {
@@ -402,5 +586,418 @@ describe('connections-store', () => {
     const store = await import('../connections-store');
     expect(await store.getDetectHosts(store.LOCAL_CONNECTION_ID)).toBe(false);
     expect(await store.getDetectHosts('does-not-exist')).toBe(false);
+  });
+});
+
+describe('connections-store keychain sync surface', () => {
+  it('add stamps updatedAt (persisted to disk) and setHostname/setHosts bump it', async () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(1_700_000_000_000);
+      const store = await import('../connections-store');
+      const rec = await store.add(sampleConn);
+      await store.__drainWriteChainForTesting();
+
+      const file = path.join(tmpDir, 'backend-connections.json');
+      let parsed = JSON.parse(await fs.readFile(file, 'utf8'));
+      expect(parsed.connections[0].updatedAt).toBe(1_700_000_000_000);
+
+      vi.setSystemTime(1_700_000_001_000);
+      await store.setHostname(rec.id, 'studio.local');
+      await store.__drainWriteChainForTesting();
+      parsed = JSON.parse(await fs.readFile(file, 'utf8'));
+      expect(parsed.connections[0].updatedAt).toBe(1_700_000_001_000);
+
+      vi.setSystemTime(1_700_000_002_000);
+      await store.setHosts(rec.id, ['10.0.0.5']);
+      await store.__drainWriteChainForTesting();
+      parsed = JSON.parse(await fs.readFile(file, 'utf8'));
+      expect(parsed.connections[0].updatedAt).toBe(1_700_000_002_000);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('setHostname/setHosts with unchanged values do not bump the LWW clock or notify', async () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(1_700_000_000_000);
+      const store = await import('../connections-store');
+      const rec = await store.add(sampleConn);
+      await store.setHostname(rec.id, 'studio.local');
+      await store.setHosts(rec.id, ['10.0.0.5']);
+      await store.__drainWriteChainForTesting();
+
+      const listener = vi.fn();
+      const unsubscribe = store.onConnectionsMutated(listener);
+
+      // The routine every-connect refresh with identical values must not
+      // re-stamp updatedAt — that would let this stale record win over a
+      // newer remote edit in keychain sync.
+      vi.setSystemTime(1_700_000_005_000);
+      await store.setHostname(rec.id, 'studio.local');
+      await store.setHosts(rec.id, [' 10.0.0.5 ']); // dedupes to the same list
+      await store.__drainWriteChainForTesting();
+
+      const file = path.join(tmpDir, 'backend-connections.json');
+      const parsed = JSON.parse(await fs.readFile(file, 'utf8'));
+      expect(parsed.connections[0].updatedAt).toBe(1_700_000_000_000);
+      expect(listener).not.toHaveBeenCalled();
+      unsubscribe();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('forget writes a tombstone (token-free) and re-adding the target clears it', async () => {
+    const store = await import('../connections-store');
+    const rec = await store.add(sampleConn);
+    await store.setHostname(rec.id, 'studio.local');
+    await store.forget(rec.id);
+    await store.__drainWriteChainForTesting();
+
+    const file = path.join(tmpDir, 'backend-connections.json');
+    const parsed = JSON.parse(await fs.readFile(file, 'utf8'));
+    expect(parsed.connections).toHaveLength(0);
+    expect(parsed.tombstones).toHaveLength(1);
+    expect(parsed.tombstones[0]).toMatchObject({
+      host: '192.168.1.10',
+      port: 8443,
+      hostname: 'studio.local',
+    });
+    expect(JSON.stringify(parsed.tombstones)).not.toContain('secret-token');
+    expect(typeof parsed.tombstones[0].updatedAt).toBe('number');
+    expect(typeof parsed.tombstones[0].deletedAt).toBe('number');
+
+    // Re-adding the same target clears the tombstone.
+    await store.add(sampleConn);
+    await store.__drainWriteChainForTesting();
+    const after = JSON.parse(await fs.readFile(file, 'utf8'));
+    expect(after.tombstones).toHaveLength(0);
+    expect(after.connections).toHaveLength(1);
+  });
+
+  it('add dedupes host case-insensitively (no split-brain with accountKeyFor)', async () => {
+    const store = await import('../connections-store');
+    const first = await store.add({ ...sampleConn, host: 'Studio.LOCAL' });
+    const second = await store.add({ ...sampleConn, host: 'studio.local', label: 'Re-added' });
+    expect(second.id).toBe(first.id);
+    expect((await store.list()).filter((c) => !c.isLocal)).toHaveLength(1);
+  });
+
+  it('listSyncRecords lists live records (decrypted token) and tombstones, never the local entry', async () => {
+    const store = await import('../connections-store');
+    const rec = await store.add(sampleConn);
+    const other = await store.add({
+      ...sampleConn,
+      port: 9443,
+      fingerprint: 'FP:GONE',
+      label: 'Gone',
+    });
+    await store.forget(other.id);
+
+    const records = await store.listSyncRecords();
+    expect(records).toHaveLength(2);
+    const live = records.find((r) => r.deleted !== true);
+    const stone = records.find((r) => r.deleted === true);
+    expect(live).toMatchObject({
+      label: 'Studio Mac',
+      host: '192.168.1.10',
+      port: 8443,
+      token: 'secret-token',
+      detectHosts: true,
+    });
+    expect(typeof live?.updatedAt).toBe('number');
+    expect(stone).toMatchObject({ label: 'Gone', port: 9443, token: '' });
+    expect(records.some((r) => r.host === null || r.label === 'This machine (local)')).toBe(false);
+    void rec;
+  });
+
+  it('pre-sync records (no updatedAt) list as epoch-old (updatedAt 0)', async () => {
+    await fs.writeFile(
+      path.join(tmpDir, 'backend-connections.json'),
+      JSON.stringify({
+        connections: [
+          {
+            id: 'old-1',
+            label: 'Old',
+            host: '192.168.1.10',
+            port: 8443,
+            fingerprint: 'AA',
+            encToken: { encrypted: false, value: 'tok' },
+          },
+        ],
+        activeId: 'local',
+      }),
+      'utf8',
+    );
+    const store = await import('../connections-store');
+    const records = await store.listSyncRecords();
+    expect(records).toHaveLength(1);
+    expect(records[0].updatedAt).toBe(0);
+  });
+
+  it('applyRemoteSyncRecord upserts a live record verbatim (id preserved, clock not re-stamped)', async () => {
+    const store = await import('../connections-store');
+    const rec = await store.add(sampleConn);
+
+    const changed = await store.applyRemoteSyncRecord({
+      label: 'Renamed remotely',
+      host: '192.168.1.10',
+      hosts: ['192.168.1.10', '10.0.0.9'],
+      port: 8443,
+      fingerprint: 'NEW:FP',
+      hostname: 'studio.local',
+      detectHosts: true,
+      token: 'rotated-token',
+      updatedAt: 42,
+    });
+    expect(changed).toBe(true);
+
+    const remote = (await store.list()).find((c) => !c.isLocal);
+    expect(remote).toMatchObject({
+      id: rec.id,
+      label: 'Renamed remotely',
+      fingerprint: 'NEW:FP',
+      hostname: 'studio.local',
+      hosts: ['192.168.1.10', '10.0.0.9'],
+    });
+    expect(await store.getDecryptedToken(rec.id)).toBe('rotated-token');
+    // The remote clock is preserved so machines converge.
+    expect((await store.listSyncRecords())[0].updatedAt).toBe(42);
+  });
+
+  it('applyRemoteSyncRecord inserts a brand-new backend (fresh pull)', async () => {
+    const store = await import('../connections-store');
+    const changed = await store.applyRemoteSyncRecord({
+      label: 'Laptop',
+      host: '10.0.0.2',
+      hosts: ['10.0.0.2'],
+      port: 9000,
+      fingerprint: 'FP',
+      hostname: null,
+      detectHosts: false,
+      token: 'laptop-token',
+      updatedAt: 7,
+    });
+    expect(changed).toBe(true);
+    const remote = (await store.list()).find((c) => !c.isLocal);
+    expect(remote).toMatchObject({ label: 'Laptop', host: '10.0.0.2', port: 9000 });
+    expect(await store.getDetectHosts(remote!.id)).toBe(false);
+    expect(await store.getDecryptedToken(remote!.id)).toBe('laptop-token');
+  });
+
+  it('applyRemoteSyncRecord tombstone removes the backend and falls active back to local', async () => {
+    const store = await import('../connections-store');
+    const rec = await store.add(sampleConn);
+    await store.setActiveId(rec.id);
+
+    // A fresh (non-TTL-expired) remote clock, slightly ahead of local.
+    const remoteClock = Date.now() + 1000;
+    const changed = await store.applyRemoteSyncRecord({
+      label: 'Studio Mac',
+      host: '192.168.1.10',
+      hosts: ['192.168.1.10'],
+      port: 8443,
+      fingerprint: 'AA:BB:CC',
+      hostname: null,
+      detectHosts: true,
+      token: '',
+      updatedAt: remoteClock,
+      deleted: true,
+      deletedAt: remoteClock,
+    });
+    expect(changed).toBe(true);
+    expect((await store.list()).filter((c) => !c.isLocal)).toHaveLength(0);
+    expect(await store.getActiveId()).toBe(store.LOCAL_CONNECTION_ID);
+    // The tombstone is remembered with the remote clock (not re-stamped).
+    const records = await store.listSyncRecords();
+    expect(records).toEqual([
+      expect.objectContaining({
+        deleted: true,
+        updatedAt: remoteClock,
+        deletedAt: remoteClock,
+        token: '',
+      }),
+    ]);
+  });
+
+  it('applyRemoteSyncRecord matches by fingerprint: a record under a NEW host:port collapses into the existing entry', async () => {
+    const store = await import('../connections-store');
+    const rec = await store.add(sampleConn); // 192.168.1.10:8443, AA:BB:CC
+
+    const changed = await store.applyRemoteSyncRecord({
+      label: 'Studio Mac',
+      host: '192.168.1.99',
+      hosts: ['192.168.1.99'],
+      port: 9443,
+      fingerprint: 'aa:bb:cc', // same machine, case-differing fingerprint
+      hostname: 'studio.local',
+      detectHosts: true,
+      token: 'rotated-token',
+      updatedAt: 42,
+    });
+    expect(changed).toBe(true);
+
+    // One record, same id, address taken from the remote.
+    const remotes = (await store.list()).filter((c) => !c.isLocal);
+    expect(remotes).toHaveLength(1);
+    expect(remotes[0]).toMatchObject({ id: rec.id, host: '192.168.1.99', port: 9443 });
+    expect(await store.getDecryptedToken(rec.id)).toBe('rotated-token');
+  });
+
+  it('applyRemoteSyncRecord tombstone matches by fingerprint: a delete under the OLD address removes the moved record', async () => {
+    const store = await import('../connections-store');
+    // The machine now lives at a new address locally.
+    const rec = await store.add({ ...sampleConn, host: '192.168.1.99', port: 9443 });
+    await store.setActiveId(rec.id);
+
+    const remoteClock = Date.now() + 1000;
+    const changed = await store.applyRemoteSyncRecord({
+      label: 'Studio Mac',
+      host: '192.168.1.10', // the OLD address
+      hosts: ['192.168.1.10'],
+      port: 8443,
+      fingerprint: 'AA:BB:CC',
+      hostname: null,
+      detectHosts: true,
+      token: '',
+      updatedAt: remoteClock,
+      deleted: true,
+      deletedAt: remoteClock,
+    });
+    expect(changed).toBe(true);
+    expect((await store.list()).filter((c) => !c.isLocal)).toHaveLength(0);
+    expect(await store.getActiveId()).toBe(store.LOCAL_CONNECTION_ID);
+  });
+
+  it('re-adding the same machine under a new address clears its old-address tombstone', async () => {
+    const store = await import('../connections-store');
+    const rec = await store.add(sampleConn); // 192.168.1.10:8443
+    await store.forget(rec.id);
+    await store.__drainWriteChainForTesting();
+
+    const file = path.join(tmpDir, 'backend-connections.json');
+    let parsed = JSON.parse(await fs.readFile(file, 'utf8'));
+    expect(parsed.tombstones).toHaveLength(1);
+
+    // Same fingerprint, new address: the machine came back — the tombstone
+    // for the old address must not survive to suppress it elsewhere.
+    await store.add({ ...sampleConn, host: '192.168.1.99', port: 9443 });
+    await store.__drainWriteChainForTesting();
+    parsed = JSON.parse(await fs.readFile(file, 'utf8'));
+    expect(parsed.tombstones).toHaveLength(0);
+    expect(parsed.connections).toHaveLength(1);
+  });
+
+  it('onConnectionsMutated fires on local mutations but never on applyRemoteSyncRecord', async () => {
+    const store = await import('../connections-store');
+    const listener = vi.fn();
+    const unsubscribe = store.onConnectionsMutated(listener);
+
+    const rec = await store.add(sampleConn);
+    expect(listener).toHaveBeenCalledTimes(1);
+    await store.setHostname(rec.id, 'studio.local');
+    expect(listener).toHaveBeenCalledTimes(2);
+    await store.setHosts(rec.id, ['10.0.0.5']);
+    expect(listener).toHaveBeenCalledTimes(3);
+    await store.forget(rec.id);
+    expect(listener).toHaveBeenCalledTimes(4);
+
+    // No-op mutations do not notify.
+    await store.setHostname('does-not-exist', 'ghost.local');
+    await store.setHosts('does-not-exist', ['10.0.0.5']);
+    await store.forget('does-not-exist');
+    expect(listener).toHaveBeenCalledTimes(4);
+
+    // Remote application never notifies (pull must not loop into push).
+    await store.applyRemoteSyncRecord({
+      label: 'Laptop',
+      host: '10.0.0.2',
+      hosts: ['10.0.0.2'],
+      port: 9000,
+      fingerprint: 'FP',
+      hostname: null,
+      detectHosts: true,
+      token: 't',
+      updatedAt: 7,
+    });
+    expect(listener).toHaveBeenCalledTimes(4);
+
+    unsubscribe();
+    await store.add({ ...sampleConn, port: 9999 });
+    expect(listener).toHaveBeenCalledTimes(4);
+  });
+
+  it('activeId is never part of the sync surface', async () => {
+    const store = await import('../connections-store');
+    const rec = await store.add(sampleConn);
+    await store.setActiveId(rec.id);
+    const records = await store.listSyncRecords();
+    expect(JSON.stringify(records)).not.toContain(rec.id);
+    expect(JSON.stringify(records)).not.toContain('activeId');
+  });
+
+  it('self-refresh port change end to end: the stale keychain account is tombstoned, the record rewritten under the new account', async () => {
+    // The refresh path re-upserts the self record through store.add (same
+    // fingerprint, new port). This drives the REAL store + REAL reconcile
+    // against an in-memory keychain to prove no stale duplicate survives.
+    const store = await import('../connections-store');
+    const sync = await import('../keychain-sync');
+
+    // In-memory keychain client.
+    const keychain = new Map<string, string>();
+    const client: import('../keychain-sync').KeychainClient = {
+      async list() {
+        return {
+          ok: true,
+          items: [...keychain.entries()].map(([account, payload]) => ({ account, payload })),
+        };
+      },
+      async upsert(account, payload) {
+        keychain.set(account, payload);
+        return { ok: true };
+      },
+      async delete(account) {
+        keychain.delete(account);
+        return { ok: true };
+      },
+    };
+    const adapter: import('../keychain-sync').LocalSyncAdapter = {
+      list: () => store.listSyncRecords(),
+      applyRemote: async (_account, record) => {
+        await store.applyRemoteSyncRecord(record);
+      },
+    };
+
+    // Publish at the original address and push to the keychain.
+    await store.add({ ...sampleConn, host: '192.168.1.10', port: 5181 });
+    await sync.reconcile(adapter, { client });
+    const oldAccount = sync.accountKeyFor('192.168.1.10', 5181);
+    expect([...keychain.keys()]).toEqual([oldAccount]);
+
+    // Port change: the refresh re-upserts under the new port — the store's
+    // fingerprint dedupe collapses it into ONE record with a fresh clock.
+    await store.add({ ...sampleConn, host: '192.168.1.10', port: 6200 });
+    expect((await store.list()).filter((c) => !c.isLocal)).toHaveLength(1);
+
+    await sync.reconcile(adapter, { client });
+
+    // The stale account now holds a tombstone; the record lives under the
+    // new account. No live duplicate remains in the keychain.
+    const newAccount = sync.accountKeyFor('192.168.1.10', 6200);
+    const staleParsed = sync.parsePayload(keychain.get(oldAccount)!);
+    expect(staleParsed).toMatchObject({ kind: 'record', record: { deleted: true, token: '' } });
+    const newParsed = sync.parsePayload(keychain.get(newAccount)!);
+    expect(newParsed).toMatchObject({
+      kind: 'record',
+      record: { port: 6200, fingerprint: 'AA:BB:CC', token: 'secret-token' },
+    });
+
+    // And locally the store still holds exactly one live record (the
+    // tombstone pull never resurrects or deletes the moved record).
+    const remotes = (await store.list()).filter((c) => !c.isLocal);
+    expect(remotes).toHaveLength(1);
+    expect(remotes[0]).toMatchObject({ port: 6200 });
   });
 });

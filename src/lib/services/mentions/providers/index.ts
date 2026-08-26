@@ -121,7 +121,9 @@ export class NoteProvider implements Provider {
   ): Promise<Array<{ note: any; workspaceId: string; workspaceTitle?: string }>> {
     try {
       const { appClient } = await import('$lib/client');
-      const notes = await appClient.notes.list(workspaceId);
+      // Slim projection (§5.2): mention search matches/previews against the
+      // first ~500 chars (contentPreview) instead of pulling full bodies.
+      const notes = await appClient.notes.list(workspaceId, { projection: 'slim' });
       return notes.map((note) => ({
         note,
         workspaceId,
@@ -154,31 +156,37 @@ export class NoteProvider implements Provider {
       // Combine all notes
       const allNotesWithContext = [...currentWorkspaceNotes, ...siblingNotes];
 
-      // Filter and map to MentionCandidate using fuzzy matching
+      // Filter and map to MentionCandidate using fuzzy matching. Slim rows
+      // carry content in `contentPreview` (first ~500 chars) — matching and
+      // previews use it in place of the full body, so a match deep inside a
+      // very long note may be missed (accepted degradation).
       const notes = allNotesWithContext
-        .filter(
-          ({ note }) =>
+        .filter(({ note }) => {
+          const body = note.content || note.contentPreview;
+          return (
             !query ||
             (note.title && fuzzyMatch(query, note.title) !== null) ||
-            (note.content && fuzzyMatch(query, note.content) !== null),
-        )
+            (body && fuzzyMatch(query, body) !== null)
+          );
+        })
         .slice(0, 10)
         .map(({ note, workspaceId, workspaceTitle }) => {
           const isCurrentWorkspace = workspaceId === context.workspaceId;
           const subtitle = isCurrentWorkspace
             ? undefined
             : m.chat_mentions_fromWorkspace_subtitle({ workspace: workspaceTitle || workspaceId });
+          const body = note.content || note.contentPreview;
 
           return {
             id: note.id || `note-${note.id}`,
             type: 'note' as MentionType,
             label: note.title || note.id || m.chat_mentions_untitledNote_label(),
             subtitle,
-            description: `${note.content?.substring(0, 100)}...` || '',
+            description: `${body?.substring(0, 100)}...` || '',
             icon: '📝',
             uri: `devspace://note/${note.id}`,
             meta: {
-              preview: note.content?.substring(0, 200) || '',
+              preview: body?.substring(0, 200) || '',
               workspaceId,
             },
           };

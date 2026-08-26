@@ -111,7 +111,10 @@
  * if the created ID still has local agent/chat state (the delete event was
  * missed or never delivered), the bridge purges it the same way and then
  * dispatches `hydrateAgentsRequested` so the store converges on the daemon's
- * canonical agent list for the new workspace.
+ * canonical agent list for the new workspace. A created ID unknown to the
+ * workspace collection (created by another client on the same daemon)
+ * dispatches `loadWorkspacesRequested` so the open window refetches the list
+ * and shows the new row without a reload (intent-hq/monorepo#3558).
  *
  * Fan-out scoping: the daemon emits one `events.event` notification per
  * matching subscription on the socket (PROTOCOL §6.3 / intent-transport
@@ -194,6 +197,7 @@ import { refreshRequested } from '$store/renderer/slices/changes/changes-slice';
 import {
   bulkUpdateWorkspaceEntities,
   clearWorkspacePendingDeletion,
+  loadWorkspacesRequested,
   markWorkspacePendingDeletion,
   removeWorkspaceEntity,
   updateWorkspaceEntity,
@@ -337,6 +341,17 @@ const streamsByAgent = new Map<string, StreamState>();
  * `handleStreamEndEvent`.
  */
 const previewTurnMessageIdByAgent = new Map<string, string>();
+
+/**
+ * Per-agent messageId of the last turn whose terminal `agent:stream:end` was
+ * applied. An activity ping is self-sufficient evidence of a live turn (it
+ * opens the sticky `liveTurnOpen` bit so a never-hydrated delegated agent's
+ * footer preview goes live without an `agent:status-changed` edge), but a
+ * same-turn straggler ping delivered after the terminal event must not
+ * re-open the bit `agent:idle` / the terminal fold just closed — this map is
+ * how the activity handler tells a mid-turn ping from that straggler.
+ */
+const previewTurnEndedMessageIdByAgent = new Map<string, string>();
 
 /**
  * True once this bridge has delivered an `agent:last-message` event — the
@@ -845,6 +860,19 @@ function handleStreamActivityEvent(event: WorkspaceEvent, workspaceId: string): 
   ) {
     return;
   }
+  // Drop an ended-turn straggler outright: a ping for the turn whose terminal
+  // `agent:stream:end` already applied — or for an even earlier turn
+  // (messageId is a UUIDv7, so lexicographic order mirrors turn order, same
+  // as `handleStreamEndEvent`'s guard) — carries nothing valid. The terminal
+  // event already applied the turn's final preview fields, so letting the
+  // straggler through would re-open liveness (`liveTurnOpen`, or a
+  // `lastToolUse.status: "running"` that `isAgentRunningState` reads as
+  // active evidence) and, for an older turn, masquerade as a new turn and
+  // clear the current digest.
+  const endedMessageId = previewTurnEndedMessageIdByAgent.get(agentId);
+  if (endedMessageId !== undefined && messageId <= endedMessageId) {
+    return;
+  }
   const lastAgentResponse =
     typeof data.lastAgentResponse === 'string' ? data.lastAgentResponse : undefined;
   const digest = typeof data.digest === 'string' ? data.digest : undefined;
@@ -869,11 +897,34 @@ function handleStreamActivityEvent(event: WorkspaceEvent, workspaceId: string): 
   if (isNewTurn) {
     previewTurnMessageIdByAgent.set(agentId, messageId);
   }
+  // The ping itself proves a turn is in flight (the daemon only emits it
+  // mid-turn), so open the sticky `liveTurnOpen` bit — the same one the
+  // `agent:status-changed` running fold sets — stamping the event's own
+  // daemon timestamp as the ordering signal. Without this, a delegated agent
+  // whose running edge predates hydration (or was missed) never reads as
+  // live even while pings stream in. `updatedAt` is daemon-owned and left
+  // untouched. (Ended-turn stragglers never reach here — dropped above.)
+  const eventTimestamp = (event as { timestamp?: unknown }).timestamp;
   withHydratedSession(agentId, () => {
+    // Re-check at execution time: `withHydratedSession` defers this callback
+    // across an async hydration fetch when the session isn't known yet, and
+    // the turn's terminal `agent:stream:end` may stamp the ended-turn map
+    // (synchronously) in that window — a then-stale ping must not re-open
+    // the liveness the terminal fold just closed.
+    const endedAtDispatch = previewTurnEndedMessageIdByAgent.get(agentId);
+    if (endedAtDispatch !== undefined && messageId <= endedAtDispatch) {
+      return;
+    }
     if (isNewTurn) {
       appStore.dispatch(updateAgentDigest(workspaceId, agentId, null));
       appStore.dispatch(updateSession(agentId, { lastToolUse: undefined }));
     }
+    appStore.dispatch(
+      updateSession(agentId, {
+        liveTurnOpen: true,
+        ...(typeof eventTimestamp === 'string' ? { liveTurnOpenedAt: eventTimestamp } : {}),
+      }),
+    );
     applyStreamPreviewFields(agentId, lastAgentResponse, digest, readLastToolUse(data.lastToolUse));
   });
 }
@@ -1257,6 +1308,10 @@ function handleStreamEndEvent(event: WorkspaceEvent, workspaceId: string): void 
   if (!isStaleTerminalForPreview) {
     if (messageId !== undefined) {
       previewTurnMessageIdByAgent.set(agentId, messageId);
+      // Record the ended turn so a straggler same-turn (or older-turn)
+      // activity ping cannot re-open the sticky liveTurnOpen bit the
+      // terminal choreography closes — see handleStreamActivityEvent.
+      previewTurnEndedMessageIdByAgent.set(agentId, messageId);
     }
     withHydratedSession(agentId, () => {
       applyStreamPreviewFields(
@@ -1575,7 +1630,8 @@ function handleAgentLastMessageEvent(event: WorkspaceEvent): void {
         hasUnread: deriveAgentHasUnread({
           lastMessageRole: updates.lastMessageRole ?? session.lastMessageRole,
           lastMessageId: updates.lastMessageId ?? session.lastMessageId,
-          metadata: session.metadata as { lastSeenMessageId?: string } | undefined,
+          isBackground: session.isBackground,
+          metadata: session.metadata,
         }),
       }),
     );
@@ -1966,8 +2022,8 @@ function handleAttentionRequestedEvent(event: WorkspaceEvent, workspaceId: strin
  * `note:*` (§7 workspace-scoped) carries `{ noteId, path, action, ... }` — the
  * daemon-authoritative "something changed" ping (PROTOCOL §7 note events do
  * NOT embed the full note body). The handler routes to `applyNoteFromEvent`,
- * which fetches the fresh note via `notes.list(workspaceId)` on
- * `note:created`/`note:updated` and dispatches the matching `applyNote*`
+ * which fetches the fresh note via a targeted `notes.get(noteId, workspaceId)`
+ * on `note:created`/`note:updated` and dispatches the matching `applyNote*`
  * action, or dispatches `applyNoteDeleted` immediately on `note:deleted`.
  *
  * Task notes are plain notes (task state lives in note metadata), so these
@@ -2559,10 +2615,19 @@ function collectOwnedTabAgentIds(workspaceId: string): Set<string> {
  * agent/chat state under that ID (e.g. the `workspace:deleted` event was
  * missed), purge it exactly like a delete would, then dispatch
  * `hydrateAgentsRequested` so the lifecycle-read-service refetches the
- * daemon's canonical agent list for the new workspace. A create for an ID
- * with no local state is a no-op here (mount-time hydration covers it).
+ * daemon's canonical agent list for the new workspace.
  * Either way, lift any deletion tombstone first: a recycled ID must not stay
  * blocked from the store for the remainder of the post-delete grace window.
+ *
+ * Unknown-ID convergence: when the created ID is absent from the workspace
+ * collection (created/imported by ANOTHER client on the same daemon — the
+ * originating window seeds its own entity from the `workspace.create`
+ * response), dispatch `loadWorkspacesRequested` so the already-open window
+ * refetches the list and the new row appears without a reload. The event
+ * payload is not used as the row source — `workspace.list` stays the single
+ * canonical shape. The lifecycle-read-saga services the action single-flight
+ * with trailing coalesce, so a create arriving mid-fetch queues one follow-up
+ * refetch instead of being dropped.
  */
 function handleWorkspaceCreatedEvent(workspaceId: string): void {
   const tombstoneTimer = workspaceDeleteTombstoneTimers.get(workspaceId);
@@ -2574,7 +2639,18 @@ function handleWorkspaceCreatedEvent(workspaceId: string): void {
   const state = appStore.state as {
     agentSessions?: { agentIdsByWorkspace: Record<string, string[]> };
     workspaceAgents?: { byWorkspaceId: Record<string, unknown> };
+    workspace?: {
+      workspaces: { ids: string[] };
+      pendingCreations: Record<string, unknown>;
+    };
   };
+  const isKnownWorkspace =
+    state.workspace === undefined ||
+    state.workspace.workspaces.ids.includes(workspaceId) ||
+    state.workspace.pendingCreations[workspaceId] !== undefined;
+  if (!isKnownWorkspace) {
+    appStore.dispatch(loadWorkspacesRequested());
+  }
   const agentIds = state.agentSessions?.agentIdsByWorkspace[workspaceId] ?? [];
   const hasLocalState =
     agentIds.length > 0 || state.workspaceAgents?.byWorkspaceId[workspaceId] !== undefined;
@@ -3903,6 +3979,7 @@ async function reconcileAgentFailureRegistry(): Promise<void> {
 export function disposeDaemonEventsRoutingState(): void {
   streamsByAgent.clear();
   previewTurnMessageIdByAgent.clear();
+  previewTurnEndedMessageIdByAgent.clear();
   daemonEmitsLastMessage = false;
   agentSessionRefreshInFlight.clear();
   agentSessionRefreshFollowUpWanted.clear();

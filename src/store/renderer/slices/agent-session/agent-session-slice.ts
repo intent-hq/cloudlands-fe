@@ -1048,10 +1048,13 @@ export const replaceMessageById = createAction<
   [agentId: string, oldId: string, newMessage: AgentMessage]
 >('agentSessions/replaceMessageById');
 
-/** Non-message field updates */
-export const updateSession = createAction<[agentId: string, updates: Partial<AgentSession>]>(
-  'agentSessions/updateSession',
-);
+/** Non-message field updates (plus the FE-owned sticky liveness fields). */
+export const updateSession = createAction<
+  [
+    agentId: string,
+    updates: Partial<AgentSession> & Pick<StoredAgentSession, 'liveTurnOpen' | 'liveTurnOpenedAt'>,
+  ]
+>('agentSessions/updateSession');
 
 /** Saga-owned core stop side effect trigger. */
 export const agentSessionStopChatRequested = createAsyncAction<[agentId: string], void>(
@@ -1320,11 +1323,20 @@ agentSessionReducer.with(eventReceived, (state, { payload: [, event] }) => {
     typeof event.timestamp === 'string' ? event.timestamp : undefined,
   );
   if (Object.keys(updates).length === 0) return state;
-  return updateSessionFields(
-    state,
-    agentId,
-    updates as Partial<Omit<StoredAgentSession, 'messages'>>,
-  );
+  // Fresh running edge (the sticky liveTurnOpen slot transitions closed →
+  // open): clear the previous turn's `lastToolUse` so it cannot render as a
+  // live tool chip during the startup window before the first
+  // `agent:stream:activity` ping of the new turn arrives. Keyed on the slot
+  // EDGE, not on every running status event — mid-turn status ticks (slot
+  // already open) must not wipe the current turn's live tool. The first
+  // tool-arm ping of the new turn repopulates the field.
+  const existing = getSession(state, agentId);
+  const opensLiveTurn = updates.liveTurnOpen === true && existing?.liveTurnOpen !== true;
+  const merged: Partial<Omit<StoredAgentSession, 'messages'>> = {
+    ...(updates as Partial<Omit<StoredAgentSession, 'messages'>>),
+    ...(opensLiveTurn && existing?.lastToolUse ? { lastToolUse: undefined } : {}),
+  };
+  return updateSessionFields(state, agentId, merged);
 });
 agentSessionReducer.with(renameSession, (state, { payload: [agentId, name] }) => {
   const session = getSession(state, agentId);

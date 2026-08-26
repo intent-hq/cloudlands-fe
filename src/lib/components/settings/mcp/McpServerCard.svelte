@@ -24,8 +24,8 @@
     onToggle: (name: string) => void;
     onEdit: (server: McpServerWithStatus) => void;
     onDelete: (name: string) => void;
-    onReauthenticate?: (name: string) => void;
-    onRestart?: (name: string) => void;
+    onReauthenticate: (name: string) => void;
+    onRestart: (name: string) => void;
   }
 
   let { server, onToggle, onEdit, onDelete, onReauthenticate, onRestart }: Props = $props();
@@ -121,7 +121,7 @@
         handleCopyJson();
         break;
       case 'reauth':
-        onReauthenticate?.(server.name);
+        onReauthenticate(server.name);
         break;
       case 'delete':
         onDelete(server.name);
@@ -238,19 +238,19 @@
 
     <!-- Right side: Actions -->
     <div class="flex items-center gap-2 shrink-0">
-      {#if server.status === 'auth_required' && onReauthenticate}
+      {#if server.status === 'auth_required'}
         <button
           type="button"
           class="px-2.5 py-1 text-xs font-medium rounded-md border border-amber-500/50 text-amber-700 dark:text-amber-400 hover:bg-amber-500/10 transition-colors cursor-pointer"
-          onclick={() => onReauthenticate?.(server.name)}
+          onclick={() => onReauthenticate(server.name)}
         >
           {m.settings_mcp_authenticateButton()}
         </button>
-      {:else if isRetryable && onRestart && !server.disabled}
+      {:else if isRetryable && !server.disabled}
         <button
           type="button"
           class="px-2.5 py-1 text-xs font-medium rounded-md border border-orange-500/50 text-orange-700 dark:text-orange-400 hover:bg-orange-500/10 transition-colors cursor-pointer flex items-center gap-1.5"
-          onclick={() => onRestart?.(server.name)}
+          onclick={() => onRestart(server.name)}
         >
           <Fa icon={faRotateRight} size="xs" />
           {m.settings_mcp_restartButton()}

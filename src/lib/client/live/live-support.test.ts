@@ -805,6 +805,8 @@ describe('resolveNoteWorkspaceId (negative cache)', () => {
   });
 
   it('a miss from an INCOMPLETE scan (failed note.list) is not negative-cached — the next attempt retries', async () => {
+    // A transport failure is NOT a projection rejection (-32602): no
+    // projection-less retry is attempted — one call, propagated.
     noteListImpl = () => Promise.reject(new Error('transport down'));
     expect(await resolveNoteWorkspaceId('note-flaky')).toBeNull();
     expect(noteListCalls).toHaveLength(1);
@@ -814,6 +816,19 @@ describe('resolveNoteWorkspaceId (negative cache)', () => {
     noteListImpl = () => Promise.resolve({ notes: [{ id: 'note-flaky' }] });
     expect(await resolveNoteWorkspaceId('note-flaky')).toBe('ws-1');
     expect(noteListCalls).toHaveLength(2);
+  });
+
+  it('a daemon that rejects the projection param (-32602) gets ONE projection-less retry', async () => {
+    noteListImpl = (params) => {
+      if ((params as { projection?: string }).projection === 'slim') {
+        return Promise.reject(Object.assign(new Error('Invalid params'), { rpcCode: -32602 }));
+      }
+      return Promise.resolve({ notes: [{ id: 'note-old-daemon' }] });
+    };
+    expect(await resolveNoteWorkspaceId('note-old-daemon')).toBe('ws-1');
+    expect(noteListCalls).toHaveLength(2);
+    expect(noteListCalls[0]).toMatchObject({ projection: 'slim' });
+    expect(noteListCalls[1]).not.toHaveProperty('projection');
   });
 
   it('a VACUOUS scan (failed workspace.list) is not negative-cached — the retry scans once the transport recovers', async () => {

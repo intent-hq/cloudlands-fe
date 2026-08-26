@@ -27,6 +27,7 @@
   import { onDestroy } from 'svelte';
   import { slide } from 'svelte/transition';
   import Toggle from '$lib/components/ui/toggle/toggle.svelte';
+  import { Button } from '$lib/components/ui/button';
   import { Input } from '$lib/components/ui/input';
   import Fa from 'svelte-fa';
   import {
@@ -40,7 +41,19 @@
   import { appClient } from '$lib/client';
   import { m } from '$shared/paraglide/messages.js';
   import { selectActiveConnectionId } from '$store/renderer/slices/connections/connections-selectors';
+  import {
+    forgetConnectionRequested,
+    loadKeychainSyncStateRequested,
+    setKeychainSyncEnabledRequested,
+  } from '$store/renderer/slices/connections/connections-slice';
+  import { store as appStore } from '$store/renderer/store';
+  import { IPC_CHANNELS } from '$shared/ipc-registry';
   import { LOCAL_CONNECTION_ID } from '$shared/types/connections';
+  import type { PublishSelfResult, SelfPublishedStateResult } from '$shared/types/connections';
+  import PublishSelfBackendModal from '$lib/components/modals/PublishSelfBackendModal.svelte';
+  import RemoveSelfBackendModal from '$lib/components/modals/RemoveSelfBackendModal.svelte';
+
+  const CONNECTIONS = IPC_CHANNELS.CONNECTIONS;
 
   const activeConnectionId$ = selectActiveConnectionId();
   const isRemote = $derived($activeConnectionId$ !== LOCAL_CONNECTION_ID);
@@ -63,6 +76,20 @@
   let showQr = $state(false);
   let qrDataUrl = $state('');
   let qrTimer: ReturnType<typeof setTimeout> | null = null;
+
+  // Publish-self state (spec: offer to put this backend into iCloud Keychain
+  // when the WSS API is enabled). Loaded alongside the WSS status; fail-soft —
+  // when it cannot be read, neither the modal nor the button appears.
+  let publishStateLoaded = $state(false);
+  let syncSupported = $state(false);
+  let syncEnabled = $state(false);
+  let selfPublished = $state(false);
+  let publishSuppressed = $state(false);
+  let selfConnectionId = $state<string | null>(null);
+  let showPublishModal = $state(false);
+  let publishBusy = $state(false);
+  let showRemoveModal = $state(false);
+  let removeBusy = $state(false);
 
   const maskedToken = $derived(
     token ? '•'.repeat(Math.max(0, token.length - 8)) + token.slice(-8) : '',
@@ -110,6 +137,7 @@
         certFingerprint = info.certFingerprint;
         localIps = info.localIps;
         _hostname = info.hostname;
+        await refreshPublishState();
       }
     } catch (error) {
       toast.error(
@@ -141,6 +169,9 @@
       enabled = checked;
       if (checked) {
         await loadStatus();
+        maybeOfferPublish();
+      } else {
+        maybeOfferRemoval();
       }
     } catch (error) {
       toast.error(
@@ -149,6 +180,147 @@
         }),
       );
       enabled = !checked;
+    }
+  }
+
+  function getApi(): Window['electronAPI'] | undefined {
+    return typeof window !== 'undefined' ? window.electronAPI : undefined;
+  }
+
+  /** Load keychain-sync + self-published state (gates the modal and button). */
+  async function refreshPublishState() {
+    const api = getApi();
+    if (!api) return;
+    try {
+      const [sync, self] = await Promise.all([
+        appStore.dispatch(loadKeychainSyncStateRequested()).promise,
+        api.invoke(CONNECTIONS.SELF_PUBLISHED_STATE) as Promise<SelfPublishedStateResult>,
+      ]);
+      syncSupported = sync.supported;
+      syncEnabled = sync.enabled;
+      selfPublished = self.published;
+      publishSuppressed = self.suppressed;
+      selfConnectionId = self.selfConnectionId;
+      publishStateLoaded = true;
+    } catch {
+      // Fail-soft: without a readable state, offer neither modal nor button.
+      publishStateLoaded = false;
+    }
+  }
+
+  /**
+   * Keep the published self entry fresh after a local change to its published
+   * fields (token rotation, port change): main re-upserts the record from the
+   * live pairing info so keychain sync pushes the new values to the user's
+   * other devices. Strict no-op in main while unpublished or while the "do
+   * not auto-publish" marker is set. Fire-and-forget and fail-soft — the
+   * rotation/port change itself already succeeded.
+   */
+  function refreshSelfEntry() {
+    const api = getApi();
+    if (!api || isRemote) return;
+    void Promise.resolve(api.invoke(CONNECTIONS.REFRESH_SELF)).catch(() => {});
+  }
+
+  /**
+   * After a successful toggle-on on the local connection: offer to publish
+   * this backend, asked every toggle-on (no decline persistence). Never on
+   * non-macOS, when a self entry already exists, or when the "do not
+   * auto-publish" marker is set (re-publishing is button-only).
+   */
+  function maybeOfferPublish() {
+    if (isRemote || !publishStateLoaded) return;
+    if (syncSupported && !selfPublished && !publishSuppressed) showPublishModal = true;
+  }
+
+  /**
+   * After a successful toggle-off on the local connection: offer to remove
+   * this machine's published entry from iCloud Keychain — the record no
+   * longer points at a reachable backend. Declining leaves it in place.
+   * Never on non-macOS or when no published self entry exists (the state
+   * from the last refresh while WSS was on; fail-soft when never loaded).
+   */
+  function maybeOfferRemoval() {
+    if (isRemote || !publishStateLoaded) return;
+    if (syncSupported && selfPublished && selfConnectionId !== null) showRemoveModal = true;
+  }
+
+  async function handleRemoveConfirm() {
+    if (selfConnectionId === null) return;
+    try {
+      removeBusy = true;
+      await appStore.dispatch(forgetConnectionRequested(selfConnectionId)).promise;
+      // Forgetting the self entry tombstones it (keychain sync removes it on
+      // other devices) and sets the "do not auto-publish" marker in main.
+      selfPublished = false;
+      publishSuppressed = true;
+      selfConnectionId = null;
+      showRemoveModal = false;
+      toast.success(m.settings_wsApi_unpublishSelf_success());
+    } catch (error) {
+      toast.error(
+        m.settings_wsApi_unpublishSelf_error({
+          error: error instanceof Error ? error.message : String(error),
+        }),
+      );
+    } finally {
+      removeBusy = false;
+    }
+  }
+
+  async function publishSelf() {
+    const api = getApi();
+    if (!api) throw new Error('electronAPI is not available');
+    const result = await (api.invoke(CONNECTIONS.PUBLISH_SELF) as Promise<PublishSelfResult>);
+    selfPublished = true;
+    publishSuppressed = false;
+    // Capture the published record's id so a WSS toggle-off later in this
+    // same settings session can offer removal (maybeOfferRemoval requires it).
+    selfConnectionId = result.connection.id;
+    toast.success(m.settings_wsApi_publishSelf_success());
+  }
+
+  async function handlePublishConfirm() {
+    try {
+      publishBusy = true;
+      if (!syncEnabled) {
+        try {
+          const sync = await appStore.dispatch(setKeychainSyncEnabledRequested(true)).promise;
+          syncEnabled = sync.enabled;
+        } catch (error) {
+          toast.error(
+            m.settings_wsApi_publishSelf_syncEnableError({
+              error: error instanceof Error ? error.message : String(error),
+            }),
+          );
+          return;
+        }
+      }
+      await publishSelf();
+      showPublishModal = false;
+    } catch (error) {
+      toast.error(
+        m.settings_wsApi_publishSelf_error({
+          error: error instanceof Error ? error.message : String(error),
+        }),
+      );
+    } finally {
+      publishBusy = false;
+    }
+  }
+
+  async function handlePublishButton() {
+    try {
+      publishBusy = true;
+      await publishSelf();
+    } catch (error) {
+      toast.error(
+        m.settings_wsApi_publishSelf_error({
+          error: error instanceof Error ? error.message : String(error),
+        }),
+      );
+    } finally {
+      publishBusy = false;
     }
   }
 
@@ -187,6 +359,9 @@
         } catch {
           // Pairing info refresh failed, but the setting was saved successfully
         }
+        // Propagate the new port to the published self entry (no-op in main
+        // when unpublished/suppressed).
+        refreshSelfEntry();
         toast.success(m.settings_wsApi_portChanged({ port: String(newPort) }));
       } else {
         toast.success(m.settings_wsApi_portSaved());
@@ -209,6 +384,9 @@
       regenerating = true;
       const result = await appClient.server.rotateToken();
       token = result.token;
+      // Propagate the rotated token to the published self entry (no-op in
+      // main when unpublished/suppressed).
+      refreshSelfEntry();
       toast.success(m.settings_wsApi_tokenRegenerated());
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -374,6 +552,28 @@
           </div>
         </section>
 
+        <!-- Publish this backend to iCloud Keychain (local + macOS + sync on
+             + not currently published; re-publish clears the suppression) -->
+        {#if publishStateLoaded && syncSupported && syncEnabled && !selfPublished}
+          <section data-publish-self-row>
+            <div class="flex items-center justify-between">
+              <div>
+                <p class="text-sm font-medium text-foreground">
+                  {m.settings_wsApi_publishSelf_label()}
+                </p>
+                <p class="text-xs text-subtle mt-1">
+                  {m.settings_wsApi_publishSelf_description()}
+                </p>
+              </div>
+              <Button size="sm" onclick={handlePublishButton} disabled={publishBusy}>
+                {publishSuppressed
+                  ? m.settings_wsApi_publishSelf_republish_label()
+                  : m.settings_wsApi_publishSelf_button_label()}
+              </Button>
+            </div>
+          </section>
+        {/if}
+
         <!-- TLS Certificate Fingerprint -->
         {#if certFingerprint}
           <section>
@@ -434,6 +634,19 @@
     {/if}
   {/if}
 </div>
+
+<PublishSelfBackendModal
+  bind:open={showPublishModal}
+  {syncEnabled}
+  busy={publishBusy}
+  onConfirm={handlePublishConfirm}
+/>
+
+<RemoveSelfBackendModal
+  bind:open={showRemoveModal}
+  busy={removeBusy}
+  onConfirm={handleRemoveConfirm}
+/>
 
 {#if showQr}
   <!-- QR Code overlay -->

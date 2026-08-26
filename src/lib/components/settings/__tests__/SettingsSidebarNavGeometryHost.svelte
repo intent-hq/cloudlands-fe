@@ -11,11 +11,16 @@
   }
 
   let { theme = 'light', width = 240, zoom = 1 }: Props = $props();
-  let activeTab = $state<SettingsTab>('tools');
+  let activeTab = $state<SettingsTab>('setup');
 </script>
 
 <section class:dark={theme === 'dark'} style:width="{width}px" style:zoom data-testid="host">
-  <div class="flex h-[420px] bg-sidebar text-foreground">
-    <SettingsSidebarNav {activeTab} onSelect={(tab) => (activeTab = tab)} />
+  <div class="flex h-[420px] bg-sidebar text-foreground" data-testid="sidebar-shell">
+    <SettingsSidebarNav {activeTab} onSelect={(tab) => (activeTab = tab)}>
+      {#snippet agentsNavigation()}
+        <button type="button" data-settings-agent-row>Implementor</button>
+        <button type="button" data-settings-agent-row>Create Specialist</button>
+      {/snippet}
+    </SettingsSidebarNav>
   </div>
 </section>

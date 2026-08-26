@@ -235,7 +235,9 @@ export interface AgentSession {
    * lastMessageId !== metadata.lastSeenMessageId` (an absent seen marker
    * counts as unread). See `deriveAgentHasUnread` and
    * intent-hq/monorepo#1597. Always `false` for daemons that omit
-   * `lastMessageId`.
+   * `lastMessageId`, for background agents (`isBackground` /
+   * `metadata.isBackground`), and for delegated child agents
+   * (`metadata.createdByAgentId` set).
    */
   hasUnread?: boolean;
 

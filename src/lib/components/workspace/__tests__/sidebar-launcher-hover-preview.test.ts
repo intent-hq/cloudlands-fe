@@ -70,6 +70,15 @@ describe('sidebar launcher hover previews', () => {
     expect(getNoteLauncherPreview(note)).toBe('Plan\n\nReview hover previews.');
   });
 
+  it('falls back to contentPreview for slim rows whose content is not loaded', () => {
+    const slim = {
+      content: '',
+      contentPreview: '# Plan\n\nSlim **preview** body.',
+      contentLength: 500,
+    } as Note;
+    expect(getNoteLauncherPreview(slim)).toBe('Plan\n\nSlim preview body.');
+  });
+
   it('includes every unique agent and prioritizes running then unread sessions', () => {
     const readAgent = { id: 'read', hasUnread: false, messages: [] } as unknown as AgentSession;
     const unreadAgent = {
