@@ -4,7 +4,8 @@ import { deriveAgentHasUnread } from './agent-unread';
 // Derivation contract (intent-hq/monorepo#1597):
 // hasUnread = lastMessageRole === 'assistant' && lastMessageId != null &&
 //             lastMessageId !== metadata.lastSeenMessageId
-// An ABSENT seen marker counts as unread.
+// An ABSENT seen marker counts as unread. Background agents and delegated
+// child agents (metadata.createdByAgentId set) always derive false.
 describe('deriveAgentHasUnread', () => {
   it('is unread when the assistant spoke last and the marker lags behind', () => {
     expect(
@@ -12,6 +13,51 @@ describe('deriveAgentHasUnread', () => {
         lastMessageRole: 'assistant',
         lastMessageId: 'm-9',
         metadata: { lastSeenMessageId: 'm-5' },
+      }),
+    ).toBe(true);
+  });
+
+  it('is read for a background agent even with an unseen assistant message', () => {
+    expect(
+      deriveAgentHasUnread({
+        lastMessageRole: 'assistant',
+        lastMessageId: 'm-9',
+        isBackground: true,
+        metadata: { lastSeenMessageId: 'm-5' },
+      }),
+    ).toBe(false);
+    expect(
+      deriveAgentHasUnread({
+        lastMessageRole: 'assistant',
+        lastMessageId: 'm-9',
+        metadata: { lastSeenMessageId: 'm-5', isBackground: true },
+      }),
+    ).toBe(false);
+  });
+
+  it('is read for a delegated child agent even with an unseen assistant message', () => {
+    expect(
+      deriveAgentHasUnread({
+        lastMessageRole: 'assistant',
+        lastMessageId: 'm-9',
+        metadata: { lastSeenMessageId: 'm-5', createdByAgentId: 'agent-parent' },
+      }),
+    ).toBe(false);
+  });
+
+  it('ignores an empty-string / non-string createdByAgentId (not a child)', () => {
+    expect(
+      deriveAgentHasUnread({
+        lastMessageRole: 'assistant',
+        lastMessageId: 'm-9',
+        metadata: { lastSeenMessageId: 'm-5', createdByAgentId: '' },
+      }),
+    ).toBe(true);
+    expect(
+      deriveAgentHasUnread({
+        lastMessageRole: 'assistant',
+        lastMessageId: 'm-9',
+        metadata: { lastSeenMessageId: 'm-5', createdByAgentId: 42 },
       }),
     ).toBe(true);
   });
