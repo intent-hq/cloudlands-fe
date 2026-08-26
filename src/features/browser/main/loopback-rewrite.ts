@@ -29,6 +29,8 @@ export interface LoopbackRewriteContext {
   daemonIsRemote: boolean;
   /** Hostname the FE uses to reach the remote daemon (sanitized transport target). */
   daemonHost?: string;
+  /** Daemon-local links must tunnel because the saved remote transport host is client loopback. */
+  daemonLinksRequireTunnel?: boolean;
 }
 
 export interface LoopbackRewriteResult {
@@ -44,9 +46,11 @@ export interface LoopbackRewriteResult {
   /**
    * True only when the URL was rewritten to the REMOTE daemon host (never for
    * local-mode or `client.localhost` rewrites, which stay on this machine).
-   * The executor probes reachability before navigating when this is set.
+   * The resolver probes reachability unless `requiresTunnel` is also set.
    */
   remoteHost?: boolean;
+  /** Skip the client-side reachability probe and forward through the daemon tunnel. */
+  requiresTunnel?: boolean;
 }
 
 /**
@@ -93,8 +97,9 @@ export function loopbackContextFromTransport(
   } else if (config?.transport === 'wss' || config?.transport === 'tcp') {
     host = config.host;
   }
-  if (!savedRemote && host && classifyLoopbackHost(host) === 'bare-loopback') {
-    return { daemonIsRemote: false };
+  if (host && classifyLoopbackHost(host) === 'bare-loopback') {
+    if (!savedRemote) return { daemonIsRemote: false };
+    return { daemonIsRemote: true, daemonHost: host, daemonLinksRequireTunnel: true };
   }
   return host ? { daemonIsRemote: true, daemonHost: host } : { daemonIsRemote: true };
 }
@@ -168,6 +173,7 @@ export function rewriteLoopbackUrl(
       requestedUrl: rawUrl,
       reason: `${DAEMON_LOCALHOST} targets the daemon machine; rewritten to remote daemon host ${daemonHost}`,
       remoteHost: true,
+      ...(context.daemonLinksRequireTunnel ? { requiresTunnel: true } : {}),
     };
   }
 
@@ -188,6 +194,7 @@ export function rewriteLoopbackUrl(
     requestedUrl: rawUrl,
     reason: `bare loopback URL assumed daemon-local; rewritten to remote daemon host ${daemonHost}`,
     remoteHost: true,
+    ...(context.daemonLinksRequireTunnel ? { requiresTunnel: true } : {}),
     warning:
       // i18n-ignore (agent-facing protocol warning, not user-facing)
       `Loopback host "${url.hostname}" was assumed to mean the daemon machine and rewritten to ` +

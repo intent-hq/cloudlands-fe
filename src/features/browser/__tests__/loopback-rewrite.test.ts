@@ -185,10 +185,26 @@ describe('loopbackContextFromTransport', () => {
   it('keeps saved remotes remote when their WSS transport endpoint is loopback', () => {
     expect(
       loopbackContextFromTransport(false, { transport: 'wss', host: 'localhost' }, true),
-    ).toEqual({ daemonIsRemote: true, daemonHost: 'localhost' });
+    ).toEqual({
+      daemonIsRemote: true,
+      daemonHost: 'localhost',
+      daemonLinksRequireTunnel: true,
+    });
     expect(
       loopbackContextFromTransport(false, { transport: 'wss', host: '127.0.0.1' }, true),
-    ).toEqual({ daemonIsRemote: true, daemonHost: '127.0.0.1' });
+    ).toEqual({
+      daemonIsRemote: true,
+      daemonHost: '127.0.0.1',
+      daemonLinksRequireTunnel: true,
+    });
+
+    const rewrite = rewriteLoopbackUrl('http://localhost:8080/app', {
+      daemonIsRemote: true,
+      daemonHost: 'localhost',
+      daemonLinksRequireTunnel: true,
+    });
+    expect(rewrite.remoteHost).toBe(true);
+    expect(rewrite.requiresTunnel).toBe(true);
   });
 
   it('degrades to remote-without-host for missing or unparseable targets', () => {

@@ -218,7 +218,6 @@ describe('browser:resolve-url IPC handler', () => {
       mocks.getBackendClient.mockReturnValue({
         getConfig: () => ({ transport: 'wss', host }),
       });
-      fetchMock.mockRejectedValue(new TypeError('fetch failed'));
       mocks.forwardPort.mockResolvedValue(54321);
       const handler = await registerAndGetHandler();
       const invoke = vi.fn((channel: string, payload: unknown) => handler({}, payload));
@@ -229,6 +228,7 @@ describe('browser:resolve-url IPC handler', () => {
       const resolved = await resolveBrowserLinkForOpen(requestedUrl);
 
       expect(invoke).toHaveBeenCalledWith('browser:resolve-url', { url: requestedUrl });
+      expect(fetchMock).not.toHaveBeenCalled();
       expect(mocks.TunnelManager).toHaveBeenCalledTimes(1);
       expect(mocks.DirectRelay).not.toHaveBeenCalled();
       expect(mocks.forwardPort).toHaveBeenCalledWith(8080);

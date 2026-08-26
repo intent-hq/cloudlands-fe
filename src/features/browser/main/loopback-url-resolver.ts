@@ -157,7 +157,9 @@ function findTunnelLocalPassthrough(
  * before navigating to it. Any HTTP response (including error statuses)
  * proves the host:port is reachable from this machine; only a network-level
  * failure (connection refused, unroutable, timeout) fails the probe. URLs
- * that were not rewritten to a remote host are never probed.
+ * that were not rewritten to a remote host are never probed. A saved remote
+ * reached through client loopback skips the probe because that origin names
+ * the transport endpoint on this machine, not the daemon machine.
  *
  * A requested URL already pointing at one of our own active tunnel-local
  * forwards is passed through untouched instead of being probed/re-tunneled
@@ -178,94 +180,115 @@ export async function resolveRewrittenRemoteTarget(
   const passthrough = findTunnelLocalPassthrough(rewrite, getTunnelProvider);
   if (passthrough) return passthrough;
   const target = new URL(rewrite.url);
-  try {
-    const response = await fetch(target.origin, {
-      signal: AbortSignal.timeout(REMOTE_REWRITE_PROBE_TIMEOUT_MS),
-    });
-    // Only reachability matters — cancel the body so undici releases the
-    // connection instead of holding it until GC.
-    void response.body?.cancel().catch(() => {});
-    return { rewrite, tunneled: false };
-  } catch (error) {
-    const detail =
-      error instanceof Error
-        ? error.cause instanceof Error
-          ? error.cause.message
-          : error.message
-        : String(error);
-    const port = target.port || (target.protocol === 'https:' ? '443' : '80');
-    logger.warn('Reachability probe failed for rewritten remote URL', {
+  let probeError: unknown;
+  if (!rewrite.requiresTunnel) {
+    try {
+      const response = await fetch(target.origin, {
+        signal: AbortSignal.timeout(REMOTE_REWRITE_PROBE_TIMEOUT_MS),
+      });
+      // Only reachability matters — cancel the body so undici releases the
+      // connection instead of holding it until GC.
+      void response.body?.cancel().catch(() => {});
+      return { rewrite, tunneled: false };
+    } catch (error) {
+      probeError = error;
+    }
+  }
+  const detail = rewrite.requiresTunnel
+    ? 'direct probe skipped because the saved remote transport endpoint is client loopback'
+    : probeError instanceof Error
+      ? probeError.cause instanceof Error
+        ? probeError.cause.message
+        : probeError.message
+      : String(probeError);
+  const port = target.port || (target.protocol === 'https:' ? '443' : '80');
+  const directTargetReason = rewrite.requiresTunnel
+    ? `${target.origin} is the saved remote's client-side transport endpoint`
+    : `${target.origin} is not directly reachable from this machine`;
+  logger.warn(
+    rewrite.requiresTunnel
+      ? 'Direct probe skipped for saved remote reached through client loopback'
+      : 'Reachability probe failed for rewritten remote URL',
+    {
       requestedUrl: rewrite.requestedUrl,
       rewrittenUrl: rewrite.url,
       origin: target.origin,
       detail,
-    });
+    },
+  );
 
-    // The getter may lazily construct the provider; a construction failure
-    // must degrade to the best-effort error result below, not reject.
-    let tunnel: TunnelProvider | null = null;
+  // The getter may lazily construct the provider; a construction failure
+  // must degrade to the best-effort error result below, not reject.
+  let tunnel: TunnelProvider | null = null;
+  try {
+    tunnel = getTunnelProvider?.() ?? null;
+  } catch (providerError) {
+    logger.warn('Tunnel provider unavailable for rewritten remote URL', {
+      requestedUrl: rewrite.requestedUrl,
+      rewrittenUrl: rewrite.url,
+      error: providerError instanceof Error ? providerError.message : String(providerError),
+    });
+  }
+  if (tunnel) {
     try {
-      tunnel = getTunnelProvider?.() ?? null;
-    } catch (providerError) {
-      logger.warn('Tunnel provider unavailable for rewritten remote URL', {
-        requestedUrl: rewrite.requestedUrl,
-        rewrittenUrl: rewrite.url,
-        error: providerError instanceof Error ? providerError.message : String(providerError),
-      });
-    }
-    if (tunnel) {
-      try {
-        const remotePort = Number(port);
-        // forwardPort is idempotent on both real providers (TunnelManager,
-        // DirectRelay): a repeat call for an already-forwarded remote port
-        // returns the existing forward's local port, so repeat resolutions of
-        // the same requested URL yield an identical final URL and openTab's
-        // exact-URL dedupe can match (intent-hq/monorepo#2787). Always call
-        // it — never shortcut via activeForwards — so the ownership wrapper
-        // seam records the requesting workspace as a co-owner of the forward
-        // (refcounted cleanup, cloudlands-fe#1325).
-        const localPort = await tunnel.forwardPort(remotePort);
-        // Known limitation: an `https` URL keeps its scheme with the host
-        // swapped to 127.0.0.1, so the origin server's cert fails hostname
-        // verification in the embedded browser. Nothing better is possible
-        // without terminating TLS locally; the practical targets are `http`
-        // dev servers.
-        const tunneledUrl = new URL(rewrite.url);
-        tunneledUrl.hostname = '127.0.0.1';
-        tunneledUrl.port = String(localPort);
-        logger.info('Rewritten remote origin unreachable; falling back to the daemon tunnel', {
+      const remotePort = Number(port);
+      // forwardPort is idempotent on both real providers (TunnelManager,
+      // DirectRelay): a repeat call for an already-forwarded remote port
+      // returns the existing forward's local port, so repeat resolutions of
+      // the same requested URL yield an identical final URL and openTab's
+      // exact-URL dedupe can match (intent-hq/monorepo#2787). Always call
+      // it — never shortcut via activeForwards — so the ownership wrapper
+      // seam records the requesting workspace as a co-owner of the forward
+      // (refcounted cleanup, cloudlands-fe#1325).
+      const localPort = await tunnel.forwardPort(remotePort);
+      // Known limitation: an `https` URL keeps its scheme with the host
+      // swapped to 127.0.0.1, so the origin server's cert fails hostname
+      // verification in the embedded browser. Nothing better is possible
+      // without terminating TLS locally; the practical targets are `http`
+      // dev servers.
+      const tunneledUrl = new URL(rewrite.url);
+      tunneledUrl.hostname = '127.0.0.1';
+      tunneledUrl.port = String(localPort);
+      logger.info(
+        rewrite.requiresTunnel
+          ? 'Saved remote uses client loopback; forwarding through the daemon tunnel'
+          : 'Rewritten remote origin unreachable; falling back to the daemon tunnel',
+        {
           requestedUrl: rewrite.requestedUrl,
           rewrittenUrl: rewrite.url,
           remotePort,
           localPort,
-        });
-        return {
-          rewrite: {
-            ...rewrite,
-            url: tunneledUrl.toString(),
-            reason:
-              // i18n-ignore (agent-facing protocol detail, not user-facing)
-              `${rewrite.reason}; ${target.origin} is not directly reachable from this machine, ` +
-              // i18n-ignore (agent-facing protocol detail, not user-facing)
-              `so port ${port} is forwarded over the daemon tunnel to 127.0.0.1:${localPort}`,
-          },
-          tunneled: true,
-        };
-      } catch (tunnelError) {
-        logger.warn('Tunnel fallback failed for rewritten remote URL', {
-          requestedUrl: rewrite.requestedUrl,
-          rewrittenUrl: rewrite.url,
-          remotePort: Number(port),
-          error: tunnelError instanceof Error ? tunnelError.message : String(tunnelError),
-        });
-      }
+        },
+      );
+      return {
+        rewrite: {
+          ...rewrite,
+          url: tunneledUrl.toString(),
+          reason:
+            // i18n-ignore (agent-facing protocol detail, not user-facing)
+            `${rewrite.reason}; ${directTargetReason}, ` +
+            // i18n-ignore (agent-facing protocol detail, not user-facing)
+            `so port ${port} is forwarded over the daemon tunnel to 127.0.0.1:${localPort}`,
+        },
+        tunneled: true,
+      };
+    } catch (tunnelError) {
+      logger.warn('Tunnel fallback failed for rewritten remote URL', {
+        requestedUrl: rewrite.requestedUrl,
+        rewrittenUrl: rewrite.url,
+        remotePort: Number(port),
+        error: tunnelError instanceof Error ? tunnelError.message : String(tunnelError),
+      });
     }
+  }
 
-    return {
-      rewrite,
-      tunneled: false,
-      error:
-        // i18n-ignore (agent-facing protocol error, not user-facing)
+  return {
+    rewrite,
+    tunneled: false,
+    error: rewrite.requiresTunnel
+      ? // i18n-ignore (agent-facing protocol error, not user-facing)
+        `The requested URL ${rewrite.requestedUrl} requires the daemon tunnel because the saved remote transport endpoint is client loopback, but port ${port} could not be forwarded (${detail}).`
+      : // i18n-ignore (agent-facing protocol error, not user-facing)
         `The requested URL ${rewrite.requestedUrl} was rewritten to ${rewrite.url} because the daemon runs on a remote machine, ` +
         // i18n-ignore (agent-facing protocol error, not user-facing)
         `but ${target.origin} is not reachable from this machine (probe failed within ${REMOTE_REWRITE_PROBE_TIMEOUT_MS}ms: ${detail}). ` +
@@ -273,8 +296,7 @@ export async function resolveRewrittenRemoteTarget(
         `The server on the daemon machine is likely listening on 127.0.0.1 only — it must bind 0.0.0.0 to accept remote ` +
         // i18n-ignore (agent-facing protocol error, not user-facing)
         `connections — or a firewall is blocking port ${port}.`,
-    };
-  }
+  };
 }
 
 /**
