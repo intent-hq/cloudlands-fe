@@ -125,6 +125,9 @@ const backendClients = new Map<string, JsonRpcClient>();
 const backendClientConnects = new Map<string, Promise<JsonRpcClient>>();
 let handlersRegistered = false;
 
+/** Main-process lifecycle signal for services caching state by pooled client. */
+export const BACKEND_CLIENT_DISCONNECTED_EVENT = 'backend-client-disconnected';
+
 /**
  * Lazily-read intentd.version pin, injected into every transport payload so
  * the renderer can compare the connected daemon's version against the pin in
@@ -667,6 +670,8 @@ export function getBackendClient(): JsonRpcClient {
   // this same client so the wire payload stays small (GAP-2b).
   registerBrowserExecReverseHandler(instance, {
     saveAsset: (params) => instance.request<{ url?: string } | undefined>('note.saveAsset', params),
+    backendId: connectionId,
+    savedRemote: connectionId !== LOCAL_CONNECTION_ID,
   });
   client = instance;
   backendClients.set(connectionId, instance);
@@ -736,6 +741,7 @@ export function disconnectBackendClient(id: string): void {
   backendClients.delete(id);
   disposeTransferConnectionsForBackend(id);
   void cancelInflightHostExecStreamsForBackendSwitch(instance);
+  app.emit(BACKEND_CLIENT_DISCONNECTED_EVENT, instance);
   instance.dispose();
 }
 
@@ -793,6 +799,8 @@ function createAdditionalBackendClient(id: string, config: BackendConnectionConf
   });
   registerBrowserExecReverseHandler(instance, {
     saveAsset: (params) => instance.request<{ url?: string } | undefined>('note.saveAsset', params),
+    backendId: id,
+    savedRemote: id !== LOCAL_CONNECTION_ID,
   });
   instance.start();
   return instance;

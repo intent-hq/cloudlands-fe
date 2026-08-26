@@ -10,20 +10,35 @@
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { requestSpy, notificationHandlers, reconnectHandlers } = vi.hoisted(() => ({
-  requestSpy: vi.fn(),
-  notificationHandlers: [] as Array<(n: unknown) => void>,
-  reconnectHandlers: [] as Array<() => void>,
-}));
+const {
+  requestSpy,
+  primaryClient,
+  notificationHandlers,
+  notificationBackendIds,
+  reconnectHandlers,
+  reconnectBackendIds,
+} = vi.hoisted(() => {
+  const request = vi.fn();
+  return {
+    requestSpy: request,
+    primaryClient: { request },
+    notificationHandlers: [] as Array<(n: unknown) => void>,
+    notificationBackendIds: [] as Array<string | undefined>,
+    reconnectHandlers: [] as Array<() => void>,
+    reconnectBackendIds: [] as Array<string | undefined>,
+  };
+});
 
 vi.mock('../../backend/main/backend.ipc', () => ({
-  getBackendClient: () => ({ request: requestSpy }),
-  onBackendNotification: (handler: (n: unknown) => void) => {
+  getBackendClient: () => primaryClient,
+  onBackendNotification: (handler: (n: unknown) => void, backendId?: string) => {
     notificationHandlers.push(handler);
+    notificationBackendIds.push(backendId);
     return () => {};
   },
-  onBackendReconnected: (handler: () => void) => {
+  onBackendReconnected: (handler: () => void, backendId?: string) => {
     reconnectHandlers.push(handler);
+    reconnectBackendIds.push(backendId);
     return () => {};
   },
 }));
@@ -46,6 +61,19 @@ function emitEvent(type: string, data: Record<string, unknown>, subscriptionId =
   }
 }
 
+function emitBackendEvent(
+  backendId: string,
+  type: string,
+  data: Record<string, unknown>,
+  subscriptionId: string,
+): void {
+  notificationHandlers.forEach((handler, index) => {
+    if (notificationBackendIds[index] === backendId) {
+      handler({ method: 'events.event', params: { subscriptionId, event: { type, data } } });
+    }
+  });
+}
+
 /** Let fire-and-forget subscribe promises settle before emitting events. */
 function flush(): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, 0));
@@ -54,7 +82,9 @@ function flush(): Promise<void> {
 beforeEach(() => {
   vi.clearAllMocks();
   notificationHandlers.length = 0;
+  notificationBackendIds.length = 0;
   reconnectHandlers.length = 0;
+  reconnectBackendIds.length = 0;
   requestSpy.mockResolvedValue({ subscriptionId: SUB_ID });
   __resetWorkspaceForwardCleanupForTesting();
 });
@@ -122,10 +152,12 @@ describe('wrapTunnelProviderWithOwnership', () => {
 
   it('records app-lifetime ownership when no workspaceId is given', async () => {
     const registry = new ForwardOwnershipRegistry();
-    const wrapped = wrapTunnelProviderWithOwnership(makeProvider(), registry);
+    const provider = makeProvider();
+    const wrapped = wrapTunnelProviderWithOwnership(provider, registry);
+    const workspaceWrapped = wrapTunnelProviderWithOwnership(provider, registry, 'ws-a');
 
     await wrapped.forwardPort(3000);
-    registry.record(3000, 'ws-a');
+    await workspaceWrapped.forwardPort(3000);
     expect(registry.releaseWorkspace('ws-a')).toEqual([]);
   });
 
@@ -180,6 +212,28 @@ describe('wrapTunnelProviderWithOwnership', () => {
     await wrapped.forwardPort(3000);
     expect(wrapped.closeForward!(3000)).toBe(false);
     expect(registry.releaseWorkspace('ws-a')).toEqual([]);
+  });
+
+  it('keeps same-port ownership isolated when one pooled provider disconnects', async () => {
+    const registry = new ForwardOwnershipRegistry();
+    const providerA = makeProvider();
+    const providerB = makeProvider();
+    const wrappedA = wrapTunnelProviderWithOwnership(providerA, registry, 'ws-a');
+    const wrappedB = wrapTunnelProviderWithOwnership(providerB, registry, 'ws-b');
+    const closeForward = vi.fn((remotePort: number, provider?: TunnelProvider) => {
+      provider?.closeForward?.(remotePort);
+    });
+    ensureWorkspaceForwardCleanup({ registry, closeForward });
+
+    await wrappedA.forwardPort(8080);
+    await wrappedB.forwardPort(8080);
+    await flush();
+    providerA.onForwardDropped!(8080);
+
+    emitEvent('workspace:deleted', { workspaceId: 'ws-b' });
+    expect(closeForward).toHaveBeenCalledWith(8080, providerB);
+    expect(providerB.closeForward).toHaveBeenCalledWith(8080);
+    expect(providerA.closeForward).not.toHaveBeenCalled();
   });
 });
 
@@ -606,5 +660,44 @@ describe('reconnect reconciliation (#2646)', () => {
     resolvers[1]!({ workspaces: [{ id: 'ws-a', archived: false, status: 'Active' }] });
     await flush();
     expect(closeForward).not.toHaveBeenCalled();
+  });
+
+  it('reconciles and subscribes a background remote against its originating client', async () => {
+    requestSpy.mockImplementation(async (method: string) => {
+      if (method === 'events.subscribe') return { subscriptionId: 'sub-local' };
+      return { workspaces: [] };
+    });
+    const remoteRequest = vi.fn(async (method: string) => {
+      if (method === 'events.subscribe') return { subscriptionId: 'sub-remote-a' };
+      return { workspaces: [{ id: 'remote-ws', archived: false, status: 'Active' }] };
+    });
+    const remoteClient = { request: remoteRequest };
+    const provider: TunnelProvider = {
+      forwardPort: vi.fn(async () => 48080),
+      closeForward: vi.fn(() => true),
+      backend: 'tunnel',
+    };
+    const registry = new ForwardOwnershipRegistry();
+    const closeForward = vi.fn();
+    const wrapped = wrapTunnelProviderWithOwnership(provider, registry, 'remote-ws');
+
+    ensureWorkspaceForwardCleanup({
+      registry,
+      closeForward,
+      client: remoteClient as never,
+      backendId: 'remote-a',
+      provider,
+    });
+    await wrapped.forwardPort(8080);
+    await flush();
+
+    expect(remoteRequest).toHaveBeenCalledWith('workspace.list', { includeArchived: true });
+    expect(requestSpy).not.toHaveBeenCalledWith('workspace.list', expect.anything());
+    expect(notificationBackendIds).toContain('remote-a');
+    expect(reconnectBackendIds).toContain('remote-a');
+    expect(closeForward).not.toHaveBeenCalled();
+
+    emitBackendEvent('remote-a', 'workspace:deleted', { workspaceId: 'remote-ws' }, 'sub-remote-a');
+    expect(closeForward).toHaveBeenCalledWith(8080, provider);
   });
 });
