@@ -199,7 +199,7 @@ jobs:
             # Remove signing inputs entirely for an unsigned package.
             unset CSC_LINK CSC_KEY_PASSWORD
           fi
-          pnpm run dist:mac -- --publish never
+          pnpm run dist:mac --publish never
         env:
           # 12288: the v2.13.0 arm64 leg's peak heap outgrew the old 8192 cap
           # even with sourcemaps disabled (monorepo#1340); same bundle here
