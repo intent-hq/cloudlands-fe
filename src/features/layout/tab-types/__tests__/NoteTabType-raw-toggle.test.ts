@@ -122,10 +122,13 @@ vi.mock('$store/renderer/slices/user-preferences/user-preferences-slice', () => 
   toggleSpellcheck: () => ({ type: 'userPreferences/toggleSpellcheck' }),
 }));
 vi.mock('$store/renderer/slices/tab-state/tab-state-selectors', () => ({
-  selectScrollPosition: () => mockState.scrollPosition,
+  selectPaneScrollState: () => ({
+    subscribe: (run: (value: { scrollTop: number }) => void) =>
+      mockState.scrollPosition.subscribe((scrollTop) => run({ scrollTop })),
+  }),
 }));
 vi.mock('$store/renderer/slices/tab-state/tab-state-slice', () => ({
-  saveScrollPosition: () => ({ type: 'tabState/saveScrollPosition' }),
+  savePaneScrollState: () => ({ type: 'tabState/savePaneScrollState' }),
 }));
 vi.mock('$store/renderer/slices/panel-layout/panel-layout-slice', () => ({
   closeTab: () => ({ type: 'panelLayout/closeTab' }),

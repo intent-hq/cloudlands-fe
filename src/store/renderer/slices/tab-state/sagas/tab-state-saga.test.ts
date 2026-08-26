@@ -12,9 +12,12 @@ vi.mock('../../../utils/safe-local-storage-saga', () => ({
 }));
 
 import {
+  loadPaneScrollStates,
   loadScrollPositions,
   loadWorkspaceTabsState,
   openWorkspaceTab,
+  PANE_SCROLL_STATES_STORAGE_KEY,
+  savePaneScrollState,
   saveScrollPosition,
   TAB_SCROLL_POSITIONS_STORAGE_KEY,
   WORKSPACE_TABS_STORAGE_KEY,
@@ -39,6 +42,7 @@ const legacyPersistedTabs = { ...persistedTabs, viewMode: 'columns' as const };
 const state = {
   tabState: {
     scrollPositions: { 'ws-1-note': 42 },
+    paneScrollStates: { 'ws-1-note': { scrollTop: 42 } },
     openTabs: { 'ws-1': true },
     currentTabId: 'ws-1',
     pinnedTabs: { 'ws-1': true },
@@ -54,6 +58,7 @@ const state = {
 const REMOTE_ID = 'remote-1';
 const REMOTE_TABS_KEY = `backend:${REMOTE_ID}:${WORKSPACE_TABS_STORAGE_KEY}`;
 const REMOTE_SCROLL_KEY = `backend:${REMOTE_ID}:${TAB_SCROLL_POSITIONS_STORAGE_KEY}`;
+const REMOTE_PANE_SCROLL_KEY = `backend:${REMOTE_ID}:${PANE_SCROLL_STATES_STORAGE_KEY}`;
 const remoteState = { ...state, connections: { activeId: REMOTE_ID } };
 
 const settle = async () => {
@@ -75,6 +80,7 @@ describe('tabStateSaga', () => {
 
     expect(dispatch.mock.calls.map(([action]) => action)).toEqual([
       loadScrollPositions({ 'ws-1-note': 42 }),
+      loadPaneScrollStates({ 'ws-1-note': { scrollTop: 42 } }),
       loadWorkspaceTabsState(legacyPersistedTabs),
       workspaceTabsHydrated(LOCAL_CONNECTION_ID),
     ]);
@@ -108,12 +114,18 @@ describe('tabStateSaga', () => {
       await settle();
       channel.put(openWorkspaceTab('ws-1'));
       channel.put(saveScrollPosition('ws-1-note', 42));
+      channel.put(savePaneScrollState('ws-1-note', { scrollTop: 42 }));
       await settle();
 
-      expect(storage.getJSON.mock.calls).toEqual([[REMOTE_SCROLL_KEY], [REMOTE_TABS_KEY]]);
+      expect(storage.getJSON.mock.calls).toEqual([
+        [REMOTE_SCROLL_KEY],
+        [REMOTE_PANE_SCROLL_KEY],
+        [REMOTE_TABS_KEY],
+      ]);
       expect(storage.setJSON.mock.calls).toEqual([
         [REMOTE_TABS_KEY, persistedTabs],
         [REMOTE_SCROLL_KEY, { 'ws-1-note': 42 }],
+        [REMOTE_PANE_SCROLL_KEY, { 'ws-1-note': { scrollTop: 42 } }],
       ]);
       task.cancel();
       await task.toPromise();
@@ -136,6 +148,7 @@ describe('tabStateSaga', () => {
 
       expect(dispatch.mock.calls.map(([action]) => action)).toEqual([
         loadScrollPositions({}),
+        loadPaneScrollStates({}),
         loadWorkspaceTabsState(persistedTabs),
         workspaceTabsHydrated(REMOTE_ID),
       ]);

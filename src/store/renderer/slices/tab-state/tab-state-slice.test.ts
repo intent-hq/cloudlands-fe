@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  clearPaneScrollState,
   closeWorkspaceTab,
   endDrag,
   loadScrollPositions,
@@ -7,7 +8,9 @@ import {
   moveWorkspace,
   openWorkspaceTab,
   reopenLastClosedWorkspaceTab,
+  prunePaneScrollStates,
   restoreWorkspaceTab,
+  savePaneScrollState,
   saveScrollPosition,
   serializeWorkspaceTabsState,
   setActiveHandleDrop,
@@ -34,6 +37,7 @@ describe('tabStateReducer', () => {
     isDragging: false,
     activeHandleDrop: null,
     scrollPositions: {},
+    paneScrollStates: {},
     openTabs: {},
     currentTabId: null,
     pinnedTabs: {},
@@ -96,6 +100,33 @@ describe('tabStateReducer', () => {
         'tab-1': 150,
       },
     );
+  });
+
+  it('persists valid pane scroll state including the top position', () => {
+    const atTop = tabStateReducer(
+      initialState,
+      savePaneScrollState('pane-1', { scrollTop: 0, shouldFollowBottom: false }),
+    );
+    expect(atTop.paneScrollStates['pane-1']).toEqual({
+      scrollTop: 0,
+      shouldFollowBottom: false,
+    });
+    expect(tabStateReducer(atTop, savePaneScrollState('pane-1', { scrollTop: -1 }))).toBe(atTop);
+  });
+
+  it('clears and prunes closed pane scroll state', () => {
+    const state = makeState({
+      paneScrollStates: {
+        'pane-1': { scrollTop: 40 },
+        'pane-2': { scrollTop: 80, shouldFollowBottom: true },
+      },
+    });
+    expect(tabStateReducer(state, clearPaneScrollState('pane-1')).paneScrollStates).toEqual({
+      'pane-2': { scrollTop: 80, shouldFollowBottom: true },
+    });
+    expect(tabStateReducer(state, prunePaneScrollStates(['pane-1'])).paneScrollStates).toEqual({
+      'pane-1': { scrollTop: 40 },
+    });
   });
 
   it('loads scroll positions by replacing the existing map', () => {

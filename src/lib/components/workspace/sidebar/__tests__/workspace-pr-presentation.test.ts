@@ -2,7 +2,10 @@ import type { PrMonitorRow } from '$features/pr-monitor/pr-monitor-service';
 import type { PullRequestInfo } from '$shared/types';
 import { PullRequestStatus } from '$shared/types';
 import { describe, expect, it } from 'vitest';
-import { buildWorkspacePRPresentationModel } from '../workspace-pr-presentation';
+import {
+  buildWorkspacePRPresentationModel,
+  getWorkspacePRCheckSummary,
+} from '../workspace-pr-presentation';
 
 const workspaceRepo = 'acme/widgets';
 const buildPrUrl = (number: number, fallback?: string) =>
@@ -176,5 +179,60 @@ describe('buildWorkspacePRPresentationModel', () => {
     expect(row.details).toContain('Merge conflicts');
     expect(row.details).toContain('1/3 checks failing (1 running)');
     expect(row.details).toContain('Changes requested');
+  });
+
+  it('prioritizes one whole-number failed, running, or passed check percentage', () => {
+    expect(getWorkspacePRCheckSummary({ total: 4, passed: 2, failed: 1, pending: 1 })).toEqual({
+      state: 'failed',
+      percentage: 25,
+    });
+    expect(getWorkspacePRCheckSummary({ total: 4, passed: 3, failed: 0, pending: 1 })).toEqual({
+      state: 'running',
+      percentage: 25,
+    });
+    expect(getWorkspacePRCheckSummary({ total: 3, passed: 3, failed: 0, pending: 0 })).toEqual({
+      state: 'passed',
+      percentage: 100,
+    });
+  });
+
+  it('does not invent a percentage for missing or invalid check totals', () => {
+    expect(getWorkspacePRCheckSummary(undefined)).toBeNull();
+    expect(getWorkspacePRCheckSummary({ total: 0, passed: 0, failed: 0, pending: 0 })).toBeNull();
+    expect(getWorkspacePRCheckSummary({ total: 4, passed: 0, failed: 0, pending: 0 })).toBeNull();
+  });
+
+  it('formats workspace CI and monitor snapshots as the same compact summary', () => {
+    const [workspaceRow] = build(
+      [makePR({ ciStatus: { total: 4, passed: 3, failed: 0, pending: 1 } })],
+      null,
+      [],
+    );
+    const [monitorRow] = build([], null, [
+      makeMonitor({
+        lastSnapshot: {
+          state: 'open',
+          isDraft: false,
+          hasConflicts: false,
+          isBehind: false,
+          mergeable: true,
+          checks: {
+            total: 4,
+            passed: 2,
+            failed: 1,
+            pending: 1,
+            failingRequired: 1,
+            pendingRequired: 1,
+            requiredKnown: true,
+          },
+          approvals: { decision: 'REVIEW_REQUIRED', have: 0, needed: 1, changesRequested: 0 },
+          threads: { unresolved: 0, resolutionRequired: false },
+          rulesKnown: true,
+        },
+      }),
+    ]);
+
+    expect(workspaceRow.checkSummary).toBe('25% running');
+    expect(monitorRow.checkSummary).toBe('25% failed');
   });
 });

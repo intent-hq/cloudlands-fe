@@ -37,7 +37,7 @@
 
   import { onMount, onDestroy, untrack, tick } from 'svelte';
   import { deepEqual } from 'fast-equals';
-  import { writable } from 'svelte/store';
+  import { readable, writable } from 'svelte/store';
   import { WorkspaceRebindTracker } from './workspace-rebind-tracker';
   import { shouldHandleChatFocusRequest, type ChatFocusRequest } from './chat-focus-ownership';
   import type { AgentMessage } from '$shared/types';
@@ -326,6 +326,8 @@
   } from '$lib/utils/previous-user-message';
   import WorkspaceSetupCard from '$features/onboarding/messages/WorkspaceSetupCard.svelte';
   import { store as appStore } from '$store/renderer/store';
+  import { selectPaneScrollState } from '$store/renderer/slices/tab-state/tab-state-selectors';
+  import { savePaneScrollState } from '$store/renderer/slices/tab-state/tab-state-slice';
 
   const logger = createLogger('ChatPanel');
 
@@ -338,6 +340,8 @@
   interface Props {
     workspace: Workspace;
     agentId: string;
+    /** Stable panel-tab identity used to persist scroll state across app restarts. */
+    panelTabId?: string;
     agentName?: string;
     agentModel?: string;
     /** Whether this panel is the active/visible tab. Used to prevent input when hidden. */
@@ -365,6 +369,7 @@
   let {
     workspace,
     agentId,
+    panelTabId,
     agentName = 'Chat',
     agentModel = undefined,
     isActive = true,
@@ -381,6 +386,11 @@
     isPanelFocused = false,
     onNavigationStateChange,
   }: Props = $props();
+
+  // svelte-ignore state_referenced_locally -- panel tab identity is immutable for a mounted pane
+  const persistedPaneScrollState$ = panelTabId
+    ? selectPaneScrollState(panelTabId)
+    : readable(undefined);
 
   // True when this panel is rendering the Chief workspace, which opens directly
   // into its composer instead of showing the regular-agent welcome.
@@ -585,7 +595,8 @@
   // re-entering at the bottom.
   // svelte-ignore state_referenced_locally -- mount-time snapshot of the identity props.
   const cachedScroll =
-    workspace?.id && agentId ? getCachedChatScroll(workspace.id, agentId) : undefined;
+    (workspace?.id && agentId ? getCachedChatScroll(workspace.id, agentId) : undefined) ??
+    $persistedPaneScrollState$;
   // Non-null when the previous instance was scrolled away from the bottom;
   // consumed by the entry-scroll paths below instead of scrolling to bottom.
   const cachedScrollRestoreTop =
@@ -2709,10 +2720,15 @@
   // scrollTop of ~0 would overwrite a useful cached position and land the
   // next mount at the top. With follow engaged the recorded scrollTop is
   // ignored on restore, so container dimensions do not matter.
-  function canRecordChatScroll(isFollowing: boolean): boolean {
+  function canPersistPaneScroll(isFollowing: boolean): boolean {
     if (!scrollContainer) return false;
     if (cachedScrollRestoreTop !== null && !hasConsumedCachedScrollRestore) return false;
     if (!isFollowing && scrollContainer.scrollHeight <= scrollContainer.clientHeight) return false;
+    return true;
+  }
+
+  function canRecordChatScroll(isFollowing: boolean): boolean {
+    if (!canPersistPaneScroll(isFollowing)) return false;
     // Stop-looking boundary (workspace switch / tab close): the boundary
     // saga clears the cache and ends this agent's divider session in the
     // same dispatch tick, BEFORE Svelte's teardown flush destroys this
@@ -3885,6 +3901,19 @@
         scrollTop: scrollContainer.scrollTop,
         shouldFollowBottom,
       });
+    }
+    if (
+      panelTabId &&
+      scrollContainer &&
+      $agentMessages$.length > 0 &&
+      canPersistPaneScroll(shouldFollowBottom)
+    ) {
+      appStore.dispatch(
+        savePaneScrollState(panelTabId, {
+          scrollTop: scrollContainer.scrollTop,
+          shouldFollowBottom,
+        }),
+      );
     }
 
     // Clear currently viewed agent so other agents can properly be marked as

@@ -44,7 +44,9 @@ test('shows only the current agent identity across root, delegated, single, stac
         expect(geometry).toEqual({ slot: [24, 24], avatar: [24, 24] });
         await expect(identity.getByRole('button', { name: currentName })).toHaveCount(1);
         await expect(header).not.toContainText(otherName);
-        await expect(header.locator('[data-pane-stack]')).toHaveCount(0);
+        await expect(header.getByTestId('pane-stack-selector-trigger')).toHaveCount(
+          stackCount > 1 ? 1 : 0,
+        );
         await expect(header.locator('[data-pane-stack-layer]')).toHaveCount(0);
         await expect(header.locator('[data-pane-stack-position]')).toHaveCount(0);
         await expect(header.locator('[data-pane-stack-overflow-trigger]')).toHaveCount(0);

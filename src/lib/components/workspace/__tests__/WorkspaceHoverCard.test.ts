@@ -391,6 +391,20 @@ describe('WorkspaceHoverCard', () => {
     expect(status.getAttribute('title')).toBe(description);
   });
 
+  it('places task progress before the description and uses normal-weight recency', async () => {
+    const { container } = await renderHoverCard({ statusMessage: 'Current workspace summary.' });
+    const header = container.querySelector('[data-workspace-hover-card-header]');
+    const progress = container.querySelector('[data-workspace-hover-card-progress]');
+    const description = container.querySelector('[data-workspace-hover-card-status-message]');
+    const recency = container.querySelector('[data-workspace-hover-card-recency]');
+
+    expect(header && progress && description).toBeTruthy();
+    expect(
+      [...header!.children].indexOf(progress!) < [...header!.children].indexOf(description!),
+    ).toBe(true);
+    expect(recency?.className).toContain('font-normal');
+  });
+
   it('renders identity on the left and the normally cased semantic status only on the right', async () => {
     const { container } = await renderHoverCard({ displayStatus: 'in_progress' });
     const header = container.querySelector('[data-workspace-hover-card-header]');
@@ -702,6 +716,8 @@ describe('WorkspaceHoverCard', () => {
     }
     expect(agentRowContent?.className).toContain('workspace-hover-card__detail-row');
     expect(prRow?.className).toContain('workspace-hover-card__detail-row');
+    expect(prRow?.className).toContain('items-start');
+    expect(prRow?.className).not.toContain('items-center');
     expect(agentRowContent?.className).not.toContain('gap-2');
     expect(prRow?.className).not.toContain('gap-2');
     for (const iconClass of ['h-6', 'w-6', 'shrink-0', 'place-items-center']) {
@@ -711,7 +727,10 @@ describe('WorkspaceHoverCard', () => {
     expect(document.querySelector('[data-workspace-hover-card-pr-divider]')).toBeNull();
     expect(screen.getByText('Add hover card')).toBeTruthy();
     expect(screen.getByText('#12')).toBeTruthy();
-    expect(screen.getByText(/checks running/).className).toContain('text-success');
+    expect(screen.getByText('#12').parentElement).toBe(
+      document.querySelector('[data-workspace-hover-card-pr-secondary]'),
+    );
+    expect(screen.getByText('25% running').className).toContain('text-subtle');
     expect(screen.queryByText('Git')).toBeNull();
     expectVisibleChangesRow('3 files +42 -7, +2 -1');
   });
@@ -790,12 +809,27 @@ describe('WorkspaceHoverCard', () => {
     expect(rows.every((row) => !row.className.includes('gap-2'))).toBe(true);
     expect(rows.every((row) => row.className.includes('py-0.5'))).toBe(true);
     expect(screen.getByText('Open workspace PR').className).toContain('truncate');
-    expect(rows[0].querySelector('[data-workspace-hover-card-pr-status]')?.className).toContain(
-      'text-success',
-    );
-    expect(rows[2].querySelector('[data-workspace-hover-card-pr-status]')?.className).toContain(
-      'text-primary',
-    );
+    expect(
+      rows.every((row) =>
+        row
+          .querySelector('[data-workspace-hover-card-pr-secondary]')
+          ?.className.includes('text-subtle'),
+      ),
+    ).toBe(true);
+    expect(
+      rows.every((row) =>
+        row
+          .querySelector('[data-workspace-hover-card-pr-status]')
+          ?.className.includes('text-subtle'),
+      ),
+    ).toBe(true);
+    expect(
+      rows.every(
+        (row) =>
+          row.querySelector('[data-workspace-hover-card-pr-number]')?.parentElement ===
+          row.querySelector('[data-workspace-hover-card-pr-secondary]'),
+      ),
+    ).toBe(true);
     expect(screen.getByText('other-org/tooling')).toBeTruthy();
     expect(screen.getByText('Cross-repo monitor')).toBeTruthy();
     expect(rows.every((row) => row.getAttribute('aria-label')?.includes('#'))).toBe(true);

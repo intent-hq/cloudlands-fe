@@ -50,7 +50,7 @@ afterEach(() => {
 });
 
 describe('pane stack control', () => {
-  it('gives a stacked agent header the shared group and active-pane semantics', () => {
+  it('keeps shared stack semantics without legacy overlay metadata', () => {
     const { container } = render(PaneStackControlHost, {
       props: { stackCount: 2, initialActiveTabId: 'agent-pane' },
     });
@@ -69,6 +69,7 @@ describe('pane stack control', () => {
     expect(active).not.toBeNull();
     expect(active?.getAttribute('aria-current')).toBe('true');
     expect(screen.getByTestId('pane-stack-selector-trigger')).not.toBeNull();
+    expect(header.querySelector('[data-pane-stack]')).toBeNull();
     expect(header.querySelector('[data-pane-stack-layer]')).toBeNull();
     expect(header.querySelector('[data-pane-stack-position]')).toBeNull();
     expect(header.querySelector('[data-pane-stack-overflow-trigger]')).toBeNull();

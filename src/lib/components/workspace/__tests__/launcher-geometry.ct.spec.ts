@@ -179,6 +179,48 @@ for (const scenario of [
   });
 }
 
+for (const theme of ['light', 'dark'] as const) {
+  test(`Changes PR hover card stays sleek and bounded in ${theme}`, async ({ mount, page }) => {
+    await page.setViewportSize({ width: 900, height: 700 });
+    await mount(LauncherGeometryHost, {
+      props: { width: 360, zoom: 1, theme, itemCount: 4 },
+    });
+
+    const action = page.locator('[data-sidebar-pr-link]');
+    await action.hover();
+    const card = page.locator('[data-sidebar-pr-hover-card]');
+    await expect(card).toBeVisible({ timeout: 500 });
+    await expect(card.locator('[data-sidebar-pr-hover-row]')).toHaveCount(3);
+    await expect(card).toContainText('Polish sidebar pull request state');
+    await expect(card).not.toContainText('checks');
+    await expect(card).not.toContainText('Awaiting review');
+    await expect(card).not.toContainText('intent-hq/repository-with-a-very-long-name');
+    await expect(card).toContainText('Draft');
+    await expect(card).toContainText('Merged');
+
+    const geometry = await card.evaluate((element) => {
+      const rect = element.getBoundingClientRect();
+      const content = element.closest<HTMLElement>('[data-tooltip-content]')!;
+      return {
+        left: rect.left,
+        top: rect.top,
+        right: rect.right,
+        bottom: rect.bottom,
+        contentClass: content.className,
+      };
+    });
+    expect(geometry.left).toBeGreaterThanOrEqual(0);
+    expect(geometry.top).toBeGreaterThanOrEqual(0);
+    expect(geometry.right).toBeLessThanOrEqual(900);
+    expect(geometry.bottom).toBeLessThanOrEqual(700);
+    expect(geometry.contentClass).toContain('bg-background');
+
+    const draftRow = card.locator('[data-pr-identity$="#1374"]');
+    await draftRow.focus();
+    await expect(draftRow).toBeFocused();
+  });
+}
+
 test('preserves semantic colors in the collapsed agent stack', async ({ mount, page }) => {
   await page.setViewportSize({ width: 1200, height: 800 });
   const component = await mount(LauncherGeometryHost, {

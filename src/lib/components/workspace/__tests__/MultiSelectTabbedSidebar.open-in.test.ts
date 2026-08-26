@@ -4,7 +4,7 @@
 import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
 import { cleanup, fireEvent, render, waitFor } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { AgentSession } from '$shared/types';
+import { PullRequestStatus, type AgentSession, type PullRequestInfo } from '$shared/types';
 
 import type { InstalledEditor } from '$store/renderer/slices/external-editors/external-editors-slice';
 import {
@@ -64,6 +64,11 @@ const mocks = vi.hoisted(() => {
     },
     runningAgentIds: new Set<string>(),
     focusedPanelId: 'source-panel',
+    activePullRequest: null as PullRequestInfo | null,
+    // eslint-disable-next-line themis/collection-state-shape -- test-only dynamic selector fixture
+    workspacePullRequests: [] as PullRequestInfo[],
+    // eslint-disable-next-line themis/collection-state-shape -- test-only dynamic selector fixture
+    prMonitors: [] as never[],
     activePrSummary: null as null | {
       number: number;
       url: string;
@@ -151,16 +156,23 @@ vi.mock('$store/renderer/slices/file-explorer/file-explorer-selectors', () => ({
   selectEffectiveFileExplorerWorkspacePath: mocks.selector('/tmp/project'),
 }));
 vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
-  selectWorkspaceById: mocks.selector({
+  selectWorkspaceById: mocks.selectorFrom(() => ({
     id: 'ws-1',
     title: 'Project',
     path: '/tmp/project',
     worktreePath: '/tmp/project',
     skipWorktree: false,
-  }),
+    repositoryOwner: 'intent-hq',
+    repositoryName: 'monorepo',
+    activePullRequest: mocks.activePullRequest ?? undefined,
+    pullRequests: mocks.workspacePullRequests,
+  })),
   selectWorkspaceActivePrSummary: mocks.selectorFrom(() => mocks.activePrSummary),
-  selectWorkspaceActivePullRequest: mocks.selector(null),
+  selectWorkspaceActivePullRequest: mocks.selectorFrom(() => mocks.activePullRequest),
   selectIsWorkspaceHostLocal: mocks.selector(true),
+}));
+vi.mock('$store/renderer/slices/pr-monitor/pr-monitor-selectors', () => ({
+  selectPrMonitors: mocks.selectorFrom(() => mocks.prMonitors),
 }));
 vi.mock('$store/renderer/slices/workspace-notes/workspace-notes-selectors', () => ({
   selectAllNotes: mocks.selectorFrom(() => mocks.notes),
@@ -332,6 +344,9 @@ describe('MultiSelectTabbedSidebar Files Open In', () => {
     mocks.selectedTabsByWorkspace.clear();
     mocks.runningAgentIds.clear();
     mocks.focusedPanelId = 'source-panel';
+    mocks.activePullRequest = null;
+    mocks.workspacePullRequests = [];
+    mocks.prMonitors = [];
     mocks.activePrSummary = null;
   });
 
@@ -390,6 +405,16 @@ describe('MultiSelectTabbedSidebar Files Open In', () => {
   });
 
   it('places one canonical PR action in the Changes trailing action area', async () => {
+    mocks.activePullRequest = {
+      id: 'pr-1373',
+      number: 1373,
+      url: 'https://github.com/other/repository-with-a-very-long-name/pull/1373',
+      title: 'A monitored pull request',
+      status: PullRequestStatus.Open,
+      createdAt: '2026-08-20T00:00:00.000Z',
+      updatedAt: '2026-08-21T00:00:00.000Z',
+    };
+    mocks.workspacePullRequests = [mocks.activePullRequest];
     mocks.activePrSummary = {
       number: 1373,
       url: 'https://github.com/other/repository-with-a-very-long-name/pull/1373',
@@ -409,7 +434,7 @@ describe('MultiSelectTabbedSidebar Files Open In', () => {
     const resource = container.querySelector<HTMLElement>('[data-sidebar-changes-resource]');
 
     expect(label.textContent).toBe('Changes');
-    expect(label.nextElementSibling).toBe(prAction);
+    expect(label.nextElementSibling?.contains(prAction)).toBe(true);
     expect(label.className).toContain('flex-1');
     expect(label.className).toContain('truncate');
     expect(prAction.className).toContain('ml-auto');
@@ -442,6 +467,72 @@ describe('MultiSelectTabbedSidebar Files Open In', () => {
     expect(mocks.dispatch).toHaveBeenCalledWith(
       expect.objectContaining({ type: 'sidebarNav/setMultiSelectSidebarSelectedTabs' }),
     );
+  });
+
+  it('lists every workspace PR in the Changes hover card and opens the selected row', async () => {
+    const prs: PullRequestInfo[] = [
+      {
+        id: 'pr-42',
+        number: 42,
+        url: 'https://github.com/intent-hq/monorepo/pull/42',
+        title: 'Primary pull request',
+        status: PullRequestStatus.Open,
+        createdAt: '2026-08-20T00:00:00.000Z',
+        updatedAt: '2026-08-21T00:00:00.000Z',
+        ciStatus: { total: 8, passed: 6, failed: 0, pending: 2 },
+      },
+      {
+        id: 'pr-43',
+        number: 43,
+        url: 'https://github.com/intent-hq/monorepo/pull/43',
+        title: 'Draft follow-up with a long descriptive title',
+        status: PullRequestStatus.Draft,
+        createdAt: '2026-08-21T00:00:00.000Z',
+        updatedAt: '2026-08-22T00:00:00.000Z',
+      },
+      {
+        id: 'pr-41',
+        number: 41,
+        url: 'https://github.com/intent-hq/monorepo/pull/41',
+        title: 'Merged foundation',
+        status: PullRequestStatus.Merged,
+        createdAt: '2026-08-18T00:00:00.000Z',
+        updatedAt: '2026-08-23T00:00:00.000Z',
+      },
+    ];
+    mocks.activePullRequest = prs[0];
+    mocks.workspacePullRequests = prs;
+    mocks.activePrSummary = {
+      number: 42,
+      url: prs[0].url,
+      chipLabel: '#42',
+      title: prs[0].title,
+      status: 'open',
+      actionLabel: 'View PR #42',
+      actionTooltip: 'View PR #42',
+    };
+
+    const Sidebar = (await import('../MultiSelectTabbedSidebar.svelte')).default;
+    const { container } = render(Sidebar, { props: { workspaceId: 'ws-1' } });
+    const prAction = container.querySelector<HTMLButtonElement>('[data-sidebar-pr-link]')!;
+    prAction.focus();
+
+    await waitFor(() =>
+      expect(document.querySelectorAll('[data-sidebar-pr-hover-row]')).toHaveLength(3),
+    );
+    const hoverCard = document.querySelector<HTMLElement>('[data-sidebar-pr-hover-card]')!;
+    expect(hoverCard.textContent).not.toContain('Pull Requests');
+    expect(hoverCard.textContent).not.toContain('intent-hq/monorepo');
+    expect(hoverCard.textContent).not.toContain('checks');
+    const draftRow = document.querySelector<HTMLButtonElement>(
+      '[data-sidebar-pr-hover-row][data-pr-identity="intent-hq/monorepo#43"]',
+    )!;
+    expect(draftRow.textContent).toContain('Draft follow-up with a long descriptive title');
+    expect(draftRow.textContent).toContain('Draft');
+    await fireEvent.click(draftRow);
+
+    expect(mocks.handleLink).toHaveBeenCalledWith(prs[1].url, { workspaceId: 'ws-1' });
+    expect(mocks.selectedTabs).toEqual(['overview']);
   });
 
   it('keeps the Changes card PR-free when there is no active PR', async () => {

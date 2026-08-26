@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onDestroy } from 'svelte';
-  import type { AgentSession } from '$shared/types';
+  import { PullRequestStatus, type AgentSession, type PullRequestInfo } from '$shared/types';
   import MultiSelectTabbedSidebar from '../../MultiSelectTabbedSidebar.svelte';
   import { startRootStoreLifecycle } from '$store/renderer/root-store-lifecycle';
   import { store } from '$store/renderer/store';
@@ -27,6 +27,37 @@
   const initialItemCount = itemCount;
   const workspaceId = 'launcher-geometry-ct';
   const timestamp = '2026-08-17T00:00:00.000Z';
+  const pullRequests: PullRequestInfo[] = [
+    {
+      id: 'pr-1373',
+      number: 1373,
+      url: 'https://github.com/intent-hq/repository-with-a-very-long-name/pull/1373',
+      title: 'Polish sidebar pull request state and interaction details',
+      status: PullRequestStatus.Open,
+      ciStatus: { total: 12, passed: 9, failed: 0, pending: 3 },
+      reviewDecision: 'REVIEW_REQUIRED',
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    },
+    {
+      id: 'pr-1374',
+      number: 1374,
+      url: 'https://github.com/intent-hq/repository-with-a-very-long-name/pull/1374',
+      title: 'Add a compact multi-PR hover card for the Changes launcher',
+      status: PullRequestStatus.Draft,
+      createdAt: '2026-08-18T00:00:00.000Z',
+      updatedAt: '2026-08-19T00:00:00.000Z',
+    },
+    {
+      id: 'pr-1368',
+      number: 1368,
+      url: 'https://github.com/intent-hq/repository-with-a-very-long-name/pull/1368',
+      title: 'Merge the sidebar layout foundation',
+      status: PullRequestStatus.Merged,
+      createdAt: '2026-08-10T00:00:00.000Z',
+      updatedAt: '2026-08-20T00:00:00.000Z',
+    },
+  ];
   const disposeStore = startRootStoreLifecycle(store, { startSagas: () => [] });
   const agents = Array.from({ length: initialItemCount }, (_, index) => ({
     id: index === 0 ? 'agent-running' : `agent-${index}`,
@@ -59,15 +90,8 @@
       status: 'active',
       repositoryOwner: 'intent-hq',
       repositoryName: 'repository-with-a-very-long-name',
-      activePullRequest: {
-        id: 'pr-1373',
-        number: 1373,
-        url: 'https://github.com/intent-hq/repository-with-a-very-long-name/pull/1373',
-        title: 'Polish sidebar PR state',
-        status: 'OPEN',
-        createdAt: timestamp,
-        updatedAt: timestamp,
-      },
+      activePullRequest: pullRequests[0],
+      pullRequests,
       createdAt: timestamp,
       updatedAt: timestamp,
     } as never),
