@@ -10,8 +10,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
  * Both this handler and workspace-asset:// (note assets via `note.readAsset`,
  * PROTOCOL §5.2) issue their RPC on the backend that owns the workspace
  * (monorepo#3501): the workspace's hosting window resolves to its stamped
- * backend's pooled client, and the app-primary compatibility client is the
- * fallback when no hosting window (or pooled client) exists.
+ * backend's pooled client. The app-primary compatibility client is the
+ * fallback when no hosting window is known (after a short retry for the
+ * initial-navigation race) or when the stamped backend is the implicit local
+ * one; a stamped named backend without a pooled client fails closed (404).
  */
 
 const { protocolHandle, mockRequest, pooledRequests, windowBackends, workspaceWindows } =
@@ -51,7 +53,10 @@ vi.mock('../window', () => ({
 }));
 
 import { imageMimeTypeForPath, parseWorkspaceFileRequest } from '../utils/workspace-file-url';
-import { resolveWorkspaceBackendClient } from '../utils/workspace-backend-client';
+import {
+  resolveWorkspaceBackendClient,
+  resolveWorkspaceBackendClientWithRetry,
+} from '../utils/workspace-backend-client';
 import {
   setupWorkspaceAssetProtocolHandler,
   setupWorkspaceFileProtocolHandler,
@@ -171,11 +176,13 @@ describe('resolveWorkspaceBackendClient', () => {
     windows?: number[];
     backendOf?: (windowId: number) => string | null;
     clients?: Record<string, string>;
+    fallbackAllowed?: (backendId: string) => boolean;
   }) => ({
     getWindowIdsForWorkspace: () => overrides.windows ?? [],
     getBackendIdForWindowId: overrides.backendOf ?? (() => null),
     getClientForBackend: (id: string) => overrides.clients?.[id],
     getPrimaryClient: () => 'primary',
+    isPrimaryFallbackAllowed: overrides.fallbackAllowed ?? ((id: string) => id === 'local'),
   });
 
   it('picks the pooled client of the first hosting window with a live backend', () => {
@@ -186,21 +193,40 @@ describe('resolveWorkspaceBackendClient', () => {
         clients: { 'conn-2': 'pooled-2' },
       }),
     });
-    expect(resolved).toEqual({ client: 'pooled-2', backendId: 'conn-2' });
+    expect(resolved).toEqual({ client: 'pooled-2', backendId: 'conn-2', fallback: null });
   });
 
   it('falls back to the primary client when no window hosts the workspace', () => {
     expect(resolveWorkspaceBackendClient('ws-1', lookup({}))).toEqual({
       client: 'primary',
       backendId: null,
+      fallback: 'no-hosting-window',
+      attemptedBackendIds: [],
     });
   });
 
-  it('falls back to the primary client when hosting backends have no pooled client', () => {
+  it('falls back to the primary client when an unpooled backend allows the fallback', () => {
+    const resolved = resolveWorkspaceBackendClient('ws-1', {
+      ...lookup({ windows: [1], backendOf: () => 'local' }),
+    });
+    expect(resolved).toEqual({
+      client: 'primary',
+      backendId: null,
+      fallback: 'unpooled-backend',
+      attemptedBackendIds: ['local'],
+    });
+  });
+
+  it('fails closed when the stamped backend is disconnected and not fallback-eligible', () => {
     const resolved = resolveWorkspaceBackendClient('ws-1', {
       ...lookup({ windows: [1], backendOf: () => 'conn-gone' }),
     });
-    expect(resolved).toEqual({ client: 'primary', backendId: null });
+    expect(resolved).toEqual({
+      client: null,
+      backendId: 'conn-gone',
+      fallback: 'backend-disconnected',
+      attemptedBackendIds: ['conn-gone'],
+    });
   });
 
   it('skips dead windows (null backend id)', () => {
@@ -211,7 +237,85 @@ describe('resolveWorkspaceBackendClient', () => {
         clients: { 'conn-2': 'pooled-2' },
       }),
     });
-    expect(resolved).toEqual({ client: 'pooled-2', backendId: 'conn-2' });
+    expect(resolved).toEqual({ client: 'pooled-2', backendId: 'conn-2', fallback: null });
+  });
+});
+
+describe('resolveWorkspaceBackendClientWithRetry', () => {
+  it('returns immediately (no sleep) when a hosting window is known', async () => {
+    const sleep = vi.fn().mockResolvedValue(undefined);
+    const resolved = await resolveWorkspaceBackendClientWithRetry(
+      'ws-1',
+      {
+        getWindowIdsForWorkspace: () => [1],
+        getBackendIdForWindowId: () => 'conn-2',
+        getClientForBackend: () => 'pooled-2',
+        getPrimaryClient: () => 'primary',
+        isPrimaryFallbackAllowed: () => false,
+      },
+      { attempts: 5, delayMs: 200, sleep },
+    );
+    expect(resolved).toEqual({ client: 'pooled-2', backendId: 'conn-2', fallback: null });
+    expect(sleep).not.toHaveBeenCalled();
+  });
+
+  it('retries while no hosting window is known and picks up a late-arriving mapping', async () => {
+    const sleep = vi.fn().mockResolvedValue(undefined);
+    const windows: number[] = [];
+    const resolvedPromise = resolveWorkspaceBackendClientWithRetry(
+      'ws-1',
+      {
+        getWindowIdsForWorkspace: () => windows,
+        getBackendIdForWindowId: () => 'conn-2',
+        getClientForBackend: () => 'pooled-2',
+        getPrimaryClient: () => 'primary',
+        isPrimaryFallbackAllowed: () => false,
+      },
+      {
+        attempts: 5,
+        delayMs: 200,
+        sleep: sleep.mockImplementation(async () => {
+          if (sleep.mock.calls.length === 2) windows.push(1);
+        }),
+      },
+    );
+    const resolved = await resolvedPromise;
+    expect(resolved).toEqual({ client: 'pooled-2', backendId: 'conn-2', fallback: null });
+    expect(sleep).toHaveBeenCalledTimes(2);
+  });
+
+  it('gives up after the attempt budget and returns the primary fallback', async () => {
+    const sleep = vi.fn().mockResolvedValue(undefined);
+    const resolved = await resolveWorkspaceBackendClientWithRetry(
+      'ws-1',
+      {
+        getWindowIdsForWorkspace: () => [],
+        getBackendIdForWindowId: () => null,
+        getClientForBackend: () => undefined,
+        getPrimaryClient: () => 'primary',
+        isPrimaryFallbackAllowed: () => false,
+      },
+      { attempts: 3, delayMs: 200, sleep },
+    );
+    expect(resolved).toMatchObject({ client: 'primary', fallback: 'no-hosting-window' });
+    expect(sleep).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not retry a fail-closed (backend-disconnected) resolution', async () => {
+    const sleep = vi.fn().mockResolvedValue(undefined);
+    const resolved = await resolveWorkspaceBackendClientWithRetry(
+      'ws-1',
+      {
+        getWindowIdsForWorkspace: () => [1],
+        getBackendIdForWindowId: () => 'conn-gone',
+        getClientForBackend: () => undefined,
+        getPrimaryClient: () => 'primary',
+        isPrimaryFallbackAllowed: () => false,
+      },
+      { attempts: 5, delayMs: 200, sleep },
+    );
+    expect(resolved).toMatchObject({ client: null, fallback: 'backend-disconnected' });
+    expect(sleep).not.toHaveBeenCalled();
   });
 });
 
@@ -222,6 +326,12 @@ describe('setupWorkspaceFileProtocolHandler', () => {
     pooledRequests.clear();
     windowBackends.clear();
     workspaceWindows.clear();
+    // Stamp ws-1 to a local-backend window with no pooled client: the
+    // resolution takes the immediate primary fallback (unpooled local), so
+    // these tests exercise the primary client without the no-hosting-window
+    // retry delay.
+    windowBackends.set(7, 'local');
+    workspaceWindows.set('ws-1', [7]);
   });
 
   it('serves a single-chunk image with the exact file.readChunk wire params', async () => {
@@ -326,16 +436,24 @@ describe('setupWorkspaceFileProtocolHandler', () => {
     expect(Buffer.from(await res.arrayBuffer())).toEqual(bytes);
   });
 
-  it('falls back to the primary client when the hosting backend has no pooled client', async () => {
+  it('falls back to the primary client when the local hosting backend has no pooled client', async () => {
     const bytes = Buffer.from('png-bytes');
-    windowBackends.set(7, 'conn-disconnected');
-    workspaceWindows.set('ws-1', [7]);
     mockRequest.mockResolvedValueOnce(chunk(bytes, bytes.length, bytes.length));
 
     const res = await getHandler()(new Request('workspace-file://ws-1/pic.png'));
 
     expect(mockRequest).toHaveBeenCalledTimes(1);
     expect(res.status).toBe(200);
+  });
+
+  it('fails closed with 404 when the hosting named backend is disconnected', async () => {
+    windowBackends.set(7, 'conn-disconnected');
+    workspaceWindows.set('ws-1', [7]);
+
+    const res = await getHandler()(new Request('workspace-file://ws-1/pic.png'));
+
+    expect(res.status).toBe(404);
+    expect(mockRequest).not.toHaveBeenCalled();
   });
 });
 
@@ -346,6 +464,10 @@ describe('setupWorkspaceAssetProtocolHandler', () => {
     pooledRequests.clear();
     windowBackends.clear();
     workspaceWindows.clear();
+    // See the workspace-file beforeEach: unpooled-local stamping avoids the
+    // no-hosting-window retry delay in primary-client tests.
+    windowBackends.set(7, 'local');
+    workspaceWindows.set('ws-1', [7]);
   });
 
   const asset = (data: Buffer, mimeType = 'image/png') => ({
@@ -355,7 +477,7 @@ describe('setupWorkspaceAssetProtocolHandler', () => {
     sizeKb: Math.ceil(data.length / 1024),
   });
 
-  it('serves an asset via note.readAsset on the primary client when no window hosts the workspace', async () => {
+  it('serves an asset via note.readAsset on the primary client for an unpooled local backend', async () => {
     const bytes = Buffer.from([0x89, 0x50, 0x4e, 0x47]);
     mockRequest.mockResolvedValueOnce(asset(bytes));
 
@@ -368,6 +490,21 @@ describe('setupWorkspaceAssetProtocolHandler', () => {
     expect(res.status).toBe(200);
     expect(res.headers.get('Content-Type')).toBe('image/png');
     expect(Buffer.from(await res.arrayBuffer())).toEqual(bytes);
+  });
+
+  it('retries resolution then serves via the primary client when no window ever hosts the workspace', async () => {
+    // Exercises the initial-navigation race path end-to-end: the bounded
+    // retry (real timers) exhausts, then the primary fallback serves.
+    const bytes = Buffer.from('late-bytes');
+    mockRequest.mockResolvedValueOnce(asset(bytes));
+
+    const res = await getAssetHandler()(new Request('workspace-asset://ws-unknown/asset-1'));
+
+    expect(mockRequest).toHaveBeenCalledWith('note.readAsset', {
+      workspaceId: 'ws-unknown',
+      asset: 'asset-1',
+    });
+    expect(res.status).toBe(200);
   });
 
   it('issues note.readAsset on the backend of the window hosting the workspace', async () => {
@@ -387,16 +524,24 @@ describe('setupWorkspaceAssetProtocolHandler', () => {
     expect(Buffer.from(await res.arrayBuffer())).toEqual(bytes);
   });
 
-  it('falls back to the primary client when the hosting backend has no pooled client', async () => {
+  it('falls back to the primary client when the local hosting backend has no pooled client', async () => {
     const bytes = Buffer.from('asset-bytes');
-    windowBackends.set(7, 'conn-disconnected');
-    workspaceWindows.set('ws-1', [7]);
     mockRequest.mockResolvedValueOnce(asset(bytes));
 
     const res = await getAssetHandler()(new Request('workspace-asset://ws-1/asset-1'));
 
     expect(mockRequest).toHaveBeenCalledTimes(1);
     expect(res.status).toBe(200);
+  });
+
+  it('fails closed with 404 when the hosting named backend is disconnected', async () => {
+    windowBackends.set(7, 'conn-disconnected');
+    workspaceWindows.set('ws-1', [7]);
+
+    const res = await getAssetHandler()(new Request('workspace-asset://ws-1/asset-1'));
+
+    expect(res.status).toBe(404);
+    expect(mockRequest).not.toHaveBeenCalled();
   });
 
   it('maps daemon errors to 404', async () => {
