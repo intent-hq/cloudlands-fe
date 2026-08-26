@@ -29,7 +29,9 @@ test('shows only the current agent identity across root, delegated, single, stac
         await expect(avatar).toHaveAttribute('height', '24');
         await expect(avatarSlot.locator('[data-panel-agent-chat-glyph]')).toHaveCount(0);
         await expect(avatarSlot.locator('[data-panel-agent-chat-text-glyph]')).toHaveCount(0);
-        await expect(identity.locator('[data-agent-avatar-with-state]')).toHaveCount(0);
+        const stateAvatar = identity.locator('[data-agent-avatar-with-state]');
+        await expect(stateAvatar).toHaveCount(1);
+        await expect(stateAvatar).toHaveAttribute('data-avatar-state', 'idle');
         const geometry = await avatarSlot.evaluate((slot) => {
           const avatar = slot.querySelector<SVGElement>('[data-agent-avatar]')!;
           const slotRect = slot.getBoundingClientRect();

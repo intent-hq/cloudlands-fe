@@ -52,13 +52,18 @@ vi.mock('$store/renderer/slices/workspace-agents/workspace-agents-selectors', ()
   selectAllWorkspaceAgents: () => readable([]),
 }));
 vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
-  selectAgentIsResponding: () => readable(false),
+  selectAgentProvider: () => readable(undefined),
+  selectAgentIsResponding: Object.assign(() => readable(false), { select: () => false }),
   selectAgentIsBlockedWaiting: () => readable(false),
   selectAgentAttentionRequest: () => readable(null),
   selectAgentSession: () => readable(null),
 }));
 vi.mock('$store/renderer/slices/permission/permission-selectors', () => ({
+  selectPendingCount: () => readable(0),
   selectPermissionRequests: () => readable([]),
+}));
+vi.mock('$store/renderer/slices/hud/hud-selectors', () => ({
+  selectHudAgentHasPendingQuestion: () => readable(false),
 }));
 vi.mock('$lib/components/ui/toast', () => ({
   toast: { success: vi.fn(), error: vi.fn() },
@@ -285,8 +290,8 @@ describe('panel header file drop', () => {
         expect(first.changes).toEqual([true, false]);
         expect(
           warn.mock.calls.filter((call) =>
-            call.some((arg) => String(arg).includes('state_proxy_equality_mismatch'))
-          )
+            call.some((arg) => String(arg).includes('state_proxy_equality_mismatch')),
+          ),
         ).toEqual([]);
       } finally {
         warn.mockRestore();
