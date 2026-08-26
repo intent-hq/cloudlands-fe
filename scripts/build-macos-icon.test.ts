@@ -140,6 +140,16 @@ describe('modern macOS icon compiler', () => {
     }
   });
 
+  it('keeps manual unsigned macOS packaging free of signing and publishing inputs', () => {
+    const config = readFileSync(
+      join(process.cwd(), '.github/workflows/manual-signed-build.yml'),
+      'utf8',
+    );
+    expect(config).toContain('if [ "${{ inputs.sign }}" != "true" ]; then');
+    expect(config).toContain('unset CSC_LINK CSC_KEY_PASSWORD');
+    expect(config).toContain('pnpm run dist:mac -- --publish never');
+  });
+
   it('packages the modern resource and declares the legacy fallback', () => {
     const config = readFileSync(join(process.cwd(), 'electron-builder.yml'), 'utf8');
     expect(config).toMatch(/^beforePack: scripts\/build-macos-icon\.js$/m);
