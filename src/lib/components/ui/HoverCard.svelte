@@ -1,8 +1,5 @@
 <script lang="ts">
-  import {
-  onMount,
-  tick,
-} from 'svelte';
+  import { onMount, tick } from 'svelte';
   import type { Snippet } from 'svelte';
   import Portal from './Portal.svelte';
   interface Props {
@@ -47,11 +44,13 @@
 
   function findAnchorElement() {
     if (anchorElement) return anchorElement;
-    return Array.from(document.querySelectorAll<HTMLElement>('[style*="anchor-name"]')).find((el) => {
-      const inlineAnchor = el.style.getPropertyValue('anchor-name');
-      const computedAnchor = getComputedStyle(el).getPropertyValue('anchor-name');
-      return inlineAnchor.includes(anchor) || computedAnchor.includes(anchor);
-    });
+    return Array.from(document.querySelectorAll<HTMLElement>('[style*="anchor-name"]')).find(
+      (el) => {
+        const inlineAnchor = el.style.getPropertyValue('anchor-name');
+        const computedAnchor = getComputedStyle(el).getPropertyValue('anchor-name');
+        return inlineAnchor.includes(anchor) || computedAnchor.includes(anchor);
+      },
+    );
   }
 
   function updateMeasuredPosition() {
@@ -83,7 +82,9 @@
       const spaceLeft = triggerRect.left - SIDE_OFFSET - COLLISION_PADDING;
       const spaceRight = viewportWidth - triggerRect.right - SIDE_OFFSET - COLLISION_PADDING;
       const placeRight = spaceRight >= cardWidth || spaceRight >= spaceLeft;
-      left = placeRight ? triggerRect.right + SIDE_OFFSET : triggerRect.left - cardWidth - SIDE_OFFSET;
+      left = placeRight
+        ? triggerRect.right + SIDE_OFFSET
+        : triggerRect.left - cardWidth - SIDE_OFFSET;
       top = triggerRect.top;
       availableHeight = Math.max(0, viewportHeight - COLLISION_PADDING * 2);
     } else if (position === 'bottom') {
@@ -122,6 +123,13 @@
     updateMeasuredPosition();
   }
 
+  $effect(() => {
+    const currentCard = cardEl;
+    const currentAnchor = anchorElement;
+    if (absolute || !currentCard || !currentAnchor) return;
+    void schedulePositionUpdate();
+  });
+
   onMount(() => {
     let resizeObserver: ResizeObserver | null = null;
     void schedulePositionUpdate().then(() => {
@@ -145,11 +153,18 @@
 {#if absolute}
   <div
     bind:this={cardEl}
-    class={positionClass + ' z-50 w-64 flex flex-col bg-popover border border-border shadow pointer-events-none transition duration-150 ease-out ' +
+    class={positionClass +
+      ' z-50 w-64 flex flex-col bg-popover border border-border shadow pointer-events-none transition duration-150 ease-out ' +
       className}
     style:position-anchor={anchor}
     style:right={position === 'bottom' ? 'anchor(left)' : undefined}
-    style:left={position === 'right' ? 'anchor(right)' : isBottom ? 'anchor(left)' : isTop ? 'anchor(center)' : undefined}
+    style:left={position === 'right'
+      ? 'anchor(right)'
+      : isBottom
+        ? 'anchor(left)'
+        : isTop
+          ? 'anchor(center)'
+          : undefined}
     style:top={position === 'right' ? 'anchor(top)' : isBottom ? 'anchor(bottom)' : undefined}
     style:bottom={position === 'bottom' ? 'anchor(bottom)' : isTop ? 'anchor(top)' : undefined}
     style:margin-right={position === 'bottom' ? '8px' : undefined}
@@ -165,7 +180,8 @@
   <Portal zIndex={50}>
     <div
       bind:this={cardEl}
-      class={positionClass + ' z-50 w-64 flex flex-col overflow-y-auto bg-popover border border-border shadow pointer-events-auto transition duration-150 ease-out ' +
+      class={positionClass +
+        ' z-50 w-64 flex flex-col overflow-y-auto bg-popover border border-border shadow pointer-events-auto transition duration-150 ease-out ' +
         className}
       style={measuredStyle}
       style:max-height={maxHeight}

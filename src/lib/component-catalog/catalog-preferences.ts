@@ -15,11 +15,42 @@ export interface CatalogPreferences {
   reducedMotion: boolean;
 }
 
+export interface CatalogUrlSettings {
+  state?: string;
+  theme?: CatalogTheme;
+  width?: number;
+  reducedMotion?: boolean;
+}
+
 export const defaultCatalogPreferences: CatalogPreferences = {
   theme: 'system',
   colorTheme: 'default',
   reducedMotion: false,
 };
+
+export function parseCatalogUrlSettings(params: URLSearchParams): CatalogUrlSettings {
+  const theme = params.get('theme');
+  const state = params.get('state')?.trim();
+  const widthValue = params.get('width');
+  const width = widthValue === null ? undefined : Number(widthValue);
+  const motion = params.get('motion');
+  const legacyReducedMotion = params.get('reducedMotion');
+
+  return {
+    state: state || undefined,
+    theme: catalogThemes.includes(theme as CatalogTheme) ? (theme as CatalogTheme) : undefined,
+    width:
+      Number.isInteger(width) && width !== undefined && width >= 240 && width <= 1600
+        ? width
+        : undefined,
+    reducedMotion:
+      motion === 'reduced' || legacyReducedMotion === 'true'
+        ? true
+        : motion === 'full' || legacyReducedMotion === 'false'
+          ? false
+          : undefined,
+  };
+}
 
 const storageKey = 'component-catalog-preferences';
 

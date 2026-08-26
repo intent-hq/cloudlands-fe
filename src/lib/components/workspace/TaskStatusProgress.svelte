@@ -13,6 +13,7 @@
     progress?: number;
     loading?: boolean;
     animationKey?: string;
+    motion?: boolean;
     ariaLabel: string;
     size?: 'default' | 'compact';
     fallback?: TaskProgressFallback;
@@ -24,6 +25,7 @@
     progress,
     loading = progress === undefined,
     animationKey,
+    motion = true,
     ariaLabel,
     size = 'default',
     fallback,
@@ -37,20 +39,24 @@
   );
   const progressValueText = $derived(formatTaskStatusValueText(statusBars, ariaLabel));
   const heightClass = $derived(size === 'compact' ? 'h-3' : 'h-5');
+  const renderKey = $derived(motion ? animationKey : undefined);
 </script>
 
-{#key animationKey}
+{#key renderKey}
   {#if loading}
     <div
       class="{heightClass} w-full {className}"
       data-task-status-progress
       data-task-status-size={size}
+      data-task-status-motion={motion ? 'animated' : 'static'}
       data-flame-progress-placeholder
       aria-hidden="true"
     ></div>
   {:else}
     <div
-      class="flame-progress-enter flex {heightClass} w-full overflow-hidden rounded-xs bg-background {className}"
+      class="{motion
+        ? 'flame-progress-enter'
+        : ''} flex {heightClass} w-full overflow-hidden rounded-xs bg-background {className}"
       role="progressbar"
       aria-label={ariaLabel}
       aria-valuemin="0"
@@ -59,13 +65,14 @@
       aria-valuetext={progressValueText}
       data-task-status-progress
       data-task-status-size={size}
-      data-flame-animation-key={animationKey}
+      data-task-status-motion={motion ? 'animated' : 'static'}
+      data-flame-animation-key={motion ? animationKey : undefined}
     >
       {#each segments as segment (segment.visualState)}
         <div
-          class="flame-status-segment h-full min-w-0 {TASK_PROGRESS_SEGMENT_CLASSES[
-            segment.visualState
-          ]}"
+          class="{motion
+            ? 'flame-status-segment'
+            : ''} h-full min-w-0 {TASK_PROGRESS_SEGMENT_CLASSES[segment.visualState]}"
           data-flame-status-bar={segment.visualState}
           data-task-progress-style={segment.visualState}
           aria-hidden="true"

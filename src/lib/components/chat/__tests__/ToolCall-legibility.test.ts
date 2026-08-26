@@ -5,6 +5,7 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 const dispatchMock = vi.hoisted(() => vi.fn());
+const parseToolResultMock = vi.hoisted(() => vi.fn((): any => ({ type: 'unknown' })));
 
 vi.mock('$store/renderer/store', async () => {
   const { createAppStoreMockModule } =
@@ -29,7 +30,7 @@ vi.mock('$lib/utils/tool-classifier', async () => {
 });
 
 vi.mock('../tool-result-parser', () => ({
-  parseToolResult: () => ({ type: 'unknown' }),
+  parseToolResult: parseToolResultMock,
 }));
 
 vi.mock('svelte-fa', async () => ({
@@ -50,7 +51,11 @@ vi.mock('$features/agent/components/agent-avatar/AgentAvatar.svelte', async () =
 
 import ToolCall from '../ToolCall.svelte';
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  parseToolResultMock.mockReset();
+  parseToolResultMock.mockReturnValue({ type: 'unknown' });
+});
 
 describe('ToolCall conversation legibility', () => {
   it('renders a concise action with an accessible collapsed details disclosure', async () => {
@@ -208,5 +213,79 @@ describe('ToolCall lazy block hydration (§5.5 slim → v7.2 agent.getMessageBlo
       .map(([action]) => action)
       .filter((action) => action?.type === 'chatState/messageBlockHydrationRequested');
     expect(hydrationActions).toHaveLength(0);
+  });
+});
+
+describe('ToolCall collapsed browser screenshot preview', () => {
+  const toolUse = {
+    id: 'browser-screenshot',
+    name: 'workspace_api_workspace-mcp',
+    input: { code: 'return ws.browser.exec([{ action: "screenshot" }])' },
+  } as any;
+
+  it('shows an accessible asset image and keeps normal expansion available', async () => {
+    parseToolResultMock.mockReturnValue({
+      type: 'browser',
+      screenshotUrl: 'workspace-asset://workspace-1/screenshot-1',
+      screenshotWidth: 1280,
+      screenshotHeight: 800,
+    });
+    const { container } = render(ToolCall, {
+      props: { toolUse, toolState: 'completed', result: { ok: true } },
+    });
+
+    const image = screen.getByRole('img', { name: 'Browser screenshot' });
+    expect(image.getAttribute('src')).toBe('workspace-asset://workspace-1/screenshot-1');
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Browser screenshot' }));
+
+    expect(screen.queryByRole('img', { name: 'Browser screenshot' })).toBeNull();
+    expect(screen.getByTestId('tool-call-disclosure').getAttribute('aria-expanded')).toBe('true');
+    expect(container.querySelector('#tool-details-browser-screenshot')).toBeTruthy();
+  });
+
+  it('shows inline PNG data in the collapsed row', () => {
+    const base64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAAB';
+    parseToolResultMock.mockReturnValue({ type: 'browser', screenshotBase64: base64 });
+
+    render(ToolCall, {
+      props: { toolUse, toolState: 'completed', result: { ok: true } },
+    });
+
+    expect(screen.getByRole('img', { name: 'Browser screenshot' }).getAttribute('src')).toBe(
+      `data:image/png;base64,${base64}`,
+    );
+  });
+
+  it('does not leave invalid, failed, running, or broken images visible', async () => {
+    parseToolResultMock.mockReturnValue({ type: 'browser', screenshotBase64: 'not base64 data' });
+    const invalid = render(ToolCall, {
+      props: { toolUse, toolState: 'completed', result: { ok: true } },
+    });
+    expect(screen.queryByRole('img', { name: 'Browser screenshot' })).toBeNull();
+    invalid.unmount();
+
+    parseToolResultMock.mockReturnValue({
+      type: 'browser',
+      screenshotUrl: 'workspace-asset://workspace-1/screenshot-2',
+    });
+    const running = render(ToolCall, {
+      props: { toolUse, toolState: 'running', result: { ok: true } },
+    });
+    expect(screen.queryByRole('img', { name: 'Browser screenshot' })).toBeNull();
+    running.unmount();
+
+    const failed = render(ToolCall, {
+      props: { toolUse, toolState: 'error', result: { ok: false } },
+    });
+    expect(screen.queryByRole('img', { name: 'Browser screenshot' })).toBeNull();
+    failed.unmount();
+
+    render(ToolCall, {
+      props: { toolUse, toolState: 'completed', result: { ok: true } },
+    });
+    const brokenImage = screen.getByRole('img', { name: 'Browser screenshot' });
+    await fireEvent.error(brokenImage);
+    expect(screen.queryByRole('img', { name: 'Browser screenshot' })).toBeNull();
   });
 });

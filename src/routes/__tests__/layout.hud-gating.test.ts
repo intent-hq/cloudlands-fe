@@ -1,7 +1,7 @@
 /**
  * Regression test for the /hud chrome-less behavior restored after e10980e5.
- * The route group now enforces the boundary structurally: the root owns global
- * lifecycle and ActionKeyHud, while `(app)` owns product chrome and overlays.
+ * The route group enforces the boundary structurally: the root owns shared Store
+ * lifecycle, while `(app)` owns product sagas, chrome, and overlays.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, render, screen } from '@testing-library/svelte';
@@ -35,6 +35,9 @@ vi.mock('$app/stores', () => ({
 
 vi.mock('$store/renderer/root-store-lifecycle', () => ({
   startRootStoreLifecycle: () => () => {},
+}));
+vi.mock('$store/renderer/app-store-lifecycle', () => ({
+  startAppStoreLifecycle: () => () => {},
 }));
 vi.mock('$store/renderer/sagas', () => ({ startAllAppSagas: () => [] }));
 vi.mock('$store/renderer/seeders', () => ({}));
@@ -148,8 +151,7 @@ describe('+layout.svelte isHudRoute chrome-less gating', () => {
     expect(screen.queryByTestId('radial-prompt-picker-overlay-marker')).toBeNull();
     expect(screen.queryByTestId('encoder-cycle-hud-marker')).toBeNull();
 
-    // ActionKeyHud stays mounted unconditionally even on the HUD route.
-    expect(screen.getAllByTestId('action-key-hud-marker').length).toBeGreaterThan(0);
+    expect(screen.queryByTestId('action-key-hud-marker')).toBeNull();
     expect(screen.getByTestId('hud-gating-children')).toBeTruthy();
   });
 
@@ -176,6 +178,7 @@ describe('+layout.svelte isHudRoute chrome-less gating', () => {
     expect(screen.getAllByTestId('toast-marker').length).toBeGreaterThan(0);
     expect(screen.getAllByTestId('radial-prompt-picker-overlay-marker').length).toBeGreaterThan(0);
     expect(screen.getAllByTestId('encoder-cycle-hud-marker').length).toBeGreaterThan(0);
+    expect(screen.getAllByTestId('action-key-hud-marker').length).toBeGreaterThan(0);
     expect(screen.getByTestId('hud-gating-children')).toBeTruthy();
   });
 });

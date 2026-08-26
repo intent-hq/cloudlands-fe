@@ -653,7 +653,7 @@
       anchor="--workspace-list-{workspace.id}"
       position="right"
       anchorElement={rowElement}
-      class="w-auto border-0 bg-transparent"
+      class="w-auto overflow-visible! rounded-lg border-0! bg-background! shadow-none!"
     >
       <WorkspaceHoverCard {workspace} activeAgentIds={streamingAgentIds} />
     </HoverCard>

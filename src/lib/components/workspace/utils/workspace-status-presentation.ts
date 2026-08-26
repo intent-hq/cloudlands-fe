@@ -78,7 +78,7 @@ function labelFor(state: WorkspaceStatusPresentationState): string {
     case 'waiting':
       return m.workspace_taskStatus_waiting_label();
     case 'unread':
-      return m.hud_workspaceState_unread_label();
+      return m.layout_activeCard_unread_header();
     case 'not_started':
       return m.workspace_statusIcon_notStarted_label();
     case 'idle':
