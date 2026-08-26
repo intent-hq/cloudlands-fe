@@ -14,8 +14,8 @@ import { LOCAL_CONNECTION_ID } from '../shared/types/connections';
  * cached image can fetch before the main process has recorded the workspace
  * (monorepo#3501); <img> never retries a 404.
  */
-export const WORKSPACE_BACKEND_RESOLUTION_ATTEMPTS = 5;
-export const WORKSPACE_BACKEND_RESOLUTION_RETRY_MS = 200;
+const WORKSPACE_BACKEND_RESOLUTION_ATTEMPTS = 5;
+const WORKSPACE_BACKEND_RESOLUTION_RETRY_MS = 200;
 
 /**
  * Resolve the backend client that owns `workspaceId` (monorepo#3501).
