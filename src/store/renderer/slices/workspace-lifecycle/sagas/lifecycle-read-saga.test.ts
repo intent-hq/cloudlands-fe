@@ -181,6 +181,38 @@ describe('lifecycleReadSaga', () => {
     await stop(run.task);
   });
 
+  it('coalesces workspace-list loads arriving mid-fetch into one trailing refetch', async () => {
+    const resolvers: ((value: unknown[]) => void)[] = [];
+    mocks.workspaces.list.mockImplementation(
+      () =>
+        new Promise<unknown[]>((done) => {
+          resolvers.push(done);
+        }),
+    );
+    const run = start();
+    run.channel.put(loadWorkspacesRequested());
+    await settle();
+    expect(mocks.workspaces.list.mock.calls).toEqual([[{ includeArchived: true }]]);
+
+    // A burst of triggers while the first fetch is in flight (e.g. remote
+    // workspace:created events) must collapse into exactly one trailing
+    // refetch — takeLeading would drop them and the first snapshot could
+    // predate the creates (PR #1740 review).
+    run.channel.put(loadWorkspacesRequested());
+    run.channel.put(loadWorkspacesRequested());
+    await settle();
+    expect(mocks.workspaces.list.mock.calls).toHaveLength(1);
+
+    resolvers[0]!([]);
+    await settle();
+    expect(mocks.workspaces.list.mock.calls).toHaveLength(2);
+
+    resolvers[1]!([]);
+    await settle();
+    expect(mocks.workspaces.list.mock.calls).toHaveLength(2);
+    await stop(run.task);
+  });
+
   it('guards ensure-tasks and coalesces explicit loads per workspace', async () => {
     const current = state();
     current.workspaceTasks.byWorkspaceId[WS] = { loading: false, initialized: true };

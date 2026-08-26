@@ -2625,7 +2625,9 @@ function collectOwnedTabAgentIds(workspaceId: string): Set<string> {
  * response), dispatch `loadWorkspacesRequested` so the already-open window
  * refetches the list and the new row appears without a reload. The event
  * payload is not used as the row source — `workspace.list` stays the single
- * canonical shape. `takeLeading` in the lifecycle-read-saga dedupes bursts.
+ * canonical shape. The lifecycle-read-saga services the action single-flight
+ * with trailing coalesce, so a create arriving mid-fetch queues one follow-up
+ * refetch instead of being dropped.
  */
 function handleWorkspaceCreatedEvent(workspaceId: string): void {
   const tombstoneTimer = workspaceDeleteTombstoneTimers.get(workspaceId);
