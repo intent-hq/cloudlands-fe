@@ -3137,6 +3137,26 @@ describe('panelLayoutReducer', () => {
       expect(result.recentlyClosed.map((entry) => entry.tab.id)).toEqual(['t2']);
     });
 
+    // A reopen is a fresh, unowned tab: a stale ownerAgentId in a
+    // recentlyClosed entry would resurrect ownership in main's registry, and
+    // the persisted owner name (monorepo#3438) goes with it.
+    it('strips a stale ownerAgentId and ownerAgentName from the reopened tab', () => {
+      const state = stateWithPanel('p1', [
+        { id: 't1', type: 'browser', title: 'B', browserUrl: 'http://a/' },
+        { id: 't2', type: 'note', title: 'A' },
+      ]);
+      const afterClose = panelLayoutReducer(state, closeTab(WS, 't1', 'p1', 1000));
+      const entry = afterClose.byWorkspaceId[WS].recentlyClosed[0];
+      (entry.tab as any).ownerAgentId = 'agent-1';
+      (entry.tab as any).ownerAgentName = 'Alice';
+
+      const afterReopen = panelLayoutReducer(afterClose, reopenClosedTab(WS, 1001));
+      const reopened = afterReopen.byWorkspaceId[WS].panels.p1.tabs.at(-1);
+      expect(reopened).toMatchObject({ type: 'browser', title: 'B' });
+      expect(reopened).not.toHaveProperty('ownerAgentId');
+      expect(reopened).not.toHaveProperty('ownerAgentName');
+    });
+
     it('cannot reopen an agent-owned browser tab — a user close hides it instead (monorepo#2857)', () => {
       const state = stateWithPanel('p1', [
         { id: 't1', type: 'browser', title: 'B', browserUrl: 'http://a/', ownerAgentId: 'agent-1' },

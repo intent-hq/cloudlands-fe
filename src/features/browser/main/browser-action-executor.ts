@@ -398,15 +398,33 @@ const OWNERSHIP_ENFORCED_ACTIONS = new Set([
 ]);
 
 /**
+ * Per-`executeActions` memo of the `agent.list` owner-name lookup, keyed by
+ * workspace and single-flight (a shared in-flight promise), so a multi-action
+ * batch costs at most one round-trip instead of one per action.
+ */
+type OwnerNameCache = Map<string, Promise<Map<string, string>>>;
+
+/**
  * Best-effort bulk owner display-name lookup via the daemon's `agent.list`
  * (PROTOCOL.md §5.5) — one request resolves every owner in a tab list.
  * Dynamic import (mirroring browser-exec-reverse) avoids a static
  * main-process dependency cycle and keeps the executor unit-testable; any
  * failure resolves an empty map — callers still carry the owner ids.
  */
-async function resolveAgentDisplayNames(workspaceId?: string): Promise<Map<string, string>> {
+async function resolveAgentDisplayNames(
+  workspaceId?: string,
+  cache?: OwnerNameCache,
+): Promise<Map<string, string>> {
+  if (!workspaceId) return new Map();
+  const cached = cache?.get(workspaceId);
+  if (cached) return cached;
+  const pending = fetchAgentDisplayNames(workspaceId);
+  cache?.set(workspaceId, pending);
+  return pending;
+}
+
+async function fetchAgentDisplayNames(workspaceId: string): Promise<Map<string, string>> {
   const names = new Map<string, string>();
-  if (!workspaceId) return names;
   try {
     const { getBackendClient } = await import('../../backend/main/backend.ipc');
     const result = (await getBackendClient().request('agent.list', { workspaceId })) as
@@ -430,8 +448,9 @@ async function resolveAgentDisplayNames(workspaceId?: string): Promise<Map<strin
 async function resolveAgentDisplayName(
   agentId: string,
   workspaceId?: string,
+  cache?: OwnerNameCache,
 ): Promise<string | undefined> {
-  return (await resolveAgentDisplayNames(workspaceId)).get(agentId);
+  return (await resolveAgentDisplayNames(workspaceId, cache)).get(agentId);
 }
 
 /**
@@ -443,9 +462,10 @@ async function notOwnerResult(
   tabId: string,
   ownerAgentId: string | undefined,
   workspaceId?: string,
+  ownerNameCache?: OwnerNameCache,
 ): Promise<ActionResult> {
   const ownerAgentName = ownerAgentId
-    ? await resolveAgentDisplayName(ownerAgentId, workspaceId)
+    ? await resolveAgentDisplayName(ownerAgentId, workspaceId, ownerNameCache)
     : undefined;
   const ownerLabel = ownerAgentName ? `${ownerAgentName} (${ownerAgentId})` : ownerAgentId;
   let error: string;
@@ -492,6 +512,7 @@ async function executeAction(
   workspaceId?: string,
   getLoopbackContext?: () => LoopbackRewriteContext,
   getTunnelProvider?: () => TunnelProvider | null,
+  ownerNameCache?: OwnerNameCache,
 ): Promise<ActionResult> {
   const tabId = ('tabId' in action ? action.tabId : undefined) || defaultTabId;
 
@@ -505,7 +526,7 @@ async function executeAction(
     if (targetTabId) {
       const owner = await embeddedBrowserCdp.resolveTabOwner(targetTabId, workspaceId);
       if (owner !== agentId) {
-        return notOwnerResult(action.action, targetTabId, owner, workspaceId);
+        return notOwnerResult(action.action, targetTabId, owner, workspaceId, ownerNameCache);
       }
     }
   }
@@ -538,7 +559,7 @@ async function executeAction(
         // (viewport invariant). One bulk agent.list resolves every owner's
         // display name; best-effort — unresolvable owners keep their id.
         const ownerNames = scoped.some((t) => t.ownerAgentId)
-          ? await resolveAgentDisplayNames(workspaceId)
+          ? await resolveAgentDisplayNames(workspaceId, ownerNameCache)
           : new Map<string, string>();
         const result = scoped.map(({ emulatedSize, hidden, ...tab }) => {
           const ownerAgentId = tab.ownerAgentId ?? null;
@@ -624,7 +645,13 @@ async function executeAction(
           };
         }
         if (agentId && target.ownerAgentId !== agentId) {
-          return notOwnerResult('showTab', action.tabId, target.ownerAgentId, workspaceId);
+          return notOwnerResult(
+            'showTab',
+            action.tabId,
+            target.ownerAgentId,
+            workspaceId,
+            ownerNameCache,
+          );
         }
         const focus = action.focus === true;
         if (target.hidden !== true && !focus) {
@@ -919,7 +946,13 @@ async function executeAction(
           if (agentId && replaceTargetTabId) {
             const owner = await embeddedBrowserCdp.resolveTabOwner(replaceTargetTabId, workspaceId);
             if (owner !== agentId) {
-              return notOwnerResult('openTab', replaceTargetTabId, owner, workspaceId);
+              return notOwnerResult(
+                'openTab',
+                replaceTargetTabId,
+                owner,
+                workspaceId,
+                ownerNameCache,
+              );
             }
           }
         }
@@ -950,7 +983,7 @@ async function executeAction(
         // persisted with the tab so the sidebar owner group can label it
         // without an agent-store lookup.
         const openOwnerName = agentId
-          ? await resolveAgentDisplayName(agentId, workspaceId)
+          ? await resolveAgentDisplayName(agentId, workspaceId, ownerNameCache)
           : undefined;
         // The short call form is for user (agentId-less) opens only — agent
         // opens always compute a defined emulatedSize above, so they always
@@ -1091,7 +1124,11 @@ async function executeAction(
         };
         const claim = embeddedBrowserCdp.claimTab(action.tabId, agentId, size);
         if (claim.status === 'already-claimed') {
-          const ownerAgentName = await resolveAgentDisplayName(claim.ownerAgentId, workspaceId);
+          const ownerAgentName = await resolveAgentDisplayName(
+            claim.ownerAgentId,
+            workspaceId,
+            ownerNameCache,
+          );
           const ownerLabel = ownerAgentName
             ? `${ownerAgentName} (${claim.ownerAgentId})`
             : claim.ownerAgentId;
@@ -1112,7 +1149,7 @@ async function executeAction(
           action.tabId,
           workspaceId,
           agentId,
-          await resolveAgentDisplayName(agentId, workspaceId),
+          await resolveAgentDisplayName(agentId, workspaceId, ownerNameCache),
         );
         return {
           action: 'claimTab',
@@ -1366,6 +1403,9 @@ export async function executeActions(
 
   const { actions, tabId: defaultTabId } = parseResult.data;
   const results: ActionResult[] = [];
+  // Owner display names are resolved at most once per batch — a multi-action
+  // sequence (e.g. N openTabs) shares one agent.list round-trip.
+  const ownerNameCache: OwnerNameCache = new Map();
 
   for (const action of actions) {
     const result = await executeAction(
@@ -1376,6 +1416,7 @@ export async function executeActions(
       workspaceId,
       getLoopbackContext,
       getTunnelProvider,
+      ownerNameCache,
     );
     results.push(result);
 

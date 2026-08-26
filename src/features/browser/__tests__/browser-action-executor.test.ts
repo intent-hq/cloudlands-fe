@@ -2306,6 +2306,32 @@ describe('browser-action-executor', () => {
       );
     });
 
+    it('resolves owner display names once per batch — N opens share one agent.list', async () => {
+      mockBackendRequest.mockResolvedValueOnce({ agents: [{ id: 'agent-1', name: 'Alice' }] });
+      mockOpenTabFn
+        .mockReturnValueOnce({ success: true, message: 'opened', tabId: 'tab-a' })
+        .mockReturnValueOnce({ success: true, message: 'opened', tabId: 'tab-b' });
+
+      const result = await executeActions(
+        {
+          actions: [
+            { action: 'openTab', url: 'http://localhost:3000/a' },
+            { action: 'openTab', url: 'http://localhost:3000/b' },
+          ],
+        },
+        mockOpenTabFn,
+        'agent-1',
+        'ws-1',
+      );
+
+      expect(result.success).toBe(true);
+      expect(mockBackendRequest).toHaveBeenCalledTimes(1);
+      expect(mockBackendRequest).toHaveBeenCalledWith('agent.list', { workspaceId: 'ws-1' });
+      // Both opens still carry the resolved name (10th arg).
+      expect(mockOpenTabFn.mock.calls[0][9]).toBe('Alice');
+      expect(mockOpenTabFn.mock.calls[1][9]).toBe('Alice');
+    });
+
     it('does not record ownership when openTabFn reports failure or returns no tabId', async () => {
       const { embeddedBrowserCdp } = await import('../main/embedded-browser-cdp-service');
       vi.mocked(embeddedBrowserCdp.setTabOwner).mockClear();
