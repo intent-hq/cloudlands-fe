@@ -24,7 +24,9 @@
     selectWorkspaceNotesState,
   } from '$store/renderer/slices/workspace-notes/workspace-notes-selectors';
   import { createNote, deleteNote } from '$features/notes/notes-write-service';
+  import { ensureNoteContentLoaded } from '$features/notes/notes-read-service';
   import { isSpecNote } from '$shared/constants/notes';
+  import { isNoteContentStale } from '$shared/utils/note-content';
   import { invoke } from '$lib/electron-bridge';
   import { createLogger } from '$lib/utils/client-logger';
   import NoteWithComments from '$lib/components/workspace/NoteWithComments.svelte';
@@ -70,6 +72,15 @@
     if (noteCopyTimeoutId) {
       clearTimeout(noteCopyTimeoutId);
       noteCopyTimeoutId = null;
+    }
+  });
+
+  // Slim note.list rows carry no content (§5.2); fetch the full body when this
+  // tab shows a note whose content has not been loaded yet.
+  const noteContentStale = $derived(isNoteContentStale($note));
+  $effect(() => {
+    if (tab.noteId && noteContentStale) {
+      ensureNoteContentLoaded(workspaceId, tab.noteId);
     }
   });
 
@@ -139,6 +150,7 @@
   const noteContentState = $derived.by<NoteContentState>(() => {
     if (!tab.noteId) return 'missing';
     if (!$note) return $notesState.loading || !$notesState.initialized ? 'loading' : 'missing';
+    if (noteContentStale) return 'loading';
     if (!noteEditable) return 'read-only';
     if (!$note.content?.trim()) return 'empty';
     return 'editor';

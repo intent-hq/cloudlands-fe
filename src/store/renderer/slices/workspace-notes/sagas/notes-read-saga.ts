@@ -37,11 +37,24 @@ function* hydrateWorkspaceNotes(workspaceId: string) {
   const current = yield* selectWorkspaceNotesState.effect(workspaceId);
   if (current.loading || current.initialized) return;
   try {
-    const response: Awaited<ReturnType<typeof appClient.notes.list>> = yield* call(
-      [appClient.notes, appClient.notes.list],
+    // Slim projection (§5.2): the initial hydrate does not need full bodies —
+    // sidebar surfaces read titles/tags/metadata, and slim rows carry
+    // contentPreview/contentLength. The spec is the one structural exception
+    // (task links, ordering), so fetch it full alongside the slim list.
+    // The spec fetch is fail-soft: a workspace without a spec note must not
+    // fail the hydrate (its slim row, if any, is kept as-is).
+    const fetchSlimListAndSpec = (id: string) =>
+      Promise.all([
+        appClient.notes.list(id, { projection: 'slim' }),
+        appClient.notes.get(SPEC_NOTE_ID, id).catch(() => null),
+      ]);
+    const [response, specNote]: Awaited<ReturnType<typeof fetchSlimListAndSpec>> = yield* call(
+      fetchSlimListAndSpec,
       workspaceId,
     );
-    const notes = response.map(toRuntimeNote);
+    const notes = response.map((note) =>
+      specNote && String(note.id) === SPEC_NOTE_ID ? toRuntimeNote(specNote) : toRuntimeNote(note),
+    );
     yield* put(loadWorkspaceNotesSucceeded([workspaceId], { [workspaceId]: notes }));
     const spec = notes.find((note) => String(note.id) === SPEC_NOTE_ID);
     if (spec) yield* put(selectNote(workspaceId, String(spec.id)));
@@ -62,11 +75,13 @@ function* applyNoteEvent(workspaceId: string, noteId: string, eventType: NoteEve
     return;
   }
   try {
-    const response: Awaited<ReturnType<typeof appClient.notes.list>> = yield* call(
-      [appClient.notes, appClient.notes.list],
+    // Targeted refetch (§5.2): one note changed, so fetch that note instead of
+    // re-listing the whole workspace with full bodies.
+    const found: Awaited<ReturnType<typeof appClient.notes.get>> = yield* call(
+      [appClient.notes, appClient.notes.get],
+      noteId,
       workspaceId,
     );
-    const found = response.find((note) => String(note.id) === noteId);
     if (!found || String(found.workspaceId) !== workspaceId) return;
     const note = toRuntimeNote(found);
     const existing = yield* selectNoteById.effect(workspaceId, noteId);
