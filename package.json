@@ -51,7 +51,7 @@
     "check": "node scripts/run-svelte-check.mjs",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "lint": "eslint . && pnpm run lint:i18n-strings && pnpm run lint:i18n-completeness",
+    "lint": "eslint --cache . && pnpm run lint:i18n-strings && pnpm run lint:i18n-completeness",
     "lint:fix": "eslint --fix .",
     "lint:dead-code": "knip",
     "lint:i18n-strings": "node scripts/check-hardcoded-strings.mjs",

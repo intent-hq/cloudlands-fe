@@ -74,6 +74,7 @@ test-harness-report.json
 *.tmp
 *.temp
 .cache
+.eslintcache
 
 # Debug files
 *.tsbuildinfo
