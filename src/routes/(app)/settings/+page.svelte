@@ -15,6 +15,7 @@
   } from '$lib/components/settings/AIBehaviorSidebar.svelte';
   import SettingsSidebarNav from '$lib/components/settings/SettingsSidebarNav.svelte';
   import ConnectionsSettings from '$lib/components/settings/ConnectionsSettings.svelte';
+  import BackendSyncSettings from '$lib/components/settings/BackendSyncSettings.svelte';
   import VoiceSettings from '$lib/components/settings/VoiceSettings.svelte';
   import GitWorkspaceSettings from '$lib/components/settings/GitWorkspaceSettings.svelte';
   import LegacyImportSettings from '$lib/components/settings/LegacyImportSettings.svelte';
@@ -487,6 +488,18 @@
             <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
               <section class="px-6 py-5">
                 <ConnectionsSettings />
+              </section>
+            </div>
+          </div>
+
+          <!-- Backend sync (iCloud Keychain) -->
+          <div id="backend-sync" class="mb-6 scroll-mt-20">
+            <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
+              {m.settings_section_backendSync()}
+            </h2>
+            <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
+              <section class="px-6 py-5">
+                <BackendSyncSettings />
               </section>
             </div>
           </div>

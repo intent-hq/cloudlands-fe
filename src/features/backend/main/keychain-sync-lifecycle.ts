@@ -58,6 +58,10 @@ export const storeSyncAdapter: LocalSyncAdapter = {
 export interface KeychainSyncLifecycleOptions {
   /** Broadcast hook fired after a reconcile pulled/deleted local records. */
   onRemoteApplied?: () => void | Promise<void>;
+  /** Broadcast hook fired when a reconcile's availability status changed
+   * (first result, or active ⇄ unavailable / different reason). T4 uses it
+   * to push `connections:sync-status-changed` to the settings UI. */
+  onStatusChanged?: (status: KeychainSyncStatus) => void;
   reconcileFn?: (
     adapter: LocalSyncAdapter,
     options?: ReconcileOptions,
@@ -108,7 +112,17 @@ export function initKeychainSyncLifecycle(
       // and fire still results in a no-op (fully inert when disabled).
       if (disposed || !(await isEnabled())) return;
       const result = await runReconcile(storeSyncAdapter);
+      const previous = lastStatus;
       lastStatus = result.status;
+      if (
+        previous === null ||
+        previous.state !== result.status.state ||
+        (previous.state === 'unavailable' &&
+          result.status.state === 'unavailable' &&
+          previous.reason !== result.status.reason)
+      ) {
+        options.onStatusChanged?.(result.status);
+      }
       if (result.pulled.length > 0 || result.deletedLocally.length > 0) {
         await options.onRemoteApplied?.();
       }

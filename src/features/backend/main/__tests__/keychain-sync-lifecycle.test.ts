@@ -79,12 +79,14 @@ function init(opts: {
   enabled?: boolean;
   reconcileFn?: ReturnType<typeof vi.fn>;
   onRemoteApplied?: () => void;
+  onStatusChanged?: (status: unknown) => void;
 }) {
   const reconcileFn = opts.reconcileFn ?? vi.fn(async () => reconcileResult());
   lifecycle = initKeychainSyncLifecycle({
     isEnabled: async () => opts.enabled ?? true,
     reconcileFn: reconcileFn as never,
     onRemoteApplied: opts.onRemoteApplied,
+    onStatusChanged: opts.onStatusChanged as never,
     debounceMs: DEBOUNCE,
     focusMinIntervalMs: FOCUS_MIN,
   });
@@ -243,6 +245,55 @@ describe('keychain-sync lifecycle triggers', () => {
     expect(lifecycle!.getStatus()).toBeNull();
     await vi.advanceTimersByTimeAsync(DEBOUNCE);
     expect(lifecycle!.getStatus()).toEqual({
+      state: 'unavailable',
+      reason: 'helper-missing',
+      message: 'dev build',
+    });
+  });
+
+  it('onStatusChanged fires on the first status and on availability changes only', async () => {
+    const onStatusChanged = vi.fn();
+    const reconcileFn = vi
+      .fn()
+      .mockResolvedValueOnce(reconcileResult({ status: { state: 'active' } }))
+      .mockResolvedValueOnce(reconcileResult({ status: { state: 'active' } }))
+      .mockResolvedValueOnce(
+        reconcileResult({
+          status: { state: 'unavailable', reason: 'unavailable', message: 'locked' },
+        }),
+      )
+      .mockResolvedValueOnce(
+        reconcileResult({
+          status: { state: 'unavailable', reason: 'unavailable', message: 'locked' },
+        }),
+      )
+      .mockResolvedValueOnce(
+        reconcileResult({
+          status: { state: 'unavailable', reason: 'helper-missing', message: 'dev build' },
+        }),
+      );
+    init({ enabled: true, reconcileFn, onStatusChanged });
+
+    await vi.advanceTimersByTimeAsync(DEBOUNCE); // first status → fires
+    expect(onStatusChanged).toHaveBeenCalledTimes(1);
+    expect(onStatusChanged).toHaveBeenLastCalledWith({ state: 'active' });
+
+    fireMutation();
+    await vi.advanceTimersByTimeAsync(DEBOUNCE); // same status → no fire
+    expect(onStatusChanged).toHaveBeenCalledTimes(1);
+
+    fireMutation();
+    await vi.advanceTimersByTimeAsync(DEBOUNCE); // active → unavailable → fires
+    expect(onStatusChanged).toHaveBeenCalledTimes(2);
+
+    fireMutation();
+    await vi.advanceTimersByTimeAsync(DEBOUNCE); // same reason → no fire
+    expect(onStatusChanged).toHaveBeenCalledTimes(2);
+
+    fireMutation();
+    await vi.advanceTimersByTimeAsync(DEBOUNCE); // reason changed → fires
+    expect(onStatusChanged).toHaveBeenCalledTimes(3);
+    expect(onStatusChanged).toHaveBeenLastCalledWith({
       state: 'unavailable',
       reason: 'helper-missing',
       message: 'dev build',

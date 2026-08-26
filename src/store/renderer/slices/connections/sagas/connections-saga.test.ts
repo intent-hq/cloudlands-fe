@@ -7,6 +7,7 @@ import {
   CONNECTION_AUTH_REJECTED_EVENT,
   CONNECTION_CERT_MISMATCH_EVENT,
   CONNECTION_PROTOCOL_MISMATCH_EVENT,
+  KEYCHAIN_SYNC_STATUS_EVENT,
   LOCAL_CONNECTION_ID,
 } from '$shared/types/connections';
 import type { ConnectionRecord } from '$shared/types/connections';
@@ -16,7 +17,9 @@ import {
   connectionsReducer,
   forgetConnectionRequested,
   initialState,
+  loadKeychainSyncStateRequested,
   openConnectionRequested,
+  setKeychainSyncEnabledRequested,
   switchConnectionRequested,
 } from '../connections-slice';
 import { connectionsSaga } from './connections-saga';
@@ -240,6 +243,7 @@ describe('connectionsSaga', () => {
       CONNECTION_CERT_MISMATCH_EVENT,
       CONNECTIONS_CHANGED_EVENT,
       CONNECTION_PROTOCOL_MISMATCH_EVENT,
+      KEYCHAIN_SYNC_STATUS_EVENT,
     ]);
 
     callbacks[CONNECTIONS_CHANGED_EVENT]!({
@@ -288,6 +292,7 @@ describe('connectionsSaga', () => {
       [CONNECTION_CERT_MISMATCH_EVENT, `listener-${CONNECTION_CERT_MISMATCH_EVENT}`],
       [CONNECTION_PROTOCOL_MISMATCH_EVENT, `listener-${CONNECTION_PROTOCOL_MISMATCH_EVENT}`],
       [CONNECTION_AUTH_REJECTED_EVENT, `listener-${CONNECTION_AUTH_REJECTED_EVENT}`],
+      [KEYCHAIN_SYNC_STATUS_EVENT, `listener-${KEYCHAIN_SYNC_STATUS_EVENT}`],
     ]);
   });
 
@@ -372,5 +377,76 @@ describe('connectionsSaga', () => {
     await run.task.toPromise();
     await expect(action.promise).rejects.toThrow('Connection switch was cancelled');
     expect(run.getState().connections.error).toBe('Connection switch was cancelled');
+  });
+
+  it('loads the keychain-sync state and stores it (T4)', async () => {
+    const syncState = { supported: true, enabled: false, status: null };
+    invoke.mockImplementation(async (channel: string) => {
+      if (channel === CONNECTION_CHANNELS.LIST)
+        return { connections: [LOCAL], activeId: LOCAL.id, windowBackendId: LOCAL.id };
+      if (channel === CONNECTION_CHANNELS.SYNC_GET_STATE) return syncState;
+      return {};
+    });
+    const run = start();
+    await settle();
+
+    const action = loadKeychainSyncStateRequested();
+    run.channel.put(action);
+    await expect(action.promise).resolves.toEqual(syncState);
+    expect(invoke).toHaveBeenCalledWith(CONNECTION_CHANNELS.SYNC_GET_STATE);
+    expect(run.getState().connections.keychainSync).toEqual(syncState);
+
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('sets the keychain-sync pref with the exact wire params and stores the result (T4)', async () => {
+    const syncState = { supported: true, enabled: true, status: { state: 'active' } };
+    invoke.mockImplementation(async (channel: string) => {
+      if (channel === CONNECTION_CHANNELS.LIST)
+        return { connections: [LOCAL], activeId: LOCAL.id, windowBackendId: LOCAL.id };
+      if (channel === CONNECTION_CHANNELS.SYNC_SET_ENABLED) return syncState;
+      return {};
+    });
+    const run = start();
+    await settle();
+
+    const action = setKeychainSyncEnabledRequested(true);
+    run.channel.put(action);
+    await expect(action.promise).resolves.toEqual(syncState);
+    expect(invoke).toHaveBeenCalledWith(CONNECTION_CHANNELS.SYNC_SET_ENABLED, { enabled: true });
+    expect(run.getState().connections.keychainSync).toEqual(syncState);
+
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('folds a sync-status push into an already-loaded sync state (T4)', async () => {
+    const syncState = { supported: true, enabled: true, status: { state: 'active' } };
+    invoke.mockImplementation(async (channel: string) => {
+      if (channel === CONNECTION_CHANNELS.LIST)
+        return { connections: [LOCAL], activeId: LOCAL.id, windowBackendId: LOCAL.id };
+      if (channel === CONNECTION_CHANNELS.SYNC_GET_STATE) return syncState;
+      return {};
+    });
+    const run = start();
+    await settle();
+
+    const load = loadKeychainSyncStateRequested();
+    run.channel.put(load);
+    await load.promise;
+
+    const status = { state: 'unavailable', reason: 'unavailable', message: 'keychain locked' };
+    callbacks[KEYCHAIN_SYNC_STATUS_EVENT]!(status);
+    await settle();
+
+    expect(run.getState().connections.keychainSync).toEqual({
+      supported: true,
+      enabled: true,
+      status,
+    });
+
+    run.task.cancel();
+    await run.task.toPromise();
   });
 });

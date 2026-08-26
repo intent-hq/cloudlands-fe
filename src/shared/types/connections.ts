@@ -39,6 +39,7 @@ export const CONNECTIONS_CHANGED_EVENT = 'connections:changed';
 export const CONNECTION_CERT_MISMATCH_EVENT = 'connections:cert-mismatch';
 export const CONNECTION_PROTOCOL_MISMATCH_EVENT = 'connections:protocol-mismatch';
 export const CONNECTION_AUTH_REJECTED_EVENT = 'connections:auth-rejected';
+export const KEYCHAIN_SYNC_STATUS_EVENT = 'connections:sync-status-changed';
 
 /**
  * Reserved id for the always-present, non-forgettable local sidecar entry
@@ -292,4 +293,47 @@ export interface ConnectionBootFallbackEvent {
   id: string;
   /** Human label of that remote (hostname/`host:port`), for the notice copy. */
   label: string;
+}
+
+// ============================================================================
+// iCloud-keychain backend sync (T4 settings UI)
+// ============================================================================
+
+/**
+ * Why the keychain cannot be used. Mirrors `HelperErrorCode` in
+ * `features/backend/main/keychain-sync.ts` (main-only module; renderer code
+ * must not import it, so the union is restated here as the wire shape).
+ */
+export type KeychainSyncUnavailableReason =
+  | 'unsupported-platform'
+  | 'helper-missing'
+  | 'helper-failed'
+  | 'unavailable'
+  | 'not-found'
+  | 'bad-arguments'
+  | 'keychain-error';
+
+/**
+ * Sync availability as surfaced to the renderer — structurally identical to
+ * `KeychainSyncStatus` in `keychain-sync.ts`, so main passes the reconcile
+ * status straight across IPC. Also the `connections:sync-status-changed`
+ * push payload.
+ */
+export type KeychainSyncUiStatus =
+  | { state: 'active' }
+  | { state: 'unavailable'; reason: KeychainSyncUnavailableReason; message: string };
+
+/** Result of `connections:sync-get-state` / `connections:sync-set-enabled`. */
+export interface KeychainSyncStateResult {
+  /** True only on macOS — elsewhere the toggle renders disabled. */
+  supported: boolean;
+  /** The opt-in local pref (per-machine, default OFF). */
+  enabled: boolean;
+  /** Last completed reconcile's availability; null before the first run. */
+  status: KeychainSyncUiStatus | null;
+}
+
+/** Params for `connections:sync-set-enabled`. */
+export interface SetKeychainSyncEnabledParams {
+  enabled: boolean;
 }

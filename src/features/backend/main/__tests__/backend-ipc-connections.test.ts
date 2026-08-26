@@ -130,6 +130,34 @@ vi.mock('../connections-store', () => ({
   onConnectionsMutated: () => () => {},
 }));
 
+// Keychain-sync lifecycle: controllable double for the T4 settings IPC. The
+// registered handle is captured so tests can drive getStatus/requestReconcile
+// and the onStatusChanged broadcast seam directly.
+const keychainSync = vi.hoisted(() => ({
+  enabled: false,
+  status: null as unknown,
+  requestReconcile: vi.fn(),
+  initOptions: null as { onStatusChanged?: (status: unknown) => void } | null,
+}));
+vi.mock('../keychain-sync-lifecycle', () => ({
+  KEYCHAIN_SYNC_ENABLED_KEY: 'keychainSyncEnabled',
+  isKeychainSyncEnabled: vi.fn(async () => keychainSync.enabled),
+  initKeychainSyncLifecycle: vi.fn((options) => {
+    keychainSync.initOptions = options;
+    return {
+      getStatus: () => keychainSync.status,
+      requestReconcile: keychainSync.requestReconcile,
+      dispose: () => {},
+    };
+  }),
+}));
+
+const localPrefs = vi.hoisted(() => ({ setLocalPref: vi.fn(async () => {}) }));
+vi.mock('../../../../main/local-prefs', () => ({
+  setLocalPref: localPrefs.setLocalPref,
+  getLocalPref: vi.fn(async () => undefined),
+}));
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -238,6 +266,9 @@ beforeEach(() => {
   store.setHostname.mockResolvedValue(undefined);
   store.setHosts.mockResolvedValue(undefined);
   store.getDetectHosts.mockResolvedValue(true);
+  keychainSync.enabled = false;
+  keychainSync.status = null;
+  keychainSync.initOptions = null;
   vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([]);
   Object.defineProperty(BrowserWindow, 'getFocusedWindow', {
     value: vi.fn(() => null),
@@ -755,6 +786,90 @@ describe('connections:* IPC handlers', () => {
     const handler = findHandler('connections:open');
 
     await expect(handler!({}, {})).rejects.toThrow();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Keychain-sync settings IPC (T4)
+// ---------------------------------------------------------------------------
+
+describe('keychain-sync settings IPC (T4)', () => {
+  const onMac = process.platform === 'darwin';
+
+  it('connections:sync-get-state returns supported + pref + lifecycle status', async () => {
+    keychainSync.enabled = true;
+    keychainSync.status = { state: 'active' };
+    const { mod } = await loadModule();
+    mod.registerBackendHandlers();
+    const handler = findHandler('connections:sync-get-state');
+    expect(handler).toBeDefined();
+
+    await expect(handler!({}, undefined)).resolves.toEqual({
+      supported: onMac,
+      enabled: true,
+      status: { state: 'active' },
+    });
+  });
+
+  it('connections:sync-get-state reports null status before the first reconcile', async () => {
+    const { mod } = await loadModule();
+    mod.registerBackendHandlers();
+    const handler = findHandler('connections:sync-get-state');
+
+    await expect(handler!({}, undefined)).resolves.toEqual({
+      supported: onMac,
+      enabled: false,
+      status: null,
+    });
+  });
+
+  it('connections:sync-set-enabled persists the pref and requests a reconcile on enable', async () => {
+    const { mod } = await loadModule();
+    mod.registerBackendHandlers();
+    const handler = findHandler('connections:sync-set-enabled');
+    expect(handler).toBeDefined();
+
+    keychainSync.enabled = true; // what isKeychainSyncEnabled reads back after the write
+    await expect(handler!({}, { enabled: true })).resolves.toEqual({
+      supported: onMac,
+      enabled: true,
+      status: null,
+    });
+    expect(localPrefs.setLocalPref).toHaveBeenCalledWith('keychainSyncEnabled', true);
+    expect(keychainSync.requestReconcile).toHaveBeenCalledTimes(1);
+  });
+
+  it('connections:sync-set-enabled(false) persists without requesting a reconcile', async () => {
+    const { mod } = await loadModule();
+    mod.registerBackendHandlers();
+    const handler = findHandler('connections:sync-set-enabled');
+
+    await expect(handler!({}, { enabled: false })).resolves.toEqual({
+      supported: onMac,
+      enabled: false,
+      status: null,
+    });
+    expect(localPrefs.setLocalPref).toHaveBeenCalledWith('keychainSyncEnabled', false);
+    expect(keychainSync.requestReconcile).not.toHaveBeenCalled();
+  });
+
+  it('rejects invalid params (non-boolean enabled) via the Zod schema', async () => {
+    const { mod } = await loadModule();
+    mod.registerBackendHandlers();
+    const handler = findHandler('connections:sync-set-enabled');
+
+    await expect(handler!({}, { enabled: 'yes' })).rejects.toThrow();
+    expect(localPrefs.setLocalPref).not.toHaveBeenCalled();
+  });
+
+  it('broadcasts connections:sync-status-changed to every window on a status change', async () => {
+    const send = installWindow();
+    const { mod } = await loadModule();
+    mod.registerBackendHandlers();
+
+    const status = { state: 'unavailable', reason: 'unavailable', message: 'locked' };
+    keychainSync.initOptions?.onStatusChanged?.(status);
+    expect(send).toHaveBeenCalledWith('connections:sync-status-changed', status);
   });
 });
 
