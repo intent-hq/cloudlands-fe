@@ -5663,7 +5663,7 @@ describe('daemonEventsBridge (workspace:created → recycled-ID purge + rehydrat
     });
   });
 
-  it('is a no-op (no purge, no refetch) when the created ID has no local state', async () => {
+  it('skips the purge + agent-list refetch when the created ID has no local agent state', async () => {
     const FRESH_WS = 'ws-bridge-fresh';
     await primeBridge();
     const handler = capturedHandlers[0]!;
@@ -5687,6 +5687,141 @@ describe('daemonEventsBridge (workspace:created → recycled-ID purge + rehydrat
     expect(backendRequestSpy).not.toHaveBeenCalledWith('agent.list', {
       workspaceId: FRESH_WS,
     });
+  });
+
+  // intent-hq/monorepo#3558: a workspace created/imported by ANOTHER client on
+  // the same daemon is unknown to this window's workspace collection — the
+  // bridge must refetch the list so the new row appears without a reload.
+  it('refetches the workspace list when the created ID is unknown to the workspace collection', async () => {
+    // UUID-shaped: the live client's normalizeWorkspace validates via
+    // createWorkspaceId when folding the workspace.list response.
+    const REMOTE_WS = '99999999-9999-4999-8999-999999999999';
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+    backendRequestSpy.mockClear();
+    backendRequestSpy.mockImplementation((method: string) => {
+      if (method === 'workspace.list') {
+        return Promise.resolve({
+          workspaces: [
+            {
+              id: REMOTE_WS,
+              title: 'Created elsewhere',
+              branch: 'main',
+              status: 'Active',
+            },
+          ],
+        });
+      }
+      return undefined;
+    });
+
+    handler({
+      method: 'events.event',
+      params: {
+        event: {
+          id: 'evt-workspace-created-elsewhere',
+          workspaceId: REMOTE_WS,
+          timestamp: '2026-01-02T00:00:00.000Z',
+          type: 'workspace:created',
+          actor: { type: 'user', id: 'u1' },
+          data: { workspaceId: REMOTE_WS },
+        },
+      },
+    });
+    // loadWorkspacesRequested → lifecycle-read-saga → appClient.workspaces.list
+    // (live client → mocked backendRequest); let the async refetch settle.
+    await flush();
+
+    expect(backendRequestSpy).toHaveBeenCalledWith('workspace.list', { includeArchived: true });
+    const state = appStore.state as { workspace: { workspaces: { ids: string[] } } };
+    expect(state.workspace.workspaces.ids).toContain(REMOTE_WS);
+  });
+
+  it('does not refetch the workspace list when the created ID is already in the collection', async () => {
+    const KNOWN_WS = 'ws-bridge-created-known';
+    const { setWorkspaceEntity } = await import('$store/renderer/slices/workspace/workspace-slice');
+    const { WorkspaceStatus } = await import('$shared/types');
+    appStore.dispatch(
+      setWorkspaceEntity({
+        id: KNOWN_WS,
+        title: 'Known ws',
+        branch: 'main',
+        status: WorkspaceStatus.Active,
+        changesets: [],
+        timeline: [],
+        conversationInfo: [],
+        createdAt: '2026-01-01T00:00:00.000Z',
+        updatedAt: '2026-01-01T00:00:00.000Z',
+      } as never),
+    );
+
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+    backendRequestSpy.mockClear();
+
+    handler({
+      method: 'events.event',
+      params: {
+        event: {
+          id: 'evt-workspace-created-known',
+          workspaceId: KNOWN_WS,
+          timestamp: '2026-01-02T00:00:00.000Z',
+          type: 'workspace:created',
+          actor: { type: 'user', id: 'u1' },
+          data: { workspaceId: KNOWN_WS },
+        },
+      },
+    });
+    await flush();
+
+    expect(backendRequestSpy).not.toHaveBeenCalledWith('workspace.list', expect.anything());
+    expect(backendRequestSpy).not.toHaveBeenCalledWith('workspace.list', undefined);
+  });
+
+  it('does not refetch the workspace list for a pending creation this window originated', async () => {
+    const PENDING_WS = 'ws-bridge-created-pending';
+    const { setPendingCreation, clearPendingCreation } =
+      await import('$store/renderer/slices/workspace/workspace-slice');
+    const { WorkspaceStatus } = await import('$shared/types');
+    appStore.dispatch(
+      setPendingCreation({
+        id: PENDING_WS,
+        title: 'Pending ws',
+        branch: 'main',
+        status: WorkspaceStatus.Active,
+        changesets: [],
+        timeline: [],
+        conversationInfo: [],
+        createdAt: '2026-01-01T00:00:00.000Z',
+        updatedAt: '2026-01-01T00:00:00.000Z',
+      } as never),
+    );
+
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+    backendRequestSpy.mockClear();
+
+    try {
+      handler({
+        method: 'events.event',
+        params: {
+          event: {
+            id: 'evt-workspace-created-pending',
+            workspaceId: PENDING_WS,
+            timestamp: '2026-01-02T00:00:00.000Z',
+            type: 'workspace:created',
+            actor: { type: 'user', id: 'u1' },
+            data: { workspaceId: PENDING_WS },
+          },
+        },
+      });
+      await flush();
+
+      expect(backendRequestSpy).not.toHaveBeenCalledWith('workspace.list', expect.anything());
+      expect(backendRequestSpy).not.toHaveBeenCalledWith('workspace.list', undefined);
+    } finally {
+      appStore.dispatch(clearPendingCreation(PENDING_WS));
+    }
   });
 
   it('lifts the deletion tombstone so the recycled ID can be stored again', async () => {
