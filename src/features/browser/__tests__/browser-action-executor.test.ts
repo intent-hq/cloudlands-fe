@@ -958,6 +958,7 @@ describe('browser-action-executor', () => {
         undefined,
         { width: 1280, height: 800 },
         true,
+        undefined,
       );
       expect(result.results[0]?.warning).toContain('no UI focus was attempted');
     });
@@ -1093,6 +1094,7 @@ describe('browser-action-executor', () => {
         'tab-existing',
         { width: 1280, height: 800 },
         false,
+        undefined,
       );
       expect(embeddedBrowserCdp.waitForTabRegistration).toHaveBeenCalledExactlyOnceWith(
         'tab-existing',
@@ -1392,6 +1394,7 @@ describe('browser-action-executor', () => {
         undefined,
         { width: 1280, height: 800 },
         false,
+        undefined,
       );
     });
 
@@ -2168,6 +2171,7 @@ describe('browser-action-executor', () => {
         undefined,
         { width: 1280, height: 800 },
         false,
+        undefined,
       );
     });
 
@@ -2251,6 +2255,7 @@ describe('browser-action-executor', () => {
         undefined,
         { width: 1280, height: 800 },
         false,
+        undefined,
       );
       // The new tab is owned at open time so it counts as the agent's own; a
       // non-tunneled open clears any stale requested-URL identity, and the
@@ -2297,7 +2302,34 @@ describe('browser-action-executor', () => {
         undefined,
         { width: 1280, height: 800 },
         true,
+        undefined,
       );
+    });
+
+    it('resolves owner display names once per batch — N opens share one agent.list', async () => {
+      mockBackendRequest.mockResolvedValueOnce({ agents: [{ id: 'agent-1', name: 'Alice' }] });
+      mockOpenTabFn
+        .mockReturnValueOnce({ success: true, message: 'opened', tabId: 'tab-a' })
+        .mockReturnValueOnce({ success: true, message: 'opened', tabId: 'tab-b' });
+
+      const result = await executeActions(
+        {
+          actions: [
+            { action: 'openTab', url: 'http://localhost:3000/a' },
+            { action: 'openTab', url: 'http://localhost:3000/b' },
+          ],
+        },
+        mockOpenTabFn,
+        'agent-1',
+        'ws-1',
+      );
+
+      expect(result.success).toBe(true);
+      expect(mockBackendRequest).toHaveBeenCalledTimes(1);
+      expect(mockBackendRequest).toHaveBeenCalledWith('agent.list', { workspaceId: 'ws-1' });
+      // Both opens still carry the resolved name (10th arg).
+      expect(mockOpenTabFn.mock.calls[0][9]).toBe('Alice');
+      expect(mockOpenTabFn.mock.calls[1][9]).toBe('Alice');
     });
 
     it('does not record ownership when openTabFn reports failure or returns no tabId', async () => {
@@ -2909,6 +2941,7 @@ describe('browser-action-executor', () => {
         'tab-1',
         'ws-1',
         'agent-1',
+        undefined,
       );
       expect(result.results[0]?.result).toMatchObject({
         tabId: 'tab-1',

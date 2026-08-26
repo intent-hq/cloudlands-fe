@@ -1694,6 +1694,7 @@ export const setTabOwnerAgent = createAction<
     tabId: string,
     ownerAgentId: string,
     emulatedSize?: { width: number; height: number },
+    ownerAgentName?: string,
   ]
 >('panelLayout/setTabOwnerAgent');
 
@@ -2639,8 +2640,9 @@ panelLayoutReducer.with(reopenClosedTab, (state, { payload }) => {
   // The genuine close cleared main's ownership of an agent-owned browser tab
   // (monorepo#2857); a reopen is a fresh, unowned tab — carrying the stale
   // ownerAgentId forward would resurrect ownership in main's registry (via
-  // layout rehydration) and block other agents from claiming the tab.
-  const { ownerAgentId: _staleOwner, ...closedTab } = closed.tab;
+  // layout rehydration) and block other agents from claiming the tab. The
+  // persisted owner name goes with it (monorepo#3438).
+  const { ownerAgentId: _staleOwner, ownerAgentName: _staleOwnerName, ...closedTab } = closed.tab;
   const newTab: PanelTab = { ...closedTab, id: newTabId };
 
   ws = {
@@ -2855,7 +2857,7 @@ panelLayoutReducer.with(
 // --- Set Tab Owner Agent (monorepo#2857) ---
 panelLayoutReducer.with(
   setTabOwnerAgent,
-  (state, { payload: [wsId, tabId, ownerAgentId, emulatedSize] }) => {
+  (state, { payload: [wsId, tabId, ownerAgentId, emulatedSize, ownerAgentName] }) => {
     const ws = getWorkspaceState(state, wsId);
     for (const [pId, panel] of Object.entries(ws.panels)) {
       const tabIdx = panel.tabs.findIndex((t) => t.id === tabId && t.type === 'browser');
@@ -2865,11 +2867,20 @@ panelLayoutReducer.with(
           tab.ownerAgentId === ownerAgentId &&
           (emulatedSize === undefined ||
             (tab.emulatedSize?.width === emulatedSize.width &&
-              tab.emulatedSize?.height === emulatedSize.height));
+              tab.emulatedSize?.height === emulatedSize.height)) &&
+          (ownerAgentName === undefined || tab.ownerAgentName === ownerAgentName);
         if (unchanged) return state;
         const newTabs = panel.tabs.map((t, i) =>
           i === tabIdx
-            ? { ...t, ownerAgentId, ...(emulatedSize === undefined ? {} : { emulatedSize }) }
+            ? {
+                ...t,
+                ownerAgentId,
+                ...(emulatedSize === undefined ? {} : { emulatedSize }),
+                // An undefined name keeps any previously persisted one — a
+                // notification that couldn't resolve the name must not erase
+                // it (monorepo#3438).
+                ...(ownerAgentName === undefined ? {} : { ownerAgentName }),
+              }
             : t,
         );
         return setWorkspaceState(state, wsId, {
@@ -2886,7 +2897,8 @@ panelLayoutReducer.with(
         hiddenTab.ownerAgentId === ownerAgentId &&
         (emulatedSize === undefined ||
           (hiddenTab.emulatedSize?.width === emulatedSize.width &&
-            hiddenTab.emulatedSize?.height === emulatedSize.height));
+            hiddenTab.emulatedSize?.height === emulatedSize.height)) &&
+        (ownerAgentName === undefined || hiddenTab.ownerAgentName === ownerAgentName);
       if (unchanged) return state;
       return setWorkspaceState(state, wsId, {
         ...ws,
@@ -2894,6 +2906,7 @@ panelLayoutReducer.with(
           id: tabId,
           ownerAgentId,
           ...(emulatedSize === undefined ? {} : { emulatedSize }),
+          ...(ownerAgentName === undefined ? {} : { ownerAgentName }),
         }),
       });
     }

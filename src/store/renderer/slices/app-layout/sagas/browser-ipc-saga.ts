@@ -51,6 +51,7 @@ function browserTab(
   requestedUrl?: string,
   ownerAgentId?: string,
   emulatedSize?: BrowserEmulatedSize,
+  ownerAgentName?: string,
 ): Omit<PanelTab, 'id'> {
   return {
     type: 'browser',
@@ -63,10 +64,31 @@ function browserTab(
     // Persist the owning agent on agent opens so ownership survives restart
     // (monorepo#2857).
     ...(ownerAgentId === undefined ? {} : { ownerAgentId }),
+    // Persist the owner's display name so the sidebar owner group can label
+    // the tab without an agent-store lookup (monorepo#3438).
+    ...(ownerAgentName === undefined ? {} : { ownerAgentName }),
     // Persist the emulated viewport alongside the owner so the tab
     // rehydrates at its actual size after restart (monorepo#2857).
     ...(emulatedSize === undefined ? {} : { emulatedSize }),
   };
+}
+
+/**
+ * Build a `setTabOwnerAgent` action at the smallest arity carrying the
+ * defined fields, so payload tuples do not grow trailing `undefined`s.
+ */
+function tabOwnerAction(
+  workspaceId: string,
+  tabId: string,
+  ownerAgentId: string,
+  emulatedSize?: BrowserEmulatedSize,
+  ownerAgentName?: string,
+): ReturnType<typeof setTabOwnerAgent> {
+  if (ownerAgentName !== undefined)
+    return setTabOwnerAgent(workspaceId, tabId, ownerAgentId, emulatedSize, ownerAgentName);
+  if (emulatedSize !== undefined)
+    return setTabOwnerAgent(workspaceId, tabId, ownerAgentId, emulatedSize);
+  return setTabOwnerAgent(workspaceId, tabId, ownerAgentId);
 }
 
 type LayoutReadiness =
@@ -150,6 +172,14 @@ function* openBrowser(data: BrowserOpenTabPayload | null): SagaGenerator<void> {
     typeof data.ownerAgentId === 'string' && data.ownerAgentId.length > 0
       ? data.ownerAgentId
       : undefined;
+  // Owner display name on agent opens; persisted with the tab so the sidebar
+  // owner group can label it without an agent-store lookup (monorepo#3438).
+  const ownerAgentName =
+    ownerAgentId !== undefined &&
+    typeof data.ownerAgentName === 'string' &&
+    data.ownerAgentName.length > 0
+      ? data.ownerAgentName
+      : undefined;
   // Emulated viewport on agent opens; persisted with the tab alongside the
   // owner so the size survives restart and the UI can surface it
   // (monorepo#2857, §5.9). Only meaningful for owned tabs.
@@ -190,9 +220,7 @@ function* openBrowser(data: BrowserOpenTabPayload | null): SagaGenerator<void> {
       if (hidden) {
         yield* put(updateTabBrowserUrl(workspaceId, hidden.id, data.url, requestedUrl ?? null));
         yield* put(
-          emulatedSize === undefined
-            ? setTabOwnerAgent(workspaceId, hidden.id, ownerAgentId)
-            : setTabOwnerAgent(workspaceId, hidden.id, ownerAgentId, emulatedSize),
+          tabOwnerAction(workspaceId, hidden.id, ownerAgentId, emulatedSize, ownerAgentName),
         );
         return;
       }
@@ -208,9 +236,7 @@ function* openBrowser(data: BrowserOpenTabPayload | null): SagaGenerator<void> {
       // (main enforced ownership before sending this open, monorepo#2857).
       if (ownerAgentId) {
         yield* put(
-          emulatedSize === undefined
-            ? setTabOwnerAgent(workspaceId, existing.id, ownerAgentId)
-            : setTabOwnerAgent(workspaceId, existing.id, ownerAgentId, emulatedSize),
+          tabOwnerAction(workspaceId, existing.id, ownerAgentId, emulatedSize, ownerAgentName),
         );
       }
       // A hidden (default) agent open never changes the active tab or panel
@@ -224,7 +250,7 @@ function* openBrowser(data: BrowserOpenTabPayload | null): SagaGenerator<void> {
       yield* put(
         openHiddenTab(
           workspaceId,
-          browserTab(data.url, requestedUrl, ownerAgentId, emulatedSize),
+          browserTab(data.url, requestedUrl, ownerAgentId, emulatedSize, ownerAgentName),
           newTabId,
         ),
       );
@@ -232,7 +258,7 @@ function* openBrowser(data: BrowserOpenTabPayload | null): SagaGenerator<void> {
     }
     const openAction = openTabInRightmostColumnRequested(
       workspaceId,
-      browserTab(data.url, requestedUrl, ownerAgentId, emulatedSize),
+      browserTab(data.url, requestedUrl, ownerAgentId, emulatedSize, ownerAgentName),
       {
         newTabId,
         allowDuplicate,
@@ -251,7 +277,7 @@ function* openBrowser(data: BrowserOpenTabPayload | null): SagaGenerator<void> {
     yield* put(
       openHiddenTab(
         workspaceId,
-        browserTab(data.url, requestedUrl, ownerAgentId, emulatedSize),
+        browserTab(data.url, requestedUrl, ownerAgentId, emulatedSize, ownerAgentName),
         newTabId,
       ),
     );
@@ -260,7 +286,7 @@ function* openBrowser(data: BrowserOpenTabPayload | null): SagaGenerator<void> {
   if (position === 'adjacent') {
     const openAction = openTabInRightmostColumnRequested(
       workspaceId,
-      browserTab(data.url, requestedUrl, ownerAgentId, emulatedSize),
+      browserTab(data.url, requestedUrl, ownerAgentId, emulatedSize, ownerAgentName),
       {
         newTabId,
         allowDuplicate,
@@ -272,7 +298,7 @@ function* openBrowser(data: BrowserOpenTabPayload | null): SagaGenerator<void> {
   }
   const openAction = openTab(
     workspaceId,
-    browserTab(data.url, requestedUrl, ownerAgentId, emulatedSize),
+    browserTab(data.url, requestedUrl, ownerAgentId, emulatedSize, ownerAgentName),
     undefined,
     newTabId,
     undefined,
@@ -514,11 +540,20 @@ function* tabOwnerChanged(data: BrowserTabOwnerChangedPayload | null): SagaGener
     return;
   }
   // The persisted emulated size rides along with the owner (claim size /
-  // resizeTab) so it survives restart too (monorepo#2857).
+  // resizeTab) so it survives restart too (monorepo#2857), as does the
+  // owner's display name for the sidebar owner group (monorepo#3438).
+  const ownerAgentName =
+    typeof data.ownerAgentName === 'string' && data.ownerAgentName.length > 0
+      ? data.ownerAgentName
+      : undefined;
   yield* put(
-    isBrowserEmulatedSize(data.emulatedSize)
-      ? setTabOwnerAgent(workspaceId, data.tabId, data.ownerAgentId, data.emulatedSize)
-      : setTabOwnerAgent(workspaceId, data.tabId, data.ownerAgentId),
+    tabOwnerAction(
+      workspaceId,
+      data.tabId,
+      data.ownerAgentId,
+      isBrowserEmulatedSize(data.emulatedSize) ? data.emulatedSize : undefined,
+      ownerAgentName,
+    ),
   );
 }
 
