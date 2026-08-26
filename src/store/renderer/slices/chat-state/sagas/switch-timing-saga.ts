@@ -81,9 +81,26 @@ function hydrationFailedWorker(action: ReturnType<typeof transcriptHydrationFail
   finalizeAgentView(agentId);
 }
 
+/** Map each live-stream phase to its first-occurrence timing gate. */
+const PHASE_GATES = {
+  connecting: 'phaseConnecting',
+  'awaiting-snapshot': 'phaseAwaitingSnapshot',
+  live: 'phaseLive',
+  resyncing: 'phaseResyncing',
+  delayed: 'phaseDelayed',
+} as const;
+
 function phaseChangedWorker(action: ReturnType<typeof chatLiveStreamPhaseChanged>): void {
   const [agentId, phase] = action.payload;
-  if (phase === null) discardAgentView(agentId);
+  if (phase === null) {
+    discardAgentView(agentId);
+    return;
+  }
+  // Bracket the chat.subscribe lifecycle (registration ack → seq-0 snapshot)
+  // so a slow reveal self-attributes: a late phaseLive with an early
+  // phaseAwaitingSnapshot points at the daemon's seq-0 push; a phaseDelayed
+  // mark means the SNAPSHOT_TIMEOUT_MS ceiling fired (see live-chat-client).
+  markAgentGate(agentId, PHASE_GATES[phase]);
 }
 
 function* subscriptionSnapshotWorker(

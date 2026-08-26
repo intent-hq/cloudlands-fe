@@ -29,7 +29,12 @@ export type GateName =
   | 'snapshotApplied'
   | 'footerReady'
   | 'revealTimedOut'
-  | 'subscriptionsFetched';
+  | 'subscriptionsFetched'
+  | 'phaseConnecting'
+  | 'phaseAwaitingSnapshot'
+  | 'phaseLive'
+  | 'phaseResyncing'
+  | 'phaseDelayed';
 export type SeedName =
   'hooksSeedStarted' | 'hooksSeedDelivered' | 'prSeedStarted' | 'prSeedDelivered';
 type SwitchOutcome = 'revealed' | 'revealed-after-timeout' | 'hydration-failed';
@@ -43,6 +48,8 @@ export interface SwitchTimingSummary {
   revealMs: number;
   /** Gate settle deltas from t=0, ms. */
   gates: Partial<Record<GateName, number>>;
+  /** The last gate to settle — attributes what the reveal was waiting on. */
+  slowestGate: GateName | undefined;
   /** Workspace seed deltas from t=0, ms (relevant seeds only; stale ones omitted). */
   seeds: Partial<Record<SeedName, number>>;
 }
@@ -150,8 +157,14 @@ export function finalizeAgentView(agentId: string): SwitchTimingSummary | null {
   const t = now();
 
   const gates: Partial<Record<GateName, number>> = {};
+  let slowestGate: GateName | undefined;
+  let slowestAt = -Infinity;
   for (const [gate, at] of Object.entries(record.gates) as [GateName, number][]) {
     gates[gate] = round1(at - record.t0);
+    if (at > slowestAt) {
+      slowestAt = at;
+      slowestGate = gate;
+    }
   }
 
   const seeds: Partial<Record<SeedName, number>> = {};
@@ -176,11 +189,12 @@ export function finalizeAgentView(agentId: string): SwitchTimingSummary | null {
     outcome,
     revealMs: round1(t - record.t0),
     gates,
+    slowestGate,
     seeds,
   };
   safeMeasure(`ws-switch:${agentId}:reveal`, startMarkName(agentId));
   logger.debug(
-    `workspace-switch ${agentId} ${summary.outcome} in ${summary.revealMs}ms (trigger=${summary.trigger})`,
+    `workspace-switch ${agentId} ${summary.outcome} in ${summary.revealMs}ms (trigger=${summary.trigger}, slowest=${summary.slowestGate ?? 'none'})`,
     { workspaceId: summary.workspaceId, gates: summary.gates, seeds: summary.seeds },
   );
   return summary;
