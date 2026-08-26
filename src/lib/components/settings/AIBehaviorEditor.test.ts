@@ -563,9 +563,7 @@ describe('AIBehaviorEditor full-height layouts', () => {
     );
     expect(editorContainer?.className).toContain('full-height-editor-container');
     expect(editorContainer?.className).not.toContain('specialist-editor-container');
-    expect(within(promptColumn).getByRole('heading', { name: 'All Agents' })).toBeTruthy();
-    expect(screen.getAllByRole('heading', { name: 'All Agents' })).toHaveLength(1);
-    expect(within(promptColumn).queryByRole('heading', { name: 'Agent instructions' })).toBeNull();
+    expect(within(promptColumn).queryByRole('heading')).toBeNull();
     expect(
       within(promptColumn).queryByText('Custom instructions that will be included for all agents.'),
     ).toBeNull();

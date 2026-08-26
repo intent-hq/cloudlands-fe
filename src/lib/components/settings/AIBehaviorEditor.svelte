@@ -683,6 +683,7 @@
       >
         <AgentRulesEditor
           title={m.settings_section_globalInstructions()}
+          showTitle={false}
           showDescription={false}
           class="xl:min-h-0 xl:flex-1"
         />
