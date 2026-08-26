@@ -95,18 +95,15 @@ describe('WorkspaceTokenUsage', () => {
     expect(disclosure.getAttribute('aria-describedby')).toBe(
       'workspace-token-usage-processed-ws-1',
     );
-    expect(document.getElementById('workspace-token-usage-processed-ws-1')?.textContent).toContain(
-      '1K tokens used',
+    expect(document.getElementById('workspace-token-usage-processed-ws-1')?.textContent).toMatch(
+      /1K\s+tokens used/,
     );
     expect(document.getElementById('workspace-token-usage-cache-ws-1')).toBeNull();
     expect(document.getElementById(detailsId!)).toBeNull();
-    expect(visibleText(disclosure)).toContain('Token usage');
-    expect(visibleText(disclosure)).toContain('1K tokens used');
-    expect(visibleText(disclosure)).not.toContain('Cached');
+    expect(disclosure.querySelector('[aria-hidden="true"]')?.textContent).toBe('1K');
+    expect(visibleText(disclosure)).toBe('1K 1K tokens used');
     expect(disclosure.querySelector('svg')).toBeNull();
-    expect(disclosure.querySelector('#workspace-token-usage-processed-ws-1')?.classList).toContain(
-      'font-normal',
-    );
+    expect(disclosure.classList).toContain('font-normal');
     const closedClassName = disclosure.className;
 
     await fireEvent.click(disclosure);
@@ -206,7 +203,10 @@ describe('WorkspaceTokenUsage', () => {
 
     const row = screen.getByTestId('workspace-token-usage');
     expect(visibleText(row)).toContain('9.4M processed');
-    expect(visibleText(screen.getByTestId('token-usage-disclosure'))).not.toContain('Cached');
+    expect(
+      screen.getByTestId('token-usage-disclosure').querySelector('[aria-hidden="true"]')
+        ?.textContent,
+    ).toBe('9.4M');
     expect(row.textContent).not.toContain('updating');
 
     expect(mocks.dispatch).toHaveBeenCalledTimes(1);
@@ -779,7 +779,10 @@ describe('WorkspaceTokenUsage', () => {
 
     await renderExpandedTokenUsage();
 
-    expect(visibleText(screen.getByTestId('token-usage-disclosure'))).toContain('4.2K tokens used');
+    expect(
+      screen.getByTestId('token-usage-disclosure').querySelector('[aria-hidden="true"]')
+        ?.textContent,
+    ).toBe('4.2K');
 
     const modelSection = screen.getByTestId('token-usage-by-model');
     const agentSection = screen.getByTestId('token-usage-by-agent');
@@ -814,7 +817,10 @@ describe('WorkspaceTokenUsage', () => {
 
     await renderExpandedTokenUsage();
 
-    expect(visibleText(screen.getByTestId('token-usage-disclosure'))).toContain('30 tokens used');
+    expect(
+      screen.getByTestId('token-usage-disclosure').querySelector('[aria-hidden="true"]')
+        ?.textContent,
+    ).toBe('30');
     const modelSection = screen.getByTestId('token-usage-by-model');
     expect(visibleText(modelSection)).toBe('By model Model Big 100%');
     const composition = screen
