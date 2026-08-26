@@ -103,6 +103,34 @@ describe('selectAgentPreview', () => {
     });
   });
 
+  it('serves the live tool on canonical running evidence without the FE isStreaming flag', () => {
+    // Background/delegated agents never get the FE-owned send-path
+    // `isStreaming` flag; canonical liveness (isResponding here) must be
+    // enough to render the in-flight tool chip during tool-only stretches.
+    const responding = stateWith(
+      session({ isResponding: true, lastToolUse: { name: 'view', input: {} } }),
+    );
+    expect(selectAgentPreview.select(responding, AGENT)).toEqual({
+      kind: 'live-tool',
+      toolUse: { type: 'tool_use', id: `wire-tool:${AGENT}`, name: 'view', input: {} },
+      isLive: true,
+    });
+
+    // The sticky liveTurnOpen bit is equally sufficient evidence.
+    const liveTurn = stateWith(session({ liveTurnOpen: true, lastToolUse: { name: 'view' } }));
+    expect(selectAgentPreview.select(liveTurn, AGENT)).toMatchObject({
+      kind: 'live-tool',
+      isLive: true,
+    });
+
+    // The same session idle falls back to the persisted tool arm.
+    const idle = stateWith(session({ lastToolUse: { name: 'view' } }));
+    expect(selectAgentPreview.select(idle, AGENT)).toMatchObject({
+      kind: 'last-tool',
+      isLive: false,
+    });
+  });
+
   it('live text outranks the live tool overlay', () => {
     const state = stateWith(
       session({

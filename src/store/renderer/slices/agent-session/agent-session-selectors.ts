@@ -556,9 +556,14 @@ export const selectAgentPreview = store.createSelector(
 
     // Tool-use block to preview when the latest thing the agent did was a
     // tool call (see agent-peek-utils). Hidden tool labels fall through.
+    // The live arm is gated on the canonical running evidence (`isLive`), not
+    // the FE-owned send-path `isStreaming` flag — background/delegated agents
+    // the user never messaged from this window still get the live tool chip
+    // during tool-only stretches. The bridge's new-turn `lastToolUse` wipe
+    // keeps a previous turn's tool from rendering as live.
     const lastToolUse = agentData?.lastToolUse;
     const liveToolUse: ToolUseBlock | undefined =
-      session?.isStreaming && session?.lastToolUse ? lastToolUse : undefined;
+      isLive && session?.lastToolUse ? lastToolUse : undefined;
     const liveToolDisplay = liveToolUse
       ? classifyTool(liveToolUse.name, (liveToolUse.input as Record<string, unknown>) || {})
       : null;
