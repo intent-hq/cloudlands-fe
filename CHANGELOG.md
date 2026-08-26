@@ -4,6 +4,27 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.96.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.95.0...v2.96.0) (2026-08-26)
+
+
+### 🚀 Features
+
+* add deterministic UI previews and polish hover cards ([#1701](https://github.com/intent-hq/cloudlands-fe/issues/1701)) ([02cfdf0](https://github.com/intent-hq/cloudlands-fe/commit/02cfdf007c173c7ad6c24d543bb4df538f059910))
+* add live-stream phase gates and slowest-gate attribution to switch timing ([#1723](https://github.com/intent-hq/cloudlands-fe/issues/1723)) ([f557789](https://github.com/intent-hq/cloudlands-fe/commit/f5577894d4d30b00cd160f9bce68b19037386569))
+* add sibling workspace proposal card mode ([#1667](https://github.com/intent-hq/cloudlands-fe/issues/1667)) ([70892a2](https://github.com/intent-hq/cloudlands-fe/commit/70892a2299a7299f6f7bfbbbe4ebb5c4a442878a))
+* show cumulative release notes after updates ([#1699](https://github.com/intent-hq/cloudlands-fe/issues/1699)) ([594f133](https://github.com/intent-hq/cloudlands-fe/commit/594f1338a767e00563e5a734bf617206e54b15c5))
+* sync remote backend connections across Macs via iCloud Keychain ([#1715](https://github.com/intent-hq/cloudlands-fe/issues/1715)) ([ccdca5f](https://github.com/intent-hq/cloudlands-fe/commit/ccdca5fd349f3e03389f96d135b0db585084ce9b))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.7.62 ([#1734](https://github.com/intent-hq/cloudlands-fe/issues/1734)) ([be679a6](https://github.com/intent-hq/cloudlands-fe/commit/be679a6d1f30175c33b1238c63877ff908cecdd1))
+* gate live tool preview on canonical running evidence ([#1730](https://github.com/intent-hq/cloudlands-fe/issues/1730)) ([20a6713](https://github.com/intent-hq/cloudlands-fe/commit/20a6713ecb6590fa19d2d58dbffbc92454c9c0ae))
+* honor openInNewAdjacentPanel for mod-clicked note task links ([#1718](https://github.com/intent-hq/cloudlands-fe/issues/1718)) ([3266c3f](https://github.com/intent-hq/cloudlands-fe/commit/3266c3f3c2d63998d88a06801b0feff9458d2046))
+* keep stacked toasts expanded and restyle warning toasts for dark theme ([#1633](https://github.com/intent-hq/cloudlands-fe/issues/1633)) ([a6a579d](https://github.com/intent-hq/cloudlands-fe/commit/a6a579dc1412bbbf481a578d5cf6b33a75b4a5fb))
+* mark sessions live on agent:stream:activity pings ([#1724](https://github.com/intent-hq/cloudlands-fe/issues/1724)) ([c0e88c8](https://github.com/intent-hq/cloudlands-fe/commit/c0e88c86cd539463e6a137f072014031d9c1f226))
+* match packaged macOS Dock icon ([#1662](https://github.com/intent-hq/cloudlands-fe/issues/1662)) ([f70a7a6](https://github.com/intent-hq/cloudlands-fe/commit/f70a7a6ad92dc898c15bff0dc101c9d41b7d8853))
+
 ## [2.95.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.94.0...v2.95.0) (2026-08-26)
 
 
