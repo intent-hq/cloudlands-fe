@@ -95,7 +95,6 @@ function createPanelSnapshot(source: HTMLElement, panel: PanelState): HTMLElemen
   });
   snapshot.setAttribute('aria-hidden', 'true');
   snapshot.inert = true;
-  snapshot.classList.add('contained');
   Object.assign(snapshot.style, {
     width: '100%',
     height: '100%',
