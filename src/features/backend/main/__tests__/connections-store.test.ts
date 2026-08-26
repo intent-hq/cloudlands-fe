@@ -416,6 +416,70 @@ describe('connections-store', () => {
     expect((await store.list()).filter((c) => !c.isLocal)).toHaveLength(2);
   });
 
+  it('different fingerprints at the SAME host:port are different machines (no upsert, no tombstone match)', async () => {
+    const store = await import('../connections-store');
+    // A machine at this address was forgotten with an OLD certificate…
+    const old = await store.add(sampleConn); // fingerprint AA:BB:CC
+    await store.forget(old.id);
+
+    // …and a NEW backend (fresh cert) reuses the address. It must be a brand
+    // new record, and the old cert's tombstone must not delete it.
+    const fresh = await store.add({ ...sampleConn, fingerprint: 'DD:EE:FF', token: 'tok-new' });
+    expect(fresh.id).not.toBe(old.id);
+    expect((await store.list()).filter((c) => !c.isLocal)).toHaveLength(1);
+
+    // The old-cert tombstone survives (it names a different machine)…
+    await store.__drainWriteChainForTesting();
+    const file = path.join(tmpDir, 'backend-connections.json');
+    const parsed = JSON.parse(await fs.readFile(file, 'utf8'));
+    expect(parsed.tombstones).toHaveLength(1);
+    expect(parsed.tombstones[0].fingerprint).toBe('AA:BB:CC');
+
+    // …and applying it as a remote tombstone must NOT remove the new backend.
+    const changed = await store.applyRemoteSyncRecord({
+      label: sampleConn.label,
+      host: sampleConn.host,
+      hosts: [sampleConn.host],
+      port: sampleConn.port,
+      fingerprint: 'AA:BB:CC',
+      hostname: null,
+      detectHosts: true,
+      token: '',
+      updatedAt: Date.now() + 60_000,
+      deleted: true,
+      deletedAt: Date.now() + 60_000,
+    });
+    expect(changed).toBe(false);
+    expect((await store.list()).filter((c) => !c.isLocal)).toHaveLength(1);
+  });
+
+  it('add stamps past a fingerprint-matching tombstone from a skewed (future) clock', async () => {
+    const store = await import('../connections-store');
+    const rec = await store.add(sampleConn);
+    await store.forget(rec.id);
+    await store.__drainWriteChainForTesting();
+
+    // Simulate the tombstone having been written by a machine whose clock is
+    // ahead: bump its LWW clock into this machine's future.
+    const file = path.join(tmpDir, 'backend-connections.json');
+    const parsed = JSON.parse(await fs.readFile(file, 'utf8'));
+    const futureClock = Date.now() + 60_000;
+    parsed.tombstones[0].updatedAt = futureClock;
+    await fs.writeFile(file, JSON.stringify(parsed), 'utf8');
+    vi.resetModules();
+    mockElectron();
+
+    // An explicit re-publish must outrank the tombstone it supersedes, or the
+    // keychain copy of the tombstone re-deletes the record on next reconcile.
+    const store2 = await import('../connections-store');
+    await store2.add({ ...sampleConn, token: 'tok-new' });
+    await store2.__drainWriteChainForTesting();
+    const after = JSON.parse(await fs.readFile(file, 'utf8'));
+    expect(after.tombstones).toHaveLength(0);
+    expect(after.connections).toHaveLength(1);
+    expect(after.connections[0].updatedAt).toBeGreaterThan(futureClock);
+  });
+
   it('records default to a null hostname until one is captured', async () => {
     const store = await import('../connections-store');
     const rec = await store.add(sampleConn);

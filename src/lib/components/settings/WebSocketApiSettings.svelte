@@ -271,9 +271,12 @@
   async function publishSelf() {
     const api = getApi();
     if (!api) throw new Error('electronAPI is not available');
-    await (api.invoke(CONNECTIONS.PUBLISH_SELF) as Promise<PublishSelfResult>);
+    const result = await (api.invoke(CONNECTIONS.PUBLISH_SELF) as Promise<PublishSelfResult>);
     selfPublished = true;
     publishSuppressed = false;
+    // Capture the published record's id so a WSS toggle-off later in this
+    // same settings session can offer removal (maybeOfferRemoval requires it).
+    selfConnectionId = result.connection.id;
     toast.success(m.settings_wsApi_publishSelf_success());
   }
 

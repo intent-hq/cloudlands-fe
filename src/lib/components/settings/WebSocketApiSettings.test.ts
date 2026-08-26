@@ -766,5 +766,56 @@ describe('WebSocketApiSettings', () => {
       });
       expect(screen.getByText('Remove this backend from iCloud Keychain?')).toBeTruthy();
     });
+
+    it('publish-in-session captures the record id, so toggle-off offers removal', async () => {
+      // Start unpublished: no selfConnectionId is known up front.
+      ipcMocks.selfState = { published: false, suppressed: false, selfConnectionId: null };
+      mocks.mockSettingsList.mockResolvedValue([
+        { path: 'server.wsApi.enabled', value: false },
+        { path: 'server.wsApi.port', value: 5181 },
+      ]);
+      render(WebSocketApiSettings);
+      await waitFor(() => expect(screen.getByRole('switch')).toBeTruthy());
+
+      // Toggle WSS on → publish modal → confirm. The PublishSelfResult id
+      // ('mock-self') must be captured for this settings session.
+      mocks.mockSettingsUpdate.mockResolvedValueOnce([
+        { path: 'server.wsApi.enabled', value: true },
+      ]);
+      mocks.mockSettingsList.mockResolvedValue([
+        { path: 'server.wsApi.enabled', value: true },
+        { path: 'server.wsApi.port', value: 5181 },
+      ]);
+      mocks.mockPairingInfo.mockResolvedValue(PAIRING);
+      await fireEvent.click(screen.getByRole('switch'));
+      await waitFor(() =>
+        expect(screen.getByText('Add this backend to iCloud Keychain?')).toBeTruthy(),
+      );
+      const publishDialog = screen.getByRole('dialog');
+      await fireEvent.click(
+        within(publishDialog).getByRole('button', { name: 'Add to iCloud Keychain' }),
+      );
+      await waitFor(() => expect(mockToast.success).toHaveBeenCalled());
+
+      // Toggle WSS off in the SAME session: the removal modal must open and
+      // the forget must target the freshly published record.
+      mocks.mockSettingsUpdate.mockResolvedValueOnce([
+        { path: 'server.wsApi.enabled', value: false },
+      ]);
+      await fireEvent.click(screen.getByRole('switch'));
+      await waitFor(() =>
+        expect(screen.getByText('Remove this backend from iCloud Keychain?')).toBeTruthy(),
+      );
+      const removeDialog = screen.getByRole('dialog');
+      await fireEvent.click(
+        within(removeDialog).getByRole('button', { name: 'Remove from iCloud Keychain' }),
+      );
+      await waitFor(() => {
+        const forget = connectionState.dispatched.find(
+          (a) => a.type === 'connections/forgetRequested',
+        ) as { type: string; payload?: unknown[] } | undefined;
+        expect(forget?.payload).toEqual(['mock-self']);
+      });
+    });
   });
 });

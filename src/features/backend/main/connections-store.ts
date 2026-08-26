@@ -338,11 +338,12 @@ function fingerprintKey(fingerprint: string | undefined | null): string | null {
 }
 
 /**
- * Whether two records identify the same backend MACHINE. The certificate
- * fingerprint is the canonical identity: when both sides carry one, a match
- * means the same machine even under a different host:port (DHCP/IP change).
- * Records without a usable fingerprint fall back to host:port identity, so
- * fingerprint-less legacy records keep their old dedupe semantics.
+ * Whether two records identify the same backend MACHINE for LIVE dedupe
+ * (add/upsert). The certificate fingerprint is the canonical identity: when
+ * both sides carry one, a match means the same machine even under a different
+ * host:port (DHCP/IP change). Records without a usable fingerprint fall back
+ * to host:port identity — and so does an explicit re-pair at the same address
+ * with a rotated cert, which must upsert in place rather than duplicate.
  */
 function sameBackend(
   a: Pick<StoredConnection, 'host' | 'port' | 'fingerprint'>,
@@ -354,14 +355,33 @@ function sameBackend(
   return sameTarget(a, b);
 }
 
-/** Drop tombstones for the same backend — matching `host:port` or the cert
- * fingerprint — so a machine that came back (possibly under a new address)
- * is never re-suppressed by its own stale tombstone. */
+/**
+ * Strict identity for TOMBSTONE matching (fingerprint-keyed forget contract):
+ * when both sides carry a fingerprint, only fingerprint equality matches —
+ * different fingerprints are different machines even at the same host:port,
+ * so a tombstone for an old certificate at a reused address must never
+ * delete (or be cleared by) the new backend living there. The host:port
+ * fallback applies only when either side lacks a usable fingerprint.
+ */
+function tombstoneMatches(
+  a: Pick<StoredConnection, 'host' | 'port' | 'fingerprint'>,
+  b: Pick<StoredConnection, 'host' | 'port' | 'fingerprint'>,
+): boolean {
+  const fa = fingerprintKey(a.fingerprint);
+  const fb = fingerprintKey(b.fingerprint);
+  if (fa !== null && fb !== null) return fa === fb;
+  return sameTarget(a, b);
+}
+
+/** Drop tombstones for the same backend — matching the cert fingerprint, or
+ * `host:port` for fingerprint-less records — so a machine that came back
+ * (possibly under a new address) is never re-suppressed by its own stale
+ * tombstone. */
 function clearTombstone(
   state: PersistedState,
   target: Pick<StoredConnection, 'host' | 'port' | 'fingerprint'>,
 ): void {
-  state.tombstones = state.tombstones.filter((t) => !sameBackend(t, target));
+  state.tombstones = state.tombstones.filter((t) => !tombstoneMatches(t, target));
 }
 
 /**
@@ -396,6 +416,14 @@ export async function add(conn: NewConnection): Promise<ConnectionRecord> {
     // normalized host:port (trim + lowercase, see sameTarget) — keychain-sync
     // keys accounts the same way.
     const duplicates = state.connections.filter((c) => sameBackend(c, conn));
+    // An explicit (re-)add must outrank the tombstone it supersedes even
+    // under clock skew: a tombstone written by a machine whose clock is ahead
+    // would otherwise re-delete this record on the next reconcile (its
+    // keychain copy keeps the future clock; newer/tie favors the delete).
+    // Read the matching tombstone's clock before dropping it and stamp the
+    // upsert strictly past it.
+    const supersededTombstone = state.tombstones.find((t) => tombstoneMatches(t, conn));
+    const stamp = Math.max(Date.now(), (supersededTombstone?.updatedAt ?? 0) + 1);
     clearTombstone(state, conn);
     if (duplicates.length > 0) {
       const survivor = duplicates.find((c) => c.id === state.activeId) ?? duplicates[0];
@@ -409,7 +437,7 @@ export async function add(conn: NewConnection): Promise<ConnectionRecord> {
       survivor.encToken = encToken;
       survivor.detectHosts = conn.detectHosts ?? true;
       survivor.hostname ??= duplicates.find((c) => c.hostname != null)?.hostname ?? null;
-      survivor.updatedAt = Date.now();
+      survivor.updatedAt = stamp;
       state.connections = state.connections.filter(
         (c) => c === survivor || !duplicates.includes(c),
       );
@@ -424,7 +452,7 @@ export async function add(conn: NewConnection): Promise<ConnectionRecord> {
       fingerprint: conn.fingerprint,
       detectHosts: conn.detectHosts ?? true,
       encToken,
-      updatedAt: Date.now(),
+      updatedAt: stamp,
     };
     state.connections.push(record);
     await writeState(state);
@@ -658,10 +686,12 @@ export async function listSyncRecords(): Promise<KeychainSyncRecord[]> {
 export async function applyRemoteSyncRecord(record: KeychainSyncRecord): Promise<boolean> {
   return mutate(async (state) => {
     if (record.deleted === true) {
-      // Match by backend identity (fingerprint canonical, host:port fallback)
-      // so a tombstone written under an old address still deletes the record
-      // now living under a new one.
-      const existing = state.connections.filter((c) => sameBackend(c, record));
+      // Match by STRICT backend identity (fingerprint canonical, host:port
+      // fallback only for fingerprint-less records) so a tombstone written
+      // under an old address still deletes the record now living under a new
+      // one — but a tombstone for an old certificate at a reused address
+      // never deletes the different machine now living there.
+      const existing = state.connections.filter((c) => tombstoneMatches(c, record));
       state.connections = state.connections.filter((c) => !existing.includes(c));
       if (existing.some((c) => c.id === state.activeId)) {
         state.activeId = LOCAL_CONNECTION_ID;

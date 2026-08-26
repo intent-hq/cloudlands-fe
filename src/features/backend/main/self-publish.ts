@@ -18,7 +18,7 @@
 import { deleteLocalPref, getLocalPref, setLocalPref } from '../../../main/local-prefs';
 
 /** local-prefs key persisting this machine's daemon cert fingerprint. */
-export const SELF_FINGERPRINT_KEY = 'selfBackendFingerprint';
+const SELF_FINGERPRINT_KEY = 'selfBackendFingerprint';
 
 /**
  * local-prefs key for the persistent "do not auto-publish" marker. Present
@@ -26,7 +26,7 @@ export const SELF_FINGERPRINT_KEY = 'selfBackendFingerprint';
  * tombstone matched our fingerprint) or unpublished locally; cleared by an
  * explicit re-publish. Absent = auto-publish offers are allowed.
  */
-export const SELF_PUBLISH_SUPPRESSED_KEY = 'selfPublishSuppressed';
+const SELF_PUBLISH_SUPPRESSED_KEY = 'selfPublishSuppressed';
 
 /**
  * Validated `server.pairingInfo` fields the publish flow consumes (PROTOCOL

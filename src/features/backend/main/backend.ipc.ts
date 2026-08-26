@@ -2018,8 +2018,12 @@ function registerConnectionsHandlers(): void {
           // unpublish: set the persistent "do not auto-publish" marker so the
           // originator honors the removal and never silently re-asserts
           // (spec "Forget = fingerprint-keyed tombstone"). Cleared only by an
-          // explicit re-publish. Resolved BEFORE the forget so the record's
-          // fingerprint is still readable; fail-soft on any lookup error.
+          // explicit re-publish. The fingerprint match is resolved BEFORE the
+          // forget (the record is still readable), but the marker is set only
+          // AFTER the forget succeeds — latching it first would leave a
+          // published entry with refresh-self permanently disabled if the
+          // forget throws. Fail-soft on any lookup error.
+          let forgetsSelf = false;
           try {
             const [records, selfFingerprint] = await Promise.all([
               connectionsStore.list(),
@@ -2027,9 +2031,7 @@ function registerConnectionsHandlers(): void {
             ]);
             const target = records.find((c) => c.id === id);
             const targetKey = normalizeFingerprint(target?.fingerprint);
-            if (selfFingerprint !== null && targetKey === selfFingerprint) {
-              await setAutoPublishSuppressed(true);
-            }
+            forgetsSelf = selfFingerprint !== null && targetKey === selfFingerprint;
           } catch (error) {
             logger.warn('Could not evaluate self-entry suppression on forget (fail-soft)', {
               id,
@@ -2037,6 +2039,7 @@ function registerConnectionsHandlers(): void {
             });
           }
           await connectionsStore.forget(id); // rejects the reserved local id
+          if (forgetsSelf) await setAutoPublishSuppressed(true);
           const targetClient = backendClients.get(id);
           const retargetedPrimary =
             wasActive && (targetClient === client || activeConnectionMeta?.id === id);
@@ -2232,9 +2235,10 @@ async function upsertSelfRecord(
   });
   // Persist the full candidate-host list + the machine hostname on the
   // record, matching what post-connect refreshes capture for remotes.
-  if (info.localIps.length > 1) {
-    await connectionsStore.setHosts(record.id, info.localIps);
-  }
+  // ALWAYS set it — even for a single IP — so extras from an interface that
+  // has since disappeared are dropped instead of syncing stale addresses
+  // (add() only removes the new primary from preserved extras).
+  await connectionsStore.setHosts(record.id, info.localIps);
   const hostname = info.prettyHostname ?? info.hostname;
   if (hostname) {
     await connectionsStore.setHostname(record.id, hostname);

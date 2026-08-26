@@ -979,6 +979,19 @@ describe('self-publish IPC', () => {
     expect(send.mock.calls.some(([c]) => c === 'connections:changed')).toBe(true);
   });
 
+  it('connections:publish-self sets hosts even for a single IP (stale extras must converge)', async () => {
+    installPairingInfo({ localIps: ['192.168.1.10'] });
+    store.add.mockResolvedValue(SELF_RECORD);
+    installWindow();
+    const { mod } = await loadModule();
+    mod.registerBackendHandlers();
+
+    await findHandler('connections:publish-self')!({}, undefined);
+    // add() preserves old extras minus only the new primary, so skipping
+    // setHosts here would keep syncing an address whose interface is gone.
+    expect(store.setHosts).toHaveBeenCalledWith('self-1', ['192.168.1.10']);
+  });
+
   it('connections:publish-self re-publish clears the "do not auto-publish" marker', async () => {
     installPairingInfo();
     store.add.mockResolvedValue(SELF_RECORD);
@@ -1086,6 +1099,22 @@ describe('self-publish IPC', () => {
     mod.registerBackendHandlers();
 
     await findHandler('connections:forget')!({}, { id: 'remote-1' });
+    expect(localPrefs.values.has('selfPublishSuppressed')).toBe(false);
+  });
+
+  it('a FAILED forget of the self entry does not latch the marker (still refreshable)', async () => {
+    store.forget.mockRejectedValue(new Error('store write failure'));
+    localPrefs.values.set('selfBackendFingerprint', '11:22:33:44');
+    store.list.mockResolvedValue([LOCAL, { ...REMOTE, fingerprint: '11:22:33:44' }]);
+    installWindow();
+    const { mod } = await loadModule();
+    mod.registerBackendHandlers();
+
+    await expect(findHandler('connections:forget')!({}, { id: 'remote-1' })).rejects.toThrow(
+      /store write failure/,
+    );
+    // Suppression only after a successful forget: latching it while the entry
+    // stays published would permanently disable refresh-self with no way out.
     expect(localPrefs.values.has('selfPublishSuppressed')).toBe(false);
   });
 });
