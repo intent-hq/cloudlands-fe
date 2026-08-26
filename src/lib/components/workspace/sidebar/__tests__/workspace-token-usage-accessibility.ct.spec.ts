@@ -388,11 +388,26 @@ test('renders the full reference table as a wide overlay from the real workspace
         const segments = Array.from(stack.children).map((segment) =>
           segment.getBoundingClientRect().toJSON(),
         );
+        const controls = Array.from(stack.querySelectorAll('.breakdown-item-control')).map(
+          (control) => {
+            const box = control.getBoundingClientRect();
+            const style = getComputedStyle(control);
+            return {
+              top: box.top,
+              bottom: box.bottom,
+              display: style.display,
+              backgroundImage: style.backgroundImage,
+              borderTopWidth: style.borderTopWidth,
+              borderBottomWidth: style.borderBottomWidth,
+            };
+          },
+        );
         const firstStyle = getComputedStyle(stack.firstElementChild!);
         const lastStyle = getComputedStyle(stack.lastElementChild!);
         return {
           box: stackBox.toJSON(),
           segmentCount: segments.length,
+          controls,
           segmentWidth: segments.reduce((sum, segment) => sum + segment.width, 0),
           overflowX: getComputedStyle(stack).overflowX,
           borderRadius: getComputedStyle(stack).borderRadius,
@@ -476,6 +491,7 @@ test('renders the full reference table as a wide overlay from the real workspace
       ({
         box,
         segmentCount,
+        controls,
         segmentWidth,
         overflowX,
         borderRadius,
@@ -485,6 +501,15 @@ test('renders the full reference table as a wide overlay from the real workspace
       }) =>
         box.height === 10 &&
         segmentCount === 4 &&
+        controls.every(
+          (control) =>
+            Math.abs(control.top - box.top) <= 0.01 &&
+            Math.abs(control.bottom - box.bottom) <= 0.01 &&
+            control.display === 'block' &&
+            control.backgroundImage === 'none' &&
+            control.borderTopWidth === '0px' &&
+            control.borderBottomWidth === '0px',
+        ) &&
         Math.abs(segmentWidth - box.width) <= 1 &&
         overflowX === 'hidden' &&
         borderRadius === '2px' &&
@@ -507,6 +532,19 @@ test('renders the full reference table as a wide overlay from the real workspace
   await expect(navigatorButtons).toHaveCount(8);
   await navigatorButtons.last().focus();
   await expect(navigatorButtons.last()).toBeFocused();
+  const focusedBarStyle = await navigatorButtons.last().evaluate((button) => {
+    const stack = button.closest('.breakdown-stack')!;
+    return {
+      buttonBoxShadow: getComputedStyle(button).boxShadow,
+      stackOutlineStyle: getComputedStyle(stack).outlineStyle,
+      stackOutlineWidth: getComputedStyle(stack).outlineWidth,
+    };
+  });
+  expect(focusedBarStyle).toEqual({
+    buttonBoxShadow: 'none',
+    stackOutlineStyle: 'solid',
+    stackOutlineWidth: '2px',
+  });
   expect(
     desktopRows.every(
       ({
@@ -757,7 +795,8 @@ test('dismisses, repositions, flips, and clamps the overlay without changing wor
         Math.max(metric.y, value.y, context.y) - Math.min(metric.y, value.y, context.y) <= 1,
     ),
   ).toBe(true);
-  expect(modelBox!.y).toBeGreaterThanOrEqual(agentBox!.y + agentBox!.height - 1);
+  expect(Math.abs(agentBox!.y - modelBox!.y)).toBeLessThanOrEqual(1);
+  expect(agentBox!.width).toBeCloseTo(modelBox!.width, 0);
 
   await page.setViewportSize({ width: 248, height: 480 });
   await expect.poll(async () => (await details.boundingBox())!.width).toBeCloseTo(232, 0);

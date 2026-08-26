@@ -304,9 +304,15 @@ describe('WorkspaceTokenUsage', () => {
       const navigatorRow = section.querySelector('.navigator-row')!;
       const selection = navigatorRow.querySelector('.navigator-selection')!;
       const stack = navigatorRow.querySelector('.breakdown-stack')!;
+      const controls = Array.from(stack.querySelectorAll('.breakdown-item-control'));
       const percentage = selection.lastElementChild!;
       expect(stack.previousElementSibling).toBe(selection);
       expect(navigatorRow.classList).toContain('flex-col');
+      expect(controls.every((control) => control.tagName === 'BUTTON')).toBe(true);
+      expect(controls.every((control) => control.classList.contains('appearance-none'))).toBe(true);
+      expect(
+        controls.every((control) => !control.classList.contains('focus-visible:ring-inset')),
+      ).toBe(true);
       expect(percentage.classList).toContain('font-normal');
       expect(percentage.classList).toContain('text-muted-foreground');
       expect(percentage.classList).not.toContain('font-medium');

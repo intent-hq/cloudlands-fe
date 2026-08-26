@@ -482,7 +482,7 @@
         data-testid="token-usage-details"
       >
         {#if agentRows.length > 0 || modelRows.length > 0}
-          <div class="breakdown-grid grid grid-cols-1">
+          <div class="breakdown-grid grid grid-cols-2">
             {#if agentRows.length > 0}
               <section
                 class="breakdown-section min-w-0 px-4 py-3"
@@ -511,10 +511,9 @@
                           class="breakdown-stack-item h-full"
                           style={`width: ${share(row.tokens, agentTokenTotal) * 100}%`}
                         >
-                          <Button
-                            variant="plain"
+                          <button
                             type="button"
-                            class="breakdown-item-control h-full w-full min-w-0 rounded-none border-0 p-0 outline-none transition-colors focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring motion-reduce:transition-none"
+                            class="breakdown-item-control block h-full w-full min-w-0 appearance-none rounded-none border-0 p-0 outline-none transition-colors motion-reduce:transition-none"
                             data-preview-active={rowKey(rowTarget(row)) ===
                             rowKey(rowTarget(selectedAgentRow))
                               ? 'true'
@@ -535,7 +534,7 @@
                             onpointerdown={(event) => handleRowPointerDown(row, event)}
                             onfocus={() => handleRowFocus(row)}
                             onblur={(event) => handleRowBlur(row, event)}
-                          ></Button>
+                          ></button>
                         </li>
                       {/each}
                     </ol>
@@ -572,10 +571,9 @@
                           class="breakdown-stack-item h-full"
                           style={`width: ${share(row.tokens, modelTokenTotal) * 100}%`}
                         >
-                          <Button
-                            variant="plain"
+                          <button
                             type="button"
-                            class="breakdown-item-control h-full w-full min-w-0 rounded-none border-0 p-0 outline-none transition-colors focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring motion-reduce:transition-none"
+                            class="breakdown-item-control block h-full w-full min-w-0 appearance-none rounded-none border-0 p-0 outline-none transition-colors motion-reduce:transition-none"
                             data-preview-active={rowKey(rowTarget(row)) ===
                             rowKey(rowTarget(selectedModelRow))
                               ? 'true'
@@ -596,7 +594,7 @@
                             onpointerdown={(event) => handleRowPointerDown(row, event)}
                             onfocus={() => handleRowFocus(row)}
                             onblur={(event) => handleRowBlur(row, event)}
-                          ></Button>
+                          ></button>
                         </li>
                       {/each}
                     </ol>
@@ -772,8 +770,9 @@
     box-shadow: inset 1px 0 hsl(var(--card) / 88%);
   }
 
-  :global(.breakdown-item-control:focus-visible) {
-    box-shadow: inset 0 0 0 2px hsl(var(--ring));
+  .breakdown-stack:focus-within {
+    outline: 2px solid hsl(var(--ring));
+    outline-offset: 2px;
   }
 
   :global(.summary-control[aria-expanded='true']) {
@@ -804,14 +803,7 @@
     }
   }
 
-  @container token-details (min-width: 280px) {
-    .breakdown-grid {
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-      position: relative;
-    }
-
-    .breakdown-section + .breakdown-section {
-      border-top: 0;
-    }
+  .breakdown-section + .breakdown-section {
+    border-top: 0;
   }
 </style>
