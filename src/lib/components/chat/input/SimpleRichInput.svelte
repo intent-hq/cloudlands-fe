@@ -518,16 +518,15 @@
   const hasComposerContent = $derived(
     value.trim().length > 0 || contextItems.length > 0 || hasInlineImages,
   );
-  const isEmptyAndUnfocused = $derived(!isComposerFocused && !hasComposerContent);
-  const visiblePlaceholder = $derived(isComposerFocused && !hasComposerContent ? placeholder : '');
+  const showPlaceholder = $derived(inputLocked || (isComposerFocused && !hasComposerContent));
 
-  // Empty, unfocused composers use the shorter idle minimum. Focus or content
-  // restores the existing active geometry.
+  // Automatic geometry expands only for real composer content. Focus reveals
+  // the placeholder without changing the compact idle height.
   let dynamicDefaultHeight = $derived.by(() => {
     if (parentPanelHeight && parentPanelHeight > COMPACT_PANEL_THRESHOLD) {
-      return isEmptyAndUnfocused ? IDLE_DEFAULT_HEIGHT : DEFAULT_HEIGHT;
+      return hasComposerContent ? DEFAULT_HEIGHT : IDLE_DEFAULT_HEIGHT;
     }
-    return isEmptyAndUnfocused ? IDLE_MIN_HEIGHT : MIN_HEIGHT;
+    return hasComposerContent ? MIN_HEIGHT : IDLE_MIN_HEIGHT;
   });
 
   // Calculate max height based on parent panel (80% of panel height, capped)
@@ -1476,6 +1475,7 @@
     class="editor-wrapper relative min-h-0 cursor-text pt-1 {isAutoExpand
       ? 'flex-1 overflow-y-auto'
       : 'flex-1 overflow-hidden'} {editMode ? 'pr-5' : ''}"
+    class:placeholder-hidden={!showPlaceholder}
     onclick={() => tiptap?.focus()}
   >
     <TipTapEditor
@@ -1486,7 +1486,7 @@
       maxHeight={isAutoExpand ? 9999 : 9999}
       {autoFocus}
       {value}
-      placeholder={visiblePlaceholder}
+      {placeholder}
       disabled={disabled || isEnhancing}
       editableWhileDisabled={editableWhileDisabled && !isEnhancing}
       {inputLocked}
@@ -1790,6 +1790,12 @@
 <style>
   .rich-input-container {
     position: relative;
+  }
+
+  .editor-wrapper.placeholder-hidden
+    :global(.tiptap-editor p.is-editor-empty:first-child::before),
+  .editor-wrapper.placeholder-hidden :global(.tiptap-editor p.is-empty:first-child::before) {
+    content: none;
   }
 
   /* Shimmer overlay for enhancement loading state */

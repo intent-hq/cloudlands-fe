@@ -21,7 +21,7 @@ async function composerHeight(input: Locator, zoom: number) {
 }
 
 for (const state of states) {
-  test(`animates automatic focus geometry without clipping in ${state.name}`, async ({
+  test(`reveals the placeholder without focus growth and animates content geometry in ${state.name}`, async ({
     mount,
     page,
   }) => {
@@ -30,6 +30,7 @@ for (const state of states) {
     await setPanelHeight(component, state.height);
     const input = component.getByTestId('message-input');
     const editor = input.locator('.tiptap-editor');
+    const editorWrapper = input.locator('.editor-wrapper');
     const actionBar = input.locator('[data-chat-input-action-bar]');
     const compact = state.height <= 640;
     const idle = compact ? 56 : 80;
@@ -39,6 +40,8 @@ for (const state of states) {
     await expect
       .poll(() => input.evaluate((node) => getComputedStyle(node).minHeight))
       .toBe(`${idle}px`);
+    await expect(editorWrapper).toHaveClass(/placeholder-hidden/);
+    await expect(editor.locator('p')).toHaveAttribute('data-placeholder', 'Ask anything');
     const motion = await input.evaluate((node) => {
       const style = getComputedStyle(node);
       return {
@@ -53,7 +56,11 @@ for (const state of states) {
 
     const idleRendered = await composerHeight(input, state.zoom);
     await editor.focus();
-    await page.keyboard.press('Enter');
+    await expect(editorWrapper).not.toHaveClass(/placeholder-hidden/);
+    await expect
+      .poll(() => input.evaluate((node) => getComputedStyle(node).minHeight))
+      .toBe(`${idle}px`);
+    await page.keyboard.type('draft');
     const expanding = await composerHeight(input, state.zoom);
     await expect
       .poll(() => input.evaluate((node) => getComputedStyle(node).minHeight))
@@ -63,7 +70,8 @@ for (const state of states) {
     expect(expanding).toBeGreaterThanOrEqual(Math.min(idleRendered, activeRendered));
     expect(expanding).toBeLessThanOrEqual(Math.max(idleRendered, activeRendered));
 
-    await editor.blur();
+    await page.keyboard.press('ControlOrMeta+A');
+    await page.keyboard.press('Backspace');
     const collapsing = await composerHeight(input, state.zoom);
     expect(collapsing).toBeGreaterThanOrEqual(Math.min(idleRendered, activeRendered));
     expect(collapsing).toBeLessThanOrEqual(Math.max(idleRendered, activeRendered));
@@ -73,6 +81,9 @@ for (const state of states) {
     await page.waitForTimeout(150);
     expect(await composerHeight(input, state.zoom)).toBeCloseTo(idleRendered, 0);
 
+    await editor.blur();
+    await expect(editorWrapper).toHaveClass(/placeholder-hidden/);
+
     await editor.focus();
     await page.waitForTimeout(20);
     await editor.blur();
@@ -80,9 +91,9 @@ for (const state of states) {
     await editor.focus();
     await expect
       .poll(() => input.evaluate((node) => getComputedStyle(node).minHeight))
-      .toBe(`${active}px`);
+      .toBe(`${idle}px`);
     await page.waitForTimeout(150);
-    expect(await composerHeight(input, state.zoom)).toBeCloseTo(activeRendered, 0);
+    expect(await composerHeight(input, state.zoom)).toBeCloseTo(idleRendered, 0);
 
     const containment = await input.evaluate((node) => {
       const box = node.getBoundingClientRect();
@@ -101,7 +112,7 @@ for (const state of states) {
   });
 }
 
-test('changes focus height immediately with reduced motion', async ({ mount, page }) => {
+test('changes content height immediately with reduced motion', async ({ mount, page }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
   const component = await mount(ChatPanelComposerGeometryHost, {
     props: { width: 720, zoom: 1, theme: 'dark' },
@@ -114,7 +125,12 @@ test('changes focus height immediately with reduced motion', async ({ mount, pag
 
   expect(await input.evaluate((node) => getComputedStyle(node).transitionProperty)).toBe('none');
   await editor.focus();
+  expect(await input.evaluate((node) => getComputedStyle(node).minHeight)).toBe('80px');
+  await page.keyboard.type('draft');
   expect(await input.evaluate((node) => getComputedStyle(node).minHeight)).toBe('100px');
+  await page.keyboard.press('ControlOrMeta+A');
+  await page.keyboard.press('Backspace');
+  expect(await input.evaluate((node) => getComputedStyle(node).minHeight)).toBe('80px');
   await editor.blur();
   expect(await input.evaluate((node) => getComputedStyle(node).minHeight)).toBe('80px');
 });
