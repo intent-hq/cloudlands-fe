@@ -27,6 +27,7 @@
   } from '$store/renderer/slices/palette/palette-selectors';
   import RadialPromptPickerOverlay from '$features/hardware-console/prompt-picker/RadialPromptPickerOverlay.svelte';
   import EncoderCycleHud from '$features/hardware-console/encoder/EncoderCycleHud.svelte';
+  import ActionKeyHud from '$features/hardware-console/actions/ActionKeyHud.svelte';
   import StatsOverlay from '$features/stats/StatsOverlay.svelte';
   import DaemonStoppedOverlay from '$features/daemon-status/DaemonStoppedOverlay.svelte';
   import { registerWorkspaceTabShortcuts } from '$features/workspace/utils/workspace-tab-navigation';
@@ -102,7 +103,7 @@
   import { isFocusInEditableElement, KeyboardShortcutManager } from '$lib/utils/keyboardShortcuts';
   import { configureMonacoWorkers } from '$lib/utils/monaco-workers';
   import { hasCapability } from '$lib/utils/platform-capabilities';
-  import { onMount, untrack } from 'svelte';
+  import { onDestroy, onMount, untrack } from 'svelte';
 
   import { createLinkTooltipHandler } from '$features/navigation/link-handler';
   import { registerAllTabTypes } from '$features/layout/tab-types/register-all';
@@ -117,6 +118,7 @@
   import { selectShowCreateModal } from '$store/renderer/slices/sidebar-nav/sidebar-nav-selectors';
   import NewSpaceModal from '$lib/components/modals/NewSpaceModal.svelte';
   import { store as appStore } from '$store/renderer/store';
+  import { startAppStoreLifecycle } from '$store/renderer/app-store-lifecycle';
   import {
     installInterruptedAgentsService,
     notifyInterruptedAgentsModalClosed,
@@ -133,6 +135,9 @@
   import { LiveAppClient } from '$lib/client/live/live-app-client';
   import { workspaceIdFromRoute } from '$lib/utils/workspace-route-context';
   const logger = createLogger('+layout');
+
+  const disposeAppStore = startAppStoreLifecycle(appStore, import.meta.hot?.data);
+  onDestroy(disposeAppStore);
 
   const routePathname = $derived($page.url.pathname);
   const routeWorkspaceId = $derived(($page.params?.id as string | undefined) ?? '');
@@ -980,7 +985,8 @@
     }}
   />
 
-  <!-- Product-route hardware-console overlays; HUD routes sit outside this group. -->
+  <!-- Product-route hardware-console overlays; HUD and sandbox routes sit outside this group. -->
+  <ActionKeyHud />
   <RadialPromptPickerOverlay />
   <EncoderCycleHud />
 
