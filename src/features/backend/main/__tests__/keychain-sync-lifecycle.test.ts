@@ -84,6 +84,8 @@ function init(opts: {
   const reconcileFn = opts.reconcileFn ?? vi.fn(async () => reconcileResult());
   lifecycle = initKeychainSyncLifecycle({
     isEnabled: async () => opts.enabled ?? true,
+    // Pref explicitly set: the T5 auto-enable probe never fires here.
+    readEnabledPref: async () => opts.enabled ?? true,
     reconcileFn: reconcileFn as never,
     onRemoteApplied: opts.onRemoteApplied,
     onStatusChanged: opts.onStatusChanged as never,
@@ -142,6 +144,7 @@ describe('keychain-sync lifecycle triggers', () => {
     );
     lifecycle = initKeychainSyncLifecycle({
       isEnabled: async () => enabled,
+      readEnabledPref: async () => enabled,
       reconcileFn: reconcileFn as never,
       debounceMs: DEBOUNCE,
       focusMinIntervalMs: FOCUS_MIN,
@@ -374,5 +377,114 @@ describe('keychain-sync lifecycle triggers', () => {
     };
     await storeSyncAdapter.applyRemote('h:1', record);
     expect(vi.mocked(applyRemoteSyncRecord)).toHaveBeenCalledWith(record);
+  });
+});
+
+describe('fresh-install auto-enable probe (T5)', () => {
+  // Any listed item counts — live records and tombstones alike both prove
+  // another Mac opted in to sync.
+  const items = [{ account: 'h:1', payload: '{"v":1,"deleted":true}' }];
+
+  function listOk(list: typeof items) {
+    return vi.fn(async () => ({ ok: true as const, items: list }));
+  }
+
+  function probeInit(opts: {
+    pref?: boolean;
+    platform?: NodeJS.Platform;
+    probeList: ReturnType<typeof vi.fn>;
+  }) {
+    let pref = opts.pref;
+    const writeEnabledPref = vi.fn(async (value: boolean) => {
+      pref = value;
+    });
+    const reconcileFn = vi.fn(async () => reconcileResult());
+    lifecycle = initKeychainSyncLifecycle({
+      // Both gates read the live tri-state pref, so an auto-enable write is
+      // immediately visible to the startup reconcile's enabled check.
+      isEnabled: async () => pref === true,
+      readEnabledPref: async () => pref,
+      writeEnabledPref,
+      probeList: opts.probeList as never,
+      platform: opts.platform ?? 'darwin',
+      reconcileFn: reconcileFn as never,
+      debounceMs: DEBOUNCE,
+      focusMinIntervalMs: FOCUS_MIN,
+    });
+    return { writeEnabledPref, reconcileFn };
+  }
+
+  it('pref absent + synced items exist: auto-enables and runs the reconcile', async () => {
+    const probeList = listOk(items);
+    const { writeEnabledPref, reconcileFn } = probeInit({ probeList });
+    await vi.advanceTimersByTimeAsync(DEBOUNCE);
+    expect(probeList).toHaveBeenCalledTimes(1);
+    expect(writeEnabledPref).toHaveBeenCalledExactlyOnceWith(true);
+    expect(reconcileFn).toHaveBeenCalledTimes(1);
+  });
+
+  it('pref absent + empty keychain: stays absent, no enable, no reconcile', async () => {
+    const probeList = listOk([]);
+    const { writeEnabledPref, reconcileFn } = probeInit({ probeList });
+    await vi.advanceTimersByTimeAsync(DEBOUNCE);
+    expect(probeList).toHaveBeenCalledTimes(1);
+    expect(writeEnabledPref).not.toHaveBeenCalled();
+    expect(reconcileFn).not.toHaveBeenCalled();
+  });
+
+  it('explicit false + items: never probes, never auto-enables', async () => {
+    const probeList = listOk(items);
+    const { writeEnabledPref, reconcileFn } = probeInit({ pref: false, probeList });
+    await vi.advanceTimersByTimeAsync(DEBOUNCE);
+    expect(probeList).not.toHaveBeenCalled();
+    expect(writeEnabledPref).not.toHaveBeenCalled();
+    expect(reconcileFn).not.toHaveBeenCalled();
+  });
+
+  it('explicit true: no probe, the normal startup reconcile still runs', async () => {
+    const probeList = listOk(items);
+    const { writeEnabledPref, reconcileFn } = probeInit({ pref: true, probeList });
+    await vi.advanceTimersByTimeAsync(DEBOUNCE);
+    expect(probeList).not.toHaveBeenCalled();
+    expect(writeEnabledPref).not.toHaveBeenCalled();
+    expect(reconcileFn).toHaveBeenCalledTimes(1);
+  });
+
+  it('helper unavailable: no write, pref stays absent so the next startup probes again', async () => {
+    const probeList = vi.fn(async () => ({
+      ok: false as const,
+      code: 'helper-missing' as const,
+      message: 'dev build',
+    }));
+    const first = probeInit({ probeList });
+    await vi.advanceTimersByTimeAsync(DEBOUNCE);
+    expect(probeList).toHaveBeenCalledTimes(1);
+    expect(first.writeEnabledPref).not.toHaveBeenCalled();
+    expect(first.reconcileFn).not.toHaveBeenCalled();
+
+    // Simulate the next app launch: the still-absent pref probes again.
+    lifecycle!.dispose();
+    const second = probeInit({ probeList });
+    await vi.advanceTimersByTimeAsync(DEBOUNCE);
+    expect(probeList).toHaveBeenCalledTimes(2);
+    expect(second.writeEnabledPref).not.toHaveBeenCalled();
+  });
+
+  it('a probe crash is swallowed (fail-soft): no write, no reconcile', async () => {
+    const probeList = vi.fn(async () => {
+      throw new Error('spawn exploded');
+    });
+    const { writeEnabledPref, reconcileFn } = probeInit({ probeList });
+    await vi.advanceTimersByTimeAsync(DEBOUNCE);
+    expect(writeEnabledPref).not.toHaveBeenCalled();
+    expect(reconcileFn).not.toHaveBeenCalled();
+  });
+
+  it('non-macOS: no probe at all', async () => {
+    const probeList = listOk(items);
+    const { writeEnabledPref } = probeInit({ probeList, platform: 'linux' });
+    await vi.advanceTimersByTimeAsync(DEBOUNCE);
+    expect(probeList).not.toHaveBeenCalled();
+    expect(writeEnabledPref).not.toHaveBeenCalled();
   });
 });
