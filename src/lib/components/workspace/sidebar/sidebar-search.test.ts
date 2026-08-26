@@ -30,6 +30,19 @@ describe('sidebar context search', () => {
     ]);
   });
 
+  it('matches slim rows against contentPreview when content is not loaded', () => {
+    const slim = {
+      id: 'slim',
+      title: 'Slim',
+      content: '',
+      contentPreview: 'Searchable preview body',
+      contentLength: 500,
+    } as Note;
+
+    expect(filterContextNotes([slim], 'searchable').map(({ id }) => id)).toEqual(['slim']);
+    expect(filterContextNotes([slim], 'missing-term')).toEqual([]);
+  });
+
   it('matches context display title and searchable subtitle text without reordering', () => {
     const items = [
       {

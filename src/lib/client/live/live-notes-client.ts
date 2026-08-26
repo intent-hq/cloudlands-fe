@@ -12,6 +12,7 @@
  */
 import { AuthorType, ContentType, NoteVisibility } from "$shared/types";
 import { NoteId, WorkspaceId } from "$shared/types/branded-ids";
+import { isProjectionRejected } from "$shared/utils/note-content";
 import type { Author, CreateNoteRequest, Note, NoteVersion } from "$shared/types";
 import type {
   LineAttributionClient,
@@ -102,6 +103,11 @@ export function normalizeNote(raw: Record<string, unknown>, workspaceId: string)
     // returns a number, forced to undefined otherwise (overriding the raw spread)
     // so a malformed value can never leak — no behavior change → last-writer-wins.
     rev: typeof raw.rev === "number" ? raw.rev : undefined,
+    // Slim-projection fields (§5.2 `projection: "slim"`): carried through only
+    // when the daemon returned them, undefined otherwise (overriding the raw
+    // spread) so full rows never carry stale slim markers.
+    contentPreview: typeof raw.contentPreview === "string" ? raw.contentPreview : undefined,
+    contentLength: typeof raw.contentLength === "number" ? raw.contentLength : undefined,
     createdAt: String(raw.createdAt ?? raw.created_at ?? now),
     updatedAt: String(raw.updatedAt ?? raw.updated_at ?? now),
   } as Note;
@@ -137,8 +143,28 @@ class LiveLineAttributionClient implements LineAttributionClient {
 export class LiveNotesClient implements NotesClient {
   readonly lineAttribution: LineAttributionClient = new LiveLineAttributionClient();
 
-  async list(workspaceId: string): Promise<Note[]> {
-    const result = await backendRequest<{ notes?: unknown[] }>("note.list", { workspaceId });
+  async list(
+    workspaceId: string,
+    options?: { projection?: "full" | "slim" },
+  ): Promise<Note[]> {
+    // §5.2 `projection`: only ride the wire when "slim" is requested so older
+    // daemons see an unchanged request. If a daemon rejects the unknown param
+    // (-32602 Invalid params), fall back once to the plain full list; other
+    // failures (transport, workspace not found) propagate unchanged.
+    let result: { notes?: unknown[] } | null;
+    if (options?.projection === "slim") {
+      try {
+        result = await backendRequest<{ notes?: unknown[] }>("note.list", {
+          workspaceId,
+          projection: "slim",
+        });
+      } catch (error) {
+        if (!isProjectionRejected(error)) throw error;
+        result = await backendRequest<{ notes?: unknown[] }>("note.list", { workspaceId });
+      }
+    } else {
+      result = await backendRequest<{ notes?: unknown[] }>("note.list", { workspaceId });
+    }
     const notes = Array.isArray(result?.notes) ? result.notes : [];
     return notes.map((n) => {
       const note = normalizeNote(n as Record<string, unknown>, workspaceId);

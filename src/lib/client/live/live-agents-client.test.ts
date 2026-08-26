@@ -1315,6 +1315,54 @@ describe('LiveAgentsClient reads thread daemon activity flags (PROTOCOL §5.5)',
     expect(agent?.hasUnread).toBe(true);
   });
 
+  it('derives hasUnread: false for a background agent despite an unseen assistant message', async () => {
+    backend.onRequest('agent.list', () => ({
+      agents: [
+        {
+          id: 'agent-bg',
+          workspaceId: 'ws-1',
+          name: 'BG',
+          status: 'idle',
+          isBackground: true,
+          lastMessageRole: 'assistant',
+          lastMessageId: 'm-9',
+          metadata: { lastSeenMessageId: 'm-5' },
+        },
+        {
+          id: 'agent-meta-bg',
+          workspaceId: 'ws-1',
+          name: 'MetaBG',
+          status: 'idle',
+          lastMessageRole: 'assistant',
+          lastMessageId: 'm-9',
+          metadata: { lastSeenMessageId: 'm-5', isBackground: true },
+        },
+      ],
+    }));
+    const client = new LiveAgentsClient();
+
+    const agents = await client.list('ws-1');
+    expect(agents.map((a) => a.hasUnread)).toEqual([false, false]);
+  });
+
+  it('derives hasUnread: false for a delegated child agent (metadata.createdByAgentId)', async () => {
+    backend.onRequest('agent.get', () => ({
+      agent: {
+        id: 'agent-child',
+        workspaceId: 'ws-1',
+        name: 'Child',
+        status: 'idle',
+        lastMessageRole: 'assistant',
+        lastMessageId: 'm-9',
+        metadata: { lastSeenMessageId: 'm-5', createdByAgentId: 'agent-parent' },
+      },
+    }));
+    const client = new LiveAgentsClient();
+
+    const agent = await client.get('agent-child');
+    expect(agent?.hasUnread).toBe(false);
+  });
+
   it('derives hasUnread: false when the daemon omits lastMessageId (older daemon)', async () => {
     backend.onRequest('agent.get', () => ({
       agent: {

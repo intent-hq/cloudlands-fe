@@ -19,6 +19,7 @@ import {
   selectEffectiveCodingAgent,
   selectEffectiveModel,
   selectExplicitModel,
+  selectSpecialistName,
   selectSpecialistSourceLabel,
 } from './specialists-selectors';
 import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
@@ -285,6 +286,35 @@ describe('specialists selectors', () => {
       const ids = selectSpecialists.select(mockState()).map((s) => s.id);
       expect(ids).toContain('implementor');
       expect(ids).toContain('verifier');
+    });
+  });
+
+  describe('selectSpecialistName startup window (catalog fallback)', () => {
+    it('resolves built-in ids from the hardcoded catalog before any source has loaded', () => {
+      // Startup window: file + bundled collections are still empty.
+      expect(selectSpecialistName.select(mockState(), 'implementor')).toBe(
+        SPECIALISTS.find((s) => s.id === 'implementor')!.name,
+      );
+    });
+
+    it('returns null for unknown ids before any source has loaded', () => {
+      expect(selectSpecialistName.select(mockState(), 'my-custom-role')).toBeNull();
+    });
+
+    it('does not resurrect catalog names once daemon bundled specialists loaded', () => {
+      const state = mockState({
+        bundledSpecialists: [
+          {
+            id: 'replacement-one',
+            name: 'Replacement One',
+            description: 'first',
+            defaultBehaviorPrompt: 'prompt one',
+            source: 'bundled' as const,
+          },
+        ],
+      });
+      expect(selectSpecialistName.select(state, 'implementor')).toBeNull();
+      expect(selectSpecialistName.select(state, 'replacement-one')).toBe('Replacement One');
     });
   });
 

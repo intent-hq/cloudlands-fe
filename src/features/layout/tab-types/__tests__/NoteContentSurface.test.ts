@@ -9,6 +9,7 @@ const states: NoteContentState[] = [
   'missing',
   'read-only',
   'recent-note',
+  'error',
 ];
 
 describe('NoteContentSurface', () => {

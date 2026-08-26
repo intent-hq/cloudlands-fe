@@ -130,7 +130,7 @@ describe('NoteProvider', () => {
     const context: SearchContext = { workspaceId: 'test-workspace' };
     const results = await provider.search('', context);
 
-    expect(mockNotesList).toHaveBeenCalledWith('test-workspace');
+    expect(mockNotesList).toHaveBeenCalledWith('test-workspace', { projection: 'slim' });
     expect(results).toHaveLength(2);
     expect(results[0]).toMatchObject({
       type: 'note',

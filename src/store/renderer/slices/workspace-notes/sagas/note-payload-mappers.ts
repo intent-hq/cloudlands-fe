@@ -78,6 +78,10 @@ export function toRuntimeNote(note: Note): Note {
     ...(note.references ? { references: note.references.map(copyReference) } : {}),
     ...(note.versions ? { versions: note.versions.map(toRuntimeNoteVersion) } : {}),
     ...(note.rev !== undefined ? { rev: note.rev } : {}),
+    // Slim-projection markers (§5.2): carried through so content surfaces can
+    // detect a row whose full body has not been fetched (isNoteContentStale).
+    ...(note.contentPreview !== undefined ? { contentPreview: note.contentPreview } : {}),
+    ...(note.contentLength !== undefined ? { contentLength: note.contentLength } : {}),
     createdAt: note.createdAt,
     updatedAt: note.updatedAt,
   };

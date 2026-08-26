@@ -497,7 +497,8 @@ jobs:
         if: steps.notes_base.outputs.skip_notes != 'true'
         continue-on-error: true
         env:
-          INTENTD_TOKEN: ${{ secrets.INTENTD_READ_PAT }}
+          # intent-hq/intentd is public; the default token covers the compare API.
+          INTENTD_TOKEN: ${{ github.token }}
           VERSION: ${{ inputs.version }}
           PREV_STABLE: ${{ steps.notes_base.outputs.base }}
           INTENTD_HEAD: ${{ steps.intentd_pins.outputs.head }}

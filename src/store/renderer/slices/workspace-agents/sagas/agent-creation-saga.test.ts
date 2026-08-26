@@ -8,6 +8,7 @@ vi.mock('$features/agent/services/agent-factory', () => ({
 vi.mock('svelte-sonner', () => ({ toast: { error: mocks.toastError } }));
 
 import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
+import { appClient } from '$lib/client';
 import type { AgentSession, Note, Workspace } from '$shared/types';
 import { AgentStatus } from '$shared/types';
 import { WorkspaceId } from '$shared/types/branded-ids';
@@ -309,6 +310,80 @@ describe('agentCreationSaga', () => {
       expect.objectContaining({
         metadata: { taskNoteId: NOTE, source: 'task-run', specialist: 'implementor' },
       }),
+    );
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('builds the initial message from cached content without fetching for a full row', async () => {
+    mocks.createAgent.mockResolvedValue({ success: true, agent: session(), agentId: AGENT });
+    const get = vi.spyOn(appClient.notes, 'get');
+    const { channel, task } = start();
+    channel.put(runAgentForNoteRequested(WS, NOTE, 'Task note'));
+    await settle();
+
+    expect(get).not.toHaveBeenCalled();
+    expect(mocks.createAgent).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ initialMessage: expect.stringContaining('Do the thing') }),
+    );
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('fetches the full note before building the initial message for a stale slim row', async () => {
+    mocks.createAgent.mockResolvedValue({ success: true, agent: session(), agentId: AGENT });
+    const slimState = state();
+    const slimNote = {
+      id: NOTE,
+      workspaceId: WS,
+      title: 'Task note',
+      content: '',
+      contentPreview: 'Do the',
+      contentLength: 12,
+    } as Note;
+    slimState.workspaceNotes = {
+      byWorkspaceId: { [WS]: { notes: createCollection<Note, 'id'>('id', [slimNote]) } },
+    };
+    const get = vi
+      .spyOn(appClient.notes, 'get')
+      .mockResolvedValue({ ...slimNote, content: 'Do the thing' } as Note);
+    const { channel, task } = start(() => slimState);
+    channel.put(runAgentForNoteRequested(WS, NOTE, 'Task note'));
+    await settle();
+
+    expect(get).toHaveBeenCalledWith(NOTE, WS);
+    expect(mocks.createAgent).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ initialMessage: expect.stringContaining('Do the thing') }),
+    );
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('keeps the cached slim row when the full-note fetch fails (fail-soft)', async () => {
+    mocks.createAgent.mockResolvedValue({ success: true, agent: session(), agentId: AGENT });
+    const slimState = state();
+    const slimNote = {
+      id: NOTE,
+      workspaceId: WS,
+      title: 'Task note',
+      content: '',
+      contentPreview: 'Do the',
+      contentLength: 12,
+    } as Note;
+    slimState.workspaceNotes = {
+      byWorkspaceId: { [WS]: { notes: createCollection<Note, 'id'>('id', [slimNote]) } },
+    };
+    const get = vi.spyOn(appClient.notes, 'get').mockResolvedValue(null);
+    const { channel, task } = start(() => slimState);
+    channel.put(runAgentForNoteRequested(WS, NOTE, 'Task note'));
+    await settle();
+
+    expect(get).toHaveBeenCalledWith(NOTE, WS);
+    expect(mocks.createAgent).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ initialMessage: expect.stringContaining('(no content)') }),
     );
     task.cancel();
     await task.toPromise();

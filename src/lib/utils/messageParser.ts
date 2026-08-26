@@ -1612,8 +1612,7 @@ const SUGGESTED_PROMPTS_TRAILING_CLOSER_REGEX = /^(.*\S)[ \t]*-->$/;
 /** Opening/closing markdown fence (backtick or tilde), optionally indented. */
 const FENCE_LINE_REGEX = /^ {0,3}(`{3,}|~{3,})(.*)$/;
 
-/** The wire parser accepts one prompt for backward compatibility. */
-const MIN_SUGGESTED_PROMPTS = 1;
+/** At most this many prompts surface as chips; extra lines are dropped. */
 const MAX_SUGGESTED_PROMPTS = 4;
 
 /** Prompts longer than this are treated as captured body text and dropped. */
@@ -1621,10 +1620,16 @@ const MAX_SUGGESTED_PROMPT_LENGTH = 200;
 
 /**
  * Shapes that indicate the captured line is response body text rather than a
- * deliberate prompt: markdown headings, fence markers, table rows, and Mermaid
- * edges (`A --> B`).
+ * deliberate prompt: markdown headings, fence markers, table rows, HTML
+ * comments, and Mermaid edges (`A --> B`).
  */
-const BODY_TEXT_LINE_PATTERNS = [/^#{1,6}(?:\s|$)/, /^(?:`{3,}|~{3,})/, /^\|/, /\S[ \t]*--+>/];
+const BODY_TEXT_LINE_PATTERNS = [
+  /^#{1,6}(?:\s|$)/,
+  /^(?:`{3,}|~{3,})/,
+  /^\|/,
+  /^<!--/,
+  /\S[ \t]*--+>/,
+];
 
 /**
  * Regex to match the delay prefix in a prompt line.
@@ -1672,11 +1677,23 @@ function parseSuggestedPromptLine(line: string): SuggestedPrompt | null {
     : null;
 }
 
-function parseSuggestedPromptLines(body: string[]): SuggestedPrompt[] | null {
+/**
+ * Salvage prompts from a well-formed block's body. When any captured line is
+ * body-text-shaped the whole block yields no chips (the model clearly wrote
+ * prose, not prompts); otherwise invalid individual lines (empty after
+ * label/delay stripping, over-long) are dropped and the rest surface, capped
+ * at {@link MAX_SUGGESTED_PROMPTS}.
+ */
+function parseSuggestedPromptLines(body: string[]): SuggestedPrompt[] {
   const lines = body.map((line) => line.trim()).filter(Boolean);
-  if (lines.length < MIN_SUGGESTED_PROMPTS || lines.length > MAX_SUGGESTED_PROMPTS) return null;
-  const prompts = lines.map(parseSuggestedPromptLine);
-  return prompts.every((prompt): prompt is SuggestedPrompt => prompt !== null) ? prompts : null;
+  if (lines.some(looksLikeBodyText)) return [];
+  const prompts: SuggestedPrompt[] = [];
+  for (const line of lines) {
+    const prompt = parseSuggestedPromptLine(line);
+    if (prompt !== null) prompts.push(prompt);
+    if (prompts.length === MAX_SUGGESTED_PROMPTS) break;
+  }
+  return prompts;
 }
 
 function partialOpenerStart(line: string): number | null {
@@ -1702,30 +1719,18 @@ function partialOpenerStart(line: string): number | null {
   return null;
 }
 
-function canWithholdOpenBlock(body: string[]): boolean {
-  const completed = body
-    .slice(0, -1)
-    .map((line) => line.trim())
-    .filter(Boolean);
-  const current = body.at(-1)?.trim() ?? '';
-  if (completed.some(looksLikeBodyText)) return false;
-  if (current && /\S[ \t]*--+>/.test(current)) return false;
-  const currentIsPartialCloser = /^-{1,2}$/.test(current);
-  const promptCount = completed.length + (current && !currentIsPartialCloser ? 1 : 0);
-  return promptCount <= MAX_SUGGESTED_PROMPTS;
-}
-
 /**
- * Locate every accepted suggested-prompts block in the content, in order.
+ * Locate every well-formed suggested-prompts block in the content, in order.
  *
- * A block is accepted only when all of the following hold:
- * - its opener ends its own line and sits outside any fenced code region;
- * - it is closed by a `-->` standing alone on its own line or fused with the
- *   final prompt, also outside any fenced code region;
- * - none of its captured lines looks like response body text.
+ * A block is well-formed when its opener ends its own line and sits outside
+ * any fenced code region, and it is closed by a `-->` standing alone on its
+ * own line or fused with the final prompt, also outside any fenced code
+ * region. Every well-formed block is returned (and thus stripped by callers)
+ * regardless of its content — raw block markup must never render — while
+ * content validity only gates whether the block contributes prompts.
  *
- * Blocks that fail any of these are not returned at all, so callers never
- * strip them from the rendered content.
+ * Structurally malformed markup (unclosed opener, fenced example, inline
+ * opener) is not returned, so callers never strip real body text.
  */
 function scanSuggestedPrompts(
   content: string,
@@ -1775,25 +1780,30 @@ function scanSuggestedPrompts(
 
     if (SUGGESTED_PROMPTS_CLOSER_REGEX.test(line)) {
       const body = lines.slice(openerIndex + 1, i);
-      const prompts = body.some((bodyLine) => looksLikeBodyText(bodyLine.trim()))
-        ? null
-        : parseSuggestedPromptLines(body);
-      if (prompts) {
-        blocks.push({ start: openerStart, end: offsets[i] + lines[i].length, body, prompts });
-      }
+      blocks.push({
+        start: openerStart,
+        end: offsets[i] + lines[i].length,
+        body,
+        prompts: parseSuggestedPromptLines(body),
+      });
       openerIndex = -1;
       continue;
     }
 
     const trailingCloserMatch = line.match(SUGGESTED_PROMPTS_TRAILING_CLOSER_REGEX);
     if (trailingCloserMatch && !SUGGESTED_PROMPTS_OPENER_REGEX.test(trailingCloserMatch[1])) {
+      // While streaming, a fused closer on the unterminated final line is
+      // ambiguous: the next chunk may extend it into an embedded arrow
+      // (`Run -->` → `Run --> tests`). Keep the block open until the newline
+      // confirms the line; the withholding pass below keeps it hidden.
+      if (isStreaming && i === lines.length - 1) continue;
       const body = [...lines.slice(openerIndex + 1, i), trailingCloserMatch[1]];
-      const prompts = body.some((bodyLine) => looksLikeBodyText(bodyLine.trim()))
-        ? null
-        : parseSuggestedPromptLines(body);
-      if (prompts) {
-        blocks.push({ start: openerStart, end: offsets[i] + lines[i].length, body, prompts });
-      }
+      blocks.push({
+        start: openerStart,
+        end: offsets[i] + lines[i].length,
+        body,
+        prompts: parseSuggestedPromptLines(body),
+      });
       openerIndex = -1;
       continue;
     }
@@ -1808,8 +1818,9 @@ function scanSuggestedPrompts(
 
   if (!isStreaming) return { blocks, withheldStart: null };
   if (openerIndex !== -1) {
-    const body = lines.slice(openerIndex + 1);
-    return { blocks, withheldStart: canWithholdOpenBlock(body) ? openerStart : null };
+    // An open block is always withheld while streaming: once it closes it is
+    // stripped no matter its content, so showing it mid-stream only flickers.
+    return { blocks, withheldStart: openerStart };
   }
   if (fence) return { blocks, withheldStart: null };
   const lastLine = lines.at(-1) ?? '';
@@ -1847,12 +1858,14 @@ function looksLikeBodyText(line: string): boolean {
  * Label|delay:30|Check build results
  * -->
  *
- * Only accepted blocks count: the opener and the `-->` closer (standalone or
- * fused with the final prompt) must both sit outside any code fence, and no
- * captured line may look like response body text. A block that fails any of these is left untouched in
- * `cleanedContent` rather than stripped, so a Mermaid diagram or table can
- * neither surface as prompt chips nor disappear from the rendered message. The
- * last accepted block wins.
+ * Only well-formed blocks count: the opener and the `-->` closer (standalone
+ * or fused with the final prompt) must both sit outside any code fence. Every
+ * well-formed block is stripped from `cleanedContent` — raw block markup never
+ * renders — while structurally malformed markup (unclosed opener, fenced
+ * example, inline opener) is left untouched, so real body text never
+ * disappears. Prompts come from the last well-formed block: nothing when any
+ * captured line looks like response body text, otherwise the valid lines with
+ * invalid ones dropped, capped at four.
  */
 export function parseSuggestedPrompts(
   content: string,
@@ -1867,7 +1880,7 @@ export function parseSuggestedPrompts(
     return { prompts: [], cleanedContent: content };
   }
 
-  // Remove every accepted block from the content (never body text).
+  // Remove every well-formed block from the content (never body text).
   let cleanedContent = '';
   let cursor = 0;
   for (const block of blocks) {
@@ -1939,7 +1952,8 @@ export function parseSuggestedPromptsFromContentBlocks(
 }
 
 /**
- * Check if content contains an accepted suggested prompts block
+ * Check if content contains a well-formed suggested prompts block (purely
+ * structural — the block may still contribute zero prompt chips).
  */
 export function hasSuggestedPrompts(content: string): boolean {
   if (!content) return false;

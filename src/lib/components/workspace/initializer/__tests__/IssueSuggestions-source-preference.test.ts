@@ -184,6 +184,27 @@ describe('IssueSuggestions source preference + provider ordering', () => {
     expect(screen.getByPlaceholderText('Search Linear issues...')).toBeTruthy();
   });
 
+  it('linear row trigger wrappers carry width-constraining classes so long titles truncate', async () => {
+    linearMocks.getAuthState.mockResolvedValue({ isAuthenticated: true });
+    linearMocks.fetchMyIssuesPage.mockImplementation(async (filter: string) =>
+      filter === 'assigned' ? { issues: [linearIssue], nextToken: null } : { issues: [], nextToken: null },
+    );
+
+    const { container } = render(IssueSuggestions, { props: { initiallyExpanded: true } });
+    await settle();
+
+    expect(screen.getByText('LIN-1')).toBeTruthy();
+    const wrappers = container.querySelectorAll('span[data-mock-tooltip-trigger]');
+    expect(wrappers.length).toBeGreaterThan(0);
+    for (const wrapper of wrappers) {
+      expect(wrapper.classList.contains('flex')).toBe(true);
+      expect(wrapper.classList.contains('w-full')).toBe(true);
+      expect(wrapper.classList.contains('min-w-0')).toBe(true);
+      // tailwind-merge must drop the default inline-flex in favor of flex
+      expect(wrapper.classList.contains('inline-flex')).toBe(false);
+    }
+  });
+
   it('does not persist the source when merely switching tabs', async () => {
     render(IssueSuggestions, { props: { initiallyExpanded: true } });
     await settle();
