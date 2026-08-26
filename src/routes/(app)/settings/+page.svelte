@@ -372,6 +372,12 @@
         return m.settings_updateChannel_alpha_label();
       },
     },
+    {
+      value: 'disabled',
+      get label() {
+        return m.settings_updateChannel_disabled_label();
+      },
+    },
   ];
 
   const updateChannelLabel = $derived(
