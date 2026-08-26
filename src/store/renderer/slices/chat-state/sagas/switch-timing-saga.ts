@@ -98,8 +98,12 @@ function phaseChangedWorker(action: ReturnType<typeof chatLiveStreamPhaseChanged
   }
   // Bracket the chat.subscribe lifecycle (registration ack → seq-0 snapshot)
   // so a slow reveal self-attributes: a late phaseLive with an early
-  // phaseAwaitingSnapshot points at the daemon's seq-0 push; a phaseDelayed
-  // mark means the SNAPSHOT_TIMEOUT_MS ceiling fired (see live-chat-client).
+  // phaseAwaitingSnapshot points at the daemon's seq-0 push. A phaseDelayed
+  // mark means the retry/backoff path ran (scheduleRetry in live-chat-client:
+  // either a rejected chat.subscribe registration or the SNAPSHOT_TIMEOUT_MS
+  // snapshot timer) — since gates are first-occurrence-only, an earlier
+  // phaseAwaitingSnapshot in the same record means the ack landed first,
+  // disambiguating toward the snapshot timeout on the first cycle.
   markAgentGate(agentId, PHASE_GATES[phase]);
 }
 

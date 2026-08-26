@@ -48,7 +48,11 @@ export interface SwitchTimingSummary {
   revealMs: number;
   /** Gate settle deltas from t=0, ms. */
   gates: Partial<Record<GateName, number>>;
-  /** The last gate to settle — attributes what the reveal was waiting on. */
+  /**
+   * The last *recorded* gate. A diagnostic hint, not proof: finalize runs on
+   * the next reveal-check action, so a large `revealMs - gates[slowestGate]`
+   * residual means the wait was elsewhere (selector gating, action scheduling).
+   */
   slowestGate: GateName | undefined;
   /** Workspace seed deltas from t=0, ms (relevant seeds only; stale ones omitted). */
   seeds: Partial<Record<SeedName, number>>;
@@ -195,7 +199,12 @@ export function finalizeAgentView(agentId: string): SwitchTimingSummary | null {
   safeMeasure(`ws-switch:${agentId}:reveal`, startMarkName(agentId));
   logger.debug(
     `workspace-switch ${agentId} ${summary.outcome} in ${summary.revealMs}ms (trigger=${summary.trigger}, slowest=${summary.slowestGate ?? 'none'})`,
-    { workspaceId: summary.workspaceId, gates: summary.gates, seeds: summary.seeds },
+    {
+      workspaceId: summary.workspaceId,
+      gates: summary.gates,
+      slowestGate: summary.slowestGate,
+      seeds: summary.seeds,
+    },
   );
   return summary;
 }
