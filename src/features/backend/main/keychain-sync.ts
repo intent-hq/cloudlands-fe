@@ -182,7 +182,7 @@ export interface KeychainItem {
   modifiedAtMs?: number;
 }
 
-export type KeychainClientResult<T> =
+type KeychainClientResult<T> =
   ({ ok: true } & T) | { ok: false; code: HelperErrorCode; message: string };
 
 /**

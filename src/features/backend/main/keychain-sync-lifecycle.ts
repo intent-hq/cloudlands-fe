@@ -36,10 +36,10 @@ const logger = new Logger('KeychainSyncLifecycle');
 export const KEYCHAIN_SYNC_ENABLED_KEY = 'keychainSyncEnabled';
 
 /** Quiet window collapsing bursts of triggers into one reconcile. */
-export const RECONCILE_DEBOUNCE_MS = 2_000;
+const RECONCILE_DEBOUNCE_MS = 2_000;
 
 /** Minimum spacing between focus-triggered reconciles. */
-export const FOCUS_MIN_INTERVAL_MS = 60_000;
+const FOCUS_MIN_INTERVAL_MS = 60_000;
 
 /** True iff the user opted in to keychain sync (absent/off = disabled). */
 export async function isKeychainSyncEnabled(): Promise<boolean> {

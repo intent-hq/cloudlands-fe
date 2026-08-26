@@ -304,7 +304,7 @@ export interface ConnectionBootFallbackEvent {
  * `features/backend/main/keychain-sync.ts` (main-only module; renderer code
  * must not import it, so the union is restated here as the wire shape).
  */
-export type KeychainSyncUnavailableReason =
+type KeychainSyncUnavailableReason =
   | 'unsupported-platform'
   | 'helper-missing'
   | 'helper-failed'
