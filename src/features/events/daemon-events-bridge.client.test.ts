@@ -2300,9 +2300,18 @@ describe('daemonEventsBridge (agent:stream:activity — push-applied live previe
     expect(selectAgentIsResponding.select(appStore.state, AGENT)).toBe(false);
 
     // A same-turn activity straggler delivered after the terminal event must
-    // not resurrect the liveness bit the choreography just closed.
-    handler(notification('agent:stream:activity', { agentId: AGENT, messageId: MESSAGE_ID }));
+    // not resurrect the liveness bit the choreography just closed — even when
+    // it carries a lastToolUse.status "running" hint, which
+    // isAgentRunningState would otherwise read as active evidence.
+    handler(
+      notification('agent:stream:activity', {
+        agentId: AGENT,
+        messageId: MESSAGE_ID,
+        lastToolUse: { name: 'shell', status: 'running' },
+      }),
+    );
     expect(readLiveTurnFields().liveTurnOpen).toBe(false);
+    expect(readAgentSessionField('lastToolUse')).toBeUndefined();
     expect(selectAgentIsResponding.select(appStore.state, AGENT)).toBe(false);
 
     // A genuinely NEW turn's ping re-opens it.

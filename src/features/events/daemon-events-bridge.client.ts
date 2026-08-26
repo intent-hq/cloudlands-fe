@@ -856,6 +856,19 @@ function handleStreamActivityEvent(event: WorkspaceEvent, workspaceId: string): 
   ) {
     return;
   }
+  // Drop an ended-turn straggler outright: a ping for the turn whose terminal
+  // `agent:stream:end` already applied — or for an even earlier turn
+  // (messageId is a UUIDv7, so lexicographic order mirrors turn order, same
+  // as `handleStreamEndEvent`'s guard) — carries nothing valid. The terminal
+  // event already applied the turn's final preview fields, so letting the
+  // straggler through would re-open liveness (`liveTurnOpen`, or a
+  // `lastToolUse.status: "running"` that `isAgentRunningState` reads as
+  // active evidence) and, for an older turn, masquerade as a new turn and
+  // clear the current digest.
+  const endedMessageId = previewTurnEndedMessageIdByAgent.get(agentId);
+  if (endedMessageId !== undefined && messageId <= endedMessageId) {
+    return;
+  }
   const lastAgentResponse =
     typeof data.lastAgentResponse === 'string' ? data.lastAgentResponse : undefined;
   const digest = typeof data.digest === 'string' ? data.digest : undefined;
@@ -886,27 +899,19 @@ function handleStreamActivityEvent(event: WorkspaceEvent, workspaceId: string): 
   // daemon timestamp as the ordering signal. Without this, a delegated agent
   // whose running edge predates hydration (or was missed) never reads as
   // live even while pings stream in. `updatedAt` is daemon-owned and left
-  // untouched. Skip the straggler case: a ping for the turn whose terminal
-  // `agent:stream:end` already applied — or for an even earlier turn
-  // (messageId is a UUIDv7, so lexicographic order mirrors turn order, same
-  // as `handleStreamEndEvent`'s guard) — must not re-open the bit the
-  // terminal choreography just closed.
-  const endedMessageId = previewTurnEndedMessageIdByAgent.get(agentId);
-  const isEndedTurnStraggler = endedMessageId !== undefined && messageId <= endedMessageId;
+  // untouched. (Ended-turn stragglers never reach here — dropped above.)
   const eventTimestamp = (event as { timestamp?: unknown }).timestamp;
   withHydratedSession(agentId, () => {
     if (isNewTurn) {
       appStore.dispatch(updateAgentDigest(workspaceId, agentId, null));
       appStore.dispatch(updateSession(agentId, { lastToolUse: undefined }));
     }
-    if (!isEndedTurnStraggler) {
-      appStore.dispatch(
-        updateSession(agentId, {
-          liveTurnOpen: true,
-          ...(typeof eventTimestamp === 'string' ? { liveTurnOpenedAt: eventTimestamp } : {}),
-        }),
-      );
-    }
+    appStore.dispatch(
+      updateSession(agentId, {
+        liveTurnOpen: true,
+        ...(typeof eventTimestamp === 'string' ? { liveTurnOpenedAt: eventTimestamp } : {}),
+      }),
+    );
     applyStreamPreviewFields(agentId, lastAgentResponse, digest, readLastToolUse(data.lastToolUse));
   });
 }
