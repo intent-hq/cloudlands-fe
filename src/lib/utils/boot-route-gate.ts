@@ -5,7 +5,7 @@
  * which renders the full-page onboarding, and legacy sessions can still boot
  * at '/'. Whether onboarding is actually appropriate depends on the connected
  * backend — it needs first-run setup only when it has no workspaces AND no
- * ready providers (`selectLocalSetupGate`) — and that decision resolves
+ * ready providers (`selectBackendSetupGate`) — and that decision resolves
  * asynchronously after boot.
  *
  * This module captures ONE immutable fact per full page load: the pathname
@@ -53,8 +53,8 @@ export interface BootRouteDecisionInput {
   currentPathname: string;
   /** Whether this page load's decision was already made. */
   gateResolved: boolean;
-  /** Backend-derived first-run gate (`selectLocalSetupGate`). */
-  localSetupGate: 'none' | 'pending' | 'redirect';
+  /** Backend-derived first-run gate (`selectBackendSetupGate`). */
+  setupGate: 'none' | 'pending' | 'redirect';
   /** Whether the workspace list has loaded (`selectWorkspaceHasLoaded`). */
   workspaceHasLoaded: boolean;
   /** Workspace list (`selectWorkspaceItems`). */
@@ -68,7 +68,22 @@ export interface BootRouteDecisionInput {
   tabsHydrated: boolean;
   /** Persisted current workspace tab id, if any. */
   currentTabId: string | null | undefined;
+  /**
+   * Bounded-hold fallback: true once the boot hold has exceeded its time
+   * budget (`BOOT_ROUTE_HOLD_TIMEOUT_MS`, armed by the (app) layout). The
+   * gate can hold forever when nothing settles — e.g. a connected daemon
+   * whose provider probes fail repeatedly never flips `hasCheckedOnce` and
+   * never completes an evaluation — so once this flips, every remaining
+   * 'hold' degrades to a best-effort resolve instead of a blank surface.
+   */
+  holdTimedOut: boolean;
 }
+
+/**
+ * Upper bound on the boot-route hold. Normal boots resolve in well under a
+ * second; this only fires in degenerate cases (see `holdTimedOut`).
+ */
+export const BOOT_ROUTE_HOLD_TIMEOUT_MS = 15_000;
 
 export type BootRouteDecision =
   /** Not a boot-route load, or already decided — nothing to do. */
@@ -87,8 +102,8 @@ export type BootRouteDecision =
  *
  * - Backend has workspaces (or a ready provider): land on the persisted tab
  *   or the first available workspace.
- * - Local backend genuinely needs first-run setup: stay on /workspace/new
- *   (which renders onboarding).
+ * - Active backend (local or remote) genuinely needs first-run setup: stay on
+ *   /workspace/new (which renders onboarding / provider setup).
  * - No workspaces but setup not needed: stay on /workspace/new (creation).
  */
 export function decideBootRoute(input: BootRouteDecisionInput): BootRouteDecision {
@@ -96,11 +111,12 @@ export function decideBootRoute(input: BootRouteDecisionInput): BootRouteDecisio
     bootPathname,
     currentPathname,
     gateResolved,
-    localSetupGate,
+    setupGate,
     workspaceHasLoaded,
     workspaces,
     tabsHydrated,
     currentTabId,
+    holdTimedOut,
   } = input;
   if (bootPathname === null || !BOOT_GATE_ROUTES.has(bootPathname) || gateResolved) {
     return { kind: 'inapplicable' };
@@ -110,11 +126,11 @@ export function decideBootRoute(input: BootRouteDecisionInput): BootRouteDecisio
   if (currentPathname !== bootPathname) {
     return { kind: 'resolve', target: null, openTabWorkspaceId: null };
   }
-  if (localSetupGate === 'pending') {
+  if (setupGate === 'pending' && !holdTimedOut) {
     return { kind: 'hold' };
   }
-  if (localSetupGate === 'redirect') {
-    // Local backend with no workspaces and no ready providers: first-run
+  if (setupGate === 'redirect') {
+    // Active backend with no workspaces and no ready providers: first-run
     // setup. /workspace/new renders it; boot windows are already there.
     return {
       kind: 'resolve',
@@ -122,13 +138,15 @@ export function decideBootRoute(input: BootRouteDecisionInput): BootRouteDecisio
       openTabWorkspaceId: null,
     };
   }
-  // 'none': no forced onboarding. Wait for the workspace list AND the
-  // active backend's persisted tab strip (the workspace-list response can win
-  // the race against per-backend tab rehydration, which would land on the
-  // first workspace instead of the persisted tab), then land on the persisted
-  // tab or the first available workspace; without any workspace,
-  // /workspace/new (creation) is the only surface left.
-  if (!workspaceHasLoaded || !tabsHydrated) {
+  // 'none' (or a timed-out 'pending' degraded to it): no forced onboarding.
+  // Wait for the workspace list AND the active backend's persisted tab strip
+  // (the workspace-list response can win the race against per-backend tab
+  // rehydration, which would land on the first workspace instead of the
+  // persisted tab), then land on the persisted tab or the first available
+  // workspace; without any workspace, /workspace/new (creation) is the only
+  // surface left. Once the hold times out, resolve with whatever loaded —
+  // a possibly-suboptimal landing beats an unbounded blank surface.
+  if ((!workspaceHasLoaded || !tabsHydrated) && !holdTimedOut) {
     return { kind: 'hold' };
   }
   const available = workspaces.filter(

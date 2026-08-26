@@ -54,4 +54,48 @@ describe('TaskStatusProgress', () => {
     expect(screen.getByRole('progressbar').getAttribute('aria-valuetext')).toBe('Task progress');
     expect(empty.container.querySelectorAll('[data-task-progress-style]')).toHaveLength(0);
   });
+
+  it('keeps static progress free of animation classes and time-keyed remounts', async () => {
+    const view = render(TaskStatusProgress, {
+      props: {
+        statuses: mixedStatuses,
+        progress: 1 / 7,
+        animationKey: 'workspace-one',
+        motion: false,
+        ariaLabel: 'Task progress',
+      },
+    });
+    const progressbar = screen.getByRole('progressbar');
+    const segments = view.container.querySelectorAll('[data-task-progress-style]');
+
+    expect(progressbar.getAttribute('data-task-status-motion')).toBe('static');
+    expect(progressbar.getAttribute('data-flame-animation-key')).toBeNull();
+    expect(progressbar.className).not.toContain('flame-progress-enter');
+    expect(
+      [...segments].every((segment) => !segment.classList.contains('flame-status-segment')),
+    ).toBe(true);
+
+    await view.rerender({
+      statuses: mixedStatuses,
+      progress: 2 / 7,
+      animationKey: 'workspace-two',
+      motion: false,
+      ariaLabel: 'Task progress',
+    });
+    expect(screen.getByRole('progressbar')).toBe(progressbar);
+
+    view.unmount();
+    const loading = render(TaskStatusProgress, {
+      props: {
+        statuses: [],
+        loading: true,
+        motion: false,
+        ariaLabel: 'Task progress',
+      },
+    });
+    const placeholder = loading.container.querySelector('[data-flame-progress-placeholder]');
+    expect(placeholder?.getAttribute('data-task-status-motion')).toBe('static');
+    expect(placeholder?.className).not.toContain('flame-progress-enter');
+    expect(placeholder?.className).not.toContain('flame-status-segment');
+  });
 });

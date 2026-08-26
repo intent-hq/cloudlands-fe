@@ -16,6 +16,8 @@
   interface Props {
     agentId: string;
     specialist?: string | null;
+    /** Specialist `icon` metadata; takes precedence over the specialist-id map when valid. */
+    icon?: string | null;
     provider?: string;
     variant?: AgentAvatarVariant;
     /** @deprecated Use a named variant. Numeric sizes remain until consumer migration completes. */
@@ -27,6 +29,7 @@
   let {
     agentId,
     specialist = null,
+    icon = null,
     provider = undefined,
     variant = defaultAgentAvatarVariant,
     size = undefined,
@@ -51,7 +54,7 @@
   data-avatar-state={state}
   data-avatar-variant={usesNamedVariant ? variant : undefined}
 >
-  <AgentAvatar {agentId} {specialist} {provider} {variant} {size} />
+  <AgentAvatar {agentId} {specialist} {icon} {provider} {variant} {size} />
   {#if state === 'unread'}
     <span class="agent-avatar-unread-dot" data-avatar-unread-dot></span>
   {/if}

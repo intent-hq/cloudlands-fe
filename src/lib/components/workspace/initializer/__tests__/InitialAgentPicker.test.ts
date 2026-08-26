@@ -40,6 +40,22 @@ const mocks = vi.hoisted(() => {
     readable,
     fileSpecialistsLoaded$: writable(false),
     hydrated$: writable(true),
+    // Orchestrator powering the team card (selectOrchestratorSpecialist).
+    orchestrator$: writable<{
+      id: string;
+      name: string;
+      description: string;
+      role?: string;
+      teamAgents?: string[];
+      icon?: string;
+    } | null>({
+      id: 'spec-writer',
+      name: 'Coordinator',
+      description: '',
+      role: 'orchestrator',
+      teamAgents: ['implementor', 'verifier'],
+      icon: 'coordinator',
+    }),
     // Store view of specialists carrying the daemon's resolvedModel preview
     // (PROTOCOL §5.11) in the default-provider context.
     specialists$: writable<
@@ -92,7 +108,9 @@ vi.mock('$store/renderer/slices/specialists/specialists-selectors', () => ({
   selectCustomSpecialistsLoaded: () => mocks.readable(true),
   selectFileSpecialistsLoaded: () => mocks.fileSpecialistsLoaded$,
   selectUserOverrides: () => mocks.readable({ modelOverrides: {} }),
-  filterPickableSpecialists: (specialists: unknown[]) => specialists,
+  selectOrchestratorSpecialist: () => mocks.orchestrator$,
+  filterModalPickableSpecialists: (specialists: Array<{ role?: string }>) =>
+    specialists.filter((s) => s.role !== 'internal'),
 }));
 
 vi.mock('$store/renderer/slices/model/model-selectors', () => ({

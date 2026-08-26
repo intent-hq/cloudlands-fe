@@ -187,12 +187,13 @@ const SKIP_DIRS = new Set([
 
 // Developer-facing scaffolding excluded from the gate (intent-hq/monorepo#2248):
 // component-catalog visual harnesses (*Harness.svelte), component-test harnesses
-// (*.test-harness.svelte), catalog fixtures (*.fixtures.ts) and metadata
-// (*.meta.ts), and playwright configs (*.playwright.config.ts). These files are
+// (*.test-harness.svelte), catalog previews (*.preview.ts, *.preview.svelte,
+// *.preview-fixtures.ts), fixtures (*.fixtures.ts), metadata (*.meta.ts), and
+// playwright configs (*.playwright.config.ts). These files are
 // demo/test scaffolding, not product UI; harness strings surfacing in the
 // in-app component catalog (a developer tool) are accepted.
 const SCAFFOLDING_FILE_RE =
-  /(?:Harness\.svelte|\.test-harness\.svelte|\.fixtures\.ts|\.meta\.ts|\.playwright\.config\.ts)$/;
+  /(?:Harness\.svelte|\.test-harness\.svelte|\.preview(?:-fixtures)?\.(?:svelte|ts)|\.fixtures\.ts|\.meta\.ts|\.playwright\.config\.ts)$/;
 
 // Counted per run and reported so name-based exclusions stay visible in CI
 // logs (a product file accidentally matching the pattern shows up here).

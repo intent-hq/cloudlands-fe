@@ -3,7 +3,9 @@ import { describe, it, expect } from 'vitest';
 import {
   filterSpecialistsByGitHubAuth,
   filterPickableSpecialists,
+  filterModalPickableSpecialists,
   selectProviderModelOverrides,
+  selectOrchestratorSpecialist,
   selectSpecialists,
   selectUserOverrides,
   selectBundledSpecialists,
@@ -149,6 +151,86 @@ describe('specialists selectors', () => {
 
       expect(ids).toContain('visible-custom');
       expect(ids).not.toContain('hidden-custom');
+    });
+
+    it('filterPickableSpecialists should keep internal specialists (in-workspace picker)', () => {
+      const ids = filterPickableSpecialists(SPECIALISTS, true).map((specialist) => specialist.id);
+
+      expect(ids).toContain('implementor');
+      expect(ids).toContain('verifier');
+    });
+
+    it('filterModalPickableSpecialists should drop internal specialists in addition to hidden', () => {
+      const ids = filterModalPickableSpecialists(SPECIALISTS, true).map(
+        (specialist) => specialist.id,
+      );
+
+      expect(ids).not.toContain('implementor');
+      expect(ids).not.toContain('verifier');
+      expect(ids).not.toContain('chief-of-staff');
+      expect(ids).toContain('spec-writer');
+      expect(ids).toContain('developer');
+    });
+  });
+
+  describe('selectOrchestratorSpecialist', () => {
+    it('finds the shipped spec-writer orchestrator in the fallback catalog', () => {
+      const orchestrator = selectOrchestratorSpecialist.select(mockState());
+
+      expect(orchestrator?.id).toBe('spec-writer');
+      expect(orchestrator?.teamAgents).toEqual(['implementor', 'verifier']);
+    });
+
+    it('finds a custom orchestrator with a different id', () => {
+      const state = mockState({
+        fileSpecialists: createCollection('id', [
+          {
+            id: 'my-lead',
+            name: 'My Lead',
+            description: 'custom orchestrator',
+            model: '',
+            behaviorPrompt: 'prompt',
+            filePath: '/Users/test/.intent/specialists/my-lead.md',
+            source: 'user' as const,
+            role: 'orchestrator' as const,
+            teamAgents: ['helper'],
+          },
+        ]),
+      });
+
+      expect(selectOrchestratorSpecialist.select(state)?.id).toBe('my-lead');
+    });
+
+    it('returns null when no orchestrator exists (team card hidden)', () => {
+      const state = mockState({
+        bundledSpecialists: [
+          {
+            id: 'plain-one',
+            name: 'Plain One',
+            description: 'no role',
+            defaultBehaviorPrompt: 'prompt',
+            source: 'bundled' as const,
+          },
+        ],
+      });
+
+      expect(selectOrchestratorSpecialist.select(state)).toBeNull();
+    });
+
+    it('breaks ties between multiple orchestrators by id order', () => {
+      const orchestrator = (id: string) => ({
+        id,
+        name: id,
+        description: 'orchestrator',
+        defaultBehaviorPrompt: 'prompt',
+        source: 'bundled' as const,
+        role: 'orchestrator' as const,
+      });
+      const state = mockState({
+        bundledSpecialists: [orchestrator('zeta-lead'), orchestrator('alpha-lead')],
+      });
+
+      expect(selectOrchestratorSpecialist.select(state)?.id).toBe('alpha-lead');
     });
   });
 

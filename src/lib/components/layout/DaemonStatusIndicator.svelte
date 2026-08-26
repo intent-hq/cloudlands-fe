@@ -125,8 +125,8 @@
   } from '$store/renderer/slices/daemon-health/daemon-health-slice';
   import {
     selectConnections,
-    selectActiveConnectionId,
-    selectActiveConnection,
+    selectCurrentConnectionId,
+    selectCurrentConnection,
     selectConnectionCertMismatch,
     selectActiveProtocolMismatch,
     selectProtocolMismatchModal,
@@ -151,8 +151,8 @@
   const unslothStatus$ = selectUnslothStatus();
   const unslothStopping$ = selectUnslothStopping();
   const connections$ = selectConnections();
-  const activeConnectionId$ = selectActiveConnectionId();
-  const activeConnection$ = selectActiveConnection();
+  const currentConnectionId$ = selectCurrentConnectionId();
+  const currentConnection$ = selectCurrentConnection();
   const certMismatch$ = selectConnectionCertMismatch();
   const activeProtocolMismatch$ = selectActiveProtocolMismatch();
   const protocolMismatchModal$ = selectProtocolMismatchModal();
@@ -312,11 +312,11 @@
       : '',
   );
 
-  // Compact machine name shown next to the status dot when the active
+  // Compact machine name shown next to the status dot when this window's
   // connection is remote (name only, no host:port — same preference order as
   // formatConnectionLabel). Null when local/unknown → dot-only trigger.
-  const activeRemoteName = $derived.by(() => {
-    const conn = $activeConnection$;
+  const currentRemoteName = $derived.by(() => {
+    const conn = $currentConnection$;
     if (!conn || conn.isLocal) return null;
     return conn.hostname?.trim() || conn.label;
   });
@@ -324,7 +324,7 @@
   // Trigger accessible name: includes the visible remote name when shown so
   // the label-in-name relationship holds (WCAG 2.5.3).
   const triggerAriaLabel = $derived(
-    activeRemoteName ? `${triggerLabel} — ${activeRemoteName}` : triggerLabel,
+    currentRemoteName ? `${triggerLabel} — ${currentRemoteName}` : triggerLabel,
   );
 
   const stopUnslothDescription = $derived.by(() => {
@@ -448,12 +448,12 @@
         {...props}
         class={cn(
           'flex items-center justify-center h-6 hover:bg-muted/50 rounded transition-colors cursor-pointer',
-          activeRemoteName ? 'gap-1.5 px-1.5' : 'w-6',
+          currentRemoteName ? 'gap-1.5 px-1.5' : 'w-6',
         )}
         aria-label={triggerAriaLabel}
       >
-        {#if activeRemoteName}
-          <span class="text-xs text-subtle truncate max-w-32">{activeRemoteName}</span>
+        {#if currentRemoteName}
+          <span class="text-xs text-subtle truncate max-w-32">{currentRemoteName}</span>
         {/if}
         <div class={cn('w-2 h-2 rounded-full shrink-0', dotColorClass)}></div>
       </button>
@@ -781,7 +781,7 @@
             >{m.layout_daemonStatus_connections_header()}</Header
           >
           {#each $connections$ as conn (conn.id)}
-            {@const isActive = conn.id === $activeConnectionId$}
+            {@const isCurrent = conn.id === $currentConnectionId$}
             <!--
               Each connection row is a real submenu (Menu.Sub), so Open/Switch/Forget
               pop out as a side flyout that opens on hover/click with bits-ui's
@@ -818,7 +818,7 @@
                       </span>
                     </Tooltip>
                   {/if}
-                  {#if isActive}
+                  {#if isCurrent}
                     <!--
                       role="img" so the span's aria-label reliably maps to an
                       accessible name (same treatment as the warning icons).
@@ -842,7 +842,7 @@
                 </Menu.Item>
                 <Menu.Item
                   class="cursor-pointer text-xs"
-                  disabled={isActive}
+                  disabled={isCurrent}
                   onSelect={() => handleSwitchConnection(conn.id)}
                 >
                   {m.layout_daemonStatus_switch_action()}

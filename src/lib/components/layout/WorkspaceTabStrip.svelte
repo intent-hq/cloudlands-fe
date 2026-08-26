@@ -553,6 +553,7 @@
               side="bottom"
               align="start"
               delayDuration={500}
+              disableHoverableContent={true}
               disabled={draggedWorkspaceId !== null}
               showArrow={false}
               maxWidth="none"

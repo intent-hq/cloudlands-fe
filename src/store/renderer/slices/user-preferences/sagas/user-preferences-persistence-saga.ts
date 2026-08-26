@@ -5,9 +5,14 @@ import { applyLanguagePreference } from '$lib/i18n/locale';
 import { SYSTEM_CHANNELS } from '$shared/ipc/channels';
 import { isGithubLinkDefaultAction } from '$shared/utils/link-helpers';
 import {
+  namespaceBackendKey,
+  selectActiveBackendId,
+} from '$store/renderer/utils/backend-storage-namespace';
+import {
   getLocalStorageJSON,
   setLocalStorageJSON,
 } from '$store/renderer/utils/safe-local-storage-saga';
+import { connectionsListReceived } from '../../connections/connections-slice';
 import {
   selectActivityLogPresets,
   selectAgentFontStyle,
@@ -74,6 +79,17 @@ function validFont(value: unknown): value is { fontStyle: FontStyle } {
   );
 }
 
+/**
+ * `workspace-list:completedProviderSetup` is backend-scoped: the flag answers
+ * "has provider setup been completed on THIS backend", so the local machine's
+ * value must not leak into remote-backend sessions. The local sidecar keeps
+ * the bare legacy key; remote backends get the `backend:<id>:` prefix.
+ */
+function* providerSetupStorageKey() {
+  const backendId = yield* selectActiveBackendId();
+  return namespaceBackendKey(COMPLETED_PROVIDER_SETUP_STORAGE_KEY, backendId);
+}
+
 function parseSystemFontsResponse(response: unknown): string[] | null {
   if (typeof response !== 'object' || response === null) return null;
   const { success, data } = response as ListSystemFontsResponse;
@@ -108,7 +124,7 @@ export function* hydrateUserPreferencesWorker() {
   const groupByRepo = yield* getLocalStorageJSON<boolean>(GROUP_BY_REPO_STORAGE_KEY);
   if (typeof groupByRepo === 'boolean') yield* put(setGroupByRepo(groupByRepo));
 
-  const providerSetup = yield* getLocalStorageJSON<boolean>(COMPLETED_PROVIDER_SETUP_STORAGE_KEY);
+  const providerSetup = yield* getLocalStorageJSON<boolean>(yield* providerSetupStorageKey());
   if (typeof providerSetup === 'boolean') {
     yield* put(setHasCompletedProviderSetup(providerSetup));
   }
@@ -173,9 +189,30 @@ function* persistGroupByRepoWorker() {
 
 function* persistProviderSetupWorker() {
   yield* setLocalStorageJSON(
-    COMPLETED_PROVIDER_SETUP_STORAGE_KEY,
+    yield* providerSetupStorageKey(),
     yield* selectHasCompletedProviderSetup.effect(),
   );
+}
+
+/**
+ * Boot hydration can run before the first `connections:list` result lands, so
+ * on a remote backend the flag may have hydrated from the local (bare) key.
+ * Re-hydrate from the backend-scoped key whenever the active backend id
+ * settles on a different value; an absent stored value resets to the slice
+ * default (false) so a fresh remote backend never inherits the local
+ * machine's completion state.
+ */
+function* watchBackendForProviderSetup() {
+  let hydratedBackendId = yield* selectActiveBackendId();
+  yield* takeEvery(connectionsListReceived, function* () {
+    const backendId = yield* selectActiveBackendId();
+    if (backendId === hydratedBackendId) return;
+    hydratedBackendId = backendId;
+    const stored = yield* getLocalStorageJSON<boolean>(
+      namespaceBackendKey(COMPLETED_PROVIDER_SETUP_STORAGE_KEY, backendId),
+    );
+    yield* put(setHasCompletedProviderSetup(stored === true));
+  });
 }
 
 function* persistShowReasoningBlocksWorker() {
@@ -261,5 +298,6 @@ function* watchUserPreferenceWrites() {
 export function* userPreferencesPersistenceSaga() {
   yield* fork(watchUserPreferenceWrites);
   yield* fork(hydrateUserPreferencesWorker);
+  yield* fork(watchBackendForProviderSetup);
   yield* fork(loadSystemFontsWorker);
 }

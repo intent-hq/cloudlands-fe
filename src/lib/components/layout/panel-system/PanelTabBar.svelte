@@ -1710,7 +1710,12 @@
                         close();
                       }}
                     >
-                      <AgentAvatar agentId="blank" variant="compact" specialist={specialist.id} />
+                      <AgentAvatar
+                        agentId="blank"
+                        variant="compact"
+                        specialist={specialist.id}
+                        icon={specialist.icon}
+                      />
                       <span>{specialist.name}</span>
                     </button>
                   {/each}

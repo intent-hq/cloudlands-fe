@@ -5,9 +5,13 @@
    * "Go through setup?" confirmation for REMOTE backends that have no
    * workspaces and no ready providers. Self-gates on the setup-prompt slice;
    * dismissal is session-scoped per connection. The local backend never sees
-   * this dialog — it silently redirects to the setup wizard instead.
+   * this dialog — it silently redirects to the setup wizard instead. It is
+   * also suppressed while already on /workspace/new: boot loads on a
+   * setup-needed backend redirect there (boot-route-gate), and the dialog
+   * must not overlay the very wizard it would offer to open.
    */
   import { goto } from '$app/navigation';
+  import { page } from '$app/stores';
   import { Button } from '$lib/components/ui/button';
   import Fa from 'svelte-fa';
   import { faXmark, faWandMagicSparkles } from '@fortawesome/free-solid-svg-icons';
@@ -49,7 +53,7 @@
   }
 </script>
 
-{#if $showPrompt}
+{#if $showPrompt && $page.url.pathname !== '/workspace/new'}
   <div
     class="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
     role="presentation"

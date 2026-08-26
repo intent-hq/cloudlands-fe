@@ -73,6 +73,7 @@ describe('connectionsReducer', () => {
   it('has the correct initial state', () => {
     expect(getItems(initialState.connections)).toEqual([]);
     expect(initialState.activeId).toBe(LOCAL_CONNECTION_ID);
+    expect(initialState.windowBackendId).toBe(LOCAL_CONNECTION_ID);
   });
 
   describe('connectionsListReceived', () => {
@@ -80,17 +81,23 @@ describe('connectionsReducer', () => {
       const result: ConnectionsListResult = {
         connections: [LOCAL, REMOTE],
         activeId: 'remote-1',
+        windowBackendId: LOCAL_CONNECTION_ID,
       };
       const next = connectionsReducer(initialState, connectionsListReceived(result));
       expect(getItems(next.connections)).toEqual([LOCAL, REMOTE]);
       expect(next.activeId).toBe('remote-1');
+      expect(next.windowBackendId).toBe(LOCAL_CONNECTION_ID);
     });
 
     it('latches hasReceivedList once the first list lands', () => {
       expect(initialState.hasReceivedList).toBe(false);
       const next = connectionsReducer(
         initialState,
-        connectionsListReceived({ connections: [LOCAL], activeId: LOCAL_CONNECTION_ID }),
+        connectionsListReceived({
+          connections: [LOCAL],
+          activeId: LOCAL_CONNECTION_ID,
+          windowBackendId: LOCAL_CONNECTION_ID,
+        }),
       );
       expect(next.hasReceivedList).toBe(true);
     });
@@ -99,7 +106,11 @@ describe('connectionsReducer', () => {
       const state = { ...initialState, status: 'connecting' as const, certMismatch: CERT_MISMATCH };
       const next = connectionsReducer(
         state,
-        connectionsListReceived({ connections: [LOCAL], activeId: LOCAL_CONNECTION_ID }),
+        connectionsListReceived({
+          connections: [LOCAL],
+          activeId: LOCAL_CONNECTION_ID,
+          windowBackendId: LOCAL_CONNECTION_ID,
+        }),
       );
       expect(next.status).toBe('connecting');
       expect(next.certMismatch).toEqual(CERT_MISMATCH);
@@ -159,7 +170,11 @@ describe('connectionsReducer', () => {
       const state = { ...initialState, authRejected: AUTH_REJECTED };
       const next = connectionsReducer(
         state,
-        connectionsListReceived({ connections: [LOCAL, REMOTE], activeId: 'remote-1' }),
+        connectionsListReceived({
+          connections: [LOCAL, REMOTE],
+          activeId: 'remote-1',
+          windowBackendId: 'remote-1',
+        }),
       );
       expect(next.authRejected).toEqual(AUTH_REJECTED);
     });
@@ -199,7 +214,11 @@ describe('connectionsReducer', () => {
       const state = { ...initialState, protocolMismatch: PROTOCOL_MISMATCH };
       const next = connectionsReducer(
         state,
-        connectionsListReceived({ connections: [LOCAL, REMOTE], activeId: 'remote-1' }),
+        connectionsListReceived({
+          connections: [LOCAL, REMOTE],
+          activeId: 'remote-1',
+          windowBackendId: 'remote-1',
+        }),
       );
       expect(next.protocolMismatch).toEqual(PROTOCOL_MISMATCH);
     });

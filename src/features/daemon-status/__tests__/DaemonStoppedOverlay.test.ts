@@ -613,11 +613,15 @@ describe('DaemonStoppedOverlay', () => {
       expect(screen.getByTestId('daemon-stopped-known-backends')).toBeTruthy();
     });
 
-    it('ignores a rejection latched for a non-active connection', async () => {
+    it('ignores a primary rejection latch that only matches the secondary window identity', async () => {
       render(DaemonStoppedOverlay);
       await showOverlay(wsTransport);
       dispatchAndFlush(
-        connectionsListReceived({ connections: [LOCAL, REMOTE], activeId: LOCAL_CONNECTION_ID }),
+        connectionsListReceived({
+          connections: [LOCAL, REMOTE],
+          activeId: LOCAL_CONNECTION_ID,
+          windowBackendId: REMOTE.id,
+        }),
       );
       rejectAuth(401);
 

@@ -22,6 +22,24 @@ function readWsUrlDefine(mode: string, wsUrl: string): string {
   return output;
 }
 
+function readPluginNames(uiPreview: boolean): string[] {
+  const configUrl = pathToFileURL(resolve('vite.config.mjs')).href;
+  const script = `
+    import createViteConfig from ${JSON.stringify(configUrl)};
+    const config = createViteConfig({ command: 'serve', mode: 'development' });
+    process.stdout.write(JSON.stringify(config.plugins.map((plugin) => plugin.name)));
+  `;
+  const output = execFileSync(process.execPath, ['--input-type=module', '-e', script], {
+    encoding: 'utf8',
+    env: {
+      ...process.env,
+      INTENT_BUILD_TARGET: 'web',
+      INTENT_UI_PREVIEW: uiPreview ? '1' : '0',
+    },
+  });
+  return JSON.parse(output);
+}
+
 describe('production web Vite configuration', () => {
   it('does not expose the configured WebSocket URL through a static define', () => {
     const define = readWsUrlDefine(
@@ -37,5 +55,10 @@ describe('production web Vite configuration', () => {
     const define = JSON.parse(readWsUrlDefine('development', 'ws://127.0.0.1:5181/rpc'));
 
     expect(define['process.env.VITE_INTENTD_WS_URL']).toBe('"ws://127.0.0.1:5181/rpc"');
+  });
+
+  it('reuses current generated messages only for the UI preview', () => {
+    expect(readPluginNames(true)).toContain('reuse-generated-paraglide');
+    expect(readPluginNames(false)).toContain('unplugin-paraglide-js');
   });
 });

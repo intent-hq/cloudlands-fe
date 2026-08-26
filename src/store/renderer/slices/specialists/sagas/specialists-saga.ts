@@ -90,6 +90,9 @@ function toBundledSpecialist(def: SpecialistDef): Specialist {
     reasoningEffort: def.reasoningEffort,
     resolvedModel: def.resolvedModel,
     resolvedProvider: def.resolvedProvider,
+    role: def.role,
+    teamAgents: def.teamAgents,
+    icon: def.icon,
   };
 }
 
@@ -109,6 +112,9 @@ function bundledFallback(builtin: Specialist): Specialist {
   if (builtin.modelOptions !== undefined) mapped.modelOptions = builtin.modelOptions;
   if (builtin.resolvedModel !== undefined) mapped.resolvedModel = builtin.resolvedModel;
   if (builtin.resolvedProvider !== undefined) mapped.resolvedProvider = builtin.resolvedProvider;
+  if (builtin.role !== undefined) mapped.role = builtin.role;
+  if (builtin.teamAgents !== undefined) mapped.teamAgents = builtin.teamAgents;
+  if (builtin.icon !== undefined) mapped.icon = builtin.icon;
   return mapped;
 }
 
@@ -127,6 +133,9 @@ function toFileSpecialist(def: SpecialistDef): FileSpecialist {
     modelOptions: def.modelOptions,
     resolvedModel: def.resolvedModel,
     resolvedProvider: def.resolvedProvider,
+    role: def.role,
+    teamAgents: def.teamAgents,
+    icon: def.icon,
   };
 }
 
@@ -193,6 +202,9 @@ function* handleSave(context: ListContext, action: ReturnType<typeof saveFileSpe
       behaviorPrompt: payload.behaviorPrompt,
       source: scope,
       hidden: existing?.hidden ?? bundled?.hidden,
+      role: existing?.role ?? bundled?.role,
+      teamAgents: existing?.teamAgents ?? bundled?.teamAgents,
+      icon: existing?.icon ?? bundled?.icon,
     };
     if (existing) {
       yield* call(

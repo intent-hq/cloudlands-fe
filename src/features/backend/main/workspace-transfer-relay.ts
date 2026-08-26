@@ -2,7 +2,8 @@
  * Workspace transfer relay (main process) — wizard steps 3–4 execution.
  *
  * Drives the FE-mediated transfer per PROTOCOL §5.1: `workspace.export.start`
- * on the SOURCE (the live backend client), then either
+ * on the SOURCE (the invoking window's backend client, passed per start),
+ * then either
  *   - relays the sealed archive chunk-by-chunk (`workspace.export.read` →
  *     `workspace.import.chunk`) into a second, short-lived JsonRpcClient
  *     pinned to the chosen TARGET connection and commits
@@ -46,7 +47,6 @@ export interface TargetClientHandle {
 
 /** Injectable seams so unit tests never stand up sockets/dialogs/disk. */
 export interface TransferRelayDeps {
-  getSourceClient(): RelayRpcClient;
   createTargetClient(connectionId: string): Promise<TargetClientHandle>;
   /** Returns the chosen path, or undefined when the user cancelled. */
   showSaveDialog(defaultFileName: string): Promise<string | undefined>;
@@ -89,8 +89,8 @@ const BUILD_TIMEOUT_MS = 600_000;
 interface RelaySession {
   workspaceId: string;
   /** The SOURCE daemon's client, pinned at start() time — a backend switch
-   * swaps the shared client, and finalize/cancel must keep talking to the
-   * daemon that owns this exportId. */
+   * rebinds windows to other clients, and finalize/cancel must keep talking
+   * to the daemon that owns this exportId. */
   source: RelayRpcClient;
   exportId: string;
   /** Set while chunks are staging on the target (cleared after commit). */
@@ -104,7 +104,8 @@ interface RelaySession {
 }
 
 export interface WorkspaceTransferRelay {
-  start(params: TransferStartParams): Promise<TransferStartResult>;
+  /** `source` is the invoking window's backend client — the transfer SOURCE. */
+  start(params: TransferStartParams, source: RelayRpcClient): Promise<TransferStartResult>;
   finalize(params: TransferFinalizeParams): Promise<TransferFinalizeResult>;
   cancel(): Promise<TransferCancelResult>;
 }
@@ -224,7 +225,9 @@ export function createWorkspaceTransferRelay(deps: TransferRelayDeps): Workspace
               settle(() => reject(new Error('cancelled')));
             }
           })
-          .catch((error) => settle(() => reject(error instanceof Error ? error : new Error(errText(error)))));
+          .catch((error) =>
+            settle(() => reject(error instanceof Error ? error : new Error(errText(error)))),
+          );
       });
       return ready;
     } finally {
@@ -301,7 +304,10 @@ export function createWorkspaceTransferRelay(deps: TransferRelayDeps): Workspace
     }
   }
 
-  async function start(params: TransferStartParams): Promise<TransferStartResult> {
+  async function start(
+    params: TransferStartParams,
+    source: RelayRpcClient,
+  ): Promise<TransferStartResult> {
     if (session && !session.committed && !session.cancelled) {
       return { success: false, error: 'a transfer is already in progress' };
     }
@@ -312,7 +318,6 @@ export function createWorkspaceTransferRelay(deps: TransferRelayDeps): Workspace
       await abortExport(session.source, session.exportId);
     }
     const { workspaceId, destination } = params;
-    const source = deps.getSourceClient();
     const current: RelaySession = {
       workspaceId,
       source,
@@ -440,7 +445,11 @@ export function createWorkspaceTransferRelay(deps: TransferRelayDeps): Workspace
 
     // Restart in-flight agents on the TARGET (fail-soft — a resume failure
     // never blocks the source finalize; the user can resolve on the target).
-    if (params.restartAgents && current.interruptedAgents.length > 0 && current.targetConnectionId) {
+    if (
+      params.restartAgents &&
+      current.interruptedAgents.length > 0 &&
+      current.targetConnectionId
+    ) {
       let targetHandle: TargetClientHandle | null = null;
       try {
         targetHandle = await deps.createTargetClient(current.targetConnectionId);

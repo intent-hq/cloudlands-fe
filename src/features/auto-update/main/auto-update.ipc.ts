@@ -111,6 +111,15 @@ export function setupAutoUpdateIPC(): void {
       SetChannelRequestSchema,
       async (_event, validated) => {
         await autoUpdateService.setChannel(validated.channel);
+        // Switching TO 'disabled' suppresses all update activity: there is
+        // no /disabled feed to check, so skip the post-switch check (and its
+        // "Checking…" toast) entirely — setChannel already neutralized any
+        // in-flight download or pending artifact. Switching AWAY from
+        // 'disabled' falls through and behaves like any other switch.
+        if (validated.channel === 'disabled') {
+          logger.info('Channel set to disabled; skipping post-switch update check');
+          return { success: true };
+        }
         // User-initiated channel switch: check the new channel's feed right
         // away with manual-check feedback instead of waiting for the hourly
         // timer. The service broadcasts 'auto-update:show-toast' first so

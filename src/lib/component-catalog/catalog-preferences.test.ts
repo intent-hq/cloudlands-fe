@@ -1,11 +1,25 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
   defaultCatalogPreferences,
+  parseCatalogUrlSettings,
   readCatalogPreferences,
   writeCatalogPreferences,
 } from './catalog-preferences';
 
 describe('catalog preferences', () => {
+  it('parses repeatable state, theme, width, and motion URL settings', () => {
+    expect(
+      parseCatalogUrlSettings(
+        new URLSearchParams('state=loading&theme=dark&width=420&motion=reduced'),
+      ),
+    ).toEqual({ state: 'loading', theme: 'dark', width: 420, reducedMotion: true });
+    expect(
+      parseCatalogUrlSettings(
+        new URLSearchParams('state=%20&theme=invalid&width=12&reducedMotion=false'),
+      ),
+    ).toEqual({ state: undefined, theme: undefined, width: undefined, reducedMotion: false });
+  });
+
   it('validates partial and corrupt stored preferences', () => {
     const storage = {
       getItem: vi.fn(() =>

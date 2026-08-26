@@ -14,17 +14,12 @@ installConsoleTeardownGuard();
 vi.mock('$store/renderer/root-store-lifecycle', () => ({
   startRootStoreLifecycle: () => () => {},
 }));
-vi.mock('$store/renderer/sagas', () => ({ startAllAppSagas: () => [] }));
 vi.mock('$store/renderer/seeders', () => ({}));
 vi.mock('$features/backend/splash-gate', () => ({ wireSplashGate: () => () => {} }));
 vi.mock('$lib/utils/history-navigation', () => ({
   attachMouseHistoryNavigation: () => () => {},
   handleHistoryNavigateIpc: () => {},
 }));
-vi.mock('$features/hardware-console/actions/ActionKeyHud.svelte', async () => ({
-  default: (await import('./mocks/Marker.svelte')).default,
-}));
-
 import { store as appStore } from '$store/renderer/store';
 import { setLanguagePreference } from '$store/renderer/slices/user-preferences/user-preferences-slice';
 import { applyLanguagePreference } from '$lib/i18n/locale';

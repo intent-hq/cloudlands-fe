@@ -53,8 +53,7 @@ export function getFocusedWindowBackendId(): string {
 }
 
 /**
- * Resolve the app icon path for dev mode. In production, the icon is baked into the binary.
- * Optionally sets the macOS dock icon.
+ * Resolve the development window icon and optionally set the macOS Dock icon.
  */
 function resolveIcon(setDockIcon: boolean): string | undefined {
   const resolutionOptions = {
@@ -69,7 +68,7 @@ function resolveIcon(setDockIcon: boolean): string | undefined {
     try {
       app.dock?.setIcon(nativeImage.createFromPath(dockIconPath));
     } catch (e) {
-      logger.warn('Failed to set dev dock icon:', e);
+      logger.warn('Failed to set Dock icon:', e);
     }
   }
 

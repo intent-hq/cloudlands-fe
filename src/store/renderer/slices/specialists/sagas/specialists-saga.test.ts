@@ -65,6 +65,9 @@ const fileDef = (id: string) => ({
   hidden: false,
   resolvedModel: 'gpt',
   resolvedProvider: 'codex',
+  role: 'internal' as const,
+  teamAgents: ['implementor'],
+  icon: 'verifier',
   parentAgentId: 'wire-only',
   wireOnly: 'drop',
 });
@@ -83,6 +86,9 @@ const mappedFileDef = (id: string) => ({
   hidden: false,
   resolvedModel: 'gpt',
   resolvedProvider: 'codex',
+  role: 'internal' as const,
+  teamAgents: ['implementor'],
+  icon: 'verifier',
 });
 
 const sagaState = (files: Record<string, ReturnType<typeof mappedFileDef>> = {}) => ({
@@ -148,6 +154,9 @@ describe('specialistsSaga', () => {
           hidden: false,
           resolvedModel: 'gpt',
           resolvedProvider: 'codex',
+          role: 'internal',
+          teamAgents: ['implementor'],
+          icon: 'verifier',
         },
       ]),
     );
@@ -318,6 +327,9 @@ describe('specialistsSaga', () => {
           behaviorPrompt: 'Inspect.',
           source: 'project',
           hidden: false,
+          role: 'internal',
+          teamAgents: ['implementor'],
+          icon: 'verifier',
         },
         'project',
         '/workspace',

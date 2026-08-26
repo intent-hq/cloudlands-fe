@@ -1,5 +1,9 @@
 import { m } from '$shared/paraglide/messages.js';
-import type { SpecialistModelOption, SpecialistSource } from '$shared/specialist-file-types';
+import type {
+  SpecialistModelOption,
+  SpecialistRole,
+  SpecialistSource,
+} from '$shared/specialist-file-types';
 
 /** Known built-in specialist IDs */
 export type BuiltinSpecialistId =
@@ -67,11 +71,32 @@ export interface Specialist {
    * the model default.
    */
   reasoningEffort?: string;
+  /**
+   * Orchestration role (`specialist.list` role, PROTOCOL §5.11):
+   * 'orchestrator' powers the New Workspace modal's team card; 'internal' is
+   * excluded from the modal's single-agent dropdown only (in-workspace
+   * pickers and Settings unaffected). Absent means standard.
+   */
+  role?: SpecialistRole;
+  /**
+   * Specialist ids the orchestrator delegates to (`specialist.list`
+   * teamAgents, PROTOCOL §5.11). Advisory/render-only — drives the modal's
+   * team-card avatar row. Absent when not declared.
+   */
+  teamAgents?: string[];
+  /**
+   * Built-in avatar design id (`specialist.list` icon, PROTOCOL §5.11).
+   * Unknown/absent values degrade to the id-map + seeded fallback.
+   */
+  icon?: string;
 }
 
 export const SPECIALISTS: Specialist[] = [
   {
     id: 'spec-writer',
+    role: 'orchestrator',
+    teamAgents: ['implementor', 'verifier'],
+    icon: 'coordinator',
     get name() {
       return m.specialists_builtin_coordinator_name();
     },
@@ -154,6 +179,8 @@ If helpful, you can use groups for distinct phases: **Researching**, **Planning*
   },
   {
     id: 'implementor',
+    role: 'internal',
+    icon: 'implementor',
     get name() {
       return m.specialists_builtin_implementor_name();
     },
@@ -191,6 +218,8 @@ Call \`ws.agent.reportToParent("<report>")\` (via the \`workspace_api\` tool) wi
   },
   {
     id: 'verifier',
+    role: 'internal',
+    icon: 'verifier',
     get name() {
       return m.specialists_builtin_verifier_name();
     },
@@ -248,6 +277,7 @@ Call \`ws.agent.reportToParent("<report>")\` (via the \`workspace_api\` tool) wi
   },
   {
     id: 'pr-reviewer',
+    icon: 'pr-reviewer',
     get name() {
       return m.specialists_builtin_prReviewer_name();
     },
@@ -342,6 +372,7 @@ If no issues found, write "✅ Approved" with no task notes.
   },
   {
     id: 'ui-designer',
+    icon: 'ui-designer',
     get name() {
       return m.specialists_builtin_uiDesigner_name();
     },
@@ -461,6 +492,7 @@ Call \`ws.agent.reportToParent("<report>")\` (via the \`workspace_api\` tool) wi
   },
   {
     id: 'developer',
+    icon: 'verifier',
     get name() {
       return m.specialists_builtin_developer_name();
     },
@@ -513,6 +545,7 @@ Then: Commands Run, Risk Notes, Follow-ups.`,
   },
   {
     id: 'chief-of-staff',
+    icon: 'chief-of-staff',
     get name() {
       return m.specialists_builtin_chiefOfStaff_name();
     },

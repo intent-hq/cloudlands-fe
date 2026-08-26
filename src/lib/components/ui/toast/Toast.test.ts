@@ -43,6 +43,23 @@ describe('Toast', () => {
     expect(screen.getByLabelText(/Notifications/)).toBeTruthy();
   });
 
+  it('renders stacked toasts expanded so a behind toast never collapses into a blank slab', async () => {
+    render(Toast);
+    toast.success('Short front toast', { id: 'short', duration: Number.POSITIVE_INFINITY });
+    toast.warning(
+      'A much longer warning message that wraps onto multiple lines and is taller than the toast in front of it',
+      { id: 'tall', duration: Number.POSITIVE_INFINITY },
+    );
+
+    await screen.findByText('Short front toast');
+    await screen.findByText(/A much longer warning message/);
+    const toastElements = Array.from(document.querySelectorAll<HTMLElement>('[data-sonner-toast]'));
+    expect(toastElements).toHaveLength(2);
+    await waitFor(() =>
+      expect(toastElements.every((el) => el.getAttribute('data-expanded') === 'true')).toBe(true),
+    );
+  });
+
   it('uses the same responsive width contract for standard and custom toasts', async () => {
     render(Toast);
     toast.success('Standard toast', { id: 'standard', duration: Number.POSITIVE_INFINITY });

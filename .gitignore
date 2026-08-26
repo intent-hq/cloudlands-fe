@@ -24,6 +24,7 @@ build/icon-dev.svg
 build/icon.icns
 build/icon.ico
 build/icon.iconset/
+build/macos-icon/
 
 # Exception: Include CDP MCP server build output
 !cdp-mcp-server/dist/
