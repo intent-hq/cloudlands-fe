@@ -8,6 +8,7 @@ import type { AgentSession, Workspace } from '$shared/types';
 import { PullRequestStatus, WorkspaceStatusEnum } from '$shared/types';
 import type { PrMonitorRow } from '$features/pr-monitor/pr-monitor-service';
 import { warmImport } from '../../../../test/warm-import';
+import hoverCardSource from '../WorkspaceHoverCard.svelte?raw';
 
 const mocks = vi.hoisted(() => {
   const dispatch = vi.fn();
@@ -367,20 +368,22 @@ describe('WorkspaceHoverCard', () => {
     expect(status.className).not.toMatch(/line-clamp|truncate|text-ellipsis/);
   });
 
-  it('renders title, repository, and named semantic status as three ordered rows', async () => {
+  it('keeps identity on the left and semantic status in the detail column', async () => {
     const { container } = await renderHoverCard({ displayStatus: 'in_progress' });
     const header = container.querySelector('[data-workspace-hover-card-header]');
     const rows = header?.querySelectorAll(
-      '[data-workspace-hover-card-title-row], [data-workspace-hover-card-repo-row], [data-workspace-hover-card-status-row]',
+      '[data-workspace-hover-card-title-row], [data-workspace-hover-card-repo-row]',
     );
+    const activity = container.querySelector('[data-workspace-hover-card-activity]');
     const statusRow = container.querySelector('[data-workspace-hover-card-status-row]');
 
-    expect(rows).toHaveLength(3);
+    expect(rows).toHaveLength(2);
     expect([...rows!].map((row) => normalizedText(row))).toEqual([
       'Hover Card Workspace',
       'augment/intent',
-      'In progress',
     ]);
+    expect(activity?.querySelector('[data-workspace-hover-card-status-row]')).toBe(statusRow);
+    expect(normalizedText(statusRow!)).toBe('In progress');
     expect(statusRow?.querySelector('[data-workspace-status="in_progress"]')).toBeTruthy();
     expect(statusRow?.querySelector('[data-workspace-status]')?.getAttribute('aria-hidden')).toBe(
       'true',
@@ -456,14 +459,13 @@ describe('WorkspaceHoverCard', () => {
     expect(container.textContent).not.toContain('Add workspace status');
   });
 
-  it('uses unbordered square elevated styling', async () => {
+  it('uses a responsive two-column shell with the 320 px compact fallback', async () => {
     const { container } = await renderHoverCard();
 
     const root = container.firstElementChild as HTMLElement;
-    expect(root.className).toContain('w-[320px]');
+    expect(root.getAttribute('data-workspace-hover-card-layout')).toBe('two-column');
     expect(root.className).toContain('shrink-0');
-    expect(root.className).toContain('max-w-[calc(100vw-1rem)]');
-    expect(root.className).not.toMatch(/min-w-\[/);
+    expect(root.className).toContain('overflow-hidden');
     expect(root.className.split(/\s+/)).not.toContain('border');
     expect(root.className.split(/\s+/)).not.toContain('border-border');
     expect(root.className).not.toMatch(/rounded/);
@@ -471,6 +473,9 @@ describe('WorkspaceHoverCard', () => {
     expect(root.className.split(/\s+/)).toContain('dark:bg-popover');
     expect(root.className).toContain('shadow-(--elevation-overlay)');
     expect(root.className).toContain('ring-1');
+    expect(hoverCardSource).toContain('width: 35rem');
+    expect(hoverCardSource).toContain('@container (max-width: 31.99rem)');
+    expect(hoverCardSource).toContain('grid-template-columns: minmax(0, 1fr)');
   });
 
   it('uses shared type roles for a clear content hierarchy', async () => {
@@ -561,6 +566,20 @@ describe('WorkspaceHoverCard', () => {
     expect(screen.getByText('Add hover card')).toBeTruthy();
     expect(screen.getByText('#12')).toBeTruthy();
     expect(screen.getByText(/checks running/).className).toContain('text-success');
+    const activitySections = document.querySelector('[data-workspace-hover-card-activity] > div');
+    const statusRow = document.querySelector('[data-workspace-hover-card-status-row]');
+    const agentRow = document.querySelector('[data-workspace-hover-card-agent-row]');
+    const stackRow = document.querySelector('[data-workspace-hover-card-agent-stack]');
+    const prLink = document.querySelector('[data-workspace-hover-card-pr-row] a');
+    expect(activitySections?.className).toContain('gap-3');
+    for (const row of [statusRow, agentRow, stackRow, prLink]) {
+      expect(row?.className).toContain('workspace-hover-card__detail-row');
+    }
+    expect(prLink?.getAttribute('href')).toBe('https://github.com/augment/intent/pull/12');
+    const prIcon = prLink?.querySelector('[data-workspace-hover-card-pr-icon]');
+    expect(prIcon?.querySelector('svg')?.getAttribute('width')).toBe('16px');
+    expect(prIcon?.querySelector('svg')?.getAttribute('height')).toBe('16px');
+    expect(prIcon?.querySelector('svg')?.getAttribute('class')).toContain('text-success');
     expect(screen.queryByText('Git')).toBeNull();
     expectVisibleChangesRow('3 files +42 -7, +2 -1');
   });
@@ -626,8 +645,8 @@ describe('WorkspaceHoverCard', () => {
       'augment/intent#12',
       'augment/intent#13',
     ]);
-    expect(rows.every((row) => row.querySelector('svg') === null)).toBe(true);
-    expect(rows.every((row) => row.querySelector('[aria-hidden="true"]') === null)).toBe(true);
+    expect(rows.every((row) => row.querySelector('svg') !== null)).toBe(true);
+    expect(rows.every((row) => row.querySelector('[aria-hidden="true"]') !== null)).toBe(true);
     expect(rows[0].querySelector('[data-workspace-hover-card-pr-status]')?.className).toContain(
       'text-success',
     );
@@ -636,7 +655,12 @@ describe('WorkspaceHoverCard', () => {
     );
     expect(screen.getByText('other-org/tooling')).toBeTruthy();
     expect(screen.getByText('Cross-repo monitor')).toBeTruthy();
-    expect(rows.every((row) => row.getAttribute('aria-label')?.includes('#'))).toBe(true);
+    expect(
+      rows.every((row) => row.querySelector('a')?.getAttribute('aria-label')?.includes('#')),
+    ).toBe(true);
+    expect(
+      rows.every((row) => row.querySelector('a')?.className.includes('truncate') === false),
+    ).toBe(true);
   });
 
   it.each([
