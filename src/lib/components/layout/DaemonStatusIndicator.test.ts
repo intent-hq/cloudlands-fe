@@ -1318,7 +1318,7 @@ describe('DaemonStatusIndicator', () => {
       );
     });
 
-    it('dispatches forgetConnectionRequested when Forget is chosen on a remote', async () => {
+    it('opens a confirm dialog on Forget and dispatches forgetConnectionRequested on confirm', async () => {
       mockStoreState = { daemonHealth: { ...healthy }, connections: withConnections('local') };
 
       const DaemonStatusIndicator = (await import('./DaemonStatusIndicator.svelte')).default;
@@ -1328,6 +1328,25 @@ describe('DaemonStatusIndicator', () => {
       await fireEvent.click(screen.getByText('desk:4180'));
       await fireEvent.click(screen.getByText('Forget'));
 
+      // Confirmation dialog names the connection; the dropdown is closed and
+      // nothing has been forgotten yet.
+      expect(screen.getByRole('dialog')).toBeTruthy();
+      expect(screen.getByText('Forget Backend')).toBeTruthy();
+      expect(screen.getByText(/desk:4180/)).toBeTruthy();
+      expect(screen.queryByText('Connections')).toBeNull();
+      expect(mockDispatch).not.toHaveBeenCalledWith(
+        expect.objectContaining({ type: 'connections/forgetRequested' }),
+      );
+
+      // Opening the dialog refreshes the keychain-sync state for the gating.
+      expect(mockDispatch).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: 'connections/loadKeychainSyncStateRequested',
+          asyncActionType: 'connections/loadKeychainSyncState',
+        }),
+      );
+
+      await fireEvent.click(screen.getByRole('button', { name: 'Forget' }));
       expect(mockDispatch).toHaveBeenCalledWith(
         expect.objectContaining({
           payload: ['r1'],
@@ -1335,6 +1354,62 @@ describe('DaemonStatusIndicator', () => {
           asyncActionType: 'connections/forget',
         }),
       );
+    });
+
+    it('cancel in the forget confirm dialog dispatches no forget request', async () => {
+      mockStoreState = { daemonHealth: { ...healthy }, connections: withConnections('local') };
+
+      const DaemonStatusIndicator = (await import('./DaemonStatusIndicator.svelte')).default;
+      render(DaemonStatusIndicator);
+      await fireEvent.click(screen.getByRole('button', { name: 'intentd: healthy' }));
+
+      await fireEvent.click(screen.getByText('desk:4180'));
+      await fireEvent.click(screen.getByText('Forget'));
+      await fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+
+      expect(screen.queryByRole('dialog')).toBeNull();
+      expect(mockDispatch).not.toHaveBeenCalledWith(
+        expect.objectContaining({ type: 'connections/forgetRequested' }),
+      );
+    });
+
+    it('shows the synced-devices notice when keychain sync is supported and enabled', async () => {
+      mockStoreState = {
+        daemonHealth: { ...healthy },
+        connections: {
+          ...withConnections('local'),
+          keychainSync: { supported: true, enabled: true, status: { state: 'active' } },
+        },
+      };
+
+      const DaemonStatusIndicator = (await import('./DaemonStatusIndicator.svelte')).default;
+      render(DaemonStatusIndicator);
+      await fireEvent.click(screen.getByRole('button', { name: 'intentd: healthy' }));
+
+      await fireEvent.click(screen.getByText('desk:4180'));
+      await fireEvent.click(screen.getByText('Forget'));
+
+      expect(screen.getByText(/all your synced devices/)).toBeTruthy();
+    });
+
+    it('shows a plain confirmation when keychain sync is not enabled', async () => {
+      mockStoreState = {
+        daemonHealth: { ...healthy },
+        connections: {
+          ...withConnections('local'),
+          keychainSync: { supported: true, enabled: false, status: null },
+        },
+      };
+
+      const DaemonStatusIndicator = (await import('./DaemonStatusIndicator.svelte')).default;
+      render(DaemonStatusIndicator);
+      await fireEvent.click(screen.getByRole('button', { name: 'intentd: healthy' }));
+
+      await fireEvent.click(screen.getByText('desk:4180'));
+      await fireEvent.click(screen.getByText('Forget'));
+
+      expect(screen.getByText(/desk:4180/)).toBeTruthy();
+      expect(screen.queryByText(/all your synced devices/)).toBeNull();
     });
 
     it('opens the add-connection modal from the connect action', async () => {
