@@ -237,6 +237,27 @@ describe('pane drag event ownership', () => {
     expect(document.querySelector('[data-panel-layout-preview-snapshot]')).toBe(firstSnapshot);
   });
 
+  it('keeps the settled outer inset, panel widths, and inter-panel gap in the preview', async () => {
+    const panel = await mountLayout();
+
+    await fireEvent(panel, dragEvent(340));
+    const preview = await waitFor(() => {
+      const element = document.querySelector<HTMLElement>('[data-panel-layout-drag-preview]');
+      expect(element).toBeTruthy();
+      return element!;
+    });
+    const split = preview.querySelector<HTMLElement>(
+      '[data-panel-layout-preview-split="horizontal"]',
+    )!;
+    const panelBases = [...split.children].map((child) => (child as HTMLElement).style.flex);
+
+    expect(preview.classList).toContain('box-content');
+    expect(preview.classList).toContain('px-2');
+    expect(preview.style.width).toBe('100%');
+    expect(split.classList).toContain('gap-2');
+    expect(panelBases).toEqual(['50 1 0%', '50 1 0%']);
+  });
+
   it('updates one live preview through gutter, panel, invalid, and valid regions', async () => {
     const panel = await mountLayout();
     const layout = panel.closest<HTMLElement>('[data-panel-layout-motion]')!;

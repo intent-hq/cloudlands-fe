@@ -49,7 +49,7 @@ afterEach(() => {
 });
 
 describe('PanelDragPreview', () => {
-  it('lets the outer workspace own projected width without shrinking the preview twice', () => {
+  it('lets the outer workspace own projected width and preserves its inline inset', () => {
     const layout = readFileSync(
       resolve(process.cwd(), 'src/lib/components/layout/panel-system/PanelLayout.svelte'),
       'utf8',
@@ -57,6 +57,8 @@ describe('PanelDragPreview', () => {
 
     expect(layout).toContain('contained && !onPanelMovePreviewWidthRatioChange');
     expect(layout).toContain('onPanelMovePreviewWidthRatioChange?.(nextRatio)');
+    expect(layout).toContain("'pointer-events-none absolute inset-y-0 left-0 z-40 box-content'");
+    expect(layout).toContain("contained ? 'px-2' : 'pr-2 sm:pr-3'");
   });
 
   it('renders a one-pane column reorder from inert snapshots without retaining the old layout', () => {

@@ -1523,7 +1523,10 @@
       {#if visiblePanelMovePreview}
         <div
           bind:this={panelDragPreviewElement}
-          class="pointer-events-none absolute inset-y-0 left-0 z-40"
+          class={cn(
+            'pointer-events-none absolute inset-y-0 left-0 z-40 box-content',
+            contained ? 'px-2' : 'pr-2 sm:pr-3',
+          )}
           style:width={`${
             (contained && !onPanelMovePreviewWidthRatioChange ? panelMovePreviewWidthRatio : 1) *
             100
