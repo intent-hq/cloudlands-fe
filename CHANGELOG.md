@@ -4,6 +4,19 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.95.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.94.0...v2.95.0) (2026-08-26)
+
+
+### 🚀 Features
+
+* add Disabled update channel to opt out of auto-updates ([#1713](https://github.com/intent-hq/cloudlands-fe/issues/1713)) ([c68094e](https://github.com/intent-hq/cloudlands-fe/commit/c68094eed3eed079daa3e38ea60651932c49bed4))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.7.61 ([#1720](https://github.com/intent-hq/cloudlands-fe/issues/1720)) ([aebfc35](https://github.com/intent-hq/cloudlands-fe/commit/aebfc355a2edb5587857d89f5a3f81c92b0ee23c))
+* resolve transfer/import client from the invoking window's backend ([#1716](https://github.com/intent-hq/cloudlands-fe/issues/1716)) ([0035a03](https://github.com/intent-hq/cloudlands-fe/commit/0035a033e8b1832549a90b57288a6a9068c4f6c0))
+
 ## [2.94.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.93.1...v2.94.0) (2026-08-26)
 
 
