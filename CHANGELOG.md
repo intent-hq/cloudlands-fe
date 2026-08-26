@@ -4,6 +4,13 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.99.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.98.0...v2.99.0) (2026-08-26)
+
+
+### 🚀 Features
+
+* reorganize settings navigation ([#1737](https://github.com/intent-hq/cloudlands-fe/issues/1737)) ([7b81eb9](https://github.com/intent-hq/cloudlands-fe/commit/7b81eb9b6d7d14f931dc4b60116a856ee5b7c523))
+
 ## [2.98.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.97.1...v2.98.0) (2026-08-26)
 
 
