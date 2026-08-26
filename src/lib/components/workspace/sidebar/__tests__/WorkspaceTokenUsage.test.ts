@@ -271,7 +271,16 @@ describe('WorkspaceTokenUsage', () => {
       { label: 'Reasoning tokens', value: '0', context: '0%' },
     ]);
     expect(composition.querySelector('.composition-description')).toBeNull();
-    expect(composition.querySelectorAll('.composition-metric [aria-hidden="true"]')).toHaveLength(
+    const compositionKeys = Array.from(
+      composition.querySelectorAll<HTMLElement>('.composition-key[aria-hidden="true"]'),
+    );
+    expect(compositionKeys.map((key) => key.dataset.metric)).toEqual([
+      'cached',
+      'input',
+      'output',
+      'reasoning',
+    ]);
+    expect(composition.querySelectorAll('.message-composition-row .composition-key')).toHaveLength(
       0,
     );
     expect(new Set(compositionValues.map(({ label }) => label)).size).toBe(4);
