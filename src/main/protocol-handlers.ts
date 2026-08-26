@@ -1,10 +1,39 @@
-import { app, protocol } from 'electron';
+import { app, BrowserWindow, protocol } from 'electron';
 import { decodeUrlPath } from './utils/decode-url-path';
 import { logger } from '../shared/logger';
 import path from 'path';
 import * as fs from 'fs';
 import { safeResolvePath } from './utils/safe-resolve-path';
 import { parseWorkspaceFileRequest } from './utils/workspace-file-url';
+import { resolveWorkspaceBackendClient } from './utils/workspace-backend-client';
+
+/**
+ * Resolve the backend client that owns `workspaceId` (monorepo#3501).
+ * `protocol.handle` does not expose the initiating webContents, so the owning
+ * backend is resolved from the windows hosting the workspace; when none is
+ * found, the app-primary compatibility client is the backward-compatible
+ * fallback. See `./utils/workspace-backend-client`.
+ */
+async function backendClientForWorkspace(workspaceId: string) {
+  const [
+    { getBackendClient, getBackendClientForConnection },
+    { getWindowIdsForWorkspace },
+    { getBackendIdForWindow },
+  ] = await Promise.all([
+    import('../features/backend/main/backend.ipc'),
+    import('../features/system/main/system.ipc'),
+    import('./window'),
+  ]);
+  return resolveWorkspaceBackendClient(workspaceId, {
+    getWindowIdsForWorkspace,
+    getBackendIdForWindowId: (windowId) => {
+      const window = BrowserWindow.fromId(windowId);
+      return window && !window.isDestroyed() ? getBackendIdForWindow(window) : null;
+    },
+    getClientForBackend: getBackendClientForConnection,
+    getPrimaryClient: getBackendClient,
+  });
+}
 
 // ---- Shared Helpers ----
 
@@ -199,11 +228,14 @@ export function setupWorkspaceAssetProtocolHandler() {
       return new Response('Invalid asset URL', { status: 400 });
     }
 
-    // Assets are served by the daemon via `note.readAsset` (PROTOCOL §5.2).
+    // Assets are served by the daemon via `note.readAsset` (PROTOCOL §5.2),
+    // issued on the backend that owns the workspace (monorepo#3501).
     // The legacy local-assets fallback was retired in D6.
+    let backendId: string | null = null;
     try {
-      const { getBackendClient } = await import('../features/backend/main/backend.ipc');
-      const result = (await getBackendClient().request('note.readAsset', {
+      const resolved = await backendClientForWorkspace(workspaceId);
+      backendId = resolved.backendId;
+      const result = (await resolved.client.request('note.readAsset', {
         workspaceId,
         asset: assetId,
       })) as { assetId: string; mimeType: string; data: string; sizeKb: number };
@@ -218,6 +250,7 @@ export function setupWorkspaceAssetProtocolHandler() {
       logger.warn('Daemon note.readAsset failed', {
         workspaceId,
         assetId,
+        backendId,
         error: error instanceof Error ? error.message : String(error),
       });
       // i18n-ignore (internal protocol response body)
@@ -249,9 +282,12 @@ export function setupWorkspaceFileProtocolHandler() {
     }
 
     const { workspaceId, filePath, mimeType } = parsed;
+    // Bytes come from the backend that owns the workspace (monorepo#3501).
+    let backendId: string | null = null;
     try {
-      const { getBackendClient } = await import('../features/backend/main/backend.ipc');
-      const client = getBackendClient();
+      const resolved = await backendClientForWorkspace(workspaceId);
+      backendId = resolved.backendId;
+      const client = resolved.client;
       const chunks: Buffer[] = [];
       let offset = 0;
       for (;;) {
@@ -306,6 +342,7 @@ export function setupWorkspaceFileProtocolHandler() {
       logger.warn('Daemon file.readChunk failed', {
         workspaceId,
         filePath,
+        backendId,
         error: error instanceof Error ? error.message : String(error),
       });
       // i18n-ignore (internal protocol response body)
