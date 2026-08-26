@@ -100,7 +100,6 @@ function start(current = state()) {
   const task = runSaga(
     { channel, dispatch: (action) => actions.push(action), getState: () => current },
     lifecycleReadSaga,
-    { activeWorkspaceId: current.tabState.currentTabId },
   );
   return { channel, actions, task };
 }
@@ -1481,6 +1480,41 @@ describe('lifecycleReadSaga', () => {
       expect(pending[MAX_CONCURRENT_WORKSPACE_READS].workspaceId).toBe(HOT);
 
       for (const entry of pending) entry.resolve();
+      await settle();
+      await stop(run.task);
+    });
+
+    // Regression: the active workspace used to be captured once at saga start
+    // (and prod passed none at all), so a workspace focused later — e.g. an
+    // archived workspace opened via cmd+k — hydrated as a background read and
+    // starved behind the backlog, leaving the chat area stuck loading.
+    it('hydrates agents ahead of the backlog for a workspace focused after boot', async () => {
+      const HOT = 'ws-archived';
+      const pendingTasks = parkTaskReads();
+      const agentReads: string[] = [];
+      mocks.agents.list.mockImplementation((workspaceId: string) => {
+        agentReads.push(workspaceId);
+        return Promise.resolve([]);
+      });
+      const current = state();
+      const run = start(current);
+
+      for (let i = 0; i < FAN_OUT; i += 1) run.channel.put(loadWorkspaceTasksRequested(`ws-${i}`));
+      await settle();
+
+      // Focus moves to this workspace only now, long after the saga started.
+      current.tabState.currentTabId = HOT;
+      run.channel.put(hydrateAgentsRequested(HOT));
+      await settle();
+      expect(agentReads).toEqual([]);
+
+      pendingTasks[0].resolve();
+      await settle();
+      // The focused workspace's agents read runs next, ahead of the queued
+      // background task reads.
+      expect(agentReads).toEqual([HOT]);
+
+      for (const entry of pendingTasks) entry.resolve();
       await settle();
       await stop(run.task);
     });
