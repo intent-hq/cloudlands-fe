@@ -1101,6 +1101,15 @@ export const ConnectionsSyncSetEnabledSchema = z.object({
   enabled: z.boolean(),
 });
 
+// Self-publish: no renderer-supplied params on either channel — main gathers
+// everything (token, fingerprint, IPs, port) from `server.pairingInfo` over
+// the local client, so the bearer token never crosses the IPC boundary.
+export const ConnectionsPublishSelfSchema = EmptySchema;
+
+export const ConnectionsSelfPublishedStateSchema = EmptySchema;
+
+export const ConnectionsRefreshSelfSchema = EmptySchema;
+
 // ============================================================================
 // Quit Confirmation Schemas
 //

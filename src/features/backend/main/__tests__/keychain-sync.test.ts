@@ -182,7 +182,13 @@ describe('payload schema', () => {
 
 describe('reconcile', () => {
   it('fresh install: pulls every remote live record into an empty local store', async () => {
-    const other = rec({ host: '10.0.0.2', port: 9000, label: 'Laptop', updatedAt: NOW - 5000 });
+    const other = rec({
+      host: '10.0.0.2',
+      port: 9000,
+      label: 'Laptop',
+      fingerprint: 'DD:EE:FF',
+      updatedAt: NOW - 5000,
+    });
     const { client, upserts, deletes } = fakeClient([item(rec()), item(other)]);
     const { adapter, applied } = fakeAdapter([]);
 
@@ -541,6 +547,210 @@ describe('reconcile', () => {
 
     expect(result.status).toEqual({ state: 'active' });
     expect(result.errors).toEqual([]);
+  });
+});
+
+describe('reconcile fingerprint identity (cross-account dedupe)', () => {
+  // The machine changed address: locally it lives at the NEW account, the
+  // keychain still holds it under the OLD account (same cert fingerprint).
+  const OLD_ACCOUNT = ACCOUNT; // 192.168.1.10:8443
+  const NEW_ACCOUNT = accountKeyFor('192.168.1.99', 9443);
+  const moved = (overrides: Partial<KeychainSyncRecord> = {}) =>
+    rec({ host: '192.168.1.99', hosts: ['192.168.1.99'], port: 9443, ...overrides });
+
+  it('local newer under a new account: the stale remote account is tombstoned, never pulled', async () => {
+    const localRecord = moved({ updatedAt: NOW - 1000 });
+    const staleRemote = rec({ updatedAt: NOW - 50_000 });
+    const { client, upserts } = fakeClient([item(staleRemote)]);
+    const { adapter, applied } = fakeAdapter([localRecord]);
+
+    const result = await reconcile(adapter, { client, now: NOW });
+
+    // The stale account never resurrects locally.
+    expect(applied).toEqual([]);
+    expect(result.pulled).toEqual([]);
+
+    // The stale account is tombstoned + the survivor pushed under its own.
+    expect(result.pushed.sort()).toEqual([OLD_ACCOUNT, NEW_ACCOUNT].sort());
+    const stalePush = upserts.find((u) => u.account === OLD_ACCOUNT);
+    const survivorPush = upserts.find((u) => u.account === NEW_ACCOUNT);
+    const staleParsed = parsePayload(stalePush!.payload);
+    expect(staleParsed).toMatchObject({
+      kind: 'record',
+      record: { deleted: true, token: '', deletedAt: NOW },
+    });
+    // The tombstone's clock stays strictly older than the survivor's so it
+    // can never win over the live record on another machine.
+    expect((staleParsed as { record: KeychainSyncRecord }).record.updatedAt).toBeLessThan(
+      localRecord.updatedAt,
+    );
+    expect(parsePayload(survivorPush!.payload)).toEqual({
+      kind: 'record',
+      record: localRecord,
+    });
+  });
+
+  it('remote newer under a different account: pulled so the store collapses by fingerprint', async () => {
+    // The OTHER machine saw the address change first: the keychain holds the
+    // machine under the NEW account, locally it still sits at the old one.
+    const remoteRecord = moved({ token: 'rotated', updatedAt: NOW - 1000 });
+    const localRecord = rec({ updatedAt: NOW - 50_000 });
+    const { client, upserts } = fakeClient([item(remoteRecord)]);
+    const { adapter, applied } = fakeAdapter([localRecord]);
+
+    const result = await reconcile(adapter, { client, now: NOW });
+
+    expect(result.pulled).toEqual([NEW_ACCOUNT]);
+    expect(applied).toEqual([{ account: NEW_ACCOUNT, record: remoteRecord }]);
+    // The consumed old-account snapshot is NOT pushed back.
+    expect(result.pushed).toEqual([]);
+    expect(upserts).toEqual([]);
+  });
+
+  it('fresh remote tombstone matching by fingerprint deletes the moved local record (tie favors delete)', async () => {
+    // Forgotten on another machine under the OLD address while it moved here.
+    const stone = tombstone({ updatedAt: NOW - 1000 });
+    const localRecord = moved({ updatedAt: NOW - 1000 }); // equal clock
+    const { client, upserts } = fakeClient([item(stone)]);
+    const { adapter, applied } = fakeAdapter([localRecord]);
+
+    const result = await reconcile(adapter, { client, now: NOW });
+
+    expect(result.deletedLocally).toEqual([OLD_ACCOUNT]);
+    expect(applied).toHaveLength(1);
+    expect(applied[0].record.deleted).toBe(true);
+    // The delete must ALSO reach the keychain under the surviving (new)
+    // account: without that tombstone, machines holding the record under the
+    // new address keep it, and this machine pulls it back on its next pass.
+    expect(result.pushed).toEqual([NEW_ACCOUNT]);
+    const parsed = parsePayload(upserts[0].payload);
+    expect(parsed).toMatchObject({
+      kind: 'record',
+      record: { deleted: true, token: '', updatedAt: stone.updatedAt, deletedAt: NOW },
+    });
+  });
+
+  it('a fresh tombstone shields a live same-fingerprint record under ANY account from being pulled (no local record)', async () => {
+    // Forget raced an address change: the keychain holds a fresh tombstone
+    // under the OLD account and a live (older) record under the NEW one. A
+    // machine with no live local record (fresh install, or it just honored
+    // the tombstone) must NOT pull the live record back in — it must
+    // tombstone the surviving account instead so every machine converges.
+    const stone = tombstone({ updatedAt: NOW - 1000 });
+    const live = moved({ updatedAt: NOW - 5000 });
+    const { client, upserts } = fakeClient([item(stone), item(live)]);
+    const { adapter, applied } = fakeAdapter([]);
+
+    const result = await reconcile(adapter, { client, now: NOW });
+
+    expect(applied).toEqual([]);
+    expect(result.pulled).toEqual([]);
+    expect(result.pushed).toEqual([NEW_ACCOUNT]);
+    const parsed = parsePayload(upserts[0].payload);
+    expect(parsed).toMatchObject({
+      kind: 'record',
+      record: { deleted: true, token: '', updatedAt: stone.updatedAt, deletedAt: NOW },
+    });
+  });
+
+  it('a fingerprint-matching LOCAL tombstone shields a live remote under another account too', async () => {
+    // The record was forgotten here while the keychain still holds it live
+    // under its new address: the pull must be skipped (it would erase the
+    // just-written tombstone via clearTombstone) and the live account
+    // tombstoned in the keychain instead.
+    const localStone = tombstone({ updatedAt: NOW - 1000 });
+    const live = moved({ updatedAt: NOW - 5000 });
+    const { client, upserts } = fakeClient([item(live)]);
+    const { adapter, applied } = fakeAdapter([localStone]);
+
+    const result = await reconcile(adapter, { client, now: NOW });
+
+    expect(applied).toEqual([]);
+    expect(result.pulled).toEqual([]);
+    // The live remote account is tombstoned; the local tombstone still
+    // pushes under its own account so other machines learn the delete.
+    expect(result.pushed.sort()).toEqual([NEW_ACCOUNT, OLD_ACCOUNT].sort());
+    const newPush = parsePayload(upserts.find((u) => u.account === NEW_ACCOUNT)!.payload);
+    expect(newPush).toMatchObject({ kind: 'record', record: { deleted: true, token: '' } });
+  });
+
+  it('two stale live keychain accounts for one fingerprint: the loser is tombstoned, the newest wins locally', async () => {
+    // Fresh install, keychain holds the same machine live under two accounts.
+    // The losing account must get a keychain tombstone in THIS pass, and the
+    // newest data must win locally regardless of iteration order.
+    const older = rec({ updatedAt: NOW - 50_000 });
+    const newer = moved({ token: 'rotated', updatedAt: NOW - 1000 });
+    for (const items of [
+      [item(older), item(newer)], // increasing updatedAt order
+      [item(newer), item(older)], // decreasing order
+    ]) {
+      const { client, upserts } = fakeClient(items);
+      const { adapter, applied } = fakeAdapter([]);
+
+      const result = await reconcile(adapter, { client, now: NOW });
+
+      // The newest record is the final local state.
+      expect(applied[applied.length - 1]).toEqual({ account: NEW_ACCOUNT, record: newer });
+      expect(result.pulled).toContain(NEW_ACCOUNT);
+      // The losing account gets a keychain tombstone (clock strictly older
+      // than the survivor's so it can never win over the live record).
+      expect(result.pushed).toEqual([OLD_ACCOUNT]);
+      const parsed = parsePayload(upserts[0].payload);
+      expect(parsed).toMatchObject({
+        kind: 'record',
+        record: { deleted: true, token: '', deletedAt: NOW },
+      });
+      expect((parsed as { record: KeychainSyncRecord }).record.updatedAt).toBeLessThan(
+        newer.updatedAt,
+      );
+    }
+  });
+
+  it('stale remote tombstone loses to a newer moved local record (re-add survives)', async () => {
+    const stone = tombstone({ updatedAt: NOW - 50_000 });
+    const localRecord = moved({ updatedAt: NOW - 1000 });
+    const { client, upserts } = fakeClient([item(stone)]);
+    const { adapter, applied } = fakeAdapter([localRecord]);
+
+    const result = await reconcile(adapter, { client, now: NOW });
+
+    expect(applied).toEqual([]);
+    expect(result.deletedLocally).toEqual([]);
+    // The survivor pushes under its own account; the stale tombstone is left
+    // to age out via its TTL.
+    expect(result.pushed).toEqual([NEW_ACCOUNT]);
+    expect(upserts).toHaveLength(1);
+    expect(parsePayload(upserts[0].payload)).toEqual({ kind: 'record', record: localRecord });
+  });
+
+  it('fingerprint-less records keep pure account semantics (no cross-account pairing)', async () => {
+    // Legacy blank fingerprints must never match each other across accounts.
+    const remoteRecord = rec({ fingerprint: '', updatedAt: NOW - 1000 });
+    const localRecord = moved({ fingerprint: '  ', updatedAt: NOW - 500 });
+    const { client, upserts } = fakeClient([item(remoteRecord)]);
+    const { adapter, applied } = fakeAdapter([localRecord]);
+
+    const result = await reconcile(adapter, { client, now: NOW });
+
+    // Both records live on: the remote pulls in, the local pushes out.
+    expect(result.pulled).toEqual([OLD_ACCOUNT]);
+    expect(applied).toEqual([{ account: OLD_ACCOUNT, record: remoteRecord }]);
+    expect(result.pushed).toEqual([NEW_ACCOUNT]);
+    expect(upserts).toHaveLength(1);
+  });
+
+  it('same-account records never trigger the cross-account path (plain LWW)', async () => {
+    // Same fingerprint AND same account: ordinary per-account reconcile.
+    const remoteRecord = rec({ label: 'Rotated', updatedAt: NOW - 1000 });
+    const localRecord = rec({ updatedAt: NOW - 50_000 });
+    const { client, upserts } = fakeClient([item(remoteRecord)]);
+    const { adapter, applied } = fakeAdapter([localRecord]);
+
+    const result = await reconcile(adapter, { client, now: NOW });
+
+    expect(result.pulled).toEqual([OLD_ACCOUNT]);
+    expect(applied).toEqual([{ account: OLD_ACCOUNT, record: remoteRecord }]);
+    expect(upserts).toEqual([]);
   });
 });
 

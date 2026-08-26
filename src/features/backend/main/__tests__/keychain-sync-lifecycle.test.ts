@@ -49,6 +49,27 @@ vi.mock('../connections-store', () => ({
   },
 }));
 
+// Stateful local-prefs double: the self-publish helpers (self fingerprint +
+// "do not auto-publish" marker) read back what they persisted.
+const localPrefs = vi.hoisted(() => {
+  const values = new Map<string, unknown>();
+  return {
+    values,
+    setLocalPref: vi.fn(async (key: string, value: unknown) => {
+      values.set(key, value);
+    }),
+    getLocalPref: vi.fn(async (key: string) => values.get(key)),
+    deleteLocalPref: vi.fn(async (key: string) => {
+      values.delete(key);
+    }),
+  };
+});
+vi.mock('../../../../main/local-prefs', () => ({
+  setLocalPref: localPrefs.setLocalPref,
+  getLocalPref: localPrefs.getLocalPref,
+  deleteLocalPref: localPrefs.deleteLocalPref,
+}));
+
 import {
   initKeychainSyncLifecycle,
   storeSyncAdapter,
@@ -102,6 +123,7 @@ function fireMutation() {
 beforeEach(() => {
   vi.useFakeTimers();
   mutationListeners.clear();
+  localPrefs.values.clear();
 });
 
 afterEach(() => {
@@ -405,6 +427,64 @@ describe('keychain-sync lifecycle triggers', () => {
     };
     await storeSyncAdapter.applyRemote('h:1', record);
     expect(vi.mocked(applyRemoteSyncRecord)).toHaveBeenCalledWith(record);
+  });
+});
+
+describe('pulled self-tombstone (suppression, no auto-re-publish)', () => {
+  const tombstone = (fingerprint: string | null) => ({
+    label: 'A',
+    host: 'h',
+    hosts: ['h'],
+    port: 1,
+    fingerprint,
+    hostname: null,
+    detectHosts: true,
+    token: '',
+    updatedAt: 5,
+    deleted: true as const,
+    deletedAt: 5,
+  });
+
+  it('a tombstone matching the persisted self fingerprint sets the marker', async () => {
+    localPrefs.values.set('selfBackendFingerprint', 'AA:BB:CC');
+    await storeSyncAdapter.applyRemote('h:1', tombstone('aa:bb:cc')); // normalized match
+    // The record removal went through the store; the marker is now set so no
+    // auto-publish offer (or refresh) ever re-asserts the entry.
+    expect(vi.mocked(applyRemoteSyncRecord)).toHaveBeenCalled();
+    expect(localPrefs.values.get('selfPublishSuppressed')).toBe(true);
+  });
+
+  it('a tombstone for an unrelated backend leaves the marker untouched', async () => {
+    localPrefs.values.set('selfBackendFingerprint', 'AA:BB:CC');
+    await storeSyncAdapter.applyRemote('h:1', tombstone('99:88:77'));
+    expect(localPrefs.values.has('selfPublishSuppressed')).toBe(false);
+  });
+
+  it('a tombstone with no self fingerprint persisted never sets the marker', async () => {
+    await storeSyncAdapter.applyRemote('h:1', tombstone('AA:BB:CC'));
+    expect(localPrefs.values.has('selfPublishSuppressed')).toBe(false);
+  });
+
+  it('a live (non-tombstone) self record never touches the marker', async () => {
+    localPrefs.values.set('selfBackendFingerprint', 'AA:BB:CC');
+    await storeSyncAdapter.applyRemote('h:1', {
+      label: 'A',
+      host: 'h',
+      hosts: ['h'],
+      port: 1,
+      fingerprint: 'AA:BB:CC',
+      hostname: null,
+      detectHosts: true,
+      token: 't',
+      updatedAt: 5,
+    });
+    expect(localPrefs.values.has('selfPublishSuppressed')).toBe(false);
+  });
+
+  it('a marker write failure never aborts the reconcile apply (fail-soft)', async () => {
+    localPrefs.values.set('selfBackendFingerprint', 'AA:BB:CC');
+    localPrefs.setLocalPref.mockRejectedValueOnce(new Error('disk full'));
+    await expect(storeSyncAdapter.applyRemote('h:1', tombstone('AA:BB:CC'))).resolves.toBeUndefined();
   });
 });
 
