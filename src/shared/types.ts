@@ -1105,6 +1105,11 @@ export interface AgentMetadata {
   // agent.get / agent.list AgentLite metadata (PROTOCOL §5.5); feeds
   // AgentCard's effectiveCompletionReport preview.
   completionReport?: string;
+  // Id of the parent agent that delegated/created this session (PROTOCOL §5.5,
+  // served on AgentLite metadata). Absent on top-level agents; drives the
+  // Agents-panel tree nesting, hud-selectors' top-level gating, and the
+  // per-agent unread suppression for delegated children.
+  createdByAgentId?: string;
   // Allow additional properties for flexibility with proper typing
   [key: string]: string | number | boolean | null | undefined | any[] | ContextReference[];
 }

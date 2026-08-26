@@ -1626,7 +1626,8 @@ function handleAgentLastMessageEvent(event: WorkspaceEvent): void {
         hasUnread: deriveAgentHasUnread({
           lastMessageRole: updates.lastMessageRole ?? session.lastMessageRole,
           lastMessageId: updates.lastMessageId ?? session.lastMessageId,
-          metadata: session.metadata as { lastSeenMessageId?: string } | undefined,
+          isBackground: session.isBackground,
+          metadata: session.metadata,
         }),
       }),
     );
