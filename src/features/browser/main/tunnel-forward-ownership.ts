@@ -43,7 +43,7 @@ export class ForwardOwnershipRegistry {
    * owner's archive/delete event (the record-after-archive race,
    * monorepo#2646).
    */
-  onWorkspaceOwnerRecorded?: (workspaceId: string) => void;
+  onWorkspaceOwnerRecorded?: (provider: TunnelProvider | undefined, workspaceId: string) => void;
 
   /** Record a successful forward; no workspaceId marks the port app-lifetime. */
   record(remotePort: number, workspaceId?: string): void {
@@ -72,7 +72,12 @@ export class ForwardOwnershipRegistry {
     if (workspaceId) {
       const isNewOwner = !entry.owners.has(workspaceId);
       entry.owners.add(workspaceId);
-      if (isNewOwner) this.onWorkspaceOwnerRecorded?.(workspaceId);
+      if (isNewOwner) {
+        this.onWorkspaceOwnerRecorded?.(
+          provider === DEFAULT_PROVIDER ? undefined : provider,
+          workspaceId,
+        );
+      }
     } else {
       entry.appOwned = true;
     }
@@ -94,9 +99,11 @@ export class ForwardOwnershipRegistry {
   }
 
   /** Distinct workspace ids currently owning at least one forwarded port. */
-  ownedWorkspaceIds(): string[] {
+  ownedWorkspaceIds(providers?: ReadonlySet<TunnelProvider>): string[] {
     const ids = new Set<string>();
-    for (const ports of this.providerPorts.values()) {
+    for (const [provider, ports] of this.providerPorts) {
+      if (providers && provider !== DEFAULT_PROVIDER && !providers.has(provider)) continue;
+      if (providers && provider === DEFAULT_PROVIDER) continue;
       for (const entry of ports.values()) {
         for (const id of entry.owners) ids.add(id);
       }
@@ -113,9 +120,14 @@ export class ForwardOwnershipRegistry {
     return this.releaseWorkspaceForProviders(workspaceId).map(({ remotePort }) => remotePort);
   }
 
-  releaseWorkspaceForProviders(workspaceId: string): OwnedForward[] {
+  releaseWorkspaceForProviders(
+    workspaceId: string,
+    providers?: ReadonlySet<TunnelProvider>,
+  ): OwnedForward[] {
     const closable: OwnedForward[] = [];
     for (const [provider, ports] of this.providerPorts) {
+      if (providers && provider !== DEFAULT_PROVIDER && !providers.has(provider)) continue;
+      if (providers && provider === DEFAULT_PROVIDER) continue;
       for (const [remotePort, entry] of ports) {
         if (!entry.owners.delete(workspaceId)) continue;
         if (entry.owners.size > 0 || entry.appOwned) continue;

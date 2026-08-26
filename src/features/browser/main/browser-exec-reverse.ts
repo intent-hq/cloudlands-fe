@@ -40,6 +40,7 @@ export type ExecuteBrowserActionsFn = (
 /** Backend identity captured at the reverse-handler or renderer IPC boundary. */
 export interface BrowserExecutionBackendContext {
   client: JsonRpcClient;
+  backendId: string;
   savedRemote: boolean;
 }
 
@@ -65,6 +66,8 @@ export interface RegisterBrowserExecOptions {
   saveAsset?: SaveAssetFn;
   /** True when this client belongs to a persisted remote connection. */
   savedRemote?: boolean;
+  /** Stable backend pool id for scoped lifecycle subscriptions. */
+  backendId?: string;
 }
 
 /**
@@ -111,6 +114,7 @@ export function registerBrowserExecReverseHandler(
       params.workspaceId,
       {
         client,
+        backendId: options.backendId ?? 'local',
         savedRemote: options.savedRemote ?? false,
       },
     );

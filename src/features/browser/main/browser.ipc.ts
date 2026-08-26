@@ -26,7 +26,11 @@ import {
   ForwardOwnershipRegistry,
   wrapTunnelProviderWithOwnership,
 } from './tunnel-forward-ownership';
-import { ensureWorkspaceForwardCleanup } from './workspace-forward-cleanup.service';
+import {
+  disposeWorkspaceForwardCleanupForClient,
+  ensureWorkspaceForwardCleanup,
+  resetWorkspaceForwardCleanup,
+} from './workspace-forward-cleanup.service';
 import {
   BACKEND_CLIENT_DISCONNECTED_EVENT,
   getBackendClientForConnection,
@@ -271,6 +275,7 @@ const ownershipWrappers = new Map<TunnelProvider, Map<string, TunnelProvider>>()
 function disposeTunnelManagerForClient(
   backendClient: BrowserExecutionBackendContext['client'],
 ): void {
+  disposeWorkspaceForwardCleanupForClient(backendClient);
   const tunnelManager = tunnelManagers.get(backendClient);
   if (!tunnelManager) return;
   tunnelManagers.delete(backendClient);
@@ -303,8 +308,14 @@ function getOwnedBrowserTunnelProvider(
   backendContext: BrowserExecutionBackendContext,
   workspaceId?: string,
 ): TunnelProvider {
-  ensureWorkspaceForwardCleanup({ registry: forwardOwnership, closeForward: closeOwnedForward });
   const inner = getBrowserTunnelProvider(backendContext);
+  ensureWorkspaceForwardCleanup({
+    registry: forwardOwnership,
+    closeForward: closeOwnedForward,
+    client: backendContext.client,
+    backendId: backendContext.backendId,
+    provider: inner,
+  });
   const key = workspaceId ?? '';
   let wrappers = ownershipWrappers.get(inner);
   if (!wrappers) {
@@ -367,9 +378,11 @@ export async function executeBrowserActions(
 }
 
 function getPrimaryBrowserBackendContext(): BrowserExecutionBackendContext {
+  const backendId = getPrimaryBackendId();
   return {
     client: getBackendClient(),
-    savedRemote: getPrimaryBackendId() !== LOCAL_CONNECTION_ID,
+    backendId,
+    savedRemote: backendId !== LOCAL_CONNECTION_ID,
   };
 }
 
@@ -381,7 +394,7 @@ function getRendererBrowserBackendContext(
     getBackendClientForConnection(backendId) ??
     (backendId === LOCAL_CONNECTION_ID ? getBackendClient() : undefined);
   if (!client) throw new Error(`Backend client is not connected: ${backendId}`);
-  return { client, savedRemote: backendId !== LOCAL_CONNECTION_ID };
+  return { client, backendId, savedRemote: backendId !== LOCAL_CONNECTION_ID };
 }
 
 // Re-export types for MCP tools
@@ -410,6 +423,7 @@ export function registerBrowserHandlers(): void {
     }
     forwardOwnership.reset();
     ownershipWrappers.clear();
+    resetWorkspaceForwardCleanup();
   });
 
   // Register a browser tab for CDP access

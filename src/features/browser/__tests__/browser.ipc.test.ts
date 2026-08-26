@@ -15,6 +15,8 @@ const mocks = vi.hoisted(() => ({
   getBackendClientForConnection: vi.fn(),
   getBackendIdForIpcSender: vi.fn(),
   getPrimaryBackendId: vi.fn(),
+  onBackendNotification: vi.fn(),
+  onBackendReconnected: vi.fn(),
 }));
 
 vi.mock('../main/embedded-browser-cdp-service', () => ({
@@ -37,8 +39,8 @@ vi.mock('../../backend/main/backend.ipc', () => ({
   getBackendIdForIpcSender: mocks.getBackendIdForIpcSender,
   getPrimaryBackendId: mocks.getPrimaryBackendId,
   // Used by the workspace-forward-cleanup service behind the provider seam.
-  onBackendNotification: vi.fn(() => () => {}),
-  onBackendReconnected: vi.fn(() => () => {}),
+  onBackendNotification: mocks.onBackendNotification,
+  onBackendReconnected: mocks.onBackendReconnected,
 }));
 vi.mock('../../backend/main/tunnel-manager', () => ({
   TunnelManager: mocks.TunnelManager,
@@ -88,6 +90,8 @@ describe('browser:resolve-url IPC handler', () => {
       getConfig: () => ({ transport: 'tcp', host: '10.0.0.5' }),
     });
     mocks.getBackendClientForConnection.mockImplementation(() => mocks.getBackendClient());
+    mocks.onBackendNotification.mockImplementation(() => () => {});
+    mocks.onBackendReconnected.mockImplementation(() => () => {});
     mocks.forwardPort.mockResolvedValue(45678);
     mocks.activeForwards.mockReturnValue([]);
     mocks.TunnelManager.mockImplementation(function (this: Record<string, unknown>) {
@@ -467,14 +471,35 @@ describe('browser tunnel-backend selection seam', () => {
   });
 
   it('disposes only the departing pooled client manager and rebuilds it on re-pair', async () => {
+    const notificationDisposers = new Map<string, Mock>();
+    const reconnectDisposers = new Map<string, Mock>();
+    mocks.onBackendNotification.mockImplementation((_handler, backendId: string) => {
+      const dispose = vi.fn();
+      notificationDisposers.set(backendId, dispose);
+      return dispose;
+    });
+    mocks.onBackendReconnected.mockImplementation((_handler, backendId: string) => {
+      const dispose = vi.fn();
+      reconnectDisposers.set(backendId, dispose);
+      return dispose;
+    });
+    const request = (workspaceId: string) =>
+      vi.fn(async (method: string) =>
+        method === 'events.subscribe'
+          ? { subscriptionId: `sub-${workspaceId}` }
+          : { workspaces: [{ id: workspaceId, archived: false }] },
+      );
     const remoteA = {
       getConfig: () => ({ transport: 'wss' as const, host: 'remote-a.example' }),
+      request: request('workspace-a'),
     };
     const remoteB = {
       getConfig: () => ({ transport: 'wss' as const, host: 'remote-b.example' }),
+      request: request('workspace-b'),
     };
     const local = {
       getConfig: () => ({ transport: 'uds' as const, socketPath: '/tmp/intentd.sock' }),
+      request: request('workspace-local'),
     };
     mocks.getBackendClientForConnection.mockImplementation((id: string) => {
       if (id === 'remote-a') return remoteA;
@@ -520,6 +545,12 @@ describe('browser tunnel-backend selection seam', () => {
     expect(managerA.dispose).toHaveBeenCalledTimes(1);
     expect(managerB.dispose).not.toHaveBeenCalled();
     expect(direct.dispose).not.toHaveBeenCalled();
+    expect(notificationDisposers.get('remote-a')).toHaveBeenCalledTimes(1);
+    expect(reconnectDisposers.get('remote-a')).toHaveBeenCalledTimes(1);
+    expect(notificationDisposers.get('remote-b')).not.toHaveBeenCalled();
+    expect(notificationDisposers.get('local')).not.toHaveBeenCalled();
+    expect(reconnectDisposers.get('remote-b')).not.toHaveBeenCalled();
+    expect(reconnectDisposers.get('local')).not.toHaveBeenCalled();
     expect(await getProvider('remote-b', 'workspace-b')).toBe(providerB);
     expect(await getProvider('local', 'workspace-local')).toBe(directProvider);
     expect(await getProvider('remote-a', 'workspace-a')).not.toBe(providerA);

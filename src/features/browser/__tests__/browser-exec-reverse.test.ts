@@ -92,6 +92,7 @@ describe('registerBrowserExecReverseHandler', () => {
 
     expect(executor).toHaveBeenCalledWith([{ action: 'listTabs' }], 't-1', 'agent-1', 'ws-1', {
       client,
+      backendId: 'local',
       savedRemote: false,
     });
     expect(socket.writes).toHaveLength(1);
@@ -106,7 +107,11 @@ describe('registerBrowserExecReverseHandler', () => {
   it('binds a background saved-remote reverse call to its originating client', async () => {
     const { client, socket } = makeClient();
     executor.mockResolvedValue({ success: true, results: [] });
-    registerBrowserExecReverseHandler(client, { executor, savedRemote: true });
+    registerBrowserExecReverseHandler(client, {
+      executor,
+      backendId: 'remote-loopback',
+      savedRemote: true,
+    });
 
     socket.receive(
       `${JSON.stringify({
@@ -123,7 +128,7 @@ describe('registerBrowserExecReverseHandler', () => {
       undefined,
       undefined,
       undefined,
-      { client, savedRemote: true },
+      { client, backendId: 'remote-loopback', savedRemote: true },
     );
     client.dispose();
   });

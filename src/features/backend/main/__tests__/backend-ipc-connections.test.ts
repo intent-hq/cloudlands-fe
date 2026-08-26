@@ -1003,11 +1003,11 @@ describe('backend client pool', () => {
       await import('../../../browser/main/browser-exec-reverse');
     expect(registerBrowserExecReverseHandler).toHaveBeenCalledWith(
       local,
-      expect.objectContaining({ savedRemote: false }),
+      expect.objectContaining({ backendId: 'local', savedRemote: false }),
     );
     expect(registerBrowserExecReverseHandler).toHaveBeenCalledWith(
       remote,
-      expect.objectContaining({ savedRemote: true }),
+      expect.objectContaining({ backendId: 'remote-1', savedRemote: true }),
     );
   });
 
