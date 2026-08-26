@@ -149,6 +149,28 @@ jobs:
           while IFS= read -r kc; do KEYCHAINS+=("$kc"); done < "$RUNNER_TEMP/keychain-list.orig"
           security list-keychains -d user -s "$KEYCHAIN_PATH" "${KEYCHAINS[@]}"
 
+      # Stage the Developer ID provisioning profile for the keychain-sync
+      # helper (dev.intentapp.cloudlands-fe.keychain-helper). scripts/
+      # sign-sidecar.js embeds it and signs the helper with the restricted
+      # keychain entitlements the profile authorizes. Fail-soft: when the
+      # secret is empty the env var stays unset, the helper ships
+      # unprovisioned, and keychain sync reports "unavailable" at runtime —
+      # the build never fails. Gated on `sign` like the rest of the signing
+      # env; the decoded file is removed by the always() cleanup step.
+      - name: Stage keychain-helper provisioning profile
+        if: ${{ inputs.sign }}
+        env:
+          KEYCHAIN_HELPER_PROFILE_B64: ${{ secrets.CLOUDLANDS_KEYCHAIN_HELPER_PROFILE_B64 }}
+        run: |
+          if [ -z "$KEYCHAIN_HELPER_PROFILE_B64" ]; then
+            echo "CLOUDLANDS_KEYCHAIN_HELPER_PROFILE_B64 not set — helper will be signed without restricted entitlements"
+            exit 0
+          fi
+          PROFILE_PATH="$RUNNER_TEMP/keychain-helper.provisionprofile"
+          echo "$KEYCHAIN_HELPER_PROFILE_B64" | base64 --decode > "$PROFILE_PATH" 2>/dev/null || \
+            echo "$KEYCHAIN_HELPER_PROFILE_B64" | base64 -D > "$PROFILE_PATH"
+          echo "KEYCHAIN_HELPER_PROVISIONING_PROFILE=$PROFILE_PATH" >> "$GITHUB_ENV"
+
       # Drop build output left by a previous run so the artifact upload can't
       # pick up stale files (no-op on this ephemeral hosted runner; kept for
       # parity with the Windows job and the still self-hosted Linux x64 leg).
@@ -210,6 +232,11 @@ jobs:
           CLOUDLANDS_APPLE_ID: ${{ inputs.sign && secrets.CLOUDLANDS_APPLE_ID || '' }}
           CLOUDLANDS_APPLE_APP_SPECIFIC_PASSWORD: ${{ inputs.sign && secrets.CLOUDLANDS_APPLE_APP_SPECIFIC_PASSWORD || '' }}
           CLOUDLANDS_APPLE_TEAM_ID: ${{ inputs.sign && secrets.CLOUDLANDS_APPLE_TEAM_ID || '' }}
+          # KEYCHAIN_HELPER_PROVISIONING_PROFILE reaches this step via
+          # GITHUB_ENV from "Stage keychain-helper provisioning profile"
+          # (only on the signing path with the secret present); when unset,
+          # scripts/sign-sidecar.js signs the helper without restricted
+          # entitlements (fail-soft).
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: List built artifacts
@@ -267,6 +294,7 @@ jobs:
             security list-keychains -d user -s "${KEYCHAINS[@]}"
           fi
           rm -f "$RUNNER_TEMP/certificate.p12"
+          rm -f "$RUNNER_TEMP/keychain-helper.provisionprofile"
 
   # Copied from release-alpha.yml build-windows, plus the integrated DigiCert
   # signing steps from intent-manual-windows-build.yml gated on the `sign`
