@@ -687,7 +687,9 @@ export function getBackendClient(): JsonRpcClient {
           expectedFingerprint: error.expected,
           actualFingerprint: error.actual,
         };
-        broadcast(CONNECTIONS.CERT_MISMATCH, payload);
+        // Scoped to the failing backend's windows — a global broadcast would
+        // surface this modal in windows bound to OTHER pooled backends.
+        broadcast(CONNECTIONS.CERT_MISMATCH, payload, meta.id);
       }
       logger.warn('Backend certificate fingerprint mismatch', {
         host: activeConnectionMeta?.host,
@@ -714,7 +716,9 @@ export function getBackendClient(): JsonRpcClient {
         // registration still replays it (same ordering as the sticky
         // protocol mismatch).
         authRejectedById.set(meta.id, payload);
-        broadcast(CONNECTIONS.AUTH_REJECTED, payload);
+        // Scoped to the failing backend's windows (see CERT_MISMATCH above);
+        // late/re-created windows for this backend replay it from the latch.
+        broadcast(CONNECTIONS.AUTH_REJECTED, payload, meta.id);
       }
       logger.warn('Backend rejected WebSocket authentication', {
         host: activeConnectionMeta?.host,
@@ -1081,7 +1085,9 @@ function handleHelloProtocolVersion(
     localProtocolVersion: localBaseline,
     remoteProtocolVersion: protocolVersion,
   });
-  broadcast(CONNECTIONS.PROTOCOL_MISMATCH, payload, pooled ? meta.id : undefined);
+  // Scoped to the mismatching backend's windows — primary or pooled — so
+  // windows bound to other backends never surface this backend's advisory.
+  broadcast(CONNECTIONS.PROTOCOL_MISMATCH, payload, meta.id);
 }
 
 /**

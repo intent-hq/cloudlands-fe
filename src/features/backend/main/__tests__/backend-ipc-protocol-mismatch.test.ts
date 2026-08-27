@@ -143,9 +143,14 @@ beforeEach(() => {
   store.setHostname.mockResolvedValue(undefined);
   sidecar.getLocalDaemonProtocolVersion.mockReturnValue(null);
   send = vi.fn();
-  vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([
-    { id: 1, isDestroyed: () => false, webContents: { send } } as never,
-  ]);
+  // Stamp the fake window with the remote backend: the mismatch broadcast is
+  // scoped to the mismatching backend's windows, and these suites assert the
+  // events for `remote-1`.
+  const window = { id: 1, backendId: 'remote-1', isDestroyed: () => false, webContents: { send } };
+  vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([window as never]);
+  vi.mocked(BrowserWindow.fromWebContents).mockImplementation((sender) =>
+    sender === window.webContents ? (window as never) : null,
+  );
 });
 
 afterEach(() => {
@@ -291,9 +296,7 @@ describe('sticky protocol mismatch replayed on connections:list', () => {
     fireHello(0, { protocolVersion: '1' });
     await mod.switchBackend('remote-1');
     fireHello(1, { protocolVersion: '2' });
-    expect(
-      (await mod.__listConnectionsForTesting('remote-1')).protocolMismatch,
-    ).not.toBeNull();
+    expect((await mod.__listConnectionsForTesting('remote-1')).protocolMismatch).not.toBeNull();
 
     store.getActiveId.mockResolvedValue('local');
     await mod.switchBackend('local'); // fresh local client clears the sticky state
@@ -307,9 +310,7 @@ describe('sticky protocol mismatch replayed on connections:list', () => {
     fireHello(0, { protocolVersion: '1' });
     await mod.switchBackend('remote-1');
     fireHello(1, { protocolVersion: '2' });
-    expect(
-      (await mod.__listConnectionsForTesting('remote-1')).protocolMismatch,
-    ).not.toBeNull();
+    expect((await mod.__listConnectionsForTesting('remote-1')).protocolMismatch).not.toBeNull();
 
     // Re-switch (fresh client clears the latch); the new handshake matches local.
     await mod.switchBackend('remote-1');

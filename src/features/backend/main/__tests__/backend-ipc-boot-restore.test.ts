@@ -526,9 +526,18 @@ describe('reconcileActiveConnectionOnBoot — boot-origin protocol mismatch', ()
   it('does not re-broadcast or re-tag on reconnect re-hellos (one-shot guard preserved)', async () => {
     boot.probe = 'resolve';
     const send = vi.fn();
-    vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([
-      { id: 1, isDestroyed: () => false, webContents: { send } } as never,
-    ]);
+    // Stamped with the boot-restored remote: the mismatch broadcast is scoped
+    // to the mismatching backend's windows (T21 stamps restored windows so).
+    const window = {
+      id: 1,
+      backendId: 'remote-1',
+      isDestroyed: () => false,
+      webContents: { send },
+    };
+    vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([window as never]);
+    vi.mocked(BrowserWindow.fromWebContents).mockImplementation((sender) =>
+      sender === window.webContents ? (window as never) : null,
+    );
     const mod = await loadModule();
     mod.__setLocalProtocolVersionForTesting('1');
 
