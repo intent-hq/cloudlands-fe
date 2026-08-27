@@ -336,11 +336,6 @@
   "settings_wsApi_publishSelf_republish_label": "Erneut veröffentlichen",
   "settings_wsApi_publishSelf_success": "Backend im iCloud-Schlüsselbund veröffentlicht",
   "settings_wsApi_publishSelf_error": "Backend konnte nicht veröffentlicht werden: {error}",
-  "settings_wsApi_unpublishSelf_title": "Dieses Backend aus dem iCloud-Schlüsselbund entfernen?",
-  "settings_wsApi_unpublishSelf_rationale": "Die WebSocket-API ist jetzt deaktiviert, daher können sich deine anderen Geräte nicht mehr mit diesem Backend verbinden. Beim Entfernen wird der Eintrag auch auf deinen anderen Geräten gelöscht; beim Behalten bleibt er erhalten, falls du die API wieder aktivierst.",
-  "settings_wsApi_unpublishSelf_confirm_label": "Aus dem iCloud-Schlüsselbund entfernen",
-  "settings_wsApi_unpublishSelf_cancel_label": "Behalten",
-  "settings_wsApi_unpublishSelf_close_ariaLabel": "Schließen",
   "settings_wsApi_unpublishSelf_success": "Backend aus dem iCloud-Schlüsselbund entfernt",
   "settings_wsApi_unpublishSelf_error": "Backend konnte nicht entfernt werden: {error}",
 

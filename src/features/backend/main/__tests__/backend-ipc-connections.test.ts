@@ -1175,6 +1175,50 @@ describe('self-publish IPC', () => {
     // stays published would permanently disable refresh-self with no way out.
     expect(localPrefs.values.has('selfPublishSuppressed')).toBe(false);
   });
+
+  it('connections:unpublish-self removes the self entry WITHOUT latching the marker', async () => {
+    store.forget.mockResolvedValue(undefined);
+    localPrefs.values.set('selfBackendFingerprint', '11:22:33:44');
+    store.list.mockResolvedValue([LOCAL, { ...REMOTE, fingerprint: '11:22:33:44' }]);
+    installWindow();
+    const { mod } = await loadModule();
+    mod.registerBackendHandlers();
+
+    await expect(findHandler('connections:unpublish-self')!({}, undefined)).resolves.toEqual({
+      removed: true,
+    });
+    expect(store.forget).toHaveBeenCalledWith('remote-1');
+    // Unlike forgetting the self entry, unpublish never suppresses
+    // auto-publish offers.
+    expect(localPrefs.values.has('selfPublishSuppressed')).toBe(false);
+  });
+
+  it('connections:unpublish-self is a no-op { removed: false } while unpublished', async () => {
+    installWindow();
+    const { mod } = await loadModule();
+    mod.registerBackendHandlers();
+
+    // No stored record carries the (absent) self fingerprint.
+    await expect(findHandler('connections:unpublish-self')!({}, undefined)).resolves.toEqual({
+      removed: false,
+    });
+    expect(store.forget).not.toHaveBeenCalled();
+    expect(localPrefs.values.has('selfPublishSuppressed')).toBe(false);
+  });
+
+  it('a FAILED unpublish-self store forget propagates and latches nothing', async () => {
+    store.forget.mockRejectedValue(new Error('store write failure'));
+    localPrefs.values.set('selfBackendFingerprint', '11:22:33:44');
+    store.list.mockResolvedValue([LOCAL, { ...REMOTE, fingerprint: '11:22:33:44' }]);
+    installWindow();
+    const { mod } = await loadModule();
+    mod.registerBackendHandlers();
+
+    await expect(findHandler('connections:unpublish-self')!({}, undefined)).rejects.toThrow(
+      /store write failure/,
+    );
+    expect(localPrefs.values.has('selfPublishSuppressed')).toBe(false);
+  });
 });
 
 // ---------------------------------------------------------------------------

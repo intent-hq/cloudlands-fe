@@ -336,11 +336,6 @@
   "settings_wsApi_publishSelf_republish_label": "Republier",
   "settings_wsApi_publishSelf_success": "Backend publié dans le trousseau iCloud",
   "settings_wsApi_publishSelf_error": "Échec de la publication du backend : {error}",
-  "settings_wsApi_unpublishSelf_title": "Supprimer ce backend du trousseau iCloud ?",
-  "settings_wsApi_unpublishSelf_rationale": "L'API WebSocket est maintenant désactivée, vos autres appareils ne peuvent donc plus se connecter à ce backend. La suppression efface aussi l'entrée de vos autres appareils ; la conserver la laisse en place pour quand vous réactiverez l'API.",
-  "settings_wsApi_unpublishSelf_confirm_label": "Supprimer du trousseau iCloud",
-  "settings_wsApi_unpublishSelf_cancel_label": "Conserver",
-  "settings_wsApi_unpublishSelf_close_ariaLabel": "Fermer",
   "settings_wsApi_unpublishSelf_success": "Backend supprimé du trousseau iCloud",
   "settings_wsApi_unpublishSelf_error": "Échec de la suppression du backend : {error}",
 

@@ -890,6 +890,10 @@ export const IPC_CHANNELS = {
     // fields (token rotation, WSS port change). Strict no-op while
     // unpublished or while the "do not auto-publish" marker is set.
     REFRESH_SELF: 'connections:refresh-self',
+    // Unpublish the self entry: remove this machine's published record (with
+    // tombstone, so keychain sync propagates the deletion) WITHOUT setting
+    // the "do not auto-publish" marker — unlike forgetting the self entry.
+    UNPUBLISH_SELF: 'connections:unpublish-self',
   },
 
   // Workspace transfer relay (main-process, wizard steps 3–4). The renderer

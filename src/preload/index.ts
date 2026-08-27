@@ -548,6 +548,7 @@ const ALLOWED_CHANNELS = [
   "connections:publish-self",
   "connections:self-published-state",
   "connections:refresh-self",
+  "connections:unpublish-self",
   "transfer:start",
   "transfer:finalize",
   "transfer:cancel",

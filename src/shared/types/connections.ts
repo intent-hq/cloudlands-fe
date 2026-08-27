@@ -409,3 +409,16 @@ export interface RefreshSelfResult {
   /** Whether the stored self entry was actually re-upserted. */
   refreshed: boolean;
 }
+
+/**
+ * `connections:unpublish-self` result. Removes this machine's published self
+ * entry — the stored record whose fingerprint matches the persisted self
+ * fingerprint — through the standard forget/teardown path (tombstone
+ * included, so keychain sync propagates the deletion) WITHOUT setting the
+ * "do not auto-publish" marker: unlike forgetting the self entry via
+ * `connections:forget`, auto-publish offers stay allowed afterwards.
+ */
+export interface UnpublishSelfResult {
+  /** Whether a stored self entry existed and was removed (`false` = no-op). */
+  removed: boolean;
+}

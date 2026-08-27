@@ -336,11 +336,6 @@
   "settings_wsApi_publishSelf_republish_label": "Volver a publicar",
   "settings_wsApi_publishSelf_success": "Backend publicado en el llavero de iCloud",
   "settings_wsApi_publishSelf_error": "No se pudo publicar el backend: {error}",
-  "settings_wsApi_unpublishSelf_title": "¿Eliminar este backend del llavero de iCloud?",
-  "settings_wsApi_unpublishSelf_rationale": "La API de WebSocket está ahora desactivada, por lo que tus otros dispositivos ya no pueden conectarse a este backend. Al eliminarlo, la entrada también se borra de tus otros dispositivos; si la conservas, permanecerá disponible para cuando vuelvas a activar la API.",
-  "settings_wsApi_unpublishSelf_confirm_label": "Eliminar del llavero de iCloud",
-  "settings_wsApi_unpublishSelf_cancel_label": "Conservar",
-  "settings_wsApi_unpublishSelf_close_ariaLabel": "Cerrar",
   "settings_wsApi_unpublishSelf_success": "Backend eliminado del llavero de iCloud",
   "settings_wsApi_unpublishSelf_error": "No se pudo eliminar el backend: {error}",
 

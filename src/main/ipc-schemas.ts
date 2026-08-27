@@ -1112,6 +1112,8 @@ export const ConnectionsSelfPublishedStateSchema = EmptySchema;
 
 export const ConnectionsRefreshSelfSchema = EmptySchema;
 
+export const ConnectionsUnpublishSelfSchema = EmptySchema;
+
 // ============================================================================
 // Quit Confirmation Schemas
 //

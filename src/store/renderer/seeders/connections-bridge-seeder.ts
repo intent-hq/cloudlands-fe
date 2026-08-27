@@ -36,6 +36,7 @@ import type {
   PublishSelfResult,
   RefreshSelfResult,
   SelfPublishedStateResult,
+  UnpublishSelfResult,
 } from '$shared/types/connections';
 
 /** The always-present, non-forgettable local sidecar entry. */
@@ -172,3 +173,13 @@ registerMockIpcHandler(CONNECTION_CHANNELS.PUBLISH_SELF, async (): Promise<Publi
 registerMockIpcHandler(CONNECTION_CHANNELS.REFRESH_SELF, async (): Promise<RefreshSelfResult> => {
   return { refreshed: selfPublished };
 });
+
+registerMockIpcHandler(
+  CONNECTION_CHANNELS.UNPUBLISH_SELF,
+  async (): Promise<UnpublishSelfResult> => {
+    const removed = selfPublished;
+    selfPublished = false;
+    connections = connections.filter((c) => c.id !== 'mock-self');
+    return { removed };
+  },
+);
