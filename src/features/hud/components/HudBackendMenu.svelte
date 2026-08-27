@@ -15,7 +15,6 @@
   import { m } from '$shared/paraglide/messages.js';
   import Fa from 'svelte-fa';
   import { faPlus, faCheck } from '@fortawesome/free-solid-svg-icons';
-  import DropdownMenu from '$lib/components/ui/dropdown-menu.svelte';
   import * as Menu from '$lib/components/ui/menu';
   import Header from '$lib/components/ui/Header.svelte';
   import Portal from '$lib/components/ui/Portal.svelte';
@@ -57,9 +56,9 @@
   }
 </script>
 
-<DropdownMenu side="top" align="start" bind:open={menuOpen} portal={true}>
-  {#snippet trigger({ props })}
-    <button {...props} class="hud-footer-system" data-testid="hud-footer-system">
+<div class="hud-backend-menu">
+  <Menu.Root bind:open={menuOpen}>
+    <Menu.Trigger class="hud-footer-system" data-testid="hud-footer-system">
       <span class="hud-footer-dot" class:hud-footer-dot-online={online}></span>
       <!-- i18n-ignore (brand/daemon name) -->
       <span class="hud-footer-system-key">INTENTD</span>
@@ -74,48 +73,56 @@
       {:else}
         <span class="hud-footer-offline">{m.hud_system_offline_label()}</span>
       {/if}
-    </button>
-  {/snippet}
+    </Menu.Trigger>
+    <Menu.Content
+      side="top"
+      align="start"
+      collisionPadding={8}
+      preventScroll={false}
+      aria-label={m.ui_dropdownMenu_ariaLabel()}
+    >
+      <div class="min-w-52 w-max max-w-72 font-mono">
+        <Menu.Item class="cursor-pointer text-xs" onSelect={openConnectModal}>
+          <span class="text-subtle"><Fa icon={faPlus} /></span>
+          {m.layout_daemonStatus_connectToAnother_action()}
+        </Menu.Item>
 
-  {#snippet content()}
-    <div class="min-w-52 w-max max-w-72 font-mono">
-      <Menu.Item class="cursor-pointer text-xs" onSelect={openConnectModal}>
-        <span class="text-subtle"><Fa icon={faPlus} /></span>
-        {m.layout_daemonStatus_connectToAnother_action()}
-      </Menu.Item>
-
-      {#if $connections$.length > 0}
-        <Header class="px-2 pt-1.5 pb-0.5" size={6}
-          >{m.layout_daemonStatus_connections_header()}</Header
-        >
-        {#each $connections$ as conn (conn.id)}
-          {@const isCurrent = conn.id === $currentConnectionId$}
-          <!-- Open-only: selecting the row opens that backend's windows. -->
-          <Menu.Item class="cursor-pointer text-xs" onSelect={() => handleOpenConnection(conn.id)}>
-            <span class="min-w-0 flex-1 truncate">
-              {conn.isLocal
-                ? m.layout_daemonStatus_localConnection_label()
-                : formatConnectionLabel(conn)}
-            </span>
-            {#if isCurrent}
-              <!--
-                role="img" so the span's aria-label reliably maps to an
-                accessible name (same treatment as the reference menu).
-              -->
-              <span
-                class="text-green-500 shrink-0"
-                role="img"
-                aria-label={m.layout_daemonStatus_connectionActive_label()}
-              >
-                <Fa icon={faCheck} />
+        {#if $connections$.length > 0}
+          <Header class="px-2 pt-1.5 pb-0.5" size={6}
+            >{m.layout_daemonStatus_connections_header()}</Header
+          >
+          {#each $connections$ as conn (conn.id)}
+            {@const isCurrent = conn.id === $currentConnectionId$}
+            <!-- Open-only: selecting the row opens that backend's windows. -->
+            <Menu.Item
+              class="cursor-pointer text-xs"
+              onSelect={() => handleOpenConnection(conn.id)}
+            >
+              <span class="min-w-0 flex-1 truncate">
+                {conn.isLocal
+                  ? m.layout_daemonStatus_localConnection_label()
+                  : formatConnectionLabel(conn)}
               </span>
-            {/if}
-          </Menu.Item>
-        {/each}
-      {/if}
-    </div>
-  {/snippet}
-</DropdownMenu>
+              {#if isCurrent}
+                <!--
+                  role="img" so the span's aria-label reliably maps to an
+                  accessible name (same treatment as the reference menu).
+                -->
+                <span
+                  class="text-green-500 shrink-0"
+                  role="img"
+                  aria-label={m.layout_daemonStatus_connectionActive_label()}
+                >
+                  <Fa icon={faCheck} />
+                </span>
+              {/if}
+            </Menu.Item>
+          {/each}
+        {/if}
+      </div>
+    </Menu.Content>
+  </Menu.Root>
+</div>
 
 <!-- Add-connection modal (portaled to body, same rationale as the reference menu). -->
 {#if connectModalOpen}
@@ -125,10 +132,14 @@
 {/if}
 
 <style>
+  .hud-backend-menu {
+    display: inline-block;
+  }
   /* The system zone, restyled as a button: inherits the footer's JetBrains
      Mono font and keeps the original layout, with a hover/focus affordance
-     for the menu trigger. */
-  .hud-footer-system {
+     for the menu trigger. :global because the button element is rendered by
+     the Menu.Trigger primitive, not this component's template. */
+  .hud-backend-menu :global(.hud-footer-system) {
     display: flex;
     align-items: center;
     gap: 8px;
@@ -144,7 +155,7 @@
     color: inherit;
     cursor: pointer;
   }
-  .hud-footer-system:hover {
+  .hud-backend-menu :global(.hud-footer-system:hover) {
     background: hsl(var(--muted) / 0.5);
   }
   .hud-footer-dot {
