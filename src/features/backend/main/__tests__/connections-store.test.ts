@@ -979,8 +979,8 @@ describe('connections-store keychain sync surface', () => {
     const original = await store.add({ ...sampleConn, syncExcluded: true });
     expect(await store.listSyncRecords()).toHaveLength(0);
 
-    // Re-add with the box kept (no exclusion) clears the flag in place.
-    const included = await store.add(sampleConn);
+    // Re-add with the box kept (explicit inclusion) clears the flag in place.
+    const included = await store.add({ ...sampleConn, syncExcluded: false });
     expect(included.id).toBe(original.id);
     expect(included.syncExcluded).toBe(false);
     expect(await store.listSyncRecords()).toHaveLength(1);
@@ -990,6 +990,33 @@ describe('connections-store keychain sync surface', () => {
     expect(reExcluded.id).toBe(original.id);
     expect(reExcluded.syncExcluded).toBe(true);
     expect(await store.listSyncRecords()).toHaveLength(0);
+  });
+
+  it('re-add WITHOUT syncExcluded preserves the survivor exclusion (refresh must not flip consent)', async () => {
+    const store = await import('../connections-store');
+    // The user explicitly opted this backend out of sync…
+    const original = await store.add({ ...sampleConn, syncExcluded: true });
+    expect(await store.listSyncRecords()).toHaveLength(0);
+
+    // …then a flag-less upsert (e.g. connections:refresh-self after a token
+    // rotation) re-adds the same backend. The exclusion MUST survive: a
+    // freshness path never carries consent to publish to the keychain.
+    const refreshed = await store.add(sampleConn);
+    expect(refreshed.id).toBe(original.id);
+    expect(refreshed.syncExcluded).toBe(true);
+    expect(await store.listSyncRecords()).toHaveLength(0);
+
+    // And symmetrically: a flag-less re-add of a synced record keeps it synced.
+    const synced = await store.add({
+      ...sampleConn,
+      port: 9443,
+      fingerprint: 'FP:SYNCED',
+      syncExcluded: false,
+    });
+    const reAdded = await store.add({ ...sampleConn, port: 9443, fingerprint: 'FP:SYNCED' });
+    expect(reAdded.id).toBe(synced.id);
+    expect(reAdded.syncExcluded).toBe(false);
+    expect(await store.listSyncRecords()).toHaveLength(1);
   });
 
   it('forget of an excluded record writes an excluded tombstone that never reaches sync', async () => {

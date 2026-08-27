@@ -132,7 +132,10 @@ export interface NewConnection {
   detectHosts?: boolean;
   /**
    * Per-backend keychain-sync exclusion (spec Phase 2): `true` keeps the
-   * record local-only (never pushed to the keychain); absent = synced.
+   * record local-only (never pushed to the keychain), `false` explicitly
+   * marks it synced. Absent = no opinion: a new record defaults to synced,
+   * while an upsert into an existing record preserves its current flag (so
+   * flag-less freshness paths never flip a user's opt-out — see add()).
    */
   syncExcluded?: boolean;
 }
@@ -428,10 +431,12 @@ export async function list(): Promise<ConnectionRecord[]> {
  * `hostname`, inheriting a hostname from a dropped duplicate if it has none),
  * the other duplicates are dropped, and the survivor is returned; otherwise a
  * new record is appended. The survivor's `syncExcluded` flag follows the
- * incoming add too — a re-add is the sanctioned way to flip a backend's
- * exclusion (re-add with sync kept = clear it, opted out = set it). The
- * plaintext token is encrypted (or marked plaintext) before it hits disk.
- * Returns the token-free record.
+ * incoming add only when the flag is EXPLICIT — a re-add with a boolean is the
+ * sanctioned way to flip a backend's exclusion (`false` = clear it, `true` =
+ * set it), while an `undefined` flag preserves the survivor's current state so
+ * flag-less upsert paths (e.g. the self-entry refresh) can never silently
+ * revert a user's per-backend opt-out. The plaintext token is encrypted (or
+ * marked plaintext) before it hits disk. Returns the token-free record.
  */
 export async function add(conn: NewConnection): Promise<ConnectionRecord> {
   const encToken = encryptToken(conn.token);
@@ -461,7 +466,7 @@ export async function add(conn: NewConnection): Promise<ConnectionRecord> {
       survivor.fingerprint = conn.fingerprint;
       survivor.encToken = encToken;
       survivor.detectHosts = conn.detectHosts ?? true;
-      survivor.syncExcluded = conn.syncExcluded ?? false;
+      survivor.syncExcluded = conn.syncExcluded ?? survivor.syncExcluded ?? false;
       survivor.hostname ??= duplicates.find((c) => c.hostname != null)?.hostname ?? null;
       survivor.updatedAt = stamp;
       state.connections = state.connections.filter(

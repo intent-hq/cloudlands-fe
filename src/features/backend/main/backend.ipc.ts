@@ -1887,10 +1887,11 @@ export function registerBackendHandlers(): void {
 
   registerConnectionsHandlers();
 
-  // Keychain sync (T3): opt-in pref-gated, fail-soft, fully async. When a
-  // reconcile pulls remote changes into the store, refresh every renderer via
-  // the existing connections:changed broadcast. Availability changes push
-  // connections:sync-status-changed so the settings UI stays live (T4).
+  // Keychain sync (T3): pref-gated (opt-out — absent reads as enabled on
+  // macOS), fail-soft, fully async. When a reconcile pulls remote changes into
+  // the store, refresh every renderer via the existing connections:changed
+  // broadcast. Availability changes push connections:sync-status-changed so
+  // the settings UI stays live (T4).
   keychainSyncLifecycle = initKeychainSyncLifecycle({
     onRemoteApplied: () => broadcastConnectionsChanged(),
     onStatusChanged: (status) => {
@@ -2092,10 +2093,11 @@ function registerConnectionsHandlers(): void {
     return { bootFallback };
   });
 
-  // Keychain sync settings surface (T4): read the opt-in pref + last-known
-  // availability, and flip the pref. Enabling requests an immediate reconcile
-  // so the settings UI gets a live availability verdict; disabling stops sync
-  // but never touches existing keychain items.
+  // Keychain sync settings surface (T4): read the opt-out pref (absent =
+  // enabled on macOS) + last-known availability, and flip the pref. Enabling
+  // requests an immediate reconcile so the settings UI gets a live
+  // availability verdict; disabling stops sync but never touches existing
+  // keychain items.
   ipcMain.handle(
     CONNECTIONS.SYNC_GET_STATE,
     createValidatedHandler(
@@ -2211,7 +2213,9 @@ async function publishSelfBackend(): Promise<PublishSelfResult> {
   if (!info.localIps[0]) {
     throw new Error('publish-self failed: no routable local IP to publish');
   }
-  const record = await upsertSelfRecord({ ...info, port: info.port });
+  // Publishing is explicit user intent to sync this machine, so force-clear
+  // any per-backend exclusion on the record (mirrors clearing the marker).
+  const record = await upsertSelfRecord({ ...info, port: info.port }, { syncExcluded: false });
   await setStoredSelfFingerprint(info.certFingerprint);
   await setAutoPublishSuppressed(false);
   await broadcastConnectionsChanged();
@@ -2225,11 +2229,15 @@ async function publishSelfBackend(): Promise<PublishSelfResult> {
  * all local IPs, port = bound wsApi port, fingerprint = cert fingerprint,
  * token, detectHosts on). The store dedupes by fingerprint — a host/port
  * change collapses into the existing record with a fresh `updatedAt` — and
- * the mutation triggers the keychain reconcile push. Callers must have
- * validated `port` and `localIps[0]` as non-null.
+ * the mutation triggers the keychain reconcile push. `opts.syncExcluded`
+ * follows the store's tri-state: publish passes `false` (explicit intent to
+ * sync), refresh omits it so the store preserves an existing per-backend
+ * exclusion — a freshness re-upsert must never flip the user's opt-out.
+ * Callers must have validated `port` and `localIps[0]` as non-null.
  */
 async function upsertSelfRecord(
   info: SelfPairingInfo & { port: number },
+  opts: { syncExcluded?: boolean } = {},
 ): Promise<ConnectionRecord> {
   const host = info.localIps[0];
   const label = info.prettyHostname ?? info.hostname ?? `${host}:${info.port}`;
@@ -2240,6 +2248,7 @@ async function upsertSelfRecord(
     fingerprint: info.certFingerprint,
     token: info.token,
     detectHosts: true,
+    ...(opts.syncExcluded !== undefined ? { syncExcluded: opts.syncExcluded } : {}),
   });
   // Persist the full candidate-host list + the machine hostname on the
   // record, matching what post-connect refreshes capture for remotes.
@@ -2266,8 +2275,9 @@ async function upsertSelfRecord(
  * auto-publish" marker is set, while no published self entry exists, when the
  * app is pinned to a remote, or when the pairing info is unavailable/
  * incomplete (WSS off, no routable IP) it is a no-op (`refreshed: false`).
- * Unlike publish it NEVER sets or clears the suppression marker — refreshing
- * is not user intent to (re-)publish.
+ * Unlike publish it NEVER sets or clears the suppression marker, and its
+ * upsert omits `syncExcluded` so the store preserves a per-backend exclusion
+ * — refreshing is not user intent to (re-)publish or to sync.
  */
 async function refreshSelfBackend(): Promise<RefreshSelfResult> {
   if (await isAutoPublishSuppressed()) {
