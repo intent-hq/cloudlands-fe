@@ -890,7 +890,7 @@
   }
 
   .breakdown-stack:focus-within {
-    outline: 2px solid hsl(var(--ring));
+    outline: 2px solid hsl(var(--foreground));
     outline-offset: 2px;
   }
 
