@@ -39,7 +39,9 @@ export const selectTransferPlanError = store.createSelector(
  * backend bound to this renderer window (the source). Keyed on
  * `windowBackendId` — not the global persisted `activeId`, which can differ in
  * the multi-window model — so a remote window lists local plus the other
- * remotes, and a local window lists only remotes.
+ * remotes, and a local window lists only remotes. Must match the main-side
+ * source resolution: `transfer:start` resolves the source client from the
+ * invoking window via `getBackendClientForIpcEvent` (workspace-transfer.ipc.ts).
  */
 export const selectTransferTargetConnections = store.createSelector(
   (state): ConnectionRecord[] => {
