@@ -90,13 +90,46 @@ describe('registerBrowserExecReverseHandler', () => {
     );
     await flush();
 
-    expect(executor).toHaveBeenCalledWith([{ action: 'listTabs' }], 't-1', 'agent-1', 'ws-1');
+    expect(executor).toHaveBeenCalledWith([{ action: 'listTabs' }], 't-1', 'agent-1', 'ws-1', {
+      client,
+      backendId: 'local',
+      savedRemote: false,
+    });
     expect(socket.writes).toHaveLength(1);
     expect(JSON.parse(socket.writes[0])).toEqual({
       jsonrpc: '2.0',
       id: 'rev-1',
       result: envelope,
     });
+    client.dispose();
+  });
+
+  it('binds a background saved-remote reverse call to its originating client', async () => {
+    const { client, socket } = makeClient();
+    executor.mockResolvedValue({ success: true, results: [] });
+    registerBrowserExecReverseHandler(client, {
+      executor,
+      backendId: 'remote-loopback',
+      savedRemote: true,
+    });
+
+    socket.receive(
+      `${JSON.stringify({
+        jsonrpc: '2.0',
+        id: 'rev-remote',
+        method: BROWSER_EXEC_METHOD,
+        params: { actions: [{ action: 'openTab', url: 'http://localhost:8080' }] },
+      })}\n`,
+    );
+    await flush();
+
+    expect(executor).toHaveBeenCalledWith(
+      [{ action: 'openTab', url: 'http://localhost:8080' }],
+      undefined,
+      undefined,
+      undefined,
+      { client, backendId: 'remote-loopback', savedRemote: true },
+    );
     client.dispose();
   });
 

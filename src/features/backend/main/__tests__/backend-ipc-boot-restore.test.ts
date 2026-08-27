@@ -129,6 +129,27 @@ vi.mock('../connections-store', () => ({
   onConnectionsMutated: () => () => {},
 }));
 
+// Stateful local-prefs double so the persisted self fingerprint (self-entry
+// boot redirect) reads back what a test seeded.
+const localPrefs = vi.hoisted(() => {
+  const values = new Map<string, unknown>();
+  return {
+    values,
+    setLocalPref: vi.fn(async (key: string, value: unknown) => {
+      values.set(key, value);
+    }),
+    getLocalPref: vi.fn(async (key: string) => values.get(key)),
+    deleteLocalPref: vi.fn(async (key: string) => {
+      values.delete(key);
+    }),
+  };
+});
+vi.mock('../../../../main/local-prefs', () => ({
+  setLocalPref: localPrefs.setLocalPref,
+  getLocalPref: localPrefs.getLocalPref,
+  deleteLocalPref: localPrefs.deleteLocalPref,
+}));
+
 // ---------------------------------------------------------------------------
 // Fixtures
 // ---------------------------------------------------------------------------
@@ -177,6 +198,7 @@ beforeEach(() => {
   store.setActiveId.mockResolvedValue(undefined);
   store.getDecryptedToken.mockResolvedValue('secret-token');
   store.setHostname.mockResolvedValue(undefined);
+  localPrefs.values.clear();
 });
 
 afterEach(() => {
@@ -277,6 +299,59 @@ describe('reconcileActiveConnectionOnBoot — T19 restore', () => {
 
     expect(store.setActiveId).not.toHaveBeenCalled();
     expect(lifecycle.events.some((e) => e.type === 'construct')).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Self-entry boot redirect: a persisted activeId pointing at this machine's
+// OWN published (hidden) self entry resolves silently to local — that record
+// IS this daemon, so it must never be restored as a WSS "remote", and no
+// boot-fallback notice fires (nothing was unreachable).
+// ---------------------------------------------------------------------------
+
+describe('reconcileActiveConnectionOnBoot — hidden self entry resolves to local', () => {
+  it('redirects to local silently (no client build, no fallback notice)', async () => {
+    localPrefs.values.set('selfBackendFingerprint', 'AA:BB:CC:DD'); // matches REMOTE
+    const mod = await loadModule();
+
+    await mod.reconcileActiveConnectionOnBoot();
+
+    expect(store.setActiveId).toHaveBeenCalledWith('local');
+    expect(mod.__getBootFallbackNoticeForTesting()).toBeNull();
+    // No remote client was ever constructed — the redirect short-circuits.
+    expect(lifecycle.events.some((e) => e.type === 'construct')).toBe(false);
+  });
+
+  it('matches the self fingerprint case-insensitively', async () => {
+    localPrefs.values.set('selfBackendFingerprint', 'aa:bb:cc:dd');
+    const mod = await loadModule();
+
+    await mod.reconcileActiveConnectionOnBoot();
+
+    expect(store.setActiveId).toHaveBeenCalledWith('local');
+    expect(lifecycle.events.some((e) => e.type === 'construct')).toBe(false);
+  });
+
+  it('takes the normal restore path when the fingerprint does not match', async () => {
+    localPrefs.values.set('selfBackendFingerprint', '99:88:77:66');
+    boot.probe = 'resolve';
+    const mod = await loadModule();
+
+    await mod.reconcileActiveConnectionOnBoot();
+
+    // Restored the (genuinely remote) backend as usual.
+    expect(store.setActiveId).not.toHaveBeenCalledWith('local');
+    expect(lifecycle.events.filter((e) => e.type === 'construct')).toHaveLength(1);
+  });
+
+  it('takes the normal restore path when no self fingerprint is persisted', async () => {
+    boot.probe = 'resolve';
+    const mod = await loadModule();
+
+    await mod.reconcileActiveConnectionOnBoot();
+
+    expect(store.setActiveId).not.toHaveBeenCalledWith('local');
+    expect(lifecycle.events.filter((e) => e.type === 'construct')).toHaveLength(1);
   });
 });
 

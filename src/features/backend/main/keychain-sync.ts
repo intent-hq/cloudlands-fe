@@ -85,6 +85,18 @@ export function accountKeyFor(host: string, port: number): string {
   return `${host.trim().toLowerCase()}:${port}`;
 }
 
+/**
+ * Normalized cert-fingerprint identity key (trimmed, case-insensitive), or
+ * null when the record carries no usable fingerprint (legacy/blank). The
+ * fingerprint is the canonical MACHINE identity: accounts are still keyed by
+ * `host:port`, but reconcile pairs records across accounts by fingerprint so
+ * a machine whose address changed never appears twice.
+ */
+function fingerprintKeyOf(record: Pick<KeychainSyncRecord, 'fingerprint'>): string | null {
+  const key = record.fingerprint.trim().toUpperCase();
+  return key === '' ? null : key;
+}
+
 /** Serialize a record into the keychain payload string (token scrubbed on
  * tombstones so forgotten backends never keep a secret in the keychain). */
 export function serializeRecord(record: KeychainSyncRecord): string {
@@ -480,6 +492,18 @@ export interface ReconcileOptions {
  * whose keychain payload is unparseable or from a newer schema version are
  * frozen — neither pulled nor pushed over.
  *
+ * The cert fingerprint is the canonical MACHINE identity across accounts:
+ * a remote record with no same-account local counterpart but whose
+ * fingerprint matches a live local record under a DIFFERENT account (the
+ * machine's host:port changed) is paired with that record instead of being
+ * pulled as a duplicate. LWW still decides: a newer remote wins and the store
+ * collapses the old record by fingerprint; a newer local record survives and
+ * the stale remote account is tombstoned in the keychain (clock kept strictly
+ * older than the survivor's) so other machines drop the old address too. A
+ * fresh remote tombstone matching by fingerprint deletes the local record
+ * even under a new address (ties favor the delete). Fingerprint-less legacy
+ * records keep pure account-based semantics.
+ *
  * Keychain unavailable (missing helper, non-mac, unsigned build, locked
  * keychain) is a clean no-op: the local store is never touched and the result
  * carries the `unavailable` status. Individual push/purge failures after a
@@ -528,6 +552,46 @@ export async function reconcile(
     local.set(accountKeyFor(record.host, record.port), record);
   }
 
+  // Live local records indexed by canonical fingerprint identity, so a remote
+  // record sitting under a STALE account (the machine's host:port changed)
+  // pairs with the local record now living under the new account instead of
+  // being pulled back in as a resurrected duplicate.
+  const localLiveByFp = new Map<string, { account: string; record: KeychainSyncRecord }>();
+  for (const [account, record] of local) {
+    if (record.deleted === true) continue;
+    const fp = fingerprintKeyOf(record);
+    if (fp !== null && !localLiveByFp.has(fp)) localLiveByFp.set(fp, { account, record });
+  }
+  /** Local accounts consumed by a cross-account fingerprint pairing — their
+   * (now stale) snapshot must not be processed again under its own key. */
+  const consumedLocal = new Set<string>();
+
+  // Freshest unexpired tombstone per fingerprint, across BOTH sides and ALL
+  // accounts. An unpaired live remote must never be pulled past a fresher
+  // tombstone for the same machine sitting under a different account (or in
+  // the local store): the pull would resurrect a forgotten backend and its
+  // applyRemote would erase the very tombstone that was just honored.
+  const tombstoneByFp = new Map<string, KeychainSyncRecord>();
+  const noteTombstone = (record: KeychainSyncRecord): void => {
+    if (record.deleted !== true || isExpiredTombstone(record, now)) return;
+    const fp = fingerprintKeyOf(record);
+    if (fp === null) return;
+    const prev = tombstoneByFp.get(fp);
+    if (!prev || record.updatedAt > prev.updatedAt) tombstoneByFp.set(fp, record);
+  };
+  for (const record of remote.values()) noteTombstone(record);
+  for (const record of local.values()) noteTombstone(record);
+
+  /** Keychain accounts already overwritten with a convergence tombstone this
+   * pass — each stale account gets exactly ONE tombstone push even when
+   * several branches would cover it (iteration-order dependent). */
+  const tombstonedRemote = new Set<string>();
+  async function pushTombstone(account: string, record: KeychainSyncRecord): Promise<void> {
+    if (tombstonedRemote.has(account)) return;
+    tombstonedRemote.add(account);
+    await push(account, record);
+  }
+
   async function push(account: string, record: KeychainSyncRecord): Promise<void> {
     // Pre-sync records carry the epoch-old clock 0 (see listSyncRecords).
     // Stamp them at push time so the keychain never holds a zero-clock item:
@@ -563,16 +627,129 @@ export async function reconcile(
     }
     if (frozen.has(account)) continue;
     const r = remote.get(account);
-    const l = local.get(account);
+    // An account consumed by a cross-account fingerprint pairing is treated
+    // as locally absent: its snapshot is stale (the record was collapsed into
+    // another account) and must not be pushed or paired again.
+    const l = consumedLocal.has(account) ? undefined : local.get(account);
 
     if (r && !l) {
+      // Same machine, different account? Pair by cert fingerprint so a
+      // host:port change never resurrects the old address as a second record.
+      const fp = fingerprintKeyOf(r);
+      const match = fp !== null ? localLiveByFp.get(fp) : undefined;
+      const paired =
+        match !== undefined && match.account !== account && !consumedLocal.has(match.account);
+
       if (r.deleted === true) {
+        if (paired && !isExpiredTombstone(r, now)) {
+          // A fresh tombstone matches a live local record under a DIFFERENT
+          // account (the machine was forgotten elsewhere before/after its
+          // address changed here). LWW by updatedAt; on a tie the tombstone
+          // wins so every machine converges — an address change must not
+          // dodge a delete.
+          if (r.updatedAt >= match.record.updatedAt) {
+            await adapter.applyRemote(account, r);
+            result.deletedLocally.push(account);
+            consumedLocal.add(match.account);
+            localLiveByFp.delete(fp as string);
+            // Propagate the delete to the SURVIVING account too: without a
+            // tombstone there, machines holding the record under the new
+            // address keep it, and this machine pulls it right back on its
+            // next pass (the live keychain item would outlive this TTL).
+            // `r.updatedAt >= match.record.updatedAt` holds here and ties
+            // favor tombstones, so it wins everywhere.
+            await pushTombstone(match.account, {
+              ...match.record,
+              token: '',
+              deleted: true,
+              updatedAt: r.updatedAt,
+              deletedAt: now,
+            });
+          }
+          // Else the local record is newer (re-add/edit after the forget):
+          // it survives and pushes under its own account; the stale
+          // tombstone ages out via its TTL.
+          continue;
+        }
         // Nothing local to delete; just purge the tombstone once expired.
         if (isExpiredTombstone(r, now)) await purge(account);
-      } else {
-        await adapter.applyRemote(account, r);
-        result.pulled.push(account);
+        continue;
       }
+
+      if (paired) {
+        // Both live, same fingerprint, different accounts: one machine, two
+        // addresses. Strictly newer wins; an exact tie breaks by account key
+        // so every machine picks the same survivor.
+        const remoteWins =
+          r.updatedAt > match.record.updatedAt ||
+          (r.updatedAt === match.record.updatedAt && account > match.account);
+        if (remoteWins) {
+          // The remote account carries the machine's newer address/data:
+          // pull it — the store collapses the old record by fingerprint.
+          await adapter.applyRemote(account, r);
+          result.pulled.push(account);
+          consumedLocal.add(match.account);
+          localLiveByFp.set(fp as string, { account, record: r });
+          // If the LOSING account also sits live in the keychain (two stale
+          // accounts for one machine, already-iterated or not), tombstone it
+          // there too — consuming it locally alone leaves the live item
+          // surfacing duplicates on every other machine.
+          const staleRemote = remote.get(match.account);
+          if (staleRemote && staleRemote.deleted !== true) {
+            let staleClock = Math.min(staleRemote.updatedAt, r.updatedAt - 1);
+            if (staleClock === 0) staleClock = -1; // 0 would be re-stamped by push()
+            await pushTombstone(match.account, {
+              ...staleRemote,
+              token: '',
+              deleted: true,
+              updatedAt: staleClock,
+              deletedAt: now,
+            });
+          }
+        } else {
+          // The REMOTE account is the stale one. Never pull it back in;
+          // instead tombstone it in the keychain so other machines drop the
+          // old address too. The tombstone's clock is kept strictly older
+          // than the survivor's so it can never win over the live record
+          // (ties favor tombstones); `deletedAt: now` gives it a full TTL
+          // window to propagate. The survivor pushes under its own account.
+          let staleClock = Math.min(r.updatedAt, match.record.updatedAt - 1);
+          if (staleClock === 0) staleClock = -1; // 0 would be re-stamped by push()
+          await pushTombstone(account, {
+            ...r,
+            token: '',
+            deleted: true,
+            updatedAt: staleClock,
+            deletedAt: now,
+          });
+        }
+        continue;
+      }
+
+      // An unpaired live pull must still honor a fresher (or equal)
+      // unexpired tombstone for the same machine sitting under ANOTHER
+      // account or in the local store: pulling would resurrect a forgotten
+      // backend (and applyRemote's live path clears the very tombstone that
+      // was just honored). Skip the pull and tombstone this account too so
+      // every machine converges on the delete.
+      const shield = fp !== null ? tombstoneByFp.get(fp) : undefined;
+      if (shield && shield.updatedAt >= r.updatedAt) {
+        await pushTombstone(account, {
+          ...r,
+          token: '',
+          deleted: true,
+          updatedAt: shield.updatedAt,
+          deletedAt: now,
+        });
+        continue;
+      }
+
+      await adapter.applyRemote(account, r);
+      result.pulled.push(account);
+      // Register the pull as this machine's live record for the fingerprint
+      // so a second stale live account for the same machine pairs with it
+      // (and loses by LWW) instead of being pulled as a duplicate.
+      if (fp !== null) localLiveByFp.set(fp, { account, record: r });
       continue;
     }
 

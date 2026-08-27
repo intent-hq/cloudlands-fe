@@ -1,4 +1,5 @@
 import type { Note, NoteVersion, TaskStatus } from '$shared/types';
+import { isNoteContentStale } from '$shared/utils/note-content';
 import { createAction } from '@augmentcode/themis/utils/store/create-action';
 import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
 import {
@@ -215,9 +216,26 @@ workspaceNotesReducer.with(
   (state, { payload: [workspaceIds, notesByWorkspace] }) => {
     return workspaceIds.reduce((nextState, workspaceId) => {
       const workspaceState = getWorkspaceState(nextState, workspaceId);
+      // Slim-projection merge (§5.2): a slim row carries no content, so when
+      // the cache already holds the full body at the same rev, keep it — a
+      // re-list must never clobber loaded content. A slim row with a newer
+      // rev — or with either rev missing, since without both revs the cached
+      // body cannot be proven current — wins as-is: the stale marker makes
+      // content surfaces refetch on demand, which is safer than silently
+      // keeping a possibly-outdated body whose contentPreview/contentLength
+      // markers describe the new server content.
+      const merged = (notesByWorkspace[workspaceId] ?? []).map((note) => {
+        if (!isNoteContentStale(note)) return note;
+        const existing = getItem(workspaceState.notes, note.id);
+        if (!existing?.content) return note;
+        if (note.rev === undefined || existing.rev === undefined || note.rev > existing.rev) {
+          return note;
+        }
+        return { ...note, content: existing.content };
+      });
       return setWorkspaceState(nextState, workspaceId, {
         ...workspaceState,
-        notes: createCollection<Note, 'id'>('id', notesByWorkspace[workspaceId] ?? []),
+        notes: createCollection<Note, 'id'>('id', merged),
         loading: false,
         error: null,
         initialized: true,

@@ -268,12 +268,13 @@
   <!-- Outer wrapper animates width; the panel stays mounted while hidden so its
        children are not torn down and rebuilt on every open/close. -->
   <div
-    class="shrink-0 h-full overflow-clip [overflow-clip-margin:0.5rem]"
+    class="shrink-0 h-full overflow-clip"
     data-sidebar-panel
     data-panel-item={$panelItem$}
     data-panel-shell
     data-resizing={isResizing}
     style="width: {expanded ? liveWidth : 0}px;"
+    style:overflow-clip-margin={expanded ? '0.5rem' : '0px'}
     inert={!isOpen}
   >
     <div

@@ -1,5 +1,5 @@
 import type { SagaGenerator } from 'typed-redux-saga';
-import { all, call, put, race, take, takeEvery, takeLeading } from 'typed-redux-saga';
+import { all, call, put, race, take, takeEvery } from 'typed-redux-saga';
 
 import { isAgentDeletionPending } from '$features/agent/utils/pending-agent-deletions';
 import { reconcileGitStatusChanges } from '$features/file-tracking/git-status-reconciliation';
@@ -583,7 +583,12 @@ export function* lifecycleReadSaga(): SagaGenerator<void> {
   const scheduler = createWorkspaceReadScheduler();
   try {
     yield* all([
-      takeLeading(loadWorkspacesRequested, loadWorkspacesWorker),
+      // Single-flight + trailing coalesce (AGENTS.md "Event-driven refetches"):
+      // the daemon-events bridge dispatches this on workspace:created for IDs
+      // unknown to the collection, so a create arriving while a list read is
+      // in flight must queue one trailing refetch — takeLeading would drop it
+      // and the fetched snapshot could predate the create.
+      takeSingleFlightInContext(loadWorkspacesRequested, () => 'workspaces', loadWorkspacesWorker),
       takeSingleFlightInContext(
         [ensureWorkspaceTasksLoaded, loadWorkspaceTasksRequested, workspaceUnmounted],
         (action) => tasksReadContext(pendingForcedTaskReads, action),

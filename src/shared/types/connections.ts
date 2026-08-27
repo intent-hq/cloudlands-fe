@@ -86,6 +86,14 @@ export interface ConnectionRecord {
    * the UI then falls back to `host:port`. Never set for the local entry.
    */
   hostname?: string | null;
+  /**
+   * Per-backend keychain-sync exclusion (spec Phase 2): `true` when the user
+   * opted this backend out of iCloud sync at add time, making the record
+   * local-only (never pushed to the keychain, never touched by pulls).
+   * Optional so pre-existing fixtures/records remain valid — absent is
+   * equivalent to `false` (synced). Never set for the local entry.
+   */
+  syncExcluded?: boolean;
   /** True for the synthesized local sidecar entry. */
   isLocal: boolean;
 }
@@ -161,6 +169,13 @@ export interface AddConnectionParams {
    * the user-entered host is ever stored (single-host behavior).
    */
   detectHosts?: boolean;
+  /**
+   * Per-backend keychain-sync opt-out (spec Phase 2): `true` when the user
+   * unchecked "Save to iCloud" at add time, storing the record local-only
+   * (never pushed to the keychain, never touched by pulls). Absent = `false`
+   * (synced).
+   */
+  syncExcluded?: boolean;
 }
 
 /** `connections:add` result: the stored, token-free record. */
@@ -327,7 +342,7 @@ export type KeychainSyncUiStatus =
 export interface KeychainSyncStateResult {
   /** True only on macOS — elsewhere the toggle renders disabled. */
   supported: boolean;
-  /** The opt-in local pref (per-machine, default OFF). */
+  /** The opt-out local pref (per-machine; absent = ON on macOS, explicit false = OFF). */
   enabled: boolean;
   /** Last completed reconcile's availability; null before the first run. */
   status: KeychainSyncUiStatus | null;
@@ -336,4 +351,61 @@ export interface KeychainSyncStateResult {
 /** Params for `connections:sync-set-enabled`. */
 export interface SetKeychainSyncEnabledParams {
   enabled: boolean;
+}
+
+// ============================================================================
+// Self-publish (publish THIS machine's backend to the synced registry)
+// ============================================================================
+
+/**
+ * `connections:publish-self` result. Main queries `server.pairingInfo` over
+ * the LOCAL client itself, builds the record (label = hostname, host = first
+ * local IP, port = bound wsApi port, fingerprint = cert fingerprint, token —
+ * main-only), and upserts it into the connections store; the store→keychain
+ * reconcile then pushes it to the user's other devices. The bearer token
+ * never appears here — only the stored, token-free record.
+ */
+export interface PublishSelfResult {
+  /** The created/updated token-free record for this machine's backend. */
+  connection: ConnectionRecord;
+}
+
+/**
+ * `connections:self-published-state` result — gates the publish/removal
+ * modals and the explicit re-publish button (spec "Decisions").
+ */
+export interface SelfPublishedStateResult {
+  /**
+   * Whether a self entry currently exists in the connections store: a record
+   * whose fingerprint matches the persisted self fingerprint or the live
+   * local daemon's cert fingerprint.
+   */
+  published: boolean;
+  /**
+   * Whether auto-publish offers are suppressed: the persistent "do not
+   * auto-publish" marker set when this machine's entry was forgotten
+   * elsewhere (tombstone honored) or unpublished locally. Cleared only by an
+   * explicit `connections:publish-self`.
+   */
+  suppressed: boolean;
+  /**
+   * The stored self entry's record id when `published` is true (the removal
+   * modal forgets it through the standard `connections:forget` path); null
+   * when no self entry exists.
+   */
+  selfConnectionId: string | null;
+}
+
+/**
+ * `connections:refresh-self` result. Fired after a local change to the
+ * published self entry's fields (token rotation, WSS port change) so the
+ * stored record — and via keychain sync, the user's other devices — picks up
+ * the new values. `refreshed` is `false` when the refresh was a no-op: no
+ * published self entry exists, the "do not auto-publish" marker is set, the
+ * app is pinned to a remote, or the local pairing info is unavailable. The
+ * refresh never sets or clears the suppression marker.
+ */
+export interface RefreshSelfResult {
+  /** Whether the stored self entry was actually re-upserted. */
+  refreshed: boolean;
 }

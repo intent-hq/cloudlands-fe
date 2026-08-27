@@ -278,11 +278,11 @@
     'blocked',
     'needs_attention',
     'idle',
-    'in_progress',
-    'pr_ready',
-    'pr_open',
     'not_started',
+    'in_progress',
     'complete',
+    'pr_open',
+    'pr_ready',
     'pr_merged',
   ];
 

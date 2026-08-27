@@ -414,6 +414,31 @@ describe('MonitoredPrsRow', () => {
     expect(card.textContent).not.toContain('blocked by blocked by');
   });
 
+  it('shows queued to merge when the open snapshot is in the merge queue', async () => {
+    // The default fixture carries a pending-required-checks blocker — the
+    // queued status takes precedence over the blocker/unknown fallthrough.
+    monitorsState.monitors = [
+      makeMonitor({
+        lastSnapshot: { ...makeMonitor().lastSnapshot!, isInMergeQueue: true },
+      }),
+    ];
+    render(MonitoredPrsRow, { props: { workspaceId: 'ws-1', agentId: 'agent-1' } });
+
+    const card = await openDetails();
+    expect(card.textContent).toContain('Open; queued to merge.');
+    expect(card.textContent).not.toContain('Open, but blocked by');
+    expect(card.textContent).not.toContain('still being checked');
+  });
+
+  it('renders the pre-existing readiness statuses when isInMergeQueue is absent', async () => {
+    monitorsState.monitors = [makeMonitor()];
+    render(MonitoredPrsRow, { props: { workspaceId: 'ws-1', agentId: 'agent-1' } });
+
+    const card = await openDetails();
+    expect(card.textContent).toContain('Open, but blocked by required checks still running.');
+    expect(card.textContent).not.toContain('queued to merge');
+  });
+
   it('uses the custom kebab before the disclosure and keeps their actions isolated', async () => {
     monitorsState.monitors = [makeMonitor()];
     render(MonitoredPrsRow, { props: { workspaceId: 'ws-1', agentId: 'agent-1' } });

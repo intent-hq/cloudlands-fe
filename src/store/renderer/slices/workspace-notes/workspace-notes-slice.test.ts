@@ -89,6 +89,90 @@ describe("workspaceNotesReducer", () => {
     });
   });
 
+  it("keeps cached full content when a slim re-list row (same rev) arrives without content", () => {
+    const full = mockNote("note-1", WS_1, { content: "Full body", rev: 3 });
+    const slim = mockNote("note-1", WS_1, {
+      content: "",
+      contentPreview: "Full bo",
+      contentLength: 9,
+      rev: 3,
+    });
+    const seeded = workspaceNotesReducer(
+      initialState,
+      loadWorkspaceNotesSucceeded([WS_1], { [WS_1]: [full] })
+    );
+    const relisted = workspaceNotesReducer(
+      seeded,
+      loadWorkspaceNotesSucceeded([WS_1], { [WS_1]: [slim] })
+    );
+
+    const merged = getItem(relisted.byWorkspaceId[WS_1].notes, "note-1" as Note["id"]);
+    expect(merged?.content).toBe("Full body");
+    expect(merged?.contentPreview).toBe("Full bo");
+  });
+
+  it("lets a slim row with a strictly newer rev replace outdated cached content", () => {
+    const full = mockNote("note-1", WS_1, { content: "Old body", rev: 3 });
+    const slim = mockNote("note-1", WS_1, {
+      content: "",
+      contentPreview: "New bo",
+      contentLength: 8,
+      rev: 4,
+    });
+    const seeded = workspaceNotesReducer(
+      initialState,
+      loadWorkspaceNotesSucceeded([WS_1], { [WS_1]: [full] })
+    );
+    const relisted = workspaceNotesReducer(
+      seeded,
+      loadWorkspaceNotesSucceeded([WS_1], { [WS_1]: [slim] })
+    );
+
+    const merged = getItem(relisted.byWorkspaceId[WS_1].notes, "note-1" as Note["id"]);
+    expect(merged?.content).toBe("");
+    expect(merged?.contentLength).toBe(8);
+  });
+
+  it("lets a slim row win when either rev is missing (cached body cannot be proven current)", () => {
+    const full = mockNote("note-1", WS_1, { content: "Cached body", rev: 3 });
+    const revlessSlim = mockNote("note-1", WS_1, {
+      content: "",
+      contentPreview: "New bo",
+      contentLength: 8,
+      rev: undefined,
+    });
+    const seeded = workspaceNotesReducer(
+      initialState,
+      loadWorkspaceNotesSucceeded([WS_1], { [WS_1]: [full] })
+    );
+    const relisted = workspaceNotesReducer(
+      seeded,
+      loadWorkspaceNotesSucceeded([WS_1], { [WS_1]: [revlessSlim] })
+    );
+
+    // The stale marker stays intact so content surfaces refetch on demand,
+    // instead of grafting a possibly-outdated body under new preview markers.
+    const merged = getItem(relisted.byWorkspaceId[WS_1].notes, "note-1" as Note["id"]);
+    expect(merged?.content).toBe("");
+    expect(merged?.contentLength).toBe(8);
+  });
+
+  it("stores slim rows as-is when nothing is cached for the note", () => {
+    const slim = mockNote("note-new", WS_1, {
+      content: "",
+      contentPreview: "Preview",
+      contentLength: 42,
+    });
+    const state = workspaceNotesReducer(
+      initialState,
+      loadWorkspaceNotesSucceeded([WS_1], { [WS_1]: [slim] })
+    );
+
+    const stored = getItem(state.byWorkspaceId[WS_1].notes, "note-new" as Note["id"]);
+    expect(stored?.content).toBe("");
+    expect(stored?.contentLength).toBe(42);
+  });
+
   it("bumps notesVersion on loadWorkspaceNotesSucceeded so mount-time hydration ticks version-gated selectors", () => {
     const first = workspaceNotesReducer(
       initialState,

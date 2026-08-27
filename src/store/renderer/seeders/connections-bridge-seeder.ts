@@ -33,6 +33,9 @@ import type {
   ConnectionBootFallbackEvent,
   KeychainSyncStateResult,
   SetKeychainSyncEnabledParams,
+  PublishSelfResult,
+  RefreshSelfResult,
+  SelfPublishedStateResult,
 } from '$shared/types/connections';
 
 /** The always-present, non-forgettable local sidecar entry. */
@@ -76,6 +79,8 @@ registerMockIpcHandler(CONNECTION_CHANNELS.ADD, async (arg): Promise<AddConnecti
     host: params.host,
     port: params.port,
     fingerprint: params.fingerprint,
+    // Mirrors the store's normalization: always a boolean on stored records.
+    syncExcluded: params.syncExcluded === true,
     isLocal: false,
   };
   connections = [...connections.filter((c) => c.id !== connection.id), connection];
@@ -134,3 +139,36 @@ registerMockIpcHandler(
     return keychainSyncState();
   },
 );
+
+// Self-publish (publish THIS machine's backend to the synced registry). The
+// mock environment has no local daemon / keychain, so the state reads as
+// never-published and publish round-trips a synthetic self record in memory.
+let selfPublished = false;
+
+registerMockIpcHandler(
+  CONNECTION_CHANNELS.SELF_PUBLISHED_STATE,
+  async (): Promise<SelfPublishedStateResult> => {
+    return {
+      published: selfPublished,
+      suppressed: false,
+      selfConnectionId: selfPublished ? 'mock-self' : null,
+    };
+  },
+);
+
+registerMockIpcHandler(CONNECTION_CHANNELS.PUBLISH_SELF, async (): Promise<PublishSelfResult> => {
+  selfPublished = true;
+  const connection: ConnectionRecord = {
+    id: 'mock-self',
+    label: 'This machine',
+    host: '127.0.0.1',
+    port: 5181,
+    fingerprint: null,
+    isLocal: false,
+  };
+  return { connection };
+});
+
+registerMockIpcHandler(CONNECTION_CHANNELS.REFRESH_SELF, async (): Promise<RefreshSelfResult> => {
+  return { refreshed: selfPublished };
+});

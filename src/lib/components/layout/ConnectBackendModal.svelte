@@ -9,12 +9,24 @@
    *      connection (`addConnectionRequested`, which encrypts the token in main)
    *      and open a window for it (`openConnectionRequested`).
    *
+   * On macOS a "Save to iCloud" checkbox (default checked) controls whether the
+   * stored record syncs via iCloud Keychain. Unchecking adds the connection with
+   * `syncExcluded: true` (local-only). Keeping it checked while keychain sync is
+   * explicitly disabled inserts a `syncConfirm` step before the add: confirming
+   * adds the backend first, then enables machine-global sync
+   * (`setKeychainSyncEnabledRequested`) — so a failed add leaves no
+   * machine-global side effect; declining still adds, just excluded from sync.
+   * The step keeps a Back button so a failing add can be corrected on the
+   * details step without losing entered values.
+   *
    * The list/active refresh arrives via the `connections:changed` push handled
    * by the connections service — this modal only drives the add/open actions
    * and surfaces inline errors.
    */
 
   import { Button } from '$lib/components/ui/button';
+  import { Checkbox } from '$lib/components/ui/checkbox';
+  import { Label } from '$lib/components/ui/label';
   import Fa from 'svelte-fa';
   import { faXmark } from '@fortawesome/free-solid-svg-icons';
   import { m } from '$shared/paraglide/messages.js';
@@ -24,7 +36,10 @@
     captureFingerprintRequested,
     addConnectionRequested,
     openConnectionRequested,
+    loadKeychainSyncStateRequested,
+    setKeychainSyncEnabledRequested,
   } from '$store/renderer/slices/connections/connections-slice';
+  import { selectKeychainSyncState } from '$store/renderer/slices/connections/connections-selectors';
 
   interface Props {
     open?: boolean;
@@ -40,7 +55,7 @@
 
   let { open = $bindable(false), prefillHost = null, prefillPort = null }: Props = $props();
 
-  type Step = 'details' | 'confirm';
+  type Step = 'details' | 'confirm' | 'syncConfirm';
 
   // The WSS default port (`server.wsApi.port`, PROTOCOL §1.1). Prefilled as a
   // sensible default; the field stays editable for operators who reconfigured it.
@@ -60,10 +75,25 @@
   let port = $state(DEFAULT_WS_PORT);
   let token = $state('');
   let detectHosts = $state(true);
+  let saveToICloud = $state(true);
   let fingerprint = $state('');
   let busy = $state(false);
   let error = $state<string | null>(null);
   let firstInput: HTMLInputElement | null = $state(null);
+
+  // Keychain sync state gates the iCloud checkbox: `supported` is the platform
+  // gate (macOS only), `enabled` decides whether the syncConfirm step is needed.
+  // While the async state load is pending (or failed), fall back to a
+  // synchronous platform check so the consent checkbox renders on macOS even
+  // when the user outraces the load — otherwise the add would proceed with the
+  // synced default behind a checkbox the user never saw. The loaded state wins
+  // once present.
+  const platformIsMac =
+    typeof window !== 'undefined' &&
+    (window as { electronAPI?: { platform?: string } }).electronAPI?.platform === 'darwin';
+  const syncState$ = selectKeychainSyncState();
+  const syncSupported = $derived($syncState$?.supported ?? platformIsMac);
+  const syncEnabled = $derived($syncState$?.enabled ?? false);
 
   const portNumber = $derived(Number(port.trim()));
   const canSubmitDetails = $derived(
@@ -81,6 +111,7 @@
     port = DEFAULT_WS_PORT;
     token = '';
     detectHosts = true;
+    saveToICloud = true;
     fingerprint = '';
     busy = false;
     error = null;
@@ -127,6 +158,18 @@
   }
 
   async function handleConfirm() {
+    // Sync explicitly off but the box kept: enabling iCloud sync is
+    // machine-global, so ask first instead of flipping it silently. Both
+    // answers still add the backend (decline just excludes it from sync).
+    if (syncSupported && !syncEnabled && saveToICloud) {
+      error = null;
+      step = 'syncConfirm';
+      return;
+    }
+    await storeAndOpen(syncSupported && !saveToICloud);
+  }
+
+  async function storeAndOpen(syncExcluded: boolean, opts: { enableSyncAfterAdd?: boolean } = {}) {
     busy = true;
     error = null;
     const trimmedHost = host.trim();
@@ -138,9 +181,18 @@
         fingerprint,
         token: token.trim(),
         detectHosts,
+        ...(syncExcluded ? { syncExcluded: true } : {}),
       });
       appStore.dispatch(addAction);
       const { connection } = await addAction.promise;
+      if (opts.enableSyncAfterAdd) {
+        // Enable machine-global sync only once the add succeeded, so a failed
+        // add (bad token, WSS off on the target) leaves no machine-global
+        // side effect. A retry re-runs the add as an idempotent upsert.
+        const syncAction = setKeychainSyncEnabledRequested(true);
+        appStore.dispatch(syncAction);
+        await syncAction.promise;
+      }
       const openAction = openConnectionRequested(connection.id);
       appStore.dispatch(openAction);
       await openAction.promise;
@@ -149,6 +201,14 @@
       error = toMessage(e);
       busy = false;
     }
+  }
+
+  async function handleEnableSyncAndAdd() {
+    await storeAndOpen(false, { enableSyncAfterAdd: true });
+  }
+
+  async function handleDeclineSync() {
+    await storeAndOpen(true);
   }
 
   function back() {
@@ -188,6 +248,12 @@
     if (justOpened) {
       if (prefillHost && host === '') host = prefillHost;
       if (prefillPort != null && port === DEFAULT_WS_PORT) port = String(prefillPort);
+      // Refresh the keychain sync state so the iCloud checkbox gate is current
+      // even when settings never loaded it. A failed load leaves the state
+      // null → the checkbox stays hidden and the add proceeds normally.
+      const loadAction = loadKeychainSyncStateRequested();
+      appStore.dispatch(loadAction);
+      loadAction.promise.catch(() => {});
     }
   });
 </script>
@@ -284,6 +350,18 @@
             <p class="text-xs text-subtle">{m.modals_connect_detectHosts_description()}</p>
           </div>
 
+          {#if syncSupported}
+            <div class="space-y-1">
+              <div class="flex items-center gap-2">
+                <Checkbox id="connect-save-to-icloud" bind:checked={saveToICloud} />
+                <Label for="connect-save-to-icloud" class="text-sm font-normal"
+                  >{m.modals_connect_saveToICloud_label()}</Label
+                >
+              </div>
+              <p class="text-xs text-subtle">{m.modals_connect_saveToICloud_description()}</p>
+            </div>
+          {/if}
+
           <p class="text-xs text-subtle">{m.modals_connect_whereToFind_help()}</p>
           <p class="text-xs text-subtle">
             {m.modals_connect_headless_before()}
@@ -294,13 +372,15 @@
             >
             {m.modals_connect_headless_after()}
           </p>
-        {:else}
+        {:else if step === 'confirm'}
           <p class="text-sm text-subtle">{m.modals_connect_confirmStep_description()}</p>
           <div class="space-y-1">
             <span class="text-xs text-subtle">{m.modals_connect_fingerprint_label()}</span>
             <!-- i18n-ignore (cert fingerprint hex, not translatable copy) -->
             <p class="font-mono text-xs break-all bg-muted/50 rounded p-2">{fingerprint}</p>
           </div>
+        {:else}
+          <p class="text-sm text-subtle">{m.modals_connect_enableSync_description()}</p>
         {/if}
 
         {#if error}
@@ -315,12 +395,22 @@
           <Button variant="default" onclick={handleCapture} disabled={!canSubmitDetails}>
             {busy ? m.modals_connect_connecting_label() : m.modals_connect_continue_label()}
           </Button>
-        {:else}
+        {:else if step === 'confirm'}
           <Button variant="ghost" onclick={back} disabled={busy}
             >{m.modals_connect_back_label()}</Button
           >
           <Button variant="default" onclick={handleConfirm} disabled={busy}>
             {busy ? m.modals_connect_connecting_label() : m.modals_connect_confirm_label()}
+          </Button>
+        {:else}
+          <Button variant="ghost" onclick={back} disabled={busy}
+            >{m.modals_connect_back_label()}</Button
+          >
+          <Button variant="ghost" onclick={handleDeclineSync} disabled={busy}>
+            {m.modals_connect_enableSync_decline_label()}
+          </Button>
+          <Button variant="default" onclick={handleEnableSyncAndAdd} disabled={busy}>
+            {busy ? m.modals_connect_connecting_label() : m.modals_connect_enableSync_confirm_label()}
           </Button>
         {/if}
       </div>

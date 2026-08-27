@@ -3,8 +3,6 @@
   import { faPlus, faRotateLeft, faTrash, faPencil } from '@fortawesome/free-solid-svg-icons';
 
   import {
-    selectDefaultReasoningEffort,
-    selectModelDisplayName,
     selectModelEffortLevels,
     selectSelectedModel,
   } from '$store/renderer/slices/model/model-selectors';
@@ -30,12 +28,6 @@
     saveFileSpecialist,
   } from '$store/renderer/slices/specialists/specialists-slice';
   import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
-  import { selectActiveProviderId } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
-  import { setActiveProvider } from '$store/renderer/slices/provider-settings/provider-settings-slice';
-  import {
-    reloadModelsForProvider,
-    setDefaultReasoningEffort,
-  } from '$store/renderer/slices/model/model-slice';
   import Button from '$lib/components/ui/button/button.svelte';
   import Input from '$lib/components/ui/input/input.svelte';
   import OpenComboButton from '$features/external-editors/components/OpenComboButton.svelte';
@@ -44,6 +36,7 @@
   import type { AIBehaviorView } from './AIBehaviorSidebar.svelte';
 
   import ModelPicker from '$lib/components/chat/input/ModelPicker.svelte';
+  import DefaultAgentModelSettings from './DefaultAgentModelSettings.svelte';
   import SpecialistModelOptions from './SpecialistModelOptions.svelte';
   import {
     hasExplicitModelPin,
@@ -78,8 +71,6 @@
   const specialists = selectSpecialists();
   const fileSpecialists$ = selectFileSpecialists();
   const selectedModel = selectSelectedModel();
-  const defaultReasoningEffort$ = selectDefaultReasoningEffort();
-  const activeProviderId$ = selectActiveProviderId();
   const defaultProviderId$ = selectEffectiveDefaultProviderId();
   const routeWorkspaceContext = getWorkspaceRouteContext();
   const routeWorkspaceId = $derived(
@@ -216,37 +207,6 @@
       );
     }
   });
-
-  function handleGlobalModelChange(compoundModelId: string) {
-    if (!compoundModelId) return;
-    const { providerId, modelId } = parseCompoundModelId(compoundModelId);
-    // The default effort is paired with the default model — drop a level the
-    // newly picked model does not advertise instead of leaving an unsupported
-    // level persisted. Decided BEFORE the provider switch below, because
-    // `reloadModelsForProvider` empties `availableModels` until the new
-    // catalog lands and every lookup would then miss. A model the loaded
-    // catalog does not know (a cross-provider pick) is inconclusive, not
-    // "no levels" — keep the level instead of clearing it blindly.
-    const current = $defaultReasoningEffort$;
-    const isKnownModel =
-      selectModelDisplayName.select(appStore.state, providerId, modelId) !== undefined;
-    if (current && isKnownModel && !effortForModel(compoundModelId, current)) {
-      appStore.dispatch(setDefaultReasoningEffort(''));
-    }
-    if (providerId && providerId !== $activeProviderId$) {
-      appStore.dispatch(setActiveProvider(providerId));
-      appStore.dispatch(reloadModelsForProvider());
-    }
-  }
-
-  /**
-   * Persist the default effort level paired with the default model
-   * (`model.defaultReasoningEffort`). Default (undefined) writes '' so the
-   * daemon reads it as unset.
-   */
-  function handleDefaultEffortChange(effort: string | null) {
-    appStore.dispatch(setDefaultReasoningEffort(effort ?? ''));
-  }
 
   /**
    * Drop an effort level the given model does not advertise, so switching to
@@ -721,36 +681,14 @@
         data-testid="all-agents-prompt-column"
         class="min-h-0 min-w-0 h-full xl:flex xl:flex-col"
       >
-        <AgentRulesEditor
-          title={m.settings_aiBehavior_sidebar_allAgents()}
-          showDescription={false}
-          class="xl:min-h-0 xl:flex-1"
-        />
+        <AgentRulesEditor class="xl:min-h-0 xl:flex-1" />
       </div>
 
-      <div data-testid="all-agents-defaults-column" class="flex min-w-0 flex-col gap-6 xl:pt-8">
+      <div data-testid="all-agents-defaults-column" class="flex min-w-0 flex-col gap-6">
         <p class="text-sm text-muted-foreground">
           {m.settings_agentRules_description()}
         </p>
-        <div
-          data-testid="all-agents-default-model-row"
-          class="flex min-w-0 flex-wrap items-center gap-3"
-        >
-          <span class="text-sm font-medium text-foreground shrink-0">
-            {m.settings_aiBehavior_defaultModel_label()}
-          </span>
-          <ModelPicker
-            selectedModel={$selectedModel}
-            onModelChange={handleGlobalModelChange}
-            showDefaultOption={false}
-            variant="default"
-            size="sm"
-            updateGlobalDefault
-            showReasoning
-            reasoningEffort={$defaultReasoningEffort$ || null}
-            onReasoningChange={handleDefaultEffortChange}
-          />
-        </div>
+        <DefaultAgentModelSettings testId="all-agents-default-model-row" />
         {#if anySpecialistHasExplicitModel}
           <button
             type="button"

@@ -111,7 +111,10 @@
  * if the created ID still has local agent/chat state (the delete event was
  * missed or never delivered), the bridge purges it the same way and then
  * dispatches `hydrateAgentsRequested` so the store converges on the daemon's
- * canonical agent list for the new workspace.
+ * canonical agent list for the new workspace. A created ID unknown to the
+ * workspace collection (created by another client on the same daemon)
+ * dispatches `loadWorkspacesRequested` so the open window refetches the list
+ * and shows the new row without a reload (intent-hq/monorepo#3558).
  *
  * Fan-out scoping: the daemon emits one `events.event` notification per
  * matching subscription on the socket (PROTOCOL §6.3 / intent-transport
@@ -194,6 +197,7 @@ import { refreshRequested } from '$store/renderer/slices/changes/changes-slice';
 import {
   bulkUpdateWorkspaceEntities,
   clearWorkspacePendingDeletion,
+  loadWorkspacesRequested,
   markWorkspacePendingDeletion,
   removeWorkspaceEntity,
   updateWorkspaceEntity,
@@ -1626,7 +1630,8 @@ function handleAgentLastMessageEvent(event: WorkspaceEvent): void {
         hasUnread: deriveAgentHasUnread({
           lastMessageRole: updates.lastMessageRole ?? session.lastMessageRole,
           lastMessageId: updates.lastMessageId ?? session.lastMessageId,
-          metadata: session.metadata as { lastSeenMessageId?: string } | undefined,
+          isBackground: session.isBackground,
+          metadata: session.metadata,
         }),
       }),
     );
@@ -2017,8 +2022,8 @@ function handleAttentionRequestedEvent(event: WorkspaceEvent, workspaceId: strin
  * `note:*` (§7 workspace-scoped) carries `{ noteId, path, action, ... }` — the
  * daemon-authoritative "something changed" ping (PROTOCOL §7 note events do
  * NOT embed the full note body). The handler routes to `applyNoteFromEvent`,
- * which fetches the fresh note via `notes.list(workspaceId)` on
- * `note:created`/`note:updated` and dispatches the matching `applyNote*`
+ * which fetches the fresh note via a targeted `notes.get(noteId, workspaceId)`
+ * on `note:created`/`note:updated` and dispatches the matching `applyNote*`
  * action, or dispatches `applyNoteDeleted` immediately on `note:deleted`.
  *
  * Task notes are plain notes (task state lives in note metadata), so these
@@ -2610,10 +2615,19 @@ function collectOwnedTabAgentIds(workspaceId: string): Set<string> {
  * agent/chat state under that ID (e.g. the `workspace:deleted` event was
  * missed), purge it exactly like a delete would, then dispatch
  * `hydrateAgentsRequested` so the lifecycle-read-service refetches the
- * daemon's canonical agent list for the new workspace. A create for an ID
- * with no local state is a no-op here (mount-time hydration covers it).
+ * daemon's canonical agent list for the new workspace.
  * Either way, lift any deletion tombstone first: a recycled ID must not stay
  * blocked from the store for the remainder of the post-delete grace window.
+ *
+ * Unknown-ID convergence: when the created ID is absent from the workspace
+ * collection (created/imported by ANOTHER client on the same daemon — the
+ * originating window seeds its own entity from the `workspace.create`
+ * response), dispatch `loadWorkspacesRequested` so the already-open window
+ * refetches the list and the new row appears without a reload. The event
+ * payload is not used as the row source — `workspace.list` stays the single
+ * canonical shape. The lifecycle-read-saga services the action single-flight
+ * with trailing coalesce, so a create arriving mid-fetch queues one follow-up
+ * refetch instead of being dropped.
  */
 function handleWorkspaceCreatedEvent(workspaceId: string): void {
   const tombstoneTimer = workspaceDeleteTombstoneTimers.get(workspaceId);
@@ -2625,7 +2639,18 @@ function handleWorkspaceCreatedEvent(workspaceId: string): void {
   const state = appStore.state as {
     agentSessions?: { agentIdsByWorkspace: Record<string, string[]> };
     workspaceAgents?: { byWorkspaceId: Record<string, unknown> };
+    workspace?: {
+      workspaces: { ids: string[] };
+      pendingCreations: Record<string, unknown>;
+    };
   };
+  const isKnownWorkspace =
+    state.workspace === undefined ||
+    state.workspace.workspaces.ids.includes(workspaceId) ||
+    state.workspace.pendingCreations[workspaceId] !== undefined;
+  if (!isKnownWorkspace) {
+    appStore.dispatch(loadWorkspacesRequested());
+  }
   const agentIds = state.agentSessions?.agentIdsByWorkspace[workspaceId] ?? [];
   const hasLocalState =
     agentIds.length > 0 || state.workspaceAgents?.byWorkspaceId[workspaceId] !== undefined;

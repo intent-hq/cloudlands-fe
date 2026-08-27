@@ -71,8 +71,17 @@ import {
   type KeychainSyncLifecycle,
 } from './keychain-sync-lifecycle';
 import { setLocalPref } from '../../../main/local-prefs';
+import {
+  extractSelfPairingInfo,
+  getStoredSelfFingerprint,
+  isAutoPublishSuppressed,
+  normalizeFingerprint,
+  setAutoPublishSuppressed,
+  setStoredSelfFingerprint,
+  type SelfPairingInfo,
+} from './self-publish';
 import { registerBrowserExecReverseHandler } from '../../browser/main/browser-exec-reverse';
-import { LOCAL_CONNECTION_ID } from '../../../shared/types/connections';
+import { LOCAL_CONNECTION_ID, type ConnectionRecord } from '../../../shared/types/connections';
 import type {
   AddConnectionResult,
   CaptureFingerprintResult,
@@ -85,6 +94,9 @@ import type {
   ForgetConnectionResult,
   KeychainSyncStateResult,
   OpenConnectionResult,
+  PublishSelfResult,
+  RefreshSelfResult,
+  SelfPublishedStateResult,
   SwitchConnectionResult,
 } from '../../../shared/types/connections';
 import { compareProtocolMajor } from './protocol-compat';
@@ -94,6 +106,9 @@ import {
   ConnectionsForgetSchema,
   ConnectionsListSchema,
   ConnectionsOpenSchema,
+  ConnectionsPublishSelfSchema,
+  ConnectionsRefreshSelfSchema,
+  ConnectionsSelfPublishedStateSchema,
   ConnectionsSwitchSchema,
   ConnectionsSyncGetStateSchema,
   ConnectionsSyncSetEnabledSchema,
@@ -109,6 +124,9 @@ let client: JsonRpcClient | null = null;
 const backendClients = new Map<string, JsonRpcClient>();
 const backendClientConnects = new Map<string, Promise<JsonRpcClient>>();
 let handlersRegistered = false;
+
+/** Main-process lifecycle signal for services caching state by pooled client. */
+export const BACKEND_CLIENT_DISCONNECTED_EVENT = 'backend-client-disconnected';
 
 /**
  * Lazily-read intentd.version pin, injected into every transport payload so
@@ -652,6 +670,8 @@ export function getBackendClient(): JsonRpcClient {
   // this same client so the wire payload stays small (GAP-2b).
   registerBrowserExecReverseHandler(instance, {
     saveAsset: (params) => instance.request<{ url?: string } | undefined>('note.saveAsset', params),
+    backendId: connectionId,
+    savedRemote: connectionId !== LOCAL_CONNECTION_ID,
   });
   client = instance;
   backendClients.set(connectionId, instance);
@@ -721,6 +741,7 @@ export function disconnectBackendClient(id: string): void {
   backendClients.delete(id);
   disposeTransferConnectionsForBackend(id);
   void cancelInflightHostExecStreamsForBackendSwitch(instance);
+  app.emit(BACKEND_CLIENT_DISCONNECTED_EVENT, instance);
   instance.dispose();
 }
 
@@ -778,6 +799,8 @@ function createAdditionalBackendClient(id: string, config: BackendConnectionConf
   });
   registerBrowserExecReverseHandler(instance, {
     saveAsset: (params) => instance.request<{ url?: string } | undefined>('note.saveAsset', params),
+    backendId: id,
+    savedRemote: id !== LOCAL_CONNECTION_ID,
   });
   instance.start();
   return instance;
@@ -1005,6 +1028,40 @@ export async function reconcileActiveConnectionOnBoot(): Promise<void> {
     return; // Nothing built yet; the lazy local client is the safe default.
   }
   if (activeId === LOCAL_CONNECTION_ID) return; // Already local — no-op.
+
+  // A persisted activeId pointing at this machine's own (hidden) self entry —
+  // e.g. selected on another device before this machine's list started hiding
+  // it, then synced back — resolves to local: that record IS this daemon, and
+  // the hidden entry must never be restored as a WSS "remote". Silent (no
+  // boot-fallback notice — nothing is unreachable) and fail-soft: a detection
+  // error just takes the normal restore path.
+  let isSelfEntry = false;
+  try {
+    const [records, selfFingerprint] = await Promise.all([
+      connectionsStore.list(),
+      getStoredSelfFingerprint(),
+    ]);
+    const target = records.find((c) => c.id === activeId);
+    isSelfEntry = target !== undefined && isSelfConnectionRecord(target, selfFingerprint);
+  } catch (error) {
+    logger.warn('Could not evaluate self-entry redirect at boot (fail-soft)', {
+      id: activeId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+  if (isSelfEntry) {
+    logger.info('Persisted active backend is this machine\u2019s own self entry; using local', {
+      id: activeId,
+    });
+    try {
+      await connectionsStore.setActiveId(LOCAL_CONNECTION_ID);
+    } catch (error) {
+      logger.warn('Failed to persist local active backend for self-entry redirect', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+    return;
+  }
 
   // Resolve the remote's config + label BEFORE building anything, so a bad
   // record (forgotten remote, missing token) falls back cleanly to local.
@@ -1242,13 +1299,37 @@ async function refreshRemoteHosts(id: string): Promise<void> {
   }
 }
 
-/** The connections list + persisted and window-scoped selections surfaced to the renderer. */
+/**
+ * Whether a stored record is THIS machine's own published self entry: its
+ * fingerprint matches the persisted self cert fingerprint (normalized, so the
+ * comparison mirrors the store's fingerprint-keyed dedupe). The local
+ * pseudo-entry never matches (its fingerprint is null).
+ */
+function isSelfConnectionRecord(
+  record: { fingerprint?: string | null },
+  selfFingerprint: string | null,
+): boolean {
+  if (selfFingerprint === null) return false;
+  const key = normalizeFingerprint(record.fingerprint);
+  return key !== null && key === selfFingerprint;
+}
+
+/**
+ * The connections list + persisted and window-scoped selections surfaced to
+ * the renderer. The machine's own published self entry is hidden here —
+ * connecting to yourself over WSS is meaningless when the same daemon is
+ * already reachable as `local` — while the record stays in the store so the
+ * keychain reconcile keeps pushing it to the user's OTHER devices (where it
+ * must appear). Presentation-only: `getSelfPublishedState` still reports it
+ * as published. Fail-soft: a self-fingerprint read error hides nothing.
+ */
 async function listConnections(
   windowBackendId: string = LOCAL_CONNECTION_ID,
 ): Promise<ConnectionsListResult> {
-  const [connections, activeId] = await Promise.all([
+  const [connections, activeId, selfFingerprint] = await Promise.all([
     connectionsStore.list(),
     connectionsStore.getActiveId(),
+    getStoredSelfFingerprint().catch(() => null),
   ]);
   // Replay any sticky protocol mismatch / auth rejection for the active
   // backend so a renderer that missed the one-shot broadcast (e.g. a window
@@ -1256,7 +1337,7 @@ async function listConnections(
   // into a rejecting remote) still surfaces the advisory / actionable state
   // (cloudlands-fe#823 pattern).
   return {
-    connections,
+    connections: connections.filter((c) => !isSelfConnectionRecord(c, selfFingerprint)),
     activeId,
     windowBackendId,
     protocolMismatch: activeProtocolMismatch,
@@ -1806,10 +1887,11 @@ export function registerBackendHandlers(): void {
 
   registerConnectionsHandlers();
 
-  // Keychain sync (T3): opt-in pref-gated, fail-soft, fully async. When a
-  // reconcile pulls remote changes into the store, refresh every renderer via
-  // the existing connections:changed broadcast. Availability changes push
-  // connections:sync-status-changed so the settings UI stays live (T4).
+  // Keychain sync (T3): pref-gated (opt-out — absent reads as enabled on
+  // macOS), fail-soft, fully async. When a reconcile pulls remote changes into
+  // the store, refresh every renderer via the existing connections:changed
+  // broadcast. Availability changes push connections:sync-status-changed so
+  // the settings UI stays live (T4).
   keychainSyncLifecycle = initKeychainSyncLifecycle({
     onRemoteApplied: () => broadcastConnectionsChanged(),
     onStatusChanged: (status) => {
@@ -1941,7 +2023,32 @@ function registerConnectionsHandlers(): void {
       async (_event, { id }) =>
         enqueueSwitchOperation(async () => {
           const wasActive = (await connectionsStore.getActiveId()) === id;
+          // Forgetting this machine's own published entry is a local
+          // unpublish: set the persistent "do not auto-publish" marker so the
+          // originator honors the removal and never silently re-asserts
+          // (spec "Forget = fingerprint-keyed tombstone"). Cleared only by an
+          // explicit re-publish. The fingerprint match is resolved BEFORE the
+          // forget (the record is still readable), but the marker is set only
+          // AFTER the forget succeeds — latching it first would leave a
+          // published entry with refresh-self permanently disabled if the
+          // forget throws. Fail-soft on any lookup error.
+          let forgetsSelf = false;
+          try {
+            const [records, selfFingerprint] = await Promise.all([
+              connectionsStore.list(),
+              getStoredSelfFingerprint(),
+            ]);
+            const target = records.find((c) => c.id === id);
+            const targetKey = normalizeFingerprint(target?.fingerprint);
+            forgetsSelf = selfFingerprint !== null && targetKey === selfFingerprint;
+          } catch (error) {
+            logger.warn('Could not evaluate self-entry suppression on forget (fail-soft)', {
+              id,
+              error: error instanceof Error ? error.message : String(error),
+            });
+          }
           await connectionsStore.forget(id); // rejects the reserved local id
+          if (forgetsSelf) await setAutoPublishSuppressed(true);
           const targetClient = backendClients.get(id);
           const retargetedPrimary =
             wasActive && (targetClient === client || activeConnectionMeta?.id === id);
@@ -1986,10 +2093,11 @@ function registerConnectionsHandlers(): void {
     return { bootFallback };
   });
 
-  // Keychain sync settings surface (T4): read the opt-in pref + last-known
-  // availability, and flip the pref. Enabling requests an immediate reconcile
-  // so the settings UI gets a live availability verdict; disabling stops sync
-  // but never touches existing keychain items.
+  // Keychain sync settings surface (T4): read the opt-out pref (absent =
+  // enabled on macOS) + last-known availability, and flip the pref. Enabling
+  // requests an immediate reconcile so the settings UI gets a live
+  // availability verdict; disabling stops sync but never touches existing
+  // keychain items.
   ipcMain.handle(
     CONNECTIONS.SYNC_GET_STATE,
     createValidatedHandler(
@@ -2017,6 +2125,42 @@ function registerConnectionsHandlers(): void {
       CONNECTIONS.SYNC_SET_ENABLED,
     ),
   );
+
+  // Self-publish: upsert THIS machine's own backend into the connections
+  // store so the store→keychain reconcile pushes it to the user's other
+  // devices. Main gathers everything from `server.pairingInfo` over the
+  // LOCAL client — the bearer token never crosses to the renderer.
+  ipcMain.handle(
+    CONNECTIONS.PUBLISH_SELF,
+    createValidatedHandler(
+      ConnectionsPublishSelfSchema,
+      async () => publishSelfBackend(),
+      CONNECTIONS.PUBLISH_SELF,
+    ),
+  );
+
+  // Whether a self entry exists + whether auto-publish offers are suppressed
+  // (gates the publish/removal modals and the explicit re-publish button).
+  ipcMain.handle(
+    CONNECTIONS.SELF_PUBLISHED_STATE,
+    createValidatedHandler(
+      ConnectionsSelfPublishedStateSchema,
+      async () => getSelfPublishedState(),
+      CONNECTIONS.SELF_PUBLISHED_STATE,
+    ),
+  );
+
+  // Refresh the published self entry after a local change to its published
+  // fields (token rotation, WSS port change). Strict no-op while unpublished
+  // or while the "do not auto-publish" marker is set.
+  ipcMain.handle(
+    CONNECTIONS.REFRESH_SELF,
+    createValidatedHandler(
+      ConnectionsRefreshSelfSchema,
+      async () => refreshSelfBackend(),
+      CONNECTIONS.REFRESH_SELF,
+    ),
+  );
 }
 
 /** Assemble the `connections:sync-get-state` / `sync-set-enabled` result. */
@@ -2026,6 +2170,197 @@ async function getKeychainSyncState(): Promise<KeychainSyncStateResult> {
     enabled: await isKeychainSyncEnabled(),
     status: keychainSyncLifecycle?.getStatus() ?? null,
   };
+}
+
+/**
+ * Resolve a client guaranteed to target the LOCAL daemon: the pooled local
+ * member when one is connected, else the compatibility client when no remote
+ * is active (lazily created — the standard handler path). `null` when the
+ * whole app is pinned to a remote and no local pool member exists —
+ * `server.pairingInfo` is local-only (UDS; PROTOCOL §5), so there is no
+ * client that could answer it.
+ */
+function getLocalClientForSelfPublish(): JsonRpcClient | null {
+  const pooled = backendClients.get(LOCAL_CONNECTION_ID);
+  if (pooled) return pooled;
+  return activeConnectionMeta === null ? getBackendClient() : null;
+}
+
+/**
+ * `connections:publish-self`: query the local daemon's `server.pairingInfo`,
+ * build the record per the spec Mechanics (label = hostname with `host:port`
+ * fallback, host = first local IP, hosts = all local IPs, port = bound wsApi
+ * port, fingerprint = cert fingerprint, token, detectHosts on), and upsert it
+ * via the store (fingerprint-keyed dedupe; the mutation triggers the keychain
+ * reconcile push). Persists the machine's own cert fingerprint for self
+ * detection and clears the "do not auto-publish" marker — publishing is
+ * explicit user intent. Rejects when the local backend is unreachable
+ * (remote-pinned app), the wsApi listener is off (`port: null`), or there is
+ * no routable local IP to publish.
+ */
+async function publishSelfBackend(): Promise<PublishSelfResult> {
+  const localClient = getLocalClientForSelfPublish();
+  if (!localClient) {
+    throw new Error('publish-self failed: local backend is not connected (remote backend active)');
+  }
+  const info = extractSelfPairingInfo(await localClient.request('server.pairingInfo'));
+  if (!info) {
+    throw new Error('publish-self failed: malformed server.pairingInfo result');
+  }
+  if (info.port === null) {
+    throw new Error('publish-self failed: the WebSocket API is not enabled');
+  }
+  if (!info.localIps[0]) {
+    throw new Error('publish-self failed: no routable local IP to publish');
+  }
+  // Publishing is explicit user intent to sync this machine, so force-clear
+  // any per-backend exclusion on the record (mirrors clearing the marker).
+  const record = await upsertSelfRecord({ ...info, port: info.port }, { syncExcluded: false });
+  await setStoredSelfFingerprint(info.certFingerprint);
+  await setAutoPublishSuppressed(false);
+  await broadcastConnectionsChanged();
+  const connection = (await connectionsStore.list()).find((c) => c.id === record.id) ?? record;
+  return { connection } satisfies PublishSelfResult;
+}
+
+/**
+ * Shared upsert of this machine's self record from validated pairing info
+ * (label = hostname with `host:port` fallback, host = first local IP, hosts =
+ * all local IPs, port = bound wsApi port, fingerprint = cert fingerprint,
+ * token, detectHosts on). The store dedupes by fingerprint — a host/port
+ * change collapses into the existing record with a fresh `updatedAt` — and
+ * the mutation triggers the keychain reconcile push. `opts.syncExcluded`
+ * follows the store's tri-state: publish passes `false` (explicit intent to
+ * sync), refresh omits it so the store preserves an existing per-backend
+ * exclusion — a freshness re-upsert must never flip the user's opt-out.
+ * Callers must have validated `port` and `localIps[0]` as non-null.
+ */
+async function upsertSelfRecord(
+  info: SelfPairingInfo & { port: number },
+  opts: { syncExcluded?: boolean } = {},
+): Promise<ConnectionRecord> {
+  const host = info.localIps[0];
+  const label = info.prettyHostname ?? info.hostname ?? `${host}:${info.port}`;
+  const record = await connectionsStore.add({
+    label,
+    host,
+    port: info.port,
+    fingerprint: info.certFingerprint,
+    token: info.token,
+    detectHosts: true,
+    ...(opts.syncExcluded !== undefined ? { syncExcluded: opts.syncExcluded } : {}),
+  });
+  // Persist the full candidate-host list + the machine hostname on the
+  // record, matching what post-connect refreshes capture for remotes.
+  // ALWAYS set it — even for a single IP — so extras from an interface that
+  // has since disappeared are dropped instead of syncing stale addresses
+  // (add() only removes the new primary from preserved extras).
+  await connectionsStore.setHosts(record.id, info.localIps);
+  const hostname = info.prettyHostname ?? info.hostname;
+  if (hostname) {
+    await connectionsStore.setHostname(record.id, hostname);
+  }
+  return record;
+}
+
+/**
+ * `connections:refresh-self`: re-upsert the published self entry from the
+ * live `server.pairingInfo` so a token rotation or WSS port/host change gets
+ * a fresh `updatedAt` and propagates to the user's other devices via the
+ * keychain reconcile (a host:port change is collapsed by the store's
+ * fingerprint dedupe, and the reconcile tombstones the stale keychain account
+ * — the record is rewritten under the new account).
+ *
+ * Strictly a freshness path, entirely fail-soft: while the "do not
+ * auto-publish" marker is set, while no published self entry exists, when the
+ * app is pinned to a remote, or when the pairing info is unavailable/
+ * incomplete (WSS off, no routable IP) it is a no-op (`refreshed: false`).
+ * Unlike publish it NEVER sets or clears the suppression marker, and its
+ * upsert omits `syncExcluded` so the store preserves a per-backend exclusion
+ * — refreshing is not user intent to (re-)publish or to sync.
+ */
+async function refreshSelfBackend(): Promise<RefreshSelfResult> {
+  if (await isAutoPublishSuppressed()) {
+    return { refreshed: false } satisfies RefreshSelfResult;
+  }
+  const localClient = getLocalClientForSelfPublish();
+  if (!localClient) {
+    return { refreshed: false } satisfies RefreshSelfResult;
+  }
+  let info: ReturnType<typeof extractSelfPairingInfo>;
+  try {
+    info = extractSelfPairingInfo(await localClient.request('server.pairingInfo'));
+  } catch (error) {
+    logger.debug('Could not refresh the self entry from server.pairingInfo (fail-soft)', {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return { refreshed: false } satisfies RefreshSelfResult;
+  }
+  if (!info || info.port === null || !info.localIps[0]) {
+    return { refreshed: false } satisfies RefreshSelfResult;
+  }
+  // Only refresh an entry that is actually published: a stored record whose
+  // fingerprint matches the persisted self fingerprint or the live one.
+  const [records, storedFingerprint] = await Promise.all([
+    connectionsStore.list(),
+    getStoredSelfFingerprint(),
+  ]);
+  const liveFingerprint = normalizeFingerprint(info.certFingerprint);
+  const selfKeys = new Set(
+    [storedFingerprint, liveFingerprint].filter((key): key is string => key !== null),
+  );
+  const published = records.some((c) => {
+    const key = normalizeFingerprint(c.fingerprint);
+    return key !== null && selfKeys.has(key);
+  });
+  if (!published) {
+    return { refreshed: false } satisfies RefreshSelfResult;
+  }
+  await upsertSelfRecord({ ...info, port: info.port });
+  await setStoredSelfFingerprint(info.certFingerprint);
+  await broadcastConnectionsChanged();
+  return { refreshed: true } satisfies RefreshSelfResult;
+}
+
+/**
+ * `connections:self-published-state`: whether a self entry exists (a stored
+ * record whose fingerprint matches the persisted self fingerprint OR the live
+ * local daemon's cert fingerprint) and whether the persistent "do not
+ * auto-publish" marker is set. The live `server.pairingInfo` probe is
+ * fail-soft — when the local daemon is unreachable (or the app is pinned to a
+ * remote), detection falls back to the persisted fingerprint alone.
+ */
+async function getSelfPublishedState(): Promise<SelfPublishedStateResult> {
+  const [records, storedFingerprint, suppressed] = await Promise.all([
+    connectionsStore.list(),
+    getStoredSelfFingerprint(),
+    isAutoPublishSuppressed(),
+  ]);
+  let liveFingerprint: string | null = null;
+  const localClient = getLocalClientForSelfPublish();
+  if (localClient) {
+    try {
+      const info = extractSelfPairingInfo(await localClient.request('server.pairingInfo'));
+      liveFingerprint = normalizeFingerprint(info?.certFingerprint ?? null);
+    } catch {
+      // Fail-soft: the persisted fingerprint still detects the self entry.
+    }
+  }
+  const selfKeys = new Set(
+    [storedFingerprint, liveFingerprint].filter((key): key is string => key !== null),
+  );
+  const selfRecord =
+    selfKeys.size > 0
+      ? records.find((c) => {
+          const key = normalizeFingerprint(c.fingerprint);
+          return key !== null && selfKeys.has(key);
+        })
+      : undefined;
+  return {
+    published: selfRecord !== undefined,
+    suppressed,
+    selfConnectionId: selfRecord?.id ?? null,
+  } satisfies SelfPublishedStateResult;
 }
 
 /** Dispose the shared client (used on shutdown and backend switch). */

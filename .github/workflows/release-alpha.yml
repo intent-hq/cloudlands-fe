@@ -182,22 +182,14 @@ jobs:
       - name: Install frontend dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Validate INTENTD_READ_PAT secret
-        env:
-          INTENTD_READ_PAT: ${{ secrets.INTENTD_READ_PAT }}
-        run: |
-          if [ -z "$INTENTD_READ_PAT" ]; then
-            echo "::error::INTENTD_READ_PAT secret is required to fetch the pinned intentd release"
-            exit 1
-          fi
-          echo "INTENTD_READ_PAT is configured"
-
       # Downloads the pinned intentd release asset, verifies its sha256, and stages
       # the binary at resources/sidecar/intentd. Fails fast with a clear error when
       # the pinned release or its per-target assets don't exist on intent-hq/intentd.
+      # intent-hq/intentd is public: the default token covers the release reads
+      # (no PAT needed) while keeping the API calls authenticated for rate limits.
       - name: Fetch pinned intentd sidecar
         env:
-          INTENTD_READ_PAT: ${{ secrets.INTENTD_READ_PAT }}
+          GH_TOKEN: ${{ github.token }}
         run: node scripts/fetch-sidecar.cjs
 
       # Written for the non-ephemeral m1mac runner (and equally valid on an
@@ -409,19 +401,9 @@ jobs:
         shell: bash
         run: pnpm install --frozen-lockfile
 
-      - name: Validate INTENTD_READ_PAT secret
-        shell: bash
-        env:
-          INTENTD_READ_PAT: ${{ secrets.INTENTD_READ_PAT }}
-        run: |
-          if [ -z "$INTENTD_READ_PAT" ]; then
-            echo "::error::INTENTD_READ_PAT secret is required to fetch the pinned intentd release"
-            exit 1
-          fi
-          echo "INTENTD_READ_PAT is configured"
-
       # Downloads the pinned intentd release asset, verifies its sha256, and
-      # stages the binary at resources/sidecar/intentd.exe.
+      # stages the binary at resources/sidecar/intentd.exe. intent-hq/intentd is
+      # public: the default token covers the release reads (no PAT needed).
       # PATH prefix: the runner's PATH resolves GNU tar (Git Bash), which parses
       # the drive letter in `tar -tf C:\...` as a remote host ("Cannot connect
       # to C: resolve failed", intent-hq/monorepo#1282). Prefer the System32
@@ -432,7 +414,7 @@ jobs:
       - name: Fetch pinned intentd sidecar
         shell: bash
         env:
-          INTENTD_READ_PAT: ${{ secrets.INTENTD_READ_PAT }}
+          GH_TOKEN: ${{ github.token }}
         run: PATH="/c/Windows/System32:$PATH" node scripts/fetch-sidecar.cjs
 
       # Drop build output left by a previous run so the artifact upload
@@ -563,19 +545,11 @@ jobs:
       - name: Install frontend dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Validate INTENTD_READ_PAT secret
-        env:
-          INTENTD_READ_PAT: ${{ secrets.INTENTD_READ_PAT }}
-        run: |
-          if [ -z "$INTENTD_READ_PAT" ]; then
-            echo "::error::INTENTD_READ_PAT secret is required to fetch the pinned intentd release"
-            exit 1
-          fi
-          echo "INTENTD_READ_PAT is configured"
-
+      # intent-hq/intentd is public: the default token covers the release reads
+      # (no PAT needed).
       - name: Fetch pinned intentd sidecar
         env:
-          INTENTD_READ_PAT: ${{ secrets.INTENTD_READ_PAT }}
+          GH_TOKEN: ${{ github.token }}
           # Always pass the explicit target (rather than deriving it from the
           # host) so the staged intentd matches the package arch, including
           # when cross-building.
@@ -743,8 +717,7 @@ jobs:
       - name: Find previous release
         id: prev_release
         env:
-          # RELEASE_PAT has repo scope on cloudlands-releases; keeps INTENTD_READ_PAT
-          # scoped to downloading intentd release assets only
+          # RELEASE_PAT has repo scope on cloudlands-releases
           GH_TOKEN: ${{ steps.token.outputs.token }}
           VERSION: ${{ needs.resolve.outputs.version }}
         run: |
@@ -840,10 +813,9 @@ jobs:
       - name: Generate release notes
         env:
           FE_TOKEN: ${{ github.token }}
-          # Read-only PAT for the private intent-hq/intentd repo; the generator uses
-          # it for the compare API and fails soft (pin-only notes) if it is missing
-          # or the compare is unavailable.
-          INTENTD_TOKEN: ${{ secrets.INTENTD_READ_PAT }}
+          # intent-hq/intentd is public; the default token covers the compare API.
+          # The generator fails soft (pin-only notes) if the compare is unavailable.
+          INTENTD_TOKEN: ${{ github.token }}
           VERSION: ${{ needs.resolve.outputs.version }}
           PREV_FE_TAG: ${{ steps.prev_release.outputs.tag }}
           INTENTD_VERSION: ${{ steps.intentd_pin.outputs.version }}
@@ -1015,7 +987,8 @@ jobs:
         continue-on-error: true
         env:
           ISSUES_GH_TOKEN: ${{ secrets.MONOREPO_ISSUES_TOKEN }}
-          INTENTD_GH_TOKEN: ${{ secrets.INTENTD_READ_PAT }}
+          # intent-hq/intentd is public; the default token covers its reads.
+          INTENTD_GH_TOKEN: ${{ github.token }}
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ needs.resolve.outputs.version }}
           PREV_FE_TAG: ${{ steps.prev_release.outputs.tag }}

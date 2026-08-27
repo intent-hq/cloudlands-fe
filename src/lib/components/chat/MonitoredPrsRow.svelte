@@ -243,6 +243,9 @@
   function readinessSummary(monitor: PrMonitorRow): string {
     const snapshot = monitor.lastSnapshot;
     if (snapshot?.isDraft) return m.chat_monitoredPrs_status_draft();
+    if (snapshot?.state === 'open' && snapshot.isInMergeQueue) {
+      return m.chat_monitoredPrs_status_mergeQueue();
+    }
     const blocker = inferredBlocker(monitor);
     if (blocker) return m.chat_monitoredPrs_status_blocked({ reason: blocker });
     if (

@@ -12,7 +12,7 @@ for (const theme of ['light', 'dark'] as const) {
         const component = await mount(SettingsSidebarNavGeometryHost, {
           props: { theme, width, zoom },
         });
-        const rows = component.getByRole('button');
+        const rows = component.locator('[data-settings-tab]');
         const geometry = await rows.evaluateAll((buttons) =>
           buttons.map((button) => {
             const row = button.getBoundingClientRect();
@@ -45,8 +45,23 @@ for (const theme of ['light', 'dark'] as const) {
           expect(row.labelCenterDelta).toBeLessThanOrEqual(0.5 * zoom);
         }
 
-        const selected = component.getByRole('button', { name: 'Tools' });
+        const selected = component.getByRole('button', { name: 'Setup' });
         await expect(selected).toHaveAttribute('aria-current', 'page');
+        const specialistsSection = component.locator('[data-settings-specialists-section]');
+        await expect(specialistsSection).toHaveClass(/mt-8/);
+        await expect(specialistsSection).not.toHaveClass(/border|pt-/);
+        const [advancedBox, specialistsHeadingBox, shellBox] = await Promise.all([
+          component.getByRole('button', { name: 'Advanced' }).boundingBox(),
+          component.getByRole('heading', { name: 'Specialists' }).boundingBox(),
+          component.getByTestId('sidebar-shell').boundingBox(),
+        ]);
+        expect(specialistsHeadingBox!.y - (advancedBox!.y + advancedBox!.height)).toBeCloseTo(
+          32 * zoom,
+          1,
+        );
+        expect(specialistsHeadingBox!.y + specialistsHeadingBox!.height).toBeLessThanOrEqual(
+          shellBox!.y + shellBox!.height,
+        );
         await component.getByRole('button', { name: 'Advanced' }).focus();
         await expect(component.getByRole('button', { name: 'Advanced' })).toBeFocused();
       });

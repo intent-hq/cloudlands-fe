@@ -5,6 +5,9 @@ import { IPC_CHANNELS } from '../../../../shared/ipc-registry';
 
 const mocks = vi.hoisted(() => ({
   sendToWorkspaceWindows: vi.fn(),
+  backendClient: {
+    getConfig: vi.fn(() => ({ transport: 'uds' as const, socketPath: '/tmp/intentd.sock' })),
+  },
 }));
 
 vi.mock('electron', () => ({
@@ -14,6 +17,16 @@ vi.mock('electron', () => ({
 
 vi.mock('../../../system/main/system.ipc', () => ({
   sendToWorkspaceWindows: mocks.sendToWorkspaceWindows,
+}));
+
+vi.mock('../../../backend/main/backend.ipc', () => ({
+  BACKEND_CLIENT_DISCONNECTED_EVENT: 'backend-client-disconnected',
+  getBackendClient: vi.fn(() => mocks.backendClient),
+  getBackendClientForConnection: vi.fn(() => mocks.backendClient),
+  getBackendIdForIpcSender: vi.fn(() => 'local'),
+  getPrimaryBackendId: vi.fn(() => 'local'),
+  onBackendNotification: vi.fn(() => () => {}),
+  onBackendReconnected: vi.fn(() => () => {}),
 }));
 
 vi.mock('../embedded-browser-cdp-service', () => ({

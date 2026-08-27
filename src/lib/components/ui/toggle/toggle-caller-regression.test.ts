@@ -97,6 +97,7 @@ describe('B2 caller metadata regression', () => {
         'src/lib/component-catalog/renderers/ProposalCatalogPreview.svelte',
         'src/lib/components/chat/input/ContextPickerButton.svelte',
         'src/lib/components/chat/proposals/BulkProposalItems.svelte',
+        'src/lib/components/layout/ConnectBackendModal.svelte',
         'src/lib/components/modals/TransferWorkspaceModal.svelte',
         'src/lib/components/settings/HardwareConsoleSettings.svelte',
         'src/lib/components/tiptap/TaskItemNodeView.svelte',
@@ -118,8 +119,8 @@ describe('B2 caller metadata regression', () => {
       ],
       toggle: [
         'src/lib/component-catalog/renderers/BasicCatalogPreview.svelte',
-        'src/lib/components/settings/AdditionalAgentsSettings.svelte',
         'src/lib/components/settings/AgentFeaturesSettings.svelte',
+        'src/lib/components/settings/GitWorkspaceSettings.svelte',
         'src/lib/components/settings/HardwareConsoleSettings.svelte',
         'src/lib/components/settings/LegacyImportSettings.svelte',
         'src/lib/components/settings/McpServersSettings.svelte',
@@ -169,8 +170,8 @@ describe('B2 caller metadata regression', () => {
       ],
       indicator: [
         { path: 'src/lib/component-catalog/renderers/BasicCatalogPreview.svelte', count: 1 },
-        { path: 'src/lib/components/settings/AdditionalAgentsSettings.svelte', count: 1 },
         { path: 'src/lib/components/settings/AgentFeaturesSettings.svelte', count: 1 },
+        { path: 'src/lib/components/settings/GitWorkspaceSettings.svelte', count: 2 },
         { path: 'src/lib/components/settings/HardwareConsoleSettings.svelte', count: 1 },
         { path: 'src/lib/components/settings/LegacyImportSettings.svelte', count: 1 },
         { path: 'src/lib/components/settings/McpServersSettings.svelte', count: 1 },
