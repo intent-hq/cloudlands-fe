@@ -129,6 +129,9 @@ describe('openMessage', () => {
 
   it('navigates to the workspace route when opened cross-workspace', async () => {
     setPathname('/workspace/ws-OTHER');
+    (goto as ReturnType<typeof vi.fn>).mockImplementationOnce(async (route: string) => {
+      setPathname(route);
+    });
 
     const done = openMessage({ workspaceId: 'ws-1', agentId: 'agent-1', messageId: 'msg-1' });
     await vi.runAllTimersAsync();
@@ -152,6 +155,22 @@ describe('openMessage', () => {
       expect.objectContaining({ type: 'appLayout/openAgentTabRequested' }),
     );
     expect(mockGetConversation).not.toHaveBeenCalled();
+  });
+
+  it('fails closed when HUD navigation returns without leaving the HUD', async () => {
+    setPathname('/hud');
+    const eventListener = vi.fn();
+    window.addEventListener('chat:open-message', eventListener);
+
+    await openMessage({ workspaceId: 'ws-1', agentId: 'agent-1', messageId: 'msg-1' });
+    await vi.runAllTimersAsync();
+
+    expect(goto).not.toHaveBeenCalled();
+    expect(mockDispatch).not.toHaveBeenCalled();
+    expect(mockGetConversation).not.toHaveBeenCalled();
+    expect(eventListener).not.toHaveBeenCalled();
+
+    window.removeEventListener('chat:open-message', eventListener);
   });
 
   it('opens the Assistant panel and selects the exact Chief thread without route navigation', async () => {

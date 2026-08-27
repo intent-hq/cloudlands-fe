@@ -120,10 +120,28 @@ describe('parseIntentLink', () => {
       expect(parseIntentLink(link).valid).toBe(false);
     });
 
-    it.each(['.', '..', '%2e', '%2e%2e', '%2F', '%5C'])(
+    it.each(['.', '..', '%2e', '%2e%2e', '%2F', '%5C', 'workspace/other', 'workspace\\other'])(
       'rejects unsafe raw workspace segment %s',
       (workspaceSegment) => {
         const link = `intent://local/${workspaceSegment}/agent/agent-1/message/msg-1`;
+
+        expect(parseIntentLink(link).valid).toBe(false);
+      },
+    );
+
+    it.each(['.', '..', '%2e', '%2e%2e', '%2F', '%5C', 'agent/other', 'agent\\other'])(
+      'rejects unsafe raw agent segment %s',
+      (agentSegment) => {
+        const link = `intent://local/workspace-1/agent/${agentSegment}/message/msg-1`;
+
+        expect(parseIntentLink(link).valid).toBe(false);
+      },
+    );
+
+    it.each(['.', '..', '%2e', '%2e%2e', '%2F', '%5C', 'msg/other', 'msg\\other'])(
+      'rejects unsafe raw message segment %s',
+      (messageSegment) => {
+        const link = `intent://local/workspace-1/agent/agent-1/message/${messageSegment}`;
 
         expect(parseIntentLink(link).valid).toBe(false);
       },

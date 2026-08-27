@@ -164,11 +164,16 @@ export async function openMessage(options: OpenMessageOptions): Promise<void> {
     typeof window !== 'undefined' &&
     window.location.pathname !== `/workspace/${workspaceId}`
   ) {
+    const targetPathname = `/workspace/${workspaceId}`;
     try {
       // navigateToRoute no-ops in the HUD pop-out window (never leaves /hud).
-      await navigateToRoute(`/workspace/${workspaceId}`);
+      await navigateToRoute(targetPathname);
     } catch (error) {
       logger.warn('[openMessage] Workspace navigation failed', { workspaceId, error });
+      return;
+    }
+    if (window.location.pathname !== targetPathname) {
+      logger.warn('[openMessage] Workspace navigation was not confirmed', { workspaceId });
       return;
     }
   }

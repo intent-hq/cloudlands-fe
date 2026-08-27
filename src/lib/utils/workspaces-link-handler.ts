@@ -110,7 +110,7 @@ export function parseIntentLink(url: string): WorkspacesLinkInfo {
       resourceId = decodeFilePathSegments(rawSegments.slice(1));
     } else if (
       rawSegments.length >= 3 &&
-      isValidWorkspaceIdSegment(rawSegments[0]) &&
+      isValidRawIdSegment(rawSegments[0]) &&
       rawSegments[1] === 'file'
     ) {
       // Long format: {workspace-id}/file/{workspace-relative-path}
@@ -119,7 +119,11 @@ export function parseIntentLink(url: string): WorkspacesLinkInfo {
       resourceId = decodeFilePathSegments(rawSegments.slice(2));
     } else if (
       rawSegments.length === 5 &&
-      isValidWorkspaceIdSegment(rawSegments[0]) &&
+      rawSegments[1] === 'agent' &&
+      rawSegments[3] === 'message' &&
+      isValidRawIdSegment(rawSegments[0]) &&
+      isValidRawIdSegment(rawSegments[2]) &&
+      isValidRawIdSegment(rawSegments[4]) &&
       pathSegments.length === 5 &&
       pathSegments[1] === 'agent' &&
       pathSegments[3] === 'message'
@@ -247,11 +251,11 @@ function isSafeWorkspaceRelativePath(path: string): boolean {
 }
 
 /**
- * A raw workspace-ID segment must not be a "." / ".." dot component (literal
- * or percent-encoded) or contain path separators — it is interpolated into
- * the /workspace/{id} route, where dot segments would resolve away from it.
+ * A raw ID segment must not be a "." / ".." dot component (literal or
+ * percent-encoded) or contain path separators. Validate before using the URL
+ * parser's normalized path segments.
  */
-function isValidWorkspaceIdSegment(segment: string): boolean {
+function isValidRawIdSegment(segment: string): boolean {
   let decoded: string;
   try {
     decoded = decodeURIComponent(segment);

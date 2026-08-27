@@ -156,4 +156,25 @@ describe('handleIntentLink panel navigation', () => {
       expect(mocks.dispatch).not.toHaveBeenCalled();
     },
   );
+
+  it.each([
+    ['agent', '%2e%2e'],
+    ['agent', '%2F'],
+    ['agent', 'agent\\other'],
+    ['message', '%2e%2e'],
+    ['message', '%5C'],
+    ['message', 'msg/other'],
+  ])('fails closed for unsafe %s segment %s', async (segmentType, unsafeSegment) => {
+    const agentSegment = segmentType === 'agent' ? unsafeSegment : 'agent-target-1';
+    const messageSegment = segmentType === 'message' ? unsafeSegment : 'msg-final-assistant';
+
+    await handleIntentLink(
+      `intent://local/target-workspace/agent/${agentSegment}/message/${messageSegment}`,
+      { workspaceId: 'owning-workspace' },
+    );
+
+    expect(mocks.openMessage).not.toHaveBeenCalled();
+    expect(mocks.navigateToRoute).not.toHaveBeenCalled();
+    expect(mocks.dispatch).not.toHaveBeenCalled();
+  });
 });
