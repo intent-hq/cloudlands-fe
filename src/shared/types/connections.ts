@@ -342,7 +342,7 @@ export type KeychainSyncUiStatus =
 export interface KeychainSyncStateResult {
   /** True only on macOS — elsewhere the toggle renders disabled. */
   supported: boolean;
-  /** The opt-in local pref (per-machine, default OFF). */
+  /** The opt-out local pref (per-machine; absent = ON on macOS, explicit false = OFF). */
   enabled: boolean;
   /** Last completed reconcile's availability; null before the first run. */
   status: KeychainSyncUiStatus | null;
