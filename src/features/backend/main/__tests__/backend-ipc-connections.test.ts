@@ -1219,6 +1219,57 @@ describe('self-publish IPC', () => {
     );
     expect(localPrefs.values.has('selfPublishSuppressed')).toBe(false);
   });
+
+  it('connections:unpublish-self falls back to the LIVE fingerprint (parity with self-published-state)', async () => {
+    // No persisted self fingerprint — only the live server.pairingInfo probe
+    // identifies the record, exactly like the self-published-state lookup that
+    // told the UI "published" in the first place (PR #1781 review).
+    installPairingInfo();
+    store.forget.mockResolvedValue(undefined);
+    store.list.mockResolvedValue([LOCAL, { ...REMOTE, fingerprint: '11:22:33:44' }]);
+    installWindow();
+    const { mod } = await loadModule();
+    mod.registerBackendHandlers();
+
+    await expect(findHandler('connections:unpublish-self')!({}, undefined)).resolves.toEqual({
+      removed: true,
+    });
+    expect(store.forget).toHaveBeenCalledWith('remote-1');
+    expect(localPrefs.values.has('selfPublishSuppressed')).toBe(false);
+  });
+
+  it('connections:publish-self is serialized behind a queued unpublish (rapid off→on)', async () => {
+    // Rapid WSS off→on: the publish upsert must not land while the unpublish
+    // critical section is still running/queued — it would be deleted right
+    // after (PR #1781 review). Hold the unpublish open on its store.list read.
+    installPairingInfo();
+    store.forget.mockResolvedValue(undefined);
+    store.add.mockResolvedValue(SELF_RECORD);
+    localPrefs.values.set('selfBackendFingerprint', '11:22:33:44');
+    let releaseList: (records: unknown[]) => void;
+    const gatedList = new Promise<unknown[]>((resolve) => {
+      releaseList = resolve;
+    });
+    store.list.mockImplementationOnce(() => gatedList);
+    store.list.mockResolvedValue([LOCAL, { ...REMOTE, fingerprint: '11:22:33:44' }]);
+    installWindow();
+    const { mod } = await loadModule();
+    mod.registerBackendHandlers();
+
+    const unpublishPromise = findHandler('connections:unpublish-self')!({}, undefined);
+    const publishPromise = findHandler('connections:publish-self')!({}, undefined);
+    await new Promise((resolve) => setImmediate(resolve));
+    // The publish is enqueued behind the still-open unpublish: no upsert yet.
+    expect(store.add).not.toHaveBeenCalled();
+
+    releaseList!([LOCAL, { ...REMOTE, fingerprint: '11:22:33:44' }]);
+    await expect(unpublishPromise).resolves.toEqual({ removed: true });
+    await publishPromise;
+    // Removal strictly precedes the fresh upsert.
+    expect(store.forget.mock.invocationCallOrder[0]).toBeLessThan(
+      store.add.mock.invocationCallOrder[0],
+    );
+  });
 });
 
 // ---------------------------------------------------------------------------

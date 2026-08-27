@@ -84,8 +84,14 @@
   let syncEnabled = $state(false);
   let selfPublished = $state(false);
   let publishSuppressed = $state(false);
-  let _selfConnectionId = $state<string | null>(null);
   let publishBusy = $state(false);
+
+  // Gate against overlapping toggle transitions: the awaited auto-unpublish
+  // (toggle-off) keeps the toggle interactive otherwise, so a rapid off→on
+  // could refresh state while the old record still exists, skip auto-publish,
+  // and then have the queued unpublish delete it — WSS enabled but
+  // unpublished (PR #1781 review).
+  let toggleBusy = $state(false);
 
   const maskedToken = $derived(
     token ? '•'.repeat(Math.max(0, token.length - 8)) + token.slice(-8) : '',
@@ -147,6 +153,8 @@
   }
 
   async function handleToggle(checked: boolean) {
+    if (toggleBusy) return;
+    toggleBusy = true;
     try {
       const result = await appClient.settings.update([
         { path: 'server.wsApi.enabled', value: checked },
@@ -176,6 +184,8 @@
         }),
       );
       enabled = !checked;
+    } finally {
+      toggleBusy = false;
     }
   }
 
@@ -196,7 +206,6 @@
       syncEnabled = sync.enabled;
       selfPublished = self.published;
       publishSuppressed = self.suppressed;
-      _selfConnectionId = self.selfConnectionId;
       publishStateLoaded = true;
     } catch {
       // Fail-soft: without a readable state, offer neither modal nor button.
@@ -259,10 +268,14 @@
     const api = getApi();
     if (!api) return;
     try {
-      await (api.invoke(CONNECTIONS.UNPUBLISH_SELF) as Promise<UnpublishSelfResult>);
+      const result = await (api.invoke(CONNECTIONS.UNPUBLISH_SELF) as Promise<UnpublishSelfResult>);
+      // `removed: false` means main found no self entry to remove (the local
+      // `selfPublished` was stale) — nothing was unpublished, so no success
+      // toast; the state still converges to unpublished-side truth.
       selfPublished = false;
-      _selfConnectionId = null;
-      toast.success(m.settings_wsApi_unpublishSelf_success());
+      if (result.removed) {
+        toast.success(m.settings_wsApi_unpublishSelf_success());
+      }
     } catch (error) {
       toast.error(
         m.settings_wsApi_unpublishSelf_error({
@@ -275,11 +288,9 @@
   async function publishSelf() {
     const api = getApi();
     if (!api) throw new Error('electronAPI is not available');
-    const result = await (api.invoke(CONNECTIONS.PUBLISH_SELF) as Promise<PublishSelfResult>);
+    await (api.invoke(CONNECTIONS.PUBLISH_SELF) as Promise<PublishSelfResult>);
     selfPublished = true;
     publishSuppressed = false;
-    // Capture the published record's id for this settings session.
-    _selfConnectionId = result.connection.id;
     toast.success(m.settings_wsApi_publishSelf_success());
   }
 
@@ -452,7 +463,7 @@
           variant="indicator"
           size="xs"
           class="mb-auto"
-          disabled={loading}
+          disabled={loading || toggleBusy}
           ariaLabel={m.settings_wsApi_enable_label()}
         />
       </div>

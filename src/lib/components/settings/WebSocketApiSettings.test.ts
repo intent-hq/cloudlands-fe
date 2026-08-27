@@ -682,6 +682,68 @@ describe('WebSocketApiSettings', () => {
       );
     });
 
+    it('shows no success toast when unpublish reports removed: false (stale local state)', async () => {
+      ipcMocks.selfState = { published: true, suppressed: false, selfConnectionId: 'self-1' };
+      ipcMocks.invoke.mockImplementation(async (channel: string) => {
+        if (channel === 'connections:self-published-state') return { ...ipcMocks.selfState };
+        if (channel === 'connections:unpublish-self') return { removed: false };
+        return { refreshed: true };
+      });
+      await toggleOff();
+
+      await waitFor(() => {
+        expect(ipcMocks.invoke).toHaveBeenCalledWith('connections:unpublish-self');
+      });
+      // Nothing was actually removed — claiming "removed from Keychain" would
+      // be a lie (PR #1781 review).
+      expect(mockToast.success).not.toHaveBeenCalled();
+      expect(mockToast.error).not.toHaveBeenCalled();
+    });
+
+    it('disables the toggle while a transition (incl. the awaited unpublish) is in flight', async () => {
+      ipcMocks.selfState = { published: true, suppressed: false, selfConnectionId: 'self-1' };
+      mocks.mockSettingsList.mockResolvedValue([
+        { path: 'server.wsApi.enabled', value: true },
+        { path: 'server.wsApi.port', value: 5181 },
+      ]);
+      mocks.mockPairingInfo.mockResolvedValue(PAIRING);
+      render(WebSocketApiSettings);
+      await waitFor(() => {
+        expect(ipcMocks.invoke).toHaveBeenCalledWith('connections:self-published-state');
+      });
+
+      // Hold the toggle-off's auto-unpublish open: the switch must be disabled
+      // for the whole transition so a rapid off→on cannot interleave with the
+      // queued unpublish (PR #1781 review).
+      let releaseUnpublish: (value: { removed: boolean }) => void;
+      ipcMocks.invoke.mockImplementation(async (channel: string) => {
+        if (channel === 'connections:self-published-state') return { ...ipcMocks.selfState };
+        if (channel === 'connections:unpublish-self') {
+          return new Promise((resolve) => {
+            releaseUnpublish = resolve;
+          });
+        }
+        return { refreshed: true };
+      });
+      mocks.mockSettingsUpdate.mockResolvedValueOnce([
+        { path: 'server.wsApi.enabled', value: false },
+      ]);
+      await fireEvent.click(screen.getByRole('switch'));
+      await waitFor(() => {
+        expect(ipcMocks.invoke).toHaveBeenCalledWith('connections:unpublish-self');
+      });
+      expect((screen.getByRole('switch') as HTMLButtonElement).disabled).toBe(true);
+
+      // A click during the transition is a no-op (no second settings.update).
+      await fireEvent.click(screen.getByRole('switch'));
+      expect(mocks.mockSettingsUpdate).toHaveBeenCalledTimes(1);
+
+      releaseUnpublish!({ removed: true });
+      await waitFor(() => {
+        expect((screen.getByRole('switch') as HTMLButtonElement).disabled).toBe(false);
+      });
+    });
+
     it('publish-in-session, toggle-off unpublishes, toggle-on auto-publishes again', async () => {
       // Start unpublished.
       ipcMocks.selfState = { published: false, suppressed: false, selfConnectionId: null };
@@ -705,6 +767,12 @@ describe('WebSocketApiSettings', () => {
       await waitFor(() => {
         expect(ipcMocks.invoke).toHaveBeenCalledWith('connections:publish-self');
       });
+      // The busy guard keeps the switch disabled until the whole transition
+      // (incl. the awaited auto-publish) settles — wait it out before the
+      // next toggle, like a user would.
+      await waitFor(() => {
+        expect((screen.getByRole('switch') as HTMLButtonElement).disabled).toBe(false);
+      });
 
       // Toggle WSS off in the SAME session: the silent auto-unpublish fires.
       mocks.mockSettingsUpdate.mockResolvedValueOnce([
@@ -715,6 +783,9 @@ describe('WebSocketApiSettings', () => {
         expect(ipcMocks.invoke).toHaveBeenCalledWith('connections:unpublish-self');
       });
       expect(screen.queryByRole('dialog')).toBeNull();
+      await waitFor(() => {
+        expect((screen.getByRole('switch') as HTMLButtonElement).disabled).toBe(false);
+      });
 
       // Toggle WSS back on: the removal did NOT latch the "do not
       // auto-publish" marker, so the auto-publish fires again.

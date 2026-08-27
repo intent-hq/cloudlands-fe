@@ -2230,9 +2230,17 @@ function getLocalClientForSelfPublish(): JsonRpcClient | null {
  * detection and clears the "do not auto-publish" marker — publishing is
  * explicit user intent. Rejects when the local backend is unreachable
  * (remote-pinned app), the wsApi listener is off (`port: null`), or there is
- * no routable local IP to publish.
+ * no routable local IP to publish. Runs as ONE enqueued critical section,
+ * serialized with `connections:unpublish-self` and every switch/forget: a
+ * rapid WSS off→on could otherwise land this upsert while the unpublish is
+ * still queued, which would then delete the fresh record (PR #1781 review).
  */
 async function publishSelfBackend(): Promise<PublishSelfResult> {
+  return enqueueSwitchOperation(() => performPublishSelfBackend());
+}
+
+/** The actual publish; only entered from the serialized critical section. */
+async function performPublishSelfBackend(): Promise<PublishSelfResult> {
   const localClient = getLocalClientForSelfPublish();
   if (!localClient) {
     throw new Error('publish-self failed: local backend is not connected (remote backend active)');
@@ -2357,46 +2365,17 @@ async function refreshSelfBackend(): Promise<RefreshSelfResult> {
 }
 
 /**
- * `connections:unpublish-self`: remove this machine's published self entry —
- * the stored record whose fingerprint matches the persisted self fingerprint
- * (same normalization as the forget-self detection) — through the standard
- * forget/teardown path, WITHOUT latching the "do not auto-publish" marker.
- * No-op (`removed: false`) when no self entry exists. The lookup + removal
- * run as ONE enqueued critical section so a concurrent switch/forget cannot
- * interleave (monorepo#2228).
+ * Resolve this machine's published self record among `records`: a stored
+ * record whose fingerprint matches the persisted self fingerprint OR the
+ * live local daemon's cert fingerprint. Shared by
+ * `connections:self-published-state` and `connections:unpublish-self` so the
+ * UI's "published" decision and the unpublish target can never diverge
+ * (PR #1781 review). The live `server.pairingInfo` probe is fail-soft — when
+ * the local daemon is unreachable (or the app is pinned to a remote),
+ * detection falls back to the persisted fingerprint alone.
  */
-async function unpublishSelfBackend(): Promise<UnpublishSelfResult> {
-  return enqueueSwitchOperation(async () => {
-    const [records, selfFingerprint] = await Promise.all([
-      connectionsStore.list(),
-      getStoredSelfFingerprint(),
-    ]);
-    const selfRecord =
-      selfFingerprint === null
-        ? undefined
-        : records.find((c) => normalizeFingerprint(c.fingerprint) === selfFingerprint);
-    if (!selfRecord) {
-      return { removed: false } satisfies UnpublishSelfResult;
-    }
-    await forgetConnectionLocked(selfRecord.id, false);
-    return { removed: true } satisfies UnpublishSelfResult;
-  });
-}
-
-/**
- * `connections:self-published-state`: whether a self entry exists (a stored
- * record whose fingerprint matches the persisted self fingerprint OR the live
- * local daemon's cert fingerprint) and whether the persistent "do not
- * auto-publish" marker is set. The live `server.pairingInfo` probe is
- * fail-soft — when the local daemon is unreachable (or the app is pinned to a
- * remote), detection falls back to the persisted fingerprint alone.
- */
-async function getSelfPublishedState(): Promise<SelfPublishedStateResult> {
-  const [records, storedFingerprint, suppressed] = await Promise.all([
-    connectionsStore.list(),
-    getStoredSelfFingerprint(),
-    isAutoPublishSuppressed(),
-  ]);
+async function findSelfRecord(records: ConnectionRecord[]): Promise<ConnectionRecord | undefined> {
+  const storedFingerprint = await getStoredSelfFingerprint();
   let liveFingerprint: string | null = null;
   const localClient = getLocalClientForSelfPublish();
   if (localClient) {
@@ -2410,13 +2389,44 @@ async function getSelfPublishedState(): Promise<SelfPublishedStateResult> {
   const selfKeys = new Set(
     [storedFingerprint, liveFingerprint].filter((key): key is string => key !== null),
   );
-  const selfRecord =
-    selfKeys.size > 0
-      ? records.find((c) => {
-          const key = normalizeFingerprint(c.fingerprint);
-          return key !== null && selfKeys.has(key);
-        })
-      : undefined;
+  if (selfKeys.size === 0) return undefined;
+  return records.find((c) => {
+    const key = normalizeFingerprint(c.fingerprint);
+    return key !== null && selfKeys.has(key);
+  });
+}
+
+/**
+ * `connections:unpublish-self`: remove this machine's published self entry —
+ * resolved via {@link findSelfRecord}, the same lookup (persisted OR live
+ * fingerprint) that decides `published` in `connections:self-published-state`
+ * — through the standard forget/teardown path, WITHOUT latching the "do not
+ * auto-publish" marker. No-op (`removed: false`) when no self entry exists.
+ * The lookup + removal run as ONE enqueued critical section so a concurrent
+ * switch/forget cannot interleave (monorepo#2228).
+ */
+async function unpublishSelfBackend(): Promise<UnpublishSelfResult> {
+  return enqueueSwitchOperation(async () => {
+    const selfRecord = await findSelfRecord(await connectionsStore.list());
+    if (!selfRecord) {
+      return { removed: false } satisfies UnpublishSelfResult;
+    }
+    await forgetConnectionLocked(selfRecord.id, false);
+    return { removed: true } satisfies UnpublishSelfResult;
+  });
+}
+
+/**
+ * `connections:self-published-state`: whether a self entry exists (per
+ * {@link findSelfRecord}) and whether the persistent "do not auto-publish"
+ * marker is set.
+ */
+async function getSelfPublishedState(): Promise<SelfPublishedStateResult> {
+  const [records, suppressed] = await Promise.all([
+    connectionsStore.list(),
+    isAutoPublishSuppressed(),
+  ]);
+  const selfRecord = await findSelfRecord(records);
   return {
     published: selfRecord !== undefined,
     suppressed,
