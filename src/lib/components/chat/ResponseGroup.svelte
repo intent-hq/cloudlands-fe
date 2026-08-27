@@ -273,7 +273,7 @@
   testId="response-group"
   disclosureTestId="response-group-disclosure"
   summaryTestId="response-group-summary"
-  class={className}
+  class={isExpanded ? `${className} mb-3` : className}
   searchDisclosureId={searchPath ? `group:${searchPath}` : undefined}
   summarySearchPath={searchPath ? `${searchPath}:summary` : undefined}
   onSearchExpand={expandForSearch}

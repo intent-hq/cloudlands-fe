@@ -121,6 +121,7 @@ for (const theme of ['light', 'dark'] as const) {
 
     for (const position of ['first', 'middle', 'last'] as const) {
       const group = component.getByTestId(`response-group-${position}`);
+      const groupContainer = group.locator('[data-operational-row-container]');
       const trigger = group.getByTestId('response-group-disclosure');
       const body = group.locator('[data-operational-expanded-content]');
       const preview = group.locator('[data-operational-preview-content]');
@@ -142,6 +143,7 @@ for (const theme of ['light', 'dark'] as const) {
       await expect(group.getByTestId(`response-group-focus-${position}`)).toHaveText(
         `Focusable ${position} detail for initial chunk`,
       );
+      await expect(groupContainer).toHaveCSS('margin-bottom', '12px');
 
       const closingState = await trigger.evaluate(async (element) => {
         element.click();
@@ -162,6 +164,7 @@ for (const theme of ['light', 'dark'] as const) {
         'initial chunk',
       );
       await expect(group.getByTestId(`response-group-focus-${position}`)).toHaveCount(0);
+      await expect(groupContainer).toHaveCSS('margin-bottom', '0px');
     }
     await scroll.evaluate((element) => (element.scrollTop = element.scrollHeight));
 
