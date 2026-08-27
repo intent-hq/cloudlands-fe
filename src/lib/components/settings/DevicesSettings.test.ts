@@ -192,6 +192,25 @@ describe('DevicesSettings', () => {
     );
   });
 
+  it('opens the write-only replacement flow when the saved secret is unavailable', async () => {
+    mocks.test.mockImplementation((params) => ({
+      type: 'connections/testRequested',
+      payload: [params],
+      promise: Promise.resolve({ status: 'secret-unavailable' }),
+    }));
+    render(DevicesSettings);
+    await openAction('Edit');
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Test connection' }));
+
+    await waitFor(() => expect(screen.queryByRole('form', { name: 'Edit Studio Mac' })).toBeNull());
+    const replacement = screen.getByRole('form', { name: 'Replace secret for Studio Mac' });
+    const token = screen.getByLabelText('New access token') as HTMLInputElement;
+    expect(replacement.contains(token)).toBe(true);
+    expect(token.value).toBe('');
+    expect(mocks.rotate).not.toHaveBeenCalled();
+  });
+
   it('validates required metadata before testing or updating', async () => {
     render(DevicesSettings);
     await openAction('Edit');

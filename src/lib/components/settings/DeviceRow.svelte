@@ -122,6 +122,9 @@
   }
 
   function blockedMessage(result: ConnectionValidationBlockedResult): string {
+    if (result.status === 'secret-unavailable') {
+      return m.settings_devices_replaceSecret_error();
+    }
     if (result.status === 'authentication-rejected') {
       return result.statusCode === 403
         ? m.settings_devices_wsApiDisabled_error()
@@ -159,6 +162,8 @@
       const result = await action.promise;
       if (result.status === 'updated') {
         closePanel();
+      } else if (result.status === 'secret-unavailable') {
+        onOpenPanel('secret');
       } else if (result.status === 'fingerprint-confirmation-required') {
         pendingFingerprint = {
           operation: 'update',
@@ -189,10 +194,14 @@
       });
       appStore.dispatch(action);
       const result = await action.promise;
-      feedback =
-        result.status === 'success'
-          ? { kind: 'success', message: m.settings_devices_testSuccess_label() }
-          : { kind: 'error', message: blockedMessage(result) };
+      if (result.status === 'secret-unavailable') {
+        onOpenPanel('secret');
+      } else {
+        feedback =
+          result.status === 'success'
+            ? { kind: 'success', message: m.settings_devices_testSuccess_label() }
+            : { kind: 'error', message: blockedMessage(result) };
+      }
     } catch {
       feedback = { kind: 'error', message: m.settings_devices_testFailed_error() };
     } finally {
@@ -321,74 +330,79 @@
         void updateDevice();
       }}
     >
-      <div class="grid gap-3 sm:grid-cols-2">
-        <div class="space-y-1">
-          <Label for={`device-${device.id}-edit-name`}>{m.settings_devices_name_label()}</Label>
-          <Input
-            id={`device-${device.id}-edit-name`}
-            bind:ref={firstEditInput}
-            bind:value={name}
-            disabled={busy !== null}
-            aria-invalid={nameInvalid || undefined}
-          />
-          {#if nameInvalid}<p class="text-xs text-error-foreground">
-              {m.settings_devices_nameRequired_error()}
-            </p>{/if}
+      <div class="grid gap-4 sm:grid-cols-[minmax(0,2fr)_minmax(12rem,1fr)]">
+        <div class="space-y-3">
+          <div class="space-y-1">
+            <Label for={`device-${device.id}-edit-name`}>{m.settings_devices_name_label()}</Label>
+            <Input
+              id={`device-${device.id}-edit-name`}
+              bind:ref={firstEditInput}
+              bind:value={name}
+              disabled={busy !== null}
+              aria-invalid={nameInvalid || undefined}
+            />
+            {#if nameInvalid}<p class="text-xs text-error-foreground">
+                {m.settings_devices_nameRequired_error()}
+              </p>{/if}
+          </div>
+          <div class="grid gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(7rem,10rem)]">
+            <div class="space-y-1">
+              <Label for={`device-${device.id}-edit-host`}>{m.settings_devices_host_label()}</Label>
+              <Input
+                id={`device-${device.id}-edit-host`}
+                bind:value={host}
+                disabled={busy !== null}
+                aria-invalid={hostInvalid || undefined}
+              />
+              {#if hostInvalid}<p class="text-xs text-error-foreground">
+                  {m.settings_devices_hostRequired_error()}
+                </p>{/if}
+            </div>
+            <div class="space-y-1">
+              <Label for={`device-${device.id}-edit-port`}>{m.settings_devices_port_label()}</Label>
+              <Input
+                id={`device-${device.id}-edit-port`}
+                bind:value={port}
+                type="text"
+                inputmode="numeric"
+                disabled={busy !== null}
+                aria-invalid={portInvalid || undefined}
+              />
+              {#if portInvalid}<p class="text-xs text-error-foreground">
+                  {m.settings_devices_portInvalid_error()}
+                </p>{/if}
+            </div>
+          </div>
         </div>
-        <div class="space-y-1">
-          <Label for={`device-${device.id}-edit-host`}>{m.settings_devices_host_label()}</Label>
-          <Input
-            id={`device-${device.id}-edit-host`}
-            bind:value={host}
-            disabled={busy !== null}
-            aria-invalid={hostInvalid || undefined}
-          />
-          {#if hostInvalid}<p class="text-xs text-error-foreground">
-              {m.settings_devices_hostRequired_error()}
-            </p>{/if}
-        </div>
-        <div class="space-y-1 sm:max-w-40">
-          <Label for={`device-${device.id}-edit-port`}>{m.settings_devices_port_label()}</Label>
-          <Input
-            id={`device-${device.id}-edit-port`}
-            bind:value={port}
-            type="text"
-            inputmode="numeric"
-            disabled={busy !== null}
-            aria-invalid={portInvalid || undefined}
-          />
-          {#if portInvalid}<p class="text-xs text-error-foreground">
-              {m.settings_devices_portInvalid_error()}
-            </p>{/if}
-        </div>
+        <fieldset class="space-y-2" disabled={busy !== null}>
+          <legend class="text-sm font-medium text-foreground"
+            >{m.settings_devices_accent_label()}</legend
+          >
+          <div class="flex flex-wrap gap-2">
+            {#each CONNECTION_ACCENTS as option}
+              <button
+                type="button"
+                class={cn(
+                  'flex size-7 cursor-pointer items-center justify-center rounded-full border bg-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                  option === accent
+                    ? 'border-foreground shadow-[0_0_0_2px_var(--color-background),0_0_0_4px_var(--color-foreground)]'
+                    : 'border-border hover:border-input',
+                )}
+                aria-label={m.settings_devices_accentOption_ariaLabel({
+                  color: accentLabel(option),
+                })}
+                aria-pressed={option === accent}
+                onclick={() => (accent = option)}
+              >
+                <span
+                  class={cn('size-3.5 rounded-full', CONNECTION_ACCENT_CLASSES[option])}
+                  aria-hidden="true"
+                ></span>
+              </button>
+            {/each}
+          </div>
+        </fieldset>
       </div>
-
-      <fieldset class="space-y-2" disabled={busy !== null}>
-        <legend class="text-sm font-medium text-foreground"
-          >{m.settings_devices_accent_label()}</legend
-        >
-        <div class="flex flex-wrap gap-2">
-          {#each CONNECTION_ACCENTS as option}
-            <button
-              type="button"
-              class={cn(
-                'flex size-7 cursor-pointer items-center justify-center rounded-full border bg-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-                option === accent
-                  ? 'border-foreground shadow-[0_0_0_2px_var(--color-background),0_0_0_4px_var(--color-foreground)]'
-                  : 'border-border hover:border-input',
-              )}
-              aria-label={m.settings_devices_accentOption_ariaLabel({ color: accentLabel(option) })}
-              aria-pressed={option === accent}
-              onclick={() => (accent = option)}
-            >
-              <span
-                class={cn('size-3.5 rounded-full', CONNECTION_ACCENT_CLASSES[option])}
-                aria-hidden="true"
-              ></span>
-            </button>
-          {/each}
-        </div>
-      </fieldset>
 
       {#if pendingFingerprint}
         <div
@@ -436,12 +450,6 @@
       {/if}
 
       <div class="flex flex-wrap items-center justify-end gap-2">
-        <Button
-          type="button"
-          variant="destructive"
-          disabled={busy !== null}
-          onclick={() => onRequestRemove(device)}>{m.settings_devices_remove_label()}</Button
-        >
         <Button
           type="button"
           variant="outline"

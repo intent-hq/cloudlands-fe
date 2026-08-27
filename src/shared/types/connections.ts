@@ -233,6 +233,7 @@ export interface UpdateConnectionParams {
 /** Machine-readable validation outcomes; renderer copy is localized by status/reason. */
 export type ConnectionValidationResult =
   | { status: 'success'; fingerprint: string }
+  | { status: 'secret-unavailable' }
   | {
       status: 'fingerprint-confirmation-required';
       expectedFingerprint: string;

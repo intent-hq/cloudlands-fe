@@ -2124,26 +2124,31 @@ export function registerBackendHandlers(): void {
   logger.info('Backend bridge IPC handlers registered');
 }
 
-async function getRemoteConnectionWithToken(id: string): Promise<{
-  connection: ConnectionRecord & { host: string; port: number; fingerprint: string };
-  token: string;
-}> {
+type SavedRemoteConnection = ConnectionRecord & {
+  host: string;
+  port: number;
+  fingerprint: string;
+};
+
+async function getRemoteConnection(id: string): Promise<SavedRemoteConnection> {
   if (id === LOCAL_CONNECTION_ID) throw new Error('Cannot update the local connection');
   const connection = (await connectionsStore.list()).find((candidate) => candidate.id === id);
   if (!connection) throw new Error(`Unknown connection id: ${id}`);
   if (connection.isLocal || !connection.host || !connection.port || !connection.fingerprint) {
     throw new Error(`Connection is not a saved remote: ${id}`);
   }
-  const token = await connectionsStore.getDecryptedToken(id);
-  if (!token) throw new Error(`Connection secret is unavailable: ${id}`);
-  return {
-    connection: connection as ConnectionRecord & {
-      host: string;
-      port: number;
-      fingerprint: string;
-    },
-    token,
-  };
+  return connection as SavedRemoteConnection;
+}
+
+async function loadSavedConnectionSecret(
+  id: string,
+): Promise<{ status: 'success'; token: string } | { status: 'secret-unavailable' }> {
+  try {
+    const token = await connectionsStore.getDecryptedToken(id);
+    return token ? { status: 'success', token } : { status: 'secret-unavailable' };
+  } catch {
+    return { status: 'secret-unavailable' };
+  }
 }
 
 async function validateConnectionAddress(
@@ -2293,17 +2298,19 @@ function registerConnectionsHandlers(): void {
       ConnectionsUpdateSchema,
       async (_event, params) =>
         enqueueSwitchOperation(async () => {
-          const { connection: saved, token } = await getRemoteConnectionWithToken(params.id);
+          const saved = await getRemoteConnection(params.id);
           const host = params.host ?? saved.host;
           const port = params.port ?? saved.port;
           const addressChanged = host !== saved.host || port !== saved.port;
           let fingerprint = saved.fingerprint;
           if (addressChanged) {
+            const secret = await loadSavedConnectionSecret(params.id);
+            if (secret.status === 'secret-unavailable') return secret;
             const validation = await validateConnectionAddress(
               saved,
               host,
               port,
-              token,
+              secret.token,
               params.confirmedFingerprint,
             );
             if (validation.status !== 'success') return validation;
@@ -2332,8 +2339,10 @@ function registerConnectionsHandlers(): void {
       ConnectionsTestSchema,
       async (_event, { id, host, port }) =>
         enqueueSwitchOperation(async () => {
-          const { connection, token } = await getRemoteConnectionWithToken(id);
-          return validateConnectionAddress(connection, host, port, token);
+          const connection = await getRemoteConnection(id);
+          const secret = await loadSavedConnectionSecret(id);
+          if (secret.status === 'secret-unavailable') return secret;
+          return validateConnectionAddress(connection, host, port, secret.token);
         }),
       CONNECTIONS.TEST,
     ),
@@ -2347,7 +2356,7 @@ function registerConnectionsHandlers(): void {
       ConnectionsRotateSecretSchema,
       async (_event, { id, token, confirmedFingerprint }) =>
         enqueueSwitchOperation(async () => {
-          const { connection } = await getRemoteConnectionWithToken(id);
+          const connection = await getRemoteConnection(id);
           const validation = await validateConnectionAddress(
             connection,
             connection.host,

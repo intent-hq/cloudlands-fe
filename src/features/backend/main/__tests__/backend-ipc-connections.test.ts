@@ -679,6 +679,7 @@ describe('connections:* IPC handlers', () => {
 
   it('connections:update changes remote presentation metadata without revalidating its saved address', async () => {
     const updated = { ...REMOTE, label: 'Editing Mac', accent: 'violet' as const };
+    store.getDecryptedToken.mockRejectedValue(new Error('undecryptable secret material'));
     store.updateMetadata.mockResolvedValue(updated);
     const send = installWindow();
     const { mod } = await loadModule();
@@ -696,6 +697,7 @@ describe('connections:* IPC handlers', () => {
       fingerprint: REMOTE.fingerprint,
     });
     expect(mockCaptureFingerprint).not.toHaveBeenCalled();
+    expect(store.getDecryptedToken).not.toHaveBeenCalled();
     expect(send).toHaveBeenCalledWith('connections:changed', expect.any(Object));
   });
 
@@ -722,6 +724,23 @@ describe('connections:* IPC handlers', () => {
     expect(store.updateMetadata).not.toHaveBeenCalled();
     expect(store.replaceSecret).not.toHaveBeenCalled();
     expect(openOrFocus).not.toHaveBeenCalled();
+  });
+
+  it('returns token-free guidance when testing cannot decrypt the saved secret', async () => {
+    store.getDecryptedToken.mockRejectedValue(
+      new Error('raw decrypt failure with secret-material'),
+    );
+    const { mod } = await loadModule();
+    mod.registerBackendHandlers();
+    const handler = findHandler('connections:test');
+
+    const result = await handler!({}, { id: REMOTE.id, host: '10.0.0.99', port: 9443 });
+
+    expect(result).toEqual({ status: 'secret-unavailable' });
+    expect(JSON.stringify(result)).not.toContain('decrypt');
+    expect(JSON.stringify(result)).not.toContain('secret-material');
+    expect(mockCaptureFingerprint).not.toHaveBeenCalled();
+    expect(store.updateMetadata).not.toHaveBeenCalled();
   });
 
   it('requires explicit fingerprint confirmation before persisting an address change', async () => {
@@ -769,6 +788,32 @@ describe('connections:* IPC handlers', () => {
     );
   });
 
+  it('returns token-free guidance when an address change cannot decrypt the saved secret', async () => {
+    store.getDecryptedToken.mockRejectedValue(
+      new Error('raw decrypt failure with secret-material'),
+    );
+    const { mod } = await loadModule();
+    mod.registerBackendHandlers();
+    const handler = findHandler('connections:update');
+
+    const result = await handler!(
+      {},
+      {
+        id: REMOTE.id,
+        label: REMOTE.label,
+        accent: 'blue',
+        host: '10.0.0.99',
+        port: 9443,
+      },
+    );
+
+    expect(result).toEqual({ status: 'secret-unavailable' });
+    expect(JSON.stringify(result)).not.toContain('decrypt');
+    expect(JSON.stringify(result)).not.toContain('secret-material');
+    expect(mockCaptureFingerprint).not.toHaveBeenCalled();
+    expect(store.updateMetadata).not.toHaveBeenCalled();
+  });
+
   it('leaves the saved secret unchanged when rotation authentication fails', async () => {
     mockCaptureFingerprint.mockResolvedValue({
       ok: true,
@@ -795,9 +840,18 @@ describe('connections:* IPC handlers', () => {
       connected: true,
       tokenValid: true,
     });
-    store.replaceSecret.mockResolvedValue(REMOTE);
+    let secretReplaced = false;
+    store.replaceSecret.mockImplementation(async () => {
+      secretReplaced = true;
+      return REMOTE;
+    });
     const { mod } = await loadModule();
     const before = await mod.connectBackendClient(REMOTE.id);
+    store.getDecryptedToken.mockClear();
+    store.getDecryptedToken.mockImplementation(async () => {
+      if (!secretReplaced) throw new Error('old secret cannot be decrypted');
+      return 'replacement';
+    });
     mod.registerBackendHandlers();
     const handler = findHandler('connections:rotate-secret');
 
@@ -805,6 +859,9 @@ describe('connections:* IPC handlers', () => {
     expect(result).toEqual({ status: 'updated', connection: REMOTE });
     expect(JSON.stringify(result)).not.toContain('replacement');
     expect(store.replaceSecret).toHaveBeenCalledWith(REMOTE.id, 'replacement', REMOTE.fingerprint);
+    expect(store.replaceSecret.mock.invocationCallOrder[0]).toBeLessThan(
+      store.getDecryptedToken.mock.invocationCallOrder[0],
+    );
     expect(mod.getBackendClientForConnection(REMOTE.id)).not.toBe(before);
   });
 

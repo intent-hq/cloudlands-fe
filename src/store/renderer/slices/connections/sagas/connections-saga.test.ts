@@ -170,6 +170,30 @@ describe('connectionsSaga', () => {
     await run.task.toPromise();
   });
 
+  it('passes through token-free saved-secret guidance for an exact test request', async () => {
+    invoke.mockImplementation(async (channel: string) => {
+      if (channel === CONNECTION_CHANNELS.LIST)
+        return {
+          connections: [LOCAL, REMOTE],
+          activeId: LOCAL_CONNECTION_ID,
+          windowBackendId: LOCAL_CONNECTION_ID,
+        };
+      if (channel === CONNECTION_CHANNELS.TEST) return { status: 'secret-unavailable' };
+      throw new Error(`unexpected channel ${channel}`);
+    });
+    const run = start();
+    await settle();
+    const params = { id: REMOTE.id, host: '10.0.0.99', port: 9443 };
+    const action = testConnectionRequested(params);
+
+    run.channel.put(action);
+
+    await expect(action.promise).resolves.toEqual({ status: 'secret-unavailable' });
+    expect(invoke).toHaveBeenCalledWith(CONNECTION_CHANNELS.TEST, params);
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
   it('replays a sticky auth rejection from the initial list fetch', async () => {
     const authRejected = { id: 'remote-1', host: '10.0.0.5', port: 8443, statusCode: 401 };
     invoke.mockImplementation(async (channel: string) =>
