@@ -157,9 +157,11 @@ const mainLogger = new Logger('Main');
 
 // Build identity banner (intent-hq/monorepo#3649): record which build produced
 // this log file. `app.getVersion()` is guarded so a non-Electron import of this
-// module cannot throw before logging starts.
+// module cannot throw before logging starts. The dedicated BuildInfo category
+// is pinned to INFO in logging-config.ts so the banner survives the packaged
+// build's WARN default level.
 const appVersion = app && typeof app.getVersion === 'function' ? app.getVersion() : 'unknown';
-mainLogger.info(
+new Logger('BuildInfo').info(
   // i18n-ignore (developer log message)
   `Intent v${appVersion} (commit ${BUILD_CONFIG.GIT_COMMIT_HASH || 'unknown'})`,
   {

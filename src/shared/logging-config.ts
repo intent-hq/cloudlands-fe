@@ -124,6 +124,12 @@ export const LOGGING_CONFIG: LoggingConfig = {
     // so filtering them out in packaged builds would defeat the purpose.
     RendererConsole: LogLevel.INFO,
 
+    // Build identity lines (#3649): the startup app-version banner and the
+    // connected-daemon build log. Pinned to INFO so they survive the
+    // production defaultLevel of WARN — their whole purpose is identifying
+    // which builds produced a packaged-app log file.
+    BuildInfo: LogLevel.INFO,
+
     // UI components - reduce noise during normal operation
     TipTapEditor: LogLevel.WARN,
     ContextPicker: LogLevel.WARN,

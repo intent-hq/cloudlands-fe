@@ -394,6 +394,14 @@ describe('backend.ipc daemon build-identity log on hello (#3649)', () => {
     return ctorOptions[0].onHelloResult as (result: unknown) => void;
   }
 
+  it('pins the BuildInfo category at INFO so the line survives the packaged WARN default', async () => {
+    const { getLogLevel, LogLevel, LOGGING_CONFIG } = await import(
+      '../../../../shared/logging-config'
+    );
+    expect(getLogLevel('BuildInfo')).toBeLessThanOrEqual(LogLevel.INFO);
+    expect(getLogLevel('BuildInfo')).toBeLessThanOrEqual(LOGGING_CONFIG.defaultLevel);
+  });
+
   it('logs the connected daemon build once, dedupes reconnects, re-logs on a build change', async () => {
     const onHelloResult = await getPrimaryOnHelloResult();
     const info = vi.spyOn(Logger.prototype, 'info');

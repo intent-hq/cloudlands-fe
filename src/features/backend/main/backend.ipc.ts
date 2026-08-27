@@ -132,8 +132,12 @@ const lastLoggedDaemonBuildKeys = new Map<string, string>();
  * #3649: log the connected daemon's build identity once at INFO so the log
  * file records which daemon build each connection talked to. Shared by the
  * primary client and secondary pool members; `connectionId` disambiguates
- * which backend the line refers to and scopes the reconnect dedupe.
+ * which backend the line refers to and scopes the reconnect dedupe. The
+ * BuildInfo category is pinned to INFO in logging-config.ts so the line
+ * survives the packaged build's WARN default level.
  */
+const buildInfoLogger = new Logger('BuildInfo');
+
 function logDaemonHelloBuild(helloResult: unknown, connectionId: string): void {
   const helloBuild = extractDaemonHelloBuildInfo(helloResult);
   if (!helloBuild) return;
@@ -141,7 +145,7 @@ function logDaemonHelloBuild(helloResult: unknown, connectionId: string): void {
   if (lastLoggedDaemonBuildKeys.get(connectionId) === key) return;
   lastLoggedDaemonBuildKeys.set(connectionId, key);
   // i18n-ignore (developer log message)
-  logger.info('Connected to intentd', {
+  buildInfoLogger.info('Connected to intentd', {
     connectionId,
     version: helloBuild.version,
     buildCommit: helloBuild.buildCommit ?? 'unknown',
