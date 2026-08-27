@@ -144,7 +144,7 @@ registerMockIpcHandler(CONNECTION_CHANNELS.FORGET, async (arg): Promise<ForgetCo
 
 registerMockIpcHandler(CONNECTION_CHANNELS.OPEN, async (arg): Promise<OpenConnectionResult> => {
   const { id } = arg as OpenConnectionParams;
-  return { id };
+  return { status: 'opened', id };
 });
 
 registerMockIpcHandler(CONNECTION_CHANNELS.SWITCH, async (arg): Promise<SwitchConnectionResult> => {

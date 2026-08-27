@@ -763,13 +763,13 @@ export function getPrimaryBackendId(): string {
  * id share one construction, and the connection store remains the only place
  * where a remote bearer token is decrypted.
  */
-export function connectBackendClient(id: string): Promise<JsonRpcClient> {
+export function connectBackendClient(id: string, tokenOverride?: string): Promise<JsonRpcClient> {
   const existing = backendClients.get(id);
   if (existing) return Promise.resolve(existing);
   const pending = backendClientConnects.get(id);
   if (pending) return pending;
 
-  const connecting = buildConfigForConnection(id)
+  const connecting = buildConfigForConnection(id, tokenOverride)
     .then(({ config }) => {
       const raced = backendClients.get(id);
       if (raced) return raced;
@@ -1540,7 +1540,10 @@ function refreshConnectionsForStatusChange(): void {
  * short-lived JsonRpcClient to the chosen target while the active client
  * stays pinned to the source.
  */
-export async function buildConfigForConnection(id: string): Promise<{
+export async function buildConfigForConnection(
+  id: string,
+  tokenOverride?: string,
+): Promise<{
   config: BackendConnectionConfig;
   meta: { id: string; host: string; port: number } | null;
 }> {
@@ -1551,7 +1554,7 @@ export async function buildConfigForConnection(id: string): Promise<{
   if (!record || record.host == null || record.port == null || record.fingerprint == null) {
     throw new Error(`Unknown or incomplete connection: ${id}`);
   }
-  const token = await connectionsStore.getDecryptedToken(id);
+  const token = tokenOverride ?? (await connectionsStore.getDecryptedToken(id));
   if (!token) {
     throw new Error(`No stored token for connection: ${id}`);
   }
@@ -1643,13 +1646,23 @@ export function openBackendWindow(id: string): Promise<OpenConnectionResult> {
 }
 
 async function performOpenBackendWindow(id: string): Promise<OpenConnectionResult> {
-  const target = await connectBackendClient(id);
+  let target = backendClients.get(id);
+  if (!target) {
+    let token: string | undefined;
+    if (id !== LOCAL_CONNECTION_ID) {
+      await getRemoteConnection(id);
+      const secret = await loadSavedConnectionSecret(id);
+      if (secret.status === 'secret-unavailable') return secret;
+      token = secret.token;
+    }
+    target = await connectBackendClient(id, token);
+  }
   try {
     // Do not create a renderer until the pinned transport has completed an
     // authenticated request. A cert/token failure rejects this remote only.
     await target.request('host.status');
     await windowHooks.openOrFocus?.(id);
-    return { id };
+    return { status: 'opened', id };
   } catch (error) {
     if (target !== client) disconnectBackendClient(id);
     throw error;

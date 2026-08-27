@@ -283,9 +283,8 @@ export interface OpenConnectionParams {
 }
 
 /** `connections:open` result: echoes the opened or focused backend id. */
-export interface OpenConnectionResult {
-  id: string;
-}
+export type OpenConnectionResult =
+  { status: 'opened'; id: string } | { status: 'secret-unavailable' };
 
 /** `connections:forget` params. */
 export interface ForgetConnectionParams {

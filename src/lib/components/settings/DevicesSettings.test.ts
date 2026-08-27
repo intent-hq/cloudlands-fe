@@ -91,7 +91,7 @@ describe('DevicesSettings', () => {
     mocks.open.mockImplementation((id) => ({
       type: 'connections/openRequested',
       payload: [id],
-      promise: Promise.resolve({ id }),
+      promise: Promise.resolve({ status: 'opened', id }),
     }));
     mocks.forget.mockImplementation((id) => ({
       type: 'connections/forgetRequested',
@@ -165,6 +165,23 @@ describe('DevicesSettings', () => {
     await waitFor(() => expect(screen.getByRole('alert')).toBeTruthy());
     expect(mocks.test).not.toHaveBeenCalled();
     expect(mocks.update).not.toHaveBeenCalled();
+  });
+
+  it('opens the write-only replacement flow when Connect cannot decrypt the saved secret', async () => {
+    mocks.open.mockImplementation((id) => ({
+      type: 'connections/openRequested',
+      payload: [id],
+      promise: Promise.resolve({ status: 'secret-unavailable' }),
+    }));
+    render(DevicesSettings);
+
+    await openAction('Connect');
+
+    await waitFor(() =>
+      expect(screen.getByRole('form', { name: 'Replace secret for Studio Mac' })).toBeTruthy(),
+    );
+    expect((screen.getByLabelText('New access token') as HTMLInputElement).value).toBe('');
+    expect(mocks.test).not.toHaveBeenCalled();
   });
 
   it('renders accessible loading and empty states', () => {

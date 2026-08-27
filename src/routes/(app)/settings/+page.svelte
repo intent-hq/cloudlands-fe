@@ -145,6 +145,7 @@
     integrations: 'connections',
     devices: 'devices',
     machines: 'devices',
+    'backend-sync': 'devices',
     voice: 'input',
     'keyboard-shortcuts': 'input',
     'git-workspace': 'setup',
@@ -584,18 +585,6 @@
             </div>
           </div>
 
-          <!-- Backend sync (iCloud Keychain) -->
-          <div id="backend-sync" class="mb-6 scroll-mt-20">
-            <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
-              {m.settings_section_backendSync()}
-            </h2>
-            <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
-              <section class="px-6 py-5">
-                <BackendSyncSettings />
-              </section>
-            </div>
-          </div>
-
           <div id="mcp-servers" data-highlight-id="mcp-servers" use:highlightTarget class="mb-12">
             <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
               {m.settings_section_mcpServers()}
@@ -608,6 +597,18 @@
         {#if activeTab === 'devices'}
           <div id="devices" class="mb-12 scroll-mt-20">
             <DevicesSettings />
+          </div>
+
+          <!-- Backend sync (iCloud Keychain) -->
+          <div id="backend-sync" class="mb-6 scroll-mt-20">
+            <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
+              {m.settings_section_backendSync()}
+            </h2>
+            <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
+              <section class="px-6 py-5">
+                <BackendSyncSettings />
+              </section>
+            </div>
           </div>
         {/if}
 

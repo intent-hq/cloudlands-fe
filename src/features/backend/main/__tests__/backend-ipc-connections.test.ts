@@ -1091,7 +1091,10 @@ describe('connections:* IPC handlers', () => {
     mod.registerBackendHandlers();
     const handler = findHandler('connections:open');
 
-    await expect(handler!({}, { id: 'remote-1' })).resolves.toEqual({ id: 'remote-1' });
+    await expect(handler!({}, { id: 'remote-1' })).resolves.toEqual({
+      status: 'opened',
+      id: 'remote-1',
+    });
 
     const remote = mod.getBackendClientForConnection('remote-1');
     expect(remote).toBeDefined();
@@ -1121,6 +1124,44 @@ describe('connections:* IPC handlers', () => {
     expect(mod.getBackendClientForConnection('remote-1')).toBeUndefined();
     expect(captureAndClose).not.toHaveBeenCalled();
     expect(openOrFocus).not.toHaveBeenCalled();
+  });
+
+  it('returns token-free open guidance and connects after write-only secret recovery', async () => {
+    let secretReplaced = false;
+    store.getDecryptedToken.mockImplementation(async () => {
+      if (!secretReplaced) throw new Error('raw decrypt failure with secret-material');
+      return 'replacement';
+    });
+    store.replaceSecret.mockImplementation(async () => {
+      secretReplaced = true;
+      return REMOTE;
+    });
+    mockCaptureFingerprint.mockResolvedValue({
+      ok: true,
+      fingerprint: REMOTE.fingerprint,
+      connected: true,
+      tokenValid: true,
+    });
+    const { mod, openOrFocus } = await loadModule();
+    mod.registerBackendHandlers();
+    const open = findHandler('connections:open');
+    const rotate = findHandler('connections:rotate-secret');
+
+    const blocked = await open!({}, { id: REMOTE.id });
+
+    expect(blocked).toEqual({ status: 'secret-unavailable' });
+    expect(JSON.stringify(blocked)).not.toContain('decrypt');
+    expect(JSON.stringify(blocked)).not.toContain('secret-material');
+    expect(openOrFocus).not.toHaveBeenCalled();
+
+    await expect(rotate!({}, { id: REMOTE.id, token: 'replacement' })).resolves.toMatchObject({
+      status: 'updated',
+    });
+    await expect(open!({}, { id: REMOTE.id })).resolves.toEqual({
+      status: 'opened',
+      id: REMOTE.id,
+    });
+    expect(openOrFocus).toHaveBeenCalledWith(REMOTE.id);
   });
 
   it('connections:forget closes and disconnects only that secondary backend', async () => {

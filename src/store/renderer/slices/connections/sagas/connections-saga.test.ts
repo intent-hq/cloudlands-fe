@@ -89,7 +89,8 @@ describe('connectionsSaga', () => {
         return { status: 'success', fingerprint: REMOTE.fingerprint };
       if (channel === CONNECTION_CHANNELS.ROTATE_SECRET)
         return { status: 'updated', connection: REMOTE };
-      if (channel === CONNECTION_CHANNELS.OPEN) return { id: (params as { id: string }).id };
+      if (channel === CONNECTION_CHANNELS.OPEN)
+        return { status: 'opened', id: (params as { id: string }).id };
       if (channel === CONNECTION_CHANNELS.FORGET) return { id: (params as { id: string }).id };
       if (channel === CONNECTION_CHANNELS.SWITCH)
         return { activeId: (params as { id: string }).id };
@@ -287,7 +288,7 @@ describe('connectionsSaga', () => {
 
     const open = openConnectionRequested(REMOTE.id);
     run.channel.put(open);
-    await expect(open.promise).resolves.toEqual({ id: REMOTE.id });
+    await expect(open.promise).resolves.toEqual({ status: 'opened', id: REMOTE.id });
     expect(invoke).toHaveBeenCalledWith(CONNECTION_CHANNELS.OPEN, { id: REMOTE.id });
 
     const forget = forgetConnectionRequested(REMOTE.id);
@@ -301,6 +302,29 @@ describe('connectionsSaga', () => {
     expect(invoke).toHaveBeenCalledWith(CONNECTION_CHANNELS.SWITCH, { id: REMOTE.id });
     expect(run.getState().connections.status).toBe('idle');
 
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('passes through token-free open guidance without leaking an IPC exception', async () => {
+    invoke.mockImplementation(async (channel: string) => {
+      if (channel === CONNECTION_CHANNELS.LIST)
+        return {
+          connections: [LOCAL, REMOTE],
+          activeId: LOCAL_CONNECTION_ID,
+          windowBackendId: LOCAL_CONNECTION_ID,
+        };
+      if (channel === CONNECTION_CHANNELS.OPEN) return { status: 'secret-unavailable' };
+      throw new Error(`unexpected channel ${channel}`);
+    });
+    const run = start();
+    await settle();
+    const action = openConnectionRequested(REMOTE.id);
+
+    run.channel.put(action);
+
+    await expect(action.promise).resolves.toEqual({ status: 'secret-unavailable' });
+    expect(invoke).toHaveBeenCalledWith(CONNECTION_CHANNELS.OPEN, { id: REMOTE.id });
     run.task.cancel();
     await run.task.toPromise();
   });

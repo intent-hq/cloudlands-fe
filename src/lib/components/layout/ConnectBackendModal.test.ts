@@ -94,7 +94,7 @@ describe('ConnectBackendModal', () => {
     }));
     mocks.openConnectionRequested.mockImplementation((id) => ({
       payload: [id],
-      promise: Promise.resolve({ id }),
+      promise: Promise.resolve({ status: 'opened', id }),
     }));
   });
 

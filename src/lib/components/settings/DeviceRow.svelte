@@ -118,7 +118,8 @@
     try {
       const action = openConnectionRequested(device.id);
       appStore.dispatch(action);
-      await action.promise;
+      const result = await action.promise;
+      if (result.status === 'secret-unavailable') onOpenPanel('secret');
     } catch {
       connectionError = true;
     }
