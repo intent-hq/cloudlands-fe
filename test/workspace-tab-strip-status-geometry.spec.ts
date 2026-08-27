@@ -439,6 +439,88 @@ test('focus, close hover, and drag keep the right-side geometry stable', async (
   ).toEqual([]);
 });
 
+test('Escape-cancelled real pointer drag suppresses its browser click', async ({ page }) => {
+  await mountStrip(page, { viewport: 900, zoom: 1, reduced: true });
+  const inactive = page.locator('[data-workspace-tab="inactive"]');
+  const inactiveTab = inactive.locator('[role="tab"]');
+  const tabBounds = await box(inactiveTab);
+  const startX = tabBounds.x + 28;
+  const pointerY = tabBounds.y + tabBounds.height / 2;
+  const strip = page.locator('[data-workspace-tab-strip]');
+
+  await page.evaluate(() => {
+    const global = globalThis as typeof globalThis & { __cancelledTabClickTargets: string[] };
+    global.__cancelledTabClickTargets = [];
+    document.addEventListener(
+      'click',
+      (event) => {
+        const target = event.target as Element;
+        const workspaceId = target
+          .closest('[data-workspace-tab]')
+          ?.getAttribute('data-workspace-tab');
+        if (workspaceId) global.__cancelledTabClickTargets.push(workspaceId);
+      },
+      { capture: true },
+    );
+  });
+
+  await page.mouse.move(startX, pointerY);
+  await page.mouse.down();
+  await page.mouse.move(startX + 12, pointerY);
+  await expect(inactive).toHaveAttribute('data-dragging', 'true');
+  await page.keyboard.press('Escape');
+  await expect(inactive).toHaveAttribute('data-dragging', 'false');
+  await expect(page.locator('[data-workspace-tab-placeholder]')).toHaveCount(0);
+  await expect(strip).toHaveCSS('cursor', 'auto');
+  await page.mouse.up();
+
+  expect(
+    await page.evaluate(
+      () =>
+        (globalThis as typeof globalThis & { __cancelledTabClickTargets: string[] })
+          .__cancelledTabClickTargets,
+    ),
+  ).toEqual(['inactive']);
+  expect(
+    await page.evaluate(() => {
+      const scenario = (
+        globalThis as typeof globalThis & {
+          __workspaceTabScenario: {
+            actions: Array<{ type: string; payload: unknown }>;
+            currentId: string;
+            tabOrder: string[];
+          };
+        }
+      ).__workspaceTabScenario;
+      return {
+        actions: scenario.actions.filter((action) => ['open', 'move'].includes(action.type)),
+        currentId: scenario.currentId,
+        tabOrder: scenario.tabOrder,
+      };
+    }),
+  ).toEqual({
+    actions: [],
+    currentId: 'active',
+    tabOrder: ['active', 'inactive', 'plain', 'loading'],
+  });
+  await expect(page.locator('[data-workspace-tab="active"] [role="tab"]')).toHaveAttribute(
+    'aria-selected',
+    'true',
+  );
+  await expect(inactiveTab).toHaveAttribute('aria-selected', 'false');
+
+  await page.mouse.click(startX, pointerY);
+  expect(
+    await page.evaluate(() =>
+      (
+        globalThis as typeof globalThis & {
+          __workspaceTabScenario: { actions: Array<{ type: string; payload: unknown }> };
+        }
+      ).__workspaceTabScenario.actions.filter((action) => ['open', 'move'].includes(action.type)),
+    ),
+  ).toEqual([{ type: 'open', payload: ['inactive'] }]);
+});
+
 test('drag keeps one horizontal real tab and drops it at the invisible reserved slot', async ({
   page,
 }) => {

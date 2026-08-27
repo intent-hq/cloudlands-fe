@@ -415,6 +415,7 @@
     const target = event.target as HTMLElement;
     const tabTarget = target.closest<HTMLElement>('[role="tab"]');
     if (!tabTarget || target.closest('[data-workspace-tab-close]')) return;
+    suppressClickWorkspaceId = null;
     const surface = event.currentTarget as HTMLElement;
     const captureTarget = stripElement ?? surface;
     const rect = surface.getBoundingClientRect();
@@ -506,9 +507,13 @@
     finishDrag(Boolean(move));
   }
 
-  function cancelPointerDrag() {
+  function cancelPointerDrag(suppressFollowingClick = false) {
+    const cancelledWorkspaceId = pendingDragPointer?.workspaceId ?? draggedWorkspaceId;
     clearPointerGrab();
     finishDrag();
+    if (suppressFollowingClick && cancelledWorkspaceId) {
+      suppressClickWorkspaceId = cancelledWorkspaceId;
+    }
   }
 
   function handleDragPointerUp(event: PointerEvent) {
@@ -536,18 +541,17 @@
 
   function handleLostPointerCapture(event: PointerEvent) {
     if (event.pointerId !== pendingDragPointer?.pointerId) return;
-    pendingDragPointer = null;
-    finishDrag();
+    cancelPointerDrag(true);
   }
 
   function handleDragKeydown(event: KeyboardEvent) {
     if (event.key !== 'Escape' || (!pendingDragPointer && !draggedWorkspaceId)) return;
     event.preventDefault();
-    cancelPointerDrag();
+    cancelPointerDrag(true);
   }
 
   function handleTabClick(event: MouseEvent, workspaceId: string) {
-    if (suppressClickWorkspaceId === workspaceId) {
+    if (suppressClickWorkspaceId === workspaceId && event.detail !== 0) {
       suppressClickWorkspaceId = null;
       event.preventDefault();
       event.stopPropagation();

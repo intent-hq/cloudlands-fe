@@ -735,6 +735,39 @@ describe('WorkspaceTabStrip', () => {
     expect(mocks.goto).toHaveBeenCalledWith('/workspace/ws-1');
   });
 
+  it.each([
+    ['pending press', 244],
+    ['active drag', 430],
+  ])('suppresses the browser click after Escape cancels a %s', async (_state, releaseX) => {
+    render(WorkspaceTabStrip);
+    setTabGeometry();
+    const source = document.querySelector<HTMLElement>('[data-workspace-tab="ws-2"]')!;
+    const tab = tabButton(source);
+
+    await fireEvent(tab, makePointerEvent('pointerdown', 242));
+    if (releaseX > 244) await fireEvent(tab, makePointerEvent('pointermove', releaseX));
+    mocks.dispatch.mockClear();
+    await fireEvent.keyDown(window, { key: 'Escape' });
+    await fireEvent(tab, makePointerEvent('pointerup', releaseX));
+    await fireEvent.click(tab, { detail: 1 });
+
+    expect(renderedTabOrder()).toEqual(['ws-1', 'ws-2', 'ws-3']);
+    expect(document.querySelector('[data-workspace-tab-placeholder]')).toBeNull();
+    expect(screen.getByRole('tablist', { name: 'Open spaces' }).className).not.toContain(
+      'cursor-grabbing',
+    );
+    expect(
+      mocks.dispatch.mock.calls
+        .map(([action]) => action)
+        .filter((action) =>
+          ['tabState/openWorkspaceTab', 'tabState/moveWorkspace'].includes(action.type),
+        ),
+    ).toEqual([]);
+    expect(mocks.goto).not.toHaveBeenCalled();
+    expect(screen.getByRole('tab', { name: /Alpha/ }).getAttribute('aria-selected')).toBe('true');
+    expect(tab.getAttribute('aria-selected')).toBe('false');
+  });
+
   it('uses the pointer-down grab offset after crossing the movement threshold', async () => {
     render(WorkspaceTabStrip);
     setTabGeometry();
