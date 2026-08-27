@@ -318,6 +318,56 @@ describe('pane and tab drag MIME routing', () => {
     expect(mocks.dispatch).toHaveBeenCalledWith({ type: 'tabState/endDrag' });
   });
 
+  it.each(['dragend', 'Escape'] as const)(
+    'removes the source tab bar safely during %s cleanup',
+    async (route) => {
+      let removeSource = () => {};
+      const onPaneDragFinish = vi.fn(() => {
+        clearDraggedPaneState();
+        removeSource();
+      });
+      const result = renderTabBar({ panelId: 'source-panel', onPaneDragFinish });
+      removeSource = result.unmount;
+      const header = result.container.querySelector<HTMLElement>('[data-panel-tabless-header]')!;
+      const dataTransfer = new TestDataTransfer();
+
+      await fireEvent(header, dragEvent('dragstart', dataTransfer));
+      if (route === 'Escape') await fireEvent.keyDown(window, { key: 'Escape' });
+      else await fireEvent(header, dragEvent('dragend', dataTransfer));
+
+      expect(onPaneDragFinish).toHaveBeenCalledOnce();
+      expect(getDraggedPane()).toBeNull();
+      expect(result.container.querySelector('[data-panel-tabless-header]')).toBeNull();
+    },
+  );
+
+  it('invokes the pane finish callback once when the source tab bar is destroyed', () => {
+    const onPaneDragFinish = vi.fn(clearDraggedPaneState);
+    const result = renderTabBar({
+      panelId: 'source-panel',
+      onPaneDragFinish,
+    });
+    setDraggedPane({ tabId: 'one', panelId: 'source-panel' });
+
+    result.unmount();
+
+    expect(onPaneDragFinish).toHaveBeenCalledOnce();
+    expect(getDraggedPane()).toBeNull();
+  });
+
+  it('does not finish the same pane drag again when dragend follows Escape', async () => {
+    const onPaneDragFinish = vi.fn(clearDraggedPaneState);
+    const result = renderTabBar({ panelId: 'source-panel', onPaneDragFinish });
+    const header = result.container.querySelector<HTMLElement>('[data-panel-tabless-header]')!;
+    const dataTransfer = new TestDataTransfer();
+
+    await fireEvent(header, dragEvent('dragstart', dataTransfer));
+    await fireEvent.keyDown(window, { key: 'Escape' });
+    await fireEvent(header, dragEvent('dragend', dataTransfer));
+
+    expect(onPaneDragFinish).toHaveBeenCalledOnce();
+  });
+
   it('adds a dropped pane to another stack from the full column surface', async () => {
     const onTabMoveToPanel = vi.fn();
     const onPaneDropPreview = vi.fn();
@@ -351,6 +401,8 @@ describe('pane and tab drag MIME routing', () => {
     expect(onTabMoveToPanel).toHaveBeenCalledWith('source-tab', 'source-panel');
     expect(onPaneDropPreview).toHaveBeenLastCalledWith(null);
     expect(dataTransfer.dropEffect).toBe('move');
+    expect(getDraggedPane()).toBeNull();
+    expect(mocks.dispatch).toHaveBeenCalledWith({ type: 'tabState/endDrag' });
   });
 
   it.each([

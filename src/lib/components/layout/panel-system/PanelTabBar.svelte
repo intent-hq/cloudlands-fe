@@ -800,7 +800,8 @@
   }
 
   function finishPaneDrag() {
-    if (onPaneDragFinish) onPaneDragFinish();
+    const finish = onPaneDragFinish;
+    if (finish) finish();
     else {
       clearDraggedPaneState();
       appStore.dispatch(endDrag());
@@ -808,7 +809,7 @@
   }
 
   function handlePaneDragEnd() {
-    finishPaneDrag();
+    if (getDraggedPane()?.panelId === panelId) finishPaneDrag();
   }
 
   function handlePaneDragKeyDown(e: KeyboardEvent) {

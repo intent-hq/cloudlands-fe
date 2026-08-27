@@ -365,7 +365,8 @@
     isPaneDragOver = false;
     activeDropZone = null;
     onPaneDropPreview?.(null);
-    if (onPaneDragFinish) onPaneDragFinish();
+    const finish = onPaneDragFinish;
+    if (finish) finish();
     else {
       clearDraggedPaneState();
       appStore.dispatch(endDrag());
