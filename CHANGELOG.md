@@ -4,6 +4,14 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.101.3](https://github.com/intent-hq/cloudlands-fe/compare/v2.101.2...v2.101.3) (2026-08-27)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.8.9 ([#1796](https://github.com/intent-hq/cloudlands-fe/issues/1796)) ([df88c70](https://github.com/intent-hq/cloudlands-fe/commit/df88c70d5917bda292be337441841dccbfc8580a))
+* reconcile agent provider and model selection ([#1795](https://github.com/intent-hq/cloudlands-fe/issues/1795)) ([f49d315](https://github.com/intent-hq/cloudlands-fe/commit/f49d315dd6ed09e1aaaac02aba545e70dbb3cf99))
+
 ## [2.101.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.101.1...v2.101.2) (2026-08-27)
 
 
