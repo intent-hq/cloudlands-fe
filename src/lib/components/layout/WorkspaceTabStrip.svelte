@@ -25,6 +25,7 @@
   } from '$store/renderer/slices/tab-state/tab-state-slice';
   import {
     getReleasedWorkspaceTabMove,
+    getWorkspaceTabAutoScrollDelta,
     getWorkspaceTabInsertionIndex,
     proposeWorkspaceTabOrder,
     type WorkspaceTabSlot,
@@ -71,16 +72,28 @@
 
   interface WorkspaceTabDragSession {
     originalOrder: string[];
-    startClientX: number;
     pointerOffsetX: number;
     origin: { left: number; top: number; width: number; height: number };
     slots: WorkspaceTabSlot[];
+    startScrollLeft: number;
+  }
+
+  interface WorkspaceTabPointerGrab {
+    workspaceId: string;
+    pointerId: number;
+    startClientX: number;
+    startClientY: number;
+    pointerOffsetX: number;
+    surface: HTMLElement;
+    captureTarget: HTMLElement | null;
   }
 
   let draggedWorkspaceId = $state<string | null>(null);
   let dragSession = $state<WorkspaceTabDragSession | null>(null);
+  let pendingDragPointer: WorkspaceTabPointerGrab | null = null;
   let dragClientX = $state(0);
   let proposedTabOrder = $state<string[] | null>(null);
+  let suppressClickWorkspaceId: string | null = null;
   const renderedTabOrder = $derived(proposedTabOrder ?? $workspaceTabOrder$);
   let reorderAnnouncement = $state('');
   let activeStreamsVersion = $state(0);
@@ -89,6 +102,7 @@
   const tabButtons = new Map<string, HTMLButtonElement>();
   const tabSurfaces = new Map<string, HTMLElement>();
   const ACTIVE_TAB_EDGE_GAP = 2;
+  const POINTER_DRAG_THRESHOLD = 4;
   // Active tab bounds drive the parent border mask that hides the sidebar
   // border under the active tab. Svelte's animate:flip moves tabs via CSS
   // transform, which ResizeObserver does not fire on, so during the flip the
@@ -96,6 +110,7 @@
   // transition whenever tab order or title-bar positioning changes.
   const activeTabBoundsPollers = new Set<() => void>();
   const ACTIVE_TAB_TRACKING_DURATION_MS = 240;
+  let autoScrollFrame: number | null = null;
 
   onMount(() => {
     activeStreamsTracker.startPolling();
@@ -173,7 +188,7 @@
     const strip = node.closest('[data-workspace-tab-strip]');
 
     const clampActiveTabIntoView = () => {
-      if (!strip) return;
+      if (!strip || draggedWorkspaceId) return;
       const tabRect = node.getBoundingClientRect();
       const stripRect = strip.getBoundingClientRect();
       if (tabRect.left < stripRect.left + ACTIVE_TAB_EDGE_GAP) {
@@ -335,6 +350,56 @@
     return first.length === second.length && first.every((id, index) => id === second[index]);
   }
 
+  function stopDragAutoScroll() {
+    if (autoScrollFrame === null) return;
+    cancelAnimationFrame(autoScrollFrame);
+    autoScrollFrame = null;
+  }
+
+  function updateProposedTabOrder(clientX: number) {
+    if (!draggedWorkspaceId || !dragSession) return;
+    const scrollDelta =
+      (stripElement?.scrollLeft ?? dragSession.startScrollLeft) - dragSession.startScrollLeft;
+    const slots = dragSession.slots.map((slot) => ({
+      ...slot,
+      centerX: slot.centerX - scrollDelta,
+    }));
+    const insertionIndex = getWorkspaceTabInsertionIndex(
+      clientX,
+      dragSession.pointerOffsetX,
+      dragSession.origin.width,
+      slots,
+    );
+    const nextOrder = proposeWorkspaceTabOrder(
+      dragSession.originalOrder,
+      draggedWorkspaceId,
+      insertionIndex,
+    );
+    if (!proposedTabOrder || !ordersMatch(nextOrder, proposedTabOrder)) {
+      proposedTabOrder = nextOrder;
+    }
+  }
+
+  function runDragAutoScroll() {
+    autoScrollFrame = null;
+    if (!draggedWorkspaceId || !dragSession || !stripElement) return;
+    const stripRect = stripElement.getBoundingClientRect();
+    const delta = getWorkspaceTabAutoScrollDelta(dragClientX, stripRect.left, stripRect.right);
+    const maxScrollLeft = Math.max(0, stripElement.scrollWidth - stripElement.clientWidth);
+    const nextScrollLeft = Math.max(0, Math.min(maxScrollLeft, stripElement.scrollLeft + delta));
+    if (nextScrollLeft === stripElement.scrollLeft) return;
+    stripElement.scrollLeft = nextScrollLeft;
+    updateProposedTabOrder(dragClientX);
+    queueDragAutoScroll();
+  }
+
+  function queueDragAutoScroll() {
+    if (autoScrollFrame !== null) return;
+    autoScrollFrame = -1;
+    const frame = requestAnimationFrame(runDragAutoScroll);
+    if (autoScrollFrame === -1) autoScrollFrame = frame;
+  }
+
   $effect(() => {
     if (
       !draggedWorkspaceId &&
@@ -345,75 +410,84 @@
     }
   });
 
-  function handleDragStart(event: DragEvent, workspaceId: string) {
-    if (!event.dataTransfer) return;
-    const target = event.currentTarget as HTMLElement;
-    const rect = target.getBoundingClientRect();
-    const startClientX = event.clientX;
+  function handleDragPointerDown(event: PointerEvent, workspaceId: string) {
+    if (event.button !== 0 || !event.isPrimary || draggedWorkspaceId) return;
+    const target = event.target as HTMLElement;
+    const tabTarget = target.closest<HTMLElement>('[role="tab"]');
+    if (!tabTarget || target.closest('[data-workspace-tab-close]')) return;
+    suppressClickWorkspaceId = null;
+    const surface = event.currentTarget as HTMLElement;
+    const captureTarget = stripElement ?? surface;
+    const rect = surface.getBoundingClientRect();
+    pendingDragPointer = {
+      workspaceId,
+      pointerId: event.pointerId,
+      startClientX: event.clientX,
+      startClientY: event.clientY,
+      pointerOffsetX: Math.max(0, Math.min(event.clientX - rect.left, rect.width)),
+      surface,
+      captureTarget,
+    };
+    captureTarget.setPointerCapture(event.pointerId);
+  }
+
+  function startPointerDrag(pointerGrab: WorkspaceTabPointerGrab, clientX: number) {
+    const rect = pointerGrab.surface.getBoundingClientRect();
     const originalOrder = [...visibleTabIds];
-    draggedWorkspaceId = workspaceId;
-    dragClientX = startClientX;
+    draggedWorkspaceId = pointerGrab.workspaceId;
+    dragClientX = clientX;
     proposedTabOrder = originalOrder;
     dragSession = {
       originalOrder,
-      startClientX,
-      pointerOffsetX: Math.max(0, Math.min(startClientX - rect.left, rect.width)),
+      pointerOffsetX: pointerGrab.pointerOffsetX,
       origin: { left: rect.left, top: rect.top, width: rect.width, height: rect.height },
       slots: originalOrder.flatMap((id) => {
-        if (id === workspaceId) return [];
+        if (id === pointerGrab.workspaceId) return [];
         const slotRect = tabSurfaces.get(id)?.getBoundingClientRect();
         return slotRect ? [{ id, centerX: slotRect.left + slotRect.width / 2 }] : [];
       }),
+      startScrollLeft: stripElement?.scrollLeft ?? 0,
     };
-    event.dataTransfer.setData('text/plain', workspaceId);
-    event.dataTransfer.effectAllowed = 'move';
-    const transparentDragImage = document.createElement('div');
-    transparentDragImage.style.cssText =
-      'position:fixed;left:-10000px;top:-10000px;width:1px;height:1px;opacity:0;';
-    document.body.append(transparentDragImage);
-    event.dataTransfer.setDragImage?.(transparentDragImage, 0, 0);
-    requestAnimationFrame(() => transparentDragImage.remove());
     appStore.dispatch(startDrag());
   }
 
-  function handleDragOver(event: DragEvent) {
-    if (!draggedWorkspaceId || !dragSession) return;
+  function handleDragPointerMove(event: PointerEvent) {
+    const pointerGrab = pendingDragPointer;
+    if (!pointerGrab || event.pointerId !== pointerGrab.pointerId) return;
+    if (!draggedWorkspaceId) {
+      const distance = Math.hypot(
+        event.clientX - pointerGrab.startClientX,
+        event.clientY - pointerGrab.startClientY,
+      );
+      if (distance < POINTER_DRAG_THRESHOLD) return;
+      startPointerDrag(pointerGrab, event.clientX);
+    }
     event.preventDefault();
-    handleDragMove(event);
-    const insertionIndex = getWorkspaceTabInsertionIndex(
-      event.clientX,
-      dragSession.pointerOffsetX,
-      dragSession.origin.width,
-      dragSession.slots,
-    );
-    const nextOrder = proposeWorkspaceTabOrder(
-      dragSession.originalOrder,
-      draggedWorkspaceId,
-      insertionIndex,
-    );
-    if (!proposedTabOrder || !ordersMatch(nextOrder, proposedTabOrder))
-      proposedTabOrder = nextOrder;
-    if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
+    dragClientX = event.clientX;
+    updateProposedTabOrder(dragClientX);
+    queueDragAutoScroll();
   }
 
-  function handleDragMove(event: DragEvent) {
-    if (!draggedWorkspaceId || !dragSession) return;
-    if (event.clientX === 0 && event.clientY === 0) return;
-    dragClientX = event.clientX;
+  function clearPointerGrab() {
+    const pointerGrab = pendingDragPointer;
+    pendingDragPointer = null;
+    if (pointerGrab?.captureTarget?.hasPointerCapture(pointerGrab.pointerId)) {
+      pointerGrab.captureTarget.releasePointerCapture(pointerGrab.pointerId);
+    }
   }
 
   function finishDrag(keepProposedOrder = false) {
     if (!draggedWorkspaceId) return;
+    stopDragAutoScroll();
+    pendingDragPointer = null;
     draggedWorkspaceId = null;
     dragSession = null;
     if (!keepProposedOrder) proposedTabOrder = null;
     appStore.dispatch(endDrag());
   }
 
-  function handleDrop(event: DragEvent) {
+  function releaseDraggedWorkspace() {
     if (!draggedWorkspaceId || !dragSession) return;
-    event.preventDefault();
-    handleDragOver(event);
     const releasedOrder = proposedTabOrder ?? dragSession.originalOrder;
     const releasedIndex = releasedOrder.indexOf(draggedWorkspaceId);
     const move = getReleasedWorkspaceTabMove(
@@ -433,10 +507,61 @@
     finishDrag(Boolean(move));
   }
 
-  function handleDragEnd() {
+  function cancelPointerDrag(suppressFollowingClick = false) {
+    const cancelledWorkspaceId = pendingDragPointer?.workspaceId ?? draggedWorkspaceId;
+    clearPointerGrab();
     finishDrag();
+    if (suppressFollowingClick && cancelledWorkspaceId) {
+      suppressClickWorkspaceId = cancelledWorkspaceId;
+    }
+  }
+
+  function handleDragPointerUp(event: PointerEvent) {
+    const pointerGrab = pendingDragPointer;
+    if (!pointerGrab || event.pointerId !== pointerGrab.pointerId) return;
+    const didDrag = draggedWorkspaceId === pointerGrab.workspaceId && dragSession !== null;
+    if (didDrag) {
+      event.preventDefault();
+      dragClientX = event.clientX;
+      updateProposedTabOrder(dragClientX);
+    }
+    suppressClickWorkspaceId = pointerGrab.workspaceId;
+    setTimeout(() => {
+      if (suppressClickWorkspaceId === pointerGrab.workspaceId) suppressClickWorkspaceId = null;
+    });
+    clearPointerGrab();
+    if (didDrag) releaseDraggedWorkspace();
+    else void openWorkspace(pointerGrab.workspaceId);
+  }
+
+  function handleDragPointerCancel(event: PointerEvent) {
+    if (event.pointerId !== pendingDragPointer?.pointerId) return;
+    cancelPointerDrag();
+  }
+
+  function handleLostPointerCapture(event: PointerEvent) {
+    if (event.pointerId !== pendingDragPointer?.pointerId) return;
+    cancelPointerDrag(true);
+  }
+
+  function handleDragKeydown(event: KeyboardEvent) {
+    if (event.key !== 'Escape' || (!pendingDragPointer && !draggedWorkspaceId)) return;
+    event.preventDefault();
+    cancelPointerDrag(true);
+  }
+
+  function handleTabClick(event: MouseEvent, workspaceId: string) {
+    if (suppressClickWorkspaceId === workspaceId && event.detail !== 0) {
+      suppressClickWorkspaceId = null;
+      event.preventDefault();
+      event.stopPropagation();
+      return;
+    }
+    void openWorkspace(workspaceId, event.detail === 0);
   }
 </script>
+
+<svelte:window onkeydown={handleDragKeydown} />
 
 {#if $workspaceTabOrder$.length > 0}
   <!-- pl-3 keeps the active tab's 12px corner-flare SVG inside the padding box
@@ -456,14 +581,17 @@
       'flex w-fit min-w-0 max-w-[100%] items-center gap-0.5 overflow-x-auto pl-3 pr-3 scrollbar-none',
       alignFirstTabToPanel ? '-ml-3' : '-ml-1',
       isOverflowing ? 'mr-1' : '-mr-2.5',
+      draggedWorkspaceId && 'cursor-grabbing',
     )}
     aria-label={m.layout_workspaceTabStrip_openSpaces_ariaLabel()}
     role="tablist"
     tabindex="-1"
     data-workspace-tab-strip
     data-app-region-clip
-    ondragover={handleDragOver}
-    ondrop={handleDrop}
+    onpointermove={handleDragPointerMove}
+    onpointerup={handleDragPointerUp}
+    onpointercancel={handleDragPointerCancel}
+    onlostpointercapture={handleLostPointerCapture}
   >
     {#each renderedTabOrder as workspaceId (workspaceId)}
       {@const workspace = workspaceById.get(workspaceId)}
@@ -487,24 +615,24 @@
             workspace.title?.trim() || m.layout_workspaceTabStrip_untitled_label()}
           {#if isDragged}
             <div
-              class="h-full w-full rounded-md border border-border bg-sidebar/35"
+              class="invisible h-full w-full"
               aria-hidden="true"
               data-workspace-tab-placeholder={workspaceId}
             ></div>
           {/if}
           <div
             class={cn(
-              'group/workspace-tab flex h-8 w-40 max-w-[40vw] shrink-0 items-center border transition-[background-color,border-color,box-shadow] motion-reduce:transition-none',
+              'group/workspace-tab flex h-8 w-40 max-w-[40vw] shrink-0 items-center border transition-[background-color,border-color] motion-reduce:transition-none',
               isCurrent
-                ? 'rounded-t-md border-border border-b-transparent bg-sidebar text-foreground'
+                ? 'rounded-t-md border-border border-b-0 bg-sidebar text-foreground shadow-none'
                 : 'rounded-md border-transparent text-muted-foreground hover:bg-sidebar/50 hover:text-foreground',
-              isDragged ? 'pointer-events-none fixed z-50 cursor-grabbing shadow-lg' : 'relative',
+              isDragged ? 'pointer-events-none fixed z-50 cursor-grabbing' : 'relative',
             )}
             data-workspace-tab={workspaceId}
             data-active={isCurrent}
             data-dragging={isDragged}
             style:left={isDragged && dragSession
-              ? `${dragSession.origin.left + dragClientX - dragSession.startClientX}px`
+              ? `${dragClientX - dragSession.pointerOffsetX}px`
               : undefined}
             style:top={isDragged && dragSession ? `${dragSession.origin.top}px` : undefined}
             style:width={isDragged && dragSession ? `${dragSession.origin.width}px` : undefined}
@@ -512,10 +640,7 @@
             use:reportActiveTabBounds={isCurrent}
             use:registerTabSurface={workspaceId}
             role="presentation"
-            draggable={true}
-            ondragstart={(event) => handleDragStart(event, workspaceId)}
-            ondrag={handleDragMove}
-            ondragend={handleDragEnd}
+            onpointerdown={(event) => handleDragPointerDown(event, workspaceId)}
           >
             {#if isCurrent}
               <!-- Concave outward flare: extends bg-sidebar below-outside the tab's bottom corners
@@ -572,8 +697,8 @@
               <button
                 type="button"
                 use:registerTabButton={workspaceId}
-                class="flex h-full w-full min-w-0 cursor-pointer items-center gap-1 truncate rounded-[inherit] pl-3 pr-1 text-left text-xs font-medium outline-none! active:cursor-grabbing focus-visible:text-foreground forced-colors:focus-visible:text-[HighlightText]"
-                onclick={(event) => void openWorkspace(workspaceId, event.detail === 0)}
+                class="flex h-full w-full min-w-0 touch-none cursor-grab select-none items-center gap-1 truncate rounded-[inherit] pl-3 pr-1 text-left text-xs font-medium outline-none! active:cursor-grabbing focus-visible:text-foreground forced-colors:focus-visible:text-[HighlightText]"
+                onclick={(event) => handleTabClick(event, workspaceId)}
                 onkeydown={(event) => handleTabKeydown(event, workspaceId)}
                 role="tab"
                 aria-selected={isCurrent}
@@ -619,9 +744,9 @@
         {:else}
           <div
             class={cn(
-              'group/workspace-tab relative flex h-8 w-40 max-w-[40vw] shrink-0 items-center border transition-[background-color,border-color,box-shadow,opacity,transform] motion-reduce:transition-none',
+              'group/workspace-tab relative flex h-8 w-40 max-w-[40vw] shrink-0 items-center border transition-[background-color,border-color,opacity,transform] motion-reduce:transition-none',
               isCurrent
-                ? 'rounded-t-md border-border border-b-transparent bg-sidebar text-foreground'
+                ? 'rounded-t-md border-border border-b-0 bg-sidebar text-foreground shadow-none'
                 : 'rounded-md border-transparent text-muted-foreground',
             )}
             data-workspace-tab={workspaceId}
@@ -697,6 +822,19 @@
 {/if}
 
 <style>
+  [data-workspace-tab][data-active='true'] {
+    border-bottom-width: 0;
+    box-shadow: none;
+  }
+
+  button[data-workspace-tab-hover-trigger] {
+    cursor: grab;
+  }
+
+  button[data-workspace-tab-hover-trigger]:active {
+    cursor: grabbing;
+  }
+
   button[data-workspace-tab-hover-trigger]:focus-visible [data-workspace-tab-title] {
     text-decoration-line: underline;
     text-decoration-thickness: 2px;

@@ -59,7 +59,10 @@ const virtualModules: Record<string, string> = {
     export const selectWorkspaceTabStatuses = () =>
       readable(() => globalThis.__workspaceTabScenario.statuses);`,
   '$store/renderer/store': `
-    export const store = { dispatch() {}, get state() { return {}; } };`,
+    export const store = {
+      dispatch(action) { globalThis.__workspaceTabScenario.actions.push(action); },
+      get state() { return {}; },
+    };`,
   '$shared/paraglide/messages.js': `
     export const m = {
       layout_workspaceTabStrip_openSpaces_ariaLabel: () => 'Open spaces',
@@ -170,6 +173,7 @@ async function mountStrip(
     Object.assign(globalThis, {
       __workspaceTabScenario: {
         currentId: 'active',
+        actions: [],
         tabOrder: ['active', 'inactive', 'plain', 'loading'],
         workspaces: [
           { id: 'active', title: 'Active workspace with a materially longer title' },
@@ -374,16 +378,40 @@ test('focus, close hover, and drag keep the right-side geometry stable', async (
   const status = active.locator('[data-workspace-tab-status-cluster]');
   const close = active.locator('[data-workspace-tab-close]');
   const before = await Promise.all([box(title), box(status), box(close)]);
+  const activeEdgeStyle = () =>
+    active.evaluate((node) => {
+      const style = getComputedStyle(node);
+      return {
+        borderBottomWidth: style.borderBottomWidth,
+        boxShadow: style.boxShadow,
+        position: style.position,
+        zIndex: style.zIndex,
+      };
+    });
 
-  await active.locator('[role="tab"]').focus();
+  expect(await activeEdgeStyle()).toEqual({
+    borderBottomWidth: '0px',
+    boxShadow: 'none',
+    position: 'relative',
+    zIndex: 'auto',
+  });
+
+  const tab = active.locator('[role="tab"]');
+  await tab.focus();
   await close.hover();
   expect(await Promise.all([box(title), box(status), box(close)])).toEqual(before);
 
-  await active.evaluate((node) => {
-    const dataTransfer = new DataTransfer();
-    node.dispatchEvent(new DragEvent('dragstart', { bubbles: true, dataTransfer }));
-  });
+  const tabBox = await box(tab);
+  await page.mouse.move(tabBox.x + 24, tabBox.y + tabBox.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(tabBox.x + 34, tabBox.y + tabBox.height / 2);
   await expect(active).toHaveAttribute('data-dragging', 'true');
+  expect(await activeEdgeStyle()).toEqual({
+    borderBottomWidth: '0px',
+    boxShadow: 'none',
+    position: 'fixed',
+    zIndex: '50',
+  });
   const [dragTitle, dragStatus, dragClose] = await Promise.all([
     box(title),
     box(status),
@@ -391,59 +419,165 @@ test('focus, close hover, and drag keep the right-side geometry stable', async (
   ]);
   expect(dragTitle.x + dragTitle.width).toBeLessThanOrEqual(dragStatus.x + 0.5);
   expect(dragStatus.x + dragStatus.width).toBeLessThanOrEqual(dragClose.x + 0.5);
+  await page.keyboard.press('Escape');
+  await expect(active).toHaveAttribute('data-dragging', 'false');
+  expect(await activeEdgeStyle()).toEqual({
+    borderBottomWidth: '0px',
+    boxShadow: 'none',
+    position: 'relative',
+    zIndex: 'auto',
+  });
+  expect(await Promise.all([box(title), box(status), box(close)])).toEqual(before);
+  expect(
+    await page.evaluate(() =>
+      (
+        globalThis as typeof globalThis & {
+          __workspaceTabScenario: { actions: Array<{ type: string }> };
+        }
+      ).__workspaceTabScenario.actions.filter((action) => action.type === 'move'),
+    ),
+  ).toEqual([]);
 });
 
-test('drag keeps one horizontal real tab and drops it at the proposed placeholder', async ({
+test('Escape-cancelled real pointer drag suppresses its browser click', async ({ page }) => {
+  await mountStrip(page, { viewport: 900, zoom: 1, reduced: true });
+  const inactive = page.locator('[data-workspace-tab="inactive"]');
+  const inactiveTab = inactive.locator('[role="tab"]');
+  const tabBounds = await box(inactiveTab);
+  const startX = tabBounds.x + 28;
+  const pointerY = tabBounds.y + tabBounds.height / 2;
+  const strip = page.locator('[data-workspace-tab-strip]');
+
+  await page.evaluate(() => {
+    const global = globalThis as typeof globalThis & { __cancelledTabClickTargets: string[] };
+    global.__cancelledTabClickTargets = [];
+    document.addEventListener(
+      'click',
+      (event) => {
+        const target = event.target as Element;
+        const workspaceId = target
+          .closest('[data-workspace-tab]')
+          ?.getAttribute('data-workspace-tab');
+        if (workspaceId) global.__cancelledTabClickTargets.push(workspaceId);
+      },
+      { capture: true },
+    );
+  });
+
+  await page.mouse.move(startX, pointerY);
+  await page.mouse.down();
+  await page.mouse.move(startX + 12, pointerY);
+  await expect(inactive).toHaveAttribute('data-dragging', 'true');
+  await page.keyboard.press('Escape');
+  await expect(inactive).toHaveAttribute('data-dragging', 'false');
+  await expect(page.locator('[data-workspace-tab-placeholder]')).toHaveCount(0);
+  await expect(strip).toHaveCSS('cursor', 'auto');
+  await page.mouse.up();
+
+  expect(
+    await page.evaluate(
+      () =>
+        (globalThis as typeof globalThis & { __cancelledTabClickTargets: string[] })
+          .__cancelledTabClickTargets,
+    ),
+  ).toEqual(['inactive']);
+  expect(
+    await page.evaluate(() => {
+      const scenario = (
+        globalThis as typeof globalThis & {
+          __workspaceTabScenario: {
+            actions: Array<{ type: string; payload: unknown }>;
+            currentId: string;
+            tabOrder: string[];
+          };
+        }
+      ).__workspaceTabScenario;
+      return {
+        actions: scenario.actions.filter((action) => ['open', 'move'].includes(action.type)),
+        currentId: scenario.currentId,
+        tabOrder: scenario.tabOrder,
+      };
+    }),
+  ).toEqual({
+    actions: [],
+    currentId: 'active',
+    tabOrder: ['active', 'inactive', 'plain', 'loading'],
+  });
+  await expect(page.locator('[data-workspace-tab="active"] [role="tab"]')).toHaveAttribute(
+    'aria-selected',
+    'true',
+  );
+  await expect(inactiveTab).toHaveAttribute('aria-selected', 'false');
+
+  await page.mouse.click(startX, pointerY);
+  expect(
+    await page.evaluate(() =>
+      (
+        globalThis as typeof globalThis & {
+          __workspaceTabScenario: { actions: Array<{ type: string; payload: unknown }> };
+        }
+      ).__workspaceTabScenario.actions.filter((action) => ['open', 'move'].includes(action.type)),
+    ),
+  ).toEqual([{ type: 'open', payload: ['inactive'] }]);
+});
+
+test('drag keeps one horizontal real tab and drops it at the invisible reserved slot', async ({
   page,
 }) => {
   await mountStrip(page, { viewport: 900, zoom: 1, reduced: false });
-  const strip = page.locator('[data-workspace-tab-strip]');
   const active = page.locator('[data-workspace-tab="active"]');
+  const activeTab = active.locator('[role="tab"]');
   const origin = await box(active);
+  const tabBounds = await box(activeTab);
   const loading = await box(page.locator('[data-workspace-tab="loading"]'));
-  const startX = origin.x + origin.width / 2;
+  const startX = tabBounds.x + 28;
   const dragX = loading.x + loading.width + 4;
+  const pointerY = origin.y + origin.height / 2;
+  const strip = page.locator('[data-workspace-tab-strip]');
+  const close = active.locator('[data-workspace-tab-close]');
 
-  await active.evaluate(
-    (node, point) => {
-      const dataTransfer = new DataTransfer();
-      (
-        globalThis as typeof globalThis & { __workspaceDragData?: DataTransfer }
-      ).__workspaceDragData = dataTransfer;
-      node.dispatchEvent(
-        new DragEvent('dragstart', {
-          bubbles: true,
-          dataTransfer,
-          clientX: point.x,
-          clientY: point.y,
-        }),
-      );
-    },
-    { x: startX, y: origin.y + origin.height / 2 },
-  );
-  await strip.evaluate(
-    (node, point) => {
-      const dataTransfer = (
-        globalThis as typeof globalThis & { __workspaceDragData?: DataTransfer }
-      ).__workspaceDragData;
-      node.dispatchEvent(
-        new DragEvent('dragover', {
-          bubbles: true,
-          cancelable: true,
-          dataTransfer,
-          clientX: point.x,
-          clientY: point.y,
-        }),
-      );
-    },
-    { x: dragX, y: origin.y + origin.height + 200 },
-  );
+  await expect(activeTab).toHaveCSS('cursor', 'grab');
+  await expect(close).toHaveCSS('cursor', 'pointer');
 
-  const placeholder = page.locator('[data-workspace-tab-placeholder="active"]');
-  await expect(placeholder).toBeVisible();
+  await page.mouse.move(startX, pointerY);
+  await page.mouse.down();
+  const dragOver = async (x: number) => page.mouse.move(x, pointerY + 200, { steps: 4 });
+
+  for (const pointerX of [startX + 44, startX - 16, dragX]) {
+    await dragOver(pointerX);
+    const tracked = await box(active);
+    expect(tracked.x).toBeCloseTo(origin.x + pointerX - startX, 1);
+    expect(tracked.y).toBeCloseTo(origin.y, 1);
+  }
+
+  const reservedSlot = page.locator('[data-workspace-tab-placeholder="active"]');
+  await expect(reservedSlot).toHaveCount(1);
+  await expect(reservedSlot).toBeHidden();
+  await expect(reservedSlot).toHaveCSS('visibility', 'hidden');
+  await expect(strip).toHaveCSS('cursor', 'grabbing');
   await expect(active).toHaveCSS('position', 'fixed');
+  await expect(active).toHaveCSS('border-bottom-width', '0px');
+  await expect(active).toHaveCSS('box-shadow', 'none');
   const dragged = await box(active);
-  const proposed = await box(placeholder);
+  const proposed = await box(reservedSlot);
+  expect({ width: proposed.width, height: proposed.height }).toEqual({
+    width: origin.width,
+    height: origin.height,
+  });
+  expect(
+    await reservedSlot.evaluate((node) => {
+      const style = getComputedStyle(node);
+      return {
+        backgroundColor: style.backgroundColor,
+        borderWidth: style.borderWidth,
+        outlineStyle: style.outlineStyle,
+      };
+    }),
+  ).toEqual({
+    backgroundColor: 'rgba(0, 0, 0, 0)',
+    borderWidth: '0px',
+    outlineStyle: 'none',
+  });
   expect(dragged.x).toBeCloseTo(origin.x + dragX - startX, 1);
   expect(dragged.y).toBeCloseTo(origin.y, 1);
   expect(
@@ -453,26 +587,35 @@ test('drag keeps one horizontal real tab and drops it at the proposed placeholde
   ).toEqual(['inactive', 'plain', 'loading', 'active']);
   await expect(page.locator('[data-workspace-stack-preview]')).toHaveCount(0);
 
-  await strip.evaluate(
-    (node, point) => {
-      const dataTransfer = (
-        globalThis as typeof globalThis & { __workspaceDragData?: DataTransfer }
-      ).__workspaceDragData;
-      node.dispatchEvent(
-        new DragEvent('drop', {
-          bubbles: true,
-          cancelable: true,
-          dataTransfer,
-          clientX: point.x,
-          clientY: point.y,
-        }),
-      );
-    },
-    { x: dragX, y: origin.y + origin.height + 200 },
-  );
+  await page.mouse.up();
 
-  await expect(placeholder).toHaveCount(0);
-  await expect(active).not.toHaveCSS('position', 'fixed');
+  expect(
+    await page.evaluate(() =>
+      (
+        globalThis as typeof globalThis & {
+          __workspaceTabScenario: { actions: Array<{ type: string; payload: unknown }> };
+        }
+      ).__workspaceTabScenario.actions
+        .filter((action) => action.type === 'move')
+        .map((action) => action.payload),
+    ),
+  ).toEqual([['active', 'loading', 'after']]);
+  expect(
+    await page.evaluate(
+      () =>
+        (globalThis as typeof globalThis & { __workspaceTabScenario: { currentId: string } })
+          .__workspaceTabScenario.currentId,
+    ),
+  ).toBe('active');
+
+  await expect(reservedSlot).toHaveCount(0);
+  await expect(strip).toHaveCSS('cursor', 'auto');
+  await expect(activeTab).toHaveCSS('cursor', 'grab');
+  await expect(close).toHaveCSS('cursor', 'pointer');
+  await expect(active).toHaveCSS('position', 'relative');
+  await expect(active).toHaveCSS('z-index', 'auto');
+  await expect(active).toHaveCSS('border-bottom-width', '0px');
+  await expect(active).toHaveCSS('box-shadow', 'none');
   const dropped = await box(active);
   expect(dropped.x).toBeCloseTo(proposed.x, 1);
   expect(dropped.x).not.toBeCloseTo(origin.x, 1);
