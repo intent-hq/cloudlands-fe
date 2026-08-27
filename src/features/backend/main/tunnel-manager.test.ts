@@ -129,16 +129,24 @@ function refuseOpens(ws: FakeTunnelSocket, refused: ReadonlySet<number>): void {
   const passthrough = ws.onFrame;
   ws.onFrame = (frame) => {
     if (frame.type === 'open' && refused.has(frame.port)) {
-      ws.deliver({
-        type: 'openErr',
-        streamId: frame.streamId,
-        message: `connect 127.0.0.1:${frame.port}: Connection refused (os error 111)`,
-      });
+      // Deliver asynchronously, like every other scripted daemon response,
+      // so the manager never processes the OPEN_ERR re-entrantly from
+      // inside its own OPEN send.
+      queueMicrotask(() =>
+        ws.deliver({
+          type: 'openErr',
+          streamId: frame.streamId,
+          message: `connect 127.0.0.1:${frame.port}: Connection refused (os error 111)`,
+        }),
+      );
       return;
     }
     passthrough?.(frame);
   };
 }
+
+/** Arbitrary remote port for [[refuseOpens]] — never actually dialed. */
+const REFUSED_PORT = 4545;
 
 const WSS_CONFIG: BackendConnectionConfig = {
   transport: 'wss',
@@ -420,7 +428,7 @@ describe('TunnelManager', () => {
 
   it('rejects the local socket when the remote OPEN fails', async () => {
     // A remote port whose OPEN the scripted daemon refuses (#3596).
-    const deadPort = 4545;
+    const deadPort = REFUSED_PORT;
     const { manager } = makeManager({ refusedPorts: new Set([deadPort]) });
     onCleanup(() => manager.dispose());
     const localPort = await manager.forwardPort(deadPort);
@@ -433,7 +441,7 @@ describe('TunnelManager', () => {
     const healthy = await startEchoServer();
     onCleanup(() => healthy.server.close());
     // A remote port whose OPEN the scripted daemon refuses (#3596).
-    const deadPort = 4545;
+    const deadPort = REFUSED_PORT;
     const { manager } = makeManager({ refusedPorts: new Set([deadPort]) });
     onCleanup(() => manager.dispose());
     const healthyLocal = await manager.forwardPort(healthy.port);
@@ -674,7 +682,7 @@ describe('TunnelManager', () => {
     const healthy = await startEchoServer();
     onCleanup(() => healthy.server.close());
     // A remote port whose OPEN the scripted daemon refuses (#3596).
-    const deadPort = 4545;
+    const deadPort = REFUSED_PORT;
     const { manager } = makeManager({ refusedPorts: new Set([deadPort]) });
     onCleanup(() => manager.dispose());
     const dropped: number[] = [];
