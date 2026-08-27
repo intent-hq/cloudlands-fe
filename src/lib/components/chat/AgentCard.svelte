@@ -42,6 +42,8 @@
   import type { AgentSession, Workspace } from '$shared/types';
   import SidebarContextMenu from '$lib/components/ui/sidebar-context-menu/SidebarContextMenu.svelte';
   import HarnessFeaturesModal from './HarnessFeaturesModal.svelte';
+  import ReplaceAgentModal from '$lib/components/modals/ReplaceAgentModal.svelte';
+  import { sendMessage } from '$store/renderer/slices/chat-state/chat-state-slice';
 
   import type { SidebarMenuEntry } from '$lib/components/ui/sidebar-context-menu/types';
   import {
@@ -49,6 +51,7 @@
     faCircleInfo,
     faFolderOpen,
     faPen,
+    faRightLeft,
     faStop,
     faTrash,
     faUserTie,
@@ -60,6 +63,7 @@
   import { selectIsWorkspaceHostLocal } from '$store/renderer/slices/workspace/workspace-selectors';
   import OpenPanelIndicator from '$lib/components/workspace/sidebar/OpenPanelIndicator.svelte';
   import { isCmdClickModifier } from '$shared/utils/link-helpers';
+  import { isReplaceAgentEligible } from '$shared/utils/replace-agent-eligibility';
 
   interface Props {
     agentId: string;
@@ -168,6 +172,9 @@
 
   // Read-only harness-features modal (opened from the context menu).
   let harnessModalOpen = $state(false);
+
+  // Replace Agent modal (opened from the context menu when eligible).
+  let replaceAgentModalOpen = $state(false);
 
   // Platform file-manager label (locality-gated reveal ⇒ daemon host is this
   // machine, so the client platform matches; PanelTabBar idiom).
@@ -387,6 +394,23 @@
     }
 
     items.push({ type: 'separator' });
+
+    // "Replace Agent" (peer-agent hand-off): hidden unless every
+    // session-derived eligibility gate passes (harnessFeatures.peerAgents
+    // snapshot true, top-level, non-background, not retired) — mirrors the
+    // AgentTabType panel menu.
+    if (!readOnly && !isBackground && isReplaceAgentEligible($agent$)) {
+      items.push({
+        id: 'replace-agent',
+        label: m.chat_agentCard_menu_replaceAgent_label(),
+        icon: faRightLeft,
+        onClick: () => {
+          replaceAgentModalOpen = true;
+          closeContextMenu();
+        },
+      });
+    }
+
     items.push({
       id: 'delete',
       label: m.chat_agentCard_menu_delete_label(),
@@ -498,6 +522,18 @@
     const specialistId = $agent$?.metadata?.specialist || $agent$?.agentMetadata?.specialist;
     return specialistId || null;
   });
+
+  // Send the (possibly edited) hand-off instruction through the normal chat
+  // send path so it lands in the transcript as a regular user message.
+  function handleReplaceAgentSend(text: string) {
+    const wsId = $agent$?.workspaceId
+      ? String($agent$.workspaceId)
+      : workspace?.id
+        ? String(workspace.id)
+        : undefined;
+    if (!wsId) return;
+    appStore.dispatch(sendMessage(agentId, { wsId, text, agentName: displayName }));
+  }
 
   // Sandbox directory for sandboxed agents (daemon-provided metadata).
   const agentSandboxPath = $derived.by(() => {
@@ -887,6 +923,15 @@
     bind:open={harnessModalOpen}
     version={$agent$.harnessVersion}
     features={$agent$?.harnessFeatures ?? null}
+  />
+{/if}
+
+{#if replaceAgentModalOpen}
+  <ReplaceAgentModal
+    bind:open={replaceAgentModalOpen}
+    agentName={displayName}
+    specialist={specialist as string | null}
+    onSend={handleReplaceAgentSend}
   />
 {/if}
 
