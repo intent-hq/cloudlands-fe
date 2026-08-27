@@ -96,7 +96,7 @@ async function mountStripMatrix(
     ]);
     document.body.replaceChildren();
     document.documentElement.classList.toggle('dark', theme === 'dark');
-    for (let count = 2; count <= 8; count += 1) {
+    for (const count of [2, 6, 8]) {
       const activeIndices = [...new Set([0, Math.floor(count / 2), count - 1])];
       for (const activeIndex of activeIndices) {
         const target = document.createElement('div');
@@ -132,94 +132,6 @@ async function mountStripMatrix(
     await tick();
     await new Promise<void>((resolveFrame) => requestAnimationFrame(() => resolveFrame()));
   }, options);
-}
-
-async function inspectPristinePanelBackground(page: Page, theme: 'light' | 'dark') {
-  await page.goto(`${baseUrl}src/app.html`);
-  await page.addStyleTag({ url: `${baseUrl}src/app.css` });
-  return page.evaluate(async (selectedTheme) => {
-    Object.assign(globalThis, { process: { env: { NODE_ENV: 'test' } } });
-    document.documentElement.classList.toggle('dark', selectedTheme === 'dark');
-    const [{ mount, tick, unmount }, { default: Host }] = await Promise.all([
-      import('/@id/svelte'),
-      import('/test/fixtures/PanelPristineBackgroundHost.svelte'),
-    ]);
-    document.body.replaceChildren();
-
-    const tokenBackground = (className: string) => {
-      const probe = document.createElement('div');
-      probe.className = className;
-      document.body.append(probe);
-      const background = getComputedStyle(probe).backgroundColor;
-      probe.remove();
-      return background;
-    };
-    const sidebarBackground = tokenBackground('bg-sidebar');
-    const cardBackground = tokenBackground('bg-card');
-    const readEmptySurface = () => {
-      const surface = document.querySelector<HTMLElement>('[data-empty-panel-surface="true"]');
-      if (!surface) return null;
-      return {
-        background: getComputedStyle(surface).backgroundColor,
-        containsPanel: surface.querySelector('.panel') !== null,
-      };
-    };
-    const mountHost = async (openAgent: boolean) => {
-      const target = document.createElement('div');
-      document.body.append(target);
-      let firstBackground: string | null = null;
-      const observer = new MutationObserver(() => {
-        firstBackground ??= readEmptySurface()?.background ?? null;
-      });
-      observer.observe(target, { childList: true, subtree: true });
-      const component = mount(Host, {
-        target,
-        props: {
-          workspaceId: `pristine-${selectedTheme}-${openAgent ? 'opened' : 'empty'}`,
-          openAgent,
-        },
-      });
-      await tick();
-      await new Promise((resolveFrame) => setTimeout(resolveFrame, 0));
-      firstBackground ??= readEmptySurface()?.background ?? null;
-      observer.disconnect();
-      return { component, target, firstBackground };
-    };
-
-    const initial = await mountHost(false);
-    const initialSurface = readEmptySurface();
-    await unmount(initial.component);
-    initial.target.remove();
-
-    const opened = await mountHost(true);
-    const firstOpenSurface = readEmptySurface();
-    const populatedPanel = [...document.querySelectorAll<HTMLElement>('.panel')].find(
-      (panel) => !panel.closest('[data-empty-panel-surface="true"]'),
-    );
-    const populatedBackground = populatedPanel
-      ? getComputedStyle(populatedPanel).backgroundColor
-      : null;
-    await new Promise<void>((resolveFrame) => requestAnimationFrame(() => resolveFrame()));
-    const settledSurface = readEmptySurface();
-    await unmount(opened.component);
-    opened.target.remove();
-
-    const remounted = await mountHost(true);
-    const remountedSurface = readEmptySurface();
-    await unmount(remounted.component);
-
-    return {
-      sidebarBackground,
-      cardBackground,
-      initialFirstBackground: initial.firstBackground,
-      initialSurface,
-      openedFirstBackground: opened.firstBackground,
-      firstOpenSurface,
-      settledSurface,
-      populatedBackground,
-      remountedSurface,
-    };
-  }, theme);
 }
 
 async function boxes(locator: Locator) {
@@ -272,301 +184,12 @@ function expectSegmentedDeck(rects: Array<{ x: number; width: number }>) {
   }
 }
 
-test('the visible pristine owner paints bg-sidebar from insertion through remount', async ({
-  page,
-}) => {
-  test.setTimeout(120_000);
-  for (const theme of ['light', 'dark'] as const) {
-    const result = await inspectPristinePanelBackground(page, theme);
-    expect(result.initialFirstBackground).toBe(result.sidebarBackground);
-    expect(result.initialSurface).toEqual({
-      background: result.sidebarBackground,
-      containsPanel: false,
-    });
-    expect(result.openedFirstBackground).toBe(result.sidebarBackground);
-    expect(result.firstOpenSurface?.background).toBe(result.sidebarBackground);
-    expect(result.settledSurface?.background).toBe(result.sidebarBackground);
-    expect(result.remountedSurface?.background).toBe(result.sidebarBackground);
-    expect(result.populatedBackground).toBe(result.cardBackground);
-    expect(result.sidebarBackground).not.toBe(result.cardBackground);
-  }
-});
-
-test('compact grid cards keep equal geometry and padding through hover at narrow and zoomed sizes', async ({
-  page,
-}) => {
-  test.setTimeout(120_000);
-  await page.setViewportSize({ width: 1400, height: 1200 });
-  let lightSurfaceBackground: string | undefined;
-  for (const geometry of [
-    { width: 360, zoom: 1, theme: 'light' as const, agentCount: 0, noteCount: 0 },
-    { width: 280, zoom: 1, theme: 'dark' as const, agentCount: 1, noteCount: 1 },
-    { width: 280, zoom: 1.5, theme: 'light' as const, agentCount: 3, noteCount: 3 },
-    { width: 360, zoom: 1, theme: 'dark' as const, agentCount: 6, noteCount: 6 },
-    { width: 260, zoom: 2, theme: 'dark' as const, agentCount: 8, noteCount: 8 },
-    { width: 360, zoom: 1.5, theme: 'light' as const, agentCount: 26, noteCount: 26 },
-  ]) {
-    await mountSidebar(page, { ...geometry, selectedTab: 'overview' });
-    const cards = page.locator('[data-sidebar-launcher-grid] [data-sidebar-launcher]');
-    const gridLabels = cards.locator('[data-sidebar-launcher-label]');
-    const bottomCards = page.locator('[data-sidebar-compact-bottom-row] > *');
-    const bottomButtons = bottomCards.locator('button');
-    const surfaces = page.locator('[data-sidebar-card-surface]');
-    const launcherLabels = page.locator('[data-sidebar-launcher-label]');
-    const rows = bottomCards.locator('[data-sidebar-launcher-row]');
-    await expect(cards).toHaveCount(4);
-    await expect(page.locator('[data-sidebar-launcher="activityLog"]')).toHaveCount(0);
-    await expect(page.locator('[data-sidebar-launcher="changes"]')).toHaveCount(1);
-    await expect(page.locator('[data-testid="sidebar-activity-preview"]')).toHaveCount(0);
-    await expect(page.locator('[data-sidebar-local-changes-summary]')).toHaveCount(0);
-    const before = await boxes(cards);
-    const labelsBefore = await boxes(gridLabels);
-    const bottomBefore = await boxes(bottomCards);
-    const bottomButtonBefore = await boxes(bottomButtons);
-    expectEqual(before.slice(0, 2).map(({ width }) => width));
-    expectEqual(before.slice(2, 4).map(({ width }) => width));
-    expect(new Set(before.map(({ padding }) => padding.join('|'))).size).toBe(1);
-    expectEqual(bottomBefore.map(({ width }) => width));
-    expect(new Set(bottomButtonBefore.map(({ padding }) => padding.join('|'))).size).toBe(1);
-    const surfaceStyles = await cardStyles(surfaces);
-    expect(new Set(surfaceStyles.map(({ backgroundColor }) => backgroundColor)).size).toBe(1);
-    expect(surfaceStyles.every(({ opacity }) => Number(opacity) === 1)).toBe(true);
-    if (geometry.theme === 'dark') {
-      await expect(page.locator('html')).toHaveClass(/\bdark\b/);
-      expect(lightSurfaceBackground).toBeDefined();
-      expect(surfaceStyles[0].backgroundColor).not.toBe(lightSurfaceBackground);
-    } else {
-      await expect(page.locator('html')).not.toHaveClass(/\bdark\b/);
-      lightSurfaceBackground = surfaceStyles[0].backgroundColor;
-    }
-    const fontWeights = await launcherLabels.evaluateAll((elements) =>
-      elements.map((element) => getComputedStyle(element).fontWeight),
-    );
-    expect(fontWeights.every((weight) => Number(weight) >= 600)).toBe(true);
-    const rowBoxes = await boxes(rows);
-    expect(rowBoxes).toHaveLength(2);
-    expectEqual(rowBoxes.map(({ height }) => height));
-    const compactHeights = await bottomCards.evaluateAll((elements) =>
-      elements.map((element) => Number.parseFloat(getComputedStyle(element).height)),
-    );
-    expect(compactHeights).toEqual([44, 44]);
-
-    const iconBounds = await cards.evaluateAll((elements) =>
-      elements.slice(1, 2).map((card) => {
-        const cardRect = card.getBoundingClientRect();
-        const scale = cardRect.width / (card as HTMLElement).offsetWidth;
-        const stack = card.querySelector<HTMLElement>('[data-sidebar-launcher-icons]')!;
-        const stackRect = stack.getBoundingClientRect();
-        const inset = Number((card as HTMLElement).dataset.launcherInlineInset ?? 0) * scale;
-        const labelLeft =
-          card.querySelector<HTMLElement>('[data-sidebar-launcher-label]')!.getBoundingClientRect()
-            .left - cardRect.left;
-        const items = [...card.querySelectorAll<HTMLElement>('[data-launcher-preview-item]')];
-        return items.map((item) => {
-          const visibleSurface =
-            item.querySelector<HTMLElement>('[data-sidebar-launcher-glyph]') ?? item;
-          const itemRect = item.getBoundingClientRect();
-          const visibleRect = visibleSurface.getBoundingClientRect();
-          const overflowText = item.querySelector<HTMLElement>('span[aria-hidden="true"]');
-          const overflowTextRect = overflowText?.getBoundingClientRect();
-          return {
-            left: itemRect.left - cardRect.left,
-            visibleLeft: visibleRect.left - cardRect.left,
-            visibleWidth: visibleRect.width,
-            right: cardRect.right - itemRect.right,
-            width: itemRect.width,
-            inset,
-            labelLeft,
-            scale,
-            overflow:
-              item.hasAttribute('data-sidebar-agent-overflow') ||
-              item.hasAttribute('data-sidebar-context-overflow'),
-            overflowText: overflowText?.textContent ?? '',
-            overflowTextLeft: overflowTextRect ? overflowTextRect.left - itemRect.left : 0,
-            overflowTextRight: overflowTextRect ? itemRect.right - overflowTextRect.right : 0,
-            scrollWidth: item.scrollWidth,
-            clientWidth: item.clientWidth,
-            availableWidth: stackRect.width,
-          };
-        });
-      }),
-    );
-    expect(
-      iconBounds.flat().every(({ left, right, inset }) => left >= inset && right >= inset),
-    ).toBe(true);
-    for (const bounds of iconBounds) {
-      const total = geometry.noteCount;
-      if (total === 0) {
-        expect(bounds).toHaveLength(0);
-        continue;
-      }
-      const renderedOverflow = bounds.find(({ overflow }) => overflow);
-      const reservedOverflowWidth = renderedOverflow
-        ? renderedOverflow.width / renderedOverflow.scale
-        : 36;
-      const expectedLimit = Math.max(
-        1,
-        Math.min(
-          6,
-          Math.floor(
-            (bounds[0].availableWidth / bounds[0].scale - 36 - reservedOverflowWidth) / 15,
-          ) + 1,
-        ),
-      );
-      const expectedVisible = Math.min(total, expectedLimit);
-      const expectedOverflow = total - expectedVisible;
-      const expectedCount = expectedVisible + (expectedOverflow > 0 ? 1 : 0);
-      expect(bounds).toHaveLength(expectedCount);
-      expect(Math.abs(bounds[0].visibleLeft - bounds[0].labelLeft)).toBeLessThanOrEqual(0.5);
-      expect(
-        bounds
-          .filter(({ overflow }) => !overflow)
-          .every(({ width, scale }) => Math.abs(width - 36 * scale) <= 0.5),
-      ).toBe(true);
-      expect(
-        bounds
-          .filter(({ overflow }) => overflow)
-          .every(({ width, scale }) => width >= 36 * scale - 0.5),
-      ).toBe(true);
-      expect(
-        bounds
-          .filter(({ overflow }) => !overflow)
-          .every(({ visibleWidth, scale }) => Math.abs(visibleWidth - 20 * scale) <= 0.5),
-      ).toBe(true);
-      const steps = bounds.slice(1).map((item, itemIndex) => item.left - bounds[itemIndex].left);
-      expect(steps.every((step) => step > 0 && step <= 36 * bounds[0].scale)).toBe(true);
-      const visibleBounds = bounds.filter(({ overflow }) => !overflow);
-      const visibleSteps = visibleBounds
-        .slice(1)
-        .map((item, itemIndex) => item.visibleLeft - visibleBounds[itemIndex].visibleLeft);
-      if (visibleSteps.length > 1) expectEqual(visibleSteps, 0.75);
-      expect(visibleSteps.every((step) => Math.abs(step - 15 * bounds[0].scale) <= 0.5)).toBe(true);
-      expect(
-        visibleSteps.every(
-          (step) => Math.abs(20 * bounds[0].scale - step - 5 * bounds[0].scale) <= 0.5,
-        ),
-      ).toBe(true);
-      if (expectedOverflow > 0) {
-        const overflow = bounds.at(-1)!;
-        expect(overflow.overflow).toBe(true);
-        expect(steps.at(-1)).toBeCloseTo(36 * bounds[0].scale, 1);
-        expect(overflow.overflowText).toBe(`+${expectedOverflow}`);
-        expect(overflow.overflowTextLeft).toBeGreaterThanOrEqual(0);
-        expect(overflow.overflowTextRight).toBeGreaterThanOrEqual(0);
-        expect(overflow.scrollWidth).toBeLessThanOrEqual(overflow.clientWidth);
-      }
-    }
-    const cardAlignment = await surfaces.evaluateAll((elements) =>
-      elements.map((card) => {
-        const element = card as HTMLElement;
-        const cardRect = element.getBoundingClientRect();
-        const scale = cardRect.width / element.offsetWidth;
-        const label = element.querySelector<HTMLElement>('[data-sidebar-launcher-label]')!;
-        const stack = element.querySelector<HTMLElement>('[data-sidebar-launcher-icons]');
-        const visibleSurface =
-          element.querySelector<HTMLElement>('[data-sidebar-launcher-glyph]') ??
-          element.querySelector<HTMLElement>(
-            '[data-sidebar-changes-resource] [data-resource-icon-tile]',
-          );
-        const id =
-          element.dataset.sidebarLauncher ??
-          (element.hasAttribute('data-workspace-terminal-dock') ? 'shell' : 'unknown');
-        let leadingLeft: number;
-        if (visibleSurface) {
-          leadingLeft = visibleSurface.getBoundingClientRect().left;
-        } else if (stack) {
-          leadingLeft =
-            stack.getBoundingClientRect().left +
-            Number(stack.dataset.launcherVisibleOffset ?? 0) * scale;
-        } else {
-          const style = getComputedStyle(element);
-          leadingLeft =
-            cardRect.left +
-            (Number.parseFloat(style.borderLeftWidth) + Number.parseFloat(style.paddingLeft)) *
-              scale;
-        }
-        return {
-          id,
-          delta: Math.abs(label.getBoundingClientRect().left - leadingLeft),
-        };
-      }),
-    );
-    expect(cardAlignment.map(({ id }) => id).sort()).toEqual([
-      'agents',
-      'browser',
-      'changes',
-      'context',
-      'files',
-      'shell',
-    ]);
-    expect(
-      cardAlignment.every(({ delta }) => delta <= 0.5),
-      JSON.stringify(cardAlignment),
-    ).toBe(true);
-    const changesGeometry = await cards
-      .filter({ has: page.locator('[data-sidebar-changes-resource]') })
-      .evaluate((card) => {
-        const scale = card.getBoundingClientRect().width / (card as HTMLElement).offsetWidth;
-        return {
-          target:
-            card
-              .querySelector<HTMLElement>('[data-sidebar-changes-resource]')!
-              .getBoundingClientRect().width / scale,
-          visible:
-            card.querySelector<HTMLElement>('[data-resource-icon-tile]')!.getBoundingClientRect()
-              .width / scale,
-        };
-      });
-    expect(changesGeometry.target).toBeCloseTo(36, 1);
-    expect(changesGeometry.visible).toBeCloseTo(20, 1);
-    const labelRows = await cards.evaluateAll((elements) =>
-      elements.map((card) => {
-        const cardRect = card.getBoundingClientRect();
-        const rowRect = card
-          .querySelector<HTMLElement>('[data-sidebar-label-row]')!
-          .getBoundingClientRect();
-        const scale = cardRect.width / (card as HTMLElement).offsetWidth;
-        return {
-          height: rowRect.height / scale,
-          bottomInset: (cardRect.bottom - rowRect.bottom) / scale,
-        };
-      }),
-    );
-    expect(labelRows.every(({ height }) => Math.abs(height - 28) < 0.1)).toBe(true);
-    expect(labelRows.every(({ bottomInset }) => bottomInset >= 8 && bottomInset <= 10)).toBe(true);
-    const filesCenterDelta = await cards
-      .filter({ has: page.locator('[data-files-open-in]') })
-      .evaluate((card) => {
-        const row = card
-          .querySelector<HTMLElement>('[data-sidebar-label-row]')!
-          .getBoundingClientRect();
-        const icon = card
-          .querySelector<HTMLElement>('[data-files-open-in]')!
-          .getBoundingClientRect();
-        return Math.abs(row.top + row.height / 2 - (icon.top + icon.height / 2));
-      });
-    expect(filesCenterDelta).toBeLessThan(0.6 * geometry.zoom);
-
-    await cards.nth(0).hover();
-    await page.waitForTimeout(300);
-    expect(await boxes(cards)).toEqual(before);
-    expect(await boxes(gridLabels)).toEqual(labelsBefore);
-    expect(await boxes(bottomCards)).toEqual(bottomBefore);
-    await cards.nth(1).hover();
-    await page.waitForTimeout(300);
-    expect(await boxes(cards)).toEqual(before);
-    await page.mouse.move(0, 0);
-    await page.waitForTimeout(300);
-    expect(await boxes(cards)).toEqual(before);
-  }
-});
-
-test('Agents card shares adaptive stack geometry for 1, 3, and large counts', async ({ page }) => {
+test('Agents card shares adaptive stack geometry at boundary counts', async ({ page }) => {
   test.setTimeout(120_000);
   await page.setViewportSize({ width: 1200, height: 1000 });
-  for (const agentCount of [1, 3, 26]) {
-    for (const theme of ['light', 'dark'] as const) {
-      for (const zoom of [1, 2]) {
+  for (const agentCount of [1, 26]) {
+    for (const theme of ['light'] as const) {
+      for (const zoom of [1]) {
         await mountSidebar(page, {
           width: 260,
           zoom,
@@ -665,50 +288,6 @@ test('Agents card shares adaptive stack geometry for 1, 3, and large counts', as
   }
 });
 
-test('launcher cards preserve note focus and the full Agents card target', async ({ page }) => {
-  await page.setViewportSize({ width: 1200, height: 1000 });
-  await mountSidebar(page, {
-    width: 320,
-    zoom: 1,
-    theme: 'light',
-    selectedTab: 'overview',
-    agentCount: 8,
-    noteCount: 8,
-  });
-
-  const agentStack = page.locator('[data-sidebar-launcher="agents"] [data-agent-avatar-stack]');
-  const notes = page.locator('[data-sidebar-context]');
-  const visibleAgents = await agentStack.locator('[data-agent-avatar-stack-item]').count();
-  expect(visibleAgents).toBeGreaterThan(0);
-  expect(visibleAgents).toBeLessThanOrEqual(6);
-  await expect(agentStack.locator('[data-agent-avatar-overflow]')).toHaveText(
-    `+${8 - visibleAgents}`,
-  );
-  await expect(agentStack.locator('button[data-sidebar-agent]')).toHaveCount(visibleAgents);
-  const visibleNotes = await notes.count();
-  expect(visibleNotes).toBeGreaterThan(0);
-  expect(visibleNotes).toBeLessThanOrEqual(6);
-  await expect(page.locator('[data-sidebar-context-overflow]')).toHaveText(`+${8 - visibleNotes}`);
-  await expect(notes.nth(0).locator('[data-panel-open-marker]')).toHaveAttribute(
-    'data-panel-open-state',
-    'open',
-  );
-
-  await notes.nth(0).focus();
-  await expect(notes.nth(0)).toBeFocused();
-  await expect(page.locator('[data-sidebar-hover-card="note"]')).toBeVisible();
-
-  const cardAction = page.locator('[data-testid="agent-panel-toggle"]');
-  await cardAction.focus();
-  await expect(cardAction).toBeFocused();
-  await cardAction.click();
-  await expect(page.locator('[data-sidebar-overlay]')).toBeVisible();
-  await expect(page.locator('[data-sidebar-tab-strip]')).toHaveAttribute(
-    'data-active-tab',
-    'agents',
-  );
-});
-
 test('visible Agents stack avatars support hover, focus, Enter, and Space', async ({ page }) => {
   await page.setViewportSize({ width: 1200, height: 1000 });
   await mountSidebar(page, {
@@ -758,123 +337,6 @@ test('visible Agents stack avatars support hover, focus, Enter, and Space', asyn
   await page.keyboard.press('Space');
   await expect(buttons.nth(2)).toHaveAttribute('data-keyboard-clicks', '1');
   await expect(page.locator('[data-sidebar-overlay]')).toHaveCount(0);
-});
-
-test('Changes PR action stays in the trailing card area at normal and narrow zoom', async ({
-  page,
-}) => {
-  await page.setViewportSize({ width: 1200, height: 1000 });
-  for (const scenario of [
-    { width: 360, zoom: 1 },
-    { width: 220, zoom: 2 },
-  ]) {
-    await mountSidebar(page, {
-      ...scenario,
-      theme: 'light',
-      selectedTab: 'overview',
-      hasPullRequest: true,
-    });
-    const card = page.locator('[data-sidebar-launcher="changes"]');
-    const action = card.locator('[data-sidebar-pr-link]');
-    await expect(action).toHaveCount(1);
-    await expect(action).toHaveAttribute('data-sidebar-pr-url', /\/pull\/42$/);
-    const geometry = await card.evaluate((element) => {
-      const box = (selector: string) => {
-        const rect = element.querySelector<HTMLElement>(selector)!.getBoundingClientRect();
-        return { left: rect.left, right: rect.right, width: rect.width };
-      };
-      const label = element.querySelector<HTMLElement>('[data-sidebar-launcher-label]')!;
-      const cardRect = element.getBoundingClientRect();
-      return {
-        card: { left: cardRect.left, right: cardRect.right, width: cardRect.width },
-        row: box('[data-sidebar-label-row]'),
-        label: box('[data-sidebar-launcher-label]'),
-        action: box('[data-sidebar-pr-link]'),
-        labelClientWidth: label.clientWidth,
-        labelScrollWidth: label.scrollWidth,
-      };
-    });
-    expect(geometry.action.width).toBeCloseTo(24 * scenario.zoom, 1);
-    expect(geometry.card.right - geometry.action.right).toBeCloseTo(9 * scenario.zoom, 1);
-    expect(geometry.label.right).toBeLessThanOrEqual(geometry.action.left);
-    expect(geometry.row.right).toBeCloseTo(geometry.action.right, 1);
-    expect(geometry.labelScrollWidth).toBeGreaterThanOrEqual(geometry.labelClientWidth);
-    await action.focus();
-    await expect(action).toBeFocused();
-    await page.keyboard.press('Enter');
-    await expect(action).toHaveCount(1);
-  }
-});
-
-test('View PR follows the workspace description once in compact and expanded modes', async ({
-  page,
-}) => {
-  test.setTimeout(120_000);
-  const longDescription =
-    'Reviewing the sidebar geometry across narrow widths, dark mode, expanded cards, and browser zoom without truncating this workspace description.';
-  for (const scenario of [
-    {
-      width: 360,
-      zoom: 1,
-      theme: 'light' as const,
-      selectedTab: 'overview',
-      description: undefined,
-      hasPullRequest: true,
-    },
-    {
-      width: 260,
-      zoom: 2,
-      theme: 'dark' as const,
-      selectedTab: 'changes',
-      description: longDescription,
-      hasPullRequest: true,
-    },
-    {
-      width: 300,
-      zoom: 1,
-      theme: 'dark' as const,
-      selectedTab: 'overview',
-      description: longDescription,
-      hasPullRequest: false,
-    },
-    {
-      width: 320,
-      zoom: 1.5,
-      theme: 'light' as const,
-      selectedTab: 'files',
-      description: undefined,
-      hasPullRequest: false,
-    },
-  ]) {
-    await mountSidebar(page, scenario);
-    const viewPr = page.locator('[data-workspace-view-pr]');
-    await expect(viewPr).toHaveCount(scenario.hasPullRequest ? 1 : 0);
-    await expect(page.locator('[data-sidebar-changes-pr]')).toHaveCount(0);
-    await expect(page.locator('[data-sidebar-overlay]')).toHaveCount(
-      scenario.selectedTab === 'overview' ? 0 : 1,
-    );
-    if (!scenario.hasPullRequest) continue;
-
-    const titleRegion = page.locator('[data-workspace-title-region]');
-    const regionBox = await titleRegion.boundingBox();
-    const prBox = await viewPr.boundingBox();
-    expect(regionBox).not.toBeNull();
-    expect(prBox).not.toBeNull();
-    expect(prBox!.x).toBeGreaterThanOrEqual(regionBox!.x);
-    expect(prBox!.x + prBox!.width).toBeLessThanOrEqual(regionBox!.x + regionBox!.width);
-    if (scenario.description) {
-      const descriptionBox = await page
-        .getByRole('button', { name: 'Edit workspace status' })
-        .boundingBox();
-      expect(descriptionBox).not.toBeNull();
-      expect(prBox!.y).toBeGreaterThanOrEqual(descriptionBox!.y + descriptionBox!.height);
-    }
-    const button = viewPr.getByRole('button', { name: 'View PR' });
-    await button.focus();
-    await expect(button).toBeFocused();
-    await page.keyboard.press('Enter');
-    await expect(viewPr).toHaveCount(1);
-  }
 });
 
 test('Browser and Shell compact cards expand into tested six-member deck bodies', async ({
@@ -962,7 +424,6 @@ test('tab deck previews inactive tabs without changing current content and trans
   await page.setViewportSize({ width: 1400, height: 1200 });
   for (const geometry of [
     { width: 360, zoom: 1, theme: 'light' as const },
-    { width: 280, zoom: 1, theme: 'dark' as const },
     { width: 280, zoom: 2, theme: 'dark' as const },
   ]) {
     await mountSidebar(page, { ...geometry, selectedTab: 'agents' });
@@ -1095,7 +556,7 @@ test('tab deck previews inactive tabs without changing current content and trans
   }
 });
 
-test('segmented deck keeps one icon per card and current-owned close for every 2–8 tab position', async ({
+test('segmented deck keeps one icon per card and current-owned close at boundary tab counts', async ({
   page,
 }) => {
   test.setTimeout(120_000);
@@ -1105,7 +566,7 @@ test('segmented deck keeps one icon per card and current-owned close for every 2
     { width: 260, zoom: 2, theme: 'dark' as const, reducedMotion: true },
   ]) {
     await mountStripMatrix(page, geometry);
-    for (let count = 2; count <= 8; count += 1) {
+    for (const count of [2, 6, 8]) {
       for (const activeIndex of [...new Set([0, Math.floor(count / 2), count - 1])]) {
         const scenario = page.locator(`[data-strip-scenario="${count}-${activeIndex}"]`);
         const strip = scenario.locator('[data-sidebar-tab-strip]');

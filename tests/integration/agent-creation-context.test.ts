@@ -1,189 +1,109 @@
-/**
- * Test agent creation with context references
- * Ensures agents are created with proper context handling
- */
+import type { Workspace } from '$shared/types';
+import { UnifiedAgentFactory } from '$features/agent/services/agent-factory';
+import { initAppStore, store } from '$store/renderer/store';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+const { backendRequestMock, createAgentMock } = vi.hoisted(() => {
+  if (!globalThis.window) {
+    Object.defineProperty(globalThis, 'window', { value: {}, writable: true, configurable: true });
+  }
+  return {
+    backendRequestMock: vi.fn(),
+    createAgentMock: vi.fn(),
+  };
+});
 
-describe('Agent Creation with Context References', () => {
-  let mockAgentFactory: any;
+vi.mock('$lib/client/live/backend-transport', () => ({ backendRequest: backendRequestMock }));
+vi.mock('$lib/client', () => ({ appClient: { agents: { create: createAgentMock } } }));
+
+describe('Agent creation with context references', () => {
+  let factory: UnifiedAgentFactory;
+  let disposeStore: () => void;
+
+  const workspace = {
+    id: 'ws-context',
+    title: 'Context workspace',
+    worktreePath: '/worktrees/context',
+    createdAt: '2026-08-25T00:00:00.000Z',
+    updatedAt: '2026-08-25T00:00:00.000Z',
+  } as Workspace;
+
+  beforeAll(() => {
+    disposeStore = initAppStore(store).dispose;
+    factory = UnifiedAgentFactory.getInstance();
+  }, 30_000);
 
   beforeEach(() => {
-    mockAgentFactory = {
-      createAgent: vi.fn(async (workspace, config) => {
-        if (!workspace?.id) {
-          return { success: false, error: 'Invalid workspace' };
-        }
-
-        const contextReferences = config.contextReferences || [];
-        const hasContext = contextReferences.length > 0;
-
-        return {
-          success: true,
-          agent: {
-            id: 'agent_1',
-            name: config.name,
-            workspaceId: workspace.id,
-            contextReferences,
-            hasContext,
-            metadata: {
-              ...config.metadata,
-              hasContext,
-              contextCount: contextReferences.length,
-            },
-          },
-        };
-      }),
-    };
-  });
-
-  it('should create agent with file context', async () => {
-    const workspace = { id: 'ws_1' };
-    const contextReferences = [{ type: 'file', path: '/src/app.ts' }];
-
-    const result = await mockAgentFactory.createAgent(workspace, {
-      name: 'Agent',
-      contextReferences,
+    createAgentMock.mockReset();
+    backendRequestMock.mockReset();
+    createAgentMock.mockResolvedValue({
+      id: 'agent-context-daemon',
+      backendSessionId: null,
+      workspaceId: workspace.id,
+      name: 'Context Agent',
+      status: 'pending',
+      messages: [],
+      createdAt: '2026-08-25T00:00:00.000Z',
+      updatedAt: '2026-08-25T00:00:00.000Z',
     });
-
-    expect(result.agent.contextReferences).toHaveLength(1);
-    expect(result.agent.contextReferences[0].type).toBe('file');
+    backendRequestMock.mockResolvedValue({ success: true, queued: false, messageId: 'msg-1' });
   });
 
-  it('should create agent with note context', async () => {
-    const workspace = { id: 'ws_1' };
-    const contextReferences = [{ type: 'note', id: 'note_1' }];
-
-    const result = await mockAgentFactory.createAgent(workspace, {
-      name: 'Agent',
-      contextReferences,
-    });
-
-    expect(result.agent.contextReferences).toHaveLength(1);
-    expect(result.agent.contextReferences[0].type).toBe('note');
+  afterAll(() => {
+    disposeStore();
+    vi.clearAllMocks();
   });
 
-  it('should create agent with multiple context references', async () => {
-    const workspace = { id: 'ws_1' };
+  it('forwards context references on the initial message without inventing create metadata', async () => {
     const contextReferences = [
       { type: 'file', path: '/src/app.ts' },
-      { type: 'file', path: '/src/utils.ts' },
-      { type: 'note', id: 'note_1' },
+      { type: 'note', id: 'note-1' },
     ];
-
-    const result = await mockAgentFactory.createAgent(workspace, {
-      name: 'Agent',
-      contextReferences,
-    });
-
-    expect(result.agent.contextReferences).toHaveLength(3);
-    expect(result.agent.hasContext).toBe(true);
-  });
-
-  it('should create agent without context', async () => {
-    const workspace = { id: 'ws_1' };
-
-    const result = await mockAgentFactory.createAgent(workspace, {
-      name: 'Agent',
-    });
-
-    expect(result.agent.contextReferences).toHaveLength(0);
-    expect(result.agent.hasContext).toBe(false);
-  });
-
-  it('should track context count in metadata', async () => {
-    const workspace = { id: 'ws_1' };
-    const contextReferences = [
-      { type: 'file', path: '/file1.ts' },
-      { type: 'file', path: '/file2.ts' },
-    ];
-
-    const result = await mockAgentFactory.createAgent(workspace, {
-      name: 'Agent',
-      contextReferences,
-    });
-
-    expect(result.agent.metadata.contextCount).toBe(2);
-  });
-
-  it('should include context in initial message', async () => {
-    const workspace = { id: 'ws_1' };
-    const contextReferences = [{ type: 'file', path: '/src/app.ts' }];
-
-    await mockAgentFactory.createAgent(workspace, {
-      name: 'Agent',
-      contextReferences,
+    const result = await factory.createAgent(workspace, {
+      workspaceId: workspace.id,
+      name: 'Context Agent',
+      agentType: 'code-review',
+      source: 'contextual-menu',
       initialMessage: 'Review this code',
-    });
-
-    expect(mockAgentFactory.createAgent).toHaveBeenCalledWith(
-      expect.any(Object),
-      expect.objectContaining({
-        contextReferences,
-        initialMessage: 'Review this code',
-      }),
-    );
-  });
-
-  it('should preserve context references across agent creation', async () => {
-    const workspace = { id: 'ws_1' };
-    const contextReferences = [
-      { type: 'file', path: '/src/app.ts' },
-      { type: 'note', id: 'note_1' },
-    ];
-
-    const result = await mockAgentFactory.createAgent(workspace, {
-      name: 'Agent',
       contextReferences,
     });
 
-    expect(result.agent.contextReferences).toEqual(contextReferences);
-  });
-
-  it('should handle mixed context types', async () => {
-    const workspace = { id: 'ws_1' };
-    const contextReferences = [
-      { type: 'file', path: '/src/app.ts' },
-      { type: 'file', path: '/src/utils.ts' },
-      { type: 'note', id: 'note_1' },
-      { type: 'note', id: 'note_2' },
-    ];
-
-    const result = await mockAgentFactory.createAgent(workspace, {
-      name: 'Agent',
+    expect(result).toMatchObject({
+      success: true,
+      agentId: 'agent-context-daemon',
+      agent: { id: 'agent-context-daemon', workspaceId: workspace.id },
+    });
+    expect(createAgentMock).toHaveBeenCalledWith({
+      workspaceId: workspace.id,
+      workspacePath: workspace.worktreePath,
+      name: 'Context Agent',
+      model: undefined,
+      provider: undefined,
+      agentType: 'code-review',
+      prompt: undefined,
+      specialist: undefined,
+      metadata: { agentType: 'code-review', source: 'contextual-menu' },
+      workspaceContext: undefined,
+    });
+    await vi.waitFor(() => expect(backendRequestMock).toHaveBeenCalledOnce());
+    expect(backendRequestMock).toHaveBeenCalledWith('agent.sendMessage', {
+      agentId: 'agent-context-daemon',
+      workspaceId: workspace.id,
+      content: 'Review this code',
       contextReferences,
+      imageBlocks: [],
+      userAppMessageId: expect.any(String),
     });
-
-    const fileContexts = result.agent.contextReferences.filter((c: any) => c.type === 'file');
-    const noteContexts = result.agent.contextReferences.filter((c: any) => c.type === 'note');
-
-    expect(fileContexts).toHaveLength(2);
-    expect(noteContexts).toHaveLength(2);
   });
 
-  it('should mark agent as having context in metadata', async () => {
-    const workspace = { id: 'ws_1' };
-    const contextReferences = [{ type: 'file', path: '/src/app.ts' }];
-
-    const result = await mockAgentFactory.createAgent(workspace, {
-      name: 'Agent',
-      contextReferences,
-      metadata: { agentType: 'review' },
+  it('omits message transport work when no context or initial message is supplied', async () => {
+    const result = await factory.createAgent(workspace, {
+      workspaceId: workspace.id,
+      name: 'Context Agent',
     });
 
-    expect(result.agent.metadata.hasContext).toBe(true);
-    expect(result.agent.metadata.agentType).toBe('review');
-  });
-
-  it('should handle empty context array', async () => {
-    const workspace = { id: 'ws_1' };
-
-    const result = await mockAgentFactory.createAgent(workspace, {
-      name: 'Agent',
-      contextReferences: [],
-    });
-
-    expect(result.agent.hasContext).toBe(false);
-    expect(result.agent.contextReferences).toHaveLength(0);
+    expect(result.success).toBe(true);
+    expect(createAgentMock).toHaveBeenCalledOnce();
+    expect(backendRequestMock).not.toHaveBeenCalled();
   });
 });

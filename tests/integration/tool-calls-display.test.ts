@@ -1,183 +1,62 @@
-/**
- * Test tool calls display and ordering in the UI
- * Ensures tool calls appear in real-time and in correct order
- */
+import type { ContentBlock } from '$shared/types';
+import {
+  buildToolResultsMap,
+  findToolResult,
+  getToolResultPayload,
+  getToolResultText,
+} from '$lib/components/chat/tool-result-pairing';
+import { describe, expect, it } from 'vitest';
 
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+function toolUse(id: string, toolCallId: string): ContentBlock {
+  return { type: 'tool_use', id, toolCallId, name: 'search', input: { query: 'test' } };
+}
 
-describe('Tool Calls Display & Ordering', () => {
-  let mockChatPanel: any;
-  let mockStreamHandler: any;
-  let contentBlocks: any[] = [];
+function toolResult(id: string, toolUseId: string, output: unknown, isError = false): ContentBlock {
+  return { type: 'tool_result', id, tool_use_id: toolUseId, output, is_error: isError };
+}
 
-  beforeEach(() => {
-    contentBlocks = [];
+describe('Tool call display association', () => {
+  it('associates each tool call with its daemon result without changing block order', () => {
+    const useA = toolUse('msg-1:1', 'call-a');
+    const resultA = toolResult('msg-1:2', 'call-a', 'A');
+    const useB = toolUse('msg-1:3', 'call-b');
+    const resultB = toolResult('msg-1:4', 'call-b', { count: 2 });
+    const blocks: ContentBlock[] = [
+      { type: 'text', text: 'Searching' },
+      useA,
+      resultA,
+      useB,
+      resultB,
+    ];
 
-    mockStreamHandler = {
-      handleContentBlock: vi.fn((block) => {
-        contentBlocks.push(block);
-      }),
-    };
+    const results = buildToolResultsMap(blocks);
 
-    mockChatPanel = {
-      messages: [],
-      addMessage: vi.fn((msg) => {
-        mockChatPanel.messages.push(msg);
-      }),
-      updateMessage: vi.fn((msgId, updates) => {
-        const msg = mockChatPanel.messages.find((m: any) => m.id === msgId);
-        if (msg) {
-          msg.contentBlocks = [...(msg.contentBlocks || []), ...updates.contentBlocks];
-        }
-      }),
-    };
+    expect(blocks.map((block) => block.type)).toEqual([
+      'text',
+      'tool_use',
+      'tool_result',
+      'tool_use',
+      'tool_result',
+    ]);
+    expect(findToolResult(results, useA)).toBe(resultA);
+    expect(findToolResult(results, useB)).toBe(resultB);
   });
 
-  it('should display tool calls in real-time as they stream', () => {
-    const messageId = 'msg_1';
-    mockChatPanel.addMessage({ id: messageId, contentBlocks: [] });
+  it('uses the protocol toolCallId to tool_use_id association', () => {
+    const use = toolUse('msg-2:0', 'provider-call-1');
+    const result = toolResult('msg-2:1', 'provider-call-1', { stdout: 'ok' });
 
-    // Simulate streaming tool call
-    mockStreamHandler.handleContentBlock({
-      type: 'tool_use',
-      id: 'tool_1',
-      name: 'search',
-      input: { query: 'test' },
+    expect(getToolResultPayload(findToolResult(buildToolResultsMap([use, result]), use))).toEqual({
+      stdout: 'ok',
     });
-
-    mockChatPanel.updateMessage(messageId, {
-      contentBlocks: [contentBlocks[0]],
-    });
-
-    const msg = mockChatPanel.messages[0];
-    expect(msg.contentBlocks).toHaveLength(1);
-    expect(msg.contentBlocks[0].type).toBe('tool_use');
-    expect(msg.contentBlocks[0].name).toBe('search');
   });
 
-  it('should display tool results after tool calls', () => {
-    const messageId = 'msg_1';
-    mockChatPanel.addMessage({ id: messageId, contentBlocks: [] });
+  it('preserves an associated tool error for display', () => {
+    const use = toolUse('msg-3:0', 'provider-call-error');
+    const result = toolResult('msg-3:1', 'provider-call-error', 'Tool execution failed', true);
+    const found = findToolResult(buildToolResultsMap([use, result]), use);
 
-    // Tool call
-    mockStreamHandler.handleContentBlock({
-      type: 'tool_use',
-      id: 'tool_1',
-      name: 'search',
-      input: { query: 'test' },
-    });
-
-    // Tool result
-    mockStreamHandler.handleContentBlock({
-      type: 'tool_result',
-      toolUseId: 'tool_1',
-      content: 'Found 5 results',
-    });
-
-    mockChatPanel.updateMessage(messageId, {
-      contentBlocks,
-    });
-
-    const msg = mockChatPanel.messages[0];
-    expect(msg.contentBlocks).toHaveLength(2);
-    expect(msg.contentBlocks[0].type).toBe('tool_use');
-    expect(msg.contentBlocks[1].type).toBe('tool_result');
-    expect(msg.contentBlocks[1].toolUseId).toBe('tool_1');
-  });
-
-  it('should handle multiple tool calls in sequence', () => {
-    const messageId = 'msg_1';
-    mockChatPanel.addMessage({ id: messageId, contentBlocks: [] });
-
-    // First tool call
-    mockStreamHandler.handleContentBlock({
-      type: 'tool_use',
-      id: 'tool_1',
-      name: 'search',
-      input: { query: 'test' },
-    });
-
-    // Second tool call
-    mockStreamHandler.handleContentBlock({
-      type: 'tool_use',
-      id: 'tool_2',
-      name: 'analyze',
-      input: { data: 'results' },
-    });
-
-    mockChatPanel.updateMessage(messageId, {
-      contentBlocks,
-    });
-
-    const msg = mockChatPanel.messages[0];
-    expect(msg.contentBlocks).toHaveLength(2);
-    expect(msg.contentBlocks[0].id).toBe('tool_1');
-    expect(msg.contentBlocks[1].id).toBe('tool_2');
-  });
-
-  it('should maintain correct order: text -> tool_use -> tool_result', () => {
-    const messageId = 'msg_1';
-    mockChatPanel.addMessage({ id: messageId, contentBlocks: [] });
-
-    mockStreamHandler.handleContentBlock({
-      type: 'text',
-      text: 'Let me search for that',
-    });
-
-    mockStreamHandler.handleContentBlock({
-      type: 'tool_use',
-      id: 'tool_1',
-      name: 'search',
-      input: { query: 'test' },
-    });
-
-    mockStreamHandler.handleContentBlock({
-      type: 'tool_result',
-      toolUseId: 'tool_1',
-      content: 'Found results',
-    });
-
-    mockStreamHandler.handleContentBlock({
-      type: 'text',
-      text: 'Here are the results',
-    });
-
-    mockChatPanel.updateMessage(messageId, {
-      contentBlocks,
-    });
-
-    const msg = mockChatPanel.messages[0];
-    expect(msg.contentBlocks).toHaveLength(4);
-    expect(msg.contentBlocks[0].type).toBe('text');
-    expect(msg.contentBlocks[1].type).toBe('tool_use');
-    expect(msg.contentBlocks[2].type).toBe('tool_result');
-    expect(msg.contentBlocks[3].type).toBe('text');
-  });
-
-  it('should handle tool call errors gracefully', () => {
-    const messageId = 'msg_1';
-    mockChatPanel.addMessage({ id: messageId, contentBlocks: [] });
-
-    mockStreamHandler.handleContentBlock({
-      type: 'tool_use',
-      id: 'tool_1',
-      name: 'search',
-      input: { query: 'test' },
-    });
-
-    mockStreamHandler.handleContentBlock({
-      type: 'tool_result',
-      toolUseId: 'tool_1',
-      isError: true,
-      content: 'Tool execution failed',
-    });
-
-    mockChatPanel.updateMessage(messageId, {
-      contentBlocks,
-    });
-
-    const msg = mockChatPanel.messages[0];
-    expect(msg.contentBlocks[1].isError).toBe(true);
-    expect(msg.contentBlocks[1].content).toBe('Tool execution failed');
+    expect(found?.is_error).toBe(true);
+    expect(getToolResultText(found)).toBe('Tool execution failed');
   });
 });

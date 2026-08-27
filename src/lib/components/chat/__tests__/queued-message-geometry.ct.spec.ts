@@ -98,9 +98,24 @@ test('preserves the held hint and edit, remove, and send-now callbacks', async (
   );
 });
 
-test('never spawns a horizontal scrollbar in the transcript scroll viewport', async ({ mount }) => {
+test('never spawns a horizontal scrollbar in the transcript scroll viewport', async ({
+  mount,
+  page,
+}) => {
+  await page.addStyleTag({
+    content: `
+      [data-testid='queued-message-scroll-viewport'] {
+        border-right: 16px solid transparent;
+      }
+
+      [data-testid='queued-message-scroll-viewport']::-webkit-scrollbar {
+        width: 16px;
+        height: 16px;
+      }
+    `,
+  });
   const component = await mount(QueuedMessageGeometryHost, {
-    props: { width: 720, contentWidth: 480, zoom: 1, messageCount: 1, scrollViewport: true },
+    props: { width: 720, contentWidth: 480, zoom: 1, messageCount: 20, scrollViewport: true },
   });
   const viewport = component.getByTestId('queued-message-scroll-viewport');
   const metrics = await viewport.evaluate((node) => ({
@@ -109,7 +124,10 @@ test('never spawns a horizontal scrollbar in the transcript scroll viewport', as
     clientWidth: node.clientWidth,
     clientHeight: node.clientHeight,
     scrollWidth: node.scrollWidth,
+    scrollHeight: node.scrollHeight,
     overflowX: getComputedStyle(node).overflowX,
+    overflowY: getComputedStyle(node).overflowY,
+    reservedLaneWidth: Number.parseFloat(getComputedStyle(node).borderRightWidth),
   }));
   // Classic scrollbars can reserve a vertical gutter, while overlay scrollbars do not.
   expect(metrics.clientWidth).toBeLessThanOrEqual(metrics.offsetWidth);

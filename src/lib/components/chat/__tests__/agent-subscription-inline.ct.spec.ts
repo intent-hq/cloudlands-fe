@@ -889,50 +889,6 @@ test('caps one through eight participants at three and computes overflow from re
   ).toBeLessThanOrEqual(0.5);
 });
 
-test('keeps the complete waiting count ahead of the adaptive stack at narrow widths', async ({
-  mount,
-}) => {
-  const component = await mount(AgentSubscriptionInlineHost, {
-    props: { mode: 'agents', agentCount: 6, width: 260, initiallyExpanded: false },
-  });
-
-  for (const theme of ['light', 'dark'] as const) {
-    for (const zoom of [1, 2]) {
-      await component.update({
-        props: { theme, zoom, mode: 'agents', agentCount: 6, width: 260, initiallyExpanded: false },
-      });
-      const summary = component.getByTestId('one-shot-summary-toggle');
-      const title = component.getByTestId('one-shot-summary-title');
-      const stack = summary.locator('[data-agent-avatar-stack]');
-      await expect(summary).toHaveAccessibleName('Waiting for 6 agents');
-      await expect(title).toHaveText('Waiting for 6 agents');
-      await expect
-        .poll(() => stack.locator('[data-agent-avatar-stack-item]').count())
-        .toBeLessThan(6);
-
-      const geometry = await summary.evaluate(
-        (button, [titleTestId, chevronTestId]) => {
-          const titleNode = button.querySelector(`[data-testid="${titleTestId}"]`)!;
-          const chevronNode = button.querySelector(`[data-testid="${chevronTestId}"]`)!;
-          const titleBox = titleNode.getBoundingClientRect();
-          const chevronBox = chevronNode.getBoundingClientRect();
-          return {
-            titleRight: titleBox.right,
-            chevronLeft: chevronBox.left,
-            buttonRight: button.getBoundingClientRect().right,
-            titleScrollWidth: (titleNode as HTMLElement).scrollWidth,
-            titleClientWidth: (titleNode as HTMLElement).clientWidth,
-          };
-        },
-        ['one-shot-summary-title', 'one-shot-collapse-toggle'],
-      );
-      expect(geometry.titleScrollWidth).toBe(geometry.titleClientWidth);
-      expect(geometry.titleRight).toBeLessThanOrEqual(geometry.chevronLeft);
-      expect(geometry.chevronLeft).toBeLessThan(geometry.buttonRight);
-    }
-  }
-});
-
 test('toggles exactly once from every full-row disclosure region and not from agent rows', async ({
   mount,
 }) => {

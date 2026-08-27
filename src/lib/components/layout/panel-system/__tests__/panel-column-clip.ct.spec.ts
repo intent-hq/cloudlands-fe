@@ -12,38 +12,54 @@ test.beforeEach(async ({ page }) => {
 });
 
 function measureGeometry(component: Locator) {
-  return component.evaluate(() => {
-    const column = document.querySelector('[data-testid="panel-column"]') as HTMLElement;
-    const inset = document.querySelector('[data-testid="panel-workspace-inset"]') as HTMLElement;
-    const canvas = inset?.querySelector('.panel-canvas-resize-handle')
-      ?.parentElement as HTMLElement | null;
-    const panels = Array.from(
-      document.querySelectorAll<HTMLElement>('.panel-split-container > .panel-split-child'),
-    );
-    const columnRect = column.getBoundingClientRect();
-    const insetRect = inset?.getBoundingClientRect();
-    const canvasRect = canvas?.getBoundingClientRect();
-    const lastPanelRect = panels.at(-1)?.getBoundingClientRect();
-    return {
-      columnRight: columnRect.right,
-      columnWidth: columnRect.width,
-      insetLeft: insetRect?.left ?? null,
-      insetRight: insetRect?.right ?? null,
-      insetBottom: insetRect?.bottom ?? null,
-      insetPaddingLeft: inset ? getComputedStyle(inset).paddingLeft : null,
-      insetPaddingRight: inset ? getComputedStyle(inset).paddingRight : null,
-      insetPaddingBottom: inset ? getComputedStyle(inset).paddingBottom : null,
-      insetScrollWidth: inset?.scrollWidth ?? null,
-      insetClientWidth: inset?.clientWidth ?? null,
-      insetScrollLeft: inset?.scrollLeft ?? null,
-      canvasWidth: canvasRect?.width ?? null,
-      canvasOffsetWidth: canvas?.offsetWidth ?? null,
-      canvasRight: canvasRect?.right ?? null,
-      lastPanelRight: lastPanelRect?.right ?? null,
-      lastPanelBottom: lastPanelRect?.bottom ?? null,
-      lastPanelFlex: panels.at(-1)?.style.flex ?? null,
-      panelWidths: panels.map((p) => p.getBoundingClientRect().width),
+  return component.evaluate(async () => {
+    await document.fonts.ready;
+    const readGeometry = () => {
+      const column = document.querySelector('[data-testid="panel-column"]') as HTMLElement;
+      const inset = document.querySelector('[data-testid="panel-workspace-inset"]') as HTMLElement;
+      const canvas = inset?.querySelector('.panel-canvas-resize-handle')
+        ?.parentElement as HTMLElement | null;
+      const panels = Array.from(
+        document.querySelectorAll<HTMLElement>('.panel-split-container > .panel-split-child'),
+      );
+      const columnRect = column.getBoundingClientRect();
+      const insetRect = inset?.getBoundingClientRect();
+      const canvasRect = canvas?.getBoundingClientRect();
+      const lastPanelRect = panels.at(-1)?.getBoundingClientRect();
+      return {
+        columnRight: columnRect.right,
+        columnWidth: columnRect.width,
+        insetLeft: insetRect?.left ?? null,
+        insetRight: insetRect?.right ?? null,
+        insetBottom: insetRect?.bottom ?? null,
+        insetPaddingLeft: inset ? getComputedStyle(inset).paddingLeft : null,
+        insetPaddingRight: inset ? getComputedStyle(inset).paddingRight : null,
+        insetPaddingBottom: inset ? getComputedStyle(inset).paddingBottom : null,
+        insetScrollWidth: inset?.scrollWidth ?? null,
+        insetClientWidth: inset?.clientWidth ?? null,
+        insetScrollLeft: inset?.scrollLeft ?? null,
+        canvasWidth: canvasRect?.width ?? null,
+        canvasOffsetWidth: canvas?.offsetWidth ?? null,
+        canvasRight: canvasRect?.right ?? null,
+        lastPanelRight: lastPanelRect?.right ?? null,
+        lastPanelBottom: lastPanelRect?.bottom ?? null,
+        lastPanelFlex: panels.at(-1)?.style.flex ?? null,
+        panelWidths: panels.map((panel) => panel.getBoundingClientRect().width),
+      };
     };
+
+    let geometry = readGeometry();
+    let serialized = JSON.stringify(geometry);
+    let stableFrames = 0;
+    for (let frame = 0; frame < 30; frame += 1) {
+      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+      geometry = readGeometry();
+      const nextSerialized = JSON.stringify(geometry);
+      stableFrames = nextSerialized === serialized ? stableFrames + 1 : 0;
+      if (stableFrames === 2) return geometry;
+      serialized = nextSerialized;
+    }
+    throw new Error('Panel geometry did not settle across consecutive animation frames');
   });
 }
 
@@ -59,6 +75,15 @@ async function stableCanvasWidths(component: Locator) {
     widths.push(sample());
     return widths;
   });
+}
+
+async function expectStableCanvasWidth(component: Locator, expectedWidth: number) {
+  await expect
+    .poll(async () => {
+      const widths = await stableCanvasWidths(component);
+      return widths.every((width) => width === expectedWidth) ? widths[0] : null;
+    })
+    .toBe(expectedWidth);
 }
 
 async function resetCanvasToAutomatic(component: Locator) {
@@ -228,13 +253,13 @@ test('keeps an explicit width stable across viewport changes', async ({ mount })
   });
   const column = component.getByTestId('panel-column');
 
-  await expect.poll(async () => (await measureGeometry(component)).canvasOffsetWidth).toBe(1208);
+  await expectStableCanvasWidth(component, 1208);
   await expect(column).toHaveAttribute('data-persisted-canvas-width', '1208');
   await expect(column).toHaveAttribute('data-canvas-width-source', 'explicit');
   await component
     .getByTestId('width-plus-one')
     .evaluate((button: HTMLButtonElement) => button.click());
-  await expect.poll(async () => (await measureGeometry(component)).canvasOffsetWidth).toBe(1208);
+  await expectStableCanvasWidth(component, 1208);
 });
 
 test('reflows the panel layout to the retained width after close', async ({ mount, page }) => {

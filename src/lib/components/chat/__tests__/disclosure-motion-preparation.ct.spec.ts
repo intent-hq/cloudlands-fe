@@ -10,33 +10,62 @@ interface FrameSample {
   responseAnimations: number;
 }
 
-async function startSampling(component: Locator, frames = 48) {
+async function controlledContent(component: Locator, trigger: Locator) {
+  const id = await trigger.getAttribute('aria-controls');
+  if (!id) throw new Error('Expected disclosure trigger to control content');
+  return component.locator(`[id=${JSON.stringify(id)}]`);
+}
+
+async function expectAnimationRunning(locator: Locator) {
+  await expect
+    .poll(() =>
+      locator.evaluate((node) =>
+        node
+          .getAnimations({ subtree: true })
+          .some((animation) => animation.playState === 'running'),
+      ),
+    )
+    .toBe(true);
+}
+
+async function expectAnimationsCleanedUp(locator: Locator) {
+  await expect
+    .poll(() => locator.evaluate((node) => node.getAnimations({ subtree: true }).length))
+    .toBe(0);
+}
+
+async function startSampling(component: Locator, frames = 48, responseContentId?: string) {
   const transcript = component.getByTestId('disclosure-transcript');
-  await transcript.evaluate((scroll, count) => {
-    const state = window as typeof window & {
-      __disclosureSamples?: FrameSample[];
-      __disclosureSamplingDone?: boolean;
-    };
-    state.__disclosureSamples = [];
-    state.__disclosureSamplingDone = false;
-    let remaining = count as number;
-    const sample = () => {
-      const response = document.querySelector<HTMLElement>('[data-operational-expanded-content]');
-      const subscription = document.querySelector<HTMLElement>(
-        '[data-testid="event-subscriptions-card"]',
-      );
-      state.__disclosureSamples!.push({
-        responseHeight: response?.getBoundingClientRect().height ?? 0,
-        subscriptionHeight: subscription?.getBoundingClientRect().height ?? 0,
-        bottomDistance: scroll.scrollHeight - scroll.clientHeight - scroll.scrollTop,
-        responseAnimations: response?.getAnimations().length ?? 0,
-      });
-      remaining -= 1;
-      if (remaining > 0) requestAnimationFrame(sample);
-      else state.__disclosureSamplingDone = true;
-    };
-    requestAnimationFrame(sample);
-  }, frames);
+  await transcript.evaluate(
+    (scroll, options) => {
+      const state = window as typeof window & {
+        __disclosureSamples?: FrameSample[];
+        __disclosureSamplingDone?: boolean;
+      };
+      state.__disclosureSamples = [];
+      state.__disclosureSamplingDone = false;
+      let remaining = options.frames;
+      const sample = () => {
+        const response = options.responseContentId
+          ? document.getElementById(options.responseContentId)
+          : null;
+        const subscription = document.querySelector<HTMLElement>(
+          '[data-testid="event-subscriptions-card"]',
+        );
+        state.__disclosureSamples!.push({
+          responseHeight: response?.getBoundingClientRect().height ?? 0,
+          subscriptionHeight: subscription?.getBoundingClientRect().height ?? 0,
+          bottomDistance: scroll.scrollHeight - scroll.clientHeight - scroll.scrollTop,
+          responseAnimations: response?.getAnimations().length ?? 0,
+        });
+        remaining -= 1;
+        if (remaining > 0) requestAnimationFrame(sample);
+        else state.__disclosureSamplingDone = true;
+      };
+      requestAnimationFrame(sample);
+    },
+    { frames, responseContentId },
+  );
 }
 
 async function finishSampling(page: Page): Promise<FrameSample[]> {
@@ -70,18 +99,22 @@ for (const config of [
     const component = await mount(DisclosureMotionPreparationHost, { props: config });
     const transcript = component.getByTestId('disclosure-transcript');
     const trigger = component.getByTestId('response-group-disclosure');
+    const responseContentId = await trigger.getAttribute('aria-controls');
+    if (!responseContentId) throw new Error('Expected response disclosure content id');
     await transcript.evaluate((node) => node.scrollTo(0, node.scrollHeight));
-    await startSampling(component);
+    await startSampling(component, 48, responseContentId);
 
-    await trigger.evaluate((node) => (node as HTMLElement).click());
-    await page.waitForTimeout(40);
-    await trigger.evaluate((node) => (node as HTMLElement).click());
-    await page.waitForTimeout(40);
-    await trigger.evaluate((node) => (node as HTMLElement).click());
+    await trigger.dispatchEvent('click');
+    await expect(trigger).toHaveAttribute('aria-expanded', 'true');
+    await expectAnimationRunning(await controlledContent(component, trigger));
+    await trigger.dispatchEvent('click');
+    await expect(trigger).toHaveAttribute('aria-expanded', 'false');
+    await expectAnimationRunning(component);
+    await trigger.dispatchEvent('click');
 
     const samples = await finishSampling(page);
     await expect(trigger).toHaveAttribute('aria-expanded', 'true');
-    const details = component.locator('[data-operational-expanded-content]');
+    const details = await controlledContent(component, trigger);
     await expect(details).toHaveCount(1);
     expect(samples).toHaveLength(48);
     expect(Math.max(...samples.map((sample) => sample.responseHeight))).toBeGreaterThan(40);
@@ -104,6 +137,7 @@ for (const config of [
       Math.max(...repeatSamples.map((sample) => Math.abs(sample.bottomDistance))),
     ).toBeLessThanOrEqual(8);
     await expect(component.getByTestId('disclosure-bottom-state')).toContainText('locked:0');
+    await expectAnimationsCleanedUp(details);
     expect(
       await details.evaluate((node) => ({
         height: (node as HTMLElement).style.height,
@@ -140,34 +174,37 @@ test('measures nested and outer subscription collapse while bottom-following', a
     8,
   );
   expect(samples.at(-1)!.subscriptionHeight).toBeLessThan(samples[0].subscriptionHeight);
-  expect(await component.evaluate((node) => node.getAnimations({ subtree: true }).length)).toBe(0);
+  await expectAnimationsCleanedUp(component);
 });
 
 test('reverses the outer subscription disclosure and keeps native keyboard control', async ({
   mount,
-  page,
 }) => {
   const component = await mount(DisclosureMotionPreparationHost);
   const transcript = component.getByTestId('disclosure-transcript');
   await transcript.evaluate((node) => node.scrollTo(0, node.scrollHeight));
   const outer = component.getByTestId('event-subscriptions-summary');
 
-  await outer.click();
-  await page.waitForTimeout(35);
-  await outer.click();
-  await page.waitForTimeout(35);
-  await outer.click();
-  await page.waitForTimeout(35);
+  await outer.focus();
+  await outer.dispatchEvent('click');
+  await expect(outer).toHaveAttribute('aria-expanded', 'false');
+  await expectAnimationRunning(component);
+  await outer.dispatchEvent('click');
+  await expect(outer).toHaveAttribute('aria-expanded', 'true');
+  await expectAnimationRunning(component.getByTestId('event-subscriptions-body'));
+  await outer.dispatchEvent('click');
+  await expect(outer).toHaveAttribute('aria-expanded', 'false');
+  await expectAnimationRunning(component);
   await outer.press('Enter');
 
   await expect(outer).toHaveAttribute('aria-expanded', 'true');
   const body = component.getByTestId('event-subscriptions-body');
   await expect(body).toBeVisible();
-  await page.waitForTimeout(240);
+  await expectAnimationsCleanedUp(component);
   expect(
     await transcript.evaluate((node) => node.scrollHeight - node.clientHeight - node.scrollTop),
   ).toBeLessThanOrEqual(8);
-  expect(await component.evaluate((node) => node.getAnimations({ subtree: true }).length)).toBe(0);
+  await expectAnimationsCleanedUp(component);
 });
 
 test('accepts live response updates during collapse without stale detached content', async ({
@@ -313,7 +350,7 @@ test('completes reduced-motion disclosure cleanup without residual animations or
   await component.getByTestId('event-subscriptions-summary').click();
   await expect(component.getByTestId('one-shot-agent-list')).toHaveCount(0);
   await expect(component.getByTestId('event-subscriptions-body')).toBeHidden();
-  expect(await component.evaluate((node) => node.getAnimations({ subtree: true }).length)).toBe(0);
+  await expectAnimationsCleanedUp(component);
 });
 
 test('honors animation debug disable with immediate clean disclosure states', async ({ mount }) => {
@@ -323,10 +360,12 @@ test('honors animation debug disable with immediate clean disclosure states', as
   const response = component.getByTestId('response-group-disclosure');
   const outer = component.getByTestId('event-subscriptions-summary');
 
-  await response.click();
-  await outer.click();
-  const details = component.locator('[data-operational-expanded-content]');
+  await response.dispatchEvent('click');
+  await expect(response).toHaveAttribute('aria-expanded', 'true');
+  await outer.dispatchEvent('click');
+  await expect(outer).toHaveAttribute('aria-expanded', 'false');
+  const details = await controlledContent(component, response);
   await expect(details).toBeVisible();
   await expect(component.getByTestId('event-subscriptions-body')).toHaveCount(0);
-  expect(await details.evaluate((node) => node.getAnimations().length)).toBe(0);
+  await expectAnimationsCleanedUp(details);
 });
