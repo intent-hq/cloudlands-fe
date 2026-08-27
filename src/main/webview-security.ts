@@ -339,6 +339,11 @@ export function setupWebviewSecurity(): void {
       handleNavigation(event, url, isMainFrame);
     });
 
+    // Opener backend of the most recently allowed /hud popup from these
+    // contents, resolved once in the open handler and consumed by the
+    // did-create-window listener (which fires synchronously right after).
+    let allowedHudPopupBackendId: string | null = null;
+
     // Handle new window creation (popups) from webviews and app windows
     contents.setWindowOpenHandler(({ url }) => {
       if (contents.getType() === 'webview') {
@@ -446,6 +451,10 @@ export function setupWebviewSecurity(): void {
               });
               return { action: 'deny' };
             }
+            // Capture the resolved backend for the did-create-window listener
+            // below: resolving there again would fall back to local if the
+            // opener were destroyed before the event fires.
+            allowedHudPopupBackendId = openerBackendId;
           }
           return {
             action: 'allow',
@@ -486,7 +495,12 @@ export function setupWebviewSecurity(): void {
       contents.on('did-create-window', (popupWindow, details) => {
         try {
           if (isHudRouteUrl(new URL(details.url))) {
-            const openerBackendId = getBackendIdForWebContents(contents);
+            // Prefer the backend captured when the popup was allowed — the
+            // opener may have been destroyed since, which would make a fresh
+            // resolution here silently fall back to local.
+            const openerBackendId =
+              allowedHudPopupBackendId ?? getBackendIdForWebContents(contents);
+            allowedHudPopupBackendId = null;
             stampWindowWithBackend(popupWindow, openerBackendId);
             registerHudWindow(popupWindow);
             logger.info('Registered HUD popup window as per-backend singleton', {

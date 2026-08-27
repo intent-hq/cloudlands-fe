@@ -156,6 +156,21 @@ describe('setWindowOpenHandler HUD singleton (window.open bridge path)', () => {
     expect(hudWindow.focus).toHaveBeenCalled();
   });
 
+  it('uses the backend captured at allow time when the opener is destroyed before did-create-window', () => {
+    const { openHandler, didCreateWindow } = attachAppWindowContents({
+      openerBackendId: 'remote-a',
+    });
+
+    expect(openHandler({ url: 'app://workspaces/hud' })).toMatchObject({ action: 'allow' });
+    // The opener window goes away between allowing the popup and the
+    // did-create-window event: a fresh resolution would fall back to local.
+    electronMocks.fromWebContents.mockReturnValue(null);
+    const hudWindow = makeHudPopupWindow();
+    didCreateWindow(hudWindow, { url: 'app://workspaces/hud' });
+
+    expect(hudWindow.backendId).toBe('remote-a');
+  });
+
   it('an opener on another backend gets its own HUD popup (no cross-backend reuse)', () => {
     const local = attachAppWindowContents();
     expect(local.openHandler({ url: 'app://workspaces/hud' })).toMatchObject({ action: 'allow' });

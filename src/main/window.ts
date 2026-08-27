@@ -26,6 +26,7 @@ const logger = new Logger('Main');
 // Backend stamping lives in the dependency-light window-backend.ts (so
 // hud-window.ts and other small modules can read stamps without this
 // module's graph); re-exported here for the existing import sites.
+import { HUD_ROUTE_PREFIX, registerHudWindow } from './hud-window';
 import {
   getBackendIdForWebContents,
   getBackendIdForWindow,
@@ -517,8 +518,15 @@ export function createWindowForSession(
     buildWindowOptions({ bounds, title: resolveAppTitle(), iconPath }),
   );
   // A restored HUD session keeps its saved backend bucket — the HUD is bound
-  // to the backend it was opened on, not forced to local.
+  // to the backend it was opened on, not forced to local. Register it as THE
+  // HUD for that backend right away (stamp first — the registry keys off the
+  // stamp): its URL is still loading during startup restore, so the URL-scan
+  // fallback would miss it and a concurrent open-HUD request could create a
+  // duplicate.
   stampWindowWithBackend(window, backendId);
+  if (session.route.startsWith(HUD_ROUTE_PREFIX)) {
+    registerHudWindow(window);
+  }
   forwardRendererConsoleToMainLog(window);
 
   if (setAsMain) {
