@@ -26,6 +26,7 @@ import {
   focusHudWindow,
   registerHudWindow,
 } from './hud-window';
+import { getBackendIdForWebContents, stampWindowWithBackend } from './window-backend';
 import { isTrustedHidOrigin } from '../features/hardware-console/main/hardware-console.ipc';
 import { Logger } from '../shared/logger';
 import { isTrustedRendererUrl } from './ipc-authorization';
@@ -119,10 +120,10 @@ function isExternalHttpUrl(parsed: URL): boolean {
 
 /**
  * Whether an internal URL targets the HUD pop-out route. The HUD is a
- * singleton: window.open()-style popups (e.g. the renderer's
- * window:open-new → window.open bridge) must reuse the live HUD window
- * instead of materializing a second one, mirroring the createAppWindow
- * funnel in system.ipc.ts.
+ * per-backend singleton: window.open()-style popups (e.g. the renderer's
+ * window:open-new → window.open bridge) must reuse the live HUD window bound
+ * to the opener's backend instead of materializing a second one, mirroring
+ * the createAppWindow funnel in system.ipc.ts.
  */
 function isHudRouteUrl(parsed: URL): boolean {
   return parsed.pathname.startsWith(HUD_ROUTE_PREFIX);
@@ -429,16 +430,19 @@ export function setupWebviewSecurity(): void {
       try {
         const parsed = new URL(url);
         if (isInternalUrl(parsed)) {
-          // HUD singleton: a popup targeting /hud (renderer window.open,
-          // including the window:open-new → window.open bridge fallback)
-          // must reuse the live HUD window instead of creating a second one
-          // — the same rule createAppWindow enforces for the IPC path.
+          // HUD per-backend singleton: a popup targeting /hud (renderer
+          // window.open, including the window:open-new → window.open bridge
+          // fallback) must reuse the live HUD window bound to the opener's
+          // backend instead of creating a second one — the same rule
+          // createAppWindow enforces for the IPC path.
           if (isHudRouteUrl(parsed)) {
-            const existing = findExistingHudWindow();
+            const openerBackendId = getBackendIdForWebContents(contents);
+            const existing = findExistingHudWindow(openerBackendId);
             if (existing) {
               focusHudWindow(existing);
-              logger.info('Reusing existing HUD window for popup (singleton)', {
+              logger.info('Reusing existing HUD window for popup (per-backend singleton)', {
                 windowId: existing.id,
+                backendId: openerBackendId,
               });
               return { action: 'deny' };
             }
@@ -474,15 +478,20 @@ export function setupWebviewSecurity(): void {
       });
     } else {
       // App-window popups: register a newly allowed /hud popup as THE HUD
-      // singleton immediately (its URL is still loading, so the URL-scan
-      // fallback would miss it — same mid-navigation race createAppWindow
-      // guards against by registering before loadURL).
+      // for its opener's backend immediately (its URL is still loading, so
+      // the URL-scan fallback would miss it — same mid-navigation race
+      // createAppWindow guards against by registering before loadURL).
+      // Stamp BEFORE registering: the registry keys off the backend stamp,
+      // and the stamp also routes the popup renderer's IPC to that backend.
       contents.on('did-create-window', (popupWindow, details) => {
         try {
           if (isHudRouteUrl(new URL(details.url))) {
+            const openerBackendId = getBackendIdForWebContents(contents);
+            stampWindowWithBackend(popupWindow, openerBackendId);
             registerHudWindow(popupWindow);
-            logger.info('Registered HUD popup window as singleton', {
+            logger.info('Registered HUD popup window as per-backend singleton', {
               windowId: popupWindow.id,
+              backendId: openerBackendId,
             });
           }
         } catch {

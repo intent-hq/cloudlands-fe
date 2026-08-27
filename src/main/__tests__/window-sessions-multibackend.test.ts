@@ -351,7 +351,7 @@ describe('multi-backend window sessions', () => {
       expect(getBackendIdForWebContents({} as never)).toBe('local');
     });
 
-    it('always stamps a restored HUD window as local', () => {
+    it('stamps a restored HUD window with its saved backend bucket (not forced local)', () => {
       const bounds = { x: 100, y: 100, width: 1024, height: 768 };
       fs.writeFileSync(
         getWindowSessionsPath(),
@@ -362,7 +362,7 @@ describe('multi-backend window sessions', () => {
       restoreWindowsForBackend('remote-a');
 
       const [window] = FakeBrowserWindow.getAllWindows();
-      expect(getBackendIdForWebContents(window.webContents as never)).toBe('local');
+      expect(getBackendIdForWebContents(window.webContents as never)).toBe('remote-a');
     });
 
     it('restores the incoming backend layout', () => {
