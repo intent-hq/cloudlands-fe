@@ -41,15 +41,15 @@
   import { appClient } from '$lib/client';
   import { m } from '$shared/paraglide/messages.js';
   import { selectActiveConnectionId } from '$store/renderer/slices/connections/connections-selectors';
-  import {
-    forgetConnectionRequested,
-    loadKeychainSyncStateRequested,
-  } from '$store/renderer/slices/connections/connections-slice';
+  import { loadKeychainSyncStateRequested } from '$store/renderer/slices/connections/connections-slice';
   import { store as appStore } from '$store/renderer/store';
   import { IPC_CHANNELS } from '$shared/ipc-registry';
   import { LOCAL_CONNECTION_ID } from '$shared/types/connections';
-  import type { PublishSelfResult, SelfPublishedStateResult } from '$shared/types/connections';
-  import RemoveSelfBackendModal from '$lib/components/modals/RemoveSelfBackendModal.svelte';
+  import type {
+    PublishSelfResult,
+    SelfPublishedStateResult,
+    UnpublishSelfResult,
+  } from '$shared/types/connections';
 
   const CONNECTIONS = IPC_CHANNELS.CONNECTIONS;
 
@@ -84,10 +84,14 @@
   let syncEnabled = $state(false);
   let selfPublished = $state(false);
   let publishSuppressed = $state(false);
-  let selfConnectionId = $state<string | null>(null);
   let publishBusy = $state(false);
-  let showRemoveModal = $state(false);
-  let removeBusy = $state(false);
+
+  // Gate against overlapping toggle transitions: the awaited auto-unpublish
+  // (toggle-off) keeps the toggle interactive otherwise, so a rapid off→on
+  // could refresh state while the old record still exists, skip auto-publish,
+  // and then have the queued unpublish delete it — WSS enabled but
+  // unpublished (PR #1781 review).
+  let toggleBusy = $state(false);
 
   const maskedToken = $derived(
     token ? '•'.repeat(Math.max(0, token.length - 8)) + token.slice(-8) : '',
@@ -149,6 +153,8 @@
   }
 
   async function handleToggle(checked: boolean) {
+    if (toggleBusy) return;
+    toggleBusy = true;
     try {
       const result = await appClient.settings.update([
         { path: 'server.wsApi.enabled', value: checked },
@@ -169,7 +175,7 @@
         await loadStatus();
         await maybeAutoPublish();
       } else {
-        maybeOfferRemoval();
+        await maybeAutoUnpublish();
       }
     } catch (error) {
       toast.error(
@@ -178,6 +184,8 @@
         }),
       );
       enabled = !checked;
+    } finally {
+      toggleBusy = false;
     }
   }
 
@@ -198,7 +206,6 @@
       syncEnabled = sync.enabled;
       selfPublished = self.published;
       publishSuppressed = self.suppressed;
-      selfConnectionId = self.selfConnectionId;
       publishStateLoaded = true;
     } catch {
       // Fail-soft: without a readable state, offer neither modal nor button.
@@ -246,49 +253,44 @@
   }
 
   /**
-   * After a successful toggle-off on the local connection: offer to remove
+   * After a successful toggle-off on the local connection: silently remove
    * this machine's published entry from iCloud Keychain — the record no
-   * longer points at a reachable backend. Declining leaves it in place.
-   * Never on non-macOS or when no published self entry exists (the state
-   * from the last refresh while WSS was on; fail-soft when never loaded).
+   * longer points at a reachable backend. Never on non-macOS or when no
+   * published self entry exists (the state from the last refresh while WSS
+   * was on; fail-soft when never loaded). Main removes the entry WITHOUT
+   * setting the "do not auto-publish" marker, so toggling WSS back on
+   * auto-publishes again. Fail-soft: an unpublish failure surfaces a toast
+   * and never rolls back the WSS toggle.
    */
-  function maybeOfferRemoval() {
+  async function maybeAutoUnpublish() {
     if (isRemote || !publishStateLoaded) return;
-    if (syncSupported && selfPublished && selfConnectionId !== null) showRemoveModal = true;
-  }
-
-  async function handleRemoveConfirm() {
-    if (selfConnectionId === null) return;
+    if (!syncSupported || !selfPublished) return;
+    const api = getApi();
+    if (!api) return;
     try {
-      removeBusy = true;
-      await appStore.dispatch(forgetConnectionRequested(selfConnectionId)).promise;
-      // Forgetting the self entry tombstones it (keychain sync removes it on
-      // other devices) and sets the "do not auto-publish" marker in main.
+      const result = await (api.invoke(CONNECTIONS.UNPUBLISH_SELF) as Promise<UnpublishSelfResult>);
+      // `removed: false` means main found no self entry to remove (the local
+      // `selfPublished` was stale) — nothing was unpublished, so no success
+      // toast; the state still converges to unpublished-side truth.
       selfPublished = false;
-      publishSuppressed = true;
-      selfConnectionId = null;
-      showRemoveModal = false;
-      toast.success(m.settings_wsApi_unpublishSelf_success());
+      if (result.removed) {
+        toast.success(m.settings_wsApi_unpublishSelf_success());
+      }
     } catch (error) {
       toast.error(
         m.settings_wsApi_unpublishSelf_error({
           error: error instanceof Error ? error.message : String(error),
         }),
       );
-    } finally {
-      removeBusy = false;
     }
   }
 
   async function publishSelf() {
     const api = getApi();
     if (!api) throw new Error('electronAPI is not available');
-    const result = await (api.invoke(CONNECTIONS.PUBLISH_SELF) as Promise<PublishSelfResult>);
+    await (api.invoke(CONNECTIONS.PUBLISH_SELF) as Promise<PublishSelfResult>);
     selfPublished = true;
     publishSuppressed = false;
-    // Capture the published record's id so a WSS toggle-off later in this
-    // same settings session can offer removal (maybeOfferRemoval requires it).
-    selfConnectionId = result.connection.id;
     toast.success(m.settings_wsApi_publishSelf_success());
   }
 
@@ -461,7 +463,7 @@
           variant="indicator"
           size="xs"
           class="mb-auto"
-          disabled={loading}
+          disabled={loading || toggleBusy}
           ariaLabel={m.settings_wsApi_enable_label()}
         />
       </div>
@@ -617,12 +619,6 @@
     {/if}
   {/if}
 </div>
-
-<RemoveSelfBackendModal
-  bind:open={showRemoveModal}
-  busy={removeBusy}
-  onConfirm={handleRemoveConfirm}
-/>
 
 {#if showQr}
   <!-- QR Code overlay -->

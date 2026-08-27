@@ -99,6 +99,7 @@ import type {
   RefreshSelfResult,
   SelfPublishedStateResult,
   SwitchConnectionResult,
+  UnpublishSelfResult,
 } from '../../../shared/types/connections';
 import { compareProtocolMajor } from './protocol-compat';
 import {
@@ -113,6 +114,7 @@ import {
   ConnectionsSwitchSchema,
   ConnectionsSyncGetStateSchema,
   ConnectionsSyncSetEnabledSchema,
+  ConnectionsUnpublishSelfSchema,
 } from '../../../main/ipc-schemas';
 import { createValidatedHandler } from '../../../main/ipc-validation-middleware';
 import { getBackendIdForWebContents, getFocusedWindowBackendId } from '../../../main/window';
@@ -1863,6 +1865,69 @@ export async function switchToLocalAndSpawn(): Promise<{
   return performSpawnSidecar();
 }
 
+/**
+ * Remove one stored connection with full teardown: forget it in the store
+ * (tombstone written so keychain sync propagates the deletion), retarget the
+ * compatibility client to local when it owned it, close its windows, and
+ * broadcast. Runs INSIDE the switch-operation queue — callers must already
+ * hold the enqueued critical section (monorepo#2228): a stale pre-queue
+ * active-id read could take the fall-back-to-local after a concurrent switch
+ * had already landed on another backend, disconnecting the backend the user
+ * just selected.
+ *
+ * `latchSuppression` controls the self-entry marker. `connections:forget`
+ * passes `true`: forgetting this machine's own published entry is a local
+ * unpublish, so the persistent "do not auto-publish" marker is set so the
+ * originator honors the removal and never silently re-asserts (spec "Forget =
+ * fingerprint-keyed tombstone"); cleared only by an explicit re-publish.
+ * `connections:unpublish-self` passes `false`: the record is removed but
+ * auto-publish offers stay allowed.
+ */
+async function forgetConnectionLocked(id: string, latchSuppression: boolean): Promise<void> {
+  const wasActive = (await connectionsStore.getActiveId()) === id;
+  // The fingerprint match is resolved BEFORE the forget (the record is still
+  // readable), but the marker is set only AFTER the forget succeeds —
+  // latching it first would leave a published entry with refresh-self
+  // permanently disabled if the forget throws. Fail-soft on any lookup error.
+  let forgetsSelf = false;
+  if (latchSuppression) {
+    try {
+      const [records, selfFingerprint] = await Promise.all([
+        connectionsStore.list(),
+        getStoredSelfFingerprint(),
+      ]);
+      const target = records.find((c) => c.id === id);
+      const targetKey = normalizeFingerprint(target?.fingerprint);
+      forgetsSelf = selfFingerprint !== null && targetKey === selfFingerprint;
+    } catch (error) {
+      logger.warn('Could not evaluate self-entry suppression on forget (fail-soft)', {
+        id,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+  await connectionsStore.forget(id); // rejects the reserved local id
+  if (forgetsSelf) await setAutoPublishSuppressed(true);
+  const targetClient = backendClients.get(id);
+  const retargetedPrimary =
+    wasActive && (targetClient === client || activeConnectionMeta?.id === id);
+  if (retargetedPrimary) {
+    disposeBackendClient();
+    currentConfig = null;
+    activeConnectionMeta = null;
+    getBackendClient();
+    backendReconnectForwarder.emit('reconnected', LOCAL_CONNECTION_ID);
+    app.emit('backend-connection-changed');
+  }
+  // If the forgotten backend owns every live window, create/focus local
+  // before destroying any of them. This prevents window-all-closed from
+  // entering the quit/session-clear path between teardown and fallback.
+  await windowHooks.ensureLocalWindowBeforeClose?.(id);
+  await windowHooks.closeForBackend?.(id);
+  if (!retargetedPrimary) disconnectBackendClient(id);
+  await broadcastConnectionsChanged();
+}
+
 /** Register the backend bridge IPC handlers (idempotent). */
 export function registerBackendHandlers(): void {
   if (handlersRegistered) return;
@@ -2136,62 +2201,17 @@ function registerConnectionsHandlers(): void {
 
   // Forget a remote connection. Close and disconnect only that backend. If it
   // also owns the compatibility client, retarget that client to local without
-  // disturbing windows belonging to any other backend.
-  // The active-id read + forget + conditional fallback is ONE enqueued
-  // critical section (monorepo#2228): a stale pre-queue read could take the
-  // fall-back-to-local after a concurrent switch had already landed on another
-  // backend, disconnecting the backend the user just selected.
+  // disturbing windows belonging to any other backend. Forgetting this
+  // machine's own published entry additionally latches the "do not
+  // auto-publish" marker. The whole removal is ONE enqueued critical section
+  // (see {@link forgetConnectionLocked}).
   ipcMain.handle(
     CONNECTIONS.FORGET,
     createValidatedHandler(
       ConnectionsForgetSchema,
       async (_event, { id }) =>
         enqueueSwitchOperation(async () => {
-          const wasActive = (await connectionsStore.getActiveId()) === id;
-          // Forgetting this machine's own published entry is a local
-          // unpublish: set the persistent "do not auto-publish" marker so the
-          // originator honors the removal and never silently re-asserts
-          // (spec "Forget = fingerprint-keyed tombstone"). Cleared only by an
-          // explicit re-publish. The fingerprint match is resolved BEFORE the
-          // forget (the record is still readable), but the marker is set only
-          // AFTER the forget succeeds — latching it first would leave a
-          // published entry with refresh-self permanently disabled if the
-          // forget throws. Fail-soft on any lookup error.
-          let forgetsSelf = false;
-          try {
-            const [records, selfFingerprint] = await Promise.all([
-              connectionsStore.list(),
-              getStoredSelfFingerprint(),
-            ]);
-            const target = records.find((c) => c.id === id);
-            const targetKey = normalizeFingerprint(target?.fingerprint);
-            forgetsSelf = selfFingerprint !== null && targetKey === selfFingerprint;
-          } catch (error) {
-            logger.warn('Could not evaluate self-entry suppression on forget (fail-soft)', {
-              id,
-              error: error instanceof Error ? error.message : String(error),
-            });
-          }
-          await connectionsStore.forget(id); // rejects the reserved local id
-          if (forgetsSelf) await setAutoPublishSuppressed(true);
-          const targetClient = backendClients.get(id);
-          const retargetedPrimary =
-            wasActive && (targetClient === client || activeConnectionMeta?.id === id);
-          if (retargetedPrimary) {
-            disposeBackendClient();
-            currentConfig = null;
-            activeConnectionMeta = null;
-            getBackendClient();
-            backendReconnectForwarder.emit('reconnected', LOCAL_CONNECTION_ID);
-            app.emit('backend-connection-changed');
-          }
-          // If the forgotten backend owns every live window, create/focus local
-          // before destroying any of them. This prevents window-all-closed from
-          // entering the quit/session-clear path between teardown and fallback.
-          await windowHooks.ensureLocalWindowBeforeClose?.(id);
-          await windowHooks.closeForBackend?.(id);
-          if (!retargetedPrimary) disconnectBackendClient(id);
-          await broadcastConnectionsChanged();
+          await forgetConnectionLocked(id, true);
           return { id } satisfies ForgetConnectionResult;
         }),
       CONNECTIONS.FORGET,
@@ -2286,6 +2306,20 @@ function registerConnectionsHandlers(): void {
       CONNECTIONS.REFRESH_SELF,
     ),
   );
+
+  // Unpublish THIS machine's published self entry: remove the stored record
+  // through the standard forget/teardown path (tombstone included, so
+  // keychain sync propagates the deletion) WITHOUT setting the "do not
+  // auto-publish" marker — unlike forgetting the self entry via
+  // `connections:forget`, auto-publish offers stay allowed afterwards.
+  ipcMain.handle(
+    CONNECTIONS.UNPUBLISH_SELF,
+    createValidatedHandler(
+      ConnectionsUnpublishSelfSchema,
+      async () => unpublishSelfBackend(),
+      CONNECTIONS.UNPUBLISH_SELF,
+    ),
+  );
 }
 
 /** Assemble the `connections:sync-get-state` / `sync-set-enabled` result. */
@@ -2321,9 +2355,17 @@ function getLocalClientForSelfPublish(): JsonRpcClient | null {
  * detection and clears the "do not auto-publish" marker — publishing is
  * explicit user intent. Rejects when the local backend is unreachable
  * (remote-pinned app), the wsApi listener is off (`port: null`), or there is
- * no routable local IP to publish.
+ * no routable local IP to publish. Runs as ONE enqueued critical section,
+ * serialized with `connections:unpublish-self` and every switch/forget: a
+ * rapid WSS off→on could otherwise land this upsert while the unpublish is
+ * still queued, which would then delete the fresh record (PR #1781 review).
  */
 async function publishSelfBackend(): Promise<PublishSelfResult> {
+  return enqueueSwitchOperation(() => performPublishSelfBackend());
+}
+
+/** The actual publish; only entered from the serialized critical section. */
+async function performPublishSelfBackend(): Promise<PublishSelfResult> {
   const localClient = getLocalClientForSelfPublish();
   if (!localClient) {
     throw new Error('publish-self failed: local backend is not connected (remote backend active)');
@@ -2443,22 +2485,56 @@ async function refreshSelfBackend(): Promise<RefreshSelfResult> {
 }
 
 /**
- * `connections:self-published-state`: whether a self entry exists (a stored
- * record whose fingerprint matches the persisted self fingerprint OR the live
- * local daemon's cert fingerprint via the shared cached probe) and whether
- * the persistent "do not auto-publish" marker is set. The live probe is
- * fail-soft — when the local daemon is unreachable (or the app is pinned to a
- * remote), detection falls back to the persisted fingerprint alone.
+ * Resolve this machine's published self record among `records`: a stored
+ * record whose fingerprint matches the persisted self fingerprint OR the
+ * live local daemon's cert fingerprint (via the shared cached
+ * {@link getLiveSelfFingerprint} probe). Shared by
+ * `connections:self-published-state` and `connections:unpublish-self` so the
+ * UI's "published" decision and the unpublish target can never diverge
+ * (PR #1781 review). The live probe is fail-soft — when the local daemon is
+ * unreachable (or the app is pinned to a remote), detection falls back to
+ * the persisted fingerprint alone.
  */
-async function getSelfPublishedState(): Promise<SelfPublishedStateResult> {
-  const [records, storedFingerprint, suppressed, liveFingerprint] = await Promise.all([
-    connectionsStore.list(),
+async function findSelfRecord(records: ConnectionRecord[]): Promise<ConnectionRecord | undefined> {
+  const [storedFingerprint, liveFingerprint] = await Promise.all([
     getStoredSelfFingerprint(),
-    isAutoPublishSuppressed(),
     getLiveSelfFingerprint(),
   ]);
   const selfKeys = buildSelfFingerprintKeys(storedFingerprint, liveFingerprint);
-  const selfRecord = records.find((c) => isSelfConnectionRecord(c, selfKeys));
+  return records.find((c) => isSelfConnectionRecord(c, selfKeys));
+}
+
+/**
+ * `connections:unpublish-self`: remove this machine's published self entry —
+ * resolved via {@link findSelfRecord}, the same lookup (persisted OR live
+ * fingerprint) that decides `published` in `connections:self-published-state`
+ * — through the standard forget/teardown path, WITHOUT latching the "do not
+ * auto-publish" marker. No-op (`removed: false`) when no self entry exists.
+ * The lookup + removal run as ONE enqueued critical section so a concurrent
+ * switch/forget cannot interleave (monorepo#2228).
+ */
+async function unpublishSelfBackend(): Promise<UnpublishSelfResult> {
+  return enqueueSwitchOperation(async () => {
+    const selfRecord = await findSelfRecord(await connectionsStore.list());
+    if (!selfRecord) {
+      return { removed: false } satisfies UnpublishSelfResult;
+    }
+    await forgetConnectionLocked(selfRecord.id, false);
+    return { removed: true } satisfies UnpublishSelfResult;
+  });
+}
+
+/**
+ * `connections:self-published-state`: whether a self entry exists (per
+ * {@link findSelfRecord}) and whether the persistent "do not auto-publish"
+ * marker is set.
+ */
+async function getSelfPublishedState(): Promise<SelfPublishedStateResult> {
+  const [records, suppressed] = await Promise.all([
+    connectionsStore.list(),
+    isAutoPublishSuppressed(),
+  ]);
+  const selfRecord = await findSelfRecord(records);
   return {
     published: selfRecord !== undefined,
     suppressed,

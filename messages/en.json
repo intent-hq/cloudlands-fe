@@ -336,11 +336,6 @@
   "settings_wsApi_publishSelf_republish_label": "Re-publish",
   "settings_wsApi_publishSelf_success": "Backend published to iCloud Keychain",
   "settings_wsApi_publishSelf_error": "Failed to publish backend: {error}",
-  "settings_wsApi_unpublishSelf_title": "Remove this backend from iCloud Keychain?",
-  "settings_wsApi_unpublishSelf_rationale": "The WebSocket API is now off, so your other devices can no longer connect to this backend. Removing it also deletes the entry from your other devices; keeping it leaves the entry in place for when you turn the API back on.",
-  "settings_wsApi_unpublishSelf_confirm_label": "Remove from iCloud Keychain",
-  "settings_wsApi_unpublishSelf_cancel_label": "Keep",
-  "settings_wsApi_unpublishSelf_close_ariaLabel": "Close",
   "settings_wsApi_unpublishSelf_success": "Backend removed from iCloud Keychain",
   "settings_wsApi_unpublishSelf_error": "Failed to remove backend: {error}",
 

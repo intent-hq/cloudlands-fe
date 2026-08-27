@@ -2,7 +2,7 @@
  * @vitest-environment jsdom
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import WebSocketApiSettings from './WebSocketApiSettings.svelte';
 
 // Mock appClient - use vi.hoisted to avoid hoisting issues
@@ -51,7 +51,6 @@ const connectionState = vi.hoisted(() => ({
     status: unknown;
   },
   dispatched: [] as { type: string }[],
-  forgetError: null as Error | null,
 }));
 
 vi.mock('$store/renderer/store', async () => {
@@ -60,14 +59,6 @@ vi.mock('$store/renderer/store', async () => {
     state: () => ({ connections: { activeId: connectionState.activeId } }),
     dispatch: (action: { type: string }) => {
       connectionState.dispatched.push(action);
-      if (action.type.startsWith('connections/forget')) {
-        return {
-          ...action,
-          promise: connectionState.forgetError
-            ? Promise.reject(connectionState.forgetError)
-            : Promise.resolve(undefined),
-        };
-      }
       return { ...action, promise: Promise.resolve(connectionState.syncState) };
     },
   });
@@ -92,6 +83,7 @@ function installElectronApi() {
       return { connection: { id: 'mock-self' } };
     }
     if (channel === 'connections:refresh-self') return { refreshed: true };
+    if (channel === 'connections:unpublish-self') return { removed: true };
     throw new Error(`unexpected invoke: ${channel}`);
   });
   (window as unknown as { electronAPI: unknown }).electronAPI = { invoke: ipcMocks.invoke };
@@ -103,7 +95,6 @@ describe('WebSocketApiSettings', () => {
     connectionState.activeId = 'local';
     connectionState.syncState = { supported: true, enabled: true, status: null };
     connectionState.dispatched.length = 0;
-    connectionState.forgetError = null;
     ipcMocks.selfState = { published: false, suppressed: false, selfConnectionId: null };
     installElectronApi();
   });
@@ -604,7 +595,7 @@ describe('WebSocketApiSettings', () => {
     });
   });
 
-  describe('removal offer on WSS toggle-off', () => {
+  describe('silent auto-unpublish on WSS toggle-off', () => {
     const PAIRING = {
       token: 'tok-1234567890',
       port: 5181,
@@ -636,97 +627,125 @@ describe('WebSocketApiSettings', () => {
       });
     }
 
-    it('opens the removal modal when a published self entry exists', async () => {
+    it('silently unpublishes when a published self entry exists (no modal)', async () => {
       ipcMocks.selfState = { published: true, suppressed: false, selfConnectionId: 'self-1' };
       await toggleOff();
 
       await waitFor(() => {
-        expect(screen.getByText('Remove this backend from iCloud Keychain?')).toBeTruthy();
-      });
-      // Rationale: other devices can no longer connect; keeping leaves it.
-      expect(screen.getByText(/can no longer connect/)).toBeTruthy();
-    });
-
-    it('does not open the modal when no self entry is published', async () => {
-      ipcMocks.selfState = { published: false, suppressed: false, selfConnectionId: null };
-      await toggleOff();
-
-      expect(screen.queryByText('Remove this backend from iCloud Keychain?')).toBeNull();
-    });
-
-    it('does not open the modal on unsupported platforms (non-macOS)', async () => {
-      connectionState.syncState = { supported: false, enabled: false, status: null };
-      ipcMocks.selfState = { published: true, suppressed: false, selfConnectionId: 'self-1' };
-      await toggleOff();
-
-      expect(screen.queryByText('Remove this backend from iCloud Keychain?')).toBeNull();
-    });
-
-    it('confirm forgets the self entry (tombstone path) and shows a success toast', async () => {
-      ipcMocks.selfState = { published: true, suppressed: false, selfConnectionId: 'self-1' };
-      await toggleOff();
-      await waitFor(() =>
-        expect(screen.getByText('Remove this backend from iCloud Keychain?')).toBeTruthy(),
-      );
-
-      const dialog = screen.getByRole('dialog');
-      await fireEvent.click(
-        within(dialog).getByRole('button', { name: 'Remove from iCloud Keychain' }),
-      );
-
-      await waitFor(() => {
-        const forget = connectionState.dispatched.find(
-          (a) => a.type === 'connections/forgetRequested',
-        ) as { type: string; payload?: unknown[] } | undefined;
-        expect(forget?.payload).toEqual(['self-1']);
+        expect(ipcMocks.invoke).toHaveBeenCalledWith('connections:unpublish-self');
         expect(mockToast.success).toHaveBeenCalledWith('Backend removed from iCloud Keychain');
       });
-      // The modal closed after the removal.
-      await waitFor(() => {
-        expect(screen.queryByText('Remove this backend from iCloud Keychain?')).toBeNull();
-      });
-    });
-
-    it('decline (Keep) closes the modal without forgetting', async () => {
-      ipcMocks.selfState = { published: true, suppressed: false, selfConnectionId: 'self-1' };
-      await toggleOff();
-      await waitFor(() =>
-        expect(screen.getByText('Remove this backend from iCloud Keychain?')).toBeTruthy(),
-      );
-
-      await fireEvent.click(screen.getByRole('button', { name: 'Keep' }));
-
-      await waitFor(() => {
-        expect(screen.queryByText('Remove this backend from iCloud Keychain?')).toBeNull();
-      });
+      // No confirmation modal — the removal is silent and automatic.
+      expect(screen.queryByRole('dialog')).toBeNull();
+      // The removal goes through the dedicated unpublish IPC, never the
+      // suppression-latching forget path.
       expect(connectionState.dispatched.some((a) => a.type === 'connections/forgetRequested')).toBe(
         false,
       );
     });
 
-    it('shows an error toast when the forget fails and keeps the modal open', async () => {
-      ipcMocks.selfState = { published: true, suppressed: false, selfConnectionId: 'self-1' };
-      connectionState.forgetError = new Error('keychain delete failed');
+    it('does not unpublish (and shows no toast) when no self entry is published', async () => {
+      ipcMocks.selfState = { published: false, suppressed: false, selfConnectionId: null };
       await toggleOff();
-      await waitFor(() =>
-        expect(screen.getByText('Remove this backend from iCloud Keychain?')).toBeTruthy(),
-      );
 
-      const dialog = screen.getByRole('dialog');
-      await fireEvent.click(
-        within(dialog).getByRole('button', { name: 'Remove from iCloud Keychain' }),
-      );
+      expect(ipcMocks.invoke).not.toHaveBeenCalledWith('connections:unpublish-self');
+      expect(mockToast.success).not.toHaveBeenCalled();
+      expect(mockToast.error).not.toHaveBeenCalled();
+    });
+
+    it('does not unpublish on unsupported platforms (non-macOS)', async () => {
+      connectionState.syncState = { supported: false, enabled: false, status: null };
+      ipcMocks.selfState = { published: true, suppressed: false, selfConnectionId: 'self-1' };
+      await toggleOff();
+
+      expect(ipcMocks.invoke).not.toHaveBeenCalledWith('connections:unpublish-self');
+      expect(mockToast.success).not.toHaveBeenCalled();
+    });
+
+    it('shows an error toast when the unpublish fails; the toggle stays off', async () => {
+      ipcMocks.selfState = { published: true, suppressed: false, selfConnectionId: 'self-1' };
+      ipcMocks.invoke.mockImplementation(async (channel: string) => {
+        if (channel === 'connections:self-published-state') return { ...ipcMocks.selfState };
+        if (channel === 'connections:unpublish-self') throw new Error('keychain delete failed');
+        return { refreshed: true };
+      });
+      await toggleOff();
 
       await waitFor(() => {
         expect(mockToast.error).toHaveBeenCalledWith(
           expect.stringContaining('keychain delete failed'),
         );
       });
-      expect(screen.getByText('Remove this backend from iCloud Keychain?')).toBeTruthy();
+      // The unpublish failure never rolls back the WSS toggle.
+      expect((screen.getByRole('switch') as HTMLElement).getAttribute('aria-checked')).toBe(
+        'false',
+      );
     });
 
-    it('publish-in-session captures the record id, so toggle-off offers removal', async () => {
-      // Start unpublished: no selfConnectionId is known up front.
+    it('shows no success toast when unpublish reports removed: false (stale local state)', async () => {
+      ipcMocks.selfState = { published: true, suppressed: false, selfConnectionId: 'self-1' };
+      ipcMocks.invoke.mockImplementation(async (channel: string) => {
+        if (channel === 'connections:self-published-state') return { ...ipcMocks.selfState };
+        if (channel === 'connections:unpublish-self') return { removed: false };
+        return { refreshed: true };
+      });
+      await toggleOff();
+
+      await waitFor(() => {
+        expect(ipcMocks.invoke).toHaveBeenCalledWith('connections:unpublish-self');
+      });
+      // Nothing was actually removed — claiming "removed from Keychain" would
+      // be a lie (PR #1781 review).
+      expect(mockToast.success).not.toHaveBeenCalled();
+      expect(mockToast.error).not.toHaveBeenCalled();
+    });
+
+    it('disables the toggle while a transition (incl. the awaited unpublish) is in flight', async () => {
+      ipcMocks.selfState = { published: true, suppressed: false, selfConnectionId: 'self-1' };
+      mocks.mockSettingsList.mockResolvedValue([
+        { path: 'server.wsApi.enabled', value: true },
+        { path: 'server.wsApi.port', value: 5181 },
+      ]);
+      mocks.mockPairingInfo.mockResolvedValue(PAIRING);
+      render(WebSocketApiSettings);
+      await waitFor(() => {
+        expect(ipcMocks.invoke).toHaveBeenCalledWith('connections:self-published-state');
+      });
+
+      // Hold the toggle-off's auto-unpublish open: the switch must be disabled
+      // for the whole transition so a rapid off→on cannot interleave with the
+      // queued unpublish (PR #1781 review).
+      let releaseUnpublish: (value: { removed: boolean }) => void;
+      ipcMocks.invoke.mockImplementation(async (channel: string) => {
+        if (channel === 'connections:self-published-state') return { ...ipcMocks.selfState };
+        if (channel === 'connections:unpublish-self') {
+          return new Promise((resolve) => {
+            releaseUnpublish = resolve;
+          });
+        }
+        return { refreshed: true };
+      });
+      mocks.mockSettingsUpdate.mockResolvedValueOnce([
+        { path: 'server.wsApi.enabled', value: false },
+      ]);
+      await fireEvent.click(screen.getByRole('switch'));
+      await waitFor(() => {
+        expect(ipcMocks.invoke).toHaveBeenCalledWith('connections:unpublish-self');
+      });
+      expect((screen.getByRole('switch') as HTMLButtonElement).disabled).toBe(true);
+
+      // A click during the transition is a no-op (no second settings.update).
+      await fireEvent.click(screen.getByRole('switch'));
+      expect(mocks.mockSettingsUpdate).toHaveBeenCalledTimes(1);
+
+      releaseUnpublish!({ removed: true });
+      await waitFor(() => {
+        expect((screen.getByRole('switch') as HTMLButtonElement).disabled).toBe(false);
+      });
+    });
+
+    it('publish-in-session, toggle-off unpublishes, toggle-on auto-publishes again', async () => {
+      // Start unpublished.
       ipcMocks.selfState = { published: false, suppressed: false, selfConnectionId: null };
       mocks.mockSettingsList.mockResolvedValue([
         { path: 'server.wsApi.enabled', value: false },
@@ -735,8 +754,7 @@ describe('WebSocketApiSettings', () => {
       render(WebSocketApiSettings);
       await waitFor(() => expect(screen.getByRole('switch')).toBeTruthy());
 
-      // Toggle WSS on → auto-publish. The PublishSelfResult id ('mock-self')
-      // must be captured for this settings session.
+      // Toggle WSS on → auto-publish.
       mocks.mockSettingsUpdate.mockResolvedValueOnce([
         { path: 'server.wsApi.enabled', value: true },
       ]);
@@ -748,27 +766,36 @@ describe('WebSocketApiSettings', () => {
       await fireEvent.click(screen.getByRole('switch'));
       await waitFor(() => {
         expect(ipcMocks.invoke).toHaveBeenCalledWith('connections:publish-self');
-        expect(mockToast.success).toHaveBeenCalled();
+      });
+      // The busy guard keeps the switch disabled until the whole transition
+      // (incl. the awaited auto-publish) settles — wait it out before the
+      // next toggle, like a user would.
+      await waitFor(() => {
+        expect((screen.getByRole('switch') as HTMLButtonElement).disabled).toBe(false);
       });
 
-      // Toggle WSS off in the SAME session: the removal modal must open and
-      // the forget must target the freshly published record.
+      // Toggle WSS off in the SAME session: the silent auto-unpublish fires.
       mocks.mockSettingsUpdate.mockResolvedValueOnce([
         { path: 'server.wsApi.enabled', value: false },
       ]);
       await fireEvent.click(screen.getByRole('switch'));
-      await waitFor(() =>
-        expect(screen.getByText('Remove this backend from iCloud Keychain?')).toBeTruthy(),
-      );
-      const removeDialog = screen.getByRole('dialog');
-      await fireEvent.click(
-        within(removeDialog).getByRole('button', { name: 'Remove from iCloud Keychain' }),
-      );
       await waitFor(() => {
-        const forget = connectionState.dispatched.find(
-          (a) => a.type === 'connections/forgetRequested',
-        ) as { type: string; payload?: unknown[] } | undefined;
-        expect(forget?.payload).toEqual(['mock-self']);
+        expect(ipcMocks.invoke).toHaveBeenCalledWith('connections:unpublish-self');
+      });
+      expect(screen.queryByRole('dialog')).toBeNull();
+      await waitFor(() => {
+        expect((screen.getByRole('switch') as HTMLButtonElement).disabled).toBe(false);
+      });
+
+      // Toggle WSS back on: the removal did NOT latch the "do not
+      // auto-publish" marker, so the auto-publish fires again.
+      ipcMocks.invoke.mockClear();
+      mocks.mockSettingsUpdate.mockResolvedValueOnce([
+        { path: 'server.wsApi.enabled', value: true },
+      ]);
+      await fireEvent.click(screen.getByRole('switch'));
+      await waitFor(() => {
+        expect(ipcMocks.invoke).toHaveBeenCalledWith('connections:publish-self');
       });
     });
   });
