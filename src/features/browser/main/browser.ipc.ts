@@ -33,11 +33,10 @@ import {
 } from './workspace-forward-cleanup.service';
 import {
   BACKEND_CLIENT_DISCONNECTED_EVENT,
-  getBackendClientForConnection,
+  getBackendClientForId,
   getBackendIdForIpcSender,
-  getBackendClient,
-  getPrimaryBackendId,
 } from '../../backend/main/backend.ipc';
+import { getFocusedWindowBackendId } from '../../../main/window';
 import { DirectRelay } from '../../backend/main/direct-relay';
 import { TunnelManager } from '../../backend/main/tunnel-manager';
 import { sendToWorkspaceWindows } from '../../system/main/system.ipc';
@@ -348,7 +347,7 @@ export async function executeBrowserActions(
   workspaceId?: string,
   backendContext?: BrowserExecutionBackendContext,
 ): Promise<ExecutionResult> {
-  const resolvedBackendContext = backendContext ?? getPrimaryBrowserBackendContext();
+  const resolvedBackendContext = backendContext ?? getFocusedBrowserBackendContext();
   return executeActions(
     { actions, tabId },
     (
@@ -383,10 +382,15 @@ export async function executeBrowserActions(
   );
 }
 
-function getPrimaryBrowserBackendContext(): BrowserExecutionBackendContext {
-  const backendId = getPrimaryBackendId();
+/**
+ * Fallback context for callers without an invoke event (MCP tools): keyed
+ * off the FOCUSED window's backend (local fallback when no window), not the
+ * app-primary client.
+ */
+function getFocusedBrowserBackendContext(): BrowserExecutionBackendContext {
+  const backendId = getFocusedWindowBackendId();
   return {
-    client: getBackendClient(),
+    client: getBackendClientForId(backendId),
     backendId,
     savedRemote: backendId !== LOCAL_CONNECTION_ID,
   };
@@ -396,10 +400,7 @@ function getRendererBrowserBackendContext(
   event: Electron.IpcMainInvokeEvent,
 ): BrowserExecutionBackendContext {
   const backendId = getBackendIdForIpcSender(event.sender);
-  const client =
-    getBackendClientForConnection(backendId) ??
-    (backendId === LOCAL_CONNECTION_ID ? getBackendClient() : undefined);
-  if (!client) throw new Error(`Backend client is not connected: ${backendId}`);
+  const client = getBackendClientForId(backendId);
   return { client, backendId, savedRemote: backendId !== LOCAL_CONNECTION_ID };
 }
 

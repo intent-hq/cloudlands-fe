@@ -18,10 +18,17 @@ vi.mock('electron', () => ({
 vi.mock('../../../backend/main/backend.ipc', () => {
   const localClient = { request: mocks.localRequest };
   const remoteClient = { request: mocks.remoteRequest };
+  const clientFor = (id: string) =>
+    id === 'remote-1' ? remoteClient : id === 'local' ? localClient : undefined;
   return {
     getBackendClient: () => localClient,
-    getBackendClientForConnection: (id: string) =>
-      id === 'remote-1' ? remoteClient : id === 'local' ? localClient : undefined,
+    getBackendClientForConnection: clientFor,
+    getBackendClientForId: (id: string) => {
+      const client = clientFor(id);
+      if (!client) throw new Error(`Backend client is not connected: ${id}`);
+      return client;
+    },
+    getLocalBackendClient: () => localClient,
     getBackendIdForIpcSender: (sender: { backendId?: string }) => sender.backendId ?? 'local',
     getPrimaryBackendId: () => 'local',
   };

@@ -34,6 +34,10 @@ vi.mock('../../../backend/main/backend.ipc', () => ({
     request: id === 'remote-1' ? mocks.remoteBackendRequest : mocks.backendRequest,
     on: mocks.clientOn,
   }),
+  getBackendClientForId: (id: string) => ({
+    request: id === 'remote-1' ? mocks.remoteBackendRequest : mocks.backendRequest,
+    on: mocks.clientOn,
+  }),
   getBackendIdForIpcSender: () => mocks.backendId.value,
   getPrimaryBackendId: () => 'local',
   onBackendReconnected: vi.fn(() => () => {}),

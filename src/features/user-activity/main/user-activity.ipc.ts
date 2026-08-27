@@ -2,6 +2,11 @@
  * User Activity IPC Handlers
  *
  * Exposes user activity service to the renderer process via IPC.
+ *
+ * Backend policy: per-backend persistence (keyed by the active backend id),
+ * with the in-memory cache dropped on a reconnect of ANY backend via
+ * `onAnyBackendReconnected` — a reconnect can signal a backend switch, and
+ * the cache is keyed by workspaceId only.
  */
 
 import { app, ipcMain } from 'electron';
@@ -15,7 +20,7 @@ import { UserActivityService } from './user-activity.service';
 import { FileSystemUserActivityRepository } from './user-activity.repository';
 import { WorkspaceId, NoteId } from '../../../shared/types/branded-ids';
 import { getActiveId } from '../../backend/main/connections-store';
-import { onBackendReconnected } from '../../backend/main/backend.ipc';
+import { onAnyBackendReconnected } from '../../backend/main/backend.ipc';
 
 const logger = new Logger('UserActivityIPC');
 
@@ -64,10 +69,11 @@ function getService(): UserActivityService {
     const repository = new FileSystemUserActivityRepository(() => resolveUserActivityBase());
     service = new UserActivityService(repository);
     // The in-memory cache is keyed by workspaceId only, while persistence is
-    // partitioned per backend id. A backend switch (surfaced as a reconnect)
-    // must drop the cache so a workspace with the SAME id on another backend
-    // never reads — or persists — the previous backend's read-state.
-    onBackendReconnected(() => service?.clearCache());
+    // partitioned per backend id. A backend switch (surfaced as a reconnect
+    // on ANY backend) must drop the cache so a workspace with the SAME id on
+    // another backend never reads — or persists — the previous backend's
+    // read-state.
+    onAnyBackendReconnected(() => service?.clearCache());
   }
   return service;
 }

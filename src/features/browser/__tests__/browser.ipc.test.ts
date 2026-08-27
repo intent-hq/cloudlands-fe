@@ -37,11 +37,20 @@ vi.mock('../../backend/main/backend.ipc', () => ({
   BACKEND_CLIENT_DISCONNECTED_EVENT: 'backend-client-disconnected',
   getBackendClient: mocks.getBackendClient,
   getBackendClientForConnection: mocks.getBackendClientForConnection,
+  getBackendClientForId: (id: string) => {
+    const client = mocks.getBackendClientForConnection(id) ?? mocks.getBackendClient();
+    if (!client) throw new Error(`Backend client is not connected: ${id}`);
+    return client;
+  },
+  getLocalBackendClient: mocks.getBackendClient,
   getBackendIdForIpcSender: mocks.getBackendIdForIpcSender,
   getPrimaryBackendId: mocks.getPrimaryBackendId,
   // Used by the workspace-forward-cleanup service behind the provider seam.
   onBackendNotification: mocks.onBackendNotification,
   onBackendReconnected: mocks.onBackendReconnected,
+}));
+vi.mock('../../../main/window', () => ({
+  getFocusedWindowBackendId: () => mocks.getPrimaryBackendId(),
 }));
 vi.mock('../../backend/main/tunnel-manager', () => ({
   TunnelManager: mocks.TunnelManager,
