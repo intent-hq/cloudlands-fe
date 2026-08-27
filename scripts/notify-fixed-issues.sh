@@ -5,7 +5,8 @@
 #          <from-ref> <to-ref> <bundled-intentd-version> [prev-intentd-version]
 #
 # Candidate collection: gathers ISSUES_REPO issue references
-# (intent-hq/monorepo#N or the full issue URL) from
+# (intent-hq/intent#N or the full issue URL; the pre-rename
+# intent-hq/monorepo name is accepted too) from
 #   (a) commit messages in <from-ref>..<to-ref>, additionally resolving
 #       squash-merge "(#N)" subject suffixes to PR bodies on SOURCE_REPO, and
 #   (b) the bundled intentd delta v<prev-intentd>..v<bundled-intentd> via the
@@ -51,7 +52,7 @@
 #   INTENTD_REPO      repo of the bundled intentd delta
 #                     (default: intent-hq/intentd)
 #   ISSUES_REPO       repo whose issues are commented on
-#                     (default: intent-hq/monorepo)
+#                     (default: intent-hq/intent)
 #   ISSUES_GH_TOKEN   token with issues:write on ISSUES_REPO; required unless
 #                     --dry-run. Also runs the linked-PR enumeration, so it
 #                     must be able to read PRs on SOURCE_REPO and
@@ -94,7 +95,7 @@ BUNDLED_INTENTD="${5:?$usage}"
 PREV_INTENTD="${6:-}"
 SOURCE_REPO="${SOURCE_REPO:-intent-hq/cloudlands-fe}"
 INTENTD_REPO="${INTENTD_REPO:-intent-hq/intentd}"
-ISSUES_REPO="${ISSUES_REPO:-intent-hq/monorepo}"
+ISSUES_REPO="${ISSUES_REPO:-intent-hq/intent}"
 ISSUES_GH_TOKEN="${ISSUES_GH_TOKEN:-}"
 INTENTD_GH_TOKEN="${INTENTD_GH_TOKEN:-}"
 
@@ -158,6 +159,13 @@ gh_intentd() {
 
 range="${FROM_REF}..${TO_REF}"
 issues_repo_re=${ISSUES_REPO//./\\.}
+# The tracker was renamed intent-hq/monorepo → intent-hq/intent; references
+# written against the old name still resolve to the same issues (GitHub
+# redirects), so accept both names permanently — otherwise refs in commits
+# that predate the rename would be missed.
+if [[ "$ISSUES_REPO" == "intent-hq/intent" ]]; then
+  issues_repo_re="(${issues_repo_re}|intent-hq/monorepo)"
+fi
 issue_ref_re="(${issues_repo_re}#|https://github\\.com/${issues_repo_re}/issues/)[0-9]+"
 
 refs_file=$(mktemp)
@@ -238,7 +246,7 @@ if [[ -n "$probe_failed" ]]; then
 fi
 
 # Completeness gate: enumerate the issue's linked fix PRs (closing-keyword
-# references, e.g. "Fixes intent-hq/monorepo#N") and require every one to be
+# references, e.g. "Fixes intent-hq/intent#N") and require every one to be
 # delivered by this release. Sets gate_result to "post" (all linked PRs
 # merged and contained, or none delivered at all -> range-scan fallback),
 # "incomplete" (an open or not-yet-contained linked PR), or "indeterminate"
