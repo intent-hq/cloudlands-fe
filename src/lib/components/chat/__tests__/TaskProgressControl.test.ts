@@ -28,16 +28,6 @@ const allStatusTasks: TaskProgressItem[] = [
   { id: 'review', title: 'Review the result', status: 'review_required' },
 ];
 
-const expectedOutlineClasses = {
-  pending: 'ring-[hsl(var(--agent-avatar-surface-neutral))]',
-  running: 'ring-[hsl(var(--agent-avatar-surface-active))]',
-  completed: 'ring-[hsl(var(--agent-avatar-surface-completed))]',
-  waiting: 'ring-[hsl(var(--agent-avatar-surface-waiting))]',
-  discussion_needed: 'ring-[hsl(var(--agent-avatar-surface-attention))]',
-  blocked: 'ring-[hsl(var(--agent-avatar-surface-failed))]',
-  review_required: 'ring-[hsl(var(--agent-avatar-surface-neutral))]',
-} as const;
-
 beforeEach(() => {
   Object.defineProperty(Element.prototype, 'getAnimations', {
     configurable: true,
@@ -175,15 +165,10 @@ describe('TaskProgressControl', () => {
     expect(
       stackItems.map((item) => item.style.zIndex || item.className.match(/z-[0-9]+/)?.[0]),
     ).toEqual(['z-0', '1', '2', '6', '5']);
-    expect(icons[0].className).toContain(expectedOutlineClasses.completed);
     expect(icons[0].dataset.completedCount).toBe('2');
-    expect(icons[1].className).toContain(expectedOutlineClasses.pending);
-    expect(icons[2].className).toContain(expectedOutlineClasses.waiting);
-    expect(icons[3].className).toContain(expectedOutlineClasses.running);
     expect(icons.at(-1)?.innerHTML).toContain('motion-safe:animate-spin');
     expect(icons.at(-1)?.innerHTML).toContain('motion-reduce:animate-none');
     const overflow = screen.getByTestId('task-progress-overflow-indicator');
-    expect(overflow.className).toContain(expectedOutlineClasses.pending);
     expect(overflow.dataset.overflowCount).toBe('3');
     const trigger = screen.getByTestId('task-progress-trigger');
     expect(trigger.className).toContain('h-(--row-action-target-compact)');
@@ -211,14 +196,12 @@ describe('TaskProgressControl', () => {
         .map((task) => task.status),
     );
     for (const icon of rowIcons) {
-      const status = icon.dataset.taskStatus as keyof typeof expectedOutlineClasses;
-      expect(icon.className).toContain(expectedOutlineClasses[status]);
       expect(icon.className).toContain('mt-0.5');
     }
   });
 
   it.each(['light', 'dark'] as const)(
-    'uses opaque background disks and exact inset state outlines in %s mode',
+    'uses opaque background disks without border, outline, ring, or shadow classes in %s mode',
     async (theme) => {
       document.documentElement.classList.toggle('dark', theme === 'dark');
       document.documentElement.classList.toggle('light', theme === 'light');
@@ -232,20 +215,14 @@ describe('TaskProgressControl', () => {
         screen.getByTestId('task-progress-overflow-indicator'),
       ];
       for (const indicator of indicators) {
-        const backgroundClass = indicator.className
-          .split(' ')
-          .find((className) => className.startsWith('bg-'));
-        const status = indicator.dataset.taskStatus as keyof typeof expectedOutlineClasses;
-        const expectedOutline =
-          indicator.dataset.testid === 'task-progress-overflow-indicator'
-            ? expectedOutlineClasses.pending
-            : expectedOutlineClasses[status];
+        const classes = indicator.className.split(' ');
+        const backgroundClass = classes.find((className) => className.startsWith('bg-'));
         expect(backgroundClass).toBe('bg-[hsl(var(--background))]');
         expect(backgroundClass).not.toContain('/');
         expect(indicator.className).toContain('text-foreground');
-        expect(indicator.className).toContain('ring-1');
-        expect(indicator.className).toContain('ring-inset');
-        expect(indicator.className).toContain(expectedOutline);
+        expect(classes).not.toEqual(
+          expect.arrayContaining([expect.stringMatching(/^(?:border|outline|ring|shadow)(?:-|$)/)]),
+        );
         expect(indicator.className).not.toMatch(
           /(?:primary|green|blue|workspace-status-unread|opacity-|\/[0-9])/,
         );
@@ -253,23 +230,25 @@ describe('TaskProgressControl', () => {
     },
   );
 
-  it('keeps the one-pixel outline inside the unchanged 14px disk box', () => {
+  it('keeps every stack disk borderless inside the unchanged 14px box', () => {
     render(TaskProgressControl, { props: { tasks: allStatusTasks } });
 
     for (const indicator of screen.getAllByTestId('task-progress-status-icon')) {
       expect(indicator.className).toContain('size-3.5');
-      expect(indicator.className).toContain('ring-1');
-      expect(indicator.className).toContain('ring-inset');
-      expect(indicator.className).not.toContain('border');
-      expect(indicator.className).not.toContain('outline-offset');
+      expect(indicator.className.split(' ')).not.toEqual(
+        expect.arrayContaining([expect.stringMatching(/^(?:border|outline|ring|shadow)(?:-|$)/)]),
+      );
     }
   });
 
-  it('contains no unread, blue, primary, translucent, or opacity color styling', () => {
+  it('contains no state-ring helper, inline shadow, or replacement color styling', () => {
     const source = readFileSync(
       resolve(process.cwd(), 'src/lib/components/chat/TaskProgressControl.svelte'),
       'utf8',
     );
+    expect(source).not.toContain('statusIndicatorClass');
+    expect(source).not.toContain('--agent-avatar-surface-');
+    expect(source).not.toMatch(/box-shadow\s*:/);
     expect(source).not.toMatch(
       /workspace-status-unread|blue|primary|green|bg-transparent|opacity-|\/[0-9]+/,
     );
@@ -312,7 +291,6 @@ describe('TaskProgressControl', () => {
     expect(icons).toHaveLength(1);
     expect(icons[0].dataset.taskStatus).toBe('completed');
     expect(icons[0].dataset.completedCount).toBe('5');
-    expect(icons[0].className).toContain(expectedOutlineClasses.completed);
     expect(icons[0].className).not.toContain('border');
     expect(icons[0].className).not.toContain('shadow');
   });

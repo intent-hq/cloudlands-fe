@@ -68,25 +68,6 @@
     return faCircle;
   }
 
-  function statusIndicatorClass(status: TaskProgressStatus): string {
-    if (status === 'completed') {
-      return 'ring-[hsl(var(--agent-avatar-surface-completed))]';
-    }
-    if (status === 'running') {
-      return 'ring-[hsl(var(--agent-avatar-surface-active))]';
-    }
-    if (status === 'discussion_needed') {
-      return 'ring-[hsl(var(--agent-avatar-surface-attention))]';
-    }
-    if (status === 'blocked') {
-      return 'ring-[hsl(var(--agent-avatar-surface-failed))]';
-    }
-    if (status === 'waiting') {
-      return 'ring-[hsl(var(--agent-avatar-surface-waiting))]';
-    }
-    return 'ring-[hsl(var(--agent-avatar-surface-neutral))]';
-  }
-
   function handleOpenChange(nextOpen: boolean) {
     open = nextOpen;
     if (!nextOpen) return;
@@ -106,9 +87,7 @@
   className = '',
 )}
   <span
-    class="inline-flex size-3.5 shrink-0 items-center justify-center rounded-full bg-[hsl(var(--background))] text-foreground leading-none ring-1 ring-inset {className} {statusIndicatorClass(
-      status,
-    )}"
+    class="inline-flex size-3.5 shrink-0 items-center justify-center rounded-full bg-[hsl(var(--background))] text-foreground leading-none {className}"
     aria-hidden="true"
     data-testid={testId}
     data-task-status={status}
@@ -192,7 +171,7 @@
                 data-task-status="overflow"
               >
                 <span
-                  class="inline-flex size-3.5 shrink-0 items-center justify-center rounded-full bg-[hsl(var(--background))] text-foreground leading-none ring-1 ring-inset ring-[hsl(var(--agent-avatar-surface-neutral))]"
+                  class="inline-flex size-3.5 shrink-0 items-center justify-center rounded-full bg-[hsl(var(--background))] text-foreground leading-none"
                   aria-hidden="true"
                   data-testid="task-progress-overflow-indicator"
                   data-overflow-count={overflowCount}
