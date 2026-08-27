@@ -1052,7 +1052,9 @@ export async function reconcileActiveConnectionOnBoot(): Promise<void> {
         // stored-match redirect never builds a client. The probe's lazily
         // built local client is swapped out by the restore path's
         // disposeBackendClient() below (same as any early consumer's client).
-        const liveFingerprint = await getLiveSelfFingerprint();
+        // Bounded like the boot reachability probe: a hung (not down) local
+        // daemon must not stall the remote restore for the 30s default.
+        const liveFingerprint = await getLiveSelfFingerprint(bootReconnectTimeoutMs);
         isSelfEntry = isSelfConnectionRecord(target, buildSelfFingerprintKeys(liveFingerprint));
       }
     }
@@ -1320,31 +1322,45 @@ async function refreshRemoteHosts(id: string): Promise<void> {
  * FAILED/unusable probe caches nothing and is retried on a later call.
  * Fail-soft: resolves `null` when the local daemon is unreachable or the app
  * is pinned to a remote with no local pool member — callers fall back to the
- * persisted fingerprint alone.
+ * persisted fingerprint alone. `timeoutMs` bounds a NEWLY started probe's
+ * request (an already-cached value or in-flight probe is returned as-is);
+ * callers on a latency-sensitive path (boot) pass a short bound so a hung
+ * local daemon cannot stall them for the client's 30s default.
  */
 let cachedLiveSelfFingerprint: string | null = null;
 let liveSelfFingerprintProbe: Promise<string | null> | null = null;
 
-function getLiveSelfFingerprint(): Promise<string | null> {
+function getLiveSelfFingerprint(timeoutMs?: number): Promise<string | null> {
   if (cachedLiveSelfFingerprint !== null) return Promise.resolve(cachedLiveSelfFingerprint);
   if (liveSelfFingerprintProbe) return liveSelfFingerprintProbe;
   const localClient = getLocalClientForSelfPublish();
   if (!localClient) return Promise.resolve(null);
   const probe: Promise<string | null> = localClient
-    .request('server.pairingInfo')
+    .request('server.pairingInfo', undefined, { timeoutMs })
     .then(
       (result) => normalizeFingerprint(extractSelfPairingInfo(result)?.certFingerprint ?? null),
       () => null,
     )
-    .then((fingerprint) => {
+    .then(async (fingerprint) => {
       // Fail-soft: never cache an unusable probe (unreachable daemon,
       // malformed result) — a later call retries it.
       if (liveSelfFingerprintProbe === probe) liveSelfFingerprintProbe = null;
       if (fingerprint !== null && cachedLiveSelfFingerprint === null) {
         cachedLiveSelfFingerprint = fingerprint;
         // A list served before the probe resolved could not hide a
-        // live-matching entry — refresh every renderer now that it can.
-        void broadcastConnectionsChanged().catch(() => {});
+        // live-matching entry — refresh every renderer now that it can, but
+        // only when the new key actually hides a stored record (the common
+        // no-match session would otherwise pay one redundant re-render).
+        // Fail-soft: a store read error just skips the refresh.
+        try {
+          const records = await connectionsStore.list();
+          const selfKeys = buildSelfFingerprintKeys(fingerprint);
+          if (records.some((c) => isSelfConnectionRecord(c, selfKeys))) {
+            void broadcastConnectionsChanged().catch(() => {});
+          }
+        } catch {
+          // Ignored — the next listConnections call serves the corrected list.
+        }
       }
       return fingerprint;
     });

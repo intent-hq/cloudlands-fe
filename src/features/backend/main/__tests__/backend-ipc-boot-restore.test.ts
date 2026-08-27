@@ -32,6 +32,8 @@ const boot = vi.hoisted(() => ({
   // an object resolves as-is ({} is malformed → no fingerprint), 'reject'
   // simulates the local-only gating error.
   pairingInfo: {} as Record<string, unknown> | 'reject',
+  // Per-call options of every `server.pairingInfo` request, in call order.
+  pairingInfoOptions: [] as Array<{ timeoutMs?: number } | undefined>,
   // The module under test is re-imported per test (vi.resetModules), so its
   // PinMismatchError class differs from any statically-imported one. loadModule
   // stashes the fresh class here so the fake emits an error the module's
@@ -74,12 +76,13 @@ vi.mock('../json-rpc-client', () => {
     dispose(): void {
       lifecycle.events.push({ type: 'dispose', seq: this.id });
     }
-    request = vi.fn((method: string) => {
+    request = vi.fn((method: string, _params?: unknown, options?: { timeoutMs?: number }) => {
       if (method === 'host.status') {
         if (boot.probe === 'reject') return Promise.reject(new Error('unreachable'));
         if (boot.probe === 'hang') return new Promise(() => {});
       }
       if (method === 'server.pairingInfo') {
+        boot.pairingInfoOptions.push(options);
         if (boot.pairingInfo === 'reject') {
           return Promise.reject(new Error('server.* methods are local-only'));
         }
@@ -204,6 +207,7 @@ beforeEach(() => {
   boot.probe = 'resolve';
   boot.certMismatch = false;
   boot.pairingInfo = {};
+  boot.pairingInfoOptions = [];
   store.getActiveId.mockResolvedValue('remote-1');
   store.list.mockResolvedValue([LOCAL, REMOTE]);
   store.setActiveId.mockResolvedValue(undefined);
@@ -378,6 +382,7 @@ describe('reconcileActiveConnectionOnBoot — hidden self entry resolves to loca
       token: 'a'.repeat(64),
       certFingerprint: 'AA:BB:CC:DD', // matches REMOTE
       port: 5181,
+      path: '/ws',
       localIps: ['192.168.1.10'],
     };
     const mod = await loadModule();
@@ -390,6 +395,10 @@ describe('reconcileActiveConnectionOnBoot — hidden self entry resolves to loca
     expect(
       ctorOpts.list.filter((o) => (o.config as { transport?: string })?.transport === 'wss'),
     ).toHaveLength(0);
+    // The boot-path probe is bounded (boot reconnect budget — 20ms here via
+    // __setBootReconnectTimeoutForTesting), not the client's 30s default — a
+    // hung local daemon must not stall the restore.
+    expect(boot.pairingInfoOptions).toEqual([{ timeoutMs: 20 }]);
   });
 
   it('matches the live fingerprint case-insensitively', async () => {
@@ -397,6 +406,7 @@ describe('reconcileActiveConnectionOnBoot — hidden self entry resolves to loca
       token: 'a'.repeat(64),
       certFingerprint: 'aa:bb:cc:dd',
       port: 5181,
+      path: '/ws',
       localIps: ['192.168.1.10'],
     };
     const mod = await loadModule();
