@@ -97,7 +97,7 @@
     </div>
   {/if}
 
-  <div>
+  <div class="flex justify-end">
     <Button variant="ghost" size="sm" onclick={() => (connectModalOpen = true)}>
       <Fa icon={faPlus} class="mr-1.5" size="xs" />
       {m.settings_devices_add_label()}
