@@ -2235,6 +2235,7 @@
   "chat_modelChangeNotice_model_label": "{name} ({providerId} / {modelId})",
   "chat_modelChangeNotice_defaultModel_label": "{provider}-Standardmodell ({providerId})",
   "chat_questionsDismissedNotice_dismissed_label": "Fragen verworfen",
+  "chat_autoUnarchivedNotice_unarchived_label": "Space wurde automatisch aus dem Archiv geholt, weil eine Nachricht gesendet wurde.",
   "chat_modelSwitchDialog_switchProvider_title": "Anbieter mitten in der Konversation wechseln?",
   "chat_modelSwitchDialog_switchModel_title": "Modell mitten in der Konversation wechseln?",
   "chat_modelSwitchDialog_close_ariaLabel": "Schließen",

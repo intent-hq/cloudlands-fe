@@ -67,6 +67,8 @@
   } from './subscription-disclosure';
   import QuestionsDismissedNotice from './QuestionsDismissedNotice.svelte';
   import { getQuestionsDismissedNotice } from './questions-dismissed-notice';
+  import AutoUnarchivedNotice from './AutoUnarchivedNotice.svelte';
+  import { getAutoUnarchivedNotice } from './auto-unarchived-notice';
 
   import { WorkspaceId } from '$shared/types/branded-ids';
   import { store as appStore } from '$store/renderer/store';
@@ -294,6 +296,9 @@
   let modelChangeNotice = $derived(getModelChangeNotice(message));
 
   let questionsDismissedNotice = $derived(getQuestionsDismissedNotice(message));
+
+  // Daemon-persisted auto-unarchive transcript row (metadata type "auto_unarchived")
+  let autoUnarchivedNotice = $derived(getAutoUnarchivedNotice(message));
 
   // Daemon-persisted attention-request row (meta.kind "discussion-request"/"blocker-report")
   let attentionNotice = $derived(getAttentionNotice(message));
@@ -1332,6 +1337,9 @@
   />
 {:else if questionsDismissedNotice}
   <QuestionsDismissedNotice title={extractAllContent(message) || undefined} />
+{:else if autoUnarchivedNotice}
+  <!-- Daemon-persisted auto-unarchive notice row - centered inline divider -->
+  <AutoUnarchivedNotice title={extractAllContent(message) || undefined} />
 {:else if questionOnlyTurn && !shouldShowStoppedIndicator && !finishReasonNoticeLabel}
   <!-- Agent Q&A is wizard-only: question-only turns render no bubble -->{:else}
   <div
