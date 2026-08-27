@@ -5975,7 +5975,7 @@
   "settings_agentFeatures_taskGraph_label": "任務圖協調",
   "settings_agentFeatures_taskGraph_description": "啟用任務圖協調工作流程（批次委派、任務關聯、解除封鎖喚醒）",
   "settings_agentFeatures_peerAgents_label": "頂層代理產生與退役",
-  "settings_agentFeatures_peerAgents_description": "允許代理產生獨立的頂層代理並自行退役（ws.agent.spawnPeer / ws.agent.retire）；僅適用於新工作階段",
+  "settings_agentFeatures_peerAgents_description": "允許代理產生獨立的頂層代理並自行退役（ws.agent.create 且 topLevel: true / ws.agent.retire）；僅適用於新工作階段",
   "settings_agentFeatures_mcpTools_label": "外部 MCP 工具",
   "settings_agentFeatures_mcpTools_description": "向代理公開外部 MCP 伺服器工具（ws.mcp.*）；每次轉送呼叫均在伺服器端強制執行",
   "settings_agentFeatures_maxTopLevelAgents_label": "頂層代理上限",

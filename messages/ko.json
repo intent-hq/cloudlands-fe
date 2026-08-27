@@ -5975,7 +5975,7 @@
   "settings_agentFeatures_taskGraph_label": "작업 그래프 조정",
   "settings_agentFeatures_taskGraph_description": "작업 그래프 조정 워크플로(일괄 위임, 작업 관계, 차단 해제 웨이크)를 활성화합니다",
   "settings_agentFeatures_peerAgents_label": "최상위 에이전트 생성 및 은퇴",
-  "settings_agentFeatures_peerAgents_description": "에이전트가 독립적인 최상위 에이전트를 생성하고 스스로 은퇴할 수 있도록 허용합니다(ws.agent.spawnPeer / ws.agent.retire). 새 세션에만 적용됩니다",
+  "settings_agentFeatures_peerAgents_description": "에이전트가 독립적인 최상위 에이전트를 생성하고 스스로 은퇴할 수 있도록 허용합니다(ws.agent.create의 topLevel: true / ws.agent.retire). 새 세션에만 적용됩니다",
   "settings_agentFeatures_mcpTools_label": "외부 MCP 도구",
   "settings_agentFeatures_mcpTools_description": "외부 MCP 서버 도구(ws.mcp.*)를 에이전트에 노출합니다. 전달되는 모든 호출에 대해 서버 측에서 강제됩니다",
   "settings_agentFeatures_maxTopLevelAgents_label": "최상위 에이전트 최대 수",
