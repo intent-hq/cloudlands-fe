@@ -157,15 +157,14 @@
               orientation="horizontal"
               class="flex h-5 w-5 -my-1 cursor-pointer items-center justify-center rounded text-ghost transition-all hover:bg-muted/50 hover:text-foreground focus-visible:bg-muted/50 focus-visible:text-foreground focus-visible:outline-none"
               ariaLabel={m.chat_chatWorkspaceCard_actionsFor_ariaLabel({
-                name: workspace.title || workspace.id,
+                name: workspace.title || m.workspace_links_untitled_label(),
               })}
             />
           {/snippet}
         </WorkspaceCard>
       {:else}
         <div class="rounded-md border border-border bg-muted/10 px-3 py-2 text-left">
-          <div class="truncate font-mono text-xs text-foreground">{workspaceId}</div>
-          <div class="mt-0.5 text-xs text-subtle">
+          <div class="text-xs text-subtle">
             {m.chat_chatWorkspaceCard_notFound_label()}
           </div>
         </div>

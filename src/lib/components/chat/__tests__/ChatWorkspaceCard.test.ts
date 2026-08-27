@@ -14,6 +14,7 @@ const mocks = vi.hoisted(() => {
   const workspaces: Record<string, Workspace | undefined> = {};
   const activeAgentIds: Record<string, string | null> = {};
   const foregroundAgentIds: Record<string, string[]> = {};
+  const workspaceSubscribers = new Map<string, Set<(workspace: Workspace | undefined) => void>>();
 
   const readable = <T>(getter: () => T) => ({
     subscribe(run: (value: T) => void) {
@@ -21,6 +22,21 @@ const mocks = vi.hoisted(() => {
       return () => {};
     },
   });
+
+  const workspaceReadable = (workspaceId: string) => ({
+    subscribe(run: (workspace: Workspace | undefined) => void) {
+      run(workspaces[workspaceId]);
+      const subscribers = workspaceSubscribers.get(workspaceId) ?? new Set();
+      subscribers.add(run);
+      workspaceSubscribers.set(workspaceId, subscribers);
+      return () => subscribers.delete(run);
+    },
+  });
+
+  const setWorkspace = (workspaceId: string, value: Workspace | undefined) => {
+    workspaces[workspaceId] = value;
+    workspaceSubscribers.get(workspaceId)?.forEach((run) => run(value));
+  };
 
   return {
     dispatch,
@@ -30,6 +46,8 @@ const mocks = vi.hoisted(() => {
     activeAgentIds,
     foregroundAgentIds,
     readable,
+    workspaceReadable,
+    setWorkspace,
   };
 });
 
@@ -107,7 +125,7 @@ vi.mock('$lib/components/ui/highlight/highlight-target', () => ({
 vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
   selectWorkspaceById: {
     select: (_state: unknown, workspaceId: string) => mocks.workspaces[workspaceId],
-    withStore: () => (workspaceId: string) => mocks.readable(() => mocks.workspaces[workspaceId]),
+    withStore: () => (workspaceId: string) => mocks.workspaceReadable(workspaceId),
   },
   selectWorkspaceActivePullRequest: { select: vi.fn(() => null) },
 }));
@@ -396,6 +414,38 @@ describe('ChatWorkspaceCard overflow menu', () => {
     await renderWorkspaceCard(['missing-workspace']);
 
     expect(await screen.findByText('Workspace not found')).toBeTruthy();
+    expect(screen.queryByText('missing-workspace')).toBeNull();
     expect(screen.queryByRole('button', { name: /workspace actions/i })).toBeNull();
+  });
+
+  it('resolves a late Chief workspace entity to its live title without exposing its ID', async () => {
+    mocks.workspaces['chief-relay-demo'] = undefined;
+    await renderWorkspaceCard(['chief-relay-demo']);
+
+    expect(await screen.findByText('Workspace not found')).toBeTruthy();
+    expect(screen.queryByText('chief-relay-demo')).toBeNull();
+
+    mocks.setWorkspace('chief-relay-demo', workspace('chief-relay-demo', 'Chief Relay Demo'));
+
+    expect(await screen.findByText('Chief Relay Demo')).toBeTruthy();
+    expect(screen.queryByText('Workspace not found')).toBeNull();
+  });
+
+  it('renders an available Chief workspace title without exposing its ID', async () => {
+    mocks.workspaces['chief-relay-demo'] = workspace('chief-relay-demo', 'Chief Relay Demo');
+    await renderWorkspaceCard(['chief-relay-demo']);
+
+    expect(await screen.findByText('Chief Relay Demo')).toBeTruthy();
+    expect(screen.queryByText('chief-relay-demo')).toBeNull();
+  });
+
+  it('uses a localized accessible fallback instead of the ID for an untitled workspace', async () => {
+    mocks.workspaces['untitled-workspace'] = workspace('untitled-workspace', '');
+    await renderWorkspaceCard(['untitled-workspace']);
+
+    expect(
+      await screen.findByRole('button', { name: 'Workspace actions for Untitled' }),
+    ).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /untitled-workspace/i })).toBeNull();
   });
 });
