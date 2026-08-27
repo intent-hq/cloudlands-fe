@@ -4,6 +4,38 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.101.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.100.0...v2.101.0) (2026-08-27)
+
+
+### 🚀 Features
+
+* add fast UI previews and secure media workflows ([#1705](https://github.com/intent-hq/cloudlands-fe/issues/1705)) ([534ae59](https://github.com/intent-hq/cloudlands-fe/commit/534ae59733ff27aac12689a90c7ed038bc4fca16))
+* add Replace Agent hand-off action to agent menus ([#1772](https://github.com/intent-hq/cloudlands-fe/issues/1772)) ([5625dc3](https://github.com/intent-hq/cloudlands-fe/commit/5625dc30be0d9c2a5340796f12b07b8c715b80c8))
+* improve workspace tab drag motion ([#1754](https://github.com/intent-hq/cloudlands-fe/issues/1754)) ([030c30a](https://github.com/intent-hq/cloudlands-fe/commit/030c30a63323a963bd1c5c56344fbaa959d93c4d))
+* lazy retired bin — count-first render, load rows on expand ([#1774](https://github.com/intent-hq/cloudlands-fe/issues/1774)) ([1b5235b](https://github.com/intent-hq/cloudlands-fe/commit/1b5235bceceaa4201b3bf0a855bfff3f5cd4586a))
+* log app build identity at startup and daemon build on connect ([#1776](https://github.com/intent-hq/cloudlands-fe/issues/1776)) ([9446862](https://github.com/intent-hq/cloudlands-fe/commit/94468622ac31490a2fac7c440e2aed68da97afaa))
+* move keychain sync items to a shared access group ([#1765](https://github.com/intent-hq/cloudlands-fe/issues/1765)) ([5ec90c2](https://github.com/intent-hq/cloudlands-fe/commit/5ec90c250cf0d895e7d1c59e96280b94770212b9))
+* refine agent panel UI ([#1707](https://github.com/intent-hq/cloudlands-fe/issues/1707)) ([f75680f](https://github.com/intent-hq/cloudlands-fe/commit/f75680ff1266674eefefd0ee4d088624aa59814d))
+* render auto_unarchived system row as subtle inline divider ([#1767](https://github.com/intent-hq/cloudlands-fe/issues/1767)) ([b6f8175](https://github.com/intent-hq/cloudlands-fe/commit/b6f81754d1273c12f9aec27a5289c852390b0e3f))
+* replace includeRetired with retiredOnly + retiredCount in agents client seam ([#1766](https://github.com/intent-hq/cloudlands-fe/issues/1766)) ([fe3a23e](https://github.com/intent-hq/cloudlands-fe/commit/fe3a23ec3da198083b7676a7d831cc217a47ba74))
+
+
+### 🐛 Bug Fixes
+
+* add space below expanded chat groups ([#1769](https://github.com/intent-hq/cloudlands-fe/issues/1769)) ([42b193e](https://github.com/intent-hq/cloudlands-fe/commit/42b193eb8507d1adf9fa4a3465e2ded511d0ccda))
+* bump intentd sidecar to v0.8.5 ([#1778](https://github.com/intent-hq/cloudlands-fe/issues/1778)) ([908a3e9](https://github.com/intent-hq/cloudlands-fe/commit/908a3e9491616e8af687a1ffcd8a5713983d1caf))
+* bump intentd sidecar to v0.8.6 ([#1783](https://github.com/intent-hq/cloudlands-fe/issues/1783)) ([a720463](https://github.com/intent-hq/cloudlands-fe/commit/a7204630119033755f3609e5dea10a33084fbe5b))
+* complete grouped thinking blocks ([#1574](https://github.com/intent-hq/cloudlands-fe/issues/1574)) ([6692562](https://github.com/intent-hq/cloudlands-fe/commit/669256239bbe45deadb4eb7bc0dcb300eb763d1a))
+* disable publishing for manual macOS builds ([#1727](https://github.com/intent-hq/cloudlands-fe/issues/1727)) ([049a3c5](https://github.com/intent-hq/cloudlands-fe/commit/049a3c57c0032189a3925e1bb4861ab568d26a22))
+* hide connections matching the live local daemon fingerprint ([#1779](https://github.com/intent-hq/cloudlands-fe/issues/1779)) ([9c4d8e7](https://github.com/intent-hq/cloudlands-fe/commit/9c4d8e7390ee3b387d935125c4d51084b2c46d53))
+* make tunnel-manager refused-OPEN tests deterministic ([#1768](https://github.com/intent-hq/cloudlands-fe/issues/1768)) ([a185c39](https://github.com/intent-hq/cloudlands-fe/commit/a185c39946e64993aa50edb105e50c9024f42d49))
+* preflight workspace transfer destination ([#1736](https://github.com/intent-hq/cloudlands-fe/issues/1736)) ([3488f05](https://github.com/intent-hq/cloudlands-fe/commit/3488f05780366e50204ebb116aea601819cdff9e))
+
+
+### ⚡ Performance
+
+* Cache unchanged ESLint results ([#1756](https://github.com/intent-hq/cloudlands-fe/issues/1756)) ([0131234](https://github.com/intent-hq/cloudlands-fe/commit/0131234e2ff427d06ea95eac6ea19b6604d1113c))
+
 ## [2.100.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.99.1...v2.100.0) (2026-08-27)
 
 
