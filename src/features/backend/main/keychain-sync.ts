@@ -496,9 +496,10 @@ function isExpiredTombstone(record: KeychainSyncRecord, now: number): boolean {
  * (one item per account) for reconcile to consume, plus bookkeeping. */
 export interface MigrationOutcome {
   items: KeychainItem[];
-  /** Accounts whose legacy copy was re-written into the shared group (the
-   * write verified; the legacy copy was deleted, or its delete was recorded
-   * as a fail-soft error and retries next pass). */
+  /** Accounts where a keychain write actually succeeded during migration —
+   * a verified shared-group upsert and/or at least one legacy-copy delete.
+   * An account whose only attempted writes all failed is NOT counted, so
+   * reconcile's "every write rejected" degrade stays sound. */
   migrated: string[];
   errors: ReconcileResult['errors'];
 }
@@ -511,14 +512,24 @@ export interface MigrationOutcome {
  * provisioning profile authorizes it); otherwise the items pass through
  * untouched — current behavior, nothing to migrate into. Per account:
  *
+ * - Any copy whose payload is unparseable or from a newer schema version
+ *   freezes the whole account in place: nothing is written or deleted (the
+ *   view prefers the shared copy when present), mirroring reconcile's
+ *   frozen-account rule — migration never moves data it cannot compare, and
+ *   an old-profile build keeps seeing its legacy item.
  * - Legacy copy only: upsert into the shared group (the helper's active
  *   write target); the legacy copy is deleted ONLY after that write
  *   verifies. A failed write keeps the legacy copy authoritative.
- * - Both copies: newer `updatedAt` wins. A newer legacy copy is re-written
- *   into the shared group first; an older one is simply deleted (the shared
- *   copy already preserves the data). If either payload is unparseable the
- *   account is left untouched (both copies kept, shared preferred in the
- *   view) — migration never destroys data it cannot compare.
+ * - Both copies: newer `updatedAt` wins, comparing the shared copy against
+ *   the NEWEST legacy copy (`kSecAttrSynchronizable` is part of the keychain
+ *   primary key, so one account can hold both a synchronizable and a
+ *   non-synchronizable legacy copy). A newer legacy copy is re-written into
+ *   the shared group first; older ones are simply deleted (the shared copy
+ *   already preserves the data).
+ *
+ * `shouldAbort` is re-checked between the upsert and the legacy deletes so a
+ * disable/dispose racing the write halts before the destructive step
+ * (leftover legacy copies retry next pass).
  *
  * Fail-soft: every keychain error is recorded (never thrown) and the
  * account's surviving copy stays in the returned view, so a partially failed
@@ -567,44 +578,83 @@ export async function migrateLegacyGroupItems(
       continue;
     }
 
-    // Pick the surviving payload: shared vs newest legacy by updatedAt.
-    const legacy = entry.legacy[0];
-    let winner: KeychainItem = legacy;
-    if (entry.shared) {
-      const sharedParsed = parsePayload(entry.shared.payload);
-      const legacyParsed = parsePayload(legacy.payload);
-      if (sharedParsed.kind !== 'record' || legacyParsed.kind !== 'record') {
-        // Cannot compare — leave both copies untouched, prefer shared.
-        outcome.items.push(entry.shared);
-        continue;
+    // Parse every copy up front; any non-record payload (unparseable or
+    // newer schema) freezes the account — nothing written or deleted.
+    const legacyParsed: { item: KeychainItem; record: KeychainSyncRecord }[] = [];
+    let frozen = false;
+    for (const li of entry.legacy) {
+      const parsed = parsePayload(li.payload);
+      if (parsed.kind !== 'record') {
+        frozen = true;
+        break;
       }
-      if (sharedParsed.record.updatedAt >= legacyParsed.record.updatedAt) {
-        winner = entry.shared;
-      }
+      legacyParsed.push({ item: li, record: parsed.record });
+    }
+    let sharedRecord: KeychainSyncRecord | undefined;
+    if (!frozen && entry.shared) {
+      const parsed = parsePayload(entry.shared.payload);
+      if (parsed.kind !== 'record') frozen = true;
+      else sharedRecord = parsed.record;
+    }
+    if (frozen) {
+      outcome.items.push(entry.shared ?? entry.legacy[0]);
+      continue;
     }
 
+    // Pick the surviving payload: shared vs the NEWEST legacy copy by
+    // updatedAt (synchronizable variants can yield several legacy copies).
+    let newestLegacy = legacyParsed[0];
+    for (const candidate of legacyParsed) {
+      if (candidate.record.updatedAt > newestLegacy.record.updatedAt) newestLegacy = candidate;
+    }
+    let winner: KeychainItem = newestLegacy.item;
+    if (entry.shared && sharedRecord && sharedRecord.updatedAt >= newestLegacy.record.updatedAt) {
+      winner = entry.shared;
+    }
+
+    let upsertSucceeded = false;
     if (winner !== entry.shared) {
       // Legacy copy is authoritative: write it into the shared group first.
-      const upserted = await client.upsert(account, legacy.payload);
+      const upserted = await client.upsert(account, winner.payload);
       if (!upserted.ok) {
         outcome.errors.push({ account, op: 'upsert', code: upserted.code });
         logger.warn('keychain group migration write failed', { account, code: upserted.code });
-        outcome.items.push(legacy);
+        outcome.items.push(newestLegacy.item);
         continue;
       }
+      upsertSucceeded = true;
     }
+
+    // Re-check cancellation before the destructive step: a disable/dispose
+    // racing the upsert await must not be followed by legacy deletes.
+    if (shouldAbort && (await shouldAbort())) {
+      aborted = true;
+      if (upsertSucceeded) {
+        outcome.migrated.push(account);
+        outcome.items.push({ ...winner, group: sharedGroup });
+      } else {
+        outcome.items.push(entry.shared ?? newestLegacy.item);
+      }
+      continue;
+    }
+
     // The shared copy now holds the surviving payload — remove the legacy
     // copies (scoped to their group so the shared item is never touched).
     let deletesOk = true;
+    let anyDeleteSucceeded = false;
     for (const stale of entry.legacy) {
       const deleted = await client.delete(account, stale.group as string);
-      if (!deleted.ok && deleted.code !== 'not-found') {
+      if (deleted.ok) {
+        anyDeleteSucceeded = true;
+      } else if (deleted.code !== 'not-found') {
         deletesOk = false;
         outcome.errors.push({ account, op: 'delete', code: deleted.code });
         logger.warn('keychain group migration cleanup failed', { account, code: deleted.code });
       }
     }
-    outcome.migrated.push(account);
+    if (upsertSucceeded || anyDeleteSucceeded) {
+      outcome.migrated.push(account);
+    }
     if (!deletesOk) {
       logger.warn('keychain group migration left a legacy copy (retries next pass)', { account });
     }

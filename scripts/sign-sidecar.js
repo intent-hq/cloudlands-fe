@@ -97,9 +97,12 @@ const KEYCHAIN_HELPER_BUNDLE_ID = 'dev.intentapp.cloudlands-fe.keychain-helper';
 
 /**
  * Team-relative suffix of the cross-app shared keychain access group (the
- * full group is `TEAMID.dev.intentapp.backends`). Must match the suffix the
- * helper resolves from its own entitlements at runtime
- * (resources/keychain/sync-helper.swift) and the group the iOS app adopts.
+ * full group is `TEAMID.dev.intentapp.backends`). The composed group must
+ * match what the helper resolves from its own entitlements at runtime and
+ * the group the iOS app adopts. Note the literal here has NO leading dot
+ * (the `${teamId}.` composition supplies it), while sync-helper.swift's
+ * `sharedGroupSuffix` is `.dev.intentapp.backends` WITH the dot (matched via
+ * `hasSuffix`) — keep both in sync when renaming the group.
  */
 export const SHARED_KEYCHAIN_GROUP_SUFFIX = 'dev.intentapp.backends';
 

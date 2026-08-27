@@ -847,7 +847,63 @@ describe('migrateLegacyGroupItems', () => {
     expect(outcome.items).toEqual([shared]); // shared preferred in the view
   });
 
-  it('a failed legacy delete still counts as migrated (view keeps shared) and records the error', async () => {
+  it('freezes a legacy-only item whose payload is unparseable (nothing written or deleted)', async () => {
+    const legacy: KeychainItem = { account: ACCOUNT, payload: 'not json', group: LEGACY };
+    const { client, upserts, deletes } = fakeClient([legacy], { sharedGroup: SHARED });
+    const outcome = await migrateLegacyGroupItems(client, [legacy], SHARED);
+    expect(upserts).toEqual([]);
+    expect(deletes).toEqual([]);
+    expect(outcome.migrated).toEqual([]);
+    expect(outcome.items).toEqual([legacy]); // kept in place, legacy group intact
+  });
+
+  it('freezes a legacy-only item carrying a newer schema version', async () => {
+    const legacy: KeychainItem = {
+      account: ACCOUNT,
+      payload: JSON.stringify({ ...rec(), v: KEYCHAIN_PAYLOAD_VERSION + 1 }),
+      group: LEGACY,
+    };
+    const { client, upserts, deletes } = fakeClient([legacy], { sharedGroup: SHARED });
+    const outcome = await migrateLegacyGroupItems(client, [legacy], SHARED);
+    expect(upserts).toEqual([]);
+    expect(deletes).toEqual([]);
+    expect(outcome.migrated).toEqual([]);
+    expect(outcome.items).toEqual([legacy]);
+  });
+
+  it('picks the newest of multiple legacy copies (synchronizable variants) for LWW', async () => {
+    const older = rec({ updatedAt: NOW - 50_000 });
+    const newer = rec({ updatedAt: NOW - 1000, label: 'Renamed' });
+    const sharedOld = rec({ updatedAt: NOW - 20_000 });
+    const items = [sharedItem(sharedOld), legacyItem(older), legacyItem(newer)];
+    const { client, upserts, scopedDeletes } = fakeClient(items, { sharedGroup: SHARED });
+    const outcome = await migrateLegacyGroupItems(client, items, SHARED);
+    // The NEWEST legacy copy beats the shared one and is re-written.
+    expect(upserts).toEqual([{ account: ACCOUNT, payload: serializeRecord(newer) }]);
+    expect(scopedDeletes).toEqual([
+      { account: ACCOUNT, group: LEGACY },
+      { account: ACCOUNT, group: LEGACY },
+    ]);
+    expect(outcome.migrated).toEqual([ACCOUNT]);
+    expect(outcome.items).toEqual([{ ...legacyItem(newer), group: SHARED }]);
+  });
+
+  it('shared newer + failed legacy delete: no write succeeded, so not counted as migrated', async () => {
+    const newer = rec({ updatedAt: NOW - 1000 });
+    const older = rec({ updatedAt: NOW - 50_000 });
+    const items = [sharedItem(newer), legacyItem(older)];
+    const { client, upserts } = fakeClient(items, {
+      sharedGroup: SHARED,
+      deleteError: 'unavailable',
+    });
+    const outcome = await migrateLegacyGroupItems(client, items, SHARED);
+    expect(upserts).toEqual([]);
+    expect(outcome.migrated).toEqual([]); // only successful writes count
+    expect(outcome.errors).toEqual([{ account: ACCOUNT, op: 'delete', code: 'unavailable' }]);
+    expect(outcome.items).toEqual([sharedItem(newer)]);
+  });
+
+  it('a failed legacy delete after a verified upsert still counts as migrated and records the error', async () => {
     const record = rec();
     const items = [legacyItem(record)];
     const upserts: { account: string; payload: string }[] = [];
@@ -889,6 +945,33 @@ describe('migrateLegacyGroupItems', () => {
     expect(upserts).toHaveLength(1);
     expect(outcome.migrated).toEqual([accountKeyFor('10.0.0.1', 8443)]);
     expect(outcome.items).toHaveLength(2); // untouched account stays in the view
+  });
+
+  it('shouldAbort flipping during the upsert halts before the legacy delete', async () => {
+    const record = rec();
+    const items = [legacyItem(record)];
+    let abort = false;
+    const upserts: string[] = [];
+    const deletes: string[] = [];
+    const client: KeychainClient = {
+      async list() {
+        return { ok: true, items, sharedGroup: SHARED };
+      },
+      async upsert(account) {
+        upserts.push(account);
+        abort = true; // sync disabled while the write is in flight
+        return { ok: true };
+      },
+      async delete(account) {
+        deletes.push(account);
+        return { ok: true };
+      },
+    };
+    const outcome = await migrateLegacyGroupItems(client, items, SHARED, () => abort);
+    expect(upserts).toEqual([ACCOUNT]);
+    expect(deletes).toEqual([]); // destructive step never runs after the abort
+    expect(outcome.migrated).toEqual([ACCOUNT]); // the upsert did succeed
+    expect(outcome.items).toEqual([{ ...legacyItem(record), group: SHARED }]);
   });
 });
 
@@ -957,6 +1040,30 @@ describe('reconcile with access-group migration', () => {
 
     expect(result.migrated).toEqual([]);
     expect(result.errors).toEqual([{ account: ACCOUNT, op: 'upsert', code: 'unavailable' }]);
+    expect(result.status).toEqual({
+      state: 'unavailable',
+      reason: 'unavailable',
+      message: expect.any(String),
+    });
+  });
+
+  it('degrades to unavailable when the only attempted writes were legacy deletes that all failed', async () => {
+    const newer = rec({ updatedAt: NOW - 1000 });
+    const older = rec({ updatedAt: NOW - 50_000 });
+    const { client, upserts } = fakeClient(
+      [
+        { ...item(newer), group: SHARED },
+        { ...item(older), group: LEGACY },
+      ],
+      { sharedGroup: SHARED, deleteError: 'unavailable' },
+    );
+    const { adapter } = fakeAdapter([]);
+
+    const result = await reconcile(adapter, { client, now: NOW });
+
+    expect(upserts).toEqual([]);
+    expect(result.migrated).toEqual([]); // failed delete is not a successful write
+    expect(result.errors).toEqual([{ account: ACCOUNT, op: 'delete', code: 'unavailable' }]);
     expect(result.status).toEqual({
       state: 'unavailable',
       reason: 'unavailable',
