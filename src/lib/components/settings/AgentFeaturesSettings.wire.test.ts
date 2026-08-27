@@ -40,9 +40,10 @@ const FEATURE_PATHS = [
   'agentFeatures.prMonitor',
   'agentFeatures.taskGraph',
   'agentFeatures.peerAgents',
+  'agentFeatures.mcpTools',
 ];
 
-// PROTOCOL §5.12 settings.list response with all twelve agentFeatures.* entries
+// PROTOCOL §5.12 settings.list response with all thirteen agentFeatures.* entries
 // plus the prMonitor.debounceSeconds (§6.9) and agents.maxTopLevelAgents numbers.
 // Entries are FLAT SettingDefinitionWithValue objects — the daemon merges `value`
 // into the definition itself (no nested `definition` key; that shape is settings.get's).
@@ -266,7 +267,9 @@ describe('AgentFeaturesSettings wire contract (PROTOCOL §5.12)', () => {
 
     render(AgentFeaturesSettings);
 
-    const toggle = await screen.findByRole('switch', { name: 'Peer agent spawning' });
+    const toggle = await screen.findByRole('switch', {
+      name: 'Top-level agent spawning & retirement',
+    });
     await waitFor(() => {
       expect(toggle.getAttribute('aria-checked')).toBe('false');
     });
@@ -298,7 +301,9 @@ describe('AgentFeaturesSettings wire contract (PROTOCOL §5.12)', () => {
 
     render(AgentFeaturesSettings);
 
-    const toggle = await screen.findByRole('switch', { name: 'Peer agent spawning' });
+    const toggle = await screen.findByRole('switch', {
+      name: 'Top-level agent spawning & retirement',
+    });
     await waitFor(() => {
       expect(toggle.getAttribute('aria-checked')).toBe('false');
     });
