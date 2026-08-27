@@ -6093,6 +6093,7 @@
   "workspace_transfer_resumeFailed_many": "エージェント {count} 件を転送先で再開できませんでした。転送先で手動で再開してください。",
   "workspace_transfer_result_failed_title": "転送に失敗しました",
   "workspace_transfer_result_downloadFailed_title": "ダウンロードに失敗しました",
+  "workspace_transfer_result_preflightFailed_message": "転送は開始されませんでした: {error}。転送元のスペースは変更されておらず、エージェントは停止されていません。",
   "workspace_transfer_result_failed_message": "転送は完了しませんでした: {error}。転送元のスペースは変更されておらず、引き続き使用できます。エージェントは停止されています。",
   "workspace_transfer_result_downloadFailed_message": "ダウンロードは完了しませんでした: {error}。スペースは変更されておらず、引き続き使用できます。エージェントは停止されています。",
   "workspace_transfer_retry_label": "再試行",

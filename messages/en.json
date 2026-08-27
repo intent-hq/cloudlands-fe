@@ -6093,6 +6093,7 @@
   "workspace_transfer_resumeFailed_many": "{count} agents could not be restarted on the destination. Resume them there manually.",
   "workspace_transfer_result_failed_title": "Transfer failed",
   "workspace_transfer_result_downloadFailed_title": "Download failed",
+  "workspace_transfer_result_preflightFailed_message": "The transfer did not start: {error}. The source space is unchanged and its agents were not stopped.",
   "workspace_transfer_result_failed_message": "The transfer did not complete: {error}. The source space is unchanged and stays usable; its agents were stopped.",
   "workspace_transfer_result_downloadFailed_message": "The download did not complete: {error}. The space is unchanged and stays usable; its agents were stopped.",
   "workspace_transfer_retry_label": "Retry",

@@ -6093,6 +6093,7 @@
   "workspace_transfer_resumeFailed_many": "{count} agentes no se pudieron reiniciar en el destino. Reanúdalos allí manualmente.",
   "workspace_transfer_result_failed_title": "La transferencia falló",
   "workspace_transfer_result_downloadFailed_title": "La descarga falló",
+  "workspace_transfer_result_preflightFailed_message": "La transferencia no se inició: {error}. El espacio de origen no ha cambiado y sus agentes no fueron detenidos.",
   "workspace_transfer_result_failed_message": "La transferencia no se completó: {error}. El espacio de origen no ha cambiado y sigue siendo utilizable; sus agentes fueron detenidos.",
   "workspace_transfer_result_downloadFailed_message": "La descarga no se completó: {error}. El espacio no ha cambiado y sigue siendo utilizable; sus agentes fueron detenidos.",
   "workspace_transfer_retry_label": "Reintentar",
