@@ -20,6 +20,24 @@ async function composerHeight(input: Locator, zoom: number) {
   return input.evaluate((node, scale) => node.getBoundingClientRect().height / scale, zoom);
 }
 
+async function placeholderMotion(editor: Locator) {
+  return editor.locator('p').evaluate((node) => {
+    const style = getComputedStyle(node, '::before');
+    return {
+      opacity: Number(style.opacity),
+      property: style.transitionProperty,
+      duration: style.transitionDuration,
+      easing: style.transitionTimingFunction,
+    };
+  });
+}
+
+async function expectImmediatePlaceholderOpacity(editor: Locator, opacity: number) {
+  const motion = await placeholderMotion(editor);
+  expect(motion.opacity).toBe(opacity);
+  expect(Number.parseFloat(motion.duration)).toBeLessThanOrEqual(0.00001);
+}
+
 for (const state of states) {
   test(`reveals the placeholder without focus growth and animates content geometry in ${state.name}`, async ({
     mount,
@@ -42,6 +60,12 @@ for (const state of states) {
       .toBe(`${idle}px`);
     await expect(editorWrapper).toHaveClass(/placeholder-hidden/);
     await expect(editor.locator('p')).toHaveAttribute('data-placeholder', 'Ask anything');
+    expect(await placeholderMotion(editor)).toEqual({
+      opacity: 0,
+      property: 'opacity',
+      duration: '0.3s',
+      easing: 'ease-in-out',
+    });
     const motion = await input.evaluate((node) => {
       const style = getComputedStyle(node);
       return {
@@ -60,6 +84,12 @@ for (const state of states) {
     await expect
       .poll(() => input.evaluate((node) => getComputedStyle(node).minHeight))
       .toBe(`${idle}px`);
+    await page.waitForTimeout(150);
+    const fadingIn = (await placeholderMotion(editor)).opacity;
+    expect(fadingIn).toBeGreaterThan(0);
+    expect(fadingIn).toBeLessThan(0.85);
+    await expect.poll(async () => (await placeholderMotion(editor)).opacity).toBeCloseTo(0.85, 2);
+    expect(await composerHeight(input, state.zoom)).toBeCloseTo(idleRendered, 0);
     await page.keyboard.type('draft');
     const expanding = await composerHeight(input, state.zoom);
     await expect
@@ -80,9 +110,15 @@ for (const state of states) {
       .toBe(`${idle}px`);
     await page.waitForTimeout(150);
     expect(await composerHeight(input, state.zoom)).toBeCloseTo(idleRendered, 0);
+    await expect.poll(async () => (await placeholderMotion(editor)).opacity).toBeCloseTo(0.85, 2);
 
     await editor.blur();
     await expect(editorWrapper).toHaveClass(/placeholder-hidden/);
+    await page.waitForTimeout(150);
+    const fadingOut = (await placeholderMotion(editor)).opacity;
+    expect(fadingOut).toBeGreaterThan(0);
+    expect(fadingOut).toBeLessThan(0.85);
+    await expect.poll(async () => (await placeholderMotion(editor)).opacity).toBe(0);
 
     await editor.focus();
     await page.waitForTimeout(20);
@@ -120,11 +156,15 @@ test('changes content height immediately with reduced motion', async ({ mount, p
   await setPanelHeight(component, 800);
   const input = component.getByTestId('message-input');
   const editor = input.locator('.tiptap-editor');
+  const editorWrapper = input.locator('.editor-wrapper');
   await editor.blur();
   await expect.poll(() => input.evaluate((node) => getComputedStyle(node).minHeight)).toBe('80px');
 
   expect(await input.evaluate((node) => getComputedStyle(node).transitionProperty)).toBe('none');
+  await expectImmediatePlaceholderOpacity(editor, 0);
   await editor.focus();
+  await expect(editorWrapper).not.toHaveClass(/placeholder-hidden/);
+  await expectImmediatePlaceholderOpacity(editor, 0.85);
   expect(await input.evaluate((node) => getComputedStyle(node).minHeight)).toBe('80px');
   await page.keyboard.type('draft');
   expect(await input.evaluate((node) => getComputedStyle(node).minHeight)).toBe('100px');
@@ -132,6 +172,8 @@ test('changes content height immediately with reduced motion', async ({ mount, p
   await page.keyboard.press('Backspace');
   expect(await input.evaluate((node) => getComputedStyle(node).minHeight)).toBe('80px');
   await editor.blur();
+  await expect(editorWrapper).toHaveClass(/placeholder-hidden/);
+  await expectImmediatePlaceholderOpacity(editor, 0);
   expect(await input.evaluate((node) => getComputedStyle(node).minHeight)).toBe('80px');
 });
 

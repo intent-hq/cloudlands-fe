@@ -1792,10 +1792,14 @@
     position: relative;
   }
 
-  .editor-wrapper.placeholder-hidden
-    :global(.tiptap-editor p.is-editor-empty:first-child::before),
+  .editor-wrapper :global(.tiptap-editor p.is-editor-empty:first-child::before),
+  .editor-wrapper :global(.tiptap-editor p.is-empty:first-child::before) {
+    transition: opacity 300ms ease-in-out;
+  }
+
+  .editor-wrapper.placeholder-hidden :global(.tiptap-editor p.is-editor-empty:first-child::before),
   .editor-wrapper.placeholder-hidden :global(.tiptap-editor p.is-empty:first-child::before) {
-    content: none;
+    opacity: 0;
   }
 
   /* Shimmer overlay for enhancement loading state */
@@ -1837,6 +1841,11 @@
   }
 
   @media (prefers-reduced-motion: reduce) {
+    .editor-wrapper :global(.tiptap-editor p.is-editor-empty:first-child::before),
+    .editor-wrapper :global(.tiptap-editor p.is-empty:first-child::before) {
+      transition: none;
+    }
+
     .shimmer-overlay {
       animation: none;
       opacity: 0.5;

@@ -318,7 +318,7 @@ describe('SimpleRichInput draft change notification', () => {
     expect(onvaluechange).toHaveBeenLastCalledWith('draft that must survive remounts');
   });
 
-  it('initializes the localized placeholder and shows it only while focused', async () => {
+  it('keeps the localized placeholder mounted while focus toggles its fade state', async () => {
     render(SimpleRichInput, { props: { value: '', contextItems: [] } });
     const editor = screen.getByTestId('tiptap-editor');
     const editorWrapper = editor.closest('.editor-wrapper');
@@ -329,6 +329,7 @@ describe('SimpleRichInput draft change notification', () => {
     expect(editorWrapper?.classList.contains('placeholder-hidden')).toBe(false);
     await fireEvent.focusOut(editor);
     expect(editorWrapper?.classList.contains('placeholder-hidden')).toBe(true);
+    expect(editor.getAttribute('placeholder')).toBe('Ask anything');
   });
 });
 
