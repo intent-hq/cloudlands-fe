@@ -115,8 +115,10 @@ test('navigates exact stacked totals with accessible pointer, focus, theme, and 
   const compositionValues = () =>
     compositionRows.evaluateAll((rows) =>
       rows.map((row) => ({
-        value: row.querySelector('.composition-value')?.textContent?.trim(),
-        share: row.querySelector('.composition-context')?.textContent?.trim(),
+        value: row.querySelector('.composition-value .animated-number-value')?.textContent?.trim(),
+        share: row
+          .querySelector('.composition-context .animated-number-value')
+          ?.textContent?.trim(),
       })),
     );
   const themeCompositionColors: string[][] = [];
@@ -176,6 +178,19 @@ test('navigates exact stacked totals with accessible pointer, focus, theme, and 
   ]);
   await expect(messageRows.nth(0)).toHaveText(/Human messages\s+3/);
   await expect(messageRows.nth(1)).toHaveText(/Agent messages\s+6/);
+  const reducedNumberStyles = await details.locator('.animated-number').evaluateAll((numbers) =>
+    numbers.map((number) => ({
+      animationName: getComputedStyle(number).animationName,
+      transform: getComputedStyle(number).transform,
+      transitionDuration: Number.parseFloat(getComputedStyle(number).transitionDuration),
+    })),
+  );
+  expect(
+    reducedNumberStyles.every(
+      ({ animationName, transform, transitionDuration }) =>
+        animationName === 'none' && transform === 'none' && transitionDuration <= 0.001,
+    ),
+  ).toBe(true);
   await agentBeta.blur();
   await expect(previewStatus).toContainText('By agent Agent alpha-01 750 processed');
 
@@ -221,6 +236,74 @@ test('navigates exact stacked totals with accessible pointer, focus, theme, and 
   await page.keyboard.press('Tab');
   await longModel.focus();
   await expect(previewStatus).toContainText('By model');
+});
+
+test('retargets animated values smoothly with final-only accessibility and stable geometry', async ({
+  mount,
+  page,
+}) => {
+  await page.setViewportSize({ width: 1100, height: 720 });
+  await page.emulateMedia({ reducedMotion: 'no-preference' });
+  await page.clock.install();
+  const component = await mount(WorkspaceTokenUsageAccessibilityHost, {
+    props: { theme: 'light', width: 304 },
+  });
+  await component.getByTestId('token-usage-disclosure').click();
+
+  const details = page.getByTestId('token-usage-details');
+  const previewStatus = details.locator('.preview-status');
+  const rows = details.locator('.token-composition-row');
+  const animatedValues = rows.locator('.composition-value .animated-number-value');
+  const finalTargets = rows.locator('.composition-value .animated-number-target');
+  const agentBeta = page
+    .getByTestId('token-usage-by-agent')
+    .locator('.breakdown-item-control')
+    .nth(1);
+  const finalModel = page
+    .getByTestId('token-usage-by-model')
+    .locator('.breakdown-item-control')
+    .last();
+  const geometry = async () => ({
+    details: await details.boundingBox(),
+    rightEdges: await rows.evaluateAll((elements) =>
+      elements.map((row) => {
+        const value = row.querySelector('.composition-value')!.getBoundingClientRect();
+        const share = row.querySelector('.composition-context')!.getBoundingClientRect();
+        return [value.right, share.right];
+      }),
+    ),
+  });
+  const initialGeometry = await geometry();
+
+  await agentBeta.dispatchEvent('pointerenter', { pointerType: 'mouse' });
+  await expect(previewStatus).toContainText('By agent Agent beta-02 150 processed');
+  await expect(finalTargets).toHaveText(['50', '30', '70', '0']);
+  expect(
+    await animatedValues.evaluateAll((values) =>
+      values.every((value) => value.ariaHidden === 'true'),
+    ),
+  ).toBe(true);
+  await page.clock.runFor(75);
+  const midpoint = Number(await animatedValues.first().textContent());
+  expect(midpoint).toBeGreaterThan(50);
+  expect(midpoint).toBeLessThan(550);
+
+  await finalModel.focus();
+  await agentBeta.dispatchEvent('pointerleave', { pointerType: 'mouse' });
+  await expect(previewStatus).toHaveAttribute('aria-atomic', 'true');
+  await expect(previewStatus).toContainText('By model Model Production Final 50 processed');
+  await expect(finalTargets).toHaveText(['30', '5', '15', '0']);
+  const midpointGeometry = await geometry();
+  expect(midpointGeometry).toEqual(initialGeometry);
+
+  await page.clock.runFor(350);
+  await expect(animatedValues).toHaveText(['30', '5', '15', '0']);
+  expect(await geometry()).toEqual(initialGeometry);
+
+  await finalModel.blur();
+  await expect(previewStatus).toContainText('By agent Agent alpha-01 750 processed');
+  await page.clock.runFor(350);
+  await expect(animatedValues).toHaveText(['550', '50', '150', '0']);
 });
 
 test('renders the full reference table as a wide overlay from the real workspace sidebar', async ({
@@ -277,7 +360,7 @@ test('renders the full reference table as a wide overlay from the real workspace
   expect(summaryMetrics.backgroundColor).toBe('rgba(0, 0, 0, 0)');
   expect(summaryMetrics.borderColor).toBe('rgba(0, 0, 0, 0)');
   expect(summaryMetrics).toMatchObject({
-    processedFontSize: 15,
+    processedFontSize: 12,
     processedFontWeight: '400',
     processedText: '1K',
   });
@@ -365,9 +448,11 @@ test('renders the full reference table as a wide overlay from the real workspace
   await expect(modelRows).toHaveCount(4);
   await expect(agentRows.first()).toBeVisible();
   await expect(modelRows.first()).toBeVisible();
-  await expect(agentSection.locator('.navigator-selection')).toContainText('Agent alpha-01 75%');
-  await expect(modelSection.locator('.navigator-selection')).toContainText(
-    'Provider/this Is An Extraordinarily Long Model Name For Truncation 60%',
+  await expect(agentSection.locator('.navigator-selection .animated-number-value')).toHaveText(
+    '75%',
+  );
+  await expect(modelSection.locator('.navigator-selection .animated-number-value')).toHaveText(
+    '60%',
   );
   await expect(agentRows.locator('.breakdown-item-control')).toHaveCount(4);
   await expect(modelRows.locator('.breakdown-item-control')).toHaveCount(4);
@@ -732,7 +817,7 @@ test('renders the full reference table as a wide overlay from the real workspace
   ]);
   expect(wideSidebarRegion!.width).toBeCloseTo(452, 0);
   expect(wideDetails!.width).toBeCloseTo(452, 0);
-  expect(wideSummaryMetrics).toEqual({ processedFontSize: '15px', processedText: '1K' });
+  expect(wideSummaryMetrics).toEqual({ processedFontSize: '12px', processedText: '1K' });
 
   await navigatorButtons.last().blur();
   await component.update({ props: { theme: 'dark', width: 280 } });
