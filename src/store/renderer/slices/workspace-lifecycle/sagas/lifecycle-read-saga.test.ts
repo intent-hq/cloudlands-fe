@@ -1231,6 +1231,11 @@ describe('lifecycleReadSaga', () => {
     await stop(run.task);
   });
 
+  // The two tests below stub the seam (appClient.agents.list), not the wire. On an
+  // 8.2+ daemon the default read excludes retired rows, but the saga must stay
+  // agnostic to row provenance: retired rows re-enter state via the retiredOnly
+  // read (lazy retired bin follow-up), and the auto-select guard has to hold no
+  // matter how a retired row reached the snapshot.
   it('keeps retired agents in state but never auto-selects them (§5.5 soft retire)', async () => {
     const retired = agent('agent-retired', { retiredAt: '2026-08-10T00:00:00.000Z' });
     const active = agent('agent-live');
