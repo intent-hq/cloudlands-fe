@@ -722,7 +722,12 @@ export async function listSyncRecords(): Promise<KeychainSyncRecord[]> {
  * record or tombstone matching ONLY excluded records — by fingerprint, or
  * host:port for fingerprint-less records — is a pure no-op: it never
  * overwrites or deletes the local-only record and never inserts a synced
- * duplicate of the same backend alongside it.
+ * duplicate of the same backend alongside it. EXCLUDED tombstones shield the
+ * same way: forgetting an opted-out backend never reaches the keychain, so
+ * its stale synced copy arrives as an unpaired live pull — re-creating the
+ * backend from it would silently undo the forget. The shields ignore the
+ * remote LWW clock (exclusion is a consent boundary, not a clock race);
+ * non-excluded tombstones keep the reconcile layer's normal LWW semantics.
  *
  * Deliberately does NOT fire {@link onConnectionsMutated} — pulls must not
  * loop back into pushes. Returns whether anything actually changed so the
@@ -768,6 +773,19 @@ export async function applyRemoteSyncRecord(record: KeychainSyncRecord): Promise
     const matches = state.connections.filter((c) => sameBackend(c, record));
     const duplicates = matches.filter((c) => c.syncExcluded !== true);
     if (matches.length > 0 && duplicates.length === 0) return false;
+    // An EXCLUDED tombstone shields the same way: it means the user forgot a
+    // backend they had opted out of sync, and (being local-only) that forget
+    // never reached the keychain — so the stale synced copy arrives as an
+    // unpaired pull. Re-creating the backend from it would silently undo the
+    // forget. The shield ignores the remote's LWW clock: exclusion is a
+    // consent boundary, not a clock race (same as the live-record shield
+    // above). Non-excluded tombstones stay with the reconcile layer's LWW.
+    if (
+      duplicates.length === 0 &&
+      state.tombstones.some((t) => t.excluded === true && tombstoneMatches(t, record))
+    ) {
+      return false;
+    }
     clearTombstone(state, record);
     const encToken = encryptToken(record.token);
     const extras = record.hosts.filter((h) => h.trim() !== record.host.trim());

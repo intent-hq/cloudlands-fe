@@ -1195,6 +1195,152 @@ describe('connections-store keychain sync surface', () => {
     expect(parsed.tombstones).toHaveLength(0);
   });
 
+  it('applyRemoteSyncRecord live pull never resurrects a forgotten excluded backend (excluded tombstone shields)', async () => {
+    const store = await import('../connections-store');
+    const rec = await store.add({ ...sampleConn, syncExcluded: true });
+    await store.forget(rec.id);
+
+    // The stale keychain copy arrives as an unpaired live pull — nothing
+    // live matches, only the excluded tombstone. A NEWER remote clock must
+    // not matter: exclusion is a consent boundary, not a clock race.
+    const changed = await store.applyRemoteSyncRecord({
+      label: 'Synced twin',
+      host: '192.168.1.10',
+      hosts: ['192.168.1.10'],
+      port: 8443,
+      fingerprint: 'AA:BB:CC',
+      hostname: null,
+      detectHosts: true,
+      token: 'remote-token',
+      updatedAt: Date.now() + 60_000,
+    });
+    expect(changed).toBe(false);
+
+    // The forget holds: no backend re-created, excluded tombstone intact.
+    expect((await store.list()).filter((c) => !c.isLocal)).toHaveLength(0);
+    await store.__drainWriteChainForTesting();
+    const file = path.join(tmpDir, 'backend-connections.json');
+    const parsed = JSON.parse(await fs.readFile(file, 'utf8'));
+    expect(parsed.tombstones).toHaveLength(1);
+    expect(parsed.tombstones[0].excluded).toBe(true);
+  });
+
+  it('excluded-tombstone shield matches a fingerprint-less backend by host:port', async () => {
+    const store = await import('../connections-store');
+    const rec = await store.add({ ...sampleConn, fingerprint: '', syncExcluded: true });
+    await store.forget(rec.id);
+
+    const changed = await store.applyRemoteSyncRecord({
+      label: 'Synced twin',
+      host: '192.168.1.10',
+      hosts: ['192.168.1.10'],
+      port: 8443,
+      fingerprint: '',
+      hostname: null,
+      detectHosts: true,
+      token: 'remote-token',
+      updatedAt: Date.now() + 60_000,
+    });
+    expect(changed).toBe(false);
+
+    expect((await store.list()).filter((c) => !c.isLocal)).toHaveLength(0);
+    await store.__drainWriteChainForTesting();
+    const file = path.join(tmpDir, 'backend-connections.json');
+    const parsed = JSON.parse(await fs.readFile(file, 'utf8'));
+    expect(parsed.tombstones).toHaveLength(1);
+    expect(parsed.tombstones[0].excluded).toBe(true);
+  });
+
+  it('a NON-excluded tombstone does not shield: a live pull still applies (normal LWW)', async () => {
+    const store = await import('../connections-store');
+    const rec = await store.add(sampleConn);
+    await store.forget(rec.id);
+
+    // The reconcile layer already decided this pull via LWW; the store must
+    // apply it — re-create the backend and clear the synced tombstone.
+    const changed = await store.applyRemoteSyncRecord({
+      label: 'Studio Mac',
+      host: '192.168.1.10',
+      hosts: ['192.168.1.10'],
+      port: 8443,
+      fingerprint: 'AA:BB:CC',
+      hostname: null,
+      detectHosts: true,
+      token: 'remote-token',
+      updatedAt: Date.now() + 60_000,
+    });
+    expect(changed).toBe(true);
+
+    expect((await store.list()).filter((c) => !c.isLocal)).toHaveLength(1);
+    await store.__drainWriteChainForTesting();
+    const file = path.join(tmpDir, 'backend-connections.json');
+    const parsed = JSON.parse(await fs.readFile(file, 'utf8'));
+    expect(parsed.tombstones).toHaveLength(0);
+  });
+
+  it('reconcile after forgetting an excluded backend: the stale keychain copy never undoes the forget', async () => {
+    // End-to-end shape of the bug: opt a backend out, the keychain still
+    // holds its stale synced copy from before the opt-out, forget it — the
+    // next reconcile pulls the unpaired stale record and must NOT re-create
+    // the backend.
+    const store = await import('../connections-store');
+    const sync = await import('../keychain-sync');
+
+    const keychain = new Map<string, string>();
+    const client: import('../keychain-sync').KeychainClient = {
+      async list() {
+        return {
+          ok: true,
+          items: [...keychain.entries()].map(([account, payload]) => ({ account, payload })),
+        };
+      },
+      async upsert(account, payload) {
+        keychain.set(account, payload);
+        return { ok: true };
+      },
+      async delete(account) {
+        keychain.delete(account);
+        return { ok: true };
+      },
+    };
+    const adapter: import('../keychain-sync').LocalSyncAdapter = {
+      list: () => store.listSyncRecords(),
+      applyRemote: async (_account, record) => {
+        await store.applyRemoteSyncRecord(record);
+      },
+    };
+
+    const rec = await store.add({ ...sampleConn, syncExcluded: true });
+    keychain.set(
+      sync.accountKeyFor('192.168.1.10', 8443),
+      sync.serializeRecord({
+        label: 'Studio Mac',
+        host: '192.168.1.10',
+        hosts: ['192.168.1.10'],
+        port: 8443,
+        fingerprint: 'AA:BB:CC',
+        hostname: null,
+        detectHosts: true,
+        token: 'stale-token',
+        updatedAt: Date.now() - 60_000,
+      }),
+    );
+    await store.forget(rec.id);
+
+    const result = await sync.reconcile(adapter, { client });
+    expect(result.pushed).toEqual([]);
+
+    // The forget holds across the reconcile and stays local-only: no
+    // backend re-created, excluded tombstone intact, keychain untouched.
+    expect((await store.list()).filter((c) => !c.isLocal)).toHaveLength(0);
+    await store.__drainWriteChainForTesting();
+    const file = path.join(tmpDir, 'backend-connections.json');
+    const parsed = JSON.parse(await fs.readFile(file, 'utf8'));
+    expect(parsed.tombstones).toHaveLength(1);
+    expect(parsed.tombstones[0].excluded).toBe(true);
+    expect(keychain.size).toBe(1);
+  });
+
   it('reconcile treats excluded records as fully local: never pushed, never overwritten or deleted, never duplicated', async () => {
     // Real store + real reconcile against an in-memory keychain: the
     // excluded record must be invisible (push side) and inviolable (pull
