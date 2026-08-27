@@ -36,14 +36,15 @@ export const selectTransferPlanError = store.createSelector(
 
 /**
  * Connections eligible as transfer targets: the connections list minus the
- * currently-active backend (the source). When a remote is active this includes
- * the local entry; when local is active it is excluded by the activeId check,
- * leaving only remotes (unchanged behavior).
+ * backend bound to this renderer window (the source). Keyed on
+ * `windowBackendId` — not the global persisted `activeId`, which can differ in
+ * the multi-window model — so a remote window lists local plus the other
+ * remotes, and a local window lists only remotes.
  */
 export const selectTransferTargetConnections = store.createSelector(
   (state): ConnectionRecord[] => {
-    const { connections, activeId } = state.connections;
-    return getItems(connections).filter((c) => c.id !== activeId);
+    const { connections, windowBackendId } = state.connections;
+    return getItems(connections).filter((c) => c.id !== windowBackendId);
   },
 );
 

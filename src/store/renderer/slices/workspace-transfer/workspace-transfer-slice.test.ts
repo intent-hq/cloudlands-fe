@@ -293,23 +293,38 @@ describe('selectTransferTargetConnections', () => {
   const REMOTE_1 = remote('remote-1', '10.0.0.5');
   const REMOTE_2 = remote('remote-2', '10.0.0.6');
 
-  function connectionsState(records: ConnectionRecord[], activeId: string): StoreState {
+  function connectionsState(
+    records: ConnectionRecord[],
+    windowBackendId: string,
+    activeId: string = windowBackendId,
+  ): StoreState {
     return {
       connections: {
         ...connectionsInitialState,
         connections: createCollection<ConnectionRecord, 'id'>('id', records),
         activeId,
+        windowBackendId,
       },
     } as unknown as StoreState;
   }
 
-  it('remote active: lists local and the other remotes, excluding the active backend', () => {
+  it('remote window: lists local and the other remotes, excluding the window backend', () => {
     const state = connectionsState([LOCAL, REMOTE_1, REMOTE_2], 'remote-1');
     expect(selectTransferTargetConnections.select(state)).toEqual([LOCAL, REMOTE_2]);
   });
 
-  it('local active: lists only remotes (local excluded as the active backend)', () => {
+  it('local window: lists only remotes (local excluded as the window backend)', () => {
     const state = connectionsState([LOCAL, REMOTE_1, REMOTE_2], LOCAL_CONNECTION_ID);
+    expect(selectTransferTargetConnections.select(state)).toEqual([REMOTE_1, REMOTE_2]);
+  });
+
+  it('remote window with persisted local activeId: keys on windowBackendId, keeping local (#3642)', () => {
+    const state = connectionsState([LOCAL, REMOTE_1, REMOTE_2], 'remote-1', LOCAL_CONNECTION_ID);
+    expect(selectTransferTargetConnections.select(state)).toEqual([LOCAL, REMOTE_2]);
+  });
+
+  it('local window with persisted remote activeId: excludes local, keeps all remotes', () => {
+    const state = connectionsState([LOCAL, REMOTE_1, REMOTE_2], LOCAL_CONNECTION_ID, 'remote-1');
     expect(selectTransferTargetConnections.select(state)).toEqual([REMOTE_1, REMOTE_2]);
   });
 });
