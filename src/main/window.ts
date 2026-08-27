@@ -285,6 +285,20 @@ let lastKnownSessions: WindowSessionsMap = {};
 // on-disk bucket cannot be restored before the next aggregate save removes it.
 const closedBackendSessions = new Set<string>();
 
+// Invoked when a non-local backend's last window is explicitly closed while
+// another backend's windows survive, so its pooled JSON-RPC client (socket,
+// reconnect timers, subscriptions) can be disposed. Registered by index.ts —
+// which wraps the quit guard around disconnectBackendClient() — so window.ts
+// never imports the backend IPC module graph.
+type LastWindowClosedForBackendHandler = (backendId: string) => void;
+let onLastWindowClosedForBackend: LastWindowClosedForBackendHandler | null = null;
+
+export function setOnLastWindowClosedForBackend(
+  handler: LastWindowClosedForBackendHandler | null,
+): void {
+  onLastWindowClosedForBackend = handler;
+}
+
 function buildSessionsFromOpenWindows(backendId: string): WindowSession[] {
   return BrowserWindow.getAllWindows()
     .filter((w: BrowserWindowType) => {
@@ -346,6 +360,19 @@ export function captureWindowSessionsSnapshot(this: BrowserWindowType | void): v
       if (isLastForBackend && hasSurvivingBackend) {
         closedBackendSessions.add(closingBackendId);
         delete lastKnownSessions[closingBackendId];
+        // Explicit last-window close for this backend: dispose its pooled
+        // client so no socket or reconnect timer keeps dialing a daemon with
+        // no windows left ("Open" reconnects on demand). Local is exempt —
+        // the sidecar management must stay alive. The switch teardown
+        // destroy()s windows (no `close` event), so the guard below is
+        // belt-and-braces while that path still exists.
+        if (closingBackendId !== LOCAL_CONNECTION_ID && !backendSwitchWindowTeardownInProgress) {
+          try {
+            onLastWindowClosedForBackend?.(closingBackendId);
+          } catch (err) {
+            logger.warn('Failed to dispose backend client on last window close:', err);
+          }
+        }
       }
     }
   } catch (err) {
@@ -447,6 +474,7 @@ export function _resetWindowSessionsCacheForTests(): void {
   clearWindowSessionsSnapshot();
   closedBackendSessions.clear();
   backendSwitchWindowTeardownInProgress = false;
+  onLastWindowClosedForBackend = null;
 }
 
 // True between captureAndCloseWindowsForBackendSwitch() destroying every
