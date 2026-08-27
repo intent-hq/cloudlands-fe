@@ -3,7 +3,7 @@ import { getItem } from '@augmentcode/themis/utils/collections/collection-utils'
 import { type Workspace } from '$shared/types';
 import { store } from '../../store';
 import { getActiveBackendId } from '../../utils/backend-storage-namespace';
-import { serializeWorkspaceTabsState, type PaneScrollState } from './tab-state-slice';
+import { serializeWorkspaceTabsState } from './tab-state-slice';
 
 export const selectIsDragging = store.createSelector((state) => {
   return state.tabState.isDragging;
@@ -19,16 +19,8 @@ export const selectScrollPosition = store.createSelector(
   },
 );
 
-export const selectPaneScrollState = store.createSelector(
-  (state, paneId: string): PaneScrollState | undefined => state.tabState.paneScrollStates[paneId],
-);
-
 export const selectAllScrollPositions = store.createSelector((state) => {
   return state.tabState.scrollPositions;
-});
-
-export const selectAllPaneScrollStates = store.createSelector((state) => {
-  return state.tabState.paneScrollStates;
 });
 
 export const selectCurrentWorkspaceTabId = store.createSelector((state) => {

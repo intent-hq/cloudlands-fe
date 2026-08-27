@@ -1110,10 +1110,7 @@
     const enableRichEditorComments = showComments && !isRawNoteViewEnabled;
     const initialEditorContent = isLargeContent
       ? ''
-      : await processMarkdownToHTML(goalContent, {
-          preserveAnchors: true,
-          workspaceId: editorWorkspaceId,
-        });
+      : await processMarkdownToHTML(goalContent, { preserveAnchors: true });
 
     if (isComponentDestroyed || editorWorkspaceId !== workspace?.id) return;
 
@@ -1185,7 +1182,6 @@
     if (isLargeContent) {
       const processedContent = await processMarkdownToHTML(goalContent, {
         preserveAnchors: true,
-        workspaceId: editorWorkspaceId,
       });
       if (editor && !editor.isDestroyed) {
         // Use requestIdleCallback to defer the heavy setContent call.
@@ -1501,7 +1497,6 @@
         // Clear the editor and set new content
         processMarkdownToHTML(newContent, {
           preserveAnchors: true,
-          workspaceId: conversionWorkspaceId,
         }).then(async (newHtmlContent) => {
           if (!ownsConversion()) return;
 

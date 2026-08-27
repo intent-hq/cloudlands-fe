@@ -28,51 +28,9 @@ export interface WorkspacePRPresentationRow {
   foregroundClass: string;
   backgroundClass: string;
   accessibleStateLabel: string;
-  checkSummary: string | null;
   details: string;
   monitorAgentId: string | undefined;
   monitorOnly: boolean;
-}
-
-type PRCheckState = 'failed' | 'running' | 'passed';
-
-export interface WorkspacePRCheckSummary {
-  state: PRCheckState;
-  percentage: number;
-}
-
-type PRCheckCounts = {
-  total: number;
-  passed: number;
-  failed: number;
-  pending: number;
-};
-
-export function getWorkspacePRCheckSummary(
-  checks: PRCheckCounts | null | undefined,
-): WorkspacePRCheckSummary | null {
-  if (!checks || !Number.isFinite(checks.total) || checks.total <= 0) return null;
-
-  const candidates: Array<[PRCheckState, number]> = [
-    ['failed', checks.failed],
-    ['running', checks.pending],
-    ['passed', checks.passed],
-  ];
-  const selected = candidates.find(([, count]) => Number.isFinite(count) && count > 0);
-  if (!selected) return null;
-
-  return {
-    state: selected[0],
-    percentage: Math.round((Math.min(selected[1], checks.total) / checks.total) * 100),
-  };
-}
-
-function formatWorkspacePRCheckSummary(summary: WorkspacePRCheckSummary | null): string | null {
-  if (!summary) return null;
-  const percent = String(summary.percentage);
-  if (summary.state === 'failed') return m.workspace_hoverCard_prChecksFailed_label({ percent });
-  if (summary.state === 'running') return m.workspace_hoverCard_prChecksRunning_label({ percent });
-  return m.workspace_hoverCard_prChecksPassed_label({ percent });
 }
 
 const PR_STATUS_ORDER: Record<PRInfo['status'], number> = {
@@ -191,9 +149,6 @@ export function buildWorkspacePRPresentationModel({
       const source = sourceByIdentity.get(normalizedPrIdentity(repo, pr.number));
       const status = statusOf(pr);
       const sourceDetails = pr.monitorSnapshot ? '' : getPRTooltipContent(source);
-      const checkSummary = formatWorkspacePRCheckSummary(
-        getWorkspacePRCheckSummary(source?.ciStatus ?? pr.monitorSnapshot?.checks),
-      );
       return {
         identity: prIdentity(repo, pr.number),
         number: pr.number,
@@ -203,7 +158,6 @@ export function buildWorkspacePRPresentationModel({
         repoContext: pr.crossRepo ? (pr.crossRepoDisplay ?? pr.crossRepo) : undefined,
         status,
         ...getPRStatusPresentation(status),
-        checkSummary,
         details: [getPRStatusTooltip({ ...pr, status }), sourceDetails].filter(Boolean).join('\n'),
         monitorAgentId: pr.monitorAgentId,
         monitorOnly: pr.monitorOnly === true,

@@ -37,8 +37,8 @@
   import * as Menu from '$lib/components/ui/menu';
   import OpenComboButton from '$features/external-editors/components/OpenComboButton.svelte';
   import NoteViewSettingsDropdown from './NoteViewSettingsDropdown.svelte';
-  import { selectPaneScrollState } from '$store/renderer/slices/tab-state/tab-state-selectors';
-  import { savePaneScrollState } from '$store/renderer/slices/tab-state/tab-state-slice';
+  import { selectScrollPosition } from '$store/renderer/slices/tab-state/tab-state-selectors';
+  import { saveScrollPosition } from '$store/renderer/slices/tab-state/tab-state-slice';
 
   import Fa from 'svelte-fa';
   import { faCheck, faCopy, faNoteSticky, faTrash } from '@fortawesome/free-solid-svg-icons';
@@ -54,8 +54,7 @@
 
   // svelte-ignore state_referenced_locally
   const workspace = selectWorkspaceById(workspaceId);
-  // svelte-ignore state_referenced_locally -- panel tab identity is immutable for a mounted pane
-  const scrollState = selectPaneScrollState(tab.id);
+  const scrollPosition = selectScrollPosition(tab.id);
 
   // svelte-ignore state_referenced_locally
   const note = selectNoteById(workspaceId, tab.noteId);
@@ -318,9 +317,9 @@
         noteId={tab.noteId}
         editable={noteEditable}
         {isPanelFocused}
-        initialScrollPosition={$scrollState?.scrollTop ?? 0}
+        initialScrollPosition={$scrollPosition}
         onScrollPositionSave={(scrollTop: number) =>
-          appStore.dispatch(savePaneScrollState(tab.id, { scrollTop }))}
+          appStore.dispatch(saveScrollPosition(tab.id, scrollTop))}
       />
     {/if}
   {:else}

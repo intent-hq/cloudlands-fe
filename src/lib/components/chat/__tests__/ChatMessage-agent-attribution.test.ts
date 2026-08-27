@@ -711,49 +711,22 @@ describe('ChatMessage hook wake attribution', () => {
     expect(screen.getByText('woke the agent')).toBeTruthy();
     const textLane = screen.getByTestId('automated-wake-text-lane');
     expect(textLane.className).toContain('gap-x-1');
-    // The labels share one lane when they fit and wrap before reaching fixed controls.
-    expect(textLane.classList.contains('grid')).toBe(false);
-    expect(textLane.classList.contains('flex-nowrap')).toBe(false);
-    expect(textLane.classList.contains('flex-wrap')).toBe(true);
+    // Single-line lane: never wraps, labels ellipsize instead.
+    expect(textLane.classList.contains('flex-nowrap')).toBe(true);
+    expect(textLane.classList.contains('flex-wrap')).toBe(false);
     const primaryLabel = screen.getByTestId('automated-wake-primary-label');
     expect(primaryLabel.textContent?.trim()).toBe('ci-watch');
-    expect(primaryLabel.classList.contains('truncate')).toBe(false);
-    expect(primaryLabel.classList.contains('whitespace-normal')).toBe(true);
-    expect(primaryLabel.classList.contains('shrink-0')).toBe(true);
+    expect(primaryLabel.classList.contains('truncate')).toBe(true);
+    expect(primaryLabel.classList.contains('shrink-0')).toBe(false);
     const status = screen.getByTestId('wake-status');
     expect(status.classList.contains('min-w-0')).toBe(true);
-    expect(status.classList.contains('truncate')).toBe(false);
-    expect(status.classList.contains('whitespace-normal')).toBe(true);
-    expect(status.classList.contains('shrink-0')).toBe(true);
+    expect(status.classList.contains('truncate')).toBe(true);
+    // Status shrinks first so the identifying label keeps as much space as fits.
+    expect(status.classList.contains('shrink-[4]')).toBe(true);
     expect(screen.queryByTestId('automated-wake-details')).toBeNull();
     await expandAutomatedWake();
     expect(screen.getByText('CI is red')).toBeTruthy();
     expect(screen.queryByText(/\[Background hook/)).toBeNull();
-  });
-
-  it('gives long hook wake labels a wrapping header instead of truncation', () => {
-    render(ChatMessage, {
-      props: {
-        message: hookWakeMessage({
-          rowMetadata: true,
-          metadata: {
-            ...hookWakeMetadata,
-            hookName: 'Open workspace tab preview',
-            hookStillActive: false,
-          },
-        }),
-      },
-    });
-
-    const header = screen.getByTestId('automated-wake-header');
-    expect(header.className).toContain('h-auto!');
-    expect(header.className).toContain('min-h-9!');
-    for (const testId of ['automated-wake-primary-label', 'wake-status']) {
-      const label = screen.getByTestId(testId);
-      expect(label.className).toContain('whitespace-normal');
-      expect(label.className).toContain('break-words');
-      expect(label.className).not.toContain('truncate');
-    }
   });
 
   it('detects hook wake from block-level messageMetadata', async () => {
@@ -1006,8 +979,8 @@ describe('ChatMessage PR-monitor wake attribution', () => {
     // The full label stays discoverable via the tooltip once the chip ellipsizes.
     expect(chip.getAttribute('title')).toBe('Open intent-hq/monorepo #42');
     const lane = screen.getByTestId('automated-wake-text-lane');
-    expect(lane.classList.contains('flex-nowrap')).toBe(false);
-    expect(lane.classList.contains('flex-wrap')).toBe(true);
+    expect(lane.classList.contains('flex-nowrap')).toBe(true);
+    expect(lane.classList.contains('flex-wrap')).toBe(false);
     expect(screen.getByText('woke the agent')).toBeTruthy();
     await expandAutomatedWake();
     expect(screen.getByText('Checks failed')).toBeTruthy();

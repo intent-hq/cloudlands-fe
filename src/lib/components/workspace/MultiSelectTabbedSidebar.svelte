@@ -85,10 +85,8 @@
   import { selectEffectiveFileExplorerWorkspacePath } from '$store/renderer/slices/file-explorer/file-explorer-selectors';
   import {
     selectWorkspaceActivePrSummary,
-    selectWorkspaceActivePullRequest,
     selectWorkspaceById,
   } from '$store/renderer/slices/workspace/workspace-selectors';
-  import { selectPrMonitors } from '$store/renderer/slices/pr-monitor/pr-monitor-selectors';
   import {
     selectAllNotes,
     selectNotesLoading,
@@ -123,9 +121,6 @@
   import { formatInteger } from '$lib/i18n/format';
   import { m } from '$shared/paraglide/messages.js';
   import OpenPanelIndicator from './sidebar/OpenPanelIndicator.svelte';
-  import PullRequestLauncherHoverCard from './sidebar/PullRequestLauncherHoverCard.svelte';
-  import { constructPrUrl } from './sidebar/sidebar-changes-utils';
-  import { buildWorkspacePRPresentationModel } from './sidebar/workspace-pr-presentation';
 
   interface Props {
     workspaceId: string;
@@ -182,30 +177,6 @@
 
   const workspace = selectWorkspaceById(workspaceIdStore);
   const activePrSummary$ = selectWorkspaceActivePrSummary(workspaceIdStore);
-  const activePullRequest$ = selectWorkspaceActivePullRequest(workspaceIdStore);
-  const prMonitors$ = selectPrMonitors(workspaceIdStore);
-  const workspacePrRows = $derived.by(() => {
-    const currentWorkspace = $workspace;
-    if (!currentWorkspace) return [];
-    const workspaceRepo =
-      currentWorkspace.repositoryOwner && currentWorkspace.repositoryName
-        ? `${currentWorkspace.repositoryOwner}/${currentWorkspace.repositoryName}`
-        : undefined;
-    return buildWorkspacePRPresentationModel({
-      workspacePRs: currentWorkspace.pullRequests,
-      activePR: $activePullRequest$,
-      monitors: $prMonitors$,
-      workspaceRepo,
-      buildPrUrl: (number, fallbackUrl) =>
-        constructPrUrl(
-          number,
-          currentWorkspace.repositoryOwner,
-          currentWorkspace.repositoryName,
-          fallbackUrl,
-        ),
-      getDisplayTitle: (pr) => pr.title,
-    });
-  });
   const notes = selectAllNotes(workspaceIdStore);
   const launcherNoteState = $derived(
     deriveNoteLauncherItems(
@@ -1381,31 +1352,22 @@
                     {#if tab.id === 'changes' && $activePrSummary$}
                       {@const pr = $activePrSummary$}
                       {@const prStatus = getActivePrStatusPresentation(pr.status)}
-                      <PullRequestLauncherHoverCard
-                        rows={workspacePrRows}
-                        disabled={workspacePrRows.length === 0}
-                        open={openLauncherHoverKey === 'changes:prs'}
-                        onOpenChange={(open) => handleLauncherHoverOpenChange('changes:prs', open)}
-                        onOpenPr={(row) =>
-                          handleLink(row.url, { workspaceId: WorkspaceId(workspaceId) })}
+                      <Button
+                        variant="plain"
+                        size="icon"
+                        class="pointer-events-auto relative z-20 ml-auto size-6 shrink-0 cursor-pointer rounded text-muted-foreground transition-colors hover:bg-background/70 hover:text-foreground focus-visible:bg-background/80 focus-visible:text-foreground"
+                        aria-label={pr.actionLabel}
+                        title={pr.actionTooltip}
+                        data-sidebar-pr-link
+                        data-sidebar-pr-url={pr.url}
+                        onpointerdown={(event) => event.stopPropagation()}
+                        onclick={(event) => {
+                          event.stopPropagation();
+                          handleLink(pr.url, { workspaceId: WorkspaceId(workspaceId) });
+                        }}
                       >
-                        <Button
-                          variant="plain"
-                          size="icon"
-                          class="pointer-events-auto relative z-20 ml-auto size-6 shrink-0 cursor-pointer rounded text-muted-foreground transition-colors hover:bg-background/70 hover:text-foreground focus-visible:bg-background/80 focus-visible:text-foreground"
-                          aria-label={pr.actionLabel}
-                          title={pr.actionTooltip}
-                          data-sidebar-pr-link
-                          data-sidebar-pr-url={pr.url}
-                          onpointerdown={(event) => event.stopPropagation()}
-                          onclick={(event) => {
-                            event.stopPropagation();
-                            handleLink(pr.url, { workspaceId: WorkspaceId(workspaceId) });
-                          }}
-                        >
-                          <Fa icon={prStatus.icon} class="size-4! {prStatus.className}" />
-                        </Button>
-                      </PullRequestLauncherHoverCard>
+                        <Fa icon={prStatus.icon} class="size-4! {prStatus.className}" />
+                      </Button>
                     {/if}
                     {#if tab.id === 'agents'}
                       <span id={`sidebar-launcher-agent-count-${workspaceId}`} class="sr-only">

@@ -73,8 +73,7 @@
 <!-- svelte-ignore a11y_click_events_have_key_events (keyboard toggle lives on the chevron button) -->
 <!-- svelte-ignore a11y_no_static_element_interactions (row is an enlarged hit-target for the chevron toggle) -->
 <div
-  class="{SUBSCRIPTION_DISCLOSURE_ROW_CLASS} h-auto! min-h-9! cursor-pointer items-start!"
-  style="padding-block: 6px !important;"
+  class="{SUBSCRIPTION_DISCLOSURE_ROW_CLASS} cursor-pointer"
   data-testid="automated-wake-header"
   data-wake-kind={presentation.kind}
   data-wake-state={presentation.state}
@@ -83,15 +82,15 @@
   <Fa
     icon={presentation.kind === 'hook' ? faBolt : faCodePullRequest}
     size={16}
-    class="{SUBSCRIPTION_CHEVRON_SIZE_CLASS} mt-1 shrink-0 {SUBSCRIPTION_ICON_CLASS}"
+    class="{SUBSCRIPTION_CHEVRON_SIZE_CLASS} shrink-0 {SUBSCRIPTION_ICON_CLASS}"
   />
   <span
-    class="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-1 overflow-hidden text-left"
+    class="flex min-w-0 flex-1 flex-nowrap items-baseline gap-x-1 overflow-hidden text-left"
     data-testid="automated-wake-text-lane"
   >
     {#if presentation.kind === 'hook'}
       <span
-        class="min-w-0 max-w-full shrink-0 whitespace-normal break-words [overflow-wrap:anywhere]"
+        class="min-w-0 max-w-full shrink truncate"
         title={presentation.attribution.rawName}
         data-testid="automated-wake-primary-label"
       >
@@ -112,9 +111,10 @@
         </span>
       </Button>
     {/if}
-    <!-- Hook labels and statuses wrap so long automated-wake text stays readable. -->
+    <!-- Status shrinks (and truncates) before the name/chip so the identifying
+         label keeps as much space as fits; full text stays in the title tooltips. -->
     <span
-      class="type-body min-w-0 max-w-full shrink-0 whitespace-normal break-words font-normal text-muted-foreground [overflow-wrap:anywhere]"
+      class="type-body min-w-0 shrink-[4] truncate font-normal text-muted-foreground"
       data-testid="wake-status"
       title={statusLabel}
     >

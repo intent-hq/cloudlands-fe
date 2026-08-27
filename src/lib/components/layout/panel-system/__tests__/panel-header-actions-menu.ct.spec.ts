@@ -65,7 +65,7 @@ for (const [index, panelType] of panelTypes.entries()) {
     ).toEqual([
       null,
       'panel-actions-trigger',
-      ...(stackCount > 1 ? ['pane-stack-selector-trigger'] : []),
+      ...(stackCount > 1 && panelType !== 'agent' ? ['pane-stack-selector-trigger'] : []),
       null,
       'panel-close-button',
     ]);

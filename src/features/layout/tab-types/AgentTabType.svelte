@@ -257,7 +257,6 @@
           bind:this={chatPanelRef}
           workspace={$workspace}
           agentId={tab.agentId}
-          panelTabId={tab.id}
           {agentModel}
           {isActive}
           {isPanelFocused}

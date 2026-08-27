@@ -448,7 +448,6 @@ vi.mock('../comment-mark-click-handler', () => ({
 
 vi.mock('$lib/utils/editor-config', async () => {
   const StarterKit = (await import('@tiptap/starter-kit')).default;
-  const Image = (await import('@tiptap/extension-image')).default;
   const TaskList = (await import('@tiptap/extension-task-list')).default;
   const { CustomTaskItem } = await import('$lib/components/tiptap/CustomTaskItem');
   const { createWorkspacesLink } = await import('$lib/utils/tiptap-link-extension');
@@ -465,7 +464,6 @@ vi.mock('$lib/utils/editor-config', async () => {
             link: false,
           }),
           createWorkspacesLink({ openOnClick: false }),
-          Image,
           TaskList,
           CustomTaskItem.configure({
             nested: true,
@@ -566,33 +564,6 @@ describe('NoteWithComments task conversion regression', () => {
     await tick();
   }
 
-  it('renders an initial workspace-relative image in the owning workspace', async () => {
-    const markdown = '![Preview](intent://local/file/docs/preview.png)';
-    const view = await renderInitializedNote('image-note', markdown);
-
-    await waitFor(() => {
-      const image = view.container.querySelector('img');
-      expect(image?.getAttribute('src')).toBe('workspace-file://ws-1/docs/preview.png');
-      expect(image?.getAttribute('alt')).toBe('Preview');
-    });
-    expect(mockProcessMarkdownToHTML).toHaveBeenCalledWith(
-      markdown,
-      expect.objectContaining({ workspaceId: WORKSPACE_ID }),
-    );
-  });
-
-  it('scopes deferred large-note conversion to the owning workspace', async () => {
-    const markdown = `${'Large note content '.repeat(320)}\n\n![Large](intent://local/file/large.webp)`;
-    await renderInitializedNote('large-note', markdown);
-
-    await waitFor(() => {
-      expect(mockProcessMarkdownToHTML).toHaveBeenCalledWith(
-        markdown,
-        expect.objectContaining({ workspaceId: WORKSPACE_ID }),
-      );
-    });
-  });
-
   it('keeps the newest note when conversions complete in reverse order', async () => {
     const view = await renderInitializedNote();
     const editorElement = view.container.querySelector('.ProseMirror') as HTMLElement;
@@ -623,15 +594,6 @@ describe('NoteWithComments task conversion regression', () => {
       showComments: true,
     });
     await tick();
-
-    expect(mockProcessMarkdownToHTML).toHaveBeenCalledWith(
-      'Note A content',
-      expect.objectContaining({ workspaceId: WORKSPACE_ID }),
-    );
-    expect(mockProcessMarkdownToHTML).toHaveBeenCalledWith(
-      'Note B content',
-      expect.objectContaining({ workspaceId: WORKSPACE_ID }),
-    );
 
     noteBConversion.resolve('<p>Note B converted</p>');
     await flushConversionCompletion();
@@ -677,25 +639,19 @@ describe('NoteWithComments task conversion regression', () => {
   });
 
   it('recreates the editor with a new owner when the workspace changes', async () => {
-    const markdown = '![Preview](intent://local/file/preview.png)';
-    const view = await renderInitializedNote('baseline', markdown);
+    const view = await renderInitializedNote();
     expect(editorWorkspaceIds.at(-1)).toBe(WORKSPACE_ID);
-    mockProcessMarkdownToHTML.mockClear();
 
     await view.rerender({
       workspace: { id: 'ws-2' } as any,
       noteId: 'baseline',
-      content: markdown,
+      content: 'Baseline content',
       editable: true,
       showSuggestions: false,
       showComments: true,
     });
 
     await waitFor(() => expect(editorWorkspaceIds.at(-1)).toBe('ws-2'));
-    expect(mockProcessMarkdownToHTML).toHaveBeenCalledWith(
-      markdown,
-      expect.objectContaining({ workspaceId: 'ws-2' }),
-    );
   });
 
   it('does not retain the old owner when workspace changes during editor initialization', async () => {

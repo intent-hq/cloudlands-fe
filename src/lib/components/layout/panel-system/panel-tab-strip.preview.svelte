@@ -67,9 +67,6 @@
     states: {
       empty: { props: { activeTabId: null, tabs: [], width: 560 } },
       single: { props: { activeTabId: noteTab.id, tabs: [noteTab], width: 560 } },
-      'agent-stack': {
-        props: { activeTabId: agentTab.id, tabs: [noteTab, agentTab, fileTab], width: 560 },
-      },
       'many-tabs': { props: { activeTabId: fileTab.id, tabs: manyTabs, width: 760 } },
       'long-content': { props: { activeTabId: longTab.id, tabs: [longTab], width: 560 } },
       narrow: { props: { activeTabId: fileTab.id, tabs: manyTabs, width: 260 } },

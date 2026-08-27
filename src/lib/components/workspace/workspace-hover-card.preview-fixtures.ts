@@ -164,10 +164,9 @@ export const workspaceHoverCardStateMatrix: readonly StateMatrixEntry[] = [
   },
   {
     family: 'Layout',
-    states:
-      'light; dark; two-column; narrow two-column; dense; right flip; bottom clamp; scroll/resize',
+    states: 'light; dark; two-column; narrow stack; dense; right flip; bottom clamp; scroll/resize',
     expected:
-      'Theme follows catalog query; the card keeps two columns, stays height-bounded, and clamps to the viewport.',
+      'Theme follows catalog query; the card uses two columns when space permits, stacks when narrow, stays height-bounded, and clamps to the viewport.',
     coverage: 'dense, narrow, and placement previews; HoverCard tests',
     conflicts: 'The card must not clip beyond collision padding.',
   },
@@ -375,21 +374,21 @@ const scenes: Record<string, WorkspaceHoverCardPreviewProps> = {
   narrow: {
     family: 'Narrow',
     expected:
-      'The identity and activity columns stay side by side; long descriptions truncate without overflow.',
+      'The activity column stacks below identity; long descriptions truncate without overflow.',
     layout: 'narrow',
     cards: [
       (() => {
         const ws = workspace('narrow', {
           displayStatus: 'in_progress',
           statusMessage:
-            'This long workspace description confirms that the narrow two-column card shows an ellipsis instead of overflowing its available width.',
+            'This long workspace description confirms that the narrow stacked card shows an ellipsis instead of overflowing its available width.',
           agentSummary: { agentIds: ['narrow-agent'] },
           activePullRequest: pr(76, { title: 'Keep narrow hover cards readable' }),
         });
         return scenario(
           'narrow',
-          'Narrow two-column card',
-          'Identity stays beside activity and PR details.',
+          'Narrow stack',
+          'Identity appears before activity and PR details.',
           {
             workspace: ws,
             tasks: [task('narrow-progress', 'in_progress'), task('narrow-todo', 'not_started')],

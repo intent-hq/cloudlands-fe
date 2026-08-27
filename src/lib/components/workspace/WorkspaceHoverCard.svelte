@@ -498,6 +498,16 @@
               {repoDisplayName}
             </div>
           </div>
+          {#if statusMessage}
+            <div
+              class="type-body mt-3 min-w-0 w-full line-clamp-3 border-none bg-transparent px-0.5 text-left text-sm leading-snug text-subtle"
+              title={statusMessage}
+              data-workspace-hover-card-message
+              data-workspace-hover-card-status-message
+            >
+              {statusMessage}
+            </div>
+          {/if}
           <div class="mt-3 min-w-0" data-workspace-hover-card-progress>
             <TaskStatusProgress
               statuses={taskStatuses}
@@ -509,16 +519,6 @@
               fallback={$workspaceTaskProgress$}
             />
           </div>
-          {#if statusMessage}
-            <div
-              class="type-body mt-3 min-w-0 w-full line-clamp-3 border-none bg-transparent px-0.5 text-left text-sm leading-snug text-subtle"
-              title={statusMessage}
-              data-workspace-hover-card-message
-              data-workspace-hover-card-status-message
-            >
-              {statusMessage}
-            </div>
-          {/if}
         {/if}
       </div>
 
@@ -538,7 +538,7 @@
           {/if}
 
           <div
-            class="type-caption flex items-center gap-3 font-normal"
+            class="type-caption flex items-center gap-3"
             data-workspace-hover-card-recency
             data-workspace-hover-card-timestamp
           >
@@ -653,7 +653,7 @@
             >
               {#each workspacePrRows as pr (pr.identity)}
                 <div
-                  class="workspace-hover-card__detail-row grid min-h-8 w-full min-w-0 grid-cols-[1.5rem_minmax(0,1fr)] items-start rounded-sm py-0.5 text-left"
+                  class="workspace-hover-card__detail-row grid min-h-8 w-full min-w-0 grid-cols-[1.5rem_minmax(0,1fr)] items-center rounded-sm py-0.5 text-left"
                   aria-label={getWorkspacePrLabel(pr)}
                   role="listitem"
                   data-workspace-hover-card-pr-row
@@ -668,27 +668,25 @@
                     <Fa icon={pr.statusIcon} size={16} class="shrink-0 {pr.foregroundClass}" />
                   </span>
                   <span class="grid min-w-0 flex-1 gap-y-0.5" data-workspace-hover-card-pr-text>
-                    <span
-                      class="type-body min-w-0 truncate text-sm font-medium leading-5 text-foreground"
-                      data-workspace-hover-card-pr-title
-                    >
-                      {pr.title || m.workspace_hoverCard_pullRequest_label()}
-                    </span>
-                    <span
-                      class="type-caption flex min-w-0 items-center gap-1.5 text-subtle"
-                      data-workspace-hover-card-pr-secondary
-                    >
-                      {#if pr.repoContext}
-                        <span class="max-w-24 shrink-0 truncate">{pr.repoContext}</span>
-                      {/if}
-                      <span class="type-caption shrink-0" data-workspace-hover-card-pr-number
-                        >#{pr.number}</span
-                      >
+                    <span class="flex min-w-0 items-baseline gap-2">
                       <span
-                        class="type-caption min-w-0 truncate text-subtle"
+                        class="type-body min-w-0 flex-1 truncate text-sm font-medium leading-5 text-foreground"
+                      >
+                        {pr.title || m.workspace_hoverCard_pullRequest_label()}
+                      </span>
+                      <span class="type-caption shrink-0 text-subtle">#{pr.number}</span>
+                    </span>
+                    <span class="flex min-w-0 items-center gap-1.5">
+                      {#if pr.repoContext}
+                        <span class="type-caption max-w-24 shrink-0 truncate text-subtle"
+                          >{pr.repoContext}</span
+                        >
+                      {/if}
+                      <span
+                        class="type-caption min-w-0 truncate {pr.foregroundClass}"
                         data-workspace-hover-card-pr-status
                       >
-                        {pr.checkSummary ?? pr.accessibleStateLabel}
+                        {pr.details.replaceAll('\n', ' · ')}
                       </span>
                     </span>
                   </span>
@@ -725,5 +723,16 @@
 
   .workspace-hover-card__detail-row {
     column-gap: 0.375rem;
+  }
+
+  @container (max-width: 31.99rem) {
+    .workspace-hover-card__columns {
+      grid-template-columns: minmax(0, 1fr);
+      overflow-y: auto;
+    }
+
+    .workspace-hover-card__activity {
+      border-width: 1px 0 0;
+    }
   }
 </style>

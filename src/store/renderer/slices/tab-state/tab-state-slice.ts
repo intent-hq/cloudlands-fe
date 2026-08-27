@@ -7,13 +7,7 @@ type TabFlagMap = Record<string, boolean>;
 export type WorkspaceDropPlacement = 'before' | 'after' | 'above' | 'below';
 
 export const TAB_SCROLL_POSITIONS_STORAGE_KEY = 'tab-scroll-positions';
-export const PANE_SCROLL_STATES_STORAGE_KEY = 'pane-scroll-states';
 export const WORKSPACE_TABS_STORAGE_KEY = 'workspace-tabs';
-
-export type PaneScrollState = {
-  scrollTop: number;
-  shouldFollowBottom?: boolean;
-};
 
 export type SerializableRect = {
   x: number;
@@ -47,7 +41,6 @@ export type TabState = {
   isDragging: boolean;
   activeHandleDrop: HandleDropInfo | null;
   scrollPositions: Record<string, number>;
-  paneScrollStates: Record<string, PaneScrollState>;
   openTabs: TabFlagMap;
   currentTabId: string | null;
   pinnedTabs: TabFlagMap;
@@ -185,7 +178,6 @@ const initialState: TabState = {
   isDragging: false,
   activeHandleDrop: null,
   scrollPositions: {},
-  paneScrollStates: {},
   openTabs: {},
   currentTabId: null,
   pinnedTabs: {},
@@ -219,16 +211,6 @@ export const saveScrollPosition = createAction<[tabId: string, scrollTop: number
 );
 export const loadScrollPositions = createAction<[positions: Record<string, number>]>(
   'tabState/loadScrollPositions',
-);
-export const savePaneScrollState = createAction<[paneId: string, scrollState: PaneScrollState]>(
-  'tabState/savePaneScrollState',
-);
-export const loadPaneScrollStates = createAction<
-  [paneScrollStates: Record<string, PaneScrollState>]
->('tabState/loadPaneScrollStates');
-export const clearPaneScrollState = createAction<[paneId: string]>('tabState/clearPaneScrollState');
-export const prunePaneScrollStates = createAction<[validPaneIds: string[]]>(
-  'tabState/prunePaneScrollStates',
 );
 export const openWorkspaceTab = createAction<[workspaceId: string]>('tabState/openWorkspaceTab');
 export const closeWorkspaceTab = createAction(
@@ -312,30 +294,6 @@ tabStateReducer.with(loadScrollPositions, (state, { payload: [scrollPositions] }
   ...state,
   scrollPositions,
 }));
-tabStateReducer.with(savePaneScrollState, (state, { payload: [paneId, scrollState] }) => {
-  if (!paneId || !Number.isFinite(scrollState.scrollTop) || scrollState.scrollTop < 0) return state;
-  return {
-    ...state,
-    paneScrollStates: { ...state.paneScrollStates, [paneId]: scrollState },
-  };
-});
-tabStateReducer.with(loadPaneScrollStates, (state, { payload: [paneScrollStates] }) => ({
-  ...state,
-  paneScrollStates,
-}));
-tabStateReducer.with(clearPaneScrollState, (state, { payload: [paneId] }) => {
-  if (!(paneId in state.paneScrollStates)) return state;
-  return { ...state, paneScrollStates: omitKey(state.paneScrollStates, paneId) };
-});
-tabStateReducer.with(prunePaneScrollStates, (state, { payload: [validPaneIds] }) => {
-  const validPaneIdSet = new Set(validPaneIds);
-  const paneScrollStates = Object.fromEntries(
-    Object.entries(state.paneScrollStates).filter(([paneId]) => validPaneIdSet.has(paneId)),
-  );
-  if (Object.keys(paneScrollStates).length === Object.keys(state.paneScrollStates).length)
-    return state;
-  return { ...state, paneScrollStates };
-});
 tabStateReducer.with(openWorkspaceTab, (state, { payload: [workspaceId] }) => {
   if (!isWorkspaceTabId(workspaceId)) return state;
 

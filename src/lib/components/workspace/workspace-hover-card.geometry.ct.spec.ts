@@ -196,7 +196,6 @@ for (const scene of [
       statusText: statusRow.locator('[data-workspace-hover-card-status-text]'),
       agentText: agentRow.locator('[data-workspace-hover-card-agent-text]'),
       prText: prRow.locator('[data-workspace-hover-card-pr-text]'),
-      prTitle: prRow.locator('[data-workspace-hover-card-pr-title]'),
       agentSection,
       prSection,
       prGlyph: prRow.locator('[data-workspace-hover-card-pr-icon] svg'),
@@ -223,6 +222,7 @@ for (const scene of [
     for (const [rowName, iconName, textName] of [
       ['statusRow', 'statusIcon', 'statusText'],
       ['agentRow', 'agentIcon', 'agentText'],
+      ['prRow', 'prIcon', 'prText'],
     ] as const) {
       const rowCenter = boxes[rowName]!.y + boxes[rowName]!.height / 2;
       const iconCenter = boxes[iconName]!.y + boxes[iconName]!.height / 2;
@@ -230,11 +230,6 @@ for (const scene of [
       expect(iconCenter).toBeCloseTo(rowCenter, 1);
       expect(textCenter).toBeCloseTo(rowCenter, 1);
     }
-
-    const prIconCenter = boxes.prIcon!.y + boxes.prIcon!.height / 2;
-    const prTitleCenter = boxes.prTitle!.y + boxes.prTitle!.height / 2;
-    expect(Math.abs(prIconCenter - prTitleCenter)).toBeLessThanOrEqual(2.5);
-    expect(boxes.prIcon!.y).toBeLessThan(boxes.prRow!.y + boxes.prRow!.height / 2);
 
     const agentRowBoxes = await agentRows.evaluateAll((rows) =>
       rows.map((row) => {
@@ -254,7 +249,7 @@ for (const scene of [
   });
 }
 
-test('keeps short descriptions at one line and preserves two columns when narrow', async ({
+test('keeps short descriptions at one line and stacks responsively when narrow', async ({
   mount,
   page,
 }) => {
@@ -284,9 +279,9 @@ test('keeps short descriptions at one line and preserves two columns when narrow
   expect(geometry.height).toBeCloseTo(geometry.lineHeight, 0);
   expect(
     await columns.evaluate((node) => getComputedStyle(node).gridTemplateColumns.split(' ').length),
-  ).toBe(2);
-  expect(await activity.evaluate((node) => getComputedStyle(node).borderLeftWidth)).toBe('1px');
-  expect(await activity.evaluate((node) => getComputedStyle(node).borderTopWidth)).toBe('0px');
+  ).toBe(1);
+  expect(await activity.evaluate((node) => getComputedStyle(node).borderLeftWidth)).toBe('0px');
+  expect(await activity.evaluate((node) => getComputedStyle(node).borderTopWidth)).toBe('1px');
   expect(
     await activity
       .locator(':scope > div')
