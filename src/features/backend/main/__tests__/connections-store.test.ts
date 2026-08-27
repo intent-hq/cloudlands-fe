@@ -1059,6 +1059,221 @@ describe('connections-store keychain sync surface', () => {
     expect(records.filter((r) => r.deleted === true)).toHaveLength(1);
   });
 
+  it('applyRemoteSyncRecord live pull never overwrites an excluded record (same account)', async () => {
+    const store = await import('../connections-store');
+    const rec = await store.add({ ...sampleConn, syncExcluded: true });
+    await store.__drainWriteChainForTesting();
+    const file = path.join(tmpDir, 'backend-connections.json');
+    const before = JSON.parse(await fs.readFile(file, 'utf8'));
+
+    const changed = await store.applyRemoteSyncRecord({
+      label: 'Synced twin',
+      host: '192.168.1.10',
+      hosts: ['192.168.1.10'],
+      port: 8443,
+      fingerprint: 'AA:BB:CC',
+      hostname: 'twin.local',
+      detectHosts: true,
+      token: 'remote-token',
+      updatedAt: Date.now() + 60_000, // newer than the local record
+    });
+    expect(changed).toBe(false);
+
+    // Untouched on disk (label, token, LWW clock) and no duplicate inserted.
+    await store.__drainWriteChainForTesting();
+    const after = JSON.parse(await fs.readFile(file, 'utf8'));
+    expect(after.connections).toEqual(before.connections);
+    expect(await store.getDecryptedToken(rec.id)).toBe('secret-token');
+  });
+
+  it('applyRemoteSyncRecord live pull for an excluded backend under a NEW address creates no duplicate', async () => {
+    const store = await import('../connections-store');
+    const rec = await store.add({ ...sampleConn, syncExcluded: true });
+
+    const changed = await store.applyRemoteSyncRecord({
+      label: 'Studio Mac',
+      host: '192.168.1.99',
+      hosts: ['192.168.1.99'],
+      port: 9443,
+      fingerprint: 'aa:bb:cc', // same machine, case-differing fingerprint
+      hostname: null,
+      detectHosts: true,
+      token: 'remote-token',
+      updatedAt: Date.now() + 60_000,
+    });
+    expect(changed).toBe(false);
+
+    const remotes = (await store.list()).filter((c) => !c.isLocal);
+    expect(remotes).toHaveLength(1);
+    expect(remotes[0]).toMatchObject({
+      id: rec.id,
+      host: '192.168.1.10',
+      port: 8443,
+      syncExcluded: true,
+    });
+  });
+
+  it('applyRemoteSyncRecord matches an excluded fingerprint-less record by host:port (no update, no duplicate)', async () => {
+    const store = await import('../connections-store');
+    const rec = await store.add({ ...sampleConn, fingerprint: '', syncExcluded: true });
+
+    const changed = await store.applyRemoteSyncRecord({
+      label: 'Synced twin',
+      host: '192.168.1.10',
+      hosts: ['192.168.1.10'],
+      port: 8443,
+      fingerprint: '',
+      hostname: null,
+      detectHosts: true,
+      token: 'remote-token',
+      updatedAt: Date.now() + 60_000,
+    });
+    expect(changed).toBe(false);
+
+    const remotes = (await store.list()).filter((c) => !c.isLocal);
+    expect(remotes).toHaveLength(1);
+    expect(remotes[0]).toMatchObject({ id: rec.id, label: 'Studio Mac', syncExcluded: true });
+    expect(await store.getDecryptedToken(rec.id)).toBe('secret-token');
+  });
+
+  it('applyRemoteSyncRecord tombstone never deletes an excluded record and remembers nothing', async () => {
+    const store = await import('../connections-store');
+    const rec = await store.add({ ...sampleConn, syncExcluded: true });
+    await store.setActiveId(rec.id);
+
+    const remoteClock = Date.now() + 60_000;
+    const changed = await store.applyRemoteSyncRecord({
+      label: 'Studio Mac',
+      host: '192.168.1.10', // an OLD address of the same machine
+      hosts: ['192.168.1.10'],
+      port: 7443,
+      fingerprint: 'AA:BB:CC',
+      hostname: null,
+      detectHosts: true,
+      token: '',
+      updatedAt: remoteClock,
+      deleted: true,
+      deletedAt: remoteClock,
+    });
+    expect(changed).toBe(false);
+
+    // The record survives, stays active, and no tombstone is remembered.
+    const remotes = (await store.list()).filter((c) => !c.isLocal);
+    expect(remotes).toHaveLength(1);
+    expect(remotes[0].id).toBe(rec.id);
+    expect(await store.getActiveId()).toBe(rec.id);
+    await store.__drainWriteChainForTesting();
+    const file = path.join(tmpDir, 'backend-connections.json');
+    const parsed = JSON.parse(await fs.readFile(file, 'utf8'));
+    expect(parsed.tombstones).toHaveLength(0);
+  });
+
+  it('reconcile treats excluded records as fully local: never pushed, never overwritten or deleted, never duplicated', async () => {
+    // Real store + real reconcile against an in-memory keychain: the
+    // excluded record must be invisible (push side) and inviolable (pull
+    // side) across full reconcile passes.
+    const store = await import('../connections-store');
+    const sync = await import('../keychain-sync');
+
+    const keychain = new Map<string, string>();
+    const client: import('../keychain-sync').KeychainClient = {
+      async list() {
+        return {
+          ok: true,
+          items: [...keychain.entries()].map(([account, payload]) => ({ account, payload })),
+        };
+      },
+      async upsert(account, payload) {
+        keychain.set(account, payload);
+        return { ok: true };
+      },
+      async delete(account) {
+        keychain.delete(account);
+        return { ok: true };
+      },
+    };
+    const adapter: import('../keychain-sync').LocalSyncAdapter = {
+      list: () => store.listSyncRecords(),
+      applyRemote: async (_account, record) => {
+        await store.applyRemoteSyncRecord(record);
+      },
+    };
+
+    // An excluded live record plus an excluded tombstone (a forgotten
+    // local-only backend) — neither may ever reach the keychain.
+    const rec = await store.add({ ...sampleConn, syncExcluded: true });
+    const gone = await store.add({
+      label: 'Gone',
+      host: '10.0.0.5',
+      port: 7000,
+      fingerprint: 'GG:HH',
+      token: 'gone-token',
+      syncExcluded: true,
+    });
+    await store.forget(gone.id);
+
+    let result = await sync.reconcile(adapter, { client });
+    expect(result.pushed).toEqual([]);
+    expect(keychain.size).toBe(0);
+
+    // Pull side: a NEWER remote live copy of the excluded backend under a
+    // DIFFERENT account (same fingerprint — the machine's synced twin).
+    const twinAccount = sync.accountKeyFor('192.168.1.99', 9443);
+    keychain.set(
+      twinAccount,
+      sync.serializeRecord({
+        label: 'Synced twin',
+        host: '192.168.1.99',
+        hosts: ['192.168.1.99'],
+        port: 9443,
+        fingerprint: 'AA:BB:CC',
+        hostname: null,
+        detectHosts: true,
+        token: 'remote-token',
+        updatedAt: Date.now() + 60_000,
+      }),
+    );
+    result = await sync.reconcile(adapter, { client });
+    expect(result.pushed).toEqual([]);
+    let remotes = (await store.list()).filter((c) => !c.isLocal);
+    expect(remotes).toHaveLength(1);
+    expect(remotes[0]).toMatchObject({
+      id: rec.id,
+      host: '192.168.1.10',
+      port: 8443,
+      syncExcluded: true,
+    });
+    expect(await store.getDecryptedToken(rec.id)).toBe('secret-token');
+    // The excluded record's own account never appeared in the keychain, and
+    // its token never leaked into any payload.
+    expect(keychain.has(sync.accountKeyFor('192.168.1.10', 8443))).toBe(false);
+    expect([...keychain.values()].join()).not.toContain('secret-token');
+
+    // A NEWER remote tombstone for the same fingerprint never deletes it.
+    const tombClock = Date.now() + 120_000;
+    keychain.set(
+      twinAccount,
+      sync.serializeRecord({
+        label: 'Synced twin',
+        host: '192.168.1.99',
+        hosts: ['192.168.1.99'],
+        port: 9443,
+        fingerprint: 'AA:BB:CC',
+        hostname: null,
+        detectHosts: true,
+        token: '',
+        updatedAt: tombClock,
+        deleted: true,
+        deletedAt: tombClock,
+      }),
+    );
+    result = await sync.reconcile(adapter, { client });
+    expect(result.deletedLocally).toEqual([]);
+    remotes = (await store.list()).filter((c) => !c.isLocal);
+    expect(remotes).toHaveLength(1);
+    expect(remotes[0]).toMatchObject({ id: rec.id, syncExcluded: true });
+  });
+
   it('self-refresh port change end to end: the stale keychain account is tombstoned, the record rewritten under the new account', async () => {
     // The refresh path re-upserts the self record through store.add (same
     // fingerprint, new port). This drives the REAL store + REAL reconcile

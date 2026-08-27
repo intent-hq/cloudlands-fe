@@ -713,6 +713,12 @@ export async function listSyncRecords(): Promise<KeychainSyncRecord[]> {
  * falls back to `local` (never touching any other machine-local selection
  * state).
  *
+ * Sync-excluded records are invisible AND inviolable (spec Phase 2): a remote
+ * record or tombstone matching ONLY excluded records — by fingerprint, or
+ * host:port for fingerprint-less records — is a pure no-op: it never
+ * overwrites or deletes the local-only record and never inserts a synced
+ * duplicate of the same backend alongside it.
+ *
  * Deliberately does NOT fire {@link onConnectionsMutated} — pulls must not
  * loop back into pushes. Returns whether anything actually changed so the
  * lifecycle can refresh the renderer only when needed.
@@ -724,8 +730,13 @@ export async function applyRemoteSyncRecord(record: KeychainSyncRecord): Promise
       // fallback only for fingerprint-less records) so a tombstone written
       // under an old address still deletes the record now living under a new
       // one — but a tombstone for an old certificate at a reused address
-      // never deletes the different machine now living there.
-      const existing = state.connections.filter((c) => tombstoneMatches(c, record));
+      // never deletes the different machine now living there. A tombstone
+      // matching only sync-excluded records is a pure no-op (nothing deleted,
+      // no tombstone remembered): the local-only backend outlives its
+      // forgotten synced twin.
+      const matched = state.connections.filter((c) => tombstoneMatches(c, record));
+      const existing = matched.filter((c) => c.syncExcluded !== true);
+      if (matched.length > 0 && existing.length === 0) return false;
       state.connections = state.connections.filter((c) => !existing.includes(c));
       if (existing.some((c) => c.id === state.activeId)) {
         state.activeId = LOCAL_CONNECTION_ID;
@@ -746,10 +757,15 @@ export async function applyRemoteSyncRecord(record: KeychainSyncRecord): Promise
       return existing.length > 0;
     }
 
+    // A live remote copy of a backend held here as sync-excluded must
+    // neither overwrite the local-only record nor insert a duplicate next to
+    // it: when every identity match is excluded, drop the pull entirely.
+    const matches = state.connections.filter((c) => sameBackend(c, record));
+    const duplicates = matches.filter((c) => c.syncExcluded !== true);
+    if (matches.length > 0 && duplicates.length === 0) return false;
     clearTombstone(state, record);
     const encToken = encryptToken(record.token);
     const extras = record.hosts.filter((h) => h.trim() !== record.host.trim());
-    const duplicates = state.connections.filter((c) => sameBackend(c, record));
     if (duplicates.length > 0) {
       const survivor = duplicates.find((c) => c.id === state.activeId) ?? duplicates[0];
       survivor.label = record.label;
