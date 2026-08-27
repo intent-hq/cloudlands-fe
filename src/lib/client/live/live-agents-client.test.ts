@@ -1133,7 +1133,7 @@ describe('LiveAgentsClient reads thread daemon activity flags (PROTOCOL §5.5)',
     });
   });
 
-  it('list omits retiredOnly by default and forwards it verbatim when set (§5.5, v8.2)', async () => {
+  it('list sends retiredOnly only when true — omitted when unset or false (§5.5, v8.2)', async () => {
     backend.onRequest('agent.list', () => ({ agents: [], retiredCount: 0 }));
     const client = new LiveAgentsClient();
 
@@ -1147,6 +1147,15 @@ describe('LiveAgentsClient reads thread daemon activity flags (PROTOCOL §5.5)',
     expect(backend.requests[1]).toEqual({
       method: 'agent.list',
       params: { workspaceId: 'ws-1', retiredOnly: true },
+    });
+
+    // The daemon treats absent and `false` identically, so an explicit
+    // `retiredOnly: false` stays off the wire and the default read carries
+    // no flags for every non-retired caller.
+    await client.list('ws-1', { retiredOnly: false });
+    expect(backend.requests[2]).toEqual({
+      method: 'agent.list',
+      params: { workspaceId: 'ws-1' },
     });
   });
 

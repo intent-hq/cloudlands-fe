@@ -109,13 +109,14 @@ export class LiveAgentsClient implements AgentsClient {
     workspaceId: string,
     options?: { retiredOnly?: boolean },
   ): Promise<{ agents: AgentSession[]; retiredCount: number }> {
-    // `retiredOnly` (§5.5 soft retire, v8.2) only rides the wire when the
-    // caller supplied it, so the default read carries no flags (retired rows
-    // excluded daemon-side). `retiredCount` (v8.2) is served on every read
-    // variant; the FE assumes an 8.2+ daemon and defaults to 0 only if the
-    // field is somehow absent.
+    // `retiredOnly` (§5.5 soft retire, v8.2) rides the wire only when true —
+    // the daemon treats absent and `false` identically, so the default read
+    // carries no flags (retired rows excluded daemon-side) even for an
+    // explicit `retiredOnly: false` caller. `retiredCount` (v8.2) is served on
+    // every read variant; the FE assumes an 8.2+ daemon and defaults to 0 only
+    // if the field is somehow absent.
     const params: Record<string, unknown> = { workspaceId };
-    if (options?.retiredOnly !== undefined) params.retiredOnly = options.retiredOnly;
+    if (options?.retiredOnly) params.retiredOnly = true;
     const result = await backendRequest<{ agents?: unknown[]; retiredCount?: number }>(
       'agent.list',
       params,
