@@ -54,6 +54,17 @@ describe('isReplaceAgentEligible', () => {
         isReplaceAgentEligible(eligibleSession({ metadata: { parentAgentId: 'agent-1' } })),
       ).toBe(false);
     });
+
+    it('is ineligible when the delegation markers live under agentMetadata', () => {
+      expect(
+        isReplaceAgentEligible(
+          eligibleSession({ agentMetadata: { createdByAgentId: 'agent-1' } }),
+        ),
+      ).toBe(false);
+      expect(
+        isReplaceAgentEligible(eligibleSession({ agentMetadata: { parentAgentId: 'agent-1' } })),
+      ).toBe(false);
+    });
   });
 
   describe('non-background gate', () => {
@@ -67,10 +78,20 @@ describe('isReplaceAgentEligible', () => {
       ).toBe(false);
     });
 
+    it('is ineligible when agentMetadata.isBackground is true', () => {
+      expect(
+        isReplaceAgentEligible(eligibleSession({ agentMetadata: { isBackground: true } })),
+      ).toBe(false);
+    });
+
     it('stays eligible when isBackground is explicitly false', () => {
       expect(
         isReplaceAgentEligible(
-          eligibleSession({ isBackground: false, metadata: { isBackground: false } }),
+          eligibleSession({
+            isBackground: false,
+            metadata: { isBackground: false },
+            agentMetadata: { isBackground: false },
+          }),
         ),
       ).toBe(true);
     });
