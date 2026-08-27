@@ -1,4 +1,6 @@
 /** @vitest-environment jsdom */
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { TaskProgressItem } from '../workspace-task-fallback';
@@ -26,21 +28,14 @@ const allStatusTasks: TaskProgressItem[] = [
   { id: 'review', title: 'Review the result', status: 'review_required' },
 ];
 
-const expectedStatusClasses = {
-  pending:
-    'bg-[hsl(var(--agent-avatar-surface-neutral))] text-[hsl(var(--agent-avatar-foreground))]',
-  running:
-    'bg-[hsl(var(--agent-avatar-surface-active))] text-[hsl(var(--agent-avatar-foreground))]',
-  completed:
-    'bg-[hsl(var(--agent-avatar-surface-completed))] text-[hsl(var(--agent-avatar-foreground-completed))]',
-  waiting:
-    'bg-[hsl(var(--agent-avatar-surface-waiting))] text-[hsl(var(--agent-avatar-foreground))]',
-  discussion_needed:
-    'bg-[hsl(var(--agent-avatar-surface-attention))] text-[hsl(var(--agent-avatar-foreground))]',
-  blocked:
-    'bg-[hsl(var(--agent-avatar-surface-failed))] text-[hsl(var(--agent-avatar-foreground))]',
-  review_required:
-    'bg-[hsl(var(--workspace-status-unread))] text-[hsl(var(--agent-avatar-foreground))]',
+const expectedOutlineClasses = {
+  pending: 'ring-[hsl(var(--agent-avatar-surface-neutral))]',
+  running: 'ring-[hsl(var(--agent-avatar-surface-active))]',
+  completed: 'ring-[hsl(var(--agent-avatar-surface-completed))]',
+  waiting: 'ring-[hsl(var(--agent-avatar-surface-waiting))]',
+  discussion_needed: 'ring-[hsl(var(--agent-avatar-surface-attention))]',
+  blocked: 'ring-[hsl(var(--agent-avatar-surface-failed))]',
+  review_required: 'ring-[hsl(var(--agent-avatar-surface-neutral))]',
 } as const;
 
 beforeEach(() => {
@@ -180,15 +175,15 @@ describe('TaskProgressControl', () => {
     expect(
       stackItems.map((item) => item.style.zIndex || item.className.match(/z-[0-9]+/)?.[0]),
     ).toEqual(['z-0', '1', '2', '6', '5']);
-    expect(icons[0].className).toContain(expectedStatusClasses.completed);
+    expect(icons[0].className).toContain(expectedOutlineClasses.completed);
     expect(icons[0].dataset.completedCount).toBe('2');
-    expect(icons[1].className).toContain(expectedStatusClasses.pending);
-    expect(icons[2].className).toContain(expectedStatusClasses.waiting);
-    expect(icons[3].className).toContain(expectedStatusClasses.running);
+    expect(icons[1].className).toContain(expectedOutlineClasses.pending);
+    expect(icons[2].className).toContain(expectedOutlineClasses.waiting);
+    expect(icons[3].className).toContain(expectedOutlineClasses.running);
     expect(icons.at(-1)?.innerHTML).toContain('motion-safe:animate-spin');
     expect(icons.at(-1)?.innerHTML).toContain('motion-reduce:animate-none');
     const overflow = screen.getByTestId('task-progress-overflow-indicator');
-    expect(overflow.className).toContain(expectedStatusClasses.pending);
+    expect(overflow.className).toContain(expectedOutlineClasses.pending);
     expect(overflow.dataset.overflowCount).toBe('3');
     const trigger = screen.getByTestId('task-progress-trigger');
     expect(trigger.className).toContain('h-(--row-action-target-compact)');
@@ -216,14 +211,14 @@ describe('TaskProgressControl', () => {
         .map((task) => task.status),
     );
     for (const icon of rowIcons) {
-      const status = icon.dataset.taskStatus as keyof typeof expectedStatusClasses;
-      expect(icon.className).toContain(expectedStatusClasses[status]);
+      const status = icon.dataset.taskStatus as keyof typeof expectedOutlineClasses;
+      expect(icon.className).toContain(expectedOutlineClasses[status]);
       expect(icon.className).toContain('mt-0.5');
     }
   });
 
   it.each(['light', 'dark'] as const)(
-    'uses exact opaque semantic token mappings without primary-green styling in %s mode',
+    'uses opaque background disks and exact inset state outlines in %s mode',
     async (theme) => {
       document.documentElement.classList.toggle('dark', theme === 'dark');
       document.documentElement.classList.toggle('light', theme === 'light');
@@ -240,14 +235,45 @@ describe('TaskProgressControl', () => {
         const backgroundClass = indicator.className
           .split(' ')
           .find((className) => className.startsWith('bg-'));
-        expect(backgroundClass).toMatch(
-          /^bg-\[hsl\(var\(--(?:agent-avatar-surface-[a-z-]+|workspace-status-unread)\)\)\]$/,
-        );
+        const status = indicator.dataset.taskStatus as keyof typeof expectedOutlineClasses;
+        const expectedOutline =
+          indicator.dataset.testid === 'task-progress-overflow-indicator'
+            ? expectedOutlineClasses.pending
+            : expectedOutlineClasses[status];
+        expect(backgroundClass).toBe('bg-[hsl(var(--background))]');
         expect(backgroundClass).not.toContain('/');
-        expect(indicator.className).not.toMatch(/(?:primary|green|opacity-)/);
+        expect(indicator.className).toContain('text-foreground');
+        expect(indicator.className).toContain('ring-1');
+        expect(indicator.className).toContain('ring-inset');
+        expect(indicator.className).toContain(expectedOutline);
+        expect(indicator.className).not.toMatch(
+          /(?:primary|green|blue|workspace-status-unread|opacity-|\/[0-9])/,
+        );
       }
     },
   );
+
+  it('keeps the one-pixel outline inside the unchanged 14px disk box', () => {
+    render(TaskProgressControl, { props: { tasks: allStatusTasks } });
+
+    for (const indicator of screen.getAllByTestId('task-progress-status-icon')) {
+      expect(indicator.className).toContain('size-3.5');
+      expect(indicator.className).toContain('ring-1');
+      expect(indicator.className).toContain('ring-inset');
+      expect(indicator.className).not.toContain('border');
+      expect(indicator.className).not.toContain('outline-offset');
+    }
+  });
+
+  it('contains no unread, blue, primary, translucent, or opacity color styling', () => {
+    const source = readFileSync(
+      resolve(process.cwd(), 'src/lib/components/chat/TaskProgressControl.svelte'),
+      'utf8',
+    );
+    expect(source).not.toMatch(
+      /workspace-status-unread|blue|primary|green|bg-transparent|opacity-|\/[0-9]+/,
+    );
+  });
 
   it('clamps normal and shimmered titles to two lines with full accessible text', async () => {
     const longPendingTitle = 'Inspect every part of the panel before completing the visual review';
@@ -286,7 +312,7 @@ describe('TaskProgressControl', () => {
     expect(icons).toHaveLength(1);
     expect(icons[0].dataset.taskStatus).toBe('completed');
     expect(icons[0].dataset.completedCount).toBe('5');
-    expect(icons[0].className).toContain(expectedStatusClasses.completed);
+    expect(icons[0].className).toContain(expectedOutlineClasses.completed);
     expect(icons[0].className).not.toContain('border');
     expect(icons[0].className).not.toContain('shadow');
   });

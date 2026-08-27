@@ -70,24 +70,21 @@
 
   function statusIndicatorClass(status: TaskProgressStatus): string {
     if (status === 'completed') {
-      return 'bg-[hsl(var(--agent-avatar-surface-completed))] text-[hsl(var(--agent-avatar-foreground-completed))]';
+      return 'ring-[hsl(var(--agent-avatar-surface-completed))]';
     }
     if (status === 'running') {
-      return 'bg-[hsl(var(--agent-avatar-surface-active))] text-[hsl(var(--agent-avatar-foreground))]';
+      return 'ring-[hsl(var(--agent-avatar-surface-active))]';
     }
     if (status === 'discussion_needed') {
-      return 'bg-[hsl(var(--agent-avatar-surface-attention))] text-[hsl(var(--agent-avatar-foreground))]';
+      return 'ring-[hsl(var(--agent-avatar-surface-attention))]';
     }
     if (status === 'blocked') {
-      return 'bg-[hsl(var(--agent-avatar-surface-failed))] text-[hsl(var(--agent-avatar-foreground))]';
-    }
-    if (status === 'review_required') {
-      return 'bg-[hsl(var(--workspace-status-unread))] text-[hsl(var(--agent-avatar-foreground))]';
+      return 'ring-[hsl(var(--agent-avatar-surface-failed))]';
     }
     if (status === 'waiting') {
-      return 'bg-[hsl(var(--agent-avatar-surface-waiting))] text-[hsl(var(--agent-avatar-foreground))]';
+      return 'ring-[hsl(var(--agent-avatar-surface-waiting))]';
     }
-    return 'bg-[hsl(var(--agent-avatar-surface-neutral))] text-[hsl(var(--agent-avatar-foreground))]';
+    return 'ring-[hsl(var(--agent-avatar-surface-neutral))]';
   }
 
   function handleOpenChange(nextOpen: boolean) {
@@ -109,7 +106,7 @@
   className = '',
 )}
   <span
-    class="inline-flex size-3.5 shrink-0 items-center justify-center rounded-full leading-none {className} {statusIndicatorClass(
+    class="inline-flex size-3.5 shrink-0 items-center justify-center rounded-full bg-[hsl(var(--background))] text-foreground leading-none ring-1 ring-inset {className} {statusIndicatorClass(
       status,
     )}"
     aria-hidden="true"
@@ -151,7 +148,7 @@
           {...props}
           bind:this={triggerElement}
           type="button"
-          class="relative m-0 inline-flex h-(--row-action-target-compact) min-w-(--row-action-target-compact) w-fit shrink-0 items-center justify-center gap-0 rounded-md border border-transparent bg-transparent p-0 text-muted-foreground outline-none transition-[border-color,box-shadow] duration-[var(--motion-fast)] focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40 motion-reduce:transition-none"
+          class="relative m-0 inline-flex h-(--row-action-target-compact) min-w-(--row-action-target-compact) w-fit shrink-0 items-center justify-center gap-0 rounded-md border border-transparent bg-background p-0 text-muted-foreground outline-none transition-[border-color,box-shadow] duration-[var(--motion-fast)] focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none"
           aria-label={progressLabel}
           aria-expanded={open}
           onfocus={handleTriggerFocus}
@@ -195,7 +192,7 @@
                 data-task-status="overflow"
               >
                 <span
-                  class="inline-flex size-3.5 shrink-0 items-center justify-center rounded-full bg-[hsl(var(--agent-avatar-surface-neutral))] text-[hsl(var(--agent-avatar-foreground))] leading-none"
+                  class="inline-flex size-3.5 shrink-0 items-center justify-center rounded-full bg-[hsl(var(--background))] text-foreground leading-none ring-1 ring-inset ring-[hsl(var(--agent-avatar-surface-neutral))]"
                   aria-hidden="true"
                   data-testid="task-progress-overflow-indicator"
                   data-overflow-count={overflowCount}
