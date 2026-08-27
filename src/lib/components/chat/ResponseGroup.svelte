@@ -125,13 +125,21 @@
       if (disclosureOverride === 'automatic') setExpanded(!hasCurrentChild);
       clearCollapseTimer();
     } else if (prevStreaming && !currentlyStreaming) {
-      if (currentlyTerminal) clearCollapseTimer();
-      else scheduleCollapse();
+      if (currentlyTerminal) {
+        clearCollapseTimer();
+        if (disclosureOverride !== 'collapsed') setExpanded(true);
+      } else {
+        scheduleCollapse();
+      }
     } else if (prevTerminal && !currentlyTerminal) {
       scheduleCollapse();
     } else if (!prevTerminal && currentlyTerminal) {
       clearCollapseTimer();
-    } else if (!searchOwnsExpansion && disclosureOverride !== 'expanded-completed') {
+    } else if (
+      !searchOwnsExpansion &&
+      disclosureOverride !== 'expanded-completed' &&
+      !currentlyTerminal
+    ) {
       setExpanded(false);
     }
     prevStreaming = currentlyStreaming;
