@@ -549,7 +549,7 @@
               class={feedback.kind === 'error'
                 ? 'text-right text-sm text-error-foreground'
                 : feedback.kind === 'success'
-                  ? 'text-right text-sm text-success-foreground'
+                  ? 'text-right text-sm text-success'
                   : 'text-right text-sm text-muted-foreground'}
               role={feedback.kind === 'error' ? 'alert' : 'status'}
               aria-atomic="true"
