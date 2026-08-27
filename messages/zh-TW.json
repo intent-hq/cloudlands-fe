@@ -2239,6 +2239,7 @@
   "chat_modelChangeNotice_model_label": "{name}（{providerId} / {modelId}）",
   "chat_modelChangeNotice_defaultModel_label": "{provider} 預設模型（{providerId}）",
   "chat_questionsDismissedNotice_dismissed_label": "問題已被忽略",
+  "chat_autoUnarchivedNotice_unarchived_label": "由於傳送了訊息，空間已自動取消歸檔。",
   "chat_modelSwitchDialog_switchProvider_title": "在對話中途切換提供者？",
   "chat_modelSwitchDialog_switchModel_title": "在對話中途切換模型？",
   "chat_modelSwitchDialog_close_ariaLabel": "關閉",

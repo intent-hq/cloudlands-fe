@@ -2240,6 +2240,7 @@
   "chat_modelChangeNotice_model_label": "{name} ({providerId} / {modelId})",
   "chat_modelChangeNotice_defaultModel_label": "{provider} default model ({providerId})",
   "chat_questionsDismissedNotice_dismissed_label": "Questions dismissed",
+  "chat_autoUnarchivedNotice_unarchived_label": "Workspace was automatically unarchived because a message was sent.",
   "chat_modelSwitchDialog_switchProvider_title": "Switch provider mid-conversation?",
   "chat_modelSwitchDialog_switchModel_title": "Switch model mid-conversation?",
   "chat_modelSwitchDialog_close_ariaLabel": "Close",

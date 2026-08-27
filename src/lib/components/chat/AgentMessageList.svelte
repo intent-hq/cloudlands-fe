@@ -8,9 +8,11 @@
   import BlockerReportNotice from './BlockerReportNotice.svelte';
   import TurnFailureNotice from './TurnFailureNotice.svelte';
   import QuestionsDismissedNotice from './QuestionsDismissedNotice.svelte';
+  import AutoUnarchivedNotice from './AutoUnarchivedNotice.svelte';
   import { getModelChangeNotice } from './model-change-notice';
   import { getAttentionNotice } from './attention-notice';
   import { getQuestionsDismissedNotice } from './questions-dismissed-notice';
+  import { getAutoUnarchivedNotice } from './auto-unarchived-notice';
   import { fade } from 'svelte/transition';
   import { m } from '$shared/paraglide/messages.js';
   import { getPresentedUserMessageText } from '$lib/utils/user-message-presentation';
@@ -102,6 +104,7 @@
   {#each filteredMessages as message, index (message.id)}
     {@const modelChangeNotice = getModelChangeNotice(message)}
     {@const questionsDismissedNotice = getQuestionsDismissedNotice(message)}
+    {@const autoUnarchivedNotice = getAutoUnarchivedNotice(message)}
     <div
       id="message-{message.id}"
       class="message-wrapper group/message"
@@ -127,6 +130,11 @@
              Discriminated on metadata type before role branching so it renders
              regardless of the exact role the daemon persists. -->
         <QuestionsDismissedNotice title={extractAllContent(message) || undefined} />
+      {:else if autoUnarchivedNotice}
+        <!-- Daemon-persisted auto-unarchive notice - centered inline divider.
+             Discriminated on metadata type before role branching so it renders
+             regardless of the exact role the daemon persists. -->
+        <AutoUnarchivedNotice title={extractAllContent(message) || undefined} />
       {:else if message.role === 'user'}
         <ChatMessage {message} onCopy={() => handleCopy(getPresentedUserMessageText(message))} />
       {:else if message.role === 'assistant'}
