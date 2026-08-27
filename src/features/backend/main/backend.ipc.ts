@@ -122,10 +122,36 @@ const BACKEND = IPC_CHANNELS.BACKEND;
 const CONNECTIONS = IPC_CHANNELS.CONNECTIONS;
 
 let client: JsonRpcClient | null = null;
-// Last daemon build identity logged from a `client.hello` result (#3649):
-// the handshake re-runs on every (re)connect, so dedupe on version+commit to
-// log the connected daemon's build once instead of once per reconnect.
-let lastLoggedDaemonBuildKey: string | null = null;
+// Last daemon build identity logged per connection from a `client.hello`
+// result (#3649): the handshake re-runs on every (re)connect, so dedupe on
+// version+commit per connection id to log each connected daemon's build once
+// instead of once per reconnect (a daemon upgrade logs again).
+const lastLoggedDaemonBuildKeys = new Map<string, string>();
+
+/**
+ * #3649: log the connected daemon's build identity once at INFO so the log
+ * file records which daemon build each connection talked to. Shared by the
+ * primary client and secondary pool members; `connectionId` disambiguates
+ * which backend the line refers to and scopes the reconnect dedupe.
+ */
+function logDaemonHelloBuild(helloResult: unknown, connectionId: string): void {
+  const helloBuild = extractDaemonHelloBuildInfo(helloResult);
+  if (!helloBuild) return;
+  const key = daemonHelloBuildKey(helloBuild);
+  if (lastLoggedDaemonBuildKeys.get(connectionId) === key) return;
+  lastLoggedDaemonBuildKeys.set(connectionId, key);
+  // i18n-ignore (developer log message)
+  logger.info('Connected to intentd', {
+    connectionId,
+    version: helloBuild.version,
+    buildCommit: helloBuild.buildCommit ?? 'unknown',
+  });
+}
+
+/** @internal Test seam: clear the per-connection daemon-build log dedupe. */
+export function __resetDaemonBuildLogForTesting(): void {
+  lastLoggedDaemonBuildKeys.clear();
+}
 const backendClients = new Map<string, JsonRpcClient>();
 const backendClientConnects = new Map<string, Promise<JsonRpcClient>>();
 let handlersRegistered = false;
@@ -546,15 +572,7 @@ export function getBackendClient(): JsonRpcClient {
       );
       // #3649: log the connected daemon's build identity once at INFO so the
       // log file records which daemon build it talked to.
-      const helloBuild = extractDaemonHelloBuildInfo(result);
-      if (helloBuild && daemonHelloBuildKey(helloBuild) !== lastLoggedDaemonBuildKey) {
-        lastLoggedDaemonBuildKey = daemonHelloBuildKey(helloBuild);
-        // i18n-ignore (developer log message)
-        logger.info('Connected to intentd', {
-          version: helloBuild.version,
-          buildCommit: helloBuild.buildCommit ?? 'unknown',
-        });
-      }
+      logDaemonHelloBuild(result, connectionId);
       // #3448: refresh the adopted external daemon's version info from the
       // live `server.version` on every (re)connect — the startup probe only
       // latches it once, so a daemon upgrade would otherwise stay stale. For
@@ -779,6 +797,9 @@ function createAdditionalBackendClient(id: string, config: BackendConnectionConf
       if (typeof clientId === 'string' && clientId.length > 0) {
         void persistClientId(clientId);
       }
+      // #3649: pool members log their daemon's build identity too, keyed by
+      // connection id so multi-backend setups record every daemon build.
+      logDaemonHelloBuild(result, id);
     },
   });
   instance.on('notification', (notification: JsonRpcNotification) => {

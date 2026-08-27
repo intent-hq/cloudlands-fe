@@ -10,7 +10,7 @@
  */
 
 import { BrowserWindow, ipcMain } from 'electron';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   __resetConnectionModeForTesting,
@@ -18,6 +18,7 @@ import {
   setConnectionMode,
   setDaemonVersionInfo,
 } from '../connection-mode';
+import { Logger } from '$shared/logger';
 
 const {
   ctorOptions,
@@ -92,6 +93,21 @@ vi.mock('../intentd-version-pin', () => ({
 
 vi.mock('../../../browser/main/browser-exec-reverse', () => ({
   registerBrowserExecReverseHandler: vi.fn(),
+}));
+
+vi.mock('../connections-store', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../connections-store')>()),
+  list: vi.fn(async () => [
+    {
+      id: 'conn-remote',
+      isLocal: false,
+      host: 'remote.example',
+      hosts: ['remote.example'],
+      port: 443,
+      fingerprint: 'AA:BB:CC',
+    },
+  ]),
+  getDecryptedToken: vi.fn(async () => 'tok-remote'),
 }));
 
 describe('backend.ipc client identity wiring (§5.17)', () => {
@@ -359,5 +375,82 @@ describe('backend.ipc daemon version refresh on hello (#3448)', () => {
       expect.objectContaining({ transport: expect.anything() }),
     );
     vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([]);
+  });
+});
+
+describe('backend.ipc daemon build-identity log on hello (#3649)', () => {
+  beforeEach(async () => {
+    const { __resetDaemonBuildLogForTesting } = await import('../backend.ipc');
+    __resetDaemonBuildLogForTesting();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  async function getPrimaryOnHelloResult(): Promise<(result: unknown) => void> {
+    const { getBackendClient } = await import('../backend.ipc');
+    getBackendClient();
+    return ctorOptions[0].onHelloResult as (result: unknown) => void;
+  }
+
+  it('logs the connected daemon build once, dedupes reconnects, re-logs on a build change', async () => {
+    const onHelloResult = await getPrimaryOnHelloResult();
+    const info = vi.spyOn(Logger.prototype, 'info');
+
+    onHelloResult({ server: { version: '0.2.0', buildCommit: 'abc1234' } });
+    onHelloResult({ server: { version: '0.2.0', buildCommit: 'abc1234' } });
+
+    const buildLogs = () => info.mock.calls.filter(([msg]) => msg === 'Connected to intentd');
+    expect(buildLogs()).toHaveLength(1);
+    expect(buildLogs()[0][1]).toEqual({
+      connectionId: 'local',
+      version: '0.2.0',
+      buildCommit: 'abc1234',
+    });
+
+    onHelloResult({ server: { version: '0.3.0', buildCommit: 'def5678' } });
+    expect(buildLogs()).toHaveLength(2);
+    expect(buildLogs()[1][1]).toEqual({
+      connectionId: 'local',
+      version: '0.3.0',
+      buildCommit: 'def5678',
+    });
+  });
+
+  it('does not log for hellos without a well-formed server.version', async () => {
+    const onHelloResult = await getPrimaryOnHelloResult();
+    const info = vi.spyOn(Logger.prototype, 'info');
+
+    onHelloResult(undefined);
+    onHelloResult({});
+    onHelloResult({ server: {} });
+    onHelloResult({ server: { version: 42 } });
+
+    expect(info.mock.calls.filter(([msg]) => msg === 'Connected to intentd')).toHaveLength(0);
+  });
+
+  it('logs a secondary pool member daemon build keyed by its connection id', async () => {
+    const { connectBackendClient } = await import('../backend.ipc');
+    const info = vi.spyOn(Logger.prototype, 'info');
+
+    await connectBackendClient('conn-remote');
+    const poolCtor = ctorOptions[ctorOptions.length - 1];
+    const onHelloResult = poolCtor.onHelloResult as (result: unknown) => void;
+    expect(typeof onHelloResult).toBe('function');
+
+    onHelloResult({ server: { version: '0.9.0', buildCommit: 'fed9876' } });
+    onHelloResult({ server: { version: '0.9.0', buildCommit: 'fed9876' } });
+
+    const buildLogs = info.mock.calls.filter(([msg]) => msg === 'Connected to intentd');
+    expect(buildLogs).toHaveLength(1);
+    expect(buildLogs[0][1]).toEqual({
+      connectionId: 'conn-remote',
+      version: '0.9.0',
+      buildCommit: 'fed9876',
+    });
+
+    const { disconnectBackendClient } = await import('../backend.ipc');
+    disconnectBackendClient('conn-remote');
   });
 });
