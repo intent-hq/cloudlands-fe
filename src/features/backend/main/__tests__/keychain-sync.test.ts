@@ -33,6 +33,7 @@ import {
   TOMBSTONE_TTL_MS,
   accountKeyFor,
   createHelperKeychainClient,
+  migrateLegacyGroupItems,
   parsePayload,
   reconcile,
   serializeRecord,
@@ -74,7 +75,9 @@ function item(record: KeychainSyncRecord): KeychainItem {
 }
 
 /** In-memory KeychainClient recording writes; list/upsert/delete can fail on
- * demand (`upsertErrors` fails only the named accounts). */
+ * demand (`upsertErrors` fails only the named accounts). `sharedGroup` makes
+ * `list()` advertise a resolved shared access group; `scopedDeletes` records
+ * the group each delete was scoped to. */
 function fakeClient(
   items: KeychainItem[] = [],
   opts: {
@@ -82,14 +85,18 @@ function fakeClient(
     upsertError?: HelperErrorCode;
     upsertErrors?: Record<string, HelperErrorCode>;
     deleteError?: HelperErrorCode;
+    sharedGroup?: string;
   } = {},
 ) {
   const upserts: { account: string; payload: string }[] = [];
   const deletes: string[] = [];
+  const scopedDeletes: { account: string; group?: string }[] = [];
   const client: KeychainClient = {
     async list() {
       if (opts.listError) return { ok: false, code: opts.listError, message: 'mock failure' };
-      return { ok: true, items };
+      return opts.sharedGroup !== undefined
+        ? { ok: true, items, sharedGroup: opts.sharedGroup }
+        : { ok: true, items };
     },
     async upsert(account, payload) {
       const code = opts.upsertErrors?.[account] ?? opts.upsertError;
@@ -97,13 +104,14 @@ function fakeClient(
       upserts.push({ account, payload });
       return { ok: true };
     },
-    async delete(account) {
+    async delete(account, group) {
       if (opts.deleteError) return { ok: false, code: opts.deleteError, message: 'mock failure' };
       deletes.push(account);
+      scopedDeletes.push({ account, group });
       return { ok: true };
     },
   };
-  return { client, upserts, deletes };
+  return { client, upserts, deletes, scopedDeletes };
 }
 
 /** In-memory LocalSyncAdapter recording remote applications. */
@@ -755,6 +763,209 @@ describe('reconcile fingerprint identity (cross-account dedupe)', () => {
 });
 
 // ============================================================================
+// Legacy access-group migration
+// ============================================================================
+
+describe('migrateLegacyGroupItems', () => {
+  const SHARED = 'TEAM12345X.dev.intentapp.backends';
+  const LEGACY = 'TEAM12345X.dev.intentapp.cloudlands-fe.keychain-helper';
+
+  function legacyItem(record: KeychainSyncRecord): KeychainItem {
+    return { ...item(record), group: LEGACY };
+  }
+  function sharedItem(record: KeychainSyncRecord): KeychainItem {
+    return { ...item(record), group: SHARED };
+  }
+
+  it('passes items through untouched when no shared group is advertised', async () => {
+    const items = [legacyItem(rec())];
+    const { client, upserts, deletes } = fakeClient(items);
+    const outcome = await migrateLegacyGroupItems(client, items, undefined);
+    expect(outcome).toEqual({ items, migrated: [], errors: [] });
+    expect(upserts).toEqual([]);
+    expect(deletes).toEqual([]);
+  });
+
+  it('migrates a legacy-only item: verified upsert first, then group-scoped delete', async () => {
+    const record = rec();
+    const items = [legacyItem(record)];
+    const { client, upserts, scopedDeletes } = fakeClient(items, { sharedGroup: SHARED });
+    const outcome = await migrateLegacyGroupItems(client, items, SHARED);
+    expect(upserts).toEqual([{ account: ACCOUNT, payload: serializeRecord(record) }]);
+    expect(scopedDeletes).toEqual([{ account: ACCOUNT, group: LEGACY }]);
+    expect(outcome.migrated).toEqual([ACCOUNT]);
+    expect(outcome.errors).toEqual([]);
+    expect(outcome.items).toEqual([{ ...legacyItem(record), group: SHARED }]);
+  });
+
+  it('keeps the legacy copy when the shared-group write fails (fail-soft)', async () => {
+    const record = rec();
+    const items = [legacyItem(record)];
+    const { client, deletes } = fakeClient(items, {
+      sharedGroup: SHARED,
+      upsertError: 'unavailable',
+    });
+    const outcome = await migrateLegacyGroupItems(client, items, SHARED);
+    expect(deletes).toEqual([]); // never delete before a verified write
+    expect(outcome.migrated).toEqual([]);
+    expect(outcome.errors).toEqual([{ account: ACCOUNT, op: 'upsert', code: 'unavailable' }]);
+    expect(outcome.items).toEqual([legacyItem(record)]);
+  });
+
+  it('both copies, shared newer: deletes the legacy copy without rewriting', async () => {
+    const newer = rec({ updatedAt: NOW - 1000 });
+    const older = rec({ updatedAt: NOW - 50_000 });
+    const items = [sharedItem(newer), legacyItem(older)];
+    const { client, upserts, scopedDeletes } = fakeClient(items, { sharedGroup: SHARED });
+    const outcome = await migrateLegacyGroupItems(client, items, SHARED);
+    expect(upserts).toEqual([]);
+    expect(scopedDeletes).toEqual([{ account: ACCOUNT, group: LEGACY }]);
+    expect(outcome.migrated).toEqual([ACCOUNT]);
+    expect(outcome.items).toEqual([sharedItem(newer)]);
+  });
+
+  it('both copies, legacy newer: rewrites the shared copy then deletes legacy', async () => {
+    const older = rec({ updatedAt: NOW - 50_000 });
+    const newer = rec({ updatedAt: NOW - 1000, label: 'Renamed' });
+    const items = [sharedItem(older), legacyItem(newer)];
+    const { client, upserts, scopedDeletes } = fakeClient(items, { sharedGroup: SHARED });
+    const outcome = await migrateLegacyGroupItems(client, items, SHARED);
+    expect(upserts).toEqual([{ account: ACCOUNT, payload: serializeRecord(newer) }]);
+    expect(scopedDeletes).toEqual([{ account: ACCOUNT, group: LEGACY }]);
+    expect(outcome.migrated).toEqual([ACCOUNT]);
+    expect(outcome.items).toEqual([{ ...legacyItem(newer), group: SHARED }]);
+  });
+
+  it('leaves both copies untouched when a payload is unparseable', async () => {
+    const shared: KeychainItem = { account: ACCOUNT, payload: 'not json', group: SHARED };
+    const legacy = legacyItem(rec());
+    const { client, upserts, deletes } = fakeClient([shared, legacy], { sharedGroup: SHARED });
+    const outcome = await migrateLegacyGroupItems(client, [shared, legacy], SHARED);
+    expect(upserts).toEqual([]);
+    expect(deletes).toEqual([]);
+    expect(outcome.migrated).toEqual([]);
+    expect(outcome.items).toEqual([shared]); // shared preferred in the view
+  });
+
+  it('a failed legacy delete still counts as migrated (view keeps shared) and records the error', async () => {
+    const record = rec();
+    const items = [legacyItem(record)];
+    const upserts: { account: string; payload: string }[] = [];
+    const client: KeychainClient = {
+      async list() {
+        return { ok: true, items, sharedGroup: SHARED };
+      },
+      async upsert(account, payload) {
+        upserts.push({ account, payload });
+        return { ok: true };
+      },
+      async delete() {
+        return { ok: false, code: 'keychain-error', message: 'mock failure' };
+      },
+    };
+    const outcome = await migrateLegacyGroupItems(client, items, SHARED);
+    expect(upserts).toHaveLength(1);
+    expect(outcome.migrated).toEqual([ACCOUNT]);
+    expect(outcome.errors).toEqual([{ account: ACCOUNT, op: 'delete', code: 'keychain-error' }]);
+    expect(outcome.items).toEqual([{ ...legacyItem(record), group: SHARED }]);
+  });
+
+  it('items without a group attribute are treated as in place', async () => {
+    const items = [item(rec())];
+    const { client, upserts, deletes } = fakeClient(items, { sharedGroup: SHARED });
+    const outcome = await migrateLegacyGroupItems(client, items, SHARED);
+    expect(upserts).toEqual([]);
+    expect(deletes).toEqual([]);
+    expect(outcome).toEqual({ items, migrated: [], errors: [] });
+  });
+
+  it('shouldAbort stops further migrations but keeps the item view intact', async () => {
+    const a = rec({ host: '10.0.0.1', updatedAt: NOW - 1000 });
+    const b = rec({ host: '10.0.0.2', updatedAt: NOW - 1000 });
+    const items = [legacyItem(a), legacyItem(b)];
+    const { client, upserts } = fakeClient(items, { sharedGroup: SHARED });
+    let calls = 0;
+    const outcome = await migrateLegacyGroupItems(client, items, SHARED, () => calls++ >= 1);
+    expect(upserts).toHaveLength(1);
+    expect(outcome.migrated).toEqual([accountKeyFor('10.0.0.1', 8443)]);
+    expect(outcome.items).toHaveLength(2); // untouched account stays in the view
+  });
+});
+
+describe('reconcile with access-group migration', () => {
+  const SHARED = 'TEAM12345X.dev.intentapp.backends';
+  const LEGACY = 'TEAM12345X.dev.intentapp.cloudlands-fe.keychain-helper';
+
+  it('migrates legacy items before reconciling and reports them in the result', async () => {
+    const record = rec();
+    const { client, upserts, scopedDeletes } = fakeClient([{ ...item(record), group: LEGACY }], {
+      sharedGroup: SHARED,
+    });
+    const { adapter, applied } = fakeAdapter([]);
+
+    const result = await reconcile(adapter, { client, now: NOW });
+
+    expect(result.status).toEqual({ state: 'active' });
+    expect(result.migrated).toEqual([ACCOUNT]);
+    expect(scopedDeletes).toEqual([{ account: ACCOUNT, group: LEGACY }]);
+    // Migration wrote it once; reconcile then pulls it locally (no re-push).
+    expect(upserts).toEqual([{ account: ACCOUNT, payload: serializeRecord(record) }]);
+    expect(result.pulled).toEqual([ACCOUNT]);
+    expect(applied).toEqual([{ account: ACCOUNT, record }]);
+  });
+
+  it('dedupes shared+legacy copies of one account into a single reconcile view', async () => {
+    const newer = rec({ updatedAt: NOW - 1000 });
+    const older = rec({ updatedAt: NOW - 50_000 });
+    const { client } = fakeClient(
+      [
+        { ...item(newer), group: SHARED },
+        { ...item(older), group: LEGACY },
+      ],
+      { sharedGroup: SHARED },
+    );
+    const { adapter, applied } = fakeAdapter([]);
+
+    const result = await reconcile(adapter, { client, now: NOW });
+
+    expect(result.migrated).toEqual([ACCOUNT]);
+    expect(result.pulled).toEqual([ACCOUNT]);
+    expect(applied).toEqual([{ account: ACCOUNT, record: newer }]);
+  });
+
+  it('no shared group advertised: reconcile behaves exactly as before', async () => {
+    const record = rec();
+    const { client, deletes } = fakeClient([item(record)]);
+    const { adapter, applied } = fakeAdapter([]);
+
+    const result = await reconcile(adapter, { client, now: NOW });
+
+    expect(result.migrated).toEqual([]);
+    expect(deletes).toEqual([]);
+    expect(result.pulled).toEqual([ACCOUNT]);
+    expect(applied).toEqual([{ account: ACCOUNT, record }]);
+  });
+
+  it('migration write failures degrade to unavailable when every write is rejected', async () => {
+    const { client } = fakeClient([{ ...item(rec()), group: LEGACY }], {
+      sharedGroup: SHARED,
+      upsertError: 'unavailable',
+    });
+    const { adapter } = fakeAdapter([]);
+
+    const result = await reconcile(adapter, { client, now: NOW });
+
+    expect(result.migrated).toEqual([]);
+    expect(result.errors).toEqual([{ account: ACCOUNT, op: 'upsert', code: 'unavailable' }]);
+    expect(result.status).toEqual({
+      state: 'unavailable',
+      reason: 'unavailable',
+      message: expect.any(String),
+    });
+  });
+});
+
+// ============================================================================
 // Helper-backed client (mocked child_process.spawn)
 // ============================================================================
 
@@ -836,6 +1047,36 @@ describe('createHelperKeychainClient', () => {
       ok: true,
       items: [{ account: ACCOUNT, payload: '{"v":1}', modifiedAtMs: 123 }],
     });
+  });
+
+  it('list: surfaces per-item group and the top-level sharedGroup when reported', async () => {
+    const shared = 'TEAM12345X.dev.intentapp.backends';
+    const legacy = 'TEAM12345X.dev.intentapp.cloudlands-fe.keychain-helper';
+    respondWith(
+      JSON.stringify({
+        items: [{ account: ACCOUNT, payload: '{"v":1}', group: legacy }],
+        sharedGroup: shared,
+      }),
+    );
+    const client = createHelperKeychainClient({ platform: 'darwin', helperPath: HELPER });
+    const result = await client.list();
+    expect(result).toEqual({
+      ok: true,
+      items: [{ account: ACCOUNT, payload: '{"v":1}', group: legacy }],
+      sharedGroup: shared,
+    });
+  });
+
+  it('delete: scopes to an access group via argv only when given', async () => {
+    const legacy = 'TEAM12345X.dev.intentapp.cloudlands-fe.keychain-helper';
+    respondWith(JSON.stringify({ ok: true }));
+    const client = createHelperKeychainClient({ platform: 'darwin', helperPath: HELPER });
+    expect(await client.delete(ACCOUNT, legacy)).toMatchObject({ ok: true });
+    expect(vi.mocked(spawn).mock.calls[0][1]).toEqual(['delete', ACCOUNT, legacy]);
+
+    respondWith(JSON.stringify({ ok: true }));
+    expect(await client.delete(ACCOUNT)).toMatchObject({ ok: true });
+    expect(vi.mocked(spawn).mock.calls[1][1]).toEqual(['delete', ACCOUNT]);
   });
 
   it('upsert: payload travels over stdin, never argv', async () => {

@@ -87,6 +87,7 @@ function reconcileResult(overrides: Partial<ReconcileResult> = {}): ReconcileRes
     deletedLocally: [],
     purged: [],
     skipped: [],
+    migrated: [],
     errors: [],
     ...overrides,
   };

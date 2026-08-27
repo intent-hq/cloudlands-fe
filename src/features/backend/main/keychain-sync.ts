@@ -192,6 +192,10 @@ export interface KeychainItem {
   account: string;
   payload: string;
   modifiedAtMs?: number;
+  /** Keychain access group holding the item (absent when the helper could
+   * not report it). Compared against the list result's `sharedGroup` to spot
+   * legacy default-group items needing migration. */
+  group?: string;
 }
 
 type KeychainClientResult<T> =
@@ -201,11 +205,18 @@ type KeychainClientResult<T> =
  * Thin async facade over the helper CLI. `createHelperKeychainClient()`
  * builds the real spawn-based client; tests (and T3, if it ever needs to)
  * can substitute an in-memory implementation.
+ *
+ * `list()`'s `sharedGroup` is the cross-app shared access group the helper
+ * resolved from its own entitlements — absent when the build's provisioning
+ * profile does not authorize it yet (helper degrades to the default group).
+ * Upserts always land in the helper's active group (shared when available);
+ * `delete(account, group)` scopes the delete to one group so migration can
+ * remove only the legacy copy.
  */
 export interface KeychainClient {
-  list(): Promise<KeychainClientResult<{ items: KeychainItem[] }>>;
+  list(): Promise<KeychainClientResult<{ items: KeychainItem[]; sharedGroup?: string }>>;
   upsert(account: string, payload: string): Promise<KeychainClientResult<object>>;
-  delete(account: string): Promise<KeychainClientResult<object>>;
+  delete(account: string, group?: string): Promise<KeychainClientResult<object>>;
 }
 
 /**
@@ -397,13 +408,17 @@ export function createHelperKeychainClient(options: HelperClientOptions = {}): K
               typeof (row as KeychainItem).payload === 'string',
           )
         : [];
-      return { ok: true, items };
+      const sharedGroup = (result as unknown as { sharedGroup?: unknown }).sharedGroup;
+      return typeof sharedGroup === 'string' && sharedGroup !== ''
+        ? { ok: true, items, sharedGroup }
+        : { ok: true, items };
     },
     upsert(account, payload) {
       return invoke(['upsert', account], JSON.stringify({ payload }));
     },
-    delete(account) {
-      return invoke(['delete', account]);
+    delete(account, group) {
+      // The group is an entitlement identifier (not secret) — argv is fine.
+      return invoke(group !== undefined ? ['delete', account, group] : ['delete', account]);
     },
   };
 }
@@ -448,6 +463,8 @@ export interface ReconcileResult {
   purged: string[];
   /** Remote items ignored (unparseable payload or newer schema version). */
   skipped: string[];
+  /** Legacy default-group items migrated into the shared access group. */
+  migrated: string[];
   /** Fail-soft keychain write errors (never contains payloads/tokens). */
   errors: { account: string; op: 'upsert' | 'delete'; code: HelperErrorCode }[];
 }
@@ -460,6 +477,7 @@ function emptyResult(status: KeychainSyncStatus): ReconcileResult {
     deletedLocally: [],
     purged: [],
     skipped: [],
+    migrated: [],
     errors: [],
   };
 }
@@ -468,6 +486,131 @@ function isExpiredTombstone(record: KeychainSyncRecord, now: number): boolean {
   return (
     record.deleted === true && (record.deletedAt ?? record.updatedAt) + TOMBSTONE_TTL_MS <= now
   );
+}
+
+// ============================================================================
+// Legacy access-group migration
+// ============================================================================
+
+/** What {@link migrateLegacyGroupItems} did: the effective deduped item view
+ * (one item per account) for reconcile to consume, plus bookkeeping. */
+export interface MigrationOutcome {
+  items: KeychainItem[];
+  /** Accounts whose legacy copy was re-written into the shared group (the
+   * write verified; the legacy copy was deleted, or its delete was recorded
+   * as a fail-soft error and retries next pass). */
+  migrated: string[];
+  errors: ReconcileResult['errors'];
+}
+
+/**
+ * One-time (idempotent) migration of legacy default-group items into the
+ * shared access group, run right after a successful helper `list`.
+ *
+ * Only runs when the helper advertises a resolved `sharedGroup` (the build's
+ * provisioning profile authorizes it); otherwise the items pass through
+ * untouched — current behavior, nothing to migrate into. Per account:
+ *
+ * - Legacy copy only: upsert into the shared group (the helper's active
+ *   write target); the legacy copy is deleted ONLY after that write
+ *   verifies. A failed write keeps the legacy copy authoritative.
+ * - Both copies: newer `updatedAt` wins. A newer legacy copy is re-written
+ *   into the shared group first; an older one is simply deleted (the shared
+ *   copy already preserves the data). If either payload is unparseable the
+ *   account is left untouched (both copies kept, shared preferred in the
+ *   view) — migration never destroys data it cannot compare.
+ *
+ * Fail-soft: every keychain error is recorded (never thrown) and the
+ * account's surviving copy stays in the returned view, so a partially failed
+ * migration simply retries on the next reconcile.
+ */
+export async function migrateLegacyGroupItems(
+  client: KeychainClient,
+  items: KeychainItem[],
+  sharedGroup: string | undefined,
+  shouldAbort?: () => boolean | Promise<boolean>,
+): Promise<MigrationOutcome> {
+  const outcome: MigrationOutcome = { items: [], migrated: [], errors: [] };
+  if (sharedGroup === undefined || sharedGroup === '') {
+    outcome.items = items;
+    return outcome;
+  }
+
+  const byAccount = new Map<string, { shared?: KeychainItem; legacy: KeychainItem[] }>();
+  const order: string[] = [];
+  for (const item of items) {
+    let entry = byAccount.get(item.account);
+    if (!entry) {
+      entry = { legacy: [] };
+      byAccount.set(item.account, entry);
+      order.push(item.account);
+    }
+    // An item with no group attribute cannot be told apart — treat it as
+    // already in place (never migrated, kept in the view).
+    if (item.group === undefined || item.group === sharedGroup) {
+      if (!entry.shared) entry.shared = item;
+    } else {
+      entry.legacy.push(item);
+    }
+  }
+
+  let aborted = false;
+  for (const account of order) {
+    const entry = byAccount.get(account) as { shared?: KeychainItem; legacy: KeychainItem[] };
+    if (entry.legacy.length === 0) {
+      outcome.items.push(entry.shared as KeychainItem);
+      continue;
+    }
+    if (aborted || (shouldAbort && (await shouldAbort()))) {
+      aborted = true;
+      outcome.items.push(entry.shared ?? entry.legacy[0]);
+      continue;
+    }
+
+    // Pick the surviving payload: shared vs newest legacy by updatedAt.
+    const legacy = entry.legacy[0];
+    let winner: KeychainItem = legacy;
+    if (entry.shared) {
+      const sharedParsed = parsePayload(entry.shared.payload);
+      const legacyParsed = parsePayload(legacy.payload);
+      if (sharedParsed.kind !== 'record' || legacyParsed.kind !== 'record') {
+        // Cannot compare — leave both copies untouched, prefer shared.
+        outcome.items.push(entry.shared);
+        continue;
+      }
+      if (sharedParsed.record.updatedAt >= legacyParsed.record.updatedAt) {
+        winner = entry.shared;
+      }
+    }
+
+    if (winner !== entry.shared) {
+      // Legacy copy is authoritative: write it into the shared group first.
+      const upserted = await client.upsert(account, legacy.payload);
+      if (!upserted.ok) {
+        outcome.errors.push({ account, op: 'upsert', code: upserted.code });
+        logger.warn('keychain group migration write failed', { account, code: upserted.code });
+        outcome.items.push(legacy);
+        continue;
+      }
+    }
+    // The shared copy now holds the surviving payload — remove the legacy
+    // copies (scoped to their group so the shared item is never touched).
+    let deletesOk = true;
+    for (const stale of entry.legacy) {
+      const deleted = await client.delete(account, stale.group as string);
+      if (!deleted.ok && deleted.code !== 'not-found') {
+        deletesOk = false;
+        outcome.errors.push({ account, op: 'delete', code: deleted.code });
+        logger.warn('keychain group migration cleanup failed', { account, code: deleted.code });
+      }
+    }
+    outcome.migrated.push(account);
+    if (!deletesOk) {
+      logger.warn('keychain group migration left a legacy copy (retries next pass)', { account });
+    }
+    outcome.items.push({ ...winner, group: sharedGroup });
+  }
+  return outcome;
 }
 
 /** Options for {@link reconcile} (injectable for tests). */
@@ -534,9 +677,21 @@ export async function reconcile(
 
   const result = emptyResult({ state: 'active' });
 
+  // Migrate legacy default-group items into the shared access group first
+  // (no-op until the build's profile authorizes the shared group). The rest
+  // of the pass consumes the migration's deduped one-item-per-account view.
+  const migration = await migrateLegacyGroupItems(
+    client,
+    listResult.items,
+    listResult.sharedGroup,
+    options.shouldAbort,
+  );
+  result.migrated.push(...migration.migrated);
+  result.errors.push(...migration.errors);
+
   const remote = new Map<string, KeychainSyncRecord>();
   const frozen = new Set<string>();
-  for (const item of listResult.items) {
+  for (const item of migration.items) {
     const parsed = parsePayload(item.payload);
     if (parsed.kind === 'record') {
       remote.set(item.account, parsed.record);
@@ -811,7 +966,8 @@ export async function reconcile(
   }
 
   if (result.errors.length > 0) {
-    const anyWriteSucceeded = result.pushed.length > 0 || result.purged.length > 0;
+    const anyWriteSucceeded =
+      result.pushed.length > 0 || result.purged.length > 0 || result.migrated.length > 0;
     if (!anyWriteSucceeded && result.errors.every((e) => e.code === 'unavailable')) {
       logger.warn('keychain sync degraded to unavailable: every write rejected', {
         errorCount: result.errors.length,

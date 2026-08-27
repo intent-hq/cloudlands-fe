@@ -96,6 +96,64 @@ async function verifySignature(binaryPath) {
 const KEYCHAIN_HELPER_BUNDLE_ID = 'dev.intentapp.cloudlands-fe.keychain-helper';
 
 /**
+ * Team-relative suffix of the cross-app shared keychain access group (the
+ * full group is `TEAMID.dev.intentapp.backends`). Must match the suffix the
+ * helper resolves from its own entitlements at runtime
+ * (resources/keychain/sync-helper.swift) and the group the iOS app adopts.
+ */
+export const SHARED_KEYCHAIN_GROUP_SUFFIX = 'dev.intentapp.backends';
+
+/**
+ * The keychain-access-groups to sign the helper with: always the default
+ * app-identifier group FIRST (existing items live there and stay readable for
+ * migration), plus the shared group when the provisioning profile authorizes
+ * it (exact entry or the `TEAMID.*` wildcard). Signing with a group the
+ * profile does not authorize would fail codesign/taskgated outright, so an
+ * older profile degrades to today's single-group entitlements instead.
+ *
+ * @param {string} teamId - 10-char Apple team ID from the profile
+ * @param {string[]} profileGroups - keychain-access-groups the profile authorizes
+ * @returns {string[]} groups for the entitlements plist
+ */
+export function resolveKeychainAccessGroups(teamId, profileGroups) {
+  const appGroup = `${teamId}.${KEYCHAIN_HELPER_BUNDLE_ID}`;
+  const sharedGroup = `${teamId}.${SHARED_KEYCHAIN_GROUP_SUFFIX}`;
+  const authorized =
+    Array.isArray(profileGroups) &&
+    profileGroups.some((g) => g === sharedGroup || g === `${teamId}.*`);
+  return authorized ? [appGroup, sharedGroup] : [appGroup];
+}
+
+/**
+ * Render the helper's entitlements plist for the given team + access groups.
+ *
+ * @param {string} teamId - 10-char Apple team ID
+ * @param {string[]} keychainAccessGroups - groups from resolveKeychainAccessGroups
+ * @returns {string} plist XML
+ */
+export function buildHelperEntitlementsPlist(teamId, keychainAccessGroups) {
+  const appIdentifier = `${teamId}.${KEYCHAIN_HELPER_BUNDLE_ID}`;
+  const groupEntries = keychainAccessGroups
+    .map((group) => `    <string>${group}</string>`)
+    .join('\n');
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>com.apple.application-identifier</key>
+  <string>${appIdentifier}</string>
+  <key>com.apple.developer.team-identifier</key>
+  <string>${teamId}</string>
+  <key>keychain-access-groups</key>
+  <array>
+${groupEntries}
+  </array>
+</dict>
+</plist>
+`;
+}
+
+/**
  * Sign the iCloud-keychain sync helper bundle
  * (Resources/keychain-helper/intent-keychain-helper.app).
  *
@@ -156,26 +214,39 @@ async function signKeychainHelper(bundlePath, identity) {
       throw new Error(`Could not extract a team ID from the provisioning profile (got "${teamId}")`);
     }
 
-    const appIdentifier = `${teamId}.${KEYCHAIN_HELPER_BUNDLE_ID}`;
+    // The shared cross-app group is included only when the profile authorizes
+    // it (see resolveKeychainAccessGroups) — signing with an unauthorized
+    // group would fail, so an older profile keeps today's single-group setup.
+    let profileGroups = [];
+    try {
+      const { stdout: groupsJson } = await execFileAsync('plutil', [
+        '-extract',
+        'Entitlements.keychain-access-groups',
+        'json',
+        '-o',
+        '-',
+        decodedProfile,
+      ]);
+      const parsed = JSON.parse(groupsJson);
+      if (Array.isArray(parsed)) profileGroups = parsed.filter((g) => typeof g === 'string');
+    } catch {
+      console.warn(
+        '  Could not read keychain-access-groups from the profile — ' +
+          'signing with the default app-identifier group only.',
+      );
+    }
+    const accessGroups = resolveKeychainAccessGroups(teamId, profileGroups);
+    if (accessGroups.length > 1) {
+      console.log(`  Profile authorizes the shared keychain group: ${accessGroups[1]}`);
+    } else {
+      console.log(
+        '  Profile does not authorize the shared keychain group — ' +
+          'helper will keep using the default group.',
+      );
+    }
+
     const entitlementsPath = path.join(tmpDir, 'entitlements.plist');
-    fs.writeFileSync(
-      entitlementsPath,
-      `<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-  <key>com.apple.application-identifier</key>
-  <string>${appIdentifier}</string>
-  <key>com.apple.developer.team-identifier</key>
-  <string>${teamId}</string>
-  <key>keychain-access-groups</key>
-  <array>
-    <string>${appIdentifier}</string>
-  </array>
-</dict>
-</plist>
-`,
-    );
+    fs.writeFileSync(entitlementsPath, buildHelperEntitlementsPlist(teamId, accessGroups));
 
     console.log(`  Signing with restricted keychain entitlements (team ${teamId}): ${bundlePath}`);
     await execFileAsync('codesign', [
