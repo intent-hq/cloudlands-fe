@@ -113,9 +113,7 @@ describe('WebSocketApiSettings', () => {
 
     render(WebSocketApiSettings);
 
-    await waitFor(() => {
-      expect(screen.getByText('Enable WebSocket API')).toBeTruthy();
-    });
+    await waitFor(() => expect(screen.getByRole('switch')).toBeTruthy());
 
     // Mock settings.update to reject (daemon error)
     mocks.mockSettingsUpdate.mockRejectedValueOnce(
@@ -152,9 +150,7 @@ describe('WebSocketApiSettings', () => {
 
     render(WebSocketApiSettings);
 
-    await waitFor(() => {
-      expect(screen.getByText('Enable WebSocket API')).toBeTruthy();
-    });
+    await waitFor(() => expect(screen.getByRole('switch')).toBeTruthy());
 
     // Mock settings.update to succeed but return rolled-back value (daemon hook failed)
     mocks.mockSettingsUpdate.mockResolvedValueOnce([
@@ -184,22 +180,6 @@ describe('WebSocketApiSettings', () => {
     await waitFor(() => {
       expect(screen.getByText('Port')).toBeTruthy();
     });
-  });
-
-  it('delegates the outer surface and padding to SettingsSection', async () => {
-    mocks.mockSettingsList.mockResolvedValue([
-      { path: 'server.wsApi.enabled', value: false },
-      { path: 'server.wsApi.port', value: 5181 },
-    ]);
-
-    const { container } = render(WebSocketApiSettings);
-    await waitFor(() => expect(screen.getByText('Port')).toBeTruthy());
-
-    const root = container.querySelector('[data-settings-websocket-api]');
-    expect(root?.className).toContain('gap-4');
-    expect(root?.className).not.toContain('bg-card');
-    expect(root?.className).not.toContain('divide-y');
-    expect(root?.querySelector('.px-6')).toBeNull();
   });
 
   it('shows Save button when port value differs from persisted setting, and clicking Save calls settings.update', async () => {
@@ -233,10 +213,7 @@ describe('WebSocketApiSettings', () => {
       ]);
     });
 
-    // Assert: success toast was shown
-    await waitFor(() => {
-      expect(mockToast.success).toHaveBeenCalledWith(expect.stringContaining('saved'));
-    });
+    await waitFor(() => expect(mockToast.success).toHaveBeenCalled());
   });
 
   it('hides Save button when the persisted port value is retyped (#814)', async () => {

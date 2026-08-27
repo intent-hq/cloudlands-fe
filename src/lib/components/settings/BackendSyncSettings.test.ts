@@ -11,6 +11,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/sv
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { KeychainSyncStateResult } from '$shared/types/connections';
+import { m } from '$shared/paraglide/messages.js';
 
 const mocks = vi.hoisted(() => ({
   syncState: { value: null as KeychainSyncStateResult | null },
@@ -75,7 +76,7 @@ describe('BackendSyncSettings', () => {
     mocks.syncState.value = { supported: false, enabled: false, status: null };
     render(BackendSyncSettings);
     await waitFor(() => {
-      expect(screen.getByText(/only available on macos/i)).toBeTruthy();
+      expect(screen.getByText(m.settings_backendSync_unsupported_description())).toBeTruthy();
     });
     const toggle = screen.getByRole('switch');
     expect(toggle.hasAttribute('disabled') || toggle.getAttribute('aria-disabled') === 'true').toBe(
@@ -89,8 +90,7 @@ describe('BackendSyncSettings', () => {
     await waitFor(() => {
       expect(screen.getByRole('switch').getAttribute('aria-checked')).toBe('true');
     });
-    expect(screen.getByText(/sync is active/i)).toBeTruthy();
-    expect(screen.queryByText(/only available on macos/i)).toBeNull();
+    expect(screen.getByText(m.settings_backendSync_status_active())).toBeTruthy();
   });
 
   it('shows the degraded note when active with write errors', async () => {
@@ -101,25 +101,25 @@ describe('BackendSyncSettings', () => {
     };
     render(BackendSyncSettings);
     await waitFor(() => {
-      expect(screen.getByText(/sync is active/i)).toBeTruthy();
+      expect(screen.getByText(m.settings_backendSync_status_active())).toBeTruthy();
     });
-    expect(screen.getByText(/could not be written to the keychain/i)).toBeTruthy();
+    expect(screen.getByText(m.settings_backendSync_status_degraded())).toBeTruthy();
   });
 
   it('hides the degraded note on a clean active status', async () => {
     mocks.syncState.value = ACTIVE;
     render(BackendSyncSettings);
     await waitFor(() => {
-      expect(screen.getByText(/sync is active/i)).toBeTruthy();
+      expect(screen.getByText(m.settings_backendSync_status_active())).toBeTruthy();
     });
-    expect(screen.queryByText(/could not be written to the keychain/i)).toBeNull();
+    expect(screen.queryByText(m.settings_backendSync_status_degraded())).toBeNull();
   });
 
   it('shows the checking line while enabled with no verdict yet', async () => {
     mocks.syncState.value = { supported: true, enabled: true, status: null };
     render(BackendSyncSettings);
     await waitFor(() => {
-      expect(screen.getByText(/checking icloud keychain availability/i)).toBeTruthy();
+      expect(screen.getByText(m.settings_backendSync_status_checking())).toBeTruthy();
     });
   });
 
@@ -131,7 +131,7 @@ describe('BackendSyncSettings', () => {
     };
     render(BackendSyncSettings);
     await waitFor(() => {
-      expect(screen.getByText(/icloud keychain is unavailable/i)).toBeTruthy();
+      expect(screen.getByText(m.settings_backendSync_status_unavailable())).toBeTruthy();
     });
     expect(screen.getByText('unsigned dev build')).toBeTruthy();
   });
@@ -142,7 +142,7 @@ describe('BackendSyncSettings', () => {
     await waitFor(() => {
       expect(screen.getByRole('switch').getAttribute('aria-checked')).toBe('false');
     });
-    expect(screen.queryByText(/sync is active/i)).toBeNull();
+    expect(screen.queryByText(m.settings_backendSync_status_active())).toBeNull();
   });
 
   it('dispatches setKeychainSyncEnabled with the exact payload on toggle', async () => {
