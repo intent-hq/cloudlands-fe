@@ -612,7 +612,7 @@
   "settings_section_aiCodingClis": "KI-Coding-CLIs",
   "settings_section_connections": "Verbindungen",
   "settings_devices_title": "Geräte",
-  "settings_devices_description": "Gespeicherte entfernte Geräte verwalten. Beim Öffnen dieser Seite wird keine Verbindung hergestellt.",
+  "settings_devices_description": "Gespeicherte Remote-Geräte verwalten. Sie können Intent mit jedem Backend verbinden, auf dem intentd ausgeführt wird.",
   "settings_devices_add_label": "Gerät hinzufügen",
   "settings_devices_loading_label": "Geräte werden geladen…",
   "settings_devices_empty_title": "Keine entfernten Geräte gespeichert",

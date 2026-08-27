@@ -612,7 +612,7 @@
   "settings_section_aiCodingClis": "CLI de codage IA",
   "settings_section_connections": "Connexions",
   "settings_devices_title": "Appareils",
-  "settings_devices_description": "Gérez les appareils distants enregistrés. L’ouverture de cette page ne lance aucune connexion.",
+  "settings_devices_description": "Gérez les appareils distants enregistrés. Vous pouvez connecter Intent à n’importe quel backend exécutant intentd.",
   "settings_devices_add_label": "Ajouter un appareil",
   "settings_devices_loading_label": "Chargement des appareils…",
   "settings_devices_empty_title": "Aucun appareil distant enregistré",

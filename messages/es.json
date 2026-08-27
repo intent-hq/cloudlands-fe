@@ -612,7 +612,7 @@
   "settings_section_aiCodingClis": "CLI de programación con IA",
   "settings_section_connections": "Conexiones",
   "settings_devices_title": "Dispositivos",
-  "settings_devices_description": "Administra los dispositivos remotos guardados. Abrir esta página no inicia ninguna conexión.",
+  "settings_devices_description": "Administra los dispositivos remotos guardados. Puedes conectar Intent a cualquier backend que ejecute intentd.",
   "settings_devices_add_label": "Añadir dispositivo",
   "settings_devices_loading_label": "Cargando dispositivos…",
   "settings_devices_empty_title": "No hay dispositivos remotos guardados",

@@ -612,7 +612,7 @@
   "settings_section_aiCodingClis": "AI Coding CLIs",
   "settings_section_connections": "Connections",
   "settings_devices_title": "Devices",
-  "settings_devices_description": "Manage saved remote devices. Opening this page does not connect to them.",
+  "settings_devices_description": "Manage saved remote devices. You can connect Intent to any backend running intentd.",
   "settings_devices_add_label": "Add device",
   "settings_devices_loading_label": "Loading devices…",
   "settings_devices_empty_title": "No remote devices saved",

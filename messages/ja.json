@@ -612,7 +612,7 @@
   "settings_section_aiCodingClis": "AI コーディング CLI",
   "settings_section_connections": "接続",
   "settings_devices_title": "デバイス",
-  "settings_devices_description": "保存済みのリモートデバイスを管理します。このページを開いても接続は開始されません。",
+  "settings_devices_description": "保存済みのリモートデバイスを管理します。intentd を実行している任意のバックエンドに Intent を接続できます。",
   "settings_devices_add_label": "デバイスを追加",
   "settings_devices_loading_label": "デバイスを読み込み中…",
   "settings_devices_empty_title": "保存済みのリモートデバイスはありません",
