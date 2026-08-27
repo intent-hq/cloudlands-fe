@@ -775,7 +775,22 @@ export function disconnectBackendClient(id: string): void {
   const instance = backendClients.get(id);
   if (!instance) return;
   if (instance === client) {
+    // The closing backend owns the primary/compatibility client (reachable
+    // when a persisted remote activeId was restored as primary at boot and
+    // other backends were opened via Open). Merely disposing would leave
+    // `currentConfig`/`activeConnectionMeta` pinned to the closed remote, so
+    // the next lazy getBackendClient() caller (config-daemon-sync, the
+    // getFocusedBackendClient pool-miss fallback, ...) would silently re-dial
+    // the window-less remote — recreating the socket and reconnect/heartbeat
+    // timers this disposal is meant to tear down. Retarget the primary to
+    // local instead, mirroring forgetConnection's retarget path.
     disposeBackendClient();
+    currentConfig = null;
+    activeConnectionMeta = null;
+    app.emit(BACKEND_CLIENT_DISCONNECTED_EVENT, instance);
+    getBackendClient();
+    backendReconnectForwarder.emit('reconnected', LOCAL_CONNECTION_ID);
+    app.emit('backend-connection-changed');
     return;
   }
   backendClients.delete(id);
