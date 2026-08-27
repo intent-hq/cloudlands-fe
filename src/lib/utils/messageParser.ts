@@ -1267,6 +1267,10 @@ export interface ContentBlockGroup {
   name: string;
   isStreaming: boolean;
   children: ContentBlock[];
+  /** Renderer-only normalization metadata for alternate-model reasoning groups. */
+  isReasoningPhase?: boolean;
+  sourceName?: string;
+  hasAdjacentReasoningHistory?: boolean;
 }
 
 export type RenderContentBlock = ContentBlock | ContentBlockGroup;

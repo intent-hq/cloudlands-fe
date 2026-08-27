@@ -13,8 +13,16 @@ import {
   dedupeKeys,
   getResponseGroupBlockKey,
   getResponseGroupBlockKeys,
+  getResponseGroupCurrentBlock,
+  getResponseGroupCurrentBlockIndex,
+  getResponseGroupCurrentChildIndex,
   getResponseGroupPreviewBlock,
+  isReasoningPhaseGroupName,
+  normalizeResponseGroup,
+  normalizeResponseGroups,
+  shouldRenderResponseGroupInline,
 } from '../response-group-blocks';
+import { extractReasoningHistory } from '../reasoning-heading';
 import { warmImport } from '../../../../test/warm-import';
 import type { ContentBlock } from '$shared/types';
 import ResponseGroupCollapseHost from './ResponseGroupCollapseHost.svelte';
@@ -379,6 +387,229 @@ describe('ResponseGroup - collapse state model', () => {
 });
 
 describe('ResponseGroup - block identity', () => {
+  it('recognizes only the alternate-model reasoning phase name', () => {
+    expect(isReasoningPhaseGroupName('Prepping')).toBe(true);
+    expect(isReasoningPhaseGroupName(' prepping ')).toBe(true);
+    expect(isReasoningPhaseGroupName('Working')).toBe(false);
+    expect(isReasoningPhaseGroupName('Plan')).toBe(false);
+  });
+
+  it('pairs the first alternate reasoning name with the group description once', () => {
+    const description = {
+      type: 'text',
+      text: 'Read the spec and inspect the screenshot.',
+    } as ContentBlock;
+    const firstReasoning = {
+      type: 'thinking',
+      text: 'Reasoning\n\n**Invoking workspace API to set title**',
+    } as ContentBlock;
+    const laterReasoning = {
+      type: 'thinking',
+      text: 'Planning clarification questions\n\nPlanning code inspection.',
+    } as ContentBlock;
+    const namedGroup = {
+      type: 'content_group' as const,
+      name: 'Prepping',
+      isStreaming: true,
+      children: [description, firstReasoning, laterReasoning],
+    };
+
+    expect(normalizeResponseGroup(namedGroup)).toEqual({
+      ...namedGroup,
+      name: 'Reasoning',
+      sourceName: 'Prepping',
+      isReasoningPhase: true,
+      children: [
+        description,
+        { type: 'thinking', text: '**Invoking workspace API to set title**' },
+        {
+          type: 'thinking',
+          text: 'Planning clarification questions\n\nPlanning code inspection.',
+        },
+      ],
+    });
+
+    const normalGroup = { ...namedGroup, name: 'Working' };
+    expect(normalizeResponseGroup(normalGroup)).toBe(normalGroup);
+  });
+
+  it('pairs the exact adjacent alternate-model title and description shape', () => {
+    const preceding = {
+      type: 'thinking',
+      id: 'msg_1:0',
+      text: '\n\n**Assessing delegation and tool availability**\n\n**Planning workspace title setup**',
+    } as ContentBlock;
+    const description = {
+      type: 'text',
+      id: 'msg_1:1',
+      text: 'I’ll first title the workspace, read the existing spec, and inspect the project.',
+    } as ContentBlock;
+    const groupReasoning = {
+      type: 'thinking',
+      id: 'msg_1:2',
+      text: 'Reasoning\n\n**Operation body**',
+    } as ContentBlock;
+    const group = {
+      type: 'content_group' as const,
+      name: 'Prepping',
+      isStreaming: true,
+      children: [description, groupReasoning],
+    };
+
+    expect(normalizeResponseGroup(group).children).toEqual([
+      description,
+      { ...groupReasoning, text: '**Operation body**' },
+    ]);
+
+    expect(normalizeResponseGroups([preceding, group])).toEqual([
+      {
+        ...group,
+        name: 'Planning workspace title setup',
+        sourceName: 'Prepping',
+        isReasoningPhase: true,
+        hasAdjacentReasoningHistory: true,
+        children: [
+          description,
+          {
+            type: 'thinking',
+            id: 'msg_1:0',
+            text: 'Assessing delegation and tool availability',
+          },
+          { ...groupReasoning, text: '**Operation body**' },
+        ],
+      },
+    ]);
+  });
+
+  it('pairs a completed headingless predecessor with a headingless reasoning phase', () => {
+    const preceding = {
+      type: 'thinking',
+      id: 'msg_1:0',
+      text: 'Inspect the current state before making the smallest safe change.',
+    } as ContentBlock;
+    const tool = {
+      type: 'tool_use',
+      id: 'msg_1:1',
+      toolCallId: 'call-1',
+      name: 'view',
+      input: { path: 'src/example.ts' },
+    } as ContentBlock;
+    const laterReasoning = {
+      type: 'thinking',
+      id: 'msg_1:2',
+      text: 'The focused check confirms the repair.',
+    } as ContentBlock;
+    const group = {
+      type: 'content_group' as const,
+      name: 'Prepping',
+      isStreaming: false,
+      children: [tool, laterReasoning],
+    };
+
+    expect(normalizeResponseGroups([preceding, group])).toEqual([
+      {
+        ...group,
+        name: '',
+        sourceName: 'Prepping',
+        isReasoningPhase: true,
+        hasAdjacentReasoningHistory: true,
+        children: [preceding, tool, laterReasoning],
+      },
+    ]);
+  });
+
+  it('renders only completed headingless reasoning phases inline', () => {
+    const group = {
+      type: 'content_group' as const,
+      name: '',
+      isStreaming: false,
+      isReasoningPhase: true,
+      children: [],
+    };
+
+    expect(shouldRenderResponseGroupInline(group)).toBe(true);
+    expect(shouldRenderResponseGroupInline({ ...group, isStreaming: true })).toBe(false);
+    expect(shouldRenderResponseGroupInline({ ...group, name: 'Model heading' })).toBe(false);
+    expect(shouldRenderResponseGroupInline({ ...group, isReasoningPhase: false })).toBe(false);
+  });
+
+  it('does not pair ordinary authored groups or adjacent prose', () => {
+    const titledReasoning = {
+      type: 'thinking',
+      text: '**Assessing availability**\n\n**Planning workspace setup**',
+    } as ContentBlock;
+    const proseReasoning = {
+      type: 'thinking',
+      text: '**Assessing availability**\n\nExplain the next step.',
+    } as ContentBlock;
+    const description = { type: 'text', text: 'Inspect the workspace.' } as ContentBlock;
+    const authoredGroup = {
+      type: 'content_group' as const,
+      name: 'Working',
+      isStreaming: true,
+      children: [description],
+    };
+    const reasoningGroup = { ...authoredGroup, name: 'Prepping' };
+
+    expect(normalizeResponseGroups([titledReasoning, authoredGroup])).toEqual([
+      titledReasoning,
+      authoredGroup,
+    ]);
+    expect(normalizeResponseGroups([proseReasoning, reasoningGroup])).toEqual([
+      proseReasoning,
+      {
+        ...reasoningGroup,
+        name: '',
+        sourceName: 'Prepping',
+        isReasoningPhase: true,
+      },
+    ]);
+  });
+
+  it('splits the screenshot reasoning history into compact titles and one subordinate body', () => {
+    expect(
+      extractReasoningHistory(
+        'Planning clarification questions on formatting issues\n\n**Planning code inspection and question sequencing**\n\nThe screenshot shows three possible faults.',
+      ),
+    ).toEqual([
+      { title: 'Planning clarification questions on formatting issues', body: '' },
+      {
+        title: 'Planning code inspection and question sequencing',
+        body: 'The screenshot shows three possible faults.',
+      },
+    ]);
+    expect(extractReasoningHistory('**Invoking workspace API to set title**')).toEqual([
+      { title: 'Invoking workspace API to set title', body: '' },
+    ]);
+  });
+
+  it('selects the last visible child and skips trailing tool results', () => {
+    const blocks = [
+      { type: 'thinking', id: 'thought-1', text: 'Earlier reasoning' },
+      { type: 'tool_use', id: 'tool-1', name: 'view', input: {} },
+      { type: 'tool_result', tool_use_id: 'tool-1', output: 'done' },
+    ] as ContentBlock[];
+
+    expect(getResponseGroupCurrentBlockIndex(blocks)).toBe(1);
+    expect(getResponseGroupCurrentBlock(blocks)).toBe(blocks[1]);
+    expect(getResponseGroupCurrentBlock([{ type: 'tool_result' } as ContentBlock])).toBeUndefined();
+  });
+
+  it('selects an adjacent description until later live history arrives', () => {
+    const description = { type: 'text', text: 'Group description.' } as ContentBlock;
+    const predecessor = { type: 'thinking', text: 'Earlier reasoning' } as ContentBlock;
+    const group = {
+      children: [description, predecessor],
+      hasAdjacentReasoningHistory: true,
+    };
+
+    expect(getResponseGroupCurrentChildIndex(group)).toBe(0);
+
+    const current = { type: 'tool_use', id: 'tool-1', name: 'view', input: {} } as ContentBlock;
+    group.children.push(current);
+    expect(getResponseGroupCurrentChildIndex(group)).toBe(2);
+  });
+
   it('uses protocol-backed tool identities instead of positions', () => {
     const toolUse = { type: 'tool_use', id: 'tool-42', name: 'search' } as ContentBlock;
     const toolResult = { type: 'tool_result', tool_use_id: 'tool-42' } as ContentBlock;

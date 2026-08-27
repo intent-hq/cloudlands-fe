@@ -7,7 +7,7 @@ test('auto-collapses every completed group while later response activity remains
 }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
   const component = await mount(ResponseGroupCollapseHost, {
-    props: { width: 320, zoom: 1, streaming: true },
+    props: { width: 320, zoom: 1, streaming: true, livePreview: false },
   });
   const lastFocus = component.getByTestId('response-group-focus-last');
   await lastFocus.focus();
@@ -56,7 +56,7 @@ function ratio(foreground: string, background: string): number {
 }
 
 for (const theme of ['light', 'dark'] as const) {
-  test(`fully collapses streaming groups with accessible motion in ${theme}`, async ({
+  test(`toggles streaming groups between one current row and full history in ${theme}`, async ({
     mount,
     page,
   }) => {
@@ -71,79 +71,75 @@ for (const theme of ['light', 'dark'] as const) {
       const group = component.getByTestId(`response-group-${position}`);
       const trigger = group.getByTestId('response-group-disclosure');
       const body = group.locator('[data-operational-expanded-content]');
-      await expect(trigger).toHaveAttribute('aria-expanded', 'true');
-      await expect(body).toHaveCount(1);
-
-      if (position === 'first') {
-        // The disclosure motion is tick-driven (inline style writes, not
-        // WAAPI keyframes — see disclosure-motion.ts), so observe the style
-        // mutations across the collapse instead of reading keyframes.
-        const motion = await trigger.evaluate(async (element) => {
-          const details = element
-            .closest('[data-operational-row-container]')
-            ?.querySelector('[data-operational-expanded-content]') as HTMLElement | null;
-          if (!details) return [];
-          const frames: { height: string; opacity: string; transform: string }[] = [];
-          const record = () => {
-            frames.push({
-              height: details.style.height,
-              opacity: details.style.opacity,
-              transform: details.style.transform,
-            });
-          };
-          const observer = new MutationObserver(record);
-          observer.observe(details, { attributes: true, attributeFilter: ['style'] });
-          element.click();
-          for (let frame = 0; frame < 120 && details.isConnected; frame += 1) {
-            await new Promise(requestAnimationFrame);
-          }
-          if (observer.takeRecords().length > 0) record();
-          observer.disconnect();
-          return frames;
-        });
-        expect(motion.some((frame) => frame.height === '0px')).toBe(true);
-        expect(motion.some((frame) => frame.opacity === '0')).toBe(true);
-        expect(motion.some((frame) => frame.transform.includes('-4px'))).toBe(true);
-      } else {
-        await trigger.click();
-      }
-
+      const preview = group.locator('[data-operational-preview-content]');
       await expect(trigger).toHaveAttribute('aria-expanded', 'false');
       await expect(body).toHaveCount(0);
-      await expect(group.locator('.cylinder-scroller')).toHaveCount(0);
-      await expect(group.getByTestId(`response-group-focus-${position}`)).toHaveCount(0);
-      await expect(group.locator('[data-testid="response-group-snippet"]')).toHaveCount(1);
-    }
+      await expect(preview).toHaveCount(1);
+      await expect(group.getByTestId(`response-group-current-${position}`)).toHaveText(
+        'initial chunk',
+      );
+      const collapsedTree = await group.ariaSnapshot();
+      expect(collapsedTree).toContain(`button "${position} group: earlier chunk"`);
+      expect(collapsedTree).toContain('- button "initial chunk"');
+      expect(collapsedTree).not.toContain(`Focusable ${position} detail`);
+      await trigger.click();
+      await expect(trigger).toHaveAttribute('aria-expanded', 'true');
+      await expect(body).toHaveCount(1);
+      await expect(preview).toHaveCount(0);
+      await expect(group.getByTestId(`response-group-current-${position}`)).toHaveCount(0);
+      await expect(group.getByTestId(`response-group-focus-${position}`)).toHaveText(
+        `Focusable ${position} detail for initial chunk`,
+      );
 
-    const snippet = component
+      const closingState = await trigger.evaluate(async (element) => {
+        element.click();
+        await Promise.resolve();
+        const controlled = document.getElementById(element.getAttribute('aria-controls')!);
+        return controlled
+          ? {
+              inert: controlled.hasAttribute('inert'),
+              ariaHidden: controlled.getAttribute('aria-hidden'),
+            }
+          : null;
+      });
+      expect(closingState).toEqual({ inert: true, ariaHidden: 'true' });
+      await expect(trigger).toHaveAttribute('aria-expanded', 'false');
+      await expect(body).toHaveCount(0);
+      await expect(preview).toHaveCount(1);
+      await expect(group.getByTestId(`response-group-current-${position}`)).toHaveText(
+        'initial chunk',
+      );
+      await expect(group.getByTestId(`response-group-focus-${position}`)).toHaveCount(0);
+    }
+    await scroll.evaluate((element) => (element.scrollTop = element.scrollHeight));
+
+    const summary = component
       .getByTestId('response-group-first')
-      .locator('[data-testid="response-group-snippet"]');
-    const colors = await snippet.evaluate((element) => ({
+      .locator('[data-testid="response-group-summary"]');
+    const colors = await summary.evaluate((element) => ({
       foreground: getComputedStyle(element).color,
       background: getComputedStyle(
         document.querySelector('[data-testid="response-group-collapse-host"]')!,
       ).backgroundColor,
-      whiteSpace: getComputedStyle(element.parentElement!).whiteSpace,
     }));
     expect(ratio(colors.foreground, colors.background)).toBeGreaterThanOrEqual(4.5);
-    expect(colors.whiteSpace).toBe('nowrap');
 
     await component.update({ props: { theme, width: 260, zoom: 2, chunk: 'new chunk' } });
     for (const position of ['first', 'middle', 'last'] as const) {
       const group = component.getByTestId(`response-group-${position}`);
-      await expect(group.getByTestId('response-group-disclosure')).toHaveAttribute(
-        'aria-expanded',
-        'false',
-      );
       await expect(group.locator('[data-operational-expanded-content]')).toHaveCount(0);
-      await expect(group.locator('[data-testid="response-group-snippet"]')).toContainText(
-        'earlier chunk',
-      );
+      await expect(group.locator('[data-operational-preview-content]')).toHaveCount(1);
+      await expect(group.getByTestId(`response-group-current-${position}`)).toHaveText('new chunk');
     }
+
+    const bottomGap = await scroll.evaluate(
+      (element) => element.scrollHeight - element.clientHeight - element.scrollTop,
+    );
+    expect(bottomGap).toBeCloseTo(0, 1);
 
     const first = component.getByTestId('response-group-first');
     const firstTrigger = first.getByTestId('response-group-disclosure');
-    await firstTrigger.click();
+    await firstTrigger.press('Enter');
     await expect(firstTrigger).toHaveAttribute('aria-expanded', 'true');
     const focusTarget = first.getByTestId('response-group-focus-first');
     await focusTarget.focus();
@@ -151,22 +147,65 @@ for (const theme of ['light', 'dark'] as const) {
     await expect(firstTrigger).toHaveAttribute('aria-expanded', 'false');
     await expect(focusTarget).toHaveCount(0);
     await expect(firstTrigger).toBeFocused();
+    await firstTrigger.press('Space');
+    await expect(firstTrigger).toHaveAttribute('aria-expanded', 'true');
+    await firstTrigger.click();
+    await expect(firstTrigger).toHaveAttribute('aria-expanded', 'false');
+  });
 
-    const bottomGap = await scroll.evaluate(
-      (element) => element.scrollHeight - element.clientHeight - element.scrollTop,
-    );
-    expect(bottomGap).toBeCloseTo(0, 1);
+  test(`keeps tick-driven collapse motion in ${theme}`, async ({ mount, page }) => {
+    await page.emulateMedia({ reducedMotion: 'no-preference' });
+    const component = await mount(ResponseGroupCollapseHost, {
+      props: { theme, width: 260, zoom: 2, livePreview: false },
+    });
+    const first = component.getByTestId('response-group-first');
+    const trigger = first.getByTestId('response-group-disclosure');
+    const body = first.locator('[data-operational-expanded-content]');
+    await expect(trigger).toHaveAttribute('aria-expanded', 'true');
+    await expect(body).toHaveCount(1);
+
+    const motion = await trigger.evaluate(async (element) => {
+      const details = element
+        .closest('[data-operational-row-container]')
+        ?.querySelector('[data-operational-expanded-content]') as HTMLElement | null;
+      if (!details) return [];
+      const frames: { height: string; opacity: string; transform: string }[] = [];
+      const record = () => {
+        frames.push({
+          height: details.style.height,
+          opacity: details.style.opacity,
+          transform: details.style.transform,
+        });
+      };
+      const observer = new MutationObserver(record);
+      observer.observe(details, { attributes: true, attributeFilter: ['style'] });
+      element.click();
+      for (let frame = 0; frame < 120 && details.isConnected; frame += 1) {
+        await new Promise(requestAnimationFrame);
+      }
+      if (observer.takeRecords().length > 0) record();
+      observer.disconnect();
+      return frames;
+    });
+    expect(motion.some((frame) => frame.height === '0px')).toBe(true);
+    expect(motion.some((frame) => frame.opacity === '0')).toBe(true);
+    expect(motion.some((frame) => frame.transform.includes('-4px'))).toBe(true);
+    await expect(trigger).toHaveAttribute('aria-expanded', 'false');
+    await expect(body).toHaveCount(0);
+    await expect(first.locator('.cylinder-scroller')).toHaveCount(0);
 
     await page.emulateMedia({ reducedMotion: 'reduce' });
-    const middle = component.getByTestId('response-group-middle');
-    const middleTrigger = middle.getByTestId('response-group-disclosure');
+    const middleTrigger = component
+      .getByTestId('response-group-middle')
+      .getByTestId('response-group-disclosure');
+    await middleTrigger.click();
+    await expect(middleTrigger).toHaveAttribute('aria-expanded', 'false');
     await middleTrigger.click();
     await expect(middleTrigger).toHaveAttribute('aria-expanded', 'true');
-    // Reduced motion should leave no lingering animations; poll because a
-    // finishing animation may briefly report `running` under load.
     await expect
       .poll(() =>
-        middle
+        component
+          .getByTestId('response-group-middle')
           .locator('[data-operational-expanded-content]')
           .evaluate((element) => element.getAnimations().map((animation) => animation.playState)),
       )

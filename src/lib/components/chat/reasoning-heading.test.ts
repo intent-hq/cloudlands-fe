@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { extractReasoningHeading } from './reasoning-heading';
+import { extractReasoningHeading, extractReasoningHistory } from './reasoning-heading';
 
 describe('extractReasoningHeading', () => {
   it('extracts a formatted Markdown heading after leading blank lines', () => {
@@ -38,5 +38,42 @@ describe('extractReasoningHeading', () => {
   it('does not promote a short line until body content follows the separator', () => {
     const content = 'Considering task restoration\n\n';
     expect(extractReasoningHeading(content)).toEqual({ heading: null, body: content });
+  });
+});
+
+describe('extractReasoningHistory', () => {
+  it('extracts every consecutive reasoning title before the body', () => {
+    expect(
+      extractReasoningHistory(
+        [
+          'Assessing delegation and tool availability',
+          '**Inspecting workspace_api method names**',
+          '**Searching workspace.set method descriptions**',
+          '**Planning workspace API title setting**',
+          'Use the matching workspace method after the inspection.',
+        ].join('\n\n'),
+      ),
+    ).toEqual([
+      { title: 'Assessing delegation and tool availability', body: '' },
+      { title: 'Inspecting workspace_api method names', body: '' },
+      { title: 'Searching workspace.set method descriptions', body: '' },
+      {
+        title: 'Planning workspace API title setting',
+        body: 'Use the matching workspace method after the inspection.',
+      },
+    ]);
+  });
+
+  it('stops title extraction when ordinary body content starts', () => {
+    expect(
+      extractReasoningHistory(
+        'Assessing delegation and tool availability\n\nBody paragraph.\n\n**Emphasized body text**',
+      ),
+    ).toEqual([
+      {
+        title: 'Assessing delegation and tool availability',
+        body: 'Body paragraph.\n\n**Emphasized body text**',
+      },
+    ]);
   });
 });

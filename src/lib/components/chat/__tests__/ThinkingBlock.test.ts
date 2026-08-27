@@ -51,17 +51,17 @@ describe('ThinkingBlock — tool-call presentation', () => {
 
     const toggle = screen.getByRole('button');
     expect(toggle.getAttribute('aria-expanded')).toBe('true');
-    expect(toggle.textContent?.trim()).toMatch(/^Thinking/);
+    expect(toggle.textContent?.trim()).toBe('Thinking...');
     expect(screen.getByTestId('markdown-viewer').textContent).toContain('Let me check the schema');
   });
 
-  it('uses the localized Thinking fallback for headingless persisted content', async () => {
+  it('uses the localized Reasoning fallback for headingless persisted content', async () => {
     await renderBlock({ content: 'Let me check the schema', isStreaming: false });
 
     const toggle = screen.getByRole('button');
     expect(toggle.getAttribute('aria-expanded')).toBe('false');
     expect(screen.queryByTestId('markdown-viewer')).toBeNull();
-    expect(toggle.textContent?.trim()).toBe('Thinking...');
+    expect(toggle.textContent?.trim()).toBe('Reasoning');
   });
 
   it('uses a short first-line title once and starts the body with the paragraph', async () => {
@@ -113,7 +113,7 @@ describe('ThinkingBlock — tool-call presentation', () => {
     const view = await renderBlock({ content: 'Partial body', isStreaming: true });
     const toggle = screen.getByRole('button');
     toggle.focus();
-    expect(toggle.textContent?.trim()).toMatch(/^Thinking/);
+    expect(toggle.textContent?.trim()).toBe('Thinking...');
 
     await view.rerender({ content: '# `Plan` **changes**\n\nPartial body', isStreaming: true });
 

@@ -20,7 +20,14 @@
     zoom = 1,
     width = 560,
     seamOnly = false,
-  }: { theme?: 'light' | 'dark'; zoom?: number; width?: number; seamOnly?: boolean } = $props();
+    reasoningSearchOnly = false,
+  }: {
+    theme?: 'light' | 'dark';
+    zoom?: number;
+    width?: number;
+    seamOnly?: boolean;
+    reasoningSearchOnly?: boolean;
+  } = $props();
   const workspaceId = 'chat-panel-operational-geometry';
   const agentId = 'chat-panel-operational-agent';
   const timestamp = '2026-08-17T12:00:00.000Z';
@@ -28,7 +35,11 @@
 
   const operationalContent = (prefix: string, includeStreamingThinking = false) =>
     [
-      { type: 'thinking', id: `${prefix}-thinking-a`, text: 'Inspect the production render path' },
+      {
+        type: 'thinking',
+        id: `${prefix}-thinking-a`,
+        text: 'Inspect the production render path\n\nGeometry detail.',
+      },
       {
         type: 'tool_use',
         id: `${prefix}-view`,
@@ -41,7 +52,11 @@
         tool_use_id: `${prefix}-view`,
         output: 'read complete',
       },
-      { type: 'thinking', id: `${prefix}-thinking-after-view`, text: 'Compare the tool row' },
+      {
+        type: 'thinking',
+        id: `${prefix}-thinking-after-view`,
+        text: 'Compare the tool row\n\nGeometry detail.',
+      },
       {
         type: 'tool_use',
         id: `${prefix}-context`,
@@ -60,7 +75,7 @@
       {
         type: 'thinking',
         id: `${prefix}-thinking-after-context`,
-        text: 'Compare the context row',
+        text: 'Compare the context row\n\nGeometry detail.',
       },
       {
         type: 'text',
@@ -116,7 +131,7 @@
       {
         type: 'thinking',
         id: `${prefix}-thinking-after-group`,
-        text: 'Compare the response group row',
+        text: 'Compare the response group row\n\nGeometry detail.',
       },
       {
         type: 'tool_use',
@@ -130,7 +145,11 @@
         tool_use_id: `${prefix}-command`,
         output: 'command complete',
       },
-      { type: 'thinking', id: `${prefix}-thinking-b`, text: 'Verify every final edge' },
+      {
+        type: 'thinking',
+        id: `${prefix}-thinking-b`,
+        text: 'Verify every final edge\n\nGeometry detail.',
+      },
       {
         type: 'tool_use',
         id: `${prefix}-input-only`,
@@ -204,7 +223,7 @@
   const thinking = (id: string): ContentBlock => ({
     type: 'thinking',
     id,
-    text: `Thinking ${id}`,
+    text: `Thinking ${id}\n\nGeometry detail.`,
   });
   const seamContent = (prefix: string, startsWithThinking = false) =>
     [
@@ -311,7 +330,7 @@
         {
           type: 'thinking',
           id: 'production-following-reasoning',
-          text: 'Trace the higher-level list wrapper',
+          text: 'Trace the higher-level list wrapper\n\nGeometry detail.',
         },
       ]),
       timestamp: '2026-08-17T11:00:02.000Z',
@@ -339,6 +358,49 @@
     message('assistant-finished', 'assistant', operationalContent('finished')),
     message('user-streaming', 'user', [{ type: 'text', text: 'Render the streaming rows' }]),
     message('assistant-streaming', 'assistant', operationalContent('streaming', true)),
+  ];
+  const reasoningSearchMessages = [
+    message('user-inline-search', 'user', [
+      { type: 'text', text: 'Check inline reasoning search' },
+    ]),
+    message('assistant-inline-search', 'assistant', [
+      {
+        type: 'thinking',
+        id: 'inline-search-predecessor',
+        text: 'Inline headingless search target remains visible without opening anything.',
+      },
+      {
+        type: 'text',
+        id: 'inline-search-open',
+        text: '<group:Prepping>Visible inline description.',
+      },
+      {
+        type: 'thinking',
+        id: 'inline-search-later',
+        text: 'Later inline reasoning stays visible in source order.',
+      },
+      { type: 'text', id: 'inline-search-close', text: '</group:Prepping>Visible final prose.' },
+    ]),
+    message('user-titled-search', 'user', [
+      { type: 'text', text: 'Check titled reasoning search' },
+    ]),
+    message('assistant-titled-search', 'assistant', [
+      {
+        type: 'text',
+        id: 'titled-search-open',
+        text: '<group:Prepping>Visible titled description.',
+      },
+      {
+        type: 'thinking',
+        id: 'titled-search-reasoning',
+        text: 'Model-derived reasoning title\n\nHidden titled reasoning search target.',
+      },
+      {
+        type: 'text',
+        id: 'titled-search-close',
+        text: '</group:Prepping>Visible titled final prose.',
+      },
+    ]),
   ];
   const seamMessages = [
     {
@@ -379,16 +441,22 @@
     message('assistant-tool-message-streaming', 'assistant', toolOnlyContent('message-streaming')),
   ];
   // svelte-ignore state_referenced_locally -- each CT mount uses one immutable fixture scenario.
-  const messages = seamOnly ? seamMessages : alignmentMessages;
+  const messages = reasoningSearchOnly
+    ? reasoningSearchMessages
+    : seamOnly
+      ? seamMessages
+      : alignmentMessages;
+  // svelte-ignore state_referenced_locally -- each CT mount uses one immutable fixture scenario.
+  const fixtureIsStreaming = !reasoningSearchOnly;
   const session = {
     id: agentId,
     workspaceId,
     name: 'Operational geometry agent',
     status: 'active',
     isActive: true,
-    isStreaming: true,
-    isProcessing: true,
-    isResponding: true,
+    isStreaming: fixtureIsStreaming,
+    isProcessing: fixtureIsStreaming,
+    isResponding: fixtureIsStreaming,
     messages,
     createdAt: timestamp,
     updatedAt: timestamp,

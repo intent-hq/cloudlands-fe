@@ -9,8 +9,9 @@
  */
 import { cleanup, fireEvent, render, screen } from '@testing-library/svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { ContentBlock } from '$shared/types';
+import type { AgentMessage, ContentBlock } from '$shared/types';
 import { warmImport } from '../../../../test/warm-import';
+import { findChatSearchMatches } from '../chat-search';
 
 vi.mock('svelte-fa', async () => {
   const MockFa = (await import('../../ui/__tests__/mocks/Fa.svelte')).default;
@@ -22,7 +23,7 @@ vi.mock('$lib/components/markdown/MarkdownViewer.svelte', async () => ({
 }));
 
 const storeState = vi.hoisted(() => ({
-  current: {} as Record<string, unknown>,
+  current: { theme: { name: 'light' } } as Record<string, unknown>,
 }));
 
 vi.mock('$store/renderer/store', async () => {
@@ -32,7 +33,7 @@ vi.mock('$store/renderer/store', async () => {
 });
 
 afterEach(() => {
-  storeState.current = {};
+  storeState.current = { theme: { name: 'light' } };
   cleanup();
 });
 
@@ -49,9 +50,13 @@ async function renderStreaming(content: ContentBlock[], isStreaming: boolean) {
   return render(StreamingMessageContent, { props: { content, isStreaming } });
 }
 
-async function renderStatic(content: ContentBlock[]) {
+async function renderMessage(content: ContentBlock[], isStreaming: boolean) {
   const MessageContent = (await import('../MessageContent.svelte')).default;
-  return render(MessageContent, { props: { content } });
+  return render(MessageContent, { props: { content, isStreaming } });
+}
+
+async function renderStatic(content: ContentBlock[]) {
+  return renderMessage(content, false);
 }
 
 describe('thinking blocks — StreamingMessageContent', () => {
@@ -63,17 +68,113 @@ describe('thinking blocks — StreamingMessageContent', () => {
     expect(screen.getByRole('button').getAttribute('aria-expanded')).toBe('true');
   });
 
-  it('renders a restored headingless block with the localized collapsed fallback', async () => {
+  it('renders a restored headingless block inline without a fallback disclosure', async () => {
     await renderStreaming([thinking('msg_1:0', 'Checking the schema first')], false);
 
-    const toggle = screen.getByRole('button');
-    expect(toggle.getAttribute('aria-expanded')).toBe('false');
-    expect(toggle.textContent?.trim()).toBe('Thinking...');
-    expect(screen.queryByTestId('markdown-viewer')).toBeNull();
-    await fireEvent.click(toggle);
+    expect(screen.queryByRole('button', { name: 'Reasoning' })).toBeNull();
+    expect(screen.queryByTestId('reasoning-tool-call')).toBeNull();
     expect(screen.getByTestId('markdown-viewer').textContent).toContain(
       'Checking the schema first',
     );
+  });
+
+  const persistedStandaloneMessage = {
+    id: 'assistant-dark-mode-sanitized',
+    role: 'assistant',
+    isStreaming: false,
+    contentBlocks: [
+      thinking(
+        'dark-mode-standalone:0',
+        'I am checking the saved theme preference before changing the interface.',
+      ),
+      {
+        type: 'tool_use',
+        id: 'dark-mode-standalone:1',
+        toolCallId: 'theme-source-call',
+        name: 'view',
+        input: { path: 'src/theme.ts' },
+      },
+      {
+        type: 'tool_result',
+        id: 'dark-mode-standalone:2',
+        tool_use_id: 'theme-source-call',
+        output: 'Sanitized theme source',
+      },
+      thinking(
+        'dark-mode-standalone:3',
+        'The saved preference and system fallback use separate paths.',
+      ),
+      { type: 'text', id: 'dark-mode-standalone:4', text: 'Theme storage is understood.' },
+    ] as ContentBlock[],
+  } as AgentMessage;
+
+  it.each([
+    ['MessageContent', renderStatic],
+    ['StreamingMessageContent', (content: ContentBlock[]) => renderStreaming(content, false)],
+  ])(
+    'renders persisted standalone headingless reasoning inline in %s',
+    async (_, renderPersistedMessage) => {
+      await renderPersistedMessage(persistedStandaloneMessage.contentBlocks ?? []);
+
+      expect(screen.queryAllByRole('button', { name: 'Reasoning' })).toHaveLength(0);
+      expect(document.querySelector('[aria-expanded][aria-label="Reasoning"]')).toBeNull();
+      expect(document.querySelector('[aria-controls][aria-label="Reasoning"]')).toBeNull();
+      expect(screen.queryByTestId('reasoning-tool-call')).toBeNull();
+      expect(document.querySelector('[data-message-content-block="thinking"]')).toBeNull();
+      expect(document.querySelectorAll('[data-tool-use-id]')).toHaveLength(1);
+
+      const orderedText = [
+        'I am checking the saved theme preference before changing the interface.',
+        'The saved preference and system fallback use separate paths.',
+        'Theme storage is understood.',
+      ].map((text) => screen.getByText(text));
+      expect(
+        orderedText
+          .slice(1)
+          .every((node, index) =>
+            Boolean(
+              orderedText[index].compareDocumentPosition(node) & Node.DOCUMENT_POSITION_FOLLOWING,
+            ),
+          ),
+      ).toBe(true);
+      for (const text of orderedText) {
+        expect(
+          document.body.textContent?.match(new RegExp(text.textContent ?? '', 'g')),
+        ).toHaveLength(1);
+      }
+
+      expect(
+        findChatSearchMatches([persistedStandaloneMessage], 'saved theme preference', new Map()),
+      ).toEqual([
+        {
+          messageId: 'assistant-dark-mode-sanitized',
+          matchIndexInMessage: 0,
+          occurrenceInBlock: 0,
+          turnKey: 'assistant-dark-mode-sanitized',
+          blockPath: 'b:0',
+          disclosurePath: [],
+        },
+      ]);
+    },
+  );
+
+  it.each([
+    ['MessageContent', renderMessage],
+    ['StreamingMessageContent', renderStreaming],
+  ])('transitions standalone active reasoning to inline content in %s', async (_, renderer) => {
+    const content = [thinking('standalone-lifecycle:0', 'I am checking the active theme path.')];
+    const view = await renderer(content, true);
+
+    expect(screen.getByRole('button', { name: 'Thinking...' }).getAttribute('aria-expanded')).toBe(
+      'true',
+    );
+    expect(screen.getByText('I am checking the active theme path.')).toBeTruthy();
+
+    await view.rerender({ content, isStreaming: false });
+
+    expect(screen.queryByRole('button', { name: 'Reasoning' })).toBeNull();
+    expect(screen.queryByTestId('reasoning-tool-call')).toBeNull();
+    expect(screen.getByText('I am checking the active theme path.')).toBeTruthy();
   });
 
   it('interleaves thinking and text blocks in stream order', async () => {
@@ -86,7 +187,14 @@ describe('thinking blocks — StreamingMessageContent', () => {
     );
 
     const rendered = document.querySelectorAll('.content-block--thinking, .content-block--text');
-    expect([...rendered].map((el) => el.className.includes('thinking'))).toEqual([true, false]);
+    expect([...rendered].map((el) => el.getAttribute('data-message-content-block'))).toEqual([
+      'text',
+      'text',
+    ]);
+    const renderedText = document.body.textContent ?? '';
+    expect(renderedText.indexOf('First I reason')).toBeLessThan(
+      renderedText.indexOf('Then I answer'),
+    );
   });
 
   it('still renders legacy `content`-bearing thinking blocks (FE <think> parser)', async () => {
@@ -110,6 +218,591 @@ describe('thinking blocks — StreamingMessageContent', () => {
     expect(screen.queryByTestId('markdown-viewer')).toBeNull();
   });
 
+  it.each([
+    ['MessageContent', renderMessage],
+    ['StreamingMessageContent', renderStreaming],
+  ])(
+    'shows one current live-group child until the user expands full history in %s',
+    async (_renderer, renderMessageContent) => {
+      const content = [
+        { type: 'text', id: 'msg_1:0', text: '<group:Working>' },
+        { type: 'text', id: 'msg_1:1', text: 'Earlier answer' },
+        thinking('msg_1:2', 'Current thought'),
+      ];
+      const view = await renderMessageContent(content, true);
+      const groupDisclosure = screen.getByTestId('response-group-disclosure');
+      const visibleChildTypes = () =>
+        [...document.querySelectorAll('[data-response-group-child]')].map((child) =>
+          child.getAttribute('data-message-content-block'),
+        );
+
+      expect(groupDisclosure.getAttribute('aria-expanded')).toBe('false');
+      expect(screen.getByTestId('response-group-name').textContent).toBe('Working');
+      expect(visibleChildTypes()).toEqual(['thinking']);
+      expect(screen.getAllByTestId('reasoning-disclosure')).toHaveLength(1);
+
+      await view.rerender({
+        content: [
+          ...content,
+          { type: 'tool_result', id: 'msg_1:3', tool_use_id: 'missing', output: 'hidden' },
+        ],
+        isStreaming: true,
+      });
+      expect(visibleChildTypes()).toEqual(['thinking']);
+
+      const tool = {
+        type: 'tool_use',
+        id: 'msg_1:4',
+        name: 'view',
+        input: { path: 'src/example.ts' },
+        toolCallId: 'tool-1',
+      } as ContentBlock;
+      await view.rerender({ content: [...content, tool], isStreaming: true });
+      expect(visibleChildTypes()).toEqual(['tool_use']);
+
+      const withAnswer = [
+        ...content,
+        tool,
+        { type: 'tool_result', id: 'msg_1:5', tool_use_id: 'tool-1', output: 'done' },
+        { type: 'text', id: 'msg_1:6', text: 'Current answer' },
+      ] as ContentBlock[];
+      await view.rerender({ content: withAnswer, isStreaming: true });
+      expect(visibleChildTypes()).toEqual(['text']);
+      expect(document.body.textContent).toContain('Current answer');
+      expect(document.body.textContent).not.toContain('Earlier answer');
+
+      await fireEvent.click(groupDisclosure);
+      expect(groupDisclosure.getAttribute('aria-expanded')).toBe('true');
+      expect(visibleChildTypes()).toEqual(['text', 'thinking', 'tool_use', 'text']);
+      expect(document.querySelector('[data-reasoning-history]')).toBeNull();
+      expect(document.body.textContent).toContain('Earlier answer');
+      const toolDisclosure = document.querySelector(
+        '[data-message-content-block="tool_use"] [data-testid="tool-call-disclosure"]',
+      );
+      expect(toolDisclosure).toBeTruthy();
+      await fireEvent.click(toolDisclosure!);
+      expect(document.body.textContent).toContain('done');
+
+      const latestThought = thinking('msg_1:7', 'Latest thought');
+      await view.rerender({ content: [...withAnswer, latestThought], isStreaming: true });
+      expect(groupDisclosure.getAttribute('aria-expanded')).toBe('true');
+      expect(visibleChildTypes()).toEqual(['text', 'thinking', 'tool_use', 'text', 'thinking']);
+
+      await fireEvent.click(groupDisclosure);
+      expect(groupDisclosure.getAttribute('aria-expanded')).toBe('false');
+      expect(visibleChildTypes()).toEqual(['thinking']);
+
+      await view.rerender({ content: [...withAnswer, latestThought], isStreaming: false });
+      expect(visibleChildTypes()).toEqual([]);
+    },
+  );
+
+  it.each([
+    ['MessageContent', renderMessage],
+    ['StreamingMessageContent', renderStreaming],
+  ])(
+    'pairs the adjacent title and description into one live preview in %s',
+    async (_renderer, renderMessageContent) => {
+      const content = [
+        thinking(
+          '01a03064:0',
+          '\n\n**Assessing delegation and tool availability**\n\n**Planning workspace title setup**',
+        ),
+        {
+          type: 'text' as const,
+          id: '01a03064:1',
+          text: '<group:Prepping>\nI’ll first title the workspace, read the existing spec, and inspect the project’s dark-mode surface before drafting the implementation plan.',
+        },
+      ];
+      const message = {
+        id: 'assistant-adjacent-preview',
+        role: 'assistant',
+        contentBlocks: content,
+        isStreaming: true,
+      } as AgentMessage;
+      await renderMessageContent(content, true);
+
+      const disclosure = screen.getByTestId('response-group-disclosure');
+      expect(screen.getAllByRole('button')).toHaveLength(1);
+      expect(screen.queryByTestId('reasoning-disclosure')).toBeNull();
+      expect(screen.getByTestId('response-group-name').textContent).toBe(
+        'Planning workspace title setup',
+      );
+      expect(document.body.textContent).not.toContain('Thinking...');
+      expect(document.body.textContent?.match(/Planning workspace title setup/g)).toHaveLength(1);
+      expect(document.body.textContent?.match(/I’ll first title the workspace/g)).toHaveLength(1);
+      expect(document.body.textContent).not.toContain('Assessing delegation and tool availability');
+      expect(findChatSearchMatches([message], 'dark-mode surface', new Map())).toEqual([
+        {
+          messageId: 'assistant-adjacent-preview',
+          matchIndexInMessage: 0,
+          occurrenceInBlock: 0,
+          turnKey: 'assistant-adjacent-preview',
+          blockPath: 'b:0:c:0',
+          disclosurePath: [],
+        },
+      ]);
+      expect(findChatSearchMatches([message], 'Assessing delegation', new Map())).toEqual([]);
+
+      await fireEvent.click(disclosure);
+      expect(
+        document.body.textContent?.match(/Assessing delegation and tool availability/g),
+      ).toHaveLength(1);
+      expect(document.body.textContent?.match(/I’ll first title the workspace/g)).toHaveLength(1);
+      expect(findChatSearchMatches([message], 'Assessing delegation', new Map())).toEqual([]);
+      const historyRow = screen.getByTestId('reasoning-history-row');
+      expect(historyRow.textContent?.trim()).toBe('Assessing delegation and tool availability');
+      expect(historyRow.querySelector('button, [aria-expanded]')).toBeNull();
+      expect(document.querySelector('[data-reasoning-history-body]')).toBeNull();
+    },
+  );
+
+  it('renders adjacent-title history in exact DOM order with the description first', async () => {
+    await renderStreaming(
+      [
+        thinking('msg_1:0', '**Retained predecessor reasoning**\n\n**Model-derived group title**'),
+        {
+          type: 'text',
+          id: 'msg_1:1',
+          text: '<group:Prepping>Group description prose.',
+        },
+        thinking('msg_1:2', 'Subsequent commentary'),
+        {
+          type: 'tool_use',
+          id: 'msg_1:3',
+          toolCallId: 'call-1',
+          name: 'view',
+          input: { summary: 'Run the source-order action' },
+        },
+        {
+          type: 'tool_result',
+          id: 'msg_1:4',
+          tool_use_id: 'call-1',
+          output: 'Source-order result',
+        },
+        { type: 'text', id: 'msg_1:5', text: 'Final commentary</group:Prepping>' },
+      ] as ContentBlock[],
+      false,
+    );
+
+    expect(screen.getByTestId('response-group-name').textContent).toBe('Model-derived group title');
+    await fireEvent.click(screen.getByTestId('response-group-disclosure'));
+    const responseGroup = screen.getByTestId('response-group');
+    expect(responseGroup.textContent?.match(/Group description prose\./g)).toHaveLength(1);
+    expect(
+      [...responseGroup.querySelectorAll('[data-response-group-child]')].map((child) => ({
+        type: child.getAttribute('data-message-content-block'),
+        text: child.textContent?.replace(/\s+/g, ' ').trim(),
+      })),
+    ).toEqual([
+      { type: 'text', text: 'Group description prose.' },
+      { type: 'thinking', text: 'Retained predecessor reasoning' },
+      { type: 'thinking', text: 'Subsequent commentary' },
+      { type: 'tool_use', text: expect.stringContaining('Run the source-order action') },
+      { type: 'text', text: 'Final commentary' },
+    ]);
+
+    const toolDisclosure = responseGroup.querySelector(
+      '[data-message-content-block="tool_use"] [data-testid="tool-call-disclosure"]',
+    );
+    expect(toolDisclosure).toBeTruthy();
+    await fireEvent.click(toolDisclosure!);
+    const orderedText = [
+      'Group description prose.',
+      'Retained predecessor reasoning',
+      'Subsequent commentary',
+      'Run the source-order action',
+      'Source-order result',
+      'Final commentary',
+    ].map((text) => screen.getByText(text));
+    expect(
+      orderedText
+        .slice(1)
+        .every((node, index) =>
+          Boolean(
+            orderedText[index].compareDocumentPosition(node) & Node.DOCUMENT_POSITION_FOLLOWING,
+          ),
+        ),
+    ).toBe(true);
+  });
+
+  it.each([
+    ['MessageContent', renderStatic],
+    ['StreamingMessageContent', (content: ContentBlock[]) => renderStreaming(content, false)],
+  ])(
+    'normalizes adjacent-title group reasoning without a duplicate generic row in %s',
+    async (_, renderMessageContent) => {
+      await renderMessageContent([
+        thinking(
+          'adjacent-normalized:0',
+          '**Retained predecessor reasoning**\n\n**Model-provided group title**',
+        ),
+        {
+          type: 'text',
+          id: 'adjacent-normalized:1',
+          text: '<group:Prepping>Group description prose.',
+        },
+        thinking('adjacent-normalized:2', 'Reasoning\n\n**Operation body**'),
+        { type: 'text', id: 'adjacent-normalized:3', text: '</group:Prepping>' },
+      ]);
+
+      const disclosure = screen.getByTestId('response-group-disclosure');
+      expect(screen.getByTestId('response-group-name').textContent).toBe(
+        'Model-provided group title',
+      );
+      expect(screen.getAllByRole('button')).toHaveLength(1);
+
+      await fireEvent.click(disclosure);
+
+      const responseGroup = screen.getByTestId('response-group');
+      expect(responseGroup.textContent?.match(/Model-provided group title/g)).toHaveLength(1);
+      expect(responseGroup.textContent?.match(/Group description prose\./g)).toHaveLength(1);
+      expect(responseGroup.textContent?.match(/Reasoning/g)).toBeNull();
+      expect(
+        [...responseGroup.querySelectorAll('[data-testid="reasoning-history-title"]')].map(
+          (title) => title.textContent?.trim(),
+        ),
+      ).toEqual(['Retained predecessor reasoning', 'Operation body']);
+      expect(
+        [...responseGroup.querySelectorAll('[data-response-group-child]')].map((child) => ({
+          type: child.getAttribute('data-message-content-block'),
+          text: child.textContent?.replace(/\s+/g, ' ').trim(),
+        })),
+      ).toEqual([
+        { type: 'text', text: 'Group description prose.' },
+        { type: 'thinking', text: 'Retained predecessor reasoning' },
+        { type: 'thinking', text: 'Operation body' },
+      ]);
+    },
+  );
+
+  it('renders the alternate-model Prepping wrapper as one reasoning disclosure', async () => {
+    const leadingContent = [
+      {
+        type: 'tool_use',
+        id: 'msg_1:0',
+        toolCallId: 'call-figma',
+        name: 'Figma startup',
+        input: { summary: 'Figma startup' },
+      },
+      { type: 'tool_result', id: 'msg_1:1', tool_use_id: 'call-figma', output: 'Figma ready' },
+      thinking('msg_1:2', 'Searching workspace API for title setting'),
+    ] as ContentBlock[];
+    const opening = [
+      ...leadingContent,
+      { type: 'text', id: 'msg_1:3', text: '<group:Prepping>' },
+    ] as ContentBlock[];
+    const view = await renderStreaming(opening, true);
+    const visibleChildTypes = () =>
+      [...document.querySelectorAll('[data-response-group-child]')].map((child) =>
+        child.getAttribute('data-message-content-block'),
+      );
+
+    let groupDisclosure = screen.getByTestId('response-group-disclosure');
+    expect(groupDisclosure.getAttribute('aria-expanded')).toBe('true');
+    expect(screen.getByTestId('response-group-name').textContent).toBe('Thinking...');
+    expect(document.body.textContent).not.toContain('Prepping');
+    expect(visibleChildTypes()).toEqual([]);
+
+    const groupContent = [
+      ...leadingContent,
+      {
+        type: 'text',
+        id: 'msg_1:3',
+        text: '<group:Prepping>I will set the workspace title. Then I will read the current spec and inspect the screenshot context.',
+      },
+      thinking('msg_1:4', 'Reasoning\n\n**Invoking workspace API to set title**'),
+      {
+        type: 'tool_use',
+        id: 'msg_1:5',
+        toolCallId: 'call-1',
+        name: 'workspace_api',
+        input: { summary: 'Set workspace title and read the current spec' },
+      },
+      { type: 'tool_result', id: 'msg_1:6', tool_use_id: 'call-1', output: 'Workspace ready' },
+      thinking(
+        'msg_1:7',
+        'Planning clarification questions on formatting issues\n\n**Planning code inspection and question sequencing**\n\nThe screenshot shows three possible faults: large vertical gaps, raw reasoning rows that stay open, and mixed tool-row indentation.',
+      ),
+      {
+        type: 'tool_use',
+        id: 'msg_1:8',
+        toolCallId: 'call-2',
+        name: 'ask',
+        input: { summary: 'Ask for the expected agent chat layout' },
+      },
+    ] as ContentBlock[];
+    await view.rerender({ content: groupContent, isStreaming: true });
+
+    expect(groupDisclosure.getAttribute('aria-expanded')).toBe('false');
+    expect(screen.getByTestId('response-group-name').textContent).toBe('Reasoning');
+    expect(visibleChildTypes()).toEqual(['tool_use']);
+    expect(document.body.textContent).not.toContain('Then I will read the current spec');
+
+    await fireEvent.click(groupDisclosure);
+    expect(groupDisclosure.getAttribute('aria-expanded')).toBe('true');
+    expect(visibleChildTypes()).toEqual(['text', 'thinking', 'tool_use', 'thinking', 'tool_use']);
+    const responseGroup = screen.getByTestId('response-group');
+    expect(responseGroup.querySelectorAll('[data-testid="reasoning-disclosure"]')).toHaveLength(0);
+    expect(responseGroup.textContent?.match(/Reasoning/g)).toHaveLength(1);
+    expect(responseGroup.textContent?.match(/Then I will read the current spec/g)).toHaveLength(1);
+    const history = [...responseGroup.querySelectorAll('[data-response-group-child]')].map(
+      (child) => child.textContent?.trim(),
+    );
+    expect(history[0]).toContain('I will set the workspace title');
+    expect(history[1]).toContain('Invoking workspace API to set title');
+    expect(history[2]).toContain('Set workspace title and read the current spec');
+    expect(history[3]).toContain('Planning clarification questions on formatting issues');
+    expect(history[4]).toContain('Ask for the expected agent chat layout');
+    const historyTitles = [
+      ...responseGroup.querySelectorAll('[data-testid="reasoning-history-title"]'),
+    ].map((title) => title.textContent?.trim());
+    expect(historyTitles).toEqual([
+      'Invoking workspace API to set title',
+      'Planning clarification questions on formatting issues',
+      'Planning code inspection and question sequencing',
+    ]);
+    const historyRows = responseGroup.querySelectorAll('[data-testid="reasoning-history-row"]');
+    expect(historyRows).toHaveLength(3);
+    expect([...historyRows].every((row) => !row.querySelector('button, [aria-expanded]'))).toBe(
+      true,
+    );
+    const historyBodies = responseGroup.querySelectorAll('[data-reasoning-history-body]');
+    expect(historyBodies).toHaveLength(1);
+    expect(historyBodies[0].textContent?.trim()).toBe(
+      'The screenshot shows three possible faults: large vertical gaps, raw reasoning rows that stay open, and mixed tool-row indentation.',
+    );
+    expect(
+      responseGroup.textContent?.match(/The screenshot shows three possible faults/g),
+    ).toHaveLength(1);
+    expect(historyRows[0].querySelector('[data-testid="markdown-viewer"]')).toBeNull();
+    const toolDisclosure = document.querySelector(
+      '[data-response-group-child][data-message-content-block="tool_use"] [data-testid="tool-call-disclosure"]',
+    );
+    expect(toolDisclosure).toBeTruthy();
+    await fireEvent.click(toolDisclosure!);
+    expect(document.body.textContent).toContain('Workspace ready');
+    await fireEvent.click(groupDisclosure);
+    expect(groupDisclosure.getAttribute('aria-expanded')).toBe('false');
+    expect(visibleChildTypes()).toEqual(['tool_use']);
+    expect(document.body.textContent).not.toContain('Then I will read the current spec');
+
+    const completedContent = [
+      ...groupContent,
+      { type: 'text', id: 'msg_1:9', text: '</group:Prepping>Workspace inspection complete.' },
+    ] as ContentBlock[];
+    await view.rerender({ content: completedContent, isStreaming: false });
+
+    groupDisclosure = screen.getByTestId('response-group-disclosure');
+    expect(groupDisclosure.getAttribute('aria-expanded')).toBe('false');
+    expect(screen.getByTestId('response-group-name').textContent).toBe('Reasoning');
+    expect(document.body.textContent).toContain('Workspace inspection complete.');
+    expect(document.body.textContent).not.toContain('Prepping');
+    expect(document.body.textContent).not.toContain('Then I will read the current spec');
+
+    await fireEvent.click(groupDisclosure);
+    expect(groupDisclosure.getAttribute('aria-expanded')).toBe('true');
+    expect(visibleChildTypes()).toEqual(['text', 'thinking', 'tool_use', 'thinking', 'tool_use']);
+    expect(responseGroup.textContent?.match(/Reasoning/g)).toHaveLength(1);
+    expect(responseGroup.textContent?.match(/Then I will read the current spec/g)).toHaveLength(1);
+  });
+
+  const persistedHeadinglessPhases = [
+    thinking('dark-mode:0', 'I am locating the theme preference before changing the interface.'),
+    { type: 'text', id: 'dark-mode:1', text: '<group:Prepping>' },
+    {
+      type: 'tool_use',
+      id: 'dark-mode:2',
+      toolCallId: 'theme-call',
+      name: 'view',
+      input: { path: 'src/theme.ts' },
+    },
+    {
+      type: 'tool_result',
+      id: 'dark-mode:3',
+      tool_use_id: 'theme-call',
+      output: 'Sanitized theme source',
+    },
+    thinking('dark-mode:4', 'The saved preference and system fallback use separate paths.'),
+    { type: 'text', id: 'dark-mode:5', text: '</group:Prepping>Theme storage is understood.' },
+    thinking('dark-mode:6', 'I am checking the remaining surfaces before implementation.'),
+    { type: 'text', id: 'dark-mode:7', text: '<group:Prepping>' },
+    {
+      type: 'tool_use',
+      id: 'dark-mode:8',
+      toolCallId: 'surface-call',
+      name: 'view',
+      input: { path: 'src/app.css' },
+    },
+    {
+      type: 'tool_result',
+      id: 'dark-mode:9',
+      tool_use_id: 'surface-call',
+      output: 'Sanitized surface source',
+    },
+    thinking('dark-mode:10', 'The remaining surfaces use shared color tokens.'),
+    { type: 'text', id: 'dark-mode:11', text: '</group:Prepping>Dark-mode review complete.' },
+  ] as ContentBlock[];
+
+  it.each([
+    ['MessageContent', renderStatic],
+    ['StreamingMessageContent', (content: ContentBlock[]) => renderStreaming(content, false)],
+  ])(
+    'renders persisted headingless phases inline once and in order in %s',
+    async (_, renderMessage) => {
+      await renderMessage(persistedHeadinglessPhases);
+
+      expect(screen.queryByTestId('response-group-disclosure')).toBeNull();
+      expect(screen.queryByTestId('reasoning-disclosure')).toBeNull();
+      expect(document.querySelector('[data-message-content-block="content_group"]')).toBeNull();
+      expect(screen.queryByRole('button', { name: 'Reasoning' })).toBeNull();
+      expect(document.querySelector('[aria-expanded][aria-label="Reasoning"]')).toBeNull();
+      expect(document.querySelector('[aria-controls][aria-label="Reasoning"]')).toBeNull();
+      expect(document.querySelector('[data-chat-search-disclosure-id^="group:"]')).toBeNull();
+      expect(document.body.textContent).not.toContain('Reasoning');
+
+      const orderedText = [
+        'I am locating the theme preference',
+        'The saved preference and system fallback',
+        'Theme storage is understood.',
+        'I am checking the remaining surfaces',
+        'The remaining surfaces use shared color tokens.',
+        'Dark-mode review complete.',
+      ];
+      let previousIndex = -1;
+      for (const text of orderedText) {
+        expect(
+          document.body.textContent?.match(new RegExp(text.replaceAll('.', '\\.'), 'g')),
+        ).toHaveLength(1);
+        const index = document.body.textContent?.indexOf(text) ?? -1;
+        expect(index).toBeGreaterThan(previousIndex);
+        previousIndex = index;
+      }
+      expect(document.querySelectorAll('[data-tool-use-id]')).toHaveLength(2);
+    },
+  );
+
+  it.each([
+    ['MessageContent', renderMessage],
+    ['StreamingMessageContent', renderStreaming],
+  ])(
+    'transitions an active headingless phase to inline completed content in %s',
+    async (_, renderMessage) => {
+      const active = [
+        { type: 'text', id: 'lifecycle:0', text: '<group:Prepping>' },
+        thinking('lifecycle:1', 'I am checking the active theme path.'),
+        {
+          type: 'tool_use',
+          id: 'lifecycle:2',
+          toolCallId: 'lifecycle-call',
+          name: 'view',
+          input: { path: 'src/theme.ts' },
+        },
+      ] as ContentBlock[];
+      const view = await renderMessage(active, true);
+
+      expect(screen.getByTestId('response-group-name').textContent).toBe('Thinking...');
+      expect(screen.queryByTestId('reasoning-disclosure')).toBeNull();
+
+      await view.rerender({
+        content: [
+          ...active,
+          thinking('lifecycle:3', 'The active path is now confirmed.'),
+          { type: 'text', id: 'lifecycle:4', text: '</group:Prepping>Theme review complete.' },
+        ],
+        isStreaming: false,
+      });
+
+      expect(screen.queryByTestId('response-group-disclosure')).toBeNull();
+      expect(screen.queryByTestId('reasoning-disclosure')).toBeNull();
+      expect(document.body.textContent).not.toContain('Reasoning');
+      expect(
+        document.body.textContent?.match(/I am checking the active theme path\./g),
+      ).toHaveLength(1);
+      expect(document.body.textContent?.match(/The active path is now confirmed\./g)).toHaveLength(
+        1,
+      );
+      expect(document.body.textContent?.match(/Theme review complete\./g)).toHaveLength(1);
+    },
+  );
+
+  it('keeps the exact screenshot history shape in the static message path', async () => {
+    await renderStatic([
+      { type: 'text', id: 'msg_1:0', text: '<group:Prepping>Group description prose.' },
+      thinking('msg_1:1', 'Reasoning\n\n**Title-only operation**'),
+      thinking('msg_1:2', 'Earlier operation\n\n**Current operation**\n\nSubordinate body.'),
+      { type: 'text', id: 'msg_1:3', text: '</group:Prepping>' },
+    ]);
+
+    const groupDisclosure = screen.getByTestId('response-group-disclosure');
+    await fireEvent.click(groupDisclosure);
+    const responseGroup = screen.getByTestId('response-group');
+    expect(
+      responseGroup.querySelectorAll('[data-testid="response-group-disclosure"]'),
+    ).toHaveLength(1);
+    expect(responseGroup.querySelectorAll('[data-testid="reasoning-disclosure"]')).toHaveLength(0);
+    expect(
+      [...responseGroup.querySelectorAll('[data-testid="reasoning-history-title"]')].map((title) =>
+        title.textContent?.trim(),
+      ),
+    ).toEqual(['Title-only operation', 'Earlier operation', 'Current operation']);
+    expect(responseGroup.querySelectorAll('[data-reasoning-history-body]')).toHaveLength(1);
+    expect(responseGroup.textContent?.match(/Subordinate body\./g)).toHaveLength(1);
+    expect(responseGroup.textContent?.match(/Group description prose\./g)).toHaveLength(1);
+    expect(
+      responseGroup.querySelectorAll('[data-testid="reasoning-history-row"] button'),
+    ).toHaveLength(0);
+  });
+
+  it('renders every consecutive screenshot title as a compact row without Markdown leakage', async () => {
+    const titles = [
+      'Assessing delegation and tool availability',
+      'Inspecting workspace_api method names',
+      'Searching workspace.set method descriptions',
+      'Planning workspace API title setting',
+    ];
+    await renderStatic([
+      { type: 'text', id: 'msg_1:0', text: '<group:Prepping>Description before history.' },
+      thinking(
+        'msg_1:1',
+        [
+          'Reasoning',
+          `**${titles[0]}**`,
+          `**${titles[1]}**`,
+          `**${titles[2]}**`,
+          `**${titles[3]}**`,
+          'History body after every title.',
+        ].join('\n\n'),
+      ),
+      { type: 'text', id: 'msg_1:2', text: '</group:Prepping>' },
+    ]);
+
+    await fireEvent.click(screen.getByTestId('response-group-disclosure'));
+    const responseGroup = screen.getByTestId('response-group');
+    expect(
+      [...responseGroup.querySelectorAll('[data-testid="reasoning-history-title"]')].map((title) =>
+        title.textContent?.trim(),
+      ),
+    ).toEqual(titles);
+    expect(responseGroup.querySelectorAll('[data-testid="reasoning-history-row"]')).toHaveLength(4);
+    expect(
+      responseGroup.querySelectorAll('[data-testid="reasoning-history-row"] button'),
+    ).toHaveLength(0);
+    expect(responseGroup.querySelector('[data-reasoning-history-body]')?.textContent?.trim()).toBe(
+      'History body after every title.',
+    );
+    expect(
+      responseGroup.querySelector('[data-reasoning-history-body] h1, h2, h3, h4, h5, h6'),
+    ).toBeNull();
+    for (const title of titles) {
+      expect(
+        responseGroup.textContent?.match(new RegExp(title.replace('.', '\\.'), 'g')),
+      ).toHaveLength(1);
+    }
+    expect(responseGroup.textContent?.match(/Description before history\./g)).toHaveLength(1);
+    expect(responseGroup.textContent?.match(/History body after every title\./g)).toHaveLength(1);
+  });
+
   it('uses the reasoning title in the static message path', async () => {
     await renderStatic([
       thinking('msg_1:0', '# Considering task restoration\n\nInspect saved state.'),
@@ -131,10 +824,14 @@ describe('thinking blocks — StreamingMessageContent', () => {
       false,
     );
 
-    expect(document.querySelector('.content-block--thinking')).not.toBeNull();
-    await fireEvent.click(screen.getByRole('button'));
+    expect(document.querySelector('.content-block--thinking')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Reasoning' })).toBeNull();
     expect(document.body.textContent).toContain('Hidden reasoning');
-    expect(document.querySelector('.content-block--text')?.textContent).toContain('Visible answer');
+    expect(
+      [...document.querySelectorAll('.content-block--text')].some((block) =>
+        block.textContent?.includes('Visible answer'),
+      ),
+    ).toBe(true);
   });
 
   it('renders thinking blocks on a fresh preferences state', async () => {
@@ -158,17 +855,16 @@ describe('thinking blocks — StreamingMessageContent', () => {
       false,
     );
 
-    expect(document.querySelector('.content-block--thinking')).not.toBeNull();
-    await fireEvent.click(screen.getByRole('button'));
+    expect(document.querySelector('.content-block--thinking')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Reasoning' })).toBeNull();
     expect(document.body.textContent).toContain('legacy hidden reasoning');
     expect(document.body.textContent).toContain('Visible answer');
   });
 
   it('only flags the truly last block of a streaming message as streaming inside a group', async () => {
     // Streaming message whose last top-level block is an unclosed <group:…>
-    // containing [thinking, tool_use, thinking, text]. Only the final text
-    // block is still streaming; the completed thinking blocks must render
-    // static (collapsed, no pulse animation).
+    // containing [thinking, tool_use, thinking, text]. Open the group to inspect
+    // all children: only the final text must still receive streaming state.
     await renderStreaming(
       [
         { type: 'text', id: 'msg_1:0', text: '<group:Working>' },
@@ -180,6 +876,8 @@ describe('thinking blocks — StreamingMessageContent', () => {
       true,
     );
 
+    await fireEvent.click(screen.getByTestId('response-group-disclosure'));
+
     const thinkingRows = document.querySelectorAll('.content-block--thinking');
     expect(thinkingRows).toHaveLength(2);
     for (const row of thinkingRows) {
@@ -189,8 +887,9 @@ describe('thinking blocks — StreamingMessageContent', () => {
       expect(row.querySelector('[aria-expanded]')?.getAttribute('aria-expanded')).toBe('false');
     }
 
-    const streamingViewers = [...document.querySelectorAll('[data-testid="markdown-viewer"]')]
-      .filter((viewer) => viewer.getAttribute('data-streaming') === 'true');
+    const streamingViewers = [
+      ...document.querySelectorAll('[data-testid="markdown-viewer"]'),
+    ].filter((viewer) => viewer.getAttribute('data-streaming') === 'true');
     expect(streamingViewers.map((viewer) => viewer.textContent)).toEqual([
       'Partial streamed answer',
     ]);
@@ -206,11 +905,13 @@ describe('thinking blocks — StreamingMessageContent', () => {
       true,
     );
 
+    await fireEvent.click(screen.getByTestId('response-group-disclosure'));
+
     const thinkingRows = document.querySelectorAll('.content-block--thinking');
     expect(thinkingRows).toHaveLength(2);
-    expect(
-      thinkingRows[0].querySelector('[data-operational-leading]')?.className,
-    ).not.toContain('animate-pulse');
+    expect(thinkingRows[0].querySelector('[data-operational-leading]')?.className).not.toContain(
+      'animate-pulse',
+    );
     expect(thinkingRows[1].querySelector('[data-operational-leading]')?.className).toContain(
       'animate-pulse',
     );
@@ -274,8 +975,8 @@ describe('thinking blocks — StreamingMessageContent', () => {
       false,
     );
 
-    expect(document.querySelector('.content-block--thinking')).not.toBeNull();
-    await fireEvent.click(screen.getByRole('button'));
+    expect(document.querySelector('.content-block--thinking')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Reasoning' })).toBeNull();
     expect(document.body.textContent).toContain('legacy visible reasoning');
   });
 });
