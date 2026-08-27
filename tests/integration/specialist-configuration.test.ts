@@ -117,8 +117,10 @@ describe('Specialist Configuration', () => {
   });
 
   describe('Specialist Model Assignments', () => {
-    it('built-ins without an explicit requirement inherit the global default model', () => {
-      for (const specialist of SPECIALISTS.filter(({ id }) => id !== 'vulnerability-scanner')) {
+    // Built-ins carry no model pin: absent means "inherit the global
+    // default model".
+    it('no built-in specialist pins a model', () => {
+      for (const specialist of SPECIALISTS) {
         expect(
           specialist.defaultModel,
           `Specialist ${specialist.id} must not pin a defaultModel`,
@@ -209,6 +211,8 @@ describe('Specialist Configuration', () => {
         expect(specialist.id).toBeDefined();
         expect(specialist.name).toBeDefined();
         expect(specialist.description).toBeDefined();
+        // No specialist pins a tier/model: absent means inherit the global default.
+        expect(specialist.defaultModel).toBeUndefined();
         expect(specialist.defaultBehaviorPrompt).toBeDefined();
       }
     });
@@ -233,18 +237,8 @@ describe('Specialist Configuration', () => {
       expect(MOCK_PROVIDER_CATALOG).not.toHaveProperty('defaultProviderId');
     });
 
-    it('only Vulnerability Scanner carries its required model pin', () => {
-      expect(
-        SPECIALISTS.filter((specialist) => specialist.defaultModel).map(
-          ({ id, codingAgent, defaultModel }) => ({ id, codingAgent, defaultModel }),
-        ),
-      ).toEqual([
-        {
-          id: 'vulnerability-scanner',
-          codingAgent: 'auggie',
-          defaultModel: 'opus4.7',
-        },
-      ]);
+    it('no built-in specialist carries a model pin (built-ins inherit the global default)', () => {
+      expect(SPECIALISTS.filter((s) => s.defaultModel)).toHaveLength(0);
     });
   });
 

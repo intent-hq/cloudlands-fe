@@ -494,8 +494,6 @@ Call \`ws.agent.reportToParent("<report>")\` (via the \`workspace_api\` tool) wi
   {
     id: 'vulnerability-scanner',
     icon: 'pr-reviewer',
-    codingAgent: 'auggie',
-    defaultModel: 'opus4.7',
     get name() {
       return m.specialists_builtin_vulnerabilityScanner_name();
     },

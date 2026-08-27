@@ -13,10 +13,10 @@ describe('SPECIALISTS', () => {
       id: 'vulnerability-scanner',
       name: 'Vulnerability Scanner',
       description: 'Finds real, exploitable security vulnerabilities in code',
-      codingAgent: 'auggie',
-      defaultModel: 'opus4.7',
       icon: 'pr-reviewer',
     });
+    expect(specialist).not.toHaveProperty('codingAgent');
+    expect(specialist).not.toHaveProperty('defaultModel');
     expect(specialist?.role).toBeUndefined();
     expect(specialist?.hidden).toBeUndefined();
     expect(specialist?.defaultBehaviorPrompt).toContain('## Vulnerability Scanner');

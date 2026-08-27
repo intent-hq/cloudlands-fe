@@ -129,17 +129,11 @@ describe("provider in-use selectors", () => {
 
   describe("active-provider fallback does not count as in use", () => {
     it("does not mark other providers as in use via unpinned specialists", () => {
+      // Bundled/hardcoded specialists carry no explicit model or codingAgent
+      // pin — they follow the active provider and must not block others.
       const state = mockState({
         activeProviderId: "claude-code",
         providerModels: { "claude-code": "claude-code:sonnet" },
-        fileSpecialists: [
-          fileSpecialist({
-            id: "unpinned-specialist",
-            name: "Unpinned Specialist",
-            model: "",
-            codingAgent: undefined,
-          }),
-        ],
       });
       expect(selectProviderInUseReasons.select(state)["auggie"]).toBeUndefined();
       expect(selectProviderInUseReason.select(state, "codex")).toBeNull();
