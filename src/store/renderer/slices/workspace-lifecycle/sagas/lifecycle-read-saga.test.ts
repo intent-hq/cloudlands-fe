@@ -1381,6 +1381,133 @@ describe('lifecycleReadSaga', () => {
     await stop(run.task);
   });
 
+  it('dedupes an agent retired between the default and retired-only reads (prefers the fresher retired row)', async () => {
+    const active = agent('agent-live');
+    // Retired between the two round trips: the default read still returns the
+    // stale non-retired row, the retired-only read returns the fresh one.
+    const staleBoth = agent('agent-both');
+    const freshBoth = agent('agent-both', { retiredAt: '2026-08-10T00:00:00.000Z' });
+    const current = state();
+    current.workspaceAgents.byWorkspaceId = {
+      [WS]: { retiredAgentsLoaded: true, isLoadingRetiredAgents: false },
+    } as never;
+    mocks.agents.listWithMeta.mockResolvedValue({ agents: [active, staleBoth], retiredCount: 1 });
+    mocks.agents.list.mockResolvedValue([freshBoth]);
+    const run = start(current);
+
+    run.channel.put(hydrateAgentsRequested(WS));
+    await settle();
+
+    expect(run.actions).toContainEqual({
+      type: 'workspaceAgents/setAgents',
+      payload: [WS, [active, freshBoth]],
+    });
+    await stop(run.task);
+  });
+
+  it('re-arms the lazy retired load when it completes mid-hydration (snapshot eviction guard)', async () => {
+    // Force a real await inside the loaded-check → setAgents span so the
+    // lazy-load completion can interleave (defense for the no-await invariant).
+    let resolvePending!: (value: boolean) => void;
+    mocks.isAgentDeletionPending.mockReturnValueOnce(
+      new Promise<boolean>((resolve) => {
+        resolvePending = resolve;
+      }) as never,
+    );
+    const active = agent('agent-live');
+    const current = state();
+    mocks.agents.listWithMeta.mockResolvedValue({ agents: [active], retiredCount: 1 });
+    const run = start(current);
+
+    run.channel.put(hydrateAgentsRequested(WS));
+    await settle();
+
+    // The lazy retired worker finishes while hydration is parked: rows added,
+    // loaded flag now true — the hydration snapshot below would evict them.
+    current.workspaceAgents.byWorkspaceId = {
+      [WS]: { retiredAgentsLoaded: true, isLoadingRetiredAgents: false },
+    } as never;
+    resolvePending(false);
+    await settle();
+
+    const types = run.actions.map((action) => action.type);
+    const setAgentsIndex = types.indexOf('workspaceAgents/setAgents');
+    expect(setAgentsIndex).toBeGreaterThanOrEqual(0);
+    // The mismatch resets the loaded flag and re-requests the retired rows so
+    // the worker re-adds what the snapshot evicted.
+    expect(run.actions.slice(setAgentsIndex)).toContainEqual({
+      type: 'workspaceAgents/setRetiredAgentsLoaded',
+      payload: [WS, false],
+    });
+    expect(run.actions).toContainEqual({
+      type: 'workspaceAgents/fetchRetiredAgentsRequested',
+      payload: [WS],
+    });
+    await stop(run.task);
+  });
+
+  it('preserves in-store transcripts on the lazy retired load (empty list rows never clobber)', async () => {
+    const existing = agent('agent-retired', {
+      retiredAt: '2026-08-10T00:00:00.000Z',
+      messages: [{ id: 'm1', role: 'user', timestamp: NOW.toISOString() }] as never,
+    });
+    const current = state();
+    current.agentSessions.byAgentId['agent-retired'] = existing;
+    // List rows carry message counts, not transcripts — the wire row is empty.
+    mocks.agents.list.mockResolvedValue([
+      agent('agent-retired', { retiredAt: '2026-08-10T00:00:00.000Z' }),
+    ]);
+    const run = start(current);
+
+    run.channel.put(fetchRetiredAgentsRequested(WS));
+    await settle();
+
+    const preserved = agent('agent-retired', {
+      retiredAt: '2026-08-10T00:00:00.000Z',
+      messages: existing.messages,
+    });
+    expect(run.actions).toContainEqual({
+      type: 'workspaceAgents/addAgent',
+      payload: [WS, preserved],
+    });
+    expect(run.actions).toContainEqual({
+      type: 'agentSessions/upsertSession',
+      payload: [preserved],
+    });
+    await stop(run.task);
+  });
+
+  it('single-flights concurrent lazy retired loads (one daemon read per workspace)', async () => {
+    let resolveList!: (value: AgentSession[]) => void;
+    mocks.agents.list.mockReturnValueOnce(
+      new Promise<AgentSession[]>((resolve) => {
+        resolveList = resolve;
+      }),
+    );
+    const run = start();
+
+    run.channel.put(fetchRetiredAgentsRequested(WS));
+    await settle();
+    run.channel.put(fetchRetiredAgentsRequested(WS));
+    run.channel.put(fetchRetiredAgentsRequested(WS));
+    await settle();
+
+    // takeLeading: re-triggers while the first read is parked are dropped.
+    expect(mocks.agents.list.mock.calls).toEqual([[WS, { retiredOnly: true }]]);
+    resolveList([]);
+    await settle();
+
+    expect(mocks.agents.list.mock.calls).toEqual([[WS, { retiredOnly: true }]]);
+    expect(
+      run.actions.filter(
+        (action) =>
+          action.type === 'workspaceAgents/setIsLoadingRetiredAgents' &&
+          (action as { payload: [string, boolean] }).payload[1] === true,
+      ),
+    ).toHaveLength(1);
+    await stop(run.task);
+  });
+
   it('does not cancel concurrent agent hydrates across workspaces (#1934)', async () => {
     const otherWorkspaceId = 'ws-other';
     type ListWithMeta = { agents: AgentSession[]; retiredCount: number };

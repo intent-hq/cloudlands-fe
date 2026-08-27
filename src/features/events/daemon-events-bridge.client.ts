@@ -3473,6 +3473,19 @@ export function routeDaemonEventsNotification(
     const data = (event as { data?: Record<string, unknown> }).data;
     if (typeof data?.agentId === 'string') {
       removeAgentFailure(data.agentId);
+      // Keep the lazy Retired bin's count (v8.2) consistent with deletion:
+      // a known retired row nudges the count down in lockstep with its
+      // removal below; an id with no local session at all may be a retired
+      // row this client never lazily loaded (deleted by another client), so
+      // re-baseline from the daemon-served `retiredCount` via a hydrate —
+      // the local removals below would otherwise change nothing and the
+      // count-first toggle would go stale.
+      const deletedSession = appStore.state.agentSessions?.byAgentId[data.agentId];
+      if (deletedSession?.retiredAt) {
+        appStore.dispatch(adjustRetiredCount(workspaceId, -1));
+      } else if (!deletedSession) {
+        appStore.dispatch(hydrateAgentsRequested(workspaceId));
+      }
       // Drop the local slice state for the deleted agent — mirroring
       // `handleAgentDeleteScheduledEvent` — so an immediate delete (no
       // `agent:delete-scheduled` grace window) converges without waiting for

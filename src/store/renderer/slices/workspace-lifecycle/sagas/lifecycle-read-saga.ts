@@ -294,14 +294,24 @@ function* hydrateAgents(workspaceId: string): SagaGenerator<void> {
   // `setAgents` replaces the workspace snapshot, so once the retired rows have
   // been lazily loaded a rehydrate must re-read them too — otherwise the
   // reconcile would evict every retired id from the workspace list.
-  if (yield* selectRetiredAgentsLoaded.effect(workspaceId)) {
+  const retiredLoadedAtRead = yield* selectRetiredAgentsLoaded.effect(workspaceId);
+  if (retiredLoadedAtRead) {
     const retiredRows: Awaited<ReturnType<typeof appClient.agents.list>> = yield* call(
       [appClient.agents, appClient.agents.list],
       workspaceId,
       { retiredOnly: true },
     );
-    listed = [...defaultRows, ...retiredRows];
+    // The two reads are separate daemon round trips, so an agent retired
+    // between them appears in BOTH lists — dedupe by id, preferring the
+    // retired-only row (it carries the fresher `retiredAt`).
+    const retiredIds = new Set(retiredRows.map((row) => String(row.id)));
+    listed = [...defaultRows.filter((row) => !retiredIds.has(String(row.id))), ...retiredRows];
   }
+  // Everything from the loaded-check above through the `setAgents` put below
+  // is synchronous saga work (sync calls, selects, puts — no promise yields),
+  // so a concurrent `fetchRetiredAgents` completion cannot interleave here.
+  // The mid-flight case — the lazy load finishing while the reads above were
+  // awaiting — is caught by the re-check just before `setAgents`.
   const fetched = yield* filterPendingDeletions(listed);
   yield* put(setAgentsLoaded(workspaceId, true));
   yield* put(setRetiredCount(workspaceId, retiredCount));
@@ -316,6 +326,14 @@ function* hydrateAgents(workspaceId: string): SagaGenerator<void> {
     );
   }
   yield* put(setAgents(workspaceId, agents));
+  if (!retiredLoadedAtRead && (yield* selectRetiredAgentsLoaded.effect(workspaceId))) {
+    // The lazy retired load completed while this hydration's daemon reads were
+    // in flight: the snapshot above just evicted its rows while the loaded
+    // flag reads true (bin would render empty and never refetch). Reset the
+    // flag and re-request so the retired worker re-adds the rows.
+    yield* put(setRetiredAgentsLoaded(workspaceId, false));
+    yield* put(fetchRetiredAgentsRequested(workspaceId));
+  }
   if (agents.length > 0) {
     yield* put(bulkUpsertSessions(agents));
     for (const agent of agents) yield* put(upsertSession(agent));

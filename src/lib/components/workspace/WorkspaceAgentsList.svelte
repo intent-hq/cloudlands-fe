@@ -8,6 +8,7 @@
   import { Skeleton } from '$lib/components/ui/skeleton';
   import { faChevronDown, faRotateLeft } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
+  import { untrack } from 'svelte';
   import { slide } from 'svelte/transition';
   import Button from '$lib/components/ui/button/button.svelte';
   import Header from '$lib/components/ui/Header.svelte';
@@ -135,17 +136,34 @@
     retiredAgentsLoaded ? retiredAgents.length : Math.max(retiredCount, retiredAgents.length),
   );
   const hasRetiredBin = $derived(displayedRetiredCount > 0);
-  // Expanding the bin — or an active search, which must keep covering retired
-  // agents — lazy-loads the retired rows exactly once (§5.5 v8.2).
+  // Expanding the bin — or activating a search, which must cover retired
+  // agents — lazy-loads the retired rows (§5.5 v8.2). The load fires on the
+  // user-action TRANSITION (expand click / search activation), never
+  // reactively off `loadingRetired`: a failed read leaves `retiredAgentsLoaded`
+  // false, so a state-tracking effect would re-dispatch the moment the loading
+  // flag clears — an unbounded hot retry loop against an erroring daemon.
+  // Failure semantics are retry-on-next-transition instead (collapse/re-expand
+  // or clear/re-type the search); the saga side is idempotent either way
+  // (skip-when-loaded + takeLeading single-flight).
+  function requestRetiredLoad() {
+    if (!hasRetiredBin || retiredAgentsLoaded || loadingRetired) return;
+    onLoadRetired?.();
+  }
+
+  function toggleRetiredBin() {
+    showRetiredAgents = !showRetiredAgents;
+    if (showRetiredAgents) requestRetiredLoad();
+  }
+
+  // Search activation is a prop transition, not a local event, so watch the
+  // edge with an effect that tracks ONLY `hasActiveSearch` (the load gates are
+  // read untracked): it fires once per false→true transition — including a
+  // mount with an active search — and cannot re-run off loading-state churn.
+  let hadActiveSearch = false;
   $effect(() => {
-    if (
-      (showRetiredAgents || hasActiveSearch) &&
-      hasRetiredBin &&
-      !retiredAgentsLoaded &&
-      !loadingRetired
-    ) {
-      onLoadRetired?.();
-    }
+    const active = hasActiveSearch;
+    if (active && !hadActiveSearch) untrack(requestRetiredLoad);
+    hadActiveSearch = active;
   });
 
   function isAgentRunning(agentId: string): boolean {
@@ -374,7 +392,7 @@
       variant="ghost-light"
       size="sm"
       class="h-9 w-full min-w-0 gap-1.5 rounded-md bg-transparent px-2 text-sm font-normal hover:bg-transparent active:bg-transparent focus-visible:-outline-offset-2 focus-visible:outline-2 focus-visible:outline-ring focus-visible:ring-0"
-      onclick={() => (showRetiredAgents = !showRetiredAgents)}
+      onclick={toggleRetiredBin}
       aria-expanded={showRetiredAgents}
       data-agent-retired-toggle
     >

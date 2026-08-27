@@ -254,6 +254,54 @@ describe('WorkspaceAgentsList single-line rows', () => {
     await waitFor(() => expect(onLoadRetired).toHaveBeenCalledTimes(1));
   });
 
+  it('does not hot-retry a failed lazy load; collapse/re-expand retries (transition-triggered)', async () => {
+    const active = makeAgent('active-agent', { name: 'Active agent' });
+    const agents = [active];
+    appStore.dispatch(bulkUpsertSessions(agents));
+    const onLoadRetired = vi.fn();
+    const props = { agents, workspaceId, retiredCount: 2, onLoadRetired };
+    const view = render(WorkspaceAgentsList, { props });
+
+    const retiredToggle = view.container.querySelector<HTMLElement>('[data-agent-retired-toggle]');
+    await fireEvent.click(retiredToggle!);
+    expect(onLoadRetired).toHaveBeenCalledTimes(1);
+
+    // Saga side of a FAILED read: loading flips true → false while
+    // retiredAgentsLoaded stays false. The trigger is the expand transition,
+    // not tracked loading state, so no immediate re-dispatch may fire.
+    await view.rerender({ ...props, loadingRetired: true });
+    await view.rerender({ ...props, loadingRetired: false });
+    expect(onLoadRetired).toHaveBeenCalledTimes(1);
+
+    // Retry semantics: collapsing and re-expanding fires a fresh load.
+    await fireEvent.click(retiredToggle!);
+    await fireEvent.click(retiredToggle!);
+    expect(onLoadRetired).toHaveBeenCalledTimes(2);
+  });
+
+  it('search activation triggers the load once per transition, not per loading-state change', async () => {
+    const active = makeAgent('active-agent', { name: 'Active agent' });
+    const agents = [active];
+    appStore.dispatch(bulkUpsertSessions(agents));
+    const onLoadRetired = vi.fn();
+    const props = { agents, workspaceId, retiredCount: 2, searchQuery: '', onLoadRetired };
+    const view = render(WorkspaceAgentsList, { props });
+    expect(onLoadRetired).not.toHaveBeenCalled();
+
+    await view.rerender({ ...props, searchQuery: 'needle' });
+    await waitFor(() => expect(onLoadRetired).toHaveBeenCalledTimes(1));
+
+    // Failed-load churn while the search stays active must not re-trigger.
+    await view.rerender({ ...props, searchQuery: 'needle', loadingRetired: true });
+    await view.rerender({ ...props, searchQuery: 'needle', loadingRetired: false });
+    expect(onLoadRetired).toHaveBeenCalledTimes(1);
+
+    // Clearing and re-typing the search is a new transition → one retry.
+    await view.rerender({ ...props, searchQuery: '' });
+    await view.rerender({ ...props, searchQuery: 'needle again' });
+    await waitFor(() => expect(onLoadRetired).toHaveBeenCalledTimes(2));
+  });
+
   it('hides the retired bin entirely at retiredCount 0 with no retired rows', async () => {
     const active = makeAgent('active-agent', { name: 'Active agent' });
     const agents = [active];
