@@ -197,23 +197,37 @@ describe('OnboardingPromptStep rendered metadata layout', () => {
     'keeps an empty %s branch empty until detection and preserves it on remount',
     async (_, selection) => {
       const onProjectChange = vi.fn();
+      const onSubmit = vi.fn();
       const first = render(OnboardingPromptStep, {
-        props: props({ projectSelection: selection, onProjectChange }),
+        props: props({ projectSelection: selection, onProjectChange, onSubmit }),
       });
 
       const trigger = within(rows(first.container)[0]).getByRole('button', {
         name: 'Select branch',
       });
       expect(trigger.textContent).toBe('Select branch');
+      expect(
+        (first.getByRole('button', { name: /Create workspace/ }) as HTMLButtonElement).disabled,
+      ).toBe(true);
 
       await fireEvent.click(trigger);
       expect(onProjectChange).toHaveBeenCalledWith({ ...selection, branch: 'master' });
 
       first.unmount();
       const remounted = render(OnboardingPromptStep, {
-        props: props({ projectSelection: { ...selection, branch: 'master' }, onProjectChange }),
+        props: props({
+          projectSelection: { ...selection, branch: 'master' },
+          onProjectChange,
+          onSubmit,
+        }),
       });
       expect(within(rows(remounted.container)[0]).getByRole('button').textContent).toBe('master');
+      const create = remounted.getByRole('button', {
+        name: /Create workspace/,
+      }) as HTMLButtonElement;
+      expect(create.disabled).toBe(false);
+      await fireEvent.click(create);
+      expect(onSubmit).toHaveBeenCalledOnce();
     },
   );
 });

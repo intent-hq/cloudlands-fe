@@ -138,6 +138,12 @@ describe('BranchSelector (daemon-backed branch listing, no fabricated fallbacks)
     expect(screen.queryByText('master')).toBeNull();
     expect(screen.queryByText('develop')).toBeNull();
     expect(onchange).not.toHaveBeenCalled();
+
+    const manualInput = screen.getByPlaceholderText('Search or enter branch name...');
+    await fireEvent.input(manualInput, { target: { value: 'manual-recovery' } });
+    await fireEvent.click(screen.getByRole('button', { name: /Use branch: manual-recovery/ }));
+    expect(onchange).toHaveBeenCalledOnce();
+    expect(onchange.mock.calls[0][0].detail).toEqual({ branch: 'manual-recovery' });
   });
 
   it('local repo: auto-selects the daemon-reported non-main current branch', async () => {

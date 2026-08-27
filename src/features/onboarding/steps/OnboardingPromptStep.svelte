@@ -161,6 +161,12 @@
   let onboardingFileInput: HTMLInputElement | null = $state(null);
   let richTextareaWrapper: HTMLDivElement | null = $state(null);
 
+  const hasResolvedBranch = $derived(
+    projectSelection?.type === 'new' ||
+      Boolean(projectSelection?.branch.trim()) ||
+      Boolean(selectedPRBranch.trim()),
+  );
+
   // Drag and drop state
   let isDragging = $state(false);
   let dragCounter = $state(0);
@@ -754,13 +760,15 @@
       />
     {/if}
 
-    <!-- Create button (blocked while any staged pill is placing/failed) -->
+    <!-- Create button (blocked while the branch is unresolved or a staged pill is placing/failed) -->
     <div class="onboarding-create-action flex items-center gap-3 pt-2">
       <Button
         class="group/button"
         size="xl"
         variant={!onboardingInputValue.trim() ? 'outline' : 'default'}
-        disabled={!onboardingInputValue.trim() || hasBlockingAttachments(stagedContextItems)}
+        disabled={!onboardingInputValue.trim() ||
+          !hasResolvedBranch ||
+          hasBlockingAttachments(stagedContextItems)}
         onclick={onSubmit}
       >
         {m.onboarding_promptStep_createWorkspace_label()}

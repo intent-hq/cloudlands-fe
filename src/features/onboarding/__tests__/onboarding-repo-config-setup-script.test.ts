@@ -601,6 +601,41 @@ describe('onboarding repo-config setup script detection', () => {
     expect(request.baseRef).toBe('master');
   });
 
+  it('ignores fast submission until an existing-repo branch resolves, then creates with it', async () => {
+    mocks.workspaceCreate.mockResolvedValue({ ok: false, error: 'stop after payload capture' });
+
+    renderPage();
+    selectGitHubRepo({ branch: '' });
+
+    const captured = (
+      window as unknown as {
+        __mockOnboardingPromptStep: {
+          onProjectChange: (selection: unknown) => void;
+          onSubmit: () => void;
+          setInputValue: (value: string) => void;
+        };
+      }
+    ).__mockOnboardingPromptStep;
+    captured.setInputValue('build the thing');
+    captured.onSubmit();
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(mocks.resolveModel).not.toHaveBeenCalled();
+    expect(mocks.workspaceCreate).not.toHaveBeenCalled();
+
+    captured.onProjectChange({
+      type: 'github',
+      repoPath: 'owner/repo',
+      githubUrl: 'https://github.com/owner/repo',
+      branch: 'master',
+      isValid: true,
+    });
+    captured.onSubmit();
+
+    await waitFor(() => expect(mocks.workspaceCreate).toHaveBeenCalledTimes(1));
+    expect(mocks.workspaceCreate.mock.calls[0][0].baseRef).toBe('master');
+  });
+
   it('awaits an in-flight probe at submit and never sends the racing generic template (monorepo#1862)', async () => {
     // Probe still in flight when the user submits: create must wait for it,
     // see the repo-config script applied, and omit setupScript — not send the
