@@ -548,7 +548,11 @@ describe('DaemonStoppedOverlay', () => {
 
     function activateRemote() {
       dispatchAndFlush(
-        connectionsListReceived({ connections: [LOCAL, REMOTE], activeId: REMOTE.id }),
+        connectionsListReceived({
+          connections: [LOCAL, REMOTE],
+          activeId: REMOTE.id,
+          windowBackendId: REMOTE.id,
+        }),
       );
     }
 
@@ -606,14 +610,35 @@ describe('DaemonStoppedOverlay', () => {
       render(DaemonStoppedOverlay);
       await showOverlay(wsTransport);
       dispatchAndFlush(
-        connectionsListReceived({ connections: [LOCAL, REMOTE, OTHER], activeId: REMOTE.id }),
+        connectionsListReceived({
+          connections: [LOCAL, REMOTE, OTHER],
+          activeId: REMOTE.id,
+          windowBackendId: REMOTE.id,
+        }),
       );
       rejectAuth(401);
 
       expect(screen.getByTestId('daemon-stopped-known-backends')).toBeTruthy();
     });
 
-    it('ignores a primary rejection latch that only matches the secondary window identity', async () => {
+    it('ignores a rejection latched for the primary when it does not match this window backend', async () => {
+      render(DaemonStoppedOverlay);
+      await showOverlay(wsTransport);
+      dispatchAndFlush(
+        connectionsListReceived({
+          connections: [LOCAL, REMOTE],
+          activeId: REMOTE.id,
+          windowBackendId: LOCAL_CONNECTION_ID,
+        }),
+      );
+      rejectAuth(401);
+
+      expect(overlay()!.textContent).not.toContain('Authentication rejected');
+      expect(screen.queryByTestId('daemon-stopped-repair')).toBeNull();
+      expect(screen.getByTestId('daemon-stopped-retrying')).toBeTruthy();
+    });
+
+    it('shows a rejection matching this window backend even when it is not the primary', async () => {
       render(DaemonStoppedOverlay);
       await showOverlay(wsTransport);
       dispatchAndFlush(
@@ -625,9 +650,9 @@ describe('DaemonStoppedOverlay', () => {
       );
       rejectAuth(401);
 
-      expect(overlay()!.textContent).not.toContain('Authentication rejected');
-      expect(screen.queryByTestId('daemon-stopped-repair')).toBeNull();
-      expect(screen.getByTestId('daemon-stopped-retrying')).toBeTruthy();
+      expect(overlay()!.textContent).toContain('Authentication rejected');
+      expect(screen.getByTestId('daemon-stopped-repair')).toBeTruthy();
+      expect(screen.queryByTestId('daemon-stopped-retrying')).toBeNull();
     });
 
     it('returns to the generic posture when a new connect operation clears the latch', async () => {
