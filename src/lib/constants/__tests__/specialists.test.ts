@@ -23,8 +23,11 @@ describe('SPECIALISTS', () => {
     expect(specialist?.defaultBehaviorPrompt).toContain(
       '**MUST trace real code paths. NEVER speculate about vulnerabilities',
     );
-    expect(specialist?.defaultBehaviorPrompt).toContain('Use `submit_comments`');
-    expect(specialist?.defaultBehaviorPrompt).toContain('create a findings note');
+    expect(specialist?.defaultBehaviorPrompt).toContain('`ws.note.create` through `workspace_api`');
+    expect(specialist?.defaultBehaviorPrompt).toContain('`ws.agent.reportToParent`');
+    expect(specialist?.defaultBehaviorPrompt).toContain('**Top-level agent**');
+    expect(specialist?.defaultBehaviorPrompt).not.toContain('submit_comments');
+    expect(specialist?.defaultBehaviorPrompt).not.toContain('create_note_workspace-mcp');
   });
 
   it('keeps chief workspace creation extraction guidance', () => {
