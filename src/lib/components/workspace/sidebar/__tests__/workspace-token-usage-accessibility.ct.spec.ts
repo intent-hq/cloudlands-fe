@@ -183,12 +183,13 @@ test('navigates exact stacked totals with accessible pointer, focus, theme, and 
       const active = controls.filter((control) => control.dataset.previewActive === 'true');
       const inactive = controls.filter((control) => control.dataset.previewActive !== 'true');
       const surface = getComputedStyle(element).backgroundColor;
-      const ringColor = tokenColor('--ring');
+      const neutralFocusColor = tokenColor('--foreground');
       return {
         foreground: tokenColor('--foreground'),
         mutedForeground: tokenColor('--muted-foreground'),
-        ringColor,
-        ring: paint([ringColor]),
+        appRingColor: tokenColor('--ring'),
+        neutralFocusColor,
+        neutralFocus: paint([neutralFocusColor]),
         surface: paint([surface]),
         active: active.map((control) => ({
           color: getComputedStyle(control).backgroundColor,
@@ -229,7 +230,7 @@ test('navigates exact stacked totals with accessible pointer, focus, theme, and 
       };
     });
     expect(focus).toEqual({
-      outlineColor: navigatorColors.ringColor,
+      outlineColor: navigatorColors.neutralFocusColor,
       outlineStyle: 'solid',
       outlineWidth: '2px',
     });
@@ -246,10 +247,11 @@ test('navigates exact stacked totals with accessible pointer, focus, theme, and 
       ).toBeLessThan(3);
     }
     expect(
-      contrastRatio(navigatorColors.ring, navigatorColors.surface),
+      contrastRatio(navigatorColors.neutralFocus, navigatorColors.surface),
       `${theme} focus`,
     ).toBeGreaterThanOrEqual(3);
-    expect(focus.outlineColor).not.toBe(navigatorColors.foreground);
+    expect(focus.outlineColor).toBe(navigatorColors.foreground);
+    expect(focus.outlineColor).not.toBe(navigatorColors.appRingColor);
     await currentAgentAlpha.blur();
     await agentAlpha.dispatchEvent('pointerleave', { pointerType: 'mouse' });
     await expect(previewStatus).toContainText('By agent Agent alpha-01 750 processed');
@@ -824,7 +826,15 @@ test('renders the full reference table as a wide overlay from the real workspace
       stackOutlineWidth: getComputedStyle(stack).outlineWidth,
       stackOutlineColor: getComputedStyle(stack).outlineColor,
       activeColor: getComputedStyle(button).backgroundColor,
-      ringColor: (() => {
+      neutralFocusColor: (() => {
+        const probe = document.createElement('span');
+        probe.style.color = 'hsl(var(--foreground))';
+        document.body.append(probe);
+        const color = getComputedStyle(probe).color;
+        probe.remove();
+        return color;
+      })(),
+      appRingColor: (() => {
         const probe = document.createElement('span');
         probe.style.color = 'hsl(var(--ring))';
         document.body.append(probe);
@@ -839,8 +849,9 @@ test('renders the full reference table as a wide overlay from the real workspace
     stackOutlineStyle: 'solid',
     stackOutlineWidth: '2px',
   });
-  expect(focusedBarStyle.stackOutlineColor).toBe(focusedBarStyle.ringColor);
+  expect(focusedBarStyle.stackOutlineColor).toBe(focusedBarStyle.neutralFocusColor);
   expect(focusedBarStyle.stackOutlineColor).not.toBe(focusedBarStyle.activeColor);
+  expect(focusedBarStyle.stackOutlineColor).not.toBe(focusedBarStyle.appRingColor);
   expect(
     desktopRows.every(
       ({
