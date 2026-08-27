@@ -14,9 +14,10 @@
   import { fetchWorkspaceTokenUsage } from '$store/renderer/slices/token-usage/token-usage-slice';
   import { selectAllWorkspaceAgents } from '$store/renderer/slices/workspace-agents/workspace-agents-selectors';
   import { Button } from '$lib/components/ui/button';
+  import AnimatedNumber from '$lib/components/ui/AnimatedNumber.svelte';
   import { portal } from '$lib/actions/portal';
   import { formatCompactNumber } from '$lib/utils/format-compact-number';
-  import { formatCurrency, formatNumber } from '$lib/i18n/format';
+  import { formatCurrency, formatInteger, formatNumber } from '$lib/i18n/format';
   import { formatModelLabel } from '$features/token-usage/utils/format-model-label';
   import type {
     TokenUsageCost,
@@ -485,7 +486,7 @@
       bind:ref={disclosureElement}
       variant="plain"
       type="button"
-      class="summary-control inline-flex h-6 w-auto min-w-0 items-center rounded px-1.5 text-sm font-normal tabular-nums text-muted-foreground outline-none transition-colors hover:bg-background/70 hover:text-foreground focus-visible:bg-background/80 focus-visible:text-foreground focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none"
+      class="summary-control inline-flex h-6 w-auto min-w-0 items-center rounded px-1.5 !text-xs font-normal tabular-nums text-muted-foreground outline-none transition-colors hover:bg-background/70 hover:text-foreground focus-visible:bg-background/80 focus-visible:text-foreground focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none"
       data-testid="token-usage-disclosure"
       aria-label={expanded
         ? m.workspace_tokenUsage_collapse_ariaLabel()
@@ -537,9 +538,13 @@
                         title={selectedAgentRow.title}>{selectedAgentRow.label}</span
                       >
                       <span
-                        class="ml-auto shrink-0 text-right text-sm font-normal tabular-nums text-muted-foreground"
+                        class="ml-auto w-14 shrink-0 text-right text-sm font-normal tabular-nums text-muted-foreground"
                       >
-                        {shareLabel(share(selectedAgentRow.tokens, agentTokenTotal))}
+                        <AnimatedNumber
+                          value={share(selectedAgentRow.tokens, agentTokenTotal)}
+                          format={shareLabel}
+                          class="block w-full text-right"
+                        />
                       </span>
                     </div>
                     <ol
@@ -599,9 +604,13 @@
                         title={selectedModelRow.title}>{selectedModelRow.label}</span
                       >
                       <span
-                        class="ml-auto shrink-0 text-right text-sm font-normal tabular-nums text-muted-foreground"
+                        class="ml-auto w-14 shrink-0 text-right text-sm font-normal tabular-nums text-muted-foreground"
                       >
-                        {shareLabel(share(selectedModelRow.tokens, modelTokenTotal))}
+                        <AnimatedNumber
+                          value={share(selectedModelRow.tokens, modelTokenTotal)}
+                          format={shareLabel}
+                          class="block w-full text-right"
+                        />
                       </span>
                     </div>
                     <ol
@@ -703,12 +712,20 @@
                 <dd
                   class="composition-value text-right text-sm font-normal tabular-nums text-muted-foreground"
                 >
-                  {formatCompactNumber(row.tokens)}
+                  <AnimatedNumber
+                    value={row.tokens}
+                    format={formatCompactNumber}
+                    class="block w-full text-right"
+                  />
                 </dd>
                 <dd
                   class="composition-context text-right text-sm font-normal tabular-nums text-muted-foreground"
                 >
-                  {shareLabel(row.share)}
+                  <AnimatedNumber
+                    value={row.share}
+                    format={shareLabel}
+                    class="block w-full text-right"
+                  />
                 </dd>
               </div>
               {#if row.id === 'input' && crossFilterAvailable}
@@ -721,7 +738,11 @@
                   <dd
                     class="composition-value text-right text-sm font-normal tabular-nums text-muted-foreground"
                   >
-                    {previewHumanMessages}
+                    <AnimatedNumber
+                      value={previewHumanMessages ?? 0}
+                      format={formatInteger}
+                      class="block w-full text-right"
+                    />
                   </dd>
                   <dd class="composition-context" aria-hidden="true"></dd>
                 </div>
@@ -734,7 +755,11 @@
                   <dd
                     class="composition-value text-right text-sm font-normal tabular-nums text-muted-foreground"
                   >
-                    {previewAgentMessages}
+                    <AnimatedNumber
+                      value={previewAgentMessages ?? 0}
+                      format={formatInteger}
+                      class="block w-full text-right"
+                    />
                   </dd>
                   <dd class="composition-context" aria-hidden="true"></dd>
                 </div>
