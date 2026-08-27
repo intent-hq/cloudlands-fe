@@ -198,6 +198,10 @@ beforeEach(() => {
     configurable: true,
     value: vi.fn(),
   });
+  Object.defineProperty(HTMLElement.prototype, 'getAnimations', {
+    configurable: true,
+    value: () => [],
+  });
 });
 
 afterEach(() => {
@@ -353,6 +357,42 @@ describe('pane and tab drag MIME routing', () => {
 
     expect(onPaneDragFinish).toHaveBeenCalledOnce();
     expect(getDraggedPane()).toBeNull();
+  });
+
+  it('keeps the source panel identity stable when source removal starts child cleanup', async () => {
+    const onPaneDragFinish = vi.fn(clearDraggedPaneState);
+    const sourceNode = { type: 'panel' as const, panelId: 'source-panel' };
+    const targetNode = { type: 'panel' as const, panelId: 'target-panel' };
+    const props = {
+      node: {
+        type: 'split' as const,
+        direction: 'horizontal' as const,
+        sizes: [50, 50],
+        children: [sourceNode, targetNode],
+      },
+      panels: {
+        'source-panel': panel('source-panel', [tab('one')]),
+        'target-panel': panel('target-panel', [tab('two')]),
+      },
+      panelOrder: ['source-panel', 'target-panel'],
+      focusedPanelId: 'source-panel',
+      workspaceId: 'workspace-1',
+      layoutId: 'workspace-1',
+      onPaneDragFinish,
+    };
+    const result = render(PanelContainer, { props });
+    setDraggedPane({ tabId: 'one', panelId: 'source-panel' });
+
+    await result.rerender({
+      ...props,
+      node: { ...props.node, sizes: [100], children: [targetNode] },
+      panels: { 'target-panel': props.panels['target-panel'] },
+      panelOrder: ['target-panel'],
+    });
+
+    await vi.waitFor(() => expect(onPaneDragFinish).toHaveBeenCalledOnce());
+    expect(getDraggedPane()).toBeNull();
+    expect(document.querySelector('[data-panel-id="source-panel"]')).toBeNull();
   });
 
   it('does not finish the same pane drag again when dragend follows Escape', async () => {

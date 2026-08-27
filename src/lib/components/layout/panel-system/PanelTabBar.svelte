@@ -209,6 +209,11 @@
     onSplitHorizontal,
   }: Props = $props();
 
+  // Panel identity is immutable for this component lifetime. Cleanup must not
+  // re-read a parent prop after reactive layout removal has started.
+  // svelte-ignore state_referenced_locally
+  const stablePanelId = panelId;
+
   const isDragging = selectIsDragging();
   // Context menu state
   let contextMenuTab = $state<{
@@ -750,7 +755,7 @@
     if (!e.dataTransfer) return;
     draggedTabId = tabId;
     e.dataTransfer.effectAllowed = 'move';
-    e.dataTransfer.setData(TAB_DRAG_MIME, JSON.stringify({ tabId, panelId }));
+    e.dataTransfer.setData(TAB_DRAG_MIME, JSON.stringify({ tabId, panelId: stablePanelId }));
 
     // Update global drag state
     appStore.dispatch(startDrag());
@@ -787,7 +792,7 @@
       e.preventDefault();
       return;
     }
-    const draggedPane = { tabId: activeTab.id, panelId };
+    const draggedPane = { tabId: activeTab.id, panelId: stablePanelId };
     setDraggedPane(draggedPane);
     e.dataTransfer.effectAllowed = 'move';
     e.dataTransfer.setData(PANE_DRAG_MIME, JSON.stringify(draggedPane));
@@ -809,16 +814,16 @@
   }
 
   function handlePaneDragEnd() {
-    if (getDraggedPane()?.panelId === panelId) finishPaneDrag();
+    if (getDraggedPane()?.panelId === stablePanelId) finishPaneDrag();
   }
 
   function handlePaneDragKeyDown(e: KeyboardEvent) {
-    if (e.key !== 'Escape' || getDraggedPane()?.panelId !== panelId) return;
+    if (e.key !== 'Escape' || getDraggedPane()?.panelId !== stablePanelId) return;
     finishPaneDrag();
   }
 
   onDestroy(() => {
-    if (getDraggedPane()?.panelId === panelId) finishPaneDrag();
+    if (getDraggedPane()?.panelId === stablePanelId) finishPaneDrag();
   });
 
   // Check if a tab drag is happening (from this panel or another)
@@ -907,7 +912,7 @@
       }
 
       // Same panel reorder
-      if (fromPanelId === panelId) {
+      if (fromPanelId === stablePanelId) {
         const fromIndex = tabs.findIndex((t) => t.id === sourceTabId);
         if (fromIndex === -1) {
           draggedTabId = null;
@@ -990,7 +995,7 @@
       }
 
       // Same panel: reorder
-      if (fromPanelId === panelId) {
+      if (fromPanelId === stablePanelId) {
         const fromIndex = tabs.findIndex((t) => t.id === sourceTabId);
         if (fromIndex === -1) {
           draggedTabId = null;
@@ -1124,7 +1129,7 @@
     }
     e.preventDefault();
     e.stopPropagation();
-    appStore.dispatch(toggleExpandPanel(layoutId ?? workspaceId, panelId));
+    appStore.dispatch(toggleExpandPanel(layoutId ?? workspaceId, stablePanelId));
   }
 
   // Check if a tab type can be located in the sidebar

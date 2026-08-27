@@ -129,6 +129,11 @@
     onSplitHorizontal,
   }: Props = $props();
 
+  // A panel component never changes identity. Keep teardown independent from
+  // the reactive layout entry, which can disappear before child cleanup runs.
+  // svelte-ignore state_referenced_locally
+  const panelId = panel.id;
+
   // Create header context for content components to register their actions
   const { actions: headerActions } = createPanelHeaderContext();
 
@@ -179,7 +184,7 @@
   // This is more reliable than DOM traversal for navigation events
   // (context must be set at init; a panel's ID is stable for its lifetime)
   // svelte-ignore state_referenced_locally
-  setPanelContext(panel.id);
+  setPanelContext(panelId);
 
   // Get the active tab - use optional chaining to handle workspace transitions
   let activeTab = $derived(panel?.tabs?.find((t) => t.id === panel.activeTabId) ?? null);
@@ -280,7 +285,7 @@
   }
 
   function markUserTouch() {
-    if (panel.pristine) appStore.dispatch(markPanelTouched(layoutId, panel.id));
+    if (panel.pristine) appStore.dispatch(markPanelTouched(layoutId, panelId));
   }
 
   // Focus the panel when the user clicks anywhere inside it. `onfocusin` only
@@ -324,11 +329,11 @@
   ): Extract<PaneDropPlacement, { kind: 'panel' }> | null {
     const draggedPane = getDraggedPane();
     if (!draggedPane) return null;
-    if (zone === 'center' && draggedPane.panelId === panel.id) return null;
-    if (zone !== 'center' && draggedPane.panelId === panel.id && panel.tabs.length === 1) {
+    if (zone === 'center' && draggedPane.panelId === panelId) return null;
+    if (zone !== 'center' && draggedPane.panelId === panelId && panel.tabs.length === 1) {
       return null;
     }
-    return { kind: 'panel', targetPanelId: panel.id, zone };
+    return { kind: 'panel', targetPanelId: panelId, zone };
   }
 
   function handleDragOver(e: DragEvent) {
@@ -401,14 +406,14 @@
 
       if (zone === 'center') {
         // Move tab to this panel's tab bar (only if from a different panel)
-        if (fromPanelId !== panel.id) {
+        if (fromPanelId !== panelId) {
           onTabMoveToPanel?.(tabId, fromPanelId);
         }
       } else {
         // Split and move tab
         // If dropping on the same panel with only one tab, don't do anything
         // (can't split a panel with its only tab - it would just end up the same)
-        if (fromPanelId === panel.id && panel.tabs.length === 1) {
+        if (fromPanelId === panelId && panel.tabs.length === 1) {
           return;
         }
         onTabDrop?.(tabId, fromPanelId, zone);
@@ -428,7 +433,7 @@
     class:bg-sidebar={panel.pristine === true && panel.tabs.length === 0}
     class:bg-background={panel.pristine !== true || panel.tabs.length > 0}
     class:contained
-    data-panel-id={panel.id}
+    data-panel-id={panelId}
     data-layout-id={layoutId}
     data-focused={isFocused}
     data-focus-border-visible={isFocused && showFocusBorder}
@@ -461,7 +466,7 @@
         tabs={panel.tabs}
         activeTabId={panel.activeTabId}
         attentionTabIds={panel.attentionTabIds}
-        panelId={panel.id}
+        {panelId}
         {workspaceId}
         {layoutId}
         {availableCanvasWidth}
@@ -533,7 +538,7 @@
       {:else}
         <PanelEmptyState
           {workspaceId}
-          panelId={panel.id}
+          {panelId}
           {onCreateAgent}
           {onCreateAgentWithSpecialist}
           {onCreateNote}
