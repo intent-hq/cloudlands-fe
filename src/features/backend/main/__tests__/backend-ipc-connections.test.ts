@@ -442,7 +442,7 @@ describe('WSS auth-rejection propagation', () => {
   });
 
   it('latches the rejection and replays it on connections:list for late subscribers', async () => {
-    installWindow();
+    const { localSender, remoteSender } = installBackendWindows();
     const { mod } = await loadModule();
     const { AuthRejectedError } = await import('../backend-connection');
     mod.registerBackendHandlers();
@@ -454,16 +454,23 @@ describe('WSS auth-rejection propagation', () => {
     client.emit('error', new AuthRejectedError(401));
 
     // A renderer created/reloaded AFTER the one-shot broadcast still learns the
-    // rejection from its initial list fetch (the sticky #823 pattern).
+    // rejection from its initial list fetch (the sticky #823 pattern) — gated
+    // to windows bound to the rejected backend.
     const handler = findHandler('connections:list');
-    await expect(handler!({}, undefined)).resolves.toMatchObject({
+    await expect(handler!({ sender: remoteSender }, undefined)).resolves.toMatchObject({
       authRejected: { id: 'remote-1', host: '10.0.0.5', port: 8443, statusCode: 401 },
+    });
+    // A window bound to a different (local) backend does not replay it.
+    await expect(handler!({ sender: localSender }, undefined)).resolves.toMatchObject({
+      authRejected: null,
     });
 
     // A fresh client (re-pair / switch) clears the latch: the list stops
     // replaying a rejection that no longer describes the live client.
     await mod.switchBackend('remote-1');
-    await expect(handler!({}, undefined)).resolves.toMatchObject({ authRejected: null });
+    await expect(handler!({ sender: remoteSender }, undefined)).resolves.toMatchObject({
+      authRejected: null,
+    });
   });
 
   it('carries the 403 statusCode (WS API disabled) on the payload', async () => {

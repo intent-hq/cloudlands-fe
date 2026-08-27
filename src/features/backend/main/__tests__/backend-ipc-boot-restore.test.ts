@@ -516,8 +516,10 @@ describe('reconcileActiveConnectionOnBoot — boot-origin protocol mismatch', ()
       remoteProtocolVersion: '2',
       origin: 'boot',
     });
-    // The sticky replay carries the tag too.
-    const list = await mod.__listConnectionsForTesting();
+    // The sticky replay carries the tag too — for the boot-restored remote's
+    // windows (T21 stamps them with the resolved boot backend id, so their
+    // connections:list resolves to the remote, never the local default).
+    const list = await mod.__listConnectionsForTesting('remote-1');
     expect(list.protocolMismatch?.origin).toBe('boot');
   });
 
