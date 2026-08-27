@@ -12,6 +12,7 @@ const mocks = vi.hoisted(() => ({
   update: vi.fn(),
   test: vi.fn(),
   rotate: vi.fn(),
+  open: vi.fn(),
   forget: vi.fn(),
   readable: <T>(get: () => T) => ({
     subscribe(run: (value: T) => void) {
@@ -36,10 +37,10 @@ vi.mock('$store/renderer/slices/connections/connections-slice', () => ({
   updateConnectionRequested: (params: unknown) => mocks.update(params),
   testConnectionRequested: (params: unknown) => mocks.test(params),
   rotateConnectionSecretRequested: (params: unknown) => mocks.rotate(params),
+  openConnectionRequested: (id: string) => mocks.open(id),
   forgetConnectionRequested: (id: string) => mocks.forget(id),
   captureFingerprintRequested: vi.fn(),
   addConnectionRequested: vi.fn(),
-  openConnectionRequested: vi.fn(),
   loadKeychainSyncStateRequested: () => ({ promise: Promise.resolve() }),
   setKeychainSyncEnabledRequested: vi.fn(),
 }));
@@ -87,6 +88,11 @@ describe('DevicesSettings', () => {
       payload: [params],
       promise: Promise.resolve({ status: 'updated', connection: remote }),
     }));
+    mocks.open.mockImplementation((id) => ({
+      type: 'connections/openRequested',
+      payload: [id],
+      promise: Promise.resolve({ id }),
+    }));
     mocks.forget.mockImplementation((id) => ({
       type: 'connections/forgetRequested',
       payload: [id],
@@ -107,17 +113,58 @@ describe('DevicesSettings', () => {
     expect(mocks.dispatch).not.toHaveBeenCalled();
   });
 
-  it('shows connected list-state version data and falls back to address for a blank name', () => {
+  it('shows hostname and connected list-state version data without a saved address', () => {
     mocks.connections = [
       local,
-      { ...remote, label: '  ', status: 'connected', intentdVersion: '6.8.0' },
+      { ...remote, hostname: 'studio-host', status: 'connected', intentdVersion: '6.8.0' },
+    ];
+    render(DevicesSettings);
+
+    expect(screen.getByText('studio-host')).toBeTruthy();
+    expect(screen.getByText(/6\.8\.0/)).toBeTruthy();
+    expect(screen.queryByText('10.0.0.2:5181')).toBeNull();
+    expect(screen.getByRole('status', { name: 'Status: Connected' }).textContent).toBe('');
+  });
+
+  it('falls back to address for a blank name and suppresses a duplicate hostname', () => {
+    mocks.connections = [
+      local,
+      { ...remote, label: '  ', hostname: null },
+      { ...remote, id: 'remote-2', label: 'Travel Mac', hostname: 'Travel Mac' },
     ];
     render(DevicesSettings);
 
     expect(screen.getByText('10.0.0.2:5181')).toBeTruthy();
-    expect(screen.getByText(/6\.8\.0/)).toBeTruthy();
-    expect(screen.getByRole('status', { name: 'Status: Connected' }).textContent).toBe('');
     expect(screen.getByRole('button', { name: 'Actions for 10.0.0.2:5181' })).toBeTruthy();
+    expect(screen.getAllByText('Travel Mac')).toHaveLength(1);
+  });
+
+  it('dispatches Connect through the existing open/focus action', async () => {
+    render(DevicesSettings);
+
+    await openAction('Connect');
+
+    expect(mocks.open).toHaveBeenCalledWith(remote.id);
+    expect(mocks.dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'connections/openRequested', payload: [remote.id] }),
+    );
+    expect(mocks.test).not.toHaveBeenCalled();
+    expect(mocks.update).not.toHaveBeenCalled();
+  });
+
+  it('surfaces Connect failure without testing or saving the device', async () => {
+    mocks.open.mockImplementation((id) => ({
+      type: 'connections/openRequested',
+      payload: [id],
+      promise: Promise.reject(new Error('open failed')),
+    }));
+    render(DevicesSettings);
+
+    await openAction('Connect');
+
+    await waitFor(() => expect(screen.getByRole('alert')).toBeTruthy());
+    expect(mocks.test).not.toHaveBeenCalled();
+    expect(mocks.update).not.toHaveBeenCalled();
   });
 
   it('renders accessible loading and empty states', () => {

@@ -653,6 +653,7 @@
   "settings_devices_fingerprintChanged_error": "L’empreinte du certificat a changé. Confirmez-la avant de continuer.",
   "settings_devices_noCertificate_error": "L’appareil n’a présenté aucun certificat.",
   "settings_devices_connectFailed_error": "Impossible de se connecter à cet appareil.",
+  "settings_devices_connect_label": "Connecter",
   "settings_devices_timeout_error": "La connexion a expiré.",
   "settings_devices_replaceSecret_label": "Remplacer le secret",
   "settings_devices_secretForm_ariaLabel": "Remplacer le secret de {name}",

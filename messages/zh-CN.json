@@ -653,6 +653,7 @@
   "settings_devices_fingerprintChanged_error": "证书指纹已更改。请在继续前确认。",
   "settings_devices_noCertificate_error": "设备未提供证书。",
   "settings_devices_connectFailed_error": "无法连接到此设备。",
+  "settings_devices_connect_label": "连接",
   "settings_devices_timeout_error": "连接超时。",
   "settings_devices_replaceSecret_label": "替换密钥",
   "settings_devices_secretForm_ariaLabel": "替换 {name} 的密钥",

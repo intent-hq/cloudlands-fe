@@ -653,6 +653,7 @@
   "settings_devices_fingerprintChanged_error": "La huella del certificado cambió. Confírmala antes de continuar.",
   "settings_devices_noCertificate_error": "El dispositivo no presentó ningún certificado.",
   "settings_devices_connectFailed_error": "No se pudo conectar con este dispositivo.",
+  "settings_devices_connect_label": "Conectar",
   "settings_devices_timeout_error": "Se agotó el tiempo de conexión.",
   "settings_devices_replaceSecret_label": "Reemplazar secreto",
   "settings_devices_secretForm_ariaLabel": "Reemplazar el secreto de {name}",

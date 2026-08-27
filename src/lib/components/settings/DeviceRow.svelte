@@ -19,11 +19,18 @@
   } from '$shared/types/connections';
   import { store as appStore } from '$store/renderer/store';
   import {
+    openConnectionRequested,
     rotateConnectionSecretRequested,
     testConnectionRequested,
     updateConnectionRequested,
   } from '$store/renderer/slices/connections/connections-slice';
-  import { faEllipsisVertical, faKey, faPen, faTrash } from '@fortawesome/free-solid-svg-icons';
+  import {
+    faEllipsisVertical,
+    faKey,
+    faPen,
+    faPlug,
+    faTrash,
+  } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
 
   export type DevicePanelMode = 'edit' | 'secret' | null;
@@ -44,6 +51,7 @@
   let secret = $state('');
   let busy = $state<'update' | 'test' | 'secret' | null>(null);
   let feedback = $state<{ kind: 'success' | 'error' | 'progress'; message: string } | null>(null);
+  let connectionError = $state(false);
   let pendingFingerprint = $state<{
     operation: 'update' | 'secret';
     expected: string;
@@ -57,6 +65,10 @@
   const savedAccent = $derived(device.accent ?? DEFAULT_CONNECTION_ACCENT);
   const address = $derived(`${device.host ?? ''}:${device.port ?? ''}`);
   const displayName = $derived(device.label.trim() || address);
+  const displayHostname = $derived.by(() => {
+    const hostname = device.hostname?.trim();
+    return hostname && hostname !== displayName ? hostname : null;
+  });
   const openStatus = $derived(device.status ?? 'not-open');
   const trimmedName = $derived(name.trim());
   const trimmedHost = $derived(host.trim());
@@ -99,6 +111,17 @@
   function closePanel() {
     onClosePanel();
     queueMicrotask(() => actionsButton?.focus());
+  }
+
+  async function connectDevice() {
+    connectionError = false;
+    try {
+      const action = openConnectionRequested(device.id);
+      appStore.dispatch(action);
+      await action.promise;
+    } catch {
+      connectionError = true;
+    }
   }
 
   function accentLabel(value: ConnectionAccent): string {
@@ -274,6 +297,9 @@
       <p id={`device-${device.id}-name`} class="truncate text-sm font-medium text-foreground">
         {displayName}
       </p>
+      {#if displayHostname}
+        <p class="truncate text-xs text-muted-foreground">{displayHostname}</p>
+      {/if}
       {#if openStatus === 'connected' && device.intentdVersion}
         <p class="truncate text-xs text-muted-foreground">
           {m.settings_devices_version_label({ version: device.intentdVersion })}
@@ -294,6 +320,15 @@
       {/snippet}
       {#snippet content({ close }: { close: () => void })}
         <div class="w-44 py-1">
+          <Menu.Item
+            onclick={() => {
+              close();
+              void connectDevice();
+            }}
+          >
+            <Fa icon={faPlug} class="size-3.5 text-muted-foreground" />
+            {m.settings_devices_connect_label()}
+          </Menu.Item>
           <Menu.Item
             onclick={() => {
               close();
@@ -326,6 +361,12 @@
       {/snippet}
     </DropdownMenu>
   </div>
+
+  {#if connectionError}
+    <p class="px-4 pb-3 text-sm text-error-foreground sm:px-5" role="alert">
+      {m.settings_devices_connectFailed_error()}
+    </p>
+  {/if}
 
   {#if panelMode === 'edit'}
     <form
@@ -389,10 +430,10 @@
               <button
                 type="button"
                 class={cn(
-                  'flex size-7 cursor-pointer items-center justify-center rounded-full border bg-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                  'flex size-7 cursor-pointer items-center justify-center rounded-full border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
                   option === accent
-                    ? 'border-foreground shadow-[0_0_0_2px_var(--color-background),0_0_0_4px_var(--color-foreground)]'
-                    : 'border-border hover:border-input',
+                    ? cn('border-transparent', CONNECTION_ACCENT_CLASSES[option])
+                    : 'border-border/60 bg-transparent hover:border-border hover:bg-muted/30',
                 )}
                 aria-label={m.settings_devices_accentOption_ariaLabel({
                   color: accentLabel(option),
@@ -400,10 +441,12 @@
                 aria-pressed={option === accent}
                 onclick={() => (accent = option)}
               >
-                <span
-                  class={cn('size-3.5 rounded-full', CONNECTION_ACCENT_CLASSES[option])}
-                  aria-hidden="true"
-                ></span>
+                {#if option !== accent}
+                  <span
+                    class={cn('size-3.5 rounded-full', CONNECTION_ACCENT_CLASSES[option])}
+                    aria-hidden="true"
+                  ></span>
+                {/if}
               </button>
             {/each}
           </div>

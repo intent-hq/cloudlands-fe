@@ -653,6 +653,7 @@
   "settings_devices_fingerprintChanged_error": "証明書のフィンガープリントが変更されました。続行する前に確認してください。",
   "settings_devices_noCertificate_error": "デバイスから証明書が提示されませんでした。",
   "settings_devices_connectFailed_error": "このデバイスに接続できませんでした。",
+  "settings_devices_connect_label": "接続",
   "settings_devices_timeout_error": "接続がタイムアウトしました。",
   "settings_devices_replaceSecret_label": "シークレットを置換",
   "settings_devices_secretForm_ariaLabel": "{name} のシークレットを置換",

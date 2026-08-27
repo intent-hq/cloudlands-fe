@@ -653,6 +653,7 @@
   "settings_devices_fingerprintChanged_error": "인증서 지문이 변경되었습니다. 계속하기 전에 확인하세요.",
   "settings_devices_noCertificate_error": "기기에서 인증서를 제공하지 않았습니다.",
   "settings_devices_connectFailed_error": "이 기기에 연결할 수 없습니다.",
+  "settings_devices_connect_label": "연결",
   "settings_devices_timeout_error": "연결 시간이 초과되었습니다.",
   "settings_devices_replaceSecret_label": "비밀 정보 교체",
   "settings_devices_secretForm_ariaLabel": "{name}의 비밀 정보 교체",
