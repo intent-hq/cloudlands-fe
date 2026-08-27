@@ -1,5 +1,7 @@
 <script lang="ts">
   import { Button } from '$lib/components/ui/button';
+  import { Fa } from 'svelte-fa';
+  import { faPlus } from '@fortawesome/free-solid-svg-icons';
   import BulkActionConfirmDialog from '$lib/components/modals/BulkActionConfirmDialog.svelte';
   import ConnectBackendModal from '$lib/components/layout/ConnectBackendModal.svelte';
   import DeviceRow, { type DevicePanelMode } from './DeviceRow.svelte';
@@ -60,14 +62,13 @@
 </script>
 
 <div class="space-y-5">
-  <div class="flex items-start justify-between gap-4">
-    <div>
-      <h2 class="text-base font-semibold text-foreground">{m.settings_devices_title()}</h2>
-      <p class="mt-1 max-w-2xl text-sm text-muted-foreground">
-        {m.settings_devices_description()}
-      </p>
-    </div>
-    <Button onclick={() => (connectModalOpen = true)}>{m.settings_devices_add_label()}</Button>
+  <div>
+    <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
+      {m.settings_devices_title()}
+    </h2>
+    <p class="max-w-2xl text-sm text-muted-foreground">
+      {m.settings_devices_description()}
+    </p>
   </div>
 
   {#if !$loaded$}
@@ -95,6 +96,13 @@
       {/each}
     </div>
   {/if}
+
+  <div>
+    <Button variant="ghost" size="sm" onclick={() => (connectModalOpen = true)}>
+      <Fa icon={faPlus} class="mr-1.5" size="xs" />
+      {m.settings_devices_add_label()}
+    </Button>
+  </div>
 
   {#if removeError}
     <div
