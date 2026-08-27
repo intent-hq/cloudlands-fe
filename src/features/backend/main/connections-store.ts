@@ -86,6 +86,12 @@ interface StoredConnection {
    * existed — treated as 0 (epoch-old) so any synced copy wins over them.
    */
   updatedAt?: number;
+  /**
+   * Per-backend keychain-sync exclusion (spec Phase 2): when `true` the
+   * record is local-only — never listed to sync (see listSyncRecords). Absent
+   * on records written before the flag existed — treated as `false` (synced).
+   */
+  syncExcluded?: boolean;
 }
 
 /**
@@ -107,6 +113,12 @@ interface StoredTombstone {
   updatedAt: number;
   /** When the backend was forgotten (ms since epoch); sync TTL anchor. */
   deletedAt: number;
+  /**
+   * `true` when the forgotten record was sync-excluded: the tombstone is as
+   * local-only as the record was — never listed to sync, so a purely local
+   * backend's deletion can never propagate to the keychain. Absent = synced.
+   */
+  excluded?: boolean;
 }
 
 /** Fields required to register a new remote connection. */
@@ -118,6 +130,11 @@ export interface NewConnection {
   token: string;
   /** "Detect all backend IPs" option (#1746); absent = enabled. */
   detectHosts?: boolean;
+  /**
+   * Per-backend keychain-sync exclusion (spec Phase 2): `true` keeps the
+   * record local-only (never pushed to the keychain); absent = synced.
+   */
+  syncExcluded?: boolean;
 }
 
 interface PersistedState {
@@ -176,6 +193,7 @@ function toRecord(stored: StoredConnection): ConnectionRecord {
     port: stored.port,
     fingerprint: stored.fingerprint,
     hostname: stored.hostname ?? null,
+    syncExcluded: stored.syncExcluded === true,
     isLocal: false,
   };
 }
@@ -201,6 +219,9 @@ function isStoredConnection(value: unknown): value is StoredConnection {
     // `updatedAt` is an optional late addition (keychain sync): absent on
     // records written before sync existed — treated as epoch-old.
     (c.updatedAt === undefined || typeof c.updatedAt === 'number') &&
+    // `syncExcluded` is an optional late addition (spec Phase 2): absent on
+    // older records — treated as `false` (synced).
+    (c.syncExcluded === undefined || typeof c.syncExcluded === 'boolean') &&
     !!tok &&
     typeof tok === 'object' &&
     typeof tok.encrypted === 'boolean' &&
@@ -221,7 +242,8 @@ function isStoredTombstone(value: unknown): value is StoredTombstone {
       (Array.isArray(t.hosts) && t.hosts.every((h) => typeof h === 'string'))) &&
     (t.detectHosts === undefined || typeof t.detectHosts === 'boolean') &&
     typeof t.updatedAt === 'number' &&
-    typeof t.deletedAt === 'number'
+    typeof t.deletedAt === 'number' &&
+    (t.excluded === undefined || typeof t.excluded === 'boolean')
   );
 }
 
@@ -405,8 +427,11 @@ export async function list(): Promise<ConnectionRecord[]> {
  * and `label` are replaced in place (it keeps its `id` and captured
  * `hostname`, inheriting a hostname from a dropped duplicate if it has none),
  * the other duplicates are dropped, and the survivor is returned; otherwise a
- * new record is appended. The plaintext token is encrypted (or marked
- * plaintext) before it hits disk. Returns the token-free record.
+ * new record is appended. The survivor's `syncExcluded` flag follows the
+ * incoming add too — a re-add is the sanctioned way to flip a backend's
+ * exclusion (re-add with sync kept = clear it, opted out = set it). The
+ * plaintext token is encrypted (or marked plaintext) before it hits disk.
+ * Returns the token-free record.
  */
 export async function add(conn: NewConnection): Promise<ConnectionRecord> {
   const encToken = encryptToken(conn.token);
@@ -436,6 +461,7 @@ export async function add(conn: NewConnection): Promise<ConnectionRecord> {
       survivor.fingerprint = conn.fingerprint;
       survivor.encToken = encToken;
       survivor.detectHosts = conn.detectHosts ?? true;
+      survivor.syncExcluded = conn.syncExcluded ?? false;
       survivor.hostname ??= duplicates.find((c) => c.hostname != null)?.hostname ?? null;
       survivor.updatedAt = stamp;
       state.connections = state.connections.filter(
@@ -451,6 +477,7 @@ export async function add(conn: NewConnection): Promise<ConnectionRecord> {
       port: conn.port,
       fingerprint: conn.fingerprint,
       detectHosts: conn.detectHosts ?? true,
+      syncExcluded: conn.syncExcluded ?? false,
       encToken,
       updatedAt: stamp,
     };
@@ -531,7 +558,9 @@ export async function setHostname(id: string, hostname: string): Promise<void> {
  * forgotten connection was active, the active selection falls back to `local`.
  * Writes a tombstone for the removed backend so keychain sync propagates the
  * deletion to other machines (replacing any older tombstone for the same
- * host:port).
+ * host:port). A sync-excluded record yields an `excluded` tombstone — kept
+ * for local dedupe/re-add bookkeeping but never listed to sync, so forgetting
+ * a local-only backend can never touch the keychain.
  */
 export async function forget(id: string): Promise<void> {
   if (id === LOCAL_CONNECTION_ID) {
@@ -556,6 +585,7 @@ export async function forget(id: string): Promise<void> {
         detectHosts: removed.detectHosts,
         updatedAt: now,
         deletedAt: now,
+        excluded: removed.syncExcluded === true,
       });
     }
     await writeState(state);
@@ -610,7 +640,9 @@ export async function getDecryptedToken(id: string): Promise<string | null> {
  *
  * The local sidecar is never listed: it is synthesized, not persisted, so it
  * can never leak into the keychain. `activeId` is per-machine state and is
- * likewise never part of the sync payload.
+ * likewise never part of the sync payload. Sync-excluded records and their
+ * `excluded` tombstones (spec Phase 2, per-backend exclusion) are omitted
+ * too — a local-only backend is invisible to sync in both directions.
  */
 export async function listSyncRecords(): Promise<KeychainSyncRecord[]> {
   const now = Date.now();
@@ -623,6 +655,7 @@ export async function listSyncRecords(): Promise<KeychainSyncRecord[]> {
   }
   const records: KeychainSyncRecord[] = [];
   for (const conn of state.connections) {
+    if (conn.syncExcluded === true) continue;
     let token: string;
     try {
       token = decryptToken(conn.encToken);
@@ -647,6 +680,7 @@ export async function listSyncRecords(): Promise<KeychainSyncRecord[]> {
   }
   for (const t of state.tombstones) {
     if (t.deletedAt + TOMBSTONE_TTL_MS <= now) continue;
+    if (t.excluded === true) continue;
     records.push({
       label: t.label,
       host: t.host,

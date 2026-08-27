@@ -86,6 +86,14 @@ export interface ConnectionRecord {
    * the UI then falls back to `host:port`. Never set for the local entry.
    */
   hostname?: string | null;
+  /**
+   * Per-backend keychain-sync exclusion (spec Phase 2): `true` when the user
+   * opted this backend out of iCloud sync at add time, making the record
+   * local-only (never pushed to the keychain, never touched by pulls).
+   * Optional so pre-existing fixtures/records remain valid — absent is
+   * equivalent to `false` (synced). Never set for the local entry.
+   */
+  syncExcluded?: boolean;
   /** True for the synthesized local sidecar entry. */
   isLocal: boolean;
 }
