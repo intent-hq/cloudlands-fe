@@ -629,6 +629,45 @@ describe('connections:* IPC handlers', () => {
     expect(store.add).toHaveBeenCalledWith(expect.objectContaining({ detectHosts: false }));
   });
 
+  it('connections:add passes syncExcluded through to the store (iCloud opt-out)', async () => {
+    store.add.mockResolvedValue(REMOTE);
+    installWindow();
+    const { mod } = await loadModule();
+    mod.registerBackendHandlers();
+    const handler = findHandler('connections:add');
+
+    const params = {
+      label: 'Studio Mac',
+      host: '10.0.0.5',
+      port: 8443,
+      fingerprint: 'AA:BB:CC:DD',
+      token: 'secret-token',
+      syncExcluded: true,
+    };
+    await expect(handler!({}, params)).resolves.toEqual({ connection: REMOTE, switched: false });
+    expect(store.add).toHaveBeenCalledWith(expect.objectContaining({ syncExcluded: true }));
+  });
+
+  it('connections:add without syncExcluded leaves the flag absent (store default = synced)', async () => {
+    store.add.mockResolvedValue(REMOTE);
+    installWindow();
+    const { mod } = await loadModule();
+    mod.registerBackendHandlers();
+    const handler = findHandler('connections:add');
+
+    const params = {
+      label: 'Studio Mac',
+      host: '10.0.0.5',
+      port: 8443,
+      fingerprint: 'AA:BB:CC:DD',
+      token: 'secret-token',
+    };
+    await expect(handler!({}, params)).resolves.toEqual({ connection: REMOTE, switched: false });
+    expect(store.add).toHaveBeenCalledWith(
+      expect.not.objectContaining({ syncExcluded: expect.anything() }),
+    );
+  });
+
   it('connections:add upserting a NON-active connection does not reconnect', async () => {
     store.add.mockResolvedValue(REMOTE);
     store.getActiveId.mockResolvedValue('local');
@@ -798,6 +837,23 @@ describe('connections:* IPC handlers', () => {
     const handler = findHandler('connections:switch');
 
     await expect(handler!({}, {})).rejects.toThrow();
+  });
+
+  it('rejects invalid params (non-boolean syncExcluded on add) via the Zod schema', async () => {
+    const { mod } = await loadModule();
+    mod.registerBackendHandlers();
+    const handler = findHandler('connections:add');
+
+    const params = {
+      label: 'Studio Mac',
+      host: '10.0.0.5',
+      port: 8443,
+      fingerprint: 'AA:BB:CC:DD',
+      token: 'secret-token',
+      syncExcluded: 'yes',
+    };
+    await expect(handler!({}, params)).rejects.toThrow();
+    expect(store.add).not.toHaveBeenCalled();
   });
 
   it('rejects invalid params (missing id on open) via the Zod schema', async () => {

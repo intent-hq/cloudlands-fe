@@ -169,6 +169,13 @@ export interface AddConnectionParams {
    * the user-entered host is ever stored (single-host behavior).
    */
   detectHosts?: boolean;
+  /**
+   * Per-backend keychain-sync opt-out (spec Phase 2): `true` when the user
+   * unchecked "Save to iCloud" at add time, storing the record local-only
+   * (never pushed to the keychain, never touched by pulls). Absent = `false`
+   * (synced).
+   */
+  syncExcluded?: boolean;
 }
 
 /** `connections:add` result: the stored, token-free record. */
