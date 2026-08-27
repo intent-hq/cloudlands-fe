@@ -1309,17 +1309,16 @@
       ? persistedReasoningEffort
       : null,
   );
+  const resolvedReasoningEffort = $derived(currentReasoningEffort ?? reasoningLevels[0] ?? null);
   const currentReasoningLabel = $derived(
-    currentReasoningEffort
-      ? reasoningLevelLabel(currentReasoningEffort)
-      : m.chat_effortPicker_level_default(),
+    resolvedReasoningEffort ? reasoningLevelLabel(resolvedReasoningEffort) : '',
   );
   const triggerLabel = $derived(currentModelLabel);
   const triggerAccessibleLabel = $derived(
-    currentReasoningEffort ? `${currentModelLabel} · ${currentReasoningLabel}` : currentModelLabel,
+    resolvedReasoningEffort ? `${currentModelLabel} · ${currentReasoningLabel}` : currentModelLabel,
   );
   const currentReasoningGaugeValue = $derived(
-    currentReasoningEffort ? reasoningLevels.indexOf(currentReasoningEffort) : 0,
+    resolvedReasoningEffort ? reasoningLevels.indexOf(resolvedReasoningEffort) : 0,
   );
   let updatingReasoningEffort = $state(false);
   let reasoningExpanded = $state(false);
@@ -1747,6 +1746,11 @@
         <ProviderIcon providerId={triggerProviderId} class="size-3.5" />
       {/if}
       <span class="flex-1 text-left truncate">{triggerLabel}</span>
+      {#if resolvedReasoningEffort}
+        <span class="shrink-0 text-xs" data-testid="model-reasoning-strength"
+          >· {currentReasoningLabel}</span
+        >
+      {/if}
       {#if currentReasoningEffort}
         <EffortGauge
           value={currentReasoningGaugeValue}
@@ -1764,6 +1768,11 @@
           <ProviderIcon providerId={triggerProviderId} class="size-3.5" />
         {/if}
         <span class="text-xs truncate">{triggerLabel}</span>
+        {#if resolvedReasoningEffort}
+          <span class="shrink-0 text-xs" data-testid="model-reasoning-strength"
+            >· {currentReasoningLabel}</span
+          >
+        {/if}
         {#if currentReasoningEffort}
           <EffortGauge
             value={currentReasoningGaugeValue}
@@ -1837,7 +1846,7 @@
               {agentId}
               {workspaceId}
               effortLevels={reasoningLevels}
-              effort={currentReasoningEffort}
+              effort={persistedReasoningEffort}
               disabled={reasoningControlDisabled}
               onEffortChange={handleReasoningSelect}
               onkeydown={handleReasoningSliderKeydown}
@@ -1886,7 +1895,7 @@
     searchable={!hasNoAvailableProvider}
     placeholder={m.chat_modelPicker_searchModels_placeholder()}
     class="min-w-0"
-    headerClass="border-b-0!"
+    headerClass={providerTabsEnabled ? 'bg-popover! border-b!' : 'border-b-0!'}
     triggerClass={cn(
       'max-w-full',
       (variant === 'outline' || variant === 'default') &&
@@ -1894,7 +1903,8 @@
       triggerClass,
     )}
     contentClass={cn(
-      'max-w-[calc(100vw-32px)]',
+      'max-w-[calc(100vw-32px)] bg-background! text-foreground!',
+      '[&_[role=searchbox]]:border-b! [&_[role=searchbox]]:border-solid! [&_[role=searchbox]]:border-border!',
       showReasoning ? 'w-85 min-h-90 max-h-90 flex flex-col' : 'w-[332px]',
     )}
     contentMaxHeight={showReasoning ? 360 : undefined}
@@ -1937,6 +1947,11 @@
             <ProviderIcon providerId={triggerProviderId} class="size-3.5" />
           {/if}
           <span class="truncate">{triggerLabel}</span>
+          {#if resolvedReasoningEffort}
+            <span class="shrink-0 text-xs" data-testid="model-reasoning-strength"
+              >· {currentReasoningLabel}</span
+            >
+          {/if}
           {#if currentReasoningEffort}
             <EffortGauge
               value={currentReasoningGaugeValue}

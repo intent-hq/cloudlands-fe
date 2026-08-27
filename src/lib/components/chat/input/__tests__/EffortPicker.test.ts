@@ -2,8 +2,8 @@
 
 /**
  * EffortPicker — the session-level reasoning-effort control next to the model
- * picker. Covers the hidden-without-levels gate, the step ordering (a leading
- * "Default" step plus one step per advertised level), the commit path
+ * picker. Covers the hidden-without-levels gate, the centered provider-default
+ * step plus one step per advertised level, the commit path
  * (`agent.update` via the AppClient seam + the session-field dispatch), and
  * re-derivation when the session's model changes.
  */
@@ -132,13 +132,13 @@ describe('EffortPicker', () => {
     inheritedModel = 'gpt5.6-sol';
     mount({ id: 'agent-1', workspaceId: 'ws-1', model: null });
 
-    expect(trigger().getAttribute('aria-label')).toContain('Default');
+    expect(trigger().getAttribute('aria-label')).toContain('Low');
     expect(screen.getByTestId('effort-gauge')).toBeTruthy();
   });
 
-  it('renders an icon-only gauge with the current default in its accessible label', () => {
+  it('renders an icon-only gauge with a concrete resolved level in its accessible label', () => {
     mount({ id: 'agent-1', workspaceId: 'ws-1', model: 'codex:gpt-5.3-codex' });
-    expect(trigger().getAttribute('aria-label')).toContain('Default');
+    expect(trigger().getAttribute('aria-label')).toContain('Low');
     expect(trigger().textContent?.trim()).toBe('');
     expect(screen.getByTestId('effort-gauge').dataset.gaugeValue).toBe('0');
     expect(screen.getByTestId('effort-gauge').dataset.gaugeCentered).toBe('true');
@@ -212,7 +212,9 @@ describe('EffortPicker', () => {
     expect(slider.getAttribute('max')).toBe('4');
     expect(slider.className).toContain('operate-slider');
     expect(screen.getAllByTestId('effort-slider-tick')).toHaveLength(5);
-    expect(screen.getByTestId('effort-current-value').textContent?.trim()).toBe('Default');
+    expect((slider as HTMLInputElement).valueAsNumber).toBe(2);
+    expect(screen.getByTestId('effort-current-value').textContent?.trim()).toBe('Low');
+    expect(screen.getByRole('dialog').textContent).not.toContain('Default');
     expect(screen.queryByTestId('effort-gauge-popover')).toBeNull();
     expect(
       screen
@@ -220,14 +222,14 @@ describe('EffortPicker', () => {
         .every((tick) => tick.className.includes('h-3 w-px')),
     ).toBe(true);
 
-    await fireEvent.input(slider, { target: { value: '2' } });
-    expect(slider.getAttribute('aria-valuetext')).toBe('Medium');
-    expect(screen.getByTestId('effort-current-value').textContent?.trim()).toBe('Medium');
+    await fireEvent.input(slider, { target: { value: '3' } });
+    expect(slider.getAttribute('aria-valuetext')).toBe('High');
+    expect(screen.getByTestId('effort-current-value').textContent?.trim()).toBe('High');
     expect(
       screen.getByTestId('effort-current-value').querySelector('[data-motion-direction]')?.dataset
         .motionDirection,
     ).toBe('up');
-    expect(screen.getByTestId('effort-gauge').dataset.gaugeValue).toBe('1');
+    expect(screen.getByTestId('effort-gauge').dataset.gaugeValue).toBe('2');
     expect(screen.getByTestId('effort-gauge-needle').className.baseVal).toContain(
       'transition-transform',
     );
@@ -235,7 +237,7 @@ describe('EffortPicker', () => {
     expect(markers.every((marker) => marker.className.includes('w-px'))).toBe(true);
 
     await fireEvent.input(slider, { target: { value: '1' } });
-    expect(screen.getByTestId('effort-current-value').textContent?.trim()).toBe('Low');
+    expect(screen.getByTestId('effort-current-value').textContent?.trim()).toBe('Medium');
     expect(
       screen.getByTestId('effort-current-value').querySelector('[data-motion-direction]')?.dataset
         .motionDirection,
@@ -259,7 +261,7 @@ describe('EffortPicker', () => {
     });
   });
 
-  it('commits the Default step as an explicit null to clear the session field', async () => {
+  it('commits the centered provider-default step as null to clear the session field', async () => {
     mount({
       id: 'agent-1',
       workspaceId: 'ws-1',
@@ -269,16 +271,16 @@ describe('EffortPicker', () => {
     await fireEvent.click(trigger());
 
     const slider = await waitFor(() => screen.getByRole('slider'));
-    await fireEvent.change(slider, { target: { value: '0' } });
+    await fireEvent.change(slider, { target: { value: '2' } });
 
     await waitFor(() => {
       expect(applyReasoningEffort).toHaveBeenCalledWith('agent-1', 'ws-1', null, 'high');
     });
   });
 
-  it('commits Default to clear a persisted effort the model no longer advertises', async () => {
+  it('commits the provider default to clear an unsupported persisted effort', async () => {
     // `gpt-5.1-codex-max` advertises only low/high, so the stale `xhigh`
-    // already renders at the Default position — picking Default must still
+    // already renders at the centered null position, which must still
     // clear it on the daemon rather than no-op.
     mount({
       id: 'agent-1',
@@ -289,7 +291,8 @@ describe('EffortPicker', () => {
     await fireEvent.click(trigger());
 
     const slider = await waitFor(() => screen.getByRole('slider'));
-    await fireEvent.change(slider, { target: { value: '0' } });
+    expect((slider as HTMLInputElement).valueAsNumber).toBe(1);
+    await fireEvent.change(slider, { target: { value: '1' } });
 
     await waitFor(() => {
       expect(applyReasoningEffort).toHaveBeenCalledWith('agent-1', 'ws-1', null, 'xhigh');
@@ -311,7 +314,7 @@ describe('EffortPicker', () => {
     expect(applyReasoningEffort).not.toHaveBeenCalled();
   });
 
-  it('re-derives levels on a model switch and falls back to Default for an unsupported effort', async () => {
+  it('re-derives levels on a model switch and resolves unsupported effort concretely', async () => {
     mount({
       id: 'agent-1',
       workspaceId: 'ws-1',
@@ -329,7 +332,7 @@ describe('EffortPicker', () => {
     bumpVersion();
 
     await waitFor(() => {
-      expect(trigger().getAttribute('aria-label')).toContain('Default');
+      expect(trigger().getAttribute('aria-label')).toContain('Low');
     });
 
     await fireEvent.click(trigger());

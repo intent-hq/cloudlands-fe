@@ -8,8 +8,8 @@
    * click opens a popover with one discrete slider step per advertised level in
    * catalog order.
    *
-   * A leading "Default" step maps to an explicit `null`, which clears the
-   * session field back to the provider default. Committing a step routes
+   * A centered provider-default step maps to an explicit `null`, which clears
+   * the session field without exposing an abstract label. Committing a step routes
    * through `applyReasoningEffort`, which owns the session dispatch and the
    * `agent.update` (§5.5) call — the daemon applies the effort on the next
    * prompt send, so queued messages are not snapshotted.
@@ -90,13 +90,21 @@
   const levels = $derived(embedded ? [...effortLevels] : ($effortLevels$ ?? []));
   const hasLevels = $derived((embedded || !!agentId) && levels.length > 0);
 
-  const steps = $derived<Step[]>([
-    { value: null, label: m.chat_effortPicker_level_default() },
-    ...levels.map((level) => ({ value: level, label: levelLabel(level) })),
-  ]);
+  const steps = $derived.by<Step[]>(() => {
+    const supportedSteps: Step[] = levels.map((level) => ({
+      value: level,
+      label: levelLabel(level),
+    }));
+    const defaultIndex = Math.round(levels.length / 2);
+    supportedSteps.splice(defaultIndex, 0, {
+      value: null,
+      label: levelLabel(levels[0] ?? ''),
+    });
+    return supportedSteps;
+  });
 
-  // An effort the newly selected model does not advertise falls back to the
-  // default position; the daemon/adapter reconciliation stays authoritative.
+  // An effort the newly selected model does not advertise keeps the underlying
+  // provider-default value while displaying the first concrete supported level.
   const persistedValue = $derived(embedded ? effort : ($reasoningEffort$ ?? null));
   const currentValue = $derived(
     persistedValue && levels.includes(persistedValue) ? persistedValue : null,
@@ -108,6 +116,11 @@
     ),
   );
   const currentLabel = $derived(steps[currentIndex]?.label ?? '');
+
+  function gaugeValue(index: number): number {
+    const value = steps[index]?.value;
+    return value ? Math.max(0, levels.indexOf(value)) : 0;
+  }
 
   let isOpen = $state(false);
   let triggerRef = $state<HTMLButtonElement | null>(null);
@@ -170,8 +183,8 @@
     if (!step || disabled || (!embedded && !workspaceId)) return;
 
     // Compare against the persisted field, not `currentValue`: an effort the
-    // model no longer advertises also maps to the "Default" position, and
-    // picking Default must still clear that stale value on the daemon.
+    // model no longer advertises maps to the provider-default position, which
+    // must still clear that stale value on the daemon.
     const previous = persistedValue ?? null;
     if (step.value === previous) return;
 
@@ -191,7 +204,7 @@
         {m.chat_effortPicker_nextSend_description()}
       </div>
       <EffortGauge
-        value={Math.max(0, sliderIndex - 1)}
+        value={gaugeValue(sliderIndex)}
         max={levels.length - 1}
         centered={steps[sliderIndex]?.value === null}
       />
@@ -238,11 +251,11 @@
       class="pointer-events-none absolute inset-x-px top-1/2 flex -translate-y-1/2 justify-between"
       aria-hidden="true"
     >
-      {#each steps as step (step.value ?? 'default')}
+      {#each steps as step (step.value ?? 'provider-default')}
         <span
           class="flex h-3 w-px items-center justify-center"
           data-testid="effort-slider-tick"
-          data-effort-level={step.value ?? 'default'}
+          data-effort-level={step.value ?? 'provider-default'}
         >
           <span
             class="h-2 w-px shrink-0 rounded-full bg-muted-foreground/55"
@@ -277,7 +290,7 @@
         data-testid="effort-picker-trigger"
       >
         <EffortGauge
-          value={Math.max(0, (isOpen ? sliderIndex : currentIndex) - 1)}
+          value={gaugeValue(isOpen ? sliderIndex : currentIndex)}
           max={levels.length - 1}
           centered={(isOpen ? steps[sliderIndex]?.value : currentValue) === null}
         />
