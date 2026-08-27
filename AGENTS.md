@@ -395,10 +395,10 @@ above) before opening a PR.
 
 ## Filing issues
 
-File bugs on [intent-hq/monorepo](https://github.com/intent-hq/monorepo/issues) — the
+File bugs on [intent-hq/intent](https://github.com/intent-hq/intent/issues) — the
 single tracker for all components; never track issues in markdown files. Label with
 `component:fe` + `agent-filed`. See the root [`AGENTS.md`](../../AGENTS.md) → Filing
-Issues for the full conventions (dedup, cross-referencing, `Fixes intent-hq/monorepo#N` —
+Issues for the full conventions (dedup, cross-referencing, `Fixes intent-hq/intent#N` —
 the release notifier `scripts/notify-fixed-issues.sh` comments on the issue once a
 release fully delivers the fix, i.e. every linked fix PR across cloudlands-fe and
 intentd is merged and contained in the released versions).

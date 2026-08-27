@@ -975,7 +975,7 @@ jobs:
           echo "::error::Rolling '${TAG}' release is stuck in draft after ${MAX_RETRIES} attempts - its download URLs 404 until re-published. Fix manually: gh api -X PATCH repos/${REPO}/releases/${RELEASE_ID} -F draft=false -F prerelease=${PRERELEASE} -f make_latest=${MAKE_LATEST}"
           exit 1
 
-      # Comments on the intent-hq/monorepo issues whose fix is fully delivered
+      # Comments on the intent-hq/intent issues whose fix is fully delivered
       # by this release: the script scans both the fe range and the bundled
       # intentd delta, then gates each candidate on cross-repo completeness
       # (every linked fix PR merged and contained in the released fe tag /

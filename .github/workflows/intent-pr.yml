@@ -31,7 +31,7 @@ env:
 
 jobs:
   # Fork-PR hardening: external (fork) PRs are not accepted (contribution
-  # policy: issues on intent-hq/monorepo) and get NO CI — in particular,
+  # policy: issues on intent-hq/intent) and get NO CI — in particular,
   # nothing from a fork may ever reach the self-hosted tinybox runner. Every
   # job in this workflow carries the same-repo guard, either directly via an
   # `if:` on `github.event.pull_request.head.repo.full_name ==

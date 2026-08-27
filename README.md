@@ -2,7 +2,7 @@
 
 Electron + SvelteKit + TypeScript desktop frontend for **Intent** that talks to
 the `intentd` daemon. It is consumed as the `packages/cloudlands-fe` git
-submodule of [intent-hq/monorepo](https://github.com/intent-hq/monorepo).
+submodule of [intent-hq/intent](https://github.com/intent-hq/intent).
 
 ## Architecture
 
@@ -37,8 +37,8 @@ SvelteKit renderer  <->  AppClient (JSON-RPC boundary)  <->  intentd daemon
 of the monorepo:
 
 ```bash
-git clone https://github.com/intent-hq/monorepo.git
-cd monorepo
+git clone https://github.com/intent-hq/intent.git
+cd intent
 
 # Initialize this submodule (some sibling submodules are still private,
 # so initialize selectively rather than cloning with --recurse-submodules)
@@ -202,7 +202,7 @@ Frontend documentation lives in the monorepo's [`docs/fe/`](../../docs/fe)
 
 Bug reports and feature requests for all Intent components — including this
 frontend — are tracked centrally on the
-[intent-hq/monorepo issue tracker](https://github.com/intent-hq/monorepo/issues),
+[intent-hq/intent issue tracker](https://github.com/intent-hq/intent/issues),
 not on this repository.
 
 ## Network & privacy
@@ -229,7 +229,7 @@ likewise what probes an MCP server when you test its connection. Daemon-side
 network calls — provider OAuth sign-ins, the user-configured integrations
 (GitHub, Linear, Sentry), user-configured MCP servers, and the sitter
 self-update — are documented in the
-[monorepo README's Network & privacy section](https://github.com/intent-hq/monorepo#network--privacy).
+[monorepo README's Network & privacy section](https://github.com/intent-hq/intent#network--privacy).
 
 ## History
 
