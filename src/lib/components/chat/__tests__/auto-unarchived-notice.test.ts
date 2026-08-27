@@ -11,15 +11,64 @@ import type { AgentMessage } from '$shared/types';
 // Mock the Redux store to avoid initialization errors
 vi.mock('$store/renderer/store', async () => {
   const { createAppStoreMockModule } = await import('$store/renderer/utils/test-helpers/store-mock');
-  return createAppStoreMockModule({ state: {} });
+  return createAppStoreMockModule({ state: {}, dispatch: vi.fn() });
 });
+
+vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
+  selectActiveWorkspaceId: Object.assign(
+    () => ({
+      subscribe: (run: (value: string | null) => void) => {
+        run('ws-1');
+        return () => {};
+      },
+    }),
+    { select: () => 'ws-1' },
+  ),
+  selectWorkspaceById: Object.assign(
+    () => ({
+      subscribe: (run: (value: unknown) => void) => {
+        run(undefined);
+        return () => {};
+      },
+    }),
+    { select: () => undefined },
+  ),
+}));
 
 // Mock workspace-notes selectors
 vi.mock('$store/renderer/slices/workspace-notes/workspace-notes-selectors', () => ({
-  selectAllNotes: {
-    select: vi.fn(() => []),
-  },
+  selectAllNotes: Object.assign(
+    () => ({
+      subscribe: (run: (value: unknown[]) => void) => {
+        run([]);
+        return () => {};
+      },
+    }),
+    { select: vi.fn(() => []) },
+  ),
 }));
+
+vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
+  selectAgentMessageById: Object.assign(
+    () => ({
+      subscribe: (run: (value: unknown) => void) => {
+        run(undefined);
+        return () => {};
+      },
+    }),
+    { select: () => undefined },
+  ),
+}));
+
+vi.mock('$features/agent/components/agent-avatar/AgentAvatar.svelte', async () => ({
+  default: (await import('./mocks/AgentAvatar.svelte')).default,
+}));
+
+vi.mock('../input/SimpleRichInput.svelte', async () => ({
+  default: (await import('./mocks/SlotOnly.svelte')).default,
+}));
+
+import ChatMessage from '../ChatMessage.svelte';
 
 // Persisted wire shape: role "system", one text block, row metadata
 // { type: "auto_unarchived", reason: "agent_activity" }.
@@ -98,6 +147,37 @@ describe('AgentMessageList - auto-unarchived divider', () => {
     // Unknown metadata falls through to the interruption banner unchanged
     expect(screen.getByRole('alert')).toBeTruthy();
     expect(screen.getByText(/This conversation was interrupted/i)).toBeTruthy();
+    expect(container.querySelector('.auto-unarchived-notice')).toBeNull();
+  });
+});
+
+describe('ChatMessage - auto-unarchived divider (direct render path)', () => {
+  it('renders the persisted system row as a centered divider before role branching', () => {
+    const { container } = render(ChatMessage, {
+      props: { message: autoUnarchivedMessage(), isStreaming: false },
+    });
+
+    expect(screen.getByRole('status')).toBeTruthy();
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(screen.getByText(m.chat_autoUnarchivedNotice_unarchived_label())).toBeTruthy();
+    expect(container.querySelector('.auto-unarchived-notice')).toBeTruthy();
+
+    // No message chrome: not a bubble, not an interruption/attention notice
+    expect(screen.queryByText(AUTO_UNARCHIVED_TEXT)).toBeNull();
+    expect(container.querySelector('[data-message-role]')).toBeNull();
+  });
+
+  it('keeps system rows with unknown metadata on the existing ChatMessage path', () => {
+    const message: AgentMessage = {
+      id: 'msg-1',
+      role: 'system',
+      contentBlocks: [{ type: 'text', text: 'This conversation was interrupted.' }],
+      timestamp: new Date().toISOString(),
+      metadata: { type: 'some_future_type' } as AgentMessage['metadata'],
+    };
+
+    const { container } = render(ChatMessage, { props: { message, isStreaming: false } });
+
     expect(container.querySelector('.auto-unarchived-notice')).toBeNull();
   });
 });
