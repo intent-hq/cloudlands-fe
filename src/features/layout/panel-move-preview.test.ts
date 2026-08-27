@@ -18,6 +18,7 @@ import {
   emptyWorkspaceState,
   moveTabToPanel,
   moveTabToSplit,
+  moveTabToSplitLevel,
   panelLayoutReducer,
 } from '$store/renderer/slices/panel-layout/panel-layout-slice';
 
@@ -71,7 +72,10 @@ function countPane(result: ReturnType<typeof project>, tabId: string): number {
 
 function drop(
   layout: Pick<WorkspacePanelLayout, 'root' | 'panels'>,
-  action: ReturnType<typeof moveTabToPanel> | ReturnType<typeof moveTabToSplit>,
+  action:
+    | ReturnType<typeof moveTabToPanel>
+    | ReturnType<typeof moveTabToSplit>
+    | ReturnType<typeof moveTabToSplitLevel>,
 ) {
   const state: PanelLayoutSliceState = {
     byWorkspaceId: {
@@ -229,6 +233,19 @@ describe('getPaneDropPreview', () => {
 });
 
 describe('preview and drop parity', () => {
+  it('matches a final-pane root insertion', () => {
+    const layout = makeLayout({ source: ['drag'], target: ['target-pane'] }, [35, 65]);
+    const preview = project(layout, { kind: 'edge', position: 'after' });
+    const dropped = drop(
+      layout,
+      moveTabToSplitLevel('ws', 'drag', 'source', [], 'after', 'horizontal', 1),
+    );
+
+    expect(dropped.root).toEqual(preview.root);
+    expect(dropped.panels).toEqual(preview.panels);
+    expect(dropped.canvasWidth).toBeCloseTo(preview.canvasWidth ?? 0);
+  });
+
   it('matches a final-pane center merge', () => {
     const layout = makeLayout({ source: ['drag'], target: ['target-pane'] }, [35, 65]);
     const preview = project(layout, {

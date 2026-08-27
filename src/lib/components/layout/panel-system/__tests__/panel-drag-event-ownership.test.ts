@@ -16,9 +16,26 @@ import {
 } from '../panel-drag';
 import { endDrag, startDrag } from '$store/renderer/slices/tab-state/tab-state-slice';
 
+const motionSpies = vi.hoisted(() => ({ preview: vi.fn(), committed: vi.fn() }));
+
 vi.mock('../Panel.svelte', async () => ({
   default: (await import('./mocks/PaneDragRoutingPanel.svelte')).default,
 }));
+
+vi.mock('../panel-reorder-animation', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../panel-reorder-animation')>();
+  return {
+    ...actual,
+    animatePanelPreviewPositions(...args: Parameters<typeof actual.animatePanelPreviewPositions>) {
+      motionSpies.preview();
+      return actual.animatePanelPreviewPositions(...args);
+    },
+    translatePanel(...args: Parameters<typeof actual.translatePanel>) {
+      motionSpies.committed(args[2]?.duration ?? 180);
+      return actual.translatePanel(...args);
+    },
+  };
+});
 
 import PanelLayout from '../PanelLayout.svelte';
 
@@ -173,6 +190,8 @@ async function probeNonGutterSequence(coordinates: readonly number[]): Promise<(
 }
 
 beforeEach(() => {
+  motionSpies.preview.mockClear();
+  motionSpies.committed.mockClear();
   vi.stubGlobal('ResizeObserver', TestResizeObserver);
   vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockImplementation(function () {
     return this.getAttribute('data-testid') === 'panel-workspace-inset' ? PANEL_WIDTH : 0;
@@ -339,6 +358,41 @@ describe('pane drag event ownership', () => {
       const settledNoteBounds = readMountedNoteBounds(retainedSettled!);
       expect(previewNoteBounds.surface).toEqual(settledNoteBounds.surface);
       expect(previewNoteBounds.content).toEqual(settledNoteBounds.content);
+    },
+  );
+
+  it.each([
+    ['root insertion', 400, 'after'],
+    ['panel side', 340, 'right'],
+    ['panel center', 200, 'center'],
+  ] as const)(
+    'animates the %s preview but commits its final layout without replay',
+    async (_, clientX, placement) => {
+      const panel = await mountLayout();
+      const dispatch = vi.spyOn(appStore, 'dispatch');
+
+      await fireEvent(panel, dragEvent(clientX));
+      await waitFor(() => {
+        expect(
+          document.querySelector(`[data-panel-layout-drag-preview="${placement}"]`),
+        ).toBeTruthy();
+        expect(motionSpies.preview).toHaveBeenCalled();
+      });
+      motionSpies.committed.mockClear();
+      dispatch.mockClear();
+
+      await fireEvent(panel, dragEvent(clientX, 'drop'));
+      window.dispatchEvent(dragEvent(clientX, 'dragend'));
+
+      await waitFor(() => {
+        expect(document.querySelector('[data-panel-layout-drag-preview]')).toBeNull();
+        expect(getDraggedPane()).toBeNull();
+      });
+      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+      expect(motionSpies.committed).not.toHaveBeenCalled();
+      expect(
+        dispatch.mock.calls.filter(([action]) => action.type === 'tabState/endDrag'),
+      ).toHaveLength(1);
     },
   );
 

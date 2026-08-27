@@ -646,28 +646,37 @@
 
     event.preventDefault();
     event.stopPropagation();
-    finishPaneDrag();
-    if (!placement) return;
-    if (placement.kind === 'edge') {
-      layoutManager.moveTabToSplitLevel(
+    if (!placement) {
+      finishPaneDrag();
+      return;
+    }
+    commitPanelMoveWithoutReplay(() => {
+      finishPaneDrag();
+      if (placement.kind === 'edge') {
+        layoutManager.moveTabToSplitLevel(
+          draggedPane.tabId,
+          draggedPane.panelId,
+          [],
+          placement.position,
+          'horizontal',
+        );
+        return;
+      }
+      if (placement.zone === 'center') {
+        layoutManager.moveTabToPanel(
+          draggedPane.tabId,
+          draggedPane.panelId,
+          placement.targetPanelId,
+        );
+        return;
+      }
+      layoutManager.moveTabToSplit(
         draggedPane.tabId,
         draggedPane.panelId,
-        [],
-        placement.position,
-        'horizontal',
+        placement.targetPanelId,
+        placement.zone,
       );
-      return;
-    }
-    if (placement.zone === 'center') {
-      layoutManager.moveTabToPanel(draggedPane.tabId, draggedPane.panelId, placement.targetPanelId);
-      return;
-    }
-    layoutManager.moveTabToSplit(
-      draggedPane.tabId,
-      draggedPane.panelId,
-      placement.targetPanelId,
-      placement.zone,
-    );
+    });
   }
 
   function handlePaneInsertionDragLeave(event: DragEvent) {
