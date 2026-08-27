@@ -168,7 +168,8 @@ export async function setupConfigIPC() {
           }
 
           // Daemon-owned sub-keys are pushed to the daemon; FE-local sub-keys
-          // stay in-memory for the session.
+          // stay in-memory for the session. A failed daemon push fails closed
+          // (success: false) — the value was NOT persisted.
           if (isDaemonOwnedKey(validated.key)) {
             try {
               const backendId = getBackendIdForIpcSender(event.sender);
@@ -180,6 +181,7 @@ export async function setupConfigIPC() {
               logger.debug('Pushed daemon-owned config change', { key: validated.key });
             } catch (err) {
               logger.warn('Failed to push config change to daemon', err as Error);
+              return { success: false, error: String(err) };
             }
           } else configManager.set(validated.key, validated.value);
 

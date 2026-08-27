@@ -101,6 +101,20 @@ describe('config IPC backend routing', () => {
     expect(mocks.localRequest).not.toHaveBeenCalled();
   });
 
+  it('fails closed (success: false) when the sender backend has no live pooled client', async () => {
+    const event = { sender: { backendId: 'remote-gone' } };
+
+    const result = await handler(CONFIG_CHANNELS.SET)(event, {
+      key: 'permissions.rules',
+      value: [{ pattern: 'git push', action: 'ask' }],
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('Backend client is not connected: remote-gone');
+    expect(mocks.localRequest).not.toHaveBeenCalled();
+    expect(mocks.remoteRequest).not.toHaveBeenCalled();
+  });
+
   it('keeps FE-only config in shared memory without calling either daemon', async () => {
     const remoteEvent = { sender: { backendId: 'remote-1' } };
     const localEvent = { sender: { backendId: 'local' } };

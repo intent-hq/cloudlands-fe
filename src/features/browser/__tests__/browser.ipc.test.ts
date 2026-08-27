@@ -37,8 +37,9 @@ vi.mock('../../backend/main/backend.ipc', () => ({
   BACKEND_CLIENT_DISCONNECTED_EVENT: 'backend-client-disconnected',
   getBackendClient: mocks.getBackendClient,
   getBackendClientForConnection: mocks.getBackendClientForConnection,
+  // Fail-closed like production: no fallback to the primary client.
   getBackendClientForId: (id: string) => {
-    const client = mocks.getBackendClientForConnection(id) ?? mocks.getBackendClient();
+    const client = mocks.getBackendClientForConnection(id);
     if (!client) throw new Error(`Backend client is not connected: ${id}`);
     return client;
   },
