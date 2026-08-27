@@ -1997,7 +1997,7 @@
   <div class="editor-container flex relative flex-1 overflow-hidden">
     <!-- Version History View -->
     <section
-      class="flex-1 pt-6 overflow-y-auto"
+      class="note-content-container flex-1 pt-6 overflow-y-auto"
       id="version-history-content"
       class:hidden={!showVersionHistory}
     >
@@ -2013,7 +2013,7 @@
     <!-- Editor Content with relative positioning for comments -->
     <section
       bind:this={scrollContainer}
-      class="relative flex-1"
+      class="note-content-container relative flex-1"
       class:pt-6={!shouldShowRawNoteView}
       class:overflow-y-auto={!shouldShowRawNoteView}
       class:overflow-hidden={shouldShowRawNoteView}
@@ -2173,8 +2173,7 @@
     background: var(--color-background);
   }
 
-  #editor-content,
-  #version-history-content {
+  .note-content-container {
     display: flex;
     flex-direction: column;
     overflow-x: hidden;
