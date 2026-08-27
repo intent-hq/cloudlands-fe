@@ -13,8 +13,11 @@
    * stored record syncs via iCloud Keychain. Unchecking adds the connection with
    * `syncExcluded: true` (local-only). Keeping it checked while keychain sync is
    * explicitly disabled inserts a `syncConfirm` step before the add: confirming
-   * enables machine-global sync (`setKeychainSyncEnabledRequested`) then adds
-   * normally; declining still adds, just excluded from sync.
+   * adds the backend first, then enables machine-global sync
+   * (`setKeychainSyncEnabledRequested`) — so a failed add leaves no
+   * machine-global side effect; declining still adds, just excluded from sync.
+   * The step keeps a Back button so a failing add can be corrected on the
+   * details step without losing entered values.
    *
    * The list/active refresh arrives via the `connections:changed` push handled
    * by the connections service — this modal only drives the add/open actions
@@ -80,8 +83,16 @@
 
   // Keychain sync state gates the iCloud checkbox: `supported` is the platform
   // gate (macOS only), `enabled` decides whether the syncConfirm step is needed.
+  // While the async state load is pending (or failed), fall back to a
+  // synchronous platform check so the consent checkbox renders on macOS even
+  // when the user outraces the load — otherwise the add would proceed with the
+  // synced default behind a checkbox the user never saw. The loaded state wins
+  // once present.
+  const platformIsMac =
+    typeof window !== 'undefined' &&
+    (window as { electronAPI?: { platform?: string } }).electronAPI?.platform === 'darwin';
   const syncState$ = selectKeychainSyncState();
-  const syncSupported = $derived($syncState$?.supported ?? false);
+  const syncSupported = $derived($syncState$?.supported ?? platformIsMac);
   const syncEnabled = $derived($syncState$?.enabled ?? false);
 
   const portNumber = $derived(Number(port.trim()));
@@ -158,7 +169,7 @@
     await storeAndOpen(syncSupported && !saveToICloud);
   }
 
-  async function storeAndOpen(syncExcluded: boolean) {
+  async function storeAndOpen(syncExcluded: boolean, opts: { enableSyncAfterAdd?: boolean } = {}) {
     busy = true;
     error = null;
     const trimmedHost = host.trim();
@@ -174,6 +185,14 @@
       });
       appStore.dispatch(addAction);
       const { connection } = await addAction.promise;
+      if (opts.enableSyncAfterAdd) {
+        // Enable machine-global sync only once the add succeeded, so a failed
+        // add (bad token, WSS off on the target) leaves no machine-global
+        // side effect. A retry re-runs the add as an idempotent upsert.
+        const syncAction = setKeychainSyncEnabledRequested(true);
+        appStore.dispatch(syncAction);
+        await syncAction.promise;
+      }
       const openAction = openConnectionRequested(connection.id);
       appStore.dispatch(openAction);
       await openAction.promise;
@@ -185,18 +204,7 @@
   }
 
   async function handleEnableSyncAndAdd() {
-    busy = true;
-    error = null;
-    try {
-      const action = setKeychainSyncEnabledRequested(true);
-      appStore.dispatch(action);
-      await action.promise;
-    } catch (e) {
-      error = toMessage(e);
-      busy = false;
-      return;
-    }
-    await storeAndOpen(false);
+    await storeAndOpen(false, { enableSyncAfterAdd: true });
   }
 
   async function handleDeclineSync() {
@@ -395,6 +403,9 @@
             {busy ? m.modals_connect_connecting_label() : m.modals_connect_confirm_label()}
           </Button>
         {:else}
+          <Button variant="ghost" onclick={back} disabled={busy}
+            >{m.modals_connect_back_label()}</Button
+          >
           <Button variant="ghost" onclick={handleDeclineSync} disabled={busy}>
             {m.modals_connect_enableSync_decline_label()}
           </Button>
