@@ -5966,7 +5966,7 @@
   "settings_agentFeatures_taskGraph_label": "任务图协调",
   "settings_agentFeatures_taskGraph_description": "启用任务图协调工作流（批量委派、任务关系、解除阻塞唤醒）",
   "settings_agentFeatures_peerAgents_label": "对等代理生成",
-  "settings_agentFeatures_peerAgents_description": "允许代理生成独立的对等代理并自行退役（ws.agent.spawnPeer / ws.agent.retire）；仅适用于新会话",
+  "settings_agentFeatures_peerAgents_description": "允许代理生成独立的对等代理并自行退役（带 topLevel: true 的 ws.agent.create / ws.agent.retire）；仅适用于新会话",
   "settings_agentFeatures_maxTopLevelAgents_label": "顶级代理上限",
   "settings_agentFeatures_maxTopLevelAgents_ariaLabel": "每个工作区的顶级代理上限",
   "settings_agentFeatures_maxTopLevelAgents_save": "保存",

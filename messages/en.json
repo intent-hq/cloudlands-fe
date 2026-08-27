@@ -5966,7 +5966,7 @@
   "settings_agentFeatures_taskGraph_label": "Task graph coordination",
   "settings_agentFeatures_taskGraph_description": "Enable the task-graph coordination workflow (batch delegation, task relations, unblocked-task wakes)",
   "settings_agentFeatures_peerAgents_label": "Peer agent spawning",
-  "settings_agentFeatures_peerAgents_description": "Allow agents to spawn independent peer agents and retire themselves (ws.agent.spawnPeer / ws.agent.retire); applies to new sessions only",
+  "settings_agentFeatures_peerAgents_description": "Allow agents to spawn independent peer agents and retire themselves (ws.agent.create with topLevel: true / ws.agent.retire); applies to new sessions only",
   "settings_agentFeatures_maxTopLevelAgents_label": "Max top-level agents",
   "settings_agentFeatures_maxTopLevelAgents_ariaLabel": "Maximum top-level agents per workspace",
   "settings_agentFeatures_maxTopLevelAgents_save": "Save",

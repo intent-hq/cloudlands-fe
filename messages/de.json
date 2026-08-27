@@ -5966,7 +5966,7 @@
   "settings_agentFeatures_taskGraph_label": "Aufgabengraph-Koordination",
   "settings_agentFeatures_taskGraph_description": "Aktiviert den Koordinationsworkflow des Aufgabengraphen (Stapeldelegation, Aufgabenbeziehungen, Wecksignale bei Entsperrung)",
   "settings_agentFeatures_peerAgents_label": "Peer-Agenten-Erstellung",
-  "settings_agentFeatures_peerAgents_description": "Agenten dürfen unabhängige Peer-Agenten erstellen und sich selbst zurückziehen (ws.agent.spawnPeer / ws.agent.retire); gilt nur für neue Sitzungen",
+  "settings_agentFeatures_peerAgents_description": "Agenten dürfen unabhängige Peer-Agenten erstellen und sich selbst zurückziehen (ws.agent.create mit topLevel: true / ws.agent.retire); gilt nur für neue Sitzungen",
   "settings_agentFeatures_maxTopLevelAgents_label": "Maximale Top-Level-Agenten",
   "settings_agentFeatures_maxTopLevelAgents_ariaLabel": "Maximale Anzahl an Top-Level-Agenten pro Arbeitsbereich",
   "settings_agentFeatures_maxTopLevelAgents_save": "Speichern",
