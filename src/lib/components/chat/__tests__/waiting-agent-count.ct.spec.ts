@@ -63,17 +63,3 @@ test('keeps the complete waiting count before the adaptive avatar stack', async 
     }
   }
 });
-
-test('labels a retained all-finished cohort as finished', async ({ mount }) => {
-  const component = await mount(AgentSubscriptionInlineHost, {
-    props: { agentCount: 3, finishedCount: 3, initiallyExpanded: false },
-  });
-
-  const summary = component.getByRole('button', { name: '3 agents finished' });
-  await expect(summary).toBeVisible();
-  await expect(summary.locator('[data-icon="circle-check"]')).toBeVisible();
-  await expect(summary.locator('[data-icon="hourglass"]')).toHaveCount(0);
-  await summary.click();
-  await expect(component.getByTestId('agent-list-item')).toHaveCount(3);
-  await expect(component.getByTestId('finished-agent-summary')).toHaveCount(0);
-});

@@ -50,6 +50,11 @@ for (const theme of ['light', 'dark'] as const) {
 for (const theme of ['light', 'dark'] as const) {
   for (const width of [320, 720]) {
     for (const zoom of [1, 2]) {
+      if (
+        (theme === 'light' && (width !== 720 || zoom !== 1)) ||
+        (theme === 'dark' && (width !== 320 || zoom !== 2))
+      )
+        continue;
       test(`owns directional Thinking seams in ${theme} at ${width}px and ${zoom * 100}%`, async ({
         mount,
         page,

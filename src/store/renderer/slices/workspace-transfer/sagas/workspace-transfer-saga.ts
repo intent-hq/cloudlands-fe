@@ -104,11 +104,16 @@ function* runTransfer(): SagaGenerator<void> {
     } else if (result.canceled) {
       yield* put(transferRunCancelled());
     } else {
-      yield* put(transferRunFailed(failureMessage(result)));
+      yield* put(
+        transferRunFailed({
+          error: failureMessage(result),
+          failurePhase: result.failurePhase ?? null,
+        }),
+      );
     }
   } catch (error) {
     logger.error('transfer:start failed', { workspaceId, error });
-    yield* put(transferRunFailed(toMessage(error)));
+    yield* put(transferRunFailed({ error: toMessage(error), failurePhase: null }));
   }
 }
 

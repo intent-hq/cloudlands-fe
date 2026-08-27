@@ -1,131 +1,64 @@
-/**
- * Test to verify streaming state is set BEFORE ChatPanel mounts
- * This test ensures the fix for the "typing indicator not appearing immediately" issue
- */
+import type { AgentSession } from '$shared/types';
+import {
+  agentSessionReducer,
+  bulkUpsertSessions,
+  initialState,
+} from '$store/renderer/slices/agent-session/agent-session-slice';
+import {
+  chatSendFailed,
+  chatSendStarted,
+  streamCompleted,
+} from '$store/renderer/slices/chat-state/chat-state-slice';
+import { describe, expect, it } from 'vitest';
 
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+const AGENT_ID = 'agent-stream-timing';
+const session: AgentSession = {
+  id: AGENT_ID,
+  name: 'Streaming agent',
+  workspaceId: 'ws-stream-timing',
+  messages: [],
+  isStreaming: false,
+  isProcessing: false,
+};
 
-describe('Streaming State Timing', () => {
-  let mockAgentFactory: any;
-  let mockChatPanel: any;
-  let mockUnifiedStore: any;
-  let mockSessionStore: any;
-  let callOrder: string[] = [];
+function registeredState() {
+  return agentSessionReducer(
+    initialState,
+    bulkUpsertSessions([session], { preserveExplicitRuntimeFlags: false }),
+  );
+}
 
-  beforeEach(() => {
-    callOrder = [];
+describe('Streaming state timing', () => {
+  it('sets streaming state synchronously when send starts', () => {
+    const stateBeforePanelRead = agentSessionReducer(registeredState(), chatSendStarted(AGENT_ID));
 
-    // Create a shared agents map
-    const agentsMap = new Map();
-
-    mockUnifiedStore = {
-      getWorkspace: vi.fn(() => ({
-        agents: agentsMap,
-      })),
-      setAgent: vi.fn((workspaceId, agent) => {
-        callOrder.push('setAgent');
-        // Actually set the agent in the map
-        agentsMap.set(agent.id, agent);
-      }),
-    };
-
-    mockSessionStore = {
-      getSession: vi.fn(() => ({ id: 'agent_1' })),
-      setStreaming: vi.fn(() => {
-        callOrder.push('setStreaming');
-      }),
-      addSession: vi.fn(),
-    };
-
-    mockChatPanel = {
-      mount: vi.fn(() => {
-        callOrder.push('ChatPanel.mount');
-        // ChatPanel checks streaming state on mount
-        const workspace = mockUnifiedStore.getWorkspace();
-        const agent = workspace.agents.get('agent_1');
-        const isStreaming = agent?.streaming?.active;
-        expect(isStreaming).toBe(true);
-      }),
-    };
-
-    mockAgentFactory = {
-      createAgent: vi.fn(async () => {
-        callOrder.push('createAgent.start');
-
-        // Step 1: Create agent in backend
-        callOrder.push('backend.create');
-
-        // Step 2: Register in state
-        mockSessionStore.addSession({ id: 'agent_1' });
-        callOrder.push('state.register');
-
-        // Step 3: SET STREAMING STATE BEFORE returning
-        // This is the fix - streaming state must be set before drawer opens
-        const agent = {
-          id: 'agent_1',
-          streaming: { active: true },
-          session: { id: 'agent_1' },
-        };
-        mockUnifiedStore.setAgent('workspace_1', agent);
-        mockSessionStore.setStreaming('agent_1', true);
-        callOrder.push('createAgent.return');
-
-        // Step 4: Send initial message (async, doesn't wait)
-        setTimeout(() => {
-          callOrder.push('sendInitialMessage');
-        }, 0);
-
-        return { success: true, agent: { id: 'agent_1' } };
-      }),
-    };
+    expect(stateBeforePanelRead.byAgentId[AGENT_ID]).toMatchObject({
+      isStreaming: true,
+      isProcessing: true,
+    });
   });
 
-  it('should set streaming state BEFORE ChatPanel mounts', async () => {
-    // Simulate the flow:
-    // 1. createAgent is called
-    // 2. createAgent returns (with streaming state set)
-    // 3. Drawer opens and ChatPanel mounts
+  it('applies start and completion events in dispatch order', () => {
+    const started = agentSessionReducer(registeredState(), chatSendStarted(AGENT_ID));
+    const completed = agentSessionReducer(
+      started,
+      streamCompleted(AGENT_ID, { lastAttemptedMessage: null, modelUnavailable: null }),
+    );
 
-    const result = await mockAgentFactory.createAgent();
-    expect(result.success).toBe(true);
-
-    // Now drawer opens and ChatPanel mounts
-    mockChatPanel.mount();
-
-    // Verify the order
-    expect(callOrder).toContain('setAgent');
-    expect(callOrder).toContain('setStreaming');
-    expect(callOrder).toContain('ChatPanel.mount');
-
-    // Verify streaming state was set BEFORE ChatPanel mounted
-    const setStreamingIndex = callOrder.indexOf('setStreaming');
-    const chatPanelMountIndex = callOrder.indexOf('ChatPanel.mount');
-    expect(setStreamingIndex).toBeLessThan(chatPanelMountIndex);
+    expect(started.byAgentId[AGENT_ID].isStreaming).toBe(true);
+    expect(completed.byAgentId[AGENT_ID]).toMatchObject({
+      isStreaming: false,
+      isProcessing: false,
+    });
   });
 
-  it('should have streaming state active when ChatPanel checks it', async () => {
-    await mockAgentFactory.createAgent();
+  it('clears both runtime flags when send fails', () => {
+    const started = agentSessionReducer(registeredState(), chatSendStarted(AGENT_ID));
+    const failed = agentSessionReducer(started, chatSendFailed(AGENT_ID, 'transport failed'));
 
-    // Verify streaming state is set
-    const workspace = mockUnifiedStore.getWorkspace();
-    const agent = workspace.agents.get('agent_1');
-    expect(agent?.streaming?.active).toBe(true);
-
-    // ChatPanel should see this immediately
-    mockChatPanel.mount();
-  });
-
-  it('should call setAgent and setStreaming before returning from createAgent', async () => {
-    await mockAgentFactory.createAgent();
-
-    // Both should have been called
-    expect(mockUnifiedStore.setAgent).toHaveBeenCalled();
-    expect(mockSessionStore.setStreaming).toHaveBeenCalled();
-
-    // And they should have been called before returning
-    expect(callOrder).toContain('setAgent');
-    expect(callOrder).toContain('setStreaming');
-    expect(callOrder.indexOf('setAgent')).toBeLessThan(callOrder.indexOf('createAgent.return'));
-    expect(callOrder.indexOf('setStreaming')).toBeLessThan(callOrder.indexOf('createAgent.return'));
+    expect(failed.byAgentId[AGENT_ID]).toMatchObject({
+      isStreaming: false,
+      isProcessing: false,
+    });
   });
 });

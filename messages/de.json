@@ -6088,6 +6088,7 @@
   "workspace_transfer_resumeFailed_many": "{count} Agenten konnten auf dem Ziel nicht neu gestartet werden. Setzen Sie sie dort manuell fort.",
   "workspace_transfer_result_failed_title": "Übertragung fehlgeschlagen",
   "workspace_transfer_result_downloadFailed_title": "Download fehlgeschlagen",
+  "workspace_transfer_result_preflightFailed_message": "Die Übertragung wurde nicht gestartet: {error}. Der Quell-Space ist unverändert und seine Agenten wurden nicht gestoppt.",
   "workspace_transfer_result_failed_message": "Die Übertragung wurde nicht abgeschlossen: {error}. Der Quell-Space ist unverändert und bleibt nutzbar; seine Agenten wurden gestoppt.",
   "workspace_transfer_result_downloadFailed_message": "Der Download wurde nicht abgeschlossen: {error}. Der Space ist unverändert und bleibt nutzbar; seine Agenten wurden gestoppt.",
   "workspace_transfer_retry_label": "Erneut versuchen",

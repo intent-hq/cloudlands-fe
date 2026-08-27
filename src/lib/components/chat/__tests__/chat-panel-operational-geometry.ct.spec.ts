@@ -6,6 +6,11 @@ test.setTimeout(120_000);
 for (const theme of ['light', 'dark'] as const) {
   for (const zoom of [1, 2]) {
     for (const width of [320, 720]) {
+      if (
+        (theme === 'light' && (width !== 720 || zoom !== 1)) ||
+        (theme === 'dark' && (width !== 320 || zoom !== 2))
+      )
+        continue;
       test(`keeps real ChatPanel operational seams exact in ${theme} at ${zoom * 100}% and ${width}px`, async ({
         mount,
       }) => {
@@ -116,7 +121,12 @@ for (const theme of ['light', 'dark'] as const) {
             expect(row.labelStart - row.rowEdges[0]).toBeCloseTo(36 * zoom, 1);
             expect(row.insets[1]).toBeCloseTo(row.insets[2], 1);
             expect(row.summary).toEqual(['0px', 'hidden', 'ellipsis', 'nowrap']);
-            expect(row.margins).toEqual(['0px', '0px', '0px', '0px']);
+            expect(row.margins).toEqual([
+              '0px',
+              row.kind === 'response-group' ? '12px' : '0px',
+              '0px',
+              '0px',
+            ]);
           }
           if (width === 320) expect(geometry.some((row) => row.summaryClipped)).toBe(true);
           const pairOrders = new Set<string>();

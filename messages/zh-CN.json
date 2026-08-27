@@ -6088,6 +6088,7 @@
   "workspace_transfer_resumeFailed_many": "{count} 个智能体未能在目标端重启。请在目标端手动恢复。",
   "workspace_transfer_result_failed_title": "传输失败",
   "workspace_transfer_result_downloadFailed_title": "下载失败",
+  "workspace_transfer_result_preflightFailed_message": "传输未开始：{error}。源空间未发生变化，其智能体也未停止。",
   "workspace_transfer_result_failed_message": "传输未完成：{error}。源空间未发生变化并可继续使用；其智能体已停止。",
   "workspace_transfer_result_downloadFailed_message": "下载未完成：{error}。空间未发生变化并可继续使用；其智能体已停止。",
   "workspace_transfer_retry_label": "重试",

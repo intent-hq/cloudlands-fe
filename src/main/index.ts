@@ -153,6 +153,25 @@ const logStartupTiming = (phase: string) => {
 // i18n-ignore (developer log message)
 logStartupTiming('Module initialization complete');
 
+const mainLogger = new Logger('Main');
+
+// Build identity banner (intent-hq/monorepo#3649): record which build produced
+// this log file. `app.getVersion()` is guarded so a non-Electron import of this
+// module cannot throw before logging starts. The dedicated BuildInfo category
+// is pinned to INFO in logging-config.ts so the banner survives the packaged
+// build's WARN default level.
+const appVersion = app && typeof app.getVersion === 'function' ? app.getVersion() : 'unknown';
+new Logger('BuildInfo').info(
+  // i18n-ignore (developer log message)
+  `Intent v${appVersion} (commit ${BUILD_CONFIG.GIT_COMMIT_HASH || 'unknown'})`,
+  {
+    electron: process.versions.electron,
+    node: process.versions.node,
+    platform: process.platform,
+    arch: process.arch,
+  },
+);
+
 // Seed PATH from the daemon (`host.env`, PROTOCOL §5.14) so child processes
 // spawned locally inherit the BE host's authoritative PATH instead of a PATH
 // we'd have to reconstruct from local shell profiles. The FE pre-populates
@@ -161,7 +180,6 @@ logStartupTiming('Module initialization complete');
 // daemon's enhanced PATH then overwrites it once `host.env` returns. Failure
 // is fail-open (we keep the essential PATH) so startup is never blocked by
 // an unreachable daemon.
-const mainLogger = new Logger('Main');
 if (process.platform !== 'win32') {
   const essentialPaths = [
     '/bin',

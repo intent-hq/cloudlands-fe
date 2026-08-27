@@ -256,7 +256,11 @@ import {
 import { derivePendingQuestions } from '$lib/components/chat/questions/pending-questions';
 import { QUESTION_RESOURCE_MIME_TYPE, type Question } from '$shared/types/question-resource';
 import { refreshWorkspaceSubscriptionEntriesRequested } from '$store/renderer/slices/agent-subscription-ui/agent-subscription-ui-slice';
-import { setAgents } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
+import {
+  setAgents,
+  setRetiredCount,
+} from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
+import { selectRetiredCount } from '$store/renderer/slices/workspace-agents/workspace-agents-selectors';
 
 function readStatusEvents(): StatusEvent[] {
   const state = appStore.state as {
@@ -5013,6 +5017,89 @@ describe('daemonEventsBridge (session lifecycle — agent:created/renamed/update
     expect(notifyInterruptedAgentUpdatedSpy).not.toHaveBeenCalled();
   });
 });
+describe('daemonEventsBridge (agent:retired/restored/deleted → lazy Retired bin count, §5.5 v8.2)', () => {
+  beforeAll(() => {
+    appStore.init();
+  });
+
+  beforeEach(async () => {
+    appStore.dispatch(clearAllSessions());
+    onBackendNotificationSpy.mockClear();
+    backendRequestSpy.mockClear();
+    refreshAgentSessionAfterEventSpy.mockReset();
+    refreshAgentSessionAfterEventSpy.mockImplementation(() => Promise.resolve());
+    __resetDaemonEventsBridgeForTests();
+    capturedHandlers.length = 0;
+    await primeBridge();
+  });
+
+  afterEach(() => vi.clearAllMocks());
+
+  const retiredCountOf = (wsId: string) => selectRetiredCount.select(appStore.state, wsId);
+
+  it('agent:retired nudges the count up and agent:restored back down alongside the metadata refresh', async () => {
+    appStore.dispatch(setRetiredCount(WS, 1));
+    const handler = capturedHandlers[0]!;
+
+    handler(notification('agent:retired', { agentId: AGENT }));
+    await flush();
+    expect(retiredCountOf(WS)).toBe(2);
+    expect(refreshAgentSessionAfterEventSpy).toHaveBeenCalledWith(AGENT);
+
+    handler(notification('agent:restored', { agentId: AGENT }));
+    await flush();
+    expect(retiredCountOf(WS)).toBe(1);
+  });
+
+  it('clamps the count at 0 when agent:restored arrives before the count was baselined', async () => {
+    const handler = capturedHandlers[0]!;
+
+    handler(notification('agent:restored', { agentId: AGENT }));
+    await flush();
+
+    expect(retiredCountOf(WS)).toBe(0);
+    expect(refreshAgentSessionAfterEventSpy).toHaveBeenCalledWith(AGENT);
+  });
+
+  it('agent:deleted on a known retired row nudges the count down in lockstep with its removal', async () => {
+    seedSession({ retiredAt: '2026-01-01T12:00:00.000Z' });
+    appStore.dispatch(setRetiredCount(WS, 2));
+    const handler = capturedHandlers[0]!;
+
+    handler(notification('agent:deleted', { agentId: AGENT }));
+    await flush();
+
+    expect(retiredCountOf(WS)).toBe(1);
+    const state = appStore.state as { agentSessions: { byAgentId: Record<string, unknown> } };
+    expect(state.agentSessions.byAgentId[AGENT]).toBeUndefined();
+  });
+
+  it('agent:deleted for an id with no local session re-baselines via a hydrate (never-loaded retired row)', async () => {
+    appStore.dispatch(setRetiredCount(WS, 2));
+    const handler = capturedHandlers[0]!;
+    backendRequestSpy.mockClear();
+
+    handler(notification('agent:deleted', { agentId: 'agent-unknown-retired' }));
+    await flush();
+
+    // The re-baseline rides the canonical default read (`agent.list`, which
+    // serves `retiredCount` on every read) — not a local guess.
+    expect(backendRequestSpy).toHaveBeenCalledWith('agent.list', { workspaceId: WS });
+  });
+
+  it('agent:deleted on a known NON-retired row leaves the retired count alone without a refetch', async () => {
+    seedSession();
+    appStore.dispatch(setRetiredCount(WS, 2));
+    const handler = capturedHandlers[0]!;
+    backendRequestSpy.mockClear();
+
+    handler(notification('agent:deleted', { agentId: AGENT }));
+    await flush();
+
+    expect(retiredCountOf(WS)).toBe(2);
+    expect(backendRequestSpy).not.toHaveBeenCalledWith('agent.list', { workspaceId: WS });
+  });
+});
 describe('daemonEventsBridge (note:* wire contract → applyNoteFromEvent)', () => {
   beforeAll(() => {
     appStore.init();
@@ -5659,7 +5746,6 @@ describe('daemonEventsBridge (workspace:created → recycled-ID purge + rehydrat
     // The bridge re-hydrates from the daemon's canonical list (PROTOCOL §5.5).
     expect(backendRequestSpy).toHaveBeenCalledWith('agent.list', {
       workspaceId: RECYCLED_WS,
-      includeRetired: true,
     });
   });
 
@@ -6274,7 +6360,6 @@ describe('daemonEventsBridge (delete grace window schedule/cancel events, monore
     // Reconcile refetch also runs — covers a window that never held a snapshot.
     expect(backendRequestSpy).toHaveBeenCalledWith('agent.list', {
       workspaceId: PENDING_WS,
-      includeRetired: true,
     });
   });
 
@@ -6299,7 +6384,6 @@ describe('daemonEventsBridge (delete grace window schedule/cancel events, monore
 
     expect(backendRequestSpy).toHaveBeenCalledWith('agent.list', {
       workspaceId: PENDING_WS,
-      includeRetired: true,
     });
   });
 

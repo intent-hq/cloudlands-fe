@@ -128,7 +128,7 @@ vi.mock('$lib/components/ui/tooltip', async () => ({
 }));
 
 vi.mock('$features/workspace/components/WorkspaceActionsMenu.svelte', async () => ({
-  default: (await import('../sidebar/__tests__/mocks/MockSimple.svelte')).default,
+  default: (await import('../sidebar/__tests__/mocks/MockWorkspaceActionsMenu.svelte')).default,
 }));
 
 vi.mock('$lib/components/modals/DeleteWarningDialog.svelte', async () => ({
@@ -167,6 +167,7 @@ async function renderHeader(overrides: Partial<Workspace> = {}) {
 // billed to the first test's timeout (intent-hq/monorepo#1464).
 warmImport(() => import('../../terminal/__tests__/mocks/MockButton.svelte'));
 warmImport(() => import('../sidebar/__tests__/mocks/MockSimple.svelte'));
+warmImport(() => import('../sidebar/__tests__/mocks/MockWorkspaceActionsMenu.svelte'));
 warmImport(() => import('../sidebar/__tests__/mocks/Fa.svelte'));
 warmImport(() => import('../WorkspaceSidebarHeader.svelte'));
 
@@ -461,5 +462,34 @@ describe('WorkspaceSidebarHeader status message', () => {
       expect(screen.queryByRole('menu')).toBeNull();
       expect(trigger.getAttribute('aria-expanded')).toBe('false');
     });
+  });
+
+  it('offers Transfer for the loaded workspace and opens its transfer modal', async () => {
+    await renderHeader();
+    const trigger = screen.getByRole('button', { name: 'Workspace actions' });
+
+    await fireEvent.keyDown(trigger, { key: 'Enter' });
+    const transfer = await screen.findByRole('button', { name: 'Transfer/Download…' });
+
+    expect(transfer.getAttribute('data-icon-name')).toBe('right-left');
+    await fireEvent.click(transfer);
+
+    expect(mocks.dispatch).toHaveBeenCalledWith({
+      type: 'workspaceTransfer/openModal',
+      payload: [{ workspaceId: 'ws-1', workspaceTitle: 'Status Workspace' }],
+    });
+    await waitFor(() => expect(screen.queryByRole('menu')).toBeNull());
+  });
+
+  it('does not offer Transfer while workspace data is unavailable', async () => {
+    const WorkspaceSidebarHeader = (await import('../WorkspaceSidebarHeader.svelte')).default;
+    render(WorkspaceSidebarHeader, { props: { workspace: null, workspaceId: 'ws-1' } });
+
+    await fireEvent.keyDown(screen.getByRole('button', { name: 'Workspace actions' }), {
+      key: 'Enter',
+    });
+    await screen.findByRole('menu');
+
+    expect(screen.queryByRole('button', { name: 'Transfer/Download…' })).toBeNull();
   });
 });

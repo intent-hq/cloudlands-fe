@@ -2,8 +2,9 @@
  * Workspace transfer relay (main process) — wizard steps 3–4 execution.
  *
  * Drives the FE-mediated transfer per PROTOCOL §5.1: `workspace.export.start`
- * on the SOURCE (the invoking window's backend client, passed per start),
- * then either
+ * on the SOURCE (the invoking window's backend client, passed per start), after
+ * a server TARGET has completed an authenticated `host.status` preflight, then
+ * either
  *   - relays the sealed archive chunk-by-chunk (`workspace.export.read` →
  *     `workspace.import.chunk`) into a second, short-lived JsonRpcClient
  *     pinned to the chosen TARGET connection and commits
@@ -14,9 +15,10 @@
  * Archive bytes live only in this module — they never cross the renderer IPC
  * boundary; the renderer sees byte/chunk counters on `transfer:progress`.
  * The temporary target client is ALWAYS disposed (success, failure, cancel);
- * the active client stays pinned to the source throughout. Failures abort
- * both sides best-effort (`workspace.export.abort` + `workspace.import.abort`)
- * so the source stays usable and the target holds no staging garbage.
+ * the active client stays pinned to the source throughout. Preflight failures
+ * never touch the source; later failures abort both sides best-effort
+ * (`workspace.export.abort` + `workspace.import.abort`) so the source stays
+ * usable and the target holds no staging garbage.
  */
 
 import type {
@@ -89,6 +91,8 @@ interface TransferReadyData {
 
 /** Per-chunk ops get a generous bound (16 MiB base64 frames on slow links). */
 const CHUNK_TIMEOUT_MS = 120_000;
+/** Overall target connect + authenticated status-probe deadline. */
+const TARGET_PREFLIGHT_TIMEOUT_MS = 15_000;
 /** `workspace.import.commit` unpacks + materializes git — the slowest call. */
 const COMMIT_TIMEOUT_MS = 600_000;
 /** Waiting for the source's archive build (`:ready`/`:failed`) is unbounded
@@ -106,13 +110,15 @@ interface RelaySession {
    * to the daemon that owns this exportId. */
   source: RelayRpcClient;
   exportId: string;
+  /** True once `workspace.export.start` has been sent and agents may be stopped. */
+  sourceExportStarted: boolean;
   /** Set while chunks are staging on the target (cleared after commit). */
   importId?: string;
   targetConnectionId?: string;
   interruptedAgents: string[];
   committed: boolean;
   cancelled: boolean;
-  /** Settles the archive-build wait early when a cancel arrives mid-build. */
+  /** Settles the active preflight/build wait early when cancel arrives. */
   signalCancel?: () => void;
 }
 
@@ -156,6 +162,36 @@ export function createWorkspaceTransferRelay(deps: TransferRelayDeps): Workspace
       await client.request('workspace.import.abort', { importId });
     } catch (error) {
       deps.logger.warn('workspace.import.abort failed (best-effort)', { error: errText(error) });
+    }
+  }
+
+  /** Prove the target is authenticated and responsive before source export. */
+  async function preflightTarget(target: RelayRpcClient, current: RelaySession): Promise<void> {
+    if (current.cancelled) throw new Error('cancelled');
+    let signalCancel: (() => void) | undefined;
+    try {
+      await new Promise<void>((resolve, reject) => {
+        let settled = false;
+        const settle = (fn: () => void): void => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timer);
+          fn();
+        };
+        const timer = setTimeout(() => {
+          settle(() => reject(new Error('Timed out connecting to the transfer destination')));
+        }, TARGET_PREFLIGHT_TIMEOUT_MS);
+        signalCancel = () => settle(() => reject(new Error('cancelled')));
+        current.signalCancel = signalCancel;
+        target
+          .request('host.status', undefined, { timeoutMs: TARGET_PREFLIGHT_TIMEOUT_MS })
+          .then(() => settle(resolve))
+          .catch((error) =>
+            settle(() => reject(error instanceof Error ? error : new Error(errText(error)))),
+          );
+      });
+    } finally {
+      if (current.signalCancel === signalCancel) current.signalCancel = undefined;
     }
   }
 
@@ -232,6 +268,11 @@ export function createWorkspaceTransferRelay(deps: TransferRelayDeps): Workspace
           }
         };
         source.on('notification', listener);
+        if (isCancelled()) {
+          settle(() => reject(new Error('cancelled')));
+          return;
+        }
+        if (session) session.sourceExportStarted = true;
         source
           .request<{ exportId: string }>('workspace.export.start', { workspaceId })
           .then((result) => {
@@ -334,7 +375,11 @@ export function createWorkspaceTransferRelay(deps: TransferRelayDeps): Workspace
   ): Promise<TransferStartResult> {
     if (session && !session.committed && !session.cancelled) {
       if (!deps.isOwnerGone(session.ownerId)) {
-        return { success: false, error: 'a transfer is already in progress' };
+        return {
+          success: false,
+          error: 'a transfer is already in progress',
+          failurePhase: session.sourceExportStarted ? 'post-export' : 'preflight',
+        };
       }
       // The in-flight run's owner window is gone: no renderer remains to
       // cancel it, so release it here — flag it cancelled (its loop unwinds
@@ -360,6 +405,7 @@ export function createWorkspaceTransferRelay(deps: TransferRelayDeps): Workspace
       ownerId,
       source,
       exportId: '',
+      sourceExportStarted: false,
       interruptedAgents: [],
       committed: false,
       cancelled: false,
@@ -379,7 +425,16 @@ export function createWorkspaceTransferRelay(deps: TransferRelayDeps): Workspace
     }
 
     let targetHandle: TargetClientHandle | null = null;
+    let target: RelayRpcClient | null = null;
     try {
+      if (destination.kind === 'server') {
+        current.targetConnectionId = destination.connectionId;
+        targetHandle = await deps.createTargetClient(destination.connectionId);
+        target = targetHandle.client;
+        await preflightTarget(target, current);
+        if (isCancelled()) throw new Error('cancelled');
+      }
+
       const ready = await startExportAndAwaitReady(source, workspaceId, isCancelled);
       current.exportId = ready.exportId;
       if (isCancelled()) throw new Error('cancelled');
@@ -403,10 +458,8 @@ export function createWorkspaceTransferRelay(deps: TransferRelayDeps): Workspace
         return { success: true, filePath };
       }
 
-      // Server destination: temporary client to the target, staged import.
-      current.targetConnectionId = destination.connectionId;
-      targetHandle = await deps.createTargetClient(destination.connectionId);
-      const target = targetHandle.client;
+      // Server destination: reuse the preflighted target client for staged import.
+      if (!target) throw new Error('transfer destination client unavailable');
       const begin = await target.request<{ importId: string }>('workspace.import.begin', {
         manifest: ready.manifest,
         archiveSizeBytes: ready.archiveSizeBytes,
@@ -455,7 +508,8 @@ export function createWorkspaceTransferRelay(deps: TransferRelayDeps): Workspace
         throw error;
       }
     } catch (error) {
-      // Source cleanup: leave the workspace usable (agents stay stopped).
+      // Source cleanup only applies after export starts; preflight failures
+      // leave the source untouched and its agents running.
       if (current.exportId) await abortExport(source, current.exportId);
       const cancelled = current.cancelled || errText(error) === 'cancelled';
       if (!cancelled) {
@@ -468,7 +522,11 @@ export function createWorkspaceTransferRelay(deps: TransferRelayDeps): Workspace
       if (session === current) session = null;
       return cancelled
         ? { success: false, canceled: true }
-        : { success: false, error: errText(error) };
+        : {
+            success: false,
+            error: errText(error),
+            failurePhase: current.sourceExportStarted ? 'post-export' : 'preflight',
+          };
     } finally {
       targetHandle?.dispose();
     }

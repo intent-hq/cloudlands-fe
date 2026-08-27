@@ -20,10 +20,7 @@ import {
 import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
 import { m } from '$shared/paraglide/messages.js';
 import { switchConnectionRequested } from '../../connections/connections-slice';
-import type {
-  ConnectionRecord,
-  ConnectionsState,
-} from '../../connections/connections-types';
+import type { ConnectionRecord, ConnectionsState } from '../../connections/connections-types';
 import type { TransferPlan, WorkspaceTransferState } from '../workspace-transfer-types';
 import { workspaceTransferSaga } from './workspace-transfer-saga';
 
@@ -142,7 +139,9 @@ describe('workspaceTransferSaga', () => {
   });
 });
 
-function confirmLoadedState(destination: { kind: 'server'; connectionId: string } | { kind: 'download' }): WorkspaceTransferState {
+function confirmLoadedState(
+  destination: { kind: 'server'; connectionId: string } | { kind: 'download' },
+): WorkspaceTransferState {
   let state = workspaceTransferReducer(
     initialState,
     openTransferModal({ workspaceId: 'ws-1', workspaceTitle: 'My Space' }),
@@ -187,7 +186,11 @@ describe('workspaceTransferSaga — steps 3–4', () => {
   });
 
   it('transfer:start failure lands on the failed result with the reason', async () => {
-    mocks.invoke.mockResolvedValue({ success: false, error: 'versions must match exactly' });
+    mocks.invoke.mockResolvedValue({
+      success: false,
+      error: 'destination unavailable',
+      failurePhase: 'preflight',
+    });
     const h = harness(
       workspaceTransferReducer(
         confirmLoadedState({ kind: 'server', connectionId: 'conn-1' }),
@@ -199,7 +202,8 @@ describe('workspaceTransferSaga — steps 3–4', () => {
     await settle();
 
     expect(h.state().runStatus).toBe('failed');
-    expect(h.state().runError).toBe('versions must match exactly');
+    expect(h.state().runError).toBe('destination unavailable');
+    expect(h.state().failurePhase).toBe('preflight');
     h.task.cancel();
   });
 

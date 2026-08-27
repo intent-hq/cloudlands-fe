@@ -1,176 +1,98 @@
-/**
- * Test agent creation with custom rules and user rules
- * Ensures agents are created with proper rule loading and merging
- */
+import type { Workspace } from '$shared/types';
+import { UnifiedAgentFactory } from '$features/agent/services/agent-factory';
+import { initAppStore, store } from '$store/renderer/store';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+const { createAgentMock } = vi.hoisted(() => {
+  if (!globalThis.window) {
+    Object.defineProperty(globalThis, 'window', { value: {}, writable: true, configurable: true });
+  }
+  return { createAgentMock: vi.fn() };
+});
+vi.mock('$lib/client', () => ({ appClient: { agents: { create: createAgentMock } } }));
 
-describe('Agent Creation with Rules', () => {
-  let mockAgentFactory: any;
-  let mockRulesLoader: any;
+describe('Daemon-owned agent rules', () => {
+  let factory: UnifiedAgentFactory;
+  let disposeStore: () => void;
+  const workspace = {
+    id: 'ws-rules',
+    title: 'Rules workspace',
+    worktreePath: '/worktrees/rules',
+    createdAt: '2026-08-25T00:00:00.000Z',
+    updatedAt: '2026-08-25T00:00:00.000Z',
+  } as Workspace;
+
+  beforeAll(() => {
+    disposeStore = initAppStore(store).dispose;
+    factory = UnifiedAgentFactory.getInstance();
+  }, 30_000);
 
   beforeEach(() => {
-    mockRulesLoader = {
-      loadUserRules: vi.fn(async () => 'User rules from .augment/rules'),
-      loadAgentTypeRules: vi.fn(async (type) => `Rules for ${type} agent`),
-    };
-
-    mockAgentFactory = {
-      createAgent: vi.fn(async (workspace, config) => {
-        const userRules = await mockRulesLoader.loadUserRules();
-        const agentTypeRules = config.agentType
-          ? await mockRulesLoader.loadAgentTypeRules(config.agentType)
-          : '';
-
-        const mergedRules = [userRules, agentTypeRules, config.rules || '']
-          .filter(Boolean)
-          .join('\n\n');
-
-        return {
-          success: true,
-          agent: {
-            id: 'agent_1',
-            name: config.name,
-            workspaceId: workspace.id,
-            systemPrompt: mergedRules,
-            rules: {
-              userRules,
-              agentTypeRules,
-              customRules: config.rules || '',
-            },
-          },
-        };
-      }),
-    };
+    createAgentMock.mockReset();
+    createAgentMock.mockResolvedValue({
+      id: 'agent-rules-daemon',
+      backendSessionId: null,
+      workspaceId: workspace.id,
+      name: 'Rules Agent',
+      status: 'pending',
+      messages: [],
+      createdAt: '2026-08-25T00:00:00.000Z',
+      updatedAt: '2026-08-25T00:00:00.000Z',
+    });
+  });
+  afterAll(() => {
+    disposeStore?.();
+    vi.clearAllMocks();
   });
 
-  it('should load user rules from .augment/rules', async () => {
-    const workspace = { id: 'ws_1' };
-
-    const result = await mockAgentFactory.createAgent(workspace, {
-      name: 'Agent with Rules',
+  it('forwards agent type and behavior prompt for daemon-side instruction assembly', async () => {
+    const result = await factory.createAgent(workspace, {
+      workspaceId: workspace.id,
+      name: 'Rules Agent',
+      agentType: 'code-review',
+      behaviorPrompt: 'Focus on correctness',
+      source: 'contextual-menu',
     });
 
-    expect(result.agent.rules.userRules).toContain('User rules');
+    expect(result).toMatchObject({
+      success: true,
+      agentId: 'agent-rules-daemon',
+      agent: { metadata: { agentType: 'code-review' } },
+    });
+    expect(result.agent).not.toHaveProperty('systemPrompt');
+    expect(createAgentMock).toHaveBeenCalledWith({
+      workspaceId: workspace.id,
+      workspacePath: workspace.worktreePath,
+      name: 'Rules Agent',
+      model: undefined,
+      provider: undefined,
+      agentType: 'code-review',
+      prompt: 'Focus on correctness',
+      specialist: undefined,
+      metadata: { agentType: 'code-review', source: 'contextual-menu' },
+      workspaceContext: undefined,
+    });
   });
 
-  it('should load agent-type specific rules', async () => {
-    const workspace = { id: 'ws_1' };
-
-    const result = await mockAgentFactory.createAgent(workspace, {
-      name: 'Workspace Agent',
+  it('does not send a legacy frontend-built system prompt', async () => {
+    await factory.createAgent(workspace, {
+      workspaceId: workspace.id,
+      name: 'Rules Agent',
       agentType: 'workspace',
+      systemPrompt: 'Frontend rules must not reach the daemon',
     });
 
-    expect(result.agent.rules.agentTypeRules).toContain('workspace');
-  });
-
-  it('should merge user rules with agent-type rules', async () => {
-    const workspace = { id: 'ws_1' };
-
-    const result = await mockAgentFactory.createAgent(workspace, {
-      name: 'Agent',
-      agentType: 'task-loop',
+    expect(createAgentMock).toHaveBeenCalledWith({
+      workspaceId: workspace.id,
+      workspacePath: workspace.worktreePath,
+      name: 'Rules Agent',
+      model: undefined,
+      provider: undefined,
+      agentType: 'workspace',
+      prompt: undefined,
+      specialist: undefined,
+      metadata: { agentType: 'workspace', source: 'api' },
+      workspaceContext: undefined,
     });
-
-    const systemPrompt = result.agent.systemPrompt;
-    expect(systemPrompt).toContain('User rules');
-    expect(systemPrompt).toContain('task-loop');
-  });
-
-  it('should include custom rules in system prompt', async () => {
-    const workspace = { id: 'ws_1' };
-    const customRules = 'Custom rules for this agent';
-
-    const result = await mockAgentFactory.createAgent(workspace, {
-      name: 'Agent',
-      rules: customRules,
-    });
-
-    expect(result.agent.rules.customRules).toBe(customRules);
-    expect(result.agent.systemPrompt).toContain(customRules);
-  });
-
-  it('should merge all three rule sources', async () => {
-    const workspace = { id: 'ws_1' };
-    const customRules = 'Custom rules';
-
-    const result = await mockAgentFactory.createAgent(workspace, {
-      name: 'Agent',
-      agentType: 'review',
-      rules: customRules,
-    });
-
-    const systemPrompt = result.agent.systemPrompt;
-    expect(systemPrompt).toContain('User rules');
-    expect(systemPrompt).toContain('review');
-    expect(systemPrompt).toContain('Custom rules');
-  });
-
-  it('should handle missing user rules gracefully', async () => {
-    mockRulesLoader.loadUserRules = vi.fn(async () => '');
-
-    const workspace = { id: 'ws_1' };
-
-    const result = await mockAgentFactory.createAgent(workspace, {
-      name: 'Agent',
-      agentType: 'task-focused',
-    });
-
-    expect(result.success).toBe(true);
-    expect(result.agent.systemPrompt).toContain('task-focused');
-  });
-
-  it('should handle missing agent-type rules gracefully', async () => {
-    const workspace = { id: 'ws_1' };
-
-    const result = await mockAgentFactory.createAgent(workspace, {
-      name: 'Agent',
-      rules: 'Custom rules',
-    });
-
-    expect(result.success).toBe(true);
-    expect(result.agent.systemPrompt).toContain('Custom rules');
-  });
-
-  it('should preserve rule order: user -> type -> custom', async () => {
-    const workspace = { id: 'ws_1' };
-
-    const result = await mockAgentFactory.createAgent(workspace, {
-      name: 'Agent',
-      agentType: 'debug',
-      rules: 'Custom',
-    });
-
-    const prompt = result.agent.systemPrompt;
-    const userIndex = prompt.indexOf('User rules');
-    const typeIndex = prompt.indexOf('debug');
-    const customIndex = prompt.indexOf('Custom');
-
-    expect(userIndex).toBeLessThan(typeIndex);
-    expect(typeIndex).toBeLessThan(customIndex);
-  });
-
-  it('should create agent with workspace rules', async () => {
-    const workspace = { id: 'ws_1' };
-    const workspaceRules = 'Workspace-specific rules';
-
-    const result = await mockAgentFactory.createAgent(workspace, {
-      name: 'Agent',
-      rules: workspaceRules,
-    });
-
-    expect(result.agent.rules.customRules).toBe(workspaceRules);
-  });
-
-  it('should handle empty rules gracefully', async () => {
-    const workspace = { id: 'ws_1' };
-
-    const result = await mockAgentFactory.createAgent(workspace, {
-      name: 'Agent',
-      rules: '',
-    });
-
-    expect(result.success).toBe(true);
   });
 });

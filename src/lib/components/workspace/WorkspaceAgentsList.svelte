@@ -8,6 +8,7 @@
   import { Skeleton } from '$lib/components/ui/skeleton';
   import { faChevronDown, faRotateLeft } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
+  import { untrack } from 'svelte';
   import { slide } from 'svelte/transition';
   import Button from '$lib/components/ui/button/button.svelte';
   import Header from '$lib/components/ui/Header.svelte';
@@ -39,6 +40,14 @@
     openPanelTabs?: PanelTab[];
     activePanelTab?: PanelTab | null;
     searchQuery?: string;
+    /** Daemon-served retired-row count (§5.5 v8.2) — renders the collapsed bin before rows load. */
+    retiredCount?: number;
+    /** True once the lazy retired-only read has hydrated the retired rows. */
+    retiredAgentsLoaded?: boolean;
+    /** True while the lazy retired-only read is in flight. */
+    loadingRetired?: boolean;
+    /** Lazy-load trigger: fired when the Retired bin expands (or a search needs retired rows). */
+    onLoadRetired?: () => void;
   }
 
   let {
@@ -54,6 +63,10 @@
     openPanelTabs = [],
     activePanelTab,
     searchQuery = '',
+    retiredCount = 0,
+    retiredAgentsLoaded = false,
+    loadingRetired = false,
+    onLoadRetired,
   }: Props = $props();
 
   const activeAgents = $derived(agents.filter((agent) => !isRetiredAgent(agent)));
@@ -116,6 +129,46 @@
   const runningBackgroundCount = $derived(
     standaloneBackgroundAgents.filter((agent) => isAgentRunning(agent.id)).length,
   );
+  // The bin toggle renders from the daemon-served count until the lazy
+  // retired-only read hydrates the rows; loaded rows are authoritative after
+  // that (they also reflect live retire/restore updates and search filtering).
+  const displayedRetiredCount = $derived(
+    retiredAgentsLoaded ? retiredAgents.length : Math.max(retiredCount, retiredAgents.length),
+  );
+  const hasRetiredBin = $derived(displayedRetiredCount > 0);
+  // Expanding the bin — or activating a search, which must cover retired
+  // agents — lazy-loads the retired rows (§5.5 v8.2). The load fires on the
+  // user-action TRANSITION (expand click / search activation), never
+  // reactively off `loadingRetired`: a failed read leaves `retiredAgentsLoaded`
+  // false, so a state-tracking effect would re-dispatch the moment the loading
+  // flag clears — an unbounded hot retry loop against an erroring daemon.
+  // Failure semantics are retry-on-next-transition instead (collapse/re-expand
+  // or clear/re-type the search); the saga side is idempotent either way
+  // (skip-when-loaded + takeLeading single-flight).
+  function requestRetiredLoad() {
+    if (!hasRetiredBin || retiredAgentsLoaded || loadingRetired) return;
+    onLoadRetired?.();
+  }
+
+  function toggleRetiredBin() {
+    showRetiredAgents = !showRetiredAgents;
+    if (showRetiredAgents) requestRetiredLoad();
+  }
+
+  // Search activation is a prop transition, not a local event, so watch the
+  // edge with an effect tracking ONLY `hasActiveSearch` + `hasRetiredBin`
+  // (the load gates are read untracked): it fires once when a search becomes
+  // active over a visible bin — including a mount with an active search — and
+  // once more if the bin appears while a search is already active (count
+  // landing after mount, when the earlier transition consumed itself against
+  // the hidden bin). It cannot re-run off loading-state churn: with both edges
+  // already true, `fired` stays latched until one of them drops.
+  let searchLoadFired = false;
+  $effect(() => {
+    const wanted = hasActiveSearch && hasRetiredBin;
+    if (wanted && !searchLoadFired) untrack(requestRetiredLoad);
+    searchLoadFired = wanted;
+  });
 
   function isAgentRunning(agentId: string): boolean {
     return runningAgentIdSet.has(agentId);
@@ -221,7 +274,7 @@
       </div>
     {/each}
   </div>
-{:else if topLevelForegroundAgents.length === 0 && standaloneBackgroundAgents.length === 0 && retiredAgents.length === 0}
+{:else if topLevelForegroundAgents.length === 0 && standaloneBackgroundAgents.length === 0 && !hasRetiredBin}
   <ListEmpty
     message={hasActiveSearch
       ? m.workspace_agentsList_noSearchResults_label()
@@ -337,19 +390,19 @@
   </div>
 {/if}
 
-{#if !loading && retiredAgents.length > 0}
+{#if !loading && hasRetiredBin}
   <div class="container w-full min-w-0 pt-2">
     <Button
       variant="ghost-light"
       size="sm"
       class="h-9 w-full min-w-0 gap-1.5 rounded-md bg-transparent px-2 text-sm font-normal hover:bg-transparent active:bg-transparent focus-visible:-outline-offset-2 focus-visible:outline-2 focus-visible:outline-ring focus-visible:ring-0"
-      onclick={() => (showRetiredAgents = !showRetiredAgents)}
+      onclick={toggleRetiredBin}
       aria-expanded={showRetiredAgents}
       data-agent-retired-toggle
     >
       <span class="min-w-0 flex-1 truncate text-left">
         {m.workspace_agentsList_retiredAgents_label({
-          count: formatInteger(retiredAgents.length),
+          count: formatInteger(displayedRetiredCount),
         })}
       </span>
       <Fa
@@ -362,7 +415,19 @@
     </Button>
   </div>
 
-  {#if shouldVirtualizeRetired}
+  {#if (hasActiveSearch || showRetiredAgents) && !retiredAgentsLoaded && retiredAgents.length === 0}
+    <!-- Lazy retired-only read in flight (or about to start): skeleton rows.
+         Rows already in state (e.g. retired live via agent:retired) render
+         immediately below instead — late-loaded rows merge into them. -->
+    <div class="space-y-2 py-2" data-agent-retired-loading>
+      {#each [1, 2] as { }}
+        <div class="flex h-10 items-center gap-2 rounded-md px-2">
+          <Skeleton class="size-6 shrink-0 rounded-md" />
+          <Skeleton class="h-3.5 w-24" />
+        </div>
+      {/each}
+    </div>
+  {:else if shouldVirtualizeRetired}
     {#if hasActiveSearch || showRetiredAgents}
       <!-- Virtual scrolling for large retired sets (flat, uniform-height rows) -->
       <div class="max-h-150 overflow-hidden pt-1" data-agent-retired-section>

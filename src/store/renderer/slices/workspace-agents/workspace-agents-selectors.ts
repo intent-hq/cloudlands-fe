@@ -75,6 +75,21 @@ export const selectIsLoadingAgents = store.createSelector((state, wsId: string) 
   return getWorkspaceAgentState(state, wsId).isLoadingAgents;
 });
 
+/** Daemon-served retired-row count (§5.5 soft retire, v8.2) for the Retired bin toggle. */
+export const selectRetiredCount = store.createSelector((state, wsId: string) => {
+  return getWorkspaceAgentState(state, wsId).retiredCount;
+});
+
+/** True once the on-demand retired-only read has hydrated the retired rows. */
+export const selectRetiredAgentsLoaded = store.createSelector((state, wsId: string) => {
+  return getWorkspaceAgentState(state, wsId).retiredAgentsLoaded;
+});
+
+/** True while the on-demand retired-only read is in flight. */
+export const selectIsLoadingRetiredAgents = store.createSelector((state, wsId: string) => {
+  return getWorkspaceAgentState(state, wsId).isLoadingRetiredAgents;
+});
+
 function byCreatedOrder(left: AgentSession, right: AgentSession): number {
   const leftTime = new Date(left.createdAt).getTime();
   const rightTime = new Date(right.createdAt).getTime();

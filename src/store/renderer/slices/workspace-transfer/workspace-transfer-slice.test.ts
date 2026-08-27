@@ -179,13 +179,18 @@ describe('workspaceTransferReducer — steps 3–4', () => {
   });
 
   it('retry from a failed result restarts the run and clears prior outcome', () => {
-    const failed = workspaceTransferReducer(transferringState(), transferRunFailed('boom'));
+    const failed = workspaceTransferReducer(
+      transferringState(),
+      transferRunFailed({ error: 'boom', failurePhase: 'preflight' }),
+    );
     expect(failed.step).toBe('result');
     expect(failed.runStatus).toBe('failed');
+    expect(failed.failurePhase).toBe('preflight');
     const retried = workspaceTransferReducer(failed, transferStartRequested());
     expect(retried.step).toBe('transferring');
     expect(retried.runStatus).toBe('running');
     expect(retried.runError).toBeNull();
+    expect(retried.failurePhase).toBeNull();
   });
 
   it('progress frames update only while running', () => {
@@ -196,7 +201,10 @@ describe('workspaceTransferReducer — steps 3–4', () => {
     expect(state.progress).toEqual(relayProgress);
 
     // Ignored after the run settled.
-    const settled = workspaceTransferReducer(state, transferRunFailed('x'));
+    const settled = workspaceTransferReducer(
+      state,
+      transferRunFailed({ error: 'x', failurePhase: 'post-export' }),
+    );
     expect(
       workspaceTransferReducer(settled, transferProgressReceived(relayProgress)).progress,
     ).toEqual(settled.progress);
@@ -249,12 +257,13 @@ describe('workspaceTransferReducer — steps 3–4', () => {
   it('finalize is rejected while transferring or after failure', () => {
     const transferring = transferringState();
     expect(
-      workspaceTransferReducer(
-        transferring,
-        transferFinalizeRequested({ switchToTarget: false }),
-      ).finalizeStatus,
+      workspaceTransferReducer(transferring, transferFinalizeRequested({ switchToTarget: false }))
+        .finalizeStatus,
     ).toBe('idle');
-    const failed = workspaceTransferReducer(transferring, transferRunFailed('x'));
+    const failed = workspaceTransferReducer(
+      transferring,
+      transferRunFailed({ error: 'x', failurePhase: 'post-export' }),
+    );
     expect(
       workspaceTransferReducer(failed, transferFinalizeRequested({ switchToTarget: false }))
         .finalizeStatus,
@@ -293,22 +302,37 @@ describe('selectTransferTargetConnections', () => {
   const REMOTE_1 = remote('remote-1', '10.0.0.5');
   const REMOTE_2 = remote('remote-2', '10.0.0.6');
 
-  function connectionsState(records: ConnectionRecord[], activeId: string): StoreState {
+  function connectionsState(
+    records: ConnectionRecord[],
+    activeId: string,
+    windowBackendId = activeId,
+  ): StoreState {
     return {
       connections: {
         ...connectionsInitialState,
         connections: createCollection<ConnectionRecord, 'id'>('id', records),
         activeId,
+        windowBackendId,
       },
     } as unknown as StoreState;
   }
 
-  it('remote active: lists local and the other remotes, excluding the active backend', () => {
+  it('remote window with local persisted active: lists local and other remotes but excludes its source', () => {
+    const state = connectionsState([LOCAL, REMOTE_1, REMOTE_2], LOCAL_CONNECTION_ID, REMOTE_1.id);
+    expect(selectTransferTargetConnections.select(state)).toEqual([LOCAL, REMOTE_2]);
+  });
+
+  it('local window with remote persisted active: excludes local and includes eligible remotes', () => {
+    const state = connectionsState([LOCAL, REMOTE_1, REMOTE_2], REMOTE_1.id, LOCAL_CONNECTION_ID);
+    expect(selectTransferTargetConnections.select(state)).toEqual([REMOTE_1, REMOTE_2]);
+  });
+
+  it('ordinary remote source: lists local and the other remotes', () => {
     const state = connectionsState([LOCAL, REMOTE_1, REMOTE_2], 'remote-1');
     expect(selectTransferTargetConnections.select(state)).toEqual([LOCAL, REMOTE_2]);
   });
 
-  it('local active: lists only remotes (local excluded as the active backend)', () => {
+  it('ordinary local source: lists only remotes', () => {
     const state = connectionsState([LOCAL, REMOTE_1, REMOTE_2], LOCAL_CONNECTION_ID);
     expect(selectTransferTargetConnections.select(state)).toEqual([REMOTE_1, REMOTE_2]);
   });

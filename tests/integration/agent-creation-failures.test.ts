@@ -1,175 +1,84 @@
-/**
- * Test agent creation failure scenarios and recovery
- * Ensures proper error handling and recovery mechanisms
- */
+import type { Workspace } from '$shared/types';
+import { UnifiedAgentFactory } from '$features/agent/services/agent-factory';
+import { initAppStore, store } from '$store/renderer/store';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+const { createAgentMock } = vi.hoisted(() => {
+  if (!globalThis.window) {
+    Object.defineProperty(globalThis, 'window', { value: {}, writable: true, configurable: true });
+  }
+  return { createAgentMock: vi.fn() };
+});
+vi.mock('$lib/client', () => ({ appClient: { agents: { create: createAgentMock } } }));
 
-describe('Agent Creation Failures & Recovery', () => {
-  let mockAgentFactory: any;
-  let mockErrorTracker: any;
+describe('Agent creation failures and recovery', () => {
+  let factory: UnifiedAgentFactory;
+  let disposeStore: () => void;
+  const workspace = {
+    id: 'ws-failures',
+    title: 'Failure workspace',
+    worktreePath: '/worktrees/failures',
+    createdAt: '2026-08-25T00:00:00.000Z',
+    updatedAt: '2026-08-25T00:00:00.000Z',
+  } as Workspace;
+  const request = {
+    workspaceId: workspace.id,
+    workspacePath: workspace.worktreePath,
+    name: 'Retry Agent',
+    model: undefined,
+    provider: undefined,
+    agentType: undefined,
+    prompt: undefined,
+    specialist: undefined,
+    metadata: { agentType: undefined, source: 'api' },
+    workspaceContext: undefined,
+  };
 
-  beforeEach(() => {
-    mockErrorTracker = {
-      trackError: vi.fn(),
-    };
+  beforeAll(() => {
+    disposeStore = initAppStore(store).dispose;
+    factory = UnifiedAgentFactory.getInstance();
+  }, 30_000);
 
-    mockAgentFactory = {
-      createAgent: vi.fn(async (workspace, config) => {
-        // Simulate various failure scenarios
-        if (!workspace?.id) {
-          mockErrorTracker.trackError({
-            message: 'Invalid workspace',
-            code: 'INVALID_WORKSPACE',
-          });
-          return { success: false, error: 'Invalid workspace' };
-        }
-
-        if (config.name === 'FAIL') {
-          mockErrorTracker.trackError({
-            message: 'Agent creation failed',
-            code: 'CREATION_FAILED',
-          });
-          return { success: false, error: 'Agent creation failed' };
-        }
-
-        return {
-          success: true,
-          agent: {
-            id: 'agent_1',
-            name: config.name,
-            workspaceId: workspace.id,
-          },
-        };
-      }),
-    };
+  beforeEach(() => createAgentMock.mockReset());
+  afterAll(() => {
+    disposeStore?.();
+    vi.clearAllMocks();
   });
 
-  it('should handle invalid workspace gracefully', async () => {
-    const result = await mockAgentFactory.createAgent(null, {
-      name: 'Agent',
+  it('rejects a workspace without an id before calling the daemon', async () => {
+    const result = await factory.createAgent(null as unknown as Workspace, {
+      workspaceId: workspace.id,
+      name: 'Retry Agent',
     });
 
-    expect(result.success).toBe(false);
-    expect(result.error).toContain('Invalid workspace');
+    expect(result).toMatchObject({ success: false, error: expect.stringContaining('workspace') });
+    expect(createAgentMock).not.toHaveBeenCalled();
   });
 
-  it('should track creation errors', async () => {
-    await mockAgentFactory.createAgent(null, { name: 'Agent' });
-
-    expect(mockErrorTracker.trackError).toHaveBeenCalled();
-  });
-
-  it('should handle missing workspace ID', async () => {
-    const result = await mockAgentFactory.createAgent({}, { name: 'Agent' });
-
-    expect(result.success).toBe(false);
-  });
-
-  it('should handle agent creation failure', async () => {
-    const workspace = { id: 'ws_1' };
-
-    const result = await mockAgentFactory.createAgent(workspace, {
-      name: 'FAIL',
+  it('surfaces a daemon failure and permits a later protocol-shaped success', async () => {
+    createAgentMock.mockRejectedValueOnce(new Error('provider unavailable')).mockResolvedValueOnce({
+      id: 'agent-retry-daemon',
+      backendSessionId: null,
+      workspaceId: workspace.id,
+      name: 'Retry Agent',
+      status: 'pending',
+      messages: [],
+      createdAt: '2026-08-25T00:00:00.000Z',
+      updatedAt: '2026-08-25T00:00:00.000Z',
     });
 
-    expect(result.success).toBe(false);
-    expect(result.error).toContain('failed');
-  });
-
-  it('should provide error message on failure', async () => {
-    const workspace = { id: 'ws_1' };
-
-    const result = await mockAgentFactory.createAgent(workspace, {
-      name: 'FAIL',
+    const failed = await factory.createAgent(workspace, {
+      workspaceId: workspace.id,
+      name: 'Retry Agent',
+    });
+    const recovered = await factory.createAgent(workspace, {
+      workspaceId: workspace.id,
+      name: 'Retry Agent',
     });
 
-    expect(result.error).toBeDefined();
-    expect(typeof result.error).toBe('string');
-  });
-
-  it('should allow retry after failure', async () => {
-    const workspace = { id: 'ws_1' };
-
-    // First attempt fails
-    const result1 = await mockAgentFactory.createAgent(workspace, {
-      name: 'FAIL',
-    });
-    expect(result1.success).toBe(false);
-
-    // Second attempt succeeds
-    const result2 = await mockAgentFactory.createAgent(workspace, {
-      name: 'Success Agent',
-    });
-    expect(result2.success).toBe(true);
-  });
-
-  it('should handle timeout during creation', async () => {
-    const workspace = { id: 'ws_1' };
-
-    mockAgentFactory.createAgent = vi.fn(
-      () =>
-        new Promise((resolve) => {
-          setTimeout(() => {
-            resolve({ success: false, error: 'Timeout' });
-          }, 100);
-        }),
-    );
-
-    const result = await Promise.race([
-      mockAgentFactory.createAgent(workspace, { name: 'Agent' }),
-      new Promise((resolve) =>
-        setTimeout(() => resolve({ success: false, error: 'Timeout' }), 50),
-      ),
-    ]);
-
-    expect((result as any).error).toBe('Timeout');
-  });
-
-  it('should handle concurrent creation failures', async () => {
-    const workspace = { id: 'ws_1' };
-
-    const results = await Promise.all([
-      mockAgentFactory.createAgent(workspace, { name: 'FAIL' }),
-      mockAgentFactory.createAgent(workspace, { name: 'FAIL' }),
-      mockAgentFactory.createAgent(workspace, { name: 'FAIL' }),
-    ]);
-
-    expect(results.every((r: any) => !r.success)).toBe(true);
-  });
-
-  it('should recover from partial failure', async () => {
-    const workspace = { id: 'ws_1' };
-
-    const results = await Promise.all([
-      mockAgentFactory.createAgent(workspace, { name: 'FAIL' }),
-      mockAgentFactory.createAgent(workspace, { name: 'Success' }),
-      mockAgentFactory.createAgent(workspace, { name: 'FAIL' }),
-    ]);
-
-    expect(results[0].success).toBe(false);
-    expect(results[1].success).toBe(true);
-    expect(results[2].success).toBe(false);
-  });
-
-  it('should not create agent on validation failure', async () => {
-    const workspace = { id: 'ws_1' };
-
-    const result = await mockAgentFactory.createAgent(workspace, {
-      name: 'FAIL',
-    });
-
-    expect(result.success).toBe(false);
-    expect(result.agent).toBeUndefined();
-  });
-
-  it('should provide recovery suggestions in error', async () => {
-    const workspace = { id: 'ws_1' };
-
-    const result = await mockAgentFactory.createAgent(workspace, {
-      name: 'FAIL',
-    });
-
-    expect(result.error).toBeDefined();
+    expect(failed).toMatchObject({ success: false, error: 'provider unavailable' });
+    expect(recovered).toMatchObject({ success: true, agentId: 'agent-retry-daemon' });
+    expect(createAgentMock).toHaveBeenNthCalledWith(1, request);
+    expect(createAgentMock).toHaveBeenNthCalledWith(2, request);
   });
 });

@@ -1,126 +1,80 @@
-/**
- * Test initial agent creation during workspace initialization
- * Ensures agents are properly created when a new workspace is set up
- */
+import type { Workspace } from '$shared/types';
+import { AgentStatus } from '$shared/types';
+import { UnifiedAgentFactory } from '$features/agent/services/agent-factory';
+import { initAppStore, store } from '$store/renderer/store';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+const { createAgentMock } = vi.hoisted(() => {
+  if (!globalThis.window) {
+    Object.defineProperty(globalThis, 'window', { value: {}, writable: true, configurable: true });
+  }
+  return { createAgentMock: vi.fn() };
+});
+vi.mock('$lib/client', () => ({ appClient: { agents: { create: createAgentMock } } }));
 
-describe('Initial Agent Creation (Workspace Initialization)', () => {
-  let mockAgentFactory: any;
+describe('Initial agent creation', () => {
+  let factory: UnifiedAgentFactory;
+  let disposeStore: () => void;
+  const workspace = {
+    id: 'ws-initial',
+    title: 'Initial workspace',
+    worktreePath: '/worktrees/initial',
+    createdAt: '2026-08-25T00:00:00.000Z',
+    updatedAt: '2026-08-25T00:00:00.000Z',
+  } as Workspace;
+
+  beforeAll(() => {
+    disposeStore = initAppStore(store).dispose;
+    factory = UnifiedAgentFactory.getInstance();
+  }, 30_000);
 
   beforeEach(() => {
-    mockAgentFactory = {
-      createAgent: vi.fn(async (workspace, config) => {
-        if (!workspace?.id) {
-          return { success: false, error: 'Invalid workspace' };
-        }
-        return {
-          success: true,
-          agent: {
-            id: 'agent_initial_1',
-            name: config.name || 'Initial Agent',
-            workspaceId: workspace.id,
-            status: 'pending',
-            isInitialAgent: true,
-            createdAt: new Date(),
-          },
-        };
-      }),
-    };
-
+    createAgentMock.mockReset();
+    createAgentMock.mockResolvedValue({
+      id: 'agent-initial-daemon',
+      backendSessionId: null,
+      workspaceId: workspace.id,
+      name: 'Initial Workspace Agent',
+      status: 'pending',
+      messages: [],
+      createdAt: '2026-08-25T00:00:00.000Z',
+      updatedAt: '2026-08-25T00:00:00.000Z',
+    });
+  });
+  afterAll(() => {
+    disposeStore?.();
+    vi.clearAllMocks();
   });
 
-  it('should create initial agent when workspace is created', async () => {
-    const workspace = { id: 'ws_1', name: 'Test Workspace' };
-
-    const result = await mockAgentFactory.createAgent(workspace, {
-      name: 'Initial Agent',
+  it('creates the initializer session through the daemon and records its source', async () => {
+    const result = await factory.createAgent(workspace, {
+      workspaceId: workspace.id,
+      name: 'Initial Workspace Agent',
+      agentType: 'workspace',
       source: 'workspace-initializer',
     });
 
-    expect(result.success).toBe(true);
-    expect(result.agent.isInitialAgent).toBe(true);
-    expect(result.agent.status).toBe('pending');
-  });
-
-  it('should set initial agent to pending status', async () => {
-    const workspace = { id: 'ws_1' };
-
-    const result = await mockAgentFactory.createAgent(workspace, {
-      name: 'Initial Agent',
-      source: 'workspace-initializer',
+    expect(result).toMatchObject({
+      success: true,
+      agentId: 'agent-initial-daemon',
+      agent: {
+        id: 'agent-initial-daemon',
+        workspaceId: workspace.id,
+        status: AgentStatus.Idle,
+        metadata: { agentType: 'workspace', source: 'workspace-initializer' },
+      },
     });
-
-    expect(result.agent.status).toBe('pending');
-  });
-
-  it('should mark agent as initial agent', async () => {
-    const workspace = { id: 'ws_1' };
-
-    const result = await mockAgentFactory.createAgent(workspace, {
-      name: 'Initial Agent',
-      source: 'workspace-initializer',
+    expect(createAgentMock).toHaveBeenCalledWith({
+      workspaceId: workspace.id,
+      workspacePath: workspace.worktreePath,
+      name: 'Initial Workspace Agent',
+      model: undefined,
+      provider: undefined,
+      agentType: 'workspace',
+      prompt: undefined,
+      specialist: undefined,
+      metadata: { agentType: 'workspace', source: 'workspace-initializer' },
+      workspaceContext: undefined,
     });
-
-    expect(result.agent.isInitialAgent).toBe(true);
-  });
-
-  it('should use workspace-initializer as source', async () => {
-    const workspace = { id: 'ws_1' };
-
-    await mockAgentFactory.createAgent(workspace, {
-      name: 'Initial Agent',
-      source: 'workspace-initializer',
-    });
-
-    expect(mockAgentFactory.createAgent).toHaveBeenCalledWith(
-      expect.any(Object),
-      expect.objectContaining({
-        source: 'workspace-initializer',
-      }),
-    );
-  });
-
-  it('should handle initial agent creation failure', async () => {
-    const invalidWorkspace = { id: null };
-
-    const result = await mockAgentFactory.createAgent(invalidWorkspace, {
-      name: 'Initial Agent',
-    });
-
-    expect(result.success).toBe(false);
-  });
-
-  it('should create agent with default name if not provided', async () => {
-    const workspace = { id: 'ws_1' };
-
-    const result = await mockAgentFactory.createAgent(workspace, {
-      source: 'workspace-initializer',
-    });
-
-    expect(result.agent.name).toBe('Initial Agent');
-  });
-
-  it('should associate agent with workspace', async () => {
-    const workspace = { id: 'ws_1', name: 'My Workspace' };
-
-    const result = await mockAgentFactory.createAgent(workspace, {
-      name: 'Initial Agent',
-      source: 'workspace-initializer',
-    });
-
-    expect(result.agent.workspaceId).toBe('ws_1');
-  });
-
-  it('should set creation timestamp', async () => {
-    const workspace = { id: 'ws_1' };
-
-    const result = await mockAgentFactory.createAgent(workspace, {
-      name: 'Initial Agent',
-      source: 'workspace-initializer',
-    });
-
-    expect(result.agent.createdAt).toBeDefined();
-    expect(result.agent.createdAt instanceof Date).toBe(true);
   });
 });

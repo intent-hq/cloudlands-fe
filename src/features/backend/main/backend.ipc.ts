@@ -61,6 +61,7 @@ import {
   setOrphanedSidecarInfo,
 } from './connection-mode';
 import { computeDaemonVersionRefresh } from './daemon-version-refresh';
+import { daemonHelloBuildKey, extractDaemonHelloBuildInfo } from './daemon-hello-build-info';
 import { detectOrphanedSidecar } from './intentd-orphan';
 import { defaultKill, restartOrphanedSidecar } from './orphan-recovery';
 import * as connectionsStore from './connections-store';
@@ -123,6 +124,40 @@ const BACKEND = IPC_CHANNELS.BACKEND;
 const CONNECTIONS = IPC_CHANNELS.CONNECTIONS;
 
 let client: JsonRpcClient | null = null;
+// Last daemon build identity logged per connection from a `client.hello`
+// result (#3649): the handshake re-runs on every (re)connect, so dedupe on
+// version+commit per connection id to log each connected daemon's build once
+// instead of once per reconnect (a daemon upgrade logs again).
+const lastLoggedDaemonBuildKeys = new Map<string, string>();
+
+/**
+ * #3649: log the connected daemon's build identity once at INFO so the log
+ * file records which daemon build each connection talked to. Shared by the
+ * primary client and secondary pool members; `connectionId` disambiguates
+ * which backend the line refers to and scopes the reconnect dedupe. The
+ * BuildInfo category is pinned to INFO in logging-config.ts so the line
+ * survives the packaged build's WARN default level.
+ */
+const buildInfoLogger = new Logger('BuildInfo');
+
+function logDaemonHelloBuild(helloResult: unknown, connectionId: string): void {
+  const helloBuild = extractDaemonHelloBuildInfo(helloResult);
+  if (!helloBuild) return;
+  const key = daemonHelloBuildKey(helloBuild);
+  if (lastLoggedDaemonBuildKeys.get(connectionId) === key) return;
+  lastLoggedDaemonBuildKeys.set(connectionId, key);
+  // i18n-ignore (developer log message)
+  buildInfoLogger.info('Connected to intentd', {
+    connectionId,
+    version: helloBuild.version,
+    buildCommit: helloBuild.buildCommit ?? 'unknown',
+  });
+}
+
+/** @internal Test seam: clear the per-connection daemon-build log dedupe. */
+export function __resetDaemonBuildLogForTesting(): void {
+  lastLoggedDaemonBuildKeys.clear();
+}
 const backendClients = new Map<string, JsonRpcClient>();
 const backendClientConnects = new Map<string, Promise<JsonRpcClient>>();
 let handlersRegistered = false;
@@ -541,6 +576,9 @@ export function getBackendClient(): JsonRpcClient {
       handleHelloProtocolVersion(
         typeof obj?.protocolVersion === 'string' ? obj.protocolVersion : null,
       );
+      // #3649: log the connected daemon's build identity once at INFO so the
+      // log file records which daemon build it talked to.
+      logDaemonHelloBuild(result, connectionId);
       // #3448: refresh the adopted external daemon's version info from the
       // live `server.version` on every (re)connect — the startup probe only
       // latches it once, so a daemon upgrade would otherwise stay stale. For
@@ -765,6 +803,9 @@ function createAdditionalBackendClient(id: string, config: BackendConnectionConf
       if (typeof clientId === 'string' && clientId.length > 0) {
         void persistClientId(clientId);
       }
+      // #3649: pool members log their daemon's build identity too, keyed by
+      // connection id so multi-backend setups record every daemon build.
+      logDaemonHelloBuild(result, id);
     },
   });
   instance.on('notification', (notification: JsonRpcNotification) => {
@@ -1034,17 +1075,32 @@ export async function reconcileActiveConnectionOnBoot(): Promise<void> {
   // A persisted activeId pointing at this machine's own (hidden) self entry —
   // e.g. selected on another device before this machine's list started hiding
   // it, then synced back — resolves to local: that record IS this daemon, and
-  // the hidden entry must never be restored as a WSS "remote". Silent (no
-  // boot-fallback notice — nothing is unreachable) and fail-soft: a detection
-  // error just takes the normal restore path.
+  // the hidden entry must never be restored as a WSS "remote". Detection
+  // matches the persisted self fingerprint first and falls back to probing the
+  // LIVE local daemon's cert fingerprint (the persisted key can be missing or
+  // stale when the record synced in before this machine ever published).
+  // Silent (no boot-fallback notice — nothing is unreachable) and fail-soft: a
+  // detection error just takes the normal restore path.
   let isSelfEntry = false;
   try {
-    const [records, selfFingerprint] = await Promise.all([
+    const [records, storedFingerprint] = await Promise.all([
       connectionsStore.list(),
       getStoredSelfFingerprint(),
     ]);
     const target = records.find((c) => c.id === activeId);
-    isSelfEntry = target !== undefined && isSelfConnectionRecord(target, selfFingerprint);
+    if (target !== undefined) {
+      isSelfEntry = isSelfConnectionRecord(target, buildSelfFingerprintKeys(storedFingerprint));
+      if (!isSelfEntry) {
+        // Probed only when the persisted key did not already decide, so the
+        // stored-match redirect never builds a client. The probe's lazily
+        // built local client is swapped out by the restore path's
+        // disposeBackendClient() below (same as any early consumer's client).
+        // Bounded like the boot reachability probe: a hung (not down) local
+        // daemon must not stall the remote restore for the 30s default.
+        const liveFingerprint = await getLiveSelfFingerprint(bootReconnectTimeoutMs);
+        isSelfEntry = isSelfConnectionRecord(target, buildSelfFingerprintKeys(liveFingerprint));
+      }
+    }
   } catch (error) {
     logger.warn('Could not evaluate self-entry redirect at boot (fail-soft)', {
       id: activeId,
@@ -1302,18 +1358,78 @@ async function refreshRemoteHosts(id: string): Promise<void> {
 }
 
 /**
+ * Cached single-flight probe of the LIVE local daemon's cert fingerprint
+ * (normalized), used alongside the persisted self fingerprint for self-entry
+ * detection. The daemon's cert is stable for the app session, so a successful
+ * probe is cached (concurrent callers share the one in-flight promise); a
+ * FAILED/unusable probe caches nothing and is retried on a later call.
+ * Fail-soft: resolves `null` when the local daemon is unreachable or the app
+ * is pinned to a remote with no local pool member — callers fall back to the
+ * persisted fingerprint alone. `timeoutMs` bounds a NEWLY started probe's
+ * request (an already-cached value or in-flight probe is returned as-is);
+ * callers on a latency-sensitive path (boot) pass a short bound so a hung
+ * local daemon cannot stall them for the client's 30s default.
+ */
+let cachedLiveSelfFingerprint: string | null = null;
+let liveSelfFingerprintProbe: Promise<string | null> | null = null;
+
+function getLiveSelfFingerprint(timeoutMs?: number): Promise<string | null> {
+  if (cachedLiveSelfFingerprint !== null) return Promise.resolve(cachedLiveSelfFingerprint);
+  if (liveSelfFingerprintProbe) return liveSelfFingerprintProbe;
+  const localClient = getLocalClientForSelfPublish();
+  if (!localClient) return Promise.resolve(null);
+  const probe: Promise<string | null> = localClient
+    .request('server.pairingInfo', undefined, { timeoutMs })
+    .then(
+      (result) => normalizeFingerprint(extractSelfPairingInfo(result)?.certFingerprint ?? null),
+      () => null,
+    )
+    .then(async (fingerprint) => {
+      // Fail-soft: never cache an unusable probe (unreachable daemon,
+      // malformed result) — a later call retries it.
+      if (liveSelfFingerprintProbe === probe) liveSelfFingerprintProbe = null;
+      if (fingerprint !== null && cachedLiveSelfFingerprint === null) {
+        cachedLiveSelfFingerprint = fingerprint;
+        // A list served before the probe resolved could not hide a
+        // live-matching entry — refresh every renderer now that it can, but
+        // only when the new key actually hides a stored record (the common
+        // no-match session would otherwise pay one redundant re-render).
+        // Fail-soft: a store read error just skips the refresh.
+        try {
+          const records = await connectionsStore.list();
+          const selfKeys = buildSelfFingerprintKeys(fingerprint);
+          if (records.some((c) => isSelfConnectionRecord(c, selfKeys))) {
+            void broadcastConnectionsChanged().catch(() => {});
+          }
+        } catch {
+          // Ignored — the next listConnections call serves the corrected list.
+        }
+      }
+      return fingerprint;
+    });
+  liveSelfFingerprintProbe = probe;
+  return probe;
+}
+
+/** Collapse persisted/live self fingerprints into a non-null normalized key set. */
+function buildSelfFingerprintKeys(...fingerprints: Array<string | null>): Set<string> {
+  return new Set(fingerprints.filter((key): key is string => key !== null));
+}
+
+/**
  * Whether a stored record is THIS machine's own published self entry: its
- * fingerprint matches the persisted self cert fingerprint (normalized, so the
- * comparison mirrors the store's fingerprint-keyed dedupe). The local
- * pseudo-entry never matches (its fingerprint is null).
+ * fingerprint matches one of the self keys (the persisted self cert
+ * fingerprint and/or the live local daemon's), normalized so the comparison
+ * mirrors the store's fingerprint-keyed dedupe. The local pseudo-entry never
+ * matches (its fingerprint is null).
  */
 function isSelfConnectionRecord(
   record: { fingerprint?: string | null },
-  selfFingerprint: string | null,
+  selfKeys: ReadonlySet<string>,
 ): boolean {
-  if (selfFingerprint === null) return false;
+  if (selfKeys.size === 0) return false;
   const key = normalizeFingerprint(record.fingerprint);
-  return key !== null && key === selfFingerprint;
+  return key !== null && selfKeys.has(key);
 }
 
 /**
@@ -1323,23 +1439,32 @@ function isSelfConnectionRecord(
  * already reachable as `local` — while the record stays in the store so the
  * keychain reconcile keeps pushing it to the user's OTHER devices (where it
  * must appear). Presentation-only: `getSelfPublishedState` still reports it
- * as published. Fail-soft: a self-fingerprint read error hides nothing.
+ * as published. Detection matches the persisted self fingerprint AND the live
+ * local daemon's cert fingerprint, so the entry hides even when this machine
+ * never published it (e.g. it synced in from another device). The live probe
+ * is NOT awaited — a slow local daemon must never delay the list (or a
+ * backend switch, which awaits the changed-list broadcast): the cached value
+ * is used when available, and the probe's own resolution re-broadcasts the
+ * list. Fail-soft: a fingerprint read/probe error hides nothing.
  */
 async function listConnections(
   windowBackendId: string = LOCAL_CONNECTION_ID,
 ): Promise<ConnectionsListResult> {
-  const [connections, activeId, selfFingerprint] = await Promise.all([
+  const [connections, activeId, storedFingerprint] = await Promise.all([
     connectionsStore.list(),
     connectionsStore.getActiveId(),
     getStoredSelfFingerprint().catch(() => null),
   ]);
+  // Kick off (or reuse) the live probe without awaiting it (see above).
+  void getLiveSelfFingerprint();
+  const selfKeys = buildSelfFingerprintKeys(storedFingerprint, cachedLiveSelfFingerprint);
   // Replay any sticky protocol mismatch / auth rejection for the active
   // backend so a renderer that missed the one-shot broadcast (e.g. a window
   // created by a switch after the remote handshake already fired, or a boot
   // into a rejecting remote) still surfaces the advisory / actionable state
   // (cloudlands-fe#823 pattern).
   return {
-    connections: connections.filter((c) => !isSelfConnectionRecord(c, selfFingerprint)),
+    connections: connections.filter((c) => !isSelfConnectionRecord(c, selfKeys)),
     activeId,
     windowBackendId,
     protocolMismatch: activeProtocolMismatch,
@@ -2348,13 +2473,8 @@ async function refreshSelfBackend(): Promise<RefreshSelfResult> {
     getStoredSelfFingerprint(),
   ]);
   const liveFingerprint = normalizeFingerprint(info.certFingerprint);
-  const selfKeys = new Set(
-    [storedFingerprint, liveFingerprint].filter((key): key is string => key !== null),
-  );
-  const published = records.some((c) => {
-    const key = normalizeFingerprint(c.fingerprint);
-    return key !== null && selfKeys.has(key);
-  });
+  const selfKeys = buildSelfFingerprintKeys(storedFingerprint, liveFingerprint);
+  const published = records.some((c) => isSelfConnectionRecord(c, selfKeys));
   if (!published) {
     return { refreshed: false } satisfies RefreshSelfResult;
   }
@@ -2367,33 +2487,21 @@ async function refreshSelfBackend(): Promise<RefreshSelfResult> {
 /**
  * Resolve this machine's published self record among `records`: a stored
  * record whose fingerprint matches the persisted self fingerprint OR the
- * live local daemon's cert fingerprint. Shared by
+ * live local daemon's cert fingerprint (via the shared cached
+ * {@link getLiveSelfFingerprint} probe). Shared by
  * `connections:self-published-state` and `connections:unpublish-self` so the
  * UI's "published" decision and the unpublish target can never diverge
- * (PR #1781 review). The live `server.pairingInfo` probe is fail-soft — when
- * the local daemon is unreachable (or the app is pinned to a remote),
- * detection falls back to the persisted fingerprint alone.
+ * (PR #1781 review). The live probe is fail-soft — when the local daemon is
+ * unreachable (or the app is pinned to a remote), detection falls back to
+ * the persisted fingerprint alone.
  */
 async function findSelfRecord(records: ConnectionRecord[]): Promise<ConnectionRecord | undefined> {
-  const storedFingerprint = await getStoredSelfFingerprint();
-  let liveFingerprint: string | null = null;
-  const localClient = getLocalClientForSelfPublish();
-  if (localClient) {
-    try {
-      const info = extractSelfPairingInfo(await localClient.request('server.pairingInfo'));
-      liveFingerprint = normalizeFingerprint(info?.certFingerprint ?? null);
-    } catch {
-      // Fail-soft: the persisted fingerprint still detects the self entry.
-    }
-  }
-  const selfKeys = new Set(
-    [storedFingerprint, liveFingerprint].filter((key): key is string => key !== null),
-  );
-  if (selfKeys.size === 0) return undefined;
-  return records.find((c) => {
-    const key = normalizeFingerprint(c.fingerprint);
-    return key !== null && selfKeys.has(key);
-  });
+  const [storedFingerprint, liveFingerprint] = await Promise.all([
+    getStoredSelfFingerprint(),
+    getLiveSelfFingerprint(),
+  ]);
+  const selfKeys = buildSelfFingerprintKeys(storedFingerprint, liveFingerprint);
+  return records.find((c) => isSelfConnectionRecord(c, selfKeys));
 }
 
 /**
