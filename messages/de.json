@@ -628,6 +628,7 @@
   "settings_devices_statusConnected_label": "Verbunden",
   "settings_devices_statusDisconnected_label": "Getrennt",
   "settings_devices_statusNotOpen_label": "Nicht geöffnet",
+  "settings_devices_version_label": "intentd-Version {version}",
   "settings_devices_accent_label": "Akzentfarbe",
   "settings_devices_accentOption_ariaLabel": "Akzentfarbe {color} verwenden",
   "settings_devices_accentBlue_label": "Blau",

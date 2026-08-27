@@ -628,6 +628,7 @@
   "settings_devices_statusConnected_label": "Connected",
   "settings_devices_statusDisconnected_label": "Disconnected",
   "settings_devices_statusNotOpen_label": "Not open",
+  "settings_devices_version_label": "intentd {version}",
   "settings_devices_accent_label": "Accent",
   "settings_devices_accentOption_ariaLabel": "Use {color} accent",
   "settings_devices_accentBlue_label": "Blue",

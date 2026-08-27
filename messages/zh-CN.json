@@ -628,6 +628,7 @@
   "settings_devices_statusConnected_label": "已连接",
   "settings_devices_statusDisconnected_label": "已断开",
   "settings_devices_statusNotOpen_label": "未打开",
+  "settings_devices_version_label": "intentd 版本 {version}",
   "settings_devices_accent_label": "标识色",
   "settings_devices_accentOption_ariaLabel": "使用{color}标识色",
   "settings_devices_accentBlue_label": "蓝色",

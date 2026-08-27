@@ -122,6 +122,8 @@ export interface ConnectionRecord {
   isLocal: boolean;
   /** Present on list/broadcast payloads; never persisted. */
   status?: ConnectionOpenStatus;
+  /** From an already-open connected client's `client.hello`; transient and never persisted. */
+  intentdVersion?: string;
 }
 
 /**

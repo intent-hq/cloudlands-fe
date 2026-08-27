@@ -96,17 +96,28 @@ describe('DevicesSettings', () => {
 
   afterEach(cleanup);
 
-  it('shows saved remotes only and reports unopened status without opening a connection', () => {
-    const { container } = render(DevicesSettings);
+  it('shows named remotes without duplicating their address or visible status text', () => {
+    render(DevicesSettings);
 
     expect(screen.getByText('Studio Mac')).toBeTruthy();
-    expect(screen.getByText('10.0.0.2:5181')).toBeTruthy();
-    expect(screen.getByRole('status', { name: 'Status: Not open' })).toBeTruthy();
+    expect(screen.queryByText('10.0.0.2:5181')).toBeNull();
+    expect(screen.getByRole('status', { name: 'Status: Not open' }).textContent).toBe('');
     expect(screen.queryByText('This machine')).toBeNull();
     expect(screen.queryByRole('textbox')).toBeNull();
-    expect(container.querySelector('[data-device-accent="indigo"]')).toBeTruthy();
-    expect(container.querySelector('.divide-y')).toBeTruthy();
     expect(mocks.dispatch).not.toHaveBeenCalled();
+  });
+
+  it('shows connected list-state version data and falls back to address for a blank name', () => {
+    mocks.connections = [
+      local,
+      { ...remote, label: '  ', status: 'connected', intentdVersion: '6.8.0' },
+    ];
+    render(DevicesSettings);
+
+    expect(screen.getByText('10.0.0.2:5181')).toBeTruthy();
+    expect(screen.getByText(/6\.8\.0/)).toBeTruthy();
+    expect(screen.getByRole('status', { name: 'Status: Connected' }).textContent).toBe('');
+    expect(screen.getByRole('button', { name: 'Actions for 10.0.0.2:5181' })).toBeTruthy();
   });
 
   it('renders accessible loading and empty states', () => {

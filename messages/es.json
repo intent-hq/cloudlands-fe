@@ -628,6 +628,7 @@
   "settings_devices_statusConnected_label": "Conectado",
   "settings_devices_statusDisconnected_label": "Desconectado",
   "settings_devices_statusNotOpen_label": "No abierto",
+  "settings_devices_version_label": "intentd versión {version}",
   "settings_devices_accent_label": "Color distintivo",
   "settings_devices_accentOption_ariaLabel": "Usar el color {color}",
   "settings_devices_accentBlue_label": "Azul",

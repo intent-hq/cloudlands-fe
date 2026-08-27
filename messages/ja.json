@@ -628,6 +628,7 @@
   "settings_devices_statusConnected_label": "接続済み",
   "settings_devices_statusDisconnected_label": "切断済み",
   "settings_devices_statusNotOpen_label": "未オープン",
+  "settings_devices_version_label": "intentd バージョン {version}",
   "settings_devices_accent_label": "アクセント",
   "settings_devices_accentOption_ariaLabel": "{color}のアクセントを使用",
   "settings_devices_accentBlue_label": "青",

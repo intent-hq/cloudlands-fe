@@ -56,6 +56,7 @@
 
   const savedAccent = $derived(device.accent ?? DEFAULT_CONNECTION_ACCENT);
   const address = $derived(`${device.host ?? ''}:${device.port ?? ''}`);
+  const displayName = $derived(device.label.trim() || address);
   const openStatus = $derived(device.status ?? 'not-open');
   const trimmedName = $derived(name.trim());
   const trimmedHost = $derived(host.trim());
@@ -119,6 +120,14 @@
       disconnected: m.settings_devices_statusDisconnected_label(),
       'not-open': m.settings_devices_statusNotOpen_label(),
     }[status];
+  }
+
+  function statusClass(status: ConnectionOpenStatus): string {
+    return status === 'connected'
+      ? 'bg-green-500'
+      : status === 'connecting'
+        ? 'bg-yellow-500'
+        : 'bg-muted-foreground/50';
   }
 
   function blockedMessage(result: ConnectionValidationBlockedResult): string {
@@ -255,25 +264,22 @@
   <div class="flex min-w-0 items-center gap-3 px-4 py-3 sm:px-5">
     <span
       class={cn(
-        'size-3 shrink-0 rounded-full ring-2 ring-background outline outline-1 outline-border',
-        CONNECTION_ACCENT_CLASSES[savedAccent],
+        'size-2.5 shrink-0 rounded-full ring-2 ring-background outline outline-1 outline-border',
+        statusClass(openStatus),
       )}
-      aria-hidden="true"
-      data-device-accent={savedAccent}
+      role="status"
+      aria-label={m.settings_devices_status_ariaLabel({ status: statusLabel(openStatus) })}
     ></span>
     <div class="min-w-0 flex-1">
       <p id={`device-${device.id}-name`} class="truncate text-sm font-medium text-foreground">
-        {device.label}
+        {displayName}
       </p>
-      <p class="truncate font-mono text-xs text-muted-foreground">{address}</p>
+      {#if openStatus === 'connected' && device.intentdVersion}
+        <p class="truncate text-xs text-muted-foreground">
+          {m.settings_devices_version_label({ version: device.intentdVersion })}
+        </p>
+      {/if}
     </div>
-    <p
-      class="shrink-0 rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground"
-      role="status"
-      aria-label={m.settings_devices_status_ariaLabel({ status: statusLabel(openStatus) })}
-    >
-      {statusLabel(openStatus)}
-    </p>
     <DropdownMenu align="end" contentClass="p-0!">
       {#snippet trigger({ props })}
         <Button
@@ -281,7 +287,7 @@
           bind:ref={actionsButton}
           variant="ghost-light"
           size="icon-xs"
-          aria-label={m.settings_devices_actionsFor_ariaLabel({ name: device.label })}
+          aria-label={m.settings_devices_actionsFor_ariaLabel({ name: displayName })}
         >
           <Fa icon={faEllipsisVertical} />
         </Button>
@@ -324,7 +330,7 @@
   {#if panelMode === 'edit'}
     <form
       class="space-y-4 border-t border-border bg-muted/20 px-4 py-4 sm:px-5"
-      aria-label={m.settings_devices_editForm_ariaLabel({ name: device.label })}
+      aria-label={m.settings_devices_editForm_ariaLabel({ name: displayName })}
       onsubmit={(event) => {
         event.preventDefault();
         void updateDevice();
@@ -470,7 +476,7 @@
   {:else if panelMode === 'secret'}
     <form
       class="space-y-4 border-t border-border bg-muted/20 px-4 py-4 sm:px-5"
-      aria-label={m.settings_devices_secretForm_ariaLabel({ name: device.label })}
+      aria-label={m.settings_devices_secretForm_ariaLabel({ name: displayName })}
       onsubmit={(event) => {
         event.preventDefault();
         void replaceSecret();

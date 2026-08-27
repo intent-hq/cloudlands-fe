@@ -36,10 +36,12 @@ vi.mock('../json-rpc-client', () => {
   class FakeJsonRpcClient {
     private readonly id = ++seq;
     private readonly config: unknown;
+    private readonly onHelloResult?: (result: unknown) => void;
     private status = 'disconnected';
     private readonly listeners = new Map<string, Array<(arg: unknown) => void>>();
-    constructor(opts: { config: unknown }) {
+    constructor(opts: { config: unknown; onHelloResult?: (result: unknown) => void }) {
       this.config = opts.config;
+      this.onHelloResult = opts.onHelloResult;
       lifecycle.events.push({ type: 'construct', seq: this.id });
     }
     on(event: string, handler: (arg: unknown) => void): this {
@@ -54,6 +56,9 @@ vi.mock('../json-rpc-client', () => {
     emit(event: string, arg?: unknown): void {
       if (event === 'status' && typeof arg === 'string') this.status = arg;
       for (const h of this.listeners.get(event) ?? []) h(arg);
+    }
+    hello(result: unknown): void {
+      this.onHelloResult?.(result);
     }
     start(): void {
       lifecycle.events.push({ type: 'start', seq: this.id });
@@ -991,6 +996,7 @@ describe('connections:* IPC handlers', () => {
     mod.getBackendClient();
     const remote = (await mod.connectBackendClient(REMOTE.id)) as unknown as {
       emit(event: string, arg: unknown): void;
+      hello(result: unknown): void;
     };
     mod.registerBackendHandlers();
 
@@ -1004,14 +1010,30 @@ describe('connections:* IPC handlers', () => {
       });
     });
 
+    remote.hello({ server: { version: '6.8.0', buildCommit: 'abc123' } });
     remote.emit('status', 'connected');
     await vi.waitFor(() => {
       const changed = send.mock.calls.filter(([channel]) => channel === 'connections:changed');
       expect(changed.at(-1)?.[1]).toMatchObject({
         connections: expect.arrayContaining([
-          expect.objectContaining({ id: REMOTE.id, status: 'connected' }),
+          expect.objectContaining({
+            id: REMOTE.id,
+            status: 'connected',
+            intentdVersion: '6.8.0',
+          }),
         ]),
       });
+    });
+    expect(rpc.calls.every((method) => method === 'server.pairingInfo')).toBe(true);
+    expect(mockCaptureFingerprint).not.toHaveBeenCalled();
+
+    remote.emit('status', 'disconnected');
+    await vi.waitFor(() => {
+      const changed = send.mock.calls.filter(([channel]) => channel === 'connections:changed');
+      const payload = changed.at(-1)?.[1] as ConnectionsListResult;
+      const record = payload.connections.find((connection) => connection.id === REMOTE.id);
+      expect(record).toMatchObject({ status: 'disconnected' });
+      expect(record).not.toHaveProperty('intentdVersion');
     });
   });
 

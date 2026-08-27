@@ -135,6 +135,7 @@ let client: JsonRpcClient | null = null;
 // version+commit per connection id to log each connected daemon's build once
 // instead of once per reconnect (a daemon upgrade logs again).
 const lastLoggedDaemonBuildKeys = new Map<string, string>();
+const connectedDaemonVersions = new Map<string, string>();
 
 /**
  * #3649: log the connected daemon's build identity once at INFO so the log
@@ -148,7 +149,11 @@ const buildInfoLogger = new Logger('BuildInfo');
 
 function logDaemonHelloBuild(helloResult: unknown, connectionId: string): void {
   const helloBuild = extractDaemonHelloBuildInfo(helloResult);
-  if (!helloBuild) return;
+  if (!helloBuild) {
+    connectedDaemonVersions.delete(connectionId);
+    return;
+  }
+  connectedDaemonVersions.set(connectionId, helloBuild.version);
   const key = daemonHelloBuildKey(helloBuild);
   if (lastLoggedDaemonBuildKeys.get(connectionId) === key) return;
   lastLoggedDaemonBuildKeys.set(connectionId, key);
@@ -163,6 +168,7 @@ function logDaemonHelloBuild(helloResult: unknown, connectionId: string): void {
 /** @internal Test seam: clear the per-connection daemon-build log dedupe. */
 export function __resetDaemonBuildLogForTesting(): void {
   lastLoggedDaemonBuildKeys.clear();
+  connectedDaemonVersions.clear();
 }
 const backendClients = new Map<string, JsonRpcClient>();
 const backendClientConnects = new Map<string, Promise<JsonRpcClient>>();
@@ -619,6 +625,7 @@ export function getBackendClient(): JsonRpcClient {
     backendNotificationForwarder.emit('notification', connectionId, notification);
   });
   instance.on('status', (status: ConnectionStatus) => {
+    if (status !== 'connected') connectedDaemonVersions.delete(connectionId);
     const transport = formatTransportInfo(instance.getConfig(), getPinnedVersion());
     // `reconnectAttempts` counts retries since the last successful connect so
     // the daemon-loss overlay can show live retry progress (#1750).
@@ -786,6 +793,7 @@ export function disconnectBackendClient(id: string): void {
     return;
   }
   backendClients.delete(id);
+  connectedDaemonVersions.delete(id);
   disposeTransferConnectionsForBackend(id);
   void cancelInflightHostExecStreamsForBackendSwitch(instance);
   app.emit(BACKEND_CLIENT_DISCONNECTED_EVENT, instance);
@@ -820,6 +828,7 @@ function createAdditionalBackendClient(id: string, config: BackendConnectionConf
     backendNotificationForwarder.emit('notification', id, notification);
   });
   instance.on('status', (status: ConnectionStatus) => {
+    if (status !== 'connected') connectedDaemonVersions.delete(id);
     broadcast(
       BACKEND.STATUS,
       {
@@ -1474,10 +1483,16 @@ async function listConnections(
   return {
     connections: connections
       .filter((c) => !isSelfConnectionRecord(c, selfKeys))
-      .map((connection) => ({
-        ...connection,
-        status: backendClients.get(connection.id)?.getStatus() ?? 'not-open',
-      })),
+      .map((connection) => {
+        const status = backendClients.get(connection.id)?.getStatus() ?? 'not-open';
+        const intentdVersion =
+          status === 'connected' ? connectedDaemonVersions.get(connection.id) : undefined;
+        return {
+          ...connection,
+          status,
+          ...(intentdVersion ? { intentdVersion } : {}),
+        };
+      }),
     activeId,
     windowBackendId,
     protocolMismatch: activeProtocolMismatch,
@@ -2739,6 +2754,7 @@ export function disposeBackendClient(): void {
   protocolMismatchOrigin = 'switch';
   if (client) {
     const primaryBackendId = getPrimaryBackendId();
+    connectedDaemonVersions.delete(primaryBackendId);
     disposeTransferConnectionsForBackend(primaryBackendId);
     void cancelInflightHostExecStreamsForBackendSwitch(client);
     for (const [id, instance] of backendClients) {

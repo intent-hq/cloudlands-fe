@@ -628,6 +628,7 @@
   "settings_devices_statusConnected_label": "연결됨",
   "settings_devices_statusDisconnected_label": "연결 끊김",
   "settings_devices_statusNotOpen_label": "열리지 않음",
+  "settings_devices_version_label": "intentd 버전 {version}",
   "settings_devices_accent_label": "강조색",
   "settings_devices_accentOption_ariaLabel": "{color} 강조색 사용",
   "settings_devices_accentBlue_label": "파랑",
