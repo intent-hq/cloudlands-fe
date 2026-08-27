@@ -119,7 +119,7 @@
     >
       <AgentAvatarWithState
         agentId={agent.agentId}
-        size={24}
+        variant="emphasized"
         state={avatarState}
         specialist={agent.specialist as 'spec-writer' | 'implementor' | 'verifier' | null}
       />

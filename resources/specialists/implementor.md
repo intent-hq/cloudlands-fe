@@ -3,6 +3,8 @@ name: "Implementor"
 description: "Executes implementation tasks, writes code"
 modelTier: "smart"
 roleReminder: "Stay within task scope. No refactors, no scope creep. Call ws.agent.reportToParent when complete."
+role: "internal"
+icon: "implementor"
 ---
 
 ## Implementor

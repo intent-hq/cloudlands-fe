@@ -57,7 +57,6 @@
       optimisticTabs: [],
       tabOrder: ['other-workspace', workspaceId],
       workspaceStacks: [['other-workspace'], [workspaceId]],
-      viewMode: 'columns',
     }),
   );
   appStore.dispatch(
@@ -113,13 +112,12 @@
       isMac: initialIsMac,
       register: (shortcut) => shortcutManager.register(shortcut),
       store: appStore,
-      getCurrentPath: () => '/',
+      getCurrentPath: () => `/workspace/${workspaceId}`,
       navigate: (path) => {
         navigationCount += 1;
         navigationPath = path;
       },
       openNewWorkspace: () => undefined,
-      toggleWorkspaceViewMode: () => undefined,
     });
     shortcutManager.attach();
   });
@@ -148,7 +146,11 @@
   data-navigation-path={navigationPath}
   data-workspace-id={workspaceId}
 ></output>
-<input data-testid="shortcut-input" />
+<div class="sr-only" data-testid="editable-panel-content">
+  <input data-testid="shortcut-input" />
+  <div contenteditable="true" role="textbox" tabindex="0" data-testid="shortcut-editor"></div>
+  <textarea class="xterm-helper-textarea" data-testid="shortcut-terminal"></textarea>
+</div>
 <div class="relative h-96 w-240" style:zoom={initialZoomFactor}>
   <div bind:this={viewport} class="h-full overflow-x-auto" data-testid="mod-w-viewport">
     <div bind:this={panelRoot} class="h-full min-w-0">

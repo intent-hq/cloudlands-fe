@@ -72,4 +72,18 @@ describe('ChatVideoBlock', () => {
     expect(snapshot.className).toContain('opacity-0');
     expect(screen.getByRole('button').querySelector('svg')).toBeTruthy();
   });
+
+  it('renders a normalized workspace video source without changing remote video behavior', () => {
+    const url = 'workspace-file://ws-1/.demo-artifacts/run/preview.webm';
+    render(ChatVideoBlock, {
+      props: {
+        source: { kind: 'workspace', url, mimeType: 'video/webm' },
+        name: 'preview.webm',
+      },
+    });
+
+    expect(
+      screen.getByRole('button', { name: 'Play preview.webm' }).querySelector('video')?.src,
+    ).toBe(url);
+  });
 });

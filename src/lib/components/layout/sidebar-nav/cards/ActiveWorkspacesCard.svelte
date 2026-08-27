@@ -209,7 +209,9 @@
 
     keyboardNavActive = false;
     highlightedIndex = -1;
-    void markWorkspaceSeen(workspaceId);
+    // Navigation deliberately does NOT mark the workspace seen (§5.1): unread
+    // is daemon-derived from per-agent seen markers and clears as each unread
+    // agent conversation is read, not by merely viewing the workspace.
     // Keep tab state in sync with the route so columns mode tracks the
     // clicked workspace (matches AllWorkspacesCard).
     appStore.dispatch(openWorkspaceTab(workspaceId));
@@ -220,11 +222,11 @@
    * Unread rows: navigate, then land on the agent the unread badge most likely
    * refers to (the helper waits for the navigation-triggered agent load). Falls
    * back to plain navigation when no foreground agent qualifies, and skips the
-   * focus entirely for Cmd/Ctrl-click (new window).
+   * focus entirely for Cmd/Ctrl-click (new window). Reading the landed-on
+   * agent's conversation is what clears that agent's unread (§5.1).
    *
-   * Attention is workspace-level (§5.1) and viewing the workspace clears it via
-   * `workspace.markSeen`, so the flag is read *before* navigating and passed to
-   * the helper — a post-navigation read would race the clear.
+   * The workspace's `attention === 'unread'` flag is read *before* navigating
+   * and passed to the helper as a stable snapshot of the clicked row's state.
    */
   async function handleUnreadClick(workspaceId: string, event?: MouseEvent | KeyboardEvent) {
     const wasUnread = $workspaceItems.find((w) => w.id === workspaceId)?.attention === 'unread';
@@ -235,7 +237,8 @@
 
   function handleMarkAsRead(e: MouseEvent, workspaceId: string) {
     e.stopPropagation();
-    // Daemon round-trip (`workspace.markSeen`, §5.1): the resulting
+    // Explicit mark-all gesture (`workspace.markSeen`, §5.1): the daemon marks
+    // every top-level agent conversation seen and the resulting
     // `workspace:attention-changed` event clears the dot on all clients.
     markWorkspaceSeen(workspaceId);
   }

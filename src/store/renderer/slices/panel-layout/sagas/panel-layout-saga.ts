@@ -13,6 +13,7 @@ import {
 } from 'typed-redux-saga';
 import { buffers, channel, type Channel } from 'redux-saga';
 import { getItems } from '@augmentcode/themis/utils/collections/collection-utils';
+import { deepEqual } from 'fast-equals';
 
 import { clearPanelLayoutAdapter } from '$features/layout/panel-layout-adapter';
 import { m } from '$shared/paraglide/messages.js';
@@ -124,7 +125,6 @@ import {
   updateTabFavicon,
   updateTabTitle,
 } from '../panel-layout-slice';
-import { dropRevealIfWorkspaceNotDisplayed } from './reveal-suppression';
 import {
   HISTORY_PERSIST_DEBOUNCE_MS,
   PANEL_LAYOUT_STORAGE_KEY_PREFIX,
@@ -283,10 +283,14 @@ function* routeTabToRightmostColumn(
   yield* put(
     reconcilePanelColumnCount(wsId, yield* selectPanelColumnCount.effect(wsId), timestamp),
   );
-  yield* put(openTabInRightmostColumn(wsId, tab, { force, allowDuplicate, newTabId }, timestamp));
-  if (agentDriven === true) {
-    yield* dropRevealIfWorkspaceNotDisplayed(wsId, newTabId);
-  }
+  yield* put(
+    openTabInRightmostColumn(
+      wsId,
+      tab,
+      { force, allowDuplicate, newTabId, background: agentDriven === true },
+      timestamp,
+    ),
+  );
 }
 
 export function* watchRightmostColumnRequests(): SagaGenerator<void> {
@@ -356,10 +360,7 @@ export function isStoredLayoutValid(value: unknown): value is WorkspacePanelLayo
     const panelIds = new Set<string>();
     if (!collectPanelIds(layout.root, panelIds) || panelIds.size === 0) return false;
     if (Object.keys(layout.panels).length === 0) return false;
-    for (const panelId of panelIds) {
-      if (!layout.panels[panelId]) return false;
-    }
-    if (layout.focusedPanelId !== null && !layout.panels[layout.focusedPanelId]) return false;
+    if (layout.focusedPanelId !== null && typeof layout.focusedPanelId !== 'string') return false;
     for (const [panelId, panel] of Object.entries(layout.panels)) {
       if (!panel || panel.id !== panelId || !Array.isArray(panel.tabs)) return false;
       if (panel.pristine !== undefined && typeof panel.pristine !== 'boolean') return false;
@@ -526,7 +527,9 @@ function* handleWorkspaceMountedRestore(
   );
   let completed = false;
   let repairedColumns = false;
+  let repairedLayout = false;
   try {
+    restoredUnderBackendIds.delete(wsId);
     yield* put(setRestoreStatus(wsId, 'pending'));
     const stored = yield* call(loadLayoutFromStorage, wsId);
     if (stored === null) {
@@ -537,6 +540,7 @@ function* handleWorkspaceMountedRestore(
       yield* put(setRestoreStatus(wsId, 'invalid'));
     } else {
       const normalized = normalizeLayoutForWorkspace(wsId, stored);
+      repairedLayout = !deepEqual(normalized, stored);
       if (current.columnCountInitialized) {
         yield* put(preparePanelLayoutBackendRestore(wsId));
       }
@@ -554,7 +558,9 @@ function* handleWorkspaceMountedRestore(
     }
     restoredUnderBackendIds.add(wsId);
     yield* call(reconcileEmptyRestoredLayout, wsId);
-    if (repairedColumns) yield* call(persistPanelLayout, { payload: { wsId } });
+    if (repairedLayout || repairedColumns) {
+      yield* call(persistPanelLayout, { payload: { wsId } });
+    }
     completed = true;
   } finally {
     // A failed or cancelled restore releases the dedup guard so a later
@@ -881,6 +887,7 @@ function* restoreAfterBackendSwitch(wsId: string | null): SagaGenerator<void> {
   restoredWorkspaceIds.add(wsId);
   let completed = false;
   let repairedColumns = false;
+  let repairedLayout = false;
   try {
     yield* put(preparePanelLayoutBackendRestore(wsId));
     yield* put(setRestoreStatus(wsId, 'pending'));
@@ -891,6 +898,7 @@ function* restoreAfterBackendSwitch(wsId: string | null): SagaGenerator<void> {
       yield* put(setRestoreStatus(wsId, stored === null ? 'empty' : 'invalid'));
     } else {
       const normalized = normalizeLayoutForWorkspace(wsId, stored);
+      repairedLayout = !deepEqual(normalized, stored);
       yield* put(initializeLayout(wsId, normalized));
       repairedColumns = yield* call(reconcileRestoredPanelColumns, wsId);
       yield* put(setRestoreStatus(wsId, 'restored'));
@@ -905,7 +913,9 @@ function* restoreAfterBackendSwitch(wsId: string | null): SagaGenerator<void> {
     }
     restoredUnderBackendIds.add(wsId);
     yield* call(reconcileEmptyRestoredLayout, wsId);
-    if (repairedColumns) yield* call(persistPanelLayout, { payload: { wsId } });
+    if (repairedLayout || repairedColumns) {
+      yield* call(persistPanelLayout, { payload: { wsId } });
+    }
     completed = true;
   } finally {
     // Mirror the mount path: a failed or cancelled re-restore releases the

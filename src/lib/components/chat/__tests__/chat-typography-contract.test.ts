@@ -7,15 +7,17 @@ function source(path: string) {
 }
 
 describe('chat typography contract', () => {
-  it('caps transcript and composer content at the approved 70em measure', () => {
+  it('caps transcript and composer content at the approved 140em measure', () => {
     const panel = source('src/lib/components/chat/ChatPanel.svelte');
     expect(panel).toContain(
       'conversation-column chat-content-measure mx-auto flex min-h-full w-full min-w-0 flex-col',
     );
     expect(panel).toContain('conversation-composer relative z-10 w-full');
-    expect(panel).toContain('class="chat-content-measure mx-auto w-full min-w-0"');
+    expect(panel).toContain(
+      'class="composer-prompt-lane chat-content-measure mx-auto w-full min-w-0"',
+    );
     expect(panel).toContain('data-testid="chat-composer-controls-inner"');
-    expect(panel).toContain('max-width: 70em');
+    expect(panel).toContain('max-width: 140em');
     expect(panel).not.toContain('max-w-[var(--content-measure-');
   });
 

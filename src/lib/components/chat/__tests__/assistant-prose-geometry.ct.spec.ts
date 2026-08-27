@@ -40,6 +40,18 @@ for (const theme of ['light', 'dark'] as const) {
         const prose = baseline.locator('[data-assistant-prose]');
 
         await expect(groupSummary).toBeVisible();
+        const expandedGeometryGroups = component.locator(
+          '[data-testid="expanded-group-prose"], [data-testid="expanded-group-operational-rows"]',
+        );
+        for (const disclosure of await expandedGeometryGroups
+          .getByTestId('response-group-disclosure')
+          .all()) {
+          if ((await disclosure.getAttribute('aria-expanded')) === 'false') {
+            await disclosure.evaluate((element) => (element as HTMLElement).click());
+          }
+          await expect(disclosure).toHaveAttribute('aria-expanded', 'true');
+        }
+        await expect(groupButton).toHaveAttribute('aria-expanded', 'false');
         await expect(prose).toHaveCount(4);
 
         const operationalRows = baseline.locator(
@@ -120,17 +132,6 @@ for (const theme of ['light', 'dark'] as const) {
           .locator('[data-testid="assistant-prose-lane"]')
           .evaluate((element) => getComputedStyle(element).backgroundColor);
         expect(contrastRatio(summaryStyles[0].color, laneBackground)).toBeGreaterThanOrEqual(4.5);
-        const leadingIconNames = await component
-          .locator('[data-chat-operational-row] [data-operational-leading] [data-icon]')
-          .evaluateAll((elements) => elements.map((element) => element.getAttribute('data-icon')));
-        expect([...new Set(leadingIconNames)].sort()).toEqual([
-          'arrows-in-line-vertical',
-          'arrows-out-line-vertical',
-          'brain',
-          'eye',
-          'hand',
-        ]);
-
         const disclosure = baseline
           .locator('[data-testid="thinking-row"] [data-testid="reasoning-disclosure"]')
           .first();
@@ -170,6 +171,22 @@ for (const theme of ['light', 'dark'] as const) {
           restingState,
         );
         expect(focusedState.focusIndicator).toContain('underline');
+
+        const expandedGroup = component.locator('[data-testid="expanded-group-prose"]');
+        const expandedGroupDisclosure = expandedGroup.locator(
+          '[data-testid="response-group-disclosure"]',
+        );
+        await expect(expandedGroupDisclosure).toHaveAttribute('aria-expanded', 'true');
+        const leadingIconNames = await component
+          .locator('[data-chat-operational-row] [data-operational-leading] [data-icon]')
+          .evaluateAll((elements) => elements.map((element) => element.getAttribute('data-icon')));
+        expect([...new Set(leadingIconNames)].sort()).toEqual([
+          'arrows-in-line-vertical',
+          'arrows-out-line-vertical',
+          'brain',
+          'eye',
+          'hand',
+        ]);
         for (const marker of await prose.all()) {
           const firstChild = marker.locator(':scope > *').first();
           const childX = await firstChild.evaluate((element) => {
@@ -177,6 +194,27 @@ for (const theme of ['light', 'dark'] as const) {
             return box.x + window.scrollX;
           });
           expect(childX).toBeCloseTo(groupX, 1);
+        }
+
+        for (const fixtureId of ['static-rich-block', 'streaming-rich-block']) {
+          const fixture = component.locator(`[data-testid="${fixtureId}"]`);
+          const richProse = fixture.locator('[data-assistant-prose]');
+          await expect(richProse).toHaveCount(1);
+          const proseX = await richProse
+            .locator(':scope > *')
+            .first()
+            .evaluate((element) => {
+              const box = element.getBoundingClientRect();
+              return box.x + window.scrollX;
+            });
+          const codeBlock = fixture.locator('.code-block-container');
+          await expect(codeBlock).toBeVisible();
+          const codeX = await codeBlock.evaluate((element) => {
+            const box = element.getBoundingClientRect();
+            return box.x + window.scrollX;
+          });
+          expect(proseX).toBeCloseTo(groupX, 1);
+          expect(codeX).toBeCloseTo(proseX, 1);
         }
 
         const laneBox = await baseline.evaluate((element) => {
@@ -279,7 +317,6 @@ for (const theme of ['light', 'dark'] as const) {
         await assertCluster('static-operational-cluster', 5);
         await assertCluster('streaming-operational-cluster', 5);
 
-        const expandedGroup = component.locator('[data-testid="expanded-group-prose"]');
         const groupRow = expandedGroup.locator('[data-operational-disclosure-row]');
         const groupProse = expandedGroup.locator(
           '[data-response-group-content] > [data-message-content-block="text"]',
@@ -292,6 +329,10 @@ for (const theme of ['light', 'dark'] as const) {
         expect(groupProseBox!.y - (groupRowBox!.y + groupRowBox!.height)).toBeCloseTo(16 * zoom, 1);
 
         const nestedGroup = component.locator('[data-testid="expanded-group-operational-rows"]');
+        const nestedGroupDisclosure = nestedGroup.locator(
+          '[data-testid="response-group-disclosure"]',
+        );
+        await expect(nestedGroupDisclosure).toHaveAttribute('aria-expanded', 'true');
         const nestedGroupContent = nestedGroup.locator('[data-response-group-content]');
         const nestedRows = nestedGroup.locator('[data-response-group-child]');
         await expect(nestedRows).toHaveCount(2);

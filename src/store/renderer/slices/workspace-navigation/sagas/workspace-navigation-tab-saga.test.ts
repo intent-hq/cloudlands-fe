@@ -5,6 +5,7 @@ import { createCollection } from '@augmentcode/themis/utils/collections/collecti
 import { ChangeStage, type TrackedChange } from '$features/file-tracking/types';
 import { m } from '$shared/paraglide/messages.js';
 import {
+  emptyWorkspaceState,
   openTabInRightmostColumn,
   panelLayoutReducer,
 } from '../../panel-layout/panel-layout-slice';
@@ -106,7 +107,7 @@ describe('workspaceNavigationTabSaga', () => {
 
     expect(dispatch.mock.calls.map(([action]) => action.type)).toEqual([
       'panelLayout/openTabInRightmostColumnRequested',
-      'panelLayout/openTabInRightmostColumnRequested',
+      'panelLayout/openTab',
       'panelLayout/openTabInRightmostColumnRequested',
       'panelLayout/openTabInRightmostColumnRequested',
     ]);
@@ -117,6 +118,8 @@ describe('workspaceNavigationTabSaga', () => {
     });
     expect(dispatch.mock.calls[1]?.[0]).toMatchObject({
       payload: {
+        panelId: 'panel-agent',
+        force: true,
         tab: {
           type: 'chat-changes',
           data: {
@@ -171,7 +174,7 @@ describe('workspaceNavigationTabSaga', () => {
     await task.toPromise();
   });
 
-  it('keeps an unmodified agent note open rightmost and preserves adjacent file metadata', async () => {
+  it('keeps an unmodified agent note in its source panel and preserves adjacent file metadata', async () => {
     vi.spyOn(Date, 'now').mockReturnValue(42);
     const channel = stdChannel();
     const dispatch = vi.fn();
@@ -217,9 +220,10 @@ describe('workspaceNavigationTabSaga', () => {
     await settle();
 
     expect(dispatch.mock.calls[0]?.[0]).toMatchObject({
-      type: 'panelLayout/openTabInRightmostColumnRequested',
+      type: 'panelLayout/openTab',
       payload: {
         wsId: 'ws-1',
+        panelId: 'panel-1',
         force: true,
         tab: {
           type: 'note',
@@ -251,7 +255,191 @@ describe('workspaceNavigationTabSaga', () => {
     vi.restoreAllMocks();
   });
 
-  it('uses source context only for explicit adjacent commit and diff routing', async () => {
+  // Regression tests for intent-hq/monorepo#3398: a mod-clicked note-task link
+  // (openInNewAdjacentPanel) must open a NEW column right of the source panel,
+  // even when an equivalent note tab is already open in another column.
+  describe('mod-click note routing into a new adjacent column (monorepo#3398)', () => {
+    const notesState = {
+      byWorkspaceId: {
+        'ws-1': { notes: createCollection('id', [{ id: 'note-1', title: 'Plan' }]) },
+      },
+    };
+
+    function runWithLayout(workspaceLayout: Record<string, unknown>) {
+      const channel = stdChannel();
+      let state: any = {
+        workspaceNotes: notesState,
+        panelLayout: { byWorkspaceId: { 'ws-1': { ...emptyWorkspaceState, ...workspaceLayout } } },
+      };
+      const dispatch = vi.fn((action: any) => {
+        state = { ...state, panelLayout: reducePanelAction(state.panelLayout, action) };
+      });
+      const task = runSaga(
+        { channel, dispatch, getState: () => state },
+        workspaceNavigationTabSaga,
+      );
+      return { channel, task, getLayout: () => state.panelLayout.byWorkspaceId['ws-1'] };
+    }
+
+    it('creates a new column right of the source even when the note is open in another column', async () => {
+      const { channel, task, getLayout } = runWithLayout({
+        root: {
+          type: 'split',
+          direction: 'horizontal',
+          children: [
+            { type: 'panel', panelId: 'left' },
+            { type: 'panel', panelId: 'right' },
+          ],
+          sizes: [50, 50],
+        },
+        panels: {
+          left: {
+            id: 'left',
+            tabs: [{ id: 'spec-tab', type: 'note', title: 'Spec', noteId: 'spec' }],
+            activeTabId: 'spec-tab',
+          },
+          right: {
+            id: 'right',
+            tabs: [
+              { id: 'existing-note', type: 'note', title: 'Plan', noteId: 'note-1' },
+              { id: 'right-file', type: 'file', title: 'a.ts', filePath: 'a.ts' },
+            ],
+            activeTabId: 'right-file',
+          },
+        },
+        focusedPanelId: 'left',
+        columnCount: 2,
+      });
+
+      channel.put(
+        openWorkspaceNote('ws-1', 'note-1', {
+          sourcePanelId: 'left',
+          openInAdjacentPanel: true,
+          openInNewAdjacentPanel: true,
+        }),
+      );
+      await settle();
+
+      const ws = getLayout();
+      const order = ws.root.children.map((child: any) => child.panelId);
+      expect(order).toHaveLength(3);
+      expect(order[0]).toBe('left');
+      expect(order[2]).toBe('right');
+      const middle = ws.panels[order[1]];
+      expect(middle.tabs).toEqual([
+        expect.objectContaining({ type: 'note', noteId: 'note-1', title: 'Plan' }),
+      ]);
+      expect(middle.activeTabId).toBe(middle.tabs[0].id);
+      // The pre-existing copy in the right column must not be hijacked.
+      expect(ws.panels.right.activeTabId).toBe('right-file');
+      task.cancel();
+      await task.toPromise();
+    });
+
+    it('creates a new column right of the source when the note is not open anywhere', async () => {
+      const { channel, task, getLayout } = runWithLayout({
+        root: {
+          type: 'split',
+          direction: 'horizontal',
+          children: [
+            { type: 'panel', panelId: 'left' },
+            { type: 'panel', panelId: 'right' },
+          ],
+          sizes: [50, 50],
+        },
+        panels: {
+          left: {
+            id: 'left',
+            tabs: [{ id: 'spec-tab', type: 'note', title: 'Spec', noteId: 'spec' }],
+            activeTabId: 'spec-tab',
+          },
+          right: {
+            id: 'right',
+            tabs: [{ id: 'right-file', type: 'file', title: 'a.ts', filePath: 'a.ts' }],
+            activeTabId: 'right-file',
+          },
+        },
+        focusedPanelId: 'left',
+        columnCount: 2,
+      });
+
+      channel.put(
+        openWorkspaceNote('ws-1', 'note-1', {
+          sourcePanelId: 'left',
+          openInAdjacentPanel: true,
+          openInNewAdjacentPanel: true,
+        }),
+      );
+      await settle();
+
+      const ws = getLayout();
+      const order = ws.root.children.map((child: any) => child.panelId);
+      expect(order).toHaveLength(3);
+      expect(order[0]).toBe('left');
+      expect(order[2]).toBe('right');
+      expect(ws.panels[order[1]].tabs).toEqual([
+        expect.objectContaining({ type: 'note', noteId: 'note-1' }),
+      ]);
+      task.cancel();
+      await task.toPromise();
+    });
+
+    it('falls back to a duplicate tab in the next column at the four-column limit', async () => {
+      const panel = (id: string) => ({
+        id,
+        tabs: [{ id: `${id}-tab`, type: 'file', title: `${id}.ts`, filePath: `${id}.ts` }],
+        activeTabId: `${id}-tab`,
+      });
+      const { channel, task, getLayout } = runWithLayout({
+        root: {
+          type: 'split',
+          direction: 'horizontal',
+          children: [
+            { type: 'panel', panelId: 'p1' },
+            { type: 'panel', panelId: 'p2' },
+            { type: 'panel', panelId: 'p3' },
+            { type: 'panel', panelId: 'p4' },
+          ],
+          sizes: [25, 25, 25, 25],
+        },
+        panels: {
+          p1: panel('p1'),
+          p2: panel('p2'),
+          p3: panel('p3'),
+          p4: {
+            id: 'p4',
+            tabs: [{ id: 'existing-note', type: 'note', title: 'Plan', noteId: 'note-1' }],
+            activeTabId: 'existing-note',
+          },
+        },
+        focusedPanelId: 'p1',
+        columnCount: 4,
+      });
+
+      channel.put(
+        openWorkspaceNote('ws-1', 'note-1', {
+          sourcePanelId: 'p1',
+          openInAdjacentPanel: true,
+          openInNewAdjacentPanel: true,
+        }),
+      );
+      await settle();
+
+      const ws = getLayout();
+      expect(ws.root.children.map((child: any) => child.panelId)).toEqual(['p1', 'p2', 'p3', 'p4']);
+      expect(ws.panels.p2.tabs).toEqual([
+        expect.objectContaining({ id: 'p2-tab' }),
+        expect.objectContaining({ type: 'note', noteId: 'note-1' }),
+      ]);
+      expect(ws.panels.p2.activeTabId).toBe(ws.panels.p2.tabs[1].id);
+      // The far column's copy stays untouched.
+      expect(ws.panels.p4.tabs).toEqual([expect.objectContaining({ id: 'existing-note' })]);
+      task.cancel();
+      await task.toPromise();
+    });
+  });
+
+  it('uses source context for adjacent commit and same-panel diff routing', async () => {
     const change = {
       id: 'change-1',
       file: 'src/foo.ts',
@@ -296,9 +484,10 @@ describe('workspaceNavigationTabSaga', () => {
       },
     });
     expect(dispatch.mock.calls[1]?.[0]).toMatchObject({
-      type: 'panelLayout/openTabInRightmostColumnRequested',
+      type: 'panelLayout/openTab',
       payload: {
         wsId: 'ws-1',
+        panelId: 'panel-b',
         force: true,
         tab: {
           type: 'diff',

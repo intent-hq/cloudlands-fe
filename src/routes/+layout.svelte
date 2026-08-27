@@ -12,25 +12,21 @@
   import '@fontsource/jetbrains-mono/700-italic.css';
   import '@fontsource/doto/700.css';
   import { onDestroy, onMount, type Snippet } from 'svelte';
-  import ActionKeyHud from '$features/hardware-console/actions/ActionKeyHud.svelte';
   import { wireSplashGate } from '$features/backend/splash-gate';
   import { store as appStore } from '$store/renderer/store';
   import { startRootStoreLifecycle } from '$store/renderer/root-store-lifecycle';
-  import { startAllAppSagas } from '$store/renderer/sagas';
   import { selectResolvedLocale } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
   import { IPC_CHANNELS } from '$shared/ipc-registry';
   import {
     attachMouseHistoryNavigation,
     handleHistoryNavigateIpc,
   } from '$lib/utils/history-navigation';
-  // Side-effect import: installs bridge-less IPC handlers without running snapshot seeders.
-  import '$store/renderer/seeders';
 
   let { children }: { children?: Snippet } = $props();
 
   const disposeStore = startRootStoreLifecycle(
     appStore,
-    { startSagas: startAllAppSagas },
+    { startSagas: () => [] },
     import.meta.hot?.data,
   );
   onDestroy(disposeStore);
@@ -66,7 +62,4 @@
 
 {#key $resolvedLocale$}
   {@render children?.()}
-
-  <!-- Global hardware-console action HUD; product chrome remains scoped to (app). -->
-  <ActionKeyHud />
 {/key}

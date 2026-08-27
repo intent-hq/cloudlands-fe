@@ -29,20 +29,21 @@
   );
 
   // Options: blank + visible specialists
-  const options = $derived.by<Array<{ id: string | null; name: string; description: string }>>(
-    () => [
-      {
-        id: null,
-        name: m.chat_specialistSwitcher_blank_label(),
-        description: m.chat_specialistSwitcher_noPresetBehavior_description(),
-      },
-      ...visibleSpecialists.map((s) => ({
-        id: s.id,
-        name: s.name,
-        description: s.description,
-      })),
-    ],
-  );
+  const options = $derived.by<
+    Array<{ id: string | null; name: string; description: string; icon?: string }>
+  >(() => [
+    {
+      id: null,
+      name: m.chat_specialistSwitcher_blank_label(),
+      description: m.chat_specialistSwitcher_noPresetBehavior_description(),
+    },
+    ...visibleSpecialists.map((s) => ({
+      id: s.id,
+      name: s.name,
+      description: s.description,
+      icon: s.icon,
+    })),
+  ]);
 
   function handleSelect(id: string | null) {
     if (id !== value) {
@@ -51,7 +52,7 @@
   }
 
   // Size classes
-  const avatarSize = $derived(size === 'sm' ? 20 : 28);
+  const avatarSize = $derived(size === 'sm' ? undefined : 28);
   const pillPadding = $derived(size === 'sm' ? 'px-2 py-1' : 'px-3 py-1.5');
   const textSize = $derived(size === 'sm' ? 'text-xs' : 'text-sm');
 </script>
@@ -72,7 +73,13 @@
       )}
       title={option.description}
     >
-      <AgentAvatar agentId="blank" size={avatarSize} specialist={option.id} />
+      <AgentAvatar
+        agentId="blank"
+        variant="standard"
+        size={avatarSize}
+        specialist={option.id}
+        icon={option.icon}
+      />
       <span class={cn('font-medium', textSize)}>{option.name}</span>
     </button>
   {/each}

@@ -246,6 +246,39 @@ describe('LiveWorkspacesClient mutations (fake transport)', () => {
     expect(firstKey).not.toEqual(secondKey);
   });
 
+  it('create preserves a proposal idempotencyKey on the exact workspace.create wire request', async () => {
+    mockedRequest.mockResolvedValueOnce({
+      workspace: {
+        id: '77777777-7777-4777-8777-777777777777',
+        title: 'Sibling follow-up',
+        branch: 'intent/sibling-follow-up',
+        status: 'Active',
+      },
+    });
+    const client = new LiveWorkspacesClient();
+    const request: CreateWorkspaceRequest = {
+      idempotencyKey: 'sibling-proposal-stable-key',
+      title: 'Sibling follow-up',
+      repositoryPath: '/repo/current',
+      baseRef: 'feature/dependency',
+      initialAgent: {
+        name: 'Coordinator',
+        prompt: 'Continue the separate follow-up.',
+        specialist: 'implementor',
+      },
+    };
+
+    const result = await client.create(request);
+
+    expect(mockedRequest).toHaveBeenCalledExactlyOnceWith('workspace.create', request, {
+      timeoutMs: 120_000,
+    });
+    expect(result).toMatchObject({
+      success: true,
+      workspace: { id: '77777777-7777-4777-8777-777777777777', title: 'Sibling follow-up' },
+    });
+  });
+
   it('delete forwards workspace.delete with the workspaceId and 120s timeout override', async () => {
     mockedRequest.mockResolvedValueOnce({ id: 'ws-1' });
     const client = new LiveWorkspacesClient();

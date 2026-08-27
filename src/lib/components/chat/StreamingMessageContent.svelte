@@ -45,6 +45,7 @@
   import ChatAgentActionBlock from './ChatAgentActionBlock.svelte';
   import SetupScriptCard from './SetupScriptCard.svelte';
   import ThinkingBlock from './ThinkingBlock.svelte';
+  import ReasoningHistoryBlock from './ReasoningHistoryBlock.svelte';
   import ProposalCard from './proposals/ProposalCard.svelte';
   import { applySpecialistProposal } from './proposals/specialist-proposal-actions';
   import {
@@ -73,7 +74,14 @@
     OPERATIONAL_GROUP_CHILD_CONTENT_CLASS,
     OPERATIONAL_GROUP_CHILD_ROW_CLASS,
   } from './operational-disclosure-row';
-  import { dedupeKeys, getResponseGroupBlockKeys } from './response-group-blocks';
+  import {
+    dedupeKeys,
+    getResponseGroupBlockKeys,
+    getResponseGroupCurrentChildIndex,
+    normalizeResponseGroups,
+    shouldRenderResponseGroupInline,
+  } from './response-group-blocks';
+  import { chatSearchBlockPath } from './chat-search';
   import { AuggieTextParser } from '$lib/utils/auggie-text-parser';
   import { createLogger } from '$lib/utils/client-logger';
   import { m } from '$shared/paraglide/messages.js';
@@ -199,6 +207,7 @@
       normalizeAgentVideoContentBlocks(
         dedupeResourceBlocks(parsedPromptBlocks.contentBlocks),
         role,
+        workspaceId,
       ),
     ).filter((block) => !isQuestionResourceBlock(block));
 
@@ -291,7 +300,9 @@
   });
 
   // Group content blocks by <group:Name> tags at the ContentBlock level.
-  let groupedBlocks = $derived(groupContentBlocks(blocks, isStreaming));
+  let groupedBlocks = $derived(
+    normalizeResponseGroups(groupContentBlocks(blocks, isStreaming), isStreaming),
+  );
 
   // Track tool states
   let toolStates = $state<Map<string, 'running' | 'completed' | 'error'>>(new Map());
@@ -564,7 +575,7 @@
     // ContentBlockGroup: use group name + index
     if (block.type === 'content_group') {
       const group = block as ContentBlockGroup;
-      return `group-${index}-${group.name}`;
+      return `group-${index}-${group.sourceName ?? group.name}`;
     }
 
     const contentBlock = block as ContentBlock;
@@ -610,13 +621,30 @@
   function isVisibleTopLevelBlock(block: RenderContentBlock): boolean {
     if (block.type === 'content_group') return true;
     const contentBlock = block as ContentBlock;
-    return Boolean(
+    if (
       isNavLinkBlock(contentBlock) ||
       resolveCard(contentBlock, cardHandlers) ||
-      getProposalFromBlock(contentBlock) ||
-      ['text', 'tool_use', 'thinking', 'image', 'video'].includes(contentBlock.type),
-    );
+      getProposalFromBlock(contentBlock)
+    ) {
+      return true;
+    }
+    if (contentBlock.type === 'text') {
+      const text = contentBlock.text || (contentBlock as any).content || '';
+      return parseSuggestedPrompts(text).cleanedContent.trim().length > 0;
+    }
+    if (contentBlock.type === 'image') {
+      return Boolean((contentBlock.data || contentBlock.dataTruncated) && contentBlock.mimeType);
+    }
+    if (contentBlock.type === 'video') return Boolean(contentBlock.source);
+    return contentBlock.type === 'tool_use' || contentBlock.type === 'thinking';
   }
+
+  let lastVisibleTopLevelBlockIndex = $derived.by(() => {
+    for (let i = groupedBlocks.length - 1; i >= 0; i--) {
+      if (isVisibleTopLevelBlock(groupedBlocks[i])) return i;
+    }
+    return -1;
+  });
 
   /**
    * Index of the last group child that actually renders. tool_result children
@@ -643,6 +671,20 @@
   parsedBlock: ParsedContent,
   isLastBlock: boolean,
   insetProse = false,
+)}
+  {#if insetProse}
+    <div class={OPERATIONAL_ASSISTANT_PROSE_INSET_CLASS}>
+      {@render renderParsedContentBlockBody(parsedBlock, isLastBlock, insetProse)}
+    </div>
+  {:else}
+    {@render renderParsedContentBlockBody(parsedBlock, isLastBlock, insetProse)}
+  {/if}
+{/snippet}
+
+{#snippet renderParsedContentBlockBody(
+  parsedBlock: ParsedContent,
+  isLastBlock: boolean,
+  insetProse: boolean,
 )}
   {#if parsedBlock.type === 'augment_code_snippet'}
     <AugmentCodeSnippet
@@ -709,10 +751,7 @@
       language={parsedBlock.metadata?.language || 'plaintext'}
     />
   {:else if parsedBlock.type === 'text'}
-    <div
-      class={insetProse ? OPERATIONAL_ASSISTANT_PROSE_INSET_CLASS : undefined}
-      data-assistant-prose={insetProse ? 'streaming-markdown' : undefined}
-    >
+    <div data-assistant-prose={insetProse ? 'streaming-markdown' : undefined}>
       <MarkdownViewer
         content={parsedBlock.content || ''}
         isStreaming={isStreaming && isLastBlock}
@@ -722,10 +761,7 @@
       />
     </div>
   {:else}
-    <div
-      class={insetProse ? OPERATIONAL_ASSISTANT_PROSE_INSET_CLASS : undefined}
-      data-assistant-prose={insetProse ? 'streaming-fallback' : undefined}
-    >
+    <div data-assistant-prose={insetProse ? 'streaming-fallback' : undefined}>
       <MarkdownViewer
         content={parsedBlock.content || ''}
         isStreaming={isStreaming && isLastBlock}
@@ -748,6 +784,7 @@
   isLastBlock: boolean,
   nested = false,
   adjacentOperationalRow = false,
+  reasoningHistory = false,
 )}
   {#if isNavLinkBlock(block)}
     <div class="w-full">
@@ -859,12 +896,21 @@
   {:else if block.type === 'thinking'}
     <!-- Daemon-emitted thinking blocks carry `text` (PROTOCOL §7.1); the legacy
          <think>-tag parser path in messageParser emits `content`. -->
-    <ThinkingBlock
-      content={getContentBlockText(block) || m.chat_shared_processing_fallback()}
-      isStreaming={isStreaming && isLastBlock}
-      {workspaceId}
-      {adjacentOperationalRow}
-    />
+    {#if reasoningHistory}
+      <ReasoningHistoryBlock
+        content={getContentBlockText(block) || m.chat_shared_processing_fallback()}
+        isStreaming={isStreaming && isLastBlock}
+        {workspaceId}
+        {adjacentOperationalRow}
+      />
+    {:else}
+      <ThinkingBlock
+        content={getContentBlockText(block) || m.chat_shared_processing_fallback()}
+        isStreaming={isStreaming && isLastBlock}
+        {workspaceId}
+        {adjacentOperationalRow}
+      />
+    {/if}
   {:else if block.type === 'image' && (block.data || block.dataTruncated) && block.mimeType}
     <ChatImageBlock
       data={block.data}
@@ -883,6 +929,45 @@
   {/if}
 {/snippet}
 
+{#snippet renderResponseGroupChild(
+  group: ContentBlockGroup,
+  groupIndex: number,
+  childBlock: ContentBlock,
+  childIndex: number,
+)}
+  <div
+    class="content-block content-block--{childBlock.type} {getOperationalClusterSpacingClass(
+      group.children,
+      childIndex,
+      (candidate) => candidate.type !== 'tool_result',
+      group.isReasoningPhase,
+    )} {isOperationalClusterBlock(childBlock)
+      ? OPERATIONAL_GROUP_CHILD_ROW_CLASS
+      : OPERATIONAL_GROUP_CHILD_CONTENT_CLASS}"
+    style:padding-left={isOperationalClusterBlock(childBlock)
+      ? undefined
+      : 'calc(var(--operational-row-inline-padding) + var(--operational-leading-slot-size) + var(--operational-leading-gap))'}
+    data-message-content-block={childBlock.type}
+    data-chat-search-block-path={chatSearchBlockPath(groupIndex, childIndex)}
+    data-response-group-child
+  >
+    {@render renderContentBlock(
+      childBlock,
+      `${groupIndex}-${childIndex}`,
+      group.isStreaming &&
+        groupIndex === groupedBlocks.length - 1 &&
+        childIndex === lastRenderableChildIndex(group.children),
+      true,
+      isAdjacentOperationalClusterRow(
+        group.children,
+        childIndex,
+        (candidate) => candidate.type !== 'tool_result',
+      ),
+      group.isReasoningPhase,
+    )}
+  </div>
+{/snippet}
+
 <div
   class="relative flex flex-col gap-0"
   class:streaming={isStreaming}
@@ -893,63 +978,57 @@
   {#each groupedBlocks as block, blockIndex (blockKeys[blockIndex])}
     {#if block.type === 'content_group'}
       {@const group = block as ContentBlockGroup}
-      <div
-        class="content-block content-block--group {getOperationalClusterSpacingClass(
-          groupedBlocks,
-          blockIndex,
-          isVisibleTopLevelBlock,
-        )}"
-        data-message-content-block="content_group"
-        use:animateIn={{ animate: isStreaming, key: blockKeys[blockIndex] }}
-      >
-        <ResponseGroup
-          name={group.name}
-          isStreaming={group.isStreaming}
-          isLast={blockIndex === groupedBlocks.length - 1}
-          blocks={group.children}
-          adjacentOperationalRow={isAdjacentOperationalClusterRow(
+      {#if shouldRenderResponseGroupInline(group)}
+        {@const childKeys = getResponseGroupBlockKeys(group.children)}
+        {#each group.children as childBlock, childIndex (childKeys[childIndex])}
+          {#if childBlock.type !== 'tool_result'}
+            {@render renderResponseGroupChild(group, blockIndex, childBlock, childIndex)}
+          {/if}
+        {/each}
+      {:else}
+        {@const currentChildIndex = getResponseGroupCurrentChildIndex(group)}
+        {#snippet currentChild()}
+          {@render renderResponseGroupChild(
+            group,
+            blockIndex,
+            group.children[currentChildIndex],
+            currentChildIndex,
+          )}
+        {/snippet}
+        <div
+          class="content-block content-block--group {getOperationalClusterSpacingClass(
             groupedBlocks,
             blockIndex,
             isVisibleTopLevelBlock,
-          )}
+          )}"
+          data-message-content-block="content_group"
+          use:animateIn={{ animate: isStreaming, key: blockKeys[blockIndex] }}
         >
-          {#snippet children()}
-            {@const childKeys = getResponseGroupBlockKeys(group.children)}
-            {@const lastRenderableIndex = lastRenderableChildIndex(group.children)}
-            {#each group.children as childBlock, childIndex (childKeys[childIndex])}
-              {#if childBlock.type !== 'tool_result'}
-                <div
-                  class="content-block content-block--{childBlock.type} {getOperationalClusterSpacingClass(
-                    group.children,
-                    childIndex,
-                    (candidate) => candidate.type !== 'tool_result',
-                  )} {isOperationalClusterBlock(childBlock)
-                    ? OPERATIONAL_GROUP_CHILD_ROW_CLASS
-                    : OPERATIONAL_GROUP_CHILD_CONTENT_CLASS}"
-                  style:padding-left={isOperationalClusterBlock(childBlock)
-                    ? undefined
-                    : 'calc(var(--operational-row-inline-padding) + var(--operational-leading-slot-size) + var(--operational-leading-gap))'}
-                  data-message-content-block={childBlock.type}
-                  data-response-group-child
-                >
-                  {@render renderContentBlock(
-                    childBlock,
-                    `${blockIndex}-${childIndex}`,
-                    blockIndex === groupedBlocks.length - 1 &&
-                      childIndex === lastRenderableIndex,
-                    true,
-                    isAdjacentOperationalClusterRow(
-                      group.children,
-                      childIndex,
-                      (candidate) => candidate.type !== 'tool_result',
-                    ),
-                  )}
-                </div>
-              {/if}
-            {/each}
-          {/snippet}
-        </ResponseGroup>
-      </div>
+          <ResponseGroup
+            name={group.name}
+            isStreaming={group.isStreaming}
+            isTerminal={blockIndex === lastVisibleTopLevelBlockIndex}
+            blocks={group.children}
+            searchPath={chatSearchBlockPath(blockIndex)}
+            reasoningPhase={group.isReasoningPhase}
+            currentChild={currentChildIndex >= 0 ? currentChild : undefined}
+            adjacentOperationalRow={isAdjacentOperationalClusterRow(
+              groupedBlocks,
+              blockIndex,
+              isVisibleTopLevelBlock,
+            )}
+          >
+            {#snippet children()}
+              {@const childKeys = getResponseGroupBlockKeys(group.children)}
+              {#each group.children as childBlock, childIndex (childKeys[childIndex])}
+                {#if childBlock.type !== 'tool_result'}
+                  {@render renderResponseGroupChild(group, blockIndex, childBlock, childIndex)}
+                {/if}
+              {/each}
+            {/snippet}
+          </ResponseGroup>
+        </div>
+      {/if}
     {:else if isNavLinkBlock(block as ContentBlock) || resolveCard(block, cardHandlers) || getProposalFromBlock(block as ContentBlock) || ['text', 'tool_use', 'thinking', 'image', 'video'].includes(block.type)}
       <div
         class="content-block content-block--{isNavLinkBlock(block as ContentBlock)
@@ -965,6 +1044,9 @@
         )}"
         data-operational-cluster-row={isOperationalClusterBlock(block) ? block.type : undefined}
         data-message-content-block={block.type}
+        data-chat-search-block-path={block.type === 'text'
+          ? chatSearchBlockPath(blockIndex)
+          : undefined}
         use:animateIn={{ animate: isStreaming, key: blockKeys[blockIndex] }}
       >
         {@render renderContentBlock(

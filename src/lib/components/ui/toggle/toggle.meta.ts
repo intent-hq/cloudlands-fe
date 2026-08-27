@@ -28,8 +28,8 @@ export const toggleCompatibilityModes = {
     replacement: '$lib/components/ui/switch',
     callers: [
       { path: 'src/lib/component-catalog/renderers/BasicCatalogPreview.svelte', count: 1 },
-      { path: 'src/lib/components/settings/AdditionalAgentsSettings.svelte', count: 1 },
       { path: 'src/lib/components/settings/AgentFeaturesSettings.svelte', count: 1 },
+      { path: 'src/lib/components/settings/GitWorkspaceSettings.svelte', count: 2 },
       { path: 'src/lib/components/settings/HardwareConsoleSettings.svelte', count: 1 },
       { path: 'src/lib/components/settings/LegacyImportSettings.svelte', count: 1 },
       { path: 'src/lib/components/settings/McpServersSettings.svelte', count: 1 },
@@ -38,7 +38,7 @@ export const toggleCompatibilityModes = {
       { path: 'src/lib/components/settings/WebSocketApiSettings.svelte', count: 1 },
       { path: 'src/lib/components/settings/WorkspaceApiSettings.svelte', count: 1 },
     ],
-    staticUsageCount: 12,
+    staticUsageCount: 13,
     dynamicUsageCount: 0,
     removalGate:
       'Remove only when source-derived static and dynamic variant="indicator" usage counts both reach zero.',
@@ -55,9 +55,8 @@ export const toggleMetadata = {
   owner: '007-B2',
   callers: [
     'src/lib/component-catalog/renderers/BasicCatalogPreview.svelte',
-    'src/lib/components/layout/WorkspaceViewModeToggle.svelte',
-    'src/lib/components/settings/AdditionalAgentsSettings.svelte',
     'src/lib/components/settings/AgentFeaturesSettings.svelte',
+    'src/lib/components/settings/GitWorkspaceSettings.svelte',
     'src/lib/components/settings/HardwareConsoleSettings.svelte',
     'src/lib/components/settings/LegacyImportSettings.svelte',
     'src/lib/components/settings/McpServersSettings.svelte',

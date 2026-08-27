@@ -50,8 +50,10 @@ import {
   chatSendStarted,
   chatInitialized,
   chatReset,
+  chatTranscriptSnapshotApplied,
   streamCompleted,
 } from '../chat-state/chat-state-slice';
+import { splitUnloadedRows } from '$lib/components/chat/chat-scrollback-composition';
 import { eventReceived } from '../workspace-events/workspace-events-slice';
 import { workspaceDeleted } from '../workspace-lifecycle/workspace-lifecycle-slice';
 import {
@@ -847,6 +849,23 @@ describe('agent-session-slice reducer', () => {
       expect(getMsgs(state, 'a1')).toHaveLength(1);
     });
 
+    it('applies the sticky liveTurnOpen/liveTurnOpenedAt fields without touching updatedAt', () => {
+      // The daemon-events bridge marks a session live off an
+      // agent:stream:activity ping through updateSession; updatedAt is
+      // daemon-owned (STAB-19) and must stay whatever the session already had.
+      let state = agentSessionReducer(
+        initialState,
+        upsertSession(makeSession('a1', 'ws-1', { updatedAt: '2026-01-01T00:00:00.000Z' })),
+      );
+      state = agentSessionReducer(
+        state,
+        updateSession('a1', { liveTurnOpen: true, liveTurnOpenedAt: '2026-01-02T00:00:00.000Z' }),
+      );
+      expect(state.byAgentId['a1'].liveTurnOpen).toBe(true);
+      expect(state.byAgentId['a1'].liveTurnOpenedAt).toBe('2026-01-02T00:00:00.000Z');
+      expect(state.byAgentId['a1'].updatedAt).toBe('2026-01-01T00:00:00.000Z');
+    });
+
     it('deduplicates same-appMessageId messages in updateSession message arrays', () => {
       const appMessageId = 'app_msg_update';
       let state = agentSessionReducer(initialState, upsertSession(makeSession('a1')));
@@ -1247,6 +1266,63 @@ describe('agent-session-slice reducer', () => {
         } as any),
       );
       expect(state.byAgentId['a1'].liveTurnOpen).toBe(false);
+    });
+
+    it('a fresh running edge clears the previous turn lastToolUse; a mid-turn tick does not', () => {
+      // The persisted lastToolUse (AgentLite §5.5) survives idle, and the
+      // running status-changed edge makes the session live BEFORE the first
+      // activity ping of the new turn wipes it — without the reducer clear,
+      // a tool-only prior turn's tool renders as live during that window.
+      let state = agentSessionReducer(
+        initialState,
+        upsertSession(
+          makeSession('a1', 'ws-1', {
+            lastToolUse: { name: 'view' },
+          } as any),
+        ),
+      );
+      expect((state.byAgentId['a1'] as any).lastToolUse).toEqual({ name: 'view' });
+
+      // Fresh running edge (liveTurnOpen closed → open) clears the stale tool.
+      state = agentSessionReducer(
+        state,
+        eventReceived('ws-1', {
+          id: 'evt-running',
+          type: 'agent:status-changed',
+          timestamp: '2024-01-01T00:00:00.000Z',
+          workspaceId: 'ws-1',
+          data: { agentId: 'a1', status: 'active', isActive: true },
+        } as any),
+      );
+      expect(state.byAgentId['a1'].liveTurnOpen).toBe(true);
+      expect((state.byAgentId['a1'] as any).lastToolUse).toBeUndefined();
+
+      // The new turn's activity ping repopulates the field...
+      state = agentSessionReducer(
+        state,
+        updateSession('a1', { lastToolUse: { name: 'str-replace-editor', status: 'running' } }),
+      );
+      expect((state.byAgentId['a1'] as any).lastToolUse).toEqual({
+        name: 'str-replace-editor',
+        status: 'running',
+      });
+
+      // ...and a mid-turn status tick (slot already open) must NOT wipe it.
+      state = agentSessionReducer(
+        state,
+        eventReceived('ws-1', {
+          id: 'evt-midturn',
+          type: 'agent:status-changed',
+          timestamp: '2024-01-01T00:01:00.000Z',
+          workspaceId: 'ws-1',
+          data: { agentId: 'a1', status: 'active', isActive: true, isStreaming: true },
+        } as any),
+      );
+      expect(state.byAgentId['a1'].liveTurnOpen).toBe(true);
+      expect((state.byAgentId['a1'] as any).lastToolUse).toEqual({
+        name: 'str-replace-editor',
+        status: 'running',
+      });
     });
 
     it('a hydration with isActive:false or a terminal status closes the sticky liveTurnOpen slot', () => {
@@ -5730,6 +5806,56 @@ describe('history segment (scrollback)', () => {
       expect(getHistory(state, 'a1')!.holeRowsEstimate).toBe(250);
     });
 
+    it('capped serial walk: hole estimate grows by exactly the pruned count so the above split shrinks monotonically to 0', () => {
+      // Regression (termination bookkeeping): with the segment pinned at
+      // HISTORY_SEGMENT_MAX, every prepended page cap-prunes its row count
+      // into the history→tail hole. If holeRowsEstimate under-counted, the
+      // above split would stall and the settle-chained walk could not
+      // terminate before exhaustion.
+      const TOTAL_HISTORY = 2000;
+      const PAGE = 200;
+      const totalMessages = TOTAL_HISTORY + 1;
+      let state = withSession('a1', [makeUniqueMessage('tail-1', 'user', ts(TOTAL_HISTORY))]);
+
+      const aboveSplit = (s: AgentSessionState) => {
+        const segment = getHistory(s, 'a1')!;
+        return splitUnloadedRows({
+          totalMessages,
+          residentCount: segment.messages.length + 1,
+          exhausted: false,
+          startOrdinalEstimate: segment.startOrdinalEstimate ?? null,
+          gapToTail: segment.gapToTail,
+          holeRowsEstimate: segment.holeRowsEstimate ?? null,
+        }).above;
+      };
+
+      let cursor = TOTAL_HISTORY;
+      let prepended = 0;
+      let previousAbove = Number.POSITIVE_INFINITY;
+      while (cursor > 0) {
+        const start = cursor - PAGE;
+        state = agentSessionReducer(
+          state,
+          prependHistoryMessages(
+            'a1',
+            Array.from({ length: PAGE }, (_, i) => histMsg(start + i)),
+          ),
+        );
+        cursor = start;
+        prepended += PAGE;
+        const segment = getHistory(state, 'a1')!;
+        // Exact bookkeeping: every row pruned past the cap is in the hole.
+        expect(segment.holeRowsEstimate ?? 0).toBe(Math.max(0, prepended - HISTORY_SEGMENT_MAX));
+        // The above split must equal the unfetched-older row count exactly
+        // and strictly decrease with every page (monotonic termination).
+        const above = aboveSplit(state);
+        expect(above).toBe(cursor);
+        expect(above).toBeLessThan(previousAbove);
+        previousAbove = above;
+      }
+      expect(aboveSplit(state)).toBe(0);
+    });
+
     it('does not track a hole estimate on seek-seeded segments (start ordinal anchors the split)', () => {
       let state = withSession();
       const landing = Array.from({ length: HISTORY_SEGMENT_MAX }, (_, i) => histMsg(i + 500));
@@ -5976,6 +6102,55 @@ describe('history segment (scrollback)', () => {
     it('clearHistorySegment is a no-op when no segment exists', () => {
       const state = withSession();
       expect(agentSessionReducer(state, clearHistorySegment('a1'))).toBe(state);
+    });
+  });
+
+  describe('transcript discard (§7.1 resumed:false snapshot)', () => {
+    it('drops the history segment in the same dispatch as the snapshot', () => {
+      let state = withSession();
+      state = agentSessionReducer(state, prependHistoryMessages('a1', [histMsg(0)]));
+      state = agentSessionReducer(
+        state,
+        chatTranscriptSnapshotApplied('a1', {
+          truncated: true,
+          totalMessages: 20,
+          resumed: false,
+        }),
+      );
+      expect(getHistory(state, 'a1')).toBeUndefined();
+    });
+
+    it('a resumed:true or plain snapshot keeps the segment', () => {
+      let state = withSession();
+      state = agentSessionReducer(state, prependHistoryMessages('a1', [histMsg(0)]));
+      state = agentSessionReducer(
+        state,
+        chatTranscriptSnapshotApplied('a1', {
+          truncated: true,
+          totalMessages: 20,
+          resumed: true,
+        }),
+      );
+      expect(getHistory(state, 'a1')).toBeDefined();
+      state = agentSessionReducer(
+        state,
+        chatTranscriptSnapshotApplied('a1', { truncated: true, totalMessages: 20 }),
+      );
+      expect(getHistory(state, 'a1')).toBeDefined();
+    });
+
+    it('is a no-op when the discarded agent has no segment', () => {
+      const state = withSession();
+      expect(
+        agentSessionReducer(
+          state,
+          chatTranscriptSnapshotApplied('a1', {
+            truncated: false,
+            totalMessages: 0,
+            resumed: false,
+          }),
+        ),
+      ).toBe(state);
     });
   });
 

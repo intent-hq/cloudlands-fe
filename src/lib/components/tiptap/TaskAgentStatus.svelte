@@ -1,9 +1,9 @@
 <script lang="ts">
   import {
     selectAgentIsResponding,
-    selectAgentPreview,
     selectAgentSession,
   } from '$store/renderer/slices/agent-session/agent-session-selectors';
+  import { selectHudAgentHasPendingQuestion } from '$store/renderer/slices/hud/hud-selectors';
   import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
 
   import { restoreAgentSessionRequested } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
@@ -11,9 +11,9 @@
   import { AgentStatus } from '$shared/types';
   import { onMount, onDestroy } from 'svelte';
   import { taskAgentPollingManager } from './task-agent-polling-manager';
-  import { mapAgentPreviewToLatestContent } from './task-agent-status-preview';
   import AgentAvatarWithState from '$features/agent/components/agent-avatar/AgentAvatarWithState.svelte';
-  import AgentPreviewToolLabel from '$lib/components/chat/AgentPreviewToolLabel.svelte';
+  import { getAvatarStateForSession } from '$features/agent/components/agent-avatar/avatar-state';
+  import { getAgentAvatarStateLabel } from '$features/agent/components/agent-avatar/avatar-state-label';
   import { openAgentTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
   import { store as appStore } from '$store/renderer/store';
   import { m } from '$shared/paraglide/messages.js';
@@ -39,11 +39,13 @@
     agentId,
     onViewAgent,
     compact = false,
+    indicator = false,
     workspaceId: owningWorkspaceId,
   }: {
     agentId: string;
     onViewAgent?: () => void;
     compact?: boolean;
+    indicator?: boolean;
     workspaceId?: string;
   } = $props();
 
@@ -53,11 +55,8 @@
   const serviceAgent$ = selectAgentSession(agentId);
   // svelte-ignore state_referenced_locally - selector readables must be created at component init; component is mounted per-agent
   const agentIsResponding$ = selectAgentIsResponding(agentId);
-  // Canonical single-line preview (attention → live text → live tool → user
-  // line → digest/report → persisted fallbacks), derived store-side.
   // svelte-ignore state_referenced_locally - selector readables must be created at component init; component is mounted per-agent
-  const agentPreview$ = selectAgentPreview(agentId);
-
+  const agentHasPendingQuestion$ = selectHudAgentHasPendingQuestion(agentId);
   // Force reactivity with a version counter that updates when we detect changes
   let version = $state(0);
   let timeoutId: ReturnType<typeof setTimeout> | undefined;
@@ -306,11 +305,6 @@
   // Only hide if loading explicitly failed (agent doesn't exist and we tried loading)
   const shouldShow = $derived(!loadFailed);
 
-  // Wire digest (AgentLite, PROTOCOL §5.5): push-applied by
-  // `agent:stream:activity` while responding and persisted on the session —
-  // no client-side extraction from stream buffers or the transcript.
-  const agentDigest = $derived(storeAgent?.digest || serviceAgent?.digest || null);
-
   // Debug logging - only log once when agent is first found to avoid log spam
   let hasLoggedAgentFound = false;
   $effect(() => {
@@ -328,33 +322,20 @@
   // Process queue hint from Redux state
   const processQueueHint = $derived(storeAgent?.processQueueHint);
 
-  // Determine agent status - defined before latestContent since it depends on this value
-  type AgentDisplayStatus = 'streaming' | 'active' | 'complete' | 'error' | 'idle' | 'unknown';
-  const agentStatus: AgentDisplayStatus = $derived.by(() => {
-    // Use finalStatus if we have one (agent completed/errored)
-    if (finalStatus === 'complete') return 'complete';
-    if (finalStatus === 'error') return 'error';
-
-    // Use Redux-derived streaming state for real-time updates.
-    if (isStreamActive) return 'streaming';
-
-    if (!storeAgent && !serviceAgent) return 'unknown';
-
-    // Fallback to canonical current-state selector
-    if ($agentIsResponding$) return 'active';
-
-    const status = storeAgent?.status || serviceAgent?.status;
-    if (status === AgentStatus.Completed) return 'complete';
-    if (status === AgentStatus.Error) return 'error';
-
-    return 'idle';
+  const avatarState = $derived(
+    getAvatarStateForSession(agent, { hasQuestion: $agentHasPendingQuestion$ }),
+  );
+  const agentStatusLabel = $derived.by(() => {
+    if (!agent) {
+      return agentFound
+        ? m.tiptap_taskAgentStatus_loadingAgent_label()
+        : m.tiptap_taskAgentStatus_spinningUp_label();
+    }
+    return getAgentAvatarStateLabel(avatarState);
   });
-
-  // Latest content preview: the canonical `selectAgentPreview` chain mapped
-  // onto this component's `{ text | toolBlock, isStreaming }` shape. The
-  // `attention`/`report` kinds are filtered out component-side (this surface
-  // does not render them; the digest has its own template branch above).
-  const latestContent = $derived(mapAgentPreviewToLatestContent($agentPreview$));
+  const indicatorLabel = $derived(
+    `${m.chat_msgAttribution_openAgent_title({ name: agent?.name ?? agentId })}: ${agentStatusLabel}`,
+  );
 
   const handleClick = (e: MouseEvent) => {
     e.preventDefault();
@@ -388,62 +369,49 @@
     onmousedown={(e) => e.preventDefault()}
     class="task-agent-status"
     class:compact
-    class:streaming={agentStatus === 'streaming'}
-    class:active={agentStatus === 'active'}
-    class:complete={agentStatus === 'complete'}
-    class:error={agentStatus === 'error'}
+    class:indicator
     class:loading={!agent}
     type="button"
     contenteditable="false"
+    aria-label={indicator ? indicatorLabel : undefined}
+    title={indicator ? indicatorLabel : undefined}
+    data-task-agent-indicator={indicator || undefined}
+    data-agent-display-status={agent ? avatarState : 'unknown'}
   >
-    <div class="status-content">
-      {#if processQueueHint?.waiting}
-        <!-- Process queue hint takes priority; reason distinguishes the admission constraint (§6.5) -->
-        {#if processQueueHint.reason === 'memory-budget'}
-          <span class="status-text" title={m.tiptap_taskAgentStatus_waitingMemory_tooltip()}
-            >{m.tiptap_taskAgentStatus_waitingMemory_label({
-              used: formatInteger(processQueueHint.used),
-              cap: formatInteger(processQueueHint.cap),
-            })}</span
+    {#if !indicator}
+      <div class="status-content">
+        {#if processQueueHint?.waiting}
+          <!-- Process queue hint takes priority; reason distinguishes the admission constraint (§6.5) -->
+          {#if processQueueHint.reason === 'memory-budget'}
+            <span class="status-text" title={m.tiptap_taskAgentStatus_waitingMemory_tooltip()}
+              >{m.tiptap_taskAgentStatus_waitingMemory_label({
+                used: formatInteger(processQueueHint.used),
+                cap: formatInteger(processQueueHint.cap),
+              })}</span
+            >
+          {:else}
+            <span class="status-text"
+              >{m.tiptap_taskAgentStatus_waitingSlot_label({
+                used: formatInteger(processQueueHint.used),
+                cap: formatInteger(processQueueHint.cap),
+              })}</span
+            >
+          {/if}
+        {:else if !agent && !agentFound}
+          <span class="status-text loading-text">{m.tiptap_taskAgentStatus_spinningUp_label()}</span
+          >
+        {:else if !agent}
+          <span class="status-text loading-text"
+            >{m.tiptap_taskAgentStatus_loadingAgent_label()}</span
           >
         {:else}
-          <span class="status-text"
-            >{m.tiptap_taskAgentStatus_waitingSlot_label({
-              used: formatInteger(processQueueHint.used),
-              cap: formatInteger(processQueueHint.cap),
-            })}</span
-          >
+          <span class="status-text">{agentStatusLabel}</span>
         {/if}
-      {:else if agentDigest}
-        <!-- Show digest prominently when available -->
-        <span class="line-clamp-3 break-all text-subtle">{agentDigest}</span>
-      {:else if !agent && !agentFound}
-        <span class="status-text loading-text">{m.tiptap_taskAgentStatus_spinningUp_label()}</span>
-      {:else if !agent}
-        <span class="status-text loading-text">{m.tiptap_taskAgentStatus_loadingAgent_label()}</span
-        >
-      {:else if latestContent?.toolBlock}
-        <span class="status-text">
-          <AgentPreviewToolLabel
-            toolUse={latestContent.toolBlock}
-            animate={latestContent.isStreaming}
-          />
-        </span>
-      {:else if latestContent?.text}
-        <span class="status-text">{latestContent.text}</span>
-      {:else if agentStatus === 'streaming' || agentStatus === 'active'}
-        <span class="status-text">{m.tiptap_taskAgentStatus_working_label()}</span>
-      {:else if agentStatus === 'complete'}
-        <span class="status-text">{m.tiptap_taskAgentStatus_completed_label()}</span>
-      {:else if agentStatus === 'error'}
-        <span class="status-text">{m.tiptap_taskAgentStatus_error_label()}</span>
-      {:else}
-        <span class="status-text">{m.tiptap_taskAgentStatus_assigned_label()}</span>
-      {/if}
-    </div>
+      </div>
+    {/if}
 
     <div class="status-icon">
-      <AgentAvatarWithState {agentId} size={19} />
+      <AgentAvatarWithState {agentId} state={avatarState} size={19} />
     </div>
   </button>
 {/if}
@@ -489,6 +457,26 @@
     background-color: transparent;
   }
 
+  .task-agent-status.indicator {
+    width: 20px;
+    height: 20px;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    gap: 0;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    border-radius: 0.25rem;
+    background: transparent;
+    box-shadow: none;
+  }
+
+  .task-agent-status.indicator:focus-visible {
+    outline: 2px solid var(--color-ring);
+    outline-offset: 1px;
+  }
+
   .task-agent-status:hover:not(.compact) {
     background-color: var(--color-accent);
   }
@@ -512,6 +500,10 @@
     align-items: center;
     margin-top: 0.3rem;
     margin-right: 0.66rem;
+  }
+
+  .indicator .status-icon {
+    margin: 0;
   }
 
   .status-content {

@@ -13,28 +13,17 @@ describe('workspace frame outer inset', () => {
     expect(appLayout).not.toContain('workspace-frame relative mr-2 mb-2');
   });
 
-  it('keeps the single-workspace surface rounded while columns remain transparent', () => {
-    expect(appLayout).toContain("showWorkspaceColumns\n              ? ''");
-    expect(appLayout).toContain(": 'rounded-xl bg-sidebar border border-border shadow-sm'");
+  it('keeps the standard workspace surface rounded', () => {
+    expect(appLayout).toContain(
+      'workspace-main flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-xl bg-sidebar border border-border shadow-sm',
+    );
   });
 
   it('keeps the workspace frame from becoming an outer vertical scroll owner', () => {
     expect(appLayout).toContain('class="flex-1 min-h-0 overflow-hidden"');
-    expect(appLayout).not.toContain('class:overflow-auto={!showWorkspaceColumns}');
   });
 
-  it('uses titlebar geometry and semantic overlap state without changing frame dimensions', () => {
+  it('keeps the sidebar frame dimensions stable', () => {
     expect(appLayout).toContain('class="workspace-sidebar-frame relative z-40');
-    expect(appLayout).toContain(
-      'class:workspace-columns-overlap={showWorkspaceColumns && workspaceColumnsOverlap}',
-    );
-    expect(appLayout).toContain('onHorizontalOverlapChange={(overlap)');
-    expect(appLayout).toContain('style:padding-top={showWorkspaceColumns');
-    const appLayoutCss = readFileSync(
-      resolve(process.cwd(), 'src/routes/(app)/app-layout.css'),
-      'utf8',
-    );
-    expect(appLayoutCss).toContain('box-shadow: var(--elevation-raised)');
-    expect(appLayoutCss).toContain('transition: opacity var(--motion-fast) ease');
   });
 });

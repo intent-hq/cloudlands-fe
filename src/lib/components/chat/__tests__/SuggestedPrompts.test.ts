@@ -77,7 +77,8 @@ describe('SuggestedPrompts', () => {
     for (const className of CHAT_OPERATIONAL_LEADING_CLASS.split(' ')) {
       expect(icon.classList.contains(className)).toBe(true);
     }
-    expect(icon.className).not.toContain('mt-');
+    expect(icon.className).toContain('mt-px');
+    expect(icon.className).toContain('self-start');
     expect(icon.className).not.toContain('/60');
     const source = readFileSync(resolve('src/lib/components/chat/SuggestedPrompts.svelte'), 'utf8');
     expect(source).toContain('size={16} class={CHAT_OPERATIONAL_ICON_CLASS}');

@@ -14,7 +14,8 @@
  *
  * Only the hostname is rewritten — scheme, port, path, query, and hash are
  * preserved. This module is pure (no Electron/transport imports); the executor
- * wiring supplies `{ daemonIsRemote, daemonHost }` from transport state.
+ * wiring supplies `{ daemonIsRemote, daemonHost }` from backend identity and
+ * transport state.
  */
 
 const DAEMON_LOCALHOST = 'daemon.localhost';
@@ -28,6 +29,8 @@ export interface LoopbackRewriteContext {
   daemonIsRemote: boolean;
   /** Hostname the FE uses to reach the remote daemon (sanitized transport target). */
   daemonHost?: string;
+  /** Daemon-local links must tunnel because the saved remote transport host is client loopback. */
+  daemonLinksRequireTunnel?: boolean;
 }
 
 export interface LoopbackRewriteResult {
@@ -43,9 +46,11 @@ export interface LoopbackRewriteResult {
   /**
    * True only when the URL was rewritten to the REMOTE daemon host (never for
    * local-mode or `client.localhost` rewrites, which stay on this machine).
-   * The executor probes reachability before navigating when this is set.
+   * The resolver probes reachability unless `requiresTunnel` is also set.
    */
   remoteHost?: boolean;
+  /** Skip the client-side reachability probe and forward through the daemon tunnel. */
+  requiresTunnel?: boolean;
 }
 
 /**
@@ -70,15 +75,16 @@ export interface TransportConfigForLoopback {
 }
 
 /**
- * Resolve the rewrite context from the active backend transport. `sameHost`
- * is `isSameHostBackendActive()` (UDS ⇒ same host by construction); for the
- * env/dev `ws`/`tcp` transports — which `isSameHostBackendActive()` reports as
- * not-same-host — a loopback target host still means the daemon runs on this
- * machine, so it resolves as local. Pure and never throws.
+ * Resolve the rewrite context from the active backend identity and transport.
+ * Saved-remote identity takes precedence over loopback host inference: a WSS
+ * endpoint may be localhost because an SSH forward carries it to another
+ * machine. Without saved-remote identity, env/dev loopback `ws`/`tcp` targets
+ * remain local. Pure and never throws.
  */
 export function loopbackContextFromTransport(
   sameHost: boolean,
   config?: TransportConfigForLoopback,
+  savedRemote = false,
 ): LoopbackRewriteContext {
   if (sameHost || config?.transport === 'uds') return { daemonIsRemote: false };
   let host: string | undefined;
@@ -92,7 +98,8 @@ export function loopbackContextFromTransport(
     host = config.host;
   }
   if (host && classifyLoopbackHost(host) === 'bare-loopback') {
-    return { daemonIsRemote: false };
+    if (!savedRemote) return { daemonIsRemote: false };
+    return { daemonIsRemote: true, daemonHost: host, daemonLinksRequireTunnel: true };
   }
   return host ? { daemonIsRemote: true, daemonHost: host } : { daemonIsRemote: true };
 }
@@ -166,6 +173,7 @@ export function rewriteLoopbackUrl(
       requestedUrl: rawUrl,
       reason: `${DAEMON_LOCALHOST} targets the daemon machine; rewritten to remote daemon host ${daemonHost}`,
       remoteHost: true,
+      ...(context.daemonLinksRequireTunnel ? { requiresTunnel: true } : {}),
     };
   }
 
@@ -186,6 +194,7 @@ export function rewriteLoopbackUrl(
     requestedUrl: rawUrl,
     reason: `bare loopback URL assumed daemon-local; rewritten to remote daemon host ${daemonHost}`,
     remoteHost: true,
+    ...(context.daemonLinksRequireTunnel ? { requiresTunnel: true } : {}),
     warning:
       // i18n-ignore (agent-facing protocol warning, not user-facing)
       `Loopback host "${url.hostname}" was assumed to mean the daemon machine and rewritten to ` +

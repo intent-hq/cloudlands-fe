@@ -9,7 +9,7 @@
   destructive action gated behind a confirmation dialog; confirming hands off
   to `onDismiss` — the host calls `agent.dismissQuestions`, which persists
   the dismissal (survives reload) and releases the question hold. On the last
-  question Send hands the full answers array to `onComplete`. Single-question
+  question an option submits immediately; typed text uses Send. Single-question
   wizards hide the step counter, progress segments, and Back button — none
   carry information when there is only one step.
 -->
@@ -54,6 +54,9 @@
   }
 
   let idx = $state(0);
+  // The host normally unmounts this component after completion. Keep a local,
+  // synchronous latch so rapid clicks cannot complete or replace an answer twice.
+  let completed = $state(false);
   // Dismiss is destructive and persistent — gate it behind a confirm dialog.
   let confirmingDismiss = $state(false);
   // Intentional initial capture: the host remounts the wizard ({#key} on the
@@ -67,8 +70,9 @@
   const isMulti = $derived(!!current?.multiSelect);
   // Single-question wizards drop the counter, segments, and Back button.
   const multiStep = $derived(questions.length > 1);
-  // Single-select mid-flow advances on selection — no Next button.
-  const showNext = $derived(isMulti || isLast);
+  // Single-select options submit immediately. The final Send action remains
+  // available only for typed custom answers; multi-select stays explicit.
+  const showNext = $derived(isMulti || (isLast && draft.text.trim().length > 0));
   const nextDisabled = $derived(
     (isMulti || isLast) && draft.sel.length === 0 && !draft.text.trim(),
   );
@@ -98,6 +102,8 @@
 
   function advance() {
     if (idx >= questions.length - 1) {
+      if (completed) return;
+      completed = true;
       onComplete?.(buildAnswers());
       return;
     }
@@ -105,24 +111,25 @@
   }
 
   function selectOption(oi: number) {
-    if (optionsLocked) return;
+    if (optionsLocked || completed) return;
     if (isMulti) {
       draft.sel = draft.sel.includes(oi) ? draft.sel.filter((x) => x !== oi) : [...draft.sel, oi];
       draft.skipped = false;
       return;
     }
-    draft.sel = draft.sel.includes(oi) ? [] : [oi];
+    draft.sel = [oi];
     draft.skipped = false;
-    if (isLast) return;
     advance();
   }
 
   function handleNext() {
+    if (completed) return;
     if (nextDisabled) return;
     advance();
   }
 
   function handleSkip() {
+    if (completed) return;
     draft.sel = [];
     draft.text = '';
     draft.skipped = true;
@@ -130,6 +137,7 @@
   }
 
   function handleBack() {
+    if (completed) return;
     idx = Math.max(idx - 1, 0);
   }
 
@@ -141,7 +149,7 @@
 </script>
 
 <div
-  class="min-w-0 overflow-hidden rounded-(--radius-large) bg-card"
+  class="min-w-0 overflow-hidden rounded-(--radius-large) border-0 bg-card"
   data-question-wizard
   data-testid="question-wizard-card"
 >
@@ -173,16 +181,22 @@
       {/if}
     </div>
   {:else}
-    <div class="flex min-h-7 items-center px-3 pt-3 sm:px-4">
+    <div
+      class="flex min-h-7 min-w-0 items-center gap-2 px-3 pt-3 sm:px-4"
+      data-question-wizard-header
+    >
       {#if multiStep}
-        <span class="type-caption text-subtle"
+        <span class="shrink-0 type-caption text-subtle" data-question-step-counter
           >{m.chat_questionWizard_stepCounter_label({
             current: idx + 1,
             total: questions.length,
           })}</span
         >
       {/if}
-      <span class="ml-auto flex items-center gap-1">
+      <p class="min-w-0 flex-1 truncate type-caption text-subtle" data-question-header-title>
+        {current.header}
+      </p>
+      <span class="flex shrink-0 items-center gap-1" data-question-header-actions>
         <button
           type="button"
           class="border-none bg-transparent type-caption text-subtle cursor-pointer font-[inherit] px-1.5 py-1 rounded-(--radius-small) hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
@@ -207,10 +221,7 @@
     {#key idx}
       <div in:fade={{ duration: stepDuration }}>
         <div class="flex flex-col gap-4 px-3 pt-3 pb-3 sm:px-4">
-          <div class="flex flex-col gap-1">
-            <p class="type-caption text-subtle">{current.header}</p>
-            <h2 class="type-title font-medium text-foreground">{current.question}</h2>
-          </div>
+          <h2 class="type-title font-medium text-foreground">{current.question}</h2>
 
           <div class="flex flex-col divide-y divide-border">
             {#each current.options as option, oi (oi)}
@@ -218,7 +229,7 @@
               <button
                 type="button"
                 aria-pressed={selected}
-                disabled={optionsLocked}
+                disabled={optionsLocked || completed}
                 data-question-option
                 data-selected={selected}
                 class="flex min-w-0 w-full items-start gap-2.5 border-0 bg-transparent px-2 py-2.5 text-left font-[inherit] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring {selected
@@ -228,21 +239,21 @@
                     : 'cursor-pointer hover:bg-accent/50 active:bg-accent'}"
                 onclick={() => selectOption(oi)}
               >
-                <span
-                  aria-hidden="true"
-                  data-option-indicator
-                  class="mt-0.5 inline-flex size-4 shrink-0 items-center justify-center border box-border {isMulti
-                    ? 'rounded-(--radius-small)'
-                    : 'rounded-full'} {selected ? 'border-primary' : 'border-input'}"
-                >
-                  {#if isMulti && selected}
-                    <span class="inline-flex size-full items-center justify-center bg-primary">
-                      <Fa icon={faCheck} class="text-[9px] text-primary-foreground a11y-ignore" />
-                    </span>
-                  {:else if selected}
-                    <span class="size-2 rounded-full bg-primary"></span>
-                  {/if}
-                </span>
+                {#if isMulti}
+                  <span
+                    aria-hidden="true"
+                    data-option-indicator
+                    class="mt-0.5 inline-flex size-4 shrink-0 items-center justify-center rounded-(--radius-small) border box-border {selected
+                      ? 'border-primary'
+                      : 'border-input'}"
+                  >
+                    {#if selected}
+                      <span class="inline-flex size-full items-center justify-center bg-primary">
+                        <Fa icon={faCheck} class="text-[9px] text-primary-foreground a11y-ignore" />
+                      </span>
+                    {/if}
+                  </span>
+                {/if}
                 <span class="flex min-w-0 flex-1 flex-col gap-0.5">
                   <span
                     class="type-body font-medium {selected
@@ -296,7 +307,7 @@
           <span class="ml-auto flex items-center gap-1.5">
             <button
               type="button"
-              class="border-none bg-transparent type-caption text-subtle cursor-pointer font-[inherit] px-2 py-1.5 rounded-(--radius-small) hover:text-foreground"
+              class="border-none bg-transparent type-body text-subtle cursor-pointer font-[inherit] px-2 py-1.5 rounded-(--radius-small) hover:text-foreground"
               onclick={handleSkip}
             >
               {m.chat_questionWizard_skip_label()}

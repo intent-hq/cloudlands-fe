@@ -6,7 +6,7 @@
  * back to sanitized input/output under the parent disclosure, without adding a
  * redundant completion state or nested disclosure.
  */
-import { render, cleanup } from '@testing-library/svelte';
+import { render, cleanup, screen } from '@testing-library/svelte';
 import { describe, it, expect, vi, afterEach } from 'vitest';
 
 vi.mock('$store/renderer/store', async () => {
@@ -150,6 +150,52 @@ describe('ToolDetails empty rich-result fallback', () => {
     });
 
     expect(container.textContent).toContain('Question queued for the user');
+  });
+});
+
+describe('ToolDetails screenshot sources', () => {
+  const pngBase64 =
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9Zl2kAAAAASUVORK5CYII=';
+
+  it('renders a real PNG browser screenshot with matching metadata', () => {
+    render(ToolDetails, {
+      props: {
+        input: {},
+        parsedResult: { type: 'browser' as const, screenshotBase64: pngBase64 },
+      },
+    });
+
+    expect(screen.getByRole('img', { name: 'Browser screenshot' }).getAttribute('src')).toBe(
+      `data:image/png;base64,${pngBase64}`,
+    );
+  });
+
+  it('does not render unsafe browser screenshot URLs', () => {
+    render(ToolDetails, {
+      props: {
+        input: {},
+        parsedResult: { type: 'browser' as const, screenshotUrl: 'javascript:alert(1)' },
+      },
+    });
+
+    expect(screen.queryByRole('img', { name: 'Browser screenshot' })).toBeNull();
+  });
+
+  it('preserves the existing Figma image MIME behavior', () => {
+    render(ToolDetails, {
+      props: {
+        input: {},
+        parsedResult: {
+          type: 'figma' as const,
+          figmaScreenshot: pngBase64,
+          figmaScreenshotMimeType: 'image/png',
+        },
+      },
+    });
+
+    expect(screen.getByRole('img', { name: 'Figma design screenshot' }).getAttribute('src')).toBe(
+      `data:image/png;base64,${pngBase64}`,
+    );
   });
 });
 

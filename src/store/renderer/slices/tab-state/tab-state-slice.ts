@@ -4,7 +4,6 @@ import { omitKey } from '../../utils/utils';
 
 export type HandleDropZoneType = 'row-above' | 'row-below' | 'column-left' | 'column-right';
 type TabFlagMap = Record<string, boolean>;
-export type WorkspaceViewMode = 'single' | 'columns';
 export type WorkspaceDropPlacement = 'before' | 'after' | 'above' | 'below';
 
 export const TAB_SCROLL_POSITIONS_STORAGE_KEY = 'tab-scroll-positions';
@@ -36,7 +35,6 @@ export type PersistedWorkspaceTabsState = {
   optimisticTabs: string[];
   tabOrder: string[];
   workspaceStacks?: string[][];
-  viewMode?: WorkspaceViewMode;
 };
 
 export type TabState = {
@@ -51,7 +49,6 @@ export type TabState = {
   workspaceStacks: string[][];
   recentlyClosedTabIds: string[];
   recentlyClosedTabAt: Record<string, number>;
-  viewMode: WorkspaceViewMode;
   version: number;
   /**
    * Backend id whose persisted tab strip has been (re)hydrated by the tab
@@ -166,7 +163,6 @@ export const serializeWorkspaceTabsState = (
     | 'unsavedTabs'
     | 'optimisticTabs'
     | 'workspaceStacks'
-    | 'viewMode'
   >,
 ): PersistedWorkspaceTabsState => ({
   openTabs: Object.keys(state.openTabs),
@@ -176,7 +172,6 @@ export const serializeWorkspaceTabsState = (
   optimisticTabs: Object.keys(state.optimisticTabs),
   tabOrder: getWorkspaceTabOrder(state.workspaceStacks),
   workspaceStacks: state.workspaceStacks,
-  viewMode: state.viewMode,
 });
 
 const initialState: TabState = {
@@ -191,7 +186,6 @@ const initialState: TabState = {
   workspaceStacks: [],
   recentlyClosedTabIds: [],
   recentlyClosedTabAt: {},
-  viewMode: 'single',
   version: 0,
   hydratedBackendId: null,
 };
@@ -244,9 +238,6 @@ export const switchToNextWorkspaceTab = createAction('tabState/switchToNextWorks
 export const switchToPreviousWorkspaceTab = createAction('tabState/switchToPreviousWorkspaceTab');
 export const switchToWorkspaceTabByIndex = createAction<[index: number]>(
   'tabState/switchToWorkspaceTabByIndex',
-);
-export const setWorkspaceViewMode = createAction<[viewMode: WorkspaceViewMode]>(
-  'tabState/setWorkspaceViewMode',
 );
 export const loadWorkspaceTabsState = createAction<[state: PersistedWorkspaceTabsState]>(
   'tabState/loadWorkspaceTabsState',
@@ -457,18 +448,12 @@ tabStateReducer.with(switchToWorkspaceTabByIndex, (state, { payload: [index] }) 
     currentTabId: nextTabId,
   });
 });
-tabStateReducer.with(setWorkspaceViewMode, (state, { payload: [viewMode] }) => {
-  if (state.viewMode === viewMode) return state;
-  return withNextVersion(state, { viewMode });
-});
 tabStateReducer.with(loadWorkspaceTabsState, (state, { payload: [workspaceTabsState] }) => {
   const tabOrder = (workspaceTabsState.tabOrder ?? []).filter(isWorkspaceTabId);
   const workspaceStacks = normalizePersistedWorkspaceStacks(
     tabOrder,
     workspaceTabsState.workspaceStacks,
   );
-  const viewMode =
-    workspaceTabsState.viewMode === 'columns' && workspaceStacks.length > 1 ? 'columns' : 'single';
   return {
     ...state,
     openTabs: createTabFlagMap((workspaceTabsState.openTabs ?? []).filter(isWorkspaceTabId)),
@@ -482,7 +467,6 @@ tabStateReducer.with(loadWorkspaceTabsState, (state, { payload: [workspaceTabsSt
       (workspaceTabsState.optimisticTabs ?? []).filter(isWorkspaceTabId),
     ),
     workspaceStacks,
-    viewMode,
     recentlyClosedTabIds: [],
     recentlyClosedTabAt: {},
   };

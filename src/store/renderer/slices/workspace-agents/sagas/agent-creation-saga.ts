@@ -2,6 +2,7 @@ import { all, call, cancelled, put, takeEvery, type SagaGenerator } from 'typed-
 
 import { agentFactory } from '$features/agent/services/agent-factory';
 import { buildTaskAgentInitialMessage } from '$features/notes/utils/task-agent-message-builder';
+import { appClient } from '$lib/client';
 import { SPECIALISTS } from '$lib/constants/specialists';
 import { createLogger } from '$lib/utils/client-logger';
 import { generateSpecialistAgentName } from '$lib/utils/agent-name-generator';
@@ -13,6 +14,7 @@ import { getAgentProvider } from '$shared/types/agent-session';
 import { createAgentTypeId, parseAgentTypeId } from '$shared/types/agent.types';
 import { CHIEF_WORKSPACE_ID, WorkspaceId } from '$shared/types/branded-ids';
 import { splitCompoundModelId } from '$shared/utils/compound-model-id';
+import { isNoteContentStale } from '$shared/utils/note-content';
 import { openAgentTabRequested } from '../../app-layout/app-layout-slice';
 import {
   agentSessionLaunchAgentRequested,
@@ -53,6 +55,24 @@ function hasUsableSession(session: AgentSession | undefined): boolean {
 function creationError(error: unknown, fallback = m.agent_creation_createFailed_error()): Error {
   if (error instanceof Error) return error;
   return new Error(error ? String(error) : fallback);
+}
+
+function isProviderModelMismatch(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : typeof error === 'string' ? error : '';
+  return /\bmodel\b.+\bdoes not belong to provider\b/i.test(message);
+}
+
+async function showCreationError(error: unknown): Promise<void> {
+  try {
+    const { toast } = await import('svelte-sonner');
+    toast.error(m.agent_creation_createFailed_error(), {
+      description: isProviderModelMismatch(error)
+        ? m.agent_creation_providerModelMismatch_description()
+        : m.agent_creation_failed_description(),
+    });
+  } catch (toastError) {
+    logger.error('Failed to surface agent creation error', toastError);
+  }
 }
 
 function* validateWorkspace(wsId: string): SagaGenerator<Workspace | null> {
@@ -125,6 +145,7 @@ function* createBasicAgent(action: ReturnType<typeof createAgentRequested>): Sag
     });
     if (!result.success || !result.agent) {
       logger.error('Failed to create agent', { workspaceId: wsId, error: result.error });
+      yield* call(showCreationError, result.error);
       return;
     }
     yield* call(registerCreatedAgent, wsId, result.agent, agents);
@@ -137,6 +158,7 @@ function* createBasicAgent(action: ReturnType<typeof createAgentRequested>): Sag
     );
   } catch (error) {
     logger.error('Failed to create agent', { workspaceId: wsId, error });
+    yield* call(showCreationError, error);
   }
 }
 
@@ -180,6 +202,7 @@ function* createSpecialistAgent(
     });
     if (!result.success || !result.agent) {
       logger.error('Failed to create specialist agent', { workspaceId: wsId, error: result.error });
+      yield* call(showCreationError, result.error);
       return;
     }
     yield* call(registerCreatedAgent, wsId, result.agent, agents);
@@ -192,6 +215,7 @@ function* createSpecialistAgent(
     );
   } catch (error) {
     logger.error('Failed to create specialist agent', { workspaceId: wsId, error });
+    yield* call(showCreationError, error);
   }
 }
 
@@ -201,8 +225,15 @@ function* runAgentForNote(
   const [wsId, noteId, noteTitle] = action.payload;
   const workspace = yield* call(validateWorkspace, wsId);
   if (!workspace) return;
-  const note = yield* selectNoteById.effect(wsId, noteId);
+  let note = yield* selectNoteById.effect(wsId, noteId);
   if (!note) return;
+  // Slim note.list rows carry no content (§5.2) — the initial message embeds
+  // the task body, so fetch the full note before building it. Fail-soft: on a
+  // fetch failure keep the cached row (the agent can still ws.note.read it).
+  if (isNoteContentStale(note)) {
+    const full = yield* call([appClient.notes, appClient.notes.get], noteId, wsId);
+    if (full && String(full.workspaceId) === wsId) note = full;
+  }
   // Daemon `specialists.default` setting wins when it resolves to a pickable
   // specialist — visibility-gated by selectSpecialists (e.g. GitHub-dependent
   // specialists without auth) and not `hidden` (picker surfaces exclude
@@ -251,10 +282,19 @@ function* runAgentForNote(
       metadata: { taskNoteId: noteId, source: 'task-run', specialist: specialistId },
       initialMessage: buildTaskAgentInitialMessage(note),
     });
-    if (!result.success || !result.agentId) return;
+    if (!result.success || !result.agentId) {
+      logger.error('Failed to run agent for note', {
+        workspaceId: wsId,
+        noteId,
+        error: result.error,
+      });
+      yield* call(showCreationError, result.error);
+      return;
+    }
     yield* put(openAgentTabRequested(wsId, { agentId: result.agentId }));
   } catch (error) {
     logger.error('Failed to run agent for note', { workspaceId: wsId, noteId, error });
+    yield* call(showCreationError, error);
   }
 }
 
@@ -278,7 +318,9 @@ function* createFromConfig(
     yield* put(action.success(result.agent));
     settled = true;
   } catch (error) {
-    yield* put(action.failure(creationError(error)));
+    const failure = creationError(error);
+    yield* call(showCreationError, failure);
+    yield* put(action.failure(failure));
     settled = true;
   } finally {
     if (!settled && (yield* cancelled())) {

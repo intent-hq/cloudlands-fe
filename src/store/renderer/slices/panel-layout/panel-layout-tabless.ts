@@ -9,7 +9,6 @@ import {
   getAutomaticPanelCanvasWidth,
   getPanelDefaultWidth,
   PANEL_SPLIT_GUTTER_WIDTH,
-  resizePanelWidthsAtDivider,
   type PanelCanvasSizing,
   type PanelDefaultWidthTier,
 } from '../../../../shared/panel-layout-sizing';
@@ -181,37 +180,39 @@ export function resizePanelTreeAtHorizontalIndex(
   return { ...node, children, sizes: nextSizes };
 }
 
-export function resizeRootHorizontalDivider(
+export function commitRootHorizontalPanelWidths(
   node: PanelLayoutNode,
-  panelIndex: number,
-  requestedDelta: number,
   previousPanelWidths: readonly number[],
-): { node: PanelLayoutNode; panelWidths: number[]; acceptedDelta: number } {
+  finalPanelWidths: readonly number[],
+): { node: PanelLayoutNode; panelWidths: number[]; changed: boolean } {
+  const previousWidths = Array.isArray(previousPanelWidths) ? [...previousPanelWidths] : [];
   if (
     node.type !== 'split' ||
     node.direction !== 'horizontal' ||
-    previousPanelWidths.length !== node.children.length
+    previousWidths.length !== node.children.length ||
+    !Array.isArray(finalPanelWidths) ||
+    finalPanelWidths.length !== node.children.length ||
+    previousWidths.some((width) => !Number.isFinite(width) || width <= 0) ||
+    finalPanelWidths.some((width) => !Number.isFinite(width) || width <= 0)
   ) {
-    return { node, panelWidths: [...previousPanelWidths], acceptedDelta: 0 };
+    return { node, panelWidths: previousWidths, changed: false };
   }
-  const resized = resizePanelWidthsAtDivider(previousPanelWidths, panelIndex, requestedDelta);
-  const panelWidthsChanged = resized.panelWidths.some(
-    (width, index) => width !== previousPanelWidths[index],
-  );
-  if (resized.acceptedDelta === 0 && !panelWidthsChanged) return { node, ...resized };
-  const totalWidth = resized.panelWidths.reduce((sum, width) => sum + width, 0);
-  if (totalWidth <= 0) return { node, ...resized };
+  const panelWidths = [...finalPanelWidths];
+  const changed = panelWidths.some((width, index) => width !== previousWidths[index]);
+  if (!changed) return { node, panelWidths, changed: false };
+  const totalWidth = panelWidths.reduce((sum, width) => sum + width, 0);
   return {
     node: {
       ...node,
       children: node.children.map((child, index) =>
-        resized.panelWidths[index] === previousPanelWidths[index]
+        panelWidths[index] === previousWidths[index]
           ? child
-          : resizePanelTreeRightEdge(child, previousPanelWidths[index], resized.panelWidths[index]),
+          : resizePanelTreeRightEdge(child, previousWidths[index], panelWidths[index]),
       ),
-      sizes: resized.panelWidths.map((width) => (width / totalWidth) * 100),
+      sizes: panelWidths.map((width) => (width / totalWidth) * 100),
     },
-    ...resized,
+    panelWidths,
+    changed: true,
   };
 }
 

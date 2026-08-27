@@ -40,7 +40,6 @@ export type AgentTypeId =
   | 'task-debug'
   | 'task-focused'
   | 'task-loop'
-  | 'ralph-loop'
   | 'workspace-agent'
   | 'code-review'
   | 'commit-message'
@@ -60,7 +59,6 @@ const AGENT_TYPE_IDS: readonly AgentTypeId[] = [
   'task-debug',
   'task-focused',
   'task-loop',
-  'ralph-loop',
   'workspace-agent',
   'code-review',
   'commit-message',
@@ -159,7 +157,7 @@ export interface UnifiedAgentConfig {
   /** Frontend createSession sends the initial prompt after backend creation. */
   skipInitialPrompt?: boolean;
   contextReferences?: any[];
-  imageBlocks?: Array<{ type: 'image'; data: string; mimeType: string }>;
+  imageBlocks?: Array<{ type: 'image'; data?: string; mimeType?: string; attachmentId?: string }>;
   metadata?: Record<string, any>;
   messages?: any[]; // For resuming existing sessions with message history
 

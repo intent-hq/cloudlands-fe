@@ -24,6 +24,8 @@ export interface TransportInfo {
   target?: string;
   /** Version reported by an adopted external daemon (version handshake). */
   daemonVersion?: string;
+  /** Source commit reported by an adopted external daemon, when available. */
+  daemonBuildCommit?: string;
   /** True when the adopted daemon's version differs from the intentd.version pin (warn-only). */
   versionMismatch?: boolean;
   /** The bundled intentd.version pin, reported in every transport mode. */
@@ -85,6 +87,9 @@ export function formatTransportInfo(
         ...(versionInfo
           ? {
               daemonVersion: versionInfo.daemonVersion ?? undefined,
+              ...(versionInfo.daemonBuildCommit
+                ? { daemonBuildCommit: versionInfo.daemonBuildCommit }
+                : {}),
               versionMismatch: versionInfo.versionMismatch,
             }
           : {}),

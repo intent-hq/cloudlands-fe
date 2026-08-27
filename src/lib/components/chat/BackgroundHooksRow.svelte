@@ -2,15 +2,14 @@
   /**
    * BackgroundHooksRow Component
    *
-   * Faint row above the chat input surfacing the active agent's background
-   * hooks (PROTOCOL §5.40): one small chip per scheduled/running hook with a
+   * Row above the chat input surfacing the active agent's background hooks
+   * (PROTOCOL §5.40): one responsive card per scheduled/running hook with a
    * live time-to-next-run countdown (a component-local 1s interval ticks a
    * reactive "now" while any rendered hook carries a `nextRunAt`/`expiresAt`)
-   * and a spinner while a run is in flight.
-   * Clicking a chip opens a popover offering "Run now" (`hook.runNow`),
-   * "View script" (opens a workspace panel tab), and "Cancel" (`hook.cancel`);
-   * the hover card offers the same "View script" affordance. Hidden entirely
-   * when the agent has no active hooks.
+   * and a static hourglass for both live states. Card details and the
+   * overflow menu offer "Run now" (`hook.runNow`),
+   * "View script" (opens a workspace panel tab), and "Cancel" (`hook.cancel`).
+   * Hidden entirely when the agent has no active hooks.
    *
    * All wire traffic lives in the `backgroundHooks` slice + its companion
    * read middleware (`background-hooks-read-service`): this component only
@@ -19,14 +18,8 @@
    */
 
   import Fa from 'svelte-fa';
-  import {
-    faBolt,
-    faChevronDown,
-    faCode,
-    faPlay,
-    faSpinner,
-    faXmark,
-  } from '@fortawesome/free-solid-svg-icons';
+  import { faChevronDown, faCode, faPlay, faXmark } from '@fortawesome/free-solid-svg-icons';
+  import HourglassMedium from 'phosphor-svelte/lib/HourglassMedium';
   import { safeSlide } from '$lib/utils/animations';
   import { untrack } from 'svelte';
   import { writable } from 'svelte/store';
@@ -53,7 +46,6 @@
     SUBSCRIPTION_CHEVRON_SIZE_CLASS,
     SUBSCRIPTION_ICON_CLASS,
     SUBSCRIPTION_ICON_BUTTON_CLASS,
-    SUBSCRIPTION_INSET_ROW_DIVIDER_CLASS,
     SUBSCRIPTION_ROW_TYPOGRAPHY_CLASS,
   } from './subscription-disclosure';
 
@@ -68,7 +60,7 @@
   let {
     workspaceId,
     agentId,
-    embedded: _embedded = false,
+    embedded = false,
     visible = $bindable(false),
     count = $bindable(0),
   }: Props = $props();
@@ -106,13 +98,13 @@
     count = agentHooks.length;
   });
 
-  function handleRunNow(hook: BackgroundHook, close: () => void) {
-    close();
+  function handleRunNow(hook: BackgroundHook, close?: () => void) {
+    close?.();
     appStore.dispatch(runBackgroundHookRequested(hook.workspaceId, hook.hookId));
   }
 
-  function handleCancel(hook: BackgroundHook, close: () => void) {
-    close();
+  function handleCancel(hook: BackgroundHook, close?: () => void) {
+    close?.();
     appStore.dispatch(cancelBackgroundHookRequested(hook.workspaceId, hook.hookId));
   }
 
@@ -187,36 +179,51 @@
   >
     {#each agentHooks as hook (hook.hookId)}
       {@const detailsId = `background-hook-details-${hook.hookId}`}
-      <div
-        class="overflow-hidden {SUBSCRIPTION_INSET_ROW_DIVIDER_CLASS}"
+      {@const titleId = `background-hook-title-${hook.hookId}`}
+      <section
+        class="background-hook-card min-w-0 max-w-full overflow-hidden {embedded
+          ? 'background-hook-card--embedded m-0 w-full rounded-none bg-transparent shadow-none'
+          : 'mx-2 my-2 rounded-lg border border-border bg-card shadow-sm'}"
         data-hook-state={hook.state}
+        data-testid="background-hook-card"
         data-subscription-motion-row="hook"
+        aria-labelledby={titleId}
         transition:safeSubscriptionRowTransition
       >
         <div
-          class="flex min-h-9 min-w-0 max-w-full items-center gap-2 px-3 py-2 text-muted-foreground"
+          class="flex min-h-10 min-w-0 max-w-full items-center gap-1.5 px-2 py-1.5 text-muted-foreground"
         >
           <Button
             variant="plain"
             type="button"
-            class="h-auto min-h-0 w-auto min-w-0 max-w-full flex-1 shrink overflow-hidden whitespace-normal rounded border-0 text-left {SUBSCRIPTION_ROW_TYPOGRAPHY_CLASS} {SUBSCRIPTION_ICON_BUTTON_CLASS} focus-visible:ring-1"
+            class="h-auto min-h-7 w-auto min-w-0 max-w-full flex-1 shrink overflow-hidden whitespace-normal rounded border-0 px-1.5 text-left {SUBSCRIPTION_ROW_TYPOGRAPHY_CLASS} {SUBSCRIPTION_ICON_BUTTON_CLASS} focus-visible:ring-1"
             data-testid="background-hook-summary"
             data-subscription-row="event-subscription"
             aria-expanded={expandedHookId === hook.hookId}
             aria-controls={detailsId}
             onclick={() => toggleHookDetails(hook.hookId)}
           >
-            <Fa
-              icon={hook.state === 'running' ? faSpinner : faBolt}
-              class="h-3.5 w-3.5 shrink-0 {SUBSCRIPTION_ICON_CLASS} {hook.state === 'running'
-                ? 'animate-spin'
-                : ''}"
-            />
-            <span class="min-w-0 flex-1 truncate">{hook.name}</span>
-            <span class="shrink-0 text-muted-foreground">{stateLabel(hook)}</span>
-            {#if hook.nextRunAt}
-              <span class="shrink-0 text-muted-foreground">{nextRunIn(hook)}</span>
-            {/if}
+            <span
+              class="inline-flex h-5 w-5 shrink-0 items-center justify-center leading-none {SUBSCRIPTION_ICON_CLASS}"
+              data-testid="background-hook-icon"
+              aria-hidden="true"
+            >
+              <HourglassMedium
+                size={16}
+                weight="regular"
+                class="h-4 w-4"
+                data-icon="hourglass-medium"
+              />
+            </span>
+            <span
+              id={titleId}
+              class="min-w-0 flex-1 truncate text-foreground {embedded
+                ? 'font-normal'
+                : 'font-medium'}">{hook.name}</span
+            >
+            <span class="min-w-0 shrink truncate text-muted-foreground">{stateLabel(hook)}</span>
+            {#if hook.nextRunAt}<span class="shrink-0 text-muted-foreground">{nextRunIn(hook)}</span
+              >{/if}
             <span class="shrink-0" data-testid="background-hook-chevron">
               <Fa
                 icon={faChevronDown}
@@ -280,40 +287,55 @@
         {#if expandedHookId === hook.hookId}
           <div
             id={detailsId}
-            class="grid gap-1.5 overflow-hidden px-9 pb-2 text-xs text-subtle"
+            class="min-w-0 overflow-hidden border-t border-border text-xs text-subtle"
             data-testid="background-hook-details"
             transition:safeSubscriptionSlide
           >
-            <span
-              >{m.chat_backgroundHooks_hover_delay_label({
-                seconds: formatInteger(Math.round(hook.delayMs / 1000)),
-              })}</span
+            <dl
+              class="background-hook-metrics grid min-w-0 grid-cols-4"
+              data-testid="background-hook-metrics"
             >
-            {#if hook.nextRunAt}
-              <span
-                >{m.chat_backgroundHooks_hover_nextRunIn_label({ duration: nextRunIn(hook) })}</span
+              <div class="background-hook-metric min-w-0 px-3 py-2">
+                <dt class="truncate text-muted-foreground">
+                  {m.chat_backgroundHooks_details_nextRun_label()}
+                </dt>
+                <dd class="min-w-0 truncate font-medium text-foreground">
+                  {hook.nextRunAt ? nextRunIn(hook) : '—'}
+                </dd>
+              </div>
+              <div class="background-hook-metric min-w-0 border-l border-border px-3 py-2">
+                <dt class="truncate text-muted-foreground">
+                  {m.chat_backgroundHooks_details_interval_label()}
+                </dt>
+                <dd class="min-w-0 truncate font-medium text-foreground">
+                  {formatCompactDuration(hook.delayMs)}
+                </dd>
+              </div>
+              <div class="background-hook-metric min-w-0 border-l border-border px-3 py-2">
+                <dt class="truncate text-muted-foreground">
+                  {m.chat_backgroundHooks_details_expires_label()}
+                </dt>
+                <dd class="min-w-0 truncate font-medium text-foreground">
+                  {hook.expiresAt ? expiresIn(hook) : '—'}
+                </dd>
+              </div>
+              <div class="background-hook-metric min-w-0 border-l border-border px-3 py-2">
+                <dt class="truncate text-muted-foreground">
+                  {m.chat_backgroundHooks_details_runs_label()}
+                </dt>
+                <dd class="min-w-0 truncate font-medium text-foreground">
+                  {formatInteger(hook.runCount)}
+                </dd>
+              </div>
+            </dl>
+            {#if hook.lastError}<div
+                class="break-words border-t border-border px-3 py-2 text-error-foreground"
+                data-testid="background-hook-last-error"
               >
-            {/if}
-            {#if hook.expiresAt}
-              <span
-                >{m.chat_backgroundHooks_hover_ttlExpiresIn_label({
-                  duration: expiresIn(hook),
-                })}</span
-              >
-            {/if}
-            <span
-              >{hook.runCount === 1
-                ? m.chat_backgroundHooks_details_runCount_one({
-                    count: formatInteger(hook.runCount),
-                  })
-                : m.chat_backgroundHooks_details_runCount_many({
-                    count: formatInteger(hook.runCount),
-                  })}</span
-            >
-            {#if hook.lastError}<span class="break-words text-destructive">{hook.lastError}</span
-              >{/if}
+                {hook.lastError}
+              </div>{/if}
             {#if hook.lastLogs}
-              <div class="grid gap-1">
+              <div class="grid gap-1 border-t border-border px-3 py-2">
                 <span class="font-medium text-muted-foreground"
                   >{m.chat_backgroundHooks_modal_logsTab_label()}</span
                 >
@@ -321,17 +343,41 @@
                   class="background-hook-logs max-h-24 overflow-auto whitespace-pre-wrap break-words font-mono leading-snug">{hook.lastLogs}</pre>
               </div>
             {/if}
-            <Button
-              variant="plain"
-              type="button"
-              class="h-auto min-h-0 w-fit shrink border-0 font-normal text-primary underline focus-visible:ring-1"
-              data-testid="background-hook-view-script-link"
-              onclick={() => handleViewScript(hook)}
-              >{m.chat_backgroundHooks_viewScript_label()}</Button
+            <div
+              class="flex min-w-0 flex-wrap items-center justify-end gap-1 border-t border-border px-2 py-1.5"
             >
+              <Button
+                variant="ghost-light"
+                size="xs"
+                disabled={hook.state === 'running'}
+                data-testid="background-hook-run-now-action"
+                onclick={() => handleRunNow(hook)}
+              >
+                <Fa icon={faPlay} class="h-2.5 w-2.5" />
+                {m.chat_backgroundHooks_runNow_label()}
+              </Button>
+              <Button
+                variant="ghost-light"
+                size="xs"
+                data-testid="background-hook-view-script-link"
+                onclick={() => handleViewScript(hook)}
+              >
+                <Fa icon={faCode} class="h-2.5 w-2.5" />
+                {m.chat_backgroundHooks_viewScript_label()}
+              </Button>
+              <Button
+                variant="ghost-light"
+                size="xs"
+                data-testid="background-hook-cancel-action"
+                onclick={() => handleCancel(hook)}
+              >
+                <Fa icon={faXmark} class="h-2.5 w-2.5" />
+                {m.chat_backgroundHooks_cancel_label()}
+              </Button>
+            </div>
           </div>
         {/if}
-      </div>
+      </section>
     {/each}
   </div>
 {/if}
@@ -339,5 +385,45 @@
 <style>
   .background-hook-logs {
     font-size: 11px;
+  }
+
+  .background-hook-card {
+    container-type: inline-size;
+  }
+
+  .background-hook-card--embedded {
+    margin: 0;
+    border-width: 0;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+    width: 100%;
+  }
+
+  .background-hook-card--embedded + .background-hook-card--embedded {
+    border-top: 1px solid hsl(var(--border));
+  }
+
+  @container (max-width: 32rem) {
+    .background-hook-metrics {
+      grid-template-columns: minmax(0, 1fr);
+    }
+
+    .background-hook-metric {
+      display: grid;
+      grid-template-columns: minmax(5rem, 0.8fr) minmax(0, 1fr);
+      align-items: baseline;
+      gap: 0.75rem;
+      border-left-width: 0;
+      border-top: 1px solid hsl(var(--border));
+    }
+
+    .background-hook-metric:first-child {
+      border-top-width: 0;
+    }
+
+    .background-hook-metric dd {
+      text-align: right;
+    }
   }
 </style>

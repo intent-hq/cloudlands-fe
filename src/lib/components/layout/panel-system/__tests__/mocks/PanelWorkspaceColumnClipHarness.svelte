@@ -154,10 +154,9 @@
 {/if}
 
 {#if mode === 'contained'}
-  <!-- Mirrors WorkspaceColumnsView: column div (stackWidth) > section (overflow-hidden)
-       > WorkspaceLayout row (fixed sidebar + flex-1 content) > PanelLayout. -->
+  <!-- Mirrors the contained workspace shell: fixed sidebar + flex-1 PanelLayout. -->
   <div
-    data-testid="workspace-column"
+    data-testid="panel-column"
     data-scenario={scenario}
     data-persisted-canvas-width={$layoutCanvasWidth$ ?? 'null'}
     data-canvas-width-source={$layoutCanvasWidthSource$ ?? 'null'}
@@ -188,7 +187,7 @@
   <!-- Mirrors tab view: app frame row (pl-2) > fixed sidebar > flex-1 content
        > uncontained PanelLayout (viewport sizing, overflow-x-auto inset). -->
   <div
-    data-testid="workspace-column"
+    data-testid="panel-column"
     data-scenario={scenario}
     data-persisted-canvas-width={$layoutCanvasWidth$ ?? 'null'}
     data-canvas-width-source={$layoutCanvasWidthSource$ ?? 'null'}

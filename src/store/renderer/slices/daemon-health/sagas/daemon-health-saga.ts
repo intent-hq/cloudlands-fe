@@ -169,11 +169,13 @@ function* maybeNotifyVersionMismatch(
   transport: BackendTransportInfo | undefined,
   alreadyNotified: boolean,
 ) {
+  // A cleared mismatch resets the latch so a later genuine mismatch (e.g. the
+  // daemon downgraded again) notifies once more with the current version.
+  if (!transport?.versionMismatch) return false;
   // An orphaned sidecar gets its own actionable toast (see
   // maybeNotifyOrphanedSidecar); the generic mismatch warning would be
   // redundant noise on the same daemon.
-  if (!transport?.versionMismatch || transport.isOrphanedSidecar || alreadyNotified)
-    return alreadyNotified;
+  if (transport.isOrphanedSidecar || alreadyNotified) return alreadyNotified;
   return yield* call(notifyVersionMismatch, transport);
 }
 

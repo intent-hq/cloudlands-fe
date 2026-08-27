@@ -52,3 +52,45 @@ describe('FileViewer SVG preview', () => {
     expect(decodeSvgSource(preview.getAttribute('src') ?? '')).toBe(content);
   });
 });
+
+describe('FileViewer workspace media', () => {
+  it('renders an image from the contained workspace-file source', () => {
+    const sourceUrl = 'workspace-file://ws-1/.demo-artifacts/run/preview.png';
+    render(FileViewer, {
+      props: { filePath: '.demo-artifacts/run/preview.png', sourceUrl },
+    });
+
+    expect(
+      screen.getByRole<HTMLImageElement>('img', { name: 'preview.png' }).getAttribute('src'),
+    ).toBe(sourceUrl);
+  });
+
+  it.each([
+    ['preview.mp4', 'video/mp4'],
+    ['preview.webm', 'video/webm'],
+  ])('renders %s with a correct video fallback MIME type', (filePath, mimeType) => {
+    render(FileViewer, { props: { filePath, fileContent: 'AAAA', isBinary: true } });
+
+    const video = screen.getByTestId<HTMLVideoElement>('file-video');
+    expect(video.getAttribute('src')).toBe(`data:${mimeType};base64,AAAA`);
+    expect(video.getAttribute('src')).not.toContain('data:image/');
+    expect(video.preload).toBe('metadata');
+    expect(video.autoplay).toBe(false);
+  });
+
+  it('renders a workspace WebM URL directly for ranged playback', () => {
+    const sourceUrl = 'workspace-file://ws-1/.demo-artifacts/run/preview.webm';
+    render(FileViewer, { props: { filePath: 'preview.webm', sourceUrl } });
+
+    expect(screen.getByTestId<HTMLVideoElement>('file-video').getAttribute('src')).toBe(sourceUrl);
+  });
+
+  it.each(['http://127.0.0.1:3000/preview.mp4', 'https://media.example/preview.mp4'])(
+    'renders the direct video URL %s without base64 wrapping',
+    (videoUrl) => {
+      render(FileViewer, { props: { filePath: 'preview.mp4', fileContent: videoUrl } });
+
+      expect(screen.getByTestId<HTMLVideoElement>('file-video').getAttribute('src')).toBe(videoUrl);
+    },
+  );
+});

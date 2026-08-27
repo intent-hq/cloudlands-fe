@@ -33,11 +33,11 @@ describe('AutoSaveTextarea persistence timing', () => {
   it('debounces specialist draft saves and trims the persisted value', async () => {
     const onSave = vi.fn().mockResolvedValue(undefined);
     render(AutoSaveTextarea, {
-      props: { value: 'Original', originalValue: 'Original', debounceMs: 250, onSave },
+      props: { value: 'Original', originalValue: 'Original', onSave },
     });
 
     await fireEvent.input(screen.getByRole('textbox'), { target: { value: '  Edited prompt  ' } });
-    await vi.advanceTimersByTimeAsync(249);
+    await vi.advanceTimersByTimeAsync(999);
     expect(onSave).not.toHaveBeenCalled();
 
     await vi.advanceTimersByTimeAsync(1);
@@ -48,7 +48,7 @@ describe('AutoSaveTextarea persistence timing', () => {
   it('supports immediate Ctrl/Cmd+S without a duplicate debounced save', async () => {
     const onSave = vi.fn().mockResolvedValue(undefined);
     render(AutoSaveTextarea, {
-      props: { value: 'Original', originalValue: 'Original', debounceMs: 1000, onSave },
+      props: { value: 'Original', originalValue: 'Original', onSave },
     });
     const textarea = screen.getByRole('textbox');
     await fireEvent.input(textarea, { target: { value: 'Save now' } });
@@ -87,38 +87,29 @@ describe('AutoSaveTextarea persistence timing', () => {
       client.specialists.edit('reviewer', { ...spec, behaviorPrompt }, 'user'),
     );
     render(AutoSaveTextarea, {
-      props: { value: 'Original', originalValue: 'Original', debounceMs: 100, onSave },
+      props: { value: 'Original', originalValue: 'Original', onSave },
     });
 
     await fireEvent.input(screen.getByRole('textbox'), { target: { value: 'Edited prompt' } });
-    await vi.advanceTimersByTimeAsync(100);
+    await vi.advanceTimersByTimeAsync(1000);
 
     expect(onSave).toHaveBeenCalledWith('Edited prompt');
     expect(window.electronAPI!.invoke).toHaveBeenCalledWith(IPC_CHANNELS.BACKEND.REQUEST, request);
   });
 
-  it('blocks autosave while over the character limit and reset cancels pending work', async () => {
+  it('blocks autosave while over the character limit', async () => {
     const onSave = vi.fn().mockResolvedValue(undefined);
-    const onReset = vi.fn();
     render(AutoSaveTextarea, {
       props: {
         value: 'Base',
         originalValue: 'Base',
-        debounceMs: 100,
         maxLength: 5,
         onSave,
-        onReset,
       },
     });
     const textarea = screen.getByRole('textbox');
     await fireEvent.input(textarea, { target: { value: 'Too long' } });
-    await vi.advanceTimersByTimeAsync(100);
-    expect(onSave).not.toHaveBeenCalled();
-
-    await fireEvent.click(screen.getByRole('button', { name: 'Reset' }));
-    expect(onReset).toHaveBeenCalledOnce();
-    expect((textarea as HTMLTextAreaElement).value).toBe('Base');
-    await vi.advanceTimersByTimeAsync(100);
+    await vi.advanceTimersByTimeAsync(1000);
     expect(onSave).not.toHaveBeenCalled();
   });
 });

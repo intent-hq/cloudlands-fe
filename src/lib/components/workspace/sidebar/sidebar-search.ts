@@ -21,7 +21,11 @@ export function filterContextNotes(notes: Note[], query: string): Note[] {
   const notesById = new Map(notes.map((note) => [String(note.id), note]));
   const visibleIds = new Set<string>();
   for (const note of notes) {
-    if (!sidebarSearchMatches(normalizedQuery, [note.title, note.content, note.id])) continue;
+    // Slim note.list rows carry no content (§5.2) — match against the
+    // contentPreview (first ~500 chars); a hit deep inside a very long note
+    // may be missed (accepted degradation).
+    const body = note.content || note.contentPreview;
+    if (!sidebarSearchMatches(normalizedQuery, [note.title, body, note.id])) continue;
     let current: Note | undefined = note;
     const visited = new Set<string>();
     while (current && !visited.has(String(current.id))) {

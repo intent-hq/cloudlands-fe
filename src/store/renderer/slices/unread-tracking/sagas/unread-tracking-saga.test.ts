@@ -3,7 +3,12 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
 
-const marks = vi.hoisted(() => ({ boundary: vi.fn(), finish: vi.fn(), send: vi.fn() }));
+const marks = vi.hoisted(() => ({
+  boundary: vi.fn(),
+  finish: vi.fn(),
+  send: vi.fn(),
+  view: vi.fn(),
+}));
 vi.mock('$features/agent/mark-agent-seen', async (importOriginal) => {
   const actual = await importOriginal<typeof import('$features/agent/mark-agent-seen')>();
   return {
@@ -11,6 +16,7 @@ vi.mock('$features/agent/mark-agent-seen', async (importOriginal) => {
     markAgentSeenAtBoundary: marks.boundary,
     markAgentSeenOnTurnFinish: marks.finish,
     markAgentSeenOnUserSend: marks.send,
+    markAgentSeenOnView: marks.view,
   };
 });
 
@@ -26,6 +32,7 @@ import { openWorkspaceTab } from '../../tab-state/tab-state-slice';
 import { agentStreamUpdateReceived } from '../../workspace-agents/workspace-agents-stream-slice';
 import type { StoreState } from '../../../types';
 import type { DividerBoundarySnapshot } from '../unread-tracking-selectors';
+import { markAgentAsViewed } from '../unread-tracking-slice';
 import { detectDividerSessionBoundary, unreadTrackingSaga } from './unread-tracking-saga';
 
 const snapshot = (overrides: Partial<DividerBoundarySnapshot> = {}): DividerBoundarySnapshot => ({
@@ -158,6 +165,21 @@ describe('unreadTrackingSaga', () => {
     await settle();
     expect(marks.send).toHaveBeenCalledWith('a1');
     expect(marks.finish).toHaveBeenCalledWith('a1');
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('owns the view trigger: markAgentAsViewed schedules markAgentSeenOnView', async () => {
+    // Opening an already-finished conversation: the panel dispatches
+    // markAgentAsViewed and the saga schedules the (self-gating) view
+    // trigger — this is the only path that can clear an agent whose turn
+    // finished before the conversation was opened.
+    const channel = stdChannel();
+    const current = snapshot();
+    const { task } = startSaga(channel, vi.fn(), () => state(current));
+    channel.put(markAgentAsViewed('a1'));
+    await settle();
+    expect(marks.view).toHaveBeenCalledWith('a1');
     task.cancel();
     await task.toPromise();
   });

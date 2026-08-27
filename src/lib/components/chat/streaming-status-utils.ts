@@ -1,4 +1,5 @@
 import { m } from '$shared/paraglide/messages.js';
+import type { IntentMarkVariant } from '$lib/components/ui/indicators';
 
 /**
  * Format duration with human-readable units:
@@ -52,6 +53,64 @@ export interface StatusEvent {
   message: string;
   level: 'info' | 'warn' | 'error';
   timestamp: number;
+  /** Measured silence at emission, additive on `stalled` events (monorepo#3402). */
+  silentMs?: number;
+}
+
+const PULSE_PHASES = new Set(['launch', 'init', 'session-create', 'session-load', 'prompt']);
+const TWIST_PHASES = new Set(['tool-call', 'tool-waiting']);
+
+function getLatestStatusEvent(statusEvents: readonly StatusEvent[]): StatusEvent | null {
+  let latest: StatusEvent | null = null;
+  for (const event of statusEvents) {
+    if (!latest || event.timestamp >= latest.timestamp) latest = event;
+  }
+  return latest;
+}
+
+export function getStatusMarkVariant(phase: string | null | undefined): IntentMarkVariant {
+  if (phase && PULSE_PHASES.has(phase)) return 'pulse';
+  if (phase && TWIST_PHASES.has(phase)) return 'twist';
+  return 'bloom';
+}
+
+/** Phase emitted by the daemon when mid-turn silence crosses the stall threshold. */
+export const STALLED_PHASE = 'stalled';
+
+/**
+ * Select the active `stalled` status event, if any (monorepo#3402). The
+ * stalled presentation is active only while the stalled event is still the
+ * newest status event — a `resumed` event, a locally appended status (tool
+ * call, first-chunk "streaming"), or turn end/failure (which clears the
+ * events) all supersede it — and no stream delta arrived after it
+ * (`lastChunkTime` is bumped on every `agent:stream:chunk`).
+ */
+export function getActiveStalledEvent(
+  statusEvents: readonly StatusEvent[],
+  lastChunkTime: number | null | undefined,
+): StatusEvent | null {
+  const latest = getLatestStatusEvent(statusEvents);
+  if (!latest || latest.phase !== STALLED_PHASE) return null;
+  if (typeof lastChunkTime === 'number' && lastChunkTime > latest.timestamp) return null;
+  return latest;
+}
+
+/**
+ * Latest status event for the thinking indicator's lifecycle line. Skips
+ * `stalled` events entirely: an active stall renders on its own dedicated
+ * warn row, and a superseded one (cleared by a stream delta, which appends
+ * no new status event) must not leak its stale "No model activity…" message
+ * into the returning thinking indicator.
+ */
+export function getLatestThinkingStatusEvent(
+  statusEvents: readonly StatusEvent[],
+): StatusEvent | null {
+  let latest: StatusEvent | null = null;
+  for (const event of statusEvents) {
+    if (event.phase === STALLED_PHASE) continue;
+    if (!latest || event.timestamp >= latest.timestamp) latest = event;
+  }
+  return latest;
 }
 
 /** Select the newest non-empty lifecycle message without trusting arrival order. */

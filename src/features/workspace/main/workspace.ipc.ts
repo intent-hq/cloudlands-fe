@@ -17,7 +17,7 @@ import { Logger } from '../../../shared/logger';
 import { getWorkspacePath } from './workspace-path.service';
 import { InstructionService } from '../../agent/main/instruction-service';
 import { execFileAsync } from '../../../shared/git/git-env';
-import { getBackendClient } from '../../backend/main/backend.ipc';
+import { getBackendClient, getBackendIdForIpcSender } from '../../backend/main/backend.ipc';
 import { cleanupWorkspaceTerminals } from '../../terminal/main/terminal.ipc';
 import {
   initRepoRegistry,
@@ -288,9 +288,12 @@ export function setupWorkspaceIPC(): void {
     WORKSPACE_CHANNELS.GET_ROOT,
     createSafeValidatedHandler(
       WorkspaceGetRootSchema,
-      async (_, validated) => {
+      async (event, validated) => {
         try {
-          return await getWorkspacePath(validated.workspaceId);
+          return await getWorkspacePath(
+            validated.workspaceId,
+            getBackendIdForIpcSender(event.sender),
+          );
         } catch (error) {
           logger.error('Failed to get workspace root', error as Error, {
             workspaceId: validated.workspaceId,

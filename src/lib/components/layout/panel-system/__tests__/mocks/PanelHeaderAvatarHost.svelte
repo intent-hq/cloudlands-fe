@@ -6,36 +6,30 @@
   import { startRootStoreLifecycle } from '$store/renderer/root-store-lifecycle';
   import { store } from '$store/renderer/store';
   import { bulkUpsertSessions } from '$store/renderer/slices/agent-session/agent-session-slice';
-  import {
-    permissionRequestReceived,
-    removePermissionRequest,
-  } from '$store/renderer/slices/permission/permission-slice';
-  import { eventReceived } from '$store/renderer/slices/workspace-events/workspace-events-slice';
   import PanelTabBar from '../../PanelTabBar.svelte';
-
-  type Scenario =
-    | 'idle'
-    | 'responding'
-    | 'processing'
-    | 'waiting'
-    | 'failed'
-    | 'permission'
-    | 'agent-switch'
-    | 'completed';
 
   let {
     theme = 'light',
     width = 280,
     zoom = 1,
-    scenario = 'idle',
-  }: { theme?: 'light' | 'dark'; width?: number; zoom?: number; scenario?: Scenario } = $props();
+    activeAgent = 'a',
+    focused = true,
+    attention = false,
+    longTitle = false,
+  }: {
+    theme?: 'light' | 'dark';
+    width?: number;
+    zoom?: number;
+    activeAgent?: 'a' | 'b';
+    focused?: boolean;
+    attention?: boolean;
+    longTitle?: boolean;
+  } = $props();
 
   const workspaceId = WorkspaceId('panel-avatar-workspace');
   const agentA = AgentId('panel-avatar-agent-a');
   const agentB = AgentId('panel-avatar-agent-b');
   const timestamp = '2026-08-16T01:00:00.000Z';
-  const permissionId = 'panel-avatar-permission';
-  let eventIndex = 0;
   const disposeStore = startRootStoreLifecycle(store, { startSagas: () => [] });
   onDestroy(disposeStore);
 
@@ -59,63 +53,42 @@
     };
   }
 
-  store.dispatch(bulkUpsertSessions([session(agentA, 'Agent A'), session(agentB, 'Agent B')]));
-
-  function dispatchStatus(
-    agentId: string,
-    status: string,
-    flags: { isProcessing?: boolean; isResponding?: boolean } = {},
-  ) {
-    store.dispatch(
-      eventReceived(workspaceId, {
-        id: `panel-avatar-event-${eventIndex++}`,
-        workspaceId,
-        timestamp,
-        type: 'agent:status-changed',
-        actor: { type: 'agent', id: agentId },
-        data: {
-          agentId,
-          status,
-          activationState: null,
-          isActive: flags.isProcessing === true || flags.isResponding === true,
-          isStreaming: false,
-          isProcessing: flags.isProcessing ?? false,
-          isResponding: flags.isResponding ?? false,
-          stopReason: status === AgentStatus.Error ? 'fixture failure' : null,
-        },
-      }),
-    );
-  }
-
+  const agentName = $derived(
+    longTitle ? 'Agent with a deliberately long panel header title' : 'Agent',
+  );
+  const noteTitle = $derived(
+    longTitle ? 'Note with a deliberately long panel header title' : 'Note',
+  );
   $effect(() => {
-    store.dispatch(removePermissionRequest(permissionId));
-    dispatchStatus(agentA, AgentStatus.RuntimeIdle);
-    dispatchStatus(agentB, AgentStatus.RuntimeIdle);
-
-    if (scenario === 'responding') dispatchStatus(agentA, 'responding', { isResponding: true });
-    if (scenario === 'processing') dispatchStatus(agentA, 'processing', { isProcessing: true });
-    if (scenario === 'waiting') dispatchStatus(agentA, AgentStatus.Waiting);
-    if (scenario === 'failed') dispatchStatus(agentA, AgentStatus.Error);
-    if (scenario === 'agent-switch') dispatchStatus(agentB, 'responding', { isResponding: true });
-    if (scenario === 'completed') dispatchStatus(agentA, AgentStatus.Completed);
-    if (scenario === 'permission') {
-      store.dispatch(
-        permissionRequestReceived({
-          requestId: permissionId,
-          sessionId: agentA,
-          title: 'Panel avatar permission',
-          options: [{ id: 'approve', label: 'Approve' }],
-          timestamp: Date.parse(timestamp),
-        }),
-      );
-    }
+    store.dispatch(
+      bulkUpsertSessions([session(agentA, `${agentName} A`), session(agentB, `${agentName} B`)]),
+    );
   });
-
-  const activeTabId = $derived(scenario === 'agent-switch' ? 'tab-b' : 'tab-a');
-  const tabs = [
-    { id: 'tab-a', type: 'agent' as const, title: 'Agent A', agentId: agentA, closable: true },
-    { id: 'tab-b', type: 'agent' as const, title: 'Agent B', agentId: agentB, closable: true },
-  ];
+  const activeTabId = $derived(activeAgent === 'b' ? 'tab-b' : 'tab-a');
+  const allTabs = $derived([
+    {
+      id: 'tab-a',
+      type: 'agent' as const,
+      title: `${agentName} A`,
+      agentId: agentA,
+      closable: true,
+    },
+    {
+      id: 'tab-b',
+      type: 'agent' as const,
+      title: `${agentName} B`,
+      agentId: agentB,
+      closable: true,
+    },
+  ]);
+  const tabs = $derived(activeAgent === 'b' ? [allTabs[1]] : [allTabs[0]]);
+  const noteTab = $derived({
+    id: 'tab-note',
+    type: 'note' as const,
+    title: noteTitle,
+    noteId: 'panel-avatar-note',
+    closable: true,
+  });
 </script>
 
 <section
@@ -126,5 +99,24 @@
   data-theme={theme}
   data-active-agent={activeTabId === 'tab-b' ? agentB : agentA}
 >
-  <PanelTabBar {tabs} {activeTabId} panelId="panel-avatar" {workspaceId} isFocused />
+  <div data-panel-header-case="agent">
+    <PanelTabBar
+      {tabs}
+      {activeTabId}
+      panelId="panel-avatar-agent"
+      {workspaceId}
+      isFocused={focused}
+      attentionTabIds={attention ? [activeTabId] : []}
+    />
+  </div>
+  <div data-panel-header-case="resource">
+    <PanelTabBar
+      tabs={[noteTab]}
+      activeTabId={noteTab.id}
+      panelId="panel-avatar-resource"
+      {workspaceId}
+      isFocused={focused}
+      attentionTabIds={attention ? [noteTab.id] : []}
+    />
+  </div>
 </section>

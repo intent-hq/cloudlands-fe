@@ -6,7 +6,7 @@
   import { ListEmpty } from '$lib/components/ui/list';
   import VirtualList from '$lib/components/ui/VirtualList.svelte';
   import { Skeleton } from '$lib/components/ui/skeleton';
-  import { faChevronDown } from '@fortawesome/free-solid-svg-icons';
+  import { faChevronDown, faRotateLeft } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import { slide } from 'svelte/transition';
   import Button from '$lib/components/ui/button/button.svelte';
@@ -17,8 +17,10 @@
     getFlatWorkspaceAgentRows,
     isBackgroundAgentSession as isBackgroundAgent,
     isCoordinatorAgentSession as isCoordinator,
+    isRetiredAgentSession as isRetiredAgent,
     shouldVirtualizeWorkspaceAgentRows,
     WORKSPACE_AGENT_ROW_HEIGHT,
+    WORKSPACE_AGENTS_VIRTUALIZATION_THRESHOLD,
   } from './workspace-agents-list-utils';
   import { m } from '$shared/paraglide/messages.js';
   import type { PanelTab } from '$store/renderer/slices/panel-layout/panel-layout-types';
@@ -27,9 +29,10 @@
   interface Props {
     agents?: AgentSession[];
     selectedAgentId?: string | null;
-    onSelect?: (detail: { agentId: string }) => void;
+    onSelect?: (detail: { agentId: string; event?: MouseEvent | KeyboardEvent }) => void;
     onCreate?: () => void;
     onCreateWithSpecialist?: (specialistId: string | null) => void;
+    onRestoreRetired?: (detail: { agentId: string }) => void;
     runningAgentIds?: string[];
     loading?: boolean;
     workspaceId?: string;
@@ -44,6 +47,7 @@
     onSelect,
     onCreate,
     onCreateWithSpecialist,
+    onRestoreRetired,
     runningAgentIds = [],
     loading = false,
     workspaceId = '',
@@ -52,7 +56,18 @@
     searchQuery = '',
   }: Props = $props();
 
-  const flatAgentRows = $derived(getFlatWorkspaceAgentRows(agents));
+  const activeAgents = $derived(agents.filter((agent) => !isRetiredAgent(agent)));
+  // Retired agents render as a flat list (no delegation tree) sorted by recency.
+  const retiredAgents = $derived(
+    filterWorkspaceAgentRows(
+      getFlatWorkspaceAgentRows(agents.filter(isRetiredAgent)).map((row) => ({
+        ...row,
+        depth: 0,
+      })),
+      searchQuery,
+    ).map((row) => row.agent),
+  );
+  const flatAgentRows = $derived(getFlatWorkspaceAgentRows(activeAgents));
   const filteredAgentRows = $derived(filterWorkspaceAgentRows(flatAgentRows, searchQuery));
   const hasActiveSearch = $derived(Boolean(searchQuery.trim()));
   const runningAgentIdSet = $derived(new Set(runningAgentIds));
@@ -88,11 +103,16 @@
   // Fall back to the regular list when delegations exist (tree heights are variable)
   // or a coordinator is present (its section headers need the regular rendering).
   const shouldUseVirtual = $derived(shouldVirtualizeWorkspaceAgentRows(filteredAgentRows));
+  // The retired bin is always flat with uniform-height rows, so a length check suffices.
+  const shouldVirtualizeRetired = $derived(
+    retiredAgents.length > WORKSPACE_AGENTS_VIRTUALIZATION_THRESHOLD,
+  );
   // The selectable row and lazy placeholder share this exact single-line height.
   const itemHeight = WORKSPACE_AGENT_ROW_HEIGHT;
   const containerHeight = 600;
   let expandedAgentIds = $state(new Set<string>());
   let showBackgroundAgents = $state(false);
+  let showRetiredAgents = $state(false);
   const runningBackgroundCount = $derived(
     standaloneBackgroundAgents.filter((agent) => isAgentRunning(agent.id)).length,
   );
@@ -108,8 +128,8 @@
     expandedAgentIds = next;
   }
 
-  function handleAgentClick(agentId: string) {
-    onSelect?.({ agentId });
+  function handleAgentClick(agentId: string, event: MouseEvent | KeyboardEvent) {
+    onSelect?.({ agentId, event });
   }
 
   function getAgentPanelState(agentId: string) {
@@ -135,7 +155,7 @@
       updatedAt={agent.updatedAt}
       hidePreview
       panelRow
-      onclick={() => handleAgentClick(agent.id)}
+      onclick={(event) => handleAgentClick(agent.id, event)}
     />
 
     {@const children = directChildrenByAgentId.get(agent.id) ?? []}
@@ -146,7 +166,7 @@
         <Button
           variant="ghost-light"
           size="sm"
-          class="flex h-9 w-full cursor-pointer items-center gap-2 rounded-md px-2 text-sm font-normal text-muted-foreground transition-colors hover:bg-muted/45 hover:text-foreground focus-visible:ring-1 focus-visible:ring-ring"
+          class="flex h-9 w-full cursor-pointer items-center gap-2 rounded-md bg-transparent px-2 text-sm font-normal text-muted-foreground transition-colors hover:bg-transparent hover:text-foreground active:bg-transparent focus-visible:-outline-offset-2 focus-visible:outline-2 focus-visible:outline-ring focus-visible:ring-0"
           onclick={(event) => {
             event.stopPropagation();
             toggleDelegation(agent.id);
@@ -201,7 +221,7 @@
       </div>
     {/each}
   </div>
-{:else if topLevelForegroundAgents.length === 0 && standaloneBackgroundAgents.length === 0}
+{:else if topLevelForegroundAgents.length === 0 && standaloneBackgroundAgents.length === 0 && retiredAgents.length === 0}
   <ListEmpty
     message={hasActiveSearch
       ? m.workspace_agentsList_noSearchResults_label()
@@ -232,7 +252,7 @@
             updatedAt={agent.updatedAt}
             hidePreview
             panelRow
-            onclick={() => handleAgentClick(agent.id)}
+            onclick={(event) => handleAgentClick(agent.id, event)}
           />
         </div>
       {/snippet}
@@ -266,7 +286,7 @@
     <Button
       variant="ghost-light"
       size="sm"
-      class="h-9 w-full min-w-0 gap-1.5 rounded-md px-2 text-sm font-normal hover:bg-muted/45 focus-visible:ring-1 focus-visible:ring-ring"
+      class="h-9 w-full min-w-0 gap-1.5 rounded-md bg-transparent px-2 text-sm font-normal hover:bg-transparent active:bg-transparent focus-visible:-outline-offset-2 focus-visible:outline-2 focus-visible:outline-ring focus-visible:ring-0"
       onclick={() => (showBackgroundAgents = !showBackgroundAgents)}
       aria-expanded={showBackgroundAgents}
       data-agent-background-toggle
@@ -309,10 +329,117 @@
             updatedAt={agent.updatedAt}
             hidePreview
             panelRow
-            onclick={() => handleAgentClick(agent.id)}
+            onclick={(event) => handleAgentClick(agent.id, event)}
           />
         </div>
       {/if}
     {/each}
   </div>
 {/if}
+
+{#if !loading && retiredAgents.length > 0}
+  <div class="container w-full min-w-0 pt-2">
+    <Button
+      variant="ghost-light"
+      size="sm"
+      class="h-9 w-full min-w-0 gap-1.5 rounded-md bg-transparent px-2 text-sm font-normal hover:bg-transparent active:bg-transparent focus-visible:-outline-offset-2 focus-visible:outline-2 focus-visible:outline-ring focus-visible:ring-0"
+      onclick={() => (showRetiredAgents = !showRetiredAgents)}
+      aria-expanded={showRetiredAgents}
+      data-agent-retired-toggle
+    >
+      <span class="min-w-0 flex-1 truncate text-left">
+        {m.workspace_agentsList_retiredAgents_label({
+          count: formatInteger(retiredAgents.length),
+        })}
+      </span>
+      <Fa
+        icon={faChevronDown}
+        size="xs"
+        class="ml-auto shrink-0 transition-transform duration-200 {showRetiredAgents
+          ? ''
+          : 'rotate-90'}"
+      />
+    </Button>
+  </div>
+
+  {#if shouldVirtualizeRetired}
+    {#if hasActiveSearch || showRetiredAgents}
+      <!-- Virtual scrolling for large retired sets (flat, uniform-height rows) -->
+      <div class="max-h-150 overflow-hidden pt-1" data-agent-retired-section>
+        <VirtualList
+          items={retiredAgents}
+          {itemHeight}
+          {containerHeight}
+          getKey={(agent: AgentSession) => agent.id}
+        >
+          {#snippet children({ item: agent }: { item: AgentSession })}
+            {@const panelState = getAgentPanelState(agent.id)}
+            <div class="w-full opacity-70">
+              <AgentCard
+                agentId={agent.id}
+                agentName={agent.name}
+                isBackground={isBackgroundAgent(agent)}
+                selected={agent.id === selectedAgentId}
+                openPanelCount={panelState.count}
+                activeInPanel={panelState.isActive}
+                updatedAt={agent.updatedAt}
+                hidePreview
+                panelRow
+                onclick={(event) => handleAgentClick(agent.id, event)}
+              >
+                {#snippet headerActions()}
+                  {@render retiredActions(agent.id)}
+                {/snippet}
+              </AgentCard>
+            </div>
+          {/snippet}
+        </VirtualList>
+      </div>
+    {/if}
+  {:else}
+    <div class="flex flex-col gap-0.5 pt-1" data-agent-retired-section>
+      {#each retiredAgents as agent (agent.id)}
+        {@const panelState = getAgentPanelState(agent.id)}
+        {#if hasActiveSearch || showRetiredAgents}
+          {#snippet rowActions()}
+            {@render retiredActions(agent.id)}
+          {/snippet}
+          <div transition:slide={{ axis: 'y', duration: 150 }} class="opacity-70">
+            <LazyAgentCard
+              cacheKey={agent.id}
+              agentId={agent.id}
+              agentName={agent.name}
+              isBackground={isBackgroundAgent(agent)}
+              selected={agent.id === selectedAgentId}
+              openPanelCount={panelState.count}
+              activeInPanel={panelState.isActive}
+              updatedAt={agent.updatedAt}
+              hidePreview
+              panelRow
+              onclick={(event) => handleAgentClick(agent.id, event)}
+              headerActions={rowActions}
+            />
+          </div>
+        {/if}
+      {/each}
+    </div>
+  {/if}
+{/if}
+
+{#snippet retiredActions(agentId: string)}
+  <Button
+    type="button"
+    variant="ghost"
+    size="icon-xs"
+    aria-label={m.workspace_agentsList_restoreRetired_ariaLabel()}
+    title={m.workspace_agentsList_restoreRetired_button()}
+    class="inline-flex h-6 w-6 cursor-pointer items-center justify-center rounded text-ghost opacity-0 transition-opacity hover:text-muted-foreground/70 focus-visible:opacity-100 group-hover/watch:opacity-100 group-focus-within/watch:opacity-100"
+    data-testid="agent-restore-retired"
+    onclick={(e) => {
+      e.stopPropagation();
+      onRestoreRetired?.({ agentId });
+    }}
+  >
+    <Fa icon={faRotateLeft} class="h-3.5! w-3.5!" />
+  </Button>
+{/snippet}

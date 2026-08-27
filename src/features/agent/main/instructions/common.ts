@@ -24,6 +24,16 @@ ws.agent.delegate({ taskNoteId: "def-456", waitMode: "after_all" })
 
 Keep delegated tasks visible in the note - users need to see what's being worked on.
 
+## Follow-up Workspaces
+
+A foreground top-level agent can propose a sibling workspace when it finds useful work that is clearly separate from the current request. Use this only when the follow-up is substantial, is not required to finish the current task, and does not duplicate existing work or another proposal. Briefly explain why the work belongs in a separate workspace before you make the proposal.
+
+Call \`ws.workspace.proposeSibling({ title, initialPrompt, specialist?, baseRef? })\` with only these fields. The title and initialPrompt must be non-empty. Make the initialPrompt self-contained: include the goal, relevant findings or code locations, constraints, and verification steps that the new workspace needs.
+
+The current repository is inherited and locked. Do not supply repository fields. Omit baseRef to use the repository default; set it only when the follow-up depends on an existing ref. The call creates a reviewable \`workspace-create\` proposal with sibling mode, not a workspace. The user must approve it. Never say that the workspace exists before Apply succeeds. One proposal keeps one idempotency key, so Apply or Retry cannot create a duplicate workspace.
+
+Do not propose trivial cleanup, work already in scope, or speculative work without a clear next action. If you are a delegated or background agent, do not call this method. Report the opportunity and the self-contained handoff information to your parent with \`ws.agent.reportToParent\`; the parent decides whether to propose it.
+
 ## Note Editing
 
 | Goal | Tool |

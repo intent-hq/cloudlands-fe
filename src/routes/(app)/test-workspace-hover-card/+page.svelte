@@ -230,6 +230,29 @@
           }),
         },
         {
+          label: 'Multiple PRs with aligned icons',
+          description: 'Keeps every PR title, number, status, and fixed icon column aligned.',
+          workspace: workspace('multiple-prs', 'Review related pull requests', {
+            pullRequests: [
+              pr({ number: 52, title: 'Open renderer update', status: PullRequestStatus.Open }),
+              pr({ number: 51, title: 'Merged daemon support', status: PullRequestStatus.Merged }),
+              pr({ number: 50, title: 'Closed prototype', status: PullRequestStatus.Closed }),
+            ],
+          }),
+        },
+        {
+          label: 'Long PR title',
+          description: 'Title truncates beside the fixed number while status remains on line two.',
+          workspace: workspace('long-pr-title', 'Review long pull request metadata', {
+            activePullRequest: pr({
+              number: 1707,
+              title:
+                'Align every workspace hover-card detail row without allowing this intentionally long pull request title to grow the card',
+              status: PullRequestStatus.Open,
+            }),
+          }),
+        },
+        {
           label: 'Draft PR',
           description: 'Draft state overrides the base PR status.',
           workspace: workspace('draft-pr', 'Draft workspace update', {
@@ -373,7 +396,7 @@
       Visual test route for <code>WorkspaceHoverCard</code> using local mock data only. Cards use a consistent
       320px intended width across content variants, with viewport clamping for narrow edges. Agent rows
       are rendered with session loading disabled, so this page does not request live workspace or agent
-      details for the card content.
+      details for the card content. Cards use a two-column 560px layout with a 320px compact fallback.
     </p>
   </header>
 
@@ -454,7 +477,7 @@
             anchor="--workspace-hover-card-right-edge"
             position="right"
             anchorElement={rightEdgeTriggerElement}
-            class="w-auto border-0 bg-transparent shadow-xl"
+            class="w-auto overflow-visible! rounded-lg border-0! bg-background! shadow-none!"
           >
             <WorkspaceHoverCard
               workspace={rightEdgePlacementWorkspace}
@@ -466,7 +489,7 @@
             anchor="--workspace-hover-card-bottom-edge"
             position="right"
             anchorElement={bottomTriggerElement}
-            class="w-auto border-0 bg-transparent shadow-xl"
+            class="w-auto overflow-visible! rounded-lg border-0! bg-background! shadow-none!"
           >
             <WorkspaceHoverCard
               workspace={bottomPlacementWorkspace}

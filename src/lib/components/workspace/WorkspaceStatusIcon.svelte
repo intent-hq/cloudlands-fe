@@ -68,6 +68,7 @@
   @media (forced-colors: active) {
     .workspace-status-dot {
       background-color: CanvasText;
+      box-shadow: none;
     }
   }
 </style>

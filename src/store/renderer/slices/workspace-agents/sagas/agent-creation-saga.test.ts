@@ -1,12 +1,14 @@
 import { runSaga, stdChannel } from 'redux-saga';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-const mocks = vi.hoisted(() => ({ createAgent: vi.fn() }));
+const mocks = vi.hoisted(() => ({ createAgent: vi.fn(), toastError: vi.fn() }));
 vi.mock('$features/agent/services/agent-factory', () => ({
   agentFactory: { createAgent: mocks.createAgent },
 }));
+vi.mock('svelte-sonner', () => ({ toast: { error: mocks.toastError } }));
 
 import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
+import { appClient } from '$lib/client';
 import type { AgentSession, Note, Workspace } from '$shared/types';
 import { AgentStatus } from '$shared/types';
 import { WorkspaceId } from '$shared/types/branded-ids';
@@ -29,6 +31,7 @@ const WS = 'ws-create-saga';
 const AGENT = 'agent-created';
 const NOTE = 'note-task-1';
 const settle = async () => {
+  await vi.dynamicImportSettled();
   await Promise.resolve();
   await Promise.resolve();
   await Promise.resolve();
@@ -153,6 +156,40 @@ describe('agentCreationSaga', () => {
     await task.toPromise();
   });
 
+  it('surfaces a safe localized error when fire-and-forget creation fails', async () => {
+    mocks.createAgent.mockResolvedValue({
+      success: false,
+      error: 'backend rejected request with secret details',
+    });
+    const { channel, task } = start();
+    channel.put(createAgentRequested(WS));
+    await settle();
+
+    expect(mocks.toastError).toHaveBeenCalledWith('Failed to create agent', {
+      description: 'Check your provider setup and selected model in Settings, then try again.',
+    });
+    expect(JSON.stringify(mocks.toastError.mock.calls)).not.toContain('secret details');
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('gives provider and model guidance for a confirmed mismatch', async () => {
+    mocks.createAgent.mockResolvedValue({
+      success: false,
+      error: 'agent.create: model fable-5 does not belong to provider claude-code',
+    });
+    const { channel, task } = start();
+    channel.put(createAgentWithSpecialistRequested(WS, null));
+    await settle();
+
+    expect(mocks.toastError).toHaveBeenCalledWith('Failed to create agent', {
+      description:
+        'The selected model does not belong to this provider. Choose a model for this provider in Settings, then try again.',
+    });
+    task.cancel();
+    await task.toPromise();
+  });
+
   it('settles create-from-config success and preserves launch options', async () => {
     mocks.createAgent.mockResolvedValue({ success: true, agent: session(), agentId: AGENT });
     const { channel, dispatched, task } = start();
@@ -227,6 +264,23 @@ describe('agentCreationSaga', () => {
     await task.toPromise();
   });
 
+  it('surfaces create-from-config failures and still rejects its promise', async () => {
+    mocks.createAgent.mockResolvedValue({ success: false, error: 'request failed' });
+    const { channel, task } = start();
+    const action = createAgentFromConfigRequested(WS, {
+      name: 'Configured',
+      workspaceId: WorkspaceId(WS),
+      agentType: createAgentTypeId('chat'),
+      source: 'test',
+    });
+    channel.put(action);
+
+    await expect(action.promise).rejects.toThrow('request failed');
+    expect(mocks.toastError).toHaveBeenCalledOnce();
+    task.cancel();
+    await task.toPromise();
+  });
+
   it('runs a task note with the daemon specialists.default setting when set', async () => {
     mocks.createAgent.mockResolvedValue({ success: true, agent: session(), agentId: AGENT });
     const { channel, task } = start(() => state('verifier'));
@@ -256,6 +310,80 @@ describe('agentCreationSaga', () => {
       expect.objectContaining({
         metadata: { taskNoteId: NOTE, source: 'task-run', specialist: 'implementor' },
       }),
+    );
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('builds the initial message from cached content without fetching for a full row', async () => {
+    mocks.createAgent.mockResolvedValue({ success: true, agent: session(), agentId: AGENT });
+    const get = vi.spyOn(appClient.notes, 'get');
+    const { channel, task } = start();
+    channel.put(runAgentForNoteRequested(WS, NOTE, 'Task note'));
+    await settle();
+
+    expect(get).not.toHaveBeenCalled();
+    expect(mocks.createAgent).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ initialMessage: expect.stringContaining('Do the thing') }),
+    );
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('fetches the full note before building the initial message for a stale slim row', async () => {
+    mocks.createAgent.mockResolvedValue({ success: true, agent: session(), agentId: AGENT });
+    const slimState = state();
+    const slimNote = {
+      id: NOTE,
+      workspaceId: WS,
+      title: 'Task note',
+      content: '',
+      contentPreview: 'Do the',
+      contentLength: 12,
+    } as Note;
+    slimState.workspaceNotes = {
+      byWorkspaceId: { [WS]: { notes: createCollection<Note, 'id'>('id', [slimNote]) } },
+    };
+    const get = vi
+      .spyOn(appClient.notes, 'get')
+      .mockResolvedValue({ ...slimNote, content: 'Do the thing' } as Note);
+    const { channel, task } = start(() => slimState);
+    channel.put(runAgentForNoteRequested(WS, NOTE, 'Task note'));
+    await settle();
+
+    expect(get).toHaveBeenCalledWith(NOTE, WS);
+    expect(mocks.createAgent).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ initialMessage: expect.stringContaining('Do the thing') }),
+    );
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('keeps the cached slim row when the full-note fetch fails (fail-soft)', async () => {
+    mocks.createAgent.mockResolvedValue({ success: true, agent: session(), agentId: AGENT });
+    const slimState = state();
+    const slimNote = {
+      id: NOTE,
+      workspaceId: WS,
+      title: 'Task note',
+      content: '',
+      contentPreview: 'Do the',
+      contentLength: 12,
+    } as Note;
+    slimState.workspaceNotes = {
+      byWorkspaceId: { [WS]: { notes: createCollection<Note, 'id'>('id', [slimNote]) } },
+    };
+    const get = vi.spyOn(appClient.notes, 'get').mockResolvedValue(null);
+    const { channel, task } = start(() => slimState);
+    channel.put(runAgentForNoteRequested(WS, NOTE, 'Task note'));
+    await settle();
+
+    expect(get).toHaveBeenCalledWith(NOTE, WS);
+    expect(mocks.createAgent).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ initialMessage: expect.stringContaining('(no content)') }),
     );
     task.cancel();
     await task.toPromise();

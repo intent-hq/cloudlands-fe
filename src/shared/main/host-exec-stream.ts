@@ -23,12 +23,20 @@
  */
 import { Buffer } from 'node:buffer';
 import { Logger } from '../logger';
-import { getBackendClient } from '../../features/backend/main/backend.ipc';
-import type { JsonRpcNotification } from '../../features/backend/main/json-rpc-client';
+import {
+  getBackendClient,
+  getBackendClientForConnection,
+} from '../../features/backend/main/backend.ipc';
+import type {
+  JsonRpcClient,
+  JsonRpcNotification,
+} from '../../features/backend/main/json-rpc-client';
 
 const logger = new Logger('HostExecStream');
 
 export interface HostExecStreamOptions {
+  /** Backend pool entry that owns this stream; defaults to the compatibility client. */
+  backendId?: string;
   /** Positional arguments passed to `command`. No shell interpolation. */
   args?: string[];
   /** Working directory; requires `workspaceId` and must be inside its root. */
@@ -92,6 +100,8 @@ const EXEC_EVENT_TYPES = ['host:exec:stdout', 'host:exec:stderr', 'host:exec:exi
  */
 interface InflightExecStream {
   readonly requestId: string;
+  readonly client: JsonRpcClient;
+  readonly backendId?: string;
   /**
    * Fire-and-forget best-effort `host.execStream.cancel` to the still-connected
    * old daemon, then immediately settle the consumer's `done` with a
@@ -113,7 +123,17 @@ const inflightExecStreams = new Set<InflightExecStream>();
  * settled immediately with the same terminal frame instead. See the
  * registration guard in {@link hostExecStream}.
  */
-let backendSwitchDraining = false;
+const drainingClients = new Set<JsonRpcClient>();
+const drainingBackendIds = new Set<string>();
+let drainAll = false;
+
+function isDraining(entry: InflightExecStream): boolean {
+  return (
+    drainAll ||
+    drainingClients.has(entry.client) ||
+    (entry.backendId !== undefined && drainingBackendIds.has(entry.backendId))
+  );
+}
 
 /**
  * Cancel + notify every in-flight `host.execStream`, invoked by `switchBackend`
@@ -133,19 +153,30 @@ let backendSwitchDraining = false;
  * pending) is either caught by the next loop iteration or settled inline by the
  * registration guard — never left hanging on the disposed client.
  */
-export async function cancelInflightHostExecStreamsForBackendSwitch(): Promise<void> {
-  backendSwitchDraining = true;
+export async function cancelInflightHostExecStreamsForBackendSwitch(
+  backend?: string | JsonRpcClient,
+): Promise<void> {
+  if (typeof backend === 'string') drainingBackendIds.add(backend);
+  else if (backend) drainingClients.add(backend);
+  else drainAll = true;
   try {
     // Loop (not a single snapshot) so a stream whose `host.execStream` response
     // resolves mid-drain is still handled instead of orphaned on the client
     // about to be disposed. `backendSwitchDraining` stays true for the whole
     // loop, so such a stream is settled inline by the registration guard in
     // `hostExecStream` rather than joining the already-swept registry.
-    while (inflightExecStreams.size > 0) {
-      const entries = [...inflightExecStreams];
+    while (true) {
+      const entries = [...inflightExecStreams].filter((entry) =>
+        backend === undefined
+          ? true
+          : typeof backend === 'string'
+            ? entry.backendId === backend
+            : entry.client === backend,
+      );
+      if (entries.length === 0) break;
       // Clear so each terminate()'s own cleanup (which deletes its entry) is a
       // harmless no-op and a re-entrant call finds nothing to do.
-      inflightExecStreams.clear();
+      for (const entry of entries) inflightExecStreams.delete(entry);
       logger.debug('Cancelling in-flight host.execStream on backend switch', {
         count: entries.length,
       });
@@ -158,7 +189,9 @@ export async function cancelInflightHostExecStreamsForBackendSwitch(): Promise<v
       await Promise.resolve();
     }
   } finally {
-    backendSwitchDraining = false;
+    if (typeof backend === 'string') drainingBackendIds.delete(backend);
+    else if (backend) drainingClients.delete(backend);
+    else drainAll = false;
   }
 }
 
@@ -182,7 +215,10 @@ export async function hostExecStream(
   command: string,
   options: HostExecStreamOptions = {},
 ): Promise<HostExecStreamHandle> {
-  const client = getBackendClient();
+  const client = options.backendId
+    ? getBackendClientForConnection(options.backendId)
+    : getBackendClient();
+  if (!client) throw new Error(`backend client is not connected: ${options.backendId}`);
 
   // Subscribe FIRST so we cannot miss the first stdout/exit frame that races
   // the `host.execStream` response.
@@ -368,9 +404,11 @@ export async function hostExecStream(
   };
   inflightEntry = {
     requestId,
+    client,
+    backendId: options.backendId,
     terminate: settleBackendSwitch,
   };
-  if (backendSwitchDraining) {
+  if (isDraining(inflightEntry)) {
     // A backend switch snapshotted the registry before this stream's
     // `host.execStream` response landed. Attaching to the now-doomed client
     // would leave `done` hanging once it is disposed, so settle inline with the

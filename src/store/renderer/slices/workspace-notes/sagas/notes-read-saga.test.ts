@@ -75,7 +75,7 @@ function harness(seed: Note[] = []) {
 describe('notesReadSaga', () => {
   afterEach(() => vi.restoreAllMocks());
 
-  it('hydrates with the exact request and maps the protocol note field by field', async () => {
+  it('hydrates with the slim-list + full-spec requests and maps the protocol note field by field', async () => {
     const spec = {
       ...note(SPEC_NOTE_ID),
       is_pinned: true,
@@ -85,14 +85,53 @@ describe('notesReadSaga', () => {
       wireOnly: 'drop',
     } as Note;
     const list = vi.spyOn(appClient.notes, 'list').mockResolvedValue([spec]);
+    const get = vi.spyOn(appClient.notes, 'get').mockResolvedValue(spec);
     const run = harness();
 
     run.channel.put(workspaceMounted(WS));
     await settle();
 
-    expect(list.mock.calls).toEqual([[WS]]);
+    expect(list.mock.calls).toEqual([[WS, { projection: 'slim' }]]);
+    expect(get.mock.calls).toEqual([[SPEC_NOTE_ID, WS]]);
     expect(run.actions).toEqual([
       loadWorkspaceNotesSucceeded([WS], { [WS]: [note(SPEC_NOTE_ID)] }),
+      selectNote(WS, SPEC_NOTE_ID),
+    ]);
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('hydrate replaces the slim spec row with the full-spec fetch result', async () => {
+    const slimSpec = note(SPEC_NOTE_ID, { content: '', contentPreview: 'pre', contentLength: 9 });
+    const fullSpec = note(SPEC_NOTE_ID, { content: 'full body' });
+    vi.spyOn(appClient.notes, 'list').mockResolvedValue([slimSpec, note('other', { content: '' })]);
+    vi.spyOn(appClient.notes, 'get').mockResolvedValue(fullSpec);
+    const run = harness();
+
+    run.channel.put(workspaceMounted(WS));
+    await settle();
+
+    expect(run.actions).toEqual([
+      loadWorkspaceNotesSucceeded([WS], {
+        [WS]: [note(SPEC_NOTE_ID, { content: 'full body' }), note('other', { content: '' })],
+      }),
+      selectNote(WS, SPEC_NOTE_ID),
+    ]);
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('hydrate stays fail-soft when the spec fetch rejects — slim rows land as-is', async () => {
+    const slimSpec = note(SPEC_NOTE_ID, { content: '', contentPreview: 'pre', contentLength: 9 });
+    vi.spyOn(appClient.notes, 'list').mockResolvedValue([slimSpec]);
+    vi.spyOn(appClient.notes, 'get').mockRejectedValue(new Error('no spec'));
+    const run = harness();
+
+    run.channel.put(workspaceMounted(WS));
+    await settle();
+
+    expect(run.actions).toEqual([
+      loadWorkspaceNotesSucceeded([WS], { [WS]: [slimSpec] }),
       selectNote(WS, SPEC_NOTE_ID),
     ]);
     run.task.cancel();
@@ -108,13 +147,19 @@ describe('notesReadSaga', () => {
     const list = vi
       .spyOn(appClient.notes, 'list')
       .mockImplementation((workspaceId) => (workspaceId === WS ? first.promise : second.promise));
+    vi.spyOn(appClient.notes, 'get').mockImplementation((_noteId, workspaceId) =>
+      Promise.resolve(workspaceId === WS ? firstSpec : secondSpec),
+    );
     const run = harness();
 
     run.channel.put(workspaceMounted(WS));
     run.channel.put(workspaceMounted(secondWorkspaceId));
     await settle();
 
-    expect(list.mock.calls).toEqual([[WS], [secondWorkspaceId]]);
+    expect(list.mock.calls).toEqual([
+      [WS, { projection: 'slim' }],
+      [secondWorkspaceId, { projection: 'slim' }],
+    ]);
     second.resolve([secondSpec]);
     await settle();
     first.resolve([firstSpec]);
@@ -132,13 +177,14 @@ describe('notesReadSaga', () => {
   it('coalesces duplicate mounts for the same workspace while its read is in flight', async () => {
     const pending = deferred<Note[]>();
     const list = vi.spyOn(appClient.notes, 'list').mockReturnValue(pending.promise);
+    vi.spyOn(appClient.notes, 'get').mockRejectedValue(new Error('no spec'));
     const run = harness();
 
     run.channel.put(workspaceMounted(WS));
     run.channel.put(workspaceMounted(WS));
     await settle();
 
-    expect(list.mock.calls).toEqual([[WS]]);
+    expect(list.mock.calls).toEqual([[WS, { projection: 'slim' }]]);
     pending.resolve([]);
     await settle();
     expect(run.actions).toEqual([loadWorkspaceNotesSucceeded([WS], { [WS]: [] })]);
@@ -157,6 +203,7 @@ describe('notesReadSaga', () => {
       firstWorkspaceCalls += 1;
       return firstWorkspaceCalls === 1 ? firstAttempt.promise : retry.promise;
     });
+    vi.spyOn(appClient.notes, 'get').mockRejectedValue(new Error('no spec'));
     const run = harness();
 
     run.channel.put(workspaceMounted(WS));
@@ -167,7 +214,11 @@ describe('notesReadSaga', () => {
     run.channel.put(workspaceMounted(WS));
     await settle();
 
-    expect(list.mock.calls).toEqual([[WS], [secondWorkspaceId], [WS]]);
+    expect(list.mock.calls).toEqual([
+      [WS, { projection: 'slim' }],
+      [secondWorkspaceId, { projection: 'slim' }],
+      [WS, { projection: 'slim' }],
+    ]);
     second.resolve([note('second-note', { workspaceId: WorkspaceId(secondWorkspaceId) })]);
     retry.resolve([note('retry-note')]);
     firstAttempt.resolve([note('stale-note')]);
@@ -197,37 +248,77 @@ describe('notesReadSaga', () => {
 
   it('maps a hydration rejection to the exact workspace failure action', async () => {
     const list = vi.spyOn(appClient.notes, 'list').mockRejectedValue(new Error('offline'));
+    vi.spyOn(appClient.notes, 'get').mockRejectedValue(new Error('no spec'));
     const run = harness();
 
     run.channel.put(workspaceMounted(WS));
     await settle();
 
-    expect(list.mock.calls).toEqual([[WS]]);
+    expect(list.mock.calls).toEqual([[WS, { projection: 'slim' }]]);
     expect(run.actions).toEqual([loadWorkspaceNotesFailed([WS], 'offline')]);
     run.task.cancel();
     await run.task.toPromise();
   });
 
-  it('uses global leading event reads and suppresses the active result after cleanup', async () => {
-    let resolve!: (notes: Note[]) => void;
-    const list = vi.spyOn(appClient.notes, 'list').mockReturnValue(
-      new Promise((done) => {
-        resolve = done;
-      }),
-    );
+  it('runs per-note event reads concurrently and suppresses the active result after cleanup', async () => {
+    const first = deferred<Note>();
+    const second = deferred<Note>();
+    const get = vi
+      .spyOn(appClient.notes, 'get')
+      .mockImplementation((noteId) => (noteId === 'note-1' ? first.promise : second.promise));
     const run = harness();
-    const event = noteEventReceived(WS, 'note-1', 'note:updated');
 
-    run.channel.put(event);
+    run.channel.put(noteEventReceived(WS, 'note-1', 'note:updated'));
     await settle();
-    run.channel.put(noteEventReceived('ws-ignored', 'note-2', 'note:created'));
+    // A DIFFERENT note's event starts its own concurrent fetch instead of
+    // being dropped by a global leading take while note-1 is in flight.
+    run.channel.put(noteEventReceived('ws-other', 'note-2', 'note:created'));
+    await settle();
+    expect(get.mock.calls).toEqual([
+      ['note-1', WS],
+      ['note-2', 'ws-other'],
+    ]);
+
     run.channel.put(workspaceUnmounted(WS));
     await settle();
-    resolve([note('note-1')]);
+    first.resolve(note('note-1'));
     await settle();
 
-    expect(list.mock.calls).toEqual([[WS]]);
+    // note-1's result raced against its workspace cleanup and is suppressed.
     expect(run.actions).toEqual([]);
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('coalesces a same-note event burst onto one trailing refetch', async () => {
+    const first = deferred<Note>();
+    const get = vi
+      .spyOn(appClient.notes, 'get')
+      .mockReturnValueOnce(first.promise)
+      .mockResolvedValueOnce(note('note-1', { title: 'Final' }));
+    const run = harness([note('note-1')]);
+
+    run.channel.put(noteEventReceived(WS, 'note-1', 'note:updated'));
+    await settle();
+    run.channel.put(noteEventReceived(WS, 'note-1', 'note:updated'));
+    run.channel.put(noteEventReceived(WS, 'note-1', 'note:updated'));
+    await settle();
+    // Single-flight: the burst rides the in-flight fetch.
+    expect(get.mock.calls).toEqual([['note-1', WS]]);
+
+    first.resolve(note('note-1', { title: 'Intermediate' }));
+    await settle();
+
+    // One trailing refetch after the leading fetch settles; the final state
+    // reflects the trailing result.
+    expect(get.mock.calls).toEqual([
+      ['note-1', WS],
+      ['note-1', WS],
+    ]);
+    expect(run.actions).toEqual([
+      applyNoteUpdated(WS, 'note-1', note('note-1', { title: 'Intermediate' })),
+      applyNoteUpdated(WS, 'note-1', note('note-1', { title: 'Final' })),
+    ]);
     run.task.cancel();
     await run.task.toPromise();
   });
@@ -239,6 +330,7 @@ describe('notesReadSaga', () => {
         resolve = done;
       }),
     );
+    vi.spyOn(appClient.notes, 'get').mockRejectedValue(new Error('no spec'));
     const run = harness();
 
     run.channel.put(workspaceMounted(WS));
@@ -248,7 +340,7 @@ describe('notesReadSaga', () => {
     resolve([note('late')]);
     await settle();
 
-    expect(list.mock.calls).toEqual([[WS]]);
+    expect(list.mock.calls).toEqual([[WS, { projection: 'slim' }]]);
     expect(run.actions).toEqual([]);
     run.task.cancel();
     await run.task.toPromise();
@@ -261,12 +353,16 @@ describe('notesReadSaga', () => {
     const list = vi
       .spyOn(appClient.notes, 'list')
       .mockImplementation((workspaceId) => (workspaceId === WS ? first.promise : second.promise));
+    vi.spyOn(appClient.notes, 'get').mockRejectedValue(new Error('no spec'));
     const run = harness();
 
     run.channel.put(workspaceMounted(WS));
     run.channel.put(workspaceMounted(secondWorkspaceId));
     await settle();
-    expect(list.mock.calls).toEqual([[WS], [secondWorkspaceId]]);
+    expect(list.mock.calls).toEqual([
+      [WS, { projection: 'slim' }],
+      [secondWorkspaceId, { projection: 'slim' }],
+    ]);
 
     run.task.cancel();
     await run.task.toPromise();
@@ -278,13 +374,13 @@ describe('notesReadSaga', () => {
   });
 
   it('applies a deleted event without fetching', async () => {
-    const list = vi.spyOn(appClient.notes, 'list');
+    const get = vi.spyOn(appClient.notes, 'get');
     const run = harness([note('note-1')]);
 
     run.channel.put(noteEventReceived(WS, 'note-1', 'note:deleted'));
     await settle();
 
-    expect(list.mock.calls).toEqual([]);
+    expect(get.mock.calls).toEqual([]);
     expect(run.actions).toEqual([applyNoteDeleted(WS, 'note-1')]);
     run.task.cancel();
     await run.task.toPromise();
@@ -292,13 +388,13 @@ describe('notesReadSaga', () => {
 
   it('maps a created event to the exact created action', async () => {
     const created = note('note-created');
-    const list = vi.spyOn(appClient.notes, 'list').mockResolvedValue([created]);
+    const get = vi.spyOn(appClient.notes, 'get').mockResolvedValue(created);
     const run = harness([note('existing')]);
 
     run.channel.put(noteEventReceived(WS, 'note-created', 'note:created'));
     await settle();
 
-    expect(list.mock.calls).toEqual([[WS]]);
+    expect(get.mock.calls).toEqual([['note-created', WS]]);
     expect(run.actions).toEqual([applyNoteCreated(WS, created)]);
     run.task.cancel();
     await run.task.toPromise();
@@ -306,26 +402,26 @@ describe('notesReadSaga', () => {
 
   it('maps an updated event to the exact updated action', async () => {
     const updated = note('note-1', { title: 'Updated' });
-    const list = vi.spyOn(appClient.notes, 'list').mockResolvedValue([updated]);
+    const get = vi.spyOn(appClient.notes, 'get').mockResolvedValue(updated);
     const run = harness([note('note-1')]);
 
     run.channel.put(noteEventReceived(WS, 'note-1', 'note:updated'));
     await settle();
 
-    expect(list.mock.calls).toEqual([[WS]]);
+    expect(get.mock.calls).toEqual([['note-1', WS]]);
     expect(run.actions).toEqual([applyNoteUpdated(WS, 'note-1', updated)]);
     run.task.cancel();
     await run.task.toPromise();
   });
 
   it('does not double-dispatch when an event refresh rejects', async () => {
-    const list = vi.spyOn(appClient.notes, 'list').mockRejectedValue(new Error('offline'));
+    const get = vi.spyOn(appClient.notes, 'get').mockRejectedValue(new Error('offline'));
     const run = harness([note('note-1')]);
 
     run.channel.put(noteEventReceived(WS, 'note-1', 'note:updated'));
     await settle();
 
-    expect(list.mock.calls).toEqual([[WS]]);
+    expect(get.mock.calls).toEqual([['note-1', WS]]);
     expect(run.actions).toEqual([]);
     run.task.cancel();
     await run.task.toPromise();
@@ -333,13 +429,13 @@ describe('notesReadSaga', () => {
 
   it('ignores an event whose returned note belongs to another workspace', async () => {
     const foreign = note('note-1', { workspaceId: WorkspaceId('other-workspace') });
-    const list = vi.spyOn(appClient.notes, 'list').mockResolvedValue([foreign]);
+    const get = vi.spyOn(appClient.notes, 'get').mockResolvedValue(foreign);
     const run = harness([note('note-1')]);
 
     run.channel.put(noteEventReceived(WS, 'note-1', 'note:updated'));
     await settle();
 
-    expect(list.mock.calls).toEqual([[WS]]);
+    expect(get.mock.calls).toEqual([['note-1', WS]]);
     expect(run.actions).toEqual([]);
     run.task.cancel();
     await run.task.toPromise();

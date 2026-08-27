@@ -31,7 +31,7 @@
   const workspaceId = getWorkspaceRouteContext()?.workspaceId ?? undefined;
 
   // Avatar size based on badge size
-  const avatarSize = $derived(size === 'xs' ? 12 : size === 'sm' ? 14 : 16);
+  const avatarSize = $derived(size === 'xs' ? 12 : size === 'sm' ? 14 : undefined);
 
   // Handle click - open agent drawer and scroll to turn
   function handleClick(e: MouseEvent) {
@@ -94,7 +94,7 @@
   {#if !compact}
     <span class="text-subtle">{m.shared_agentAttribution_editedBy_label()}</span>
   {/if}
-  <AgentAvatar agentId={attribution.agentId} size={avatarSize} />
+  <AgentAvatar agentId={attribution.agentId} variant="compact" size={avatarSize} />
   {#if !compact}
     <span class="text-foreground truncate max-w-[150px] font-medium">
       {displayName}

@@ -1,18 +1,18 @@
 <script lang="ts">
   import Fa from 'svelte-fa';
-  import { faPlus, faGear, faPencil } from '@fortawesome/free-solid-svg-icons';
+  import { faPlus } from '@fortawesome/free-solid-svg-icons';
+  import AgentAvatar from '$features/agent/components/agent-avatar/AgentAvatar.svelte';
   import {
     filterSpecialistsByGitHubAuth,
-    selectSpecialists,
-    selectIsBuiltIn,
+    selectFileSpecialists,
     selectHasOverrides,
+    selectSpecialists,
     selectSpecialistSourceLabel,
-    selectUserOverrides,
   } from '$store/renderer/slices/specialists/specialists-selectors';
   import { selectGitHubAuthIsAuthenticated } from '$store/renderer/slices/github-auth/github-auth-selectors';
 
-  import AgentAvatar from '$features/agent/components/agent-avatar/AgentAvatar.svelte';
   import { Tooltip } from '$lib/components/ui/tooltip';
+  import { highlightTarget } from '$lib/components/ui/highlight/highlight-target';
   import { m } from '$shared/paraglide/messages.js';
   import { store as appStore } from '$store/renderer/store';
 
@@ -23,36 +23,26 @@
   interface Props {
     activeView: AIBehaviorView;
     onSelect: (view: AIBehaviorView) => void;
+    isActive?: boolean;
   }
 
-  let { activeView, onSelect }: Props = $props();
+  let { activeView, onSelect, isActive = true }: Props = $props();
 
   const specialists = selectSpecialists();
+  const fileSpecialists$ = selectFileSpecialists();
   const isGitHubAuth$ = selectGitHubAuthIsAuthenticated();
   const visibleSpecialists = $derived.by(() =>
     filterSpecialistsByGitHubAuth($specialists, $isGitHubAuth$),
   );
-  const userOverrides$ = selectUserOverrides();
-  // Track override changes to trigger re-render (updates {@const} values in template)
-  $effect(() => {
-    void $userOverrides$;
-  });
 
-  // Check if a specialist ID is a built-in type for avatar rendering
-  function isBuiltInSpecialistId(
-    id: string,
-  ): id is 'spec-writer' | 'implementor' | 'verifier' | 'pr-reviewer' | 'ui-designer' {
-    return (
-      id === 'spec-writer' ||
-      id === 'implementor' ||
-      id === 'verifier' ||
-      id === 'pr-reviewer' ||
-      id === 'ui-designer'
-    );
+  function getHasOverrides(id: string): boolean {
+    void $fileSpecialists$; // track file specialist changes for reactivity
+    return selectHasOverrides.select(appStore.state, id);
   }
 
   // Check if item is selected
   function isSelected(view: AIBehaviorView): boolean {
+    if (!isActive) return false;
     if (activeView.type !== view.type) return false;
     if (view.type === 'specialist' && activeView.type === 'specialist') {
       return activeView.id === view.id;
@@ -61,103 +51,74 @@
   }
 </script>
 
-<div class="w-52 flex flex-col shrink-0">
-  <!-- System Prompt - fixed at top -->
+<!-- Specialists -->
+{#each visibleSpecialists as specialist (specialist.id)}
+  {@const hasOverrides = getHasOverrides(specialist.id)}
+  {@const sourceLabel = selectSpecialistSourceLabel.select(appStore.state, specialist.id)}
+
   <button
+    id={`specialist-${specialist.id}`}
     type="button"
-    onclick={() => onSelect({ type: 'system-prompt' })}
-    class="flex items-center gap-2.5 px-3 py-2 rounded-lg text-left transition-colors cursor-pointer
-      {isSelected({ type: 'system-prompt' })
-      ? 'bg-muted text-foreground'
-      : 'hover:bg-muted/50 text-foreground'}"
+    onclick={() => onSelect({ type: 'specialist', id: specialist.id })}
+    data-highlight-id={`specialist-${specialist.id}`}
+    data-settings-agent-row
+    use:highlightTarget
+    aria-current={isSelected({ type: 'specialist', id: specialist.id }) ? 'true' : undefined}
+    class="flex w-full min-w-0 cursor-pointer items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring
+      {isSelected({ type: 'specialist', id: specialist.id })
+      ? 'bg-muted font-medium text-foreground shadow-xs'
+      : 'text-muted-foreground hover:bg-muted/50 hover:text-foreground'}"
   >
-    <div
-      class="w-5 h-5 rounded-md bg-primary/10 flex items-center justify-center text-primary shrink-0"
-    >
-      <Fa icon={faGear} class="w-3 h-3" />
-    </div>
-    <span class="text-sm font-medium">{m.settings_aiBehavior_sidebar_allAgents()}</span>
-  </button>
-
-  <!-- Specialists section - scrollable with max height -->
-  <div class="specialist-section mt-4 overflow-y-auto border-b-accent-foreground">
-    <div class="px-3 py-1.5 flex items-center justify-between">
-      <span class="text-ui font-semibold text-muted-foreground uppercase tracking-wider">
-        {m.settings_aiBehavior_sidebar_specialistsSection()}
-      </span>
-    </div>
-
-    {#each visibleSpecialists as specialist (specialist.id)}
-      {@const isBuiltIn = selectIsBuiltIn.select(appStore.state, specialist.id)}
-      {@const hasOverrides = selectHasOverrides.select(appStore.state, specialist.id)}
-      {@const sourceLabel = selectSpecialistSourceLabel.select(appStore.state, specialist.id)}
-      {@const isCustomized = isBuiltIn && hasOverrides}
-
-      <button
-        type="button"
-        onclick={() => onSelect({ type: 'specialist', id: specialist.id })}
-        class="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-left transition-colors cursor-pointer
-          {isSelected({ type: 'specialist', id: specialist.id })
-          ? 'bg-muted text-foreground'
-          : 'hover:bg-muted/50 text-foreground'}"
-      >
-        <!-- Avatar -->
-        <div class="shrink-0">
-          {#if isBuiltInSpecialistId(specialist.id)}
-            <AgentAvatar agentId="blank" size={20} specialist={specialist.id} />
-          {:else}
-            <AgentAvatar agentId="blank" size={20} />
-          {/if}
-        </div>
-
-        <!-- Name, path, and badges -->
-        <div class="flex-1 min-w-0">
-          <div class="flex items-center gap-1.5">
-            <span class="text-sm truncate">{specialist.name}</span>
-            {#if sourceLabel === 'Project'}
-              <Tooltip
-                content={m.settings_aiBehavior_sidebar_projectBadgeTooltip()}
-                side="right"
-                delayDuration={400}
-              >
-                <span
-                  class="text-ui px-1 py-0.5 rounded font-medium shrink-0 bg-primary/15 text-primary"
-                >
-                  {m.settings_aiBehavior_sidebar_projectBadge()}
-                </span>
-              </Tooltip>
-            {/if}
-          </div>
-        </div>
-        {#if isCustomized}
-          <span class="text-primary shrink-0" title={m.settings_aiBehavior_sidebar_modifiedTitle()}>
-            <Fa icon={faPencil} class="w-2.5 h-2.5" />
+    <AgentAvatar
+      agentId={specialist.id}
+      specialist={specialist.id}
+      variant="compact"
+      class="shrink-0"
+    />
+    <div class="flex-1 min-w-0">
+      <div class="flex items-center gap-1.5">
+        <span class="truncate">{specialist.name}</span>
+        {#if hasOverrides}
+          <span
+            data-specialist-modified-marker
+            aria-hidden="true"
+            class="text-ui shrink-0 leading-none text-muted-foreground"
+          >
+            *
           </span>
         {/if}
-      </button>
-    {/each}
-    <!-- <div style="height: 2000px;">Mock spacer</div> -->
-  </div>
-  <!-- Create button - flows after specialists -->
-  <button
-    type="button"
-    onclick={() => onSelect({ type: 'create-specialist' })}
-    class="w-full flex items-center gap-2.5 mt-4 px-3 py-2 rounded-lg text-left transition-colors cursor-pointer
-        {isSelected({ type: 'create-specialist' })
-      ? 'bg-muted text-foreground'
-      : 'hover:bg-muted/50 text-muted-foreground hover:text-foreground'}"
-  >
-    <div
-      class="w-5 h-5 rounded-md border border-dashed border-current flex items-center justify-center shrink-0"
-    >
-      <Fa icon={faPlus} class="w-2.5 h-2.5" />
+        {#if sourceLabel === 'Project'}
+          <Tooltip
+            content={m.settings_aiBehavior_sidebar_projectBadgeTooltip()}
+            side="right"
+            delayDuration={400}
+          >
+            <span
+              class="text-ui px-1 py-0.5 rounded font-medium shrink-0 bg-primary/15 text-primary"
+            >
+              {m.settings_aiBehavior_sidebar_projectBadge()}
+            </span>
+          </Tooltip>
+        {/if}
+      </div>
     </div>
-    <span class="text-sm">{m.settings_aiBehavior_sidebar_createSpecialist()}</span>
   </button>
-</div>
+{/each}
 
-<style>
-  .specialist-section {
-    max-height: calc(100vh - 25rem);
-  }
-</style>
+<!-- Create button - flows after specialists -->
+<button
+  id="create-specialist"
+  type="button"
+  onclick={() => onSelect({ type: 'create-specialist' })}
+  data-highlight-id="create-specialist"
+  data-settings-agent-row
+  use:highlightTarget
+  aria-current={isSelected({ type: 'create-specialist' }) ? 'true' : undefined}
+  class="flex w-full min-w-0 cursor-pointer items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring
+    {isSelected({ type: 'create-specialist' })
+    ? 'bg-muted font-medium text-foreground shadow-xs'
+    : 'text-muted-foreground hover:bg-muted/50 hover:text-foreground'}"
+>
+  <Fa icon={faPlus} class="h-3 w-3 shrink-0" />
+  <span class="truncate">{m.settings_aiBehavior_sidebar_createSpecialist()}</span>
+</button>

@@ -62,6 +62,7 @@
   import {
     selectSpecialists,
     selectEffectiveBehaviorPrompt,
+    selectOrchestratorSpecialist,
   } from '$store/renderer/slices/specialists/specialists-selectors';
   import { createLogger } from '$lib/utils/client-logger';
   import {
@@ -386,8 +387,9 @@
           const matchedSpecialist = specialists.find((s) => s.id === data.specialist);
           if (matchedSpecialist) {
             selectedSpecialist = matchedSpecialist.id;
-            // Switch team mode based on specialist - spec-writer uses team orchestration, everything else is single agent
-            isTeamMode = data.specialist === 'spec-writer';
+            // Switch team mode based on specialist - the orchestrator uses team orchestration, everything else is single agent
+            isTeamMode =
+              data.specialist === selectOrchestratorSpecialist.select(appStore.state)?.id;
             logger.debug('Applied specialist from prefill', { specialistId: matchedSpecialist.id });
           } else {
             logger.warn('Specialist from prefill not found, ignoring', {
@@ -432,6 +434,7 @@
   }
 
   const workspaceInitializerHydrated$ = selectWorkspaceInitializerHydrated();
+  const orchestrator$ = selectOrchestratorSpecialist();
   const compactFormState$ = selectCompactWorkspaceInitializerFormState();
   const lastSelectedRepo$ = selectWorkspaceInitializerLastSelectedRepo();
   const lastSubmittedAgent$ = selectWorkspaceInitializerLastSubmittedAgent();
@@ -462,13 +465,14 @@
   // Use saved state first, then fall back to last submitted values, then defaults
   // NOTE: selectedSpecialist can be null (meaning "General / no specialist").
   // We check !== undefined instead of using ?? because null is a valid value
-  // and ?? treats null as nullish, which would incorrectly fall through to 'spec-writer'.
+  // and ?? treats null as nullish, which would incorrectly fall through to the
+  // orchestrator default.
   let selectedSpecialist = $state<string | null>(
     savedState?.selectedSpecialist !== undefined
       ? savedState.selectedSpecialist
       : lastSubmittedAgent?.selectedSpecialist !== undefined
         ? lastSubmittedAgent.selectedSpecialist
-        : 'spec-writer',
+        : ($orchestrator$?.id ?? null),
   );
   // Validate saved model against current provider - stale models from a different provider
   // (e.g., 'claude-code:default' when active provider is now 'opencode') should be discarded
@@ -493,9 +497,9 @@
       ? (savedState?.selectedReasoningEffort ?? lastSubmittedAgent?.selectedReasoningEffort)
       : undefined,
   );
-  // Track if team mode is selected (spec-writer orchestrates)
+  // Track if team mode is selected (the orchestrator specialist coordinates)
   let isTeamMode = $state<boolean>(
-    savedState?.isTeamMode ?? lastSubmittedAgent?.isTeamMode ?? true,
+    savedState?.isTeamMode ?? lastSubmittedAgent?.isTeamMode ?? $orchestrator$ !== null,
   );
   // Track which provider the user selected for the initial agent
   // Priority: active provider store takes precedence since it's the user's
@@ -865,8 +869,9 @@
           );
           if (matchedSpecialist) {
             selectedSpecialist = matchedSpecialist.id;
-            // Switch team mode based on specialist - spec-writer uses team orchestration, everything else is single agent
-            isTeamMode = data.specialist === 'spec-writer';
+            // Switch team mode based on specialist - the orchestrator uses team orchestration, everything else is single agent
+            isTeamMode =
+              data.specialist === selectOrchestratorSpecialist.select(appStore.state)?.id;
             logger.debug('Applied specialist from prefill (onMount)', {
               specialistId: matchedSpecialist.id,
             });
@@ -1984,7 +1989,11 @@
       // whole first message (prompt + images + context) out of initialAgent
       // and send it via `agent.sendMessage` with the attachment-reference
       // fileBlocks after placement succeeds (create → place → send).
-      const hasStagedFiles = hasStagedFileItems(contextItems);
+      // Images follow the same create → place → send path (monorepo#3338):
+      // they too need the workspace to exist for placement, and holding
+      // them keeps inline base64 out of the workspace.create frame — the
+      // held send swaps them to attachment-reference blocks.
+      const hasStagedFiles = hasStagedFileItems(contextItems) || imageBlocks.length > 0;
 
       // No client-minted agentId: the daemon assigns the initial agent's id
       // and returns it on the create result (supersedes the fresh-id-per-
@@ -2109,7 +2118,8 @@
           workspace.id,
           initialAgentId ?? null,
           agentName,
-          specialistId === 'spec-writer',
+          specialistId !== undefined &&
+            specialistId === selectOrchestratorSpecialist.select(appStore.state)?.id,
         ),
       );
       const initialState: WorkspaceNavigationWorkspaceState = {

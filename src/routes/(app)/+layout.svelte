@@ -27,13 +27,10 @@
   } from '$store/renderer/slices/palette/palette-selectors';
   import RadialPromptPickerOverlay from '$features/hardware-console/prompt-picker/RadialPromptPickerOverlay.svelte';
   import EncoderCycleHud from '$features/hardware-console/encoder/EncoderCycleHud.svelte';
+  import ActionKeyHud from '$features/hardware-console/actions/ActionKeyHud.svelte';
   import StatsOverlay from '$features/stats/StatsOverlay.svelte';
   import DaemonStoppedOverlay from '$features/daemon-status/DaemonStoppedOverlay.svelte';
   import { registerWorkspaceTabShortcuts } from '$features/workspace/utils/workspace-tab-navigation';
-  import {
-    cancelWorkspaceViewModeTransition,
-    toggleWorkspaceViewModeWithTransition,
-  } from '$features/workspace/workspace-view-mode-action';
   import AuggieSetupGate from '$lib/components/AuggieSetupGate.svelte';
   import CommandPalette from '$lib/components/CommandPalette.svelte';
   import DebugPanel from '$lib/components/debug/DebugPanel.svelte';
@@ -42,8 +39,6 @@
   import GitHubAuthModal from '$lib/components/GitHubAuthModal.svelte';
   import KeyboardShortcutsCheatSheet from '$lib/components/layout/KeyboardShortcutsCheatSheet.svelte';
   import WindowTitleBar from '$lib/components/layout/WindowTitleBar.svelte';
-  import { getCounterScaledTitlebarHeight } from '$lib/components/layout/titlebar-geometry';
-  import WorkspaceColumnsView from '$lib/components/workspace/WorkspaceColumnsView.svelte';
   import WorkspaceWarningDialogs from '$lib/components/modals/WorkspaceWarningDialogs.svelte';
   import TransferWorkspaceModalHost from '$lib/components/modals/TransferWorkspaceModalHost.svelte';
   import ImportWorkspaceModalHost from '$lib/components/modals/ImportWorkspaceModalHost.svelte';
@@ -78,7 +73,6 @@
     selectCurrentWorkspaceTabId,
     selectWorkspaceTabOrder,
     selectWorkspaceTabsHydrated,
-    selectWorkspaceViewMode,
   } from '$store/renderer/slices/tab-state/tab-state-selectors';
   import {
     toggleTerminalOverlay,
@@ -90,13 +84,16 @@
     selectWorkspaceItems,
     selectWorkspaceLoading,
   } from '$store/renderer/slices/workspace/workspace-selectors';
-  import { selectZoomFactor } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
   import {
     selectBootRouteGateResolved,
-    selectLocalSetupGate,
+    selectBackendSetupGate,
   } from '$store/renderer/slices/setup-prompt/setup-prompt-selectors';
   import { bootRouteGateResolved } from '$store/renderer/slices/setup-prompt/setup-prompt-slice';
-  import { decideBootRoute, getBootRoutePathname } from '$lib/utils/boot-route-gate';
+  import {
+    BOOT_ROUTE_HOLD_TIMEOUT_MS,
+    decideBootRoute,
+    getBootRoutePathname,
+  } from '$lib/utils/boot-route-gate';
   import {
     loadWorkspacesRequested,
     recordWorkspaceView,
@@ -106,7 +103,7 @@
   import { isFocusInEditableElement, KeyboardShortcutManager } from '$lib/utils/keyboardShortcuts';
   import { configureMonacoWorkers } from '$lib/utils/monaco-workers';
   import { hasCapability } from '$lib/utils/platform-capabilities';
-  import { onMount, untrack } from 'svelte';
+  import { onDestroy, onMount, untrack } from 'svelte';
 
   import { createLinkTooltipHandler } from '$features/navigation/link-handler';
   import { registerAllTabTypes } from '$features/layout/tab-types/register-all';
@@ -121,6 +118,9 @@
   import { selectShowCreateModal } from '$store/renderer/slices/sidebar-nav/sidebar-nav-selectors';
   import NewSpaceModal from '$lib/components/modals/NewSpaceModal.svelte';
   import { store as appStore } from '$store/renderer/store';
+  // Installs production bridge handlers before the app sagas and route startup use them.
+  import '$store/renderer/seeders';
+  import { startAppStoreLifecycle } from '$store/renderer/app-store-lifecycle';
   import {
     installInterruptedAgentsService,
     notifyInterruptedAgentsModalClosed,
@@ -138,18 +138,19 @@
   import { workspaceIdFromRoute } from '$lib/utils/workspace-route-context';
   const logger = createLogger('+layout');
 
+  const disposeAppStore = startAppStoreLifecycle(appStore, import.meta.hot?.data);
+  onDestroy(disposeAppStore);
+
   const routePathname = $derived($page.url.pathname);
   const routeWorkspaceId = $derived(($page.params?.id as string | undefined) ?? '');
   const workspaceId = $derived(workspaceIdFromRoute(routePathname, routeWorkspaceId) ?? undefined);
   const workspaceItems = selectWorkspaceItems();
   const workspaceHasLoaded = selectWorkspaceHasLoaded();
-  const localSetupGate = selectLocalSetupGate();
+  const backendSetupGate = selectBackendSetupGate();
   const bootGateResolved = selectBootRouteGateResolved();
-  const zoomFactor = selectZoomFactor();
   const currentWorkspaceTabId = selectCurrentWorkspaceTabId();
   const workspaceTabsHydrated = selectWorkspaceTabsHydrated();
   const workspaceTabOrder = selectWorkspaceTabOrder();
-  const workspaceViewMode = selectWorkspaceViewMode();
   const showReleaseNotesModal$ = selectShowReleaseNotesModal();
   const releaseNotes$ = selectReleaseNotes();
   const showCreateModal$ = selectShowCreateModal();
@@ -187,26 +188,15 @@
   }
 
   let currentWorkspaceId = $derived($page.params.id as string | undefined);
-  let showWorkspaceColumns = $derived(
-    $workspaceViewMode === 'columns' &&
-      currentWorkspaceId !== undefined &&
-      currentWorkspaceId !== 'new' &&
-      $page.url.pathname.startsWith('/workspace/'),
-  );
-  let workspaceColumnsOverlap = $state(false);
   const globalModals = selectGlobalModals();
   const featureCodeDialogOpen = selectFeatureCodeDialogOpen();
   const isPaletteOpen$ = selectIsPaletteOpen();
   const paletteQuery$ = selectPaletteQuery();
 
-  // Workspaces whose surfaces render their own webviews. In single-workspace
-  // mode only the routed workspace is displayed; in columns mode the columns
-  // view reports which workspaces render a real surface (virtualized columns
-  // render placeholders, so their tabs still need offscreen keep-alive)
-  // (monorepo#2789 slice 2).
-  let columnsMountedWorkspaceIds = $state<ReadonlySet<string>>(new Set());
+  // The routed workspace renders its own webviews; all other open workspace
+  // browser tabs stay alive in the offscreen host (monorepo#2789 slice 2).
   const offscreenExcludedWorkspaceIds = $derived<ReadonlySet<string>>(
-    showWorkspaceColumns ? columnsMountedWorkspaceIds : new Set(workspaceId ? [workspaceId] : []),
+    new Set(workspaceId ? [workspaceId] : []),
   );
 
   // Interrupted agents modal state
@@ -221,22 +211,35 @@
   // /workspace/new, which renders onboarding. Gate boot (and legacy `/`)
   // loads on the backend-derived setup evaluation: land on an existing
   // workspace when the backend has one, and only fall through to onboarding
-  // when the local backend genuinely needs first-run setup (no workspaces and
-  // no ready providers). The decision logic lives in decideBootRoute
-  // (boot-route-gate); it fires at most once per full page load, so
-  // deliberate in-app navigation to `/` or /workspace/new is unaffected.
-  // While it holds, WorkspaceSurface suppresses onboarding so the wizard
-  // never flashes before a redirect.
+  // when the active backend (local or remote) genuinely needs first-run setup
+  // (no workspaces and no ready providers). The decision logic lives in
+  // decideBootRoute (boot-route-gate); it fires at most once per full page
+  // load, so deliberate in-app navigation to `/` or /workspace/new is
+  // unaffected. While it holds, WorkspaceSurface suppresses onboarding so the
+  // wizard never flashes before a redirect. The hold is bounded: if nothing
+  // settles within BOOT_ROUTE_HOLD_TIMEOUT_MS (e.g. provider probes failing
+  // forever, so neither a check settlement nor an evaluation ever arrives),
+  // bootHoldTimedOut flips and decideBootRoute resolves best-effort instead
+  // of holding a blank surface indefinitely.
+  let bootHoldTimedOut = $state(false);
+  $effect(() => {
+    if ($bootGateResolved) return;
+    const timer = setTimeout(() => {
+      bootHoldTimedOut = true;
+    }, BOOT_ROUTE_HOLD_TIMEOUT_MS);
+    return () => clearTimeout(timer);
+  });
   $effect(() => {
     const decision = decideBootRoute({
       bootPathname: getBootRoutePathname(),
       currentPathname: window.location.pathname,
       gateResolved: $bootGateResolved,
-      localSetupGate: $localSetupGate,
+      setupGate: $backendSetupGate,
       workspaceHasLoaded: $workspaceHasLoaded,
       workspaces: $workspaceItems,
       tabsHydrated: $workspaceTabsHydrated,
       currentTabId: $currentWorkspaceTabId,
+      holdTimedOut: bootHoldTimedOut,
     });
     if (decision.kind !== 'resolve') return;
     untrack(() => {
@@ -325,7 +328,7 @@
     const appClient = new LiveAppClient();
     const disposeInterruptedAgents = installInterruptedAgentsService(appClient, (agents) => {
       interruptedAgents = agents;
-      showInterruptedAgentsModal = true;
+      showInterruptedAgentsModal = agents.length > 0;
     });
 
     // Initialize quit-confirmation service (in-app modal for quit/restart)
@@ -484,7 +487,6 @@
       getCurrentPath: () => window.location.pathname,
       navigate: (path) => goto(path),
       openNewWorkspace: () => appStore.dispatch(setShowCreateModal(true)),
-      toggleWorkspaceViewMode: () => void toggleWorkspaceViewModeWithTransition(),
     });
 
     // Optionally register config-driven shortcut for opening the command palette
@@ -629,7 +631,7 @@
       const isOnWorkspacePage = $page.url.pathname.startsWith('/workspace/');
       const terminalContextId = resolveTerminalShortcutWorkspaceId({
         isOnWorkspacePage,
-        useSelectedWorkspace: showWorkspaceColumns,
+        useSelectedWorkspace: false,
         selectedWorkspaceId: $currentWorkspaceTabId,
         routeWorkspaceId: currentWorkspaceId,
       });
@@ -892,8 +894,6 @@
 
   // Keep the workspace list warm when navigating away from workspace pages.
   beforeNavigate(({ to }: any) => {
-    cancelWorkspaceViewModeTransition();
-
     if (to && !to.url.pathname.startsWith('/workspace/')) {
       // Load workspaces when navigating to any non-workspace route
       // This ensures workspaces are loaded for tabs, switcher, and other UI components
@@ -938,7 +938,7 @@
     data-testid="app-ready"
   >
     <!-- Title bar at top -->
-    <WindowTitleBar {workspaceId} overlayWorkspaceColumns={showWorkspaceColumns} />
+    <WindowTitleBar {workspaceId} />
 
     <!-- Main Content Area with Sidebar Nav -->
     <ErrorBoundary componentName="MainLayout">
@@ -946,37 +946,19 @@
         <!-- Sidebar Panel (persistent, pushes content) -->
         <div
           class="workspace-sidebar-frame relative z-40 flex min-h-0 shrink-0 bg-transparent"
-          class:workspace-columns-overlap={showWorkspaceColumns && workspaceColumnsOverlap}
-          style:padding-top={showWorkspaceColumns
-            ? `${getCounterScaledTitlebarHeight($zoomFactor)}px`
-            : undefined}
           data-sidebar-panel-frame
         >
           <SidebarPanel />
         </div>
 
         <!-- Workspace content area -->
-        <div
-          class="workspace-frame relative mr-2 flex min-h-0 min-w-0 flex-1 bg-transparent"
-          style:padding-top={showWorkspaceColumns
-            ? `${getCounterScaledTitlebarHeight($zoomFactor)}px`
-            : undefined}
-        >
+        <div class="workspace-frame relative mr-2 flex min-h-0 min-w-0 flex-1 bg-transparent">
           <main
-            class="workspace-main flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden {showWorkspaceColumns
-              ? ''
-              : 'rounded-xl bg-sidebar border border-border shadow-sm'}"
+            class="workspace-main flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-xl bg-sidebar border border-border shadow-sm"
             aria-label={m.layout_appShell_mainContent_ariaLabel()}
           >
             <div class="flex-1 min-h-0 overflow-hidden">
-              {#if showWorkspaceColumns}
-                <WorkspaceColumnsView
-                  onHorizontalOverlapChange={(overlap) => (workspaceColumnsOverlap = overlap)}
-                  onMountedWorkspaceIdsChange={(mounted) => (columnsMountedWorkspaceIds = mounted)}
-                />
-              {:else}
-                {@render children?.()}
-              {/if}
+              {@render children?.()}
             </div>
 
             <!-- Root Quake Terminal Overlay (self-gates on __root__ terminal state) -->
@@ -1005,7 +987,8 @@
     }}
   />
 
-  <!-- Product-route hardware-console overlays; HUD routes sit outside this group. -->
+  <!-- Product-route hardware-console overlays; HUD and sandbox routes sit outside this group. -->
+  <ActionKeyHud />
   <RadialPromptPickerOverlay />
   <EncoderCycleHud />
 
@@ -1082,12 +1065,16 @@
 
   <SetupPromptDialog />
 
-  <!-- Release Notes Modal (shown after update) -->
-  <ReleaseNotesModal
-    open={$showReleaseNotesModal$}
-    releaseNotes={$releaseNotes$}
-    onClose={() => appStore.dispatch(closeReleaseNotesModal())}
-  />
+  <!-- Interrupted-agent recovery owns the startup modal slot. Keeping release
+       notes in Redux while this component is unmounted avoids consuming the
+       queued payload through the dialog's close callback. -->
+  {#if !showInterruptedAgentsModal}
+    <ReleaseNotesModal
+      open={$showReleaseNotesModal$}
+      releaseNotes={$releaseNotes$}
+      onClose={() => appStore.dispatch(closeReleaseNotesModal())}
+    />
+  {/if}
 
   <FeatureCodeDialog
     open={$featureCodeDialogOpen}

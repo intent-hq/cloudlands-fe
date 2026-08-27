@@ -3,8 +3,6 @@
   import { faPlus, faRotateLeft, faTrash, faPencil } from '@fortawesome/free-solid-svg-icons';
 
   import {
-    selectDefaultReasoningEffort,
-    selectModelDisplayName,
     selectModelEffortLevels,
     selectSelectedModel,
   } from '$store/renderer/slices/model/model-selectors';
@@ -30,12 +28,6 @@
     saveFileSpecialist,
   } from '$store/renderer/slices/specialists/specialists-slice';
   import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
-  import { selectActiveProviderId } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
-  import { setActiveProvider } from '$store/renderer/slices/provider-settings/provider-settings-slice';
-  import {
-    reloadModelsForProvider,
-    setDefaultReasoningEffort,
-  } from '$store/renderer/slices/model/model-slice';
   import Button from '$lib/components/ui/button/button.svelte';
   import Input from '$lib/components/ui/input/input.svelte';
   import OpenComboButton from '$features/external-editors/components/OpenComboButton.svelte';
@@ -44,6 +36,7 @@
   import type { AIBehaviorView } from './AIBehaviorSidebar.svelte';
 
   import ModelPicker from '$lib/components/chat/input/ModelPicker.svelte';
+  import DefaultAgentModelSettings from './DefaultAgentModelSettings.svelte';
   import SpecialistModelOptions from './SpecialistModelOptions.svelte';
   import {
     hasExplicitModelPin,
@@ -63,9 +56,6 @@
   import { store as appStore } from '$store/renderer/store';
   import { getWorkspaceRouteContext } from '$lib/utils/workspace-route-context';
 
-  // i18n-ignore (file path)
-  const getSpecialistOverridePath = (id: string) => `~/.intent/specialists/${id}.md`;
-
   interface Props {
     activeView: AIBehaviorView;
     /** Explicit owner for settings opened outside a workspace route. */
@@ -81,8 +71,6 @@
   const specialists = selectSpecialists();
   const fileSpecialists$ = selectFileSpecialists();
   const selectedModel = selectSelectedModel();
-  const defaultReasoningEffort$ = selectDefaultReasoningEffort();
-  const activeProviderId$ = selectActiveProviderId();
   const defaultProviderId$ = selectEffectiveDefaultProviderId();
   const routeWorkspaceContext = getWorkspaceRouteContext();
   const routeWorkspaceId = $derived(
@@ -219,37 +207,6 @@
       );
     }
   });
-
-  function handleGlobalModelChange(compoundModelId: string) {
-    if (!compoundModelId) return;
-    const { providerId, modelId } = parseCompoundModelId(compoundModelId);
-    // The default effort is paired with the default model — drop a level the
-    // newly picked model does not advertise instead of leaving an unsupported
-    // level persisted. Decided BEFORE the provider switch below, because
-    // `reloadModelsForProvider` empties `availableModels` until the new
-    // catalog lands and every lookup would then miss. A model the loaded
-    // catalog does not know (a cross-provider pick) is inconclusive, not
-    // "no levels" — keep the level instead of clearing it blindly.
-    const current = $defaultReasoningEffort$;
-    const isKnownModel =
-      selectModelDisplayName.select(appStore.state, providerId, modelId) !== undefined;
-    if (current && isKnownModel && !effortForModel(compoundModelId, current)) {
-      appStore.dispatch(setDefaultReasoningEffort(''));
-    }
-    if (providerId && providerId !== $activeProviderId$) {
-      appStore.dispatch(setActiveProvider(providerId));
-      appStore.dispatch(reloadModelsForProvider());
-    }
-  }
-
-  /**
-   * Persist the default effort level paired with the default model
-   * (`model.defaultReasoningEffort`). Default (undefined) writes '' so the
-   * daemon reads it as unset.
-   */
-  function handleDefaultEffortChange(effort: string | null) {
-    appStore.dispatch(setDefaultReasoningEffort(effort ?? ''));
-  }
 
   /**
    * Drop an effort level the given model does not advertise, so switching to
@@ -706,39 +663,37 @@
       appStore.dispatch(deleteFileSpecialistAction(ref));
     }
   }
-
-  /** Check if a built-in specialist has been customized (its user override differs from defaults) */
-  function hasFileOverride(): boolean {
-    if (!currentSpecialist) return false;
-    return selectHasOverrides.select(appStore.state, currentSpecialist.id);
-  }
 </script>
 
-<div class="editor-container flex-1">
+<div
+  class="editor-container full-height-editor-container flex-1 xl:flex xl:h-full xl:min-h-0 xl:flex-col {activeView.type ===
+  'specialist'
+    ? 'specialist-editor-container'
+    : ''}"
+>
   <!-- System Prompt View -->
   {#if activeView.type === 'system-prompt'}
-    <!-- Global defaults -->
-    <div class="mb-6">
-      <div class="flex items-center gap-3 flex-wrap">
-        <span class="text-sm font-medium text-foreground shrink-0">
-          {m.settings_aiBehavior_defaultModel_label()}
-        </span>
-        <ModelPicker
-          selectedModel={$selectedModel}
-          onModelChange={handleGlobalModelChange}
-          showDefaultOption={false}
-          variant="default"
-          size="sm"
-          updateGlobalDefault
-          showReasoning
-          reasoningEffort={$defaultReasoningEffort$ || null}
-          onReasoningChange={handleDefaultEffortChange}
-        />
+    <div
+      data-testid="all-agents-editor-layout"
+      class="grid min-w-0 grid-cols-1 gap-8 xl:h-full xl:min-h-0 xl:flex-1 xl:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)] xl:items-stretch"
+    >
+      <div
+        data-testid="all-agents-prompt-column"
+        class="min-h-0 min-w-0 h-full xl:flex xl:flex-col"
+      >
+        <AgentRulesEditor class="xl:min-h-0 xl:flex-1" />
+      </div>
+
+      <div data-testid="all-agents-defaults-column" class="flex min-w-0 flex-col gap-6">
+        <p class="text-sm text-muted-foreground">
+          {m.settings_agentRules_description()}
+        </p>
+        <DefaultAgentModelSettings testId="all-agents-default-model-row" />
         {#if anySpecialistHasExplicitModel}
           <button
             type="button"
             onclick={resetAllSpecialistsToInherit}
-            class="px-3 py-1.5 text-xs font-medium rounded-md border border-border text-muted-foreground hover:text-foreground hover:bg-muted transition-colors cursor-pointer whitespace-nowrap"
+            class="self-start text-xs font-medium text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
           >
             {m.settings_aiBehavior_resetAllSpecialists()}
           </button>
@@ -746,17 +701,21 @@
       </div>
     </div>
 
-    <!-- Agent Instructions (1fr) -->
-    <div class="min-h-0 h-full">
-      <AgentRulesEditor />
-    </div>
-
     <!-- Specialist Editor View -->
   {:else if activeView.type === 'specialist' && currentSpecialist}
-    <!-- Header: Name + Open button -->
-    <div class="mb-6">
-      <div class="flex items-start justify-between gap-3">
-        <div class="flex-1 min-w-0">
+    <div
+      data-testid="specialist-editor-layout"
+      class="grid min-w-0 grid-cols-1 gap-8 xl:h-full xl:min-h-0 xl:flex-1 xl:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)] xl:items-stretch"
+    >
+      <!-- Keep the prompt first so narrow layouts and keyboard order prioritize editing. -->
+      <div
+        data-testid="specialist-prompt-column"
+        class="min-h-0 min-w-0 h-full xl:flex xl:flex-col"
+      >
+        <div
+          data-testid="specialist-prompt-header"
+          class="mb-2 flex min-w-0 shrink-0 flex-wrap items-center gap-2"
+        >
           {#if !isBuiltIn && !hasOverrides}
             <input
               type="text"
@@ -768,23 +727,51 @@
                   e.currentTarget.blur();
                 }
               }}
+              aria-label={m.settings_aiBehavior_name_label()}
               placeholder={m.settings_aiBehavior_specialistName_placeholder()}
-              class="w-full text-base font-medium text-foreground bg-transparent border-none outline-none px-0 py-0 focus:ring-0 focus:outline-none placeholder:text-muted-foreground"
+              class="min-w-0 flex-1 text-base font-medium text-foreground bg-transparent border-none outline-none px-0 py-0 focus:ring-0 focus:outline-none placeholder:text-muted-foreground"
             />
           {:else}
-            <div class="flex items-center gap-2">
-              <h2 class="text-base font-medium text-foreground">{currentSpecialist.name}</h2>
-              {#if isBuiltIn && hasOverrides}
-                <span
-                  class="text-xs px-1.5 py-0.5 rounded bg-primary/15 text-primary font-medium inline-flex items-center gap-1"
-                >
-                  <Fa icon={faPencil} class="w-2.5 h-2.5" />
-                  {m.settings_aiBehavior_modifiedBadge()}
-                </span>
-              {/if}
+            <h2 class="text-base font-medium text-foreground">{currentSpecialist.name}</h2>
+            {#if isBuiltIn && hasOverrides}
+              <span
+                class="text-xs px-1.5 py-0.5 rounded bg-primary/15 text-primary font-medium inline-flex items-center gap-1"
+              >
+                <Fa icon={faPencil} class="w-2.5 h-2.5" />
+                {m.settings_aiBehavior_modifiedBadge()}
+              </span>
+            {/if}
+          {/if}
+          {#if isBuiltIn && hasOverrides}
+            <button
+              type="button"
+              onclick={resetToDefault}
+              class="text-xs text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1 cursor-pointer shrink-0"
+            >
+              <Fa icon={faRotateLeft} class="w-3 h-3" />
+              {m.settings_aiBehavior_reset()}
+            </button>
+          {/if}
+          {#if specialistFilePath}
+            <div class="ml-auto shrink-0">
+              <OpenComboButton filePath={specialistFilePath} isDirectory={false} />
             </div>
           {/if}
+        </div>
+        <AutoSaveTextarea
+          value={effectiveBehaviorPrompt}
+          originalValue={currentSpecialist.defaultBehaviorPrompt}
+          placeholder={m.settings_aiBehavior_systemPrompt_placeholder()}
+          minRows={12}
+          maxLength={50000}
+          onSave={handlePromptSave}
+          class="xl:min-h-0 xl:flex-1"
+        />
+      </div>
 
+      <div data-testid="specialist-details-column" class="flex min-w-0 flex-col gap-6 xl:pt-8">
+        <!-- Specialist identity and source context. -->
+        <div class="min-w-0">
           {#if !isBuiltIn && !hasOverrides}
             <input
               type="text"
@@ -802,232 +789,201 @@
           {:else}
             <p class="text-sm text-muted-foreground mt-1">{currentSpecialist.description}</p>
           {/if}
+
+          {#if !isBuiltIn}
+            <p class="text-sm text-muted-foreground mt-2">
+              {#if sourceLabel === 'Project'}
+                {m.settings_aiBehavior_projectInfo_before()}
+                <code class="bg-muted px-1 py-0.5 rounded break-all"
+                  >{specialistFilePath?.replace(/^\/Users\/[^/]+/, '~') ?? ''}</code
+                >.
+              {:else}
+                {m.settings_aiBehavior_personalInfo_before()}
+                <code class="bg-muted px-1 py-0.5 rounded break-all"
+                  >{specialistFilePath?.replace(/^\/Users\/[^/]+/, '~') ?? ''}</code
+                >.
+                {m.settings_aiBehavior_personalInfo_middle()}
+                <!-- i18n-ignore (file path) -->
+                <code class="bg-muted px-1 py-0.5 rounded">&lt;repo&gt;/.intent/specialists/</code>
+                {m.settings_aiBehavior_personalInfo_after()}
+              {/if}
+            </p>
+          {/if}
+          <p class="text-sm text-muted-foreground mt-2">
+            {m.settings_aiBehavior_usageHint()}
+          </p>
         </div>
 
-        {#if specialistFilePath}
-          <div class="shrink-0">
-            <OpenComboButton filePath={specialistFilePath} isDirectory={false} />
+        <!-- Preserve the specialist model, reasoning, and delegation controls. -->
+        <div class="min-w-0">
+          <div class="flex min-w-0 flex-wrap items-center gap-3">
+            <span class="text-sm font-medium text-foreground shrink-0">
+              {m.settings_aiBehavior_model_label()}
+            </span>
+            <ModelPicker
+              selectedModel={specialistModelValue}
+              onModelChange={handleSpecialistModelChange}
+              showDefaultOption={true}
+              defaultModelId={currentSpecialist.resolvedModel}
+              defaultModelLabel={m.chat_modelPicker_providerDefault_label()}
+              defaultOptionLabel={m.settings_aiBehavior_inheritModel_label()}
+              defaultOptionDescription={m.settings_aiBehavior_inheritModel_description()}
+              formatDefaultModelLabel={(model) =>
+                m.settings_aiBehavior_inheritModelPreview_label({ model })}
+              size="sm"
+              variant="default"
+              showReasoning
+              reasoningEffort={specialistEffortValue ?? null}
+              onReasoningChange={(effort) => handleSpecialistEffortChange(effort ?? undefined)}
+            />
+          </div>
+
+          <!-- Delegation model options (PROTOCOL §5.11 modelOptions). Keyed on
+               the specialist id so draft rows never leak across specialist
+               switches (remounting resets the component's local rows). -->
+          <details class="mt-4 min-w-0">
+            <summary class="text-ui cursor-pointer text-muted-foreground">
+              {m.settings_aiBehavior_advanced_label()}
+            </summary>
+            {#key currentSpecialist.id}
+              <SpecialistModelOptions
+                savedOptions={savedModelOptions}
+                onCommit={handleModelOptionsCommit}
+              />
+            {/key}
+          </details>
+        </div>
+
+        {#if !isBuiltIn}
+          <div class="pt-4 border-border">
+            <button
+              type="button"
+              onclick={deleteSpecialist}
+              class="text-xs text-muted-foreground hover:text-error-foreground transition-colors flex items-center gap-1.5 cursor-pointer"
+            >
+              <Fa icon={faTrash} class="w-3 h-3" />
+              {m.settings_aiBehavior_deleteSpecialist()}
+            </button>
           </div>
         {/if}
       </div>
-
-      <!-- Contextual info -->
-      <p class="text-sm text-muted-foreground mt-2">
-        {#if isBuiltIn && !hasOverrides}
-          {m.settings_aiBehavior_builtInInfo_before()}
-          <code class="bg-muted px-1 py-0.5 rounded"
-            >{getSpecialistOverridePath(currentSpecialist.id)}</code
-          >.
-        {:else if isBuiltIn && hasOverrides}
-          {m.settings_aiBehavior_customizedInfo_before()}
-          <code class="bg-muted px-1 py-0.5 rounded"
-            >{specialistFilePath?.replace(/^\/Users\/[^/]+/, '~') ?? ''}</code
-          >.
-          {m.settings_aiBehavior_customizedInfo_after()}
-        {:else if sourceLabel === 'Project'}
-          {m.settings_aiBehavior_projectInfo_before()}
-          <code class="bg-muted px-1 py-0.5 rounded"
-            >{specialistFilePath?.replace(/^\/Users\/[^/]+/, '~') ?? ''}</code
-          >.
-        {:else}
-          {m.settings_aiBehavior_personalInfo_before()}
-          <code class="bg-muted px-1 py-0.5 rounded"
-            >{specialistFilePath?.replace(/^\/Users\/[^/]+/, '~') ?? ''}</code
-          >.
-          {m.settings_aiBehavior_personalInfo_middle()}
-          <!-- i18n-ignore (file path) -->
-          <code class="bg-muted px-1 py-0.5 rounded">&lt;repo&gt;/.intent/specialists/</code>
-          {m.settings_aiBehavior_personalInfo_after()}
-        {/if}
-      </p>
-      <p class="text-sm text-muted-foreground mt-2">
-        {m.settings_aiBehavior_usageHint()}
-      </p>
-    </div>
-
-    <!-- Model picker — inline row -->
-    <div class="mb-6">
-      <div class="flex items-center gap-3">
-        <span class="text-sm font-medium text-foreground shrink-0">
-          {m.settings_aiBehavior_model_label()}
-        </span>
-        <ModelPicker
-          selectedModel={specialistModelValue}
-          onModelChange={handleSpecialistModelChange}
-          showDefaultOption={true}
-          defaultModelId={currentSpecialist.resolvedModel}
-          defaultModelLabel={m.chat_modelPicker_providerDefault_label()}
-          defaultOptionLabel={m.settings_aiBehavior_inheritModel_label()}
-          defaultOptionDescription={m.settings_aiBehavior_inheritModel_description()}
-          formatDefaultModelLabel={(model) =>
-            m.settings_aiBehavior_inheritModelPreview_label({ model })}
-          size="sm"
-          variant="default"
-          showReasoning
-          reasoningEffort={specialistEffortValue ?? null}
-          onReasoningChange={(effort) => handleSpecialistEffortChange(effort ?? undefined)}
-        />
-        {#if isBuiltIn && hasFileOverride()}
-          <button
-            type="button"
-            onclick={resetToDefault}
-            class="text-xs text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1 cursor-pointer shrink-0"
-          >
-            <Fa icon={faRotateLeft} class="w-3 h-3" />
-            {m.settings_aiBehavior_reset()}
-          </button>
-        {/if}
-      </div>
-
-      <!-- Delegation model options (PROTOCOL §5.11 modelOptions). Keyed on
-           the specialist id so draft rows never leak across specialist
-           switches (remounting resets the component's local rows). -->
-      <div class="mt-4">
-        {#key currentSpecialist.id}
-          <SpecialistModelOptions
-            savedOptions={savedModelOptions}
-            onCommit={handleModelOptionsCommit}
-          />
-        {/key}
-      </div>
-    </div>
-
-    <!-- System Prompt (1fr) -->
-    <div class="min-h-0 h-full">
-      <AutoSaveTextarea
-        value={effectiveBehaviorPrompt}
-        originalValue={currentSpecialist.defaultBehaviorPrompt}
-        label={m.settings_aiBehavior_systemPrompt_label()}
-        labelClass="text-sm font-medium text-foreground"
-        placeholder={m.settings_aiBehavior_systemPrompt_placeholder()}
-        minRows={12}
-        maxLength={50000}
-        onSave={handlePromptSave}
-        onReset={isBuiltIn ? resetToDefault : undefined}
-      />
-    </div>
-
-    <!-- Actions -->
-    <div class="pt-4 border-border">
-      {#if !isBuiltIn}
-        <button
-          type="button"
-          onclick={deleteSpecialist}
-          class="text-xs text-muted-foreground hover:text-error-foreground transition-colors flex items-center gap-1.5 cursor-pointer"
-        >
-          <Fa icon={faTrash} class="w-3 h-3" />
-          {m.settings_aiBehavior_deleteSpecialist()}
-        </button>
-      {/if}
     </div>
 
     <!-- Create Specialist View -->
   {:else if activeView.type === 'create-specialist'}
-    <!-- Metadata -->
-    <div class="mb-4">
-      <h2 class="text-base font-medium text-foreground">
-        {m.settings_aiBehavior_createSpecialist_title()}
-      </h2>
-      <p class="text-sm text-muted-foreground mt-1">
-        {m.settings_aiBehavior_createSpecialist_pathNote_before()}
-        <!-- i18n-ignore (file path) -->
-        <code class="bg-muted px-1 py-0.5 rounded">~/.intent/specialists/</code>
-      </p>
-    </div>
-
-    <!-- Fields -->
-    <div class="space-y-4 mb-6">
-      <div>
-        <label class="text-sm font-medium text-foreground block mb-1.5">
-          {m.settings_aiBehavior_name_label()}
-        </label>
-        <Input
-          noFocusStyle
-          type="text"
-          bind:value={newName}
-          placeholder={m.settings_aiBehavior_name_placeholder()}
-        />
-      </div>
-
-      <div>
-        <label class="text-sm font-medium text-foreground block mb-1.5">
-          {m.settings_aiBehavior_description_label()}
-        </label>
-        <Input
-          noFocusStyle
-          type="text"
-          bind:value={newDescription}
-          placeholder={m.settings_aiBehavior_description_placeholder()}
-        />
-      </div>
-
-      <div class="flex items-center gap-3">
-        <span class="text-sm font-medium text-foreground shrink-0">
-          {m.settings_aiBehavior_model_label()}
-        </span>
-        <ModelPicker
-          selectedModel={newModel}
-          onModelChange={handleCreateModelChange}
-          showDefaultOption={true}
-          defaultModelId={$selectedModel}
-          defaultOptionLabel={m.settings_aiBehavior_inheritModel_label()}
-          defaultOptionDescription={m.settings_aiBehavior_inheritModel_description()}
-          formatDefaultModelLabel={(model) =>
-            m.settings_aiBehavior_inheritModelPreview_label({ model })}
-          variant="default"
-          size="sm"
-          showReasoning
-          reasoningEffort={newEffort ?? null}
-          onReasoningChange={(effort) => {
-            newEffort = effort ?? undefined;
-          }}
-        />
-      </div>
-    </div>
-
-    <!-- System Prompt (1fr) -->
-    <div class="min-h-0 h-full flex flex-col gap-1.5">
-      <label class="text-sm font-medium text-foreground block shrink-0">
-        {m.settings_aiBehavior_systemPrompt_label()}
-      </label>
-      <textarea
-        bind:value={newPrompt}
-        placeholder={m.settings_aiBehavior_newPrompt_placeholder()}
-        class="w-full grow p-3 text-sm rounded-lg border border-border bg-background resize-none
-          focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2
-          {newPromptIsOverLimit ? 'border-destructive' : ''}"></textarea>
-      {#if newPromptIsApproachingLimit || newPromptIsOverLimit}
-        <div
-          class="flex items-center justify-end text-xs shrink-0 {newPromptIsOverLimit
-            ? 'text-destructive'
-            : 'text-warning'}"
-        >
-          <span>
-            {m.settings_autoSave_limitUsed({
-              percent: formatNumber(newPromptPercentage / 100, {
-                style: 'percent',
-                maximumFractionDigits: 0,
-              }),
-            })}
-          </span>
-        </div>
-      {/if}
-    </div>
-
-    <!-- Actions -->
-    <div class="pt-4 border-border">
-      <div class="flex justify-end gap-2">
-        <Button variant="ghost" onclick={discardNewSpecialist}>
-          {m.settings_aiBehavior_discard()}
-        </Button>
-        <Button
-          variant="default"
-          onclick={createSpecialist}
-          disabled={!newName.trim() || newPromptIsOverLimit}
-        >
-          <Fa icon={faPlus} class="w-3.5 h-3.5 mr-1.5" />
+    <div
+      data-testid="create-specialist-editor-layout"
+      class="grid min-w-0 grid-cols-1 gap-8 xl:h-full xl:min-h-0 xl:flex-1 xl:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)] xl:items-stretch"
+    >
+      <!-- Keep the prompt first so narrow layouts and keyboard order prioritize editing. -->
+      <div
+        data-testid="create-specialist-prompt-column"
+        class="min-h-0 min-w-0 h-full xl:flex xl:flex-col"
+      >
+        <h2 class="mb-2 shrink-0 text-base font-medium text-foreground">
           {m.settings_aiBehavior_createSpecialist_title()}
-        </Button>
+        </h2>
+        <div class="flex min-h-0 flex-1 flex-col gap-1.5">
+          <textarea
+            id="create-specialist-prompt"
+            bind:value={newPrompt}
+            placeholder={m.settings_aiBehavior_newPrompt_placeholder()}
+            class="min-h-72 w-full grow resize-none rounded-lg border border-border bg-background p-3 text-sm
+              focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 xl:min-h-0
+              {newPromptIsOverLimit ? 'border-destructive' : ''}"></textarea>
+          {#if newPromptIsApproachingLimit || newPromptIsOverLimit}
+            <div
+              class="flex shrink-0 items-center justify-end text-xs {newPromptIsOverLimit
+                ? 'text-destructive'
+                : 'text-warning'}"
+            >
+              <span>
+                {m.settings_autoSave_limitUsed({
+                  percent: formatNumber(newPromptPercentage / 100, {
+                    style: 'percent',
+                    maximumFractionDigits: 0,
+                  }),
+                })}
+              </span>
+            </div>
+          {/if}
+        </div>
+      </div>
+
+      <div
+        data-testid="create-specialist-details-column"
+        class="flex min-w-0 flex-col gap-4 xl:pt-8"
+      >
+        <div>
+          <label
+            for="create-specialist-name"
+            class="text-sm font-medium text-foreground block mb-1.5"
+          >
+            {m.settings_aiBehavior_name_label()}
+          </label>
+          <Input
+            id="create-specialist-name"
+            noFocusStyle
+            type="text"
+            bind:value={newName}
+            placeholder={m.settings_aiBehavior_name_placeholder()}
+          />
+        </div>
+
+        <div>
+          <label
+            for="create-specialist-description"
+            class="text-sm font-medium text-foreground block mb-1.5"
+          >
+            {m.settings_aiBehavior_description_label()}
+          </label>
+          <Input
+            id="create-specialist-description"
+            noFocusStyle
+            type="text"
+            bind:value={newDescription}
+            placeholder={m.settings_aiBehavior_description_placeholder()}
+          />
+        </div>
+
+        <div class="flex items-center gap-3">
+          <span class="text-sm font-medium text-foreground shrink-0">
+            {m.settings_aiBehavior_model_label()}
+          </span>
+          <ModelPicker
+            selectedModel={newModel}
+            onModelChange={handleCreateModelChange}
+            showDefaultOption={true}
+            defaultModelId={$selectedModel}
+            defaultOptionLabel={m.settings_aiBehavior_inheritModel_label()}
+            defaultOptionDescription={m.settings_aiBehavior_inheritModel_description()}
+            formatDefaultModelLabel={(model) =>
+              m.settings_aiBehavior_inheritModelPreview_label({ model })}
+            variant="default"
+            size="sm"
+            showReasoning
+            reasoningEffort={newEffort ?? null}
+            onReasoningChange={(effort) => {
+              newEffort = effort ?? undefined;
+            }}
+          />
+        </div>
+
+        <div class="pt-4 border-border">
+          <div class="flex justify-end gap-2">
+            <Button variant="ghost" onclick={discardNewSpecialist}>
+              {m.settings_aiBehavior_discard()}
+            </Button>
+            <Button
+              variant="default"
+              onclick={createSpecialist}
+              disabled={!newName.trim() || newPromptIsOverLimit}
+            >
+              <Fa icon={faPlus} class="w-3.5 h-3.5 mr-1.5" />
+              {m.settings_aiBehavior_createSpecialist_title()}
+            </Button>
+          </div>
+        </div>
       </div>
     </div>
   {/if}
@@ -1040,6 +996,17 @@
 
     display: grid;
     grid-template-rows: min-content min-content 1fr min-content;
+  }
+
+  @media (min-width: 1280px) {
+    .editor-container.full-height-editor-container {
+      display: flex;
+      flex-direction: column;
+      grid-template-rows: none;
+      flex: 1 1 0%;
+      height: 100%;
+      min-height: 0;
+    }
   }
 
   /* Warning color fallback */

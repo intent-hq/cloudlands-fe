@@ -60,7 +60,12 @@
   const reasoningContent = $derived(extractReasoningHeading(content));
   const instanceId = $props.id();
   const detailsId = `reasoning-details-${instanceId}`;
-  const toggleLabel = $derived(reasoningContent.heading ?? m.chat_thinkingBlock_thinking_label());
+  const toggleLabel = $derived(
+    reasoningContent.heading ??
+      (isStreaming
+        ? m.chat_thinkingBlock_thinking_label()
+        : m.chat_thinkingBlock_reasoning_label()),
+  );
 </script>
 
 {#snippet leading()}

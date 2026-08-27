@@ -38,6 +38,12 @@
   const tool = [
     { type: 'tool_use', id: 'tool-1', name: 'read_file', input: { path: 'src/example.ts' } },
   ] as ContentBlock[];
+  const richBlock = [
+    {
+      type: 'text',
+      text: 'Prose beside a rich block\n\n```ts\nconst inset = true;\n```',
+    },
+  ] as ContentBlock[];
 
   const operationalRows = [
     { type: 'thinking', id: 'thinking-first', text: '# First reasoning\n\nFirst detail' },
@@ -103,20 +109,32 @@
       id: 'tool-reasoning',
       content: [
         { type: 'tool_use', id: 'pair-tool-c', name: 'view', input: { path: 'src/c.ts' } },
-        { type: 'thinking', id: 'pair-reasoning-a', text: 'Inspect the tool result' },
+        {
+          type: 'thinking',
+          id: 'pair-reasoning-a',
+          text: 'Inspect the tool result\n\nOperational geometry detail.',
+        },
       ],
     },
     {
       id: 'reasoning-tool',
       content: [
-        { type: 'thinking', id: 'pair-reasoning-b', text: 'Choose the next tool' },
+        {
+          type: 'thinking',
+          id: 'pair-reasoning-b',
+          text: 'Choose the next tool\n\nOperational geometry detail.',
+        },
         { type: 'tool_use', id: 'pair-tool-d', name: 'view', input: { path: 'src/d.ts' } },
       ],
     },
     {
       id: 'reasoning-context',
       content: [
-        { type: 'thinking', id: 'pair-reasoning-c', text: 'Search for the owning primitive' },
+        {
+          type: 'thinking',
+          id: 'pair-reasoning-c',
+          text: 'Search for the owning primitive\n\nOperational geometry detail.',
+        },
         {
           type: 'tool_use',
           id: 'pair-context-a',
@@ -188,6 +206,10 @@
     </div>
     <div data-testid="expanded-group-operational-rows">
       <MessageContent content={expandedGroupOperationalRows} />
+    </div>
+    <div data-testid="static-rich-block"><MessageContent content={richBlock} /></div>
+    <div data-testid="streaming-rich-block">
+      <StreamingMessageContent content={richBlock} isStreaming />
     </div>
     <div data-testid="single-operational-cluster">
       <MessageContent content={tool} />

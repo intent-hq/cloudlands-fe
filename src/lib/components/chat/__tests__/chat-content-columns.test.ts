@@ -14,7 +14,7 @@ describe('chat content column contracts', () => {
     expect(panel).toMatch(
       /class="conversation-column chat-content-measure[^\"]*w-full[^\"]*min-w-0[^\"]*"[\s\S]*?data-testid="chat-transcript-inner"/,
     );
-    expect(panel).toContain('max-width: 70em');
+    expect(panel).toContain('max-width: 140em');
     expect(panel).toContain('data-testid="chat-transcript-scroll-viewport"');
     expect(panel).not.toMatch(/data-testid="chat-transcript-inner"[^>]*overflow-y-auto/);
   });
@@ -25,15 +25,16 @@ describe('chat content column contracts', () => {
     expect(CHAT_TRANSCRIPT_OVERFLOW_CLASS).toContain('overflow-x-hidden');
   });
 
-  it('keeps the prompt divider full width around a separate capped controls column', () => {
-    expect(panel).toContain(
-      'class="composer-prompt-layer relative z-10 w-full border-t border-border"',
-    );
-    expect(panel).toContain('class:pb-3={!hasVisibleTranscriptUtility}');
+  it('keeps the prompt layer full width around one capped, inset composer lane', () => {
+    expect(panel).toContain('class="composer-prompt-layer relative z-10 w-full"');
     expect(panel).toContain('bind:visible={hasVisibleTranscriptUtility}');
     expect(panel).toContain('style:padding-inline-end="{scrollbarGutterWidth}px"');
     expect(panel).toMatch(
-      /class="chat-content-measure mx-auto w-full min-w-0"[\s\S]*?data-testid="chat-composer-controls-inner"/,
+      /class="composer-prompt-lane chat-content-measure mx-auto w-full min-w-0"[\s\S]*?data-testid="chat-composer-lane"/,
+    );
+    expect(panel).toContain('data-testid="chat-composer-controls-inner"');
+    expect(panel).toMatch(
+      /data-testid="chat-composer-lane"[\s\S]*?data-testid="question-wizard-slot"/,
     );
     expect(panel).toContain('.composer-prompt-layer :global(.rich-input-container)');
   });
@@ -43,5 +44,13 @@ describe('chat content column contracts', () => {
     expect(panel).toMatch(
       /class="chat-content-measure mx-auto w-full min-w-0[^\"]*"[\s\S]*?data-testid="pinned-prompt-overlay-lane"/,
     );
+  });
+
+  it('aligns queued-message surfaces with the prompt box at regular and Chief widths', () => {
+    expect(panel).toMatch(
+      /data-testid="transcript-utility-stack"[\s\S]*?class="relative z-20 mt-6 \{isChiefWorkspace[\s\S]*?\? 'mx-1 sm:mx-2'[\s\S]*?: 'w-full'\}"[\s\S]*?data-testid="queued-message-utility-area"/,
+    );
+    expect(panel).not.toContain('queued-message-utility-wide');
+    expect(panel).not.toContain("'-mx-4 sm:-mx-6'");
   });
 });

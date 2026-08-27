@@ -2,7 +2,7 @@
  * Connections IPC bridge — mock fallback for the multi-backend connect channels.
  *
  * Bridges the `connections:*` request/response channels (`list`,
- * `capture-fingerprint`, `add`, `forget`, `switch`) so the connections service
+ * `capture-fingerprint`, `add`, `forget`, `open`, `switch`) so the connections service
  * thunks resolve in bridge-less builds (browser mock) and tests instead of
  * rejecting with UnbridgedMockIpcChannelError.
  *
@@ -26,9 +26,16 @@ import type {
   AddConnectionResult,
   ForgetConnectionParams,
   ForgetConnectionResult,
+  OpenConnectionParams,
+  OpenConnectionResult,
   SwitchConnectionParams,
   SwitchConnectionResult,
   ConnectionBootFallbackEvent,
+  KeychainSyncStateResult,
+  SetKeychainSyncEnabledParams,
+  PublishSelfResult,
+  RefreshSelfResult,
+  SelfPublishedStateResult,
 } from '$shared/types/connections';
 
 /** The always-present, non-forgettable local sidecar entry. */
@@ -46,7 +53,7 @@ let connections: ConnectionRecord[] = [LOCAL_ENTRY];
 let activeId: string = LOCAL_CONNECTION_ID;
 
 registerMockIpcHandler(CONNECTION_CHANNELS.LIST, async (): Promise<ConnectionsListResult> => {
-  return { connections: [...connections], activeId };
+  return { connections: [...connections], activeId, windowBackendId: LOCAL_CONNECTION_ID };
 });
 
 registerMockIpcHandler(
@@ -72,6 +79,8 @@ registerMockIpcHandler(CONNECTION_CHANNELS.ADD, async (arg): Promise<AddConnecti
     host: params.host,
     port: params.port,
     fingerprint: params.fingerprint,
+    // Mirrors the store's normalization: always a boolean on stored records.
+    syncExcluded: params.syncExcluded === true,
     isLocal: false,
   };
   connections = [...connections.filter((c) => c.id !== connection.id), connection];
@@ -85,6 +94,11 @@ registerMockIpcHandler(CONNECTION_CHANNELS.FORGET, async (arg): Promise<ForgetCo
   const { id } = arg as ForgetConnectionParams;
   connections = connections.filter((c) => c.id !== id || c.isLocal);
   if (activeId === id) activeId = LOCAL_CONNECTION_ID;
+  return { id };
+});
+
+registerMockIpcHandler(CONNECTION_CHANNELS.OPEN, async (arg): Promise<OpenConnectionResult> => {
+  const { id } = arg as OpenConnectionParams;
   return { id };
 });
 
@@ -103,3 +117,58 @@ registerMockIpcHandler(
     return { bootFallback: null };
   },
 );
+
+// iCloud-keychain sync (T4). The browser/mock environment has no macOS
+// keychain, so sync reads as unsupported; the pref round-trips in memory so
+// the toggle wiring stays testable.
+let keychainSyncEnabled = false;
+
+function keychainSyncState(): KeychainSyncStateResult {
+  return { supported: false, enabled: keychainSyncEnabled, status: null };
+}
+
+registerMockIpcHandler(
+  CONNECTION_CHANNELS.SYNC_GET_STATE,
+  async (): Promise<KeychainSyncStateResult> => keychainSyncState(),
+);
+
+registerMockIpcHandler(
+  CONNECTION_CHANNELS.SYNC_SET_ENABLED,
+  async (arg): Promise<KeychainSyncStateResult> => {
+    keychainSyncEnabled = (arg as SetKeychainSyncEnabledParams).enabled;
+    return keychainSyncState();
+  },
+);
+
+// Self-publish (publish THIS machine's backend to the synced registry). The
+// mock environment has no local daemon / keychain, so the state reads as
+// never-published and publish round-trips a synthetic self record in memory.
+let selfPublished = false;
+
+registerMockIpcHandler(
+  CONNECTION_CHANNELS.SELF_PUBLISHED_STATE,
+  async (): Promise<SelfPublishedStateResult> => {
+    return {
+      published: selfPublished,
+      suppressed: false,
+      selfConnectionId: selfPublished ? 'mock-self' : null,
+    };
+  },
+);
+
+registerMockIpcHandler(CONNECTION_CHANNELS.PUBLISH_SELF, async (): Promise<PublishSelfResult> => {
+  selfPublished = true;
+  const connection: ConnectionRecord = {
+    id: 'mock-self',
+    label: 'This machine',
+    host: '127.0.0.1',
+    port: 5181,
+    fingerprint: null,
+    isLocal: false,
+  };
+  return { connection };
+});
+
+registerMockIpcHandler(CONNECTION_CHANNELS.REFRESH_SELF, async (): Promise<RefreshSelfResult> => {
+  return { refreshed: selfPublished };
+});

@@ -48,7 +48,7 @@ import { createSafeValidatedHandler } from '../../../main/ipc-validation-middlew
 import { broadcastToBrowserIpcClients } from '../../../main/browser-ipc-broadcast-adapter';
 import { execFileAsync } from '../../../shared/git/git-env';
 import { findBinary } from '../../../shared/main/find-binary';
-import { getBackendClient } from '../../backend/main/backend.ipc';
+import { getBackendClient, getBackendIdForIpcSender } from '../../backend/main/backend.ipc';
 import { hostExec } from '../../../shared/main/host-exec';
 import { hostExecStream } from '../../../shared/main/host-exec-stream';
 import {
@@ -77,6 +77,8 @@ import {
 import { meetsMinimumVersion } from '../../../shared/utils/version-compare';
 import { posixSingleQuote } from '../../../shared/utils/posix-single-quote';
 import { resolveAppIconPath } from '../../../main/utils/resolve-app-icon';
+import { LOCAL_CONNECTION_ID } from '../../../shared/types/connections';
+import { CHIEF_WORKSPACE_ID } from '../../../shared/types/branded-ids';
 
 // ESM-compatible __dirname
 const __filename = fileURLToPath(import.meta.url);
@@ -881,14 +883,19 @@ export function setupSystemIPC() {
    * exists it is restored/focused and returned instead of creating a second
    * one (see main/hud-window.ts).
    */
-  async function createAppWindow(route?: string): Promise<BrowserWindow> {
+  async function createAppWindow(
+    route: string | undefined,
+    openerBackendId: string,
+  ): Promise<BrowserWindow> {
     const { BrowserWindow } = await import('electron');
     const path = await import('path');
-    const { forwardRendererConsoleToMainLog } = await import('../../../main/window');
+    const { forwardRendererConsoleToMainLog, stampWindowWithBackend } =
+      await import('../../../main/window');
     const { HUD_ROUTE_PREFIX, findExistingHudWindow, focusHudWindow, registerHudWindow } =
       await import('../../../main/hud-window');
 
     const isHudRoute = typeof route === 'string' && route.startsWith(HUD_ROUTE_PREFIX);
+    const isChiefRoute = route === `/workspace/${CHIEF_WORKSPACE_ID}`;
     if (isHudRoute) {
       const existing = findExistingHudWindow();
       if (existing) {
@@ -922,6 +929,10 @@ export function setupSystemIPC() {
       ...getWindowAppearanceOptions(isDarkMode),
       ...(iconPath && { icon: iconPath }),
     });
+    stampWindowWithBackend(
+      newWindow,
+      isHudRoute || isChiefRoute ? LOCAL_CONNECTION_ID : openerBackendId,
+    );
     forwardRendererConsoleToMainLog(newWindow);
 
     // Register BEFORE loadURL so a concurrent HUD-open request reuses this
@@ -958,9 +969,12 @@ export function setupSystemIPC() {
     WINDOW_CHANNELS.CREATE,
     createSafeValidatedHandler(
       WindowCreateSchema,
-      async (_event, validated) => {
+      async (event, validated) => {
         try {
-          const newWindow = await createAppWindow(validated.route);
+          const newWindow = await createAppWindow(
+            validated.route,
+            getBackendIdForIpcSender(event.sender),
+          );
           logger.info('New window created', { route: validated.route });
           return { success: true, windowId: newWindow.id };
         } catch (error) {
@@ -980,9 +994,12 @@ export function setupSystemIPC() {
     WINDOW_CHANNELS.OPEN_NEW,
     createSafeValidatedHandler(
       WindowOpenNewSchema,
-      async (_event, validated) => {
+      async (event, validated) => {
         try {
-          const newWindow = await createAppWindow(validated.route);
+          const newWindow = await createAppWindow(
+            validated.route,
+            getBackendIdForIpcSender(event.sender),
+          );
           return { success: true, windowId: newWindow.id };
         } catch (error) {
           logger.error('Failed to open new window', error as Error);
@@ -2292,7 +2309,7 @@ export function setupSystemIPC() {
     SYSTEM_CHANNELS.EXECUTE_COMMAND,
     createSafeValidatedHandler(
       SystemExecuteCommandSchema,
-      async (_event, validated) => {
+      async (event, validated) => {
         try {
           const { command, cwd, workspaceId } = validated;
 
@@ -2310,6 +2327,7 @@ export function setupSystemIPC() {
             cwd,
             workspaceId,
             timeoutMs: 30_000,
+            backendId: getBackendIdForIpcSender(event.sender),
           });
 
           if (result.exitCode === 0) {
@@ -2368,6 +2386,7 @@ export function setupSystemIPC() {
             process.platform === 'win32' ? ['cmd.exe', '/c'] : ['/bin/sh', '-c'];
 
           const handle = await hostExecStream(shellCmd, {
+            backendId: getBackendIdForIpcSender(event.sender),
             args: [shellFlag, command],
             cwd,
             workspaceId,

@@ -6,7 +6,7 @@
     WorkspaceAgentInfo,
     WorkspaceGitSummary,
   } from '$shared/types';
-  import { PullRequestStatus, WorkspaceStatusEnum } from '$shared/types';
+  import { WorkspaceStatusEnum } from '$shared/types';
   import { formatDistanceToNow } from '$lib/i18n/format';
   import { Skeleton } from '$lib/components/ui/skeleton';
   import AgentAvatarWithState from '$features/agent/components/agent-avatar/AgentAvatarWithState.svelte';
@@ -18,8 +18,6 @@
   import { activeStreamsTracker } from '$features/agent/services/active-streams-tracker';
   import { onMount } from 'svelte';
   import { writable } from 'svelte/store';
-  import Fa from 'svelte-fa';
-  import { faCodeMerge, faCodePullRequest } from '@fortawesome/free-solid-svg-icons';
   import { selectAllWorkspaceAgents } from '$store/renderer/slices/workspace-agents/workspace-agents-selectors';
   import { ensureAgentSessionLoaded } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
   import {
@@ -33,13 +31,21 @@
     selectWorkspaceGitSummary,
   } from '$store/renderer/slices/workspace-summaries/workspace-summaries-selectors';
   import { loadWorkspaceSummariesRequested } from '$store/renderer/slices/workspace-summaries/workspace-summaries-slice';
+  import { selectWorkspaceActivePullRequest } from '$store/renderer/slices/workspace/workspace-selectors';
+  import { selectPrMonitors } from '$store/renderer/slices/pr-monitor/pr-monitor-selectors';
 
   import { getWorkspaceActivityDisplayTime } from '$shared/utils/workspace-activity-time';
   import { store as appStore } from '$store/renderer/store';
   import { m } from '$shared/paraglide/messages.js';
   import { formatInteger } from '$lib/i18n/format';
+  import Fa from 'svelte-fa';
   import TaskStatusProgress from './TaskStatusProgress.svelte';
   import WorkspaceStatusIcon from './WorkspaceStatusIcon.svelte';
+  import { constructPrUrl } from './sidebar/sidebar-changes-utils';
+  import {
+    buildWorkspacePRPresentationModel,
+    type WorkspacePRPresentationRow,
+  } from './sidebar/workspace-pr-presentation';
   import {
     getWorkspaceStatusPresentation,
     resolveWorkspaceStatusState,
@@ -96,11 +102,6 @@
     }
   }
 
-  function titleCase(value: string | undefined) {
-    if (!value) return null;
-    return value.charAt(0).toUpperCase() + value.slice(1).toLowerCase().replaceAll('_', ' ');
-  }
-
   function pluralize(count: number, singular: string, plural = `${singular}s`) {
     return `${count} ${count === 1 ? singular : plural}`;
   }
@@ -120,55 +121,6 @@
       createdAt: workspace.updatedAt,
       updatedAt: workspace.updatedAt,
     };
-  }
-
-  function getPullRequestDisplayStatus(
-    pr: PullRequestInfo | null,
-    legacyStatus?: PullRequestStatus,
-  ) {
-    return pr?.isDraft ? PullRequestStatus.Draft : (pr?.status ?? legacyStatus ?? null);
-  }
-
-  function formatPullRequestDetails(pr: PullRequestInfo | null, legacyStatus?: PullRequestStatus) {
-    const status = pr?.isDraft ? PullRequestStatus.Draft : (pr?.status ?? legacyStatus);
-    if (!status) return null;
-
-    const parts: string[] = [];
-    if (!pr?.number || status !== PullRequestStatus.Open) parts.push(titleCase(status) ?? status);
-    if (pr?.mergeConflicts) parts.push('conflicts');
-    if (pr?.ciStatus?.failed) parts.push('CI failing');
-    else if (pr?.ciStatus?.pending) parts.push('CI pending');
-    if (pr?.reviewDecision === 'APPROVED') parts.push('approved');
-    if (pr?.reviewDecision === 'CHANGES_REQUESTED') parts.push('changes requested');
-    return parts.length > 0 ? parts.join(' · ') : null;
-  }
-
-  function getPullRequestStatusColor(status: PullRequestStatus | null) {
-    switch (status) {
-      case PullRequestStatus.Open:
-        return 'text-emerald-500';
-      case PullRequestStatus.Merged:
-        return 'text-purple-500';
-      case PullRequestStatus.Closed:
-        return 'text-red-500';
-      default:
-        return 'text-subtle';
-    }
-  }
-
-  function getPullRequestStatusIcon(status: PullRequestStatus | null) {
-    return status === PullRequestStatus.Merged ? faCodeMerge : faCodePullRequest;
-  }
-
-  function getPullRequestDetailsColor(
-    pr: PullRequestInfo | null,
-    status: PullRequestStatus | null,
-  ) {
-    if (pr?.mergeConflicts || pr?.ciStatus?.failed || pr?.reviewDecision === 'CHANGES_REQUESTED') {
-      return 'text-red-500';
-    }
-    if (pr?.ciStatus?.pending) return 'text-amber-500';
-    return getPullRequestStatusColor(status);
   }
 
   function formatGitSummary(summary: WorkspaceGitSummary | null) {
@@ -196,14 +148,13 @@
 
   function formatRunningAgentStatus(agent: Pick<WorkspaceAgentInfo, 'status'>) {
     const status = getAgentStatus(agent);
-    if (status === 'background') return 'Running';
-    if (status === 'waiting') return 'Waiting';
-    if (status === 'processing') return 'Processing';
-    return 'Running';
+    if (status === 'waiting') return m.workspace_taskStatus_waiting_label();
+    if (status === 'processing') return m.workspace_statusIcon_inProgress_label();
+    return m.workspace_devScripts_running_label();
   }
 
   function formatRunningAgentMetadata(agent: WorkspaceAgentInfo) {
-    const parts = [formatRunningAgentStatus(agent)];
+    const parts: string[] = [formatRunningAgentStatus(agent)];
     const lastActivity = formatRelativeDate(agent.lastActivity);
     if (lastActivity) parts.push(lastActivity);
     return parts.join(' · ');
@@ -266,6 +217,7 @@
   const workspaceTasksInitialized$ = selectWorkspaceTasksInitialized(workspaceIdStore);
   const workspaceDiffSummary$ = selectWorkspaceDiffSummary(workspaceIdStore);
   const workspaceGitSummary$ = selectWorkspaceGitSummary(workspaceIdStore);
+  const prMonitors$ = selectPrMonitors(workspaceIdStore);
 
   // Fetch on-demand task/summary data when the hovered workspace changes.
   $effect(() => {
@@ -296,10 +248,43 @@
     return workspace ? activeStreamsTracker.getStreamingAgentIdsForWorkspace(workspace.id) : [];
   });
 
-  // Attention is workspace-level (BE-owned); treat all member agents as unread.
-  let unreadAgentIds = $derived(
-    workspace?.attention === 'unread' ? (workspace.agentSummary?.agentIds ?? []) : [],
-  );
+  // Attention is workspace-level (BE-owned); mark top-level foreground members
+  // as unread. The daemon's richer `agentSummary.agents` form (PROTOCOL §5.1,
+  // v2.9 `parentAgentId`) is read structurally like hud-selectors' agentInfosOf
+  // — the FE type only declares `agentIds`. Loaded Redux sessions refine the
+  // gate: their derived `hasUnread` wins when present (see deriveAgentHasUnread
+  // for the gating semantics), and background/delegated sessions are
+  // suppressed; unhydrated members fall back to the summary's top-level filter.
+  let unreadAgentIds = $derived.by(() => {
+    if (workspace?.attention !== 'unread') return [];
+    const summary = workspace.agentSummary as
+      | { agents?: unknown; agentIds?: string[] }
+      | undefined;
+    const memberIds = summary?.agentIds ?? [];
+    const parentByAgentId = new Map<string, unknown>();
+    if (Array.isArray(summary?.agents)) {
+      for (const entry of summary.agents) {
+        if (entry && typeof entry === 'object' && typeof (entry as { id?: unknown }).id === 'string') {
+          parentByAgentId.set(
+            (entry as { id: string }).id,
+            (entry as { parentAgentId?: unknown }).parentAgentId,
+          );
+        }
+      }
+    }
+    const sessionsById = new Map($workspaceAgentSessions$.map((session) => [String(session.id), session]));
+    return memberIds.filter((agentId) => {
+      const session = sessionsById.get(String(agentId));
+      if (session) {
+        if (typeof session.hasUnread === 'boolean') return session.hasUnread;
+        if (session.isBackground === true || session.metadata?.isBackground === true) return false;
+        const createdBy = session.metadata?.createdByAgentId;
+        if (typeof createdBy === 'string' && createdBy.length > 0) return false;
+      }
+      const parentAgentId = parentByAgentId.get(agentId);
+      return !(typeof parentAgentId === 'string' && parentAgentId.length > 0);
+    });
+  });
 
   // Filter out streaming agents from unread list
   let unreadOnlyAgentIds = $derived(unreadAgentIds.filter((id) => !streamingAgentIds.includes(id)));
@@ -423,13 +408,37 @@
     return $workspaceTaskProgress$.completed / $workspaceTaskProgress$.total;
   });
 
-  let activePullRequest = $derived(getWorkspacePullRequest(workspace));
-  let pullRequestDisplayStatus = $derived(
-    getPullRequestDisplayStatus(activePullRequest, workspace?.prStatus),
-  );
-  let pullRequestDetailsText = $derived(
-    formatPullRequestDetails(activePullRequest, workspace?.prStatus),
-  );
+  let activePullRequest = $derived.by(() => {
+    if (!workspace) return null;
+    return (
+      selectWorkspaceActivePullRequest.select(appStore.state, workspace.id) ??
+      getWorkspacePullRequest(workspace)
+    );
+  });
+  let workspacePrRows = $derived.by(() => {
+    if (!workspace) return [];
+    const ws = workspace;
+    const workspaceRepo =
+      ws.repositoryOwner && ws.repositoryName
+        ? `${ws.repositoryOwner}/${ws.repositoryName}`
+        : undefined;
+    return buildWorkspacePRPresentationModel({
+      workspacePRs: ws.pullRequests,
+      activePR: activePullRequest,
+      monitors: $prMonitors$,
+      workspaceRepo,
+      buildPrUrl: (prNum, fallbackUrl) =>
+        constructPrUrl(prNum, ws.repositoryOwner, ws.repositoryName, fallbackUrl),
+      getDisplayTitle: (pr) => pr.title,
+    });
+  });
+
+  function getWorkspacePrLabel(pr: WorkspacePRPresentationRow): string {
+    const identity = pr.repo
+      ? m.workspace_card_prBadge_repoLine_tooltip({ repo: pr.repo, number: pr.number })
+      : m.workspace_card_prBadge_label({ number: ` #${pr.number}` });
+    return [identity, pr.title, pr.details].filter(Boolean).join('\n');
+  }
 
   let gitSummaryText = $derived(workspace ? formatGitSummary($workspaceGitSummary$) : null);
 
@@ -455,164 +464,275 @@
 </script>
 
 <div
-  class="bg-popover shadow-(--elevation-overlay) ring-1 ring-border/70 py-3 px-4 w-[320px] shrink-0 max-w-[calc(100vw-1rem)] flex flex-col gap-1.5 text-left"
+  class="workspace-hover-card shrink-0 overflow-hidden rounded-lg bg-background text-left shadow-(--elevation-overlay) ring-1 ring-border/70"
+  data-workspace-hover-card-layout="two-column"
 >
-  <!-- Header: Title and repo -->
-  <div class="w-full" data-workspace-hover-card-header>
-    {#if isLoading || !workspace}
-      <Skeleton class="h-5 w-40" />
-    {:else}
-      <div class="flex items-start gap-2" data-workspace-hover-card-title-row>
-        <div class="min-w-0 flex-1">
-          <div class="text-sm font-semibold text-foreground truncate">
-            {workspace?.title || m.workspace_links_untitled_label()}
+  <div class="workspace-hover-card__columns grid min-h-0" data-workspace-hover-card-columns>
+    <!-- Left column: identity, message, progress, and recency -->
+    <div class="flex min-h-52 min-w-0 flex-col px-4 py-3.5" data-workspace-hover-card-identity>
+      <div class="w-full" data-workspace-hover-card-header>
+        {#if isLoading || !workspace}
+          <Skeleton class="h-5 w-40" />
+        {:else}
+          <div class="flex items-start gap-2" data-workspace-hover-card-title-row>
+            <div class="min-w-0 flex-1">
+              <div
+                class="type-title line-clamp-2 text-base font-semibold leading-5 text-foreground"
+                data-workspace-hover-card-title
+              >
+                {workspace?.title || m.workspace_links_untitled_label()}
+              </div>
+            </div>
+            {#if lifecycleText}
+              <div
+                class="type-caption shrink-0 rounded-full bg-muted px-2 py-0.5 font-medium text-subtle"
+              >
+                {lifecycleText}
+              </div>
+            {/if}
           </div>
-        </div>
-        {#if lifecycleText}
-          <div
-            class="shrink-0 rounded-full bg-muted px-2 py-0.5 text-[0.65rem] font-medium text-subtle"
-          >
-            {lifecycleText}
+          <div class="w-full flex items-center -mt-0.5 gap-1" data-workspace-hover-card-repo-row>
+            <div
+              class="type-body flex-1 truncate border-none bg-transparent p-0 text-left font-mono text-xs text-muted-foreground"
+            >
+              {repoDisplayName}
+            </div>
+          </div>
+          {#if statusMessage}
+            <div
+              class="type-body mt-3 min-w-0 w-full line-clamp-3 border-none bg-transparent px-0.5 text-left text-sm leading-snug text-subtle"
+              title={statusMessage}
+              data-workspace-hover-card-message
+              data-workspace-hover-card-status-message
+            >
+              {statusMessage}
+            </div>
+          {/if}
+          <div class="mt-3 min-w-0" data-workspace-hover-card-progress>
+            <TaskStatusProgress
+              statuses={taskStatuses}
+              progress={taskProgressRatio}
+              loading={!$workspaceTasksInitialized$}
+              motion={false}
+              ariaLabel={m.workspace_hoverCard_taskProgress_ariaLabel()}
+              size="compact"
+              fallback={$workspaceTaskProgress$}
+            />
           </div>
         {/if}
       </div>
-      <div class="w-full flex items-center -mt-0.5 gap-1" data-workspace-hover-card-repo-row>
-        <div
-          class="flex-1 text-muted-foreground text-sm truncate text-left bg-transparent border-none p-0 font-inherit"
-        >
-          {repoDisplayName}
-        </div>
-      </div>
-      <div
-        class="mt-1 flex w-full min-w-0 items-center gap-2 text-sm text-muted-foreground"
-        data-workspace-hover-card-status-row
-      >
-        <WorkspaceStatusIcon status={workspaceStatusState} size={14} decorative />
-        <span class="min-w-0 truncate">{workspaceStatusPresentation.label}</span>
-      </div>
-      <div class="mt-2 min-w-0" data-workspace-hover-card-progress>
-        <TaskStatusProgress
-          statuses={taskStatuses}
-          progress={taskProgressRatio}
-          loading={!$workspaceTasksInitialized$}
-          animationKey={String(workspace.id)}
-          ariaLabel={m.workspace_hoverCard_taskProgress_ariaLabel()}
-          size="compact"
-          fallback={$workspaceTaskProgress$}
-        />
-      </div>
-      {#if statusMessage}
-        <div
-          class="mt-2 w-full text-sm text-subtle bg-transparent border-none px-0.5 pt-1 text-left break-words whitespace-pre-wrap transition-all duration-150 leading-snug"
-        >
-          {statusMessage}
-        </div>
-      {/if}
-    {/if}
-  </div>
 
-  {#if !isLoading && workspace}
-    <div class="grid gap-1.5 text-xs text-subtle">
-      {#if runningAgents.length > 0}
-        <div class="mt-1 flex w-full min-w-0 flex-col pb-2">
-          <div
-            class="-mx-1 min-w-0 w-full flex flex-col"
-            role="list"
-            aria-label={m.workspace_hoverCard_runningAgents_ariaLabel()}
-          >
-            {#each runningAgents.slice(0, 3) as agent (agent.id)}
-              <div
-                class="flex min-h-6 items-center justify-between gap-2 px-1.75 py-0.25 text-left min-w-0 w-full"
-                role="listitem"
-                aria-label={`${agent.name} ${formatRunningAgentMetadata(agent)}`}
+      {#if !isLoading && workspace}
+        <div class="mt-auto grid gap-1.5 pt-4 text-xs text-subtle">
+          {#if changeSummaryLineText}
+            <div
+              class="flex w-full min-w-0 items-center py-0.5"
+              aria-label={m.workspace_hoverCard_changes_ariaLabel()}
+            >
+              <span
+                class="type-body min-w-0 truncate text-sm font-medium leading-5 text-foreground"
               >
-                <div class="flex-1 flex min-w-0 flex-1 items-center gap-2">
-                  <span class="grid h-6 w-6 shrink-0 place-items-center">
-                    <AgentAvatarWithState
-                      agentId={agent.id}
-                      variant="standard"
-                      state={getRunningAgentAvatarState(agent)}
-                      specialist={agent.specialist as BuiltinSpecialistId | null}
-                    />
-                  </span>
-                  <span class="min-w-0 truncate text-sm font-medium leading-5 text-foreground">
-                    {agent.name}
-                  </span>
-                </div>
-              </div>
-            {/each}
-            {#if runningAgents.length > 3}
-              <div class="px-1.75 pt-0.75 text-ui text-subtle font-medium">
-                {m.workspace_hoverCard_moreAgents_label({
-                  count: formatInteger(runningAgents.length - 3),
-                })}
-              </div>
-            {/if}
+                {changeSummaryLineText}
+              </span>
+            </div>
+          {/if}
+
+          <div
+            class="type-caption flex items-center gap-3"
+            data-workspace-hover-card-recency
+            data-workspace-hover-card-timestamp
+          >
+            <span class="min-w-0 truncate"
+              >{m.workspace_hoverCard_lastUpdated_label({ time: lastActivityText })}</span
+            >
           </div>
         </div>
       {/if}
+    </div>
 
-      {#if hoverCardStackItems.length > 0}
+    <!-- Right column: agent state, bounded active rows, and pull request -->
+    {#if !isLoading && workspace}
+      <div
+        class="workspace-hover-card__activity flex min-h-0 min-w-0 flex-col gap-3 border-solid border-border px-4 py-3.5"
+        data-workspace-hover-card-activity
+      >
         <div
-          class="flex items-center py-1 pl-[var(--agent-avatar-emphasized-ring-width)] pr-[var(--agent-avatar-emphasized-ring-width)]"
-          data-workspace-hover-card-agent-stack
+          class="workspace-hover-card__detail-row type-caption grid min-h-8 w-full min-w-0 grid-cols-[1.5rem_minmax(0,1fr)] items-center py-0.5"
+          data-workspace-hover-card-agent-summary
+          data-workspace-hover-card-status-row
         >
-          <AgentAvatarStack items={hoverCardStackItems} />
-        </div>
-      {/if}
-
-      {#if activePullRequest}
-        <div
-          class="relative min-w-0 -mx-1 flex w-full items-center gap-2 px-1 py-0.5"
-          aria-label={m.workspace_hoverCard_pullRequest_label()}
-        >
-          <Fa
-            icon={getPullRequestStatusIcon(pullRequestDisplayStatus)}
-            size="xs"
-            class="{getPullRequestStatusColor(pullRequestDisplayStatus)} shrink-0"
-          />
-          <span class="flex min-w-0 flex-1 items-center gap-2 text-left">
-            <span class="min-w-0 flex-1 truncate text-sm text-foreground">
-              {activePullRequest.title || m.workspace_hoverCard_pullRequest_label()}
-            </span>
-            {#if activePullRequest.number}
-              <span class="shrink-0 text-ui text-subtle">#{activePullRequest.number}</span>
-            {/if}
-            {#if pullRequestDetailsText}
-              <span
-                class="max-w-28 shrink-0 truncate text-right text-ui font-medium {getPullRequestDetailsColor(
-                  activePullRequest,
-                  pullRequestDisplayStatus,
-                )}"
-              >
-                {pullRequestDetailsText}
-              </span>
-            {/if}
+          <span
+            class="grid h-6 w-6 shrink-0 place-items-center"
+            data-workspace-hover-card-status-icon
+          >
+            <WorkspaceStatusIcon
+              status={workspaceStatusState}
+              size={14}
+              decorative
+              class={workspaceStatusState === 'blocked' ? 'text-foreground' : undefined}
+            />
+          </span>
+          <span
+            class="min-w-0 truncate text-sm font-medium leading-5 normal-case text-foreground"
+            data-workspace-hover-card-status-text
+          >
+            {workspaceStatusPresentation.label}
           </span>
         </div>
-      {/if}
 
-      {#if changeSummaryLineText}
-        <div
-          class="-mx-1 flex w-full min-w-0 items-center px-1 py-0.5"
-          aria-label={m.workspace_hoverCard_changes_ariaLabel()}
-        >
-          <span class="min-w-0 truncate text-sm font-medium leading-5 text-foreground">
-            {changeSummaryLineText}
-          </span>
+        <div class="flex min-h-0 flex-col gap-3 overflow-y-auto">
+          {#if runningAgents.length > 0 || hoverCardStackItems.length > 0}
+            <div class="grid min-w-0 w-full gap-1" data-workspace-hover-card-agent-section>
+              {#if runningAgents.length > 0}
+                <div
+                  class="min-w-0 w-full flex flex-col"
+                  role="list"
+                  aria-label={m.workspace_hoverCard_runningAgents_ariaLabel()}
+                  data-workspace-hover-card-agent-list
+                >
+                  {#each runningAgents.slice(0, 3) as agent (agent.id)}
+                    <div
+                      class="flex min-h-8 w-full min-w-0 items-center py-0.5 text-left"
+                      role="listitem"
+                      aria-label={`${agent.name} ${formatRunningAgentMetadata(agent)}`}
+                      data-workspace-hover-card-agent-row
+                    >
+                      <div
+                        class="workspace-hover-card__detail-row grid min-w-0 flex-1 grid-cols-[1.5rem_minmax(0,1fr)] items-center"
+                      >
+                        <span
+                          class="grid h-6 w-6 shrink-0 place-items-center"
+                          data-workspace-hover-card-agent-icon
+                        >
+                          <AgentAvatarWithState
+                            agentId={agent.id}
+                            variant="standard"
+                            state={getRunningAgentAvatarState(agent)}
+                            specialist={agent.specialist as BuiltinSpecialistId | null}
+                          />
+                        </span>
+                        <span
+                          class="type-body min-w-0 truncate text-sm font-medium leading-5 text-foreground"
+                          data-workspace-hover-card-agent-text
+                        >
+                          {agent.name}
+                        </span>
+                      </div>
+                    </div>
+                  {/each}
+                </div>
+                {#if runningAgents.length > 3}
+                  <div
+                    class="pt-1 text-ui text-subtle font-medium"
+                    data-workspace-hover-card-overflow
+                  >
+                    {m.workspace_hoverCard_moreAgents_label({
+                      count: formatInteger(runningAgents.length - 3),
+                    })}
+                  </div>
+                {/if}
+              {/if}
+
+              {#if hoverCardStackItems.length > 0}
+                <div
+                  class="flex items-center py-1 pl-[var(--agent-avatar-emphasized-ring-width)] pr-[var(--agent-avatar-emphasized-ring-width)]"
+                  data-workspace-hover-card-agent-stack
+                >
+                  <AgentAvatarStack items={hoverCardStackItems} />
+                </div>
+              {/if}
+            </div>
+          {/if}
+
+          {#if workspacePrRows.length > 0}
+            <div
+              class="grid min-w-0 w-full gap-1 py-0.5"
+              aria-label={m.workspace_hoverCard_pullRequest_label()}
+              role="list"
+              data-workspace-hover-card-pr-list
+            >
+              {#each workspacePrRows as pr (pr.identity)}
+                <div
+                  class="workspace-hover-card__detail-row grid min-h-8 w-full min-w-0 grid-cols-[1.5rem_minmax(0,1fr)] items-center rounded-sm py-0.5 text-left"
+                  aria-label={getWorkspacePrLabel(pr)}
+                  role="listitem"
+                  data-workspace-hover-card-pr-row
+                  data-pr-identity={pr.identity}
+                  data-pr-status={pr.status}
+                >
+                  <span
+                    class="grid h-6 w-6 shrink-0 place-items-center"
+                    aria-hidden="true"
+                    data-workspace-hover-card-pr-icon
+                  >
+                    <Fa icon={pr.statusIcon} size={16} class="shrink-0 {pr.foregroundClass}" />
+                  </span>
+                  <span class="grid min-w-0 flex-1 gap-y-0.5" data-workspace-hover-card-pr-text>
+                    <span class="flex min-w-0 items-baseline gap-2">
+                      <span
+                        class="type-body min-w-0 flex-1 truncate text-sm font-medium leading-5 text-foreground"
+                      >
+                        {pr.title || m.workspace_hoverCard_pullRequest_label()}
+                      </span>
+                      <span class="type-caption shrink-0 text-subtle">#{pr.number}</span>
+                    </span>
+                    <span class="flex min-w-0 items-center gap-1.5">
+                      {#if pr.repoContext}
+                        <span class="type-caption max-w-24 shrink-0 truncate text-subtle"
+                          >{pr.repoContext}</span
+                        >
+                      {/if}
+                      <span
+                        class="type-caption min-w-0 truncate {pr.foregroundClass}"
+                        data-workspace-hover-card-pr-status
+                      >
+                        {pr.details.replaceAll('\n', ' · ')}
+                      </span>
+                    </span>
+                  </span>
+                </div>
+              {/each}
+            </div>
+          {/if}
         </div>
-      {/if}
-
-      <div class="flex items-center justify-between gap-3">
-        <span class="min-w-0 truncate text-right"
-          >{m.workspace_hoverCard_lastUpdated_label({ time: lastActivityText })}</span
-        >
       </div>
-    </div>
-  {:else if isLoading}
-    <div class="grid gap-1.5">
-      <Skeleton class="h-4 w-48" />
-      <Skeleton class="h-4 w-36" />
-    </div>
-  {/if}
+    {:else if isLoading}
+      <div class="grid gap-1.5 border-t border-border px-4 py-3.5">
+        <Skeleton class="h-4 w-48" />
+        <Skeleton class="h-4 w-36" />
+      </div>
+    {/if}
+  </div>
 </div>
+
+<style>
+  .workspace-hover-card {
+    width: 35rem;
+    max-width: min(100%, calc(100vw - 1rem));
+    max-height: min(27.5rem, calc(100vh - 1rem));
+    container-type: inline-size;
+  }
+
+  .workspace-hover-card__columns {
+    grid-template-columns: minmax(0, 1.08fr) minmax(0, 0.92fr);
+  }
+
+  .workspace-hover-card__activity {
+    border-width: 0 0 0 1px;
+  }
+
+  .workspace-hover-card__detail-row {
+    column-gap: 0.375rem;
+  }
+
+  @container (max-width: 31.99rem) {
+    .workspace-hover-card__columns {
+      grid-template-columns: minmax(0, 1fr);
+      overflow-y: auto;
+    }
+
+    .workspace-hover-card__activity {
+      border-width: 1px 0 0;
+    }
+  }
+</style>

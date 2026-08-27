@@ -313,7 +313,7 @@
                 onclick={(e) => onShowAgent?.(event.actor.id!, e)}
                 title={m.log_timeline_openAgent_tooltip()}
               >
-                <AgentAvatar size={24} agentId={event.actor.id} />
+                <AgentAvatar variant="emphasized" agentId={event.actor.id} />
               </button>
             {/if}
           </div>

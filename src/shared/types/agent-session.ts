@@ -51,8 +51,8 @@ export interface QueuedMessage {
   queuedAt: string;
   /** Optional context items attached to the message */
   contextItems?: QueuedMessageContextItem[];
-  /** Optional image blocks attached to the message */
-  imageBlocks?: Array<{ type: 'image'; data: string; mimeType: string }>;
+  /** Optional image blocks attached to the message (inline data or attachment reference) */
+  imageBlocks?: Array<{ type: 'image'; data?: string; mimeType?: string; attachmentId?: string }>;
   /** Optional attachment-reference file blocks attached to the message */
   fileBlocks?: Array<{
     type: 'file';
@@ -235,7 +235,9 @@ export interface AgentSession {
    * lastMessageId !== metadata.lastSeenMessageId` (an absent seen marker
    * counts as unread). See `deriveAgentHasUnread` and
    * intent-hq/monorepo#1597. Always `false` for daemons that omit
-   * `lastMessageId`.
+   * `lastMessageId`, for background agents (`isBackground` /
+   * `metadata.isBackground`), and for delegated child agents
+   * (`metadata.createdByAgentId` set).
    */
   hasUnread?: boolean;
 
@@ -248,6 +250,13 @@ export interface AgentSession {
    *  daemon restart (the session survives). Rows carrying it are hidden from
    *  the FE agent list. */
   pendingDeleteAt?: string;
+
+  /** ISO timestamp of a soft retirement (PROTOCOL §5.5 soft retire, v7.5).
+   *  Presence-detected: served on `agent.get`/`agent.getSession` always and on
+   *  `agent.list` rows only under `includeRetired: true`; omitted on active
+   *  rows, never `null`. A retired session is inert daemon-side (sends,
+   *  queueing, watches, retry all reject) until `agent.restore` clears it. */
+  retiredAt?: string;
 
   /** Harness version stamped at session creation (PROTOCOL §5.5, additive;
    *  e.g. "1.0" — legacy rows backfill to "1.0"). Immutable creation-time

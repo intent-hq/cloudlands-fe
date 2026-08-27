@@ -126,23 +126,32 @@
 </script>
 
 <!--
-  Kept offscreen at real size: display:none guests stop painting, which breaks
-  CDP screenshot/capture, so the container sits outside the viewport instead.
+  Kept in-viewport but visually hidden: display:none guests stop painting,
+  and out-of-viewport guests (the old left:-10000px parking) get
+  viewport-culled by the compositor — no BeginFrames, so CDP
+  Page.captureScreenshot and webContents.capturePage() hang until the
+  caller's budget kills them (monorepo#3366). A 1x1 overflow-hidden
+  container at the viewport origin (opacity 0, no pointer events) keeps
+  the full-size guests genuinely painting while staying invisible and
+  non-interactive. `inert` removes the (focusable) webviews from the tab
+  order; harness-verified to not suppress BeginFrames.
 -->
 <div
-  class="fixed top-0 h-[800px] w-[1280px]"
-  style:left="-10000px"
+  class="pointer-events-none fixed left-0 top-0 h-px w-px overflow-hidden opacity-0"
   aria-hidden="true"
+  inert
   data-offscreen-webview-host
 >
-  {#each entries as entry (entry.tabId)}
-    <webview
-      class="absolute inset-0 h-full w-full border-none"
-      src={entry.url}
-      partition={BROWSER_PANEL_PARTITION}
-      allowpopups
-      data-offscreen-webview-tab={entry.tabId}
-      use:offscreenWebview={entry}
-    ></webview>
-  {/each}
+  <div class="relative h-[800px] w-[1280px]">
+    {#each entries as entry (entry.tabId)}
+      <webview
+        class="absolute inset-0 h-full w-full border-none"
+        src={entry.url}
+        partition={BROWSER_PANEL_PARTITION}
+        allowpopups
+        data-offscreen-webview-tab={entry.tabId}
+        use:offscreenWebview={entry}
+      ></webview>
+    {/each}
+  </div>
 </div>

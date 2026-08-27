@@ -10,16 +10,15 @@ describe('sidebar shell background ownership', () => {
 
     expect(panel).toContain('sidebar-panel h-full flex flex-col relative text-sidebar-foreground');
     expect(panel).not.toMatch(/sidebar-panel[^"\n]*(?:bg-sidebar|background)/);
-    expect(panel).toMatch(
-      /class="shrink-0 h-full overflow-clip \[overflow-clip-margin:0\.5rem\]"\s+data-sidebar-panel/,
-    );
+    expect(panel).toMatch(/class="shrink-0 h-full overflow-clip"\s+data-sidebar-panel/);
+    expect(panel).toContain("style:overflow-clip-margin={expanded ? '0.5rem' : '0px'}");
     expect(panel).toMatch(
       /class="min-h-0 flex-1 overflow-clip \[overflow-clip-margin:0\.5rem\] flex flex-col"\s+data-combined-panel-chief/,
     );
     expect(panel).not.toMatch(/data-sidebar-panel[^>]+(?:bg-sidebar|background)/s);
   });
 
-  it('preserves contained surfaces and canonical dark token lightness', () => {
+  it('preserves contained surfaces and the approved dark neutral tokens', () => {
     const allWorkspaces = source(
       'src/lib/components/layout/sidebar-nav/cards/AllWorkspacesCard.svelte',
     );
@@ -31,7 +30,7 @@ describe('sidebar shell background ownership', () => {
     expect(workspaceCard).toContain('hover:bg-background/40');
     expect(workspaceCard).toContain("selected && 'bg-primary/5 ring-1 ring-primary/30'");
     expect(allWorkspaces).toContain('overflow-y-auto flex-1 min-h-0 pt-1 pb-2');
-    expect(tokens).toContain('--theme-dark-background: 154 16% 3%;');
-    expect(tokens).toContain('--theme-dark-sidebar: 154 16% 5%;');
+    expect(tokens).toContain('--theme-dark-background: 0 0% 10.1960784314%;');
+    expect(tokens).toContain('--theme-dark-sidebar: 0 0% 14.9019607843%;');
   });
 });

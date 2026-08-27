@@ -122,6 +122,20 @@ for (const config of [
     expect(
       Math.max(...samples.map((sample) => Math.abs(sample.bottomDistance))),
     ).toBeLessThanOrEqual(8);
+
+    // Regression (monorepo#3379): repeat a rapid disclosure round and require
+    // the same bottom lock — the css/WAAPI-driven motion drifted 14-22px here.
+    await startSampling(component);
+    for (let click = 0; click < 4; click += 1) {
+      await trigger.evaluate((node) => (node as HTMLElement).click());
+      await page.waitForTimeout(40);
+    }
+    const repeatSamples = await finishSampling(page);
+    await expect(trigger).toHaveAttribute('aria-expanded', 'true');
+    expect(repeatSamples).toHaveLength(48);
+    expect(
+      Math.max(...repeatSamples.map((sample) => Math.abs(sample.bottomDistance))),
+    ).toBeLessThanOrEqual(8);
     await expect(component.getByTestId('disclosure-bottom-state')).toContainText('locked:0');
     await expectAnimationsCleanedUp(details);
     expect(
@@ -195,28 +209,51 @@ test('reverses the outer subscription disclosure and keeps native keyboard contr
 
 test('accepts live response updates during collapse without stale detached content', async ({
   mount,
+  page,
 }) => {
   const initialProps = { responseStreaming: true, responseText: 'Initial live activity.' };
   const component = await mount(DisclosureMotionPreparationHost, { props: initialProps });
   const transcript = component.getByTestId('disclosure-transcript');
   await transcript.evaluate((node) => node.scrollTo(0, node.scrollHeight));
   const toggle = component.getByTestId('response-group-disclosure');
-  const details = await controlledContent(component, toggle);
 
-  await toggle.dispatchEvent('click');
   await expect(toggle).toHaveAttribute('aria-expanded', 'false');
-  await expectAnimationRunning(details);
+  await expect(component.getByTestId('prepared-response-current')).toHaveText(
+    'Initial live activity.',
+  );
+  await toggle.click();
+  await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+  await expect(component.getByTestId('prepared-response-body')).toBeVisible();
+  await toggle.click();
+  await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+  await page.waitForTimeout(35);
   await component.update({
     props: { ...initialProps, responseText: 'Updated live activity while collapsing.' },
   });
-  await expect(details).toHaveCount(0);
+  await page.waitForTimeout(240);
+  await expect(component.locator('[data-operational-expanded-content]')).toHaveCount(0);
+  const current = component.getByTestId('prepared-response-current');
+  await expect(current).toBeVisible();
+  await expect(current).toHaveText('Updated live activity while collapsing.');
+  expect(
+    await current.evaluate((node) => node.closest('[data-operational-expanded-content]') === null),
+  ).toBe(true);
+  await expect(component.getByTestId('prepared-response-body')).toHaveCount(0);
   expect(
     await transcript.evaluate((node) => node.scrollHeight - node.clientHeight - node.scrollTop),
   ).toBeLessThanOrEqual(8);
 
   await toggle.click();
-  await expect(component.getByText('Updated live activity while collapsing.')).toBeVisible();
-  await expectAnimationsCleanedUp(details);
+  await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+  await expect(component.getByTestId('prepared-response-body')).toContainText(
+    'Updated live activity while collapsing.',
+  );
+  await page.waitForTimeout(240);
+  expect(
+    await component
+      .locator('[data-operational-expanded-content]')
+      .evaluate((node) => node.getAnimations().length),
+  ).toBe(0);
 });
 
 for (const cohort of [

@@ -3,8 +3,7 @@
    * Aurora Background Component
    *
    * Creates a subtle WebGL-powered northern lights effect that appears behind
-   * the chat input when streaming. Uses the seeded agent color palette
-   * seeded by the agent ID for consistency.
+   * the chat input when streaming. Uses the canonical active agent color.
    *
    * Performance optimizations:
    * - Throttled to 30fps instead of 60fps (halves GPU usage)
@@ -14,9 +13,6 @@
    */
   import { onMount, onDestroy } from 'svelte';
   import { browser } from '$app/environment';
-  import { agentColorPalette } from '$lib/utils/agent-colors';
-  import { stringToSeededRandom } from '$lib/utils/hash';
-  import { selectIsDarkTheme } from '$store/renderer/slices/theme/theme-selectors';
 
   interface Props {
     agentId?: string;
@@ -37,7 +33,7 @@
   let isPageVisible = $state<boolean>(true);
   let prefersReducedMotion = $state<boolean>(false);
   let lastFrameTime = $state<number>(0);
-  const isDarkTheme = selectIsDarkTheme();
+  let semanticColorReady = false;
 
   // Target 30fps instead of 60fps to reduce GPU usage
   const TARGET_FRAME_TIME = 1000 / 30; // ~33ms per frame
@@ -55,160 +51,51 @@
     seed: WebGLUniformLocation | null;
   } | null = null;
 
-  // Cached RGB color values (recomputed only when agentId or dark mode changes)
-  let cachedRgbColors: {
-    rgb1: [number, number, number];
-    rgb2: [number, number, number];
-    rgb3: [number, number, number];
-  } | null = null;
-  let cachedColorKey = '';
-
   // Cached device pixel ratio (updated on resize, not every frame)
   let cachedDpr = 1;
 
-  // Hue shift a color by degrees (same logic as avatar-constants.ts)
-  function hueShiftColor(hexColor: string, hueShift: number): string {
-    const match = hexColor.match(/^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i);
-    if (!match) return hexColor;
+  function getSemanticAuroraColor(): [number, number, number] | null {
+    if (!canvas) return null;
 
-    const [, rHex, gHex, bHex] = match;
-    const r = parseInt(rHex, 16) / 255;
-    const g = parseInt(gHex, 16) / 255;
-    const b = parseInt(bHex, 16) / 255;
+    const match = getComputedStyle(canvas).color.match(/^rgba?\((.+)\)$/i);
+    if (!match) return null;
 
-    // RGB to HSL
-    const max = Math.max(r, g, b);
-    const min = Math.min(r, g, b);
-    let h = 0;
-    let s = 0;
-    const l = (max + min) / 2;
+    const channels = match[1]
+      .split(/[\s,\/]+/)
+      .filter(Boolean)
+      .slice(0, 3);
+    if (channels.length !== 3) return null;
 
-    if (max !== min) {
-      const d = max - min;
-      s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
-      switch (max) {
-        case r:
-          h = (g - b) / d + (g < b ? 6 : 0);
-          break;
-        case g:
-          h = (b - r) / d + 2;
-          break;
-        case b:
-          h = (r - g) / d + 4;
-          break;
-      }
-      h /= 6;
+    const rgb = channels.map((channel) => {
+      const value = Number.parseFloat(channel);
+      return channel.endsWith('%') ? value / 100 : value / 255;
+    });
+    if (rgb.some((channel) => !Number.isFinite(channel) || channel < 0 || channel > 1)) {
+      return null;
     }
-
-    // Apply hue shift
-    h = (h + hueShift / 360) % 1;
-    if (h < 0) h += 1;
-
-    // HSL to RGB
-    const hue2rgb = (p: number, q: number, t: number) => {
-      if (t < 0) t += 1;
-      if (t > 1) t -= 1;
-      if (t < 1 / 6) return p + (q - p) * 6 * t;
-      if (t < 1 / 2) return q;
-      if (t < 2 / 3) return p + (q - p) * (2 / 3 - t) * 6;
-      return p;
-    };
-
-    let newR, newG, newB;
-    if (s === 0) {
-      newR = newG = newB = l;
-    } else {
-      const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
-      const p = 2 * l - q;
-      newR = hue2rgb(p, q, h + 1 / 3);
-      newG = hue2rgb(p, q, h);
-      newB = hue2rgb(p, q, h - 1 / 3);
-    }
-
-    const toHex = (c: number) =>
-      Math.round(c * 255)
-        .toString(16)
-        .padStart(2, '0');
-    return `#${toHex(newR)}${toHex(newG)}${toHex(newB)}`;
+    return rgb as [number, number, number];
   }
 
-  // Generate colors based on agent ID seed - pick one base color and hue shift
-  function getAuroraColors(seed: string): [string, string, string] {
-    const random = stringToSeededRandom(seed);
-    const baseColor = random.pick([...agentColorPalette]);
-    // Small hue shifts to keep colors in similar range (like avatar does with 30deg)
-    const color2 = hueShiftColor(baseColor, 15);
-    const color3 = hueShiftColor(baseColor, -10);
-    return [baseColor, color2, color3];
+  function syncSemanticAuroraColor(): boolean {
+    // Keep the existing prop contract without letting agent identity affect the color.
+    void agentId;
+    semanticColorReady = false;
+    if (!gl || !program || !uniformLocations) return false;
+
+    const color = getSemanticAuroraColor();
+    if (!color) return false;
+
+    gl.useProgram(program);
+    for (const location of [
+      uniformLocations.color1,
+      uniformLocations.color2,
+      uniformLocations.color3,
+    ]) {
+      gl.uniform3f(location, color[0], color[1], color[2]);
+    }
+    semanticColorReady = true;
+    return true;
   }
-
-  // Convert hex to RGB array (0-1 range) with dark mode adjustments
-  // Uses same treatment as avatar: darken to 65% brightness, reduce saturation to 50%
-  function hexToRgb(hex: string, darkMode: boolean): [number, number, number] {
-    const match = hex.match(/^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i);
-    if (!match) return [1, 1, 1];
-
-    let r = parseInt(match[1], 16) / 255;
-    let g = parseInt(match[2], 16) / 255;
-    let b = parseInt(match[3], 16) / 255;
-
-    // Convert RGB to HSL
-    const max = Math.max(r, g, b);
-    const min = Math.min(r, g, b);
-    let h = 0;
-    let s = 0;
-    let l = (max + min) / 2;
-
-    if (max !== min) {
-      const d = max - min;
-      s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
-      switch (max) {
-        case r:
-          h = (g - b) / d + (g < b ? 6 : 0);
-          break;
-        case g:
-          h = (b - r) / d + 2;
-          break;
-        case b:
-          h = (r - g) / d + 4;
-          break;
-      }
-      h /= 6;
-    }
-
-    if (darkMode) {
-      // Same as avatar: reduce saturation to 90%
-      s = Math.min(1, Math.max(0, s * 0.9));
-    }
-
-    // Also dim the overall effect
-    const dimFactor = darkMode ? 0.7 : 1.0;
-
-    // Convert HSL back to RGB
-    const hue2rgb = (p: number, q: number, t: number) => {
-      if (t < 0) t += 1;
-      if (t > 1) t -= 1;
-      if (t < 1 / 6) return p + (q - p) * 6 * t;
-      if (t < 1 / 2) return q;
-      if (t < 2 / 3) return p + (q - p) * (2 / 3 - t) * 6;
-      return p;
-    };
-
-    let newR, newG, newB;
-    if (s === 0) {
-      newR = newG = newB = l;
-    } else {
-      const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
-      const p = 2 * l - q;
-      newR = hue2rgb(p, q, h + 1 / 3);
-      newG = hue2rgb(p, q, h);
-      newB = hue2rgb(p, q, h - 1 / 3);
-    }
-
-    return [newR * dimFactor, newG * dimFactor, newB * dimFactor];
-  }
-
-  let auroraColors = $derived(getAuroraColors(agentId));
 
   const vertexShaderSource = `
     attribute vec2 a_position;
@@ -453,6 +340,7 @@
       color3: gl.getUniformLocation(program, 'u_color3'),
       seed: gl.getUniformLocation(program, 'u_seed'),
     };
+    syncSemanticAuroraColor();
 
     // Cache initial DPR
     cachedDpr = window.devicePixelRatio || 1;
@@ -502,36 +390,9 @@
     gl.uniform2f(uniformLocations.resolution, width, height);
     gl.uniform1f(uniformLocations.seed, seed);
 
-    // Use cached RGB colors (recomputed only when agentId or dark mode changes)
-    const colorKey = `${agentId}-${$isDarkTheme}`;
-    if (cachedColorKey !== colorKey) {
-      const [c1, c2, c3] = auroraColors;
-      cachedRgbColors = {
-        rgb1: hexToRgb(c1, $isDarkTheme),
-        rgb2: hexToRgb(c2, $isDarkTheme),
-        rgb3: hexToRgb(c3, $isDarkTheme),
-      };
-      cachedColorKey = colorKey;
-    }
-    if (cachedRgbColors) {
-      gl.uniform3f(
-        uniformLocations.color1,
-        cachedRgbColors.rgb1[0],
-        cachedRgbColors.rgb1[1],
-        cachedRgbColors.rgb1[2],
-      );
-      gl.uniform3f(
-        uniformLocations.color2,
-        cachedRgbColors.rgb2[0],
-        cachedRgbColors.rgb2[1],
-        cachedRgbColors.rgb2[2],
-      );
-      gl.uniform3f(
-        uniformLocations.color3,
-        cachedRgbColors.rgb3[0],
-        cachedRgbColors.rgb3[1],
-        cachedRgbColors.rgb3[2],
-      );
+    if (!semanticColorReady && !syncSemanticAuroraColor()) {
+      animationFrame = requestAnimationFrame(render);
+      return;
     }
 
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
@@ -567,8 +428,7 @@
     program = null;
     gl = null;
     uniformLocations = null;
-    cachedRgbColors = null;
-    cachedColorKey = '';
+    semanticColorReady = false;
   }
 
   // Handle page visibility changes
@@ -615,11 +475,21 @@
     // Listen for DPR changes (e.g., moving between retina/non-retina displays)
     setupDprListener();
 
+    const handleSemanticColorChange = () => syncSemanticAuroraColor();
+    const themeObserver = new MutationObserver(handleSemanticColorChange);
+    themeObserver.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ['class', 'style', 'data-theme', 'data-theme-override'],
+    });
+    window.addEventListener('theme-changed', handleSemanticColorChange);
+
     initWebGL();
 
     return () => {
       document.removeEventListener('visibilitychange', handleVisibilityChange);
       motionQuery.removeEventListener('change', handleMotionPreference);
+      window.removeEventListener('theme-changed', handleSemanticColorChange);
+      themeObserver.disconnect();
       dprCleanup?.();
     };
   });
@@ -642,4 +512,10 @@
   });
 </script>
 
-<canvas bind:this={canvas} class="w-full h-full block"></canvas>
+<canvas bind:this={canvas} class="aurora-background block h-full w-full"></canvas>
+
+<style>
+  .aurora-background {
+    color: hsl(var(--agent-avatar-surface-active));
+  }
+</style>

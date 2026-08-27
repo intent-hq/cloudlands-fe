@@ -144,8 +144,19 @@ describe('turn-boundary divider placement (ChatPanel contract)', () => {
       'utf8',
     ).replace(/<!--[\s\S]*?-->/g, '');
     const normalized = panel.replace(/\s+/g, ' ');
-    expect(normalized).toContain(
-      '{#if !isLastTurnInConversation} <ConversationTurnGap currentIsEventNotification={isEventNotification} currentHasAssistantMessages={turn.assistantMessages.length > 0} nextIsEventNotification={nextTurnIsEventNotification} nextHasUserMessage={nextTurnHasUserMessage} compactOperationalSeam={compactOperationalTurnBoundary} zeroToolSeam={zeroOperationalTurnBoundary} batchedDeliverySeam={batchedDeliveryTurnSeam} /> {/if} {#if dividerAtTurnBoundary} <NewMessagesDivider /> {/if}',
+    const gapStart = normalized.indexOf('<ConversationTurnGap');
+    const gapEnd = normalized.indexOf('/>', gapStart) + 2;
+    const dividerStart = normalized.indexOf('{#if dividerAtTurnBoundary}', gapEnd);
+    const gap = normalized.slice(gapStart, gapEnd);
+
+    expect(gapStart).toBeGreaterThan(-1);
+    expect(gap).toContain('compactOperationalSeam={compactOperationalTurnBoundary}');
+    expect(gap).toContain('zeroToolSeam={zeroOperationalTurnBoundary}');
+    expect(gap).toContain('batchedDeliverySeam={batchedDeliveryTurnSeam}');
+    expect(gap).toContain('attentionQuestionAnswerSeam={attentionQuestionAnswerTurnSeam}');
+    expect(normalized.slice(gapEnd, dividerStart).trim()).toBe('{/if}');
+    expect(normalized.slice(dividerStart)).toContain(
+      '{#if dividerAtTurnBoundary} <NewMessagesDivider /> {/if}',
     );
   });
 

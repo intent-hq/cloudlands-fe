@@ -17,6 +17,9 @@
  * resolves provider + key server-side at `voice.transcribe` time (§5.41).
  */
 import { appClient } from '$lib/client';
+import { VOICE_VOCABULARY_TERM_MAX_LENGTH } from './voice-settings-constants';
+
+export { VOICE_VOCABULARY_TERM_MAX_LENGTH };
 
 /** Transcription providers supported by `voice.transcribe` (§5.41). */
 export type VoiceProvider = 'elevenlabs' | 'openai';
@@ -98,9 +101,6 @@ export const VOICE_LANGUAGES: readonly string[] = [
 
 /** Non-secret daemon settings path holding the transcription vocabulary (string array, §5.12). */
 export const VOICE_VOCABULARY_SETTING_PATH = 'voice.vocabulary';
-
-/** Maximum length of a single vocabulary term (providers skip longer keyterms, §5.41). */
-export const VOICE_VOCABULARY_TERM_MAX_LENGTH = 50;
 
 /**
  * Non-secret daemon settings path capping the auto-derived workspace

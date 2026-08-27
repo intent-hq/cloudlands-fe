@@ -77,6 +77,18 @@ export function filterSpecialistsByGitHubAuth(specialists: Specialist[], isGitHu
 export function filterPickableSpecialists(specialists: Specialist[], isGitHubAuthenticated: boolean): Specialist[] {
     return filterSpecialistsByGitHubAuth(specialists, isGitHubAuthenticated).filter((s) => !s.hidden);
 }
+/**
+ * Filter specialists for the New Workspace modal's single-agent dropdown:
+ * the pickable set (GitHub gating + `hidden`) minus `role: internal`
+ * specialists. Internal specialists remain visible in the in-workspace
+ * SpecialistDropdown (which uses `filterPickableSpecialists`) and in
+ * Settings.
+ * @param specialists List of specialists to filter
+ * @param isGitHubAuthenticated Whether user is authenticated with GitHub
+ */
+export function filterModalPickableSpecialists(specialists: Specialist[], isGitHubAuthenticated: boolean): Specialist[] {
+    return filterPickableSpecialists(specialists, isGitHubAuthenticated).filter((s) => s.role !== 'internal');
+}
 // ============================================================================
 // Derived: merged specialists list
 // Priority: file (project > user) > bundled > hardcoded SPECIALISTS (last resort)
@@ -104,6 +116,9 @@ export const selectSpecialists = store.createSelector((state): Specialist[] => {
                 resolvedProvider: file.resolvedProvider,
                 modelOptions: file.modelOptions,
                 reasoningEffort: file.reasoningEffort,
+                role: file.role,
+                teamAgents: file.teamAgents,
+                icon: file.icon,
             });
         }
     }
@@ -129,18 +144,17 @@ export const selectSpecialists = store.createSelector((state): Specialist[] => {
         }
     }
 
-    // Stable sort: bundled specialists in their original order first,
+    // Stable sort: built-in specialists in catalog order first,
     // then custom (user/project) specialists sorted alphabetically by name.
     // This prevents the list from reordering when a specialist is re-saved.
     const bundledOrder = new Map<string, number>();
-    // Build order from bundled + hardcoded fallback (both represent "built-in" order)
-    for (const s of bundledSpecialists) {
+    // Seed from the catalog so file-only overrides retain their built-in position,
+    // then append any daemon-provided built-ins that are not in the catalog.
+    for (const s of SPECIALISTS) {
         if (!bundledOrder.has(s.id)) bundledOrder.set(s.id, bundledOrder.size);
     }
-    if (bundledSpecialists.length === 0) {
-        for (const s of SPECIALISTS) {
-            if (!bundledOrder.has(s.id)) bundledOrder.set(s.id, bundledOrder.size);
-        }
+    for (const s of bundledSpecialists) {
+        if (!bundledOrder.has(s.id)) bundledOrder.set(s.id, bundledOrder.size);
     }
 
     result.sort((a, b) => {
@@ -155,6 +169,18 @@ export const selectSpecialists = store.createSelector((state): Specialist[] => {
     });
 
     return result;
+});
+/**
+ * The specialist that powers the New Workspace modal's team-mode card: the
+ * first `role: 'orchestrator'` entry by id order (ties are deterministic
+ * regardless of list sort). Returns null when no orchestrator exists — the
+ * modal then hides the team card and defaults to single-agent mode.
+ */
+export const selectOrchestratorSpecialist = store.createSelector((state): Specialist | null => {
+    const orchestrators = selectSpecialists.select(state).filter((s) => s.role === 'orchestrator');
+    if (orchestrators.length === 0) return null;
+    orchestrators.sort((a, b) => a.id.localeCompare(b.id));
+    return orchestrators[0];
 });
 // ============================================================================
 // Parameterized selectors
@@ -173,6 +199,16 @@ export const selectSpecialistById = store.createSelector((state, specialistId: s
     const bundled = state.specialists.bundledSpecialists.find((s: Specialist) => s.id === specialistId);
     if (bundled) {
         return { id: bundled.id, name: bundled.name, description: bundled.description, source: 'builtin' };
+    }
+    // Last resort fallback: hardcoded SPECIALISTS, only before any source has
+    // produced specialists (mirrors selectSpecialists) — so built-in ids
+    // resolve during the async startup window, while specialists absent from
+    // the loaded set must not resurrect (daemon replacement mode).
+    if (getItems(state.specialists.fileSpecialists).length === 0 && state.specialists.bundledSpecialists.length === 0) {
+        const catalog = SPECIALISTS.find((s) => s.id === specialistId);
+        if (catalog) {
+            return { id: catalog.id, name: catalog.name, description: catalog.description, source: 'builtin' };
+        }
     }
     return null;
 });
@@ -227,9 +263,14 @@ export const selectEffectiveBehaviorPrompt = store.createSelector((state, specia
     // Wave 2: File specialists already have the correct prompt baked in.
     return specialist.defaultBehaviorPrompt;
 });
-/** Check if a specialist is built-in (bundled) */
+function isKnownBuiltIn(specialistId: string, bundledSpecialists: Specialist[]): boolean {
+    return bundledSpecialists.some((s: Specialist) => s.id === specialistId) ||
+        SPECIALISTS.some((s: Specialist) => s.id === specialistId);
+}
+
+/** Check if a specialist is built-in (bundled or shipped in the catalog) */
 export const selectIsBuiltIn = store.createSelector((state, specialistId: string): boolean => {
-    return state.specialists.bundledSpecialists.some((s: Specialist) => s.id === specialistId);
+    return isKnownBuiltIn(specialistId, state.specialists.bundledSpecialists);
 });
 /** Check if a specialist is file-based */
 export const selectIsFileBased = store.createSelector((state, specialistId: string): boolean => {
@@ -242,7 +283,7 @@ export const selectIsFileBased = store.createSelector((state, specialistId: stri
  * equal) never reads as "Modified" (monorepo#1450).
  */
 export const selectHasOverrides = store.createSelector((state, specialistId: string): boolean => {
-    const isBuiltIn = state.specialists.bundledSpecialists.some((s: Specialist) => s.id === specialistId);
+    const isBuiltIn = isKnownBuiltIn(specialistId, state.specialists.bundledSpecialists);
     if (!isBuiltIn) return false;
     const file = getItem(state.specialists.fileSpecialists, specialistId);
     if (!file || file.source !== 'user') return false;

@@ -31,6 +31,7 @@ import {
   chatReset,
   chatStreamingReconciled,
   chatInitialized,
+  chatTranscriptSnapshotApplied,
   streamCompleted,
   streamTimedOut,
 } from '../chat-state/chat-state-slice';
@@ -1047,10 +1048,13 @@ export const replaceMessageById = createAction<
   [agentId: string, oldId: string, newMessage: AgentMessage]
 >('agentSessions/replaceMessageById');
 
-/** Non-message field updates */
-export const updateSession = createAction<[agentId: string, updates: Partial<AgentSession>]>(
-  'agentSessions/updateSession',
-);
+/** Non-message field updates (plus the FE-owned sticky liveness fields). */
+export const updateSession = createAction<
+  [
+    agentId: string,
+    updates: Partial<AgentSession> & Pick<StoredAgentSession, 'liveTurnOpen' | 'liveTurnOpenedAt'>,
+  ]
+>('agentSessions/updateSession');
 
 /** Saga-owned core stop side effect trigger. */
 export const agentSessionStopChatRequested = createAsyncAction<[agentId: string], void>(
@@ -1104,6 +1108,17 @@ export const agentSessionRetryWithModelRequested = createAsyncAction<
   [agentId: string, wsId: string, model: string],
   void
 >('agentSessions/retryWithModel', 'agentSessions/retryWithModelRequested');
+
+/**
+ * Saga-owned retry-from-stalled side effect trigger (monorepo#3402): cancels
+ * the hung turn, waits for the stop to settle, then re-sends the identical
+ * last user input. A no-op when the stall is no longer active by the time
+ * the command runs (resumed event, stream delta, or turn end).
+ */
+export const agentSessionRetryFromStalledRequested = createAsyncAction<
+  [agentId: string, wsId: string],
+  void
+>('agentSessions/retryFromStalled', 'agentSessions/retryFromStalledRequested');
 
 /** Saga-owned fork-session side effect trigger. Resolves with the forked agent id. */
 export const agentSessionForkSessionRequested = createAsyncAction<
@@ -1308,11 +1323,20 @@ agentSessionReducer.with(eventReceived, (state, { payload: [, event] }) => {
     typeof event.timestamp === 'string' ? event.timestamp : undefined,
   );
   if (Object.keys(updates).length === 0) return state;
-  return updateSessionFields(
-    state,
-    agentId,
-    updates as Partial<Omit<StoredAgentSession, 'messages'>>,
-  );
+  // Fresh running edge (the sticky liveTurnOpen slot transitions closed →
+  // open): clear the previous turn's `lastToolUse` so it cannot render as a
+  // live tool chip during the startup window before the first
+  // `agent:stream:activity` ping of the new turn arrives. Keyed on the slot
+  // EDGE, not on every running status event — mid-turn status ticks (slot
+  // already open) must not wipe the current turn's live tool. The first
+  // tool-arm ping of the new turn repopulates the field.
+  const existing = getSession(state, agentId);
+  const opensLiveTurn = updates.liveTurnOpen === true && existing?.liveTurnOpen !== true;
+  const merged: Partial<Omit<StoredAgentSession, 'messages'>> = {
+    ...(updates as Partial<Omit<StoredAgentSession, 'messages'>>),
+    ...(opensLiveTurn && existing?.lastToolUse ? { lastToolUse: undefined } : {}),
+  };
+  return updateSessionFields(state, agentId, merged);
 });
 agentSessionReducer.with(renameSession, (state, { payload: [agentId, name] }) => {
   const session = getSession(state, agentId);
@@ -1635,3 +1659,12 @@ agentSessionReducer.with(
 agentSessionReducer.with(clearHistorySegment, (state, { payload: [agentId] }) =>
   removeHistorySegment(state, agentId),
 );
+// Cross-slice: a §7.1 `resumed: false` seq-0 snapshot discards the retained
+// transcript, so the history segment — unanchored against the fresh
+// transcript — is dropped in the SAME dispatch the chat-state reducer resets
+// the walk cursors and fetching flags in (atomic walk reset; the scrollback
+// saga's clearHistorySegment chain still runs and is idempotent here).
+agentSessionReducer.with(chatTranscriptSnapshotApplied, (state, { payload: [agentId, meta] }) => {
+  if (meta.resumed !== false) return state;
+  return removeHistorySegment(state, agentId);
+});

@@ -25,6 +25,7 @@
   import Button from '../ui/button/button.svelte';
   import ImageLightbox from '$lib/components/ui/ImageLightbox.svelte';
   import { openWorkspaceAttachment } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
+  import { resolveAttachmentImageUrl } from './attachment-image-url';
   import { store as appStore } from '$store/renderer/store';
   import { getWorkspaceRouteContext } from '$lib/utils/workspace-route-context';
   import { m } from '$shared/paraglide/messages.js';
@@ -195,13 +196,38 @@
   let lightboxImageName = $state('');
   let lightboxOpenerElement: HTMLButtonElement | null = $state(null);
 
+  // Resolved workspace-file:// URLs for queued attachment-reference image
+  // blocks (monorepo#3338), keyed by attachmentId.
+  let referenceImageUrls = $state<Record<string, string>>({});
+  $effect(() => {
+    if (!workspaceId) return;
+    for (const message of messages) {
+      for (const block of message.imageBlocks ?? []) {
+        if (!block.attachmentId || referenceImageUrls[block.attachmentId] !== undefined) continue;
+        const attachmentId = block.attachmentId;
+        void resolveAttachmentImageUrl(workspaceId, attachmentId).then((url) => {
+          if (url) referenceImageUrls = { ...referenceImageUrls, [attachmentId]: url };
+        });
+      }
+    }
+  });
+
+  /** Renderable src for a queued image block: inline data URL or resolved reference URL. */
+  function queuedImageSrc(block: NonNullable<QueuedMessage['imageBlocks']>[number]): string | null {
+    if (block.attachmentId) return referenceImageUrls[block.attachmentId] ?? null;
+    if (block.data && block.mimeType) return `data:${block.mimeType};base64,${block.data}`;
+    return null;
+  }
+
   // Open a queued image attachment in the lightbox
   function openImageLightbox(
     block: NonNullable<QueuedMessage['imageBlocks']>[number],
     openerElement: HTMLButtonElement,
     index: number,
   ) {
-    lightboxImageUrl = `data:${block.mimeType};base64,${block.data}`;
+    const src = queuedImageSrc(block);
+    if (!src) return;
+    lightboxImageUrl = src;
     lightboxImageName = m.chat_chatMessage_attachedImage_alt({ number: formatInteger(index + 1) });
     lightboxOpenerElement = openerElement;
     lightboxOpen = true;
@@ -385,6 +411,7 @@
   {#if message.imageBlocks && message.imageBlocks.length > 0}
     <div class="inline-flex items-center gap-1 shrink-0">
       {#each message.imageBlocks as block, i (i)}
+        {@const src = queuedImageSrc(block)}
         <button
           type="button"
           class="inline-flex shrink-0 p-0 border-0 bg-transparent cursor-pointer align-text-bottom rounded-sm focus:outline-none focus:ring-1 focus:ring-primary"
@@ -398,11 +425,17 @@
             total: formatInteger(message.imageBlocks?.length ?? 0),
           })}
         >
-          <img
-            src="data:{block.mimeType};base64,{block.data}"
-            alt={m.chat_chatMessage_attachedImage_alt({ number: formatInteger(i + 1) })}
-            class="h-[1.1em] w-[1.1em] rounded-sm border border-border object-cover hover:opacity-90 transition-opacity"
-          />
+          {#if src}
+            <img
+              {src}
+              alt={m.chat_chatMessage_attachedImage_alt({ number: formatInteger(i + 1) })}
+              class="h-[1.1em] w-[1.1em] rounded-sm border border-border object-cover hover:opacity-90 transition-opacity"
+            />
+          {:else}
+            <span
+              class="h-[1.1em] w-[1.1em] rounded-sm border border-border bg-muted/50 inline-block"
+            ></span>
+          {/if}
         </button>
       {/each}
     </div>
@@ -433,7 +466,7 @@
 
 {#if messages.length > 0}
   <div
-    class="queued-messages-surface relative z-20 px-2 pt-3 pb-2 before:pointer-events-none before:absolute before:top-0 before:left-1/2 before:h-px before:-translate-x-1/2 before:bg-border"
+    class="queued-messages-surface relative z-20 px-2 pt-3 pb-2"
     data-testid="queued-messages-container"
     transition:safeSlide={{ duration: 200 }}
   >
@@ -617,9 +650,3 @@
   imageName={lightboxImageName}
   openerElement={lightboxOpenerElement}
 />
-
-<style>
-  .queued-messages-surface::before {
-    width: 100cqw;
-  }
-</style>

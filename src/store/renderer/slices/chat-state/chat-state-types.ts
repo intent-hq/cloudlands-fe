@@ -7,6 +7,12 @@ export interface StatusEvent {
   message: string;
   level: 'info' | 'warn' | 'error';
   timestamp: number;
+  /**
+   * Additive on the daemon's `stalled` status event (monorepo#3402): the
+   * silence already measured when the event was emitted, so the live
+   * "No model activity for N" counter can anchor at `timestamp - silentMs`.
+   */
+  silentMs?: number;
 }
 
 export interface StreamStatusContext {
@@ -56,9 +62,11 @@ interface SendMessageOptions {
   contextReferences?: ContextReference[];
   /**
    * Image blocks the original send carried, recorded so "Try again" resends
-   * them with the message (#965). Plain base64 data — serializable/redux-safe.
+   * them with the message (#965). Inline arm carries plain base64 data;
+   * reference arm carries the attachment-registry UUID (monorepo#3338) —
+   * serializable/redux-safe either way.
    */
-  imageBlocks?: Array<{ type: 'image'; data: string; mimeType: string }>;
+  imageBlocks?: Array<{ type: 'image'; data?: string; mimeType?: string; attachmentId?: string }>;
   /**
    * Attachment-reference file blocks the original send carried, recorded so
    * "Try again" resends them. UUID + metadata only — no bytes.
@@ -232,6 +240,15 @@ export interface ChatAgentState {
   /** True while an `aroundIndex` far-flick seek fetch is in flight. */
   fetchingHistorySeek: boolean;
   /**
+   * Monotonic §7.1 discard counter: bumped atomically by the
+   * `resumed: false` snapshot reducer (the same write that resets the walk
+   * cursors + fetching flags). Scrollback workers capture it before their
+   * wire call and drop the result when it changed mid-flight — a page that
+   * resolves after the discard was fetched against the discarded transcript
+   * and must not recreate a segment or persist a cursor.
+   */
+  scrollbackDiscardEpoch: number;
+  /**
    * True once the daemon rejected `aroundIndex` with INVALID_PARAMS —
    * a daemon predating the param. Seeks are disabled for this agent for the
    * rest of the session (the serial walk covers deep scrolls instead).
@@ -287,8 +304,8 @@ export interface SendMessagePayload {
   serializedContextItems?: SerializableContextItem[];
   workspaceContextStr?: string;
   noteIds?: string[];
-  /** Image blocks extracted from serialized context items */
-  imageBlocks?: Array<{ type: 'image'; data: string; mimeType: string }>;
+  /** Image blocks extracted from serialized context items (inline or reference arm) */
+  imageBlocks?: Array<{ type: 'image'; data?: string; mimeType?: string; attachmentId?: string }>;
   /** Attachment-reference file blocks extracted from context items */
   fileBlocks?: Array<{
     type: 'file';

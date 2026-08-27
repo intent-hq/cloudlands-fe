@@ -883,7 +883,7 @@ Another plain prompt
     expect(result.prompts[3]).toBe('Another plain prompt');
   });
 
-  it('should keep a block with an invalid prompt line visible', () => {
+  it('should drop an invalid prompt line and keep the valid ones', () => {
     const content = `<!-- suggested-prompts
 delay:60|
 Valid prompt
@@ -891,8 +891,8 @@ Valid prompt
 
     const result = parseSuggestedPrompts(content);
 
-    expect(result.prompts).toEqual([]);
-    expect(result.cleanedContent).toBe(content);
+    expect(result.prompts).toEqual(['Valid prompt']);
+    expect(result.cleanedContent).toBe('');
   });
 
   it('should return empty array and unchanged content when no suggested-prompts block', () => {
@@ -960,13 +960,13 @@ Valid prompt
     expect(result.cleanedContent).toBe('Here is the response.');
   });
 
-  it('should reject a CRLF block whose lines look like body text', () => {
+  it('should strip a CRLF block whose lines look like body text without surfacing prompts', () => {
     const content = ['<!-- suggested-prompts', 'A --> B', '-->'].join('\r\n');
 
     const result = parseSuggestedPrompts(content);
 
     expect(result.prompts).toEqual([]);
-    expect(result.cleanedContent).toBe(content);
+    expect(result.cleanedContent).toBe('');
   });
 
   it('should keep fence state across an unclosed opener that precedes a fenced example', () => {
@@ -1021,35 +1021,47 @@ Valid prompt
     expect(result.cleanedContent).toBe(content);
   });
 
-  it('should discard a block whose lines look like body text without dropping the text', () => {
-    const content = ['<!-- suggested-prompts', '## Heading', 'Run tests', '-->'].join('\n');
+  it('should strip a block whose lines look like body text without surfacing prompts', () => {
+    const content = ['Done.', '<!-- suggested-prompts', '## Heading', 'Run tests', '-->'].join(
+      '\n',
+    );
+
+    const result = parseSuggestedPrompts(content);
+
+    // A well-formed block never renders as raw markup, but body-text-shaped
+    // lines gate the chips to nothing.
+    expect(result.prompts).toEqual([]);
+    expect(result.cleanedContent).toBe('Done.');
+  });
+
+  it('should strip a block containing a Mermaid edge line without surfacing prompts', () => {
+    const content = ['Done.', '<!-- suggested-prompts', 'A --> B', 'Run tests', '-->'].join('\n');
 
     const result = parseSuggestedPrompts(content);
 
     expect(result.prompts).toEqual([]);
-    // A rejected block is body text, so it must stay in the rendered content
-    expect(result.cleanedContent).toBe(content);
+    expect(result.cleanedContent).toBe('Done.');
   });
 
-  it('should discard a block containing a Mermaid edge line without dropping the text', () => {
-    const content = ['<!-- suggested-prompts', 'A --> B', 'Run tests', '-->'].join('\n');
+  it('should strip a block containing a table row without surfacing prompts', () => {
+    const content = ['Done.', '<!-- suggested-prompts', '| a | b |', 'Run tests', '-->'].join('\n');
 
     const result = parseSuggestedPrompts(content);
 
     expect(result.prompts).toEqual([]);
-    expect(result.cleanedContent).toBe(content);
+    expect(result.cleanedContent).toBe('Done.');
   });
 
-  it('should discard a block containing a table row without dropping the text', () => {
-    const content = ['<!-- suggested-prompts', '| a | b |', 'Run tests', '-->'].join('\n');
+  it('should strip an empty well-formed block without surfacing prompts', () => {
+    const content = ['Done.', '<!-- suggested-prompts', '', '-->'].join('\n');
 
     const result = parseSuggestedPrompts(content);
 
     expect(result.prompts).toEqual([]);
-    expect(result.cleanedContent).toBe(content);
+    expect(result.cleanedContent).toBe('Done.');
   });
 
-  it('should fall back to an earlier accepted block when the last one is rejected', () => {
+  it('should not fall back to an earlier block when the last one yields no prompts', () => {
     const content = [
       '<!-- suggested-prompts',
       'Run tests',
@@ -1065,10 +1077,10 @@ Valid prompt
 
     const result = parseSuggestedPrompts(content);
 
-    expect(result.prompts).toEqual(['Run tests', 'Review code']);
-    // Only the accepted block is stripped; the rejected one stays as body text
-    expect(result.cleanedContent).toContain('## Heading');
-    expect(result.cleanedContent).not.toContain('Run tests');
+    // The last well-formed block wins even when gated to zero prompts, so an
+    // earlier block must not resurface stale chips. Both blocks are stripped.
+    expect(result.prompts).toEqual([]);
+    expect(result.cleanedContent).toBe('Body.');
   });
 
   it('should use the last well-formed block when several are present', () => {
@@ -1092,7 +1104,7 @@ Valid prompt
     expect(result.cleanedContent).toBe('More text.');
   });
 
-  it('should keep blocks with more than four prompts visible', () => {
+  it('should cap prompts at four and strip the block', () => {
     const content = [
       '<!-- suggested-prompts',
       ...Array.from({ length: 10 }, (_, i) => `Prompt ${i + 1}`),
@@ -1101,18 +1113,28 @@ Valid prompt
 
     const result = parseSuggestedPrompts(content);
 
-    expect(result.prompts).toEqual([]);
-    expect(result.cleanedContent).toBe(content);
+    expect(result.prompts).toEqual(['Prompt 1', 'Prompt 2', 'Prompt 3', 'Prompt 4']);
+    expect(result.cleanedContent).toBe('');
   });
 
-  it('should keep a block with an over-long prompt visible', () => {
+  it('should drop an over-long prompt and keep the valid ones', () => {
     const long = 'x'.repeat(201);
     const content = ['<!-- suggested-prompts', long, 'Run tests', '-->'].join('\n');
 
     const result = parseSuggestedPrompts(content);
 
-    expect(result.prompts).toEqual([]);
-    expect(result.cleanedContent).toBe(content);
+    expect(result.prompts).toEqual(['Run tests']);
+    expect(result.cleanedContent).toBe('');
+  });
+
+  it('should keep a prompt at exactly the length limit', () => {
+    const atLimit = 'x'.repeat(200);
+    const content = ['<!-- suggested-prompts', atLimit, '-->'].join('\n');
+
+    const result = parseSuggestedPrompts(content);
+
+    expect(result.prompts).toEqual([atLimit]);
+    expect(result.cleanedContent).toBe('');
   });
 
   it('should not treat an inline opener followed by prose as a block', () => {
@@ -1182,14 +1204,16 @@ Some trailing content.`;
     expect(result.cleanedContent).toBe('');
   });
 
-  it('should reject a trailing-closer remainder that looks like body text', () => {
-    const content = ['<!-- suggested-prompts', 'Run tests', 'A --> B -->'].join('\n');
+  it('should strip a body-shaped trailing-closer remainder without surfacing prompts', () => {
+    const content = ['Done.', '<!-- suggested-prompts', 'Run tests', 'A --> B -->'].join('\n');
 
     const result = parseSuggestedPrompts(content);
 
+    // The standalone-suffix `-->` makes the block unambiguously comment
+    // delimited, so it is stripped; the body-shaped remainder gates the chips.
     expect(result.prompts).toEqual([]);
-    expect(result.cleanedContent).toBe(content);
-    expect(hasSuggestedPrompts(content)).toBe(false);
+    expect(result.cleanedContent).toBe('Done.');
+    expect(hasSuggestedPrompts(content)).toBe(true);
   });
 
   it('should not close a block on an opener-shaped trailing-closer remainder', () => {
@@ -1243,14 +1267,95 @@ Some trailing content.`;
     }
   });
 
-  it('restores malformed and incomplete blocks when streaming finalizes', () => {
+  it('withholds an open streaming block whose body is over-cap or body-shaped', () => {
+    // The old canWithholdOpenBlock heuristic released such tails mid-stream;
+    // now any open block stays withheld because a well-formed close strips it
+    // regardless of content.
+    const overCap = 'Done.\n\n<!-- suggested-prompts\nP1\nP2\nP3\nP4\nP5\nP6';
+    expect(parseSuggestedPrompts(overCap, { isStreaming: true }).cleanedContent).toBe('Done.');
+
+    const bodyShaped = 'Done.\n\n<!-- suggested-prompts\n## Heading\nSome prose here.';
+    expect(parseSuggestedPrompts(bodyShaped, { isStreaming: true }).cleanedContent).toBe('Done.');
+  });
+
+  it('gates chips to zero when a body-shaped line appears beyond the cap', () => {
+    // "Any captured line" means the whole block body, not just the first four.
+    const content = 'Done.\n\n<!-- suggested-prompts\nP1\nP2\nP3\nP4\n## Heading\n-->';
+    const result = parseSuggestedPrompts(content);
+    expect(result.prompts).toEqual([]);
+    expect(result.cleanedContent).toBe('Done.');
+  });
+
+  it('defers a fused closer on the unterminated final line while streaming (monorepo#3155)', () => {
+    // Chunk boundary inside an embedded arrow: `Run -->` must not surface a
+    // prompt chip that the next chunk (`Run --> tests`) invalidates. The
+    // deferred block stays open, so the always-withhold rule keeps it hidden.
+    const fused = 'Done.\n\n<!-- suggested-prompts\nRun -->';
+    const withheld = parseSuggestedPrompts(fused, { isStreaming: true });
+    expect(withheld.prompts).toEqual([]);
+    expect(withheld.cleanedContent).toBe('Done.');
+
+    // Once the next chunk reveals an embedded arrow the block is still open:
+    // it stays withheld while streaming, and finalization restores the text
+    // because the block never closed.
+    const extended = 'Done.\n\n<!-- suggested-prompts\nRun --> tests\n';
+    const stillOpen = parseSuggestedPrompts(extended, { isStreaming: true });
+    expect(stillOpen.prompts).toEqual([]);
+    expect(stillOpen.cleanedContent).toBe('Done.');
+    expect(parseSuggestedPrompts(extended).cleanedContent).toBe(extended);
+  });
+
+  it('accepts a fused closer while streaming once its line is newline-terminated', () => {
+    const confirmed = 'Done.\n\n<!-- suggested-prompts\nRun tests -->\n';
+    const result = parseSuggestedPrompts(confirmed, { isStreaming: true });
+    expect(result.prompts).toEqual(['Run tests']);
+    expect(result.cleanedContent).toBe('Done.');
+  });
+
+  it('accepts a fused closer on the final line when not streaming', () => {
+    const finalized = 'Done.\n\n<!-- suggested-prompts\nRun tests -->';
+    const result = parseSuggestedPrompts(finalized);
+    expect(result.prompts).toEqual(['Run tests']);
+    expect(result.cleanedContent).toBe('Done.');
+  });
+
+  it('strips an over-cap block closed by a fused dash-only remainder and caps its chips', () => {
+    // The fused `- -->` closer is deferred while streaming (block open →
+    // withheld); at finalization the close is accepted, the well-formed block
+    // is stripped, and the fifth candidate falls past the cap.
+    const content = 'Done.\n\n<!-- suggested-prompts\nOne\nTwo\nThree\nFour\n- -->';
+    const streaming = parseSuggestedPrompts(content, { isStreaming: true });
+    expect(streaming.prompts).toEqual([]);
+    expect(streaming.cleanedContent).toBe('Done.');
+    const finalized = parseSuggestedPrompts(content);
+    expect(finalized.prompts).toEqual(['One', 'Two', 'Three', 'Four']);
+    expect(finalized.cleanedContent).toBe('Done.');
+  });
+
+  it('strips a fused final line whose remainder is an embedded arrow without yielding chips', () => {
+    // Streaming defers the fused closer (block open → withheld); finalization
+    // accepts the close and strips the block, but the embedded arrow is
+    // body-shaped so no chips surface.
+    const content = 'Done.\n\n<!-- suggested-prompts\nA --> B -->';
+    const streaming = parseSuggestedPrompts(content, { isStreaming: true });
+    expect(streaming.prompts).toEqual([]);
+    expect(streaming.cleanedContent).toBe('Done.');
+    const finalized = parseSuggestedPrompts(content);
+    expect(finalized.prompts).toEqual([]);
+    expect(finalized.cleanedContent).toBe('Done.');
+  });
+
+  it('restores unclosed blocks when streaming finalizes', () => {
     const incomplete = 'Done.\n\n<!-- suggested-prompts\nOnly one prompt';
     expect(parseSuggestedPrompts(incomplete, { isStreaming: true }).cleanedContent).toBe('Done.');
     expect(parseSuggestedPrompts(incomplete).cleanedContent).toBe(incomplete);
 
+    // An open block is always withheld while streaming — even one whose lines
+    // look like body text — because a well-formed close strips it regardless.
+    // If it never closes, finalization restores the text.
     const embeddedCloser = 'Done.\n\n<!-- suggested-prompts\nRun --> tests\nOpen PR';
     expect(parseSuggestedPrompts(embeddedCloser, { isStreaming: true }).cleanedContent).toBe(
-      embeddedCloser,
+      'Done.',
     );
     expect(parseSuggestedPrompts(embeddedCloser).cleanedContent).toBe(embeddedCloser);
   });

@@ -10,6 +10,7 @@
   } from '$store/renderer/slices/panel-layout/panel-layout-slice';
   import {
     selectPanelColumnCount,
+    selectFocusedPanelId,
     selectPanelIds,
   } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
 
@@ -44,6 +45,7 @@
 
   const panelIds$ = selectPanelIds(WORKSPACE_ID);
   const columnCount$ = selectPanelColumnCount(WORKSPACE_ID);
+  const focusedPanelId$ = selectFocusedPanelId(WORKSPACE_ID);
 
   function populateRightmostPanel() {
     const panelId = selectPanelIds.select(appStore.state, WORKSPACE_ID).at(-1);
@@ -77,6 +79,7 @@
   data-testid="panel-layout-state"
   data-panel-ids={$panelIds$.join(',')}
   data-column-count={$columnCount$}
+  data-focused-panel-id={$focusedPanelId$}
 ></output>
 
 <div class="overflow-hidden rounded-lg bg-sidebar" style="height: 420px; width: 1200px;">

@@ -65,6 +65,32 @@ describe('suggested prompts rendering', () => {
     expect(document.body.textContent).toContain('Only one prompt');
   });
 
+  it('keeps the preceding group terminal when final content only adds suggested prompts', async () => {
+    vi.useFakeTimers();
+    try {
+      const MessageContent = (await import('../MessageContent.svelte')).default;
+      const streamingContent: ContentBlock[] = [
+        { type: 'text', text: '<group:Final>' },
+        { type: 'text', text: 'Final visible detail' },
+      ];
+      const completedContent: ContentBlock[] = [
+        ...streamingContent,
+        { type: 'text', text: '</group:Final>' },
+        { type: 'text', text: '<!-- suggested-prompts\nRun tests.\nOpen PR.\n-->' },
+      ];
+      const { container, rerender } = render(MessageContent, {
+        props: { content: streamingContent, isStreaming: true },
+      });
+      const disclosure = container.querySelector('[data-testid="response-group-disclosure"]')!;
+
+      await rerender({ content: completedContent, isStreaming: false });
+      await vi.advanceTimersByTimeAsync(800);
+      expect(disclosure.getAttribute('aria-expanded')).toBe('true');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('converges after duplicate and corrected full-text stream updates', async () => {
     const StreamingMessageContent = (await import('../StreamingMessageContent.svelte')).default;
     const reconciler = new ChatTranscriptReconciler();

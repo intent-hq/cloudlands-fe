@@ -96,7 +96,6 @@ jobs:
         if: steps.token.outputs.present == 'true'
         env:
           GH_TOKEN: ${{ secrets.RELEASE_PAT }}
-          INTENTD_READ_PAT: ${{ secrets.INTENTD_READ_PAT }}
         run: |
           set -euo pipefail
           echo "bump=false" >> "$GITHUB_OUTPUT"
@@ -105,7 +104,7 @@ jobs:
           if [ -z "$manifest" ]; then
             echo "Mirror manifest unavailable; falling back to intent-hq/intentd."
             tmp=$(mktemp -d)
-            if GH_TOKEN="${INTENTD_READ_PAT:-$GH_TOKEN}" gh release download channel-alpha \
+            if gh release download channel-alpha \
                 --repo intent-hq/intentd --pattern alpha.json --dir "$tmp"; then
               manifest=$(cat "$tmp/alpha.json")
             fi
@@ -178,7 +177,6 @@ jobs:
         env:
           CURRENT: ${{ steps.decide.outputs.current }}
           LATEST: ${{ steps.decide.outputs.latest }}
-          INTENTD_READ_PAT: ${{ secrets.INTENTD_READ_PAT }}
           GH_TOKEN: ${{ secrets.RELEASE_PAT }}
         run: |
           set -euo pipefail

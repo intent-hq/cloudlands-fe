@@ -41,6 +41,9 @@ vi.mock('../../system/main/system.ipc', () => ({
 
 import { IPC_CHANNELS } from '../../../shared/ipc-registry';
 
+const JPEG_1PX =
+  '/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAP//////////////////////////////////////////////////////////////////////////////////////2wBDAf//////////////////////////////////////////////////////////////////////////////////////wAARCAABAAEDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAX/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/9oADAMBAAIQAxAAAAEf/8QAFBABAAAAAAAAAAAAAAAAAAAAAP/aAAgBAQABBQJ//8QAFBEBAAAAAAAAAAAAAAAAAAAAAP/aAAgBAwEBPwF//8QAFBEBAAAAAAAAAAAAAAAAAAAAAP/aAAgBAgEBPwF//8QAFBABAAAAAAAAAAAAAAAAAAAAAP/aAAgBAQAGPwJ//8QAFBABAAAAAAAAAAAAAAAAAAAAAP/aAAgBAQABPyF//9oADAMBAAIAAwAAABAf/8QAFBEBAAAAAAAAAAAAAAAAAAAAAP/aAAgBAwEBPxB//8QAFBEBAAAAAAAAAAAAAAAAAAAAAP/aAAgBAgEBPxB//8QAFBABAAAAAAAAAAAAAAAAAAAAAP/aAAgBAQABPxB//9k=';
+
 type PanelTab = {
   tabId: string;
   url: string;
@@ -71,7 +74,7 @@ function fakeWebview(id: number, url: string) {
 function fakeCdpWebview(
   id: number,
   cdpResponses: Record<string, unknown | 'hang' | Error>,
-  capturePageImage = { width: 320, height: 240 },
+  capturePageImage: { width: number; height: number } | 'hang' = { width: 320, height: 240 },
 ) {
   const sendCommand = vi.fn((method: string) => {
     const response = cdpResponses[method];
@@ -79,10 +82,13 @@ function fakeCdpWebview(
     if (response instanceof Error) return Promise.reject(response);
     return Promise.resolve(response);
   });
-  const capturePage = vi.fn(async () => ({
-    getSize: () => capturePageImage,
-    toJPEG: () => Buffer.from('fallback-jpeg-bytes'),
-  }));
+  const capturePage = vi.fn(async () => {
+    if (capturePageImage === 'hang') return new Promise<never>(() => {});
+    return {
+      getSize: () => capturePageImage,
+      toJPEG: () => Buffer.from(JPEG_1PX, 'base64'),
+    };
+  });
   return {
     ...fakeWebview(id, 'http://cdp/'),
     debugger: {
@@ -581,16 +587,21 @@ describe('screenshot Page-domain hang fallback (#3154)', () => {
     const service = await loadService();
     const wc = fakeCdpWebview(61, {
       'Page.getLayoutMetrics': LAYOUT_METRICS,
-      'Page.captureScreenshot': { data: 'cdp-base64' },
+      'Page.captureScreenshot': { data: JPEG_1PX },
     });
     mocks.fromId.mockReturnValue(wc);
     service.registerTab('tab-cdp', 61);
 
     await expect(service.screenshot('tab-cdp')).resolves.toEqual({
-      base64: 'cdp-base64',
+      base64: JPEG_1PX,
       width: 800,
       height: 600,
     });
+    expect(Buffer.from(JPEG_1PX, 'base64').subarray(0, 3)).toEqual(Buffer.from([0xff, 0xd8, 0xff]));
+    expect(wc.debugger.sendCommand).toHaveBeenCalledWith(
+      'Page.captureScreenshot',
+      expect.objectContaining({ format: 'jpeg', quality: 80 }),
+    );
     expect(wc.capturePage).not.toHaveBeenCalled();
     service.unregisterTab('tab-cdp');
   });
@@ -605,7 +616,7 @@ describe('screenshot Page-domain hang fallback (#3154)', () => {
     await vi.advanceTimersByTimeAsync(6_000);
 
     await expect(pending).resolves.toEqual({
-      base64: Buffer.from('fallback-jpeg-bytes').toString('base64'),
+      base64: JPEG_1PX,
       width: 320,
       height: 240,
     });
@@ -626,7 +637,7 @@ describe('screenshot Page-domain hang fallback (#3154)', () => {
     await vi.advanceTimersByTimeAsync(6_000);
 
     await expect(pending).resolves.toEqual({
-      base64: Buffer.from('fallback-jpeg-bytes').toString('base64'),
+      base64: JPEG_1PX,
       width: 320,
       height: 240,
     });
@@ -643,7 +654,7 @@ describe('screenshot Page-domain hang fallback (#3154)', () => {
     service.registerTab('tab-reject', 64);
 
     await expect(service.screenshot('tab-reject')).resolves.toEqual({
-      base64: Buffer.from('fallback-jpeg-bytes').toString('base64'),
+      base64: JPEG_1PX,
       width: 320,
       height: 240,
     });
@@ -660,9 +671,31 @@ describe('screenshot Page-domain hang fallback (#3154)', () => {
     mocks.fromId.mockReturnValue(wc);
     service.registerTab('tab-fallback-fail', 65);
 
-    await expect(service.screenshot('tab-fallback-fail')).rejects.toThrow('capture failed');
+    await expect(service.screenshot('tab-fallback-fail')).rejects.toThrow(
+      'Screenshot capture failed: CDP stage: Page.getLayoutMetrics failed: Page domain unavailable; Electron fallback stage: capture failed',
+    );
     expect(wc.capturePage).toHaveBeenCalledTimes(1);
     service.unregisterTab('tab-fallback-fail');
   });
-});
 
+  it('bounds a stalled capturePage() fallback and reports both failed stages', async () => {
+    const service = await loadService();
+    const wc = fakeCdpWebview(
+      66,
+      { 'Page.getLayoutMetrics': new Error('Page domain unavailable') },
+      'hang',
+    );
+    mocks.fromId.mockReturnValue(wc);
+    service.registerTab('tab-fallback-hang', 66);
+
+    const pending = service.screenshot('tab-fallback-hang');
+    pending.catch(() => {});
+    await vi.advanceTimersByTimeAsync(5_100);
+
+    await expect(pending).rejects.toThrow(
+      'Screenshot capture failed: CDP stage: Page.getLayoutMetrics failed: Page domain unavailable; Electron fallback stage: capturePage timed out after 5000ms: the tab is not painting (its surface may be hidden or occluded).',
+    );
+    expect(wc.capturePage).toHaveBeenCalledTimes(1);
+    service.unregisterTab('tab-fallback-hang');
+  });
+});

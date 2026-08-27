@@ -1,4 +1,14 @@
 <script lang="ts">
+  /**
+   * AutomatedWakeCardHeader
+   *
+   * The whole header bar is a toggle hit-target for the disclosure; the
+   * chevron button carries the disclosure semantics (aria-expanded /
+   * aria-controls) and keyboard activation. The PR chip stays a sibling
+   * interactive control — the row handler ignores clicks originating from
+   * any button so neither action can activate the other and the card never
+   * nests interactive controls.
+   */
   import Fa from 'svelte-fa';
   import { faBolt, faChevronDown, faCodePullRequest } from '@fortawesome/free-solid-svg-icons';
   import type { Workspace } from '$shared/types';
@@ -52,42 +62,64 @@
       forceExternal: true,
     });
   }
+
+  function handleRowClick(event: MouseEvent) {
+    // Sibling buttons (PR chip, chevron toggle) own their own clicks.
+    if ((event.target as HTMLElement | null)?.closest('button')) return;
+    ontoggle();
+  }
 </script>
 
+<!-- svelte-ignore a11y_click_events_have_key_events (keyboard toggle lives on the chevron button) -->
+<!-- svelte-ignore a11y_no_static_element_interactions (row is an enlarged hit-target for the chevron toggle) -->
 <div
-  class={SUBSCRIPTION_DISCLOSURE_ROW_CLASS}
+  class="{SUBSCRIPTION_DISCLOSURE_ROW_CLASS} cursor-pointer"
   data-testid="automated-wake-header"
   data-wake-kind={presentation.kind}
   data-wake-state={presentation.state}
+  onclick={handleRowClick}
 >
   <Fa
     icon={presentation.kind === 'hook' ? faBolt : faCodePullRequest}
     size={16}
     class="{SUBSCRIPTION_CHEVRON_SIZE_CLASS} shrink-0 {SUBSCRIPTION_ICON_CLASS}"
   />
-  {#if presentation.kind === 'hook'}
-    <span class="min-w-0 flex-1 truncate" title={presentation.attribution.rawName}>
-      {presentation.attribution.displayName}
-    </span>
-  {:else}
-    <Button
-      type="button"
-      variant="plain"
-      class="h-auto min-w-0 flex-1 justify-start whitespace-normal break-words text-left font-inherit text-muted-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-      data-testid="pr-monitor-wake-chip"
-      title={m.chat_prMonitorWakeAttribution_openPr_tooltip()}
-      onclick={openPr}
-    >
-      {getPrMonitorWakeChipLabel(presentation.attribution, workspaceRepo)}
-    </Button>
-  {/if}
   <span
-    class="type-body shrink truncate font-normal text-muted-foreground"
-    style="max-width: 35%;"
-    data-testid="wake-status"
-    title={statusLabel}
+    class="flex min-w-0 flex-1 flex-nowrap items-baseline gap-x-1 overflow-hidden text-left"
+    data-testid="automated-wake-text-lane"
   >
-    {statusLabel}
+    {#if presentation.kind === 'hook'}
+      <span
+        class="min-w-0 max-w-full shrink truncate"
+        title={presentation.attribution.rawName}
+        data-testid="automated-wake-primary-label"
+      >
+        {presentation.attribution.displayName}
+      </span>
+    {:else}
+      {@const chipLabel = getPrMonitorWakeChipLabel(presentation.attribution, workspaceRepo)}
+      <Button
+        type="button"
+        variant="plain"
+        class="h-auto min-w-0 max-w-full shrink justify-start overflow-hidden text-left font-inherit text-muted-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        data-testid="pr-monitor-wake-chip"
+        title={m.chat_prMonitorWakeAttribution_openPrWithLabel_tooltip({ label: chipLabel })}
+        onclick={openPr}
+      >
+        <span class="min-w-0 truncate">
+          {chipLabel}
+        </span>
+      </Button>
+    {/if}
+    <!-- Status shrinks (and truncates) before the name/chip so the identifying
+         label keeps as much space as fits; full text stays in the title tooltips. -->
+    <span
+      class="type-body min-w-0 shrink-[4] truncate font-normal text-muted-foreground"
+      data-testid="wake-status"
+      title={statusLabel}
+    >
+      {statusLabel}
+    </span>
   </span>
   <button
     type="button"

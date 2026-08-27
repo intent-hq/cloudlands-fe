@@ -268,6 +268,9 @@ export function setupSpecialistsIPC(): void {
             hidden: bundled.frontmatter.hidden,
             modelOptions: bundled.frontmatter.modelOptions,
             reasoningEffort: bundled.frontmatter.reasoningEffort,
+            role: bundled.frontmatter.role,
+            teamAgents: bundled.frontmatter.teamAgents,
+            icon: bundled.frontmatter.icon,
             behaviorPrompt: bundled.behaviorPrompt,
           });
 

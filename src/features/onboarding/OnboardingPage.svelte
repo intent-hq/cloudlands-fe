@@ -98,15 +98,12 @@
     type ContextReference,
   } from '$features/onboarding/utils/parse-context-references';
   import { setInitialAgentId } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
+  import { hasBlockingAttachments, type ContextItem } from '$lib/components/chat/input/context-api';
   import {
-  hasBlockingAttachments,
-  type ContextItem,
-} from '$lib/components/chat/input/context-api';
-  import {
-  hasStagedFileItems,
-  redeemStagedAttachments,
-  sendHeldFirstMessage,
-} from '$lib/components/workspace/initializer/staged-attachments';
+    hasStagedFileItems,
+    redeemStagedAttachments,
+    sendHeldFirstMessage,
+  } from '$lib/components/workspace/initializer/staged-attachments';
   import {
     SETUP_SCRIPT_TEMPLATES,
     getTemplateContent,
@@ -631,6 +628,7 @@
         hasReadyProvider: hasReadyProvider($providerStatusMap$),
         hasCompletedProviderSetup: selectHasCompletedProviderSetup.select(appStore.state),
         hasWorkspaces: hasAvailableWorkspace($workspaceItems$),
+        providersCheckedOnce: $providersCheckedOnce$,
       });
       if (fullFlowRequested) {
         appStore.dispatch(setOnboardingFullFlowRequested(false));
@@ -913,10 +911,7 @@
     isOnboardingCreating = true;
     onboardingCreationError = null;
     try {
-      const redemption = await redeemStagedAttachments(
-        pending.workspaceId,
-        onboardingStagedItems,
-      );
+      const redemption = await redeemStagedAttachments(pending.workspaceId, onboardingStagedItems);
       onboardingStagedItems = redemption.items;
       if (redemption.failedCount > 0) {
         onboardingCreationError = m.onboarding_page_attachmentPlacementFailed_error();
@@ -1119,7 +1114,10 @@
       // placement needs the workspace to exist. With staged files, hold the
       // prompt out of initialAgent and send it after placement (create →
       // placeAttachment → agent.sendMessage with the attachment references).
-      const hasStagedFiles = hasStagedFileItems(onboardingStagedItems);
+      // Images follow the same held path (monorepo#3338): they too are
+      // placed post-create and travel as attachment-reference blocks, so no
+      // inline base64 rides the workspace.create frame.
+      const hasStagedFiles = hasStagedFileItems(onboardingStagedItems) || imageBlocks.length > 0;
 
       const result = await workspaceClient.create({
         title: '',

@@ -11,12 +11,15 @@ vi.mock('$lib/components/ui/button', async () => ({
 }));
 
 vi.mock('svelte-fa', async () => ({
-  default: (await import('./mocks/SlotOnly.svelte')).default,
+  default: (await import('./mocks/FaIcon.svelte')).default,
 }));
 
 vi.mock('@fortawesome/free-solid-svg-icons', () => ({
   faExclamationTriangle: { iconName: 'exclamation-triangle' },
   faRotateRight: { iconName: 'rotate-right' },
+  faCopy: { iconName: 'copy' },
+  faCheck: { iconName: 'check' },
+  faStop: { iconName: 'stop' },
 }));
 
 import StreamingStatus from '../StreamingStatus.svelte';
@@ -25,20 +28,24 @@ import {
   formatElapsed,
   computeCompletedEvents,
   deriveErrorDisplay,
+  getActiveStalledEvent,
+  getLatestThinkingStatusEvent,
   latestMeaningfulStatusMessage,
   shouldAppendStreamingEvent,
   SESSION_CORRUPTED,
+  STALLED_PHASE,
   type StatusEvent,
 } from '../streaming-status-utils';
 
 afterEach(() => {
   cleanup();
+  vi.useRealTimers();
   vi.clearAllMocks();
   overwriteGetLocale(() => 'en');
 });
 
 describe('StreamingStatus rendered UI', () => {
-  it('renders an animated Thinking row with muted localized lifecycle text while processing', () => {
+  it('renders one active 16px phase mark and the localized Thinking row', () => {
     const { container } = render(StreamingStatus, {
       props: {
         isProcessing: true,
@@ -50,63 +57,77 @@ describe('StreamingStatus rendered UI', () => {
     });
 
     const row = container.firstElementChild as HTMLElement;
-    const status = screen.getByRole('status', { name: 'Thinking' });
-    const spinner = container.querySelector('.legacy-streaming-spinner') as HTMLElement;
-    const label = screen.getByTestId('streaming-status-thinking');
-    const lifecycle = screen.getByTestId('streaming-status-lifecycle');
+    const mark = screen.getByRole('status', { name: 'Loading' });
+    const label = screen.getByTestId('streaming-status-thinking-label');
+    const lifecycle = screen.getByTestId('streaming-status-phase');
 
-    expect(status.getAttribute('aria-live')).toBe('polite');
-    expect(status.getAttribute('aria-atomic')).toBe('true');
     expect(row.className).toContain('h-7');
     expect(row.className).toContain('px-[var(--operational-row-inline-padding)]');
     expect(row.className).toContain(
       'grid-cols-[var(--operational-leading-slot-size)_minmax(0,1fr)_auto]',
     );
     expect(row.className).toContain('mt-2');
-    expect(spinner.className).toContain('legacy-streaming-spinner');
-    expect(spinner.className).toContain('size-[var(--operational-leading-slot-size)]');
-    expect(spinner.getAttribute('style')).toContain('--size: 3.5px');
+    expect(mark.getAttribute('data-variant')).toBe('pulse');
+    expect(mark.getAttribute('data-playing')).toBe('true');
+    expect(mark.getAttribute('width')).toBe('16');
+    expect(mark.parentElement?.className).toContain('size-[var(--operational-leading-slot-size)]');
+    expect(screen.getAllByRole('status')).toHaveLength(1);
     expect(label.textContent).toBe('Thinking');
     expect(label.className).toContain('text-foreground');
     expect(lifecycle.textContent).toBe('Sent prompt…');
     expect(lifecycle.className).toContain('text-muted-foreground');
     expect(lifecycle.className).toContain('truncate');
     expect(row.textContent).not.toContain('·');
-    expect(lifecycle.parentElement?.className).toContain('gap-1.5');
+    expect(lifecycle.closest('[role="status"]')).toBeNull();
+    expect(lifecycle.closest('[aria-live]')).toBeNull();
   });
 
-  it('shows the current lifecycle phase while streaming and updates it without a separator', async () => {
-    const { rerender } = render(StreamingStatus, {
+  it('shows the newest daemon message and maps all lifecycle phases to mark variants', async () => {
+    const { container, rerender } = render(StreamingStatus, {
       props: {
         isStreaming: true,
         statusEvents: [
-          { phase: 'prompt', message: 'Sent prompt…', level: 'info', timestamp: 1000 },
+          { phase: 'prompt', message: 'Exact daemon prompt', level: 'info', timestamp: 2000 },
+          { phase: 'launch', message: 'Older event', level: 'info', timestamp: 1000 },
         ],
       },
     });
 
-    expect(screen.getByTestId('streaming-status-lifecycle').textContent).toBe('Sent prompt…');
+    expect(screen.getByTestId('streaming-status-phase').textContent).toBe('Exact daemon prompt');
+    expect(
+      container.querySelector('[data-slot="intent-mark-loader"]')?.getAttribute('data-variant'),
+    ).toBe('pulse');
 
-    await rerender({
-      isStreaming: true,
-      statusEvents: [
-        { phase: 'prompt', message: 'Sent prompt…', level: 'info', timestamp: 1000 },
-        { phase: 'streaming', message: 'Streaming response…', level: 'info', timestamp: 2000 },
-      ],
-    });
-
-    expect(screen.getByTestId('streaming-status-lifecycle').textContent).toBe(
-      'Streaming response…',
-    );
-    expect(screen.getByRole('status').textContent).not.toContain('·');
+    for (const [phase, variant] of [
+      ['session-create', 'pulse'],
+      ['session-load', 'pulse'],
+      ['init', 'pulse'],
+      ['tool-call', 'twist'],
+      ['tool-waiting', 'twist'],
+      ['streaming', 'bloom'],
+      ['future-phase', 'bloom'],
+    ] as const) {
+      await rerender({
+        isStreaming: true,
+        statusEvents: [
+          { phase, message: `Daemon message for ${phase}`, level: 'info', timestamp: 3000 },
+        ],
+      });
+      expect(screen.getByTestId('streaming-status-phase').textContent).toBe(
+        `Daemon message for ${phase}`,
+      );
+      expect(
+        container.querySelector('[data-slot="intent-mark-loader"]')?.getAttribute('data-variant'),
+      ).toBe(variant);
+    }
   });
 
   it('keeps the Thinking label when lifecycle phase text is missing', () => {
     render(StreamingStatus, { props: { isProcessing: true, statusEvents: [] } });
 
     expect(screen.getByTestId('streaming-status-thinking').textContent).toBe('Thinking');
-    expect(screen.queryByTestId('streaming-status-lifecycle')).toBeNull();
-    expect(screen.getByRole('status').getAttribute('aria-label')).toBe('Thinking');
+    expect(screen.queryByTestId('streaming-status-phase')).toBeNull();
+    expect(screen.getByRole('status').getAttribute('aria-label')).toBe('Loading');
   });
 
   it('uses the active locale for Thinking and preserves an already-localized lifecycle phrase', () => {
@@ -120,9 +141,41 @@ describe('StreamingStatus rendered UI', () => {
       },
     });
 
-    expect(screen.getByTestId('streaming-status-thinking').textContent).toBe('Pensando');
-    expect(screen.getByTestId('streaming-status-lifecycle').textContent).toBe('Solicitud enviada…');
-    expect(screen.getByRole('status').getAttribute('aria-label')).toBe('Pensando');
+    expect(screen.getByTestId('streaming-status-thinking-label').textContent).toBe('Pensando');
+    expect(screen.getByTestId('streaming-status-phase').textContent).toBe('Solicitud enviada…');
+    expect(screen.getByRole('status').getAttribute('aria-label')).toBe('Cargando');
+  });
+
+  it('shows live elapsed detail only on row hover and keeps it non-live and non-focusable', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(10_000);
+    render(StreamingStatus, {
+      props: {
+        isProcessing: true,
+        statusEvents: [
+          {
+            phase: 'streaming',
+            message: 'Streaming the response',
+            level: 'info',
+            timestamp: 7_800,
+          },
+        ],
+      },
+    });
+
+    const row = screen
+      .getByTestId('streaming-status-thinking')
+      .closest('[data-streaming-typing-row]')!;
+    const elapsed = screen.getByTestId('streaming-status-elapsed');
+    expect(row.className).toContain('group');
+    expect(elapsed.textContent).toBe('2s ago');
+    expect(elapsed.className).toContain('opacity-0');
+    expect(elapsed.className).toContain('group-hover:opacity-100');
+    expect(elapsed.getAttribute('aria-live')).toBe('off');
+    expect(elapsed.getAttribute('tabindex')).toBeNull();
+
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(screen.getByTestId('streaming-status-elapsed').textContent).toBe('3s ago');
   });
 
   it('renders explicit failed response copy, alert semantics, and retry action for inactive errors', async () => {
@@ -145,13 +198,21 @@ describe('StreamingStatus rendered UI', () => {
     expect(container.firstElementChild?.className).not.toContain('pl-2');
     expect(container.firstElementChild?.className).not.toContain('bg-destructive');
     expect(container.firstElementChild?.className).not.toContain('border-destructive');
+    expect(container.firstElementChild?.className).toContain('mt-2');
 
     const copyButton = screen.getByRole('button', { name: /copy error details/i });
     expect(copyButton).toBeTruthy();
     expect(copyButton.className).toContain('text-muted-foreground');
-    expect(copyButton.className).toContain('opacity-30');
-    expect(copyButton.parentElement?.className).toContain('gap-1.5');
+    expect(copyButton.className).toContain('absolute');
+    expect(copyButton.className).toContain('top-3');
+    expect(copyButton.className).toContain('-translate-y-1/2');
+    expect(copyButton.getAttribute('data-variant')).toBe('ghost-light');
+    expect(copyButton.getAttribute('data-size')).toBe('icon-sm');
+    expect(copyButton.querySelector('[data-icon="copy"]')).toBeTruthy();
+    expect(copyButton.parentElement?.className).toContain('gap-x-1.5');
     expect(copyButton.parentElement?.className).toContain('min-h-5');
+    expect(copyButton.parentElement?.className).toContain('grid-cols-[1.75rem_minmax(0,1fr)]');
+    expect(copyButton.nextElementSibling?.className).toContain('col-start-2');
     const retry = screen.getByRole('button', { name: 'Try again' });
     expect(retry.textContent?.trim()).toBe('');
     expect(retry.className).toContain('shrink-0');
@@ -175,11 +236,27 @@ describe('StreamingStatus rendered UI', () => {
     });
 
     const copyButton = screen.getByRole('button', { name: /copy error details/i });
+    const stableClassName = copyButton.className;
+    copyButton.focus();
+    expect(document.activeElement).toBe(copyButton);
+    expect(copyButton.tabIndex).toBe(0);
     await fireEvent.click(copyButton);
     expect(writeTextMock).toHaveBeenCalledOnce();
     expect(writeTextMock).toHaveBeenCalledWith(
       'Response failed\n\nStream timeout after 10 minutes',
     );
+    await waitFor(() => expect(copyButton.querySelector('[data-icon="check"]')).toBeTruthy());
+    expect(copyButton.className).toBe(stableClassName);
+    expect(copyButton.getAttribute('aria-label')).toBe('Copy error details to clipboard');
+  });
+
+  it('removes the failure top step only when its caller marks it as the first row', () => {
+    const { container } = render(StreamingStatus, {
+      props: { error: 'Stream timeout', class: 'mt-0' },
+    });
+
+    expect(container.firstElementChild?.className).toContain('mt-0');
+    expect(container.firstElementChild?.className).not.toContain('mt-2');
   });
 
   it('renders recreate-aware corrupted-session copy with the raw error as secondary detail (monorepo#940)', async () => {
@@ -261,6 +338,7 @@ describe('StreamingStatus rendered UI', () => {
     expect(screen.queryByTestId('error-title')).toBeNull();
     expect(container.textContent).toContain('gpt5.5');
     expect(container.textContent).toContain('is not available');
+    expect(container.firstElementChild?.className).not.toContain('mt-2');
 
     await fireEvent.click(screen.getByRole('button', { name: /retry with gpt5\.5-fast/i }));
     expect(onRetryWithModel).toHaveBeenCalledWith('gpt5.5-fast');
@@ -345,6 +423,231 @@ describe('StreamingStatus rendered UI', () => {
   });
 });
 
+describe('StreamingStatus stalled state (monorepo#3402)', () => {
+  const stalledEvent = (timestamp: number): StatusEvent => ({
+    phase: STALLED_PHASE,
+    message: 'No model activity for 90s',
+    level: 'warn',
+    timestamp,
+  });
+
+  it('renders the warn-styled stalled row with live elapsed copy and hides the thinking indicator', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(100_000);
+    const { container } = render(StreamingStatus, {
+      props: {
+        isStreaming: true,
+        onStop: vi.fn(),
+        statusEvents: [
+          { phase: 'streaming', message: 'Streaming response…', level: 'info', timestamp: 5_000 },
+          stalledEvent(95_000),
+        ],
+      },
+    });
+
+    const row = container.querySelector('[data-stream-stalled="true"]') as HTMLElement;
+    expect(row).toBeTruthy();
+    expect(row.className).toContain('border-warning/20');
+    expect(row.className).toContain('bg-warning/5');
+    expect(screen.getByTestId('stalled-message').textContent).toBe('No model activity for 5s');
+    expect(screen.queryByTestId('streaming-status-thinking')).toBeNull();
+
+    await vi.advanceTimersByTimeAsync(2_000);
+    expect(screen.getByTestId('stalled-message').textContent).toBe('No model activity for 7s');
+  });
+
+  it('anchors the duration at timestamp - silentMs so the measured silence is included', async () => {
+    // The daemon only emits the stalled event after `silentMs` of measured
+    // silence, so the first render must already report that silence instead
+    // of starting the counter at the emission time.
+    vi.useFakeTimers();
+    vi.setSystemTime(100_000);
+    render(StreamingStatus, {
+      props: {
+        isStreaming: true,
+        statusEvents: [{ ...stalledEvent(95_000), silentMs: 90_000 }],
+      },
+    });
+
+    expect(screen.getByTestId('stalled-message').textContent).toBe('No model activity for 1m 35s');
+
+    await vi.advanceTimersByTimeAsync(2_000);
+    expect(screen.getByTestId('stalled-message').textContent).toBe('No model activity for 1m 37s');
+  });
+
+  it('announces the stall once via a static live region, keeping the ticking duration non-live', async () => {
+    // The visible label updates every second; if it lived in an aria-live
+    // region, assistive tech would re-announce it for the entire stall.
+    vi.useFakeTimers();
+    vi.setSystemTime(100_000);
+    render(StreamingStatus, {
+      props: { isStreaming: true, onStop: vi.fn(), statusEvents: [stalledEvent(95_000)] },
+    });
+
+    const announcement = screen.getByTestId('stalled-announcement');
+    expect(announcement.getAttribute('role')).toBe('status');
+    const announcedText = announcement.textContent;
+    expect(announcedText).toBe('No model activity detected. You can retry or cancel the response.');
+
+    const message = screen.getByTestId('stalled-message');
+    expect(message.getAttribute('aria-live')).toBeNull();
+    expect(message.getAttribute('role')).toBeNull();
+    expect(message.closest('[aria-live]')).toBeNull();
+
+    await vi.advanceTimersByTimeAsync(3_000);
+    expect(announcement.textContent).toBe(announcedText);
+    expect(message.textContent).toBe('No model activity for 8s');
+  });
+
+  it('dispatches the stop action when Cancel is clicked', async () => {
+    const onStop = vi.fn();
+    render(StreamingStatus, {
+      props: {
+        isStreaming: true,
+        onStop,
+        statusEvents: [stalledEvent(1_000)],
+      },
+    });
+
+    await fireEvent.click(screen.getByTestId('stalled-cancel'));
+    expect(onStop).toHaveBeenCalledOnce();
+  });
+
+  it('renders the Retry button in the stalled row and invokes the callback on click', async () => {
+    const onStalledRetry = vi.fn();
+    render(StreamingStatus, {
+      props: {
+        isStreaming: true,
+        onStop: vi.fn(),
+        onStalledRetry,
+        statusEvents: [stalledEvent(1_000)],
+      },
+    });
+
+    await fireEvent.click(screen.getByTestId('stalled-retry'));
+    expect(onStalledRetry).toHaveBeenCalledOnce();
+  });
+
+  it('omits the Retry button when no onStalledRetry callback is provided', () => {
+    render(StreamingStatus, {
+      props: { isStreaming: true, onStop: vi.fn(), statusEvents: [stalledEvent(1_000)] },
+    });
+
+    expect(screen.queryByTestId('stalled-retry')).toBeNull();
+  });
+
+  it('does not render the Retry button outside the stalled state', () => {
+    const { container } = render(StreamingStatus, {
+      props: { isStreaming: true, onStop: vi.fn(), onStalledRetry: vi.fn(), statusEvents: [] },
+    });
+
+    expect(container.querySelector('[data-stream-stalled="true"]')).toBeNull();
+    expect(screen.queryByTestId('stalled-retry')).toBeNull();
+  });
+
+  it('clears on a resumed event and falls back to the thinking indicator', async () => {
+    const events: StatusEvent[] = [stalledEvent(1_000)];
+    const { container, rerender } = render(StreamingStatus, {
+      props: { isStreaming: true, onStop: vi.fn(), statusEvents: events },
+    });
+
+    expect(container.querySelector('[data-stream-stalled="true"]')).toBeTruthy();
+
+    await rerender({
+      isStreaming: true,
+      onStop: vi.fn(),
+      statusEvents: [
+        ...events,
+        { phase: 'resumed', message: 'Model activity resumed', level: 'info', timestamp: 2_000 },
+      ],
+    });
+
+    await waitFor(() =>
+      expect(container.querySelector('[data-stream-stalled="true"]')).toBeNull(),
+    );
+    expect(screen.getByTestId('streaming-status-thinking')).toBeTruthy();
+  });
+
+  it('clears when a new stream delta arrives after the stalled event', async () => {
+    const events: StatusEvent[] = [stalledEvent(1_000)];
+    const { container, rerender } = render(StreamingStatus, {
+      props: { isStreaming: true, onStop: vi.fn(), statusEvents: events, lastChunkTime: 500 },
+    });
+
+    expect(container.querySelector('[data-stream-stalled="true"]')).toBeTruthy();
+
+    await rerender({
+      isStreaming: true,
+      onStop: vi.fn(),
+      statusEvents: events,
+      lastChunkTime: 2_000,
+    });
+
+    await waitFor(() =>
+      expect(container.querySelector('[data-stream-stalled="true"]')).toBeNull(),
+    );
+    expect(screen.getByTestId('streaming-status-thinking')).toBeTruthy();
+  });
+
+  it('never leaks the stalled message into the returning thinking indicator after a delta clears it', async () => {
+    // A stream delta clears the stall via lastChunkTime without appending a
+    // new status event, so the stalled event stays the newest entry — the
+    // thinking indicator must fall back to the last non-stalled lifecycle
+    // message instead of showing stale "No model activity…" copy.
+    const events: StatusEvent[] = [
+      { phase: 'streaming', message: 'Streaming response…', level: 'info', timestamp: 500 },
+      stalledEvent(1_000),
+    ];
+    const { container, rerender } = render(StreamingStatus, {
+      props: { isStreaming: true, onStop: vi.fn(), statusEvents: events, lastChunkTime: 600 },
+    });
+
+    expect(container.querySelector('[data-stream-stalled="true"]')).toBeTruthy();
+
+    await rerender({
+      isStreaming: true,
+      onStop: vi.fn(),
+      statusEvents: events,
+      lastChunkTime: 2_000,
+    });
+
+    await waitFor(() =>
+      expect(container.querySelector('[data-stream-stalled="true"]')).toBeNull(),
+    );
+    expect(screen.getByTestId('streaming-status-phase').textContent).toBe('Streaming response…');
+    expect(screen.getByTestId('streaming-status-phase').textContent).not.toContain(
+      'No model activity',
+    );
+    expect(
+      container.querySelector('[data-slot="intent-mark-loader"]')?.getAttribute('data-variant'),
+    ).toBe('bloom');
+  });
+
+  it('does not render the stalled row once the turn has ended or failed', () => {
+    const events: StatusEvent[] = [stalledEvent(1_000)];
+    const idle = render(StreamingStatus, {
+      props: { isStreaming: false, isProcessing: false, statusEvents: events },
+    });
+    expect(idle.container.querySelector('[data-stream-stalled="true"]')).toBeNull();
+    cleanup();
+
+    const failed = render(StreamingStatus, {
+      props: { isStreaming: true, error: 'Stream timeout', statusEvents: events },
+    });
+    expect(failed.container.querySelector('[data-stream-stalled="true"]')).toBeNull();
+    expect(screen.getByTestId('error-title').textContent).toBe('Response failed');
+  });
+
+  it('omits the Cancel button when no onStop handler is provided', () => {
+    const { container } = render(StreamingStatus, {
+      props: { isStreaming: true, statusEvents: [stalledEvent(1_000)] },
+    });
+
+    expect(container.querySelector('[data-stream-stalled="true"]')).toBeTruthy();
+    expect(screen.queryByTestId('stalled-cancel')).toBeNull();
+  });
+});
+
 describe('StreamingStatus utilities', () => {
   describe('latestMeaningfulStatusMessage', () => {
     it('selects the latest localized non-empty phase by timestamp', () => {
@@ -421,6 +724,84 @@ describe('StreamingStatus utilities', () => {
       expect(formatElapsed(60000)).toBe('1m 0s');
       expect(formatElapsed(90499)).toBe('1m 30s');
       expect(formatElapsed(3661000)).toBe('1h 1m 1s');
+    });
+  });
+
+  describe('getActiveStalledEvent', () => {
+    const stalled: StatusEvent = {
+      phase: STALLED_PHASE,
+      message: 'No model activity for 90s',
+      level: 'warn',
+      timestamp: 5_000,
+    };
+
+    it('returns the stalled event when it is the newest status event', () => {
+      expect(getActiveStalledEvent([stalled], null)).toBe(stalled);
+      expect(
+        getActiveStalledEvent(
+          [{ phase: 'streaming', message: 'Streaming…', level: 'info', timestamp: 1_000 }, stalled],
+          null,
+        ),
+      ).toBe(stalled);
+    });
+
+    it('returns null when a later event supersedes the stall (e.g. resumed)', () => {
+      expect(
+        getActiveStalledEvent(
+          [stalled, { phase: 'resumed', message: 'Resumed', level: 'info', timestamp: 6_000 }],
+          null,
+        ),
+      ).toBeNull();
+    });
+
+    it('returns null when a stream delta arrived after the stall', () => {
+      expect(getActiveStalledEvent([stalled], 6_000)).toBeNull();
+      expect(getActiveStalledEvent([stalled], 4_000)).toBe(stalled);
+    });
+
+    it('returns null when there are no events or the latest is not stalled', () => {
+      expect(getActiveStalledEvent([], null)).toBeNull();
+      expect(
+        getActiveStalledEvent(
+          [{ phase: 'streaming', message: 'Streaming…', level: 'info', timestamp: 9_000 }],
+          null,
+        ),
+      ).toBeNull();
+    });
+
+    it('re-triggers on a second stall in the same turn (newer stalled after delta)', () => {
+      const second: StatusEvent = { ...stalled, timestamp: 20_000 };
+      expect(getActiveStalledEvent([stalled, second], 10_000)).toBe(second);
+    });
+  });
+
+  describe('getLatestThinkingStatusEvent', () => {
+    const stalled: StatusEvent = {
+      phase: STALLED_PHASE,
+      message: 'No model activity for 90s',
+      level: 'warn',
+      timestamp: 5_000,
+    };
+    const streaming: StatusEvent = {
+      phase: 'streaming',
+      message: 'Streaming response…',
+      level: 'info',
+      timestamp: 1_000,
+    };
+
+    it('skips stalled events and returns the newest non-stalled event', () => {
+      expect(getLatestThinkingStatusEvent([streaming, stalled])).toBe(streaming);
+      expect(getLatestThinkingStatusEvent([stalled, streaming])).toBe(streaming);
+    });
+
+    it('returns null when only stalled events exist or the list is empty', () => {
+      expect(getLatestThinkingStatusEvent([stalled])).toBeNull();
+      expect(getLatestThinkingStatusEvent([])).toBeNull();
+    });
+
+    it('matches getLatestStatusEvent semantics when no stalled event is present', () => {
+      const later: StatusEvent = { ...streaming, phase: 'tool-call', timestamp: 2_000 };
+      expect(getLatestThinkingStatusEvent([streaming, later])).toBe(later);
     });
   });
 

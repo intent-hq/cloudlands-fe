@@ -2,7 +2,7 @@
  * Connections Slice
  *
  * Actions + reducer for the multi-backend connect feature. Tracks the
- * connections list, the active backend, the in-flight add/switch operation
+ * connections list, the active backend, the in-flight add/open/switch operation
  * status, and the last pinned-cert mismatch.
  *
  * The list + active selection are authoritative from main: they are set from
@@ -24,6 +24,9 @@ import type {
   ConnectionRecord,
   ConnectionsState,
   ConnectionsListResult,
+  KeychainSyncStateResult,
+  KeychainSyncUiStatus,
+  OpenConnectionResult,
   ConnectionAuthRejectedEvent,
   ConnectionCertMismatchEvent,
   ConnectionProtocolMismatchEvent,
@@ -36,6 +39,7 @@ import type {
 export const initialState: ConnectionsState = {
   connections: createCollection<ConnectionRecord, 'id'>('id'),
   activeId: LOCAL_CONNECTION_ID,
+  windowBackendId: LOCAL_CONNECTION_ID,
   hasReceivedList: false,
   status: 'idle',
   error: null,
@@ -43,6 +47,7 @@ export const initialState: ConnectionsState = {
   authRejected: null,
   protocolMismatch: null,
   protocolMismatchModalDismissed: false,
+  keychainSync: null,
 };
 
 // ---------------------------------------------------------------------------
@@ -59,19 +64,19 @@ export const connectionsListReceived = createAction<[result: ConnectionsListResu
 );
 
 /**
- * An add/switch operation started (thunk invoked its IPC channel). Moves
+ * An add/open/switch operation started (its saga invoked the IPC channel). Moves
  * status to 'connecting' and clears any prior error.
  */
 export const connectOperationStarted = createAction('connections/operationStarted');
 
 /**
- * The in-flight add/switch operation succeeded. Status returns to 'idle'; the
+ * The in-flight add/open/switch operation succeeded. Status returns to 'idle'; the
  * list/active refresh arrives separately via the `connections:changed` push.
  */
 export const connectOperationSettled = createAction('connections/operationSettled');
 
 /**
- * The in-flight add/switch operation failed. Status moves to 'error' and the
+ * The in-flight add/open/switch operation failed. Status moves to 'error' and the
  * message is stored for the UI.
  */
 export const connectOperationFailed = createAction<[error: string]>('connections/operationFailed');
@@ -132,13 +137,18 @@ export const captureFingerprintRequested = createAsyncAction<
 
 /**
  * Saga-owned connection add request. Resolves with the token-free record plus
- * whether main already switched to it (active re-pair rebuilds the live client
- * in the add handler — the caller must then skip its own follow-up switch).
+ * whether main rebuilt an active connection's client in place.
  */
 export const addConnectionRequested = createAsyncAction<
   [params: AddConnectionParams],
   AddConnectionResult
 >('connections/add', 'connections/addRequested');
+
+/** Saga-owned non-destructive open/focus request for one backend. */
+export const openConnectionRequested = createAsyncAction<[id: string], OpenConnectionResult>(
+  'connections/open',
+  'connections/openRequested',
+);
 
 /** Saga-owned stored-connection removal request. */
 export const forgetConnectionRequested = createAsyncAction<[id: string], void>(
@@ -152,6 +162,36 @@ export const switchConnectionRequested = createAsyncAction<[id: string], void>(
   'connections/switchRequested',
 );
 
+/**
+ * iCloud-keychain sync state received — from the `connections:sync-get-state`
+ * invoke or the `connections:sync-set-enabled` result (both carry the full
+ * `KeychainSyncStateResult`).
+ */
+export const keychainSyncStateReceived = createAction<[result: KeychainSyncStateResult]>(
+  'connections/keychainSyncStateReceived',
+);
+
+/**
+ * A `connections:sync-status-changed` push arrived — a reconcile's
+ * availability verdict changed. Ignored until the full state has been loaded
+ * (`keychainSync` is null before that, and status alone cannot seed it).
+ */
+export const keychainSyncStatusReceived = createAction<[status: KeychainSyncUiStatus]>(
+  'connections/keychainSyncStatusReceived',
+);
+
+/** Saga-owned keychain-sync state hydration (settings UI mount). */
+export const loadKeychainSyncStateRequested = createAsyncAction<[], KeychainSyncStateResult>(
+  'connections/loadKeychainSyncState',
+  'connections/loadKeychainSyncStateRequested',
+);
+
+/** Saga-owned keychain-sync opt-in toggle request. */
+export const setKeychainSyncEnabledRequested = createAsyncAction<
+  [enabled: boolean],
+  KeychainSyncStateResult
+>('connections/setKeychainSyncEnabled', 'connections/setKeychainSyncEnabledRequested');
+
 // ---------------------------------------------------------------------------
 // Reducer
 // ---------------------------------------------------------------------------
@@ -162,6 +202,7 @@ connectionsReducer.with(connectionsListReceived, (state, { payload: [result] }) 
     ...state,
     connections: createCollection<ConnectionRecord, 'id'>('id', result.connections),
     activeId: result.activeId,
+    windowBackendId: result.windowBackendId,
     hasReceivedList: true,
   };
 });
@@ -198,4 +239,13 @@ connectionsReducer.with(protocolMismatchReceived, (state, { payload: [event] }) 
 });
 connectionsReducer.with(protocolMismatchModalDismissed, (state) => {
   return { ...state, protocolMismatchModalDismissed: true };
+});
+connectionsReducer.with(keychainSyncStateReceived, (state, { payload: [result] }) => {
+  return { ...state, keychainSync: result };
+});
+connectionsReducer.with(keychainSyncStatusReceived, (state, { payload: [status] }) => {
+  // Status alone cannot seed the state — `supported`/`enabled` are unknown
+  // until the first full load, so a push arriving before it is dropped.
+  if (!state.keychainSync) return state;
+  return { ...state, keychainSync: { ...state.keychainSync, status } };
 });

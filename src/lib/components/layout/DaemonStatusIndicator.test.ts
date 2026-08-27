@@ -27,6 +27,7 @@ let mockDispatch = vi.fn();
 const DEFAULT_CONNECTIONS = {
   connections: createCollection('id'),
   activeId: 'local',
+  windowBackendId: 'local',
   status: 'idle',
   error: null,
   certMismatch: null,
@@ -524,7 +525,10 @@ describe('DaemonStatusIndicator', () => {
             port: null,
             os: 'macos',
             arch: 'aarch64',
-            transport: { mode: 'external-ws' as const, target: 'wss://some-host.example.com:4180/ws' },
+            transport: {
+              mode: 'external-ws' as const,
+              target: 'wss://some-host.example.com:4180/ws',
+            },
           },
           lastUpdated: new Date().toISOString(),
           polling: false,
@@ -797,6 +801,7 @@ describe('DaemonStatusIndicator', () => {
             },
           ]),
           activeId: 'r1',
+          windowBackendId: 'r1',
           status: 'idle',
           error: null,
           certMismatch: null,
@@ -845,6 +850,7 @@ describe('DaemonStatusIndicator', () => {
             },
           ]),
           activeId: 'local',
+          windowBackendId: 'local',
           status: 'idle',
           error: null,
           certMismatch: null,
@@ -1128,15 +1134,43 @@ describe('DaemonStatusIndicator', () => {
       isLocal: false,
     };
 
-    function withConnections(activeId: string) {
+    function withConnections(windowBackendId: string, activeId = windowBackendId) {
       return {
         connections: createCollection('id', [localRecord, remoteRecord]),
         activeId,
+        windowBackendId,
         status: 'idle',
         error: null,
         certMismatch: null,
       };
     }
+
+    it('checks the remote row and shows its trigger name while persisted activeId stays local', async () => {
+      mockStoreState = {
+        daemonHealth: { ...healthy },
+        connections: withConnections('r1', 'local'),
+      };
+
+      const DaemonStatusIndicator = (await import('./DaemonStatusIndicator.svelte')).default;
+      render(DaemonStatusIndicator);
+      await fireEvent.click(screen.getByRole('button', { name: 'intentd: healthy — desk:4180' }));
+
+      const activeIcon = screen.getByLabelText('Active');
+      expect(activeIcon.closest('[role="menuitem"]')?.textContent).toContain('desk:4180');
+    });
+
+    it('checks Local in a local window while the remote is also connected', async () => {
+      mockStoreState = { daemonHealth: { ...healthy }, connections: withConnections('local') };
+
+      const DaemonStatusIndicator = (await import('./DaemonStatusIndicator.svelte')).default;
+      render(DaemonStatusIndicator);
+      await fireEvent.click(screen.getByRole('button', { name: 'intentd: healthy' }));
+
+      const activeIcon = screen.getByLabelText('Active');
+      expect(activeIcon.closest('[role="menuitem"]')?.textContent).toContain(
+        'This machine (local)',
+      );
+    });
 
     it('shows the connect action and the connections list with local first', async () => {
       mockStoreState = { daemonHealth: { ...healthy }, connections: withConnections('local') };
@@ -1165,7 +1199,7 @@ describe('DaemonStatusIndicator', () => {
       await fireEvent.click(screen.getByRole('button', { name: 'intentd: healthy' }));
 
       // The row is a submenu trigger: collapsed with menu-popup semantics, and no
-      // Switch/Forget rendered until it is opened (no inline expansion).
+      // Open/Switch/Forget rendered until it is opened (no inline expansion).
       const remoteRow = screen.getByText('desk:4180').closest('[role="menuitem"]');
       expect(remoteRow?.getAttribute('aria-haspopup')).toBe('menu');
       expect(remoteRow?.getAttribute('aria-expanded')).toBe('false');
@@ -1174,6 +1208,7 @@ describe('DaemonStatusIndicator', () => {
       // Opening the row flips aria-expanded and reveals the flyout actions.
       await fireEvent.click(remoteRow!);
       expect(remoteRow?.getAttribute('aria-expanded')).toBe('true');
+      expect(screen.getByText('Open')).toBeTruthy();
       expect(screen.getByText('Switch')).toBeTruthy();
       expect(screen.getByText('Forget')).toBeTruthy();
 
@@ -1185,23 +1220,55 @@ describe('DaemonStatusIndicator', () => {
       expect(parentContent?.contains(flyout)).toBe(false);
     });
 
-    it('expands local to Switch only (Forget hidden); remote to Switch + Forget', async () => {
+    it('expands local to Open + Switch (Forget hidden); remote to all three actions', async () => {
       mockStoreState = { daemonHealth: { ...healthy }, connections: withConnections('local') };
 
       const DaemonStatusIndicator = (await import('./DaemonStatusIndicator.svelte')).default;
       render(DaemonStatusIndicator);
       await fireEvent.click(screen.getByRole('button', { name: 'intentd: healthy' }));
 
-      // Local: Switch present, Forget absent (un-forgettable).
+      // Local: Open + Switch present, Forget absent (un-forgettable).
       await fireEvent.click(screen.getByText('This machine (local)'));
+      expect(screen.getAllByText('Open')).toHaveLength(1);
       expect(screen.getAllByText('Switch')).toHaveLength(1);
       expect(screen.queryByText('Forget')).toBeNull();
 
-      // Remote: both Switch and Forget present in its flyout.
+      // Remote: Open, Switch, and Forget present in its flyout.
       await fireEvent.click(screen.getByText('desk:4180'));
       const forget = screen.getByText('Forget');
       const flyout = forget.closest('[data-slot="menu-sub-content"]')!;
+      expect(within(flyout as HTMLElement).getByText('Open')).toBeTruthy();
       expect(within(flyout as HTMLElement).getByText('Switch')).toBeTruthy();
+    });
+
+    it('dispatches openConnectionRequested for this window remote and closes the dropdown', async () => {
+      mockStoreState = {
+        daemonHealth: { ...healthy },
+        connections: withConnections('r1', 'local'),
+      };
+
+      const DaemonStatusIndicator = (await import('./DaemonStatusIndicator.svelte')).default;
+      render(DaemonStatusIndicator);
+      await fireEvent.click(screen.getByRole('button', { name: 'intentd: healthy — desk:4180' }));
+
+      const menuRow = screen
+        .getAllByText('desk:4180')
+        .map((el) => el.closest('[role="menuitem"]'))
+        .find((row) => row?.getAttribute('aria-haspopup') === 'menu');
+      await fireEvent.click(menuRow!);
+
+      const openItem = screen.getByText('Open').closest('[role="menuitem"]');
+      expect(openItem?.getAttribute('aria-disabled')).not.toBe('true');
+      await fireEvent.click(openItem!);
+
+      expect(mockDispatch).toHaveBeenCalledWith(
+        expect.objectContaining({
+          payload: ['r1'],
+          type: 'connections/openRequested',
+          asyncActionType: 'connections/open',
+        }),
+      );
+      expect(screen.queryByText('Connections')).toBeNull();
     });
 
     it('dispatches switchConnectionRequested when Switch is chosen on a non-active remote', async () => {
@@ -1223,8 +1290,11 @@ describe('DaemonStatusIndicator', () => {
       );
     });
 
-    it('disables Switch for the active entry', async () => {
-      mockStoreState = { daemonHealth: { ...healthy }, connections: withConnections('r1') };
+    it('disables Switch for this window entry even when persisted activeId differs', async () => {
+      mockStoreState = {
+        daemonHealth: { ...healthy },
+        connections: withConnections('r1', 'local'),
+      };
 
       const DaemonStatusIndicator = (await import('./DaemonStatusIndicator.svelte')).default;
       render(DaemonStatusIndicator);
@@ -1248,7 +1318,7 @@ describe('DaemonStatusIndicator', () => {
       );
     });
 
-    it('dispatches forgetConnectionRequested when Forget is chosen on a remote', async () => {
+    it('opens a confirm dialog on Forget and dispatches forgetConnectionRequested on confirm', async () => {
       mockStoreState = { daemonHealth: { ...healthy }, connections: withConnections('local') };
 
       const DaemonStatusIndicator = (await import('./DaemonStatusIndicator.svelte')).default;
@@ -1258,6 +1328,25 @@ describe('DaemonStatusIndicator', () => {
       await fireEvent.click(screen.getByText('desk:4180'));
       await fireEvent.click(screen.getByText('Forget'));
 
+      // Confirmation dialog names the connection; the dropdown is closed and
+      // nothing has been forgotten yet.
+      expect(screen.getByRole('dialog')).toBeTruthy();
+      expect(screen.getByText('Forget Backend')).toBeTruthy();
+      expect(screen.getByText(/desk:4180/)).toBeTruthy();
+      expect(screen.queryByText('Connections')).toBeNull();
+      expect(mockDispatch).not.toHaveBeenCalledWith(
+        expect.objectContaining({ type: 'connections/forgetRequested' }),
+      );
+
+      // Opening the dialog refreshes the keychain-sync state for the gating.
+      expect(mockDispatch).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: 'connections/loadKeychainSyncStateRequested',
+          asyncActionType: 'connections/loadKeychainSyncState',
+        }),
+      );
+
+      await fireEvent.click(screen.getByRole('button', { name: 'Forget' }));
       expect(mockDispatch).toHaveBeenCalledWith(
         expect.objectContaining({
           payload: ['r1'],
@@ -1265,6 +1354,62 @@ describe('DaemonStatusIndicator', () => {
           asyncActionType: 'connections/forget',
         }),
       );
+    });
+
+    it('cancel in the forget confirm dialog dispatches no forget request', async () => {
+      mockStoreState = { daemonHealth: { ...healthy }, connections: withConnections('local') };
+
+      const DaemonStatusIndicator = (await import('./DaemonStatusIndicator.svelte')).default;
+      render(DaemonStatusIndicator);
+      await fireEvent.click(screen.getByRole('button', { name: 'intentd: healthy' }));
+
+      await fireEvent.click(screen.getByText('desk:4180'));
+      await fireEvent.click(screen.getByText('Forget'));
+      await fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+
+      expect(screen.queryByRole('dialog')).toBeNull();
+      expect(mockDispatch).not.toHaveBeenCalledWith(
+        expect.objectContaining({ type: 'connections/forgetRequested' }),
+      );
+    });
+
+    it('shows the synced-devices notice when keychain sync is supported and enabled', async () => {
+      mockStoreState = {
+        daemonHealth: { ...healthy },
+        connections: {
+          ...withConnections('local'),
+          keychainSync: { supported: true, enabled: true, status: { state: 'active' } },
+        },
+      };
+
+      const DaemonStatusIndicator = (await import('./DaemonStatusIndicator.svelte')).default;
+      render(DaemonStatusIndicator);
+      await fireEvent.click(screen.getByRole('button', { name: 'intentd: healthy' }));
+
+      await fireEvent.click(screen.getByText('desk:4180'));
+      await fireEvent.click(screen.getByText('Forget'));
+
+      expect(screen.getByText(/all your synced devices/)).toBeTruthy();
+    });
+
+    it('shows a plain confirmation when keychain sync is not enabled', async () => {
+      mockStoreState = {
+        daemonHealth: { ...healthy },
+        connections: {
+          ...withConnections('local'),
+          keychainSync: { supported: true, enabled: false, status: null },
+        },
+      };
+
+      const DaemonStatusIndicator = (await import('./DaemonStatusIndicator.svelte')).default;
+      render(DaemonStatusIndicator);
+      await fireEvent.click(screen.getByRole('button', { name: 'intentd: healthy' }));
+
+      await fireEvent.click(screen.getByText('desk:4180'));
+      await fireEvent.click(screen.getByText('Forget'));
+
+      expect(screen.getByText(/desk:4180/)).toBeTruthy();
+      expect(screen.queryByText(/all your synced devices/)).toBeNull();
     });
 
     it('opens the add-connection modal from the connect action', async () => {
@@ -1330,6 +1475,7 @@ describe('DaemonStatusIndicator', () => {
         connections: {
           connections: createCollection('id', [remoteWithHostname]),
           activeId: 'local',
+          windowBackendId: 'local',
           status: 'idle',
           error: null,
           certMismatch: null,
@@ -1378,14 +1524,15 @@ describe('DaemonStatusIndicator', () => {
       isLocal: false,
     };
 
-    function withActive(activeId: string) {
+    function withCurrent(windowBackendId: string) {
       return {
         connections: createCollection('id', [
           localRecord,
           remoteWithHostname,
           remoteWithoutHostname,
         ]),
-        activeId,
+        activeId: windowBackendId,
+        windowBackendId,
         status: 'idle',
         error: null,
         certMismatch: null,
@@ -1393,7 +1540,7 @@ describe('DaemonStatusIndicator', () => {
     }
 
     it('shows the hostname inside the trigger button when a remote with hostname is active', async () => {
-      mockStoreState = { daemonHealth: { ...healthy }, connections: withActive('r1') };
+      mockStoreState = { daemonHealth: { ...healthy }, connections: withCurrent('r1') };
 
       const DaemonStatusIndicator = (await import('./DaemonStatusIndicator.svelte')).default;
       render(DaemonStatusIndicator);
@@ -1409,7 +1556,7 @@ describe('DaemonStatusIndicator', () => {
     });
 
     it('falls back to the record label (host:port) when the remote has no hostname', async () => {
-      mockStoreState = { daemonHealth: { ...healthy }, connections: withActive('r2') };
+      mockStoreState = { daemonHealth: { ...healthy }, connections: withCurrent('r2') };
 
       const DaemonStatusIndicator = (await import('./DaemonStatusIndicator.svelte')).default;
       render(DaemonStatusIndicator);
@@ -1420,7 +1567,7 @@ describe('DaemonStatusIndicator', () => {
     });
 
     it('shows no label when the local connection is active (dot-only trigger)', async () => {
-      mockStoreState = { daemonHealth: { ...healthy }, connections: withActive('local') };
+      mockStoreState = { daemonHealth: { ...healthy }, connections: withCurrent('local') };
 
       const DaemonStatusIndicator = (await import('./DaemonStatusIndicator.svelte')).default;
       render(DaemonStatusIndicator);
@@ -1442,7 +1589,7 @@ describe('DaemonStatusIndicator', () => {
     });
 
     it('clicking the label toggles the same dropdown as the dot', async () => {
-      mockStoreState = { daemonHealth: { ...healthy }, connections: withActive('r1') };
+      mockStoreState = { daemonHealth: { ...healthy }, connections: withCurrent('r1') };
 
       const DaemonStatusIndicator = (await import('./DaemonStatusIndicator.svelte')).default;
       render(DaemonStatusIndicator);
@@ -1529,6 +1676,7 @@ describe('DaemonStatusIndicator', () => {
       return {
         connections: createCollection('id'),
         activeId: 'local',
+        windowBackendId: 'local',
         status: 'idle',
         error: null,
         certMismatch: mismatch,

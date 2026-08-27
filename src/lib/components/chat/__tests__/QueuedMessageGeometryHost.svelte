@@ -9,6 +9,7 @@
     messageCount?: number;
     heldForQuestions?: boolean;
     scrollViewport?: boolean;
+    alignWithPrompt?: boolean;
   }
 
   let {
@@ -18,6 +19,7 @@
     messageCount = 1,
     heldForQuestions = false,
     scrollViewport = false,
+    alignWithPrompt = false,
   }: Props = $props();
   let lastAction = $state('none');
   const messages = $derived(
@@ -52,7 +54,25 @@
   data-testid="queued-message-geometry-host"
   style="width: {width}px; zoom: {zoom}; container-type: inline-size;"
 >
-  {#if scrollViewport}
+  {#if alignWithPrompt}
+    <div class="px-4 sm:px-6" data-testid="queued-message-transcript-lane">
+      <div class="relative z-20 mt-6 w-full" data-testid="queued-message-utility-area">
+        <QueuedMessageList
+          {messages}
+          {heldForQuestions}
+          onsendnow={(id) => (lastAction = `send:${id}`)}
+          onremove={(id) => (lastAction = `remove:${id}`)}
+          onedit={async (id, _content, editing) => {
+            lastAction = `${editing ? 'edit' : 'save'}:${id}`;
+            return { success: true };
+          }}
+        />
+      </div>
+    </div>
+    <div class="px-4 sm:px-6">
+      <div class="h-px w-full" data-testid="queued-message-prompt-bounds"></div>
+    </div>
+  {:else if scrollViewport}
     <!-- Mirrors the ChatPanel transcript scroll viewport contract. -->
     <div
       class="max-h-80 {CHAT_TRANSCRIPT_OVERFLOW_CLASS}"

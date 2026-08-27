@@ -2,7 +2,8 @@
  * Workspace transfer relay (main process) — wizard steps 3–4 execution.
  *
  * Drives the FE-mediated transfer per PROTOCOL §5.1: `workspace.export.start`
- * on the SOURCE (the live backend client), then either
+ * on the SOURCE (the invoking window's backend client, passed per start),
+ * then either
  *   - relays the sealed archive chunk-by-chunk (`workspace.export.read` →
  *     `workspace.import.chunk`) into a second, short-lived JsonRpcClient
  *     pinned to the chosen TARGET connection and commits
@@ -27,6 +28,13 @@ import type {
   TransferStartResult,
 } from '../../../shared/types/workspace-transfer';
 
+/** Structured rejection when another window owns the active session. */
+const NOT_OWNER = {
+  success: false,
+  error: 'the transfer session belongs to another window',
+  code: 'not-session-owner',
+} as const;
+
 /** The subset of JsonRpcClient the relay needs (injectable for tests). */
 export interface RelayRpcClient {
   request<T = unknown>(
@@ -46,13 +54,15 @@ export interface TargetClientHandle {
 
 /** Injectable seams so unit tests never stand up sockets/dialogs/disk. */
 export interface TransferRelayDeps {
-  getSourceClient(): RelayRpcClient;
   createTargetClient(connectionId: string): Promise<TargetClientHandle>;
   /** Returns the chosen path, or undefined when the user cancelled. */
   showSaveDialog(defaultFileName: string): Promise<string | undefined>;
   /** Sequential chunk sink for the download destination. */
   openFileSink(filePath: string): Promise<FileSink>;
   broadcastProgress(event: TransferProgressEvent): void;
+  /** True when the session-owning window no longer exists (closed/destroyed),
+   * releasing its session for takeover/cleanup by other windows. */
+  isOwnerGone(ownerId: number): boolean;
   logger: {
     info(msg: string, meta?: Record<string, unknown>): void;
     warn(msg: string, meta?: Record<string, unknown>): void;
@@ -88,9 +98,12 @@ const BUILD_TIMEOUT_MS = 600_000;
 /** One in-flight/settled transfer awaiting finalize. */
 interface RelaySession {
   workspaceId: string;
+  /** WebContents id of the window that started the session — lifecycle calls
+   * from other windows are rejected while this window is alive. */
+  ownerId: number;
   /** The SOURCE daemon's client, pinned at start() time — a backend switch
-   * swaps the shared client, and finalize/cancel must keep talking to the
-   * daemon that owns this exportId. */
+   * rebinds windows to other clients, and finalize/cancel must keep talking
+   * to the daemon that owns this exportId. */
   source: RelayRpcClient;
   exportId: string;
   /** Set while chunks are staging on the target (cleared after commit). */
@@ -104,9 +117,15 @@ interface RelaySession {
 }
 
 export interface WorkspaceTransferRelay {
-  start(params: TransferStartParams): Promise<TransferStartResult>;
-  finalize(params: TransferFinalizeParams): Promise<TransferFinalizeResult>;
-  cancel(): Promise<TransferCancelResult>;
+  /** `source` is the invoking window's backend client — the transfer SOURCE;
+   * `ownerId` is the invoking window's WebContents id (session affinity). */
+  start(
+    params: TransferStartParams,
+    source: RelayRpcClient,
+    ownerId: number,
+  ): Promise<TransferStartResult>;
+  finalize(params: TransferFinalizeParams, ownerId: number): Promise<TransferFinalizeResult>;
+  cancel(ownerId: number): Promise<TransferCancelResult>;
 }
 
 const TRANSFER_EVENT_TYPES = [
@@ -224,7 +243,9 @@ export function createWorkspaceTransferRelay(deps: TransferRelayDeps): Workspace
               settle(() => reject(new Error('cancelled')));
             }
           })
-          .catch((error) => settle(() => reject(error instanceof Error ? error : new Error(errText(error)))));
+          .catch((error) =>
+            settle(() => reject(error instanceof Error ? error : new Error(errText(error)))),
+          );
       });
       return ready;
     } finally {
@@ -301,9 +322,31 @@ export function createWorkspaceTransferRelay(deps: TransferRelayDeps): Workspace
     }
   }
 
-  async function start(params: TransferStartParams): Promise<TransferStartResult> {
+  /** Owner check: the caller owns the session, or its owner window is gone. */
+  function ownsSession(current: RelaySession, ownerId: number): boolean {
+    return current.ownerId === ownerId || deps.isOwnerGone(current.ownerId);
+  }
+
+  async function start(
+    params: TransferStartParams,
+    source: RelayRpcClient,
+    ownerId: number,
+  ): Promise<TransferStartResult> {
     if (session && !session.committed && !session.cancelled) {
-      return { success: false, error: 'a transfer is already in progress' };
+      if (!deps.isOwnerGone(session.ownerId)) {
+        return { success: false, error: 'a transfer is already in progress' };
+      }
+      // The in-flight run's owner window is gone: no renderer remains to
+      // cancel it, so release it here — flag it cancelled (its loop unwinds
+      // and aborts the export itself) and let the new start proceed.
+      session.cancelled = true;
+      session.signalCancel?.();
+    }
+    // A committed-but-unfinalized session stays pinned to its window: another
+    // window must not silently abort it (monorepo#3519). Only its own window
+    // — or any window once the owner is gone — may replace it.
+    if (session?.committed && !ownsSession(session, ownerId)) {
+      return NOT_OWNER;
     }
     // A committed-but-unfinalized leftover (renderer reloaded/crashed before
     // finalize or close, so no transfer:cancel ever arrived) would otherwise
@@ -312,9 +355,9 @@ export function createWorkspaceTransferRelay(deps: TransferRelayDeps): Workspace
       await abortExport(session.source, session.exportId);
     }
     const { workspaceId, destination } = params;
-    const source = deps.getSourceClient();
     const current: RelaySession = {
       workspaceId,
+      ownerId,
       source,
       exportId: '',
       interruptedAgents: [],
@@ -330,7 +373,7 @@ export function createWorkspaceTransferRelay(deps: TransferRelayDeps): Workspace
     if (destination.kind === 'download') {
       filePath = await deps.showSaveDialog(`${workspaceId}-transfer.zip`);
       if (!filePath) {
-        session = null;
+        if (session === current) session = null;
         return { success: false, canceled: true };
       }
     }
@@ -421,7 +464,8 @@ export function createWorkspaceTransferRelay(deps: TransferRelayDeps): Workspace
           error: errText(error),
         });
       }
-      session = null;
+      // An orphaned run released by a takeover must not clear its successor.
+      if (session === current) session = null;
       return cancelled
         ? { success: false, canceled: true }
         : { success: false, error: errText(error) };
@@ -430,17 +474,27 @@ export function createWorkspaceTransferRelay(deps: TransferRelayDeps): Workspace
     }
   }
 
-  async function finalize(params: TransferFinalizeParams): Promise<TransferFinalizeResult> {
+  async function finalize(
+    params: TransferFinalizeParams,
+    ownerId: number,
+  ): Promise<TransferFinalizeResult> {
     const current = session;
     if (!current || !current.committed) {
       return { success: false, error: 'no committed transfer to finalize' };
+    }
+    if (!ownsSession(current, ownerId)) {
+      return NOT_OWNER;
     }
     const source = current.source;
     const resumeFailed: string[] = [];
 
     // Restart in-flight agents on the TARGET (fail-soft — a resume failure
     // never blocks the source finalize; the user can resolve on the target).
-    if (params.restartAgents && current.interruptedAgents.length > 0 && current.targetConnectionId) {
+    if (
+      params.restartAgents &&
+      current.interruptedAgents.length > 0 &&
+      current.targetConnectionId
+    ) {
       let targetHandle: TargetClientHandle | null = null;
       try {
         targetHandle = await deps.createTargetClient(current.targetConnectionId);
@@ -470,14 +524,19 @@ export function createWorkspaceTransferRelay(deps: TransferRelayDeps): Workspace
     } catch (error) {
       return { success: false, error: errText(error), resumeFailed };
     }
-    session = null;
+    // An owner-gone takeover may have replaced the session mid-await; only
+    // clear the session this finalize actually acted on.
+    if (session === current) session = null;
     return { success: true, ...(resumeFailed.length > 0 ? { resumeFailed } : {}) };
   }
 
-  async function cancel(): Promise<TransferCancelResult> {
+  async function cancel(ownerId: number): Promise<TransferCancelResult> {
     const current = session;
     if (!current) {
       return { success: true };
+    }
+    if (!ownsSession(current, ownerId)) {
+      return NOT_OWNER;
     }
     if (current.committed) {
       // The transfer settled but the wizard was dismissed without finalizing:

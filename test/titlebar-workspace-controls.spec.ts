@@ -25,20 +25,8 @@ test.beforeAll(async () => {
           replacement: resolve(process.cwd(), 'test/fixtures/titlebar-control-store.ts'),
         },
         {
-          find: '$store/renderer/slices/tab-state/tab-state-selectors',
-          replacement: resolve(process.cwd(), 'test/fixtures/titlebar-control-store.ts'),
-        },
-        {
-          find: '$features/workspace/workspace-view-mode-action',
-          replacement: resolve(process.cwd(), 'test/fixtures/titlebar-control-store.ts'),
-        },
-        {
           find: '$store/renderer/store',
           replacement: resolve(process.cwd(), 'test/fixtures/titlebar-control-store.ts'),
-        },
-        {
-          find: /.*\/sidebar-nav\/SidebarNavHoverCard\.svelte$/,
-          replacement: resolve(process.cwd(), 'test/fixtures/EmptyComponent.svelte'),
         },
         { find: '$lib', replacement: resolve(process.cwd(), 'src/lib') },
         { find: '$store', replacement: resolve(process.cwd(), 'src/store') },
@@ -94,7 +82,6 @@ test('mounts accepted control geometry and shortcut tooltips', async ({ page }, 
         await mountControls(page, theme, zoom);
         const controls = [
           page.locator('[data-titlebar-spaces-control]'),
-          page.locator('[data-fixture-control="layout"] button'),
           page.locator('[data-workspace-repo-launcher] button'),
         ];
         for (const control of controls) {
@@ -103,9 +90,13 @@ test('mounts accepted control geometry and shortcut tooltips', async ({ page }, 
           expect(box?.height).toBeCloseTo(32 * zoom, 0);
           await expect(control).not.toHaveAttribute('title', /.+/);
         }
+        const sidebarControl = controls[0];
+        await expect(sidebarControl).toHaveAttribute('aria-label', 'Toggle sidebar');
+        await expect(sidebarControl).not.toHaveAttribute('aria-haspopup');
+        await expect(sidebarControl).not.toHaveAttribute('aria-expanded');
+        await expect(sidebarControl).not.toHaveAttribute('aria-controls');
         const glyphs = [
           page.locator('[data-titlebar-spaces-control] svg'),
-          page.locator('[data-fixture-control="layout"] svg'),
           page.locator('[data-workspace-repo-launcher] svg'),
         ];
         for (const glyph of glyphs) {
@@ -114,9 +105,11 @@ test('mounts accepted control geometry and shortcut tooltips', async ({ page }, 
           expect(box?.height).toBeCloseTo(16 * zoom, 0);
           expect(await glyph.evaluate((node) => getComputedStyle(node).opacity)).toBe('1');
         }
-        await controls[1].hover();
+        await sidebarControl.hover();
         await expect(page.locator('[data-tooltip-label]')).toBeVisible();
-        await expect(page.locator('[data-tooltip-shortcut]')).toContainText(/L/);
+        await expect(page.locator('[data-tooltip-label]')).toHaveText('Toggle sidebar');
+        await expect(page.locator('[data-tooltip-shortcut]')).toContainText(/(?:⌘|Ctrl\+)O/);
+        await expect(page.locator('.sidebar-hover-card')).toHaveCount(0);
         if (reducedMotion === 'no-preference' && zoom === 1) {
           await testInfo.attach(theme + '-titlebar-controls', {
             body: await page.screenshot(),

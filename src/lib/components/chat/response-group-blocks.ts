@@ -1,9 +1,151 @@
 import type { ContentBlock } from '$shared/types';
+import type { ContentBlockGroup, RenderContentBlock } from '$lib/utils/messageParser';
 import {
   getIdBackedContentBlockKey,
   getToolResultContentBlockKey,
   getToolUseContentBlockKey,
 } from '$shared/utils/content-block-helpers';
+import { extractReasoningHeading, extractStandaloneReasoningTitle } from './reasoning-heading';
+
+// This provider phase arrives in the same parsed content_group shape as normal
+// named groups. Keep the compatibility match narrow so authored group names
+// such as Working and Plan retain their model-provided titles.
+const REASONING_PHASE_GROUP_NAMES = new Set(['prepping']);
+
+export function isReasoningPhaseGroupName(name: string): boolean {
+  return REASONING_PHASE_GROUP_NAMES.has(name.trim().toLowerCase());
+}
+
+function reasoningWithText(block: ContentBlock, text: string): ContentBlock | null {
+  if (!text.trim()) return null;
+  const { content: _content, ...rest } = block;
+  return { ...rest, type: 'thinking', text } as ContentBlock;
+}
+
+function normalizeStandaloneReasoning(block: ContentBlock, isActive: boolean): ContentBlock | null {
+  if (block.type !== 'thinking' || isActive) return block;
+
+  const text = block.text ?? block.content ?? '';
+  if (extractReasoningHeading(text).heading) return block;
+  if (!text.trim()) return null;
+
+  const { content: _content, ...rest } = block;
+  return { ...rest, type: 'text', text } as ContentBlock;
+}
+
+export function normalizeResponseGroup(block: ContentBlockGroup): ContentBlockGroup {
+  if (!isReasoningPhaseGroupName(block.name)) return block;
+
+  const parsedReasoning = block.children.map((child) =>
+    child.type === 'thinking' ? extractReasoningHeading(child.text ?? child.content ?? '') : null,
+  );
+  const firstNamedReasoning = parsedReasoning.findIndex((reasoning) => reasoning?.heading);
+  const children = block.children.flatMap((child, index) => {
+    if (child.type !== 'thinking') return [child];
+    const reasoning = parsedReasoning[index];
+    const text =
+      index === firstNamedReasoning ? (reasoning?.body ?? '') : (child.text ?? child.content ?? '');
+    const normalized = reasoningWithText(child, text);
+    return normalized ? [normalized] : [];
+  });
+
+  return {
+    ...block,
+    name: parsedReasoning[firstNamedReasoning]?.heading ?? '',
+    sourceName: block.name,
+    isReasoningPhase: true,
+    children,
+  };
+}
+
+function pairAdjacentReasoningGroup(
+  preceding: ContentBlock,
+  group: ContentBlockGroup,
+): ContentBlockGroup | null {
+  if (preceding.type !== 'thinking' || !isReasoningPhaseGroupName(group.name)) return null;
+
+  const precedingReasoning = extractReasoningHeading(preceding.text ?? preceding.content ?? '');
+  const normalizedGroup = normalizeResponseGroup(group);
+  if (!group.isStreaming && !precedingReasoning.heading && !normalizedGroup.name) {
+    const precedingHistory = reasoningWithText(preceding, precedingReasoning.body);
+    if (!precedingHistory) return null;
+
+    const [firstChild, ...remainingChildren] = normalizedGroup.children;
+    const children =
+      firstChild?.type === 'text'
+        ? [firstChild, precedingHistory, ...remainingChildren]
+        : [precedingHistory, ...normalizedGroup.children];
+    return {
+      ...normalizedGroup,
+      hasAdjacentReasoningHistory: true,
+      children,
+    };
+  }
+
+  const description = group.children[0];
+  if (description?.type !== 'text' || !(description.text ?? description.content ?? '').trim()) {
+    return null;
+  }
+
+  if (!precedingReasoning.heading) return null;
+
+  const title = extractStandaloneReasoningTitle(precedingReasoning.body);
+  if (!title) return null;
+
+  const precedingHistory = reasoningWithText(preceding, precedingReasoning.heading);
+  const children = normalizedGroup.children;
+
+  return {
+    ...normalizedGroup,
+    name: title,
+    hasAdjacentReasoningHistory: true,
+    children: precedingHistory ? [children[0], precedingHistory, ...children.slice(1)] : children,
+  };
+}
+
+export function normalizeResponseGroups(
+  blocks: readonly RenderContentBlock[],
+  isStreaming = false,
+): RenderContentBlock[] {
+  const normalized: RenderContentBlock[] = [];
+  let activeBlockIndex = -1;
+  if (isStreaming) {
+    for (let index = blocks.length - 1; index >= 0; index -= 1) {
+      if (blocks[index].type !== 'tool_result') {
+        activeBlockIndex = index;
+        break;
+      }
+    }
+  }
+
+  for (let index = 0; index < blocks.length; index += 1) {
+    const block = blocks[index];
+    const next = blocks[index + 1];
+    if (block.type !== 'content_group' && next?.type === 'content_group') {
+      const paired = pairAdjacentReasoningGroup(block, next);
+      if (paired) {
+        normalized.push(paired);
+        index += 1;
+        continue;
+      }
+    }
+
+    if (block.type === 'content_group') {
+      normalized.push(normalizeResponseGroup(block));
+      continue;
+    }
+
+    const standalone = normalizeStandaloneReasoning(block, index === activeBlockIndex);
+    if (standalone) normalized.push(standalone);
+  }
+  return normalized;
+}
+
+export function shouldRenderResponseGroupInline(
+  group: Pick<ContentBlockGroup, 'isReasoningPhase' | 'isStreaming' | 'name'>,
+): boolean {
+  return group.isReasoningPhase === true && !group.isStreaming && !group.name.trim();
+}
 
 export function getResponseGroupBlockKey(block: ContentBlock, index: number): string {
   // A tool owner id is not row identity. Prefer the protocol block id so
@@ -45,6 +187,35 @@ export function dedupeKeys(keys: readonly string[]): string[] {
 
 export function getResponseGroupBlockKeys(blocks: readonly ContentBlock[]): string[] {
   return dedupeKeys(blocks.map((block, index) => getResponseGroupBlockKey(block, index)));
+}
+
+export function getResponseGroupCurrentBlockIndex(blocks: readonly ContentBlock[]): number {
+  for (let index = blocks.length - 1; index >= 0; index -= 1) {
+    if (blocks[index].type !== 'tool_result') return index;
+  }
+
+  return -1;
+}
+
+export function getResponseGroupCurrentChildIndex(
+  group: Pick<ContentBlockGroup, 'children' | 'hasAdjacentReasoningHistory'>,
+): number {
+  if (
+    group.hasAdjacentReasoningHistory &&
+    getResponseGroupCurrentBlockIndex(group.children.slice(2)) < 0
+  ) {
+    return group.children.length > 0 ? 0 : -1;
+  }
+
+  return getResponseGroupCurrentBlockIndex(group.children);
+}
+
+export function getResponseGroupCurrentBlock(
+  blocks: readonly ContentBlock[] | undefined,
+): ContentBlock | undefined {
+  if (!blocks) return undefined;
+  const index = getResponseGroupCurrentBlockIndex(blocks);
+  return index >= 0 ? blocks[index] : undefined;
 }
 
 export function getResponseGroupPreviewBlock(

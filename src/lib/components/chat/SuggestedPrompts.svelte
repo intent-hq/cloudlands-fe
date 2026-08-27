@@ -79,7 +79,10 @@
           onclick={() => handleClick(prompt)}
           onkeydown={(e) => handleKeyDown(e, prompt)}
         >
-          <span class={CHAT_OPERATIONAL_LEADING_CLASS} data-suggested-prompt-icon>
+          <span
+            class="{CHAT_OPERATIONAL_LEADING_CLASS} mt-px self-start"
+            data-suggested-prompt-icon
+          >
             <Fa icon={faArrowRight} size={16} class={CHAT_OPERATIONAL_ICON_CLASS} />
           </span>
           <span class="min-w-0 flex-1 text-pretty" data-suggested-prompt-label>{prompt}</span>

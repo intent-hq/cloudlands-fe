@@ -2,7 +2,7 @@
  * Workspace import relay (main process) — the "Import Workspace from File…"
  * flow. Reads a transfer zip picked via a file-open dialog, pulls its
  * `manifest.json` (central-directory read, nothing extracted), hashes the
- * archive, then streams it into the CURRENT backend per PROTOCOL §5.1:
+ * archive, then streams it into the invoking window's backend per PROTOCOL §5.1:
  * `workspace.import.begin` → seq-numbered base64 `workspace.import.chunk`
  * calls (respecting the begin result's `maxChunkBytes`) →
  * `workspace.import.commit`.
@@ -32,12 +32,13 @@ export interface ImportFileSource extends ZipByteSource {
 
 /** Injectable seams so unit tests never stand up sockets/dialogs/disk. */
 export interface ImportRelayDeps {
-  /** The CURRENT backend's client — the import target. */
-  getClient(): RelayRpcClient;
   /** Returns the chosen path, or undefined when the user cancelled. */
   showOpenDialog(): Promise<string | undefined>;
   openFile(filePath: string): Promise<ImportFileSource>;
   broadcastProgress(event: ImportProgressEvent): void;
+  /** True when the session-owning window no longer exists (closed/destroyed),
+   * releasing its session for cancellation by other windows. */
+  isOwnerGone(ownerId: number): boolean;
   logger: {
     info(msg: string, meta?: Record<string, unknown>): void;
     warn(msg: string, meta?: Record<string, unknown>): void;
@@ -54,6 +55,9 @@ const COMMIT_TIMEOUT_MS = 600_000;
 const HASH_READ_BYTES = 4 * 1024 * 1024;
 
 interface ImportSession {
+  /** WebContents id of the window that started the session — lifecycle calls
+   * from other windows are rejected while this window is alive. */
+  ownerId: number;
   cancelled: boolean;
   /** Set while chunks are staging on the backend (cleared after commit). */
   importId?: string;
@@ -61,18 +65,37 @@ interface ImportSession {
 }
 
 export interface WorkspaceImportRelay {
-  start(params: ImportStartParams): Promise<ImportStartResult>;
-  cancel(): Promise<ImportCancelResult>;
+  /** `client` is the invoking window's backend client — the import target;
+   * `ownerId` is the invoking window's WebContents id (session affinity). */
+  start(
+    params: ImportStartParams,
+    client: RelayRpcClient,
+    ownerId: number,
+  ): Promise<ImportStartResult>;
+  cancel(ownerId: number): Promise<ImportCancelResult>;
 }
 
 function errText(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+/** Structured rejection when another window owns the active session. */
+const NOT_OWNER = {
+  success: false,
+  error: 'the import session belongs to another window',
+  code: 'not-session-owner',
+} as const;
+
 export function createWorkspaceImportRelay(deps: ImportRelayDeps): WorkspaceImportRelay {
   let session: ImportSession | null = null;
-  /** Last picked archive, for dialog-free retry after a failure. */
-  let lastFilePath: string | undefined;
+  /** Last picked archive, for dialog-free retry after a failure — pinned to
+   * the window that picked it so another window cannot re-run its import. */
+  let lastFile: { path: string; ownerId: number } | undefined;
+
+  /** Owner check: the caller owns the session, or its owner window is gone. */
+  function ownsSession(current: ImportSession, ownerId: number): boolean {
+    return current.ownerId === ownerId || deps.isOwnerGone(current.ownerId);
+  }
 
   /** Best-effort backend-side cleanup; never throws. */
   async function abortImport(client: RelayRpcClient, importId: string): Promise<void> {
@@ -143,26 +166,38 @@ export function createWorkspaceImportRelay(deps: ImportRelayDeps): WorkspaceImpo
     }
   }
 
-  async function start(params: ImportStartParams): Promise<ImportStartResult> {
+  async function start(
+    params: ImportStartParams,
+    client: RelayRpcClient,
+    ownerId: number,
+  ): Promise<ImportStartResult> {
     if (session) {
-      return { success: false, error: 'an import is already in progress' };
+      if (!deps.isOwnerGone(session.ownerId)) {
+        return { success: false, error: 'an import is already in progress' };
+      }
+      // The in-flight run's owner window is gone: no renderer remains to
+      // cancel it, so release it here — flag it cancelled (its loop observes
+      // the flag and aborts the staged import) and let the new start proceed.
+      session.cancelled = true;
     }
     // The session exists across the open dialog too, so a wizard close while
     // the native dialog is up marks it cancelled and the pick is discarded.
-    const current: ImportSession = { cancelled: false };
+    const current: ImportSession = { ownerId, cancelled: false };
     session = current;
     const isCancelled = (): boolean => current.cancelled;
 
     let file: ImportFileSource | null = null;
-    let filePath = params.reuseLastFile ? lastFilePath : undefined;
+    // Retry only re-runs the invoking window's own pick — another window's
+    // last file must not leak across (monorepo#3519).
+    let filePath =
+      params.reuseLastFile && lastFile?.ownerId === ownerId ? lastFile.path : undefined;
     try {
       if (!filePath) {
         filePath = await deps.showOpenDialog();
         if (!filePath || isCancelled()) return { success: false, canceled: true };
       }
-      lastFilePath = filePath;
+      lastFile = { path: filePath, ownerId };
 
-      const client = deps.getClient();
       current.client = client;
       file = await deps.openFile(filePath);
       const sizeBytes = await file.size();
@@ -186,7 +221,14 @@ export function createWorkspaceImportRelay(deps: ImportRelayDeps): WorkspaceImpo
         if (!Number.isFinite(begin.maxChunkBytes) || begin.maxChunkBytes <= 0) {
           throw new Error('invalid maxChunkBytes from workspace.import.begin');
         }
-        await uploadChunks(client, file, sizeBytes, begin.maxChunkBytes, begin.importId, isCancelled);
+        await uploadChunks(
+          client,
+          file,
+          sizeBytes,
+          begin.maxChunkBytes,
+          begin.importId,
+          isCancelled,
+        );
         if (isCancelled()) throw new Error('cancelled');
         deps.broadcastProgress({
           phase: 'committing',
@@ -198,7 +240,11 @@ export function createWorkspaceImportRelay(deps: ImportRelayDeps): WorkspaceImpo
         const commit = await client.request<{
           workspace?: { id?: string; title?: string; name?: string };
           interruptedAgents?: string[];
-        }>('workspace.import.commit', { importId: begin.importId }, { timeoutMs: COMMIT_TIMEOUT_MS });
+        }>(
+          'workspace.import.commit',
+          { importId: begin.importId },
+          { timeoutMs: COMMIT_TIMEOUT_MS },
+        );
         current.importId = undefined;
         if (isCancelled()) {
           // The cancel raced the commit and lost: the backend already holds
@@ -236,13 +282,17 @@ export function createWorkspaceImportRelay(deps: ImportRelayDeps): WorkspaceImpo
         : { success: false, error: errText(error) };
     } finally {
       await file?.close().catch(() => undefined);
-      session = null;
+      // An orphaned run released by a takeover must not clear its successor.
+      if (session === current) session = null;
     }
   }
 
-  async function cancel(): Promise<ImportCancelResult> {
+  async function cancel(ownerId: number): Promise<ImportCancelResult> {
     const current = session;
     if (!current) return { success: true };
+    if (!ownsSession(current, ownerId)) {
+      return NOT_OWNER;
+    }
     current.cancelled = true;
     // The in-flight start() loop observes the flag between reads/chunks and
     // aborts the staged import itself; nothing else to do here.

@@ -5,11 +5,13 @@
   import { parseVSCodeTheme } from '$lib/utils/vscode-theme-parser';
   import {
     defaultCatalogPreferences,
+    parseCatalogUrlSettings,
     readCatalogPreferences,
     writeCatalogPreferences,
     type CatalogColorTheme,
     type CatalogTheme,
   } from './catalog-preferences';
+  import { installPreviewBrowserApi } from './preview-discovery';
 
   let { activeSlug, children }: { activeSlug?: string; children?: Snippet } = $props();
   let theme = $state<CatalogTheme>(defaultCatalogPreferences.theme);
@@ -31,9 +33,11 @@
     initialRootReducedMotion = root.classList.contains('catalog-reduced-motion');
     initialRootStyle = root.getAttribute('style');
     const saved = readCatalogPreferences(localStorage);
-    theme = saved.theme;
+    const urlSettings = parseCatalogUrlSettings(new URLSearchParams(window.location.search));
+    theme = urlSettings.theme ?? saved.theme;
     colorTheme = saved.colorTheme;
-    reducedMotion = saved.reducedMotion;
+    reducedMotion = urlSettings.reducedMotion ?? saved.reducedMotion;
+    const removePreviewBrowserApi = installPreviewBrowserApi(window);
 
     const media = window.matchMedia('(prefers-color-scheme: dark)');
     const updateSystemTheme = () => (systemDark = media.matches);
@@ -42,6 +46,7 @@
     hydrated = true;
     return () => {
       media.removeEventListener('change', updateSystemTheme);
+      removePreviewBrowserApi();
       root.classList.toggle('dark', initialRootDark);
       root.classList.toggle('light', initialRootLight);
       root.classList.toggle('catalog-reduced-motion', initialRootReducedMotion);
@@ -67,6 +72,13 @@
     root.classList.toggle('dark', resolvedTheme === 'dark');
     root.classList.toggle('light', resolvedTheme === 'light');
     root.classList.toggle('catalog-reduced-motion', reducedMotion);
+
+    if (activeSlug) {
+      const url = new URL(window.location.href);
+      url.searchParams.set('theme', theme);
+      url.searchParams.set('motion', reducedMotion ? 'reduced' : 'full');
+      window.history.replaceState(window.history.state, '', url);
+    }
   });
 </script>
 

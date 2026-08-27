@@ -1,7 +1,9 @@
 /**
  * @vitest-environment jsdom
  */
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
+import { readFileSync } from 'node:fs';
+import { SvelteURL } from 'svelte/reactivity';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { appClient } from '$lib/client';
 import { SPECIALISTS } from '$lib/constants/specialists';
@@ -12,7 +14,10 @@ import { hydrateActiveProvider } from '$store/renderer/slices/provider-settings/
 import { selectGitHubAuthError } from '$store/renderer/slices/github-auth/github-auth-selectors';
 import { setGitHubAuthError } from '$store/renderer/slices/github-auth/github-auth-slice';
 import { selectBundledSpecialists } from '$store/renderer/slices/specialists/specialists-selectors';
-import { setBundledSpecialists } from '$store/renderer/slices/specialists/specialists-slice';
+import {
+  setBundledSpecialists,
+  setFileSpecialists,
+} from '$store/renderer/slices/specialists/specialists-slice';
 import { selectSelectedModel } from '$store/renderer/slices/model/model-selectors';
 import { setSelectedModel } from '$store/renderer/slices/model/model-slice';
 import { selectMcpError } from '$store/renderer/slices/mcp-settings/mcp-settings-selectors';
@@ -80,15 +85,17 @@ vi.mock('$lib/components/settings/ProviderSelector.svelte', async () => ({
 vi.mock('$lib/components/settings/AIBehaviorEditor.svelte', async () => ({
   default: (await import('./mocks/SettingsStateFixture.svelte')).default,
 }));
-vi.mock('$lib/components/settings/AIBehaviorSidebar.svelte', async () => ({
-  default: (await import('$lib/components/workspace/sidebar/__tests__/mocks/MockSimple.svelte'))
-    .default,
-}));
 vi.mock('$lib/components/settings/ConnectionsSettings.svelte', async () => ({
-  default: (await import('$lib/components/chat/__tests__/mocks/SlotOnly.svelte')).default,
+  default: (await import('./mocks/SettingsStateFixture.svelte')).default,
+}));
+vi.mock('$lib/components/settings/VoiceSettings.svelte', async () => ({
+  default: (await import('./mocks/SettingsStateFixture.svelte')).default,
 }));
 vi.mock('$lib/components/settings/GitWorkspaceSettings.svelte', async () => ({
-  default: (await import('$lib/components/chat/__tests__/mocks/SlotOnly.svelte')).default,
+  default: (await import('./mocks/GitWorkspaceSettingsFixture.svelte')).default,
+}));
+vi.mock('$lib/components/settings/LanguageSettings.svelte', async () => ({
+  default: (await import('./mocks/SettingsStateFixture.svelte')).default,
 }));
 vi.mock('$lib/components/settings/OpenInAppsSettings.svelte', async () => ({
   default: (await import('$lib/components/chat/__tests__/mocks/SlotOnly.svelte')).default,
@@ -145,7 +152,7 @@ beforeEach(() => {
   registerMockIpcHandler(IPC_CHANNELS.BACKEND.GET_STATUS, () => ({ status: 'connected' }));
   (globalThis as typeof globalThis & { __APP_VERSION__: string }).__APP_VERSION__ = '2.0.10';
   window.history.pushState({}, '', '/settings#default-model');
-  mocks.page.url = new URL(window.location.href);
+  mocks.page.url = new SvelteURL(window.location.href);
   (
     window.localStorage.getItem as unknown as { mockReturnValue(value: string | null): void }
   ).mockReturnValue(null);
@@ -327,7 +334,7 @@ function renderSettings(
   catalog: SettingsCatalog = [...SETTINGS_PROTOCOL_FIXTURES.list.response.settings],
 ) {
   window.history.pushState({}, '', url);
-  mocks.page.url = new URL(window.location.href);
+  mocks.page.url.href = window.location.href;
   const requestedTab = mocks.page.url.searchParams.get('tab');
   const fixture = fixtureId
     ? SETTINGS_CAPTURE_FIXTURES.find(({ id }) => id === fixtureId)
@@ -342,32 +349,54 @@ function renderSettings(
   });
 }
 
-async function exerciseFixtureSaveMode(saveMode: string) {
+async function exerciseFixtureSaveMode(saveMode: string, fixture: HTMLElement) {
+  const fixtureScreen = within(fixture);
   if (saveMode === 'immediate') {
-    await fireEvent.click(screen.getByRole('button', { name: 'Apply immediately' }));
+    await fireEvent.click(fixtureScreen.getByRole('button', { name: 'Apply immediately' }));
   } else if (saveMode === 'autosave') {
-    await fireEvent.input(screen.getByRole('textbox', { name: 'Autosave value' }), {
+    await fireEvent.input(fixtureScreen.getByRole('textbox', { name: 'Autosave value' }), {
       target: { value: 'saved draft' },
     });
   } else if (saveMode === 'blur-or-enter') {
-    const input = screen.getByRole('textbox', { name: 'Blur or Enter value' });
+    const input = fixtureScreen.getByRole('textbox', { name: 'Blur or Enter value' });
     await fireEvent.input(input, { target: { value: 'saved on blur' } });
     await fireEvent.blur(input);
   } else if (saveMode === 'explicit') {
-    await fireEvent.click(screen.getByRole('button', { name: 'Save changes' }));
+    await fireEvent.click(fixtureScreen.getByRole('button', { name: 'Save changes' }));
   } else {
-    await fireEvent.click(screen.getByRole('button', { name: 'Review save' }));
-    await fireEvent.click(screen.getByRole('button', { name: 'Confirm fixture save' }));
+    await fireEvent.click(fixtureScreen.getByRole('button', { name: 'Review save' }));
+    await fireEvent.click(fixtureScreen.getByRole('button', { name: 'Confirm fixture save' }));
   }
   await waitFor(() =>
-    expect(screen.getByTestId('fixture-save-state').textContent).toContain('saved:success'),
+    expect(fixtureScreen.getByTestId('fixture-save-state').textContent).toContain('saved:success'),
   );
+}
+
+function expectElementOrder(ids: string[]) {
+  const elements = ids.map((id) => document.getElementById(id));
+  expect(elements.every(Boolean)).toBe(true);
+  for (let index = 1; index < elements.length; index += 1) {
+    expect(
+      elements[index - 1]!.compareDocumentPosition(elements[index]!) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  }
 }
 
 describe('settings deterministic capture fixtures', () => {
   it('covers every tab in light/dark at desktop/compact dimensions with stable IDs', () => {
-    expect(SETTINGS_CAPTURE_FIXTURES).toHaveLength(24);
-    expect(new Set(SETTINGS_CAPTURE_FIXTURES.map(({ id }) => id)).size).toBe(24);
+    expect(SETTINGS_TABS.map(({ id }) => id)).toEqual([
+      'display',
+      'app-behavior',
+      'agent-behavior',
+      'providers',
+      'connections',
+      'setup',
+      'advanced',
+      'input',
+    ]);
+    expect(SETTINGS_CAPTURE_FIXTURES).toHaveLength(32);
+    expect(new Set(SETTINGS_CAPTURE_FIXTURES.map(({ id }) => id)).size).toBe(32);
     for (const tab of SETTINGS_TABS) {
       expect(SETTINGS_CAPTURE_FIXTURES.filter((fixture) => fixture.tab === tab.id)).toHaveLength(4);
     }
@@ -414,7 +443,8 @@ describe('settings deterministic capture fixtures', () => {
       expect(window.innerHeight).toBe(height);
       if (heading) expect(screen.getByRole('heading', { name: heading })).toBeTruthy();
 
-      const renderedState = screen.getByTestId('settings-state-fixture');
+      const renderedState = screen.getAllByTestId('settings-state-fixture')[0];
+      const fixtureScreen = within(renderedState);
       expect(renderedState.dataset.tab).toBe(tab);
       expect(renderedState.dataset.state).toBe(state);
       expect(renderedState.dataset.stateOwner).toBe(stateOwner);
@@ -428,45 +458,51 @@ describe('settings deterministic capture fixtures', () => {
       expect(renderedState.dataset.ownerValue).toBe(state);
       expect(renderedState.dataset.saveMode).toBe(saveMode);
       await waitFor(() => expect(renderedState.dataset.catalogSize).toBe('2'));
-      expect(screen.getByText(`Fixture state: ${state}`)).toBeTruthy();
+      expect(fixtureScreen.getByText(`Fixture state: ${state}`)).toBeTruthy();
 
       if (state === 'loading' || state === 'success')
-        expect(screen.getByRole('status')).toBeTruthy();
+        expect(fixtureScreen.getByRole('status')).toBeTruthy();
       if (state === 'empty') {
-        await fireEvent.click(screen.getByRole('button', { name: /Add .* item/ }));
+        await fireEvent.click(fixtureScreen.getByRole('button', { name: /Add .* item/ }));
         await waitFor(() =>
-          expect(screen.getByTestId('fixture-action-state').textContent).toContain('add:success'),
+          expect(fixtureScreen.getByTestId('fixture-action-state').textContent).toContain(
+            'add:success',
+          ),
         );
       }
       if (state === 'validation') {
-        expect(screen.getByRole('alert')).toBeTruthy();
+        expect(fixtureScreen.getByRole('alert')).toBeTruthy();
         expect(
-          screen.getByRole('textbox', { name: 'Fixture value' }).getAttribute('aria-invalid'),
+          fixtureScreen
+            .getByRole('textbox', { name: 'Fixture value' })
+            .getAttribute('aria-invalid'),
         ).toBe('true');
       }
       if (state === 'error') {
-        await fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+        await fireEvent.click(fixtureScreen.getByRole('button', { name: 'Retry' }));
         await waitFor(() =>
-          expect(screen.getByTestId('fixture-action-state').textContent).toContain('retry:success'),
+          expect(fixtureScreen.getByTestId('fixture-action-state').textContent).toContain(
+            'retry:success',
+          ),
         );
       }
       if (state === 'disabled') {
         expect(
-          (screen.getByRole('button', { name: 'Unavailable setting' }) as HTMLButtonElement)
+          (fixtureScreen.getByRole('button', { name: 'Unavailable setting' }) as HTMLButtonElement)
             .disabled,
         ).toBe(true);
       }
       if (state === 'confirmation') {
-        expect(screen.getByRole('dialog', { name: 'Confirm settings change' })).toBeTruthy();
-        await fireEvent.click(screen.getByRole('button', { name: 'Confirm state change' }));
+        expect(fixtureScreen.getByRole('dialog', { name: 'Confirm settings change' })).toBeTruthy();
+        await fireEvent.click(fixtureScreen.getByRole('button', { name: 'Confirm state change' }));
         await waitFor(() =>
-          expect(screen.getByTestId('fixture-action-state').textContent).toContain(
+          expect(fixtureScreen.getByTestId('fixture-action-state').textContent).toContain(
             'confirm:success',
           ),
         );
       }
 
-      await exerciseFixtureSaveMode(saveMode);
+      await exerciseFixtureSaveMode(saveMode, renderedState);
       expect(renderedState.dataset.state).toBe('success');
       expect(renderedState.dataset.ownerValue).toBe('success');
 
@@ -489,7 +525,7 @@ describe('settings deterministic capture fixtures', () => {
 
 describe('settings tab route and focus behavior', () => {
   it('keeps an accessible page name without a visible content-area heading', () => {
-    const { container } = renderSettings('/settings?tab=general');
+    const { container } = renderSettings('/settings?tab=display');
     const main = container.querySelector('main');
     const heading = screen.getByRole('heading', { level: 1, name: 'Settings' });
 
@@ -501,38 +537,92 @@ describe('settings tab route and focus behavior', () => {
 
   it.each([
     ['providers', null],
-    ['agents', null],
-    ['tools', null],
-    ['fonts-colors', 'Appearance'],
-    ['notifications', 'Notifications'],
-    ['general', 'Updates'],
+    ['specialists', null],
+    ['setup', 'Git'],
+    ['display', 'Appearance'],
+    ['app-behavior', 'Updates'],
+    ['agent-behavior', 'Global Instructions'],
+    ['connections', 'Accounts'],
+    ['advanced', 'Agent Backend'],
+    ['input', 'Keyboard Shortcuts'],
   ])('uses the shared wide section layout for %s', (tab, heading) => {
     const { container } = renderSettings(`/settings?tab=${tab}`);
     const content = container.querySelector('main');
 
-    expect(content?.className).toContain('max-w-4xl');
+    expect(content?.className).toContain(tab === 'specialists' ? 'max-w-6xl' : 'max-w-4xl');
     expect(content?.className).toContain('flex-col');
     if (heading) expect(screen.getByRole('heading', { name: heading })).toBeTruthy();
   });
 
+  it('widens the settings content for every Specialists editor view', async () => {
+    appStore.dispatch(setBundledSpecialists([...SPECIALISTS]));
+    const { container } = renderSettings('/settings?tab=specialists');
+    const content = container.querySelector('main');
+    const editorSection = container.querySelector('#specialist-editor');
+    const navigation = screen.getByRole('navigation', { name: 'Settings' });
+
+    expect(content?.className).toContain('max-w-6xl');
+    expect(content?.className).not.toContain('max-w-4xl');
+    expect(content?.className).toContain('xl:h-full');
+    expect(content?.className).toContain('xl:min-h-0');
+    expect(content?.className).toContain('xl:py-8');
+    expect(editorSection?.className).toContain('xl:min-h-0');
+    expect(editorSection?.className).toContain('xl:flex-1');
+    expect(editorSection?.className).toContain('xl:flex-col');
+
+    await fireEvent.click(within(navigation).getByRole('button', { name: 'Implementor' }));
+
+    expect(content?.className).toContain('max-w-6xl');
+    expect(content?.className).not.toContain('max-w-4xl');
+    expect(content?.className).toContain('xl:h-full');
+    expect(content?.className).toContain('xl:min-h-0');
+    expect(content?.className).toContain('xl:py-8');
+    expect(editorSection?.className).toContain('xl:min-h-0');
+    expect(editorSection?.className).toContain('xl:flex-1');
+    expect(editorSection?.className).toContain('xl:flex-col');
+
+    await fireEvent.click(within(navigation).getByRole('button', { name: 'Create Specialist' }));
+
+    expect(content?.className).toContain('max-w-6xl');
+    expect(content?.className).not.toContain('max-w-4xl');
+    expect(content?.className).toContain('xl:h-full');
+    expect(content?.className).toContain('xl:min-h-0');
+    expect(content?.className).toContain('xl:py-8');
+    expect(editorSection?.className).toContain('xl:min-h-0');
+    expect(editorSection?.className).toContain('xl:flex-1');
+    expect(editorSection?.className).toContain('xl:flex-col');
+
+    await fireEvent.click(within(navigation).getByRole('button', { name: 'Implementor' }));
+    await fireEvent.click(within(navigation).getByRole('button', { name: 'Providers' }));
+
+    expect(content?.className).toContain('max-w-4xl');
+    expect(content?.className).not.toContain('max-w-6xl');
+    expect(content?.className).not.toContain('xl:h-full');
+  });
+
   it.each([
-    ['accounts', 'Providers'],
-    ['agents', 'Agents'],
-    ['setup', 'Tools'],
-    ['fonts-colors', 'Appearance'],
-    ['notifications', 'General'],
-    ['general', 'General'],
-    ['connections', 'Connections'],
-    ['interface-system', 'Appearance'],
-    ['unknown', 'General'],
-  ])('maps ?tab=%s to %s', async (tab, label) => {
+    ['accounts', 'Providers', 'page'],
+    ['agents', 'Agent Behavior', 'page'],
+    ['setup', 'Setup', 'page'],
+    ['tools', 'Setup', 'page'],
+    ['git-workspace', 'Setup', 'page'],
+    ['fonts-colors', 'Display', 'page'],
+    ['notifications', 'App Behavior', 'page'],
+    ['general', 'Display', 'page'],
+    ['connections', 'Connections', 'page'],
+    ['interface-system', 'Display', 'page'],
+    ['input', 'Input', 'page'],
+    ['unknown', 'Display', 'page'],
+  ])('maps ?tab=%s to %s', async (tab, label, current) => {
     renderSettings(`/settings?tab=${tab}`);
     await waitFor(() =>
-      expect(screen.getByRole('button', { name: label }).getAttribute('aria-current')).toBe('page'),
+      expect(screen.getByRole('button', { name: label }).getAttribute('aria-current')).toBe(
+        current,
+      ),
     );
   });
 
-  it('renders the Agent Backend section on Advanced and no longer on Tools', async () => {
+  it('renders Agent Backend only on Advanced while the legacy Tools tab resolves to Setup', async () => {
     const advanced = renderSettings('/settings?tab=advanced');
     await waitFor(() => expect(advanced.container.querySelector('#agent-backend')).not.toBeNull());
     expect(screen.getByRole('heading', { name: 'Agent Backend' })).toBeTruthy();
@@ -540,8 +630,60 @@ describe('settings tab route and focus behavior', () => {
     cleanup();
 
     const tools = renderSettings('/settings?tab=tools');
-    await waitFor(() => expect(tools.container.querySelector('#mcp-servers')).not.toBeNull());
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Setup' }).getAttribute('aria-current')).toBe(
+        'page',
+      ),
+    );
     expect(tools.container.querySelector('#agent-backend')).toBeNull();
+  });
+
+  it.each([
+    ['display', ['theme', 'font-style', 'language']],
+    ['app-behavior', ['updates', 'open-in', 'github-link-action', 'notifications']],
+    ['agent-behavior', ['global-instructions', 'agent-features']],
+    ['providers', ['providers', 'utility-default-model']],
+    ['connections', ['integrations', 'mcp-servers']],
+    ['setup', ['git', 'shell', 'cli-optimization', 'workspace']],
+    ['advanced', ['agent-backend', 'websocket-api', 'workspace-api', 'data', 'reset', 'developer']],
+    ['input', ['keyboard-shortcuts', 'voice']],
+  ])('renders %s sections in the requested order', (tab, ids) => {
+    renderSettings(`/settings?tab=${tab}`);
+    expectElementOrder(ids);
+  });
+
+  it('keeps provider groups and conditional Advanced sections in requested source order', () => {
+    const providerSource = readFileSync(
+      'src/lib/components/settings/ProviderSelector.svelte',
+      'utf8',
+    );
+    const pageSource = readFileSync('src/routes/(app)/settings/+page.svelte', 'utf8');
+    const messages = JSON.parse(readFileSync('messages/en.json', 'utf8')) as Record<string, string>;
+    const providerGroups = ["{ id: 'enabled'", "{ id: 'discovered'", "{ id: 'supported'"];
+    const advancedIds = [
+      'id="agent-backend"',
+      'id="websocket-api"',
+      'id="workspace-api"',
+      'id="connection"',
+      'id="hardware"',
+      'id="data"',
+      'id="reset"',
+      'id="developer"',
+    ];
+
+    const providerPositions = providerGroups.map((group) => providerSource.indexOf(group));
+    expect(providerPositions.every((position) => position >= 0)).toBe(true);
+    expect(providerPositions).toEqual([...providerPositions].sort((a, b) => a - b));
+    expect([
+      messages.settings_providers_groupEnabled_label,
+      messages.settings_providers_groupDiscovered_label,
+      messages.settings_providers_groupSupported_label,
+    ]).toEqual(['Enabled', 'Available', 'Not Detected']);
+    expect(pageSource).not.toContain('settings_section_aiCodingClis_hint');
+    expect(messages).not.toHaveProperty('settings_section_aiCodingClis_hint');
+    const advancedPositions = advancedIds.map((id) => pageSource.indexOf(id));
+    expect(advancedPositions.every((position) => position >= 0)).toBe(true);
+    expect(advancedPositions).toEqual([...advancedPositions].sort((a, b) => a - b));
   });
 
   it.each([
@@ -559,25 +701,260 @@ describe('settings tab route and focus behavior', () => {
     expect(document.querySelector('#agent-backend')).not.toBeNull();
   });
 
+  it.each([
+    ['/settings?tab=input#voice', 'Input', 'voice'],
+    ['/settings?tab=connections#voice', 'Input', 'voice'],
+    ['/settings?tab=advanced#workspace-api', 'Advanced', 'workspace-api'],
+    ['/settings?tab=system#workspace-api', 'Advanced', 'workspace-api'],
+    ['/settings?tab=agent-behavior#agent-features', 'Agent Behavior', 'agent-features'],
+    ['/settings?tab=behavior#agent-features', 'Agent Behavior', 'agent-features'],
+  ])('routes canonical and legacy URL %s to %s', async (url, category, sectionId) => {
+    renderSettings(url);
+
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: category }).getAttribute('aria-current')).toBe(
+        'page',
+      ),
+    );
+    expect(document.getElementById(sectionId)).not.toBeNull();
+  });
+
   it('exposes sidebar navigation buttons with the active page marked', async () => {
     renderSettings('/settings?tab=accounts');
     expect(screen.getByRole('navigation', { name: 'Settings' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Providers' }).getAttribute('aria-current')).toBe(
       'page',
     );
-    expect(screen.getByRole('button', { name: 'Agents' }).hasAttribute('aria-current')).toBe(false);
+    expect(screen.getByRole('heading', { level: 2, name: 'Specialists' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Specialists' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'All Agents' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Implementor' }).hasAttribute('aria-current')).toBe(
+      false,
+    );
+  });
+
+  it('renders compact specialist selection only inside the existing settings sidebar', async () => {
+    const implementorDefinition = SPECIALISTS.find(({ id }) => id === 'implementor')!;
+    const { container } = renderSettings('/settings?tab=specialists');
+    appStore.dispatch(setBundledSpecialists([]));
+    appStore.dispatch(
+      setFileSpecialists([
+        {
+          id: implementorDefinition.id,
+          name: implementorDefinition.name,
+          description: implementorDefinition.description,
+          model: '',
+          behaviorPrompt: `${implementorDefinition.defaultBehaviorPrompt}\nModified`,
+          roleReminder: implementorDefinition.roleReminder,
+          filePath: '/Users/test/.intent/specialists/implementor.md',
+          source: 'user',
+        },
+        {
+          id: 'sidebar-custom',
+          name: 'Sidebar Custom',
+          description: 'Project specialist',
+          model: '',
+          behaviorPrompt: 'Custom prompt',
+          filePath: '/repo/.intent/specialists/sidebar-custom.md',
+          source: 'project',
+        },
+      ]),
+    );
+    const navigation = screen.getByRole('navigation', { name: 'Settings' });
+    const specialistsNavigation = navigation.querySelector('[data-settings-specialists-section]');
+    await waitFor(() =>
+      expect(
+        within(navigation).getByRole('button', { name: 'Sidebar Custom Project' }),
+      ).toBeTruthy(),
+    );
+    const specialistsHeading = within(navigation).getByRole('heading', {
+      level: 2,
+      name: 'Specialists',
+    });
+    const implementor = within(navigation).getByRole('button', { name: 'Implementor' });
+    const customSpecialist = within(navigation).getByRole('button', {
+      name: 'Sidebar Custom Project',
+    });
+    const createSpecialist = within(navigation).getByRole('button', {
+      name: 'Create Specialist',
+    });
+    const input = within(navigation).getByRole('button', { name: 'Input' });
+
+    expect(specialistsNavigation).not.toBeNull();
+    expect(within(navigation).queryByRole('button', { name: 'Specialists' })).toBeNull();
+    expect(within(navigation).queryByRole('button', { name: 'All Agents' })).toBeNull();
+    expect(specialistsNavigation?.contains(implementor)).toBe(true);
+    expect(specialistsNavigation?.contains(customSpecialist)).toBe(true);
+    expect(specialistsNavigation?.contains(createSpecialist)).toBe(true);
+    expect(
+      input.compareDocumentPosition(specialistsHeading) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+    expect(
+      specialistsHeading.compareDocumentPosition(implementor) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+    expect(specialistsNavigation?.className).toContain('mt-8');
+    expect(specialistsNavigation?.className).not.toMatch(/border|ml-|p[lt]-/);
+    expect(navigation.querySelector('[data-settings-agents-submenu]')).toBeNull();
+    expect(specialistsNavigation?.querySelectorAll('[data-agent-avatar]')).toHaveLength(2);
+    expect(createSpecialist.querySelectorAll('[data-icon="plus"]')).toHaveLength(1);
+    expect(
+      implementor.querySelector('[data-agent-avatar][data-avatar-design="implementor"]'),
+    ).not.toBeNull();
+    expect(
+      customSpecialist.querySelector('[data-agent-avatar][data-avatar-design^="fallback-"]'),
+    ).not.toBeNull();
+    for (const avatar of specialistsNavigation?.querySelectorAll('[data-agent-avatar]') ?? []) {
+      expect(avatar.getAttribute('aria-hidden')).toBe('true');
+      expect(avatar.getAttribute('data-avatar-variant')).toBe('compact');
+      expect(avatar.classList.contains('shrink-0')).toBe(true);
+    }
+    expect(
+      specialistsNavigation?.querySelectorAll('[data-specialist-modified-marker]'),
+    ).toHaveLength(1);
+    expect(implementor.querySelector('[data-specialist-modified-marker]')?.textContent).toBe('*');
+    expect(implementor.querySelector('[data-specialist-modified-marker]')?.className).toContain(
+      'text-ui',
+    );
+    expect(implementor.querySelector('[data-specialist-modified-marker]')?.className).toContain(
+      'text-muted-foreground',
+    );
+    expect(customSpecialist.querySelector('[data-specialist-modified-marker]')).toBeNull();
+    expect(within(customSpecialist).getByText('Project')).toBeTruthy();
+    expect(createSpecialist.querySelector('[data-specialist-modified-marker]')).toBeNull();
+
+    for (const row of specialistsNavigation?.querySelectorAll('[data-settings-agent-row]') ?? []) {
+      expect(row.closest('[data-settings-specialists-section]')).toBe(specialistsNavigation);
+      expect(row.className).toContain('rounded-lg');
+      expect(row.className).toContain('px-2.5');
+      expect(row.className).toContain('py-2');
+      expect(row.className).not.toMatch(/border|ml-|pl-/);
+    }
+
+    expect(implementor.querySelectorAll('[data-agent-avatar]')).toHaveLength(1);
+    expect(customSpecialist.querySelectorAll('[data-agent-avatar]')).toHaveLength(1);
+    expect(implementor.hasAttribute('aria-current')).toBe(false);
+    expect(customSpecialist.hasAttribute('aria-current')).toBe(false);
+    expect(implementor.className).not.toContain('shadow-xs');
+    expect(container.querySelector('main [data-settings-agents-submenu]')).toBeNull();
+    expect(container.querySelector('main #specialist-editor')?.children).toHaveLength(1);
+    expect(container.querySelector('main #specialist-editor')?.className).not.toContain(
+      'grid-cols',
+    );
+
+    await fireEvent.click(implementor);
+
+    expect(screen.getByTestId('ai-behavior-view').textContent).toContain('specialist:implementor');
+    expect(implementor.getAttribute('aria-current')).toBe('true');
+    expect(implementor.className).toContain('bg-muted');
+    expect(implementor.className).toContain('shadow-xs');
+
+    await fireEvent.click(createSpecialist);
+
+    expect(screen.getByTestId('ai-behavior-view').textContent).toContain('create-specialist');
+    expect(createSpecialist.getAttribute('aria-current')).toBe('true');
+    expect(createSpecialist.className).toContain('bg-muted');
+    expect(createSpecialist.className).toContain('shadow-xs');
+    expect(implementor.className).not.toContain('shadow-xs');
+
+    appStore.dispatch(
+      setFileSpecialists([
+        {
+          id: 'sidebar-custom',
+          name: 'Sidebar Custom',
+          description: 'Project specialist',
+          model: '',
+          behaviorPrompt: 'Custom prompt',
+          filePath: '/repo/.intent/specialists/sidebar-custom.md',
+          source: 'project',
+        },
+      ]),
+    );
+    await waitFor(() =>
+      expect(within(navigation).queryByRole('button', { name: 'Implementor' })).toBeNull(),
+    );
+
+    appStore.dispatch(
+      setFileSpecialists([
+        {
+          id: implementorDefinition.id,
+          name: implementorDefinition.name,
+          description: implementorDefinition.description,
+          model: '',
+          behaviorPrompt: `${implementorDefinition.defaultBehaviorPrompt}\nModified again`,
+          roleReminder: implementorDefinition.roleReminder,
+          filePath: '/Users/test/.intent/specialists/implementor.md',
+          source: 'user',
+        },
+      ]),
+    );
+    await waitFor(() =>
+      expect(
+        within(navigation)
+          .getByRole('button', { name: 'Implementor' })
+          .querySelector('[data-specialist-modified-marker]')?.textContent,
+      ).toBe('*'),
+    );
+  });
+
+  it('keeps flat Specialists rows visible and activates the selected specialist view', async () => {
+    renderSettings('/settings?tab=agent-behavior');
+    const navigation = screen.getByRole('navigation', { name: 'Settings' });
+
+    expect(within(navigation).getByRole('heading', { name: 'Specialists' })).toBeTruthy();
+    expect(within(navigation).queryByRole('button', { name: 'All Agents' })).toBeNull();
+
+    await fireEvent.click(within(navigation).getByRole('button', { name: 'Providers' }));
+
+    expect(navigation.querySelector('[data-settings-specialists-section]')).not.toBeNull();
+    expect(navigation.querySelector('[data-settings-agents-submenu]')).toBeNull();
+    expect(within(navigation).getByRole('button', { name: 'Implementor' })).toBeTruthy();
+    expect(within(navigation).getByRole('button', { name: 'Create Specialist' })).toBeTruthy();
+
+    await fireEvent.click(within(navigation).getByRole('button', { name: 'Implementor' }));
+
+    expect(
+      within(navigation).getByRole('button', { name: 'Implementor' }).getAttribute('aria-current'),
+    ).toBe('true');
+    expect(screen.getByTestId('ai-behavior-view').textContent).toContain('specialist:implementor');
+    expect(window.location.search).toBe('?tab=specialists&specialist=implementor');
+    expect(window.location.hash).toBe('#specialist-implementor');
+  });
+
+  it('keeps Providers and Global Instructions default-model entry points on shared state', async () => {
+    appStore.dispatch(hydrateActiveProvider('codex'));
+    appStore.dispatch(setSelectedModel({ providerId: 'codex', model: 'codex:shared-fixture' }));
+    renderSettings('/settings?tab=providers');
+
+    const providersDefault = document.getElementById('utility-default-model')!;
+    expect(within(providersDefault).getAllByText('Default model')).toHaveLength(2);
+    expect(selectSelectedModel.select(appStore.state, 'codex')).toBe('codex:shared-fixture');
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Agent Behavior' }));
+
+    const globalInstructionsDefault = await screen.findByTestId(
+      'global-instructions-default-model-row',
+    );
+    expect(within(globalInstructionsDefault).getAllByText('Default model')).toHaveLength(2);
+    expect(selectSelectedModel.select(appStore.state, 'codex')).toBe('codex:shared-fixture');
+
+    appStore.dispatch(setSelectedModel({ providerId: 'codex', model: 'codex:updated-fixture' }));
+    await fireEvent.click(screen.getByRole('button', { name: 'Providers' }));
+    expect(selectSelectedModel.select(appStore.state, 'codex')).toBe('codex:updated-fixture');
+    expect(
+      within(document.getElementById('utility-default-model')!).getAllByText('Default model'),
+    ).toHaveLength(2);
   });
 
   it('activates a clicked sidebar item while preserving params and hash', async () => {
-    renderSettings('/settings?tab=accounts&specialist=reviewer#integrations');
-    const providers = screen.getByRole('button', { name: 'Providers' });
+    renderSettings('/settings?tab=connections&specialist=reviewer#integrations');
+    const connections = screen.getByRole('button', { name: 'Connections' });
     const advanced = screen.getByRole('button', { name: 'Advanced' });
     advanced.focus();
     await fireEvent.click(advanced);
 
     expect(document.activeElement).toBe(advanced);
     expect(advanced.getAttribute('aria-current')).toBe('page');
-    expect(providers.hasAttribute('aria-current')).toBe(false);
+    expect(connections.hasAttribute('aria-current')).toBe(false);
     expect(window.location.search).toBe('?tab=advanced&specialist=reviewer');
     expect(window.location.hash).toBe('#integrations');
   });
@@ -585,28 +962,64 @@ describe('settings tab route and focus behavior', () => {
   it.each([
     ['/settings?specialist=reviewer', 'specialist:reviewer'],
     ['/settings?view=create-specialist', 'create-specialist'],
-  ])('opens the requested Agents query view for %s', async (url, expectedView) => {
+  ])('opens the requested Specialists query view for %s', async (url, expectedView) => {
     renderSettings(url);
+    expect((await screen.findByTestId('ai-behavior-view')).textContent).toContain(expectedView);
+  });
+
+  it('syncs canonical Specialists query views while Settings remains mounted', async () => {
+    const replaceState = vi.spyOn(window.history, 'replaceState');
+    renderSettings('/settings?tab=specialists&specialist=implementor#specialist-implementor');
+    expect((await screen.findByTestId('ai-behavior-view')).textContent).toContain(
+      'specialist:implementor',
+    );
+
+    window.history.pushState(
+      {},
+      '',
+      '/settings?tab=specialists&specialist=reviewer#specialist-reviewer',
+    );
+    mocks.page.url.href = window.location.href;
     await waitFor(() =>
-      expect(screen.getByRole('button', { name: 'Agents' }).getAttribute('aria-current')).toBe(
-        'page',
+      expect(screen.getByTestId('ai-behavior-view').textContent).toContain('specialist:reviewer'),
+    );
+
+    window.history.pushState(
+      {},
+      '',
+      '/settings?tab=specialists&view=create-specialist#create-specialist',
+    );
+    mocks.page.url.href = window.location.href;
+    await waitFor(() =>
+      expect(screen.getByTestId('ai-behavior-view').textContent).toContain('create-specialist'),
+    );
+
+    window.history.pushState(
+      {},
+      '',
+      '/settings?tab=specialists&specialist=implementor#specialist-implementor',
+    );
+    mocks.page.url.href = window.location.href;
+    await waitFor(() =>
+      expect(screen.getByTestId('ai-behavior-view').textContent).toContain(
+        'specialist:implementor',
       ),
     );
-    expect(screen.getByTestId('ai-behavior-view').textContent).toContain(expectedView);
+    expect(replaceState).not.toHaveBeenCalled();
   });
 
   it.each([
-    ['/settings?tab=agents&workspaceId=query-owner', 'value', 'query-owner'],
-    ['/settings?tab=agents', 'null', 'none'],
+    ['/settings?tab=agent-behavior&workspaceId=query-owner', 'value', 'query-owner'],
+    ['/settings?tab=agent-behavior', 'null', 'none'],
   ])(
     'passes the expected workspace identity to AI behavior settings for %s',
     async (url, kind, value) => {
       renderSettings(url);
 
       await waitFor(() =>
-        expect(screen.getByRole('button', { name: 'Agents' }).getAttribute('aria-current')).toBe(
-          'page',
-        ),
+        expect(
+          screen.getByRole('button', { name: 'Agent Behavior' }).getAttribute('aria-current'),
+        ).toBe('page'),
       );
       const workspaceId = screen.getByTestId('ai-behavior-workspace-id');
       expect(workspaceId.dataset.workspaceIdKind).toBe(kind);
@@ -626,7 +1039,7 @@ describe('settings back and footer behavior', () => {
   });
 
   it('renders version and support state when the app is up to date', () => {
-    renderSettings('/settings?tab=general');
+    renderSettings('/settings?tab=display');
     expect(screen.getByText(/v2\.0\.10/)).toBeTruthy();
     expect(screen.getByText('Up to date')).toBeTruthy();
     expect(screen.getByRole('link', { name: 'Support' }).getAttribute('href')).toBe(
@@ -637,7 +1050,7 @@ describe('settings back and footer behavior', () => {
 
   it('dispatches install when an update is ready', async () => {
     appStore.dispatch(simulateSetState({ status: 'downloaded' }));
-    renderSettings('/settings?tab=general');
+    renderSettings('/settings?tab=app-behavior');
     const update = screen.getByRole('button', { name: 'Update available' });
     const dispatchSpy = vi.spyOn(appStore, 'dispatch');
     await fireEvent.click(update);
@@ -647,23 +1060,34 @@ describe('settings back and footer behavior', () => {
 
 describe('settings hash target integration', () => {
   it.each([
-    ['default-model', 'quickActions.defaultModel', 'Agents'],
-    ['utility-default-model', 'utility-default-model', 'Tools'],
-    ['notifications', 'notifications', 'General'],
-    ['color-theme', 'color-theme', 'Appearance'],
-    ['note-font', 'note-font', 'Appearance'],
-    ['agent-chat-font', 'agent-chat-font', 'Appearance'],
-    ['code-font', 'code-font', 'Appearance'],
+    ['default-model', 'quickActions.defaultModel', 'Agent Behavior', 'page'],
+    ['global-instructions', 'quickActions.defaultModel', 'Agent Behavior', 'page'],
+    ['utility-default-model', 'utility-default-model', 'Providers', 'page'],
+    ['updates', 'updates', 'App Behavior', 'page'],
+    ['open-in', 'open-in', 'App Behavior', 'page'],
+    ['github-link-action', 'github-link-action', 'App Behavior', 'page'],
+    ['notifications', 'notifications', 'App Behavior', 'page'],
+    ['agent-features', 'agent-features', 'Agent Behavior', 'page'],
+    ['mcp-servers', 'mcp-servers', 'Connections', 'page'],
+    ['cli-optimization', 'cli-optimization', 'Setup', 'page'],
+    ['workspace-api', 'workspace-api', 'Advanced', 'page'],
+    ['keyboard-shortcuts', 'keyboard-shortcuts', 'Input', 'page'],
+    ['voice', 'voice', 'Input', 'page'],
+    ['language', 'language', 'Display', 'page'],
+    ['color-theme', 'color-theme', 'Display', 'page'],
+    ['note-font', 'note-font', 'Display', 'page'],
+    ['agent-chat-font', 'agent-chat-font', 'Display', 'page'],
+    ['code-font', 'code-font', 'Display', 'page'],
   ])(
     'activates the registry tab and highlight target for /settings#%s',
-    async (hash, expectedId, tabLabel) => {
+    async (hash, expectedId, tabLabel, expectedCurrent) => {
       const target = resolveHashToTarget(hash);
       expect(target?.id).toBe(expectedId);
 
       renderSettings(`/settings#${hash}`);
 
       const expectedTab = screen.getByRole('button', { name: tabLabel });
-      await waitFor(() => expect(expectedTab.getAttribute('aria-current')).toBe('page'));
+      await waitFor(() => expect(expectedTab.getAttribute('aria-current')).toBe(expectedCurrent));
 
       const targetElement = await waitFor(() => {
         const element = document.querySelector<HTMLElement>(target?.highlightSelector ?? '');
@@ -698,7 +1122,7 @@ describe('settings hash target integration', () => {
 
   it('cancels the previous hash scroll when a newer hash is scheduled', async () => {
     vi.useFakeTimers();
-    renderSettings('/settings?tab=fonts-colors#note-font');
+    renderSettings('/settings?tab=display#note-font');
     await Promise.resolve();
     await Promise.resolve();
 
@@ -710,7 +1134,7 @@ describe('settings hash target integration', () => {
     Object.defineProperty(codeFont, 'offsetTop', { value: 360, configurable: true });
     const pendingBeforeReschedule = vi.getTimerCount();
 
-    window.history.replaceState({}, '', '/settings?tab=fonts-colors#code-font');
+    window.history.replaceState({}, '', '/settings?tab=display#code-font');
     window.dispatchEvent(new HashChangeEvent('hashchange'));
     expect(vi.getTimerCount()).toBe(pendingBeforeReschedule);
     await vi.advanceTimersByTimeAsync(100);
@@ -721,7 +1145,7 @@ describe('settings hash target integration', () => {
 
   it('cancels a pending hash scroll when the hash is removed', async () => {
     vi.useFakeTimers();
-    renderSettings('/settings?tab=fonts-colors#note-font');
+    renderSettings('/settings?tab=display#note-font');
     await Promise.resolve();
     await Promise.resolve();
     const container = document
@@ -730,7 +1154,7 @@ describe('settings hash target integration', () => {
     const scrollTo = vi.mocked(container.scrollTo);
     const pendingBeforeRemoval = vi.getTimerCount();
 
-    window.history.replaceState({}, '', '/settings?tab=fonts-colors');
+    window.history.replaceState({}, '', '/settings?tab=display');
     window.dispatchEvent(new HashChangeEvent('hashchange'));
     expect(vi.getTimerCount()).toBe(pendingBeforeRemoval - 1);
     await vi.advanceTimersByTimeAsync(100);
@@ -740,7 +1164,7 @@ describe('settings hash target integration', () => {
 
   it('cancels a pending hash scroll when the page unmounts', async () => {
     vi.useFakeTimers();
-    const view = renderSettings('/settings?tab=fonts-colors#note-font');
+    const view = renderSettings('/settings?tab=display#note-font');
     await Promise.resolve();
     await Promise.resolve();
     const container = document

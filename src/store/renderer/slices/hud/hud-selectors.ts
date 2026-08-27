@@ -1231,6 +1231,8 @@ export interface HudTakeoverView {
  * `completionReport` (session `metadata`, `agent.reportToParent` §5.5) when
  * any linked session carries one, else the task note's own content (the task
  * id IS its note id, §5.4) — both served verbatim; null when neither has text.
+ * Slim-projection rows (§5.2) carry no content; their `contentPreview`
+ * (first ~500 chars) stands in until the full body is loaded.
  */
 function completeTaskReport(
   state: StoreState,
@@ -1246,7 +1248,8 @@ function completeTaskReport(
     if (typeof report === 'string' && report.trim().length > 0) return report;
   }
   const notes = state.workspaceNotes?.byWorkspaceId[workspaceId]?.notes;
-  const content = notes ? getItem(notes, taskId as NoteId)?.content : undefined;
+  const note = notes ? getItem(notes, taskId as NoteId) : undefined;
+  const content = note?.content || note?.contentPreview;
   return typeof content === 'string' && content.trim().length > 0 ? content : null;
 }
 

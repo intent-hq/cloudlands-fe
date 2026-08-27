@@ -595,7 +595,6 @@
                           isInstalled={provider.available}
                           onPathChange={(path) => handlePathChange(provider.id, path)}
                           bind:open={pathConfigOpen[provider.id]}
-                          showTrigger={false}
                         />
                       </div>
                     {/if}

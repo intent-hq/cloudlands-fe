@@ -5,7 +5,7 @@ import WorkspaceStatusIcon from './WorkspaceStatusIcon.svelte';
 describe('WorkspaceStatusIcon', () => {
   it.each([
     ['in_progress', 'In progress', 'workspace-status-color-active'],
-    ['unread', 'UNREAD', 'workspace-status-color-unread'],
+    ['unread', 'Unread', 'workspace-status-color-unread'],
     ['idle', 'Idle', 'text-muted-foreground/35'],
     ['not_started', 'Not started', 'text-muted-foreground/35'],
   ] as const)('renders one accessible semantic %s dot', (status, label, color) => {
@@ -19,6 +19,9 @@ describe('WorkspaceStatusIcon', () => {
     expect(indicator.className).toContain(color);
     expect(indicator.className).toContain('forced-colors:text-[CanvasText]');
     expect(indicator.getAttribute('style')).toContain('width: 12px');
+    const dot = view.container.querySelector('[data-workspace-status-dot]');
+    expect(dot).not.toBeNull();
+    expect(dot?.classList.contains('workspace-status-dot')).toBe(true);
     expect(view.container.querySelectorAll('[data-workspace-status-dot]')).toHaveLength(1);
     expect(view.container.querySelector('svg')).toBeNull();
     expect(view.container.querySelectorAll('[data-workspace-status]')).toHaveLength(1);

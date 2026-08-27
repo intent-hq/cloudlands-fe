@@ -10,7 +10,6 @@
   import type { NodeViewProps } from '@tiptap/core';
   import { NodeViewWrapper, NodeViewContent } from '$lib/utils/tiptap/svelte-node-view';
   import TaskAgentStatus from './TaskAgentStatus.svelte';
-  import TaskNotePreview from './TaskNotePreview.svelte';
   import TaskRelationLink from '$lib/components/workspace/TaskRelationLink.svelte';
   import { createLogger } from '$lib/utils/client-logger';
   import { navigateToNote } from '$lib/utils/workspace-navigation';
@@ -24,7 +23,6 @@
   } from '@fortawesome/free-solid-svg-icons';
   import Button from '../ui/button/button.svelte';
   import { Tooltip } from '$lib/components/ui/tooltip';
-  import { slide } from 'svelte/transition';
   import { taskNoteUrl } from '$shared/constants/intent-links';
   import {
     selectSelectedNoteId,
@@ -45,6 +43,7 @@
   import { store as appStore } from '$store/renderer/store';
   import { m } from '$shared/paraglide/messages.js';
   import { getWorkspaceRouteContext } from '$lib/utils/workspace-route-context';
+  import { isCmdClickModifier } from '$shared/utils/link-helpers';
 
   const logger = createLogger('TaskItemNodeView');
   const TASK_LINK_REGEX = /^intent:\/\/local\/task\/(.+)$/;
@@ -182,9 +181,9 @@
     }
   }
 
-  async function handleOpenLinkedNote(event?: MouseEvent) {
+  async function handleOpenLinkedNote(event?: MouseEvent | KeyboardEvent) {
     if (linkedTaskNoteId) {
-      const openInAdjacentPanel = true;
+      const openInAdjacentPanel = event ? isCmdClickModifier({ event }) : false;
       // Find the panel ID by looking up the DOM for the data-panel-id attribute
       const target = event?.target as HTMLElement | null;
       const panelElement = target?.closest('[data-panel-id]');
@@ -199,7 +198,7 @@
       await navigateToNote(linkedTaskNoteId, {
         workspaceId: (linkedTaskNote?.workspaceId as string | undefined) ?? workspaceId,
         openInAdjacentPanel,
-        openInNewAdjacentPanel: true,
+        openInNewAdjacentPanel: openInAdjacentPanel,
         sourcePanelId,
       });
     }
@@ -391,177 +390,174 @@
   data-linked-task-note-id={linkedTaskNoteId || undefined}
 >
   {#if isCardLayout}
-    <!-- Card layout for linked tasks or tasks with agents -->
+    <!-- Compact row for linked tasks or tasks with agents -->
     {#if isOptimistic}
-      <!-- Non-clickable card for optimistic tasks -->
       <div
-        class="my-0.5 flex flex-col w-full min-w-0 bg-transparent border border-border rounded-xs shadow-xs text-left transition-colors cursor-default {selected
-          ? 'border-primary'
-          : ''}"
+        data-task-item-row
+        data-density="compact"
+        class="my-0.5 flex h-8 w-full min-w-0 items-center gap-1.5 overflow-hidden bg-transparent text-left transition-colors"
         role="group"
         contenteditable="false"
       >
-        <div class="flex items-center gap-1.5 w-full pl-2.5 pr-2 pt-1.5 pb-2">
-          <span class="shrink-0" onclick={(e) => e.stopPropagation()} role="presentation">
-            {#key status}
-              <TaskStatusIcon
-                status={displayStatus as TaskStatus}
-                size={16}
-                onclick={handleCheckboxClick}
-              />
-            {/key}
-          </span>
-          <span
-            class="flex-1 min-w-0 font-medium overflow-hidden text-ellipsis whitespace-nowrap [&_p]:m-0"
-          >
-            <NodeViewContent />
-          </span>
-        </div>
+        <span
+          data-task-row-leading
+          class="flex shrink-0 items-center"
+          onclick={(e) => e.stopPropagation()}
+          role="presentation"
+        >
+          {#key status}
+            <TaskStatusIcon
+              status={displayStatus as TaskStatus}
+              size={16}
+              onclick={handleCheckboxClick}
+            />
+          {/key}
+        </span>
+        <span
+          data-task-row-content
+          data-task-row-title
+          class="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap font-medium [&_p]:m-0"
+        >
+          <NodeViewContent />
+        </span>
         {#if effectiveAgentId}
-          <div
-            class="flex items-center pt-1 pl-8 w-full bg-muted/20 hover:bg-muted/50 rounded-b-md py-1"
-            transition:slide={{ axis: 'y', duration: 200 }}
-          >
-            <TaskAgentStatus agentId={effectiveAgentId} {workspaceId} compact />
+          <div data-task-row-trailing class="ml-auto flex shrink-0 items-center">
+            <TaskAgentStatus agentId={effectiveAgentId} {workspaceId} compact indicator />
           </div>
         {/if}
       </div>
     {:else}
-      <!-- Clickable card for linked tasks with hover preview -->
-      <Tooltip
-        side="bottom"
-        align="start"
-        sideOffset={2}
-        delayDuration={400}
-        class=" my-0.5 min-w-0 w-full"
-        contentClass="p-0 bg-transparent border-0 shadow-none"
+      <div
+        data-task-item-row
+        data-density="compact"
+        class="group/task my-0.5 flex h-8 w-full min-w-0 items-center gap-1.5 overflow-hidden bg-transparent text-left transition-colors"
+        contenteditable="false"
       >
-        {#snippet content()}
-          {#if linkedTaskNoteId && !linkedTaskNotFound}
-            <TaskNotePreview {workspaceId} noteId={linkedTaskNoteId} />
-          {/if}
-        {/snippet}
-        <div
-          class="flex flex-col w-full min-w-0 bg-transparent border border-border rounded-xs shadow-xs text-left transition-colors {selected
-            ? 'border-primary'
-            : ''}"
-          contenteditable="false"
+        <span
+          data-task-row-leading
+          class="flex shrink-0 items-center"
+          onclick={(e) => e.stopPropagation()}
+          role="presentation"
         >
-          <div class="flex items-center gap-2 w-full pl-2.5 pr-2 pt-2 pb-1.5">
-            <span class="shrink-0" onclick={(e) => e.stopPropagation()} role="presentation">
-              {#key linkedTaskStatus}
-                <TaskStatusIcon
-                  status={displayStatus as TaskStatus}
-                  size={16}
-                  onclick={linkedTaskNotFound ? undefined : handleCheckboxClick}
-                />
-              {/key}
-            </span>
-            <button
-              type="button"
-              data-testid="linked-task-title"
-              class="flex-1 min-w-0 bg-transparent border-0 p-0 font-medium overflow-hidden text-ellipsis whitespace-nowrap text-left cursor-pointer {linkedTaskNotFound
-                ? 'text-muted-foreground italic'
-                : ''}"
-              onclick={(e) => handleOpenLinkedNote(e)}
+          {#key linkedTaskStatus}
+            <TaskStatusIcon
+              status={displayStatus as TaskStatus}
+              size={16}
+              onclick={linkedTaskNotFound ? undefined : handleCheckboxClick}
+            />
+          {/key}
+        </span>
+        <button
+          type="button"
+          data-testid="linked-task-title"
+          data-task-row-content
+          data-task-row-title
+          class="min-w-0 flex-1 cursor-pointer overflow-hidden text-ellipsis whitespace-nowrap border-0 bg-transparent p-0 text-left font-medium outline-none focus-visible:ring-2 focus-visible:ring-primary/40 {linkedTaskNotFound
+            ? 'text-muted-foreground italic'
+            : ''}"
+          onclick={(e) => handleOpenLinkedNote(e)}
+          onkeydown={(event) => {
+            if (event.key === 'Enter' && isCmdClickModifier({ event })) {
+              event.preventDefault();
+              void handleOpenLinkedNote(event);
+            }
+          }}
+        >
+          {linkedTaskTitle}
+        </button>
+        <div data-task-row-trailing class="ml-auto flex shrink-0 items-center gap-1.5">
+          {#if unmetDependsOn.length > 0 && !effectiveChecked}
+            <Tooltip
+              side="bottom"
+              align="end"
+              delayDuration={300}
+              disableHoverableContent={false}
+              class="shrink-0"
+              contentClass="p-1.5"
             >
-              {linkedTaskTitle}
-            </button>
-            {#if unmetDependsOn.length > 0 && !effectiveChecked}
-              <Tooltip
-                side="bottom"
-                align="end"
-                delayDuration={300}
-                disableHoverableContent={false}
-                class="shrink-0"
-                contentClass="p-1.5"
-              >
-                {#snippet content()}
-                  <div class="flex flex-col items-stretch gap-1 min-w-0">
-                    <div class="px-0.5 text-xs text-muted-foreground">
-                      {m.tiptap_taskItem_waitsOnList_label()}
-                    </div>
-                    {#each unmetDependsOn as depId (depId)}
-                      <TaskRelationLink {workspaceId} noteId={depId} unmet />
-                    {/each}
+              {#snippet content()}
+                <div class="flex flex-col items-stretch gap-1 min-w-0">
+                  <div class="px-0.5 text-xs text-muted-foreground">
+                    {m.tiptap_taskItem_waitsOnList_label()}
                   </div>
-                {/snippet}
-                <span
-                  class="inline-flex items-center gap-1 rounded-full bg-muted px-1.5 py-0.5 text-xs font-medium text-subtle"
-                  contenteditable="false"
-                >
-                  <Fa icon={faHourglassHalf} size="xs" />
-                  {m.tiptap_taskItem_waitsOn_label({ count: unmetDependsOn.length })}
-                </span>
-              </Tooltip>
-            {/if}
-            {#if linkedTaskConflictsWith.length > 0 && !effectiveChecked}
-              <Tooltip
-                side="bottom"
-                align="end"
-                delayDuration={300}
-                disableHoverableContent={false}
-                class="shrink-0"
-                contentClass="p-1.5"
+                  {#each unmetDependsOn as depId (depId)}
+                    <TaskRelationLink {workspaceId} noteId={depId} unmet />
+                  {/each}
+                </div>
+              {/snippet}
+              <span
+                data-task-row-waits-on
+                class="inline-flex items-center gap-1 rounded-full bg-muted px-1.5 py-0.5 text-xs font-medium text-subtle"
+                contenteditable="false"
               >
-                {#snippet content()}
-                  <div class="flex flex-col items-stretch gap-1 min-w-0">
-                    <div class="px-0.5 text-xs text-muted-foreground">
-                      {m.tiptap_taskItem_conflictsList_label()}
-                    </div>
-                    {#each linkedTaskConflictsWith as conflictId (conflictId)}
-                      <TaskRelationLink {workspaceId} noteId={conflictId} variant="conflict" />
-                    {/each}
+                <Fa icon={faHourglassHalf} size="xs" />
+                {m.tiptap_taskItem_waitsOn_label({ count: unmetDependsOn.length })}
+              </span>
+            </Tooltip>
+          {/if}
+          {#if linkedTaskConflictsWith.length > 0 && !effectiveChecked}
+            <Tooltip
+              side="bottom"
+              align="end"
+              delayDuration={300}
+              disableHoverableContent={false}
+              class="shrink-0"
+              contentClass="p-1.5"
+            >
+              {#snippet content()}
+                <div class="flex flex-col items-stretch gap-1 min-w-0">
+                  <div class="px-0.5 text-xs text-muted-foreground">
+                    {m.tiptap_taskItem_conflictsList_label()}
                   </div>
-                {/snippet}
-                <span
-                  class="inline-flex items-center gap-1 rounded-full bg-warning/10 px-1.5 py-0.5 text-xs font-medium text-warning"
-                  contenteditable="false"
-                >
-                  <Fa icon={faTriangleExclamation} size="xs" />
-                  {m.tiptap_taskItem_conflicts_label({ count: linkedTaskConflictsWith.length })}
-                </span>
-              </Tooltip>
-            {/if}
-            {#if linkedTaskNotFound}
-              <Button
-                variant="ghost-light"
-                size="icon-xs"
-                class="shrink-0"
-                title={m.tiptap_taskItem_convertToInline_tooltip()}
-                onclick={(e) => {
-                  e.stopPropagation();
-                  convertToInlineTask();
-                }}
+                  {#each linkedTaskConflictsWith as conflictId (conflictId)}
+                    <TaskRelationLink {workspaceId} noteId={conflictId} variant="conflict" />
+                  {/each}
+                </div>
+              {/snippet}
+              <span
+                data-task-row-conflict
+                class="inline-flex items-center gap-1 rounded-full bg-warning/10 px-1.5 py-0.5 text-xs font-medium text-warning"
+                contenteditable="false"
               >
-                <Fa icon={faLinkSlash} class="text-warning" />
-              </Button>
-            {/if}
-            {#if !effectiveAgentId && !effectiveChecked}
-              <Button
-                variant="ghost-light"
-                size="icon-xs"
-                class="shrink-0 opacity-30 hover:opacity-100 transition-opacity"
-                title={m.tiptap_taskItem_assignToAgent_tooltip()}
-                onclick={(e) => {
-                  e.stopPropagation();
-                  emitLinkedTaskDelegateEvent();
-                }}
-              >
-                <Fa icon={faPlay} />
-              </Button>
-            {/if}
-          </div>
+                <Fa icon={faTriangleExclamation} size="xs" />
+                {m.tiptap_taskItem_conflicts_label({ count: linkedTaskConflictsWith.length })}
+              </span>
+            </Tooltip>
+          {/if}
+          {#if linkedTaskNotFound}
+            <Button
+              variant="ghost-light"
+              size="icon-xs"
+              class="shrink-0"
+              title={m.tiptap_taskItem_convertToInline_tooltip()}
+              onclick={(e) => {
+                e.stopPropagation();
+                convertToInlineTask();
+              }}
+            >
+              <Fa icon={faLinkSlash} class="text-warning" />
+            </Button>
+          {/if}
+          {#if !effectiveAgentId && !effectiveChecked}
+            <Button
+              variant="ghost-light"
+              size="icon-xs"
+              data-task-row-assign
+              class="shrink-0 opacity-30 transition-opacity group-focus-within/task:opacity-100 group-hover/task:opacity-100"
+              title={m.tiptap_taskItem_assignToAgent_tooltip()}
+              onclick={(e) => {
+                e.stopPropagation();
+                emitLinkedTaskDelegateEvent();
+              }}
+            >
+              <Fa icon={faPlay} />
+            </Button>
+          {/if}
           {#if effectiveAgentId}
-            <div
-              class="flex items-center pt-1 pl-9 w-full bg-muted/20 hover:bg-muted/50 rounded-b-md py-1"
-              transition:slide={{ axis: 'y', duration: 200 }}
-            >
-              <TaskAgentStatus agentId={effectiveAgentId} {workspaceId} compact />
-            </div>
+            <TaskAgentStatus agentId={effectiveAgentId} {workspaceId} compact indicator />
           {/if}
         </div>
-      </Tooltip>
+      </div>
       <span class="sr-only"><NodeViewContent /></span>
     {/if}
   {:else}

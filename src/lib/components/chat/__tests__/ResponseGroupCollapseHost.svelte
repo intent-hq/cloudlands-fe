@@ -2,14 +2,31 @@
   import type { ContentBlock } from '$shared/types';
   import ResponseGroup from '../ResponseGroup.svelte';
 
+  type Position = 'first' | 'middle' | 'last';
+
   let {
     theme = 'light',
     width = 260,
     zoom = 2,
     chunk = 'initial chunk',
-  }: { theme?: 'light' | 'dark'; width?: number; zoom?: number; chunk?: string } = $props();
+    streaming = true,
+    activePosition,
+    terminalPosition,
+    afterGroupsVisible = true,
+    livePreview = true,
+  }: {
+    theme?: 'light' | 'dark';
+    width?: number;
+    zoom?: number;
+    chunk?: string;
+    streaming?: boolean;
+    activePosition?: Position | 'thinking';
+    terminalPosition?: Position | null;
+    afterGroupsVisible?: boolean;
+    livePreview?: boolean;
+  } = $props();
 
-  const positions = ['first', 'middle', 'last'] as const;
+  const positions = ['first', 'middle', 'last'] as const satisfies readonly Position[];
   const blocks = $derived([
     { type: 'text', text: 'earlier chunk' },
     { type: 'text', text: chunk },
@@ -33,7 +50,16 @@
     <div class="h-20" aria-hidden="true"></div>
     {#each positions as position}
       <div data-testid="response-group-{position}">
-        <ResponseGroup name={`${position} group`} isStreaming isLast={position === 'last'} {blocks}>
+        {#snippet currentChild()}
+          <button type="button" data-testid="response-group-current-{position}">{chunk}</button>
+        {/snippet}
+        <ResponseGroup
+          name={`${position} group`}
+          isStreaming={activePosition === undefined ? streaming : activePosition === position}
+          isTerminal={terminalPosition === position}
+          {blocks}
+          currentChild={livePreview && activePosition === undefined ? currentChild : undefined}
+        >
           <div class="py-2" data-testid="response-group-body-{position}">
             <button type="button" data-testid="response-group-focus-{position}">
               Focusable {position} detail for {chunk}
@@ -42,5 +68,12 @@
         </ResponseGroup>
       </div>
     {/each}
+    {#if afterGroupsVisible}
+      <div data-testid="response-after-groups">
+        {activePosition === 'thinking'
+          ? 'Later Thinking/response activity continues'
+          : 'Later response activity'}
+      </div>
+    {/if}
   </div>
 </section>

@@ -11,9 +11,23 @@ const mocks = vi.hoisted(() => ({
   stop: vi.fn(),
   rename: vi.fn(),
   toastInfo: vi.fn(),
+  // Image pre-upload (monorepo#3338): default maps each inline block to a
+  // deterministic reference block; individual tests override to assert the
+  // failure path.
+  toImageReferenceBlocks: vi.fn(
+    async (_wsId: string, blocks: Array<{ attachmentId?: string; mimeType?: string }>) =>
+      blocks.map((block, i) => ({
+        type: 'image' as const,
+        attachmentId: block.attachmentId ?? `attach-${i}`,
+        ...(block.mimeType ? { mimeType: block.mimeType } : {}),
+      })),
+  ),
 }));
 vi.mock('$features/agent/agent-send', () => ({ sendMessage: mocks.send }));
 vi.mock('svelte-sonner', () => ({ toast: { info: mocks.toastInfo } }));
+vi.mock('$lib/components/chat/input/image-attachment-placement', () => ({
+  toImageReferenceBlocks: mocks.toImageReferenceBlocks,
+}));
 vi.mock('$lib/client', () => ({
   appClient: {
     agents: {
@@ -38,6 +52,7 @@ import type { AgentSession, QueuedMessage, Workspace } from '$shared/types';
 import { AgentStatus, WorkspaceStatusEnum } from '$shared/types';
 import {
   agentSessionReducer,
+  agentSessionRetryFromStalledRequested,
   agentSessionRetryLastMessageRequested,
   agentSessionRetryWithModelRequested,
   agentSessionStopChatRequested,
@@ -64,6 +79,8 @@ import {
   chatStateReducer,
   refreshChatTranscriptRequested,
   sendMessage,
+  streamActivityReceived,
+  streamStatusReceived,
   transcriptHydrationSettled,
 } from '../chat-state-slice';
 import { chatSendSaga } from './chat-send-saga';
@@ -139,7 +156,9 @@ function harness(
     channel,
     dispatch,
     task,
-    setChat: (action: ReturnType<typeof chatLastAttemptedMessageSet>) => {
+    setChat: (
+      action: ReturnType<typeof chatLastAttemptedMessageSet> | ReturnType<typeof streamStatusReceived>,
+    ) => {
       chatState = chatStateReducer(chatState, action);
     },
     settleTranscript: (agentId = AGENT) => {
@@ -222,13 +241,18 @@ describe('chatSendSaga', () => {
     await settle();
 
     expect(mocks.send).toHaveBeenCalledTimes(1);
+    // Inline image blocks are pre-uploaded and swapped to attachment
+    // references before the wire call (monorepo#3338).
+    expect(mocks.toImageReferenceBlocks).toHaveBeenCalledWith(WS, [
+      { type: 'image', data: 'abc', mimeType: 'image/png' },
+    ]);
     expect(mocks.send).toHaveBeenNthCalledWith(
       1,
       AGENT,
       'first',
       expect.objectContaining({ id: WS }),
       {
-        imageBlocks: [{ type: 'image', data: 'abc', mimeType: 'image/png' }],
+        imageBlocks: [{ type: 'image', attachmentId: 'attach-0', mimeType: 'image/png' }],
         noteIds: ['note-1'],
         userAppMessageId: 'app-message-first',
         priority: 'interrupt',
@@ -457,9 +481,7 @@ describe('chatSendSaga', () => {
     // record (the way the sendQueuedNow failure paths do) — that would break
     // the failure banner's "Try again".
     expect(run.dispatch).not.toHaveBeenCalledWith(chatLastAttemptedMessageSet(AGENT, null));
-    expect(run.dispatch).toHaveBeenCalledWith(
-      chatSendFailed(AGENT, 'Agent not found: agent-send'),
-    );
+    expect(run.dispatch).toHaveBeenCalledWith(chatSendFailed(AGENT, 'Agent not found: agent-send'));
     run.task.cancel();
     await run.task.toPromise();
   });
@@ -486,8 +508,10 @@ describe('chatSendSaga', () => {
     );
     await settle();
 
+    // Queued sends carry the converted reference blocks too — the retry
+    // record matches the wire payload (no re-upload on retry).
     expect(mocks.queue).toHaveBeenCalledWith(AGENT, 'later', {
-      imageBlocks: [{ type: 'image', data: 'abc', mimeType: 'image/png' }],
+      imageBlocks: [{ type: 'image', attachmentId: 'attach-0', mimeType: 'image/png' }],
     });
     expect(mocks.send).not.toHaveBeenCalled();
     expect(run.dispatch).toHaveBeenCalledWith(
@@ -496,7 +520,9 @@ describe('chatSendSaga', () => {
         'queued-1',
         {
           text: 'later',
-          options: { imageBlocks: [{ type: 'image', data: 'abc', mimeType: 'image/png' }] },
+          options: {
+            imageBlocks: [{ type: 'image', attachmentId: 'attach-0', mimeType: 'image/png' }],
+          },
         },
         'turn-queued',
       ),
@@ -772,6 +798,119 @@ describe('chatSendSaga', () => {
       expect.any(Object),
     );
     expect(mocks.toastInfo).not.toHaveBeenCalled();
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('retry-from-stalled stops the hung turn and re-sends the last attempt with interrupt priority', async () => {
+    mocks.stop.mockResolvedValue({ success: true });
+    mocks.send.mockResolvedValue(undefined);
+    const run = harness();
+    run.setChat(
+      streamStatusReceived(
+        AGENT,
+        { phase: 'stalled', message: 'No model activity', level: 'warn', timestamp: Date.now() },
+        false,
+      ),
+    );
+    run.setChat(chatLastAttemptedMessageSet(AGENT, { text: 'stalled send', options: {} }));
+
+    const retry = agentSessionRetryFromStalledRequested(AGENT, WS);
+    run.channel.put(retry);
+    await expect(retry.promise).resolves.toBeUndefined();
+
+    expect(mocks.stop).toHaveBeenCalledWith(AGENT);
+    expect(mocks.send).toHaveBeenCalledWith(
+      AGENT,
+      'stalled send',
+      expect.objectContaining({ id: WS }),
+      expect.objectContaining({ priority: 'interrupt' }),
+    );
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('retry-from-stalled abandons the re-send when the user cancels mid-retry', async () => {
+    // The retry's own stop RPC hangs while the user clicks Cancel: the
+    // concurrent agentSessionStopChatRequested must win the race so no
+    // message is re-sent after the user chose to stop.
+    let releaseRetryStop!: (value: { success: boolean }) => void;
+    mocks.stop
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            releaseRetryStop = resolve;
+          }),
+      )
+      .mockResolvedValue({ success: true });
+    mocks.send.mockResolvedValue(undefined);
+    const run = harness();
+    run.setChat(
+      streamStatusReceived(
+        AGENT,
+        { phase: 'stalled', message: 'No model activity', level: 'warn', timestamp: Date.now() },
+        false,
+      ),
+    );
+    run.setChat(chatLastAttemptedMessageSet(AGENT, { text: 'stalled send', options: {} }));
+
+    const retry = agentSessionRetryFromStalledRequested(AGENT, WS);
+    run.channel.put(retry);
+    await settle();
+    expect(mocks.stop).toHaveBeenCalledTimes(1);
+
+    const stop = agentSessionStopChatRequested(AGENT);
+    run.channel.put(stop);
+    releaseRetryStop({ success: true });
+
+    await expect(retry.promise).resolves.toBeUndefined();
+    await expect(stop.promise).resolves.toBeUndefined();
+    expect(mocks.send).not.toHaveBeenCalled();
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('retry-from-stalled is a no-op when the stall is no longer active', async () => {
+    const run = harness();
+    // Stalled event followed by a later stream chunk: stall superseded.
+    run.setChat(
+      streamStatusReceived(
+        AGENT,
+        { phase: 'stalled', message: 'No model activity', level: 'warn', timestamp: 1_000 },
+        false,
+      ),
+    );
+    run.setChat(chatLastAttemptedMessageSet(AGENT, { text: 'stalled send', options: {} }));
+    run.dispatch(streamActivityReceived(AGENT, true, 2_000));
+
+    const retry = agentSessionRetryFromStalledRequested(AGENT, WS);
+    run.channel.put(retry);
+    await expect(retry.promise).resolves.toBeUndefined();
+
+    expect(mocks.stop).not.toHaveBeenCalled();
+    expect(mocks.send).not.toHaveBeenCalled();
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('retry-from-stalled with no recorded attempt stops the turn and toasts', async () => {
+    mocks.stop.mockResolvedValue({ success: true });
+    const run = harness();
+    run.setChat(
+      streamStatusReceived(
+        AGENT,
+        { phase: 'stalled', message: 'No model activity', level: 'warn', timestamp: Date.now() },
+        false,
+      ),
+    );
+
+    const retry = agentSessionRetryFromStalledRequested(AGENT, WS);
+    run.channel.put(retry);
+    await expect(retry.promise).resolves.toBeUndefined();
+
+    expect(mocks.stop).toHaveBeenCalledWith(AGENT);
+    expect(mocks.send).not.toHaveBeenCalled();
+    await vi.waitFor(() => expect(mocks.toastInfo).toHaveBeenCalledTimes(1));
     run.task.cancel();
     await run.task.toPromise();
   });

@@ -125,21 +125,25 @@
   } from '$store/renderer/slices/daemon-health/daemon-health-slice';
   import {
     selectConnections,
-    selectActiveConnectionId,
-    selectActiveConnection,
+    selectCurrentConnectionId,
+    selectCurrentConnection,
     selectConnectionCertMismatch,
     selectActiveProtocolMismatch,
     selectProtocolMismatchModal,
+    selectKeychainSyncState,
   } from '$store/renderer/slices/connections/connections-selectors';
   import {
     certMismatchCleared,
     protocolMismatchModalDismissed,
   } from '$store/renderer/slices/connections/connections-slice';
   import {
+    openConnectionRequested,
     switchConnectionRequested,
     forgetConnectionRequested,
+    loadKeychainSyncStateRequested,
   } from '$store/renderer/slices/connections/connections-slice';
   import { LOCAL_CONNECTION_ID } from '$shared/types/connections';
+  import type { ConnectionRecord } from '$shared/types/connections';
   import { store as appStore } from '$store/renderer/store';
   import type { DaemonHealth } from '$store/renderer/slices/daemon-health/daemon-health-types';
 
@@ -150,16 +154,19 @@
   const unslothStatus$ = selectUnslothStatus();
   const unslothStopping$ = selectUnslothStopping();
   const connections$ = selectConnections();
-  const activeConnectionId$ = selectActiveConnectionId();
-  const activeConnection$ = selectActiveConnection();
+  const currentConnectionId$ = selectCurrentConnectionId();
+  const currentConnection$ = selectCurrentConnection();
   const certMismatch$ = selectConnectionCertMismatch();
   const activeProtocolMismatch$ = selectActiveProtocolMismatch();
   const protocolMismatchModal$ = selectProtocolMismatchModal();
+  const keychainSyncState$ = selectKeychainSyncState();
 
   let dropdownOpen = $state(false);
   let liveUptimeSeconds = $state<number | undefined>(undefined);
   let stopUnslothDialogOpen = $state(false);
   let connectModalOpen = $state(false);
+  let forgetDialogOpen = $state(false);
+  let forgetDialogTarget = $state<{ id: string; label: string } | null>(null);
 
   // Color mapping for health states
   const healthColors: Record<DaemonHealth, string> = {
@@ -311,11 +318,11 @@
       : '',
   );
 
-  // Compact machine name shown next to the status dot when the active
+  // Compact machine name shown next to the status dot when this window's
   // connection is remote (name only, no host:port — same preference order as
   // formatConnectionLabel). Null when local/unknown → dot-only trigger.
-  const activeRemoteName = $derived.by(() => {
-    const conn = $activeConnection$;
+  const currentRemoteName = $derived.by(() => {
+    const conn = $currentConnection$;
     if (!conn || conn.isLocal) return null;
     return conn.hostname?.trim() || conn.label;
   });
@@ -323,7 +330,7 @@
   // Trigger accessible name: includes the visible remote name when shown so
   // the label-in-name relationship holds (WCAG 2.5.3).
   const triggerAriaLabel = $derived(
-    activeRemoteName ? `${triggerLabel} — ${activeRemoteName}` : triggerLabel,
+    currentRemoteName ? `${triggerLabel} — ${currentRemoteName}` : triggerLabel,
   );
 
   const stopUnslothDescription = $derived.by(() => {
@@ -348,6 +355,18 @@
     connectModalOpen = true;
   }
 
+  async function handleOpenConnection(id: string) {
+    dropdownOpen = false;
+    try {
+      const action = openConnectionRequested(id);
+      appStore.dispatch(action);
+      await action.promise;
+    } catch {
+      // The failure is surfaced via the slice's op-status/error; nothing more
+      // to do here (the list/active refresh arrives via connections:changed).
+    }
+  }
+
   async function handleSwitchConnection(id: string) {
     dropdownOpen = false;
     try {
@@ -369,6 +388,42 @@
       // Refresh + any error surface via the connections service; no-op here.
     }
   }
+
+  // --- Forget confirmation dialog -----------------------------------------
+
+  /**
+   * Forget is destructive (and, with iCloud sync on, propagates to every
+   * synced device), so it confirms first. Opening the dialog also refreshes
+   * the keychain-sync state so the synced-devices sentence gates on the
+   * current supported+enabled values.
+   */
+  function requestForgetConnection(conn: ConnectionRecord) {
+    dropdownOpen = false;
+    forgetDialogTarget = { id: conn.id, label: formatConnectionLabel(conn) };
+    forgetDialogOpen = true;
+    const action = loadKeychainSyncStateRequested();
+    appStore.dispatch(action);
+    action.promise.catch(() => {
+      // Unloadable sync state → the dialog shows the plain confirmation.
+    });
+  }
+
+  function confirmForgetConnection() {
+    if (forgetDialogTarget) void handleForgetConnection(forgetDialogTarget.id);
+  }
+
+  // Base sentence naming the connection, plus the synced-devices notice only
+  // when keychain sync is supported AND enabled on this machine.
+  const forgetDialogDescription = $derived.by(() => {
+    if (!forgetDialogTarget) return '';
+    const base = m.layout_daemonStatus_forgetConfirm_description({
+      name: forgetDialogTarget.label,
+    });
+    const sync = $keychainSyncState$;
+    return sync?.supported && sync.enabled
+      ? `${base} ${m.layout_daemonStatus_forgetConfirmSynced_description()}`
+      : base;
+  });
 
   // --- Cert-mismatch modal actions ---------------------------------------
 
@@ -435,12 +490,12 @@
         {...props}
         class={cn(
           'flex items-center justify-center h-6 hover:bg-muted/50 rounded transition-colors cursor-pointer',
-          activeRemoteName ? 'gap-1.5 px-1.5' : 'w-6',
+          currentRemoteName ? 'gap-1.5 px-1.5' : 'w-6',
         )}
         aria-label={triggerAriaLabel}
       >
-        {#if activeRemoteName}
-          <span class="text-xs text-subtle truncate max-w-32">{activeRemoteName}</span>
+        {#if currentRemoteName}
+          <span class="text-xs text-subtle truncate max-w-32">{currentRemoteName}</span>
         {/if}
         <div class={cn('w-2 h-2 rounded-full shrink-0', dotColorClass)}></div>
       </button>
@@ -752,7 +807,7 @@
         </div>
       {/if}
 
-      <!-- Multi-backend connect: add action + connections list (Switch/Forget) -->
+      <!-- Multi-backend connect: add action + connections list (Open/Switch/Forget) -->
       <div class="h-px bg-border my-1"></div>
       <div class="px-1 pb-1">
         <button
@@ -768,9 +823,9 @@
             >{m.layout_daemonStatus_connections_header()}</Header
           >
           {#each $connections$ as conn (conn.id)}
-            {@const isActive = conn.id === $activeConnectionId$}
+            {@const isCurrent = conn.id === $currentConnectionId$}
             <!--
-              Each connection row is a real submenu (Menu.Sub), so Switch/Forget
+              Each connection row is a real submenu (Menu.Sub), so Open/Switch/Forget
               pop out as a side flyout that opens on hover/click with bits-ui's
               pointer-grace (it stays open while the pointer travels into it).
               The flyout portals to body so the parent menu's overflow scroll
@@ -805,7 +860,7 @@
                       </span>
                     </Tooltip>
                   {/if}
-                  {#if isActive}
+                  {#if isCurrent}
                     <!--
                       role="img" so the span's aria-label reliably maps to an
                       accessible name (same treatment as the warning icons).
@@ -823,7 +878,13 @@
               <Menu.SubContent side="left" align="start" class="min-w-28">
                 <Menu.Item
                   class="cursor-pointer text-xs"
-                  disabled={isActive}
+                  onSelect={() => handleOpenConnection(conn.id)}
+                >
+                  {m.layout_daemonStatus_open_action()}
+                </Menu.Item>
+                <Menu.Item
+                  class="cursor-pointer text-xs"
+                  disabled={isCurrent}
                   onSelect={() => handleSwitchConnection(conn.id)}
                 >
                   {m.layout_daemonStatus_switch_action()}
@@ -831,7 +892,7 @@
                 {#if !conn.isLocal}
                   <Menu.Item
                     class="cursor-pointer text-xs text-error-foreground data-[highlighted]:text-error-foreground"
-                    onSelect={() => handleForgetConnection(conn.id)}
+                    onSelect={() => requestForgetConnection(conn)}
                   >
                     {m.layout_daemonStatus_forget_action()}
                   </Menu.Item>
@@ -854,6 +915,18 @@
     confirmText={m.layout_daemonStatus_stopUnsloth_confirm_label()}
     variant="destructive"
     onConfirm={confirmStopUnsloth}
+  />
+{/if}
+
+<!-- Forget-connection confirmation (same canonical body portal). -->
+{#if forgetDialogOpen && forgetDialogTarget}
+  <BulkActionConfirmDialog
+    bind:open={forgetDialogOpen}
+    title={m.layout_daemonStatus_forgetConfirm_title()}
+    description={forgetDialogDescription}
+    confirmText={m.layout_daemonStatus_forgetConfirm_confirm_label()}
+    variant="destructive"
+    onConfirm={confirmForgetConnection}
   />
 {/if}
 

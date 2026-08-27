@@ -39,22 +39,39 @@ const FEATURE_PATHS = [
   'agentFeatures.stateSnapshot',
   'agentFeatures.prMonitor',
   'agentFeatures.taskGraph',
+  'agentFeatures.peerAgents',
 ];
 
-// PROTOCOL §5.12 settings.list response with all eleven agentFeatures.* entries
-// plus the prMonitor.debounceSeconds number (§6.9)
+// PROTOCOL §5.12 settings.list response with all twelve agentFeatures.* entries
+// plus the prMonitor.debounceSeconds (§6.9) and agents.maxTopLevelAgents numbers.
+// Entries are FLAT SettingDefinitionWithValue objects — the daemon merges `value`
+// into the definition itself (no nested `definition` key; that shape is settings.get's).
 function listResponse() {
   return {
     settings: [
       ...FEATURE_PATHS.map((path) => ({
         path,
+        label: path,
+        description: '',
+        category: 'agentFeatures',
+        type: 'boolean',
+        defaultValue: true,
         value: true,
-        definition: { path, type: 'boolean', scope: 'user' },
       })),
       {
         path: 'prMonitor.debounceSeconds',
+        label: 'PR monitor debounce',
+        description: '',
+        category: 'prMonitor',
+        type: 'number',
+        min: 10,
+        defaultValue: 60,
         value: 60,
-        definition: { path: 'prMonitor.debounceSeconds', type: 'number', scope: 'user' },
+      },
+      {
+        path: 'agents.maxTopLevelAgents',
+        value: 20,
+        definition: { path: 'agents.maxTopLevelAgents', type: 'number', scope: 'user' },
       },
     ],
   };
@@ -205,6 +222,117 @@ describe('AgentFeaturesSettings wire contract (PROTOCOL §5.12)', () => {
     });
     await waitFor(() => {
       expect(toggle.getAttribute('aria-checked')).toBe('false');
+    });
+  });
+
+  it('renders the daemon-provided tokenImpact annotation from settings.list (§5.12)', async () => {
+    mocks.mockBackendRequest.mockImplementation(async (method: string) => {
+      if (method === 'settings.list') {
+        const response = listResponse();
+        return {
+          settings: response.settings.map((s) =>
+            s.path === 'agentFeatures.backgroundHooks'
+              ? { ...s, tokenImpact: '~620 tokens/session' }
+              : s,
+          ),
+        };
+      }
+      throw new Error(`Unexpected method: ${method}`);
+    });
+
+    render(AgentFeaturesSettings);
+
+    const impact = await screen.findByText('~620 tokens/session');
+    expect(impact.className).toContain('text-ghost');
+    // Entries without the optional field render no annotation.
+    expect(screen.queryAllByText(/tokens\/(session|turn)/)).toHaveLength(1);
+  });
+
+  it('issues settings.update for agentFeatures.peerAgents when its toggle changes', async () => {
+    mocks.mockBackendRequest.mockImplementation(async (method: string) => {
+      if (method === 'settings.list') {
+        const response = listResponse();
+        return {
+          settings: response.settings.map((s) =>
+            s.path === 'agentFeatures.peerAgents' ? { ...s, value: false } : s,
+          ),
+        };
+      }
+      if (method === 'settings.update') {
+        return { applied: [{ path: 'agentFeatures.peerAgents', value: true }] };
+      }
+      throw new Error(`Unexpected method: ${method}`);
+    });
+
+    render(AgentFeaturesSettings);
+
+    const toggle = await screen.findByRole('switch', { name: 'Peer agent spawning' });
+    await waitFor(() => {
+      expect(toggle.getAttribute('aria-checked')).toBe('false');
+    });
+    await fireEvent.click(toggle);
+
+    await waitFor(() => {
+      const updateCall = vi
+        .mocked(mocks.mockBackendRequest)
+        .mock.calls.find((call) => call[0] === 'settings.update');
+      expect(updateCall).toBeDefined();
+      expect(updateCall![1]).toEqual({
+        changes: [{ path: 'agentFeatures.peerAgents', value: true }],
+      });
+    });
+    expect(toggle.getAttribute('aria-checked')).toBe('true');
+  });
+
+  it('renders peerAgents OFF when settings.list omits it (opt-in default)', async () => {
+    mocks.mockBackendRequest.mockImplementation(async (method: string) => {
+      if (method === 'settings.list') {
+        // Older daemon: agentFeatures.peerAgents is not registered
+        const response = listResponse();
+        return {
+          settings: response.settings.filter((s) => s.path !== 'agentFeatures.peerAgents'),
+        };
+      }
+      throw new Error(`Unexpected method: ${method}`);
+    });
+
+    render(AgentFeaturesSettings);
+
+    const toggle = await screen.findByRole('switch', { name: 'Peer agent spawning' });
+    await waitFor(() => {
+      expect(toggle.getAttribute('aria-checked')).toBe('false');
+    });
+  });
+
+  it('issues settings.update for agents.maxTopLevelAgents when the cap is saved', async () => {
+    mocks.mockBackendRequest.mockImplementation(async (method: string) => {
+      if (method === 'settings.list') return listResponse();
+      if (method === 'settings.update') {
+        return { applied: [{ path: 'agents.maxTopLevelAgents', value: 5 }] };
+      }
+      throw new Error(`Unexpected method: ${method}`);
+    });
+
+    render(AgentFeaturesSettings);
+
+    const input = await screen.findByRole('spinbutton', {
+      name: 'Maximum top-level agents per workspace',
+    });
+    await waitFor(() => {
+      expect((input as HTMLInputElement).value).toBe('20');
+    });
+    await fireEvent.input(input, { target: { value: '5' } });
+    const save = await screen.findByRole('button', { name: 'Save' });
+    await fireEvent.click(save);
+
+    await waitFor(() => {
+      const updateCall = vi
+        .mocked(mocks.mockBackendRequest)
+        .mock.calls.find((call) => call[0] === 'settings.update');
+      expect(updateCall).toBeDefined();
+      expect(updateCall![1]).toEqual({
+        changes: [{ path: 'agents.maxTopLevelAgents', value: 5 }],
+      });
     });
   });
 

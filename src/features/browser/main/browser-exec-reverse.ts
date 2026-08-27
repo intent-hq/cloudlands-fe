@@ -23,6 +23,9 @@ const logger = new Logger('BrowserExecReverse');
 
 export const BROWSER_EXEC_METHOD = 'browser.exec';
 
+/** Keep persistence below the outer 30-second workspace browser deadline. */
+const SCREENSHOT_ASSET_SAVE_TIMEOUT_MS = 5_000;
+
 /**
  * Signature of `executeBrowserActions` from `./browser.ipc`. Kept in-file to
  * avoid a static import of the browser IPC entry (and its Electron-touching
@@ -34,7 +37,15 @@ export type ExecuteBrowserActionsFn = (
   tabId?: string,
   agentId?: string,
   workspaceId?: string,
+  backendContext?: BrowserExecutionBackendContext,
 ) => Promise<ExecutionResult>;
+
+/** Backend identity captured at the reverse-handler or renderer IPC boundary. */
+export interface BrowserExecutionBackendContext {
+  client: JsonRpcClient;
+  backendId: string;
+  savedRemote: boolean;
+}
 
 interface BrowserExecParams {
   actions: unknown[];
@@ -56,6 +67,10 @@ export interface RegisterBrowserExecOptions {
   executor?: ExecuteBrowserActionsFn;
   /** Overridable asset-save call for tests. */
   saveAsset?: SaveAssetFn;
+  /** True when this client belongs to a persisted remote connection. */
+  savedRemote?: boolean;
+  /** Stable backend pool id for scoped lifecycle subscriptions. */
+  backendId?: string;
 }
 
 /**
@@ -64,9 +79,15 @@ export interface RegisterBrowserExecOptions {
  * imported. The daemon-initiated reverse call is the only real trigger, and
  * that path runs in the Electron main process where the import is safe.
  */
-const defaultExecutor: ExecuteBrowserActionsFn = async (actions, tabId, agentId, workspaceId) => {
+const defaultExecutor: ExecuteBrowserActionsFn = async (
+  actions,
+  tabId,
+  agentId,
+  workspaceId,
+  backendContext,
+) => {
   const { executeBrowserActions } = await import('./browser.ipc');
-  return executeBrowserActions(actions, tabId, agentId, workspaceId);
+  return executeBrowserActions(actions, tabId, agentId, workspaceId, backendContext);
 };
 
 /**
@@ -89,7 +110,17 @@ export function registerBrowserExecReverseHandler(
       hasWorkspaceId: !!params.workspaceId,
     });
 
-    const result = await executor(params.actions, params.tabId, params.agentId, params.workspaceId);
+    const result = await executor(
+      params.actions,
+      params.tabId,
+      params.agentId,
+      params.workspaceId,
+      {
+        client,
+        backendId: options.backendId ?? 'local',
+        savedRemote: options.savedRemote ?? false,
+      },
+    );
 
     if (params.workspaceId && saveAsset && result.success) {
       await rewriteScreenshotAssets(result, params.workspaceId, saveAsset);
@@ -137,37 +168,55 @@ async function rewriteScreenshotAssets(
   workspaceId: string,
   saveAsset: SaveAssetFn,
 ): Promise<void> {
-  for (const actionResult of result.results) {
-    if (actionResult.action !== 'screenshot' || !actionResult.success) continue;
-    const data = actionResult.result as
-      { base64?: string; width?: number; height?: number } | undefined;
-    if (!data?.base64) continue;
-    try {
-      const saved = await saveAsset({
-        workspaceId,
-        data: data.base64,
-        mimeType: 'image/jpeg',
-        originalName: `screenshot-${Date.now()}.jpg`,
-      });
-      // Only replace the base64 payload once we actually have a usable
-      // `assetUrl` — `SaveAssetFn` may return `undefined` or a payload without
-      // `url`, and dropping the base64 in that case would leave the caller
-      // with neither the inline blob nor a fetchable URL.
-      if (saved?.url) {
-        actionResult.result = {
-          assetUrl: saved.url,
-          width: data.width,
-          height: data.height,
-        };
-      } else {
-        logger.warn('saveAsset returned no url; keeping base64 in screenshot result', {
+  await Promise.all(
+    result.results.map(async (actionResult) => {
+      if (actionResult.action !== 'screenshot' || !actionResult.success) return;
+      const data = actionResult.result as
+        { base64?: string; width?: number; height?: number } | undefined;
+      if (!data?.base64) return;
+      try {
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        const saved = await Promise.race([
+          saveAsset({
+            workspaceId,
+            data: data.base64,
+            mimeType: 'image/jpeg',
+            originalName: `screenshot-${Date.now()}.jpg`,
+          }),
+          new Promise<never>((_, reject) => {
+            timer = setTimeout(
+              () =>
+                reject(
+                  new Error(
+                    // i18n-ignore (agent-facing operational timeout, not user-facing)
+                    `Asset persistence timed out after ${SCREENSHOT_ASSET_SAVE_TIMEOUT_MS}ms`,
+                  ),
+                ),
+              SCREENSHOT_ASSET_SAVE_TIMEOUT_MS,
+            );
+          }),
+        ]).finally(() => clearTimeout(timer));
+        // Only replace the base64 payload once we actually have a usable
+        // `assetUrl` — `SaveAssetFn` may return `undefined` or a payload without
+        // `url`, and dropping the base64 in that case would leave the caller
+        // with neither the inline blob nor a fetchable URL.
+        if (saved?.url) {
+          actionResult.result = {
+            assetUrl: saved.url,
+            width: data.width,
+            height: data.height,
+          };
+        } else {
+          logger.warn('saveAsset returned no url; keeping base64 in screenshot result', {
+            workspaceId,
+          });
+        }
+      } catch (err) {
+        logger.warn('Failed to save screenshot as asset, keeping base64 in result', {
           workspaceId,
+          error: err instanceof Error ? err.message : String(err),
         });
       }
-    } catch (err) {
-      logger.warn('Failed to save screenshot as asset, keeping base64 in result', {
-        error: err instanceof Error ? err.message : String(err),
-      });
-    }
-  }
+    }),
+  );
 }

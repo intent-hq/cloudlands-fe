@@ -191,7 +191,7 @@
           }}
           title={m.notes_cliBlock_viewAgent_tooltip()}
         >
-          <AgentAvatar agentId={linkedAgentId} size={16} />
+          <AgentAvatar agentId={linkedAgentId} variant="compact" />
         </button>
       {:else}
         <Fa icon={faTerminal} size="sm" class="shrink-0 text-muted-foreground" />

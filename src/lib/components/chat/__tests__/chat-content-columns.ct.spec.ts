@@ -1,60 +1,132 @@
 import { expect, test } from '@playwright/experimental-ct-svelte';
+import type { Locator } from '@playwright/test';
 import ChatPanelOperationalGeometryHost from './ChatPanelOperationalGeometryHost.svelte';
+import {
+  applyAuroraPaintProbe,
+  colorDistance,
+  isPaintProbe,
+  samplePanelBottomPixels,
+} from './aurora-panel-pixels';
 
 const center = (box: { x: number; width: number }) => box.x + box.width / 2;
 
-test('caps and centers separate transcript and composer columns in every wide state', async ({
+const bottomSurfaceGeometry = (locator: Locator) =>
+  locator.evaluate((node) => {
+    const box = node.getBoundingClientRect();
+    const style = getComputedStyle(node);
+    return {
+      edges: [box.left, box.right, box.bottom],
+      radii: [style.borderBottomLeftRadius, style.borderBottomRightRadius],
+    };
+  });
+
+async function expectPanelToClipFlushAurora(aurora: Locator, panel: Locator) {
+  const [auroraGeometry, panelGeometry] = await Promise.all([
+    bottomSurfaceGeometry(aurora),
+    bottomSurfaceGeometry(panel),
+  ]);
+  expect(auroraGeometry.radii).toEqual(panelGeometry.radii);
+  expect(Number.parseFloat(panelGeometry.radii[0])).toBeGreaterThan(0);
+  await applyAuroraPaintProbe(aurora);
+  const pixels = await samplePanelBottomPixels(panel);
+  pixels.outsideCorners.forEach((corner) => expect(isPaintProbe(corner)).toBe(false));
+  pixels.insideCorners.forEach((corner) => expect(isPaintProbe(corner)).toBe(true));
+  pixels.straightEdges.forEach((edge) => {
+    expect(isPaintProbe(edge)).toBe(true);
+    pixels.outsideCorners.forEach((corner) =>
+      expect(colorDistance(edge, corner)).toBeGreaterThan(100),
+    );
+  });
+}
+
+test('caps and centers transcript, prompt, and composer at the shared 140em measure', async ({
   mount,
+  page,
 }) => {
+  await page.setViewportSize({ width: 3000, height: 900 });
   const component = await mount(ChatPanelOperationalGeometryHost, {
-    props: { theme: 'light', zoom: 1, width: 1440 },
+    props: { theme: 'light', zoom: 1, width: 3000 },
   });
   const transcript = component.getByTestId('chat-transcript-inner');
   const composer = component.getByTestId('chat-composer-controls-inner');
+  const composerLane = component.getByTestId('chat-composer-lane');
   const shell = component.getByTestId('chat-composer-shell');
   const promptLayer = component.getByTestId('composer-prompt-layer');
+  const aurora = component.getByTestId('composer-aurora-host');
 
   for (const theme of ['light', 'dark'] as const) {
     for (const zoom of [1, 2]) {
-      await component.update({ props: { theme, zoom, width: 1440 } });
+      await component.update({ props: { theme, zoom, width: 3000 } });
+      const sharedMeasure = await transcript.evaluate((node) => {
+        const style = getComputedStyle(node);
+        return {
+          fontSize: Number.parseFloat(style.fontSize),
+          maxWidth: Number.parseFloat(style.maxWidth),
+        };
+      });
+      expect(sharedMeasure.maxWidth / sharedMeasure.fontSize).toBeCloseTo(140, 5);
       await expect
-        .poll(async () => (await transcript.boundingBox())!.width)
-        .toBeCloseTo(1050 * zoom, 1);
-      const [transcriptBox, composerBox, shellBox, promptBox] = await Promise.all([
+        .poll(async () => {
+          const [transcriptBox, composerLaneBox] = await Promise.all([
+            transcript.boundingBox(),
+            composerLane.boundingBox(),
+          ]);
+          return Math.abs(transcriptBox!.width - composerLaneBox!.width);
+        })
+        .toBeLessThanOrEqual(1);
+      const [transcriptBox, composerBox, composerLaneBox, shellBox, promptBox] = await Promise.all([
         transcript.boundingBox(),
         composer.boundingBox(),
+        composerLane.boundingBox(),
         shell.boundingBox(),
         promptLayer.boundingBox(),
       ]);
-      expect(composerBox!.width).toBeCloseTo(1050 * zoom, 1);
+      expect(composerLaneBox!.width).toBeCloseTo(transcriptBox!.width, 1);
+      expect(composerBox!.width).toBeCloseTo(transcriptBox!.width - 48 * zoom, 1);
       expect(Math.abs(center(transcriptBox!) - center(composerBox!))).toBeLessThanOrEqual(0.5);
       expect(promptBox!.width).toBeCloseTo(shellBox!.width, 1);
-      await expect(promptLayer).toHaveCSS('border-top-width', '1px');
-      await expect(transcript).toHaveCSS('max-width', '1050px');
-      await expect(composer).toHaveCSS('max-width', '1050px');
+      const panel = component.locator('.panel');
+      const [auroraGeometry, shellGeometry, panelContentGeometry] = await Promise.all([
+        bottomSurfaceGeometry(aurora),
+        bottomSurfaceGeometry(shell),
+        bottomSurfaceGeometry(component.locator('.panel > .panel-content')),
+      ]);
+      expect(auroraGeometry.edges).toEqual(shellGeometry.edges);
+      expect(auroraGeometry.edges).toEqual(panelContentGeometry.edges);
+      await expectPanelToClipFlushAurora(aurora, panel);
+      await expect(promptLayer).toHaveCSS('border-top-width', '0px');
+      await expect(composerLane).toHaveCSS('padding-left', '24px');
+      await expect(composerLane).toHaveCSS('padding-right', '24px');
+      await expect(composerLane).toHaveCSS('padding-bottom', '24px');
+      expect(
+        await composerLane.evaluate((node) => Number.parseFloat(getComputedStyle(node).maxWidth)),
+      ).toBeCloseTo(sharedMeasure.maxWidth, 5);
     }
   }
 });
 
-test('adds bottom breathing room when no subscription utility is visible', async ({ mount }) => {
+test('matches the wide side and lower composer spacing', async ({ mount, page }) => {
+  await page.setViewportSize({ width: 900, height: 900 });
   const component = await mount(ChatPanelOperationalGeometryHost, {
     props: { theme: 'light', zoom: 1, width: 720 },
   });
   const promptLayer = component.getByTestId('composer-prompt-layer');
 
   await expect(promptLayer).toHaveAttribute('data-has-transcript-utility', 'false');
-  await expect(promptLayer).toHaveCSS('padding-bottom', '12px');
+  await expect(component.getByTestId('chat-composer-lane')).toHaveCSS('padding-bottom', '24px');
 });
 
-test('uses the same available width and gutters without a nested narrow scroll owner', async ({
-  mount,
-}) => {
+test('keeps the nested composer inset without a narrow scroll owner', async ({ mount, page }) => {
+  await page.setViewportSize({ width: 390, height: 900 });
   const component = await mount(ChatPanelOperationalGeometryHost, {
     props: { theme: 'light', zoom: 1, width: 360 },
   });
   const transcript = component.getByTestId('chat-transcript-inner');
   const composer = component.getByTestId('chat-composer-controls-inner');
+  const composerLane = component.getByTestId('chat-composer-lane');
   const viewport = component.getByTestId('chat-transcript-scroll-viewport');
+  const aurora = component.getByTestId('composer-aurora-host');
+  const shell = component.getByTestId('chat-composer-shell');
 
   for (const theme of ['light', 'dark'] as const) {
     for (const zoom of [1, 2]) {
@@ -67,21 +139,37 @@ test('uses the same available width and gutters without a nested narrow scroll o
             transcript.boundingBox().then((box) => box?.width ?? 0),
             composer.boundingBox().then((box) => box?.width ?? 0),
           ]);
-          return transcriptWidth > 0 ? Math.abs(transcriptWidth - composerWidth) : Infinity;
+          return transcriptWidth > 0
+            ? Math.abs(transcriptWidth - composerWidth - 32 * zoom)
+            : Infinity;
         })
-        .toBeLessThanOrEqual(0.05);
+        .toBeLessThanOrEqual(1);
       const [transcriptBox, composerBox] = await Promise.all([
         transcript.boundingBox(),
         composer.boundingBox(),
       ]);
-      expect(transcriptBox!.width).toBeCloseTo(composerBox!.width, 1);
+      expect(Math.abs(transcriptBox!.width - composerBox!.width - 32 * zoom)).toBeLessThanOrEqual(
+        1,
+      );
       expect(Math.abs(center(transcriptBox!) - center(composerBox!))).toBeLessThanOrEqual(0.5);
+      await expect(composerLane).toHaveCSS('padding-left', '16px');
+      await expect(composerLane).toHaveCSS('padding-right', '16px');
+      await expect(composerLane).toHaveCSS('padding-bottom', '16px');
       expect(transcriptBox!.width).toBeLessThanOrEqual(360 * zoom);
       expect(await transcript.evaluate((node) => node.scrollWidth <= node.clientWidth + 0.5)).toBe(
         true,
       );
       await expect(viewport).toHaveCSS('overflow-y', 'auto');
       await expect(transcript).toHaveCSS('overflow-y', 'visible');
+      const panel = component.locator('.panel');
+      const [auroraGeometry, shellGeometry, panelContentGeometry] = await Promise.all([
+        bottomSurfaceGeometry(aurora),
+        bottomSurfaceGeometry(shell),
+        bottomSurfaceGeometry(component.locator('.panel > .panel-content')),
+      ]);
+      expect(auroraGeometry.edges).toEqual(shellGeometry.edges);
+      expect(auroraGeometry.edges).toEqual(panelContentGeometry.edges);
+      await expectPanelToClipFlushAurora(aurora, panel);
     }
   }
 });

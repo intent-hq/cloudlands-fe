@@ -54,6 +54,15 @@ const TAB_REGISTRATION_TIMEOUT_MS = 15_000;
  */
 const SCREENSHOT_CDP_TIMEOUT_MS = 5_000;
 
+/**
+ * How long (ms) to wait for the webContents.capturePage() fallback. On a
+ * guest whose compositor produces no frames (e.g. viewport-culled or
+ * occluded surfaces) capturePage() never settles, so an unbounded fallback
+ * would eat the caller's whole reverse-request budget after the CDP path
+ * already burned its timeouts (intent-hq/monorepo#3366).
+ */
+const SCREENSHOT_CAPTURE_PAGE_TIMEOUT_MS = 5_000;
+
 interface TabInfo {
   tabId: string;
   webContentsId: number;
@@ -1078,9 +1087,7 @@ class EmbeddedBrowserCdpService {
     const webContentsId = this.resolveTabId(tabId);
     if (webContentsId === undefined) return;
     const bounds = this.tabViewBounds.get(tabId);
-    const scale = bounds
-      ? Math.min(1, bounds.width / size.width, bounds.height / size.height)
-      : 1;
+    const scale = bounds ? Math.min(1, bounds.width / size.width, bounds.height / size.height) : 1;
     void this.sendCommand(webContentsId, 'Emulation.setDeviceMetricsOverride', {
       width: size.width,
       height: size.height,
@@ -1242,6 +1249,7 @@ class EmbeddedBrowserCdpService {
     tabId: string,
     workspaceId: string | undefined,
     ownerAgentId: string,
+    ownerAgentName?: string,
   ): void {
     if (!tabId || typeof workspaceId !== 'string' || workspaceId.length === 0) {
       // Without a workspaceId there is no target window to notify, so the
@@ -1258,6 +1266,9 @@ class EmbeddedBrowserCdpService {
       tabId,
       workspaceId,
       ownerAgentId,
+      // Best-effort display name so the sidebar owner group can label the
+      // tab without an agent-store lookup (monorepo#3438).
+      ...(ownerAgentName === undefined ? {} : { ownerAgentName }),
       ...(emulatedSize === undefined ? {} : { emulatedSize: { ...emulatedSize } }),
     });
   }
@@ -1553,6 +1564,12 @@ class EmbeddedBrowserCdpService {
    * while toJPEG() encodes the physical-pixel bitmap, so on HiDPI displays
    * the encoded image can exceed the reported width/height by the display
    * scale factor. Acceptable degradation versus hanging the action.
+   *
+   * Bounded: on a guest whose compositor produces no frames capturePage()
+   * never settles either, so it is raced against a timeout — failing fast
+   * with a clear error beats eating the caller's 30s budget (#3366).
+   * stayHidden/stayAwake keep the capture from perturbing visibility state
+   * on hidden or occluded views.
    */
   private async capturePageFallback(
     webContentsId: number,
@@ -1561,13 +1578,32 @@ class EmbeddedBrowserCdpService {
     if (!wc || wc.isDestroyed()) {
       throw new Error(`WebContents ${webContentsId} not found or destroyed`);
     }
-    const image = await wc.capturePage();
-    const size = image.getSize();
-    return {
-      base64: image.toJPEG(80).toString('base64'),
-      width: size.width,
-      height: size.height,
-    };
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      const image = await Promise.race([
+        wc.capturePage(undefined, { stayHidden: true, stayAwake: true }),
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(
+            () =>
+              reject(
+                new Error(
+                  // i18n-ignore (agent-facing protocol error, not user-facing)
+                  `capturePage timed out after ${SCREENSHOT_CAPTURE_PAGE_TIMEOUT_MS}ms: the tab is not painting (its surface may be hidden or occluded).`,
+                ),
+              ),
+            SCREENSHOT_CAPTURE_PAGE_TIMEOUT_MS,
+          );
+        }),
+      ]);
+      const size = image.getSize();
+      return {
+        base64: image.toJPEG(80).toString('base64'),
+        width: size.width,
+        height: size.height,
+      };
+    } finally {
+      clearTimeout(timer);
+    }
   }
 
   /**
@@ -1586,15 +1622,25 @@ class EmbeddedBrowserCdpService {
 
     try {
       return await this.screenshotViaCdp(webContentsId);
-    } catch (error) {
+    } catch (cdpError) {
       // The Page domain can hang (or fail) on some guests while the rest of
       // the debugger session works; degrade to capturePage() instead of
       // hanging the action until the caller's budget kills it (#3154).
       logger.warn('CDP screenshot failed; falling back to webContents.capturePage()', {
         webContentsId,
-        error: error instanceof Error ? error.message : String(error),
+        error: cdpError instanceof Error ? cdpError.message : String(cdpError),
       });
-      return this.capturePageFallback(webContentsId);
+      try {
+        return await this.capturePageFallback(webContentsId);
+      } catch (fallbackError) {
+        const cdpMessage = cdpError instanceof Error ? cdpError.message : String(cdpError);
+        const fallbackMessage =
+          fallbackError instanceof Error ? fallbackError.message : String(fallbackError);
+        throw new Error(
+          // i18n-ignore (agent-facing operational diagnostic, not user-facing)
+          `Screenshot capture failed: CDP stage: ${cdpMessage}; Electron fallback stage: ${fallbackMessage}`,
+        );
+      }
     }
   }
 

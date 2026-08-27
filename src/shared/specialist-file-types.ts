@@ -47,6 +47,17 @@ export interface SpecialistModelOption {
 }
 
 /**
+ * Orchestration role of a specialist (PROTOCOL §5.11 `role`):
+ * - 'orchestrator': powers the New Workspace modal's team-mode card.
+ * - 'internal': excluded from the modal's single-agent dropdown ONLY; still
+ *   visible in-workspace (SpecialistDropdown) and in Settings, unlike
+ *   `hidden` which hides from all pickers.
+ * Absent (undefined) means a standard specialist. Unknown values read as
+ * absent (lenient parse).
+ */
+export type SpecialistRole = 'orchestrator' | 'internal';
+
+/**
  * YAML frontmatter fields for specialist markdown files
  */
 export interface SpecialistFileFrontmatter {
@@ -93,6 +104,24 @@ export interface SpecialistFileFrontmatter {
    * specialist then inherits the model default.
    */
   reasoningEffort?: string;
+  /**
+   * Orchestration role (PROTOCOL §5.11). Omitted (undefined) means standard;
+   * unknown values in files read as omitted.
+   */
+  role?: SpecialistRole;
+  /**
+   * Specialist ids the orchestrator delegates to (advisory/render-only, used
+   * for the team-card avatar row). Stored in frontmatter as a single-line
+   * JSON-array scalar like `modelOptions`. Omitted (undefined) when the file
+   * has no `teamAgents:` key.
+   */
+  teamAgents?: string[];
+  /**
+   * Built-in avatar design id for this specialist (PROTOCOL §5.11). Carried
+   * verbatim; unknown/absent values degrade to the id-map + seeded fallback
+   * at render time.
+   */
+  icon?: string;
 }
 
 /**

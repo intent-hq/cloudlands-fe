@@ -106,7 +106,9 @@ describe('WorkspaceAgentsList single-line rows', () => {
     const longRow = view.container.querySelector<HTMLElement>(
       `[data-agent-panel-row="${longName.id}"]`,
     );
-    expect(longRow?.className).toContain('bg-muted/70');
+    expect(longRow?.className).toContain('bg-transparent');
+    expect(longRow?.className).not.toContain('hover:bg-muted');
+    expect(longRow?.getAttribute('aria-current')).toBe('true');
     expect(longRow?.querySelector('[data-agent-row-name]')?.className).toContain('flex-1');
     expect(longRow?.querySelector('[data-panel-open-state="active"]')).toBeTruthy();
     expect(longRow?.querySelector('[data-agent-row-time]')).toBeTruthy();
@@ -116,7 +118,10 @@ describe('WorkspaceAgentsList single-line rows', () => {
     expect(backgroundRow?.querySelector('[data-agent-background-badge]')).toBeTruthy();
 
     await fireEvent.keyDown(longRow!, { key: 'Enter' });
-    expect(onSelect).toHaveBeenCalledWith({ agentId: longName.id });
+    expect(onSelect).toHaveBeenCalledWith({
+      agentId: longName.id,
+      event: expect.any(KeyboardEvent),
+    });
     longRow?.focus();
     expect(document.activeElement).toBe(longRow);
 
@@ -146,6 +151,92 @@ describe('WorkspaceAgentsList single-line rows', () => {
     expect(backgroundToggle?.getAttribute('aria-expanded')).toBe('false');
     await fireEvent.click(backgroundToggle!);
     expect(backgroundToggle?.getAttribute('aria-expanded')).toBe('true');
+  });
+
+  it('shows retired agents in a collapsed bin with a restore action', async () => {
+    const active = makeAgent('active-agent', { name: 'Active agent' });
+    const retired = makeAgent('retired-agent', {
+      name: 'Retired agent',
+      retiredAt: '2026-08-20T00:00:00.000Z',
+    });
+    const agents = [active, retired];
+    appStore.dispatch(bulkUpsertSessions(agents));
+    const onRestoreRetired = vi.fn();
+    const onSelect = vi.fn();
+    const view = render(WorkspaceAgentsList, {
+      props: { agents, workspaceId, onRestoreRetired, onSelect },
+    });
+
+    // Retired agent is excluded from the main list and hidden behind the toggle.
+    await waitFor(() =>
+      expect(view.container.querySelector(`[data-agent-panel-row="${active.id}"]`)).toBeTruthy(),
+    );
+    expect(view.container.querySelector(`[data-agent-panel-row="${retired.id}"]`)).toBeNull();
+
+    const retiredToggle = view.container.querySelector<HTMLElement>('[data-agent-retired-toggle]');
+    expect(retiredToggle).toBeTruthy();
+    expect(retiredToggle?.getAttribute('aria-expanded')).toBe('false');
+    expect(retiredToggle?.textContent).toContain('1 retired agents');
+
+    await fireEvent.click(retiredToggle!);
+    expect(retiredToggle?.getAttribute('aria-expanded')).toBe('true');
+    const retiredRow = view.container.querySelector<HTMLElement>(
+      `[data-agent-panel-row="${retired.id}"]`,
+    );
+    expect(retiredRow).toBeTruthy();
+
+    // Clicking the row still opens the (read-only) conversation.
+    await fireEvent.click(retiredRow!);
+    expect(onSelect).toHaveBeenCalledWith(expect.objectContaining({ agentId: retired.id }));
+
+    // The restore affordance dispatches the un-retire callback without selecting.
+    const restoreButton = view.container.querySelector<HTMLElement>(
+      '[data-testid="agent-restore-retired"]',
+    );
+    expect(restoreButton).toBeTruthy();
+    onSelect.mockClear();
+    await fireEvent.click(restoreButton!);
+    expect(onRestoreRetired).toHaveBeenCalledWith({ agentId: retired.id });
+    expect(onSelect).not.toHaveBeenCalled();
+  });
+
+  it('virtualizes the retired bin above the threshold', async () => {
+    const active = makeAgent('active-agent', { name: 'Active agent' });
+    const retired = Array.from({ length: 40 }, (_, index) =>
+      makeAgent(`retired-${index}`, {
+        name: `Retired agent ${index}`,
+        retiredAt: '2026-08-20T00:00:00.000Z',
+      }),
+    );
+    const agents = [active, ...retired];
+    appStore.dispatch(bulkUpsertSessions(agents));
+    const onRestoreRetired = vi.fn();
+    const view = render(WorkspaceAgentsList, {
+      props: { agents, workspaceId, onRestoreRetired },
+    });
+
+    // Collapsed: no retired rows rendered at all.
+    const retiredToggle = view.container.querySelector<HTMLElement>('[data-agent-retired-toggle]');
+    expect(retiredToggle?.textContent).toContain('40 retired agents');
+    expect(view.container.querySelector('[data-agent-retired-section]')).toBeNull();
+
+    // Expanded: rows render through VirtualList slots, not all 21 eagerly.
+    await fireEvent.click(retiredToggle!);
+    const section = view.container.querySelector<HTMLElement>('[data-agent-retired-section]');
+    expect(section).toBeTruthy();
+    await waitFor(() => expect(section!.querySelector('[data-index]')).toBeTruthy());
+    const slots = section!.querySelectorAll<HTMLElement>('[data-index]');
+    expect(slots.length).toBeGreaterThan(0);
+    expect(slots.length).toBeLessThan(retired.length);
+    for (const slot of slots) expect(slot.style.height).toBe('40px');
+
+    // Rows keep the restore affordance inside the virtual path.
+    const restoreButton = section!.querySelector<HTMLElement>(
+      '[data-testid="agent-restore-retired"]',
+    );
+    expect(restoreButton).toBeTruthy();
+    await fireEvent.click(restoreButton!);
+    expect(onRestoreRetired).toHaveBeenCalledWith({ agentId: retired[0].id });
   });
 
   it('keeps virtualized row slots at the shared 40px height', async () => {

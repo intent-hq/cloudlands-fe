@@ -16,6 +16,7 @@ import { ToolService } from '../../tools/main/tool.service';
 import { ACPServer } from '../../acp-official/main/server/acp-server';
 import type { ACPServerConfig } from '../../acp-official/main/server/acp-server';
 import { getBackendClient } from '../../backend/main/backend.ipc';
+import { isProjectionRejected } from '$shared/utils/note-content';
 import { Logger } from '$shared/logger';
 import type { Result, PullRequestInfo } from '$shared/types';
 import type { UserContext, ToolPermissions } from '../../tools/types';
@@ -247,10 +248,22 @@ export class ProtocolAdapter {
       return [];
     }
 
+    // Slim projection (§5.2): the agent-facing list returns metadata +
+    // contentPreview; agents fetch full bodies via getNote. Falls back to a
+    // plain full list on daemons that reject the unknown param (-32602).
     try {
-      const result = await getBackendClient().request<{ notes: any[] }>('note.list', {
-        workspaceId,
-      });
+      let result: { notes: any[] };
+      try {
+        result = await getBackendClient().request<{ notes: any[] }>('note.list', {
+          workspaceId,
+          projection: 'slim',
+        });
+      } catch (error) {
+        if (!isProjectionRejected(error)) throw error;
+        result = await getBackendClient().request<{ notes: any[] }>('note.list', {
+          workspaceId,
+        });
+      }
       return Array.isArray(result?.notes) ? result.notes : [];
     } catch (error) {
       logger.error('Failed to list notes', error as Error);

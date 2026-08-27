@@ -16,6 +16,19 @@ import {
   registerBrowserExecReverseHandler,
   type ExecuteBrowserActionsFn,
 } from '../main/browser-exec-reverse';
+import { parseToolResult } from '../../../lib/components/chat/tool-result-parser';
+import { resolveBrowserScreenshotSource } from '../../../lib/components/chat/browser-screenshot-source';
+
+const JPEG_1PX =
+  '/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAP//////////////////////////////////////////////////////////////////////////////////////2wBDAf//////////////////////////////////////////////////////////////////////////////////////wAARCAABAAEDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAX/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/9oADAMBAAIQAxAAAAEf/8QAFBABAAAAAAAAAAAAAAAAAAAAAP/aAAgBAQABBQJ//8QAFBEBAAAAAAAAAAAAAAAAAAAAAP/aAAgBAwEBPwF//8QAFBEBAAAAAAAAAAAAAAAAAAAAAP/aAAgBAgEBPwF//8QAFBABAAAAAAAAAAAAAAAAAAAAAP/aAAgBAQAGPwJ//8QAFBABAAAAAAAAAAAAAAAAAAAAAP/aAAgBAQABPyF//9oADAMBAAIAAwAAABAf/8QAFBEBAAAAAAAAAAAAAAAAAAAAAP/aAAgBAwEBPxB//8QAFBEBAAAAAAAAAAAAAAAAAAAAAP/aAAgBAgEBPxB//8QAFBABAAAAAAAAAAAAAAAAAAAAAP/aAAgBAQABPxB//9k=';
+
+function parseScreenshotPayload(payload: unknown) {
+  return parseToolResult(
+    'workspace_api_workspace-mcp',
+    { code: 'return await ws.browser.exec([{ action: "screenshot" }])' },
+    JSON.stringify(payload),
+  );
+}
 
 class FakeSocket extends EventEmitter {
   writes: string[] = [];
@@ -46,7 +59,9 @@ function makeClient() {
 const flush = () => new Promise((resolve) => setImmediate(resolve));
 
 describe('registerBrowserExecReverseHandler', () => {
-  let executor: ReturnType<typeof vi.fn<Parameters<ExecuteBrowserActionsFn>, ReturnType<ExecuteBrowserActionsFn>>>;
+  let executor: ReturnType<
+    typeof vi.fn<Parameters<ExecuteBrowserActionsFn>, ReturnType<ExecuteBrowserActionsFn>>
+  >;
 
   beforeEach(() => {
     executor = vi.fn();
@@ -88,18 +103,46 @@ describe('registerBrowserExecReverseHandler', () => {
     );
     await flush();
 
-    expect(executor).toHaveBeenCalledWith(
-      [{ action: 'listTabs' }],
-      't-1',
-      'agent-1',
-      'ws-1',
-    );
+    expect(executor).toHaveBeenCalledWith([{ action: 'listTabs' }], 't-1', 'agent-1', 'ws-1', {
+      client,
+      backendId: 'local',
+      savedRemote: false,
+    });
     expect(socket.writes).toHaveLength(1);
     expect(JSON.parse(socket.writes[0])).toEqual({
       jsonrpc: '2.0',
       id: 'rev-1',
       result: envelope,
     });
+    client.dispose();
+  });
+
+  it('binds a background saved-remote reverse call to its originating client', async () => {
+    const { client, socket } = makeClient();
+    executor.mockResolvedValue({ success: true, results: [] });
+    registerBrowserExecReverseHandler(client, {
+      executor,
+      backendId: 'remote-loopback',
+      savedRemote: true,
+    });
+
+    socket.receive(
+      `${JSON.stringify({
+        jsonrpc: '2.0',
+        id: 'rev-remote',
+        method: BROWSER_EXEC_METHOD,
+        params: { actions: [{ action: 'openTab', url: 'http://localhost:8080' }] },
+      })}\n`,
+    );
+    await flush();
+
+    expect(executor).toHaveBeenCalledWith(
+      [{ action: 'openTab', url: 'http://localhost:8080' }],
+      undefined,
+      undefined,
+      undefined,
+      { client, backendId: 'remote-loopback', savedRemote: true },
+    );
     client.dispose();
   });
 
@@ -161,7 +204,7 @@ describe('registerBrowserExecReverseHandler', () => {
         {
           action: 'screenshot',
           success: true,
-          result: { base64: 'AAAA', width: 10, height: 20 },
+          result: { base64: JPEG_1PX, width: 10, height: 20 },
         },
       ],
     });
@@ -183,7 +226,7 @@ describe('registerBrowserExecReverseHandler', () => {
 
     expect(saveAsset).toHaveBeenCalledWith({
       workspaceId: 'ws-1',
-      data: 'AAAA',
+      data: JPEG_1PX,
       mimeType: 'image/jpeg',
       originalName: expect.stringMatching(/^screenshot-\d+\.jpg$/),
     });
@@ -193,12 +236,15 @@ describe('registerBrowserExecReverseHandler', () => {
       width: 10,
       height: 20,
     });
+    expect(
+      resolveBrowserScreenshotSource(parseScreenshotPayload(response.result.results[0].result)),
+    ).toBe('workspace-asset://ws-1/abc.jpg');
     client.dispose();
   });
 
   it('keeps the base64 screenshot payload when saveAsset resolves without a url', async () => {
     const { client, socket } = makeClient();
-    const original = { base64: 'AAAA', width: 10, height: 20 };
+    const original = { base64: JPEG_1PX, width: 10, height: 20 };
     executor.mockResolvedValue({
       success: true,
       results: [{ action: 'screenshot', success: true, result: { ...original } }],
@@ -219,6 +265,40 @@ describe('registerBrowserExecReverseHandler', () => {
     expect(saveAsset).toHaveBeenCalledTimes(1);
     const response = JSON.parse(socket.writes[0]);
     expect(response.result.results[0].result).toEqual(original);
+    const parsed = parseScreenshotPayload(response.result.results[0].result);
+    expect(parsed.screenshotMimeType).toBe('image/jpeg');
+    expect(resolveBrowserScreenshotSource(parsed)).toBe(`data:image/jpeg;base64,${JPEG_1PX}`);
     client.dispose();
+  });
+
+  it('bounds stalled asset persistence and returns the usable inline screenshot', async () => {
+    vi.useFakeTimers();
+    try {
+      const { client, socket } = makeClient();
+      const original = { base64: 'AAAA', width: 10, height: 20 };
+      executor.mockResolvedValue({
+        success: true,
+        results: [{ action: 'screenshot', success: true, result: { ...original } }],
+      });
+      const saveAsset = vi.fn(() => new Promise<never>(() => {}));
+      registerBrowserExecReverseHandler(client, { executor, saveAsset });
+
+      socket.receive(
+        `${JSON.stringify({
+          jsonrpc: '2.0',
+          id: 'rev-6',
+          method: BROWSER_EXEC_METHOD,
+          params: { actions: [{ action: 'screenshot' }], workspaceId: 'ws-1' },
+        })}\n`,
+      );
+      await vi.advanceTimersByTimeAsync(5_100);
+
+      expect(saveAsset).toHaveBeenCalledTimes(1);
+      const response = JSON.parse(socket.writes[0]);
+      expect(response.result.results[0].result).toEqual(original);
+      client.dispose();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

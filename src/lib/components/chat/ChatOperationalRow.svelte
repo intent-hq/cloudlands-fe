@@ -12,12 +12,14 @@
     CHAT_OPERATIONAL_TRAILING_CLASS,
     safeOperationalDetailsTransition,
   } from './operational-disclosure-row';
+  import { searchDisclosureEvents } from './chat-search-disclosure';
 
   interface Props {
     leading: Snippet;
     summary: Snippet;
     trailing?: Snippet;
     showChevron?: boolean;
+    preview?: Snippet;
     details?: Snippet;
     interactive?: boolean;
     expanded?: boolean;
@@ -28,6 +30,7 @@
     onclick?: (event: MouseEvent) => void;
     onkeydown?: (event: KeyboardEvent) => void;
     detailsId?: string;
+    previewClass?: string;
     detailsClass?: string;
     detailsTransition?: (node: Element) => TransitionConfig;
     detailsMotion?: string;
@@ -44,6 +47,10 @@
     toolUseId?: string;
     toolCallId?: string;
     conversationLayer?: string;
+    searchDisclosureId?: string;
+    summarySearchPath?: string;
+    onSearchExpand?: () => void;
+    onSearchRestore?: () => void;
     class?: string;
   }
 
@@ -52,6 +59,7 @@
     summary,
     trailing,
     showChevron = true,
+    preview,
     details,
     interactive = false,
     expanded = false,
@@ -62,6 +70,7 @@
     onclick,
     onkeydown,
     detailsId,
+    previewClass = '',
     detailsClass = '',
     detailsTransition = safeOperationalDetailsTransition,
     detailsMotion,
@@ -78,6 +87,10 @@
     toolUseId,
     toolCallId,
     conversationLayer,
+    searchDisclosureId,
+    summarySearchPath,
+    onSearchExpand,
+    onSearchRestore,
     class: className = '',
   }: Props = $props();
 </script>
@@ -91,6 +104,9 @@
   data-tool-use-id={toolUseId}
   data-tool-call-id={toolCallId}
   data-conversation-layer={conversationLayer}
+  data-chat-search-disclosure-id={searchDisclosureId}
+  data-chat-search-expanded={searchDisclosureId ? expanded : undefined}
+  use:searchDisclosureEvents={{ onExpand: onSearchExpand, onRestore: onSearchRestore }}
 >
   <div class={CHAT_OPERATIONAL_ROW_CLASS} data-operational-disclosure-row data-compact-tool-row>
     {#if interactive}
@@ -117,6 +133,7 @@
           data-operational-summary
           data-tool-sentence={toolIcon || undefined}
           data-testid={summaryTestId}
+          data-chat-search-block-path={summarySearchPath}
           title={summaryTitle}>{@render summary()}</span
         >
       </button>
@@ -134,6 +151,7 @@
         data-operational-summary
         data-tool-sentence={toolIcon || undefined}
         data-testid={summaryTestId}
+        data-chat-search-block-path={summarySearchPath}
         aria-label={ariaLabel}
         title={summaryTitle ?? ariaLabel}>{@render summary()}</span
       >
@@ -153,6 +171,12 @@
       </span>
     {/if}
   </div>
+
+  {#if preview}
+    <div class={previewClass} data-operational-preview-content>
+      {@render preview()}
+    </div>
+  {/if}
 
   {#if details}
     <div

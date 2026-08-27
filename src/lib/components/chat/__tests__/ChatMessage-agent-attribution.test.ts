@@ -709,6 +709,20 @@ describe('ChatMessage hook wake attribution', () => {
     expect(surface.getAttribute('data-external-spacing-owner')).toBe('automated-wake-card');
     expect(screen.getByText('ci-watch')).toBeTruthy();
     expect(screen.getByText('woke the agent')).toBeTruthy();
+    const textLane = screen.getByTestId('automated-wake-text-lane');
+    expect(textLane.className).toContain('gap-x-1');
+    // Single-line lane: never wraps, labels ellipsize instead.
+    expect(textLane.classList.contains('flex-nowrap')).toBe(true);
+    expect(textLane.classList.contains('flex-wrap')).toBe(false);
+    const primaryLabel = screen.getByTestId('automated-wake-primary-label');
+    expect(primaryLabel.textContent?.trim()).toBe('ci-watch');
+    expect(primaryLabel.classList.contains('truncate')).toBe(true);
+    expect(primaryLabel.classList.contains('shrink-0')).toBe(false);
+    const status = screen.getByTestId('wake-status');
+    expect(status.classList.contains('min-w-0')).toBe(true);
+    expect(status.classList.contains('truncate')).toBe(true);
+    // Status shrinks first so the identifying label keeps as much space as fits.
+    expect(status.classList.contains('shrink-[4]')).toBe(true);
     expect(screen.queryByTestId('automated-wake-details')).toBeNull();
     await expandAutomatedWake();
     expect(screen.getByText('CI is red')).toBeTruthy();
@@ -746,6 +760,29 @@ describe('ChatMessage hook wake attribution', () => {
 
     expect(screen.getByText('CI is red')).toBeTruthy();
     expect(screen.getByTestId('automated-wake-header')).toBeTruthy();
+  });
+
+  it('toggles the disclosure from anywhere on the header bar', async () => {
+    render(ChatMessage, { props: { message: hookWakeMessage({ rowMetadata: true }) } });
+
+    const header = screen.getByTestId('automated-wake-header');
+    expect(header.className).toContain('cursor-pointer');
+    const toggle = screen.getByTestId('automated-wake-toggle');
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+
+    // Empty row space toggles open.
+    await fireEvent.click(header);
+    expect(toggle.getAttribute('aria-expanded')).toBe('true');
+    expect(screen.getByText('CI is red')).toBeTruthy();
+
+    // Hook name label toggles closed again.
+    await fireEvent.click(screen.getByTestId('automated-wake-primary-label'));
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    expect(screen.queryByTestId('automated-wake-details')).toBeNull();
+
+    // Status text toggles open again.
+    await fireEvent.click(screen.getByTestId('wake-status'));
+    expect(toggle.getAttribute('aria-expanded')).toBe('true');
   });
 
   it('hides the trailing state note (old wording) from the rendered body', async () => {
@@ -934,6 +971,16 @@ describe('ChatMessage PR-monitor wake attribution', () => {
     expect(chip.textContent?.trim()).toBe('intent-hq/monorepo #42');
     // Label sits flush left next to the PR icon (overrides the Button base justify-center)
     expect(chip.className).toContain('justify-start');
+    // Single-line chip: truncates instead of wrapping.
+    expect(chip.className).not.toContain('whitespace-normal');
+    expect(chip.className).not.toContain('break-words');
+    expect(chip.classList.contains('shrink-0')).toBe(false);
+    expect(chip.querySelector('.truncate')).toBeTruthy();
+    // The full label stays discoverable via the tooltip once the chip ellipsizes.
+    expect(chip.getAttribute('title')).toBe('Open intent-hq/monorepo #42');
+    const lane = screen.getByTestId('automated-wake-text-lane');
+    expect(lane.classList.contains('flex-nowrap')).toBe(true);
+    expect(lane.classList.contains('flex-wrap')).toBe(false);
     expect(screen.getByText('woke the agent')).toBeTruthy();
     await expandAutomatedWake();
     expect(screen.getByText('Checks failed')).toBeTruthy();
@@ -1001,6 +1048,25 @@ describe('ChatMessage PR-monitor wake attribution', () => {
     expect(handleLinkMock).toHaveBeenCalledTimes(1);
     expect(handleLinkMock.mock.calls[0][0]).toBe('https://github.example/pr/42');
     expect(handleLinkMock.mock.calls[0][1]).toMatchObject({ forceExternal: true });
+    // Chip click stays sibling to the disclosure — it never toggles the card.
+    expect(screen.getByTestId('automated-wake-toggle').getAttribute('aria-expanded')).toBe('false');
+    expect(screen.queryByTestId('automated-wake-details')).toBeNull();
+  });
+
+  it('toggles the disclosure from the header bar without opening the PR', async () => {
+    render(ChatMessage, { props: { message: prMonitorWakeMessage({ rowMetadata: true }) } });
+
+    const toggle = screen.getByTestId('automated-wake-toggle');
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+
+    await fireEvent.click(screen.getByTestId('automated-wake-header'));
+    expect(toggle.getAttribute('aria-expanded')).toBe('true');
+    expect(screen.getByText('Checks failed')).toBeTruthy();
+
+    await fireEvent.click(screen.getByTestId('wake-status'));
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    expect(screen.queryByTestId('automated-wake-details')).toBeNull();
+    expect(handleLinkMock).not.toHaveBeenCalled();
   });
 
   it('falls back to the GitHub PR URL when metadata has no url', async () => {

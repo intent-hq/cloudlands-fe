@@ -14,7 +14,7 @@ export function isGithubLinkDefaultAction(value: unknown): value is GithubLinkDe
   return GITHUB_LINK_DEFAULT_ACTIONS.includes(value as GithubLinkDefaultAction);
 }
 
-/** Modifier key flags extracted from a MouseEvent */
+/** Modifier key flags extracted from a mouse or keyboard event. */
 interface ModifierFlags {
   metaKey?: boolean;
   ctrlKey?: boolean;
@@ -23,13 +23,13 @@ interface ModifierFlags {
 export interface LinkHandlerOptions {
   /** Workspace ID for panel layout manager lookup. When undefined, HTTP/HTTPS links fall back to the external browser. */
   workspaceId?: WorkspaceId;
-  /** Panel where the navigation originated. Used to resolve stacked workspace-column layouts. */
+  /** Panel where the navigation originated. Used to resolve stacked panel layouts. */
   sourcePanelId?: string;
   /** The raw (unresolved) `href` attribute of the clicked anchor, e.g. `src/main.rs`.
    *  Used to detect schemeless path-like targets that the DOM resolves against the app's own origin. */
   rawHref?: string;
-  /** The original MouseEvent (used to detect Cmd+Click) */
-  event?: MouseEvent;
+  /** The original activation event (used to detect Mod-click and Mod+Enter). */
+  event?: MouseEvent | KeyboardEvent;
   /** Explicitly open internal note/task links beside the source panel. */
   openInAdjacentPanel?: boolean;
   /** Create a new adjacent panel instead of reusing an existing neighbor. */

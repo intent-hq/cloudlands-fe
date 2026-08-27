@@ -20,8 +20,7 @@ vi.mock('$lib/client/live/backend-transport', async (importOriginal) => {
 });
 
 const settle = async () => {
-  await Promise.resolve();
-  await Promise.resolve();
+  await new Promise((resolve) => setTimeout(resolve, 0));
 };
 
 describe('filesReadSaga', () => {
@@ -212,6 +211,52 @@ describe('filesReadSaga', () => {
         ['packages/a/docs/guide.md', 'packages/b/docs/guide.md'],
       ),
     ]);
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('retargets an ignored media basename only when direct artifact listing is unique', async () => {
+    vi.spyOn(appClient.files, 'read').mockResolvedValue(null);
+    vi.spyOn(appClient.files, 'listDirectory').mockImplementation(async (_workspaceId, path) => {
+      if (path === '.demo-artifacts') {
+        return [{ name: 'saved-run', path: 'saved-run', type: 'directory' }];
+      }
+      if (path === '.demo-artifacts/saved-run') {
+        return [{ name: 'preview.webm', path: 'preview.webm', type: 'file' }];
+      }
+      return [];
+    });
+    const channel = stdChannel();
+    const actions: unknown[] = [];
+    const task = runSaga({ channel, dispatch: (action) => actions.push(action) }, filesReadSaga);
+
+    channel.put(loadFileContentRequested('ws-1', 'preview.webm', '/repo/preview.webm'));
+    await settle();
+
+    expect(actions).toEqual([
+      removeFileContentEntry('ws-1', 'preview.webm'),
+      updateFileTabPath('ws-1', 'preview.webm', '.demo-artifacts/saved-run/preview.webm'),
+    ]);
+    expect(backendRequest).not.toHaveBeenCalled();
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('reports the missing hover-card MP4 without a broad filename search or false candidate', async () => {
+    vi.spyOn(appClient.files, 'read').mockResolvedValue(null);
+    vi.spyOn(appClient.files, 'listDirectory').mockResolvedValue([]);
+    const channel = stdChannel();
+    const actions: unknown[] = [];
+    const task = runSaga({ channel, dispatch: (action) => actions.push(action) }, filesReadSaga);
+    const path = 'artifacts/workspace-hover-card-demo/hover-card-demo.mp4';
+
+    channel.put(loadFileContentRequested('ws-1', path, `/repo/${path}`));
+    await settle();
+
+    expect(actions).toEqual([
+      loadFileContentFailed('ws-1', path, `/repo/${path}`, m.files_read_notFound_error(), []),
+    ]);
+    expect(backendRequest).not.toHaveBeenCalled();
     task.cancel();
     await task.toPromise();
   });

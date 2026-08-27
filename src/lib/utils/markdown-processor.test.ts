@@ -55,10 +55,20 @@ describe('markdown-processor inline workspace file images', () => {
     expect(html).toContain('alt="shot"');
   });
 
-  it('rewrites long-form intent file image links without a workspaceId option', async () => {
-    const html = await processMarkdownToHTML('![shot](intent://local/ws-xyz/file/shot.webp)');
+  it('rewrites long-form intent file image links for the current workspace', async () => {
+    const html = await processMarkdownToHTML('![shot](intent://local/ws-xyz/file/shot.webp)', {
+      workspaceId: 'ws-xyz',
+    });
 
     expect(html).toContain('src="workspace-file://ws-xyz/shot.webp"');
+  });
+
+  it('does not rewrite cross-workspace long-form intent file image links', async () => {
+    const html = await processMarkdownToHTML('![shot](intent://local/other-ws/file/secret.png)', {
+      workspaceId: 'ws-xyz',
+    });
+
+    expect(html).not.toContain('workspace-file://');
   });
 
   it('does not produce a workspace-file src for traversal paths', async () => {

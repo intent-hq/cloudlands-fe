@@ -21,8 +21,6 @@ const virtualModules: Record<string, string> = {
     export const TooltipRich = Tooltip;`,
   '$lib/components/workspace/WorkspaceHoverCard.svelte': `
     export { default } from '/src/lib/components/layout/__tests__/mocks/MockWorkspaceHoverCard.svelte';`,
-  '$lib/components/workspace/workspace-view-transition': `
-    export const getWorkspaceViewTransitionName = (workspaceId) => 'workspace-' + workspaceId;`,
   '$lib/components/workspace/utils/workspace-tab-status-presentation': `
     export const getWorkspaceTabStatusPresentation = (category) => ({
       icon: { iconName: category }, className: '', label: category.toUpperCase(),
@@ -43,14 +41,22 @@ const virtualModules: Record<string, string> = {
     export const openWorkspaceTab = (...payload) => ({ type: 'open', payload });
     export const startDrag = () => ({ type: 'startDrag' });`,
   '$store/renderer/slices/tab-state/tab-state-selectors': `
+    const currentSubscribers = new Set();
     const readable = (read) => ({ subscribe(run) { run(read()); return () => {}; } });
     export const selectCurrentWorkspaceTabId = Object.assign(
-      () => readable(() => globalThis.__workspaceTabScenario.currentId),
+      () => ({ subscribe(run) {
+        currentSubscribers.add(run);
+        run(globalThis.__workspaceTabScenario.currentId);
+        return () => currentSubscribers.delete(run);
+      } }),
       { select: () => globalThis.__workspaceTabScenario.currentId },
     );
+    globalThis.__setCurrentWorkspaceTabId = (workspaceId) => {
+      globalThis.__workspaceTabScenario.currentId = workspaceId;
+      currentSubscribers.forEach((run) => run(workspaceId));
+    };
     export const selectWorkspaceTabOrder = () =>
-      readable(() => globalThis.__workspaceTabScenario.tabOrder);
-    export const selectWorkspaceViewMode = () => readable(() => 'single');`,
+      readable(() => globalThis.__workspaceTabScenario.tabOrder);`,
   '$store/renderer/slices/workspace/workspace-selectors': `
     const readable = (read) => ({ subscribe(run) { run(read()); return () => {}; } });
     export const selectWorkspaceItems = Object.assign(
@@ -62,7 +68,10 @@ const virtualModules: Record<string, string> = {
     export const selectWorkspaceTabStatuses = () =>
       readable(() => globalThis.__workspaceTabScenario.statuses);`,
   '$store/renderer/store': `
-    export const store = { dispatch() {}, get state() { return {}; } };`,
+    export const store = {
+      dispatch(action) { globalThis.__workspaceTabScenario.actions.push(action); },
+      get state() { return {}; },
+    };`,
   '$shared/paraglide/messages.js': `
     export const m = {
       layout_workspaceTabStrip_openSpaces_ariaLabel: () => 'Open spaces',
@@ -155,23 +164,33 @@ test.afterAll(async () => server?.close());
 
 async function mountStrip(
   page: Page,
-  options: { viewport: number; zoom: number; reduced: boolean },
+  options: {
+    viewport: number;
+    zoom: number;
+    reduced: boolean;
+    theme?: 'light' | 'dark';
+    panelOpen?: boolean;
+    panelWidth?: number;
+  },
 ) {
   await page.setViewportSize({ width: options.viewport, height: 360 });
   await page.emulateMedia({ reducedMotion: options.reduced ? 'reduce' : 'no-preference' });
   await page.goto(`${baseUrl}src/app.html`);
   await page.addStyleTag({ url: `${baseUrl}src/app.css` });
   await page.addStyleTag({ content: 'body { margin: 0; overflow: hidden; }' });
-  await page.evaluate(async ({ zoom }) => {
+  await page.evaluate(async ({ zoom, theme, panelOpen, panelWidth }) => {
     Object.assign(globalThis, { process: { env: { NODE_ENV: 'test' } } });
+    document.documentElement.classList.toggle('dark', theme === 'dark');
+    document.documentElement.style.colorScheme = theme === 'dark' ? 'dark' : 'light';
     Object.assign(globalThis, {
       __workspaceTabScenario: {
         currentId: 'active',
+        actions: [],
         tabOrder: ['active', 'inactive', 'plain', 'loading'],
         workspaces: [
           { id: 'active', title: 'Active workspace with a materially longer title' },
           { id: 'inactive', title: 'Inactive workspace with a materially longer title' },
-          { id: 'plain', title: 'Workspace without any status indicators' },
+          { id: 'plain', title: 'Workspace with the default idle status' },
         ],
         statuses: {
           active: statusValue(['running']),
@@ -183,15 +202,74 @@ async function mountStrip(
       const items = categories.map((category) => ({ category, count: 1, agentNames: [] }));
       return { agentCount: 1, categories: items, visibleCategories: items, hiddenCategoryCount: 0 };
     }
-    const [{ mount, tick }, { default: Strip }] = await Promise.all([
+    const [{ mount, tick, unmount }, { default: Strip }] = await Promise.all([
       import('/@id/svelte'),
       import('/src/lib/components/layout/WorkspaceTabStrip.svelte'),
     ]);
     document.body.replaceChildren();
     const target = document.createElement('div');
-    target.style.cssText = `width:100%; padding:24px; zoom:${zoom};`;
     document.body.append(target);
-    mount(Strip, { target });
+    if (panelOpen === undefined || panelWidth === undefined) {
+      target.style.cssText = `width:100%; padding:24px; zoom:${zoom};`;
+      mount(Strip, { target });
+    } else {
+      target.style.cssText = `width:100%; zoom:${zoom};`;
+      const controls = document.createElement('div');
+      controls.dataset.titlebarWorkspaceControls = '';
+      controls.style.cssText = 'display:flex;min-width:0;align-items:center;gap:4px;';
+      target.append(controls);
+
+      const launcher = document.createElement('button');
+      launcher.dataset.workspaceRepoLauncher = '';
+      launcher.style.cssText = 'width:32px;height:32px;';
+      controls.append(launcher);
+
+      const frame = document.createElement('div');
+      frame.style.cssText = 'display:flex;padding-left:8px;width:100%;';
+      const sidebar = document.createElement('div');
+      sidebar.dataset.sidebarPanelFrame = '';
+      sidebar.style.cssText = `flex:0 0 ${panelOpen ? panelWidth : 0}px;`;
+      const main = document.createElement('main');
+      main.className =
+        'workspace-main flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-xl bg-sidebar border border-border shadow-sm';
+      main.style.cssText = 'height:200px;';
+      frame.append(sidebar, main);
+      target.append(frame);
+
+      let currentPanelOpen = panelOpen;
+      let currentPanelWidth = panelWidth;
+      let component: ReturnType<typeof mount> | null = null;
+      const applyPanelLayout = () => {
+        const offset = currentPanelOpen ? currentPanelWidth + 8 : 116;
+        controls.style.marginLeft = `${offset}px`;
+        controls.style.width = `calc(100% - ${offset}px)`;
+        sidebar.style.flexBasis = `${currentPanelOpen ? currentPanelWidth : 0}px`;
+      };
+      const renderStrip = async () => {
+        if (component) await unmount(component);
+        component = mount(Strip, {
+          target: controls,
+        });
+        controls.append(launcher);
+        await tick();
+        await new Promise<void>((resolveFrame) => requestAnimationFrame(() => resolveFrame()));
+      };
+      applyPanelLayout();
+      await renderStrip();
+
+      Object.assign(globalThis, {
+        __setWorkspacePanelWidth(width: number) {
+          currentPanelWidth = width;
+          applyPanelLayout();
+        },
+        async __setWorkspacePanelOpen(open: boolean) {
+          currentPanelOpen = open;
+          applyPanelLayout();
+          await renderStrip();
+        },
+        __remountWorkspaceTabStrip: renderStrip,
+      });
+    }
     await tick();
     await new Promise<void>((resolveFrame) => requestAnimationFrame(() => resolveFrame()));
   }, options);
@@ -202,6 +280,205 @@ async function box(locator: Locator) {
   expect(value).not.toBeNull();
   return value!;
 }
+
+async function settle(page: Page) {
+  await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())));
+}
+
+async function expectNormalActiveShape(
+  page: Page,
+  workspaceId: string,
+  zoom: number,
+  assertHeight = true,
+) {
+  const tab = page.locator(`[data-workspace-tab="${workspaceId}"]`);
+  expect(await tab.getAttribute('data-workspace-tab-leading-shape')).toBeNull();
+  const radii = await tab.evaluate((node) => {
+    const style = getComputedStyle(node);
+    return {
+      leading: Number.parseFloat(style.borderTopLeftRadius),
+      trailing: Number.parseFloat(style.borderTopRightRadius),
+    };
+  });
+  expect(radii.leading).toBeGreaterThan(0);
+  expect(radii.trailing).toBe(radii.leading);
+  await expect(tab.locator('[data-workspace-tab-leading-flare]')).toHaveCount(1);
+  await expect(tab.locator('[data-workspace-tab-trailing-flare]')).toHaveCount(1);
+  if (assertHeight) expect((await box(tab)).height).toBeCloseTo(32 * zoom, 0);
+  return radii;
+}
+
+async function expectPanelGutter(page: Page, zoom: number) {
+  const tab = page.locator('[data-workspace-tab="active"]');
+  const panel = page.locator('.workspace-main');
+  const [tabBox, panelBox] = await Promise.all([box(tab), box(panel)]);
+  expect(tabBox.x - panelBox.x).toBeCloseTo(8 * zoom, 0);
+  expect(tabBox.y + tabBox.height).toBeCloseTo(panelBox.y, 0);
+}
+
+test('keeps the normal first-tab curve, both flares, and 8px panel gutter across the geometry matrix', async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  const scenarios = [
+    { viewport: 1400, zoom: 1, reduced: false, panelWidths: [288, 420], overflow: false },
+    { viewport: 1400, zoom: 2, reduced: true, panelWidths: [288, 420], overflow: true },
+    { viewport: 760, zoom: 1, reduced: true, panelWidths: [96, 160], overflow: true },
+    { viewport: 760, zoom: 2, reduced: false, panelWidths: [96, 160], overflow: true },
+  ];
+
+  for (const theme of ['light', 'dark'] as const) {
+    for (const scenario of scenarios) {
+      await mountStrip(page, {
+        ...scenario,
+        theme,
+        panelOpen: true,
+        panelWidth: scenario.panelWidths[0],
+      });
+
+      for (const panelWidth of scenario.panelWidths) {
+        await page.evaluate((width) => {
+          (
+            globalThis as typeof globalThis & { __setWorkspacePanelWidth: (value: number) => void }
+          ).__setWorkspacePanelWidth(width);
+        }, panelWidth);
+        await settle(page);
+        const [firstTab, workspaceMain] = await Promise.all([
+          box(page.locator('[data-workspace-tab]').first()),
+          box(page.locator('.workspace-main')),
+        ]);
+        expect(firstTab.x - workspaceMain.x).toBeCloseTo(8 * scenario.zoom, 0);
+        await expectNormalActiveShape(page, 'active', scenario.zoom);
+        await expectPanelGutter(page, scenario.zoom);
+      }
+
+      const strip = page.locator('[data-workspace-tab-strip]');
+      expect(await strip.evaluate((node) => node.scrollWidth > node.clientWidth)).toBe(
+        scenario.overflow,
+      );
+
+      await page.evaluate(() => {
+        (
+          globalThis as typeof globalThis & {
+            __setCurrentWorkspaceTabId: (workspaceId: string) => void;
+          }
+        ).__setCurrentWorkspaceTabId('inactive');
+      });
+      await settle(page);
+      const normalActiveRadii = await expectNormalActiveShape(page, 'inactive', scenario.zoom);
+
+      await page.evaluate(() => {
+        (
+          globalThis as typeof globalThis & {
+            __setCurrentWorkspaceTabId: (workspaceId: string) => void;
+            __remountWorkspaceTabStrip: () => Promise<void>;
+          }
+        ).__setCurrentWorkspaceTabId('active');
+        return globalThis.__remountWorkspaceTabStrip();
+      });
+      const firstTabRadii = await expectNormalActiveShape(page, 'active', scenario.zoom);
+      expect(firstTabRadii).toEqual(normalActiveRadii);
+      await expectPanelGutter(page, scenario.zoom);
+
+      await page.locator('[data-workspace-tab="active"]').evaluate((node) => {
+        node.dispatchEvent(
+          new DragEvent('dragstart', {
+            bubbles: true,
+            dataTransfer: new DataTransfer(),
+            clientX: node.getBoundingClientRect().x + 20,
+            clientY: node.getBoundingClientRect().y + 16,
+          }),
+        );
+      });
+      await expectNormalActiveShape(page, 'active', scenario.zoom, false);
+      await page.locator('[data-workspace-tab="active"]').evaluate((node) => {
+        node.dispatchEvent(new DragEvent('dragend', { bubbles: true }));
+      });
+      await settle(page);
+      await page.locator('[data-workspace-tab-motion="active"]').evaluate(async (node) => {
+        await Promise.all(
+          node.getAnimations({ subtree: true }).map((animation) => animation.finished),
+        );
+      });
+      await expectNormalActiveShape(page, 'active', scenario.zoom);
+      await expectPanelGutter(page, scenario.zoom);
+
+      await page.evaluate(() => {
+        const scenarioState = (
+          globalThis as typeof globalThis & {
+            __workspaceTabScenario: { currentId: string; tabOrder: string[] };
+            __remountWorkspaceTabStrip: () => Promise<void>;
+          }
+        ).__workspaceTabScenario;
+        scenarioState.currentId = 'loading';
+        scenarioState.tabOrder = ['loading', 'active', 'inactive', 'plain'];
+        return globalThis.__remountWorkspaceTabStrip();
+      });
+      await expect(page.locator('[data-workspace-tab="loading"]')).toHaveAttribute(
+        'data-workspace-tab-loading',
+        'true',
+      );
+      expect(await expectNormalActiveShape(page, 'loading', scenario.zoom)).toEqual(
+        normalActiveRadii,
+      );
+
+      await page.evaluate(() => {
+        const scenarioState = (
+          globalThis as typeof globalThis & {
+            __workspaceTabScenario: { currentId: string; tabOrder: string[] };
+            __remountWorkspaceTabStrip: () => Promise<void>;
+          }
+        ).__workspaceTabScenario;
+        scenarioState.currentId = 'active';
+        scenarioState.tabOrder = ['active', 'inactive', 'plain', 'loading'];
+        return globalThis.__remountWorkspaceTabStrip();
+      });
+      await expectNormalActiveShape(page, 'active', scenario.zoom);
+      await expectPanelGutter(page, scenario.zoom);
+
+      await page.evaluate(() =>
+        (
+          globalThis as typeof globalThis & {
+            __setWorkspacePanelOpen: (open: boolean) => Promise<void>;
+          }
+        ).__setWorkspacePanelOpen(false),
+      );
+      await expectNormalActiveShape(page, 'active', scenario.zoom);
+
+      await page.evaluate(() =>
+        (
+          globalThis as typeof globalThis & {
+            __setWorkspacePanelOpen: (open: boolean) => Promise<void>;
+          }
+        ).__setWorkspacePanelOpen(true),
+      );
+      await expectNormalActiveShape(page, 'active', scenario.zoom);
+      await expectPanelGutter(page, scenario.zoom);
+
+      const transitionSeconds = await page
+        .locator('[data-workspace-tab="active"]')
+        .evaluate((node) => Number.parseFloat(getComputedStyle(node).transitionDuration));
+      expect(transitionSeconds <= 0.00001).toBe(scenario.reduced);
+    }
+  }
+});
+
+test('preserves the collapsed-sidebar first-tab clearance across zoom', async ({ page }) => {
+  for (const zoom of [1, 2]) {
+    await mountStrip(page, {
+      viewport: 1400,
+      zoom,
+      reduced: true,
+      panelOpen: false,
+      panelWidth: 288,
+    });
+    const [firstTab, controls] = await Promise.all([
+      box(page.locator('[data-workspace-tab]').first()),
+      box(page.locator('[data-titlebar-workspace-controls]')),
+    ]);
+    expect(firstTab.x - controls.x).toBeCloseTo(8 * zoom, 0);
+  }
+});
 
 test('keeps titles, statuses, and close controls disjoint at 160px and constrained widths', async ({
   page,
@@ -232,11 +509,12 @@ test('keeps titles, statuses, and close controls disjoint at 160px and constrain
       box(activeStatus),
       box(activeClose),
     ]);
+    expect(activeBox.width).toBeCloseTo(Math.min(160, options.viewport * 0.4) * scale, 0);
     expect(titleBox.x - activeBox.x).toBeCloseTo(12 * scale, 0);
     expect(titleBox.x + titleBox.width).toBeLessThanOrEqual(statusBox.x + 0.5);
     expect(statusBox.x + statusBox.width).toBeLessThanOrEqual(closeBox.x + 0.5);
     expect(closeBox.x + closeBox.width).toBeLessThanOrEqual(activeBox.x + activeBox.width + 0.5);
-    expect(titleBox.width).toBeCloseTo(activeBox.width - 60 * scale, 0);
+    expect(titleBox.width).toBeCloseTo(activeBox.width - 58 * scale, 0);
     await expect(active).toHaveAttribute('data-active', 'true');
     await expect(inactive).toHaveAttribute('data-active', 'false');
     await expect(active.locator('[role="tab"]')).toHaveAttribute(
@@ -256,15 +534,15 @@ test('keeps titles, statuses, and close controls disjoint at 160px and constrain
       inactiveCloseBox.x + 0.5,
     );
     expect(inactiveTitleBox.width).toBeCloseTo(titleBox.width, 0);
-    await expect(inactiveStatus.locator('[data-workspace-tab-status]')).toHaveCount(1);
+    await expect(inactiveStatus.locator('[data-workspace-status]')).toHaveCount(1);
 
-    await expect(plain.locator('[data-workspace-tab-status-cluster]')).toHaveCount(0);
+    await expect(plain.locator('[data-workspace-status="idle"]')).toHaveCount(1);
     const [plainTitleBox, plainCloseBox] = await Promise.all([
       box(plain.locator('[data-workspace-tab-title]')),
       box(plain.locator('[data-workspace-tab-close]')),
     ]);
     expect(plainTitleBox.x + plainTitleBox.width).toBeLessThanOrEqual(plainCloseBox.x + 0.5);
-    expect(plainTitleBox.width).toBeGreaterThan(titleBox.width);
+    expect(plainTitleBox.width).toBeCloseTo(titleBox.width, 0);
 
     await expect(loading).toHaveAttribute('data-workspace-tab-loading', 'true');
     await expect(loading.locator('[data-workspace-tab-status-cluster]')).toHaveCount(0);
@@ -294,16 +572,40 @@ test('focus, close hover, and drag keep the right-side geometry stable', async (
   const status = active.locator('[data-workspace-tab-status-cluster]');
   const close = active.locator('[data-workspace-tab-close]');
   const before = await Promise.all([box(title), box(status), box(close)]);
+  const activeEdgeStyle = () =>
+    active.evaluate((node) => {
+      const style = getComputedStyle(node);
+      return {
+        borderBottomWidth: style.borderBottomWidth,
+        boxShadow: style.boxShadow,
+        position: style.position,
+        zIndex: style.zIndex,
+      };
+    });
 
-  await active.locator('[role="tab"]').focus();
+  expect(await activeEdgeStyle()).toEqual({
+    borderBottomWidth: '0px',
+    boxShadow: 'none',
+    position: 'relative',
+    zIndex: 'auto',
+  });
+
+  const tab = active.locator('[role="tab"]');
+  await tab.focus();
   await close.hover();
   expect(await Promise.all([box(title), box(status), box(close)])).toEqual(before);
 
-  await active.evaluate((node) => {
-    const dataTransfer = new DataTransfer();
-    node.dispatchEvent(new DragEvent('dragstart', { bubbles: true, dataTransfer }));
-  });
+  const tabBox = await box(tab);
+  await page.mouse.move(tabBox.x + 24, tabBox.y + tabBox.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(tabBox.x + 34, tabBox.y + tabBox.height / 2);
   await expect(active).toHaveAttribute('data-dragging', 'true');
+  expect(await activeEdgeStyle()).toEqual({
+    borderBottomWidth: '0px',
+    boxShadow: 'none',
+    position: 'fixed',
+    zIndex: '50',
+  });
   const [dragTitle, dragStatus, dragClose] = await Promise.all([
     box(title),
     box(status),
@@ -311,59 +613,165 @@ test('focus, close hover, and drag keep the right-side geometry stable', async (
   ]);
   expect(dragTitle.x + dragTitle.width).toBeLessThanOrEqual(dragStatus.x + 0.5);
   expect(dragStatus.x + dragStatus.width).toBeLessThanOrEqual(dragClose.x + 0.5);
+  await page.keyboard.press('Escape');
+  await expect(active).toHaveAttribute('data-dragging', 'false');
+  expect(await activeEdgeStyle()).toEqual({
+    borderBottomWidth: '0px',
+    boxShadow: 'none',
+    position: 'relative',
+    zIndex: 'auto',
+  });
+  expect(await Promise.all([box(title), box(status), box(close)])).toEqual(before);
+  expect(
+    await page.evaluate(() =>
+      (
+        globalThis as typeof globalThis & {
+          __workspaceTabScenario: { actions: Array<{ type: string }> };
+        }
+      ).__workspaceTabScenario.actions.filter((action) => action.type === 'move'),
+    ),
+  ).toEqual([]);
 });
 
-test('drag keeps one horizontal real tab and drops it at the proposed placeholder', async ({
+test('Escape-cancelled real pointer drag suppresses its browser click', async ({ page }) => {
+  await mountStrip(page, { viewport: 900, zoom: 1, reduced: true });
+  const inactive = page.locator('[data-workspace-tab="inactive"]');
+  const inactiveTab = inactive.locator('[role="tab"]');
+  const tabBounds = await box(inactiveTab);
+  const startX = tabBounds.x + 28;
+  const pointerY = tabBounds.y + tabBounds.height / 2;
+  const strip = page.locator('[data-workspace-tab-strip]');
+
+  await page.evaluate(() => {
+    const global = globalThis as typeof globalThis & { __cancelledTabClickTargets: string[] };
+    global.__cancelledTabClickTargets = [];
+    document.addEventListener(
+      'click',
+      (event) => {
+        const target = event.target as Element;
+        const workspaceId = target
+          .closest('[data-workspace-tab]')
+          ?.getAttribute('data-workspace-tab');
+        if (workspaceId) global.__cancelledTabClickTargets.push(workspaceId);
+      },
+      { capture: true },
+    );
+  });
+
+  await page.mouse.move(startX, pointerY);
+  await page.mouse.down();
+  await page.mouse.move(startX + 12, pointerY);
+  await expect(inactive).toHaveAttribute('data-dragging', 'true');
+  await page.keyboard.press('Escape');
+  await expect(inactive).toHaveAttribute('data-dragging', 'false');
+  await expect(page.locator('[data-workspace-tab-placeholder]')).toHaveCount(0);
+  await expect(strip).toHaveCSS('cursor', 'auto');
+  await page.mouse.up();
+
+  expect(
+    await page.evaluate(
+      () =>
+        (globalThis as typeof globalThis & { __cancelledTabClickTargets: string[] })
+          .__cancelledTabClickTargets,
+    ),
+  ).toEqual(['inactive']);
+  expect(
+    await page.evaluate(() => {
+      const scenario = (
+        globalThis as typeof globalThis & {
+          __workspaceTabScenario: {
+            actions: Array<{ type: string; payload: unknown }>;
+            currentId: string;
+            tabOrder: string[];
+          };
+        }
+      ).__workspaceTabScenario;
+      return {
+        actions: scenario.actions.filter((action) => ['open', 'move'].includes(action.type)),
+        currentId: scenario.currentId,
+        tabOrder: scenario.tabOrder,
+      };
+    }),
+  ).toEqual({
+    actions: [],
+    currentId: 'active',
+    tabOrder: ['active', 'inactive', 'plain', 'loading'],
+  });
+  await expect(page.locator('[data-workspace-tab="active"] [role="tab"]')).toHaveAttribute(
+    'aria-selected',
+    'true',
+  );
+  await expect(inactiveTab).toHaveAttribute('aria-selected', 'false');
+
+  await page.mouse.click(startX, pointerY);
+  expect(
+    await page.evaluate(() =>
+      (
+        globalThis as typeof globalThis & {
+          __workspaceTabScenario: { actions: Array<{ type: string; payload: unknown }> };
+        }
+      ).__workspaceTabScenario.actions.filter((action) => ['open', 'move'].includes(action.type)),
+    ),
+  ).toEqual([{ type: 'open', payload: ['inactive'] }]);
+});
+
+test('drag keeps one horizontal real tab and drops it at the invisible reserved slot', async ({
   page,
 }) => {
   await mountStrip(page, { viewport: 900, zoom: 1, reduced: false });
-  const strip = page.locator('[data-workspace-tab-strip]');
   const active = page.locator('[data-workspace-tab="active"]');
+  const activeTab = active.locator('[role="tab"]');
   const origin = await box(active);
+  const tabBounds = await box(activeTab);
   const loading = await box(page.locator('[data-workspace-tab="loading"]'));
-  const startX = origin.x + origin.width / 2;
+  const startX = tabBounds.x + 28;
   const dragX = loading.x + loading.width + 4;
+  const pointerY = origin.y + origin.height / 2;
+  const strip = page.locator('[data-workspace-tab-strip]');
+  const close = active.locator('[data-workspace-tab-close]');
 
-  await active.evaluate(
-    (node, point) => {
-      const dataTransfer = new DataTransfer();
-      (
-        globalThis as typeof globalThis & { __workspaceDragData?: DataTransfer }
-      ).__workspaceDragData = dataTransfer;
-      node.dispatchEvent(
-        new DragEvent('dragstart', {
-          bubbles: true,
-          dataTransfer,
-          clientX: point.x,
-          clientY: point.y,
-        }),
-      );
-    },
-    { x: startX, y: origin.y + origin.height / 2 },
-  );
-  await strip.evaluate(
-    (node, point) => {
-      const dataTransfer = (
-        globalThis as typeof globalThis & { __workspaceDragData?: DataTransfer }
-      ).__workspaceDragData;
-      node.dispatchEvent(
-        new DragEvent('dragover', {
-          bubbles: true,
-          cancelable: true,
-          dataTransfer,
-          clientX: point.x,
-          clientY: point.y,
-        }),
-      );
-    },
-    { x: dragX, y: origin.y + origin.height + 200 },
-  );
+  await expect(activeTab).toHaveCSS('cursor', 'grab');
+  await expect(close).toHaveCSS('cursor', 'pointer');
 
-  const placeholder = page.locator('[data-workspace-tab-placeholder="active"]');
-  await expect(placeholder).toBeVisible();
+  await page.mouse.move(startX, pointerY);
+  await page.mouse.down();
+  const dragOver = async (x: number) => page.mouse.move(x, pointerY + 200, { steps: 4 });
+
+  for (const pointerX of [startX + 44, startX - 16, dragX]) {
+    await dragOver(pointerX);
+    const tracked = await box(active);
+    expect(tracked.x).toBeCloseTo(origin.x + pointerX - startX, 1);
+    expect(tracked.y).toBeCloseTo(origin.y, 1);
+  }
+
+  const reservedSlot = page.locator('[data-workspace-tab-placeholder="active"]');
+  await expect(reservedSlot).toHaveCount(1);
+  await expect(reservedSlot).toBeHidden();
+  await expect(reservedSlot).toHaveCSS('visibility', 'hidden');
+  await expect(strip).toHaveCSS('cursor', 'grabbing');
   await expect(active).toHaveCSS('position', 'fixed');
+  await expect(active).toHaveCSS('border-bottom-width', '0px');
+  await expect(active).toHaveCSS('box-shadow', 'none');
   const dragged = await box(active);
-  const proposed = await box(placeholder);
+  const proposed = await box(reservedSlot);
+  expect({ width: proposed.width, height: proposed.height }).toEqual({
+    width: origin.width,
+    height: origin.height,
+  });
+  expect(
+    await reservedSlot.evaluate((node) => {
+      const style = getComputedStyle(node);
+      return {
+        backgroundColor: style.backgroundColor,
+        borderWidth: style.borderWidth,
+        outlineStyle: style.outlineStyle,
+      };
+    }),
+  ).toEqual({
+    backgroundColor: 'rgba(0, 0, 0, 0)',
+    borderWidth: '0px',
+    outlineStyle: 'none',
+  });
   expect(dragged.x).toBeCloseTo(origin.x + dragX - startX, 1);
   expect(dragged.y).toBeCloseTo(origin.y, 1);
   expect(
@@ -373,26 +781,35 @@ test('drag keeps one horizontal real tab and drops it at the proposed placeholde
   ).toEqual(['inactive', 'plain', 'loading', 'active']);
   await expect(page.locator('[data-workspace-stack-preview]')).toHaveCount(0);
 
-  await strip.evaluate(
-    (node, point) => {
-      const dataTransfer = (
-        globalThis as typeof globalThis & { __workspaceDragData?: DataTransfer }
-      ).__workspaceDragData;
-      node.dispatchEvent(
-        new DragEvent('drop', {
-          bubbles: true,
-          cancelable: true,
-          dataTransfer,
-          clientX: point.x,
-          clientY: point.y,
-        }),
-      );
-    },
-    { x: dragX, y: origin.y + origin.height + 200 },
-  );
+  await page.mouse.up();
 
-  await expect(placeholder).toHaveCount(0);
-  await expect(active).not.toHaveCSS('position', 'fixed');
+  expect(
+    await page.evaluate(() =>
+      (
+        globalThis as typeof globalThis & {
+          __workspaceTabScenario: { actions: Array<{ type: string; payload: unknown }> };
+        }
+      ).__workspaceTabScenario.actions
+        .filter((action) => action.type === 'move')
+        .map((action) => action.payload),
+    ),
+  ).toEqual([['active', 'loading', 'after']]);
+  expect(
+    await page.evaluate(
+      () =>
+        (globalThis as typeof globalThis & { __workspaceTabScenario: { currentId: string } })
+          .__workspaceTabScenario.currentId,
+    ),
+  ).toBe('active');
+
+  await expect(reservedSlot).toHaveCount(0);
+  await expect(strip).toHaveCSS('cursor', 'auto');
+  await expect(activeTab).toHaveCSS('cursor', 'grab');
+  await expect(close).toHaveCSS('cursor', 'pointer');
+  await expect(active).toHaveCSS('position', 'relative');
+  await expect(active).toHaveCSS('z-index', 'auto');
+  await expect(active).toHaveCSS('border-bottom-width', '0px');
+  await expect(active).toHaveCSS('box-shadow', 'none');
   const dropped = await box(active);
   expect(dropped.x).toBeCloseTo(proposed.x, 1);
   expect(dropped.x).not.toBeCloseTo(origin.x, 1);

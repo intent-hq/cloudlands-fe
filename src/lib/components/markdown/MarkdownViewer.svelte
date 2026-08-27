@@ -25,6 +25,7 @@
   } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
   import { store as appStore } from '$store/renderer/store';
   import { WorkspaceId } from '$shared/types/branded-ids';
+  import { isCmdClickModifier } from '$shared/utils/link-helpers';
 
   // Use shared safe lowlight instance (handles unregistered languages gracefully)
   const lowlight = safeLowlight;
@@ -288,7 +289,7 @@
   // - Click → embedded browser panel (for http/https)
   // - Cmd+Click → external browser
   // - intent:// → internal navigation
-  function handleLinkClick(event: MouseEvent): void {
+  function handleLinkClick(event: MouseEvent | KeyboardEvent): void {
     const target = event.target as HTMLElement;
     const anchor = target.closest('a');
 
@@ -319,8 +320,6 @@
       handleLink(anchor.href, {
         workspaceId: owningWorkspaceId,
         sourcePanelId,
-        openInAdjacentPanel: true,
-        openInNewAdjacentPanel: true,
         event,
         rawHref: anchor.getAttribute('href') ?? undefined,
       });
@@ -344,7 +343,7 @@
 
         // Get source panel ID for same-panel navigation
         const sourcePanelId = getSourcePanelId(event);
-        const openInAdjacentPanel = true;
+        const openInAdjacentPanel = isCmdClickModifier({ event });
 
         // Use onFileClick callback if provided, otherwise use direct navigation
         if (onFileClick) {
@@ -367,14 +366,13 @@
 
         // Get source panel ID for same-panel navigation
         const sourcePanelId = getSourcePanelId(event);
-        const openInAdjacentPanel = event.metaKey || event.ctrlKey;
+        const openInAdjacentPanel = isCmdClickModifier({ event });
 
         const wsIdNote = workspaceId;
         if (wsIdNote) {
           appStore.dispatch(
             openWorkspaceNote(wsIdNote, noteId, {
               openInAdjacentPanel,
-              openInNewAdjacentPanel: true,
               sourcePanelId,
             }),
           );
@@ -383,7 +381,12 @@
     }
   }
 
-  function getSourcePanelId(event: MouseEvent): string | undefined {
+  function handleLinkKeydown(event: KeyboardEvent): void {
+    if (event.key !== 'Enter' || !isCmdClickModifier({ event })) return;
+    handleLinkClick(event);
+  }
+
+  function getSourcePanelId(event: MouseEvent | KeyboardEvent): string | undefined {
     const target = event.target;
     if (!(target instanceof HTMLElement)) return undefined;
     return target.closest<HTMLElement>('[data-panel-id]')?.dataset.panelId;
@@ -396,6 +399,7 @@
   function initializeEditor(element: HTMLElement) {
     // Attach link click handler (using the shared handler function)
     element.addEventListener('click', handleLinkClick, true);
+    element.addEventListener('keydown', handleLinkKeydown, true);
 
     // Create a new TipTap editor for this element
     // NOTE: Editor pooling was disabled because TipTap editors cannot be reliably
@@ -545,6 +549,7 @@
     // Clean up link click handler from TipTap editor element
     if (editorElement) {
       editorElement.removeEventListener('click', handleLinkClick, true);
+      editorElement.removeEventListener('keydown', handleLinkKeydown, true);
     }
 
     // Clean up file click handler
@@ -569,11 +574,13 @@
 <!-- static: processed HTML without TipTap (for links, code blocks, etc.) -->
 <!-- complex: full TipTap for interactive content (task lists) -->
 {#if isStreaming}
-  <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+  <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions a11y_no_noninteractive_element_interactions -->
   <div
+    role="group"
     class="markdown-viewer streaming-content {className}"
     bind:this={streamingContentElement}
     onclick={handleLinkClick}
+    onkeydown={handleLinkKeydown}
   >
     {@html processedContent}
   </div>
@@ -585,11 +592,13 @@
 {:else if contentComplexity === 'static'}
   <!-- PERF: Static content - use processed HTML without TipTap -->
   <!-- This path handles links, code blocks, etc. without the overhead of TipTap -->
-  <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+  <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions a11y_no_noninteractive_element_interactions -->
   <div
+    role="group"
     class="markdown-viewer static-content {className}"
     bind:this={staticContentElement}
     onclick={handleLinkClick}
+    onkeydown={handleLinkKeydown}
   >
     {@html processedContent}
   </div>

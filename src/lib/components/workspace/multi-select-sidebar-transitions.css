@@ -7,8 +7,15 @@
   transform: translateY(var(--sidebar-card-content-y, 0));
 }
 
+.sidebar-expanded-card-shell {
+  --sidebar-expanded-card-max-block-size: 600px;
+}
+
 .sidebar-expanded-card {
   grid-area: 1 / 1;
+  align-self: end;
+  block-size: min(100%, var(--sidebar-expanded-card-max-block-size));
+  max-block-size: var(--sidebar-expanded-card-max-block-size);
 }
 
 .sidebar-expanded-tab-deck {

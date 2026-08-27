@@ -112,6 +112,7 @@ export const WorkspaceEventType = {
   // Agent interaction events (for agent-to-agent communication)
   AgentCreated: 'agent:created',
   AgentDeleted: 'agent:deleted',
+  AgentRetired: 'agent:retired',
   AgentRestored: 'agent:restored',
   AgentRenamed: 'agent:renamed',
   AgentIdle: 'agent:idle',

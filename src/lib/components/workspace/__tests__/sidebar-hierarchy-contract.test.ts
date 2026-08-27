@@ -18,6 +18,7 @@ describe('workspace sidebar hierarchy presentation contract', () => {
     expect(navigation).toContain('data-nav-item={item.id}');
     expect(navigation).toContain('name="dandelion"');
     expect(navigation).not.toContain('name="spaces"');
+    expect(navigation).not.toContain('SidebarNavHoverCard');
     expect(titleBar).toContain('<SidebarNav />');
     expect(titleBar.indexOf('<SidebarNav />')).toBeLessThan(titleBar.indexOf('<WorkspaceTabStrip'));
     expect(titleBar).not.toContain('ChiefTrigger');
@@ -28,17 +29,6 @@ describe('workspace sidebar hierarchy presentation contract', () => {
     expect(titleBar).toContain('activeWorkspaceId={routedWorkspaceId}');
     expect(titleBar).toContain('data-titlebar-settings');
     expect(appLayout).not.toContain('<SidebarNav />');
-  });
-
-  it('uses the recents-only spaces list from the plus hover target', () => {
-    const hoverCard = source('../../layout/sidebar-nav/SidebarNavHoverCard.svelte');
-
-    expect(hoverCard).toContain("$activeCard$ === 'new-workspace'");
-    expect(hoverCard).not.toContain("$activeCard$ === 'home'");
-    expect(hoverCard).toContain('<AllWorkspacesCard recentsOnly />');
-    expect(hoverCard).not.toContain('Find or switch spaces');
-    expect(hoverCard).not.toContain('pinAllWorkspacesPanel');
-    expect(hoverCard).not.toContain('shadow-lg');
   });
 
   it('opens a title-bar workspace tab before navigating from the spaces combobox', () => {
@@ -172,11 +162,17 @@ describe('workspace sidebar hierarchy presentation contract', () => {
     expect(sidebar).toContain('m.ui_openCombo_openInApp_tooltip()');
     expect(sidebar).not.toContain('m.ui_openCombo_open_label()');
     expect(sidebar).not.toContain('faChevronDown');
-    expect(sidebar).toContain('handleOpenAgentInPanel(agent.id);');
-    expect(sidebar).toContain('onSelect={({ agentId }) => handleOpenAgentInPanel(agentId)}');
+    expect(sidebar).toContain('const sourcePanelId = selectFocusedPanelId.select(');
+    expect(sidebar).toContain('openAgentTabRequested(workspaceId, {');
+    expect(sidebar).toContain('sourcePanelId,');
+    expect(sidebar).toContain('handleOpenAgentInPanel(agent.id, event);');
+    expect(sidebar).toContain('onSelect={({ agentId, event }) =>');
+    expect(sidebar).toContain('handleOpenAgentInPanel(agentId, event)}');
     expect(sidebar).toContain('onOpenAgent={handleOpenAgentInPanel}');
     expect(sidebar).toContain('onSelectAgent={handleOpenAgentInPanel}');
-    expect(sidebar).toContain('onclick={() => handleOpenNoteInPanel(note.id as string)}');
+    expect(sidebar).toContain(
+      'onclick={(event) => handleOpenNoteInPanel(note.id as string, event)}',
+    );
     expect(sidebar).toContain('rounded-sm outline-none transition-colors');
     expect(sidebar).toContain('rounded-lg border border-border bg-sidebar');
     expect(sidebar).not.toContain('focus-visible:ring-0');

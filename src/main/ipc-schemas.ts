@@ -34,6 +34,7 @@ export const WORKSPACE_EVENT_TYPE_LITERALS = [
   'agent:created',
   'agent:deleted',
   'agent:restored',
+  'agent:retired',
   'agent:renamed',
   'agent:idle',
   'agent:status-changed',
@@ -193,8 +194,18 @@ export const WorkspaceCreateSchema = z.object({
       specialist: z.string().optional(), // Specialist or team coordinator ID (flexible to support any specialist)
       behaviorPrompt: z.string().optional(), // Custom behavior instructions (from team coordinator or specialist)
       contextReferences: z.array(z.any()).optional(),
+      // Inline arm (data + mimeType) or attachment-registry reference arm
+      // (attachmentId, monorepo#3338) — exactly one of data / attachmentId
+      // per block, enforced daemon-side.
       imageBlocks: z
-        .array(z.object({ type: z.literal('image'), data: z.string(), mimeType: z.string() }))
+        .array(
+          z.object({
+            type: z.literal('image'),
+            data: z.string().optional(),
+            mimeType: z.string().optional(),
+            attachmentId: z.string().optional(),
+          }),
+        )
         .optional(),
       metadata: z.record(z.any()).optional(),
     })
@@ -1007,6 +1018,9 @@ export const SpecialistWriteSchema = z
       )
       .optional(),
     reasoningEffort: z.string().optional(),
+    role: z.enum(['orchestrator', 'internal']).optional(),
+    teamAgents: z.array(z.string().min(1, 'Team agent id must be non-empty')).optional(),
+    icon: z.string().optional(),
     behaviorPrompt: z.string().min(1, 'Behavior prompt is required'),
     scope: z.enum(['user', 'project']).optional(),
     workspacePath: z.string().optional(),
@@ -1067,15 +1081,36 @@ export const ConnectionsAddSchema = z.object({
   token: z.string().min(1, 'Token is required'),
   /** "Detect all backend IPs" option (#1746); absent = enabled. */
   detectHosts: z.boolean().optional(),
+  /** Per-backend keychain-sync opt-out (spec Phase 2); absent = synced. */
+  syncExcluded: z.boolean().optional(),
 });
 
 export const ConnectionsForgetSchema = z.object({
   id: z.string().min(1, 'Connection ID is required'),
 });
 
+export const ConnectionsOpenSchema = z.object({
+  id: z.string().min(1, 'Connection ID is required'),
+});
+
 export const ConnectionsSwitchSchema = z.object({
   id: z.string().min(1, 'Connection ID is required'),
 });
+
+export const ConnectionsSyncGetStateSchema = EmptySchema;
+
+export const ConnectionsSyncSetEnabledSchema = z.object({
+  enabled: z.boolean(),
+});
+
+// Self-publish: no renderer-supplied params on either channel — main gathers
+// everything (token, fingerprint, IPs, port) from `server.pairingInfo` over
+// the local client, so the bearer token never crosses the IPC boundary.
+export const ConnectionsPublishSelfSchema = EmptySchema;
+
+export const ConnectionsSelfPublishedStateSchema = EmptySchema;
+
+export const ConnectionsRefreshSelfSchema = EmptySchema;
 
 // ============================================================================
 // Quit Confirmation Schemas

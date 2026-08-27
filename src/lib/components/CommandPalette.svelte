@@ -28,6 +28,7 @@
   import { createTranscriptQuery } from '$lib/utils/palette-transcript-search';
   import { createLogger } from '$lib/utils/client-logger';
   import { m } from '$shared/paraglide/messages.js';
+  import { isCmdClickModifier } from '$shared/utils/link-helpers';
 
   import { selectBrowserRecentUrls } from '$store/renderer/slices/browser/browser-selectors';
   import { initBrowserWorkspace } from '$store/renderer/slices/browser/browser-slice';
@@ -90,8 +91,6 @@
     getWorkspaceActivityDisplayTime,
   } from '$shared/utils/workspace-activity-time';
   import { store as appStore } from '$store/renderer/store';
-  import { selectWorkspaceViewMode } from '$store/renderer/slices/tab-state/tab-state-selectors';
-  import { toggleWorkspaceViewModeWithTransition } from '$features/workspace/workspace-view-mode-action';
 
   const logger = createLogger('CommandPalette');
 
@@ -119,8 +118,7 @@
 
   let searchQuery = $state('');
   const workspaceItems = selectWorkspaceItems();
-  const workspaceViewMode$ = selectWorkspaceViewMode();
-  let commands = $derived(COMMAND_PALETTE_COMMANDS($workspaceViewMode$));
+  const commands = COMMAND_PALETTE_COMMANDS;
   const currentChanges$ = selectCurrentChanges(workspaceIdStore);
   const workspaceAgents$ = selectAllWorkspaceAgents(workspaceIdStore);
   const allNotes$ = selectAllNotes(workspaceIdStore);
@@ -161,7 +159,7 @@
     if (!workspaceId) return [];
 
     return $workspaceAgents$
-      .filter((s) => !s.id?.startsWith('terminal-'))
+      .filter((s) => !s.id?.startsWith('terminal-') && !s.retiredAt)
       .map((s) => {
         // Get the latest message content
         const messages = s.messages || [];
@@ -645,7 +643,7 @@
         return;
       }
       // Cmd+Enter opens in adjacent panel
-      const openInAdjacentPanel = e.metaKey || e.ctrlKey;
+      const openInAdjacentPanel = isCmdClickModifier({ event: e });
       const selectedItem = searchResults[selectedIndex];
       if (isSelectableResult(selectedItem)) {
         selectItem(selectedItem, { openInAdjacentPanel });
@@ -801,9 +799,6 @@
         return true;
       case 'open-usage-stats':
         appStore.dispatch(setStatsOverlayOpen(true));
-        return true;
-      case 'workspace-view-mode':
-        void toggleWorkspaceViewModeWithTransition();
         return true;
       default:
         return true;

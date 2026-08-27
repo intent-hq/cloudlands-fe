@@ -7,6 +7,7 @@ import {
   CONNECTION_AUTH_REJECTED_EVENT,
   CONNECTION_CERT_MISMATCH_EVENT,
   CONNECTION_PROTOCOL_MISMATCH_EVENT,
+  KEYCHAIN_SYNC_STATUS_EVENT,
   LOCAL_CONNECTION_ID,
 } from '$shared/types/connections';
 import type { ConnectionRecord } from '$shared/types/connections';
@@ -16,6 +17,9 @@ import {
   connectionsReducer,
   forgetConnectionRequested,
   initialState,
+  loadKeychainSyncStateRequested,
+  openConnectionRequested,
+  setKeychainSyncEnabledRequested,
   switchConnectionRequested,
 } from '../connections-slice';
 import { connectionsSaga } from './connections-saga';
@@ -67,10 +71,15 @@ describe('connectionsSaga', () => {
     callbacks = {};
     invoke = vi.fn(async (channel: string, params?: unknown) => {
       if (channel === CONNECTION_CHANNELS.LIST)
-        return { connections: [LOCAL], activeId: LOCAL_CONNECTION_ID };
+        return {
+          connections: [LOCAL],
+          activeId: LOCAL_CONNECTION_ID,
+          windowBackendId: LOCAL_CONNECTION_ID,
+        };
       if (channel === CONNECTION_CHANNELS.CAPTURE_FINGERPRINT)
         return { fingerprint: 'AB:CD', tokenValid: true };
       if (channel === CONNECTION_CHANNELS.ADD) return { connection: REMOTE, switched: false };
+      if (channel === CONNECTION_CHANNELS.OPEN) return { id: (params as { id: string }).id };
       if (channel === CONNECTION_CHANNELS.FORGET) return { id: (params as { id: string }).id };
       if (channel === CONNECTION_CHANNELS.SWITCH)
         return { activeId: (params as { id: string }).id };
@@ -99,7 +108,12 @@ describe('connectionsSaga', () => {
     };
     invoke.mockImplementation(async (channel: string) =>
       channel === CONNECTION_CHANNELS.LIST
-        ? { connections: [LOCAL, REMOTE], activeId: REMOTE.id, protocolMismatch: mismatch }
+        ? {
+            connections: [LOCAL, REMOTE],
+            activeId: LOCAL.id,
+            windowBackendId: REMOTE.id,
+            protocolMismatch: mismatch,
+          }
         : { fingerprint: 'AB:CD' },
     );
     const run = start();
@@ -107,7 +121,8 @@ describe('connectionsSaga', () => {
 
     expect(invoke).toHaveBeenCalledWith(CONNECTION_CHANNELS.LIST);
     expect(getItems(run.getState().connections.connections)).toEqual([LOCAL, REMOTE]);
-    expect(run.getState().connections.activeId).toBe(REMOTE.id);
+    expect(run.getState().connections.activeId).toBe(LOCAL.id);
+    expect(run.getState().connections.windowBackendId).toBe(REMOTE.id);
     expect(run.getState().connections.protocolMismatch).toEqual(mismatch);
 
     run.task.cancel();
@@ -125,7 +140,12 @@ describe('connectionsSaga', () => {
     };
     invoke.mockImplementation(async (channel: string) =>
       channel === CONNECTION_CHANNELS.LIST
-        ? { connections: [LOCAL, REMOTE], activeId: REMOTE.id, protocolMismatch: mismatch }
+        ? {
+            connections: [LOCAL, REMOTE],
+            activeId: REMOTE.id,
+            windowBackendId: REMOTE.id,
+            protocolMismatch: mismatch,
+          }
         : { fingerprint: 'AB:CD' },
     );
     const run = start();
@@ -144,7 +164,12 @@ describe('connectionsSaga', () => {
     const authRejected = { id: 'remote-1', host: '10.0.0.5', port: 8443, statusCode: 401 };
     invoke.mockImplementation(async (channel: string) =>
       channel === CONNECTION_CHANNELS.LIST
-        ? { connections: [LOCAL, REMOTE], activeId: REMOTE.id, authRejected }
+        ? {
+            connections: [LOCAL, REMOTE],
+            activeId: REMOTE.id,
+            windowBackendId: REMOTE.id,
+            authRejected,
+          }
         : { fingerprint: 'AB:CD' },
     );
     const run = start();
@@ -190,6 +215,11 @@ describe('connectionsSaga', () => {
       token: 'secret',
     });
 
+    const open = openConnectionRequested(REMOTE.id);
+    run.channel.put(open);
+    await expect(open.promise).resolves.toEqual({ id: REMOTE.id });
+    expect(invoke).toHaveBeenCalledWith(CONNECTION_CHANNELS.OPEN, { id: REMOTE.id });
+
     const forget = forgetConnectionRequested(REMOTE.id);
     run.channel.put(forget);
     await expect(forget.promise).resolves.toBeUndefined();
@@ -213,9 +243,14 @@ describe('connectionsSaga', () => {
       CONNECTION_CERT_MISMATCH_EVENT,
       CONNECTIONS_CHANGED_EVENT,
       CONNECTION_PROTOCOL_MISMATCH_EVENT,
+      KEYCHAIN_SYNC_STATUS_EVENT,
     ]);
 
-    callbacks[CONNECTIONS_CHANGED_EVENT]!({ connections: [LOCAL, REMOTE], activeId: REMOTE.id });
+    callbacks[CONNECTIONS_CHANGED_EVENT]!({
+      connections: [LOCAL, REMOTE],
+      activeId: LOCAL.id,
+      windowBackendId: REMOTE.id,
+    });
     callbacks[CONNECTION_CERT_MISMATCH_EVENT]!({
       id: REMOTE.id,
       host: REMOTE.host,
@@ -239,7 +274,8 @@ describe('connectionsSaga', () => {
     await settle();
 
     expect(getItems(run.getState().connections.connections)).toEqual([LOCAL, REMOTE]);
-    expect(run.getState().connections.activeId).toBe(REMOTE.id);
+    expect(run.getState().connections.activeId).toBe(LOCAL.id);
+    expect(run.getState().connections.windowBackendId).toBe(REMOTE.id);
     expect(run.getState().connections.certMismatch?.actualFingerprint).toBe('EF:01');
     expect(run.getState().connections.protocolMismatch?.remoteProtocolVersion).toBe('2');
     expect(run.getState().connections.authRejected).toEqual({
@@ -256,12 +292,14 @@ describe('connectionsSaga', () => {
       [CONNECTION_CERT_MISMATCH_EVENT, `listener-${CONNECTION_CERT_MISMATCH_EVENT}`],
       [CONNECTION_PROTOCOL_MISMATCH_EVENT, `listener-${CONNECTION_PROTOCOL_MISMATCH_EVENT}`],
       [CONNECTION_AUTH_REJECTED_EVENT, `listener-${CONNECTION_AUTH_REJECTED_EVENT}`],
+      [KEYCHAIN_SYNC_STATUS_EVENT, `listener-${KEYCHAIN_SYNC_STATUS_EVENT}`],
     ]);
   });
 
   it('rejects a failed operation and records its status error', async () => {
     invoke.mockImplementation(async (channel: string) => {
-      if (channel === CONNECTION_CHANNELS.LIST) return { connections: [LOCAL], activeId: LOCAL.id };
+      if (channel === CONNECTION_CHANNELS.LIST)
+        return { connections: [LOCAL], activeId: LOCAL.id, windowBackendId: LOCAL.id };
       if (channel === CONNECTION_CHANNELS.SWITCH) throw new Error('no such connection');
       return {};
     });
@@ -279,7 +317,8 @@ describe('connectionsSaga', () => {
   it('takes only the leading same-action request while other action owners remain independent', async () => {
     let resolveAdd: ((value: { connection: ConnectionRecord }) => void) | undefined;
     invoke.mockImplementation(async (channel: string) => {
-      if (channel === CONNECTION_CHANNELS.LIST) return { connections: [LOCAL], activeId: LOCAL.id };
+      if (channel === CONNECTION_CHANNELS.LIST)
+        return { connections: [LOCAL], activeId: LOCAL.id, windowBackendId: LOCAL.id };
       if (channel === CONNECTION_CHANNELS.ADD)
         return await new Promise<{ connection: ConnectionRecord }>((resolve) => {
           resolveAdd = resolve;
@@ -323,7 +362,8 @@ describe('connectionsSaga', () => {
 
   it('rejects an active awaitable request when the root saga is cancelled', async () => {
     invoke.mockImplementation(async (channel: string) => {
-      if (channel === CONNECTION_CHANNELS.LIST) return { connections: [LOCAL], activeId: LOCAL.id };
+      if (channel === CONNECTION_CHANNELS.LIST)
+        return { connections: [LOCAL], activeId: LOCAL.id, windowBackendId: LOCAL.id };
       if (channel === CONNECTION_CHANNELS.SWITCH) return await new Promise(() => {});
       return {};
     });
@@ -337,5 +377,76 @@ describe('connectionsSaga', () => {
     await run.task.toPromise();
     await expect(action.promise).rejects.toThrow('Connection switch was cancelled');
     expect(run.getState().connections.error).toBe('Connection switch was cancelled');
+  });
+
+  it('loads the keychain-sync state and stores it (T4)', async () => {
+    const syncState = { supported: true, enabled: false, status: null };
+    invoke.mockImplementation(async (channel: string) => {
+      if (channel === CONNECTION_CHANNELS.LIST)
+        return { connections: [LOCAL], activeId: LOCAL.id, windowBackendId: LOCAL.id };
+      if (channel === CONNECTION_CHANNELS.SYNC_GET_STATE) return syncState;
+      return {};
+    });
+    const run = start();
+    await settle();
+
+    const action = loadKeychainSyncStateRequested();
+    run.channel.put(action);
+    await expect(action.promise).resolves.toEqual(syncState);
+    expect(invoke).toHaveBeenCalledWith(CONNECTION_CHANNELS.SYNC_GET_STATE);
+    expect(run.getState().connections.keychainSync).toEqual(syncState);
+
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('sets the keychain-sync pref with the exact wire params and stores the result (T4)', async () => {
+    const syncState = { supported: true, enabled: true, status: { state: 'active' } };
+    invoke.mockImplementation(async (channel: string) => {
+      if (channel === CONNECTION_CHANNELS.LIST)
+        return { connections: [LOCAL], activeId: LOCAL.id, windowBackendId: LOCAL.id };
+      if (channel === CONNECTION_CHANNELS.SYNC_SET_ENABLED) return syncState;
+      return {};
+    });
+    const run = start();
+    await settle();
+
+    const action = setKeychainSyncEnabledRequested(true);
+    run.channel.put(action);
+    await expect(action.promise).resolves.toEqual(syncState);
+    expect(invoke).toHaveBeenCalledWith(CONNECTION_CHANNELS.SYNC_SET_ENABLED, { enabled: true });
+    expect(run.getState().connections.keychainSync).toEqual(syncState);
+
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('folds a sync-status push into an already-loaded sync state (T4)', async () => {
+    const syncState = { supported: true, enabled: true, status: { state: 'active' } };
+    invoke.mockImplementation(async (channel: string) => {
+      if (channel === CONNECTION_CHANNELS.LIST)
+        return { connections: [LOCAL], activeId: LOCAL.id, windowBackendId: LOCAL.id };
+      if (channel === CONNECTION_CHANNELS.SYNC_GET_STATE) return syncState;
+      return {};
+    });
+    const run = start();
+    await settle();
+
+    const load = loadKeychainSyncStateRequested();
+    run.channel.put(load);
+    await load.promise;
+
+    const status = { state: 'unavailable', reason: 'unavailable', message: 'keychain locked' };
+    callbacks[KEYCHAIN_SYNC_STATUS_EVENT]!(status);
+    await settle();
+
+    expect(run.getState().connections.keychainSync).toEqual({
+      supported: true,
+      enabled: true,
+      status,
+    });
+
+    run.task.cancel();
+    await run.task.toPromise();
   });
 });

@@ -2,6 +2,7 @@
   import { onDestroy } from 'svelte';
   import AgentAvatarCatalog from '$features/agent/components/agent-avatar/AgentAvatarCatalog.svelte';
   import AgentAvatarWithState from '$features/agent/components/agent-avatar/AgentAvatarWithState.svelte';
+  import AIBehaviorSidebar from '$lib/components/settings/AIBehaviorSidebar.svelte';
   import {
     agentAvatarGeometry,
     agentAvatarVariants,
@@ -130,6 +131,12 @@
     variant="standard"
     class="theme-avatar"
   />
+  <section data-settings-specialists style="width: 320px">
+    <AIBehaviorSidebar activeView={{ type: 'specialist', id: 'implementor' }} onSelect={() => {}} />
+  </section>
+  <section data-agent-avatar-legacy>
+    <AgentAvatarWithState agentId="legacy-browser-avatar" size={18} state="idle" />
+  </section>
 </main>
 
 <style>

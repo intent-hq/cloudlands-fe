@@ -91,6 +91,7 @@ export function getOperationalClusterSpacingClass<T extends OperationalClusterBl
   blocks: readonly T[],
   index: number,
   isVisible: (block: T) => boolean = () => true,
+  compactConsecutiveThinking = false,
 ): string {
   const block = blocks[index];
   if (!block || !isVisible(block)) return '';
@@ -100,7 +101,9 @@ export function getOperationalClusterSpacingClass<T extends OperationalClusterBl
   if (previousIndex < 0) return '';
 
   const previous = blocks[previousIndex];
-  if (previous.type === 'thinking' && block.type === 'thinking') return 'pt-14';
+  if (previous.type === 'thinking' && block.type === 'thinking') {
+    return compactConsecutiveThinking ? '' : 'pt-14';
+  }
   const previousIsOperational = isOperationalClusterBlock(previous);
   const currentIsOperational = isOperationalClusterBlock(block);
   if (previousIsOperational && currentIsOperational) return '';

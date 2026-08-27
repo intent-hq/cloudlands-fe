@@ -43,6 +43,7 @@ async function mountSidebar(
   page: Page,
   options: {
     width: number;
+    height?: number;
     zoom: number;
     selectedTab: string;
     reducedMotion?: boolean;
@@ -731,4 +732,111 @@ test('reduced motion settles tab allocation immediately and mode transitions res
   expectEqual(restored.slice(0, 2).map(({ width }) => width));
   expectEqual(restored.slice(2, 4).map(({ width }) => width));
   expect(new Set(restored.map(({ padding }) => padding.join('|'))).size).toBe(1);
+});
+
+test('expanded cards stay bottom-aligned and use the smaller of the stage height and 600px', async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  await page.setViewportSize({ width: 1600, height: 2200 });
+
+  for (const scenario of [
+    {
+      width: 360,
+      height: 420,
+      zoom: 1,
+      theme: 'light' as const,
+      selectedTab: 'agents',
+      agentCount: 40,
+      noteCount: 40,
+    },
+    {
+      width: 280,
+      height: 920,
+      zoom: 2,
+      theme: 'dark' as const,
+      selectedTab: 'context',
+      agentCount: 40,
+      noteCount: 40,
+    },
+  ]) {
+    await mountSidebar(page, { ...scenario, reducedMotion: true });
+    const geometry = await page.locator('[data-sidebar-overlay]').evaluate((overlay) => {
+      const overlayRect = overlay.getBoundingClientRect();
+      const overlayStyle = getComputedStyle(overlay);
+      const cards = [...overlay.querySelectorAll<HTMLElement>('.sidebar-expanded-card')];
+      return cards.map((card) => {
+        const rect = card.getBoundingClientRect();
+        const scale = rect.width / card.offsetWidth;
+        const scroller = card.querySelector<HTMLElement>('[data-sidebar-expanded-scroll]');
+        return {
+          tab: card.dataset.sidebarCardTab,
+          height: rect.height / scale,
+          availableHeight:
+            overlayRect.height / scale -
+            parseFloat(overlayStyle.paddingTop) -
+            parseFloat(overlayStyle.paddingBottom),
+          bottomGap: (overlayRect.bottom - rect.bottom) / scale,
+          expectedBottomGap: parseFloat(overlayStyle.paddingBottom),
+          overflowY: scroller ? getComputedStyle(scroller).overflowY : null,
+          scrollHeight: scroller?.scrollHeight ?? 0,
+          clientHeight: scroller?.clientHeight ?? 0,
+        };
+      });
+    });
+
+    expect(geometry.map(({ tab }) => tab)).toEqual([scenario.selectedTab]);
+    for (const card of geometry) {
+      expect(card.height).toBeCloseTo(Math.min(600, card.availableHeight), 0);
+      expect(card.bottomGap).toBeCloseTo(card.expectedBottomGap, 0);
+      expect(card.overflowY).toBe('auto');
+      expect(card.scrollHeight).toBeGreaterThan(card.clientHeight);
+    }
+  }
+
+  await mountSidebar(page, {
+    width: 360,
+    height: 920,
+    zoom: 1,
+    theme: 'light',
+    selectedTab: 'agents',
+    agentCount: 40,
+    reducedMotion: true,
+  });
+  await expect(page.locator('.sidebar-expanded-card')).toHaveCSS('max-block-size', '600px');
+  await page.locator('[data-sidebar-launcher-host]').evaluate((host) => {
+    host.style.height = '420px';
+  });
+  await expect
+    .poll(() => page.locator('.sidebar-expanded-card').evaluate((card) => card.clientHeight))
+    .toBeLessThan(600);
+
+  await mountSidebar(page, {
+    width: 360,
+    height: 920,
+    zoom: 1,
+    theme: 'light',
+    selectedTab: 'agents',
+    agentCount: 40,
+  });
+  await page
+    .locator('[data-sidebar-collapsed-tab="context"] button')
+    .evaluate((button) => button.click());
+  const transitioningCards = page.locator('.sidebar-expanded-card');
+  await expect(transitioningCards).toHaveCount(2);
+  const transitionGeometry = await transitioningCards.evaluateAll((cards) =>
+    cards.map((card) => {
+      const cardRect = card.getBoundingClientRect();
+      const overlayRect = card.parentElement!.getBoundingClientRect();
+      const scale = cardRect.width / (card as HTMLElement).offsetWidth;
+      return {
+        tab: (card as HTMLElement).dataset.sidebarCardTab,
+        height: cardRect.height / scale,
+        bottomGap: (overlayRect.bottom - cardRect.bottom) / scale,
+      };
+    }),
+  );
+  expect(transitionGeometry.map(({ tab }) => tab).sort()).toEqual(['agents', 'context']);
+  expect(transitionGeometry.every(({ height }) => Math.abs(height - 600) <= 0.5)).toBe(true);
+  expect(transitionGeometry.every(({ bottomGap }) => Math.abs(bottomGap - 4) <= 0.5)).toBe(true);
 });

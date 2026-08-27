@@ -161,15 +161,11 @@ describe('flattenAnswersToMessage (wire contract format)', () => {
     const flattened = flattenAnswersToMessage([
       answer(MULTI, { selectedLabels: ['Desktop app', 'CLI'], freeText: 'and the docs site' }),
     ]);
-    expect(flattened).toBe(
-      `Q: ${MULTI.question}\nA: Desktop app, CLI, (Other) and the docs site`,
-    );
+    expect(flattened).toBe(`Q: ${MULTI.question}\nA: Desktop app, CLI, (Other) and the docs site`);
   });
 
   it('reports an empty non-skipped answer as (skipped)', () => {
-    expect(flattenAnswersToMessage([answer(SINGLE)])).toBe(
-      `Q: ${SINGLE.question}\nA: (skipped)`,
-    );
+    expect(flattenAnswersToMessage([answer(SINGLE)])).toBe(`Q: ${SINGLE.question}\nA: (skipped)`);
   });
 });
 
@@ -245,7 +241,9 @@ describe('wizard completion → agent.sendMessage wire shape', () => {
           workspaceId: WS,
           name: 'Coordinator',
           status: AgentStatus.Pending,
-          messages: [assistantMessage([questionBlock(SINGLE), questionBlock(MULTI), questionBlock(LAST)])],
+          messages: [
+            assistantMessage([questionBlock(SINGLE), questionBlock(MULTI), questionBlock(LAST)]),
+          ],
           createdAt: '2026-07-03T14:35:35.924Z',
           updatedAt: '2026-07-03T14:35:35.924Z',
         } as unknown as AgentSession,
@@ -291,8 +289,8 @@ describe('wizard completion → agent.sendMessage wire shape', () => {
       target: { value: 'and the docs site' },
     });
     await fireEvent.click(screen.getByRole('button', { name: /next/i }));
-    // Q3: explicit Skip completes the wizard.
-    await fireEvent.click(screen.getByRole('button', { name: /skip/i }));
+    // Q3 final single-select: one option click completes and sends immediately.
+    await fireEvent.click(screen.getByText('Force re-login'));
 
     // The send path is a fire-and-forget middleware chain (dynamic imports +
     // pre-send transcript hydration) that can exceed the 1s default timeout
@@ -317,7 +315,7 @@ describe('wizard completion → agent.sendMessage wire shape', () => {
         'A: Desktop app, CLI, (Other) and the docs site\n' +
         '\n' +
         `Q: ${LAST.question}\n` +
-        'A: (skipped)',
+        'A: Force re-login',
     );
     // The structured answer tag naming the question set being resolved —
     // exactly and only these two fields (PROTOCOL §5.5 `messageMetadata`).
@@ -327,9 +325,9 @@ describe('wizard completion → agent.sendMessage wire shape', () => {
     });
     expect(params).not.toHaveProperty('metadata');
     // Exactly ONE send for the whole question set.
-    expect(
-      backendRequestMock.mock.calls.filter((c) => c[0] === 'agent.sendMessage'),
-    ).toHaveLength(1);
+    expect(backendRequestMock.mock.calls.filter((c) => c[0] === 'agent.sendMessage')).toHaveLength(
+      1,
+    );
   }, 30000);
 });
 

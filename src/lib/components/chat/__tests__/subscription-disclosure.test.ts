@@ -30,14 +30,26 @@ describe('safeSubscriptionRowTransition', () => {
       'matchMedia',
       vi.fn(() => ({ matches: false })),
     );
-    const config = safeSubscriptionRowTransition(document.createElement('div'));
+    const node = document.createElement('div');
+    const config = safeSubscriptionRowTransition(node);
 
     expect(config.duration).toBe(160);
-    expect(config.css?.(0, 1)).toContain('overflow:hidden;height:0px');
-    expect(config.css?.(0, 1)).toContain('opacity:0;transform:translateY(-2px)');
-    expect(config.css?.(1, 0)).toContain('height:36px');
-    expect(config.css?.(1, 0)).not.toContain('border-top-width');
-    expect(config.css?.(1, 0)).toContain('opacity:1;transform:translateY(0px)');
+    // Styles are tick-driven (not css/WAAPI) so the height mutation lands in
+    // the same task as the followed-bottom scroll correction.
+    expect(config.css).toBeUndefined();
+    config.tick?.(0, 1);
+    expect(node.style.overflow).toBe('hidden');
+    expect(node.style.height).toBe('0px');
+    expect(node.style.opacity).toBe('0');
+    expect(node.style.transform).toBe('translateY(-2px)');
+    config.tick?.(0.5, 0.5);
+    expect(node.style.height).toBe('18px');
+    expect(node.style.borderTopWidth).toBe('');
+    config.tick?.(1, 0);
+    expect(node.style.overflow).toBe('');
+    expect(node.style.height).toBe('');
+    expect(node.style.opacity).toBe('');
+    expect(node.style.transform).toBe('');
   });
 
   it('uses inset separators that do not add to settled row or list height', () => {

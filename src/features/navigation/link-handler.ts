@@ -30,6 +30,7 @@ import { setShowCreateModal } from '$store/renderer/slices/sidebar-nav/sidebar-n
 import { selectGithubLinkDefaultAction } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
 import { setWorkspaceInitializerPendingGitHubPrefill } from '$store/renderer/slices/workspace-initializer/workspace-initializer-slice';
 import { openWorkspaceFile } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
+import { focusPanel } from '$store/renderer/slices/panel-layout/panel-layout-slice';
 import { store as appStore } from '$store/renderer/store';
 import { invoke as invokeIpc } from '../../shared/generated/ipc-client';
 
@@ -125,7 +126,7 @@ export async function handleLink(url: string, options: LinkHandlerOptions): Prom
             return await openInExternalBrowser(url);
           case 'open-in-app':
             return options.workspaceId
-              ? await openInBrowserPanel(url, options.workspaceId)
+              ? await openInBrowserPanel(url, options.workspaceId, sourcePanelId)
               : await openInExternalBrowser(url);
           case 'copy-link':
             await writeTextToClipboard(url);
@@ -168,6 +169,7 @@ export async function handleLink(url: string, options: LinkHandlerOptions): Prom
  */
 async function handleIntentLink(url: string, options: LinkHandlerOptions): Promise<boolean> {
   try {
+    focusSourcePanel(options);
     const { handleIntentLink: handleIntent } = await import('$lib/utils/workspaces-link-handler');
     return await handleIntent(url, {
       workspaceId: options.workspaceId,
@@ -200,6 +202,7 @@ async function handleDevspaceLink(url: string, options: LinkHandlerOptions): Pro
         terminalId,
         workspaceId: options.workspaceId,
       });
+      focusSourcePanel(options);
       appStore.dispatch(
         openTerminalTabRequested(options.workspaceId, {
           terminalId,
@@ -220,12 +223,42 @@ async function handleDevspaceLink(url: string, options: LinkHandlerOptions): Pro
 
 /** Matches an explicit URL scheme prefix (e.g. `https:`, `intent:`, `vscode:`). */
 const SCHEME_PATTERN = /^[a-z][a-z0-9+.-]*:/;
+const WINDOWS_ABSOLUTE_PATH_PATTERN = /^[a-z]:\//i;
+
+function normalizeSlashes(path: string): string {
+  return path.replace(/\\/g, '/');
+}
+
+function decodePathTarget(path: string): string | null {
+  try {
+    return normalizeSlashes(decodeURIComponent(path));
+  } catch {
+    return null;
+  }
+}
+
+function hasTraversalSegment(path: string): boolean {
+  return path.split('/').some((segment) => segment === '..');
+}
+
+function normalizeWorkspaceRelativePath(path: string): string | null {
+  const segments = path.split('/').filter((segment) => segment && segment !== '.');
+  if (segments.length === 0 || segments.some((segment) => segment === '..')) return null;
+  return segments.join('/');
+}
 
 function getSourcePanelId(options: LinkHandlerOptions): string | undefined {
   if (options.sourcePanelId) return options.sourcePanelId;
   const target = options.event?.target;
   if (!(target instanceof HTMLElement)) return undefined;
   return target.closest<HTMLElement>('[data-panel-id]')?.dataset.panelId;
+}
+
+function focusSourcePanel(
+  options: Pick<LinkHandlerOptions, 'workspaceId' | 'sourcePanelId'>,
+): void {
+  if (!options.workspaceId || !options.sourcePanelId) return;
+  appStore.dispatch(focusPanel(options.workspaceId, options.sourcePanelId));
 }
 
 /**
@@ -281,7 +314,10 @@ async function openFilePathLink(
   fromResolvedUrl: boolean,
 ): Promise<boolean> {
   try {
-    let path = target;
+    const decodedTarget = decodePathTarget(target);
+    if (!decodedTarget || decodedTarget.includes('\0')) return false;
+
+    let path = decodedTarget;
     let line: number | undefined;
     const lineMatch = path.match(/#L(\d+)$/);
     if (lineMatch) {
@@ -295,12 +331,18 @@ async function openFilePathLink(
       return false;
     }
 
-    if (path.startsWith('/')) {
+    if (hasTraversalSegment(path)) {
+      logger.warn('Rejected file link with path traversal', { path });
+      return false;
+    }
+
+    if (path.startsWith('/') || WINDOWS_ABSOLUTE_PATH_PATTERN.test(path)) {
       const { selectWorkspaceById } =
         await import('$store/renderer/slices/workspace/workspace-selectors');
       const workspace = selectWorkspaceById.select(appStore.state, workspaceId);
       const root = workspace?.worktreePath ?? workspace?.path;
-      const normalizedRoot = root?.endsWith('/') ? root.slice(0, -1) : root;
+      const slashRoot = root ? normalizeSlashes(root) : undefined;
+      const normalizedRoot = slashRoot?.endsWith('/') ? slashRoot.slice(0, -1) : slashRoot;
       if (normalizedRoot && path.startsWith(`${normalizedRoot}/`)) {
         path = path.slice(normalizedRoot.length + 1);
       } else if (fromResolvedUrl) {
@@ -312,7 +354,15 @@ async function openFilePathLink(
       }
     }
 
+    const normalizedPath = normalizeWorkspaceRelativePath(path);
+    if (!normalizedPath) {
+      logger.warn('Rejected invalid workspace file link', { path });
+      return false;
+    }
+    path = normalizedPath;
+
     const openInAdjacentPanel = isCmdClickModifier(options);
+    focusSourcePanel(options);
     appStore.dispatch(
       openWorkspaceFile(workspaceId, path, {
         line,
@@ -337,13 +387,14 @@ async function openFilePathLink(
 async function openLinkActionMenu(
   url: string,
   gitHubRef: GitHubIssueOrPrRef,
-  event: MouseEvent,
+  event: MouseEvent | KeyboardEvent,
   workspaceId?: WorkspaceId,
 ): Promise<boolean> {
   try {
     const { showLinkActionMenu } = await import('./link-action-menu-state.svelte');
     const anchorElement = event.target instanceof HTMLElement ? event.target : null;
-    let { clientX: x, clientY: y } = event;
+    let x = event instanceof MouseEvent ? event.clientX : 0;
+    let y = event instanceof MouseEvent ? event.clientY : 0;
     if (x === 0 && y === 0 && anchorElement) {
       const rect = anchorElement.getBoundingClientRect();
       x = rect.left;
@@ -391,6 +442,7 @@ export async function openInBrowserPanel(
     logger.warn('URL resolution failed, opening the URL unresolved', { url, error });
   }
   try {
+    focusSourcePanel({ workspaceId, sourcePanelId });
     const { getPanelLayoutManager } = await import('$features/layout/panel-layout-adapter');
     const layoutManager = getPanelLayoutManager(workspaceId);
     layoutManager.openBrowserPanel(targetUrl, undefined, sourcePanelId, requestedUrl);

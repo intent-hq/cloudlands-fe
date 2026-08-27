@@ -70,6 +70,23 @@ jobs:
       - name: Checkout dispatched ref
         uses: actions/checkout@v7
 
+      - name: Select Xcode 26
+        run: |
+          xcode=$(find /Applications -maxdepth 1 -type d -name 'Xcode_26*.app' 2>/dev/null | sort -V | tail -n 1 || true)
+          if [ -z "$xcode" ] || [ ! -d "$xcode" ]; then
+            echo "::error::Xcode 26 is required for macOS packaging, but no Xcode_26*.app bundle is installed"
+            exit 1
+          fi
+          developer_dir="$xcode/Contents/Developer"
+          version=$(DEVELOPER_DIR="$developer_dir" xcodebuild -version | head -n 1)
+          if [[ ! "$version" =~ ^Xcode\ 26([.\ ]|$) ]]; then
+            echo "::error::Expected Xcode 26, but $xcode reports '$version'"
+            exit 1
+          fi
+          echo "DEVELOPER_DIR=$developer_dir" >> "$GITHUB_ENV"
+          echo "Selected $xcode ($version)"
+          DEVELOPER_DIR="$developer_dir" xcrun --find actool
+
       - name: Setup pnpm
         uses: pnpm/action-setup@v6
         with:
@@ -94,22 +111,14 @@ jobs:
       - name: Install frontend dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Validate INTENTD_READ_PAT secret
-        env:
-          INTENTD_READ_PAT: ${{ secrets.INTENTD_READ_PAT }}
-        run: |
-          if [ -z "$INTENTD_READ_PAT" ]; then
-            echo "::error::INTENTD_READ_PAT secret is required to fetch the pinned intentd release"
-            exit 1
-          fi
-          echo "INTENTD_READ_PAT is configured"
-
       # Downloads the pinned intentd release asset, verifies its sha256, and stages
       # the binary at resources/sidecar/intentd. Fails fast with a clear error when
       # the pinned release or its per-target assets don't exist on intent-hq/intentd.
+      # intent-hq/intentd is public: the default token covers the release reads
+      # (no PAT needed) while keeping the API calls authenticated for rate limits.
       - name: Fetch pinned intentd sidecar
         env:
-          INTENTD_READ_PAT: ${{ secrets.INTENTD_READ_PAT }}
+          GH_TOKEN: ${{ github.token }}
         run: node scripts/fetch-sidecar.cjs
 
       # Written for the non-ephemeral m1mac runner (and equally valid on an
@@ -149,6 +158,28 @@ jobs:
           while IFS= read -r kc; do KEYCHAINS+=("$kc"); done < "$RUNNER_TEMP/keychain-list.orig"
           security list-keychains -d user -s "$KEYCHAIN_PATH" "${KEYCHAINS[@]}"
 
+      # Stage the Developer ID provisioning profile for the keychain-sync
+      # helper (dev.intentapp.cloudlands-fe.keychain-helper). scripts/
+      # sign-sidecar.js embeds it and signs the helper with the restricted
+      # keychain entitlements the profile authorizes. Fail-soft: when the
+      # secret is empty the env var stays unset, the helper ships
+      # unprovisioned, and keychain sync reports "unavailable" at runtime —
+      # the build never fails. Gated on `sign` like the rest of the signing
+      # env; the decoded file is removed by the always() cleanup step.
+      - name: Stage keychain-helper provisioning profile
+        if: ${{ inputs.sign }}
+        env:
+          KEYCHAIN_HELPER_PROFILE_B64: ${{ secrets.CLOUDLANDS_KEYCHAIN_HELPER_PROFILE_B64 }}
+        run: |
+          if [ -z "$KEYCHAIN_HELPER_PROFILE_B64" ]; then
+            echo "CLOUDLANDS_KEYCHAIN_HELPER_PROFILE_B64 not set — helper will be signed without restricted entitlements"
+            exit 0
+          fi
+          PROFILE_PATH="$RUNNER_TEMP/keychain-helper.provisionprofile"
+          echo "$KEYCHAIN_HELPER_PROFILE_B64" | base64 --decode > "$PROFILE_PATH" 2>/dev/null || \
+            echo "$KEYCHAIN_HELPER_PROFILE_B64" | base64 -D > "$PROFILE_PATH"
+          echo "KEYCHAIN_HELPER_PROVISIONING_PROFILE=$PROFILE_PATH" >> "$GITHUB_ENV"
+
       # Drop build output left by a previous run so the artifact upload can't
       # pick up stale files (no-op on this ephemeral hosted runner; kept for
       # parity with the Windows job and the still self-hosted Linux x64 leg).
@@ -176,7 +207,13 @@ jobs:
 
       - name: Build and package macOS app
         id: build
-        run: pnpm run dist:mac
+        run: |
+          if [ "${{ inputs.sign }}" != "true" ]; then
+            # Empty CSC_LINK is treated as the project directory by electron-builder.
+            # Remove signing inputs entirely for an unsigned package.
+            unset CSC_LINK CSC_KEY_PASSWORD
+          fi
+          pnpm run dist:mac --publish never
         env:
           # 12288: the v2.13.0 arm64 leg's peak heap outgrew the old 8192 cap
           # even with sourcemaps disabled (monorepo#1340); same bundle here
@@ -193,10 +230,8 @@ jobs:
           # Points at the sidecar staged by fetch-sidecar.cjs; copy-sidecar.cjs
           # detects the pre-staged binary and leaves it in place.
           INTENTD_BIN: ${{ github.workspace }}/resources/sidecar/intentd
-          # Signing env is emptied when sign=false: electron-builder ignores
-          # empty CSC_* vars, scripts/notarize.js and scripts/sign-sidecar.js
-          # skip gracefully without the Apple creds, and auto-discovery is
-          # disabled so no stray keychain identity can be picked up.
+          # Signing env is removed by the command when sign=false, and
+          # auto-discovery is disabled so no stray keychain identity is used.
           CSC_IDENTITY_AUTO_DISCOVERY: ${{ inputs.sign && 'true' || 'false' }}
           # CSC_LINK/CSC_KEY_PASSWORD make electron-builder import the cert
           # into its own temporary keychain, independent of the one imported
@@ -210,6 +245,11 @@ jobs:
           CLOUDLANDS_APPLE_ID: ${{ inputs.sign && secrets.CLOUDLANDS_APPLE_ID || '' }}
           CLOUDLANDS_APPLE_APP_SPECIFIC_PASSWORD: ${{ inputs.sign && secrets.CLOUDLANDS_APPLE_APP_SPECIFIC_PASSWORD || '' }}
           CLOUDLANDS_APPLE_TEAM_ID: ${{ inputs.sign && secrets.CLOUDLANDS_APPLE_TEAM_ID || '' }}
+          # KEYCHAIN_HELPER_PROVISIONING_PROFILE reaches this step via
+          # GITHUB_ENV from "Stage keychain-helper provisioning profile"
+          # (only on the signing path with the secret present); when unset,
+          # scripts/sign-sidecar.js signs the helper without restricted
+          # entitlements (fail-soft).
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: List built artifacts
@@ -267,6 +307,7 @@ jobs:
             security list-keychains -d user -s "${KEYCHAINS[@]}"
           fi
           rm -f "$RUNNER_TEMP/certificate.p12"
+          rm -f "$RUNNER_TEMP/keychain-helper.provisionprofile"
 
   # Copied from release-alpha.yml build-windows, plus the integrated DigiCert
   # signing steps from intent-manual-windows-build.yml gated on the `sign`
@@ -328,19 +369,9 @@ jobs:
         shell: bash
         run: pnpm install --frozen-lockfile
 
-      - name: Validate INTENTD_READ_PAT secret
-        shell: bash
-        env:
-          INTENTD_READ_PAT: ${{ secrets.INTENTD_READ_PAT }}
-        run: |
-          if [ -z "$INTENTD_READ_PAT" ]; then
-            echo "::error::INTENTD_READ_PAT secret is required to fetch the pinned intentd release"
-            exit 1
-          fi
-          echo "INTENTD_READ_PAT is configured"
-
       # Downloads the pinned intentd release asset, verifies its sha256, and
-      # stages the binary at resources/sidecar/intentd.exe.
+      # stages the binary at resources/sidecar/intentd.exe. intent-hq/intentd is
+      # public: the default token covers the release reads (no PAT needed).
       # PATH prefix: the runner's PATH resolves GNU tar (Git Bash), which parses
       # the drive letter in `tar -tf C:\...` as a remote host ("Cannot connect
       # to C: resolve failed", intent-hq/monorepo#1282). Prefer the System32
@@ -351,7 +382,7 @@ jobs:
       - name: Fetch pinned intentd sidecar
         shell: bash
         env:
-          INTENTD_READ_PAT: ${{ secrets.INTENTD_READ_PAT }}
+          GH_TOKEN: ${{ github.token }}
         run: PATH="/c/Windows/System32:$PATH" node scripts/fetch-sidecar.cjs
 
       # ── DigiCert signing setup (official action; pattern from ────────────
@@ -574,19 +605,11 @@ jobs:
       - name: Install frontend dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Validate INTENTD_READ_PAT secret
-        env:
-          INTENTD_READ_PAT: ${{ secrets.INTENTD_READ_PAT }}
-        run: |
-          if [ -z "$INTENTD_READ_PAT" ]; then
-            echo "::error::INTENTD_READ_PAT secret is required to fetch the pinned intentd release"
-            exit 1
-          fi
-          echo "INTENTD_READ_PAT is configured"
-
+      # intent-hq/intentd is public: the default token covers the release reads
+      # (no PAT needed).
       - name: Fetch pinned intentd sidecar
         env:
-          INTENTD_READ_PAT: ${{ secrets.INTENTD_READ_PAT }}
+          GH_TOKEN: ${{ github.token }}
           # Always pass the explicit target (rather than deriving it from the
           # host) so the staged intentd matches the package arch, including
           # when cross-building.

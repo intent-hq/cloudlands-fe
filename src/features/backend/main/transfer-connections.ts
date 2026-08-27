@@ -25,6 +25,7 @@
 import { Logger } from '$shared/logger';
 import type { BackendConnectionConfig } from './backend-connection';
 import { JsonRpcClient } from './json-rpc-client';
+import { LOCAL_CONNECTION_ID } from '../../../shared/types/connections';
 
 const logger = new Logger('TransferConnections');
 
@@ -65,6 +66,7 @@ export const SESSION_LEASE_IDLE_TTL_MS = 15 * 60 * 1000;
  * transfer settles — success, failure, or abort.
  */
 export interface TransferConnectionLease {
+  readonly backendId: string;
   request<T = unknown>(
     method: string,
     params?: unknown,
@@ -99,7 +101,11 @@ const activeLeases = new Set<TransferConnectionLease>();
 let activeCount = 0;
 
 /** FIFO queue of transfers waiting for a free slot. */
-let slotWaiters: Array<{ resolve: () => void; reject: (error: Error) => void }> = [];
+let slotWaiters: Array<{
+  backendId: string;
+  resolve: () => void;
+  reject: (error: Error) => void;
+}> = [];
 
 /**
  * Bumped by {@link disposeAllTransferConnections}; a waiter that was handed
@@ -107,7 +113,7 @@ let slotWaiters: Array<{ resolve: () => void; reject: (error: Error) => void }> 
  * this after waking and fails instead of opening a connection against the
  * outgoing backend.
  */
-let disposeGeneration = 0;
+const disposeGenerations = new Map<string, number>();
 
 /** In-flight chunked upload sessions: uploadId → the lease carrying them. */
 const uploadLeases = new Map<string, SessionLease>();
@@ -140,13 +146,13 @@ function settleSession(uploadId: string, session: SessionLease): void {
   uploadLeases.delete(uploadId);
 }
 
-function acquireSlot(): Promise<void> {
+function acquireSlot(backendId: string): Promise<void> {
   if (activeCount < MAX_TRANSFER_CONNECTIONS) {
     activeCount += 1;
     return Promise.resolve();
   }
   return new Promise<void>((resolve, reject) => {
-    slotWaiters.push({ resolve, reject });
+    slotWaiters.push({ backendId, resolve, reject });
   });
 }
 
@@ -170,10 +176,11 @@ function releaseSlot(): void {
  */
 export async function acquireTransferConnection(
   config: BackendConnectionConfig,
+  backendId: string = LOCAL_CONNECTION_ID,
 ): Promise<TransferConnectionLease> {
-  const generation = disposeGeneration;
-  await acquireSlot();
-  if (generation !== disposeGeneration) {
+  const generation = disposeGenerations.get(backendId) ?? 0;
+  await acquireSlot(backendId);
+  if (generation !== (disposeGenerations.get(backendId) ?? 0)) {
     // A dispose landed while we waited (a settling lease handed us its slot
     // in the same tick the backend was torn down) — do not open a
     // connection against the outgoing backend.
@@ -186,6 +193,7 @@ export async function acquireTransferConnection(
   });
   let released = false;
   const lease: TransferConnectionLease = {
+    backendId,
     request: (method, params, options) => client.request(method, params, options),
     release: () => {
       if (released) return;
@@ -209,8 +217,9 @@ export async function acquireTransferConnection(
 export async function withTransferConnection<T>(
   config: BackendConnectionConfig,
   fn: (connection: TransferConnectionLease) => Promise<T>,
+  backendId: string = LOCAL_CONNECTION_ID,
 ): Promise<T> {
-  const lease = await acquireTransferConnection(config);
+  const lease = await acquireTransferConnection(config, backendId);
   try {
     return await fn(lease);
   } finally {
@@ -278,6 +287,7 @@ export async function requestOverTransferConnection<T = unknown>(
   method: string,
   params?: unknown,
   options?: { timeoutMs?: number },
+  backendId: string = LOCAL_CONNECTION_ID,
 ): Promise<T> {
   const uploadId =
     params && typeof params === 'object' && 'uploadId' in params
@@ -285,7 +295,7 @@ export async function requestOverTransferConnection<T = unknown>(
       : undefined;
 
   if (method === 'file.attachmentUpload.begin') {
-    const lease = await acquireTransferConnection(config);
+    const lease = await acquireTransferConnection(config, backendId);
     try {
       const result = await lease.request<T>(method, params, options);
       const newUploadId =
@@ -335,15 +345,36 @@ export async function requestOverTransferConnection<T = unknown>(
     // Unknown session here (already settled, or its connection was disposed
     // by a switch): settle it on the daemon over a one-shot connection —
     // upload sessions are keyed by uploadId, not connection, so this works.
-    return withTransferConnection(config, (connection) =>
-      connection.request<T>(method, params, options),
+    return withTransferConnection(
+      config,
+      (connection) => connection.request<T>(method, params, options),
+      backendId,
     );
   }
 
   // Single-shot transfers (`file.placeAttachment` data arm).
-  return withTransferConnection(config, (connection) =>
-    connection.request<T>(method, params, options),
+  return withTransferConnection(
+    config,
+    (connection) => connection.request<T>(method, params, options),
+    backendId,
   );
+}
+
+/** Dispose transfer sockets owned by one backend without disturbing other backends. */
+export function disposeTransferConnectionsForBackend(backendId: string): void {
+  disposeGenerations.set(backendId, (disposeGenerations.get(backendId) ?? 0) + 1);
+  for (const [uploadId, session] of uploadLeases) {
+    if (session.lease.backendId === backendId) settleSession(uploadId, session);
+  }
+  const retainedWaiters = [] as typeof slotWaiters;
+  for (const waiter of slotWaiters) {
+    if (waiter.backendId === backendId) waiter.reject(new Error('transfer connections disposed'));
+    else retainedWaiters.push(waiter);
+  }
+  slotWaiters = retainedWaiters;
+  for (const lease of [...activeLeases]) {
+    if (lease.backendId === backendId) lease.release();
+  }
 }
 
 /**
@@ -354,7 +385,13 @@ export async function requestOverTransferConnection<T = unknown>(
 export function disposeAllTransferConnections(): void {
   // Invalidate waiters already handed a slot (their continuation has not run
   // yet); they fail after waking instead of connecting to the old backend.
-  disposeGeneration += 1;
+  const backendIds = new Set([
+    ...[...activeLeases].map((lease) => lease.backendId),
+    ...slotWaiters.map((waiter) => waiter.backendId),
+  ]);
+  for (const backendId of backendIds) {
+    disposeGenerations.set(backendId, (disposeGenerations.get(backendId) ?? 0) + 1);
+  }
   for (const [uploadId, session] of uploadLeases) {
     settleSession(uploadId, session);
   }
@@ -384,4 +421,5 @@ export function __resetTransferConnectionsForTesting(): void {
   disposeAllTransferConnections();
   activeCount = 0;
   slotWaiters = [];
+  disposeGenerations.clear();
 }

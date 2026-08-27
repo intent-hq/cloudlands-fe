@@ -1,5 +1,9 @@
 import { m } from '$shared/paraglide/messages.js';
-import type { SpecialistModelOption, SpecialistSource } from '$shared/specialist-file-types';
+import type {
+  SpecialistModelOption,
+  SpecialistRole,
+  SpecialistSource,
+} from '$shared/specialist-file-types';
 
 /** Known built-in specialist IDs */
 export type BuiltinSpecialistId =
@@ -9,8 +13,7 @@ export type BuiltinSpecialistId =
   | 'pr-reviewer'
   | 'ui-designer'
   | 'developer'
-  | 'chief-of-staff'
-  | 'ralph';
+  | 'chief-of-staff';
 
 export interface Specialist {
   id: string;
@@ -68,11 +71,32 @@ export interface Specialist {
    * the model default.
    */
   reasoningEffort?: string;
+  /**
+   * Orchestration role (`specialist.list` role, PROTOCOL §5.11):
+   * 'orchestrator' powers the New Workspace modal's team card; 'internal' is
+   * excluded from the modal's single-agent dropdown only (in-workspace
+   * pickers and Settings unaffected). Absent means standard.
+   */
+  role?: SpecialistRole;
+  /**
+   * Specialist ids the orchestrator delegates to (`specialist.list`
+   * teamAgents, PROTOCOL §5.11). Advisory/render-only — drives the modal's
+   * team-card avatar row. Absent when not declared.
+   */
+  teamAgents?: string[];
+  /**
+   * Built-in avatar design id (`specialist.list` icon, PROTOCOL §5.11).
+   * Unknown/absent values degrade to the id-map + seeded fallback.
+   */
+  icon?: string;
 }
 
 export const SPECIALISTS: Specialist[] = [
   {
     id: 'spec-writer',
+    role: 'orchestrator',
+    teamAgents: ['implementor', 'verifier'],
+    icon: 'coordinator',
     get name() {
       return m.specialists_builtin_coordinator_name();
     },
@@ -155,6 +179,8 @@ If helpful, you can use groups for distinct phases: **Researching**, **Planning*
   },
   {
     id: 'implementor',
+    role: 'internal',
+    icon: 'implementor',
     get name() {
       return m.specialists_builtin_implementor_name();
     },
@@ -192,6 +218,8 @@ Call \`ws.agent.reportToParent("<report>")\` (via the \`workspace_api\` tool) wi
   },
   {
     id: 'verifier',
+    role: 'internal',
+    icon: 'verifier',
     get name() {
       return m.specialists_builtin_verifier_name();
     },
@@ -249,6 +277,7 @@ Call \`ws.agent.reportToParent("<report>")\` (via the \`workspace_api\` tool) wi
   },
   {
     id: 'pr-reviewer',
+    icon: 'pr-reviewer',
     get name() {
       return m.specialists_builtin_prReviewer_name();
     },
@@ -343,6 +372,7 @@ If no issues found, write "✅ Approved" with no task notes.
   },
   {
     id: 'ui-designer',
+    icon: 'ui-designer',
     get name() {
       return m.specialists_builtin_uiDesigner_name();
     },
@@ -462,6 +492,7 @@ Call \`ws.agent.reportToParent("<report>")\` (via the \`workspace_api\` tool) wi
   },
   {
     id: 'developer',
+    icon: 'verifier',
     get name() {
       return m.specialists_builtin_developer_name();
     },
@@ -514,6 +545,7 @@ Then: Commands Run, Risk Notes, Follow-ups.`,
   },
   {
     id: 'chief-of-staff',
+    icon: 'chief-of-staff',
     get name() {
       return m.specialists_builtin_chiefOfStaff_name();
     },
@@ -614,23 +646,23 @@ For non-workspace-create proposals, always set \`preview.applyLabel\` to a verb 
 Render a NavLink with a fenced \`nav-link\` block containing a JSON object:
 
 \`\`\`nav-link
-{"target": "/settings?tab=tools#utility-default-model", "label": "Quick action model"}
+{"target": "/settings?tab=providers#utility-default-model", "label": "Quick action model"}
 \`\`\`
 
 **The \`target\` must be the full canonical route, including any query string and hash fragment that points at a specific row, card, or control.** A bare path like \`/settings\` lands on the page top with no highlight — that is a bug, not a shortcut. Always include the hash when one exists for the row you are linking to.
 
-**Look up canonical routes; do not guess them.** Call \`ws.app.ui.targets()\` to discover registered targets and use the \`route\` field verbatim. Each target's \`route\` already contains the correct tab query and hash (e.g. \`/settings?tab=agents#default-model\`, \`/settings?tab=tools#utility-default-model\`, \`/settings?tab=fonts-colors#color-theme\`). If \`ws.app.ui.targets()\` does not list the row, the row is not navigable and you should describe the path in prose instead of emitting a broken NavLink.
+**Look up canonical routes; do not guess them.** Call \`ws.app.ui.targets()\` to discover registered targets and use the \`route\` field verbatim. Each target's \`route\` already contains the correct tab query and hash (e.g. \`/settings?tab=agents#default-model\`, \`/settings?tab=providers#utility-default-model\`, \`/settings?tab=appearance#color-theme\`). If \`ws.app.ui.targets()\` does not list the row, the row is not navigable and you should describe the path in prose instead of emitting a broken NavLink.
 
 Worked example — user asks "where do I change the quick action model?":
 
 \`\`\`nav-link
-{"target": "/settings?tab=tools#utility-default-model", "label": "Quick action model"}
+{"target": "/settings?tab=providers#utility-default-model", "label": "Quick action model"}
 \`\`\`
 
 **Anti-patterns — never do these:**
 
 - ❌ \`{"target": "/settings", "label": "Quick action model"}\` — bare path, no hash, lands at page top.
-- ❌ \`{"target": "/settings?tab=tools", "label": "Quick actions"}\` — tab without hash, no row highlight.
+- ❌ \`{"target": "/settings?tab=providers", "label": "Quick actions"}\` — tab without hash, no row highlight.
 - ❌ Inventing routes (\`/specialists\`, \`/workspaces/foo\`, \`/settings/models\`) that \`ws.app.ui.targets()\` does not list — those render as plain text with no link.
 
 ## Teaching Users About Intent
@@ -725,22 +757,7 @@ Be proactive but reversible. Summarize what you found, recommend the safest next
     // i18n-ignore (agent behavior prompt consumed by LLM, not user-facing UI)
     roleReminder:
       // i18n-ignore (agent behavior prompt consumed by LLM)
-      'You are the built-in Chief of Staff. Stay at the app level: use ws.app.* tools, proposal cards for non-destructive changes, confirmation cards for destructive actions, and NavLinks when teaching or navigating. CRITICAL: every time you mention one or more workspaces in chat (lists, single answers, recommendations, anything), emit a fenced `workspace` block with one workspace ID per line — never a prose list, bullets, or table of IDs. Never use a workspace ID slug (e.g. `user-bug-2`) as a label in prose; use the workspace title instead. When each workspace has its own commentary, emit a single-ID `workspace` block immediately followed by that commentary, repeated per workspace — do not stack cards then bullets. NavLink targets must be the full canonical route from ws.app.ui.targets() including the hash fragment that points at the specific row (e.g. `/settings?tab=tools#utility-default-model`) — a bare path like `/settings` lands at the page top with no highlight and is always wrong when a row-specific target exists.',
-  },
-  {
-    id: 'ralph',
-    get name() {
-      return m.specialists_builtin_ralph_name();
-    },
-    get description() {
-      return m.specialists_builtin_ralph_description();
-    },
-    defaultBehaviorPrompt: '',
-    defaultAgentType: 'ralph-loop',
-    // i18n-ignore (agent behavior prompt consumed by LLM, not user-facing UI)
-    roleReminder:
-      // i18n-ignore (agent behavior prompt consumed by LLM)
-      'You are Ralph. Phase 1: plan with user, agree on tests, get approval. Phase 2: delegate work→test to fresh child agents in a loop. Never implement directly — always delegate. Focus on task note state, not conversation history.',
+      'You are the built-in Chief of Staff. Stay at the app level: use ws.app.* tools, proposal cards for non-destructive changes, confirmation cards for destructive actions, and NavLinks when teaching or navigating. CRITICAL: every time you mention one or more workspaces in chat (lists, single answers, recommendations, anything), emit a fenced `workspace` block with one workspace ID per line — never a prose list, bullets, or table of IDs. Never use a workspace ID slug (e.g. `user-bug-2`) as a label in prose; use the workspace title instead. When each workspace has its own commentary, emit a single-ID `workspace` block immediately followed by that commentary, repeated per workspace — do not stack cards then bullets. NavLink targets must be the full canonical route from ws.app.ui.targets() including the hash fragment that points at the specific row (e.g. `/settings?tab=providers#utility-default-model`) — a bare path like `/settings` lands at the page top with no highlight and is always wrong when a row-specific target exists.',
   },
 ];
 

@@ -6,7 +6,6 @@ const mocks = vi.hoisted(() => ({
   loadError: null as null | { kind: 'not_found' | 'error'; message: string },
   workspace: null as null | { id: string; title: string },
   dispatch: vi.fn(),
-  markSeen: vi.fn(),
 }));
 const action = vi.hoisted(() => (type: string) => (...payload: unknown[]) => ({ type, payload }));
 const mockPart = vi.hoisted(() => (marker: string) => async () => {
@@ -85,10 +84,8 @@ vi.mock('$store/renderer/slices/app-layout/app-layout-selectors', () => ({
   selectPendingCommandPaletteAction: () => readable(null),
 }));
 vi.mock('$store/renderer/slices/panel-layout/panel-layout-selectors', () => ({
-  selectPanelColumnCountsByWorkspaceId: () => readable({}),
   selectPanelLayoutRoot: () => readable(null),
 }));
-vi.mock('$features/workspace/mark-workspace-seen', () => ({ markWorkspaceSeen: mocks.markSeen }));
 vi.mock('$lib/utils/window-events', () => ({ dispatchWindowEvent: vi.fn() }));
 vi.mock('$features/layout/panel-layout-adapter', () => ({
   getPanelLayoutManager: () => ({ openTab: vi.fn() }),
@@ -147,22 +144,14 @@ vi.mock('$lib/components/layout/panel-system', async () => {
   };
 });
 
-import WorkspaceSurfaceColumnsHarness from './__tests__/mocks/WorkspaceSurfaceColumnsHarness.svelte';
 import WorkspaceSurface from './WorkspaceSurface.svelte';
 
-const hosts = [
-  { name: 'standalone', count: 1, columnMode: false },
-  { name: 'one-column', count: 1, columnMode: true },
-  { name: 'two-column', count: 2, columnMode: true },
-  { name: 'three-column', count: 3, columnMode: true },
-];
-
-function renderHost({ count, columnMode }: (typeof hosts)[number]) {
-  const result = render(WorkspaceSurfaceColumnsHarness, { props: { count, columnMode } });
-  const host = result.container.querySelector<HTMLElement>('[data-visible-workspace-host]')!;
+function renderHost() {
+  const result = render(WorkspaceSurface, { props: { workspaceId: 'workspace-1' } });
+  const host = result.container.querySelector<HTMLElement>('[data-workspace-surface]')!;
   Object.defineProperties(host, {
-    clientWidth: { configurable: true, value: columnMode ? count * 360 : 960 },
-    scrollWidth: { configurable: true, value: columnMode ? count * 360 : 960 },
+    clientWidth: { configurable: true, value: 960 },
+    scrollWidth: { configurable: true, value: 960 },
   });
   return { ...result, host };
 }
@@ -172,30 +161,23 @@ beforeEach(() => {
   mocks.loadError = null;
   mocks.workspace = null;
   mocks.dispatch.mockClear();
-  mocks.markSeen.mockClear();
 });
 
 describe('WorkspaceSurface terminal shell boundary', () => {
-  it.each(hosts.flatMap((host) => ['not_found', 'error'].map((kind) => ({ host, kind }))))(
-    'keeps $kind shell-free in $host.name mode',
-    ({ host: scenario, kind }) => {
+  it.each(['not_found', 'error'] as const)(
+    'keeps the standard workspace shell-free for %s terminal state',
+    (kind) => {
       mocks.loadError = {
         kind: kind as 'not_found' | 'error',
         message: kind === 'error' ? 'Backend unavailable' : 'Workspace not found',
       };
-      const { container, host } = renderHost(scenario);
-      const columns = [
-        ...container.querySelectorAll<HTMLElement>('[data-visible-workspace-column]'),
-      ];
+      const { container, host } = renderHost();
       const states = [
         ...container.querySelectorAll<HTMLElement>('[data-workspace-terminal-state]'),
       ];
 
-      expect(states).toHaveLength(scenario.count);
-      expect(screen.getAllByRole('button', { name: 'All workspaces' })).toHaveLength(
-        scenario.count,
-      );
-      states.forEach((state, index) => expect(columns[index].contains(state)).toBe(true));
+      expect(states).toHaveLength(1);
+      expect(screen.getAllByRole('button', { name: 'All workspaces' })).toHaveLength(1);
       expect(host.scrollWidth).toBeLessThanOrEqual(host.clientWidth);
       expect(container.querySelector('[data-workspace-layout]')).toBeNull();
       expect(container.querySelector('[data-workspace-sidebar]')).toBeNull();
@@ -211,28 +193,28 @@ describe('WorkspaceSurface terminal shell boundary', () => {
     },
   );
 
-  it.each(hosts.flatMap((host) => ['loading', 'valid'].map((phase) => ({ host, phase }))))(
-    'retains the workspace shell for $phase state in $host.name mode',
-    ({ host: scenario, phase }) => {
+  it.each(['loading', 'valid'] as const)(
+    'retains the standard workspace shell for %s state',
+    (phase) => {
       mocks.workspace =
         phase === 'valid' ? { id: 'workspace-valid', title: 'Valid workspace' } : null;
-      const { container, host } = renderHost(scenario);
-      expect(container.querySelectorAll('[data-workspace-layout]')).toHaveLength(scenario.count);
-      expect(container.querySelectorAll('[data-workspace-sidebar]')).toHaveLength(scenario.count);
-      expect(container.querySelectorAll('[data-panel-canvas]')).toHaveLength(scenario.count);
-      expect(container.querySelectorAll('[data-terminal-dock]')).toHaveLength(scenario.count);
+      const { container, host } = renderHost();
+      expect(container.querySelectorAll('[data-workspace-layout]')).toHaveLength(1);
+      expect(container.querySelectorAll('[data-workspace-sidebar]')).toHaveLength(1);
+      expect(container.querySelectorAll('[data-panel-canvas]')).toHaveLength(1);
+      expect(container.querySelectorAll('[data-terminal-dock]')).toHaveLength(1);
       expect(container.querySelector('[data-workspace-terminal-state]')).toBeNull();
       expect(host.scrollWidth).toBeLessThanOrEqual(host.clientWidth);
       expect(
         container.querySelectorAll(
           `[data-workspace-surface-part="${phase === 'loading' ? 'content-skeleton' : 'valid-panel-layout'}"]`,
         ),
-      ).toHaveLength(scenario.count);
+      ).toHaveLength(1);
       expect(
         container.querySelectorAll(
           `[data-workspace-surface-part="${phase === 'loading' ? 'sidebar-skeleton' : 'valid-sidebar'}"]`,
         ),
-      ).toHaveLength(scenario.count);
+      ).toHaveLength(1);
     },
   );
 });

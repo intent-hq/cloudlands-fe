@@ -14,7 +14,7 @@ const expected: Array<
   ['needs_attention', 'icon', 'circle-question', 'text-warning', 'Needs attention'],
   ['in_progress', 'dot', null, 'workspace-status-color-active', 'In progress'],
   ['waiting', 'icon', 'clock', 'text-muted-foreground', 'Waiting'],
-  ['unread', 'dot', null, 'workspace-status-color-unread', 'UNREAD'],
+  ['unread', 'dot', null, 'workspace-status-color-unread', 'Unread'],
   ['not_started', 'dot', null, 'text-muted-foreground/35', 'Not started'],
   ['idle', 'dot', null, 'text-muted-foreground/35', 'Idle'],
   ['complete', 'icon', 'circle-check', 'text-success', 'Complete'],
@@ -44,6 +44,7 @@ describe('workspace status presentation', () => {
       const result = getWorkspaceStatusPresentation(state);
       expect(result.tooltip).toBe(result.label);
       expect(result.accessibleName).toBe(result.label);
+      expect(result.label).not.toBe(result.label.toUpperCase());
     }
   });
 

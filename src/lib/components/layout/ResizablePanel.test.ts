@@ -23,9 +23,9 @@ vi.mock('$store/renderer/slices/ui-layout/ui-layout-selectors', async () => {
     selectSidebarExpandedWidth: () => readable(600),
     selectResizablePanelSize: (storageKey: string) => {
       const initialValue =
-        storageKey === 'workspace-column-width:synced'
+        storageKey === 'panel-canvas-width:synced'
           ? 600
-          : storageKey === 'workspace-column-width:hydrated'
+          : storageKey === 'panel-canvas-width:hydrated'
             ? 1320
             : storageKey === 'workspace-left-panel-width:valid'
               ? 390
@@ -75,22 +75,6 @@ describe('ResizablePanel reactive defaults', () => {
     await waitFor(() => expect(panel?.getAttribute('style')).toContain('width: 360px'));
   });
 
-  it('does not collapse a scoped workspace sidebar when collapse following is disabled', async () => {
-    const { container } = render(ResizablePanel, {
-      props: {
-        storageKey: 'workspace-left-panel-width:column-ws',
-        defaultWidth: 360,
-        followSidebarCollapsed: false,
-      },
-    });
-    const panel = container.firstElementChild;
-
-    mocks.setSidebarCollapsed(true);
-    await tick();
-
-    expect(panel?.getAttribute('style')).toContain('width: 360px');
-  });
-
   it('stays collapsed when a stored sidebar width hydrates and restores it on expand', async () => {
     mocks.sidebarCollapsedInitial = true;
     const storageKey = 'workspace-left-panel-width:delayed';
@@ -106,90 +90,6 @@ describe('ResizablePanel reactive defaults', () => {
 
     mocks.setSidebarCollapsed(false);
     await waitFor(() => expect(panel?.getAttribute('style')).toContain('width: 390px'));
-  });
-
-  it('applies a hydrated column width without an automatic callback', async () => {
-    const onWidthChange = vi.fn();
-    const { container } = render(ResizablePanel, {
-      props: {
-        storageKey: 'workspace-left-panel-width:valid',
-        maxWidth: 400,
-        clampStoredWidth: true,
-        notifyAutomaticWidthChanges: false,
-        onWidthChange,
-      },
-    });
-
-    expect(container.firstElementChild?.getAttribute('style')).toContain('width: 390px');
-    await tick();
-    expect(onWidthChange).not.toHaveBeenCalled();
-    expect(mocks.dispatch).not.toHaveBeenCalled();
-  });
-
-  it('clamps stale column widths and persists only the manual resize', async () => {
-    const onWidthChange = vi.fn();
-    const { container } = render(ResizablePanel, {
-      props: {
-        storageKey: 'workspace-left-panel-width:stale',
-        side: 'left',
-        maxWidth: 400,
-        clampStoredWidth: true,
-        notifyAutomaticWidthChanges: false,
-        onWidthChange,
-      },
-    });
-
-    expect(container.firstElementChild?.getAttribute('style')).toContain('width: 400px');
-    expect(onWidthChange).not.toHaveBeenCalled();
-    mocks.dispatch.mockClear();
-    const handle = container.querySelector('button')!;
-    await fireEvent.mouseDown(handle, { clientX: 400 });
-    await fireEvent.mouseMove(document, { clientX: 350 });
-    await fireEvent.mouseUp(document);
-
-    expect(onWidthChange).toHaveBeenLastCalledWith(350);
-    expect(mocks.dispatch).toHaveBeenCalledWith({
-      type: 'uiLayout/setResizablePanelSize',
-      payload: ['workspace-left-panel-width:stale', 350],
-    });
-  });
-
-  it('clamps a stale expanded column width without an automatic callback', async () => {
-    const onWidthChange = vi.fn();
-    const { container } = render(ResizablePanel, {
-      props: {
-        storageKey: 'workspace-left-panel-width:valid',
-        expandedStorageKey: 'workspace-left-panel-expanded-width:stale',
-        isExpanded: true,
-        maxWidth: 400,
-        clampStoredWidth: true,
-        notifyAutomaticWidthChanges: false,
-        onWidthChange,
-      },
-    });
-
-    expect(container.firstElementChild?.getAttribute('style')).toContain('width: 400px');
-    await tick();
-    expect(onWidthChange).not.toHaveBeenCalled();
-    expect(mocks.dispatch).not.toHaveBeenCalled();
-  });
-
-  it('keeps its fixed width after a temporary parent fill ends', async () => {
-    const props = {
-      defaultWidth: 360,
-      maxWidth: 400,
-      doSkipResize: true,
-      preserveFixedWidthAfterFill: true,
-      notifyAutomaticWidthChanges: false,
-    };
-    const { container, rerender } = render(ResizablePanel, { props });
-    const panel = container.firstElementChild as HTMLElement;
-    panel.getBoundingClientRect = () => ({ width: 856 }) as DOMRect;
-
-    await rerender({ ...props, doSkipResize: false });
-
-    expect(panel.getAttribute('style')).toContain('width: 360px');
-    expect(mocks.dispatch).not.toHaveBeenCalled();
   });
 
   it('does not notify again when only the callback identity changes', async () => {
@@ -208,7 +108,7 @@ describe('ResizablePanel reactive defaults', () => {
 
   it('grows to an increased default without shrinking an existing width', async () => {
     const props = {
-      storageKey: 'workspace-column-width:ws-1',
+      storageKey: 'panel-canvas-width:ws-1',
       minWidth: 640,
       maxWidth: 2200,
       defaultWidth: 960,
@@ -224,13 +124,13 @@ describe('ResizablePanel reactive defaults', () => {
     });
     expect(mocks.dispatch).toHaveBeenCalledWith({
       type: 'uiLayout/setResizablePanelSize',
-      payload: ['workspace-column-width:ws-1', 1560],
+      payload: ['panel-canvas-width:ws-1', 1560],
     });
   });
 
   it('resizes in both directions by the reactive default delta', async () => {
     const props = {
-      storageKey: 'workspace-column-width:ws-1',
+      storageKey: 'panel-canvas-width:ws-1',
       minWidth: 280,
       maxWidth: 960,
       defaultWidth: 360,
@@ -260,7 +160,7 @@ describe('ResizablePanel reactive defaults', () => {
 
   it('applies and removes a transient width delta without persisting it', async () => {
     const props = {
-      storageKey: 'workspace-column-width:ws-1',
+      storageKey: 'panel-canvas-width:ws-1',
       minWidth: 280,
       maxWidth: 2200,
       defaultWidth: 1320,
@@ -280,7 +180,7 @@ describe('ResizablePanel reactive defaults', () => {
 
   it('does not apply a restored panel-count delta twice during hydration', async () => {
     const initialProps = {
-      storageKey: 'workspace-column-width:hydrated',
+      storageKey: 'panel-canvas-width:hydrated',
       minWidth: 280,
       maxWidth: 1960,
       defaultWidth: 360,
@@ -302,7 +202,7 @@ describe('ResizablePanel reactive defaults', () => {
 
   it('starts from and follows the default when persisted width restoration is disabled', async () => {
     const props = {
-      storageKey: 'workspace-column-width:hydrated',
+      storageKey: 'panel-canvas-width:hydrated',
       minWidth: 280,
       maxWidth: 1960,
       defaultWidth: 960,
@@ -314,7 +214,7 @@ describe('ResizablePanel reactive defaults', () => {
     expect(container.firstElementChild?.getAttribute('style')).toContain('width: 960px');
     expect(mocks.dispatch).not.toHaveBeenCalledWith({
       type: 'uiLayout/requestResizablePanelSize',
-      payload: ['workspace-column-width:hydrated'],
+      payload: ['panel-canvas-width:hydrated'],
     });
 
     await rerender({ ...props, defaultWidth: 1320, resizeWithDefaultWidth: true });
@@ -325,7 +225,7 @@ describe('ResizablePanel reactive defaults', () => {
 
   it('syncs exactly to a reactive default after a stored manual width', async () => {
     const props = {
-      storageKey: 'workspace-column-width:synced',
+      storageKey: 'panel-canvas-width:synced',
       minWidth: 280,
       maxWidth: 960,
       defaultWidth: 360,

@@ -21,8 +21,10 @@ vi.mock('$store/renderer/slices/tab-state/tab-state-slice', () => ({
 
 import PanelCornerHandle from '../PanelCornerHandle.svelte';
 import PanelSplitHandle from '../PanelSplitHandle.svelte';
+import { setDraggedPane } from '../panel-drag';
 
 afterEach(() => {
+  setDraggedPane(null);
   document.body.classList.remove('panel-resizing');
   vi.clearAllMocks();
 });
@@ -140,6 +142,21 @@ describe('editorial panel resize handles', () => {
         value: expect.objectContaining({ zoneType: 'column-right' }),
       }),
     );
+  });
+
+  it('leaves active-pane insertion to the full-height layout gutters', async () => {
+    const onTabDropToHandle = vi.fn();
+    setDraggedPane({ tabId: 'tab', panelId: 'source' });
+    render(PanelSplitHandle, {
+      props: { direction: 'horizontal', nodePath: [], onTabDropToHandle },
+    });
+    const handle = screen.getByRole('button', { name: 'Resize panel' });
+
+    await fireEvent.dragOver(handle, { clientX: 1, clientY: 1, dataTransfer: tabDataTransfer });
+    await fireEvent.drop(handle, { clientX: 1, clientY: 1, dataTransfer: tabDataTransfer });
+
+    expect(onTabDropToHandle).not.toHaveBeenCalled();
+    expect(dispatch).not.toHaveBeenCalled();
   });
 
   it('does not offer tab drops on a stale vertical split handle', async () => {

@@ -70,6 +70,14 @@ export interface PanelTab {
    */
   ownerAgentId?: string;
   /**
+   * Owning agent's display name as last reported by main (monorepo#3438);
+   * absent for unowned tabs or when the name could not be resolved.
+   * Persisted with the layout so the sidebar owner group can label the tab
+   * even when the renderer's agent store does not have the owner loaded.
+   * The live agent store, when it has the owner, takes precedence (renames).
+   */
+  ownerAgentName?: string;
+  /**
    * Emulated viewport of an agent-owned browser tab (monorepo#2857); absent
    * for unowned (native-sized) tabs. Persisted with the layout alongside
    * `ownerAgentId` so the tab rehydrates at its actual size after restart,
@@ -89,6 +97,8 @@ export interface PanelState {
   id: string;
   tabs: PanelTab[];
   activeTabId: string | null;
+  /** Inactive panes added by background activity and not yet selected by the user. */
+  attentionTabIds?: string[];
   /** True for an untouched reusable blank panel that the next user item can consume. */
   pristine?: boolean;
 }

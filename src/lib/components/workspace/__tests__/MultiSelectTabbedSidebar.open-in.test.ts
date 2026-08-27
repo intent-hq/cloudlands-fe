@@ -139,6 +139,7 @@ vi.mock('$store/renderer/slices/workspace-agents/workspace-agents-selectors', ()
   selectAllWorkspaceAgents: mocks.selectorFrom(() => mocks.agents),
   selectForegroundWorkspaceAgents: mocks.selector([]),
   selectIsLoadingAgents: mocks.selectorFrom(() => mocks.agentsLoading),
+  selectWorkspaceHasUnreadForegroundAgents: mocks.selector(false),
 }));
 vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
   selectAgentIsResponding: mocks.selector(false),
@@ -820,6 +821,34 @@ describe('MultiSelectTabbedSidebar Files Open In', () => {
     expect(requests[0]?.[0].payload[1]).not.toHaveProperty('targetPanelId');
     expect(requests[0]?.[0].payload[1]).not.toHaveProperty('adaptiveFirstChat');
     expect(requests[0]?.[0].payload[1]).not.toHaveProperty('availablePanelCanvasWidth');
+  });
+
+  it('routes a modified Agents card click through adjacent intent', async () => {
+    mocks.agents = [makeAgent('agent-b')];
+    mocks.selectedTabs = ['agents'];
+    const Sidebar = (await import('../MultiSelectTabbedSidebar.svelte')).default;
+    const { container } = render(Sidebar, {
+      props: { workspaceId: 'ws-1', panelLayoutId: 'layout-1' },
+    });
+
+    mocks.dispatch.mockClear();
+    await fireEvent.click(container.querySelector('[data-expanded-agent="agent-b"]')!, {
+      ctrlKey: true,
+    });
+
+    expect(mocks.dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'appLayout/openAgentTabRequested',
+        payload: [
+          'ws-1',
+          expect.objectContaining({
+            agentId: 'agent-b',
+            sourcePanelId: 'source-panel',
+            openInAdjacentPanel: true,
+          }),
+        ],
+      }),
+    );
   });
 
   it('opens the Agents card and compact note exactly once', async () => {

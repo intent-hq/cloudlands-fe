@@ -3,20 +3,22 @@
  *
  * Binds the import relay engine (`workspace-import-relay.ts`) to the Electron
  * IPC surface: `transfer:import-start` / `transfer:import-cancel` invokes,
- * progress pushed on `transfer:import-progress`. Production deps: the live
- * backend client as the TARGET, Electron's open dialog, and a plain fs file
- * handle for random-access archive reads.
+ * progress pushed on `transfer:import-progress`. Production deps: the
+ * invoking window's backend client as the TARGET (resolved per start from the
+ * IPC event sender), Electron's open dialog, and a plain fs file handle for
+ * random-access archive reads.
  */
 
 import { promises as fs } from 'node:fs';
-import { BrowserWindow, dialog, ipcMain } from 'electron';
+import { BrowserWindow, dialog, ipcMain, webContents } from 'electron';
 import { Logger } from '$shared/logger';
 import { IPC_CHANNELS } from '$shared/ipc-registry';
 import type {
   ImportProgressEvent,
   ImportStartParams,
 } from '../../../shared/types/workspace-transfer';
-import { getBackendClient } from './backend.ipc';
+import { getBackendClientForIpcEvent } from './backend.ipc';
+import type { JsonRpcClient } from './json-rpc-client';
 import {
   createWorkspaceImportRelay,
   type ImportFileSource,
@@ -77,13 +79,20 @@ async function openFile(filePath: string): Promise<ImportFileSource> {
   };
 }
 
+/** A session owner is gone once its WebContents no longer exists (window
+ * closed) — its leftover session is then released for other windows. */
+function isOwnerGone(ownerId: number): boolean {
+  const contents = webContents.fromId(ownerId);
+  return !contents || contents.isDestroyed();
+}
+
 function getRelay(): WorkspaceImportRelay {
   if (!relay) {
     relay = createWorkspaceImportRelay({
-      getClient: () => getBackendClient(),
       showOpenDialog,
       openFile,
       broadcastProgress,
+      isOwnerGone,
       logger: {
         info: (msg, meta) => logger.info(msg, meta),
         warn: (msg, meta) => logger.warn(msg, meta),
@@ -98,11 +107,19 @@ export function registerWorkspaceImportHandlers(): void {
   if (handlersRegistered) return;
   handlersRegistered = true;
 
-  ipcMain.handle(TRANSFER.IMPORT_START, async (_event, params?: ImportStartParams) => {
-    return getRelay().start(params ?? {});
+  ipcMain.handle(TRANSFER.IMPORT_START, async (event, params?: ImportStartParams) => {
+    // The TARGET is the backend bound to the invoking window — not the global
+    // primary client, which may point at a different daemon.
+    let client: JsonRpcClient;
+    try {
+      client = getBackendClientForIpcEvent(event).client;
+    } catch (error) {
+      return { success: false, error: error instanceof Error ? error.message : String(error) };
+    }
+    return getRelay().start(params ?? {}, client, event.sender.id);
   });
 
-  ipcMain.handle(TRANSFER.IMPORT_CANCEL, async () => {
-    return getRelay().cancel();
+  ipcMain.handle(TRANSFER.IMPORT_CANCEL, async (event) => {
+    return getRelay().cancel(event.sender.id);
   });
 }

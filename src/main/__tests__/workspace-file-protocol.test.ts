@@ -4,26 +4,65 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
  * workspace-file://{workspaceId}/{percent-encoded-path} — URL validation and
  * the daemon-backed handler. Bytes come from `file.readChunk` (PROTOCOL §5.9:
  * params { workspaceId, path, offset, length } → { content (base64),
- * bytesRead, size }); the handler assembles multi-chunk reads and serves an
- * image-only MIME allowlist (SVG excluded in v1).
+ * bytesRead, size }); the handler assembles multi-chunk reads and serves a
+ * narrow image/video MIME allowlist (SVG excluded).
+ *
+ * Both this handler and workspace-asset:// (note assets via `note.readAsset`,
+ * PROTOCOL §5.2) issue their RPC on the backend that owns the workspace
+ * (monorepo#3501): the workspace's hosting window resolves to its stamped
+ * backend's pooled client. The app-primary compatibility client is the
+ * fallback when no hosting window is known (after a short retry for the
+ * initial-navigation race) or when the stamped backend is the implicit local
+ * one; a stamped named backend without a pooled client fails closed (404).
  */
 
-const { protocolHandle, mockRequest } = vi.hoisted(() => ({
-  protocolHandle: vi.fn(),
-  mockRequest: vi.fn(),
-}));
+const { protocolHandle, mockRequest, pooledRequests, windowBackends, workspaceWindows } =
+  vi.hoisted(() => ({
+    protocolHandle: vi.fn(),
+    mockRequest: vi.fn(),
+    /** backendId → pooled client `request` mock. */
+    pooledRequests: new Map<string, ReturnType<typeof vi.fn>>(),
+    /** windowId → stamped backendId. */
+    windowBackends: new Map<number, string>(),
+    /** workspaceId → hosting windowIds. */
+    workspaceWindows: new Map<string, number[]>(),
+  }));
 
 vi.mock('electron', () => ({
   app: { getAppPath: vi.fn(() => '/app') },
   protocol: { handle: protocolHandle },
+  BrowserWindow: {
+    fromId: (id: number) => (windowBackends.has(id) ? { id, isDestroyed: () => false } : null),
+  },
 }));
 
 vi.mock('../../features/backend/main/backend.ipc', () => ({
   getBackendClient: () => ({ request: mockRequest }),
+  getBackendClientForConnection: (id: string) => {
+    const request = pooledRequests.get(id);
+    return request ? { request } : undefined;
+  },
 }));
 
-import { imageMimeTypeForPath, parseWorkspaceFileRequest } from '../utils/workspace-file-url';
+vi.mock('../../features/system/main/system.ipc', () => ({
+  getWindowIdsForWorkspace: (workspaceId: string) => workspaceWindows.get(workspaceId) ?? [],
+}));
+
+vi.mock('../window', () => ({
+  getBackendIdForWindow: (window: { id: number }) => windowBackends.get(window.id) ?? 'local',
+}));
+
 import {
+  imageMimeTypeForPath,
+  parseWorkspaceFileRequest,
+  workspaceFileMimeTypeForPath,
+} from '../utils/workspace-file-url';
+import {
+  resolveWorkspaceBackendClient,
+  resolveWorkspaceBackendClientWithRetry,
+} from '../utils/workspace-backend-client';
+import {
+  setupWorkspaceAssetProtocolHandler,
   setupWorkspaceFileProtocolHandler,
   WORKSPACE_FILE_CHUNK_BYTES,
   WORKSPACE_FILE_MAX_BYTES,
@@ -47,6 +86,17 @@ describe('imageMimeTypeForPath', () => {
   });
 });
 
+describe('workspaceFileMimeTypeForPath', () => {
+  it('preserves the image allowlist and adds only MP4 and WebM video', () => {
+    expect(workspaceFileMimeTypeForPath('preview.PNG')).toBe('image/png');
+    expect(workspaceFileMimeTypeForPath('preview.mp4')).toBe('video/mp4');
+    expect(workspaceFileMimeTypeForPath('preview.WEBM')).toBe('video/webm');
+    expect(workspaceFileMimeTypeForPath('preview.mov')).toBeNull();
+    expect(workspaceFileMimeTypeForPath('preview.ogg')).toBeNull();
+    expect(workspaceFileMimeTypeForPath('preview.svg')).toBeNull();
+  });
+});
+
 describe('parseWorkspaceFileRequest', () => {
   it('accepts a nested percent-encoded image path', () => {
     const parsed = parseWorkspaceFileRequest('workspace-file://ws-1/docs/my%20pic.png');
@@ -58,6 +108,20 @@ describe('parseWorkspaceFileRequest', () => {
     });
   });
 
+  it('accepts only allowlisted video paths with the correct MIME type', () => {
+    expect(parseWorkspaceFileRequest('workspace-file://ws-2/artifacts/demo%20clip.mp4')).toEqual({
+      ok: true,
+      workspaceId: 'ws-2',
+      filePath: 'artifacts/demo clip.mp4',
+      mimeType: 'video/mp4',
+    });
+    expect(parseWorkspaceFileRequest('workspace-file://ws-2/artifacts/demo.webm')).toMatchObject({
+      ok: true,
+      workspaceId: 'ws-2',
+      mimeType: 'video/webm',
+    });
+  });
+
   it('rejects traversal segments with 403 (encoded slashes bypass URL dot-segment normalization)', () => {
     // Plain and percent-encoded dot segments are consumed by WHATWG URL
     // parsing, but `%2F..%2F` survives it and decodes to `../` client-side.
@@ -65,22 +129,19 @@ describe('parseWorkspaceFileRequest', () => {
     expect(parsed).toMatchObject({ ok: false, status: 403 });
   });
 
-  it('neutralizes plain dot segments via URL normalization', () => {
+  it('rejects plain dot segments before URL normalization can hide them', () => {
     const parsed = parseWorkspaceFileRequest('workspace-file://ws-1/a/../../b.png');
-    expect(parsed).toMatchObject({ ok: true, filePath: 'b.png' });
+    expect(parsed).toMatchObject({ ok: false, status: 403 });
   });
 
-  it('neutralizes percent-encoded dot segments via URL normalization (pins WHATWG behavior)', () => {
-    // `%2e%2e` segments are consumed during URL parsing and clamp at the
-    // root, so they never reach the traversal check. Pinned so a swap away
-    // from WHATWG `new URL` semantics cannot silently regress containment.
+  it('rejects percent-encoded dot segments before URL normalization can hide them', () => {
     expect(parseWorkspaceFileRequest('workspace-file://ws-1/%2e%2e/secret.png')).toMatchObject({
-      ok: true,
-      filePath: 'secret.png',
+      ok: false,
+      status: 403,
     });
     expect(
       parseWorkspaceFileRequest('workspace-file://ws-1/a/%2e%2e/%2e%2e/secret.png'),
-    ).toMatchObject({ ok: true, filePath: 'secret.png' });
+    ).toMatchObject({ ok: false, status: 403 });
   });
 
   it('rejects non-allowlisted extensions with 415', () => {
@@ -106,6 +167,13 @@ describe('parseWorkspaceFileRequest', () => {
       status: 400,
     });
     expect(parseWorkspaceFileRequest('not a url')).toMatchObject({ status: 400 });
+    expect(parseWorkspaceFileRequest('https://ws-1/a.png')).toMatchObject({ status: 400 });
+    expect(parseWorkspaceFileRequest('workspace-file://user@ws-1/a.png')).toMatchObject({
+      status: 400,
+    });
+    expect(parseWorkspaceFileRequest('workspace-file://ws-1/a.png?download=1')).toMatchObject({
+      status: 400,
+    });
   });
 });
 
@@ -116,21 +184,252 @@ function getHandler(): (request: Request) => Promise<Response> {
   return call![1];
 }
 
+function getAssetHandler(): (request: Request) => Promise<Response> {
+  setupWorkspaceAssetProtocolHandler();
+  const call = protocolHandle.mock.calls.find(([scheme]) => scheme === 'workspace-asset');
+  expect(call).toBeDefined();
+  return call![1];
+}
+
 function chunk(bytes: Buffer, bytesRead: number, size: number) {
   return { content: bytes.toString('base64'), bytesRead, size };
 }
+
+function appRequest(url: string, headers: Record<string, string> = {}): Request {
+  return new Request(url, { headers: { Origin: 'app://workspaces', ...headers } });
+}
+
+/** Bind `workspaceId` to a live pooled backend client and return its request mock. */
+function bindWorkspaceToBackend(workspaceId: string, backendId: string, windowId = 7) {
+  const request = vi.fn();
+  pooledRequests.set(backendId, request);
+  windowBackends.set(windowId, backendId);
+  workspaceWindows.set(workspaceId, [windowId]);
+  return request;
+}
+
+describe('resolveWorkspaceBackendClient', () => {
+  const lookup = (overrides: {
+    windows?: number[];
+    backendOf?: (windowId: number) => string | null;
+    clients?: Record<string, string>;
+    fallbackAllowed?: (backendId: string) => boolean;
+  }) => ({
+    getWindowIdsForWorkspace: () => overrides.windows ?? [],
+    getBackendIdForWindowId: overrides.backendOf ?? (() => null),
+    getClientForBackend: (id: string) => overrides.clients?.[id],
+    getPrimaryClient: () => 'primary',
+    isPrimaryFallbackAllowed: overrides.fallbackAllowed ?? ((id: string) => id === 'local'),
+  });
+
+  it('picks the pooled client of the first hosting window with a live backend', () => {
+    const resolved = resolveWorkspaceBackendClient('ws-1', {
+      ...lookup({
+        windows: [1, 2],
+        backendOf: (id) => (id === 1 ? 'conn-dead' : 'conn-2'),
+        clients: { 'conn-2': 'pooled-2' },
+      }),
+    });
+    expect(resolved).toEqual({ client: 'pooled-2', backendId: 'conn-2', fallback: null });
+  });
+
+  it('falls back to the primary client when no window hosts the workspace', () => {
+    expect(resolveWorkspaceBackendClient('ws-1', lookup({}))).toEqual({
+      client: 'primary',
+      backendId: null,
+      fallback: 'no-hosting-window',
+      attemptedBackendIds: [],
+    });
+  });
+
+  it('falls back to the primary client when an unpooled backend allows the fallback', () => {
+    const resolved = resolveWorkspaceBackendClient('ws-1', {
+      ...lookup({ windows: [1], backendOf: () => 'local' }),
+    });
+    expect(resolved).toEqual({
+      client: 'primary',
+      backendId: null,
+      fallback: 'unpooled-backend',
+      attemptedBackendIds: ['local'],
+    });
+  });
+
+  it('fails closed when the stamped backend is disconnected and not fallback-eligible', () => {
+    const resolved = resolveWorkspaceBackendClient('ws-1', {
+      ...lookup({ windows: [1], backendOf: () => 'conn-gone' }),
+    });
+    expect(resolved).toEqual({
+      client: null,
+      backendId: 'conn-gone',
+      fallback: 'backend-disconnected',
+      attemptedBackendIds: ['conn-gone'],
+    });
+  });
+
+  it('skips dead windows (null backend id)', () => {
+    const resolved = resolveWorkspaceBackendClient('ws-1', {
+      ...lookup({
+        windows: [1, 2],
+        backendOf: (id) => (id === 1 ? null : 'conn-2'),
+        clients: { 'conn-2': 'pooled-2' },
+      }),
+    });
+    expect(resolved).toEqual({ client: 'pooled-2', backendId: 'conn-2', fallback: null });
+  });
+});
+
+describe('resolveWorkspaceBackendClientWithRetry', () => {
+  it('returns immediately (no sleep) when a hosting window is known', async () => {
+    const sleep = vi.fn().mockResolvedValue(undefined);
+    const resolved = await resolveWorkspaceBackendClientWithRetry(
+      'ws-1',
+      {
+        getWindowIdsForWorkspace: () => [1],
+        getBackendIdForWindowId: () => 'conn-2',
+        getClientForBackend: () => 'pooled-2',
+        getPrimaryClient: () => 'primary',
+        isPrimaryFallbackAllowed: () => false,
+      },
+      { attempts: 5, delayMs: 200, sleep },
+    );
+    expect(resolved).toEqual({ client: 'pooled-2', backendId: 'conn-2', fallback: null });
+    expect(sleep).not.toHaveBeenCalled();
+  });
+
+  it('retries while no hosting window is known and picks up a late-arriving mapping', async () => {
+    const sleep = vi.fn().mockResolvedValue(undefined);
+    const windows: number[] = [];
+    const resolvedPromise = resolveWorkspaceBackendClientWithRetry(
+      'ws-1',
+      {
+        getWindowIdsForWorkspace: () => windows,
+        getBackendIdForWindowId: () => 'conn-2',
+        getClientForBackend: () => 'pooled-2',
+        getPrimaryClient: () => 'primary',
+        isPrimaryFallbackAllowed: () => false,
+      },
+      {
+        attempts: 5,
+        delayMs: 200,
+        sleep: sleep.mockImplementation(async () => {
+          if (sleep.mock.calls.length === 2) windows.push(1);
+        }),
+      },
+    );
+    const resolved = await resolvedPromise;
+    expect(resolved).toEqual({ client: 'pooled-2', backendId: 'conn-2', fallback: null });
+    expect(sleep).toHaveBeenCalledTimes(2);
+  });
+
+  it('gives up after the attempt budget and returns the primary fallback', async () => {
+    const sleep = vi.fn().mockResolvedValue(undefined);
+    const resolved = await resolveWorkspaceBackendClientWithRetry(
+      'ws-1',
+      {
+        getWindowIdsForWorkspace: () => [],
+        getBackendIdForWindowId: () => null,
+        getClientForBackend: () => undefined,
+        getPrimaryClient: () => 'primary',
+        isPrimaryFallbackAllowed: () => false,
+      },
+      { attempts: 3, delayMs: 200, sleep },
+    );
+    expect(resolved).toMatchObject({ client: 'primary', fallback: 'no-hosting-window' });
+    expect(sleep).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not retry a fail-closed (backend-disconnected) resolution', async () => {
+    const sleep = vi.fn().mockResolvedValue(undefined);
+    const resolved = await resolveWorkspaceBackendClientWithRetry(
+      'ws-1',
+      {
+        getWindowIdsForWorkspace: () => [1],
+        getBackendIdForWindowId: () => 'conn-gone',
+        getClientForBackend: () => undefined,
+        getPrimaryClient: () => 'primary',
+        isPrimaryFallbackAllowed: () => false,
+      },
+      { attempts: 5, delayMs: 200, sleep },
+    );
+    expect(resolved).toMatchObject({ client: null, fallback: 'backend-disconnected' });
+    expect(sleep).not.toHaveBeenCalled();
+  });
+});
 
 describe('setupWorkspaceFileProtocolHandler', () => {
   beforeEach(() => {
     protocolHandle.mockClear();
     mockRequest.mockReset();
+    pooledRequests.clear();
+    windowBackends.clear();
+    workspaceWindows.clear();
+    // Stamp ws-1 to a local-backend window with no pooled client: the
+    // resolution takes the immediate primary fallback (unpooled local), so
+    // these tests exercise the primary client without the no-hosting-window
+    // retry delay.
+    windowBackends.set(7, 'local');
+    workspaceWindows.set('ws-1', [7]);
+  });
+
+  it('rejects hostile, null, and arbitrary localhost origins before daemon access', async () => {
+    const handler = getHandler();
+
+    for (const origin of ['https://evil.example', 'null', 'http://localhost:5190']) {
+      const res = await handler(
+        new Request('workspace-file://ws-secret/images/pic.png', {
+          headers: { Origin: origin },
+        }),
+      );
+      expect(res.status).toBe(403);
+      expect(res.headers.get('Access-Control-Allow-Origin')).toBeNull();
+    }
+
+    expect(mockRequest).not.toHaveBeenCalled();
+  });
+
+  it('allows only the configured development renderer origin', async () => {
+    vi.stubEnv('NODE_ENV', 'development');
+    vi.stubEnv('DEV_PORT', '5197');
+    try {
+      const bytes = Buffer.from('dev');
+      mockRequest.mockResolvedValueOnce(chunk(bytes, bytes.length, bytes.length));
+
+      const allowed = await getHandler()(
+        new Request('workspace-file://ws-1/dev.png', {
+          headers: { Origin: 'http://127.0.0.1:5197' },
+        }),
+      );
+      expect(allowed.status).toBe(200);
+      expect(allowed.headers.get('Access-Control-Allow-Origin')).toBe('http://127.0.0.1:5197');
+
+      const denied = await getHandler()(
+        new Request('workspace-file://ws-1/dev.png', {
+          headers: { Origin: 'http://127.0.0.1:5198' },
+        }),
+      );
+      expect(denied.status).toBe(403);
+      expect(mockRequest).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it('keeps origin-less media loads non-CORS-readable', async () => {
+    const bytes = Buffer.from('image');
+    mockRequest.mockResolvedValueOnce(chunk(bytes, bytes.length, bytes.length));
+
+    const res = await getHandler()(new Request('workspace-file://ws-1/direct.png'));
+
+    expect(res.status).toBe(200);
+    expect(res.headers.get('Access-Control-Allow-Origin')).toBeNull();
+    expect(res.headers.get('Vary')).toBe('Origin');
   });
 
   it('serves a single-chunk image with the exact file.readChunk wire params', async () => {
     const bytes = Buffer.from([0x89, 0x50, 0x4e, 0x47]);
     mockRequest.mockResolvedValueOnce(chunk(bytes, bytes.length, bytes.length));
 
-    const res = await getHandler()(new Request('workspace-file://ws-1/images/pic.png'));
+    const res = await getHandler()(appRequest('workspace-file://ws-1/images/pic.png'));
 
     expect(mockRequest).toHaveBeenCalledTimes(1);
     expect(mockRequest).toHaveBeenCalledWith('file.readChunk', {
@@ -141,32 +440,103 @@ describe('setupWorkspaceFileProtocolHandler', () => {
     });
     expect(res.status).toBe(200);
     expect(res.headers.get('Content-Type')).toBe('image/png');
-    // Required for renderer fetch() reads across origins (corsEnabled scheme).
-    expect(res.headers.get('Access-Control-Allow-Origin')).toBe('*');
+    expect(res.headers.get('Access-Control-Allow-Origin')).toBe('app://workspaces');
+    expect(res.headers.get('Vary')).toBe('Origin');
+    expect(res.headers.get('Accept-Ranges')).toBe('bytes');
+    expect(res.headers.get('Content-Length')).toBe(String(bytes.length));
     expect(Buffer.from(await res.arrayBuffer())).toEqual(bytes);
+  });
+
+  it('serves a bounded MP4 byte range with correct playback headers', async () => {
+    const allBytes = Buffer.from('0123456789');
+    mockRequest
+      .mockResolvedValueOnce(chunk(allBytes.subarray(0, 1), 1, allBytes.length))
+      .mockResolvedValueOnce(chunk(allBytes.subarray(2, 6), 4, allBytes.length));
+
+    const res = await getHandler()(
+      appRequest('workspace-file://ws-1/artifacts/demo.mp4', { Range: 'bytes=2-5' }),
+    );
+
+    expect(mockRequest).toHaveBeenNthCalledWith(1, 'file.readChunk', {
+      workspaceId: 'ws-1',
+      path: 'artifacts/demo.mp4',
+      offset: 0,
+      length: 1,
+    });
+    expect(mockRequest).toHaveBeenNthCalledWith(2, 'file.readChunk', {
+      workspaceId: 'ws-1',
+      path: 'artifacts/demo.mp4',
+      offset: 2,
+      length: 4,
+    });
+    expect(res.status).toBe(206);
+    expect(res.headers.get('Content-Type')).toBe('video/mp4');
+    expect(res.headers.get('Content-Range')).toBe('bytes 2-5/10');
+    expect(res.headers.get('Content-Length')).toBe('4');
+    expect(res.headers.get('Access-Control-Allow-Origin')).toBe('app://workspaces');
+    expect(Buffer.from(await res.arrayBuffer()).toString()).toBe('2345');
+  });
+
+  it('supports WebM suffix ranges without reading outside the selected bytes', async () => {
+    const allBytes = Buffer.from('0123456789');
+    mockRequest
+      .mockResolvedValueOnce(chunk(allBytes.subarray(0, 1), 1, allBytes.length))
+      .mockResolvedValueOnce(chunk(allBytes.subarray(7), 3, allBytes.length));
+
+    const res = await getHandler()(
+      appRequest('workspace-file://ws-1/artifacts/demo.webm', { Range: 'bytes=-3' }),
+    );
+
+    expect(mockRequest.mock.calls[1][1]).toMatchObject({ offset: 7, length: 3 });
+    expect(res.status).toBe(206);
+    expect(res.headers.get('Content-Type')).toBe('video/webm');
+    expect(res.headers.get('Content-Range')).toBe('bytes 7-9/10');
+    expect(Buffer.from(await res.arrayBuffer()).toString()).toBe('789');
+  });
+
+  it('rejects invalid and unsatisfiable ranges safely', async () => {
+    const handler = getHandler();
+    const invalid = await handler(
+      appRequest('workspace-file://ws-1/demo.mp4', { Range: 'bytes=0-1,4-5' }),
+    );
+    expect(invalid.status).toBe(416);
+    expect(mockRequest).not.toHaveBeenCalled();
+
+    mockRequest.mockResolvedValueOnce(chunk(Buffer.from('x'), 1, 4));
+    const unsatisfiable = await handler(
+      appRequest('workspace-file://ws-1/demo.mp4', { Range: 'bytes=4-' }),
+    );
+    expect(unsatisfiable.status).toBe(416);
+    expect(unsatisfiable.headers.get('Content-Range')).toBe('bytes */4');
   });
 
   it('assembles multi-chunk reads by advancing offset until size is reached', async () => {
     const first = Buffer.from('first-half');
     const second = Buffer.from('second');
     const size = first.length + second.length;
+    const concatSpy = vi.spyOn(Buffer, 'concat');
     mockRequest
       .mockResolvedValueOnce(chunk(first, first.length, size))
       .mockResolvedValueOnce(chunk(second, second.length, size));
 
-    const res = await getHandler()(new Request('workspace-file://ws-1/big.webp'));
+    try {
+      const res = await getHandler()(appRequest('workspace-file://ws-1/big.webp'));
 
-    expect(mockRequest).toHaveBeenCalledTimes(2);
-    expect(mockRequest.mock.calls[1][1]).toMatchObject({ offset: first.length });
-    expect(res.status).toBe(200);
-    expect(res.headers.get('Content-Type')).toBe('image/webp');
-    expect(Buffer.from(await res.arrayBuffer())).toEqual(Buffer.concat([first, second]));
+      expect(mockRequest).toHaveBeenCalledTimes(2);
+      expect(mockRequest.mock.calls[1][1]).toMatchObject({ offset: first.length });
+      expect(concatSpy).toHaveBeenCalledTimes(1);
+      expect(res.status).toBe(200);
+      expect(res.headers.get('Content-Type')).toBe('image/webp');
+      expect(Buffer.from(await res.arrayBuffer()).toString()).toBe('first-halfsecond');
+    } finally {
+      concatSpy.mockRestore();
+    }
   });
 
   it('serves an empty file as an empty 200 body', async () => {
     mockRequest.mockResolvedValueOnce({ content: '', bytesRead: 0, size: 0 });
 
-    const res = await getHandler()(new Request('workspace-file://ws-1/empty.gif'));
+    const res = await getHandler()(appRequest('workspace-file://ws-1/empty.gif'));
 
     expect(res.status).toBe(200);
     expect((await res.arrayBuffer()).byteLength).toBe(0);
@@ -175,10 +545,10 @@ describe('setupWorkspaceFileProtocolHandler', () => {
   it('rejects traversal and non-image URLs without issuing an RPC', async () => {
     const handler = getHandler();
 
-    const traversal = await handler(new Request('workspace-file://ws-1/a%2F..%2Fx.png'));
+    const traversal = await handler(appRequest('workspace-file://ws-1/a%2F..%2Fx.png'));
     expect(traversal.status).toBe(403);
 
-    const nonImage = await handler(new Request('workspace-file://ws-1/notes.md'));
+    const nonImage = await handler(appRequest('workspace-file://ws-1/notes.md'));
     expect(nonImage.status).toBe(415);
 
     expect(mockRequest).not.toHaveBeenCalled();
@@ -188,7 +558,7 @@ describe('setupWorkspaceFileProtocolHandler', () => {
     const bytes = Buffer.from('x');
     mockRequest.mockResolvedValueOnce(chunk(bytes, 1, WORKSPACE_FILE_MAX_BYTES + 1));
 
-    const res = await getHandler()(new Request('workspace-file://ws-1/huge.jpeg'));
+    const res = await getHandler()(appRequest('workspace-file://ws-1/huge.jpeg'));
 
     expect(res.status).toBe(413);
   });
@@ -196,7 +566,7 @@ describe('setupWorkspaceFileProtocolHandler', () => {
   it('maps daemon errors to 404', async () => {
     mockRequest.mockRejectedValueOnce(new Error('path is outside the workspace'));
 
-    const res = await getHandler()(new Request('workspace-file://ws-1/missing.png'));
+    const res = await getHandler()(appRequest('workspace-file://ws-1/missing.png'));
 
     expect(res.status).toBe(404);
   });
@@ -205,8 +575,149 @@ describe('setupWorkspaceFileProtocolHandler', () => {
     const bytes = Buffer.from('abcdef');
     mockRequest.mockResolvedValueOnce(chunk(bytes, bytes.length + 3, bytes.length + 3));
 
-    const res = await getHandler()(new Request('workspace-file://ws-1/spliced.png'));
+    const res = await getHandler()(appRequest('workspace-file://ws-1/spliced.png'));
 
     expect(res.status).toBe(404);
+  });
+
+  it('issues file.readChunk on the backend of the window hosting the workspace', async () => {
+    const bytes = Buffer.from([0x89, 0x50, 0x4e, 0x47]);
+    const remoteRequest = bindWorkspaceToBackend('ws-remote', 'conn-2');
+    remoteRequest.mockResolvedValueOnce(chunk(bytes, bytes.length, bytes.length));
+
+    const res = await getHandler()(new Request('workspace-file://ws-remote/pic.png'));
+
+    expect(remoteRequest).toHaveBeenCalledWith('file.readChunk', {
+      workspaceId: 'ws-remote',
+      path: 'pic.png',
+      offset: 0,
+      length: WORKSPACE_FILE_CHUNK_BYTES,
+    });
+    expect(mockRequest).not.toHaveBeenCalled();
+    expect(res.status).toBe(200);
+    expect(Buffer.from(await res.arrayBuffer())).toEqual(bytes);
+  });
+
+  it('falls back to the primary client when the local hosting backend has no pooled client', async () => {
+    const bytes = Buffer.from('png-bytes');
+    mockRequest.mockResolvedValueOnce(chunk(bytes, bytes.length, bytes.length));
+
+    const res = await getHandler()(new Request('workspace-file://ws-1/pic.png'));
+
+    expect(mockRequest).toHaveBeenCalledTimes(1);
+    expect(res.status).toBe(200);
+  });
+
+  it('fails closed with 404 when the hosting named backend is disconnected', async () => {
+    windowBackends.set(7, 'conn-disconnected');
+    workspaceWindows.set('ws-1', [7]);
+
+    const res = await getHandler()(new Request('workspace-file://ws-1/pic.png'));
+
+    expect(res.status).toBe(404);
+    expect(mockRequest).not.toHaveBeenCalled();
+  });
+});
+
+describe('setupWorkspaceAssetProtocolHandler', () => {
+  beforeEach(() => {
+    protocolHandle.mockClear();
+    mockRequest.mockReset();
+    pooledRequests.clear();
+    windowBackends.clear();
+    workspaceWindows.clear();
+    // See the workspace-file beforeEach: unpooled-local stamping avoids the
+    // no-hosting-window retry delay in primary-client tests.
+    windowBackends.set(7, 'local');
+    workspaceWindows.set('ws-1', [7]);
+  });
+
+  const asset = (data: Buffer, mimeType = 'image/png') => ({
+    assetId: 'asset-1',
+    mimeType,
+    data: data.toString('base64'),
+    sizeKb: Math.ceil(data.length / 1024),
+  });
+
+  it('serves an asset via note.readAsset on the primary client for an unpooled local backend', async () => {
+    const bytes = Buffer.from([0x89, 0x50, 0x4e, 0x47]);
+    mockRequest.mockResolvedValueOnce(asset(bytes));
+
+    const res = await getAssetHandler()(new Request('workspace-asset://ws-1/asset-1'));
+
+    expect(mockRequest).toHaveBeenCalledWith('note.readAsset', {
+      workspaceId: 'ws-1',
+      asset: 'asset-1',
+    });
+    expect(res.status).toBe(200);
+    expect(res.headers.get('Content-Type')).toBe('image/png');
+    expect(Buffer.from(await res.arrayBuffer())).toEqual(bytes);
+  });
+
+  it('retries resolution then serves via the primary client when no window ever hosts the workspace', async () => {
+    // Exercises the initial-navigation race path end-to-end: the bounded
+    // retry (real timers) exhausts, then the primary fallback serves.
+    const bytes = Buffer.from('late-bytes');
+    mockRequest.mockResolvedValueOnce(asset(bytes));
+
+    const res = await getAssetHandler()(new Request('workspace-asset://ws-unknown/asset-1'));
+
+    expect(mockRequest).toHaveBeenCalledWith('note.readAsset', {
+      workspaceId: 'ws-unknown',
+      asset: 'asset-1',
+    });
+    expect(res.status).toBe(200);
+  });
+
+  it('issues note.readAsset on the backend of the window hosting the workspace', async () => {
+    const bytes = Buffer.from('asset-bytes');
+    const remoteRequest = bindWorkspaceToBackend('ws-remote', 'conn-2');
+    remoteRequest.mockResolvedValueOnce(asset(bytes, 'image/webp'));
+
+    const res = await getAssetHandler()(new Request('workspace-asset://ws-remote/asset-1'));
+
+    expect(remoteRequest).toHaveBeenCalledWith('note.readAsset', {
+      workspaceId: 'ws-remote',
+      asset: 'asset-1',
+    });
+    expect(mockRequest).not.toHaveBeenCalled();
+    expect(res.status).toBe(200);
+    expect(res.headers.get('Content-Type')).toBe('image/webp');
+    expect(Buffer.from(await res.arrayBuffer())).toEqual(bytes);
+  });
+
+  it('falls back to the primary client when the local hosting backend has no pooled client', async () => {
+    const bytes = Buffer.from('asset-bytes');
+    mockRequest.mockResolvedValueOnce(asset(bytes));
+
+    const res = await getAssetHandler()(new Request('workspace-asset://ws-1/asset-1'));
+
+    expect(mockRequest).toHaveBeenCalledTimes(1);
+    expect(res.status).toBe(200);
+  });
+
+  it('fails closed with 404 when the hosting named backend is disconnected', async () => {
+    windowBackends.set(7, 'conn-disconnected');
+    workspaceWindows.set('ws-1', [7]);
+
+    const res = await getAssetHandler()(new Request('workspace-asset://ws-1/asset-1'));
+
+    expect(res.status).toBe(404);
+    expect(mockRequest).not.toHaveBeenCalled();
+  });
+
+  it('maps daemon errors to 404', async () => {
+    mockRequest.mockRejectedValueOnce(new Error('asset not found'));
+
+    const res = await getAssetHandler()(new Request('workspace-asset://ws-1/asset-1'));
+
+    expect(res.status).toBe(404);
+  });
+
+  it('rejects asset ids with path separators without issuing an RPC', async () => {
+    const res = await getAssetHandler()(new Request('workspace-asset://ws-1/a%2Fb'));
+
+    expect(res.status).toBe(400);
+    expect(mockRequest).not.toHaveBeenCalled();
   });
 });

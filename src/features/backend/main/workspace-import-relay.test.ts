@@ -14,7 +14,10 @@ import {
   type ImportFileSource,
   type ImportRelayDeps,
 } from './workspace-import-relay';
-import type { ImportProgressEvent } from '../../../shared/types/workspace-transfer';
+import type {
+  ImportProgressEvent,
+  ImportStartParams,
+} from '../../../shared/types/workspace-transfer';
 
 const MANIFEST = { formatVersion: 1, workspaceId: 'ws-1', creatingIntentdVersion: '1.2.3' };
 
@@ -97,14 +100,27 @@ function makeDeps(
 ) {
   const progress: ImportProgressEvent[] = [];
   const deps: ImportRelayDeps = {
-    getClient: () => client.client,
     showOpenDialog: vi.fn(async () => '/tmp/in.zip'),
     openFile: vi.fn(async () => file.file),
     broadcastProgress: (e) => progress.push(e),
+    isOwnerGone: vi.fn(() => false),
     logger: { info: vi.fn(), warn: vi.fn() },
     ...extra,
   };
   return { deps, progress };
+}
+
+/** Default owning window for tests that don't exercise cross-window affinity. */
+const OWNER = 101;
+
+/** Relay wrapper defaulting the ownerId so single-window tests stay terse. */
+function makeRelay(deps: ImportRelayDeps) {
+  const relay = createWorkspaceImportRelay(deps);
+  return {
+    start: (params: ImportStartParams, client: RelayRpcClient, ownerId: number = OWNER) =>
+      relay.start(params, client, ownerId),
+    cancel: (ownerId: number = OWNER) => relay.cancel(ownerId),
+  };
 }
 
 describe('workspace import relay', () => {
@@ -112,9 +128,9 @@ describe('workspace import relay', () => {
     const client = makeClient();
     const file = makeFile();
     const { deps, progress } = makeDeps(client, file);
-    const relay = createWorkspaceImportRelay(deps);
+    const relay = makeRelay(deps);
 
-    const result = await relay.start({});
+    const result = await relay.start({}, client.client);
 
     expect(result).toEqual({
       success: true,
@@ -149,9 +165,9 @@ describe('workspace import relay', () => {
     const { deps } = makeDeps(client, file, {
       showOpenDialog: vi.fn(async () => undefined),
     });
-    const relay = createWorkspaceImportRelay(deps);
+    const relay = makeRelay(deps);
 
-    const result = await relay.start({});
+    const result = await relay.start({}, client.client);
 
     expect(result).toEqual({ success: false, canceled: true });
     expect(client.calls).toHaveLength(0);
@@ -165,9 +181,9 @@ describe('workspace import relay', () => {
     });
     const file = makeFile();
     const { deps } = makeDeps(client, file);
-    const relay = createWorkspaceImportRelay(deps);
+    const relay = makeRelay(deps);
 
-    const result = await relay.start({});
+    const result = await relay.start({}, client.client);
 
     expect(result).toEqual({ success: false, error: daemonError });
     const methods = client.calls.map((c) => c.method);
@@ -181,9 +197,9 @@ describe('workspace import relay', () => {
     });
     const file = makeFile();
     const { deps } = makeDeps(client, file);
-    const relay = createWorkspaceImportRelay(deps);
+    const relay = makeRelay(deps);
 
-    const result = await relay.start({});
+    const result = await relay.start({}, client.client);
 
     expect(result).toEqual({ success: false, error: 'link dropped' });
     const abort = client.calls.find((c) => c.method === 'workspace.import.abort');
@@ -197,9 +213,9 @@ describe('workspace import relay', () => {
     });
     const file = makeFile();
     const { deps } = makeDeps(client, file);
-    const relay = createWorkspaceImportRelay(deps);
+    const relay = makeRelay(deps);
 
-    const result = await relay.start({});
+    const result = await relay.start({}, client.client);
 
     expect(result).toEqual({ success: false, error: 'sha mismatch' });
     expect(client.calls.some((c) => c.method === 'workspace.import.abort')).toBe(true);
@@ -209,7 +225,7 @@ describe('workspace import relay', () => {
     const client = makeClient();
     const file = makeFile();
     const { deps } = makeDeps(client, file);
-    const relay = createWorkspaceImportRelay(deps);
+    const relay = makeRelay(deps);
     // Cancel as soon as the first chunk lands on the wire.
     const originalRequest = client.client.request.bind(client.client);
     let cancelled = false;
@@ -222,7 +238,7 @@ describe('workspace import relay', () => {
       return result as never;
     };
 
-    const result = await relay.start({});
+    const result = await relay.start({}, client.client);
 
     expect(result).toEqual({ success: false, canceled: true });
     expect(client.calls.some((c) => c.method === 'workspace.import.abort')).toBe(true);
@@ -237,14 +253,14 @@ describe('workspace import relay', () => {
     const openDialog = vi.fn(async () => '/tmp/in.zip');
     const openFile = vi.fn(async () => file.file);
     const { deps } = makeDeps(failing, file, { showOpenDialog: openDialog, openFile });
-    const relay = createWorkspaceImportRelay(deps);
+    const relay = makeRelay(deps);
 
-    await relay.start({});
+    await relay.start({}, failing.client);
     expect(openDialog).toHaveBeenCalledTimes(1);
 
     const second = makeFile();
     openFile.mockResolvedValueOnce(second.file);
-    await relay.start({ reuseLastFile: true });
+    await relay.start({ reuseLastFile: true }, failing.client);
 
     expect(openDialog).toHaveBeenCalledTimes(1);
     expect(openFile).toHaveBeenLastCalledWith('/tmp/in.zip');
@@ -263,9 +279,9 @@ describe('workspace import relay', () => {
     });
     const file = makeFile();
     const { deps } = makeDeps(client, file);
-    const relay = createWorkspaceImportRelay(deps);
+    const relay = makeRelay(deps);
 
-    const result = await relay.start({});
+    const result = await relay.start({}, client.client);
 
     expect(result).toMatchObject({ success: true });
     const seqOnes = client.calls.filter(
@@ -282,9 +298,9 @@ describe('workspace import relay', () => {
       });
       const file = makeFile();
       const { deps } = makeDeps(client, file);
-      const relay = createWorkspaceImportRelay(deps);
+      const relay = makeRelay(deps);
 
-      const result = await relay.start({});
+      const result = await relay.start({}, client.client);
 
       expect(result).toEqual({
         success: false,
@@ -298,7 +314,7 @@ describe('workspace import relay', () => {
   it('a cancel while the open dialog is up discards the picked file', async () => {
     const client = makeClient();
     const file = makeFile();
-    let relay: ReturnType<typeof createWorkspaceImportRelay>;
+    let relay: ReturnType<typeof makeRelay>;
     const { deps } = makeDeps(client, file, {
       showOpenDialog: vi.fn(async () => {
         // The wizard closes (cancel) while the native dialog is still open.
@@ -306,9 +322,9 @@ describe('workspace import relay', () => {
         return '/tmp/in.zip';
       }),
     });
-    relay = createWorkspaceImportRelay(deps);
+    relay = makeRelay(deps);
 
-    const result = await relay.start({});
+    const result = await relay.start({}, client.client);
 
     expect(result).toEqual({ success: false, canceled: true });
     expect(client.calls).toHaveLength(0);
@@ -330,16 +346,149 @@ describe('workspace import relay', () => {
       return (await originalRequest(method, params, options)) as never;
     };
     const { deps } = makeDeps(client, file);
-    const relay = createWorkspaceImportRelay(deps);
+    const relay = makeRelay(deps);
 
-    const first = relay.start({});
+    const first = relay.start({}, client.client);
     await vi.waitFor(() => {
       if (!commitStarted) throw new Error('commit not reached yet');
     });
-    const second = await relay.start({});
+    const second = await relay.start({}, client.client);
     expect(second).toEqual({ success: false, error: 'an import is already in progress' });
 
     releaseCommit?.();
     await expect(first).resolves.toMatchObject({ success: true });
+  });
+});
+
+describe('workspace import relay — per-window session affinity (monorepo#3519)', () => {
+  const OTHER = 202;
+
+  /** Start an import and hold its commit so the session stays in flight. */
+  function makeGatedClient() {
+    const client = makeClient();
+    let commitStarted = false;
+    let releaseCommit: (() => void) | undefined;
+    const commitGate = new Promise<void>((resolve) => (releaseCommit = resolve));
+    const originalRequest = client.client.request.bind(client.client);
+    client.client.request = async (method, params, options) => {
+      if (method === 'workspace.import.commit') {
+        commitStarted = true;
+        await commitGate;
+      }
+      return (await originalRequest(method, params, options)) as never;
+    };
+    return {
+      ...client,
+      commitReached: () => commitStarted,
+      releaseCommit: () => releaseCommit?.(),
+    };
+  }
+
+  it('rejects cancel from a non-owning window; the import completes', async () => {
+    const client = makeGatedClient();
+    const file = makeFile();
+    const { deps } = makeDeps(client, file);
+    const relay = makeRelay(deps);
+
+    const first = relay.start({}, client.client);
+    await vi.waitFor(() => {
+      if (!client.commitReached()) throw new Error('commit not reached yet');
+    });
+
+    const hijack = await relay.cancel(OTHER);
+    expect(hijack).toEqual({
+      success: false,
+      error: 'the import session belongs to another window',
+      code: 'not-session-owner',
+    });
+
+    client.releaseCommit();
+    await expect(first).resolves.toMatchObject({ success: true });
+    expect(client.calls.some((c) => c.method === 'workspace.import.abort')).toBe(false);
+  });
+
+  it('allows cancel from another window once the owning window is gone', async () => {
+    const isOwnerGone = vi.fn(() => false);
+    const client = makeGatedClient();
+    const file = makeFile();
+    const { deps } = makeDeps(client, file, { isOwnerGone });
+    const relay = makeRelay(deps);
+
+    const first = relay.start({}, client.client);
+    await vi.waitFor(() => {
+      if (!client.commitReached()) throw new Error('commit not reached yet');
+    });
+
+    isOwnerGone.mockReturnValue(true);
+    const result = await relay.cancel(OTHER);
+    expect(result).toEqual({ success: true });
+    expect(isOwnerGone).toHaveBeenCalledWith(OWNER);
+
+    client.releaseCommit();
+    await expect(first).resolves.toMatchObject({ success: false, canceled: true });
+  });
+
+  it('releases an in-flight run whose owner is gone: a new start cancels it and proceeds', async () => {
+    const isOwnerGone = vi.fn(() => false);
+    const client = makeGatedClient();
+    const file = makeFile();
+    const { deps } = makeDeps(client, file, { isOwnerGone });
+    const relay = makeRelay(deps);
+
+    // Orphaned run: held at commit, then its window closes.
+    const orphan = relay.start({}, client.client);
+    await vi.waitFor(() => {
+      if (!client.commitReached()) throw new Error('commit not reached yet');
+    });
+    isOwnerGone.mockReturnValue(true);
+
+    const fresh = makeClient();
+    const second = relay.start({}, fresh.client, OTHER);
+    client.releaseCommit();
+    // The orphan unwinds as cancelled (its cancel raced the commit and lost).
+    await expect(orphan).resolves.toMatchObject({ success: false, canceled: true });
+    isOwnerGone.mockReturnValue(false);
+    await expect(second).resolves.toMatchObject({ success: true });
+  });
+
+  it('keeps rejecting a second start while the in-flight run\'s owner is alive', async () => {
+    const client = makeGatedClient();
+    const file = makeFile();
+    const { deps } = makeDeps(client, file);
+    const relay = makeRelay(deps);
+
+    const first = relay.start({}, client.client);
+    await vi.waitFor(() => {
+      if (!client.commitReached()) throw new Error('commit not reached yet');
+    });
+    const second = await relay.start({}, client.client, OTHER);
+    expect(second).toMatchObject({ success: false, error: expect.stringContaining('already') });
+
+    client.releaseCommit();
+    await expect(first).resolves.toMatchObject({ success: true });
+  });
+
+  it('does not reuse another window\'s last file: retry from a second window re-opens the dialog', async () => {
+    const failing = makeClient({
+      'workspace.import.commit': () => new Error('boom'),
+    });
+    const file = makeFile();
+    const openDialog = vi.fn(async () => '/tmp/in.zip');
+    const openFile = vi.fn(async () => file.file);
+    const { deps } = makeDeps(failing, file, { showOpenDialog: openDialog, openFile });
+    const relay = makeRelay(deps);
+
+    await relay.start({}, failing.client);
+    expect(openDialog).toHaveBeenCalledTimes(1);
+
+    // A different window's "retry" must not silently re-run the first
+    // window's archive — it gets its own open dialog.
+    openDialog.mockResolvedValueOnce('/tmp/other.zip');
+    const second = makeFile();
+    openFile.mockResolvedValueOnce(second.file);
+    await relay.start({ reuseLastFile: true }, failing.client, OTHER);
+
+    expect(openDialog).toHaveBeenCalledTimes(2);
+    expect(openFile).toHaveBeenLastCalledWith('/tmp/other.zip');
   });
 });

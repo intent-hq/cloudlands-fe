@@ -53,7 +53,6 @@
   } from '$store/renderer/slices/ui-layout/ui-layout-slice';
 
   import { createNoteRequested } from '$store/renderer/slices/note-read-tracking/note-read-tracking-slice';
-  import { markWorkspaceSeen } from '$features/workspace/mark-workspace-seen';
   import { setOnboardingActive } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
 
   // Components
@@ -69,10 +68,7 @@
   import { PanelLayout } from '$lib/components/layout/panel-system';
   import { getPanelLayoutManager } from '$features/layout/panel-layout-adapter';
 
-  import {
-    selectPanelColumnCountsByWorkspaceId,
-    selectPanelLayoutRoot,
-  } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
+  import { selectPanelLayoutRoot } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
 
   // Onboarding
   import OnboardingPage from '$features/onboarding/OnboardingPage.svelte';
@@ -88,10 +84,6 @@
   } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
   import MultiSelectTabbedSidebar from '$lib/components/workspace/MultiSelectTabbedSidebar.svelte';
   import { m } from '$shared/paraglide/messages.js';
-  import type {
-    PanelCycleBoundaryTarget,
-    PanelCycleDirection,
-  } from '$features/layout/panel-cycle-navigation';
   import { store as appStore } from '$store/renderer/store';
 
   // eslint-disable-next-line intent/no-component-async-data-fetch -- Constructs a logger; no domain data is fetched.
@@ -99,27 +91,9 @@
 
   interface Props {
     workspaceId: string;
-    active?: boolean;
-    manageTab?: boolean;
-    columnMode?: boolean;
-    onCloseWorkspace?: (event: MouseEvent) => void;
-    onSidebarWidthChange?: (width: number) => void;
-    onPanelMovePreviewWidthRatioChange?: (ratio: number) => void;
-    onPanelCanvasWidthChange?: (width: number) => void;
-    onCyclePanelBoundary?: (direction: PanelCycleDirection) => PanelCycleBoundaryTarget | null;
   }
 
-  let {
-    workspaceId,
-    active = true,
-    manageTab = true,
-    columnMode = false,
-    onCloseWorkspace,
-    onSidebarWidthChange,
-    onPanelMovePreviewWidthRatioChange,
-    onPanelCanvasWidthChange,
-    onCyclePanelBoundary,
-  }: Props = $props();
+  let { workspaceId }: Props = $props();
   const surfaceWorkspaceId = $derived(
     workspaceId && workspaceId !== 'new' ? WorkspaceId(workspaceId) : null,
   );
@@ -127,40 +101,6 @@
   const panelLayoutIdStore = writable(workspaceId);
   $effect(() => panelLayoutIdStore.set(workspaceId));
   const panelLayoutRoot$ = selectPanelLayoutRoot(panelLayoutIdStore);
-  const panelColumnCountsByWorkspaceId$ = selectPanelColumnCountsByWorkspaceId();
-  const columnPanelCount = $derived($panelColumnCountsByWorkspaceId$[panelLayoutId] ?? 0);
-  let sidebarFillsAvailableWidth = $state(false);
-  let previousColumnPanelCount: number | null = null;
-  let sidebarFillTimer: ReturnType<typeof setTimeout> | null = null;
-
-  $effect(() => {
-    const nextPanelCount = columnPanelCount;
-    if (sidebarFillTimer) clearTimeout(sidebarFillTimer);
-
-    if (!columnMode) {
-      sidebarFillsAvailableWidth = false;
-      previousColumnPanelCount = nextPanelCount;
-      return;
-    }
-
-    const delayCompactFill =
-      previousColumnPanelCount !== null && previousColumnPanelCount > 0 && nextPanelCount === 0;
-    previousColumnPanelCount = nextPanelCount;
-    if (!delayCompactFill) {
-      sidebarFillsAvailableWidth = nextPanelCount === 0;
-      return;
-    }
-
-    sidebarFillsAvailableWidth = false;
-    sidebarFillTimer = setTimeout(() => {
-      sidebarFillsAvailableWidth = true;
-      sidebarFillTimer = null;
-    }, 300);
-
-    return () => {
-      if (sidebarFillTimer) clearTimeout(sidebarFillTimer);
-    };
-  });
 
   // ============================================================================
   // Core State
@@ -307,18 +247,15 @@
 
   // Hide the left nav bar and top bar workspace controls during onboarding
   $effect(() => {
-    if (!active) return;
     appStore.dispatch(setOnboardingActive(showOnboarding));
     return () => appStore.dispatch(setOnboardingActive(false));
   });
 
-  $effect(() => {
-    if (!active || !workspaceId || workspaceId === 'new') return;
-    // Viewing a workspace clears its unread attention on the daemon
-    // (fire-and-forget `workspace.markSeen`, PROTOCOL §5.1); the
-    // `workspace:attention-changed` event drives the UI clear.
-    markWorkspaceSeen(workspaceId);
-  });
+  // Viewing a workspace does NOT clear its unread attention: the flag is
+  // daemon-derived from per-agent seen markers (PROTOCOL §5.1) and clears only
+  // as each unread agent conversation is read (`agent.markSeen`, driven by the
+  // per-agent unread-tracking triggers). Explicit "mark as read" gestures call
+  // `workspace.markSeen` (mark every agent seen) from the sidebar cards.
 
   // Load workspace store on mount
   onMount(() => {
@@ -328,22 +265,10 @@
       appStore.dispatch(loadWorkspacesRequested());
     }
 
-    // Re-focusing the window while a workspace is on screen counts as viewing
-    // it — mark it seen so unread raised while the window was backgrounded
-    // clears the moment the user comes back.
-    const handleWindowFocus = () => {
-      if (workspaceId) markWorkspaceSeen(workspaceId);
-    };
-    window.addEventListener('focus', handleWindowFocus);
-
     // The `initial-agent-pending` sessionStorage marker is no longer stashed
     // by the daemon-owned create flow, so the fresh-creation fade-in transition
     // no longer keys off it. Any equivalent signal should come from workspace
     // creation events / navigation state going forward.
-
-    return () => {
-      window.removeEventListener('focus', handleWindowFocus);
-    };
   });
 
   // Create cleanup manager for this component
@@ -557,9 +482,6 @@
     get previousWorkspaceId() {
       return previousWorkspaceId;
     },
-    get manageTab() {
-      return manageTab;
-    },
   });
 
   // ============================================================================
@@ -624,7 +546,6 @@
 
   // Monitor file tracking store's main panel view for commit and diff navigation
   $effect(() => {
-    if (!active) return;
     const mainPanelView = $ftMainPanelView$;
     if (mainPanelView?.type === 'commit' && mainPanelView.commit && workspaceState) {
       logger.info('[WorkspacePage] Navigating to commit view', {
@@ -715,10 +636,6 @@
    */
   async function handleCreateAgent(agentType?: string, panelId?: string) {
     if (!$workspace) return;
-    if (columnMode) {
-      appStore.dispatch(createAgentRequested($workspace.id, agentType, { panelLayoutId, panelId }));
-      return;
-    }
     appStore.dispatch(createAgentRequested($workspace.id, agentType, { panelId }));
   }
 
@@ -728,12 +645,6 @@
    */
   async function handleCreateAgentWithSpecialist(specialistId: string | null, panelId?: string) {
     if (!$workspace) return;
-    if (columnMode) {
-      appStore.dispatch(
-        createAgentWithSpecialistRequested($workspace.id, specialistId, { panelLayoutId, panelId }),
-      );
-      return;
-    }
     appStore.dispatch(createAgentWithSpecialistRequested($workspace.id, specialistId, { panelId }));
   }
 
@@ -753,7 +664,7 @@
 
   usePanelShortcuts({
     get enabled() {
-      return active;
+      return true;
     },
     // Cmd+B is registered once by the global workspace shortcut router.
     onOpenAgentOverview: () => {
@@ -896,8 +807,6 @@
       <MultiSelectTabbedSidebar
         workspaceId={$workspace?.id || workspaceId}
         {panelLayoutId}
-        {onCloseWorkspace}
-        draggableTitleRegion={columnMode}
         onCreateNote={handleCreateNote}
         onCreateFile={handleCreateFile}
         onFileRenamed={handleFileRenamed}
@@ -933,10 +842,7 @@
             onNavigateAway={() => void navigateToFirstWorkspace()}
           />
         {:else}
-          <ContentSkeleton
-            panelCount={columnMode ? columnPanelCount : 1}
-            layoutRoot={$panelLayoutRoot$}
-          />
+          <ContentSkeleton panelCount={1} layoutRoot={$panelLayoutRoot$} />
         {/if}
       {:else}
         <div
@@ -949,17 +855,9 @@
           <PanelLayout
             workspaceId={$workspace?.id || workspaceId}
             layoutId={panelLayoutId}
-            {active}
-            contained={columnMode}
-            canvasSizing={columnMode ? 'content' : 'viewport'}
-            hideEmptyLayout={columnMode}
-            allowCloseLastPanel={columnMode}
             onCreateAgent={(panelId) => handleCreateAgent(undefined, panelId)}
             onCreateAgentWithSpecialist={handleCreateAgentWithSpecialist}
             onCreateNote={handleCreateNote}
-            {onPanelMovePreviewWidthRatioChange}
-            {onPanelCanvasWidthChange}
-            {onCyclePanelBoundary}
           />
         </div>
       {/if}
@@ -995,7 +893,6 @@
       bind:this={surfaceElement}
       class="h-full min-h-0 w-full overflow-hidden"
       data-workspace-surface={workspaceId}
-      data-active={active}
       data-loading={!$workspace}
     >
       <WorkspaceSurfaceLoadBoundary
@@ -1013,10 +910,6 @@
             sidebarSide={$sidebarSide$}
             sidebarStorageKey={`workspace-left-panel-width:${workspaceId}`}
             sidebarExpandedStorageKey={`workspace-left-panel-expanded-width:${workspaceId}`}
-            {columnMode}
-            {sidebarFillsAvailableWidth}
-            disableSidebarWidthTransition={columnMode}
-            {onSidebarWidthChange}
             startCollapsed={isOnboarding}
           />
         {/snippet}

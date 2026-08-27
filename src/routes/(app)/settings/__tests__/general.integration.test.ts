@@ -90,7 +90,7 @@ let storeContext: ReduxStoreContext | undefined;
 const originalInvoke = window.electronAPI!.invoke;
 let setChannelResponse: { success: boolean; error?: { message: string } };
 
-function renderSettingsTab(tab: 'general' | 'appearance' | 'advanced') {
+function renderSettingsTab(tab: 'general' | 'appearance' | 'app-behavior' | 'advanced') {
   window.history.pushState({}, '', `/settings?tab=${tab}`);
   mocks.page.url = new URL(window.location.href);
   return render(SettingsPage, {
@@ -100,6 +100,7 @@ function renderSettingsTab(tab: 'general' | 'appearance' | 'advanced') {
 
 const renderGeneral = () => renderSettingsTab('general');
 const renderAppearance = () => renderSettingsTab('appearance');
+const renderAppBehavior = () => renderSettingsTab('app-behavior');
 const renderAdvanced = () => renderSettingsTab('advanced');
 
 function installDispatchRecorder() {
@@ -172,15 +173,18 @@ describe('Settings migration', () => {
     expect(
       readFileSync('src/lib/components/workspace/WorkspaceSidebarHeader.svelte', 'utf8'),
     ).not.toContain('data-panel-column-count-trigger');
-    expect(
-      readFileSync('src/lib/components/layout/panel-system/PanelTabBar.svelte', 'utf8'),
-    ).toContain('data-panel-column-count-trigger');
+    const panelTabBar = readFileSync(
+      'src/lib/components/layout/panel-system/PanelTabBar.svelte',
+      'utf8',
+    );
+    expect(panelTabBar).not.toContain('data-panel-column-count-trigger');
+    expect(panelTabBar).toContain('data-add-panel-column');
     recorder.restore();
   });
 
   it('dispatches the exact Redux update-channel action without a direct backend request', async () => {
     const recorder = installDispatchRecorder();
-    renderGeneral();
+    renderAppBehavior();
 
     await fireEvent.click(screen.getByRole('button', { name: 'Select update channel' }));
     await fireEvent.pointerUp(await screen.findByRole('option', { name: 'Beta' }), {
@@ -198,9 +202,9 @@ describe('Settings migration', () => {
     recorder.restore();
   });
 
-  it('keeps the channel selector focusable and offers all three channels', async () => {
+  it('keeps the channel selector focusable and offers all four channels', async () => {
     const recorder = installDispatchRecorder();
-    renderGeneral();
+    renderAppBehavior();
 
     const trigger = screen.getByRole('button', { name: 'Select update channel' });
     expect(trigger.textContent).toContain('Stable');
@@ -210,6 +214,7 @@ describe('Settings migration', () => {
 
     expect(await screen.findByRole('option', { name: 'Stable' })).toBeTruthy();
     expect(screen.getByRole('option', { name: 'Beta' })).toBeTruthy();
+    expect(screen.getByRole('option', { name: 'Disabled' })).toBeTruthy();
     await fireEvent.pointerUp(screen.getByRole('option', { name: 'Alpha' }), {
       button: 0,
       pointerType: 'mouse',
@@ -217,6 +222,23 @@ describe('Settings migration', () => {
 
     await waitFor(() => expect(selectUpdateChannel.select(appStore.state)).toBe('alpha'));
     expect(recorder.calls).toContainEqual(setUpdateChannel('alpha'));
+    expect(backendCalls()).toHaveLength(0);
+    recorder.restore();
+  });
+
+  it('renders the Disabled option and dispatches setUpdateChannel(disabled) on selection', async () => {
+    const recorder = installDispatchRecorder();
+    renderGeneral();
+
+    await fireEvent.click(screen.getByRole('button', { name: 'App Behavior' }));
+    await fireEvent.click(screen.getByRole('button', { name: 'Select update channel' }));
+    await fireEvent.pointerUp(await screen.findByRole('option', { name: 'Disabled' }), {
+      button: 0,
+      pointerType: 'mouse',
+    });
+
+    await waitFor(() => expect(selectUpdateChannel.select(appStore.state)).toBe('disabled'));
+    expect(recorder.calls).toContainEqual(setUpdateChannel('disabled'));
     expect(backendCalls()).toHaveLength(0);
     recorder.restore();
   });

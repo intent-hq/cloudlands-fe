@@ -36,6 +36,10 @@
     type AgentAvatarStackItem,
   } from '$features/agent/components/agent-avatar/AgentAvatarStack.svelte';
   import { getAvatarStateForSession } from '$features/agent/components/agent-avatar/avatar-state';
+  import {
+    isAgentRunningState,
+    toAgentRuntimeStateInput,
+  } from '$shared/utils/agent-runtime-state';
   import type { AgentSession } from '$shared/types';
 
   import {
@@ -256,6 +260,28 @@
     }
     return ids;
   });
+  // Whether the agent's live session shows a running turn right now. Uses the
+  // same session→runtime-input mapping as getAvatarStateForSession so a row's
+  // grouping always agrees with the state its avatar renders.
+  function isSessionRunning(session: AgentSession | undefined): boolean {
+    if (!session) return false;
+    return isAgentRunningState(toAgentRuntimeStateInput(session));
+  }
+  // Effective finished set: delegation-group completion lists never un-complete
+  // when an agent is re-woken by a message, so an agent whose live session
+  // shows a running turn is treated as active again — same precedent as the
+  // completed-vs-running deferral in getAvatarState. It returns to finished on
+  // its own once the new turn settles.
+  const finishedAgentIdSet = $derived.by(() => {
+    if (isolatedPreview) return completedAgentIdSet;
+    const agentSessionsById = selectAgentSessionsById.select(rendererState);
+    const ids = new Set<string>();
+    for (const id of completedAgentIdSet) {
+      if (isSessionRunning(agentSessionsById[id])) continue;
+      ids.add(id);
+    }
+    return ids;
+  });
   function getHeaderStackItems(rows: readonly WaitingAgentRow[]): AgentAvatarStackItem[] {
     const agentSessionsById = selectAgentSessionsById.select(rendererState);
     return rows.map((row): AgentAvatarStackItem => {
@@ -265,7 +291,7 @@
         agentId: row.agentId,
         specialist: session?.metadata?.specialist ?? session?.agentMetadata?.specialist ?? null,
         state: getAvatarStateForSession(session, {
-          isCompleted: completedAgentIdSet.has(row.agentId),
+          isCompleted: finishedAgentIdSet.has(row.agentId),
         }),
       };
     });
@@ -288,7 +314,7 @@
     if (session.attentionRequestKind === 'discussion') return 1;
 
     // Terminal states
-    if (completedAgentIdSet.has(agentId)) return 4;
+    if (finishedAgentIdSet.has(agentId)) return 4;
 
     const status = String(session.status).toLowerCase();
 
@@ -301,7 +327,7 @@
 
   const activeAgentRows = $derived.by(() => {
     const agentSessionsById = selectAgentSessionsById.select(rendererState);
-    const nonTerminal = waitingAgentRows.filter((row) => !completedAgentIdSet.has(row.agentId));
+    const nonTerminal = waitingAgentRows.filter((row) => !finishedAgentIdSet.has(row.agentId));
     // Stable semantic sort: group by priority, preserve source order within each group
     // Build index map for stable tie-breaking
     const sourceIndexMap = new Map<string, number>();
@@ -321,7 +347,7 @@
   const finishedAgentRows = $derived.by(() => {
     const agentSessionsById = selectAgentSessionsById.select(rendererState);
     return waitingAgentRows
-      .filter((row) => completedAgentIdSet.has(row.agentId))
+      .filter((row) => finishedAgentIdSet.has(row.agentId))
       .sort((a, b) => {
         const aTimestamp = timestampMillis(agentSessionsById[a.agentId]?.updatedAt);
         const bTimestamp = timestampMillis(agentSessionsById[b.agentId]?.updatedAt);
@@ -750,11 +776,11 @@
                   {summaryHeading}
                 </span>
               </span>
-              <span class="ml-auto flex min-w-0 flex-1 items-center justify-end">
+              <span class="ml-auto flex min-w-0 flex-1 items-center justify-end gap-2">
                 {#if waitingAgentsCollapsed}
                   <AgentAvatarStack
                     items={getHeaderStackItems(summaryAgentRows)}
-                    maxVisible={8}
+                    maxVisible={3}
                     adaptive
                   />
                 {:else}
@@ -789,7 +815,7 @@
             transition:safeSubscriptionSlide
           >
             {#each ungroupedAgentRows as row (row.agentId)}
-              {@render watchedAgentRow(row, completedAgentIdSet.has(row.agentId))}
+              {@render watchedAgentRow(row, finishedAgentIdSet.has(row.agentId))}
             {/each}
             {#if shouldGroupFinishedAgents}
               <div

@@ -46,12 +46,16 @@
     reportStreamLifecycle,
     streamTurnCorrelation,
   } from '$lib/utils/stream-lifecycle-telemetry';
-  import { saveAgentSessionRequested } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
+  import {
+    restoreRetiredAgentRequested,
+    saveAgentSessionRequested,
+  } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
   import {
     agentSessionDismissQuestionsRequested,
     agentSessionEditAndRegenerateRequested,
     agentSessionForkSessionRequested,
     agentSessionRegenerateFromMessageRequested,
+    agentSessionRetryFromStalledRequested,
     agentSessionRetryLastMessageRequested,
     agentSessionRetryWithModelRequested,
     agentSessionStopChatRequested,
@@ -177,6 +181,8 @@
     composeTranscript,
     isConversationStartLoaded,
     mapScrollTopToOrdinal,
+    OLDER_HISTORY_INDICATOR_QUIET_MS,
+    olderHistoryIndicatorAction,
     reconcileVirtualSpacer,
     restateFrozenSpacers,
     shouldRequestOlderHistory,
@@ -224,6 +230,10 @@
   import { parseSuggestedPromptsFromContentBlocks } from '$lib/utils/messageParser';
   import { getQueueInfo, isBatchedDeliverySeam, stripDequeueWaitNote } from '$lib/utils/queue-info';
   import {
+    eventCardAssistantMarginClass,
+    isAttentionQuestionAnswerSeam,
+  } from './attention-flow-spacing';
+  import {
     captureMessageSendOrigin,
     createMessageSendLaunchBubble,
   } from './message-send-transition';
@@ -242,10 +252,11 @@
     createLazyTurnHeightCache,
     type LazyTurnHeightCache,
   } from './lazy-turn-height-cache';
+  import { createMessageHydrationPolicy, type HydrationMessage } from './message-hydration-policy';
   import {
+    CHIEF_LAZY_MESSAGE_THRESHOLD,
     INITIAL_LAZY_MODE_TRACKER,
     isOlderHistoryPrepend,
-    isTurnInRecentWindow,
     nextLazyMode,
   } from './chat-turn-virtualization';
   import {
@@ -265,7 +276,6 @@
   } from '$store/renderer/slices/unread-tracking/unread-tracking-slice';
   import { selectDividerSession } from '$store/renderer/slices/unread-tracking/unread-tracking-selectors';
   import AuroraBackground from './AuroraBackground.svelte';
-  import AuroraSofteningLayer from './AuroraSofteningLayer.svelte';
   import {
     CHAT_SCROLL_END_MARKER_CLASS,
     CHAT_TRANSCRIPT_OVERFLOW_CLASS,
@@ -296,6 +306,7 @@
     findChatSearchMatches,
     type ChatSearchMatch,
   } from './chat-search';
+  import { requestSearchDisclosure } from './chat-search-disclosure';
   import { resolveHydratedInputModel } from './input-hydration';
   import {
     deriveQueuedMessagesVisibility,
@@ -449,6 +460,10 @@
   const dividerSession$ = selectDividerSession(agentIdStore);
   const isDelegatedBackgroundTaskAgent = $derived(isDelegatedBackgroundTaskSession($agentSession$));
 
+  // Retired sessions (PROTOCOL v7.5+, retiredAt set) are read-only: the transcript
+  // stays viewable but the composer is replaced with a restore affordance.
+  const isRetiredSession = $derived(!!$agentSession$?.retiredAt);
+
   // Derive error state: combine transient chatError with persisted agent status.
   // After a reload, chatError is null but agent status may be Error — use
   // stopReason or a generic message so StreamingStatus shows the failure + Retry button.
@@ -562,10 +577,11 @@
 
   let scrollContainer = $state<HTMLDivElement>();
   let composerElement = $state<HTMLDivElement>();
+  let composerHeight = $state(0);
   let inputComponent = $state<SimpleRichInput>();
   // Rehydrate the transcript scroll state cached by the previous instance's
-  // destroy (column windowing unmounts off-screen panels) so a remount keeps
-  // the user's reading position instead of re-entering at the bottom.
+  // destroy so a remount keeps the user's reading position instead of
+  // re-entering at the bottom.
   // svelte-ignore state_referenced_locally -- mount-time snapshot of the identity props.
   const cachedScroll =
     workspace?.id && agentId ? getCachedChatScroll(workspace.id, agentId) : undefined;
@@ -635,6 +651,16 @@
 
   let lazyTurnHeightCache = $state.raw<LazyTurnHeightCache>(createLazyTurnHeightCache('unbound'));
   let lazyTurnCacheScope = 'unbound';
+  let hydratedMessageIds = $state.raw<Set<string>>(new Set());
+
+  function syncHydratedMessageIds() {
+    hydratedMessageIds = new Set(messageHydrationPolicy.getHydratedIds());
+  }
+
+  const messageHydrationPolicy = createMessageHydrationPolicy([], {
+    onHydrate: syncHydratedMessageIds,
+    onDehydrate: syncHydratedMessageIds,
+  });
 
   $effect(() => {
     const scope = createLazyTurnCacheScope({
@@ -895,7 +921,8 @@
     chatTranscriptBottomInsetClass({
       isChiefWorkspace,
       isCompactMode,
-      showQueue: queuedMessagesVisibility.showQueue,
+      // Mirrors the render gate: retired sessions hide the queue block.
+      showQueue: queuedMessagesVisibility.showQueue && !isRetiredSession,
     }),
   );
 
@@ -950,6 +977,8 @@
   let searchInputRef: HTMLInputElement | null = $state(null);
   let panelElement: HTMLElement | null = $state(null);
   let currentSearchIndex = $state(0);
+  let searchOpenedDisclosures: Array<{ messageId: string; disclosureId: string }> = [];
+  let searchHighlightRequest = 0;
 
   // Tracks DOM focus within the panel wrapper. Combined with the `isPanelFocused`
   // prop (from the panel-system parent) so keyboard shortcuts that are scoped to a
@@ -1018,12 +1047,9 @@
   // Mirroring those exact transforms (instead of re-encoding them as a regex)
   // keeps the search index in lockstep with the renderer automatically.
   //
-  // Additionally:
-  //   - Only the last top-level content_group stays expanded after streaming
-  //     (`isLast={blockIndex === groupedBlocks.length - 1}` in
-  //     MessageContent.svelte); earlier groups collapse and their children are
-  //     removed from the DOM by ResponseGroup's `{#if isExpanded || showCylinder}`
-  //     gate, so matches inside them have no text nodes to highlight.
+  // Additionally, completed content groups are indexed with disclosure paths.
+  // Search can temporarily reveal the exact group that owns a match, then
+  // restore only the disclosure state that search changed.
   //   - Event-notification user messages are rendered as an EventWakeupBanner
   //     summary (+ optional AgentCards) instead of a ChatMessage, so the raw
   //     text never reaches the DOM.
@@ -1071,22 +1097,75 @@
     triggerHighlight();
   }
 
-  // Trigger highlighting (called from event handlers, not effects)
-  // Async: awaits Svelte's pending DOM updates so that any LazyTurn force-rendered
-  // by the visibleSearchTurnKeys change has actually rendered its message content
-  // before we run querySelector('[data-message-id="..."]').
+  async function restoreSearchDisclosures(
+    container: HTMLDivElement | undefined,
+    keepMessageId: string | undefined,
+    keep: ReadonlySet<string>,
+  ) {
+    if (!container) return;
+    const remaining: Array<{ messageId: string; disclosureId: string }> = [];
+    for (const opened of [...searchOpenedDisclosures].reverse()) {
+      if (opened.messageId === keepMessageId && keep.has(opened.disclosureId)) {
+        remaining.unshift(opened);
+        continue;
+      }
+      const message = container.querySelector(
+        `[data-message-id="${CSS.escape(opened.messageId)}"]`,
+      );
+      const disclosure = message?.querySelector(
+        `[data-chat-search-disclosure-id="${CSS.escape(opened.disclosureId)}"]`,
+      );
+      if (disclosure) requestSearchDisclosure(disclosure, false);
+      await tick();
+    }
+    searchOpenedDisclosures = remaining;
+  }
+
+  async function revealSearchMatch(
+    match: ChatSearchMatch | undefined,
+    container: HTMLDivElement | undefined,
+  ) {
+    const required = new Set(match?.disclosurePath ?? []);
+    await restoreSearchDisclosures(container, match?.messageId, required);
+    if (!match || !container) return;
+    const message = container.querySelector(`[data-message-id="${CSS.escape(match.messageId)}"]`);
+    if (!message) return;
+    for (const id of match.disclosurePath) {
+      const disclosure = message.querySelector(
+        `[data-chat-search-disclosure-id="${CSS.escape(id)}"]`,
+      );
+      if (!disclosure) continue;
+      if (disclosure.getAttribute('data-chat-search-expanded') !== 'true') {
+        requestSearchDisclosure(disclosure, true);
+        if (
+          !searchOpenedDisclosures.some(
+            (opened) => opened.messageId === match.messageId && opened.disclosureId === id,
+          )
+        ) {
+          searchOpenedDisclosures.push({ messageId: match.messageId, disclosureId: id });
+        }
+        await tick();
+        await new Promise(requestAnimationFrame);
+      }
+    }
+  }
+
+  // Trigger highlighting after LazyTurn materialization and disclosure reveal.
   async function triggerHighlight() {
-    // Use untrack to read reactive values without creating dependencies
+    const request = ++searchHighlightRequest;
     const query = untrack(() => debouncedSearchQuery);
     const index = untrack(() => currentSearchIndex);
     const isShowing = untrack(() => showSearch);
     const matches = untrack(() => allSearchMatches);
     const container = untrack(() => scrollContainer);
     await tick();
-    // Use requestAnimationFrame to ensure DOM is ready
-    requestAnimationFrame(() => {
-      doHighlightSearchMatches(query, index, matches, isShowing, container);
-    });
+    if (request !== searchHighlightRequest) return;
+    await revealSearchMatch(isShowing ? matches[index] : undefined, container);
+    if (request !== searchHighlightRequest) return;
+    await tick();
+    await new Promise(requestAnimationFrame);
+    if (request !== searchHighlightRequest) return;
+    doHighlightSearchMatches(query, index, matches, isShowing, container);
   }
 
   // Use CSS Custom Highlight API for search highlighting
@@ -1117,35 +1196,38 @@
     const allRanges: Range[] = [];
     let currentRange: Range | null = null;
 
-    // Group matches by messageId
-    const matchesByMessage = new Map<string, number[]>();
-    matches.forEach((m, globalIndex) => {
-      if (!matchesByMessage.has(m.messageId)) {
-        matchesByMessage.set(m.messageId, []);
-      }
-      matchesByMessage.get(m.messageId)!.push(globalIndex);
-    });
-
-    // PERF: Index message elements once instead of running querySelector per message.
-    // Previous implementation did a full container subtree scan for every message with
-    // matches; this collapses that to a single walk.
+    // Index materialized messages once. Only the active match's search-owned
+    // disclosure ancestors need to be present.
     const messageElById = new Map<string, Element>();
     for (const el of container.querySelectorAll('[data-message-id]')) {
       const id = (el as HTMLElement).dataset.messageId;
       if (id && !messageElById.has(id)) messageElById.set(id, el);
     }
 
-    for (const [messageId, globalIndices] of matchesByMessage) {
-      const messageEl = messageElById.get(messageId);
-      if (!messageEl) continue;
+    const matchesByBlock = new Map<
+      string,
+      Array<{ match: ChatSearchMatch; globalIndex: number }>
+    >();
+    matches.forEach((match, globalIndex) => {
+      const key = `${match.messageId}\u0000${match.blockPath}`;
+      const group = matchesByBlock.get(key) ?? [];
+      group.push({ match, globalIndex });
+      matchesByBlock.set(key, group);
+    });
 
-      // Walk all text nodes once, concatenating them into `fullText` and recording
-      // each node's cumulative start offset. Running indexOf on the concatenated text
-      // (instead of per-node) ensures we find matches that span multiple text nodes
-      // — e.g. a query landing across syntax-highlighter token boundaries inside a
-      // code block. Without this, the per-node scan miscounts against the catalog
-      // and subsequent matches in the same message get mislabelled global indices.
-      const walker = document.createTreeWalker(messageEl, NodeFilter.SHOW_TEXT, {
+    for (const blockMatches of matchesByBlock.values()) {
+      const first = blockMatches[0].match;
+      const messageEl = messageElById.get(first.messageId);
+      if (!messageEl) continue;
+      const selector = `[data-chat-search-block-path="${CSS.escape(first.blockPath)}"]`;
+      const blockEl = first.blockPath
+        ? messageEl.matches(selector)
+          ? messageEl
+          : messageEl.querySelector(selector)
+        : messageEl;
+      if (!blockEl) continue;
+
+      const walker = document.createTreeWalker(blockEl, NodeFilter.SHOW_TEXT, {
         acceptNode: (n) => {
           const parent = (n as Text).parentElement;
           if (!parent) return NodeFilter.FILTER_REJECT;
@@ -1174,29 +1256,23 @@
 
       const fullText = parts.join('');
       const lowerFullText = fullText.toLowerCase();
-      const maxMatches = globalIndices.length;
+      const maxOccurrence = Math.max(...blockMatches.map(({ match }) => match.occurrenceInBlock));
+      const rangesByOccurrence: Range[] = [];
       let searchPos = 0;
-      let matchCountInMessage = 0;
-
-      while (matchCountInMessage < maxMatches) {
+      while (rangesByOccurrence.length <= maxOccurrence) {
         const hit = lowerFullText.indexOf(lowerQuery, searchPos);
         if (hit === -1) break;
         const hitEnd = hit + lowerQuery.length;
-        const globalIndex = globalIndices[matchCountInMessage];
-
         const range = createRangeForSpan(textNodes, nodeStarts, hit, hitEnd);
-        if (range) {
-          if (globalIndex === currentIndex) {
-            currentRange = range;
-          } else {
-            allRanges.push(range);
-          }
-        }
-
-        matchCountInMessage++;
-        // Advance by query length (non-overlapping) — matches allSearchMatches'
-        // counting so global indices stay aligned with the catalog.
+        if (range) rangesByOccurrence.push(range);
         searchPos = hitEnd;
+      }
+
+      for (const { match, globalIndex } of blockMatches) {
+        const range = rangesByOccurrence[match.occurrenceInBlock];
+        if (!range) continue;
+        if (globalIndex === currentIndex) currentRange = range;
+        else allRanges.push(range);
       }
     }
 
@@ -1970,6 +2046,13 @@
     if (!settled) return;
     tick().then(() => {
       if (isComponentDestroyed || !scrollContainer) return;
+      // Discard raced this settle: the dispatch that cleared
+      // fetchingHistorySeek was a resumed:false reset, not a landing. The
+      // discard effect below owns the viewport (followToBottom on this
+      // same tick, one microtask later) — the failed-seek fallback must
+      // not dispatch an older-history page against the scrollTop the
+      // just-zeroed spacers clamped to an arbitrary position.
+      if (discardReanchorPending) return;
       const target = pendingSeekTargetOrdinal;
       pendingSeekTargetOrdinal = null;
       seekLandingPending = false;
@@ -1994,6 +2077,65 @@
             above + (target - startOrdinal) * rowHeight - scrollContainer.clientHeight / 2,
           ),
         );
+      });
+    });
+  });
+
+  // Transcript discard (§7.1 `resumed: false` seq-0 snapshot, e.g. after an
+  // intentd restart): the store dropped the retained transcript and the
+  // reducers reset the walk cursors + fetching flags atomically — but the
+  // panel-local walk geometry (spacers, seek debounce, landing-pending) was
+  // sized against the discarded rows and would strand the viewport inside a
+  // phantom spacer over an empty store. Zero it all and re-anchor to the
+  // fresh tail. Keyed on the snapshot's OBJECT IDENTITY (every
+  // chatTranscriptSnapshotApplied mints a fresh meta object) so only a NEW
+  // discarded snapshot fires; the first observation per agent only records
+  // the baseline (a mount over an already-discarded snapshot has nothing to
+  // reset). Identity — not seq — because the restart sequence clears the
+  // snapshot first (phase→null resets seq), and effect batching can flush
+  // the clear + fresh snapshot together, where a seq comparison against the
+  // pre-clear baseline could coincide and miss the discard.
+  let discardBaselineAgentId: string | undefined;
+  let discardBaselineMeta: typeof $transcriptSnapshotMeta$;
+  // Raised synchronously by the discard reset below until its re-anchor
+  // lands. The same dispatch that applies the discard also clears
+  // fetchingHistorySeek (the atomic reducer reset), so with a seek in
+  // flight the seek-settle effect above (created earlier, flushed earlier)
+  // observes a spurious settle and schedules its landing handler one
+  // microtask BEFORE this effect's followToBottom — with
+  // pendingSeekTargetOrdinal already nulled it would take the failed-seek
+  // fallback and dispatch a spurious older-history page. The flag makes it
+  // stand down for the discard's re-anchor.
+  let discardReanchorPending = false;
+  $effect(() => {
+    const meta = $transcriptSnapshotMeta$;
+    const currentAgentId = agentId;
+    untrack(() => {
+      if (currentAgentId !== discardBaselineAgentId) {
+        discardBaselineAgentId = currentAgentId;
+        discardBaselineMeta = meta;
+        // The older-history indicator tracked the PREVIOUS agent's walk:
+        // drop it instantly so switching agents mid-walk cannot carry the
+        // visible indicator (or its armed hide / pending evaluation) over
+        // to the newly selected agent for the quiet window.
+        resetOlderHistoryIndicator();
+        return;
+      }
+      if (meta === discardBaselineMeta) return;
+      const isNewDiscard = meta?.resumed === false;
+      discardBaselineMeta = meta;
+      if (!isNewDiscard) return;
+      cancelSeekDebounce();
+      seekLandingPending = false;
+      pendingSeekTargetOrdinal = null;
+      discardReanchorPending = true;
+      virtualSpacerHeight = 0;
+      virtualSpacerBelowHeight = 0;
+      shouldFollowBottom = true;
+      tick().then(() => {
+        discardReanchorPending = false;
+        if (isComponentDestroyed || !scrollContainer) return;
+        followToBottom(scrollContainer);
       });
     });
   });
@@ -2263,6 +2405,63 @@
     return () => container.removeEventListener('scroll', onScroll);
   });
 
+  // Chain-scoped visibility for the top "Loading older messages" indicator:
+  // the raw fetching flag toggles false between every page of the settle
+  // chain below, so rendering it directly blinked once per page. The
+  // indicator instead tracks the WALK — shown while a fetch is in flight or
+  // the settle re-evaluation is pending, hidden only after a short quiet
+  // window once the chain truly stops (olderHistoryIndicatorAction).
+  let olderHistoryIndicatorVisible = $state(false);
+  let olderHistoryChainEvaluationPending = false;
+  let olderHistoryIndicatorHideTimer: ReturnType<typeof setTimeout> | null = null;
+
+  function syncOlderHistoryIndicator(fetching: boolean) {
+    const action = olderHistoryIndicatorAction({
+      fetching,
+      chainEvaluationPending: olderHistoryChainEvaluationPending,
+      visible: olderHistoryIndicatorVisible,
+      hideArmed: olderHistoryIndicatorHideTimer !== null,
+    });
+    if (action === 'show') {
+      if (olderHistoryIndicatorHideTimer !== null) {
+        clearTimeout(olderHistoryIndicatorHideTimer);
+        olderHistoryIndicatorHideTimer = null;
+      }
+      olderHistoryIndicatorVisible = true;
+    } else if (action === 'arm-hide') {
+      olderHistoryIndicatorHideTimer = setTimeout(() => {
+        olderHistoryIndicatorHideTimer = null;
+        if (isComponentDestroyed) return;
+        olderHistoryIndicatorVisible = false;
+      }, OLDER_HISTORY_INDICATOR_QUIET_MS);
+    }
+  }
+
+  // Drop the indicator instantly (visible flag, armed hide timer, pending
+  // chain evaluation) — the agent-change branch of the discard-baseline
+  // effect above calls this so a mid-walk agent switch never carries the
+  // previous agent's indicator over to the new agent for the quiet window.
+  // Also rebaselines the settle tracker: the switch flips
+  // $fetchingOlderHistory$ to the NEW agent's value, and without the
+  // rebaseline that flip would read as the old agent's walk settling
+  // (spurious settle → evaluation pending → indicator re-shown).
+  function resetOlderHistoryIndicator() {
+    if (olderHistoryIndicatorHideTimer !== null) {
+      clearTimeout(olderHistoryIndicatorHideTimer);
+      olderHistoryIndicatorHideTimer = null;
+    }
+    olderHistoryChainEvaluationPending = false;
+    olderHistoryIndicatorVisible = false;
+    wasFetchingOlderHistory = false;
+  }
+
+  // Clear the indicator hide timer on destroy.
+  $effect(() => {
+    return () => {
+      if (olderHistoryIndicatorHideTimer !== null) clearTimeout(olderHistoryIndicatorHideTimer);
+    };
+  });
+
   // Continuous paging: the scroll listener above is edge-triggered, and a
   // prepend + anchor restore emits no scroll event — without this settle
   // re-evaluation the walk strands after one page while the user holds the
@@ -2278,12 +2477,21 @@
     const fetching = $fetchingOlderHistory$;
     const settled = wasFetchingOlderHistory && !fetching;
     wasFetchingOlderHistory = fetching;
+    // The pending flag is raised BEFORE the indicator sync so the settle
+    // gap (fetch false, chain not yet re-evaluated) never arms the hide.
+    if (settled) olderHistoryChainEvaluationPending = true;
+    untrack(() => syncOlderHistoryIndicator(fetching));
     if (!settled) return;
     tick().then(() => {
       requestAnimationFrame(() => {
         requestAnimationFrame(() => {
-          if (isComponentDestroyed || !scrollContainer) return;
-          maybeRequestOlderHistory();
+          olderHistoryChainEvaluationPending = false;
+          if (isComponentDestroyed) return;
+          if (scrollContainer) maybeRequestOlderHistory();
+          // The saga raises the fetching flag synchronously on dispatch, so
+          // this read distinguishes "chain continued" (stay visible) from
+          // "chain stopped" (arm the quiet-window hide).
+          syncOlderHistoryIndicator($fetchingOlderHistory$);
         });
       });
     });
@@ -2539,17 +2747,28 @@
   const totalTurnCount = $derived($agentMessages$.filter((m) => m.role === 'user').length);
 
   // PERF: Enable lazy loading only for larger conversations, latched across
-  // background older-history prepends (see nextLazyMode). Mutating the plain
-  // (non-$state) tracker inside the derived is safe: re-evaluation with
+  // background older-history prepends (see nextLazyMode). The decision crosses
+  // on either the user-turn count OR the total message count (currentCount) so
+  // assistant-heavy transcripts (Chief-of-staff threads) virtualize despite a
+  // low turn count. Chief threads use a lower message threshold so their
+  // assistant-heavy transcripts engage virtualization much sooner. Mutating the
+  // plain (non-$state) tracker inside the derived is safe: re-evaluation with
   // unchanged inputs is idempotent (`unchanged` → latch), and deriveds are
-  // lazy, so the latch is best-effort — a prepend coalesced with an append
-  // into one observed transition recomputes from the threshold, failing open
-  // to the pre-latch behavior. Do not make the tracker stateful.
+  // lazy, so the latch is best-effort — a prepend coalesced with an append into
+  // one observed transition recomputes from the threshold, failing open to the
+  // pre-latch behavior. Do not make the tracker stateful.
   let lazyModeTracker = INITIAL_LAZY_MODE_TRACKER;
   const shouldUseLazyLoading = $derived.by(() => {
     const currentCount = $agentMessages$.length;
     const currentNewestId = $agentMessages$[currentCount - 1]?.id;
-    lazyModeTracker = nextLazyMode(lazyModeTracker, currentCount, currentNewestId, totalTurnCount);
+    const messageThreshold = isChiefWorkspace ? CHIEF_LAZY_MESSAGE_THRESHOLD : undefined;
+    lazyModeTracker = nextLazyMode(
+      lazyModeTracker,
+      currentCount,
+      currentNewestId,
+      totalTurnCount,
+      messageThreshold,
+    );
     return lazyModeTracker.mode;
   });
 
@@ -2605,8 +2824,8 @@
       // fits on screen, scroll to the bottom with follow enabled instead
       // (decided inside scrollToNewMessagesDivider).
       if (isFirstMessage && cachedScrollRestoreTop !== null && !hasConsumedCachedScrollRestore) {
-        // Remount after column windowing: land at the previous instance's
-        // reading position instead of the divider/bottom entry scroll.
+        // Land at the previous instance's reading position instead of the
+        // divider/bottom entry scroll.
         tick().then(() => {
           if (isComponentDestroyed) return;
           applyCachedScrollRestore();
@@ -2650,6 +2869,12 @@
   // Compute the turn structure and both virtualization/search indexes in one
   // transcript pass rather than regrouping each date bucket for every consumer.
   const conversationTurnIndex = $derived(indexConversationTurns(groupedMessages));
+  const hydrationMessages = $derived.by((): HydrationMessage[] =>
+    groupedMessages
+      .flatMap((group) => group.messages)
+      .filter((message) => message.role === 'user' || message.role === 'assistant')
+      .map(({ id, role }) => ({ id, role })),
+  );
 
   const lastConversationTurn = $derived.by((): ConversationTurn | null => {
     const lastGroup = conversationTurnIndex.groups[conversationTurnIndex.groups.length - 1];
@@ -2682,25 +2907,9 @@
   // Maps turnKey (userMessageId or `group-${groupIndex}-turn-${turnIndex}`) to global index
   const globalTurnIndexMap = $derived(conversationTurnIndex.globalIndexByTurnKey);
 
-  $effect(() => {
-    lazyTurnHeightCache.retain(globalTurnIndexMap.keys());
-  });
-
   // Map each messageId to its enclosing turnKey. Used by allSearchMatches so that
-  // matches in virtualized LazyTurn placeholders can be force-rendered during search.
+  // matches in virtualized message placeholders can be force-rendered during search.
   const messageIdToTurnKey = $derived(conversationTurnIndex.turnKeyByMessageId);
-
-  // Helper to check if a turn should be force-visible (recent or streaming)
-  function isTurnForceVisible(turnKey: string): boolean {
-    if (!shouldUseLazyLoading) return true; // Always visible if lazy loading is disabled
-    const globalIndex = globalTurnIndexMap.get(turnKey);
-    if (globalIndex === undefined) return true; // Unknown turn, render it
-    const totalTurns = globalTurnIndexMap.size;
-    return (
-      isTurnInRecentWindow(globalIndex, totalTurns) ||
-      isTurnTemporarilyMaterialized(temporaryTurnMaterialization, turnKey)
-    );
-  }
 
   // --- Auto-commit status (fetched once, shared across all AutoCommitStatus instances) ---
   let autoCommitStatuses = $state<CommitStatus[]>([]);
@@ -2869,8 +3078,8 @@
       if (scrollContainer) {
         if ($agentMessages$.length > 0) {
           if (cachedScrollRestoreTop !== null) {
-            // Remount after column windowing: restore the previous instance's
-            // reading position (no-op when the hydration effect already did).
+            // Restore the previous instance's reading position (no-op when
+            // the hydration effect already did).
             applyCachedScrollRestore();
           } else {
             shouldFollowBottom = true;
@@ -3260,6 +3469,34 @@
   const DEEP_OPEN_HIGHLIGHT_NAME = 'deep-open-match';
   const DEEP_OPEN_HIGHLIGHT_TIMEOUT_MS = 8000;
 
+  function isMessageForceVisible(messageId: string): boolean {
+    if (!shouldUseLazyLoading) return true;
+    const turnKey = messageIdToTurnKey.get(messageId);
+    if (!turnKey) return true;
+    const isLastTurn = globalTurnIndexMap.get(turnKey) === globalTurnIndexMap.size - 1;
+    return (
+      isTurnTemporarilyMaterialized(temporaryTurnMaterialization, turnKey) ||
+      ($agentSessionIsStreaming$ && isLastTurn) ||
+      visibleSearchTurnKeys.has(turnKey) ||
+      deepOpenTurnKey === turnKey
+    );
+  }
+
+  // The controller order is the composed history + live-tail chronology, not
+  // turn position. Users remain eagerly rendered; assistant rows register with
+  // the shared observer and follow the asymmetric displayport frontier.
+  $effect(() => {
+    const messages = hydrationMessages;
+    messageHydrationPolicy.updateMessages(messages);
+    for (const message of messages) {
+      messageHydrationPolicy.setForced(message.id, isMessageForceVisible(message.id));
+    }
+    lazyTurnHeightCache.retain(
+      messages.filter((message) => message.role === 'assistant').map((message) => message.id),
+    );
+    syncHydratedMessageIds();
+  });
+
   function handleTurnEditStateChange(turnKey: string, isEditing: boolean) {
     temporaryTurnMaterialization = isEditing
       ? materializeTurn(temporaryTurnMaterialization, 'editing', turnKey)
@@ -3482,15 +3719,19 @@
     const setupWhenReady = () => {
       readinessFrame = null;
       if (destroyed) return;
-      if (!scrollContainer) {
+      if (!scrollContainer || !composerElement) {
         readinessFrame = requestAnimationFrame(setupWhenReady);
         return;
       }
       observer = new ResizeObserver((entries) => {
         for (const entry of entries) {
-          const newHeight = entry.contentRect.height;
-          if (newHeight !== containerHeight) {
-            containerHeight = newHeight;
+          if (entry.target === scrollContainer) {
+            const newHeight = entry.contentRect.height;
+            if (newHeight !== containerHeight) {
+              containerHeight = newHeight;
+            }
+          } else if (entry.target === composerElement) {
+            composerHeight = entry.contentRect.height;
           }
         }
         if (scrollContainer) {
@@ -3501,6 +3742,7 @@
         }
       });
       observer.observe(scrollContainer);
+      observer.observe(composerElement);
     };
     readinessFrame = requestAnimationFrame(setupWhenReady);
 
@@ -3627,9 +3869,8 @@
       cachedScrollRestoreRetryFrame = null;
     }
 
-    // Cache the transcript scroll state so a remount after column windowing
-    // (WorkspaceColumnsView unmounting off-screen surfaces) restores the
-    // user's reading position instead of re-entering at the bottom. Guarded
+    // Cache the transcript scroll state so a remount restores the user's
+    // reading position instead of re-entering at the bottom. Guarded
     // so a collapsed container or a pending (unconsumed) restore cannot
     // record a clamped ~0 scrollTop over a useful cached position.
     if (
@@ -3659,6 +3900,7 @@
       searchDebounceTimer = null;
     }
     if (deepOpenReleaseTimer !== null) clearTimeout(deepOpenReleaseTimer);
+    messageHydrationPolicy.dispose();
     lazyTurnHeightCache.clear();
     // Note: followBottom action cleanup is handled automatically by Svelte
     // Don't clear chat data - just cleanup listeners
@@ -3885,19 +4127,33 @@
   }
 
   // Extract imageBlocks from any context item with imageData/imageMimeType
-  // (file-type attachments and legacy inline-image items alike), and
-  // attachment-reference fileBlocks from placed-attachment items
-  // (file.placeAttachment — UUID + metadata, no bytes).
+  // (file-type attachments and legacy inline-image items alike) plus
+  // already-placed image items (attachmentId + imageMimeType → reference
+  // arm, monorepo#3338), and attachment-reference fileBlocks from the
+  // remaining placed-attachment items (file.placeAttachment — UUID +
+  // metadata, no bytes). Inline image blocks are placed and swapped to
+  // references by the send saga before the wire call.
   function extractAttachmentBlocks(items: ContextItem[]) {
     const imageBlocks = items
-      .filter((item) => item.imageData && item.imageMimeType)
-      .map((item) => ({
-        type: 'image' as const,
-        data: item.imageData!,
-        mimeType: item.imageMimeType!,
-      }));
+      .filter((item) => (item.imageData || item.attachmentId) && item.imageMimeType)
+      .map((item) =>
+        item.attachmentId
+          ? {
+              type: 'image' as const,
+              attachmentId: item.attachmentId,
+              // The neutral 'image' marker (reference restored without a
+              // persisted mime) stays off the wire — mimeType is optional
+              // on the reference arm.
+              ...(item.imageMimeType!.includes('/') ? { mimeType: item.imageMimeType! } : {}),
+            }
+          : {
+              type: 'image' as const,
+              data: item.imageData!,
+              mimeType: item.imageMimeType!,
+            },
+      );
     const fileBlocks = items
-      .filter((item) => item.attachmentId)
+      .filter((item) => item.attachmentId && !item.imageMimeType)
       .map((item) => ({
         type: 'file' as const,
         attachmentId: item.attachmentId!,
@@ -4009,6 +4265,21 @@
     if (!workspace) return;
     appStore.dispatch(agentSessionRetryWithModelRequested(agentId, workspace.id, model));
   }
+
+  // Handle retrying from a stalled turn: cancel it and re-send the same input
+  // (monorepo#3402). The saga no-ops if the stall cleared before it runs.
+  function handleStalledRetry() {
+    if (!workspace) return;
+    appStore.dispatch(agentSessionRetryFromStalledRequested(agentId, workspace.id));
+  }
+
+  // Retired sessions (PROTOCOL §5.5) are read-only: withhold the mutating
+  // retry callbacks so StreamingStatus never renders Retry/Retry-with-model
+  // or stalled-retry affordances that would hit the daemon's retired-session
+  // guard.
+  const gatedRetry = $derived(isRetiredSession ? undefined : handleRetry);
+  const gatedRetryWithModel = $derived(isRetiredSession ? undefined : handleRetryWithModel);
+  const gatedStalledRetry = $derived(isRetiredSession ? undefined : handleStalledRetry);
 
   // Handle changing the specialist for an agent
   // The specialist can be changed at any time - even after messages have been sent.
@@ -4141,7 +4412,12 @@
     newText: string,
     model?: string,
     blocks?: {
-      imageBlocks?: Array<{ type: 'image'; data: string; mimeType: string }>;
+      imageBlocks?: Array<{
+        type: 'image';
+        data?: string;
+        mimeType?: string;
+        attachmentId?: string;
+      }>;
       fileBlocks?: Array<{
         type: 'file';
         attachmentId: string;
@@ -4408,6 +4684,19 @@
   ondragover={panelFileDrop.handleDragOver}
   ondrop={panelFileDrop.handleDrop}
 >
+  <!-- The regular Aurora belongs to the complete chat surface, not the inset
+       composer lane. It inherits the real Panel radius for its own bottom clip. -->
+  {#if $agentSessionIsStreaming$ && !isChiefWorkspace}
+    <div
+      class="composer-aurora-host regular-panel-aurora-host pointer-events-none absolute inset-x-0 bottom-0 z-0 overflow-hidden"
+      style:height={`calc(${composerHeight}px + 10rem)`}
+      data-testid="composer-aurora-host"
+      transition:fade
+    >
+      <AuroraBackground {agentId} />
+    </div>
+  {/if}
+
   <!-- Full-panel drop zone overlay (file drags only) -->
   {#if isFileDragOverPanel || isFileDragOverHeader}
     <div
@@ -4692,9 +4981,10 @@
                           failedAt={effectiveFailedAt}
                           modelUnavailable={$chatModelUnavailable$}
                           {hasPendingPermission}
-                          onRetry={handleRetry}
-                          onRetryWithModel={handleRetryWithModel}
+                          onRetry={gatedRetry}
+                          onRetryWithModel={gatedRetryWithModel}
                           onStop={handleStop}
+                          onStalledRetry={gatedStalledRetry}
                           seed={agentId}
                           statusEvents={$chatStatusEvents$}
                           streamingStartTime={$chatStreamingStartTime$}
@@ -4717,9 +5007,10 @@
                         failedAt={effectiveFailedAt}
                         modelUnavailable={$chatModelUnavailable$}
                         {hasPendingPermission}
-                        onRetry={handleRetry}
-                        onRetryWithModel={handleRetryWithModel}
+                        onRetry={gatedRetry}
+                        onRetryWithModel={gatedRetryWithModel}
                         onStop={handleStop}
+                        onStalledRetry={gatedStalledRetry}
                         seed={agentId}
                         statusEvents={$chatStatusEvents$}
                         streamingStartTime={$chatStreamingStartTime$}
@@ -4799,9 +5090,10 @@
                           failedAt={effectiveFailedAt}
                           modelUnavailable={$chatModelUnavailable$}
                           {hasPendingPermission}
-                          onRetry={handleRetry}
-                          onRetryWithModel={handleRetryWithModel}
+                          onRetry={gatedRetry}
+                          onRetryWithModel={gatedRetryWithModel}
                           onStop={handleStop}
+                          onStalledRetry={gatedStalledRetry}
                           seed={agentId}
                           statusEvents={$chatStatusEvents$}
                           streamingStartTime={$chatStreamingStartTime$}
@@ -4824,9 +5116,10 @@
                         failedAt={effectiveFailedAt}
                         modelUnavailable={$chatModelUnavailable$}
                         {hasPendingPermission}
-                        onRetry={handleRetry}
-                        onRetryWithModel={handleRetryWithModel}
+                        onRetry={gatedRetry}
+                        onRetryWithModel={gatedRetryWithModel}
                         onStop={handleStop}
+                        onStalledRetry={gatedStalledRetry}
                         seed={agentId}
                         statusEvents={$chatStatusEvents$}
                         streamingStartTime={$chatStreamingStartTime$}
@@ -4854,12 +5147,14 @@
                   failedAt={effectiveFailedAt}
                   modelUnavailable={$chatModelUnavailable$}
                   {hasPendingPermission}
-                  onRetry={handleRetry}
-                  onRetryWithModel={handleRetryWithModel}
+                  onRetry={gatedRetry}
+                  onRetryWithModel={gatedRetryWithModel}
                   onStop={handleStop}
+                  onStalledRetry={gatedStalledRetry}
                   seed={agentId}
                   statusEvents={$chatStatusEvents$}
                   streamingStartTime={$chatStreamingStartTime$}
+                  class={effectiveError ? 'mt-0' : undefined}
                 />
               </div>
             </div>
@@ -4923,8 +5218,11 @@
                 {/if}
               {/snippet}
               <!-- Older-history loading affordance: small top indicator while
-                   an on-demand scrollback page fetch is in flight. -->
-              {#if $fetchingOlderHistory$}
+                   the on-demand scrollback walk is active. Chain-scoped, not
+                   per-fetch: it stays up across the settle-chain gaps between
+                   pages and hides after a short quiet window once the walk
+                   stops (see syncOlderHistoryIndicator). -->
+              {#if olderHistoryIndicatorVisible}
                 <div
                   class="flex items-center justify-center gap-2 py-2 text-xs text-muted-foreground"
                   data-testid="chat-older-history-loading"
@@ -5012,13 +5310,17 @@
                     nextTurn,
                   )}
                   {@const zeroOperationalTurnBoundary = compactOperationalTurnBoundary}
+                  {@const attentionQuestionAnswerTurnSeam = isAttentionQuestionAnswerSeam(
+                    turn,
+                    nextTurn,
+                  )}
                   <!-- Adjacent user rows sharing queueInfo.batchId (one batch
                        flush) get a compact seam — covers plain user messages
-                       AND wake/event-notification cards on either side. -->
-                  {@const batchedDeliveryTurnSeam = isBatchedDeliverySeam(turn, nextTurn)}
+                       AND wake/event-notification cards on either side. The
+                       structured attention-to-answer flow has its own rhythm. -->
+                  {@const batchedDeliveryTurnSeam =
+                    !attentionQuestionAnswerTurnSeam && isBatchedDeliverySeam(turn, nextTurn)}
                   <!-- Conversation turn container - constrains sticky behavior -->
-                  <!-- PERF: LazyTurn defers rendering of off-screen turns -->
-                  <!-- PERF: Only force-visible the last turn during streaming, not all turns -->
                   <!-- Fallback chain mirrors the row render order below. Edge case:
                        a user message with metadata.type === 'event_notification' but
                        no eventTypes (and no [WORKSPACE EVENTS] prefix) renders neither
@@ -5036,157 +5338,154 @@
                     !isLastTurnInConversation,
                   )}
                   <div class="conversation-turn" data-conversation-turn>
-                    <LazyTurn
-                      {turnKey}
-                      scrollRoot={scrollContainer}
-                      heightCache={lazyTurnHeightCache}
-                      forceVisible={isTurnForceVisible(turnKey) ||
-                        ($agentSessionIsStreaming$ && isLastTurnInConversation) ||
-                        visibleSearchTurnKeys.has(turnKey) ||
-                        deepOpenTurnKey === turnKey}
-                    >
-                      {#snippet children()}
-                        <!-- Event wakeup banner - shown when agent is woken by a subscription -->
-                        <!-- Also detect [WORKSPACE EVENTS] messages as a fallback in case metadata is missing -->
-                        {#if turn.userMessage && isEventNotification}
-                          {@const message = turn.userMessage}
-                          {@const globalIndex = getMessageIndex(message.id)}
-                          {@const messageText = extractAllContent(message)}
-                          <!-- Source wake-up row remains owned by this transcript turn. -->
-                          <div
-                            data-message-id={message.id}
-                            data-pinned-prompt-id={message.id}
-                            data-message-index={globalIndex}
-                            class="message-nav-target relative z-10"
-                            class:mb-8={turn.assistantMessages.length > 0}
-                            use:attachPinnedPromptMessage={message}
-                            transition:safeSlide={{ axis: 'y', duration: 200 }}
-                          >
-                            <EventWakeupBanner
-                              metadata={message.metadata as {
-                                type: 'event_notification';
-                                eventCount: number;
-                                eventTypes: string[];
-                                events?: Array<{
-                                  type: string;
-                                  data: Record<string, unknown>;
-                                  timestamp: string;
-                                }>;
-                              }}
-                              {messageText}
-                              asDivider={true}
-                              compact={isCompactMode}
-                              showAgentCards={!isDelegatedBackgroundTaskAgent}
-                              {workspace}
-                            />
-                          </div>
-                          {@render newMessagesDividerAfter(message.id, dividerAtTurnBoundary)}
-                        {/if}
-                        <!-- User message source row; the independent overlay never moves this node. -->
-                        <!-- Also skip messages starting with [WORKSPACE EVENTS] as a fallback in case metadata is missing -->
-                        {#if turn.userMessage && !isEventNotification}
-                          {@const message = turn.userMessage}
-                          {@const globalIndex = getMessageIndex(message.id)}
-                          <div
-                            data-message-id={message.id}
-                            data-message-role="user"
-                            data-pinnable-user-prompt={!isAutomatedMessage(message)
-                              ? ''
-                              : undefined}
-                            data-pinned-prompt-id={message.id}
-                            data-send-app-message-id={message.appMessageId}
-                            data-message-index={globalIndex}
-                            class="message-nav-target relative z-20"
-                            class:mb-5={isAutomatedMessage(message)}
-                            class:mb-7={!isAutomatedMessage(message)}
-                            class:invisible={pendingSendMessageIds.has(
-                              String(message.appMessageId ?? ''),
-                            )}
-                            use:attachPinnedPromptMessage={message}
-                          >
-                            <div class={isChiefWorkspace ? 'mx-1 sm:mx-2' : ''}>
-                              <ChatMessage
-                                {agentId}
-                                messageId={message.id}
-                                ownsMessageIdentity={false}
-                                {workspace}
-                                onEditSubmit={(newText, model, blocks) =>
+                    <!-- Event wakeup banner - shown when agent is woken by a subscription -->
+                    <!-- Also detect [WORKSPACE EVENTS] messages as a fallback in case metadata is missing -->
+                    {#if turn.userMessage && isEventNotification}
+                      {@const message = turn.userMessage}
+                      {@const globalIndex = getMessageIndex(message.id)}
+                      {@const messageText = extractAllContent(message)}
+                      <!-- Source wake-up row remains owned by this transcript turn. -->
+                      <div
+                        data-message-id={message.id}
+                        data-pinned-prompt-id={message.id}
+                        data-message-index={globalIndex}
+                        class="message-nav-target relative z-10 {eventCardAssistantMarginClass(
+                          message,
+                          turn.assistantMessages.length > 0,
+                        )}"
+                        use:attachPinnedPromptMessage={message}
+                        transition:safeSlide={{ axis: 'y', duration: 200 }}
+                      >
+                        <EventWakeupBanner
+                          metadata={message.metadata as {
+                            type: 'event_notification';
+                            eventCount: number;
+                            eventTypes: string[];
+                            events?: Array<{
+                              type: string;
+                              data: Record<string, unknown>;
+                              timestamp: string;
+                            }>;
+                          }}
+                          {messageText}
+                          asDivider={true}
+                          compact={isCompactMode}
+                          showAgentCards={!isDelegatedBackgroundTaskAgent}
+                          {workspace}
+                        />
+                      </div>
+                      {@render newMessagesDividerAfter(message.id, dividerAtTurnBoundary)}
+                    {/if}
+                    <!-- User message source row; the independent overlay never moves this node. -->
+                    <!-- Also skip messages starting with [WORKSPACE EVENTS] as a fallback in case metadata is missing -->
+                    {#if turn.userMessage && !isEventNotification}
+                      {@const message = turn.userMessage}
+                      {@const globalIndex = getMessageIndex(message.id)}
+                      <div
+                        data-message-id={message.id}
+                        data-message-role="user"
+                        data-pinnable-user-prompt={!isAutomatedMessage(message) ? '' : undefined}
+                        data-pinned-prompt-id={message.id}
+                        data-send-app-message-id={message.appMessageId}
+                        data-message-index={globalIndex}
+                        class="message-nav-target relative z-20"
+                        class:mb-5={isAutomatedMessage(message)}
+                        class:mb-7={!isAutomatedMessage(message)}
+                        class:invisible={pendingSendMessageIds.has(
+                          String(message.appMessageId ?? ''),
+                        )}
+                        use:attachPinnedPromptMessage={message}
+                      >
+                        <div class={isChiefWorkspace ? 'mx-1 sm:mx-2' : ''}>
+                          <ChatMessage
+                            {agentId}
+                            messageId={message.id}
+                            ownsMessageIdentity={false}
+                            {workspace}
+                            onEditSubmit={isRetiredSession
+                              ? undefined
+                              : (newText, model, blocks) =>
                                   handleEditMessage(message.id, newText, model, blocks)}
-                                onEditStateChange={(isEditing) =>
-                                  handleTurnEditStateChange(turnKey, isEditing)}
-                                editModel={turn.assistantMessages[0]?.metadata?.model ??
-                                  hydratedInputModel}
-                                onScrollToPrevious={() => scrollToPreviousUserMessage(message.id)}
-                                backendSessionId={auggieSessionId}
-                              />
-                            </div>
-                          </div>
-                          {@render newMessagesDividerAfter(message.id, dividerAtTurnBoundary)}
-                        {/if}
+                            onEditStateChange={(isEditing) =>
+                              handleTurnEditStateChange(turnKey, isEditing)}
+                            editModel={turn.assistantMessages[0]?.metadata?.model ??
+                              hydratedInputModel}
+                            onScrollToPrevious={() => scrollToPreviousUserMessage(message.id)}
+                            backendSessionId={auggieSessionId}
+                          />
+                        </div>
+                      </div>
+                      {@render newMessagesDividerAfter(message.id, dividerAtTurnBoundary)}
+                    {/if}
 
-                        <!-- Model-change notices (daemon-persisted, after the user row, before assistant output) -->
-                        {#each turn.noticeMessages as noticeMessage (noticeMessage.id)}
-                          {@const notice = getModelChangeNotice(noticeMessage)}
-                          {#if notice}
-                            <div data-message-id={noticeMessage.id} class="px-2">
-                              <ModelChangeNotice
-                                {notice}
-                                fallbackText={extractAllContent(noticeMessage) || undefined}
-                              />
-                            </div>
-                            {@render newMessagesDividerAfter(
-                              noticeMessage.id,
-                              dividerAtTurnBoundary,
-                            )}
-                          {/if}
-                        {/each}
+                    <!-- Model-change notices (daemon-persisted, after the user row, before assistant output) -->
+                    {#each turn.noticeMessages as noticeMessage (noticeMessage.id)}
+                      {@const notice = getModelChangeNotice(noticeMessage)}
+                      {#if notice}
+                        <div data-message-id={noticeMessage.id} class="px-2">
+                          <ModelChangeNotice
+                            {notice}
+                            fallbackText={extractAllContent(noticeMessage) || undefined}
+                          />
+                        </div>
+                        {@render newMessagesDividerAfter(noticeMessage.id, dividerAtTurnBoundary)}
+                      {/if}
+                    {/each}
 
-                        <!-- Show status when active but no assistant message yet, or when there's an error/modelUnavailable -->
-                        {#if groupIndex === groupedMessages.length - 1 && turnIndex === turns.length - 1 && turn.assistantMessages.length === 0 && shouldShowPendingAssistantStatus( { isStreaming: $agentSessionIsStreaming$, isProcessing: $agentIsResponding$, error: effectiveError, modelUnavailable: $chatModelUnavailable$ } )}
-                          <div class={isCompactMode ? 'mb-2' : 'mb-8'}>
-                            <StreamingStatus
-                              isStreaming={$agentSessionIsStreaming$}
-                              isProcessing={$agentIsResponding$}
-                              lastChunkTime={$chatLastChunkTime$}
-                              receivedFirstChunk={$chatReceivedFirstChunk$}
-                              streamingContentLength={$chatStreamingContent$?.length ?? 0}
-                              error={effectiveError}
-                              sessionCorrupted={effectiveSessionCorrupted}
-                              failedAt={effectiveFailedAt}
-                              modelUnavailable={$chatModelUnavailable$}
-                              {hasPendingPermission}
-                              onRetry={handleRetry}
-                              onRetryWithModel={handleRetryWithModel}
-                              onStop={handleStop}
-                              seed={agentId}
-                              statusEvents={$chatStatusEvents$}
-                              streamingStartTime={$chatStreamingStartTime$}
-                            />
-                          </div>
-                        {/if}
+                    <!-- Show status when active but no assistant message yet, or when there's an error/modelUnavailable -->
+                    {#if groupIndex === groupedMessages.length - 1 && turnIndex === turns.length - 1 && turn.assistantMessages.length === 0 && shouldShowPendingAssistantStatus( { isStreaming: $agentSessionIsStreaming$, isProcessing: $agentIsResponding$, error: effectiveError, modelUnavailable: $chatModelUnavailable$ } )}
+                      <div class={isCompactMode ? 'mb-2' : 'mb-8'}>
+                        <StreamingStatus
+                          isStreaming={$agentSessionIsStreaming$}
+                          isProcessing={$agentIsResponding$}
+                          lastChunkTime={$chatLastChunkTime$}
+                          receivedFirstChunk={$chatReceivedFirstChunk$}
+                          streamingContentLength={$chatStreamingContent$?.length ?? 0}
+                          error={effectiveError}
+                          sessionCorrupted={effectiveSessionCorrupted}
+                          failedAt={effectiveFailedAt}
+                          modelUnavailable={$chatModelUnavailable$}
+                          {hasPendingPermission}
+                          onRetry={gatedRetry}
+                          onRetryWithModel={gatedRetryWithModel}
+                          onStop={handleStop}
+                          onStalledRetry={gatedStalledRetry}
+                          seed={agentId}
+                          statusEvents={$chatStatusEvents$}
+                          streamingStartTime={$chatStreamingStartTime$}
+                        />
+                      </div>
+                    {/if}
 
-                        <!-- Assistant messages -->
-                        <!-- PERF: Key by message.id for efficient updates during streaming -->
-                        {#each turn.assistantMessages as message, assistantIndex (message.id)}
-                          {@const isLastTurn =
-                            groupIndex === groupedMessages.length - 1 &&
-                            turnIndex === turns.length - 1}
-                          {@const isLastAssistant =
-                            assistantIndex === turn.assistantMessages.length - 1}
-                          {@const isLastMessage = isLastTurn && isLastAssistant}
-                          {@const isCurrentlyStreaming = isLastMessage && $agentSessionIsStreaming$}
-                          {@const compactPreviousMessageBoundary =
-                            hasOperationalAssistantMessageBoundary(
-                              turn.assistantMessages[assistantIndex - 1],
-                              message,
-                            )}
-                          {@const compactNextMessageBoundary =
-                            hasOperationalAssistantMessageBoundary(
-                              message,
-                              turn.assistantMessages[assistantIndex + 1],
-                            )}
-                          {@const turnNumber = getMessageTurnNumber(message.id)}
-                          {@const globalIndex = getMessageIndex(message.id)}
+                    <!-- Assistant messages -->
+                    <!-- PERF: Key by message.id for efficient updates during streaming -->
+                    {#each turn.assistantMessages as message, assistantIndex (message.id)}
+                      {@const isLastTurn =
+                        groupIndex === groupedMessages.length - 1 && turnIndex === turns.length - 1}
+                      {@const isLastAssistant =
+                        assistantIndex === turn.assistantMessages.length - 1}
+                      {@const isLastMessage = isLastTurn && isLastAssistant}
+                      {@const isCurrentlyStreaming = isLastMessage && $agentSessionIsStreaming$}
+                      {@const compactPreviousMessageBoundary =
+                        hasOperationalAssistantMessageBoundary(
+                          turn.assistantMessages[assistantIndex - 1],
+                          message,
+                        )}
+                      {@const compactNextMessageBoundary = hasOperationalAssistantMessageBoundary(
+                        message,
+                        turn.assistantMessages[assistantIndex + 1],
+                      )}
+                      {@const turnNumber = getMessageTurnNumber(message.id)}
+                      {@const globalIndex = getMessageIndex(message.id)}
+                      <LazyTurn
+                        turnKey={message.id}
+                        scrollRoot={scrollContainer}
+                        heightCache={lazyTurnHeightCache}
+                        hydrationController={messageHydrationPolicy}
+                        hydrated={hydratedMessageIds.has(message.id)}
+                        forceVisible={isMessageForceVisible(message.id)}
+                      >
+                        {#snippet children()}
                           <div
                             data-message-id={message.id}
                             data-message-role="assistant"
@@ -5203,9 +5502,13 @@
                               ownsMessageIdentity={false}
                               {workspace}
                               isStreaming={isCurrentlyStreaming}
-                              onEditSubmit={(newText, model, blocks) =>
-                                handleEditMessage(message.id, newText, model, blocks)}
-                              onRegenerate={() => handleRegenerateFromMessage(message.id)}
+                              onEditSubmit={isRetiredSession
+                                ? undefined
+                                : (newText, model, blocks) =>
+                                    handleEditMessage(message.id, newText, model, blocks)}
+                              onRegenerate={isRetiredSession
+                                ? undefined
+                                : () => handleRegenerateFromMessage(message.id)}
                               onFork={() => handleForkFromMessage(message.id)}
                               backendSessionId={auggieSessionId}
                               suppressCoordinationStoppedIndicator={turn.userMessage
@@ -5227,9 +5530,10 @@
                                 failedAt={effectiveFailedAt}
                                 modelUnavailable={$chatModelUnavailable$}
                                 {hasPendingPermission}
-                                onRetry={handleRetry}
-                                onRetryWithModel={handleRetryWithModel}
+                                onRetry={gatedRetry}
+                                onRetryWithModel={gatedRetryWithModel}
                                 onStop={handleStop}
+                                onStalledRetry={gatedStalledRetry}
                                 seed={agentId}
                                 statusEvents={$chatStatusEvents$}
                                 streamingStartTime={$chatStreamingStartTime$}
@@ -5259,10 +5563,10 @@
                               workspaceId={workspace.id}
                             />
                           {/if}
-                          {@render newMessagesDividerAfter(message.id, dividerAtTurnBoundary)}
-                        {/each}
-                      {/snippet}
-                    </LazyTurn>
+                        {/snippet}
+                      </LazyTurn>
+                      {@render newMessagesDividerAfter(message.id, dividerAtTurnBoundary)}
+                    {/each}
                   </div>
                   <!-- Editorial rhythm between turns (not after the last one).
                        Must stay the negation of dividerDefersToTurnBoundary's
@@ -5277,6 +5581,7 @@
                       compactOperationalSeam={compactOperationalTurnBoundary}
                       zeroToolSeam={zeroOperationalTurnBoundary}
                       batchedDeliverySeam={batchedDeliveryTurnSeam}
+                      attentionQuestionAnswerSeam={attentionQuestionAnswerTurnSeam}
                     />
                   {/if}
                   <!-- Turn-boundary divider placement: the anchor is this turn's
@@ -5288,7 +5593,10 @@
                 {/each}
               {/each}
               {#if showEndOfListStreamingStatus}
-                <div class={isCompactMode ? 'mb-2' : 'mb-16'}>
+                <div
+                  class="pt-1 {isCompactMode ? 'mb-2' : 'mb-16'}"
+                  data-testid="end-of-list-streaming-status"
+                >
                   <StreamingStatus
                     isStreaming={$agentSessionIsStreaming$}
                     isProcessing={$agentIsResponding$}
@@ -5300,9 +5608,10 @@
                     failedAt={effectiveFailedAt}
                     modelUnavailable={$chatModelUnavailable$}
                     {hasPendingPermission}
-                    onRetry={handleRetry}
-                    onRetryWithModel={handleRetryWithModel}
+                    onRetry={gatedRetry}
+                    onRetryWithModel={gatedRetryWithModel}
                     onStop={handleStop}
+                    onStalledRetry={gatedStalledRetry}
                     seed={agentId}
                     statusEvents={$chatStatusEvents$}
                     streamingStartTime={$chatStreamingStartTime$}
@@ -5374,12 +5683,12 @@
             {/key}
           {/if}
 
-          <!-- Queued messages remain in the same scroll/follow surface. -->
-          {#if queuedMessagesVisibility.showQueue}
+          <!-- Queued messages remain in the same scroll/follow surface.
+               Hidden on retired sessions: the queue's edit/remove/send-now
+               controls all mutate daemon state a retired agent rejects. -->
+          {#if queuedMessagesVisibility.showQueue && !isRetiredSession}
             <div
-              class="relative z-20 mt-6 {isChiefWorkspace
-                ? 'w-full'
-                : 'queued-message-utility-wide -mx-4 sm:-mx-6'}"
+              class="relative z-20 mt-6 {isChiefWorkspace ? 'mx-1 sm:mx-2' : 'w-full'}"
               data-testid="queued-message-utility-area"
             >
               <QueuedMessageList
@@ -5418,95 +5727,123 @@
   <div
     bind:this={composerElement}
     class="conversation-composer relative z-10 w-full"
+    class:chief-composer={isChiefWorkspace}
     class:input-flash={showInputFlash}
     data-streaming={$agentSessionIsStreaming$}
     data-testid="chat-composer-shell"
   >
-    <!-- Aurora northern lights effect during streaming. The chief variant bleeds
-         further left/bottom so the shader crosses the ChiefCard px-2 inset and
-         the sidebar frame's pl-2/pb-2 window inset (the ancestors clip with an
-         8px overflow-clip-margin), touching the app window's left/bottom edges. -->
-    {#if $agentSessionIsStreaming$}
+    <!-- Aurora northern lights effect during streaming. The regular host is owned
+         by the complete chat surface above. The chief variant remains composer-owned
+         and bleeds further left/bottom so the shader crosses the
+         ChiefCard px-2 inset and the sidebar frame's pl-2/pb-2 window inset (the
+         ancestors clip with an 8px overflow-clip-margin), touching the app window's
+         left/bottom edges. -->
+    {#if $agentSessionIsStreaming$ && isChiefWorkspace}
       <div
-        class="pointer-events-none absolute z-0 overflow-hidden {isChiefWorkspace
-          ? '-left-4 -right-2 -bottom-4'
-          : '-inset-x-2 -bottom-2'}"
+        class="composer-aurora-host pointer-events-none absolute -left-4 -right-2 -bottom-4 z-0 overflow-hidden"
         style="height: calc(100% + 10rem);"
         data-testid="composer-aurora-host"
         transition:fade
       >
         <AuroraBackground {agentId} />
-        <AuroraSofteningLayer />
       </div>
     {/if}
 
     <div
-      class="composer-prompt-layer relative z-10 w-full border-t border-border"
-      class:pb-3={!hasVisibleTranscriptUtility}
+      class="composer-prompt-layer relative z-10 w-full"
       style:padding-inline-end="{scrollbarGutterWidth}px"
       data-testid="composer-prompt-layer"
       data-has-transcript-utility={hasVisibleTranscriptUtility}
     >
       <div
-        class="chat-content-measure mx-auto w-full min-w-0"
-        data-testid="chat-composer-controls-inner"
+        class="composer-prompt-lane chat-content-measure mx-auto w-full min-w-0"
+        data-testid="chat-composer-lane"
       >
-        {#if pendingQuestions}
-          {#key pendingQuestions.messageId}
-            <div class="w-full" data-testid="question-wizard-slot">
-              <QuestionWizard
-                questions={pendingQuestions.questions}
-                collapsed={questionWizardCollapsed}
-                onToggleCollapsed={(collapsed) => (questionWizardCollapsed = collapsed)}
-                onComplete={handleQuestionWizardComplete}
-                onDismiss={handleQuestionWizardDismiss}
-              />
+        <div class="w-full min-w-0" data-testid="chat-composer-controls-inner">
+          {#if isRetiredSession}
+            <div
+              class="flex w-full items-center justify-between gap-3 px-4 py-3 text-sm text-muted-foreground sm:px-6"
+              data-testid="chat-retired-banner"
+            >
+              <span class="min-w-0 truncate">{m.chat_chatPanel_retiredReadOnly_label()}</span>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                data-testid="chat-retired-restore"
+                onclick={() => {
+                  if (workspace?.id && agentId) {
+                    appStore.dispatch(restoreRetiredAgentRequested(workspace.id, agentId));
+                  }
+                }}
+              >
+                {m.workspace_agentsList_restoreRetired_button()}
+              </Button>
             </div>
-          {/key}
-        {/if}
-        {#if (!pendingQuestions && !pendingQuestionRecoveryLoading) || questionWizardCollapsed}
-          {#if draftManager.gateVisible}
-            <ChatDraftLoadingGate />
+          {:else}
+            {#if pendingQuestions}
+              {#key pendingQuestions.messageId}
+                <div class="w-full" data-testid="question-wizard-slot">
+                  <QuestionWizard
+                    questions={pendingQuestions.questions}
+                    collapsed={questionWizardCollapsed}
+                    onToggleCollapsed={(collapsed) => (questionWizardCollapsed = collapsed)}
+                    onComplete={handleQuestionWizardComplete}
+                    onDismiss={handleQuestionWizardDismiss}
+                  />
+                </div>
+              {/key}
+            {/if}
+            {#if (!pendingQuestions && !pendingQuestionRecoveryLoading) || questionWizardCollapsed}
+              {#if draftManager.gateVisible}
+                <ChatDraftLoadingGate />
+              {/if}
+              <SimpleRichInput
+                bind:this={inputComponent}
+                bind:contextItems
+                bind:value={inputValue}
+                onvaluechange={(value) => {
+                  if (workspace?.id && agentId) {
+                    appStore.dispatch(setChatDraft(workspace.id, agentId, value));
+                  }
+                }}
+                onsubmit={handleSend}
+                onforcesubmit={handleForceSubmit}
+                onstop={handleStop}
+                onHistoryPrev={handleHistoryPrev}
+                onHistoryNext={handleHistoryNext}
+                disabled={!workspace || !$agentSession$}
+                inputLocked={draftManager.gateActive}
+                isStreaming={$agentSessionIsStreaming$}
+                isResponding={$agentIsResponding$}
+                {workspace}
+                currentContext={currentMainPanelContext}
+                {agentId}
+                selectedModel={hydratedInputModel}
+                compactMode={isCompactMode}
+                editorClassName={isChiefWorkspace ? 'w-full px-1.5!' : 'w-full px-4! sm:px-6!'}
+                contentInsetClassName={isChiefWorkspace ? 'w-full px-1.5' : 'w-full px-4 sm:px-6'}
+                edgeDocked
+                externalDropTarget
+                requiresModelSwitchConfirmation={!canChangeProvider}
+                providerId={inputProviderId}
+              />
+            {/if}
           {/if}
-          <SimpleRichInput
-            bind:this={inputComponent}
-            bind:contextItems
-            bind:value={inputValue}
-            onvaluechange={(value) => {
-              if (workspace?.id && agentId) {
-                appStore.dispatch(setChatDraft(workspace.id, agentId, value));
-              }
-            }}
-            onsubmit={handleSend}
-            onforcesubmit={handleForceSubmit}
-            onstop={handleStop}
-            onHistoryPrev={handleHistoryPrev}
-            onHistoryNext={handleHistoryNext}
-            disabled={!workspace || !$agentSession$}
-            inputLocked={draftManager.gateActive}
-            isStreaming={$agentSessionIsStreaming$}
-            isResponding={$agentIsResponding$}
-            {workspace}
-            currentContext={currentMainPanelContext}
-            {agentId}
-            selectedModel={hydratedInputModel}
-            compactMode={isCompactMode}
-            editorClassName={isChiefWorkspace ? 'w-full px-1.5!' : 'w-full px-4! sm:px-6!'}
-            contentInsetClassName={isChiefWorkspace ? 'w-full px-1.5' : 'w-full px-4 sm:px-6'}
-            edgeDocked
-            externalDropTarget
-            requiresModelSwitchConfirmation={!canChangeProvider}
-            providerId={inputProviderId}
-          />
-        {/if}
+        </div>
       </div>
     </div>
   </div>
 </div>
 
 <style>
+  .regular-panel-aurora-host {
+    border-bottom-left-radius: var(--panel-shell-radius);
+    border-bottom-right-radius: var(--panel-shell-radius);
+  }
+
   .chat-content-measure {
-    max-width: 70em;
+    max-width: 140em;
   }
 
   /* Keep style invalidation local without paint-containing sticky descendants. */
@@ -5578,7 +5915,29 @@
     animation: input-flash 0.6s ease-out;
   }
 
-  /* The full-width prompt layer owns the docked divider. */
+  .conversation-composer {
+    --composer-lane-inset: 1rem;
+  }
+
+  .conversation-composer.chief-composer {
+    --composer-lane-inset: 0.25rem;
+  }
+
+  .composer-prompt-lane {
+    padding: 0.5rem var(--composer-lane-inset) var(--composer-lane-inset);
+  }
+
+  @media (min-width: 640px) {
+    .conversation-composer {
+      --composer-lane-inset: 1.5rem;
+    }
+
+    .conversation-composer.chief-composer {
+      --composer-lane-inset: 0.5rem;
+    }
+  }
+
+  /* The prompt lane owns the outer inset around the nested composer surface. */
   .composer-prompt-layer :global(.rich-input-container) {
     border-top-width: 0;
   }

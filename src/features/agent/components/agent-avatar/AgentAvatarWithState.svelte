@@ -16,6 +16,8 @@
   interface Props {
     agentId: string;
     specialist?: string | null;
+    /** Specialist `icon` metadata; takes precedence over the specialist-id map when valid. */
+    icon?: string | null;
     provider?: string;
     variant?: AgentAvatarVariant;
     /** @deprecated Use a named variant. Numeric sizes remain until consumer migration completes. */
@@ -27,6 +29,7 @@
   let {
     agentId,
     specialist = null,
+    icon = null,
     provider = undefined,
     variant = defaultAgentAvatarVariant,
     size = undefined,
@@ -51,7 +54,10 @@
   data-avatar-state={state}
   data-avatar-variant={usesNamedVariant ? variant : undefined}
 >
-  <AgentAvatar {agentId} {specialist} {provider} {variant} {size} />
+  <AgentAvatar {agentId} {specialist} {icon} {provider} {variant} {size} />
+  {#if state === 'unread'}
+    <span class="agent-avatar-unread-dot" data-avatar-unread-dot></span>
+  {/if}
 </span>
 
 <style>
@@ -70,7 +76,7 @@
     border-radius: var(--agent-avatar-corner-radius, 6px);
     clip-path: inset(0 round var(--agent-avatar-corner-radius, 6px));
     background-color: var(--agent-avatar-background);
-    color: #080808;
+    color: hsl(var(--agent-avatar-foreground));
     opacity: 1;
     transition: background-color var(--motion-fast) var(--ease-standard);
     forced-color-adjust: auto;
@@ -100,6 +106,17 @@
   .agent-avatar-with-state--needs-permission,
   .agent-avatar-with-state--attention-discussion {
     --agent-avatar-background: hsl(var(--agent-avatar-surface-attention));
+  }
+
+  .agent-avatar-unread-dot {
+    position: absolute;
+    inset-inline-end: 3px;
+    inset-block-end: 3px;
+    width: 6px;
+    height: 6px;
+    border-radius: 9999px;
+    background-color: hsl(var(--workspace-status-unread));
+    pointer-events: none;
   }
 
   @media (forced-colors: active) {
@@ -136,6 +153,9 @@
     .agent-avatar-with-state--attention-discussion {
       --agent-avatar-background-forced: Mark;
       background-color: Mark;
+    }
+    .agent-avatar-unread-dot {
+      background-color: CanvasText;
     }
   }
 

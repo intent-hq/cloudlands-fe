@@ -112,7 +112,7 @@ describe('ThinkingBlock — live streaming integration', () => {
     expect(updatedButton.getAttribute('aria-expanded')).toBe('true');
   });
 
-  it('thinking block stays expanded while accumulating, collapses when text starts', async () => {
+  it('thinking block stays expanded while accumulating, then becomes inline', async () => {
     const StreamingMessageContent = (await import('../StreamingMessageContent.svelte')).default;
     const reconciler = new ChatTranscriptReconciler();
 
@@ -162,21 +162,9 @@ describe('ThinkingBlock — live streaming integration', () => {
     transcript = reconciler.transcript();
     rerender({ content: transcript.messages[0].contentBlocks || [], isStreaming: true });
 
-    // Thinking should now be collapsed (not the last block anymore)
-    await waitFor(
-      () => {
-        const buttons = screen.getAllByRole('button');
-        const thinkingButton = buttons.find((b) => b.textContent?.includes('Thinking'));
-        expect(thinkingButton?.getAttribute('aria-expanded')).toBe('false');
-      },
-      { timeout: 500 },
-    );
-
-    // Wait for collapse transition to complete
-    await new Promise((r) => setTimeout(r, 300));
-
-    // Only text block viewer should be visible now (thinking collapsed)
+    // Completed headingless thinking becomes inline when the answer starts.
+    await waitFor(() => expect(screen.queryByTestId('reasoning-disclosure')).toBeNull());
     const viewers = screen.getAllByTestId('markdown-viewer');
-    expect(viewers.length).toBe(1);
+    expect(viewers.map((viewer) => viewer.textContent)).toEqual(['Reasoning...', 'Answer: 42.']);
   });
 });

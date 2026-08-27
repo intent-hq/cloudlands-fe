@@ -13,17 +13,15 @@ describe('workspace surface background contract', () => {
     expect(sidebar).not.toMatch(/sidebar-panel[^"\n]*(?:bg-sidebar|background)/);
   });
 
-  it('paints tab, column, sidebar-host, and panel-canvas surfaces with the sidebar token', () => {
+  it('paints tab, sidebar-host, and panel-canvas surfaces with the sidebar token', () => {
     const layout = source('src/lib/components/workspace/WorkspaceLayout.svelte');
-    const columns = source('src/lib/components/workspace/WorkspaceColumnsView.svelte');
     const panelLayout = source('src/lib/components/layout/panel-system/PanelLayout.svelte');
     const appLayout = source('src/routes/(app)/+layout.svelte');
     expect(layout).toContain('workspace-page h-full flex flex-col relative bg-sidebar');
     expect(layout).toContain('workspace-sidebar-{sidebarSide} flex-none h-full min-w-0 bg-sidebar');
     expect(layout).not.toContain("'bg-background'");
-    expect(columns).toContain('rounded-xl border border-border bg-sidebar shadow-sm');
     expect(panelLayout).toContain('panel-layout h-full w-full flex flex-col bg-sidebar');
-    expect(appLayout).toContain("'rounded-xl bg-sidebar border border-border shadow-sm'");
+    expect(appLayout).toContain('rounded-xl bg-sidebar border border-border shadow-sm');
   });
 
   it('keeps every renderer shell layer transparent', () => {

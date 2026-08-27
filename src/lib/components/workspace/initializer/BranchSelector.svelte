@@ -11,6 +11,7 @@
   import { createLogger } from '$lib/utils/client-logger';
   import { appClient } from '$lib/client';
   import { performanceMonitor } from '$lib/utils/performance';
+  import { parseGitHubUrl } from '$lib/utils/workspace-validation';
 
   import { setWorkspaceInitializerBranchForRepo } from '$store/renderer/slices/workspace-initializer/workspace-initializer-slice';
   import { selectWorkspaceInitializerBranchByRepo } from '$store/renderer/slices/workspace-initializer/workspace-initializer-selectors';
@@ -610,11 +611,11 @@
         }
       } else if (effectiveRepoType === 'github' && effectiveGithubUrl) {
         // Parse GitHub URL to get owner and repo
-        const match = effectiveGithubUrl.match(/github\.com\/([^\/]+)\/([^\/\.]+)/);
-        if (!match) {
+        const parsed = parseGitHubUrl(effectiveGithubUrl);
+        if (!parsed) {
           throw new Error('Invalid GitHub URL format');
         }
-        const [, owner, repo] = match;
+        const { owner, repo } = parsed;
 
         // Cached-first paint (`github.branches.listCached`, PROTOCOL §5.27):
         // refs from the daemon's local repo cache — or its one-round-trip
@@ -1223,8 +1224,7 @@
       (repoPath && /^[a-zA-Z0-9_-]+\/[a-zA-Z0-9._-]+$/.test(repoPath)
         ? `https://github.com/${repoPath}`
         : undefined);
-    const match = url?.match(/github\.com\/([^\/]+)\/([^\/\.]+)/);
-    return match ? { owner: match[1], repo: match[2] } : null;
+    return url ? parseGitHubUrl(url) : null;
   }
 
   // Server-side prefix search: when the user types in a GitHub repo's search

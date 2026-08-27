@@ -21,6 +21,7 @@
   import type { IconDefinition } from '@fortawesome/fontawesome-common-types';
   import type { BreadcrumbItem } from './types';
   import { m } from '$shared/paraglide/messages.js';
+  import { SHORTCUTS } from '$lib/utils/shortcuts';
 
   interface Props {
     /** Main title - displayed after breadcrumbs */
@@ -187,7 +188,7 @@
       <div class="flex items-center h-full pl-3">
         <TooltipShortcut
           label={m.ui_contentHeader_goBack_tooltip()}
-          shortcut="cmd+["
+          shortcut={SHORTCUTS.GO_BACK.key}
           side="bottom"
           delayDuration={300}
         >
@@ -204,7 +205,7 @@
         </TooltipShortcut>
         <TooltipShortcut
           label={m.ui_contentHeader_goForward_tooltip()}
-          shortcut="cmd+]"
+          shortcut={SHORTCUTS.GO_FORWARD.key}
           side="bottom"
           delayDuration={300}
         >

@@ -1,9 +1,9 @@
 import { sveltekit } from '@sveltejs/kit/vite';
-import { paraglideVitePlugin } from '@inlang/paraglide-js';
+import { compile, paraglideVitePlugin } from '@inlang/paraglide-js';
 import { defineConfig, loadEnv } from 'vite';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
-import { readFileSync } from 'fs';
+import { existsSync, readFileSync, readdirSync, statSync } from 'fs';
 import { execSync } from 'child_process';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -11,6 +11,52 @@ const __dirname = dirname(__filename);
 
 // Read version from package.json for __APP_VERSION__
 const packageJson = JSON.parse(readFileSync(join(__dirname, 'package.json'), 'utf8'));
+
+const paraglideProject = join(__dirname, 'project.inlang');
+const paraglideOutdir = join(__dirname, 'src/shared/paraglide');
+const messagesDir = join(__dirname, 'messages');
+const normalizeWatcherPath = (file) => file.replace(/\\/g, '/');
+
+function canReuseGeneratedParaglide() {
+  const outputs = ['messages.js', 'runtime.js'].map((file) => join(paraglideOutdir, file));
+  if (outputs.some((file) => !existsSync(file))) return false;
+
+  const inputs = [
+    join(paraglideProject, 'settings.json'),
+    ...readdirSync(messagesDir)
+      .filter((file) => file.endsWith('.json'))
+      .map((file) => join(messagesDir, file)),
+  ];
+  const newestInput = Math.max(...inputs.map((file) => statSync(file).mtimeMs));
+  const oldestOutput = Math.min(...outputs.map((file) => statSync(file).mtimeMs));
+  return oldestOutput >= newestInput;
+}
+
+const reuseGeneratedParaglide = () => ({
+  name: 'reuse-generated-paraglide',
+  enforce: 'pre',
+  buildStart() {
+    this.addWatchFile(messagesDir);
+    this.addWatchFile(join(paraglideProject, 'settings.json'));
+  },
+  async watchChange(file) {
+    const normalizedFile = normalizeWatcherPath(file);
+    const normalizedMessagesDir = normalizeWatcherPath(messagesDir);
+    const normalizedProjectSettings = normalizeWatcherPath(join(paraglideProject, 'settings.json'));
+    const isMessage =
+      normalizedFile.startsWith(`${normalizedMessagesDir}/`) && normalizedFile.endsWith('.json');
+    const isProjectSettings = normalizedFile === normalizedProjectSettings;
+    if (!isMessage && !isProjectSettings) return;
+
+    await compile({
+      project: paraglideProject,
+      outdir: paraglideOutdir,
+      outputStructure: 'locale-modules',
+      cleanOutdir: false,
+      isServer: "import.meta.env?.SSR ?? typeof window === 'undefined'",
+    });
+  },
+});
 
 // Node modules that should be excluded from browser bundle
 // These are dependencies of electron-store that use Node.js APIs
@@ -242,7 +288,7 @@ const excludeNodeModules = () => ({
   },
 });
 
-export default defineConfig(({ mode }) => {
+export default defineConfig(({ command, mode }) => {
   // Web profile: `INTENT_BUILD_TARGET=web` (set by the dev:web / build:web
   // scripts) builds the renderer for a plain browser — no Electron main or
   // preload. svelte.config.js switches the adapter output to dist/web for the
@@ -250,6 +296,7 @@ export default defineConfig(({ mode }) => {
   // credentials never enter immutable application chunks. VITE_INTENTD_WS_URL
   // remains a dev:web convenience; without either URL the app uses the mock.
   const isWebBuild = process.env.INTENT_BUILD_TARGET === 'web';
+  const isUiPreview = command === 'serve' && process.env.INTENT_UI_PREVIEW === '1';
   const useBundledMessages = mode === 'production';
   const i18nVirtualMessages = '\0intent-paraglide-messages';
   const i18nVirtualRuntime = '\0intent-paraglide-runtime';
@@ -314,14 +361,16 @@ export default defineConfig(({ mode }) => {
           return null;
         },
       },
-      paraglideVitePlugin({
-        project: join(__dirname, 'project.inlang'),
-        outdir: join(__dirname, 'src/shared/paraglide'),
-        // The app-wide `m` namespace uses nearly the complete catalog. Emitting one
-        // module per message creates 5k+ Rollup nodes without useful tree-shaking;
-        // locale modules keep the same runtime contract with a bounded build graph.
-        outputStructure: 'locale-modules',
-      }),
+      isUiPreview && canReuseGeneratedParaglide()
+        ? reuseGeneratedParaglide()
+        : paraglideVitePlugin({
+            project: paraglideProject,
+            outdir: paraglideOutdir,
+            // The app-wide `m` namespace uses nearly the complete catalog. Emitting one
+            // module per message creates 5k+ Rollup nodes without useful tree-shaking;
+            // locale modules keep the same runtime contract with a bounded build graph.
+            outputStructure: 'locale-modules',
+          }),
       devHealthProbeSilencer(),
       preventSvelteKitRegenHMR(),
       sveltekit(),

@@ -48,4 +48,11 @@ describe('generateSystemInfo', () => {
     expect(info.cpuCount).toBeGreaterThan(0);
     expect(() => new Date(info.timestamp).toISOString()).not.toThrow();
   });
+
+  it('reports the frontend build commit when available and omits it otherwise', () => {
+    expect(generateSystemInfo(snapshot, '0123456789abcdef').appBuildCommit).toBe(
+      '0123456789abcdef',
+    );
+    expect(generateSystemInfo(snapshot, '')).not.toHaveProperty('appBuildCommit');
+  });
 });

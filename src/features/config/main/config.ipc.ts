@@ -23,13 +23,68 @@ import { ConfigGetSchema, ConfigSetSchema, ConfigGetAllSchema } from '../../../m
 import {
   hydrateFromDaemon,
   isDaemonOwnedKey,
+  NON_SECRET_DAEMON_KEYS,
   pushDaemonKey,
   pushAllDaemonKeys,
+  readDaemonKey,
 } from './config-daemon-sync';
+import {
+  getBackendClient,
+  getBackendClientForConnection,
+  getBackendIdForIpcSender,
+  getPrimaryBackendId,
+} from '../../backend/main/backend.ipc';
+import type { JsonRpcClient } from '../../backend/main/json-rpc-client';
+import { LOCAL_CONNECTION_ID } from '../../backend/main/connections-store';
 
 const logger = new Logger('ConfigIPC');
 
 let configManager: ConfigManager | null = null;
+
+function getClientForBackend(backendId: string): JsonRpcClient {
+  const pooled = getBackendClientForConnection(backendId);
+  if (pooled) return pooled;
+  if (backendId === getPrimaryBackendId()) return getBackendClient();
+  throw new Error(`Backend client is not connected: ${backendId}`);
+}
+
+function getLocalClient(): JsonRpcClient | undefined {
+  return (
+    getBackendClientForConnection(LOCAL_CONNECTION_ID) ??
+    (getPrimaryBackendId() === LOCAL_CONNECTION_ID ? getBackendClient() : undefined)
+  );
+}
+
+function setPath(target: Record<string, unknown>, path: string, value: unknown): void {
+  const segments = path.split('.');
+  const leaf = segments.pop();
+  if (!leaf) return;
+  let cursor = target;
+  for (const segment of segments) {
+    const next = cursor[segment];
+    if (!next || typeof next !== 'object' || Array.isArray(next)) cursor[segment] = {};
+    cursor = cursor[segment] as Record<string, unknown>;
+  }
+  cursor[leaf] = value;
+}
+
+async function getAllForBackend(
+  client: JsonRpcClient,
+): Promise<ReturnType<ConfigManager['getAll']>> {
+  if (!configManager) throw new Error('ConfigManager not initialized');
+  const config = structuredClone(configManager.getAll()) as unknown as Record<string, unknown>;
+  await Promise.all(
+    NON_SECRET_DAEMON_KEYS.map(async (path) => {
+      try {
+        const value = await readDaemonKey(path, client);
+        if (value !== undefined && value !== null) setPath(config, path, value);
+      } catch (err) {
+        logger.warn('Failed to read daemon-owned config key', err as Error, { path });
+      }
+    }),
+  );
+  return config as unknown as ReturnType<ConfigManager['getAll']>;
+}
 
 /**
  * Get the shared ConfigManager instance
@@ -46,7 +101,9 @@ export function getConfigManager(): ConfigManager | null {
 export async function persistConfig(): Promise<void> {
   if (!configManager) return;
   try {
-    await pushAllDaemonKeys(configManager);
+    const localClient = getLocalClient();
+    if (!localClient) throw new Error('Local backend client is not connected');
+    await pushAllDaemonKeys(configManager, localClient);
     logger.debug('Persisted daemon-owned config sub-keys to daemon');
   } catch (err) {
     logger.error('Failed to persist config to daemon', err as Error);
@@ -64,7 +121,8 @@ export async function setupConfigIPC() {
     // renderer sees canonical values. FE-local sub-keys stay at their in-memory
     // defaults for the session.
     try {
-      await hydrateFromDaemon(configManager);
+      const localClient = getLocalClient();
+      if (localClient) await hydrateFromDaemon(configManager, localClient);
       await configManager.initialize();
     } catch (err) {
       logger.error('Failed to initialize ConfigManager', err as Error);
@@ -76,13 +134,18 @@ export async function setupConfigIPC() {
     CONFIG_CHANNELS.GET,
     createSafeValidatedHandler(
       ConfigGetSchema,
-      async (_evt, validated) => {
+      async (event, validated) => {
         try {
           if (!configManager) throw new Error('ConfigManager not initialized');
           if (validated.key) {
+            if (isDaemonOwnedKey(validated.key)) {
+              const client = getClientForBackend(getBackendIdForIpcSender(event.sender));
+              return await readDaemonKey(validated.key, client);
+            }
             return configManager.get(validated.key as any);
           }
-          return configManager.getAll();
+          const client = getClientForBackend(getBackendIdForIpcSender(event.sender));
+          return await getAllForBackend(client);
         } catch (err) {
           logger.error('config:get error', err as Error, { key: validated.key });
           return null;
@@ -97,7 +160,7 @@ export async function setupConfigIPC() {
     CONFIG_CHANNELS.SET,
     createSafeValidatedHandler(
       ConfigSetSchema,
-      async (_evt, validated) => {
+      async (event, validated) => {
         try {
           if (!configManager) throw new Error('ConfigManager not initialized');
 
@@ -105,18 +168,20 @@ export async function setupConfigIPC() {
             return { success: false, error: m.config_ipc_valueUndefined_error() };
           }
 
-          configManager.set(validated.key, validated.value);
-
           // Daemon-owned sub-keys are pushed to the daemon; FE-local sub-keys
           // stay in-memory for the session.
           if (isDaemonOwnedKey(validated.key)) {
             try {
-              await pushDaemonKey(validated.key, validated.value);
+              const backendId = getBackendIdForIpcSender(event.sender);
+              await pushDaemonKey(validated.key, validated.value, getClientForBackend(backendId));
+              if (backendId === getPrimaryBackendId()) {
+                configManager.set(validated.key, validated.value);
+              }
               logger.debug('Pushed daemon-owned config change', { key: validated.key });
             } catch (err) {
               logger.warn('Failed to push config change to daemon', err as Error);
             }
-          }
+          } else configManager.set(validated.key, validated.value);
 
           return { success: true };
         } catch (err) {
@@ -133,10 +198,11 @@ export async function setupConfigIPC() {
     CONFIG_CHANNELS.GET_ALL,
     createSafeValidatedHandler(
       ConfigGetAllSchema,
-      async () => {
+      async (event) => {
         try {
           if (!configManager) throw new Error('ConfigManager not initialized');
-          return configManager.getAll();
+          const client = getClientForBackend(getBackendIdForIpcSender(event.sender));
+          return await getAllForBackend(client);
         } catch (err) {
           logger.error('config:getAll error', err as Error);
           return null;

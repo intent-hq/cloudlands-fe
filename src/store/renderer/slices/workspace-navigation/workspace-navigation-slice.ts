@@ -364,7 +364,7 @@ export const openWorkspaceNote = createAction<
     noteId: string,
     options?: {
       openInAdjacentPanel?: boolean;
-      /** @deprecated Adjacent opens now reuse an existing fixed column. */
+      /** Force a fresh adjacent column even when an equivalent tab is already open elsewhere. */
       openInNewAdjacentPanel?: boolean;
       sourcePanelId?: string;
     },

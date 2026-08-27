@@ -61,13 +61,18 @@ vi.mock('$store/renderer/slices/workspace-agents/workspace-agents-selectors', ()
   selectAllWorkspaceAgents: () => readable([]),
 }));
 vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
-  selectAgentIsResponding: () => readable(false),
+  selectAgentProvider: () => readable(undefined),
+  selectAgentIsResponding: Object.assign(() => readable(false), { select: () => false }),
   selectAgentIsBlockedWaiting: () => readable(false),
   selectAgentAttentionRequest: () => readable(null),
   selectAgentSession: () => readable(null),
 }));
 vi.mock('$store/renderer/slices/permission/permission-selectors', () => ({
+  selectPendingCount: () => readable(0),
   selectPermissionRequests: () => readable([]),
+}));
+vi.mock('$store/renderer/slices/hud/hud-selectors', () => ({
+  selectHudAgentHasPendingQuestion: () => readable(false),
 }));
 vi.mock('$lib/components/ui/toast', () => ({
   toast: { success: vi.fn(), error: vi.fn() },
@@ -85,7 +90,7 @@ vi.mock('svelte-fa', async () => ({
 }));
 
 import PanelTabBar from '../PanelTabBar.svelte';
-import { setDraggedPanelId } from '../panel-drag';
+import { setDraggedPane } from '../panel-drag';
 
 const tabs = [{ id: 'tab-1', type: 'file' as const, title: 'File', closable: true }];
 
@@ -97,6 +102,7 @@ function renderTabBar(showTabStrip = false) {
       panelId: 'panel-1',
       workspaceId: 'workspace-1',
       showTabStrip,
+      onTabClose: vi.fn(),
       onClosePanel: vi.fn(),
     },
   });
@@ -112,12 +118,12 @@ beforeEach(() => {
     },
   );
   mocks.dispatch.mockClear();
-  setDraggedPanelId(null);
+  setDraggedPane(null);
 });
 
 afterEach(() => {
   vi.unstubAllGlobals();
-  setDraggedPanelId(null);
+  setDraggedPane(null);
   cleanup();
 });
 
@@ -151,9 +157,9 @@ describe('panel header double-click expansion', () => {
     });
   });
 
-  it('does not toggle while a panel drag is active', async () => {
+  it('does not toggle while a pane drag is active', async () => {
     const { container } = renderTabBar();
-    setDraggedPanelId('panel-1');
+    setDraggedPane({ panelId: 'panel-1', tabId: 'tab-1' });
     await fireEvent.dblClick(container.querySelector('[data-panel-tabless-header]')!);
     expect(mocks.dispatch).not.toHaveBeenCalled();
   });

@@ -17,10 +17,6 @@ function isSetupTerminal(terminal: TerminalTab): boolean {
   return (terminal.customName || terminal.name) === 'Setup';
 }
 
-export const selectIsTerminalOverlayOpen = store.createSelector((state, wsId: string | null) => {
-  return getActiveWs(state, wsId).isOpen;
-});
-
 export const selectTerminalOverlayHeight = store.createSelector((state) => {
   return state.terminals.height;
 });

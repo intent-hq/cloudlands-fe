@@ -15,7 +15,11 @@ import {
   type TargetClientHandle,
   type TransferRelayDeps,
 } from './workspace-transfer-relay';
-import type { TransferProgressEvent } from '../../../shared/types/workspace-transfer';
+import type {
+  TransferFinalizeParams,
+  TransferProgressEvent,
+  TransferStartParams,
+} from '../../../shared/types/workspace-transfer';
 
 type Notification = { method: string; params?: unknown };
 type Listener = (n: Notification) => void;
@@ -113,7 +117,6 @@ function makeDeps(
 ) {
   const progress: TransferProgressEvent[] = [];
   const deps: TransferRelayDeps = {
-    getSourceClient: () => source.client,
     createTargetClient: vi.fn(async () => {
       if (!target) throw new Error('no target in this scenario');
       return target.handle;
@@ -123,10 +126,26 @@ function makeDeps(
       throw new Error('no file sink in this scenario');
     }),
     broadcastProgress: (e) => progress.push(e),
+    isOwnerGone: vi.fn(() => false),
     logger: { info: vi.fn(), warn: vi.fn() },
     ...extra,
   };
   return { deps, progress };
+}
+
+/** Default owning window for tests that don't exercise cross-window affinity. */
+const OWNER = 101;
+
+/** Relay wrapper defaulting the ownerId so single-window tests stay terse. */
+function makeRelay(deps: TransferRelayDeps) {
+  const relay = createWorkspaceTransferRelay(deps);
+  return {
+    start: (params: TransferStartParams, source: RelayRpcClient, ownerId: number = OWNER) =>
+      relay.start(params, source, ownerId),
+    finalize: (params: TransferFinalizeParams, ownerId: number = OWNER) =>
+      relay.finalize(params, ownerId),
+    cancel: (ownerId: number = OWNER) => relay.cancel(ownerId),
+  };
 }
 
 /** Poll until the source's export.start was issued, then emit `type`. */
@@ -146,12 +165,12 @@ describe('workspace-transfer relay — server destination', () => {
     const source = makeSource();
     const target = makeTarget();
     const { deps, progress } = makeDeps(source, target);
-    const relay = createWorkspaceTransferRelay(deps);
+    const relay = makeRelay(deps);
 
-    const startPromise = relay.start({
-      workspaceId: 'ws-1',
-      destination: { kind: 'server', connectionId: 'conn-1' },
-    });
+    const startPromise = relay.start(
+      { workspaceId: 'ws-1', destination: { kind: 'server', connectionId: 'conn-1' } },
+      source.client,
+    );
     await emitWhenStarted(source, 'workspace:transfer:ready', READY_DATA);
     const result = await startPromise;
 
@@ -177,12 +196,12 @@ describe('workspace-transfer relay — server destination', () => {
     const source = makeSource();
     const target = makeTarget();
     const { deps, progress } = makeDeps(source, target);
-    const relay = createWorkspaceTransferRelay(deps);
+    const relay = makeRelay(deps);
 
-    const startPromise = relay.start({
-      workspaceId: 'ws-1',
-      destination: { kind: 'server', connectionId: 'conn-1' },
-    });
+    const startPromise = relay.start(
+      { workspaceId: 'ws-1', destination: { kind: 'server', connectionId: 'conn-1' } },
+      source.client,
+    );
     await emitWhenStarted(source, 'workspace:transfer:progress', {
       workspaceId: 'ws-1',
       exportId: 'export-1',
@@ -198,12 +217,12 @@ describe('workspace-transfer relay — server destination', () => {
     const source = makeSource();
     const target = makeTarget();
     const { deps, progress } = makeDeps(source, target);
-    const relay = createWorkspaceTransferRelay(deps);
+    const relay = makeRelay(deps);
 
-    const startPromise = relay.start({
-      workspaceId: 'ws-1',
-      destination: { kind: 'server', connectionId: 'conn-1' },
-    });
+    const startPromise = relay.start(
+      { workspaceId: 'ws-1', destination: { kind: 'server', connectionId: 'conn-1' } },
+      source.client,
+    );
     await emitWhenStarted(source, 'workspace:transfer:failed', {
       workspaceId: 'ws-OTHER',
       exportId: 'export-x',
@@ -220,12 +239,12 @@ describe('workspace-transfer relay — server destination', () => {
     const source = makeSource();
     const target = makeTarget();
     const { deps } = makeDeps(source, target);
-    const relay = createWorkspaceTransferRelay(deps);
+    const relay = makeRelay(deps);
 
-    const startPromise = relay.start({
-      workspaceId: 'ws-1',
-      destination: { kind: 'server', connectionId: 'conn-1' },
-    });
+    const startPromise = relay.start(
+      { workspaceId: 'ws-1', destination: { kind: 'server', connectionId: 'conn-1' } },
+      source.client,
+    );
     await emitWhenStarted(source, 'workspace:transfer:failed', {
       workspaceId: 'ws-1',
       exportId: 'export-1',
@@ -245,12 +264,12 @@ describe('workspace-transfer relay — server destination', () => {
       'workspace.import.begin': () => new Error('versions must match exactly'),
     });
     const { deps } = makeDeps(source, target);
-    const relay = createWorkspaceTransferRelay(deps);
+    const relay = makeRelay(deps);
 
-    const startPromise = relay.start({
-      workspaceId: 'ws-1',
-      destination: { kind: 'server', connectionId: 'conn-1' },
-    });
+    const startPromise = relay.start(
+      { workspaceId: 'ws-1', destination: { kind: 'server', connectionId: 'conn-1' } },
+      source.client,
+    );
     await emitWhenStarted(source, 'workspace:transfer:ready', READY_DATA);
     const result = await startPromise;
 
@@ -268,12 +287,12 @@ describe('workspace-transfer relay — server destination', () => {
         seq === 1 ? new Error('connection lost') : { importId: 'import-1', seq },
     });
     const { deps } = makeDeps(source, target);
-    const relay = createWorkspaceTransferRelay(deps);
+    const relay = makeRelay(deps);
 
-    const startPromise = relay.start({
-      workspaceId: 'ws-1',
-      destination: { kind: 'server', connectionId: 'conn-1' },
-    });
+    const startPromise = relay.start(
+      { workspaceId: 'ws-1', destination: { kind: 'server', connectionId: 'conn-1' } },
+      source.client,
+    );
     await emitWhenStarted(source, 'workspace:transfer:ready', READY_DATA);
     const result = await startPromise;
 
@@ -290,12 +309,12 @@ describe('workspace-transfer relay — server destination', () => {
         throw new Error('unknown connection conn-9');
       }),
     });
-    const relay = createWorkspaceTransferRelay(deps);
+    const relay = makeRelay(deps);
 
-    const startPromise = relay.start({
-      workspaceId: 'ws-1',
-      destination: { kind: 'server', connectionId: 'conn-9' },
-    });
+    const startPromise = relay.start(
+      { workspaceId: 'ws-1', destination: { kind: 'server', connectionId: 'conn-9' } },
+      source.client,
+    );
     await emitWhenStarted(source, 'workspace:transfer:ready', READY_DATA);
     const result = await startPromise;
 
@@ -307,21 +326,21 @@ describe('workspace-transfer relay — server destination', () => {
     const source = makeSource();
     const target = makeTarget();
     const { deps } = makeDeps(source, target);
-    const relay = createWorkspaceTransferRelay(deps);
+    const relay = makeRelay(deps);
 
-    const first = relay.start({
-      workspaceId: 'ws-1',
-      destination: { kind: 'server', connectionId: 'conn-1' },
-    });
+    const first = relay.start(
+      { workspaceId: 'ws-1', destination: { kind: 'server', connectionId: 'conn-1' } },
+      source.client,
+    );
     await emitWhenStarted(source, 'workspace:transfer:ready', READY_DATA);
     await first;
     // No finalize and no cancel (e.g. renderer reload) — the session lingers.
     expect(source.calls.some((c) => c.method === 'workspace.export.abort')).toBe(false);
 
-    const second = relay.start({
-      workspaceId: 'ws-2',
-      destination: { kind: 'server', connectionId: 'conn-1' },
-    });
+    const second = relay.start(
+      { workspaceId: 'ws-2', destination: { kind: 'server', connectionId: 'conn-1' } },
+      source.client,
+    );
     await vi.waitFor(() => {
       if (!source.calls.some((c) => c.method === 'workspace.export.abort')) {
         throw new Error('stale export not aborted yet');
@@ -342,16 +361,16 @@ describe('workspace-transfer relay — server destination', () => {
     const source = makeSource();
     const target = makeTarget();
     const { deps } = makeDeps(source, target);
-    const relay = createWorkspaceTransferRelay(deps);
+    const relay = makeRelay(deps);
 
-    const first = relay.start({
-      workspaceId: 'ws-1',
-      destination: { kind: 'server', connectionId: 'conn-1' },
-    });
-    const second = await relay.start({
-      workspaceId: 'ws-2',
-      destination: { kind: 'server', connectionId: 'conn-1' },
-    });
+    const first = relay.start(
+      { workspaceId: 'ws-1', destination: { kind: 'server', connectionId: 'conn-1' } },
+      source.client,
+    );
+    const second = await relay.start(
+      { workspaceId: 'ws-2', destination: { kind: 'server', connectionId: 'conn-1' } },
+      source.client,
+    );
     expect(second).toMatchObject({ success: false, error: expect.stringContaining('already') });
 
     await emitWhenStarted(source, 'workspace:transfer:ready', READY_DATA);
@@ -380,9 +399,12 @@ describe('workspace-transfer relay — download destination', () => {
     const { deps, progress } = makeDeps(source, undefined, {
       openFileSink: vi.fn(async () => sink),
     });
-    const relay = createWorkspaceTransferRelay(deps);
+    const relay = makeRelay(deps);
 
-    const startPromise = relay.start({ workspaceId: 'ws-1', destination: { kind: 'download' } });
+    const startPromise = relay.start(
+      { workspaceId: 'ws-1', destination: { kind: 'download' } },
+      source.client,
+    );
     await emitWhenStarted(source, 'workspace:transfer:ready', READY_DATA);
     const result = await startPromise;
 
@@ -398,12 +420,12 @@ describe('workspace-transfer relay — download destination', () => {
     const { deps } = makeDeps(source, undefined, {
       showSaveDialog: vi.fn(async () => undefined),
     });
-    const relay = createWorkspaceTransferRelay(deps);
+    const relay = makeRelay(deps);
 
-    const result = await relay.start({
-      workspaceId: 'ws-1',
-      destination: { kind: 'download' },
-    });
+    const result = await relay.start(
+      { workspaceId: 'ws-1', destination: { kind: 'download' } },
+      source.client,
+    );
     expect(result).toEqual({ success: false, canceled: true });
     expect(source.calls).toEqual([]);
   });
@@ -417,9 +439,12 @@ describe('workspace-transfer relay — download destination', () => {
     });
     const { sink, discard } = makeSink();
     const { deps } = makeDeps(source, undefined, { openFileSink: vi.fn(async () => sink) });
-    const relay = createWorkspaceTransferRelay(deps);
+    const relay = makeRelay(deps);
 
-    const startPromise = relay.start({ workspaceId: 'ws-1', destination: { kind: 'download' } });
+    const startPromise = relay.start(
+      { workspaceId: 'ws-1', destination: { kind: 'download' } },
+      source.client,
+    );
     await emitWhenStarted(source, 'workspace:transfer:ready', READY_DATA);
     const result = await startPromise;
 
@@ -438,11 +463,11 @@ describe('workspace-transfer relay — finalize', () => {
     const target = makeTarget(targetOverrides);
     const targetFactory = vi.fn(async () => target.handle);
     const { deps } = makeDeps(source, target, { createTargetClient: targetFactory });
-    const relay = createWorkspaceTransferRelay(deps);
-    const startPromise = relay.start({
-      workspaceId: 'ws-1',
-      destination: { kind: 'server', connectionId: 'conn-1' },
-    });
+    const relay = makeRelay(deps);
+    const startPromise = relay.start(
+      { workspaceId: 'ws-1', destination: { kind: 'server', connectionId: 'conn-1' } },
+      source.client,
+    );
     await emitWhenStarted(source, 'workspace:transfer:ready', READY_DATA);
     await startPromise;
     return { relay, source, target, targetFactory };
@@ -504,33 +529,47 @@ describe('workspace-transfer relay — finalize', () => {
   it('rejects finalize with no committed transfer', async () => {
     const source = makeSource();
     const { deps } = makeDeps(source);
-    const relay = createWorkspaceTransferRelay(deps);
+    const relay = makeRelay(deps);
     const result = await relay.finalize({ archiveSource: true });
-    expect(result).toMatchObject({ success: false, error: expect.stringContaining('no committed') });
+    expect(result).toMatchObject({
+      success: false,
+      error: expect.stringContaining('no committed'),
+    });
   });
 
-  it('finalize talks to the source pinned at start, not the switched shared client', async () => {
-    const source = makeSource();
+  it('start and finalize use the per-invocation source client, not a shared one', async () => {
+    const first = makeSource();
+    const second = makeSource();
     const target = makeTarget();
-    const other = makeSource();
-    let active = source;
-    const { deps } = makeDeps(source, target, { getSourceClient: () => active.client });
-    const relay = createWorkspaceTransferRelay(deps);
+    const { deps } = makeDeps(first, target);
+    const relay = makeRelay(deps);
 
-    const startPromise = relay.start({
-      workspaceId: 'ws-1',
-      destination: { kind: 'server', connectionId: 'conn-1' },
+    const firstStart = relay.start(
+      { workspaceId: 'ws-1', destination: { kind: 'server', connectionId: 'conn-1' } },
+      first.client,
+    );
+    await emitWhenStarted(first, 'workspace:transfer:ready', READY_DATA);
+    await firstStart;
+    await relay.finalize({ archiveSource: false, restartAgents: false });
+
+    // A start invoked from a window bound to another backend must talk to
+    // that backend for export.start/finalize; the first client sees nothing.
+    const callsBefore = first.calls.length;
+    const secondStart = relay.start(
+      { workspaceId: 'ws-2', destination: { kind: 'server', connectionId: 'conn-1' } },
+      second.client,
+    );
+    await emitWhenStarted(second, 'workspace:transfer:ready', {
+      ...READY_DATA,
+      workspaceId: 'ws-2',
     });
-    await emitWhenStarted(source, 'workspace:transfer:ready', READY_DATA);
-    await startPromise;
-
-    // Simulate a backend switch swapping the shared client mid-wizard.
-    active = other;
+    await secondStart;
     const result = await relay.finalize({ archiveSource: true, restartAgents: false });
 
     expect(result).toEqual({ success: true });
-    expect(source.calls.some((c) => c.method === 'workspace.export.finalize')).toBe(true);
-    expect(other.calls).toEqual([]);
+    expect(second.calls.some((c) => c.method === 'workspace.export.start')).toBe(true);
+    expect(second.calls.some((c) => c.method === 'workspace.export.finalize')).toBe(true);
+    expect(first.calls.length).toBe(callsBefore);
   });
 });
 
@@ -538,12 +577,12 @@ describe('workspace-transfer relay — cancel', () => {
   it('cancel mid-build aborts the export and start resolves canceled', async () => {
     const source = makeSource();
     const { deps } = makeDeps(source);
-    const relay = createWorkspaceTransferRelay(deps);
+    const relay = makeRelay(deps);
 
-    const startPromise = relay.start({
-      workspaceId: 'ws-1',
-      destination: { kind: 'server', connectionId: 'conn-1' },
-    });
+    const startPromise = relay.start(
+      { workspaceId: 'ws-1', destination: { kind: 'server', connectionId: 'conn-1' } },
+      source.client,
+    );
     await vi.waitFor(() => {
       if (!source.started()) throw new Error('not started yet');
     });
@@ -564,12 +603,12 @@ describe('workspace-transfer relay — cancel', () => {
     const source = makeSource();
     const target = makeTarget();
     const { deps } = makeDeps(source, target);
-    const relay = createWorkspaceTransferRelay(deps);
+    const relay = makeRelay(deps);
 
-    const startPromise = relay.start({
-      workspaceId: 'ws-1',
-      destination: { kind: 'server', connectionId: 'conn-1' },
-    });
+    const startPromise = relay.start(
+      { workspaceId: 'ws-1', destination: { kind: 'server', connectionId: 'conn-1' } },
+      source.client,
+    );
     await emitWhenStarted(source, 'workspace:transfer:ready', READY_DATA);
     await startPromise;
 
@@ -584,7 +623,7 @@ describe('workspace-transfer relay — cancel', () => {
   it('cancel with no session is a quiet no-op', async () => {
     const source = makeSource();
     const { deps } = makeDeps(source);
-    const relay = createWorkspaceTransferRelay(deps);
+    const relay = makeRelay(deps);
     expect(await relay.cancel()).toEqual({ success: true });
     expect(source.calls).toEqual([]);
   });
@@ -600,13 +639,13 @@ describe('workspace-transfer relay — cancel', () => {
       },
     });
     const { deps } = makeDeps(source, target);
-    const relay = createWorkspaceTransferRelay(deps);
+    const relay = makeRelay(deps);
     relayRef = relay;
 
-    const startPromise = relay.start({
-      workspaceId: 'ws-1',
-      destination: { kind: 'server', connectionId: 'conn-1' },
-    });
+    const startPromise = relay.start(
+      { workspaceId: 'ws-1', destination: { kind: 'server', connectionId: 'conn-1' } },
+      source.client,
+    );
     await emitWhenStarted(source, 'workspace:transfer:ready', READY_DATA);
     const result = await startPromise;
 
@@ -645,14 +684,208 @@ describe('workspace-transfer relay — cancel', () => {
         discard,
       })),
     });
-    const relay = createWorkspaceTransferRelay(deps);
+    const relay = makeRelay(deps);
     relayRef = relay;
 
-    const startPromise = relay.start({ workspaceId: 'ws-1', destination: { kind: 'download' } });
+    const startPromise = relay.start(
+      { workspaceId: 'ws-1', destination: { kind: 'download' } },
+      source.client,
+    );
     await emitWhenStarted(source, 'workspace:transfer:ready', READY_DATA);
     const result = await startPromise;
 
     expect(result).toMatchObject({ success: false, canceled: true });
     expect(discard).toHaveBeenCalledOnce();
+  });
+});
+
+describe('workspace-transfer relay — per-window session affinity (monorepo#3519)', () => {
+  const OTHER = 202;
+
+  /** Run a full transfer to committed-but-unfinalized from OWNER's window. */
+  async function committedRelay(extra: Partial<TransferRelayDeps> = {}) {
+    const source = makeSource();
+    const target = makeTarget();
+    const { deps } = makeDeps(source, target, extra);
+    const relay = makeRelay(deps);
+    const startPromise = relay.start(
+      { workspaceId: 'ws-1', destination: { kind: 'server', connectionId: 'conn-1' } },
+      source.client,
+    );
+    await emitWhenStarted(source, 'workspace:transfer:ready', READY_DATA);
+    await startPromise;
+    return { relay, source, target, deps };
+  }
+
+  it('rejects finalize from a non-owning window and keeps the session finalizable', async () => {
+    const { relay, source } = await committedRelay();
+
+    const hijack = await relay.finalize({ archiveSource: true }, OTHER);
+    expect(hijack).toEqual({
+      success: false,
+      error: 'the transfer session belongs to another window',
+      code: 'not-session-owner',
+    });
+    expect(source.calls.some((c) => c.method === 'workspace.export.finalize')).toBe(false);
+
+    // The owner's finalize still works afterwards.
+    const result = await relay.finalize({ archiveSource: true });
+    expect(result).toEqual({ success: true });
+    expect(source.calls.some((c) => c.method === 'workspace.export.finalize')).toBe(true);
+  });
+
+  it('rejects cancel from a non-owning window without aborting the export', async () => {
+    const { relay, source } = await committedRelay();
+
+    const hijack = await relay.cancel(OTHER);
+    expect(hijack).toMatchObject({ success: false, code: 'not-session-owner' });
+    expect(source.calls.some((c) => c.method === 'workspace.export.abort')).toBe(false);
+
+    // The owner can still cancel (aborts the committed export staging).
+    const result = await relay.cancel();
+    expect(result).toEqual({ success: true });
+    expect(source.calls.some((c) => c.method === 'workspace.export.abort')).toBe(true);
+  });
+
+  it('rejects a second-window start over a committed-but-unfinalized session (no silent abort)', async () => {
+    const { relay, source } = await committedRelay();
+    const other = makeSource();
+
+    const result = await relay.start(
+      { workspaceId: 'ws-2', destination: { kind: 'server', connectionId: 'conn-1' } },
+      other.client,
+      OTHER,
+    );
+    expect(result).toMatchObject({ success: false, code: 'not-session-owner' });
+    expect(source.calls.some((c) => c.method === 'workspace.export.abort')).toBe(false);
+    expect(other.calls).toEqual([]);
+
+    // The owner's session is intact: finalize still lands on the source.
+    expect(await relay.finalize({ archiveSource: false })).toEqual({ success: true });
+  });
+
+  it('rejects a mid-run cancel from a non-owning window; the transfer completes', async () => {
+    const source = makeSource();
+    const target = makeTarget();
+    const { deps } = makeDeps(source, target);
+    const relay = makeRelay(deps);
+
+    const startPromise = relay.start(
+      { workspaceId: 'ws-1', destination: { kind: 'server', connectionId: 'conn-1' } },
+      source.client,
+    );
+    await vi.waitFor(() => {
+      if (!source.started()) throw new Error('not started yet');
+    });
+    const hijack = await relay.cancel(OTHER);
+    expect(hijack).toMatchObject({ success: false, code: 'not-session-owner' });
+
+    source.emit('workspace:transfer:ready', READY_DATA);
+    const result = await startPromise;
+    expect(result).toMatchObject({ success: true });
+    expect(source.calls.some((c) => c.method === 'workspace.export.abort')).toBe(false);
+  });
+
+  it('releases a session whose owning window is gone: another window may finalize', async () => {
+    const isOwnerGone = vi.fn(() => false);
+    const { relay, source } = await committedRelay({ isOwnerGone });
+
+    isOwnerGone.mockReturnValue(true);
+    const result = await relay.finalize({ archiveSource: true }, OTHER);
+    expect(result).toEqual({ success: true });
+    expect(isOwnerGone).toHaveBeenCalledWith(OWNER);
+    expect(source.calls.some((c) => c.method === 'workspace.export.finalize')).toBe(true);
+  });
+
+  it('releases a committed leftover whose owner is gone: a new start aborts and proceeds', async () => {
+    const isOwnerGone = vi.fn(() => false);
+    const { relay, source } = await committedRelay({ isOwnerGone });
+
+    isOwnerGone.mockReturnValue(true);
+    const second = relay.start(
+      { workspaceId: 'ws-2', destination: { kind: 'server', connectionId: 'conn-1' } },
+      source.client,
+      OTHER,
+    );
+    await vi.waitFor(() => {
+      if (!source.calls.some((c) => c.method === 'workspace.export.abort')) {
+        throw new Error('stale export not aborted yet');
+      }
+    });
+    await vi.waitFor(() => {
+      if (source.calls.filter((c) => c.method === 'workspace.export.start').length < 2) {
+        throw new Error('second export not started yet');
+      }
+    });
+    source.emit('workspace:transfer:ready', { ...READY_DATA, workspaceId: 'ws-2' });
+    await expect(second).resolves.toMatchObject({ success: true });
+  });
+
+  it('releases an in-flight run whose owner is gone: a new start cancels it and proceeds', async () => {
+    const isOwnerGone = vi.fn(() => false);
+    const source = makeSource();
+    const target = makeTarget();
+    const { deps } = makeDeps(source, target, { isOwnerGone });
+    const relay = makeRelay(deps);
+
+    // Orphaned run: mid-build (awaiting :ready), then its window closes.
+    const orphan = relay.start(
+      { workspaceId: 'ws-1', destination: { kind: 'server', connectionId: 'conn-1' } },
+      source.client,
+    );
+    await vi.waitFor(() => {
+      if (!source.started()) throw new Error('not started yet');
+    });
+    isOwnerGone.mockReturnValue(true);
+
+    const second = relay.start(
+      { workspaceId: 'ws-2', destination: { kind: 'server', connectionId: 'conn-1' } },
+      source.client,
+      OTHER,
+    );
+    // The orphan unwinds as cancelled and aborts its own export.
+    await expect(orphan).resolves.toMatchObject({ success: false, canceled: true });
+    await vi.waitFor(() => {
+      if (!source.calls.some((c) => c.method === 'workspace.export.abort')) {
+        throw new Error('orphaned export not aborted yet');
+      }
+    });
+
+    isOwnerGone.mockReturnValue(false);
+    await vi.waitFor(() => {
+      if (source.calls.filter((c) => c.method === 'workspace.export.start').length < 2) {
+        throw new Error('second export not started yet');
+      }
+    });
+    source.emit('workspace:transfer:ready', { ...READY_DATA, workspaceId: 'ws-2' });
+    await expect(second).resolves.toMatchObject({ success: true });
+
+    // The orphan's unwind must not have cleared the successor's session:
+    // the new owner can still finalize.
+    expect(await relay.finalize({ archiveSource: false }, OTHER)).toEqual({ success: true });
+  });
+
+  it('keeps rejecting a second start while the in-flight run\'s owner is alive', async () => {
+    const source = makeSource();
+    const target = makeTarget();
+    const { deps } = makeDeps(source, target);
+    const relay = makeRelay(deps);
+
+    const first = relay.start(
+      { workspaceId: 'ws-1', destination: { kind: 'server', connectionId: 'conn-1' } },
+      source.client,
+    );
+    await vi.waitFor(() => {
+      if (!source.started()) throw new Error('not started yet');
+    });
+    const second = await relay.start(
+      { workspaceId: 'ws-2', destination: { kind: 'server', connectionId: 'conn-1' } },
+      source.client,
+      OTHER,
+    );
+    expect(second).toMatchObject({ success: false, error: expect.stringContaining('already') });
+
+    source.emit('workspace:transfer:ready', READY_DATA);
+    await expect(first).resolves.toMatchObject({ success: true });
   });
 });
