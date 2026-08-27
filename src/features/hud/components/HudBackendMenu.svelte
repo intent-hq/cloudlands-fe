@@ -133,7 +133,9 @@
     align-items: center;
     gap: 8px;
     min-width: 0;
-    margin: 0;
+    /* Cancel the left padding so the dot keeps the footer's original
+       left-edge alignment despite the button's hover-affordance padding. */
+    margin: 0 0 0 -8px;
     padding: 3px 8px;
     border: none;
     border-radius: 4px;
