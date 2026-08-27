@@ -5659,7 +5659,6 @@ describe('daemonEventsBridge (workspace:created → recycled-ID purge + rehydrat
     // The bridge re-hydrates from the daemon's canonical list (PROTOCOL §5.5).
     expect(backendRequestSpy).toHaveBeenCalledWith('agent.list', {
       workspaceId: RECYCLED_WS,
-      includeRetired: true,
     });
   });
 
@@ -6274,7 +6273,6 @@ describe('daemonEventsBridge (delete grace window schedule/cancel events, monore
     // Reconcile refetch also runs — covers a window that never held a snapshot.
     expect(backendRequestSpy).toHaveBeenCalledWith('agent.list', {
       workspaceId: PENDING_WS,
-      includeRetired: true,
     });
   });
 
@@ -6299,7 +6297,6 @@ describe('daemonEventsBridge (delete grace window schedule/cancel events, monore
 
     expect(backendRequestSpy).toHaveBeenCalledWith('agent.list', {
       workspaceId: PENDING_WS,
-      includeRetired: true,
     });
   });
 

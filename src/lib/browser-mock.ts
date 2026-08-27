@@ -169,7 +169,7 @@ function mockBackendMethodResult(method: string, params?: Record<string, unknown
   }
   if (method === 'repo.list') return { repos: [] };
   if (method === 'settings.list') return { settings: [] };
-  if (method === 'agent.list') return { agents: [] };
+  if (method === 'agent.list') return { agents: [], retiredCount: 0 };
   if (method === 'agent.listInterrupted') return { agents: [] };
   if (method === 'models.list') return { models: [] };
   if (method === 'skill.list') return { skills: [] };

@@ -1133,8 +1133,8 @@ describe('LiveAgentsClient reads thread daemon activity flags (PROTOCOL §5.5)',
     });
   });
 
-  it('list omits includeRetired by default and forwards it verbatim when set (§5.5 soft retire)', async () => {
-    backend.onRequest('agent.list', () => ({ agents: [] }));
+  it('list omits retiredOnly by default and forwards it verbatim when set (§5.5, v8.2)', async () => {
+    backend.onRequest('agent.list', () => ({ agents: [], retiredCount: 0 }));
     const client = new LiveAgentsClient();
 
     await client.list('ws-1');
@@ -1143,14 +1143,35 @@ describe('LiveAgentsClient reads thread daemon activity flags (PROTOCOL §5.5)',
       params: { workspaceId: 'ws-1' },
     });
 
-    await client.list('ws-1', { includeRetired: true });
+    await client.list('ws-1', { retiredOnly: true });
     expect(backend.requests[1]).toEqual({
       method: 'agent.list',
-      params: { workspaceId: 'ws-1', includeRetired: true },
+      params: { workspaceId: 'ws-1', retiredOnly: true },
     });
   });
 
-  it('list carries retiredAt verbatim (§5.5 soft retire)', async () => {
+  it('listWithMeta surfaces retiredCount and defaults it to 0 when absent (§5.5, v8.2)', async () => {
+    backend.onRequest('agent.list', () => ({
+      agents: [{ id: 'agent-active', workspaceId: 'ws-1', name: 'Active', status: 'active' }],
+      retiredCount: 3,
+    }));
+    const client = new LiveAgentsClient();
+
+    const { agents, retiredCount } = await client.listWithMeta('ws-1');
+    expect(backend.requests[0]).toEqual({
+      method: 'agent.list',
+      params: { workspaceId: 'ws-1' },
+    });
+    expect(agents).toHaveLength(1);
+    expect(agents[0].retiredAt).toBeUndefined();
+    expect(retiredCount).toBe(3);
+
+    backend.onRequest('agent.list', () => ({ agents: [] }));
+    const fallback = await client.listWithMeta('ws-1');
+    expect(fallback.retiredCount).toBe(0);
+  });
+
+  it('list carries retiredAt verbatim on the retired-only read (§5.5 soft retire)', async () => {
     backend.onRequest('agent.list', () => ({
       agents: [
         {
@@ -1160,14 +1181,13 @@ describe('LiveAgentsClient reads thread daemon activity flags (PROTOCOL §5.5)',
           status: 'idle',
           retiredAt: '2026-08-20T00:00:00.000Z',
         },
-        { id: 'agent-active', workspaceId: 'ws-1', name: 'Active', status: 'active' },
       ],
+      retiredCount: 1,
     }));
     const client = new LiveAgentsClient();
 
-    const agents = await client.list('ws-1', { includeRetired: true });
+    const agents = await client.list('ws-1', { retiredOnly: true });
     expect(agents[0]).toMatchObject({ id: 'agent-retired', retiredAt: '2026-08-20T00:00:00.000Z' });
-    expect(agents[1].retiredAt).toBeUndefined();
   });
 
   it('restore forwards agent.restore and folds success/error into a MutationResult (§5.5)', async () => {

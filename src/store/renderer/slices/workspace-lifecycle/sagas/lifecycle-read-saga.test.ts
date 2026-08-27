@@ -1240,7 +1240,7 @@ describe('lifecycleReadSaga', () => {
     run.channel.put(hydrateAgentsRequested(WS));
     await settle();
 
-    expect(mocks.agents.list).toHaveBeenCalledWith(WS, { includeRetired: true });
+    expect(mocks.agents.list).toHaveBeenCalledWith(WS);
     expect(run.actions).toContainEqual({
       type: 'workspaceAgents/setAgents',
       payload: [WS, [retired, active]],
@@ -1297,10 +1297,7 @@ describe('lifecycleReadSaga', () => {
     run.channel.put(hydrateAgentsRequested(otherWorkspaceId));
     await settle();
 
-    expect(mocks.agents.list.mock.calls).toEqual([
-      [WS, { includeRetired: true }],
-      [otherWorkspaceId, { includeRetired: true }],
-    ]);
+    expect(mocks.agents.list.mock.calls).toEqual([[WS], [otherWorkspaceId]]);
 
     resolvers[WS]!([]);
     resolvers[otherWorkspaceId]!([]);
@@ -1327,14 +1324,11 @@ describe('lifecycleReadSaga', () => {
     run.channel.put(hydrateAgentsRequested(WS));
     await settle();
 
-    expect(mocks.agents.list.mock.calls).toEqual([[WS, { includeRetired: true }]]);
+    expect(mocks.agents.list.mock.calls).toEqual([[WS]]);
     resolveFirst([]);
     await settle();
 
-    expect(mocks.agents.list.mock.calls).toEqual([
-      [WS, { includeRetired: true }],
-      [WS, { includeRetired: true }],
-    ]);
+    expect(mocks.agents.list.mock.calls).toEqual([[WS], [WS]]);
     expect(run.actions.filter((action) => action.type === setAgentsLoaded.type)).toHaveLength(2);
     await stop(run.task);
   });
@@ -1355,15 +1349,12 @@ describe('lifecycleReadSaga', () => {
     run.channel.put(hydrateAgentsRequested(WS));
     run.channel.put(hydrateAgentsRequested(WS));
     await settle();
-    expect(mocks.agents.list.mock.calls).toEqual([[WS, { includeRetired: true }]]);
+    expect(mocks.agents.list.mock.calls).toEqual([[WS]]);
 
     rejectFirst(new Error('offline'));
     await settle();
 
-    expect(mocks.agents.list.mock.calls).toEqual([
-      [WS, { includeRetired: true }],
-      [WS, { includeRetired: true }],
-    ]);
+    expect(mocks.agents.list.mock.calls).toEqual([[WS], [WS]]);
     expect(run.actions).toEqual([
       setAgentsLoaded(WS, true),
       { type: 'workspaceAgents/setAgents', payload: [WS, []] },
@@ -1391,15 +1382,12 @@ describe('lifecycleReadSaga', () => {
     resolveFirst([agent('agent-late')]);
     await settle();
 
-    expect(mocks.agents.list.mock.calls).toEqual([[WS, { includeRetired: true }]]);
+    expect(mocks.agents.list.mock.calls).toEqual([[WS]]);
     expect(run.actions).toEqual([]);
 
     run.channel.put(hydrateAgentsRequested(WS));
     await settle();
-    expect(mocks.agents.list.mock.calls).toEqual([
-      [WS, { includeRetired: true }],
-      [WS, { includeRetired: true }],
-    ]);
+    expect(mocks.agents.list.mock.calls).toEqual([[WS], [WS]]);
     expect(run.actions).toEqual([
       setAgentsLoaded(WS, true),
       { type: 'workspaceAgents/setAgents', payload: [WS, []] },

@@ -253,9 +253,10 @@ export interface AgentSession {
 
   /** ISO timestamp of a soft retirement (PROTOCOL §5.5 soft retire, v7.5).
    *  Presence-detected: served on `agent.get`/`agent.getSession` always and on
-   *  `agent.list` rows only under `includeRetired: true`; omitted on active
-   *  rows, never `null`. A retired session is inert daemon-side (sends,
-   *  queueing, watches, retry all reject) until `agent.restore` clears it. */
+   *  `agent.list` rows only on the retired-row read (`retiredOnly: true`,
+   *  v8.2); omitted on active rows, never `null`. A retired session is inert
+   *  daemon-side (sends, queueing, watches, retry all reject) until
+   *  `agent.restore` clears it. */
   retiredAt?: string;
 
   /** Harness version stamped at session creation (PROTOCOL §5.5, additive;

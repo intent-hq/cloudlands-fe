@@ -99,16 +99,32 @@ function normalizeAgent(raw: Record<string, unknown>): AgentSession {
 export class LiveAgentsClient implements AgentsClient {
   async list(
     workspaceId: string,
-    options?: { includeRetired?: boolean },
+    options?: { retiredOnly?: boolean },
   ): Promise<AgentSession[]> {
-    // `includeRetired` (§5.5 soft retire, v7.5) only rides the wire when the
-    // caller supplied it, so older daemons see an omitted param and the
-    // default read stays byte-identical (retired rows excluded daemon-side).
+    const { agents } = await this.listWithMeta(workspaceId, options);
+    return agents;
+  }
+
+  async listWithMeta(
+    workspaceId: string,
+    options?: { retiredOnly?: boolean },
+  ): Promise<{ agents: AgentSession[]; retiredCount: number }> {
+    // `retiredOnly` (§5.5 soft retire, v8.2) only rides the wire when the
+    // caller supplied it, so the default read carries no flags (retired rows
+    // excluded daemon-side). `retiredCount` (v8.2) is served on every read
+    // variant; the FE assumes an 8.2+ daemon and defaults to 0 only if the
+    // field is somehow absent.
     const params: Record<string, unknown> = { workspaceId };
-    if (options?.includeRetired !== undefined) params.includeRetired = options.includeRetired;
-    const result = await backendRequest<{ agents?: unknown[] }>('agent.list', params);
+    if (options?.retiredOnly !== undefined) params.retiredOnly = options.retiredOnly;
+    const result = await backendRequest<{ agents?: unknown[]; retiredCount?: number }>(
+      'agent.list',
+      params,
+    );
     const agents = Array.isArray(result?.agents) ? result.agents : [];
-    return agents.map((a) => normalizeAgent(a as Record<string, unknown>));
+    return {
+      agents: agents.map((a) => normalizeAgent(a as Record<string, unknown>)),
+      retiredCount: typeof result?.retiredCount === 'number' ? result.retiredCount : 0,
+    };
   }
 
   async get(agentId: string): Promise<AgentSession | null> {

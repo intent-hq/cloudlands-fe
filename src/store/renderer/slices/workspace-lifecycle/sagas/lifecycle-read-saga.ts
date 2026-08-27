@@ -260,14 +260,12 @@ function* refreshAgentStats(agentId: string, forceRefresh: boolean): SagaGenerat
 }
 
 function* hydrateAgents(workspaceId: string): SagaGenerator<void> {
-  // `includeRetired` (§5.5 soft retire, v7.5): retired rows are excluded from
-  // the default read daemon-side, but the sidebar's Retired bin needs them —
-  // they arrive carrying `retiredAt` and are partitioned out of the active
-  // sections in the UI rather than dropped here.
+  // Default read (§5.5 soft retire): retired rows are excluded daemon-side
+  // and no longer ride every hydration frame; the sidebar's Retired bin loads
+  // them on demand via the retired-only read (`retiredOnly: true`, v8.2).
   const listed: Awaited<ReturnType<typeof appClient.agents.list>> = yield* call(
     [appClient.agents, appClient.agents.list],
     workspaceId,
-    { includeRetired: true },
   );
   const fetched = [] as typeof listed;
   for (const agent of listed) {
