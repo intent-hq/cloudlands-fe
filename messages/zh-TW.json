@@ -5980,7 +5980,7 @@
   "settings_agentFeatures_taskGraph_label": "任務圖協調",
   "settings_agentFeatures_taskGraph_description": "啟用任務圖協調工作流程（批次委派、任務關聯、解除封鎖喚醒）",
   "settings_agentFeatures_peerAgents_label": "對等代理產生",
-  "settings_agentFeatures_peerAgents_description": "允許代理產生獨立的對等代理並自行退役（ws.agent.spawnPeer / ws.agent.retire）；僅適用於新工作階段",
+  "settings_agentFeatures_peerAgents_description": "允許代理產生獨立的對等代理並自行退役（帶 topLevel: true 的 ws.agent.create / ws.agent.retire）；僅適用於新工作階段",
   "settings_agentFeatures_maxTopLevelAgents_label": "頂層代理上限",
   "settings_agentFeatures_maxTopLevelAgents_ariaLabel": "每個工作區的頂層代理上限",
   "settings_agentFeatures_maxTopLevelAgents_save": "儲存",

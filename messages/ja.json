@@ -5980,7 +5980,7 @@
   "settings_agentFeatures_taskGraph_label": "タスクグラフ連携",
   "settings_agentFeatures_taskGraph_description": "タスクグラフ連携ワークフロー（バッチ委任、タスク関係、ブロック解除ウェイク）を有効にします",
   "settings_agentFeatures_peerAgents_label": "ピアエージェントの生成",
-  "settings_agentFeatures_peerAgents_description": "エージェントが独立したピアエージェントを生成し、自身を退役させられるようにします（ws.agent.spawnPeer / ws.agent.retire）。新しいセッションにのみ適用されます",
+  "settings_agentFeatures_peerAgents_description": "エージェントが独立したピアエージェントを生成し、自身を退役させられるようにします（topLevel: true を指定した ws.agent.create / ws.agent.retire）。新しいセッションにのみ適用されます",
   "settings_agentFeatures_maxTopLevelAgents_label": "トップレベルエージェントの上限",
   "settings_agentFeatures_maxTopLevelAgents_ariaLabel": "ワークスペースごとのトップレベルエージェントの上限",
   "settings_agentFeatures_maxTopLevelAgents_save": "保存",
