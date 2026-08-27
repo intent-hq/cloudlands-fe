@@ -61,6 +61,7 @@ import {
   setOrphanedSidecarInfo,
 } from './connection-mode';
 import { computeDaemonVersionRefresh } from './daemon-version-refresh';
+import { daemonHelloBuildKey, extractDaemonHelloBuildInfo } from './daemon-hello-build-info';
 import { detectOrphanedSidecar } from './intentd-orphan';
 import { defaultKill, restartOrphanedSidecar } from './orphan-recovery';
 import * as connectionsStore from './connections-store';
@@ -121,6 +122,10 @@ const BACKEND = IPC_CHANNELS.BACKEND;
 const CONNECTIONS = IPC_CHANNELS.CONNECTIONS;
 
 let client: JsonRpcClient | null = null;
+// Last daemon build identity logged from a `client.hello` result (#3649):
+// the handshake re-runs on every (re)connect, so dedupe on version+commit to
+// log the connected daemon's build once instead of once per reconnect.
+let lastLoggedDaemonBuildKey: string | null = null;
 const backendClients = new Map<string, JsonRpcClient>();
 const backendClientConnects = new Map<string, Promise<JsonRpcClient>>();
 let handlersRegistered = false;
@@ -539,6 +544,17 @@ export function getBackendClient(): JsonRpcClient {
       handleHelloProtocolVersion(
         typeof obj?.protocolVersion === 'string' ? obj.protocolVersion : null,
       );
+      // #3649: log the connected daemon's build identity once at INFO so the
+      // log file records which daemon build it talked to.
+      const helloBuild = extractDaemonHelloBuildInfo(result);
+      if (helloBuild && daemonHelloBuildKey(helloBuild) !== lastLoggedDaemonBuildKey) {
+        lastLoggedDaemonBuildKey = daemonHelloBuildKey(helloBuild);
+        // i18n-ignore (developer log message)
+        logger.info('Connected to intentd', {
+          version: helloBuild.version,
+          buildCommit: helloBuild.buildCommit ?? 'unknown',
+        });
+      }
       // #3448: refresh the adopted external daemon's version info from the
       // live `server.version` on every (re)connect — the startup probe only
       // latches it once, so a daemon upgrade would otherwise stay stale. For
