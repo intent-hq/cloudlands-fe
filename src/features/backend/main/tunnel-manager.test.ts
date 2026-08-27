@@ -115,6 +115,31 @@ function attachFakeDaemon(ws: FakeTunnelSocket): void {
   };
 }
 
+/**
+ * Wrap `ws.onFrame` so OPENs for ports in `refused` are answered with the
+ * daemon's connection-refused OPEN_ERR without any real TCP connect; all
+ * other frames pass through to the scripted daemon. Tests use this instead
+ * of grabbing-then-releasing an ephemeral port and dialing it for real:
+ * the released port can be re-bound by a parallel CI worker (or the
+ * loopback connect can succeed as a TCP self-connect) before the fake
+ * daemon dials it, turning the expected OPEN_ERR into OPEN_OK and hanging
+ * the test on a close that never comes (intent-hq/monorepo#3596).
+ */
+function refuseOpens(ws: FakeTunnelSocket, refused: ReadonlySet<number>): void {
+  const passthrough = ws.onFrame;
+  ws.onFrame = (frame) => {
+    if (frame.type === 'open' && refused.has(frame.port)) {
+      ws.deliver({
+        type: 'openErr',
+        streamId: frame.streamId,
+        message: `connect 127.0.0.1:${frame.port}: Connection refused (os error 111)`,
+      });
+      return;
+    }
+    passthrough?.(frame);
+  };
+}
+
 const WSS_CONFIG: BackendConnectionConfig = {
   transport: 'wss',
   host: '127.0.0.1',
@@ -131,6 +156,8 @@ function makeManager(
     connectTimeoutMs?: number;
     daemon?: boolean;
     config?: BackendConnectionConfig | null;
+    /** Remote ports whose OPENs get a scripted refused OPEN_ERR (see [[refuseOpens]]). */
+    refusedPorts?: Set<number>;
   } = {},
 ): { manager: TunnelManager; created: FakeTunnelSocket[] } {
   const created: FakeTunnelSocket[] = [];
@@ -139,6 +166,7 @@ function makeManager(
     socketFactory: () => {
       const ws = new FakeTunnelSocket();
       if (options.daemon !== false) attachFakeDaemon(ws);
+      if (options.refusedPorts) refuseOpens(ws, options.refusedPorts);
       created.push(ws);
       queueMicrotask(() => ws.open());
       return ws;
@@ -391,12 +419,9 @@ describe('TunnelManager', () => {
   });
 
   it('rejects the local socket when the remote OPEN fails', async () => {
-    // A port with nothing listening: grab an ephemeral port then release it.
-    const probe = await startEchoServer();
-    const deadPort = probe.port;
-    await new Promise<void>((resolve) => probe.server.close(() => resolve()));
-
-    const { manager } = makeManager();
+    // A remote port whose OPEN the scripted daemon refuses (#3596).
+    const deadPort = 4545;
+    const { manager } = makeManager({ refusedPorts: new Set([deadPort]) });
     onCleanup(() => manager.dispose());
     const localPort = await manager.forwardPort(deadPort);
     const client = await connectClient(localPort);
@@ -407,12 +432,9 @@ describe('TunnelManager', () => {
   it('drops the whole forward on a refused OPEN, leaving other forwards intact (#2537)', async () => {
     const healthy = await startEchoServer();
     onCleanup(() => healthy.server.close());
-    // A port with nothing listening: grab an ephemeral port then release it.
-    const probe = await startEchoServer();
-    const deadPort = probe.port;
-    await new Promise<void>((resolve) => probe.server.close(() => resolve()));
-
-    const { manager } = makeManager();
+    // A remote port whose OPEN the scripted daemon refuses (#3596).
+    const deadPort = 4545;
+    const { manager } = makeManager({ refusedPorts: new Set([deadPort]) });
     onCleanup(() => manager.dispose());
     const healthyLocal = await manager.forwardPort(healthy.port);
     const healthyClient = await connectClient(healthyLocal);
@@ -438,25 +460,22 @@ describe('TunnelManager', () => {
   });
 
   it('a later forwardPort recreates a forward dropped by a refused OPEN', async () => {
-    const probe = await startEchoServer();
-    const deadPort = probe.port;
-    await new Promise<void>((resolve) => probe.server.close(() => resolve()));
-
-    const { manager } = makeManager();
+    // The echo server listens throughout; the scripted daemon refuses OPENs
+    // for its port until the refusal is lifted below — deterministic
+    // stand-ins for a dead-then-revived remote port (#3596).
+    const { server, port: deadPort } = await startEchoServer();
+    onCleanup(() => server.close());
+    const refusedPorts = new Set([deadPort]);
+    const { manager } = makeManager({ refusedPorts });
     onCleanup(() => manager.dispose());
     const staleLocal = await manager.forwardPort(deadPort);
     const refused = await connectClient(staleLocal);
     await waitForClose(refused);
     await waitFor(() => manager.activeForwards().length === 0);
 
-    // The server comes back on the same remote port; the next forwardPort
+    // The server "comes back" on the same remote port; the next forwardPort
     // builds a fresh forward instead of returning the dropped one.
-    const revived = net.createServer((socket) => socket.pipe(socket));
-    await new Promise<void>((resolve, reject) => {
-      revived.once('error', reject);
-      revived.listen(deadPort, '127.0.0.1', () => resolve());
-    });
-    onCleanup(() => revived.close());
+    refusedPorts.delete(deadPort);
 
     const freshLocal = await manager.forwardPort(deadPort);
     expect(manager.activeForwards()).toEqual([{ remotePort: deadPort, localPort: freshLocal }]);
@@ -654,12 +673,9 @@ describe('TunnelManager', () => {
   it('notifies onForwardDropped for refused-OPEN drops and explicit closeForward', async () => {
     const healthy = await startEchoServer();
     onCleanup(() => healthy.server.close());
-    // A port with nothing listening: grab an ephemeral port then release it.
-    const probe = await startEchoServer();
-    const deadPort = probe.port;
-    await new Promise<void>((resolve) => probe.server.close(() => resolve()));
-
-    const { manager } = makeManager();
+    // A remote port whose OPEN the scripted daemon refuses (#3596).
+    const deadPort = 4545;
+    const { manager } = makeManager({ refusedPorts: new Set([deadPort]) });
     onCleanup(() => manager.dispose());
     const dropped: number[] = [];
     manager.onForwardDropped = (remotePort) => dropped.push(remotePort);
