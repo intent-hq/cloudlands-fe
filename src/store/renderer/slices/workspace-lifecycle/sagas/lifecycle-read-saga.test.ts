@@ -1231,6 +1231,11 @@ describe('lifecycleReadSaga', () => {
     await stop(run.task);
   });
 
+  // The two tests below stub the seam (appClient.agents.list), not the wire. On an
+  // 8.2+ daemon the default read excludes retired rows, but the saga must stay
+  // agnostic to row provenance: retired rows re-enter state via the retiredOnly
+  // read (lazy retired bin follow-up), and the auto-select guard has to hold no
+  // matter how a retired row reached the snapshot.
   it('keeps retired agents in state but never auto-selects them (§5.5 soft retire)', async () => {
     const retired = agent('agent-retired', { retiredAt: '2026-08-10T00:00:00.000Z' });
     const active = agent('agent-live');
@@ -1240,7 +1245,7 @@ describe('lifecycleReadSaga', () => {
     run.channel.put(hydrateAgentsRequested(WS));
     await settle();
 
-    expect(mocks.agents.list).toHaveBeenCalledWith(WS, { includeRetired: true });
+    expect(mocks.agents.list).toHaveBeenCalledWith(WS);
     expect(run.actions).toContainEqual({
       type: 'workspaceAgents/setAgents',
       payload: [WS, [retired, active]],
@@ -1297,10 +1302,7 @@ describe('lifecycleReadSaga', () => {
     run.channel.put(hydrateAgentsRequested(otherWorkspaceId));
     await settle();
 
-    expect(mocks.agents.list.mock.calls).toEqual([
-      [WS, { includeRetired: true }],
-      [otherWorkspaceId, { includeRetired: true }],
-    ]);
+    expect(mocks.agents.list.mock.calls).toEqual([[WS], [otherWorkspaceId]]);
 
     resolvers[WS]!([]);
     resolvers[otherWorkspaceId]!([]);
@@ -1327,14 +1329,11 @@ describe('lifecycleReadSaga', () => {
     run.channel.put(hydrateAgentsRequested(WS));
     await settle();
 
-    expect(mocks.agents.list.mock.calls).toEqual([[WS, { includeRetired: true }]]);
+    expect(mocks.agents.list.mock.calls).toEqual([[WS]]);
     resolveFirst([]);
     await settle();
 
-    expect(mocks.agents.list.mock.calls).toEqual([
-      [WS, { includeRetired: true }],
-      [WS, { includeRetired: true }],
-    ]);
+    expect(mocks.agents.list.mock.calls).toEqual([[WS], [WS]]);
     expect(run.actions.filter((action) => action.type === setAgentsLoaded.type)).toHaveLength(2);
     await stop(run.task);
   });
@@ -1355,15 +1354,12 @@ describe('lifecycleReadSaga', () => {
     run.channel.put(hydrateAgentsRequested(WS));
     run.channel.put(hydrateAgentsRequested(WS));
     await settle();
-    expect(mocks.agents.list.mock.calls).toEqual([[WS, { includeRetired: true }]]);
+    expect(mocks.agents.list.mock.calls).toEqual([[WS]]);
 
     rejectFirst(new Error('offline'));
     await settle();
 
-    expect(mocks.agents.list.mock.calls).toEqual([
-      [WS, { includeRetired: true }],
-      [WS, { includeRetired: true }],
-    ]);
+    expect(mocks.agents.list.mock.calls).toEqual([[WS], [WS]]);
     expect(run.actions).toEqual([
       setAgentsLoaded(WS, true),
       { type: 'workspaceAgents/setAgents', payload: [WS, []] },
@@ -1391,15 +1387,12 @@ describe('lifecycleReadSaga', () => {
     resolveFirst([agent('agent-late')]);
     await settle();
 
-    expect(mocks.agents.list.mock.calls).toEqual([[WS, { includeRetired: true }]]);
+    expect(mocks.agents.list.mock.calls).toEqual([[WS]]);
     expect(run.actions).toEqual([]);
 
     run.channel.put(hydrateAgentsRequested(WS));
     await settle();
-    expect(mocks.agents.list.mock.calls).toEqual([
-      [WS, { includeRetired: true }],
-      [WS, { includeRetired: true }],
-    ]);
+    expect(mocks.agents.list.mock.calls).toEqual([[WS], [WS]]);
     expect(run.actions).toEqual([
       setAgentsLoaded(WS, true),
       { type: 'workspaceAgents/setAgents', payload: [WS, []] },

@@ -503,11 +503,20 @@ export interface AgentsClient {
   /**
    * Agents of one workspace (`agent.list`, §5.5). Soft-retired sessions
    * (`retiredAt` set, v7.5) are excluded from the default read daemon-side;
-   * `options.includeRetired: true` serves every row, retired ones carrying
-   * the presence-detected `retiredAt` ISO timestamp. The flag only rides the
-   * wire when supplied so older daemons see an omitted param.
+   * `options.retiredOnly: true` (v8.2) serves ONLY retired rows, each
+   * carrying the presence-detected `retiredAt` ISO timestamp. The flag only
+   * rides the wire when supplied so the default read carries no flags.
    */
-  list(workspaceId: string, options?: { includeRetired?: boolean }): Promise<AgentSession[]>;
+  list(workspaceId: string, options?: { retiredOnly?: boolean }): Promise<AgentSession[]>;
+  /**
+   * Same read as `list` plus response metadata: `retiredCount` (v8.2) is the
+   * number of soft-retired sessions in the workspace, served on every
+   * `agent.list` variant (defaults to 0 if the field is absent).
+   */
+  listWithMeta(
+    workspaceId: string,
+    options?: { retiredOnly?: boolean },
+  ): Promise<{ agents: AgentSession[]; retiredCount: number }>;
   get(agentId: string): Promise<AgentSession | null>;
   /**
    * One page of an agent's retained transcript (`agent.getConversation`, §5.5).
