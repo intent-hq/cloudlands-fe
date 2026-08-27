@@ -41,6 +41,8 @@
   let name = $state('');
   let host = $state('');
   let port = $state('');
+  const CONNECTION_ACCENT_OPTIONS: readonly ConnectionAccent[] = [null, ...CONNECTION_ACCENTS];
+
   let accent = $state<ConnectionAccent>(DEFAULT_CONNECTION_ACCENT);
   let secret = $state('');
   let busy = $state<'update' | 'test' | null>(null);
@@ -57,7 +59,9 @@
   let secretInput: HTMLInputElement | null = $state(null);
   let focusSecretOnEdit = $state(false);
 
-  const savedAccent = $derived(device.accent ?? DEFAULT_CONNECTION_ACCENT);
+  const savedAccent = $derived(
+    device.accent === undefined ? DEFAULT_CONNECTION_ACCENT : device.accent,
+  );
   const address = $derived(`${device.host ?? ''}:${device.port ?? ''}`);
   const displayName = $derived(device.label.trim() || address);
   const displayHostname = $derived.by(() => {
@@ -138,6 +142,7 @@
   }
 
   function accentLabel(value: ConnectionAccent): string {
+    if (value === null) return m.settings_devices_accentNone_label();
     return {
       blue: m.settings_devices_accentBlue_label(),
       indigo: m.settings_devices_accentIndigo_label(),
@@ -439,13 +444,15 @@
             >{m.settings_devices_accent_label()}</legend
           >
           <div class="flex flex-wrap gap-2">
-            {#each CONNECTION_ACCENTS as option}
+            {#each CONNECTION_ACCENT_OPTIONS as option}
               <button
                 type="button"
                 class={cn(
                   'flex size-7 cursor-pointer items-center justify-center rounded-full border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
                   option === accent
-                    ? cn('border-transparent', CONNECTION_ACCENT_CLASSES[option])
+                    ? option === null
+                      ? 'border-foreground bg-background'
+                      : cn('border-transparent', CONNECTION_ACCENT_CLASSES[option])
                     : 'border-border/60 bg-transparent hover:border-border hover:bg-muted/30',
                 )}
                 aria-label={m.settings_devices_accentOption_ariaLabel({
@@ -454,7 +461,12 @@
                 aria-pressed={option === accent}
                 onclick={() => (accent = option)}
               >
-                {#if option !== accent}
+                {#if option === null}
+                  <span
+                    class="size-3.5 rounded-full border border-muted-foreground/60 bg-background"
+                    aria-hidden="true"
+                  ></span>
+                {:else if option !== accent}
                   <span
                     class={cn('size-3.5 rounded-full', CONNECTION_ACCENT_CLASSES[option])}
                     aria-hidden="true"

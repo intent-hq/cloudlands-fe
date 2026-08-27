@@ -110,7 +110,7 @@ export function serializeRecord(record: KeychainSyncRecord): string {
   const payload: Record<string, unknown> = {
     v: KEYCHAIN_PAYLOAD_VERSION,
     label: record.label,
-    accent: record.accent ?? DEFAULT_CONNECTION_ACCENT,
+    accent: record.accent === undefined ? DEFAULT_CONNECTION_ACCENT : record.accent,
     host: record.host,
     hosts: record.hosts,
     port: record.port,

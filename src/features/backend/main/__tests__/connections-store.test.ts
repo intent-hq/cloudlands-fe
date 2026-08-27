@@ -104,15 +104,23 @@ describe('connections-store', () => {
     expect(list[1]).not.toHaveProperty('encToken');
   });
 
-  it('persists palette accents and defaults records written before accents existed', async () => {
+  it('preserves explicit blank accents and defaults only records written before accents existed', async () => {
     const store = await import('../connections-store');
-    const rec = await store.add({ ...sampleConn, accent: 'orange' });
-    expect(rec.accent).toBe('orange');
+    const rec = await store.add({ ...sampleConn, accent: null });
+    expect(rec.accent).toBeNull();
     await store.__drainWriteChainForTesting();
 
     const file = path.join(tmpDir, 'backend-connections.json');
     const parsed = JSON.parse(await fs.readFile(file, 'utf8'));
-    expect(parsed.connections[0].accent).toBe('orange');
+    expect(parsed.connections[0].accent).toBeNull();
+
+    vi.resetModules();
+    mockElectron();
+    const blankReloaded = await import('../connections-store');
+    expect(
+      (await blankReloaded.list()).find((connection) => connection.id === rec.id)?.accent,
+    ).toBeNull();
+
     delete parsed.connections[0].accent;
     await fs.writeFile(file, JSON.stringify(parsed), 'utf8');
 
@@ -122,6 +130,37 @@ describe('connections-store', () => {
     expect((await reloaded.list()).find((connection) => connection.id === rec.id)?.accent).toBe(
       'blue',
     );
+  });
+
+  it('round-trips an explicit blank through update, sync, and tombstones', async () => {
+    const store = await import('../connections-store');
+    const rec = await store.add(sampleConn);
+    expect(
+      await store.updateMetadata(rec.id, { label: sampleConn.label, accent: null }),
+    ).toMatchObject({ accent: null });
+    expect((await store.listSyncRecords())[0].accent).toBeNull();
+
+    await store.forget(rec.id);
+    const tombstone = (await store.listSyncRecords()).find((record) => record.deleted === true);
+    expect(tombstone?.accent).toBeNull();
+  });
+
+  it('accepts an explicit blank accent through the add and update IPC schemas', async () => {
+    const { ConnectionsAddSchema, ConnectionsUpdateSchema } =
+      await import('../../../../main/ipc-schemas');
+    expect(
+      ConnectionsAddSchema.parse({
+        label: 'Studio Mac',
+        accent: null,
+        host: 'studio.local',
+        port: 5181,
+        fingerprint: 'AA:BB',
+        token: 'secret',
+      }).accent,
+    ).toBeNull();
+    expect(
+      ConnectionsUpdateSchema.parse({ id: 'remote-1', label: 'Studio Mac', accent: null }).accent,
+    ).toBeNull();
   });
 
   it('updateMetadata changes name and accent without rewriting the bearer token', async () => {
@@ -846,6 +885,7 @@ describe('connections-store keychain sync surface', () => {
 
     const changed = await store.applyRemoteSyncRecord({
       label: 'Renamed remotely',
+      accent: null,
       host: '192.168.1.10',
       hosts: ['192.168.1.10', '10.0.0.9'],
       port: 8443,
@@ -861,6 +901,7 @@ describe('connections-store keychain sync surface', () => {
     expect(remote).toMatchObject({
       id: rec.id,
       label: 'Renamed remotely',
+      accent: null,
       fingerprint: 'NEW:FP',
       hostname: 'studio.local',
       hosts: ['192.168.1.10', '10.0.0.9'],

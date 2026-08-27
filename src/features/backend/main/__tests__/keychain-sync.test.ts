@@ -145,6 +145,17 @@ describe('payload schema', () => {
     expect(parsed).toEqual({ kind: 'record', record });
   });
 
+  it('round-trips an explicit blank accent on live records and tombstones', () => {
+    expect(parsePayload(serializeRecord(rec({ accent: null })))).toEqual({
+      kind: 'record',
+      record: rec({ accent: null }),
+    });
+    expect(parsePayload(serializeRecord(tombstone({ accent: null })))).toEqual({
+      kind: 'record',
+      record: tombstone({ accent: null }),
+    });
+  });
+
   it('scrubs the token from tombstone payloads', () => {
     const payload = serializeRecord(rec({ deleted: true, deletedAt: NOW - 1 }));
     const raw = JSON.parse(payload) as Record<string, unknown>;
@@ -233,7 +244,12 @@ describe('reconcile', () => {
   });
 
   it('remote newer: overwrites the local record (token included)', async () => {
-    const remoteRecord = rec({ label: 'Rotated', token: 'rotated-token', updatedAt: NOW - 1000 });
+    const remoteRecord = rec({
+      label: 'Rotated',
+      accent: null,
+      token: 'rotated-token',
+      updatedAt: NOW - 1000,
+    });
     const { client, upserts } = fakeClient([item(remoteRecord)]);
     const { adapter, applied } = fakeAdapter([rec({ updatedAt: NOW - 10_000 })]);
 

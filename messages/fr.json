@@ -630,6 +630,7 @@
   "settings_devices_statusNotOpen_label": "Non ouvert",
   "settings_devices_version_label": "intentd version {version}",
   "settings_devices_accent_label": "Couleur distinctive",
+  "settings_devices_accentNone_label": "Aucun",
   "settings_devices_accentOption_ariaLabel": "Utiliser la couleur {color}",
   "settings_devices_accentBlue_label": "Bleu",
   "settings_devices_accentIndigo_label": "Bleu indigo",

@@ -175,6 +175,21 @@ describe('ConnectBackendModal', () => {
     );
   });
 
+  it('can explicitly add a connection without an accent', async () => {
+    const ConnectBackendModal = (await import('./ConnectBackendModal.svelte')).default;
+    render(ConnectBackendModal, { props: { open: true } });
+
+    await fillDetails();
+    await fireEvent.click(screen.getByRole('button', { name: 'Use None accent' }));
+    await fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+    await screen.findByText('AA:BB:CC:DD');
+    await fireEvent.click(screen.getByRole('button', { name: 'Confirm & connect' }));
+
+    expect(mocks.addConnectionRequested).toHaveBeenCalledWith(
+      expect.objectContaining({ accent: null }),
+    );
+  });
+
   it('opens the backend after main re-pairs an active connection', async () => {
     mocks.addConnectionRequested.mockImplementationOnce((params) => ({
       payload: [params],

@@ -58,16 +58,22 @@ export const CONNECTION_ACCENTS = [
   'teal',
 ] as const;
 
-export type ConnectionAccent = (typeof CONNECTION_ACCENTS)[number];
+export type ConnectionAccentName = (typeof CONNECTION_ACCENTS)[number];
+
+/** A named palette accent, or an explicit request for no accent. */
+export type ConnectionAccent = ConnectionAccentName | null;
 
 /** Deterministic fallback for records written before accent metadata existed. */
-export const DEFAULT_CONNECTION_ACCENT: ConnectionAccent = 'blue';
+export const DEFAULT_CONNECTION_ACCENT: ConnectionAccentName = 'blue';
 
 /** Transient state derived only from an already-created backend client. */
 export type ConnectionOpenStatus = 'connecting' | 'connected' | 'disconnected' | 'not-open';
 
 export function isConnectionAccent(value: unknown): value is ConnectionAccent {
-  return typeof value === 'string' && (CONNECTION_ACCENTS as readonly string[]).includes(value);
+  return (
+    value === null ||
+    (typeof value === 'string' && (CONNECTION_ACCENTS as readonly string[]).includes(value))
+  );
 }
 
 // ============================================================================
@@ -86,8 +92,8 @@ export function isConnectionAccent(value: unknown): value is ConnectionAccent {
 export interface ConnectionRecord {
   id: string;
   label: string;
-  /** Palette-backed remote identity accent; `null` for local. */
-  accent?: ConnectionAccent | null;
+  /** Palette-backed remote identity accent; missing is legacy, `null` is explicitly blank. */
+  accent?: ConnectionAccent;
   /** Remote host/IP; `null` for the local UDS entry. */
   host: string | null;
   /**
@@ -186,7 +192,7 @@ export interface CaptureFingerprintResult {
  */
 export interface AddConnectionParams {
   label: string;
-  /** Absent callers receive {@link DEFAULT_CONNECTION_ACCENT}. */
+  /** Absent callers receive {@link DEFAULT_CONNECTION_ACCENT}; `null` explicitly clears it. */
   accent?: ConnectionAccent;
   host: string;
   port: number;

@@ -630,6 +630,7 @@
   "settings_devices_statusNotOpen_label": "未オープン",
   "settings_devices_version_label": "intentd バージョン {version}",
   "settings_devices_accent_label": "アクセント",
+  "settings_devices_accentNone_label": "なし",
   "settings_devices_accentOption_ariaLabel": "{color}のアクセントを使用",
   "settings_devices_accentBlue_label": "青",
   "settings_devices_accentIndigo_label": "藍",

@@ -89,6 +89,8 @@
     selectBackendSetupGate,
   } from '$store/renderer/slices/setup-prompt/setup-prompt-selectors';
   import { bootRouteGateResolved } from '$store/renderer/slices/setup-prompt/setup-prompt-slice';
+  import { selectCurrentConnection } from '$store/renderer/slices/connections/connections-selectors';
+  import { connectionFrameTint } from '$lib/utils/connection-accents';
   import {
     BOOT_ROUTE_HOLD_TIMEOUT_MS,
     decideBootRoute,
@@ -154,6 +156,10 @@
   const showReleaseNotesModal$ = selectShowReleaseNotesModal();
   const releaseNotes$ = selectReleaseNotes();
   const showCreateModal$ = selectShowCreateModal();
+  const currentConnection$ = selectCurrentConnection();
+  const workspaceFrameBackground = $derived(
+    connectionFrameTint($currentConnection$?.accent, $currentConnection$?.isLocal ?? true),
+  );
 
   // Register all tab types early
   // This must happen before any panels are rendered
@@ -955,6 +961,7 @@
         <div class="workspace-frame relative mr-2 flex min-h-0 min-w-0 flex-1 bg-transparent">
           <main
             class="workspace-main flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-xl bg-sidebar border border-border shadow-sm"
+            style:background={workspaceFrameBackground}
             aria-label={m.layout_appShell_mainContent_ariaLabel()}
           >
             <div class="flex-1 min-h-0 overflow-hidden">

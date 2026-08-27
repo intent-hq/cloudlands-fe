@@ -85,6 +85,8 @@
 
   let step = $state<Step>('details');
   let name = $state('');
+  const CONNECTION_ACCENT_OPTIONS: readonly ConnectionAccent[] = [null, ...CONNECTION_ACCENTS];
+
   let accent = $state<ConnectionAccent>(DEFAULT_CONNECTION_ACCENT);
   let host = $state('');
   let port = $state(DEFAULT_WS_PORT);
@@ -248,6 +250,7 @@
     'w-full px-3 py-2 bg-background border border-border rounded text-foreground text-sm focus:outline-none focus:border-primary';
 
   function accentLabel(value: ConnectionAccent): string {
+    if (value === null) return m.settings_devices_accentNone_label();
     return {
       blue: m.settings_devices_accentBlue_label(),
       indigo: m.settings_devices_accentIndigo_label(),
@@ -342,7 +345,7 @@
           <fieldset class="space-y-2">
             <legend class="text-xs text-subtle">{m.settings_devices_accent_label()}</legend>
             <div class="flex flex-wrap gap-2">
-              {#each CONNECTION_ACCENTS as option}
+              {#each CONNECTION_ACCENT_OPTIONS as option}
                 <button
                   type="button"
                   class={cn(
@@ -357,10 +360,17 @@
                   aria-pressed={option === accent}
                   onclick={() => (accent = option)}
                 >
-                  <span
-                    class={cn('size-4 rounded-full', CONNECTION_ACCENT_CLASSES[option])}
-                    aria-hidden="true"
-                  ></span>
+                  {#if option === null}
+                    <span
+                      class="size-4 rounded-full border border-muted-foreground/60 bg-background"
+                      aria-hidden="true"
+                    ></span>
+                  {:else}
+                    <span
+                      class={cn('size-4 rounded-full', CONNECTION_ACCENT_CLASSES[option])}
+                      aria-hidden="true"
+                    ></span>
+                  {/if}
                 </button>
               {/each}
             </div>

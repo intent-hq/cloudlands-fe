@@ -1076,7 +1076,7 @@ export const ConnectionsCaptureFingerprintSchema = z.object({
 
 export const ConnectionsAddSchema = z.object({
   label: z.string().min(1, 'Label is required'),
-  accent: z.enum(CONNECTION_ACCENTS).optional(),
+  accent: z.enum(CONNECTION_ACCENTS).nullable().optional(),
   host: z.string().min(1, 'Host is required'),
   port: z.number().int().positive('Port must be a positive integer'),
   fingerprint: z.string().min(1, 'Fingerprint is required'),
@@ -1091,7 +1091,7 @@ export const ConnectionsUpdateSchema = z
   .object({
     id: z.string().min(1, 'Connection ID is required'),
     label: z.string().trim().min(1, 'Label is required'),
-    accent: z.enum(CONNECTION_ACCENTS),
+    accent: z.enum(CONNECTION_ACCENTS).nullable(),
     host: z.string().trim().min(1, 'Host is required').optional(),
     port: z.number().int().min(1).max(65_535).optional(),
     confirmedFingerprint: z.string().trim().min(1).optional(),

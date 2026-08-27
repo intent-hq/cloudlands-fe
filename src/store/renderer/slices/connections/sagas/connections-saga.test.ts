@@ -253,17 +253,17 @@ describe('connectionsSaga', () => {
     const update = updateConnectionRequested({
       id: REMOTE.id,
       label: 'Editing Mac',
-      accent: 'violet',
+      accent: null,
     });
     run.channel.put(update);
     await expect(update.promise).resolves.toEqual({
       status: 'updated',
-      connection: { ...REMOTE, id: REMOTE.id, label: 'Editing Mac', accent: 'violet' },
+      connection: { ...REMOTE, id: REMOTE.id, label: 'Editing Mac', accent: null },
     });
     expect(invoke).toHaveBeenCalledWith(CONNECTION_CHANNELS.UPDATE, {
       id: REMOTE.id,
       label: 'Editing Mac',
-      accent: 'violet',
+      accent: null,
     });
 
     const test = testConnectionRequested({ id: REMOTE.id, host: '10.0.0.99', port: 9443 });

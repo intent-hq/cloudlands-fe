@@ -228,6 +228,15 @@ describe('DevicesSettings', () => {
     expect(mocks.rotate).not.toHaveBeenCalled();
   });
 
+  it('can clear a previously selected device accent', async () => {
+    render(DevicesSettings);
+    await openAction('Edit');
+    await fireEvent.click(screen.getByRole('button', { name: 'Use None accent' }));
+    await fireEvent.click(screen.getByRole('button', { name: 'Update' }));
+
+    expect(mocks.update).toHaveBeenCalledWith(expect.objectContaining({ accent: null }));
+  });
+
   it('replaces the first inline panel when a second device action opens', async () => {
     mocks.connections = [
       local,

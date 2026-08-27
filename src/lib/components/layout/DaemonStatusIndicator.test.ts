@@ -1160,7 +1160,7 @@ describe('DaemonStatusIndicator', () => {
       expect(activeIcon.closest('[role="menuitem"]')?.textContent).toContain('desk:4180');
     });
 
-    it('renders the saved machine accent in the current trigger and connection row', async () => {
+    it('keeps the saved machine accent in the connection row but omits it from the trigger', async () => {
       mockStoreState = {
         daemonHealth: { ...healthy },
         connections: withConnections('r1', 'local'),
@@ -1169,10 +1169,8 @@ describe('DaemonStatusIndicator', () => {
       const { container } = render(DaemonStatusIndicatorPreloaded);
       await fireEvent.click(screen.getByRole('button', { name: 'intentd: healthy — desk:4180' }));
 
-      expect(document.querySelectorAll('[data-connection-accent="teal"]')).toHaveLength(2);
-      expect(container.querySelector('[data-connection-accent="teal"]')?.className).toContain(
-        'bg-teal-600',
-      );
+      expect(document.querySelectorAll('[data-connection-accent="teal"]')).toHaveLength(1);
+      expect(container.querySelector('[data-connection-accent="teal"]')).toBeNull();
     });
 
     it('checks Local in a local window while the remote is also connected', async () => {

@@ -630,6 +630,7 @@
   "settings_devices_statusNotOpen_label": "未開啟",
   "settings_devices_version_label": "intentd 版本 {version}",
   "settings_devices_accent_label": "識別色",
+  "settings_devices_accentNone_label": "無",
   "settings_devices_accentOption_ariaLabel": "使用{color}識別色",
   "settings_devices_accentBlue_label": "藍色",
   "settings_devices_accentIndigo_label": "靛藍色",

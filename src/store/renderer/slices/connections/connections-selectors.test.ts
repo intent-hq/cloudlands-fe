@@ -5,6 +5,7 @@
 import { describe, it, expect } from 'vitest';
 import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
 import { LOCAL_CONNECTION_ID } from '$shared/types/connections';
+import { connectionFrameTint, resolveConnectionAccent } from '$lib/utils/connection-accents';
 import type { StoreState } from '../../types';
 import type {
   ConnectionsState,
@@ -88,6 +89,12 @@ describe('connections selectors', () => {
     it('resolves the active record by id', () => {
       const state = stateWith({ connections: [LOCAL, REMOTE], activeId: 'remote-1' });
       expect(selectActiveConnection.select(state)).toEqual(REMOTE);
+    });
+
+    it('preserves an explicit blank accent on the selected record', () => {
+      const blank = { ...REMOTE, accent: null };
+      const state = stateWith({ connections: [LOCAL, blank], activeId: blank.id });
+      expect(selectActiveConnection.select(state)?.accent).toBeNull();
     });
 
     it('returns null when the active id is not in the list (e.g. before load)', () => {
@@ -214,5 +221,21 @@ describe('connections selectors', () => {
       expect(selectActiveProtocolMismatch.select(state)).toEqual(event);
       expect(selectProtocolMismatchModal.select(state)).toEqual(event);
     });
+  });
+});
+
+describe('connection accent presentation', () => {
+  it('distinguishes legacy missing accents from an explicit blank', () => {
+    expect(resolveConnectionAccent(undefined)).toBe('blue');
+    expect(resolveConnectionAccent(null)).toBeNull();
+  });
+
+  it('derives a low-opacity semantic tint only for named remote accents', () => {
+    expect(connectionFrameTint('teal', false)).toBe(
+      'color-mix(in srgb, var(--color-teal-500) 7%, var(--color-sidebar))',
+    );
+    expect(connectionFrameTint(null, false)).toBeUndefined();
+    expect(connectionFrameTint('teal', true)).toBeUndefined();
+    expect(connectionFrameTint(undefined, false)).toContain('var(--color-blue-500)');
   });
 });

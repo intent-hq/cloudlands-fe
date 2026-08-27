@@ -63,7 +63,7 @@ interface EncryptedToken {
 interface StoredConnection {
   id: string;
   label: string;
-  /** Optional for backward compatibility; missing records use the default accent. */
+  /** Optional for backward compatibility; missing uses the default, null is explicitly blank. */
   accent?: ConnectionAccent;
   host: string;
   port: number;
@@ -202,7 +202,7 @@ function toRecord(stored: StoredConnection): ConnectionRecord {
   return {
     id: stored.id,
     label: stored.label,
-    accent: stored.accent ?? DEFAULT_CONNECTION_ACCENT,
+    accent: stored.accent === undefined ? DEFAULT_CONNECTION_ACCENT : stored.accent,
     host: stored.host,
     hosts: candidateHosts(stored),
     port: stored.port,
@@ -453,7 +453,7 @@ export async function list(): Promise<ConnectionRecord[]> {
  * marked plaintext) before it hits disk. Returns the token-free record.
  */
 export async function add(conn: NewConnection): Promise<ConnectionRecord> {
-  const accent = conn.accent ?? DEFAULT_CONNECTION_ACCENT;
+  const accent = conn.accent === undefined ? DEFAULT_CONNECTION_ACCENT : conn.accent;
   if (!isConnectionAccent(accent)) throw new Error('Invalid connection accent');
   const encToken = encryptToken(conn.token);
   const stored = await mutate(async (state) => {
@@ -574,7 +574,7 @@ export async function updateMetadata(
       clearTombstone(state, previous);
       state.tombstones.push({
         label: previous.label,
-        accent: previous.accent ?? DEFAULT_CONNECTION_ACCENT,
+        accent: previous.accent === undefined ? DEFAULT_CONNECTION_ACCENT : previous.accent,
         host: previous.host,
         port: previous.port,
         fingerprint: previous.fingerprint,
@@ -707,7 +707,7 @@ export async function forget(id: string): Promise<void> {
       clearTombstone(state, removed);
       state.tombstones.push({
         label: removed.label,
-        accent: removed.accent ?? DEFAULT_CONNECTION_ACCENT,
+        accent: removed.accent === undefined ? DEFAULT_CONNECTION_ACCENT : removed.accent,
         host: removed.host,
         port: removed.port,
         fingerprint: removed.fingerprint,
@@ -799,7 +799,7 @@ export async function listSyncRecords(): Promise<KeychainSyncRecord[]> {
     }
     records.push({
       label: conn.label,
-      accent: conn.accent ?? DEFAULT_CONNECTION_ACCENT,
+      accent: conn.accent === undefined ? DEFAULT_CONNECTION_ACCENT : conn.accent,
       host: conn.host,
       hosts: candidateHosts(conn),
       port: conn.port,
@@ -815,7 +815,7 @@ export async function listSyncRecords(): Promise<KeychainSyncRecord[]> {
     if (t.excluded === true) continue;
     records.push({
       label: t.label,
-      accent: t.accent ?? DEFAULT_CONNECTION_ACCENT,
+      accent: t.accent === undefined ? DEFAULT_CONNECTION_ACCENT : t.accent,
       host: t.host,
       hosts: candidateHosts(t),
       port: t.port,
@@ -882,7 +882,7 @@ export async function applyRemoteSyncRecord(record: KeychainSyncRecord): Promise
       clearTombstone(state, record);
       state.tombstones.push({
         label: record.label,
-        accent: record.accent ?? DEFAULT_CONNECTION_ACCENT,
+        accent: record.accent === undefined ? DEFAULT_CONNECTION_ACCENT : record.accent,
         host: record.host,
         port: record.port,
         fingerprint: record.fingerprint,
@@ -921,7 +921,7 @@ export async function applyRemoteSyncRecord(record: KeychainSyncRecord): Promise
     if (duplicates.length > 0) {
       const survivor = duplicates.find((c) => c.id === state.activeId) ?? duplicates[0];
       survivor.label = record.label;
-      survivor.accent = record.accent ?? DEFAULT_CONNECTION_ACCENT;
+      survivor.accent = record.accent === undefined ? DEFAULT_CONNECTION_ACCENT : record.accent;
       survivor.host = record.host;
       survivor.port = record.port;
       survivor.fingerprint = record.fingerprint;
@@ -937,7 +937,7 @@ export async function applyRemoteSyncRecord(record: KeychainSyncRecord): Promise
       state.connections.push({
         id: randomUUID(),
         label: record.label,
-        accent: record.accent ?? DEFAULT_CONNECTION_ACCENT,
+        accent: record.accent === undefined ? DEFAULT_CONNECTION_ACCENT : record.accent,
         host: record.host,
         port: record.port,
         fingerprint: record.fingerprint,
