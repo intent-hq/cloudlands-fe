@@ -21,6 +21,20 @@ function measureNote(locator: Locator) {
   });
 }
 
+function waitForStablePreviewGeometry(locator: Locator) {
+  return locator.evaluate(async (preview) => {
+    const nextFrame = () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+    await nextFrame();
+    await nextFrame();
+    await Promise.all(
+      preview
+        .getAnimations({ subtree: true })
+        .map((animation) => animation.finished.catch(() => undefined)),
+    );
+    await nextFrame();
+  });
+}
+
 for (const sourceSide of ['left', 'right'] as const) {
   test(`keeps the retained note gutter for a ${sourceSide}-source root preview`, async ({
     mount,
@@ -42,6 +56,7 @@ for (const sourceSide of ['left', 'right'] as const) {
       '[data-panel-layout-preview-panel="retained-panel"] .positioning-relative-container',
     );
     await expect(previewNote).toBeVisible();
+    await waitForStablePreviewGeometry(preview);
     const during = await measureNote(previewNote);
     const split = preview.locator('[data-panel-layout-preview-split="horizontal"]');
     const widths = await split
