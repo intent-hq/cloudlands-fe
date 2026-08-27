@@ -287,6 +287,60 @@ describe('ResponseGroup - collapse state model', () => {
     }
   });
 
+  it('keeps a terminal group open when its stream completes', async () => {
+    vi.useFakeTimers();
+    try {
+      const { container, rerender } = render(ResponseGroup, {
+        props: { name: 'Terminal group', isStreaming: true, isTerminal: true, children },
+      });
+      const btn = header(container);
+
+      await rerender({ isStreaming: false, isTerminal: true });
+      await vi.advanceTimersByTimeAsync(800);
+      expect(btn.getAttribute('aria-expanded')).toBe('true');
+      expect(details(container)).not.toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('preserves a user-collapsed terminal group when its stream completes', async () => {
+    vi.useFakeTimers();
+    try {
+      const { container, rerender } = render(ResponseGroup, {
+        props: { name: 'Terminal group', isStreaming: true, isTerminal: true, children },
+      });
+      const btn = header(container);
+
+      await fireEvent.click(btn);
+      await rerender({ isStreaming: false, isTerminal: true });
+      await vi.advanceTimersByTimeAsync(800);
+      expect(btn.getAttribute('aria-expanded')).toBe('false');
+      expect(details(container)).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('collapses a completed terminal group after later visible content follows', async () => {
+    vi.useFakeTimers();
+    try {
+      const { container, rerender } = render(ResponseGroup, {
+        props: { name: 'Terminal group', isStreaming: true, isTerminal: true, children },
+      });
+      const btn = header(container);
+
+      await rerender({ isStreaming: false, isTerminal: true });
+      await rerender({ isStreaming: false, isTerminal: false });
+      await vi.advanceTimersByTimeAsync(799);
+      expect(btn.getAttribute('aria-expanded')).toBe('true');
+      await vi.advanceTimersByTimeAsync(1);
+      expect(btn.getAttribute('aria-expanded')).toBe('false');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('clears a pending automatic collapse when destroyed', async () => {
     vi.useFakeTimers();
     const setTimeoutSpy = vi.spyOn(globalThis, 'setTimeout');
@@ -792,4 +846,88 @@ describe('MessageContent - top-level response rows', () => {
       streaming.container.querySelector('[data-message-content-block="tool_use"]')?.className,
     ).toContain('ml-2');
   });
+
+  it.each([
+    ['MessageContent', () => import('../MessageContent.svelte')],
+    ['StreamingMessageContent', () => import('../StreamingMessageContent.svelte')],
+  ] as const)(
+    'keeps a terminal group open through the %s streaming completion path',
+    async (_name, loadComponent) => {
+      vi.useFakeTimers();
+      try {
+        const Component = (await loadComponent()).default;
+        const streamingContent = [
+          { type: 'text', text: '<group:Final>' },
+          { type: 'text', text: 'Final visible detail' },
+        ] as ContentBlock[];
+        const completedContent = [
+          ...streamingContent,
+          { type: 'text', text: '</group:Final>' },
+          { type: 'text', text: '   ' },
+        ] as ContentBlock[];
+        const { container, rerender } = render(Component, {
+          props: { content: streamingContent, isStreaming: true },
+        });
+        const btn = container.querySelector('[data-testid="response-group-disclosure"]')!;
+
+        await rerender({ content: completedContent, isStreaming: false });
+        await vi.advanceTimersByTimeAsync(800);
+        expect(btn.getAttribute('aria-expanded')).toBe('true');
+      } finally {
+        vi.useRealTimers();
+      }
+    },
+  );
+
+  it.each([
+    ['MessageContent', () => import('../MessageContent.svelte')],
+    ['StreamingMessageContent', () => import('../StreamingMessageContent.svelte')],
+  ] as const)(
+    'keeps a terminal group collapsed on a completed %s history mount',
+    async (_name, loadComponent) => {
+      const Component = (await loadComponent()).default;
+      const content = [
+        { type: 'text', text: '<group:History>' },
+        { type: 'text', text: 'Historical detail' },
+      ] as ContentBlock[];
+      const { container } = render(Component, { props: { content, isStreaming: false } });
+
+      expect(
+        container
+          .querySelector('[data-testid="response-group-disclosure"]')
+          ?.getAttribute('aria-expanded'),
+      ).toBe('false');
+    },
+  );
+
+  it.each([
+    ['MessageContent', () => import('../MessageContent.svelte')],
+    ['StreamingMessageContent', () => import('../StreamingMessageContent.svelte')],
+  ] as const)(
+    'collapses a completed %s group when later visible content follows',
+    async (_name, loadComponent) => {
+      vi.useFakeTimers();
+      try {
+        const Component = (await loadComponent()).default;
+        const streamingContent = [
+          { type: 'text', text: '<group:Earlier>' },
+          { type: 'text', text: 'Earlier detail' },
+        ] as ContentBlock[];
+        const completedContent = [
+          ...streamingContent,
+          { type: 'text', text: '</group:Earlier>\nFollowing prose' },
+        ] as ContentBlock[];
+        const { container, rerender } = render(Component, {
+          props: { content: streamingContent, isStreaming: true },
+        });
+        const btn = container.querySelector('[data-testid="response-group-disclosure"]')!;
+
+        await rerender({ content: completedContent, isStreaming: false });
+        await vi.advanceTimersByTimeAsync(800);
+        expect(btn.getAttribute('aria-expanded')).toBe('false');
+      } finally {
+        vi.useRealTimers();
+      }
+    },
+  );
 });

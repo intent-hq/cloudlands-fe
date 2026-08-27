@@ -8,6 +8,26 @@ vi.mock('$features/layout/tab-types/registry', () => ({
 
 import PaneStackControlHost from './mocks/PaneStackControlHost.svelte';
 
+const panelTypes = [
+  'agent',
+  'browser',
+  'terminal',
+  'note',
+  'file',
+  'diff',
+  'changes',
+  'local-changes',
+  'chat-changes',
+  'settings',
+  'overview',
+  'hook-script',
+  'activity',
+  'activity-changes',
+  'code-review',
+  'agent-overview',
+  'task',
+] as const;
+
 beforeEach(() => {
   Element.prototype.scrollIntoView = vi.fn();
   vi.stubGlobal(
@@ -30,7 +50,7 @@ afterEach(() => {
 });
 
 describe('pane stack control', () => {
-  it('keeps stacked agent metadata out of the agent panel header', () => {
+  it('gives a stacked agent header the shared group and active-pane semantics', () => {
     const { container } = render(PaneStackControlHost, {
       props: { stackCount: 2, initialActiveTabId: 'agent-pane' },
     });
@@ -42,10 +62,49 @@ describe('pane stack control', () => {
     expect(header.querySelector('[data-panel-agent-header-identity]')).not.toBeNull();
     expect(header.textContent).toContain('Build agent');
     expect(header.textContent).not.toContain('Release plan');
-    expect(header.querySelector('[data-pane-stack]')).toBeNull();
+    expect(header.getAttribute('role')).toBe('group');
+    expect(header.getAttribute('aria-label')).toBe('Pane stack size: 2');
+    expect(header.getAttribute('data-pane-stack-size')).toBe('2');
+    const active = header.querySelector('[data-pane-stack-active="agent-pane"]');
+    expect(active).not.toBeNull();
+    expect(active?.getAttribute('aria-current')).toBe('true');
+    expect(screen.getByTestId('pane-stack-selector-trigger')).not.toBeNull();
     expect(header.querySelector('[data-pane-stack-layer]')).toBeNull();
     expect(header.querySelector('[data-pane-stack-position]')).toBeNull();
     expect(header.querySelector('[data-pane-stack-overflow-trigger]')).toBeNull();
+  });
+
+  it.each(panelTypes)('shows the selector for a stacked active %s pane', (type) => {
+    const fallback = type === 'note' ? 'browser' : 'note';
+    const { container } = render(PaneStackControlHost, {
+      props: {
+        paneTypes: [type, fallback],
+        stackCount: 2,
+        initialActiveTabId: `${type}-pane`,
+      },
+    });
+    const header = container.querySelector('[data-panel-tabless-header]')!;
+
+    expect(header.getAttribute('role')).toBe('group');
+    expect(header.getAttribute('aria-label')).toBe('Pane stack size: 2');
+    expect(header.getAttribute('data-pane-stack-size')).toBe('2');
+    expect(header.querySelector(`[data-pane-stack-active="${type}-pane"]`)).not.toBeNull();
+    expect(screen.getByTestId('pane-stack-selector-trigger')).not.toBeNull();
+  });
+
+  it.each(panelTypes)('hides the selector for a single active %s pane', (type) => {
+    const { container } = render(PaneStackControlHost, {
+      props: {
+        paneTypes: [type],
+        stackCount: 1,
+        initialActiveTabId: `${type}-pane`,
+      },
+    });
+
+    expect(
+      container.querySelector('[data-pane-stack-size]')?.getAttribute('data-pane-stack-size'),
+    ).toBe('1');
+    expect(screen.queryByTestId('pane-stack-selector-trigger')).toBeNull();
   });
 
   it('shows one flat active pane and one complete selector', () => {
@@ -57,6 +116,7 @@ describe('pane stack control', () => {
     expect(stack.getAttribute('aria-label')).toBe('Pane stack size: 5');
     expect(stack.querySelector('[data-pane-stack-layer]')).toBeNull();
     expect(active.getAttribute('data-pane-stack-active')).toBe('note-pane');
+    expect(active.getAttribute('aria-current')).toBe('true');
     expect(active.textContent).toContain('Release plan');
     expect(active.querySelector('[data-pane-stack-position]')).toBeNull();
     expect(trigger.textContent?.trim()).toBe('');
@@ -75,6 +135,48 @@ describe('pane stack control', () => {
     await fireEvent.click(menu.querySelector('[data-pane-stack-item="browser-pane"]')!);
     expect(container.firstElementChild?.getAttribute('data-active-tab')).toBe('browser-pane');
     await waitFor(() => expect(screen.queryByRole('menu')).toBeNull());
+  });
+
+  it('preserves agent identity and menu order in the complete list', async () => {
+    render(PaneStackControlHost);
+    await fireEvent.click(screen.getByTestId('pane-stack-selector-trigger'));
+    const menu = await screen.findByRole('menu', { name: 'Panes in this stack' });
+    const items = Array.from(menu.querySelectorAll('[data-pane-stack-item]'));
+
+    expect(items.map((item) => item.getAttribute('data-pane-stack-item'))).toEqual([
+      'agent-pane',
+      'note-pane',
+      'file-pane',
+      'browser-pane',
+      'terminal-pane',
+    ]);
+    const agentItem = menu.querySelector('[data-pane-stack-item="agent-pane"]')!;
+    expect(agentItem.textContent).toContain('Build agent');
+    expect(
+      agentItem.querySelector('[data-pane-stack-item-identity="agent"] [data-agent-avatar]'),
+    ).not.toBeNull();
+    expect(agentItem.querySelector('[data-panel-agent-chat-glyph]')).toBeNull();
+  });
+
+  it('updates the selector when panes are added and removed', async () => {
+    const view = render(PaneStackControlHost, {
+      props: { paneTypes: ['note'], stackCount: 1, initialActiveTabId: 'note-pane' },
+    });
+    expect(screen.queryByTestId('pane-stack-selector-trigger')).toBeNull();
+
+    await view.rerender({ paneTypes: ['note', 'browser'], stackCount: 2 });
+    expect(screen.getByTestId('pane-stack-selector-trigger')).not.toBeNull();
+    expect(
+      screen.getByTestId('pane-stack-selector-trigger').querySelectorAll('[data-pane-stack-line]'),
+    ).toHaveLength(2);
+
+    await fireEvent.click(screen.getByTestId('pane-stack-selector-trigger'));
+    await fireEvent.click(await screen.findByRole('menuitem', { name: 'Preview browser' }));
+    expect(view.container.firstElementChild?.getAttribute('data-active-tab')).toBe('browser-pane');
+
+    await view.rerender({ paneTypes: ['browser'], stackCount: 1 });
+    await waitFor(() => expect(screen.queryByTestId('pane-stack-selector-trigger')).toBeNull());
+    expect(view.container.firstElementChild?.getAttribute('data-active-tab')).toBe('browser-pane');
   });
 
   it('opens the complete list from the keyboard and restores trigger focus on dismiss', async () => {

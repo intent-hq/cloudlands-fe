@@ -230,6 +230,10 @@
   import { parseSuggestedPromptsFromContentBlocks } from '$lib/utils/messageParser';
   import { getQueueInfo, isBatchedDeliverySeam, stripDequeueWaitNote } from '$lib/utils/queue-info';
   import {
+    eventCardAssistantMarginClass,
+    isAttentionQuestionAnswerSeam,
+  } from './attention-flow-spacing';
+  import {
     captureMessageSendOrigin,
     createMessageSendLaunchBubble,
   } from './message-send-transition';
@@ -272,7 +276,6 @@
   } from '$store/renderer/slices/unread-tracking/unread-tracking-slice';
   import { selectDividerSession } from '$store/renderer/slices/unread-tracking/unread-tracking-selectors';
   import AuroraBackground from './AuroraBackground.svelte';
-  import AuroraSofteningLayer from './AuroraSofteningLayer.svelte';
   import {
     CHAT_SCROLL_END_MARKER_CLASS,
     CHAT_TRANSCRIPT_OVERFLOW_CLASS,
@@ -4691,7 +4694,6 @@
       transition:fade
     >
       <AuroraBackground {agentId} />
-      <AuroraSofteningLayer />
     </div>
   {/if}
 
@@ -5308,10 +5310,16 @@
                     nextTurn,
                   )}
                   {@const zeroOperationalTurnBoundary = compactOperationalTurnBoundary}
+                  {@const attentionQuestionAnswerTurnSeam = isAttentionQuestionAnswerSeam(
+                    turn,
+                    nextTurn,
+                  )}
                   <!-- Adjacent user rows sharing queueInfo.batchId (one batch
                        flush) get a compact seam — covers plain user messages
-                       AND wake/event-notification cards on either side. -->
-                  {@const batchedDeliveryTurnSeam = isBatchedDeliverySeam(turn, nextTurn)}
+                       AND wake/event-notification cards on either side. The
+                       structured attention-to-answer flow has its own rhythm. -->
+                  {@const batchedDeliveryTurnSeam =
+                    !attentionQuestionAnswerTurnSeam && isBatchedDeliverySeam(turn, nextTurn)}
                   <!-- Conversation turn container - constrains sticky behavior -->
                   <!-- Fallback chain mirrors the row render order below. Edge case:
                        a user message with metadata.type === 'event_notification' but
@@ -5341,8 +5349,10 @@
                         data-message-id={message.id}
                         data-pinned-prompt-id={message.id}
                         data-message-index={globalIndex}
-                        class="message-nav-target relative z-10"
-                        class:mb-8={turn.assistantMessages.length > 0}
+                        class="message-nav-target relative z-10 {eventCardAssistantMarginClass(
+                          message,
+                          turn.assistantMessages.length > 0,
+                        )}"
                         use:attachPinnedPromptMessage={message}
                         transition:safeSlide={{ axis: 'y', duration: 200 }}
                       >
@@ -5571,6 +5581,7 @@
                       compactOperationalSeam={compactOperationalTurnBoundary}
                       zeroToolSeam={zeroOperationalTurnBoundary}
                       batchedDeliverySeam={batchedDeliveryTurnSeam}
+                      attentionQuestionAnswerSeam={attentionQuestionAnswerTurnSeam}
                     />
                   {/if}
                   <!-- Turn-boundary divider placement: the anchor is this turn's
@@ -5582,7 +5593,10 @@
                 {/each}
               {/each}
               {#if showEndOfListStreamingStatus}
-                <div class={isCompactMode ? 'mb-2' : 'mb-16'}>
+                <div
+                  class="pt-1 {isCompactMode ? 'mb-2' : 'mb-16'}"
+                  data-testid="end-of-list-streaming-status"
+                >
                   <StreamingStatus
                     isStreaming={$agentSessionIsStreaming$}
                     isProcessing={$agentIsResponding$}
@@ -5674,9 +5688,7 @@
                controls all mutate daemon state a retired agent rejects. -->
           {#if queuedMessagesVisibility.showQueue && !isRetiredSession}
             <div
-              class="relative z-20 mt-6 {isChiefWorkspace
-                ? 'w-full'
-                : 'queued-message-utility-wide -mx-4 sm:-mx-6'}"
+              class="relative z-20 mt-6 {isChiefWorkspace ? 'mx-1 sm:mx-2' : 'w-full'}"
               data-testid="queued-message-utility-area"
             >
               <QueuedMessageList
@@ -5734,7 +5746,6 @@
         transition:fade
       >
         <AuroraBackground {agentId} />
-        <AuroraSofteningLayer />
       </div>
     {/if}
 

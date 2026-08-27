@@ -41,11 +41,20 @@ const virtualModules: Record<string, string> = {
     export const openWorkspaceTab = (...payload) => ({ type: 'open', payload });
     export const startDrag = () => ({ type: 'startDrag' });`,
   '$store/renderer/slices/tab-state/tab-state-selectors': `
+    const currentSubscribers = new Set();
     const readable = (read) => ({ subscribe(run) { run(read()); return () => {}; } });
     export const selectCurrentWorkspaceTabId = Object.assign(
-      () => readable(() => globalThis.__workspaceTabScenario.currentId),
+      () => ({ subscribe(run) {
+        currentSubscribers.add(run);
+        run(globalThis.__workspaceTabScenario.currentId);
+        return () => currentSubscribers.delete(run);
+      } }),
       { select: () => globalThis.__workspaceTabScenario.currentId },
     );
+    globalThis.__setCurrentWorkspaceTabId = (workspaceId) => {
+      globalThis.__workspaceTabScenario.currentId = workspaceId;
+      currentSubscribers.forEach((run) => run(workspaceId));
+    };
     export const selectWorkspaceTabOrder = () =>
       readable(() => globalThis.__workspaceTabScenario.tabOrder);`,
   '$store/renderer/slices/workspace/workspace-selectors': `
@@ -159,6 +168,7 @@ async function mountStrip(
     viewport: number;
     zoom: number;
     reduced: boolean;
+    theme?: 'light' | 'dark';
     panelOpen?: boolean;
     panelWidth?: number;
   },
@@ -168,8 +178,10 @@ async function mountStrip(
   await page.goto(`${baseUrl}src/app.html`);
   await page.addStyleTag({ url: `${baseUrl}src/app.css` });
   await page.addStyleTag({ content: 'body { margin: 0; overflow: hidden; }' });
-  await page.evaluate(async ({ zoom, panelOpen, panelWidth }) => {
+  await page.evaluate(async ({ zoom, theme, panelOpen, panelWidth }) => {
     Object.assign(globalThis, { process: { env: { NODE_ENV: 'test' } } });
+    document.documentElement.classList.toggle('dark', theme === 'dark');
+    document.documentElement.style.colorScheme = theme === 'dark' ? 'dark' : 'light';
     Object.assign(globalThis, {
       __workspaceTabScenario: {
         currentId: 'active',
@@ -190,7 +202,7 @@ async function mountStrip(
       const items = categories.map((category) => ({ category, count: 1, agentNames: [] }));
       return { agentCount: 1, categories: items, visibleCategories: items, hiddenCategoryCount: 0 };
     }
-    const [{ mount, tick }, { default: Strip }] = await Promise.all([
+    const [{ mount, tick, unmount }, { default: Strip }] = await Promise.all([
       import('/@id/svelte'),
       import('/src/lib/components/layout/WorkspaceTabStrip.svelte'),
     ]);
@@ -204,9 +216,8 @@ async function mountStrip(
       target.style.cssText = `width:100%; zoom:${zoom};`;
       const controls = document.createElement('div');
       controls.dataset.titlebarWorkspaceControls = '';
-      controls.style.cssText = `display:flex;align-items:center;gap:4px;margin-left:${panelOpen ? panelWidth + 8 : 116}px;width:fit-content;`;
+      controls.style.cssText = 'display:flex;min-width:0;align-items:center;gap:4px;';
       target.append(controls);
-      mount(Strip, { target: controls, props: { alignFirstTabToPanel: panelOpen } });
 
       const launcher = document.createElement('button');
       launcher.dataset.workspaceRepoLauncher = '';
@@ -219,17 +230,44 @@ async function mountStrip(
       sidebar.dataset.sidebarPanelFrame = '';
       sidebar.style.cssText = `flex:0 0 ${panelOpen ? panelWidth : 0}px;`;
       const main = document.createElement('main');
-      main.className = 'workspace-main';
-      main.style.cssText = 'height:200px;min-width:0;flex:1;';
+      main.className =
+        'workspace-main flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-xl bg-sidebar border border-border shadow-sm';
+      main.style.cssText = 'height:200px;';
       frame.append(sidebar, main);
       target.append(frame);
 
+      let currentPanelOpen = panelOpen;
+      let currentPanelWidth = panelWidth;
+      let component: ReturnType<typeof mount> | null = null;
+      const applyPanelLayout = () => {
+        const offset = currentPanelOpen ? currentPanelWidth + 8 : 116;
+        controls.style.marginLeft = `${offset}px`;
+        controls.style.width = `calc(100% - ${offset}px)`;
+        sidebar.style.flexBasis = `${currentPanelOpen ? currentPanelWidth : 0}px`;
+      };
+      const renderStrip = async () => {
+        if (component) await unmount(component);
+        component = mount(Strip, {
+          target: controls,
+        });
+        controls.append(launcher);
+        await tick();
+        await new Promise<void>((resolveFrame) => requestAnimationFrame(() => resolveFrame()));
+      };
+      applyPanelLayout();
+      await renderStrip();
+
       Object.assign(globalThis, {
         __setWorkspacePanelWidth(width: number) {
-          if (!panelOpen) return;
-          sidebar.style.flexBasis = `${width}px`;
-          controls.style.marginLeft = `${width + 8}px`;
+          currentPanelWidth = width;
+          applyPanelLayout();
         },
+        async __setWorkspacePanelOpen(open: boolean) {
+          currentPanelOpen = open;
+          applyPanelLayout();
+          await renderStrip();
+        },
+        __remountWorkspaceTabStrip: renderStrip,
       });
     }
     await tick();
@@ -243,29 +281,184 @@ async function box(locator: Locator) {
   return value!;
 }
 
-test('aligns the first tab with the open workspace panel across resize and zoom', async ({
+async function settle(page: Page) {
+  await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())));
+}
+
+async function expectNormalActiveShape(
+  page: Page,
+  workspaceId: string,
+  zoom: number,
+  assertHeight = true,
+) {
+  const tab = page.locator(`[data-workspace-tab="${workspaceId}"]`);
+  expect(await tab.getAttribute('data-workspace-tab-leading-shape')).toBeNull();
+  const radii = await tab.evaluate((node) => {
+    const style = getComputedStyle(node);
+    return {
+      leading: Number.parseFloat(style.borderTopLeftRadius),
+      trailing: Number.parseFloat(style.borderTopRightRadius),
+    };
+  });
+  expect(radii.leading).toBeGreaterThan(0);
+  expect(radii.trailing).toBe(radii.leading);
+  await expect(tab.locator('[data-workspace-tab-leading-flare]')).toHaveCount(1);
+  await expect(tab.locator('[data-workspace-tab-trailing-flare]')).toHaveCount(1);
+  if (assertHeight) expect((await box(tab)).height).toBeCloseTo(32 * zoom, 0);
+  return radii;
+}
+
+async function expectPanelGutter(page: Page, zoom: number) {
+  const tab = page.locator('[data-workspace-tab="active"]');
+  const panel = page.locator('.workspace-main');
+  const [tabBox, panelBox] = await Promise.all([box(tab), box(panel)]);
+  expect(tabBox.x - panelBox.x).toBeCloseTo(8 * zoom, 0);
+  expect(tabBox.y + tabBox.height).toBeCloseTo(panelBox.y, 0);
+}
+
+test('keeps the normal first-tab curve, both flares, and 8px panel gutter across the geometry matrix', async ({
   page,
 }) => {
-  for (const zoom of [1, 2]) {
-    await mountStrip(page, {
-      viewport: 1400,
-      zoom,
-      reduced: true,
-      panelOpen: true,
-      panelWidth: 288,
-    });
+  test.setTimeout(120_000);
+  const scenarios = [
+    { viewport: 1400, zoom: 1, reduced: false, panelWidths: [288, 420], overflow: false },
+    { viewport: 1400, zoom: 2, reduced: true, panelWidths: [288, 420], overflow: true },
+    { viewport: 760, zoom: 1, reduced: true, panelWidths: [96, 160], overflow: true },
+    { viewport: 760, zoom: 2, reduced: false, panelWidths: [96, 160], overflow: true },
+  ];
 
-    for (const panelWidth of [288, 420]) {
-      await page.evaluate((width) => {
+  for (const theme of ['light', 'dark'] as const) {
+    for (const scenario of scenarios) {
+      await mountStrip(page, {
+        ...scenario,
+        theme,
+        panelOpen: true,
+        panelWidth: scenario.panelWidths[0],
+      });
+
+      for (const panelWidth of scenario.panelWidths) {
+        await page.evaluate((width) => {
+          (
+            globalThis as typeof globalThis & { __setWorkspacePanelWidth: (value: number) => void }
+          ).__setWorkspacePanelWidth(width);
+        }, panelWidth);
+        await settle(page);
+        const [firstTab, workspaceMain] = await Promise.all([
+          box(page.locator('[data-workspace-tab]').first()),
+          box(page.locator('.workspace-main')),
+        ]);
+        expect(firstTab.x - workspaceMain.x).toBeCloseTo(8 * scenario.zoom, 0);
+        await expectNormalActiveShape(page, 'active', scenario.zoom);
+        await expectPanelGutter(page, scenario.zoom);
+      }
+
+      const strip = page.locator('[data-workspace-tab-strip]');
+      expect(await strip.evaluate((node) => node.scrollWidth > node.clientWidth)).toBe(
+        scenario.overflow,
+      );
+
+      await page.evaluate(() => {
         (
-          globalThis as typeof globalThis & { __setWorkspacePanelWidth: (value: number) => void }
-        ).__setWorkspacePanelWidth(width);
-      }, panelWidth);
-      const [firstTab, workspaceMain] = await Promise.all([
-        box(page.locator('[data-workspace-tab]').first()),
-        box(page.locator('.workspace-main')),
-      ]);
-      expect(Math.abs(firstTab.x - workspaceMain.x) / zoom).toBeLessThanOrEqual(1);
+          globalThis as typeof globalThis & {
+            __setCurrentWorkspaceTabId: (workspaceId: string) => void;
+          }
+        ).__setCurrentWorkspaceTabId('inactive');
+      });
+      await settle(page);
+      const normalActiveRadii = await expectNormalActiveShape(page, 'inactive', scenario.zoom);
+
+      await page.evaluate(() => {
+        (
+          globalThis as typeof globalThis & {
+            __setCurrentWorkspaceTabId: (workspaceId: string) => void;
+            __remountWorkspaceTabStrip: () => Promise<void>;
+          }
+        ).__setCurrentWorkspaceTabId('active');
+        return globalThis.__remountWorkspaceTabStrip();
+      });
+      const firstTabRadii = await expectNormalActiveShape(page, 'active', scenario.zoom);
+      expect(firstTabRadii).toEqual(normalActiveRadii);
+      await expectPanelGutter(page, scenario.zoom);
+
+      await page.locator('[data-workspace-tab="active"]').evaluate((node) => {
+        node.dispatchEvent(
+          new DragEvent('dragstart', {
+            bubbles: true,
+            dataTransfer: new DataTransfer(),
+            clientX: node.getBoundingClientRect().x + 20,
+            clientY: node.getBoundingClientRect().y + 16,
+          }),
+        );
+      });
+      await expectNormalActiveShape(page, 'active', scenario.zoom, false);
+      await page.locator('[data-workspace-tab="active"]').evaluate((node) => {
+        node.dispatchEvent(new DragEvent('dragend', { bubbles: true }));
+      });
+      await settle(page);
+      await page.locator('[data-workspace-tab-motion="active"]').evaluate(async (node) => {
+        await Promise.all(
+          node.getAnimations({ subtree: true }).map((animation) => animation.finished),
+        );
+      });
+      await expectNormalActiveShape(page, 'active', scenario.zoom);
+      await expectPanelGutter(page, scenario.zoom);
+
+      await page.evaluate(() => {
+        const scenarioState = (
+          globalThis as typeof globalThis & {
+            __workspaceTabScenario: { currentId: string; tabOrder: string[] };
+            __remountWorkspaceTabStrip: () => Promise<void>;
+          }
+        ).__workspaceTabScenario;
+        scenarioState.currentId = 'loading';
+        scenarioState.tabOrder = ['loading', 'active', 'inactive', 'plain'];
+        return globalThis.__remountWorkspaceTabStrip();
+      });
+      await expect(page.locator('[data-workspace-tab="loading"]')).toHaveAttribute(
+        'data-workspace-tab-loading',
+        'true',
+      );
+      expect(await expectNormalActiveShape(page, 'loading', scenario.zoom)).toEqual(
+        normalActiveRadii,
+      );
+
+      await page.evaluate(() => {
+        const scenarioState = (
+          globalThis as typeof globalThis & {
+            __workspaceTabScenario: { currentId: string; tabOrder: string[] };
+            __remountWorkspaceTabStrip: () => Promise<void>;
+          }
+        ).__workspaceTabScenario;
+        scenarioState.currentId = 'active';
+        scenarioState.tabOrder = ['active', 'inactive', 'plain', 'loading'];
+        return globalThis.__remountWorkspaceTabStrip();
+      });
+      await expectNormalActiveShape(page, 'active', scenario.zoom);
+      await expectPanelGutter(page, scenario.zoom);
+
+      await page.evaluate(() =>
+        (
+          globalThis as typeof globalThis & {
+            __setWorkspacePanelOpen: (open: boolean) => Promise<void>;
+          }
+        ).__setWorkspacePanelOpen(false),
+      );
+      await expectNormalActiveShape(page, 'active', scenario.zoom);
+
+      await page.evaluate(() =>
+        (
+          globalThis as typeof globalThis & {
+            __setWorkspacePanelOpen: (open: boolean) => Promise<void>;
+          }
+        ).__setWorkspacePanelOpen(true),
+      );
+      await expectNormalActiveShape(page, 'active', scenario.zoom);
+      await expectPanelGutter(page, scenario.zoom);
+
+      const transitionSeconds = await page
+        .locator('[data-workspace-tab="active"]')
+        .evaluate((node) => Number.parseFloat(getComputedStyle(node).transitionDuration));
+      expect(transitionSeconds <= 0.00001).toBe(scenario.reduced);
     }
   }
 });
@@ -316,6 +509,7 @@ test('keeps titles, statuses, and close controls disjoint at 160px and constrain
       box(activeStatus),
       box(activeClose),
     ]);
+    expect(activeBox.width).toBeCloseTo(Math.min(160, options.viewport * 0.4) * scale, 0);
     expect(titleBox.x - activeBox.x).toBeCloseTo(12 * scale, 0);
     expect(titleBox.x + titleBox.width).toBeLessThanOrEqual(statusBox.x + 0.5);
     expect(statusBox.x + statusBox.width).toBeLessThanOrEqual(closeBox.x + 0.5);

@@ -422,6 +422,34 @@
   const blockKeys = $derived(
     dedupeKeys(groupedBlocks.map((block, index) => getBlockKey(block, index))),
   );
+
+  function isVisibleTopLevelBlock(block: RenderContentBlock): boolean {
+    if (block.type === 'content_group') return true;
+    const contentBlock = block as ContentBlock;
+    if (
+      isNavLinkBlock(contentBlock) ||
+      resolveCard(contentBlock, cardHandlers) ||
+      getProposalFromBlock(contentBlock)
+    ) {
+      return true;
+    }
+    if (contentBlock.type === 'text') {
+      const text = contentBlock.text || (contentBlock as any).content || '';
+      return parseSuggestedPrompts(text).cleanedContent.trim().length > 0;
+    }
+    if (contentBlock.type === 'image') {
+      return Boolean((contentBlock.data || contentBlock.dataTruncated) && contentBlock.mimeType);
+    }
+    if (contentBlock.type === 'video') return Boolean(contentBlock.source);
+    return ['tool_use', 'tool_result', 'thinking'].includes(contentBlock.type);
+  }
+
+  const lastVisibleTopLevelBlockIndex = $derived.by(() => {
+    for (let i = groupedBlocks.length - 1; i >= 0; i--) {
+      if (isVisibleTopLevelBlock(groupedBlocks[i])) return i;
+    }
+    return -1;
+  });
 </script>
 
 {#snippet renderParsedContentBlock(parsedBlock: ParsedContent, insetProse = false)}
@@ -772,6 +800,7 @@
           <ResponseGroup
             name={group.name}
             isStreaming={group.isStreaming}
+            isTerminal={blockIndex === lastVisibleTopLevelBlockIndex}
             blocks={group.children}
             searchPath={chatSearchBlockPath(blockIndex)}
             reasoningPhase={group.isReasoningPhase}

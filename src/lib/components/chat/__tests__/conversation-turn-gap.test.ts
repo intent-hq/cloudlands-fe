@@ -100,6 +100,35 @@ describe('ConversationTurnGap', () => {
     expect(gap.hasAttribute('data-batched-seam')).toBe(false);
   });
 
+  it('renders a 24px structured attention-to-answer seam instead of a batch seam', async () => {
+    const { container, rerender } = render(ConversationTurnGap, {
+      props: {
+        currentIsEventNotification: true,
+        currentHasAssistantMessages: false,
+        nextIsEventNotification: false,
+        nextHasUserMessage: true,
+        attentionQuestionAnswerSeam: true,
+        batchedDeliverySeam: false,
+      },
+    });
+    const gap = container.firstElementChild!;
+    expect(gap.className).toContain('h-6');
+    expect(gap.getAttribute('data-attention-answer-seam')).toBe('true');
+    expect(gap.hasAttribute('data-batched-seam')).toBe(false);
+
+    await rerender({
+      currentIsEventNotification: true,
+      currentHasAssistantMessages: false,
+      nextIsEventNotification: false,
+      nextHasUserMessage: true,
+      attentionQuestionAnswerSeam: false,
+      batchedDeliverySeam: true,
+    });
+    expect(gap.className).toContain('h-2');
+    expect(gap.hasAttribute('data-attention-answer-seam')).toBe(false);
+    expect(gap.getAttribute('data-batched-seam')).toBe('true');
+  });
+
   it('applies the batched seam to wake-card boundaries on both sides', async () => {
     // Batch member followed by a wake card in the same batch.
     const { container, rerender } = render(ConversationTurnGap, {

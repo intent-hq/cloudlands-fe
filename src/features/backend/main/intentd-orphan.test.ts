@@ -3,13 +3,18 @@
  * path resolution, and the bundle-containment check that separates a true
  * orphan (executable inside our resourcesPath) from an external daemon.
  */
-import { describe, expect, it, beforeEach, afterEach } from 'vitest';
+import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest';
 import { spawn, type ChildProcess } from 'node:child_process';
 import { once } from 'node:events';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
+
+vi.mock('node:fs', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:fs')>();
+  return { ...actual, readlinkSync: vi.fn(actual.readlinkSync) };
+});
 
 import {
   detectOrphanedSidecar,
@@ -223,23 +228,24 @@ describe('detectOrphanedSidecar', () => {
     expect(detectOrphanedSidecar(envFor(tmpDir), tmpDir, 'linux')).toBeNull();
   });
 
-  it('classifies a live process running from inside resources as an orphan', async () => {
-    const platform = process.platform;
-    if (platform !== 'linux' && platform !== 'darwin') return;
-    // Copy a real binary into the fake bundle and run it, standing in for a
-    // leftover intentd running from a previous app install's resources.
+  it('classifies a live process reported inside resources as an orphan', async () => {
+    // Real kernel path resolution is covered above. Stub that boundary here so
+    // the orchestration contract does not depend on lsof availability under
+    // full-suite process pressure.
     const resources = path.join(tmpDir, 'resources');
     const exe = path.join(resources, 'intentd', 'intentd');
     fs.mkdirSync(path.dirname(exe), { recursive: true });
     fs.copyFileSync('/bin/sleep', exe);
     fs.chmodSync(exe, 0o755);
-    const child = await spawnLiveProcess(exe, ['30']);
+    const child = await spawnLiveProcess('/bin/sleep', ['30']);
+    const readlink = vi.mocked(fs.readlinkSync).mockReturnValue(exe);
     try {
       fs.writeFileSync(path.join(tmpDir, 'intentd.pid'), String(child.pid));
-      const info = detectOrphanedSidecar(envFor(tmpDir), resources, platform);
+      const info = detectOrphanedSidecar(envFor(tmpDir), resources, 'linux');
       expect(info).not.toBeNull();
       expect(info!.pid).toBe(child.pid);
     } finally {
+      readlink.mockRestore();
       child.kill('SIGKILL');
     }
   });

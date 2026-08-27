@@ -45,4 +45,12 @@ describe('chat content column contracts', () => {
       /class="chat-content-measure mx-auto w-full min-w-0[^\"]*"[\s\S]*?data-testid="pinned-prompt-overlay-lane"/,
     );
   });
+
+  it('aligns queued-message surfaces with the prompt box at regular and Chief widths', () => {
+    expect(panel).toMatch(
+      /data-testid="transcript-utility-stack"[\s\S]*?class="relative z-20 mt-6 \{isChiefWorkspace[\s\S]*?\? 'mx-1 sm:mx-2'[\s\S]*?: 'w-full'\}"[\s\S]*?data-testid="queued-message-utility-area"/,
+    );
+    expect(panel).not.toContain('queued-message-utility-wide');
+    expect(panel).not.toContain("'-mx-4 sm:-mx-6'");
+  });
 });

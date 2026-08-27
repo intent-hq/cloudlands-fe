@@ -166,7 +166,7 @@
         <Button
           variant="ghost-light"
           size="sm"
-          class="flex h-9 w-full cursor-pointer items-center gap-2 rounded-md px-2 text-sm font-normal text-muted-foreground transition-colors hover:bg-muted/45 hover:text-foreground focus-visible:ring-1 focus-visible:ring-ring"
+          class="flex h-9 w-full cursor-pointer items-center gap-2 rounded-md bg-transparent px-2 text-sm font-normal text-muted-foreground transition-colors hover:bg-transparent hover:text-foreground active:bg-transparent focus-visible:-outline-offset-2 focus-visible:outline-2 focus-visible:outline-ring focus-visible:ring-0"
           onclick={(event) => {
             event.stopPropagation();
             toggleDelegation(agent.id);
@@ -286,7 +286,7 @@
     <Button
       variant="ghost-light"
       size="sm"
-      class="h-9 w-full min-w-0 gap-1.5 rounded-md px-2 text-sm font-normal hover:bg-muted/45 focus-visible:ring-1 focus-visible:ring-ring"
+      class="h-9 w-full min-w-0 gap-1.5 rounded-md bg-transparent px-2 text-sm font-normal hover:bg-transparent active:bg-transparent focus-visible:-outline-offset-2 focus-visible:outline-2 focus-visible:outline-ring focus-visible:ring-0"
       onclick={() => (showBackgroundAgents = !showBackgroundAgents)}
       aria-expanded={showBackgroundAgents}
       data-agent-background-toggle
@@ -342,7 +342,7 @@
     <Button
       variant="ghost-light"
       size="sm"
-      class="h-9 w-full min-w-0 gap-1.5 rounded-md px-2 text-sm font-normal hover:bg-muted/45 focus-visible:ring-1 focus-visible:ring-ring"
+      class="h-9 w-full min-w-0 gap-1.5 rounded-md bg-transparent px-2 text-sm font-normal hover:bg-transparent active:bg-transparent focus-visible:-outline-offset-2 focus-visible:outline-2 focus-visible:outline-ring focus-visible:ring-0"
       onclick={() => (showRetiredAgents = !showRetiredAgents)}
       aria-expanded={showRetiredAgents}
       data-agent-retired-toggle

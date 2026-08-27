@@ -36,34 +36,41 @@
 
 {#if $attentionRequest$}
   <div
-    class="w-full font-family-child"
+    class="mt-6 w-full font-family-child"
     data-testid="attention-request-banner"
     transition:safeSlide={{ axis: 'y', duration: 200 }}
   >
     <div class="flex flex-col gap-1 px-3 py-1.5 text-sm">
-      <span
-        class="flex items-center gap-2 {$attentionRequest$.kind === 'blocker'
-          ? 'text-red-500'
-          : 'text-amber-500'}"
-      >
-        <Fa
-          icon={$attentionRequest$.kind === 'blocker' ? faCircleExclamation : faCommentDots}
-          size="13"
-        />
-        {$attentionRequest$.kind === 'blocker'
-          ? m.chat_agentCard_attentionBlocker_label()
-          : m.chat_agentCard_attentionDiscussion_label()}
-      </span>
+      <div class="flex items-start justify-between gap-3" data-testid="attention-request-header">
+        <span
+          class="flex min-w-0 items-start gap-2 {$attentionRequest$.kind === 'blocker'
+            ? 'text-red-500'
+            : 'text-amber-500'}"
+        >
+          <Fa
+            icon={$attentionRequest$.kind === 'blocker' ? faCircleExclamation : faCommentDots}
+            size="13"
+          />
+          <span class="min-w-0 break-words" data-testid="attention-request-label">
+            {$attentionRequest$.kind === 'blocker'
+              ? m.chat_agentCard_attentionBlocker_label()
+              : m.chat_agentCard_attentionDiscussion_label()}
+          </span>
+        </span>
+        {#if $attentionRequest$.timestamp}
+          <RelativeTime
+            date={$attentionRequest$.timestamp}
+            class="shrink-0 whitespace-nowrap text-xs text-ghost"
+          />
+        {/if}
+      </div>
       {#if $attentionRequest$.reason}
-        <span class="break-words whitespace-pre-wrap text-subtle">
+        <span
+          class="break-words whitespace-pre-wrap text-subtle"
+          data-testid="attention-request-reason"
+        >
           {$attentionRequest$.reason}
         </span>
-      {/if}
-      {#if $attentionRequest$.timestamp}
-        <RelativeTime
-          date={$attentionRequest$.timestamp}
-          class="shrink-0 whitespace-nowrap text-xs text-ghost self-center"
-        />
       {/if}
     </div>
   </div>

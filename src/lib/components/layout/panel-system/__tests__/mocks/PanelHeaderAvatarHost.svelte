@@ -13,11 +13,17 @@
     width = 280,
     zoom = 1,
     activeAgent = 'a',
+    focused = true,
+    attention = false,
+    longTitle = false,
   }: {
     theme?: 'light' | 'dark';
     width?: number;
     zoom?: number;
     activeAgent?: 'a' | 'b';
+    focused?: boolean;
+    attention?: boolean;
+    longTitle?: boolean;
   } = $props();
 
   const workspaceId = WorkspaceId('panel-avatar-workspace');
@@ -47,13 +53,42 @@
     };
   }
 
-  store.dispatch(bulkUpsertSessions([session(agentA, 'Agent A'), session(agentB, 'Agent B')]));
+  const agentName = $derived(
+    longTitle ? 'Agent with a deliberately long panel header title' : 'Agent',
+  );
+  const noteTitle = $derived(
+    longTitle ? 'Note with a deliberately long panel header title' : 'Note',
+  );
+  $effect(() => {
+    store.dispatch(
+      bulkUpsertSessions([session(agentA, `${agentName} A`), session(agentB, `${agentName} B`)]),
+    );
+  });
   const activeTabId = $derived(activeAgent === 'b' ? 'tab-b' : 'tab-a');
-  const allTabs = [
-    { id: 'tab-a', type: 'agent' as const, title: 'Agent A', agentId: agentA, closable: true },
-    { id: 'tab-b', type: 'agent' as const, title: 'Agent B', agentId: agentB, closable: true },
-  ];
+  const allTabs = $derived([
+    {
+      id: 'tab-a',
+      type: 'agent' as const,
+      title: `${agentName} A`,
+      agentId: agentA,
+      closable: true,
+    },
+    {
+      id: 'tab-b',
+      type: 'agent' as const,
+      title: `${agentName} B`,
+      agentId: agentB,
+      closable: true,
+    },
+  ]);
   const tabs = $derived(activeAgent === 'b' ? [allTabs[1]] : [allTabs[0]]);
+  const noteTab = $derived({
+    id: 'tab-note',
+    type: 'note' as const,
+    title: noteTitle,
+    noteId: 'panel-avatar-note',
+    closable: true,
+  });
 </script>
 
 <section
@@ -64,5 +99,24 @@
   data-theme={theme}
   data-active-agent={activeTabId === 'tab-b' ? agentB : agentA}
 >
-  <PanelTabBar {tabs} {activeTabId} panelId="panel-avatar" {workspaceId} isFocused />
+  <div data-panel-header-case="agent">
+    <PanelTabBar
+      {tabs}
+      {activeTabId}
+      panelId="panel-avatar-agent"
+      {workspaceId}
+      isFocused={focused}
+      attentionTabIds={attention ? [activeTabId] : []}
+    />
+  </div>
+  <div data-panel-header-case="resource">
+    <PanelTabBar
+      tabs={[noteTab]}
+      activeTabId={noteTab.id}
+      panelId="panel-avatar-resource"
+      {workspaceId}
+      isFocused={focused}
+      attentionTabIds={attention ? [noteTab.id] : []}
+    />
+  </div>
 </section>

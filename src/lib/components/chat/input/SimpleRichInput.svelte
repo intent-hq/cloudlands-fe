@@ -497,6 +497,7 @@
   // Resize functionality
   let isResizing = $state(false);
   let containerHeight = $state<number | null>(null); // null = use auto-expand mode
+  let isComposerFocused = $state(false);
   let initialY = 0;
   let initialHeight = 0;
 
@@ -506,19 +507,26 @@
 
   // Height constraints for auto-expand
   const MIN_HEIGHT = 65;
+  const IDLE_MIN_HEIGHT = 56;
+  const DEFAULT_HEIGHT = 100;
+  const IDLE_DEFAULT_HEIGHT = 80;
   const COMPACT_PANEL_THRESHOLD = 640; // Keep the composer compact in short and stacked panels
   const MAX_HEIGHT_PERCENTAGE = 0.8; // Max 80% of parent panel
   const MAX_HEIGHT_ABSOLUTE = 800; // Absolute max in pixels
   const FALLBACK_MAX_HEIGHT = 300;
 
-  // Use 65px for short panels, larger default for taller panels
+  const hasComposerContent = $derived(
+    value.trim().length > 0 || contextItems.length > 0 || hasInlineImages,
+  );
+  const showPlaceholder = $derived(inputLocked || (isComposerFocused && !hasComposerContent));
+
+  // Automatic geometry expands only for real composer content. Focus reveals
+  // the placeholder without changing the compact idle height.
   let dynamicDefaultHeight = $derived.by(() => {
     if (parentPanelHeight && parentPanelHeight > COMPACT_PANEL_THRESHOLD) {
-      // Taller panel - use a larger default (but still reasonable)
-      return 100;
+      return hasComposerContent ? DEFAULT_HEIGHT : IDLE_DEFAULT_HEIGHT;
     }
-    // Short panel or unknown - use minimum
-    return MIN_HEIGHT;
+    return hasComposerContent ? MIN_HEIGHT : IDLE_MIN_HEIGHT;
   });
 
   // Calculate max height based on parent panel (80% of panel height, capped)
@@ -1259,6 +1267,17 @@
     isResizing = false;
   }
 
+  function handleFocusIn() {
+    isComposerFocused = true;
+  }
+
+  function handleFocusOut(event: FocusEvent) {
+    const nextTarget = event.relatedTarget;
+    if (!(nextTarget instanceof Node) || !containerRef?.contains(nextTarget)) {
+      isComposerFocused = false;
+    }
+  }
+
   // Add global mouse event listeners for resize
   $effect(() => {
     if (isResizing) {
@@ -1340,7 +1359,10 @@
 <div
   bind:this={containerRef}
   class={cn(
-    'relative rich-input-container flex flex-col overflow-hidden text-card-foreground transition-[border-color,background-color,box-shadow] duration-(--motion-fast) motion-reduce:transition-none',
+    'relative rich-input-container flex flex-col overflow-hidden text-card-foreground duration-(--motion-fast) ease-(--ease-standard) motion-reduce:transition-none',
+    isAutoExpand
+      ? 'transition-[border-color,background-color,box-shadow,min-height]'
+      : 'transition-[border-color,background-color,box-shadow]',
     edgeDocked
       ? 'rounded-lg border-0 bg-sidebar shadow-none'
       : 'rounded-lg border border-border shadow-(--elevation-raised) focus-within:border-ring focus-within:ring-0',
@@ -1356,6 +1378,8 @@
   ondragover={externalDropTarget ? undefined : handleDragOver}
   ondrop={externalDropTarget ? undefined : handleDrop}
   onpaste={handlePaste}
+  onfocusin={handleFocusIn}
+  onfocusout={handleFocusOut}
   role="region"
   aria-label={m.chat_richInput_dropSupport_ariaLabel()}
   data-testid="message-input"
@@ -1448,9 +1472,10 @@
   <!-- svelte-ignore a11y_click_events_have_key_events -->
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div
-    class="editor-wrapper relative min-h-0 cursor-text {isAutoExpand
+    class="editor-wrapper relative min-h-0 cursor-text pt-1 {isAutoExpand
       ? 'flex-1 overflow-y-auto'
       : 'flex-1 overflow-hidden'} {editMode ? 'pr-5' : ''}"
+    class:placeholder-hidden={!showPlaceholder}
     onclick={() => tiptap?.focus()}
   >
     <TipTapEditor
@@ -1767,6 +1792,16 @@
     position: relative;
   }
 
+  .editor-wrapper :global(.tiptap-editor p.is-editor-empty:first-child::before),
+  .editor-wrapper :global(.tiptap-editor p.is-empty:first-child::before) {
+    transition: opacity 300ms ease-in-out;
+  }
+
+  .editor-wrapper.placeholder-hidden :global(.tiptap-editor p.is-editor-empty:first-child::before),
+  .editor-wrapper.placeholder-hidden :global(.tiptap-editor p.is-empty:first-child::before) {
+    opacity: 0;
+  }
+
   /* Shimmer overlay for enhancement loading state */
   .shimmer-overlay-wrapper {
     position: absolute;
@@ -1806,20 +1841,15 @@
   }
 
   @media (prefers-reduced-motion: reduce) {
+    .editor-wrapper :global(.tiptap-editor p.is-editor-empty:first-child::before),
+    .editor-wrapper :global(.tiptap-editor p.is-empty:first-child::before) {
+      transition: none;
+    }
+
     .shimmer-overlay {
       animation: none;
       opacity: 0.5;
       transform: none;
     }
-  }
-
-  /* Hide placeholder when panel is not focused */
-  :global(.panel:not(.focused) .rich-input-container .is-editor-empty::before) {
-    opacity: 0;
-    transition: opacity 150ms;
-  }
-  :global(.panel.focused .rich-input-container .is-editor-empty::before) {
-    opacity: 1;
-    transition: opacity 150ms;
   }
 </style>

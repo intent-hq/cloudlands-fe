@@ -252,9 +252,8 @@ describe('subscription row typography', () => {
 
     for (const [row, label] of rows) {
       const icon = row.querySelector('svg')!;
-      expect(icon.classList).toContain('text-muted-foreground!');
-      expect(icon.classList).toContain('opacity-100');
       expect(tone(icon)).toEqual(tone(label));
+      expect(tone(icon).opacity).toBe('1');
     }
   });
 });

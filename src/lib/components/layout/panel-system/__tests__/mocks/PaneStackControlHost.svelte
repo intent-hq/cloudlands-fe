@@ -1,9 +1,14 @@
 <script lang="ts">
   import { onDestroy } from 'svelte';
-  import type { PanelTab } from '$store/renderer/slices/panel-layout/panel-layout-types';
+  import type {
+    PanelTab,
+    PanelTabType,
+  } from '$store/renderer/slices/panel-layout/panel-layout-types';
   import { startRootStoreLifecycle } from '$store/renderer/root-store-lifecycle';
   import { store } from '$store/renderer/store';
   import PanelTabBar from '../../PanelTabBar.svelte';
+
+  type PaneFixtureType = PanelTabType | 'task';
 
   let {
     theme = 'light',
@@ -13,6 +18,7 @@
     stackCount = 5,
     initialActiveTabId = 'note-pane',
     attentionTabIds = [],
+    paneTypes = ['agent', 'note', 'file', 'browser', 'terminal'],
   }: {
     theme?: 'light' | 'dark';
     width?: number;
@@ -21,48 +27,48 @@
     stackCount?: number;
     initialActiveTabId?: string;
     attentionTabIds?: string[];
+    paneTypes?: PaneFixtureType[];
   } = $props();
 
   const disposeStore = startRootStoreLifecycle(store, { startSagas: () => [] });
 
-  const allTabs: PanelTab[] = [
-    {
-      id: 'agent-pane',
-      type: 'agent',
-      title: 'Build agent',
-      agentId: 'agent-pane',
+  const paneTitles: Record<PaneFixtureType, string> = {
+    note: 'Release plan',
+    file: 'panel.ts',
+    diff: 'Panel changes',
+    changes: 'Changes',
+    'local-changes': 'Local changes',
+    'chat-changes': 'Chat changes',
+    agent: 'Build agent',
+    terminal: 'Development server',
+    settings: 'Settings',
+    overview: 'Overview',
+    browser: 'Preview browser',
+    'hook-script': 'Hook script',
+    activity: 'Activity',
+    'activity-changes': 'Activity changes',
+    'code-review': 'Code review',
+    'agent-overview': 'Agent overview',
+    task: 'Assigned task',
+  };
+
+  function createTab(fixtureType: PaneFixtureType): PanelTab {
+    const id = `${fixtureType}-pane`;
+    const type = fixtureType === 'task' ? 'note' : fixtureType;
+    return {
+      id,
+      type,
+      title: paneTitles[fixtureType],
+      agentId: type === 'agent' ? id : undefined,
+      noteId: type === 'note' ? id : undefined,
+      filePath: type === 'file' ? '/workspace/src/panel.ts' : undefined,
+      browserUrl: type === 'browser' ? 'https://example.com/preview' : undefined,
+      terminalId: type === 'terminal' ? id : undefined,
       closable: true,
-    },
-    {
-      id: 'note-pane',
-      type: 'note',
-      title: 'Release plan',
-      noteId: 'note-pane',
-      closable: true,
-    },
-    {
-      id: 'file-pane',
-      type: 'file',
-      title: 'panel.ts',
-      filePath: '/workspace/src/panel.ts',
-      closable: true,
-    },
-    {
-      id: 'browser-pane',
-      type: 'browser',
-      title: 'Preview browser',
-      browserUrl: 'https://example.com/preview',
-      closable: true,
-    },
-    {
-      id: 'terminal-pane',
-      type: 'terminal',
-      title: 'Development server',
-      terminalId: 'terminal-pane',
-      closable: true,
-    },
-  ];
-  const tabs = $derived(allTabs.slice(0, stackCount));
+    };
+  }
+
+  const tabs = $derived(paneTypes.slice(0, stackCount).map(createTab));
   // svelte-ignore state_referenced_locally - the prop seeds the test harness state
   let activeTabId = $state(initialActiveTabId);
   let lastClosedTabId = $state('');

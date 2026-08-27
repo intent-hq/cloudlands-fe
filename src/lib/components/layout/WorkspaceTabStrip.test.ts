@@ -452,13 +452,33 @@ describe('WorkspaceTabStrip', () => {
     await waitFor(() => expect(screen.queryByTestId('workspace-tab-preview')).toBeNull());
   });
 
-  it('returns the corner-flare padding when aligning the first tab to an open panel', () => {
-    render(WorkspaceTabStrip, { props: { alignFirstTabToPanel: true } });
+  it('keeps the normal first-tab curve, flares, and strip gutter across switching', async () => {
+    const { rerender } = render(WorkspaceTabStrip, {
+      props: { activeWorkspaceId: 'ws-1' },
+    });
 
     const tablist = screen.getByRole('tablist', { name: 'Open spaces' });
+    const firstTab = document.querySelector('[data-workspace-tab="ws-1"]')!;
     expect(tablist.className).toContain('pl-3');
-    expect(tablist.className).toContain('-ml-3');
-    expect(tablist.className).not.toContain('-ml-1');
+    expect(tablist.className).toContain('-ml-1');
+    expect(tablist.className).not.toContain('-ml-3');
+    expect(firstTab.hasAttribute('data-workspace-tab-leading-shape')).toBe(false);
+    expect(firstTab.classList).toContain('rounded-t-md');
+    expect(firstTab.querySelector('[data-workspace-tab-leading-flare]')).toBeTruthy();
+    expect(firstTab.querySelector('[data-workspace-tab-trailing-flare]')).toBeTruthy();
+
+    await rerender({ activeWorkspaceId: 'ws-2' });
+    const secondTab = document.querySelector('[data-workspace-tab="ws-2"]')!;
+    expect(firstTab.hasAttribute('data-workspace-tab-leading-shape')).toBe(false);
+    expect(secondTab.hasAttribute('data-workspace-tab-leading-shape')).toBe(false);
+    expect(secondTab.classList).toContain('rounded-t-md');
+    expect(secondTab.querySelector('[data-workspace-tab-leading-flare]')).toBeTruthy();
+    expect(secondTab.querySelector('[data-workspace-tab-trailing-flare]')).toBeTruthy();
+
+    await rerender({ activeWorkspaceId: 'ws-1' });
+    expect(firstTab.classList).toContain('rounded-t-md');
+    expect(firstTab.querySelector('[data-workspace-tab-leading-flare]')).toBeTruthy();
+    expect(firstTab.querySelector('[data-workspace-tab-trailing-flare]')).toBeTruthy();
   });
 
   it('refreshes the active-tab border bounds when title-bar positioning changes', async () => {
@@ -474,7 +494,6 @@ describe('WorkspaceTabStrip', () => {
     await rerender({
       activeWorkspaceId: 'ws-1',
       onActiveTabBoundsChange,
-      alignFirstTabToPanel: true,
       horizontalPositionTrackingKey: 288,
     });
 

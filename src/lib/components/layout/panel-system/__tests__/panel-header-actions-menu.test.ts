@@ -1,9 +1,16 @@
 /** @vitest-environment jsdom */
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { createRawSnippet } from 'svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { PanelTab } from '$store/renderer/slices/panel-layout/panel-layout-types';
 import { SHORTCUTS, formatShortcut } from '$lib/utils/shortcuts';
+
+const panelTabBarSource = readFileSync(
+  path.resolve(process.cwd(), 'src/lib/components/layout/panel-system/PanelTabBar.svelte'),
+  'utf8',
+);
 
 const mocks = vi.hoisted(() => {
   let columnCount = 2;
@@ -81,13 +88,18 @@ vi.mock('$store/renderer/slices/workspace-agents/workspace-agents-selectors', ()
   selectAllWorkspaceAgents: () => readable([]),
 }));
 vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
-  selectAgentIsResponding: () => readable(false),
+  selectAgentProvider: () => readable(undefined),
+  selectAgentIsResponding: Object.assign(() => readable(false), { select: () => false }),
   selectAgentIsBlockedWaiting: () => readable(false),
   selectAgentAttentionRequest: () => readable(null),
   selectAgentSession: () => readable(null),
 }));
 vi.mock('$store/renderer/slices/permission/permission-selectors', () => ({
+  selectPendingCount: () => readable(0),
   selectPermissionRequests: () => readable([]),
+}));
+vi.mock('$store/renderer/slices/hud/hud-selectors', () => ({
+  selectHudAgentHasPendingQuestion: () => readable(false),
 }));
 vi.mock('$lib/components/ui/toast', () => ({
   toast: { success: vi.fn(), error: vi.fn() },
@@ -363,6 +375,19 @@ describe('mounted panel header actions menu', () => {
     expect(mocks.dispatch).not.toHaveBeenCalledWith(
       expect.objectContaining({ type: 'panelLayout/toggleExpandPanel' }),
     );
+  });
+
+  it('sizes the grouped action menu from content within a viewport cap', async () => {
+    const { container } = renderHeader('note');
+
+    await fireEvent.click(panelTrigger(container));
+    const menu = await screen.findByRole('menu');
+
+    expect(menu.classList).toContain('w-max');
+    expect(menu.classList).toContain('panel-actions-menu-content');
+    expect(panelTabBarSource).toContain('min-width: min(14rem, calc(100vw - 1rem))');
+    expect(panelTabBarSource).toContain('max-width: calc(100vw - 1rem)');
+    expect(menu.classList).toContain('[&_[data-slot=menu-command-item]>kbd]:text-muted-foreground');
   });
 
   it.each(

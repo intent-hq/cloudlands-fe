@@ -32,6 +32,7 @@ describe('editorial workspace shell presentation contract', () => {
     const container = source('../PanelContainer.svelte');
 
     expect(panel).toContain('overflow-hidden rounded-(--panel-shell-radius) text-foreground');
+    expect(panel).toContain('--panel-shell-radius: var(--radius-large);');
     expect(panel).not.toContain('rounded-lg border border-border');
     expect(panel).toContain(
       'class:bg-sidebar={panel.pristine === true && panel.tabs.length === 0}',

@@ -71,7 +71,9 @@ for (const [index, panelType] of panelTypes.entries()) {
     ]);
     await expect(header.locator('[data-panel-column-count-trigger]')).toHaveCount(0);
     if (panelType === 'agent') {
-      await expect(header.locator('[data-panel-agent-chat-glyph]')).toHaveCount(1);
+      const agentAvatar = header.locator('[data-panel-agent-header-identity] [data-agent-avatar]');
+      await expect(agentAvatar).toHaveCount(1);
+      await expect(agentAvatar).toHaveAttribute('data-avatar-variant', 'emphasized');
     }
 
     const identity = header.locator(
@@ -153,6 +155,68 @@ for (const [index, panelType] of panelTypes.entries()) {
 
     await close.click();
     await expect(component).toHaveAttribute('data-close-count', '1');
+  });
+}
+
+for (const scenario of [
+  { theme: 'light' as const, viewportWidth: 1000, hostWidth: 560, zoom: 1 },
+  { theme: 'dark' as const, viewportWidth: 1000, hostWidth: 560, zoom: 1 },
+  { theme: 'light' as const, viewportWidth: 320, hostWidth: 150, zoom: 2 },
+  { theme: 'dark' as const, viewportWidth: 320, hostWidth: 150, zoom: 2 },
+]) {
+  test(`fits content in ${scenario.theme} at ${scenario.viewportWidth}px and ${scenario.zoom * 100}% zoom`, async ({
+    mount,
+    page,
+  }) => {
+    await page.setViewportSize({ width: scenario.viewportWidth, height: 800 });
+    const component = await mount(PanelHeaderActionsHost, {
+      props: {
+        panelType: 'note',
+        width: scenario.hostWidth,
+        zoom: scenario.zoom,
+        theme: scenario.theme,
+        longMenuContent: true,
+      },
+    });
+    const trigger = component.locator(
+      '[data-panel-tabless-header] [data-testid="panel-actions-trigger"]',
+    );
+    await trigger.click();
+    const menu = page.getByRole('menu');
+    const longItem = menu.getByRole('menuitem', {
+      name: 'Content display action with a deliberately long label',
+    });
+    await expect(menu).toBeVisible();
+
+    const geometry = await menu.evaluate((node) => {
+      const item = node.querySelector<HTMLElement>('[data-slot="menu-command-item"]')!;
+      const label = item.querySelector<HTMLElement>(':scope > span')!;
+      const shortcut = item.querySelector<HTMLElement>('kbd')!;
+      const box = node.getBoundingClientRect();
+      return {
+        left: box.left,
+        right: box.right,
+        width: box.width,
+        labelClientWidth: label.clientWidth,
+        labelScrollWidth: label.scrollWidth,
+        labelColor: getComputedStyle(label).color,
+        shortcutColor: getComputedStyle(shortcut).color,
+      };
+    });
+    expect(geometry.left).toBeGreaterThanOrEqual(8 - 0.5);
+    expect(geometry.right).toBeLessThanOrEqual(scenario.viewportWidth - 8 + 0.5);
+    expect(geometry.shortcutColor).not.toBe(geometry.labelColor);
+
+    if (scenario.viewportWidth === 1000) {
+      expect(geometry.width).toBeGreaterThan(224);
+      expect(geometry.labelScrollWidth).toBeLessThanOrEqual(geometry.labelClientWidth + 1);
+    } else {
+      expect(geometry.width).toBeLessThanOrEqual(scenario.viewportWidth - 16 + 0.5);
+      expect(geometry.labelScrollWidth).toBeGreaterThan(geometry.labelClientWidth);
+    }
+
+    await longItem.click();
+    await expect(component).toHaveAttribute('data-display-count', '1');
   });
 }
 

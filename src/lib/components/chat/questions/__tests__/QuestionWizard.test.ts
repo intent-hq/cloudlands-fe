@@ -96,7 +96,7 @@ describe('QuestionWizard', () => {
     );
   });
 
-  it('uses one borderless raised card with lightweight choices and an outlined input', () => {
+  it('uses one borderless shadowless card with lightweight choices and an outlined input', () => {
     const { container } = setup([LAST]);
     const wizard = container.querySelector('[data-question-wizard]');
     const options = Array.from(container.querySelectorAll('[data-question-option]'));
@@ -105,7 +105,7 @@ describe('QuestionWizard', () => {
     expect(wizard?.className).toContain('bg-card');
     expect(wizard?.className).toContain('border-0');
     expect(wizard?.className).not.toContain('border-border');
-    expect(wizard?.className).toContain('shadow-(--elevation-raised)');
+    expect(wizard?.className).not.toContain('shadow');
     expect(wizard?.className).toContain('rounded-(--radius-large)');
     expect(options).toHaveLength(2);
     expect(options.every((option) => option.className.includes('border-0'))).toBe(true);
@@ -304,6 +304,8 @@ describe('QuestionWizard', () => {
     expect(option.tagName).toBe('BUTTON');
     expect((option as HTMLButtonElement).disabled).toBe(false);
     expect(document.activeElement).toBe(option);
+    expect(option.className).toContain('focus-visible:ring-2');
+    expect(option.className).toContain('focus-visible:ring-ring');
   });
 
   it('keeps the free-form field visually integrated when focused', () => {
@@ -428,12 +430,16 @@ describe('QuestionWizard', () => {
   });
 
   it('Hide requests collapse; collapsed renders the banner that re-expands on click', async () => {
-    const { onToggleCollapsed, rerender } = setup();
+    const { container, onToggleCollapsed, rerender } = setup();
     await fireEvent.click(screen.getByRole('button', { name: /hide/i }));
     expect(onToggleCollapsed).toHaveBeenCalledWith(true);
     await rerender({ collapsed: true });
     expect(screen.getByText('Click to expand')).toBeTruthy();
     expect(screen.queryByText('1 of 3')).toBeNull();
+    const wizard = container.querySelector('[data-question-wizard]');
+    expect(wizard?.className).toContain('bg-card');
+    expect(wizard?.className).toContain('rounded-(--radius-large)');
+    expect(wizard?.className).not.toContain('shadow');
     await fireEvent.click(screen.getByText('Agent Has Questions'));
     expect(onToggleCollapsed).toHaveBeenCalledWith(false);
   });
@@ -492,6 +498,7 @@ describe('QuestionWizard', () => {
 
     const dialog = screen.getByRole('dialog');
     expect(dialog.getAttribute('data-slot')).toBe('dialog-content');
+    expect(dialog.className).toContain('dialog-editorial-content');
     expect(dialog.className).toContain('max-w-sm');
     expect(dialog.className).toContain('bg-popover');
     expect(document.querySelector('[data-slot="dialog-overlay"]')).toBeTruthy();

@@ -58,43 +58,6 @@ async function pickerForTrigger(page: Page, trigger: Locator) {
   return picker;
 }
 
-async function startNavigatorPointerTrace(trigger: Locator) {
-  await trigger.evaluate((element) => {
-    const target = element as HTMLElement & {
-      __navigatorPointerTrace?: Array<{
-        type: string;
-        pointerType: string;
-        x: number;
-        y: number;
-        expanded: string | null;
-      }>;
-    };
-    target.__navigatorPointerTrace = [];
-    for (const type of ['pointerover', 'pointerenter', 'pointermove']) {
-      target.addEventListener(type, (event) => {
-        const pointer = event as PointerEvent;
-        target.__navigatorPointerTrace?.push({
-          type,
-          pointerType: pointer.pointerType,
-          x: pointer.clientX,
-          y: pointer.clientY,
-          expanded: target.getAttribute('aria-expanded'),
-        });
-      });
-    }
-  });
-}
-
-async function readNavigatorPointerState(trigger: Locator) {
-  return trigger.evaluate((element) => {
-    const target = element as HTMLElement & { __navigatorPointerTrace?: unknown[] };
-    return {
-      expanded: target.getAttribute('aria-expanded'),
-      trace: target.__navigatorPointerTrace ?? [],
-    };
-  });
-}
-
 async function classifyMessageIdentityNodes(page: Page, messageId: string) {
   return page
     .locator(`[data-message-id="${messageId}"], [data-navigation-message-id="${messageId}"]`)
@@ -493,12 +456,8 @@ test.describe('chat message navigator production path', () => {
         .toBeCloseTo(selectedScrollTop, 0);
       await expect(downButton).toBeEnabled();
       await listButton.focus();
-      const focusDialog = await pickerForTrigger(page, listButton);
-      await expect(
-        focusDialog.getByRole('combobox', { name: 'Filter user messages' }),
-      ).toBeFocused();
-      await page.keyboard.press('Escape');
-      await expect(focusDialog).toHaveCount(0);
+      await expect(listButton).toHaveAttribute('aria-expanded', 'false');
+      await expect(page.getByRole('dialog', { name: 'Browse user messages' })).toHaveCount(0);
       await expect(listButton).toBeFocused();
       await page.keyboard.press('Tab');
       await expect(downButton).toBeFocused();
@@ -543,10 +502,8 @@ test.describe('chat message navigator production path', () => {
     await expectUniqueVisible(title);
 
     await trigger.focus();
-    let dialog = await pickerForTrigger(page, trigger);
-    await expect(dialog.getByRole('combobox', { name: 'Filter user messages' })).toBeFocused();
-    await page.keyboard.press('Escape');
-    await expect(dialog).toHaveCount(0);
+    await expect(trigger).toHaveAttribute('aria-expanded', 'false');
+    await expect(page.getByRole('dialog', { name: 'Browse user messages' })).toHaveCount(0);
     await expect(trigger).toBeFocused();
     await page.keyboard.press('Tab');
     await expect(outside).toBeFocused();
@@ -556,7 +513,7 @@ test.describe('chat message navigator production path', () => {
     await expect(closeButton).toBeFocused();
 
     await trigger.press('Space');
-    dialog = await pickerForTrigger(page, trigger);
+    let dialog = await pickerForTrigger(page, trigger);
     await expect(dialog).toHaveRole('dialog', { name: 'Browse user messages' });
     await expect(dialog.getByRole('combobox', { name: 'Filter user messages' })).toBeFocused();
     await page.keyboard.press('Escape');
@@ -583,6 +540,8 @@ test.describe('chat message navigator production path', () => {
 
     await outside.focus();
     await trigger.focus();
+    await expect(trigger).toHaveAttribute('aria-expanded', 'false');
+    await trigger.click();
     dialog = await pickerForTrigger(page, trigger);
     const search = dialog.getByRole('combobox', { name: 'Filter user messages' });
     await expect(search).toBeFocused();
@@ -592,15 +551,10 @@ test.describe('chat message navigator production path', () => {
     await expect(dialog).toHaveCount(0);
 
     await page.mouse.move(0, 0);
-    await startNavigatorPointerTrace(trigger);
     await trigger.hover();
-    await expect.poll(() => readNavigatorPointerState(trigger)).toMatchObject({ expanded: 'true' });
-    dialog = await pickerForTrigger(page, trigger);
-    await expect(dialog.getByRole('combobox', { name: 'Filter user messages' })).toBeFocused();
-    await dialog.hover();
-    await page.waitForTimeout(200);
-    await expect(dialog).toBeVisible();
-    await title.click();
-    await expect(dialog).toHaveCount(0);
+    await page.waitForTimeout(350);
+    await expect(trigger).toHaveAttribute('aria-expanded', 'false');
+    await expect(page.getByRole('dialog', { name: 'Browse user messages' })).toHaveCount(0);
+    await expect(page.getByRole('tooltip', { name: 'Browse user messages' })).toBeVisible();
   });
 });

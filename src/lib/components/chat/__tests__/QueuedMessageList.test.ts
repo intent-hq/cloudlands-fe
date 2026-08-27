@@ -84,6 +84,7 @@ describe('QueuedMessageList', () => {
       expect(chevron.classList.contains('rotate-90')).toBe(false);
       expect(label.textContent?.trim()).toBe('1 queued message');
       expect(container.className).toContain('pb-2');
+      expect(container.className).not.toContain('before:');
       expect(screen.getAllByTestId('queued-message-row')).toHaveLength(1);
     });
 

@@ -466,7 +466,7 @@
 
 {#if messages.length > 0}
   <div
-    class="queued-messages-surface relative z-20 px-2 pt-3 pb-2 before:pointer-events-none before:absolute before:top-0 before:left-1/2 before:h-px before:-translate-x-1/2 before:bg-border"
+    class="queued-messages-surface relative z-20 px-2 pt-3 pb-2"
     data-testid="queued-messages-container"
     transition:safeSlide={{ duration: 200 }}
   >
@@ -650,9 +650,3 @@
   imageName={lightboxImageName}
   openerElement={lightboxOpenerElement}
 />
-
-<style>
-  .queued-messages-surface::before {
-    width: 100cqw;
-  }
-</style>

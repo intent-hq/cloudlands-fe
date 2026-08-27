@@ -478,6 +478,7 @@
             <div class="min-w-0 flex-1">
               <div
                 class="type-title line-clamp-2 text-base font-semibold leading-5 text-foreground"
+                data-workspace-hover-card-title
               >
                 {workspace?.title || m.workspace_links_untitled_label()}
               </div>

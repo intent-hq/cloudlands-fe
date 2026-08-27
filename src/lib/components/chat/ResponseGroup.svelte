@@ -30,6 +30,7 @@
   interface Props {
     name: string;
     isStreaming?: boolean;
+    isTerminal?: boolean;
     children: Snippet;
     currentChild?: Snippet;
     blocks?: ContentBlock[];
@@ -42,6 +43,7 @@
   let {
     name,
     isStreaming = false,
+    isTerminal = false,
     children,
     currentChild,
     blocks,
@@ -57,6 +59,7 @@
   let isInitialized = false;
   let desiredExpanded = false;
   let prevStreaming = false;
+  let prevTerminal = false;
   let collapseTimer: ReturnType<typeof setTimeout> | null = null;
   let contentEl: HTMLElement | undefined = $state();
   let triggerEl: HTMLButtonElement | undefined = $state();
@@ -82,13 +85,30 @@
     isExpanded = false;
   }
 
+  function clearCollapseTimer() {
+    if (!collapseTimer) return;
+    clearTimeout(collapseTimer);
+    collapseTimer = null;
+  }
+
+  function scheduleCollapse() {
+    clearCollapseTimer();
+    if (disclosureOverride === 'collapsed' || !desiredExpanded) return;
+    collapseTimer = setTimeout(() => {
+      setExpanded(false);
+      collapseTimer = null;
+    }, 800);
+  }
+
   $effect(() => {
     const currentlyStreaming = isStreaming;
+    const currentlyTerminal = isTerminal;
     const hasCurrentChild = Boolean(currentChild);
     if (!isInitialized) {
       isInitialized = true;
       desiredExpanded = isExpanded;
       prevStreaming = currentlyStreaming;
+      prevTerminal = currentlyTerminal;
       if (currentlyStreaming && hasCurrentChild && disclosureOverride === 'automatic') {
         setExpanded(false);
       } else if (!currentlyStreaming && disclosureOverride !== 'expanded-completed') {
@@ -103,35 +123,35 @@
         disclosureOverride = 'automatic';
       }
       if (disclosureOverride === 'automatic') setExpanded(!hasCurrentChild);
-      if (collapseTimer) {
-        clearTimeout(collapseTimer);
-        collapseTimer = null;
-      }
+      clearCollapseTimer();
     } else if (prevStreaming && !currentlyStreaming) {
-      if (disclosureOverride !== 'collapsed') {
-        collapseTimer = setTimeout(() => {
-          setExpanded(false);
-          collapseTimer = null;
-        }, 800);
+      if (currentlyTerminal) {
+        clearCollapseTimer();
+        if (disclosureOverride !== 'collapsed') setExpanded(true);
+      } else {
+        scheduleCollapse();
       }
-    } else if (!searchOwnsExpansion && disclosureOverride !== 'expanded-completed') {
+    } else if (prevTerminal && !currentlyTerminal) {
+      scheduleCollapse();
+    } else if (!prevTerminal && currentlyTerminal) {
+      clearCollapseTimer();
+    } else if (
+      !searchOwnsExpansion &&
+      disclosureOverride !== 'expanded-completed' &&
+      !currentlyTerminal
+    ) {
       setExpanded(false);
     }
     prevStreaming = currentlyStreaming;
+    prevTerminal = currentlyTerminal;
   });
 
   onDestroy(() => {
-    if (collapseTimer) {
-      clearTimeout(collapseTimer);
-      collapseTimer = null;
-    }
+    clearCollapseTimer();
   });
 
   function toggle() {
-    if (collapseTimer) {
-      clearTimeout(collapseTimer);
-      collapseTimer = null;
-    }
+    clearCollapseTimer();
 
     searchOwnsExpansion = false;
     const nextExpanded = !desiredExpanded;
@@ -145,10 +165,7 @@
 
   function expandForSearch() {
     if (desiredExpanded) return;
-    if (collapseTimer) {
-      clearTimeout(collapseTimer);
-      collapseTimer = null;
-    }
+    clearCollapseTimer();
     searchOwnsExpansion = true;
     setExpanded(true);
   }

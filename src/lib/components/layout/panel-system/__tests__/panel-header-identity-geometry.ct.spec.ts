@@ -20,6 +20,7 @@ test('keeps one larger identity geometry across panel types, themes, widths, and
               const leading = header.querySelector<HTMLElement>(
                 '[data-panel-header-leading-surface]',
               )!;
+              const leadingGlyph = leading.querySelector<SVGElement>('svg')!;
               const title = header.querySelector<HTMLElement>('[data-panel-header-title]')!;
               const titleText = title.querySelector<HTMLElement>('button, span')!;
               const actions = header.querySelector<HTMLElement>('[data-panel-header-actions]')!;
@@ -28,6 +29,8 @@ test('keeps one larger identity geometry across panel types, themes, widths, and
               )!;
               const headerRect = header.getBoundingClientRect();
               const leadingRect = leading.getBoundingClientRect();
+              const leadingGlyphRect = leadingGlyph.getBoundingClientRect();
+              const leadingGlyphStyle = getComputedStyle(leadingGlyph);
               const titleRect = title.getBoundingClientRect();
               const actionsRect = actions.getBoundingClientRect();
               const scale = headerRect.width / (header as HTMLElement).offsetWidth;
@@ -35,6 +38,10 @@ test('keeps one larger identity geometry across panel types, themes, widths, and
                 headerHeight: headerRect.height / scale,
                 leadingWidth: leadingRect.width / scale,
                 leadingHeight: leadingRect.height / scale,
+                leadingGlyphContentWidth:
+                  leadingGlyphRect.width / scale -
+                  Number.parseFloat(leadingGlyphStyle.paddingLeft) -
+                  Number.parseFloat(leadingGlyphStyle.paddingRight),
                 leadingCenterDelta:
                   Math.abs(
                     leadingRect.top +
@@ -62,6 +69,10 @@ test('keeps one larger identity geometry across panel types, themes, widths, and
           expect(geometry.headerHeight).toBeCloseTo(32, 1);
           expect(geometry.leadingWidth).toBeCloseTo(24, 1);
           expect(geometry.leadingHeight).toBeCloseTo(24, 1);
+          expect(geometry.leadingGlyphContentWidth).toBeCloseTo(
+            identityType === 'agent' ? 20 : 16,
+            1,
+          );
           expect(geometry.leadingCenterDelta).toBeLessThanOrEqual(0.6);
           expect(geometry.titleFontSize).toBe(geometry.bodyFontSize);
           expect(geometry.titleLineHeight).toBe(geometry.bodyLineHeight);

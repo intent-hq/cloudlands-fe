@@ -10,6 +10,17 @@ function hasUnqualifiedClassToken(content: string, token: string) {
   return content.split(/[\s'"`]+/u).includes(token);
 }
 
+function openingTagAfter(content: string, anchor: string) {
+  const anchorIndex = content.indexOf(anchor);
+  const tagStart = content.indexOf('<div', anchorIndex);
+  const tagClose = content.slice(tagStart).match(/\n\s*>/u);
+  if (anchorIndex < 0 || tagStart < 0 || !tagClose || tagClose.index === undefined) {
+    throw new Error(`Opening div not found after contract anchor: ${anchor}`);
+  }
+  const tagEnd = tagStart + tagClose.index + tagClose[0].length;
+  return content.slice(tagStart, tagEnd);
+}
+
 describe('editorial conversation presentation contract', () => {
   it('assigns restored and streaming transcript identity to the outer row only', () => {
     const panel = source('src/lib/components/chat/ChatPanel.svelte');
@@ -304,10 +315,17 @@ describe('editorial conversation presentation contract', () => {
     const wakeup = source('src/lib/components/chat/EventWakeupBanner.svelte');
     const avatar = source('src/lib/components/chat/InlineAgentAvatar.svelte');
 
-    expect(panel).toMatch(
-      /data-message-index=\{globalIndex\}[\s\S]{0,220}message-nav-target relative z-10[\s\S]{0,120}use:attachPinnedPromptMessage=\{message\}/,
+    const wakeupWrapper = openingTagAfter(
+      panel,
+      '<!-- Source wake-up row remains owned by this transcript turn. -->',
     );
-    expect(panel).toContain('class:mb-8={turn.assistantMessages.length > 0}');
+    expect(wakeupWrapper).toContain('data-message-id={message.id}');
+    expect(wakeupWrapper).toContain('data-message-index={globalIndex}');
+    expect(wakeupWrapper).toContain('message-nav-target relative z-10');
+    expect(wakeupWrapper).toContain('data-pinned-prompt-id={message.id}');
+    expect(wakeupWrapper).toContain('use:attachPinnedPromptMessage={message}');
+    expect(wakeupWrapper).toContain('eventCardAssistantMarginClass(');
+    expect(wakeupWrapper).toContain('turn.assistantMessages.length > 0');
     expect(panel).toContain('class:mb-5={isAutomatedMessage(message)}');
     expect(panel).toContain('class:mb-7={!isAutomatedMessage(message)}');
     expect(panel).not.toContain('data-testid="chat-scroll-to-bottom-button"');
@@ -417,17 +435,35 @@ describe('editorial conversation presentation contract', () => {
     expect(panel).not.toContain('w-full pt-8 pb-12');
   });
 
-  it('keeps the tall streaming Aurora below queued messages in the stacking order', () => {
+  it('keeps the regular and Chief streaming Aurora backgrounds below queued messages', () => {
     const panel = source('src/lib/components/chat/ChatPanel.svelte');
 
-    expect(panel).toContain('class="conversation-composer relative z-10 w-full"');
-    expect(panel).toContain(
-      'class="composer-aurora-host pointer-events-none absolute -left-4 -right-2 -bottom-4 z-0 overflow-hidden"',
-    );
-    expect(panel).toContain(
-      'class="composer-aurora-host regular-panel-aurora-host pointer-events-none absolute inset-x-0 bottom-0 z-0 overflow-hidden"',
-    );
+    const auroraBackground = '<AuroraBackground {agentId} />';
+    const regularAurora =
+      'class="composer-aurora-host regular-panel-aurora-host pointer-events-none absolute inset-x-0 bottom-0 z-0 overflow-hidden"';
+    const transcript = 'data-testid="chat-transcript-scroll-viewport"';
+    const composer = 'class="conversation-composer relative z-10 w-full"';
+    const chiefAurora =
+      'class="composer-aurora-host pointer-events-none absolute -left-4 -right-2 -bottom-4 z-0 overflow-hidden"';
+    const regularAuroraIndex = panel.indexOf(regularAurora);
+    const regularBackgroundIndex = panel.indexOf(auroraBackground, regularAuroraIndex);
+    const transcriptIndex = panel.indexOf(transcript);
+    const composerIndex = panel.indexOf(composer);
+    const chiefAuroraIndex = panel.indexOf(chiefAurora);
+    const chiefBackgroundIndex = panel.indexOf(auroraBackground, chiefAuroraIndex);
+
+    expect(regularAuroraIndex).toBeGreaterThan(-1);
+    expect(regularBackgroundIndex).toBeGreaterThan(regularAuroraIndex);
+    expect(regularBackgroundIndex).toBeLessThan(transcriptIndex);
+    expect(transcriptIndex).toBeGreaterThan(regularAuroraIndex);
+    expect(composerIndex).toBeGreaterThan(transcriptIndex);
+    expect(chiefAuroraIndex).toBeGreaterThan(composerIndex);
+    expect(chiefBackgroundIndex).toBeGreaterThan(chiefAuroraIndex);
+    expect(panel.match(/<AuroraBackground \{agentId\} \/>/g)).toHaveLength(2);
+    expect(panel).not.toContain('AuroraSofteningLayer');
+    expect(panel).toContain('style:height={`calc(${composerHeight}px + 10rem)`}');
     expect(panel).toContain('height: calc(100% + 10rem)');
     expect(panel).toContain('class="relative z-20 mt-6 {isChiefWorkspace');
+    expect(panel).not.toContain('regular-composer-aurora-host');
   });
 });

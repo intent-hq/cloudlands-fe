@@ -20,12 +20,14 @@
     zoom = 1,
     width = 560,
     seamOnly = false,
+    detachedStatus = false,
     reasoningSearchOnly = false,
   }: {
     theme?: 'light' | 'dark';
     zoom?: number;
     width?: number;
     seamOnly?: boolean;
+    detachedStatus?: boolean;
     reasoningSearchOnly?: boolean;
   } = $props();
   const workspaceId = 'chat-panel-operational-geometry';
@@ -447,7 +449,7 @@
       ? seamMessages
       : alignmentMessages;
   // svelte-ignore state_referenced_locally -- each CT mount uses one immutable fixture scenario.
-  const fixtureIsStreaming = !reasoningSearchOnly;
+  const fixtureIsStreaming = !reasoningSearchOnly && !detachedStatus;
   const session = {
     id: agentId,
     workspaceId,
@@ -455,8 +457,8 @@
     status: 'active',
     isActive: true,
     isStreaming: fixtureIsStreaming,
-    isProcessing: fixtureIsStreaming,
-    isResponding: fixtureIsStreaming,
+    isProcessing: !reasoningSearchOnly,
+    isResponding: !reasoningSearchOnly,
     messages,
     createdAt: timestamp,
     updatedAt: timestamp,

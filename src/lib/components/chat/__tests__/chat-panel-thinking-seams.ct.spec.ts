@@ -13,6 +13,41 @@ const eventPairs = [
 ] as const;
 
 for (const theme of ['light', 'dark'] as const) {
+  for (const zoom of [1, 2]) {
+    test(`keeps 16px above the detached live Thinking row in ${theme} at ${zoom * 100}%`, async ({
+      mount,
+    }) => {
+      const component = await mount(ChatPanelOperationalGeometryHost, {
+        props: { theme, width: 720, zoom, seamOnly: true, detachedStatus: true },
+      });
+      const wrapper = component.getByTestId('end-of-list-streaming-status');
+      await expect(wrapper.locator('[data-streaming-typing-row]')).toBeVisible();
+
+      const geometry = await wrapper.evaluate((element) => {
+        const previous = document.querySelector(
+          '[data-message-id="assistant-tool-message-streaming"]',
+        )!;
+        const row = element.querySelector('[data-streaming-typing-row]')!;
+        const wrapperStyle = getComputedStyle(element);
+        return {
+          topGap: row.getBoundingClientRect().top - previous.getBoundingClientRect().bottom,
+          rowMarginTop: getComputedStyle(row).marginTop,
+          wrapperPaddingTop: wrapperStyle.paddingTop,
+          wrapperPaddingBottom: wrapperStyle.paddingBottom,
+          wrapperMarginBottom: wrapperStyle.marginBottom,
+        };
+      });
+
+      expect(geometry.topGap).toBeCloseTo(16 * zoom, 1);
+      expect(geometry.rowMarginTop).toBe('8px');
+      expect(geometry.wrapperPaddingTop).toBe('4px');
+      expect(geometry.wrapperPaddingBottom).toBe('0px');
+      expect(geometry.wrapperMarginBottom).toBe('64px');
+    });
+  }
+}
+
+for (const theme of ['light', 'dark'] as const) {
   for (const width of [320, 720]) {
     for (const zoom of [1, 2]) {
       test(`owns directional Thinking seams in ${theme} at ${width}px and ${zoom * 100}%`, async ({

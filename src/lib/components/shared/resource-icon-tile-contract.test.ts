@@ -79,7 +79,10 @@ describe('resource icon tile source contract', () => {
     expect(tabBar).toContain('width="16"');
     expect(tabBar).toContain('<KebabIcon class="pointer-events-none size-3.5!" />');
     expect(tabBar).toContain('<Fa icon={faXmark} size={14} class="size-3.5!" />');
-    expect(navigator).toContain('<Fa icon={faList} size={14} class="size-3.5!" />');
+    expect(navigator).toContain("import ChatTextIcon from 'phosphor-svelte/lib/ChatTextIcon'");
+    expect(navigator).toMatch(/<ChatTextIcon[\s\S]*?size=\{14\}[\s\S]*?mirrored/);
+    expect(navigator).toContain('data-chat-message-navigator-chat-icon');
+    expect(navigator).not.toContain('faList');
     expect(scrollButton).toContain('size={CHAT_ICON_SIZE.compact} class="size-4!"');
     expect(chatSizes).toContain('header: 12');
     expect(chatSizes).toContain('compact: 16');

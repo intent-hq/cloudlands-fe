@@ -621,13 +621,30 @@
   function isVisibleTopLevelBlock(block: RenderContentBlock): boolean {
     if (block.type === 'content_group') return true;
     const contentBlock = block as ContentBlock;
-    return Boolean(
+    if (
       isNavLinkBlock(contentBlock) ||
       resolveCard(contentBlock, cardHandlers) ||
-      getProposalFromBlock(contentBlock) ||
-      ['text', 'tool_use', 'thinking', 'image', 'video'].includes(contentBlock.type),
-    );
+      getProposalFromBlock(contentBlock)
+    ) {
+      return true;
+    }
+    if (contentBlock.type === 'text') {
+      const text = contentBlock.text || (contentBlock as any).content || '';
+      return parseSuggestedPrompts(text).cleanedContent.trim().length > 0;
+    }
+    if (contentBlock.type === 'image') {
+      return Boolean((contentBlock.data || contentBlock.dataTruncated) && contentBlock.mimeType);
+    }
+    if (contentBlock.type === 'video') return Boolean(contentBlock.source);
+    return contentBlock.type === 'tool_use' || contentBlock.type === 'thinking';
   }
+
+  let lastVisibleTopLevelBlockIndex = $derived.by(() => {
+    for (let i = groupedBlocks.length - 1; i >= 0; i--) {
+      if (isVisibleTopLevelBlock(groupedBlocks[i])) return i;
+    }
+    return -1;
+  });
 
   /**
    * Index of the last group child that actually renders. tool_result children
@@ -990,6 +1007,7 @@
           <ResponseGroup
             name={group.name}
             isStreaming={group.isStreaming}
+            isTerminal={blockIndex === lastVisibleTopLevelBlockIndex}
             blocks={group.children}
             searchPath={chatSearchBlockPath(blockIndex)}
             reasoningPhase={group.isReasoningPhase}

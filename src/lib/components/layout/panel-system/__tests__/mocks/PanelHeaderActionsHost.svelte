@@ -28,6 +28,7 @@
     theme = 'light',
     populated = true,
     stackCount = 2,
+    longMenuContent = false,
   }: {
     panelType?: PanelTabType;
     width?: number;
@@ -38,6 +39,7 @@
     theme?: 'light' | 'dark';
     populated?: boolean;
     stackCount?: 1 | 2 | 3 | 4 | 5;
+    longMenuContent?: boolean;
   } = $props();
 
   const disposeStore = startRootStoreLifecycle(store, { startSagas: () => [] });
@@ -108,7 +110,13 @@
 </script>
 
 {#snippet contentDisplayAction()}
-  <Menu.CommandItem label="Content display action" onclick={() => (displayCount += 1)} />
+  <Menu.CommandItem
+    label={longMenuContent
+      ? 'Content display action with a deliberately long label'
+      : 'Content display action'}
+    shortcut={longMenuContent ? 'Ctrl+Shift+Alt+M' : undefined}
+    onclick={() => (displayCount += 1)}
+  />
 {/snippet}
 
 {#snippet contentNavigationAction()}

@@ -40,7 +40,6 @@
   import { locateItemInSidebarRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
   import type { IconDefinition } from '@fortawesome/fontawesome-common-types';
   import Fa from 'svelte-fa';
-  import ChatTextIcon from 'phosphor-svelte/lib/ChatTextIcon';
   import { Tooltip } from '$lib/components/ui/tooltip';
   import DropdownMenu from '$lib/components/ui/dropdown-menu.svelte';
   import * as Menu from '$lib/components/ui/menu';
@@ -74,6 +73,7 @@
   } from '$store/renderer/slices/specialists/specialists-selectors';
   import { selectGitHubAuthIsAuthenticated } from '$store/renderer/slices/github-auth/github-auth-selectors';
   import AgentAvatar from '$features/agent/components/agent-avatar/AgentAvatar.svelte';
+  import PanelHeaderAgentAvatar from './PanelHeaderAgentAvatar.svelte';
   import { navigateToSettings } from '$lib/utils/workspace-navigation';
   import {
     selectIsWorkspaceHostLocal,
@@ -1145,7 +1145,11 @@
 </script>
 
 {#snippet panelActionsDropdown()}
-  <DropdownMenu align="end" side="bottom" contentClass="w-56">
+  <DropdownMenu
+    align="end"
+    side="bottom"
+    contentClass="panel-actions-menu-content w-max [&_[data-slot=menu-command-item]>kbd]:text-muted-foreground"
+  >
     <!-- i18n-ignore -->
     {#snippet trigger({ props }: { props: Record<string, unknown> })}
       <Tooltip content={m.ui_breadcrumb_more_label()} side="bottom" delayDuration={300}>
@@ -1446,8 +1450,15 @@
               data-pane-stack-item={tab.id}
               data-attention={attentionPaneIds.has(tab.id) ? '' : undefined}
             >
-              <span class="flex size-5 shrink-0 items-center justify-center">
-                {@render panelIdentity(tab, true)}
+              <span
+                class="flex size-5 shrink-0 items-center justify-center"
+                data-pane-stack-item-identity={tab.type}
+              >
+                {#if tab.type === 'agent' && tab.agentId}
+                  <AgentAvatar agentId={tab.agentId} variant="standard" />
+                {:else}
+                  {@render panelIdentity(tab, true)}
+                {/if}
               </span>
               <span class="min-w-0 flex-1 truncate">{getTabTitle(tab)}</span>
               {#if attentionPaneIds.has(tab.id)}
@@ -1806,19 +1817,22 @@
       ondragend={handlePaneDragEnd}
       data-panel-tabless-header
       data-panel-content-header
-      role={activeTab.type === 'agent' /* i18n-ignore: tab type discriminator */
-        ? undefined
-        : 'group'}
-      aria-label={activeTab.type === 'agent' /* i18n-ignore: tab type discriminator */
-        ? undefined
-        : m.layout_panelTabBar_paneStack_ariaLabel({ count: tabs.length })}
-      data-pane-stack={activeTab.type === 'agent' ? undefined : ''}
-      data-pane-stack-size={activeTab.type === 'agent' ? undefined : tabs.length}
+      role="group"
+      aria-label={m.layout_panelTabBar_paneStack_ariaLabel({ count: tabs.length })}
+      data-pane-stack
+      data-pane-stack-size={tabs.length}
     >
       {#if activeTab.type === 'agent'}
-        <!-- Agent headers show only the current icon and editable name. -->
+        <!-- Agent headers keep the current avatar and editable name. -->
         <div
           class="flex min-w-0 shrink items-center gap-2 overflow-hidden bg-card pl-1"
+          aria-label={m.layout_panelTabBar_activePane_ariaLabel({
+            title: activeTabTitle,
+            position: panePosition(activeTab.id),
+            count: tabs.length,
+          })}
+          aria-current="true"
+          data-pane-stack-active={activeTab.id}
           data-attention={attentionPaneIds.has(activeTab.id) ? '' : undefined}
           data-panel-agent-header-identity
         >
@@ -1827,14 +1841,11 @@
             data-testid="panel-header-agent-avatar-slot"
             data-panel-header-leading-surface
           >
-            <ChatTextIcon
-              size={16}
-              mirrored
-              aria-hidden="true"
-              class="shrink-0 text-muted-foreground"
-              data-panel-agent-chat-glyph
-              data-panel-agent-chat-text-glyph
-            />
+            {#if activeTab.agentId}
+              {#key activeTab.agentId}
+                <PanelHeaderAgentAvatar agentId={activeTab.agentId} />
+              {/key}
+            {/if}
           </span>
           <div class="panel-header-title min-w-0 shrink" data-panel-header-title>
             {#if onTabRename}
@@ -1857,9 +1868,6 @@
               </span>
             {/if}
           </div>
-          {#if attentionPaneIds.has(activeTab.id)}
-            <span class="size-1.5 shrink-0 rounded-full bg-primary" aria-hidden="true"></span>
-          {/if}
         </div>
       {:else}
         <!-- Non-agent panes retain the current flat identity and complete selector. -->
@@ -1874,7 +1882,7 @@
               position: panePosition(activeTab.id),
               count: tabs.length,
             })}
-            aria-current="page"
+            aria-current="true"
             data-pane-stack-active={activeTab.id}
             data-attention={attentionPaneIds.has(activeTab.id) ? '' : undefined}
           >
@@ -1945,7 +1953,7 @@
         {/if}
         {@render panelActionsDropdown()}
         {@render panelControlsDivider()}
-        {#if tabs.length > 1 && activeTab.type !== 'agent'}
+        {#if tabs.length > 1}
           {@render paneStackSelector()}
         {/if}
         {@render addPanelColumnButton()}
@@ -2360,6 +2368,11 @@
 {/if}
 
 <style>
+  :global(.panel-actions-menu-content) {
+    min-width: min(14rem, calc(100vw - 1rem));
+    max-width: calc(100vw - 1rem);
+  }
+
   /* CSS variables for panel tab bar heights */
   .panel-tab-wrapper {
     --panel-header-height: clamp(2rem, 3rem, 10cqh);
