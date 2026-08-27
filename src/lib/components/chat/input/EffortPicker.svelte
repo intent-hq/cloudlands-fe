@@ -8,8 +8,8 @@
    * click opens a popover with one discrete slider step per advertised level in
    * catalog order.
    *
-   * A centered provider-default step maps to an explicit `null`, which clears
-   * the session field without exposing an abstract label. Committing a step routes
+   * A centered Auto step maps to an explicit `null`, which clears the session
+   * field back to the provider default. Committing a step routes
    * through `applyReasoningEffort`, which owns the session dispatch and the
    * `agent.update` (§5.5) call — the daemon applies the effort on the next
    * prompt send, so queued messages are not snapshotted.
@@ -84,27 +84,36 @@
     return LEVEL_LABELS[level]?.() ?? level;
   }
 
-  type Step = { value: string | null; label: string };
+  type Step = { value: string | null; label: string; position: number };
+
+  const SLIDER_MAX = 100;
+  const SLIDER_MIDPOINT = SLIDER_MAX / 2;
+  const MIDDLE_LEVEL_POSITION = SLIDER_MIDPOINT - 1;
 
   const embedded = $derived(mode === 'embedded');
   const levels = $derived(embedded ? [...effortLevels] : ($effortLevels$ ?? []));
   const hasLevels = $derived((embedded || !!agentId) && levels.length > 0);
 
   const steps = $derived.by<Step[]>(() => {
-    const supportedSteps: Step[] = levels.map((level) => ({
-      value: level,
-      label: levelLabel(level),
-    }));
-    const defaultIndex = Math.round(levels.length / 2);
-    supportedSteps.splice(defaultIndex, 0, {
-      value: null,
-      label: levelLabel(levels[0] ?? ''),
+    const supportedSteps: Step[] = levels.map((level, index) => {
+      const intendedPosition =
+        levels.length === 1 ? 0 : Math.round((index / (levels.length - 1)) * SLIDER_MAX);
+      return {
+        value: level,
+        label: levelLabel(level),
+        position: intendedPosition === SLIDER_MIDPOINT ? MIDDLE_LEVEL_POSITION : intendedPosition,
+      };
     });
-    return supportedSteps;
+    supportedSteps.push({
+      value: null,
+      label: m.chat_effortPicker_level_auto(),
+      position: SLIDER_MIDPOINT,
+    });
+    return supportedSteps.sort((left, right) => left.position - right.position);
   });
 
   // An effort the newly selected model does not advertise keeps the underlying
-  // provider-default value while displaying the first concrete supported level.
+  // provider-default value without guessing which concrete level the provider uses.
   const persistedValue = $derived(embedded ? effort : ($reasoningEffort$ ?? null));
   const currentValue = $derived(
     persistedValue && levels.includes(persistedValue) ? persistedValue : null,
@@ -128,11 +137,25 @@
   let popoverStyle = $state('');
   let sliderIndex = $state(0);
   let labelDirection = $state<'up' | 'down'>('up');
+  const sliderPosition = $derived(steps[sliderIndex]?.position ?? SLIDER_MIDPOINT);
 
   function preview(index: number) {
     if (index === sliderIndex) return;
     labelDirection = index > sliderIndex ? 'up' : 'down';
     sliderIndex = index;
+  }
+
+  function nearestStepIndex(position: number): number {
+    let nearestIndex = 0;
+    let nearestDistance = Number.POSITIVE_INFINITY;
+    for (const [index, step] of steps.entries()) {
+      const distance = Math.abs(step.position - position);
+      if (distance < nearestDistance) {
+        nearestIndex = index;
+        nearestDistance = distance;
+      }
+    }
+    return nearestIndex;
   }
 
   $effect(() => {
@@ -195,6 +218,27 @@
         : false;
     if (applied === false) sliderIndex = currentIndex;
   }
+
+  function handleSliderKeydown(event: KeyboardEvent) {
+    onkeydown?.(event);
+    if (event.defaultPrevented) return;
+
+    let nextIndex: number | undefined;
+    if (event.key === 'ArrowLeft' || event.key === 'ArrowDown') {
+      nextIndex = Math.max(0, sliderIndex - 1);
+    } else if (event.key === 'ArrowRight' || event.key === 'ArrowUp') {
+      nextIndex = Math.min(steps.length - 1, sliderIndex + 1);
+    } else if (event.key === 'Home') {
+      nextIndex = 0;
+    } else if (event.key === 'End') {
+      nextIndex = steps.length - 1;
+    }
+
+    if (nextIndex === undefined) return;
+    event.preventDefault();
+    preview(nextIndex);
+    void commit(nextIndex);
+  }
 </script>
 
 {#snippet sliderContent()}
@@ -231,31 +275,34 @@
   <div class={cn('relative', embedded ? 'mt-2' : 'mt-2.5')}>
     <Slider
       min="0"
-      max={steps.length - 1}
+      max={SLIDER_MAX}
       step="1"
-      value={sliderIndex}
+      value={sliderPosition}
       {disabled}
-      {onkeydown}
+      onkeydown={handleSliderKeydown}
       aria-label={m.chat_effortPicker_slider_ariaLabel()}
       aria-valuetext={steps[sliderIndex]?.label}
-      onValueChange={(value) => {
-        preview(value);
+      onValueChange={(position) => {
+        preview(nearestStepIndex(position));
       }}
       onchange={(event) => {
-        const index = Number((event.currentTarget as HTMLInputElement).value);
+        const position = Number((event.currentTarget as HTMLInputElement).value);
+        const index = nearestStepIndex(position);
         preview(index);
         void commit(index);
       }}
     />
     <div
-      class="pointer-events-none absolute inset-x-px top-1/2 flex -translate-y-1/2 justify-between"
+      class="pointer-events-none absolute inset-x-px top-1/2 -translate-y-1/2"
       aria-hidden="true"
     >
       {#each steps as step (step.value ?? 'provider-default')}
         <span
           class="flex h-3 w-px items-center justify-center"
+          style={`position: absolute; left: ${step.position}%; transform: translateX(-50%);`}
           data-testid="effort-slider-tick"
           data-effort-level={step.value ?? 'provider-default'}
+          data-slider-position={step.position}
         >
           <span
             class="h-2 w-px shrink-0 rounded-full bg-muted-foreground/55"

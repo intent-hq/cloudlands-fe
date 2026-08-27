@@ -608,7 +608,7 @@ describe('ModelPicker combined reasoning mode', () => {
 
     expect(toggle.textContent?.trim()).toBe('Reasoning effort · Medium');
     const slider = screen.getByRole('slider');
-    expect(slider.getAttribute('max')).toBe('4');
+    expect(slider.getAttribute('max')).toBe('100');
     expect(slider.getAttribute('aria-valuetext')).toBe('Medium');
     expect(screen.getAllByTestId('effort-slider-tick')).toHaveLength(5);
     expect(screen.queryByTestId('effort-current-value')).toBeNull();
@@ -678,7 +678,7 @@ describe('ModelPicker combined reasoning mode', () => {
     const toggle = await screen.findByTestId('model-reasoning-toggle');
     await waitFor(() => expect(toggle.hasAttribute('disabled')).toBe(false));
     await fireEvent.click(toggle);
-    await fireEvent.change(screen.getByRole('slider'), { target: { value: '3' } });
+    await fireEvent.change(screen.getByRole('slider'), { target: { value: '67' } });
 
     await waitFor(() => {
       expect(applyReasoningEffortMock).toHaveBeenCalledWith('agent-1', 'ws-1', 'high', 'medium');
@@ -707,7 +707,7 @@ describe('ModelPicker combined reasoning mode', () => {
     const toggle = await screen.findByTestId('model-reasoning-toggle');
     expect(toggle.hasAttribute('disabled')).toBe(false);
     await fireEvent.click(toggle);
-    await fireEvent.change(screen.getByRole('slider'), { target: { value: '4' } });
+    await fireEvent.change(screen.getByRole('slider'), { target: { value: '100' } });
 
     await waitFor(() => expect(onReasoningChange).toHaveBeenCalledWith('max'));
     expect(applyReasoningEffortMock).not.toHaveBeenCalled();
@@ -731,14 +731,14 @@ describe('ModelPicker combined reasoning mode', () => {
     const toggle = await screen.findByTestId('model-reasoning-toggle');
     await waitFor(() => expect(toggle.hasAttribute('disabled')).toBe(false));
     expect(screen.queryByTestId('effort-gauge')).toBeNull();
-    expect(trigger.textContent).toContain('Low');
+    expect(trigger.textContent).toContain('Auto');
     expect(trigger.textContent).not.toContain('Default');
-    expect(toggle.textContent?.trim()).toBe('Reasoning effort · Low');
+    expect(toggle.textContent?.trim()).toBe('Reasoning effort · Auto');
     await fireEvent.click(toggle);
     const slider = screen.getByRole('slider') as HTMLInputElement;
-    expect(slider.valueAsNumber).toBe(2);
-    expect(slider.getAttribute('max')).toBe('4');
-    expect(slider.getAttribute('aria-valuetext')).toBe('Low');
+    expect(slider.valueAsNumber).toBe(50);
+    expect(slider.getAttribute('max')).toBe('100');
+    expect(slider.getAttribute('aria-valuetext')).toBe('Auto');
   });
 
   it('expands by keyboard, lets Escape collapse first, and resets after reopening', async () => {
@@ -1064,11 +1064,11 @@ describe('ModelPicker combined reasoning mode', () => {
     expect(toggle.getAttribute('aria-expanded')).toBe('false');
 
     await fireEvent.click(toggle);
-    expect(screen.getByRole('slider').getAttribute('max')).toBe('3');
+    expect(screen.getByRole('slider').getAttribute('max')).toBe('100');
     expect(screen.getAllByTestId('effort-slider-tick')).toHaveLength(4);
   });
 
-  it('shows a concrete reasoning strength for the provider-default state', async () => {
+  it('shows Auto for the provider-default state without guessing a concrete strength', async () => {
     reasoningEffort$.set(null);
 
     render(ModelPicker, {
@@ -1083,15 +1083,15 @@ describe('ModelPicker combined reasoning mode', () => {
 
     const trigger = screen.getByRole('button');
     expect(trigger.textContent).toContain('GPT-5.6-Sol');
-    await waitFor(() => expect(trigger.textContent).toContain('Low'));
-    expect(screen.getByLabelText('GPT-5.6-Sol · Low')).toBeTruthy();
+    await waitFor(() => expect(trigger.textContent).toContain('Auto'));
+    expect(screen.getByLabelText('GPT-5.6-Sol · Auto')).toBeTruthy();
     expect(trigger.textContent).not.toContain('Default');
     expect(screen.queryByTestId('effort-gauge')).toBeNull();
 
     await fireEvent.click(trigger);
     const toggle = await screen.findByTestId('model-reasoning-toggle');
     await waitFor(() => expect(toggle.hasAttribute('disabled')).toBe(false));
-    expect(toggle.textContent?.trim()).toBe('Reasoning effort · Low');
+    expect(toggle.textContent?.trim()).toBe('Reasoning effort · Auto');
     expect(toggle.className).toContain('text-xs');
     expect(toggle.querySelector('[data-testid="effort-gauge"]')).toBeNull();
   });

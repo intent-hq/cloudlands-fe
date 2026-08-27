@@ -122,6 +122,11 @@ describe('EffortPicker', () => {
   }
 
   const trigger = () => screen.getByTestId('effort-picker-trigger');
+  const positionFor = (level: string) =>
+    Number(
+      screen.getAllByTestId('effort-slider-tick').find((tick) => tick.dataset.effortLevel === level)
+        ?.dataset.sliderPosition,
+    );
 
   it('renders nothing when the session model advertises no effort levels', () => {
     mount({ id: 'agent-1', workspaceId: 'ws-1', model: 'auggie:butler' });
@@ -132,13 +137,13 @@ describe('EffortPicker', () => {
     inheritedModel = 'gpt5.6-sol';
     mount({ id: 'agent-1', workspaceId: 'ws-1', model: null });
 
-    expect(trigger().getAttribute('aria-label')).toContain('Low');
+    expect(trigger().getAttribute('aria-label')).toContain('Auto');
     expect(screen.getByTestId('effort-gauge')).toBeTruthy();
   });
 
-  it('renders an icon-only gauge with a concrete resolved level in its accessible label', () => {
+  it('renders an icon-only centered gauge with Auto in its accessible label', () => {
     mount({ id: 'agent-1', workspaceId: 'ws-1', model: 'codex:gpt-5.3-codex' });
-    expect(trigger().getAttribute('aria-label')).toContain('Low');
+    expect(trigger().getAttribute('aria-label')).toContain('Auto');
     expect(trigger().textContent?.trim()).toBe('');
     expect(screen.getByTestId('effort-gauge').dataset.gaugeValue).toBe('0');
     expect(screen.getByTestId('effort-gauge').dataset.gaugeCentered).toBe('true');
@@ -177,11 +182,11 @@ describe('EffortPicker', () => {
     expect(gauge.dataset.gaugeValue).toBe('0');
     expect(gauge.dataset.gaugeCentered).toBe('false');
     const slider = screen.getByRole('slider');
-    expect(slider.getAttribute('max')).toBe('2');
+    expect(slider.getAttribute('max')).toBe('100');
     expect(slider.getAttribute('aria-valuetext')).toBe('Low');
     expect(screen.getAllByTestId('effort-slider-tick')).toHaveLength(3);
 
-    await fireEvent.change(slider, { target: { value: '2' } });
+    await fireEvent.change(slider, { target: { value: String(positionFor('high')) } });
     expect(onEffortChange).toHaveBeenCalledWith('high');
     expect(gauge.dataset.gaugeValue).toBe('1');
     expect(applyReasoningEffort).not.toHaveBeenCalled();
@@ -209,11 +214,11 @@ describe('EffortPicker', () => {
     expect(screen.getByRole('dialog').textContent).toContain('Reasoning effort');
 
     const slider = screen.getByRole('slider');
-    expect(slider.getAttribute('max')).toBe('4');
+    expect(slider.getAttribute('max')).toBe('100');
     expect(slider.className).toContain('operate-slider');
     expect(screen.getAllByTestId('effort-slider-tick')).toHaveLength(5);
-    expect((slider as HTMLInputElement).valueAsNumber).toBe(2);
-    expect(screen.getByTestId('effort-current-value').textContent?.trim()).toBe('Low');
+    expect((slider as HTMLInputElement).valueAsNumber).toBe(50);
+    expect(screen.getByTestId('effort-current-value').textContent?.trim()).toBe('Auto');
     expect(screen.getByRole('dialog').textContent).not.toContain('Default');
     expect(screen.queryByTestId('effort-gauge-popover')).toBeNull();
     expect(
@@ -222,7 +227,7 @@ describe('EffortPicker', () => {
         .every((tick) => tick.className.includes('h-3 w-px')),
     ).toBe(true);
 
-    await fireEvent.input(slider, { target: { value: '3' } });
+    await fireEvent.input(slider, { target: { value: String(positionFor('high')) } });
     expect(slider.getAttribute('aria-valuetext')).toBe('High');
     expect(screen.getByTestId('effort-current-value').textContent?.trim()).toBe('High');
     expect(
@@ -236,7 +241,7 @@ describe('EffortPicker', () => {
     const markers = screen.getAllByTestId('effort-slider-tick-marker');
     expect(markers.every((marker) => marker.className.includes('w-px'))).toBe(true);
 
-    await fireEvent.input(slider, { target: { value: '1' } });
+    await fireEvent.input(slider, { target: { value: String(positionFor('medium')) } });
     expect(screen.getByTestId('effort-current-value').textContent?.trim()).toBe('Medium');
     expect(
       screen.getByTestId('effort-current-value').querySelector('[data-motion-direction]')?.dataset
@@ -254,7 +259,7 @@ describe('EffortPicker', () => {
     await fireEvent.click(trigger());
 
     const slider = await waitFor(() => screen.getByRole('slider'));
-    await fireEvent.change(slider, { target: { value: '3' } });
+    await fireEvent.change(slider, { target: { value: String(positionFor('high')) } });
 
     await waitFor(() => {
       expect(applyReasoningEffort).toHaveBeenCalledWith('agent-1', 'ws-1', 'high', 'low');
@@ -271,7 +276,7 @@ describe('EffortPicker', () => {
     await fireEvent.click(trigger());
 
     const slider = await waitFor(() => screen.getByRole('slider'));
-    await fireEvent.change(slider, { target: { value: '2' } });
+    await fireEvent.change(slider, { target: { value: '50' } });
 
     await waitFor(() => {
       expect(applyReasoningEffort).toHaveBeenCalledWith('agent-1', 'ws-1', null, 'high');
@@ -291,8 +296,8 @@ describe('EffortPicker', () => {
     await fireEvent.click(trigger());
 
     const slider = await waitFor(() => screen.getByRole('slider'));
-    expect((slider as HTMLInputElement).valueAsNumber).toBe(1);
-    await fireEvent.change(slider, { target: { value: '1' } });
+    expect((slider as HTMLInputElement).valueAsNumber).toBe(50);
+    await fireEvent.change(slider, { target: { value: '50' } });
 
     await waitFor(() => {
       expect(applyReasoningEffort).toHaveBeenCalledWith('agent-1', 'ws-1', null, 'xhigh');
@@ -309,12 +314,12 @@ describe('EffortPicker', () => {
     await fireEvent.click(trigger());
 
     const slider = await waitFor(() => screen.getByRole('slider'));
-    await fireEvent.change(slider, { target: { value: '3' } });
+    await fireEvent.change(slider, { target: { value: String(positionFor('high')) } });
 
     expect(applyReasoningEffort).not.toHaveBeenCalled();
   });
 
-  it('re-derives levels on a model switch and resolves unsupported effort concretely', async () => {
+  it('re-derives levels on a model switch and resolves unsupported effort to Auto', async () => {
     mount({
       id: 'agent-1',
       workspaceId: 'ws-1',
@@ -332,13 +337,81 @@ describe('EffortPicker', () => {
     bumpVersion();
 
     await waitFor(() => {
-      expect(trigger().getAttribute('aria-label')).toContain('Low');
+      expect(trigger().getAttribute('aria-label')).toContain('Auto');
     });
 
     await fireEvent.click(trigger());
     const slider = await waitFor(() => screen.getByRole('slider'));
-    expect(slider.getAttribute('max')).toBe('2');
+    expect(slider.getAttribute('max')).toBe('100');
     expect(screen.getAllByTestId('effort-slider-tick')).toHaveLength(3);
+  });
+
+  it.each([
+    [['low'], [0]],
+    [
+      ['low', 'medium', 'high'],
+      [0, 49, 100],
+    ],
+    [
+      ['minimal', 'low', 'medium', 'high', 'xhigh'],
+      [0, 25, 49, 75, 100],
+    ],
+  ] as const)(
+    'centers Auto and preserves explicit positions for %s',
+    (effortLevels, expectedPositions) => {
+      const onEffortChange = vi.fn();
+      render(EffortPicker, {
+        props: {
+          mode: 'embedded',
+          effortLevels,
+          effort: null,
+          onEffortChange,
+        },
+      });
+
+      const slider = screen.getByRole('slider') as HTMLInputElement;
+      expect(slider.max).toBe('100');
+      expect(slider.valueAsNumber).toBe(50);
+      expect(slider.getAttribute('aria-valuetext')).toBe('Auto');
+      expect(positionFor('provider-default')).toBe(50);
+      expect(effortLevels.map((level) => positionFor(level))).toEqual(expectedPositions);
+      expect(onEffortChange).not.toHaveBeenCalled();
+    },
+  );
+
+  it('commits exact explicit and null values at their mouse positions', async () => {
+    const onEffortChange = vi.fn(async () => true);
+    render(EffortPicker, {
+      props: {
+        mode: 'embedded',
+        effortLevels: ['minimal', 'low', 'medium', 'high', 'xhigh'],
+        effort: 'high',
+        onEffortChange,
+      },
+    });
+
+    const slider = screen.getByRole('slider');
+    await fireEvent.change(slider, { target: { value: String(positionFor('medium')) } });
+    expect(onEffortChange).toHaveBeenLastCalledWith('medium');
+    await fireEvent.change(slider, { target: { value: '50' } });
+    expect(onEffortChange).toHaveBeenLastCalledWith(null);
+  });
+
+  it('keeps the offset middle level keyboard reachable beside Auto', async () => {
+    const onEffortChange = vi.fn(async () => true);
+    render(EffortPicker, {
+      props: {
+        mode: 'embedded',
+        effortLevels: ['low', 'medium', 'high'],
+        effort: null,
+        onEffortChange,
+      },
+    });
+
+    const slider = screen.getByRole('slider');
+    await fireEvent.keyDown(slider, { key: 'ArrowLeft' });
+    expect(slider.getAttribute('aria-valuetext')).toBe('Medium');
+    expect(onEffortChange).toHaveBeenLastCalledWith('medium');
   });
 
   it('hides the control once the session switches to a model without effort levels', async () => {

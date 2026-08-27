@@ -1863,6 +1863,7 @@
   "chat_editRegenerate_confirm_description": "Tous les messages ultérieurs de cette conversation seront définitivement supprimés et ne pourront pas être récupérés. L'agent régénérera sa réponse à partir de ce message.",
   "chat_editRegenerate_confirm_title": "Modifier le message et redémarrer d'ici ?",
   "chat_effortPicker_level_default": "Par défaut",
+  "chat_effortPicker_level_auto": "Automatique",
   "chat_effortPicker_level_high": "Élevé",
   "chat_effortPicker_level_low": "Faible",
   "chat_effortPicker_level_max": "Maximum",

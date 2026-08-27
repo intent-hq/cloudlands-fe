@@ -1309,16 +1309,17 @@
       ? persistedReasoningEffort
       : null,
   );
-  const resolvedReasoningEffort = $derived(currentReasoningEffort ?? reasoningLevels[0] ?? null);
   const currentReasoningLabel = $derived(
-    resolvedReasoningEffort ? reasoningLevelLabel(resolvedReasoningEffort) : '',
+    currentReasoningEffort
+      ? reasoningLevelLabel(currentReasoningEffort)
+      : m.chat_effortPicker_level_auto(),
   );
   const triggerLabel = $derived(currentModelLabel);
   const triggerAccessibleLabel = $derived(
-    resolvedReasoningEffort ? `${currentModelLabel} · ${currentReasoningLabel}` : currentModelLabel,
+    showReasoningFooter ? `${currentModelLabel} · ${currentReasoningLabel}` : currentModelLabel,
   );
   const currentReasoningGaugeValue = $derived(
-    resolvedReasoningEffort ? reasoningLevels.indexOf(resolvedReasoningEffort) : 0,
+    currentReasoningEffort ? reasoningLevels.indexOf(currentReasoningEffort) : 0,
   );
   let updatingReasoningEffort = $state(false);
   let reasoningExpanded = $state(false);
@@ -1746,7 +1747,7 @@
         <ProviderIcon providerId={triggerProviderId} class="size-3.5" />
       {/if}
       <span class="flex-1 text-left truncate">{triggerLabel}</span>
-      {#if resolvedReasoningEffort}
+      {#if showReasoningFooter}
         <span class="shrink-0 text-xs" data-testid="model-reasoning-strength"
           >· {currentReasoningLabel}</span
         >
@@ -1768,7 +1769,7 @@
           <ProviderIcon providerId={triggerProviderId} class="size-3.5" />
         {/if}
         <span class="text-xs truncate">{triggerLabel}</span>
-        {#if resolvedReasoningEffort}
+        {#if showReasoningFooter}
           <span class="shrink-0 text-xs" data-testid="model-reasoning-strength"
             >· {currentReasoningLabel}</span
           >
@@ -1947,7 +1948,7 @@
             <ProviderIcon providerId={triggerProviderId} class="size-3.5" />
           {/if}
           <span class="truncate">{triggerLabel}</span>
-          {#if resolvedReasoningEffort}
+          {#if showReasoningFooter}
             <span class="shrink-0 text-xs" data-testid="model-reasoning-strength"
               >· {currentReasoningLabel}</span
             >
