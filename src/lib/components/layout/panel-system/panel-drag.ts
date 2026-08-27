@@ -5,7 +5,6 @@ export const PANE_DRAG_MIME = 'application/x-panel-tab';
 const PANE_DRAG_IMAGE_ATTRIBUTE = 'data-pane-drag-image';
 
 export type PaneDropZone = 'left' | 'center' | 'right';
-export type PanelDragPlacement = 'before' | 'after' | 'above' | 'below';
 export interface PaneInsertionTarget {
   index: number;
   left: number;

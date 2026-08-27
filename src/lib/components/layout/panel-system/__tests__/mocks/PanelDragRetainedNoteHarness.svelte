@@ -75,6 +75,6 @@
 </script>
 
 <button data-show-root-preview onclick={showRootPreview}>Show preview</button>
-<div class="h-[420px] w-[816px] overflow-hidden">
+<div class="overflow-hidden" style="height: 420px; width: 816px">
   <PanelLayout workspaceId={layoutId} {layoutId} contained canvasSizing="viewport" />
 </div>

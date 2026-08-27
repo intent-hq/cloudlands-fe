@@ -1,9 +1,13 @@
 import { expect, test } from '@playwright/experimental-ct-svelte';
 import type { Locator, Page } from '@playwright/test';
 import PanelWorkspaceColumnClipHarness from './mocks/PanelWorkspaceColumnClipHarness.svelte';
-import { resizePanelWidthsAtDivider } from '$shared/panel-layout-sizing';
+import {
+  allocateViewportPanelWidths,
+  resizePanelWidthsAtDivider,
+} from '$shared/panel-layout-sizing';
 
 const GUTTER_WIDTH = 8;
+const UNCONTAINED_INLINE_CHROME = 20;
 const ROOT_HANDLE_SELECTOR =
   '.panel-split-container.horizontal > .panel-split-handle-wrapper > button[data-resize-axis="x"]';
 
@@ -221,9 +225,16 @@ for (const mode of ['contained', 'uncontained'] as const) {
         });
         const handles = component.locator(ROOT_HANDLE_SELECTOR);
         await expect(handles).toHaveCount(2);
-        const widths = [...viewport.widths];
-        // The canvas settles to the persisted width asynchronously; wait for
-        // it before asserting the strict initial geometry.
+        const initialCanvasWidth =
+          mode === 'uncontained'
+            ? viewport.viewportWidth - UNCONTAINED_INLINE_CHROME
+            : viewport.canvasWidth;
+        const widths =
+          mode === 'uncontained'
+            ? allocateViewportPanelWidths(viewport.widths, initialCanvasWidth).panelWidths
+            : [...viewport.widths];
+        // The canvas settles to its policy width asynchronously; content keeps
+        // the persisted width, while viewport mode fits the available frame.
         const expectedCanvasWidth =
           widths.reduce((sum, width) => sum + width, 0) + GUTTER_WIDTH * (widths.length - 1);
         await expect
@@ -311,6 +322,7 @@ for (const zoomFactor of [1, 2]) {
       button.click();
     });
     await nextFrames(page, 3);
+    widths.splice(0, widths.length, ...allocateViewportPanelWidths(widths, 1009).panelWidths);
     expectGeometry(await readGeometry(component), widths, zoomFactor);
 
     await component.getByTestId('reload-panel-layout').evaluate((button: HTMLButtonElement) => {

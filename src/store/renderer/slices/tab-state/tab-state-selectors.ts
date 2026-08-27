@@ -9,10 +9,6 @@ export const selectIsDragging = store.createSelector((state) => {
   return state.tabState.isDragging;
 });
 
-export const selectActiveHandleDrop = store.createSelector((state) => {
-  return state.tabState.activeHandleDrop;
-});
-
 export const selectScrollPosition = store.createSelector(
   (state, tabId: string): number | undefined => {
     return state.tabState.scrollPositions[tabId];

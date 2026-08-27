@@ -2,14 +2,14 @@ import { createAction } from '@augmentcode/themis/utils/store/create-action';
 import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
 import { omitKey } from '../../utils/utils';
 
-export type HandleDropZoneType = 'row-above' | 'row-below' | 'column-left' | 'column-right';
+type HandleDropZoneType = 'row-above' | 'row-below' | 'column-left' | 'column-right';
 type TabFlagMap = Record<string, boolean>;
 export type WorkspaceDropPlacement = 'before' | 'after' | 'above' | 'below';
 
 export const TAB_SCROLL_POSITIONS_STORAGE_KEY = 'tab-scroll-positions';
 export const WORKSPACE_TABS_STORAGE_KEY = 'workspace-tabs';
 
-export type SerializableRect = {
+type SerializableRect = {
   x: number;
   y: number;
   width: number;

@@ -2,6 +2,8 @@ import { expect, test } from '@playwright/experimental-ct-svelte';
 import type { Locator } from '@playwright/test';
 import PanelWorkspaceColumnClipHarness from './mocks/PanelWorkspaceColumnClipHarness.svelte';
 
+const UNCONTAINED_INLINE_CHROME = 20;
+
 // Earlier specs in the shared CT page may leave a resized viewport behind;
 // the geometry below assumes the default 1280x720 viewport, so pin it. The
 // intermediate size forces a real resize even when Playwright's cached
@@ -161,7 +163,9 @@ test('keeps the right inset visible at the horizontal scroll end (tab view)', as
   });
   const inset = component.getByTestId('panel-workspace-inset');
 
-  await expect.poll(async () => (await measureGeometry(component)).canvasOffsetWidth).toBe(1208);
+  await expect
+    .poll(async () => (await measureGeometry(component)).canvasOffsetWidth)
+    .toBe(760 - UNCONTAINED_INLINE_CHROME);
   await inset.evaluate((node) => {
     node.scrollLeft = node.scrollWidth;
   });
@@ -217,7 +221,11 @@ test('keeps an explicit restored chat width byte-for-byte', async ({ mount }) =>
 });
 
 for (const mode of ['uncontained', 'contained'] as const) {
-  test(`releases local width after an automatic reset in ${mode} mode`, async ({ mount }) => {
+  const testName =
+    mode === 'uncontained'
+      ? 'fits viewport changes while retaining the explicit width preference'
+      : 'releases local width after an automatic reset in contained mode';
+  test(testName, async ({ mount }) => {
     const component = await mount(PanelWorkspaceColumnClipHarness, {
       props: {
         mode,
@@ -228,8 +236,17 @@ for (const mode of ['uncontained', 'contained'] as const) {
       },
     });
 
-    await expect.poll(async () => (await measureGeometry(component)).canvasOffsetWidth).toBe(1208);
-    await resetCanvasToAutomatic(component);
+    await expect
+      .poll(async () => (await measureGeometry(component)).canvasOffsetWidth)
+      .toBe(mode === 'uncontained' ? 760 - UNCONTAINED_INLINE_CHROME : 1208);
+    if (mode === 'contained') {
+      await resetCanvasToAutomatic(component);
+    } else {
+      await expect(component.getByTestId('panel-column')).toHaveAttribute(
+        'data-persisted-canvas-width',
+        '1208',
+      );
+    }
     const resetWidth = (await measureGeometry(component)).canvasOffsetWidth!;
 
     await component
@@ -241,7 +258,7 @@ for (const mode of ['uncontained', 'contained'] as const) {
   });
 }
 
-test('keeps an explicit width stable across viewport changes', async ({ mount }) => {
+test('keeps explicit width state while fitting viewport changes', async ({ mount }) => {
   const component = await mount(PanelWorkspaceColumnClipHarness, {
     props: {
       mode: 'uncontained',
@@ -253,13 +270,13 @@ test('keeps an explicit width stable across viewport changes', async ({ mount })
   });
   const column = component.getByTestId('panel-column');
 
-  await expectStableCanvasWidth(component, 1208);
+  await expectStableCanvasWidth(component, 760 - UNCONTAINED_INLINE_CHROME);
   await expect(column).toHaveAttribute('data-persisted-canvas-width', '1208');
   await expect(column).toHaveAttribute('data-canvas-width-source', 'explicit');
   await component
     .getByTestId('width-plus-one')
     .evaluate((button: HTMLButtonElement) => button.click());
-  await expectStableCanvasWidth(component, 1208);
+  await expectStableCanvasWidth(component, 761 - UNCONTAINED_INLINE_CHROME);
 });
 
 test('reflows the panel layout to the retained width after close', async ({ mount, page }) => {
@@ -359,7 +376,7 @@ test('fits mixed panel defaults into one ordered row', async ({ mount }) => {
   expect(geometry.lastPanelRight!).toBeLessThanOrEqual(geometry.columnRight);
 });
 
-test('uses persisted panel ratios as preferences only while they overflow', async ({ mount }) => {
+test('uses persisted panel ratios as fitted viewport preferences', async ({ mount }) => {
   const component = await mount(PanelWorkspaceColumnClipHarness, {
     props: {
       mode: 'uncontained',
@@ -371,8 +388,10 @@ test('uses persisted panel ratios as preferences only while they overflow', asyn
     },
   });
 
-  await expect.poll(async () => (await measureGeometry(component)).canvasOffsetWidth).toBe(1208);
-  expect((await measureGeometry(component)).panelWidths).toEqual([300, 900]);
+  await expect
+    .poll(async () => (await measureGeometry(component)).canvasOffsetWidth)
+    .toBe(1020 - UNCONTAINED_INLINE_CHROME);
+  expect((await measureGeometry(component)).panelWidths).toEqual([248, 744]);
 });
 
 test('creates a fitted chat once without a post-creation resize flash', async ({ mount }) => {
