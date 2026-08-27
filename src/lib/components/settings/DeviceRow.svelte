@@ -536,16 +536,6 @@
       {/if}
 
       <div class="flex flex-wrap items-center justify-between gap-2">
-        <div class="flex items-center gap-2">
-          <Button type="button" variant="ghost-light" disabled={busy !== null} onclick={closePanel}
-            >{m.settings_devices_cancel_label()}</Button
-          >
-          <Button
-            type="submit"
-            disabled={busy !== null || editInvalid || (!editChanged && !secret.trim())}
-            loading={busy === 'update'}>{m.settings_devices_update_label()}</Button
-          >
-        </div>
         <div class="flex max-w-full flex-wrap items-center justify-end gap-2">
           <Button
             type="button"
@@ -567,6 +557,16 @@
               {feedback.message}
             </p>
           {/if}
+        </div>
+        <div class="flex items-center gap-2">
+          <Button type="button" variant="ghost-light" disabled={busy !== null} onclick={closePanel}
+            >{m.settings_devices_cancel_label()}</Button
+          >
+          <Button
+            type="submit"
+            disabled={busy !== null || editInvalid || (!editChanged && !secret.trim())}
+            loading={busy === 'update'}>{m.settings_devices_update_label()}</Button
+          >
         </div>
       </div>
     </form>
