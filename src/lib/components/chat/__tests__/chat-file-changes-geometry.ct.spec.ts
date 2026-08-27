@@ -15,9 +15,9 @@ for (const zoom of [1, 2]) {
       });
       const reference = component.getByTestId('reference-operational-row');
       const summary = component.getByTestId('file-summary-row');
-      const rows = reference
-        .getByRole('status', { name: 'Reference operational row' })
-        .or(summary.getByRole('button', { name: '1,234 files changed in conversation so far' }));
+      const rows = component.locator(
+        '[data-streaming-typing-row], [data-operational-disclosure-row]',
+      );
       await expect(rows).toHaveCount(2);
       await expect(summary.getByRole('button')).toHaveAccessibleName(
         '1,234 files changed in conversation so far',
