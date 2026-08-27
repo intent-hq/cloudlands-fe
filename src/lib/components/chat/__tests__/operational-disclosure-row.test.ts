@@ -362,6 +362,19 @@ describe('shared operational disclosure-row contract', () => {
     expect(expanded.className).not.toContain('pl-');
   });
 
+  it('adds bottom space only while a response group is expanded', async () => {
+    const group = render(ResponseGroup, { props: { name: 'Group', children } });
+    const container = group.container.querySelector('[data-operational-row-container]')!;
+    const trigger = screen.getByTestId('response-group-disclosure');
+
+    expect(container.classList.contains('mb-3')).toBe(false);
+    await fireEvent.click(trigger);
+    expect(container.classList.contains('mb-3')).toBe(true);
+
+    await fireEvent.click(trigger);
+    expect(container.classList.contains('mb-3')).toBe(false);
+  });
+
   it('preserves completed and error disclosure semantics and specialized expanded content', async () => {
     render(ToolCall, {
       props: { toolUse: genericTool, toolState: 'error', result: 'Command failed' },
