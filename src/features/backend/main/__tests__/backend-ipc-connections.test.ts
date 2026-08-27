@@ -2033,6 +2033,45 @@ describe('backend client pool', () => {
     expect(mod.getBackendClientForConnection('remote-1')).toBeUndefined();
   });
 
+  it('retargets the primary to local when the disconnected backend owns the compatibility client', async () => {
+    // Boot-restored persisted remote: the primary/compatibility client is
+    // pinned to the remote (activeConnectionMeta set), then its last window
+    // closes. Disposal must clear the remote pin and rebuild a local primary —
+    // otherwise the next lazy getBackendClient() would re-dial the window-less
+    // remote and recreate the reconnect/heartbeat timers.
+    const { mod } = await loadModule();
+    mod.__setActiveConnectionMetaForTesting({ id: 'remote-1', host: '10.0.0.5', port: 8443 });
+    const remotePrimary = mod.getBackendClient();
+    expect(mod.getBackendClientForConnection('remote-1')).toBe(remotePrimary);
+    const onLocalReconnect = vi.fn();
+    mod.onBackendReconnected(onLocalReconnect, 'local');
+    lifecycle.events = [];
+    vi.mocked(app.emit).mockClear();
+
+    mod.disconnectBackendClient('remote-1');
+
+    // Old remote primary disposed, fresh local primary constructed + started.
+    expect(lifecycle.events.map((event) => event.type)).toEqual([
+      'dispose',
+      'construct',
+      'start',
+    ]);
+    expect(vi.mocked(app.emit)).toHaveBeenCalledWith(
+      mod.BACKEND_CLIENT_DISCONNECTED_EVENT,
+      remotePrimary,
+    );
+    expect(vi.mocked(app.emit)).toHaveBeenCalledWith('backend-connection-changed');
+    expect(onLocalReconnect).toHaveBeenCalledTimes(1);
+    // The remote pin is cleared: the rebuilt primary is local, not the remote.
+    expect(mod.__getActiveConnectionMetaForTesting()).toBeNull();
+    expect(mod.getBackendClientForConnection('remote-1')).toBeUndefined();
+    const rebuilt = mod.getBackendClient();
+    expect(rebuilt).not.toBe(remotePrimary);
+    expect(mod.getBackendClientForConnection('local')).toBe(rebuilt);
+    // No further construction on subsequent calls (the rebuild is stable).
+    expect(mod.getBackendClient()).toBe(rebuilt);
+  });
+
   it('scopes main-process reconnect listeners to their backend', async () => {
     const { mod } = await loadModule();
     const local = mod.getBackendClient() as unknown as { emit(event: string): void };
