@@ -38,9 +38,11 @@
   } from '@fortawesome/free-solid-svg-icons';
   import { faNote } from '$lib/icons/faNote';
   import HarnessFeaturesModal from '$lib/components/chat/HarnessFeaturesModal.svelte';
+  import ReplaceAgentModal from '$lib/components/modals/ReplaceAgentModal.svelte';
   import { formatAgentMessagesForClipboard } from '$lib/utils/clipboard-formatters';
   import { isReplaceAgentEligible } from '$shared/utils/replace-agent-eligibility';
   import { m } from '$shared/paraglide/messages.js';
+  import { sendMessage } from '$store/renderer/slices/chat-state/chat-state-slice';
   import { deleteAgentWithUndoRequested } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
   import { store as appStore } from '$store/renderer/store';
 
@@ -127,6 +129,28 @@
   // top-level, non-background, not retired. Mirrors the AgentCard context menu.
   const canReplaceAgent = $derived(isReplaceAgentEligible($agent$));
   let replaceAgentModalOpen = $state(false);
+
+  // Raw specialist id (not the display name) — interpolated into the built
+  // hand-off instruction's `ws.agent.create` call shape.
+  const agentSpecialistId = $derived(
+    ((agentSession?.metadata?.specialist ||
+      (agentSession as any)?.agentMetadata?.specialist) as string) || null,
+  );
+
+  // Send the (possibly edited) hand-off instruction through the normal chat
+  // send path so it lands in the transcript as a regular user message.
+  function handleReplaceAgentSend(text: string) {
+    if (!tab.agentId) return;
+    appStore.dispatch(
+      sendMessage(tab.agentId, {
+        wsId: workspaceId,
+        text,
+        agentName: agentSession?.name || tab.title || '',
+        agentModel,
+        isInitialWorkspaceAgent,
+      }),
+    );
+  }
 
   // Copy/delete state
   let agentCopyFeedback = $state<string | null>(null);
@@ -270,8 +294,12 @@
 {/if}
 
 {#if replaceAgentModalOpen}
-  <!-- Placeholder mount point: the Replace Agent modal component (follow-up task) renders here. -->
-  <span class="hidden" data-replace-agent-modal-placeholder></span>
+  <ReplaceAgentModal
+    bind:open={replaceAgentModalOpen}
+    agentName={agentSession?.name || tab.title || ''}
+    specialist={agentSpecialistId}
+    onSend={handleReplaceAgentSend}
+  />
 {/if}
 
 {#if tab.agentId}

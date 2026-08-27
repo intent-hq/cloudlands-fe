@@ -42,6 +42,8 @@
   import type { AgentSession, Workspace } from '$shared/types';
   import SidebarContextMenu from '$lib/components/ui/sidebar-context-menu/SidebarContextMenu.svelte';
   import HarnessFeaturesModal from './HarnessFeaturesModal.svelte';
+  import ReplaceAgentModal from '$lib/components/modals/ReplaceAgentModal.svelte';
+  import { sendMessage } from '$store/renderer/slices/chat-state/chat-state-slice';
 
   import type { SidebarMenuEntry } from '$lib/components/ui/sidebar-context-menu/types';
   import {
@@ -516,6 +518,18 @@
     return specialistId || null;
   });
 
+  // Send the (possibly edited) hand-off instruction through the normal chat
+  // send path so it lands in the transcript as a regular user message.
+  function handleReplaceAgentSend(text: string) {
+    const wsId = $agent$?.workspaceId
+      ? String($agent$.workspaceId)
+      : workspace?.id
+        ? String(workspace.id)
+        : undefined;
+    if (!wsId) return;
+    appStore.dispatch(sendMessage(agentId, { wsId, text, agentName: displayName }));
+  }
+
   // Sandbox directory for sandboxed agents (daemon-provided metadata).
   const agentSandboxPath = $derived.by(() => {
     const path = $agent$?.metadata?.sandboxPath || $agent$?.agentMetadata?.sandboxPath;
@@ -892,8 +906,12 @@
 {/if}
 
 {#if replaceAgentModalOpen}
-  <!-- Placeholder mount point: the Replace Agent modal component (follow-up task) renders here. -->
-  <span class="hidden" data-replace-agent-modal-placeholder></span>
+  <ReplaceAgentModal
+    bind:open={replaceAgentModalOpen}
+    agentName={displayName}
+    specialist={specialist as string | null}
+    onSend={handleReplaceAgentSend}
+  />
 {/if}
 
 <style>
