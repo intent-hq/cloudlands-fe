@@ -179,6 +179,7 @@ import {
 } from '$store/renderer/slices/agent-session/agent-session-slice';
 import { workspaceDeleted } from '$store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice';
 import {
+  adjustRetiredCount,
   hydrateAgentsRequested,
   removeAgent,
 } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
@@ -3472,6 +3473,19 @@ export function routeDaemonEventsNotification(
     const data = (event as { data?: Record<string, unknown> }).data;
     if (typeof data?.agentId === 'string') {
       removeAgentFailure(data.agentId);
+      // Keep the lazy Retired bin's count (v8.2) consistent with deletion:
+      // a known retired row nudges the count down in lockstep with its
+      // removal below; an id with no local session at all may be a retired
+      // row this client never lazily loaded (deleted by another client), so
+      // re-baseline from the daemon-served `retiredCount` via a hydrate —
+      // the local removals below would otherwise change nothing and the
+      // count-first toggle would go stale.
+      const deletedSession = appStore.state.agentSessions?.byAgentId[data.agentId];
+      if (deletedSession?.retiredAt) {
+        appStore.dispatch(adjustRetiredCount(workspaceId, -1));
+      } else if (!deletedSession) {
+        appStore.dispatch(hydrateAgentsRequested(workspaceId));
+      }
       // Drop the local slice state for the deleted agent — mirroring
       // `handleAgentDeleteScheduledEvent` — so an immediate delete (no
       // `agent:delete-scheduled` grace window) converges without waiting for
@@ -3735,9 +3749,13 @@ export function routeDaemonEventsNotification(
   // metadata mutations on a live row, so the same metadata-only `agent.get`
   // refresh converges `retiredAt` on the session (transcript preserved) and
   // the sidebar moves the agent into/out of the Retired bin without a
-  // whole-list refetch.
+  // whole-list refetch. The retired-row count (v8.2 lazy Retired bin) is
+  // nudged in lockstep so the collapsed toggle stays consistent even before
+  // the lazy retired-only read runs; hydration re-baselines it from the
+  // daemon-served `retiredCount`.
   if (type === 'agent:retired' || type === 'agent:restored') {
     handleAgentUpdatedEvent(event);
+    appStore.dispatch(adjustRetiredCount(workspaceId, type === 'agent:retired' ? 1 : -1));
   }
   // `agent:attention-requested` (requestDiscussion / reportBlocker) — the
   // daemon persists the attention-request fields on the session and also

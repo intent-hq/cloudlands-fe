@@ -36,10 +36,16 @@
     refreshUnreadNotes,
   } from '$store/renderer/slices/note-read-tracking/note-read-tracking-slice';
   import { initializeNotes } from '$store/renderer/slices/workspace-notes/workspace-notes-slice';
-  import { restoreRetiredAgentRequested } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
+  import {
+    fetchRetiredAgentsRequested,
+    restoreRetiredAgentRequested,
+  } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
   import {
     selectAllWorkspaceAgents,
     selectIsLoadingAgents,
+    selectIsLoadingRetiredAgents,
+    selectRetiredAgentsLoaded,
+    selectRetiredCount,
     selectWorkspaceHasUnreadForegroundAgents,
   } from '$store/renderer/slices/workspace-agents/workspace-agents-selectors';
   import { selectAgentIsRunning } from '$store/renderer/slices/agent-session/agent-session-selectors';
@@ -195,6 +201,9 @@
   const notesLoading$ = selectNotesLoading(workspaceIdStore);
   const allWorkspaceAgents = selectAllWorkspaceAgents(workspaceIdStore);
   const agentsLoading = selectIsLoadingAgents(workspaceIdStore);
+  const retiredCount$ = selectRetiredCount(workspaceIdStore);
+  const retiredAgentsLoaded$ = selectRetiredAgentsLoaded(workspaceIdStore);
+  const loadingRetired$ = selectIsLoadingRetiredAgents(workspaceIdStore);
   const hasUnreadForegroundAgents$ = selectWorkspaceHasUnreadForegroundAgents(workspaceIdStore);
   const hudQuestionsByAgentId$ = selectHudQuestionsByAgentId();
 
@@ -1072,6 +1081,12 @@
                             {workspaceId}
                             openPanelTabs={$allPanelTabs$}
                             activePanelTab={$activeTab$}
+                            retiredCount={$retiredCount$}
+                            retiredAgentsLoaded={$retiredAgentsLoaded$}
+                            loadingRetired={$loadingRetired$}
+                            onLoadRetired={() => {
+                              appStore.dispatch(fetchRetiredAgentsRequested(workspaceId));
+                            }}
                             onSelect={({ agentId, event }) =>
                               handleOpenAgentInPanel(agentId, event)}
                             onRestoreRetired={({ agentId }) => {

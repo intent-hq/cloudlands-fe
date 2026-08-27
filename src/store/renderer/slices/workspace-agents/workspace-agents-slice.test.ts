@@ -30,6 +30,7 @@ import {
 } from './workspace-agents-selectors';
 import {
   addAgent,
+  adjustRetiredCount,
   agentsLoaded,
   createAgentRequested,
   createAgentWithSpecialistRequested,
@@ -46,6 +47,9 @@ import {
   setInitialAgentId,
   setInitialSpecWriteInProgress,
   setIsLoadingAgents,
+  setIsLoadingRetiredAgents,
+  setRetiredAgentsLoaded,
+  setRetiredCount,
   setWaitingForFirstMessage,
   workspaceAgentsReducer,
 } from './workspace-agents-slice';
@@ -198,6 +202,30 @@ describe('workspaceAgentsReducer', () => {
       agentsLoaded: true,
       initialAgentId: 'agent-1',
     });
+  });
+
+  it('tracks the lazy retired-bin state per workspace (§5.5 v8.2)', () => {
+    let state = workspaceAgentsReducer(initialState, setRetiredCount(WS_1, 3));
+    state = workspaceAgentsReducer(state, setIsLoadingRetiredAgents(WS_1, true));
+    state = workspaceAgentsReducer(state, setRetiredAgentsLoaded(WS_1, true));
+
+    expect(state.byWorkspaceId[WS_1]).toEqual({
+      ...emptyWorkspaceAgentState,
+      retiredCount: 3,
+      isLoadingRetiredAgents: true,
+      retiredAgentsLoaded: true,
+    });
+
+    // Event nudges move the count but never below zero.
+    state = workspaceAgentsReducer(state, adjustRetiredCount(WS_1, -1));
+    expect(state.byWorkspaceId[WS_1].retiredCount).toBe(2);
+    state = workspaceAgentsReducer(state, adjustRetiredCount(WS_1, -5));
+    expect(state.byWorkspaceId[WS_1].retiredCount).toBe(0);
+    state = workspaceAgentsReducer(state, adjustRetiredCount(WS_1, 1));
+    expect(state.byWorkspaceId[WS_1].retiredCount).toBe(1);
+    // A daemon-served count can never be negative in state either.
+    state = workspaceAgentsReducer(state, setRetiredCount(WS_1, -2));
+    expect(state.byWorkspaceId[WS_1].retiredCount).toBe(0);
   });
 
   it('stores waiting-for-first-message per agent and clears it when false', () => {
