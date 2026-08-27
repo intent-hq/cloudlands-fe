@@ -8,6 +8,7 @@ vi.mock('$lib/client', () => ({ appClient: { settings: { update: mocks.update } 
 import { BackendError } from '$lib/client/live/backend-transport-types';
 
 import {
+  activeProviderPersistRejected,
   enablementPersistRejected,
   hydrateActiveProvider,
   setActiveProvider,
@@ -181,8 +182,7 @@ describe('providerSettingsSaga', () => {
     expect(mocks.update.mock.calls).toEqual([
       [[{ path: 'providers.active', value: 'codex' }]],
     ]);
-    // An active-provider write carries no enablement delta — no rollback.
-    expect(dispatch).not.toHaveBeenCalled();
+    expect(dispatch).toHaveBeenCalledWith(activeProviderPersistRejected('codex'));
     task.cancel();
     await task.toPromise();
   });

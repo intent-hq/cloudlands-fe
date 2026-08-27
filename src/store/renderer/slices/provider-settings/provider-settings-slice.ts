@@ -5,6 +5,12 @@ import { providerCatalogLoaded } from '../provider-catalog/provider-catalog-slic
 
 export type ProviderSettingsState = {
   activeProviderId: string;
+  /**
+   * Newest local active-provider choice awaiting a matching daemon hydration.
+   * Conflicting hydration values are older snapshots/echoes and cannot replace
+   * the choice until it is confirmed or the persistence write is rejected.
+   */
+  pendingActiveProviderId: string | null;
   enabledProviders: Record<string, boolean>;
   /**
    * Registry metadata snapshotted from `providerCatalogLoaded` (reducers only
@@ -29,6 +35,7 @@ export type ProviderSettingsState = {
 
 export const initialState: ProviderSettingsState = {
   activeProviderId: '',
+  pendingActiveProviderId: null,
   enabledProviders: {},
   nonDisableableProviderIds: [],
   pendingEnablementOverrides: {},
@@ -77,6 +84,10 @@ export const enablementPersistRejected = createAction<[providerId: string]>(
   'providerSettings/enablementPersistRejected',
 );
 
+export const activeProviderPersistRejected = createAction<[providerId: string]>(
+  'providerSettings/activeProviderPersistRejected',
+);
+
 export const providerSettingsReducer = createReducer<ProviderSettingsState>(initialState);
 providerSettingsReducer.with(providerCatalogLoaded, (state, { payload: [catalog] }) => ({
   ...state,
@@ -90,11 +101,16 @@ providerSettingsReducer.with(providerCatalogLoaded, (state, { payload: [catalog]
 providerSettingsReducer.with(setActiveProvider, (state, { payload: [providerId] }) => ({
   ...state,
   activeProviderId: providerId,
+  pendingActiveProviderId: providerId,
 }));
-providerSettingsReducer.with(hydrateActiveProvider, (state, { payload: [providerId] }) => ({
-  ...state,
-  activeProviderId: providerId,
-}));
+providerSettingsReducer.with(hydrateActiveProvider, (state, { payload: [providerId] }) => {
+  if (state.pendingActiveProviderId && providerId !== state.pendingActiveProviderId) return state;
+  return {
+    ...state,
+    activeProviderId: providerId,
+    pendingActiveProviderId: null,
+  };
+});
 providerSettingsReducer.with(
   setProviderEnabled,
   (state, { payload: [{ providerId, enabled }] }) => {
@@ -135,6 +151,10 @@ providerSettingsReducer.with(enablementPersistRejected, (state, { payload: [prov
   const pending = { ...state.pendingEnablementOverrides };
   delete pending[providerId];
   return { ...state, pendingEnablementOverrides: pending };
+});
+providerSettingsReducer.with(activeProviderPersistRejected, (state, { payload: [providerId] }) => {
+  if (state.pendingActiveProviderId !== providerId) return state;
+  return { ...state, pendingActiveProviderId: null };
 });
 providerSettingsReducer.with(loadEnabledProvidersFromStorage, (state, { payload: [providers] }) => {
   // Hydration (boot snapshot or settings:changed) never clobbers newer
