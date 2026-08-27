@@ -12,6 +12,8 @@ const mocks = vi.hoisted(() => {
   const goto = vi.fn(() => Promise.resolve());
   const openWorkspaceInNewWindow = vi.fn(() => Promise.resolve());
   const workspaces: Record<string, Workspace | undefined> = {};
+  const activeAgentIds: Record<string, string | null> = {};
+  const foregroundAgentIds: Record<string, string[]> = {};
 
   const readable = <T>(getter: () => T) => ({
     subscribe(run: (value: T) => void) {
@@ -25,6 +27,8 @@ const mocks = vi.hoisted(() => {
     goto,
     openWorkspaceInNewWindow,
     workspaces,
+    activeAgentIds,
+    foregroundAgentIds,
     readable,
   };
 });
@@ -49,6 +53,15 @@ vi.mock('$lib/store/redux-dispatch-bridge', () => ({
 
 vi.mock('$lib/components/layout/sidebar-nav/utils/openWorkspaceInNewWindow', () => ({
   openWorkspaceInNewWindow: mocks.openWorkspaceInNewWindow,
+}));
+
+vi.mock('$store/renderer/slices/workspace-agents/workspace-agents-selectors', () => ({
+  selectActiveAgentId: {
+    select: (_state: unknown, workspaceId: string) => mocks.activeAgentIds[workspaceId] ?? null,
+  },
+  selectWorkspaceForegroundAgentIds: {
+    select: (_state: unknown, workspaceId: string) => mocks.foregroundAgentIds[workspaceId] ?? [],
+  },
 }));
 
 vi.mock('$lib/components/ui/tooltip', async () => ({
@@ -142,7 +155,7 @@ const workspace = (id: string, title: string): Workspace => ({
 
 async function renderWorkspaceCard(workspaceIds = ['ws-1']) {
   const ChatWorkspaceCard = (await import('../ChatWorkspaceCard.svelte')).default;
-  render(ChatWorkspaceCard, { props: { workspaceIds } });
+  return render(ChatWorkspaceCard, { props: { workspaceIds } });
 }
 
 async function openMenu() {
@@ -176,6 +189,8 @@ describe('ChatWorkspaceCard overflow menu', () => {
     mocks.goto.mockClear();
     mocks.openWorkspaceInNewWindow.mockClear();
     mocks.workspaces['ws-1'] = workspace('ws-1', 'Archive Cleanup');
+    mocks.activeAgentIds['ws-1'] = 'agent-primary';
+    mocks.foregroundAgentIds['ws-1'] = ['agent-primary', 'agent-secondary'];
     vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
       callback(0);
       return 1;
@@ -254,11 +269,94 @@ describe('ChatWorkspaceCard overflow menu', () => {
 
     await openMenu();
     await fireEvent.click(screen.getByRole('menuitem', { name: 'Open' }));
-    await waitFor(() => expect(mocks.goto).toHaveBeenCalledWith('/workspace/ws-1'));
+    await waitFor(() => expect(mocks.goto).toHaveBeenCalledTimes(1));
+    expect(mocks.goto).toHaveBeenCalledWith('/workspace/ws-1');
+    expect(
+      mocks.dispatch.mock.calls.filter(
+        ([action]) => action.type === 'appLayout/openAgentTabRequested',
+      ),
+    ).toHaveLength(1);
 
     await openMenu();
     await fireEvent.click(screen.getByRole('menuitem', { name: 'Open in New Window' }));
     await waitFor(() => expect(mocks.openWorkspaceInNewWindow).toHaveBeenCalledWith('ws-1'));
+  });
+
+  it('opens the workspace and its active top-level agent from the card', async () => {
+    await renderWorkspaceCard();
+
+    await fireEvent.click(await screen.findByRole('button', { name: 'Archive Cleanup' }));
+
+    await waitFor(() =>
+      expect(mocks.dispatch).toHaveBeenCalledWith({
+        type: 'appLayout/openAgentTabRequested',
+        payload: ['ws-1', { agentId: 'agent-primary' }],
+      }),
+    );
+    expect(mocks.goto).toHaveBeenCalledOnce();
+    expect(mocks.dispatch).toHaveBeenCalledWith({
+      type: 'tabState/openWorkspaceTab',
+      payload: ['ws-1'],
+    });
+  });
+
+  it('uses the first top-level agent when the active agent is not top-level', async () => {
+    mocks.activeAgentIds['ws-1'] = 'agent-background';
+    await renderWorkspaceCard();
+
+    await fireEvent.click(await screen.findByRole('button', { name: 'Archive Cleanup' }));
+
+    await waitFor(() =>
+      expect(mocks.dispatch).toHaveBeenCalledWith({
+        type: 'appLayout/openAgentTabRequested',
+        payload: ['ws-1', { agentId: 'agent-primary' }],
+      }),
+    );
+  });
+
+  it('falls back to the workspace route when no top-level agent is loaded', async () => {
+    mocks.activeAgentIds['ws-1'] = null;
+    mocks.foregroundAgentIds['ws-1'] = [];
+    await renderWorkspaceCard();
+
+    await fireEvent.click(await screen.findByRole('button', { name: 'Archive Cleanup' }));
+
+    await waitFor(() => expect(mocks.goto).toHaveBeenCalledWith('/workspace/ws-1'));
+    expect(
+      mocks.dispatch.mock.calls.some(
+        ([action]) => action.type === 'appLayout/openAgentTabRequested',
+      ),
+    ).toBe(false);
+  });
+
+  it.each([
+    ['Command', { metaKey: true }],
+    ['Control', { ctrlKey: true }],
+  ])('opens a new window without changing the current window for %s-click', async (_, modifier) => {
+    await renderWorkspaceCard();
+    mocks.dispatch.mockClear();
+
+    await fireEvent.click(await screen.findByRole('button', { name: 'Archive Cleanup' }), modifier);
+
+    expect(mocks.openWorkspaceInNewWindow).toHaveBeenCalledWith('ws-1');
+    expect(mocks.goto).not.toHaveBeenCalled();
+    expect(mocks.dispatch).not.toHaveBeenCalled();
+  });
+
+  it('opens the active top-level agent from Enter activation', async () => {
+    const { container } = await renderWorkspaceCard();
+    const row = container.querySelector('[data-workspace-card-row]');
+    expect(row).toBeTruthy();
+
+    await fireEvent.keyDown(row!, { key: 'Enter' });
+
+    await waitFor(() =>
+      expect(mocks.dispatch).toHaveBeenCalledWith({
+        type: 'appLayout/openAgentTabRequested',
+        payload: ['ws-1', { agentId: 'agent-primary' }],
+      }),
+    );
+    expect(mocks.goto).toHaveBeenCalledOnce();
   });
 
   it('dispatches existing archive and delete Redux actions from the menu', async () => {

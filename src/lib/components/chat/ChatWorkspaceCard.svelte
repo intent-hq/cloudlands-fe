@@ -15,6 +15,12 @@
     requestDeleteWorkspace,
   } from '$store/renderer/slices/workspace-operations/workspace-operations-slice';
   import { openWorkspaceInNewWindow } from '$lib/components/layout/sidebar-nav/utils/openWorkspaceInNewWindow';
+  import { openAgentTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
+  import {
+    selectActiveAgentId,
+    selectWorkspaceForegroundAgentIds,
+  } from '$store/renderer/slices/workspace-agents/workspace-agents-selectors';
+  import { openWorkspaceTab } from '$store/renderer/slices/tab-state/tab-state-slice';
   import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
   import type { Workspace } from '$shared/types';
   import { m } from '$shared/paraglide/messages.js';
@@ -74,10 +80,24 @@
       return;
     }
 
+    appStore.dispatch(openWorkspaceTab(workspaceId));
     try {
       await goto(`/workspace/${workspaceId}`);
     } catch (error) {
       console.warn('Failed to navigate to workspace:', error);
+      return;
+    }
+
+    const foregroundAgentIds = selectWorkspaceForegroundAgentIds
+      .select(appStore.state, workspaceId)
+      .map(String);
+    const activeAgentId = selectActiveAgentId.select(appStore.state, workspaceId);
+    const targetAgentId =
+      activeAgentId && foregroundAgentIds.includes(activeAgentId)
+        ? activeAgentId
+        : foregroundAgentIds[0];
+    if (targetAgentId) {
+      appStore.dispatch(openAgentTabRequested(workspaceId, { agentId: targetAgentId }));
     }
   }
 
