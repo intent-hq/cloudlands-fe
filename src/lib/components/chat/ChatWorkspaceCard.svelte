@@ -80,7 +80,6 @@
       return;
     }
 
-    appStore.dispatch(openWorkspaceTab(workspaceId));
     try {
       await goto(`/workspace/${workspaceId}`);
     } catch (error) {
@@ -88,6 +87,7 @@
       return;
     }
 
+    appStore.dispatch(openWorkspaceTab(workspaceId));
     const foregroundAgentIds = selectWorkspaceForegroundAgentIds
       .select(appStore.state, workspaceId)
       .map(String);

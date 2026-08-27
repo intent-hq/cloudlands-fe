@@ -15,13 +15,13 @@ interface BaseMessageAttribution {
   fromAgentId: string;
 }
 
-export interface AgentSenderAttribution extends BaseMessageAttribution {
+interface AgentSenderAttribution extends BaseMessageAttribution {
   kind: 'agent';
   /** Display name for the sender ("Agent" fallback, truncated to ~20 chars). */
   displayName: string;
 }
 
-export interface ChiefMessageAttribution extends BaseMessageAttribution {
+interface ChiefMessageAttribution extends BaseMessageAttribution {
   kind: 'chief';
   /** Exact source message link when the complete metadata contract is valid. */
   sourceUrl?: string;

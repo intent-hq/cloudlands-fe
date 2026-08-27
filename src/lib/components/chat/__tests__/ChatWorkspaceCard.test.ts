@@ -316,6 +316,28 @@ describe('ChatWorkspaceCard overflow menu', () => {
       type: 'tabState/openWorkspaceTab',
       payload: ['ws-1'],
     });
+    const workspaceTabCallIndex = mocks.dispatch.mock.calls.findIndex(
+      ([action]) => action.type === 'tabState/openWorkspaceTab',
+    );
+    expect(mocks.goto.mock.invocationCallOrder[0]).toBeLessThan(
+      mocks.dispatch.mock.invocationCallOrder[workspaceTabCallIndex],
+    );
+  });
+
+  it('leaves tab state unchanged and stops agent actions when workspace navigation fails', async () => {
+    const navigationError = new Error('navigation failed');
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    mocks.goto.mockRejectedValueOnce(navigationError);
+    await renderWorkspaceCard();
+    mocks.dispatch.mockClear();
+
+    await fireEvent.click(await screen.findByRole('button', { name: 'Archive Cleanup' }));
+
+    await waitFor(() =>
+      expect(warn).toHaveBeenCalledWith('Failed to navigate to workspace:', navigationError),
+    );
+    expect(mocks.dispatch).not.toHaveBeenCalled();
+    warn.mockRestore();
   });
 
   it('uses the first top-level agent when the active agent is not top-level', async () => {
