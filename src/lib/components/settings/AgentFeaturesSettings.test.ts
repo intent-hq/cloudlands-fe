@@ -44,6 +44,7 @@ const FEATURE_PATHS = [
   'agentFeatures.prMonitor',
   'agentFeatures.taskGraph',
   'agentFeatures.peerAgents',
+  'agentFeatures.mcpTools',
 ];
 
 describe('AgentFeaturesSettings', () => {
@@ -57,11 +58,11 @@ describe('AgentFeaturesSettings', () => {
     cleanup();
   });
 
-  it('renders twelve toggles; all on when the daemon reports every path true', async () => {
+  it('renders thirteen toggles; all on when the daemon reports every path true', async () => {
     render(AgentFeaturesSettings);
 
     await waitFor(() => {
-      expect(screen.getAllByRole('switch')).toHaveLength(12);
+      expect(screen.getAllByRole('switch')).toHaveLength(13);
     });
     for (const toggle of screen.getAllByRole('switch')) {
       expect(toggle.getAttribute('aria-checked')).toBe('true');
@@ -83,9 +84,11 @@ describe('AgentFeaturesSettings', () => {
     render(AgentFeaturesSettings);
 
     await waitFor(() => {
-      expect(screen.getAllByRole('switch')).toHaveLength(12);
+      expect(screen.getAllByRole('switch')).toHaveLength(13);
     });
-    const peerAgents = screen.getByRole('switch', { name: 'Peer agent spawning' });
+    const peerAgents = screen.getByRole('switch', {
+      name: 'Top-level agent spawning & retirement',
+    });
     // peerAgents is the one opt-in feature — absent coerces to off
     expect(peerAgents.getAttribute('aria-checked')).toBe('false');
     for (const toggle of screen.getAllByRole('switch')) {
@@ -95,7 +98,7 @@ describe('AgentFeaturesSettings', () => {
   });
 
   it('renders task graph on when an older daemon does not report the key', async () => {
-    // Daemon predates agentFeatures.taskGraph — the other ten entries are present
+    // Daemon predates agentFeatures.taskGraph — the other twelve entries are present
     mocks.mockSettingsList.mockResolvedValue(
       FEATURE_PATHS.filter((path) => path !== 'agentFeatures.taskGraph').map((path) => ({
         path,
@@ -254,7 +257,7 @@ describe('AgentFeaturesSettings', () => {
     render(AgentFeaturesSettings);
 
     await waitFor(() => {
-      expect(screen.getAllByText('~620 tokens/session')).toHaveLength(11);
+      expect(screen.getAllByText('~620 tokens/session')).toHaveLength(12);
     });
     const perTurn = screen.getByText('~50 tokens/turn');
     expect(perTurn.className).toContain('text-ghost');
@@ -264,7 +267,7 @@ describe('AgentFeaturesSettings', () => {
     render(AgentFeaturesSettings);
 
     await waitFor(() => {
-      expect(screen.getAllByRole('switch')).toHaveLength(12);
+      expect(screen.getAllByRole('switch')).toHaveLength(13);
     });
     expect(screen.queryByText(/tokens\/(session|turn)/)).toBeNull();
   });
@@ -306,7 +309,9 @@ describe('AgentFeaturesSettings', () => {
     it('renders peer agents on when the daemon reports value true', async () => {
       render(AgentFeaturesSettings);
 
-      const toggle = await screen.findByRole('switch', { name: 'Peer agent spawning' });
+      const toggle = await screen.findByRole('switch', {
+        name: 'Top-level agent spawning & retirement',
+      });
       await waitFor(() => {
         expect(toggle.getAttribute('aria-checked')).toBe('true');
       });
@@ -325,7 +330,9 @@ describe('AgentFeaturesSettings', () => {
 
       render(AgentFeaturesSettings);
 
-      const toggle = await screen.findByRole('switch', { name: 'Peer agent spawning' });
+      const toggle = await screen.findByRole('switch', {
+        name: 'Top-level agent spawning & retirement',
+      });
       await waitFor(() => {
         expect(toggle.getAttribute('aria-checked')).toBe('false');
       });
@@ -412,7 +419,9 @@ describe('AgentFeaturesSettings', () => {
 
       render(AgentFeaturesSettings);
 
-      const toggle = await screen.findByRole('switch', { name: 'Peer agent spawning' });
+      const toggle = await screen.findByRole('switch', {
+        name: 'Top-level agent spawning & retirement',
+      });
       await waitFor(() => {
         expect(toggle.getAttribute('aria-checked')).toBe('false');
       });
