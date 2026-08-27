@@ -128,6 +128,8 @@ test('navigates exact stacked totals with accessible pointer, focus, theme, and 
 
   for (const theme of ['light', 'dark'] as const) {
     await component.update({ props: { theme, width: 304 } });
+    await expect(component).toHaveAttribute('data-theme', theme);
+    await expect(page.locator('html')).toHaveClass(new RegExp(`(^|\\s)${theme}(\\s|$)`));
     await agentAlpha.dispatchEvent('pointerenter', { pointerType: 'mouse' });
     await expect(previewStatus).toContainText('By agent Agent alpha-01 750 processed');
     await expect(agentAlpha).toHaveAttribute('aria-current', 'true');
@@ -156,12 +158,99 @@ test('navigates exact stacked totals with accessible pointer, focus, theme, and 
     expect(new Set(keyColors.map(({ color }) => color)).size).toBe(4);
     expect(segmentColors).toEqual(keyColors.filter(({ metric }) => metric !== 'reasoning'));
     await expect(messageRows.locator('.composition-key')).toHaveCount(0);
-    const activeStyle = await agentAlpha.evaluate((element) => ({
-      background: getComputedStyle(element).backgroundColor,
-      transitionDuration: Number.parseFloat(getComputedStyle(element).transitionDuration),
-    }));
-    expect(activeStyle.background).not.toBe('rgba(0, 0, 0, 0)');
-    expect(activeStyle.transitionDuration).toBeLessThanOrEqual(0.001);
+    await agentAlpha.focus();
+    const navigatorColors = await details.evaluate((element) => {
+      const paint = (values: string[]): [number, number, number, number] => {
+        const canvas = document.createElement('canvas');
+        canvas.width = 1;
+        canvas.height = 1;
+        const context = canvas.getContext('2d')!;
+        for (const value of values) {
+          context.fillStyle = value;
+          context.fillRect(0, 0, 1, 1);
+        }
+        return [...context.getImageData(0, 0, 1, 1).data];
+      };
+      const tokenColor = (token: string) => {
+        const probe = document.createElement('span');
+        probe.style.color = `hsl(var(${token}))`;
+        document.body.append(probe);
+        const color = getComputedStyle(probe).color;
+        probe.remove();
+        return color;
+      };
+      const controls = Array.from(element.querySelectorAll<HTMLElement>('.breakdown-item-control'));
+      const active = controls.filter((control) => control.dataset.previewActive === 'true');
+      const inactive = controls.filter((control) => control.dataset.previewActive !== 'true');
+      const surface = getComputedStyle(element).backgroundColor;
+      const ringColor = tokenColor('--ring');
+      return {
+        foreground: tokenColor('--foreground'),
+        mutedForeground: tokenColor('--muted-foreground'),
+        ringColor,
+        ring: paint([ringColor]),
+        surface: paint([surface]),
+        active: active.map((control) => ({
+          color: getComputedStyle(control).backgroundColor,
+          effective: paint([surface, getComputedStyle(control).backgroundColor]),
+          transitionDuration: Number.parseFloat(getComputedStyle(control).transitionDuration),
+        })),
+        inactive: inactive.map((control) => ({
+          color: getComputedStyle(control).backgroundColor,
+          effective: paint([surface, getComputedStyle(control).backgroundColor]),
+        })),
+        percentages: Array.from(
+          element.querySelectorAll<HTMLElement>('.navigator-selection > :last-child'),
+        ).map((percentage) => getComputedStyle(percentage).color),
+      };
+    });
+    expect(navigatorColors.active).toHaveLength(2);
+    expect(navigatorColors.active.every(({ color }) => color === navigatorColors.foreground)).toBe(
+      true,
+    );
+    expect(
+      navigatorColors.active.every(({ transitionDuration }) => transitionDuration <= 0.001),
+    ).toBe(true);
+    expect(
+      navigatorColors.inactive.every(({ color }) => color !== navigatorColors.foreground),
+    ).toBe(true);
+    expect(
+      navigatorColors.percentages.every((color) => color === navigatorColors.mutedForeground),
+    ).toBe(true);
+    const currentAgentAlpha = agentSection.locator('.breakdown-item-control').first();
+    await currentAgentAlpha.focus();
+    await expect(currentAgentAlpha).toBeFocused();
+    const focus = await currentAgentAlpha.evaluate((element) => {
+      const stack = element.closest<HTMLElement>('.breakdown-stack')!;
+      return {
+        outlineColor: getComputedStyle(stack).outlineColor,
+        outlineStyle: getComputedStyle(stack).outlineStyle,
+        outlineWidth: getComputedStyle(stack).outlineWidth,
+      };
+    });
+    expect(focus).toEqual({
+      outlineColor: navigatorColors.ringColor,
+      outlineStyle: 'solid',
+      outlineWidth: '2px',
+    });
+    for (const colors of navigatorColors.active) {
+      expect(
+        contrastRatio(colors.effective, navigatorColors.surface),
+        `${theme} selected`,
+      ).toBeGreaterThanOrEqual(3);
+    }
+    for (const colors of navigatorColors.inactive) {
+      expect(
+        contrastRatio(colors.effective, navigatorColors.surface),
+        `${theme} inactive`,
+      ).toBeLessThan(3);
+    }
+    expect(
+      contrastRatio(navigatorColors.ring, navigatorColors.surface),
+      `${theme} focus`,
+    ).toBeGreaterThanOrEqual(3);
+    expect(focus.outlineColor).not.toBe(navigatorColors.foreground);
+    await currentAgentAlpha.blur();
     await agentAlpha.dispatchEvent('pointerleave', { pointerType: 'mouse' });
     await expect(previewStatus).toContainText('By agent Agent alpha-01 750 processed');
   }

@@ -882,7 +882,7 @@
   }
 
   :global(.breakdown-item-control[data-preview-active='true']) {
-    background: hsl(var(--success) / 82%);
+    background: hsl(var(--foreground));
   }
 
   .breakdown-stack-item + .breakdown-stack-item {

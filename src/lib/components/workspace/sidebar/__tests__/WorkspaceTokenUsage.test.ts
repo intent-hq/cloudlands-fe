@@ -354,12 +354,26 @@ describe('WorkspaceTokenUsage', () => {
       const selection = navigatorRow.querySelector('.navigator-selection')!;
       const stack = navigatorRow.querySelector('.breakdown-stack')!;
       const controls = Array.from(stack.querySelectorAll('.breakdown-item-control'));
+      const activeControls = controls.filter(
+        (control) => control.getAttribute('data-preview-active') === 'true',
+      );
       const label = selection.firstElementChild!;
       const percentage = selection.lastElementChild!;
       expect(stack.previousElementSibling).toBe(selection);
       expect(navigatorRow.classList).toContain('flex-col');
       expect(controls.every((control) => control.tagName === 'BUTTON')).toBe(true);
       expect(controls.every((control) => control.classList.contains('appearance-none'))).toBe(true);
+      expect(activeControls).toHaveLength(1);
+      expect(activeControls[0]?.getAttribute('aria-current')).toBe('true');
+      expect(
+        controls
+          .filter((control) => control !== activeControls[0])
+          .every(
+            (control) =>
+              control.getAttribute('data-preview-active') === null &&
+              control.getAttribute('aria-current') === null,
+          ),
+      ).toBe(true);
       expect(
         controls.every((control) => !control.classList.contains('focus-visible:ring-inset')),
       ).toBe(true);
