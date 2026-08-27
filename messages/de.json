@@ -5581,6 +5581,8 @@
   "specialists_builtin_prReviewer_description": "Überprüft Pull Requests mit fundiertem, umsetzbarem Feedback",
   "specialists_builtin_uiDesigner_name": "UI-Designer",
   "specialists_builtin_uiDesigner_description": "Erstellt elegante, barrierefreie, produktionsreife Benutzeroberflächen",
+  "specialists_builtin_vulnerabilityScanner_name": "Schwachstellen-Scanner",
+  "specialists_builtin_vulnerabilityScanner_description": "Findet echte, ausnutzbare Sicherheitslücken im Code",
   "specialists_builtin_developer_name": "Entwickler",
   "specialists_builtin_developer_description": "Plant, implementiert und verifiziert — alles in einem Agenten",
   "specialists_builtin_chiefOfStaff_name": "Stabschef",

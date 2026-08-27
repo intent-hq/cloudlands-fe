@@ -5581,6 +5581,8 @@
   "specialists_builtin_prReviewer_description": "以高置信度、可操作的反馈审查拉取请求",
   "specialists_builtin_uiDesigner_name": "UI 设计师",
   "specialists_builtin_uiDesigner_description": "打造优雅、无障碍、生产就绪的用户界面",
+  "specialists_builtin_vulnerabilityScanner_name": "漏洞扫描器",
+  "specialists_builtin_vulnerabilityScanner_description": "查找代码中真实且可利用的安全漏洞",
   "specialists_builtin_developer_name": "开发者",
   "specialists_builtin_developer_description": "规划、实现和验证——一个智能体全部搞定",
   "specialists_builtin_chiefOfStaff_name": "幕僚长",

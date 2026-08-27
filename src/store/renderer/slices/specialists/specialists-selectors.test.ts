@@ -161,6 +161,14 @@ describe('specialists selectors', () => {
       expect(ids).toContain('verifier');
     });
 
+    it('keeps Vulnerability Scanner pickable as a standard specialist', () => {
+      const inWorkspaceIds = filterPickableSpecialists(SPECIALISTS, true).map(({ id }) => id);
+      const modalIds = filterModalPickableSpecialists(SPECIALISTS, true).map(({ id }) => id);
+
+      expect(inWorkspaceIds).toContain('vulnerability-scanner');
+      expect(modalIds).toContain('vulnerability-scanner');
+    });
+
     it('filterModalPickableSpecialists should drop internal specialists in addition to hidden', () => {
       const ids = filterModalPickableSpecialists(SPECIALISTS, true).map(
         (specialist) => specialist.id,

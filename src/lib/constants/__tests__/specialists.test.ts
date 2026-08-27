@@ -6,6 +6,27 @@ import { describe, expect, it } from 'vitest';
 import { getSpecialistById } from '../specialists';
 
 describe('SPECIALISTS', () => {
+  it('defines the Vulnerability Scanner fallback metadata and prompt', () => {
+    const specialist = getSpecialistById('vulnerability-scanner');
+
+    expect(specialist).toMatchObject({
+      id: 'vulnerability-scanner',
+      name: 'Vulnerability Scanner',
+      description: 'Finds real, exploitable security vulnerabilities in code',
+      codingAgent: 'auggie',
+      defaultModel: 'opus4.7',
+      icon: 'pr-reviewer',
+    });
+    expect(specialist?.role).toBeUndefined();
+    expect(specialist?.hidden).toBeUndefined();
+    expect(specialist?.defaultBehaviorPrompt).toContain('## Vulnerability Scanner');
+    expect(specialist?.defaultBehaviorPrompt).toContain(
+      '**MUST trace real code paths. NEVER speculate about vulnerabilities',
+    );
+    expect(specialist?.defaultBehaviorPrompt).toContain('Use `submit_comments`');
+    expect(specialist?.defaultBehaviorPrompt).toContain('create a findings note');
+  });
+
   it('keeps chief workspace creation extraction guidance', () => {
     const chief = getSpecialistById('chief-of-staff');
 
