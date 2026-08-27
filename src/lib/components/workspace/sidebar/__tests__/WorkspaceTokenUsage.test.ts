@@ -47,7 +47,25 @@ function makeUsage(overrides: Partial<WorkspaceTokenUsageState>): WorkspaceToken
 }
 
 function visibleText(element: Element): string {
-  return (element.textContent ?? '').replace(/\s+/g, ' ').trim();
+  const copy = element.cloneNode(true) as Element;
+  copy.querySelectorAll('.animated-number-target').forEach((target) => target.remove());
+  return (copy.textContent ?? '').replace(/\s+/g, ' ').trim();
+}
+
+function mockReducedMotion() {
+  vi.mocked(window.matchMedia).mockImplementation(
+    (query) =>
+      ({
+        matches: query === '(prefers-reduced-motion: reduce)',
+        media: query,
+        onchange: null,
+        addListener: vi.fn(),
+        removeListener: vi.fn(),
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+        dispatchEvent: vi.fn(() => true),
+      }) as MediaQueryList,
+  );
 }
 
 async function renderTokenUsage(workspaceId = 'ws-1') {
@@ -70,6 +88,7 @@ describe('WorkspaceTokenUsage', () => {
     mocks.dispatch.mockClear();
     mocks.state.usage = emptyWorkspaceTokenUsageState;
     mocks.state.agents = [];
+    mockReducedMotion();
   });
 
   it('renders a closed, accessible disclosure and toggles its controlled details', async () => {
@@ -263,8 +282,8 @@ describe('WorkspaceTokenUsage', () => {
     expect(compositionRows).toHaveLength(4);
     const compositionValues = compositionRows.map((compositionRow) => ({
       label: compositionRow.querySelector('.composition-metric')?.textContent?.trim(),
-      value: compositionRow.querySelector('.composition-value')?.textContent?.trim(),
-      context: compositionRow.querySelector('.composition-context')?.textContent?.trim(),
+      value: visibleText(compositionRow.querySelector('.composition-value')!),
+      context: visibleText(compositionRow.querySelector('.composition-context')!),
     }));
     expect(compositionValues).toEqual([
       { label: 'Cached context', value: '9.3M', context: '98.9%' },
@@ -420,8 +439,8 @@ describe('WorkspaceTokenUsage', () => {
     )!;
     const values = () =>
       Array.from(composition.querySelectorAll('.token-composition-row')).map((row) => ({
-        value: row.querySelector('.composition-value')?.textContent?.trim(),
-        share: row.querySelector('.composition-context')?.textContent?.trim(),
+        value: visibleText(row.querySelector('.composition-value')!),
+        share: visibleText(row.querySelector('.composition-context')!),
       }));
     const stripMetrics = () =>
       Array.from(composition.querySelectorAll<HTMLElement>('.composition-strip-segment')).map(
@@ -621,8 +640,8 @@ describe('WorkspaceTokenUsage', () => {
       );
     const values = () =>
       Array.from(details.querySelectorAll('.token-composition-row')).map((row) => ({
-        value: row.querySelector('.composition-value')?.textContent?.trim(),
-        share: row.querySelector('.composition-context')?.textContent?.trim(),
+        value: visibleText(row.querySelector('.composition-value')!),
+        share: visibleText(row.querySelector('.composition-context')!),
       }));
     const agentSection = screen.getByTestId('token-usage-by-agent');
     const modelSection = screen.getByTestId('token-usage-by-model');
