@@ -61,9 +61,8 @@ const mocks = vi.hoisted(() => {
 vi.mock('$app/navigation', () => ({ goto: mocks.goto }));
 
 vi.mock('$store/renderer/store', async () => {
-  const { createAppStoreMockModule } = await import(
-    '$store/renderer/utils/test-helpers/store-mock'
-  );
+  const { createAppStoreMockModule } =
+    await import('$store/renderer/utils/test-helpers/store-mock');
   return createAppStoreMockModule({
     state: () => ({ providerSettings: { activeProviderId: mocks.activeProviderId } }),
     dispatch: mocks.dispatch,
@@ -73,10 +72,9 @@ vi.mock('$store/renderer/store', async () => {
 vi.mock('$store/renderer/slices/onboarding/onboarding-selectors', () => ({
   selectOnboardingStep: () => mocks.readable(() => 'configuring'),
   selectOnboardingState: () => mocks.readable(() => ({ step: 'configuring' })),
-  selectOnboardingFullFlowRequested: Object.assign(
-    () => mocks.readable(() => false),
-    { select: () => false },
-  ),
+  selectOnboardingFullFlowRequested: Object.assign(() => mocks.readable(() => false), {
+    select: () => false,
+  }),
 }));
 
 vi.mock('$store/renderer/slices/workspace-initializer/workspace-initializer-selectors', () => ({
@@ -153,28 +151,33 @@ vi.mock('$features/onboarding/steps/OnboardingPromptStep.svelte', async () => ({
 }));
 
 vi.mock('$features/onboarding/steps/OnboardingGitHubStep.svelte', async () => ({
-  default: (await import('$lib/components/workspace/initializer/__tests__/mocks/MockComponent.svelte'))
-    .default,
+  default: (
+    await import('$lib/components/workspace/initializer/__tests__/mocks/MockComponent.svelte')
+  ).default,
 }));
 
 vi.mock('$features/onboarding/messages/WorkspaceSetupCard.svelte', async () => ({
-  default: (await import('$lib/components/workspace/initializer/__tests__/mocks/MockComponent.svelte'))
-    .default,
+  default: (
+    await import('$lib/components/workspace/initializer/__tests__/mocks/MockComponent.svelte')
+  ).default,
 }));
 
 vi.mock('$features/onboarding/messages/ProjectPickerMessage.svelte', async () => ({
-  default: (await import('$lib/components/workspace/initializer/__tests__/mocks/MockComponent.svelte'))
-    .default,
+  default: (
+    await import('$lib/components/workspace/initializer/__tests__/mocks/MockComponent.svelte')
+  ).default,
 }));
 
 vi.mock('$features/onboarding/messages/AgentGrid.svelte', async () => ({
-  default: (await import('$lib/components/workspace/initializer/__tests__/mocks/MockComponent.svelte'))
-    .default,
+  default: (
+    await import('$lib/components/workspace/initializer/__tests__/mocks/MockComponent.svelte')
+  ).default,
 }));
 
 vi.mock('$lib/components/modals/PullConflictDialog.svelte', async () => ({
-  default: (await import('$lib/components/workspace/initializer/__tests__/mocks/MockComponent.svelte'))
-    .default,
+  default: (
+    await import('$lib/components/workspace/initializer/__tests__/mocks/MockComponent.svelte')
+  ).default,
 }));
 
 vi.mock('$lib/components/ui/RichTextarea.svelte', async () => ({
@@ -183,8 +186,9 @@ vi.mock('$lib/components/ui/RichTextarea.svelte', async () => ({
 }));
 
 vi.mock('svelte-fa', async () => ({
-  default: (await import('$lib/components/workspace/initializer/__tests__/mocks/MockComponent.svelte'))
-    .default,
+  default: (
+    await import('$lib/components/workspace/initializer/__tests__/mocks/MockComponent.svelte')
+  ).default,
 }));
 
 import OnboardingPage from '../OnboardingPage.svelte';
@@ -568,7 +572,7 @@ describe('onboarding repo-config setup script detection', () => {
     });
   });
 
-  it('submits a picked-repo create for GitHub selections: githubUrl only, no repositoryPath/clonePath', async () => {
+  it('submits a picked-repo create with its detected non-main branch', async () => {
     // Picked-repo flow: the daemon hydrates the checkout from its repo
     // cache. The create request must carry the GitHub URL and MUST NOT
     // carry a local repositoryPath or any clonePath (the selection's
@@ -576,7 +580,7 @@ describe('onboarding repo-config setup script detection', () => {
     mocks.workspaceCreate.mockResolvedValue({ ok: false, error: 'stop after payload capture' });
 
     renderPage();
-    selectGitHubRepo();
+    selectGitHubRepo({ branch: 'master' });
 
     const captured = (
       window as unknown as {
@@ -594,7 +598,7 @@ describe('onboarding repo-config setup script detection', () => {
     expect(request.githubUrl).toBe('https://github.com/owner/repo');
     expect(request.repositoryPath).toBeUndefined();
     expect(request).not.toHaveProperty('clonePath');
-    expect(request.baseRef).toBe('main');
+    expect(request.baseRef).toBe('master');
   });
 
   it('awaits an in-flight probe at submit and never sends the racing generic template (monorepo#1862)', async () => {
@@ -792,7 +796,12 @@ describe('onboarding repo-config setup script detection', () => {
         __mockOnboardingPromptStep: { onProjectChange: (selection: unknown) => void };
       }
     ).__mockOnboardingPromptStep;
-    captured.onProjectChange({ type: 'local', repoPath: '/repo/a', branch: 'other', isValid: true });
+    captured.onProjectChange({
+      type: 'local',
+      repoPath: '/repo/a',
+      branch: 'other',
+      isValid: true,
+    });
 
     // Debounce window elapses with no further request.
     await new Promise((r) => setTimeout(r, 400));
@@ -927,7 +936,12 @@ describe('onboarding remote-URL probe race (cloudlands-fe#443)', () => {
         __mockOnboardingPromptStep: { onProjectChange: (selection: unknown) => void };
       }
     ).__mockOnboardingPromptStep;
-    captured.onProjectChange({ type: 'local', repoPath: '/repo/a', branch: 'other', isValid: true });
+    captured.onProjectChange({
+      type: 'local',
+      repoPath: '/repo/a',
+      branch: 'other',
+      isValid: true,
+    });
     await flush();
 
     // The suffix must persist (no blank/flicker) and the probe must not re-run.
@@ -1128,9 +1142,9 @@ describe('onboarding model picker (initial Coordinator agent)', () => {
 
     await waitFor(() => expect(mocks.workspaceCreate).toHaveBeenCalledTimes(1));
     const actions = dispatchedActions();
-    expect(actions.find((a) => a.type === 'providerSettings/setProviderEnabled')?.payload).toEqual(
-      [{ providerId: 'auggie', enabled: true }],
-    );
+    expect(actions.find((a) => a.type === 'providerSettings/setProviderEnabled')?.payload).toEqual([
+      { providerId: 'auggie', enabled: true },
+    ]);
     expect(actions.find((a) => a.type === 'providerSettings/setActiveProvider')?.payload).toEqual([
       'auggie',
     ]);
