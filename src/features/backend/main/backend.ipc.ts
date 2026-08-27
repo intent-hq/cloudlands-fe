@@ -2359,16 +2359,18 @@ function registerConnectionsHandlers(): void {
     ),
   );
 
-  // Probe unsaved address values with the saved secret. This intentionally has
-  // no store mutation and no window hook; callers localize the structured result.
+  // Probe unsaved address values with a write-only override or the saved secret.
+  // This intentionally has no store mutation and no window hook.
   ipcMain.handle(
     CONNECTIONS.TEST,
     createValidatedHandler(
       ConnectionsTestSchema,
-      async (_event, { id, host, port }) =>
+      async (_event, { id, host, port, token }) =>
         enqueueSwitchOperation(async () => {
           const connection = await getRemoteConnection(id);
-          const secret = await loadSavedConnectionSecret(id);
+          const secret = token
+            ? ({ status: 'success', token } as const)
+            : await loadSavedConnectionSecret(id);
           if (secret.status === 'secret-unavailable') return secret;
           return validateConnectionAddress(connection, host, port, secret.token);
         }),

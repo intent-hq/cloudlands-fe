@@ -731,6 +731,27 @@ describe('connections:* IPC handlers', () => {
     expect(openOrFocus).not.toHaveBeenCalled();
   });
 
+  it('tests a write-only secret override without decrypting or persisting it', async () => {
+    store.getDecryptedToken.mockRejectedValue(new Error('stored secret is undecryptable'));
+    const { mod } = await loadModule();
+    mod.registerBackendHandlers();
+    const handler = findHandler('connections:test');
+
+    const result = await handler!(
+      {},
+      { id: REMOTE.id, host: '10.0.0.99', port: 9443, token: 'preview-token' },
+    );
+
+    expect(result).toEqual({ status: 'success', fingerprint: REMOTE.fingerprint });
+    expect(store.getDecryptedToken).not.toHaveBeenCalled();
+    expect(store.updateMetadata).not.toHaveBeenCalled();
+    expect(store.replaceSecret).not.toHaveBeenCalled();
+    expect(JSON.stringify(result)).not.toContain('preview-token');
+    expect(mockCaptureFingerprint).toHaveBeenCalledWith(
+      expect.objectContaining({ token: 'preview-token' }),
+    );
+  });
+
   it('returns token-free guidance when testing cannot decrypt the saved secret', async () => {
     store.getDecryptedToken.mockRejectedValue(
       new Error('raw decrypt failure with secret-material'),

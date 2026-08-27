@@ -24,16 +24,10 @@
     testConnectionRequested,
     updateConnectionRequested,
   } from '$store/renderer/slices/connections/connections-slice';
-  import {
-    faEllipsisVertical,
-    faKey,
-    faPen,
-    faPlug,
-    faTrash,
-  } from '@fortawesome/free-solid-svg-icons';
+  import { faEllipsisVertical, faPen, faPlug, faTrash } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
 
-  export type DevicePanelMode = 'edit' | 'secret' | null;
+  export type DevicePanelMode = 'edit' | null;
 
   interface Props {
     device: ConnectionRecord;
@@ -49,7 +43,7 @@
   let port = $state('');
   let accent = $state<ConnectionAccent>(DEFAULT_CONNECTION_ACCENT);
   let secret = $state('');
-  let busy = $state<'update' | 'test' | 'secret' | null>(null);
+  let busy = $state<'update' | 'test' | null>(null);
   let feedback = $state<{ kind: 'success' | 'error' | 'progress'; message: string } | null>(null);
   let connectionError = $state(false);
   let pendingFingerprint = $state<{
@@ -61,6 +55,7 @@
   let actionsButton: HTMLButtonElement | null = $state(null);
   let firstEditInput: HTMLInputElement | null = $state(null);
   let secretInput: HTMLInputElement | null = $state(null);
+  let focusSecretOnEdit = $state(false);
 
   const savedAccent = $derived(device.accent ?? DEFAULT_CONNECTION_ACCENT);
   const address = $derived(`${device.host ?? ''}:${device.port ?? ''}`);
@@ -85,7 +80,6 @@
       portNumber !== device.port ||
       accent !== savedAccent,
   );
-  const secretInvalid = $derived(secret.trim().length === 0);
 
   function resetPanel() {
     name = device.label;
@@ -103,8 +97,15 @@
     if (panelKey === initializedPanel) return;
     initializedPanel = panelKey;
     untrack(resetPanel);
-    if (panelMode) {
-      requestAnimationFrame(() => (panelMode === 'edit' ? firstEditInput : secretInput)?.focus());
+    if (panelMode === 'edit') {
+      requestAnimationFrame(() => {
+        if (focusSecretOnEdit) {
+          focusSecretOnEdit = false;
+          secretInput?.focus();
+        } else {
+          firstEditInput?.focus();
+        }
+      });
     }
   });
 
@@ -113,13 +114,24 @@
     queueMicrotask(() => actionsButton?.focus());
   }
 
+  function openEditForSecretRecovery() {
+    feedback = null;
+    pendingFingerprint = null;
+    if (panelMode === 'edit') {
+      requestAnimationFrame(() => secretInput?.focus());
+    } else {
+      focusSecretOnEdit = true;
+      onOpenPanel('edit');
+    }
+  }
+
   async function connectDevice() {
     connectionError = false;
     try {
       const action = openConnectionRequested(device.id);
       appStore.dispatch(action);
       const result = await action.promise;
-      if (result.status === 'secret-unavailable') onOpenPanel('secret');
+      if (result.status === 'secret-unavailable') openEditForSecretRecovery();
     } catch {
       connectionError = true;
     }
@@ -184,19 +196,47 @@
     };
   }
 
-  async function updateDevice(confirmedFingerprint?: string) {
+  async function updateDevice(confirmedFingerprint?: string, confirmedSecretFingerprint?: string) {
     if (editInvalid || busy) return;
     busy = 'update';
     feedback = { kind: 'progress', message: m.settings_devices_updating_label() };
     pendingFingerprint = null;
     try {
+      const token = secret.trim();
+      if (token) {
+        feedback = { kind: 'progress', message: m.settings_devices_replacingSecret_label() };
+        const rotateAction = rotateConnectionSecretRequested({
+          id: device.id,
+          token,
+          ...(confirmedSecretFingerprint
+            ? { confirmedFingerprint: confirmedSecretFingerprint }
+            : {}),
+        });
+        appStore.dispatch(rotateAction);
+        const rotateResult = await rotateAction.promise;
+        if (rotateResult.status === 'fingerprint-confirmation-required') {
+          pendingFingerprint = {
+            operation: 'secret',
+            expected: rotateResult.expectedFingerprint,
+            actual: rotateResult.actualFingerprint,
+          };
+          feedback = { kind: 'error', message: blockedMessage(rotateResult) };
+          return;
+        }
+        if (rotateResult.status !== 'updated') {
+          feedback = { kind: 'error', message: blockedMessage(rotateResult) };
+          return;
+        }
+        secret = '';
+        feedback = { kind: 'progress', message: m.settings_devices_updating_label() };
+      }
       const action = updateConnectionRequested(updateParams(confirmedFingerprint));
       appStore.dispatch(action);
       const result = await action.promise;
       if (result.status === 'updated') {
         closePanel();
       } else if (result.status === 'secret-unavailable') {
-        onOpenPanel('secret');
+        openEditForSecretRecovery();
       } else if (result.status === 'fingerprint-confirmation-required') {
         pendingFingerprint = {
           operation: 'update',
@@ -224,11 +264,12 @@
         id: device.id,
         host: trimmedHost,
         port: portNumber,
+        ...(secret.trim() ? { token: secret.trim() } : {}),
       });
       appStore.dispatch(action);
       const result = await action.promise;
       if (result.status === 'secret-unavailable') {
-        onOpenPanel('secret');
+        openEditForSecretRecovery();
       } else {
         feedback =
           result.status === 'success'
@@ -242,45 +283,11 @@
     }
   }
 
-  async function replaceSecret(confirmedFingerprint?: string) {
-    const token = secret.trim();
-    if (!token || busy) return;
-    busy = 'secret';
-    feedback = { kind: 'progress', message: m.settings_devices_replacingSecret_label() };
-    pendingFingerprint = null;
-    try {
-      const action = rotateConnectionSecretRequested({
-        id: device.id,
-        token,
-        ...(confirmedFingerprint ? { confirmedFingerprint } : {}),
-      });
-      appStore.dispatch(action);
-      const result = await action.promise;
-      if (result.status === 'updated') {
-        secret = '';
-        feedback = { kind: 'success', message: m.settings_devices_secretReplaced_label() };
-      } else if (result.status === 'fingerprint-confirmation-required') {
-        pendingFingerprint = {
-          operation: 'secret',
-          expected: result.expectedFingerprint,
-          actual: result.actualFingerprint,
-        };
-        feedback = { kind: 'error', message: blockedMessage(result) };
-      } else {
-        feedback = { kind: 'error', message: blockedMessage(result) };
-      }
-    } catch {
-      feedback = { kind: 'error', message: m.settings_devices_replaceSecret_error() };
-    } finally {
-      busy = null;
-    }
-  }
-
   function confirmFingerprint() {
     if (!pendingFingerprint) return;
     const { operation, actual } = pendingFingerprint;
     if (operation === 'update') void updateDevice(actual);
-    else void replaceSecret(actual);
+    else void updateDevice(undefined, actual);
   }
 </script>
 
@@ -338,15 +345,6 @@
           >
             <Fa icon={faPen} class="size-3.5 text-muted-foreground" />
             {m.settings_devices_edit_label()}
-          </Menu.Item>
-          <Menu.Item
-            onclick={() => {
-              close();
-              onOpenPanel('secret');
-            }}
-          >
-            <Fa icon={faKey} class="size-3.5 text-muted-foreground" />
-            {m.settings_devices_replaceSecret_label()}
           </Menu.Item>
           <Menu.Item
             destructive
@@ -420,6 +418,20 @@
                   {m.settings_devices_portInvalid_error()}
                 </p>{/if}
             </div>
+          </div>
+          <div class="space-y-1">
+            <Label for={`device-${device.id}-edit-secret`}>
+              {m.settings_devices_newSecret_label()}
+            </Label>
+            <Input
+              id={`device-${device.id}-edit-secret`}
+              bind:ref={secretInput}
+              bind:value={secret}
+              type="password"
+              autocomplete="new-password"
+              placeholder={m.settings_devices_secret_placeholder()}
+              disabled={busy !== null}
+            />
           </div>
         </div>
         <fieldset class="space-y-2" disabled={busy !== null}>
@@ -512,84 +524,8 @@
         >
         <Button
           type="submit"
-          disabled={busy !== null || editInvalid || !editChanged}
+          disabled={busy !== null || editInvalid || (!editChanged && !secret.trim())}
           loading={busy === 'update'}>{m.settings_devices_update_label()}</Button
-        >
-      </div>
-    </form>
-  {:else if panelMode === 'secret'}
-    <form
-      class="space-y-4 border-t border-border bg-muted/20 px-4 py-4 sm:px-5"
-      aria-label={m.settings_devices_secretForm_ariaLabel({ name: displayName })}
-      onsubmit={(event) => {
-        event.preventDefault();
-        void replaceSecret();
-      }}
-    >
-      <div class="space-y-1">
-        <Label for={`device-${device.id}-secret`}>{m.settings_devices_newSecret_label()}</Label>
-        <p class="text-xs text-muted-foreground">{m.settings_devices_newSecret_description()}</p>
-        <Input
-          id={`device-${device.id}-secret`}
-          bind:ref={secretInput}
-          bind:value={secret}
-          type="password"
-          autocomplete="new-password"
-          disabled={busy !== null}
-        />
-      </div>
-
-      {#if pendingFingerprint}
-        <div
-          class="space-y-2 rounded-md border border-warning-foreground/30 bg-warning/10 p-3"
-          role="alert"
-        >
-          <p class="text-sm font-medium text-foreground">
-            {m.settings_devices_confirmFingerprint_title()}
-          </p>
-          <p class="text-xs text-muted-foreground">
-            {m.settings_devices_confirmFingerprint_description()}
-          </p>
-          <dl class="grid gap-2 text-xs sm:grid-cols-2">
-            <div>
-              <dt class="text-muted-foreground">
-                {m.settings_devices_expectedFingerprint_label()}
-              </dt>
-              <dd class="break-all font-mono">{pendingFingerprint.expected}</dd>
-            </div>
-            <div>
-              <dt class="text-muted-foreground">{m.settings_devices_actualFingerprint_label()}</dt>
-              <dd class="break-all font-mono">{pendingFingerprint.actual}</dd>
-            </div>
-          </dl>
-          <div class="flex justify-end gap-2">
-            <Button variant="ghost-light" size="sm" onclick={() => (pendingFingerprint = null)}
-              >{m.settings_devices_cancel_label()}</Button
-            >
-            <Button size="sm" onclick={confirmFingerprint}
-              >{m.settings_devices_confirmFingerprint_label()}</Button
-            >
-          </div>
-        </div>
-      {:else if feedback}
-        <p
-          class={feedback.kind === 'error'
-            ? 'text-sm text-error-foreground'
-            : feedback.kind === 'success'
-              ? 'text-sm text-success-foreground'
-              : 'text-sm text-muted-foreground'}
-          role={feedback.kind === 'error' ? 'alert' : 'status'}
-        >
-          {feedback.message}
-        </p>
-      {/if}
-
-      <div class="flex justify-end gap-2">
-        <Button type="button" variant="ghost-light" disabled={busy !== null} onclick={closePanel}
-          >{m.settings_devices_cancel_label()}</Button
-        >
-        <Button type="submit" disabled={busy !== null || secretInvalid} loading={busy === 'secret'}
-          >{m.settings_devices_replaceSecret_label()}</Button
         >
       </div>
     </form>

@@ -1104,6 +1104,7 @@ export const ConnectionsTestSchema = z.object({
   id: z.string().min(1, 'Connection ID is required'),
   host: z.string().trim().min(1, 'Host is required'),
   port: z.number().int().min(1).max(65_535),
+  token: z.string().min(1, 'Token is required').optional(),
 });
 
 export const ConnectionsRotateSecretSchema = z.object({

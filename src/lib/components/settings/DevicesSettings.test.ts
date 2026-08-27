@@ -177,10 +177,8 @@ describe('DevicesSettings', () => {
 
     await openAction('Connect');
 
-    await waitFor(() =>
-      expect(screen.getByRole('form', { name: 'Replace secret for Studio Mac' })).toBeTruthy(),
-    );
-    expect((screen.getByLabelText('New access token') as HTMLInputElement).value).toBe('');
+    await waitFor(() => expect(screen.getByRole('form', { name: 'Edit Studio Mac' })).toBeTruthy());
+    expect((screen.getByLabelText('Access token') as HTMLInputElement).value).toBe('');
     expect(mocks.test).not.toHaveBeenCalled();
   });
 
@@ -196,7 +194,7 @@ describe('DevicesSettings', () => {
     expect(screen.getByText('No remote devices saved')).toBeTruthy();
   });
 
-  async function openAction(name: 'Edit' | 'Replace secret' | 'Remove', deviceName = 'Studio Mac') {
+  async function openAction(name: 'Connect' | 'Edit' | 'Remove', deviceName = 'Studio Mac') {
     await fireEvent.click(screen.getByRole('button', { name: `Actions for ${deviceName}` }));
     await fireEvent.click(await screen.findByRole('menuitem', { name }));
   }
@@ -206,6 +204,7 @@ describe('DevicesSettings', () => {
 
     await openAction('Edit');
     expect(screen.getByRole('form', { name: 'Edit Studio Mac' })).toBeTruthy();
+    expect((screen.getByLabelText('Access token') as HTMLInputElement).value).toBe('');
     const name = screen.getByRole('textbox', { name: 'Name' });
     await fireEvent.input(name, { target: { value: 'Render box' } });
     await fireEvent.input(screen.getByRole('textbox', { name: 'Hostname or IP' }), {
@@ -226,6 +225,7 @@ describe('DevicesSettings', () => {
     expect(mocks.dispatch).not.toHaveBeenCalledWith(
       expect.objectContaining({ type: expect.stringMatching(/theme/i) }),
     );
+    expect(mocks.rotate).not.toHaveBeenCalled();
   });
 
   it('replaces the first inline panel when a second device action opens', async () => {
@@ -239,9 +239,9 @@ describe('DevicesSettings', () => {
     await openAction('Edit');
     expect(screen.getByRole('form', { name: 'Edit Studio Mac' })).toBeTruthy();
 
-    await openAction('Replace secret', 'Travel Mac');
+    await openAction('Edit', 'Travel Mac');
     expect(screen.queryByRole('form', { name: 'Edit Studio Mac' })).toBeNull();
-    expect(screen.getByRole('form', { name: 'Replace secret for Travel Mac' })).toBeTruthy();
+    expect(screen.getByRole('form', { name: 'Edit Travel Mac' })).toBeTruthy();
   });
 
   it('tests current unsaved address values without updating or opening a connection', async () => {
@@ -267,6 +267,25 @@ describe('DevicesSettings', () => {
     );
   });
 
+  it('tests a typed write-only secret without saving or rotating it', async () => {
+    render(DevicesSettings);
+    await openAction('Edit');
+    await fireEvent.input(screen.getByLabelText('Access token'), {
+      target: { value: 'preview-token' },
+    });
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Test connection' }));
+
+    expect(mocks.test).toHaveBeenCalledWith({
+      id: remote.id,
+      host: remote.host,
+      port: remote.port,
+      token: 'preview-token',
+    });
+    expect(mocks.rotate).not.toHaveBeenCalled();
+    expect(mocks.update).not.toHaveBeenCalled();
+  });
+
   it('opens the write-only replacement flow when the saved secret is unavailable', async () => {
     mocks.test.mockImplementation((params) => ({
       type: 'connections/testRequested',
@@ -278,10 +297,9 @@ describe('DevicesSettings', () => {
 
     await fireEvent.click(screen.getByRole('button', { name: 'Test connection' }));
 
-    await waitFor(() => expect(screen.queryByRole('form', { name: 'Edit Studio Mac' })).toBeNull());
-    const replacement = screen.getByRole('form', { name: 'Replace secret for Studio Mac' });
-    const token = screen.getByLabelText('New access token') as HTMLInputElement;
-    expect(replacement.contains(token)).toBe(true);
+    const edit = screen.getByRole('form', { name: 'Edit Studio Mac' });
+    const token = screen.getByLabelText('Access token') as HTMLInputElement;
+    expect(edit.contains(token)).toBe(true);
     expect(token.value).toBe('');
     expect(mocks.rotate).not.toHaveBeenCalled();
   });
@@ -336,21 +354,25 @@ describe('DevicesSettings', () => {
     );
   });
 
-  it('replaces a write-only secret without rendering an existing value', async () => {
+  it('rotates a typed write-only secret before applying the edit', async () => {
     render(DevicesSettings);
-    await openAction('Replace secret');
-    const token = screen.getByLabelText('New access token') as HTMLInputElement;
+    await openAction('Edit');
+    const token = screen.getByLabelText('Access token') as HTMLInputElement;
     expect(token.value).toBe('');
-    expect(token.placeholder).toBe('');
     await fireEvent.input(token, { target: { value: 'replacement-token' } });
-    await fireEvent.click(screen.getByRole('button', { name: 'Replace secret' }));
+    await fireEvent.click(screen.getByRole('button', { name: 'Update' }));
 
     expect(mocks.rotate).toHaveBeenCalledWith({
       id: 'remote-1',
       token: 'replacement-token',
     });
-    expect(await screen.findByText('Secret replaced.')).toBeTruthy();
-    expect(token.value).toBe('');
+    expect(mocks.update).toHaveBeenCalledWith({
+      id: remote.id,
+      label: remote.label,
+      accent: remote.accent,
+      host: remote.host,
+      port: remote.port,
+    });
   });
 
   it('returns focus to the overflow trigger after cancelling an inline form', async () => {

@@ -262,6 +262,8 @@ export interface TestConnectionParams {
   id: string;
   host: string;
   port: number;
+  /** Write-only override for this probe; never persisted or returned. */
+  token?: string;
 }
 
 export type TestConnectionResult = ConnectionValidationResult;
