@@ -44,6 +44,7 @@ describe('production route graph', () => {
       '+error.svelte',
       '+layout.svelte',
       '+layout.ts',
+      'hud/+layout.svelte',
       'hud/+page.svelte',
     ]);
     expect(routeFiles.some(isInternalRouteFile)).toBe(false);

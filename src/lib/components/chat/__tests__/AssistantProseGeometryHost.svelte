@@ -109,20 +109,32 @@
       id: 'tool-reasoning',
       content: [
         { type: 'tool_use', id: 'pair-tool-c', name: 'view', input: { path: 'src/c.ts' } },
-        { type: 'thinking', id: 'pair-reasoning-a', text: 'Inspect the tool result' },
+        {
+          type: 'thinking',
+          id: 'pair-reasoning-a',
+          text: 'Inspect the tool result\n\nOperational geometry detail.',
+        },
       ],
     },
     {
       id: 'reasoning-tool',
       content: [
-        { type: 'thinking', id: 'pair-reasoning-b', text: 'Choose the next tool' },
+        {
+          type: 'thinking',
+          id: 'pair-reasoning-b',
+          text: 'Choose the next tool\n\nOperational geometry detail.',
+        },
         { type: 'tool_use', id: 'pair-tool-d', name: 'view', input: { path: 'src/d.ts' } },
       ],
     },
     {
       id: 'reasoning-context',
       content: [
-        { type: 'thinking', id: 'pair-reasoning-c', text: 'Search for the owning primitive' },
+        {
+          type: 'thinking',
+          id: 'pair-reasoning-c',
+          text: 'Search for the owning primitive\n\nOperational geometry detail.',
+        },
         {
           type: 'tool_use',
           id: 'pair-context-a',

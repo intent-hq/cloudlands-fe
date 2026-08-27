@@ -61,8 +61,7 @@
       stabilityStatus = 'error';
       Preview = null;
       scene = null;
-      const stageLabel = stage === 'preparation' ? 'capture preparation' : stage;
-      error = `Preview ${stageLabel} failed: ${describeError(cause)}`;
+      error = `Preview ${stage} failed: ${describeError(cause)}`;
       if (cleanupError) error += ` Cleanup failed: ${describeError(cleanupError)}`;
       setActivePreview(null);
     };
@@ -137,7 +136,10 @@
         setActivePreview({ slug: nextSlug, state: stateName, width: nextWidth, status: 'ready' });
       } catch (preparationError) {
         if (cancelled || stabilityController.signal.aborted) return;
-        failScene('preparation', preparationError);
+        const cleanupError = cleanupSetup();
+        stabilityStatus = 'error';
+        stabilityError = `Preview capture preparation failed: ${describeError(preparationError)}`;
+        if (cleanupError) stabilityError += ` Cleanup failed: ${describeError(cleanupError)}`;
       }
     })();
 

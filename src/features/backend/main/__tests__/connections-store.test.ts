@@ -938,6 +938,515 @@ describe('connections-store keychain sync surface', () => {
     expect(JSON.stringify(records)).not.toContain('activeId');
   });
 
+  it('add without syncExcluded stays synced (flag false, listed to sync)', async () => {
+    const store = await import('../connections-store');
+    const rec = await store.add(sampleConn);
+    expect(rec.syncExcluded).toBe(false);
+    expect((await store.list()).find((c) => c.id === rec.id)?.syncExcluded).toBe(false);
+    expect(await store.listSyncRecords()).toHaveLength(1);
+  });
+
+  it('add with syncExcluded persists the flag and hides the record from listSyncRecords', async () => {
+    const store = await import('../connections-store');
+    const excluded = await store.add({ ...sampleConn, syncExcluded: true });
+    const synced = await store.add({
+      ...sampleConn,
+      port: 9443,
+      fingerprint: 'FP:SYNCED',
+      label: 'Synced',
+    });
+    expect(excluded.syncExcluded).toBe(true);
+    expect(excluded).not.toHaveProperty('token');
+    expect(excluded).not.toHaveProperty('encToken');
+    await store.__drainWriteChainForTesting();
+
+    // Persisted on disk…
+    const file = path.join(tmpDir, 'backend-connections.json');
+    const parsed = JSON.parse(await fs.readFile(file, 'utf8'));
+    expect(parsed.connections.find((c: { id: string }) => c.id === excluded.id).syncExcluded).toBe(
+      true,
+    );
+
+    // …and invisible to sync while the synced sibling still lists.
+    const records = await store.listSyncRecords();
+    expect(records).toHaveLength(1);
+    expect(records[0]).toMatchObject({ label: 'Synced', port: 9443 });
+    void synced;
+  });
+
+  it('re-add flips the exclusion flag on the surviving record (both directions)', async () => {
+    const store = await import('../connections-store');
+    const original = await store.add({ ...sampleConn, syncExcluded: true });
+    expect(await store.listSyncRecords()).toHaveLength(0);
+
+    // Re-add with the box kept (explicit inclusion) clears the flag in place.
+    const included = await store.add({ ...sampleConn, syncExcluded: false });
+    expect(included.id).toBe(original.id);
+    expect(included.syncExcluded).toBe(false);
+    expect(await store.listSyncRecords()).toHaveLength(1);
+
+    // Re-add opted out again sets it back on the same record.
+    const reExcluded = await store.add({ ...sampleConn, syncExcluded: true });
+    expect(reExcluded.id).toBe(original.id);
+    expect(reExcluded.syncExcluded).toBe(true);
+    expect(await store.listSyncRecords()).toHaveLength(0);
+  });
+
+  it('re-add WITHOUT syncExcluded preserves the survivor exclusion (refresh must not flip consent)', async () => {
+    const store = await import('../connections-store');
+    // The user explicitly opted this backend out of sync…
+    const original = await store.add({ ...sampleConn, syncExcluded: true });
+    expect(await store.listSyncRecords()).toHaveLength(0);
+
+    // …then a flag-less upsert (e.g. connections:refresh-self after a token
+    // rotation) re-adds the same backend. The exclusion MUST survive: a
+    // freshness path never carries consent to publish to the keychain.
+    const refreshed = await store.add(sampleConn);
+    expect(refreshed.id).toBe(original.id);
+    expect(refreshed.syncExcluded).toBe(true);
+    expect(await store.listSyncRecords()).toHaveLength(0);
+
+    // And symmetrically: a flag-less re-add of a synced record keeps it synced.
+    const synced = await store.add({
+      ...sampleConn,
+      port: 9443,
+      fingerprint: 'FP:SYNCED',
+      syncExcluded: false,
+    });
+    const reAdded = await store.add({ ...sampleConn, port: 9443, fingerprint: 'FP:SYNCED' });
+    expect(reAdded.id).toBe(synced.id);
+    expect(reAdded.syncExcluded).toBe(false);
+    expect(await store.listSyncRecords()).toHaveLength(1);
+  });
+
+  it('forget of an excluded record writes an excluded tombstone that never reaches sync', async () => {
+    const store = await import('../connections-store');
+    const rec = await store.add({ ...sampleConn, syncExcluded: true });
+    await store.forget(rec.id);
+    await store.__drainWriteChainForTesting();
+
+    // The tombstone is kept on disk (local bookkeeping) marked excluded…
+    const file = path.join(tmpDir, 'backend-connections.json');
+    const parsed = JSON.parse(await fs.readFile(file, 'utf8'));
+    expect(parsed.connections).toHaveLength(0);
+    expect(parsed.tombstones).toHaveLength(1);
+    expect(parsed.tombstones[0].excluded).toBe(true);
+
+    // …but never listed to sync, so the deletion cannot hit the keychain.
+    expect(await store.listSyncRecords()).toHaveLength(0);
+  });
+
+  it('forget of a synced record writes a non-excluded tombstone (still listed to sync)', async () => {
+    const store = await import('../connections-store');
+    const rec = await store.add(sampleConn);
+    await store.forget(rec.id);
+    await store.__drainWriteChainForTesting();
+
+    const file = path.join(tmpDir, 'backend-connections.json');
+    const parsed = JSON.parse(await fs.readFile(file, 'utf8'));
+    expect(parsed.tombstones[0].excluded).toBe(false);
+    const records = await store.listSyncRecords();
+    expect(records).toEqual([expect.objectContaining({ deleted: true })]);
+  });
+
+  it('legacy state without syncExcluded is read as synced (back-compat)', async () => {
+    await fs.writeFile(
+      path.join(tmpDir, 'backend-connections.json'),
+      JSON.stringify({
+        connections: [
+          {
+            id: 'legacy-1',
+            label: 'Legacy',
+            host: '192.168.1.10',
+            port: 8443,
+            fingerprint: 'AA',
+            encToken: { encrypted: false, value: 'tok' },
+          },
+        ],
+        activeId: 'local',
+        tombstones: [
+          {
+            label: 'Legacy gone',
+            host: '192.168.1.11',
+            port: 8443,
+            fingerprint: 'BB',
+            updatedAt: Date.now(),
+            deletedAt: Date.now(),
+          },
+        ],
+      }),
+      'utf8',
+    );
+    const store = await import('../connections-store');
+    const remote = (await store.list()).find((c) => !c.isLocal);
+    expect(remote?.syncExcluded).toBe(false);
+    // Both the legacy record and the legacy tombstone still sync.
+    const records = await store.listSyncRecords();
+    expect(records).toHaveLength(2);
+    expect(records.filter((r) => r.deleted === true)).toHaveLength(1);
+  });
+
+  it('applyRemoteSyncRecord live pull never overwrites an excluded record (same account)', async () => {
+    const store = await import('../connections-store');
+    const rec = await store.add({ ...sampleConn, syncExcluded: true });
+    await store.__drainWriteChainForTesting();
+    const file = path.join(tmpDir, 'backend-connections.json');
+    const before = JSON.parse(await fs.readFile(file, 'utf8'));
+
+    const changed = await store.applyRemoteSyncRecord({
+      label: 'Synced twin',
+      host: '192.168.1.10',
+      hosts: ['192.168.1.10'],
+      port: 8443,
+      fingerprint: 'AA:BB:CC',
+      hostname: 'twin.local',
+      detectHosts: true,
+      token: 'remote-token',
+      updatedAt: Date.now() + 60_000, // newer than the local record
+    });
+    expect(changed).toBe(false);
+
+    // Untouched on disk (label, token, LWW clock) and no duplicate inserted.
+    await store.__drainWriteChainForTesting();
+    const after = JSON.parse(await fs.readFile(file, 'utf8'));
+    expect(after.connections).toEqual(before.connections);
+    expect(await store.getDecryptedToken(rec.id)).toBe('secret-token');
+  });
+
+  it('applyRemoteSyncRecord live pull for an excluded backend under a NEW address creates no duplicate', async () => {
+    const store = await import('../connections-store');
+    const rec = await store.add({ ...sampleConn, syncExcluded: true });
+
+    const changed = await store.applyRemoteSyncRecord({
+      label: 'Studio Mac',
+      host: '192.168.1.99',
+      hosts: ['192.168.1.99'],
+      port: 9443,
+      fingerprint: 'aa:bb:cc', // same machine, case-differing fingerprint
+      hostname: null,
+      detectHosts: true,
+      token: 'remote-token',
+      updatedAt: Date.now() + 60_000,
+    });
+    expect(changed).toBe(false);
+
+    const remotes = (await store.list()).filter((c) => !c.isLocal);
+    expect(remotes).toHaveLength(1);
+    expect(remotes[0]).toMatchObject({
+      id: rec.id,
+      host: '192.168.1.10',
+      port: 8443,
+      syncExcluded: true,
+    });
+  });
+
+  it('applyRemoteSyncRecord matches an excluded fingerprint-less record by host:port (no update, no duplicate)', async () => {
+    const store = await import('../connections-store');
+    const rec = await store.add({ ...sampleConn, fingerprint: '', syncExcluded: true });
+
+    const changed = await store.applyRemoteSyncRecord({
+      label: 'Synced twin',
+      host: '192.168.1.10',
+      hosts: ['192.168.1.10'],
+      port: 8443,
+      fingerprint: '',
+      hostname: null,
+      detectHosts: true,
+      token: 'remote-token',
+      updatedAt: Date.now() + 60_000,
+    });
+    expect(changed).toBe(false);
+
+    const remotes = (await store.list()).filter((c) => !c.isLocal);
+    expect(remotes).toHaveLength(1);
+    expect(remotes[0]).toMatchObject({ id: rec.id, label: 'Studio Mac', syncExcluded: true });
+    expect(await store.getDecryptedToken(rec.id)).toBe('secret-token');
+  });
+
+  it('applyRemoteSyncRecord tombstone never deletes an excluded record and remembers nothing', async () => {
+    const store = await import('../connections-store');
+    const rec = await store.add({ ...sampleConn, syncExcluded: true });
+    await store.setActiveId(rec.id);
+
+    const remoteClock = Date.now() + 60_000;
+    const changed = await store.applyRemoteSyncRecord({
+      label: 'Studio Mac',
+      host: '192.168.1.10', // an OLD address of the same machine
+      hosts: ['192.168.1.10'],
+      port: 7443,
+      fingerprint: 'AA:BB:CC',
+      hostname: null,
+      detectHosts: true,
+      token: '',
+      updatedAt: remoteClock,
+      deleted: true,
+      deletedAt: remoteClock,
+    });
+    expect(changed).toBe(false);
+
+    // The record survives, stays active, and no tombstone is remembered.
+    const remotes = (await store.list()).filter((c) => !c.isLocal);
+    expect(remotes).toHaveLength(1);
+    expect(remotes[0].id).toBe(rec.id);
+    expect(await store.getActiveId()).toBe(rec.id);
+    await store.__drainWriteChainForTesting();
+    const file = path.join(tmpDir, 'backend-connections.json');
+    const parsed = JSON.parse(await fs.readFile(file, 'utf8'));
+    expect(parsed.tombstones).toHaveLength(0);
+  });
+
+  it('applyRemoteSyncRecord live pull never resurrects a forgotten excluded backend (excluded tombstone shields)', async () => {
+    const store = await import('../connections-store');
+    const rec = await store.add({ ...sampleConn, syncExcluded: true });
+    await store.forget(rec.id);
+
+    // The stale keychain copy arrives as an unpaired live pull — nothing
+    // live matches, only the excluded tombstone. A NEWER remote clock must
+    // not matter: exclusion is a consent boundary, not a clock race.
+    const changed = await store.applyRemoteSyncRecord({
+      label: 'Synced twin',
+      host: '192.168.1.10',
+      hosts: ['192.168.1.10'],
+      port: 8443,
+      fingerprint: 'AA:BB:CC',
+      hostname: null,
+      detectHosts: true,
+      token: 'remote-token',
+      updatedAt: Date.now() + 60_000,
+    });
+    expect(changed).toBe(false);
+
+    // The forget holds: no backend re-created, excluded tombstone intact.
+    expect((await store.list()).filter((c) => !c.isLocal)).toHaveLength(0);
+    await store.__drainWriteChainForTesting();
+    const file = path.join(tmpDir, 'backend-connections.json');
+    const parsed = JSON.parse(await fs.readFile(file, 'utf8'));
+    expect(parsed.tombstones).toHaveLength(1);
+    expect(parsed.tombstones[0].excluded).toBe(true);
+  });
+
+  it('excluded-tombstone shield matches a fingerprint-less backend by host:port', async () => {
+    const store = await import('../connections-store');
+    const rec = await store.add({ ...sampleConn, fingerprint: '', syncExcluded: true });
+    await store.forget(rec.id);
+
+    const changed = await store.applyRemoteSyncRecord({
+      label: 'Synced twin',
+      host: '192.168.1.10',
+      hosts: ['192.168.1.10'],
+      port: 8443,
+      fingerprint: '',
+      hostname: null,
+      detectHosts: true,
+      token: 'remote-token',
+      updatedAt: Date.now() + 60_000,
+    });
+    expect(changed).toBe(false);
+
+    expect((await store.list()).filter((c) => !c.isLocal)).toHaveLength(0);
+    await store.__drainWriteChainForTesting();
+    const file = path.join(tmpDir, 'backend-connections.json');
+    const parsed = JSON.parse(await fs.readFile(file, 'utf8'));
+    expect(parsed.tombstones).toHaveLength(1);
+    expect(parsed.tombstones[0].excluded).toBe(true);
+  });
+
+  it('a NON-excluded tombstone does not shield: a live pull still applies (normal LWW)', async () => {
+    const store = await import('../connections-store');
+    const rec = await store.add(sampleConn);
+    await store.forget(rec.id);
+
+    // The reconcile layer already decided this pull via LWW; the store must
+    // apply it — re-create the backend and clear the synced tombstone.
+    const changed = await store.applyRemoteSyncRecord({
+      label: 'Studio Mac',
+      host: '192.168.1.10',
+      hosts: ['192.168.1.10'],
+      port: 8443,
+      fingerprint: 'AA:BB:CC',
+      hostname: null,
+      detectHosts: true,
+      token: 'remote-token',
+      updatedAt: Date.now() + 60_000,
+    });
+    expect(changed).toBe(true);
+
+    expect((await store.list()).filter((c) => !c.isLocal)).toHaveLength(1);
+    await store.__drainWriteChainForTesting();
+    const file = path.join(tmpDir, 'backend-connections.json');
+    const parsed = JSON.parse(await fs.readFile(file, 'utf8'));
+    expect(parsed.tombstones).toHaveLength(0);
+  });
+
+  it('reconcile after forgetting an excluded backend: the stale keychain copy never undoes the forget', async () => {
+    // End-to-end shape of the bug: opt a backend out, the keychain still
+    // holds its stale synced copy from before the opt-out, forget it — the
+    // next reconcile pulls the unpaired stale record and must NOT re-create
+    // the backend.
+    const store = await import('../connections-store');
+    const sync = await import('../keychain-sync');
+
+    const keychain = new Map<string, string>();
+    const client: import('../keychain-sync').KeychainClient = {
+      async list() {
+        return {
+          ok: true,
+          items: [...keychain.entries()].map(([account, payload]) => ({ account, payload })),
+        };
+      },
+      async upsert(account, payload) {
+        keychain.set(account, payload);
+        return { ok: true };
+      },
+      async delete(account) {
+        keychain.delete(account);
+        return { ok: true };
+      },
+    };
+    const adapter: import('../keychain-sync').LocalSyncAdapter = {
+      list: () => store.listSyncRecords(),
+      applyRemote: async (_account, record) => {
+        await store.applyRemoteSyncRecord(record);
+      },
+    };
+
+    const rec = await store.add({ ...sampleConn, syncExcluded: true });
+    keychain.set(
+      sync.accountKeyFor('192.168.1.10', 8443),
+      sync.serializeRecord({
+        label: 'Studio Mac',
+        host: '192.168.1.10',
+        hosts: ['192.168.1.10'],
+        port: 8443,
+        fingerprint: 'AA:BB:CC',
+        hostname: null,
+        detectHosts: true,
+        token: 'stale-token',
+        updatedAt: Date.now() - 60_000,
+      }),
+    );
+    await store.forget(rec.id);
+
+    const result = await sync.reconcile(adapter, { client });
+    expect(result.pushed).toEqual([]);
+
+    // The forget holds across the reconcile and stays local-only: no
+    // backend re-created, excluded tombstone intact, keychain untouched.
+    expect((await store.list()).filter((c) => !c.isLocal)).toHaveLength(0);
+    await store.__drainWriteChainForTesting();
+    const file = path.join(tmpDir, 'backend-connections.json');
+    const parsed = JSON.parse(await fs.readFile(file, 'utf8'));
+    expect(parsed.tombstones).toHaveLength(1);
+    expect(parsed.tombstones[0].excluded).toBe(true);
+    expect(keychain.size).toBe(1);
+  });
+
+  it('reconcile treats excluded records as fully local: never pushed, never overwritten or deleted, never duplicated', async () => {
+    // Real store + real reconcile against an in-memory keychain: the
+    // excluded record must be invisible (push side) and inviolable (pull
+    // side) across full reconcile passes.
+    const store = await import('../connections-store');
+    const sync = await import('../keychain-sync');
+
+    const keychain = new Map<string, string>();
+    const client: import('../keychain-sync').KeychainClient = {
+      async list() {
+        return {
+          ok: true,
+          items: [...keychain.entries()].map(([account, payload]) => ({ account, payload })),
+        };
+      },
+      async upsert(account, payload) {
+        keychain.set(account, payload);
+        return { ok: true };
+      },
+      async delete(account) {
+        keychain.delete(account);
+        return { ok: true };
+      },
+    };
+    const adapter: import('../keychain-sync').LocalSyncAdapter = {
+      list: () => store.listSyncRecords(),
+      applyRemote: async (_account, record) => {
+        await store.applyRemoteSyncRecord(record);
+      },
+    };
+
+    // An excluded live record plus an excluded tombstone (a forgotten
+    // local-only backend) — neither may ever reach the keychain.
+    const rec = await store.add({ ...sampleConn, syncExcluded: true });
+    const gone = await store.add({
+      label: 'Gone',
+      host: '10.0.0.5',
+      port: 7000,
+      fingerprint: 'GG:HH',
+      token: 'gone-token',
+      syncExcluded: true,
+    });
+    await store.forget(gone.id);
+
+    let result = await sync.reconcile(adapter, { client });
+    expect(result.pushed).toEqual([]);
+    expect(keychain.size).toBe(0);
+
+    // Pull side: a NEWER remote live copy of the excluded backend under a
+    // DIFFERENT account (same fingerprint — the machine's synced twin).
+    const twinAccount = sync.accountKeyFor('192.168.1.99', 9443);
+    keychain.set(
+      twinAccount,
+      sync.serializeRecord({
+        label: 'Synced twin',
+        host: '192.168.1.99',
+        hosts: ['192.168.1.99'],
+        port: 9443,
+        fingerprint: 'AA:BB:CC',
+        hostname: null,
+        detectHosts: true,
+        token: 'remote-token',
+        updatedAt: Date.now() + 60_000,
+      }),
+    );
+    result = await sync.reconcile(adapter, { client });
+    expect(result.pushed).toEqual([]);
+    let remotes = (await store.list()).filter((c) => !c.isLocal);
+    expect(remotes).toHaveLength(1);
+    expect(remotes[0]).toMatchObject({
+      id: rec.id,
+      host: '192.168.1.10',
+      port: 8443,
+      syncExcluded: true,
+    });
+    expect(await store.getDecryptedToken(rec.id)).toBe('secret-token');
+    // The excluded record's own account never appeared in the keychain, and
+    // its token never leaked into any payload.
+    expect(keychain.has(sync.accountKeyFor('192.168.1.10', 8443))).toBe(false);
+    expect([...keychain.values()].join()).not.toContain('secret-token');
+
+    // A NEWER remote tombstone for the same fingerprint never deletes it.
+    const tombClock = Date.now() + 120_000;
+    keychain.set(
+      twinAccount,
+      sync.serializeRecord({
+        label: 'Synced twin',
+        host: '192.168.1.99',
+        hosts: ['192.168.1.99'],
+        port: 9443,
+        fingerprint: 'AA:BB:CC',
+        hostname: null,
+        detectHosts: true,
+        token: '',
+        updatedAt: tombClock,
+        deleted: true,
+        deletedAt: tombClock,
+      }),
+    );
+    result = await sync.reconcile(adapter, { client });
+    expect(result.deletedLocally).toEqual([]);
+    remotes = (await store.list()).filter((c) => !c.isLocal);
+    expect(remotes).toHaveLength(1);
+    expect(remotes[0]).toMatchObject({ id: rec.id, syncExcluded: true });
+  });
+
   it('self-refresh port change end to end: the stale keychain account is tombstoned, the record rewritten under the new account', async () => {
     // The refresh path re-upserts the self record through store.add (same
     // fingerprint, new port). This drives the REAL store + REAL reconcile

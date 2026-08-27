@@ -4,6 +4,27 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.100.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.99.1...v2.100.0) (2026-08-27)
+
+
+### 🚀 Features
+
+* default-on iCloud keychain sync with per-backend opt-out ([#1762](https://github.com/intent-hq/cloudlands-fe/issues/1762)) ([e424b0b](https://github.com/intent-hq/cloudlands-fe/commit/e424b0bcabf43124aa75e0a0e12d5688ff6fd08e))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.8.4 ([#1764](https://github.com/intent-hq/cloudlands-fe/issues/1764)) ([8367e90](https://github.com/intent-hq/cloudlands-fe/commit/8367e90a0b37524e7739b74f4668f7b712457d71))
+
+## [2.99.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.99.0...v2.99.1) (2026-08-27)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.8.3 ([#1761](https://github.com/intent-hq/cloudlands-fe/issues/1761)) ([7a7922f](https://github.com/intent-hq/cloudlands-fe/commit/7a7922fa8b3c4e74f844599875f76cdbc439d73a))
+* expand loading glow across agent panel ([#1759](https://github.com/intent-hq/cloudlands-fe/issues/1759)) ([b112cca](https://github.com/intent-hq/cloudlands-fe/commit/b112cca66c9a65344855f15f22933e6d4e8ba27a))
+* prevent collapsed sidebar edge bleed ([#1758](https://github.com/intent-hq/cloudlands-fe/issues/1758)) ([f352c22](https://github.com/intent-hq/cloudlands-fe/commit/f352c22cbd8e56bc20f6d17ee26fa822a8647821))
+
 ## [2.99.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.98.0...v2.99.0) (2026-08-26)
 
 

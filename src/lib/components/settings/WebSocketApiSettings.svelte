@@ -44,13 +44,11 @@
   import {
     forgetConnectionRequested,
     loadKeychainSyncStateRequested,
-    setKeychainSyncEnabledRequested,
   } from '$store/renderer/slices/connections/connections-slice';
   import { store as appStore } from '$store/renderer/store';
   import { IPC_CHANNELS } from '$shared/ipc-registry';
   import { LOCAL_CONNECTION_ID } from '$shared/types/connections';
   import type { PublishSelfResult, SelfPublishedStateResult } from '$shared/types/connections';
-  import PublishSelfBackendModal from '$lib/components/modals/PublishSelfBackendModal.svelte';
   import RemoveSelfBackendModal from '$lib/components/modals/RemoveSelfBackendModal.svelte';
 
   const CONNECTIONS = IPC_CHANNELS.CONNECTIONS;
@@ -77,16 +75,16 @@
   let qrDataUrl = $state('');
   let qrTimer: ReturnType<typeof setTimeout> | null = null;
 
-  // Publish-self state (spec: offer to put this backend into iCloud Keychain
-  // when the WSS API is enabled). Loaded alongside the WSS status; fail-soft —
-  // when it cannot be read, neither the modal nor the button appears.
+  // Publish-self state (spec Phase 2: sync is opt-out, so enabling the WSS
+  // API auto-publishes this backend to iCloud Keychain). Loaded alongside the
+  // WSS status; fail-soft — when it cannot be read, neither the auto-publish
+  // nor the button fires.
   let publishStateLoaded = $state(false);
   let syncSupported = $state(false);
   let syncEnabled = $state(false);
   let selfPublished = $state(false);
   let publishSuppressed = $state(false);
   let selfConnectionId = $state<string | null>(null);
-  let showPublishModal = $state(false);
   let publishBusy = $state(false);
   let showRemoveModal = $state(false);
   let removeBusy = $state(false);
@@ -169,7 +167,7 @@
       enabled = checked;
       if (checked) {
         await loadStatus();
-        maybeOfferPublish();
+        await maybeAutoPublish();
       } else {
         maybeOfferRemoval();
       }
@@ -223,14 +221,28 @@
   }
 
   /**
-   * After a successful toggle-on on the local connection: offer to publish
-   * this backend, asked every toggle-on (no decline persistence). Never on
-   * non-macOS, when a self entry already exists, or when the "do not
-   * auto-publish" marker is set (re-publishing is button-only).
+   * After a successful toggle-on on the local connection: auto-publish this
+   * backend to iCloud Keychain (sync is opt-out, no opt-in modal). Never on
+   * non-macOS, when sync is explicitly disabled, when a self entry already
+   * exists, or when the "do not auto-publish" marker is set (re-publishing
+   * is button-only). Fail-soft: a publish failure surfaces a toast and never
+   * rolls back the WSS toggle.
    */
-  function maybeOfferPublish() {
+  async function maybeAutoPublish() {
     if (isRemote || !publishStateLoaded) return;
-    if (syncSupported && !selfPublished && !publishSuppressed) showPublishModal = true;
+    if (!syncSupported || !syncEnabled || selfPublished || publishSuppressed) return;
+    try {
+      publishBusy = true;
+      await publishSelf();
+    } catch (error) {
+      toast.error(
+        m.settings_wsApi_publishSelf_error({
+          error: error instanceof Error ? error.message : String(error),
+        }),
+      );
+    } finally {
+      publishBusy = false;
+    }
   }
 
   /**
@@ -278,35 +290,6 @@
     // same settings session can offer removal (maybeOfferRemoval requires it).
     selfConnectionId = result.connection.id;
     toast.success(m.settings_wsApi_publishSelf_success());
-  }
-
-  async function handlePublishConfirm() {
-    try {
-      publishBusy = true;
-      if (!syncEnabled) {
-        try {
-          const sync = await appStore.dispatch(setKeychainSyncEnabledRequested(true)).promise;
-          syncEnabled = sync.enabled;
-        } catch (error) {
-          toast.error(
-            m.settings_wsApi_publishSelf_syncEnableError({
-              error: error instanceof Error ? error.message : String(error),
-            }),
-          );
-          return;
-        }
-      }
-      await publishSelf();
-      showPublishModal = false;
-    } catch (error) {
-      toast.error(
-        m.settings_wsApi_publishSelf_error({
-          error: error instanceof Error ? error.message : String(error),
-        }),
-      );
-    } finally {
-      publishBusy = false;
-    }
   }
 
   async function handlePublishButton() {
@@ -634,13 +617,6 @@
     {/if}
   {/if}
 </div>
-
-<PublishSelfBackendModal
-  bind:open={showPublishModal}
-  {syncEnabled}
-  busy={publishBusy}
-  onConfirm={handlePublishConfirm}
-/>
 
 <RemoveSelfBackendModal
   bind:open={showRemoveModal}

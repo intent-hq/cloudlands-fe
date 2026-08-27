@@ -79,6 +79,8 @@ registerMockIpcHandler(CONNECTION_CHANNELS.ADD, async (arg): Promise<AddConnecti
     host: params.host,
     port: params.port,
     fingerprint: params.fingerprint,
+    // Mirrors the store's normalization: always a boolean on stored records.
+    syncExcluded: params.syncExcluded === true,
     isLocal: false,
   };
   connections = [...connections.filter((c) => c.id !== connection.id), connection];

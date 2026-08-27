@@ -36,9 +36,15 @@ describe('connection-mode', () => {
 
   it('round-trips daemon version info and clears it on reset', () => {
     expect(getDaemonVersionInfo()).toBeNull();
-    setDaemonVersionInfo({ daemonVersion: '0.2.0', pinnedVersion: '0.1.0', versionMismatch: true });
+    setDaemonVersionInfo({
+      daemonVersion: '0.2.0',
+      daemonBuildCommit: '0123456789abcdef',
+      pinnedVersion: '0.1.0',
+      versionMismatch: true,
+    });
     expect(getDaemonVersionInfo()).toEqual({
       daemonVersion: '0.2.0',
+      daemonBuildCommit: '0123456789abcdef',
       pinnedVersion: '0.1.0',
       versionMismatch: true,
     });
@@ -82,20 +88,30 @@ describe('formatTransportInfo', () => {
     });
   });
 
-  it('includes daemonVersion and versionMismatch for external UDS when version info is set', () => {
+  it('includes daemon version, build commit, and mismatch for external UDS', () => {
     setConnectionMode('external');
-    setDaemonVersionInfo({ daemonVersion: '0.2.0', pinnedVersion: '0.1.0', versionMismatch: true });
+    setDaemonVersionInfo({
+      daemonVersion: '0.2.0',
+      daemonBuildCommit: '0123456789abcdef',
+      pinnedVersion: '0.1.0',
+      versionMismatch: true,
+    });
     expect(formatTransportInfo({ transport: 'uds', socketPath: '/tmp/i.sock' })).toEqual({
       mode: 'external-uds',
       target: '/tmp/i.sock',
       daemonVersion: '0.2.0',
+      daemonBuildCommit: '0123456789abcdef',
       versionMismatch: true,
     });
   });
 
   it('reports versionMismatch false for external UDS when versions match', () => {
     setConnectionMode('external');
-    setDaemonVersionInfo({ daemonVersion: '0.1.0', pinnedVersion: '0.1.0', versionMismatch: false });
+    setDaemonVersionInfo({
+      daemonVersion: '0.1.0',
+      pinnedVersion: '0.1.0',
+      versionMismatch: false,
+    });
     expect(formatTransportInfo({ transport: 'uds', socketPath: '/tmp/i.sock' })).toEqual({
       mode: 'external-uds',
       target: '/tmp/i.sock',
@@ -135,7 +151,10 @@ describe('formatTransportInfo', () => {
 
   it('reports external-ws with a sanitized URL (strips userinfo + query)', () => {
     expect(
-      formatTransportInfo({ transport: 'ws', wsUrl: 'ws://user:secret@127.0.0.1:5181/ws?token=abc' }),
+      formatTransportInfo({
+        transport: 'ws',
+        wsUrl: 'ws://user:secret@127.0.0.1:5181/ws?token=abc',
+      }),
     ).toEqual({ mode: 'external-ws', target: 'ws://127.0.0.1:5181/ws' });
   });
 
@@ -183,9 +202,9 @@ describe('formatTransportInfo', () => {
       target: 'wss:h:443',
       pinnedVersion: '0.1.0',
     });
-    expect(formatTransportInfo({ transport: 'tcp', host: '10.0.0.1', port: 6000 }, '0.1.0')).toEqual(
-      { mode: 'external-ws', target: 'tcp:10.0.0.1:6000', pinnedVersion: '0.1.0' },
-    );
+    expect(
+      formatTransportInfo({ transport: 'tcp', host: '10.0.0.1', port: 6000 }, '0.1.0'),
+    ).toEqual({ mode: 'external-ws', target: 'tcp:10.0.0.1:6000', pinnedVersion: '0.1.0' });
   });
 
   it('omits pinnedVersion when the pin is null (missing/malformed pin file)', () => {

@@ -180,19 +180,37 @@ test('accepts live response updates during collapse without stale detached conte
   await transcript.evaluate((node) => node.scrollTo(0, node.scrollHeight));
   const toggle = component.getByTestId('response-group-disclosure');
 
+  await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+  await expect(component.getByTestId('prepared-response-current')).toHaveText(
+    'Initial live activity.',
+  );
   await toggle.click();
+  await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+  await expect(component.getByTestId('prepared-response-body')).toBeVisible();
+  await toggle.click();
+  await expect(toggle).toHaveAttribute('aria-expanded', 'false');
   await page.waitForTimeout(35);
   await component.update({
     props: { ...initialProps, responseText: 'Updated live activity while collapsing.' },
   });
   await page.waitForTimeout(240);
   await expect(component.locator('[data-operational-expanded-content]')).toHaveCount(0);
+  const current = component.getByTestId('prepared-response-current');
+  await expect(current).toBeVisible();
+  await expect(current).toHaveText('Updated live activity while collapsing.');
+  expect(
+    await current.evaluate((node) => node.closest('[data-operational-expanded-content]') === null),
+  ).toBe(true);
+  await expect(component.getByTestId('prepared-response-body')).toHaveCount(0);
   expect(
     await transcript.evaluate((node) => node.scrollHeight - node.clientHeight - node.scrollTop),
   ).toBeLessThanOrEqual(8);
 
   await toggle.click();
-  await expect(component.getByText('Updated live activity while collapsing.')).toBeVisible();
+  await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+  await expect(component.getByTestId('prepared-response-body')).toContainText(
+    'Updated live activity while collapsing.',
+  );
   await page.waitForTimeout(240);
   expect(
     await component

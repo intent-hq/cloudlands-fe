@@ -13,10 +13,29 @@ describe('intentFileImageUrlToWorkspaceFileUrl', () => {
     );
   });
 
-  it('converts long-form links carrying their own workspace ID', () => {
-    expect(intentFileImageUrlToWorkspaceFileUrl('intent://local/other-ws/file/a.jpeg', WS)).toBe(
-      'workspace-file://other-ws/a.jpeg',
+  it('converts long-form links for the current workspace', () => {
+    expect(intentFileImageUrlToWorkspaceFileUrl(`intent://local/${WS}/file/a.jpeg`, WS)).toBe(
+      `workspace-file://${WS}/a.jpeg`,
     );
+  });
+
+  it('compares the decoded long-form workspace ID with the current workspace', () => {
+    expect(intentFileImageUrlToWorkspaceFileUrl('intent://local/ws%2D1234/file/a.png', WS)).toBe(
+      `workspace-file://${WS}/a.png`,
+    );
+    expect(
+      intentFileImageUrlToWorkspaceFileUrl('intent://local/other%2Dws/file/a.png', WS),
+    ).toBeNull();
+  });
+
+  it('returns null for a different long-form workspace ID', () => {
+    expect(
+      intentFileImageUrlToWorkspaceFileUrl('intent://local/other-ws/file/a.jpeg', WS),
+    ).toBeNull();
+  });
+
+  it('returns null for long-form links without a current workspace ID', () => {
+    expect(intentFileImageUrlToWorkspaceFileUrl(`intent://local/${WS}/file/a.png`)).toBeNull();
   });
 
   it('returns null for short-form links without a current workspace ID', () => {
@@ -46,6 +65,7 @@ describe('intentFileImageUrlToWorkspaceFileUrl', () => {
     ['backslash in segment', 'intent://local/file/a%5Cb.png'],
     ['windows drive prefix', 'intent://local/file/C:/a.png'],
     ['unsafe workspace id', 'intent://local/..%2F..%2Fx/file/a.png'],
+    ['malformed workspace id encoding', 'intent://local/ws%ZZ/file/a.png'],
     ['missing path', 'intent://local/file/'],
     ['not an intent url', 'https://example.com/a.png'],
   ])('returns null for %s', (_name, url) => {
@@ -60,6 +80,20 @@ describe('rewriteIntentFileImageSrcs', () => {
     expect(rewriteIntentFileImageSrcs(html, WS)).toBe(
       `<p><img src="workspace-file://${WS}/docs/shot.png" alt="shot"></p>`,
     );
+  });
+
+  it('rewrites matching long-form image sources', () => {
+    const html = `<img src="intent://local/${WS}/file/docs/shot.png" alt="shot">`;
+
+    expect(rewriteIntentFileImageSrcs(html, WS)).toBe(
+      `<img src="workspace-file://${WS}/docs/shot.png" alt="shot">`,
+    );
+  });
+
+  it('leaves cross-workspace long-form image sources untouched', () => {
+    const html = '<img src="intent://local/other-ws/file/secret.png" alt="secret">';
+
+    expect(rewriteIntentFileImageSrcs(html, WS)).toBe(html);
   });
 
   it('decodes entity-encoded ampersands before parsing', () => {

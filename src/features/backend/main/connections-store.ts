@@ -86,6 +86,12 @@ interface StoredConnection {
    * existed — treated as 0 (epoch-old) so any synced copy wins over them.
    */
   updatedAt?: number;
+  /**
+   * Per-backend keychain-sync exclusion (spec Phase 2): when `true` the
+   * record is local-only — never listed to sync (see listSyncRecords). Absent
+   * on records written before the flag existed — treated as `false` (synced).
+   */
+  syncExcluded?: boolean;
 }
 
 /**
@@ -107,6 +113,12 @@ interface StoredTombstone {
   updatedAt: number;
   /** When the backend was forgotten (ms since epoch); sync TTL anchor. */
   deletedAt: number;
+  /**
+   * `true` when the forgotten record was sync-excluded: the tombstone is as
+   * local-only as the record was — never listed to sync, so a purely local
+   * backend's deletion can never propagate to the keychain. Absent = synced.
+   */
+  excluded?: boolean;
 }
 
 /** Fields required to register a new remote connection. */
@@ -118,6 +130,14 @@ export interface NewConnection {
   token: string;
   /** "Detect all backend IPs" option (#1746); absent = enabled. */
   detectHosts?: boolean;
+  /**
+   * Per-backend keychain-sync exclusion (spec Phase 2): `true` keeps the
+   * record local-only (never pushed to the keychain), `false` explicitly
+   * marks it synced. Absent = no opinion: a new record defaults to synced,
+   * while an upsert into an existing record preserves its current flag (so
+   * flag-less freshness paths never flip a user's opt-out — see add()).
+   */
+  syncExcluded?: boolean;
 }
 
 interface PersistedState {
@@ -176,6 +196,7 @@ function toRecord(stored: StoredConnection): ConnectionRecord {
     port: stored.port,
     fingerprint: stored.fingerprint,
     hostname: stored.hostname ?? null,
+    syncExcluded: stored.syncExcluded === true,
     isLocal: false,
   };
 }
@@ -201,6 +222,9 @@ function isStoredConnection(value: unknown): value is StoredConnection {
     // `updatedAt` is an optional late addition (keychain sync): absent on
     // records written before sync existed — treated as epoch-old.
     (c.updatedAt === undefined || typeof c.updatedAt === 'number') &&
+    // `syncExcluded` is an optional late addition (spec Phase 2): absent on
+    // older records — treated as `false` (synced).
+    (c.syncExcluded === undefined || typeof c.syncExcluded === 'boolean') &&
     !!tok &&
     typeof tok === 'object' &&
     typeof tok.encrypted === 'boolean' &&
@@ -221,7 +245,8 @@ function isStoredTombstone(value: unknown): value is StoredTombstone {
       (Array.isArray(t.hosts) && t.hosts.every((h) => typeof h === 'string'))) &&
     (t.detectHosts === undefined || typeof t.detectHosts === 'boolean') &&
     typeof t.updatedAt === 'number' &&
-    typeof t.deletedAt === 'number'
+    typeof t.deletedAt === 'number' &&
+    (t.excluded === undefined || typeof t.excluded === 'boolean')
   );
 }
 
@@ -405,8 +430,13 @@ export async function list(): Promise<ConnectionRecord[]> {
  * and `label` are replaced in place (it keeps its `id` and captured
  * `hostname`, inheriting a hostname from a dropped duplicate if it has none),
  * the other duplicates are dropped, and the survivor is returned; otherwise a
- * new record is appended. The plaintext token is encrypted (or marked
- * plaintext) before it hits disk. Returns the token-free record.
+ * new record is appended. The survivor's `syncExcluded` flag follows the
+ * incoming add only when the flag is EXPLICIT — a re-add with a boolean is the
+ * sanctioned way to flip a backend's exclusion (`false` = clear it, `true` =
+ * set it), while an `undefined` flag preserves the survivor's current state so
+ * flag-less upsert paths (e.g. the self-entry refresh) can never silently
+ * revert a user's per-backend opt-out. The plaintext token is encrypted (or
+ * marked plaintext) before it hits disk. Returns the token-free record.
  */
 export async function add(conn: NewConnection): Promise<ConnectionRecord> {
   const encToken = encryptToken(conn.token);
@@ -436,6 +466,7 @@ export async function add(conn: NewConnection): Promise<ConnectionRecord> {
       survivor.fingerprint = conn.fingerprint;
       survivor.encToken = encToken;
       survivor.detectHosts = conn.detectHosts ?? true;
+      survivor.syncExcluded = conn.syncExcluded ?? survivor.syncExcluded ?? false;
       survivor.hostname ??= duplicates.find((c) => c.hostname != null)?.hostname ?? null;
       survivor.updatedAt = stamp;
       state.connections = state.connections.filter(
@@ -451,6 +482,7 @@ export async function add(conn: NewConnection): Promise<ConnectionRecord> {
       port: conn.port,
       fingerprint: conn.fingerprint,
       detectHosts: conn.detectHosts ?? true,
+      syncExcluded: conn.syncExcluded ?? false,
       encToken,
       updatedAt: stamp,
     };
@@ -531,7 +563,9 @@ export async function setHostname(id: string, hostname: string): Promise<void> {
  * forgotten connection was active, the active selection falls back to `local`.
  * Writes a tombstone for the removed backend so keychain sync propagates the
  * deletion to other machines (replacing any older tombstone for the same
- * host:port).
+ * host:port). A sync-excluded record yields an `excluded` tombstone — kept
+ * for local dedupe/re-add bookkeeping but never listed to sync, so forgetting
+ * a local-only backend can never touch the keychain.
  */
 export async function forget(id: string): Promise<void> {
   if (id === LOCAL_CONNECTION_ID) {
@@ -556,6 +590,7 @@ export async function forget(id: string): Promise<void> {
         detectHosts: removed.detectHosts,
         updatedAt: now,
         deletedAt: now,
+        excluded: removed.syncExcluded === true,
       });
     }
     await writeState(state);
@@ -610,7 +645,9 @@ export async function getDecryptedToken(id: string): Promise<string | null> {
  *
  * The local sidecar is never listed: it is synthesized, not persisted, so it
  * can never leak into the keychain. `activeId` is per-machine state and is
- * likewise never part of the sync payload.
+ * likewise never part of the sync payload. Sync-excluded records and their
+ * `excluded` tombstones (spec Phase 2, per-backend exclusion) are omitted
+ * too — a local-only backend is invisible to sync in both directions.
  */
 export async function listSyncRecords(): Promise<KeychainSyncRecord[]> {
   const now = Date.now();
@@ -623,6 +660,7 @@ export async function listSyncRecords(): Promise<KeychainSyncRecord[]> {
   }
   const records: KeychainSyncRecord[] = [];
   for (const conn of state.connections) {
+    if (conn.syncExcluded === true) continue;
     let token: string;
     try {
       token = decryptToken(conn.encToken);
@@ -647,6 +685,7 @@ export async function listSyncRecords(): Promise<KeychainSyncRecord[]> {
   }
   for (const t of state.tombstones) {
     if (t.deletedAt + TOMBSTONE_TTL_MS <= now) continue;
+    if (t.excluded === true) continue;
     records.push({
       label: t.label,
       host: t.host,
@@ -679,6 +718,17 @@ export async function listSyncRecords(): Promise<KeychainSyncRecord[]> {
  * falls back to `local` (never touching any other machine-local selection
  * state).
  *
+ * Sync-excluded records are invisible AND inviolable (spec Phase 2): a remote
+ * record or tombstone matching ONLY excluded records — by fingerprint, or
+ * host:port for fingerprint-less records — is a pure no-op: it never
+ * overwrites or deletes the local-only record and never inserts a synced
+ * duplicate of the same backend alongside it. EXCLUDED tombstones shield the
+ * same way: forgetting an opted-out backend never reaches the keychain, so
+ * its stale synced copy arrives as an unpaired live pull — re-creating the
+ * backend from it would silently undo the forget. The shields ignore the
+ * remote LWW clock (exclusion is a consent boundary, not a clock race);
+ * non-excluded tombstones keep the reconcile layer's normal LWW semantics.
+ *
  * Deliberately does NOT fire {@link onConnectionsMutated} — pulls must not
  * loop back into pushes. Returns whether anything actually changed so the
  * lifecycle can refresh the renderer only when needed.
@@ -690,8 +740,13 @@ export async function applyRemoteSyncRecord(record: KeychainSyncRecord): Promise
       // fallback only for fingerprint-less records) so a tombstone written
       // under an old address still deletes the record now living under a new
       // one — but a tombstone for an old certificate at a reused address
-      // never deletes the different machine now living there.
-      const existing = state.connections.filter((c) => tombstoneMatches(c, record));
+      // never deletes the different machine now living there. A tombstone
+      // matching only sync-excluded records is a pure no-op (nothing deleted,
+      // no tombstone remembered): the local-only backend outlives its
+      // forgotten synced twin.
+      const matched = state.connections.filter((c) => tombstoneMatches(c, record));
+      const existing = matched.filter((c) => c.syncExcluded !== true);
+      if (matched.length > 0 && existing.length === 0) return false;
       state.connections = state.connections.filter((c) => !existing.includes(c));
       if (existing.some((c) => c.id === state.activeId)) {
         state.activeId = LOCAL_CONNECTION_ID;
@@ -712,10 +767,28 @@ export async function applyRemoteSyncRecord(record: KeychainSyncRecord): Promise
       return existing.length > 0;
     }
 
+    // A live remote copy of a backend held here as sync-excluded must
+    // neither overwrite the local-only record nor insert a duplicate next to
+    // it: when every identity match is excluded, drop the pull entirely.
+    const matches = state.connections.filter((c) => sameBackend(c, record));
+    const duplicates = matches.filter((c) => c.syncExcluded !== true);
+    if (matches.length > 0 && duplicates.length === 0) return false;
+    // An EXCLUDED tombstone shields the same way: it means the user forgot a
+    // backend they had opted out of sync, and (being local-only) that forget
+    // never reached the keychain — so the stale synced copy arrives as an
+    // unpaired pull. Re-creating the backend from it would silently undo the
+    // forget. The shield ignores the remote's LWW clock: exclusion is a
+    // consent boundary, not a clock race (same as the live-record shield
+    // above). Non-excluded tombstones stay with the reconcile layer's LWW.
+    if (
+      duplicates.length === 0 &&
+      state.tombstones.some((t) => t.excluded === true && tombstoneMatches(t, record))
+    ) {
+      return false;
+    }
     clearTombstone(state, record);
     const encToken = encryptToken(record.token);
     const extras = record.hosts.filter((h) => h.trim() !== record.host.trim());
-    const duplicates = state.connections.filter((c) => sameBackend(c, record));
     if (duplicates.length > 0) {
       const survivor = duplicates.find((c) => c.id === state.activeId) ?? duplicates[0];
       survivor.label = record.label;

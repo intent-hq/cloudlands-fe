@@ -37,6 +37,7 @@
     sanitizeToolPayload,
     sanitizeToolText,
   } from './tool-display-model';
+  import { resolveBrowserScreenshotSource } from './browser-screenshot-source';
 
   interface Props {
     input: Record<string, any>;
@@ -76,6 +77,9 @@
   let copied = $state(false);
   const sanitizedInput = $derived(sanitizeToolPayload(input) as Record<string, any>);
   const sanitizedResult = $derived(sanitizeToolPayload(result));
+  const browserScreenshotSource = $derived(
+    parsedResult?.type === 'browser' ? resolveBrowserScreenshotSource(parsedResult) : null,
+  );
 
   // Disposition summary for batch delegate results ("2 started · 1 held · 1 skipped").
   // The started count always shows; held/skipped/failed only when non-zero.
@@ -954,12 +958,11 @@
           {:else if parsedResult.type === 'browser' && (parsedResult.screenshotBase64 || parsedResult.screenshotUrl || parsedResult.browserTabs?.length || parsedResult.evaluateResult !== undefined || evaluateExpressions || parsedResult.accessibilityTree || parsedResult.error || parsedResult.content)}
             <!-- Browser tool results -->
             <div class="flex flex-col gap-2">
-              {#if parsedResult.screenshotBase64 || parsedResult.screenshotUrl}
+              {#if browserScreenshotSource}
                 <!-- Inline screenshot -->
                 <div class="overflow-hidden rounded border border-border">
                   <img
-                    src={parsedResult.screenshotUrl ||
-                      `data:image/png;base64,${parsedResult.screenshotBase64}`}
+                    src={browserScreenshotSource}
                     alt={m.chat_toolDetails_browserScreenshot_alt()}
                     class="w-full h-auto max-h-96 object-contain bg-white"
                     style={parsedResult.screenshotWidth

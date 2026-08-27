@@ -19,6 +19,7 @@
     summary: Snippet;
     trailing?: Snippet;
     showChevron?: boolean;
+    preview?: Snippet;
     details?: Snippet;
     interactive?: boolean;
     expanded?: boolean;
@@ -29,6 +30,7 @@
     onclick?: (event: MouseEvent) => void;
     onkeydown?: (event: KeyboardEvent) => void;
     detailsId?: string;
+    previewClass?: string;
     detailsClass?: string;
     detailsTransition?: (node: Element) => TransitionConfig;
     detailsMotion?: string;
@@ -57,6 +59,7 @@
     summary,
     trailing,
     showChevron = true,
+    preview,
     details,
     interactive = false,
     expanded = false,
@@ -67,6 +70,7 @@
     onclick,
     onkeydown,
     detailsId,
+    previewClass = '',
     detailsClass = '',
     detailsTransition = safeOperationalDetailsTransition,
     detailsMotion,
@@ -167,6 +171,12 @@
       </span>
     {/if}
   </div>
+
+  {#if preview}
+    <div class={previewClass} data-operational-preview-content>
+      {@render preview()}
+    </div>
+  {/if}
 
   {#if details}
     <div

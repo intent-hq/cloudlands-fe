@@ -13,6 +13,7 @@ import { installConsoleTeardownGuard } from './helpers/console-teardown-guard';
 installConsoleTeardownGuard();
 
 const mockPage = vi.hoisted(() => ({ pathname: '/' }));
+const mocks = vi.hoisted(() => ({ startAppStoreLifecycle: vi.fn(() => () => {}) }));
 
 vi.mock('$app/navigation', () => ({
   goto: vi.fn(),
@@ -37,7 +38,7 @@ vi.mock('$store/renderer/root-store-lifecycle', () => ({
   startRootStoreLifecycle: () => () => {},
 }));
 vi.mock('$store/renderer/app-store-lifecycle', () => ({
-  startAppStoreLifecycle: () => () => {},
+  startAppStoreLifecycle: mocks.startAppStoreLifecycle,
 }));
 vi.mock('$store/renderer/sagas', () => ({ startAllAppSagas: () => [] }));
 vi.mock('$store/renderer/seeders', () => ({}));
@@ -125,6 +126,7 @@ vi.mock('$lib/components/ui/tooltip/LinkTooltip.svelte', async () => ({
 import { store as appStore } from '$store/renderer/store';
 import AppLayout from '../(app)/+layout.svelte';
 import RootLayout from '../+layout.svelte';
+import HudLayout from '../hud/+layout.svelte';
 
 const childrenSnippet = createRawSnippet(() => ({
   render: () => '<div data-testid="hud-gating-children">content</div>',
@@ -133,6 +135,7 @@ const childrenSnippet = createRawSnippet(() => ({
 describe('+layout.svelte isHudRoute chrome-less gating', () => {
   beforeEach(() => {
     appStore.init();
+    mocks.startAppStoreLifecycle.mockClear();
   });
 
   afterEach(() => {
@@ -180,5 +183,22 @@ describe('+layout.svelte isHudRoute chrome-less gating', () => {
     expect(screen.getAllByTestId('encoder-cycle-hud-marker').length).toBeGreaterThan(0);
     expect(screen.getAllByTestId('action-key-hud-marker').length).toBeGreaterThan(0);
     expect(screen.getByTestId('hud-gating-children')).toBeTruthy();
+    expect(mocks.startAppStoreLifecycle).toHaveBeenCalledOnce();
+  });
+
+  it.each(['/hud', '/hud/settings'])('owns one app saga lifecycle for %s', (pathname) => {
+    mockPage.pathname = pathname;
+    const stopAppStoreLifecycle = vi.fn();
+    mocks.startAppStoreLifecycle.mockReturnValueOnce(stopAppStoreLifecycle);
+
+    const view = render(HudLayout, { props: { children: childrenSnippet } });
+
+    expect(mocks.startAppStoreLifecycle).toHaveBeenCalledOnce();
+    expect(mocks.startAppStoreLifecycle).toHaveBeenCalledWith(appStore, undefined);
+    expect(screen.getByTestId('hud-gating-children')).toBeTruthy();
+    expect(stopAppStoreLifecycle).not.toHaveBeenCalled();
+
+    view.unmount();
+    expect(stopAppStoreLifecycle).toHaveBeenCalledOnce();
   });
 });

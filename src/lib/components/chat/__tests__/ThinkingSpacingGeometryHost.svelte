@@ -21,7 +21,11 @@
 
   let { theme = 'light', width = 720, zoom = 1, showStreamingThinking = true }: Props = $props();
 
-  const thinking = (id: string): ContentBlock => ({ type: 'thinking', id, text: 'Thinking' });
+  const thinking = (id: string): ContentBlock => ({
+    type: 'thinking',
+    id,
+    text: `Thinking ${id}\n\nGeometry detail.`,
+  });
   const firstChild = [thinking('first-child')] as ContentBlock[];
   const proseThenThinking = [
     { type: 'text', text: 'Ordinary prose before reasoning' },

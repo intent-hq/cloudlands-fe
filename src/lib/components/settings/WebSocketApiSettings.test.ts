@@ -475,7 +475,7 @@ describe('WebSocketApiSettings', () => {
     });
   });
 
-  describe('publish-self offer on WSS toggle-on', () => {
+  describe('auto-publish on WSS toggle-on (opt-out sync, no modal)', () => {
     const PAIRING = {
       token: 'tok-1234567890',
       port: 5181,
@@ -504,61 +504,16 @@ describe('WebSocketApiSettings', () => {
       await fireEvent.click(screen.getByRole('switch'));
     }
 
-    it('opens the publish modal when sync is supported and self is unpublished', async () => {
+    it('auto-publishes without a modal when sync is on and self is unpublished', async () => {
       await toggleOn();
-
-      await waitFor(() => {
-        expect(screen.getByText('Add this backend to iCloud Keychain?')).toBeTruthy();
-      });
-      // Spec rationale copy is present.
-      expect(screen.getByText(/connect immediately after install/)).toBeTruthy();
-      expect(screen.getByText(/IP address changes sync automatically/)).toBeTruthy();
-    });
-
-    it('does not open the modal on unsupported platforms (non-macOS)', async () => {
-      connectionState.syncState = { supported: false, enabled: false, status: null };
-      await toggleOn();
-
-      await waitFor(() => {
-        expect(ipcMocks.invoke).toHaveBeenCalledWith('connections:self-published-state');
-      });
-      expect(screen.queryByText('Add this backend to iCloud Keychain?')).toBeNull();
-    });
-
-    it('does not open the modal when self is already published', async () => {
-      ipcMocks.selfState = { published: true, suppressed: false, selfConnectionId: 'self-1' };
-      await toggleOn();
-
-      await waitFor(() => {
-        expect(ipcMocks.invoke).toHaveBeenCalledWith('connections:self-published-state');
-      });
-      expect(screen.queryByText('Add this backend to iCloud Keychain?')).toBeNull();
-    });
-
-    it('does not open the modal when auto-publish is suppressed', async () => {
-      ipcMocks.selfState = { published: false, suppressed: true, selfConnectionId: null };
-      await toggleOn();
-
-      await waitFor(() => {
-        expect(ipcMocks.invoke).toHaveBeenCalledWith('connections:self-published-state');
-      });
-      expect(screen.queryByText('Add this backend to iCloud Keychain?')).toBeNull();
-    });
-
-    it('confirm publishes and shows a success toast (sync already on)', async () => {
-      await toggleOn();
-      await waitFor(() =>
-        expect(screen.getByText('Add this backend to iCloud Keychain?')).toBeTruthy(),
-      );
-
-      const dialog = screen.getByRole('dialog');
-      await fireEvent.click(within(dialog).getByRole('button', { name: 'Add to iCloud Keychain' }));
 
       await waitFor(() => {
         expect(ipcMocks.invoke).toHaveBeenCalledWith('connections:publish-self');
         expect(mockToast.success).toHaveBeenCalledWith('Backend published to iCloud Keychain');
       });
-      // Sync was already on — no enable dispatch beyond the state load.
+      // No opt-in modal is ever shown.
+      expect(screen.queryByRole('dialog')).toBeNull();
+      // Auto-publish never flips the sync pref itself.
       expect(
         connectionState.dispatched.some((a) =>
           a.type.startsWith('connections/setKeychainSyncEnabled'),
@@ -566,64 +521,67 @@ describe('WebSocketApiSettings', () => {
       ).toBe(false);
     });
 
-    it('confirm with sync off enables keychain sync first, then publishes', async () => {
-      connectionState.syncState = { supported: true, enabled: false, status: null };
+    it('does not publish on unsupported platforms (non-macOS)', async () => {
+      connectionState.syncState = { supported: false, enabled: false, status: null };
       await toggleOn();
-      await waitFor(() =>
-        expect(screen.getByText('Add this backend to iCloud Keychain?')).toBeTruthy(),
-      );
-      // The sync-off note is shown.
-      expect(screen.getByText(/Confirming will also turn it on/)).toBeTruthy();
-
-      // The enable dispatch resolves with sync on.
-      connectionState.syncState = { supported: true, enabled: true, status: null };
-      const dialog = screen.getByRole('dialog');
-      await fireEvent.click(within(dialog).getByRole('button', { name: 'Add to iCloud Keychain' }));
 
       await waitFor(() => {
-        expect(
-          connectionState.dispatched.some((a) =>
-            a.type.startsWith('connections/setKeychainSyncEnabled'),
-          ),
-        ).toBe(true);
-        expect(ipcMocks.invoke).toHaveBeenCalledWith('connections:publish-self');
-        expect(mockToast.success).toHaveBeenCalled();
+        expect(ipcMocks.invoke).toHaveBeenCalledWith('connections:self-published-state');
       });
+      expect(ipcMocks.invoke).not.toHaveBeenCalledWith('connections:publish-self');
+      expect(screen.queryByRole('dialog')).toBeNull();
     });
 
-    it('decline closes the modal without publishing', async () => {
+    it('does not publish (and shows no prompt) when sync is explicitly disabled', async () => {
+      connectionState.syncState = { supported: true, enabled: false, status: null };
       await toggleOn();
-      await waitFor(() =>
-        expect(screen.getByText('Add this backend to iCloud Keychain?')).toBeTruthy(),
-      );
-
-      await fireEvent.click(screen.getByRole('button', { name: 'Not now' }));
 
       await waitFor(() => {
-        expect(screen.queryByText('Add this backend to iCloud Keychain?')).toBeNull();
+        expect(ipcMocks.invoke).toHaveBeenCalledWith('connections:self-published-state');
+      });
+      expect(ipcMocks.invoke).not.toHaveBeenCalledWith('connections:publish-self');
+      expect(screen.queryByRole('dialog')).toBeNull();
+      expect(
+        connectionState.dispatched.some((a) =>
+          a.type.startsWith('connections/setKeychainSyncEnabled'),
+        ),
+      ).toBe(false);
+    });
+
+    it('does not publish when self is already published', async () => {
+      ipcMocks.selfState = { published: true, suppressed: false, selfConnectionId: 'self-1' };
+      await toggleOn();
+
+      await waitFor(() => {
+        expect(ipcMocks.invoke).toHaveBeenCalledWith('connections:self-published-state');
       });
       expect(ipcMocks.invoke).not.toHaveBeenCalledWith('connections:publish-self');
     });
 
-    it('shows an error toast when publish fails and keeps the modal open', async () => {
+    it('does not publish when auto-publish is suppressed', async () => {
+      ipcMocks.selfState = { published: false, suppressed: true, selfConnectionId: null };
       await toggleOn();
-      await waitFor(() =>
-        expect(screen.getByText('Add this backend to iCloud Keychain?')).toBeTruthy(),
-      );
 
+      await waitFor(() => {
+        expect(ipcMocks.invoke).toHaveBeenCalledWith('connections:self-published-state');
+      });
+      expect(ipcMocks.invoke).not.toHaveBeenCalledWith('connections:publish-self');
+    });
+
+    it('shows an error toast when the auto-publish fails; the toggle stays on', async () => {
       ipcMocks.invoke.mockImplementation(async (channel: string) => {
         if (channel === 'connections:publish-self') throw new Error('keychain write failed');
         return { ...ipcMocks.selfState };
       });
-      const dialog = screen.getByRole('dialog');
-      await fireEvent.click(within(dialog).getByRole('button', { name: 'Add to iCloud Keychain' }));
+      await toggleOn();
 
       await waitFor(() => {
         expect(mockToast.error).toHaveBeenCalledWith(
           expect.stringContaining('keychain write failed'),
         );
       });
-      expect(screen.getByText('Add this backend to iCloud Keychain?')).toBeTruthy();
+      // The publish failure never rolls back the WSS toggle.
+      expect((screen.getByRole('switch') as HTMLElement).getAttribute('aria-checked')).toBe('true');
     });
 
     it('shows the publish row with a re-publish label when suppressed', async () => {
@@ -777,8 +735,8 @@ describe('WebSocketApiSettings', () => {
       render(WebSocketApiSettings);
       await waitFor(() => expect(screen.getByRole('switch')).toBeTruthy());
 
-      // Toggle WSS on → publish modal → confirm. The PublishSelfResult id
-      // ('mock-self') must be captured for this settings session.
+      // Toggle WSS on → auto-publish. The PublishSelfResult id ('mock-self')
+      // must be captured for this settings session.
       mocks.mockSettingsUpdate.mockResolvedValueOnce([
         { path: 'server.wsApi.enabled', value: true },
       ]);
@@ -788,14 +746,10 @@ describe('WebSocketApiSettings', () => {
       ]);
       mocks.mockPairingInfo.mockResolvedValue(PAIRING);
       await fireEvent.click(screen.getByRole('switch'));
-      await waitFor(() =>
-        expect(screen.getByText('Add this backend to iCloud Keychain?')).toBeTruthy(),
-      );
-      const publishDialog = screen.getByRole('dialog');
-      await fireEvent.click(
-        within(publishDialog).getByRole('button', { name: 'Add to iCloud Keychain' }),
-      );
-      await waitFor(() => expect(mockToast.success).toHaveBeenCalled());
+      await waitFor(() => {
+        expect(ipcMocks.invoke).toHaveBeenCalledWith('connections:publish-self');
+        expect(mockToast.success).toHaveBeenCalled();
+      });
 
       // Toggle WSS off in the SAME session: the removal modal must open and
       // the forget must target the freshly published record.

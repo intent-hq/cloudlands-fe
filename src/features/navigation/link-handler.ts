@@ -223,6 +223,29 @@ async function handleDevspaceLink(url: string, options: LinkHandlerOptions): Pro
 
 /** Matches an explicit URL scheme prefix (e.g. `https:`, `intent:`, `vscode:`). */
 const SCHEME_PATTERN = /^[a-z][a-z0-9+.-]*:/;
+const WINDOWS_ABSOLUTE_PATH_PATTERN = /^[a-z]:\//i;
+
+function normalizeSlashes(path: string): string {
+  return path.replace(/\\/g, '/');
+}
+
+function decodePathTarget(path: string): string | null {
+  try {
+    return normalizeSlashes(decodeURIComponent(path));
+  } catch {
+    return null;
+  }
+}
+
+function hasTraversalSegment(path: string): boolean {
+  return path.split('/').some((segment) => segment === '..');
+}
+
+function normalizeWorkspaceRelativePath(path: string): string | null {
+  const segments = path.split('/').filter((segment) => segment && segment !== '.');
+  if (segments.length === 0 || segments.some((segment) => segment === '..')) return null;
+  return segments.join('/');
+}
 
 function getSourcePanelId(options: LinkHandlerOptions): string | undefined {
   if (options.sourcePanelId) return options.sourcePanelId;
@@ -291,7 +314,10 @@ async function openFilePathLink(
   fromResolvedUrl: boolean,
 ): Promise<boolean> {
   try {
-    let path = target;
+    const decodedTarget = decodePathTarget(target);
+    if (!decodedTarget || decodedTarget.includes('\0')) return false;
+
+    let path = decodedTarget;
     let line: number | undefined;
     const lineMatch = path.match(/#L(\d+)$/);
     if (lineMatch) {
@@ -305,12 +331,18 @@ async function openFilePathLink(
       return false;
     }
 
-    if (path.startsWith('/')) {
+    if (hasTraversalSegment(path)) {
+      logger.warn('Rejected file link with path traversal', { path });
+      return false;
+    }
+
+    if (path.startsWith('/') || WINDOWS_ABSOLUTE_PATH_PATTERN.test(path)) {
       const { selectWorkspaceById } =
         await import('$store/renderer/slices/workspace/workspace-selectors');
       const workspace = selectWorkspaceById.select(appStore.state, workspaceId);
       const root = workspace?.worktreePath ?? workspace?.path;
-      const normalizedRoot = root?.endsWith('/') ? root.slice(0, -1) : root;
+      const slashRoot = root ? normalizeSlashes(root) : undefined;
+      const normalizedRoot = slashRoot?.endsWith('/') ? slashRoot.slice(0, -1) : slashRoot;
       if (normalizedRoot && path.startsWith(`${normalizedRoot}/`)) {
         path = path.slice(normalizedRoot.length + 1);
       } else if (fromResolvedUrl) {
@@ -321,6 +353,13 @@ async function openFilePathLink(
         return await openInExternalEditor(`file://${path}`);
       }
     }
+
+    const normalizedPath = normalizeWorkspaceRelativePath(path);
+    if (!normalizedPath) {
+      logger.warn('Rejected invalid workspace file link', { path });
+      return false;
+    }
+    path = normalizedPath;
 
     const openInAdjacentPanel = isCmdClickModifier(options);
     focusSourcePanel(options);

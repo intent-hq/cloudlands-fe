@@ -67,6 +67,50 @@ describe('agent video content normalization', () => {
   });
 
   it.each([
+    [
+      'intent://local/file/.demo-artifacts/run/frontend-preview.webm',
+      'workspace-file://ws-1/.demo-artifacts/run/frontend-preview.webm',
+      'video/webm',
+    ],
+    [
+      'intent://local/ws-1/file/artifacts/demo%20clip.mp4',
+      'workspace-file://ws-1/artifacts/demo%20clip.mp4',
+      'video/mp4',
+    ],
+  ])('normalizes a trusted current-workspace video %s', (uri, url, mimeType) => {
+    const result = normalizeAgentVideoContentBlocks(
+      [block({ type: 'resource_link', uri, name: 'preview' })],
+      'assistant',
+      'ws-1',
+    );
+
+    expect(result[0]).toMatchObject({
+      type: 'video',
+      source: { kind: 'workspace', url, mimeType },
+    });
+  });
+
+  it.each([
+    'intent://local/ws-2/file/demo.webm',
+    'intent://local/file/../demo.webm',
+    'intent://local/file/demo.mov',
+    'workspace-file://ws-1/demo.webm',
+    'file:///tmp/demo.webm',
+  ])('does not normalize unsafe or unsupported local video %s', (uri) => {
+    const original = block({ type: 'resource_link', uri });
+    const input = [original];
+
+    expect(normalizeAgentVideoContentBlocks(input, 'assistant', 'ws-1')).toBe(input);
+  });
+
+  it('requires an explicit current workspace before normalizing a local video', () => {
+    const original = block({ type: 'resource_link', uri: 'intent://local/file/demo.webm' });
+    const input = [original];
+
+    expect(normalizeAgentVideoContentBlocks(input, 'assistant')).toBe(input);
+  });
+
+  it.each([
     { type: 'resource_link', uri: 'http://media.example/clip.mp4' },
     { type: 'resource_link', uri: 'not a URL', mimeType: 'video/mp4' },
     { type: 'resource_link', uri: 'https://user:pass@media.example/clip.mp4' },

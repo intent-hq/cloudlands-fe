@@ -147,7 +147,7 @@ describe('modern macOS icon compiler', () => {
     );
     expect(config).toContain('if [ "${{ inputs.sign }}" != "true" ]; then');
     expect(config).toContain('unset CSC_LINK CSC_KEY_PASSWORD');
-    expect(config).toContain('pnpm run dist:mac -- --publish never');
+    expect(config).toContain('pnpm run dist:mac --publish never');
   });
 
   it('packages the modern resource and declares the legacy fallback', () => {

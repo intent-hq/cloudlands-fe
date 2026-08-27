@@ -217,6 +217,10 @@ describe('ToolCall lazy block hydration (§5.5 slim → v7.2 agent.getMessageBlo
 });
 
 describe('ToolCall collapsed browser screenshot preview', () => {
+  const pngBase64 =
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9Zl2kAAAAASUVORK5CYII=';
+  const jpegBase64 =
+    '/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAP//////////////////////////////////////////////////////////////////////////////////////2wBDAf//////////////////////////////////////////////////////////////////////////////////////wAARCAABAAEDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAX/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/9oADAMBAAIQAxAAAAEf/8QAFBABAAAAAAAAAAAAAAAAAAAAAP/aAAgBAQABBQJ//8QAFBEBAAAAAAAAAAAAAAAAAAAAAP/aAAgBAwEBPwF//8QAFBEBAAAAAAAAAAAAAAAAAAAAAP/aAAgBAgEBPwF//8QAFBABAAAAAAAAAAAAAAAAAAAAAP/aAAgBAQAGPwJ//8QAFBABAAAAAAAAAAAAAAAAAAAAAP/aAAgBAQABPyF//9oADAMBAAIAAwAAABAf/8QAFBEBAAAAAAAAAAAAAAAAAAAAAP/aAAgBAwEBPxB//8QAFBEBAAAAAAAAAAAAAAAAAAAAAP/aAAgBAgEBPxB//8QAFBABAAAAAAAAAAAAAAAAAAAAAP/aAAgBAQABPxB//9k=';
   const toolUse = {
     id: 'browser-screenshot',
     name: 'workspace_api_workspace-mcp',
@@ -237,7 +241,10 @@ describe('ToolCall collapsed browser screenshot preview', () => {
     const image = screen.getByRole('img', { name: 'Browser screenshot' });
     expect(image.getAttribute('src')).toBe('workspace-asset://workspace-1/screenshot-1');
 
-    await fireEvent.click(screen.getByRole('button', { name: 'Browser screenshot' }));
+    const screenshotButton = screen.getByRole('button', { name: 'Browser screenshot' });
+    expect(screenshotButton.getAttribute('data-slot')).toBe('button');
+    expect(screenshotButton.className).toContain('h-auto');
+    await fireEvent.click(screenshotButton);
 
     expect(screen.queryByRole('img', { name: 'Browser screenshot' })).toBeNull();
     expect(screen.getByTestId('tool-call-disclosure').getAttribute('aria-expanded')).toBe('true');
@@ -245,15 +252,26 @@ describe('ToolCall collapsed browser screenshot preview', () => {
   });
 
   it('shows inline PNG data in the collapsed row', () => {
-    const base64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAAB';
-    parseToolResultMock.mockReturnValue({ type: 'browser', screenshotBase64: base64 });
+    parseToolResultMock.mockReturnValue({ type: 'browser', screenshotBase64: pngBase64 });
 
     render(ToolCall, {
       props: { toolUse, toolState: 'completed', result: { ok: true } },
     });
 
     expect(screen.getByRole('img', { name: 'Browser screenshot' }).getAttribute('src')).toBe(
-      `data:image/png;base64,${base64}`,
+      `data:image/png;base64,${pngBase64}`,
+    );
+  });
+
+  it('shows real inline JPEG data with JPEG metadata in the collapsed row', () => {
+    parseToolResultMock.mockReturnValue({ type: 'browser', screenshotBase64: jpegBase64 });
+
+    render(ToolCall, {
+      props: { toolUse, toolState: 'completed', result: { ok: true } },
+    });
+
+    expect(screen.getByRole('img', { name: 'Browser screenshot' }).getAttribute('src')).toBe(
+      `data:image/jpeg;base64,${jpegBase64}`,
     );
   });
 

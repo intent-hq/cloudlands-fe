@@ -1,13 +1,12 @@
 import type { AgentMessage } from '$shared/types';
 import { extractAllContent } from '$shared/types';
+import { getContentBlockText } from '$shared/utils/content-block-helpers';
 import {
   groupContentBlocks,
   parseSuggestedPrompts,
   parseSuggestedPromptsFromContentBlocks,
-  type ContentBlockGroup,
 } from '$lib/utils/messageParser';
 import { getPresentedUserMessageText } from '$lib/utils/user-message-presentation';
-
 interface ChatSearchBlock {
   messageId: string;
   turnKey: string;
@@ -15,6 +14,11 @@ interface ChatSearchBlock {
   disclosurePath: string[];
   text: string;
 }
+import {
+  getResponseGroupCurrentChildIndex,
+  normalizeResponseGroups,
+  shouldRenderResponseGroupInline,
+} from './response-group-blocks';
 
 export interface ChatSearchMatch {
   messageId: string;
@@ -49,7 +53,10 @@ function buildMessageSearchBlocks(message: AgentMessage, turnKey: string): ChatS
   const parsedPromptBlocks = parseSuggestedPromptsFromContentBlocks(contentBlocks, {
     isStreaming: !!message.isStreaming,
   });
-  const grouped = groupContentBlocks(parsedPromptBlocks.contentBlocks, !!message.isStreaming);
+  const grouped = normalizeResponseGroups(
+    groupContentBlocks(parsedPromptBlocks.contentBlocks, !!message.isStreaming),
+    !!message.isStreaming,
+  );
   const output: ChatSearchBlock[] = [];
   const addText = (text: string, blockPath: string, disclosurePath: string[]) => {
     const cleaned = parseSuggestedPrompts(text).cleanedContent;
@@ -64,8 +71,33 @@ function buildMessageSearchBlocks(message: AgentMessage, turnKey: string): ChatS
       return;
     }
     if (block.type !== 'content_group') return;
-    const group = block as ContentBlockGroup;
-    group.children.forEach((child, childIndex) => {
+    if (block.isStreaming) {
+      const currentChildIndex = getResponseGroupCurrentChildIndex(block);
+      const currentBlock = block.children[currentChildIndex];
+      if (currentBlock) {
+        addText(
+          getContentBlockText(currentBlock),
+          chatSearchBlockPath(blockIndex, currentChildIndex),
+          [],
+        );
+      }
+      return;
+    }
+    if (block.isReasoningPhase) {
+      const rendersInline = shouldRenderResponseGroupInline(block);
+      if (!rendersInline && block.name.trim().toLowerCase() === 'reasoning') return;
+      const disclosurePath = rendersInline ? [] : [`group:${path}`];
+      block.children.forEach((child, childIndex) => {
+        if (child.type === 'tool_result') return;
+        addText(
+          getContentBlockText(child),
+          chatSearchBlockPath(blockIndex, childIndex),
+          disclosurePath,
+        );
+      });
+      return;
+    }
+    block.children.forEach((child, childIndex) => {
       if (child.type !== 'text') return;
       addText(child.text || child.content || '', chatSearchBlockPath(blockIndex, childIndex), [
         `group:${path}`,

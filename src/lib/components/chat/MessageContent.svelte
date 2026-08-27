@@ -28,6 +28,7 @@
   import type { DiagramPrimitive } from '$shared/types/notes-primitives';
   import ToolCall from './ToolCall.svelte';
   import ThinkingBlock from './ThinkingBlock.svelte';
+  import ReasoningHistoryBlock from './ReasoningHistoryBlock.svelte';
   import CodeBlock from '$lib/components/editor/CodeBlock.svelte';
   import MarkdownViewer from '$lib/components/markdown/MarkdownViewer.svelte';
   import AugmentCodeSnippet from '$lib/components/editor/AugmentCodeSnippet.svelte';
@@ -64,7 +65,13 @@
     OPERATIONAL_GROUP_CHILD_CONTENT_CLASS,
     OPERATIONAL_GROUP_CHILD_ROW_CLASS,
   } from './operational-disclosure-row';
-  import { dedupeKeys, getResponseGroupBlockKeys } from './response-group-blocks';
+  import {
+    dedupeKeys,
+    getResponseGroupBlockKeys,
+    getResponseGroupCurrentChildIndex,
+    normalizeResponseGroups,
+    shouldRenderResponseGroupInline,
+  } from './response-group-blocks';
   import { chatSearchBlockPath } from './chat-search';
   import NavLink from './NavLink.svelte';
   import ProposalCard from './proposals/ProposalCard.svelte';
@@ -143,6 +150,7 @@
       normalizeAgentVideoContentBlocks(
         dedupeResourceBlocks(parsedPromptBlocks.contentBlocks),
         role,
+        workspaceId,
       ),
     ).filter((block) => {
       // Agent Q&A questions are wizard-only: they never render in the
@@ -181,7 +189,9 @@
   });
 
   // Group content blocks by <group:Name> tags at the ContentBlock level.
-  const groupedBlocks = $derived(groupContentBlocks(blocks, isStreaming));
+  const groupedBlocks = $derived(
+    normalizeResponseGroups(groupContentBlocks(blocks, isStreaming), isStreaming),
+  );
 
   function isVisibleOperationalBlock(block: RenderContentBlock): boolean {
     return block.type !== 'tool_result';
@@ -386,7 +396,7 @@
   function getBlockKey(block: RenderContentBlock, index: number): string {
     if (block.type === 'content_group') {
       const group = block as ContentBlockGroup;
-      return `group-${index}-${group.name}`;
+      return `group-${index}-${group.sourceName ?? group.name}`;
     }
     const contentBlock = block as ContentBlock;
     if (isNavLinkBlock(contentBlock)) return `nav-link-${index}-${contentBlock.target}`;
@@ -540,6 +550,7 @@
   blockIndex: number,
   nested = false,
   adjacentOperationalRow = false,
+  reasoningHistory = false,
 )}
   {#if isNavLinkBlock(block)}
     <div class="w-full" in:fly={{ y: 10, duration: 200 }}>
@@ -704,80 +715,126 @@
       </div>
     </div>
   {:else if block.type === 'thinking'}
-    <ThinkingBlock
-      content={getContentBlockText(block) || m.chat_shared_processing_fallback()}
-      {workspaceId}
-      {adjacentOperationalRow}
-    />
+    {#if reasoningHistory}
+      <ReasoningHistoryBlock
+        content={getContentBlockText(block) || m.chat_shared_processing_fallback()}
+        {workspaceId}
+        {adjacentOperationalRow}
+      />
+    {:else}
+      <ThinkingBlock
+        content={getContentBlockText(block) || m.chat_shared_processing_fallback()}
+        isStreaming={isStreaming && !nested && blockIndex === groupedBlocks.length - 1}
+        {workspaceId}
+        {adjacentOperationalRow}
+      />
+    {/if}
   {/if}
+{/snippet}
+
+{#snippet renderResponseGroupChild(
+  group: ContentBlockGroup,
+  groupIndex: number,
+  childBlock: ContentBlock,
+  childIndex: number,
+)}
+  <div
+    class={`${getOperationalClusterSpacingClass(
+      group.children,
+      childIndex,
+      isVisibleOperationalBlock,
+      group.isReasoningPhase,
+    )} ${
+      isOperationalClusterBlock(childBlock)
+        ? OPERATIONAL_GROUP_CHILD_ROW_CLASS
+        : OPERATIONAL_GROUP_CHILD_CONTENT_CLASS
+    }`}
+    style:padding-left={isOperationalClusterBlock(childBlock)
+      ? undefined
+      : 'calc(var(--operational-row-inline-padding) + var(--operational-leading-slot-size) + var(--operational-leading-gap))'}
+    data-message-content-block={childBlock.type}
+    data-chat-search-block-path={chatSearchBlockPath(groupIndex, childIndex)}
+    data-response-group-child
+  >
+    {@render renderContentBlock(
+      childBlock,
+      `${groupIndex}-${childIndex}`,
+      groupIndex,
+      true,
+      isAdjacentOperationalClusterRow(group.children, childIndex, isVisibleOperationalBlock),
+      group.isReasoningPhase,
+    )}
+  </div>
 {/snippet}
 
 <div class="flex flex-col gap-0" style="contain: layout style paint;" data-operational-stack>
   {#each groupedBlocks as block, blockIndex (blockKeys[blockIndex])}
-    <div
-      class={getOperationalClusterSpacingClass(
-        groupedBlocks,
-        blockIndex,
-        isVisibleOperationalBlock,
-      )}
-      data-operational-cluster-row={isOperationalClusterBlock(block) ? block.type : undefined}
-      data-message-content-block={block.type}
-      data-chat-search-block-path={block.type === 'text'
-        ? chatSearchBlockPath(blockIndex)
-        : undefined}
-    >
-      {#if block.type === 'content_group'}
-        {@const group = block as ContentBlockGroup}
-        <ResponseGroup
-          name={group.name}
-          isStreaming={group.isStreaming}
-          isTerminal={blockIndex === lastVisibleTopLevelBlockIndex}
-          blocks={group.children}
-          searchPath={chatSearchBlockPath(blockIndex)}
-          adjacentOperationalRow={isAdjacentOperationalClusterRow(
+    {#if block.type === 'content_group'}
+      {@const group = block as ContentBlockGroup}
+      {#if shouldRenderResponseGroupInline(group)}
+        {@const childKeys = getResponseGroupBlockKeys(group.children)}
+        {#each group.children as childBlock, childIndex (childKeys[childIndex])}
+          {#if childBlock.type !== 'tool_result'}
+            {@render renderResponseGroupChild(group, blockIndex, childBlock, childIndex)}
+          {/if}
+        {/each}
+      {:else}
+        {@const currentChildIndex = getResponseGroupCurrentChildIndex(group)}
+        {#snippet currentChild()}
+          {@render renderResponseGroupChild(
+            group,
+            blockIndex,
+            group.children[currentChildIndex],
+            currentChildIndex,
+          )}
+        {/snippet}
+        <div
+          class={getOperationalClusterSpacingClass(
             groupedBlocks,
             blockIndex,
             isVisibleOperationalBlock,
           )}
+          data-operational-cluster-row={block.type}
+          data-message-content-block={block.type}
         >
-          {#snippet children()}
-            {@const childKeys = getResponseGroupBlockKeys(group.children)}
-            {#each group.children as childBlock, childIndex (childKeys[childIndex])}
-              {#if childBlock.type !== 'tool_result'}
-                <div
-                  class={`${getOperationalClusterSpacingClass(
-                    group.children,
-                    childIndex,
-                    isVisibleOperationalBlock,
-                  )} ${
-                    isOperationalClusterBlock(childBlock)
-                      ? OPERATIONAL_GROUP_CHILD_ROW_CLASS
-                      : OPERATIONAL_GROUP_CHILD_CONTENT_CLASS
-                  }`}
-                  style:padding-left={isOperationalClusterBlock(childBlock)
-                    ? undefined
-                    : 'calc(var(--operational-row-inline-padding) + var(--operational-leading-slot-size) + var(--operational-leading-gap))'}
-                  data-message-content-block={childBlock.type}
-                  data-chat-search-block-path={chatSearchBlockPath(blockIndex, childIndex)}
-                  data-response-group-child
-                >
-                  {@render renderContentBlock(
-                    childBlock,
-                    `${blockIndex}-${childIndex}`,
-                    blockIndex,
-                    true,
-                    isAdjacentOperationalClusterRow(
-                      group.children,
-                      childIndex,
-                      isVisibleOperationalBlock,
-                    ),
-                  )}
-                </div>
-              {/if}
-            {/each}
-          {/snippet}
-        </ResponseGroup>
-      {:else}
+          <ResponseGroup
+            name={group.name}
+            isStreaming={group.isStreaming}
+            isTerminal={blockIndex === lastVisibleTopLevelBlockIndex}
+            blocks={group.children}
+            searchPath={chatSearchBlockPath(blockIndex)}
+            reasoningPhase={group.isReasoningPhase}
+            currentChild={currentChildIndex >= 0 ? currentChild : undefined}
+            adjacentOperationalRow={isAdjacentOperationalClusterRow(
+              groupedBlocks,
+              blockIndex,
+              isVisibleOperationalBlock,
+            )}
+          >
+            {#snippet children()}
+              {@const childKeys = getResponseGroupBlockKeys(group.children)}
+              {#each group.children as childBlock, childIndex (childKeys[childIndex])}
+                {#if childBlock.type !== 'tool_result'}
+                  {@render renderResponseGroupChild(group, blockIndex, childBlock, childIndex)}
+                {/if}
+              {/each}
+            {/snippet}
+          </ResponseGroup>
+        </div>
+      {/if}
+    {:else}
+      <div
+        class={getOperationalClusterSpacingClass(
+          groupedBlocks,
+          blockIndex,
+          isVisibleOperationalBlock,
+        )}
+        data-operational-cluster-row={isOperationalClusterBlock(block) ? block.type : undefined}
+        data-message-content-block={block.type}
+        data-chat-search-block-path={block.type === 'text'
+          ? chatSearchBlockPath(blockIndex)
+          : undefined}
+      >
         {@render renderContentBlock(
           block as ContentBlock,
           String(blockIndex),
@@ -785,7 +842,7 @@
           false,
           isAdjacentOperationalClusterRow(groupedBlocks, blockIndex, isVisibleOperationalBlock),
         )}
-      {/if}
-    </div>
+      </div>
+    {/if}
   {/each}
 </div>
