@@ -276,7 +276,6 @@
   } from '$store/renderer/slices/unread-tracking/unread-tracking-slice';
   import { selectDividerSession } from '$store/renderer/slices/unread-tracking/unread-tracking-selectors';
   import AuroraBackground from './AuroraBackground.svelte';
-  import AuroraSofteningLayer from './AuroraSofteningLayer.svelte';
   import {
     CHAT_SCROLL_END_MARKER_CLASS,
     CHAT_TRANSCRIPT_OVERFLOW_CLASS,
@@ -4695,7 +4694,6 @@
       transition:fade
     >
       <AuroraBackground {agentId} />
-      <AuroraSofteningLayer />
     </div>
   {/if}
 
@@ -5748,7 +5746,6 @@
         transition:fade
       >
         <AuroraBackground {agentId} />
-        <AuroraSofteningLayer />
       </div>
     {/if}
 
