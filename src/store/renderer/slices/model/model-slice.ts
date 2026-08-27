@@ -4,7 +4,7 @@ import { createCollection } from '@augmentcode/themis/utils/collections/collecti
 import type { AuggieModel } from '$features/auggie/auggie-models.client';
 import { providerCatalogLoaded } from '../provider-catalog/provider-catalog-slice';
 import {
-  hydrateActiveProvider,
+  activeProviderReconciled,
   setActiveProvider,
 } from '../provider-settings/provider-settings-slice';
 import { normalizeModelForProvider, normalizeProviderModels } from './model-selection-utils';
@@ -191,7 +191,7 @@ modelReducer.with(setActiveProvider, (state, { payload: [providerId] }) => {
     providerModels: normalizeProviderModels(state.providerModels, defaultProviderId),
   };
 });
-modelReducer.with(hydrateActiveProvider, (state, { payload: [providerId] }) => {
+modelReducer.with(activeProviderReconciled, (state, { payload: [providerId] }) => {
   const defaultProviderId = validatedDefaultProviderId(
     providerId,
     state.catalogProviderIds,

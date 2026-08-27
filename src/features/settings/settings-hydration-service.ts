@@ -25,6 +25,7 @@ import { store as appStore } from '$store/renderer/store';
 import { getActiveBackendId } from '$store/renderer/utils/backend-storage-namespace';
 import { settingsChanged } from '$store/renderer/slices/settings-events/settings-events-slice';
 import {
+  activeProviderReconciled,
   ensureEnabledIfUnset,
   hydrateActiveProvider,
   loadEnabledProvidersFromStorage,
@@ -55,6 +56,10 @@ function applyOne(change: AppliedSettingChange): void {
     case 'providers.active': {
       if (typeof value === 'string' && value.length > 0) {
         appStore.dispatch(hydrateActiveProvider(value));
+        // Mirror only the provider that survived the pending-local-intent guard.
+        appStore.dispatch(
+          activeProviderReconciled(appStore.state.providerSettings.activeProviderId),
+        );
       }
       return;
     }

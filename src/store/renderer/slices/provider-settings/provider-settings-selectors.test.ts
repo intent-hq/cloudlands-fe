@@ -18,6 +18,7 @@ import {
 } from '../provider-catalog/provider-catalog-slice';
 import { selectEffectiveDefaultProviderId } from '../provider-catalog/provider-catalog-selectors';
 import {
+  activeProviderReconciled,
   hydrateActiveProvider,
   initialState as providerSettingsInitialState,
   loadEnabledProvidersFromStorage,
@@ -287,7 +288,7 @@ describe("install-mid-onboarding regression (false 'No provider available' on st
       settings,
       loadEnabledProvidersFromStorage({ 'claude-code': true }),
     );
-    model = modelReducer(model, hydrateActiveProvider('claude-code'));
+    model = modelReducer(model, activeProviderReconciled(settings.activeProviderId));
     state = buildState(availability, settings, model);
     expect(selectActiveProviderId.select(state)).toBe('claude-code');
     expect(selectEffectiveDefaultProviderId.select(state)).toBe('claude-code');

@@ -8,6 +8,7 @@ import { resolveProviderEnabled } from '$shared/provider-catalog';
 import { selectProviderCatalogEntry } from '../../provider-catalog/provider-catalog-selectors';
 import { selectEnabledProviders } from '../provider-settings-selectors';
 import {
+  activeProviderPersistRejected,
   enablementPersistRejected,
   setActiveProvider,
   setProviderEnabled,
@@ -127,6 +128,9 @@ function* persistProviderSettingsQueue(updates: Channel<ProviderSettingsUpdate>)
       } catch (error) {
         if (isDaemonErrorResponse(error)) {
           logger.warn('Daemon rejected provider settings write:', error);
+          if (update.activeProviderId !== undefined) {
+            yield* put(activeProviderPersistRejected(update.activeProviderId));
+          }
           if (update.enabledProviderDelta !== undefined) {
             // Retire the click's pending override: a rejected write must not
             // keep masking later daemon-originated hydrations for the

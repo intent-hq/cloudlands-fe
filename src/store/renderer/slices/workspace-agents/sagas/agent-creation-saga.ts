@@ -29,7 +29,7 @@ import {
   selectDefaultSpecialistId,
   selectEffectiveBehaviorPrompt,
   selectEffectiveCodingAgent,
-  selectEffectiveModel,
+  selectExplicitModel,
   selectSpecialists,
 } from '../../specialists/specialists-selectors';
 import { selectWorkspaceById } from '../../workspace/workspace-selectors';
@@ -118,8 +118,8 @@ function* openCreatedAgent(
   }
 }
 
-function providerForModel(model: string, fallback: string): string {
-  return model.includes(':') ? splitCompoundModelId(model).providerId || fallback : fallback;
+function providerForModel(model: string | undefined, fallback: string): string {
+  return model?.includes(':') ? splitCompoundModelId(model).providerId || fallback : fallback;
 }
 
 function* createBasicAgent(action: ReturnType<typeof createAgentRequested>): SagaGenerator<void> {
@@ -169,7 +169,7 @@ function* createSpecialistAgent(
   const workspace = yield* call(validateWorkspace, wsId);
   if (!workspace) return;
   const agents = yield* selectAllWorkspaceAgents.effect(wsId);
-  let model = yield* selectSelectedModel.effect();
+  let model: string | undefined = yield* selectSelectedModel.effect();
   const activeProvider = yield* selectActiveProviderId.effect();
   let provider = providerForModel(model, activeProvider);
   let behaviorPrompt: string | undefined;
@@ -180,7 +180,8 @@ function* createSpecialistAgent(
     if (specialist) {
       baseName = specialist.name;
       provider = yield* selectEffectiveCodingAgent.effect(specialistId);
-      model = yield* selectEffectiveModel.effect(specialistId);
+      model = yield* selectExplicitModel.effect(specialistId);
+      provider = providerForModel(model, provider);
       behaviorPrompt = yield* selectEffectiveBehaviorPrompt.effect(specialistId);
     }
   }
@@ -245,7 +246,7 @@ function* runAgentForNote(
     ? specialists.find((candidate) => candidate.id === defaultSpecialistId && !candidate.hidden)
     : undefined;
   const specialistId = configured?.id ?? 'implementor';
-  let model = yield* selectEffectiveModel.effect(specialistId);
+  let model = yield* selectExplicitModel.effect(specialistId);
   let behaviorPrompt = yield* selectEffectiveBehaviorPrompt.effect(specialistId);
   if (!behaviorPrompt) {
     const specialist = SPECIALISTS.find((candidate) => candidate.id === specialistId);
@@ -261,20 +262,23 @@ function* runAgentForNote(
     (agent) => String(agent.workspaceId) === wsId && agent.isInitialAgent,
   );
   const defaultProvider = yield* selectEffectiveDefaultProviderId.effect();
+  const activeProvider = yield* selectActiveProviderId.effect();
   // A specialist explicitly pinned to a coding agent runs on it; otherwise
-  // inherit the workspace's initial-agent provider as before.
-  const provider =
-    configured?.codingAgent || (initial ? getAgentProvider(initial, defaultProvider) : undefined);
-  // When the specialist pins a provider but resolves no model, keep the model
-  // empty so the daemon resolves that provider's own default — the globally
-  // selected model may belong to a different provider.
-  const fallbackModel = configured?.codingAgent ? '' : yield* selectSelectedModel.effect();
+  // inherit the workspace's initial-agent provider, then the active provider.
+  // Compound explicit models carry their own authoritative provider.
+  const inheritedProvider =
+    configured?.codingAgent ||
+    (initial ? getAgentProvider(initial, defaultProvider) : undefined) ||
+    activeProvider;
+  const provider = providerForModel(model, inheritedProvider);
   try {
     const result = yield* call([agentFactory, agentFactory.createAgent], workspace, {
       name: noteTitle || m.agent_creation_taskAgent_name(),
       nameExplicitlySet: false,
       workspaceId: WorkspaceId(wsId),
-      model: model || fallbackModel,
+      // Resolved-model catalog values are previews only. When the specialist
+      // has no explicit model, omit it so the daemon resolves in this provider.
+      model,
       provider,
       agentType: createAgentTypeId('task-loop'),
       behaviorPrompt,
