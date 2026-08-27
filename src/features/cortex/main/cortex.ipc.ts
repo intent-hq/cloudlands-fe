@@ -33,10 +33,7 @@ export function setupCortexIPC() {
   });
 
   // Get available models for Cortex — daemon-owned catalog (PROTOCOL §6.7)
-  ipcMain.handle(
-    CORTEX_CHANNELS.GET_MODELS,
-    async (_event, params?: { forceRefresh?: boolean }) =>
-      getProviderModelsEnvelope('cortex', params),
+  ipcMain.handle(CORTEX_CHANNELS.GET_MODELS, async (event, params?: { forceRefresh?: boolean }) =>
+    getProviderModelsEnvelope('cortex', params, event),
   );
 }
-

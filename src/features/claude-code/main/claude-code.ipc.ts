@@ -49,7 +49,7 @@ export function setupClaudeCodeIPC() {
   // Get available models for Claude Code — daemon-owned catalog (PROTOCOL §6.7)
   ipcMain.handle(
     CLAUDE_CODE_CHANNELS.GET_MODELS,
-    async (_event, params?: { forceRefresh?: boolean }) =>
-      getProviderModelsEnvelope('claude-code', params),
+    async (event, params?: { forceRefresh?: boolean }) =>
+      getProviderModelsEnvelope('claude-code', params, event),
   );
 }
