@@ -200,6 +200,76 @@ describe('WorkspaceAgentsList single-line rows', () => {
     expect(onSelect).not.toHaveBeenCalled();
   });
 
+  it('renders the collapsed bin from retiredCount and lazy-loads rows on expand (§5.5 v8.2)', async () => {
+    const active = makeAgent('active-agent', { name: 'Active agent' });
+    const agents = [active];
+    appStore.dispatch(bulkUpsertSessions(agents));
+    const onLoadRetired = vi.fn();
+    const view = render(WorkspaceAgentsList, {
+      props: { agents, workspaceId, retiredCount: 3, onLoadRetired },
+    });
+
+    // Count-first: the collapsed toggle renders from the daemon-served count
+    // even though no retired row is hydrated, and nothing loads eagerly.
+    const retiredToggle = view.container.querySelector<HTMLElement>('[data-agent-retired-toggle]');
+    expect(retiredToggle).toBeTruthy();
+    expect(retiredToggle?.textContent).toContain('3 retired agents');
+    expect(onLoadRetired).not.toHaveBeenCalled();
+    expect(view.container.querySelector('[data-agent-retired-loading]')).toBeNull();
+
+    // Expanding triggers the lazy load exactly once and shows skeleton rows.
+    await fireEvent.click(retiredToggle!);
+    await waitFor(() => expect(onLoadRetired).toHaveBeenCalledTimes(1));
+    expect(view.container.querySelector('[data-agent-retired-loading]')).toBeTruthy();
+
+    // Loaded: rows are authoritative for the label; the skeleton goes away.
+    const retired = makeAgent('retired-agent', {
+      name: 'Retired agent',
+      retiredAt: '2026-08-20T00:00:00.000Z',
+    });
+    appStore.dispatch(bulkUpsertSessions([retired]));
+    await view.rerender({
+      agents: [active, retired],
+      workspaceId,
+      retiredCount: 1,
+      retiredAgentsLoaded: true,
+      onLoadRetired,
+    });
+    expect(view.container.querySelector('[data-agent-retired-loading]')).toBeNull();
+    expect(retiredToggle?.textContent).toContain('1 retired agents');
+    expect(view.container.querySelector(`[data-agent-panel-row="${retired.id}"]`)).toBeTruthy();
+    expect(onLoadRetired).toHaveBeenCalledTimes(1);
+  });
+
+  it('lazy-loads retired rows when a search is active without expanding the bin', async () => {
+    const active = makeAgent('active-agent', { name: 'Active agent' });
+    const agents = [active];
+    appStore.dispatch(bulkUpsertSessions(agents));
+    const onLoadRetired = vi.fn();
+    render(WorkspaceAgentsList, {
+      props: { agents, workspaceId, retiredCount: 2, searchQuery: 'needle', onLoadRetired },
+    });
+
+    // An active search must cover retired agents, so the load fires eagerly.
+    await waitFor(() => expect(onLoadRetired).toHaveBeenCalledTimes(1));
+  });
+
+  it('hides the retired bin entirely at retiredCount 0 with no retired rows', async () => {
+    const active = makeAgent('active-agent', { name: 'Active agent' });
+    const agents = [active];
+    appStore.dispatch(bulkUpsertSessions(agents));
+    const onLoadRetired = vi.fn();
+    const view = render(WorkspaceAgentsList, {
+      props: { agents, workspaceId, retiredCount: 0, onLoadRetired },
+    });
+
+    await waitFor(() =>
+      expect(view.container.querySelector(`[data-agent-panel-row="${active.id}"]`)).toBeTruthy(),
+    );
+    expect(view.container.querySelector('[data-agent-retired-toggle]')).toBeNull();
+    expect(onLoadRetired).not.toHaveBeenCalled();
+  });
+
   it('virtualizes the retired bin above the threshold', async () => {
     const active = makeAgent('active-agent', { name: 'Active agent' });
     const retired = Array.from({ length: 40 }, (_, index) =>

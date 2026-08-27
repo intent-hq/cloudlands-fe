@@ -55,13 +55,20 @@ import {
   tokenUsageReceived,
 } from '../../token-usage/token-usage-slice';
 import {
+  addAgent,
+  fetchRetiredAgentsRequested,
   hydrateAgentsRequested,
   setActiveAgentId,
   setAgents,
   setAgentsLoaded,
+  setIsLoadingRetiredAgents,
+  setRetiredAgentsLoaded,
+  setRetiredCount,
 } from '../../workspace-agents/workspace-agents-slice';
 import {
   selectActiveAgentId,
+  selectIsLoadingRetiredAgents,
+  selectRetiredAgentsLoaded,
   selectWorkspaceAgentIds,
 } from '../../workspace-agents/workspace-agents-selectors';
 import { eventsLoaded, loadEventsRequested } from '../../workspace-events/workspace-events-slice';
@@ -259,23 +266,45 @@ function* refreshAgentStats(agentId: string, forceRefresh: boolean): SagaGenerat
   }
 }
 
-function* hydrateAgents(workspaceId: string): SagaGenerator<void> {
-  // Default read (§5.5 soft retire): retired rows are excluded daemon-side
-  // and no longer ride every hydration frame; the sidebar's Retired bin loads
-  // them on demand via the retired-only read (`retiredOnly: true`, v8.2).
-  const listed: Awaited<ReturnType<typeof appClient.agents.list>> = yield* call(
-    [appClient.agents, appClient.agents.list],
-    workspaceId,
-  );
+/**
+ * Drop rows the FE soft-hid (local pending registry) and rows carrying the
+ * daemon's delete-grace-window deadline (PROTOCOL §5.5 `pendingDeleteAt`,
+ * v6.7+) — e.g. a deletion scheduled by another window.
+ */
+function* filterPendingDeletions(
+  listed: Awaited<ReturnType<typeof appClient.agents.list>>,
+): SagaGenerator<Awaited<ReturnType<typeof appClient.agents.list>>> {
   const fetched = [] as typeof listed;
   for (const agent of listed) {
-    // Drop rows the FE soft-hid (local pending registry) and rows carrying the
-    // daemon's delete-grace-window deadline (PROTOCOL §5.5 `pendingDeleteAt`,
-    // v6.7+) — e.g. a deletion scheduled by another window.
     if (agent.pendingDeleteAt) continue;
     if (!(yield* call(isAgentDeletionPending, String(agent.id)))) fetched.push(agent);
   }
+  return fetched;
+}
+
+function* hydrateAgents(workspaceId: string): SagaGenerator<void> {
+  // Default read (§5.5 soft retire): retired rows are excluded daemon-side
+  // and no longer ride every hydration frame; the sidebar's Retired bin
+  // renders its collapsed toggle from `retiredCount` (v8.2, served on every
+  // read) and loads the rows on demand via the retired-only read.
+  const { agents: defaultRows, retiredCount }: Awaited<
+    ReturnType<typeof appClient.agents.listWithMeta>
+  > = yield* call([appClient.agents, appClient.agents.listWithMeta], workspaceId);
+  let listed = defaultRows;
+  // `setAgents` replaces the workspace snapshot, so once the retired rows have
+  // been lazily loaded a rehydrate must re-read them too — otherwise the
+  // reconcile would evict every retired id from the workspace list.
+  if (yield* selectRetiredAgentsLoaded.effect(workspaceId)) {
+    const retiredRows: Awaited<ReturnType<typeof appClient.agents.list>> = yield* call(
+      [appClient.agents, appClient.agents.list],
+      workspaceId,
+      { retiredOnly: true },
+    );
+    listed = [...defaultRows, ...retiredRows];
+  }
+  const fetched = yield* filterPendingDeletions(listed);
   yield* put(setAgentsLoaded(workspaceId, true));
+  yield* put(setRetiredCount(workspaceId, retiredCount));
 
   const agents = [] as typeof fetched;
   for (const agent of fetched) {
@@ -301,6 +330,51 @@ function* hydrateAgents(workspaceId: string): SagaGenerator<void> {
   if (selectable.length === 0) return;
   const firstForeground = selectable.find((agent) => !agent.isBackground) ?? selectable[0];
   yield* put(setActiveAgentId(workspaceId, String(firstForeground.id)));
+}
+
+/**
+ * On-demand retired-row load (§5.5 soft retire, v8.2): triggered when the
+ * sidebar's Retired bin expands (or an active search needs retired coverage).
+ * Loads once per workspace — a failed read leaves `retiredAgentsLoaded` false
+ * so the next expand retries. Rows merge in via `addAgent` (append-only) so a
+ * concurrent hydration snapshot is never clobbered.
+ */
+function* fetchRetiredAgents(workspaceId: string): SagaGenerator<void> {
+  if (yield* selectRetiredAgentsLoaded.effect(workspaceId)) return;
+  if (yield* selectIsLoadingRetiredAgents.effect(workspaceId)) return;
+  yield* put(setIsLoadingRetiredAgents(workspaceId, true));
+  try {
+    const listed: Awaited<ReturnType<typeof appClient.agents.list>> = yield* call(
+      [appClient.agents, appClient.agents.list],
+      workspaceId,
+      { retiredOnly: true },
+    );
+    const fetched = yield* filterPendingDeletions(listed);
+    if (fetched.length > 0) {
+      // List rows carry message COUNTS, not transcripts — keep any transcript
+      // already in the store (e.g. an agent retired live in this session).
+      const agents = [] as typeof fetched;
+      for (const agent of fetched) {
+        const existing = yield* selectAgentSession.effect(String(agent.id));
+        agents.push(
+          agent.messages.length === 0 && existing && existing.messages.length > 0
+            ? { ...agent, messages: existing.messages }
+            : agent,
+        );
+      }
+      yield* put(bulkUpsertSessions(agents));
+      for (const agent of agents) {
+        yield* put(upsertSession(agent));
+        yield* put(addAgent(workspaceId, agent));
+      }
+    }
+    // Re-baseline the count to the rows actually loaded so the bin label and
+    // its contents can never disagree after a load.
+    yield* put(setRetiredCount(workspaceId, fetched.length));
+    yield* put(setRetiredAgentsLoaded(workspaceId, true));
+  } finally {
+    yield* put(setIsLoadingRetiredAgents(workspaceId, false));
+  }
 }
 
 type WorkspaceRead = (workspaceId: string) => SagaGenerator<void>;
@@ -511,6 +585,13 @@ function* coalescedAgentsWorker(scheduler: WorkspaceReadScheduler, action: Agent
   }
 }
 
+function* retiredAgentsWorker(
+  scheduler: WorkspaceReadScheduler,
+  action: ReturnType<typeof fetchRetiredAgentsRequested>,
+) {
+  yield* runWorkspaceRead(scheduler, 'retiredAgents', action.payload[0], fetchRetiredAgents);
+}
+
 function* terminalsWorker(
   scheduler: WorkspaceReadScheduler,
   action: ReturnType<typeof hydrateTerminalsRequested>,
@@ -629,6 +710,7 @@ export function* lifecycleReadSaga(): SagaGenerator<void> {
         coalescedAgentsWorker,
         scheduler,
       ),
+      takeLeadingByWorkspace(fetchRetiredAgentsRequested, retiredAgentsWorker, scheduler),
       takeLeadingByWorkspace(hydrateTerminalsRequested, terminalsWorker, scheduler),
       takeEvery(workspaceUnmounted, clearUnmountedInitializedContext, initializedContexts),
     ]);

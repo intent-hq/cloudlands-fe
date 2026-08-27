@@ -179,6 +179,7 @@ import {
 } from '$store/renderer/slices/agent-session/agent-session-slice';
 import { workspaceDeleted } from '$store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice';
 import {
+  adjustRetiredCount,
   hydrateAgentsRequested,
   removeAgent,
 } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
@@ -3735,9 +3736,13 @@ export function routeDaemonEventsNotification(
   // metadata mutations on a live row, so the same metadata-only `agent.get`
   // refresh converges `retiredAt` on the session (transcript preserved) and
   // the sidebar moves the agent into/out of the Retired bin without a
-  // whole-list refetch.
+  // whole-list refetch. The retired-row count (v8.2 lazy Retired bin) is
+  // nudged in lockstep so the collapsed toggle stays consistent even before
+  // the lazy retired-only read runs; hydration re-baselines it from the
+  // daemon-served `retiredCount`.
   if (type === 'agent:retired' || type === 'agent:restored') {
     handleAgentUpdatedEvent(event);
+    appStore.dispatch(adjustRetiredCount(workspaceId, type === 'agent:retired' ? 1 : -1));
   }
   // `agent:attention-requested` (requestDiscussion / reportBlocker) — the
   // daemon persists the attention-request fields on the session and also

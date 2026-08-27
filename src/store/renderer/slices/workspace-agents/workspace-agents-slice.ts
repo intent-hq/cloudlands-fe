@@ -38,6 +38,16 @@ export interface WorkspaceAgentState {
    * Key: agentId, Value: timestamp (ms) of last seen event.
    */
   recentAgentCreatedEvents: Record<string, number>;
+  /**
+   * Daemon-served retired-row count (§5.5 soft retire, v8.2). The default
+   * hydration read excludes retired rows, so the sidebar's Retired bin renders
+   * its collapsed toggle from this count and lazy-loads the rows on expand.
+   */
+  retiredCount: number;
+  /** True once the retired-only read has hydrated the retired rows. */
+  retiredAgentsLoaded: boolean;
+  /** True while the on-demand retired-only read is in flight. */
+  isLoadingRetiredAgents: boolean;
 }
 
 export interface WorkspaceAgentsState {
@@ -176,6 +186,9 @@ export const emptyWorkspaceAgentState: WorkspaceAgentState = {
   isInitialSpecWriteInProgress: false,
   diskMessageCounts: {},
   recentAgentCreatedEvents: {},
+  retiredCount: 0,
+  retiredAgentsLoaded: false,
+  isLoadingRetiredAgents: false,
 };
 
 export const initialState: WorkspaceAgentsState = {
@@ -218,6 +231,33 @@ export const setIsLoadingAgents = createAction<[wsId: string, loading: boolean]>
  */
 export const hydrateAgentsRequested = createAction<[wsId: string]>(
   'workspaceAgents/hydrateAgentsRequested',
+);
+/**
+ * Saga-only trigger (no reducer entry): load the workspace's retired rows on
+ * demand via the retired-only read (`retiredOnly: true`, §5.5 v8.2) when the
+ * sidebar's Retired bin is expanded or an active search needs them. The
+ * handler lives in `lifecycle-read-saga` and no-ops once the rows are loaded.
+ */
+export const fetchRetiredAgentsRequested = createAction<[wsId: string]>(
+  'workspaceAgents/fetchRetiredAgentsRequested',
+);
+/** Store the daemon-served retired-row count (`retiredCount`, §5.5 v8.2). */
+export const setRetiredCount = createAction<[wsId: string, count: number]>(
+  'workspaceAgents/setRetiredCount',
+);
+/**
+ * Nudge the retired-row count on `agent:retired` (+1) / `agent:restored` (−1)
+ * so the collapsed bin stays consistent without a full refetch; hydration
+ * re-baselines from the daemon-served count.
+ */
+export const adjustRetiredCount = createAction<[wsId: string, delta: number]>(
+  'workspaceAgents/adjustRetiredCount',
+);
+export const setRetiredAgentsLoaded = createAction<[wsId: string, loaded: boolean]>(
+  'workspaceAgents/setRetiredAgentsLoaded',
+);
+export const setIsLoadingRetiredAgents = createAction<[wsId: string, loading: boolean]>(
+  'workspaceAgents/setIsLoadingRetiredAgents',
 );
 export const createAgentRequested = createAction<
   [wsId: string, agentType?: string, options?: { panelLayoutId?: string; panelId?: string }]
@@ -452,6 +492,36 @@ workspaceAgentsReducer.with(setIsLoadingAgents, (state, { payload: [wsId, isLoad
     return state;
   }
   return setWorkspaceState(state, wsId, { ...workspaceState, isLoadingAgents });
+});
+workspaceAgentsReducer.with(setRetiredCount, (state, { payload: [wsId, count] }) => {
+  const workspaceState = getWorkspaceState(state, wsId);
+  const retiredCount = Math.max(0, count);
+  if (workspaceState.retiredCount === retiredCount) {
+    return state;
+  }
+  return setWorkspaceState(state, wsId, { ...workspaceState, retiredCount });
+});
+workspaceAgentsReducer.with(adjustRetiredCount, (state, { payload: [wsId, delta] }) => {
+  const workspaceState = getWorkspaceState(state, wsId);
+  const retiredCount = Math.max(0, workspaceState.retiredCount + delta);
+  if (workspaceState.retiredCount === retiredCount) {
+    return state;
+  }
+  return setWorkspaceState(state, wsId, { ...workspaceState, retiredCount });
+});
+workspaceAgentsReducer.with(setRetiredAgentsLoaded, (state, { payload: [wsId, loaded] }) => {
+  const workspaceState = getWorkspaceState(state, wsId);
+  if (workspaceState.retiredAgentsLoaded === loaded) {
+    return state;
+  }
+  return setWorkspaceState(state, wsId, { ...workspaceState, retiredAgentsLoaded: loaded });
+});
+workspaceAgentsReducer.with(setIsLoadingRetiredAgents, (state, { payload: [wsId, loading] }) => {
+  const workspaceState = getWorkspaceState(state, wsId);
+  if (workspaceState.isLoadingRetiredAgents === loading) {
+    return state;
+  }
+  return setWorkspaceState(state, wsId, { ...workspaceState, isLoadingRetiredAgents: loading });
 });
 workspaceAgentsReducer.with(
   setWaitingForFirstMessage,
