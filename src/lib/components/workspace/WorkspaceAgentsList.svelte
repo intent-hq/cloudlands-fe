@@ -156,14 +156,18 @@
   }
 
   // Search activation is a prop transition, not a local event, so watch the
-  // edge with an effect that tracks ONLY `hasActiveSearch` (the load gates are
-  // read untracked): it fires once per false→true transition — including a
-  // mount with an active search — and cannot re-run off loading-state churn.
-  let hadActiveSearch = false;
+  // edge with an effect tracking ONLY `hasActiveSearch` + `hasRetiredBin`
+  // (the load gates are read untracked): it fires once when a search becomes
+  // active over a visible bin — including a mount with an active search — and
+  // once more if the bin appears while a search is already active (count
+  // landing after mount, when the earlier transition consumed itself against
+  // the hidden bin). It cannot re-run off loading-state churn: with both edges
+  // already true, `fired` stays latched until one of them drops.
+  let searchLoadFired = false;
   $effect(() => {
-    const active = hasActiveSearch;
-    if (active && !hadActiveSearch) untrack(requestRetiredLoad);
-    hadActiveSearch = active;
+    const wanted = hasActiveSearch && hasRetiredBin;
+    if (wanted && !searchLoadFired) untrack(requestRetiredLoad);
+    searchLoadFired = wanted;
   });
 
   function isAgentRunning(agentId: string): boolean {

@@ -302,6 +302,30 @@ describe('WorkspaceAgentsList single-line rows', () => {
     await waitFor(() => expect(onLoadRetired).toHaveBeenCalledTimes(2));
   });
 
+  it('re-fires the load when retiredCount lands after the search was already active (mount-before-hydrate edge)', async () => {
+    const active = makeAgent('active-agent', { name: 'Active agent' });
+    const agents = [active];
+    appStore.dispatch(bulkUpsertSessions(agents));
+    const onLoadRetired = vi.fn();
+    // Mount with a persisted active query while hydration hasn't served the
+    // count yet: the search transition consumes itself against the hidden bin.
+    const props = { agents, workspaceId, retiredCount: 0, searchQuery: 'needle', onLoadRetired };
+    const view = render(WorkspaceAgentsList, { props });
+    // Bin hidden at count 0 → the search transition consumed itself, no load.
+    expect(view.container.querySelector('[data-agent-retired-toggle]')).toBeNull();
+    expect(onLoadRetired).not.toHaveBeenCalled();
+
+    // Hydration lands the count → the bin's false→true edge re-fires the load
+    // because the search is still active.
+    await view.rerender({ ...props, retiredCount: 2 });
+    await waitFor(() => expect(onLoadRetired).toHaveBeenCalledTimes(1));
+
+    // Still edge-triggered: loading-state churn at a stable count is inert.
+    await view.rerender({ ...props, retiredCount: 2, loadingRetired: true });
+    await view.rerender({ ...props, retiredCount: 2, loadingRetired: false });
+    expect(onLoadRetired).toHaveBeenCalledTimes(1);
+  });
+
   it('hides the retired bin entirely at retiredCount 0 with no retired rows', async () => {
     const active = makeAgent('active-agent', { name: 'Active agent' });
     const agents = [active];
