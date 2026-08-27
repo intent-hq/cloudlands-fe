@@ -1,8 +1,9 @@
 /**
  * @vitest-environment jsdom
  */
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { m } from '$shared/paraglide/messages.js';
 import type { ConnectionRecord } from '$shared/types/connections';
 
 const mocks = vi.hoisted(() => ({
@@ -231,7 +232,21 @@ describe('DevicesSettings', () => {
   it('can clear a previously selected device accent', async () => {
     render(DevicesSettings);
     await openAction('Edit');
-    await fireEvent.click(screen.getByRole('button', { name: 'Use None accent' }));
+    const selected = screen.getByRole('button', {
+      name: m.settings_devices_accentOption_ariaLabel({
+        color: m.settings_devices_accentIndigo_label(),
+      }),
+    });
+    const blank = screen.getByRole('button', {
+      name: m.settings_devices_accentBlank_ariaLabel(),
+    });
+    expect(selected.getAttribute('aria-pressed')).toBe('true');
+    expect(blank.getAttribute('aria-pressed')).toBe('false');
+
+    await fireEvent.click(blank);
+
+    expect(selected.getAttribute('aria-pressed')).toBe('false');
+    expect(blank.getAttribute('aria-pressed')).toBe('true');
     await fireEvent.click(screen.getByRole('button', { name: 'Update' }));
 
     expect(mocks.update).toHaveBeenCalledWith(expect.objectContaining({ accent: null }));
@@ -254,26 +269,57 @@ describe('DevicesSettings', () => {
   });
 
   it('tests current unsaved address values without updating or opening a connection', async () => {
+    let resolveTest!: (result: { status: 'success'; fingerprint: string }) => void;
+    mocks.test.mockImplementation((params) => ({
+      type: 'connections/testRequested',
+      payload: [params],
+      promise: new Promise((resolve) => {
+        resolveTest = resolve;
+      }),
+    }));
     render(DevicesSettings);
     await openAction('Edit');
+    const form = screen.getByRole('form', { name: 'Edit Studio Mac' });
     await fireEvent.input(screen.getByRole('textbox', { name: 'Hostname or IP' }), {
       target: { value: 'preview.local' },
     });
     await fireEvent.input(screen.getByRole('textbox', { name: 'Port' }), {
       target: { value: '6200' },
     });
-    await fireEvent.click(screen.getByRole('button', { name: 'Test connection' }));
+    const testButton = screen.getByRole('button', { name: 'Test connection' });
+    await fireEvent.click(testButton);
 
     expect(mocks.test).toHaveBeenCalledWith({
       id: 'remote-1',
       host: 'preview.local',
       port: 6200,
     });
-    expect(await screen.findByText('Connection successful.')).toBeTruthy();
+    expect(testButton.getAttribute('aria-busy')).toBe('true');
+    expect(within(form).getByRole('status')).toBeTruthy();
+    resolveTest({ status: 'success', fingerprint: remote.fingerprint! });
+    await waitFor(() => expect(testButton.getAttribute('aria-busy')).toBeNull());
+    expect(within(form).getByRole('status')).toBeTruthy();
     expect(mocks.update).not.toHaveBeenCalled();
     expect(mocks.dispatch).not.toHaveBeenCalledWith(
       expect.objectContaining({ type: expect.stringMatching(/open/i) }),
     );
+  });
+
+  it('announces a failed connection test and leaves the action available to retry', async () => {
+    mocks.test.mockImplementation((params) => ({
+      type: 'connections/testRequested',
+      payload: [params],
+      promise: Promise.resolve({ status: 'failed', reason: 'connect-failed' }),
+    }));
+    render(DevicesSettings);
+    await openAction('Edit');
+    const form = screen.getByRole('form', { name: 'Edit Studio Mac' });
+    const testButton = screen.getByRole('button', { name: 'Test connection' });
+
+    await fireEvent.click(testButton);
+
+    expect(await within(form).findByRole('alert')).toBeTruthy();
+    expect(testButton.hasAttribute('disabled')).toBe(false);
   });
 
   it('tests a typed write-only secret without saving or rotating it', async () => {

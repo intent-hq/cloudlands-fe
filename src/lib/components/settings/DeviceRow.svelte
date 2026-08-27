@@ -46,6 +46,7 @@
   let accent = $state<ConnectionAccent>(DEFAULT_CONNECTION_ACCENT);
   let secret = $state('');
   let busy = $state<'update' | 'test' | null>(null);
+  let feedbackOperation = $state<'update' | 'test' | null>(null);
   let feedback = $state<{ kind: 'success' | 'error' | 'progress'; message: string } | null>(null);
   let connectionError = $state(false);
   let pendingFingerprint = $state<{
@@ -92,6 +93,7 @@
     accent = savedAccent;
     secret = '';
     busy = null;
+    feedbackOperation = null;
     feedback = null;
     pendingFingerprint = null;
   }
@@ -141,8 +143,7 @@
     }
   }
 
-  function accentLabel(value: ConnectionAccent): string {
-    if (value === null) return m.settings_devices_accentNone_label();
+  function accentLabel(value: Exclude<ConnectionAccent, null>): string {
     return {
       blue: m.settings_devices_accentBlue_label(),
       indigo: m.settings_devices_accentIndigo_label(),
@@ -152,6 +153,10 @@
       emerald: m.settings_devices_accentEmerald_label(),
       teal: m.settings_devices_accentTeal_label(),
     }[value];
+  }
+
+  function selectedAccentStyle(value: Exclude<ConnectionAccent, null>): string {
+    return `outline: 1px solid color-mix(in srgb, var(--color-${value}-500) 45%, transparent); outline-offset: 2px;`;
   }
 
   function statusLabel(status: ConnectionOpenStatus): string {
@@ -204,6 +209,7 @@
   async function updateDevice(confirmedFingerprint?: string, confirmedSecretFingerprint?: string) {
     if (editInvalid || busy) return;
     busy = 'update';
+    feedbackOperation = 'update';
     feedback = { kind: 'progress', message: m.settings_devices_updating_label() };
     pendingFingerprint = null;
     try {
@@ -262,6 +268,7 @@
   async function testDevice() {
     if (hostInvalid || portInvalid || busy) return;
     busy = 'test';
+    feedbackOperation = 'test';
     pendingFingerprint = null;
     feedback = { kind: 'progress', message: m.settings_devices_testing_label() };
     try {
@@ -448,27 +455,32 @@
               <button
                 type="button"
                 class={cn(
-                  'flex size-7 cursor-pointer items-center justify-center rounded-full border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
+                  'flex size-7 cursor-pointer items-center justify-center rounded-full border border-transparent bg-transparent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
                   option === accent
                     ? option === null
-                      ? 'border-foreground bg-background'
-                      : cn('border-transparent', CONNECTION_ACCENT_CLASSES[option])
-                    : 'border-border/60 bg-transparent hover:border-border hover:bg-muted/30',
+                      ? 'bg-muted/50'
+                      : undefined
+                    : 'hover:bg-muted/30',
                 )}
-                aria-label={m.settings_devices_accentOption_ariaLabel({
-                  color: accentLabel(option),
-                })}
+                aria-label={option === null
+                  ? m.settings_devices_accentBlank_ariaLabel()
+                  : m.settings_devices_accentOption_ariaLabel({ color: accentLabel(option) })}
                 aria-pressed={option === accent}
                 onclick={() => (accent = option)}
               >
                 {#if option === null}
                   <span
-                    class="size-3.5 rounded-full border border-muted-foreground/60 bg-background"
+                    class="relative size-3.5 rounded-full border border-muted-foreground/60"
                     aria-hidden="true"
-                  ></span>
-                {:else if option !== accent}
+                  >
+                    <span
+                      class="absolute left-0.5 top-1/2 h-px w-2.5 -translate-y-1/2 rotate-45 bg-muted-foreground/60"
+                    ></span>
+                  </span>
+                {:else}
                   <span
                     class={cn('size-3.5 rounded-full', CONNECTION_ACCENT_CLASSES[option])}
+                    style={option === accent ? selectedAccentStyle(option) : undefined}
                     aria-hidden="true"
                   ></span>
                 {/if}
@@ -510,7 +522,7 @@
             >
           </div>
         </div>
-      {:else if feedback}
+      {:else if feedback && feedbackOperation === 'update'}
         <p
           class={feedback.kind === 'error'
             ? 'text-sm text-error-foreground'
@@ -524,13 +536,28 @@
       {/if}
 
       <div class="flex flex-wrap items-center justify-end gap-2">
-        <Button
-          type="button"
-          variant="outline"
-          disabled={busy !== null || hostInvalid || portInvalid}
-          loading={busy === 'test'}
-          onclick={() => void testDevice()}>{m.settings_devices_test_label()}</Button
-        >
+        <div class="flex max-w-full flex-wrap items-center justify-end gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            disabled={busy !== null || hostInvalid || portInvalid}
+            loading={busy === 'test'}
+            onclick={() => void testDevice()}>{m.settings_devices_test_label()}</Button
+          >
+          {#if feedback && feedbackOperation === 'test'}
+            <p
+              class={feedback.kind === 'error'
+                ? 'text-right text-sm text-error-foreground'
+                : feedback.kind === 'success'
+                  ? 'text-right text-sm text-success-foreground'
+                  : 'text-right text-sm text-muted-foreground'}
+              role={feedback.kind === 'error' ? 'alert' : 'status'}
+              aria-atomic="true"
+            >
+              {feedback.message}
+            </p>
+          {/if}
+        </div>
         <Button type="button" variant="ghost-light" disabled={busy !== null} onclick={closePanel}
           >{m.settings_devices_cancel_label()}</Button
         >

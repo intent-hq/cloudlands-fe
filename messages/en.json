@@ -631,6 +631,7 @@
   "settings_devices_version_label": "intentd {version}",
   "settings_devices_accent_label": "Accent",
   "settings_devices_accentNone_label": "None",
+  "settings_devices_accentBlank_ariaLabel": "Use no accent",
   "settings_devices_accentOption_ariaLabel": "Use {color} accent",
   "settings_devices_accentBlue_label": "Blue",
   "settings_devices_accentIndigo_label": "Indigo",

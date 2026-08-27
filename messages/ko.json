@@ -631,6 +631,7 @@
   "settings_devices_version_label": "intentd 버전 {version}",
   "settings_devices_accent_label": "강조색",
   "settings_devices_accentNone_label": "없음",
+  "settings_devices_accentBlank_ariaLabel": "강조색 사용 안 함",
   "settings_devices_accentOption_ariaLabel": "{color} 강조색 사용",
   "settings_devices_accentBlue_label": "파랑",
   "settings_devices_accentIndigo_label": "남색",
