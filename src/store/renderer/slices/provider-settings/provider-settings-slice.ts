@@ -53,6 +53,11 @@ export const hydrateActiveProvider = createAction<[providerId: string]>(
   'providerSettings/hydrateActiveProvider',
 );
 
+/** Effective active provider after guarded daemon hydration reconciliation. */
+export const activeProviderReconciled = createAction<[providerId: string]>(
+  'providerSettings/activeProviderReconciled',
+);
+
 // NOTE: there is intentionally no "validate active provider against
 // availability" action. Per decision D1(B) the active provider is never
 // silently switched away because it's uninstalled/unavailable — the store
