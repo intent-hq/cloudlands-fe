@@ -4,6 +4,18 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.100.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.99.1...v2.100.0) (2026-08-27)
+
+
+### 🚀 Features
+
+* default-on iCloud keychain sync with per-backend opt-out ([#1762](https://github.com/intent-hq/cloudlands-fe/issues/1762)) ([e424b0b](https://github.com/intent-hq/cloudlands-fe/commit/e424b0bcabf43124aa75e0a0e12d5688ff6fd08e))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.8.4 ([#1764](https://github.com/intent-hq/cloudlands-fe/issues/1764)) ([8367e90](https://github.com/intent-hq/cloudlands-fe/commit/8367e90a0b37524e7739b74f4668f7b712457d71))
+
 ## [2.99.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.99.0...v2.99.1) (2026-08-27)
 
 
