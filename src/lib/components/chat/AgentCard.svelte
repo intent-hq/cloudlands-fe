@@ -49,6 +49,7 @@
     faCircleInfo,
     faFolderOpen,
     faPen,
+    faRightLeft,
     faStop,
     faTrash,
     faUserTie,
@@ -60,6 +61,7 @@
   import { selectIsWorkspaceHostLocal } from '$store/renderer/slices/workspace/workspace-selectors';
   import OpenPanelIndicator from '$lib/components/workspace/sidebar/OpenPanelIndicator.svelte';
   import { isCmdClickModifier } from '$shared/utils/link-helpers';
+  import { isReplaceAgentEligible } from '$shared/utils/replace-agent-eligibility';
 
   interface Props {
     agentId: string;
@@ -168,6 +170,9 @@
 
   // Read-only harness-features modal (opened from the context menu).
   let harnessModalOpen = $state(false);
+
+  // Replace Agent modal (opened from the context menu when eligible).
+  let replaceAgentModalOpen = $state(false);
 
   // Platform file-manager label (locality-gated reveal ⇒ daemon host is this
   // machine, so the client platform matches; PanelTabBar idiom).
@@ -382,6 +387,23 @@
     }
 
     items.push({ type: 'separator' });
+
+    // "Replace Agent" (peer-agent hand-off): hidden unless every
+    // session-derived eligibility gate passes (harnessFeatures.peerAgents
+    // snapshot true, top-level, non-background, not retired) — mirrors the
+    // AgentTabType panel menu.
+    if (!readOnly && !isBackground && isReplaceAgentEligible($agent$)) {
+      items.push({
+        id: 'replace-agent',
+        label: m.chat_agentCard_menu_replaceAgent_label(),
+        icon: faRightLeft,
+        onClick: () => {
+          replaceAgentModalOpen = true;
+          closeContextMenu();
+        },
+      });
+    }
+
     items.push({
       id: 'delete',
       label: m.chat_agentCard_menu_delete_label(),
@@ -867,6 +889,11 @@
     version={$agent$.harnessVersion}
     features={$agent$?.harnessFeatures ?? null}
   />
+{/if}
+
+{#if replaceAgentModalOpen}
+  <!-- Placeholder mount point: the Replace Agent modal component (follow-up task) renders here. -->
+  <span class="hidden" data-replace-agent-modal-placeholder></span>
 {/if}
 
 <style>

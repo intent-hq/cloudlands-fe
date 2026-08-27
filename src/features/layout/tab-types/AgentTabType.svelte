@@ -29,10 +29,17 @@
     selectSpecialistName,
     selectSpecialists,
   } from '$store/renderer/slices/specialists/specialists-selectors';
-  import { faCheck, faCircleInfo, faCopy, faTrash } from '@fortawesome/free-solid-svg-icons';
+  import {
+    faCheck,
+    faCircleInfo,
+    faCopy,
+    faRightLeft,
+    faTrash,
+  } from '@fortawesome/free-solid-svg-icons';
   import { faNote } from '$lib/icons/faNote';
   import HarnessFeaturesModal from '$lib/components/chat/HarnessFeaturesModal.svelte';
   import { formatAgentMessagesForClipboard } from '$lib/utils/clipboard-formatters';
+  import { isReplaceAgentEligible } from '$shared/utils/replace-agent-eligibility';
   import { m } from '$shared/paraglide/messages.js';
   import { deleteAgentWithUndoRequested } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
   import { store as appStore } from '$store/renderer/store';
@@ -114,6 +121,12 @@
   const harnessVersion = $derived($agent$?.harnessVersion ?? null);
   const harnessFeatures = $derived($agent$?.harnessFeatures ?? null);
   let harnessModalOpen = $state(false);
+
+  // "Replace Agent" (peer-agent hand-off) — hidden unless every session-derived
+  // eligibility gate passes: harnessFeatures.peerAgents snapshot true,
+  // top-level, non-background, not retired. Mirrors the AgentCard context menu.
+  const canReplaceAgent = $derived(isReplaceAgentEligible($agent$));
+  let replaceAgentModalOpen = $state(false);
 
   // Copy/delete state
   let agentCopyFeedback = $state<string | null>(null);
@@ -224,6 +237,13 @@
     onclick={handleCopyAgentConversation}
     disabled={agentMessages.length === 0}
   />
+  {#if canReplaceAgent}
+    <Menu.CommandItem
+      icon={faRightLeft}
+      label={m.layout_agentTab_replaceAgent_tooltip()}
+      onclick={() => (replaceAgentModalOpen = true)}
+    />
+  {/if}
   <Menu.CommandItem
     icon={faTrash}
     label={m.layout_agentTab_deleteAgent_tooltip()}
@@ -247,6 +267,11 @@
     version={harnessVersion}
     features={harnessFeatures}
   />
+{/if}
+
+{#if replaceAgentModalOpen}
+  <!-- Placeholder mount point: the Replace Agent modal component (follow-up task) renders here. -->
+  <span class="hidden" data-replace-agent-modal-placeholder></span>
 {/if}
 
 {#if tab.agentId}
