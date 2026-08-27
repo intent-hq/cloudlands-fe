@@ -1081,6 +1081,8 @@ export const ConnectionsAddSchema = z.object({
   token: z.string().min(1, 'Token is required'),
   /** "Detect all backend IPs" option (#1746); absent = enabled. */
   detectHosts: z.boolean().optional(),
+  /** Per-backend keychain-sync opt-out (spec Phase 2); absent = synced. */
+  syncExcluded: z.boolean().optional(),
 });
 
 export const ConnectionsForgetSchema = z.object({

@@ -86,6 +86,14 @@ export interface ConnectionRecord {
    * the UI then falls back to `host:port`. Never set for the local entry.
    */
   hostname?: string | null;
+  /**
+   * Per-backend keychain-sync exclusion (spec Phase 2): `true` when the user
+   * opted this backend out of iCloud sync at add time, making the record
+   * local-only (never pushed to the keychain, never touched by pulls).
+   * Optional so pre-existing fixtures/records remain valid — absent is
+   * equivalent to `false` (synced). Never set for the local entry.
+   */
+  syncExcluded?: boolean;
   /** True for the synthesized local sidecar entry. */
   isLocal: boolean;
 }
@@ -161,6 +169,13 @@ export interface AddConnectionParams {
    * the user-entered host is ever stored (single-host behavior).
    */
   detectHosts?: boolean;
+  /**
+   * Per-backend keychain-sync opt-out (spec Phase 2): `true` when the user
+   * unchecked "Save to iCloud" at add time, storing the record local-only
+   * (never pushed to the keychain, never touched by pulls). Absent = `false`
+   * (synced).
+   */
+  syncExcluded?: boolean;
 }
 
 /** `connections:add` result: the stored, token-free record. */
@@ -327,7 +342,7 @@ export type KeychainSyncUiStatus =
 export interface KeychainSyncStateResult {
   /** True only on macOS — elsewhere the toggle renders disabled. */
   supported: boolean;
-  /** The opt-in local pref (per-machine, default OFF). */
+  /** The opt-out local pref (per-machine; absent = ON on macOS, explicit false = OFF). */
   enabled: boolean;
   /** Last completed reconcile's availability; null before the first run. */
   status: KeychainSyncUiStatus | null;

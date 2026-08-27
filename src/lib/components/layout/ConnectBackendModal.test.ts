@@ -14,7 +14,14 @@ const mocks = vi.hoisted(() => ({
   captureFingerprintRequested: vi.fn(),
   addConnectionRequested: vi.fn(),
   openConnectionRequested: vi.fn(),
+  loadKeychainSyncStateRequested: vi.fn(),
+  setKeychainSyncEnabledRequested: vi.fn(),
   openExternalUrl: vi.fn(),
+  // The keychain sync state the mocked selector serves; tests set it before
+  // render. Null = not loaded (checkbox hidden, adds proceed normally).
+  syncState: {
+    value: null as { supported: boolean; enabled: boolean; status: null } | null,
+  },
 }));
 
 vi.mock('svelte-fa', () => ({
@@ -29,7 +36,16 @@ vi.mock('$store/renderer/slices/connections/connections-slice', () => ({
   captureFingerprintRequested: mocks.captureFingerprintRequested,
   addConnectionRequested: mocks.addConnectionRequested,
   openConnectionRequested: mocks.openConnectionRequested,
+  loadKeychainSyncStateRequested: mocks.loadKeychainSyncStateRequested,
+  setKeychainSyncEnabledRequested: mocks.setKeychainSyncEnabledRequested,
 }));
+
+vi.mock('$store/renderer/slices/connections/connections-selectors', async () => {
+  const { readable } = await import('svelte/store');
+  return {
+    selectKeychainSyncState: () => readable(mocks.syncState.value),
+  };
+});
 
 vi.mock('$lib/utils/open-external', () => ({
   openExternalUrl: mocks.openExternalUrl,
@@ -46,9 +62,18 @@ async function fillDetails() {
 describe('ConnectBackendModal', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.syncState.value = null;
     mocks.captureFingerprintRequested.mockImplementation((params) => ({
       payload: [params],
       promise: Promise.resolve({ fingerprint: 'AA:BB:CC:DD', tokenValid: true }),
+    }));
+    mocks.loadKeychainSyncStateRequested.mockImplementation(() => ({
+      payload: [],
+      promise: Promise.resolve(mocks.syncState.value),
+    }));
+    mocks.setKeychainSyncEnabledRequested.mockImplementation((enabled) => ({
+      payload: [enabled],
+      promise: Promise.resolve({ supported: true, enabled, status: null }),
     }));
     mocks.addConnectionRequested.mockImplementation((params) => ({
       payload: [params],
@@ -251,5 +276,189 @@ describe('ConnectBackendModal', () => {
 
     await fireEvent.input(screen.getByLabelText('Port'), { target: { value: '4180' } });
     expect(continueBtn().disabled).toBe(false);
+  });
+
+  describe('Save to iCloud', () => {
+    const macSync = (enabled: boolean) => ({ supported: true, enabled, status: null });
+
+    async function renderAndReachConfirm() {
+      const ConnectBackendModal = (await import('./ConnectBackendModal.svelte')).default;
+      render(ConnectBackendModal, { props: { open: true } });
+      await fillDetails();
+      await fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+      await screen.findByText('AA:BB:CC:DD');
+    }
+
+    it('hides the checkbox entirely when sync is unsupported (non-macOS)', async () => {
+      mocks.syncState.value = { supported: false, enabled: false, status: null };
+      const ConnectBackendModal = (await import('./ConnectBackendModal.svelte')).default;
+      render(ConnectBackendModal, { props: { open: true } });
+
+      expect(screen.queryByRole('checkbox', { name: 'Save to iCloud' })).toBeNull();
+    });
+
+    it('shows the checkbox checked by default on macOS and adds without syncExcluded', async () => {
+      mocks.syncState.value = macSync(true);
+      await renderAndReachConfirm();
+
+      await fireEvent.click(screen.getByRole('button', { name: 'Confirm & connect' }));
+
+      expect(mocks.addConnectionRequested).toHaveBeenCalledWith(
+        expect.not.objectContaining({ syncExcluded: true }),
+      );
+      await vi.waitFor(() => expect(mocks.openConnectionRequested).toHaveBeenCalledWith('r1'));
+    });
+
+    it('adds with syncExcluded: true when sync is on but the box is unchecked', async () => {
+      mocks.syncState.value = macSync(true);
+      const ConnectBackendModal = (await import('./ConnectBackendModal.svelte')).default;
+      render(ConnectBackendModal, { props: { open: true } });
+
+      const checkbox = screen.getByRole('checkbox', { name: 'Save to iCloud' });
+      expect(checkbox.getAttribute('aria-checked')).toBe('true');
+      await fireEvent.click(checkbox);
+
+      await fillDetails();
+      await fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+      await screen.findByText('AA:BB:CC:DD');
+      await fireEvent.click(screen.getByRole('button', { name: 'Confirm & connect' }));
+
+      expect(mocks.addConnectionRequested).toHaveBeenCalledWith(
+        expect.objectContaining({ syncExcluded: true }),
+      );
+      expect(mocks.setKeychainSyncEnabledRequested).not.toHaveBeenCalled();
+    });
+
+    it('shows the enable-sync confirm when sync is off; confirming adds then enables sync', async () => {
+      mocks.syncState.value = macSync(false);
+      await renderAndReachConfirm();
+
+      await fireEvent.click(screen.getByRole('button', { name: 'Confirm & connect' }));
+
+      // The machine-global consequences are stated before anything happens.
+      expect(await screen.findByText(/syncs all backends on this Mac/i)).toBeTruthy();
+      expect(mocks.addConnectionRequested).not.toHaveBeenCalled();
+
+      await fireEvent.click(screen.getByRole('button', { name: 'Enable sync & add' }));
+
+      expect(mocks.addConnectionRequested).toHaveBeenCalledWith(
+        expect.not.objectContaining({ syncExcluded: true }),
+      );
+      await vi.waitFor(() =>
+        expect(mocks.setKeychainSyncEnabledRequested).toHaveBeenCalledWith(true),
+      );
+      await vi.waitFor(() => expect(mocks.openConnectionRequested).toHaveBeenCalledWith('r1'));
+    });
+
+    it('declining the enable-sync confirm still adds the backend, excluded from sync', async () => {
+      mocks.syncState.value = macSync(false);
+      await renderAndReachConfirm();
+
+      await fireEvent.click(screen.getByRole('button', { name: 'Confirm & connect' }));
+      await screen.findByText(/syncs all backends on this Mac/i);
+      await fireEvent.click(screen.getByRole('button', { name: 'Add without iCloud' }));
+
+      await vi.waitFor(() =>
+        expect(mocks.addConnectionRequested).toHaveBeenCalledWith(
+          expect.objectContaining({ syncExcluded: true }),
+        ),
+      );
+      expect(mocks.setKeychainSyncEnabledRequested).not.toHaveBeenCalled();
+      await vi.waitFor(() => expect(mocks.openConnectionRequested).toHaveBeenCalledWith('r1'));
+    });
+
+    it('adds with syncExcluded and no confirm dialog when sync is off and the box is unchecked', async () => {
+      mocks.syncState.value = macSync(false);
+      const ConnectBackendModal = (await import('./ConnectBackendModal.svelte')).default;
+      render(ConnectBackendModal, { props: { open: true } });
+
+      await fireEvent.click(screen.getByRole('checkbox', { name: 'Save to iCloud' }));
+      await fillDetails();
+      await fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+      await screen.findByText('AA:BB:CC:DD');
+      await fireEvent.click(screen.getByRole('button', { name: 'Confirm & connect' }));
+
+      expect(screen.queryByText(/syncs all backends on this Mac/i)).toBeNull();
+      expect(mocks.addConnectionRequested).toHaveBeenCalledWith(
+        expect.objectContaining({ syncExcluded: true }),
+      );
+      expect(mocks.setKeychainSyncEnabledRequested).not.toHaveBeenCalled();
+    });
+
+    it('a failed add on the enable-sync path leaves machine-global sync untouched', async () => {
+      mocks.syncState.value = macSync(false);
+      mocks.addConnectionRequested.mockImplementationOnce((params) => ({
+        payload: [params],
+        promise: Promise.reject(new Error('token rejected')),
+      }));
+      await renderAndReachConfirm();
+
+      await fireEvent.click(screen.getByRole('button', { name: 'Confirm & connect' }));
+      await screen.findByText(/syncs all backends on this Mac/i);
+      await fireEvent.click(screen.getByRole('button', { name: 'Enable sync & add' }));
+
+      // The bundled action did not complete: no machine-global side effect.
+      expect(await screen.findByText('token rejected')).toBeTruthy();
+      expect(mocks.setKeychainSyncEnabledRequested).not.toHaveBeenCalled();
+      expect(mocks.openConnectionRequested).not.toHaveBeenCalled();
+    });
+
+    it('surfaces an enable-sync failure inline after a successful add (no open)', async () => {
+      mocks.syncState.value = macSync(false);
+      mocks.setKeychainSyncEnabledRequested.mockImplementationOnce((enabled) => ({
+        payload: [enabled],
+        promise: Promise.reject(new Error('keychain unavailable')),
+      }));
+      await renderAndReachConfirm();
+
+      await fireEvent.click(screen.getByRole('button', { name: 'Confirm & connect' }));
+      await screen.findByText(/syncs all backends on this Mac/i);
+      await fireEvent.click(screen.getByRole('button', { name: 'Enable sync & add' }));
+
+      expect(await screen.findByText('keychain unavailable')).toBeTruthy();
+      // The add ran first (sync enable only after a successful add).
+      expect(mocks.addConnectionRequested).toHaveBeenCalled();
+      expect(mocks.openConnectionRequested).not.toHaveBeenCalled();
+    });
+
+    it('the enable-sync step has a Back button returning to details with values kept', async () => {
+      mocks.syncState.value = macSync(false);
+      await renderAndReachConfirm();
+
+      await fireEvent.click(screen.getByRole('button', { name: 'Confirm & connect' }));
+      await screen.findByText(/syncs all backends on this Mac/i);
+      await fireEvent.click(screen.getByRole('button', { name: 'Back' }));
+
+      // Back on the details step, entered values intact, nothing dispatched.
+      expect((screen.getByLabelText('Host') as HTMLInputElement).value).toBe('10.0.0.2');
+      expect((screen.getByLabelText('Access token') as HTMLInputElement).value).toBe(
+        'secret-token',
+      );
+      expect(mocks.addConnectionRequested).not.toHaveBeenCalled();
+      expect(mocks.setKeychainSyncEnabledRequested).not.toHaveBeenCalled();
+    });
+
+    it('falls back to the preload platform gate while the sync state has not loaded', async () => {
+      // Sync state never loads (null) but the preload bridge says darwin: the
+      // consent checkbox must still render so a fast add cannot silently
+      // default to synced without the user ever seeing the opt-out.
+      mocks.syncState.value = null;
+      (window as any).electronAPI = { ...(window as any).electronAPI, platform: 'darwin' };
+      try {
+        const ConnectBackendModal = (await import('./ConnectBackendModal.svelte')).default;
+        render(ConnectBackendModal, { props: { open: true } });
+
+        expect(screen.getByRole('checkbox', { name: 'Save to iCloud' })).toBeTruthy();
+      } finally {
+        delete (window as any).electronAPI.platform;
+      }
+    });
+
+    it('refreshes the keychain sync state when the modal opens', async () => {
+      const ConnectBackendModal = (await import('./ConnectBackendModal.svelte')).default;
+      render(ConnectBackendModal, { props: { open: true } });
+
+      await vi.waitFor(() => expect(mocks.loadKeychainSyncStateRequested).toHaveBeenCalled());
+    });
   });
 });

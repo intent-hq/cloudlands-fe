@@ -97,6 +97,7 @@ describe('B2 caller metadata regression', () => {
         'src/lib/component-catalog/renderers/ProposalCatalogPreview.svelte',
         'src/lib/components/chat/input/ContextPickerButton.svelte',
         'src/lib/components/chat/proposals/BulkProposalItems.svelte',
+        'src/lib/components/layout/ConnectBackendModal.svelte',
         'src/lib/components/modals/TransferWorkspaceModal.svelte',
         'src/lib/components/settings/HardwareConsoleSettings.svelte',
         'src/lib/components/tiptap/TaskItemNodeView.svelte',

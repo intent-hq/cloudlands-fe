@@ -629,6 +629,45 @@ describe('connections:* IPC handlers', () => {
     expect(store.add).toHaveBeenCalledWith(expect.objectContaining({ detectHosts: false }));
   });
 
+  it('connections:add passes syncExcluded through to the store (iCloud opt-out)', async () => {
+    store.add.mockResolvedValue(REMOTE);
+    installWindow();
+    const { mod } = await loadModule();
+    mod.registerBackendHandlers();
+    const handler = findHandler('connections:add');
+
+    const params = {
+      label: 'Studio Mac',
+      host: '10.0.0.5',
+      port: 8443,
+      fingerprint: 'AA:BB:CC:DD',
+      token: 'secret-token',
+      syncExcluded: true,
+    };
+    await expect(handler!({}, params)).resolves.toEqual({ connection: REMOTE, switched: false });
+    expect(store.add).toHaveBeenCalledWith(expect.objectContaining({ syncExcluded: true }));
+  });
+
+  it('connections:add without syncExcluded leaves the flag absent (store default = synced)', async () => {
+    store.add.mockResolvedValue(REMOTE);
+    installWindow();
+    const { mod } = await loadModule();
+    mod.registerBackendHandlers();
+    const handler = findHandler('connections:add');
+
+    const params = {
+      label: 'Studio Mac',
+      host: '10.0.0.5',
+      port: 8443,
+      fingerprint: 'AA:BB:CC:DD',
+      token: 'secret-token',
+    };
+    await expect(handler!({}, params)).resolves.toEqual({ connection: REMOTE, switched: false });
+    expect(store.add).toHaveBeenCalledWith(
+      expect.not.objectContaining({ syncExcluded: expect.anything() }),
+    );
+  });
+
   it('connections:add upserting a NON-active connection does not reconnect', async () => {
     store.add.mockResolvedValue(REMOTE);
     store.getActiveId.mockResolvedValue('local');
@@ -800,6 +839,23 @@ describe('connections:* IPC handlers', () => {
     await expect(handler!({}, {})).rejects.toThrow();
   });
 
+  it('rejects invalid params (non-boolean syncExcluded on add) via the Zod schema', async () => {
+    const { mod } = await loadModule();
+    mod.registerBackendHandlers();
+    const handler = findHandler('connections:add');
+
+    const params = {
+      label: 'Studio Mac',
+      host: '10.0.0.5',
+      port: 8443,
+      fingerprint: 'AA:BB:CC:DD',
+      token: 'secret-token',
+      syncExcluded: 'yes',
+    };
+    await expect(handler!({}, params)).rejects.toThrow();
+    expect(store.add).not.toHaveBeenCalled();
+  });
+
   it('rejects invalid params (missing id on open) via the Zod schema', async () => {
     const { mod } = await loadModule();
     mod.registerBackendHandlers();
@@ -958,7 +1014,8 @@ describe('self-publish IPC', () => {
 
     // Record per spec Mechanics: label = hostname (pretty preferred), host =
     // first local IP, port = bound wsApi port, fingerprint + token from
-    // pairingInfo, detectHosts on. The token goes to the store only.
+    // pairingInfo, detectHosts on. The token goes to the store only. Publishing
+    // is explicit user intent to sync, so the exclusion flag is force-cleared.
     expect(store.add).toHaveBeenCalledWith({
       label: "Clement's Mac Studio",
       host: '192.168.1.10',
@@ -966,6 +1023,7 @@ describe('self-publish IPC', () => {
       fingerprint: '11:22:33:44',
       token: 'a'.repeat(64),
       detectHosts: true,
+      syncExcluded: false,
     });
     // All local IPs persist as candidate hosts; the hostname persists too.
     expect(store.setHosts).toHaveBeenCalledWith('self-1', ['192.168.1.10', '10.0.0.5']);
@@ -1174,6 +1232,13 @@ describe('self-entry refresh IPC', () => {
       token: 'b'.repeat(64),
       detectHosts: true,
     });
+    // Regression (PR #1762 review): the refresh upsert must NOT carry a
+    // syncExcluded value — the store preserves the survivor's flag when it is
+    // absent, so a refresh can never flip a user's explicit per-backend
+    // exclusion back to synced. Publish (explicit intent) passes false instead.
+    expect(store.add).toHaveBeenCalledWith(
+      expect.not.objectContaining({ syncExcluded: expect.anything() }),
+    );
     expect(store.setHosts).toHaveBeenCalledWith('self-1', ['192.168.1.10', '10.0.0.5']);
     expect(store.setHostname).toHaveBeenCalledWith('self-1', "Clement's Mac Studio");
     // A refresh never touches the suppression marker.
