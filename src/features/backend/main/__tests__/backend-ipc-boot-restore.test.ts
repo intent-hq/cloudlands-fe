@@ -28,6 +28,10 @@ const ctorOpts = vi.hoisted(() => ({ list: [] as Array<Record<string, unknown>> 
 const boot = vi.hoisted(() => ({
   probe: 'resolve' as 'resolve' | 'reject' | 'hang',
   certMismatch: false,
+  // Steerable `server.pairingInfo` answer for the live self-fingerprint probe:
+  // an object resolves as-is ({} is malformed → no fingerprint), 'reject'
+  // simulates the local-only gating error.
+  pairingInfo: {} as Record<string, unknown> | 'reject',
   // The module under test is re-imported per test (vi.resetModules), so its
   // PinMismatchError class differs from any statically-imported one. loadModule
   // stashes the fresh class here so the fake emits an error the module's
@@ -74,6 +78,12 @@ vi.mock('../json-rpc-client', () => {
       if (method === 'host.status') {
         if (boot.probe === 'reject') return Promise.reject(new Error('unreachable'));
         if (boot.probe === 'hang') return new Promise(() => {});
+      }
+      if (method === 'server.pairingInfo') {
+        if (boot.pairingInfo === 'reject') {
+          return Promise.reject(new Error('server.* methods are local-only'));
+        }
+        return Promise.resolve(boot.pairingInfo);
       }
       return Promise.resolve({});
     });
@@ -193,6 +203,7 @@ beforeEach(() => {
   ctorOpts.list = [];
   boot.probe = 'resolve';
   boot.certMismatch = false;
+  boot.pairingInfo = {};
   store.getActiveId.mockResolvedValue('remote-1');
   store.list.mockResolvedValue([LOCAL, REMOTE]);
   store.setActiveId.mockResolvedValue(undefined);
@@ -218,9 +229,11 @@ describe('reconcileActiveConnectionOnBoot — T19 restore', () => {
 
     expect(store.setActiveId).not.toHaveBeenCalledWith('local');
     expect(mod.__getBootFallbackNoticeForTesting()).toBeNull();
-    // Built exactly one client (the restored remote) and did not dispose it.
-    expect(lifecycle.events.filter((e) => e.type === 'construct')).toHaveLength(1);
-    expect(lifecycle.events.some((e) => e.type === 'dispose')).toBe(false);
+    // Two constructs: the live self-fingerprint probe's throwaway local client
+    // (#1, disposed by the authoritative swap) and the restored remote (#2),
+    // which stays live (never disposed).
+    expect(lifecycle.events.filter((e) => e.type === 'construct')).toHaveLength(2);
+    expect(lifecycle.events.some((e) => e.type === 'dispose' && e.seq === 2)).toBe(false);
     // The restore emits the menu-rebuild trigger so backend-gated items update (#1889).
     expect(vi.mocked(app.emit)).toHaveBeenCalledWith('backend-connection-changed');
   });
@@ -287,8 +300,11 @@ describe('reconcileActiveConnectionOnBoot — T19 restore', () => {
 
     expect(store.setActiveId).toHaveBeenCalledWith('local');
     expect(mod.__getBootFallbackNoticeForTesting()).toEqual({ id: 'remote-1', label: 'remote-1' });
-    // Nothing was built (config resolution failed before any client construct).
-    expect(lifecycle.events.some((e) => e.type === 'construct')).toBe(false);
+    // No remote client was built (config resolution failed before any WSS
+    // construct); the only construct is the self-fingerprint probe's local one.
+    expect(
+      ctorOpts.list.filter((o) => (o.config as { transport?: string })?.transport === 'wss'),
+    ).toHaveLength(0);
   });
 
   it('is a no-op when the persisted active id is already local', async () => {
@@ -339,9 +355,10 @@ describe('reconcileActiveConnectionOnBoot — hidden self entry resolves to loca
 
     await mod.reconcileActiveConnectionOnBoot();
 
-    // Restored the (genuinely remote) backend as usual.
+    // Restored the (genuinely remote) backend as usual. Two constructs: the
+    // live-fingerprint probe's local client + the restored remote.
     expect(store.setActiveId).not.toHaveBeenCalledWith('local');
-    expect(lifecycle.events.filter((e) => e.type === 'construct')).toHaveLength(1);
+    expect(lifecycle.events.filter((e) => e.type === 'construct')).toHaveLength(2);
   });
 
   it('takes the normal restore path when no self fingerprint is persisted', async () => {
@@ -351,7 +368,58 @@ describe('reconcileActiveConnectionOnBoot — hidden self entry resolves to loca
     await mod.reconcileActiveConnectionOnBoot();
 
     expect(store.setActiveId).not.toHaveBeenCalledWith('local');
-    expect(lifecycle.events.filter((e) => e.type === 'construct')).toHaveLength(1);
+    expect(lifecycle.events.filter((e) => e.type === 'construct')).toHaveLength(2);
+  });
+
+  it('redirects to local when the LIVE daemon fingerprint matches (nothing persisted)', async () => {
+    // Never published from this machine (no stored fingerprint), but the
+    // record synced in from another device and matches the live daemon cert.
+    boot.pairingInfo = {
+      token: 'a'.repeat(64),
+      certFingerprint: 'AA:BB:CC:DD', // matches REMOTE
+      port: 5181,
+      localIps: ['192.168.1.10'],
+    };
+    const mod = await loadModule();
+
+    await mod.reconcileActiveConnectionOnBoot();
+
+    expect(store.setActiveId).toHaveBeenCalledWith('local');
+    expect(mod.__getBootFallbackNoticeForTesting()).toBeNull();
+    // Only the probe's local client was built — never a WSS "remote" to self.
+    expect(
+      ctorOpts.list.filter((o) => (o.config as { transport?: string })?.transport === 'wss'),
+    ).toHaveLength(0);
+  });
+
+  it('matches the live fingerprint case-insensitively', async () => {
+    boot.pairingInfo = {
+      token: 'a'.repeat(64),
+      certFingerprint: 'aa:bb:cc:dd',
+      port: 5181,
+      localIps: ['192.168.1.10'],
+    };
+    const mod = await loadModule();
+
+    await mod.reconcileActiveConnectionOnBoot();
+
+    expect(store.setActiveId).toHaveBeenCalledWith('local');
+    expect(
+      ctorOpts.list.filter((o) => (o.config as { transport?: string })?.transport === 'wss'),
+    ).toHaveLength(0);
+  });
+
+  it('takes the normal restore path when the live probe fails (fail-soft)', async () => {
+    boot.pairingInfo = 'reject';
+    boot.probe = 'resolve';
+    const mod = await loadModule();
+
+    await mod.reconcileActiveConnectionOnBoot();
+
+    expect(store.setActiveId).not.toHaveBeenCalledWith('local');
+    expect(
+      ctorOpts.list.filter((o) => (o.config as { transport?: string })?.transport === 'wss'),
+    ).toHaveLength(1);
   });
 });
 
@@ -427,7 +495,8 @@ describe('reconcileActiveConnectionOnBoot — boot-origin protocol mismatch', ()
     mod.__setLocalProtocolVersionForTesting('1');
 
     await mod.reconcileActiveConnectionOnBoot();
-    fireHello(0, { clientId: 'c', protocolVersion: '2' }); // restored remote's handshake
+    // Client #0 is the self-fingerprint probe's local client; #1 is the remote.
+    fireHello(1, { clientId: 'c', protocolVersion: '2' }); // restored remote's handshake
 
     expect(mod.__getActiveProtocolMismatchForTesting()).toEqual({
       id: 'remote-1',
@@ -452,9 +521,9 @@ describe('reconcileActiveConnectionOnBoot — boot-origin protocol mismatch', ()
     mod.__setLocalProtocolVersionForTesting('1');
 
     await mod.reconcileActiveConnectionOnBoot();
-    fireHello(0, { protocolVersion: '2' });
-    fireHello(0, { protocolVersion: '2' }); // reconnect re-runs hello
-    fireHello(0, { protocolVersion: '2' });
+    fireHello(1, { protocolVersion: '2' });
+    fireHello(1, { protocolVersion: '2' }); // reconnect re-runs hello
+    fireHello(1, { protocolVersion: '2' });
 
     const mismatchCalls = send.mock.calls.filter(
       ([channel]) => channel === 'connections:protocol-mismatch',
@@ -472,9 +541,9 @@ describe('reconcileActiveConnectionOnBoot — boot-origin protocol mismatch', ()
     });
     mod.__setLocalProtocolVersionForTesting('1');
 
-    await mod.reconcileActiveConnectionOnBoot(); // client #0 (boot-pinned remote)
-    await mod.switchBackend('remote-1'); // client #1 (explicit switch)
-    fireHello(1, { protocolVersion: '2' });
+    await mod.reconcileActiveConnectionOnBoot(); // client #0 (probe) + #1 (boot-pinned remote)
+    await mod.switchBackend('remote-1'); // client #2 (explicit switch)
+    fireHello(2, { protocolVersion: '2' });
 
     expect(mod.__getActiveProtocolMismatchForTesting()?.origin).toBe('switch');
   });

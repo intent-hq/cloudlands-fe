@@ -1432,6 +1432,169 @@ describe('connections:list hides the self entry on the owning machine', () => {
       selfConnectionId: 'self-1',
     });
   });
+
+  it('filters a record matching the LIVE daemon fingerprint (nothing persisted)', async () => {
+    // Never published from this machine, but the record synced in from
+    // another device and matches the live local daemon's cert. The probe is
+    // not awaited by the list itself — it hides on the next list once cached.
+    rpc.handler = async (method) => {
+      if (method === 'server.pairingInfo') {
+        return { token: 'a'.repeat(64), certFingerprint: '11:22:33:44', port: 5181 };
+      }
+      return {};
+    };
+    store.list.mockResolvedValue([LOCAL, REMOTE, SELF_ENTRY]);
+    const { mod } = await loadModule();
+    mod.registerBackendHandlers();
+    const list = findHandler('connections:list')!;
+
+    await list({}, undefined); // kicks off the probe
+    await vi.waitFor(async () => {
+      await expect(list({}, undefined)).resolves.toMatchObject({
+        connections: [LOCAL, REMOTE],
+      });
+    });
+  });
+
+  it('matches the live fingerprint case-insensitively', async () => {
+    rpc.handler = async (method) => {
+      if (method === 'server.pairingInfo') {
+        return { token: 'a'.repeat(64), certFingerprint: '11:22:33:44'.toLowerCase(), port: 5181 };
+      }
+      return {};
+    };
+    store.list.mockResolvedValue([LOCAL, SELF_ENTRY]);
+    const { mod } = await loadModule();
+    mod.registerBackendHandlers();
+    const list = findHandler('connections:list')!;
+
+    await list({}, undefined);
+    await vi.waitFor(async () => {
+      await expect(list({}, undefined)).resolves.toMatchObject({
+        connections: [LOCAL],
+      });
+    });
+  });
+
+  it('re-broadcasts the list to renderers once the live probe resolves', async () => {
+    const send = installWindow();
+    rpc.handler = async (method) => {
+      if (method === 'server.pairingInfo') {
+        return { token: 'a'.repeat(64), certFingerprint: '11:22:33:44', port: 5181 };
+      }
+      return {};
+    };
+    store.list.mockResolvedValue([LOCAL, SELF_ENTRY]);
+    const { mod } = await loadModule();
+    mod.registerBackendHandlers();
+
+    // The first list cannot hide the live match yet (probe in flight)…
+    await expect(findHandler('connections:list')!({}, undefined)).resolves.toMatchObject({
+      connections: [LOCAL, SELF_ENTRY],
+    });
+    // …but the probe's resolution pushes a corrected list to every window.
+    await vi.waitFor(() => {
+      const changed = send.mock.calls.filter(([channel]) => channel === 'connections:changed');
+      expect(changed.length).toBeGreaterThan(0);
+      expect(changed.at(-1)?.[1]).toMatchObject({ connections: [LOCAL] });
+    });
+  });
+
+  it('combines the persisted and live fingerprints (both records hide)', async () => {
+    // A stale persisted key (pre-cert-rotation entry) and the live cert each
+    // match a different stored record — both must hide.
+    localPrefs.values.set('selfBackendFingerprint', '99:88:77:66');
+    rpc.handler = async (method) => {
+      if (method === 'server.pairingInfo') {
+        return { token: 'a'.repeat(64), certFingerprint: '11:22:33:44', port: 5181 };
+      }
+      return {};
+    };
+    const SELF_OLD = { ...SELF_ENTRY, id: 'self-old', fingerprint: '99:88:77:66' };
+    store.list.mockResolvedValue([LOCAL, REMOTE, SELF_ENTRY, SELF_OLD]);
+    const { mod } = await loadModule();
+    mod.registerBackendHandlers();
+    const list = findHandler('connections:list')!;
+
+    // The stored key hides self-old immediately; the live match follows.
+    await expect(list({}, undefined)).resolves.toMatchObject({
+      connections: [LOCAL, REMOTE, SELF_ENTRY],
+    });
+    await vi.waitFor(async () => {
+      await expect(list({}, undefined)).resolves.toMatchObject({
+        connections: [LOCAL, REMOTE],
+      });
+    });
+  });
+
+  it('hides nothing when the probe fails and no fingerprint was persisted (fail-soft)', async () => {
+    rpc.handler = async (method) => {
+      if (method === 'server.pairingInfo') throw new Error('probe down');
+      return {};
+    };
+    store.list.mockResolvedValue([LOCAL, REMOTE, SELF_ENTRY]);
+    const { mod } = await loadModule();
+    mod.registerBackendHandlers();
+    const list = findHandler('connections:list')!;
+
+    await list({}, undefined);
+    await vi.waitFor(() => expect(rpc.calls).toContain('server.pairingInfo'));
+    await expect(list({}, undefined)).resolves.toMatchObject({
+      connections: [LOCAL, REMOTE, SELF_ENTRY],
+    });
+  });
+
+  it('caches a successful live probe for the session (one pairingInfo call across lists)', async () => {
+    rpc.handler = async (method) => {
+      if (method === 'server.pairingInfo') {
+        return { token: 'a'.repeat(64), certFingerprint: '11:22:33:44', port: 5181 };
+      }
+      return {};
+    };
+    store.list.mockResolvedValue([LOCAL, SELF_ENTRY]);
+    const { mod } = await loadModule();
+    mod.registerBackendHandlers();
+    const list = findHandler('connections:list')!;
+
+    await list({}, undefined);
+    await vi.waitFor(async () => {
+      await expect(list({}, undefined)).resolves.toMatchObject({ connections: [LOCAL] });
+    });
+    await list({}, undefined);
+    await findHandler('connections:self-published-state')!({}, undefined);
+
+    expect(rpc.calls.filter((m) => m === 'server.pairingInfo')).toHaveLength(1);
+  });
+
+  it('retries the live probe on a later list after a failed probe (not cached)', async () => {
+    let failures = 0;
+    rpc.handler = async (method) => {
+      if (method === 'server.pairingInfo') {
+        if (failures === 0) {
+          failures += 1;
+          throw new Error('daemon still starting');
+        }
+        return { token: 'a'.repeat(64), certFingerprint: '11:22:33:44', port: 5181 };
+      }
+      return {};
+    };
+    store.list.mockResolvedValue([LOCAL, SELF_ENTRY]);
+    const { mod } = await loadModule();
+    mod.registerBackendHandlers();
+    const list = findHandler('connections:list')!;
+
+    // First list: probe fails (not cached) → nothing hides. A later list
+    // retries the probe; once it succeeds the self entry hides.
+    await expect(list({}, undefined)).resolves.toMatchObject({
+      connections: [LOCAL, SELF_ENTRY],
+    });
+    await vi.waitFor(async () => {
+      await expect(list({}, undefined)).resolves.toMatchObject({
+        connections: [LOCAL],
+      });
+    });
+    expect(rpc.calls.filter((m) => m === 'server.pairingInfo')).toHaveLength(2);
+  });
 });
 
 // ---------------------------------------------------------------------------
