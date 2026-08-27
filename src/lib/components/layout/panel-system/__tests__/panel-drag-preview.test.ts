@@ -61,7 +61,10 @@ describe('PanelDragPreview', () => {
     expect(layout).toContain("contained ? 'px-2' : 'pr-2 sm:pr-3'");
   });
 
-  it('renders a one-pane column reorder from inert snapshots without retaining the old layout', () => {
+  it.each([
+    ['left source to right destination', ['target-panel', 'source-panel']],
+    ['right source to left destination', ['source-panel', 'target-panel']],
+  ] as const)('renders a one-pane column reorder from inert snapshots for %s', (_, panelOrder) => {
     const sourceState = panel('source-panel', ['source']);
     const targetState = panel('target-panel', ['target']);
     const source = addSourcePanel(sourceState);
@@ -70,14 +73,12 @@ describe('PanelDragPreview', () => {
       props: {
         panels: { 'source-panel': sourceState, 'target-panel': targetState },
         draggedPanelId: 'source-panel',
+        contained: true,
         node: {
           type: 'split',
           direction: 'horizontal',
           sizes: [50, 50],
-          children: [
-            { type: 'panel', panelId: 'target-panel' },
-            { type: 'panel', panelId: 'source-panel' },
-          ],
+          children: panelOrder.map((panelId) => ({ type: 'panel' as const, panelId })),
         },
       },
     });
@@ -87,29 +88,35 @@ describe('PanelDragPreview', () => {
     const snapshots = [
       ...container.querySelectorAll<HTMLElement>('[data-panel-layout-preview-snapshot]'),
     ];
-    expect(snapshots.map((snapshot) => snapshot.textContent)).toEqual([
-      expect.stringContaining('target content'),
-      expect.stringContaining('source content'),
-    ]);
-    expect(snapshots.map((snapshot) => snapshot.dataset.panelLayoutPreviewSnapshot)).toEqual([
-      'target-panel',
-      'source-panel',
-    ]);
+    expect(snapshots.map((snapshot) => snapshot.dataset.panelLayoutPreviewSnapshot)).toEqual(
+      panelOrder,
+    );
+    expect(container.textContent).toContain('target content');
+    expect(container.textContent).toContain('source content');
     expect(container.querySelector('[data-panel-id]')).toBeNull();
     expect(snapshots.every((snapshot) => snapshot.inert)).toBe(true);
-    const previewColumns = container.querySelector<HTMLElement>(
+    const previewSplit = container.querySelector<HTMLElement>(
       '[data-panel-layout-preview-split="horizontal"]',
-    )!.children;
-    expect([...previewColumns].map((column) => (column as HTMLElement).style.flex)).toEqual([
-      '0 0 500px',
-      '0 0 500px',
+    )!;
+    const previewColumns = previewSplit.querySelectorAll<HTMLElement>(
+      ':scope > .panel-drag-preview-child',
+    );
+    expect([...previewColumns].map((column) => column.style.flex)).toEqual([
+      '0 0 496px',
+      '0 0 496px',
     ]);
-    expect(snapshots[1].querySelector('input')?.value).toBe('source state');
+    expect(
+      previewSplit.querySelector<HTMLElement>('[data-panel-layout-preview-gutter]')?.style.width,
+    ).toBe('8px');
+    const sourceSnapshot = snapshots.find(
+      (snapshot) => snapshot.dataset.panelLayoutPreviewSnapshot === 'source-panel',
+    )!;
+    expect(sourceSnapshot.querySelector('input')?.value).toBe('source state');
     expect(snapshots[0].style.animation).toBe('none');
     const draggedPreview = container.querySelector<HTMLElement>(
       '[data-panel-layout-preview-dragged]',
     );
-    expect(draggedPreview).toBe(snapshots[1].parentElement?.parentElement);
+    expect(draggedPreview).toBe(sourceSnapshot.parentElement?.parentElement);
     expect(draggedPreview?.children).toHaveLength(2);
     const destinations = container.querySelectorAll<HTMLElement>('[data-panel-drop-destination]');
     expect(destinations).toHaveLength(1);
@@ -251,14 +258,15 @@ describe('PanelDragPreview', () => {
       container.querySelector(`[data-panel-layout-preview-panel="${PANE_DROP_PREVIEW_PANEL_ID}"]`)
         ?.textContent,
     ).toContain('drag content');
-    const previewColumns = container.querySelector<HTMLElement>(
-      '[data-panel-layout-preview-split="horizontal"]',
-    )!.children;
-    expect([...previewColumns].map((column) => (column as HTMLElement).style.flex)).toEqual([
-      '0 0 330px',
-      '0 0 330px',
-      '0 0 340px',
+    const previewColumns = container.querySelectorAll<HTMLElement>(
+      '[data-panel-layout-preview-split="horizontal"] > .panel-drag-preview-child',
+    );
+    expect([...previewColumns].map((column) => column.style.flex)).toEqual([
+      '0 0 324.72px',
+      '0 0 324.72px',
+      '0 0 334.56px',
     ]);
+    expect(container.querySelectorAll('[data-panel-layout-preview-gutter]')).toHaveLength(2);
 
     source.remove();
     target.remove();

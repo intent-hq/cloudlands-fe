@@ -52,5 +52,9 @@
   ondragovercapture={recordPreviewAfterRootCapture}
   ondragover={handleDragOver}
 >
-  {panel.id}
+  <div data-note-content-surface>
+    <div style="padding-left: 48px; padding-right: 48px" data-note-content-inset>
+      {panel.id}
+    </div>
+  </div>
 </div>

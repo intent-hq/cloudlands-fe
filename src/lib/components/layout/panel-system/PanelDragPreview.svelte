@@ -3,7 +3,12 @@
   import { cn } from '$lib/utils';
   import PanelDragPreview from './PanelDragPreview.svelte';
   import { renderPanelLayoutPreview } from './panel-stack-preview';
-  import { getElementContentBoxSize, getPanelReferenceSize } from './panel-resize';
+  import {
+    getElementContentBoxSize,
+    getPanelFlexValue,
+    getPanelReferenceSize,
+  } from './panel-resize';
+  import { PANEL_SPLIT_GUTTER_WIDTH } from '$shared/panel-layout-sizing';
 
   let {
     node,
@@ -31,14 +36,12 @@
   function getChildStyle(index: number): string {
     if (node.type !== 'split') return '';
     const size = node.sizes[index] ?? 100 / node.children.length;
-    if (contained || panelReferenceSize === null) return `flex: ${size} 1 0%`;
-    return `flex: 0 0 ${(panelReferenceSize * size) / 100}px`;
+    return `flex: ${getPanelFlexValue(size, panelReferenceSize)}`;
   }
 
   $effect(() => {
     if (node.type !== 'split' || !splitElement) return;
     const element = splitElement;
-    const children = [...element.children] as HTMLElement[];
     const resizeTarget = isRoot
       ? element.closest<HTMLElement>('[data-testid="panel-workspace-inset"]')
       : element.parentElement;
@@ -52,10 +55,9 @@
         : resizeTarget
           ? getElementContentBoxSize(resizeTarget, 'vertical')
           : element.clientHeight;
-    const gap = Number.parseFloat(getComputedStyle(element).gap) || 0;
     panelReferenceSize = getPanelReferenceSize(
       availableSize,
-      gap * Math.max(0, children.length - 1),
+      PANEL_SPLIT_GUTTER_WIDTH * Math.max(0, node.children.length - 1),
     );
   });
 </script>
@@ -89,7 +91,7 @@
   <div
     bind:this={splitElement}
     class={cn(
-      'panel-drag-preview-split flex h-full min-h-0 w-full min-w-0 gap-2',
+      'panel-drag-preview-split flex h-full min-h-0 w-full min-w-0',
       node.direction,
       node.direction === 'vertical' && 'flex-col',
       contained && 'contained',
@@ -110,6 +112,17 @@
           isRoot={false}
         />
       </div>
+      <!-- i18n-ignore -->
+      {#if index < node.children.length - 1}
+        <div
+          class="panel-drag-preview-gutter shrink-0"
+          style={node.direction === 'horizontal'
+            ? `width: ${PANEL_SPLIT_GUTTER_WIDTH}px`
+            : `height: ${PANEL_SPLIT_GUTTER_WIDTH}px`}
+          data-panel-layout-preview-gutter={node.direction}
+          aria-hidden="true"
+        ></div>
+      {/if}
     {/each}
   </div>
 {/if}
