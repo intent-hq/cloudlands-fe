@@ -32,6 +32,12 @@ import { appClient } from '$lib/client';
 import { store as appStore } from '$store/renderer/store';
 import { openAgentTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
 import { replaceMessages } from '$store/renderer/slices/agent-session/agent-session-slice';
+import {
+  openPanel,
+  setChiefActiveAgentId,
+} from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
+import { setActiveAgentId } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
+import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
 import { dispatchWindowEvent } from './window-events';
 import { navigateToRoute } from './navigation.client';
 
@@ -151,16 +157,29 @@ export async function openMessage(options: OpenMessageOptions): Promise<void> {
     messageId,
   });
 
-  if (typeof window !== 'undefined' && window.location.pathname !== `/workspace/${workspaceId}`) {
+  const isChiefMessage = workspaceId === CHIEF_WORKSPACE_ID;
+
+  if (
+    !isChiefMessage &&
+    typeof window !== 'undefined' &&
+    window.location.pathname !== `/workspace/${workspaceId}`
+  ) {
     try {
       // navigateToRoute no-ops in the HUD pop-out window (never leaves /hud).
       await navigateToRoute(`/workspace/${workspaceId}`);
     } catch (error) {
       logger.warn('[openMessage] Workspace navigation failed', { workspaceId, error });
+      return;
     }
   }
 
-  appStore.dispatch(openAgentTabRequested(workspaceId, { agentId }));
+  if (isChiefMessage) {
+    appStore.dispatch(setChiefActiveAgentId(agentId));
+    appStore.dispatch(setActiveAgentId(CHIEF_WORKSPACE_ID, agentId));
+    appStore.dispatch(openPanel('chief'));
+  } else {
+    appStore.dispatch(openAgentTabRequested(workspaceId, { agentId }));
+  }
 
   const present = (await waitForMessage(agentId, messageId))
     ? true

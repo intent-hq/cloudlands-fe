@@ -1815,6 +1815,7 @@
   "chat_draftGate_loading_label": "Chargement du brouillon du message",
   "chat_turnFailureNotice_title_label": "Échec du tour",
   "chat_msgAttribution_openAgent_title": "Ouvrir l'agent {name}",
+  "chat_msgAttribution_openSource_title": "Ouvrir le message source",
   "chat_msgAttribution_sentMessage_after": "a envoyé un message",
   "chat_queuedNotice_label": "A attendu {duration} dans la file",
   "chat_shared_agentName_fallback": "Agent",

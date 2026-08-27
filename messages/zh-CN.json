@@ -1815,6 +1815,7 @@
   "chat_draftGate_loading_label": "正在加载草稿消息",
   "chat_turnFailureNotice_title_label": "回合失败",
   "chat_msgAttribution_openAgent_title": "打开智能体 {name}",
+  "chat_msgAttribution_openSource_title": "打开来源消息",
   "chat_msgAttribution_sentMessage_after": "发送了一条消息",
   "chat_queuedNotice_label": "在队列中等待了 {duration}",
   "chat_shared_agentName_fallback": "智能体",

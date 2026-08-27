@@ -1815,6 +1815,7 @@
   "chat_draftGate_loading_label": "Nachrichtenentwurf wird geladen",
   "chat_turnFailureNotice_title_label": "Durchlauf fehlgeschlagen",
   "chat_msgAttribution_openAgent_title": "Agent {name} öffnen",
+  "chat_msgAttribution_openSource_title": "Quellnachricht öffnen",
   "chat_msgAttribution_sentMessage_after": "hat eine Nachricht gesendet",
   "chat_queuedNotice_label": "{duration} in der Warteschlange gewartet",
   "chat_shared_agentName_fallback": "Agent",

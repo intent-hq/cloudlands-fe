@@ -1816,6 +1816,7 @@
   "chat_draftGate_loading_label": "Loading draft message",
   "chat_turnFailureNotice_title_label": "Turn failed",
   "chat_msgAttribution_openAgent_title": "Open agent {name}",
+  "chat_msgAttribution_openSource_title": "Open source message",
   "chat_msgAttribution_sentMessage_after": "sent a message",
   "chat_queuedNotice_label": "Waited in queue for {duration}",
   "chat_shared_agentName_fallback": "Agent",
