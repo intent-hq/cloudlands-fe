@@ -1,10 +1,10 @@
 {
   "$schema": "https://unpkg.com/knip@6/schema.json",
-  // The remaining 19 duplicate-export rows are deliberate KEEPs (triaged): both names in
+  // The remaining 20 duplicate-export rows are deliberate KEEPs (triaged): both names in
   // each pair have live importers (icon compat aliases, per-channel schema aliases,
   // mock-module shape, etc.). Consolidation is a rename follow-up, not dead code.
   "rules": {
-    "duplicates": "warn"
+    "duplicates": "warn",
   },
   "entry": [
     // Electron main process (tsconfig.main.json; package.json "main" points at its build output)
@@ -34,14 +34,14 @@
     // Dynamically imported as import('$lib/dev-tools') in src/routes/(app)/+layout.svelte
     // (DEV-only); knip does not follow this aliased dynamic import inside .svelte
     "src/lib/dev-tools.ts",
+    // Loaded by the import.meta.glob preview registry in preview-discovery.ts;
+    // each module's default component export is part of that runtime contract.
+    "src/**/*.preview.{ts,svelte}",
     // Loaded at runtime by cdp-mcp-server/server.ts via a computed path and copied
     // into dist by scripts/build-cdp-mcp.js — not imported as a module
     "cdp-mcp-server/cdp-helpers.js",
-    // Discovered at runtime by preview-discovery.ts through import.meta.glob;
-    // knip cannot infer that each module's named definition and default component are used.
-    "src/**/*.preview.{ts,svelte}",
     // Compile-time type-assertion file, checked by tsc (pnpm run check), never imported
-    "src/store/renderer/utils/context-saga-effects.typecheck.ts"
+    "src/store/renderer/utils/context-saga-effects.typecheck.ts",
   ],
   "ignore": [
     // Consumed via `import * as Card/Dialog/Menu/Sheet` namespace imports whose member
@@ -60,7 +60,7 @@
     // Contract surface exercised via `vi.importActual` in system-ipc-routing.test.ts and
     // agent-subscription-contracts.test.ts — knip cannot trace importActual usage
     "src/lib/electron-bridge.ts",
-    "src/main/browser-ipc-broadcast-adapter.ts"
+    "src/main/browser-ipc-broadcast-adapter.ts",
   ],
   "project": [
     "src/**/*.{js,cjs,mjs,ts,svelte,css}",
@@ -74,10 +74,10 @@
     "test/**/*.ts",
     "tests/**/*.ts",
     "e2e/**/*.{js,ts}",
-    "playwright/**/*.ts"
+    "playwright/**/*.ts",
   ],
   "vitest": {
-    "config": ["vitest.config.ts", "tests/integration/vitest.integration.config.ts"]
+    "config": ["vitest.config.ts", "tests/integration/vitest.integration.config.ts"],
   },
   "playwright": {
     // Loading multiple playwright configs fails with "Requiring @playwright/test second
@@ -97,8 +97,8 @@
       // operate-patterns.playwright.config.ts: testMatch operate-patterns.visual.spec.ts
       "src/**/*.visual.spec.ts",
       // e2e/playwright.config.e2e.ts + e2e/build-smoke.config.ts: testMatch **/*.e2e.ts
-      "e2e/**/*.e2e.ts"
-    ]
+      "e2e/**/*.e2e.ts",
+    ],
   },
   // System/external binaries, not npm packages: pkill/iconutil (macOS), duckdb, flatpak,
   // idea (JetBrains launcher), auggie (Augment CLI, expected on dev/CI hosts)
@@ -116,9 +116,9 @@
     // Native module build toolchain (node-pty/ssh2 rebuilds); version pinned via pnpm overrides
     "node-gyp",
     // Loaded by the inlang CLI through project.inlang/settings.json "modules"
-    "@inlang/plugin-message-format"
+    "@inlang/plugin-message-format",
   ],
   // Vite dev-server URL specifiers (/@id/..., /src/..., /test/fixtures/...) imported inside
   // page.evaluate() in browser-based playwright specs — runtime URLs, not module specifiers
-  "ignoreUnresolved": ["^/(@id|src|test)/.+"]
+  "ignoreUnresolved": ["^/(@id|src|test)/.+"],
 }

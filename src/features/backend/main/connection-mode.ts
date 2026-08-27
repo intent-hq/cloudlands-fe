@@ -27,6 +27,8 @@ export type ConnectionMode = 'sidecar' | 'external' | 'unknown';
  */
 export interface DaemonVersionInfo {
   daemonVersion: string | null;
+  /** Source commit reported by the adopted daemon, when its build embeds one. */
+  daemonBuildCommit?: string | null;
   pinnedVersion: string | null;
   versionMismatch: boolean;
 }

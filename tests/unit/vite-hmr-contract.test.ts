@@ -22,6 +22,11 @@ describe('renderer HMR watcher', () => {
     expect(source).toContain('isTestOnlyFile ||');
   });
 
+  it('normalizes the Paraglide settings path before watcher comparison', () => {
+    expect(source).toContain('const normalizedProjectSettings = normalizeWatcherPath(');
+    expect(source).toContain('normalizedFile === normalizedProjectSettings');
+  });
+
   it('ignores nested .intent isolated worktrees so they cannot stall the dev server', () => {
     // Watcher exclusion: nested worktree SvelteKit output (.svelte-kit/tsconfig.json)
     // must never reach Vite's tsconfig cache-clear / full-reload path (monorepo#3150).

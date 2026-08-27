@@ -24,6 +24,7 @@
   import ToolStatusIcon from './ToolStatusIcon.svelte';
   import ChatOperationalRow from './ChatOperationalRow.svelte';
   import { resolveToolLeadingIcon } from './tool-leading-icon';
+  import { resolveBrowserScreenshotSource } from './browser-screenshot-source';
   import { Button } from '$lib/components/ui/button';
 
   interface Props {
@@ -80,19 +81,9 @@
   const parsedResult = $derived(
     result ? parseToolResult(toolUse.name, toolUse.input || {}, result) : null,
   );
-  const browserScreenshotSource = $derived.by(() => {
-    if (parsedResult?.type !== 'browser') return null;
-
-    const assetUrl = parsedResult.screenshotUrl?.trim();
-    if (assetUrl && /^(?:https?:\/\/|workspace-asset:\/\/)/i.test(assetUrl)) return assetUrl;
-
-    const base64 = parsedResult.screenshotBase64?.trim();
-    if (base64 && /^[A-Za-z0-9+/]+={0,2}$/.test(base64)) {
-      return `data:image/png;base64,${base64}`;
-    }
-
-    return null;
-  });
+  const browserScreenshotSource = $derived(
+    parsedResult?.type === 'browser' ? resolveBrowserScreenshotSource(parsedResult) : null,
+  );
   let failedBrowserScreenshotSource = $state<string | null>(null);
 
   // PERF: Classify tool - memoized with $derived
@@ -386,7 +377,7 @@
     <Button
       type="button"
       variant="plain"
-      class="block w-full cursor-pointer border-0 bg-transparent p-0 px-2 pb-1 text-left"
+      class="block h-auto w-full cursor-pointer border-0 bg-transparent p-0 px-2 pb-1 text-left"
       onclick={toggleExpanded}
     >
       <div class="overflow-hidden rounded border border-border">

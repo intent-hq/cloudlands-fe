@@ -22,6 +22,13 @@ vi.mock('./capture-stability', () => ({
 
 const loadedButton = { component: Button, definition: buttonPreview };
 
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((promiseResolve) => {
+    resolve = promiseResolve;
+  });
+  return { promise, resolve };
+}
 describe('CatalogScene', () => {
   beforeEach(() => {
     mocks.loadPreview.mockReset();
@@ -35,7 +42,7 @@ describe('CatalogScene', () => {
 
   afterEach(() => cleanup());
 
-  it('renders a lazily discovered state and publishes readiness after stability', async () => {
+  it('renders a lazily discovered state and marks DOM readiness after stability', async () => {
     const preview = render(CatalogScene, {
       props: { slug: 'button', requestedState: 'loading', requestedWidth: 420 },
     });
@@ -46,6 +53,12 @@ describe('CatalogScene', () => {
     expect(screen.getByTestId('catalog-scene').dataset.previewState).toBe('loading');
     expect(screen.getByTestId('catalog-scene-focus').style.width).toBe('420px');
     expect(screen.getByRole('button', { name: 'Saving' }).getAttribute('aria-busy')).toBe('true');
+    expect(screen.getByRole('link', { name: 'disabled' }).getAttribute('href')).toBe(
+      '/?state=disabled&width=420',
+    );
+    expect(screen.getByRole('link', { name: '320px' }).getAttribute('href')).toBe(
+      '/?state=loading&width=320',
+    );
     await waitFor(() =>
       expect(screen.getByTestId('catalog-scene').dataset.previewStable).toBe('true'),
     );
@@ -65,32 +78,33 @@ describe('CatalogScene', () => {
     expect(screen.getByRole('button', { name: 'Unavailable' })).not.toBeNull();
   });
 
-  it('keeps public readiness false while capture stability is pending', async () => {
-    let resolveStability: ((value: { imageCount: number; reducedMotion: boolean }) => void) | null =
-      null;
-    mocks.waitForCaptureStability.mockImplementationOnce(
-      () =>
-        new Promise((resolve) => {
-          resolveStability = resolve;
-        }),
-    );
+  it('does not publish DOM or API readiness before capture stability resolves', async () => {
+    const stability = deferred<{ imageCount: number; reducedMotion: boolean }>();
+    mocks.waitForCaptureStability.mockReturnValueOnce(stability.promise);
     render(CatalogScene, {
       props: { slug: 'button', requestedState: 'loading', requestedWidth: 420 },
     });
 
     await waitFor(() => expect(mocks.waitForCaptureStability).toHaveBeenCalledTimes(1));
+    expect(screen.getByRole('button', { name: 'Saving' })).not.toBeNull();
     expect(screen.getByTestId('catalog-scene').dataset.previewStatus).toBe('loading');
     expect(screen.getByTestId('catalog-scene').dataset.previewReady).toBe('false');
-    expect(screen.getByTestId('catalog-scene').dataset.previewStable).toBe('false');
+    expect(screen.getByTestId('catalog-scene').dataset.previewStability).toBe('waiting');
     expect(mocks.setActivePreview).not.toHaveBeenCalledWith(
       expect.objectContaining({ status: 'ready' }),
     );
 
-    resolveStability?.({ imageCount: 0, reducedMotion: true });
+    stability.resolve({ imageCount: 0, reducedMotion: true });
     await waitFor(() =>
       expect(screen.getByTestId('catalog-scene').dataset.previewReady).toBe('true'),
     );
     expect(screen.getByTestId('catalog-scene').dataset.previewStable).toBe('true');
+    expect(mocks.setActivePreview).toHaveBeenLastCalledWith({
+      slug: 'button',
+      state: 'loading',
+      width: 420,
+      status: 'ready',
+    });
   });
 
   it('keeps an invalid state visible and does not emit a false ready marker', async () => {
@@ -137,7 +151,7 @@ describe('CatalogScene', () => {
     expect(mocks.waitForCaptureStability).not.toHaveBeenCalled();
   });
 
-  it('keeps public readiness false when capture preparation fails and cleans the fixture', async () => {
+  it('does not publish readiness when capture preparation fails and cleans the fixture', async () => {
     const dispose = vi.fn();
     mocks.loadPreview.mockResolvedValueOnce({
       component: Button,
@@ -155,11 +169,12 @@ describe('CatalogScene', () => {
     expect((await screen.findByRole('alert')).textContent).toContain(
       'Preview capture preparation failed: fonts unavailable',
     );
-    expect(screen.getByTestId('catalog-scene').dataset.previewStatus).toBe('error');
     expect(screen.getByTestId('catalog-scene').dataset.previewReady).toBe('false');
     expect(screen.getByTestId('catalog-scene').dataset.previewStable).toBe('false');
     expect(screen.getByTestId('catalog-scene').dataset.previewStability).toBe('error');
-    expect(mocks.setActivePreview).toHaveBeenLastCalledWith(null);
+    expect(mocks.setActivePreview).not.toHaveBeenCalledWith(
+      expect.objectContaining({ status: 'ready' }),
+    );
     expect(dispose).toHaveBeenCalledTimes(1);
   });
 
@@ -195,5 +210,14 @@ describe('CatalogScene', () => {
       expect(screen.getByTestId('catalog-scene').dataset.previewStable).toBe('true'),
     );
     expect(screen.queryByRole('alert')).toBeNull();
+    expect(mocks.setActivePreview).not.toHaveBeenCalledWith(
+      expect.objectContaining({ state: 'first', status: 'ready' }),
+    );
+    expect(mocks.setActivePreview).toHaveBeenLastCalledWith({
+      slug: 'button',
+      state: 'default',
+      width: 420,
+      status: 'ready',
+    });
   });
 });

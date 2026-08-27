@@ -4,6 +4,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import type { PanelTab } from '$store/renderer/slices/panel-layout/panel-layout-types';
 import { m } from '$shared/paraglide/messages.js';
+import { appClient } from '$lib/client';
+import { backendRequest } from '$lib/client/live/backend-transport';
+import type { FileNode } from '$shared/types';
 
 const {
   actionMocks,
@@ -177,6 +180,11 @@ vi.mock('$store/renderer/store', async () => {
   });
 });
 
+vi.mock('$lib/client/live/backend-transport', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('$lib/client/live/backend-transport')>();
+  return { ...actual, backendRequest: vi.fn() };
+});
+
 vi.mock('$store/renderer/slices/files/files-selectors', () => ({
   selectFileContent: createMockSelector((_wsId: string, path: string | null | undefined) =>
     path ? (mockReduxState.files[path]?.localContent ?? null) : null,
@@ -286,10 +294,14 @@ describe('FileTabType Redux integration', () => {
   beforeEach(() => {
     resetMockReduxState();
     vi.clearAllMocks();
+    vi.mocked(backendRequest).mockImplementation(async (method) =>
+      method === 'file.stat' ? { isFile: true } : { files: [] },
+    );
   });
 
   afterEach(() => {
     cleanup();
+    vi.restoreAllMocks();
   });
 
   function renderFileTab(tab: PanelTab = fileTab) {
@@ -301,6 +313,27 @@ describe('FileTabType Redux integration', () => {
         isPanelFocused: true,
       },
     });
+  }
+
+  const fileNode = (name: string): FileNode => ({ name, path: name, type: 'file' });
+  const directoryNode = (name: string): FileNode => ({ name, path: name, type: 'directory' });
+
+  function mockIgnoredArtifacts() {
+    return vi
+      .spyOn(appClient.files, 'listDirectory')
+      .mockImplementation(async (_workspaceId, path) => {
+        if (path === '.demo-artifacts') {
+          return [directoryNode('20260824T234627Z-frontend-preview')];
+        }
+        if (path === '.demo-artifacts/20260824T234627Z-frontend-preview') {
+          return [
+            fileNode('frontend-preview.png'),
+            fileNode('frontend-preview.gif'),
+            fileNode('frontend-preview.webm'),
+          ];
+        }
+        return [];
+      });
   }
 
   it('groups editor presentation toggles into one view settings menu', async () => {
@@ -477,7 +510,7 @@ describe('FileTabType Redux integration', () => {
     expect(screen.queryByTestId('code-editor')).toBeNull();
   });
 
-  it('keeps binary files in FileViewer instead of CodeEditor', async () => {
+  it('keeps allowlisted binary images in FileViewer without a text read', async () => {
     mockReduxState.files['assets/logo.png'] = {
       localContent: '',
       originalContent: '',
@@ -492,8 +525,223 @@ describe('FileTabType Redux integration', () => {
 
     const viewer = await screen.findByTestId('file-viewer');
     expect(viewer.getAttribute('data-file-path')).toBe('assets/logo.png');
-    expect(viewer.getAttribute('data-is-binary')).toBe('true');
+    expect(viewer.getAttribute('data-source-url')).toBe('workspace-file://ws-1/assets/logo.png');
+    expect(actionMocks.loadFileContentRequested).not.toHaveBeenCalled();
     expect(screen.queryByTestId('code-editor')).toBeNull();
+  });
+
+  it.each([
+    [
+      '20260824T234627Z-frontend-preview/frontend-preview.png',
+      '.demo-artifacts/20260824T234627Z-frontend-preview/frontend-preview.png',
+    ],
+    [
+      'frontend-preview.webm',
+      '.demo-artifacts/20260824T234627Z-frontend-preview/frontend-preview.webm',
+    ],
+    [
+      'frontend-preview.gif',
+      '.demo-artifacts/20260824T234627Z-frontend-preview/frontend-preview.gif',
+    ],
+  ])(
+    'retargets noncanonical media %s before rendering its final binary URL',
+    async (requestedPath, resolvedPath) => {
+      const list = mockIgnoredArtifacts();
+      vi.mocked(backendRequest).mockImplementation(async (method, params) => {
+        if (method === 'file.stat') {
+          if ((params as { path: string }).path === resolvedPath) return { isFile: true };
+          throw new Error('not found');
+        }
+        return { files: [] };
+      });
+      const tab = {
+        ...fileTab,
+        id: `tab-${requestedPath}`,
+        title: requestedPath,
+        filePath: requestedPath,
+      };
+      const view = renderFileTab(tab);
+
+      await waitFor(() =>
+        expect(actionMocks.updateFileTabPath).toHaveBeenCalledWith(
+          'ws-1',
+          requestedPath,
+          resolvedPath,
+          tab.id,
+        ),
+      );
+      expect(screen.queryByTestId('file-viewer')).toBeNull();
+
+      await view.rerender({
+        tab: { ...tab, title: resolvedPath.split('/').pop(), filePath: resolvedPath },
+        workspaceId: 'ws-1',
+        isActive: true,
+        isPanelFocused: true,
+      });
+
+      const viewer = await screen.findByTestId('file-viewer');
+      expect(viewer.getAttribute('data-file-path')).toBe(resolvedPath);
+      expect(viewer.getAttribute('data-source-url')).toBe(`workspace-file://ws-1/${resolvedPath}`);
+      expect(actionMocks.updateFileTabPath).toHaveBeenCalledTimes(1);
+      expect(list.mock.calls.every(([workspaceId]) => workspaceId === 'ws-1')).toBe(true);
+      expect(actionMocks.loadFileContentRequested).not.toHaveBeenCalled();
+    },
+  );
+
+  it('preserves an exact root-level media file without suffix retargeting', async () => {
+    const list = vi.spyOn(appClient.files, 'listDirectory');
+    renderFileTab({ ...fileTab, id: 'tab-root-png', title: 'logo.png', filePath: 'logo.png' });
+
+    expect((await screen.findByTestId('file-viewer')).getAttribute('data-source-url')).toBe(
+      'workspace-file://ws-1/logo.png',
+    );
+    expect(backendRequest).toHaveBeenCalledWith('file.stat', {
+      workspaceId: 'ws-1',
+      path: 'logo.png',
+    });
+    expect(list).not.toHaveBeenCalled();
+    expect(actionMocks.updateFileTabPath).not.toHaveBeenCalled();
+    expect(actionMocks.loadFileContentRequested).not.toHaveBeenCalled();
+  });
+
+  it.each(['../preview.png', 'src/../../preview.webm'])(
+    'does not resolve or text-read traversal media path %s',
+    async (filePath) => {
+      const list = vi.spyOn(appClient.files, 'listDirectory');
+      renderFileTab({ ...fileTab, id: `tab-${filePath}`, title: filePath, filePath });
+
+      expect(await screen.findByText(m.layout_fileTab_preparing_label())).toBeTruthy();
+      expect(backendRequest).not.toHaveBeenCalled();
+      expect(list).not.toHaveBeenCalled();
+      expect(actionMocks.updateFileTabPath).not.toHaveBeenCalled();
+      expect(actionMocks.loadFileContentRequested).not.toHaveBeenCalled();
+      expect(screen.queryByTestId('file-viewer')).toBeNull();
+    },
+  );
+
+  it.each(['missing', 'ambiguous', 'truncated'])(
+    'does not retarget a %s media resolution result',
+    async (outcome) => {
+      vi.mocked(backendRequest).mockRejectedValue(new Error('not found'));
+      vi.spyOn(appClient.files, 'listDirectory').mockImplementation(async (_workspaceId, path) => {
+        if (outcome === 'missing') return [];
+        if (outcome === 'truncated' && path === '.demo-artifacts') {
+          return Array.from({ length: 257 }, (_, index) => fileNode(`capture-${index}.png`));
+        }
+        if (path === '.demo-artifacts') return [directoryNode('one'), directoryNode('two')];
+        if (path === '.demo-artifacts/one' || path === '.demo-artifacts/two') {
+          return [fileNode('preview.png')];
+        }
+        return [];
+      });
+
+      renderFileTab({
+        ...fileTab,
+        id: `tab-${outcome}`,
+        title: 'preview.png',
+        filePath: 'preview.png',
+      });
+
+      expect((await screen.findByTestId('file-viewer')).getAttribute('data-source-url')).toBe(
+        'workspace-file://ws-1/preview.png',
+      );
+      expect(actionMocks.updateFileTabPath).not.toHaveBeenCalled();
+      expect(actionMocks.loadFileContentRequested).not.toHaveBeenCalled();
+    },
+  );
+
+  it('ignores a late exact-path result after the media tab changes', async () => {
+    let finishOldStat!: () => void;
+    vi.mocked(backendRequest).mockImplementation(async (method, params) => {
+      const path = (params as { path: string }).path;
+      if (method === 'file.stat' && path === 'old.png') {
+        await new Promise<void>((resolve) => {
+          finishOldStat = resolve;
+        });
+        throw new Error('not found');
+      }
+      return { isFile: true };
+    });
+    const view = renderFileTab({
+      ...fileTab,
+      id: 'tab-race',
+      title: 'old.png',
+      filePath: 'old.png',
+    });
+    await waitFor(() => expect(finishOldStat).toBeTypeOf('function'));
+
+    await view.rerender({
+      tab: { ...fileTab, id: 'tab-race', title: 'current.webm', filePath: 'current.webm' },
+      workspaceId: 'ws-2',
+      isActive: true,
+      isPanelFocused: true,
+    });
+    finishOldStat();
+
+    const viewer = await screen.findByTestId('file-viewer');
+    expect(viewer.getAttribute('data-source-url')).toBe('workspace-file://ws-2/current.webm');
+    expect(actionMocks.updateFileTabPath).not.toHaveBeenCalled();
+    expect(actionMocks.loadFileContentRequested).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    [
+      '.demo-artifacts/20260824T234627Z-frontend-preview/frontend-preview.png',
+      'workspace-file://ws-1/.demo-artifacts/20260824T234627Z-frontend-preview/frontend-preview.png',
+    ],
+    ['artifacts/my clip.webp', 'workspace-file://ws-1/artifacts/my%20clip.webp'],
+    ['.demo-artifacts/run/preview.mp4', 'workspace-file://ws-1/.demo-artifacts/run/preview.mp4'],
+    [
+      '.demo-artifacts/20260824T234627Z-frontend-preview/frontend-preview.webm',
+      'workspace-file://ws-1/.demo-artifacts/20260824T234627Z-frontend-preview/frontend-preview.webm',
+    ],
+  ])(
+    'renders trusted workspace media %s without a UTF-8 file.read',
+    async (filePath, sourceUrl) => {
+      renderFileTab({ ...fileTab, id: `tab-${filePath}`, title: filePath, filePath });
+
+      const viewer = await screen.findByTestId('file-viewer');
+      expect(viewer.getAttribute('data-source-url')).toBe(sourceUrl);
+      expect(actionMocks.updateFileTabPath).not.toHaveBeenCalled();
+      expect(actionMocks.loadFileContentRequested).not.toHaveBeenCalled();
+      expect(dispatchMock).not.toHaveBeenCalledWith(
+        expect.objectContaining({ type: 'files/loadFileContentRequested' }),
+      );
+      expect(screen.queryByTestId('code-editor')).toBeNull();
+    },
+  );
+
+  it('routes an absolute in-workspace video through its workspace-relative media URL', async () => {
+    renderFileTab({
+      ...fileTab,
+      id: 'tab-absolute-video',
+      title: 'preview.webm',
+      filePath: '/repo/.demo-artifacts/run/preview.webm',
+    });
+
+    const viewer = await screen.findByTestId('file-viewer');
+    expect(viewer.getAttribute('data-source-url')).toBe(
+      'workspace-file://ws-1/.demo-artifacts/run/preview.webm',
+    );
+    expect(actionMocks.loadFileContentRequested).not.toHaveBeenCalled();
+  });
+
+  it('does not route unsupported media extensions through workspace-file', async () => {
+    renderFileTab({
+      ...fileTab,
+      id: 'tab-unsupported-video',
+      title: 'preview.mov',
+      filePath: 'artifacts/preview.mov',
+    });
+
+    await waitFor(() =>
+      expect(actionMocks.loadFileContentRequested).toHaveBeenCalledWith(
+        'ws-1',
+        'artifacts/preview.mov',
+        '/repo/artifacts/preview.mov',
+      ),
+    );
+    expect(screen.queryByTestId('file-viewer')).toBeNull();
   });
 
   it('renders Redux file content, dispatches edits, and saves current content', async () => {

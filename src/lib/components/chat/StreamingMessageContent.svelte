@@ -207,6 +207,7 @@
       normalizeAgentVideoContentBlocks(
         dedupeResourceBlocks(parsedPromptBlocks.contentBlocks),
         role,
+        workspaceId,
       ),
     ).filter((block) => !isQuestionResourceBlock(block));
 

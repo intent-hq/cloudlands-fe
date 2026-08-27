@@ -9,6 +9,17 @@ import os from 'os';
 import { Logger } from '../../../shared/logger';
 import { allSamples, type MemorySnapshot, type ProcessKind } from '../../../main/memory-monitor';
 
+interface GeneratedBuildConfigModule {
+  BUILD_CONFIG: { GIT_COMMIT_HASH: string };
+}
+
+const BUILD_CONFIG_MODULE_PATH = '../../../main/build-config.generated.js';
+const DEFAULT_APP_BUILD_COMMIT = await import(/* @vite-ignore */ BUILD_CONFIG_MODULE_PATH)
+  .then((generated) => (generated as GeneratedBuildConfigModule).BUILD_CONFIG.GIT_COMMIT_HASH)
+  // The generated module is deliberately absent from clean source checkouts.
+  // Production and development entry points generate it before compiling.
+  .catch(() => '');
+
 const logger = new Logger('SystemInfoService');
 
 /** One process Intent is responsible for, at the moment the bundle was created. */
@@ -25,6 +36,8 @@ interface SystemProcessInfo {
 interface SystemInfo {
   timestamp: string;
   appVersion: string;
+  /** Frontend source commit embedded at build time. Omitted when unavailable. */
+  appBuildCommit?: string;
   electronVersion: string;
   platform: string;
   arch: string;
@@ -50,7 +63,10 @@ interface SystemInfo {
  * Generate system information
  * @param memorySnapshot Capture-time process reading, or `null` when unavailable
  */
-export function generateSystemInfo(memorySnapshot: MemorySnapshot | null = null): SystemInfo {
+export function generateSystemInfo(
+  memorySnapshot: MemorySnapshot | null = null,
+  appBuildCommit = DEFAULT_APP_BUILD_COMMIT,
+): SystemInfo {
   const totalMemory = os.totalmem();
   const freeMemory = os.freemem();
 
@@ -66,6 +82,7 @@ export function generateSystemInfo(memorySnapshot: MemorySnapshot | null = null)
   const info: SystemInfo = {
     timestamp: new Date().toISOString(),
     appVersion: app.getVersion(),
+    ...(appBuildCommit ? { appBuildCommit } : {}),
     electronVersion: process.versions.electron,
     platform: process.platform,
     arch: process.arch,

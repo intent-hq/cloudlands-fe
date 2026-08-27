@@ -464,6 +464,7 @@ export function resolveSocketPath(
 export interface DaemonVersionProbeResult {
   alive: boolean;
   version?: string;
+  buildCommit?: string;
   protocolVersion?: string;
 }
 
@@ -517,11 +518,13 @@ export async function probeDaemonVersion(
       if (newlineIndex === -1) return;
       try {
         const parsed = JSON.parse(buffer.slice(0, newlineIndex)) as {
-          result?: { version?: unknown; protocolVersion?: unknown };
+          result?: { version?: unknown; buildCommit?: unknown; protocolVersion?: unknown };
         };
         finish({
           alive: true,
           version: typeof parsed.result?.version === 'string' ? parsed.result.version : undefined,
+          buildCommit:
+            typeof parsed.result?.buildCommit === 'string' ? parsed.result.buildCommit : undefined,
           protocolVersion:
             typeof parsed.result?.protocolVersion === 'string'
               ? parsed.result.protocolVersion
@@ -964,6 +967,7 @@ export async function startIntentdSidecar(
     const versionMismatch = comparison === 'older' || comparison === 'newer';
     setDaemonVersionInfo({
       daemonVersion: probe.version ?? null,
+      ...(probe.buildCommit ? { daemonBuildCommit: probe.buildCommit } : {}),
       pinnedVersion,
       versionMismatch,
     });
@@ -978,6 +982,7 @@ export async function startIntentdSidecar(
     const details = {
       socketPath,
       daemonVersion: probe.version ?? null,
+      daemonBuildCommit: probe.buildCommit ?? null,
       protocolVersion: probe.protocolVersion ?? null,
       pinnedVersion,
       comparison,

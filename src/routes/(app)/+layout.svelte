@@ -118,6 +118,8 @@
   import { selectShowCreateModal } from '$store/renderer/slices/sidebar-nav/sidebar-nav-selectors';
   import NewSpaceModal from '$lib/components/modals/NewSpaceModal.svelte';
   import { store as appStore } from '$store/renderer/store';
+  // Installs production bridge handlers before the app sagas and route startup use them.
+  import '$store/renderer/seeders';
   import { startAppStoreLifecycle } from '$store/renderer/app-store-lifecycle';
   import {
     installInterruptedAgentsService,
