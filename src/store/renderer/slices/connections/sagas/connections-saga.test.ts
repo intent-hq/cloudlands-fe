@@ -19,8 +19,10 @@ import {
   initialState,
   loadKeychainSyncStateRequested,
   openConnectionRequested,
+  rotateConnectionSecretRequested,
   setKeychainSyncEnabledRequested,
   switchConnectionRequested,
+  testConnectionRequested,
   updateConnectionRequested,
 } from '../connections-slice';
 import { connectionsSaga } from './connections-saga';
@@ -82,7 +84,11 @@ describe('connectionsSaga', () => {
         return { fingerprint: 'AB:CD', tokenValid: true };
       if (channel === CONNECTION_CHANNELS.ADD) return { connection: REMOTE, switched: false };
       if (channel === CONNECTION_CHANNELS.UPDATE)
-        return { connection: { ...REMOTE, ...(params as object) } };
+        return { status: 'updated', connection: { ...REMOTE, ...(params as object) } };
+      if (channel === CONNECTION_CHANNELS.TEST)
+        return { status: 'success', fingerprint: REMOTE.fingerprint };
+      if (channel === CONNECTION_CHANNELS.ROTATE_SECRET)
+        return { status: 'updated', connection: REMOTE };
       if (channel === CONNECTION_CHANNELS.OPEN) return { id: (params as { id: string }).id };
       if (channel === CONNECTION_CHANNELS.FORGET) return { id: (params as { id: string }).id };
       if (channel === CONNECTION_CHANNELS.SWITCH)
@@ -226,12 +232,33 @@ describe('connectionsSaga', () => {
     });
     run.channel.put(update);
     await expect(update.promise).resolves.toEqual({
+      status: 'updated',
       connection: { ...REMOTE, id: REMOTE.id, label: 'Editing Mac', accent: 'violet' },
     });
     expect(invoke).toHaveBeenCalledWith(CONNECTION_CHANNELS.UPDATE, {
       id: REMOTE.id,
       label: 'Editing Mac',
       accent: 'violet',
+    });
+
+    const test = testConnectionRequested({ id: REMOTE.id, host: '10.0.0.99', port: 9443 });
+    run.channel.put(test);
+    await expect(test.promise).resolves.toEqual({
+      status: 'success',
+      fingerprint: REMOTE.fingerprint,
+    });
+    expect(invoke).toHaveBeenCalledWith(CONNECTION_CHANNELS.TEST, {
+      id: REMOTE.id,
+      host: '10.0.0.99',
+      port: 9443,
+    });
+
+    const rotate = rotateConnectionSecretRequested({ id: REMOTE.id, token: 'replacement' });
+    run.channel.put(rotate);
+    await expect(rotate.promise).resolves.toEqual({ status: 'updated', connection: REMOTE });
+    expect(invoke).toHaveBeenCalledWith(CONNECTION_CHANNELS.ROTATE_SECRET, {
+      id: REMOTE.id,
+      token: 'replacement',
     });
 
     const open = openConnectionRequested(REMOTE.id);

@@ -35,9 +35,13 @@ import type {
   KeychainSyncUiStatus,
   OpenConnectionParams,
   OpenConnectionResult,
+  RotateConnectionSecretParams,
+  RotateConnectionSecretResult,
   SetKeychainSyncEnabledParams,
   SwitchConnectionParams,
   SwitchConnectionResult,
+  TestConnectionParams,
+  TestConnectionResult,
   UpdateConnectionParams,
   UpdateConnectionResult,
 } from '$shared/types/connections';
@@ -57,8 +61,10 @@ import {
   loadKeychainSyncStateRequested,
   openConnectionRequested,
   protocolMismatchReceived,
+  rotateConnectionSecretRequested,
   setKeychainSyncEnabledRequested,
   switchConnectionRequested,
+  testConnectionRequested,
   updateConnectionRequested,
 } from '../connections-slice';
 
@@ -149,6 +155,20 @@ async function invokeUpdateConnection(
   const api = getApi();
   if (!api) throw new Error('electronAPI is not available');
   return (await api.invoke(CONNECTIONS.UPDATE, params)) as UpdateConnectionResult;
+}
+
+async function invokeTestConnection(params: TestConnectionParams): Promise<TestConnectionResult> {
+  const api = getApi();
+  if (!api) throw new Error('electronAPI is not available');
+  return (await api.invoke(CONNECTIONS.TEST, params)) as TestConnectionResult;
+}
+
+async function invokeRotateConnectionSecret(
+  params: RotateConnectionSecretParams,
+): Promise<RotateConnectionSecretResult> {
+  const api = getApi();
+  if (!api) throw new Error('electronAPI is not available');
+  return (await api.invoke(CONNECTIONS.ROTATE_SECRET, params)) as RotateConnectionSecretResult;
 }
 
 async function invokeOpenConnection(params: OpenConnectionParams): Promise<OpenConnectionResult> {
@@ -284,6 +304,40 @@ function* updateConnection(
   }
 }
 
+function* testConnection(
+  action: ReturnType<typeof testConnectionRequested>,
+): SagaGenerator<void> {
+  let settled = false;
+  try {
+    const result = yield* call(invokeTestConnection, action.payload[0]);
+    yield* put(action.success(result));
+    settled = true;
+  } catch (error) {
+    yield* put(action.failure(toError(error)));
+    settled = true;
+  } finally {
+    if (!settled && (yield* cancelled()))
+      yield* put(action.failure(new Error('Connection test was cancelled')));
+  }
+}
+
+function* rotateConnectionSecret(
+  action: ReturnType<typeof rotateConnectionSecretRequested>,
+): SagaGenerator<void> {
+  let settled = false;
+  try {
+    const result = yield* call(invokeRotateConnectionSecret, action.payload[0]);
+    yield* put(action.success(result));
+    settled = true;
+  } catch (error) {
+    yield* put(action.failure(toError(error)));
+    settled = true;
+  } finally {
+    if (!settled && (yield* cancelled()))
+      yield* put(action.failure(new Error('Secret rotation was cancelled')));
+  }
+}
+
 function* openConnection(action: ReturnType<typeof openConnectionRequested>): SagaGenerator<void> {
   let settled = false;
   yield* put(connectOperationStarted());
@@ -388,6 +442,8 @@ function* watchConnectionsActions(): SagaGenerator<void> {
     takeLeading(captureFingerprintRequested, captureFingerprint),
     takeLeading(addConnectionRequested, addConnection),
     takeLeading(updateConnectionRequested, updateConnection),
+    takeLeading(testConnectionRequested, testConnection),
+    takeLeading(rotateConnectionSecretRequested, rotateConnectionSecret),
     takeLeading(openConnectionRequested, openConnection),
     takeLeading(forgetConnectionRequested, forgetConnection),
     takeLeading(switchConnectionRequested, switchConnection),

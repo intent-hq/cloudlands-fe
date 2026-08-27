@@ -535,6 +535,8 @@ const ALLOWED_CHANNELS = [
   "connections:capture-fingerprint",
   "connections:add",
   "connections:update",
+  "connections:test",
+  "connections:rotate-secret",
   "connections:open",
   "connections:forget",
   "connections:switch",

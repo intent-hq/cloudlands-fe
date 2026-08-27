@@ -27,6 +27,10 @@ import type {
   KeychainSyncStateResult,
   KeychainSyncUiStatus,
   OpenConnectionResult,
+  RotateConnectionSecretParams,
+  RotateConnectionSecretResult,
+  TestConnectionParams,
+  TestConnectionResult,
   UpdateConnectionParams,
   UpdateConnectionResult,
   ConnectionAuthRejectedEvent,
@@ -151,6 +155,18 @@ export const updateConnectionRequested = createAsyncAction<
   [params: UpdateConnectionParams],
   UpdateConnectionResult
 >('connections/update', 'connections/updateRequested');
+
+/** Saga-owned probe of unsaved address values with the saved secret. */
+export const testConnectionRequested = createAsyncAction<
+  [params: TestConnectionParams],
+  TestConnectionResult
+>('connections/test', 'connections/testRequested');
+
+/** Saga-owned write-only secret rotation request. */
+export const rotateConnectionSecretRequested = createAsyncAction<
+  [params: RotateConnectionSecretParams],
+  RotateConnectionSecretResult
+>('connections/rotateSecret', 'connections/rotateSecretRequested');
 
 /** Saga-owned non-destructive open/focus request for one backend. */
 export const openConnectionRequested = createAsyncAction<[id: string], OpenConnectionResult>(

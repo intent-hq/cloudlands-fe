@@ -216,6 +216,47 @@ describe('connections-store', () => {
     expect(await store.getDecryptedToken('unknown')).toBeNull();
   });
 
+  it('updates remote address metadata while preserving the secret and syncing the old identity tombstone', async () => {
+    const store = await import('../connections-store');
+    const original = await store.add(sampleConn);
+
+    const updated = await store.updateMetadata(original.id, {
+      label: 'Moved Mac',
+      accent: 'violet',
+      host: '10.0.0.42',
+      port: 9443,
+      fingerprint: 'DD:EE:FF',
+    });
+
+    expect(updated).toMatchObject({
+      id: original.id,
+      label: 'Moved Mac',
+      accent: 'violet',
+      host: '10.0.0.42',
+      port: 9443,
+      fingerprint: 'DD:EE:FF',
+    });
+    expect(await store.getDecryptedToken(original.id)).toBe(sampleConn.token);
+    const syncRecords = await store.listSyncRecords();
+    expect(syncRecords).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ host: sampleConn.host, deleted: true }),
+        expect.objectContaining({ host: '10.0.0.42' }),
+      ]),
+    );
+  });
+
+  it('replaces only the encrypted secret and validated fingerprint for one remote', async () => {
+    const store = await import('../connections-store');
+    const original = await store.add(sampleConn);
+    const updated = await store.replaceSecret(original.id, 'rotated-token', 'DD:EE:FF');
+
+    expect(updated).toMatchObject({ id: original.id, fingerprint: 'DD:EE:FF' });
+    expect(await store.getDecryptedToken(original.id)).toBe('rotated-token');
+    expect(updated).not.toHaveProperty('token');
+    expect(updated).not.toHaveProperty('encToken');
+  });
+
   it('token is encrypted at rest when safeStorage is available', async () => {
     const store = await import('../connections-store');
     await store.add(sampleConn);

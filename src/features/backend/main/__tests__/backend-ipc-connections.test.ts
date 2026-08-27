@@ -112,6 +112,7 @@ const store = vi.hoisted(() => ({
   setActiveId: vi.fn(),
   add: vi.fn(),
   updateMetadata: vi.fn(),
+  replaceSecret: vi.fn(),
   forget: vi.fn(),
   getDecryptedToken: vi.fn(),
   setHostname: vi.fn(),
@@ -125,6 +126,7 @@ vi.mock('../connections-store', () => ({
   setActiveId: store.setActiveId,
   add: store.add,
   updateMetadata: store.updateMetadata,
+  replaceSecret: store.replaceSecret,
   forget: store.forget,
   getDecryptedToken: store.getDecryptedToken,
   setHostname: store.setHostname,
@@ -675,7 +677,7 @@ describe('connections:* IPC handlers', () => {
     );
   });
 
-  it('connections:update changes only remote presentation metadata and broadcasts', async () => {
+  it('connections:update changes remote presentation metadata without revalidating its saved address', async () => {
     const updated = { ...REMOTE, label: 'Editing Mac', accent: 'violet' as const };
     store.updateMetadata.mockResolvedValue(updated);
     const send = installWindow();
@@ -685,12 +687,216 @@ describe('connections:* IPC handlers', () => {
 
     await expect(
       handler!({}, { id: REMOTE.id, label: 'Editing Mac', accent: 'violet' }),
-    ).resolves.toEqual({ connection: updated });
+    ).resolves.toEqual({ status: 'updated', connection: updated });
     expect(store.updateMetadata).toHaveBeenCalledWith(REMOTE.id, {
       label: 'Editing Mac',
       accent: 'violet',
+      host: REMOTE.host,
+      port: REMOTE.port,
+      fingerprint: REMOTE.fingerprint,
     });
+    expect(mockCaptureFingerprint).not.toHaveBeenCalled();
     expect(send).toHaveBeenCalledWith('connections:changed', expect.any(Object));
+  });
+
+  it('tests unsaved address values with the saved secret without saving or opening a window', async () => {
+    mockCaptureFingerprint.mockResolvedValue({
+      ok: true,
+      fingerprint: REMOTE.fingerprint,
+      connected: true,
+      tokenValid: true,
+    });
+    const { mod, openOrFocus } = await loadModule();
+    mod.registerBackendHandlers();
+    const handler = findHandler('connections:test');
+
+    await expect(
+      handler!({}, { id: REMOTE.id, host: '10.0.0.99', port: 9443 }),
+    ).resolves.toEqual({ status: 'success', fingerprint: REMOTE.fingerprint });
+    expect(mockCaptureFingerprint).toHaveBeenCalledWith({
+      host: '10.0.0.99',
+      port: 9443,
+      token: 'secret-token',
+    });
+    expect(store.updateMetadata).not.toHaveBeenCalled();
+    expect(store.replaceSecret).not.toHaveBeenCalled();
+    expect(openOrFocus).not.toHaveBeenCalled();
+  });
+
+  it('requires explicit fingerprint confirmation before persisting an address change', async () => {
+    const changedFingerprint = 'DD:EE:FF';
+    mockCaptureFingerprint.mockResolvedValue({
+      ok: true,
+      fingerprint: changedFingerprint,
+      connected: true,
+      tokenValid: true,
+    });
+    store.updateMetadata.mockResolvedValue({
+      ...REMOTE,
+      host: '10.0.0.99',
+      port: 9443,
+      fingerprint: changedFingerprint,
+    });
+    const { mod } = await loadModule();
+    mod.registerBackendHandlers();
+    const handler = findHandler('connections:update');
+    const params = {
+      id: REMOTE.id,
+      label: REMOTE.label,
+      accent: 'blue' as const,
+      host: '10.0.0.99',
+      port: 9443,
+    };
+
+    await expect(handler!({}, params)).resolves.toEqual({
+      status: 'fingerprint-confirmation-required',
+      expectedFingerprint: REMOTE.fingerprint,
+      actualFingerprint: changedFingerprint,
+    });
+    expect(store.updateMetadata).not.toHaveBeenCalled();
+
+    await expect(
+      handler!({}, { ...params, confirmedFingerprint: changedFingerprint }),
+    ).resolves.toMatchObject({ status: 'updated' });
+    expect(store.updateMetadata).toHaveBeenCalledWith(
+      REMOTE.id,
+      expect.objectContaining({
+        host: '10.0.0.99',
+        port: 9443,
+        fingerprint: changedFingerprint,
+      }),
+    );
+  });
+
+  it('leaves the saved secret unchanged when rotation authentication fails', async () => {
+    mockCaptureFingerprint.mockResolvedValue({
+      ok: true,
+      fingerprint: REMOTE.fingerprint,
+      connected: false,
+      tokenValid: false,
+      statusCode: 401,
+    });
+    const { mod } = await loadModule();
+    mod.registerBackendHandlers();
+    const handler = findHandler('connections:rotate-secret');
+
+    await expect(handler!({}, { id: REMOTE.id, token: 'replacement' })).resolves.toEqual({
+      status: 'authentication-rejected',
+      statusCode: 401,
+    });
+    expect(store.replaceSecret).not.toHaveBeenCalled();
+  });
+
+  it('rotates a validated secret without returning it', async () => {
+    mockCaptureFingerprint.mockResolvedValue({
+      ok: true,
+      fingerprint: REMOTE.fingerprint,
+      connected: true,
+      tokenValid: true,
+    });
+    store.replaceSecret.mockResolvedValue(REMOTE);
+    const { mod } = await loadModule();
+    const before = await mod.connectBackendClient(REMOTE.id);
+    mod.registerBackendHandlers();
+    const handler = findHandler('connections:rotate-secret');
+
+    const result = await handler!({}, { id: REMOTE.id, token: 'replacement' });
+    expect(result).toEqual({ status: 'updated', connection: REMOTE });
+    expect(JSON.stringify(result)).not.toContain('replacement');
+    expect(store.replaceSecret).toHaveBeenCalledWith(
+      REMOTE.id,
+      'replacement',
+      REMOTE.fingerprint,
+    );
+    expect(mod.getBackendClientForConnection(REMOTE.id)).not.toBe(before);
+  });
+
+  it('rebuilds only the affected open pooled client after an address change', async () => {
+    const other = {
+      ...REMOTE,
+      id: 'remote-2',
+      host: '10.0.0.6',
+      fingerprint: '11:22:33',
+    };
+    store.list.mockResolvedValue([LOCAL, REMOTE, other]);
+    mockCaptureFingerprint.mockResolvedValue({
+      ok: true,
+      fingerprint: REMOTE.fingerprint,
+      connected: true,
+      tokenValid: true,
+    });
+    store.updateMetadata.mockResolvedValue({ ...REMOTE, host: '10.0.0.99' });
+    const { mod } = await loadModule();
+    const affectedBefore = await mod.connectBackendClient(REMOTE.id);
+    const otherBefore = await mod.connectBackendClient(other.id);
+    mod.registerBackendHandlers();
+    const handler = findHandler('connections:update');
+
+    await handler!({}, {
+      id: REMOTE.id,
+      label: REMOTE.label,
+      accent: 'blue',
+      host: '10.0.0.99',
+      port: REMOTE.port,
+    });
+
+    expect(mod.getBackendClientForConnection(REMOTE.id)).not.toBe(affectedBefore);
+    expect(mod.getBackendClientForConnection(other.id)).toBe(otherBefore);
+  });
+
+  it('serializes connection tests so each uses a stable saved-secret snapshot', async () => {
+    let finishFirst!: (value: unknown) => void;
+    let finishSecond!: (value: unknown) => void;
+    mockCaptureFingerprint
+      .mockImplementationOnce(() => new Promise((resolve) => (finishFirst = resolve)))
+      .mockImplementationOnce(() => new Promise((resolve) => (finishSecond = resolve)));
+    const { mod } = await loadModule();
+    mod.registerBackendHandlers();
+    const handler = findHandler('connections:test')!;
+
+    const first = handler({}, { id: REMOTE.id, host: '10.0.0.8', port: 8443 });
+    const second = handler({}, { id: REMOTE.id, host: '10.0.0.9', port: 8443 });
+    await vi.waitFor(() => expect(mockCaptureFingerprint).toHaveBeenCalledTimes(1));
+    finishFirst({
+      ok: true,
+      fingerprint: REMOTE.fingerprint,
+      connected: true,
+      tokenValid: true,
+    });
+    await expect(first).resolves.toMatchObject({ status: 'success' });
+    await vi.waitFor(() => expect(mockCaptureFingerprint).toHaveBeenCalledTimes(2));
+    finishSecond({
+      ok: true,
+      fingerprint: REMOTE.fingerprint,
+      connected: true,
+      tokenValid: true,
+    });
+    await expect(second).resolves.toMatchObject({ status: 'success' });
+  });
+
+  it('rejects local, unknown, and malformed edit operations before mutation', async () => {
+    const { mod } = await loadModule();
+    mod.registerBackendHandlers();
+    const testHandler = findHandler('connections:test');
+    const updateHandler = findHandler('connections:update');
+
+    await expect(
+      testHandler!({}, { id: LOCAL.id, host: '127.0.0.1', port: 8443 }),
+    ).rejects.toThrow('local');
+    await expect(
+      testHandler!({}, { id: 'missing', host: '127.0.0.1', port: 8443 }),
+    ).rejects.toThrow('Unknown');
+    await expect(
+      updateHandler!({}, {
+        id: REMOTE.id,
+        label: REMOTE.label,
+        accent: 'blue',
+        host: '127.0.0.1',
+        port: 70_000,
+      }),
+    ).rejects.toThrow();
+    expect(store.updateMetadata).not.toHaveBeenCalled();
+    expect(store.replaceSecret).not.toHaveBeenCalled();
   });
 
   it('connections:update rejects invalid accent metadata before touching the store', async () => {

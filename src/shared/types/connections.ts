@@ -10,9 +10,8 @@
  * Token boundary: the bearer token is main-only (encrypted at rest via
  * Electron `safeStorage`, see `connections-store.ts`). It NEVER appears on any
  * stored, listed, or broadcast connection shape. The only place a token
- * crosses the IPC boundary is renderer→main at add/capture time
- * (`CaptureFingerprintParams`, `AddConnectionParams`), where the user has just
- * typed it — it is consumed by main and never returned.
+ * crosses the IPC boundary is renderer→main at add/capture/rotation time,
+ * where the user has just typed it — it is consumed by main and never returned.
  *
  * `ConnectionRecord` here is structurally identical to the token-free record
  * returned by `connections-store.ts` (`list()`), so main can pass the store's
@@ -223,12 +222,59 @@ export interface UpdateConnectionParams {
   id: string;
   label: string;
   accent: ConnectionAccent;
+  /** Optional for compatibility with presentation-only callers. */
+  host?: string;
+  /** Must be supplied together with `host`. */
+  port?: number;
+  /** Explicit user confirmation of a newly presented certificate. */
+  confirmedFingerprint?: string;
 }
 
-/** `connections:update` result: the updated, token-free record. */
-export interface UpdateConnectionResult {
-  connection: ConnectionRecord;
+/** Machine-readable validation outcomes; renderer copy is localized by status/reason. */
+export type ConnectionValidationResult =
+  | { status: 'success'; fingerprint: string }
+  | {
+      status: 'fingerprint-confirmation-required';
+      expectedFingerprint: string;
+      actualFingerprint: string;
+    }
+  | { status: 'authentication-rejected'; statusCode: number }
+  | {
+      status: 'failed';
+      reason: 'no-certificate' | 'connect-failed' | 'timeout';
+      statusCode?: number;
+    };
+
+export type ConnectionValidationBlockedResult = Exclude<
+  ConnectionValidationResult,
+  { status: 'success' }
+>;
+
+/** `connections:update` result: either an updated token-free record or validation guidance. */
+export type UpdateConnectionResult =
+  | { status: 'updated'; connection: ConnectionRecord }
+  | ConnectionValidationBlockedResult;
+
+/** Test current unsaved address values with the saved main-process-only secret. */
+export interface TestConnectionParams {
+  id: string;
+  host: string;
+  port: number;
 }
+
+export type TestConnectionResult = ConnectionValidationResult;
+
+/** Replace a saved secret without ever returning the old or new value. */
+export interface RotateConnectionSecretParams {
+  id: string;
+  token: string;
+  /** Explicit user confirmation of a newly presented certificate. */
+  confirmedFingerprint?: string;
+}
+
+export type RotateConnectionSecretResult =
+  | { status: 'updated'; connection: ConnectionRecord }
+  | ConnectionValidationBlockedResult;
 
 /** `connections:open` params. */
 export interface OpenConnectionParams {

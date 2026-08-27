@@ -529,6 +529,8 @@ interface CaptureFingerprintOk {
   ok: true;
   /** Presented cert SHA-256 fingerprint, colon-hex uppercase (PROTOCOL §1.2). */
   fingerprint: string;
+  /** True only when the WebSocket upgrade itself succeeded. */
+  connected: boolean;
   /**
    * `false` when the daemon rejected the upgrade with HTTP 401/403 (bad token
    * / WS API disabled, PROTOCOL §2.1) — the cert was still captured from the
@@ -537,7 +539,7 @@ interface CaptureFingerprintOk {
    * token).
    */
   tokenValid: boolean;
-  /** HTTP status the upgrade was rejected with when `tokenValid` is false (401 or 403). */
+  /** HTTP status for rejected/non-upgraded responses. */
   statusCode?: number;
 }
 
@@ -594,24 +596,36 @@ export function captureFingerprint(
       timeoutMs,
     );
     timer.unref?.();
-    const readCert = (response: IncomingMessage, authRejectedStatus?: number): void => {
+    const readCert = (
+      response: IncomingMessage,
+      connected: boolean,
+      authRejectedStatus?: number,
+    ): void => {
       const fingerprint = peerFingerprint(response);
       if (!fingerprint) {
         finish({ ok: false, code: 'no-certificate', error: 'server presented no certificate' });
         return;
       }
       if (authRejectedStatus !== undefined) {
-        finish({ ok: true, fingerprint, tokenValid: false, statusCode: authRejectedStatus });
+        finish({ ok: true, fingerprint, connected, tokenValid: false, statusCode: authRejectedStatus });
         return;
       }
-      finish({ ok: true, fingerprint, tokenValid: true });
+      finish({
+        ok: true,
+        fingerprint,
+        connected,
+        tokenValid: true,
+        ...(!connected && response.statusCode !== undefined
+          ? { statusCode: response.statusCode }
+          : {}),
+      });
     };
-    ws.on('upgrade', (response: IncomingMessage) => readCert(response));
+    ws.on('upgrade', (response: IncomingMessage) => readCert(response, true));
     ws.on('unexpected-response', (_req, response: IncomingMessage) => {
       // 401/403 are the daemon's auth rejections (PROTOCOL §2.1); any other
       // status says nothing about the token, so tokenValid stays true.
       const statusCode = response.statusCode ?? 0;
-      readCert(response, statusCode === 401 || statusCode === 403 ? statusCode : undefined);
+      readCert(response, false, statusCode === 401 || statusCode === 403 ? statusCode : undefined);
     });
     ws.on('error', (err: Error) =>
       finish({ ok: false, code: 'connect-failed', error: err.message }),

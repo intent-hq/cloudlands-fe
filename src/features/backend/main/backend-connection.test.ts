@@ -754,7 +754,12 @@ describe('WSS pinned transport (fingerprint + bearer token)', () => {
       port: daemon.port,
       token: TOKEN,
     });
-    expect(result).toEqual({ ok: true, fingerprint: daemon.fingerprint, tokenValid: true });
+    expect(result).toEqual({
+      ok: true,
+      fingerprint: daemon.fingerprint,
+      connected: true,
+      tokenValid: true,
+    });
   });
 
   it('captureFingerprint surfaces a structured error when the host is unreachable', async () => {
@@ -930,6 +935,7 @@ describe('WSS auth rejection (401/403 upgrade responses)', () => {
     expect(result).toEqual({
       ok: true,
       fingerprint: normalizeFingerprint(daemon.fingerprint),
+      connected: false,
       tokenValid: false,
       statusCode: 401,
     });
@@ -945,6 +951,7 @@ describe('WSS auth rejection (401/403 upgrade responses)', () => {
     expect(result).toEqual({
       ok: true,
       fingerprint: normalizeFingerprint(daemon.fingerprint),
+      connected: false,
       tokenValid: false,
       statusCode: 403,
     });
@@ -960,7 +967,9 @@ describe('WSS auth rejection (401/403 upgrade responses)', () => {
     expect(result).toEqual({
       ok: true,
       fingerprint: normalizeFingerprint(daemon.fingerprint),
+      connected: false,
       tokenValid: true,
+      statusCode: 500,
     });
   });
 });

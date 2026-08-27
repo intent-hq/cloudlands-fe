@@ -519,25 +519,104 @@ export async function add(conn: NewConnection): Promise<ConnectionRecord> {
  */
 export async function updateMetadata(
   id: string,
-  metadata: { label: string; accent: ConnectionAccent },
+  metadata: {
+    label: string;
+    accent: ConnectionAccent;
+    host?: string;
+    port?: number;
+    fingerprint?: string;
+  },
 ): Promise<ConnectionRecord> {
   if (id === LOCAL_CONNECTION_ID) throw new Error('Cannot update the local connection');
   const label = metadata.label.trim();
   if (!label) throw new Error('Connection label is required');
   if (!isConnectionAccent(metadata.accent)) throw new Error('Invalid connection accent');
+  const host = metadata.host?.trim();
+  if (metadata.host !== undefined && !host) throw new Error('Connection host is required');
+  if (
+    metadata.port !== undefined &&
+    (!Number.isInteger(metadata.port) || metadata.port < 1 || metadata.port > 65_535)
+  ) {
+    throw new Error('Invalid connection port');
+  }
+  const fingerprint = metadata.fingerprint?.trim();
+  if (metadata.fingerprint !== undefined && !fingerprint) {
+    throw new Error('Connection fingerprint is required');
+  }
 
   const result = await mutate(async (state) => {
     const conn = state.connections.find((candidate) => candidate.id === id);
     if (!conn) throw new Error(`Unknown connection id: ${id}`);
-    if (conn.label === label && conn.accent === metadata.accent) return { conn, changed: false };
+    const nextHost = host ?? conn.host;
+    const nextPort = metadata.port ?? conn.port;
+    const nextFingerprint = fingerprint ?? conn.fingerprint;
+    const addressChanged = conn.host !== nextHost || conn.port !== nextPort;
+    const fingerprintChanged = fingerprintKey(conn.fingerprint) !== fingerprintKey(nextFingerprint);
+    if (
+      conn.label === label &&
+      conn.accent === metadata.accent &&
+      !addressChanged &&
+      !fingerprintChanged
+    ) {
+      return { conn, changed: false };
+    }
+    const previous = { ...conn, hosts: conn.hosts ? [...conn.hosts] : undefined };
     conn.label = label;
     conn.accent = metadata.accent;
-    conn.updatedAt = Date.now();
+    conn.host = nextHost;
+    conn.port = nextPort;
+    conn.fingerprint = nextFingerprint;
+    if (addressChanged) conn.hosts = [];
+    if (addressChanged || fingerprintChanged) conn.hostname = null;
+    const now = Date.now();
+    conn.updatedAt = now;
+    if (addressChanged && fingerprintChanged) {
+      clearTombstone(state, previous);
+      state.tombstones.push({
+        label: previous.label,
+        accent: previous.accent ?? DEFAULT_CONNECTION_ACCENT,
+        host: previous.host,
+        port: previous.port,
+        fingerprint: previous.fingerprint,
+        hostname: previous.hostname ?? null,
+        hosts: previous.hosts,
+        detectHosts: previous.detectHosts,
+        updatedAt: now,
+        deletedAt: now,
+        excluded: previous.syncExcluded === true,
+      });
+    }
     await writeState(state);
     return { conn, changed: true };
   });
   if (result.changed) notifyMutated();
   return toRecord(result.conn);
+}
+
+/** Atomically replace a remote's encrypted secret after main-process validation. */
+export async function replaceSecret(
+  id: string,
+  token: string,
+  fingerprint: string,
+): Promise<ConnectionRecord> {
+  if (id === LOCAL_CONNECTION_ID) throw new Error('Cannot update the local connection');
+  if (!token) throw new Error('Connection token is required');
+  const normalizedFingerprint = fingerprint.trim();
+  if (!normalizedFingerprint) throw new Error('Connection fingerprint is required');
+  const result = await mutate(async (state) => {
+    const conn = state.connections.find((candidate) => candidate.id === id);
+    if (!conn) throw new Error(`Unknown connection id: ${id}`);
+    conn.encToken = encryptToken(token);
+    if (fingerprintKey(conn.fingerprint) !== fingerprintKey(normalizedFingerprint)) {
+      conn.fingerprint = normalizedFingerprint;
+      conn.hostname = null;
+    }
+    conn.updatedAt = Date.now();
+    await writeState(state);
+    return conn;
+  });
+  notifyMutated();
+  return toRecord(result);
 }
 
 /**

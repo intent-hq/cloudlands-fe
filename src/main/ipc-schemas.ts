@@ -1091,6 +1091,23 @@ export const ConnectionsUpdateSchema = z.object({
   id: z.string().min(1, 'Connection ID is required'),
   label: z.string().trim().min(1, 'Label is required'),
   accent: z.enum(CONNECTION_ACCENTS),
+  host: z.string().trim().min(1, 'Host is required').optional(),
+  port: z.number().int().min(1).max(65_535).optional(),
+  confirmedFingerprint: z.string().trim().min(1).optional(),
+}).refine((value) => (value.host === undefined) === (value.port === undefined), {
+  message: 'Host and port must be supplied together',
+});
+
+export const ConnectionsTestSchema = z.object({
+  id: z.string().min(1, 'Connection ID is required'),
+  host: z.string().trim().min(1, 'Host is required'),
+  port: z.number().int().min(1).max(65_535),
+});
+
+export const ConnectionsRotateSecretSchema = z.object({
+  id: z.string().min(1, 'Connection ID is required'),
+  token: z.string().min(1, 'Token is required'),
+  confirmedFingerprint: z.string().trim().min(1).optional(),
 });
 
 export const ConnectionsForgetSchema = z.object({

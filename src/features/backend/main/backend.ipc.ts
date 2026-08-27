@@ -97,8 +97,10 @@ import type {
   OpenConnectionResult,
   PublishSelfResult,
   RefreshSelfResult,
+  RotateConnectionSecretResult,
   SelfPublishedStateResult,
   SwitchConnectionResult,
+  TestConnectionResult,
   UnpublishSelfResult,
   UpdateConnectionResult,
 } from '../../../shared/types/connections';
@@ -109,10 +111,12 @@ import {
   ConnectionsForgetSchema,
   ConnectionsListSchema,
   ConnectionsOpenSchema,
+  ConnectionsRotateSecretSchema,
   ConnectionsPublishSelfSchema,
   ConnectionsRefreshSelfSchema,
   ConnectionsSelfPublishedStateSchema,
   ConnectionsSwitchSchema,
+  ConnectionsTestSchema,
   ConnectionsSyncGetStateSchema,
   ConnectionsSyncSetEnabledSchema,
   ConnectionsUnpublishSelfSchema,
@@ -2120,6 +2124,84 @@ export function registerBackendHandlers(): void {
   logger.info('Backend bridge IPC handlers registered');
 }
 
+async function getRemoteConnectionWithToken(id: string): Promise<{
+  connection: ConnectionRecord & { host: string; port: number; fingerprint: string };
+  token: string;
+}> {
+  if (id === LOCAL_CONNECTION_ID) throw new Error('Cannot update the local connection');
+  const connection = (await connectionsStore.list()).find((candidate) => candidate.id === id);
+  if (!connection) throw new Error(`Unknown connection id: ${id}`);
+  if (connection.isLocal || !connection.host || !connection.port || !connection.fingerprint) {
+    throw new Error(`Connection is not a saved remote: ${id}`);
+  }
+  const token = await connectionsStore.getDecryptedToken(id);
+  if (!token) throw new Error(`Connection secret is unavailable: ${id}`);
+  return {
+    connection: connection as ConnectionRecord & {
+      host: string;
+      port: number;
+      fingerprint: string;
+    },
+    token,
+  };
+}
+
+async function validateConnectionAddress(
+  connection: ConnectionRecord,
+  host: string,
+  port: number,
+  token: string,
+  confirmedFingerprint?: string,
+): Promise<TestConnectionResult> {
+  const captured = await captureFingerprint({ host, port, token });
+  if (!captured.ok) {
+    return { status: 'failed', reason: captured.code };
+  }
+  if (!captured.tokenValid) {
+    return { status: 'authentication-rejected', statusCode: captured.statusCode ?? 401 };
+  }
+  if (!captured.connected) {
+    return {
+      status: 'failed',
+      reason: 'connect-failed',
+      ...(captured.statusCode !== undefined ? { statusCode: captured.statusCode } : {}),
+    };
+  }
+  const actualFingerprint = normalizeFingerprint(captured.fingerprint);
+  const expectedFingerprint = normalizeFingerprint(connection.fingerprint);
+  if (!actualFingerprint || !expectedFingerprint) {
+    return { status: 'failed', reason: 'no-certificate' };
+  }
+  const confirmed = confirmedFingerprint
+    ? normalizeFingerprint(confirmedFingerprint)
+    : undefined;
+  if (actualFingerprint !== expectedFingerprint && confirmed !== actualFingerprint) {
+    return {
+      status: 'fingerprint-confirmation-required',
+      expectedFingerprint,
+      actualFingerprint,
+    };
+  }
+  return { status: 'success', fingerprint: actualFingerprint };
+}
+
+/** Rebuild only an already-open client after its durable transport config changed. */
+async function rebuildConnectionClientIfOpen(id: string): Promise<void> {
+  const isPrimary = activeConnectionMeta?.id === id;
+  const isSecondaryOpen = !isPrimary && backendClients.has(id);
+  if (!isPrimary && !isSecondaryOpen) return;
+  if (isPrimary) {
+    const { config, meta } = await buildConfigForConnection(id);
+    disposeBackendClient();
+    currentConfig = meta ? config : null;
+    activeConnectionMeta = meta;
+    getBackendClient();
+    return;
+  }
+  disconnectBackendClient(id);
+  await connectBackendClient(id);
+}
+
 /**
  * Register the multi-backend connections registry IPC handlers (part of
  * {@link registerBackendHandlers}). Each channel validates its params against
@@ -2205,18 +2287,86 @@ function registerConnectionsHandlers(): void {
     ),
   );
 
-  // Update remote-only presentation metadata. The store mutation deliberately
-  // has no token parameter, so this operation cannot expose or rewrite auth.
+  // Update remote metadata without carrying a token. Address changes are
+  // validated with the saved main-only secret before any durable mutation.
   ipcMain.handle(
     CONNECTIONS.UPDATE,
     createValidatedHandler(
       ConnectionsUpdateSchema,
-      async (_event, { id, label, accent }) => {
-        const connection = await connectionsStore.updateMetadata(id, { label, accent });
-        await broadcastConnectionsChanged();
-        return { connection } satisfies UpdateConnectionResult;
-      },
+      async (_event, params) =>
+        enqueueSwitchOperation(async () => {
+          const { connection: saved, token } = await getRemoteConnectionWithToken(params.id);
+          const host = params.host ?? saved.host;
+          const port = params.port ?? saved.port;
+          const addressChanged = host !== saved.host || port !== saved.port;
+          let fingerprint = saved.fingerprint;
+          if (addressChanged) {
+            const validation = await validateConnectionAddress(
+              saved,
+              host,
+              port,
+              token,
+              params.confirmedFingerprint,
+            );
+            if (validation.status !== 'success') return validation;
+            fingerprint = validation.fingerprint;
+          }
+          const connection = await connectionsStore.updateMetadata(params.id, {
+            label: params.label,
+            accent: params.accent,
+            host,
+            port,
+            fingerprint,
+          });
+          if (addressChanged) await rebuildConnectionClientIfOpen(params.id);
+          await broadcastConnectionsChanged();
+          return { status: 'updated', connection } satisfies UpdateConnectionResult;
+        }),
       CONNECTIONS.UPDATE,
+    ),
+  );
+
+  // Probe unsaved address values with the saved secret. This intentionally has
+  // no store mutation and no window hook; callers localize the structured result.
+  ipcMain.handle(
+    CONNECTIONS.TEST,
+    createValidatedHandler(
+      ConnectionsTestSchema,
+      async (_event, { id, host, port }) =>
+        enqueueSwitchOperation(async () => {
+          const { connection, token } = await getRemoteConnectionWithToken(id);
+          return validateConnectionAddress(connection, host, port, token);
+        }),
+      CONNECTIONS.TEST,
+    ),
+  );
+
+  // Secret rotation is a separate write-only operation. The replacement is
+  // persisted only after authentication and certificate validation succeed.
+  ipcMain.handle(
+    CONNECTIONS.ROTATE_SECRET,
+    createValidatedHandler(
+      ConnectionsRotateSecretSchema,
+      async (_event, { id, token, confirmedFingerprint }) =>
+        enqueueSwitchOperation(async () => {
+          const { connection } = await getRemoteConnectionWithToken(id);
+          const validation = await validateConnectionAddress(
+            connection,
+            connection.host,
+            connection.port,
+            token,
+            confirmedFingerprint,
+          );
+          if (validation.status !== 'success') return validation;
+          const updated = await connectionsStore.replaceSecret(id, token, validation.fingerprint);
+          await rebuildConnectionClientIfOpen(id);
+          await broadcastConnectionsChanged();
+          return {
+            status: 'updated',
+            connection: updated,
+          } satisfies RotateConnectionSecretResult;
+        }),
+      CONNECTIONS.ROTATE_SECRET,
     ),
   );
 
