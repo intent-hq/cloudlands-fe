@@ -249,13 +249,13 @@
 
   function accentLabel(value: ConnectionAccent): string {
     return {
-      blue: m.settings_machines_accentBlue_label(),
-      indigo: m.settings_machines_accentIndigo_label(),
-      violet: m.settings_machines_accentViolet_label(),
-      rose: m.settings_machines_accentRose_label(),
-      orange: m.settings_machines_accentOrange_label(),
-      emerald: m.settings_machines_accentEmerald_label(),
-      teal: m.settings_machines_accentTeal_label(),
+      blue: m.settings_devices_accentBlue_label(),
+      indigo: m.settings_devices_accentIndigo_label(),
+      violet: m.settings_devices_accentViolet_label(),
+      rose: m.settings_devices_accentRose_label(),
+      orange: m.settings_devices_accentOrange_label(),
+      emerald: m.settings_devices_accentEmerald_label(),
+      teal: m.settings_devices_accentTeal_label(),
     }[value];
   }
 
@@ -340,7 +340,7 @@
           </div>
 
           <fieldset class="space-y-2">
-            <legend class="text-xs text-subtle">{m.settings_machines_accent_label()}</legend>
+            <legend class="text-xs text-subtle">{m.settings_devices_accent_label()}</legend>
             <div class="flex flex-wrap gap-2">
               {#each CONNECTION_ACCENTS as option}
                 <button
@@ -483,7 +483,9 @@
             {m.modals_connect_enableSync_decline_label()}
           </Button>
           <Button variant="default" onclick={handleEnableSyncAndAdd} disabled={busy}>
-            {busy ? m.modals_connect_connecting_label() : m.modals_connect_enableSync_confirm_label()}
+            {busy
+              ? m.modals_connect_connecting_label()
+              : m.modals_connect_enableSync_confirm_label()}
           </Button>
         {/if}
       </div>

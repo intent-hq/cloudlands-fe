@@ -20,7 +20,7 @@
     | 'agent-behavior'
     | 'providers'
     | 'connections'
-    | 'machines'
+    | 'devices'
     | 'setup'
     | 'advanced'
     | 'input'
@@ -71,10 +71,10 @@
       },
     },
     {
-      id: 'machines',
+      id: 'devices',
       icon: faServer,
       get label() {
-        return m.settings_sidebar_machines_label();
+        return m.settings_sidebar_devices_label();
       },
     },
     {

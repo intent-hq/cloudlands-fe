@@ -52,7 +52,7 @@ vi.mock('$lib/utils/open-external', () => ({
 }));
 
 async function fillDetails() {
-  await fireEvent.input(screen.getByLabelText('Machine name'), {
+  await fireEvent.input(screen.getByLabelText('Device name'), {
     target: { value: 'Studio Mac' },
   });
   await fireEvent.input(screen.getByLabelText('Host'), { target: { value: '10.0.0.2' } });
@@ -162,7 +162,7 @@ describe('ConnectBackendModal', () => {
       true,
     );
 
-    await fireEvent.input(screen.getByLabelText('Machine name'), {
+    await fireEvent.input(screen.getByLabelText('Device name'), {
       target: { value: 'Render box' },
     });
     await fireEvent.click(screen.getByRole('button', { name: 'Use Rose accent' }));
@@ -296,7 +296,7 @@ describe('ConnectBackendModal', () => {
     const continueBtn = () => screen.getByRole('button', { name: 'Continue' }) as HTMLButtonElement;
     expect(continueBtn().disabled).toBe(true);
 
-    await fireEvent.input(screen.getByLabelText('Machine name'), {
+    await fireEvent.input(screen.getByLabelText('Device name'), {
       target: { value: 'Studio Mac' },
     });
     await fireEvent.input(screen.getByLabelText('Host'), { target: { value: '10.0.0.2' } });

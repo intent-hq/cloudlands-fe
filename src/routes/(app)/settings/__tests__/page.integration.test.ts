@@ -91,7 +91,7 @@ vi.mock('$lib/components/settings/ConnectionsSettings.svelte', async () => ({
 vi.mock('$lib/components/settings/VoiceSettings.svelte', async () => ({
   default: (await import('./mocks/SettingsStateFixture.svelte')).default,
 }));
-vi.mock('$lib/components/settings/MachinesSettings.svelte', async () => ({
+vi.mock('$lib/components/settings/DevicesSettings.svelte', async () => ({
   default: (await import('$lib/components/chat/__tests__/mocks/SlotOnly.svelte')).default,
 }));
 vi.mock('$lib/components/settings/GitWorkspaceSettings.svelte', async () => ({
@@ -613,7 +613,8 @@ describe('settings tab route and focus behavior', () => {
     ['notifications', 'App Behavior', 'page'],
     ['general', 'Display', 'page'],
     ['connections', 'Connections', 'page'],
-    ['machines', 'Machines', 'page'],
+    ['devices', 'Devices', 'page'],
+    ['machines', 'Devices', 'page'],
     ['interface-system', 'Display', 'page'],
     ['input', 'Input', 'page'],
     ['unknown', 'Display', 'page'],
@@ -626,15 +627,18 @@ describe('settings tab route and focus behavior', () => {
     );
   });
 
-  it('maps the compatible #machines hash to the Machines tab', async () => {
-    const { container } = renderSettings('/settings#machines');
-    await waitFor(() =>
-      expect(screen.getByRole('button', { name: 'Machines' }).getAttribute('aria-current')).toBe(
-        'page',
-      ),
-    );
-    expect(container.querySelector('#machines')).not.toBeNull();
-  });
+  it.each(['devices', 'machines'])(
+    'maps the compatible #%s hash to the Devices tab',
+    async (hash) => {
+      const { container } = renderSettings(`/settings#${hash}`);
+      await waitFor(() =>
+        expect(screen.getByRole('button', { name: 'Devices' }).getAttribute('aria-current')).toBe(
+          'page',
+        ),
+      );
+      expect(container.querySelector('#devices')).not.toBeNull();
+    },
+  );
 
   it('renders Agent Backend only on Advanced while the legacy Tools tab resolves to Setup', async () => {
     const advanced = renderSettings('/settings?tab=advanced');

@@ -1,0 +1,292 @@
+/**
+ * @vitest-environment jsdom
+ */
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { ConnectionRecord } from '$shared/types/connections';
+
+const mocks = vi.hoisted(() => ({
+  loaded: true,
+  connections: [] as ConnectionRecord[],
+  dispatch: vi.fn(),
+  update: vi.fn(),
+  test: vi.fn(),
+  rotate: vi.fn(),
+  forget: vi.fn(),
+  readable: <T>(get: () => T) => ({
+    subscribe(run: (value: T) => void) {
+      run(get());
+      return () => {};
+    },
+  }),
+}));
+
+vi.mock('$store/renderer/store', () => ({
+  store: { dispatch: mocks.dispatch },
+}));
+
+vi.mock('$store/renderer/slices/connections/connections-selectors', () => ({
+  selectConnectionsLoaded: () => mocks.readable(() => mocks.loaded),
+  selectRemoteConnections: () =>
+    mocks.readable(() => mocks.connections.filter((connection) => !connection.isLocal)),
+  selectKeychainSyncState: () => mocks.readable(() => null),
+}));
+
+vi.mock('$store/renderer/slices/connections/connections-slice', () => ({
+  updateConnectionRequested: (params: unknown) => mocks.update(params),
+  testConnectionRequested: (params: unknown) => mocks.test(params),
+  rotateConnectionSecretRequested: (params: unknown) => mocks.rotate(params),
+  forgetConnectionRequested: (id: string) => mocks.forget(id),
+  captureFingerprintRequested: vi.fn(),
+  addConnectionRequested: vi.fn(),
+  openConnectionRequested: vi.fn(),
+  loadKeychainSyncStateRequested: () => ({ promise: Promise.resolve() }),
+  setKeychainSyncEnabledRequested: vi.fn(),
+}));
+
+import DevicesSettings from './DevicesSettings.svelte';
+
+const local: ConnectionRecord = {
+  id: 'local',
+  label: 'This machine',
+  host: null,
+  port: null,
+  fingerprint: null,
+  isLocal: true,
+  status: 'connected',
+};
+
+const remote: ConnectionRecord = {
+  id: 'remote-1',
+  label: 'Studio Mac',
+  accent: 'indigo',
+  host: '10.0.0.2',
+  port: 5181,
+  fingerprint: 'AA:BB',
+  isLocal: false,
+  status: 'not-open',
+};
+
+describe('DevicesSettings', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.loaded = true;
+    mocks.connections = [local, remote];
+    mocks.update.mockImplementation((params) => ({
+      type: 'connections/updateRequested',
+      payload: [params],
+      promise: Promise.resolve({ status: 'updated', connection: { ...remote, ...params } }),
+    }));
+    mocks.test.mockImplementation((params) => ({
+      type: 'connections/testRequested',
+      payload: [params],
+      promise: Promise.resolve({ status: 'success', fingerprint: remote.fingerprint }),
+    }));
+    mocks.rotate.mockImplementation((params) => ({
+      type: 'connections/rotateSecretRequested',
+      payload: [params],
+      promise: Promise.resolve({ status: 'updated', connection: remote }),
+    }));
+    mocks.forget.mockImplementation((id) => ({
+      type: 'connections/forgetRequested',
+      payload: [id],
+      promise: Promise.resolve(),
+    }));
+  });
+
+  afterEach(cleanup);
+
+  it('shows saved remotes only and reports unopened status without opening a connection', () => {
+    const { container } = render(DevicesSettings);
+
+    expect(screen.getByText('Studio Mac')).toBeTruthy();
+    expect(screen.getByText('10.0.0.2:5181')).toBeTruthy();
+    expect(screen.getByRole('status', { name: 'Status: Not open' })).toBeTruthy();
+    expect(screen.queryByText('This machine')).toBeNull();
+    expect(screen.queryByRole('textbox')).toBeNull();
+    expect(container.querySelector('[data-device-accent="indigo"]')).toBeTruthy();
+    expect(container.querySelector('.divide-y')).toBeTruthy();
+    expect(mocks.dispatch).not.toHaveBeenCalled();
+  });
+
+  it('renders accessible loading and empty states', () => {
+    mocks.loaded = false;
+    const loading = render(DevicesSettings);
+    expect(screen.getByRole('status').textContent).toContain('Loading devices');
+    loading.unmount();
+
+    mocks.loaded = true;
+    mocks.connections = [local];
+    render(DevicesSettings);
+    expect(screen.getByText('No remote devices saved')).toBeTruthy();
+  });
+
+  async function openAction(name: 'Edit' | 'Replace secret' | 'Remove') {
+    await fireEvent.click(screen.getByRole('button', { name: 'Actions for Studio Mac' }));
+    await fireEvent.click(await screen.findByRole('menuitem', { name }));
+  }
+
+  it('edits metadata inline and permits only one device panel at a time', async () => {
+    mocks.connections = [
+      local,
+      remote,
+      { ...remote, id: 'remote-2', label: 'Travel Mac', host: '10.0.0.3' },
+    ];
+    render(DevicesSettings);
+
+    await openAction('Edit');
+    expect(screen.getByRole('form', { name: 'Edit Studio Mac' })).toBeTruthy();
+    const name = screen.getByRole('textbox', { name: 'Name' });
+    await fireEvent.input(name, { target: { value: 'Render box' } });
+    await fireEvent.input(screen.getByRole('textbox', { name: 'Hostname or IP' }), {
+      target: { value: 'render.local' },
+    });
+    await fireEvent.input(screen.getByRole('textbox', { name: 'Port' }), {
+      target: { value: '5190' },
+    });
+    await fireEvent.click(screen.getByRole('button', { name: 'Use Rose accent' }));
+    await fireEvent.click(screen.getByRole('button', { name: 'Update' }));
+    expect(mocks.update).toHaveBeenCalledWith({
+      id: 'remote-1',
+      label: 'Render box',
+      accent: 'rose',
+      host: 'render.local',
+      port: 5190,
+    });
+    expect(mocks.dispatch).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: expect.stringMatching(/theme/i) }),
+    );
+  });
+
+  it('tests current unsaved address values without updating or opening a connection', async () => {
+    render(DevicesSettings);
+    await openAction('Edit');
+    await fireEvent.input(screen.getByRole('textbox', { name: 'Hostname or IP' }), {
+      target: { value: 'preview.local' },
+    });
+    await fireEvent.input(screen.getByRole('textbox', { name: 'Port' }), {
+      target: { value: '6200' },
+    });
+    await fireEvent.click(screen.getByRole('button', { name: 'Test connection' }));
+
+    expect(mocks.test).toHaveBeenCalledWith({
+      id: 'remote-1',
+      host: 'preview.local',
+      port: 6200,
+    });
+    expect(await screen.findByText('Connection successful.')).toBeTruthy();
+    expect(mocks.update).not.toHaveBeenCalled();
+    expect(mocks.dispatch).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: expect.stringMatching(/open/i) }),
+    );
+  });
+
+  it('validates required metadata before testing or updating', async () => {
+    render(DevicesSettings);
+    await openAction('Edit');
+    await fireEvent.input(screen.getByRole('textbox', { name: 'Name' }), {
+      target: { value: ' ' },
+    });
+    await fireEvent.input(screen.getByRole('textbox', { name: 'Hostname or IP' }), {
+      target: { value: '' },
+    });
+    await fireEvent.input(screen.getByRole('textbox', { name: 'Port' }), {
+      target: { value: '70000' },
+    });
+
+    expect(screen.getByText('Enter a device name.')).toBeTruthy();
+    expect(screen.getByText('Enter a hostname or IP address.')).toBeTruthy();
+    expect(screen.getByText('Enter a port from 1 to 65535.')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Test connection' }).hasAttribute('disabled')).toBe(
+      true,
+    );
+    expect(screen.getByRole('button', { name: 'Update' }).hasAttribute('disabled')).toBe(true);
+  });
+
+  it('requires explicit confirmation before trusting a changed certificate', async () => {
+    mocks.update
+      .mockImplementationOnce((params) => ({
+        payload: [params],
+        promise: Promise.resolve({
+          status: 'fingerprint-confirmation-required',
+          expectedFingerprint: 'AA:BB',
+          actualFingerprint: 'CC:DD',
+        }),
+      }))
+      .mockImplementationOnce((params) => ({
+        payload: [params],
+        promise: Promise.resolve({ status: 'updated', connection: remote }),
+      }));
+    render(DevicesSettings);
+    await openAction('Edit');
+    await fireEvent.input(screen.getByRole('textbox', { name: 'Name' }), {
+      target: { value: 'Render box' },
+    });
+    await fireEvent.click(screen.getByRole('button', { name: 'Update' }));
+
+    expect(await screen.findByText('CC:DD')).toBeTruthy();
+    await fireEvent.click(screen.getByRole('button', { name: 'Trust fingerprint' }));
+    expect(mocks.update).toHaveBeenLastCalledWith(
+      expect.objectContaining({ confirmedFingerprint: 'CC:DD' }),
+    );
+  });
+
+  it('replaces a write-only secret without rendering an existing value', async () => {
+    render(DevicesSettings);
+    await openAction('Replace secret');
+    const token = screen.getByLabelText('New access token') as HTMLInputElement;
+    expect(token.value).toBe('');
+    expect(token.placeholder).toBe('');
+    await fireEvent.input(token, { target: { value: 'replacement-token' } });
+    await fireEvent.click(screen.getByRole('button', { name: 'Replace secret' }));
+
+    expect(mocks.rotate).toHaveBeenCalledWith({
+      id: 'remote-1',
+      token: 'replacement-token',
+    });
+    expect(await screen.findByText('Secret replaced.')).toBeTruthy();
+    expect(token.value).toBe('');
+  });
+
+  it('returns focus to the overflow trigger after cancelling an inline form', async () => {
+    render(DevicesSettings);
+    const trigger = screen.getByRole('button', { name: 'Actions for Studio Mac' });
+    trigger.focus();
+    await fireEvent.keyDown(trigger, { key: 'Enter' });
+    await fireEvent.click(await screen.findByRole('menuitem', { name: 'Edit' }));
+    await waitFor(() =>
+      expect(document.activeElement).toBe(screen.getByRole('textbox', { name: 'Name' })),
+    );
+    await fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    await waitFor(() => expect(document.activeElement).toBe(trigger));
+  });
+
+  it('requires confirmation before remove and keeps a retry action after failure', async () => {
+    mocks.forget.mockImplementationOnce((id) => ({
+      type: 'connections/forgetRequested',
+      payload: [id],
+      promise: Promise.reject(new Error('keychain unavailable')),
+    }));
+    render(DevicesSettings);
+
+    await openAction('Remove');
+    expect(screen.getByRole('dialog')).toBeTruthy();
+    expect(screen.getByText('Remove device?')).toBeTruthy();
+    expect(mocks.forget).not.toHaveBeenCalled();
+
+    const removeButtons = screen.getAllByRole('button', { name: 'Remove' });
+    await fireEvent.click(removeButtons[removeButtons.length - 1]);
+    expect(mocks.forget).toHaveBeenCalledWith('remote-1');
+    expect((await screen.findByRole('alert')).textContent).toContain(
+      'Could not remove the device.',
+    );
+
+    mocks.forget.mockImplementationOnce((id) => ({
+      type: 'connections/forgetRequested',
+      payload: [id],
+      promise: Promise.resolve(),
+    }));
+    await fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
+    await waitFor(() => expect(mocks.forget).toHaveBeenCalledTimes(2));
+  });
+});

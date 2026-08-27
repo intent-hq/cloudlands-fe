@@ -41,7 +41,7 @@ describe('SettingsSidebarNav', () => {
       'Agent Behavior',
       'Providers',
       'Connections',
-      'Machines',
+      'Devices',
       'Setup',
       'Input',
       'Advanced',
@@ -52,7 +52,7 @@ describe('SettingsSidebarNav', () => {
     expect(screen.getByRole('button', { name: 'Agent Behavior' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Providers' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Connections' })).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Machines' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Devices' })).toBeTruthy();
     const setup = screen.getByRole('button', { name: 'Setup' });
     expect(setup.getAttribute('aria-current')).toBe('page');
     expect(setup.className).toContain('bg-muted');
@@ -93,7 +93,7 @@ describe('SettingsSidebarNav', () => {
       'Agent Behavior',
       'Providers',
       'Connections',
-      'Machines',
+      'Devices',
       'Setup',
       'Input',
       'Advanced',
