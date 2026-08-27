@@ -710,9 +710,10 @@ describe('connections:* IPC handlers', () => {
     mod.registerBackendHandlers();
     const handler = findHandler('connections:test');
 
-    await expect(
-      handler!({}, { id: REMOTE.id, host: '10.0.0.99', port: 9443 }),
-    ).resolves.toEqual({ status: 'success', fingerprint: REMOTE.fingerprint });
+    await expect(handler!({}, { id: REMOTE.id, host: '10.0.0.99', port: 9443 })).resolves.toEqual({
+      status: 'success',
+      fingerprint: REMOTE.fingerprint,
+    });
     expect(mockCaptureFingerprint).toHaveBeenCalledWith({
       host: '10.0.0.99',
       port: 9443,
@@ -803,11 +804,7 @@ describe('connections:* IPC handlers', () => {
     const result = await handler!({}, { id: REMOTE.id, token: 'replacement' });
     expect(result).toEqual({ status: 'updated', connection: REMOTE });
     expect(JSON.stringify(result)).not.toContain('replacement');
-    expect(store.replaceSecret).toHaveBeenCalledWith(
-      REMOTE.id,
-      'replacement',
-      REMOTE.fingerprint,
-    );
+    expect(store.replaceSecret).toHaveBeenCalledWith(REMOTE.id, 'replacement', REMOTE.fingerprint);
     expect(mod.getBackendClientForConnection(REMOTE.id)).not.toBe(before);
   });
 
@@ -832,13 +829,16 @@ describe('connections:* IPC handlers', () => {
     mod.registerBackendHandlers();
     const handler = findHandler('connections:update');
 
-    await handler!({}, {
-      id: REMOTE.id,
-      label: REMOTE.label,
-      accent: 'blue',
-      host: '10.0.0.99',
-      port: REMOTE.port,
-    });
+    await handler!(
+      {},
+      {
+        id: REMOTE.id,
+        label: REMOTE.label,
+        accent: 'blue',
+        host: '10.0.0.99',
+        port: REMOTE.port,
+      },
+    );
 
     expect(mod.getBackendClientForConnection(REMOTE.id)).not.toBe(affectedBefore);
     expect(mod.getBackendClientForConnection(other.id)).toBe(otherBefore);
@@ -880,20 +880,23 @@ describe('connections:* IPC handlers', () => {
     const testHandler = findHandler('connections:test');
     const updateHandler = findHandler('connections:update');
 
-    await expect(
-      testHandler!({}, { id: LOCAL.id, host: '127.0.0.1', port: 8443 }),
-    ).rejects.toThrow('local');
+    await expect(testHandler!({}, { id: LOCAL.id, host: '127.0.0.1', port: 8443 })).rejects.toThrow(
+      'local',
+    );
     await expect(
       testHandler!({}, { id: 'missing', host: '127.0.0.1', port: 8443 }),
     ).rejects.toThrow('Unknown');
     await expect(
-      updateHandler!({}, {
-        id: REMOTE.id,
-        label: REMOTE.label,
-        accent: 'blue',
-        host: '127.0.0.1',
-        port: 70_000,
-      }),
+      updateHandler!(
+        {},
+        {
+          id: REMOTE.id,
+          label: REMOTE.label,
+          accent: 'blue',
+          host: '127.0.0.1',
+          port: 70_000,
+        },
+      ),
     ).rejects.toThrow();
     expect(store.updateMetadata).not.toHaveBeenCalled();
     expect(store.replaceSecret).not.toHaveBeenCalled();

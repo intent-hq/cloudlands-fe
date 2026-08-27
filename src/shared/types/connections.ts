@@ -252,8 +252,7 @@ export type ConnectionValidationBlockedResult = Exclude<
 
 /** `connections:update` result: either an updated token-free record or validation guidance. */
 export type UpdateConnectionResult =
-  | { status: 'updated'; connection: ConnectionRecord }
-  | ConnectionValidationBlockedResult;
+  { status: 'updated'; connection: ConnectionRecord } | ConnectionValidationBlockedResult;
 
 /** Test current unsaved address values with the saved main-process-only secret. */
 export interface TestConnectionParams {
@@ -273,8 +272,7 @@ export interface RotateConnectionSecretParams {
 }
 
 export type RotateConnectionSecretResult =
-  | { status: 'updated'; connection: ConnectionRecord }
-  | ConnectionValidationBlockedResult;
+  { status: 'updated'; connection: ConnectionRecord } | ConnectionValidationBlockedResult;
 
 /** `connections:open` params. */
 export interface OpenConnectionParams {

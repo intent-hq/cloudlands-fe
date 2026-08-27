@@ -2172,9 +2172,7 @@ async function validateConnectionAddress(
   if (!actualFingerprint || !expectedFingerprint) {
     return { status: 'failed', reason: 'no-certificate' };
   }
-  const confirmed = confirmedFingerprint
-    ? normalizeFingerprint(confirmedFingerprint)
-    : undefined;
+  const confirmed = confirmedFingerprint ? normalizeFingerprint(confirmedFingerprint) : undefined;
   if (actualFingerprint !== expectedFingerprint && confirmed !== actualFingerprint) {
     return {
       status: 'fingerprint-confirmation-required',

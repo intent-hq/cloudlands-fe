@@ -304,9 +304,7 @@ function* updateConnection(
   }
 }
 
-function* testConnection(
-  action: ReturnType<typeof testConnectionRequested>,
-): SagaGenerator<void> {
+function* testConnection(action: ReturnType<typeof testConnectionRequested>): SagaGenerator<void> {
   let settled = false;
   try {
     const result = yield* call(invokeTestConnection, action.payload[0]);

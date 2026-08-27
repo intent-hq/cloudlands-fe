@@ -121,17 +121,12 @@ describe('DevicesSettings', () => {
     expect(screen.getByText('No remote devices saved')).toBeTruthy();
   });
 
-  async function openAction(name: 'Edit' | 'Replace secret' | 'Remove') {
-    await fireEvent.click(screen.getByRole('button', { name: 'Actions for Studio Mac' }));
+  async function openAction(name: 'Edit' | 'Replace secret' | 'Remove', deviceName = 'Studio Mac') {
+    await fireEvent.click(screen.getByRole('button', { name: `Actions for ${deviceName}` }));
     await fireEvent.click(await screen.findByRole('menuitem', { name }));
   }
 
-  it('edits metadata inline and permits only one device panel at a time', async () => {
-    mocks.connections = [
-      local,
-      remote,
-      { ...remote, id: 'remote-2', label: 'Travel Mac', host: '10.0.0.3' },
-    ];
+  it('edits metadata inline', async () => {
     render(DevicesSettings);
 
     await openAction('Edit');
@@ -156,6 +151,22 @@ describe('DevicesSettings', () => {
     expect(mocks.dispatch).not.toHaveBeenCalledWith(
       expect.objectContaining({ type: expect.stringMatching(/theme/i) }),
     );
+  });
+
+  it('replaces the first inline panel when a second device action opens', async () => {
+    mocks.connections = [
+      local,
+      remote,
+      { ...remote, id: 'remote-2', label: 'Travel Mac', host: '10.0.0.3' },
+    ];
+    render(DevicesSettings);
+
+    await openAction('Edit');
+    expect(screen.getByRole('form', { name: 'Edit Studio Mac' })).toBeTruthy();
+
+    await openAction('Replace secret', 'Travel Mac');
+    expect(screen.queryByRole('form', { name: 'Edit Studio Mac' })).toBeNull();
+    expect(screen.getByRole('form', { name: 'Replace secret for Travel Mac' })).toBeTruthy();
   });
 
   it('tests current unsaved address values without updating or opening a connection', async () => {

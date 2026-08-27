@@ -607,7 +607,13 @@ export function captureFingerprint(
         return;
       }
       if (authRejectedStatus !== undefined) {
-        finish({ ok: true, fingerprint, connected, tokenValid: false, statusCode: authRejectedStatus });
+        finish({
+          ok: true,
+          fingerprint,
+          connected,
+          tokenValid: false,
+          statusCode: authRejectedStatus,
+        });
         return;
       }
       finish({
