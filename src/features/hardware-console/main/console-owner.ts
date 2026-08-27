@@ -22,7 +22,7 @@ import type { BrowserWindow } from 'electron';
 
 import { IPC_CHANNELS } from '../../../shared/ipc-registry';
 import { Logger } from '../../../shared/logger';
-import { findExistingHudWindow, isHudWindow } from '../../../main/hud-window';
+import { isHudWindow, isTrackedHudWindow } from '../../../main/hud-window';
 
 const logger = new Logger('HardwareConsoleOwner');
 
@@ -133,10 +133,10 @@ export class ConsoleOwnerTracker<W extends ConsoleOwnerWindow = ConsoleOwnerWind
  * windows are created.
  */
 export function setupConsoleOwnerTracking(): ConsoleOwnerTracker<BrowserWindow> {
-  // Layered HUD detection: URL check (loaded windows) + the tracked HUD
-  // singleton ref (covers the mid-navigation about:blank race).
+  // Layered HUD detection: URL check (loaded windows) + the tracked
+  // per-backend HUD registry (covers the mid-navigation about:blank race).
   const tracker = new ConsoleOwnerTracker<BrowserWindow>(
-    (win) => isHudWindow(win) || findExistingHudWindow() === win,
+    (win) => isHudWindow(win) || isTrackedHudWindow(win),
   );
   app.on('browser-window-created', (_event, window) => tracker.registerWindow(window));
   app.on('browser-window-focus', (_event, window) => tracker.handleFocus(window));
