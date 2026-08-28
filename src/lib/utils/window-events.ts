@@ -14,6 +14,10 @@ type KnownWindowEventName =
   | 'editor:selection-change'
   | 'file:changed'
   | 'file:restore-scroll-position'
+  // Browser-emitted built-in event; fired when the window regains OS focus.
+  // Consumed by a saga via takeEveryFromWindowEvent (`lifecycle-read-saga.ts`)
+  // to reconcile workspace deltas missed while unfocused.
+  | 'focus'
   | 'navigate-message'
   | 'note-content-update'
   | 'note:restore-scroll-position'
