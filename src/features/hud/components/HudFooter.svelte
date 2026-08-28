@@ -1,12 +1,14 @@
 <script lang="ts">
   /**
    * HUD footer — full-width bottom bar with three zones:
-   *  LEFT   daemon connection health (same `selectHudSystem` view the SYSTEM
-   *         panel renders: pulsing dot + ONLINE/OFFLINE, live from the
-   *         daemon-health slice's 10s poll — 'down' is OFFLINE, 'healthy'
-   *         and 'degraded' are ONLINE). When connected to a REMOTE daemon
-   *         the short daemon hostname renders in parens between the INTENTD
-   *         label and the status: `INTENTD (intent1) ONLINE`.
+   *  LEFT   daemon connection health rendered by HudBackendMenu (same
+   *         `selectHudSystem` view the SYSTEM panel renders: pulsing dot +
+   *         ONLINE/OFFLINE, live from the daemon-health slice's 10s poll —
+   *         'down' is OFFLINE, 'healthy' and 'degraded' are ONLINE). When
+   *         connected to a REMOTE daemon the short daemon hostname renders
+   *         in parens between the INTENTD label and the status:
+   *         `INTENTD (intent1) ONLINE`. The zone is also the trigger for
+   *         the drop-up backend menu (Open a backend / add a backend).
    *  MIDDLE workspace counts by state (IDLE / PROGRESS / ATTENTION /
    *         PR OPEN / PR MERGED / FAILED / COMPLETED) from the SAME
    *         `selectHudWorkspaceStateBars` rollup the left rail and grid use.
@@ -23,6 +25,7 @@
     selectHudSystem,
     selectHudWorkspaceStateBars,
   } from '$store/renderer/slices/hud/hud-selectors';
+  import HudBackendMenu from './HudBackendMenu.svelte';
 
   /**
    * Human platform name for the product label, from the preload-exposed
@@ -45,9 +48,7 @@
   const system$ = selectHudSystem();
   const workspaceBars$ = selectHudWorkspaceStateBars();
 
-  const online = $derived($system$.online);
   const daemonVersion = $derived($system$.version);
-  const remoteHostname = $derived($system$.remoteHostname);
 
   const stats = $derived({
     idle: $workspaceBars$.idle,
@@ -62,22 +63,7 @@
 </script>
 
 <footer class="hud-footer" data-testid="hud-footer">
-  <div class="hud-footer-system" data-testid="hud-footer-system">
-    <span class="hud-footer-dot" class:hud-footer-dot-online={online}></span>
-    <!-- i18n-ignore (brand/daemon name) -->
-    <span class="hud-footer-system-key">INTENTD</span>
-    {#if remoteHostname !== null}
-      <!-- i18n-ignore (daemon-reported hostname is data, not copy) -->
-      <span class="hud-footer-system-key" data-testid="hud-footer-hostname"
-        >({remoteHostname})</span
-      >
-    {/if}
-    {#if online}
-      <span class="hud-footer-online">{m.hud_system_online_label()}</span>
-    {:else}
-      <span class="hud-footer-offline">{m.hud_system_offline_label()}</span>
-    {/if}
-  </div>
+  <HudBackendMenu />
 
   <div class="hud-footer-stats" data-testid="hud-footer-stats">
     <div class="hud-footer-stat">
@@ -151,33 +137,8 @@
       500 11px 'JetBrains Mono',
       monospace;
   }
-  .hud-footer-system {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    min-width: 0;
-  }
-  .hud-footer-dot {
-    width: 7px;
-    height: 7px;
-    border-radius: 50%;
-    background: hsl(var(--error-foreground));
-  }
-  .hud-footer-dot-online {
-    background: hsl(var(--primary));
-    animation: hudpulse 2.2s ease-in-out infinite;
-  }
-  .hud-footer-system-key {
-    color: hsl(var(--muted-foreground));
-    letter-spacing: 0.12em;
-  }
-  .hud-footer-online {
-    color: hsl(var(--primary));
-  }
-  .hud-footer-offline {
-    color: hsl(var(--error-foreground));
-    animation: hudblink 1.6s step-end infinite;
-  }
+  /* The LEFT system zone (dot / INTENTD / ONLINE) and its styles moved into
+     HudBackendMenu.svelte, which renders it as the backend-menu trigger. */
   .hud-footer-stats {
     position: absolute;
     left: 50%;
@@ -244,9 +205,7 @@
     background: hsl(var(--border));
   }
   @media (prefers-reduced-motion: reduce) {
-    .hud-stat-blink,
-    .hud-footer-dot-online,
-    .hud-footer-offline {
+    .hud-stat-blink {
       animation: none;
     }
   }
