@@ -20,7 +20,7 @@ let mockStoreState: Partial<StoreState> = {
   },
 };
 let mockDispatch = vi.fn();
-const mockNavigateToRoute = vi.fn();
+const mockNavigateToSettings = vi.fn();
 
 // Default connections slice, merged under whatever a test sets on
 // `mockStoreState` so the component's connections selectors always resolve
@@ -39,8 +39,8 @@ vi.mock('svelte-fa', () => ({
   default: () => null,
 }));
 
-vi.mock('$lib/utils/navigation.client', () => ({
-  navigateToRoute: mockNavigateToRoute,
+vi.mock('$lib/utils/workspace-navigation', () => ({
+  navigateToSettings: mockNavigateToSettings,
 }));
 
 // Mock tooltip with a passthrough component so the real dropdown can render.
@@ -1416,7 +1416,7 @@ describe('DaemonStatusIndicator', () => {
       render(DaemonStatusIndicator);
       await fireEvent.click(screen.getByRole('button', { name: 'intentd: healthy' }));
       await fireEvent.click(screen.getByText('Manage devices'));
-      expect(mockNavigateToRoute).toHaveBeenCalledWith('/settings?tab=devices');
+      expect(mockNavigateToSettings).toHaveBeenCalledWith({ tab: 'devices' });
     });
 
     it('offers to connect another device when no remote is saved', async () => {
@@ -1430,7 +1430,7 @@ describe('DaemonStatusIndicator', () => {
       render(DaemonStatusIndicatorPreloaded);
       await fireEvent.click(screen.getByRole('button', { name: 'intentd: healthy' }));
       await fireEvent.click(screen.getByText('Connect another device'));
-      expect(mockNavigateToRoute).toHaveBeenCalledWith('/settings?tab=devices');
+      expect(mockNavigateToSettings).toHaveBeenCalledWith({ tab: 'devices' });
     });
 
     describe('remote Update action', () => {

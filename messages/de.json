@@ -5968,7 +5968,7 @@
   "splash_gettingReady_label": "Wir bereiten alles zum Bauen vor",
   "layout_daemonStatus_connections_header": "Verbindungen",
   "layout_daemonStatus_connectToAnother_action": "Mit einem anderen intentd verbinden…",
-  "layout_daemonStatus_details_action": "Details",
+  "layout_daemonStatus_details_action": "Einzelheiten",
   "layout_daemonStatus_manageDevices_action": "Geräte verwalten",
   "layout_daemonStatus_connectAnotherDevice_action": "Weiteres Gerät verbinden",
   "layout_daemonStatus_localConnection_label": "Dieser Computer (lokal)",

@@ -166,7 +166,7 @@
     resolveConnectionAccent,
   } from '$lib/utils/connection-accents';
   import { store as appStore } from '$store/renderer/store';
-  import { navigateToRoute } from '$lib/utils/navigation.client';
+  import { navigateToSettings } from '$lib/utils/workspace-navigation';
   import type { DaemonHealth } from '$store/renderer/slices/daemon-health/daemon-health-types';
 
   const health$ = selectDaemonHealth();
@@ -375,9 +375,7 @@
 
   function openDevicesSettings() {
     dropdownOpen = false;
-    // Navigation is renderer UI behavior, not domain-data loading.
-    // eslint-disable-next-line intent/no-component-async-data-fetch
-    void navigateToRoute('/settings?tab=devices');
+    void navigateToSettings({ tab: 'devices' });
   }
 
   const hasSavedRemoteConnections = $derived($connections$.some((conn) => !conn.isLocal));
