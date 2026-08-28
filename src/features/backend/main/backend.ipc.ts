@@ -1274,6 +1274,7 @@ function refreshConnectionsForStatusChange(): void {
  */
 class ConnectionSecretUnavailableError extends Error {
   constructor() {
+    // i18n-ignore (internal error)
     super('Connection secret unavailable');
     this.name = 'ConnectionSecretUnavailableError';
   }

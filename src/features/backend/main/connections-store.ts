@@ -346,6 +346,7 @@ class ConnectionSecretUnavailableError extends Error {
   readonly code = 'connection-secret-unavailable';
 
   constructor() {
+    // i18n-ignore (internal error)
     super('Connection secret unavailable');
     this.name = 'ConnectionSecretUnavailableError';
   }
