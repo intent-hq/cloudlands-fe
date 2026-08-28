@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import type { Workspace } from '$shared/types';
 import {
+  removeWorkspaceEntity,
   setPendingCreation,
   setWorkspaceEntity,
   workspaceReducer,
@@ -58,5 +59,13 @@ describe('workspace load state', () => {
     });
     expect(selectWorkspaceLoadResult.select(state, real.id)).toMatchObject(real);
     expect(selectWorkspaceLoadResult.select(state, optimistic.id)).toMatchObject(optimistic);
+  });
+
+  it('clears an in-flight load when its workspace entity is explicitly evicted', () => {
+    const loading = workspaceLifecycleReducer(initialState, workspaceLoadStarted('evicted'));
+
+    const evicted = workspaceLifecycleReducer(loading, removeWorkspaceEntity('evicted'));
+
+    expect(evicted.loadByWorkspaceId['evicted']).toBeUndefined();
   });
 });

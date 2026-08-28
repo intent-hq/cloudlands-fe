@@ -145,6 +145,6 @@ workspaceLifecycleReducer.with(workspaceDeleted, (state, { payload: [wsId] }) =>
   clearLoadState(clearSession(state, wsId), wsId),
 );
 workspaceLifecycleReducer.with(workspaceEntityRemoved, (state, { payload: [wsId] }) =>
-  clearSession(state, wsId),
+  clearLoadState(clearSession(state, wsId), wsId),
 );
 workspaceLifecycleReducer.with(workspaceStateReset, () => initialState);

@@ -73,6 +73,10 @@ function* loadWorkspace(action: ReturnType<typeof workspaceLoadRequested>): Saga
 
     if (!result.ok) {
       const notFound = isNotFoundError(result.error);
+      if (notFound) {
+        yield* put(closeWorkspaceTab(workspaceId));
+        yield* put(removeWorkspaceEntity(workspaceId));
+      }
       yield* put(
         workspaceLoadFailed(workspaceId, {
           kind: notFound ? 'not_found' : 'error',
@@ -80,10 +84,6 @@ function* loadWorkspace(action: ReturnType<typeof workspaceLoadRequested>): Saga
         }),
       );
       yield* put(workspaceOpenFailed(workspaceId));
-      if (notFound) {
-        yield* put(closeWorkspaceTab(workspaceId));
-        yield* put(removeWorkspaceEntity(workspaceId));
-      }
       return;
     }
 
@@ -102,11 +102,14 @@ function* loadWorkspace(action: ReturnType<typeof workspaceLoadRequested>): Saga
         }
       } catch {
         // Opening succeeded; keep the protocol workspace when optional path hydration fails.
+        if (yield* isLoadInvalidated(workspaceId)) return;
       }
     }
+    if (yield* isLoadInvalidated(workspaceId)) return;
     yield* put(workspaceOpenSucceeded(workspaceId));
     yield* put(workspaceLoadSucceeded(workspaceId));
   } catch (error) {
+    if (yield* isLoadInvalidated(workspaceId)) return;
     yield* put(workspaceLoadFailed(workspaceId, { kind: 'error', message: errorMessage(error) }));
     yield* put(workspaceOpenFailed(workspaceId));
   }

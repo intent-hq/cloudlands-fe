@@ -5,6 +5,7 @@ import type { Workspace } from '$shared/types';
 import { openWorkspaceTab, tabStateReducer } from '../../tab-state/tab-state-slice';
 import {
   initialState as initialWorkspaceState,
+  removeWorkspaceEntity,
   workspaceReducer,
 } from '../../workspace/workspace-slice';
 import { selectWorkspaceById } from '../../workspace/workspace-selectors';
@@ -48,8 +49,12 @@ function workspace(id: string, title = id): Workspace {
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
-  const promise = new Promise<T>((done) => (resolve = done));
-  return { promise, resolve };
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((done, fail) => {
+    resolve = done;
+    reject = fail;
+  });
+  return { promise, resolve, reject };
 }
 
 function createHarness(options: { cached?: Workspace; live?: boolean; openTab?: boolean } = {}) {
@@ -166,6 +171,9 @@ describe('workspaceLoadSaga', () => {
 
     expect(mocks.open).not.toHaveBeenCalled();
     expect(run.actions).not.toContainEqual(workspaceHydrationRequested(cached.id));
+    expect(run.actions.some((action) => action.type === 'workspace/setWorkspaceEntity')).toBe(
+      false,
+    );
     expect(run.getState().workspaceLifecycle.loadByWorkspaceId[cached.id]?.status).toBe('ready');
     await stop(run.task);
   });
@@ -208,6 +216,68 @@ describe('workspaceLoadSaga', () => {
     await stop(run.task);
   });
 
+  it('drops a successful open result after explicit entity eviction', async () => {
+    const cached = workspace('evicted-space');
+    const gate = deferred<{ ok: true; data: Workspace }>();
+    mocks.open.mockReturnValueOnce(gate.promise);
+    const run = createHarness({ cached });
+
+    run.dispatch(workspaceLoadRequested(cached.id));
+    await settle();
+    run.dispatch(removeWorkspaceEntity(cached.id));
+    gate.resolve({ ok: true, data: cached });
+    await settle();
+
+    expect(selectWorkspaceById.select(run.getState() as never, cached.id)).toBeUndefined();
+    expect(run.getState().workspaceLifecycle.loadByWorkspaceId[cached.id]).toBeUndefined();
+    expect(run.actions).not.toContainEqual({
+      type: 'workspace-lifecycle/workspaceOpenSucceeded',
+      payload: [cached.id],
+    });
+    await stop(run.task);
+  });
+
+  it('drops a rejected open result after explicit entity eviction', async () => {
+    const gate = deferred<{ ok: true; data: Workspace }>();
+    mocks.open.mockReturnValueOnce(gate.promise);
+    const run = createHarness();
+
+    run.dispatch(workspaceLoadRequested('evicted-open'));
+    await settle();
+    run.dispatch(removeWorkspaceEntity('evicted-open'));
+    gate.reject(new Error('Backend unavailable'));
+    await settle();
+
+    expect(run.getState().workspaceLifecycle.loadByWorkspaceId['evicted-open']).toBeUndefined();
+    expect(run.actions).not.toContainEqual({
+      type: 'workspace-lifecycle/workspaceLoadFailed',
+      payload: ['evicted-open', { kind: 'error', message: 'Backend unavailable' }],
+    });
+    await stop(run.task);
+  });
+
+  it('drops rejected optional path hydration after explicit entity eviction', async () => {
+    const opened = { ...workspace('evicted-path'), repositoryPath: undefined } as Workspace;
+    const gate = deferred<Workspace>();
+    mocks.open.mockResolvedValueOnce({ ok: true, data: opened });
+    mocks.get.mockReturnValueOnce(gate.promise);
+    const run = createHarness();
+
+    run.dispatch(workspaceLoadRequested(opened.id));
+    await settle();
+    run.dispatch(removeWorkspaceEntity(opened.id));
+    gate.reject(new Error('Path unavailable'));
+    await settle();
+
+    expect(selectWorkspaceById.select(run.getState() as never, opened.id)).toBeUndefined();
+    expect(run.getState().workspaceLifecycle.loadByWorkspaceId[opened.id]).toBeUndefined();
+    expect(run.actions).not.toContainEqual({
+      type: 'workspace-lifecycle/workspaceOpenSucceeded',
+      payload: [opened.id],
+    });
+    await stop(run.task);
+  });
+
   it('retries not-found once, evicts the entity, and closes its tab', async () => {
     const cached = workspace('missing-space');
     mocks.open.mockResolvedValue({ ok: false, error: 'Workspace not found' });
@@ -243,6 +313,27 @@ describe('workspaceLoadSaga', () => {
     await settle();
     expect(run.getState().workspaceLifecycle.loadByWorkspaceId[recreated.id]?.status).toBe('ready');
     expect(run.getState().workspace.workspaces.ids).toContain(recreated.id);
+    await stop(run.task);
+  });
+
+  it('recovers from a failed open on a subsequent request without eviction', async () => {
+    const recovered = workspace('retry-space');
+    mocks.open
+      .mockResolvedValueOnce({ ok: false, error: 'Backend unavailable' })
+      .mockResolvedValueOnce({ ok: true, data: recovered });
+    const run = createHarness();
+
+    run.dispatch(workspaceLoadRequested(recovered.id));
+    await settle();
+    expect(run.getState().workspaceLifecycle.loadByWorkspaceId[recovered.id]?.status).toBe('error');
+
+    run.dispatch(workspaceLoadRequested(recovered.id));
+    await settle();
+
+    expect(run.getState().workspaceLifecycle.loadByWorkspaceId[recovered.id]?.status).toBe('ready');
+    expect(selectWorkspaceById.select(run.getState() as never, recovered.id)).toMatchObject(
+      recovered,
+    );
     await stop(run.task);
   });
 
