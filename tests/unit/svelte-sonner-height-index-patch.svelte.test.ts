@@ -9,6 +9,7 @@ type PatchedToastState = {
   removeHeight(id: string | number): void;
   reset(): void;
   setHeight(data: Height): void;
+  toasts: Array<{ id: string | number }>;
 };
 
 const require = createRequire(import.meta.url);
@@ -28,15 +29,37 @@ describe('svelte-sonner toast height indexing (upstream since 1.2.1)', () => {
   beforeEach(() => toastState.reset());
   afterEach(() => toastState.reset());
 
-  it('keeps heights compact when toast order and measurement order differ', () => {
+  it('orders heights newest-first (aligned with toasts) when measured oldest-first', () => {
+    // Create oldest -> newest; toastState.toasts is newest-first (unshift).
+    toastState.create({ id: 'first', message: 'First' });
+    toastState.create({ id: 'second', message: 'Second' });
+    toastState.create({ id: 'third', message: 'Third' });
+    expect(toastState.toasts.map((toast) => toast.id)).toEqual(['third', 'second', 'first']);
+
+    // Measure in mount order oldest -> newest — the order that exposed the
+    // original bug: appending here leaves heights oldest-first, so visible
+    // (newest) toasts accumulate every hidden older toast's height as offset.
+    toastState.setHeight({ toastId: 'first', height: 40 });
+    toastState.setHeight({ toastId: 'second', height: 48 });
+    toastState.setHeight({ toastId: 'third', height: 56 });
+
+    // Must be spliced into the toasts-aligned (newest-first) position, not
+    // appended: an append implementation produces [first, second, third].
+    expect(toastState.heights).toEqual([
+      { toastId: 'third', height: 56 },
+      { toastId: 'second', height: 48 },
+      { toastId: 'first', height: 40 },
+    ]);
+    expect(toastState.heights.map((height) => height.toastId)).toEqual(
+      toastState.toasts.map((toast) => toast.id),
+    );
+  });
+
+  it('updates an existing entry in place and stays compact', () => {
     toastState.create({ id: 'first', message: 'First' });
     toastState.create({ id: 'second', message: 'Second' });
 
     toastState.setHeight({ toastId: 'first', height: 40 });
-
-    expect(() =>
-      toastState.heights.findIndex((height) => height.toastId === 'first'),
-    ).not.toThrow();
     expect(toastState.heights).toEqual([{ toastId: 'first', height: 40 }]);
 
     toastState.setHeight({ toastId: 'first', height: 40 });
