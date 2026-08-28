@@ -761,7 +761,7 @@
         class={getOperationalClusterSpacingClass(groupedBlocks, blockIndex, isVisibleTopLevelBlock)}
         data-operational-cluster-row={isOperationalClusterBlock(block) ? block.type : undefined}
         data-message-content-block={block.type}
-        data-chat-search-block-path={block.type === 'text'
+        data-chat-search-block-path={block.type === 'text' || block.type === 'tool_result'
           ? chatSearchBlockPath(blockIndex)
           : undefined}
       >

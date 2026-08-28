@@ -19,6 +19,11 @@ import {
   normalizeResponseGroups,
   shouldRenderResponseGroupInline,
 } from './response-group-blocks';
+import {
+  classifyToolResults,
+  getToolResultText,
+  isStandaloneToolResult,
+} from './tool-result-pairing';
 
 export interface ChatSearchMatch {
   messageId: string;
@@ -57,6 +62,7 @@ function buildMessageSearchBlocks(message: AgentMessage, turnKey: string): ChatS
     groupContentBlocks(parsedPromptBlocks.contentBlocks, !!message.isStreaming),
     !!message.isStreaming,
   );
+  const toolResultClassification = classifyToolResults(parsedPromptBlocks.contentBlocks);
   const output: ChatSearchBlock[] = [];
   const addText = (text: string, blockPath: string, disclosurePath: string[]) => {
     const cleaned = parseSuggestedPrompts(text).cleanedContent;
@@ -68,6 +74,10 @@ function buildMessageSearchBlocks(message: AgentMessage, turnKey: string): ChatS
     const path = chatSearchBlockPath(blockIndex);
     if (block.type === 'text') {
       addText(block.text || block.content || '', path, []);
+      return;
+    }
+    if (block.type === 'tool_result' && isStandaloneToolResult(toolResultClassification, block)) {
+      addText(getToolResultText(block), path, []);
       return;
     }
     if (block.type !== 'content_group') return;
