@@ -308,6 +308,7 @@ describe('multi-backend connect — end-to-end journey', () => {
       protocolMismatch: null,
       authRejected: null,
       pinnedVersion: '0.1.0',
+      connectedIds: [],
     });
 
     // Trust-on-first-use: capture the remote's presented fingerprint.

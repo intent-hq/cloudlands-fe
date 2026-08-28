@@ -26,6 +26,7 @@ export type {
   ConnectionRecord,
   ConnectionsListResult,
   OpenConnectionResult,
+  UpdateBackendResult,
   ConnectionAuthRejectedEvent,
   ConnectionCertMismatchEvent,
   ConnectionProtocolMismatchEvent,
@@ -64,6 +65,13 @@ export interface ConnectionsState {
    * Compared against each remote's captured `daemonVersion`.
    */
   pinnedVersion: string | null;
+  /**
+   * ids of the connections with a live, currently-connected client in main's
+   * pool (from the `connections:list` result / `connections:changed` push).
+   * Gates connected-only actions (the remote Update button). Empty until the
+   * first list payload carrying the field lands.
+   */
+  connectedIds: string[];
   /** Status of the in-flight add/open/switch operation. */
   status: ConnectionOpStatus;
   /** Error message from the last failed add/open/switch operation, or null. */

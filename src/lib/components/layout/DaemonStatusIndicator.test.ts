@@ -1425,6 +1425,131 @@ describe('DaemonStatusIndicator', () => {
       expect(screen.getByLabelText('Host')).toBeTruthy();
       expect(screen.getByLabelText('Access token')).toBeTruthy();
     });
+
+    describe('remote Update action', () => {
+      const behindRemote = { ...remoteRecord, daemonVersion: '0.8.0' };
+
+      function withUpdatableRemote(
+        overrides: Partial<{
+          daemonVersion: string | null;
+          connectedIds: string[];
+          pinnedVersion: string | null;
+        }> = {},
+      ) {
+        const remote = {
+          ...behindRemote,
+          daemonVersion:
+            overrides.daemonVersion !== undefined ? overrides.daemonVersion : '0.8.0',
+        };
+        return {
+          connections: createCollection('id', [localRecord, remote]),
+          activeId: 'local',
+          windowBackendId: 'local',
+          status: 'idle',
+          error: null,
+          certMismatch: null,
+          connectedIds: overrides.connectedIds ?? ['local', 'r1'],
+          pinnedVersion: overrides.pinnedVersion !== undefined ? overrides.pinnedVersion : '0.9.0',
+        };
+      }
+
+      it('shows Update on a connected remote that is behind and dispatches the request', async () => {
+        mockStoreState = { daemonHealth: { ...healthy }, connections: withUpdatableRemote() };
+
+        const DaemonStatusIndicator = (await import('./DaemonStatusIndicator.svelte')).default;
+        render(DaemonStatusIndicator);
+        await fireEvent.click(screen.getByRole('button', { name: 'intentd: healthy' }));
+        await fireEvent.click(screen.getByText('desk:4180'));
+
+        const updateItem = screen.getByText('Update').closest('[role="menuitem"]');
+        expect(updateItem?.getAttribute('title')).toBe(
+          "Update this backend's intentd from v0.8.0 to v0.9.0",
+        );
+        await fireEvent.click(updateItem!);
+
+        expect(mockDispatch).toHaveBeenCalledWith(
+          expect.objectContaining({
+            payload: ['r1'],
+            type: 'connections/updateBackendRequested',
+            asyncActionType: 'connections/updateBackend',
+          }),
+        );
+        // The dropdown closes so the toast is not hidden behind the menu.
+        expect(screen.queryByText('Connections')).toBeNull();
+      });
+
+      it('hides Update when the remote is not connected', async () => {
+        mockStoreState = {
+          daemonHealth: { ...healthy },
+          connections: withUpdatableRemote({ connectedIds: ['local'] }),
+        };
+
+        const DaemonStatusIndicator = (await import('./DaemonStatusIndicator.svelte')).default;
+        render(DaemonStatusIndicator);
+        await fireEvent.click(screen.getByRole('button', { name: 'intentd: healthy' }));
+        await fireEvent.click(screen.getByText('desk:4180'));
+
+        expect(screen.getByText('Switch')).toBeTruthy();
+        expect(screen.queryByText('Update')).toBeNull();
+      });
+
+      it('hides Update when the remote is not behind the pin (equal)', async () => {
+        mockStoreState = {
+          daemonHealth: { ...healthy },
+          connections: withUpdatableRemote({ daemonVersion: '0.9.0' }),
+        };
+
+        const DaemonStatusIndicator = (await import('./DaemonStatusIndicator.svelte')).default;
+        render(DaemonStatusIndicator);
+        await fireEvent.click(screen.getByRole('button', { name: 'intentd: healthy' }));
+        await fireEvent.click(screen.getByText('desk:4180'));
+
+        expect(screen.getByText('Switch')).toBeTruthy();
+        expect(screen.queryByText('Update')).toBeNull();
+      });
+
+      it('never shows Update on the local row even when it compares older', async () => {
+        mockStoreState = {
+          daemonHealth: { ...healthy },
+          connections: {
+            ...withUpdatableRemote(),
+            connections: createCollection('id', [
+              { ...localRecord, daemonVersion: '0.8.0' },
+              behindRemote,
+            ]),
+          },
+        };
+
+        const DaemonStatusIndicator = (await import('./DaemonStatusIndicator.svelte')).default;
+        render(DaemonStatusIndicator);
+        await fireEvent.click(screen.getByRole('button', { name: 'intentd: healthy' }));
+        await fireEvent.click(screen.getByText('This machine (local)'));
+
+        expect(screen.getByText('Switch')).toBeTruthy();
+        expect(screen.queryByText('Update')).toBeNull();
+      });
+
+      it('shouldShowUpdateAction covers ahead/unknown/missing-pin cases', async () => {
+        const { shouldShowUpdateAction } = await import('./DaemonStatusIndicator.svelte');
+        const conn = { id: 'r1', isLocal: false, daemonVersion: '0.8.0' };
+
+        expect(shouldShowUpdateAction(conn, ['r1'], '0.9.0')).toBe(true);
+        // Ahead of the pin.
+        expect(shouldShowUpdateAction({ ...conn, daemonVersion: '1.0.0' }, ['r1'], '0.9.0')).toBe(
+          false,
+        );
+        // Unparsable captured version → 'unknown' comparison.
+        expect(shouldShowUpdateAction({ ...conn, daemonVersion: 'garbage' }, ['r1'], '0.9.0')).toBe(
+          false,
+        );
+        // No captured version / no pin / legacy state without connectedIds.
+        expect(shouldShowUpdateAction({ ...conn, daemonVersion: null }, ['r1'], '0.9.0')).toBe(
+          false,
+        );
+        expect(shouldShowUpdateAction(conn, ['r1'], null)).toBe(false);
+        expect(shouldShowUpdateAction(conn, undefined, '0.9.0')).toBe(false);
+      });
+    });
   });
 
   describe('connection label (hostname)', () => {

@@ -38,6 +38,8 @@ import type {
   SetKeychainSyncEnabledParams,
   SwitchConnectionParams,
   SwitchConnectionResult,
+  UpdateBackendParams,
+  UpdateBackendResult,
 } from '$shared/types/connections';
 import {
   addConnectionRequested,
@@ -57,6 +59,7 @@ import {
   protocolMismatchReceived,
   setKeychainSyncEnabledRequested,
   switchConnectionRequested,
+  updateBackendRequested,
 } from '../connections-slice';
 
 const CONNECTIONS = IPC_CHANNELS.CONNECTIONS;
@@ -160,6 +163,32 @@ async function invokeSwitchConnection(
   const api = getApi();
   if (!api) throw new Error('electronAPI is not available');
   return (await api.invoke(CONNECTIONS.SWITCH, params)) as SwitchConnectionResult;
+}
+
+async function invokeUpdateBackend(params: UpdateBackendParams): Promise<UpdateBackendResult> {
+  const api = getApi();
+  if (!api) throw new Error('electronAPI is not available');
+  return (await api.invoke(CONNECTIONS.UPDATE_BACKEND, params)) as UpdateBackendResult;
+}
+
+/**
+ * Toast the structured `connections:update-backend` outcome. Lazy imports
+ * (same pattern as the boot-fallback toast) keep the saga module light.
+ */
+async function showUpdateBackendToast(result: UpdateBackendResult): Promise<void> {
+  const [{ toast }, { m }] = await Promise.all([
+    import('svelte-sonner'),
+    import('$shared/paraglide/messages.js'),
+  ]);
+  if (result.ok) {
+    toast.success(m.layout_daemonStatus_updateRequested_toast());
+  } else if (result.reason === 'unsupported') {
+    toast.error(m.layout_daemonStatus_updateUnsupported_toast());
+  } else if (result.reason === 'not-connected') {
+    toast.error(m.layout_daemonStatus_updateNotConnected_toast());
+  } else {
+    toast.error(m.layout_daemonStatus_updateFailed_toast({ message: result.message ?? '' }));
+  }
 }
 
 async function invokeSyncGetState(): Promise<KeychainSyncStateResult> {
@@ -302,6 +331,27 @@ function* switchConnection(
   }
 }
 
+function* updateBackend(action: ReturnType<typeof updateBackendRequested>): SagaGenerator<void> {
+  let settled = false;
+  try {
+    const result = yield* call(invokeUpdateBackend, { id: action.payload[0] });
+    yield* call(showUpdateBackendToast, result);
+    yield* put(action.success(result));
+    settled = true;
+  } catch (error) {
+    // An IPC-level failure (validation, bridge unavailable) — daemon-side
+    // failures come back as structured non-ok results, not throws.
+    const resolved = toError(error);
+    const failure: UpdateBackendResult = { ok: false, reason: 'failed', message: resolved.message };
+    yield* call(showUpdateBackendToast, failure);
+    yield* put(action.failure(resolved));
+    settled = true;
+  } finally {
+    if (!settled && (yield* cancelled()))
+      yield* put(action.failure(new Error('Backend update request was cancelled')));
+  }
+}
+
 function* loadKeychainSyncState(
   action: ReturnType<typeof loadKeychainSyncStateRequested>,
 ): SagaGenerator<void> {
@@ -362,6 +412,7 @@ function* watchConnectionsActions(): SagaGenerator<void> {
     takeLeading(openConnectionRequested, openConnection),
     takeLeading(forgetConnectionRequested, forgetConnection),
     takeLeading(switchConnectionRequested, switchConnection),
+    takeLeading(updateBackendRequested, updateBackend),
     takeLeading(loadKeychainSyncStateRequested, loadKeychainSyncState),
     takeLeading(setKeychainSyncEnabledRequested, setKeychainSyncEnabled),
   ]);
