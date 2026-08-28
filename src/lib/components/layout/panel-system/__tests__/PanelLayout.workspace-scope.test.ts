@@ -100,10 +100,6 @@ vi.mock('$lib/client', () => ({ appClient: { terminals: { create: vi.fn() } } })
 vi.mock('../PanelContainer.svelte', async () => ({
   default: (await import('../../../workspace/sidebar/__tests__/mocks/MockSimple.svelte')).default,
 }));
-vi.mock('../HandleDropOverlay.svelte', async () => ({
-  default: (await import('../../../workspace/sidebar/__tests__/mocks/MockSimple.svelte')).default,
-}));
-
 import PanelLayout from '../PanelLayout.svelte';
 
 describe('PanelLayout workspace-scoped layout lifecycle', () => {
@@ -135,21 +131,6 @@ describe('PanelLayout workspace-scoped layout lifecycle', () => {
     );
     expect(dispatchMock).not.toHaveBeenCalledWith(
       expect.objectContaining({ payload: ['ws-redux-b'] }),
-    );
-  });
-
-  it('only renders the handle drop overlay while the layout is active', async () => {
-    const { container, rerender } = render(PanelLayout, {
-      props: { workspaceId: 'ws-component-a', active: false },
-    });
-    const inactiveMockCount = container.querySelectorAll('[data-testid="mock-component"]').length;
-
-    await rerender({ workspaceId: 'ws-component-a', active: true });
-
-    await waitFor(() =>
-      expect(container.querySelectorAll('[data-testid="mock-component"]')).toHaveLength(
-        inactiveMockCount + 1,
-      ),
     );
   });
 });

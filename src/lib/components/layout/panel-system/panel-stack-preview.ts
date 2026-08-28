@@ -1,10 +1,27 @@
 import type { Action } from 'svelte/action';
+import type { PanelState } from '$store/renderer/slices/panel-layout/panel-layout-types';
+
+export interface PanelLayoutPreviewSnapshot {
+  panel: PanelState;
+  sourcePanelId?: string | null;
+}
 
 function findPanel(panelId: string | null): HTMLElement | null {
   if (!panelId) return null;
   return (
     [...document.querySelectorAll<HTMLElement>('[data-panel-id]')].find(
       (element) => element.dataset.panelId === panelId,
+    ) ?? null
+  );
+}
+
+function findPanelContainingTab(tabId: string | null): HTMLElement | null {
+  if (!tabId) return null;
+  return (
+    [...document.querySelectorAll<HTMLElement>('[data-panel-id]')].find((panel) =>
+      [...panel.querySelectorAll<HTMLElement>('.tab-content-wrapper[data-tab-id]')].some(
+        (wrapper) => wrapper.dataset.tabId === tabId,
+      ),
     ) ?? null
   );
 }
@@ -37,8 +54,37 @@ function copyElementState(source: Element, snapshot: Element): void {
   });
 }
 
-function createPanelSnapshot(source: HTMLElement): HTMLElement {
+function applyProjectedPanelState(snapshot: HTMLElement, panel: PanelState): void {
+  const activeTab = panel.tabs.find((tab) => tab.id === panel.activeTabId) ?? panel.tabs[0] ?? null;
+  const contentWrappers = [
+    ...snapshot.querySelectorAll<HTMLElement>('.tab-content-wrapper[data-tab-id]'),
+  ];
+  contentWrappers.forEach((wrapper) => {
+    if (wrapper.dataset.tabId !== activeTab?.id) {
+      wrapper.remove();
+      return;
+    }
+    wrapper.classList.remove('hidden');
+    wrapper.removeAttribute('inert');
+    wrapper.setAttribute('aria-hidden', 'false');
+  });
+
+  snapshot.dataset.panelLayoutPreviewActivePane = activeTab?.id ?? '';
+  snapshot.dataset.panelLayoutPreviewStackSize = String(panel.tabs.length);
+  snapshot.querySelectorAll<HTMLElement>('[data-pane-stack]').forEach((stack) => {
+    stack.dataset.paneStackSize = String(panel.tabs.length);
+  });
+  snapshot.querySelectorAll<HTMLElement>('[data-pane-stack-active]').forEach((active) => {
+    active.dataset.paneStackActive = activeTab?.id ?? '';
+  });
+  const title = snapshot.querySelector<HTMLElement>('[data-panel-header-title]');
+  if (title && activeTab) title.replaceChildren(activeTab.title ?? '');
+}
+
+function createPanelSnapshot(source: HTMLElement, panel: PanelState): HTMLElement {
   const snapshot = source.cloneNode(true) as HTMLElement;
+  copyElementState(source, snapshot);
+  applyProjectedPanelState(snapshot, panel);
   snapshot.removeAttribute('data-panel-id');
   snapshot.querySelectorAll('[data-panel-id]').forEach((element) => {
     element.removeAttribute('data-panel-id');
@@ -68,16 +114,36 @@ function createPanelSnapshot(source: HTMLElement): HTMLElement {
   return snapshot;
 }
 
-export const renderPanelLayoutPreview: Action<HTMLElement, string> = (host, panelId) => {
-  function render(nextPanelId: string) {
-    const source = findPanel(nextPanelId);
-    if (!source) return;
-    const snapshot = createPanelSnapshot(source);
-    snapshot.dataset.panelLayoutPreviewSnapshot = nextPanelId;
+export const renderPanelLayoutPreview: Action<HTMLElement, PanelLayoutPreviewSnapshot> = (
+  host,
+  options,
+) => {
+  let renderedPanel: PanelState | null = null;
+  let renderedSourcePanelId: string | null = null;
+
+  function render(next: PanelLayoutPreviewSnapshot) {
+    const sourcePanelId = next.sourcePanelId ?? null;
+    if (next.panel === renderedPanel && sourcePanelId === renderedSourcePanelId) return;
+    renderedPanel = next.panel;
+    renderedSourcePanelId = sourcePanelId;
+    const activeTabId = next.panel.activeTabId ?? next.panel.tabs[0]?.id ?? null;
+    const source =
+      findPanelContainingTab(activeTabId) ??
+      findPanel(next.sourcePanelId ?? null) ??
+      findPanel(next.panel.id);
+    if (!source) {
+      host.replaceChildren();
+      return;
+    }
+    const snapshot = createPanelSnapshot(source, next.panel);
+    snapshot.dataset.panelLayoutPreviewSnapshot = next.panel.id;
+    snapshot.dataset.panelLayoutPreviewSnapshotSource = source.dataset.panelId ?? '';
     host.replaceChildren(snapshot);
-    copyElementState(source, snapshot);
   }
 
-  render(panelId);
-  return { update: render };
+  render(options);
+  return {
+    update: render,
+    destroy: () => host.replaceChildren(),
+  };
 };

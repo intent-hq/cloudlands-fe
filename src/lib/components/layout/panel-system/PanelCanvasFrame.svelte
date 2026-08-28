@@ -64,6 +64,7 @@
   disableWidthTransition={true}
   showHandleIndicator={true}
   handleClassName="panel-canvas-resize-handle"
+  lockRenderedWidthDuringResize={sizing === 'viewport'}
   {onWidthChange}
   {onResizeStart}
   onResize={(_previousWidth, nextWidth) => onResizePreview(nextWidth - widths.defaultWidth)}

@@ -24,7 +24,7 @@
     resizeAdjacentPanels,
   } from './panel-resize';
   import { translatePanel } from './panel-reorder-animation';
-  import { getDraggedPane } from './panel-drag';
+  import { getDraggedPane, type PaneDropPlacement } from './panel-drag';
   import { resize } from '$lib/components/layout/size-transition';
   import { cubicOut } from 'svelte/easing';
   import {
@@ -91,6 +91,10 @@
       fromPanelId: string,
       insertIndex?: number,
     ) => void;
+    /** Reports the one valid destination for the active-pane drag. */
+    onPaneDropPreview?: (placement: PaneDropPlacement | null) => void;
+    /** Idempotently finishes the active-pane drag before layout mutation. */
+    onPaneDragFinish?: () => void;
     /** Handler for moving the active pane to an adjacent column. */
     onMoveActivePane?: (panelId: string, direction: 'next' | 'prev') => void;
     /** Handler for reordering a whole panel relative to another panel */
@@ -150,6 +154,8 @@
     onResizeRootDivider,
     onTabDropToSplit,
     onTabMoveToPanel,
+    onPaneDropPreview,
+    onPaneDragFinish,
     onMoveActivePane,
     onPanelMove,
     onTabDropToSplitHandle,
@@ -648,6 +654,8 @@
           onTabDropToSplit?.(node.panelId, tabId, fromPanelId, zone)}
         onTabMoveToPanel={(tabId, fromPanelId, insertIndex?: number) =>
           onTabMoveToPanel?.(node.panelId, tabId, fromPanelId, insertIndex)}
+        {onPaneDropPreview}
+        {onPaneDragFinish}
         onMovePaneLeft={onMoveActivePane && panelIndex > 0
           ? () => onMoveActivePane(node.panelId, 'prev')
           : undefined}
@@ -734,6 +742,8 @@
             {onResizeRootDivider}
             {onTabDropToSplit}
             {onTabMoveToPanel}
+            {onPaneDropPreview}
+            {onPaneDragFinish}
             {onMoveActivePane}
             {onPanelMove}
             {onTabDropToSplitHandle}

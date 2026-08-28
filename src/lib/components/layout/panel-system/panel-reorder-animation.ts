@@ -27,8 +27,9 @@ export function capturePanelPositions(
 export function animatePanelPreviewPositions(
   root: ParentNode,
   fromPositions: ReadonlyMap<string, DOMRect>,
-  duration = 240,
+  duration = 140,
 ): void {
+  if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return;
   root.querySelectorAll<HTMLElement>(PREVIEW_PANEL_SELECTOR).forEach((element) => {
     const panelId = getPanelPositionId(element);
     const from = panelId ? fromPositions.get(panelId) : null;
@@ -36,12 +37,21 @@ export function animatePanelPreviewPositions(
     const to = element.getBoundingClientRect();
     const deltaX = from.left - to.left;
     const deltaY = from.top - to.top;
-    if (Math.abs(deltaX) < 1 && Math.abs(deltaY) < 1) return;
+    const scaleX = to.width > 0 ? from.width / to.width : 1;
+    const scaleY = to.height > 0 ? from.height / to.height : 1;
+    if (
+      Math.abs(deltaX) < 1 &&
+      Math.abs(deltaY) < 1 &&
+      Math.abs(scaleX - 1) < 0.01 &&
+      Math.abs(scaleY - 1) < 0.01
+    )
+      return;
 
     element.getAnimations().forEach((animation) => animation.cancel());
+    element.style.transformOrigin = 'top left';
     element.animate(
       [
-        { transform: `translate3d(${deltaX}px, ${deltaY}px, 0)` },
+        { transform: `translate3d(${deltaX}px, ${deltaY}px, 0) scale(${scaleX}, ${scaleY})` },
         { transform: 'translate3d(0, 0, 0)' },
       ],
       { duration, easing: 'cubic-bezier(0.22, 1, 0.36, 1)' },

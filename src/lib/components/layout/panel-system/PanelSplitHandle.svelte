@@ -10,13 +10,6 @@
 
   import { m } from '$shared/paraglide/messages.js';
   import { cn } from '$lib/utils';
-  import { selectIsDragging } from '$store/renderer/slices/tab-state/tab-state-selectors';
-  import {
-    setActiveHandleDrop,
-    type HandleDropZoneType,
-    type SerializableRect,
-  } from '$store/renderer/slices/tab-state/tab-state-slice';
-  import { store as appStore } from '$store/renderer/store';
   import { getDraggedPane } from './panel-drag';
 
   /** Position relative to the split for container-level insertion */
@@ -58,19 +51,7 @@
   let isDragging = $state(false);
   let startPos = $state(0);
 
-  // Tab drag drop zone state
-  let isTabDragOver = $state(false);
   let handleRef: HTMLButtonElement;
-
-  // Track global tab drag state
-  const isTabDragging = selectIsDragging();
-
-  // Reset drop zone state when global drag ends
-  $effect(() => {
-    if (!$isTabDragging) {
-      isTabDragOver = false;
-    }
-  });
 
   // Custom MIME type for tab drag (must match PanelTabBar)
   const TAB_DRAG_MIME = 'application/x-panel-tab';
@@ -134,12 +115,9 @@
     window.removeEventListener('mouseup', handleMouseUp);
   }
 
-  // Detailed drop zone info including direction and position
   interface DropZoneInfo {
-    zoneType: HandleDropZoneType;
     position: HandleDropZone;
     insertDirection: 'horizontal' | 'vertical';
-    label: string;
   }
 
   function getDropZoneInfo(e: DragEvent): DropZoneInfo | null {
@@ -149,17 +127,13 @@
     const x = e.clientX - rect.left;
     if (x < rect.width / 2) {
       return {
-        zoneType: 'column-left',
         position: 'before',
         insertDirection: 'horizontal',
-        label: m.layout_panelSplitHandle_addColumnLeft_label(),
       };
     }
     return {
-      zoneType: 'column-right',
       position: 'after',
       insertDirection: 'horizontal',
-      label: m.layout_panelSplitHandle_addColumnRight_label(),
     };
   }
 
@@ -173,45 +147,14 @@
     e.preventDefault();
     e.stopPropagation();
 
-    isTabDragOver = true;
-    const zoneInfo = getDropZoneInfo(e);
-    currentZoneInfo = zoneInfo;
-
-    // Update global store with drop info for the overlay
-    if (zoneInfo && handleRef) {
-      const handleRect = handleRef.getBoundingClientRect();
-      // Find the parent split container to get full bounds for the overlay
-      const container = handleRef.closest('.panel-split-container');
-      const containerRect = container?.getBoundingClientRect() ?? handleRect;
-
-      const toRect = (r: DOMRect): SerializableRect => ({
-        x: r.x,
-        y: r.y,
-        width: r.width,
-        height: r.height,
-        top: r.top,
-        right: r.right,
-        bottom: r.bottom,
-        left: r.left,
-      });
-      appStore.dispatch(
-        setActiveHandleDrop({
-          handleRect: toRect(handleRect),
-          containerRect: toRect(containerRect),
-          zoneType: zoneInfo.zoneType,
-          label: zoneInfo.label,
-        }),
-      );
-    }
+    currentZoneInfo = getDropZoneInfo(e);
   }
 
   function handleTabDragLeave(e: DragEvent) {
     const relatedTarget = e.relatedTarget as HTMLElement;
     if (relatedTarget && handleRef?.contains(relatedTarget)) return;
 
-    isTabDragOver = false;
     currentZoneInfo = null;
-    appStore.dispatch(setActiveHandleDrop(null));
   }
 
   function handleTabDrop(e: DragEvent) {
@@ -220,9 +163,7 @@
     e.stopPropagation();
 
     const zoneInfo = currentZoneInfo;
-    isTabDragOver = false;
     currentZoneInfo = null;
-    appStore.dispatch(setActiveHandleDrop(null));
 
     if (!zoneInfo) return;
 
@@ -253,7 +194,6 @@
     'app-resize-handle panel-split-handle',
     direction === 'horizontal' ? 'horizontal' : 'vertical',
     isDragging && 'dragging',
-    isTabDragOver && 'tab-drag-over',
   )}
   data-resize-axis={direction === 'horizontal' ? 'x' : 'y'}
   data-resizing={isDragging}
@@ -281,70 +221,5 @@
     height: 16px;
     width: 100%;
     margin: -4px 0;
-  }
-
-  /* Tab drag drop zone styles */
-  .panel-split-handle.tab-drag-over {
-    z-index: 30;
-  }
-
-  .handle-drop-indicator {
-    position: absolute;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: hsl(var(--primary) / 0.15);
-    pointer-events: none;
-    z-index: 100;
-  }
-
-  /* Horizontal split handle (vertical bar) - indicators go above/below */
-  .handle-drop-indicator.horizontal {
-    left: 50%;
-    transform: translateX(-50%);
-    width: max(200px, 30vw);
-    height: 60px;
-  }
-
-  .handle-drop-indicator.horizontal.before {
-    bottom: 100%;
-    margin-bottom: 10px;
-    /* border-radius: 8px 8px 0 0; */
-  }
-
-  .handle-drop-indicator.horizontal.after {
-    top: 100%;
-    margin-top: 10px;
-    /* border-radius: 0 0 8px 8px; */
-  }
-
-  /* Vertical split handle (horizontal bar) - indicators go left/right */
-  .handle-drop-indicator.vertical {
-    top: 50%;
-    transform: translateY(-50%);
-    width: 60px;
-    height: max(100px, 20vh);
-  }
-
-  .handle-drop-indicator.vertical.before {
-    right: 100%;
-    margin-right: 10px;
-    /* border-radius: 8px 0 0 8px; */
-  }
-
-  .handle-drop-indicator.vertical.after {
-    left: 100%;
-    margin-left: 10px;
-    /* border-radius: 0 8px 8px 0; */
-  }
-
-  .drop-label {
-    font-size: 0.75rem;
-    font-weight: 500;
-    color: hsl(var(--primary));
-    background: hsl(var(--background) / 0.9);
-    padding: 0.25rem 0.5rem;
-    /* border-radius: 10px; */
-    white-space: nowrap;
   }
 </style>

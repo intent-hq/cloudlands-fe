@@ -23,7 +23,6 @@ describe('floating surface elevation', () => {
     'src/lib/components/tiptap/TaskMenu.svelte',
     'src/lib/components/tiptap/BubbleMenu.svelte',
     'src/lib/components/tiptap/LaunchFromSelectionDialog.svelte',
-    'src/lib/components/layout/panel-system/HandleDropOverlay.svelte',
   ])('%s uses the shared overlay elevation value', (file) => {
     expect(source(file)).toContain('box-shadow: var(--elevation-overlay)');
   });

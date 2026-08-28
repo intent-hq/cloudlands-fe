@@ -66,6 +66,7 @@
 
     // Follow reactive default changes exactly, discarding a manual offset.
     syncWithDefaultWidth = false,
+    lockRenderedWidthDuringResize = false,
 
     // Apply a temporary visual delta without changing or persisting the base width.
     transientWidthDelta = 0,
@@ -133,6 +134,8 @@
 
     // Resize exactly to each reactive default.
     syncWithDefaultWidth?: boolean;
+    /** Report resize deltas while keeping the rendered width fixed. */
+    lockRenderedWidthDuringResize?: boolean;
 
     // Temporary rendered-width delta that is never persisted.
     transientWidthDelta?: number;
@@ -568,12 +571,12 @@
     // Clamp to min/max
     newWidth = Math.max(minWidth, Math.min(maxWidth, newWidth));
 
-    // Update the appropriate width based on expanded state
-    if (isExpanded) {
+    // Update the appropriate width based on expanded state.
+    if (isExpanded && !lockRenderedWidthDuringResize) {
       expandedWidth = newWidth;
       // Always update percentage for window resize tracking
       expandedWidthPercent = pixelsToPercent(newWidth, true);
-    } else {
+    } else if (!lockRenderedWidthDuringResize) {
       // Check if we should collapse (if collapse feature is enabled)
       if (collapseThreshold !== null) {
         if (newWidth < collapseThreshold) {
@@ -595,9 +598,13 @@
         appStore.dispatch(setSidebarWidth(panelWidth));
       }
     }
-    const nextRenderedWidth = isExpanded ? expandedWidth : panelWidth;
-    onResize?.(lastResizeWidth, nextRenderedWidth);
-    lastResizeWidth = nextRenderedWidth;
+    const nextReportedWidth = lockRenderedWidthDuringResize
+      ? newWidth
+      : isExpanded
+        ? expandedWidth
+        : panelWidth;
+    onResize?.(lastResizeWidth, nextReportedWidth);
+    lastResizeWidth = nextReportedWidth;
   }
 
   function scheduleResizeAutoScroll() {
@@ -656,7 +663,13 @@
     if (resizeAutoScrollFrame !== null) cancelAnimationFrame(resizeAutoScrollFrame);
     resizeAutoScrollFrame = null;
     const finalSize =
-      orientation === 'horizontal' ? (isExpanded ? expandedWidth : panelWidth) : panelHeight;
+      orientation === 'horizontal'
+        ? lockRenderedWidthDuringResize
+          ? lastResizeWidth
+          : isExpanded
+            ? expandedWidth
+            : panelWidth
+        : panelHeight;
     onResizeEnd?.(orientation === 'horizontal' ? startWidth : startHeight, finalSize);
     document.body.classList.remove('panel-resizing');
     document.body.style.cursor = '';

@@ -193,10 +193,8 @@ describe('closing a panel that collapses a split', () => {
       expect(workspace.canvasWidth).toBe((VIEWPORT_WIDTH - GUTTER) / 2);
       expect(workspace.canvasWidthSource).toBe('explicit');
     });
-    // Closing one equal column removes its width and the gutter from the
-    // persisted canvas instead of stretching the survivor across the old row.
-    const expectedReference = (VIEWPORT_WIDTH - GUTTER) / 2;
-    await waitFor(() => expect(flexBasis(survivorWrapper('p2'))).toBeCloseTo(expectedReference, 3));
+    // The saved width remains useful as history, but one visible viewport panel fills the row.
+    await waitFor(() => expect(flexBasis(survivorWrapper('p2'))).toBeCloseTo(VIEWPORT_WIDTH, 3));
   });
 
   it('keeps the bottom panel visible after closing the top panel final tab', async () => {
