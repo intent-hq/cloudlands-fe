@@ -49,6 +49,13 @@ export function getAgentMessageAttribution(metadata: unknown): AgentMessageAttri
  * the daemon emits, never leading whitespace belonging to the body.
  * Display-only strip — the stored message text is never mutated. Returns
  * the input unchanged when no header matches.
+ *
+ * Note: the daemon's own idempotence guard is looser (a bare
+ * `starts_with("[MESSAGE FROM AGENT")` — it never re-annotates such
+ * content), so a lookalike first line on an attributed row means the
+ * daemon skipped annotation and the line is user/agent-authored — which
+ * is exactly why the strip requires the full daemon shape before touching
+ * it. Regex-only (no exact rebuild from metadata) is intentional.
  */
 const A2A_SENDER_HEADER = /^\[MESSAGE FROM AGENT (?:[^\n]+ )?\(agent-[0-9a-f-]+\)\](?:\n\n?|$)/;
 
