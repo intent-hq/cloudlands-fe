@@ -378,7 +378,6 @@ import {
   createWindow,
   createWindowForDeepLink,
   getWindowSessionsPath,
-  isBackendSwitchWindowTeardownInProgress,
   restoreAllBackendWindowSessions,
   saveAllWindowSessions,
   setOnLastWindowClosedForBackend,
@@ -590,10 +589,9 @@ app.whenReady().then(async () => {
   };
 
   // Dispose a non-local backend's pooled client when its last window is
-  // explicitly closed (window.ts already excludes local and the switch
-  // teardown path). Guard against the quit flow: before-quit closes every
-  // window, and per-backend disposal there would race gracefulShutdown()'s
-  // own client teardown.
+  // explicitly closed (window.ts already excludes local). Guard against the
+  // quit flow: before-quit closes every window, and per-backend disposal
+  // there would race gracefulShutdown()'s own client teardown.
   setOnLastWindowClosedForBackend((backendId) => {
     if (isShuttingDown) return;
     disconnectBackendClient(backendId);
@@ -1146,7 +1144,7 @@ app.whenReady().then(async () => {
     // Add Sample intentd Process (daemon-side capture via debug.sampleStacks,
     // PROTOCOL §5.43). Hidden on a Windows FE whose daemon is same-host (UDS,
     // no saved remote) — it can never support sampling (#1889); the menu is
-    // rebuilt on 'backend-connection-changed' so the gate tracks switches. Any
+    // rebuilt on 'backend-connection-changed' so the gate tracks changes. Any
     // other unsupported daemon surfaces its own error through the dialog below.
     if (shouldShowStackSampleMenuItem(process.platform, isSameHostBackendActive())) {
       helpMenuItems.push({
@@ -1879,16 +1877,6 @@ app.on('before-quit', async (event: Electron.Event) => {
 });
 
 app.on('window-all-closed', async () => {
-  // A backend switch destroys every window between its capture and restore
-  // halves, which fires this event mid-switch. Treating that as a manual
-  // last-window close would delete the sessions file the switch just wrote
-  // (macOS) or start the quit flow (Windows/Linux) — so ignore it entirely;
-  // restoreWindowsForBackend() reopens windows right after.
-  if (isBackendSwitchWindowTeardownInProgress()) {
-    logger.info('window-all-closed ignored: backend-switch window teardown in progress');
-    return;
-  }
-
   // On macOS the app stays alive after all windows are closed.
   // Clear the saved sessions file so that clicking the dock icon opens a single
   // fresh window instead of restoring every window the user just closed.

@@ -97,7 +97,6 @@ import type {
   PublishSelfResult,
   RefreshSelfResult,
   SelfPublishedStateResult,
-  SwitchConnectionResult,
   UnpublishSelfResult,
   UpdateBackendResult,
 } from '../../../shared/types/connections';
@@ -111,7 +110,6 @@ import {
   ConnectionsPublishSelfSchema,
   ConnectionsRefreshSelfSchema,
   ConnectionsSelfPublishedStateSchema,
-  ConnectionsSwitchSchema,
   ConnectionsSyncGetStateSchema,
   ConnectionsSyncSetEnabledSchema,
   ConnectionsUnpublishSelfSchema,
@@ -212,14 +210,14 @@ function getPinnedVersion(): string | null {
  * app-settings, ACP terminal) attach their reconnect/resubscribe handlers via
  * {@link onBackendReconnected} exactly ONCE at registration time. Historically
  * those handlers were attached directly to the live JsonRpcClient instance — so
- * after a {@link switchBackend} disposed that client and built a new one, the
- * handlers were stranded on the dead client and never re-attached, and a
- * post-switch daemon reconnect would silently fail to replay their
- * subscriptions.
+ * after a client swap (e.g. an active re-pair via `connections:add`) disposed
+ * that client and built a new one, the handlers were stranded on the dead
+ * client and never re-attached, and a later daemon reconnect would silently
+ * fail to replay their subscriptions.
  *
  * The forwarder is a single long-lived emitter that outlives every client swap.
  * Each freshly constructed client's `reconnected` event is piped into it, and
- * {@link switchBackend} emits one `reconnected` through it right after building
+ * a client rebuild emits one `reconnected` through it right after building
  * the new client so registered services re-subscribe against the new target
  * (a fresh client's FIRST connect is a plain `connected`, not a `reconnected`,
  * so without this nudge the swap would not trigger a resubscribe).
@@ -236,7 +234,7 @@ backendReconnectForwarder.setMaxListeners(50);
  * notification.service, app-settings, ACP terminal)
  * attach their notification listener exactly ONCE via
  * {@link onBackendNotification}. Historically each attached directly to the
- * live JsonRpcClient instance, so after a {@link switchBackend} disposed that
+ * live JsonRpcClient instance, so after a client swap disposed that
  * client the listener was stranded on the dead client — every daemon
  * `events.event` on the new client (terminal output/exit, script state/output,
  * `agent:idle`, `settings:changed`) was silently dropped for the rest of the
@@ -251,7 +249,7 @@ backendNotificationForwarder.setMaxListeners(50);
  * {@link backendNotificationForwarder} for the `status` stream that the
  * app-settings / notification.service `armStatusRetry` connect-retry hooks
  * need: a `status` listener attached to the live client would be stranded by a
- * switch, so it registers here instead and observes the new client's
+ * client swap, so it registers here instead and observes the new client's
  * transitions.
  */
 const backendStatusForwarder = new EventEmitter();
@@ -318,7 +316,7 @@ const protocolMismatchNotifiedIds = new Set<string>();
  * `connections:protocol-mismatch` listener AFTER the one-shot broadcast fired
  * still surfaces the advisory modal + menu warning (cloudlands-fe#823).
  *
- * A backend switch destroys the initiating renderer and creates a new window;
+ * A window can be created after its backend's handshake already fired —
  * a fast remote can broadcast the mismatch before the new renderer subscribes,
  * so the one-shot event alone is lossy. This latched copy closes that race.
  * An id's entry is cleared whenever a fresh client for that id is constructed
@@ -335,7 +333,7 @@ const protocolMismatchById = new Map<string, ConnectionProtocolMismatchEvent>();
  * one-shot `connections:auth-rejected` broadcast fired (including the boot
  * path) still surfaces the actionable "authentication rejected" state —
  * exactly the {@link protocolMismatchById} pattern. An id's entry is cleared
- * whenever a fresh client for that id is constructed (a re-pair or switch
+ * whenever a fresh client for that id is constructed (a re-pair
  * builds a new client whose own connect re-detects any rejection).
  */
 const authRejectedById = new Map<string, ConnectionAuthRejectedEvent>();
@@ -349,7 +347,7 @@ const authRejectedById = new Map<string, ConnectionAuthRejectedEvent>();
  * the boot-wide restore: pooled clients start before any of their windows
  * exist, so a changed cert detected then would otherwise never be seen. An
  * id's entry is cleared whenever a fresh client for that id is constructed
- * (a re-pair or switch builds a new client whose own connect re-detects a
+ * (a re-pair builds a new client whose own connect re-detects a
  * still-changed cert).
  */
 const certMismatchById = new Map<string, ConnectionCertMismatchEvent>();
@@ -362,44 +360,15 @@ const certMismatchById = new Map<string, ConnectionCertMismatchEvent>();
 let keychainSyncLifecycle: KeychainSyncLifecycle | null = null;
 
 /**
- * Window-teardown seam for a backend switch (T4). Two split hooks, called
- * around the client swap so the outgoing backend's layout is captured while its
- * windows are still live and the incoming backend's windows only open once the
- * new client is connecting:
- *   - `captureAndClose(fromId)` — persist the outgoing backend's workspace/HUD
- *     windows under `fromId`, then destroy them all.
- *   - `restore(toId)` — restore `toId`'s saved sessions, or open a fresh window.
- * Injectable so switch-orchestration unit tests never pull in the Electron
- * window module.
+ * Window seam for backend open/forget flows. Injectable so orchestration unit
+ * tests never pull in the Electron window module.
  */
 interface BackendWindowHooks {
-  captureAndClose(fromBackendId: string): Promise<void>;
-  restore(toBackendId: string): void | Promise<void>;
   openOrFocus?(backendId: string): void | Promise<void>;
   ensureLocalWindowBeforeClose?(backendId: string): void | Promise<void>;
   closeForBackend?(backendId: string): void | Promise<void>;
-  /**
-   * Idempotent failure-path clear of the window-all-closed teardown guard set
-   * by `captureAndClose`. `restore` already clears it at its top; the switch
-   * orchestration also calls this from a finally so a throw between the two
-   * halves cannot leak the guard and suppress window-all-closed handling for
-   * the rest of the session.
-   */
-  clearTeardownGuard?(): void | Promise<void>;
 }
 const defaultWindowHooks: BackendWindowHooks = {
-  async captureAndClose(fromBackendId) {
-    const mod = (await import('../../../main/window')) as unknown as {
-      captureAndCloseWindowsForBackendSwitch: (id: string) => Promise<void>;
-    };
-    await mod.captureAndCloseWindowsForBackendSwitch(fromBackendId);
-  },
-  async restore(toBackendId) {
-    const mod = (await import('../../../main/window')) as unknown as {
-      restoreWindowsForBackend: (id: string) => void;
-    };
-    mod.restoreWindowsForBackend(toBackendId);
-  },
   async openOrFocus(backendId) {
     const mod = (await import('../../../main/window')) as unknown as {
       openOrFocusWindowsForBackend: (id: string) => void;
@@ -417,12 +386,6 @@ const defaultWindowHooks: BackendWindowHooks = {
       closeWindowsForBackend: (id: string) => void;
     };
     mod.closeWindowsForBackend(backendId);
-  },
-  async clearTeardownGuard() {
-    const mod = (await import('../../../main/window')) as unknown as {
-      clearBackendSwitchWindowTeardownGuard: () => void;
-    };
-    mod.clearBackendSwitchWindowTeardownGuard();
   },
 };
 let windowHooks: BackendWindowHooks = defaultWindowHooks;
@@ -816,15 +779,15 @@ function createAdditionalBackendClient(id: string, config: BackendConnectionConf
 /**
  * Register a main-process listener for backend reconnects. Fires each time the
  * shared JsonRpcClient re-establishes the connection after a drop — AND once
- * per {@link switchBackend} — so consumers that hold long-lived
- * `events.subscribe` subscriptions (terminal registry, script manager,
- * notification/app-settings services, ACP terminal handler) can re-issue them.
- * Returns a disposer.
+ * per client rebuild (e.g. an active re-pair) — so consumers that hold
+ * long-lived `events.subscribe` subscriptions (terminal registry, script
+ * manager, notification/app-settings services, ACP terminal handler) can
+ * re-issue them. Returns a disposer.
  *
  * The handler is attached to the stable {@link backendReconnectForwarder}, NOT
  * to the live client instance, so it survives client swaps: a service registers
  * once and keeps replaying subscriptions against whatever client is current,
- * even across an arbitrary number of backend switches.
+ * even across an arbitrary number of client rebuilds.
  */
 export function onBackendReconnected(handler: () => void, backendId?: string): () => void {
   // Ensure the local client exists (and is wired into the forwarder) so a
@@ -859,7 +822,7 @@ export function onAnyBackendReconnected(handler: (backendId: string) => void): (
  * {@link backendNotificationForwarder}, NOT to the live client instance, so it
  * survives client swaps: a service registers once and keeps receiving daemon
  * events against whatever client is current, even across an arbitrary number of
- * backend switches.
+ * client rebuilds.
  */
 export function onBackendNotification(
   handler: (notification: JsonRpcNotification) => void,
@@ -958,7 +921,8 @@ function handleHelloProtocolVersion(
     localProtocolVersion: localBaseline as string,
     remoteProtocolVersion: protocolVersion as string,
     // A pool member is only built for a window the user pointed at that
-    // backend (boot restore included), so the advisory is always switch-origin.
+    // backend (boot restore included), so the advisory is always modal-worthy
+    // (`'switch'` is the legacy wire value for a user-initiated connect).
     origin: 'switch',
   };
   // Latch BEFORE broadcasting so a renderer that fetches `connections:list`
@@ -980,7 +944,7 @@ function handleHelloProtocolVersion(
  * Prefers the local renderer client's own `client.hello` value
  * ({@link localProtocolVersion}) when available, and falls back to the sidecar
  * manager's stable startup-probe value ({@link getLocalDaemonProtocolVersion})
- * — which survives client disposal — so a switch to a remote before the local
+ * — which survives client disposal — so a remote connect before the local
  * hello resolved still has a baseline to compare against (cloudlands-fe#823).
  */
 function resolveLocalProtocolBaseline(): string | null {
@@ -1000,7 +964,7 @@ function toErrorPayload(error: unknown): {
 }
 
 // ============================================================================
-// Multi-backend connect: switch orchestration + connections registry IPC.
+// Multi-backend connect: open orchestration + connections registry IPC.
 // ============================================================================
 
 /**
@@ -1032,13 +996,13 @@ function extractHostname(result: unknown): string | null {
  * and re-broadcasts the list so the menu upgrades `host:port` to
  * `hostname (host:port)`.
  *
- * Fire-and-forget by design: it must never block or fail a switch. The
+ * Fire-and-forget by design: it must never block or fail an open. The
  * `host.status` request queues until the fresh socket connects, so awaiting it
- * inline would stall the switch on a slow/unreachable remote — instead the
+ * inline would stall the open on a slow/unreachable remote — instead the
  * label upgrades asynchronously once the hostname arrives. Any failure
  * (unreachable, malformed result, store write error) is swallowed with a warn;
  * the connection keeps its `host:port` label. Results that arrive after the
- * active connection has switched away are discarded (monorepo#2221).
+ * backend's client was disposed are discarded (monorepo#2221).
  */
 async function captureRemoteHostname(id: string): Promise<void> {
   try {
@@ -1196,7 +1160,7 @@ function isSelfConnectionRecord(
  * local daemon's cert fingerprint, so the entry hides even when this machine
  * never published it (e.g. it synced in from another device). The live probe
  * is NOT awaited — a slow local daemon must never delay the list (or a
- * backend switch, which awaits the changed-list broadcast): the cached value
+ * mutation, which awaits the changed-list broadcast): the cached value
  * is used when available, and the probe's own resolution re-broadcasts the
  * list. Fail-soft: a fingerprint read/probe error hides nothing.
  */
@@ -1213,7 +1177,7 @@ async function listConnections(
   const selfKeys = buildSelfFingerprintKeys(storedFingerprint, cachedLiveSelfFingerprint);
   // Replay any sticky protocol mismatch / auth rejection for THIS WINDOW'S
   // backend so a renderer that missed the one-shot broadcast (e.g. a window
-  // created by a switch after the remote handshake already fired, a boot into
+  // created after the remote handshake already fired, a boot into
   // a rejecting remote, or a reload of a pooled-backend window) still surfaces
   // the advisory / actionable state (cloudlands-fe#823 pattern), per backend.
   return {
@@ -1301,37 +1265,37 @@ export async function buildConfigForConnection(id: string): Promise<{
 }
 
 /**
- * Tail of the switch-serialization queue: every switch-affecting operation
- * chains onto it via {@link enqueueSwitchOperation}, so switches run strictly
- * one at a time. {@link performSwitchBackend} has several await points (store
+ * Tail of the connection-operation serialization queue: every
+ * connection-affecting operation chains onto it via
+ * {@link enqueueConnectionOperation}, so operations run strictly one at a
+ * time. The open/forget/publish flows have several await points (store
  * reads/writes, window hooks) with pool state mutated across them; two
- * interleaved switches could tear down one backend's client while `activeId`
- * names another, and mislabel records via `captureRemoteHostname`
+ * interleaved operations could tear down one backend's client while another
+ * operation still uses it, and mislabel records via `captureRemoteHostname`
  * (monorepo#2221). Always a settled-or-pending promise that never rejects — a
- * failed switch must not poison subsequent switches.
+ * failed operation must not poison subsequent operations.
  */
-let switchQueue: Promise<void> = Promise.resolve();
+let connectionOperationQueue: Promise<void> = Promise.resolve();
 
 /**
- * Run `fn` serialized with every backend switch (monorepo#2228). Beyond plain
- * switches, the `connections:forget` / `connections:add` handlers make
- * read-decide-switch decisions on `getActiveId()`; reading the active id
- * OUTSIDE the queue and then conditionally switching was a TOCTOU — a
- * concurrent switch could land between the read and the enqueued switch,
- * making the decision stale (e.g. forget's fall-back-to-local disconnecting a
- * backend the user just selected). Enqueuing the whole read-decide-switch
- * sequence makes the decision atomic with respect to switches.
+ * Run `fn` serialized with every connection-affecting operation
+ * (monorepo#2228). The `connections:forget` / `connections:add` handlers make
+ * read-decide decisions on `getActiveId()`; reading the active id OUTSIDE the
+ * queue and then acting on it was a TOCTOU — a concurrent operation could land
+ * between the read and the enqueued action, making the decision stale (e.g.
+ * forget disconnecting a backend the user just opened). Enqueuing the whole
+ * read-decide sequence makes the decision atomic with respect to every other
+ * connection operation.
  *
- * Inside `fn`, perform switches by calling `performSwitchBackend` DIRECTLY —
- * anything that enqueues (calling {@link switchBackend} or a nested
- * `enqueueSwitchOperation`) would chain onto the queue tail behind the
- * currently-running `fn` and self-deadlock. The returned promise settles with
- * `fn`'s outcome; a rejection propagates to the caller but never poisons the
- * queue (the tail swallows it).
+ * Inside `fn`, never enqueue (a nested `enqueueConnectionOperation` would
+ * chain onto the queue tail behind the currently-running `fn` and
+ * self-deadlock). The returned promise settles with `fn`'s outcome; a
+ * rejection propagates to the caller but never poisons the queue (the tail
+ * swallows it).
  */
-function enqueueSwitchOperation<T>(fn: () => Promise<T>): Promise<T> {
-  const result = switchQueue.then(fn);
-  switchQueue = result.then(
+function enqueueConnectionOperation<T>(fn: () => Promise<T>): Promise<T> {
+  const result = connectionOperationQueue.then(fn);
+  connectionOperationQueue = result.then(
     () => undefined,
     () => undefined,
   );
@@ -1339,33 +1303,8 @@ function enqueueSwitchOperation<T>(fn: () => Promise<T>): Promise<T> {
 }
 
 /**
- * Switch the app's windows to backend `id` with a clean teardown + reload:
- *   1. Resolve+validate the target config first (throws early on a bad id/token,
- *      leaving the current backend untouched).
- *   2. Capture + close the outgoing backend's windows while they are still live
- *      (T4 `captureAndClose`), then dispose the outgoing backend's pooled
- *      client (local stays connected — main-process services depend on it).
- *   3. Flip the store's active id and connect the target's pooled client.
- *   4. Restore the incoming backend's windows (T4 `restore`) — after the client
- *      connect, so restored windows attach to the new daemon (or open fresh).
- *   5. Broadcast the changed list/active selection.
- *
- * Invocations are serialized through {@link enqueueSwitchOperation}: each
- * switch runs to completion before the next begins, so overlapping switches
- * (e.g. the user clicks a slow backend, then quickly clicks another) can never
- * interleave across the await points above. Serialization covers every entry
- * point — the `connections:switch` handler, the `connections:forget`
- * fall-back-to-local, and the `connections:add` switch-to-itself — the latter
- * two enqueue their whole read-decide-switch sequence so the `getActiveId()`
- * decision cannot go stale behind an in-flight switch (monorepo#2228).
- */
-export function switchBackend(id: string): Promise<SwitchConnectionResult> {
-  return enqueueSwitchOperation(() => performSwitchBackend(id));
-}
-
-/**
- * Connect one pooled backend and open/focus its windows without switching the
- * app. `options.probeTimeoutMs` bounds the authenticated `host.status` probe
+ * Connect one pooled backend and open/focus its windows.
+ * `options.probeTimeoutMs` bounds the authenticated `host.status` probe
  * for a single call (defaults to the client's flat request timeout) — used by
  * deadline-driven callers like {@link openLocalAndSpawn} whose own budget is
  * shorter than the 30s client default.
@@ -1374,7 +1313,7 @@ export function openBackendWindow(
   id: string,
   options?: { probeTimeoutMs?: number },
 ): Promise<OpenConnectionResult> {
-  return enqueueSwitchOperation(() => performOpenBackendWindow(id, options));
+  return enqueueConnectionOperation(() => performOpenBackendWindow(id, options));
 }
 
 async function performOpenBackendWindow(
@@ -1386,6 +1325,17 @@ async function performOpenBackendWindow(
     // Do not create a renderer until the pinned transport has completed an
     // authenticated request. A cert/token failure rejects this remote only.
     await target.request('host.status', undefined, { timeoutMs: options?.probeTimeoutMs });
+    // Label the remote by its hostname once it connects (T14). Reuses the
+    // live client's `host.status`; fire-and-forget so a slow remote never
+    // stalls the open — the label upgrades from `host:port` to
+    // `hostname (host:port)` asynchronously. Skipped for the local sidecar
+    // (UDS has no remote hostname to show; its label is fixed). The
+    // candidate-host refresh (#1746) piggybacks on the same post-connect
+    // window, equally fire-and-forget/fail-soft.
+    if (id !== LOCAL_CONNECTION_ID) {
+      void captureRemoteHostname(id);
+      void refreshRemoteHosts(id);
+    }
     await windowHooks.openOrFocus?.(id);
     return { id };
   } catch (error) {
@@ -1394,92 +1344,6 @@ async function performOpenBackendWindow(
     if (id !== LOCAL_CONNECTION_ID) disconnectBackendClient(id);
     throw error;
   }
-}
-
-/**
- * The actual switch orchestration; only ever entered from within a serialized
- * {@link enqueueSwitchOperation} critical section (via {@link switchBackend}
- * or an enqueued read-decide-switch sequence).
- */
-async function performSwitchBackend(id: string): Promise<SwitchConnectionResult> {
-  const fromId = await connectionsStore.getActiveId();
-  // (1) Validate + resolve BEFORE any teardown.
-  const { meta } = await buildConfigForConnection(id);
-
-  // captureAndClose sets the window-all-closed teardown guard partway through
-  // (after saving sessions, before the destroy loop); restore clears it at its
-  // top. A throw from anywhere in between — including from captureAndClose
-  // itself after the flag is set — would leak the guard and suppress
-  // window-all-closed handling for the rest of the session, so the finally
-  // re-clears it (idempotent — a no-op when unset or already cleared).
-  try {
-    // (2) Capture + close the outgoing backend's windows while they're still live.
-    await windowHooks.captureAndClose(fromId);
-
-    // (2.5) Cancel + notify any in-flight `host.execStream` while the old client is
-    // still connected. Its per-call subscription is bound to the client that may
-    // be disposed below (it could not be migrated onto a stable forwarder like the
-    // T8/T9 long-lived listeners), so without this the consumer's `done` would
-    // hang on remaining output and an exit frame that can never arrive. This
-    // best-effort cancels on the old daemon, then hands each consumer a terminal
-    // cancelled-by-backend-switch frame — issue #1616. Runs BEFORE dispose.
-    await cancelInflightHostExecStreamsForBackendSwitch(backendClients.get(fromId));
-
-    // (3) Dispose the outgoing REMOTE backend's pooled client + subscriptions
-    // before connecting the new one — no leaked socket/timers/listeners (spec
-    // acceptance: "fully disconnects the old daemon ... before connecting the
-    // new one"). The local member stays connected: main-process services
-    // (app settings, workspace paths, self-publish) are pinned to it.
-    if (fromId !== LOCAL_CONNECTION_ID && fromId !== id) {
-      disconnectBackendClient(fromId);
-    }
-
-    // (4) Persist the new active target and connect its pooled client. An
-    // explicit switch to a REMOTE keeps its historical full-rebuild semantics:
-    // any existing pooled client for the target is disposed and rebuilt with
-    // clean cert/auth/protocol latches (the re-pair flow depends on the fresh
-    // connect re-detecting a still-present failure). The always-on local
-    // member is never rebuilt.
-    await connectionsStore.setActiveId(id);
-    if (id !== LOCAL_CONNECTION_ID) disconnectBackendClient(id);
-    await connectBackendClient(id);
-
-    // The client's first connect is a plain `connected`, not a `reconnected`,
-    // so its own `reconnected` event will not fire on this initial connect. Nudge
-    // the stable forwarder once here so per-backend main-process services
-    // (attached via onBackendReconnected) replay their `events.subscribe` calls
-    // against the client — their requests queue until the fresh socket connects (T8).
-    backendReconnectForwarder.emit('reconnected', id);
-
-    // (4.5) Label the remote by its hostname once it connects (T14). Reuses the
-    // live client's `host.status`; fire-and-forget so a slow/unreachable remote
-    // never stalls the switch — the label upgrades from `host:port` to
-    // `hostname (host:port)` asynchronously. Skipped for the local sidecar (UDS
-    // has no remote hostname to show; its label is fixed). The candidate-host
-    // refresh (#1746) piggybacks on the same post-connect window, equally
-    // fire-and-forget/fail-soft.
-    if (meta) {
-      void captureRemoteHostname(id);
-      void refreshRemoteHosts(id);
-    }
-
-    // (5) Restore the incoming backend's windows (now targeting the new daemon).
-    await windowHooks.restore(id);
-  } finally {
-    try {
-      await windowHooks.clearTeardownGuard?.();
-    } catch {
-      // Best-effort: a throw from a finally would replace the in-flight
-      // exception, so a rejection here (e.g. the default hook's dynamic
-      // import) must never mask the original switch error.
-    }
-  }
-
-  // (6) Notify the renderer, and the main process (menu items gated on the
-  // active backend, e.g. Help ▸ Sample intentd Process on win32 — #1889).
-  await broadcastConnectionsChanged();
-  app.emit('backend-connection-changed');
-  return { activeId: id };
 }
 
 /**
@@ -1674,10 +1538,10 @@ export async function openLocalAndSpawn(): Promise<{
  * Remove one stored connection with full teardown: forget it in the store
  * (tombstone written so keychain sync propagates the deletion; the store
  * resets a matching persisted `activeId` to local itself), dispose its pooled
- * client, close its windows, and broadcast. Runs INSIDE the switch-operation
+ * client, close its windows, and broadcast. Runs INSIDE the connection-operation
  * queue — callers must already hold the enqueued critical section
  * (monorepo#2228): a stale pre-queue read could disconnect the backend the
- * user just selected behind a concurrent switch.
+ * user just selected behind a concurrent operation.
  *
  * `latchSuppression` controls the self-entry marker. `connections:forget`
  * passes `true`: forgetting this machine's own published entry is a local
@@ -1947,26 +1811,33 @@ function registerConnectionsHandlers(): void {
 
   // Add a remote connection (token encrypted at rest by the store). The store
   // upserts by host:port, so re-adding an existing target refreshes its
-  // token/fingerprint/label in place. If the upserted record is the persisted
-  // ACTIVE selection, rebuild its pooled client immediately so the refreshed
-  // token takes effect without closing any windows, and report
-  // `switched: true` for compatibility; otherwise invalidate only that remote's
-  // pool entry. The whole
-  // add + active-id read + conditional rebuild is ONE enqueued critical
-  // section (monorepo#2228): a stale pre-queue read could rebuild against
-  // this record after the user had already selected another backend.
+  // token/fingerprint/label in place. If the upserted record has a LIVE pooled
+  // client (windows are open on it) — or is the persisted active selection —
+  // rebuild that client immediately so the refreshed token takes effect
+  // without closing any windows; a re-pair of a dormant remote only invalidates
+  // its pool entry. `switched` stays pinned to the persisted active id for
+  // wire compatibility. The whole
+  // add + live-client/active-id read + conditional rebuild is ONE enqueued
+  // critical section (monorepo#2228): a stale pre-queue read could rebuild
+  // against this record after another backend operation had already run.
   ipcMain.handle(
     CONNECTIONS.ADD,
     createValidatedHandler(
       ConnectionsAddSchema,
       async (_event, params) =>
-        enqueueSwitchOperation(async () => {
+        enqueueConnectionOperation(async () => {
           const connection = await connectionsStore.add(params);
           const activeId = await connectionsStore.getActiveId();
-          if (connection.id === activeId) {
-            // Refresh an active target's credentials without destroying any
-            // windows. The caller opens/focuses it through connections:open.
-            disconnectBackendClient(connection.id);
+          // Open-only model: the persisted activeId no longer tracks which
+          // backends have windows, so the rebuild decision keys off the live
+          // pool — any backend serving windows gets the refreshed credentials
+          // applied in place, active or not.
+          const hadLiveClient = backendClients.has(connection.id);
+          disconnectBackendClient(connection.id);
+          if (hadLiveClient || connection.id === activeId) {
+            // Refresh a live (or active) target's credentials without
+            // destroying any windows. The caller opens/focuses it through
+            // connections:open.
             const rebuilt = await connectBackendClient(connection.id);
             // The rebuilt client's FIRST connect is a plain `connected`, not a
             // `reconnected`, and this backend's windows stay alive across the
@@ -1986,14 +1857,12 @@ function registerConnectionsHandlers(): void {
               connection.id,
             );
             backendReconnectForwarder.emit('reconnected', connection.id);
-            await broadcastConnectionsChanged();
-            return { connection, switched: true } satisfies AddConnectionResult;
           }
-          // Re-pairing a non-active remote invalidates only that pool entry;
-          // every other backend remains connected.
-          disconnectBackendClient(connection.id);
           await broadcastConnectionsChanged();
-          return { connection, switched: false } satisfies AddConnectionResult;
+          return {
+            connection,
+            switched: connection.id === activeId,
+          } satisfies AddConnectionResult;
         }),
       CONNECTIONS.ADD,
     ),
@@ -2022,21 +1891,11 @@ function registerConnectionsHandlers(): void {
     createValidatedHandler(
       ConnectionsForgetSchema,
       async (_event, { id }) =>
-        enqueueSwitchOperation(async () => {
+        enqueueConnectionOperation(async () => {
           await forgetConnectionLocked(id, true);
           return { id } satisfies ForgetConnectionResult;
         }),
       CONNECTIONS.FORGET,
-    ),
-  );
-
-  // Switch the live backend (full teardown + reload; see `switchBackend`).
-  ipcMain.handle(
-    CONNECTIONS.SWITCH,
-    createValidatedHandler(
-      ConnectionsSwitchSchema,
-      async (_event, { id }) => switchBackend(id),
-      CONNECTIONS.SWITCH,
     ),
   );
 
@@ -2161,12 +2020,12 @@ async function getKeychainSyncState(): Promise<KeychainSyncStateResult> {
  * explicit user intent. Rejects when the local backend is unreachable
  * (remote-pinned app), the wsApi listener is off (`port: null`), or there is
  * no routable local IP to publish. Runs as ONE enqueued critical section,
- * serialized with `connections:unpublish-self` and every switch/forget: a
+ * serialized with `connections:unpublish-self` and every forget: a
  * rapid WSS off→on could otherwise land this upsert while the unpublish is
  * still queued, which would then delete the fresh record (PR #1781 review).
  */
 async function publishSelfBackend(): Promise<PublishSelfResult> {
-  return enqueueSwitchOperation(() => performPublishSelfBackend());
+  return enqueueConnectionOperation(() => performPublishSelfBackend());
 }
 
 /** The actual publish; only entered from the serialized critical section. */
@@ -2310,10 +2169,10 @@ async function findSelfRecord(records: ConnectionRecord[]): Promise<ConnectionRe
  * — through the standard forget/teardown path, WITHOUT latching the "do not
  * auto-publish" marker. No-op (`removed: false`) when no self entry exists.
  * The lookup + removal run as ONE enqueued critical section so a concurrent
- * switch/forget cannot interleave (monorepo#2228).
+ * forget cannot interleave (monorepo#2228).
  */
 async function unpublishSelfBackend(): Promise<UnpublishSelfResult> {
-  return enqueueSwitchOperation(async () => {
+  return enqueueConnectionOperation(async () => {
     const selfRecord = await findSelfRecord(await connectionsStore.list());
     if (!selfRecord) {
       return { removed: false } satisfies UnpublishSelfResult;

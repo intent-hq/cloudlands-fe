@@ -536,7 +536,6 @@ const ALLOWED_CHANNELS = [
   "connections:add",
   "connections:open",
   "connections:forget",
-  "connections:switch",
   "connections:update-backend",
   "connections:changed",
   "connections:cert-mismatch",

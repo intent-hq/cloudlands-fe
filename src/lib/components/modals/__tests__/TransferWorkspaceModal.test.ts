@@ -407,7 +407,7 @@ describe('TransferWorkspaceModal — transferring step', () => {
 });
 
 describe('TransferWorkspaceModal — result step', () => {
-  it('success (server): archive checkbox, Done and Switch buttons', async () => {
+  it('success (server): archive checkbox, Done and Open buttons', async () => {
     const TransferWorkspaceModal = (await import('../TransferWorkspaceModal.svelte')).default;
     const onFinalize = vi.fn();
     const onSetArchiveSource = vi.fn();
@@ -437,13 +437,13 @@ describe('TransferWorkspaceModal — result step', () => {
     await fireEvent.click(screen.getByRole('checkbox'));
     expect(onSetArchiveSource).toHaveBeenCalledWith(false);
 
-    await fireEvent.click(screen.getByTestId('transfer-switch-button'));
+    await fireEvent.click(screen.getByTestId('transfer-open-button'));
     expect(onFinalize).toHaveBeenCalledWith(true);
     await fireEvent.click(screen.getByTestId('transfer-done-button'));
     expect(onFinalize).toHaveBeenCalledWith(false);
   });
 
-  it('success (download): saved-archive copy and path, no archive checkbox, no switch button', async () => {
+  it('success (download): saved-archive copy and path, no archive checkbox, no open button', async () => {
     const TransferWorkspaceModal = (await import('../TransferWorkspaceModal.svelte')).default;
 
     render(TransferWorkspaceModal, {
@@ -464,7 +464,7 @@ describe('TransferWorkspaceModal — result step', () => {
     );
     expect(screen.queryByTestId('transfer-archive-source')).toBeNull();
     expect(screen.queryByRole('checkbox')).toBeNull();
-    expect(screen.queryByTestId('transfer-switch-button')).toBeNull();
+    expect(screen.queryByTestId('transfer-open-button')).toBeNull();
     expect(screen.getByTestId('transfer-done-button')).toBeTruthy();
   });
 

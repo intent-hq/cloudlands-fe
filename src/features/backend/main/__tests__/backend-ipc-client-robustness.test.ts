@@ -1,17 +1,16 @@
 /**
- * T8/T9 — switch robustness: stable forwarders.
+ * T8/T9 — client-rebuild robustness: stable forwarders.
  *
- * Switching-correctness gaps closed here:
+ * Correctness gaps closed here:
  *   - **Reconnect forwarder** (T8): main-process services attach reconnect
  *     handlers ONCE via `onBackendReconnected`. Those handlers must survive a
- *     `switchBackend` (which can dispose and rebuild a backend's pooled
- *     client) and still fire on a post-switch reconnect, replaying
- *     subscriptions against the NEW client.
+ *     pooled-client dispose + rebuild and still fire on a later reconnect,
+ *     replaying subscriptions against the NEW client.
  *   - **Notification / status forwarders** (T9): services attach their daemon
  *     `notification` (and connect-retry `status`) listeners ONCE via
  *     `onBackendNotification` / `onBackendStatus`. A notification/status event
- *     on a client built by a `switchBackend` must reach a handler registered
- *     before the switch — otherwise terminal/script/idle/settings events are
+ *     on a freshly built client must reach a handler registered before the
+ *     client ever existed — otherwise terminal/script/idle/settings events are
  *     silently dropped for the rest of the session.
  *
  * The real JsonRpcClient/window module/connections store are mocked so the
@@ -132,8 +131,7 @@ const LOCAL = {
 async function loadModule() {
   const mod = await import('../backend.ipc');
   mod.__setBackendWindowHooksForTesting({
-    captureAndClose: vi.fn(async () => {}),
-    restore: vi.fn(() => {}),
+    openOrFocus: vi.fn(async () => {}),
   });
   return mod;
 }
@@ -161,7 +159,7 @@ afterEach(() => {
 // ---------------------------------------------------------------------------
 
 describe('reconnect forwarder', () => {
-  it('replays a registered handler on a reconnect of the NEW client after a switch', async () => {
+  it('replays a registered handler on a reconnect of a client built after registration', async () => {
     const mod = await loadModule();
     mod.getBackendClient(); // local pool member
 
@@ -170,34 +168,34 @@ describe('reconnect forwarder', () => {
     const handler = vi.fn();
     mod.onBackendReconnected(handler, 'remote-1');
 
-    // Switch to the remote: its pooled client is built. The switch itself
-    // nudges the forwarder once so services resubscribe to the new target.
-    await mod.switchBackend('remote-1');
-    expect(handler).toHaveBeenCalledTimes(1);
+    // Open the remote: its pooled client is built.
+    await mod.openBackendWindow('remote-1');
 
-    // A later reconnect of the NEW client must still reach the handler, even
-    // though it was registered before the client ever existed.
+    // A reconnect of the NEW client must reach the handler, even though it
+    // was registered before the client ever existed.
     const newClient = mod.getBackendClientForId('remote-1') as unknown as {
       emit(e: string): void;
     };
     newClient.emit('reconnected');
-    expect(handler).toHaveBeenCalledTimes(2);
+    expect(handler).toHaveBeenCalledTimes(1);
   });
 
-  it('keeps forwarding across multiple switches (handler attached once, never re-registered)', async () => {
+  it('keeps forwarding across a dispose + rebuild (handler attached once, never re-registered)', async () => {
     const mod = await loadModule();
     mod.getBackendClient();
     const handler = vi.fn();
-    mod.onBackendReconnected(handler); // defaults to the local backend
+    mod.onBackendReconnected(handler, 'remote-1');
 
-    await mod.switchBackend('remote-1');
-    await mod.switchBackend('local'); // switch-back nudges the local forwarder
+    await mod.openBackendWindow('remote-1');
+    mod.disconnectBackendClient('remote-1');
+    await mod.openBackendWindow('remote-1');
+
+    // The rebuilt client still forwards its own reconnects to the handler.
+    const rebuilt = mod.getBackendClientForId('remote-1') as unknown as {
+      emit(e: string): void;
+    };
+    rebuilt.emit('reconnected');
     expect(handler).toHaveBeenCalledTimes(1);
-
-    // The always-on local client still forwards its own reconnects.
-    const current = mod.getBackendClient() as unknown as { emit(e: string): void };
-    current.emit('reconnected');
-    expect(handler).toHaveBeenCalledTimes(2);
   });
 
   it('stops forwarding after the disposer runs', async () => {
@@ -207,7 +205,6 @@ describe('reconnect forwarder', () => {
     const dispose = mod.onBackendReconnected(handler);
 
     dispose();
-    await mod.switchBackend('remote-1');
     const current = mod.getBackendClient() as unknown as { emit(e: string): void };
     current.emit('reconnected');
 
@@ -225,7 +222,7 @@ describe('notification forwarder', () => {
     params: { subscriptionId: 'sub-1', event: { type: 'terminal:data' } },
   };
 
-  it('delivers a NEW client notification to a handler registered before the switch', async () => {
+  it('delivers a NEW client notification to a handler registered before the client existed', async () => {
     const mod = await loadModule();
     mod.getBackendClient(); // local pool member
 
@@ -234,8 +231,8 @@ describe('notification forwarder', () => {
     const handler = vi.fn();
     mod.onBackendNotification(handler, 'remote-1');
 
-    // Switch to the remote: its pooled client is built.
-    await mod.switchBackend('remote-1');
+    // Open the remote: its pooled client is built.
+    await mod.openBackendWindow('remote-1');
 
     // A daemon notification on the NEW client must still reach the handler,
     // even though it was registered before the client ever existed.
@@ -247,14 +244,14 @@ describe('notification forwarder', () => {
     expect(handler).toHaveBeenCalledWith(NOTIFICATION);
   });
 
-  it('keeps delivering on the local client across switches away and back', async () => {
+  it('keeps delivering on the local client while remotes come and go', async () => {
     const mod = await loadModule();
     mod.getBackendClient();
     const handler = vi.fn();
     mod.onBackendNotification(handler); // defaults to the local backend
 
-    await mod.switchBackend('remote-1');
-    await mod.switchBackend('local');
+    await mod.openBackendWindow('remote-1');
+    mod.disconnectBackendClient('remote-1');
 
     const current = mod.getBackendClient() as unknown as {
       emit(e: string, arg?: unknown): void;
@@ -270,7 +267,7 @@ describe('notification forwarder', () => {
     const dispose = mod.onBackendNotification(handler, 'remote-1');
 
     dispose();
-    await mod.switchBackend('remote-1');
+    await mod.openBackendWindow('remote-1');
     const current = mod.getBackendClientForId('remote-1') as unknown as {
       emit(e: string, arg?: unknown): void;
     };
@@ -285,13 +282,13 @@ describe('notification forwarder', () => {
 // ---------------------------------------------------------------------------
 
 describe('status forwarder', () => {
-  it('delivers a NEW client status transition to a handler registered before the switch', async () => {
+  it('delivers a NEW client status transition to a handler registered before the client existed', async () => {
     const mod = await loadModule();
     mod.getBackendClient();
     const handler = vi.fn();
     mod.onBackendStatus(handler, 'remote-1');
 
-    await mod.switchBackend('remote-1');
+    await mod.openBackendWindow('remote-1');
 
     const newClient = mod.getBackendClientForId('remote-1') as unknown as {
       emit(e: string, arg?: unknown): void;
@@ -302,161 +299,65 @@ describe('status forwarder', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Switch serialization (monorepo#2221): switchBackend invocations queue behind
-// a module-level promise-chain mutex, so overlapping switches can never
-// interleave across the orchestration's await points.
+// Connection-operation serialization (monorepo#2221): openBackendWindow
+// invocations queue behind a module-level promise-chain mutex, so overlapping
+// operations can never interleave across the orchestration's await points.
 // ---------------------------------------------------------------------------
 
-describe('switchBackend serialization', () => {
-  it('runs overlapping switches strictly sequentially', async () => {
+describe('openBackendWindow serialization', () => {
+  it('runs overlapping opens strictly sequentially', async () => {
     const mod = await loadModule();
-    // Park the first switch at its window-teardown await point.
+    // Park the first open at its window-hook await point.
     let releaseFirst!: () => void;
     const gate = new Promise<void>((r) => (releaseFirst = r));
-    const captureAndClose = vi.fn(async () => {
-      if (captureAndClose.mock.calls.length === 1) await gate;
+    const openOrFocus = vi.fn(async () => {
+      if (openOrFocus.mock.calls.length === 1) await gate;
     });
-    mod.__setBackendWindowHooksForTesting({ captureAndClose, restore: vi.fn(() => {}) });
+    mod.__setBackendWindowHooksForTesting({ openOrFocus });
 
-    const first = mod.switchBackend('remote-1');
-    await vi.waitFor(() => expect(captureAndClose).toHaveBeenCalledTimes(1));
-    const second = mod.switchBackend('local');
+    const first = mod.openBackendWindow('remote-1');
+    await vi.waitFor(() => expect(openOrFocus).toHaveBeenCalledTimes(1));
+    const second = mod.openBackendWindow('local');
 
-    // The queued switch makes no progress while the first is still in flight.
+    // The queued open makes no progress while the first is still in flight.
     await Promise.resolve();
     await Promise.resolve();
-    expect(captureAndClose).toHaveBeenCalledTimes(1);
-    expect(store.setActiveId).not.toHaveBeenCalled();
+    expect(openOrFocus).toHaveBeenCalledTimes(1);
 
     releaseFirst();
-    await expect(first).resolves.toEqual({ activeId: 'remote-1' });
-    await expect(second).resolves.toEqual({ activeId: 'local' });
+    await expect(first).resolves.toEqual({ id: 'remote-1' });
+    await expect(second).resolves.toEqual({ id: 'local' });
 
-    expect(store.setActiveId.mock.calls.map(([id]) => id)).toEqual(['remote-1', 'local']);
-    // Strict client lifecycle: switch 1 builds+starts the remote client (the
-    // local member is built lazily alongside it), then switch 2 disposes the
-    // outgoing remote and reuses the pooled local member — never interleaved.
+    expect(openOrFocus.mock.calls.map(([id]) => id)).toEqual(['remote-1', 'local']);
+    // Strict client lifecycle: each open builds+starts its pooled client
+    // (remote then local) — never interleaved, nothing disposed.
     expect(lifecycle.events.map((e) => e.type)).toEqual([
       'construct',
       'start',
       'construct',
       'start',
-      'dispose',
     ]);
-    // The final switch targeted local, so no remote identity is pinned.
-    expect(mod.isRemoteBackendActive()).toBe(false);
   });
 
-  it('a rejected switch does not block the switches queued behind it', async () => {
+  it('a rejected open does not block the opens queued behind it', async () => {
     const mod = await loadModule();
 
-    const first = mod.switchBackend('unknown-id');
-    const second = mod.switchBackend('remote-1');
+    const first = mod.openBackendWindow('unknown-id');
+    const second = mod.openBackendWindow('remote-1');
 
     await expect(first).rejects.toThrow('Unknown or incomplete connection');
-    await expect(second).resolves.toEqual({ activeId: 'remote-1' });
-  });
-});
-
-// ---------------------------------------------------------------------------
-// Teardown-guard hardening: captureAndClose sets the window-all-closed
-// suppression guard and restore clears it at its top. A throw from any step in
-// between must not leak the guard (which would suppress window-all-closed
-// handling for the rest of the session) — performSwitchBackend re-clears it in
-// a finally via the idempotent clearTeardownGuard hook.
-// ---------------------------------------------------------------------------
-
-describe('switch teardown-guard hardening', () => {
-  it('clears the teardown guard when a step between capture and restore throws', async () => {
-    const mod = await loadModule();
-    const captureAndClose = vi.fn(async () => {});
-    const restore = vi.fn(() => {});
-    const clearTeardownGuard = vi.fn(() => {});
-    mod.__setBackendWindowHooksForTesting({ captureAndClose, restore, clearTeardownGuard });
-    // Fail after the guard is set (captureAndClose ran) but before restore.
-    store.setActiveId.mockRejectedValueOnce(new Error('disk gone'));
-
-    await expect(mod.switchBackend('remote-1')).rejects.toThrow('disk gone');
-
-    expect(captureAndClose).toHaveBeenCalledTimes(1);
-    expect(restore).not.toHaveBeenCalled();
-    expect(clearTeardownGuard).toHaveBeenCalledTimes(1);
-  });
-
-  it('clears the teardown guard when captureAndClose itself throws after setting it', async () => {
-    // The flag is set partway through captureAndClose (before the destroy
-    // loop), so a throw from the destroy loop leaks it unless captureAndClose
-    // runs INSIDE the try/finally.
-    const mod = await loadModule();
-    const captureAndClose = vi.fn(async () => {
-      throw new Error('destroy failed');
-    });
-    const restore = vi.fn(() => {});
-    const clearTeardownGuard = vi.fn(() => {});
-    mod.__setBackendWindowHooksForTesting({ captureAndClose, restore, clearTeardownGuard });
-
-    await expect(mod.switchBackend('remote-1')).rejects.toThrow('destroy failed');
-
-    expect(restore).not.toHaveBeenCalled();
-    expect(clearTeardownGuard).toHaveBeenCalledTimes(1);
-  });
-
-  it('a rejecting guard clear never masks the original switch error', async () => {
-    const mod = await loadModule();
-    const captureAndClose = vi.fn(async () => {});
-    const restore = vi.fn(() => {});
-    const clearTeardownGuard = vi.fn(async () => {
-      throw new Error('import failed');
-    });
-    mod.__setBackendWindowHooksForTesting({ captureAndClose, restore, clearTeardownGuard });
-    store.setActiveId.mockRejectedValueOnce(new Error('disk gone'));
-
-    // The try block's error surfaces, not the finally's.
-    await expect(mod.switchBackend('remote-1')).rejects.toThrow('disk gone');
-    expect(clearTeardownGuard).toHaveBeenCalledTimes(1);
-  });
-
-  it('a rejecting guard clear does not fail an otherwise-successful switch', async () => {
-    const mod = await loadModule();
-    const captureAndClose = vi.fn(async () => {});
-    const restore = vi.fn(() => {});
-    const clearTeardownGuard = vi.fn(async () => {
-      throw new Error('import failed');
-    });
-    mod.__setBackendWindowHooksForTesting({ captureAndClose, restore, clearTeardownGuard });
-
-    await expect(mod.switchBackend('remote-1')).resolves.toEqual({ activeId: 'remote-1' });
-  });
-
-  it('runs the (idempotent) guard clear after restore on a successful switch', async () => {
-    const mod = await loadModule();
-    const order: string[] = [];
-    const captureAndClose = vi.fn(async () => {});
-    const restore = vi.fn(() => {
-      order.push('restore');
-    });
-    const clearTeardownGuard = vi.fn(() => {
-      order.push('clearTeardownGuard');
-    });
-    mod.__setBackendWindowHooksForTesting({ captureAndClose, restore, clearTeardownGuard });
-
-    await expect(mod.switchBackend('remote-1')).resolves.toEqual({ activeId: 'remote-1' });
-
-    // restore clears the guard itself; the finally's clear runs after it and
-    // must be a harmless no-op on the success path.
-    expect(order).toEqual(['restore', 'clearTeardownGuard']);
+    await expect(second).resolves.toEqual({ id: 'remote-1' });
   });
 });
 
 // ---------------------------------------------------------------------------
 // Open-only recovery — "Open local" from a remote window's stopped overlay:
 // openLocalAndSpawn spawns the sidecar (if needed) and opens/focuses the local
-// backend's windows in one main-side action. No window is ever retargeted: no
-// switch, no captureAndClose, no setActiveId.
+// backend's windows in one main-side action. No window is ever retargeted.
 // ---------------------------------------------------------------------------
 
-describe('openLocalAndSpawn — open-only recovery, no switch', () => {
-  it('spawns the sidecar then opens the local windows without touching any switch machinery', async () => {
+describe('openLocalAndSpawn — open-only recovery', () => {
+  it('spawns the sidecar then opens the local windows without retargeting any window', async () => {
     // The initiating window targets a remote backend; recovery must NOT
     // retarget it (or any other window) to local.
     store.getActiveId.mockResolvedValue('remote-1');
@@ -471,21 +372,15 @@ describe('openLocalAndSpawn — open-only recovery, no switch', () => {
 
     try {
       const mod = await import('../backend.ipc');
-      const captureAndClose = vi.fn(async () => {});
       const openOrFocus = vi.fn(async () => {});
-      mod.__setBackendWindowHooksForTesting({
-        captureAndClose,
-        restore: vi.fn(() => {}),
-        openOrFocus,
-      });
+      mod.__setBackendWindowHooksForTesting({ openOrFocus });
 
       const result = await mod.openLocalAndSpawn();
 
       // Spawn was initiated in main, then the local backend's windows were
-      // opened/focused — and nothing switched: no teardown, no active flip.
+      // opened/focused — and no other window was touched: no active flip.
       expect(spawnSidecarOnDemand).toHaveBeenCalledTimes(1);
       expect(openOrFocus).toHaveBeenCalledWith('local');
-      expect(captureAndClose).not.toHaveBeenCalled();
       expect(store.setActiveId).not.toHaveBeenCalled();
       expect(result.ok).toBe(true);
       expect(result.spawned).toBe(true);
@@ -507,11 +402,7 @@ describe('openLocalAndSpawn — open-only recovery, no switch', () => {
     try {
       const mod = await import('../backend.ipc');
       const openOrFocus = vi.fn(async () => {});
-      mod.__setBackendWindowHooksForTesting({
-        captureAndClose: vi.fn(async () => {}),
-        restore: vi.fn(() => {}),
-        openOrFocus,
-      });
+      mod.__setBackendWindowHooksForTesting({ openOrFocus });
 
       const result = await mod.openLocalAndSpawn();
 
@@ -542,11 +433,7 @@ describe('openLocalAndSpawn — open-only recovery, no switch', () => {
       const openOrFocus = vi
         .fn(async () => {})
         .mockRejectedValueOnce(new Error('connect ECONNREFUSED'));
-      mod.__setBackendWindowHooksForTesting({
-        captureAndClose: vi.fn(async () => {}),
-        restore: vi.fn(() => {}),
-        openOrFocus,
-      });
+      mod.__setBackendWindowHooksForTesting({ openOrFocus });
 
       const result = await mod.openLocalAndSpawn();
 

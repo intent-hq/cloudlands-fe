@@ -1,10 +1,10 @@
 /**
- * T3 — switch orchestration + connections registry IPC (backend.ipc.ts).
+ * T3 — open orchestration + connections registry IPC (backend.ipc.ts).
  *
- * Covers the two behaviours the spec calls out as must-assert:
- *   - **Teardown-before-connect**: a `switchBackend` disposes the previous
- *     JSON-RPC client (socket/timers/listeners) BEFORE the new target's client
- *     is constructed/started, and a bad target is rejected before ANY teardown.
+ * Covers the behaviours the spec calls out as must-assert:
+ *   - **Validated open**: `openBackendWindow` connects a pooled client, probes
+ *     it with an authenticated request, and only then opens the window; a bad
+ *     target is rejected before any window opens.
  *   - **Cert-mismatch propagation**: a {@link PinMismatchError} from the pinned
  *     `wss` transport surfaces a single `connections:cert-mismatch` failure
  *     event to the renderer instead of silently reconnecting.
@@ -208,31 +208,23 @@ const LOCAL = {
   isLocal: true,
 };
 
-/** Import a fresh backend.ipc module and inject window-teardown hook spies. */
+/** Import a fresh backend.ipc module and inject window hook spies. */
 async function loadModule() {
   const mod = await import('../backend.ipc');
-  // Spies record into the shared lifecycle log so ordering vs client
-  // construct/dispose can be asserted (capture BEFORE dispose, restore AFTER).
-  const captureAndClose = vi.fn(async () => {
-    lifecycle.events.push({ type: 'capture', seq: 0 });
+  // The openOrFocus spy records into the shared lifecycle log so ordering vs
+  // client construct/start can be asserted (open AFTER the client connects).
+  const openOrFocus = vi.fn(async () => {
+    lifecycle.events.push({ type: 'open', seq: 0 });
   });
-  const restore = vi.fn(() => {
-    lifecycle.events.push({ type: 'restore', seq: 0 });
-  });
-  const openOrFocus = vi.fn();
   const ensureLocalWindowBeforeClose = vi.fn();
   const closeForBackend = vi.fn();
   mod.__setBackendWindowHooksForTesting({
-    captureAndClose,
-    restore,
     openOrFocus,
     ensureLocalWindowBeforeClose,
     closeForBackend,
   });
   return {
     mod,
-    captureAndClose,
-    restore,
     openOrFocus,
     ensureLocalWindowBeforeClose,
     closeForBackend,
@@ -318,67 +310,55 @@ afterEach(() => {
 });
 
 // ---------------------------------------------------------------------------
-// Teardown-before-connect ordering
+// Connect-before-open ordering
 // ---------------------------------------------------------------------------
 
-describe('switchBackend teardown-before-connect', () => {
-  it('captures+closes old windows, keeps local connected, then connects + restores', async () => {
-    const { mod, captureAndClose, restore } = await loadModule();
+describe('openBackendWindow connect-before-open', () => {
+  it('keeps local connected, connects the target, then opens its window', async () => {
+    const { mod, openOrFocus } = await loadModule();
     mod.getBackendClient(); // client #1 (local)
     expect(lifecycle.events).toEqual([
       { type: 'construct', seq: 1 },
       { type: 'start', seq: 1 },
     ]);
 
-    const result = await mod.switchBackend('remote-1');
-    expect(result).toEqual({ activeId: 'remote-1' });
+    const result = await mod.openBackendWindow('remote-1');
+    expect(result).toEqual({ id: 'remote-1' });
 
-    // Ordering: capture+close the OLD windows, then construct/start the new
-    // client, and restore the NEW windows only after the connect. The local
-    // pool member (#1) is never disposed — main-process services stay on it.
+    // Ordering: construct/start the target's client, and open its window only
+    // after the connect + authenticated probe. The local pool member (#1) is
+    // never disposed — main-process services stay on it.
     const kinds = lifecycle.events.map((e) => `${e.type}#${e.seq}`);
-    expect(kinds).toEqual([
-      'construct#1',
-      'start#1',
-      'capture#0',
-      'construct#2',
-      'start#2',
-      'restore#0',
-    ]);
+    expect(kinds).toEqual(['construct#1', 'start#1', 'construct#2', 'start#2', 'open#0']);
 
-    // Active id flipped; hooks ran with the right from/to ids.
-    expect(store.setActiveId).toHaveBeenCalledWith('remote-1');
-    expect(captureAndClose).toHaveBeenCalledWith('local');
-    expect(restore).toHaveBeenCalledWith('remote-1');
-
-    // Menu-rebuild trigger fired so backend-gated items track the switch (#1889).
-    expect(vi.mocked(app.emit)).toHaveBeenCalledWith('backend-connection-changed');
+    // The open never flips the persisted whole-app selection.
+    expect(store.setActiveId).not.toHaveBeenCalled();
+    expect(openOrFocus).toHaveBeenCalledWith('remote-1');
   });
 
-  it('rejects an unknown target BEFORE any teardown (live client untouched)', async () => {
+  it('rejects an unknown target BEFORE any window opens (live client untouched)', async () => {
     store.list.mockResolvedValue([LOCAL]); // no remote-1
-    const { mod, captureAndClose, restore } = await loadModule();
+    const { mod, openOrFocus } = await loadModule();
     mod.getBackendClient(); // client #1
     lifecycle.events = [];
 
-    await expect(mod.switchBackend('remote-1')).rejects.toThrow(/unknown or incomplete/i);
+    await expect(mod.openBackendWindow('remote-1')).rejects.toThrow(/unknown or incomplete/i);
 
-    // No window teardown, no dispose, no new construct, no active-id flip.
+    // No new construct, no window open, no active-id flip.
     expect(lifecycle.events).toEqual([]);
     expect(store.setActiveId).not.toHaveBeenCalled();
-    expect(captureAndClose).not.toHaveBeenCalled();
-    expect(restore).not.toHaveBeenCalled();
+    expect(openOrFocus).not.toHaveBeenCalled();
   });
 
-  it('rejects a remote with no stored token before any teardown', async () => {
+  it('rejects a remote with no stored token before any window opens', async () => {
     store.getDecryptedToken.mockResolvedValue(null);
-    const { mod } = await loadModule();
+    const { mod, openOrFocus } = await loadModule();
     mod.getBackendClient();
     lifecycle.events = [];
 
-    await expect(mod.switchBackend('remote-1')).rejects.toThrow(/no stored token/i);
+    await expect(mod.openBackendWindow('remote-1')).rejects.toThrow(/no stored token/i);
     expect(lifecycle.events).toEqual([]);
-    expect(store.setActiveId).not.toHaveBeenCalled();
+    expect(openOrFocus).not.toHaveBeenCalled();
   });
 });
 
@@ -392,7 +372,7 @@ describe('pinned-cert mismatch propagation', () => {
     const { mod } = await loadModule();
     const { PinMismatchError } = await import('../backend-connection');
 
-    await mod.switchBackend('remote-1'); // remote-1's pooled client is live
+    await mod.openBackendWindow('remote-1'); // remote-1's pooled client is live
     const client = mod.getBackendClientForId('remote-1') as unknown as {
       emit(event: string, arg: unknown): void;
     };
@@ -417,7 +397,7 @@ describe('pinned-cert mismatch propagation', () => {
   it('does not emit a mismatch event for a generic transport error', async () => {
     const send = installWindow('remote-1');
     const { mod } = await loadModule();
-    await mod.switchBackend('remote-1');
+    await mod.openBackendWindow('remote-1');
     const client = mod.getBackendClientForId('remote-1') as unknown as {
       emit(event: string, arg: unknown): void;
     };
@@ -457,7 +437,7 @@ describe('pinned-cert mismatch propagation', () => {
       certMismatch: null,
     });
 
-    // A fresh client (re-pair / switch) clears the latch: the list stops
+    // A fresh client (re-pair) clears the latch: the list stops
     // replaying a mismatch that no longer describes the live client.
     mod.disconnectBackendClient('remote-1');
     await mod.connectBackendClient('remote-1');
@@ -477,7 +457,7 @@ describe('WSS auth-rejection propagation', () => {
     const { mod } = await loadModule();
     const { AuthRejectedError } = await import('../backend-connection');
 
-    await mod.switchBackend('remote-1'); // remote-1's pooled client is live
+    await mod.openBackendWindow('remote-1'); // remote-1's pooled client is live
     const client = mod.getBackendClientForId('remote-1') as unknown as {
       emit(event: string, arg: unknown): void;
     };
@@ -504,7 +484,7 @@ describe('WSS auth-rejection propagation', () => {
     const { AuthRejectedError } = await import('../backend-connection');
     mod.registerBackendHandlers();
 
-    await mod.switchBackend('remote-1');
+    await mod.openBackendWindow('remote-1');
     const client = mod.getBackendClientForId('remote-1') as unknown as {
       emit(event: string, arg: unknown): void;
     };
@@ -522,9 +502,10 @@ describe('WSS auth-rejection propagation', () => {
       authRejected: null,
     });
 
-    // A fresh client (re-pair / switch) clears the latch: the list stops
+    // A fresh client (re-pair) clears the latch: the list stops
     // replaying a rejection that no longer describes the live client.
-    await mod.switchBackend('remote-1');
+    mod.disconnectBackendClient('remote-1');
+    await mod.connectBackendClient('remote-1');
     await expect(handler!({ sender: remoteSender }, undefined)).resolves.toMatchObject({
       authRejected: null,
     });
@@ -535,7 +516,7 @@ describe('WSS auth-rejection propagation', () => {
     const { mod } = await loadModule();
     const { AuthRejectedError } = await import('../backend-connection');
 
-    await mod.switchBackend('remote-1');
+    await mod.openBackendWindow('remote-1');
     const client = mod.getBackendClientForId('remote-1') as unknown as {
       emit(event: string, arg: unknown): void;
     };
@@ -552,15 +533,16 @@ describe('WSS auth-rejection propagation', () => {
     const { mod } = await loadModule();
     const { AuthRejectedError } = await import('../backend-connection');
 
-    await mod.switchBackend('remote-1');
+    await mod.openBackendWindow('remote-1');
     let client = mod.getBackendClientForId('remote-1') as unknown as {
       emit(event: string, arg: unknown): void;
     };
     client.emit('error', new AuthRejectedError(401));
     expect(send.mock.calls.filter(([c]) => c === 'connections:auth-rejected')).toHaveLength(1);
 
-    // A switch disposes the old client and builds a fresh one → latch resets.
-    await mod.switchBackend('remote-1');
+    // A dispose + rebuild yields a fresh client → latch resets.
+    mod.disconnectBackendClient('remote-1');
+    await mod.connectBackendClient('remote-1');
     client = mod.getBackendClientForId('remote-1') as unknown as {
       emit(event: string, arg: unknown): void;
     };
@@ -571,7 +553,7 @@ describe('WSS auth-rejection propagation', () => {
   it('does not emit an auth-rejected event for a generic transport error', async () => {
     const send = installWindow('remote-1');
     const { mod } = await loadModule();
-    await mod.switchBackend('remote-1');
+    await mod.openBackendWindow('remote-1');
     const client = mod.getBackendClientForId('remote-1') as unknown as {
       emit(event: string, arg: unknown): void;
     };
@@ -863,7 +845,7 @@ describe('connections:* IPC handlers', () => {
     store.add.mockResolvedValue(REMOTE);
     store.getActiveId.mockResolvedValue('local');
     installWindow();
-    const { mod, captureAndClose, restore } = await loadModule();
+    const { mod, openOrFocus } = await loadModule();
     mod.registerBackendHandlers();
     const handler = findHandler('connections:add');
 
@@ -871,16 +853,51 @@ describe('connections:* IPC handlers', () => {
       {},
       { label: 'Studio Mac', host: '10.0.0.5', port: 8443, fingerprint: 'AA:BB:CC:DD', token: 't' },
     );
-    // Not the live backend → no client swap / window teardown.
-    expect(captureAndClose).not.toHaveBeenCalled();
-    expect(restore).not.toHaveBeenCalled();
+    // Not the live backend → no client swap / window changes.
+    expect(openOrFocus).not.toHaveBeenCalled();
   });
 
-  it('connections:add refreshes an active client without tearing down windows', async () => {
+  it('connections:add re-pairing a LIVE non-active backend rebuilds its client in place', async () => {
+    store.add.mockResolvedValue(REMOTE);
+    store.getActiveId.mockResolvedValue('local'); // open-only state: remote-1 has windows but is not active
+    const send = installWindow('remote-1');
+    const { mod, openOrFocus } = await loadModule();
+    mod.getBackendClient(); // warm the always-on local pool member
+    await mod.connectBackendClient('remote-1'); // the re-paired target serves open windows
+    mod.registerBackendHandlers();
+    const handler = findHandler('connections:add');
+    lifecycle.events = [];
+
+    const params = {
+      label: 'Studio Mac',
+      host: '10.0.0.5',
+      port: 8443,
+      fingerprint: 'AA:BB:CC:DD',
+      token: 'fresh-token',
+    };
+    // Not the persisted active id → switched stays false (wire compat), but
+    // the live client is still rebuilt so the refreshed token reaches the
+    // backend's open windows instead of the stale pooled client.
+    await expect(handler!({}, params)).resolves.toEqual({ connection: REMOTE, switched: false });
+
+    expect(lifecycle.events.map((e) => e.type)).toEqual(['dispose', 'construct', 'start']);
+    expect(openOrFocus).not.toHaveBeenCalled();
+    expect(store.setActiveId).not.toHaveBeenCalled();
+    // The replayed reconnect marker reaches the backend's windows so daemon
+    // event subscriptions re-subscribe against the new client.
+    expect(
+      send.mock.calls.some(
+        ([c, payload]) =>
+          c === 'backend:status' && (payload as { reconnected?: boolean }).reconnected === true,
+      ),
+    ).toBe(true);
+  });
+
+  it('connections:add refreshes an active client without touching windows', async () => {
     store.add.mockResolvedValue(REMOTE);
     store.getActiveId.mockResolvedValue('remote-1');
     const send = installWindow();
-    const { mod, captureAndClose, restore } = await loadModule();
+    const { mod, openOrFocus } = await loadModule();
     mod.getBackendClient(); // warm the always-on local pool member
     await mod.connectBackendClient('remote-1'); // the active target's pooled client is live
     mod.registerBackendHandlers();
@@ -902,14 +919,13 @@ describe('connections:* IPC handlers', () => {
     const disposed = lifecycle.events.find((e) => e.type === 'dispose')!;
     const constructed = lifecycle.events.find((e) => e.type === 'construct')!;
     expect(disposed.seq).toBeLessThan(constructed.seq);
-    expect(captureAndClose).not.toHaveBeenCalled();
-    expect(restore).not.toHaveBeenCalled();
+    expect(openOrFocus).not.toHaveBeenCalled();
     expect(store.setActiveId).not.toHaveBeenCalled();
     expect(send.mock.calls.some(([c]) => c === 'connections:changed')).toBe(true);
   });
 
   it('connections:open keeps the local client and windows while opening the remote', async () => {
-    const { mod, captureAndClose, openOrFocus } = await loadModule();
+    const { mod, openOrFocus } = await loadModule();
     const local = mod.getBackendClient();
     mod.registerBackendHandlers();
     const handler = findHandler('connections:open');
@@ -924,7 +940,6 @@ describe('connections:* IPC handlers', () => {
     });
     expect(mod.getBackendClient()).toBe(local);
     expect(mod.getBackendClientForConnection('local')).toBe(local);
-    expect(captureAndClose).not.toHaveBeenCalled();
     expect(openOrFocus).toHaveBeenCalledWith('remote-1');
     expect(store.setActiveId).not.toHaveBeenCalled();
   });
@@ -934,7 +949,7 @@ describe('connections:* IPC handlers', () => {
       if (method === 'host.status') throw new Error('remote rejected');
       return {};
     };
-    const { mod, captureAndClose, openOrFocus } = await loadModule();
+    const { mod, openOrFocus } = await loadModule();
     const local = mod.getBackendClient();
     mod.registerBackendHandlers();
     const handler = findHandler('connections:open');
@@ -944,7 +959,6 @@ describe('connections:* IPC handlers', () => {
     expect(mod.getBackendClient()).toBe(local);
     expect(mod.getBackendClientForConnection('local')).toBe(local);
     expect(mod.getBackendClientForConnection('remote-1')).toBeUndefined();
-    expect(captureAndClose).not.toHaveBeenCalled();
     expect(openOrFocus).not.toHaveBeenCalled();
   });
 
@@ -952,8 +966,7 @@ describe('connections:* IPC handlers', () => {
     store.getActiveId.mockResolvedValue('local');
     store.forget.mockResolvedValue(undefined);
     const send = installWindow();
-    const { mod, captureAndClose, restore, ensureLocalWindowBeforeClose, closeForBackend } =
-      await loadModule();
+    const { mod, ensureLocalWindowBeforeClose, closeForBackend } = await loadModule();
     const local = mod.getBackendClient();
     const remote = await mod.connectBackendClient('remote-1');
     mod.registerBackendHandlers();
@@ -961,9 +974,6 @@ describe('connections:* IPC handlers', () => {
 
     await expect(handler!({}, { id: 'remote-1' })).resolves.toEqual({ id: 'remote-1' });
     expect(store.forget).toHaveBeenCalledWith('remote-1');
-    // Was not the live backend → no full switch/window teardown.
-    expect(captureAndClose).not.toHaveBeenCalled();
-    expect(restore).not.toHaveBeenCalled();
     expect(ensureLocalWindowBeforeClose).toHaveBeenCalledWith('remote-1');
     expect(closeForBackend).toHaveBeenCalledWith('remote-1');
     expect(ensureLocalWindowBeforeClose.mock.invocationCallOrder[0]).toBeLessThan(
@@ -978,17 +988,14 @@ describe('connections:* IPC handlers', () => {
     expect(send.mock.calls.some(([c]) => c === 'connections:changed')).toBe(true);
   });
 
-  it('connections:forget of the active connection disposes only its pooled client', async () => {
-    store.getActiveId.mockResolvedValue('remote-1');
+  it('connections:forget of a connection with an open window disposes only its pooled client', async () => {
+    store.getActiveId.mockResolvedValue('local');
     store.forget.mockResolvedValue(undefined);
     installWindow();
-    const { mod, captureAndClose, restore, ensureLocalWindowBeforeClose, closeForBackend } =
-      await loadModule();
+    const { mod, ensureLocalWindowBeforeClose, closeForBackend } = await loadModule();
     const local = mod.getBackendClient(); // the always-on local pool member
-    await mod.switchBackend('remote-1');
+    await mod.openBackendWindow('remote-1');
     lifecycle.events = [];
-    captureAndClose.mockClear();
-    restore.mockClear();
     mod.registerBackendHandlers();
     const handler = findHandler('connections:forget');
 
@@ -999,23 +1006,10 @@ describe('connections:* IPC handlers', () => {
     expect(ensureLocalWindowBeforeClose.mock.invocationCallOrder[0]).toBeLessThan(
       closeForBackend.mock.invocationCallOrder[0],
     );
-    expect(captureAndClose).not.toHaveBeenCalled();
-    expect(restore).not.toHaveBeenCalled();
     expect(mod.getBackendClientForConnection('remote-1')).toBeUndefined();
     // The local pool member survives untouched — no retarget/rebuild needed.
     expect(mod.getBackendClientForConnection('local')).toBe(local);
     expect(lifecycle.events.map((event) => event.type)).toEqual(['dispose']);
-  });
-
-  it('connections:switch routes through switchBackend', async () => {
-    const { mod, captureAndClose, restore } = await loadModule();
-    mod.getBackendClient();
-    mod.registerBackendHandlers();
-    const handler = findHandler('connections:switch');
-
-    await expect(handler!({}, { id: 'remote-1' })).resolves.toEqual({ activeId: 'remote-1' });
-    expect(captureAndClose).toHaveBeenCalledWith('local');
-    expect(restore).toHaveBeenCalledWith('remote-1');
   });
 
   it('rejects invalid params (missing token on capture) via the Zod schema', async () => {
@@ -1025,14 +1019,6 @@ describe('connections:* IPC handlers', () => {
 
     await expect(handler!({}, { host: '10.0.0.5', port: 8443 })).rejects.toThrow();
     expect(mockCaptureFingerprint).not.toHaveBeenCalled();
-  });
-
-  it('rejects invalid params (missing id on switch) via the Zod schema', async () => {
-    const { mod } = await loadModule();
-    mod.registerBackendHandlers();
-    const handler = findHandler('connections:switch');
-
-    await expect(handler!({}, {})).rejects.toThrow();
   });
 
   it('rejects invalid params (non-boolean syncExcluded on add) via the Zod schema', async () => {
@@ -1280,11 +1266,11 @@ describe('self-publish IPC', () => {
     expect(store.add).not.toHaveBeenCalled();
   });
 
-  it('connections:publish-self works while a remote backend is active (pooled local client)', async () => {
+  it('connections:publish-self works while a remote backend is open (pooled local client)', async () => {
     installPairingInfo();
     store.add.mockResolvedValue(SELF_RECORD);
     const { mod } = await loadModule();
-    await mod.switchBackend('remote-1'); // remote windows active; local member persists
+    await mod.openBackendWindow('remote-1'); // remote window open; local member persists
     mod.registerBackendHandlers();
 
     const result = (await findHandler('connections:publish-self')!({}, undefined)) as {
@@ -1625,12 +1611,12 @@ describe('self-entry refresh IPC', () => {
     expect(store.add).not.toHaveBeenCalled();
   });
 
-  it('refreshes via the pooled local client even while a remote backend is active', async () => {
+  it('refreshes via the pooled local client even while a remote backend is open', async () => {
     installPairingInfo();
     store.add.mockResolvedValue(SELF_RECORD);
     store.list.mockResolvedValue([LOCAL, { ...REMOTE, fingerprint: '11:22:33:44' }]);
     const { mod } = await loadModule();
-    await mod.switchBackend('remote-1'); // remote windows active; local member persists
+    await mod.openBackendWindow('remote-1'); // remote window open; local member persists
     mod.registerBackendHandlers();
 
     const result = await findHandler('connections:refresh-self')!({}, undefined);
@@ -1936,10 +1922,10 @@ describe('connections:list hides the self entry on the owning machine', () => {
 // ---------------------------------------------------------------------------
 
 describe('multi-host candidates (#1746)', () => {
-  it('switchBackend builds the wss config with the stored candidate hosts', async () => {
+  it('openBackendWindow builds the wss config with the stored candidate hosts', async () => {
     store.list.mockResolvedValue([LOCAL, { ...REMOTE, hosts: ['10.0.0.5', '192.168.1.5'] }]);
     const { mod } = await loadModule();
-    await mod.switchBackend('remote-1');
+    await mod.openBackendWindow('remote-1');
     const config = mod.getBackendClientForId('remote-1').getConfig() as {
       host?: string;
       hosts?: string[];
@@ -1948,14 +1934,14 @@ describe('multi-host candidates (#1746)', () => {
     expect(config.hosts).toEqual(['10.0.0.5', '192.168.1.5']);
   });
 
-  it('switchBackend falls back to a one-element host list for records without hosts', async () => {
+  it('openBackendWindow falls back to a one-element host list for records without hosts', async () => {
     const { mod } = await loadModule();
-    await mod.switchBackend('remote-1');
+    await mod.openBackendWindow('remote-1');
     const config = mod.getBackendClientForId('remote-1').getConfig() as { hosts?: string[] };
     expect(config.hosts).toEqual(['10.0.0.5']);
   });
 
-  it('persists refreshed candidate hosts from server.pairingInfo after a switch', async () => {
+  it('persists refreshed candidate hosts from server.pairingInfo after an open', async () => {
     installWindow();
     rpc.handler = async (method) => {
       if (method === 'server.pairingInfo') {
@@ -1964,7 +1950,7 @@ describe('multi-host candidates (#1746)', () => {
       return {};
     };
     const { mod } = await loadModule();
-    await mod.switchBackend('remote-1');
+    await mod.openBackendWindow('remote-1');
 
     await vi.waitFor(() =>
       expect(store.setHosts).toHaveBeenCalledWith('remote-1', ['10.0.0.5', '192.168.1.5']),
@@ -1974,7 +1960,7 @@ describe('multi-host candidates (#1746)', () => {
   it('skips the pairingInfo refresh when the record opted out of IP detection', async () => {
     store.getDetectHosts.mockResolvedValue(false);
     const { mod } = await loadModule();
-    await mod.switchBackend('remote-1');
+    await mod.openBackendWindow('remote-1');
 
     // The hostname capture still runs, but no pairingInfo call on the remote
     // client and no setHosts. (The local pool member's own self-fingerprint
@@ -1995,8 +1981,8 @@ describe('multi-host candidates (#1746)', () => {
       return {};
     };
     const { mod } = await loadModule();
-    // Must not reject the switch, and the stored hosts stay untouched.
-    await expect(mod.switchBackend('remote-1')).resolves.toEqual({ activeId: 'remote-1' });
+    // Must not reject the open, and the stored hosts stay untouched.
+    await expect(mod.openBackendWindow('remote-1')).resolves.toEqual({ id: 'remote-1' });
     await vi.waitFor(() => expect(rpc.calls).toContain('server.pairingInfo'));
     expect(store.setHosts).not.toHaveBeenCalled();
   });
@@ -2007,20 +1993,13 @@ describe('multi-host candidates (#1746)', () => {
       return {};
     };
     const { mod } = await loadModule();
-    await mod.switchBackend('remote-1');
+    await mod.openBackendWindow('remote-1');
     await vi.waitFor(() => expect(rpc.calls).toContain('server.pairingInfo'));
     expect(store.setHosts).not.toHaveBeenCalled();
   });
 
   it('drops a pairingInfo result that lands after its pooled client was torn down', async () => {
     installWindow();
-    // Track the persisted active id so the second switch sees remote-1 as the
-    // outgoing backend and disposes its pooled client mid-flight.
-    let activeId = 'local';
-    store.getActiveId.mockImplementation(async () => activeId);
-    store.setActiveId.mockImplementation(async (id: string) => {
-      activeId = id;
-    });
     // Hold the pairingInfo answer open until the test releases it.
     let releasePairingInfo!: () => void;
     const gate = new Promise<void>((resolve) => (releasePairingInfo = resolve));
@@ -2032,11 +2011,11 @@ describe('multi-host candidates (#1746)', () => {
       return {};
     };
     const { mod } = await loadModule();
-    await mod.switchBackend('remote-1');
+    await mod.openBackendWindow('remote-1');
     await vi.waitFor(() => expect(rpc.calls).toContain('server.pairingInfo'));
 
     // remote-1's pooled client is disposed while the refresh is still in flight…
-    await mod.switchBackend('local');
+    mod.disconnectBackendClient('remote-1');
     releasePairingInfo();
 
     // …so the stale answer must NOT be persisted under remote-1.
@@ -2046,14 +2025,14 @@ describe('multi-host candidates (#1746)', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Switch-queue TOCTOU (monorepo#2228): the forget/add handlers make their
-// active-id decision INSIDE the serialized switch queue, so a concurrent
-// switch can never make the decision stale — forget's fall-back-to-local must
-// not disconnect a backend the user just selected, and a re-pair of A must
-// not switch back to A after the user selected B.
+// Connection-queue TOCTOU (monorepo#2228): the forget/add handlers run their
+// whole read-decide sequence INSIDE the serialized connection-operation queue,
+// so a concurrent operation can never make the decision stale — a forget must
+// not tear down a client mid-open, and a re-pair's active-id read must wait
+// its queue turn.
 // ---------------------------------------------------------------------------
 
-describe('forget/add active-id decisions inside the switch queue (monorepo#2228)', () => {
+describe('forget/add decisions inside the connection-operation queue (monorepo#2228)', () => {
   const REMOTE2 = {
     id: 'remote-2',
     label: 'Laptop',
@@ -2063,78 +2042,68 @@ describe('forget/add active-id decisions inside the switch queue (monorepo#2228)
     isLocal: false,
   };
 
-  /** Stateful active-id so `setActiveId` writes are visible to later reads. */
-  function installStatefulActiveId(initial: string): () => string {
-    let activeId = initial;
-    store.getActiveId.mockImplementation(async () => activeId);
-    store.setActiveId.mockImplementation(async (id: string) => {
-      activeId = id;
-    });
-    return () => activeId;
-  }
-
-  it('forget(A) racing a switch to B does not take the stale fall-back-to-local', async () => {
+  it('forget(A) racing an open of B waits its queue turn', async () => {
     store.list.mockResolvedValue([LOCAL, REMOTE, REMOTE2]);
     store.forget.mockResolvedValue(undefined);
-    const getActive = installStatefulActiveId('remote-1');
     installWindow();
-    const { mod, restore } = await loadModule();
+    const { mod } = await loadModule();
     mod.registerBackendHandlers();
     const forgetHandler = findHandler('connections:forget')!;
 
-    // Park the user's switch to B at its window-teardown await point…
-    let releaseSwitch!: () => void;
-    const gate = new Promise<void>((resolve) => (releaseSwitch = resolve));
-    const captureAndClose = vi.fn(async () => {
-      if (captureAndClose.mock.calls.length === 1) await gate;
+    // Park the user's open of B at its window-hook await point…
+    let releaseOpen!: () => void;
+    const gate = new Promise<void>((resolve) => (releaseOpen = resolve));
+    const openOrFocus = vi.fn(async () => {
+      if (openOrFocus.mock.calls.length === 1) await gate;
     });
-    mod.__setBackendWindowHooksForTesting({ captureAndClose, restore });
+    const ensureLocalWindowBeforeClose = vi.fn();
+    const closeForBackend = vi.fn();
+    mod.__setBackendWindowHooksForTesting({
+      openOrFocus,
+      ensureLocalWindowBeforeClose,
+      closeForBackend,
+    });
 
-    const switchToB = mod.switchBackend('remote-2');
-    await vi.waitFor(() => expect(captureAndClose).toHaveBeenCalledTimes(1));
-    // …then forget(A) lands while that switch is still in flight.
+    const openB = mod.openBackendWindow('remote-2');
+    await vi.waitFor(() => expect(openOrFocus).toHaveBeenCalledTimes(1));
+    // …then forget(A) lands while that open is still in flight.
     const forget = forgetHandler({}, { id: 'remote-1' });
 
     // The enqueued forget makes NO progress (not even the store forget) while
-    // the switch is in flight — the whole decision waits its queue turn.
+    // the open is in flight — the whole decision waits its queue turn.
     await Promise.resolve();
     await Promise.resolve();
     expect(store.forget).not.toHaveBeenCalled();
 
-    releaseSwitch();
-    await expect(switchToB).resolves.toEqual({ activeId: 'remote-2' });
+    releaseOpen();
+    await expect(openB).resolves.toEqual({ id: 'remote-2' });
     await expect(forget).resolves.toEqual({ id: 'remote-1' });
 
-    // A was no longer active at decision time → record forgotten, but no
-    // fall-back-to-local switch: the FE stays on the B the user selected.
     expect(store.forget).toHaveBeenCalledWith('remote-1');
-    expect(store.setActiveId.mock.calls.map(([id]) => id)).toEqual(['remote-2']);
-    expect(getActive()).toBe('remote-2');
-    expect(captureAndClose).toHaveBeenCalledTimes(1);
-    expect(restore).toHaveBeenCalledTimes(1);
-    expect(restore).toHaveBeenCalledWith('remote-2');
+    expect(closeForBackend).toHaveBeenCalledWith('remote-1');
+    // B's freshly opened client survives the forget of A.
+    expect(mod.getBackendClientForConnection('remote-2')).toBeDefined();
   });
 
-  it('re-pairing A racing a switch to B never switches back to A', async () => {
+  it('re-pairing A racing an open of B makes its active-id decision after the open', async () => {
     store.list.mockResolvedValue([LOCAL, REMOTE, REMOTE2]);
     store.add.mockResolvedValue(REMOTE); // upsert of remote-1 (refreshed token)
-    const getActive = installStatefulActiveId('remote-1');
     installWindow();
-    const { mod, restore } = await loadModule();
+    const { mod } = await loadModule();
     mod.registerBackendHandlers();
     const addHandler = findHandler('connections:add')!;
 
-    // Park the user's switch to B at its window-teardown await point…
-    let releaseSwitch!: () => void;
-    const gate = new Promise<void>((resolve) => (releaseSwitch = resolve));
-    const captureAndClose = vi.fn(async () => {
-      if (captureAndClose.mock.calls.length === 1) await gate;
+    // Park the user's open of B at its window-hook await point…
+    let releaseOpen!: () => void;
+    const gate = new Promise<void>((resolve) => (releaseOpen = resolve));
+    const openOrFocus = vi.fn(async () => {
+      if (openOrFocus.mock.calls.length === 1) await gate;
     });
-    mod.__setBackendWindowHooksForTesting({ captureAndClose, restore });
+    mod.__setBackendWindowHooksForTesting({ openOrFocus });
 
-    const switchToB = mod.switchBackend('remote-2');
-    await vi.waitFor(() => expect(captureAndClose).toHaveBeenCalledTimes(1));
-    // …then the re-pair of A lands while that switch is still in flight.
+    const openB = mod.openBackendWindow('remote-2');
+    await vi.waitFor(() => expect(openOrFocus).toHaveBeenCalledTimes(1));
+    // …then the re-pair of A lands while that open is still in flight.
     const add = addHandler(
       {},
       {
@@ -2146,18 +2115,18 @@ describe('forget/add active-id decisions inside the switch queue (monorepo#2228)
       },
     );
 
-    releaseSwitch();
-    await expect(switchToB).resolves.toEqual({ activeId: 'remote-2' });
-    // A was no longer active at decision time → upsert only, no switch-back.
-    await expect(add).resolves.toEqual({ connection: REMOTE, switched: false });
+    // The enqueued add makes no progress while the open is in flight.
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(store.add).not.toHaveBeenCalled();
 
-    expect(store.setActiveId.mock.calls.map(([id]) => id)).toEqual(['remote-2']);
-    expect(getActive()).toBe('remote-2');
-    expect(captureAndClose).toHaveBeenCalledTimes(1);
-    expect(restore).toHaveBeenCalledWith('remote-2');
+    releaseOpen();
+    await expect(openB).resolves.toEqual({ id: 'remote-2' });
+    // A was not active at decision time → upsert only, no client rebuild.
+    await expect(add).resolves.toEqual({ connection: REMOTE, switched: false });
   });
 
-  it('a rejected enqueued forget does not poison the queue for later switches', async () => {
+  it('a rejected enqueued forget does not poison the queue for later opens', async () => {
     store.forget.mockRejectedValue(new Error('cannot forget the reserved local connection'));
     installWindow();
     const { mod } = await loadModule();
@@ -2165,7 +2134,7 @@ describe('forget/add active-id decisions inside the switch queue (monorepo#2228)
     const forgetHandler = findHandler('connections:forget')!;
 
     await expect(forgetHandler({}, { id: 'remote-1' })).rejects.toThrow(/cannot forget/i);
-    await expect(mod.switchBackend('remote-1')).resolves.toEqual({ activeId: 'remote-1' });
+    await expect(mod.openBackendWindow('remote-1')).resolves.toEqual({ id: 'remote-1' });
   });
 });
 

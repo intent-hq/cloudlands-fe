@@ -2,7 +2,7 @@
  * Connections IPC bridge — mock fallback for the multi-backend connect channels.
  *
  * Bridges the `connections:*` request/response channels (`list`,
- * `capture-fingerprint`, `add`, `forget`, `open`, `switch`) so the connections service
+ * `capture-fingerprint`, `add`, `forget`, `open`) so the connections service
  * thunks resolve in bridge-less builds (browser mock) and tests instead of
  * rejecting with UnbridgedMockIpcChannelError.
  *
@@ -28,8 +28,6 @@ import type {
   ForgetConnectionResult,
   OpenConnectionParams,
   OpenConnectionResult,
-  SwitchConnectionParams,
-  SwitchConnectionResult,
   UpdateBackendParams,
   UpdateBackendResult,
   KeychainSyncStateResult,
@@ -50,7 +48,7 @@ const LOCAL_ENTRY: ConnectionRecord = {
   isLocal: true,
 };
 
-// Session-scoped in-memory store so add/forget/switch stay coherent with list.
+// Session-scoped in-memory store so add/forget/open stay coherent with list.
 let connections: ConnectionRecord[] = [LOCAL_ENTRY];
 let activeId: string = LOCAL_CONNECTION_ID;
 
@@ -102,12 +100,6 @@ registerMockIpcHandler(CONNECTION_CHANNELS.FORGET, async (arg): Promise<ForgetCo
 registerMockIpcHandler(CONNECTION_CHANNELS.OPEN, async (arg): Promise<OpenConnectionResult> => {
   const { id } = arg as OpenConnectionParams;
   return { id };
-});
-
-registerMockIpcHandler(CONNECTION_CHANNELS.SWITCH, async (arg): Promise<SwitchConnectionResult> => {
-  const { id } = arg as SwitchConnectionParams;
-  if (connections.some((c) => c.id === id)) activeId = id;
-  return { activeId };
 });
 
 // Remote self-update request. The mock has no live pooled clients, so every

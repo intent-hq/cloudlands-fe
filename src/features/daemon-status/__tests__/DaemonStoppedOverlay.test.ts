@@ -524,7 +524,7 @@ describe('DaemonStoppedOverlay', () => {
       );
     }
 
-    it('offers "Open local" and routes it through backend:open-local-and-spawn (no switch)', async () => {
+    it('offers "Open local" and routes it through backend:open-local-and-spawn', async () => {
       render(DaemonStoppedOverlay);
       await showOverlay(wsTransport);
       bindWindowToRemote();
@@ -575,7 +575,7 @@ describe('DaemonStoppedOverlay', () => {
         .find((action) => action.type === openConnectionRequested.type);
       expect(dispatched?.payload).toEqual(['remote-2']);
       // Open-only: the legacy retargeting action must never fire from the
-      // overlay. Literal type string: the remove-switch follow-up deletes the
+      // overlay. Literal type string: the remove-switch change deleted the
       // action creator, and this negative assertion must survive that.
       expect(
         dispatchSpy.mock.calls.some(
@@ -711,7 +711,7 @@ describe('DaemonStoppedOverlay', () => {
       expect(overlay()!.textContent).toContain('(HTTP 403)');
     });
 
-    it('keeps the switch-backend fail-over list visible in the token-rejected state', async () => {
+    it('keeps the open-backend fail-over list visible in the token-rejected state', async () => {
       const OTHER = { ...REMOTE, id: 'remote-2', label: 'Other Mac', host: '10.0.0.6' };
       render(DaemonStoppedOverlay);
       await showOverlay(wsTransport);

@@ -2,7 +2,7 @@
  * CertMismatchModal Component Tests
  *
  * Verifies the blocking failure modal surfaces the stored vs presented
- * fingerprint and wires its three exits (switch back / forget & re-pair /
+ * fingerprint and wires its three exits (open local / forget & re-pair /
  * dismiss) to the provided callbacks.
  */
 
@@ -32,16 +32,16 @@ describe('CertMismatchModal', () => {
     expect(screen.getByText('DD:EE:FF')).toBeTruthy();
   });
 
-  it('invokes the callbacks for switch-back, forget, and dismiss', async () => {
-    const onSwitchBack = vi.fn();
+  it('invokes the callbacks for open-local, forget, and dismiss', async () => {
+    const onOpenLocal = vi.fn();
     const onForget = vi.fn();
     const onDismiss = vi.fn();
 
     const CertMismatchModal = (await import('./CertMismatchModal.svelte')).default;
-    render(CertMismatchModal, { props: { event, onSwitchBack, onForget, onDismiss } });
+    render(CertMismatchModal, { props: { event, onOpenLocal, onForget, onDismiss } });
 
-    await fireEvent.click(screen.getByText('Switch back to This machine (local)'));
-    expect(onSwitchBack).toHaveBeenCalledOnce();
+    await fireEvent.click(screen.getByText('Open This machine (local)'));
+    expect(onOpenLocal).toHaveBeenCalledOnce();
 
     await fireEvent.click(screen.getByText('Forget & re-pair'));
     expect(onForget).toHaveBeenCalledWith('r1');
