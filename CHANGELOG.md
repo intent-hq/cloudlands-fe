@@ -4,6 +4,14 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.105.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.104.0...v2.105.0) (2026-08-28)
+
+
+### 🚀 Features
+
+* remove the whole-app backend switch flow ([#1819](https://github.com/intent-hq/cloudlands-fe/issues/1819)) ([507cfff](https://github.com/intent-hq/cloudlands-fe/commit/507cfffea05367182b1e88371d31f7ceb9ef87a8))
+* rework daemon-stopped overlay recovery to Open-only actions ([#1818](https://github.com/intent-hq/cloudlands-fe/issues/1818)) ([30499db](https://github.com/intent-hq/cloudlands-fe/commit/30499dbe86da39be37c1cc9b53ab46ba7c81c8db))
+
 ## [2.104.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.103.0...v2.104.0) (2026-08-28)
 
 
