@@ -229,12 +229,18 @@ async function loadModule() {
   };
 }
 
-/** Install a single fake renderer window and return its `send` spy. */
-function installWindow() {
+/**
+ * Install a single fake renderer window and return its `send` spy. Pass a
+ * `backendId` to stamp the window (and wire `fromWebContents`) so it receives
+ * backend-scoped broadcasts; unstamped windows resolve to the local default.
+ */
+function installWindow(backendId?: string) {
   const send = vi.fn();
-  vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([
-    { id: 1, isDestroyed: () => false, webContents: { send } } as never,
-  ]);
+  const window = { id: 1, backendId, isDestroyed: () => false, webContents: { send } };
+  vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([window as never]);
+  vi.mocked(BrowserWindow.fromWebContents).mockImplementation((sender) =>
+    sender === window.webContents ? (window as never) : null,
+  );
   return send;
 }
 
@@ -371,7 +377,7 @@ describe('switchBackend teardown-before-connect', () => {
 
 describe('pinned-cert mismatch propagation', () => {
   it('emits a single connections:cert-mismatch failure event on PinMismatchError', async () => {
-    const send = installWindow();
+    const send = installWindow('remote-1');
     const { mod } = await loadModule();
     const { PinMismatchError } = await import('../backend-connection');
 
@@ -398,7 +404,7 @@ describe('pinned-cert mismatch propagation', () => {
   });
 
   it('does not emit a mismatch event for a generic transport error', async () => {
-    const send = installWindow();
+    const send = installWindow('remote-1');
     const { mod } = await loadModule();
     await mod.switchBackend('remote-1');
     const client = mod.getBackendClient() as unknown as {
@@ -416,7 +422,7 @@ describe('pinned-cert mismatch propagation', () => {
 
 describe('WSS auth-rejection propagation', () => {
   it('emits a single connections:auth-rejected failure event on AuthRejectedError', async () => {
-    const send = installWindow();
+    const send = installWindow('remote-1');
     const { mod } = await loadModule();
     const { AuthRejectedError } = await import('../backend-connection');
 
@@ -442,7 +448,7 @@ describe('WSS auth-rejection propagation', () => {
   });
 
   it('latches the rejection and replays it on connections:list for late subscribers', async () => {
-    installWindow();
+    const { localSender, remoteSender } = installBackendWindows();
     const { mod } = await loadModule();
     const { AuthRejectedError } = await import('../backend-connection');
     mod.registerBackendHandlers();
@@ -454,20 +460,27 @@ describe('WSS auth-rejection propagation', () => {
     client.emit('error', new AuthRejectedError(401));
 
     // A renderer created/reloaded AFTER the one-shot broadcast still learns the
-    // rejection from its initial list fetch (the sticky #823 pattern).
+    // rejection from its initial list fetch (the sticky #823 pattern) — gated
+    // to windows bound to the rejected backend.
     const handler = findHandler('connections:list');
-    await expect(handler!({}, undefined)).resolves.toMatchObject({
+    await expect(handler!({ sender: remoteSender }, undefined)).resolves.toMatchObject({
       authRejected: { id: 'remote-1', host: '10.0.0.5', port: 8443, statusCode: 401 },
+    });
+    // A window bound to a different (local) backend does not replay it.
+    await expect(handler!({ sender: localSender }, undefined)).resolves.toMatchObject({
+      authRejected: null,
     });
 
     // A fresh client (re-pair / switch) clears the latch: the list stops
     // replaying a rejection that no longer describes the live client.
     await mod.switchBackend('remote-1');
-    await expect(handler!({}, undefined)).resolves.toMatchObject({ authRejected: null });
+    await expect(handler!({ sender: remoteSender }, undefined)).resolves.toMatchObject({
+      authRejected: null,
+    });
   });
 
   it('carries the 403 statusCode (WS API disabled) on the payload', async () => {
-    const send = installWindow();
+    const send = installWindow('remote-1');
     const { mod } = await loadModule();
     const { AuthRejectedError } = await import('../backend-connection');
 
@@ -484,7 +497,7 @@ describe('WSS auth-rejection propagation', () => {
   });
 
   it('resets the once-latch when a fresh client is constructed', async () => {
-    const send = installWindow();
+    const send = installWindow('remote-1');
     const { mod } = await loadModule();
     const { AuthRejectedError } = await import('../backend-connection');
 
@@ -503,7 +516,7 @@ describe('WSS auth-rejection propagation', () => {
   });
 
   it('does not emit an auth-rejected event for a generic transport error', async () => {
-    const send = installWindow();
+    const send = installWindow('remote-1');
     const { mod } = await loadModule();
     await mod.switchBackend('remote-1');
     const client = mod.getBackendClient() as unknown as {
