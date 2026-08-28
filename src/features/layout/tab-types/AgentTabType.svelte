@@ -35,6 +35,7 @@
     faCopy,
     faRightLeft,
     faTrash,
+    faUserTie,
   } from '@fortawesome/free-solid-svg-icons';
   import { faNote } from '$lib/icons/faNote';
   import HarnessFeaturesModal from '$lib/components/chat/HarnessFeaturesModal.svelte';
@@ -95,14 +96,15 @@
 
   const agentMessages = $derived(agentSession?.messages || []);
 
-  // Get specialist display name
+  // Get specialist display name, falling back to the raw id when the
+  // lookup misses (parity with AgentCard).
   const agentSpecialistName = $derived.by(() => {
     void $specialists$;
     if (!tab.agentId) return null;
     const specialistId =
       agentSession?.metadata?.specialist || (agentSession as any)?.agentMetadata?.specialist;
     if (!specialistId) return null;
-    return selectSpecialistName.select(appStore.state, specialistId);
+    return selectSpecialistName.select(appStore.state, specialistId) ?? specialistId;
   });
 
   // Resolve "Delegated by" reactively once the parent session is loaded into Redux.
@@ -275,13 +277,22 @@
     disabled={isAgentDeleting}
     destructive
   />
-  {#if harnessVersion}
+  {#if agentSpecialistName || harnessVersion}
     <Menu.Separator />
-    <Menu.CommandItem
-      icon={faCircleInfo}
-      label={m.chat_agentCard_menu_harnessVersion_label({ version: harnessVersion })}
-      onclick={() => (harnessModalOpen = true)}
-    />
+    {#if agentSpecialistName}
+      <Menu.CommandItem
+        icon={faUserTie}
+        label={m.chat_agentCard_menu_specialist_label({ name: agentSpecialistName })}
+        disabled
+      />
+    {/if}
+    {#if harnessVersion}
+      <Menu.CommandItem
+        icon={faCircleInfo}
+        label={m.chat_agentCard_menu_harnessVersion_label({ version: harnessVersion })}
+        onclick={() => (harnessModalOpen = true)}
+      />
+    {/if}
   {/if}
 {/snippet}
 
