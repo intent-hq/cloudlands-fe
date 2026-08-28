@@ -122,6 +122,7 @@ vi.mock('../utils/resolve-app-title', () => ({
 }));
 
 import { _resetHudWindowRefForTests, isTrackedHudWindow } from '../hud-window';
+import { setMainWindow } from '../state';
 import {
   _resetWindowSessionsCacheForTests,
   captureWindowSessionsSnapshot,
@@ -135,8 +136,10 @@ import {
   getBackendIdForWebContents,
   getFocusedWindowBackendId,
   isBackendSwitchWindowTeardownInProgress,
+  listSavedSessionBackendIds,
   loadWindowSessions,
   openOrFocusWindowsForBackend,
+  restoreAllBackendWindowSessions,
   restoreWindowsForBackend,
   saveAllWindowSessions,
   saveWindowSessions,
@@ -681,6 +684,166 @@ describe('multi-backend window sessions', () => {
       expect(isBackendSwitchWindowTeardownInProgress()).toBe(false);
       clearBackendSwitchWindowTeardownGuard();
       expect(isBackendSwitchWindowTeardownInProgress()).toBe(false);
+    });
+  });
+
+  describe('boot restore of all backends (restoreAllBackendWindowSessions)', () => {
+    const bounds = { x: 100, y: 100, width: 1024, height: 768 };
+
+    beforeEach(() => {
+      vi.mocked(setMainWindow).mockClear();
+    });
+
+    it('restores every saved backend bucket, each window stamped with its backend id', async () => {
+      fs.writeFileSync(
+        getWindowSessionsPath(),
+        JSON.stringify({
+          local: [{ route: '/work/l', bounds }],
+          'remote-1': [{ route: '/work/r1', bounds }],
+          'remote-2': [
+            { route: '/work/r2a', bounds },
+            { route: '/work/r2b', bounds },
+          ],
+        }),
+        'utf-8',
+      );
+
+      const connect = vi.fn().mockResolvedValue({});
+      const restored = await restoreAllBackendWindowSessions('local', connect);
+
+      expect(restored).toBe(true);
+      const live = FakeBrowserWindow.getAllWindows();
+      expect(live).toHaveLength(4);
+      const byBackend = (id: string) => live.filter((w) => w.backendId === id);
+      expect(byBackend('local')).toHaveLength(1);
+      expect(byBackend('remote-1')).toHaveLength(1);
+      expect(byBackend('remote-2')).toHaveLength(2);
+    });
+
+    it('connects a pooled client for every non-active backend, never the active one', async () => {
+      fs.writeFileSync(
+        getWindowSessionsPath(),
+        JSON.stringify({
+          local: [{ route: '/work/l', bounds }],
+          'remote-1': [{ route: '/work/r1', bounds }],
+          'remote-2': [{ route: '/work/r2', bounds }],
+        }),
+        'utf-8',
+      );
+
+      const connect = vi.fn().mockResolvedValue({});
+      await restoreAllBackendWindowSessions('remote-1', connect);
+
+      expect(connect).toHaveBeenCalledTimes(2);
+      expect(connect).toHaveBeenCalledWith('local');
+      expect(connect).toHaveBeenCalledWith('remote-2');
+      expect(connect).not.toHaveBeenCalledWith('remote-1');
+    });
+
+    it("the active backend's first window restores first and becomes the main window", async () => {
+      fs.writeFileSync(
+        getWindowSessionsPath(),
+        JSON.stringify({
+          local: [{ route: '/work/l', bounds }],
+          'remote-1': [{ route: '/work/r1', bounds }],
+        }),
+        'utf-8',
+      );
+
+      await restoreAllBackendWindowSessions('remote-1', vi.fn().mockResolvedValue({}));
+
+      const live = FakeBrowserWindow.getAllWindows();
+      expect(live[0].backendId).toBe('remote-1');
+      expect(setMainWindow).toHaveBeenCalledTimes(1);
+      expect(setMainWindow).toHaveBeenCalledWith(live[0]);
+    });
+
+    it('skips a backend whose client cannot be built (fail-soft) but restores the rest', async () => {
+      fs.writeFileSync(
+        getWindowSessionsPath(),
+        JSON.stringify({
+          local: [{ route: '/work/l', bounds }],
+          'remote-forgotten': [{ route: '/work/gone', bounds }],
+          'remote-2': [{ route: '/work/r2', bounds }],
+        }),
+        'utf-8',
+      );
+
+      const connect = vi.fn((id: string) =>
+        id === 'remote-forgotten'
+          ? Promise.reject(new Error('Backend connection not found'))
+          : Promise.resolve({}),
+      );
+      const restored = await restoreAllBackendWindowSessions('local', connect);
+
+      expect(restored).toBe(true);
+      const live = FakeBrowserWindow.getAllWindows();
+      expect(live.map((w) => w.backendId).sort()).toEqual(['local', 'remote-2']);
+      expect(live.every((w) => !w.webContents.getURL().includes('/work/gone'))).toBe(true);
+    });
+
+    it('returns false and opens nothing when no backend has saved sessions', async () => {
+      const connect = vi.fn().mockResolvedValue({});
+      const restored = await restoreAllBackendWindowSessions('local', connect);
+
+      expect(restored).toBe(false);
+      expect(connect).not.toHaveBeenCalled();
+      expect(FakeBrowserWindow.getAllWindows()).toHaveLength(0);
+      expect(setMainWindow).not.toHaveBeenCalled();
+    });
+
+    it('does not restore a tombstoned backend whose last window was explicitly closed', async () => {
+      seedLiveWindow('app://workspaces/work/local', undefined, 'local');
+      const remote = seedLiveWindow('app://workspaces/work/closed', undefined, 'remote-1');
+      await saveAllWindowSessions();
+      captureWindowSessionsSnapshot.call(remote as never);
+      remote.destroy();
+
+      expect(listSavedSessionBackendIds()).toEqual(['local']);
+
+      FakeBrowserWindow.instances = [];
+      const connect = vi.fn().mockResolvedValue({});
+      const restored = await restoreAllBackendWindowSessions('local', connect);
+
+      expect(restored).toBe(true);
+      const live = FakeBrowserWindow.getAllWindows();
+      expect(live).toHaveLength(1);
+      expect(live[0].backendId).toBe('local');
+      expect(connect).not.toHaveBeenCalled();
+    });
+
+    it('restores a legacy top-level array as the local bucket', async () => {
+      fs.writeFileSync(
+        getWindowSessionsPath(),
+        JSON.stringify([{ route: '/work/legacy', bounds }]),
+        'utf-8',
+      );
+
+      const restored = await restoreAllBackendWindowSessions('local', vi.fn());
+
+      expect(restored).toBe(true);
+      const live = FakeBrowserWindow.getAllWindows();
+      expect(live).toHaveLength(1);
+      expect(live[0].backendId).toBe('local');
+      expect(live[0].webContents.getURL()).toContain('/work/legacy');
+    });
+
+    it('the active bucket still provides the main window when a non-active bucket also restores', async () => {
+      // Non-active buckets sort after the active one regardless of on-disk order.
+      fs.writeFileSync(
+        getWindowSessionsPath(),
+        JSON.stringify({
+          'remote-1': [{ route: '/work/r1', bounds }],
+          local: [{ route: '/work/l', bounds }],
+        }),
+        'utf-8',
+      );
+
+      await restoreAllBackendWindowSessions('local', vi.fn().mockResolvedValue({}));
+
+      const live = FakeBrowserWindow.getAllWindows();
+      expect(live[0].backendId).toBe('local');
+      expect(setMainWindow).toHaveBeenCalledWith(live[0]);
     });
   });
 

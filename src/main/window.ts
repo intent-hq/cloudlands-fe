@@ -669,6 +669,67 @@ export function restoreWindowsForBackend(toBackendId: string): void {
   }
 }
 
+/**
+ * Enumerate the backend ids that have a non-empty saved session bucket on
+ * disk, excluding backends whose final window was explicitly closed this
+ * session (tombstoned — see `closedBackendSessions`).
+ */
+export function listSavedSessionBackendIds(): string[] {
+  try {
+    return Object.entries(readSessionsMap())
+      .filter(([id, sessions]) => sessions.length > 0 && !closedBackendSessions.has(id))
+      .map(([id]) => id);
+  } catch (err) {
+    logger.warn('Failed to enumerate saved window session backends:', err);
+    return [];
+  }
+}
+
+/**
+ * Boot/dock-activate restore across EVERY backend that has a saved session
+ * bucket, not just the active one. The active backend restores first so its
+ * first window becomes the main window; each non-active backend gets a pooled
+ * client connected via `connectBackend` (injected — window.ts must not import
+ * backend.ipc) BEFORE its windows open, so restored windows resolve their own
+ * daemon. Fail-soft per bucket: a backend whose client config cannot even be
+ * built (forgotten remote, missing token) is skipped with a log, while an
+ * unreachable-but-buildable backend still restores — client construction does
+ * not await reachability, and the per-window stopped overlay shows until its
+ * client connects. Returns true when at least one window was restored.
+ */
+export async function restoreAllBackendWindowSessions(
+  activeBackendId: string,
+  connectBackend: (backendId: string) => Promise<unknown>,
+): Promise<boolean> {
+  const backendIds = listSavedSessionBackendIds();
+  // Stable sort: active bucket first, others keep their on-disk order.
+  backendIds.sort((a, b) => Number(b === activeBackendId) - Number(a === activeBackendId));
+  let restoredAny = false;
+  for (const backendId of backendIds) {
+    if (backendId !== activeBackendId) {
+      // The active backend's client already exists (lazy local default or the
+      // boot-reconciled primary); every other bucket needs its pool member.
+      try {
+        await connectBackend(backendId);
+      } catch (err) {
+        logger.warn('Skipping window restore for backend without a connectable client', {
+          backendId,
+          error: err instanceof Error ? err.message : String(err),
+        });
+        continue;
+      }
+    }
+    const sessions = loadWindowSessions(backendId);
+    if (!sessions || sessions.length === 0) continue;
+    logger.info('Restoring window sessions', { backendId, count: sessions.length });
+    for (let i = 0; i < sessions.length; i++) {
+      createWindowForSession(sessions[i], !restoredAny && i === 0, backendId);
+    }
+    restoredAny = true;
+  }
+  return restoredAny;
+}
+
 /** Focus a live window for a backend, or add that backend's saved/fresh windows. */
 export function openOrFocusWindowsForBackend(backendId: string): void {
   const existing = BrowserWindow.getAllWindows().find(
