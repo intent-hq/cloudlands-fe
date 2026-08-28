@@ -21,7 +21,10 @@ const { toastState } = (await import(/* @vite-ignore */ patchedModulePath)) as {
   toastState: PatchedToastState;
 };
 
-describe('svelte-sonner toast height indexing patch', () => {
+// Regression guard for the heights bookkeeping our local 1.1.1 patch used to
+// fix; since svelte-sonner 1.2.1 the fix is upstream (setHeight looks entries
+// up by toast id and keeps heights newest-first, matching the toasts order).
+describe('svelte-sonner toast height indexing (upstream since 1.2.1)', () => {
   beforeEach(() => toastState.reset());
   afterEach(() => toastState.reset());
 
@@ -36,11 +39,11 @@ describe('svelte-sonner toast height indexing patch', () => {
     ).not.toThrow();
     expect(toastState.heights).toEqual([{ toastId: 'first', height: 40 }]);
 
-    const measuredHeight = toastState.heights[0];
     toastState.setHeight({ toastId: 'first', height: 40 });
-    expect(toastState.heights[0]).toBe(measuredHeight);
+    expect(toastState.heights).toEqual([{ toastId: 'first', height: 40 }]);
 
     toastState.setHeight({ toastId: 'first', height: 48 });
+    expect(toastState.heights).toEqual([{ toastId: 'first', height: 48 }]);
     toastState.removeHeight('first');
 
     expect(toastState.heights).toEqual([]);
