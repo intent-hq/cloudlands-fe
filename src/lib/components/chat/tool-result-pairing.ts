@@ -11,6 +11,53 @@
 
 import type { ContentBlock } from '$shared/types';
 
+export interface ToolResultClassification {
+  resultsMap: Map<string, ContentBlock>;
+  standaloneResults: ReadonlySet<ContentBlock>;
+}
+
+function toolUseReferences(block: ContentBlock): string[] {
+  return [block.id, block.toolCallId].filter((ref): ref is string => Boolean(ref));
+}
+
+function toolResultReferences(block: ContentBlock): string[] {
+  return [block.tool_use_id, block.toolCallId].filter((ref): ref is string => Boolean(ref));
+}
+
+/**
+ * Classify every result in one rendered transcript message. A result is paired
+ * when any of its protocol identifiers references a visible sibling tool_use;
+ * every other result is standalone.
+ */
+export function classifyToolResults(blocks: readonly ContentBlock[]): ToolResultClassification {
+  const visibleToolUseReferences = new Set<string>();
+  const resultsMap = new Map<string, ContentBlock>();
+  const standaloneResults = new Set<ContentBlock>();
+
+  for (const block of blocks) {
+    if (block.type !== 'tool_use') continue;
+    for (const ref of toolUseReferences(block)) visibleToolUseReferences.add(ref);
+  }
+
+  for (const block of blocks) {
+    if (block.type !== 'tool_result') continue;
+    const references = toolResultReferences(block);
+    for (const ref of references) resultsMap.set(ref, block);
+    if (!references.some((ref) => visibleToolUseReferences.has(ref))) {
+      standaloneResults.add(block);
+    }
+  }
+
+  return { resultsMap, standaloneResults };
+}
+
+export function isStandaloneToolResult(
+  classification: ToolResultClassification,
+  block: ContentBlock,
+): boolean {
+  return block.type === 'tool_result' && classification.standaloneResults.has(block);
+}
+
 /**
  * Build a lookup map from tool_use identifiers to their tool_result blocks.
  *
@@ -19,17 +66,8 @@ import type { ContentBlock } from '$shared/types';
  * `tool_use.id` or `tool_use.toolCallId` resolves. Results without an id
  * reference stay unpaired; there is no position-based attribution.
  */
-export function buildToolResultsMap(blocks: ContentBlock[]): Map<string, ContentBlock> {
-  const map = new Map<string, ContentBlock>();
-
-  for (const block of blocks) {
-    if (block.type !== 'tool_result') continue;
-    for (const ref of [block.tool_use_id, block.toolCallId]) {
-      if (ref) map.set(ref, block);
-    }
-  }
-
-  return map;
+export function buildToolResultsMap(blocks: readonly ContentBlock[]): Map<string, ContentBlock> {
+  return classifyToolResults(blocks).resultsMap;
 }
 
 /**

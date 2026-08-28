@@ -11,10 +11,12 @@ import { describe, it, expect } from 'vitest';
 import type { ContentBlock } from '$shared/types';
 import {
   buildToolResultsMap,
+  classifyToolResults,
   extractPayloadText,
   findToolResult,
   getToolResultPayload,
   getToolResultText,
+  isStandaloneToolResult,
 } from '../tool-result-pairing';
 
 /** Daemon-shaped tool_use block (PROTOCOL §7.1). */
@@ -99,6 +101,37 @@ describe('buildToolResultsMap / findToolResult — §7.1 pairing', () => {
     const map = buildToolResultsMap([use, orphan]);
 
     expect(findToolResult(map, use)).toBeUndefined();
+  });
+});
+
+describe('classifyToolResults — transcript visibility', () => {
+  it('classifies protocol-paired results as attached and unmatched results as standalone', () => {
+    const use = toolUse('msg_1:0', 'tc_1');
+    const paired = toolResult('msg_1:1', 'tc_1', 'paired');
+    const legacyPaired = toolResult('msg_1:2', 'msg_1:0', 'legacy paired');
+    const orphan = toolResult('msg_1:3', 'missing', 'orphan');
+    const classification = classifyToolResults([use, paired, legacyPaired, orphan]);
+
+    expect(isStandaloneToolResult(classification, paired)).toBe(false);
+    expect(isStandaloneToolResult(classification, legacyPaired)).toBe(false);
+    expect(isStandaloneToolResult(classification, orphan)).toBe(true);
+  });
+
+  it('keeps duplicate paired results out of standalone rows and attaches the latest once', () => {
+    const use = toolUse('msg_1:0', 'tc_1');
+    const first = toolResult('msg_1:1', 'tc_1', 'first');
+    const latest = toolResult('msg_1:2', 'tc_1', 'latest');
+    const classification = classifyToolResults([use, first, latest]);
+
+    expect(classification.standaloneResults.size).toBe(0);
+    expect(findToolResult(classification.resultsMap, use)).toBe(latest);
+  });
+
+  it('classifies a result with no reference as standalone', () => {
+    const result = { type: 'tool_result', id: 'msg_1:0', output: 'orphan' } as ContentBlock;
+    const classification = classifyToolResults([result]);
+
+    expect(isStandaloneToolResult(classification, result)).toBe(true);
   });
 });
 

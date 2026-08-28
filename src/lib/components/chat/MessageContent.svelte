@@ -6,10 +6,11 @@
     normalizeAgentVideoContentBlocks,
   } from '$shared/types';
   import {
-    buildToolResultsMap,
+    classifyToolResults,
     findToolResult,
     getToolResultPayload,
     getToolResultText,
+    isStandaloneToolResult,
   } from './tool-result-pairing';
   import { isHydrationPending, mergeHydratedContent } from './block-hydration';
   import { messageBlockHydrationRequested } from '$store/renderer/slices/chat-state/chat-state-slice';
@@ -187,14 +188,12 @@
     normalizeResponseGroups(groupContentBlocks(blocks, isStreaming), isStreaming),
   );
 
-  function isVisibleOperationalBlock(block: RenderContentBlock): boolean {
+  function isVisibleGroupChild(block: RenderContentBlock): boolean {
     return block.type !== 'tool_result';
   }
 
-  // Build a map of tool results from tool_result blocks, paired by
-  // toolCallId ↔ tool_use_id per PROTOCOL.md §7.1, with position-based
-  // fallback for error results with empty tool_use_id
-  const toolResultsMap = $derived.by(() => buildToolResultsMap(blocks));
+  const toolResultClassification = $derived.by(() => classifyToolResults(blocks));
+  const toolResultsMap = $derived(toolResultClassification.resultsMap);
 
   // Compute tool states based on results
   const toolStates = $derived.by(() => {
@@ -403,7 +402,10 @@
       return Boolean((contentBlock.data || contentBlock.dataTruncated) && contentBlock.mimeType);
     }
     if (contentBlock.type === 'video') return Boolean(contentBlock.source);
-    return ['tool_use', 'tool_result', 'thinking'].includes(contentBlock.type);
+    if (contentBlock.type === 'tool_result') {
+      return isStandaloneToolResult(toolResultClassification, contentBlock);
+    }
+    return contentBlock.type === 'tool_use' || contentBlock.type === 'thinking';
   }
 
   const lastVisibleTopLevelBlockIndex = $derived.by(() => {
@@ -586,7 +588,7 @@
         {messageId}
       />
     </div>
-  {:else if block.type === 'tool_result'}
+  {:else if block.type === 'tool_result' && isStandaloneToolResult(toolResultClassification, block)}
     {@const resultPayload = getToolResultPayload(block)}
     <div class="border border-border rounded-md" in:fly={{ y: 10, duration: 200 }}>
       <div class="px-3 py-2 bg-muted/50 border-b border-border">
@@ -670,7 +672,7 @@
         : getOperationalClusterSpacingClass(
             group.children,
             childIndex,
-            isVisibleOperationalBlock,
+            isVisibleGroupChild,
             group.isReasoningPhase,
           )
     } ${
@@ -690,7 +692,7 @@
       `${groupIndex}-${childIndex}`,
       groupIndex,
       true,
-      isAdjacentOperationalClusterRow(group.children, childIndex, isVisibleOperationalBlock),
+      isAdjacentOperationalClusterRow(group.children, childIndex, isVisibleGroupChild),
       group.isReasoningPhase,
     )}
   </div>
@@ -723,7 +725,7 @@
           class={getOperationalClusterSpacingClass(
             groupedBlocks,
             blockIndex,
-            isVisibleOperationalBlock,
+            isVisibleTopLevelBlock,
           )}
           data-operational-cluster-row={block.type}
           data-message-content-block={block.type}
@@ -741,7 +743,7 @@
             adjacentOperationalRow={isAdjacentOperationalClusterRow(
               groupedBlocks,
               blockIndex,
-              isVisibleOperationalBlock,
+              isVisibleTopLevelBlock,
             )}
           >
             {#snippet children()}
@@ -754,13 +756,9 @@
           </ResponseGroup>
         </div>
       {/if}
-    {:else}
+    {:else if block.type !== 'tool_result' || isStandaloneToolResult(toolResultClassification, block)}
       <div
-        class={getOperationalClusterSpacingClass(
-          groupedBlocks,
-          blockIndex,
-          isVisibleOperationalBlock,
-        )}
+        class={getOperationalClusterSpacingClass(groupedBlocks, blockIndex, isVisibleTopLevelBlock)}
         data-operational-cluster-row={isOperationalClusterBlock(block) ? block.type : undefined}
         data-message-content-block={block.type}
         data-chat-search-block-path={block.type === 'text'
@@ -772,7 +770,7 @@
           String(blockIndex),
           blockIndex,
           false,
-          isAdjacentOperationalClusterRow(groupedBlocks, blockIndex, isVisibleOperationalBlock),
+          isAdjacentOperationalClusterRow(groupedBlocks, blockIndex, isVisibleTopLevelBlock),
         )}
       </div>
     {/if}

@@ -2,7 +2,6 @@
   import type {
     ContentBlock,
     ToolUseBlock,
-    ToolResultBlock,
     Proposal,
     MessageRole,
   } from '$shared/types';
@@ -12,10 +11,11 @@
     normalizeAgentVideoContentBlocks,
   } from '$shared/types';
   import {
-    buildToolResultsMap,
+    classifyToolResults,
     findToolResult,
     getToolResultPayload,
     getToolResultText,
+    isStandaloneToolResult,
   } from './tool-result-pairing';
   import { isHydrationPending, mergeHydratedContent } from './block-hydration';
   import { messageBlockHydrationRequested } from '$store/renderer/slices/chat-state/chat-state-slice';
@@ -221,7 +221,7 @@
     let filtered: ContentBlock[];
     if (!isStreaming) {
       // Not streaming - do full processing
-      // Filter out malformed tool_result blocks, empty text blocks, and optionally tool_use blocks
+      // Filter empty text blocks and optionally hide tool activity.
       filtered = rawBlocks.filter((block) => {
         // Filter out tool_use blocks if hideToolCalls is true
         if (hideToolCalls && block.type === 'tool_use') {
@@ -238,21 +238,7 @@
           }
         }
 
-        if (block.type === 'tool_result') {
-          // Also hide tool_result blocks if hideToolCalls is true
-          if (hideToolCalls) {
-            return false;
-          }
-
-          const resultBlock = block as ToolResultBlock;
-          if (typeof resultBlock.output === 'string') {
-            const contentStr = resultBlock.output;
-            // i18n-ignore (wire-content sniffing of tool result payloads, not rendered)
-            if (contentStr.includes('\u001b[') || contentStr.includes('🔧 Tool call:')) {
-              return false;
-            }
-          }
-        }
+        if (hideToolCalls && block.type === 'tool_result') return false;
         return true;
       });
     } else {
@@ -301,13 +287,8 @@
   // Track tool states
   let toolStates = $state<Map<string, 'running' | 'completed' | 'error'>>(new Map());
 
-  // Tool results paired by toolCallId ↔ tool_use_id per PROTOCOL.md §7.1,
-  // with position-based fallback for error results with empty tool_use_id.
-  // tool_use blocks carry both an addressable `id` (messageId:blockIndex) and
-  // a provider `toolCallId`; tool_result references the call via `tool_use_id`
-  // (canonically the toolCallId). Indexing under both keys lets lookup by
-  // tool_use.id and tool_use.toolCallId both resolve.
-  let toolResultsMap = $derived.by(() => buildToolResultsMap(blocks));
+  let toolResultClassification = $derived.by(() => classifyToolResults(blocks));
+  let toolResultsMap = $derived(toolResultClassification.resultsMap);
 
   // Update tool states based on content
   $effect(() => {
@@ -597,6 +578,9 @@
       return Boolean((contentBlock.data || contentBlock.dataTruncated) && contentBlock.mimeType);
     }
     if (contentBlock.type === 'video') return Boolean(contentBlock.source);
+    if (contentBlock.type === 'tool_result') {
+      return isStandaloneToolResult(toolResultClassification, contentBlock);
+    }
     return contentBlock.type === 'tool_use' || contentBlock.type === 'thinking';
   }
 
@@ -828,9 +812,56 @@
         {/each}
       {/if}
     </div>
-  {:else if block.type === 'tool_result'}
-    <!-- Tool results are handled by associating them with their tool_use blocks -->
-    <!-- We don't render them separately as they're shown within the ToolCall component -->
+  {:else if block.type === 'tool_result' && isStandaloneToolResult(toolResultClassification, block)}
+    {@const resultPayload = getToolResultPayload(block)}
+    <div class="border border-border rounded-md">
+      <div class="px-3 py-2 bg-muted/50 border-b border-border">
+        <span class="type-caption text-subtle">{m.chat_messageContent_toolResult_label()}</span>
+      </div>
+      <div class="p-3">
+        {#if typeof resultPayload === 'string'}
+          <CodeBlock code={resultPayload} />
+        {:else if Array.isArray(resultPayload)}
+          {#each resultPayload as any[] as nestedBlock, nestedIndex (`nested-${parsedKey}-${nestedIndex}-${nestedBlock.id ?? nestedBlock.type}`)}
+            {#if nestedBlock.type === 'text' && nestedBlock.text}
+              <div class="w-full">
+                <MarkdownViewer
+                  content={nestedBlock.text}
+                  {workspaceId}
+                  taskBlockRenderMode="content"
+                  onFileClick={(path, options) => handleOpenFile({ path, ...options })}
+                />
+              </div>
+            {:else if nestedBlock.type === 'image' && nestedBlock.data && nestedBlock.mimeType}
+              <ChatImageBlock
+                data={nestedBlock.data}
+                mimeType={nestedBlock.mimeType}
+                alt={m.chat_messageContent_toolResultImage_alt()}
+              />
+            {:else if nestedBlock.type === 'video' && nestedBlock.source}
+              <ChatVideoBlock
+                source={nestedBlock.source}
+                name={nestedBlock.fileName}
+                poster={typeof nestedBlock.metadata?.poster === 'string'
+                  ? nestedBlock.metadata.poster
+                  : undefined}
+              />
+            {:else if nestedBlock.type === 'tool_use'}
+              {@const nestedToolBlock = nestedBlock as ToolUseBlock}
+              {@const nestedToolResult = findToolResult(toolResultsMap, nestedToolBlock)}
+              {@const nestedToolState = toolStates.get(nestedToolBlock.id) || 'completed'}
+              {@const nestedResultContent = getToolResultPayload(nestedToolResult)}
+              <ToolCall
+                toolUse={nestedToolBlock}
+                toolState={nestedToolState}
+                result={nestedResultContent}
+                {workspaceId}
+              />
+            {/if}
+          {/each}
+        {/if}
+      </div>
+    </div>
   {:else if block.type === 'thinking'}
     <!-- Daemon-emitted thinking blocks carry `text` (PROTOCOL §7.1); the legacy
          <think>-tag parser path in messageParser emits `content`. -->
@@ -973,7 +1004,7 @@
           </ResponseGroup>
         </div>
       {/if}
-    {:else if isNavLinkBlock(block as ContentBlock) || ['text', 'tool_use', 'thinking', 'image', 'video'].includes(block.type)}
+    {:else if isVisibleTopLevelBlock(block)}
       <div
         class="content-block content-block--{isNavLinkBlock(block as ContentBlock)
           ? 'nav-link'
