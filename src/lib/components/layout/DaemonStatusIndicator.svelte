@@ -1,6 +1,5 @@
 <script lang="ts" module>
   import { formatNumber } from '$lib/i18n/format';
-  import { compareToPinnedVersion } from '$shared/intentd-version-compare';
 
   /**
    * Format raw sysinfo CPU percent (may exceed 100% on multi-core hosts)
@@ -85,23 +84,6 @@
     const configuredName = label && label !== address ? label : '';
     return configuredName || conn.hostname?.trim() || label || address;
   }
-
-  /**
-   * Visibility predicate for the connections-submenu Update action: only a
-   * remote row with a live connection whose captured daemon version compares
-   * semver-`older` than the app's pinned intentd version shows it. Local,
-   * disconnected, ahead/equal, and unknown/unparsable versions render nothing.
-   */
-  export function shouldShowUpdateAction(
-    conn: { id: string; isLocal: boolean; daemonVersion?: string | null },
-    connectedIds: readonly string[] | undefined,
-    pinnedVersion: string | null | undefined,
-  ): boolean {
-    if (conn.isLocal) return false;
-    if (!conn.daemonVersion || !pinnedVersion) return false;
-    if (!connectedIds?.includes(conn.id)) return false;
-    return compareToPinnedVersion(conn.daemonVersion, pinnedVersion) === 'older';
-  }
 </script>
 
 <script lang="ts">
@@ -140,14 +122,11 @@
   } from '$store/renderer/slices/daemon-health/daemon-health-slice';
   import {
     selectConnections,
-    selectConnectedIds,
     selectCurrentConnectionId,
     selectCurrentConnection,
     selectConnectionCertMismatch,
     selectActiveProtocolMismatch,
     selectProtocolMismatchModal,
-    selectKeychainSyncState,
-    selectPinnedDaemonVersion,
   } from '$store/renderer/slices/connections/connections-selectors';
   import {
     certMismatchCleared,
@@ -156,11 +135,8 @@
   import {
     openConnectionRequested,
     forgetConnectionRequested,
-    loadKeychainSyncStateRequested,
-    updateBackendRequested,
   } from '$store/renderer/slices/connections/connections-slice';
   import { LOCAL_CONNECTION_ID } from '$shared/types/connections';
-  import type { ConnectionRecord } from '$shared/types/connections';
   import {
     CONNECTION_ACCENT_CLASSES,
     resolveConnectionAccent,
@@ -176,20 +152,15 @@
   const unslothStatus$ = selectUnslothStatus();
   const unslothStopping$ = selectUnslothStopping();
   const connections$ = selectConnections();
-  const connectedIds$ = selectConnectedIds();
-  const pinnedDaemonVersion$ = selectPinnedDaemonVersion();
   const currentConnectionId$ = selectCurrentConnectionId();
   const currentConnection$ = selectCurrentConnection();
   const certMismatch$ = selectConnectionCertMismatch();
   const activeProtocolMismatch$ = selectActiveProtocolMismatch();
   const protocolMismatchModal$ = selectProtocolMismatchModal();
-  const keychainSyncState$ = selectKeychainSyncState();
 
   let dropdownOpen = $state(false);
   let liveUptimeSeconds = $state<number | undefined>(undefined);
   let stopUnslothDialogOpen = $state(false);
-  let forgetDialogOpen = $state(false);
-  let forgetDialogTarget = $state<{ id: string; label: string } | null>(null);
 
   // Color mapping for health states
   const healthColors: Record<DaemonHealth, string> = {
@@ -245,6 +216,17 @@
     $health$ === 'healthy' && versionMismatch
       ? m.layout_daemonStatus_healthyVersionMismatch_label()
       : healthLabels[$health$](),
+  );
+
+  const detailsStatusLabel = $derived(
+    m.layout_daemonStatus_statusSummary_label({
+      status:
+        $health$ === 'healthy'
+          ? m.layout_daemonStatus_healthyState_label()
+          : $health$ === 'degraded'
+            ? m.layout_daemonStatus_degradedState_label()
+            : m.layout_daemonStatus_notRunning_label(),
+    }),
   );
 
   const versionMismatchTooltip = $derived.by(() => {
@@ -392,64 +374,6 @@
     }
   }
 
-  async function handleForgetConnection(id: string) {
-    try {
-      const action = forgetConnectionRequested(id);
-      appStore.dispatch(action);
-      await action.promise;
-    } catch {
-      // Refresh + any error surface via the connections service; no-op here.
-    }
-  }
-
-  async function handleUpdateConnection(id: string) {
-    dropdownOpen = false;
-    try {
-      const action = updateBackendRequested(id);
-      appStore.dispatch(action);
-      await action.promise;
-    } catch {
-      // Outcomes (success and every failure mode) surface as saga-owned
-      // toasts; nothing more to do here.
-    }
-  }
-
-  // --- Forget confirmation dialog -----------------------------------------
-
-  /**
-   * Forget is destructive (and, with iCloud sync on, propagates to every
-   * synced device), so it confirms first. Opening the dialog also refreshes
-   * the keychain-sync state so the synced-devices sentence gates on the
-   * current supported+enabled values.
-   */
-  function requestForgetConnection(conn: ConnectionRecord) {
-    dropdownOpen = false;
-    forgetDialogTarget = { id: conn.id, label: formatConnectionLabel(conn) };
-    forgetDialogOpen = true;
-    const action = loadKeychainSyncStateRequested();
-    appStore.dispatch(action);
-    action.promise.catch(() => {
-      // Unloadable sync state → the dialog shows the plain confirmation.
-    });
-  }
-
-  function confirmForgetConnection() {
-    if (forgetDialogTarget) void handleForgetConnection(forgetDialogTarget.id);
-  }
-
-  // Base sentence naming the connection, plus the synced-devices notice only
-  // when keychain sync is supported AND enabled on this machine.
-  const forgetDialogDescription = $derived.by(() => {
-    if (!forgetDialogTarget) return '';
-    const base = m.layout_daemonStatus_forgetConfirm_description({
-      name: forgetDialogTarget.label,
-    });
-    const sync = $keychainSyncState$;
-    return sync?.supported && sync.enabled
-      ? `${base} ${m.layout_daemonStatus_forgetConfirmSynced_description()}`
-      : base;
-  });
-
   // --- Cert-mismatch modal actions ---------------------------------------
 
   function dismissCertMismatch() {
@@ -536,7 +460,7 @@
     <div class="min-w-56 w-max max-w-80">
       <Menu.Sub>
         <Menu.SubTrigger class="w-full cursor-pointer text-xs px-3 py-1.5">
-          {m.layout_daemonStatus_details_action()}
+          {detailsStatusLabel}
         </Menu.SubTrigger>
         <Menu.SubContent side="left" align="start" class="min-w-56 w-max max-w-80 px-0">
           <Header class="px-3 pt-1.5 pb-1" size={6}>{m.layout_daemonStatus_header()}</Header>
@@ -854,108 +778,71 @@
         </Menu.SubContent>
       </Menu.Sub>
 
-      <!-- Multi-backend connections list (Open/Forget) + final Devices CTA -->
+      <!-- Multi-backend devices list + final Devices CTA -->
       <div class="h-px bg-border my-1"></div>
       <div class="px-1 pb-1">
         {#if $connections$.length > 0}
           <Header class="px-2 pt-1.5 pb-0.5" size={6}
-            >{m.layout_daemonStatus_connections_header()}</Header
+            >{m.layout_daemonStatus_devices_header()}</Header
           >
           {#each $connections$ as conn (conn.id)}
             {@const isCurrent = conn.id === $currentConnectionId$}
             {@const accent = resolveConnectionAccent(conn.accent)}
-            <!--
-              Each connection row is a real submenu (Menu.Sub), so Open/Forget
-              pop out as a side flyout that opens on hover/click with bits-ui's
-              pointer-grace (it stays open while the pointer travels into it).
-              The flyout portals to body so the parent menu's overflow scroll
-              cannot clip it; side="left" because this menu sits at the
-              top-right of the title bar.
-            -->
-            <Menu.Sub>
-              <Menu.SubTrigger class="w-full cursor-pointer text-xs px-2 py-1.5">
-                {#if !conn.isLocal && accent !== null}
-                  <span
-                    class={cn(
-                      'size-2.5 shrink-0 rounded-full ring-1 ring-background',
-                      CONNECTION_ACCENT_CLASSES[accent],
-                    )}
-                    aria-hidden="true"
-                    data-connection-accent={accent}
-                  ></span>
-                {/if}
-                <span class="min-w-0 flex-1 truncate">
-                  {conn.isLocal
-                    ? m.layout_daemonStatus_localConnection_label()
-                    : formatConnectionLabel(conn)}
-                </span>
-                <span class="flex items-center gap-1.5 shrink-0">
-                  {#if $activeProtocolMismatch$?.id === conn.id}
-                    <Tooltip side="left" contentClass="z-[10001]">
-                      {#snippet content()}
-                        <span>{m.layout_daemonStatus_protocolMismatch_tooltip()}</span>
-                      {/snippet}
-                      <!--
+            <Menu.Item
+              class="w-full cursor-pointer text-xs px-2 py-1.5"
+              onSelect={() => handleOpenConnection(conn.id)}
+            >
+              {#if !conn.isLocal && accent !== null}
+                <span
+                  class={cn(
+                    'size-2.5 shrink-0 rounded-full ring-1 ring-background',
+                    CONNECTION_ACCENT_CLASSES[accent],
+                  )}
+                  aria-hidden="true"
+                  data-connection-accent={accent}
+                ></span>
+              {/if}
+              <span class="min-w-0 flex-1 truncate">
+                {conn.isLocal
+                  ? m.layout_daemonStatus_localConnection_label()
+                  : formatConnectionLabel(conn)}
+              </span>
+              <span class="flex items-center gap-1.5 shrink-0">
+                {#if $activeProtocolMismatch$?.id === conn.id}
+                  <Tooltip side="left" contentClass="z-[10001]">
+                    {#snippet content()}
+                      <span>{m.layout_daemonStatus_protocolMismatch_tooltip()}</span>
+                    {/snippet}
+                    <!--
                         Same aria-only pattern as the Version-row warning icon:
                         the full explanation is the icon's accessible name, and
-                        it flows into this submenu trigger's name-from-contents
+                        it flows into this menu item's name-from-contents
                         so arrow-key navigation announces it with the row.
                       -->
-                      <span
-                        class="text-yellow-600 dark:text-yellow-500"
-                        role="img"
-                        aria-label={m.layout_daemonStatus_protocolMismatch_tooltip()}
-                      >
-                        <Fa icon={faTriangleExclamation} />
-                      </span>
-                    </Tooltip>
-                  {/if}
-                  {#if isCurrent}
-                    <!--
+                    <span
+                      class="text-yellow-600 dark:text-yellow-500"
+                      role="img"
+                      aria-label={m.layout_daemonStatus_protocolMismatch_tooltip()}
+                    >
+                      <Fa icon={faTriangleExclamation} />
+                    </span>
+                  </Tooltip>
+                {/if}
+                {#if isCurrent}
+                  <!--
                       role="img" so the span's aria-label reliably maps to an
                       accessible name (same treatment as the warning icons).
                     -->
-                    <span
-                      class="text-green-500"
-                      role="img"
-                      aria-label={m.layout_daemonStatus_connectionActive_label()}
-                    >
-                      <Fa icon={faCheck} />
-                    </span>
-                  {/if}
-                </span>
-              </Menu.SubTrigger>
-              <Menu.SubContent side="left" align="start" class="min-w-28">
-                <Menu.Item
-                  class="cursor-pointer text-xs"
-                  onSelect={() => handleOpenConnection(conn.id)}
-                >
-                  {m.layout_daemonStatus_open_action()}
-                </Menu.Item>
-                {#if shouldShowUpdateAction(conn, $connectedIds$, $pinnedDaemonVersion$)}
-                  {@const updateTooltip = m.layout_daemonStatus_update_tooltip({
-                    daemonVersion: stripLeadingV(conn.daemonVersion ?? ''),
-                    pinnedVersion: stripLeadingV($pinnedDaemonVersion$ ?? ''),
-                  })}
-                  <Menu.Item
-                    class="cursor-pointer text-xs"
-                    title={updateTooltip}
-                    aria-label={updateTooltip}
-                    onSelect={() => handleUpdateConnection(conn.id)}
+                  <span
+                    class="text-green-500"
+                    role="img"
+                    aria-label={m.layout_daemonStatus_connectionActive_label()}
                   >
-                    {m.layout_daemonStatus_update_action()}
-                  </Menu.Item>
+                    <Fa icon={faCheck} />
+                  </span>
                 {/if}
-                {#if !conn.isLocal}
-                  <Menu.Item
-                    class="cursor-pointer text-xs text-error-foreground data-[highlighted]:text-error-foreground"
-                    onSelect={() => requestForgetConnection(conn)}
-                  >
-                    {m.layout_daemonStatus_forget_action()}
-                  </Menu.Item>
-                {/if}
-              </Menu.SubContent>
-            </Menu.Sub>
+              </span>
+            </Menu.Item>
           {/each}
         {/if}
         <button
@@ -981,18 +868,6 @@
     confirmText={m.layout_daemonStatus_stopUnsloth_confirm_label()}
     variant="destructive"
     onConfirm={confirmStopUnsloth}
-  />
-{/if}
-
-<!-- Forget-connection confirmation (same canonical body portal). -->
-{#if forgetDialogOpen && forgetDialogTarget}
-  <BulkActionConfirmDialog
-    bind:open={forgetDialogOpen}
-    title={m.layout_daemonStatus_forgetConfirm_title()}
-    description={forgetDialogDescription}
-    confirmText={m.layout_daemonStatus_forgetConfirm_confirm_label()}
-    variant="destructive"
-    onConfirm={confirmForgetConnection}
   />
 {/if}
 
