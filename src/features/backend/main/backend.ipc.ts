@@ -333,6 +333,20 @@ let protocolMismatchOrigin: 'boot' | 'switch' = 'switch';
 const authRejectedById = new Map<string, ConnectionAuthRejectedEvent>();
 
 /**
+ * Sticky cert-mismatch per backend connection id (no entry when that backend's
+ * pinned cert matches or it is local). Persisted here in main and replayed on
+ * {@link listConnections} so a renderer/window created AFTER the one-shot
+ * `connections:cert-mismatch` broadcast fired still surfaces the blocking
+ * trust warning — exactly the {@link authRejectedById} pattern. Critical for
+ * the boot-wide restore: pooled clients start before any of their windows
+ * exist, so a changed cert detected then would otherwise never be seen. An
+ * id's entry is cleared whenever a fresh client for that id is constructed
+ * (a re-pair or switch builds a new client whose own connect re-detects a
+ * still-changed cert).
+ */
+const certMismatchById = new Map<string, ConnectionCertMismatchEvent>();
+
+/**
  * Sticky boot-time backend-restore fallback notice (T19), or `null`. Set by
  * {@link reconcileActiveConnectionOnBoot} when a persisted remote `activeId` was
  * unreachable at boot and the FE fell back to local. Replayed on
@@ -470,6 +484,7 @@ export function __resetBackendProtocolStateForTesting(): void {
   activeConnectionMeta = null;
   bootFallbackNotice = null;
   authRejectedById.clear();
+  certMismatchById.clear();
 }
 /** @internal Test seam: read the latched auth-rejection for the active backend. */
 export function __getActiveAuthRejectedForTesting(): ConnectionAuthRejectedEvent | null {
@@ -535,6 +550,7 @@ function clearBackendFailureState(id: string): void {
   protocolMismatchNotifiedIds.delete(id);
   protocolMismatchById.delete(id);
   authRejectedById.delete(id);
+  certMismatchById.delete(id);
 }
 
 /** Lazily create, wire, and start the shared main-process JSON-RPC client. */
@@ -687,8 +703,15 @@ export function getBackendClient(): JsonRpcClient {
           expectedFingerprint: error.expected,
           actualFingerprint: error.actual,
         };
+        // Latch BEFORE broadcasting so a renderer that fetches
+        // `connections:list` between the broadcast and its own listener
+        // registration still replays it (same ordering as the sticky
+        // auth rejection).
+        certMismatchById.set(meta.id, payload);
         // Scoped to the failing backend's windows — a global broadcast would
         // surface this modal in windows bound to OTHER pooled backends.
+        // Windows created later (e.g. the boot-wide restore connects pooled
+        // clients before their windows exist) replay it from the latch.
         broadcast(CONNECTIONS.CERT_MISMATCH, payload, meta.id);
       }
       logger.warn('Backend certificate fingerprint mismatch', {
@@ -933,6 +956,11 @@ function createAdditionalBackendClient(id: string, config: BackendConnectionConf
           expectedFingerprint: error.expected,
           actualFingerprint: error.actual,
         };
+        // Latch BEFORE broadcasting (same ordering as the primary). The boot
+        // restore starts pooled clients before their windows exist, so the
+        // one-shot broadcast alone can fire into zero windows; the latch is
+        // replayed on each window's initial `connections:list` fetch.
+        certMismatchById.set(meta.id, payload);
         broadcast(CONNECTIONS.CERT_MISMATCH, payload, meta.id);
       }
       logger.warn('Backend pool certificate fingerprint mismatch', { id, host: meta?.host });
@@ -1610,6 +1638,7 @@ async function listConnections(
     windowBackendId,
     protocolMismatch: protocolMismatchById.get(windowBackendId) ?? null,
     authRejected: authRejectedById.get(windowBackendId) ?? null,
+    certMismatch: certMismatchById.get(windowBackendId) ?? null,
   };
 }
 
@@ -1626,6 +1655,7 @@ async function broadcastConnectionsChanged(): Promise<void> {
       windowBackendId,
       protocolMismatch: protocolMismatchById.get(windowBackendId) ?? null,
       authRejected: authRejectedById.get(windowBackendId) ?? null,
+      certMismatch: certMismatchById.get(windowBackendId) ?? null,
     };
     try {
       win.webContents.send(CONNECTIONS.CHANGED, windowPayload);

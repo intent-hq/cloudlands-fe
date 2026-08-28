@@ -181,6 +181,36 @@ describe('connectionsSaga', () => {
     await run.task.toPromise();
   });
 
+  it('replays a sticky cert mismatch from the initial list fetch', async () => {
+    // Boot-wide restore: the pooled client's mismatch fired before this window
+    // existed, so the one-shot push was lost — the initial list replays it and
+    // the blocking trust modal still shows.
+    const certMismatch = {
+      id: 'remote-1',
+      host: '10.0.0.5',
+      port: 8443,
+      expectedFingerprint: 'AA:BB',
+      actualFingerprint: 'EE:FF',
+    };
+    invoke.mockImplementation(async (channel: string) =>
+      channel === CONNECTION_CHANNELS.LIST
+        ? {
+            connections: [LOCAL, REMOTE],
+            activeId: REMOTE.id,
+            windowBackendId: REMOTE.id,
+            certMismatch,
+          }
+        : { fingerprint: 'AB:CD' },
+    );
+    const run = start();
+    await settle();
+
+    expect(run.getState().connections.certMismatch).toEqual(certMismatch);
+
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
   it('sends exact command payloads and settles each awaitable action with contract responses', async () => {
     const run = start();
     await settle();

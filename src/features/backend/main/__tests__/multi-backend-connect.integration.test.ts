@@ -243,7 +243,11 @@ beforeEach(async () => {
   electronState.handlers = new Map();
   vi.resetModules();
   vi.clearAllMocks();
-  mockCaptureFingerprint.mockResolvedValue({ ok: true, fingerprint: FINGERPRINT, tokenValid: true });
+  mockCaptureFingerprint.mockResolvedValue({
+    ok: true,
+    fingerprint: FINGERPRINT,
+    tokenValid: true,
+  });
 });
 
 afterEach(async () => {
@@ -301,6 +305,7 @@ describe('multi-backend connect — end-to-end journey', () => {
       windowBackendId: 'local',
       protocolMismatch: null,
       authRejected: null,
+      certMismatch: null,
     });
 
     // Trust-on-first-use: capture the remote's presented fingerprint.
@@ -384,8 +389,22 @@ describe('multi-backend connect — end-to-end journey', () => {
       path.join(tmpDir, 'backend-connections.json'),
       JSON.stringify({
         connections: [
-          { id: 'dup-1', label: 'Old pairing', host: REMOTE_INPUT.host, port: REMOTE_INPUT.port, fingerprint: 'OLD:FP', encToken: { encrypted: false, value: 'stale-token' } },
-          { id: 'dup-2', label: 'Active pairing', host: REMOTE_INPUT.host, port: REMOTE_INPUT.port, fingerprint: 'OLD:FP', encToken: { encrypted: false, value: 'stale-token' } },
+          {
+            id: 'dup-1',
+            label: 'Old pairing',
+            host: REMOTE_INPUT.host,
+            port: REMOTE_INPUT.port,
+            fingerprint: 'OLD:FP',
+            encToken: { encrypted: false, value: 'stale-token' },
+          },
+          {
+            id: 'dup-2',
+            label: 'Active pairing',
+            host: REMOTE_INPUT.host,
+            port: REMOTE_INPUT.port,
+            fingerprint: 'OLD:FP',
+            encToken: { encrypted: false, value: 'stale-token' },
+          },
         ],
         activeId: 'dup-2',
       }),

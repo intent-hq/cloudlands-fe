@@ -124,6 +124,14 @@ export interface ConnectionsListResult {
    * auth is good (or it is local).
    */
   authRejected?: ConnectionAuthRejectedEvent | null;
+  /**
+   * Sticky cert mismatch for this window's backend, replayed here so a
+   * renderer created or reloaded after the one-shot `connections:cert-mismatch`
+   * broadcast (e.g. the boot-wide restore connects pooled clients before their
+   * windows exist) still surfaces the blocking trust warning. `null`/absent
+   * when the backend's pinned cert matches (or it is local).
+   */
+  certMismatch?: ConnectionCertMismatchEvent | null;
 }
 
 /**
