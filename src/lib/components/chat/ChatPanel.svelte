@@ -53,7 +53,6 @@
   import {
     agentSessionDismissQuestionsRequested,
     agentSessionEditAndRegenerateRequested,
-    agentSessionForkSessionRequested,
     agentSessionRegenerateFromMessageRequested,
     agentSessionRetryFromStalledRequested,
     agentSessionRetryLastMessageRequested,
@@ -4460,16 +4459,6 @@
     );
   }
 
-  // Handle forking the conversation from a specific message
-  function handleForkFromMessage(messageId: string) {
-    if (!workspace) return;
-    appStore.dispatch(
-      agentSessionForkSessionRequested(agentId, workspace.id, {
-        forkFromMessageId: messageId,
-      }),
-    );
-  }
-
   // Handle selecting a suggested prompt - sends immediately
   function handleSelectSuggestedPrompt(prompt: string) {
     handleSend(prompt);
@@ -5509,7 +5498,6 @@
                               onRegenerate={isRetiredSession
                                 ? undefined
                                 : () => handleRegenerateFromMessage(message.id)}
-                              onFork={() => handleForkFromMessage(message.id)}
                               backendSessionId={auggieSessionId}
                               suppressCoordinationStoppedIndicator={turn.userMessage
                                 ? isAutomatedMessage(turn.userMessage)

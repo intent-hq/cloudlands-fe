@@ -313,6 +313,7 @@ import { setupReleaseNotesIPC } from '../features/release-notes/main/release-not
 import { isInstallingUpdate } from '../features/auto-update/main/auto-update.service';
 import {
   registerBackendHandlers,
+  connectBackendClient,
   disconnectBackendClient,
   disposeBackendClient,
   getBackendClient,
@@ -376,10 +377,9 @@ import {
   clearWindowSessionsSnapshot,
   createWindow,
   createWindowForDeepLink,
-  createWindowForSession,
   getWindowSessionsPath,
   isBackendSwitchWindowTeardownInProgress,
-  loadWindowSessions,
+  restoreAllBackendWindowSessions,
   saveAllWindowSessions,
   setOnLastWindowClosedForBackend,
   stampWindowWithBackend,
@@ -1725,22 +1725,22 @@ app.whenReady().then(async () => {
     // Check for intent:// deep link in process.argv (cold start)
     const intentUrlArg = process.argv.find((arg: string) => arg.startsWith('intent://'));
 
-    // Try to restore saved window sessions (unless we have a deep link to process).
-    // Key off the RESOLVED boot backend (T21): reconcileActiveConnectionOnBoot()
-    // above has already run to completion, so getActiveId() now reflects the
-    // actually-connected backend — the reconnected remote when it was reachable,
-    // otherwise local. Restoring under this id (never the hard-coded local
-    // default) ensures a remote's windows are only restored when we booted back
-    // onto that remote, and local's windows when we fell back to local.
+    // Try to restore saved window sessions (unless we have a deep link to
+    // process, which keeps its single-window bypass). EVERY backend with a
+    // saved session bucket is restored, each bucket's windows stamped with its
+    // own backend id and backed by its own pooled client (fail-soft — an
+    // unreachable backend still gets its windows behind the stopped overlay).
+    // The ACTIVE bucket restores first and provides the main window; keyed off
+    // the RESOLVED boot backend (T21): reconcileActiveConnectionOnBoot() above
+    // has already run to completion, so getActiveId() now reflects the
+    // actually-connected backend — the reconnected remote when it was
+    // reachable, otherwise local.
     const bootBackendId = await getActiveId();
-    const savedSessions = intentUrlArg ? null : loadWindowSessions(bootBackendId);
-    if (savedSessions && savedSessions.length > 0) {
-      logger.info('Restoring window sessions from previous run', { count: savedSessions.length });
-      for (let i = 0; i < savedSessions.length; i++) {
-        createWindowForSession(savedSessions[i], i === 0, bootBackendId);
-      }
-    } else {
-      // No saved sessions (or has deep link) — create a single default window
+    const restored = intentUrlArg
+      ? false
+      : await restoreAllBackendWindowSessions(bootBackendId, connectBackendClient);
+    if (!restored) {
+      // No saved sessions anywhere (or has deep link) — create a single default window
       createWindow(bootBackendId);
     }
 
@@ -2065,17 +2065,13 @@ app.on('activate', async () => {
     targetWindow.show();
     targetWindow.focus();
   } else {
-    // No windows at all — restore sessions or create a new one. Key off the
-    // currently-active backend (T21) so a dock-click reopen restores the live
-    // backend's windows, never the hard-coded local default.
+    // No windows at all — restore every backend's saved sessions (same
+    // multi-bucket restore as boot) or create a new one. The active backend
+    // (T21) restores first and provides the main window, so a dock-click
+    // reopen never keys everything to the hard-coded local default.
     const backendId = await getActiveId();
-    const savedSessions = loadWindowSessions(backendId);
-    if (savedSessions && savedSessions.length > 0) {
-      logger.info('Restoring window sessions on activate', { count: savedSessions.length });
-      for (let i = 0; i < savedSessions.length; i++) {
-        createWindowForSession(savedSessions[i], i === 0, backendId);
-      }
-    } else {
+    const restored = await restoreAllBackendWindowSessions(backendId, connectBackendClient);
+    if (!restored) {
       createWindow(backendId);
     }
   }

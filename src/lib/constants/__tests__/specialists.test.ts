@@ -69,6 +69,53 @@ describe('SPECIALISTS', () => {
     expect(chief?.defaultBehaviorPrompt).toContain('intent://local/{workspaceId}/note/{noteId}');
   });
 
+  it('keeps completion-only Chief messaging guidance in canonical and bundled prompts', () => {
+    const chief = getSpecialistById('chief-of-staff');
+    const bundled = readFileSync(
+      resolve(__dirname, '../../../../resources/specialists/chief-of-staff.md'),
+      'utf8',
+    );
+    const section = (prompt: string) =>
+      prompt.match(/## Messaging Agents Across Workspaces[\s\S]*?(?=\n## )/)?.[0].trim();
+
+    expect(section(chief?.defaultBehaviorPrompt ?? '')).toBe(section(bundled));
+    for (const prompt of [chief?.defaultBehaviorPrompt ?? '', bundled]) {
+      const messaging = section(prompt) ?? '';
+
+      expect(prompt).toContain('ws.app.agents.send(agentId, message, priority?)');
+      expect(prompt).toContain('ws.app.agents.ask(agentId, message, priority?)');
+      expect(prompt).toContain('one wake only when the target completes');
+      expect(prompt).toContain('Direct target messages remain transcript data');
+      expect(prompt).toContain('End your turn after `ask` returns');
+      expect(prompt).toContain(
+        'const conversation = await ws.app.agents.readConversation(asked.send.workspaceId, asked.send.agentId',
+      );
+      expect(messaging.match(/ws\.app\.agents\.readConversation\(/g)).toHaveLength(1);
+      expect(prompt).toContain(
+        'const finalAssistant = [...conversation.messages].reverse().find((message) => message.role === "assistant" && typeof message.id === "string" && message.id.length > 0)',
+      );
+      expect(prompt).toContain(
+        '[${conversation.workspaceTitle}](intent://local/${conversation.workspaceId}/agent/${conversation.agentId}/message/${finalAssistant.id})',
+      );
+      expect(prompt).toContain('Build this URL only from the `readConversation` result');
+      expect(prompt).toContain('Use `conversation.workspaceTitle` as the visible link label');
+      expect(prompt).toContain(
+        'Never use `asked.send.workspaceId`, `asked.send.agentId`, `asked.send.messageId`',
+      );
+      expect(prompt).toContain('a `chief_message` source ID');
+      expect(prompt).toContain('a user-role message ID');
+      expect(prompt).toContain(
+        'Never expose a raw workspace ID or agent ID in relay prose or link text',
+      );
+      expect(messaging).not.toContain('ws.app.workspaces.list({ filter: {}, sort: {} })');
+      expect(prompt).not.toContain('"/agent/" + asked.send.agentId');
+      expect(prompt).toContain('completed-ask exact-message source link');
+      expect(prompt).toContain('canonical message navigation still opens the target chat');
+      expect(prompt).toContain('do not invent or render a broken link');
+      expect(prompt).not.toMatch(/progress[- ]versus[- ]final/i);
+    }
+  });
+
   it('teaches Chief to wait on cross-workspace agents instead of polling', () => {
     const chief = getSpecialistById('chief-of-staff');
     expect(chief?.defaultBehaviorPrompt).toMatch(/## Waiting on Agents Across Workspaces/);
@@ -98,7 +145,7 @@ describe('SPECIALISTS', () => {
     expect(bundled).toMatch(/## Waiting on Agents Across Workspaces/);
     expect(bundled).toContain('ws.app.agents.waitFor({ agentIds, waitMode? })');
     expect(bundled).toContain(
-      'ws.app.agents.waitFor({ agentIds: ["agent-1111-…", "agent-2222-…"], waitMode: "after_all" })',
+      "ws.app.agents.waitFor({ agentIds: ['agent-1111-…', 'agent-2222-…'], waitMode: 'after_all' });",
     );
     expect(bundled).toMatch(/do not poll[*\s]+`ws\.app\.agents\.list` in a loop/i);
     expect(bundled).toMatch(/one wake per agent as each finishes/i);

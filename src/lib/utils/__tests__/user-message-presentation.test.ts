@@ -133,6 +133,7 @@ describe('stripAgentMessageHeader', () => {
 
   it('strips the exact literal header rebuilt from attribution metadata', () => {
     const attribution = {
+      kind: 'agent' as const,
       fromAgentId: 'agent-1234',
       displayName: 'Research Agent',
       rawName: 'Research Agent',
@@ -146,20 +147,42 @@ describe('stripAgentMessageHeader', () => {
 
   it('exact-literal path handles a name the regex fallback cannot match', () => {
     const rawName = 'Weird ) name (x)';
-    const attribution = { fromAgentId: 'agent-99Z', displayName: rawName, rawName };
+    const attribution = {
+      kind: 'agent' as const,
+      fromAgentId: 'agent-99Z',
+      displayName: rawName,
+      rawName,
+    };
     const text = `[MESSAGE FROM AGENT ${rawName} (agent-99Z)]\n\nbody`;
     expect(stripAgentMessageHeader(text, attribution)).toBe('body');
   });
 
   it('exact-literal path strips the name-absent shape when rawName is empty', () => {
-    const attribution = { fromAgentId: 'agent-1234', displayName: 'Agent', rawName: '' };
+    const attribution = {
+      kind: 'agent' as const,
+      fromAgentId: 'agent-1234',
+      displayName: 'Agent',
+      rawName: '',
+    };
     expect(stripAgentMessageHeader('[MESSAGE FROM AGENT (agent-1234)]\n\nPing', attribution)).toBe(
       'Ping',
     );
   });
 
   it('with attribution, a mismatched literal falls back to the pinned regex only', () => {
-    const attribution = { fromAgentId: 'agent-5678', displayName: 'Other', rawName: 'Other' };
+    const attribution = {
+      kind: 'agent' as const,
+      fromAgentId: 'agent-5678',
+      displayName: 'Other',
+      rawName: 'Other',
+    };
+    expect(stripAgentMessageHeader(`${A2A_HEADER}\n\nbody`, attribution)).toBe('body');
+    const lookalike = '[MESSAGE FROM AGENT quoted prose]\n\nbody';
+    expect(stripAgentMessageHeader(lookalike, attribution)).toBe(lookalike);
+  });
+
+  it('a chief attribution uses only the pinned regex fallback', () => {
+    const attribution = { kind: 'chief' as const, fromAgentId: 'agent-chief' };
     expect(stripAgentMessageHeader(`${A2A_HEADER}\n\nbody`, attribution)).toBe('body');
     const lookalike = '[MESSAGE FROM AGENT quoted prose]\n\nbody';
     expect(stripAgentMessageHeader(lookalike, attribution)).toBe(lookalike);
