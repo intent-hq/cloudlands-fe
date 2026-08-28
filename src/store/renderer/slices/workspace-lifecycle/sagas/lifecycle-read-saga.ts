@@ -676,9 +676,10 @@ function* clearUnmountedInitializedContext(
 
 /**
  * Attention-flag reconciliation (PROTOCOL §9.9): a window that missed
- * `workspace:updated` deltas while unfocused (raise or clear from another
- * window / the daemon) must converge before its store answers hardware key
- * presses. Both triggers funnel into `loadWorkspacesRequested`, whose worker
+ * `workspace:attention-changed` / `workspace:waiting-changed` /
+ * `workspace:displayStatus-changed` deltas while unfocused (raise or clear
+ * from another window / the daemon) must converge before its store answers
+ * hardware key presses. Both triggers funnel into `loadWorkspacesRequested`, whose worker
  * is single-flight with trailing coalesce — a burst of focus/owner flips
  * collapses into at most one trailing `workspace.list` refetch, never an
  * O(workspaces) fan-out.

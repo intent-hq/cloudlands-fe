@@ -8431,6 +8431,54 @@ describe('daemonEventsBridge (dropped deltas for unhydrated workspaces → targe
     expect((await readWorkspace(WS))?.attention).toBe('unread');
     expect((await readWorkspace(WS))?.waiting).toBe(true);
   });
+
+  // Regression (PR #1814 review): the in-flight check must run before the
+  // entity-presence check. If another path hydrates the entity while a
+  // missing-entity fetch is in flight, a delta arriving afterwards merges into
+  // the now-present entity — but the older in-flight fetch can resolve last
+  // and overwrite the merged flag with its stale projection. The delta must
+  // queue a trailing fetch (whose projection postdates it) so the store
+  // converges on the fresh value.
+  it('queues a trailing fetch when a delta arrives after another path hydrated the entity mid-flight', async () => {
+    const WS = 'ws-hydrated-mid-flight';
+    const { setWorkspaceEntity } = await import('$store/renderer/slices/workspace/workspace-slice');
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+    const stale = await makeWorkspace(WS, {});
+    const fresh = await makeWorkspace(WS, { attention: 'unread' });
+
+    const pendingFetches: Array<(value: unknown) => void> = [];
+    backendRequestSpy.mockImplementation(async (method: string) => {
+      if (method !== 'workspace.get') return { subscriptionId: 'sub-1' };
+      return new Promise((resolve) => {
+        pendingFetches.push(resolve);
+      });
+    });
+
+    // Delta for a missing workspace starts the leading fetch (stays pending).
+    handler(changedNotification('workspace:waiting-changed', WS, { waiting: true }));
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(pendingFetches).toHaveLength(1);
+
+    // Another path (e.g. a workspace.list response) hydrates the entity.
+    appStore.dispatch(setWorkspaceEntity(stale as never));
+
+    // A newer delta merges into the now-present entity and — despite the
+    // presence — must queue a trailing fetch because one is still in flight.
+    handler(changedNotification('workspace:attention-changed', WS, { attention: 'unread' }));
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect((await readWorkspace(WS))?.attention).toBe('unread');
+
+    // The stale leading fetch resolves LAST and clobbers the merged flag…
+    pendingFetches[0]!({ workspace: stale });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    // …but the trailing fetch (post-delta projection) restores convergence.
+    expect(pendingFetches).toHaveLength(2);
+    pendingFetches[1]!({ workspace: fresh });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect((await readWorkspace(WS))?.attention).toBe('unread');
+  });
 });
 
 describe('daemonEventsBridge (completion-watch refresh routing)', () => {

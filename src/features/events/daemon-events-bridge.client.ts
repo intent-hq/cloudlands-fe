@@ -2311,11 +2311,17 @@ async function hydrateWorkspaceEntityIfMissing(workspaceId: string): Promise<voi
     workspace: { workspaces: unknown; pendingDeletions: Record<string, boolean> };
   };
   if (state.workspace.pendingDeletions[workspaceId]) return;
-  if (getItem(state.workspace.workspaces as never, workspaceId as never)) return;
+  // The in-flight check runs BEFORE the entity-presence check: if another
+  // path (e.g. a workspace.list response) hydrated the entity while a
+  // missing-entity fetch is still in flight, a delta arriving now merges into
+  // the present entity but the older fetch can resolve last and overwrite the
+  // merged flag with its stale projection — queuing a trailing fetch (whose
+  // projection postdates this delta) guarantees convergence.
   if (missingEntityFetchInFlightByWorkspace.has(workspaceId)) {
     missingEntityFetchFollowUpWantedByWorkspace.add(workspaceId);
     return;
   }
+  if (getItem(state.workspace.workspaces as never, workspaceId as never)) return;
   missingEntityFetchInFlightByWorkspace.add(workspaceId);
   await runHydrateMissingWorkspaceEntityFetch(workspaceId);
 }
