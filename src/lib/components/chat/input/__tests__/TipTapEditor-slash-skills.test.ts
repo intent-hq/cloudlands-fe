@@ -114,7 +114,8 @@ describe('TipTapEditor slash skills', () => {
     const { component, editor } = await mountEditor();
     component.insertText('/rev');
     await waitFor(() => expect(screen.getByRole('listbox')).toBeTruthy());
-    await fireEvent.keyDown(editor, { key: 'Enter' });
+    const reviewOption = screen.getByRole('option', { name: /^\/review\b/ });
+    await fireEvent.click(reviewOption);
     await waitFor(() => expect(component.getTextContent()).toBe('/review '));
 
     const mention = {
