@@ -2420,13 +2420,13 @@ function registerConnectionsHandlers(): void {
 
   // Add a remote connection (token encrypted at rest by the store). The store
   // upserts by host:port, so re-adding an existing target refreshes its
-  // token/fingerprint/label in place. If the upserted record is the ACTIVE
-  // backend, rebuild the live client via a switch to itself so the refreshed
-  // token takes effect immediately without closing any windows, and report
+  // token/fingerprint/label in place. If the upserted record is the persisted
+  // ACTIVE selection, rebuild its pooled client immediately so the refreshed
+  // token takes effect without closing any windows, and report
   // `switched: true` for compatibility; otherwise invalidate only that remote's
-  // secondary pool entry. The whole
-  // add + active-id read + conditional switch is ONE enqueued critical
-  // section (monorepo#2228): a stale pre-queue read could re-switch back to
+  // pool entry. The whole
+  // add + active-id read + conditional rebuild is ONE enqueued critical
+  // section (monorepo#2228): a stale pre-queue read could rebuild against
   // this record after the user had already selected another backend.
   ipcMain.handle(
     CONNECTIONS.ADD,
@@ -2439,16 +2439,13 @@ function registerConnectionsHandlers(): void {
           if (connection.id === activeId) {
             // Refresh an active target's credentials without destroying any
             // windows. The caller opens/focuses it through connections:open.
-            const { config, meta } = await buildConfigForConnection(connection.id);
-            disposeBackendClient();
-            currentConfig = meta ? config : null;
-            activeConnectionMeta = meta;
-            getBackendClient();
+            disconnectBackendClient(connection.id);
+            await connectBackendClient(connection.id);
             await broadcastConnectionsChanged();
             return { connection, switched: true } satisfies AddConnectionResult;
           }
-          // Re-pairing a secondary remote invalidates only that pool entry; the
-          // local primary and every other backend remain connected.
+          // Re-pairing a non-active remote invalidates only that pool entry;
+          // every other backend remains connected.
           disconnectBackendClient(connection.id);
           await broadcastConnectionsChanged();
           return { connection, switched: false } satisfies AddConnectionResult;
@@ -2514,16 +2511,6 @@ function registerConnectionsHandlers(): void {
       CONNECTIONS.UPDATE_BACKEND,
     ),
   );
-
-  // Pull the one-shot boot-restore fallback notice (T19), consume-once. The
-  // renderer fetches this once on mount and surfaces a non-blocking toast; the
-  // fallback happens before any window exists, so the notice is latched at boot
-  // and delivered here on demand rather than pushed live. No params.
-  ipcMain.handle(CONNECTIONS.GET_BOOT_FALLBACK, async () => {
-    const bootFallback = bootFallbackNotice;
-    bootFallbackNotice = null;
-    return { bootFallback };
-  });
 
   // Keychain sync settings surface (T4): read the opt-out pref (absent =
   // enabled on macOS) + last-known availability, and flip the pref. Enabling
@@ -2619,20 +2606,6 @@ async function getKeychainSyncState(): Promise<KeychainSyncStateResult> {
 }
 
 /**
- * Resolve a client guaranteed to target the LOCAL daemon: the pooled local
- * member when one is connected, else the compatibility client when no remote
- * is active (lazily created — the standard handler path). `null` when the
- * whole app is pinned to a remote and no local pool member exists —
- * `server.pairingInfo` is local-only (UDS; PROTOCOL §5), so there is no
- * client that could answer it.
- */
-function getLocalClientForSelfPublish(): JsonRpcClient | null {
-  const pooled = backendClients.get(LOCAL_CONNECTION_ID);
-  if (pooled) return pooled;
-  return activeConnectionMeta === null ? getBackendClient() : null;
-}
-
-/**
  * `connections:publish-self`: query the local daemon's `server.pairingInfo`,
  * build the record per the spec Mechanics (label = hostname with `host:port`
  * fallback, host = first local IP, hosts = all local IPs, port = bound wsApi
@@ -2653,10 +2626,7 @@ async function publishSelfBackend(): Promise<PublishSelfResult> {
 
 /** The actual publish; only entered from the serialized critical section. */
 async function performPublishSelfBackend(): Promise<PublishSelfResult> {
-  const localClient = getLocalClientForSelfPublish();
-  if (!localClient) {
-    throw new Error('publish-self failed: local backend is not connected (remote backend active)');
-  }
+  const localClient = getLocalBackendClient();
   const info = extractSelfPairingInfo(await localClient.request('server.pairingInfo'));
   if (!info) {
     throw new Error('publish-self failed: malformed server.pairingInfo result');
@@ -2737,10 +2707,7 @@ async function refreshSelfBackend(): Promise<RefreshSelfResult> {
   if (await isAutoPublishSuppressed()) {
     return { refreshed: false } satisfies RefreshSelfResult;
   }
-  const localClient = getLocalClientForSelfPublish();
-  if (!localClient) {
-    return { refreshed: false } satisfies RefreshSelfResult;
-  }
+  const localClient = getLocalBackendClient();
   let info: ReturnType<typeof extractSelfPairingInfo>;
   try {
     info = extractSelfPairingInfo(await localClient.request('server.pairingInfo'));
@@ -2829,20 +2796,12 @@ async function getSelfPublishedState(): Promise<SelfPublishedStateResult> {
   } satisfies SelfPublishedStateResult;
 }
 
-/** Dispose the shared client (used on shutdown and backend switch). */
-export function disposeBackendClient(): void {
-  // The next client is switch-origin unless the boot-restore path re-tags it
-  // (see {@link protocolMismatchOrigin}).
-  protocolMismatchOrigin = 'switch';
-  if (client) {
-    const primaryBackendId = getPrimaryBackendId();
-    disposeTransferConnectionsForBackend(primaryBackendId);
-    void cancelInflightHostExecStreamsForBackendSwitch(client);
-    for (const [id, instance] of backendClients) {
-      if (instance === client) backendClients.delete(id);
-    }
-    clearBackendFailureState(primaryBackendId);
-    client.dispose();
+/** Dispose every pooled backend client (app shutdown). */
+export function disposeAllBackendClients(): void {
+  for (const [id, instance] of backendClients) {
+    backendClients.delete(id);
+    clearBackendFailureState(id);
+    disposeTransferConnectionsForBackend(id);
+    instance.dispose();
   }
-  client = null;
 }
