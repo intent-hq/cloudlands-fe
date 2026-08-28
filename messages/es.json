@@ -1815,6 +1815,7 @@
   "chat_draftGate_loading_label": "Cargando borrador del mensaje",
   "chat_turnFailureNotice_title_label": "Turno fallido",
   "chat_msgAttribution_openAgent_title": "Abrir agente {name}",
+  "chat_msgAttribution_openSource_title": "Abrir mensaje de origen",
   "chat_msgAttribution_sentMessage_after": "envió un mensaje",
   "chat_queuedNotice_label": "Esperó {duration} en la cola",
   "chat_shared_agentName_fallback": "Agente",

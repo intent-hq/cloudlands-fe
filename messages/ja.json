@@ -1815,6 +1815,7 @@
   "chat_draftGate_loading_label": "下書きメッセージを読み込み中",
   "chat_turnFailureNotice_title_label": "ターンが失敗しました",
   "chat_msgAttribution_openAgent_title": "エージェント {name} を開く",
+  "chat_msgAttribution_openSource_title": "元のメッセージを開く",
   "chat_msgAttribution_sentMessage_after": "がメッセージを送信しました",
   "chat_queuedNotice_label": "キューで {duration} 待機",
   "chat_shared_agentName_fallback": "エージェント",

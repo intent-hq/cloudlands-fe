@@ -1815,6 +1815,7 @@
   "chat_draftGate_loading_label": "임시 저장 메시지 불러오는 중",
   "chat_turnFailureNotice_title_label": "턴 실패",
   "chat_msgAttribution_openAgent_title": "에이전트 {name} 열기",
+  "chat_msgAttribution_openSource_title": "원본 메시지 열기",
   "chat_msgAttribution_sentMessage_after": "이(가) 메시지를 보냈습니다",
   "chat_queuedNotice_label": "대기열에서 {duration} 동안 대기함",
   "chat_shared_agentName_fallback": "에이전트",

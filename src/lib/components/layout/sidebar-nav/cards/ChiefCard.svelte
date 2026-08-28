@@ -51,6 +51,7 @@
   import { WorkspaceStatus, type Workspace } from '$shared/types';
   import { formatChiefThreadName } from './chief-thread-name';
   import { ensureChiefThreadCreation } from './chief-thread-creation';
+  import { resolveChiefThreadOnExpansion } from './chief-thread-selection';
   import {
     selectEffectiveBehaviorPrompt,
     selectSpecialists,
@@ -157,12 +158,16 @@
     ) {
       return;
     }
-    // Existing conversations keep the system prompt they were created with.
-    // Migrate the visible selection to a current-identity thread, or create
-    // one when this installation only has legacy generic-agent threads.
-    if ($currentChiefThread$) {
+    // Preserve an exact-message deep-link selection, including an older Chief
+    // thread. Otherwise migrate to the latest current-identity thread.
+    const threadToSelect = resolveChiefThreadOnExpansion(
+      $chiefThreads$,
+      $chiefActiveAgentId$,
+      $currentChiefThread$,
+    );
+    if (threadToSelect) {
       hasAutoStartedRef = true;
-      const agentId = $currentChiefThread$.agentId;
+      const agentId = threadToSelect.agentId;
       selectedAgentId = agentId;
       appStore.dispatch(setChiefActiveAgentId(agentId));
       appStore.dispatch(setActiveAgentId(CHIEF_WORKSPACE_ID, agentId));
