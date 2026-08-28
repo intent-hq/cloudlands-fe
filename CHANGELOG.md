@@ -4,6 +4,19 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.103.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.102.0...v2.103.0) (2026-08-28)
+
+
+### 🚀 Features
+
+* remote daemon version capture + Update action for behind remote backends ([#1807](https://github.com/intent-hq/cloudlands-fe/issues/1807)) ([897c9ce](https://github.com/intent-hq/cloudlands-fe/commit/897c9ce481bbad290d2939a79f3a6f0d2f3cef3b))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.8.11 ([#1809](https://github.com/intent-hq/cloudlands-fe/issues/1809)) ([fd2b163](https://github.com/intent-hq/cloudlands-fe/commit/fd2b163266d2f3f6ae590bdaf2472695cdc4825b))
+* close stale agent tabs on agent-not-found instead of showing hydration error ([#1804](https://github.com/intent-hq/cloudlands-fe/issues/1804)) ([de7d490](https://github.com/intent-hq/cloudlands-fe/commit/de7d490e9d5b3e040cdcba113184d133683e199c))
+
 ## [2.102.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.101.4...v2.102.0) (2026-08-28)
 
 
