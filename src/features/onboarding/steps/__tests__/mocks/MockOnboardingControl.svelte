@@ -16,7 +16,7 @@
 
   function activate() {
     if (onchange) {
-      onchange({ detail: { branch: 'changed-branch' } } as CustomEvent<{ branch: string }>);
+      onchange({ detail: { branch: 'master' } } as CustomEvent<{ branch: string }>);
     } else {
       onModelChange?.('mock:model');
     }

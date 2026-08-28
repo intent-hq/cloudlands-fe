@@ -67,7 +67,7 @@ describe('workspace card @@@workspace sentinel blocks', () => {
   });
 });
 
-describe('workspace card regressions - bare IDs and legacy fences render as text/code', () => {
+describe('workspace card regressions', () => {
   it('does NOT promote bare workspace ID lines - renders as plain text', () => {
     const result = parseAgentMessage('amber-forest\nsilver-leaf');
 
@@ -107,15 +107,17 @@ describe('workspace card regressions - bare IDs and legacy fences render as text
     expect(result[0].content).toBe('- merge-queue');
   });
 
-  it('legacy ```workspace fence produces NO workspace_card - renders as code block', () => {
-    const result = parseAgentMessage('```workspace\nworkspace-1\n```');
+  it('renders the Chief relay workspace fence as a title card instead of raw code', () => {
+    const result = parseAgentMessage(
+      'Sent. Waiting for Relay Target to reply.\n\n```workspace\nreply-exactly-4\n```',
+    );
 
-    expect(result).toHaveLength(1);
-    expect(result[0].type).toBe('code');
-    expect(result[0].metadata?.language).toBe('workspace');
+    expect(result.map((block) => block.type)).toEqual(['text', 'workspace_card']);
+    expect(result[1].metadata?.workspaceCardData?.workspaceIds).toEqual(['reply-exactly-4']);
+    expect(result).not.toContainEqual(expect.objectContaining({ type: 'code' }));
   });
 
-  it('legacy ~~~workspace fence produces NO workspace_card - renders as code block', () => {
+  it('keeps unsupported tilde-fenced workspace blocks as code', () => {
     const result = parseAgentMessage('~~~workspace\nworkspace-1\n~~~');
 
     expect(result).toHaveLength(1);
@@ -134,7 +136,9 @@ describe('workspace card proposal dedupe', () => {
   });
 
   it('keeps workspace cards that include non-proposal workspaces', () => {
-    const blocks = groupParsedBlocks(parseAgentMessage('@@@workspace\npr-review-5\nother-space\n@@@'));
+    const blocks = groupParsedBlocks(
+      parseAgentMessage('@@@workspace\npr-review-5\nother-space\n@@@'),
+    );
 
     const result = filterWorkspaceCardsCoveredByIds(blocks, new Set(['pr-review-5']));
 

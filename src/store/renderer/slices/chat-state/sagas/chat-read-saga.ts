@@ -41,6 +41,7 @@ import { INITIAL_RETRY_DELAY_MS, SNAPSHOT_TIMEOUT_MS } from '$lib/client/live/li
 import { createLogger } from '$lib/utils/client-logger';
 import type { AgentMessage, AgentSession } from '$shared/types';
 import { isAgentDeletionPending } from '$features/agent/utils/pending-agent-deletions';
+import { isAgentNotFoundError } from '$features/agent/utils/agent-not-found-error';
 import {
   hasChatSubscriptionAcquisitionInFlight,
   hasReplayableChatSnapshot,
@@ -53,7 +54,9 @@ import {
 import { bulkUpsertSessions, upsertSession } from '../../agent-session/agent-session-slice';
 import { selectAgentMessages } from '../../agent-session/agent-session-selectors';
 import { workspaceUnmounted } from '../../workspace-lifecycle/workspace-lifecycle-slice';
+import { cleanupDeletedAgentTabs } from '../../workspace-agents/sagas/deleted-agent-cleanup';
 import {
+  chatReset,
   chatTranscriptSnapshotApplied,
   chatTranscriptSnapshotRerequested,
   initializeChatRequested,
@@ -234,6 +237,22 @@ function* hydrateChatTranscriptSaga(request: ChatRequest): SagaGenerator<Hydrate
       snapshotChannel.close();
     }
   } catch (error) {
+    if (isAgentNotFoundError(error)) {
+      // The daemon no longer knows this agent — a restored layout carrying a
+      // tab for a deleted agent (monorepo#1753). Expected condition, not a
+      // hydration failure: WARN + close the referencing tabs (shared cleanup)
+      // and short-circuit with `started: false` so the worker dispatches
+      // neither settled nor failed — no error/retry surface for a tab that is
+      // being closed. Unlike the deletion-pending early return above,
+      // `transcriptHydrationStarted` HAS already been dispatched here, so
+      // reset the chat-state entry — otherwise the deleted agent's marker
+      // would sit at 'loading' forever (a leak today, a retry-less permanent
+      // skeleton if a chat surface ever mounts outside an agent panel tab).
+      // The interest lease still releases via the finally.
+      yield* call(cleanupDeletedAgentTabs, wsId, agentId);
+      yield* put(chatReset(agentId));
+      return { started: false, succeeded: false };
+    }
     logger.error(
       `Failed to hydrate chat transcript for agent ${agentId} in workspace ${wsId}`,
       error,

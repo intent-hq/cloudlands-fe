@@ -112,6 +112,37 @@ describe('Specialist Prompts Verification', () => {
       expect(chief!.defaultBehaviorPrompt).toContain('confirmation cards');
       expect(chief!.defaultBehaviorPrompt).toContain('NavLink');
     });
+
+    it('chief-of-staff should document positional completion-only messaging', () => {
+      const prompt = getSpecialistById('chief-of-staff')!.defaultBehaviorPrompt;
+
+      expect(prompt).toContain('ws.app.agents.send(agentId, message, priority?)');
+      expect(prompt).toContain('ws.app.agents.ask(agentId, message, priority?)');
+      expect(prompt).toContain('one wake only when the target completes');
+      expect(prompt).toContain('readConversation(asked.send.workspaceId, asked.send.agentId');
+      expect(prompt).toContain(
+        'const finalAssistant = [...conversation.messages].reverse().find((message) => message.role === "assistant" && typeof message.id === "string" && message.id.length > 0)',
+      );
+      expect(prompt).toContain(
+        '[${conversation.workspaceTitle}](intent://local/${conversation.workspaceId}/agent/${conversation.agentId}/message/${finalAssistant.id})',
+      );
+      expect(prompt).toContain('Build this URL only from the `readConversation` result');
+      expect(prompt).toContain('Use `conversation.workspaceTitle` as the visible link label');
+      expect(prompt).toContain(
+        'Never use `asked.send.workspaceId`, `asked.send.agentId`, `asked.send.messageId`',
+      );
+      expect(prompt).toContain('a `chief_message` source ID');
+      expect(prompt).toContain('a user-role message ID');
+      expect(prompt).toContain(
+        'Never expose a raw workspace ID or agent ID in relay prose or link text',
+      );
+      expect(prompt).not.toContain(
+        'Resolve the live workspace title with `ws.app.workspaces.list({ filter: {}, sort: {} })`',
+      );
+      expect(prompt).not.toContain('"/agent/" + asked.send.agentId');
+      expect(prompt).not.toContain('ws.app.agents.send({ agentId, message, priority? })');
+      expect(prompt).not.toContain('ws.app.agents.ask({ agentId, message, priority? })');
+    });
   });
 
   describe('Delegation Instructions in Prompts', () => {

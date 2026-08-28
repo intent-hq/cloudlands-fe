@@ -868,6 +868,11 @@ export const IPC_CHANNELS = {
     OPEN: 'connections:open',
     FORGET: 'connections:forget',
     SWITCH: 'connections:switch',
+    // Ask one connected remote backend's daemon to self-update (routes
+    // `system.requestUpdate` to that backend's pooled client). Structured
+    // result — never throws for daemon-side failures (unsupported/old daemon,
+    // unsupervised) so the renderer can toast a specific message.
+    UPDATE_BACKEND: 'connections:update-backend',
     CHANGED: 'connections:changed',
     CERT_MISMATCH: 'connections:cert-mismatch',
     PROTOCOL_MISMATCH: 'connections:protocol-mismatch',

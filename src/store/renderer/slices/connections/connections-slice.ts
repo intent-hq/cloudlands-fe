@@ -33,6 +33,7 @@ import type {
   TestConnectionResult,
   UpdateConnectionParams,
   UpdateConnectionResult,
+  UpdateBackendResult,
   ConnectionAuthRejectedEvent,
   ConnectionCertMismatchEvent,
   ConnectionProtocolMismatchEvent,
@@ -47,6 +48,8 @@ export const initialState: ConnectionsState = {
   activeId: LOCAL_CONNECTION_ID,
   windowBackendId: LOCAL_CONNECTION_ID,
   hasReceivedList: false,
+  pinnedVersion: null,
+  connectedIds: [],
   status: 'idle',
   error: null,
   certMismatch: null,
@@ -187,6 +190,16 @@ export const switchConnectionRequested = createAsyncAction<[id: string], void>(
 );
 
 /**
+ * Saga-owned remote-backend update request (the connections-menu Update
+ * action). Resolves with the structured `connections:update-backend` result;
+ * the saga owns the success/failure toasts, so no op-status state is tracked.
+ */
+export const updateBackendRequested = createAsyncAction<[id: string], UpdateBackendResult>(
+  'connections/updateBackend',
+  'connections/updateBackendRequested',
+);
+
+/**
  * iCloud-keychain sync state received — from the `connections:sync-get-state`
  * invoke or the `connections:sync-set-enabled` result (both carry the full
  * `KeychainSyncStateResult`).
@@ -222,13 +235,37 @@ export const setKeychainSyncEnabledRequested = createAsyncAction<
 
 export const connectionsReducer = createReducer<ConnectionsState>(initialState);
 connectionsReducer.with(connectionsListReceived, (state, { payload: [result] }) => {
-  return {
+  const next: ConnectionsState = {
     ...state,
     connections: createCollection<ConnectionRecord, 'id'>('id', result.connections),
     activeId: result.activeId,
     windowBackendId: result.windowBackendId,
     hasReceivedList: true,
+    // Absent on payloads from an older main process — keep the prior value
+    // rather than clearing a pin the renderer already learned.
+    pinnedVersion: result.pinnedVersion !== undefined ? result.pinnedVersion : state.pinnedVersion,
+    // Same older-main tolerance for live connectivity.
+    connectedIds: result.connectedIds !== undefined ? result.connectedIds : state.connectedIds,
   };
+  // Sync the per-window sticky latches when the payload carries them: `null`
+  // clears (e.g. main disconnected/rebuilt the window's backend client, so the
+  // old rejection no longer applies), an event replays the latch. Absent fields
+  // (older payload shape) leave the latched state untouched.
+  if (result.authRejected !== undefined) {
+    next.authRejected = result.authRejected;
+  }
+  if (result.protocolMismatch !== undefined) {
+    next.protocolMismatch = result.protocolMismatch;
+    if (result.protocolMismatch === null) {
+      next.protocolMismatchModalDismissed = false;
+    } else if (result.protocolMismatch.id !== state.protocolMismatch?.id) {
+      // A fresh mismatch replayed via the list gets the same modal semantics
+      // as the one-shot push; re-replays of the already-stored mismatch keep
+      // the user's dismissal.
+      next.protocolMismatchModalDismissed = result.protocolMismatch.origin === 'boot';
+    }
+  }
+  return next;
 });
 connectionsReducer.with(connectOperationStarted, (state) => {
   // A fresh add/switch clears the auth-rejected latch: a re-add refreshes the

@@ -23,10 +23,16 @@ vi.mock('../../../backend/main/backend.ipc', () => ({
   BACKEND_CLIENT_DISCONNECTED_EVENT: 'backend-client-disconnected',
   getBackendClient: vi.fn(() => mocks.backendClient),
   getBackendClientForConnection: vi.fn(() => mocks.backendClient),
+  getBackendClientForId: vi.fn(() => mocks.backendClient),
+  getLocalBackendClient: vi.fn(() => mocks.backendClient),
   getBackendIdForIpcSender: vi.fn(() => 'local'),
   getPrimaryBackendId: vi.fn(() => 'local'),
   onBackendNotification: vi.fn(() => () => {}),
   onBackendReconnected: vi.fn(() => () => {}),
+}));
+
+vi.mock('../../../../main/window', () => ({
+  getFocusedWindowBackendId: vi.fn(() => 'local'),
 }));
 
 vi.mock('../embedded-browser-cdp-service', () => ({

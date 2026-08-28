@@ -964,6 +964,21 @@
       await resumeOnboardingPendingSend();
       return;
     }
+
+    // Existing repositories cannot be created until BranchSelector resolves
+    // (or the user manually enters) a branch. Snapshot the effective branch
+    // before the prompt step unmounts so workspace.create never receives ''.
+    const isNewRepo = projectSelection.type === 'new';
+    const currentBranch = projectSelection.branch;
+    const effectiveBranch =
+      selectedPRBranch && currentBranch !== selectedPRBranch && !isNewRepo
+        ? selectedPRBranch
+        : currentBranch;
+    if (!isNewRepo && !effectiveBranch.trim()) {
+      toast.error(m.onboarding_page_branchRequired_toast());
+      return;
+    }
+
     if (hasBlockingAttachments(onboardingStagedItems)) {
       // The error banner's Retry also lands here — surface why nothing
       // happened instead of a silent no-op (pills must be retried/removed).
@@ -1079,13 +1094,6 @@
           return;
         }
       }
-
-      const isNewRepo = projectSelection.type === 'new';
-      const currentBranch = projectSelection.branch;
-      const effectiveBranch =
-        selectedPRBranch && currentBranch !== selectedPRBranch && !isNewRepo
-          ? selectedPRBranch
-          : currentBranch;
 
       // Await any in-flight repo-config probe (bounded, sub-second) so the
       // setup-script decision below sees the committed `.intent/config.json`

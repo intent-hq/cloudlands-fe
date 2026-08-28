@@ -96,11 +96,18 @@ vi.mock('../intentd-sidecar', () => ({
   onSidecarStartupFailed: vi.fn(() => () => {}),
   getSidecarRunLog: vi.fn(() => ({ available: false })),
   getSidecarStartupFailure: vi.fn(() => null),
+  getLocalDaemonProtocolVersion: vi.fn(() => null),
   spawnSidecarOnDemand: vi.fn(),
 }));
 
 vi.mock('../../../browser/main/browser-exec-reverse', () => ({
   registerBrowserExecReverseHandler: vi.fn(),
+}));
+
+// Deterministic intentd version pin (the real reader would read the repo's
+// live intentd.version file, making list-shape assertions drift on every bump).
+vi.mock('../intentd-version-pin', () => ({
+  readPinnedVersion: vi.fn(() => '0.1.0'),
 }));
 
 // Preserve the real PinMismatchError + resolveBackendConfig; stub captureFingerprint.
@@ -121,6 +128,7 @@ const store = vi.hoisted(() => ({
   forget: vi.fn(),
   getDecryptedToken: vi.fn(),
   setHostname: vi.fn(),
+  setDaemonVersion: vi.fn(),
   setHosts: vi.fn(),
   getDetectHosts: vi.fn(),
 }));
@@ -135,6 +143,7 @@ vi.mock('../connections-store', () => ({
   forget: store.forget,
   getDecryptedToken: store.getDecryptedToken,
   setHostname: store.setHostname,
+  setDaemonVersion: store.setDaemonVersion,
   setHosts: store.setHosts,
   getDetectHosts: store.getDetectHosts,
   // Keychain-sync lifecycle wiring (T3); inert in these suites.
@@ -240,12 +249,18 @@ async function loadModule() {
   };
 }
 
-/** Install a single fake renderer window and return its `send` spy. */
-function installWindow() {
+/**
+ * Install a single fake renderer window and return its `send` spy. Pass a
+ * `backendId` to stamp the window (and wire `fromWebContents`) so it receives
+ * backend-scoped broadcasts; unstamped windows resolve to the local default.
+ */
+function installWindow(backendId?: string) {
   const send = vi.fn();
-  vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([
-    { id: 1, isDestroyed: () => false, webContents: { send } } as never,
-  ]);
+  const window = { id: 1, backendId, isDestroyed: () => false, webContents: { send } };
+  vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([window as never]);
+  vi.mocked(BrowserWindow.fromWebContents).mockImplementation((sender) =>
+    sender === window.webContents ? (window as never) : null,
+  );
   return send;
 }
 
@@ -294,6 +309,7 @@ beforeEach(() => {
   store.setActiveId.mockResolvedValue(undefined);
   store.getDecryptedToken.mockResolvedValue('secret-token');
   store.setHostname.mockResolvedValue(undefined);
+  store.setDaemonVersion.mockResolvedValue(false);
   store.setHosts.mockResolvedValue(undefined);
   store.getDetectHosts.mockResolvedValue(true);
   keychainSync.enabled = false;
@@ -382,7 +398,7 @@ describe('switchBackend teardown-before-connect', () => {
 
 describe('pinned-cert mismatch propagation', () => {
   it('emits a single connections:cert-mismatch failure event on PinMismatchError', async () => {
-    const send = installWindow();
+    const send = installWindow('remote-1');
     const { mod } = await loadModule();
     const { PinMismatchError } = await import('../backend-connection');
 
@@ -409,7 +425,7 @@ describe('pinned-cert mismatch propagation', () => {
   });
 
   it('does not emit a mismatch event for a generic transport error', async () => {
-    const send = installWindow();
+    const send = installWindow('remote-1');
     const { mod } = await loadModule();
     await mod.switchBackend('remote-1');
     const client = mod.getBackendClient() as unknown as {
@@ -419,6 +435,46 @@ describe('pinned-cert mismatch propagation', () => {
     client.emit('error', new Error('ECONNRESET'));
     expect(send.mock.calls.some(([c]) => c === 'connections:cert-mismatch')).toBe(false);
   });
+
+  it('latches a pooled-client mismatch fired with zero windows and replays it on connections:list', async () => {
+    // Boot-wide restore path: the pooled client connects BEFORE any window for
+    // its backend exists, so the one-shot broadcast fires into the void. The
+    // window created afterwards must still learn the mismatch from its initial
+    // list fetch — a changed cert is a blocking trust decision, never droppable.
+    const { mod } = await loadModule();
+    const { PinMismatchError } = await import('../backend-connection');
+    mod.registerBackendHandlers();
+
+    const pooled = (await mod.connectBackendClient('remote-1')) as unknown as {
+      emit(event: string, arg: unknown): void;
+    };
+    pooled.emit('error', new PinMismatchError('AA:BB:CC:DD', 'EE:FF:00:11'));
+
+    // The window appears only now (restore creates it after the connect).
+    const { localSender, remoteSender } = installBackendWindows();
+    const handler = findHandler('connections:list');
+    await expect(handler!({ sender: remoteSender }, undefined)).resolves.toMatchObject({
+      certMismatch: {
+        id: 'remote-1',
+        host: '10.0.0.5',
+        port: 8443,
+        expectedFingerprint: 'AA:BB:CC:DD',
+        actualFingerprint: 'EE:FF:00:11',
+      },
+    });
+    // A window bound to a different (local) backend does not replay it.
+    await expect(handler!({ sender: localSender }, undefined)).resolves.toMatchObject({
+      certMismatch: null,
+    });
+
+    // A fresh client (re-pair / switch) clears the latch: the list stops
+    // replaying a mismatch that no longer describes the live client.
+    mod.disconnectBackendClient('remote-1');
+    await mod.connectBackendClient('remote-1');
+    await expect(handler!({ sender: remoteSender }, undefined)).resolves.toMatchObject({
+      certMismatch: null,
+    });
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -427,7 +483,7 @@ describe('pinned-cert mismatch propagation', () => {
 
 describe('WSS auth-rejection propagation', () => {
   it('emits a single connections:auth-rejected failure event on AuthRejectedError', async () => {
-    const send = installWindow();
+    const send = installWindow('remote-1');
     const { mod } = await loadModule();
     const { AuthRejectedError } = await import('../backend-connection');
 
@@ -453,7 +509,7 @@ describe('WSS auth-rejection propagation', () => {
   });
 
   it('latches the rejection and replays it on connections:list for late subscribers', async () => {
-    installWindow();
+    const { localSender, remoteSender } = installBackendWindows();
     const { mod } = await loadModule();
     const { AuthRejectedError } = await import('../backend-connection');
     mod.registerBackendHandlers();
@@ -465,20 +521,27 @@ describe('WSS auth-rejection propagation', () => {
     client.emit('error', new AuthRejectedError(401));
 
     // A renderer created/reloaded AFTER the one-shot broadcast still learns the
-    // rejection from its initial list fetch (the sticky #823 pattern).
+    // rejection from its initial list fetch (the sticky #823 pattern) — gated
+    // to windows bound to the rejected backend.
     const handler = findHandler('connections:list');
-    await expect(handler!({}, undefined)).resolves.toMatchObject({
+    await expect(handler!({ sender: remoteSender }, undefined)).resolves.toMatchObject({
       authRejected: { id: 'remote-1', host: '10.0.0.5', port: 8443, statusCode: 401 },
+    });
+    // A window bound to a different (local) backend does not replay it.
+    await expect(handler!({ sender: localSender }, undefined)).resolves.toMatchObject({
+      authRejected: null,
     });
 
     // A fresh client (re-pair / switch) clears the latch: the list stops
     // replaying a rejection that no longer describes the live client.
     await mod.switchBackend('remote-1');
-    await expect(handler!({}, undefined)).resolves.toMatchObject({ authRejected: null });
+    await expect(handler!({ sender: remoteSender }, undefined)).resolves.toMatchObject({
+      authRejected: null,
+    });
   });
 
   it('carries the 403 statusCode (WS API disabled) on the payload', async () => {
-    const send = installWindow();
+    const send = installWindow('remote-1');
     const { mod } = await loadModule();
     const { AuthRejectedError } = await import('../backend-connection');
 
@@ -495,7 +558,7 @@ describe('WSS auth-rejection propagation', () => {
   });
 
   it('resets the once-latch when a fresh client is constructed', async () => {
-    const send = installWindow();
+    const send = installWindow('remote-1');
     const { mod } = await loadModule();
     const { AuthRejectedError } = await import('../backend-connection');
 
@@ -514,7 +577,7 @@ describe('WSS auth-rejection propagation', () => {
   });
 
   it('does not emit an auth-rejected event for a generic transport error', async () => {
-    const send = installWindow();
+    const send = installWindow('remote-1');
     const { mod } = await loadModule();
     await mod.switchBackend('remote-1');
     const client = mod.getBackendClient() as unknown as {
@@ -548,6 +611,131 @@ describe('connections:* IPC handlers', () => {
       protocolMismatch: null,
       // No auth rejection has fired, so there is no sticky rejection either.
       authRejected: null,
+      // No pinned cert has mismatched, so there is no sticky cert failure.
+      certMismatch: null,
+      // The app's pinned intentd version rides the list payload.
+      pinnedVersion: '0.1.0',
+      // No client reports 'connected' (the fake pool returns 'disconnected').
+      connectedIds: [],
+    });
+  });
+
+  it('connections:list reports connected pool members in connectedIds', async () => {
+    const { mod } = await loadModule();
+    mod.getBackendClient(); // local stays 'disconnected'
+    const remote = (await mod.connectBackendClient('remote-1')) as unknown as { status: string };
+    remote.status = 'connected';
+    mod.registerBackendHandlers();
+
+    await expect(findHandler('connections:list')!({}, undefined)).resolves.toMatchObject({
+      connectedIds: ['remote-1'],
+    });
+  });
+
+  it('re-broadcasts connections:changed when a pool member connects or drops', async () => {
+    const send = installWindow();
+    const { mod } = await loadModule();
+    const remote = (await mod.connectBackendClient('remote-1')) as unknown as {
+      status: string;
+      emit(event: string, arg: unknown): void;
+    };
+    mod.registerBackendHandlers();
+
+    remote.status = 'connected';
+    remote.emit('status', 'connected');
+    await vi.waitFor(() => {
+      const changed = send.mock.calls.filter(([c]) => c === 'connections:changed');
+      expect(changed.at(-1)?.[1]).toMatchObject({ connectedIds: ['remote-1'] });
+    });
+
+    remote.status = 'disconnected';
+    remote.emit('status', 'disconnected');
+    await vi.waitFor(() => {
+      const changed = send.mock.calls.filter(([c]) => c === 'connections:changed');
+      expect(changed.at(-1)?.[1]).toMatchObject({ connectedIds: [] });
+    });
+  });
+
+  it('connections:update-backend routes system.requestUpdate to the pooled client', async () => {
+    const { mod } = await loadModule();
+    const remote = (await mod.connectBackendClient('remote-1')) as unknown as { status: string };
+    remote.status = 'connected';
+    mod.registerBackendHandlers();
+    const handler = findHandler('connections:update-backend');
+    expect(handler).toBeDefined();
+
+    await expect(handler!({}, { id: 'remote-1' })).resolves.toEqual({ ok: true });
+    expect(rpc.calls).toContain('system.requestUpdate');
+  });
+
+  it('connections:update-backend rejects the local id as unsupported', async () => {
+    const { mod } = await loadModule();
+    mod.registerBackendHandlers();
+
+    await expect(findHandler('connections:update-backend')!({}, { id: 'local' })).resolves.toEqual({
+      ok: false,
+      reason: 'unsupported',
+    });
+    expect(rpc.calls).not.toContain('system.requestUpdate');
+  });
+
+  it('connections:update-backend reports not-connected without a live client', async () => {
+    const { mod } = await loadModule();
+    mod.registerBackendHandlers();
+    const handler = findHandler('connections:update-backend')!;
+
+    // No pooled client at all for the id.
+    await expect(handler({}, { id: 'remote-1' })).resolves.toEqual({
+      ok: false,
+      reason: 'not-connected',
+    });
+
+    // A pooled but disconnected client is not updatable either.
+    await mod.connectBackendClient('remote-1'); // fake status stays 'disconnected'
+    await expect(handler({}, { id: 'remote-1' })).resolves.toEqual({
+      ok: false,
+      reason: 'not-connected',
+    });
+    expect(rpc.calls).not.toContain('system.requestUpdate');
+  });
+
+  it('connections:update-backend maps -32601 to unsupported (daemon too old)', async () => {
+    const { JsonRpcError } = await import('../json-rpc-errors');
+    rpc.handler = async (method) => {
+      if (method === 'system.requestUpdate') {
+        throw new JsonRpcError({ code: -32601, message: 'Method not found' });
+      }
+      return {};
+    };
+    const { mod } = await loadModule();
+    const remote = (await mod.connectBackendClient('remote-1')) as unknown as { status: string };
+    remote.status = 'connected';
+    mod.registerBackendHandlers();
+
+    await expect(
+      findHandler('connections:update-backend')!({}, { id: 'remote-1' }),
+    ).resolves.toEqual({ ok: false, reason: 'unsupported' });
+  });
+
+  it('connections:update-backend surfaces a structured daemon failure', async () => {
+    const { JsonRpcError } = await import('../json-rpc-errors');
+    rpc.handler = async (method) => {
+      if (method === 'system.requestUpdate') {
+        throw new JsonRpcError({ code: -32000, message: 'daemon is not sitter-supervised' });
+      }
+      return {};
+    };
+    const { mod } = await loadModule();
+    const remote = (await mod.connectBackendClient('remote-1')) as unknown as { status: string };
+    remote.status = 'connected';
+    mod.registerBackendHandlers();
+
+    await expect(
+      findHandler('connections:update-backend')!({}, { id: 'remote-1' }),
+    ).resolves.toEqual({
+      ok: false,
+      reason: 'failed',
+      message: 'daemon is not sitter-supervised',
     });
   });
 
@@ -2462,6 +2650,41 @@ describe('backend client pool', () => {
     expect(mod.getBackendClient()).toBe(local);
     expect(mod.getBackendClientForConnection('local')).toBe(local);
     expect(mod.getBackendClientForConnection('remote-1')).toBeUndefined();
+  });
+
+  it('retargets the primary to local when the disconnected backend owns the compatibility client', async () => {
+    // Boot-restored persisted remote: the primary/compatibility client is
+    // pinned to the remote (activeConnectionMeta set), then its last window
+    // closes. Disposal must clear the remote pin and rebuild a local primary —
+    // otherwise the next lazy getBackendClient() would re-dial the window-less
+    // remote and recreate the reconnect/heartbeat timers.
+    const { mod } = await loadModule();
+    mod.__setActiveConnectionMetaForTesting({ id: 'remote-1', host: '10.0.0.5', port: 8443 });
+    const remotePrimary = mod.getBackendClient();
+    expect(mod.getBackendClientForConnection('remote-1')).toBe(remotePrimary);
+    const onLocalReconnect = vi.fn();
+    mod.onBackendReconnected(onLocalReconnect, 'local');
+    lifecycle.events = [];
+    vi.mocked(app.emit).mockClear();
+
+    mod.disconnectBackendClient('remote-1');
+
+    // Old remote primary disposed, fresh local primary constructed + started.
+    expect(lifecycle.events.map((event) => event.type)).toEqual(['dispose', 'construct', 'start']);
+    expect(vi.mocked(app.emit)).toHaveBeenCalledWith(
+      mod.BACKEND_CLIENT_DISCONNECTED_EVENT,
+      remotePrimary,
+    );
+    expect(vi.mocked(app.emit)).toHaveBeenCalledWith('backend-connection-changed');
+    expect(onLocalReconnect).toHaveBeenCalledTimes(1);
+    // The remote pin is cleared: the rebuilt primary is local, not the remote.
+    expect(mod.__getActiveConnectionMetaForTesting()).toBeNull();
+    expect(mod.getBackendClientForConnection('remote-1')).toBeUndefined();
+    const rebuilt = mod.getBackendClient();
+    expect(rebuilt).not.toBe(remotePrimary);
+    expect(mod.getBackendClientForConnection('local')).toBe(rebuilt);
+    // No further construction on subsequent calls (the rebuild is stable).
+    expect(mod.getBackendClient()).toBe(rebuilt);
   });
 
   it('scopes main-process reconnect listeners to their backend', async () => {

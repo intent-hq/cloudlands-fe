@@ -4,6 +4,7 @@ import {
   it,
 } from "vitest";
 import {
+  activeProviderPersistRejected,
   enablementPersistRejected,
   ensureEnabledIfUnset,
   hydrateActiveProvider,
@@ -48,6 +49,7 @@ describe("providerSettingsReducer", () => {
     it("should update activeProviderId", () => {
       const state = providerSettingsReducer(initialState, setActiveProvider("claude-code"));
       expect(state.activeProviderId).toBe("claude-code");
+      expect(state.pendingActiveProviderId).toBe("claude-code");
     });
 
     it("should not mutate previous state when setting active provider", () => {
@@ -60,6 +62,7 @@ describe("providerSettingsReducer", () => {
     it("should set activeProviderId from hydration", () => {
       const state = providerSettingsReducer(initialState, hydrateActiveProvider("codex"));
       expect(state.activeProviderId).toBe("codex");
+      expect(state.pendingActiveProviderId).toBeNull();
     });
 
     it("should overwrite an existing active provider during hydration", () => {
@@ -69,6 +72,34 @@ describe("providerSettingsReducer", () => {
       };
       const state = providerSettingsReducer(prev, hydrateActiveProvider("auggie"));
       expect(state.activeProviderId).toBe("auggie");
+    });
+
+    it("keeps a newer local active provider over a stale hydration until confirmation", () => {
+      const selected = providerSettingsReducer(initialState, setActiveProvider("claude-code"));
+      const stale = providerSettingsReducer(selected, hydrateActiveProvider("auggie"));
+      expect(stale).toBe(selected);
+      expect(stale.activeProviderId).toBe("claude-code");
+
+      const confirmed = providerSettingsReducer(stale, hydrateActiveProvider("claude-code"));
+      expect(confirmed.activeProviderId).toBe("claude-code");
+      expect(confirmed.pendingActiveProviderId).toBeNull();
+
+      const remoteChange = providerSettingsReducer(confirmed, hydrateActiveProvider("codex"));
+      expect(remoteChange.activeProviderId).toBe("codex");
+    });
+
+    it("retires only the matching pending active provider after daemon rejection", () => {
+      const claude = providerSettingsReducer(initialState, setActiveProvider("claude-code"));
+      const codex = providerSettingsReducer(claude, setActiveProvider("codex"));
+      const oldRejection = providerSettingsReducer(
+        codex,
+        activeProviderPersistRejected("claude-code"),
+      );
+      expect(oldRejection).toBe(codex);
+
+      const rejected = providerSettingsReducer(codex, activeProviderPersistRejected("codex"));
+      expect(rejected.activeProviderId).toBe("codex");
+      expect(rejected.pendingActiveProviderId).toBeNull();
     });
   });
 

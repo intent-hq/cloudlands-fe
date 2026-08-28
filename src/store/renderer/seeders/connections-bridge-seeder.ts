@@ -36,6 +36,8 @@ import type {
   OpenConnectionResult,
   SwitchConnectionParams,
   SwitchConnectionResult,
+  UpdateBackendParams,
+  UpdateBackendResult,
   ConnectionBootFallbackEvent,
   KeychainSyncStateResult,
   SetKeychainSyncEnabledParams,
@@ -152,6 +154,17 @@ registerMockIpcHandler(CONNECTION_CHANNELS.SWITCH, async (arg): Promise<SwitchCo
   if (connections.some((c) => c.id === id)) activeId = id;
   return { activeId };
 });
+
+// Remote self-update request. The mock has no live pooled clients, so every
+// target reads as not connected — mirroring the main handler's gate.
+registerMockIpcHandler(
+  CONNECTION_CHANNELS.UPDATE_BACKEND,
+  async (arg): Promise<UpdateBackendResult> => {
+    const { id } = arg as UpdateBackendParams;
+    if (id === LOCAL_CONNECTION_ID) return { ok: false, reason: 'unsupported' };
+    return { ok: false, reason: 'not-connected' };
+  },
+);
 
 // Boot-restore fallback notice (T19). The mock never falls back at boot, so
 // there is no notice to deliver — real fallbacks are latched in the main

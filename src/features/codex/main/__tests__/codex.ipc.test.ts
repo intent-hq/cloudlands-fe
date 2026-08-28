@@ -7,17 +7,12 @@
  * §6.7). These tests assert the wire request shape and the envelope mapping.
  */
 
-import {
-  beforeEach,
-  describe,
-  expect,
-  it,
-  vi,
-} from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   handlers: new Map<string, Function>(),
   backendRequest: vi.fn(),
+  remoteBackendRequest: vi.fn(),
   findBinary: vi.fn(),
 }));
 
@@ -31,6 +26,18 @@ vi.mock('electron', () => ({
 
 vi.mock('../../../backend/main/backend.ipc', () => ({
   getBackendClient: () => ({ request: mocks.backendRequest }),
+  // Mirrors production routing: resolve the invoking window's backend id and
+  // fail closed when that backend has no live pooled client.
+  getBackendClientForIpcEvent: (event?: { sender?: { backendId?: string } }) => {
+    const backendId = event?.sender?.backendId ?? 'local';
+    if (backendId === 'local') {
+      return { backendId, client: { request: mocks.backendRequest } };
+    }
+    if (backendId === 'remote-a') {
+      return { backendId, client: { request: mocks.remoteBackendRequest } };
+    }
+    throw new Error(`Backend client is not connected: ${backendId}`);
+  },
 }));
 
 vi.mock('../../../../shared/main/find-binary', () => ({
@@ -144,6 +151,31 @@ describe('codex IPC model listing', () => {
     expect(result.data).toBeUndefined();
   });
 
+  it("issues models.list on the invoking window's backend, not the primary (intent#3682)", async () => {
+    mocks.remoteBackendRequest.mockResolvedValue({
+      providerId: 'codex',
+      models: [{ id: 'remote-model', name: 'Remote Model' }],
+    });
+
+    const handler = await setupAndGetModels();
+    const result = await handler({ sender: { backendId: 'remote-a' } });
+
+    expect(mocks.remoteBackendRequest).toHaveBeenCalledWith('models.list', { providerId: 'codex' });
+    expect(mocks.backendRequest).not.toHaveBeenCalled();
+    expect(result.success).toBe(true);
+    expect(result.data).toEqual([{ value: 'remote-model', label: 'Remote Model' }]);
+  });
+
+  it('fails closed when the window backend has no live pooled client (intent#3682)', async () => {
+    const handler = await setupAndGetModels();
+    const result = await handler({ sender: { backendId: 'remote-gone' } });
+
+    expect(result.success).toBe(false);
+    expect(result.error).toBe('Backend client is not connected: remote-gone');
+    expect(mocks.backendRequest).not.toHaveBeenCalled();
+    expect(mocks.remoteBackendRequest).not.toHaveBeenCalled();
+  });
+
   it('drops malformed rows (missing id/name) instead of failing the envelope', async () => {
     mocks.backendRequest.mockResolvedValue({
       providerId: 'codex',
@@ -159,8 +191,6 @@ describe('codex IPC model listing', () => {
     const result = await handler({});
 
     expect(result.success).toBe(true);
-    expect(result.data).toEqual([
-      { value: 'gpt-5.3-codex/low', label: 'GPT-5.3 Codex (Low)' },
-    ]);
+    expect(result.data).toEqual([{ value: 'gpt-5.3-codex/low', label: 'GPT-5.3 Codex (Low)' }]);
   });
 });

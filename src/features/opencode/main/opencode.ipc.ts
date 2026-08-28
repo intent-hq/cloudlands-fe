@@ -68,9 +68,7 @@ export function setupOpencodeIPC() {
   });
 
   // Get available models from opencode — daemon-owned catalog (PROTOCOL §6.7)
-  ipcMain.handle(
-    OPENCODE_CHANNELS.GET_MODELS,
-    async (_event, params?: { forceRefresh?: boolean }) =>
-      getProviderModelsEnvelope('opencode', params),
+  ipcMain.handle(OPENCODE_CHANNELS.GET_MODELS, async (event, params?: { forceRefresh?: boolean }) =>
+    getProviderModelsEnvelope('opencode', params, event),
   );
 }

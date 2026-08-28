@@ -103,6 +103,7 @@ import type {
   TestConnectionResult,
   UnpublishSelfResult,
   UpdateConnectionResult,
+  UpdateBackendResult,
 } from '../../../shared/types/connections';
 import { compareProtocolMajor } from './protocol-compat';
 import {
@@ -121,6 +122,7 @@ import {
   ConnectionsSyncSetEnabledSchema,
   ConnectionsUnpublishSelfSchema,
   ConnectionsUpdateSchema,
+  ConnectionsUpdateBackendSchema,
 } from '../../../main/ipc-schemas';
 import { createValidatedHandler } from '../../../main/ipc-validation-middleware';
 import { getBackendIdForWebContents, getFocusedWindowBackendId } from '../../../main/window';
@@ -169,6 +171,31 @@ function logDaemonHelloBuild(helloResult: unknown, connectionId: string): void {
 export function __resetDaemonBuildLogForTesting(): void {
   lastLoggedDaemonBuildKeys.clear();
   connectedDaemonVersions.clear();
+}
+
+/**
+ * Capture a REMOTE backend's daemon version from its `client.hello` result
+ * (`server.version`) and persist it on the connection record, following the
+ * `setHostname` capture pattern. The handshake re-runs on every (re)connect,
+ * so a daemon upgrade refreshes the stored value. Fire-and-forget/fail-soft
+ * by design — a store write error must never disturb the handshake — and the
+ * `connections:changed` broadcast fires only when the stored value actually
+ * changed (the store dedupes the common every-reconnect same-version case).
+ * Never called for the local entry: the `DaemonVersionInfo` path owns the
+ * local daemon's version.
+ */
+function captureRemoteDaemonVersion(helloResult: unknown, connectionId: string): void {
+  const helloBuild = extractDaemonHelloBuildInfo(helloResult);
+  if (!helloBuild) return;
+  void connectionsStore
+    .setDaemonVersion(connectionId, helloBuild.version)
+    .then((changed) => (changed ? broadcastConnectionsChanged() : undefined))
+    .catch((error: unknown) => {
+      logger.warn('Failed to capture remote daemon version', {
+        connectionId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    });
 }
 const backendClients = new Map<string, JsonRpcClient>();
 const backendClientConnects = new Map<string, Promise<JsonRpcClient>>();
@@ -244,6 +271,17 @@ backendNotificationForwarder.setMaxListeners(50);
 const backendStatusForwarder = new EventEmitter();
 backendStatusForwarder.setMaxListeners(50);
 
+// Keep the renderer's per-connection connectivity view (`connectedIds` on the
+// connections list payload) current: any client's connected/disconnected
+// transition re-broadcasts `connections:changed`. Both the primary and every
+// pool member pipe `status` through this stable forwarder, so one listener
+// covers all clients across swaps. 'connecting' is skipped — connectivity has
+// not changed yet at that point (still disconnected).
+backendStatusForwarder.on('status', (_id: string, status: ConnectionStatus) => {
+  if (status === 'connecting') return;
+  void broadcastConnectionsChanged().catch(() => {});
+});
+
 /**
  * Connection target for the NEXT `getBackendClient()` construction. `null`
  * means "resolve the local/env default" (startup + switch-back-to-local); a
@@ -261,21 +299,23 @@ let currentConfig: BackendConnectionConfig | null = null;
 let activeConnectionMeta: { id: string; host: string; port: number } | null = null;
 
 /**
- * One-shot guard so a pinned-cert mismatch surfaces a single failure event per
+ * One-shot guards so a pinned-cert mismatch surfaces a single failure event per
  * client — the reconnect loop re-raises {@link PinMismatchError} on every retry
  * against an unchanged cert, but the renderer only needs one blocking modal.
- * Reset whenever a fresh client is constructed.
+ * Keyed by connection id so each pooled backend (and the primary) tracks its
+ * own guard; an id's entry is cleared whenever a fresh client for that id is
+ * constructed (see {@link clearBackendFailureState}).
  */
-let certMismatchNotified = false;
+const certMismatchNotifiedIds = new Set<string>();
 
 /**
- * One-shot guard so a WSS auth rejection (HTTP 401/403) surfaces a single
+ * One-shot guards so a WSS auth rejection (HTTP 401/403) surfaces a single
  * failure event per client — the reconnect loop re-raises
  * {@link AuthRejectedError} on every retry against an unchanged token, but the
- * renderer only needs one notice. Reset whenever a fresh client is constructed
- * (parallels {@link certMismatchNotified}).
+ * renderer only needs one notice. Keyed by connection id (parallels
+ * {@link certMismatchNotifiedIds}).
  */
-let authRejectedNotified = false;
+const authRejectedNotifiedIds = new Set<string>();
 
 /**
  * The LOCAL intentd's `protocolVersion`, learned from the `client.hello`
@@ -293,28 +333,30 @@ let authRejectedNotified = false;
 let localProtocolVersion: string | null = null;
 
 /**
- * One-shot guard so a remote's protocol mismatch surfaces a single non-blocking
+ * One-shot guards so a remote's protocol mismatch surfaces a single non-blocking
  * warning per client — the reconnect loop re-runs `client.hello` on every
- * retry, but the renderer only needs one notice. Reset whenever a fresh client
- * is constructed (parallels {@link certMismatchNotified}).
+ * retry, but the renderer only needs one notice. Keyed by connection id; an
+ * id's entry is cleared whenever a fresh client for that id is constructed
+ * (parallels {@link certMismatchNotifiedIds}).
  */
-let protocolMismatchNotified = false;
+const protocolMismatchNotifiedIds = new Set<string>();
 
 /**
- * Sticky protocol-mismatch for the CURRENTLY active backend, or `null` when the
- * active backend matches local (or is local). Persisted here in main and
- * replayed on {@link listConnections} so a renderer that registered its
+ * Sticky protocol-mismatch per backend connection id (no entry when that
+ * backend matches local or is local). Persisted here in main and replayed on
+ * {@link listConnections} so a renderer that registered its
  * `connections:protocol-mismatch` listener AFTER the one-shot broadcast fired
  * still surfaces the advisory modal + menu warning (cloudlands-fe#823).
  *
  * A backend switch destroys the initiating renderer and creates a new window;
  * a fast remote can broadcast the mismatch before the new renderer subscribes,
  * so the one-shot event alone is lossy. This latched copy closes that race.
- * Cleared whenever a fresh client is constructed (see {@link getBackendClient})
- * — the next `client.hello` re-detects a mismatch for a mismatching remote and
- * leaves it null for a matching/local backend.
+ * An id's entry is cleared whenever a fresh client for that id is constructed
+ * (see {@link clearBackendFailureState}) — the next `client.hello` re-detects
+ * a mismatch for a mismatching remote and latches nothing for a matching/local
+ * backend.
  */
-let activeProtocolMismatch: ConnectionProtocolMismatchEvent | null = null;
+const protocolMismatchById = new Map<string, ConnectionProtocolMismatchEvent>();
 
 /**
  * Origin of the flow that pinned the CURRENT client to a remote, stamped onto
@@ -329,16 +371,30 @@ let activeProtocolMismatch: ConnectionProtocolMismatchEvent | null = null;
 let protocolMismatchOrigin: 'boot' | 'switch' = 'switch';
 
 /**
- * Sticky auth-rejection for the CURRENTLY active backend, or `null` when its
- * auth is good (or it is local). Persisted here in main and replayed on
- * {@link listConnections} so a renderer/window created or reloaded AFTER the
+ * Sticky auth-rejection per backend connection id (no entry when that
+ * backend's auth is good or it is local). Persisted here in main and replayed
+ * on {@link listConnections} so a renderer/window created or reloaded AFTER the
  * one-shot `connections:auth-rejected` broadcast fired (including the boot
  * path) still surfaces the actionable "authentication rejected" state —
- * exactly the {@link activeProtocolMismatch} pattern. Cleared whenever a fresh
- * client is constructed (a re-pair or switch builds a new client whose own
- * connect re-detects any rejection).
+ * exactly the {@link protocolMismatchById} pattern. An id's entry is cleared
+ * whenever a fresh client for that id is constructed (a re-pair or switch
+ * builds a new client whose own connect re-detects any rejection).
  */
-let activeAuthRejected: ConnectionAuthRejectedEvent | null = null;
+const authRejectedById = new Map<string, ConnectionAuthRejectedEvent>();
+
+/**
+ * Sticky cert-mismatch per backend connection id (no entry when that backend's
+ * pinned cert matches or it is local). Persisted here in main and replayed on
+ * {@link listConnections} so a renderer/window created AFTER the one-shot
+ * `connections:cert-mismatch` broadcast fired still surfaces the blocking
+ * trust warning — exactly the {@link authRejectedById} pattern. Critical for
+ * the boot-wide restore: pooled clients start before any of their windows
+ * exist, so a changed cert detected then would otherwise never be seen. An
+ * id's entry is cleared whenever a fresh client for that id is constructed
+ * (a re-pair or switch builds a new client whose own connect re-detects a
+ * still-changed cert).
+ */
+const certMismatchById = new Map<string, ConnectionCertMismatchEvent>();
 
 /**
  * Sticky boot-time backend-restore fallback notice (T19), or `null`. Set by
@@ -463,27 +519,31 @@ export function __handleHelloProtocolVersionForTesting(protocolVersion: string |
   handleHelloProtocolVersion(protocolVersion);
 }
 export function __getActiveProtocolMismatchForTesting(): ConnectionProtocolMismatchEvent | null {
-  return activeProtocolMismatch;
+  return protocolMismatchById.get(activeConnectionMeta?.id ?? LOCAL_CONNECTION_ID) ?? null;
 }
-export function __listConnectionsForTesting(): Promise<ConnectionsListResult> {
-  return listConnections();
+export function __listConnectionsForTesting(
+  windowBackendId?: string,
+): Promise<ConnectionsListResult> {
+  return listConnections(windowBackendId);
 }
 export function __resetBackendProtocolStateForTesting(): void {
   localProtocolVersion = null;
-  protocolMismatchNotified = false;
-  activeProtocolMismatch = null;
+  protocolMismatchNotifiedIds.clear();
+  protocolMismatchById.clear();
   protocolMismatchOrigin = 'switch';
   activeConnectionMeta = null;
   bootFallbackNotice = null;
-  activeAuthRejected = null;
+  authRejectedById.clear();
+  certMismatchById.clear();
 }
 /** @internal Test seam: read the latched auth-rejection for the active backend. */
 export function __getActiveAuthRejectedForTesting(): ConnectionAuthRejectedEvent | null {
-  return activeAuthRejected;
+  return authRejectedById.get(activeConnectionMeta?.id ?? LOCAL_CONNECTION_ID) ?? null;
 }
 /** @internal Test seam: poke the latched auth-rejection directly. */
 export function __setActiveAuthRejectedForTesting(event: ConnectionAuthRejectedEvent | null): void {
-  activeAuthRejected = event;
+  if (event) authRejectedById.set(event.id, event);
+  else authRejectedById.clear();
 }
 /** @internal Test seam: shorten the T19 boot-reconnect timeout. */
 export function __setBootReconnectTimeoutForTesting(ms: number): void {
@@ -528,16 +588,24 @@ export function isSameHostBackendActive(): boolean {
 /** Liveness heartbeat interval; reconnect-on-close cannot detect half-open sockets. */
 const HEARTBEAT_INTERVAL_MS = 30_000;
 
+/**
+ * Drop every latched failure state (cert/auth one-shot guards, sticky protocol
+ * mismatch and auth rejection) for one backend connection id. Called whenever
+ * a fresh client for that id is constructed — its own connect + `client.hello`
+ * re-detects any still-present failure — and when the id's client is disposed.
+ */
+function clearBackendFailureState(id: string): void {
+  certMismatchNotifiedIds.delete(id);
+  authRejectedNotifiedIds.delete(id);
+  protocolMismatchNotifiedIds.delete(id);
+  protocolMismatchById.delete(id);
+  authRejectedById.delete(id);
+  certMismatchById.delete(id);
+}
+
 /** Lazily create, wire, and start the shared main-process JSON-RPC client. */
 export function getBackendClient(): JsonRpcClient {
   if (client) return client;
-  // A fresh client starts with clean cert- and protocol-mismatch guards. The
-  // incoming backend's own `client.hello` re-detects any mismatch.
-  certMismatchNotified = false;
-  authRejectedNotified = false;
-  protocolMismatchNotified = false;
-  activeProtocolMismatch = null;
-  activeAuthRejected = null;
   // Local and packaged builds default to UDS. Explicit transport overrides
   // (`INTENTD_SOCKET`, `INTENTD_WS_URL`, `INTENTD_TCP`) win either way — see
   // `resolveBackendConfig`. After a switch to a remote
@@ -545,6 +613,10 @@ export function getBackendClient(): JsonRpcClient {
   // it is `null` for the local sidecar (startup + switch-back-to-local).
   const isDev = !app.isPackaged;
   const connectionId = activeConnectionMeta?.id ?? LOCAL_CONNECTION_ID;
+  // A fresh client starts with clean cert/auth/protocol-mismatch guards for
+  // its backend. The incoming backend's own `client.hello` re-detects any
+  // mismatch.
+  clearBackendFailureState(connectionId);
   // An explicit whole-app switch keeps its historical full-rebuild semantics.
   // If the target was already connected as a secondary pool member, dispose it
   // before replacing it with the newly wired primary client.
@@ -591,6 +663,14 @@ export function getBackendClient(): JsonRpcClient {
       // #3649: log the connected daemon's build identity once at INFO so the
       // log file records which daemon build it talked to.
       logDaemonHelloBuild(result, connectionId);
+      // Persist a REMOTE backend's reported daemon version on its connection
+      // record (refreshed on every reconnect). Guarded on the live active
+      // meta so a hello landing after a switch away cannot mislabel the
+      // record (the monorepo#2221 pattern); the local entry never captures —
+      // the #3448 refresh below owns the local daemon's version.
+      if (activeConnectionMeta?.id === connectionId) {
+        captureRemoteDaemonVersion(result, connectionId);
+      }
       // #3448: refresh the adopted external daemon's version info from the
       // live `server.version` on every (re)connect — the startup probe only
       // latches it once, so a daemon upgrade would otherwise stay stale. For
@@ -673,16 +753,26 @@ export function getBackendClient(): JsonRpcClient {
     // event to the renderer instead of silently reconnecting into a changed
     // cert (spec "Trust-on-first-use flow", no silent re-trust).
     if (error instanceof PinMismatchError) {
-      if (!certMismatchNotified && activeConnectionMeta) {
-        certMismatchNotified = true;
+      const meta = activeConnectionMeta;
+      if (meta && !certMismatchNotifiedIds.has(meta.id)) {
+        certMismatchNotifiedIds.add(meta.id);
         const payload: ConnectionCertMismatchEvent = {
-          id: activeConnectionMeta.id,
-          host: activeConnectionMeta.host,
-          port: activeConnectionMeta.port,
+          id: meta.id,
+          host: meta.host,
+          port: meta.port,
           expectedFingerprint: error.expected,
           actualFingerprint: error.actual,
         };
-        broadcast(CONNECTIONS.CERT_MISMATCH, payload);
+        // Latch BEFORE broadcasting so a renderer that fetches
+        // `connections:list` between the broadcast and its own listener
+        // registration still replays it (same ordering as the sticky
+        // auth rejection).
+        certMismatchById.set(meta.id, payload);
+        // Scoped to the failing backend's windows — a global broadcast would
+        // surface this modal in windows bound to OTHER pooled backends.
+        // Windows created later (e.g. the boot-wide restore connects pooled
+        // clients before their windows exist) replay it from the latch.
+        broadcast(CONNECTIONS.CERT_MISMATCH, payload, meta.id);
       }
       logger.warn('Backend certificate fingerprint mismatch', {
         host: activeConnectionMeta?.host,
@@ -695,20 +785,23 @@ export function getBackendClient(): JsonRpcClient {
     // machine-readable auth-rejected event per client instead of a generic
     // transport error.
     if (error instanceof AuthRejectedError) {
-      if (!authRejectedNotified && activeConnectionMeta) {
-        authRejectedNotified = true;
+      const meta = activeConnectionMeta;
+      if (meta && !authRejectedNotifiedIds.has(meta.id)) {
+        authRejectedNotifiedIds.add(meta.id);
         const payload: ConnectionAuthRejectedEvent = {
-          id: activeConnectionMeta.id,
-          host: activeConnectionMeta.host,
-          port: activeConnectionMeta.port,
+          id: meta.id,
+          host: meta.host,
+          port: meta.port,
           statusCode: error.statusCode,
         };
         // Latch BEFORE broadcasting so a renderer that fetches
         // `connections:list` between the broadcast and its own listener
         // registration still replays it (same ordering as the sticky
         // protocol mismatch).
-        activeAuthRejected = payload;
-        broadcast(CONNECTIONS.AUTH_REJECTED, payload);
+        authRejectedById.set(meta.id, payload);
+        // Scoped to the failing backend's windows (see CERT_MISMATCH above);
+        // late/re-created windows for this backend replay it from the latch.
+        broadcast(CONNECTIONS.AUTH_REJECTED, payload, meta.id);
       }
       logger.warn('Backend rejected WebSocket authentication', {
         host: activeConnectionMeta?.host,
@@ -736,6 +829,64 @@ export function getBackendClient(): JsonRpcClient {
 /** Return a live pooled client by connection id, without creating one. */
 export function getBackendClientForConnection(id: string): JsonRpcClient | undefined {
   return backendClients.get(id);
+}
+
+/**
+ * Resolve a backend id to its live pooled client — fail-closed. The one
+ * exception: the local sidecar id lazily creates the compatibility client
+ * when no whole-app switch is active (startup boot order), matching
+ * {@link getBackendClientForIpcEvent}. Any other id without a live pooled
+ * client throws instead of silently retargeting the primary.
+ */
+export function getBackendClientForId(backendId: string): JsonRpcClient {
+  const pooledClient = backendClients.get(backendId);
+  if (pooledClient) return pooledClient;
+  if (backendId === LOCAL_CONNECTION_ID && activeConnectionMeta === null) {
+    return getBackendClient();
+  }
+  throw new Error(`Backend client is not connected: ${backendId}`);
+}
+
+/**
+ * Local-pinned accessor for services whose data must always come from the
+ * local sidecar (app settings, workspace paths, config persistence). Throws
+ * when the local backend has no live client and cannot be lazily created.
+ */
+export function getLocalBackendClient(): JsonRpcClient {
+  return getBackendClientForId(LOCAL_CONNECTION_ID);
+}
+
+/**
+ * Ask one connected remote backend's daemon to self-update via
+ * `system.requestUpdate` (the daemon signals its serve-mode sitter, which
+ * installs the newer version and restarts the daemon). Returns a structured
+ * {@link UpdateBackendResult} instead of throwing for daemon-side failures so
+ * the renderer can toast a specific message:
+ *   - local id → 'unsupported' (the local sidecar is never updated this way);
+ *   - no live pooled client → 'not-connected' (saved-but-disconnected remote);
+ *   - JSON-RPC -32601 → 'unsupported' (daemon too old to know the method);
+ *   - any other daemon/transport error → 'failed' with the error message.
+ */
+async function requestBackendUpdate(id: string): Promise<UpdateBackendResult> {
+  if (id === LOCAL_CONNECTION_ID) {
+    return { ok: false, reason: 'unsupported' };
+  }
+  const target = backendClients.get(id);
+  if (!target || target.getStatus() !== 'connected') {
+    return { ok: false, reason: 'not-connected' };
+  }
+  try {
+    await target.request('system.requestUpdate');
+    return { ok: true };
+  } catch (error) {
+    if (error instanceof JsonRpcError && error.rpcCode === -32601) {
+      logger.warn('Remote daemon does not support system.requestUpdate', { id });
+      return { ok: false, reason: 'unsupported' };
+    }
+    const message = error instanceof Error ? error.message : String(error);
+    logger.warn('Remote daemon update request failed', { id, error: message });
+    return { ok: false, reason: 'failed', message };
+  }
 }
 
 /** Resolve a renderer sender to its backend id, with the local fallback. */
@@ -789,11 +940,27 @@ export function disconnectBackendClient(id: string): void {
   const instance = backendClients.get(id);
   if (!instance) return;
   if (instance === client) {
+    // The closing backend owns the primary/compatibility client (reachable
+    // when a persisted remote activeId was restored as primary at boot and
+    // other backends were opened via Open). Merely disposing would leave
+    // `currentConfig`/`activeConnectionMeta` pinned to the closed remote, so
+    // the next lazy getBackendClient() caller (config-daemon-sync, the
+    // getFocusedBackendClient pool-miss fallback, ...) would silently re-dial
+    // the window-less remote — recreating the socket and reconnect/heartbeat
+    // timers this disposal is meant to tear down. Retarget the primary to
+    // local instead, mirroring forgetConnection's retarget path.
     disposeBackendClient();
+    currentConfig = null;
+    activeConnectionMeta = null;
+    app.emit(BACKEND_CLIENT_DISCONNECTED_EVENT, instance);
+    getBackendClient();
+    backendReconnectForwarder.emit('reconnected', LOCAL_CONNECTION_ID);
+    app.emit('backend-connection-changed');
     return;
   }
   backendClients.delete(id);
   connectedDaemonVersions.delete(id);
+  clearBackendFailureState(id);
   disposeTransferConnectionsForBackend(id);
   void cancelInflightHostExecStreamsForBackendSwitch(instance);
   app.emit(BACKEND_CLIENT_DISCONNECTED_EVENT, instance);
@@ -802,6 +969,15 @@ export function disconnectBackendClient(id: string): void {
 
 /** Build a secondary pool member and route its renderer events by connection id. */
 function createAdditionalBackendClient(id: string, config: BackendConnectionConfig): JsonRpcClient {
+  // A fresh pool member starts with clean cert/auth/protocol-mismatch guards
+  // for its backend — its own connect + `client.hello` re-detects any failure.
+  clearBackendFailureState(id);
+  // The failure-event identity for this pool member. `null` for a pooled
+  // local/UDS client (no cert/auth/protocol mismatch to attribute).
+  const meta =
+    id !== LOCAL_CONNECTION_ID && config.host != null && config.port != null
+      ? { id, host: config.host, port: config.port }
+      : null;
   const instance = new JsonRpcClient({
     config,
     heartbeatIntervalMs: HEARTBEAT_INTERVAL_MS,
@@ -811,16 +987,30 @@ function createAdditionalBackendClient(id: string, config: BackendConnectionConf
     },
     helloParams: async () => ({ clientId: await getOrCreateClientId() }),
     onHelloResult: (result) => {
-      const clientId =
+      const obj =
         result && typeof result === 'object'
-          ? (result as { clientId?: unknown }).clientId
+          ? (result as { clientId?: unknown; protocolVersion?: unknown })
           : undefined;
+      const clientId = obj?.clientId;
       if (typeof clientId === 'string' && clientId.length > 0) {
         void persistClientId(clientId);
       }
+      // T15 on the pool path: a pooled remote's handshake `protocolVersion`
+      // runs the same warn-but-allow compat check as the primary, latched per
+      // connection id and broadcast to this backend's windows only.
+      handleHelloProtocolVersion(
+        typeof obj?.protocolVersion === 'string' ? obj.protocolVersion : null,
+        meta,
+      );
       // #3649: pool members log their daemon's build identity too, keyed by
       // connection id so multi-backend setups record every daemon build.
       logDaemonHelloBuild(result, id);
+      // Pool members capture their remote's daemon version too; the id is
+      // fixed at construction so no active-meta guard is needed. Skipped for
+      // a pooled local client (the DaemonVersionInfo path owns local).
+      if (id !== LOCAL_CONNECTION_ID) {
+        captureRemoteDaemonVersion(result, id);
+      }
     },
   });
   instance.on('notification', (notification: JsonRpcNotification) => {
@@ -855,6 +1045,50 @@ function createAdditionalBackendClient(id: string, config: BackendConnectionConf
     backendReconnectForwarder.emit('reconnected', id);
   });
   instance.on('error', (error: Error) => {
+    // Same non-transient failure handling as the primary client (see
+    // getBackendClient's `error` handler), latched per connection id and
+    // broadcast to this backend's windows only.
+    if (error instanceof PinMismatchError) {
+      if (meta && !certMismatchNotifiedIds.has(meta.id)) {
+        certMismatchNotifiedIds.add(meta.id);
+        const payload: ConnectionCertMismatchEvent = {
+          id: meta.id,
+          host: meta.host,
+          port: meta.port,
+          expectedFingerprint: error.expected,
+          actualFingerprint: error.actual,
+        };
+        // Latch BEFORE broadcasting (same ordering as the primary). The boot
+        // restore starts pooled clients before their windows exist, so the
+        // one-shot broadcast alone can fire into zero windows; the latch is
+        // replayed on each window's initial `connections:list` fetch.
+        certMismatchById.set(meta.id, payload);
+        broadcast(CONNECTIONS.CERT_MISMATCH, payload, meta.id);
+      }
+      logger.warn('Backend pool certificate fingerprint mismatch', { id, host: meta?.host });
+      return;
+    }
+    if (error instanceof AuthRejectedError) {
+      if (meta && !authRejectedNotifiedIds.has(meta.id)) {
+        authRejectedNotifiedIds.add(meta.id);
+        const payload: ConnectionAuthRejectedEvent = {
+          id: meta.id,
+          host: meta.host,
+          port: meta.port,
+          statusCode: error.statusCode,
+        };
+        // Latch BEFORE broadcasting so a renderer that fetches
+        // `connections:list` between the broadcast and its own listener
+        // registration still replays it (same ordering as the primary).
+        authRejectedById.set(meta.id, payload);
+        broadcast(CONNECTIONS.AUTH_REJECTED, payload, meta.id);
+      }
+      logger.warn('Backend pool rejected WebSocket authentication', {
+        id,
+        statusCode: error.statusCode,
+      });
+      return;
+    }
     logger.warn('Backend pool transport error', { id, error: error.message });
   });
   registerBrowserExecReverseHandler(instance, {
@@ -886,6 +1120,19 @@ export function onBackendReconnected(handler: () => void, backendId?: string): (
   const listener = (emittingBackendId: string): void => {
     if (emittingBackendId === (backendId ?? getPrimaryBackendId())) handler();
   };
+  backendReconnectForwarder.on('reconnected', listener);
+  return () => backendReconnectForwarder.off('reconnected', listener);
+}
+
+/**
+ * Register a main-process listener for reconnects on ANY backend, receiving
+ * the emitting backend id. For consumers whose state is partitioned per
+ * backend (e.g. the user-activity cache) rather than pinned to one id.
+ * Returns a disposer.
+ */
+export function onAnyBackendReconnected(handler: (backendId: string) => void): () => void {
+  getBackendClient();
+  const listener = (emittingBackendId: string): void => handler(emittingBackendId);
   backendReconnectForwarder.on('reconnected', listener);
   return () => backendReconnectForwarder.off('reconnected', listener);
 }
@@ -959,12 +1206,7 @@ export function getBackendClientForIpcEvent(event?: Electron.IpcMainInvokeEvent)
   client: JsonRpcClient;
 } {
   const backendId = event?.sender ? getBackendIdForWebContents(event.sender) : LOCAL_CONNECTION_ID;
-  const pooledClient = getBackendClientForConnection(backendId);
-  if (pooledClient) return { backendId, client: pooledClient };
-  if (backendId === LOCAL_CONNECTION_ID && activeConnectionMeta === null) {
-    return { backendId, client: getBackendClient() };
-  }
-  throw new Error(`Backend client is not connected: ${backendId}`);
+  return { backendId, client: getBackendClientForId(backendId) };
 }
 
 /**
@@ -975,23 +1217,33 @@ export function getBackendClientForIpcEvent(event?: Electron.IpcMainInvokeEvent)
  * identity after a {@link switchBackend} to a remote.
  *   - Local handshake → record the value as the baseline `localProtocolVersion`.
  *   - Remote handshake → compare its **major** against the local baseline (see
- *     {@link resolveLocalProtocolBaseline}); on a mismatch latch it as the
- *     sticky {@link activeProtocolMismatch} AND broadcast a single non-blocking
+ *     {@link resolveLocalProtocolBaseline}); on a mismatch latch it in the
+ *     sticky {@link protocolMismatchById} AND broadcast a single non-blocking
  *     `connections:protocol-mismatch` notice (the connection still proceeds —
  *     warn-but-allow). An unknown/absent version on either side surfaces
  *     nothing.
+ *
+ * Pooled clients call this too, passing their own `connectionMeta` (built from
+ * the pool member's config) so their handshake runs the same check latched per
+ * connection id and broadcast to that backend's windows only. Pooled-path
+ * mismatches are always `origin: 'switch'` — a pool member is only built for a
+ * window the user pointed at that backend, never by boot restore.
  */
-function handleHelloProtocolVersion(protocolVersion: string | null): void {
-  const meta = activeConnectionMeta;
+function handleHelloProtocolVersion(
+  protocolVersion: string | null,
+  connectionMeta: { id: string; host: string; port: number } | null = activeConnectionMeta,
+): void {
+  const meta = connectionMeta;
+  const pooled = meta !== null && meta !== activeConnectionMeta;
   if (!meta) {
     // Local sidecar / env default: remember the baseline protocolVersion.
     if (protocolVersion) localProtocolVersion = protocolVersion;
     return;
   }
-  if (protocolMismatchNotified) return;
+  if (protocolMismatchNotifiedIds.has(meta.id)) return;
   const localBaseline = resolveLocalProtocolBaseline();
   if (compareProtocolMajor(localBaseline, protocolVersion) !== 'mismatch') return;
-  protocolMismatchNotified = true;
+  protocolMismatchNotifiedIds.add(meta.id);
   const payload: ConnectionProtocolMismatchEvent = {
     id: meta.id,
     host: meta.host,
@@ -1000,18 +1252,20 @@ function handleHelloProtocolVersion(protocolVersion: string | null): void {
     localProtocolVersion: localBaseline as string,
     remoteProtocolVersion: protocolVersion as string,
     // 'boot' when this client was pinned by boot restore (suppresses the
-    // renderer modal), 'switch' for an explicit backend switch.
-    origin: protocolMismatchOrigin,
+    // renderer modal), 'switch' for an explicit backend switch or pool member.
+    origin: pooled ? 'switch' : protocolMismatchOrigin,
   };
   // Latch BEFORE broadcasting so a renderer that fetches `connections:list`
   // between the broadcast and its own listener registration still replays it.
-  activeProtocolMismatch = payload;
+  protocolMismatchById.set(meta.id, payload);
   logger.warn('Remote backend protocol version differs from local (warn-only)', {
     id: meta.id,
     localProtocolVersion: localBaseline,
     remoteProtocolVersion: protocolVersion,
   });
-  broadcast(CONNECTIONS.PROTOCOL_MISMATCH, payload);
+  // Scoped to the mismatching backend's windows — primary or pooled — so
+  // windows bound to other backends never surface this backend's advisory.
+  broadcast(CONNECTIONS.PROTOCOL_MISMATCH, payload, meta.id);
 }
 
 /**
@@ -1190,8 +1444,8 @@ export async function reconcileActiveConnectionOnBoot(): Promise<void> {
 
   // Unreachable/timed out: tear the remote client down and fall back to local.
   // A pinned-cert mismatch already surfaced its own blocking modal via the
-  // client `error` handler (certMismatchNotified) — skip the redundant notice.
-  const certMismatch = certMismatchNotified;
+  // client `error` handler (certMismatchNotifiedIds) — skip the redundant notice.
+  const certMismatch = certMismatchNotifiedIds.has(activeId);
   logger.warn('Last-used remote backend unreachable at boot; falling back to local', {
     id: activeId,
     certMismatch,
@@ -1475,11 +1729,11 @@ async function listConnections(
   // Kick off (or reuse) the live probe without awaiting it (see above).
   void getLiveSelfFingerprint();
   const selfKeys = buildSelfFingerprintKeys(storedFingerprint, cachedLiveSelfFingerprint);
-  // Replay any sticky protocol mismatch / auth rejection for the active
+  // Replay any sticky protocol mismatch / auth rejection for THIS WINDOW'S
   // backend so a renderer that missed the one-shot broadcast (e.g. a window
-  // created by a switch after the remote handshake already fired, or a boot
-  // into a rejecting remote) still surfaces the advisory / actionable state
-  // (cloudlands-fe#823 pattern).
+  // created by a switch after the remote handshake already fired, a boot into
+  // a rejecting remote, or a reload of a pooled-backend window) still surfaces
+  // the advisory / actionable state (cloudlands-fe#823 pattern), per backend.
   return {
     connections: connections
       .filter((c) => !isSelfConnectionRecord(c, selfKeys))
@@ -1495,8 +1749,18 @@ async function listConnections(
       }),
     activeId,
     windowBackendId,
-    protocolMismatch: activeProtocolMismatch,
-    authRejected: activeAuthRejected,
+    protocolMismatch: protocolMismatchById.get(windowBackendId) ?? null,
+    authRejected: authRejectedById.get(windowBackendId) ?? null,
+    certMismatch: certMismatchById.get(windowBackendId) ?? null,
+    // The app's pinned intentd version so the renderer can compare each
+    // remote's captured `daemonVersion` without a separate channel.
+    pinnedVersion: getPinnedVersion(),
+    // Live per-connection connectivity so the renderer can gate
+    // connected-only actions (the remote Update button). Kept fresh by the
+    // status-forwarder re-broadcast of `connections:changed`.
+    connectedIds: [...backendClients.entries()]
+      .filter(([, instance]) => instance.getStatus() === 'connected')
+      .map(([id]) => id),
   };
 }
 
@@ -1505,9 +1769,15 @@ async function broadcastConnectionsChanged(): Promise<void> {
   const payload = await listConnections();
   for (const win of BrowserWindow.getAllWindows()) {
     if (win.isDestroyed()) continue;
+    const windowBackendId = getBackendIdForWebContents(win.webContents);
+    // Re-derive the per-backend sticky replay for THIS window's backend — the
+    // shared payload was computed for the local default.
     const windowPayload: ConnectionsChangedEvent = {
       ...payload,
-      windowBackendId: getBackendIdForWebContents(win.webContents),
+      windowBackendId,
+      protocolMismatch: protocolMismatchById.get(windowBackendId) ?? null,
+      authRejected: authRejectedById.get(windowBackendId) ?? null,
+      certMismatch: certMismatchById.get(windowBackendId) ?? null,
     };
     try {
       win.webContents.send(CONNECTIONS.CHANGED, windowPayload);
@@ -2448,6 +2718,23 @@ function registerConnectionsHandlers(): void {
     ),
   );
 
+  // Ask one connected remote backend's daemon to self-update: route
+  // `system.requestUpdate` to that backend's pooled client. The daemon signals
+  // its serve-mode sitter (SIGUSR1), which installs the newer version and
+  // gracefully restarts the daemon — the client then reconnects on its own.
+  // The result is structured (never a thrown daemon error) so the renderer can
+  // toast a specific message per failure mode: local/method-unknown daemons →
+  // 'unsupported', no live client → 'not-connected', a structured daemon error
+  // (unsupervised, non-unix) → 'failed' with the daemon's message.
+  ipcMain.handle(
+    CONNECTIONS.UPDATE_BACKEND,
+    createValidatedHandler(
+      ConnectionsUpdateBackendSchema,
+      async (_event, { id }) => requestBackendUpdate(id),
+      CONNECTIONS.UPDATE_BACKEND,
+    ),
+  );
+
   // Pull the one-shot boot-restore fallback notice (T19), consume-once. The
   // renderer fetches this once on mount and surfaces a non-blocking toast; the
   // fallback happens before any window exists, so the notice is latched at boot
@@ -2775,6 +3062,7 @@ export function disposeBackendClient(): void {
     for (const [id, instance] of backendClients) {
       if (instance === client) backendClients.delete(id);
     }
+    clearBackendFailureState(primaryBackendId);
     client.dispose();
   }
   client = null;

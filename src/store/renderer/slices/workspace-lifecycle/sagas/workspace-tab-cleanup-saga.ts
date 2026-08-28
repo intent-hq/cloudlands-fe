@@ -32,7 +32,8 @@ export function* workspaceTabCleanupSaga(): SagaGenerator<void> {
       const focusChanged = currentFocusedId !== previousFocusedId;
       const unmountedIds = new Set<string>();
 
-      if (focusChanged && previousFocusedId) unmountedIds.add(previousFocusedId);
+      // Focus changes keep the previous workspace session warm. Teardown is
+      // reserved for tabs that disappear or workspaces that are deleted.
       for (const workspaceId of previousIds) {
         if (!currentIdSet.has(workspaceId)) unmountedIds.add(workspaceId);
       }

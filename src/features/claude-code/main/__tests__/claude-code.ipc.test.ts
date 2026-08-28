@@ -27,6 +27,10 @@ vi.mock('electron', () => ({
 
 vi.mock('../../../backend/main/backend.ipc', () => ({
   getBackendClient: () => ({ request: mocks.backendRequest }),
+  getBackendClientForIpcEvent: () => ({
+    backendId: 'local',
+    client: { request: mocks.backendRequest },
+  }),
 }));
 
 vi.mock('../../../../shared/main/find-binary', () => ({

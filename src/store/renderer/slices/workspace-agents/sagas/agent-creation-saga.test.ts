@@ -50,15 +50,20 @@ function session(): AgentSession {
   } as AgentSession;
 }
 
-function state(defaultSpecialistId = '', fileSpecialists: FileSpecialist[] = []) {
+function state(
+  defaultSpecialistId = '',
+  fileSpecialists: FileSpecialist[] = [],
+  activeProviderId = 'augment',
+  providerModels: Record<string, string> = { augment: 'sonnet' },
+) {
   const workspace = { id: WS, title: 'Workspace', repositoryPath: '/tmp/repo' } as Workspace;
   const note = { id: NOTE, title: 'Task note', content: 'Do the thing' } as Note;
   return {
     workspace: { workspaces: { ids: [WS], map: { [WS]: workspace } } },
     workspaceAgents: { byWorkspaceId: { [WS]: { agentIds: [] } } },
     agentSessions: { byAgentId: {} },
-    model: { providerModels: { augment: 'sonnet' } },
-    providerSettings: { activeProviderId: 'augment' },
+    model: { providerModels },
+    providerSettings: { activeProviderId },
     specialists: {
       ...specialistsInitialState,
       defaultSpecialistId,
@@ -108,6 +113,97 @@ describe('agentCreationSaga', () => {
       }),
     );
     expect(mocks.createAgent.mock.calls[0][1]).not.toHaveProperty('agentId');
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('pairs a blank agent model with its selected Claude provider', async () => {
+    mocks.createAgent.mockResolvedValue({ success: true, agent: session(), agentId: AGENT });
+    const { channel, task } = start(() =>
+      state('', [], 'claude-code', { 'claude-code': 'claude-code:opus-4-1' }),
+    );
+    channel.put(createAgentRequested(WS));
+    await settle();
+
+    expect(mocks.createAgent).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        model: 'claude-code:opus-4-1',
+        provider: 'claude-code',
+      }),
+    );
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('pairs General specialist-picker creation with the selected Claude provider', async () => {
+    mocks.createAgent.mockResolvedValue({ success: true, agent: session(), agentId: AGENT });
+    const { channel, task } = start(() =>
+      state('', [], 'claude-code', { 'claude-code': 'claude-code:opus-4-1' }),
+    );
+    channel.put(createAgentWithSpecialistRequested(WS, null));
+    await settle();
+
+    expect(mocks.createAgent).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        model: 'claude-code:opus-4-1',
+        provider: 'claude-code',
+      }),
+    );
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('omits an inherited specialist preview while preserving its pinned provider', async () => {
+    mocks.createAgent.mockResolvedValue({ success: true, agent: session(), agentId: AGENT });
+    const inherited: FileSpecialist = {
+      id: 'claude-reviewer',
+      name: 'Claude Reviewer',
+      description: 'Pinned to Claude with an inherited model',
+      codingAgent: 'claude-code',
+      model: '',
+      behaviorPrompt: 'Review changes.',
+      filePath: '/tmp/claude-reviewer.md',
+      source: 'user',
+      resolvedModel: 'fable-5',
+      resolvedProvider: 'auggie',
+    };
+    const { channel, task } = start(() => state('', [inherited]));
+    channel.put(createAgentWithSpecialistRequested(WS, 'claude-reviewer'));
+    await settle();
+
+    expect(mocks.createAgent).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ provider: 'claude-code', model: undefined }),
+    );
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('pairs a compound specialist model with its owning provider', async () => {
+    mocks.createAgent.mockResolvedValue({ success: true, agent: session(), agentId: AGENT });
+    const pinned: FileSpecialist = {
+      id: 'claude-reviewer',
+      name: 'Claude Reviewer',
+      description: 'Pinned to Claude Opus',
+      codingAgent: 'claude-code',
+      model: 'claude-code:opus-4-1',
+      behaviorPrompt: 'Review changes.',
+      filePath: '/tmp/claude-reviewer.md',
+      source: 'user',
+    };
+    const { channel, task } = start(() => state('', [pinned]));
+    channel.put(createAgentWithSpecialistRequested(WS, 'claude-reviewer'));
+    await settle();
+
+    expect(mocks.createAgent).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        provider: 'claude-code',
+        model: 'claude-code:opus-4-1',
+      }),
+    );
     task.cancel();
     await task.toPromise();
   });
@@ -292,6 +388,8 @@ describe('agentCreationSaga', () => {
       expect.objectContaining({
         agentType: 'task-loop',
         source: 'task-metadata-bar-run',
+        provider: 'augment',
+        model: undefined,
         metadata: { taskNoteId: NOTE, source: 'task-run', specialist: 'verifier' },
       }),
     );
@@ -400,6 +498,8 @@ describe('agentCreationSaga', () => {
       behaviorPrompt: 'Run tasks on codex.',
       filePath: '/tmp/codex-runner.md',
       source: 'user',
+      resolvedModel: 'fable-5',
+      resolvedProvider: 'auggie',
     };
     const { channel, task } = start(() => state('codex-runner', [pinned]));
     channel.put(runAgentForNoteRequested(WS, NOTE, 'Task note'));
@@ -417,7 +517,7 @@ describe('agentCreationSaga', () => {
     await task.toPromise();
   });
 
-  it('keeps the model empty when the pinned specialist resolves no model (daemon resolves provider default)', async () => {
+  it('omits an inherited task-run preview so the daemon resolves the pinned provider default', async () => {
     mocks.createAgent.mockResolvedValue({ success: true, agent: session(), agentId: AGENT });
     const pinned: FileSpecialist = {
       id: 'codex-runner',
@@ -428,6 +528,8 @@ describe('agentCreationSaga', () => {
       behaviorPrompt: 'Run tasks on codex.',
       filePath: '/tmp/codex-runner.md',
       source: 'user',
+      resolvedModel: 'fable-5',
+      resolvedProvider: 'auggie',
     };
     const { channel, task } = start(() => state('codex-runner', [pinned]));
     channel.put(runAgentForNoteRequested(WS, NOTE, 'Task note'));
@@ -435,7 +537,7 @@ describe('agentCreationSaga', () => {
 
     expect(mocks.createAgent).toHaveBeenCalledWith(
       expect.anything(),
-      expect.objectContaining({ provider: 'codex', model: '' }),
+      expect.objectContaining({ provider: 'codex', model: undefined }),
     );
     task.cancel();
     await task.toPromise();

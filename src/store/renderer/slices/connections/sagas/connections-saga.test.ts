@@ -1,6 +1,10 @@
 import { runSaga, stdChannel } from 'redux-saga';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+// The update saga lazy-imports svelte-sonner for its outcome toasts.
+const toast = vi.hoisted(() => ({ success: vi.fn(), error: vi.fn() }));
+vi.mock('svelte-sonner', () => ({ toast }));
+
 import {
   CONNECTION_CHANNELS,
   CONNECTIONS_CHANGED_EVENT,
@@ -24,6 +28,7 @@ import {
   switchConnectionRequested,
   testConnectionRequested,
   updateConnectionRequested,
+  updateBackendRequested,
 } from '../connections-slice';
 import { connectionsSaga } from './connections-saga';
 import { getItems } from '@augmentcode/themis/utils/collections/collection-utils';
@@ -73,6 +78,8 @@ function start() {
 describe('connectionsSaga', () => {
   beforeEach(() => {
     callbacks = {};
+    toast.success.mockClear();
+    toast.error.mockClear();
     invoke = vi.fn(async (channel: string, params?: unknown) => {
       if (channel === CONNECTION_CHANNELS.LIST)
         return {
@@ -211,6 +218,36 @@ describe('connectionsSaga', () => {
     await settle();
 
     expect(run.getState().connections.authRejected).toEqual(authRejected);
+
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('replays a sticky cert mismatch from the initial list fetch', async () => {
+    // Boot-wide restore: the pooled client's mismatch fired before this window
+    // existed, so the one-shot push was lost — the initial list replays it and
+    // the blocking trust modal still shows.
+    const certMismatch = {
+      id: 'remote-1',
+      host: '10.0.0.5',
+      port: 8443,
+      expectedFingerprint: 'AA:BB',
+      actualFingerprint: 'EE:FF',
+    };
+    invoke.mockImplementation(async (channel: string) =>
+      channel === CONNECTION_CHANNELS.LIST
+        ? {
+            connections: [LOCAL, REMOTE],
+            activeId: REMOTE.id,
+            windowBackendId: REMOTE.id,
+            certMismatch,
+          }
+        : { fingerprint: 'AB:CD' },
+    );
+    const run = start();
+    await settle();
+
+    expect(run.getState().connections.certMismatch).toEqual(certMismatch);
 
     run.task.cancel();
     await run.task.toPromise();
@@ -539,6 +576,111 @@ describe('connectionsSaga', () => {
       enabled: true,
       status,
     });
+
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('requests a backend update and toasts success', async () => {
+    invoke.mockImplementation(async (channel: string) => {
+      if (channel === CONNECTION_CHANNELS.LIST)
+        return { connections: [LOCAL, REMOTE], activeId: LOCAL.id, windowBackendId: LOCAL.id };
+      if (channel === CONNECTION_CHANNELS.UPDATE_BACKEND) return { ok: true };
+      return {};
+    });
+    const run = start();
+    await settle();
+
+    const action = updateBackendRequested('remote-1');
+    run.channel.put(action);
+    await expect(action.promise).resolves.toEqual({ ok: true });
+    expect(invoke).toHaveBeenCalledWith(CONNECTION_CHANNELS.UPDATE_BACKEND, { id: 'remote-1' });
+    expect(toast.success).toHaveBeenCalledTimes(1);
+    expect(toast.error).not.toHaveBeenCalled();
+
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('handles concurrent updates to different backends (takeEvery, not takeLeading)', async () => {
+    // The first backend's RPC stays pending until we release it; the second
+    // action arrives while the first is in flight and must not be dropped.
+    let releaseFirst!: (value: { ok: true }) => void;
+    const firstResult = new Promise<{ ok: true }>((resolve) => {
+      releaseFirst = resolve;
+    });
+    invoke.mockImplementation(async (channel: string, params?: unknown) => {
+      if (channel === CONNECTION_CHANNELS.LIST)
+        return { connections: [LOCAL, REMOTE], activeId: LOCAL.id, windowBackendId: LOCAL.id };
+      if (channel === CONNECTION_CHANNELS.UPDATE_BACKEND) {
+        return (params as { id: string }).id === 'remote-1' ? firstResult : { ok: true };
+      }
+      return {};
+    });
+    const run = start();
+    await settle();
+
+    const first = updateBackendRequested('remote-1');
+    const second = updateBackendRequested('remote-2');
+    run.channel.put(first);
+    run.channel.put(second);
+    // The second settles while the first is still awaiting its RPC.
+    await expect(second.promise).resolves.toEqual({ ok: true });
+    releaseFirst({ ok: true });
+    await expect(first.promise).resolves.toEqual({ ok: true });
+    expect(invoke).toHaveBeenCalledWith(CONNECTION_CHANNELS.UPDATE_BACKEND, { id: 'remote-1' });
+    expect(invoke).toHaveBeenCalledWith(CONNECTION_CHANNELS.UPDATE_BACKEND, { id: 'remote-2' });
+    expect(toast.success).toHaveBeenCalledTimes(2);
+
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('toasts a specific error per structured update failure and resolves the action', async () => {
+    const results: Array<{ ok: false; reason: string; message?: string }> = [
+      { ok: false, reason: 'unsupported' },
+      { ok: false, reason: 'not-connected' },
+      { ok: false, reason: 'failed', message: 'daemon is not sitter-supervised' },
+    ];
+    let index = 0;
+    invoke.mockImplementation(async (channel: string) => {
+      if (channel === CONNECTION_CHANNELS.LIST)
+        return { connections: [LOCAL, REMOTE], activeId: LOCAL.id, windowBackendId: LOCAL.id };
+      if (channel === CONNECTION_CHANNELS.UPDATE_BACKEND) return results[index++];
+      return {};
+    });
+    const run = start();
+    await settle();
+
+    for (const expected of results) {
+      const action = updateBackendRequested('remote-1');
+      run.channel.put(action);
+      // A structured failure resolves (no throw) — the toast carries the news.
+      await expect(action.promise).resolves.toEqual(expected);
+    }
+    expect(toast.error).toHaveBeenCalledTimes(3);
+    // The daemon's message is embedded in the failed-toast text.
+    expect(String(toast.error.mock.calls[2]![0])).toContain('daemon is not sitter-supervised');
+    expect(toast.success).not.toHaveBeenCalled();
+
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('rejects the update action and toasts on an IPC-level failure', async () => {
+    invoke.mockImplementation(async (channel: string) => {
+      if (channel === CONNECTION_CHANNELS.LIST)
+        return { connections: [LOCAL, REMOTE], activeId: LOCAL.id, windowBackendId: LOCAL.id };
+      if (channel === CONNECTION_CHANNELS.UPDATE_BACKEND) throw new Error('bridge unavailable');
+      return {};
+    });
+    const run = start();
+    await settle();
+
+    const action = updateBackendRequested('remote-1');
+    run.channel.put(action);
+    await expect(action.promise).rejects.toThrow('bridge unavailable');
+    expect(toast.error).toHaveBeenCalledTimes(1);
 
     run.task.cancel();
     await run.task.toPromise();

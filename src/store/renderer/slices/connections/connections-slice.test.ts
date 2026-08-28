@@ -122,6 +122,35 @@ describe('connectionsReducer', () => {
       ).toBe('connected');
     });
 
+    it('stores the pinned intentd version and per-connection daemonVersion from the payload', () => {
+      expect(initialState.pinnedVersion).toBeNull();
+      const remoteWithVersion: ConnectionRecord = { ...REMOTE, daemonVersion: '0.8.10' };
+      const next = connectionsReducer(
+        initialState,
+        connectionsListReceived({
+          connections: [LOCAL, remoteWithVersion],
+          activeId: LOCAL_CONNECTION_ID,
+          windowBackendId: LOCAL_CONNECTION_ID,
+          pinnedVersion: '0.8.10',
+        }),
+      );
+      expect(next.pinnedVersion).toBe('0.8.10');
+      expect(getItems(next.connections)[1].daemonVersion).toBe('0.8.10');
+    });
+
+    it('keeps a known pinnedVersion when the payload omits the field (older main process)', () => {
+      const state = { ...initialState, pinnedVersion: '0.8.10' };
+      const next = connectionsReducer(
+        state,
+        connectionsListReceived({
+          connections: [LOCAL],
+          activeId: LOCAL_CONNECTION_ID,
+          windowBackendId: LOCAL_CONNECTION_ID,
+        }),
+      );
+      expect(next.pinnedVersion).toBe('0.8.10');
+    });
+
     it('leaves op-status and cert-mismatch untouched (they are separate concerns)', () => {
       const state = { ...initialState, status: 'connecting' as const, certMismatch: CERT_MISMATCH };
       const next = connectionsReducer(
@@ -186,7 +215,7 @@ describe('connectionsReducer', () => {
       expect(next.status).toBe('connecting');
     });
 
-    it('connectionsListReceived leaves the latch untouched', () => {
+    it('connectionsListReceived leaves the latch untouched when the field is absent', () => {
       const state = { ...initialState, authRejected: AUTH_REJECTED };
       const next = connectionsReducer(
         state,
@@ -194,6 +223,33 @@ describe('connectionsReducer', () => {
           connections: [LOCAL, REMOTE],
           activeId: 'remote-1',
           windowBackendId: 'remote-1',
+        }),
+      );
+      expect(next.authRejected).toEqual(AUTH_REJECTED);
+    });
+
+    it('connectionsListReceived with authRejected: null clears the latch (re-pair path)', () => {
+      const state = { ...initialState, authRejected: AUTH_REJECTED };
+      const next = connectionsReducer(
+        state,
+        connectionsListReceived({
+          connections: [LOCAL, REMOTE],
+          activeId: 'remote-1',
+          windowBackendId: 'remote-1',
+          authRejected: null,
+        }),
+      );
+      expect(next.authRejected).toBeNull();
+    });
+
+    it('connectionsListReceived with a latched rejection replays it', () => {
+      const next = connectionsReducer(
+        initialState,
+        connectionsListReceived({
+          connections: [LOCAL, REMOTE],
+          activeId: 'remote-1',
+          windowBackendId: 'remote-1',
+          authRejected: AUTH_REJECTED,
         }),
       );
       expect(next.authRejected).toEqual(AUTH_REJECTED);
@@ -230,7 +286,7 @@ describe('connectionsReducer', () => {
       expect(next.protocolMismatchModalDismissed).toBe(true);
     });
 
-    it('connectionsListReceived leaves the protocol-mismatch state untouched', () => {
+    it('connectionsListReceived leaves the protocol-mismatch state untouched when absent', () => {
       const state = { ...initialState, protocolMismatch: PROTOCOL_MISMATCH };
       const next = connectionsReducer(
         state,
@@ -241,6 +297,58 @@ describe('connectionsReducer', () => {
         }),
       );
       expect(next.protocolMismatch).toEqual(PROTOCOL_MISMATCH);
+    });
+
+    it('connectionsListReceived with protocolMismatch: null clears the advisory', () => {
+      const state = {
+        ...initialState,
+        protocolMismatch: PROTOCOL_MISMATCH,
+        protocolMismatchModalDismissed: true,
+      };
+      const next = connectionsReducer(
+        state,
+        connectionsListReceived({
+          connections: [LOCAL, REMOTE],
+          activeId: 'remote-1',
+          windowBackendId: 'remote-1',
+          protocolMismatch: null,
+        }),
+      );
+      expect(next.protocolMismatch).toBeNull();
+      expect(next.protocolMismatchModalDismissed).toBe(false);
+    });
+
+    it('connectionsListReceived replaying a fresh mismatch applies push modal semantics', () => {
+      const next = connectionsReducer(
+        initialState,
+        connectionsListReceived({
+          connections: [LOCAL, REMOTE],
+          activeId: 'remote-1',
+          windowBackendId: 'remote-1',
+          protocolMismatch: { ...PROTOCOL_MISMATCH, origin: 'boot' },
+        }),
+      );
+      expect(next.protocolMismatch).toEqual({ ...PROTOCOL_MISMATCH, origin: 'boot' });
+      expect(next.protocolMismatchModalDismissed).toBe(true);
+    });
+
+    it('connectionsListReceived re-replaying the stored mismatch keeps the dismissal', () => {
+      const state = {
+        ...initialState,
+        protocolMismatch: PROTOCOL_MISMATCH,
+        protocolMismatchModalDismissed: true,
+      };
+      const next = connectionsReducer(
+        state,
+        connectionsListReceived({
+          connections: [LOCAL, REMOTE],
+          activeId: 'remote-1',
+          windowBackendId: 'remote-1',
+          protocolMismatch: PROTOCOL_MISMATCH,
+        }),
+      );
+      expect(next.protocolMismatch).toEqual(PROTOCOL_MISMATCH);
+      expect(next.protocolMismatchModalDismissed).toBe(true);
     });
   });
 
