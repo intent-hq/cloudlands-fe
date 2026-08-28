@@ -1293,7 +1293,7 @@ export async function buildConfigForConnection(
   if (!record || record.host == null || record.port == null || record.fingerprint == null) {
     throw new Error(`Unknown or incomplete connection: ${id}`);
   }
-  let token = tokenOverride;
+  let token: string | null | undefined = tokenOverride;
   if (token === undefined) {
     try {
       token = await connectionsStore.getDecryptedToken(id);
