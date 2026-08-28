@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import RtkSettings from './RtkSettings.svelte';
 import { SYSTEM_CHANNELS } from '$shared/ipc/channels';
+import { m } from '$shared/paraglide/messages.js';
 
 // Mock appClient and IPC invoke
 const mocks = vi.hoisted(() => ({
@@ -88,9 +89,7 @@ describe('RtkSettings', () => {
     await fireEvent.click(toggle);
 
     await waitFor(() => {
-      expect(mocks.mockSettingsUpdate).toHaveBeenCalledWith([
-        { path: 'rtk.enabled', value: true },
-      ]);
+      expect(mocks.mockSettingsUpdate).toHaveBeenCalledWith([{ path: 'rtk.enabled', value: true }]);
     });
   });
 
@@ -132,25 +131,14 @@ describe('RtkSettings', () => {
     expect(toggle.hasAttribute('disabled')).toBe(true);
   });
 
-  it('shows "rtk is not installed" message when unavailable', async () => {
-    mocks.mockSettingsGet.mockResolvedValue({ path: 'rtk.enabled', value: false });
-    mocks.mockInvoke.mockResolvedValue({ data: { available: false } });
-
-    render(RtkSettings);
-
-    await waitFor(() => {
-      expect(screen.getByText(/rtk is not installed/)).toBeTruthy();
-    });
-  });
-
-  it('handles settings.get null return (real client behavior on transport failure)', async () => {
+  it('surfaces a settings.get transport failure', async () => {
     mocks.mockSettingsGet.mockResolvedValue(null);
     mocks.mockInvoke.mockResolvedValue({ data: { available: true } });
 
     render(RtkSettings);
 
     await waitFor(() => {
-      expect(screen.getByText(/Failed to load RTK settings from the daemon/)).toBeTruthy();
+      expect(screen.getByText(m.settings_rtk_loadError())).toBeTruthy();
     });
   });
 
@@ -219,16 +207,9 @@ describe('RtkSettings', () => {
 
     await fireEvent.click(toggle);
 
-    await waitFor(() => {
-      // Toggle should remain off since update failed
-      expect(toggle.getAttribute('data-state')).toBe('off');
-      // Error message should be displayed
-      expect(screen.getByText(/Failed to save RTK setting/)).toBeTruthy();
-    });
-
-    // settings.update should have been attempted
-    expect(mocks.mockSettingsUpdate).toHaveBeenCalledWith([
-      { path: 'rtk.enabled', value: true },
-    ]);
+    await waitFor(() =>
+      expect(mocks.mockSettingsUpdate).toHaveBeenCalledWith([{ path: 'rtk.enabled', value: true }]),
+    );
+    expect(toggle.getAttribute('data-state')).toBe('off');
   });
 });

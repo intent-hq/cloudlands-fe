@@ -43,10 +43,12 @@ const LOCAL: ConnectionRecord = {
 const REMOTE: ConnectionRecord = {
   id: 'remote-1',
   label: 'Studio Mac',
+  accent: 'blue',
   host: '10.0.0.5',
   port: 8443,
   fingerprint: 'AB:CD',
   isLocal: false,
+  status: 'not-open',
 };
 
 const CERT_MISMATCH: ConnectionCertMismatchEvent = {
@@ -103,6 +105,21 @@ describe('connectionsReducer', () => {
         }),
       );
       expect(next.hasReceivedList).toBe(true);
+    });
+
+    it('replaces transient status when a pooled-client refresh arrives', () => {
+      const opened = { ...REMOTE, status: 'connected' as const };
+      const next = connectionsReducer(
+        initialState,
+        connectionsListReceived({
+          connections: [LOCAL, opened],
+          activeId: LOCAL_CONNECTION_ID,
+          windowBackendId: LOCAL_CONNECTION_ID,
+        }),
+      );
+      expect(
+        getItems(next.connections).find((connection) => connection.id === REMOTE.id)?.status,
+      ).toBe('connected');
     });
 
     it('stores the pinned intentd version and per-connection daemonVersion from the payload', () => {

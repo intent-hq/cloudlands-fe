@@ -50,6 +50,7 @@ const NOW = 1_700_000_000_000;
 function rec(overrides: Partial<KeychainSyncRecord> = {}): KeychainSyncRecord {
   return {
     label: 'Studio Mac',
+    accent: 'blue',
     host: '192.168.1.10',
     hosts: ['192.168.1.10'],
     port: 8443,
@@ -144,6 +145,17 @@ describe('payload schema', () => {
     expect(parsed).toEqual({ kind: 'record', record });
   });
 
+  it('round-trips an explicit blank accent on live records and tombstones', () => {
+    expect(parsePayload(serializeRecord(rec({ accent: null })))).toEqual({
+      kind: 'record',
+      record: rec({ accent: null }),
+    });
+    expect(parsePayload(serializeRecord(tombstone({ accent: null })))).toEqual({
+      kind: 'record',
+      record: tombstone({ accent: null }),
+    });
+  });
+
   it('scrubs the token from tombstone payloads', () => {
     const payload = serializeRecord(rec({ deleted: true, deletedAt: NOW - 1 }));
     const raw = JSON.parse(payload) as Record<string, unknown>;
@@ -183,8 +195,13 @@ describe('payload schema', () => {
     const parsed = parsePayload(payload);
     expect(parsed).toMatchObject({
       kind: 'record',
-      record: { hosts: ['h'], hostname: null, detectHosts: true },
+      record: { accent: 'blue', hosts: ['h'], hostname: null, detectHosts: true },
     });
+  });
+
+  it('rejects accents outside the shared palette', () => {
+    const payload = JSON.stringify({ ...rec(), v: 1, accent: 'chartreuse' });
+    expect(parsePayload(payload).kind).toBe('invalid');
   });
 });
 
@@ -227,7 +244,12 @@ describe('reconcile', () => {
   });
 
   it('remote newer: overwrites the local record (token included)', async () => {
-    const remoteRecord = rec({ label: 'Rotated', token: 'rotated-token', updatedAt: NOW - 1000 });
+    const remoteRecord = rec({
+      label: 'Rotated',
+      accent: null,
+      token: 'rotated-token',
+      updatedAt: NOW - 1000,
+    });
     const { client, upserts } = fakeClient([item(remoteRecord)]);
     const { adapter, applied } = fakeAdapter([rec({ updatedAt: NOW - 10_000 })]);
 

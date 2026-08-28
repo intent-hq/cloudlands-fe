@@ -94,6 +94,7 @@ describe('connections-store', () => {
     expect(list[1]).toMatchObject({
       id: rec.id,
       label: 'Studio Mac',
+      accent: 'blue',
       host: '192.168.1.10',
       port: 8443,
       fingerprint: 'AA:BB:CC',
@@ -101,6 +102,106 @@ describe('connections-store', () => {
     });
     expect(list[1]).not.toHaveProperty('token');
     expect(list[1]).not.toHaveProperty('encToken');
+  });
+
+  it('preserves explicit blank accents and defaults only records written before accents existed', async () => {
+    const store = await import('../connections-store');
+    const rec = await store.add({ ...sampleConn, accent: null });
+    expect(rec.accent).toBeNull();
+    await store.__drainWriteChainForTesting();
+
+    const file = path.join(tmpDir, 'backend-connections.json');
+    const parsed = JSON.parse(await fs.readFile(file, 'utf8'));
+    expect(parsed.connections[0].accent).toBeNull();
+
+    vi.resetModules();
+    mockElectron();
+    const blankReloaded = await import('../connections-store');
+    expect(
+      (await blankReloaded.list()).find((connection) => connection.id === rec.id)?.accent,
+    ).toBeNull();
+
+    delete parsed.connections[0].accent;
+    await fs.writeFile(file, JSON.stringify(parsed), 'utf8');
+
+    vi.resetModules();
+    mockElectron();
+    const reloaded = await import('../connections-store');
+    expect((await reloaded.list()).find((connection) => connection.id === rec.id)?.accent).toBe(
+      'blue',
+    );
+  });
+
+  it('round-trips an explicit blank through update, sync, and tombstones', async () => {
+    const store = await import('../connections-store');
+    const rec = await store.add(sampleConn);
+    expect(
+      await store.updateMetadata(rec.id, { label: sampleConn.label, accent: null }),
+    ).toMatchObject({ accent: null });
+    expect((await store.listSyncRecords())[0].accent).toBeNull();
+
+    await store.forget(rec.id);
+    const tombstone = (await store.listSyncRecords()).find((record) => record.deleted === true);
+    expect(tombstone?.accent).toBeNull();
+  });
+
+  it('accepts an explicit blank accent through the add and update IPC schemas', async () => {
+    const { ConnectionsAddSchema, ConnectionsUpdateSchema } =
+      await import('../../../../main/ipc-schemas');
+    expect(
+      ConnectionsAddSchema.parse({
+        label: 'Studio Mac',
+        accent: null,
+        host: 'studio.local',
+        port: 5181,
+        fingerprint: 'AA:BB',
+        token: 'secret',
+      }).accent,
+    ).toBeNull();
+    expect(
+      ConnectionsUpdateSchema.parse({ id: 'remote-1', label: 'Studio Mac', accent: null }).accent,
+    ).toBeNull();
+  });
+
+  it('updateMetadata changes name and accent without rewriting the bearer token', async () => {
+    const store = await import('../connections-store');
+    const rec = await store.add(sampleConn);
+    await store.__drainWriteChainForTesting();
+    const file = path.join(tmpDir, 'backend-connections.json');
+    const before = JSON.parse(await fs.readFile(file, 'utf8')).connections[0];
+
+    const updated = await store.updateMetadata(rec.id, {
+      label: '  Editing Mac  ',
+      accent: 'violet',
+    });
+    expect(updated).toMatchObject({ id: rec.id, label: 'Editing Mac', accent: 'violet' });
+    expect(await store.getDecryptedToken(rec.id)).toBe('secret-token');
+
+    const after = JSON.parse(await fs.readFile(file, 'utf8')).connections[0];
+    expect(after.encToken).toEqual(before.encToken);
+    expect(after).toMatchObject({ label: 'Editing Mac', accent: 'violet' });
+    expect((await store.listSyncRecords())[0]).toMatchObject({
+      label: 'Editing Mac',
+      accent: 'violet',
+    });
+  });
+
+  it('updateMetadata rejects local, unknown, blank-name, and invalid-accent updates', async () => {
+    const store = await import('../connections-store');
+    const rec = await store.add(sampleConn);
+
+    await expect(
+      store.updateMetadata(store.LOCAL_CONNECTION_ID, { label: 'Local', accent: 'blue' }),
+    ).rejects.toThrow(/local/i);
+    await expect(
+      store.updateMetadata('missing', { label: 'Missing', accent: 'blue' }),
+    ).rejects.toThrow(/unknown/i);
+    await expect(store.updateMetadata(rec.id, { label: '   ', accent: 'blue' })).rejects.toThrow(
+      /label/i,
+    );
+    await expect(
+      store.updateMetadata(rec.id, { label: 'Studio Mac', accent: 'chartreuse' as never }),
+    ).rejects.toThrow(/accent/i);
   });
 
   it('forget removes a remote but rejects forgetting local', async () => {
@@ -152,6 +253,102 @@ describe('connections-store', () => {
     expect(await store.getDecryptedToken(rec.id)).toBe('secret-token');
     expect(await store.getDecryptedToken(store.LOCAL_CONNECTION_ID)).toBeNull();
     expect(await store.getDecryptedToken('unknown')).toBeNull();
+  });
+
+  it('updates remote address metadata while preserving the secret and syncing the old identity tombstone', async () => {
+    const store = await import('../connections-store');
+    const original = await store.add(sampleConn);
+
+    const updated = await store.updateMetadata(original.id, {
+      label: 'Moved Mac',
+      accent: 'violet',
+      host: '10.0.0.42',
+      port: 9443,
+      fingerprint: 'DD:EE:FF',
+    });
+
+    expect(updated).toMatchObject({
+      id: original.id,
+      label: 'Moved Mac',
+      accent: 'violet',
+      host: '10.0.0.42',
+      port: 9443,
+      fingerprint: 'DD:EE:FF',
+    });
+    expect(await store.getDecryptedToken(original.id)).toBe(sampleConn.token);
+    const syncRecords = await store.listSyncRecords();
+    expect(syncRecords).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ host: sampleConn.host, deleted: true }),
+        expect.objectContaining({ host: '10.0.0.42' }),
+      ]),
+    );
+  });
+
+  it('deduplicates an updated live identity and preserves the edited record as active', async () => {
+    const store = await import('../connections-store');
+    const edited = await store.add(sampleConn);
+    const duplicate = await store.add({
+      ...sampleConn,
+      label: 'Duplicate Mac',
+      host: 'duplicate.local',
+      port: 9443,
+      fingerprint: 'dd ee ff',
+      token: 'duplicate-token',
+    });
+    await store.setActiveId(duplicate.id);
+
+    const updated = await store.updateMetadata(edited.id, {
+      label: 'Moved Mac',
+      accent: 'violet',
+      host: 'duplicate.local',
+      port: 9443,
+      fingerprint: 'DDEEFF',
+    });
+
+    expect(updated.id).toBe(edited.id);
+    expect((await store.list()).filter((connection) => !connection.isLocal)).toEqual([updated]);
+    expect(await store.getActiveId()).toBe(edited.id);
+    expect(await store.getDecryptedToken(edited.id)).toBe(sampleConn.token);
+  });
+
+  it('clears a matching tombstone when an update adopts that identity', async () => {
+    const store = await import('../connections-store');
+    const edited = await store.add(sampleConn);
+    const removed = await store.add({
+      ...sampleConn,
+      host: 'removed.local',
+      port: 9443,
+      fingerprint: '11:22:33',
+    });
+    await store.forget(removed.id);
+
+    await store.updateMetadata(edited.id, {
+      label: edited.label,
+      accent: edited.accent ?? 'blue',
+      host: 'removed.local',
+      port: 9443,
+      fingerprint: '112233',
+    });
+
+    const syncRecords = await store.listSyncRecords();
+    expect(syncRecords).toContainEqual(
+      expect.objectContaining({ host: 'removed.local', fingerprint: '112233' }),
+    );
+    expect(syncRecords).not.toContainEqual(
+      expect.objectContaining({ host: 'removed.local', deleted: true }),
+    );
+  });
+
+  it('replaces only the encrypted secret and validated fingerprint for one remote', async () => {
+    const store = await import('../connections-store');
+    const original = await store.add(sampleConn);
+    const updated = await store.replaceSecret(original.id, 'rotated-token', 'DD:EE:FF');
+
+    expect(updated).toMatchObject({ id: original.id, fingerprint: 'DD:EE:FF' });
+    expect(await store.getDecryptedToken(original.id)).toBe('rotated-token');
+    expect(updated).not.toHaveProperty('token');
+    expect(updated).not.toHaveProperty('encToken');
   });
 
   it('token is encrypted at rest when safeStorage is available', async () => {
@@ -332,12 +529,12 @@ describe('connections-store', () => {
     const samePortOtherHost = await store.add({
       ...sampleConn,
       host: '192.168.1.11',
-      fingerprint: 'FP:OTHER-HOST',
+      fingerprint: 'DD:EE:FF',
     });
     const sameHostOtherPort = await store.add({
       ...sampleConn,
       port: 9443,
-      fingerprint: 'FP:OTHER-PORT',
+      fingerprint: '11:22:33',
     });
 
     expect(samePortOtherHost.id).not.toBe(first.id);
@@ -819,6 +1016,7 @@ describe('connections-store keychain sync surface', () => {
 
     const changed = await store.applyRemoteSyncRecord({
       label: 'Renamed remotely',
+      accent: null,
       host: '192.168.1.10',
       hosts: ['192.168.1.10', '10.0.0.9'],
       port: 8443,
@@ -834,6 +1032,7 @@ describe('connections-store keychain sync surface', () => {
     expect(remote).toMatchObject({
       id: rec.id,
       label: 'Renamed remotely',
+      accent: null,
       fingerprint: 'NEW:FP',
       hostname: 'studio.local',
       hosts: ['192.168.1.10', '10.0.0.9'],

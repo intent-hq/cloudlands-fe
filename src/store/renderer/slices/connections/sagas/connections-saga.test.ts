@@ -23,7 +23,10 @@ import {
   initialState,
   loadKeychainSyncStateRequested,
   openConnectionRequested,
+  rotateConnectionSecretRequested,
   setKeychainSyncEnabledRequested,
+  testConnectionRequested,
+  updateConnectionRequested,
   updateBackendRequested,
 } from '../connections-slice';
 import { connectionsSaga } from './connections-saga';
@@ -40,6 +43,7 @@ const LOCAL: ConnectionRecord = {
 const REMOTE: ConnectionRecord = {
   id: 'remote-1',
   label: 'Studio Mac',
+  accent: 'blue',
   host: '10.0.0.5',
   port: 8443,
   fingerprint: 'AB:CD',
@@ -85,7 +89,14 @@ describe('connectionsSaga', () => {
       if (channel === CONNECTION_CHANNELS.CAPTURE_FINGERPRINT)
         return { fingerprint: 'AB:CD', tokenValid: true };
       if (channel === CONNECTION_CHANNELS.ADD) return { connection: REMOTE, switched: false };
-      if (channel === CONNECTION_CHANNELS.OPEN) return { id: (params as { id: string }).id };
+      if (channel === CONNECTION_CHANNELS.UPDATE)
+        return { status: 'updated', connection: { ...REMOTE, ...(params as object) } };
+      if (channel === CONNECTION_CHANNELS.TEST)
+        return { status: 'success', fingerprint: REMOTE.fingerprint };
+      if (channel === CONNECTION_CHANNELS.ROTATE_SECRET)
+        return { status: 'updated', connection: REMOTE };
+      if (channel === CONNECTION_CHANNELS.OPEN)
+        return { status: 'opened', id: (params as { id: string }).id };
       if (channel === CONNECTION_CHANNELS.FORGET) return { id: (params as { id: string }).id };
       throw new Error(`unexpected channel ${channel}`);
     });
@@ -160,6 +171,30 @@ describe('connectionsSaga', () => {
     expect(run.getState().connections.protocolMismatch).toEqual(mismatch);
     expect(run.getState().connections.protocolMismatchModalDismissed).toBe(true);
 
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('passes through token-free saved-secret guidance for an exact test request', async () => {
+    invoke.mockImplementation(async (channel: string) => {
+      if (channel === CONNECTION_CHANNELS.LIST)
+        return {
+          connections: [LOCAL, REMOTE],
+          activeId: LOCAL_CONNECTION_ID,
+          windowBackendId: LOCAL_CONNECTION_ID,
+        };
+      if (channel === CONNECTION_CHANNELS.TEST) return { status: 'secret-unavailable' };
+      throw new Error(`unexpected channel ${channel}`);
+    });
+    const run = start();
+    await settle();
+    const params = { id: REMOTE.id, host: '10.0.0.99', port: 9443 };
+    const action = testConnectionRequested(params);
+
+    run.channel.put(action);
+
+    await expect(action.promise).resolves.toEqual({ status: 'secret-unavailable' });
+    expect(invoke).toHaveBeenCalledWith(CONNECTION_CHANNELS.TEST, params);
     run.task.cancel();
     await run.task.toPromise();
   });
@@ -249,9 +284,45 @@ describe('connectionsSaga', () => {
       token: 'secret',
     });
 
+    const update = updateConnectionRequested({
+      id: REMOTE.id,
+      label: 'Editing Mac',
+      accent: null,
+    });
+    run.channel.put(update);
+    await expect(update.promise).resolves.toEqual({
+      status: 'updated',
+      connection: { ...REMOTE, id: REMOTE.id, label: 'Editing Mac', accent: null },
+    });
+    expect(invoke).toHaveBeenCalledWith(CONNECTION_CHANNELS.UPDATE, {
+      id: REMOTE.id,
+      label: 'Editing Mac',
+      accent: null,
+    });
+
+    const test = testConnectionRequested({ id: REMOTE.id, host: '10.0.0.99', port: 9443 });
+    run.channel.put(test);
+    await expect(test.promise).resolves.toEqual({
+      status: 'success',
+      fingerprint: REMOTE.fingerprint,
+    });
+    expect(invoke).toHaveBeenCalledWith(CONNECTION_CHANNELS.TEST, {
+      id: REMOTE.id,
+      host: '10.0.0.99',
+      port: 9443,
+    });
+
+    const rotate = rotateConnectionSecretRequested({ id: REMOTE.id, token: 'replacement' });
+    run.channel.put(rotate);
+    await expect(rotate.promise).resolves.toEqual({ status: 'updated', connection: REMOTE });
+    expect(invoke).toHaveBeenCalledWith(CONNECTION_CHANNELS.ROTATE_SECRET, {
+      id: REMOTE.id,
+      token: 'replacement',
+    });
+
     const open = openConnectionRequested(REMOTE.id);
     run.channel.put(open);
-    await expect(open.promise).resolves.toEqual({ id: REMOTE.id });
+    await expect(open.promise).resolves.toEqual({ status: 'opened', id: REMOTE.id });
     expect(invoke).toHaveBeenCalledWith(CONNECTION_CHANNELS.OPEN, { id: REMOTE.id });
 
     const forget = forgetConnectionRequested(REMOTE.id);
@@ -260,6 +331,78 @@ describe('connectionsSaga', () => {
     expect(invoke).toHaveBeenCalledWith(CONNECTION_CHANNELS.FORGET, { id: REMOTE.id });
     expect(run.getState().connections.status).toBe('idle');
 
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('settles concurrent update, test, and secret-rotation actions independently', async () => {
+    const releases = new Map<string, (value: unknown) => void>();
+    const results: Record<string, unknown> = {
+      [CONNECTION_CHANNELS.UPDATE]: { status: 'updated', connection: REMOTE },
+      [CONNECTION_CHANNELS.TEST]: { status: 'success', fingerprint: REMOTE.fingerprint },
+      [CONNECTION_CHANNELS.ROTATE_SECRET]: { status: 'updated', connection: REMOTE },
+    };
+    invoke.mockImplementation(async (channel: string, params?: unknown) => {
+      if (channel === CONNECTION_CHANNELS.LIST)
+        return { connections: [LOCAL, REMOTE], activeId: LOCAL.id, windowBackendId: LOCAL.id };
+      if ((params as { id?: string } | undefined)?.id === 'remote-pending') {
+        return new Promise((resolve) => releases.set(channel, resolve));
+      }
+      return results[channel];
+    });
+    const run = start();
+    await settle();
+
+    const pairs = [
+      [
+        CONNECTION_CHANNELS.UPDATE,
+        updateConnectionRequested({ id: 'remote-pending', label: 'Pending', accent: 'blue' }),
+        updateConnectionRequested({ id: 'remote-second', label: 'Second', accent: 'violet' }),
+      ],
+      [
+        CONNECTION_CHANNELS.TEST,
+        testConnectionRequested({ id: 'remote-pending', host: 'pending.local', port: 5181 }),
+        testConnectionRequested({ id: 'remote-second', host: 'second.local', port: 5181 }),
+      ],
+      [
+        CONNECTION_CHANNELS.ROTATE_SECRET,
+        rotateConnectionSecretRequested({ id: 'remote-pending', token: 'pending' }),
+        rotateConnectionSecretRequested({ id: 'remote-second', token: 'second' }),
+      ],
+    ] as const;
+
+    for (const [channel, first, second] of pairs) {
+      run.channel.put(first);
+      await vi.waitFor(() => expect(releases.has(channel)).toBe(true));
+      run.channel.put(second);
+      await expect(second.promise).resolves.toEqual(results[channel]);
+      releases.get(channel)!(results[channel]);
+      await expect(first.promise).resolves.toEqual(results[channel]);
+    }
+
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('passes through token-free open guidance without leaking an IPC exception', async () => {
+    invoke.mockImplementation(async (channel: string) => {
+      if (channel === CONNECTION_CHANNELS.LIST)
+        return {
+          connections: [LOCAL, REMOTE],
+          activeId: LOCAL_CONNECTION_ID,
+          windowBackendId: LOCAL_CONNECTION_ID,
+        };
+      if (channel === CONNECTION_CHANNELS.OPEN) return { status: 'secret-unavailable' };
+      throw new Error(`unexpected channel ${channel}`);
+    });
+    const run = start();
+    await settle();
+    const action = openConnectionRequested(REMOTE.id);
+
+    run.channel.put(action);
+
+    await expect(action.promise).resolves.toEqual({ status: 'secret-unavailable' });
+    expect(invoke).toHaveBeenCalledWith(CONNECTION_CHANNELS.OPEN, { id: REMOTE.id });
     run.task.cancel();
     await run.task.toPromise();
   });

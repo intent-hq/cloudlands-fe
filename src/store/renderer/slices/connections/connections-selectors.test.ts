@@ -4,7 +4,16 @@
 
 import { describe, it, expect } from 'vitest';
 import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
-import { LOCAL_CONNECTION_ID } from '$shared/types/connections';
+import {
+  LOCAL_CONNECTION_ID,
+  SELECTABLE_CONNECTION_ACCENTS,
+  isConnectionAccent,
+} from '$shared/types/connections';
+import {
+  connectionAccentOptions,
+  connectionShellTint,
+  resolveConnectionAccent,
+} from '$lib/utils/connection-accents';
 import type { StoreState } from '../../types';
 import type {
   ConnectionsState,
@@ -15,7 +24,8 @@ import type {
 import { initialState, connectionsReducer, protocolMismatchReceived } from './connections-slice';
 import {
   selectConnections,
-
+  selectRemoteConnections,
+  selectConnectionOpenStatus,
   selectCurrentConnectionId,
   selectCurrentConnection,
   selectConnectionStatus,
@@ -39,10 +49,12 @@ const LOCAL: ConnectionRecord = {
 const REMOTE: ConnectionRecord = {
   id: 'remote-1',
   label: 'Studio Mac',
+  accent: 'violet',
   host: '10.0.0.5',
   port: 8443,
   fingerprint: 'AB:CD',
   isLocal: false,
+  status: 'connected',
 };
 
 function stateWith(overrides: Partial<ConnectionsState>): StoreState {
@@ -71,6 +83,13 @@ describe('connections selectors', () => {
     expect(selectConnectionCertMismatch.select(state)).toBeNull();
   });
 
+  it('selects remote machines and their transient open state', () => {
+    const state = stateWith({ connections: [LOCAL, REMOTE] });
+    expect(selectRemoteConnections.select(state)).toEqual([REMOTE]);
+    expect(selectConnectionOpenStatus.select(state, REMOTE.id)).toBe('connected');
+    expect(selectConnectionOpenStatus.select(state, 'missing')).toBe('not-open');
+  });
+
   describe('current-window connection selectors', () => {
     it('resolve the window backend while persisted activeId remains local', () => {
       const state = stateWith({
@@ -80,6 +99,26 @@ describe('connections selectors', () => {
       });
       expect(selectCurrentConnectionId.select(state)).toBe(REMOTE.id);
       expect(selectCurrentConnection.select(state)).toEqual(REMOTE);
+    });
+
+    it('changes the shell tint with the backend bound to the current window', () => {
+      const remoteState = stateWith({
+        connections: [LOCAL, REMOTE],
+        activeId: LOCAL_CONNECTION_ID,
+        windowBackendId: REMOTE.id,
+      });
+      const remote = selectCurrentConnection.select(remoteState);
+      expect(connectionShellTint(remote?.accent, remote?.isLocal ?? true)).toContain(
+        'var(--color-violet-500)',
+      );
+
+      const localState = stateWith({
+        connections: [LOCAL, REMOTE],
+        activeId: REMOTE.id,
+        windowBackendId: LOCAL_CONNECTION_ID,
+      });
+      const local = selectCurrentConnection.select(localState);
+      expect(connectionShellTint(local?.accent, local?.isLocal ?? true)).toBeUndefined();
     });
   });
 
@@ -193,5 +232,35 @@ describe('connections selectors', () => {
       expect(selectActiveProtocolMismatch.select(state)).toEqual(event);
       expect(selectProtocolMismatchModal.select(state)).toEqual(event);
     });
+  });
+});
+
+describe('connection accent presentation', () => {
+  it('offers six new choices while retaining indigo as a valid legacy accent', () => {
+    expect(SELECTABLE_CONNECTION_ACCENTS).toEqual([
+      'blue',
+      'violet',
+      'rose',
+      'orange',
+      'emerald',
+      'teal',
+    ]);
+    expect(isConnectionAccent('indigo')).toBe(true);
+    expect(connectionAccentOptions()).not.toContain('indigo');
+    expect(connectionAccentOptions('indigo')).toContain('indigo');
+  });
+
+  it('distinguishes legacy missing accents from an explicit blank', () => {
+    expect(resolveConnectionAccent(undefined)).toBe('blue');
+    expect(resolveConnectionAccent(null)).toBeNull();
+  });
+
+  it('derives a low-opacity semantic tint only for named remote accents', () => {
+    expect(connectionShellTint('teal', false)).toBe(
+      'linear-gradient(color-mix(in srgb, var(--color-teal-500) 7%, transparent) 0 0)',
+    );
+    expect(connectionShellTint(null, false)).toBeUndefined();
+    expect(connectionShellTint('teal', true)).toBeUndefined();
+    expect(connectionShellTint(undefined, false)).toContain('var(--color-blue-500)');
   });
 });

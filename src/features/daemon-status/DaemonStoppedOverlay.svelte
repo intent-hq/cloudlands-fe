@@ -75,6 +75,9 @@
   const activeConnectionId$ = selectCurrentConnectionId();
   const isConnecting$ = selectIsConnecting();
   const authRejected$ = selectActiveAuthRejected();
+  const repairConnection = $derived(
+    $connections$.find((connection) => connection.id === $authRejected$?.id),
+  );
 
   // Presentational grace-period latch: health 'down' arms a timer; a recovery
   // before it fires cancels the overlay entirely (no flash on quick blips).
@@ -441,6 +444,8 @@
 
   <ConnectBackendModal
     bind:open={repairModalOpen}
+    prefillLabel={repairConnection?.label ?? null}
+    prefillAccent={repairConnection?.accent}
     prefillHost={$authRejected$?.host ?? null}
     prefillPort={$authRejected$?.port ?? null}
   />

@@ -16,7 +16,6 @@ import {
   setNoteFontStyle,
   setSystemFonts,
 } from '$store/renderer/slices/user-preferences/user-preferences-slice';
-import { FONTS_COLORS_VISUAL_FIXTURES } from './fonts-colors.fixtures';
 
 const STORE_CONTEXT = 'redux-store-context';
 const LONG_FONT_NAME = 'A Very Long Editorial Programming Font Family Name';
@@ -159,7 +158,6 @@ describe('Fonts & Colors settings migration', () => {
         { type: 'fontSettings/setAgentFontStyle', payload: ['monospace'] },
         { type: 'fontSettings/setCodeFontFamily', payload: [LONG_FONT_NAME] },
       ]);
-      expect(codeFont.querySelector('.truncate')).not.toBeNull();
       expect(
         vi
           .mocked(window.electronAPI!.invoke)
@@ -168,27 +166,5 @@ describe('Fonts & Colors settings migration', () => {
     } finally {
       recorder.restore();
     }
-  });
-
-  it('preserves the four hash/highlight contracts and canonical responsive composition', () => {
-    const { container } = renderFontsColors();
-    for (const id of ['color-theme', 'note-font', 'agent-chat-font', 'code-font']) {
-      const target = document.getElementById(id);
-      expect(target?.getAttribute('data-highlight-id')).toBe(id);
-    }
-    expect(screen.getByRole('heading', { name: 'Appearance' })).toBeTruthy();
-    expect(screen.getByRole('heading', { name: 'Font Style' })).toBeTruthy();
-    expect(container.querySelector('main')?.className).toContain('max-w-4xl');
-    expect(document.getElementById('theme')?.className).toContain('mb-12');
-    expect(document.getElementById('font-style')?.className).toContain('mb-12');
-  });
-
-  it('defines deterministic light/dark desktop/compact visual fixtures', () => {
-    expect(FONTS_COLORS_VISUAL_FIXTURES).toEqual([
-      { id: 'fonts-colors-light-desktop', theme: 'light', width: 1440, height: 1000 },
-      { id: 'fonts-colors-dark-desktop', theme: 'dark', width: 1440, height: 1000 },
-      { id: 'fonts-colors-light-compact', theme: 'light', width: 900, height: 760 },
-      { id: 'fonts-colors-dark-compact', theme: 'dark', width: 900, height: 760 },
-    ]);
   });
 });

@@ -164,6 +164,10 @@
   } from '$store/renderer/slices/connections/connections-slice';
   import { LOCAL_CONNECTION_ID } from '$shared/types/connections';
   import type { ConnectionRecord } from '$shared/types/connections';
+  import {
+    CONNECTION_ACCENT_CLASSES,
+    resolveConnectionAccent,
+  } from '$lib/utils/connection-accents';
   import { store as appStore } from '$store/renderer/store';
   import type { DaemonHealth } from '$store/renderer/slices/daemon-health/daemon-health-types';
 
@@ -597,7 +601,8 @@
                     <span>{versionMismatchTooltip}</span>
                   {/snippet}
                   <div class="flex justify-between gap-2 text-xs w-full whitespace-nowrap">
-                    <span class="text-subtle shrink-0">{m.layout_daemonStatus_version_label()}</span>
+                    <span class="text-subtle shrink-0">{m.layout_daemonStatus_version_label()}</span
+                    >
                     <span class="flex items-center gap-1.5 min-w-0">
                       <!--
                         Keyboard focus inside the menu is menu-managed (bits-ui
@@ -846,6 +851,7 @@
           >
           {#each $connections$ as conn (conn.id)}
             {@const isCurrent = conn.id === $currentConnectionId$}
+            {@const accent = resolveConnectionAccent(conn.accent)}
             <!--
               Each connection row is a real submenu (Menu.Sub), so Open/Forget
               pop out as a side flyout that opens on hover/click with bits-ui's
@@ -856,6 +862,16 @@
             -->
             <Menu.Sub>
               <Menu.SubTrigger class="w-full cursor-pointer text-xs px-2 py-1.5">
+                {#if !conn.isLocal && accent !== null}
+                  <span
+                    class={cn(
+                      'size-2.5 shrink-0 rounded-full ring-1 ring-background',
+                      CONNECTION_ACCENT_CLASSES[accent],
+                    )}
+                    aria-hidden="true"
+                    data-connection-accent={accent}
+                  ></span>
+                {/if}
                 <span class="min-w-0 flex-1 truncate">
                   {conn.isLocal
                     ? m.layout_daemonStatus_localConnection_label()

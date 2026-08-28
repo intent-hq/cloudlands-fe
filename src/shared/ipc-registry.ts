@@ -861,6 +861,9 @@ export const IPC_CHANNELS = {
     LIST: 'connections:list',
     CAPTURE_FINGERPRINT: 'connections:capture-fingerprint',
     ADD: 'connections:add',
+    UPDATE: 'connections:update',
+    TEST: 'connections:test',
+    ROTATE_SECRET: 'connections:rotate-secret',
     OPEN: 'connections:open',
     FORGET: 'connections:forget',
     // Ask one connected remote backend's daemon to self-update (routes

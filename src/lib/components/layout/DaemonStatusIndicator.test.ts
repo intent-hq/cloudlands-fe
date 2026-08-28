@@ -1128,6 +1128,7 @@ describe('DaemonStatusIndicator', () => {
     const remoteRecord = {
       id: 'r1',
       label: 'desk:4180',
+      accent: 'teal',
       host: '10.0.0.2',
       port: 4180,
       fingerprint: 'AA:BB',
@@ -1157,6 +1158,19 @@ describe('DaemonStatusIndicator', () => {
 
       const activeIcon = screen.getByLabelText('Active');
       expect(activeIcon.closest('[role="menuitem"]')?.textContent).toContain('desk:4180');
+    });
+
+    it('keeps the saved machine accent in the connection row but omits it from the trigger', async () => {
+      mockStoreState = {
+        daemonHealth: { ...healthy },
+        connections: withConnections('r1', 'local'),
+      };
+
+      const { container } = render(DaemonStatusIndicatorPreloaded);
+      await fireEvent.click(screen.getByRole('button', { name: 'intentd: healthy — desk:4180' }));
+
+      expect(document.querySelectorAll('[data-connection-accent="teal"]')).toHaveLength(1);
+      expect(container.querySelector('[data-connection-accent="teal"]')).toBeNull();
     });
 
     it('checks Local in a local window while the remote is also connected', async () => {
@@ -1388,8 +1402,7 @@ describe('DaemonStatusIndicator', () => {
       ) {
         const remote = {
           ...behindRemote,
-          daemonVersion:
-            overrides.daemonVersion !== undefined ? overrides.daemonVersion : '0.8.0',
+          daemonVersion: overrides.daemonVersion !== undefined ? overrides.daemonVersion : '0.8.0',
         };
         return {
           connections: createCollection('id', [localRecord, remote]),

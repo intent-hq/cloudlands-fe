@@ -273,7 +273,10 @@ describe('multi-backend connect — end-to-end journey', () => {
     });
     const remoteId = added.connection.id;
 
-    await expect(invoke('connections:open', { id: remoteId })).resolves.toEqual({ id: remoteId });
+    await expect(invoke('connections:open', { id: remoteId })).resolves.toEqual({
+      status: 'opened',
+      id: remoteId,
+    });
 
     const live = (electronState.windows as FakeWindow[]).filter((window) => !window.isDestroyed());
     expect(live.map((window) => window.backendId)).toEqual(['local', remoteId]);
@@ -351,13 +354,13 @@ describe('multi-backend connect — end-to-end journey', () => {
 
     // Open the remote: its window opens alongside local's, and its pooled
     // client is the pinned wss target built from the DECRYPTED stored token.
-    await expect(invoke('connections:open', { id: remoteId })).resolves.toEqual({ id: remoteId });
+    await expect(invoke('connections:open', { id: remoteId })).resolves.toEqual({
+      status: 'opened',
+      id: remoteId,
+    });
     expect(openOrFocus).toHaveBeenCalledWith(remoteId);
 
-    const remoteConfig = mod.getBackendClientForId(remoteId).getConfig() as Record<
-      string,
-      unknown
-    >;
+    const remoteConfig = mod.getBackendClientForId(remoteId).getConfig() as Record<string, unknown>;
     expect(remoteConfig).toMatchObject({
       transport: 'wss',
       host: '10.0.0.5',

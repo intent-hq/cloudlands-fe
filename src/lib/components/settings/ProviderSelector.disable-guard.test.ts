@@ -4,6 +4,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, waitFor } from '@testing-library/svelte';
 import { PROVIDERS_CHANNELS } from '$shared/ipc/channels';
+import { m } from '$shared/paraglide/messages.js';
 import { warmImport } from '../../../test/warm-import';
 
 const mocks = vi.hoisted(() => ({
@@ -170,7 +171,6 @@ describe('ProviderSelector disable guard', () => {
       'Anthropic Claude Code',
     )) as HTMLButtonElement;
     expect(claudeButton.disabled).toBe(true);
-    expect(claudeButton.title).toContain('My Spec');
 
     await fireEvent.click(
       result.getByRole('button', { name: 'Provider actions for Anthropic Claude Code' }),
@@ -213,7 +213,7 @@ describe('ProviderSelector default-unavailable honesty', () => {
     cleanup();
   });
 
-  it('shows "Default (unavailable)" for a generic active provider that is not installed', async () => {
+  it('marks a generic unavailable active provider as the unavailable default', async () => {
     const base = await buildState([]);
     mocks.state.current = {
       ...base,
@@ -254,12 +254,11 @@ describe('ProviderSelector default-unavailable honesty', () => {
     const ProviderSelector = (await import('./ProviderSelector.svelte')).default;
     const result = render(ProviderSelector);
     await waitFor(() => {
-      expect(result.getByText('OpenAI Codex')).toBeTruthy();
+      expect(result.getByText(m.settings_providers_defaultUnavailable_label())).toBeTruthy();
     });
-    expect(result.getByText('Default (unavailable)')).toBeTruthy();
   });
 
-  it('shows "Default (unavailable)" when Auggie is active but not installed', async () => {
+  it('marks unavailable Auggie as the unavailable default', async () => {
     const base = await buildState([]);
     mocks.state.current = {
       ...base,
@@ -294,7 +293,7 @@ describe('ProviderSelector default-unavailable honesty', () => {
     const ProviderSelector = (await import('./ProviderSelector.svelte')).default;
     const result = render(ProviderSelector);
     await waitFor(() => {
-      expect(result.getByText('Default (unavailable)')).toBeTruthy();
+      expect(result.getByText(m.settings_providers_defaultUnavailable_label())).toBeTruthy();
     });
   });
 });

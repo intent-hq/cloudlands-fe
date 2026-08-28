@@ -10,9 +10,8 @@
  * Token boundary: the bearer token is main-only (encrypted at rest via
  * Electron `safeStorage`, see `connections-store.ts`). It NEVER appears on any
  * stored, listed, or broadcast connection shape. The only place a token
- * crosses the IPC boundary is renderer→main at add/capture time
- * (`CaptureFingerprintParams`, `AddConnectionParams`), where the user has just
- * typed it — it is consumed by main and never returned.
+ * crosses the IPC boundary is renderer→main at add/capture/rotation time,
+ * where the user has just typed it — it is consumed by main and never returned.
  *
  * `ConnectionRecord` here is structurally identical to the token-free record
  * returned by `connections-store.ts` (`list()`), so main can pass the store's
@@ -48,6 +47,39 @@ export const KEYCHAIN_SYNC_STATUS_EVENT = 'connections:sync-status-changed';
  */
 export const LOCAL_CONNECTION_ID = 'local';
 
+/** Stable semantic identifiers accepted from persisted and synced connection records. */
+export const CONNECTION_ACCENTS = [
+  'blue',
+  'indigo',
+  'violet',
+  'rose',
+  'orange',
+  'emerald',
+  'teal',
+] as const;
+
+export type ConnectionAccentName = (typeof CONNECTION_ACCENTS)[number];
+
+/** Accents offered for new selections; legacy indigo values remain valid above. */
+export const SELECTABLE_CONNECTION_ACCENTS: readonly ConnectionAccentName[] =
+  CONNECTION_ACCENTS.filter((accent) => accent !== 'indigo');
+
+/** A named palette accent, or an explicit request for no accent. */
+export type ConnectionAccent = ConnectionAccentName | null;
+
+/** Deterministic fallback for records written before accent metadata existed. */
+export const DEFAULT_CONNECTION_ACCENT: ConnectionAccentName = 'blue';
+
+/** Transient state derived only from an already-created backend client. */
+export type ConnectionOpenStatus = 'connecting' | 'connected' | 'disconnected' | 'not-open';
+
+export function isConnectionAccent(value: unknown): value is ConnectionAccent {
+  return (
+    value === null ||
+    (typeof value === 'string' && (CONNECTION_ACCENTS as readonly string[]).includes(value))
+  );
+}
+
 // ============================================================================
 // Core types
 // ============================================================================
@@ -64,6 +96,8 @@ export const LOCAL_CONNECTION_ID = 'local';
 export interface ConnectionRecord {
   id: string;
   label: string;
+  /** Palette-backed remote identity accent; missing is legacy, `null` is explicitly blank. */
+  accent?: ConnectionAccent;
   /** Remote host/IP; `null` for the local UDS entry. */
   host: string | null;
   /**
@@ -105,6 +139,10 @@ export interface ConnectionRecord {
   syncExcluded?: boolean;
   /** True for the synthesized local sidecar entry. */
   isLocal: boolean;
+  /** Present on list/broadcast payloads; never persisted. */
+  status?: ConnectionOpenStatus;
+  /** From an already-open connected client's `client.hello`; transient and never persisted. */
+  intentdVersion?: string;
 }
 
 /**
@@ -190,6 +228,8 @@ export interface CaptureFingerprintResult {
  */
 export interface AddConnectionParams {
   label: string;
+  /** Absent callers receive {@link DEFAULT_CONNECTION_ACCENT}; `null` explicitly clears it. */
+  accent?: ConnectionAccent;
   host: string;
   port: number;
   fingerprint: string;
@@ -223,15 +263,74 @@ export interface AddConnectionResult {
   switched: boolean;
 }
 
+/** `connections:update` params. Never carries or mutates the bearer token. */
+export interface UpdateConnectionParams {
+  id: string;
+  label: string;
+  accent: ConnectionAccent;
+  /** Optional for compatibility with presentation-only callers. */
+  host?: string;
+  /** Must be supplied together with `host`. */
+  port?: number;
+  /** Explicit user confirmation of a newly presented certificate. */
+  confirmedFingerprint?: string;
+}
+
+/** Machine-readable validation outcomes; renderer copy is localized by status/reason. */
+type ConnectionValidationResult =
+  | { status: 'success'; fingerprint: string }
+  | { status: 'secret-unavailable' }
+  | {
+      status: 'fingerprint-confirmation-required';
+      expectedFingerprint: string;
+      actualFingerprint: string;
+    }
+  | { status: 'authentication-rejected'; statusCode: number }
+  | {
+      status: 'failed';
+      reason: 'no-certificate' | 'connect-failed' | 'timeout';
+      statusCode?: number;
+    };
+
+export type ConnectionValidationBlockedResult = Exclude<
+  ConnectionValidationResult,
+  { status: 'success' }
+>;
+
+/** `connections:update` result: either an updated token-free record or validation guidance. */
+export type UpdateConnectionResult =
+  { status: 'updated'; connection: ConnectionRecord } | ConnectionValidationBlockedResult;
+
+/** Test current unsaved address values with the saved main-process-only secret. */
+export interface TestConnectionParams {
+  id: string;
+  host: string;
+  port: number;
+  /** Write-only override for this probe; never persisted or returned. */
+  token?: string;
+}
+
+export type TestConnectionResult = ConnectionValidationResult;
+
+/** Replace a saved secret without ever returning the old or new value. */
+export interface RotateConnectionSecretParams {
+  id: string;
+  token: string;
+  /** Explicit user confirmation of a newly presented certificate. */
+  confirmedFingerprint?: string;
+}
+
+export type RotateConnectionSecretResult =
+  { status: 'updated'; connection: ConnectionRecord } | ConnectionValidationBlockedResult;
+
 /** `connections:open` params. */
 export interface OpenConnectionParams {
   id: string;
 }
 
 /** `connections:open` result: echoes the opened or focused backend id. */
-export interface OpenConnectionResult {
-  id: string;
-}
+export type OpenConnectionResult =
+  { status: 'opened'; id: string } | { status: 'secret-unavailable' };
 
 /** `connections:forget` params. */
 export interface ForgetConnectionParams {

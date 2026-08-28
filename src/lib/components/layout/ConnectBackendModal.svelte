@@ -26,6 +26,7 @@
 
   import { Button } from '$lib/components/ui/button';
   import { Checkbox } from '$lib/components/ui/checkbox';
+  import { Input } from '$lib/components/ui/input';
   import { Label } from '$lib/components/ui/label';
   import Fa from 'svelte-fa';
   import { faXmark } from '@fortawesome/free-solid-svg-icons';
@@ -40,6 +41,12 @@
     setKeychainSyncEnabledRequested,
   } from '$store/renderer/slices/connections/connections-slice';
   import { selectKeychainSyncState } from '$store/renderer/slices/connections/connections-selectors';
+  import { DEFAULT_CONNECTION_ACCENT, type ConnectionAccent } from '$shared/types/connections';
+  import {
+    CONNECTION_ACCENT_CLASSES,
+    connectionAccentOptions,
+  } from '$lib/utils/connection-accents';
+  import { cn } from '$lib/utils';
 
   interface Props {
     open?: boolean;
@@ -51,9 +58,19 @@
      */
     prefillHost?: string | null;
     prefillPort?: number | null;
+    prefillLabel?: string | null;
+    prefillAccent?: ConnectionAccent;
+    defaultAccent?: ConnectionAccent;
   }
 
-  let { open = $bindable(false), prefillHost = null, prefillPort = null }: Props = $props();
+  let {
+    open = $bindable(false),
+    prefillHost = null,
+    prefillPort = null,
+    prefillLabel = null,
+    prefillAccent = undefined,
+    defaultAccent = DEFAULT_CONNECTION_ACCENT,
+  }: Props = $props();
 
   type Step = 'details' | 'confirm' | 'syncConfirm';
 
@@ -71,6 +88,8 @@
   }
 
   let step = $state<Step>('details');
+  let name = $state('');
+  let accent = $state<ConnectionAccent>(DEFAULT_CONNECTION_ACCENT);
   let host = $state('');
   let port = $state(DEFAULT_WS_PORT);
   let token = $state('');
@@ -80,6 +99,9 @@
   let busy = $state(false);
   let error = $state<string | null>(null);
   let firstInput: HTMLInputElement | null = $state(null);
+  const accentOptions = $derived(
+    connectionAccentOptions(prefillAccent === undefined ? defaultAccent : prefillAccent),
+  );
 
   // Keychain sync state gates the iCloud checkbox: `supported` is the platform
   // gate (macOS only), `enabled` decides whether the syncConfirm step is needed.
@@ -97,7 +119,8 @@
 
   const portNumber = $derived(Number(port.trim()));
   const canSubmitDetails = $derived(
-    host.trim().length > 0 &&
+    name.trim().length > 0 &&
+      host.trim().length > 0 &&
       Number.isInteger(portNumber) &&
       portNumber > 0 &&
       portNumber <= 65535 &&
@@ -107,6 +130,8 @@
 
   function reset() {
     step = 'details';
+    name = '';
+    accent = defaultAccent;
     host = '';
     port = DEFAULT_WS_PORT;
     token = '';
@@ -175,7 +200,8 @@
     const trimmedHost = host.trim();
     try {
       const addAction = addConnectionRequested({
-        label: `${trimmedHost}:${portNumber}`,
+        label: name.trim(),
+        accent,
         host: trimmedHost,
         port: portNumber,
         fingerprint,
@@ -228,6 +254,19 @@
   const inputClass =
     'w-full px-3 py-2 bg-background border border-border rounded text-foreground text-sm focus:outline-none focus:border-primary';
 
+  function accentLabel(value: ConnectionAccent): string {
+    if (value === null) return m.settings_devices_accentNone_label();
+    return {
+      blue: m.settings_devices_accentBlue_label(),
+      indigo: m.settings_devices_accentIndigo_label(),
+      violet: m.settings_devices_accentViolet_label(),
+      rose: m.settings_devices_accentRose_label(),
+      orange: m.settings_devices_accentOrange_label(),
+      emerald: m.settings_devices_accentEmerald_label(),
+      teal: m.settings_devices_accentTeal_label(),
+    }[value];
+  }
+
   // Focus the first field when the modal opens.
   $effect(() => {
     if (open && step === 'details' && firstInput) {
@@ -246,6 +285,8 @@
     const justOpened = open && !wasOpen;
     wasOpen = open;
     if (justOpened) {
+      if (prefillLabel && name === '') name = prefillLabel;
+      accent = prefillAccent === undefined ? defaultAccent : prefillAccent;
       if (prefillHost && host === '') host = prefillHost;
       if (prefillPort != null && port === DEFAULT_WS_PORT) port = String(prefillPort);
       // Refresh the keychain sync state so the iCloud checkbox gate is current
@@ -293,12 +334,61 @@
           <p class="text-sm text-subtle">{m.modals_connect_details_description()}</p>
 
           <div class="space-y-1">
+            <label class="text-xs text-subtle" for="connect-name"
+              >{m.modals_connect_name_label()}</label
+            >
+            <Input
+              id="connect-name"
+              bind:ref={firstInput}
+              bind:value={name}
+              type="text"
+              placeholder={m.modals_connect_name_placeholder()}
+              class={inputClass}
+              autocomplete="off"
+            />
+          </div>
+
+          <fieldset class="space-y-1">
+            <legend class="text-xs text-subtle">{m.settings_devices_accent_label()}</legend>
+            <div class="flex flex-wrap gap-1">
+              {#each accentOptions as option}
+                <Button
+                  type="button"
+                  variant="plain"
+                  class={cn(
+                    'flex size-8 cursor-pointer items-center justify-center rounded-full border bg-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                    option === accent
+                      ? 'border-foreground shadow-[0_0_0_2px_var(--color-background),0_0_0_4px_var(--color-foreground)]'
+                      : 'border-border hover:border-input',
+                  )}
+                  aria-label={m.modals_connect_accentOption_ariaLabel({
+                    color: accentLabel(option),
+                  })}
+                  aria-pressed={option === accent}
+                  onclick={() => (accent = option)}
+                >
+                  {#if option === null}
+                    <span
+                      class="size-4 rounded-full border border-muted-foreground/60 bg-background"
+                      aria-hidden="true"
+                    ></span>
+                  {:else}
+                    <span
+                      class={cn('size-4 rounded-full', CONNECTION_ACCENT_CLASSES[option])}
+                      aria-hidden="true"
+                    ></span>
+                  {/if}
+                </Button>
+              {/each}
+            </div>
+          </fieldset>
+
+          <div class="space-y-1">
             <label class="text-xs text-subtle" for="connect-host"
               >{m.modals_connect_host_label()}</label
             >
             <input
               id="connect-host"
-              bind:this={firstInput}
               bind:value={host}
               type="text"
               placeholder={m.modals_connect_host_placeholder()}
@@ -410,7 +500,9 @@
             {m.modals_connect_enableSync_decline_label()}
           </Button>
           <Button variant="default" onclick={handleEnableSyncAndAdd} disabled={busy}>
-            {busy ? m.modals_connect_connecting_label() : m.modals_connect_enableSync_confirm_label()}
+            {busy
+              ? m.modals_connect_connecting_label()
+              : m.modals_connect_enableSync_confirm_label()}
           </Button>
         {/if}
       </div>

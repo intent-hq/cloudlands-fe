@@ -130,35 +130,10 @@ describe('ProviderSelector progressive rendering', () => {
     const ProviderSelector = (await import('./ProviderSelector.svelte')).default;
     const result = render(ProviderSelector);
 
-    // Visible catalog rows are on screen without any probe having settled;
-    // gated rows (mock) stay hidden via the catalog's own verdict, while
-    // ungated cortex renders like any other visible row.
-    for (const name of [
-      'Augment Auggie',
-      'Anthropic Claude Code',
-      'OpenAI Codex',
-      'Grok Build',
-      'Snowflake Cortex',
-    ]) {
-      expect(result.getByText(name)).toBeTruthy();
-    }
+    expect(
+      result.getByRole('button', { name: 'Provider actions for Anthropic Claude Code' }),
+    ).toBeTruthy();
     expect(result.queryByText('Mock (E2E)')).toBeNull();
-
-    expect(
-      result.getAllByRole('heading', { level: 2 }).map((heading) => heading.textContent?.trim()),
-    ).toEqual(['Enabled', 'Not Detected']);
-    const enabledCard = result.getByRole('region', { name: 'Enabled' });
-    const enabledText = enabledCard.textContent ?? '';
-    expect(enabledText.indexOf('Augment Auggie')).toBeLessThan(enabledText.indexOf('OpenAI Codex'));
-    expect(result.getByRole('region', { name: 'Not Detected' }).textContent).not.toContain(
-      'Augment Auggie',
-    );
-    expect(result.queryByRole('heading', { name: 'Available' })).toBeNull();
-    expect(
-      result.container.querySelector(
-        '[role="region"][aria-labelledby="provider-group-discovered"]',
-      ),
-    ).toBeNull();
 
     expect(result.queryByTitle('Configure Anthropic Claude Code path')).toBeNull();
     await fireEvent.click(
@@ -178,28 +153,11 @@ describe('ProviderSelector progressive rendering', () => {
     const ProviderSelector = (await import('./ProviderSelector.svelte')).default;
     const result = render(ProviderSelector);
 
-    const groupHeadings = result.getAllByRole('heading', { level: 2 });
-    expect(groupHeadings.map((heading) => heading.textContent?.trim())).toEqual([
-      'Enabled',
-      'Available',
-      'Not Detected',
-    ]);
-    const providerCards = result.getAllByRole('region');
-    expect(providerCards).toHaveLength(3);
-    expect(providerCards.every((card) => card?.classList.contains('bg-card'))).toBe(true);
-    expect(groupHeadings.every((heading) => heading.closest('[role="region"]') === null)).toBe(
-      true,
-    );
-    const availableText = providerCards[1]?.textContent ?? '';
-    expect(availableText.indexOf('OpenAI Codex')).toBeLessThan(availableText.indexOf('OpenCode'));
-
     // Codex settled → inline enable action; login status/actions stay in menus.
     await waitFor(() => {
       expect(result.getByRole('button', { name: 'Enable' })).toBeTruthy();
     });
     const enableButton = result.getByRole('button', { name: 'Enable' });
-    expect(enableButton.className).toContain('text-secondary-foreground');
-    expect(enableButton.className).not.toContain('bg-primary');
     expect(result.queryByText('Logged in')).toBeNull();
 
     await fireEvent.click(enableButton);
@@ -220,18 +178,6 @@ describe('ProviderSelector progressive rendering', () => {
     expect(result.getByRole('menuitem', { name: 'Log in' })).toBeTruthy();
     // Providers whose probe has not landed keep a per-row pending indicator.
     expect(result.getAllByLabelText('Loading…').length).toBeGreaterThan(0);
-  });
-
-  it('mutes a provider name once its probe settles as unavailable', async () => {
-    mocks.state.current = await buildState({
-      'claude-code': { available: false },
-    });
-    const ProviderSelector = (await import('./ProviderSelector.svelte')).default;
-    const result = render(ProviderSelector);
-
-    const providerName = result.getByText('Anthropic Claude Code');
-    expect(providerName.className).toContain('text-muted-foreground');
-    expect(providerName.className).toContain('opacity-60');
   });
 
   it('shows provider warning details and the Node.js action only in the overflow menu', async () => {

@@ -84,6 +84,16 @@ const APP_UI_TARGETS: AppUiTarget[] = [
     route: '/settings?tab=connections#integrations',
     description: 'Connected integrations settings.',
   }),
+  settingsTarget({
+    id: 'devices',
+    tab: 'devices',
+    hashAliases: ['devices', 'machines'],
+    scrollSelector: '#devices',
+    highlightSelector: '#devices',
+    label: 'Settings: Devices',
+    route: '/settings?tab=devices#devices',
+    description: 'Saved remote device settings.',
+  }),
   ...[
     ['voice', 'Voice Dictation', 'Voice dictation settings.', 'input'],
     ['keyboard-shortcuts', 'Keyboard Shortcuts', 'Keyboard shortcuts reference.', 'input'],

@@ -31,6 +31,7 @@ import { cancelInflightHostExecStreamsForBackendSwitch } from '$shared/main/host
 import {
   AuthRejectedError,
   captureFingerprint,
+  normalizeFingerprint as normalizeTransportFingerprint,
   PinMismatchError,
   resolveBackendConfig,
   type BackendConnectionConfig,
@@ -96,8 +97,11 @@ import type {
   OpenConnectionResult,
   PublishSelfResult,
   RefreshSelfResult,
+  RotateConnectionSecretResult,
   SelfPublishedStateResult,
+  TestConnectionResult,
   UnpublishSelfResult,
+  UpdateConnectionResult,
   UpdateBackendResult,
 } from '../../../shared/types/connections';
 import { compareProtocolMajor } from './protocol-compat';
@@ -107,12 +111,15 @@ import {
   ConnectionsForgetSchema,
   ConnectionsListSchema,
   ConnectionsOpenSchema,
+  ConnectionsRotateSecretSchema,
   ConnectionsPublishSelfSchema,
   ConnectionsRefreshSelfSchema,
   ConnectionsSelfPublishedStateSchema,
+  ConnectionsTestSchema,
   ConnectionsSyncGetStateSchema,
   ConnectionsSyncSetEnabledSchema,
   ConnectionsUnpublishSelfSchema,
+  ConnectionsUpdateSchema,
   ConnectionsUpdateBackendSchema,
 } from '../../../main/ipc-schemas';
 import { createValidatedHandler } from '../../../main/ipc-validation-middleware';
@@ -127,6 +134,7 @@ const CONNECTIONS = IPC_CHANNELS.CONNECTIONS;
 // version+commit per connection id to log each connected daemon's build once
 // instead of once per reconnect (a daemon upgrade logs again).
 const lastLoggedDaemonBuildKeys = new Map<string, string>();
+const connectedDaemonVersions = new Map<string, string>();
 
 /**
  * #3649: log the connected daemon's build identity once at INFO so the log
@@ -140,7 +148,11 @@ const buildInfoLogger = new Logger('BuildInfo');
 
 function logDaemonHelloBuild(helloResult: unknown, connectionId: string): void {
   const helloBuild = extractDaemonHelloBuildInfo(helloResult);
-  if (!helloBuild) return;
+  if (!helloBuild) {
+    connectedDaemonVersions.delete(connectionId);
+    return;
+  }
+  connectedDaemonVersions.set(connectionId, helloBuild.version);
   const key = daemonHelloBuildKey(helloBuild);
   if (lastLoggedDaemonBuildKeys.get(connectionId) === key) return;
   lastLoggedDaemonBuildKeys.set(connectionId, key);
@@ -155,6 +167,7 @@ function logDaemonHelloBuild(helloResult: unknown, connectionId: string): void {
 /** @internal Test seam: clear the per-connection daemon-build log dedupe. */
 export function __resetDaemonBuildLogForTesting(): void {
   lastLoggedDaemonBuildKeys.clear();
+  connectedDaemonVersions.clear();
 }
 
 /**
@@ -578,13 +591,13 @@ export function getFocusedBackendClient(): JsonRpcClient {
  * connection store remains the only place where a remote bearer token is
  * decrypted.
  */
-export function connectBackendClient(id: string): Promise<JsonRpcClient> {
+export function connectBackendClient(id: string, tokenOverride?: string): Promise<JsonRpcClient> {
   const existing = backendClients.get(id);
   if (existing) return Promise.resolve(existing);
   const pending = backendClientConnects.get(id);
   if (pending) return pending;
 
-  const connecting = buildConfigForConnection(id)
+  const connecting = buildConfigForConnection(id, tokenOverride)
     .then(({ config }) => {
       const raced = backendClients.get(id);
       if (raced) return raced;
@@ -604,6 +617,7 @@ export function disconnectBackendClient(id: string): void {
   const instance = backendClients.get(id);
   if (!instance) return;
   backendClients.delete(id);
+  connectedDaemonVersions.delete(id);
   clearBackendFailureState(id);
   disposeTransferConnectionsForBackend(id);
   void cancelInflightHostExecStreamsForBackendSwitch(instance);
@@ -696,6 +710,7 @@ function createAdditionalBackendClient(id: string, config: BackendConnectionConf
     backendNotificationForwarder.emit('notification', id, notification);
   });
   instance.on('status', (status: ConnectionStatus) => {
+    if (status !== 'connected') connectedDaemonVersions.delete(id);
     broadcast(
       BACKEND.STATUS,
       {
@@ -706,6 +721,7 @@ function createAdditionalBackendClient(id: string, config: BackendConnectionConf
       id,
     );
     backendStatusForwarder.emit('status', id, status);
+    refreshConnectionsForStatusChange();
   });
   instance.on('reconnected', () => {
     broadcast(
@@ -1181,7 +1197,18 @@ async function listConnections(
   // a rejecting remote, or a reload of a pooled-backend window) still surfaces
   // the advisory / actionable state (cloudlands-fe#823 pattern), per backend.
   return {
-    connections: connections.filter((c) => !isSelfConnectionRecord(c, selfKeys)),
+    connections: connections
+      .filter((c) => !isSelfConnectionRecord(c, selfKeys))
+      .map((connection) => {
+        const status = backendClients.get(connection.id)?.getStatus() ?? 'not-open';
+        const intentdVersion =
+          status === 'connected' ? connectedDaemonVersions.get(connection.id) : undefined;
+        return {
+          ...connection,
+          status,
+          ...(intentdVersion ? { intentdVersion } : {}),
+        };
+      }),
     activeId,
     windowBackendId,
     protocolMismatch: protocolMismatchById.get(windowBackendId) ?? null,
@@ -1225,6 +1252,15 @@ async function broadcastConnectionsChanged(): Promise<void> {
   }
 }
 
+/** Push a fresh list after a pooled client's transient status changes. */
+function refreshConnectionsForStatusChange(): void {
+  void broadcastConnectionsChanged().catch((error) => {
+    logger.warn('Failed to refresh connection statuses', {
+      error: error instanceof Error ? error.message : String(error),
+    });
+  });
+}
+
 /**
  * Resolve the transport config + cert-mismatch identity for a connection id.
  * `local` maps to the env/UDS default (no pinned cert); a remote id builds the
@@ -1236,7 +1272,18 @@ async function broadcastConnectionsChanged(): Promise<void> {
  * short-lived JsonRpcClient to the chosen target while the active client
  * stays pinned to the source.
  */
-export async function buildConfigForConnection(id: string): Promise<{
+class ConnectionSecretUnavailableError extends Error {
+  constructor() {
+    // i18n-ignore (internal error)
+    super('Connection secret unavailable');
+    this.name = 'ConnectionSecretUnavailableError';
+  }
+}
+
+export async function buildConfigForConnection(
+  id: string,
+  tokenOverride?: string,
+): Promise<{
   config: BackendConnectionConfig;
   meta: { id: string; host: string; port: number } | null;
 }> {
@@ -1247,7 +1294,14 @@ export async function buildConfigForConnection(id: string): Promise<{
   if (!record || record.host == null || record.port == null || record.fingerprint == null) {
     throw new Error(`Unknown or incomplete connection: ${id}`);
   }
-  const token = await connectionsStore.getDecryptedToken(id);
+  let token: string | null | undefined = tokenOverride;
+  if (token === undefined) {
+    try {
+      token = await connectionsStore.getDecryptedToken(id);
+    } catch {
+      throw new ConnectionSecretUnavailableError();
+    }
+  }
   if (!token) {
     throw new Error(`No stored token for connection: ${id}`);
   }
@@ -1312,14 +1366,14 @@ function enqueueConnectionOperation<T>(fn: () => Promise<T>): Promise<T> {
 export function openBackendWindow(
   id: string,
   options?: { probeTimeoutMs?: number },
-): Promise<OpenConnectionResult> {
+): Promise<{ id: string }> {
   return enqueueConnectionOperation(() => performOpenBackendWindow(id, options));
 }
 
 async function performOpenBackendWindow(
   id: string,
   options?: { probeTimeoutMs?: number },
-): Promise<OpenConnectionResult> {
+): Promise<{ id: string }> {
   const target = await connectBackendClient(id);
   try {
     // Do not create a renderer until the pinned transport has completed an
@@ -1763,6 +1817,79 @@ export function registerBackendHandlers(): void {
   logger.info('Backend bridge IPC handlers registered');
 }
 
+type SavedRemoteConnection = ConnectionRecord & {
+  host: string;
+  port: number;
+  fingerprint: string;
+};
+
+async function getRemoteConnection(id: string): Promise<SavedRemoteConnection> {
+  if (id === LOCAL_CONNECTION_ID) throw new Error('Cannot update the local connection');
+  const connection = (await connectionsStore.list()).find((candidate) => candidate.id === id);
+  if (!connection) throw new Error(`Unknown connection id: ${id}`);
+  if (connection.isLocal || !connection.host || !connection.port || !connection.fingerprint) {
+    throw new Error(`Connection is not a saved remote: ${id}`);
+  }
+  return connection as SavedRemoteConnection;
+}
+
+async function loadSavedConnectionSecret(
+  id: string,
+): Promise<{ status: 'success'; token: string } | { status: 'secret-unavailable' }> {
+  try {
+    const token = await connectionsStore.getDecryptedToken(id);
+    return token ? { status: 'success', token } : { status: 'secret-unavailable' };
+  } catch {
+    return { status: 'secret-unavailable' };
+  }
+}
+
+async function validateConnectionAddress(
+  connection: ConnectionRecord,
+  host: string,
+  port: number,
+  token: string,
+  confirmedFingerprint?: string,
+): Promise<TestConnectionResult> {
+  const captured = await captureFingerprint({ host, port, token });
+  if (!captured.ok) {
+    return { status: 'failed', reason: captured.code };
+  }
+  if (!captured.tokenValid) {
+    return { status: 'authentication-rejected', statusCode: captured.statusCode ?? 401 };
+  }
+  if (!captured.connected) {
+    return {
+      status: 'failed',
+      reason: 'connect-failed',
+      ...(captured.statusCode !== undefined ? { statusCode: captured.statusCode } : {}),
+    };
+  }
+  const actualFingerprint = normalizeTransportFingerprint(captured.fingerprint ?? '');
+  const expectedFingerprint = normalizeTransportFingerprint(connection.fingerprint ?? '');
+  if (!actualFingerprint || !expectedFingerprint) {
+    return { status: 'failed', reason: 'no-certificate' };
+  }
+  const confirmed = confirmedFingerprint
+    ? normalizeTransportFingerprint(confirmedFingerprint)
+    : undefined;
+  if (actualFingerprint !== expectedFingerprint && confirmed !== actualFingerprint) {
+    return {
+      status: 'fingerprint-confirmation-required',
+      expectedFingerprint,
+      actualFingerprint,
+    };
+  }
+  return { status: 'success', fingerprint: actualFingerprint };
+}
+
+/** Rebuild only an already-open client after its durable transport config changed. */
+async function rebuildConnectionClientIfOpen(id: string): Promise<void> {
+  if (!backendClients.has(id)) return;
+  disconnectBackendClient(id);
+  await connectBackendClient(id);
+}
+
 /**
  * Register the multi-backend connections registry IPC handlers (part of
  * {@link registerBackendHandlers}). Each channel validates its params against
@@ -1868,6 +1995,95 @@ function registerConnectionsHandlers(): void {
     ),
   );
 
+  // Update remote metadata without carrying a token. Address changes are
+  // validated with the saved main-only secret before any durable mutation.
+  ipcMain.handle(
+    CONNECTIONS.UPDATE,
+    createValidatedHandler(
+      ConnectionsUpdateSchema,
+      async (_event, params) =>
+        enqueueConnectionOperation(async () => {
+          const saved = await getRemoteConnection(params.id);
+          const host = params.host ?? saved.host;
+          const port = params.port ?? saved.port;
+          const addressChanged = host !== saved.host || port !== saved.port;
+          let fingerprint = saved.fingerprint;
+          if (addressChanged) {
+            const secret = await loadSavedConnectionSecret(params.id);
+            if (secret.status === 'secret-unavailable') return secret;
+            const validation = await validateConnectionAddress(
+              saved,
+              host,
+              port,
+              secret.token,
+              params.confirmedFingerprint,
+            );
+            if (validation.status !== 'success') return validation;
+            fingerprint = validation.fingerprint;
+          }
+          const connection = await connectionsStore.updateMetadata(params.id, {
+            label: params.label,
+            accent: params.accent,
+            host,
+            port,
+            fingerprint,
+          });
+          if (addressChanged) await rebuildConnectionClientIfOpen(params.id);
+          await broadcastConnectionsChanged();
+          return { status: 'updated', connection } satisfies UpdateConnectionResult;
+        }),
+      CONNECTIONS.UPDATE,
+    ),
+  );
+
+  // Probe unsaved address values with a write-only override or the saved secret.
+  // This intentionally has no store mutation and no window hook.
+  ipcMain.handle(
+    CONNECTIONS.TEST,
+    createValidatedHandler(
+      ConnectionsTestSchema,
+      async (_event, { id, host, port, token }) =>
+        enqueueConnectionOperation(async () => {
+          const connection = await getRemoteConnection(id);
+          const secret = token
+            ? ({ status: 'success', token } as const)
+            : await loadSavedConnectionSecret(id);
+          if (secret.status === 'secret-unavailable') return secret;
+          return validateConnectionAddress(connection, host, port, secret.token);
+        }),
+      CONNECTIONS.TEST,
+    ),
+  );
+
+  // Secret rotation is a separate write-only operation. The replacement is
+  // persisted only after authentication and certificate validation succeed.
+  ipcMain.handle(
+    CONNECTIONS.ROTATE_SECRET,
+    createValidatedHandler(
+      ConnectionsRotateSecretSchema,
+      async (_event, { id, token, confirmedFingerprint }) =>
+        enqueueConnectionOperation(async () => {
+          const connection = await getRemoteConnection(id);
+          const validation = await validateConnectionAddress(
+            connection,
+            connection.host,
+            connection.port,
+            token,
+            confirmedFingerprint,
+          );
+          if (validation.status !== 'success') return validation;
+          const updated = await connectionsStore.replaceSecret(id, token, validation.fingerprint);
+          await rebuildConnectionClientIfOpen(id);
+          await broadcastConnectionsChanged();
+          return {
+            status: 'updated',
+            connection: updated,
+          } satisfies RotateConnectionSecretResult;
+        }),
+      CONNECTIONS.ROTATE_SECRET,
+    ),
+  );
+
   // Open or focus one backend without changing activeId or tearing down any
   // other backend's windows/client. The authenticated probe rejects before a
   // window is created when the saved token or certificate is invalid.
@@ -1875,15 +2091,23 @@ function registerConnectionsHandlers(): void {
     CONNECTIONS.OPEN,
     createValidatedHandler(
       ConnectionsOpenSchema,
-      async (_event, { id }) => openBackendWindow(id),
+      async (_event, { id }) => {
+        try {
+          const opened = await openBackendWindow(id);
+          return { status: 'opened', id: opened.id } satisfies OpenConnectionResult;
+        } catch (error) {
+          if (error instanceof ConnectionSecretUnavailableError) {
+            return { status: 'secret-unavailable' } satisfies OpenConnectionResult;
+          }
+          throw error;
+        }
+      },
       CONNECTIONS.OPEN,
     ),
   );
 
-  // Forget a remote connection. Close and disconnect only that backend. If it
-  // also owns the compatibility client, retarget that client to local without
-  // disturbing windows belonging to any other backend. Forgetting this
-  // machine's own published entry additionally latches the "do not
+  // Forget a remote connection. Close and disconnect only that backend.
+  // Forgetting this machine's own published entry additionally latches the "do not
   // auto-publish" marker. The whole removal is ONE enqueued critical section
   // (see {@link forgetConnectionLocked}).
   ipcMain.handle(

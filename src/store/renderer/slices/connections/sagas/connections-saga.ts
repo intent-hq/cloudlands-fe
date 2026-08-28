@@ -36,7 +36,13 @@ import type {
   KeychainSyncUiStatus,
   OpenConnectionParams,
   OpenConnectionResult,
+  RotateConnectionSecretParams,
+  RotateConnectionSecretResult,
   SetKeychainSyncEnabledParams,
+  TestConnectionParams,
+  TestConnectionResult,
+  UpdateConnectionParams,
+  UpdateConnectionResult,
   UpdateBackendParams,
   UpdateBackendResult,
 } from '$shared/types/connections';
@@ -56,7 +62,10 @@ import {
   loadKeychainSyncStateRequested,
   openConnectionRequested,
   protocolMismatchReceived,
+  rotateConnectionSecretRequested,
   setKeychainSyncEnabledRequested,
+  testConnectionRequested,
+  updateConnectionRequested,
   updateBackendRequested,
 } from '../connections-slice';
 
@@ -139,6 +148,28 @@ async function invokeAddConnection(params: AddConnectionParams): Promise<AddConn
   const api = getApi();
   if (!api) throw new Error('electronAPI is not available');
   return (await api.invoke(CONNECTIONS.ADD, params)) as AddConnectionResult;
+}
+
+async function invokeUpdateConnection(
+  params: UpdateConnectionParams,
+): Promise<UpdateConnectionResult> {
+  const api = getApi();
+  if (!api) throw new Error('electronAPI is not available');
+  return (await api.invoke(CONNECTIONS.UPDATE, params)) as UpdateConnectionResult;
+}
+
+async function invokeTestConnection(params: TestConnectionParams): Promise<TestConnectionResult> {
+  const api = getApi();
+  if (!api) throw new Error('electronAPI is not available');
+  return (await api.invoke(CONNECTIONS.TEST, params)) as TestConnectionResult;
+}
+
+async function invokeRotateConnectionSecret(
+  params: RotateConnectionSecretParams,
+): Promise<RotateConnectionSecretResult> {
+  const api = getApi();
+  if (!api) throw new Error('electronAPI is not available');
+  return (await api.invoke(CONNECTIONS.ROTATE_SECRET, params)) as RotateConnectionSecretResult;
 }
 
 async function invokeOpenConnection(params: OpenConnectionParams): Promise<OpenConnectionResult> {
@@ -294,6 +325,55 @@ function* forgetConnection(
   }
 }
 
+function* updateConnection(
+  action: ReturnType<typeof updateConnectionRequested>,
+): SagaGenerator<void> {
+  let settled = false;
+  try {
+    const result = yield* call(invokeUpdateConnection, action.payload[0]);
+    yield* put(action.success(result));
+    settled = true;
+  } catch (error) {
+    yield* put(action.failure(toError(error)));
+    settled = true;
+  } finally {
+    if (!settled && (yield* cancelled()))
+      yield* put(action.failure(new Error('Connection update was cancelled')));
+  }
+}
+
+function* testConnection(action: ReturnType<typeof testConnectionRequested>): SagaGenerator<void> {
+  let settled = false;
+  try {
+    const result = yield* call(invokeTestConnection, action.payload[0]);
+    yield* put(action.success(result));
+    settled = true;
+  } catch (error) {
+    yield* put(action.failure(toError(error)));
+    settled = true;
+  } finally {
+    if (!settled && (yield* cancelled()))
+      yield* put(action.failure(new Error('Connection test was cancelled')));
+  }
+}
+
+function* rotateConnectionSecret(
+  action: ReturnType<typeof rotateConnectionSecretRequested>,
+): SagaGenerator<void> {
+  let settled = false;
+  try {
+    const result = yield* call(invokeRotateConnectionSecret, action.payload[0]);
+    yield* put(action.success(result));
+    settled = true;
+  } catch (error) {
+    yield* put(action.failure(toError(error)));
+    settled = true;
+  } finally {
+    if (!settled && (yield* cancelled()))
+      yield* put(action.failure(new Error('Secret rotation was cancelled')));
+  }
+}
+
 function* openConnection(action: ReturnType<typeof openConnectionRequested>): SagaGenerator<void> {
   let settled = false;
   yield* put(connectOperationStarted());
@@ -393,6 +473,9 @@ function* watchConnectionsActions(): SagaGenerator<void> {
     takeLeading(loadConnectionsRequested, hydrateConnections),
     takeLeading(captureFingerprintRequested, captureFingerprint),
     takeLeading(addConnectionRequested, addConnection),
+    takeEvery(updateConnectionRequested, updateConnection),
+    takeEvery(testConnectionRequested, testConnection),
+    takeEvery(rotateConnectionSecretRequested, rotateConnectionSecret),
     takeLeading(openConnectionRequested, openConnection),
     takeLeading(forgetConnectionRequested, forgetConnection),
     // takeEvery, not takeLeading: each action targets one backend id, and

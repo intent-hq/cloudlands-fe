@@ -2,7 +2,8 @@
  * Connections IPC bridge — mock fallback for the multi-backend connect channels.
  *
  * Bridges the `connections:*` request/response channels (`list`,
- * `capture-fingerprint`, `add`, `forget`, `open`) so the connections service
+ * `capture-fingerprint`, `add`, `forget`, `open`, `update`, `test`,
+ * `rotate-secret`) so the connections service
  * thunks resolve in bridge-less builds (browser mock) and tests instead of
  * rejecting with UnbridgedMockIpcChannelError.
  *
@@ -97,10 +98,27 @@ registerMockIpcHandler(CONNECTION_CHANNELS.FORGET, async (arg): Promise<ForgetCo
   return { id };
 });
 
-registerMockIpcHandler(CONNECTION_CHANNELS.OPEN, async (arg): Promise<OpenConnectionResult> => {
-  const { id } = arg as OpenConnectionParams;
-  return { id };
-});
+const FORWARDED_DEVICE_CHANNELS = [
+  CONNECTION_CHANNELS.OPEN,
+  CONNECTION_CHANNELS.UPDATE,
+  CONNECTION_CHANNELS.TEST,
+  CONNECTION_CHANNELS.ROTATE_SECRET,
+] as const;
+
+for (const channel of FORWARDED_DEVICE_CHANNELS) {
+  registerMockIpcHandler(channel, async (arg) => {
+    const bridge = typeof window !== 'undefined' ? window.electronAPI : undefined;
+    const invoke = bridge?.invoke as
+      ((channel: string, payload?: unknown) => Promise<unknown>) | undefined;
+    if (invoke) return invoke(channel, arg);
+
+    if (channel === CONNECTION_CHANNELS.OPEN) {
+      const { id } = arg as OpenConnectionParams;
+      return { status: 'opened', id } satisfies OpenConnectionResult;
+    }
+    return { status: 'failed', reason: 'connect-failed' };
+  });
+}
 
 // Remote self-update request. The mock has no live pooled clients, so every
 // target reads as not connected — mirroring the main handler's gate.

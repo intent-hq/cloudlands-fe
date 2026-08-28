@@ -36,9 +36,12 @@ vi.mock('../json-rpc-client', () => {
   class FakeJsonRpcClient {
     private readonly id = ++seq;
     private readonly config: unknown;
+    private readonly onHelloResult?: (result: unknown) => void;
+    private status = 'disconnected';
     private readonly listeners = new Map<string, Array<(arg: unknown) => void>>();
-    constructor(opts: { config: unknown }) {
+    constructor(opts: { config: unknown; onHelloResult?: (result: unknown) => void }) {
       this.config = opts.config;
+      this.onHelloResult = opts.onHelloResult;
       lifecycle.events.push({ type: 'construct', seq: this.id });
     }
     on(event: string, handler: (arg: unknown) => void): this {
@@ -51,7 +54,11 @@ vi.mock('../json-rpc-client', () => {
       return this;
     }
     emit(event: string, arg?: unknown): void {
+      if (event === 'status' && typeof arg === 'string') this.status = arg;
       for (const h of this.listeners.get(event) ?? []) h(arg);
+    }
+    hello(result: unknown): void {
+      this.onHelloResult?.(result);
     }
     start(): void {
       lifecycle.events.push({ type: 'start', seq: this.id });
@@ -69,8 +76,6 @@ vi.mock('../json-rpc-client', () => {
     getConfig(): unknown {
       return this.config;
     }
-    /** Steerable status so connectivity-gated paths can be exercised. */
-    status = 'disconnected';
     getStatus(): string {
       return this.status;
     }
@@ -91,6 +96,7 @@ vi.mock('../intentd-sidecar', () => ({
   onSidecarStartupFailed: vi.fn(() => () => {}),
   getSidecarRunLog: vi.fn(() => ({ available: false })),
   getSidecarStartupFailure: vi.fn(() => null),
+  getLocalDaemonProtocolVersion: vi.fn(() => null),
   spawnSidecarOnDemand: vi.fn(),
 }));
 
@@ -117,6 +123,8 @@ const store = vi.hoisted(() => ({
   getActiveId: vi.fn(),
   setActiveId: vi.fn(),
   add: vi.fn(),
+  updateMetadata: vi.fn(),
+  replaceSecret: vi.fn(),
   forget: vi.fn(),
   getDecryptedToken: vi.fn(),
   setHostname: vi.fn(),
@@ -130,6 +138,8 @@ vi.mock('../connections-store', () => ({
   getActiveId: store.getActiveId,
   setActiveId: store.setActiveId,
   add: store.add,
+  updateMetadata: store.updateMetadata,
+  replaceSecret: store.replaceSecret,
   forget: store.forget,
   getDecryptedToken: store.getDecryptedToken,
   setHostname: store.setHostname,
@@ -575,7 +585,10 @@ describe('connections:* IPC handlers', () => {
     expect(handler).toBeDefined();
 
     await expect(handler!({}, undefined)).resolves.toEqual({
-      connections: [LOCAL, REMOTE],
+      connections: [
+        { ...LOCAL, status: 'disconnected' },
+        { ...REMOTE, status: 'not-open' },
+      ],
       activeId: 'local',
       windowBackendId: 'local',
       // No remote handshake has mismatched, so there is no sticky mismatch (#823).
@@ -841,6 +854,403 @@ describe('connections:* IPC handlers', () => {
     );
   });
 
+  it('connections:update changes remote presentation metadata without revalidating its saved address', async () => {
+    const updated = { ...REMOTE, label: 'Editing Mac', accent: 'violet' as const };
+    store.getDecryptedToken.mockRejectedValue(new Error('undecryptable secret material'));
+    store.updateMetadata.mockResolvedValue(updated);
+    const send = installWindow();
+    const { mod } = await loadModule();
+    mod.registerBackendHandlers();
+    const handler = findHandler('connections:update');
+
+    await expect(
+      handler!({}, { id: REMOTE.id, label: 'Editing Mac', accent: 'violet' }),
+    ).resolves.toEqual({ status: 'updated', connection: updated });
+    expect(store.updateMetadata).toHaveBeenCalledWith(REMOTE.id, {
+      label: 'Editing Mac',
+      accent: 'violet',
+      host: REMOTE.host,
+      port: REMOTE.port,
+      fingerprint: REMOTE.fingerprint,
+    });
+    expect(mockCaptureFingerprint).not.toHaveBeenCalled();
+    expect(store.getDecryptedToken).not.toHaveBeenCalled();
+    expect(send).toHaveBeenCalledWith('connections:changed', expect.any(Object));
+  });
+
+  it('tests unsaved address values with the saved secret without saving or opening a window', async () => {
+    mockCaptureFingerprint.mockResolvedValue({
+      ok: true,
+      fingerprint: REMOTE.fingerprint,
+      connected: true,
+      tokenValid: true,
+    });
+    const { mod, openOrFocus } = await loadModule();
+    mod.registerBackendHandlers();
+    const handler = findHandler('connections:test');
+
+    await expect(handler!({}, { id: REMOTE.id, host: '10.0.0.99', port: 9443 })).resolves.toEqual({
+      status: 'success',
+      fingerprint: REMOTE.fingerprint,
+    });
+    expect(mockCaptureFingerprint).toHaveBeenCalledWith({
+      host: '10.0.0.99',
+      port: 9443,
+      token: 'secret-token',
+    });
+    expect(store.updateMetadata).not.toHaveBeenCalled();
+    expect(store.replaceSecret).not.toHaveBeenCalled();
+    expect(openOrFocus).not.toHaveBeenCalled();
+  });
+
+  it('tests a write-only secret override without decrypting or persisting it', async () => {
+    store.getDecryptedToken.mockRejectedValue(new Error('stored secret is undecryptable'));
+    const { mod } = await loadModule();
+    mod.registerBackendHandlers();
+    const handler = findHandler('connections:test');
+
+    const result = await handler!(
+      {},
+      { id: REMOTE.id, host: '10.0.0.99', port: 9443, token: 'preview-token' },
+    );
+
+    expect(result).toEqual({ status: 'success', fingerprint: REMOTE.fingerprint });
+    expect(store.getDecryptedToken).not.toHaveBeenCalled();
+    expect(store.updateMetadata).not.toHaveBeenCalled();
+    expect(store.replaceSecret).not.toHaveBeenCalled();
+    expect(JSON.stringify(result)).not.toContain('preview-token');
+    expect(mockCaptureFingerprint).toHaveBeenCalledWith(
+      expect.objectContaining({ token: 'preview-token' }),
+    );
+  });
+
+  it('returns token-free guidance when testing cannot decrypt the saved secret', async () => {
+    store.getDecryptedToken.mockRejectedValue(
+      new Error('raw decrypt failure with secret-material'),
+    );
+    const { mod } = await loadModule();
+    mod.registerBackendHandlers();
+    const handler = findHandler('connections:test');
+
+    const result = await handler!({}, { id: REMOTE.id, host: '10.0.0.99', port: 9443 });
+
+    expect(result).toEqual({ status: 'secret-unavailable' });
+    expect(JSON.stringify(result)).not.toContain('decrypt');
+    expect(JSON.stringify(result)).not.toContain('secret-material');
+    expect(mockCaptureFingerprint).not.toHaveBeenCalled();
+    expect(store.updateMetadata).not.toHaveBeenCalled();
+  });
+
+  it('requires explicit fingerprint confirmation before persisting an address change', async () => {
+    const changedFingerprint = 'DD:EE:FF';
+    mockCaptureFingerprint.mockResolvedValue({
+      ok: true,
+      fingerprint: changedFingerprint,
+      connected: true,
+      tokenValid: true,
+    });
+    store.updateMetadata.mockResolvedValue({
+      ...REMOTE,
+      host: '10.0.0.99',
+      port: 9443,
+      fingerprint: changedFingerprint,
+    });
+    const { mod } = await loadModule();
+    mod.registerBackendHandlers();
+    const handler = findHandler('connections:update');
+    const params = {
+      id: REMOTE.id,
+      label: REMOTE.label,
+      accent: 'blue' as const,
+      host: '10.0.0.99',
+      port: 9443,
+    };
+
+    await expect(handler!({}, params)).resolves.toEqual({
+      status: 'fingerprint-confirmation-required',
+      expectedFingerprint: REMOTE.fingerprint,
+      actualFingerprint: changedFingerprint,
+    });
+    expect(store.updateMetadata).not.toHaveBeenCalled();
+
+    await expect(
+      handler!({}, { ...params, confirmedFingerprint: changedFingerprint }),
+    ).resolves.toMatchObject({ status: 'updated' });
+    expect(store.updateMetadata).toHaveBeenCalledWith(
+      REMOTE.id,
+      expect.objectContaining({
+        host: '10.0.0.99',
+        port: 9443,
+        fingerprint: changedFingerprint,
+      }),
+    );
+  });
+
+  it('returns token-free guidance when an address change cannot decrypt the saved secret', async () => {
+    store.getDecryptedToken.mockRejectedValue(
+      new Error('raw decrypt failure with secret-material'),
+    );
+    const { mod } = await loadModule();
+    mod.registerBackendHandlers();
+    const handler = findHandler('connections:update');
+
+    const result = await handler!(
+      {},
+      {
+        id: REMOTE.id,
+        label: REMOTE.label,
+        accent: 'blue',
+        host: '10.0.0.99',
+        port: 9443,
+      },
+    );
+
+    expect(result).toEqual({ status: 'secret-unavailable' });
+    expect(JSON.stringify(result)).not.toContain('decrypt');
+    expect(JSON.stringify(result)).not.toContain('secret-material');
+    expect(mockCaptureFingerprint).not.toHaveBeenCalled();
+    expect(store.updateMetadata).not.toHaveBeenCalled();
+  });
+
+  it('leaves the saved secret unchanged when rotation authentication fails', async () => {
+    mockCaptureFingerprint.mockResolvedValue({
+      ok: true,
+      fingerprint: REMOTE.fingerprint,
+      connected: false,
+      tokenValid: false,
+      statusCode: 401,
+    });
+    const { mod } = await loadModule();
+    mod.registerBackendHandlers();
+    const handler = findHandler('connections:rotate-secret');
+
+    await expect(handler!({}, { id: REMOTE.id, token: 'replacement' })).resolves.toEqual({
+      status: 'authentication-rejected',
+      statusCode: 401,
+    });
+    expect(store.replaceSecret).not.toHaveBeenCalled();
+  });
+
+  it('rotates a validated secret without returning it', async () => {
+    mockCaptureFingerprint.mockResolvedValue({
+      ok: true,
+      fingerprint: REMOTE.fingerprint,
+      connected: true,
+      tokenValid: true,
+    });
+    let secretReplaced = false;
+    store.replaceSecret.mockImplementation(async () => {
+      secretReplaced = true;
+      return REMOTE;
+    });
+    const { mod } = await loadModule();
+    const before = await mod.connectBackendClient(REMOTE.id);
+    store.getDecryptedToken.mockClear();
+    store.getDecryptedToken.mockImplementation(async () => {
+      if (!secretReplaced) throw new Error('old secret cannot be decrypted');
+      return 'replacement';
+    });
+    mod.registerBackendHandlers();
+    const handler = findHandler('connections:rotate-secret');
+
+    const result = await handler!({}, { id: REMOTE.id, token: 'replacement' });
+    expect(result).toEqual({ status: 'updated', connection: REMOTE });
+    expect(JSON.stringify(result)).not.toContain('replacement');
+    expect(store.replaceSecret).toHaveBeenCalledWith(REMOTE.id, 'replacement', REMOTE.fingerprint);
+    expect(store.replaceSecret.mock.invocationCallOrder[0]).toBeLessThan(
+      store.getDecryptedToken.mock.invocationCallOrder[0],
+    );
+    expect(mod.getBackendClientForConnection(REMOTE.id)).not.toBe(before);
+  });
+
+  it('rebuilds only the affected open pooled client after an address change', async () => {
+    const other = {
+      ...REMOTE,
+      id: 'remote-2',
+      host: '10.0.0.6',
+      fingerprint: '11:22:33',
+    };
+    store.list.mockResolvedValue([LOCAL, REMOTE, other]);
+    mockCaptureFingerprint.mockResolvedValue({
+      ok: true,
+      fingerprint: REMOTE.fingerprint,
+      connected: true,
+      tokenValid: true,
+    });
+    store.updateMetadata.mockResolvedValue({ ...REMOTE, host: '10.0.0.99' });
+    const { mod } = await loadModule();
+    const affectedBefore = await mod.connectBackendClient(REMOTE.id);
+    const otherBefore = await mod.connectBackendClient(other.id);
+    mod.registerBackendHandlers();
+    const handler = findHandler('connections:update');
+
+    await handler!(
+      {},
+      {
+        id: REMOTE.id,
+        label: REMOTE.label,
+        accent: 'blue',
+        host: '10.0.0.99',
+        port: REMOTE.port,
+      },
+    );
+
+    expect(mod.getBackendClientForConnection(REMOTE.id)).not.toBe(affectedBefore);
+    expect(mod.getBackendClientForConnection(other.id)).toBe(otherBefore);
+  });
+
+  it('serializes connection tests so each uses a stable saved-secret snapshot', async () => {
+    let finishFirst!: (value: unknown) => void;
+    let finishSecond!: (value: unknown) => void;
+    mockCaptureFingerprint
+      .mockImplementationOnce(() => new Promise((resolve) => (finishFirst = resolve)))
+      .mockImplementationOnce(() => new Promise((resolve) => (finishSecond = resolve)));
+    const { mod } = await loadModule();
+    mod.registerBackendHandlers();
+    const handler = findHandler('connections:test')!;
+
+    const first = handler({}, { id: REMOTE.id, host: '10.0.0.8', port: 8443 });
+    const second = handler({}, { id: REMOTE.id, host: '10.0.0.9', port: 8443 });
+    await vi.waitFor(() => expect(mockCaptureFingerprint).toHaveBeenCalledTimes(1));
+    finishFirst({
+      ok: true,
+      fingerprint: REMOTE.fingerprint,
+      connected: true,
+      tokenValid: true,
+    });
+    await expect(first).resolves.toMatchObject({ status: 'success' });
+    await vi.waitFor(() => expect(mockCaptureFingerprint).toHaveBeenCalledTimes(2));
+    finishSecond({
+      ok: true,
+      fingerprint: REMOTE.fingerprint,
+      connected: true,
+      tokenValid: true,
+    });
+    await expect(second).resolves.toMatchObject({ status: 'success' });
+  });
+
+  it('accepts separator-equivalent saved and captured fingerprints', async () => {
+    const saved = { ...REMOTE, fingerprint: 'aa:bb:cc' };
+    store.list.mockResolvedValue([LOCAL, saved]);
+    mockCaptureFingerprint.mockResolvedValue({
+      ok: true,
+      fingerprint: 'AA BB CC',
+      connected: true,
+      tokenValid: true,
+    });
+    const { mod } = await loadModule();
+    mod.registerBackendHandlers();
+    const handler = findHandler('connections:test')!;
+
+    await expect(
+      handler({}, { id: saved.id, host: saved.host, port: saved.port }),
+    ).resolves.toEqual({
+      status: 'success',
+      fingerprint: 'AA:BB:CC',
+    });
+  });
+
+  it('rejects local, unknown, and malformed edit operations before mutation', async () => {
+    const { mod } = await loadModule();
+    mod.registerBackendHandlers();
+    const testHandler = findHandler('connections:test');
+    const updateHandler = findHandler('connections:update');
+
+    await expect(testHandler!({}, { id: LOCAL.id, host: '127.0.0.1', port: 8443 })).rejects.toThrow(
+      'local',
+    );
+    await expect(
+      testHandler!({}, { id: 'missing', host: '127.0.0.1', port: 8443 }),
+    ).rejects.toThrow('Unknown');
+    await expect(
+      updateHandler!(
+        {},
+        {
+          id: REMOTE.id,
+          label: REMOTE.label,
+          accent: 'blue',
+          host: '127.0.0.1',
+          port: 70_000,
+        },
+      ),
+    ).rejects.toThrow();
+    expect(store.updateMetadata).not.toHaveBeenCalled();
+    expect(store.replaceSecret).not.toHaveBeenCalled();
+  });
+
+  it('connections:update rejects invalid accent metadata before touching the store', async () => {
+    const { mod } = await loadModule();
+    mod.registerBackendHandlers();
+    const handler = findHandler('connections:update');
+
+    await expect(
+      handler!({}, { id: REMOTE.id, label: 'Editing Mac', accent: 'chartreuse' }),
+    ).rejects.toThrow();
+    expect(store.updateMetadata).not.toHaveBeenCalled();
+  });
+
+  it('connections:list reports pooled status without opening saved remotes', async () => {
+    const { mod } = await loadModule();
+    mod.getBackendClient();
+    mod.registerBackendHandlers();
+    const handler = findHandler('connections:list');
+
+    await expect(handler!({}, undefined)).resolves.toMatchObject({
+      connections: [
+        { id: LOCAL.id, status: 'disconnected' },
+        { id: REMOTE.id, status: 'not-open' },
+      ],
+    });
+    expect(mod.getBackendClientForConnection(REMOTE.id)).toBeUndefined();
+  });
+
+  it('pooled-client status transitions rebroadcast refreshed connection state', async () => {
+    const send = installWindow();
+    const { mod } = await loadModule();
+    mod.getBackendClient();
+    const remote = (await mod.connectBackendClient(REMOTE.id)) as unknown as {
+      emit(event: string, arg: unknown): void;
+      hello(result: unknown): void;
+    };
+    mod.registerBackendHandlers();
+
+    remote.emit('status', 'connecting');
+    await vi.waitFor(() => {
+      const changed = send.mock.calls.filter(([channel]) => channel === 'connections:changed');
+      expect(changed.at(-1)?.[1]).toMatchObject({
+        connections: expect.arrayContaining([
+          expect.objectContaining({ id: REMOTE.id, status: 'connecting' }),
+        ]),
+      });
+    });
+
+    remote.hello({ server: { version: '6.8.0', buildCommit: 'abc123' } });
+    remote.emit('status', 'connected');
+    await vi.waitFor(() => {
+      const changed = send.mock.calls.filter(([channel]) => channel === 'connections:changed');
+      expect(changed.at(-1)?.[1]).toMatchObject({
+        connections: expect.arrayContaining([
+          expect.objectContaining({
+            id: REMOTE.id,
+            status: 'connected',
+            intentdVersion: '6.8.0',
+          }),
+        ]),
+      });
+    });
+    expect(rpc.calls.every((method) => method === 'server.pairingInfo')).toBe(true);
+    expect(mockCaptureFingerprint).not.toHaveBeenCalled();
+
+    remote.emit('status', 'disconnected');
+    await vi.waitFor(() => {
+      const changed = send.mock.calls.filter(([channel]) => channel === 'connections:changed');
+      const payload = changed.at(-1)?.[1] as ConnectionsListResult;
+      const record = payload.connections.find((connection) => connection.id === REMOTE.id);
+      expect(record).toMatchObject({ status: 'disconnected' });
+      expect(record).not.toHaveProperty('intentdVersion');
+    });
+  });
+
   it('connections:add upserting a NON-active connection does not reconnect', async () => {
     store.add.mockResolvedValue(REMOTE);
     store.getActiveId.mockResolvedValue('local');
@@ -930,7 +1340,10 @@ describe('connections:* IPC handlers', () => {
     mod.registerBackendHandlers();
     const handler = findHandler('connections:open');
 
-    await expect(handler!({}, { id: 'remote-1' })).resolves.toEqual({ id: 'remote-1' });
+    await expect(handler!({}, { id: 'remote-1' })).resolves.toEqual({
+      status: 'opened',
+      id: 'remote-1',
+    });
 
     const remote = mod.getBackendClientForConnection('remote-1');
     expect(remote).toBeDefined();
@@ -960,6 +1373,44 @@ describe('connections:* IPC handlers', () => {
     expect(mod.getBackendClientForConnection('local')).toBe(local);
     expect(mod.getBackendClientForConnection('remote-1')).toBeUndefined();
     expect(openOrFocus).not.toHaveBeenCalled();
+  });
+
+  it('returns token-free open guidance and connects after write-only secret recovery', async () => {
+    let secretReplaced = false;
+    store.getDecryptedToken.mockImplementation(async () => {
+      if (!secretReplaced) throw new Error('raw decrypt failure with secret-material');
+      return 'replacement';
+    });
+    store.replaceSecret.mockImplementation(async () => {
+      secretReplaced = true;
+      return REMOTE;
+    });
+    mockCaptureFingerprint.mockResolvedValue({
+      ok: true,
+      fingerprint: REMOTE.fingerprint,
+      connected: true,
+      tokenValid: true,
+    });
+    const { mod, openOrFocus } = await loadModule();
+    mod.registerBackendHandlers();
+    const open = findHandler('connections:open');
+    const rotate = findHandler('connections:rotate-secret');
+
+    const blocked = await open!({}, { id: REMOTE.id });
+
+    expect(blocked).toEqual({ status: 'secret-unavailable' });
+    expect(JSON.stringify(blocked)).not.toContain('decrypt');
+    expect(JSON.stringify(blocked)).not.toContain('secret-material');
+    expect(openOrFocus).not.toHaveBeenCalled();
+
+    await expect(rotate!({}, { id: REMOTE.id, token: 'replacement' })).resolves.toMatchObject({
+      status: 'updated',
+    });
+    await expect(open!({}, { id: REMOTE.id })).resolves.toEqual({
+      status: 'opened',
+      id: REMOTE.id,
+    });
+    expect(openOrFocus).toHaveBeenCalledWith(REMOTE.id);
   });
 
   it('connections:forget closes and disconnects only that secondary backend', async () => {

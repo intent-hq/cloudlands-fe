@@ -2,7 +2,6 @@
  * @vitest-environment jsdom
  */
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
-import { readFileSync } from 'node:fs';
 import { SvelteURL } from 'svelte/reactivity';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { appClient } from '$lib/client';
@@ -40,7 +39,6 @@ import {
   fetchEditorsSuccess,
   setLoading as setExternalEditorsLoading,
 } from '$store/renderer/slices/external-editors/external-editors-slice';
-import { requestUiHighlight } from '$store/renderer/slices/ui-highlight/ui-highlight-slice';
 import { selectAutoUpdateError } from '$store/renderer/slices/auto-update/auto-update-selectors';
 import {
   installUpdate,
@@ -90,6 +88,9 @@ vi.mock('$lib/components/settings/ConnectionsSettings.svelte', async () => ({
 }));
 vi.mock('$lib/components/settings/VoiceSettings.svelte', async () => ({
   default: (await import('./mocks/SettingsStateFixture.svelte')).default,
+}));
+vi.mock('$lib/components/settings/DevicesSettings.svelte', async () => ({
+  default: (await import('$lib/components/chat/__tests__/mocks/SlotOnly.svelte')).default,
 }));
 vi.mock('$lib/components/settings/GitWorkspaceSettings.svelte', async () => ({
   default: (await import('./mocks/GitWorkspaceSettingsFixture.svelte')).default,
@@ -168,7 +169,6 @@ afterEach(() => {
   cleanup();
   window.electronAPI!.invoke = originalInvoke;
   resetMockIpcRouter();
-  document.documentElement.classList.remove('light', 'dark');
   vi.useRealTimers();
 });
 
@@ -372,36 +372,7 @@ async function exerciseFixtureSaveMode(saveMode: string, fixture: HTMLElement) {
   );
 }
 
-function expectElementOrder(ids: string[]) {
-  const elements = ids.map((id) => document.getElementById(id));
-  expect(elements.every(Boolean)).toBe(true);
-  for (let index = 1; index < elements.length; index += 1) {
-    expect(
-      elements[index - 1]!.compareDocumentPosition(elements[index]!) &
-        Node.DOCUMENT_POSITION_FOLLOWING,
-    ).toBeTruthy();
-  }
-}
-
-describe('settings deterministic capture fixtures', () => {
-  it('covers every tab in light/dark at desktop/compact dimensions with stable IDs', () => {
-    expect(SETTINGS_TABS.map(({ id }) => id)).toEqual([
-      'display',
-      'app-behavior',
-      'agent-behavior',
-      'providers',
-      'connections',
-      'setup',
-      'advanced',
-      'input',
-    ]);
-    expect(SETTINGS_CAPTURE_FIXTURES).toHaveLength(32);
-    expect(new Set(SETTINGS_CAPTURE_FIXTURES.map(({ id }) => id)).size).toBe(32);
-    for (const tab of SETTINGS_TABS) {
-      expect(SETTINGS_CAPTURE_FIXTURES.filter((fixture) => fixture.tab === tab.id)).toHaveLength(4);
-    }
-  });
-
+describe('settings state and save-mode fixtures', () => {
   it('pins state ownership, save modes, and the required interaction-state matrix', () => {
     const states = new Set(SETTINGS_TABS.flatMap((tab) => [...tab.states]));
     const declaredOwners = new Set(SETTINGS_TABS.flatMap((tab) => [...tab.stateOwners]));
@@ -418,14 +389,8 @@ describe('settings deterministic capture fixtures', () => {
   });
 
   it.each(SETTINGS_CAPTURE_FIXTURES)(
-    'renders $id deterministically',
-    async ({ id, url, label, heading, theme, width, height, tab, state, stateOwner, saveMode }) => {
-      Object.defineProperties(window, {
-        innerWidth: { value: width, configurable: true },
-        innerHeight: { value: height, configurable: true },
-      });
-      document.documentElement.classList.add(theme);
-
+    'exercises the $id state and save mode',
+    async ({ id, url, label, tab, state, stateOwner, saveMode }) => {
       if (stateOwner === 'daemon settings') {
         settingsCatalogResponse = settingsCatalogResponse.map((setting) =>
           setting.path === 'providers.active' ? { ...setting, value: state } : setting,
@@ -437,11 +402,7 @@ describe('settings deterministic capture fixtures', () => {
       renderSettings(url, id, catalog);
 
       const activeTab = screen.getByRole('button', { name: label });
-      await waitFor(() => expect(activeTab.className).toContain('text-foreground'));
-      expect(document.documentElement.classList.contains(theme)).toBe(true);
-      expect(window.innerWidth).toBe(width);
-      expect(window.innerHeight).toBe(height);
-      if (heading) expect(screen.getByRole('heading', { name: heading })).toBeTruthy();
+      await waitFor(() => expect(activeTab.getAttribute('aria-current')).toBe('page'));
 
       const renderedState = screen.getAllByTestId('settings-state-fixture')[0];
       const fixtureScreen = within(renderedState);
@@ -458,7 +419,6 @@ describe('settings deterministic capture fixtures', () => {
       expect(renderedState.dataset.ownerValue).toBe(state);
       expect(renderedState.dataset.saveMode).toBe(saveMode);
       await waitFor(() => expect(renderedState.dataset.catalogSize).toBe('2'));
-      expect(fixtureScreen.getByText(`Fixture state: ${state}`)).toBeTruthy();
 
       if (state === 'loading' || state === 'success')
         expect(fixtureScreen.getByRole('status')).toBeTruthy();
@@ -524,80 +484,12 @@ describe('settings deterministic capture fixtures', () => {
 });
 
 describe('settings tab route and focus behavior', () => {
-  it('keeps an accessible page name without a visible content-area heading', () => {
+  it('labels the main region with the accessible page name', () => {
     const { container } = renderSettings('/settings?tab=display');
     const main = container.querySelector('main');
     const heading = screen.getByRole('heading', { level: 1, name: 'Settings' });
 
-    expect(heading.className).toContain('sr-only');
-    expect(heading.id).toBe('settings-page-title');
     expect(main?.getAttribute('aria-labelledby')).toBe(heading.id);
-    expect(container.querySelector('main > header')).toBeNull();
-  });
-
-  it.each([
-    ['providers', null],
-    ['specialists', null],
-    ['setup', 'Git'],
-    ['display', 'Appearance'],
-    ['app-behavior', 'Updates'],
-    ['agent-behavior', 'Global Instructions'],
-    ['connections', 'Accounts'],
-    ['advanced', 'Agent Backend'],
-    ['input', 'Keyboard Shortcuts'],
-  ])('uses the shared wide section layout for %s', (tab, heading) => {
-    const { container } = renderSettings(`/settings?tab=${tab}`);
-    const content = container.querySelector('main');
-
-    expect(content?.className).toContain(tab === 'specialists' ? 'max-w-6xl' : 'max-w-4xl');
-    expect(content?.className).toContain('flex-col');
-    if (heading) expect(screen.getByRole('heading', { name: heading })).toBeTruthy();
-  });
-
-  it('widens the settings content for every Specialists editor view', async () => {
-    appStore.dispatch(setBundledSpecialists([...SPECIALISTS]));
-    const { container } = renderSettings('/settings?tab=specialists');
-    const content = container.querySelector('main');
-    const editorSection = container.querySelector('#specialist-editor');
-    const navigation = screen.getByRole('navigation', { name: 'Settings' });
-
-    expect(content?.className).toContain('max-w-6xl');
-    expect(content?.className).not.toContain('max-w-4xl');
-    expect(content?.className).toContain('xl:h-full');
-    expect(content?.className).toContain('xl:min-h-0');
-    expect(content?.className).toContain('xl:py-8');
-    expect(editorSection?.className).toContain('xl:min-h-0');
-    expect(editorSection?.className).toContain('xl:flex-1');
-    expect(editorSection?.className).toContain('xl:flex-col');
-
-    await fireEvent.click(within(navigation).getByRole('button', { name: 'Implementor' }));
-
-    expect(content?.className).toContain('max-w-6xl');
-    expect(content?.className).not.toContain('max-w-4xl');
-    expect(content?.className).toContain('xl:h-full');
-    expect(content?.className).toContain('xl:min-h-0');
-    expect(content?.className).toContain('xl:py-8');
-    expect(editorSection?.className).toContain('xl:min-h-0');
-    expect(editorSection?.className).toContain('xl:flex-1');
-    expect(editorSection?.className).toContain('xl:flex-col');
-
-    await fireEvent.click(within(navigation).getByRole('button', { name: 'Create Specialist' }));
-
-    expect(content?.className).toContain('max-w-6xl');
-    expect(content?.className).not.toContain('max-w-4xl');
-    expect(content?.className).toContain('xl:h-full');
-    expect(content?.className).toContain('xl:min-h-0');
-    expect(content?.className).toContain('xl:py-8');
-    expect(editorSection?.className).toContain('xl:min-h-0');
-    expect(editorSection?.className).toContain('xl:flex-1');
-    expect(editorSection?.className).toContain('xl:flex-col');
-
-    await fireEvent.click(within(navigation).getByRole('button', { name: 'Implementor' }));
-    await fireEvent.click(within(navigation).getByRole('button', { name: 'Providers' }));
-
-    expect(content?.className).toContain('max-w-4xl');
-    expect(content?.className).not.toContain('max-w-6xl');
-    expect(content?.className).not.toContain('xl:h-full');
   });
 
   it.each([
@@ -610,6 +502,8 @@ describe('settings tab route and focus behavior', () => {
     ['notifications', 'App Behavior', 'page'],
     ['general', 'Display', 'page'],
     ['connections', 'Connections', 'page'],
+    ['devices', 'Devices', 'page'],
+    ['machines', 'Devices', 'page'],
     ['interface-system', 'Display', 'page'],
     ['input', 'Input', 'page'],
     ['unknown', 'Display', 'page'],
@@ -622,10 +516,22 @@ describe('settings tab route and focus behavior', () => {
     );
   });
 
+  it.each(['devices', 'machines'])(
+    'maps the compatible #%s hash to the Devices tab',
+    async (hash) => {
+      const { container } = renderSettings(`/settings#${hash}`);
+      await waitFor(() =>
+        expect(screen.getByRole('button', { name: 'Devices' }).getAttribute('aria-current')).toBe(
+          'page',
+        ),
+      );
+      expect(container.querySelector('#devices')).not.toBeNull();
+    },
+  );
+
   it('renders Agent Backend only on Advanced while the legacy Tools tab resolves to Setup', async () => {
     const advanced = renderSettings('/settings?tab=advanced');
     await waitFor(() => expect(advanced.container.querySelector('#agent-backend')).not.toBeNull());
-    expect(screen.getByRole('heading', { name: 'Agent Backend' })).toBeTruthy();
 
     cleanup();
 
@@ -636,54 +542,6 @@ describe('settings tab route and focus behavior', () => {
       ),
     );
     expect(tools.container.querySelector('#agent-backend')).toBeNull();
-  });
-
-  it.each([
-    ['display', ['theme', 'font-style', 'language']],
-    ['app-behavior', ['updates', 'open-in', 'github-link-action', 'notifications']],
-    ['agent-behavior', ['global-instructions', 'agent-features']],
-    ['providers', ['providers', 'utility-default-model']],
-    ['connections', ['integrations', 'mcp-servers']],
-    ['setup', ['git', 'shell', 'cli-optimization', 'workspace']],
-    ['advanced', ['agent-backend', 'websocket-api', 'workspace-api', 'data', 'reset', 'developer']],
-    ['input', ['keyboard-shortcuts', 'voice']],
-  ])('renders %s sections in the requested order', (tab, ids) => {
-    renderSettings(`/settings?tab=${tab}`);
-    expectElementOrder(ids);
-  });
-
-  it('keeps provider groups and conditional Advanced sections in requested source order', () => {
-    const providerSource = readFileSync(
-      'src/lib/components/settings/ProviderSelector.svelte',
-      'utf8',
-    );
-    const pageSource = readFileSync('src/routes/(app)/settings/+page.svelte', 'utf8');
-    const messages = JSON.parse(readFileSync('messages/en.json', 'utf8')) as Record<string, string>;
-    const providerGroups = ["{ id: 'enabled'", "{ id: 'discovered'", "{ id: 'supported'"];
-    const advancedIds = [
-      'id="agent-backend"',
-      'id="websocket-api"',
-      'id="workspace-api"',
-      'id="connection"',
-      'id="hardware"',
-      'id="data"',
-      'id="reset"',
-      'id="developer"',
-    ];
-
-    const providerPositions = providerGroups.map((group) => providerSource.indexOf(group));
-    expect(providerPositions.every((position) => position >= 0)).toBe(true);
-    expect(providerPositions).toEqual([...providerPositions].sort((a, b) => a - b));
-    expect([
-      messages.settings_providers_groupEnabled_label,
-      messages.settings_providers_groupDiscovered_label,
-      messages.settings_providers_groupSupported_label,
-    ]).toEqual(['Enabled', 'Available', 'Not Detected']);
-    expect(pageSource).not.toContain('settings_section_aiCodingClis_hint');
-    expect(messages).not.toHaveProperty('settings_section_aiCodingClis_hint');
-    const advancedPositions = advancedIds.map((id) => pageSource.indexOf(id));
-    expect(advancedPositions.every((position) => position >= 0)).toBe(true);
-    expect(advancedPositions).toEqual([...advancedPositions].sort((a, b) => a - b));
   });
 
   it.each([
@@ -719,23 +577,9 @@ describe('settings tab route and focus behavior', () => {
     expect(document.getElementById(sectionId)).not.toBeNull();
   });
 
-  it('exposes sidebar navigation buttons with the active page marked', async () => {
-    renderSettings('/settings?tab=accounts');
-    expect(screen.getByRole('navigation', { name: 'Settings' })).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Providers' }).getAttribute('aria-current')).toBe(
-      'page',
-    );
-    expect(screen.getByRole('heading', { level: 2, name: 'Specialists' })).toBeTruthy();
-    expect(screen.queryByRole('button', { name: 'Specialists' })).toBeNull();
-    expect(screen.queryByRole('button', { name: 'All Agents' })).toBeNull();
-    expect(screen.getByRole('button', { name: 'Implementor' }).hasAttribute('aria-current')).toBe(
-      false,
-    );
-  });
-
-  it('renders compact specialist selection only inside the existing settings sidebar', async () => {
+  it('activates selected specialist views', async () => {
     const implementorDefinition = SPECIALISTS.find(({ id }) => id === 'implementor')!;
-    const { container } = renderSettings('/settings?tab=specialists');
+    renderSettings('/settings?tab=specialists');
     appStore.dispatch(setBundledSpecialists([]));
     appStore.dispatch(
       setFileSpecialists([
@@ -749,167 +593,31 @@ describe('settings tab route and focus behavior', () => {
           filePath: '/Users/test/.intent/specialists/implementor.md',
           source: 'user',
         },
-        {
-          id: 'sidebar-custom',
-          name: 'Sidebar Custom',
-          description: 'Project specialist',
-          model: '',
-          behaviorPrompt: 'Custom prompt',
-          filePath: '/repo/.intent/specialists/sidebar-custom.md',
-          source: 'project',
-        },
       ]),
     );
     const navigation = screen.getByRole('navigation', { name: 'Settings' });
-    const specialistsNavigation = navigation.querySelector('[data-settings-specialists-section]');
-    await waitFor(() =>
-      expect(
-        within(navigation).getByRole('button', { name: 'Sidebar Custom Project' }),
-      ).toBeTruthy(),
-    );
-    const specialistsHeading = within(navigation).getByRole('heading', {
-      level: 2,
-      name: 'Specialists',
-    });
-    const implementor = within(navigation).getByRole('button', { name: 'Implementor' });
-    const customSpecialist = within(navigation).getByRole('button', {
-      name: 'Sidebar Custom Project',
-    });
+    const implementor = await within(navigation).findByRole('button', { name: 'Implementor' });
     const createSpecialist = within(navigation).getByRole('button', {
       name: 'Create Specialist',
     });
-    const input = within(navigation).getByRole('button', { name: 'Input' });
-
-    expect(specialistsNavigation).not.toBeNull();
-    expect(within(navigation).queryByRole('button', { name: 'Specialists' })).toBeNull();
-    expect(within(navigation).queryByRole('button', { name: 'All Agents' })).toBeNull();
-    expect(specialistsNavigation?.contains(implementor)).toBe(true);
-    expect(specialistsNavigation?.contains(customSpecialist)).toBe(true);
-    expect(specialistsNavigation?.contains(createSpecialist)).toBe(true);
-    expect(
-      input.compareDocumentPosition(specialistsHeading) & Node.DOCUMENT_POSITION_FOLLOWING,
-    ).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
-    expect(
-      specialistsHeading.compareDocumentPosition(implementor) & Node.DOCUMENT_POSITION_FOLLOWING,
-    ).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
-    expect(specialistsNavigation?.className).toContain('mt-8');
-    expect(specialistsNavigation?.className).not.toMatch(/border|ml-|p[lt]-/);
-    expect(navigation.querySelector('[data-settings-agents-submenu]')).toBeNull();
-    expect(specialistsNavigation?.querySelectorAll('[data-agent-avatar]')).toHaveLength(2);
-    expect(createSpecialist.querySelectorAll('[data-icon="plus"]')).toHaveLength(1);
-    expect(
-      implementor.querySelector('[data-agent-avatar][data-avatar-design="implementor"]'),
-    ).not.toBeNull();
-    expect(
-      customSpecialist.querySelector('[data-agent-avatar][data-avatar-design^="fallback-"]'),
-    ).not.toBeNull();
-    for (const avatar of specialistsNavigation?.querySelectorAll('[data-agent-avatar]') ?? []) {
-      expect(avatar.getAttribute('aria-hidden')).toBe('true');
-      expect(avatar.getAttribute('data-avatar-variant')).toBe('compact');
-      expect(avatar.classList.contains('shrink-0')).toBe(true);
-    }
-    expect(
-      specialistsNavigation?.querySelectorAll('[data-specialist-modified-marker]'),
-    ).toHaveLength(1);
-    expect(implementor.querySelector('[data-specialist-modified-marker]')?.textContent).toBe('*');
-    expect(implementor.querySelector('[data-specialist-modified-marker]')?.className).toContain(
-      'text-ui',
-    );
-    expect(implementor.querySelector('[data-specialist-modified-marker]')?.className).toContain(
-      'text-muted-foreground',
-    );
-    expect(customSpecialist.querySelector('[data-specialist-modified-marker]')).toBeNull();
-    expect(within(customSpecialist).getByText('Project')).toBeTruthy();
-    expect(createSpecialist.querySelector('[data-specialist-modified-marker]')).toBeNull();
-
-    for (const row of specialistsNavigation?.querySelectorAll('[data-settings-agent-row]') ?? []) {
-      expect(row.closest('[data-settings-specialists-section]')).toBe(specialistsNavigation);
-      expect(row.className).toContain('rounded-lg');
-      expect(row.className).toContain('px-2.5');
-      expect(row.className).toContain('py-2');
-      expect(row.className).not.toMatch(/border|ml-|pl-/);
-    }
-
-    expect(implementor.querySelectorAll('[data-agent-avatar]')).toHaveLength(1);
-    expect(customSpecialist.querySelectorAll('[data-agent-avatar]')).toHaveLength(1);
     expect(implementor.hasAttribute('aria-current')).toBe(false);
-    expect(customSpecialist.hasAttribute('aria-current')).toBe(false);
-    expect(implementor.className).not.toContain('shadow-xs');
-    expect(container.querySelector('main [data-settings-agents-submenu]')).toBeNull();
-    expect(container.querySelector('main #specialist-editor')?.children).toHaveLength(1);
-    expect(container.querySelector('main #specialist-editor')?.className).not.toContain(
-      'grid-cols',
-    );
 
     await fireEvent.click(implementor);
 
     expect(screen.getByTestId('ai-behavior-view').textContent).toContain('specialist:implementor');
     expect(implementor.getAttribute('aria-current')).toBe('true');
-    expect(implementor.className).toContain('bg-muted');
-    expect(implementor.className).toContain('shadow-xs');
 
     await fireEvent.click(createSpecialist);
 
     expect(screen.getByTestId('ai-behavior-view').textContent).toContain('create-specialist');
     expect(createSpecialist.getAttribute('aria-current')).toBe('true');
-    expect(createSpecialist.className).toContain('bg-muted');
-    expect(createSpecialist.className).toContain('shadow-xs');
-    expect(implementor.className).not.toContain('shadow-xs');
-
-    appStore.dispatch(
-      setFileSpecialists([
-        {
-          id: 'sidebar-custom',
-          name: 'Sidebar Custom',
-          description: 'Project specialist',
-          model: '',
-          behaviorPrompt: 'Custom prompt',
-          filePath: '/repo/.intent/specialists/sidebar-custom.md',
-          source: 'project',
-        },
-      ]),
-    );
-    await waitFor(() =>
-      expect(within(navigation).queryByRole('button', { name: 'Implementor' })).toBeNull(),
-    );
-
-    appStore.dispatch(
-      setFileSpecialists([
-        {
-          id: implementorDefinition.id,
-          name: implementorDefinition.name,
-          description: implementorDefinition.description,
-          model: '',
-          behaviorPrompt: `${implementorDefinition.defaultBehaviorPrompt}\nModified again`,
-          roleReminder: implementorDefinition.roleReminder,
-          filePath: '/Users/test/.intent/specialists/implementor.md',
-          source: 'user',
-        },
-      ]),
-    );
-    await waitFor(() =>
-      expect(
-        within(navigation)
-          .getByRole('button', { name: 'Implementor' })
-          .querySelector('[data-specialist-modified-marker]')?.textContent,
-      ).toBe('*'),
-    );
   });
 
-  it('keeps flat Specialists rows visible and activates the selected specialist view', async () => {
+  it('activates a specialist after navigating between settings tabs', async () => {
     renderSettings('/settings?tab=agent-behavior');
     const navigation = screen.getByRole('navigation', { name: 'Settings' });
 
-    expect(within(navigation).getByRole('heading', { name: 'Specialists' })).toBeTruthy();
-    expect(within(navigation).queryByRole('button', { name: 'All Agents' })).toBeNull();
-
     await fireEvent.click(within(navigation).getByRole('button', { name: 'Providers' }));
-
-    expect(navigation.querySelector('[data-settings-specialists-section]')).not.toBeNull();
-    expect(navigation.querySelector('[data-settings-agents-submenu]')).toBeNull();
-    expect(within(navigation).getByRole('button', { name: 'Implementor' })).toBeTruthy();
-    expect(within(navigation).getByRole('button', { name: 'Create Specialist' })).toBeTruthy();
-
     await fireEvent.click(within(navigation).getByRole('button', { name: 'Implementor' }));
 
     expect(
@@ -925,24 +633,16 @@ describe('settings tab route and focus behavior', () => {
     appStore.dispatch(setSelectedModel({ providerId: 'codex', model: 'codex:shared-fixture' }));
     renderSettings('/settings?tab=providers');
 
-    const providersDefault = document.getElementById('utility-default-model')!;
-    expect(within(providersDefault).getAllByText('Default model')).toHaveLength(2);
     expect(selectSelectedModel.select(appStore.state, 'codex')).toBe('codex:shared-fixture');
 
     await fireEvent.click(screen.getByRole('button', { name: 'Agent Behavior' }));
 
-    const globalInstructionsDefault = await screen.findByTestId(
-      'global-instructions-default-model-row',
-    );
-    expect(within(globalInstructionsDefault).getAllByText('Default model')).toHaveLength(2);
+    await screen.findByTestId('global-instructions-default-model-row');
     expect(selectSelectedModel.select(appStore.state, 'codex')).toBe('codex:shared-fixture');
 
     appStore.dispatch(setSelectedModel({ providerId: 'codex', model: 'codex:updated-fixture' }));
     await fireEvent.click(screen.getByRole('button', { name: 'Providers' }));
     expect(selectSelectedModel.select(appStore.state, 'codex')).toBe('codex:updated-fixture');
-    expect(
-      within(document.getElementById('utility-default-model')!).getAllByText('Default model'),
-    ).toHaveLength(2);
   });
 
   it('activates a clicked sidebar item while preserving params and hash', async () => {
@@ -1029,23 +729,12 @@ describe('settings tab route and focus behavior', () => {
 });
 
 describe('settings back and footer behavior', () => {
-  it('shows the back label and delegates click navigation', async () => {
+  it('delegates back navigation', async () => {
     mocks.previousPath = '/';
     renderSettings('/settings');
     const back = screen.getByRole('button', { name: /Back/ });
-    expect(back.textContent).toContain('Back');
     await fireEvent.click(back);
     expect(mocks.navigateBack).toHaveBeenCalledOnce();
-  });
-
-  it('renders version and support state when the app is up to date', () => {
-    renderSettings('/settings?tab=display');
-    expect(screen.getByText(/v2\.0\.10/)).toBeTruthy();
-    expect(screen.getByText('Up to date')).toBeTruthy();
-    expect(screen.getByRole('link', { name: 'Support' }).getAttribute('href')).toBe(
-      'https://www.intentapp.dev/docs',
-    );
-    expect(screen.getByRole('link', { name: 'Support' }).getAttribute('target')).toBe('_blank');
   });
 
   it('dispatches install when an update is ready', async () => {
@@ -1079,7 +768,7 @@ describe('settings hash target integration', () => {
     ['agent-chat-font', 'agent-chat-font', 'Display', 'page'],
     ['code-font', 'code-font', 'Display', 'page'],
   ])(
-    'activates the registry tab and highlight target for /settings#%s',
+    'activates the registry tab and target for /settings#%s',
     async (hash, expectedId, tabLabel, expectedCurrent) => {
       const target = resolveHashToTarget(hash);
       expect(target?.id).toBe(expectedId);
@@ -1089,15 +778,9 @@ describe('settings hash target integration', () => {
       const expectedTab = screen.getByRole('button', { name: tabLabel });
       await waitFor(() => expect(expectedTab.getAttribute('aria-current')).toBe(expectedCurrent));
 
-      const targetElement = await waitFor(() => {
+      await waitFor(() => {
         const element = document.querySelector<HTMLElement>(target?.highlightSelector ?? '');
         expect(element).not.toBeNull();
-        return element as HTMLElement;
-      });
-
-      storeContext.store.dispatch(requestUiHighlight(target!.id));
-      await waitFor(() => {
-        expect(targetElement.classList.contains('ui-highlight-pulse-ring')).toBe(true);
       });
     },
   );

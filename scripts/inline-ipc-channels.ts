@@ -17,6 +17,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
+import { format, resolveConfig } from 'prettier';
 import {
   getAllowedChannels,
   DYNAMIC_CHANNEL_PATTERNS,
@@ -270,8 +271,15 @@ if (placeholderIndex !== -1) {
   }
 }
 
+// Keep regeneration byte-stable with the repository formatting gate.
+const prettierConfig = await resolveConfig(path.join(__dirname, '..', 'src/preload/index.ts'));
+const outputContent = await format(templateContent, {
+  ...prettierConfig,
+  filepath: preloadOutputPath,
+});
+
 // Write the output file
-fs.writeFileSync(preloadOutputPath, templateContent, 'utf-8');
+fs.writeFileSync(preloadOutputPath, outputContent, 'utf-8');
 
 console.log(`✅ Inlined IPC channels into: ${preloadOutputPath}`);
 console.log(`📊 Total static channels: ${getAllowedChannels().length}`);
