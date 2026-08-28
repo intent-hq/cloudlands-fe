@@ -15,9 +15,11 @@
  * The local sidecar is not a persisted record: a synthetic, non-forgettable
  * "This machine (local)" entry (id `local`) is always synthesized as the
  * first item of `list()`. The file also carries the legacy `activeId` field
- * (defaults to `local`) — Open-only: it no longer drives client routing, and
- * is read only as a boot-time default (which session bucket restores first /
- * the fallback backend for a fresh first window).
+ * (defaults to `local`) — Open-only: it no longer drives client routing. It
+ * is read primarily as a boot-time default (which session bucket restores
+ * first / the fallback backend for a fresh first window), plus a couple of
+ * legacy compat reads: the `connections:add` rebuild-if-active check (and its
+ * `switched` result field) and the browser-capture state-dir key.
  *
  * Writes are serialized behind a promise chain (mirroring `local-prefs.ts`)
  * so a mid-write reader sees either the old or new file, never a torn one.
@@ -644,7 +646,8 @@ export async function forget(id: string): Promise<void> {
 
 /**
  * The legacy persisted `activeId`; defaults to `local`. Open-only: not a
- * routing concept — read only as a boot-time default (see the file header).
+ * routing concept — read primarily as a boot-time default, plus a couple of
+ * legacy compat reads (see the file header).
  */
 export async function getActiveId(): Promise<string> {
   const state = await readState();
