@@ -4,15 +4,25 @@
   import { startRootStoreLifecycle } from '$store/renderer/root-store-lifecycle';
   import { store } from '$store/renderer/store';
   import { tokenUsageReceived } from '$store/renderer/slices/token-usage/token-usage-slice';
+  import { applyLanguagePreference, type AppLocale } from '$lib/i18n/locale';
 
   interface Props {
     theme?: 'light' | 'dark';
     width?: number;
     placement?: 'top' | 'bottom';
     side?: 'left' | 'right';
+    locale?: AppLocale;
   }
 
-  let { theme = 'light', width = 304, placement = 'top', side = 'left' }: Props = $props();
+  let {
+    theme = 'light',
+    width = 304,
+    placement = 'top',
+    side = 'left',
+    locale = 'en',
+  }: Props = $props();
+  // svelte-ignore state_referenced_locally -- a mounted test host keeps one locale
+  applyLanguagePreference(locale);
   const workspaceId = 'token-usage-accessibility-ct';
   const disposeStore = startRootStoreLifecycle(store, { startSagas: () => [] });
 
@@ -186,6 +196,7 @@
 
   onDestroy(() => {
     disposeStore();
+    applyLanguagePreference('en');
     document.documentElement.classList.remove('light', 'dark');
   });
 </script>

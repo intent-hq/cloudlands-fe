@@ -106,10 +106,14 @@ test('navigates exact stacked totals with accessible pointer, focus, theme, and 
   const compositionRows = details.locator('.token-composition-row');
   const messageRows = details.locator('.message-composition-row');
   const agentSection = page.getByTestId('token-usage-by-agent');
+  const agentGroup = agentSection.getByRole('radiogroup', { name: 'By agent' });
   const agentButtons = agentSection.locator('.breakdown-item-control');
   const agentAlpha = agentButtons.first();
   const agentBeta = agentButtons.nth(1);
-  const modelButtons = page.getByTestId('token-usage-by-model').locator('.breakdown-item-control');
+  const agentFinal = agentButtons.last();
+  const modelSection = page.getByTestId('token-usage-by-model');
+  const modelGroup = modelSection.getByRole('radiogroup', { name: 'By model' });
+  const modelButtons = modelSection.locator('.breakdown-item-control');
   const longModel = modelButtons.first();
   const finalModel = modelButtons.last();
   const compositionValues = () =>
@@ -124,7 +128,12 @@ test('navigates exact stacked totals with accessible pointer, focus, theme, and 
   const themeCompositionColors: string[][] = [];
 
   await expect(previewStatus).toContainText('By agent Agent alpha-01 750 processed');
-  await expect(agentAlpha).toHaveAttribute('aria-current', 'true');
+  await expect(agentAlpha).toHaveRole('radio');
+  await expect(agentAlpha).toHaveAttribute('aria-checked', 'true');
+  await expect(agentAlpha).toHaveAttribute('tabindex', '0');
+  await expect(agentBeta).toHaveAttribute('tabindex', '-1');
+  await expect(agentGroup.getByRole('radio')).toHaveCount(4);
+  await expect(modelGroup.getByRole('radio')).toHaveCount(4);
 
   for (const theme of ['light', 'dark'] as const) {
     await component.update({ props: { theme, width: 304 } });
@@ -132,10 +141,10 @@ test('navigates exact stacked totals with accessible pointer, focus, theme, and 
     await expect(page.locator('html')).toHaveClass(new RegExp(`(^|\\s)${theme}(\\s|$)`));
     await agentAlpha.dispatchEvent('pointerenter', { pointerType: 'mouse' });
     await expect(previewStatus).toContainText('By agent Agent alpha-01 750 processed');
-    await expect(agentAlpha).toHaveAttribute('aria-current', 'true');
+    await expect(agentAlpha).toHaveAttribute('aria-checked', 'true');
     expect(await compositionValues()).toEqual([
-      { value: '550', share: '73.3%' },
-      { value: '50', share: '6.7%' },
+      { value: '550', share: '73%' },
+      { value: '50', share: '7%' },
       { value: '150', share: '20%' },
       { value: '0', share: '0%' },
     ]);
@@ -258,13 +267,40 @@ test('navigates exact stacked totals with accessible pointer, focus, theme, and 
   }
   expect(themeCompositionColors[0]).not.toEqual(themeCompositionColors[1]);
 
+  await agentAlpha.focus();
+  await agentAlpha.press('ArrowRight');
+  await expect(agentBeta).toBeFocused();
+  await expect(agentBeta).toHaveAttribute('aria-checked', 'true');
+  await expect(agentBeta).toHaveAttribute('tabindex', '0');
+  await expect(previewStatus).toContainText('By agent Agent beta-02 150 processed');
+  await agentBeta.press('ArrowLeft');
+  await expect(agentAlpha).toBeFocused();
+  await expect(previewStatus).toContainText('By agent Agent alpha-01 750 processed');
+  await agentAlpha.press('ArrowLeft');
+  await expect(agentFinal).toBeFocused();
+  await expect(previewStatus).toContainText('By agent Agent producti 25 processed');
+  await agentFinal.press('ArrowRight');
+  await expect(agentAlpha).toBeFocused();
+  await agentAlpha.press('End');
+  await expect(agentFinal).toBeFocused();
+  await agentFinal.press('Home');
+  await expect(agentAlpha).toBeFocused();
+  await page.keyboard.press('Tab');
+  await expect(longModel).toBeFocused();
+  await expect(previewStatus).toContainText(
+    'By model Provider/this Is An Extraordinarily Long Model Name For Truncation 600 processed',
+  );
+  await page.keyboard.press('Shift+Tab');
+  await expect(agentAlpha).toBeFocused();
+  await expect(previewStatus).toContainText('By agent Agent alpha-01 750 processed');
+
   await agentBeta.focus();
   await expect(agentBeta).toBeFocused();
   await expect(previewStatus).toContainText('By agent Agent beta-02 150 processed');
   expect(await compositionValues()).toEqual([
-    { value: '50', share: '33.3%' },
+    { value: '50', share: '33%' },
     { value: '30', share: '20%' },
-    { value: '70', share: '46.7%' },
+    { value: '70', share: '47%' },
     { value: '0', share: '0%' },
   ]);
   await expect(messageRows.nth(0)).toHaveText(/Human messages\s+3/);
@@ -329,6 +365,25 @@ test('navigates exact stacked totals with accessible pointer, focus, theme, and 
   await expect(previewStatus).toContainText('By model');
 });
 
+test('uses localized radio group and segment semantics', async ({ mount, page }) => {
+  await page.setViewportSize({ width: 1100, height: 720 });
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  const component = await mount(WorkspaceTokenUsageAccessibilityHost, {
+    props: { theme: 'light', width: 304, locale: 'de' },
+  });
+  await component.getByTestId('token-usage-disclosure').click();
+
+  const agentGroup = page.getByRole('radiogroup', { name: 'Nach Agent' });
+  const modelGroup = page.getByRole('radiogroup', { name: 'Nach Modell' });
+  await expect(agentGroup).toBeVisible();
+  await expect(modelGroup).toBeVisible();
+  await expect(agentGroup.getByRole('radio')).toHaveCount(4);
+  await expect(agentGroup.getByRole('radio').first()).toHaveAccessibleName(
+    /Nach Agent, Agent alpha-01: 750 Token/,
+  );
+  await expect(agentGroup.getByRole('radio').first()).toHaveAttribute('aria-checked', 'true');
+});
+
 test('retargets animated values smoothly with final-only accessibility and stable geometry', async ({
   mount,
   page,
@@ -346,6 +401,7 @@ test('retargets animated values smoothly with final-only accessibility and stabl
   const rows = details.locator('.token-composition-row');
   const animatedValues = rows.locator('.composition-value .animated-number-value');
   const finalTargets = rows.locator('.composition-value .animated-number-target');
+  const animatedNumbers = details.locator('.animated-number');
   const agentBeta = page
     .getByTestId('token-usage-by-agent')
     .locator('.breakdown-item-control')
@@ -363,8 +419,28 @@ test('retargets animated values smoothly with final-only accessibility and stabl
         return [value.right, share.right];
       }),
     ),
+    numbers: await animatedNumbers.evaluateAll((numbers) =>
+      numbers.map((number) => {
+        const box = number.getBoundingClientRect();
+        return {
+          top: box.top,
+          bottom: box.bottom,
+          transform: getComputedStyle(number).transform,
+        };
+      }),
+    ),
   });
   const initialGeometry = await geometry();
+  await expect(animatedNumbers).toHaveCount(12);
+  expect(
+    await animatedNumbers.evaluateAll((numbers) =>
+      numbers.every(
+        (number) =>
+          (number as HTMLElement).dataset.pulse === 'false' &&
+          getComputedStyle(number).transform === 'none',
+      ),
+    ),
+  ).toBe(true);
 
   await agentBeta.dispatchEvent('pointerenter', { pointerType: 'mouse' });
   await expect(previewStatus).toContainText('By agent Agent beta-02 150 processed');
@@ -378,12 +454,23 @@ test('retargets animated values smoothly with final-only accessibility and stabl
   const midpoint = Number(await animatedValues.first().textContent());
   expect(midpoint).toBeGreaterThan(50);
   expect(midpoint).toBeLessThan(550);
+  expect(await geometry()).toEqual(initialGeometry);
+  expect(
+    (await details.locator('.animated-number-value').allTextContents()).every(
+      (value) => !/[0-9][.,][0-9]/.test(value),
+    ),
+  ).toBe(true);
 
   await finalModel.focus();
   await agentBeta.dispatchEvent('pointerleave', { pointerType: 'mouse' });
   await expect(previewStatus).toHaveAttribute('aria-atomic', 'true');
   await expect(previewStatus).toContainText('By model Model Production Final 50 processed');
   await expect(finalTargets).toHaveText(['30', '5', '15', '0']);
+  expect(
+    await finalTargets.evaluateAll((targets) =>
+      targets.every((target) => target.ariaAtomic === 'true'),
+    ),
+  ).toBe(true);
   const midpointGeometry = await geometry();
   expect(midpointGeometry).toEqual(initialGeometry);
 
@@ -471,8 +558,8 @@ test('renders the full reference table as a wide overlay from the real workspace
   const compositionRows = details.locator('.composition-row');
   const tokenCompositionRows = details.locator('.token-composition-row');
   const messageCompositionRows = details.locator('.message-composition-row');
-  const agentRows = agentSection.getByRole('listitem');
-  const modelRows = modelSection.getByRole('listitem');
+  const agentRows = agentSection.locator('.breakdown-stack-item');
+  const modelRows = modelSection.locator('.breakdown-stack-item');
   const detailsMetrics = await details.evaluate((element) => {
     const style = getComputedStyle(element);
     return {
@@ -518,7 +605,7 @@ test('renders the full reference table as a wide overlay from the real workspace
   await expect(compositionRows).toHaveCount(6);
   await expect(compositionStrip).toHaveRole('img');
   await expect(compositionStrip).toHaveAccessibleName(
-    /Token composition, Cached context: 550 tokens, 73.3%.*Input context: 50 tokens, 6.7%.*Model output: 150 tokens, 20%/,
+    /Token composition, Cached context: 550 tokens, 73%.*Input context: 50 tokens, 7%.*Model output: 150 tokens, 20%/,
   );
   await expect(compositionSegments).toHaveCount(3);
   await expect(compositionHeader).toHaveText(/Metric\s+Value\s+Share/);
