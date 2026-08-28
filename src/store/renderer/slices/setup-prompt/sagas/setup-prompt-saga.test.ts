@@ -55,7 +55,7 @@ function harness(opts: HarnessOptions = {}) {
     connections: {
       ...connectionsInitialState,
       connections: createCollection<ConnectionRecord, 'id'>('id', [LOCAL, REMOTE]),
-      activeId: opts.activeId ?? LOCAL_CONNECTION_ID,
+      windowBackendId: opts.activeId ?? LOCAL_CONNECTION_ID,
     },
     workspace: {
       hasLoaded: opts.hasLoaded ?? true,
