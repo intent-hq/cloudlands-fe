@@ -68,6 +68,15 @@ interface StoredConnection {
    */
   hostname?: string | null;
   /**
+   * The remote daemon's reported version (`server.version` from its
+   * `client.hello`), captured on connect and refreshed on every reconnect.
+   * Absent on records written before this field existed and until the first
+   * capture. Observational, per-machine state: it is NEVER part of the
+   * keychain-sync surface (each machine observes the daemon itself), so
+   * writes never bump the LWW clock or notify sync.
+   */
+  daemonVersion?: string | null;
+  /**
    * Candidate hosts (#1746): the primary `host` first, then any additional IPs
    * the backend reported via `server.pairingInfo`. Absent on records written
    * before this field existed — treated as `[host]` (single-host behavior).
@@ -196,6 +205,7 @@ function toRecord(stored: StoredConnection): ConnectionRecord {
     port: stored.port,
     fingerprint: stored.fingerprint,
     hostname: stored.hostname ?? null,
+    daemonVersion: stored.daemonVersion ?? null,
     syncExcluded: stored.syncExcluded === true,
     isLocal: false,
   };
@@ -214,6 +224,11 @@ function isStoredConnection(value: unknown): value is StoredConnection {
     // `hostname` is an optional late addition: absent on older records, a string
     // once captured. Accept missing/null/string; reject any other type.
     (c.hostname === undefined || c.hostname === null || typeof c.hostname === 'string') &&
+    // `daemonVersion` is an optional late addition: absent on older records,
+    // a string once captured. Accept missing/null/string; reject any other type.
+    (c.daemonVersion === undefined ||
+      c.daemonVersion === null ||
+      typeof c.daemonVersion === 'string') &&
     // `hosts` / `detectHosts` are optional late additions (#1746): absent on
     // older records. Accept missing or well-typed; reject any other type.
     (c.hosts === undefined ||
@@ -556,6 +571,31 @@ export async function setHostname(id: string, hostname: string): Promise<void> {
     return true;
   });
   if (changed) notifyMutated();
+}
+
+/**
+ * Persist the remote daemon's reported version for a connection (from its
+ * `client.hello` `server.version`). Returns `true` when the stored value
+ * actually changed so the caller can broadcast the refreshed list. A no-op
+ * for an unknown id and for empty/whitespace versions (fail-soft: the version
+ * is an observational display nicety, never a hard requirement). Unlike
+ * {@link setHostname}, this is per-machine observational state: it never
+ * bumps the LWW clock (`updatedAt`) and never notifies keychain sync — each
+ * machine captures the version from its own connection, and a re-stamp would
+ * let a stale record win over a newer remote edit.
+ */
+export async function setDaemonVersion(id: string, version: string): Promise<boolean> {
+  const trimmed = version.trim();
+  if (!trimmed) return false;
+  return mutate(async (state) => {
+    const conn = state.connections.find((c) => c.id === id);
+    if (!conn) return false; // unknown id: nothing to update
+    // Unchanged version (the common every-reconnect case): skip the write.
+    if (conn.daemonVersion === trimmed) return false;
+    conn.daemonVersion = trimmed;
+    await writeState(state);
+    return true;
+  });
 }
 
 /**

@@ -27,6 +27,7 @@ import type {
   KeychainSyncStateResult,
   KeychainSyncUiStatus,
   OpenConnectionResult,
+  UpdateBackendResult,
   ConnectionAuthRejectedEvent,
   ConnectionCertMismatchEvent,
   ConnectionProtocolMismatchEvent,
@@ -41,6 +42,8 @@ export const initialState: ConnectionsState = {
   activeId: LOCAL_CONNECTION_ID,
   windowBackendId: LOCAL_CONNECTION_ID,
   hasReceivedList: false,
+  pinnedVersion: null,
+  connectedIds: [],
   status: 'idle',
   error: null,
   certMismatch: null,
@@ -163,6 +166,16 @@ export const switchConnectionRequested = createAsyncAction<[id: string], void>(
 );
 
 /**
+ * Saga-owned remote-backend update request (the connections-menu Update
+ * action). Resolves with the structured `connections:update-backend` result;
+ * the saga owns the success/failure toasts, so no op-status state is tracked.
+ */
+export const updateBackendRequested = createAsyncAction<[id: string], UpdateBackendResult>(
+  'connections/updateBackend',
+  'connections/updateBackendRequested',
+);
+
+/**
  * iCloud-keychain sync state received — from the `connections:sync-get-state`
  * invoke or the `connections:sync-set-enabled` result (both carry the full
  * `KeychainSyncStateResult`).
@@ -204,6 +217,11 @@ connectionsReducer.with(connectionsListReceived, (state, { payload: [result] }) 
     activeId: result.activeId,
     windowBackendId: result.windowBackendId,
     hasReceivedList: true,
+    // Absent on payloads from an older main process — keep the prior value
+    // rather than clearing a pin the renderer already learned.
+    pinnedVersion: result.pinnedVersion !== undefined ? result.pinnedVersion : state.pinnedVersion,
+    // Same older-main tolerance for live connectivity.
+    connectedIds: result.connectedIds !== undefined ? result.connectedIds : state.connectedIds,
   };
   // Sync the per-window sticky latches when the payload carries them: `null`
   // clears (e.g. main disconnected/rebuilt the window's backend client, so the
