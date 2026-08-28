@@ -1939,7 +1939,25 @@ function registerConnectionsHandlers(): void {
             // Refresh an active target's credentials without destroying any
             // windows. The caller opens/focuses it through connections:open.
             disconnectBackendClient(connection.id);
-            await connectBackendClient(connection.id);
+            const rebuilt = await connectBackendClient(connection.id);
+            // The rebuilt client's FIRST connect is a plain `connected`, not a
+            // `reconnected`, and this backend's windows stay alive across the
+            // swap. Replay the reconnect marker exactly as the instance's own
+            // `reconnected` handler would, so main-process services and
+            // renderer consumers holding daemon `events.subscribe` leases
+            // re-subscribe against the new client (requests queue until the
+            // fresh socket connects, T8).
+            broadcast(
+              BACKEND.STATUS,
+              {
+                status: 'connected',
+                reconnected: true,
+                transport: formatTransportInfo(rebuilt.getConfig(), getPinnedVersion()),
+                reconnectAttempts: rebuilt.getReconnectAttempts(),
+              },
+              connection.id,
+            );
+            backendReconnectForwarder.emit('reconnected', connection.id);
             await broadcastConnectionsChanged();
             return { connection, switched: true } satisfies AddConnectionResult;
           }

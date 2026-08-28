@@ -323,6 +323,7 @@ import { registerWorkspaceTransferHandlers } from '../features/backend/main/work
 import { registerWorkspaceImportHandlers } from '../features/backend/main/workspace-import.ipc';
 import { getConnectionMode } from '../features/backend/main/connection-mode';
 import { getActiveId } from '../features/backend/main/connections-store';
+import { LOCAL_CONNECTION_ID } from '../shared/types/connections';
 import { startIntentdSidecar, stopIntentdSidecar } from '../features/backend/main/intentd-sidecar';
 import { startMemoryMonitor, stopMemoryMonitor } from './memory-monitor';
 import { setupUserRulesIPC as setupWorkspaceRulesIPC } from '../features/rules/main/user-rules.ipc';
@@ -1732,8 +1733,24 @@ app.whenReady().then(async () => {
       ? false
       : await restoreAllBackendWindowSessions(bootBackendId, connectBackendClient);
     if (!restored) {
-      // No saved sessions anywhere (or has deep link) — create a single default window
-      createWindow(bootBackendId);
+      // No saved sessions anywhere (or has deep link) — create a single default
+      // window. A remote boot backend needs its pooled client connected first
+      // (only the local client is created lazily); if its client cannot be
+      // built (deleted record, missing token), fall back to a local window
+      // rather than one whose every RPC fails closed.
+      let windowBackendId = bootBackendId;
+      if (bootBackendId !== LOCAL_CONNECTION_ID) {
+        try {
+          await connectBackendClient(bootBackendId);
+        } catch (error) {
+          logger.warn('Boot backend has no connectable client; opening a local window', {
+            backendId: bootBackendId,
+            error: error instanceof Error ? error.message : String(error),
+          });
+          windowBackendId = LOCAL_CONNECTION_ID;
+        }
+      }
+      createWindow(windowBackendId);
     }
 
     startupMetrics.end('createWindow');

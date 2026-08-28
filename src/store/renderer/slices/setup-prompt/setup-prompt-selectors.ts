@@ -18,14 +18,16 @@ export const selectBootRouteGateResolved = store.createSelector(
 );
 
 /**
- * The evaluation for the CURRENTLY-ACTIVE backend, or null. Gated on the
- * active connection id so a stale evaluation from a previous backend never
- * drives the gate after a switch.
+ * The evaluation for THIS WINDOW's backend, or null. Gated on the
+ * window-scoped backend id (the saga stamps evaluations with the same id) so
+ * a stale evaluation from a previous backend never drives the gate after a
+ * switch, and a window opened on a non-active backend still sees its own
+ * first-run result.
  */
 export const selectActiveSetupEvaluation = store.createSelector(
   (state): SetupEvaluation | null => {
     const { evaluation } = state.setupPrompt;
-    return evaluation && evaluation.connectionId === state.connections.activeId
+    return evaluation && evaluation.connectionId === state.connections.windowBackendId
       ? evaluation
       : null;
   },
