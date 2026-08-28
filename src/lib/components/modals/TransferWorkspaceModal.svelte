@@ -11,7 +11,7 @@
    *      counts, size estimate, git summary, and pre-flight warnings.
    *   3. `transferring` — live progress (build stage, bytes down/up vs the
    *      plan estimate) + the "restart in-flight agents" toggle.
-   *   4. `result` — success (archive-source checkbox and Switch button for
+   *   4. `result` — success (archive-source checkbox and Open button for
    *      server transfers, Done) or failure (reason + Retry; the source
    *      stays usable).
    *
@@ -74,7 +74,7 @@
     onRetry?: () => void;
     onSetRestartAgents?: (value: boolean) => void;
     onSetArchiveSource?: (value: boolean) => void;
-    onFinalize?: (switchToTarget: boolean) => void;
+    onFinalize?: (openTarget: boolean) => void;
   }
 
   let {
@@ -594,9 +594,9 @@
               variant="ghost"
               onclick={() => onFinalize?.(true)}
               disabled={finalizeStatus === 'running'}
-              data-testid="transfer-switch-button"
+              data-testid="transfer-open-button"
             >
-              {m.workspace_transfer_switchToTarget_label({ label: targetLabel })}
+              {m.workspace_transfer_openTarget_label({ label: targetLabel })}
             </Button>
           {/if}
           <Button

@@ -45,14 +45,18 @@ jobs:
 
   # Decides where the heavy jobs (checks / build-web / test) run: the local
   # tinybox runner normally, or GH-hosted larger runners when the tinybox
-  # queue is backed up (ported from intentd's ci.yml route job). Runs on a
-  # small GH-hosted runner so the burst decision is independent of the
-  # tinybox queue: probing from tinybox would queue behind the very backlog
-  # it measures (and deadlock entirely with tinybox offline). The probe fails
-  # open to tinybox on API errors; if the job itself fails (runner outage,
-  # timeout), the routed jobs are skipped and need a re-run — a deliberate
-  # trade-off. The seconds-long jobs (pr-title / conflict-markers / gate) are
-  # not routed — they pin directly to ubuntu-latest.
+  # queue is backed up or the fleet is unavailable (ported from intentd's
+  # ci.yml route job). Runs on a small GH-hosted runner so the burst
+  # decision is independent of the tinybox queue: probing from tinybox
+  # would queue behind the very backlog it measures (and deadlock entirely
+  # with tinybox offline). The probe FAILS OPEN TO GH-HOSTED (gh-linux-8x):
+  # on API errors, when no online self-hosted Linux runner is visible, or
+  # when a self-hosted job has sat queued past the staleness cutoff, the
+  # heavy jobs burst instead of queueing behind an offline fleet — CI must
+  # not deadlock when tinybox is down. If the job itself fails (runner
+  # outage, timeout), the routed jobs are skipped and need a re-run — a
+  # deliberate trade-off. The seconds-long jobs (pr-title / conflict-markers
+  # / gate) are not routed — they pin directly to ubuntu-latest.
   route:
     runs-on: ubuntu-latest
     # Same-repo PRs only (see fork-PR hardening note above); a skip here also
@@ -79,7 +83,13 @@ jobs:
           # GITHUB_TOKEN is repo-scoped and can only see cloudlands-fe. Set
           # the CI_QUEUE_READ_TOKEN secret (fine-grained PAT with
           # actions:read on the sibling repos) to enable cross-repo counting;
-          # without it those repos are skipped and contribute 0.
+          # without it those repos are skipped and contribute 0. Routing to
+          # tinybox additionally requires the token to list this repo's
+          # self-hosted runners (fine-grained "Administration" repository
+          # permission, read) — the default GITHUB_TOKEN cannot carry that
+          # permission, so without a suitably-scoped CI_QUEUE_READ_TOKEN the
+          # runner check fails and every run bursts (safe: burst is the
+          # fail-open default; it just never uses tinybox).
           github-token: ${{ secrets.CI_QUEUE_READ_TOKEN || github.token }}
           script: |
             const tinybox = ["self-hosted", "Linux", "X64"];
@@ -89,30 +99,80 @@ jobs:
             // 16 GB Node heap cap comfortably.
             const burst = ["gh-linux-8x"];
             const threshold = parseInt(process.env.THRESHOLD || "8", 10);
-            // Count self-hosted Linux jobs that are queued or running in
-            // queued/in-progress runs: a running job occupies a tinybox
-            // slot just as much as a queued one. GH-hosted jobs —
-            // including this route job and bursted heavy jobs — don't match
-            // the self-hosted+Linux label filter, so they never inflate the
-            // depth.
-            const owner = context.repo.owner;
-            const repos = ["intentd", "cloudlands-fe", "monorepo"];
-            let depth = 0;
-            for (const repo of repos) {
-              try {
-                for (const status of ["queued", "in_progress"]) {
-                  const runs = await github.rest.actions.listWorkflowRunsForRepo({ owner, repo, status, per_page: 20 });
-                  for (const run of runs.data.workflow_runs.filter(r => r.id !== context.runId).slice(0, 10)) {
-                    const jobs = await github.rest.actions.listJobsForWorkflowRun({ owner, repo, run_id: run.id, per_page: 100 });
-                    depth += jobs.data.jobs.filter(j => (j.status === "queued" || j.status === "in_progress") && j.labels.includes("self-hosted") && j.labels.includes("Linux")).length;
+            // A self-hosted job queued longer than this has no runner
+            // picking it up — treat the fleet as unavailable and burst.
+            const staleMs = 15 * 60 * 1000;
+            // FAIL OPEN TO BURST: tinybox is only selected when the probe
+            // positively confirms (a) an online self-hosted Linux runner
+            // registered on this repo, (b) no self-hosted job stuck queued
+            // past the staleness cutoff, and (c) a queue depth within the
+            // threshold. Any probe error — including a token that cannot
+            // list runners — routes to burst, so CI cannot queue-deadlock
+            // when the fleet is offline or unreadable (mirrors intentd's
+            // ci.yml route job).
+            let useBurst = true;
+            let reason = "fail-open default";
+            try {
+              // Repo-registered runners only: org-level runner groups are
+              // not visible here, and an empty/unreadable list routes to
+              // burst by design (never deadlock on an invisible fleet).
+              const runners = await github.paginate(
+                github.rest.actions.listSelfHostedRunnersForRepo,
+                { owner: context.repo.owner, repo: context.repo.repo, per_page: 100 }
+              );
+              const online = runners.filter(r =>
+                r.status === "online" &&
+                tinybox.every(l => (r.labels || []).some(x => x.name === l))
+              );
+              if (online.length === 0) {
+                reason = "no online self-hosted Linux runner";
+              } else {
+                // Count self-hosted Linux jobs that are queued or running in
+                // queued/in-progress runs: a running job occupies a tinybox
+                // slot just as much as a queued one. GH-hosted jobs —
+                // including this route job and bursted heavy jobs — don't
+                // match the self-hosted+Linux label filter, so they never
+                // inflate the depth. Sibling-repo probe failures are the
+                // documented degraded mode (skip, contribute 0); a failure
+                // on this repo's own probe means the depth is unknowable,
+                // so it rethrows into the fail-open burst path. A queued
+                // job older than staleMs means nothing is draining the
+                // queue despite the runner looking online — burst.
+                const owner = context.repo.owner;
+                const repos = ["intentd", "cloudlands-fe", "monorepo"];
+                let depth = 0;
+                let staleQueued = false;
+                for (const repo of repos) {
+                  try {
+                    for (const status of ["queued", "in_progress"]) {
+                      const runs = await github.rest.actions.listWorkflowRunsForRepo({ owner, repo, status, per_page: 20 });
+                      for (const run of runs.data.workflow_runs.filter(r => r.id !== context.runId).slice(0, 10)) {
+                        const jobs = await github.rest.actions.listJobsForWorkflowRun({ owner, repo, run_id: run.id, per_page: 100 });
+                        for (const j of jobs.data.jobs) {
+                          if ((j.status === "queued" || j.status === "in_progress") && j.labels.includes("self-hosted") && j.labels.includes("Linux")) {
+                            depth += 1;
+                            if (j.status === "queued" && Date.parse(j.created_at) < Date.now() - staleMs) staleQueued = true;
+                          }
+                        }
+                      }
+                    }
+                  } catch (e) {
+                    if (repo === context.repo.repo) throw e;
+                    core.info(`queue probe skipped ${repo}: ${e.message}`);
                   }
                 }
-              } catch (e) {
-                core.info(`queue probe skipped ${repo}: ${e.message}`);
+                if (staleQueued) {
+                  reason = `self-hosted job queued past staleness cutoff (fleet not draining) online=${online.length}`;
+                } else {
+                  useBurst = depth > threshold;
+                  reason = `queue depth=${depth} threshold=${threshold} online=${online.length}`;
+                }
               }
+            } catch (e) {
+              useBurst = true;
+              reason = `probe failed (${e.message})`;
             }
-            const useBurst = depth > threshold;
-            core.info(`linux queue depth=${depth} threshold=${threshold} burst=${useBurst}`);
+            core.info(`linux routing: burst=${useBurst} (${reason})`);
             core.setOutput("linux_labels", JSON.stringify(useBurst ? burst : tinybox));
             core.setOutput("linux_burst", String(useBurst));
 

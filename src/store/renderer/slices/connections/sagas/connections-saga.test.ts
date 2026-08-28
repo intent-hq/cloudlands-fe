@@ -25,7 +25,6 @@ import {
   openConnectionRequested,
   rotateConnectionSecretRequested,
   setKeychainSyncEnabledRequested,
-  switchConnectionRequested,
   testConnectionRequested,
   updateConnectionRequested,
   updateBackendRequested,
@@ -99,8 +98,6 @@ describe('connectionsSaga', () => {
       if (channel === CONNECTION_CHANNELS.OPEN)
         return { status: 'opened', id: (params as { id: string }).id };
       if (channel === CONNECTION_CHANNELS.FORGET) return { id: (params as { id: string }).id };
-      if (channel === CONNECTION_CHANNELS.SWITCH)
-        return { activeId: (params as { id: string }).id };
       throw new Error(`unexpected channel ${channel}`);
     });
     offById = vi.fn();
@@ -332,11 +329,6 @@ describe('connectionsSaga', () => {
     run.channel.put(forget);
     await expect(forget.promise).resolves.toBeUndefined();
     expect(invoke).toHaveBeenCalledWith(CONNECTION_CHANNELS.FORGET, { id: REMOTE.id });
-
-    const switchAction = switchConnectionRequested(REMOTE.id);
-    run.channel.put(switchAction);
-    await expect(switchAction.promise).resolves.toBeUndefined();
-    expect(invoke).toHaveBeenCalledWith(CONNECTION_CHANNELS.SWITCH, { id: REMOTE.id });
     expect(run.getState().connections.status).toBe('idle');
 
     run.task.cancel();
@@ -480,12 +472,12 @@ describe('connectionsSaga', () => {
     invoke.mockImplementation(async (channel: string) => {
       if (channel === CONNECTION_CHANNELS.LIST)
         return { connections: [LOCAL], activeId: LOCAL.id, windowBackendId: LOCAL.id };
-      if (channel === CONNECTION_CHANNELS.SWITCH) throw new Error('no such connection');
+      if (channel === CONNECTION_CHANNELS.OPEN) throw new Error('no such connection');
       return {};
     });
     const run = start();
     await settle();
-    const action = switchConnectionRequested('missing');
+    const action = openConnectionRequested('missing');
     run.channel.put(action);
     await expect(action.promise).rejects.toThrow('no such connection');
     expect(run.getState().connections.status).toBe('error');
@@ -544,19 +536,19 @@ describe('connectionsSaga', () => {
     invoke.mockImplementation(async (channel: string) => {
       if (channel === CONNECTION_CHANNELS.LIST)
         return { connections: [LOCAL], activeId: LOCAL.id, windowBackendId: LOCAL.id };
-      if (channel === CONNECTION_CHANNELS.SWITCH) return await new Promise(() => {});
+      if (channel === CONNECTION_CHANNELS.OPEN) return await new Promise(() => {});
       return {};
     });
     const run = start();
     await settle();
-    const action = switchConnectionRequested(REMOTE.id);
+    const action = openConnectionRequested(REMOTE.id);
     run.channel.put(action);
     await settle();
 
     run.task.cancel();
     await run.task.toPromise();
-    await expect(action.promise).rejects.toThrow('Connection switch was cancelled');
-    expect(run.getState().connections.error).toBe('Connection switch was cancelled');
+    await expect(action.promise).rejects.toThrow('Connection open was cancelled');
+    expect(run.getState().connections.error).toBe('Connection open was cancelled');
   });
 
   it('loads the keychain-sync state and stores it (T4)', async () => {

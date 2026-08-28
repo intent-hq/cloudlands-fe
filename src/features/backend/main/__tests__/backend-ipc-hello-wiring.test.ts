@@ -216,10 +216,8 @@ describe('backend.ipc sidecar run-log bridge', () => {
 });
 
 describe('backend.ipc daemon version refresh on hello (#3448)', () => {
-  afterEach(async () => {
+  afterEach(() => {
     __resetConnectionModeForTesting();
-    const { __setActiveConnectionMetaForTesting } = await import('../backend.ipc');
-    __setActiveConnectionMetaForTesting(null);
   });
 
   async function getOnHelloResult(): Promise<(result: unknown) => void> {
@@ -321,15 +319,16 @@ describe('backend.ipc daemon version refresh on hello (#3448)', () => {
   });
 
   it('does not let a remote backend hello overwrite the local daemon version info', async () => {
-    const onHelloResult = await getOnHelloResult();
-    const { __setActiveConnectionMetaForTesting } = await import('../backend.ipc');
+    const { connectBackendClient, disconnectBackendClient } = await import('../backend.ipc');
     setConnectionMode('external');
     setDaemonVersionInfo({
       daemonVersion: '0.1.0',
       pinnedVersion: '0.1.0',
       versionMismatch: false,
     });
-    __setActiveConnectionMetaForTesting({ id: 'conn-1', host: 'remote', port: 443 });
+    await connectBackendClient('conn-remote');
+    const poolCtor = ctorOptions[ctorOptions.length - 1];
+    const onHelloResult = poolCtor.onHelloResult as (result: unknown) => void;
 
     const send = vi.fn();
     vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([
@@ -348,6 +347,7 @@ describe('backend.ipc daemon version refresh on hello (#3448)', () => {
       expect.objectContaining({ transport: expect.anything() }),
     );
     vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([]);
+    disconnectBackendClient('conn-remote');
   });
 
   it('leaves stored info unchanged and skips the broadcast for a malformed server.version', async () => {
@@ -467,9 +467,7 @@ describe('backend.ipc daemon build-identity log on hello (#3649)', () => {
 });
 
 describe('backend.ipc remote daemon version capture on hello', () => {
-  afterEach(async () => {
-    const { __setActiveConnectionMetaForTesting } = await import('../backend.ipc');
-    __setActiveConnectionMetaForTesting(null);
+  afterEach(() => {
     vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([]);
     mockSetDaemonVersion.mockClear();
     mockSetDaemonVersion.mockResolvedValue(false);
@@ -519,7 +517,7 @@ describe('backend.ipc remote daemon version capture on hello', () => {
     disconnectBackendClient('conn-remote');
   });
 
-  it('never captures for the local backend (primary client with no active remote)', async () => {
+  it('never captures for the local backend (pooled local client)', async () => {
     const { getBackendClient } = await import('../backend.ipc');
     getBackendClient();
     const onHelloResult = ctorOptions[0].onHelloResult as (result: unknown) => void;

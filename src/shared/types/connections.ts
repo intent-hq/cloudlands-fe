@@ -151,16 +151,16 @@ export interface ConnectionRecord {
  */
 export interface ConnectionsListResult {
   connections: ConnectionRecord[];
-  /** Persisted whole-app selection used for boot restore and explicit switches. */
+  /** Persisted whole-app selection used for boot restore. */
   activeId: string;
   /** Backend bound to the renderer window receiving this payload. */
   windowBackendId: string;
   /**
    * Sticky protocol mismatch for the currently active backend, replayed here so
    * a renderer that missed the one-shot `connections:protocol-mismatch`
-   * broadcast (e.g. a window created by a backend switch, after the remote
-   * handshake already fired) still surfaces the advisory. `null`/absent when the
-   * active backend matches local (or is local itself).
+   * broadcast (e.g. a window created after the remote handshake already fired)
+   * still surfaces the advisory. `null`/absent when the active backend matches
+   * local (or is local itself).
    */
   protocolMismatch?: ConnectionProtocolMismatchEvent | null;
   /**
@@ -254,9 +254,11 @@ export interface AddConnectionParams {
 export interface AddConnectionResult {
   connection: ConnectionRecord;
   /**
-   * `true` when the add re-paired the active backend and main rebuilt that
-   * client in place. Either way, callers may follow with `connections:open`;
-   * opening never performs a whole-app switch.
+   * `true` when the add re-paired the persisted active backend (kept for wire
+   * compatibility). Main rebuilds the pooled client in place for ANY re-paired
+   * backend that is live (serving windows) or active, so the refreshed
+   * credentials always reach open windows. Either way, callers may follow with
+   * `connections:open`; opening never performs a whole-app switch.
    */
   switched: boolean;
 }
@@ -340,16 +342,6 @@ export interface ForgetConnectionResult {
   id: string;
 }
 
-/** `connections:switch` params. */
-export interface SwitchConnectionParams {
-  id: string;
-}
-
-/** `connections:switch` result: the newly active connection id. */
-export interface SwitchConnectionResult {
-  activeId: string;
-}
-
 /** `connections:update-backend` params. */
 export interface UpdateBackendParams {
   id: string;
@@ -379,7 +371,7 @@ export type UpdateBackendResult =
 // ============================================================================
 
 /**
- * `connections:changed` — broadcast after any mutation (add/forget/switch) so
+ * `connections:changed` — broadcast after any mutation (add/forget/open) so
  * every window refreshes its list + active selection. Same shape as the
  * `connections:list` result.
  */
@@ -421,7 +413,7 @@ export interface ConnectionAuthRejectedEvent {
  * `protocolVersion` (from its `client.hello` handshake) differs in **major
  * version** from the local intentd's. Warn-but-allow: the connection still
  * proceeds; the renderer surfaces a non-blocking advisory modal on first
- * connect/switch and a persistent warning in the daemon-status menu. Unlike
+ * connect and a persistent warning in the daemon-status menu. Unlike
  * {@link ConnectionCertMismatchEvent}, this NEVER blocks the connection.
  */
 export interface ConnectionProtocolMismatchEvent {
@@ -436,33 +428,13 @@ export interface ConnectionProtocolMismatchEvent {
   /**
    * Which flow detected the mismatch. `'boot'` when it was latched while boot
    * reconciliation restored a persisted remote — the renderer suppresses the
-   * advisory modal (the user did not just initiate a switch) and keeps the
-   * persistent menu warning. `'switch'` (or absent, for older payloads) for an
-   * explicit backend switch — modal-worthy. Carried on the sticky
-   * `connections:list` replay too. Additive.
+   * advisory modal (the user did not just initiate a connect) and keeps the
+   * persistent menu warning. `'switch'` (or absent, for older payloads) for a
+   * user-initiated connect — modal-worthy ('switch' is the legacy wire value,
+   * kept for compatibility). Carried on the sticky `connections:list` replay
+   * too. Additive.
    */
   origin?: 'boot' | 'switch';
-}
-
-/**
- * Boot-time backend-restore fallback notice (T19). When the app relaunches with
- * a persisted remote `activeId` that turns out to be unreachable at boot, the FE
- * falls back to the always-available local sidecar and surfaces this
- * non-blocking notice ("Couldn't reach <label>; using this machine") so the user
- * understands why they are on local rather than the remote they last used.
- *
- * Latched in main and PULLED once by the renderer via the
- * `connections:get-boot-fallback` invoke channel (consume-once), rather than
- * pushed on a live channel: the fallback happens during boot reconciliation,
- * before any renderer window exists to receive a broadcast, so a one-shot push
- * would be lost. The renderer surfaces it as a non-blocking toast — it is never
- * stored as connections-slice state.
- */
-export interface ConnectionBootFallbackEvent {
-  /** id of the remote connection that could not be reached at boot. */
-  id: string;
-  /** Human label of that remote (hostname/`host:port`), for the notice copy. */
-  label: string;
 }
 
 // ============================================================================

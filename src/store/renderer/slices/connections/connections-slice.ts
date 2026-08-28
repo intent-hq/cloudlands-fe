@@ -2,7 +2,7 @@
  * Connections Slice
  *
  * Actions + reducer for the multi-backend connect feature. Tracks the
- * connections list, the active backend, the in-flight add/open/switch operation
+ * connections list, the active backend, the in-flight add/open operation
  * status, and the last pinned-cert mismatch.
  *
  * The list + active selection are authoritative from main: they are set from
@@ -73,19 +73,19 @@ export const connectionsListReceived = createAction<[result: ConnectionsListResu
 );
 
 /**
- * An add/open/switch operation started (its saga invoked the IPC channel). Moves
+ * An add/open operation started (its saga invoked the IPC channel). Moves
  * status to 'connecting' and clears any prior error.
  */
 export const connectOperationStarted = createAction('connections/operationStarted');
 
 /**
- * The in-flight add/open/switch operation succeeded. Status returns to 'idle'; the
+ * The in-flight add/open operation succeeded. Status returns to 'idle'; the
  * list/active refresh arrives separately via the `connections:changed` push.
  */
 export const connectOperationSettled = createAction('connections/operationSettled');
 
 /**
- * The in-flight add/open/switch operation failed. Status moves to 'error' and the
+ * The in-flight add/open operation failed. Status moves to 'error' and the
  * message is stored for the UI.
  */
 export const connectOperationFailed = createAction<[error: string]>('connections/operationFailed');
@@ -104,8 +104,8 @@ export const certMismatchCleared = createAction('connections/certMismatchCleared
 /**
  * A `connections:auth-rejected` push arrived — the remote backend rejected the
  * WebSocket upgrade with HTTP 401/403 (bad/rotated token, or the WS API is
- * disabled). Latched so the UI can surface a "re-pair or switch" state instead
- * of the generic cannot-connect overlay.
+ * disabled). Latched so the UI can surface a "re-pair or open local" state
+ * instead of the generic cannot-connect overlay.
  */
 export const authRejectedReceived = createAction<[event: ConnectionAuthRejectedEvent]>(
   'connections/authRejectedReceived',
@@ -118,7 +118,7 @@ export const authRejectedReceived = createAction<[event: ConnectionAuthRejectedE
  * the modal-dismissed flag so the advisory shows for this fresh mismatch —
  * except for boot-origin events (`origin: 'boot'`), which latch the flag so
  * only the persistent menu warning shows (the user did not just initiate a
- * switch, so no modal).
+ * connect, so no modal).
  */
 export const protocolMismatchReceived = createAction<[event: ConnectionProtocolMismatchEvent]>(
   'connections/protocolMismatchReceived',
@@ -181,12 +181,6 @@ export const openConnectionRequested = createAsyncAction<[id: string], OpenConne
 export const forgetConnectionRequested = createAsyncAction<[id: string], void>(
   'connections/forget',
   'connections/forgetRequested',
-);
-
-/** Saga-owned active-backend switch request. */
-export const switchConnectionRequested = createAsyncAction<[id: string], void>(
-  'connections/switch',
-  'connections/switchRequested',
 );
 
 /**
@@ -268,9 +262,9 @@ connectionsReducer.with(connectionsListReceived, (state, { payload: [result] }) 
   return next;
 });
 connectionsReducer.with(connectOperationStarted, (state) => {
-  // A fresh add/switch clears the auth-rejected latch: a re-add refreshes the
-  // stored token for the same target, and a switch changes the target — either
-  // way the latched rejection no longer describes the operation under way.
+  // A fresh add/open clears the auth-rejected latch: a re-add refreshes the
+  // stored token for the same target, and a fresh open rebuilds the client —
+  // either way the latched rejection no longer describes the operation under way.
   return { ...state, status: 'connecting', error: null, authRejected: null };
 });
 connectionsReducer.with(connectOperationSettled, (state) => {
@@ -290,7 +284,7 @@ connectionsReducer.with(authRejectedReceived, (state, { payload: [event] }) => {
 });
 connectionsReducer.with(protocolMismatchReceived, (state, { payload: [event] }) => {
   // Boot-origin mismatches (persisted remote restored at launch) suppress the
-  // advisory modal but keep the persistent menu warning; switch-origin (or
+  // advisory modal but keep the persistent menu warning; user-initiated (or
   // origin-less, older payloads) mismatches show the modal.
   return {
     ...state,

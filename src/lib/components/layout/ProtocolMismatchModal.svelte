@@ -8,7 +8,7 @@
    * We surface local vs remote versions and offer:
    *   - continue anyway (dismiss — the connection stays; a persistent warning
    *     remains in the daemon-status menu),
-   *   - switch back to the local sidecar.
+   *   - open the local sidecar's window.
    *
    * Warn-but-allow: some features may not work correctly across a major
    * protocol gap, but the user stays in control.
@@ -22,11 +22,11 @@
 
   interface Props {
     event: ConnectionProtocolMismatchEvent;
-    onSwitchBack?: () => void;
+    onOpenLocal?: () => void;
     onContinue?: () => void;
   }
 
-  let { event, onSwitchBack, onContinue }: Props = $props();
+  let { event, onOpenLocal, onContinue }: Props = $props();
 
   function handleKeydown(e: KeyboardEvent) {
     if (e.key === 'Escape') {
@@ -103,8 +103,8 @@
       <Button variant="default" onclick={() => onContinue?.()}>
         {m.modals_protocolMismatch_continue_label()}
       </Button>
-      <Button variant="ghost" onclick={() => onSwitchBack?.()}>
-        {m.modals_protocolMismatch_switchBack_label()}
+      <Button variant="ghost" onclick={() => onOpenLocal?.()}>
+        {m.modals_protocolMismatch_openLocal_label()}
       </Button>
     </div>
   </div>

@@ -23,9 +23,10 @@ import {
   heartbeatFailed,
   pollSystemStatus,
   pollUnslothStatus,
+  openLocalAndSpawnRequested,
+  openLocalAndSpawnSucceeded,
   spawnSidecarFailed,
   spawnSidecarRequested,
-  switchLocalAndSpawnRequested,
   stopUnslothFailed,
   stopUnslothRequested,
   stopUnslothSucceeded,
@@ -72,9 +73,9 @@ async function invokeSpawnSidecar() {
     { ok: boolean; spawned: boolean; reason?: string; error?: { message?: string } } | undefined;
 }
 
-async function invokeSwitchLocalAndSpawn() {
+async function invokeOpenLocalAndSpawn() {
   if (!window.electronAPI) throw new Error('electronAPI is not available');
-  return (await window.electronAPI.invoke(BACKEND.SWITCH_LOCAL_AND_SPAWN)) as
+  return (await window.electronAPI.invoke(BACKEND.OPEN_LOCAL_AND_SPAWN)) as
     { ok: boolean; spawned: boolean; reason?: string; error?: { message?: string } } | undefined;
 }
 
@@ -310,10 +311,14 @@ function* spawnSidecarSaga() {
   }
 }
 
-function* switchLocalAndSpawnSaga() {
+function* openLocalAndSpawnSaga() {
   try {
-    const result = yield* call(invokeSwitchLocalAndSpawn);
-    if (!result?.ok) {
+    const result = yield* call(invokeOpenLocalAndSpawn);
+    if (result?.ok) {
+      // This window keeps its own (dead) backend, so no 'connected' status
+      // event ever reaches it — clear the pending flag explicitly.
+      yield* put(openLocalAndSpawnSucceeded());
+    } else {
       yield* put(
         spawnSidecarFailed(
           result?.error?.message ?? result?.reason ?? m.daemonStatus_spawnSidecarFailed_error(),
@@ -336,7 +341,7 @@ function* fetchSidecarRunLogSaga() {
 
 function* watchDaemonControls() {
   yield* takeEvery(spawnSidecarRequested, spawnSidecarSaga);
-  yield* takeEvery(switchLocalAndSpawnRequested, switchLocalAndSpawnSaga);
+  yield* takeEvery(openLocalAndSpawnRequested, openLocalAndSpawnSaga);
   yield* takeEvery(fetchSidecarRunLogRequested, fetchSidecarRunLogSaga);
   yield* takeLeading(stopUnslothRequested, stopUnslothSaga);
 }

@@ -27,15 +27,6 @@ export const selectConnectionOpenStatus = store.createSelector(
     getItem(state.connections.connections, id)?.status ?? 'not-open',
 );
 
-/** id of the active connection (`LOCAL_CONNECTION_ID` for the local sidecar). */
-export const selectActiveConnectionId = store.createSelector((state) => state.connections.activeId);
-
-/** The active connection record, or null before the list has loaded. */
-export const selectActiveConnection = store.createSelector((state): ConnectionRecord | null => {
-  const { connections, activeId } = state.connections;
-  return getItems(connections).find((c) => c.id === activeId) ?? null;
-});
-
 /** id of the backend bound to this renderer window. */
 export const selectCurrentConnectionId = store.createSelector(
   (state) => state.connections.windowBackendId,

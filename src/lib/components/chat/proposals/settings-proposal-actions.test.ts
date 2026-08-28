@@ -352,7 +352,7 @@ describe('settings-proposal-actions', () => {
     const setItem = vi.mocked(window.localStorage.setItem);
     setItem.mockClear();
     mocks.getState.mockReturnValue(
-      makeState({ connections: { activeId: 'remote-1' } } as Partial<StoreState>),
+      makeState({ connections: { windowBackendId: 'remote-1' } } as Partial<StoreState>),
     );
 
     await undoSettingsProposalWork([
@@ -374,7 +374,7 @@ describe('settings-proposal-actions', () => {
     const setItem = vi.mocked(window.localStorage.setItem);
     setItem.mockClear();
     mocks.getState.mockReturnValue(
-      makeState({ connections: { activeId: 'local' } } as Partial<StoreState>),
+      makeState({ connections: { windowBackendId: 'local' } } as Partial<StoreState>),
     );
 
     await undoSettingsProposalWork([

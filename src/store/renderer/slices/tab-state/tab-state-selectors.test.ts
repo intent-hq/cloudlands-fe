@@ -66,7 +66,7 @@ describe('tab state selectors', () => {
     ): StoreState =>
       ({
         tabState: { ...tabState, hydratedBackendId },
-        connections: { activeId },
+        connections: { activeId, windowBackendId: activeId },
       }) as unknown as StoreState;
 
     it('is false before any hydration settles', () => {

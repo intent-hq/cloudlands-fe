@@ -73,7 +73,7 @@ function persistedTabs(
 
 /** `connectionsListReceived` payload switching the active backend. */
 function backendActive(activeId: string) {
-  return connectionsListReceived({ connections: [], activeId });
+  return connectionsListReceived({ connections: [], activeId, windowBackendId: activeId });
 }
 
 function createHarness() {

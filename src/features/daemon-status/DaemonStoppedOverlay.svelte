@@ -16,11 +16,12 @@
    * health === 'down', auto-dismisses when backend:status returns 'connected'
    * (resubscription on reconnect is handled by the existing RESUB-1 path — this
    * component issues no wire requests itself). Offers actionable recovery when
-   * the connection is down (T20): "Start local intentd" (offered in any
-   * external mode — it switches the active backend to local first, then spawns
-   * the app-managed sidecar) or the app-managed sidecar retry when the
-   * supervisor gave up restarting, plus a one-click switch to any other saved
-   * backend so the user can fail over without opening the daemon-status menu.
+   * the connection is down (T20, Open-only — no action retargets this window):
+   * "Start local intentd" in a local window (spawns the app-managed sidecar) /
+   * "Open local" in a remote window (spawns if needed and opens the local
+   * backend's windows), the sidecar retry when the supervisor gave up
+   * restarting, plus one-click Open actions for the other saved backends so
+   * the user can fail over without opening the daemon-status menu.
    */
   import { page } from '$app/stores';
   import { store as appStore } from '$store/renderer/store';
@@ -41,16 +42,16 @@
   } from '$store/renderer/slices/daemon-health/daemon-health-selectors';
   import {
     spawnSidecarRequested,
-    switchLocalAndSpawnRequested,
+    openLocalAndSpawnRequested,
     fetchSidecarRunLogRequested,
   } from '$store/renderer/slices/daemon-health/daemon-health-slice';
   import {
     selectConnections,
-    selectActiveConnectionId,
+    selectCurrentConnectionId,
     selectIsConnecting,
     selectActiveAuthRejected,
   } from '$store/renderer/slices/connections/connections-selectors';
-  import { switchConnectionRequested } from '$store/renderer/slices/connections/connections-slice';
+  import { openConnectionRequested } from '$store/renderer/slices/connections/connections-slice';
   import { LOCAL_CONNECTION_ID } from '$shared/types/connections';
   import type { ConnectionRecord } from '$shared/types/connections';
   import ConnectBackendModal from '$lib/components/layout/ConnectBackendModal.svelte';
@@ -71,7 +72,7 @@
   const runLogPending$ = selectSidecarRunLogPending();
   const runLogError$ = selectSidecarRunLogError();
   const connections$ = selectConnections();
-  const activeConnectionId$ = selectActiveConnectionId();
+  const activeConnectionId$ = selectCurrentConnectionId();
   const isConnecting$ = selectIsConnecting();
   const authRejected$ = selectActiveAuthRejected();
   const repairConnection = $derived(
@@ -122,33 +123,38 @@
   // sidecar-uds or still unresolved) and either the spawn never happened
   // (startup failure) or the supervisor crash-looped past its restart policy.
   const isSidecarFailure = $derived(($sidecarStartupFailed$ || $sidecarGaveUp$) && !isExternalMode);
-  // "Start local intentd" is offered in any external mode — external-uds AND
-  // external-ws (T20). The on-demand sidecar binds the local UDS socket, which a
-  // WS-connected client would never reconnect to on its own, so handleSpawnSidecar
-  // first switches the active backend to local (making the spawned sidecar's UDS
-  // the reconnect target) before requesting the spawn. Once a spawn is in flight
-  // (or failed), the section stays visible even if a status broadcast flips the
-  // transport to sidecar-uds mid-spawn — hiding it would drop the pending
-  // indicator / error and any way to retry.
+  // Local recovery is offered in any external mode — external-uds AND
+  // external-ws (T20). In a local window the action just spawns the on-demand
+  // sidecar ("Start local intentd"); in a remote window it becomes "Open local"
+  // — spawn (if needed) plus open/focus the local backend's windows, leaving
+  // THIS window on its own backend (Open-only: no overlay action retargets a
+  // window). Once a spawn is in flight (or failed), the section stays visible
+  // even if a status broadcast flips the transport to sidecar-uds mid-spawn —
+  // hiding it would drop the pending indicator / error and any way to retry.
   const showSpawnButton = $derived(
     isExternalMode || $sidecarGaveUp$ || $spawnPending$ || $spawnError$ !== null,
   );
+  // Remote window: this window's backend is a stored remote connection, so
+  // local recovery opens the local backend's windows instead of spawning into
+  // this window's dead connection.
+  const isRemoteWindow = $derived($activeConnectionId$ !== LOCAL_CONNECTION_ID);
 
-  // Other saved backends the user can fail over to without opening the menu
-  // (T20). Excludes the local entry — "Start local intentd" is its dedicated
-  // action — and the currently-active connection (switching to it is a no-op).
+  // Other saved backends the user can open windows for without leaving this
+  // one (T20, Open-only). Excludes the local entry — "Open local" / "Start
+  // local intentd" is its dedicated action — and this window's own backend.
   const otherConnections = $derived(
     $connections$.filter((c) => !c.isLocal && c.id !== $activeConnectionId$),
   );
 
-  // Actionable token-rejected posture: the active remote backend rejected the
+  // Actionable token-rejected posture: this window's remote backend rejected the
   // WebSocket upgrade with HTTP 401/403 (`connections:auth-rejected`), so
   // retrying with the same stored token cannot succeed. The overlay swaps the
-  // generic cannot-connect copy for a "re-pair or switch" state: no
-  // "Retrying…" indicator (it would be misleading), and a Re-pair button that
-  // opens the add-connection flow with host/port prefilled — re-adding the
-  // same host:port replaces the stored token, and the resulting add/switch
-  // clears the latched rejection (connectOperationStarted).
+  // generic cannot-connect copy for a re-pair state: no "Retrying…" indicator
+  // (it would be misleading), and a Re-pair button that opens the
+  // add-connection flow with host/port prefilled — re-adding the same
+  // host:port replaces the stored token and rebuilds the live client in
+  // place, and the fresh client clears the latched rejection
+  // (connectOperationStarted).
   const isAuthRejected = $derived($authRejected$ !== null);
   let repairModalOpen = $state(false);
 
@@ -161,11 +167,11 @@
     return conn.label;
   }
 
-  // Connection details for the lost external daemon (#1750): prefer the active
-  // connection record's `hostname (host:port)` label (captured from host.status
-  // on first connect); fall back to the transport target (sanitized WS URL or
-  // UDS socket path) when the active connection is the local entry (external-uds
-  // adoption) or the record has not loaded.
+  // Connection details for the lost external daemon (#1750): prefer this
+  // window's connection record's `hostname (host:port)` label (captured from
+  // host.status on first connect); fall back to the transport target (sanitized
+  // WS URL or UDS socket path) when the window's backend is the local entry
+  // (external-uds adoption) or the record has not loaded.
   const activeConnection = $derived(
     $connections$.find((c) => c.id === $activeConnectionId$) ?? null,
   );
@@ -175,27 +181,22 @@
   });
 
   function handleSpawnSidecar() {
-    // In external/remote mode the active target is a remote backend; the
-    // on-demand sidecar binds the local UDS socket, so we must switch active →
-    // local first (making that UDS the reconnect target) before spawning.
-    //
-    // The switch destroys THIS window (captureAndCloseWindowsForBackendSwitch)
-    // before the switch IPC returns, so a renderer continuation that dispatched
-    // the spawn afterwards could be torn down before it ran — leaving the user on
-    // a fresh local window with intentd never started. Route the whole recovery
-    // through a single main-side action that switches AND spawns atomically, so
-    // it survives the window teardown.
-    if ($activeConnectionId$ !== LOCAL_CONNECTION_ID) {
-      appStore.dispatch(switchLocalAndSpawnRequested());
+    // Remote window: "Open local" — main spawns the sidecar (if needed) and
+    // opens/focuses the local backend's windows in one main-side action, so
+    // recovery completes even if this renderer goes away mid-flight. This
+    // window keeps its own (dead) backend and this overlay.
+    if (isRemoteWindow) {
+      appStore.dispatch(openLocalAndSpawnRequested());
       return;
     }
-    // Already local: no switch, no window teardown — the plain spawn path is safe.
+    // Local window: plain spawn — the window's client reconnects to the local
+    // UDS socket on its own once the daemon serves it.
     appStore.dispatch(spawnSidecarRequested());
   }
 
-  async function handleSwitchConnection(id: string) {
+  async function handleOpenConnection(id: string) {
     try {
-      const action = switchConnectionRequested(id);
+      const action = openConnectionRequested(id);
       appStore.dispatch(action);
       await action.promise;
     } catch {
@@ -392,9 +393,13 @@
               onclick={handleSpawnSidecar}
               data-testid="daemon-stopped-spawn-sidecar"
             >
-              {$spawnPending$
-                ? m.daemonStatus_overlay_startingIntentd_label()
-                : m.daemonStatus_overlay_startLocalIntentd_label()}
+              {#if $spawnPending$}
+                {m.daemonStatus_overlay_startingIntentd_label()}
+              {:else if isRemoteWindow}
+                {m.daemonStatus_overlay_openLocal_label()}
+              {:else}
+                {m.daemonStatus_overlay_startLocalIntentd_label()}
+              {/if}
             </button>
 
             {#if $spawnError$}
@@ -404,9 +409,11 @@
             {/if}
 
             <p class="mt-2 text-xs text-muted-foreground">
-              {isExternalMode
-                ? m.daemonStatus_overlay_externalDataNote_label()
-                : m.daemonStatus_overlay_dataDirNote_label()}
+              {isRemoteWindow
+                ? m.daemonStatus_overlay_openLocalDataNote_label()
+                : isExternalMode
+                  ? m.daemonStatus_overlay_externalDataNote_label()
+                  : m.daemonStatus_overlay_dataDirNote_label()}
             </p>
           </div>
         {/if}
@@ -422,10 +429,10 @@
                   type="button"
                   class="w-full truncate rounded-md border border-border px-4 py-2 text-left text-sm font-medium text-foreground hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50"
                   disabled={$isConnecting$}
-                  onclick={() => handleSwitchConnection(conn.id)}
-                  data-testid="daemon-stopped-switch-backend"
+                  onclick={() => handleOpenConnection(conn.id)}
+                  data-testid="daemon-stopped-open-backend"
                 >
-                  {connectionLabel(conn)}
+                  {m.daemonStatus_overlay_openBackend_label({ label: connectionLabel(conn) })}
                 </button>
               {/each}
             </div>

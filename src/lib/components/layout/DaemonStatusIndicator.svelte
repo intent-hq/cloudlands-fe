@@ -158,7 +158,6 @@
   } from '$store/renderer/slices/connections/connections-slice';
   import {
     openConnectionRequested,
-    switchConnectionRequested,
     forgetConnectionRequested,
     loadKeychainSyncStateRequested,
     updateBackendRequested,
@@ -394,18 +393,6 @@
     }
   }
 
-  async function handleSwitchConnection(id: string) {
-    dropdownOpen = false;
-    try {
-      const action = switchConnectionRequested(id);
-      appStore.dispatch(action);
-      await action.promise;
-    } catch {
-      // The failure is surfaced via the slice's op-status/error; nothing more
-      // to do here (the list/active refresh arrives via connections:changed).
-    }
-  }
-
   async function handleForgetConnection(id: string) {
     try {
       const action = forgetConnectionRequested(id);
@@ -470,10 +457,10 @@
     appStore.dispatch(certMismatchCleared());
   }
 
-  async function switchBackToLocal() {
+  async function openLocalFromCertMismatch() {
     dismissCertMismatch();
     try {
-      const action = switchConnectionRequested(LOCAL_CONNECTION_ID);
+      const action = openConnectionRequested(LOCAL_CONNECTION_ID);
       appStore.dispatch(action);
       await action.promise;
     } catch {
@@ -499,11 +486,11 @@
     appStore.dispatch(protocolMismatchModalDismissed());
   }
 
-  /** Switch back to the local sidecar from the advisory modal. */
-  async function switchBackFromProtocolMismatch() {
+  /** Open the local sidecar's window from the advisory modal. */
+  async function openLocalFromProtocolMismatch() {
     continueWithProtocolMismatch();
     try {
-      const action = switchConnectionRequested(LOCAL_CONNECTION_ID);
+      const action = openConnectionRequested(LOCAL_CONNECTION_ID);
       appStore.dispatch(action);
       await action.promise;
     } catch {
@@ -847,7 +834,7 @@
         </div>
       {/if}
 
-      <!-- Multi-backend connect: add action + connections list (Open/Switch/Forget) -->
+      <!-- Multi-backend connect: add action + connections list (Open/Forget) -->
       <div class="h-px bg-border my-1"></div>
       <div class="px-1 pb-1">
         <button
@@ -866,7 +853,7 @@
             {@const isCurrent = conn.id === $currentConnectionId$}
             {@const accent = resolveConnectionAccent(conn.accent)}
             <!--
-              Each connection row is a real submenu (Menu.Sub), so Open/Switch/Forget
+              Each connection row is a real submenu (Menu.Sub), so Open/Forget
               pop out as a side flyout that opens on hover/click with bits-ui's
               pointer-grace (it stays open while the pointer travels into it).
               The flyout portals to body so the parent menu's overflow scroll
@@ -932,13 +919,6 @@
                   onSelect={() => handleOpenConnection(conn.id)}
                 >
                   {m.layout_daemonStatus_open_action()}
-                </Menu.Item>
-                <Menu.Item
-                  class="cursor-pointer text-xs"
-                  disabled={isCurrent}
-                  onSelect={() => handleSwitchConnection(conn.id)}
-                >
-                  {m.layout_daemonStatus_switch_action()}
                 </Menu.Item>
                 {#if shouldShowUpdateAction(conn, $connectedIds$, $pinnedDaemonVersion$)}
                   {@const updateTooltip = m.layout_daemonStatus_update_tooltip({
@@ -1007,7 +987,7 @@
   <Portal target="body" zIndex={100}>
     <CertMismatchModal
       event={$certMismatch$}
-      onSwitchBack={switchBackToLocal}
+      onOpenLocal={openLocalFromCertMismatch}
       onForget={forgetMismatchedConnection}
       onDismiss={dismissCertMismatch}
     />
@@ -1023,7 +1003,7 @@
   <Portal target="body" zIndex={100}>
     <ProtocolMismatchModal
       event={$protocolMismatchModal$}
-      onSwitchBack={switchBackFromProtocolMismatch}
+      onOpenLocal={openLocalFromProtocolMismatch}
       onContinue={continueWithProtocolMismatch}
     />
   </Portal>

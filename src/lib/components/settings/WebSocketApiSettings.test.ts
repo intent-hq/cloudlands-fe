@@ -37,7 +37,7 @@ vi.mock('svelte-sonner', () => ({
   toast: mockToast,
 }));
 
-// Mock the store so selectActiveConnectionId resolves; tests flip
+// Mock the store so selectCurrentConnectionId resolves; tests flip
 // `connectionState.activeId` and call `connectionState.emit()` to simulate a
 // connection switch while the component stays mounted. Dispatches of the
 // keychain-sync async actions resolve `connectionState.syncState` through the
@@ -56,7 +56,7 @@ const connectionState = vi.hoisted(() => ({
 vi.mock('$store/renderer/store', async () => {
   const { createAppStoreMock } = await import('$store/renderer/utils/test-helpers/store-mock');
   const store = createAppStoreMock({
-    state: () => ({ connections: { activeId: connectionState.activeId } }),
+    state: () => ({ connections: { windowBackendId: connectionState.activeId } }),
     dispatch: (action: { type: string }) => {
       connectionState.dispatched.push(action);
       return { ...action, promise: Promise.resolve(connectionState.syncState) };

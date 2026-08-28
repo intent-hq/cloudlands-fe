@@ -47,14 +47,14 @@ registerMockIpcHandler(BACKEND.SPAWN_SIDECAR, async () => {
 });
 
 /**
- * Atomic "Start local intentd" recovery (T22 review). Only the Electron main
- * process can switch the active backend and spawn the sidecar (ipcMain handler
- * in features/backend/main/backend.ipc.ts); in bridge-less builds and tests the
+ * Open-only "Open local" recovery. Only the Electron main process can spawn
+ * the sidecar and open the local backend's windows (ipcMain handler in
+ * features/backend/main/backend.ipc.ts); in bridge-less builds and tests the
  * mock router answers with the real handler's failure shape so the daemon-loss
  * UI surfaces the error instead of the invoke rejecting. Tests override via
  * `registerMockIpcHandler`.
  */
-registerMockIpcHandler(BACKEND.SWITCH_LOCAL_AND_SPAWN, async () => {
+registerMockIpcHandler(BACKEND.OPEN_LOCAL_AND_SPAWN, async () => {
   return {
     ok: false,
     spawned: false,

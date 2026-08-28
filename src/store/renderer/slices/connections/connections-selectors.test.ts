@@ -26,8 +26,6 @@ import {
   selectConnections,
   selectRemoteConnections,
   selectConnectionOpenStatus,
-  selectActiveConnectionId,
-  selectActiveConnection,
   selectCurrentConnectionId,
   selectCurrentConnection,
   selectConnectionStatus,
@@ -69,7 +67,7 @@ function stateWith(overrides: Partial<ConnectionsState>): StoreState {
 }
 
 describe('connections selectors', () => {
-  it('reads the list, active id, status, error and cert-mismatch', () => {
+  it('reads the list, window backend id, status, error and cert-mismatch', () => {
     const state = stateWith({
       connections: [LOCAL, REMOTE],
       activeId: 'remote-1',
@@ -79,7 +77,6 @@ describe('connections selectors', () => {
       certMismatch: null,
     });
     expect(selectConnections.select(state)).toEqual([LOCAL, REMOTE]);
-    expect(selectActiveConnectionId.select(state)).toBe('remote-1');
     expect(selectCurrentConnectionId.select(state)).toBe(LOCAL_CONNECTION_ID);
     expect(selectConnectionStatus.select(state)).toBe('error');
     expect(selectConnectionError.select(state)).toBe('boom');
@@ -91,24 +88,6 @@ describe('connections selectors', () => {
     expect(selectRemoteConnections.select(state)).toEqual([REMOTE]);
     expect(selectConnectionOpenStatus.select(state, REMOTE.id)).toBe('connected');
     expect(selectConnectionOpenStatus.select(state, 'missing')).toBe('not-open');
-  });
-
-  describe('selectActiveConnection', () => {
-    it('resolves the active record by id', () => {
-      const state = stateWith({ connections: [LOCAL, REMOTE], activeId: 'remote-1' });
-      expect(selectActiveConnection.select(state)).toEqual(REMOTE);
-    });
-
-    it('preserves an explicit blank accent on the selected record', () => {
-      const blank = { ...REMOTE, accent: null };
-      const state = stateWith({ connections: [LOCAL, blank], activeId: blank.id });
-      expect(selectActiveConnection.select(state)?.accent).toBeNull();
-    });
-
-    it('returns null when the active id is not in the list (e.g. before load)', () => {
-      const state = stateWith({ connections: [], activeId: LOCAL_CONNECTION_ID });
-      expect(selectActiveConnection.select(state)).toBeNull();
-    });
   });
 
   describe('current-window connection selectors', () => {
