@@ -25,8 +25,8 @@ import {
   ensureProvidersChecked,
 } from '../../agent-availability/agent-availability-slice';
 import {
-  selectActiveConnection,
-  selectActiveConnectionId,
+  selectCurrentConnection,
+  selectCurrentConnectionId,
 } from '../../connections/connections-selectors';
 import {
   selectWorkspaceHasLoaded,
@@ -108,8 +108,8 @@ export function* evaluateSetupStateWorker() {
     });
   }
 
-  const connection = yield* selectActiveConnection.effect();
-  const connectionId = yield* selectActiveConnectionId.effect();
+  const connection = yield* selectCurrentConnection.effect();
+  const connectionId = yield* selectCurrentConnectionId.effect();
   const workspaceCount = (yield* selectWorkspaceItems.effect()).length;
   const statusMap = yield* selectProviderStatusMap.effect();
 

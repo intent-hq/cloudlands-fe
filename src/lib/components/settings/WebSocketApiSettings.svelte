@@ -40,7 +40,7 @@
   import { toast } from '$lib/components/ui/toast';
   import { appClient } from '$lib/client';
   import { m } from '$shared/paraglide/messages.js';
-  import { selectActiveConnectionId } from '$store/renderer/slices/connections/connections-selectors';
+  import { selectCurrentConnectionId } from '$store/renderer/slices/connections/connections-selectors';
   import { loadKeychainSyncStateRequested } from '$store/renderer/slices/connections/connections-slice';
   import { store as appStore } from '$store/renderer/store';
   import { IPC_CHANNELS } from '$shared/ipc-registry';
@@ -53,7 +53,7 @@
 
   const CONNECTIONS = IPC_CHANNELS.CONNECTIONS;
 
-  const activeConnectionId$ = selectActiveConnectionId();
+  const activeConnectionId$ = selectCurrentConnectionId();
   const isRemote = $derived($activeConnectionId$ !== LOCAL_CONNECTION_ID);
 
   let enabled = $state(false);

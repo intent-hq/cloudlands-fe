@@ -15,8 +15,7 @@ import type {
 import { initialState, connectionsReducer, protocolMismatchReceived } from './connections-slice';
 import {
   selectConnections,
-  selectActiveConnectionId,
-  selectActiveConnection,
+
   selectCurrentConnectionId,
   selectCurrentConnection,
   selectConnectionStatus,
@@ -56,7 +55,7 @@ function stateWith(overrides: Partial<ConnectionsState>): StoreState {
 }
 
 describe('connections selectors', () => {
-  it('reads the list, active id, status, error and cert-mismatch', () => {
+  it('reads the list, window backend id, status, error and cert-mismatch', () => {
     const state = stateWith({
       connections: [LOCAL, REMOTE],
       activeId: 'remote-1',
@@ -66,23 +65,10 @@ describe('connections selectors', () => {
       certMismatch: null,
     });
     expect(selectConnections.select(state)).toEqual([LOCAL, REMOTE]);
-    expect(selectActiveConnectionId.select(state)).toBe('remote-1');
     expect(selectCurrentConnectionId.select(state)).toBe(LOCAL_CONNECTION_ID);
     expect(selectConnectionStatus.select(state)).toBe('error');
     expect(selectConnectionError.select(state)).toBe('boom');
     expect(selectConnectionCertMismatch.select(state)).toBeNull();
-  });
-
-  describe('selectActiveConnection', () => {
-    it('resolves the active record by id', () => {
-      const state = stateWith({ connections: [LOCAL, REMOTE], activeId: 'remote-1' });
-      expect(selectActiveConnection.select(state)).toEqual(REMOTE);
-    });
-
-    it('returns null when the active id is not in the list (e.g. before load)', () => {
-      const state = stateWith({ connections: [], activeId: LOCAL_CONNECTION_ID });
-      expect(selectActiveConnection.select(state)).toBeNull();
-    });
   });
 
   describe('current-window connection selectors', () => {
