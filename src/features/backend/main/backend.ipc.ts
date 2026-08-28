@@ -1314,21 +1314,20 @@ let switchQueue: Promise<void> = Promise.resolve();
 
 /**
  * Run `fn` serialized with every backend switch (monorepo#2228). Beyond plain
- * switches, the `connections:forget` / `connections:add` handlers and
- * {@link switchToLocalAndSpawn} make read-decide-switch decisions on
- * `getActiveId()`; reading the active id OUTSIDE the queue and then
- * conditionally switching was a TOCTOU — a concurrent switch could land
- * between the read and the enqueued switch, making the decision stale (e.g.
- * forget's fall-back-to-local disconnecting a backend the user just selected).
- * Enqueuing the whole read-decide-switch sequence makes the decision atomic
- * with respect to switches.
+ * switches, the `connections:forget` / `connections:add` handlers make
+ * read-decide-switch decisions on `getActiveId()`; reading the active id
+ * OUTSIDE the queue and then conditionally switching was a TOCTOU — a
+ * concurrent switch could land between the read and the enqueued switch,
+ * making the decision stale (e.g. forget's fall-back-to-local disconnecting a
+ * backend the user just selected). Enqueuing the whole read-decide-switch
+ * sequence makes the decision atomic with respect to switches.
  *
  * Inside `fn`, perform switches by calling `performSwitchBackend` DIRECTLY —
- * anything that enqueues (calling {@link switchBackend},
- * {@link switchToLocalAndSpawn}, or a nested `enqueueSwitchOperation`) would
- * chain onto the queue tail behind the currently-running `fn` and
- * self-deadlock. The returned promise settles with `fn`'s outcome; a rejection
- * propagates to the caller but never poisons the queue (the tail swallows it).
+ * anything that enqueues (calling {@link switchBackend} or a nested
+ * `enqueueSwitchOperation`) would chain onto the queue tail behind the
+ * currently-running `fn` and self-deadlock. The returned promise settles with
+ * `fn`'s outcome; a rejection propagates to the caller but never poisons the
+ * queue (the tail swallows it).
  */
 function enqueueSwitchOperation<T>(fn: () => Promise<T>): Promise<T> {
   const result = switchQueue.then(fn);
@@ -1356,10 +1355,9 @@ function enqueueSwitchOperation<T>(fn: () => Promise<T>): Promise<T> {
  * (e.g. the user clicks a slow backend, then quickly clicks another) can never
  * interleave across the await points above. Serialization covers every entry
  * point — the `connections:switch` handler, the `connections:forget`
- * fall-back-to-local, the `connections:add` switch-to-itself, and
- * {@link switchToLocalAndSpawn} — the latter three enqueue their whole
- * read-decide-switch sequence so the `getActiveId()` decision cannot go stale
- * behind an in-flight switch (monorepo#2228).
+ * fall-back-to-local, and the `connections:add` switch-to-itself — the latter
+ * two enqueue their whole read-decide-switch sequence so the `getActiveId()`
+ * decision cannot go stale behind an in-flight switch (monorepo#2228).
  */
 export function switchBackend(id: string): Promise<SwitchConnectionResult> {
   return enqueueSwitchOperation(() => performSwitchBackend(id));
@@ -1480,9 +1478,10 @@ async function performSwitchBackend(id: string): Promise<SwitchConnectionResult>
  * On a successful spawn, re-broadcast the current status so the reconnect UI
  * updates while the JsonRpcClient's ≤5s reconnect loop picks up the new socket.
  *
- * Extracted from the `backend:spawn-sidecar` handler so {@link switchToLocalAndSpawn}
- * can reuse the exact same spawn semantics after flipping the active backend to
- * local (the switch makes the transport `uds`, so the guard then passes).
+ * Extracted from the `backend:spawn-sidecar` handler so {@link openLocalAndSpawn}
+ * can reuse the exact same spawn semantics before opening the local backend's
+ * windows (the always-on local pooled client keeps the `uds` transport, so the
+ * guard passes without any switch).
  */
 async function performSpawnSidecar(): Promise<{
   ok: boolean;
@@ -1598,48 +1597,51 @@ async function doPerformRestartOrphanedSidecar(): Promise<RestartOrphanedSidecar
   }
 }
 
+/** How long "Open local" keeps probing for the freshly spawned daemon. */
+const OPEN_LOCAL_PROBE_DEADLINE_MS = 15_000;
+/** Cadence between "Open local" probe retries while the daemon starts up. */
+const OPEN_LOCAL_PROBE_RETRY_MS = 500;
+
 /**
- * Atomic "Start local intentd" recovery from external/remote mode (T22 review):
- * switch the active backend to local AND spawn the app-managed sidecar in a
- * SINGLE main-process action.
+ * Open-only "Open local" recovery from a remote window's stopped overlay:
+ * spawn the app-managed sidecar (if needed) AND open/focus the local backend's
+ * windows in a SINGLE main-process action. Nothing retargets any existing
+ * window — the initiating remote window keeps its own (dead) backend and its
+ * overlay; the user lands in a local window alongside it.
  *
- * Why this must live wholly in main: {@link switchBackend} captures-and-closes
- * every window (destroying the renderer that initiated recovery) BEFORE the
- * switch IPC resolves, so a renderer that switched-to-local and then separately
- * dispatched the spawn could be torn down before the second step ran — leaving
- * the user on a fresh local window with intentd never started. Keeping both steps
- * here makes recovery independent of the initiating renderer's survival.
+ * Why this lives wholly in main: the two steps must complete even if the
+ * initiating renderer is closed mid-flight, and spawn-then-open belongs in one
+ * action so a fresh local window never opens against a socket nobody serves.
  *
- * Order matters: switch to local FIRST so the live transport becomes the local
- * UDS socket, THEN spawn — {@link performSpawnSidecar}'s uds guard only passes
- * once the switch has re-targeted the client. Already-local is a no-op switch
- * (just spawn), mirroring the renderer's prior guard. The active-id read and
- * the conditional switch are enqueued as ONE critical section so the no-op
- * decision cannot go stale behind a concurrent switch (monorepo#2228); the
- * spawn itself stays outside the queue.
+ * Order matters: spawn FIRST so the local UDS socket is (about to be) served,
+ * THEN open. `spawnSidecarOnDemand` resolves as soon as the child is forked —
+ * before the daemon binds the socket — and a connect attempt against an
+ * unserved socket rejects fast, so the open retries on a short cadence until
+ * the daemon answers the authenticated probe (or the deadline lapses). A spawn
+ * that reports a live daemon already on the socket (`spawned: false`) still
+ * proceeds to the open. The spawn's uds guard needs no switch: the always-on
+ * local pooled client is UDS-configured regardless of any window's backend.
  */
-export async function switchToLocalAndSpawn(): Promise<{
+export async function openLocalAndSpawn(): Promise<{
   ok: boolean;
   spawned: boolean;
   reason?: string;
   error?: unknown;
 }> {
-  try {
-    await enqueueSwitchOperation(async () => {
-      const activeId = await connectionsStore.getActiveId();
-      if (activeId !== LOCAL_CONNECTION_ID) {
-        await performSwitchBackend(LOCAL_CONNECTION_ID);
+  const spawnResult = await performSpawnSidecar();
+  if (!spawnResult.ok) return spawnResult;
+  const deadline = Date.now() + OPEN_LOCAL_PROBE_DEADLINE_MS;
+  for (;;) {
+    try {
+      await openBackendWindow(LOCAL_CONNECTION_ID);
+      return spawnResult;
+    } catch (error) {
+      if (Date.now() >= deadline) {
+        return { ...spawnResult, ok: false, error: toErrorPayload(error) };
       }
-    });
-  } catch (error) {
-    // A switch failure still lets us attempt the spawn (main may already be
-    // targeting local); surface nothing here — performSpawnSidecar reports its
-    // own outcome and the connections slice carries any switch error.
-    logger.warn('Switch to local before sidecar spawn failed; attempting spawn anyway', {
-      error: error instanceof Error ? error.message : String(error),
-    });
+      await new Promise((resolve) => setTimeout(resolve, OPEN_LOCAL_PROBE_RETRY_MS));
+    }
   }
-  return performSpawnSidecar();
 }
 
 /**
@@ -1793,9 +1795,9 @@ export function registerBackendHandlers(): void {
   // Kill-and-restart recovery for an orphaned sidecar (#2444).
   ipcMain.handle(BACKEND.RESTART_ORPHANED_SIDECAR, async () => performRestartOrphanedSidecar());
 
-  // Atomic recovery: switch active → local AND spawn the sidecar in one main-side
-  // action so it survives the initiating window's teardown during the switch.
-  ipcMain.handle(BACKEND.SWITCH_LOCAL_AND_SPAWN, async () => switchToLocalAndSpawn());
+  // Open-only recovery: spawn the sidecar (if needed) AND open/focus the local
+  // backend's windows in one main-side action; no window is retargeted.
+  ipcMain.handle(BACKEND.OPEN_LOCAL_AND_SPAWN, async () => openLocalAndSpawn());
 
   // Per-run sidecar log capture: the renderer's daemon-loss dialog offers to
   // show the captured stdout/stderr tail from the last sidecar run. The

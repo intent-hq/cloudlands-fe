@@ -23,9 +23,9 @@ import {
   heartbeatFailed,
   pollSystemStatus,
   pollUnslothStatus,
+  openLocalAndSpawnRequested,
   spawnSidecarFailed,
   spawnSidecarRequested,
-  switchLocalAndSpawnRequested,
   stopUnslothFailed,
   stopUnslothRequested,
   stopUnslothSucceeded,
@@ -72,9 +72,9 @@ async function invokeSpawnSidecar() {
     { ok: boolean; spawned: boolean; reason?: string; error?: { message?: string } } | undefined;
 }
 
-async function invokeSwitchLocalAndSpawn() {
+async function invokeOpenLocalAndSpawn() {
   if (!window.electronAPI) throw new Error('electronAPI is not available');
-  return (await window.electronAPI.invoke(BACKEND.SWITCH_LOCAL_AND_SPAWN)) as
+  return (await window.electronAPI.invoke(BACKEND.OPEN_LOCAL_AND_SPAWN)) as
     { ok: boolean; spawned: boolean; reason?: string; error?: { message?: string } } | undefined;
 }
 
@@ -310,9 +310,9 @@ function* spawnSidecarSaga() {
   }
 }
 
-function* switchLocalAndSpawnSaga() {
+function* openLocalAndSpawnSaga() {
   try {
-    const result = yield* call(invokeSwitchLocalAndSpawn);
+    const result = yield* call(invokeOpenLocalAndSpawn);
     if (!result?.ok) {
       yield* put(
         spawnSidecarFailed(
@@ -336,7 +336,7 @@ function* fetchSidecarRunLogSaga() {
 
 function* watchDaemonControls() {
   yield* takeEvery(spawnSidecarRequested, spawnSidecarSaga);
-  yield* takeEvery(switchLocalAndSpawnRequested, switchLocalAndSpawnSaga);
+  yield* takeEvery(openLocalAndSpawnRequested, openLocalAndSpawnSaga);
   yield* takeEvery(fetchSidecarRunLogRequested, fetchSidecarRunLogSaga);
   yield* takeLeading(stopUnslothRequested, stopUnslothSaga);
 }

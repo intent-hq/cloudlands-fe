@@ -20,13 +20,13 @@ import {
   fetchSidecarRunLogRequested,
   fetchSidecarRunLogSucceeded,
   heartbeatFailed,
+  openLocalAndSpawnRequested,
   pollUnslothStatus,
   spawnSidecarFailed,
   spawnSidecarRequested,
   stopUnslothFailed,
   stopUnslothRequested,
   systemStatusFailure,
-  switchLocalAndSpawnRequested,
 } from '../daemon-health-slice';
 import type { SystemStatusWirePayload } from '../daemon-health-types';
 import { daemonHealthSaga, pollSystemStatusSaga } from './daemon-health-saga';
@@ -598,19 +598,19 @@ describe('daemonHealthSaga', () => {
     ).toHaveLength(0);
   });
 
-  it('routes external recovery through the atomic switch-and-spawn channel', async () => {
+  it('routes remote-window recovery through the open-local-and-spawn channel', async () => {
     invoke.mockImplementation(async (channel: string) => {
       if (channel === BACKEND.GET_STATUS) return { status: 'connected' };
-      if (channel === BACKEND.SWITCH_LOCAL_AND_SPAWN) return { ok: true, spawned: true };
+      if (channel === BACKEND.OPEN_LOCAL_AND_SPAWN) return { ok: true, spawned: true };
       return undefined;
     });
     const { input, task } = startHealthSaga();
     await settle();
 
-    input.put(switchLocalAndSpawnRequested());
+    input.put(openLocalAndSpawnRequested());
     await settle();
 
-    expect(invoke).toHaveBeenCalledWith(BACKEND.SWITCH_LOCAL_AND_SPAWN);
+    expect(invoke).toHaveBeenCalledWith(BACKEND.OPEN_LOCAL_AND_SPAWN);
     task.cancel();
     await task.toPromise();
   });
