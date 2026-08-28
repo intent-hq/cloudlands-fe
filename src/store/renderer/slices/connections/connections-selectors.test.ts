@@ -113,21 +113,23 @@ describe('connections selectors', () => {
       statusCode: 401,
     };
 
-    it('surfaces the rejection only while the affected backend is active', () => {
-      const active = stateWith({
-        authRejected: AUTH_REJECTED,
-        activeId: 'remote-1',
-        windowBackendId: LOCAL_CONNECTION_ID,
-      });
-      expect(selectActiveAuthRejected.select(active)).toEqual(AUTH_REJECTED);
-
-      // A secondary window is bound to the rejected remote, but the primary stayed local.
-      const inactive = stateWith({
+    it('surfaces the rejection only in windows bound to the affected backend', () => {
+      // This window is bound to the rejected remote (even though the primary
+      // stayed local): surface the rejection here.
+      const boundToRejected = stateWith({
         authRejected: AUTH_REJECTED,
         activeId: LOCAL_CONNECTION_ID,
         windowBackendId: 'remote-1',
       });
-      expect(selectActiveAuthRejected.select(inactive)).toBeNull();
+      expect(selectActiveAuthRejected.select(boundToRejected)).toEqual(AUTH_REJECTED);
+
+      // This window is bound to local; another backend's rejection is not its problem.
+      const boundToLocal = stateWith({
+        authRejected: AUTH_REJECTED,
+        activeId: 'remote-1',
+        windowBackendId: LOCAL_CONNECTION_ID,
+      });
+      expect(selectActiveAuthRejected.select(boundToLocal)).toBeNull();
     });
 
     it('returns null when nothing is latched', () => {
@@ -144,22 +146,24 @@ describe('connections selectors', () => {
       remoteProtocolVersion: '2',
     };
 
-    it('surfaces the mismatch only while the affected backend is active', () => {
-      const active = stateWith({
-        protocolMismatch: PROTOCOL_MISMATCH,
-        activeId: 'remote-1',
-        windowBackendId: LOCAL_CONNECTION_ID,
-      });
-      expect(selectActiveProtocolMismatch.select(active)).toEqual(PROTOCOL_MISMATCH);
-
-      // A secondary window is bound to the mismatched remote, but the primary stayed local.
-      const inactive = stateWith({
+    it('surfaces the mismatch only in windows bound to the affected backend', () => {
+      // This window is bound to the mismatched remote (even though the primary
+      // stayed local): surface the mismatch here.
+      const boundToMismatched = stateWith({
         protocolMismatch: PROTOCOL_MISMATCH,
         activeId: LOCAL_CONNECTION_ID,
         windowBackendId: 'remote-1',
       });
-      expect(selectActiveProtocolMismatch.select(inactive)).toBeNull();
-      expect(selectProtocolMismatchModal.select(inactive)).toBeNull();
+      expect(selectActiveProtocolMismatch.select(boundToMismatched)).toEqual(PROTOCOL_MISMATCH);
+
+      // This window is bound to local; another backend's mismatch is not its problem.
+      const boundToLocal = stateWith({
+        protocolMismatch: PROTOCOL_MISMATCH,
+        activeId: 'remote-1',
+        windowBackendId: LOCAL_CONNECTION_ID,
+      });
+      expect(selectActiveProtocolMismatch.select(boundToLocal)).toBeNull();
+      expect(selectProtocolMismatchModal.select(boundToLocal)).toBeNull();
     });
 
     it('shows the modal only when active and not yet dismissed', () => {
@@ -185,7 +189,7 @@ describe('connections selectors', () => {
     it('boot-origin mismatch keeps the menu warning but never shows the modal', () => {
       const event: ConnectionProtocolMismatchEvent = { ...PROTOCOL_MISMATCH, origin: 'boot' };
       const connections = connectionsReducer(
-        { ...initialState, activeId: 'remote-1', windowBackendId: LOCAL_CONNECTION_ID },
+        { ...initialState, activeId: 'remote-1', windowBackendId: 'remote-1' },
         protocolMismatchReceived(event),
       );
       const state = stateWith(connections);
@@ -196,7 +200,7 @@ describe('connections selectors', () => {
     it('switch-origin mismatch shows the modal until dismissed (unchanged behavior)', () => {
       const event: ConnectionProtocolMismatchEvent = { ...PROTOCOL_MISMATCH, origin: 'switch' };
       const connections = connectionsReducer(
-        { ...initialState, activeId: 'remote-1', windowBackendId: LOCAL_CONNECTION_ID },
+        { ...initialState, activeId: 'remote-1', windowBackendId: 'remote-1' },
         protocolMismatchReceived(event),
       );
       const state = stateWith(connections);

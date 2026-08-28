@@ -2,9 +2,15 @@
  * Terminal IPC Handler
  *
  * Routes every terminal spawn through the daemon's `terminal.*` RPC surface
- * (PROTOCOL §5.13) via `getBackendClient()`. Local `node-pty` /
- * `child_process` spawning has been retired — the daemon owns the PTY host,
- * including for remote workspaces (the daemon runs on the remote host).
+ * (PROTOCOL §5.13). Local `node-pty` / `child_process` spawning has been
+ * retired — the daemon owns the PTY host, including for remote workspaces
+ * (the daemon runs on the remote host).
+ *
+ * Backend policy: per-backend. Every terminal is stamped with the backend id
+ * of the sender that created it, and all subsequent RPCs (`terminal.write`,
+ * `terminal.resize`, `terminal.kill`, resubscribe) resolve that id via
+ * `getBackendClientForId` — fail-closed when that backend has no live
+ * pooled client, never retargeting the primary.
  *
  * The renderer IPC contract on `TERMINAL_CHANNELS.*` is preserved: request /
  * response shapes, buffered-output replay, and the terminal:* Redux domain
@@ -44,10 +50,8 @@ import {
   terminalCreated,
 } from '../../../store/main/slices/terminal-events/terminal-events-slice';
 import {
-  getBackendClient,
-  getBackendClientForConnection,
+  getBackendClientForId,
   getBackendIdForIpcSender,
-  getPrimaryBackendId,
   onBackendNotification,
   onBackendReconnected,
 } from '../../backend/main/backend.ipc';
@@ -138,11 +142,8 @@ async function getWorkspaceInfo(
   return {};
 }
 
-function getClientForBackend(backendId: string): ReturnType<typeof getBackendClient> {
-  const pooled = getBackendClientForConnection(backendId);
-  if (pooled) return pooled;
-  if (backendId === getPrimaryBackendId()) return getBackendClient();
-  throw new Error(`backend client is not connected: ${backendId}`);
+function getClientForBackend(backendId: string): ReturnType<typeof getBackendClientForId> {
+  return getBackendClientForId(backendId);
 }
 
 function ensureDirectoryExists(dirPath: string): string | null {
@@ -373,7 +374,7 @@ class DaemonTerminalRegistry {
     await this.doSubscribe(client);
   }
 
-  private async doSubscribe(client: ReturnType<typeof getBackendClient>): Promise<void> {
+  private async doSubscribe(client: ReturnType<typeof getBackendClientForId>): Promise<void> {
     try {
       const result = await client.request<{ subscriptionId?: string }>('events.subscribe', {
         eventTypes: ['terminal:data', 'terminal:exit'],

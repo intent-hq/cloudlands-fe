@@ -313,6 +313,7 @@ import { setupReleaseNotesIPC } from '../features/release-notes/main/release-not
 import { isInstallingUpdate } from '../features/auto-update/main/auto-update.service';
 import {
   registerBackendHandlers,
+  disconnectBackendClient,
   disposeBackendClient,
   getBackendClient,
   isSameHostBackendActive,
@@ -380,6 +381,7 @@ import {
   isBackendSwitchWindowTeardownInProgress,
   loadWindowSessions,
   saveAllWindowSessions,
+  setOnLastWindowClosedForBackend,
   stampWindowWithBackend,
 } from './window.js';
 import {
@@ -586,6 +588,16 @@ app.whenReady().then(async () => {
     if (sessionSaveTimeout) clearTimeout(sessionSaveTimeout);
     sessionSaveTimeout = setTimeout(() => void saveOpenWindowSessions(), 1000);
   };
+
+  // Dispose a non-local backend's pooled client when its last window is
+  // explicitly closed (window.ts already excludes local and the switch
+  // teardown path). Guard against the quit flow: before-quit closes every
+  // window, and per-backend disposal there would race gracefulShutdown()'s
+  // own client teardown.
+  setOnLastWindowClosedForBackend((backendId) => {
+    if (isShuttingDown) return;
+    disconnectBackendClient(backendId);
+  });
 
   app.on('browser-window-created', (_event: Electron.Event, window: BrowserWindowType) => {
     stampWindowWithBackend(window);

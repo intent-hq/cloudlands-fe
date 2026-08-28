@@ -211,7 +211,7 @@ export const setKeychainSyncEnabledRequested = createAsyncAction<
 
 export const connectionsReducer = createReducer<ConnectionsState>(initialState);
 connectionsReducer.with(connectionsListReceived, (state, { payload: [result] }) => {
-  return {
+  const next: ConnectionsState = {
     ...state,
     connections: createCollection<ConnectionRecord, 'id'>('id', result.connections),
     activeId: result.activeId,
@@ -223,6 +223,25 @@ connectionsReducer.with(connectionsListReceived, (state, { payload: [result] }) 
     // Same older-main tolerance for live connectivity.
     connectedIds: result.connectedIds !== undefined ? result.connectedIds : state.connectedIds,
   };
+  // Sync the per-window sticky latches when the payload carries them: `null`
+  // clears (e.g. main disconnected/rebuilt the window's backend client, so the
+  // old rejection no longer applies), an event replays the latch. Absent fields
+  // (older payload shape) leave the latched state untouched.
+  if (result.authRejected !== undefined) {
+    next.authRejected = result.authRejected;
+  }
+  if (result.protocolMismatch !== undefined) {
+    next.protocolMismatch = result.protocolMismatch;
+    if (result.protocolMismatch === null) {
+      next.protocolMismatchModalDismissed = false;
+    } else if (result.protocolMismatch.id !== state.protocolMismatch?.id) {
+      // A fresh mismatch replayed via the list gets the same modal semantics
+      // as the one-shot push; re-replays of the already-stored mismatch keep
+      // the user's dismissal.
+      next.protocolMismatchModalDismissed = result.protocolMismatch.origin === 'boot';
+    }
+  }
+  return next;
 });
 connectionsReducer.with(connectOperationStarted, (state) => {
   // A fresh add/switch clears the auth-rejected latch: a re-add refreshes the

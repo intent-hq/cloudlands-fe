@@ -4,6 +4,32 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.102.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.101.4...v2.102.0) (2026-08-28)
+
+
+### 🚀 Features
+
+* **backend:** dispose pooled client on last window close ([#1788](https://github.com/intent-hq/cloudlands-fe/issues/1788)) ([732ef75](https://github.com/intent-hq/cloudlands-fe/commit/732ef7523393d36d13730fe4ae0d73f3684b50ef))
+* **backend:** per-backend cert/auth/protocol-mismatch wiring on pooled clients ([#1798](https://github.com/intent-hq/cloudlands-fe/issues/1798)) ([b4a4d47](https://github.com/intent-hq/cloudlands-fe/commit/b4a4d4743144f1cdd9cde50eaf7bee5a00be0e7f))
+* bind the HUD to the opener's backend (per-backend HUD singleton) ([#1786](https://github.com/intent-hq/cloudlands-fe/issues/1786)) ([b54f146](https://github.com/intent-hq/cloudlands-fe/commit/b54f1461bfc40e8363c5333f4b6dbc7fb558d036))
+
+
+### 🐛 Bug Fixes
+
+* migrate primary-keyed main-process services to per-backend/local-only routing ([#1790](https://github.com/intent-hq/cloudlands-fe/issues/1790)) ([5578679](https://github.com/intent-hq/cloudlands-fe/commit/55786795a6db9850b0cbba4e0d9667f89883ccab))
+
+
+### ⚡ Performance
+
+* preserve workspace sessions across tab focus ([#1802](https://github.com/intent-hq/cloudlands-fe/issues/1802)) ([befa89d](https://github.com/intent-hq/cloudlands-fe/commit/befa89ddbe907e8c286f5905b4b6533000e609a8))
+
+## [2.101.4](https://github.com/intent-hq/cloudlands-fe/compare/v2.101.3...v2.101.4) (2026-08-28)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.8.10 ([#1800](https://github.com/intent-hq/cloudlands-fe/issues/1800)) ([a0376ef](https://github.com/intent-hq/cloudlands-fe/commit/a0376efea30b226006377deafb98be8eb7bbc1e4))
+
 ## [2.101.3](https://github.com/intent-hq/cloudlands-fe/compare/v2.101.2...v2.101.3) (2026-08-27)
 
 

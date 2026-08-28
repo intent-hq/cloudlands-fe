@@ -161,14 +161,67 @@ describe('HUD window singleton via WINDOW.OPEN_NEW', () => {
     },
   );
 
-  it.each(['/hud', '/workspace/__chief__'])(
-    'keeps the local-only %s route on the local backend',
-    async (route) => {
-      await handlerFor(WINDOW_CHANNELS.OPEN_NEW)({ sender: { backendId: 'remote-a' } }, { route });
+  it('binds the HUD to the opener backend (no longer forced local)', async () => {
+    await handlerFor(WINDOW_CHANNELS.OPEN_NEW)(
+      { sender: { backendId: 'remote-a' } },
+      { route: '/hud' },
+    );
 
-      expect(electronMocks.constructed[0].backendId).toBe('local');
-    },
-  );
+    expect(electronMocks.constructed[0].backendId).toBe('remote-a');
+  });
+
+  it('keeps the local-only chief route on the local backend', async () => {
+    await handlerFor(WINDOW_CHANNELS.OPEN_NEW)(
+      { sender: { backendId: 'remote-a' } },
+      { route: '/workspace/__chief__' },
+    );
+
+    expect(electronMocks.constructed[0].backendId).toBe('local');
+  });
+
+  it('openers on different backends each get their own HUD; same backend reuses', async () => {
+    const openNew = handlerFor(WINDOW_CHANNELS.OPEN_NEW);
+    const localFirst = (await openNew({ sender: { backendId: 'local' } }, { route: '/hud' })) as {
+      windowId: number;
+    };
+    const remoteFirst = (await openNew(
+      { sender: { backendId: 'remote-a' } },
+      { route: '/hud' },
+    )) as { windowId: number };
+    expect(electronMocks.constructed).toHaveLength(2);
+    expect(remoteFirst.windowId).not.toBe(localFirst.windowId);
+
+    const localAgain = (await openNew({ sender: { backendId: 'local' } }, { route: '/hud' })) as {
+      windowId: number;
+    };
+    const remoteAgain = (await openNew(
+      { sender: { backendId: 'remote-a' } },
+      { route: '/hud' },
+    )) as { windowId: number };
+    expect(electronMocks.constructed).toHaveLength(2);
+    expect(localAgain.windowId).toBe(localFirst.windowId);
+    expect(remoteAgain.windowId).toBe(remoteFirst.windowId);
+  });
+
+  it('closing one backend HUD does not disturb the other backend HUD', async () => {
+    const openNew = handlerFor(WINDOW_CHANNELS.OPEN_NEW);
+    await openNew({ sender: { backendId: 'local' } }, { route: '/hud' });
+    const remote = (await openNew({ sender: { backendId: 'remote-a' } }, { route: '/hud' })) as {
+      windowId: number;
+    };
+    electronMocks.constructed[0]._close();
+
+    const localFresh = (await openNew({ sender: { backendId: 'local' } }, { route: '/hud' })) as {
+      windowId: number;
+    };
+    const remoteReused = (await openNew(
+      { sender: { backendId: 'remote-a' } },
+      { route: '/hud' },
+    )) as { windowId: number };
+    expect(electronMocks.constructed).toHaveLength(3);
+    expect(localFresh.windowId).toBe(electronMocks.constructed[2].id);
+    expect(remoteReused.windowId).toBe(remote.windowId);
+  });
 
   it('WINDOW.CREATE funnels through the same singleton as OPEN_NEW', async () => {
     await handlerFor(WINDOW_CHANNELS.OPEN_NEW)({ sender: {} }, { route: '/hud' });

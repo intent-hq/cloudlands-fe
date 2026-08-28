@@ -121,6 +121,7 @@ vi.mock('../utils/resolve-app-title', () => ({
   resolveAppTitle: () => 'Intent',
 }));
 
+import { _resetHudWindowRefForTests, isTrackedHudWindow } from '../hud-window';
 import {
   _resetWindowSessionsCacheForTests,
   captureWindowSessionsSnapshot,
@@ -139,6 +140,7 @@ import {
   restoreWindowsForBackend,
   saveAllWindowSessions,
   saveWindowSessions,
+  setOnLastWindowClosedForBackend,
   type WindowSession,
 } from '../window';
 
@@ -167,6 +169,7 @@ describe('multi-backend window sessions', () => {
     FakeBrowserWindow.instances = [];
     FakeBrowserWindow.focused = null;
     _resetWindowSessionsCacheForTests();
+    _resetHudWindowRefForTests();
   });
 
   describe('per-backend save/restore', () => {
@@ -254,6 +257,89 @@ describe('multi-backend window sessions', () => {
       );
       expect(remoteWindows).toHaveLength(1);
       expect(remoteWindows[0].webContents.getURL()).not.toContain('/work/closed');
+    });
+  });
+
+  describe('pooled client disposal on last window close', () => {
+    it('disposes the remote client when its last window is explicitly closed', () => {
+      const disposer = vi.fn();
+      setOnLastWindowClosedForBackend(disposer);
+      seedLiveWindow('app://workspaces/work/local', undefined, 'local');
+      const remote = seedLiveWindow('app://workspaces/work/remote', undefined, 'remote-1');
+
+      captureWindowSessionsSnapshot.call(remote as never);
+      remote.destroy();
+
+      expect(disposer).toHaveBeenCalledTimes(1);
+      expect(disposer).toHaveBeenCalledWith('remote-1');
+    });
+
+    it('does not dispose while another window of the same backend survives', () => {
+      const disposer = vi.fn();
+      setOnLastWindowClosedForBackend(disposer);
+      seedLiveWindow('app://workspaces/work/local', undefined, 'local');
+      const remoteA = seedLiveWindow('app://workspaces/work/a', undefined, 'remote-1');
+      seedLiveWindow('app://workspaces/work/b', undefined, 'remote-1');
+
+      captureWindowSessionsSnapshot.call(remoteA as never);
+      remoteA.destroy();
+
+      expect(disposer).not.toHaveBeenCalled();
+    });
+
+    it('never disposes the local backend (sidecar management stays alive)', () => {
+      const disposer = vi.fn();
+      setOnLastWindowClosedForBackend(disposer);
+      const local = seedLiveWindow('app://workspaces/work/local', undefined, 'local');
+      seedLiveWindow('app://workspaces/work/remote', undefined, 'remote-1');
+
+      captureWindowSessionsSnapshot.call(local as never);
+      local.destroy();
+
+      expect(disposer).not.toHaveBeenCalled();
+    });
+
+    it('does not dispose on a whole-process last-window close (quit path)', () => {
+      // No surviving backend → this is window-all-closed / quit territory, not
+      // a per-backend close; gracefulShutdown() owns client teardown there.
+      const disposer = vi.fn();
+      setOnLastWindowClosedForBackend(disposer);
+      const remote = seedLiveWindow('app://workspaces/work/remote', undefined, 'remote-1');
+
+      captureWindowSessionsSnapshot.call(remote as never);
+      remote.destroy();
+
+      expect(disposer).not.toHaveBeenCalled();
+    });
+
+    it('does not dispose during a backend-switch window teardown', async () => {
+      const disposer = vi.fn();
+      setOnLastWindowClosedForBackend(disposer);
+      seedLiveWindow('app://workspaces/work/local', undefined, 'local');
+      const remote = seedLiveWindow('app://workspaces/work/remote', undefined, 'remote-1');
+
+      await captureAndCloseWindowsForBackendSwitch('local');
+      expect(isBackendSwitchWindowTeardownInProgress()).toBe(true);
+      // A close event landing mid-teardown must not dispose the client.
+      captureWindowSessionsSnapshot.call(remote as never);
+      remote.destroy();
+      clearBackendSwitchWindowTeardownGuard();
+
+      expect(disposer).not.toHaveBeenCalled();
+    });
+
+    it('a throwing disposer still records the closed-backend tombstone', async () => {
+      setOnLastWindowClosedForBackend(() => {
+        throw new Error('dispose failed');
+      });
+      seedLiveWindow('app://workspaces/work/local', undefined, 'local');
+      const remote = seedLiveWindow('app://workspaces/work/closed', undefined, 'remote-1');
+      await saveAllWindowSessions();
+
+      expect(() => captureWindowSessionsSnapshot.call(remote as never)).not.toThrow();
+      remote.destroy();
+
+      expect(loadWindowSessions('remote-1')).toBeNull();
     });
   });
 
@@ -351,7 +437,7 @@ describe('multi-backend window sessions', () => {
       expect(getBackendIdForWebContents({} as never)).toBe('local');
     });
 
-    it('always stamps a restored HUD window as local', () => {
+    it('stamps a restored HUD window with its saved backend bucket (not forced local)', () => {
       const bounds = { x: 100, y: 100, width: 1024, height: 768 };
       fs.writeFileSync(
         getWindowSessionsPath(),
@@ -362,7 +448,33 @@ describe('multi-backend window sessions', () => {
       restoreWindowsForBackend('remote-a');
 
       const [window] = FakeBrowserWindow.getAllWindows();
-      expect(getBackendIdForWebContents(window.webContents as never)).toBe('local');
+      expect(getBackendIdForWebContents(window.webContents as never)).toBe('remote-a');
+    });
+
+    it('registers a restored /hud session in the tracked HUD registry', () => {
+      const bounds = { x: 100, y: 100, width: 1024, height: 768 };
+      fs.writeFileSync(
+        getWindowSessionsPath(),
+        JSON.stringify({
+          'remote-a': [
+            { route: '/hud', bounds },
+            { route: '/work/remote', bounds },
+          ],
+        }),
+        'utf-8',
+      );
+
+      restoreWindowsForBackend('remote-a');
+
+      // The /hud window is tracked immediately (before its URL loads), so a
+      // concurrent open-HUD request cannot create a duplicate during restore;
+      // the plain window is not.
+      const live = FakeBrowserWindow.getAllWindows();
+      expect(live).toHaveLength(2);
+      const hud = live.find((w) => w.webContents.getURL().includes('/hud'));
+      const plain = live.find((w) => !w.webContents.getURL().includes('/hud'));
+      expect(isTrackedHudWindow(hud as never)).toBe(true);
+      expect(isTrackedHudWindow(plain as never)).toBe(false);
     });
 
     it('restores the incoming backend layout', () => {

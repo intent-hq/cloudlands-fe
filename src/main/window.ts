@@ -23,26 +23,17 @@ const logger = new Logger('Main');
 
 // ---- Shared Window Helpers ----
 
-type BackendBoundWindow = BrowserWindowType & { backendId?: string };
+// Backend stamping lives in the dependency-light window-backend.ts (so
+// hud-window.ts and other small modules can read stamps without this
+// module's graph); re-exported here for the existing import sites.
+import { HUD_ROUTE_PREFIX, registerHudWindow } from './hud-window';
+import {
+  getBackendIdForWebContents,
+  getBackendIdForWindow,
+  stampWindowWithBackend,
+} from './window-backend';
 
-/** Stamp a BrowserWindow with the backend used by its renderer. */
-export function stampWindowWithBackend(
-  window: BrowserWindowType,
-  backendId: string = LOCAL_CONNECTION_ID,
-): void {
-  (window as BackendBoundWindow).backendId = backendId;
-}
-
-/** Resolve a BrowserWindow's backend, defaulting legacy/unbound windows to local. */
-export function getBackendIdForWindow(window: BrowserWindowType): string {
-  return (window as BackendBoundWindow).backendId ?? LOCAL_CONNECTION_ID;
-}
-
-/** Resolve an IPC sender's backend, defaulting unbound windows to local. */
-export function getBackendIdForWebContents(webContents: Electron.WebContents): string {
-  const window = BrowserWindow.fromWebContents(webContents) as BackendBoundWindow | null;
-  return window ? getBackendIdForWindow(window) : LOCAL_CONNECTION_ID;
-}
+export { getBackendIdForWebContents, getBackendIdForWindow, stampWindowWithBackend };
 
 /** The focused window's backend; falls back to the main window, then local. */
 export function getFocusedWindowBackendId(): string {
@@ -285,6 +276,20 @@ let lastKnownSessions: WindowSessionsMap = {};
 // on-disk bucket cannot be restored before the next aggregate save removes it.
 const closedBackendSessions = new Set<string>();
 
+// Invoked when a non-local backend's last window is explicitly closed while
+// another backend's windows survive, so its pooled JSON-RPC client (socket,
+// reconnect timers, subscriptions) can be disposed. Registered by index.ts —
+// which wraps the quit guard around disconnectBackendClient() — so window.ts
+// never imports the backend IPC module graph.
+type LastWindowClosedForBackendHandler = (backendId: string) => void;
+let onLastWindowClosedForBackend: LastWindowClosedForBackendHandler | null = null;
+
+export function setOnLastWindowClosedForBackend(
+  handler: LastWindowClosedForBackendHandler | null,
+): void {
+  onLastWindowClosedForBackend = handler;
+}
+
 function buildSessionsFromOpenWindows(backendId: string): WindowSession[] {
   return BrowserWindow.getAllWindows()
     .filter((w: BrowserWindowType) => {
@@ -346,6 +351,19 @@ export function captureWindowSessionsSnapshot(this: BrowserWindowType | void): v
       if (isLastForBackend && hasSurvivingBackend) {
         closedBackendSessions.add(closingBackendId);
         delete lastKnownSessions[closingBackendId];
+        // Explicit last-window close for this backend: dispose its pooled
+        // client so no socket or reconnect timer keeps dialing a daemon with
+        // no windows left ("Open" reconnects on demand). Local is exempt —
+        // the sidecar management must stay alive. The switch teardown
+        // destroy()s windows (no `close` event), so the guard below is
+        // belt-and-braces while that path still exists.
+        if (closingBackendId !== LOCAL_CONNECTION_ID && !backendSwitchWindowTeardownInProgress) {
+          try {
+            onLastWindowClosedForBackend?.(closingBackendId);
+          } catch (err) {
+            logger.warn('Failed to dispose backend client on last window close:', err);
+          }
+        }
       }
     }
   } catch (err) {
@@ -447,6 +465,7 @@ export function _resetWindowSessionsCacheForTests(): void {
   clearWindowSessionsSnapshot();
   closedBackendSessions.clear();
   backendSwitchWindowTeardownInProgress = false;
+  onLastWindowClosedForBackend = null;
 }
 
 // True between captureAndCloseWindowsForBackendSwitch() destroying every
@@ -526,10 +545,16 @@ export function createWindowForSession(
   const window = new BrowserWindow(
     buildWindowOptions({ bounds, title: resolveAppTitle(), iconPath }),
   );
-  stampWindowWithBackend(
-    window,
-    session.route.startsWith('/hud') ? LOCAL_CONNECTION_ID : backendId,
-  );
+  // A restored HUD session keeps its saved backend bucket — the HUD is bound
+  // to the backend it was opened on, not forced to local. Register it as THE
+  // HUD for that backend right away (stamp first — the registry keys off the
+  // stamp): its URL is still loading during startup restore, so the URL-scan
+  // fallback would miss it and a concurrent open-HUD request could create a
+  // duplicate.
+  stampWindowWithBackend(window, backendId);
+  if (session.route.startsWith(HUD_ROUTE_PREFIX)) {
+    registerHudWindow(window);
+  }
   forwardRendererConsoleToMainLog(window);
 
   if (setAsMain) {

@@ -63,37 +63,39 @@ export const selectConnectionCertMismatch = store.createSelector(
 );
 
 /**
- * Auth rejection for the currently-active backend, or null. The backend
- * rejected the WebSocket upgrade with HTTP 401/403 (bad/rotated token, or the
- * WS API is disabled). Gated on the active connection id so switching backends
- * hides the state without an explicit clear. Drives the actionable "token
- * rejected — re-pair" posture of the daemon-loss overlay.
+ * Auth rejection for THIS WINDOW'S backend, or null. The backend rejected the
+ * WebSocket upgrade with HTTP 401/403 (bad/rotated token, or the WS API is
+ * disabled). Gated on the window's own connection id so a window bound to a
+ * pooled backend surfaces its own rejection and switching backends hides the
+ * state without an explicit clear. Drives the actionable "token rejected —
+ * re-pair" posture of the daemon-loss overlay.
  */
 export const selectActiveAuthRejected = store.createSelector((state) => {
-  const { authRejected, activeId } = state.connections;
-  return authRejected && authRejected.id === activeId ? authRejected : null;
+  const { authRejected, windowBackendId } = state.connections;
+  return authRejected && authRejected.id === windowBackendId ? authRejected : null;
 });
 
 /**
- * Protocol mismatch for the currently-active backend, or null. Gated on the
- * active connection id so switching back to local (or to a compatible remote)
- * hides the warning without an explicit clear. Drives the persistent
- * daemon-status menu warning.
+ * Protocol mismatch for THIS WINDOW'S backend, or null. Gated on the window's
+ * own connection id so a window bound to a pooled backend surfaces its own
+ * mismatch, and switching back to local (or to a compatible remote) hides the
+ * warning without an explicit clear. Drives the persistent daemon-status menu
+ * warning.
  */
 export const selectActiveProtocolMismatch = store.createSelector((state) => {
-  const { protocolMismatch, activeId } = state.connections;
-  return protocolMismatch && protocolMismatch.id === activeId ? protocolMismatch : null;
+  const { protocolMismatch, windowBackendId } = state.connections;
+  return protocolMismatch && protocolMismatch.id === windowBackendId ? protocolMismatch : null;
 });
 
 /**
  * Protocol mismatch that should surface the advisory modal, or null. Same
- * active-backend gating as {@link selectActiveProtocolMismatch}, plus the modal must
+ * own-backend gating as {@link selectActiveProtocolMismatch}, plus the modal must
  * not have been dismissed for this mismatch (warn-but-allow — dismissing keeps
  * the connection and the persistent menu warning).
  */
 export const selectProtocolMismatchModal = store.createSelector((state) => {
-  const { protocolMismatch, activeId, protocolMismatchModalDismissed } = state.connections;
-  if (!protocolMismatch || protocolMismatch.id !== activeId) return null;
+  const { protocolMismatch, windowBackendId, protocolMismatchModalDismissed } = state.connections;
+  if (!protocolMismatch || protocolMismatch.id !== windowBackendId) return null;
   return protocolMismatchModalDismissed ? null : protocolMismatch;
 });
 
