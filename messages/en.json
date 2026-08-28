@@ -5905,6 +5905,7 @@
   "layout_daemonStatus_updateUnsupported_toast": "This backend's intentd is too old to accept remote update requests. Update it manually on its machine.",
   "layout_daemonStatus_updateNotConnected_toast": "Not connected to this backend — connect to it before requesting an update.",
   "layout_daemonStatus_updateFailed_toast": "The backend could not start the update: {message}",
+  "layout_daemonStatus_updateRequestError_toast": "Could not send the update request. Please try again.",
   "layout_daemonStatus_forget_action": "Forget",
   "layout_daemonStatus_forgetConfirm_title": "Forget Backend",
   "layout_daemonStatus_forgetConfirm_description": "“{name}” will be removed from this machine's saved connections.",

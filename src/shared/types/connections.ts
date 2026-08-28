@@ -263,11 +263,9 @@ export interface UpdateBackendParams {
  *                          sitter-supervised, non-unix host); `message`
  *                          carries the daemon's error text.
  */
-export interface UpdateBackendResult {
-  ok: boolean;
-  reason?: 'not-connected' | 'unsupported' | 'failed';
-  message?: string;
-}
+export type UpdateBackendResult =
+  | { ok: true }
+  | { ok: false; reason: 'not-connected' | 'unsupported' | 'failed'; message?: string };
 
 // ============================================================================
 // Push-event payloads (main → renderer)

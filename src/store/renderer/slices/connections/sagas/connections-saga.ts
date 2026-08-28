@@ -7,6 +7,7 @@ import {
   join,
   put,
   take,
+  takeEvery,
   takeLeading,
   type SagaGenerator,
 } from 'typed-redux-saga';
@@ -191,6 +192,19 @@ async function showUpdateBackendToast(result: UpdateBackendResult): Promise<void
   }
 }
 
+/**
+ * Generic toast for an IPC-level update failure (validation, bridge
+ * unavailable) — internal error text like "electronAPI is not available" is
+ * not user-oriented, unlike daemon-side 'failed' messages.
+ */
+async function showUpdateBackendRequestErrorToast(): Promise<void> {
+  const [{ toast }, { m }] = await Promise.all([
+    import('svelte-sonner'),
+    import('$shared/paraglide/messages.js'),
+  ]);
+  toast.error(m.layout_daemonStatus_updateRequestError_toast());
+}
+
 async function invokeSyncGetState(): Promise<KeychainSyncStateResult> {
   const api = getApi();
   if (!api) throw new Error('electronAPI is not available');
@@ -342,8 +356,7 @@ function* updateBackend(action: ReturnType<typeof updateBackendRequested>): Saga
     // An IPC-level failure (validation, bridge unavailable) — daemon-side
     // failures come back as structured non-ok results, not throws.
     const resolved = toError(error);
-    const failure: UpdateBackendResult = { ok: false, reason: 'failed', message: resolved.message };
-    yield* call(showUpdateBackendToast, failure);
+    yield* call(showUpdateBackendRequestErrorToast);
     yield* put(action.failure(resolved));
     settled = true;
   } finally {
@@ -412,7 +425,11 @@ function* watchConnectionsActions(): SagaGenerator<void> {
     takeLeading(openConnectionRequested, openConnection),
     takeLeading(forgetConnectionRequested, forgetConnection),
     takeLeading(switchConnectionRequested, switchConnection),
-    takeLeading(updateBackendRequested, updateBackend),
+    // takeEvery, not takeLeading: each action targets one backend id, and
+    // multiple connected remotes can be updated back-to-back — takeLeading
+    // would drop the second action, leaving its promise unresolved and the
+    // user without a toast.
+    takeEvery(updateBackendRequested, updateBackend),
     takeLeading(loadKeychainSyncStateRequested, loadKeychainSyncState),
     takeLeading(setKeychainSyncEnabledRequested, setKeychainSyncEnabled),
   ]);

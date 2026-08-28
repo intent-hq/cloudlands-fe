@@ -5905,6 +5905,7 @@
   "layout_daemonStatus_updateUnsupported_toast": "此後端的 intentd 版本過舊，無法接受遠端更新要求。請在其所在機器上手動更新。",
   "layout_daemonStatus_updateNotConnected_toast": "未連線到此後端 — 請先連線再要求更新。",
   "layout_daemonStatus_updateFailed_toast": "後端無法啟動更新：{message}",
+  "layout_daemonStatus_updateRequestError_toast": "無法傳送更新請求。請重試。",
   "layout_daemonStatus_forget_action": "忘記",
   "layout_daemonStatus_forgetConfirm_title": "忘記後端",
   "layout_daemonStatus_forgetConfirm_description": "「{name}」將從此機器已儲存的連線中移除。",

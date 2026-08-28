@@ -478,6 +478,40 @@ describe('connectionsSaga', () => {
     await run.task.toPromise();
   });
 
+  it('handles concurrent updates to different backends (takeEvery, not takeLeading)', async () => {
+    // The first backend's RPC stays pending until we release it; the second
+    // action arrives while the first is in flight and must not be dropped.
+    let releaseFirst!: (value: { ok: true }) => void;
+    const firstResult = new Promise<{ ok: true }>((resolve) => {
+      releaseFirst = resolve;
+    });
+    invoke.mockImplementation(async (channel: string, params?: unknown) => {
+      if (channel === CONNECTION_CHANNELS.LIST)
+        return { connections: [LOCAL, REMOTE], activeId: LOCAL.id, windowBackendId: LOCAL.id };
+      if (channel === CONNECTION_CHANNELS.UPDATE_BACKEND) {
+        return (params as { id: string }).id === 'remote-1' ? firstResult : { ok: true };
+      }
+      return {};
+    });
+    const run = start();
+    await settle();
+
+    const first = updateBackendRequested('remote-1');
+    const second = updateBackendRequested('remote-2');
+    run.channel.put(first);
+    run.channel.put(second);
+    // The second settles while the first is still awaiting its RPC.
+    await expect(second.promise).resolves.toEqual({ ok: true });
+    releaseFirst({ ok: true });
+    await expect(first.promise).resolves.toEqual({ ok: true });
+    expect(invoke).toHaveBeenCalledWith(CONNECTION_CHANNELS.UPDATE_BACKEND, { id: 'remote-1' });
+    expect(invoke).toHaveBeenCalledWith(CONNECTION_CHANNELS.UPDATE_BACKEND, { id: 'remote-2' });
+    expect(toast.success).toHaveBeenCalledTimes(2);
+
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
   it('toasts a specific error per structured update failure and resolves the action', async () => {
     const results: Array<{ ok: false; reason: string; message?: string }> = [
       { ok: false, reason: 'unsupported' },

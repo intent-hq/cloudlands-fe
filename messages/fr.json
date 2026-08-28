@@ -5905,6 +5905,7 @@
   "layout_daemonStatus_updateUnsupported_toast": "L'intentd de ce backend est trop ancien pour accepter les demandes de mise à jour à distance. Mettez-le à jour manuellement sur sa machine.",
   "layout_daemonStatus_updateNotConnected_toast": "Pas de connexion à ce backend — connectez-vous avant de demander une mise à jour.",
   "layout_daemonStatus_updateFailed_toast": "Le backend n'a pas pu lancer la mise à jour : {message}",
+  "layout_daemonStatus_updateRequestError_toast": "Impossible d'envoyer la demande de mise à jour. Veuillez réessayer.",
   "layout_daemonStatus_forget_action": "Oublier",
   "layout_daemonStatus_forgetConfirm_title": "Oublier le backend",
   "layout_daemonStatus_forgetConfirm_description": "« {name} » sera supprimé des connexions enregistrées de cette machine.",

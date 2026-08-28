@@ -5905,6 +5905,7 @@
   "layout_daemonStatus_updateUnsupported_toast": "El intentd de este backend es demasiado antiguo para aceptar solicitudes de actualización remota. Actualízalo manualmente en su máquina.",
   "layout_daemonStatus_updateNotConnected_toast": "No hay conexión con este backend — conéctate antes de solicitar una actualización.",
   "layout_daemonStatus_updateFailed_toast": "El backend no pudo iniciar la actualización: {message}",
+  "layout_daemonStatus_updateRequestError_toast": "No se pudo enviar la solicitud de actualización. Inténtalo de nuevo.",
   "layout_daemonStatus_forget_action": "Olvidar",
   "layout_daemonStatus_forgetConfirm_title": "Olvidar backend",
   "layout_daemonStatus_forgetConfirm_description": "“{name}” se eliminará de las conexiones guardadas de esta máquina.",
