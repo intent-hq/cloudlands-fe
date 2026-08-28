@@ -3532,6 +3532,7 @@
   "onboarding_page_firstMessageSendFailed_error": "工作區已建立，但訊息傳送失敗 — 再次點擊建立以重試",
   "onboarding_page_firstMessageSendFailedDetail_error": "工作區已建立，但訊息傳送失敗：{detail} — 再次點擊建立以重試",
   "onboarding_page_blockingAttachments_toast": "部分附件仍在上傳中或已失敗 — 請先重試或移除",
+  "onboarding_page_branchRequired_toast": "建立工作區前，請先選擇分支",
   "onboarding_page_createFailed_error": "建立工作區失敗",
   "onboarding_page_unexpected_error": "發生了意外錯誤",
   "onboarding_page_yourProject_label": "你的專案",

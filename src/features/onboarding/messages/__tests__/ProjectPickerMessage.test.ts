@@ -90,6 +90,7 @@ describe('ProjectPickerMessage — GitHub tab picked-repo selection', () => {
   afterEach(() => {
     cleanup();
     backendRequestMock.mockReset();
+    sessionStorage.clear();
   });
 
   afterAll(() => {
@@ -149,5 +150,29 @@ describe('ProjectPickerMessage — GitHub tab picked-repo selection', () => {
       expect(last?.type).toBe('github');
       expect(last?.isValid).toBe(false);
     });
+  });
+
+  it.each([
+    ['an omitted branch', {}, ''],
+    ['an explicit branch', { branch: 'master' }, 'master'],
+  ])('preserves %s in a local-repo prefill', async (_, branchPrefill, expectedBranch) => {
+    mockDaemon();
+    sessionStorage.setItem(
+      'workspace-prefill',
+      JSON.stringify({ repoPath: '/tmp/non-main-repo', ...branchPrefill }),
+    );
+    const onProjectChange = vi.fn();
+
+    render(ProjectPickerMessage, { props: { onProjectChange } });
+
+    await waitFor(() =>
+      expect(onProjectChange).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: 'local',
+          repoPath: '/tmp/non-main-repo',
+          branch: expectedBranch,
+        }),
+      ),
+    );
   });
 });

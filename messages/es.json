@@ -3532,6 +3532,7 @@
   "onboarding_page_firstMessageSendFailed_error": "El espacio de trabajo se creó, pero el envío de tu mensaje falló — pulsa Crear de nuevo para reintentar",
   "onboarding_page_firstMessageSendFailedDetail_error": "El espacio de trabajo se creó, pero el envío de tu mensaje falló: {detail} — pulsa Crear de nuevo para reintentar",
   "onboarding_page_blockingAttachments_toast": "Algunos adjuntos siguen subiéndose o fallaron — reintenta o elimínalos primero",
+  "onboarding_page_branchRequired_toast": "Selecciona una rama antes de crear el espacio de trabajo",
   "onboarding_page_createFailed_error": "No se pudo crear el espacio de trabajo",
   "onboarding_page_unexpected_error": "Se produjo un error inesperado",
   "onboarding_page_yourProject_label": "su proyecto",

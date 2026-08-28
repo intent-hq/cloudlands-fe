@@ -3532,6 +3532,7 @@
   "onboarding_page_firstMessageSendFailed_error": "ワークスペースは作成されましたが、メッセージの送信に失敗しました — もう一度作成を押して再試行してください",
   "onboarding_page_firstMessageSendFailedDetail_error": "ワークスペースは作成されましたが、メッセージの送信に失敗しました: {detail} — もう一度作成を押して再試行してください",
   "onboarding_page_blockingAttachments_toast": "一部の添付ファイルがまだアップロード中か失敗しています — 先に再試行または削除してください",
+  "onboarding_page_branchRequired_toast": "ワークスペースを作成する前にブランチを選択してください",
   "onboarding_page_createFailed_error": "ワークスペースを作成できませんでした",
   "onboarding_page_unexpected_error": "予期しないエラーが発生しました",
   "onboarding_page_yourProject_label": "あなたのプロジェクト",

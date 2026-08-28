@@ -3532,6 +3532,7 @@
   "onboarding_page_firstMessageSendFailed_error": "워크스페이스는 생성되었지만 메시지 전송에 실패했습니다 — 만들기를 다시 눌러 재시도하세요",
   "onboarding_page_firstMessageSendFailedDetail_error": "워크스페이스는 생성되었지만 메시지 전송에 실패했습니다: {detail} — 만들기를 다시 눌러 재시도하세요",
   "onboarding_page_blockingAttachments_toast": "일부 첨부 파일이 아직 업로드 중이거나 실패했습니다 — 먼저 다시 시도하거나 제거하세요",
+  "onboarding_page_branchRequired_toast": "워크스페이스를 만들기 전에 브랜치를 선택하세요",
   "onboarding_page_createFailed_error": "작업 공간을 만들지 못했습니다",
   "onboarding_page_unexpected_error": "예기치 않은 오류가 발생했습니다",
   "onboarding_page_yourProject_label": "내 프로젝트",

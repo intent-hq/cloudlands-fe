@@ -138,6 +138,57 @@ describe('BranchSelector (daemon-backed branch listing, no fabricated fallbacks)
     expect(screen.queryByText('master')).toBeNull();
     expect(screen.queryByText('develop')).toBeNull();
     expect(onchange).not.toHaveBeenCalled();
+
+    const manualInput = screen.getByPlaceholderText('Search or enter branch name...');
+    await fireEvent.input(manualInput, { target: { value: 'manual-recovery' } });
+    await fireEvent.click(screen.getByRole('button', { name: /Use branch: manual-recovery/ }));
+    expect(onchange).toHaveBeenCalledOnce();
+    expect(onchange.mock.calls[0][0].detail).toEqual({ branch: 'manual-recovery' });
+  });
+
+  it('local repo: auto-selects the daemon-reported non-main current branch', async () => {
+    mockGetBranches.mockResolvedValue({
+      branches: ['master'],
+      remoteBranches: [],
+      defaultBranch: 'master',
+      currentBranch: 'master',
+    });
+    const onchange = vi.fn();
+
+    render(BranchSelector, {
+      props: { repoPath: '/tmp/non-main-repo', repoType: 'local', value: '', onchange },
+    });
+
+    await waitFor(() => expect(mockGetBranches).toHaveBeenCalledWith('/tmp/non-main-repo', true));
+    await waitFor(() => expect(onchange).toHaveBeenCalled());
+    expect(onchange.mock.calls[0][0].detail).toEqual({ branch: 'master' });
+  });
+
+  it.each([
+    ['explicit', true],
+    ['persisted', false],
+  ])('local repo: keeps a valid %s branch authoritative', async (_, explicit) => {
+    debugFlags.enableFormPersistence = !explicit;
+    savedBranchByRepo['/tmp/non-main-repo'] = explicit ? '' : 'release';
+    mockGetBranches.mockResolvedValue({
+      branches: ['master', 'release'],
+      remoteBranches: [],
+      defaultBranch: 'master',
+      currentBranch: 'master',
+    });
+    const onchange = vi.fn();
+
+    render(BranchSelector, {
+      props: {
+        repoPath: '/tmp/non-main-repo',
+        repoType: 'local',
+        value: explicit ? 'release' : '',
+        onchange,
+      },
+    });
+
+    await waitFor(() => expect(onchange).toHaveBeenCalled());
+    expect(onchange.mock.calls[0][0].detail).toEqual({ branch: 'release' });
   });
 
   it('GitHub-URL repo: lists daemon branches and auto-selects the default branch', async () => {

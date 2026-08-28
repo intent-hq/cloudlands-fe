@@ -24,10 +24,7 @@
   import { hasBlockingAttachments, type ContextItem } from '$lib/components/chat/input/context-api';
   import BranchSelector from '$lib/components/workspace/initializer/BranchSelector.svelte';
   import SetupScriptModal from '$lib/components/modals/SetupScriptModal.svelte';
-  import {
-    setupScriptDisplayName,
-    type SetupScriptNameSource,
-  } from '$features/setup-scripts';
+  import { setupScriptDisplayName, type SetupScriptNameSource } from '$features/setup-scripts';
   import IssueSuggestions from '$lib/components/workspace/initializer/IssueSuggestions.svelte';
   import ModelPicker from '$lib/components/chat/input/ModelPicker.svelte';
   import WorkspaceCreationError from '$features/onboarding/steps/WorkspaceCreationError.svelte';
@@ -163,6 +160,12 @@
   let onboardingRichTextarea: RichTextarea | null = $state(null);
   let onboardingFileInput: HTMLInputElement | null = $state(null);
   let richTextareaWrapper: HTMLDivElement | null = $state(null);
+
+  const hasResolvedBranch = $derived(
+    projectSelection?.type === 'new' ||
+      Boolean(projectSelection?.branch.trim()) ||
+      Boolean(selectedPRBranch.trim()),
+  );
 
   // Drag and drop state
   let isDragging = $state(false);
@@ -602,7 +605,7 @@
           <BranchSelector
             variant="ghost"
             triggerClass="max-w-full pl-1 pr-1.5 font-medium bg-card/50 py-1.25 rounded-md border border-border"
-            value={projectSelection?.branch || 'main'}
+            value={projectSelection.branch}
             repoPath={projectSelection.repoPath}
             repoType="local"
             hasTriggerIcon={false}
@@ -641,7 +644,7 @@
           <BranchSelector
             variant="ghost"
             triggerClass="max-w-full pl-1 pr-1.5 font-medium bg-card/50 py-1.25 rounded-md border border-border"
-            value={projectSelection?.branch || 'main'}
+            value={projectSelection.branch}
             repoPath={projectSelection.repoPath || ''}
             repoType="github"
             githubUrl={projectSelection.githubUrl}
@@ -757,13 +760,15 @@
       />
     {/if}
 
-    <!-- Create button (blocked while any staged pill is placing/failed) -->
+    <!-- Create button (blocked while the branch is unresolved or a staged pill is placing/failed) -->
     <div class="onboarding-create-action flex items-center gap-3 pt-2">
       <Button
         class="group/button"
         size="xl"
         variant={!onboardingInputValue.trim() ? 'outline' : 'default'}
-        disabled={!onboardingInputValue.trim() || hasBlockingAttachments(stagedContextItems)}
+        disabled={!onboardingInputValue.trim() ||
+          !hasResolvedBranch ||
+          hasBlockingAttachments(stagedContextItems)}
         onclick={onSubmit}
       >
         {m.onboarding_promptStep_createWorkspace_label()}
