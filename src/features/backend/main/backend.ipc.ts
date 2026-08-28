@@ -1100,7 +1100,7 @@ async function refreshRemoteHosts(id: string): Promise<void> {
     // Snapshot this backend's pooled client BEFORE the first await: a
     // concurrent disconnect/reconnect replaces the pool entry, and querying
     // the NEW client here would persist another socket's answer.
-    const client = getBackendClient();
+    const client = getBackendClientForId(id);
     if (!(await connectionsStore.getDetectHosts(id))) return;
     const result = await client.request('server.pairingInfo');
     const ips = extractLocalIps(result);
@@ -1431,8 +1431,14 @@ async function performSwitchBackend(id: string): Promise<SwitchConnectionResult>
       disconnectBackendClient(fromId);
     }
 
-    // (4) Persist the new active target and connect its pooled client.
+    // (4) Persist the new active target and connect its pooled client. An
+    // explicit switch to a REMOTE keeps its historical full-rebuild semantics:
+    // any existing pooled client for the target is disposed and rebuilt with
+    // clean cert/auth/protocol latches (the re-pair flow depends on the fresh
+    // connect re-detecting a still-present failure). The always-on local
+    // member is never rebuilt.
     await connectionsStore.setActiveId(id);
+    if (id !== LOCAL_CONNECTION_ID) disconnectBackendClient(id);
     await connectBackendClient(id);
 
     // The client's first connect is a plain `connected`, not a `reconnected`,

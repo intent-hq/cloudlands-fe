@@ -379,7 +379,7 @@ export function disposeTransferConnectionsForBackend(backendId: string): void {
 
 /**
  * Dispose every open transfer connection and fail queued waiters — called
- * on backend switch and shutdown (`disposeBackendClient`), where transfers
+ * on backend switch and shutdown (`disposeAllBackendClients`), where transfers
  * against the outgoing backend can no longer complete.
  */
 export function disposeAllTransferConnections(): void {
