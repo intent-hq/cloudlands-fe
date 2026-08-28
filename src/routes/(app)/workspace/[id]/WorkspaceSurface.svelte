@@ -13,12 +13,7 @@
   import { toast } from 'svelte-sonner';
 
   import { createWorkspacePageState } from './composables/workspace-page-state.svelte';
-  import {
-    useCloseHandlers,
-    usePanelShortcuts,
-    useTabManagement,
-    useWorkspaceLoader,
-  } from './composables';
+  import { useCloseHandlers, usePanelShortcuts, useTabManagement } from './composables';
   import {
     dispatchCreateFileRequest,
     handleCommandPaletteCreateFile,
@@ -35,11 +30,14 @@
   import { isBootRouteLoad } from '$lib/utils/boot-route-gate';
   import { clearMainPanelView as ftClearMainPanelView } from '$store/renderer/slices/changes/changes-slice';
   import {
-    selectWorkspaceById,
     selectWorkspaceIsEmpty,
     selectIsNewWorkspaceSession,
   } from '$store/renderer/slices/workspace/workspace-selectors';
-  import { selectWorkspaceLoadState } from '$store/renderer/slices/workspace-lifecycle/workspace-lifecycle-selectors';
+  import {
+    selectWorkspaceLoadResult,
+    selectWorkspaceLoadState,
+  } from '$store/renderer/slices/workspace-lifecycle/workspace-lifecycle-selectors';
+  import { workspaceLoadRequested } from '$store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice';
   import {
     selectPanelVisibilityFlag,
     selectSidebarSide,
@@ -136,7 +134,7 @@
     // Pre-populate workspace data from the store to avoid blank state.
     // This is a synchronous Map lookup — cheap and eliminates the skeleton flash
     // when the workspace is already cached (the common case during workspace navigation).
-    const cachedWorkspace = selectWorkspaceById.select(appStore.state, wsId);
+    const cachedWorkspace = selectWorkspaceLoadResult.select(appStore.state, wsId);
     if (cachedWorkspace) {
       newState.updateState({
         workspaceData: cachedWorkspace,
@@ -175,11 +173,19 @@
     workspaceIdStore.set(workspaceId);
   });
 
-  // Redux-backed workspace entity selector.  Called at component init time
+  // Redux-backed workspace result selector. Called at component init time
   // (top-level script) with a Readable<string> so it stays reactive to both
   // workspaceId changes AND Redux state updates.
-  const workspace = selectWorkspaceById(workspaceIdStore);
+  const workspace = selectWorkspaceLoadResult(workspaceIdStore);
   const workspaceLoadState = selectWorkspaceLoadState(workspaceIdStore);
+
+  $effect(() => {
+    const currentWorkspaceId = workspaceId;
+    if (!currentWorkspaceId || currentWorkspaceId === 'undefined' || currentWorkspaceId === 'new') {
+      return;
+    }
+    appStore.dispatch(workspaceLoadRequested(currentWorkspaceId));
+  });
 
   // Transient signal: command palette → create-file dialog
   const pendingCommandPaletteAction$ = selectPendingCommandPaletteAction();
@@ -455,16 +461,6 @@
     },
     get previousWorkspaceId() {
       return previousWorkspaceId;
-    },
-  });
-
-  // ============================================================================
-  // Workspace Loading (composable)
-  // ============================================================================
-
-  useWorkspaceLoader({
-    get workspaceId() {
-      return workspaceId;
     },
   });
 
