@@ -12,13 +12,16 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { DraftAttachment, DraftsClient } from '$lib/client/app-client';
 import type { ContextItem } from '$lib/components/chat/input/context-api';
 import {
+  LEGACY_ONBOARDING_PROMPT_SESSION_KEY,
   LEGACY_PROMPT_SESSION_KEY,
   MAX_DRAFT_ATTACHMENTS_BYTES,
   NEW_WORKSPACE_DRAFT_AGENT_ID,
   NEW_WORKSPACE_DRAFT_WORKSPACE_ID,
   buildNewWorkspaceDraftPayload,
   clearNewWorkspaceDraft,
+  contextItemsToInlineImages,
   createNewWorkspaceDraftSaver,
+  inlineImagesToContextItems,
   persistNewWorkspaceDraft,
   restoreNewWorkspaceDraft,
 } from '../new-workspace-draft';
@@ -140,6 +143,39 @@ describe('restoreNewWorkspaceDraft', () => {
     expect(sessionStorage.getItem(LEGACY_PROMPT_SESSION_KEY)).toBe('legacy prompt');
     expect(drafts.set).not.toHaveBeenCalled();
   });
+
+  it('migrates the onboarding legacy key when passed via options.legacyKey', async () => {
+    sessionStorage.setItem(LEGACY_ONBOARDING_PROMPT_SESSION_KEY, 'onboarding legacy prompt');
+    const drafts = createMockDrafts(null);
+
+    const restored = await restoreNewWorkspaceDraft(drafts, {
+      legacyKey: LEGACY_ONBOARDING_PROMPT_SESSION_KEY,
+    });
+
+    expect(restored).toEqual({
+      status: 'restored',
+      text: 'onboarding legacy prompt',
+      contextItems: [],
+    });
+    expect(sessionStorage.getItem(LEGACY_ONBOARDING_PROMPT_SESSION_KEY)).toBeNull();
+    expect(drafts.set).toHaveBeenCalledWith(
+      '__new-workspace__',
+      '__initializer__',
+      'onboarding legacy prompt',
+      undefined,
+    );
+  });
+
+  it('removes only the provided legacy key when a daemon draft exists', async () => {
+    sessionStorage.setItem(LEGACY_ONBOARDING_PROMPT_SESSION_KEY, 'stale onboarding prompt');
+    sessionStorage.setItem(LEGACY_PROMPT_SESSION_KEY, 'modal prompt untouched');
+    const drafts = createMockDrafts({ text: 'daemon wins', updatedAt: '2026-07-23T00:00:00Z' });
+
+    await restoreNewWorkspaceDraft(drafts, { legacyKey: LEGACY_ONBOARDING_PROMPT_SESSION_KEY });
+
+    expect(sessionStorage.getItem(LEGACY_ONBOARDING_PROMPT_SESSION_KEY)).toBeNull();
+    expect(sessionStorage.getItem(LEGACY_PROMPT_SESSION_KEY)).toBe('modal prompt untouched');
+  });
 });
 
 describe('buildNewWorkspaceDraftPayload', () => {
@@ -256,6 +292,56 @@ describe('clearNewWorkspaceDraft', () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
 
     expect(drafts.clear).toHaveBeenCalledOnce();
+  });
+
+  it('removes the onboarding legacy key when passed via options.legacyKey', () => {
+    sessionStorage.setItem(LEGACY_ONBOARDING_PROMPT_SESSION_KEY, 'stale');
+    const drafts = createMockDrafts();
+
+    clearNewWorkspaceDraft(drafts, { legacyKey: LEGACY_ONBOARDING_PROMPT_SESSION_KEY });
+
+    expect(drafts.clear).toHaveBeenCalledWith('__new-workspace__', '__initializer__');
+    expect(sessionStorage.getItem(LEGACY_ONBOARDING_PROMPT_SESSION_KEY)).toBeNull();
+  });
+});
+
+describe('inline image ↔ context item conversion', () => {
+  const PNG_DATA_URL = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUg==';
+
+  it('projects data-URL inline images into image context items for the draft attachments', () => {
+    expect(
+      inlineImagesToContextItems([
+        { src: PNG_DATA_URL, alt: 'screenshot.png' },
+        { src: 'https://example.com/remote.png', alt: 'skipped' },
+      ]),
+    ).toEqual([
+      {
+        id: 'inline-image-0',
+        type: 'file',
+        label: 'screenshot.png',
+        imageData: 'iVBORw0KGgoAAAANSUhEUg==',
+        imageMimeType: 'image/png',
+      },
+    ]);
+  });
+
+  it('falls back to a positional label when the image has no alt', () => {
+    const [item] = inlineImagesToContextItems([{ src: PNG_DATA_URL }]);
+
+    expect(item.label).toBe('image-1');
+  });
+
+  it('rebuilds data URLs from restored image context items, skipping non-image items', () => {
+    expect(contextItemsToInlineImages([imageItem, plainItem])).toEqual([
+      { src: PNG_DATA_URL, alt: 'screenshot.png' },
+    ]);
+  });
+
+  it('round-trips an inline image through serialize → deserialize shape', () => {
+    const items = inlineImagesToContextItems([{ src: PNG_DATA_URL, alt: 'screenshot.png' }]);
+    const roundTripped = contextItemsToInlineImages(items);
+
+    expect(roundTripped).toEqual([{ src: PNG_DATA_URL, alt: 'screenshot.png' }]);
   });
 });
 

@@ -1,8 +1,10 @@
 /**
- * New Workspace modal draft persistence via the daemon drafts API
- * (PROTOCOL §5.16 `drafts.*`).
+ * New Workspace draft persistence via the daemon drafts API
+ * (PROTOCOL §5.16 `drafts.*`), shared by the New Workspace modal and the
+ * onboarding page (both draft the first prompt for a workspace that does not
+ * exist yet).
  *
- * The modal drafts a prompt + image attachments before any workspace or agent
+ * The prompt + image attachments are drafted before any workspace or agent
  * exists, so the draft is keyed under the reserved sentinel IDs documented in
  * PROTOCOL §5.16 ("Opaque keys & reserved sentinels"). The daemon treats draft
  * keys as opaque, and the `__…__` form cannot collide with real workspace IDs
@@ -26,6 +28,10 @@ export const NEW_WORKSPACE_DRAFT_AGENT_ID = '__initializer__';
 
 /** Legacy sessionStorage text-draft key — read once for migration, then removed. */
 export const LEGACY_PROMPT_SESSION_KEY = 'compact-workspace-initializer-state-prompt';
+
+/** Legacy onboarding-page sessionStorage text-draft key — read once for
+ * migration, then removed. */
+export const LEGACY_ONBOARDING_PROMPT_SESSION_KEY = 'onboarding-prompt';
 
 /**
  * Size guard for the serialized draft payload (text + attachments combined):
@@ -56,24 +62,26 @@ export type NewWorkspaceDraftRestore =
   | { status: 'error' };
 
 /**
- * Restore the modal draft from the daemon. When the daemon has no draft,
- * falls back once to the legacy sessionStorage text draft: the legacy value
- * is persisted to the daemon immediately (fire-and-forget `drafts.set`) and
- * the key removed, so the one-time migration does not depend on the caller's
- * debounced save path. A failed `drafts.get` is non-fatal, returns
- * `{ status: 'error' }`, and skips the migration so the legacy value
- * survives for a later attempt.
+ * Restore the draft from the daemon. When the daemon has no draft, falls
+ * back once to the legacy sessionStorage text draft (`options.legacyKey`,
+ * default the modal's): the legacy value is persisted to the daemon
+ * immediately (fire-and-forget `drafts.set`) and the key removed, so the
+ * one-time migration does not depend on the caller's debounced save path.
+ * A failed `drafts.get` is non-fatal, returns `{ status: 'error' }`, and
+ * skips the migration so the legacy value survives for a later attempt.
  */
 export async function restoreNewWorkspaceDraft(
   drafts: DraftsClient,
+  options: { legacyKey?: string } = {},
 ): Promise<NewWorkspaceDraftRestore> {
+  const legacyKey = options.legacyKey ?? LEGACY_PROMPT_SESSION_KEY;
   try {
     const draft = await drafts.get(NEW_WORKSPACE_DRAFT_WORKSPACE_ID, NEW_WORKSPACE_DRAFT_AGENT_ID);
     if (draft) {
       // The daemon draft supersedes any legacy value — drop the legacy key so
       // a stale prompt can't be "migrated" back in after the draft is cleared.
       try {
-        sessionStorage.removeItem(LEGACY_PROMPT_SESSION_KEY);
+        sessionStorage.removeItem(legacyKey);
       } catch {
         // sessionStorage unavailable — nothing to remove
       }
@@ -94,8 +102,8 @@ export async function restoreNewWorkspaceDraft(
 
   let legacyPrompt: string | null = null;
   try {
-    legacyPrompt = sessionStorage.getItem(LEGACY_PROMPT_SESSION_KEY);
-    if (legacyPrompt !== null) sessionStorage.removeItem(LEGACY_PROMPT_SESSION_KEY);
+    legacyPrompt = sessionStorage.getItem(legacyKey);
+    if (legacyPrompt !== null) sessionStorage.removeItem(legacyKey);
   } catch {
     // sessionStorage unavailable — nothing to migrate
   }
@@ -224,13 +232,62 @@ export function createNewWorkspaceDraftSaver(
  * Fire-and-forget `drafts.clear` under the sentinel keys (called after a
  * successful workspace create); also removes the legacy sessionStorage key.
  */
-export function clearNewWorkspaceDraft(drafts: DraftsClient): void {
+export function clearNewWorkspaceDraft(
+  drafts: DraftsClient,
+  options: { legacyKey?: string } = {},
+): void {
   try {
-    sessionStorage.removeItem(LEGACY_PROMPT_SESSION_KEY);
+    sessionStorage.removeItem(options.legacyKey ?? LEGACY_PROMPT_SESSION_KEY);
   } catch {
     // sessionStorage unavailable — nothing to remove
   }
   drafts.clear(NEW_WORKSPACE_DRAFT_WORKSPACE_ID, NEW_WORKSPACE_DRAFT_AGENT_ID).catch((err) => {
     logger.warn('drafts.clear failed', { error: String(err) });
   });
+}
+
+/**
+ * Inline editor image (data-URL `src`) — structurally matches the TipTap
+ * editor's `InlineImage` without importing from a `.svelte` module.
+ */
+export interface DraftInlineImage {
+  src: string;
+  alt?: string;
+}
+
+const DATA_URL_RE = /^data:([^;]+);base64,(.+)$/;
+
+/**
+ * Project inline editor images into image context items so they ride the
+ * draft's `attachments` array ({@link serializeDraftAttachments} persists
+ * `imageData`/`imageMimeType`). Non-data-URL images are skipped.
+ */
+export function inlineImagesToContextItems(images: DraftInlineImage[]): ContextItem[] {
+  const items: ContextItem[] = [];
+  images.forEach((image, index) => {
+    const match = image.src.match(DATA_URL_RE);
+    if (!match) return;
+    const [, mimeType, data] = match;
+    items.push({
+      id: `inline-image-${index}`,
+      type: 'file',
+      label: image.alt || `image-${index + 1}`,
+      imageData: data,
+      imageMimeType: mimeType,
+    });
+  });
+  return items;
+}
+
+/**
+ * Rebuild inline editor images (data URLs for `insertImage`) from restored
+ * image context items; items without image data are skipped.
+ */
+export function contextItemsToInlineImages(items: ContextItem[]): DraftInlineImage[] {
+  return items
+    .filter((item) => item.imageData && item.imageMimeType)
+    .map((item) => ({
+      src: `data:${item.imageMimeType};base64,${item.imageData}`,
+      alt: item.label,
+    }));
 }
