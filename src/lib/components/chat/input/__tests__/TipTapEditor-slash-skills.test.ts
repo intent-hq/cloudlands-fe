@@ -33,8 +33,9 @@ describe('TipTapEditor slash skills', () => {
 
     await waitFor(() => expect(screen.getByRole('listbox')).toBeTruthy());
     expect(screen.getAllByRole('option').map((option) => option.textContent)).toEqual([
-      expect.stringContaining('/research'),
+      expect.stringContaining('research'),
     ]);
+    expect(screen.getByRole('option').textContent).not.toContain('/research');
     leading.unmount();
 
     const prose = await mountEditor();
@@ -103,7 +104,7 @@ describe('TipTapEditor slash skills', () => {
     ];
     await view.rerender({ skills: updatedSkills, onUpdate });
     const option = await screen.findByRole('option');
-    expect(option.textContent).toContain('/summarize');
+    expect(option.textContent?.trim()).toBe('summarize');
 
     await fireEvent.pointerDown(option);
     await fireEvent.click(option);
@@ -114,7 +115,7 @@ describe('TipTapEditor slash skills', () => {
     const { component, editor } = await mountEditor();
     component.insertText('/rev');
     await waitFor(() => expect(screen.getByRole('listbox')).toBeTruthy());
-    const reviewOption = screen.getByRole('option', { name: /^\/review\b/ });
+    const reviewOption = screen.getByRole('option', { name: 'review' });
     await fireEvent.click(reviewOption);
     await waitFor(() => expect(component.getTextContent()).toBe('/review '));
 

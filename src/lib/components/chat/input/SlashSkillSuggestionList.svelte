@@ -1,5 +1,6 @@
 <script lang="ts">
   import { Button } from '$lib/components/ui/button';
+  import { Tooltip } from '$lib/components/ui/tooltip';
   import type { SkillInfo } from '$store/renderer/slices/skills/skills-types';
   import { m } from '$shared/paraglide/messages.js';
 
@@ -82,7 +83,7 @@
   export { onKeyDown };
 </script>
 
-<div class="slash-skill-suggestion-list">
+<div class="slash-skill-suggestion-list w-full max-w-72">
   {#if loading}
     <div class="slash-skill-state" role="status" aria-live="polite">
       {m.chat_slashSkillSuggestionList_loading_label()}
@@ -106,21 +107,23 @@
       onkeydown={handleKeyDown}
     >
       {#each items as item, index (`${item.name}:${item.location}`)}
-        <Button
-          type="button"
-          id={`${componentId}-option-${index}`}
-          variant="ghost"
-          size="sm"
-          class={`slash-skill-option h-auto w-full items-baseline justify-start gap-2.5 rounded-none border-0 bg-transparent px-2 py-1.5 text-left text-inherit shadow-none hover:border-0 hover:text-inherit focus-visible:border-0 focus-visible:ring-0 active:border-0 ${selectedIndex === index ? 'active' : ''}`}
-          role="option"
-          aria-selected={selectedIndex === index}
-          onpointerenter={() => (selectedIndex = index)}
-          onpointerdown={(event) => event.preventDefault()}
-          onclick={() => selectItem(index)}
-        >
-          <span class="slash-skill-name type-code">/{item.name}</span>
-          <span class="slash-skill-description">{item.description}</span>
-        </Button>
+        <Tooltip content={item.description} side="right" align="start" class="w-full">
+          <Button
+            type="button"
+            id={`${componentId}-option-${index}`}
+            variant="ghost"
+            size="sm"
+            class={`slash-skill-option h-auto w-full justify-start rounded-none border-0 bg-transparent px-2 py-1.5 text-left text-inherit shadow-none hover:border-0 hover:text-inherit focus-visible:border-0 focus-visible:ring-0 active:border-0 ${selectedIndex === index ? 'active' : ''}`}
+            role="option"
+            aria-label={item.name}
+            aria-selected={selectedIndex === index}
+            onpointerenter={() => (selectedIndex = index)}
+            onpointerdown={(event) => event.preventDefault()}
+            onclick={() => selectItem(index)}
+          >
+            <span class="slash-skill-name type-code">{item.name}</span>
+          </Button>
+        </Tooltip>
       {/each}
     </div>
   {/if}
@@ -128,7 +131,6 @@
 
 <style>
   .slash-skill-suggestion-list {
-    width: 100%;
     overflow: hidden;
     border: 1px solid hsl(var(--border));
     background: hsl(var(--popover));
@@ -154,15 +156,6 @@
   .slash-skill-name {
     flex-shrink: 0;
     font-weight: 600;
-  }
-
-  .slash-skill-description {
-    min-width: 0;
-    overflow: hidden;
-    color: hsl(var(--muted-foreground));
-    font-size: 12px;
-    text-overflow: ellipsis;
-    white-space: nowrap;
   }
 
   .slash-skill-state {
