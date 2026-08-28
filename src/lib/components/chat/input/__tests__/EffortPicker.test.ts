@@ -172,7 +172,7 @@ describe('EffortPicker', () => {
     expect(content.textContent).toContain('Reasoning effort');
     expect(trigger().textContent?.trim()).toBe('Low');
     const gauge = screen.getByTestId('effort-gauge');
-    expect(screen.getByText('Reasoning effort').contains(gauge)).toBe(true);
+    expect(screen.getByText('Reasoning effort').nextElementSibling).toBe(gauge);
     expect(gauge.dataset.gaugeValue).toBe('0');
     expect(gauge.className.baseVal).toContain('[&_line]:transition-none!');
 
@@ -194,6 +194,7 @@ describe('EffortPicker', () => {
     expect(trigger().textContent).toContain('High');
     const gauge = screen.getByTestId('effort-gauge');
     expect(trigger().contains(gauge)).toBe(true);
+    expect(screen.getByText('Reasoning effort').nextElementSibling).toBe(gauge);
     expect(gauge.dataset.gaugeValue).toBe('2');
   });
 

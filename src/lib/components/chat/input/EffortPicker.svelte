@@ -159,6 +159,7 @@
   >
     {#if embedded}
       <span class="inline-flex items-center gap-1 type-caption text-muted-foreground">
+        <span>{m.chat_effortPicker_title_label()}</span>
         {#if selectedLevelIndex >= 0}
           <EffortGauge
             value={selectedLevelIndex}
@@ -166,7 +167,6 @@
             class="[&_line]:transition-none!"
           />
         {/if}
-        {m.chat_effortPicker_title_label()}
       </span>
     {/if}
     <div class={cn(embedded ? 'w-32' : 'min-w-36')}>
@@ -182,16 +182,21 @@
           aria-label={m.chat_effortPicker_trigger_ariaLabel({ level: selectedLabel })}
           data-testid="effort-picker-trigger"
         >
-          {#if !embedded && selectedLevelIndex >= 0}
-            <EffortGauge
-              value={selectedLevelIndex}
-              max={Math.max(1, levels.length - 1)}
-              class="[&_line]:transition-none!"
-            />
-          {/if}
           <span class="min-w-0 flex-1 truncate text-left">
-            {#if !embedded}{m.chat_effortPicker_title_label()} ·{' '}
-            {/if}{selectedLabel}
+            {#if !embedded}
+              <span class="inline-flex items-center gap-1">
+                <span>{m.chat_effortPicker_title_label()}</span>
+                {#if selectedLevelIndex >= 0}
+                  <EffortGauge
+                    value={selectedLevelIndex}
+                    max={Math.max(1, levels.length - 1)}
+                    class="[&_line]:transition-none!"
+                  />
+                {/if}
+              </span>{'· '}{selectedLabel}
+            {:else}
+              {selectedLabel}
+            {/if}
           </span>
         </Select.Trigger>
         <Select.Content portal={!embedded} dropUp={!embedded}>
