@@ -362,13 +362,6 @@ const certMismatchById = new Map<string, ConnectionCertMismatchEvent>();
 let keychainSyncLifecycle: KeychainSyncLifecycle | null = null;
 
 /**
- * Bounded timeout for boot-time probes against the local daemon (e.g. the
- * live self-fingerprint probe). Short enough that a hung daemon never stalls
- * startup.
- */
-const bootProbeTimeoutMs = 4_000;
-
-/**
  * Window-teardown seam for a backend switch (T4). Two split hooks, called
  * around the client swap so the outgoing backend's layout is captured while its
  * windows are still live and the incoming backend's windows only open once the
