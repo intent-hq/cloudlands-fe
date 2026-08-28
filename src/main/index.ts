@@ -315,10 +315,9 @@ import {
   registerBackendHandlers,
   connectBackendClient,
   disconnectBackendClient,
-  disposeBackendClient,
-  getBackendClient,
+  disposeAllBackendClients,
+  getLocalBackendClient,
   isSameHostBackendActive,
-  reconcileActiveConnectionOnBoot,
 } from '../features/backend/main/backend.ipc';
 import { registerWorkspaceTransferHandlers } from '../features/backend/main/workspace-transfer.ipc';
 import { registerWorkspaceImportHandlers } from '../features/backend/main/workspace-import.ipc';
@@ -471,20 +470,20 @@ async function performGracefulShutdown() {
     // fires. This delay gives those threads time to finish.
     await new Promise((resolve) => setTimeout(resolve, 300));
 
-    // Dispose the live backend JSON-RPC client (closes the UDS/TCP socket).
+    // Dispose every pooled backend JSON-RPC client (closes the UDS/WSS sockets).
     try {
-      disposeBackendClient();
-      logger.info('Backend JSON-RPC client disposed');
+      disposeAllBackendClients();
+      logger.info('Backend JSON-RPC clients disposed');
     } catch (error) {
       logger.error(
         // i18n-ignore (developer log message)
-        'Error disposing backend client:',
+        'Error disposing backend clients:',
         error instanceof Error ? error : new Error(String(error)),
       );
     }
 
     // Stop the intentd sidecar daemon (if we spawned it). SIGTERM with a grace
-    // period, then SIGKILL. This runs AFTER disposeBackendClient() so the FE
+    // period, then SIGKILL. This runs AFTER disposeAllBackendClients() so the FE
     // closes the socket before we kill the daemon. In external mode the daemon
     // is not ours to stop — skip the stop path entirely so no code path ever
     // signals an external daemon.
@@ -663,7 +662,7 @@ app.whenReady().then(async () => {
       // active provider (`providers.active`, the effective-default rule used
       // renderer-side), falling back to the first catalog row when unset.
       // The settings read is best-effort: a failure just means first-row.
-      const activeProviderId = await getBackendClient()
+      const activeProviderId = await getLocalBackendClient()
         .request('settings.get', { path: 'providers.active' })
         .then((result) => {
           const value = (result as { value?: unknown } | null)?.value;
@@ -1580,11 +1579,6 @@ app.whenReady().then(async () => {
   // retry briefly while a newly spawned sidecar creates its socket.
   await seedPathFromHostEnv();
 
-  // Boot reconciliation (T8): the live client is built from the local/env
-  // default, so make the persisted active connection agree with it before any
-  // window queries `connections:list`. Reset a stale remote active-id to local.
-  await reconcileActiveConnectionOnBoot();
-
   registerBackendHandlers(); // Needed for live JSON-RPC transport (workspaces domain)
   registerWorkspaceTransferHandlers(); // Workspace transfer relay (wizard steps 3–4)
   registerWorkspaceImportHandlers(); // Import Workspace from File (File menu)
@@ -1730,11 +1724,9 @@ app.whenReady().then(async () => {
     // saved session bucket is restored, each bucket's windows stamped with its
     // own backend id and backed by its own pooled client (fail-soft — an
     // unreachable backend still gets its windows behind the stopped overlay).
-    // The ACTIVE bucket restores first and provides the main window; keyed off
-    // the RESOLVED boot backend (T21): reconcileActiveConnectionOnBoot() above
-    // has already run to completion, so getActiveId() now reflects the
-    // actually-connected backend — the reconnected remote when it was
-    // reachable, otherwise local.
+    // The last-used bucket (persisted activeId, legacy field) restores first
+    // and provides the main window; each backend's own pooled client connects
+    // on demand, so no boot-time reconciliation of the field is needed.
     const bootBackendId = await getActiveId();
     const restored = intentUrlArg
       ? false
