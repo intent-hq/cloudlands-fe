@@ -36,6 +36,7 @@ vi.mock('../../../backend/main/backend.ipc', () => {
   return {
     getBackendClient: () => client,
     getBackendClientForConnection: (id: string) => (id === 'local' ? client : undefined),
+    getLocalBackendClient: () => client,
     getPrimaryBackendId: () => 'local',
     onBackendReconnected: (handler: () => void, backendId = 'local') => {
       reconnectHandlers.push((emittingBackendId = 'local') => {

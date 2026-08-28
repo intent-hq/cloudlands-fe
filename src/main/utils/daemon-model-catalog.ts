@@ -9,6 +9,12 @@
  * longer keeps its own model caches or probe implementations. This helper is
  * the single wire seam the per-provider `GET_MODELS` IPC handlers and the
  * main-side model-override validator (`model-pool.ts`) call into.
+ *
+ * Backend policy: per-sender. Each call resolves the invoking window's
+ * backend via `getBackendClientForIpcEvent(event)` and issues `models.list`
+ * on that backend's pooled client — fail-closed (`success: false`) when the
+ * window's backend has no live client; never silently retargets the primary.
+ * Callers without an invoke event (main-side validation) resolve to local.
  */
 import { Logger } from '../../shared/logger';
 import {
@@ -16,7 +22,8 @@ import {
   type ProviderModelInfo,
   type WireModelsListResult,
 } from '../../shared/models/wire-model-info';
-import { getBackendClient } from '../../features/backend/main/backend.ipc';
+import { getBackendClientForIpcEvent } from '../../features/backend/main/backend.ipc';
+import type { JsonRpcClient } from '../../features/backend/main/json-rpc-client';
 
 const logger = new Logger('DaemonModelCatalog');
 
@@ -37,6 +44,7 @@ interface ProviderModelCatalog {
  * last-good + `stale: true` or a static fallback with a `warning` (§6.7).
  */
 async function listProviderModels(
+  client: JsonRpcClient,
   providerId: string,
   options: { forceRefresh?: boolean } = {},
 ): Promise<ProviderModelCatalog> {
@@ -46,7 +54,7 @@ async function listProviderModels(
   }
 
   try {
-    const result = await getBackendClient().request<WireModelsListResult>('models.list', params);
+    const result = await client.request<WireModelsListResult>('models.list', params);
     const catalog: ProviderModelCatalog = {
       models: wireModelsToProviderModels(result),
     };
@@ -77,16 +85,21 @@ export interface GetModelsEnvelope {
 }
 
 /**
- * Uniform `GET_MODELS` handler body: thin call to the daemon catalog. Only a
- * wire/transport failure produces `success: false` — probe/CLI failures are
- * degraded daemon-side to last-good/static data plus a `warning` (§6.7).
+ * Uniform `GET_MODELS` handler body: thin call to the daemon catalog on the
+ * invoking window's backend (local when `event` is absent — main-side
+ * callers). A wire/transport failure OR a window backend without a live
+ * pooled client produces `success: false` (fail-closed, never retargets the
+ * primary) — probe/CLI failures are degraded daemon-side to
+ * last-good/static data plus a `warning` (§6.7).
  */
 export async function getProviderModelsEnvelope(
   providerId: string,
   params?: { forceRefresh?: boolean },
+  event?: Electron.IpcMainInvokeEvent,
 ): Promise<GetModelsEnvelope> {
   try {
-    const catalog = await listProviderModels(providerId, {
+    const { client } = getBackendClientForIpcEvent(event);
+    const catalog = await listProviderModels(client, providerId, {
       forceRefresh: params?.forceRefresh === true,
     });
     const envelope: GetModelsEnvelope = { success: true, data: catalog.models };

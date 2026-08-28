@@ -31,9 +31,7 @@ export function setupDroidIPC() {
   });
 
   // Get available models for droid — daemon-owned catalog (PROTOCOL §6.7)
-  ipcMain.handle(
-    DROID_CHANNELS.GET_MODELS,
-    async (_event, params?: { forceRefresh?: boolean }) =>
-      getProviderModelsEnvelope('droid', params),
+  ipcMain.handle(DROID_CHANNELS.GET_MODELS, async (event, params?: { forceRefresh?: boolean }) =>
+    getProviderModelsEnvelope('droid', params, event),
   );
 }

@@ -20,6 +20,10 @@ vi.mock('../pi-resolver', () => ({
 
 vi.mock('../../../backend/main/backend.ipc', () => ({
   getBackendClient: () => ({ request: mockBackendRequest }),
+  getBackendClientForIpcEvent: () => ({
+    backendId: 'local',
+    client: { request: mockBackendRequest },
+  }),
 }));
 
 // Capture the handler registered via ipcMain.handle so we can invoke it directly.
@@ -32,10 +36,7 @@ vi.mock('electron', () => ({
   },
 }));
 
-import {
-  installPiMcpAdapter,
-  isPiMcpAdapterInstalled,
-} from '../pi-resolver';
+import { installPiMcpAdapter, isPiMcpAdapterInstalled } from '../pi-resolver';
 import { PI_CHANNELS } from '../../../../shared/ipc/channels';
 import { setupPiIPC } from '../pi.ipc';
 

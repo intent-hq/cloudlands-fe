@@ -8,11 +8,12 @@
  * and asks the {@link ForwardOwnershipRegistry} which ports lost their last
  * owner (refcount semantics; app-lifetime forwards are never touched).
  *
- * Started lazily per originating backend client from browser.ipc.ts the first
- * time its tunnel provider is handed out. Each client owns its subscription,
- * reconnect, and reconciliation state; a pooled-client disconnect tears down
- * only that state. Every mint re-runs the idempotent subscribe so a transient
- * initial failure self-heals.
+ * Backend policy: per-backend. Started lazily per originating backend client
+ * from browser.ipc.ts the first time its tunnel provider is handed out; each
+ * client owns its subscription, reconnect, and reconciliation state, scoped
+ * to its own backend id (legacy callers without a client/backendId pin to
+ * local). A pooled-client disconnect tears down only that state. Every mint
+ * re-runs the idempotent subscribe so a transient initial failure self-heals.
  *
  * Events alone are not enough (monorepo#2646): archive/delete events fired
  * while the client was disconnected (or before a subscribe resolved) are
@@ -30,10 +31,11 @@
 
 import { Logger } from '../../../shared/logger';
 import {
-  getBackendClient,
+  getLocalBackendClient,
   onBackendNotification,
   onBackendReconnected,
 } from '../../backend/main/backend.ipc';
+import { LOCAL_CONNECTION_ID } from '../../../shared/types/connections';
 import type { JsonRpcClient, JsonRpcNotification } from '../../backend/main/json-rpc-client';
 import type { ForwardOwnershipRegistry } from './tunnel-forward-ownership';
 import type { TunnelProvider } from './loopback-url-resolver';
@@ -44,9 +46,9 @@ export interface WorkspaceForwardCleanupDeps {
   registry: ForwardOwnershipRegistry;
   /** Close the forward on the exact provider that owned it. */
   closeForward: (remotePort: number, provider?: TunnelProvider) => void;
-  /** Originating pooled client; defaults to the primary client for legacy callers. */
+  /** Originating pooled client; defaults to the LOCAL client for legacy callers. */
   client?: JsonRpcClient;
-  /** Backend id used to scope stable notification/reconnect listeners. */
+  /** Backend id used to scope stable notification/reconnect listeners; defaults to local. */
   backendId?: string;
   /** Provider owned by this client and cleanup state. */
   provider?: TunnelProvider;
@@ -66,11 +68,12 @@ class WorkspaceForwardCleanupState {
 
   constructor(private readonly deps: WorkspaceForwardCleanupDeps & { client: JsonRpcClient }) {
     if (deps.provider) this.providers.add(deps.provider);
+    const backendId = deps.backendId ?? LOCAL_CONNECTION_ID;
     this.disposeNotification = onBackendNotification(
       (notification) => this.handleBackendNotification(notification),
-      deps.backendId,
+      backendId,
     );
-    this.disposeReconnect = onBackendReconnected(() => this.handleReconnect(), deps.backendId);
+    this.disposeReconnect = onBackendReconnected(() => this.handleReconnect(), backendId);
   }
 
   addProvider(provider?: TunnelProvider): void {
@@ -257,7 +260,7 @@ function attachRegistryState(
  * on every provider handout.
  */
 export function ensureWorkspaceForwardCleanup(cleanupDeps: WorkspaceForwardCleanupDeps): void {
-  const client = cleanupDeps.client ?? getBackendClient();
+  const client = cleanupDeps.client ?? getLocalBackendClient();
   let state = cleanupStates.get(client);
   if (!state) {
     state = new WorkspaceForwardCleanupState({ ...cleanupDeps, client });

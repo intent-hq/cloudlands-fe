@@ -724,6 +724,31 @@ export function getBackendClientForConnection(id: string): JsonRpcClient | undef
   return backendClients.get(id);
 }
 
+/**
+ * Resolve a backend id to its live pooled client — fail-closed. The one
+ * exception: the local sidecar id lazily creates the compatibility client
+ * when no whole-app switch is active (startup boot order), matching
+ * {@link getBackendClientForIpcEvent}. Any other id without a live pooled
+ * client throws instead of silently retargeting the primary.
+ */
+export function getBackendClientForId(backendId: string): JsonRpcClient {
+  const pooledClient = backendClients.get(backendId);
+  if (pooledClient) return pooledClient;
+  if (backendId === LOCAL_CONNECTION_ID && activeConnectionMeta === null) {
+    return getBackendClient();
+  }
+  throw new Error(`Backend client is not connected: ${backendId}`);
+}
+
+/**
+ * Local-pinned accessor for services whose data must always come from the
+ * local sidecar (app settings, workspace paths, config persistence). Throws
+ * when the local backend has no live client and cannot be lazily created.
+ */
+export function getLocalBackendClient(): JsonRpcClient {
+  return getBackendClientForId(LOCAL_CONNECTION_ID);
+}
+
 /** Resolve a renderer sender to its backend id, with the local fallback. */
 export function getBackendIdForIpcSender(sender: Electron.WebContents): string {
   return getBackendIdForWebContents(sender);
@@ -889,6 +914,19 @@ export function onBackendReconnected(handler: () => void, backendId?: string): (
 }
 
 /**
+ * Register a main-process listener for reconnects on ANY backend, receiving
+ * the emitting backend id. For consumers whose state is partitioned per
+ * backend (e.g. the user-activity cache) rather than pinned to one id.
+ * Returns a disposer.
+ */
+export function onAnyBackendReconnected(handler: (backendId: string) => void): () => void {
+  getBackendClient();
+  const listener = (emittingBackendId: string): void => handler(emittingBackendId);
+  backendReconnectForwarder.on('reconnected', listener);
+  return () => backendReconnectForwarder.off('reconnected', listener);
+}
+
+/**
  * Register a main-process listener for daemon JSON-RPC notifications
  * (`events.event` and friends). Fires for every notification on whatever client
  * is currently live. Returns a disposer.
@@ -957,12 +995,7 @@ export function getBackendClientForIpcEvent(event?: Electron.IpcMainInvokeEvent)
   client: JsonRpcClient;
 } {
   const backendId = event?.sender ? getBackendIdForWebContents(event.sender) : LOCAL_CONNECTION_ID;
-  const pooledClient = getBackendClientForConnection(backendId);
-  if (pooledClient) return { backendId, client: pooledClient };
-  if (backendId === LOCAL_CONNECTION_ID && activeConnectionMeta === null) {
-    return { backendId, client: getBackendClient() };
-  }
-  throw new Error(`Backend client is not connected: ${backendId}`);
+  return { backendId, client: getBackendClientForId(backendId) };
 }
 
 /**

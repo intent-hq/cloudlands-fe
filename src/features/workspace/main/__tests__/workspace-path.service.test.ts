@@ -26,6 +26,11 @@ vi.mock('../../../backend/main/backend.ipc', () => ({
   getBackendClient: () => ({ request: compatibilityRequestSpy }),
   getBackendClientForConnection: (id: string) =>
     id === 'local' ? { request: requestSpy } : undefined,
+  getLocalBackendClient: () => {
+    if (backendState.primaryId !== 'local')
+      throw new Error('Backend client is not connected: local');
+    return { request: requestSpy };
+  },
   getPrimaryBackendId: () => backendState.primaryId,
   onBackendNotification: (handler: (n: unknown) => void) => {
     notificationHandlers.push(handler);
