@@ -1086,6 +1086,43 @@ describe('ModelPicker combined reasoning mode', () => {
     expect(selectTrigger.textContent?.trim()).toBe('Auto');
     expect(selectTrigger.className).toContain('text-xs');
   });
+
+  it('shows explicit none as Off in the composer, tooltip, accessibility label, and select', async () => {
+    reasoningEffort$.set('none');
+    agentModelEffortLevels$.set(['none', 'low', 'ultra']);
+
+    render(ModelPicker, {
+      props: {
+        selectedModel: 'codex:gpt-5.6-sol',
+        agentId: 'agent-1',
+        workspaceId: 'ws-1',
+        showReasoning: true,
+        portal: false,
+      },
+    });
+
+    const trigger = screen.getByRole('button');
+    const labeledTrigger = await waitFor(() => screen.getByLabelText('GPT-5.6-Sol · Off'));
+    expect(labeledTrigger.getAttribute('title')).toBe('GPT-5.6-Sol · Off');
+    expect(screen.getByTestId('model-reasoning-strength').textContent).toContain('Off');
+
+    await fireEvent.click(trigger);
+    const selectTrigger = effortTrigger();
+    expect(selectTrigger.textContent?.trim()).toBe('Off');
+    expect(selectTrigger.getAttribute('aria-label')).toContain('Off');
+    const listbox = await openEffortSelect();
+    expect(
+      within(listbox)
+        .getAllByRole('option')
+        .map((option) => option.textContent?.replace('✓', '').trim()),
+    ).toEqual(['Auto', 'Off', 'Low', 'ultra']);
+    expect(applyReasoningEffortMock).not.toHaveBeenCalled();
+    await selectEffort(listbox, 'Auto');
+
+    await waitFor(() => {
+      expect(applyReasoningEffortMock).toHaveBeenCalledWith('agent-1', 'ws-1', null, 'none');
+    });
+  });
 });
 
 describe('ModelPicker multi-provider mode', () => {

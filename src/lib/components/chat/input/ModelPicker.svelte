@@ -1285,6 +1285,7 @@
   });
 
   const LEVEL_LABELS: Record<string, () => string> = {
+    none: () => m.chat_shared_valueOff_label(),
     minimal: () => m.chat_effortPicker_level_minimal(),
     low: () => m.chat_effortPicker_level_low(),
     medium: () => m.chat_effortPicker_level_medium(),

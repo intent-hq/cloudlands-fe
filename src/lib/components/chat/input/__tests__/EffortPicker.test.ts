@@ -99,6 +99,7 @@ describe('EffortPicker', () => {
     modelEffortLevels.set('codex:gpt-5.3-codex', ['low', 'medium', 'high', 'xhigh']);
     modelEffortLevels.set('codex:gpt-5.1-codex-max', ['low', 'high']);
     modelEffortLevels.set('gpt5.6-sol', ['low', 'medium', 'high', 'max']);
+    modelEffortLevels.set('provider:off-capable', ['none', 'low', 'ultra']);
     inheritedModel = undefined;
     sessionVersion$.set(0);
   });
@@ -198,6 +199,40 @@ describe('EffortPicker', () => {
         .map((option) => option.textContent?.replace('✓', '').trim()),
     ).toEqual(['Auto', 'Low', 'Medium', 'High', 'Extra high']);
     expect(applyReasoningEffort).not.toHaveBeenCalled();
+  });
+
+  it('labels explicit none as Off while preserving provider order and exact commits', async () => {
+    mount({
+      id: 'agent-1',
+      workspaceId: 'ws-1',
+      model: 'provider:off-capable',
+      reasoningEffort: 'none',
+    });
+
+    expect(trigger().textContent).toContain('Off');
+    expect(trigger().getAttribute('aria-label')).toContain('Off');
+    const listbox = await openSelect();
+    expect(
+      within(listbox)
+        .getAllByRole('option')
+        .map((option) => option.textContent?.replace('✓', '').trim()),
+    ).toEqual(['Auto', 'Off', 'Low', 'ultra']);
+    expect(applyReasoningEffort).not.toHaveBeenCalled();
+    await selectOption(listbox, 'Auto');
+
+    await waitFor(() => {
+      expect(applyReasoningEffort).toHaveBeenCalledWith('agent-1', 'ws-1', null, 'none');
+    });
+  });
+
+  it('commits the exact explicit none value separately from Auto', async () => {
+    mount({ id: 'agent-1', workspaceId: 'ws-1', model: 'provider:off-capable' });
+    const listbox = await openSelect();
+    await selectOption(listbox, 'Off');
+
+    await waitFor(() => {
+      expect(applyReasoningEffort).toHaveBeenCalledWith('agent-1', 'ws-1', 'none', null);
+    });
   });
 
   it('commits the selected level, passing the previous effort for rollback', async () => {
