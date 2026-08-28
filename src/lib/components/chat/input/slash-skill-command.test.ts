@@ -12,26 +12,44 @@ function skill(name: string, description: string, location = `/skills/${name}`):
 }
 
 describe('findSlashCommandContext', () => {
-  it('finds only a leading slash token and returns its query and replacement range', () => {
+  it('finds a slash token at any token boundary', () => {
     expect(findSlashCommandContext('  /review')).toEqual({
       query: 'review',
       from: 2,
       to: 9,
     });
     expect(findSlashCommandContext('\n\t/')).toEqual({ query: '', from: 2, to: 3 });
-  });
-
-  it('uses the cursor position while replacing the complete token', () => {
-    expect(findSlashCommandContext('/review later', 4)).toEqual({
-      query: 'rev',
-      from: 0,
-      to: 7,
+    expect(findSlashCommandContext('explain this /review')).toEqual({
+      query: 'review',
+      from: 13,
+      to: 20,
+    });
+    expect(findSlashCommandContext('first line\n/review')).toEqual({
+      query: 'review',
+      from: 11,
+      to: 18,
     });
   });
 
-  it('rejects slashes outside the active leading command token', () => {
-    expect(findSlashCommandContext('review /skill')).toBeNull();
+  it('uses the cursor position to find and filter the active token', () => {
+    expect(findSlashCommandContext('before /review after', 11)).toEqual({
+      query: 'rev',
+      from: 7,
+      to: 14,
+    });
+
+    const prompt = '/audit then /review later';
+    expect(findSlashCommandContext(prompt, prompt.indexOf('/review') + 4)).toEqual({
+      query: 'rev',
+      from: 12,
+      to: 19,
+    });
+  });
+
+  it('rejects embedded slashes and slashes outside the active cursor token', () => {
     expect(findSlashCommandContext('path/to/file')).toBeNull();
+    expect(findSlashCommandContext('https://example.com/docs')).toBeNull();
+    expect(findSlashCommandContext('word/review')).toBeNull();
     expect(findSlashCommandContext('/review later')).toBeNull();
     expect(findSlashCommandContext(' /review', 1)).toBeNull();
   });
@@ -69,14 +87,26 @@ describe('rankSlashSkills', () => {
 });
 
 describe('applySlashSkillSelection', () => {
-  it('replaces the leading token, preserves surrounding content, and positions the cursor', () => {
-    const prompt = '  /rev existing request';
-    const context = findSlashCommandContext(prompt, 6);
+  it('replaces only the active token, preserves surrounding content, and positions the cursor', () => {
+    const prompt = 'draft /rev existing request';
+    const context = findSlashCommandContext(prompt, 10);
     expect(context).not.toBeNull();
 
     expect(applySlashSkillSelection(prompt, context!, { name: 'review' })).toEqual({
-      text: '  /review existing request',
-      cursorOffset: 10,
+      text: 'draft /review existing request',
+      cursorOffset: 14,
+    });
+  });
+
+  it('replaces the selected command among multiple slash tokens across lines', () => {
+    const prompt = '/audit first\nthen /rev final request';
+    const cursorOffset = prompt.indexOf('/rev') + 4;
+    const context = findSlashCommandContext(prompt, cursorOffset);
+    expect(context).not.toBeNull();
+
+    expect(applySlashSkillSelection(prompt, context!, { name: 'review' })).toEqual({
+      text: '/audit first\nthen /review final request',
+      cursorOffset: prompt.indexOf('/rev') + '/review '.length,
     });
   });
 

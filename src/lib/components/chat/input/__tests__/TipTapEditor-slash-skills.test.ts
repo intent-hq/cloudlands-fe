@@ -27,20 +27,44 @@ async function mountEditor(props: Record<string, unknown> = {}) {
 }
 
 describe('TipTapEditor slash skills', () => {
-  it('activates only for a leading slash token and filters case-insensitively', async () => {
-    const leading = await mountEditor();
-    leading.component.insertText('  /RES');
+  it('activates at any token boundary, filters case-insensitively, and ignores embedded slashes', async () => {
+    const command = await mountEditor();
+    command.component.insertText('explain /RES');
 
     await waitFor(() => expect(screen.getByRole('listbox')).toBeTruthy());
     expect(screen.getAllByRole('option').map((option) => option.textContent)).toEqual([
       expect.stringContaining('research'),
     ]);
     expect(screen.getByRole('option').textContent).not.toContain('/research');
-    leading.unmount();
+    command.unmount();
 
-    const prose = await mountEditor();
-    prose.component.insertText('explain /review');
+    const path = await mountEditor();
+    path.component.insertText('open path/to/file');
     expect(screen.queryByRole('listbox')).toBeNull();
+  });
+
+  it('preserves a mid-prompt prefix and keeps the caret after the selected command', async () => {
+    const onUpdate = vi.fn();
+    const { component } = await mountEditor({ onUpdate });
+    component.insertText('Please /rev');
+    await waitFor(() => expect(screen.getByRole('listbox')).toBeTruthy());
+
+    await fireEvent.click(screen.getByRole('option', { name: 'review' }));
+    await waitFor(() => expect(component.getTextContent()).toBe('Please /review '));
+
+    component.insertText('audit this');
+    expect(component.getTextContent()).toBe('Please /review audit this');
+    expect(onUpdate).toHaveBeenLastCalledWith('Please /review audit this');
+  });
+
+  it('activates after a newline and replaces only the current command', async () => {
+    const { component } = await mountEditor();
+    await component.setContent('/audit first\nthen /rev');
+    component.focusEnd();
+    await waitFor(() => expect(screen.getByRole('listbox')).toBeTruthy());
+
+    await fireEvent.click(screen.getByRole('option', { name: 'review' }));
+    await waitFor(() => expect(component.getTextContent()).toBe('/audit first\nthen /review '));
   });
 
   it('portals an anchored floating menu above the editor without adding inline layout', async () => {

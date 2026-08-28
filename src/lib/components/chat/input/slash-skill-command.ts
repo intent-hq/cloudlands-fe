@@ -14,10 +14,10 @@ export type SlashSkillSelection = {
 const WHITESPACE = /\s/u;
 
 /**
- * Find a slash-command query at the first non-whitespace token.
+ * Find the slash-command token immediately before the cursor.
  *
- * The cursor must be inside that token so a completed command followed by
- * ordinary prompt text does not keep the suggestion menu open.
+ * The slash must start at a token boundary and the cursor must be inside that
+ * token, so URL/path slashes and completed commands elsewhere stay inactive.
  */
 export function findSlashCommandContext(
   prompt: string,
@@ -25,8 +25,11 @@ export function findSlashCommandContext(
 ): SlashCommandContext | null {
   if (cursorOffset < 0 || cursorOffset > prompt.length) return null;
 
-  const from = prompt.search(/\S/u);
-  if (from < 0 || prompt[from] !== '/' || cursorOffset < from + 1) return null;
+  let from = cursorOffset - 1;
+  while (from >= 0 && !WHITESPACE.test(prompt[from])) from -= 1;
+  from += 1;
+
+  if (prompt[from] !== '/' || cursorOffset < from + 1) return null;
 
   let to = from + 1;
   while (to < prompt.length && !WHITESPACE.test(prompt[to])) to += 1;
@@ -80,7 +83,7 @@ export function rankSlashSkills(skills: readonly SkillInfo[], query: string): Sk
     .map(({ skill }) => skill);
 }
 
-/** Replace the complete leading slash token while preserving the rest of the prompt. */
+/** Replace the active slash token while preserving the rest of the prompt. */
 export function applySlashSkillSelection(
   prompt: string,
   context: SlashCommandContext,
