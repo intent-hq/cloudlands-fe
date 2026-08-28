@@ -15,6 +15,7 @@ import { getActiveLocale } from './locale';
 export const {
   formatNumber,
   formatInteger,
+  formatCompactNumber,
   formatCurrency,
   formatBytesBinary,
   formatRelativeTime,
@@ -32,4 +33,8 @@ export const {
   formatDatePattern,
 } = createFormatters(getActiveLocale);
 
-export type { DateInput } from '$shared/i18n/formatters';
+export type {
+  CompactNumberOptions,
+  CurrencyFormatOptions,
+  DateInput,
+} from '$shared/i18n/formatters';

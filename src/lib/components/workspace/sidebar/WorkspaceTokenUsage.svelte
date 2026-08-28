@@ -16,8 +16,12 @@
   import { Button } from '$lib/components/ui/button';
   import AnimatedNumber from '$lib/components/ui/AnimatedNumber.svelte';
   import { portal } from '$lib/actions/portal';
-  import { formatCompactNumber } from '$lib/utils/format-compact-number';
-  import { formatCurrency, formatInteger, formatNumber } from '$lib/i18n/format';
+  import {
+    formatCompactNumber,
+    formatCurrency,
+    formatInteger,
+    formatNumber,
+  } from '$lib/i18n/format';
   import { formatModelLabel } from '$features/token-usage/utils/format-model-label';
   import type {
     TokenUsageCost,
@@ -113,13 +117,17 @@
   }
 
   function shareLabel(value: number): string {
-    return formatNumber(value, { style: 'percent', maximumFractionDigits: 1 });
+    return formatNumber(value, { style: 'percent', maximumFractionDigits: 0 });
+  }
+
+  function compactWholeNumber(value: number): string {
+    return formatCompactNumber(value, { maximumFractionDigits: 0 });
   }
 
   /** Formatted cost, or null when the daemon reported none for the entry. */
   function costLabel(cost: TokenUsageCost | null | undefined): string | null {
     if (!cost) return null;
-    const label = formatCurrency(cost.amount, cost.currency);
+    const label = formatCurrency(cost.amount, cost.currency, { fractionDigits: 0 });
     return label === '' ? null : label;
   }
 
@@ -229,9 +237,11 @@
 
   const modelRows = $derived(crossFilterAvailable ? matrixBreakdownRows('model') : legacyModelRows);
   const agentRows = $derived(crossFilterAvailable ? matrixBreakdownRows('agent') : legacyAgentRows);
+  const modelSegmentRows = $derived(modelRows.filter((row) => row.tokens > 0));
+  const agentSegmentRows = $derived(agentRows.filter((row) => row.tokens > 0));
 
   function firstNonzeroRow(rows: BreakdownRow[]): BreakdownRow | undefined {
-    return rows.find((row) => row.tokens > 0) ?? rows[0];
+    return rows.find((row) => row.tokens > 0);
   }
 
   const defaultTarget = $derived(
@@ -311,7 +321,7 @@
         m.workspace_tokenUsage_segment_ariaLabel({
           scope: m.workspace_tokenUsage_composition_label(),
           category: row.label,
-          tokens: formatCompactNumber(row.tokens),
+          tokens: compactWholeNumber(row.tokens),
           share: shareLabel(row.share),
         }),
       )
@@ -362,6 +372,28 @@
 
   function handleRowFocus(row: BreakdownRow) {
     if (!suppressTouchFocusPreview) focusedTarget = rowTarget(row);
+  }
+
+  function handleRowKeydown(row: BreakdownRow, rows: BreakdownRow[], event: KeyboardEvent) {
+    const currentIndex = rows.findIndex(
+      (candidate) => rowKey(rowTarget(candidate)) === rowKey(rowTarget(row)),
+    );
+    if (currentIndex < 0) return;
+
+    let nextIndex: number | null = null;
+    if (event.key === 'ArrowLeft') nextIndex = (currentIndex - 1 + rows.length) % rows.length;
+    if (event.key === 'ArrowRight') nextIndex = (currentIndex + 1) % rows.length;
+    if (event.key === 'Home') nextIndex = 0;
+    if (event.key === 'End') nextIndex = rows.length - 1;
+    if (nextIndex === null) return;
+
+    event.preventDefault();
+    suppressTouchFocusPreview = false;
+    hoveredTarget = null;
+    touchTarget = null;
+    focusedTarget = rowTarget(rows[nextIndex]);
+    const group = (event.currentTarget as HTMLElement).closest('[role="radiogroup"]');
+    group?.querySelectorAll<HTMLButtonElement>('[role="radio"]')[nextIndex]?.focus();
   }
 
   function handleRowBlur(row: BreakdownRow, event: FocusEvent) {
@@ -498,9 +530,9 @@
       onkeydown={handleDisclosureKeydown}
       onclick={handleDisclosureClick}
     >
-      <span aria-hidden="true">{formatCompactNumber(processedTokens)}</span>
+      <span aria-hidden="true">{compactWholeNumber(processedTokens)}</span>
       <span id={processedId} class="sr-only" aria-live="polite">
-        {formatCompactNumber(processedTokens)}
+        {compactWholeNumber(processedTokens)}
         {m.workspace_tokenUsage_tokensUsed_label()}
         {#if isUpdating}
           {m.workspace_tokenUsage_updating_label()}
@@ -530,7 +562,7 @@
                 <h4 id={`${detailsId}-agents`} class="sr-only">
                   {m.workspace_tokenUsage_byAgent_label()}
                 </h4>
-                {#if selectedAgentRow}
+                {#if selectedAgentRow && agentSegmentRows.length > 0}
                   <div class="navigator-row flex min-w-0 flex-col gap-1.5">
                     <div class="navigator-selection flex min-w-0 items-baseline gap-1.5">
                       <span
@@ -543,33 +575,41 @@
                         <AnimatedNumber
                           value={share(selectedAgentRow.tokens, agentTokenTotal)}
                           format={shareLabel}
+                          pulse={false}
                           class="block w-full text-right"
                         />
                       </span>
                     </div>
                     <ol
                       class="breakdown-stack flex h-2.5 w-full min-w-0 overflow-hidden bg-muted/60"
+                      role="radiogroup"
+                      aria-labelledby={`${detailsId}-agents`}
                     >
-                      {#each agentRows as row (row.id)}
+                      {#each agentSegmentRows as row (row.id)}
                         <li
                           class="breakdown-stack-item h-full"
+                          role="presentation"
                           style={`width: ${share(row.tokens, agentTokenTotal) * 100}%`}
                         >
                           <button
                             type="button"
+                            role="radio"
                             class="breakdown-item-control block h-full w-full min-w-0 appearance-none rounded-none border-0 p-0 outline-none transition-colors motion-reduce:transition-none"
                             data-preview-active={rowKey(rowTarget(row)) ===
                             rowKey(rowTarget(selectedAgentRow))
                               ? 'true'
                               : undefined}
-                            aria-current={rowKey(rowTarget(row)) ===
+                            aria-checked={rowKey(rowTarget(row)) ===
                             rowKey(rowTarget(selectedAgentRow))
                               ? 'true'
-                              : undefined}
+                              : 'false'}
+                            tabindex={rowKey(rowTarget(row)) === rowKey(rowTarget(selectedAgentRow))
+                              ? 0
+                              : -1}
                             aria-label={m.workspace_tokenUsage_segment_ariaLabel({
                               scope: row.kindLabel,
                               category: row.label,
-                              tokens: formatCompactNumber(row.tokens),
+                              tokens: compactWholeNumber(row.tokens),
                               share: shareLabel(share(row.tokens, agentTokenTotal)),
                             })}
                             title={row.title}
@@ -578,6 +618,7 @@
                             onpointerdown={(event) => handleRowPointerDown(row, event)}
                             onfocus={() => handleRowFocus(row)}
                             onblur={(event) => handleRowBlur(row, event)}
+                            onkeydown={(event) => handleRowKeydown(row, agentSegmentRows, event)}
                           ></button>
                         </li>
                       {/each}
@@ -596,7 +637,7 @@
                 <h4 id={`${detailsId}-models`} class="sr-only">
                   {m.workspace_tokenUsage_byModel_label()}
                 </h4>
-                {#if selectedModelRow}
+                {#if selectedModelRow && modelSegmentRows.length > 0}
                   <div class="navigator-row flex min-w-0 flex-col gap-1.5">
                     <div class="navigator-selection flex min-w-0 items-baseline gap-1.5">
                       <span
@@ -609,33 +650,41 @@
                         <AnimatedNumber
                           value={share(selectedModelRow.tokens, modelTokenTotal)}
                           format={shareLabel}
+                          pulse={false}
                           class="block w-full text-right"
                         />
                       </span>
                     </div>
                     <ol
                       class="breakdown-stack flex h-2.5 w-full min-w-0 overflow-hidden bg-muted/60"
+                      role="radiogroup"
+                      aria-labelledby={`${detailsId}-models`}
                     >
-                      {#each modelRows as row (row.id)}
+                      {#each modelSegmentRows as row (row.id)}
                         <li
                           class="breakdown-stack-item h-full"
+                          role="presentation"
                           style={`width: ${share(row.tokens, modelTokenTotal) * 100}%`}
                         >
                           <button
                             type="button"
+                            role="radio"
                             class="breakdown-item-control block h-full w-full min-w-0 appearance-none rounded-none border-0 p-0 outline-none transition-colors motion-reduce:transition-none"
                             data-preview-active={rowKey(rowTarget(row)) ===
                             rowKey(rowTarget(selectedModelRow))
                               ? 'true'
                               : undefined}
-                            aria-current={rowKey(rowTarget(row)) ===
+                            aria-checked={rowKey(rowTarget(row)) ===
                             rowKey(rowTarget(selectedModelRow))
                               ? 'true'
-                              : undefined}
+                              : 'false'}
+                            tabindex={rowKey(rowTarget(row)) === rowKey(rowTarget(selectedModelRow))
+                              ? 0
+                              : -1}
                             aria-label={m.workspace_tokenUsage_segment_ariaLabel({
                               scope: row.kindLabel,
                               category: row.label,
-                              tokens: formatCompactNumber(row.tokens),
+                              tokens: compactWholeNumber(row.tokens),
                               share: shareLabel(share(row.tokens, modelTokenTotal)),
                             })}
                             title={row.title}
@@ -644,6 +693,7 @@
                             onpointerdown={(event) => handleRowPointerDown(row, event)}
                             onfocus={() => handleRowFocus(row)}
                             onblur={(event) => handleRowBlur(row, event)}
+                            onkeydown={(event) => handleRowKeydown(row, modelSegmentRows, event)}
                           ></button>
                         </li>
                       {/each}
@@ -671,7 +721,7 @@
             {/if}
             <span title={scopeTitle(activeTarget)}>{scopeLabel(activeTarget)}</span>
             <span>
-              <span>{formatCompactNumber(previewProcessedTokens)}</span>
+              <span>{compactWholeNumber(previewProcessedTokens)}</span>
               {m.workspace_tokenUsage_processed_label()}
             </span>
           </span>
@@ -714,7 +764,8 @@
                 >
                   <AnimatedNumber
                     value={row.tokens}
-                    format={formatCompactNumber}
+                    format={compactWholeNumber}
+                    pulse={false}
                     class="block w-full text-right"
                   />
                 </dd>
@@ -724,6 +775,7 @@
                   <AnimatedNumber
                     value={row.share}
                     format={shareLabel}
+                    pulse={false}
                     class="block w-full text-right"
                   />
                 </dd>
@@ -741,6 +793,7 @@
                     <AnimatedNumber
                       value={previewHumanMessages ?? 0}
                       format={formatInteger}
+                      pulse={false}
                       class="block w-full text-right"
                     />
                   </dd>
@@ -758,6 +811,7 @@
                     <AnimatedNumber
                       value={previewAgentMessages ?? 0}
                       format={formatInteger}
+                      pulse={false}
                       class="block w-full text-right"
                     />
                   </dd>

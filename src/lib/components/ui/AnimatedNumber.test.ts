@@ -46,6 +46,7 @@ describe('AnimatedNumber', () => {
     const midpoint = Number(visible.textContent);
     expect(midpoint).toBeGreaterThan(100);
     expect(midpoint).toBeLessThan(1_000);
+    expect(view.container.querySelector('.animated-number')?.className).toContain('animating-up');
 
     await view.rerender({
       value: 400,
@@ -58,6 +59,41 @@ describe('AnimatedNumber', () => {
     expect(visible.textContent).toBe('400');
     expect(view.container.querySelector('.animated-number-target')?.textContent).toBe('400');
     expect(view.container.querySelector('.animated-number')?.className).not.toMatch(/animating-/);
+  });
+
+  it('keeps interpolation but omits pulse classes when pulse is disabled', async () => {
+    vi.useFakeTimers();
+    mockMotionPreference(false);
+    const AnimatedNumber = (await import('./AnimatedNumber.svelte')).default;
+    const view = render(AnimatedNumber, {
+      props: {
+        value: 1_234,
+        duration: 300,
+        pulse: false,
+        format: (value: number) => String(Math.round(value)),
+      },
+    });
+    const number = view.container.querySelector('.animated-number')!;
+    const visible = view.container.querySelector('.animated-number-value')!;
+
+    await view.rerender({
+      value: 9_876,
+      duration: 300,
+      pulse: false,
+      format: (value) => String(Math.round(value)),
+    });
+    await vi.advanceTimersByTimeAsync(150);
+    expect(Number(visible.textContent)).toBeGreaterThan(1_234);
+    expect(Number(visible.textContent)).toBeLessThan(9_876);
+    expect(visible.textContent).not.toContain('.');
+    expect(number.className).not.toMatch(/animating-/);
+    expect(number.getAttribute('data-pulse')).toBe('false');
+
+    await vi.advanceTimersByTimeAsync(200);
+    expect(visible.textContent).toBe('9876');
+    expect(
+      view.container.querySelector('.animated-number-target')?.getAttribute('aria-atomic'),
+    ).toBe('true');
   });
 
   it('snaps to the accessible final target under reduced motion', async () => {
