@@ -10,6 +10,7 @@
     format?: (n: number) => string;
     class?: string;
     accessible?: boolean;
+    pulse?: boolean;
   }
 
   let {
@@ -18,6 +19,7 @@
     format = (n: number) => formatInteger(n),
     class: className = '',
     accessible = true,
+    pulse = true,
   }: Props = $props();
 
   // Track direction for animation styling
@@ -77,14 +79,15 @@
 
 <span
   class="animated-number {className}"
-  class:animating-up={direction === 'up'}
-  class:animating-down={direction === 'down'}
+  class:animating-up={pulse && direction === 'up'}
+  class:animating-down={pulse && direction === 'down'}
+  data-pulse={pulse ? 'true' : 'false'}
 >
   <span class="animated-number-value" aria-hidden={accessible ? 'true' : undefined}
     >{formattedValue}</span
   >
   {#if accessible}
-    <span class="animated-number-target">{targetValue}</span>
+    <span class="animated-number-target" aria-atomic="true">{targetValue}</span>
   {/if}
 </span>
 

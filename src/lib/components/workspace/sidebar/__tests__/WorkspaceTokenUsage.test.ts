@@ -223,11 +223,11 @@ describe('WorkspaceTokenUsage', () => {
     await renderExpandedTokenUsage();
 
     const row = screen.getByTestId('workspace-token-usage');
-    expect(visibleText(screen.getByTestId('token-usage-details'))).toContain('9.4M processed');
+    expect(visibleText(screen.getByTestId('token-usage-details'))).toContain('9M processed');
     expect(
       screen.getByTestId('token-usage-disclosure').querySelector('[aria-hidden="true"]')
         ?.textContent,
-    ).toBe('9.4M');
+    ).toBe('9M');
     expect(row.textContent).not.toContain('updating');
 
     expect(mocks.dispatch).toHaveBeenCalledTimes(1);
@@ -263,7 +263,7 @@ describe('WorkspaceTokenUsage', () => {
     expect(composition.querySelector('.preview-status')?.classList).toContain('sr-only');
     expect(compositionStrip.nextElementSibling).toBe(compositionHeader);
     expect(compositionStrip.getAttribute('aria-label')).toContain(
-      'Token composition, Cached context: 9.3M tokens, 98.9%',
+      'Token composition, Cached context: 9M tokens, 99%',
     );
     const compositionSegments = Array.from(
       compositionStrip.querySelectorAll<HTMLElement>('.composition-strip-segment'),
@@ -286,8 +286,8 @@ describe('WorkspaceTokenUsage', () => {
       context: visibleText(compositionRow.querySelector('.composition-context')!),
     }));
     expect(compositionValues).toEqual([
-      { label: 'Cached context', value: '9.3M', context: '98.9%' },
-      { label: 'Input context', value: '1.2K', context: '0%' },
+      { label: 'Cached context', value: '9M', context: '99%' },
+      { label: 'Input context', value: '1K', context: '0%' },
       { label: 'Model output', value: '98K', context: '1%' },
       { label: 'Reasoning tokens', value: '0', context: '0%' },
     ]);
@@ -314,31 +314,44 @@ describe('WorkspaceTokenUsage', () => {
           cell.classList.contains('text-muted-foreground'),
       ),
     ).toBe(true);
-    expect(text).toContain('9.4M processed');
+    expect(text).toContain('9M processed');
 
-    const modelRows = within(modelSection).getAllByRole('listitem');
+    const modelRows = Array.from(modelSection.querySelectorAll('.breakdown-stack-item'));
     expect(modelRows).toHaveLength(2);
-    expect(visibleText(modelSection)).toBe('By model Model Big 99.7%');
+    expect(visibleText(modelSection)).toBe('By model Model Big 100%');
     expect(
       within(modelSection)
-        .getByRole('button', { name: 'By model, Model Big: 9.3M tokens, 99.7%' })
-        .getAttribute('aria-current'),
+        .getByRole('radio', { name: 'By model, Model Big: 9M tokens, 100%' })
+        .getAttribute('aria-checked'),
     ).toBe('true');
     expect(
-      within(modelSection).getByRole('button', { name: 'By model, Model Small: 31K tokens, 0.3%' }),
+      within(modelSection).getByRole('radio', { name: 'By model, Model Small: 31K tokens, 0%' }),
     ).toBeTruthy();
 
-    const agentRows = within(agentSection).getAllByRole('listitem');
+    const agentRows = Array.from(agentSection.querySelectorAll('.breakdown-stack-item'));
     expect(agentRows).toHaveLength(2);
-    expect(visibleText(agentSection)).toBe('By agent Beta 91.5%');
+    expect(visibleText(agentSection)).toBe('By agent Beta 91%');
     expect(
       within(agentSection)
-        .getByRole('button', { name: 'By agent, Beta: 332.4K tokens, 91.5%' })
-        .getAttribute('aria-current'),
+        .getByRole('radio', { name: 'By agent, Beta: 332K tokens, 91%' })
+        .getAttribute('aria-checked'),
     ).toBe('true');
     expect(
-      within(agentSection).getByRole('button', { name: 'By agent, Alpha: 31K tokens, 8.5%' }),
+      within(agentSection).getByRole('radio', { name: 'By agent, Alpha: 31K tokens, 9%' }),
     ).toBeTruthy();
+    const agentGroup = within(agentSection).getByRole('radiogroup', { name: 'By agent' });
+    const modelGroup = within(modelSection).getByRole('radiogroup', { name: 'By model' });
+    expect(
+      within(agentGroup)
+        .getAllByRole('radio')
+        .filter((radio) => radio.tabIndex === 0),
+    ).toHaveLength(1);
+    expect(
+      within(modelGroup)
+        .getAllByRole('radio')
+        .filter((radio) => radio.tabIndex === 0),
+    ).toHaveLength(1);
+    expect(details.querySelectorAll('[data-pulse="false"]')).toHaveLength(10);
     expect(
       [...modelRows, ...agentRows].every((listRow) =>
         listRow.classList.contains('breakdown-stack-item'),
@@ -364,14 +377,14 @@ describe('WorkspaceTokenUsage', () => {
       expect(controls.every((control) => control.tagName === 'BUTTON')).toBe(true);
       expect(controls.every((control) => control.classList.contains('appearance-none'))).toBe(true);
       expect(activeControls).toHaveLength(1);
-      expect(activeControls[0]?.getAttribute('aria-current')).toBe('true');
+      expect(activeControls[0]?.getAttribute('aria-checked')).toBe('true');
       expect(
         controls
           .filter((control) => control !== activeControls[0])
           .every(
             (control) =>
               control.getAttribute('data-preview-active') === null &&
-              control.getAttribute('aria-current') === null,
+              control.getAttribute('aria-checked') === 'false',
           ),
       ).toBe(true);
       expect(
@@ -460,26 +473,26 @@ describe('WorkspaceTokenUsage', () => {
       Array.from(composition.querySelectorAll<HTMLElement>('.composition-strip-segment')).map(
         (segment) => ({ metric: segment.dataset.metric, width: segment.style.width }),
       );
-    const alpha = screen.getByRole('button', { name: 'By agent, Alpha: 150 tokens, 13%' });
-    const beta = screen.getByRole('button', { name: 'By agent, Beta: 1K tokens, 87%' });
-    const zeroCache = screen.getByRole('button', {
-      name: 'By model, Model Zero Cache: 100 tokens, 66.7%',
+    const alpha = screen.getByRole('radio', { name: 'By agent, Alpha: 150 tokens, 13%' });
+    const beta = screen.getByRole('radio', { name: 'By agent, Beta: 1K tokens, 87%' });
+    const zeroCache = screen.getByRole('radio', {
+      name: 'By model, Model Zero Cache: 100 tokens, 67%',
     });
-    const reasoning = screen.getByRole('button', {
-      name: 'By model, Model Reasoning: 50 tokens, 33.3%',
+    const reasoning = screen.getByRole('radio', {
+      name: 'By model, Model Reasoning: 50 tokens, 33%',
     });
 
-    expect(visibleText(previewStatus)).toBe('Active scope Workspace 1.1K processed');
-    expect(visibleText(disclosure)).toContain('1.1K tokens used');
+    expect(visibleText(previewStatus)).toBe('Active scope Workspace 1K processed');
+    expect(visibleText(disclosure)).toContain('1K tokens used');
 
     await fireEvent.pointerEnter(alpha, { pointerType: 'mouse' });
     expect(visibleText(previewStatus)).toBe('Active scope By agent Alpha 150 processed');
-    expect(alpha.getAttribute('aria-current')).toBe('true');
+    expect(alpha.getAttribute('aria-checked')).toBe('true');
     expect(values()).toEqual([
-      { value: '70', share: '46.7%' },
-      { value: '10', share: '6.7%' },
-      { value: '20', share: '13.3%' },
-      { value: '50', share: '33.3%' },
+      { value: '70', share: '47%' },
+      { value: '10', share: '7%' },
+      { value: '20', share: '13%' },
+      { value: '50', share: '33%' },
     ]);
     expect(stripMetrics()).toEqual([
       { metric: 'cached', width: `${(70 / 150) * 100}%` },
@@ -502,7 +515,7 @@ describe('WorkspaceTokenUsage', () => {
     ]);
 
     await fireEvent.pointerLeave(zeroCache, { pointerType: 'mouse' });
-    expect(visibleText(previewStatus)).toBe('Active scope Workspace 1.1K processed');
+    expect(visibleText(previewStatus)).toBe('Active scope Workspace 1K processed');
 
     await fireEvent.focus(beta);
     expect(visibleText(previewStatus)).toBe('Active scope By agent Beta 1K processed');
@@ -530,8 +543,8 @@ describe('WorkspaceTokenUsage', () => {
     expect(stripMetrics()).toEqual([{ metric: 'reasoning', width: '100%' }]);
 
     await fireEvent.blur(reasoning);
-    expect(visibleText(previewStatus)).toBe('Active scope Workspace 1.1K processed');
-    expect(visibleText(disclosure)).toContain('1.1K tokens used');
+    expect(visibleText(previewStatus)).toBe('Active scope Workspace 1K processed');
+    expect(visibleText(disclosure)).toContain('1K tokens used');
 
     await fireEvent.pointerEnter(alpha, { pointerType: 'touch' });
     await fireEvent.pointerDown(alpha, { pointerType: 'touch' });
@@ -539,7 +552,21 @@ describe('WorkspaceTokenUsage', () => {
     expect(visibleText(previewStatus)).toBe('Active scope By agent Alpha 150 processed');
     expect(composition.querySelector('.message-composition-row')).toBeNull();
     await fireEvent.pointerDown(alpha, { pointerType: 'touch' });
-    expect(visibleText(previewStatus)).toBe('Active scope Workspace 1.1K processed');
+    expect(visibleText(previewStatus)).toBe('Active scope Workspace 1K processed');
+
+    beta.focus();
+    await fireEvent.keyDown(beta, { key: 'ArrowRight' });
+    expect(document.activeElement).toBe(alpha);
+    expect(alpha.getAttribute('aria-checked')).toBe('true');
+    expect(visibleText(previewStatus)).toBe('Active scope By agent Alpha 150 processed');
+    await fireEvent.keyDown(alpha, { key: 'ArrowRight' });
+    expect(document.activeElement).toBe(beta);
+    await fireEvent.keyDown(beta, { key: 'ArrowLeft' });
+    expect(document.activeElement).toBe(alpha);
+    await fireEvent.keyDown(alpha, { key: 'Home' });
+    expect(document.activeElement).toBe(beta);
+    await fireEvent.keyDown(beta, { key: 'End' });
+    expect(document.activeElement).toBe(alpha);
   });
 
   it('selects exact matrix totals from either navigator with pointer, focus, and touch', async () => {
@@ -590,6 +617,13 @@ describe('WorkspaceTokenUsage', () => {
         },
         humanMessages: 2,
         agentMessages: 5,
+      },
+      {
+        agentId: 'agent-zero',
+        model: 'model-zero',
+        totals: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheCreationTokens: 0 },
+        humanMessages: 1,
+        agentMessages: 1,
       },
     ];
     mocks.state.usage = makeUsage({
@@ -642,6 +676,7 @@ describe('WorkspaceTokenUsage', () => {
     mocks.state.agents = [
       { id: 'agent-alpha', name: 'Alpha' },
       { id: 'agent-beta', name: 'Beta' },
+      { id: 'agent-zero', name: 'Zero token agent' },
     ];
 
     await renderExpandedTokenUsage();
@@ -659,8 +694,8 @@ describe('WorkspaceTokenUsage', () => {
       }));
     const agentSection = screen.getByTestId('token-usage-by-agent');
     const modelSection = screen.getByTestId('token-usage-by-model');
-    const alphaControl = within(agentSection).getByRole('button', {
-      name: 'By agent, Alpha: 160 tokens, 13.8%',
+    const alphaControl = within(agentSection).getByRole('radio', {
+      name: 'By agent, Alpha: 160 tokens, 14%',
     });
 
     expect(messageCounts()).toEqual(['Human messages 6', 'Agent messages 7']);
@@ -685,30 +720,32 @@ describe('WorkspaceTokenUsage', () => {
     ).toBeTruthy();
     expect(agentSection.querySelectorAll('.breakdown-item-control')).toHaveLength(2);
     expect(modelSection.querySelectorAll('.breakdown-item-control')).toHaveLength(2);
+    expect(within(agentSection).queryByRole('radio', { name: /Zero token agent/ })).toBeNull();
+    expect(within(modelSection).queryByRole('radio', { name: /model-zero/ })).toBeNull();
 
     await fireEvent.pointerEnter(alphaControl, { pointerType: 'mouse' });
     expect(visibleText(status)).toBe('Active scope By agent Alpha 160 processed');
     expect(messageCounts()).toEqual(['Human messages 3', 'Agent messages 4']);
     expect(values()).toEqual([
-      { value: '70', share: '43.8%' },
-      { value: '15', share: '9.4%' },
-      { value: '25', share: '15.6%' },
-      { value: '50', share: '31.3%' },
+      { value: '70', share: '44%' },
+      { value: '15', share: '9%' },
+      { value: '25', share: '16%' },
+      { value: '50', share: '31%' },
     ]);
-    expect(within(agentSection).getAllByRole('listitem')).toHaveLength(2);
-    expect(within(modelSection).getAllByRole('listitem')).toHaveLength(2);
-    expect(screen.getByTestId('token-usage-total-cost').textContent).toContain('$1.00');
+    expect(agentSection.querySelectorAll('.breakdown-stack-item')).toHaveLength(2);
+    expect(modelSection.querySelectorAll('.breakdown-stack-item')).toHaveLength(2);
+    expect(screen.getByTestId('token-usage-total-cost').textContent).toContain('$1');
 
     await fireEvent.pointerLeave(alphaControl, { pointerType: 'mouse' });
     expect(visibleText(status)).toBe('Active scope By agent Beta 1K processed');
 
-    const modelA = within(modelSection).getByRole('button', {
-      name: 'By model, Model A: 350 tokens, 30.2%',
+    const modelA = within(modelSection).getByRole('radio', {
+      name: 'By model, Model A: 350 tokens, 30%',
     });
     await fireEvent.focus(modelA);
     expect(visibleText(status)).toBe('Active scope By model Model A 350 processed');
     expect(messageCounts()).toEqual(['Human messages 6', 'Agent messages 5']);
-    expect(within(agentSection).getAllByRole('listitem')).toHaveLength(2);
+    expect(agentSection.querySelectorAll('.breakdown-stack-item')).toHaveLength(2);
     await fireEvent.blur(modelA);
 
     await fireEvent.pointerDown(alphaControl, { pointerType: 'touch' });
@@ -717,8 +754,8 @@ describe('WorkspaceTokenUsage', () => {
     await fireEvent.pointerDown(alphaControl, { pointerType: 'touch' });
     expect(visibleText(status)).toBe('Active scope By agent Beta 1K processed');
 
-    const modelB = within(modelSection).getByRole('button', {
-      name: 'By model, Model B: 810 tokens, 69.8%',
+    const modelB = within(modelSection).getByRole('radio', {
+      name: 'By model, Model B: 810 tokens, 70%',
     });
     await fireEvent.pointerDown(modelB, { pointerType: 'touch' });
     expect(visibleText(status)).toBe('Active scope By model Model B 810 processed');
@@ -817,7 +854,7 @@ describe('WorkspaceTokenUsage', () => {
     expect(
       screen.getByTestId('token-usage-disclosure').querySelector('[aria-hidden="true"]')
         ?.textContent,
-    ).toBe('4.2K');
+    ).toBe('4K');
 
     const modelSection = screen.getByTestId('token-usage-by-model');
     const agentSection = screen.getByTestId('token-usage-by-agent');
@@ -827,7 +864,7 @@ describe('WorkspaceTokenUsage', () => {
       .getByRole('heading', { name: 'Token composition' })
       .closest('section')!;
     const reasoningRow = composition.querySelectorAll('.composition-row')[3];
-    expect(visibleText(reasoningRow)).toBe('Reasoning tokens 4.2K 99.3%');
+    expect(visibleText(reasoningRow)).toBe('Reasoning tokens 4K 99%');
   });
 
   it('keeps the pre-thoughtTokens layout when the field is absent', async () => {
@@ -1021,7 +1058,7 @@ describe('WorkspaceTokenUsage', () => {
     expect(agentSection.textContent).not.toContain('$1.50');
 
     const totalCost = screen.getByTestId('token-usage-total-cost');
-    expect(visibleText(totalCost)).toBe('Total cost $1.50');
+    expect(visibleText(totalCost)).toBe('Total cost $2');
     expect(totalCost.lastElementChild?.classList).toContain('font-normal');
     expect(totalCost.querySelector('.font-medium')).toBeNull();
   });
