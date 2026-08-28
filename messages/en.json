@@ -1927,6 +1927,7 @@
   "chat_editRegenerate_confirm_description": "All later messages in this conversation will be permanently removed and cannot be recovered. The agent will regenerate its response from this message.",
   "chat_editRegenerate_confirm_title": "Edit message and restart from here?",
   "chat_effortPicker_level_default": "Default",
+  "chat_effortPicker_level_auto": "Auto",
   "chat_effortPicker_level_high": "High",
   "chat_effortPicker_level_low": "Low",
   "chat_effortPicker_level_max": "Max",

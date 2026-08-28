@@ -1926,6 +1926,7 @@
   "chat_editRegenerate_confirm_description": "この会話の以降のメッセージはすべて完全に削除され、復元できません。エージェントはこのメッセージから応答を再生成します。",
   "chat_editRegenerate_confirm_title": "メッセージを編集してここからやり直しますか？",
   "chat_effortPicker_level_default": "デフォルト",
+  "chat_effortPicker_level_auto": "自動",
   "chat_effortPicker_level_high": "高",
   "chat_effortPicker_level_low": "低",
   "chat_effortPicker_level_max": "最大",

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { derived, get, readable, writable } from 'svelte/store';
 
 const mockModelState = vi.hoisted(() => ({
@@ -544,6 +544,85 @@ describe('ModelPicker combined reasoning mode', () => {
     activeProviderId$.set('auggie');
   });
 
+  const effortTrigger = () => screen.getByTestId('effort-picker-trigger');
+
+  async function openEffortSelect() {
+    await fireEvent.click(effortTrigger());
+    const listboxes = await screen.findAllByRole('listbox');
+    return listboxes[listboxes.length - 1];
+  }
+
+  async function selectEffort(listbox: HTMLElement, name: string) {
+    await fireEvent.pointerUp(within(listbox).getByRole('option', { name }), {
+      pointerType: 'mouse',
+    });
+  }
+
+  const triggerBranches: Array<{
+    name: string;
+    props: { size?: 'xs'; isLocked?: boolean };
+  }> = [
+    { name: 'regular', props: {} },
+    { name: 'xs', props: { size: 'xs' } },
+    { name: 'locked', props: { isLocked: true } },
+  ];
+
+  it.each(triggerBranches)(
+    'renders Auto, Off, and explicit effort gauges in the $name trigger',
+    async ({ props }) => {
+      const levels = ['none', 'low', 'medium', 'high'];
+      const cases: Array<{
+        effort: string | null;
+        label: string;
+        gaugeValue: number | null;
+      }> = [
+        { effort: null, label: 'Auto', gaugeValue: null },
+        { effort: 'none', label: 'Off', gaugeValue: null },
+        { effort: 'low', label: 'Low', gaugeValue: 1 },
+        { effort: 'medium', label: 'Medium', gaugeValue: 2 },
+        { effort: 'high', label: 'High', gaugeValue: 3 },
+      ];
+
+      for (const { effort, label, gaugeValue } of cases) {
+        reasoningEffort$.set(effort);
+        agentModelEffortLevels$.set(levels);
+        render(ModelPicker, {
+          props: {
+            selectedModel: 'codex:gpt-5.6-sol',
+            agentId: 'agent-1',
+            workspaceId: 'ws-1',
+            showReasoning: true,
+            portal: false,
+            ...props,
+          },
+        });
+
+        const accessibleLabel = `GPT-5.6-Sol · ${label}`;
+        const trigger = await waitFor(() => screen.getByRole('button', { name: accessibleLabel }));
+        const titleElement = props.isLocked ? trigger : trigger.querySelector('[title]');
+        expect(titleElement?.getAttribute('title')).toContain(accessibleLabel);
+
+        const gauge = screen.queryByTestId('model-reasoning-effort-gauge');
+        if (gaugeValue === null) {
+          expect(gauge).toBeNull();
+        } else {
+          expect(gauge?.dataset.gaugeValue).toBe(String(gaugeValue));
+          expect(gauge?.dataset.gaugeSize).toBe('compact');
+        }
+
+        if (effort === null) {
+          expect(screen.getByTestId('model-reasoning-strength').textContent).toContain('Auto');
+        } else {
+          expect(screen.queryByTestId('model-reasoning-strength')).toBeNull();
+          expect(trigger.textContent).not.toContain(label);
+        }
+
+        cleanup();
+        document.body.innerHTML = '';
+      }
+    },
+  );
+
   it('hides the reasoning footer when the selected model has no effort levels', async () => {
     const models = [{ value: 'no-effort', label: 'No effort model' }];
     mockModelState.availableModels = models;
@@ -562,7 +641,7 @@ describe('ModelPicker combined reasoning mode', () => {
     expect(screen.queryByTestId('model-reasoning-section')).toBeNull();
   });
 
-  it('shows a compact collapsed reasoning row by default', async () => {
+  it('shows a compact reasoning select and replaces the current strength with a gauge', async () => {
     render(ModelPicker, {
       props: {
         selectedModel: 'codex:gpt-5.6-sol',
@@ -574,46 +653,36 @@ describe('ModelPicker combined reasoning mode', () => {
     });
 
     const trigger = screen.getByRole('button');
-    const triggerGauge = await waitFor(() => screen.getByTestId('effort-gauge'));
     expect(trigger.textContent).toContain('GPT-5.6-Sol');
+    await waitFor(() => expect(screen.getByLabelText('GPT-5.6-Sol · Medium')).toBeTruthy());
     expect(trigger.textContent).not.toContain('Medium');
-    expect(screen.getByLabelText('GPT-5.6-Sol · Medium')).toBeTruthy();
-    expect(triggerGauge.dataset.gaugeValue).toBe('1');
-    expect(triggerGauge.dataset.gaugeCentered).toBe('false');
-    expect(triggerGauge.dataset.gaugeSize).toBe('compact');
+    expect(screen.getByTestId('model-reasoning-effort-gauge').dataset.gaugeValue).toBe('1');
+    expect(screen.queryByTestId('effort-gauge')).toBeNull();
 
     await fireEvent.click(trigger);
 
+    const popover = screen.getByRole('listbox');
+    expect(popover.className).toContain('bg-background!');
+    expect(popover.className).toContain('[&_[role=searchbox]]:border-b!');
+    expect(popover.className).toContain('[&_[role=searchbox]]:border-solid!');
     const modelOption = await screen.findByRole('option', { name: /GPT-5\.6-Sol/ });
     expect(modelOption.textContent).toContain('Codex model');
     expect(modelOption.textContent).not.toContain('Effort:');
     expect(modelOption.textContent).not.toContain('low · medium · high · max');
     expect(screen.getByTestId('model-reasoning-section')).toBeTruthy();
-    const toggle = await screen.findByTestId('model-reasoning-toggle');
-    expect(toggle.hasAttribute('disabled')).toBe(false);
-    expect(toggle.textContent?.trim()).toBe('Reasoning effort · Medium');
-    expect(toggle.className).toContain('text-xs');
-    expect(toggle.querySelector('[data-testid="effort-gauge"]')).toBeNull();
-    expect(toggle.querySelector('svg')).toBeNull();
-    expect(toggle.getAttribute('aria-expanded')).toBe('false');
-    expect(toggle.classList.contains('bg-transparent')).toBe(true);
-    expect(toggle.className).not.toContain('focus:bg-muted');
+    const selectTrigger = effortTrigger() as HTMLButtonElement;
+    expect(selectTrigger.disabled).toBe(false);
+    expect(selectTrigger.textContent?.trim()).toBe('Medium');
+    expect(selectTrigger.className).toContain('text-xs');
+    expect(selectTrigger.getAttribute('aria-expanded')).toBe('false');
+    expect(screen.getByTestId('effort-gauge')).toBeTruthy();
     expect(screen.queryByRole('slider')).toBeNull();
 
-    await fireEvent.click(toggle);
-
-    expect(toggle.textContent?.trim()).toBe('Reasoning effort · Medium');
-    const slider = screen.getByRole('slider');
-    expect(slider.getAttribute('max')).toBe('4');
-    expect(slider.getAttribute('aria-valuetext')).toBe('Medium');
-    expect(screen.getAllByTestId('effort-slider-tick')).toHaveLength(5);
-    expect(screen.queryByTestId('effort-current-value')).toBeNull();
-    expect(screen.getByTestId('effort-picker-content').textContent).not.toContain(
-      'Reasoning effort',
-    );
-    const nextSendCaption = screen.getByText('Applies on the next message you send.');
-    expect(nextSendCaption).toBeTruthy();
-    expect(screen.queryByTestId('effort-picker-trigger')).toBeNull();
+    const effortListbox = await openEffortSelect();
+    expect(within(effortListbox).getAllByRole('option')).toHaveLength(5);
+    expect(within(effortListbox).getByRole('option', { name: 'Auto' })).toBeTruthy();
+    expect(screen.queryByTestId('effort-slider-tick')).toBeNull();
+    expect(applyReasoningEffortMock).not.toHaveBeenCalled();
   });
 
   it('renders expanded Codex effort rows as one base model option', async () => {
@@ -656,7 +725,7 @@ describe('ModelPicker combined reasoning mode', () => {
     await fireEvent.click(screen.getByRole('button'));
 
     expect(await screen.findAllByRole('option', { name: /GPT-5\.6-Sol/ })).toHaveLength(1);
-    expect(screen.getByTestId('model-reasoning-toggle').hasAttribute('disabled')).toBe(false);
+    expect((effortTrigger() as HTMLButtonElement).disabled).toBe(false);
   });
 
   it('uses applyReasoningEffort when a reasoning level is selected', async () => {
@@ -671,10 +740,9 @@ describe('ModelPicker combined reasoning mode', () => {
     });
 
     await fireEvent.click(screen.getByRole('button'));
-    const toggle = await screen.findByTestId('model-reasoning-toggle');
-    await waitFor(() => expect(toggle.hasAttribute('disabled')).toBe(false));
-    await fireEvent.click(toggle);
-    await fireEvent.change(screen.getByRole('slider'), { target: { value: '3' } });
+    await waitFor(() => expect((effortTrigger() as HTMLButtonElement).disabled).toBe(false));
+    const effortListbox = await openEffortSelect();
+    await selectEffort(effortListbox, 'High');
 
     await waitFor(() => {
       expect(applyReasoningEffortMock).toHaveBeenCalledWith('agent-1', 'ws-1', 'high', 'medium');
@@ -695,44 +763,47 @@ describe('ModelPicker combined reasoning mode', () => {
     });
 
     const trigger = screen.getByRole('button');
-    const triggerGauge = await waitFor(() => screen.getByTestId('effort-gauge'));
-    expect(screen.getByLabelText('GPT-5.6-Sol · High')).toBeTruthy();
-    expect(triggerGauge.dataset.gaugeValue).toBe('2');
+    await waitFor(() => expect(screen.getByLabelText('GPT-5.6-Sol · High')).toBeTruthy());
+    expect(trigger.textContent).not.toContain('High');
+    expect(screen.getByTestId('model-reasoning-effort-gauge').dataset.gaugeValue).toBe('2');
+    expect(screen.queryByTestId('effort-gauge')).toBeNull();
 
     await fireEvent.click(trigger);
-    const toggle = await screen.findByTestId('model-reasoning-toggle');
-    expect(toggle.hasAttribute('disabled')).toBe(false);
-    await fireEvent.click(toggle);
-    await fireEvent.change(screen.getByRole('slider'), { target: { value: '4' } });
+    expect((effortTrigger() as HTMLButtonElement).disabled).toBe(false);
+    const effortListbox = await openEffortSelect();
+    await selectEffort(effortListbox, 'Max');
 
     await waitFor(() => expect(onReasoningChange).toHaveBeenCalledWith('max'));
     expect(applyReasoningEffortMock).not.toHaveBeenCalled();
   });
 
-  it('treats an unsupported controlled effort as unset', async () => {
+  it('displays an unsupported controlled effort as Auto without mutating it', async () => {
+    const onReasoningChange = vi.fn();
     render(ModelPicker, {
       props: {
         selectedModel: 'codex:gpt-5.6-sol',
         showReasoning: true,
         reasoningEffort: 'xhigh',
-        onReasoningChange: vi.fn(),
+        onReasoningChange,
         portal: false,
       },
     });
 
     const trigger = screen.getByRole('button');
-    expect(screen.getByLabelText('GPT-5.6-Sol')).toBeTruthy();
+    await waitFor(() => expect(trigger.textContent).toContain('Auto'));
 
     await fireEvent.click(trigger);
-    const toggle = await screen.findByTestId('model-reasoning-toggle');
-    await waitFor(() => expect(toggle.hasAttribute('disabled')).toBe(false));
+    await waitFor(() => expect((effortTrigger() as HTMLButtonElement).disabled).toBe(false));
     expect(screen.queryByTestId('effort-gauge')).toBeNull();
-    expect(toggle.textContent?.trim()).toBe('Reasoning effort · Default');
-    await fireEvent.click(toggle);
-    expect(screen.getByRole('slider').getAttribute('aria-valuetext')).toBe('Default');
+    expect(trigger.textContent).toContain('Auto');
+    expect(trigger.textContent).not.toContain('Default');
+    expect(effortTrigger().textContent?.trim()).toBe('Auto');
+    const effortListbox = await openEffortSelect();
+    expect(within(effortListbox).getByRole('option', { name: 'Auto' })).toBeTruthy();
+    expect(onReasoningChange).not.toHaveBeenCalled();
   });
 
-  it('expands by keyboard, lets Escape collapse first, and resets after reopening', async () => {
+  it('lets the canonical select own keyboard navigation, focus, and Escape', async () => {
     render(ModelPicker, {
       props: {
         selectedModel: 'codex:gpt-5.6-sol',
@@ -744,21 +815,22 @@ describe('ModelPicker combined reasoning mode', () => {
     });
 
     await fireEvent.click(screen.getByRole('button'));
-    const toggle = await screen.findByTestId('model-reasoning-toggle');
-    await waitFor(() => expect(toggle.hasAttribute('disabled')).toBe(false));
-    await fireEvent.keyDown(toggle, { key: 'Enter' });
-    expect(screen.getByRole('slider')).toBeTruthy();
+    const selectTrigger = (await screen.findByTestId('effort-picker-trigger')) as HTMLButtonElement;
+    await waitFor(() => expect(selectTrigger.disabled).toBe(false));
+    selectTrigger.focus();
+    await fireEvent.keyDown(selectTrigger, { key: 'Enter' });
+    const listboxes = screen.getAllByRole('listbox');
+    expect(listboxes).toHaveLength(2);
 
-    await fireEvent.keyDown(screen.getByRole('slider'), { key: 'Escape' });
-    await waitFor(() => expect(screen.queryByRole('slider')).toBeNull());
-    expect(screen.getByRole('listbox')).toBeTruthy();
+    await fireEvent.keyDown(selectTrigger, { key: 'Escape' });
+    await waitFor(() => {
+      expect(screen.getAllByRole('listbox')).toHaveLength(1);
+      expect(selectTrigger.getAttribute('aria-expanded')).toBe('false');
+    });
+    expect(document.activeElement).toBe(selectTrigger);
 
-    await fireEvent.click(await screen.findByRole('option', { name: /GPT-5\.6-Sol/ }));
+    await fireEvent.keyDown(selectTrigger, { key: 'Escape' });
     await waitFor(() => expect(screen.queryByRole('listbox')).toBeNull());
-    await fireEvent.click(screen.getByRole('button'));
-    expect(screen.getByTestId('model-reasoning-toggle').getAttribute('aria-expanded')).toBe(
-      'false',
-    );
   });
 
   it('keeps the chat popover height stable while allowing the model list to scroll', async () => {
@@ -831,6 +903,9 @@ describe('ModelPicker combined reasoning mode', () => {
     await fireEvent.click(screen.getByRole('button'));
 
     const codexTab = screen.getByRole('tab', { name: /Codex/ });
+    const providerTabs = screen.getByTestId('model-provider-tabs');
+    expect(providerTabs.parentElement?.className).toContain('bg-popover!');
+    expect(providerTabs.parentElement?.className).toContain('border-b!');
     expect(codexTab.getAttribute('aria-selected')).toBe('true');
     expect(await screen.findByRole('option', { name: /GPT-5\.6-Sol/ })).toBeTruthy();
     expect(screen.queryByRole('option', { name: /GPT 5\.4/ })).toBeNull();
@@ -1043,20 +1118,19 @@ describe('ModelPicker combined reasoning mode', () => {
     const trigger = screen.getByRole('button');
     expect(trigger.textContent).toContain('GPT-5.6-Sol');
     expect(trigger.textContent).not.toContain('Medium');
+    expect(screen.getByTestId('model-reasoning-effort-gauge').dataset.gaugeValue).toBe('1');
 
     await fireEvent.click(trigger);
     expect(screen.getByTestId('model-reasoning-section')).toBeTruthy();
-    const toggle = await screen.findByTestId('model-reasoning-toggle');
-    expect(toggle.hasAttribute('disabled')).toBe(false);
-    expect(toggle.getAttribute('aria-disabled')).toBe('false');
-    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    const selectTrigger = effortTrigger() as HTMLButtonElement;
+    expect(selectTrigger.disabled).toBe(false);
+    expect(selectTrigger.getAttribute('aria-expanded')).toBe('false');
 
-    await fireEvent.click(toggle);
-    expect(screen.getByRole('slider').getAttribute('max')).toBe('3');
-    expect(screen.getAllByTestId('effort-slider-tick')).toHaveLength(4);
+    const effortListbox = await openEffortSelect();
+    expect(within(effortListbox).getAllByRole('option')).toHaveLength(4);
   });
 
-  it('omits the Default reasoning suffix from the trigger', async () => {
+  it('shows Auto for the provider-default state without guessing a concrete strength', async () => {
     reasoningEffort$.set(null);
 
     render(ModelPicker, {
@@ -1071,15 +1145,60 @@ describe('ModelPicker combined reasoning mode', () => {
 
     const trigger = screen.getByRole('button');
     expect(trigger.textContent).toContain('GPT-5.6-Sol');
+    await waitFor(() => expect(trigger.textContent).toContain('Auto'));
+    expect(screen.getByLabelText('GPT-5.6-Sol · Auto')).toBeTruthy();
     expect(trigger.textContent).not.toContain('Default');
     expect(screen.queryByTestId('effort-gauge')).toBeNull();
 
     await fireEvent.click(trigger);
-    const toggle = await screen.findByTestId('model-reasoning-toggle');
-    await waitFor(() => expect(toggle.hasAttribute('disabled')).toBe(false));
-    expect(toggle.textContent?.trim()).toBe('Reasoning effort · Default');
-    expect(toggle.className).toContain('text-xs');
-    expect(toggle.querySelector('[data-testid="effort-gauge"]')).toBeNull();
+    const selectTrigger = effortTrigger() as HTMLButtonElement;
+    await waitFor(() => expect(selectTrigger.disabled).toBe(false));
+    expect(selectTrigger.textContent?.trim()).toBe('Auto');
+    expect(selectTrigger.className).toContain('text-xs');
+    expect(screen.queryByTestId('effort-gauge')).toBeNull();
+  });
+
+  it('shows explicit none as Off in the composer, tooltip, accessibility label, and select', async () => {
+    reasoningEffort$.set('none');
+    agentModelEffortLevels$.set(['none', 'low', 'ultra']);
+
+    render(ModelPicker, {
+      props: {
+        selectedModel: 'codex:gpt-5.6-sol',
+        agentId: 'agent-1',
+        workspaceId: 'ws-1',
+        showReasoning: true,
+        portal: false,
+      },
+    });
+
+    const trigger = screen.getByRole('button');
+    const labeledTrigger = await waitFor(() => screen.getByLabelText('GPT-5.6-Sol · Off'));
+    expect(labeledTrigger.getAttribute('title')).toBe('GPT-5.6-Sol · Off');
+    expect(trigger.textContent).not.toContain('Off');
+    expect(screen.queryByTestId('model-reasoning-strength')).toBeNull();
+    expect(screen.queryByTestId('model-reasoning-effort-gauge')).toBeNull();
+
+    await fireEvent.click(trigger);
+    const selectTrigger = effortTrigger();
+    expect(selectTrigger.textContent?.trim()).toBe('Off');
+    expect(selectTrigger.getAttribute('aria-label')).toContain('Off');
+    const gauge = screen.getByTestId('effort-gauge');
+    expect(screen.getByTestId('model-reasoning-section').contains(gauge)).toBe(true);
+    expect(gauge.dataset.gaugeValue).toBe('0');
+    const listbox = await openEffortSelect();
+    expect(
+      within(listbox)
+        .getAllByRole('option')
+        .map((option) => option.textContent?.replace('✓', '').trim()),
+    ).toEqual(['Auto', 'Off', 'Low', 'ultra']);
+    expect(applyReasoningEffortMock).not.toHaveBeenCalled();
+    await selectEffort(listbox, 'Auto');
+    expect(screen.queryByTestId('effort-gauge')).toBeNull();
+
+    await waitFor(() => {
+      expect(applyReasoningEffortMock).toHaveBeenCalledWith('agent-1', 'ws-1', null, 'none');
+    });
   });
 });
 

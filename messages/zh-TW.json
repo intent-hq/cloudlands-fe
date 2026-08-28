@@ -1926,6 +1926,7 @@
   "chat_editRegenerate_confirm_description": "此對話中之後的所有訊息將被永久刪除且無法恢復。智慧體將從此訊息開始重新產生回覆。",
   "chat_editRegenerate_confirm_title": "編輯訊息並從此處重新開始？",
   "chat_effortPicker_level_default": "預設",
+  "chat_effortPicker_level_auto": "自動",
   "chat_effortPicker_level_high": "高",
   "chat_effortPicker_level_low": "低",
   "chat_effortPicker_level_max": "最高",

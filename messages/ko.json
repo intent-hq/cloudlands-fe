@@ -1926,6 +1926,7 @@
   "chat_editRegenerate_confirm_description": "이 대화의 이후 메시지가 모두 영구적으로 제거되며 복구할 수 없습니다. 에이전트가 이 메시지부터 응답을 다시 생성합니다.",
   "chat_editRegenerate_confirm_title": "메시지를 편집하고 여기서부터 다시 시작할까요?",
   "chat_effortPicker_level_default": "기본",
+  "chat_effortPicker_level_auto": "자동",
   "chat_effortPicker_level_high": "높음",
   "chat_effortPicker_level_low": "낮음",
   "chat_effortPicker_level_max": "최대",

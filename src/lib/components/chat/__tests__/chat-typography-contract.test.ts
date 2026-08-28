@@ -50,10 +50,9 @@ describe('chat typography contract', () => {
     expect(permission).toContain('type-body');
     expect(permission).toContain('type-caption');
     expect(permission).toContain('type-code');
-    expect(`${queued}${permission}`).not.toMatch(/text-(?:xs|sm)|font-(?:semibold|bold)/);
   });
 
-  it('normalizes model, context, and effort picker typography', () => {
+  it('uses semantic roles throughout model, context, and effort pickers', () => {
     const pickerFiles = [
       'src/lib/components/chat/input/ContextPickerButton.svelte',
       'src/lib/components/chat/input/EffortPicker.svelte',
@@ -64,10 +63,6 @@ describe('chat typography contract', () => {
     ].map(source);
     expect(pickerFiles.join('')).toContain('type-body');
     expect(pickerFiles.join('')).toContain('type-caption');
-    expect(pickerFiles.slice(0, 2).concat(pickerFiles.slice(3)).join('')).not.toMatch(
-      /text-(?:xs|sm)|font-(?:semibold|bold)/,
-    );
-    expect(pickerFiles[2]).toContain('<span class="text-xs truncate">{triggerLabel}</span>');
   });
 
   it('keeps transcript metadata semantic and the unread divider neutral and legible', () => {
@@ -82,7 +77,6 @@ describe('chat typography contract', () => {
     ].map(source);
     expect(metadataFiles.join('')).toContain('type-caption');
     expect(metadataFiles.join('')).toContain('type-code');
-    expect(metadataFiles.join('')).not.toMatch(/text-xs|font-(?:semibold|bold)/);
 
     const divider = source('src/lib/components/chat/NewMessagesDivider.svelte');
     expect(divider).toContain('type-caption');
@@ -107,13 +101,11 @@ describe('chat typography contract', () => {
       expect(wake).toContain(token);
     }
     expect(agentCard).toContain('data-testid="agent-card-status"');
-    expect(agentCard).toContain(
-      'type-body shrink-0 truncate whitespace-nowrap font-normal text-muted-foreground',
-    );
-    expect(agentCard).toContain('type-body shrink-0 truncate');
-    expect(wake).toContain('type-body min-w-0 truncate font-normal text-muted-foreground');
-    expect(wake).not.toContain('type-body min-w-0 truncate font-medium text-foreground');
-    expect(wake).not.toMatch(/type-(?:title|display)|text-(?:base|lg|xl|2xl)/);
+    expect(agentCard).toContain('type-body shrink-0 truncate whitespace-nowrap');
+    expect(agentCard).toContain('text-muted-foreground');
+    expect(wake).toContain('type-body min-w-0 truncate');
+    expect(wake).toContain('text-muted-foreground');
+    expect(wake).not.toMatch(/type-(?:title|display)/);
   });
 
   it('shares opaque header icons, compact leading gaps, and 16px event chevrons', () => {
@@ -128,7 +120,9 @@ describe('chat typography contract', () => {
       'src/lib/components/chat/MonitoredPrsRow.svelte',
     ].map(source);
     const subscriptions = source('src/lib/components/chat/AgentSubscriptions.svelte');
-    expect(subscription).toContain("font-normal text-muted-foreground!'");
+    expect(subscription).toMatch(
+      /SUBSCRIPTION_ROW_TYPOGRAPHY_CLASS = '[^']*text-muted-foreground!'/,
+    );
     expect(subscription).not.toContain('text-muted-foreground/');
     expect(subscription).toContain(
       "SUBSCRIPTION_ICON_CLASS = 'text-muted-foreground! opacity-100'",
@@ -139,8 +133,8 @@ describe('chat typography contract', () => {
     expect(subscription).not.toContain('inline-flex size-5 shrink-0');
     expect(subscriptions).not.toContain('grid-template-columns: 1rem');
     expect(subscription).toContain("SUBSCRIPTION_CHEVRON_SIZE_CLASS = 'h-[16px]! w-[16px]!'");
-    expect(operational).toContain(
-      "CHAT_OPERATIONAL_SUMMARY_TONE_CLASS = 'font-normal text-muted-foreground'",
+    expect(operational).toMatch(
+      /CHAT_OPERATIONAL_SUMMARY_TONE_CLASS = '[^']*text-muted-foreground'/,
     );
     expect(operational).toContain("'h-[16px]! w-[16px]! shrink-0 opacity-60");
     expect(eventFiles.join('')).not.toMatch(

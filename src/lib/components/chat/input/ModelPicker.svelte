@@ -2,7 +2,6 @@
   /* eslint-disable max-lines */
   import { onMount, tick, untrack } from 'svelte';
   import { writable } from 'svelte/store';
-  import { slide } from 'svelte/transition';
 
   import { agentClient } from '$features/agent/agent.client';
   import {
@@ -954,9 +953,6 @@
     return availableModels.some((m) => m.value === localModel);
   });
 
-  const lockedButtonTitle = $derived(
-    lockedTitle?.trim() || m.chat_modelPicker_modelLocked_title({ model: currentModelLabel }),
-  );
   const shouldShowLockIconWhenLocked = $derived(isCompact || showLockIconWhenLocked);
 
   const buttonSize = $derived(isCompact ? 'icon' : size);
@@ -1287,6 +1283,7 @@
   });
 
   const LEVEL_LABELS: Record<string, () => string> = {
+    none: () => m.chat_shared_valueOff_label(),
     minimal: () => m.chat_effortPicker_level_minimal(),
     low: () => m.chat_effortPicker_level_low(),
     medium: () => m.chat_effortPicker_level_medium(),
@@ -1312,17 +1309,24 @@
   const currentReasoningLabel = $derived(
     currentReasoningEffort
       ? reasoningLevelLabel(currentReasoningEffort)
-      : m.chat_effortPicker_level_default(),
+      : m.chat_effortPicker_level_auto(),
+  );
+  const currentReasoningLevelIndex = $derived(
+    currentReasoningEffort ? reasoningLevels.indexOf(currentReasoningEffort) : -1,
+  );
+  const showTriggerReasoningGauge = $derived(
+    currentReasoningEffort !== null &&
+      currentReasoningEffort !== 'none' &&
+      currentReasoningLevelIndex >= 0,
   );
   const triggerLabel = $derived(currentModelLabel);
   const triggerAccessibleLabel = $derived(
-    currentReasoningEffort ? `${currentModelLabel} · ${currentReasoningLabel}` : currentModelLabel,
+    showReasoningFooter ? `${currentModelLabel} · ${currentReasoningLabel}` : currentModelLabel,
   );
-  const currentReasoningGaugeValue = $derived(
-    currentReasoningEffort ? reasoningLevels.indexOf(currentReasoningEffort) : 0,
+  const lockedButtonTitle = $derived(
+    lockedTitle?.trim() || m.chat_modelPicker_modelLocked_title({ model: triggerAccessibleLabel }),
   );
   let updatingReasoningEffort = $state(false);
-  let reasoningExpanded = $state(false);
   const reasoningControlDisabled = $derived(
     reasoningDisabled ||
       updatingReasoningEffort ||
@@ -1334,40 +1338,6 @@
       (!allProvidersLoaded && Object.keys(allProviderModels).length > 0) ||
       nonBlockingProviderWarnings.length > 0,
   );
-
-  $effect(() => {
-    void dropdownOpen;
-    reasoningExpanded = false;
-  });
-
-  $effect(() => {
-    if (reasoningLevels.length === 0) reasoningExpanded = false;
-  });
-
-  function handleReasoningToggleKeydown(event: KeyboardEvent) {
-    if (reasoningControlDisabled) return;
-    if (event.key === 'Enter' || event.key === ' ') {
-      event.preventDefault();
-      event.stopPropagation();
-      reasoningExpanded = true;
-      return;
-    }
-    if (event.key === 'Escape') {
-      event.preventDefault();
-      event.stopPropagation();
-      dropdownOpen = false;
-    }
-  }
-
-  function handleReasoningSliderKeydown(event: KeyboardEvent) {
-    if (event.key === 'Escape') {
-      event.preventDefault();
-      event.stopPropagation();
-      reasoningExpanded = false;
-      return;
-    }
-    event.stopPropagation();
-  }
 
   function selectProviderTab(providerId: string) {
     activeBrowseProviderId = providerId;
@@ -1735,6 +1705,7 @@
     class={cn(buttonClass, 'cursor-default')}
     title={lockedButtonTitle}
     tooltip={lockedButtonTitle}
+    aria-label={triggerAccessibleLabel}
     disabled={true}
   >
     {#if isCompact}
@@ -1747,12 +1718,16 @@
         <ProviderIcon providerId={triggerProviderId} class="size-3.5" />
       {/if}
       <span class="flex-1 text-left truncate">{triggerLabel}</span>
-      {#if currentReasoningEffort}
+      {#if showReasoningFooter && currentReasoningEffort === null}
+        <span class="shrink-0 text-xs" data-testid="model-reasoning-strength"
+          >· {currentReasoningLabel}</span
+        >
+      {:else if showTriggerReasoningGauge}
         <EffortGauge
-          value={currentReasoningGaugeValue}
-          max={reasoningLevels.length - 1}
-          centered={false}
-          size="compact"
+          value={currentReasoningLevelIndex}
+          max={Math.max(1, reasoningLevels.length - 1)}
+          testId="model-reasoning-effort-gauge"
+          class="[&_line]:transition-none!"
         />
       {/if}
     {:else}
@@ -1764,13 +1739,16 @@
           <ProviderIcon providerId={triggerProviderId} class="size-3.5" />
         {/if}
         <span class="text-xs truncate">{triggerLabel}</span>
-        {#if currentReasoningEffort}
+        {#if showReasoningFooter && currentReasoningEffort === null}
+          <span class="shrink-0 text-xs" data-testid="model-reasoning-strength"
+            >· {currentReasoningLabel}</span
+          >
+        {:else if showTriggerReasoningGauge}
           <EffortGauge
-            value={currentReasoningGaugeValue}
-            max={reasoningLevels.length - 1}
-            centered={false}
-            size="compact"
-            class="ml-1"
+            value={currentReasoningLevelIndex}
+            max={Math.max(1, reasoningLevels.length - 1)}
+            testId="model-reasoning-effort-gauge"
+            class="[&_line]:transition-none!"
           />
         {/if}
       </span>
@@ -1803,47 +1781,16 @@
   {#snippet dropdownFooter()}
     {#if showReasoningFooter}
       <div class="px-2 py-2" data-testid="model-reasoning-section">
-        <Button
-          variant="ghost"
-          size="default"
-          aria-expanded={reasoningExpanded}
-          aria-disabled={reasoningControlDisabled}
+        <EffortPicker
+          mode="embedded"
+          {agentId}
+          {workspaceId}
+          effortLevels={reasoningLevels}
+          effort={persistedReasoningEffort}
           disabled={reasoningControlDisabled}
-          class={cn(
-            'flex w-full items-center justify-between rounded bg-transparent px-2 py-1.5 text-left text-xs focus:bg-transparent focus:outline-none',
-            reasoningControlDisabled
-              ? 'cursor-not-allowed text-muted-foreground/50'
-              : 'hover:bg-muted/20',
-          )}
-          data-testid="model-reasoning-toggle"
-          onclick={() => {
-            if (!reasoningControlDisabled) reasoningExpanded = !reasoningExpanded;
-          }}
-          onkeydown={handleReasoningToggleKeydown}
-        >
-          <span class="truncate">
-            {m.chat_effortPicker_title_label()} · {currentReasoningLabel}
-          </span>
-        </Button>
-        {#if reasoningExpanded && reasoningLevels.length > 0}
-          <div
-            class="px-2 pb-1 pt-2"
-            role="group"
-            aria-label={m.chat_effortPicker_popover_ariaLabel()}
-            transition:slide={{ duration: 180, axis: 'y' }}
-          >
-            <EffortPicker
-              mode="embedded"
-              {agentId}
-              {workspaceId}
-              effortLevels={reasoningLevels}
-              effort={currentReasoningEffort}
-              disabled={reasoningControlDisabled}
-              onEffortChange={handleReasoningSelect}
-              onkeydown={handleReasoningSliderKeydown}
-            />
-          </div>
-        {/if}
+          {modalAware}
+          onEffortChange={handleReasoningSelect}
+        />
       </div>
     {/if}
     {#if !allProvidersLoaded && Object.keys(allProviderModels).length > 0}
@@ -1886,7 +1833,7 @@
     searchable={!hasNoAvailableProvider}
     placeholder={m.chat_modelPicker_searchModels_placeholder()}
     class="min-w-0"
-    headerClass="border-b-0!"
+    headerClass={providerTabsEnabled ? 'bg-popover! border-b!' : 'border-b-0!'}
     triggerClass={cn(
       'max-w-full',
       (variant === 'outline' || variant === 'default') &&
@@ -1894,7 +1841,8 @@
       triggerClass,
     )}
     contentClass={cn(
-      'max-w-[calc(100vw-32px)]',
+      'max-w-[calc(100vw-32px)] bg-background! text-foreground!',
+      '[&_[role=searchbox]]:border-b! [&_[role=searchbox]]:border-solid! [&_[role=searchbox]]:border-border!',
       showReasoning ? 'w-85 min-h-90 max-h-90 flex flex-col' : 'w-[332px]',
     )}
     contentMaxHeight={showReasoning ? 360 : undefined}
@@ -1937,12 +1885,16 @@
             <ProviderIcon providerId={triggerProviderId} class="size-3.5" />
           {/if}
           <span class="truncate">{triggerLabel}</span>
-          {#if currentReasoningEffort}
+          {#if showReasoningFooter && currentReasoningEffort === null}
+            <span class="shrink-0 text-xs" data-testid="model-reasoning-strength"
+              >· {currentReasoningLabel}</span
+            >
+          {:else if showTriggerReasoningGauge}
             <EffortGauge
-              value={currentReasoningGaugeValue}
-              max={reasoningLevels.length - 1}
-              centered={false}
-              size="compact"
+              value={currentReasoningLevelIndex}
+              max={Math.max(1, reasoningLevels.length - 1)}
+              testId="model-reasoning-effort-gauge"
+              class="[&_line]:transition-none!"
             />
           {/if}
         {:else}
