@@ -19,6 +19,7 @@ import {
   serializeDraftAttachments,
 } from '$lib/components/chat/chat-draft-attachments';
 import type { ContextItem } from '$lib/components/chat/input/context-api';
+import { parseImageDataUrl } from '$lib/components/chat/input/image-data-url';
 import { createLogger } from '$lib/utils/client-logger';
 
 /** Reserved sentinel `workspaceId` for the New Workspace modal draft (PROTOCOL §5.16). */
@@ -176,6 +177,10 @@ export interface NewWorkspaceDraftSaver {
   schedule(text: string, contextItems: ContextItem[]): void;
   /** Persist a pending debounced save immediately; no-op when none is pending. */
   flush(): void;
+  /** Drop a pending debounced save without persisting it — for the clear
+   * paths, so an already-armed timer can't fire `drafts.set` after
+   * `drafts.clear` and resurrect the draft. */
+  cancel(): void;
 }
 
 /**
@@ -225,19 +230,27 @@ export function createNewWorkspaceDraftSaver(
       }
       save();
     },
+    cancel() {
+      if (timer) {
+        clearTimeout(timer);
+        timer = null;
+      }
+      pending = null;
+    },
   };
 }
 
 /**
  * Fire-and-forget `drafts.clear` under the sentinel keys (called after a
- * successful workspace create); also removes the legacy sessionStorage key.
+ * successful workspace create); also removes BOTH known legacy sessionStorage
+ * keys — the daemon draft is shared between the modal and the onboarding
+ * page, so a stale key left by the other surface could migrate a cleared
+ * draft back in on its next restore.
  */
-export function clearNewWorkspaceDraft(
-  drafts: DraftsClient,
-  options: { legacyKey?: string } = {},
-): void {
+export function clearNewWorkspaceDraft(drafts: DraftsClient): void {
   try {
-    sessionStorage.removeItem(options.legacyKey ?? LEGACY_PROMPT_SESSION_KEY);
+    sessionStorage.removeItem(LEGACY_PROMPT_SESSION_KEY);
+    sessionStorage.removeItem(LEGACY_ONBOARDING_PROMPT_SESSION_KEY);
   } catch {
     // sessionStorage unavailable — nothing to remove
   }
@@ -255,28 +268,42 @@ export interface DraftInlineImage {
   alt?: string;
 }
 
-const DATA_URL_RE = /^data:([^;]+);base64,(.+)$/;
-
 /**
  * Project inline editor images into image context items so they ride the
  * draft's `attachments` array ({@link serializeDraftAttachments} persists
- * `imageData`/`imageMimeType`). Non-data-URL images are skipped.
+ * `imageData`/`imageMimeType`). Parsed via {@link parseImageDataUrl} — no
+ * regex over the potentially multi-MB base64 payload, and non-image data
+ * URLs (e.g. `data:application/pdf`) are skipped like non-data-URL images.
  */
 export function inlineImagesToContextItems(images: DraftInlineImage[]): ContextItem[] {
   const items: ContextItem[] = [];
   images.forEach((image, index) => {
-    const match = image.src.match(DATA_URL_RE);
-    if (!match) return;
-    const [, mimeType, data] = match;
+    const parsed = parseImageDataUrl(image.src);
+    if (!parsed) return;
     items.push({
       id: `inline-image-${index}`,
       type: 'file',
       label: image.alt || `image-${index + 1}`,
-      imageData: data,
-      imageMimeType: mimeType,
+      imageData: parsed.data,
+      imageMimeType: parsed.mimeType,
     });
   });
   return items;
+}
+
+/**
+ * Resolve the inline images a scheduled draft save should persist: the live
+ * editor read when the editor is mounted (an empty live read is a deliberate
+ * deletion and wins), otherwise the caller's retained fallback (restored
+ * draft images / the last live read). Keeps saves scheduled while the editor
+ * is unmounted — restore settling before the prompt step exists, or the step
+ * being destroyed mid-create — from wiping the draft's image attachments.
+ */
+export function resolveDraftImages(
+  editorImages: DraftInlineImage[] | null,
+  fallbackImages: DraftInlineImage[],
+): DraftInlineImage[] {
+  return editorImages ?? fallbackImages;
 }
 
 /**
