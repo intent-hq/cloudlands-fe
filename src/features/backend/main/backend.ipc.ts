@@ -1272,6 +1272,13 @@ function refreshConnectionsForStatusChange(): void {
  * short-lived JsonRpcClient to the chosen target while the active client
  * stays pinned to the source.
  */
+class ConnectionSecretUnavailableError extends Error {
+  constructor() {
+    super('Connection secret unavailable');
+    this.name = 'ConnectionSecretUnavailableError';
+  }
+}
+
 export async function buildConfigForConnection(
   id: string,
   tokenOverride?: string,
@@ -1286,7 +1293,14 @@ export async function buildConfigForConnection(
   if (!record || record.host == null || record.port == null || record.fingerprint == null) {
     throw new Error(`Unknown or incomplete connection: ${id}`);
   }
-  const token = tokenOverride ?? (await connectionsStore.getDecryptedToken(id));
+  let token = tokenOverride;
+  if (token === undefined) {
+    try {
+      token = await connectionsStore.getDecryptedToken(id);
+    } catch {
+      throw new ConnectionSecretUnavailableError();
+    }
+  }
   if (!token) {
     throw new Error(`No stored token for connection: ${id}`);
   }
@@ -1351,14 +1365,14 @@ function enqueueConnectionOperation<T>(fn: () => Promise<T>): Promise<T> {
 export function openBackendWindow(
   id: string,
   options?: { probeTimeoutMs?: number },
-): Promise<OpenConnectionResult> {
+): Promise<{ id: string }> {
   return enqueueConnectionOperation(() => performOpenBackendWindow(id, options));
 }
 
 async function performOpenBackendWindow(
   id: string,
   options?: { probeTimeoutMs?: number },
-): Promise<OpenConnectionResult> {
+): Promise<{ id: string }> {
   const target = await connectBackendClient(id);
   try {
     // Do not create a renderer until the pinned transport has completed an
@@ -1376,7 +1390,7 @@ async function performOpenBackendWindow(
       void refreshRemoteHosts(id);
     }
     await windowHooks.openOrFocus?.(id);
-    return { status: 'opened', id };
+    return { id };
   } catch (error) {
     // The always-on local member is never torn down on a failed probe; it
     // lazily rebuilds and main-process services depend on it.
@@ -2076,7 +2090,17 @@ function registerConnectionsHandlers(): void {
     CONNECTIONS.OPEN,
     createValidatedHandler(
       ConnectionsOpenSchema,
-      async (_event, { id }) => openBackendWindow(id),
+      async (_event, { id }) => {
+        try {
+          const opened = await openBackendWindow(id);
+          return { status: 'opened', id: opened.id } satisfies OpenConnectionResult;
+        } catch (error) {
+          if (error instanceof ConnectionSecretUnavailableError) {
+            return { status: 'secret-unavailable' } satisfies OpenConnectionResult;
+          }
+          throw error;
+        }
+      },
       CONNECTIONS.OPEN,
     ),
   );

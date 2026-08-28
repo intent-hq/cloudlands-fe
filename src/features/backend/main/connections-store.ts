@@ -342,9 +342,22 @@ function encryptToken(token: string): EncryptedToken {
   return { encrypted: false, value: token };
 }
 
+class ConnectionSecretUnavailableError extends Error {
+  readonly code = 'connection-secret-unavailable';
+
+  constructor() {
+    super('Connection secret unavailable');
+    this.name = 'ConnectionSecretUnavailableError';
+  }
+}
+
 function decryptToken(encToken: EncryptedToken): string {
   if (encToken.encrypted) {
-    return safeStorage.decryptString(Buffer.from(encToken.value, 'base64'));
+    try {
+      return safeStorage.decryptString(Buffer.from(encToken.value, 'base64'));
+    } catch {
+      throw new ConnectionSecretUnavailableError();
+    }
   }
   return encToken.value;
 }
