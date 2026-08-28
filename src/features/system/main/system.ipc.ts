@@ -621,9 +621,8 @@ export function setupSystemIPC() {
       AppSetLanguagePreferenceSchema,
       async (_event, validated) => {
         try {
-          const { setMainLanguagePreference, getMainActiveLocale } = await import(
-            '../../../main/main-locale'
-          );
+          const { setMainLanguagePreference, getMainActiveLocale } =
+            await import('../../../main/main-locale');
           const changed = setMainLanguagePreference(validated.preference);
           logger.info('Language preference synced from renderer', {
             preference: validated.preference,
@@ -879,9 +878,10 @@ export function setupSystemIPC() {
    * All new windows should use this to avoid config drift.
    * Keep in sync with createWindow / createWindowForSession in main/index.ts.
    *
-   * The HUD pop-out (`/hud`) is a singleton: when a live HUD window already
-   * exists it is restored/focused and returned instead of creating a second
-   * one (see main/hud-window.ts).
+   * The HUD pop-out (`/hud`) is a per-backend singleton bound to the opener's
+   * backend: when a live HUD window for that backend already exists it is
+   * restored/focused and returned instead of creating a second one (see
+   * main/hud-window.ts). HUDs for different backends coexist.
    */
   async function createAppWindow(
     route: string | undefined,
@@ -897,10 +897,13 @@ export function setupSystemIPC() {
     const isHudRoute = typeof route === 'string' && route.startsWith(HUD_ROUTE_PREFIX);
     const isChiefRoute = route === `/workspace/${CHIEF_WORKSPACE_ID}`;
     if (isHudRoute) {
-      const existing = findExistingHudWindow();
+      const existing = findExistingHudWindow(openerBackendId);
       if (existing) {
         focusHudWindow(existing);
-        logger.info('Reusing existing HUD window (singleton)', { windowId: existing.id });
+        logger.info('Reusing existing HUD window (per-backend singleton)', {
+          windowId: existing.id,
+          backendId: openerBackendId,
+        });
         return existing;
       }
     }
@@ -929,14 +932,14 @@ export function setupSystemIPC() {
       ...getWindowAppearanceOptions(isDarkMode),
       ...(iconPath && { icon: iconPath }),
     });
-    stampWindowWithBackend(
-      newWindow,
-      isHudRoute || isChiefRoute ? LOCAL_CONNECTION_ID : openerBackendId,
-    );
+    // The HUD inherits the opener's backend (its data reflects that backend);
+    // only the local-only chief route stays pinned to the local backend.
+    stampWindowWithBackend(newWindow, isChiefRoute ? LOCAL_CONNECTION_ID : openerBackendId);
     forwardRendererConsoleToMainLog(newWindow);
 
-    // Register BEFORE loadURL so a concurrent HUD-open request reuses this
-    // window even while its URL is still about:blank (mid-navigation race).
+    // Register AFTER stamping (the registry keys off the backend stamp) and
+    // BEFORE loadURL so a concurrent HUD-open request reuses this window even
+    // while its URL is still about:blank (mid-navigation race).
     if (isHudRoute) {
       registerHudWindow(newWindow);
     }

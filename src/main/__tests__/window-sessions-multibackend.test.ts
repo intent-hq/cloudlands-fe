@@ -121,6 +121,7 @@ vi.mock('../utils/resolve-app-title', () => ({
   resolveAppTitle: () => 'Intent',
 }));
 
+import { _resetHudWindowRefForTests, isTrackedHudWindow } from '../hud-window';
 import {
   _resetWindowSessionsCacheForTests,
   captureWindowSessionsSnapshot,
@@ -167,6 +168,7 @@ describe('multi-backend window sessions', () => {
     FakeBrowserWindow.instances = [];
     FakeBrowserWindow.focused = null;
     _resetWindowSessionsCacheForTests();
+    _resetHudWindowRefForTests();
   });
 
   describe('per-backend save/restore', () => {
@@ -351,7 +353,7 @@ describe('multi-backend window sessions', () => {
       expect(getBackendIdForWebContents({} as never)).toBe('local');
     });
 
-    it('always stamps a restored HUD window as local', () => {
+    it('stamps a restored HUD window with its saved backend bucket (not forced local)', () => {
       const bounds = { x: 100, y: 100, width: 1024, height: 768 };
       fs.writeFileSync(
         getWindowSessionsPath(),
@@ -362,7 +364,33 @@ describe('multi-backend window sessions', () => {
       restoreWindowsForBackend('remote-a');
 
       const [window] = FakeBrowserWindow.getAllWindows();
-      expect(getBackendIdForWebContents(window.webContents as never)).toBe('local');
+      expect(getBackendIdForWebContents(window.webContents as never)).toBe('remote-a');
+    });
+
+    it('registers a restored /hud session in the tracked HUD registry', () => {
+      const bounds = { x: 100, y: 100, width: 1024, height: 768 };
+      fs.writeFileSync(
+        getWindowSessionsPath(),
+        JSON.stringify({
+          'remote-a': [
+            { route: '/hud', bounds },
+            { route: '/work/remote', bounds },
+          ],
+        }),
+        'utf-8',
+      );
+
+      restoreWindowsForBackend('remote-a');
+
+      // The /hud window is tracked immediately (before its URL loads), so a
+      // concurrent open-HUD request cannot create a duplicate during restore;
+      // the plain window is not.
+      const live = FakeBrowserWindow.getAllWindows();
+      expect(live).toHaveLength(2);
+      const hud = live.find((w) => w.webContents.getURL().includes('/hud'));
+      const plain = live.find((w) => !w.webContents.getURL().includes('/hud'));
+      expect(isTrackedHudWindow(hud as never)).toBe(true);
+      expect(isTrackedHudWindow(plain as never)).toBe(false);
     });
 
     it('restores the incoming backend layout', () => {
