@@ -134,6 +134,14 @@ export interface ConnectionsListResult {
    */
   authRejected?: ConnectionAuthRejectedEvent | null;
   /**
+   * Sticky cert mismatch for this window's backend, replayed here so a
+   * renderer created or reloaded after the one-shot `connections:cert-mismatch`
+   * broadcast (e.g. the boot-wide restore connects pooled clients before their
+   * windows exist) still surfaces the blocking trust warning. `null`/absent
+   * when the backend's pinned cert matches (or it is local).
+   */
+  certMismatch?: ConnectionCertMismatchEvent | null;
+  /**
    * The app's pinned intentd version (the `intentd.version` file bundled with
    * the FE), or `null` when the pin is missing/malformed. Carried here so the
    * renderer can compare each remote's captured `daemonVersion` against the

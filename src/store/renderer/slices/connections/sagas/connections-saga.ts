@@ -231,6 +231,12 @@ function* hydrateConnections(
     // created/reloaded after the one-shot push (including boot) still surfaces
     // the actionable state.
     if (result.authRejected) yield* put(authRejectedReceived(result.authRejected));
+    // Replay the latched cert mismatch the same way — the boot-wide restore
+    // connects pooled clients before their windows exist, so the one-shot
+    // `connections:cert-mismatch` push can fire into zero windows. Initial
+    // hydration only: syncing it from every `connections:changed` push would
+    // reopen a modal the user already dismissed.
+    if (result.certMismatch) yield* put(certMismatchReceived(result.certMismatch));
     yield* put(action.success(undefined as never));
     settled = true;
   } catch (error) {

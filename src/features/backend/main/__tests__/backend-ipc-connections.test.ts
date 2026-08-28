@@ -425,6 +425,46 @@ describe('pinned-cert mismatch propagation', () => {
     client.emit('error', new Error('ECONNRESET'));
     expect(send.mock.calls.some(([c]) => c === 'connections:cert-mismatch')).toBe(false);
   });
+
+  it('latches a pooled-client mismatch fired with zero windows and replays it on connections:list', async () => {
+    // Boot-wide restore path: the pooled client connects BEFORE any window for
+    // its backend exists, so the one-shot broadcast fires into the void. The
+    // window created afterwards must still learn the mismatch from its initial
+    // list fetch — a changed cert is a blocking trust decision, never droppable.
+    const { mod } = await loadModule();
+    const { PinMismatchError } = await import('../backend-connection');
+    mod.registerBackendHandlers();
+
+    const pooled = (await mod.connectBackendClient('remote-1')) as unknown as {
+      emit(event: string, arg: unknown): void;
+    };
+    pooled.emit('error', new PinMismatchError('AA:BB:CC:DD', 'EE:FF:00:11'));
+
+    // The window appears only now (restore creates it after the connect).
+    const { localSender, remoteSender } = installBackendWindows();
+    const handler = findHandler('connections:list');
+    await expect(handler!({ sender: remoteSender }, undefined)).resolves.toMatchObject({
+      certMismatch: {
+        id: 'remote-1',
+        host: '10.0.0.5',
+        port: 8443,
+        expectedFingerprint: 'AA:BB:CC:DD',
+        actualFingerprint: 'EE:FF:00:11',
+      },
+    });
+    // A window bound to a different (local) backend does not replay it.
+    await expect(handler!({ sender: localSender }, undefined)).resolves.toMatchObject({
+      certMismatch: null,
+    });
+
+    // A fresh client (re-pair / switch) clears the latch: the list stops
+    // replaying a mismatch that no longer describes the live client.
+    mod.disconnectBackendClient('remote-1');
+    await mod.connectBackendClient('remote-1');
+    await expect(handler!({ sender: remoteSender }, undefined)).resolves.toMatchObject({
+      certMismatch: null,
+    });
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -558,6 +598,8 @@ describe('connections:* IPC handlers', () => {
       protocolMismatch: null,
       // No auth rejection has fired, so there is no sticky rejection either.
       authRejected: null,
+      // No pinned cert has mismatched, so there is no sticky cert failure.
+      certMismatch: null,
       // The app's pinned intentd version rides the list payload.
       pinnedVersion: '0.1.0',
       // No client reports 'connected' (the fake pool returns 'disconnected').
@@ -617,9 +659,10 @@ describe('connections:* IPC handlers', () => {
     const { mod } = await loadModule();
     mod.registerBackendHandlers();
 
-    await expect(findHandler('connections:update-backend')!({}, { id: 'local' })).resolves.toEqual(
-      { ok: false, reason: 'unsupported' },
-    );
+    await expect(findHandler('connections:update-backend')!({}, { id: 'local' })).resolves.toEqual({
+      ok: false,
+      reason: 'unsupported',
+    });
     expect(rpc.calls).not.toContain('system.requestUpdate');
   });
 
@@ -2197,11 +2240,7 @@ describe('backend client pool', () => {
     mod.disconnectBackendClient('remote-1');
 
     // Old remote primary disposed, fresh local primary constructed + started.
-    expect(lifecycle.events.map((event) => event.type)).toEqual([
-      'dispose',
-      'construct',
-      'start',
-    ]);
+    expect(lifecycle.events.map((event) => event.type)).toEqual(['dispose', 'construct', 'start']);
     expect(vi.mocked(app.emit)).toHaveBeenCalledWith(
       mod.BACKEND_CLIENT_DISCONNECTED_EVENT,
       remotePrimary,
