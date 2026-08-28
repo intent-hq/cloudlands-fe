@@ -102,7 +102,9 @@ vi.mock('$store/renderer/slices/specialists/specialists-selectors', () => ({
   selectSpecialists: () => ({
     subscribe: (run: (value: unknown[]) => void) => (run([]), () => {}),
   }),
-  selectSpecialistName: { select: () => undefined },
+  selectSpecialistName: {
+    select: (_state: unknown, id: string) => (id === 'implementor' ? 'Implementor' : undefined),
+  },
 }));
 vi.mock('$features/agent/browser', () => ({
   subscribeToAgent: (agentId: string, run: (session: any) => void) => {
@@ -240,5 +242,79 @@ describe('AgentTabType harness version panel-actions menu item', () => {
 
     await fireEvent.keyDown(dialog, { key: 'Escape' });
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+  });
+});
+
+describe('AgentTabType specialist panel-actions menu item', () => {
+  // The harness and the embedded view-settings snippet render their own
+  // separators above the actions, so count only separators after Delete —
+  // i.e. the info section's shared separator.
+  function separatorsAfterDelete(): number {
+    const menu = screen.getByRole('menu');
+    const deleteItem = screen.getByText('Delete agent').closest('[role="menuitem"]')!;
+    return Array.from(menu.querySelectorAll('[data-slot="menu-separator"]')).filter(
+      (sep) => deleteItem.compareDocumentPosition(sep) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).length;
+  }
+
+  beforeEach(() => {
+    mockState.dispatch.mockClear();
+    mockState.agents.set({});
+  });
+
+  afterEach(() => {
+    cleanup();
+    document.body.innerHTML = '';
+  });
+
+  it('renders a disabled info item before the harness entry, with one shared separator', async () => {
+    seedSession({ harnessVersion: '1.0', metadata: { specialist: 'implementor' } });
+    renderTab();
+    await openPanelActionsMenu();
+
+    const item = await screen.findByText('Specialist: Implementor');
+    const menuItem = item.closest('[role="menuitem"]');
+    expect(menuItem).not.toBeNull();
+    // Read-only informational entry: disabled, no flyout.
+    expect(menuItem!.getAttribute('aria-disabled')).toBe('true');
+    expect(menuItem!.getAttribute('aria-haspopup')).not.toBe('menu');
+
+    // Specialist precedes the harness version entry (AgentCard ordering).
+    const harnessItem = screen.getByText('Harness v1.0').closest('[role="menuitem"]');
+    expect(
+      menuItem!.compareDocumentPosition(harnessItem!) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+
+    // Single shared separator for the info section, no double separator.
+    expect(separatorsAfterDelete()).toBe(1);
+  });
+
+  it('shows the item (and the separator) when only the specialist is present', async () => {
+    seedSession({ metadata: { specialist: 'implementor' } });
+    renderTab();
+    await openPanelActionsMenu();
+
+    expect(await screen.findByText('Specialist: Implementor')).toBeTruthy();
+    expect(screen.queryByText(/^Harness v/)).toBeNull();
+    expect(separatorsAfterDelete()).toBe(1);
+  });
+
+  it('omits the item entirely when the agent has no specialist', async () => {
+    seedSession({ harnessVersion: '1.0' });
+    renderTab();
+    await openPanelActionsMenu();
+
+    expect(await screen.findByText('Harness v1.0')).toBeTruthy();
+    expect(screen.queryByText(/^Specialist:/)).toBeNull();
+  });
+
+  it('omits the item and the separator when neither specialist nor harness version exists', async () => {
+    seedSession();
+    renderTab();
+    await openPanelActionsMenu();
+
+    expect(await screen.findByText('Delete agent')).toBeTruthy();
+    expect(screen.queryByText(/^Specialist:/)).toBeNull();
+    expect(separatorsAfterDelete()).toBe(0);
   });
 });
