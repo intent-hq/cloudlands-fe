@@ -157,6 +157,9 @@ describe('Specialist Prompts Verification', () => {
       // All specialists should be included so agents know about them
       expect(formatted).toContain('Coordinator');
       expect(formatted).toContain('spec-writer');
+      expect(formatted).toContain(
+        '| **Vulnerability Scanner** | `vulnerability-scanner` | Finds real, exploitable security vulnerabilities in code |',
+      );
     });
 
     it('should include usage examples', async () => {

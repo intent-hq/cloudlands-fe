@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
@@ -28,6 +29,21 @@ describe('SPECIALISTS', () => {
     expect(specialist?.defaultBehaviorPrompt).toContain('**Top-level agent**');
     expect(specialist?.defaultBehaviorPrompt).not.toContain('submit_comments');
     expect(specialist?.defaultBehaviorPrompt).not.toContain('create_note_workspace-mcp');
+  });
+
+  it('keeps both scanner prompt copies byte-identical to the canonical intentd body', () => {
+    const specialist = getSpecialistById('vulnerability-scanner');
+    const bundled = readFileSync(
+      resolve(__dirname, '../../../../resources/specialists/vulnerability-scanner.md'),
+      'utf8',
+    );
+    const bundledBody = bundled.replace(/^---\n[\s\S]*?\n---\n\n/, '');
+
+    expect(bundled).not.toMatch(/^(codingAgent|model):/m);
+    expect(bundledBody).toBe(specialist?.defaultBehaviorPrompt);
+    expect(createHash('sha256').update(bundledBody).digest('hex')).toBe(
+      '0f2c2dc42ec65311e80fb7afd5f899fcf509df09fcfeeb6d343d3163c9c7c9ee',
+    );
   });
 
   it('keeps chief workspace creation extraction guidance', () => {
