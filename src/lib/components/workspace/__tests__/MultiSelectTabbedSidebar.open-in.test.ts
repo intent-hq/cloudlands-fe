@@ -3,6 +3,7 @@
  */
 import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
 import { cleanup, fireEvent, render, waitFor } from '@testing-library/svelte';
+import { tick } from 'svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AgentSession } from '$shared/types';
 
@@ -1029,6 +1030,42 @@ describe('MultiSelectTabbedSidebar Files Open In', () => {
     await fireEvent.click(card!);
     expect(mocks.dispatch).not.toHaveBeenCalled();
 
+    await fireEvent.keyDown(window, { key: 'Escape' });
+    expect(mocks.dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'sidebarNav/setMultiSelectSidebarSelectedTabs',
+        payload: ['ws-1', ['overview']],
+      }),
+    );
+  });
+
+  it('keeps the expanded card open while a dropdown menu is open; a second Escape dismisses it', async () => {
+    mocks.selectedTabs = ['agents'];
+    const Sidebar = (await import('../MultiSelectTabbedSidebar.svelte')).default;
+    // The real (unmocked) DropdownMenu — e.g. the workspace kebab — registers
+    // an escape layer above the expanded panel's while open.
+    const DropdownMenu = (
+      await vi.importActual<typeof import('$lib/components/ui/dropdown-menu.svelte')>(
+        '$lib/components/ui/dropdown-menu.svelte',
+      )
+    ).default;
+
+    render(Sidebar, { props: { workspaceId: 'ws-1' } });
+    const dropdown = render(DropdownMenu, { props: { open: true } });
+    await tick();
+
+    mocks.dispatch.mockClear();
+
+    // First Escape: the dropdown layer is topmost and shields the panel.
+    await fireEvent.keyDown(window, { key: 'Escape' });
+    expect(mocks.dispatch).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'sidebarNav/setMultiSelectSidebarSelectedTabs' }),
+    );
+
+    await dropdown.rerender({ open: false });
+    await tick();
+
+    // Second Escape: the panel layer is topmost again and dismisses the card.
     await fireEvent.keyDown(window, { key: 'Escape' });
     expect(mocks.dispatch).toHaveBeenCalledWith(
       expect.objectContaining({
