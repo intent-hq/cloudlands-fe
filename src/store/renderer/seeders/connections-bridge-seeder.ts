@@ -2,8 +2,8 @@
  * Connections IPC bridge — mock fallback for the multi-backend connect channels.
  *
  * Bridges the `connections:*` request/response channels (`list`,
- * `capture-fingerprint`, `add`, `update`, `test`, `rotate-secret`, `forget`, `open`,
- * `switch`) so the connections service thunks resolve in bridge-less builds and tests instead of
+ * `capture-fingerprint`, `add`, `forget`, `open`, `switch`) so the connections service
+ * thunks resolve in bridge-less builds (browser mock) and tests instead of
  * rejecting with UnbridgedMockIpcChannelError.
  *
  * In production (live electronAPI) these are handled by the main-process
@@ -24,12 +24,6 @@ import type {
   CaptureFingerprintResult,
   AddConnectionParams,
   AddConnectionResult,
-  UpdateConnectionParams,
-  UpdateConnectionResult,
-  TestConnectionParams,
-  TestConnectionResult,
-  RotateConnectionSecretParams,
-  RotateConnectionSecretResult,
   ForgetConnectionParams,
   ForgetConnectionResult,
   OpenConnectionParams,
@@ -61,14 +55,6 @@ const LOCAL_ENTRY: ConnectionRecord = {
 let connections: ConnectionRecord[] = [LOCAL_ENTRY];
 let activeId: string = LOCAL_CONNECTION_ID;
 
-function mockFingerprint(host: string, port: number): string {
-  const seed = `${host}:${port}`;
-  let hash = 0;
-  for (let i = 0; i < seed.length; i++) hash = (hash * 31 + seed.charCodeAt(i)) & 0xffff;
-  const byte = (hash & 0xff).toString(16).padStart(2, '0').toUpperCase();
-  return Array.from({ length: 32 }, () => byte).join(':');
-}
-
 registerMockIpcHandler(CONNECTION_CHANNELS.LIST, async (): Promise<ConnectionsListResult> => {
   return { connections: [...connections], activeId, windowBackendId: LOCAL_CONNECTION_ID };
 });
@@ -78,7 +64,11 @@ registerMockIpcHandler(
   async (arg): Promise<CaptureFingerprintResult> => {
     const { host, port } = arg as CaptureFingerprintParams;
     // Deterministic stub fingerprint (colon-hex uppercase, PROTOCOL §1.2 shape).
-    return { fingerprint: mockFingerprint(host, port), tokenValid: true };
+    const seed = `${host}:${port}`;
+    let hash = 0;
+    for (let i = 0; i < seed.length; i++) hash = (hash * 31 + seed.charCodeAt(i)) & 0xffff;
+    const byte = (hash & 0xff).toString(16).padStart(2, '0').toUpperCase();
+    return { fingerprint: Array.from({ length: 32 }, () => byte).join(':'), tokenValid: true };
   },
 );
 
@@ -102,40 +92,6 @@ registerMockIpcHandler(CONNECTION_CHANNELS.ADD, async (arg): Promise<AddConnecti
   // mirroring the main-process add handler's contract.
   return { connection, switched: connection.id === activeId };
 });
-
-registerMockIpcHandler(CONNECTION_CHANNELS.UPDATE, async (arg): Promise<UpdateConnectionResult> => {
-  const params = arg as UpdateConnectionParams;
-  const current = connections.find((connection) => connection.id === params.id);
-  if (!current || current.isLocal) return { status: 'failed', reason: 'connect-failed' };
-  const connection: ConnectionRecord = {
-    ...current,
-    label: params.label,
-    accent: params.accent,
-    ...(params.host !== undefined && params.port !== undefined
-      ? { host: params.host, port: params.port }
-      : {}),
-  };
-  connections = connections.map((item) => (item.id === connection.id ? connection : item));
-  return { status: 'updated', connection };
-});
-
-registerMockIpcHandler(CONNECTION_CHANNELS.TEST, async (arg): Promise<TestConnectionResult> => {
-  const params = arg as TestConnectionParams;
-  const current = connections.find((connection) => connection.id === params.id);
-  if (!current || current.isLocal) return { status: 'failed', reason: 'connect-failed' };
-  return { status: 'success', fingerprint: mockFingerprint(params.host, params.port) };
-});
-
-registerMockIpcHandler(
-  CONNECTION_CHANNELS.ROTATE_SECRET,
-  async (arg): Promise<RotateConnectionSecretResult> => {
-    const { id } = arg as RotateConnectionSecretParams;
-    const connection = connections.find((item) => item.id === id);
-    if (!connection || connection.isLocal) return { status: 'failed', reason: 'connect-failed' };
-    // The write-only token is intentionally consumed without entering renderer state.
-    return { status: 'updated', connection };
-  },
-);
 
 registerMockIpcHandler(CONNECTION_CHANNELS.FORGET, async (arg): Promise<ForgetConnectionResult> => {
   const { id } = arg as ForgetConnectionParams;
