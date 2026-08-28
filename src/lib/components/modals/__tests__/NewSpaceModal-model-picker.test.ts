@@ -337,7 +337,12 @@ describe('NewSpaceModal model-picker composition', () => {
     });
     await waitFor(() => {
       expect(persistedStates().at(-1)).toMatchObject({ selectedReasoningEffort: 'high' });
-      expect(pickerTrigger(team).textContent).toContain('High');
+      const updatedTeamTrigger = pickerTrigger(team);
+      expect(within(updatedTeamTrigger).getByLabelText('GPT 5.6 · High')).toBeTruthy();
+      expect(updatedTeamTrigger.textContent).not.toContain('High');
+      const effortGauge = within(updatedTeamTrigger).getByTestId('model-reasoning-effort-gauge');
+      expect(effortGauge.dataset.gaugeValue).toBe('2');
+      expect(effortGauge.dataset.gaugeSize).toBe('compact');
     });
     await fireEvent.click(pickerTrigger(team));
     await waitFor(() => expect(screen.queryByRole('listbox')).toBeNull());
