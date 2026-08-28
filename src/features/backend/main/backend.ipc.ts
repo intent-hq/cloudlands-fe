@@ -1363,17 +1363,29 @@ export function switchBackend(id: string): Promise<SwitchConnectionResult> {
   return enqueueSwitchOperation(() => performSwitchBackend(id));
 }
 
-/** Connect one pooled backend and open/focus its windows without switching the app. */
-export function openBackendWindow(id: string): Promise<OpenConnectionResult> {
-  return enqueueSwitchOperation(() => performOpenBackendWindow(id));
+/**
+ * Connect one pooled backend and open/focus its windows without switching the
+ * app. `options.probeTimeoutMs` bounds the authenticated `host.status` probe
+ * for a single call (defaults to the client's flat request timeout) — used by
+ * deadline-driven callers like {@link openLocalAndSpawn} whose own budget is
+ * shorter than the 30s client default.
+ */
+export function openBackendWindow(
+  id: string,
+  options?: { probeTimeoutMs?: number },
+): Promise<OpenConnectionResult> {
+  return enqueueSwitchOperation(() => performOpenBackendWindow(id, options));
 }
 
-async function performOpenBackendWindow(id: string): Promise<OpenConnectionResult> {
+async function performOpenBackendWindow(
+  id: string,
+  options?: { probeTimeoutMs?: number },
+): Promise<OpenConnectionResult> {
   const target = await connectBackendClient(id);
   try {
     // Do not create a renderer until the pinned transport has completed an
     // authenticated request. A cert/token failure rejects this remote only.
-    await target.request('host.status');
+    await target.request('host.status', undefined, { timeoutMs: options?.probeTimeoutMs });
     await windowHooks.openOrFocus?.(id);
     return { id };
   } catch (error) {
@@ -1507,13 +1519,21 @@ async function performSpawnSidecar(): Promise<{
     if (result.ok) {
       // The daemon-loss modal resolves as soon as the spawn kicked off; the
       // JsonRpcClient's ≤5s reconnect loop picks up the socket once the
-      // daemon is serving and broadcasts `backend:status` as usual.
+      // daemon is serving and broadcasts `backend:status` as usual. Scoped to
+      // local windows: this is the LOCAL client's status, and openLocalAndSpawn
+      // makes the spawn reachable from remote windows — an unscoped broadcast
+      // would let an already-connected local client mark a remote window's
+      // still-dead backend healthy and wrongly dismiss its overlay.
       const client = getLocalBackendClient();
-      broadcast(BACKEND.STATUS, {
-        status: client.getStatus(),
-        transport: formatTransportInfo(client.getConfig(), getPinnedVersion()),
-        reconnectAttempts: client.getReconnectAttempts(),
-      });
+      broadcast(
+        BACKEND.STATUS,
+        {
+          status: client.getStatus(),
+          transport: formatTransportInfo(client.getConfig(), getPinnedVersion()),
+          reconnectAttempts: client.getReconnectAttempts(),
+        },
+        LOCAL_CONNECTION_ID,
+      );
     }
     return result;
   } catch (error) {
@@ -1621,6 +1641,11 @@ const OPEN_LOCAL_PROBE_RETRY_MS = 500;
  * that reports a live daemon already on the socket (`spawned: false`) still
  * proceeds to the open. The spawn's uds guard needs no switch: the always-on
  * local pooled client is UDS-configured regardless of any window's backend.
+ *
+ * Each probe is bounded by the REMAINING deadline budget (not the client's
+ * flat 30s request default): a socket that accepts but never answers would
+ * otherwise hold this IPC — and the overlay's disabled button — well past the
+ * documented deadline.
  */
 export async function openLocalAndSpawn(): Promise<{
   ok: boolean;
@@ -1633,7 +1658,8 @@ export async function openLocalAndSpawn(): Promise<{
   const deadline = Date.now() + OPEN_LOCAL_PROBE_DEADLINE_MS;
   for (;;) {
     try {
-      await openBackendWindow(LOCAL_CONNECTION_ID);
+      const remainingMs = Math.max(deadline - Date.now(), OPEN_LOCAL_PROBE_RETRY_MS);
+      await openBackendWindow(LOCAL_CONNECTION_ID, { probeTimeoutMs: remainingMs });
       return spawnResult;
     } catch (error) {
       if (Date.now() >= deadline) {

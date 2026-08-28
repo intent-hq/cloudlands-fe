@@ -919,7 +919,9 @@ describe('connections:* IPC handlers', () => {
     const remote = mod.getBackendClientForConnection('remote-1');
     expect(remote).toBeDefined();
     expect(remote).not.toBe(local);
-    expect(remote?.request).toHaveBeenCalledWith('host.status');
+    expect(remote?.request).toHaveBeenCalledWith('host.status', undefined, {
+      timeoutMs: undefined,
+    });
     expect(mod.getBackendClient()).toBe(local);
     expect(mod.getBackendClientForConnection('local')).toBe(local);
     expect(captureAndClose).not.toHaveBeenCalled();

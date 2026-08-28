@@ -557,4 +557,98 @@ describe('openLocalAndSpawn — open-only recovery, no switch', () => {
       else process.env.INTENTD_SOCKET = priorSocket;
     }
   }, 10_000);
+
+  it('scopes the spawn status broadcast to local windows only', async () => {
+    // The spawn broadcast carries the LOCAL client's status; a remote window's
+    // backend is still dead, so an unscoped broadcast would wrongly dismiss
+    // its stopped overlay.
+    const priorSocket = process.env.INTENTD_SOCKET;
+    process.env.INTENTD_SOCKET = '/tmp/intent-open-spawn-test.sock';
+    vi.mocked(spawnSidecarOnDemand).mockResolvedValue({
+      ok: true,
+      spawned: true,
+    } as unknown as Awaited<ReturnType<typeof spawnSidecarOnDemand>>);
+
+    const localSend = vi.fn();
+    const remoteSend = vi.fn();
+    const localWindow = {
+      id: 1,
+      backendId: 'local',
+      isDestroyed: () => false,
+      webContents: { send: localSend },
+    };
+    const remoteWindow = {
+      id: 2,
+      backendId: 'remote-1',
+      isDestroyed: () => false,
+      webContents: { send: remoteSend },
+    };
+    vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([localWindow, remoteWindow] as never);
+    vi.mocked(BrowserWindow.fromWebContents).mockImplementation((sender) => {
+      if (sender === localWindow.webContents) return localWindow as never;
+      if (sender === remoteWindow.webContents) return remoteWindow as never;
+      return null;
+    });
+
+    try {
+      const mod = await import('../backend.ipc');
+      mod.__setBackendWindowHooksForTesting({
+        captureAndClose: vi.fn(async () => {}),
+        restore: vi.fn(() => {}),
+        openOrFocus: vi.fn(async () => {}),
+      });
+
+      const result = await mod.openLocalAndSpawn();
+
+      expect(result.ok).toBe(true);
+      const localStatusCalls = localSend.mock.calls.filter(([ch]) => ch === 'backend:status');
+      const remoteStatusCalls = remoteSend.mock.calls.filter(([ch]) => ch === 'backend:status');
+      expect(localStatusCalls.length).toBeGreaterThan(0);
+      expect(remoteStatusCalls).toHaveLength(0);
+    } finally {
+      if (priorSocket === undefined) delete process.env.INTENTD_SOCKET;
+      else process.env.INTENTD_SOCKET = priorSocket;
+    }
+  });
+
+  it('bounds each host.status probe by the remaining deadline budget', async () => {
+    // The client's flat request default is 30s — longer than the whole 15s
+    // open deadline. Each probe must carry an explicit timeout within the
+    // remaining budget so a socket that accepts but never answers cannot hold
+    // the IPC past the documented deadline.
+    store.getActiveId.mockResolvedValue('remote-1');
+    const priorSocket = process.env.INTENTD_SOCKET;
+    process.env.INTENTD_SOCKET = '/tmp/intent-open-spawn-test.sock';
+    vi.mocked(spawnSidecarOnDemand).mockResolvedValue({
+      ok: true,
+      spawned: true,
+    } as unknown as Awaited<ReturnType<typeof spawnSidecarOnDemand>>);
+
+    try {
+      const mod = await import('../backend.ipc');
+      mod.__setBackendWindowHooksForTesting({
+        captureAndClose: vi.fn(async () => {}),
+        restore: vi.fn(() => {}),
+        openOrFocus: vi.fn(async () => {}),
+      });
+
+      const result = await mod.openLocalAndSpawn();
+      expect(result.ok).toBe(true);
+
+      const client = mod.getBackendClientForId('local') as unknown as {
+        request: ReturnType<typeof vi.fn>;
+      };
+      const probes = client.request.mock.calls.filter(([method]) => method === 'host.status');
+      expect(probes.length).toBeGreaterThan(0);
+      for (const [, , options] of probes) {
+        const timeoutMs = (options as { timeoutMs?: number } | undefined)?.timeoutMs;
+        expect(typeof timeoutMs).toBe('number');
+        expect(timeoutMs).toBeGreaterThan(0);
+        expect(timeoutMs).toBeLessThanOrEqual(15_000);
+      }
+    } finally {
+      if (priorSocket === undefined) delete process.env.INTENTD_SOCKET;
+      else process.env.INTENTD_SOCKET = priorSocket;
+    }
+  });
 });
