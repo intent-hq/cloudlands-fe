@@ -29,6 +29,7 @@ import {
 } from '../../agent-session/agent-session-slice';
 import {
   chatLiveStreamPhaseChanged,
+  chatReset,
   chatStateReducer,
   chatTranscriptSnapshotApplied,
   chatTranscriptSnapshotRerequested,
@@ -45,6 +46,7 @@ import { workspaceUnmounted } from '../../workspace-lifecycle/workspace-lifecycl
 import {
   closeTabsByAgentId,
   destroyTabsByOwnerAgent,
+  pruneRecentlyClosed,
 } from '../../panel-layout/panel-layout-slice';
 import {
   clearAllStandingChatSubscriptions,
@@ -677,10 +679,28 @@ describe('chatReadSaga (single-transfer hydration)', () => {
         ([action]) => action.type === destroyTabsByOwnerAgent.type,
       )?.[0];
       expect(destroy?.payload).toMatchObject({ wsId: WS, agentId: AGENT });
+      // Missed-deletion recovery: no event-driven prune follows, so the
+      // cleanup prunes recentlyClosed itself — "Reopen closed tab" must not
+      // resurrect the deleted agent.
+      const prune = run.dispatch.mock.calls.find(
+        ([action]) => action.type === pruneRecentlyClosed.type,
+      )?.[0];
+      expect(prune?.payload).toEqual([WS, { agentId: AGENT }]);
       expect(mocks.invoke).toHaveBeenCalledWith('browser:clear-agent-tabs', { agentId: AGENT });
+      // Worker contract: `started: false` suppresses BOTH settle/fail
+      // branches — neither the retry surface nor a false settle.
       expect(
         run.dispatch.mock.calls.some(([action]) => action.type === transcriptHydrationFailed.type),
       ).toBe(false);
+      expect(
+        run.dispatch.mock.calls.some(([action]) => action.type === transcriptHydrationSettled.type),
+      ).toBe(false);
+      // The started 'loading' marker must not leak: the path resets the
+      // deleted agent's chat-state entry.
+      expect(
+        run.dispatch.mock.calls.some(([action]) => action.type === chatReset.type),
+      ).toBe(true);
+      expect(run.chat().byAgentId[AGENT]?.transcriptHydration).toBeUndefined();
       run.task.cancel();
       await run.task.toPromise();
     },

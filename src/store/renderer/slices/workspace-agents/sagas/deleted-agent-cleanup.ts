@@ -17,6 +17,7 @@ import { IPC_CHANNELS } from '$shared/ipc-registry';
 import {
   closeTabsByAgentId,
   destroyTabsByOwnerAgent,
+  pruneRecentlyClosed,
 } from '../../panel-layout/panel-layout-slice';
 
 const logger = createLogger('DeletedAgentCleanup');
@@ -31,6 +32,13 @@ export function* cleanupDeletedAgentTabs(wsId: string, agentId: string) {
   // registrations — an earlier list-tabs reply may already have rehydrated
   // them for the persisted hidden tabs.
   yield* put(destroyTabsByOwnerAgent(wsId, agentId));
+  // `closeTabsByAgentId` is a normal close that parks each tab in
+  // `recentlyClosed` — and because this recovery covers a deletion event
+  // MISSED while the app was closed, no event-driven prune follows it (the
+  // `agent:deleted` mutation-saga path is the one that prunes). Prune here so
+  // "Reopen closed tab" cannot resurrect the deleted agent and loop straight
+  // back into this cleanup.
+  yield* put(pruneRecentlyClosed(wsId, { agentId }));
   try {
     yield* call(invoke, IPC_CHANNELS.BROWSER.CLEAR_AGENT_TABS, { agentId });
   } catch (clearError) {

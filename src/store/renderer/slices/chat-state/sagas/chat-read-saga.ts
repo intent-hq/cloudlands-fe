@@ -56,6 +56,7 @@ import { selectAgentMessages } from '../../agent-session/agent-session-selectors
 import { workspaceUnmounted } from '../../workspace-lifecycle/workspace-lifecycle-slice';
 import { cleanupDeletedAgentTabs } from '../../workspace-agents/sagas/deleted-agent-cleanup';
 import {
+  chatReset,
   chatTranscriptSnapshotApplied,
   chatTranscriptSnapshotRerequested,
   initializeChatRequested,
@@ -242,8 +243,14 @@ function* hydrateChatTranscriptSaga(request: ChatRequest): SagaGenerator<Hydrate
       // hydration failure: WARN + close the referencing tabs (shared cleanup)
       // and short-circuit with `started: false` so the worker dispatches
       // neither settled nor failed — no error/retry surface for a tab that is
-      // being closed. The interest lease still releases via the finally.
+      // being closed. Unlike the deletion-pending early return above,
+      // `transcriptHydrationStarted` HAS already been dispatched here, so
+      // reset the chat-state entry — otherwise the deleted agent's marker
+      // would sit at 'loading' forever (a leak today, a retry-less permanent
+      // skeleton if a chat surface ever mounts outside an agent panel tab).
+      // The interest lease still releases via the finally.
       yield* call(cleanupDeletedAgentTabs, wsId, agentId);
+      yield* put(chatReset(agentId));
       return { started: false, succeeded: false };
     }
     logger.error(
