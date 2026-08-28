@@ -109,4 +109,25 @@ describe('TipTapEditor slash skills', () => {
     await fireEvent.click(option);
     await waitFor(() => expect(onUpdate).toHaveBeenLastCalledWith('/summarize '));
   });
+
+  it('keeps a real at-mention serializable and discoverable after selecting a skill', async () => {
+    const { component, editor } = await mountEditor();
+    component.insertText('/rev');
+    await waitFor(() => expect(screen.getByRole('listbox')).toBeTruthy());
+    await fireEvent.keyDown(editor, { key: 'Enter' });
+    await waitFor(() => expect(component.getTextContent()).toBe('/review '));
+
+    const mention = {
+      id: 'src/lib/review.ts',
+      label: 'review.ts',
+      type: 'file',
+      uri: 'file:///workspace/src/lib/review.ts',
+      meta: { path: 'src/lib/review.ts' },
+    };
+    expect(component.insertMention(mention)).toBe(true);
+
+    expect(component.getTextContent()).toBe('/review @src/lib/review.ts ');
+    expect(component.getMentions()).toEqual([mention]);
+    expect(editor.querySelector('[data-mention]')?.textContent).toBe('review.ts');
+  });
 });
