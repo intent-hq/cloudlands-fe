@@ -45,6 +45,9 @@ describe('SlashSkillSuggestionList', () => {
 
     const reviewOption = screen.getByRole('option', { name: 'review' });
     expect(reviewOption.textContent?.trim()).toBe('review');
+    const reviewLabel = reviewOption.querySelector('span');
+    expect(reviewLabel?.className).toContain('type-body');
+    expect(reviewLabel?.className).not.toContain('type-code');
     expect(screen.queryByText('Review a change')).toBeNull();
 
     reviewOption.focus();
@@ -53,6 +56,7 @@ describe('SlashSkillSuggestionList', () => {
       name: 'Review a change',
       hidden: true,
     });
+    expect(tooltip.className).toContain('type-caption');
     await waitFor(() => expect(reviewOption.getAttribute('aria-describedby')).toBe(tooltip.id));
   });
 

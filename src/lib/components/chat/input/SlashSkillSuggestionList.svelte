@@ -109,7 +109,7 @@
       onkeydown={handleKeyDown}
     >
       {#each items as item, index (`${item.name}:${item.location}`)}
-        <Tooltip content={item.description} side="right" align="start" class="w-full">
+        <Tooltip content={item.description} side="right" align="start" size="sm" class="w-full">
           <Button
             type="button"
             id={`${componentId}-option-${index}`}
@@ -123,7 +123,7 @@
             onpointerdown={(event) => event.preventDefault()}
             onclick={() => selectItem(index)}
           >
-            <span class="slash-skill-name type-code">{item.name}</span>
+            <span class="type-body">{item.name}</span>
           </Button>
         </Tooltip>
       {/each}
@@ -146,11 +146,6 @@
   :global(.slash-skill-option:focus-visible) {
     outline: 2px solid hsl(var(--primary));
     outline-offset: -2px;
-  }
-
-  .slash-skill-name {
-    flex-shrink: 0;
-    font-weight: 600;
   }
 
   .slash-skill-state {
