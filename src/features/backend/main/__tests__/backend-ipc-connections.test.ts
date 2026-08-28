@@ -96,6 +96,12 @@ vi.mock('../../../browser/main/browser-exec-reverse', () => ({
   registerBrowserExecReverseHandler: vi.fn(),
 }));
 
+// Deterministic intentd version pin (the real reader would read the repo's
+// live intentd.version file, making list-shape assertions drift on every bump).
+vi.mock('../intentd-version-pin', () => ({
+  readPinnedVersion: vi.fn(() => '0.1.0'),
+}));
+
 // Preserve the real PinMismatchError + resolveBackendConfig; stub captureFingerprint.
 const mockCaptureFingerprint = vi.hoisted(() => vi.fn());
 vi.mock('../backend-connection', async (importActual) => {
@@ -112,6 +118,7 @@ const store = vi.hoisted(() => ({
   forget: vi.fn(),
   getDecryptedToken: vi.fn(),
   setHostname: vi.fn(),
+  setDaemonVersion: vi.fn(),
   setHosts: vi.fn(),
   getDetectHosts: vi.fn(),
 }));
@@ -124,6 +131,7 @@ vi.mock('../connections-store', () => ({
   forget: store.forget,
   getDecryptedToken: store.getDecryptedToken,
   setHostname: store.setHostname,
+  setDaemonVersion: store.setDaemonVersion,
   setHosts: store.setHosts,
   getDetectHosts: store.getDetectHosts,
   // Keychain-sync lifecycle wiring (T3); inert in these suites.
@@ -283,6 +291,7 @@ beforeEach(() => {
   store.setActiveId.mockResolvedValue(undefined);
   store.getDecryptedToken.mockResolvedValue('secret-token');
   store.setHostname.mockResolvedValue(undefined);
+  store.setDaemonVersion.mockResolvedValue(false);
   store.setHosts.mockResolvedValue(undefined);
   store.getDetectHosts.mockResolvedValue(true);
   keychainSync.enabled = false;
@@ -534,6 +543,8 @@ describe('connections:* IPC handlers', () => {
       protocolMismatch: null,
       // No auth rejection has fired, so there is no sticky rejection either.
       authRejected: null,
+      // The app's pinned intentd version rides the list payload.
+      pinnedVersion: '0.1.0',
     });
   });
 

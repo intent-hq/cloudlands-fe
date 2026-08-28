@@ -158,6 +158,31 @@ function logDaemonHelloBuild(helloResult: unknown, connectionId: string): void {
 export function __resetDaemonBuildLogForTesting(): void {
   lastLoggedDaemonBuildKeys.clear();
 }
+
+/**
+ * Capture a REMOTE backend's daemon version from its `client.hello` result
+ * (`server.version`) and persist it on the connection record, following the
+ * `setHostname` capture pattern. The handshake re-runs on every (re)connect,
+ * so a daemon upgrade refreshes the stored value. Fire-and-forget/fail-soft
+ * by design — a store write error must never disturb the handshake — and the
+ * `connections:changed` broadcast fires only when the stored value actually
+ * changed (the store dedupes the common every-reconnect same-version case).
+ * Never called for the local entry: the `DaemonVersionInfo` path owns the
+ * local daemon's version.
+ */
+function captureRemoteDaemonVersion(helloResult: unknown, connectionId: string): void {
+  const helloBuild = extractDaemonHelloBuildInfo(helloResult);
+  if (!helloBuild) return;
+  void connectionsStore
+    .setDaemonVersion(connectionId, helloBuild.version)
+    .then((changed) => (changed ? broadcastConnectionsChanged() : undefined))
+    .catch((error: unknown) => {
+      logger.warn('Failed to capture remote daemon version', {
+        connectionId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    });
+}
 const backendClients = new Map<string, JsonRpcClient>();
 const backendClientConnects = new Map<string, Promise<JsonRpcClient>>();
 let handlersRegistered = false;
@@ -579,6 +604,14 @@ export function getBackendClient(): JsonRpcClient {
       // #3649: log the connected daemon's build identity once at INFO so the
       // log file records which daemon build it talked to.
       logDaemonHelloBuild(result, connectionId);
+      // Persist a REMOTE backend's reported daemon version on its connection
+      // record (refreshed on every reconnect). Guarded on the live active
+      // meta so a hello landing after a switch away cannot mislabel the
+      // record (the monorepo#2221 pattern); the local entry never captures —
+      // the #3448 refresh below owns the local daemon's version.
+      if (activeConnectionMeta?.id === connectionId) {
+        captureRemoteDaemonVersion(result, connectionId);
+      }
       // #3448: refresh the adopted external daemon's version info from the
       // live `server.version` on every (re)connect — the startup probe only
       // latches it once, so a daemon upgrade would otherwise stay stale. For
@@ -806,6 +839,12 @@ function createAdditionalBackendClient(id: string, config: BackendConnectionConf
       // #3649: pool members log their daemon's build identity too, keyed by
       // connection id so multi-backend setups record every daemon build.
       logDaemonHelloBuild(result, id);
+      // Pool members capture their remote's daemon version too; the id is
+      // fixed at construction so no active-meta guard is needed. Skipped for
+      // a pooled local client (the DaemonVersionInfo path owns local).
+      if (id !== LOCAL_CONNECTION_ID) {
+        captureRemoteDaemonVersion(result, id);
+      }
     },
   });
   instance.on('notification', (notification: JsonRpcNotification) => {
@@ -1469,6 +1508,9 @@ async function listConnections(
     windowBackendId,
     protocolMismatch: activeProtocolMismatch,
     authRejected: activeAuthRejected,
+    // The app's pinned intentd version so the renderer can compare each
+    // remote's captured `daemonVersion` without a separate channel.
+    pinnedVersion: getPinnedVersion(),
   };
 }
 

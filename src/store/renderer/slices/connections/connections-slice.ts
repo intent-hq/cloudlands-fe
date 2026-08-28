@@ -41,6 +41,7 @@ export const initialState: ConnectionsState = {
   activeId: LOCAL_CONNECTION_ID,
   windowBackendId: LOCAL_CONNECTION_ID,
   hasReceivedList: false,
+  pinnedVersion: null,
   status: 'idle',
   error: null,
   certMismatch: null,
@@ -204,6 +205,9 @@ connectionsReducer.with(connectionsListReceived, (state, { payload: [result] }) 
     activeId: result.activeId,
     windowBackendId: result.windowBackendId,
     hasReceivedList: true,
+    // Absent on payloads from an older main process — keep the prior value
+    // rather than clearing a pin the renderer already learned.
+    pinnedVersion: result.pinnedVersion !== undefined ? result.pinnedVersion : state.pinnedVersion,
   };
 });
 connectionsReducer.with(connectOperationStarted, (state) => {

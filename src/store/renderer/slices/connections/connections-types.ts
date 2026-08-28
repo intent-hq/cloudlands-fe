@@ -58,6 +58,12 @@ export interface ConnectionsState {
    * work (e.g. workspace-tab reconciliation) gates on this flag.
    */
   hasReceivedList: boolean;
+  /**
+   * The app's pinned intentd version (from the `connections:list` result), or
+   * null before the list has loaded or when the pin file is missing/malformed.
+   * Compared against each remote's captured `daemonVersion`.
+   */
+  pinnedVersion: string | null;
   /** Status of the in-flight add/open/switch operation. */
   status: ConnectionOpStatus;
   /** Error message from the last failed add/open/switch operation, or null. */

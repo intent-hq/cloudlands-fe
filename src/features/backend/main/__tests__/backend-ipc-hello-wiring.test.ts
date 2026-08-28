@@ -24,6 +24,7 @@ const {
   ctorOptions,
   mockGetOrCreateClientId,
   mockPersistClientId,
+  mockSetDaemonVersion,
   mockRunLog,
   startupFailedListeners,
   mockStartupFailure,
@@ -31,6 +32,7 @@ const {
   ctorOptions: [] as Array<Record<string, unknown>>,
   mockGetOrCreateClientId: vi.fn(async () => 'cli-persisted'),
   mockPersistClientId: vi.fn(async () => {}),
+  mockSetDaemonVersion: vi.fn(async () => false),
   mockRunLog: {
     available: true,
     startedAt: '2026-07-26T00:00:00.000Z',
@@ -108,6 +110,7 @@ vi.mock('../connections-store', async (importOriginal) => ({
     },
   ]),
   getDecryptedToken: vi.fn(async () => 'tok-remote'),
+  setDaemonVersion: mockSetDaemonVersion,
 }));
 
 describe('backend.ipc client identity wiring (§5.17)', () => {
@@ -459,6 +462,86 @@ describe('backend.ipc daemon build-identity log on hello (#3649)', () => {
     });
 
     const { disconnectBackendClient } = await import('../backend.ipc');
+    disconnectBackendClient('conn-remote');
+  });
+});
+
+describe('backend.ipc remote daemon version capture on hello', () => {
+  afterEach(async () => {
+    const { __setActiveConnectionMetaForTesting } = await import('../backend.ipc');
+    __setActiveConnectionMetaForTesting(null);
+    vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([]);
+    mockSetDaemonVersion.mockClear();
+    mockSetDaemonVersion.mockResolvedValue(false);
+  });
+
+  it('persists a pool member remote daemon version keyed by its connection id', async () => {
+    const { connectBackendClient, disconnectBackendClient } = await import('../backend.ipc');
+    await connectBackendClient('conn-remote');
+    const poolCtor = ctorOptions[ctorOptions.length - 1];
+    const onHelloResult = poolCtor.onHelloResult as (result: unknown) => void;
+
+    onHelloResult({ server: { version: '0.9.0', buildCommit: 'fed9876' } });
+    await vi.waitFor(() => {
+      expect(mockSetDaemonVersion).toHaveBeenCalledWith('conn-remote', '0.9.0');
+    });
+
+    disconnectBackendClient('conn-remote');
+  });
+
+  it('broadcasts connections:changed only when the captured version actually changed', async () => {
+    const { connectBackendClient, disconnectBackendClient } = await import('../backend.ipc');
+    await connectBackendClient('conn-remote');
+    const poolCtor = ctorOptions[ctorOptions.length - 1];
+    const onHelloResult = poolCtor.onHelloResult as (result: unknown) => void;
+
+    const send = vi.fn();
+    vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([
+      { id: 1, isDestroyed: () => false, webContents: { send } } as never,
+    ]);
+
+    // Unchanged version (the store dedupes): no broadcast.
+    mockSetDaemonVersion.mockResolvedValueOnce(false);
+    onHelloResult({ server: { version: '0.9.0' } });
+    await vi.waitFor(() => expect(mockSetDaemonVersion).toHaveBeenCalledTimes(1));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(send.mock.calls.filter(([c]) => c === 'connections:changed')).toHaveLength(0);
+
+    // A changed version pushes the refreshed list to every window.
+    mockSetDaemonVersion.mockResolvedValueOnce(true);
+    onHelloResult({ server: { version: '1.0.0' } });
+    await vi.waitFor(() => {
+      expect(send.mock.calls.filter(([c]) => c === 'connections:changed').length).toBeGreaterThan(
+        0,
+      );
+    });
+
+    disconnectBackendClient('conn-remote');
+  });
+
+  it('never captures for the local backend (primary client with no active remote)', async () => {
+    const { getBackendClient } = await import('../backend.ipc');
+    getBackendClient();
+    const onHelloResult = ctorOptions[0].onHelloResult as (result: unknown) => void;
+
+    onHelloResult({ server: { version: '0.9.0' } });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(mockSetDaemonVersion).not.toHaveBeenCalled();
+  });
+
+  it('ignores hellos without a well-formed server.version', async () => {
+    const { connectBackendClient, disconnectBackendClient } = await import('../backend.ipc');
+    await connectBackendClient('conn-remote');
+    const poolCtor = ctorOptions[ctorOptions.length - 1];
+    const onHelloResult = poolCtor.onHelloResult as (result: unknown) => void;
+
+    onHelloResult(undefined);
+    onHelloResult({});
+    onHelloResult({ server: {} });
+    onHelloResult({ server: { version: 42 } });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(mockSetDaemonVersion).not.toHaveBeenCalled();
+
     disconnectBackendClient('conn-remote');
   });
 });

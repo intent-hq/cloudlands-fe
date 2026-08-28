@@ -105,6 +105,35 @@ describe('connectionsReducer', () => {
       expect(next.hasReceivedList).toBe(true);
     });
 
+    it('stores the pinned intentd version and per-connection daemonVersion from the payload', () => {
+      expect(initialState.pinnedVersion).toBeNull();
+      const remoteWithVersion: ConnectionRecord = { ...REMOTE, daemonVersion: '0.8.10' };
+      const next = connectionsReducer(
+        initialState,
+        connectionsListReceived({
+          connections: [LOCAL, remoteWithVersion],
+          activeId: LOCAL_CONNECTION_ID,
+          windowBackendId: LOCAL_CONNECTION_ID,
+          pinnedVersion: '0.8.10',
+        }),
+      );
+      expect(next.pinnedVersion).toBe('0.8.10');
+      expect(getItems(next.connections)[1].daemonVersion).toBe('0.8.10');
+    });
+
+    it('keeps a known pinnedVersion when the payload omits the field (older main process)', () => {
+      const state = { ...initialState, pinnedVersion: '0.8.10' };
+      const next = connectionsReducer(
+        state,
+        connectionsListReceived({
+          connections: [LOCAL],
+          activeId: LOCAL_CONNECTION_ID,
+          windowBackendId: LOCAL_CONNECTION_ID,
+        }),
+      );
+      expect(next.pinnedVersion).toBe('0.8.10');
+    });
+
     it('leaves op-status and cert-mismatch untouched (they are separate concerns)', () => {
       const state = { ...initialState, status: 'connecting' as const, certMismatch: CERT_MISMATCH };
       const next = connectionsReducer(

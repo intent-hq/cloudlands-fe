@@ -31,6 +31,15 @@ export const selectCurrentConnection = store.createSelector((state): ConnectionR
   return getItem(connections, windowBackendId) ?? null;
 });
 
+/**
+ * The app's pinned intentd version, or null before the list has loaded or
+ * when the pin file is missing/malformed. Compared against each remote's
+ * captured `daemonVersion`.
+ */
+export const selectPinnedDaemonVersion = store.createSelector(
+  (state) => state.connections.pinnedVersion,
+);
+
 /** Status of the in-flight add/switch operation. */
 export const selectConnectionStatus = store.createSelector((state) => state.connections.status);
 

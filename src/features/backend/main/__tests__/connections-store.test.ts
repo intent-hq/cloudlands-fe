@@ -519,6 +519,82 @@ describe('connections-store', () => {
     expect((await store.list()).some((c) => c.hostname === 'ghost.local')).toBe(false);
   });
 
+  it('records default to a null daemonVersion until one is captured', async () => {
+    const store = await import('../connections-store');
+    const rec = await store.add(sampleConn);
+    expect(rec.daemonVersion).toBeNull();
+    expect((await store.list())[1].daemonVersion).toBeNull();
+  });
+
+  it('setDaemonVersion persists the captured version and it round-trips through disk', async () => {
+    const store = await import('../connections-store');
+    const rec = await store.add(sampleConn);
+    await expect(store.setDaemonVersion(rec.id, '0.8.10')).resolves.toBe(true);
+    await store.__drainWriteChainForTesting();
+
+    vi.resetModules();
+    mockElectron();
+    const reloaded = await import('../connections-store');
+    const remote = (await reloaded.list()).find((c) => c.id === rec.id);
+    expect(remote?.daemonVersion).toBe('0.8.10');
+  });
+
+  it('setDaemonVersion refreshes a changed version and reports unchanged writes as false', async () => {
+    const store = await import('../connections-store');
+    const rec = await store.add(sampleConn);
+
+    await expect(store.setDaemonVersion(rec.id, ' 0.8.10 ')).resolves.toBe(true);
+    expect((await store.list())[1].daemonVersion).toBe('0.8.10');
+
+    // The routine every-reconnect same-version capture is a no-op.
+    await expect(store.setDaemonVersion(rec.id, '0.8.10')).resolves.toBe(false);
+
+    // A daemon upgrade refreshes the stored value.
+    await expect(store.setDaemonVersion(rec.id, '0.9.0')).resolves.toBe(true);
+    expect((await store.list())[1].daemonVersion).toBe('0.9.0');
+
+    // A blank capture must not blank out a known version.
+    await expect(store.setDaemonVersion(rec.id, '   ')).resolves.toBe(false);
+    expect((await store.list())[1].daemonVersion).toBe('0.9.0');
+  });
+
+  it('setDaemonVersion is a no-op for an unknown id (fail-soft)', async () => {
+    const store = await import('../connections-store');
+    await store.add(sampleConn);
+    await expect(store.setDaemonVersion('does-not-exist', '1.0.0')).resolves.toBe(false);
+    expect((await store.list()).some((c) => c.daemonVersion === '1.0.0')).toBe(false);
+  });
+
+  it('setDaemonVersion never bumps the LWW clock or notifies keychain sync (per-machine state)', async () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(1_700_000_000_000);
+      const store = await import('../connections-store');
+      const rec = await store.add(sampleConn);
+      await store.__drainWriteChainForTesting();
+
+      const listener = vi.fn();
+      const unsubscribe = store.onConnectionsMutated(listener);
+
+      vi.setSystemTime(1_700_000_001_000);
+      await store.setDaemonVersion(rec.id, '0.8.10');
+      await store.__drainWriteChainForTesting();
+
+      const file = path.join(tmpDir, 'backend-connections.json');
+      const parsed = JSON.parse(await fs.readFile(file, 'utf8'));
+      expect(parsed.connections[0].daemonVersion).toBe('0.8.10');
+      expect(parsed.connections[0].updatedAt).toBe(1_700_000_000_000);
+      expect(listener).not.toHaveBeenCalled();
+      unsubscribe();
+
+      // The captured version never enters the sync surface either.
+      const records = await store.listSyncRecords();
+      expect(JSON.stringify(records)).not.toContain('daemonVersion');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('malformed JSON on disk yields just the local entry (defensive)', async () => {
     await fs.writeFile(path.join(tmpDir, 'backend-connections.json'), 'not json', 'utf8');
     const store = await import('../connections-store');

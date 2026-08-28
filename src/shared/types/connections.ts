@@ -87,6 +87,15 @@ export interface ConnectionRecord {
    */
   hostname?: string | null;
   /**
+   * The remote daemon's reported version (`server.version` from its
+   * `client.hello` handshake, PROTOCOL §5.17), captured on connect and
+   * refreshed on every reconnect so the UI can compare it against the app's
+   * pinned intentd version. `null`/absent until captured (or for daemons that
+   * predate the field). Never set for the local entry — the existing
+   * `DaemonVersionInfo` path owns the local daemon's version.
+   */
+  daemonVersion?: string | null;
+  /**
    * Per-backend keychain-sync exclusion (spec Phase 2): `true` when the user
    * opted this backend out of iCloud sync at add time, making the record
    * local-only (never pushed to the keychain, never touched by pulls).
@@ -124,6 +133,13 @@ export interface ConnectionsListResult {
    * auth is good (or it is local).
    */
   authRejected?: ConnectionAuthRejectedEvent | null;
+  /**
+   * The app's pinned intentd version (the `intentd.version` file bundled with
+   * the FE), or `null` when the pin is missing/malformed. Carried here so the
+   * renderer can compare each remote's captured `daemonVersion` against the
+   * version the app expects without a separate channel.
+   */
+  pinnedVersion?: string | null;
 }
 
 /**
