@@ -47,7 +47,7 @@ export const KEYCHAIN_SYNC_STATUS_EVENT = 'connections:sync-status-changed';
  */
 export const LOCAL_CONNECTION_ID = 'local';
 
-/** Stable semantic identifiers for the per-machine visual accent palette. */
+/** Stable semantic identifiers accepted from persisted and synced connection records. */
 export const CONNECTION_ACCENTS = [
   'blue',
   'indigo',
@@ -59,6 +59,10 @@ export const CONNECTION_ACCENTS = [
 ] as const;
 
 export type ConnectionAccentName = (typeof CONNECTION_ACCENTS)[number];
+
+/** Accents offered for new selections; legacy indigo values remain valid above. */
+export const SELECTABLE_CONNECTION_ACCENTS: readonly ConnectionAccentName[] =
+  CONNECTION_ACCENTS.filter((accent) => accent !== 'indigo');
 
 /** A named palette accent, or an explicit request for no accent. */
 export type ConnectionAccent = ConnectionAccentName | null;

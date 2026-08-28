@@ -6,10 +6,12 @@
   import DropdownMenu from '$lib/components/ui/dropdown-menu.svelte';
   import * as Menu from '$lib/components/ui/menu';
   import { cn } from '$lib/utils';
-  import { CONNECTION_ACCENT_CLASSES } from '$lib/utils/connection-accents';
+  import {
+    CONNECTION_ACCENT_CLASSES,
+    connectionAccentOptions,
+  } from '$lib/utils/connection-accents';
   import { m } from '$shared/paraglide/messages.js';
   import {
-    CONNECTION_ACCENTS,
     DEFAULT_CONNECTION_ACCENT,
     type ConnectionAccent,
     type ConnectionOpenStatus,
@@ -41,8 +43,6 @@
   let name = $state('');
   let host = $state('');
   let port = $state('');
-  const CONNECTION_ACCENT_OPTIONS: readonly ConnectionAccent[] = [null, ...CONNECTION_ACCENTS];
-
   let accent = $state<ConnectionAccent>(DEFAULT_CONNECTION_ACCENT);
   let secret = $state('');
   let busy = $state<'update' | 'test' | null>(null);
@@ -63,6 +63,7 @@
   const savedAccent = $derived(
     device.accent === undefined ? DEFAULT_CONNECTION_ACCENT : device.accent,
   );
+  const accentOptions = $derived(connectionAccentOptions(savedAccent));
   const address = $derived(`${device.host ?? ''}:${device.port ?? ''}`);
   const displayName = $derived(device.label.trim() || address);
   const displayHostname = $derived.by(() => {
@@ -446,12 +447,12 @@
             />
           </div>
         </div>
-        <fieldset class="space-y-2" disabled={busy !== null}>
+        <fieldset class="space-y-1" disabled={busy !== null}>
           <legend class="text-sm font-medium text-foreground"
             >{m.settings_devices_accent_label()}</legend
           >
-          <div class="flex flex-wrap gap-2">
-            {#each CONNECTION_ACCENT_OPTIONS as option}
+          <div class="flex flex-wrap gap-1">
+            {#each accentOptions as option}
               <button
                 type="button"
                 class={cn(

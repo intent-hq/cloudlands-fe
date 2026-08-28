@@ -1,5 +1,7 @@
 import {
+  CONNECTION_ACCENTS,
   DEFAULT_CONNECTION_ACCENT,
+  SELECTABLE_CONNECTION_ACCENTS,
   type ConnectionAccent,
   type ConnectionAccentName,
 } from '$shared/types/connections';
@@ -20,12 +22,22 @@ export function resolveConnectionAccent(accent: ConnectionAccent | undefined): C
   return accent === undefined ? DEFAULT_CONNECTION_ACCENT : accent;
 }
 
-/** Low-opacity semantic background for the existing workspace content frame. */
-export function connectionFrameTint(
+/** New choices plus a current legacy accent so persisted values remain editable. */
+export function connectionAccentOptions(current?: ConnectionAccent): readonly ConnectionAccent[] {
+  return [
+    null,
+    ...CONNECTION_ACCENTS.filter(
+      (accent) => SELECTABLE_CONNECTION_ACCENTS.includes(accent) || accent === current,
+    ),
+  ];
+}
+
+/** Low-opacity semantic background layered with the application shell surface. */
+export function connectionShellTint(
   accent: ConnectionAccent | undefined,
   isLocal: boolean,
 ): string | undefined {
   const resolved = resolveConnectionAccent(accent);
   if (isLocal || resolved === null) return undefined;
-  return `color-mix(in srgb, var(--color-${resolved}-500) 7%, var(--color-sidebar))`;
+  return `color-mix(in srgb, var(--color-${resolved}-500) 7%, var(--panel-layout-surface))`;
 }

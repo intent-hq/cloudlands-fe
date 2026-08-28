@@ -90,7 +90,7 @@
   } from '$store/renderer/slices/setup-prompt/setup-prompt-selectors';
   import { bootRouteGateResolved } from '$store/renderer/slices/setup-prompt/setup-prompt-slice';
   import { selectCurrentConnection } from '$store/renderer/slices/connections/connections-selectors';
-  import { connectionFrameTint } from '$lib/utils/connection-accents';
+  import { connectionShellTint } from '$lib/utils/connection-accents';
   import {
     BOOT_ROUTE_HOLD_TIMEOUT_MS,
     decideBootRoute,
@@ -157,8 +157,8 @@
   const releaseNotes$ = selectReleaseNotes();
   const showCreateModal$ = selectShowCreateModal();
   const currentConnection$ = selectCurrentConnection();
-  const workspaceFrameBackground = $derived(
-    connectionFrameTint($currentConnection$?.accent, $currentConnection$?.isLocal ?? true),
+  const applicationShellBackground = $derived(
+    connectionShellTint($currentConnection$?.accent, $currentConnection$?.isLocal ?? true),
   );
 
   // Register all tab types early
@@ -940,6 +940,7 @@
   <!-- Main Layout with Title Bar -->
   <div
     class="panel-layout-container relative h-screen w-screen overflow-hidden bg-transparent text-foreground flex flex-col"
+    style:background-color={applicationShellBackground}
     aria-label={m.layout_appShell_shell_ariaLabel()}
     data-testid="app-ready"
   >
@@ -961,7 +962,6 @@
         <div class="workspace-frame relative mr-2 flex min-h-0 min-w-0 flex-1 bg-transparent">
           <main
             class="workspace-main flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-xl bg-sidebar border border-border shadow-sm"
-            style:background={workspaceFrameBackground}
             aria-label={m.layout_appShell_mainContent_ariaLabel()}
           >
             <div class="flex-1 min-h-0 overflow-hidden">

@@ -40,12 +40,11 @@
     setKeychainSyncEnabledRequested,
   } from '$store/renderer/slices/connections/connections-slice';
   import { selectKeychainSyncState } from '$store/renderer/slices/connections/connections-selectors';
+  import { DEFAULT_CONNECTION_ACCENT, type ConnectionAccent } from '$shared/types/connections';
   import {
-    CONNECTION_ACCENTS,
-    DEFAULT_CONNECTION_ACCENT,
-    type ConnectionAccent,
-  } from '$shared/types/connections';
-  import { CONNECTION_ACCENT_CLASSES } from '$lib/utils/connection-accents';
+    CONNECTION_ACCENT_CLASSES,
+    connectionAccentOptions,
+  } from '$lib/utils/connection-accents';
   import { cn } from '$lib/utils';
 
   interface Props {
@@ -85,8 +84,6 @@
 
   let step = $state<Step>('details');
   let name = $state('');
-  const CONNECTION_ACCENT_OPTIONS: readonly ConnectionAccent[] = [null, ...CONNECTION_ACCENTS];
-
   let accent = $state<ConnectionAccent>(DEFAULT_CONNECTION_ACCENT);
   let host = $state('');
   let port = $state(DEFAULT_WS_PORT);
@@ -97,6 +94,7 @@
   let busy = $state(false);
   let error = $state<string | null>(null);
   let firstInput: HTMLInputElement | null = $state(null);
+  const accentOptions = $derived(connectionAccentOptions(defaultAccent));
 
   // Keychain sync state gates the iCloud checkbox: `supported` is the platform
   // gate (macOS only), `enabled` decides whether the syncConfirm step is needed.
@@ -342,10 +340,10 @@
             />
           </div>
 
-          <fieldset class="space-y-2">
+          <fieldset class="space-y-1">
             <legend class="text-xs text-subtle">{m.settings_devices_accent_label()}</legend>
-            <div class="flex flex-wrap gap-2">
-              {#each CONNECTION_ACCENT_OPTIONS as option}
+            <div class="flex flex-wrap gap-1">
+              {#each accentOptions as option}
                 <button
                   type="button"
                   class={cn(

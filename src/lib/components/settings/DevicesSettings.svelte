@@ -6,7 +6,7 @@
   import ConnectBackendModal from '$lib/components/layout/ConnectBackendModal.svelte';
   import DeviceRow, { type DevicePanelMode } from './DeviceRow.svelte';
   import { m } from '$shared/paraglide/messages.js';
-  import { CONNECTION_ACCENTS, type ConnectionRecord } from '$shared/types/connections';
+  import { SELECTABLE_CONNECTION_ACCENTS, type ConnectionRecord } from '$shared/types/connections';
   import {
     selectConnectionsLoaded,
     selectRemoteConnections,
@@ -25,7 +25,9 @@
   let removeError = $state<string | null>(null);
   let removing = $state(false);
 
-  const defaultAccent = $derived(CONNECTION_ACCENTS[$devices$.length % CONNECTION_ACCENTS.length]);
+  const defaultAccent = $derived(
+    SELECTABLE_CONNECTION_ACCENTS[$devices$.length % SELECTABLE_CONNECTION_ACCENTS.length],
+  );
 
   function openPanel(deviceId: string, panel: Exclude<DevicePanelMode, null>) {
     activeDeviceId = deviceId;

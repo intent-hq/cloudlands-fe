@@ -4,8 +4,16 @@
 
 import { describe, it, expect } from 'vitest';
 import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
-import { LOCAL_CONNECTION_ID } from '$shared/types/connections';
-import { connectionFrameTint, resolveConnectionAccent } from '$lib/utils/connection-accents';
+import {
+  LOCAL_CONNECTION_ID,
+  SELECTABLE_CONNECTION_ACCENTS,
+  isConnectionAccent,
+} from '$shared/types/connections';
+import {
+  connectionAccentOptions,
+  connectionShellTint,
+  resolveConnectionAccent,
+} from '$lib/utils/connection-accents';
 import type { StoreState } from '../../types';
 import type {
   ConnectionsState,
@@ -112,6 +120,26 @@ describe('connections selectors', () => {
       });
       expect(selectCurrentConnectionId.select(state)).toBe(REMOTE.id);
       expect(selectCurrentConnection.select(state)).toEqual(REMOTE);
+    });
+
+    it('changes the shell tint with the backend bound to the current window', () => {
+      const remoteState = stateWith({
+        connections: [LOCAL, REMOTE],
+        activeId: LOCAL_CONNECTION_ID,
+        windowBackendId: REMOTE.id,
+      });
+      const remote = selectCurrentConnection.select(remoteState);
+      expect(connectionShellTint(remote?.accent, remote?.isLocal ?? true)).toContain(
+        'var(--color-violet-500)',
+      );
+
+      const localState = stateWith({
+        connections: [LOCAL, REMOTE],
+        activeId: REMOTE.id,
+        windowBackendId: LOCAL_CONNECTION_ID,
+      });
+      const local = selectCurrentConnection.select(localState);
+      expect(connectionShellTint(local?.accent, local?.isLocal ?? true)).toBeUndefined();
     });
   });
 
@@ -225,17 +253,31 @@ describe('connections selectors', () => {
 });
 
 describe('connection accent presentation', () => {
+  it('offers six new choices while retaining indigo as a valid legacy accent', () => {
+    expect(SELECTABLE_CONNECTION_ACCENTS).toEqual([
+      'blue',
+      'violet',
+      'rose',
+      'orange',
+      'emerald',
+      'teal',
+    ]);
+    expect(isConnectionAccent('indigo')).toBe(true);
+    expect(connectionAccentOptions()).not.toContain('indigo');
+    expect(connectionAccentOptions('indigo')).toContain('indigo');
+  });
+
   it('distinguishes legacy missing accents from an explicit blank', () => {
     expect(resolveConnectionAccent(undefined)).toBe('blue');
     expect(resolveConnectionAccent(null)).toBeNull();
   });
 
   it('derives a low-opacity semantic tint only for named remote accents', () => {
-    expect(connectionFrameTint('teal', false)).toBe(
-      'color-mix(in srgb, var(--color-teal-500) 7%, var(--color-sidebar))',
+    expect(connectionShellTint('teal', false)).toBe(
+      'color-mix(in srgb, var(--color-teal-500) 7%, var(--panel-layout-surface))',
     );
-    expect(connectionFrameTint(null, false)).toBeUndefined();
-    expect(connectionFrameTint('teal', true)).toBeUndefined();
-    expect(connectionFrameTint(undefined, false)).toContain('var(--color-blue-500)');
+    expect(connectionShellTint(null, false)).toBeUndefined();
+    expect(connectionShellTint('teal', true)).toBeUndefined();
+    expect(connectionShellTint(undefined, false)).toContain('var(--color-blue-500)');
   });
 });
