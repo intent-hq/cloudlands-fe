@@ -403,6 +403,62 @@ describe('resolveDraftImages', () => {
       vi.useRealTimers();
     }
   });
+
+  it('regression: staged non-image attachments ride the drafts.set payload alongside inline images (a text save must not wipe them)', () => {
+    vi.useFakeTimers();
+    try {
+      const drafts = createMockDrafts();
+      const saver = createNewWorkspaceDraftSaver(drafts);
+      // Path-only staged item as OnboardingPromptStep stages it (no bytes;
+      // placed at create-time redemption).
+      const stagedItem: ContextItem = {
+        id: 'staged-file-1721650000000-0',
+        type: 'file',
+        label: 'report.pdf',
+        description: 'application/pdf • 1.2 MB',
+        path: 'report.pdf',
+        attachmentMimeType: 'application/pdf',
+        attachmentSize: 1258291,
+        sourcePath: '/home/user/report.pdf',
+      };
+
+      // Mirrors the onboarding save payload: inline editor images + staged
+      // non-image items in one attachments array.
+      saver.schedule('typed after staging a pdf', [
+        ...inlineImagesToContextItems(resolveDraftImages(null, restoredImages)),
+        stagedItem,
+      ]);
+      vi.advanceTimersByTime(300);
+
+      expect(drafts.set).toHaveBeenCalledOnce();
+      expect(drafts.set).toHaveBeenCalledWith(
+        '__new-workspace__',
+        '__initializer__',
+        'typed after staging a pdf',
+        [
+          {
+            id: 'inline-image-0',
+            type: 'file',
+            label: 'screenshot.png',
+            imageData: 'iVBORw0KGgoAAAANSUhEUg==',
+            imageMimeType: 'image/png',
+          },
+          {
+            id: 'staged-file-1721650000000-0',
+            type: 'file',
+            label: 'report.pdf',
+            description: 'application/pdf • 1.2 MB',
+            path: 'report.pdf',
+            attachmentMimeType: 'application/pdf',
+            attachmentSize: 1258291,
+            sourcePath: '/home/user/report.pdf',
+          },
+        ],
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
 
 describe('createNewWorkspaceDraftSaver', () => {
