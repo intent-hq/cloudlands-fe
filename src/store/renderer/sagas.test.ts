@@ -15,7 +15,6 @@ describe('renderer app saga registry', () => {
       'daemonEventsSaga',
       'daemonHealthSaga',
       'connectionsSaga',
-      'bootFallbackToastSaga',
       'settingsHydrationSaga',
       'activeStreamsSaga',
       'agentReadSaga',

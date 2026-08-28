@@ -874,10 +874,6 @@ export const IPC_CHANNELS = {
     CERT_MISMATCH: 'connections:cert-mismatch',
     PROTOCOL_MISMATCH: 'connections:protocol-mismatch',
     AUTH_REJECTED: 'connections:auth-rejected',
-    // Pull the one-shot boot-restore fallback notice latched in main (T19),
-    // consume-once. The renderer fetches this once on mount and surfaces a
-    // non-blocking toast; the notice never becomes connections-slice state.
-    GET_BOOT_FALLBACK: 'connections:get-boot-fallback',
     // iCloud-keychain backend sync (T4): read the opt-in pref + availability
     // status, and set the pref (enabling requests an immediate reconcile).
     // SYNC_STATUS_CHANGED is a main→renderer push (also in EVENT_CHANNELS).

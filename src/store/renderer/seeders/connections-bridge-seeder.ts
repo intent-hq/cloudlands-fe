@@ -32,7 +32,6 @@ import type {
   SwitchConnectionResult,
   UpdateBackendParams,
   UpdateBackendResult,
-  ConnectionBootFallbackEvent,
   KeychainSyncStateResult,
   SetKeychainSyncEnabledParams,
   PublishSelfResult,
@@ -119,16 +118,6 @@ registerMockIpcHandler(
     const { id } = arg as UpdateBackendParams;
     if (id === LOCAL_CONNECTION_ID) return { ok: false, reason: 'unsupported' };
     return { ok: false, reason: 'not-connected' };
-  },
-);
-
-// Boot-restore fallback notice (T19). The mock never falls back at boot, so
-// there is no notice to deliver — real fallbacks are latched in the main
-// process and pulled once via this channel (see backend.ipc.ts).
-registerMockIpcHandler(
-  CONNECTION_CHANNELS.GET_BOOT_FALLBACK,
-  async (): Promise<{ bootFallback: ConnectionBootFallbackEvent | null }> => {
-    return { bootFallback: null };
   },
 );
 

@@ -87,7 +87,6 @@ import type {
   AddConnectionResult,
   CaptureFingerprintResult,
   ConnectionAuthRejectedEvent,
-  ConnectionBootFallbackEvent,
   ConnectionCertMismatchEvent,
   ConnectionProtocolMismatchEvent,
   ConnectionsChangedEvent,
