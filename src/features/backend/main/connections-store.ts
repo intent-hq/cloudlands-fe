@@ -24,6 +24,7 @@ import { promises as fs } from 'fs';
 import * as path from 'path';
 import { randomUUID } from 'crypto';
 import { app, safeStorage } from 'electron';
+import { normalizeFingerprint } from './backend-connection';
 import { Logger } from '../../../shared/logger';
 import {
   DEFAULT_CONNECTION_ACCENT,
@@ -387,7 +388,7 @@ function sameTarget(
  * null when the record carries no usable fingerprint (legacy/blank).
  */
 function fingerprintKey(fingerprint: string | undefined | null): string | null {
-  const key = (fingerprint ?? '').trim().toUpperCase();
+  const key = normalizeFingerprint(fingerprint ?? '');
   return key === '' ? null : key;
 }
 
@@ -567,11 +568,21 @@ export async function updateMetadata(
     const nextFingerprint = fingerprint ?? conn.fingerprint;
     const addressChanged = conn.host !== nextHost || conn.port !== nextPort;
     const fingerprintChanged = fingerprintKey(conn.fingerprint) !== fingerprintKey(nextFingerprint);
+    const identityChanged = addressChanged || fingerprintChanged;
+    const nextIdentity = { host: nextHost, port: nextPort, fingerprint: nextFingerprint };
+    const duplicates = state.connections.filter(
+      (candidate) => candidate !== conn && sameBackend(candidate, nextIdentity),
+    );
+    const matchingTombstone = state.tombstones.find((tombstone) =>
+      tombstoneMatches(tombstone, nextIdentity),
+    );
     if (
       conn.label === label &&
       conn.accent === metadata.accent &&
       !addressChanged &&
-      !fingerprintChanged
+      !fingerprintChanged &&
+      duplicates.length === 0 &&
+      !matchingTombstone
     ) {
       return { conn, changed: false };
     }
@@ -583,8 +594,17 @@ export async function updateMetadata(
     conn.fingerprint = nextFingerprint;
     if (addressChanged) conn.hosts = [];
     if (addressChanged || fingerprintChanged) conn.hostname = null;
-    const now = Date.now();
+    const now = Math.max(
+      Date.now(),
+      ...duplicates.map((candidate) => (candidate.updatedAt ?? 0) + 1),
+      matchingTombstone ? matchingTombstone.updatedAt + 1 : 0,
+    );
     conn.updatedAt = now;
+    if (identityChanged || matchingTombstone) clearTombstone(state, nextIdentity);
+    if (duplicates.some((candidate) => candidate.id === state.activeId)) state.activeId = conn.id;
+    state.connections = state.connections.filter(
+      (candidate) => candidate === conn || !duplicates.includes(candidate),
+    );
     if (addressChanged && fingerprintChanged) {
       clearTombstone(state, previous);
       state.tombstones.push({

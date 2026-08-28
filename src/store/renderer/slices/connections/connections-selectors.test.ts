@@ -278,7 +278,7 @@ describe('connection accent presentation', () => {
 
   it('derives a low-opacity semantic tint only for named remote accents', () => {
     expect(connectionShellTint('teal', false)).toBe(
-      'color-mix(in srgb, var(--color-teal-500) 7%, var(--panel-layout-surface))',
+      'linear-gradient(color-mix(in srgb, var(--color-teal-500) 7%, transparent) 0 0)',
     );
     expect(connectionShellTint(null, false)).toBeUndefined();
     expect(connectionShellTint('teal', true)).toBeUndefined();

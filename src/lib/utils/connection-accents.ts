@@ -17,6 +17,17 @@ export const CONNECTION_ACCENT_CLASSES: Record<ConnectionAccentName, string> = {
   teal: 'bg-teal-600 dark:bg-teal-400',
 };
 
+/** Statically named palette tokens for inline color mixing that passes token auditing. */
+export const CONNECTION_ACCENT_COLORS: Record<ConnectionAccentName, string> = {
+  blue: 'var(--color-blue-500)',
+  indigo: 'var(--color-indigo-500)',
+  violet: 'var(--color-violet-500)',
+  rose: 'var(--color-rose-500)',
+  orange: 'var(--color-orange-500)',
+  emerald: 'var(--color-emerald-500)',
+  teal: 'var(--color-teal-500)',
+};
+
 /** Preserve an explicit blank while applying the legacy missing-value fallback. */
 export function resolveConnectionAccent(accent: ConnectionAccent | undefined): ConnectionAccent {
   return accent === undefined ? DEFAULT_CONNECTION_ACCENT : accent;
@@ -32,12 +43,12 @@ export function connectionAccentOptions(current?: ConnectionAccent): readonly Co
   ];
 }
 
-/** Low-opacity semantic background layered with the application shell surface. */
+/** Low-opacity semantic background image layered over the application shell surface. */
 export function connectionShellTint(
   accent: ConnectionAccent | undefined,
   isLocal: boolean,
 ): string | undefined {
   const resolved = resolveConnectionAccent(accent);
   if (isLocal || resolved === null) return undefined;
-  return `color-mix(in srgb, var(--color-${resolved}-500) 7%, var(--panel-layout-surface))`;
+  return `linear-gradient(color-mix(in srgb, ${CONNECTION_ACCENT_COLORS[resolved]} 7%, transparent) 0 0)`;
 }

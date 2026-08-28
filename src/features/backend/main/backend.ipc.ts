@@ -31,6 +31,7 @@ import { cancelInflightHostExecStreamsForBackendSwitch } from '$shared/main/host
 import {
   AuthRejectedError,
   captureFingerprint,
+  normalizeFingerprint as normalizeTransportFingerprint,
   PinMismatchError,
   resolveBackendConfig,
   type BackendConnectionConfig,
@@ -2470,12 +2471,14 @@ async function validateConnectionAddress(
       ...(captured.statusCode !== undefined ? { statusCode: captured.statusCode } : {}),
     };
   }
-  const actualFingerprint = normalizeFingerprint(captured.fingerprint);
-  const expectedFingerprint = normalizeFingerprint(connection.fingerprint);
+  const actualFingerprint = normalizeTransportFingerprint(captured.fingerprint ?? '');
+  const expectedFingerprint = normalizeTransportFingerprint(connection.fingerprint ?? '');
   if (!actualFingerprint || !expectedFingerprint) {
     return { status: 'failed', reason: 'no-certificate' };
   }
-  const confirmed = confirmedFingerprint ? normalizeFingerprint(confirmedFingerprint) : undefined;
+  const confirmed = confirmedFingerprint
+    ? normalizeTransportFingerprint(confirmedFingerprint)
+    : undefined;
   if (actualFingerprint !== expectedFingerprint && confirmed !== actualFingerprint) {
     return {
       status: 'fingerprint-confirmation-required',

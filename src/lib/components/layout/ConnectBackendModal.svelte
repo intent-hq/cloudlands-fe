@@ -26,6 +26,7 @@
 
   import { Button } from '$lib/components/ui/button';
   import { Checkbox } from '$lib/components/ui/checkbox';
+  import { Input } from '$lib/components/ui/input';
   import { Label } from '$lib/components/ui/label';
   import Fa from 'svelte-fa';
   import { faXmark } from '@fortawesome/free-solid-svg-icons';
@@ -57,6 +58,8 @@
      */
     prefillHost?: string | null;
     prefillPort?: number | null;
+    prefillLabel?: string | null;
+    prefillAccent?: ConnectionAccent;
     defaultAccent?: ConnectionAccent;
   }
 
@@ -64,6 +67,8 @@
     open = $bindable(false),
     prefillHost = null,
     prefillPort = null,
+    prefillLabel = null,
+    prefillAccent = undefined,
     defaultAccent = DEFAULT_CONNECTION_ACCENT,
   }: Props = $props();
 
@@ -94,7 +99,9 @@
   let busy = $state(false);
   let error = $state<string | null>(null);
   let firstInput: HTMLInputElement | null = $state(null);
-  const accentOptions = $derived(connectionAccentOptions(defaultAccent));
+  const accentOptions = $derived(
+    connectionAccentOptions(prefillAccent === undefined ? defaultAccent : prefillAccent),
+  );
 
   // Keychain sync state gates the iCloud checkbox: `supported` is the platform
   // gate (macOS only), `enabled` decides whether the syncConfirm step is needed.
@@ -278,7 +285,8 @@
     const justOpened = open && !wasOpen;
     wasOpen = open;
     if (justOpened) {
-      accent = defaultAccent;
+      if (prefillLabel && name === '') name = prefillLabel;
+      accent = prefillAccent === undefined ? defaultAccent : prefillAccent;
       if (prefillHost && host === '') host = prefillHost;
       if (prefillPort != null && port === DEFAULT_WS_PORT) port = String(prefillPort);
       // Refresh the keychain sync state so the iCloud checkbox gate is current
@@ -329,9 +337,9 @@
             <label class="text-xs text-subtle" for="connect-name"
               >{m.modals_connect_name_label()}</label
             >
-            <input
+            <Input
               id="connect-name"
-              bind:this={firstInput}
+              bind:ref={firstInput}
               bind:value={name}
               type="text"
               placeholder={m.modals_connect_name_placeholder()}
@@ -344,8 +352,9 @@
             <legend class="text-xs text-subtle">{m.settings_devices_accent_label()}</legend>
             <div class="flex flex-wrap gap-1">
               {#each accentOptions as option}
-                <button
+                <Button
                   type="button"
+                  variant="plain"
                   class={cn(
                     'flex size-8 cursor-pointer items-center justify-center rounded-full border bg-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
                     option === accent
@@ -369,7 +378,7 @@
                       aria-hidden="true"
                     ></span>
                   {/if}
-                </button>
+                </Button>
               {/each}
             </div>
           </fieldset>

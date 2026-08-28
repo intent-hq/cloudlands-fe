@@ -3,11 +3,11 @@
   import { Button } from '$lib/components/ui/button';
   import { Input } from '$lib/components/ui/input';
   import { Label } from '$lib/components/ui/label';
-  import DropdownMenu from '$lib/components/ui/dropdown-menu.svelte';
   import * as Menu from '$lib/components/ui/menu';
   import { cn } from '$lib/utils';
   import {
     CONNECTION_ACCENT_CLASSES,
+    CONNECTION_ACCENT_COLORS,
     connectionAccentOptions,
   } from '$lib/utils/connection-accents';
   import { m } from '$shared/paraglide/messages.js';
@@ -56,6 +56,7 @@
   } | null>(null);
   let initializedPanel = $state<string | null>(null);
   let actionsButton: HTMLButtonElement | null = $state(null);
+  let actionsMenuOpen = $state(false);
   let firstEditInput: HTMLInputElement | null = $state(null);
   let secretInput: HTMLInputElement | null = $state(null);
   let focusSecretOnEdit = $state(false);
@@ -157,7 +158,7 @@
   }
 
   function selectedAccentStyle(value: Exclude<ConnectionAccent, null>): string {
-    return `outline: 2px solid color-mix(in srgb, var(--color-${value}-500) 45%, transparent); outline-offset: 3px;`;
+    return `outline: 2px solid color-mix(in srgb, ${CONNECTION_ACCENT_COLORS[value]} 45%, transparent); outline-offset: 3px;`;
   }
 
   function statusLabel(status: ConnectionOpenStatus): string {
@@ -332,23 +333,25 @@
         <p class="truncate text-xs text-muted-foreground">{displayHostname}</p>
       {/if}
     </div>
-    <DropdownMenu align="end" contentClass="p-0!">
-      {#snippet trigger({ props })}
-        <Button
-          {...props}
-          bind:ref={actionsButton}
-          variant="ghost-light"
-          size="icon-xs"
-          aria-label={m.settings_devices_actionsFor_ariaLabel({ name: displayName })}
-        >
-          <Fa icon={faEllipsisVertical} />
-        </Button>
-      {/snippet}
-      {#snippet content({ close }: { close: () => void })}
+    <Menu.Root bind:open={actionsMenuOpen}>
+      <Menu.Trigger>
+        {#snippet child({ props })}
+          <Button
+            {...props}
+            bind:ref={actionsButton}
+            variant="ghost-light"
+            size="icon-xs"
+            aria-label={m.settings_devices_actionsFor_ariaLabel({ name: displayName })}
+          >
+            <Fa icon={faEllipsisVertical} />
+          </Button>
+        {/snippet}
+      </Menu.Trigger>
+      <Menu.Content align="end" class="p-0!">
         <div class="w-44 py-1">
           <Menu.Item
             onclick={() => {
-              close();
+              actionsMenuOpen = false;
               void connectDevice();
             }}
           >
@@ -357,7 +360,7 @@
           </Menu.Item>
           <Menu.Item
             onclick={() => {
-              close();
+              actionsMenuOpen = false;
               onOpenPanel('edit');
             }}
           >
@@ -367,7 +370,7 @@
           <Menu.Item
             destructive
             onclick={() => {
-              close();
+              actionsMenuOpen = false;
               onRequestRemove(device);
             }}
           >
@@ -375,8 +378,8 @@
             {m.settings_devices_remove_label()}
           </Menu.Item>
         </div>
-      {/snippet}
-    </DropdownMenu>
+      </Menu.Content>
+    </Menu.Root>
   </div>
 
   {#if connectionError}
@@ -458,8 +461,9 @@
           >
           <div class="flex flex-wrap gap-1">
             {#each accentOptions as option}
-              <button
+              <Button
                 type="button"
+                variant="plain"
                 class={cn(
                   'flex size-7 cursor-pointer items-center justify-center rounded-full border border-transparent bg-transparent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
                   option === accent
@@ -490,7 +494,7 @@
                     aria-hidden="true"
                   ></span>
                 {/if}
-              </button>
+              </Button>
             {/each}
           </div>
         </fieldset>

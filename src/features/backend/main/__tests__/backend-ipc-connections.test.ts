@@ -1145,6 +1145,27 @@ describe('connections:* IPC handlers', () => {
     await expect(second).resolves.toMatchObject({ status: 'success' });
   });
 
+  it('accepts separator-equivalent saved and captured fingerprints', async () => {
+    const saved = { ...REMOTE, fingerprint: 'aa:bb:cc' };
+    store.list.mockResolvedValue([LOCAL, saved]);
+    mockCaptureFingerprint.mockResolvedValue({
+      ok: true,
+      fingerprint: 'AA BB CC',
+      connected: true,
+      tokenValid: true,
+    });
+    const { mod } = await loadModule();
+    mod.registerBackendHandlers();
+    const handler = findHandler('connections:test')!;
+
+    await expect(
+      handler({}, { id: saved.id, host: saved.host, port: saved.port }),
+    ).resolves.toEqual({
+      status: 'success',
+      fingerprint: 'AA:BB:CC',
+    });
+  });
+
   it('rejects local, unknown, and malformed edit operations before mutation', async () => {
     const { mod } = await loadModule();
     mod.registerBackendHandlers();

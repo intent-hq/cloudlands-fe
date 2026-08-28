@@ -285,6 +285,61 @@ describe('connections-store', () => {
     );
   });
 
+  it('deduplicates an updated live identity and preserves the edited record as active', async () => {
+    const store = await import('../connections-store');
+    const edited = await store.add(sampleConn);
+    const duplicate = await store.add({
+      ...sampleConn,
+      label: 'Duplicate Mac',
+      host: 'duplicate.local',
+      port: 9443,
+      fingerprint: 'dd ee ff',
+      token: 'duplicate-token',
+    });
+    await store.setActiveId(duplicate.id);
+
+    const updated = await store.updateMetadata(edited.id, {
+      label: 'Moved Mac',
+      accent: 'violet',
+      host: 'duplicate.local',
+      port: 9443,
+      fingerprint: 'DDEEFF',
+    });
+
+    expect(updated.id).toBe(edited.id);
+    expect((await store.list()).filter((connection) => !connection.isLocal)).toEqual([updated]);
+    expect(await store.getActiveId()).toBe(edited.id);
+    expect(await store.getDecryptedToken(edited.id)).toBe(sampleConn.token);
+  });
+
+  it('clears a matching tombstone when an update adopts that identity', async () => {
+    const store = await import('../connections-store');
+    const edited = await store.add(sampleConn);
+    const removed = await store.add({
+      ...sampleConn,
+      host: 'removed.local',
+      port: 9443,
+      fingerprint: '11:22:33',
+    });
+    await store.forget(removed.id);
+
+    await store.updateMetadata(edited.id, {
+      label: edited.label,
+      accent: edited.accent ?? 'blue',
+      host: 'removed.local',
+      port: 9443,
+      fingerprint: '112233',
+    });
+
+    const syncRecords = await store.listSyncRecords();
+    expect(syncRecords).toContainEqual(
+      expect.objectContaining({ host: 'removed.local', fingerprint: '112233' }),
+    );
+    expect(syncRecords).not.toContainEqual(
+      expect.objectContaining({ host: 'removed.local', deleted: true }),
+    );
+  });
+
   it('replaces only the encrypted secret and validated fingerprint for one remote', async () => {
     const store = await import('../connections-store');
     const original = await store.add(sampleConn);
@@ -474,12 +529,12 @@ describe('connections-store', () => {
     const samePortOtherHost = await store.add({
       ...sampleConn,
       host: '192.168.1.11',
-      fingerprint: 'FP:OTHER-HOST',
+      fingerprint: 'DD:EE:FF',
     });
     const sameHostOtherPort = await store.add({
       ...sampleConn,
       port: 9443,
-      fingerprint: 'FP:OTHER-PORT',
+      fingerprint: '11:22:33',
     });
 
     expect(samePortOtherHost.id).not.toBe(first.id);

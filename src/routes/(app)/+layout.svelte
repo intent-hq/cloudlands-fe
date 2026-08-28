@@ -157,7 +157,7 @@
   const releaseNotes$ = selectReleaseNotes();
   const showCreateModal$ = selectShowCreateModal();
   const currentConnection$ = selectCurrentConnection();
-  const applicationShellBackground = $derived(
+  const applicationShellTint = $derived(
     connectionShellTint($currentConnection$?.accent, $currentConnection$?.isLocal ?? true),
   );
 
@@ -940,7 +940,7 @@
   <!-- Main Layout with Title Bar -->
   <div
     class="panel-layout-container relative h-screen w-screen overflow-hidden bg-transparent text-foreground flex flex-col"
-    style:background-color={applicationShellBackground}
+    style:background-image={applicationShellTint}
     aria-label={m.layout_appShell_shell_ariaLabel()}
     data-testid="app-ready"
   >

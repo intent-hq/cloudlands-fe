@@ -343,6 +343,55 @@ describe('connectionsSaga', () => {
     await run.task.toPromise();
   });
 
+  it('settles concurrent update, test, and secret-rotation actions independently', async () => {
+    const releases = new Map<string, (value: unknown) => void>();
+    const results: Record<string, unknown> = {
+      [CONNECTION_CHANNELS.UPDATE]: { status: 'updated', connection: REMOTE },
+      [CONNECTION_CHANNELS.TEST]: { status: 'success', fingerprint: REMOTE.fingerprint },
+      [CONNECTION_CHANNELS.ROTATE_SECRET]: { status: 'updated', connection: REMOTE },
+    };
+    invoke.mockImplementation(async (channel: string, params?: unknown) => {
+      if (channel === CONNECTION_CHANNELS.LIST)
+        return { connections: [LOCAL, REMOTE], activeId: LOCAL.id, windowBackendId: LOCAL.id };
+      if ((params as { id?: string } | undefined)?.id === 'remote-pending') {
+        return new Promise((resolve) => releases.set(channel, resolve));
+      }
+      return results[channel];
+    });
+    const run = start();
+    await settle();
+
+    const pairs = [
+      [
+        CONNECTION_CHANNELS.UPDATE,
+        updateConnectionRequested({ id: 'remote-pending', label: 'Pending', accent: 'blue' }),
+        updateConnectionRequested({ id: 'remote-second', label: 'Second', accent: 'violet' }),
+      ],
+      [
+        CONNECTION_CHANNELS.TEST,
+        testConnectionRequested({ id: 'remote-pending', host: 'pending.local', port: 5181 }),
+        testConnectionRequested({ id: 'remote-second', host: 'second.local', port: 5181 }),
+      ],
+      [
+        CONNECTION_CHANNELS.ROTATE_SECRET,
+        rotateConnectionSecretRequested({ id: 'remote-pending', token: 'pending' }),
+        rotateConnectionSecretRequested({ id: 'remote-second', token: 'second' }),
+      ],
+    ] as const;
+
+    for (const [channel, first, second] of pairs) {
+      run.channel.put(first);
+      await vi.waitFor(() => expect(releases.has(channel)).toBe(true));
+      run.channel.put(second);
+      await expect(second.promise).resolves.toEqual(results[channel]);
+      releases.get(channel)!(results[channel]);
+      await expect(first.promise).resolves.toEqual(results[channel]);
+    }
+
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
   it('passes through token-free open guidance without leaking an IPC exception', async () => {
     invoke.mockImplementation(async (channel: string) => {
       if (channel === CONNECTION_CHANNELS.LIST)

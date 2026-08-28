@@ -531,6 +531,7 @@ describe('DaemonStoppedOverlay', () => {
       host: '10.0.0.5',
       port: 8443,
       fingerprint: 'AB:CD',
+      accent: 'indigo' as const,
       isLocal: false,
     };
     const LOCAL = {
@@ -668,7 +669,7 @@ describe('DaemonStoppedOverlay', () => {
       expect(screen.queryByTestId('daemon-stopped-repair')).toBeNull();
     });
 
-    it('opens the re-pair modal with host and port prefilled', async () => {
+    it('opens the re-pair modal with saved metadata and address prefilled', async () => {
       render(DaemonStoppedOverlay);
       await showOverlay(wsTransport);
       activateRemote();
@@ -678,8 +679,13 @@ describe('DaemonStoppedOverlay', () => {
 
       const hostInput = (await screen.findByLabelText(/host/i)) as HTMLInputElement;
       const portInput = screen.getByLabelText(/port/i) as HTMLInputElement;
+      const nameInput = screen.getByLabelText(/name/i) as HTMLInputElement;
       expect(hostInput.value).toBe('10.0.0.5');
       expect(portInput.value).toBe('8443');
+      expect(nameInput.value).toBe(REMOTE.label);
+      expect(screen.getByRole('button', { name: /indigo/i }).getAttribute('aria-pressed')).toBe(
+        'true',
+      );
     });
   });
 
