@@ -328,12 +328,16 @@ describe('NewSpaceModal model-picker composition', () => {
     });
 
     await fireEvent.click(pickerTrigger(team));
-    const reasoningToggle = await within(dialog).findByTestId('model-reasoning-toggle');
-    await fireEvent.click(reasoningToggle);
-    await fireEvent.change(within(dialog).getByRole('slider'), { target: { value: '3' } });
+    const reasoningTrigger = await within(dialog).findByTestId('effort-picker-trigger');
+    await fireEvent.click(reasoningTrigger);
+    const listboxes = within(dialog).getAllByRole('listbox');
+    const reasoningListbox = listboxes[listboxes.length - 1];
+    await fireEvent.pointerUp(within(reasoningListbox).getByRole('option', { name: 'High' }), {
+      pointerType: 'mouse',
+    });
     await waitFor(() => {
       expect(persistedStates().at(-1)).toMatchObject({ selectedReasoningEffort: 'high' });
-      expect(pickerTrigger(team).querySelector('[data-testid="effort-gauge"]')).toBeTruthy();
+      expect(pickerTrigger(team).textContent).toContain('High');
     });
     await fireEvent.click(pickerTrigger(team));
     await waitFor(() => expect(screen.queryByRole('listbox')).toBeNull());

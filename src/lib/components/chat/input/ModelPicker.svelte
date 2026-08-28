@@ -2,7 +2,6 @@
   /* eslint-disable max-lines */
   import { onMount, tick, untrack } from 'svelte';
   import { writable } from 'svelte/store';
-  import { slide } from 'svelte/transition';
 
   import { agentClient } from '$features/agent/agent.client';
   import {
@@ -25,7 +24,6 @@
   } from '$features/agent/components/AgentProviderIcon.svelte';
   import { faSettings } from '$lib/icons/phosphor-icons';
   import ModelPickerEmptyState from './ModelPickerEmptyState.svelte';
-  import EffortGauge from './EffortGauge.svelte';
   import EffortPicker from './EffortPicker.svelte';
   import ModelPickerGroupHeader from './ModelPickerGroupHeader.svelte';
   import ModelPickerLegacyGroupHeader from './ModelPickerLegacyGroupHeader.svelte';
@@ -1318,11 +1316,7 @@
   const triggerAccessibleLabel = $derived(
     showReasoningFooter ? `${currentModelLabel} · ${currentReasoningLabel}` : currentModelLabel,
   );
-  const currentReasoningGaugeValue = $derived(
-    currentReasoningEffort ? reasoningLevels.indexOf(currentReasoningEffort) : 0,
-  );
   let updatingReasoningEffort = $state(false);
-  let reasoningExpanded = $state(false);
   const reasoningControlDisabled = $derived(
     reasoningDisabled ||
       updatingReasoningEffort ||
@@ -1334,40 +1328,6 @@
       (!allProvidersLoaded && Object.keys(allProviderModels).length > 0) ||
       nonBlockingProviderWarnings.length > 0,
   );
-
-  $effect(() => {
-    void dropdownOpen;
-    reasoningExpanded = false;
-  });
-
-  $effect(() => {
-    if (reasoningLevels.length === 0) reasoningExpanded = false;
-  });
-
-  function handleReasoningToggleKeydown(event: KeyboardEvent) {
-    if (reasoningControlDisabled) return;
-    if (event.key === 'Enter' || event.key === ' ') {
-      event.preventDefault();
-      event.stopPropagation();
-      reasoningExpanded = true;
-      return;
-    }
-    if (event.key === 'Escape') {
-      event.preventDefault();
-      event.stopPropagation();
-      dropdownOpen = false;
-    }
-  }
-
-  function handleReasoningSliderKeydown(event: KeyboardEvent) {
-    if (event.key === 'Escape') {
-      event.preventDefault();
-      event.stopPropagation();
-      reasoningExpanded = false;
-      return;
-    }
-    event.stopPropagation();
-  }
 
   function selectProviderTab(providerId: string) {
     activeBrowseProviderId = providerId;
@@ -1752,14 +1712,6 @@
           >· {currentReasoningLabel}</span
         >
       {/if}
-      {#if currentReasoningEffort}
-        <EffortGauge
-          value={currentReasoningGaugeValue}
-          max={reasoningLevels.length - 1}
-          centered={false}
-          size="compact"
-        />
-      {/if}
     {:else}
       <span class={cn('flex items-center', shouldShowLockIconWhenLocked && 'gap-1.5')}>
         {#if shouldShowLockIconWhenLocked}
@@ -1773,15 +1725,6 @@
           <span class="shrink-0 text-xs" data-testid="model-reasoning-strength"
             >· {currentReasoningLabel}</span
           >
-        {/if}
-        {#if currentReasoningEffort}
-          <EffortGauge
-            value={currentReasoningGaugeValue}
-            max={reasoningLevels.length - 1}
-            centered={false}
-            size="compact"
-            class="ml-1"
-          />
         {/if}
       </span>
     {/if}
@@ -1813,47 +1756,15 @@
   {#snippet dropdownFooter()}
     {#if showReasoningFooter}
       <div class="px-2 py-2" data-testid="model-reasoning-section">
-        <Button
-          variant="ghost"
-          size="default"
-          aria-expanded={reasoningExpanded}
-          aria-disabled={reasoningControlDisabled}
+        <EffortPicker
+          mode="embedded"
+          {agentId}
+          {workspaceId}
+          effortLevels={reasoningLevels}
+          effort={persistedReasoningEffort}
           disabled={reasoningControlDisabled}
-          class={cn(
-            'flex w-full items-center justify-between rounded bg-transparent px-2 py-1.5 text-left text-xs focus:bg-transparent focus:outline-none',
-            reasoningControlDisabled
-              ? 'cursor-not-allowed text-muted-foreground/50'
-              : 'hover:bg-muted/20',
-          )}
-          data-testid="model-reasoning-toggle"
-          onclick={() => {
-            if (!reasoningControlDisabled) reasoningExpanded = !reasoningExpanded;
-          }}
-          onkeydown={handleReasoningToggleKeydown}
-        >
-          <span class="truncate">
-            {m.chat_effortPicker_title_label()} · {currentReasoningLabel}
-          </span>
-        </Button>
-        {#if reasoningExpanded && reasoningLevels.length > 0}
-          <div
-            class="px-2 pb-1 pt-2"
-            role="group"
-            aria-label={m.chat_effortPicker_popover_ariaLabel()}
-            transition:slide={{ duration: 180, axis: 'y' }}
-          >
-            <EffortPicker
-              mode="embedded"
-              {agentId}
-              {workspaceId}
-              effortLevels={reasoningLevels}
-              effort={persistedReasoningEffort}
-              disabled={reasoningControlDisabled}
-              onEffortChange={handleReasoningSelect}
-              onkeydown={handleReasoningSliderKeydown}
-            />
-          </div>
-        {/if}
+          onEffortChange={handleReasoningSelect}
+        />
       </div>
     {/if}
     {#if !allProvidersLoaded && Object.keys(allProviderModels).length > 0}
@@ -1952,14 +1863,6 @@
             <span class="shrink-0 text-xs" data-testid="model-reasoning-strength"
               >· {currentReasoningLabel}</span
             >
-          {/if}
-          {#if currentReasoningEffort}
-            <EffortGauge
-              value={currentReasoningGaugeValue}
-              max={reasoningLevels.length - 1}
-              centered={false}
-              size="compact"
-            />
           {/if}
         {:else}
           <div class="h-3.5 w-24 bg-muted/50 rounded-sm animate-pulse"></div>
