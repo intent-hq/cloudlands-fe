@@ -974,7 +974,10 @@
       selectedPRBranch && currentBranch !== selectedPRBranch && !isNewRepo
         ? selectedPRBranch
         : currentBranch;
-    if (!isNewRepo && !effectiveBranch.trim()) return;
+    if (!isNewRepo && !effectiveBranch.trim()) {
+      toast.error(m.onboarding_page_branchRequired_toast());
+      return;
+    }
 
     if (hasBlockingAttachments(onboardingStagedItems)) {
       // The error banner's Retry also lands here — surface why nothing

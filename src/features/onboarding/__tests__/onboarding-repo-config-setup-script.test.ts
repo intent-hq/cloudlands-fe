@@ -40,6 +40,7 @@ const mocks = vi.hoisted(() => {
     lastUsedSelect: vi.fn(),
     getRemoteUrl: vi.fn<(repoPath: string) => Promise<unknown>>(),
     workspaceCreate: vi.fn<(params: Record<string, unknown>) => Promise<unknown>>(),
+    toastError: vi.fn(),
     gitPull: vi.fn(async () => ({ success: true })),
     // Default implementation survives vi.clearAllMocks(); model-pick tests
     // override per-call behavior with mockImplementation.
@@ -122,7 +123,7 @@ vi.mock('$lib/client/live/live-prompt-enhancement', () => ({
 }));
 
 vi.mock('svelte-sonner', () => ({
-  toast: { success: vi.fn(), error: vi.fn() },
+  toast: { success: vi.fn(), error: mocks.toastError },
 }));
 
 vi.mock('$features/onboarding/utils/resolve-onboarding-model', () => ({
@@ -601,7 +602,7 @@ describe('onboarding repo-config setup script detection', () => {
     expect(request.baseRef).toBe('master');
   });
 
-  it('ignores fast submission until an existing-repo branch resolves, then creates with it', async () => {
+  it('explains blocked submission until an existing-repo branch resolves, then creates with it', async () => {
     mocks.workspaceCreate.mockResolvedValue({ ok: false, error: 'stop after payload capture' });
 
     renderPage();
@@ -620,6 +621,7 @@ describe('onboarding repo-config setup script detection', () => {
     captured.onSubmit();
 
     await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(mocks.toastError).toHaveBeenCalledWith('Select a branch before creating the workspace');
     expect(mocks.resolveModel).not.toHaveBeenCalled();
     expect(mocks.workspaceCreate).not.toHaveBeenCalled();
 
