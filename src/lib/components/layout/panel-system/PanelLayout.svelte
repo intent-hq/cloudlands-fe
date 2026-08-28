@@ -517,11 +517,31 @@
 
   function finishPaneDrag() {
     clearPanelMovePreviewNow();
-    paneInsertionGeometry = null;
-    paneInsertionGeometryKey = null;
+    invalidatePaneInsertionGeometry();
     clearDraggedPaneState();
     appStore.dispatch(endDrag());
   }
+
+  function invalidatePaneInsertionGeometry() {
+    paneInsertionGeometry = null;
+    paneInsertionGeometryKey = null;
+  }
+
+  $effect(() => {
+    const layoutElement = panelLayoutMotionElement;
+    const panelIds = $panelIds$;
+    if (!layoutElement) return;
+
+    const observer = new ResizeObserver(invalidatePaneInsertionGeometry);
+    observer.observe(layoutElement);
+    const panelElements = layoutElement.querySelectorAll<HTMLElement>('[data-panel-id]');
+    for (const panelElement of panelElements) {
+      if (panelElement.dataset.panelId && panelIds.includes(panelElement.dataset.panelId)) {
+        observer.observe(panelElement);
+      }
+    }
+    return () => observer.disconnect();
+  });
 
   function commitPanelMoveWithoutReplay(commit: () => void) {
     if (panelMovePreviewClearFrame !== null) cancelAnimationFrame(panelMovePreviewClearFrame);
@@ -564,7 +584,7 @@
     const panelRectsById = new Map(
       $panelIds$.map((panelId, index) => [panelId, panelRects[index] as DOMRect] as const),
     );
-    return { layoutRect, panelElementsById, panelRectsById, targets };
+    return { layoutRect, panelRectsById, targets };
   }
 
   function getPaneInsertionGeometry(draggedPane: DraggedPane) {
@@ -591,7 +611,9 @@
     );
     if (insertionPlacement) return insertionPlacement;
 
-    if (!targetPanelId || !geometry.panelElementsById.has(targetPanelId)) return null;
+    if (!targetPanelId) return null;
+    const targetRect = geometry.panelRectsById.get(targetPanelId);
+    if (!targetRect) return null;
     const targetPanel = $panels$[targetPanelId];
     if (!targetPanel) return null;
     const previousPlacement = paneDropPreview?.placement;
@@ -599,12 +621,7 @@
       previousPlacement?.kind === 'panel' && previousPlacement.targetPanelId === targetPanelId
         ? previousPlacement.zone
         : null;
-    const zone = getPaneColumnDropZone(
-      clientX,
-      geometry.panelRectsById.get(targetPanelId)!,
-      $panelIds$.length < 4,
-      previousZone,
-    );
+    const zone = getPaneColumnDropZone(clientX, targetRect, $panelIds$.length < 4, previousZone);
     if (zone === 'center' && draggedPane.panelId === targetPanelId) return null;
     if (
       zone !== 'center' &&
@@ -734,8 +751,7 @@
   $effect(() => {
     if (!$isDragging$ && !suppressCommittedPanelMoveMotion) {
       clearPanelMovePreviewNow();
-      paneInsertionGeometry = null;
-      paneInsertionGeometryKey = null;
+      invalidatePaneInsertionGeometry();
     }
   });
 

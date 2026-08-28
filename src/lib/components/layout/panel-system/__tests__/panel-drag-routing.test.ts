@@ -703,6 +703,36 @@ describe('pane and tab drag MIME routing', () => {
     expect(onTabMoveToPanel).toHaveBeenCalledWith('source-tab', 'source-panel');
   });
 
+  it('shows one neutral destination for a legacy tab drag over the panel body', async () => {
+    const { container } = render(Panel, {
+      props: { panel: panel(), workspaceId: 'workspace-1' },
+    });
+    const targetPanel = container.querySelector<HTMLElement>('[data-panel-id="target-panel"]')!;
+    targetPanel.getBoundingClientRect = () =>
+      ({ left: 0, right: 400, top: 0, bottom: 400, width: 400, height: 400 }) as DOMRect;
+    const dataTransfer = new TestDataTransfer();
+    dataTransfer.setData(
+      TAB_DRAG_MIME,
+      JSON.stringify({ tabId: 'source-tab', panelId: 'source-panel' }),
+    );
+
+    for (const [clientX, zone] of [
+      [60, 'left'],
+      [200, 'center'],
+      [340, 'right'],
+    ] as const) {
+      await fireEvent(targetPanel, dragEvent('dragover', dataTransfer, clientX));
+      expect(
+        container
+          .querySelector('[data-panel-drop-destination]')
+          ?.getAttribute('data-panel-legacy-tab-drop-zone'),
+      ).toBe(zone);
+    }
+
+    await fireEvent(targetPanel, dragEvent('dragleave', dataTransfer, 500, 500));
+    expect(container.querySelector('[data-panel-drop-destination]')).toBeNull();
+  });
+
   it('removes side creation targets at the four-column limit', async () => {
     const onTabDrop = vi.fn();
     const onTabMoveToPanel = vi.fn();
@@ -726,7 +756,11 @@ describe('pane and tab drag MIME routing', () => {
 
     await fireEvent(targetPanel, dragEvent('dragover', dataTransfer, 10, 200));
     expect(container.textContent).not.toContain('Move to stack');
-    expect(container.querySelector('[data-panel-drop-destination]')).toBeNull();
+    expect(
+      container
+        .querySelector('[data-panel-drop-destination]')
+        ?.getAttribute('data-panel-legacy-tab-drop-zone'),
+    ).toBe('center');
     await fireEvent(targetPanel, dragEvent('drop', dataTransfer, 10, 200));
 
     expect(onTabDrop).not.toHaveBeenCalled();

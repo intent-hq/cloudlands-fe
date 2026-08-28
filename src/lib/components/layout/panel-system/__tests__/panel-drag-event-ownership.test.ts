@@ -70,8 +70,29 @@ function readMountedNoteBounds(root: HTMLElement) {
 }
 
 class TestResizeObserver {
-  observe() {}
-  disconnect() {}
+  static readonly instances = new Set<TestResizeObserver>();
+  readonly targets = new Set<Element>();
+
+  constructor(private readonly callback: ResizeObserverCallback) {
+    TestResizeObserver.instances.add(this);
+  }
+
+  observe(target: Element) {
+    this.targets.add(target);
+  }
+
+  disconnect() {
+    this.targets.clear();
+    TestResizeObserver.instances.delete(this);
+  }
+
+  static notify(target: Element) {
+    for (const observer of TestResizeObserver.instances) {
+      if (observer.targets.has(target)) {
+        observer.callback([{ target } as ResizeObserverEntry], observer as ResizeObserver);
+      }
+    }
+  }
 }
 
 class TestDataTransfer {
@@ -89,7 +110,7 @@ function dragEvent(clientX: number, type = 'dragover'): DragEvent {
   return event;
 }
 
-async function mountLayout(sourceSide: 'left' | 'right' = 'left') {
+async function mountLayout(sourceSide: 'left' | 'right' = 'left', includeDetachedPanel = false) {
   const sourceNode = { type: 'panel' as const, panelId: 'source-panel' };
   const targetNode = { type: 'panel' as const, panelId: 'target-panel' };
   appStore.dispatch(
@@ -114,6 +135,15 @@ async function mountLayout(sourceSide: 'left' | 'right' = 'left') {
           ],
           activeTabId: 'one',
         },
+        ...(includeDetachedPanel
+          ? {
+              'detached-panel': {
+                id: 'detached-panel',
+                tabs: [{ id: 'detached-tab', type: 'note', title: 'Detached', closable: true }],
+                activeTabId: 'detached-tab',
+              },
+            }
+          : {}),
       },
       focusedPanelId: 'target-panel',
       canvasWidth: PANEL_WIDTH,
@@ -281,6 +311,38 @@ describe('pane drag event ownership', () => {
       layoutRect.mock.calls.length,
     ]).toEqual(geometryReads);
     expect(document.querySelector('[data-panel-layout-preview-snapshot]')).toBe(firstSnapshot);
+  });
+
+  it('remeasures drag geometry after a scoped panel changes size', async () => {
+    const panel = await mountLayout();
+    const layout = panel.closest<HTMLElement>('[data-panel-layout-motion]')!;
+    const layoutRect = vi.spyOn(layout, 'getBoundingClientRect');
+
+    await fireEvent(panel, dragEvent(340));
+    await waitFor(() =>
+      expect(document.querySelector('[data-panel-layout-drag-preview="right"]')).toBeTruthy(),
+    );
+    const initialReads = layoutRect.mock.calls.length;
+
+    TestResizeObserver.notify(panel);
+    await fireEvent(panel, dragEvent(340));
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+
+    expect(layoutRect.mock.calls.length).toBeGreaterThan(initialReads);
+  });
+
+  it('ignores a nested panel element outside the rendered layout scope', async () => {
+    const panel = await mountLayout('left', true);
+    const detachedPanel = document.createElement('div');
+    detachedPanel.dataset.panelId = 'detached-panel';
+    detachedPanel.getBoundingClientRect = () =>
+      ({ left: 0, right: 400, top: 0, bottom: 400, width: 400, height: 400 }) as DOMRect;
+    panel.append(detachedPanel);
+
+    await fireEvent(detachedPanel, dragEvent(200));
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+
+    expect(document.querySelector('[data-panel-layout-drag-preview]')).toBeNull();
   });
 
   it.each([

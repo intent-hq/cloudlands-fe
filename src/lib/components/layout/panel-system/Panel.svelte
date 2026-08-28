@@ -264,6 +264,7 @@
 
   // Drop zone state
   let isPaneDragOver = $state(false);
+  let isLegacyTabDragOver = $state(false);
   let activeDropZone = $state<DropZone | null>(null);
 
   // Track global drag state to disable pointer events on content
@@ -273,6 +274,7 @@
   $effect(() => {
     if (!$isDragging) {
       isPaneDragOver = false;
+      isLegacyTabDragOver = false;
       activeDropZone = null;
     }
   });
@@ -342,6 +344,7 @@
     e.preventDefault();
     const zone = getDropZone(e);
     isPaneDragOver = getDraggedPane() !== null;
+    isLegacyTabDragOver = !isPaneDragOver;
     activeDropZone = zone;
     if (isPaneDragOver) onPaneDropPreview?.(getPaneDropPlacement(zone));
     if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
@@ -363,6 +366,7 @@
 
     if (isPaneDragOver) onPaneDropPreview?.(null);
     isPaneDragOver = false;
+    isLegacyTabDragOver = false;
     activeDropZone = null;
   }
 
@@ -395,14 +399,14 @@
 
     markUserTouch();
 
+    const zone = activeDropZone ?? getDropZone(e);
+    activeDropZone = null;
+    isLegacyTabDragOver = false;
     try {
       const data = e.dataTransfer?.getData(TAB_DRAG_MIME);
       if (!data) return;
 
       const { tabId, panelId: fromPanelId } = JSON.parse(data);
-
-      const zone = activeDropZone ?? getDropZone(e);
-      activeDropZone = null;
 
       if (zone === 'center') {
         // Move tab to this panel's tab bar (only if from a different panel)
@@ -548,6 +552,15 @@
       {/if}
     </div>
 
+    {#if isLegacyTabDragOver && activeDropZone}
+      <div
+        class={cn('legacy-tab-drop-destination', activeDropZone)}
+        data-panel-drop-destination
+        data-panel-legacy-tab-drop-zone={activeDropZone}
+        aria-hidden="true"
+      ></div>
+    {/if}
+
     <!-- {#if !isFocused}
     <div
       class="absolute inset-0 bg-sidebar/50 mix-blend-darken dark:bg-[#1b1b1b] dark:mix-blend-difference pointer-events-none"
@@ -584,6 +597,39 @@
 
   .panel-content {
     position: relative;
+  }
+
+  .legacy-tab-drop-destination {
+    position: absolute;
+    inset-block: 0;
+    z-index: 20;
+    border: 1px solid hsl(var(--border));
+    border-radius: 0.5rem;
+    background: hsl(var(--card) / 0.42);
+    pointer-events: none;
+  }
+
+  .legacy-tab-drop-destination.left {
+    left: 0;
+    width: 50%;
+  }
+
+  .legacy-tab-drop-destination.right {
+    right: 0;
+    width: 50%;
+  }
+
+  .legacy-tab-drop-destination.center {
+    inset-inline: 0;
+  }
+
+  @media (forced-colors: active) {
+    .legacy-tab-drop-destination {
+      border-color: CanvasText;
+      background: Canvas;
+      outline: 2px solid CanvasText;
+      outline-offset: -3px;
+    }
   }
 
   /* Tab content wrapper - keeps content mounted but hidden to preserve scroll */
