@@ -276,6 +276,25 @@ let lastKnownSessions: WindowSessionsMap = {};
 // on-disk bucket cannot be restored before the next aggregate save removes it.
 const closedBackendSessions = new Set<string>();
 
+/**
+ * Synchronously drop one backend's bucket from window-sessions.json.
+ * Runs inside the window `close` listener (captureWindowSessionsSnapshot), so
+ * it must be sync — the tombstone alone is process-local and a crash before
+ * the next aggregate save would leave the stale bucket to be restored by the
+ * boot-wide enumeration.
+ */
+function pruneSessionsBucketFromDisk(backendId: string): void {
+  try {
+    const map = readSessionsMap();
+    if (!(backendId in map)) return;
+    delete map[backendId];
+    fs.writeFileSync(getWindowSessionsPath(), JSON.stringify(map), 'utf-8');
+    logger.debug('Pruned closed backend session bucket from disk', { backendId });
+  } catch (err) {
+    logger.warn('Failed to prune closed backend session bucket:', err);
+  }
+}
+
 // Invoked when a non-local backend's last window is explicitly closed while
 // another backend's windows survive, so its pooled JSON-RPC client (socket,
 // reconnect timers, subscriptions) can be disposed. Registered by index.ts —
@@ -351,6 +370,10 @@ export function captureWindowSessionsSnapshot(this: BrowserWindowType | void): v
       if (isLastForBackend && hasSurvivingBackend) {
         closedBackendSessions.add(closingBackendId);
         delete lastKnownSessions[closingBackendId];
+        // The tombstone is process-local: prune the on-disk bucket now so a
+        // crash/force-quit before the next aggregate save cannot resurrect the
+        // explicitly closed backend's windows at the next boot-wide restore.
+        pruneSessionsBucketFromDisk(closingBackendId);
         // Explicit last-window close for this backend: dispose its pooled
         // client so no socket or reconnect timer keeps dialing a daemon with
         // no windows left ("Open" reconnects on demand). Local is exempt —

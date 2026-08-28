@@ -261,6 +261,22 @@ describe('multi-backend window sessions', () => {
       expect(remoteWindows).toHaveLength(1);
       expect(remoteWindows[0].webContents.getURL()).not.toContain('/work/closed');
     });
+
+    it('prunes the on-disk bucket immediately at close time (crash-safe tombstone)', async () => {
+      const local = seedLiveWindow('app://workspaces/work/local', undefined, 'local');
+      const remote = seedLiveWindow('app://workspaces/work/closed', undefined, 'remote-1');
+      await saveAllWindowSessions();
+      expect(readMap()['remote-1']).toBeDefined();
+
+      // The close listener alone must clear the bucket — no aggregate save may
+      // run before a crash/force-quit, so the tombstone cannot stay memory-only.
+      captureWindowSessionsSnapshot.call(remote as never);
+      remote.destroy();
+
+      expect(readMap()).toEqual({
+        local: [{ route: '/work/local', bounds: local.bounds }],
+      });
+    });
   });
 
   describe('pooled client disposal on last window close', () => {
