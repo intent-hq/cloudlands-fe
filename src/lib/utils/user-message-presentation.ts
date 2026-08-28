@@ -59,8 +59,9 @@ export function getPresentedUserMessageText(message: AgentMessage): string {
   // Rows sent by another agent carry the daemon-stamped sender header in
   // content; the attribution chip conveys the sender, so presentation copies
   // (render, preview, copy) drop the leading header line.
-  const presentLeadingHeader = getAgentMessageAttribution(message.metadata)
-    ? stripAgentMessageHeader
+  const attribution = getAgentMessageAttribution(message.metadata);
+  const presentLeadingHeader = attribution
+    ? (text: string) => stripAgentMessageHeader(text, attribution)
     : (text: string) => text;
 
   const textParts = message.contentBlocks

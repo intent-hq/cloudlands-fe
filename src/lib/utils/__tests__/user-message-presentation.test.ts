@@ -130,6 +130,40 @@ describe('stripAgentMessageHeader', () => {
       `Quoting:\n${A2A_HEADER}\ndone`,
     );
   });
+
+  it('strips the exact literal header rebuilt from attribution metadata', () => {
+    const attribution = {
+      fromAgentId: 'agent-1234',
+      displayName: 'Research Agent',
+      rawName: 'Research Agent',
+    };
+    expect(stripAgentMessageHeader(`${A2A_HEADER}\n\nbody`, attribution)).toBe('body');
+    expect(stripAgentMessageHeader(A2A_HEADER, attribution)).toBe('');
+    expect(stripAgentMessageHeader(`${A2A_HEADER}\n\n    indented`, attribution)).toBe(
+      '    indented',
+    );
+  });
+
+  it('exact-literal path handles a name the regex fallback cannot match', () => {
+    const rawName = 'Weird ) name (x)';
+    const attribution = { fromAgentId: 'agent-99Z', displayName: rawName, rawName };
+    const text = `[MESSAGE FROM AGENT ${rawName} (agent-99Z)]\n\nbody`;
+    expect(stripAgentMessageHeader(text, attribution)).toBe('body');
+  });
+
+  it('exact-literal path strips the name-absent shape when rawName is empty', () => {
+    const attribution = { fromAgentId: 'agent-1234', displayName: 'Agent', rawName: '' };
+    expect(stripAgentMessageHeader('[MESSAGE FROM AGENT (agent-1234)]\n\nPing', attribution)).toBe(
+      'Ping',
+    );
+  });
+
+  it('with attribution, a mismatched literal falls back to the pinned regex only', () => {
+    const attribution = { fromAgentId: 'agent-5678', displayName: 'Other', rawName: 'Other' };
+    expect(stripAgentMessageHeader(`${A2A_HEADER}\n\nbody`, attribution)).toBe('body');
+    const lookalike = '[MESSAGE FROM AGENT quoted prose]\n\nbody';
+    expect(stripAgentMessageHeader(lookalike, attribution)).toBe(lookalike);
+  });
 });
 
 describe('A2A sender header presentation', () => {
