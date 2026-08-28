@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { Button } from '$lib/components/ui/button';
   import type { SkillInfo } from '$store/renderer/slices/skills/skills-types';
   import { m } from '$shared/paraglide/messages.js';
 
@@ -105,19 +106,21 @@
       onkeydown={handleKeyDown}
     >
       {#each items as item, index (`${item.name}:${item.location}`)}
-        <button
+        <Button
           type="button"
           id={`${componentId}-option-${index}`}
-          class:active={selectedIndex === index}
+          variant="ghost"
+          size="sm"
+          class={`slash-skill-option h-auto w-full items-baseline justify-start gap-2.5 rounded-none border-0 bg-transparent px-2 py-1.5 text-left text-inherit shadow-none hover:border-0 hover:text-inherit focus-visible:border-0 focus-visible:ring-0 active:border-0 ${selectedIndex === index ? 'active' : ''}`}
           role="option"
           aria-selected={selectedIndex === index}
           onpointerenter={() => (selectedIndex = index)}
           onpointerdown={(event) => event.preventDefault()}
           onclick={() => selectItem(index)}
         >
-          <span class="slash-skill-name">/{item.name}</span>
+          <span class="slash-skill-name type-code">/{item.name}</span>
           <span class="slash-skill-description">{item.description}</span>
-        </button>
+        </Button>
       {/each}
     </div>
   {/if}
@@ -138,33 +141,18 @@
     padding: 4px;
   }
 
-  button {
-    display: flex;
-    width: 100%;
-    align-items: baseline;
-    gap: 10px;
-    border: 0;
-    padding: 6px 8px;
-    background: transparent;
-    color: inherit;
-    cursor: pointer;
-    text-align: left;
-  }
-
-  button:hover,
-  button.active {
+  :global(.slash-skill-option:hover),
+  :global(.slash-skill-option.active) {
     background: hsl(var(--primary) / 0.12);
   }
 
-  button:focus-visible {
+  :global(.slash-skill-option:focus-visible) {
     outline: 2px solid hsl(var(--primary));
     outline-offset: -2px;
   }
 
   .slash-skill-name {
     flex-shrink: 0;
-    font-family: var(--font-mono);
-    font-size: 12px;
     font-weight: 600;
   }
 
