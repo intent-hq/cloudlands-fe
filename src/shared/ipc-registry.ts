@@ -837,13 +837,12 @@ export const IPC_CHANNELS = {
     NOTIFICATION: 'backend:notification',
     STATUS: 'backend:status',
     SPAWN_SIDECAR: 'backend:spawn-sidecar',
-    // Atomic recovery from external/remote mode: switch the active backend to
-    // local AND spawn the app-managed sidecar in ONE main-process action. The
-    // switch destroys every window (captureAndClose) before the switch IPC
-    // returns, so a renderer that switched then dispatched the spawn separately
-    // could be torn down before the second step runs — this single handler keeps
-    // both steps in main so recovery survives the window teardown.
-    SWITCH_LOCAL_AND_SPAWN: 'backend:switch-local-and-spawn',
+    // Open-only recovery from a remote window's stopped overlay: spawn the
+    // app-managed local sidecar (if needed) AND open/focus the local backend's
+    // windows in ONE main-process action. No window is ever retargeted — the
+    // initiating window keeps its own backend — and both steps stay in main so
+    // recovery completes even if the initiating renderer goes away mid-flight.
+    OPEN_LOCAL_AND_SPAWN: 'backend:open-local-and-spawn',
     GET_SIDECAR_RUN_LOG: 'backend:get-sidecar-run-log',
     // Kill-and-restart recovery for an orphaned sidecar (#2444): the adopted
     // daemon's executable lives inside our own bundle (leftover from a

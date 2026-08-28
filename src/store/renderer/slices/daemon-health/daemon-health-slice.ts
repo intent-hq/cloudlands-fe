@@ -101,11 +101,21 @@ export const systemStatusFailure = createAction('daemonHealth/systemStatusFailur
 export const spawnSidecarRequested = createAction('daemonHealth/spawnSidecarRequested');
 
 /**
- * User asked to switch an external backend back to the local sidecar and spawn
- * it atomically in the main process so the initiating window can be replaced.
+ * User asked to open the local backend from a remote window's stopped overlay.
+ * Main spawns the sidecar (if needed) and opens/focuses the local backend's
+ * windows; this window keeps its own backend and its overlay.
  */
-export const switchLocalAndSpawnRequested = createAction(
-  'daemonHealth/switchLocalAndSpawnRequested',
+export const openLocalAndSpawnRequested = createAction(
+  'daemonHealth/openLocalAndSpawnRequested',
+);
+
+/**
+ * backend:open-local-and-spawn resolved ok. The initiating window stays bound
+ * to its own (dead) backend, so no 'connected' backend:status event ever
+ * reaches it to clear the pending flag — this action is that reset.
+ */
+export const openLocalAndSpawnSucceeded = createAction(
+  'daemonHealth/openLocalAndSpawnSucceeded',
 );
 
 /**
@@ -298,8 +308,11 @@ daemonHealthReducer.with(systemStatusFailure, (state) => {
 daemonHealthReducer.with(spawnSidecarRequested, (state) => {
   return { ...state, sidecarSpawnPending: true, sidecarSpawnError: null };
 });
-daemonHealthReducer.with(switchLocalAndSpawnRequested, (state) => {
+daemonHealthReducer.with(openLocalAndSpawnRequested, (state) => {
   return { ...state, sidecarSpawnPending: true, sidecarSpawnError: null };
+});
+daemonHealthReducer.with(openLocalAndSpawnSucceeded, (state) => {
+  return { ...state, sidecarSpawnPending: false };
 });
 daemonHealthReducer.with(spawnSidecarFailed, (state, { payload: [error] }) => {
   return { ...state, sidecarSpawnPending: false, sidecarSpawnError: error };

@@ -81,6 +81,7 @@ import {
   authRejectedReceived,
   connectionsListReceived,
   connectOperationStarted,
+  openConnectionRequested,
 } from '$store/renderer/slices/connections/connections-slice';
 import { LOCAL_CONNECTION_ID } from '$shared/types/connections';
 
@@ -175,6 +176,9 @@ describe('DaemonStoppedOverlay', () => {
     bootTransport = sidecarTransport;
     invokeMock = vi.fn(async (channel: string, ...args: unknown[]) => {
       if (channel === BACKEND.SPAWN_SIDECAR) {
+        return { ok: true, spawned: true, reason: 'sidecar spawned' };
+      }
+      if (channel === BACKEND.OPEN_LOCAL_AND_SPAWN) {
         return { ok: true, spawned: true, reason: 'sidecar spawned' };
       }
       if (channel === BACKEND.GET_STATUS) {
@@ -484,6 +488,102 @@ describe('DaemonStoppedOverlay', () => {
     appStore.dispatch(connectionStatusChanged('connected', sidecarTransport));
     await vi.waitFor(() => {
       expect(overlay()).toBeNull();
+    });
+  });
+
+  describe('Open-only recovery actions in a remote window', () => {
+    const REMOTE = {
+      id: 'remote-1',
+      label: 'Studio Mac',
+      host: '10.0.0.5',
+      port: 8443,
+      fingerprint: 'AB:CD',
+      isLocal: false,
+    };
+    const OTHER = { ...REMOTE, id: 'remote-2', label: 'Other Mac', host: '10.0.0.6' };
+    const LOCAL = {
+      id: LOCAL_CONNECTION_ID,
+      label: 'This machine (local)',
+      host: null,
+      port: null,
+      fingerprint: null,
+      isLocal: true,
+    };
+    const wsTransport: BackendTransportInfo = {
+      mode: 'external-ws',
+      target: 'wss://10.0.0.5:8443/ws',
+    };
+
+    function bindWindowToRemote(connections = [LOCAL, REMOTE, OTHER]) {
+      dispatchAndFlush(
+        connectionsListReceived({
+          connections,
+          activeId: REMOTE.id,
+          windowBackendId: REMOTE.id,
+        }),
+      );
+    }
+
+    it('offers "Open local" and routes it through backend:open-local-and-spawn (no switch)', async () => {
+      render(DaemonStoppedOverlay);
+      await showOverlay(wsTransport);
+      bindWindowToRemote();
+
+      const button = screen.getByTestId('daemon-stopped-spawn-sidecar') as HTMLButtonElement;
+      expect(button.textContent).toContain('Open local');
+      // The remote-window note explains this window keeps its own backend.
+      expect(overlay()!.textContent).toContain('stays connected to the remote backend');
+
+      await fireEvent.click(button);
+      await vi.waitFor(() => {
+        expect(invokeMock).toHaveBeenCalledWith(BACKEND.OPEN_LOCAL_AND_SPAWN);
+      });
+      // The plain spawn channel (local-window path) must NOT fire from a
+      // remote window — spawning without opening would target this window's
+      // dead remote connection.
+      expect(invokeMock).not.toHaveBeenCalledWith(BACKEND.SPAWN_SIDECAR);
+    });
+
+    it('keeps "Start local intentd" (plain spawn) when the window backend is local', async () => {
+      render(DaemonStoppedOverlay);
+      await showOverlay(externalTransport);
+      // Default windowBackendId is local — external-uds adoption posture.
+      const button = screen.getByTestId('daemon-stopped-spawn-sidecar') as HTMLButtonElement;
+      expect(button.textContent).toContain('Start local intentd');
+
+      await fireEvent.click(button);
+      await vi.waitFor(() => {
+        expect(invokeMock).toHaveBeenCalledWith(BACKEND.SPAWN_SIDECAR);
+      });
+      expect(invokeMock).not.toHaveBeenCalledWith(BACKEND.OPEN_LOCAL_AND_SPAWN);
+    });
+
+    it('lists other backends as "Open …" actions that dispatch openConnectionRequested', async () => {
+      render(DaemonStoppedOverlay);
+      await showOverlay(wsTransport);
+      bindWindowToRemote();
+
+      const openButtons = screen.getAllByTestId('daemon-stopped-open-backend');
+      expect(openButtons).toHaveLength(1);
+      expect(openButtons[0].textContent).toContain('Open');
+      expect(openButtons[0].textContent).toContain('Other Mac');
+
+      const dispatchSpy = vi.spyOn(appStore, 'dispatch');
+      await fireEvent.click(openButtons[0]);
+      const dispatched = dispatchSpy.mock.calls
+        .map(([action]) => action as { type: string; payload?: unknown[] })
+        .find((action) => action.type === openConnectionRequested.type);
+      expect(dispatched?.payload).toEqual(['remote-2']);
+      // Open-only: the legacy retargeting action must never fire from the
+      // overlay. Literal type string: the remove-switch follow-up deletes the
+      // action creator, and this negative assertion must survive that.
+      expect(
+        dispatchSpy.mock.calls.some(
+          ([action]) =>
+            (action as { type: string }).type === 'connections/switchConnectionRequested',
+        ),
+      ).toBe(false);
+      dispatchSpy.mockRestore();
     });
   });
 
