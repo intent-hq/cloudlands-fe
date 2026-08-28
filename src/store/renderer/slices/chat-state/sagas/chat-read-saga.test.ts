@@ -5,6 +5,7 @@ const mocks = vi.hoisted(() => ({
   get: vi.fn(),
   getConversation: vi.fn(),
   getMessageBlock: vi.fn(),
+  invoke: vi.fn(() => Promise.resolve()),
 }));
 vi.mock('$lib/client', () => ({
   appClient: {
@@ -16,6 +17,7 @@ vi.mock('$lib/client', () => ({
     chat: {},
   },
 }));
+vi.mock('$lib/electron-bridge', () => ({ invoke: mocks.invoke }));
 
 import type { AgentMessage, AgentSession } from '$shared/types';
 import { AgentStatus } from '$shared/types';
@@ -40,6 +42,10 @@ import {
 } from '../chat-state-slice';
 import { hydratedBlockKey } from '../chat-state-types';
 import { workspaceUnmounted } from '../../workspace-lifecycle/workspace-lifecycle-slice';
+import {
+  closeTabsByAgentId,
+  destroyTabsByOwnerAgent,
+} from '../../panel-layout/panel-layout-slice';
 import {
   clearAllStandingChatSubscriptions,
   markChatSubscriptionAcquiring,
@@ -628,9 +634,57 @@ describe('chatReadSaga (single-transfer hydration)', () => {
     expect(
       run.dispatch.mock.calls.some(([action]) => action.type === transcriptHydrationFailed.type),
     ).toBe(true);
+    // A generic failure is NOT the deleted-agent path: no tab close.
+    expect(
+      run.dispatch.mock.calls.some(([action]) => action.type === closeTabsByAgentId.type),
+    ).toBe(false);
     run.task.cancel();
     await run.task.toPromise();
   });
+
+  // Regression: restoring a layout with a tab for a deleted agent makes
+  // `agents.get` reject with the agent-not-found shape (monorepo#1753).
+  // Hydration must treat it as "agent deleted" — run the shared stale-tab
+  // cleanup and short-circuit — never reach the error/retry surface for a
+  // tab that is being closed.
+  it.each([
+    [
+      'structured data.code',
+      Object.assign(new Error('Agent not found'), {
+        name: 'BackendError',
+        code: 'not-found',
+        rpcCode: -32602,
+        data: { code: 'not-found' },
+      }),
+    ],
+    [
+      'rpcCode + message fallback',
+      Object.assign(new Error(`Agent ${AGENT} not found`), { rpcCode: -32602 }),
+    ],
+  ])(
+    'closes stale tabs instead of failing hydration on agent-not-found (%s)',
+    async (_label, notFound) => {
+      mocks.get.mockRejectedValue(notFound);
+      const run = harness();
+      run.channel.put(initializeChatRequested(AGENT, { wsId: WS }));
+      await settle();
+
+      const close = run.dispatch.mock.calls.find(
+        ([action]) => action.type === closeTabsByAgentId.type,
+      )?.[0];
+      expect(close?.payload).toMatchObject({ wsId: WS, agentId: AGENT });
+      const destroy = run.dispatch.mock.calls.find(
+        ([action]) => action.type === destroyTabsByOwnerAgent.type,
+      )?.[0];
+      expect(destroy?.payload).toMatchObject({ wsId: WS, agentId: AGENT });
+      expect(mocks.invoke).toHaveBeenCalledWith('browser:clear-agent-tabs', { agentId: AGENT });
+      expect(
+        run.dispatch.mock.calls.some(([action]) => action.type === transcriptHydrationFailed.type),
+      ).toBe(false);
+      run.task.cancel();
+      await run.task.toPromise();
+    },
+  );
 
   it('cancels an unmounted workspace read without a late upsert or settled ghost action', async () => {
     let resolve!: (value: AgentSession) => void;
