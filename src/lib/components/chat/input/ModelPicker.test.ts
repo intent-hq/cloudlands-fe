@@ -753,11 +753,14 @@ describe('ModelPicker combined reasoning mode', () => {
     const listboxes = screen.getAllByRole('listbox');
     expect(listboxes).toHaveLength(2);
 
-    await fireEvent.keyDown(listboxes[1], { key: 'Escape' });
-    await waitFor(() => expect(screen.getAllByRole('listbox')).toHaveLength(1));
+    await fireEvent.keyDown(selectTrigger, { key: 'Escape' });
+    await waitFor(() => {
+      expect(screen.getAllByRole('listbox')).toHaveLength(1);
+      expect(selectTrigger.getAttribute('aria-expanded')).toBe('false');
+    });
     expect(document.activeElement).toBe(selectTrigger);
 
-    await fireEvent.click(await screen.findByRole('option', { name: /GPT-5\.6-Sol/ }));
+    await fireEvent.keyDown(selectTrigger, { key: 'Escape' });
     await waitFor(() => expect(screen.queryByRole('listbox')).toBeNull());
   });
 

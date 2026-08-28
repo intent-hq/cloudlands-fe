@@ -108,6 +108,7 @@
     options.find((option) => option.value === selectedOptionValue)?.label ??
       m.chat_effortPicker_level_auto(),
   );
+  let selectOpen = $state(false);
 
   $effect(() => {
     selectedOptionValue = persistedOptionValue;
@@ -138,7 +139,11 @@
     data-testid="effort-picker-content"
     role="group"
     aria-label={m.chat_effortPicker_popover_ariaLabel()}
-    onkeydown={(event) => event.stopPropagation()}
+    onkeydown={(event) => {
+      if (event.key === 'Escape' && !selectOpen) return;
+      if (event.key === 'Escape') selectOpen = false;
+      event.stopPropagation();
+    }}
   >
     {#if embedded}
       <span class="type-caption text-muted-foreground">
@@ -148,6 +153,7 @@
     <div class={cn(embedded ? 'w-32' : 'min-w-36')}>
       <Select.Root
         bind:value={selectedOptionValue}
+        bind:open={selectOpen}
         items={selectItems}
         disabled={controlDisabled}
         onchange={(value) => void commit(value)}
