@@ -435,6 +435,14 @@
           const restoredImages = contextItemsToInlineImages(restore.contextItems);
           onboardingDraftImageFallback = restoredImages;
           pendingOnboardingDraftImages = restoredImages;
+          // Non-image items (path-only staged files from either surface)
+          // rehydrate into the staged list so they survive the round trip —
+          // they are placed at create-time redemption, and a failed pill
+          // stays blocking/retryable rather than silently dropped.
+          const restoredStaged = restore.contextItems.filter((item) => !item.imageData);
+          if (restoredStaged.length > 0 && onboardingStagedItems.length === 0) {
+            onboardingStagedItems = restoredStaged;
+          }
         }
       }
     } finally {
@@ -458,7 +466,9 @@
     }, 50);
   });
 
-  /** Debounced daemon draft save: prompt text + inline editor images. */
+  /** Debounced daemon draft save: prompt text + inline editor images +
+   * staged non-image attachments (path-only; placed at create-time
+   * redemption). */
   function scheduleOnboardingDraftSave() {
     if (!isOnboarding || onboardingDraftCleared) return;
     // Pre-settle, only text the user actually typed is scheduled: it must be
@@ -473,17 +483,20 @@
     const liveImages =
       richTextarea && pendingOnboardingDraftImages === null ? richTextarea.getInlineImages() : null;
     if (liveImages) onboardingDraftImageFallback = liveImages;
-    onboardingDraftSaver.schedule(
-      onboardingInputValue,
-      inlineImagesToContextItems(resolveDraftImages(liveImages, onboardingDraftImageFallback)),
-    );
+    onboardingDraftSaver.schedule(onboardingInputValue, [
+      ...inlineImagesToContextItems(resolveDraftImages(liveImages, onboardingDraftImageFallback)),
+      ...onboardingStagedItems,
+    ]);
   }
 
   // Text changes flow through the bound value; image-only changes don't touch
-  // it, so handleOnboardingContentChange also schedules a save.
+  // it, so handleOnboardingContentChange also schedules a save. Staged
+  // non-image attachments are tracked here too — adding/removing a staged
+  // file must persist without a keystroke.
   $effect(() => {
     void onboardingInputValue;
     void onboardingDraftRestored;
+    void onboardingStagedItems;
     scheduleOnboardingDraftSave();
   });
 
