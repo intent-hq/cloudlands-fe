@@ -12,6 +12,7 @@
  */
 
 import * as fs from 'fs';
+import fsAsync from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -272,6 +273,68 @@ describe('multi-backend window sessions', () => {
       // run before a crash/force-quit, so the tombstone cannot stay memory-only.
       captureWindowSessionsSnapshot.call(remote as never);
       remote.destroy();
+
+      expect(readMap()).toEqual({
+        local: [{ route: '/work/local', bounds: local.bounds }],
+      });
+    });
+
+    it('an aggregate save in flight during the sync prune cannot resurrect the bucket', async () => {
+      const local = seedLiveWindow('app://workspaces/work/local', undefined, 'local');
+      const remote = seedLiveWindow('app://workspaces/work/closed', undefined, 'remote-1');
+      await saveAllWindowSessions();
+
+      // Park the aggregate save's async write mid-flight; the sync prune below
+      // uses fs.writeFileSync, so only the save path is suspended.
+      let releaseWrite!: () => void;
+      const gate = new Promise<void>((resolve) => (releaseWrite = resolve));
+      const realWrite = fsAsync.writeFile.bind(fsAsync);
+      const writeSpy = vi
+        .spyOn(fsAsync, 'writeFile')
+        .mockImplementationOnce(async (...args: Parameters<typeof fsAsync.writeFile>) => {
+          await gate;
+          return realWrite(...args);
+        });
+      const inFlight = saveAllWindowSessions();
+
+      // While the write is parked, the remote's last window closes:
+      // tombstone + sync prune drop the bucket from disk.
+      captureWindowSessionsSnapshot.call(remote as never);
+      remote.destroy();
+      expect(readMap()['remote-1']).toBeUndefined();
+
+      releaseWrite();
+      await inFlight;
+      writeSpy.mockRestore();
+
+      expect(readMap()).toEqual({
+        local: [{ route: '/work/local', bounds: local.bounds }],
+      });
+    });
+
+    it('a single-backend save in flight during the sync prune cannot resurrect the bucket', async () => {
+      const local = seedLiveWindow('app://workspaces/work/local', undefined, 'local');
+      const remote = seedLiveWindow('app://workspaces/work/closed', undefined, 'remote-1');
+      await saveAllWindowSessions();
+
+      let releaseWrite!: () => void;
+      const gate = new Promise<void>((resolve) => (releaseWrite = resolve));
+      const realWrite = fsAsync.writeFile.bind(fsAsync);
+      const writeSpy = vi
+        .spyOn(fsAsync, 'writeFile')
+        .mockImplementationOnce(async (...args: Parameters<typeof fsAsync.writeFile>) => {
+          await gate;
+          return realWrite(...args);
+        });
+      const inFlight = saveWindowSessions('local');
+
+      captureWindowSessionsSnapshot.call(remote as never);
+      remote.destroy();
+      expect(readMap()['remote-1']).toBeUndefined();
+
+      releaseWrite();
+      await inFlight;
+      writeSpy.mockRestore();
 
       expect(readMap()).toEqual({
         local: [{ route: '/work/local', bounds: local.bounds }],
@@ -736,7 +799,7 @@ describe('multi-backend window sessions', () => {
       expect(byBackend('remote-2')).toHaveLength(2);
     });
 
-    it('connects a pooled client for every non-active backend, never the active one', async () => {
+    it('connects a pooled client for every bucket, including the active backend', async () => {
       fs.writeFileSync(
         getWindowSessionsPath(),
         JSON.stringify({
@@ -750,10 +813,12 @@ describe('multi-backend window sessions', () => {
       const connect = vi.fn().mockResolvedValue({});
       await restoreAllBackendWindowSessions('remote-1', connect);
 
-      expect(connect).toHaveBeenCalledTimes(2);
+      // Unconditional connect: the active backend's call is idempotent on the
+      // pool, so no bucket relies on boot having already created its client.
+      expect(connect).toHaveBeenCalledTimes(3);
+      expect(connect).toHaveBeenNthCalledWith(1, 'remote-1');
       expect(connect).toHaveBeenCalledWith('local');
       expect(connect).toHaveBeenCalledWith('remote-2');
-      expect(connect).not.toHaveBeenCalledWith('remote-1');
     });
 
     it("the active backend's first window restores first and becomes the main window", async () => {
@@ -825,7 +890,8 @@ describe('multi-backend window sessions', () => {
       const live = FakeBrowserWindow.getAllWindows();
       expect(live).toHaveLength(1);
       expect(live[0].backendId).toBe('local');
-      expect(connect).not.toHaveBeenCalled();
+      expect(connect).toHaveBeenCalledTimes(1);
+      expect(connect).toHaveBeenCalledWith('local');
     });
 
     it('restores a legacy top-level array as the local bucket', async () => {

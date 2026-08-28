@@ -295,6 +295,22 @@ function pruneSessionsBucketFromDisk(backendId: string): void {
   }
 }
 
+/**
+ * Write the sessions map while honoring tombstones on both sides of the async
+ * write. Tombstoned buckets are stripped before serialization, and because a
+ * window `close` listener can tombstone + sync-prune a bucket while the write
+ * is in flight (the completing write would silently resurrect the pruned
+ * bucket on disk), any bucket tombstoned mid-write is re-pruned after the
+ * write settles.
+ */
+async function writeSessionsMapRespectingTombstones(map: WindowSessionsMap): Promise<void> {
+  for (const backendId of closedBackendSessions) delete map[backendId];
+  await fsAsync.writeFile(getWindowSessionsPath(), JSON.stringify(map), 'utf-8');
+  for (const backendId of closedBackendSessions) {
+    if (backendId in map) pruneSessionsBucketFromDisk(backendId);
+  }
+}
+
 // Invoked when a non-local backend's last window is explicitly closed while
 // another backend's windows survive, so its pooled JSON-RPC client (socket,
 // reconnect timers, subscriptions) can be disposed. Registered by index.ts —
@@ -403,10 +419,8 @@ export async function saveWindowSessions(backendId: string): Promise<void> {
       closedBackendSessions.delete(backendId);
       lastKnownSessions[backendId] = sessions;
     } else if (closedBackendSessions.has(backendId)) {
-      const map = readSessionsMap();
-      delete map[backendId];
       delete lastKnownSessions[backendId];
-      await fsAsync.writeFile(getWindowSessionsPath(), JSON.stringify(map), 'utf-8');
+      await writeSessionsMapRespectingTombstones(readSessionsMap());
       return;
     } else if (lastKnownSessions[backendId]?.length > 0) {
       // No live windows (e.g., non-macOS window-all-closed). Fall back to the
@@ -422,7 +436,7 @@ export async function saveWindowSessions(backendId: string): Promise<void> {
       // never clobbers another backend's saved sessions.
       const map = readSessionsMap();
       map[backendId] = sessions;
-      await fsAsync.writeFile(getWindowSessionsPath(), JSON.stringify(map), 'utf-8');
+      await writeSessionsMapRespectingTombstones(map);
       logger.debug('Saved window sessions', {
         backendId,
         count: sessions.length,
@@ -459,7 +473,7 @@ export async function saveAllWindowSessions(): Promise<void> {
       map[backendId] = sessions;
     }
     if (backendIds.size > 0) {
-      await fsAsync.writeFile(getWindowSessionsPath(), JSON.stringify(map), 'utf-8');
+      await writeSessionsMapRespectingTombstones(map);
     }
   } catch (err) {
     logger.warn('Failed to save all window sessions:', err);
@@ -711,9 +725,10 @@ export function listSavedSessionBackendIds(): string[] {
 /**
  * Boot/dock-activate restore across EVERY backend that has a saved session
  * bucket, not just the active one. The active backend restores first so its
- * first window becomes the main window; each non-active backend gets a pooled
- * client connected via `connectBackend` (injected — window.ts must not import
- * backend.ipc) BEFORE its windows open, so restored windows resolve their own
+ * first window becomes the main window; every bucket gets a pooled client
+ * connected via `connectBackend` (injected — window.ts must not import
+ * backend.ipc; idempotent for already-connected backends) BEFORE its windows
+ * open, so restored windows resolve their own
  * daemon. Fail-soft per bucket: a backend whose client config cannot even be
  * built (forgotten remote, missing token) is skipped with a log, while an
  * unreachable-but-buildable backend still restores — client construction does
@@ -729,18 +744,17 @@ export async function restoreAllBackendWindowSessions(
   backendIds.sort((a, b) => Number(b === activeBackendId) - Number(a === activeBackendId));
   let restoredAny = false;
   for (const backendId of backendIds) {
-    if (backendId !== activeBackendId) {
-      // The active backend's client already exists (lazy local default or the
-      // boot-reconciled primary); every other bucket needs its pool member.
-      try {
-        await connectBackend(backendId);
-      } catch (err) {
-        logger.warn('Skipping window restore for backend without a connectable client', {
-          backendId,
-          error: err instanceof Error ? err.message : String(err),
-        });
-        continue;
-      }
+    // Connect every bucket unconditionally — connectBackend is idempotent
+    // (returns the existing pooled client when one is already connected), so
+    // this holds no assumption about which client boot already created.
+    try {
+      await connectBackend(backendId);
+    } catch (err) {
+      logger.warn('Skipping window restore for backend without a connectable client', {
+        backendId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      continue;
     }
     const sessions = loadWindowSessions(backendId);
     if (!sessions || sessions.length === 0) continue;
