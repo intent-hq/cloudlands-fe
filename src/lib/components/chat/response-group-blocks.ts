@@ -22,15 +22,18 @@ function reasoningWithText(block: ContentBlock, text: string): ContentBlock | nu
   return { ...rest, type: 'thinking', text } as ContentBlock;
 }
 
+// Standalone daemon-canonical thinking blocks always stay reasoning so they
+// render as a disclosure, never as prose, regardless of heading shape
+// (intent-hq/intent#3753). Only the reasoning-phase group path
+// (normalizeResponseGroup) converts thinking to inline text. Completed empty
+// blocks are dropped.
 function normalizeStandaloneReasoning(block: ContentBlock, isActive: boolean): ContentBlock | null {
   if (block.type !== 'thinking' || isActive) return block;
 
   const text = block.text ?? block.content ?? '';
-  if (extractReasoningHeading(text).heading) return block;
   if (!text.trim()) return null;
 
-  const { content: _content, ...rest } = block;
-  return { ...rest, type: 'text', text } as ContentBlock;
+  return block;
 }
 
 export function normalizeResponseGroup(block: ContentBlockGroup): ContentBlockGroup {
