@@ -1788,6 +1788,7 @@
           effortLevels={reasoningLevels}
           effort={persistedReasoningEffort}
           disabled={reasoningControlDisabled}
+          {modalAware}
           onEffortChange={handleReasoningSelect}
         />
       </div>

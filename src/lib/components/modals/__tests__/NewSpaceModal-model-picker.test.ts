@@ -418,6 +418,46 @@ describe('NewSpaceModal model-picker composition', () => {
     expect(mocks.onClose).not.toHaveBeenCalled();
   });
 
+  it('dismisses nested reasoning before the modal-aware model picker on Escape', async () => {
+    render(NewSpaceModal, { props: { open: true, onClose: mocks.onClose } });
+    const dialog = await screen.findByRole('dialog', { name: 'New Workspace' });
+    const team = modeCard(/Agent orchestration/i);
+    const modelTrigger = pickerTrigger(team);
+
+    await fireEvent.click(modelTrigger);
+    const modelListbox = await within(dialog).findByRole('listbox');
+    await fireEvent.click(
+      await within(modelListbox).findByRole('option', { name: /GPT 5\.6/ }, { timeout: 5000 }),
+    );
+    await waitFor(() => expect(modelTrigger.textContent).toContain('GPT 5.6'));
+
+    await fireEvent.click(modelTrigger);
+    const reasoningTrigger = await within(dialog).findByTestId('effort-picker-trigger');
+    reasoningTrigger.focus();
+    await fireEvent.keyDown(reasoningTrigger, { key: 'Enter' });
+    await waitFor(() => expect(within(dialog).getAllByRole('listbox')).toHaveLength(2));
+    const persistedCount = persistedStates().length;
+
+    await fireEvent.keyDown(reasoningTrigger, { key: 'ArrowDown' });
+    expect(within(dialog).getAllByRole('listbox')).toHaveLength(2);
+    await fireEvent.keyDown(reasoningTrigger, { key: 'Escape' });
+
+    await waitFor(() => {
+      expect(within(dialog).getAllByRole('listbox')).toHaveLength(1);
+      expect(reasoningTrigger.getAttribute('aria-expanded')).toBe('false');
+    });
+    expect(document.activeElement).toBe(reasoningTrigger);
+    expect(persistedStates()).toHaveLength(persistedCount);
+    expect(mocks.onClose).not.toHaveBeenCalled();
+
+    await fireEvent.keyDown(reasoningTrigger, { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByRole('listbox')).toBeNull());
+    expect(document.activeElement).toBe(modelTrigger);
+    expect(screen.getByRole('dialog', { name: 'New Workspace' })).toBe(dialog);
+    expect(persistedStates()).toHaveLength(persistedCount);
+    expect(mocks.onClose).not.toHaveBeenCalled();
+  });
+
   it('affirms model picker bounds and options in every required visual state', async () => {
     for (const { theme, width, zoom, reducedMotion } of [
       { theme: 'light', width: 1024, zoom: 1, reducedMotion: false },

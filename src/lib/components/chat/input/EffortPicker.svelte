@@ -17,6 +17,7 @@
   import { untrack } from 'svelte';
   import { writable } from 'svelte/store';
   import { cn } from '$lib/utils';
+  import { pushEscapeLayer } from '$lib/utils/escapeLayers';
   import { Select } from '$lib/components/ui/select';
   import EffortGauge from './EffortGauge.svelte';
   import { m } from '$shared/paraglide/messages.js';
@@ -33,6 +34,7 @@
     mode?: 'popover' | 'embedded';
     effortLevels?: readonly string[];
     effort?: string | null;
+    modalAware?: boolean;
     onEffortChange?: (effort: string | null) => boolean | void | Promise<boolean | void>;
   }
 
@@ -44,6 +46,7 @@
     mode = 'popover',
     effortLevels = [],
     effort = null,
+    modalAware = false,
     onEffortChange,
   }: Props = $props();
 
@@ -121,9 +124,20 @@
   const selectedLabel = $derived(selectedOption?.label ?? m.chat_effortPicker_level_auto());
   const selectedLevelIndex = $derived(selectedOption?.levelIndex ?? -1);
   let selectOpen = $state(false);
+  let pickerRoot = $state<HTMLDivElement | null>(null);
 
   $effect(() => {
     selectedOptionValue = persistedOptionValue;
+  });
+
+  $effect(() => {
+    if (!modalAware || !selectOpen) return;
+    return pushEscapeLayer(() => {
+      selectOpen = false;
+      queueMicrotask(() =>
+        pickerRoot?.querySelector<HTMLButtonElement>('button[aria-haspopup="listbox"]')?.focus(),
+      );
+    });
   });
 
   async function commit(optionValue: string) {
@@ -147,6 +161,7 @@
 {#if hasLevels}
   <!-- svelte-ignore a11y_no_noninteractive_element_interactions (keyboard boundary around an interactive nested select) -->
   <div
+    bind:this={pickerRoot}
     class={cn(embedded ? 'flex items-center justify-between gap-3' : 'w-auto', className)}
     data-testid="effort-picker-content"
     role="group"
