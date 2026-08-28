@@ -14,6 +14,7 @@
     type ContextMentionAttributes,
   } from '$lib/components/tiptap/ContextMention';
   import { PasteChip } from '$lib/components/tiptap/PasteChip';
+  import { SkillCommand } from '$lib/components/tiptap/SkillCommand';
   import { createLogger } from '$lib/utils/client-logger';
   import { m } from '$shared/paraglide/messages.js';
   import type { ContextItem } from './context-api';
@@ -38,7 +39,6 @@
   } from './trailing-hint-extension';
   import SlashSkillSuggestionList from './SlashSkillSuggestionList.svelte';
   import {
-    applySlashSkillSelection,
     findSlashCommandContext,
     rankSlashSkills,
     type SlashCommandContext,
@@ -249,13 +249,31 @@
 
   function selectSlashSkill(skill: SkillInfo) {
     if (!editor || !slashContext) return;
-    const selection = applySlashSkillSelection(serializeEditorText(editor), slashContext, skill);
+    const prompt = serializeEditorText(editor);
+    const cursorOffset = textBeforeCursor(editor).length;
+    const range = {
+      from: editor.state.selection.from - slashContext.query.length - 1,
+      to: editor.state.selection.from + slashContext.to - cursorOffset,
+    };
+    const needsSpace =
+      slashContext.to === prompt.length || !/^\s/u.test(prompt.slice(slashContext.to));
+    const content = [
+      { type: 'skillCommand', attrs: { name: skill.name } },
+      ...(needsSpace ? [{ type: 'text', text: ' ' }] : []),
+    ];
     editor
       .chain()
-      .setContent(plainTextToEditorHTML(selection.text))
-      .setTextSelection(selection.cursorOffset + 1)
       .focus()
+      .insertContentAt(range, content)
+      .setTextSelection(range.from + 2)
       .run();
+  }
+
+  function editorHTML(text: string): string {
+    return plainTextToEditorHTML(
+      text,
+      skills.map((skill) => skill.name),
+    );
   }
 
   function handleSlashMenuKeyDown(event: KeyboardEvent): boolean {
@@ -368,7 +386,7 @@
    */
   export async function setContent(text: string) {
     if (!editor) return;
-    const html = plainTextToEditorHTML(text || '');
+    const html = editorHTML(text || '');
     editor
       .chain()
       .command(({ tr }) => {
@@ -665,7 +683,7 @@
     let cancelled = false;
     (async () => {
       // Rehydrate any @-tokens (or bare filenames) into mention spans before creating the editor
-      const initialHTML = plainTextToEditorHTML(value || '');
+      const initialHTML = editorHTML(value || '');
       if (cancelled) return;
       const editorElement = element;
       if (!editorElement) return;
@@ -791,6 +809,7 @@
           }),
           // Paste chip for multi-line pasted text (5+ lines)
           PasteChip,
+          SkillCommand,
           TrailingHintExtension,
         ],
         content: initialHTML,
@@ -1087,7 +1106,7 @@
                 if (prevValue !== null) {
                   event.preventDefault();
                   // Set the content and move cursor to end
-                  editor?.chain().setContent(plainTextToEditorHTML(prevValue)).focus('end').run();
+                  editor?.chain().setContent(editorHTML(prevValue)).focus('end').run();
                   // Notify parent of the change
                   onUpdate?.(prevValue);
                   return true;
@@ -1123,7 +1142,7 @@
                 if (nextValue !== null) {
                   event.preventDefault();
                   // Set the content and move cursor to end
-                  editor?.chain().setContent(plainTextToEditorHTML(nextValue)).focus('end').run();
+                  editor?.chain().setContent(editorHTML(nextValue)).focus('end').run();
                   // Notify parent of the change
                   onUpdate?.(nextValue);
                   return true;
@@ -1438,7 +1457,7 @@
     const requestId = ++valueUpdateRequestId;
 
     (async () => {
-      const html = plainTextToEditorHTML(value || '');
+      const html = editorHTML(value || '');
 
       // PERF: Check if this is still the latest request and editor still exists
       // This prevents race conditions when value changes rapidly

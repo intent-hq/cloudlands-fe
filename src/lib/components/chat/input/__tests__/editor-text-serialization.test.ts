@@ -17,6 +17,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { Editor, type Extensions } from '@tiptap/core';
 import StarterKit from '@tiptap/starter-kit';
 import Mention from '@tiptap/extension-mention';
+import { SkillCommand } from '$lib/components/tiptap/SkillCommand';
 import { Slice, Fragment } from '@tiptap/pm/model';
 import {
   plainTextToEditorHTML,
@@ -157,6 +158,21 @@ describe('editor-text-serialization (#1151)', () => {
       expect(serializeEditorText(mentionEditor)).toBe('see @file.ts\nnext line');
     } finally {
       mentionEditor.destroy();
+    }
+  });
+
+  it('round-trips and copies skill command nodes as literal slash commands', () => {
+    const skillEditor = createEditor([SkillCommand]);
+    try {
+      skillEditor.commands.setContent(plainTextToEditorHTML('Use /review now', ['review']));
+      expect(skillEditor.getHTML()).toContain('data-type="skill-command"');
+      expect(serializeEditorText(skillEditor)).toBe('Use /review now');
+
+      skillEditor.commands.selectAll();
+      const clipboardTextSerializer = skillEditor.view.someProp('clipboardTextSerializer');
+      expect(clipboardTextSerializer?.()).toBe('Use /review now');
+    } finally {
+      skillEditor.destroy();
     }
   });
 });

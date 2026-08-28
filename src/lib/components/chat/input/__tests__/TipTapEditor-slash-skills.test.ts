@@ -52,9 +52,51 @@ describe('TipTapEditor slash skills', () => {
     await fireEvent.click(screen.getByRole('option', { name: 'review' }));
     await waitFor(() => expect(component.getTextContent()).toBe('Please /review '));
 
+    const chip = document.querySelector('[data-type="skill-command"]');
+    expect(chip?.textContent).toBe('/review');
+    expect(chip?.getAttribute('role')).toBe('code');
+    expect(chip?.getAttribute('aria-label')).toBe('/review');
+    expect(chip?.getAttribute('contenteditable')).toBe('false');
+    expect(chip?.classList.contains('skill-command-chip')).toBe(true);
+
     component.insertText('audit this');
     expect(component.getTextContent()).toBe('Please /review audit this');
     expect(onUpdate).toHaveBeenLastCalledWith('Please /review audit this');
+  });
+
+  it('restores command chips from draft, history, and external-value text', async () => {
+    const onHistoryPrev = vi.fn(() => 'History /audit prompt');
+    const view = await mountEditor({ value: 'Draft /review prompt', onHistoryPrev });
+    expect(view.editor.querySelector('[data-skill-name="review"]')?.textContent).toBe('/review');
+    expect(view.component.getTextContent()).toBe('Draft /review prompt');
+
+    await view.component.setContent('');
+    view.component.focusEnd();
+    await fireEvent.keyDown(view.editor, { key: 'ArrowUp' });
+    await waitFor(() =>
+      expect(view.editor.querySelector('[data-skill-name="audit"]')?.textContent).toBe('/audit'),
+    );
+    expect(view.component.getTextContent()).toBe('History /audit prompt');
+
+    view.editor.blur();
+    await view.rerender({ value: 'External /research value', skills, onHistoryPrev });
+    await waitFor(() =>
+      expect(view.editor.querySelector('[data-skill-name="research"]')?.textContent).toBe(
+        '/research',
+      ),
+    );
+    expect(view.component.getTextContent()).toBe('External /research value');
+  });
+
+  it('deletes a selected command chip atomically from the keyboard', async () => {
+    const { component, editor } = await mountEditor();
+    component.insertText('/rev');
+    await fireEvent.click(await screen.findByRole('option', { name: 'review' }));
+    await waitFor(() => expect(component.getTextContent()).toBe('/review '));
+
+    await fireEvent.keyDown(editor, { key: 'Backspace' });
+    await waitFor(() => expect(component.getTextContent()).toBe(''));
+    expect(editor.querySelector('[data-type="skill-command"]')).toBeNull();
   });
 
   it('activates after a newline and replaces only the current command', async () => {
@@ -162,14 +204,8 @@ describe('TipTapEditor slash skills', () => {
     await waitFor(() => expect(onUpdate).toHaveBeenLastCalledWith('/summarize '));
   });
 
-  it('keeps a real at-mention serializable and discoverable after selecting a skill', async () => {
+  it('preserves an existing mention node when selecting a skill', async () => {
     const { component, editor } = await mountEditor();
-    component.insertText('/rev');
-    await waitFor(() => expect(screen.getByRole('listbox')).toBeTruthy());
-    const reviewOption = screen.getByRole('option', { name: 'review' });
-    await fireEvent.click(reviewOption);
-    await waitFor(() => expect(component.getTextContent()).toBe('/review '));
-
     const mention = {
       id: 'src/lib/review.ts',
       label: 'review.ts',
@@ -178,9 +214,13 @@ describe('TipTapEditor slash skills', () => {
       meta: { path: 'src/lib/review.ts' },
     };
     expect(component.insertMention(mention)).toBe(true);
+    component.insertText('/rev');
+    await waitFor(() => expect(screen.getByRole('listbox')).toBeTruthy());
+    await fireEvent.click(screen.getByRole('option', { name: 'review' }));
 
-    expect(component.getTextContent()).toBe('/review @src/lib/review.ts ');
+    expect(component.getTextContent()).toBe('@src/lib/review.ts /review ');
     expect(component.getMentions()).toEqual([mention]);
     expect(editor.querySelector('[data-mention]')?.textContent).toBe('review.ts');
+    expect(editor.querySelector('[data-type="skill-command"]')?.textContent).toBe('/review');
   });
 });
