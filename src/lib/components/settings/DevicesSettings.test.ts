@@ -114,30 +114,34 @@ describe('DevicesSettings', () => {
     expect(mocks.dispatch).not.toHaveBeenCalled();
   });
 
-  it('shows hostname and connected list-state version data without a saved address', () => {
+  it('shows only the raw version beside the name when connected', () => {
     mocks.connections = [
       local,
       { ...remote, hostname: 'studio-host', status: 'connected', intentdVersion: '6.8.0' },
     ];
     render(DevicesSettings);
 
-    expect(screen.getByText('studio-host')).toBeTruthy();
-    expect(screen.getByText(/6\.8\.0/)).toBeTruthy();
+    expect(screen.queryByText('studio-host')).toBeNull();
+    expect(screen.getByText('6.8.0')).toBeTruthy();
     expect(screen.queryByText('10.0.0.2:5181')).toBeNull();
-    expect(screen.getByRole('status', { name: 'Status: Connected' }).textContent).toBe('');
+    expect(screen.getByRole('status').getAttribute('aria-label')).toBeTruthy();
   });
 
-  it('falls back to address for a blank name and suppresses a duplicate hostname', () => {
-    mocks.connections = [
-      local,
-      { ...remote, label: '  ', hostname: null },
-      { ...remote, id: 'remote-2', label: 'Travel Mac', hostname: 'Travel Mac' },
-    ];
+  it('omits hostname and version when the connected version is unknown', () => {
+    mocks.connections = [local, { ...remote, hostname: 'studio-host', status: 'connected' }];
+    render(DevicesSettings);
+
+    expect(screen.getByText('Studio Mac')).toBeTruthy();
+    expect(screen.queryByText('studio-host')).toBeNull();
+    expect(screen.getByRole('status').getAttribute('aria-label')).toBeTruthy();
+  });
+
+  it('falls back to the address for a blank name', () => {
+    mocks.connections = [local, { ...remote, label: '  ', hostname: null }];
     render(DevicesSettings);
 
     expect(screen.getByText('10.0.0.2:5181')).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Actions for 10.0.0.2:5181' })).toBeTruthy();
-    expect(screen.getAllByText('Travel Mac')).toHaveLength(1);
   });
 
   it('dispatches Connect through the existing open/focus action', async () => {

@@ -67,10 +67,6 @@
   const accentOptions = $derived(connectionAccentOptions(savedAccent));
   const address = $derived(`${device.host ?? ''}:${device.port ?? ''}`);
   const displayName = $derived(device.label.trim() || address);
-  const displayHostname = $derived.by(() => {
-    const hostname = device.hostname?.trim();
-    return hostname && hostname !== displayName ? hostname : null;
-  });
   const openStatus = $derived(device.status ?? 'not-open');
   const trimmedName = $derived(name.trim());
   const trimmedHost = $derived(host.trim());
@@ -319,19 +315,16 @@
       <div class="flex min-w-0 items-baseline gap-2">
         <p
           id={`device-${device.id}-name`}
-          class="min-w-0 flex-1 truncate text-sm font-medium text-foreground"
+          class="min-w-0 truncate text-sm font-medium text-foreground"
         >
           {displayName}
         </p>
         {#if openStatus === 'connected' && device.intentdVersion}
           <p class="shrink-0 whitespace-nowrap text-xs text-muted-foreground">
-            {m.settings_devices_version_label({ version: device.intentdVersion })}
+            {device.intentdVersion}
           </p>
         {/if}
       </div>
-      {#if displayHostname}
-        <p class="truncate text-xs text-muted-foreground">{displayHostname}</p>
-      {/if}
     </div>
     <Menu.Root bind:open={actionsMenuOpen}>
       <Menu.Trigger>
