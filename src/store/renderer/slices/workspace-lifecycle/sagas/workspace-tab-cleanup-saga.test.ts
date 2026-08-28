@@ -9,7 +9,7 @@ import {
 import {
   initialState as initialWorkspaceLifecycleState,
   workspaceDeleted,
-  workspaceHydrationRequested,
+  workspaceLoadRequested,
   workspaceLifecycleReducer,
   workspaceMounted,
   workspaceOpenFailed,
@@ -68,7 +68,7 @@ function lifecycleActions(harness: ReturnType<typeof createHarness>) {
     .map(([action]) => action)
     .filter(
       (action) =>
-        action.type === workspaceUnmounted.type || action.type === workspaceHydrationRequested.type,
+        action.type === workspaceUnmounted.type || action.type === workspaceLoadRequested.type,
     );
 }
 
@@ -77,7 +77,7 @@ describe('workspaceTabCleanupSaga', () => {
     const harness = createHarness(['ws-A', 'ws-B']);
     await settle();
 
-    expect(lifecycleActions(harness)).toEqual([workspaceHydrationRequested('ws-B')]);
+    expect(lifecycleActions(harness)).toEqual([workspaceLoadRequested('ws-B')]);
     harness.task.cancel();
     await harness.task.toPromise();
   });
@@ -102,7 +102,7 @@ describe('workspaceTabCleanupSaga', () => {
     harness.dispatch(openWorkspaceTab('ws-A'));
     await settle();
 
-    expect(lifecycleActions(harness)).toEqual([workspaceHydrationRequested('ws-A')]);
+    expect(lifecycleActions(harness)).toEqual([workspaceLoadRequested('ws-A')]);
     harness.task.cancel();
     await harness.task.toPromise();
   });
@@ -114,9 +114,9 @@ describe('workspaceTabCleanupSaga', () => {
     await settle();
 
     expect(lifecycleActions(harness)).toEqual([
-      workspaceHydrationRequested('ws-B'),
+      workspaceLoadRequested('ws-B'),
       workspaceUnmounted('ws-B'),
-      workspaceHydrationRequested('ws-A'),
+      workspaceLoadRequested('ws-A'),
     ]);
     harness.task.cancel();
     await harness.task.toPromise();
@@ -144,7 +144,7 @@ describe('workspaceTabCleanupSaga', () => {
     await settle();
 
     expect(lifecycleActions(harness)).toEqual([
-      workspaceHydrationRequested('ws-B'),
+      workspaceLoadRequested('ws-B'),
       workspaceUnmounted('ws-A'),
     ]);
     harness.task.cancel();
@@ -158,7 +158,7 @@ describe('workspaceTabCleanupSaga', () => {
     await settle();
 
     expect(lifecycleActions(harness)).toEqual([
-      workspaceHydrationRequested('ws-B'),
+      workspaceLoadRequested('ws-B'),
       workspaceUnmounted('ws-A'),
     ]);
     harness.task.cancel();
@@ -175,7 +175,7 @@ describe('workspaceTabCleanupSaga', () => {
 
     expect(lifecycleActions(harness)).toEqual([
       workspaceUnmounted('ws-A'),
-      workspaceHydrationRequested('ws-A'),
+      workspaceLoadRequested('ws-A'),
     ]);
     harness.task.cancel();
     await harness.task.toPromise();
@@ -190,7 +190,7 @@ describe('workspaceTabCleanupSaga', () => {
     harness.dispatch(openWorkspaceTab('ws-A'));
     await settle();
 
-    expect(lifecycleActions(harness)).toEqual([workspaceHydrationRequested('ws-A')]);
+    expect(lifecycleActions(harness)).toEqual([workspaceLoadRequested('ws-A')]);
     harness.task.cancel();
     await harness.task.toPromise();
   });
@@ -204,9 +204,9 @@ describe('workspaceTabCleanupSaga', () => {
     await settle();
 
     expect(lifecycleActions(harness)).toEqual([
-      workspaceHydrationRequested('ws-B'),
+      workspaceLoadRequested('ws-B'),
       workspaceUnmounted('ws-B'),
-      workspaceHydrationRequested('ws-A'),
+      workspaceLoadRequested('ws-A'),
     ]);
     harness.task.cancel();
     await harness.task.toPromise();

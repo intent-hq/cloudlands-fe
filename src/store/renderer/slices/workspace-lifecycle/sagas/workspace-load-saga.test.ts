@@ -1,0 +1,260 @@
+import { runSaga, stdChannel } from 'redux-saga';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+import type { Workspace } from '$shared/types';
+import { openWorkspaceTab, tabStateReducer } from '../../tab-state/tab-state-slice';
+import {
+  initialState as initialWorkspaceState,
+  workspaceReducer,
+} from '../../workspace/workspace-slice';
+import { selectWorkspaceById } from '../../workspace/workspace-selectors';
+import {
+  initialState as initialLifecycleState,
+  workspaceDeleted,
+  workspaceHydrationRequested,
+  workspaceLoadRequested,
+  workspaceLifecycleReducer,
+  workspaceMounted,
+  workspaceOpenSucceeded,
+} from '../workspace-lifecycle-slice';
+import { workspaceLoadSaga } from './workspace-load-saga';
+
+const mocks = vi.hoisted(() => ({ get: vi.fn(), open: vi.fn() }));
+vi.mock('../../workspace/utils/workspace.client', () => ({
+  workspaceClient: { open: mocks.open },
+}));
+vi.mock('$lib/client', () => ({
+  appClient: { workspaces: { get: mocks.get } },
+}));
+
+const settle = async () => {
+  for (let index = 0; index < 8; index += 1) await Promise.resolve();
+};
+
+function workspace(id: string, title = id): Workspace {
+  return {
+    id,
+    title,
+    branch: 'main',
+    repositoryPath: '/repo',
+    changesets: [],
+    timeline: [],
+    conversationInfo: [],
+    status: 'Active',
+    createdAt: '2026-08-28T00:00:00.000Z',
+    updatedAt: '2026-08-28T00:00:00.000Z',
+  } as Workspace;
+}
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((done) => (resolve = done));
+  return { promise, resolve };
+}
+
+function createHarness(options: { cached?: Workspace; live?: boolean; openTab?: boolean } = {}) {
+  let workspaceState = initialWorkspaceState;
+  let lifecycleState = initialLifecycleState;
+  let tabState = tabStateReducer(undefined, { type: '@@INIT' });
+  if (options.cached) {
+    workspaceState = workspaceReducer(workspaceState, {
+      type: 'workspace/setWorkspaceEntity',
+      payload: [options.cached],
+    });
+    if (options.live) {
+      lifecycleState = workspaceLifecycleReducer(
+        lifecycleState,
+        workspaceMounted(options.cached.id),
+      );
+      lifecycleState = workspaceLifecycleReducer(
+        lifecycleState,
+        workspaceOpenSucceeded(options.cached.id),
+      );
+    }
+    if (options.openTab) tabState = tabStateReducer(tabState, openWorkspaceTab(options.cached.id));
+  }
+  const channel = stdChannel();
+  const actions: Array<{ type: string; payload?: unknown[] }> = [];
+  const getState = () => ({
+    workspace: workspaceState,
+    workspaceLifecycle: lifecycleState,
+    tabState,
+  });
+  const dispatch = (action: { type: string; payload?: unknown[] }) => {
+    workspaceState = workspaceReducer(workspaceState, action as never);
+    lifecycleState = workspaceLifecycleReducer(lifecycleState, action as never);
+    tabState = tabStateReducer(tabState, action as never);
+    actions.push(action);
+    channel.put(action);
+    return action;
+  };
+  const task = runSaga({ channel, dispatch, getState }, workspaceLoadSaga);
+  return { actions, dispatch, getState, task };
+}
+
+async function stop(task: ReturnType<typeof runSaga>) {
+  task.cancel();
+  await task.toPromise();
+}
+
+describe('workspaceLoadSaga', () => {
+  beforeEach(() => {
+    mocks.get.mockReset();
+    mocks.open.mockReset();
+  });
+
+  it('admits a cold load, hydrates, opens, and publishes the protocol workspace', async () => {
+    const opened = workspace('cold-space', 'Cold workspace');
+    mocks.open.mockResolvedValueOnce({ ok: true, data: opened });
+    const run = createHarness();
+
+    run.dispatch(workspaceLoadRequested(opened.id));
+    await settle();
+
+    expect(mocks.open).toHaveBeenCalledExactlyOnceWith(opened.id);
+    expect(run.actions).toContainEqual(workspaceHydrationRequested(opened.id));
+    expect(run.getState().workspace.workspaces.ids).toContain(opened.id);
+    expect(run.getState().workspaceLifecycle.loadByWorkspaceId[opened.id]).toEqual({
+      status: 'ready',
+      error: null,
+    });
+    await stop(run.task);
+  });
+
+  it('keeps cached presentation ready while opening a cold session', async () => {
+    const cached = workspace('cached-space');
+    const gate = deferred<{ ok: true; data: Workspace }>();
+    mocks.open.mockReturnValueOnce(gate.promise);
+    const run = createHarness({ cached });
+
+    run.dispatch(workspaceLoadRequested(cached.id));
+    await settle();
+    expect(run.getState().workspaceLifecycle.loadByWorkspaceId[cached.id]?.status).toBe(
+      'cached-ready',
+    );
+    expect(mocks.open).toHaveBeenCalledOnce();
+
+    gate.resolve({ ok: true, data: cached });
+    await settle();
+    expect(run.getState().workspaceLifecycle.loadByWorkspaceId[cached.id]?.status).toBe('ready');
+    await stop(run.task);
+  });
+
+  it('publishes optional path hydration after a successful open', async () => {
+    const opened = { ...workspace('path-space'), repositoryPath: undefined } as Workspace;
+    const hydrated = { ...opened, repositoryPath: '/hydrated/repo' } as Workspace;
+    mocks.open.mockResolvedValueOnce({ ok: true, data: opened });
+    mocks.get.mockResolvedValueOnce(hydrated);
+    const run = createHarness();
+
+    run.dispatch(workspaceLoadRequested(opened.id));
+    await settle();
+
+    expect(mocks.get).toHaveBeenCalledExactlyOnceWith(opened.id);
+    expect(selectWorkspaceById.select(run.getState() as never, opened.id)?.repositoryPath).toBe(
+      '/hydrated/repo',
+    );
+    await stop(run.task);
+  });
+
+  it('does no hydration or open work for a warm live session', async () => {
+    const cached = workspace('warm-space');
+    const run = createHarness({ cached, live: true });
+
+    run.dispatch(workspaceLoadRequested(cached.id));
+    await settle();
+
+    expect(mocks.open).not.toHaveBeenCalled();
+    expect(run.actions).not.toContainEqual(workspaceHydrationRequested(cached.id));
+    expect(run.getState().workspaceLifecycle.loadByWorkspaceId[cached.id]?.status).toBe('ready');
+    await stop(run.task);
+  });
+
+  it('single-flights duplicate route requests and cancels stale route results', async () => {
+    const first = deferred<{ ok: true; data: Workspace }>();
+    const second = workspace('second-space');
+    mocks.open.mockReturnValueOnce(first.promise).mockResolvedValueOnce({ ok: true, data: second });
+    const run = createHarness();
+
+    run.dispatch(workspaceLoadRequested('first-space'));
+    run.dispatch(workspaceLoadRequested('first-space'));
+    await settle();
+    expect(mocks.open).toHaveBeenCalledTimes(1);
+
+    run.dispatch(workspaceLoadRequested(second.id));
+    await settle();
+    first.resolve({ ok: true, data: workspace('first-space') });
+    await settle();
+
+    expect(mocks.open).toHaveBeenCalledTimes(2);
+    expect(run.getState().workspace.workspaces.ids).toEqual([second.id]);
+    expect(run.getState().workspaceLifecycle.loadByWorkspaceId['first-space']).toBeUndefined();
+    await stop(run.task);
+  });
+
+  it('drops an awaited result after the workspace is deleted', async () => {
+    const gate = deferred<{ ok: true; data: Workspace }>();
+    mocks.open.mockReturnValueOnce(gate.promise);
+    const run = createHarness();
+
+    run.dispatch(workspaceLoadRequested('deleted-space'));
+    await settle();
+    run.dispatch(workspaceDeleted('deleted-space', []));
+    gate.resolve({ ok: true, data: workspace('deleted-space') });
+    await settle();
+
+    expect(run.getState().workspace.workspaces.ids).not.toContain('deleted-space');
+    expect(run.getState().workspaceLifecycle.loadByWorkspaceId['deleted-space']).toBeUndefined();
+    await stop(run.task);
+  });
+
+  it('retries not-found once, evicts the entity, and closes its tab', async () => {
+    const cached = workspace('missing-space');
+    mocks.open.mockResolvedValue({ ok: false, error: 'Workspace not found' });
+    const run = createHarness({ cached, openTab: true });
+
+    run.dispatch(workspaceLoadRequested(cached.id));
+    await settle();
+
+    expect(mocks.open).toHaveBeenCalledTimes(2);
+    expect(run.actions).toContainEqual({ type: 'workspace/loadWorkspacesRequested', payload: [] });
+    expect(run.getState().workspace.workspaces.ids).not.toContain(cached.id);
+    expect(run.getState().tabState.openTabs[cached.id]).toBeFalsy();
+    expect(run.getState().workspaceLifecycle.loadByWorkspaceId[cached.id]).toEqual({
+      status: 'not-found',
+      error: { kind: 'not_found', message: 'Workspace not found' },
+    });
+    await stop(run.task);
+  });
+
+  it('recovers from failure and reloads a deleted then recreated workspace', async () => {
+    const recreated = workspace('recreated-space');
+    mocks.open
+      .mockResolvedValueOnce({ ok: false, error: 'Backend unavailable' })
+      .mockResolvedValueOnce({ ok: true, data: recreated });
+    const run = createHarness();
+
+    run.dispatch(workspaceLoadRequested(recreated.id));
+    await settle();
+    expect(run.getState().workspaceLifecycle.loadByWorkspaceId[recreated.id]?.status).toBe('error');
+
+    run.dispatch(workspaceDeleted(recreated.id, []));
+    run.dispatch(workspaceLoadRequested(recreated.id));
+    await settle();
+    expect(run.getState().workspaceLifecycle.loadByWorkspaceId[recreated.id]?.status).toBe('ready');
+    expect(run.getState().workspace.workspaces.ids).toContain(recreated.id);
+    await stop(run.task);
+  });
+
+  it('marks optimistic routes ready without hydration or open', async () => {
+    const run = createHarness();
+    run.dispatch(workspaceLoadRequested('optimistic-1'));
+    await settle();
+
+    expect(mocks.open).not.toHaveBeenCalled();
+    expect(run.getState().workspaceLifecycle.loadByWorkspaceId['optimistic-1']?.status).toBe(
+      'optimistic',
+    );
+    await stop(run.task);
+  });
+});

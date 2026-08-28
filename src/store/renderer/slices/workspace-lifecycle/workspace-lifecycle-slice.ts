@@ -1,10 +1,38 @@
 import { createAction } from '@augmentcode/themis/utils/store/create-action';
 import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
-import type { WorkspaceLifecycleState, WorkspaceSessionPhase } from './workspace-lifecycle-types';
+import type {
+  WorkspaceLifecycleState,
+  WorkspaceLoadError,
+  WorkspaceLoadState,
+  WorkspaceSessionPhase,
+} from './workspace-lifecycle-types';
 
 export const initialState: WorkspaceLifecycleState = {
   sessionPhaseByWorkspaceId: {},
+  loadByWorkspaceId: {},
 };
+
+export const workspaceLoadRequested = createAction<[wsId: string]>(
+  'workspace-lifecycle/workspaceLoadRequested',
+);
+export const workspaceLoadStarted = createAction<[wsId: string]>(
+  'workspace-lifecycle/workspaceLoadStarted',
+);
+export const workspaceLoadCachedReady = createAction<[wsId: string]>(
+  'workspace-lifecycle/workspaceLoadCachedReady',
+);
+export const workspaceLoadOptimisticReady = createAction<[wsId: string]>(
+  'workspace-lifecycle/workspaceLoadOptimisticReady',
+);
+export const workspaceLoadSucceeded = createAction<[wsId: string]>(
+  'workspace-lifecycle/workspaceLoadSucceeded',
+);
+export const workspaceLoadCancelled = createAction<[wsId: string]>(
+  'workspace-lifecycle/workspaceLoadCancelled',
+);
+export const workspaceLoadFailed = createAction<[wsId: string, error: WorkspaceLoadError]>(
+  'workspace-lifecycle/workspaceLoadFailed',
+);
 
 export const workspaceHydrationRequested = createAction<[wsId: string]>(
   'workspace-lifecycle/workspaceHydrationRequested',
@@ -56,7 +84,48 @@ function clearSession(state: WorkspaceLifecycleState, wsId: string): WorkspaceLi
   return { ...state, sessionPhaseByWorkspaceId };
 }
 
+function setLoadState(
+  state: WorkspaceLifecycleState,
+  wsId: string,
+  loadState: WorkspaceLoadState,
+): WorkspaceLifecycleState {
+  const current = state.loadByWorkspaceId[wsId];
+  if (current?.status === loadState.status && current.error === loadState.error) return state;
+  return {
+    ...state,
+    loadByWorkspaceId: { ...state.loadByWorkspaceId, [wsId]: loadState },
+  };
+}
+
+function clearLoadState(state: WorkspaceLifecycleState, wsId: string): WorkspaceLifecycleState {
+  if (!(wsId in state.loadByWorkspaceId)) return state;
+  const { [wsId]: _removed, ...loadByWorkspaceId } = state.loadByWorkspaceId;
+  return { ...state, loadByWorkspaceId };
+}
+
 export const workspaceLifecycleReducer = createReducer<WorkspaceLifecycleState>(initialState);
+
+workspaceLifecycleReducer.with(workspaceLoadStarted, (state, { payload: [wsId] }) =>
+  setLoadState(state, wsId, { status: 'loading', error: null }),
+);
+workspaceLifecycleReducer.with(workspaceLoadCachedReady, (state, { payload: [wsId] }) =>
+  setLoadState(state, wsId, { status: 'cached-ready', error: null }),
+);
+workspaceLifecycleReducer.with(workspaceLoadOptimisticReady, (state, { payload: [wsId] }) =>
+  setLoadState(state, wsId, { status: 'optimistic', error: null }),
+);
+workspaceLifecycleReducer.with(workspaceLoadSucceeded, (state, { payload: [wsId] }) =>
+  setLoadState(state, wsId, { status: 'ready', error: null }),
+);
+workspaceLifecycleReducer.with(workspaceLoadFailed, (state, { payload: [wsId, error] }) =>
+  setLoadState(state, wsId, {
+    status: error.kind === 'not_found' ? 'not-found' : 'error',
+    error,
+  }),
+);
+workspaceLifecycleReducer.with(workspaceLoadCancelled, (state, { payload: [wsId] }) =>
+  clearLoadState(state, wsId),
+);
 
 workspaceLifecycleReducer.with(workspaceMounted, (state, { payload: [wsId] }) => {
   const current = state.sessionPhaseByWorkspaceId[wsId];
@@ -70,10 +139,10 @@ workspaceLifecycleReducer.with(workspaceOpenFailed, (state, { payload: [wsId] })
   clearSession(state, wsId),
 );
 workspaceLifecycleReducer.with(workspaceUnmounted, (state, { payload: [wsId] }) =>
-  clearSession(state, wsId),
+  clearLoadState(clearSession(state, wsId), wsId),
 );
 workspaceLifecycleReducer.with(workspaceDeleted, (state, { payload: [wsId] }) =>
-  clearSession(state, wsId),
+  clearLoadState(clearSession(state, wsId), wsId),
 );
 workspaceLifecycleReducer.with(workspaceEntityRemoved, (state, { payload: [wsId] }) =>
   clearSession(state, wsId),

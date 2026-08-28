@@ -39,14 +39,12 @@
     selectWorkspaceIsEmpty,
     selectIsNewWorkspaceSession,
   } from '$store/renderer/slices/workspace/workspace-selectors';
+  import { selectWorkspaceLoadState } from '$store/renderer/slices/workspace-lifecycle/workspace-lifecycle-selectors';
   import {
     selectPanelVisibilityFlag,
     selectSidebarSide,
   } from '$store/renderer/slices/ui-layout/ui-layout-selectors';
-  import {
-    loadWorkspacesRequested,
-    setWorkspaceEntity,
-  } from '$store/renderer/slices/workspace/workspace-slice';
+  import { loadWorkspacesRequested } from '$store/renderer/slices/workspace/workspace-slice';
   import {
     setPanelVisibility,
     type PanelVisibilityState,
@@ -129,10 +127,8 @@
    * Initialize a new workspace state for the given ID, pre-populating data from the store
    * to avoid a flash of empty/skeleton UI. Used by both the initial load and transition paths.
    *
-   * Sets workspaceData on the state AND hydrates Redux so the selector-backed
-   * $workspace has data on the first render frame. The workspace loader's
-   * effect will still call workspaceClient.open() because its condition does not gate on
-   * hasWorkspaceData — open() must always be called to start backend change detection.
+   * Sets presentation data from the canonical Redux entity on the first frame.
+   * Backend admission and publication are owned by workspaceLoadSaga.
    */
   function initializeWorkspaceState(wsId: string): ReturnType<typeof createWorkspacePageState> {
     const newState = createWorkspacePageState(wsId);
@@ -146,12 +142,6 @@
         workspaceData: cachedWorkspace,
         workspace: { id: wsId, status: 'ready' },
       });
-    }
-
-    // Hydrate Redux immediately so the selector-backed $workspace has
-    // data on the very first render frame (before the workspace loader runs).
-    if (cachedWorkspace) {
-      appStore.dispatch(setWorkspaceEntity(cachedWorkspace));
     }
 
     // Batch state updates with untrack to prevent effect cascades
@@ -189,6 +179,7 @@
   // (top-level script) with a Readable<string> so it stays reactive to both
   // workspaceId changes AND Redux state updates.
   const workspace = selectWorkspaceById(workspaceIdStore);
+  const workspaceLoadState = selectWorkspaceLoadState(workspaceIdStore);
 
   // Transient signal: command palette → create-file dialog
   const pendingCommandPaletteAction$ = selectPendingCommandPaletteAction();
@@ -327,9 +318,6 @@
         previousWorkspaceId = currentWorkspaceId;
       });
 
-      // Clear loading state to trigger fresh load
-      workspaceLoader.clearLoadingState();
-
       // The workspace state still has the old workspace ID internally,
       // but we need to recreate it to get the correct isOptimistic value.
       // To avoid UI flashing, preserve the current state data
@@ -348,15 +336,6 @@
 
         // Immediately restore the preserved data to avoid UI flash
         workspaceState.updateState(preservedData);
-
-        // Hydrate Redux so the selector-backed $workspace picks up the
-        // workspace entity immediately during the optimistic→real transition.
-        {
-          const cachedWorkspace = selectWorkspaceById.select(appStore.state, currentWorkspaceId);
-          if (cachedWorkspace) {
-            appStore.dispatch(setWorkspaceEntity(cachedWorkspace));
-          }
-        }
 
         logger.info('Transitioned to real workspace state', {
           workspaceId: currentWorkspaceId,
@@ -379,11 +358,6 @@
     // Key insight: Create new state BEFORE disposing old one to avoid blank state during transition
     const previousState = workspaceState;
     if (previousState && !stateDisposing) {
-      // Clear any in-flight load from the previous workspace so the loader's
-      // deduplication guards don't block the new workspace from loading.
-      // (The optimistic transition path already does this at line 238.)
-      workspaceLoader.clearLoadingState();
-
       // Create the new workspace state immediately to avoid UI gaps
       if (currentWorkspaceId) {
         try {
@@ -488,18 +462,9 @@
   // Workspace Loading (composable)
   // ============================================================================
 
-  const workspaceLoader = useWorkspaceLoader({
+  useWorkspaceLoader({
     get workspaceId() {
       return workspaceId;
-    },
-    get workspaceState() {
-      return workspaceState;
-    },
-    get state() {
-      return pageState;
-    },
-    get previousWorkspaceId() {
-      return previousWorkspaceId;
     },
   });
 
@@ -755,9 +720,6 @@
   onDestroy(() => {
     logger.debug('Starting workspace page cleanup', { workspaceId });
 
-    // Cancel any pending loads
-    workspaceLoader.clearLoadingState();
-
     // Clear workspace state reference
     workspaceState = null;
 
@@ -790,7 +752,7 @@
     {#if isCreatingWorkspace || isInTransition}
       <!-- Blank panel while creating new workspace or during transition -->
       <div class="w-full h-full"></div>
-    {:else if workspaceLoader.loadError}
+    {:else if $workspaceLoadState.error}
       <!-- Terminal load failure — blank panel; main content shows the not-found state -->
       <div class="w-full h-full"></div>
     {:else}
@@ -831,13 +793,13 @@
     {/if}
     {#if !showOnboarding || onboardingFadingOut}
       {#if !$workspace || isCreatingWorkspace}
-        {#if workspaceLoader.loadError && !isCreatingWorkspace}
+        {#if $workspaceLoadState.error && !isCreatingWorkspace}
           <ResourceNotFound
-            kind={workspaceLoader.loadError.kind}
+            kind={$workspaceLoadState.error.kind}
             resourceLabel={m.workspace_page_workspaceResource_label()}
             resourceId={workspaceId}
-            detail={workspaceLoader.loadError.kind === 'error'
-              ? workspaceLoader.loadError.message
+            detail={$workspaceLoadState.error.kind === 'error'
+              ? $workspaceLoadState.error.message
               : undefined}
             onNavigateAway={() => void navigateToFirstWorkspace()}
           />
@@ -896,7 +858,7 @@
       data-loading={!$workspace}
     >
       <WorkspaceSurfaceLoadBoundary
-        loadError={isCreatingWorkspace ? null : workspaceLoader.loadError}
+        loadError={isCreatingWorkspace ? null : $workspaceLoadState.error}
         resourceLabel={m.workspace_page_workspaceResource_label()}
         resourceId={workspaceId}
         onNavigateAway={() => void navigateToFirstWorkspace()}

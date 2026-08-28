@@ -3,32 +3,15 @@
 
   let {
     workspaceId,
-    workspaceState,
-    state = null,
-    previousWorkspaceId = null,
   }: {
     workspaceId: string;
-    workspaceState: any;
-    state?: any;
-    previousWorkspaceId?: string | null;
   } = $props();
 
-  const loader = useWorkspaceLoader({
+  useWorkspaceLoader({
     get workspaceId() {
       return workspaceId;
-    },
-    get workspaceState() {
-      return workspaceState;
-    },
-    get state() {
-      return state;
-    },
-    get previousWorkspaceId() {
-      return previousWorkspaceId;
     },
   });
 </script>
 
-<div data-testid="loading-workspace-id">{loader.loadingWorkspaceId ?? ''}</div>
-<div data-testid="load-error-kind">{loader.loadError?.kind ?? ''}</div>
-<div data-testid="load-error-message">{loader.loadError?.message ?? ''}</div>
+<div data-testid="workspace-loader">{workspaceId}</div>

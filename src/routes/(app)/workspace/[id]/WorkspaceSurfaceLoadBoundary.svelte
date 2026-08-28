@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { Snippet } from 'svelte';
   import ResourceNotFound from '$lib/components/common/ResourceNotFound.svelte';
-  import type { WorkspaceLoadError } from './composables/use-workspace-loader.svelte';
+  import type { WorkspaceLoadError } from '$store/renderer/slices/workspace-lifecycle/workspace-lifecycle-types';
 
   interface Props {
     loadError: WorkspaceLoadError | null;

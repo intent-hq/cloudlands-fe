@@ -12,6 +12,11 @@
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { CreateWorkspaceRequest } from "$shared/types";
+import { WORKSPACE_CHANNELS } from "$shared/ipc/channels";
+import {
+  registerMockIpcHandler,
+  unregisterMockIpcHandler,
+} from "$shared/ipc-mock-router";
 
 vi.mock("$lib/client", () => ({
   appClient: {
@@ -27,6 +32,31 @@ import { appClient } from "$lib/client";
 import { WorkspaceClient } from "./workspace.client";
 
 const workspaces = vi.mocked(appClient.workspaces);
+
+describe("WorkspaceClient.open wire contract", () => {
+  afterEach(() => unregisterMockIpcHandler(WORKSPACE_CHANNELS.OPEN));
+
+  it("sends the exact workspace:open request and accepts a protocol workspace response", async () => {
+    const opened = {
+      id: "amber-forest",
+      title: "Amber Forest",
+      branch: "main",
+      changesets: [],
+      timeline: [],
+      conversationInfo: [],
+      status: "active",
+      createdAt: "2026-08-28T00:00:00.000Z",
+      updatedAt: "2026-08-28T00:00:00.000Z",
+    };
+    const handler = vi.fn().mockResolvedValue({ success: true, data: opened });
+    registerMockIpcHandler(WORKSPACE_CHANNELS.OPEN, handler);
+
+    const result = await new WorkspaceClient().open("amber-forest" as never);
+
+    expect(handler).toHaveBeenCalledExactlyOnceWith({ id: "amber-forest" });
+    expect(result).toEqual({ ok: true, data: opened });
+  });
+});
 
 describe("WorkspaceClient.create (AppClient seam, PROTOCOL §5.1)", () => {
   afterEach(() => vi.clearAllMocks());

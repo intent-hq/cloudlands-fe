@@ -44,12 +44,12 @@ vi.mock('./composables', () => ({
   useCloseHandlers: vi.fn(),
   usePanelShortcuts: vi.fn(),
   useTabManagement: () => ({ isInTransition: false }),
-  useWorkspaceLoader: () => ({
-    get loadError() {
-      return mocks.loadError;
-    },
-    clearLoadingState: vi.fn(),
-  }),
+  useWorkspaceLoader: vi.fn(),
+}));
+
+vi.mock('$store/renderer/slices/workspace-lifecycle/workspace-lifecycle-selectors', () => ({
+  selectWorkspaceLoadState: () =>
+    readable({ status: mocks.loadError ? 'error' : 'idle', error: mocks.loadError }),
 }));
 vi.mock('./composables/create-file-command', () => ({
   dispatchCreateFileRequest: vi.fn(),
