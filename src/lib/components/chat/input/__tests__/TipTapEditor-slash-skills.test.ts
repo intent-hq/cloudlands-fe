@@ -43,6 +43,33 @@ describe('TipTapEditor slash skills', () => {
     expect(screen.queryByRole('listbox')).toBeNull();
   });
 
+  it('portals an anchored floating menu above the editor without adding inline layout', async () => {
+    const view = await mountEditor();
+    view.editor.getBoundingClientRect = vi.fn(
+      () =>
+        ({
+          x: 40,
+          y: 500,
+          top: 500,
+          right: 440,
+          bottom: 580,
+          left: 40,
+          width: 400,
+          height: 80,
+          toJSON: () => ({}),
+        }) as DOMRect,
+    );
+
+    view.component.insertText('/');
+
+    const menu = await screen.findByTestId('slash-skill-menu');
+    await waitFor(() => expect(menu.dataset.side).toBe('top'));
+    expect(menu.closest('.tiptap-root')).toBeNull();
+    expect(view.container.querySelector('.slash-skill-menu')).toBeNull();
+    expect(view.container.querySelector('.tiptap-root')?.children).toHaveLength(1);
+    expect(menu.parentElement?.style.position).toBe('absolute');
+  });
+
   it('selects by keyboard before history or submit and preserves force-submit modifiers', async () => {
     const onSubmit = vi.fn();
     const onForceSubmit = vi.fn();

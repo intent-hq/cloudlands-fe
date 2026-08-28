@@ -40,6 +40,8 @@ describe('SlashSkillSuggestionList', () => {
     const view = render(SlashSkillSuggestionList, { props: { items, onSelect: vi.fn() } });
     const surface = view.container.querySelector('.slash-skill-suggestion-list');
     expect(surface?.classList.contains('max-w-72')).toBe(true);
+    expect(surface?.classList.contains('rounded-(--radius-medium)')).toBe(true);
+    expect(surface?.classList.contains('shadow-(--elevation-overlay)')).toBe(true);
 
     const reviewOption = screen.getByRole('option', { name: 'review' });
     expect(reviewOption.textContent?.trim()).toBe('review');

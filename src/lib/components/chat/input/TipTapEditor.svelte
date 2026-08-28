@@ -1,6 +1,7 @@
 <script lang="ts">
   /* eslint-disable max-lines */
   import { onMount, onDestroy, mount, unmount } from 'svelte';
+  import { Popover } from 'bits-ui';
 
   import { Editor, getTextBetween, getTextSerializersFromSchema } from '@tiptap/core';
   import { PluginKey, TextSelection } from '@tiptap/pm/state';
@@ -194,7 +195,7 @@
   // extension options are fixed at editor creation, so suppression is CSS-side.
   const placeholderSuppressed = $derived(!isEditable && !inputLocked);
 
-  let element: HTMLDivElement;
+  let element = $state<HTMLDivElement>();
   let editor: Editor | null = $state(null);
   let hoverPreview: any = null;
   let hoverPreviewContainer: HTMLDivElement | null = null;
@@ -240,6 +241,10 @@
 
   function dismissSlashMenu() {
     dismissedSlashContext = slashContextKey;
+  }
+
+  function preserveEditorFocus(event: Event) {
+    event.preventDefault();
   }
 
   function selectSlashSkill(skill: SkillInfo) {
@@ -662,9 +667,11 @@
       // Rehydrate any @-tokens (or bare filenames) into mention spans before creating the editor
       const initialHTML = plainTextToEditorHTML(value || '');
       if (cancelled) return;
+      const editorElement = element;
+      if (!editorElement) return;
 
       editor = new Editor({
-        element,
+        element: editorElement,
         extensions: [
           StarterKit.configure({
             heading: false,
@@ -1149,9 +1156,9 @@
       });
 
       // Add hover and click listeners for mentions
-      element.addEventListener('mouseover', handleMentionHover);
-      element.addEventListener('mouseout', handleMentionMouseOut);
-      element.addEventListener('click', handleMentionClick);
+      editorElement.addEventListener('mouseover', handleMentionHover);
+      editorElement.addEventListener('mouseout', handleMentionMouseOut);
+      editorElement.addEventListener('click', handleMentionClick);
 
       // Add keydown handler directly to the ProseMirror editor element (not the container)
       // This is the actual contenteditable element that receives keyboard events
@@ -1476,18 +1483,30 @@
 </script>
 
 <div class="tiptap-root">
-  {#if slashMenuOpen}
-    <div class="slash-skill-menu">
-      <SlashSkillSuggestionList
-        bind:this={slashSuggestionList}
-        items={filteredSkills}
-        loading={skillsLoading}
-        error={skillsError}
-        onSelect={selectSlashSkill}
-        onDismiss={dismissSlashMenu}
-      />
-    </div>
-  {/if}
+  <Popover.Root bind:open={() => slashMenuOpen, (open) => !open && dismissSlashMenu()}>
+    <Popover.Portal>
+      <Popover.Content
+        customAnchor={element ?? null}
+        side="top"
+        align="start"
+        sideOffset={4}
+        trapFocus={false}
+        onOpenAutoFocus={preserveEditorFocus}
+        onCloseAutoFocus={preserveEditorFocus}
+        class="z-(--layer-popover) w-72 max-w-full outline-none"
+        data-testid="slash-skill-menu"
+      >
+        <SlashSkillSuggestionList
+          bind:this={slashSuggestionList}
+          items={filteredSkills}
+          loading={skillsLoading}
+          error={skillsError}
+          onSelect={selectSlashSkill}
+          onDismiss={dismissSlashMenu}
+        />
+      </Popover.Content>
+    </Popover.Portal>
+  </Popover.Root>
   <div
     bind:this={element}
     class="tiptap-container {className}"
@@ -1500,12 +1519,6 @@
   .tiptap-root {
     position: relative;
     width: 100%;
-  }
-
-  .slash-skill-menu {
-    position: relative;
-    z-index: var(--layer-popover);
-    margin: 0 0.5rem 0.25rem;
   }
 
   .tiptap-container {

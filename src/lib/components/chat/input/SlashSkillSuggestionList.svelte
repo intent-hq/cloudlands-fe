@@ -83,7 +83,9 @@
   export { onKeyDown };
 </script>
 
-<div class="slash-skill-suggestion-list w-full max-w-72">
+<div
+  class="slash-skill-suggestion-list w-full max-w-72 overflow-hidden rounded-(--radius-medium) border border-border bg-popover text-popover-foreground shadow-(--elevation-overlay)"
+>
   {#if loading}
     <div class="slash-skill-state" role="status" aria-live="polite">
       {m.chat_slashSkillSuggestionList_loading_label()}
@@ -130,13 +132,6 @@
 </div>
 
 <style>
-  .slash-skill-suggestion-list {
-    overflow: hidden;
-    border: 1px solid hsl(var(--border));
-    background: hsl(var(--popover));
-    color: hsl(var(--foreground));
-  }
-
   .slash-skill-options {
     max-height: 300px;
     overflow-y: auto;
