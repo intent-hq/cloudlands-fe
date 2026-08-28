@@ -12,6 +12,11 @@ import { createLogger } from '$lib/utils/client-logger';
 import { WorkspaceId } from '$shared/types/branded-ids';
 
 import { closeWorkspaceTab } from '$store/renderer/slices/tab-state/tab-state-slice';
+import { selectIsWorkspaceSessionLive } from '$store/renderer/slices/workspace-lifecycle/workspace-lifecycle-selectors';
+import {
+  workspaceOpenFailed,
+  workspaceOpenSucceeded,
+} from '$store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice';
 import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
 import {
   removeWorkspaceEntity,
@@ -80,6 +85,7 @@ export function useWorkspaceLoader(options: UseWorkspaceLoaderOptions) {
         await handleRealWorkspaceLoad(workspaceId, workspaceState, state, generation);
       }
     } catch (error) {
+      appStore.dispatch(workspaceOpenFailed(workspaceId));
       if (generation !== loadGeneration) {
         logger.debug('Ignoring error from stale workspace load', { workspaceId });
         return;
@@ -175,11 +181,20 @@ export function useWorkspaceLoader(options: UseWorkspaceLoaderOptions) {
 
     // Load real workspace - prefer already-initialized workspace from the store
     let ws = selectWorkspaceById.select(appStore.state, workspaceId);
+    const isLiveSession = selectIsWorkspaceSessionLive.select(appStore.state, workspaceId);
 
-    // NOTE: We previously skipped workspaceClient.open() when the workspace already had a worktreePath.
-    // However, this caused a bug where change detection monitoring wouldn't start on revisits.
-    // The backend open() call is idempotent and fast if monitoring is already running, so we always call it
-    // to ensure the change detector is properly initialized.
+    // A live session has completed both lifecycle hydration and backend open.
+    // Reuse its canonical Redux entity to prepare the newly keyed Svelte surface
+    // without re-opening the workspace or republishing an unchanged entity.
+    if (ws && isLiveSession) {
+      workspaceState.updateState({
+        workspaceData: ws,
+        workspace: { id: ws.id, status: 'ready' },
+      });
+      workspaceState.markInitialized();
+      lastPreparedWorkspaceId = ws.id;
+      return;
+    }
 
     logger.info('Opening workspace to ensure backend initialization', {
       workspaceId,
@@ -237,6 +252,7 @@ export function useWorkspaceLoader(options: UseWorkspaceLoaderOptions) {
     // entity into Redux.
     // i18n-ignore (backend error-string comparison, not user-facing)
     if (!openResult.ok && openResult.error === 'Workspace not found') {
+      appStore.dispatch(workspaceOpenFailed(workspaceId));
       logger.error('Workspace not found after retry', { workspaceId });
       // Staleness guard: navigation may have superseded this load while the
       // 500ms retry was pending — don't write stale error state in that case.
@@ -276,11 +292,13 @@ export function useWorkspaceLoader(options: UseWorkspaceLoaderOptions) {
 
     if (openResult.ok && openResult.data) {
       ws = openResult.data;
+      appStore.dispatch(workspaceOpenSucceeded(workspaceId));
       logger.info('Workspace opened successfully, monitoring started', {
         workspaceId,
         worktreePath: ws.worktreePath,
       });
     } else {
+      appStore.dispatch(workspaceOpenFailed(workspaceId));
       const errorMsg =
         !openResult.ok && 'error' in openResult
           ? openResult.error
@@ -332,9 +350,9 @@ export function useWorkspaceLoader(options: UseWorkspaceLoaderOptions) {
       // dependencies that re-trigger this effect when the load completes, causing
       // the workspace to be opened thousands of times in a tight loop.
       //
-      // Note: We intentionally do NOT check for existing workspaceData here.
-      // The backend workspace:open call is idempotent and must run on every visit
-      // to ensure SSH, RPC, change detection, and git monitoring are initialized.
+      // The loader checks canonical workspace lifecycle state inside loadWorkspace:
+      // cold/recovering sessions open, while authoritative live sessions reuse
+      // their cached entity without another backend round trip.
       untrack(() => {
         // Only load if:
         // 1. We haven't already started loading this workspace

@@ -46,6 +46,7 @@ import { setupScriptsReducer } from './slices/setup-scripts/setup-scripts-slice'
 import { mcpSettingsReducer } from './slices/mcp-settings/mcp-settings-slice';
 import { commentsReducer } from './slices/comments/comments-slice';
 import { taskAgentAssociationsReducer } from './slices/task-agent-associations/task-agent-associations-slice';
+import { workspaceLifecycleReducer } from './slices/workspace-lifecycle/workspace-lifecycle-slice';
 
 import { autoUpdateReducer } from './slices/auto-update/auto-update-slice';
 import { sidebarNavReducer } from './slices/sidebar-nav/sidebar-nav-slice';
@@ -141,6 +142,7 @@ export const reducers = {
   mcpSettings: mcpSettingsReducer,
   comments: commentsReducer,
   taskAgentAssociations: taskAgentAssociationsReducer,
+  workspaceLifecycle: workspaceLifecycleReducer,
 
   autoUpdate: autoUpdateReducer,
   sidebarNav: sidebarNavReducer,

@@ -4,24 +4,37 @@ import type { Workspace } from '$shared/types';
 import { closeWorkspaceTab } from '$store/renderer/slices/tab-state/tab-state-slice';
 import { emptyWorkspaceAgentState } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
 import {
+  workspaceOpenFailed,
+  workspaceOpenSucceeded,
+} from '$store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice';
+import {
   removeWorkspaceEntity,
   setWorkspaceEntity,
 } from '$store/renderer/slices/workspace/workspace-slice';
 import TestUseWorkspaceLoader from './TestUseWorkspaceLoader.test.svelte';
 
-const { dispatchMock, openMock, selectWorkspaceByIdMock, storeStateRef } = vi.hoisted(() => {
-  const dispatchMock = vi.fn();
-  const openMock = vi.fn();
-  const selectWorkspaceByIdMock = vi.fn();
-  const storeStateRef = { current: {} as Record<string, unknown> };
+const { dispatchMock, liveWorkspaceIds, openMock, selectWorkspaceByIdMock, storeStateRef } =
+  vi.hoisted(() => {
+    const dispatchMock = vi.fn();
+    const liveWorkspaceIds = new Set<string>();
+    const openMock = vi.fn();
+    const selectWorkspaceByIdMock = vi.fn();
+    const storeStateRef = { current: {} as Record<string, unknown> };
 
-  return {
-    dispatchMock,
-    openMock,
-    selectWorkspaceByIdMock,
-    storeStateRef,
-  };
-});
+    return {
+      dispatchMock,
+      liveWorkspaceIds,
+      openMock,
+      selectWorkspaceByIdMock,
+      storeStateRef,
+    };
+  });
+
+vi.mock('$store/renderer/slices/workspace-lifecycle/workspace-lifecycle-selectors', () => ({
+  selectIsWorkspaceSessionLive: {
+    select: (_state: unknown, workspaceId: string) => liveWorkspaceIds.has(workspaceId),
+  },
+}));
 
 vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
   selectWorkspaceById: {
@@ -85,6 +98,12 @@ async function flushAsyncWork() {
 describe('useWorkspaceLoader', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    liveWorkspaceIds.clear();
+    dispatchMock.mockImplementation((action) => {
+      const [workspaceId] = action.payload ?? [];
+      if (action.type === workspaceOpenSucceeded.type) liveWorkspaceIds.add(workspaceId);
+      if (action.type === workspaceOpenFailed.type) liveWorkspaceIds.delete(workspaceId);
+    });
     storeStateRef.current = {
       workspaceAgents: {
         byWorkspaceId: {},
@@ -115,16 +134,17 @@ describe('useWorkspaceLoader', () => {
     ]);
 
     open.resolve({ ok: true, data: cachedWorkspace });
-    await waitFor(() => expect(dispatchMock).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(dispatchMock).toHaveBeenCalledTimes(3));
 
     expect(openMock.mock.calls).toEqual([[cachedWorkspace.id]]);
     expect(dispatchMock.mock.calls.map(([action]) => action)).toEqual([
       setWorkspaceEntity(cachedWorkspace),
+      workspaceOpenSucceeded(cachedWorkspace.id),
       setWorkspaceEntity(cachedWorkspace),
     ]);
   });
 
-  it('opens every A → B → A route visit without owning workspace lifecycle', async () => {
+  it('opens cold A and B once, then skips open and entity republish on warm A revisit', async () => {
     const workspaceA = makeWorkspace({ id: 'loader-revisit-a', title: 'Workspace A' });
     const workspaceB = makeWorkspace({ id: 'loader-revisit-b', title: 'Workspace B' });
     selectWorkspaceByIdMock.mockImplementation((id: string) =>
@@ -156,14 +176,59 @@ describe('useWorkspaceLoader', () => {
       workspaceState: createWorkspaceState(),
       previousWorkspaceId: workspaceB.id,
     });
-    await waitFor(() => expect(openMock).toHaveBeenCalledTimes(3));
+    await flushAsyncWork();
 
-    expect(openMock.mock.calls).toEqual([[workspaceA.id], [workspaceB.id], [workspaceA.id]]);
+    expect(openMock.mock.calls).toEqual([[workspaceA.id], [workspaceB.id]]);
     expect(
       dispatchMock.mock.calls
         .map(([action]) => action)
-        .filter((action) => action.type.startsWith('workspace-lifecycle/')),
-    ).toEqual([]);
+        .filter((action) => action.type === setWorkspaceEntity.type),
+    ).toEqual([
+      setWorkspaceEntity(workspaceA),
+      setWorkspaceEntity(workspaceA),
+      setWorkspaceEntity(workspaceB),
+      setWorkspaceEntity(workspaceB),
+    ]);
+  });
+
+  it('reopens a cached workspace after a failed session and recovers it', async () => {
+    const workspaceA = makeWorkspace({ id: 'loader-recovery-a' });
+    const workspaceB = makeWorkspace({ id: 'loader-recovery-b' });
+    selectWorkspaceByIdMock.mockImplementation((id: string) =>
+      id === workspaceA.id ? workspaceA : workspaceB,
+    );
+    let aAttempts = 0;
+    openMock.mockImplementation(async (id: string) => {
+      if (id === workspaceA.id && aAttempts++ === 0) {
+        return { ok: false, error: 'temporary failure' };
+      }
+      return { ok: true, data: id === workspaceA.id ? workspaceA : workspaceB };
+    });
+
+    const view = render(TestUseWorkspaceLoader, {
+      props: {
+        workspaceId: workspaceA.id,
+        workspaceState: createWorkspaceState(),
+        previousWorkspaceId: null,
+      },
+    });
+    await waitFor(() => expect(openMock).toHaveBeenCalledTimes(1));
+    await view.rerender({
+      workspaceId: workspaceB.id,
+      workspaceState: createWorkspaceState(),
+      previousWorkspaceId: workspaceA.id,
+    });
+    await waitFor(() => expect(openMock).toHaveBeenCalledTimes(2));
+    await view.rerender({
+      workspaceId: workspaceA.id,
+      workspaceState: createWorkspaceState(),
+      previousWorkspaceId: workspaceB.id,
+    });
+    await waitFor(() => expect(openMock).toHaveBeenCalledTimes(3));
+
+    expect(openMock.mock.calls).toEqual([[workspaceA.id], [workspaceB.id], [workspaceA.id]]);
+    expect(dispatchMock).toHaveBeenCalledWith(workspaceOpenFailed(workspaceA.id));
+    expect(dispatchMock).toHaveBeenCalledWith(workspaceOpenSucceeded(workspaceA.id));
   });
 
   it('refreshes Redux with the opened workspace entity after open resolves', async () => {
@@ -200,7 +265,7 @@ describe('useWorkspaceLoader', () => {
     ]);
   });
 
-  it('loads a workspace without synchronizing global active or lifecycle state', async () => {
+  it('loads a workspace without synchronizing global active or hydration state', async () => {
     const workspace = makeWorkspace({ id: 'loader-inactive-column' });
     selectWorkspaceByIdMock.mockReturnValue(workspace);
     openMock.mockResolvedValue({ ok: true, data: workspace });
@@ -217,10 +282,10 @@ describe('useWorkspaceLoader', () => {
       dispatchMock.mock.calls
         .map(([action]) => action)
         .filter((action) => action.type.startsWith('workspace-lifecycle/')),
-    ).toEqual([]);
+    ).toEqual([workspaceOpenSucceeded(workspace.id)]);
   });
 
-  it('pre-populates a cached workspace without touching lifecycle or initial-agent state', async () => {
+  it('pre-populates a cached workspace without touching hydration or initial-agent state', async () => {
     // Regression: the loader used to read `initialAgentConfig` and pre-dispatch
     // `setInitialAgentId` before `workspaceMounted`. Now that the daemon owns
     // initial-agent creation, the loader must NOT insert any initial-agent
@@ -253,7 +318,7 @@ describe('useWorkspaceLoader', () => {
       dispatchMock.mock.calls
         .map(([action]) => action)
         .filter((action) => action.type.startsWith('workspace-lifecycle/')),
-    ).toEqual([]);
+    ).toEqual([workspaceOpenSucceeded(cachedWorkspace.id)]);
   });
 
   it('exposes a not_found loadError when open fails twice with "Workspace not found" and no cached entity exists', async () => {
@@ -453,8 +518,9 @@ describe('useWorkspaceLoader', () => {
       }),
     );
 
-    // Route loading does not own workspace lifecycle; canonical tab focus/removal does.
-    expect(actions.filter((action) => action.type.startsWith('workspace-lifecycle/'))).toEqual([]);
+    expect(actions.filter((action) => action.type.startsWith('workspace-lifecycle/'))).toEqual([
+      workspaceOpenFailed(cachedWorkspace.id),
+    ]);
 
     expect(workspaceState.updateState).toHaveBeenCalledWith({
       workspace: { id: cachedWorkspace.id, status: 'error' },
@@ -626,7 +692,7 @@ describe('useWorkspaceLoader', () => {
       dispatchMock.mock.calls
         .map(([action]) => action)
         .filter((action) => action.type.startsWith('workspace-lifecycle/')),
-    ).toEqual([]);
+    ).toEqual([workspaceOpenSucceeded(workspaceB.id)]);
   });
 
   it('invalidates an outstanding workspace load when the loader is destroyed', async () => {

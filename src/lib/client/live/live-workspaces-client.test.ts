@@ -93,6 +93,23 @@ describe('LiveWorkspacesClient mutations (fake transport)', () => {
     });
   });
 
+  it('open sends the exact workspace.get request and unwraps the protocol response', async () => {
+    const workspace = {
+      id: '77777777-7777-4777-8777-777777777777',
+      title: 'Warm refresh workspace',
+      branch: 'intent/warm-refresh',
+      status: 'Active',
+    };
+    mockedRequest.mockResolvedValueOnce({ workspace });
+    const client = new LiveWorkspacesClient();
+
+    const result = await client.open(workspace.id);
+
+    expect(mockedRequest).toHaveBeenCalledOnce();
+    expect(mockedRequest).toHaveBeenCalledWith('workspace.get', { workspaceId: workspace.id });
+    expect(result).toMatchObject({ id: workspace.id, title: workspace.title });
+  });
+
   it('create surfaces the daemon-assigned initialAgent on the result', async () => {
     // When the request carries an `initialAgent`, the daemon assigns the
     // agent id and returns the created projection as `initialAgent` — the
