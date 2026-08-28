@@ -1,3 +1,4 @@
+import { m } from '$shared/paraglide/messages.js';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/svelte';
 import type { Workspace } from '$shared/types';
@@ -281,7 +282,7 @@ describe('useWorkspaceLoader', () => {
       workspace: { id: 'loader-missing-1', status: 'error' },
       workspaceData: {
         id: 'loader-missing-1',
-        title: 'Space not found',
+        title: m.workspace_loader_notFound_title(),
         status: 'not_found',
       },
     });
@@ -311,16 +312,16 @@ describe('useWorkspaceLoader', () => {
 
     await waitFor(() => expect(screen.getByTestId('load-error-kind').textContent).toBe('error'));
     expect(screen.getByTestId('load-error-message').textContent).toBe(
-      'Failed to open space: Backend exploded',
+      m.workspace_loader_openFailed_error({ error: 'Backend exploded' }),
     );
 
     expect(workspaceState.updateState).toHaveBeenCalledWith({
       workspace: { id: 'loader-broken-1', status: 'error' },
       workspaceData: {
         id: 'loader-broken-1',
-        title: 'Error loading space',
+        title: m.workspace_loader_errorLoading_title(),
         status: 'error',
-        error: 'Failed to open space: Backend exploded',
+        error: m.workspace_loader_openFailed_error({ error: 'Backend exploded' }),
       },
     });
   });
@@ -460,7 +461,7 @@ describe('useWorkspaceLoader', () => {
       workspace: { id: cachedWorkspace.id, status: 'error' },
       workspaceData: {
         id: cachedWorkspace.id,
-        title: 'Space not found',
+        title: m.workspace_loader_notFound_title(),
         status: 'not_found',
       },
     });

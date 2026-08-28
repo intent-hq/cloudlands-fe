@@ -6,6 +6,7 @@
  * per-agent id, only close/Switch To dismiss) and the "Switch To" wiring
  * (workspace activation + cross-workspace goto + agent-tab dispatch).
  */
+import { m } from '$shared/paraglide/messages.js';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const {
@@ -311,12 +312,14 @@ describe('agent-attention-toast-service', () => {
       expect(options.action.label).toBe('Switch To');
     });
 
-    it('falls back to the generic Space label when the workspace title is unknown', async () => {
+    it('falls back to the generic workspace label when the workspace title is unknown', async () => {
       workspaceByIdSelectMock.mockImplementation(() => undefined);
 
       await showWorkspaceAutoUnarchiveToast(notice);
 
-      expect(lastInfoCall()[0]).toBe('Space was unarchived — Builder became active');
+      expect(lastInfoCall()[0]).toBe(
+        m.workspace_autoUnarchive_toast({ title: m.workspace_page_space_title(), name: 'Builder' }),
+      );
     });
 
     it('still shows the toast (with the fallback title) when title resolution throws', async () => {
@@ -326,7 +329,9 @@ describe('agent-attention-toast-service', () => {
 
       await showWorkspaceAutoUnarchiveToast(notice);
 
-      expect(lastInfoCall()[0]).toBe('Space was unarchived — Builder became active');
+      expect(lastInfoCall()[0]).toBe(
+        m.workspace_autoUnarchive_toast({ title: m.workspace_page_space_title(), name: 'Builder' }),
+      );
     });
 
     it('Switch To routes to the workspace and opens the agent tab', async () => {

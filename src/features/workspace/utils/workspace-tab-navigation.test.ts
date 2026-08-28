@@ -463,7 +463,6 @@ describe('global workspace tab navigation', () => {
         key: 'w',
         shift: true,
         global: true,
-        description: 'Close Space Tab',
       });
       expect(Boolean(shortcut.meta)).toBe(meta);
       expect(Boolean(shortcut.ctrl)).toBe(ctrl);

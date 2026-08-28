@@ -7,6 +7,7 @@
  * displayStatus (even 'complete') can be Waiting. Unread wins over Waiting;
  * Running is excluded by the no-stream check.
  */
+import { m } from '$shared/paraglide/messages.js';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/svelte';
 import { store as appStore } from '$store/renderer/store';
@@ -15,7 +16,10 @@ import {
   setWorkspaceHasLoaded,
   resetWorkspaceState,
 } from '$store/renderer/slices/workspace/workspace-slice';
-import { hydrateSidebarNav, togglePinWorkspace } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
+import {
+  hydrateSidebarNav,
+  togglePinWorkspace,
+} from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
 import { WorkspaceStatus, type Workspace, type WorkspaceId } from '$shared/types';
 import ActiveWorkspacesCardHarness from './mocks/ActiveWorkspacesCardHarness.svelte';
 
@@ -134,7 +138,9 @@ describe('ActiveWorkspacesCard Waiting section', () => {
       expect(screen.getByRole('navigation', { name: 'Active workspaces' })).toBeTruthy();
     });
     expect(screen.queryByRole('listbox')).toBeNull();
-    expect(screen.getByRole('textbox', { name: 'Search spaces...' })).toBeTruthy();
+    expect(
+      screen.getByRole('textbox', { name: m.layout_activeCard_search_placeholder() }),
+    ).toBeTruthy();
   });
 
   it('excludes a streaming waiting-flagged workspace from Waiting (it is Running)', async () => {
