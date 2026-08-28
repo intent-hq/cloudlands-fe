@@ -2,7 +2,7 @@ import { store } from '../../store';
 import { emptyWorkspaceSkillsState } from './skills-slice';
 import type { SkillInfo, SkillsWorkspaceState } from './skills-types';
 
-export const selectSkillsWorkspaceState = store.createSelector<
+const selectSkillsWorkspaceState = store.createSelector<
   [workspaceId: string],
   SkillsWorkspaceState
 >((state, workspaceId) => state.skills.byWorkspaceId[workspaceId] ?? emptyWorkspaceSkillsState);
