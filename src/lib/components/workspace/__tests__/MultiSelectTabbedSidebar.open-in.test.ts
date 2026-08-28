@@ -54,6 +54,8 @@ const mocks = vi.hoisted(() => {
     agents: [] as AgentSession[],
     agentsLoading: false,
     notes: [] as Array<{ id: string; title: string; content: string }>,
+    mcpServers: [] as Array<{ name: string }>,
+    skills: [] as Array<{ name: string }>,
     changes: [] as Array<{ id: string; file: string; relativePath: string }>,
     selectedTabs: ['overview'] as string[],
     selectedTabsByWorkspace: new Map<string, string[]>(),
@@ -64,6 +66,7 @@ const mocks = vi.hoisted(() => {
     },
     runningAgentIds: new Set<string>(),
     focusedPanelId: 'source-panel',
+    panelOpenCount: 0,
     activePrSummary: null as null | {
       number: number;
       url: string;
@@ -119,8 +122,8 @@ vi.mock('$store/renderer/slices/panel-layout/panel-layout-selectors', () => ({
   selectAllTabs: mocks.selector([]),
   selectFocusedPanelId: { select: () => mocks.focusedPanelId },
   getPanelTabOpenState: () => ({
-    count: 0,
-    isOpen: false,
+    count: mocks.panelOpenCount,
+    isOpen: mocks.panelOpenCount > 0,
     isActive: false,
     isOpenElsewhere: false,
   }),
@@ -168,6 +171,12 @@ vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
 vi.mock('$store/renderer/slices/workspace-notes/workspace-notes-selectors', () => ({
   selectAllNotes: mocks.selectorFrom(() => mocks.notes),
   selectNotesLoading: mocks.selector(false),
+}));
+vi.mock('$store/renderer/slices/mcp-settings/mcp-settings-selectors', () => ({
+  selectMcpServers: mocks.selectorFrom(() => mocks.mcpServers),
+}));
+vi.mock('$store/renderer/slices/skills/skills-selectors', () => ({
+  selectSkills: mocks.selectorFrom(() => mocks.skills),
 }));
 vi.mock('$store/renderer/slices/sidebar-nav/sidebar-nav-selectors', () => ({
   selectMultiSelectSidebarSelectedTabIds: (workspaceIdStore: {
@@ -267,7 +276,7 @@ vi.mock('../sidebar', async () => {
     FilesPanel: filesPanel,
     SidebarChangesPanel: simple,
     isChildNote: () => false,
-    isSpecNote: () => false,
+    isSpecNote: (noteId: string) => noteId === 'spec',
   };
 });
 
@@ -330,11 +339,14 @@ describe('MultiSelectTabbedSidebar Files Open In', () => {
     mocks.agents = [];
     mocks.agentsLoading = false;
     mocks.notes = [];
+    mocks.mcpServers = [];
+    mocks.skills = [];
     mocks.changes = [];
     mocks.selectedTabs = ['overview'];
     mocks.selectedTabsByWorkspace.clear();
     mocks.runningAgentIds.clear();
     mocks.focusedPanelId = 'source-panel';
+    mocks.panelOpenCount = 0;
     mocks.activePrSummary = null;
   });
 
@@ -503,6 +515,38 @@ describe('MultiSelectTabbedSidebar Files Open In', () => {
     expect(container.querySelector('[data-agent-avatar-overflow]')).toBeNull();
   });
 
+  it.each([
+    { mcpServers: 0, skills: 0, summary: 'Spec' },
+    { mcpServers: 1, skills: 0, summary: 'Spec and MCP' },
+    { mcpServers: 0, skills: 1, summary: 'Spec and Skills' },
+    { mcpServers: 1, skills: 1, summary: 'Spec, MCP, and Skills' },
+  ])(
+    'summarizes compact Context capabilities with $mcpServers MCP servers and $skills skills',
+    async ({ mcpServers, skills, summary }) => {
+      mocks.notes = [
+        { id: 'spec', title: 'Spec', content: '' },
+        { id: 'reference', title: 'Reference', content: '' },
+      ];
+      mocks.mcpServers = Array.from({ length: mcpServers }, (_, index) => ({
+        name: `server-${index}`,
+      }));
+      mocks.skills = Array.from({ length: skills }, (_, index) => ({ name: `skill-${index}` }));
+      mocks.panelOpenCount = 1;
+      const Sidebar = (await import('../MultiSelectTabbedSidebar.svelte')).default;
+      const { container, getByText } = render(Sidebar, { props: { workspaceId: 'ws-1' } });
+      const specButton = container.querySelector<HTMLElement>('[data-sidebar-context="spec"]')!;
+      const referenceButton = container.querySelector<HTMLElement>(
+        '[data-sidebar-context="reference"]',
+      )!;
+      const summaryElement = getByText(summary);
+
+      expect(summaryElement.matches('[data-context-capability-summary]')).toBe(true);
+      expect(summaryElement.className).toContain('text-[11px]');
+      expect(specButton.querySelector('[data-panel-open-marker]')).toBeNull();
+      expect(referenceButton.querySelector('[data-panel-open-marker]')).toBeTruthy();
+    },
+  );
+
   it.each([1, 4, 6])('uses the shared logical-start stack at %i-item density', async (count) => {
     mocks.agents = Array.from({ length: count }, (_, index) =>
       makeAgent(`agent-${index}`, { isInitialAgent: index === 0 }),
@@ -584,7 +628,9 @@ describe('MultiSelectTabbedSidebar Files Open In', () => {
     expect(agentOverflow.matches('button, [role="button"], [tabindex]')).toBe(false);
     expect(agentOverflow.textContent).toBe('+2');
     expect(getComputedStyle(agentOverflow).backgroundColor).toBe('rgba(0, 0, 0, 0)');
-    expect(contextStack.style.gridTemplateColumns).toBe('repeat(5, 15px) 36px max-content');
+    expect(contextStack.style.gridTemplateColumns).toBe(
+      'max-content repeat(4, 15px) 36px max-content',
+    );
     expectNoteOverflowStyle(noteOverflow);
     for (const theme of ['light', 'dark'] as const) {
       document.documentElement.classList.toggle('dark', theme === 'dark');
@@ -854,7 +900,7 @@ describe('MultiSelectTabbedSidebar Files Open In', () => {
     );
   });
 
-  it('opens the Agents card and compact note exactly once', async () => {
+  it('opens the Agents card, Context card, and compact Spec note exactly once', async () => {
     mocks.agents = [makeAgent('primary', { isInitialAgent: true })];
     mocks.notes = [{ id: 'spec', title: 'Spec', content: '' }];
     mocks.changes = [{ id: 'change', file: '/tmp/file.ts', relativePath: 'file.ts' }];
@@ -879,6 +925,16 @@ describe('MultiSelectTabbedSidebar Files Open In', () => {
     await fireEvent.click(container.querySelector('[data-sidebar-context="spec"]')!);
     expect(mocks.openUserTab).toHaveBeenCalledTimes(1);
     expect(mocks.openUserTab).toHaveBeenCalledWith(expect.objectContaining({ noteId: 'spec' }));
+
+    mocks.dispatch.mockClear();
+    const contextCard = container.querySelector<HTMLElement>('[data-sidebar-launcher="context"]')!;
+    await fireEvent.click(contextCard.querySelector('.launcher-tile-action')!);
+    expect(mocks.dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'sidebarNav/setMultiSelectSidebarSelectedTabs',
+        payload: ['ws-1', ['context']],
+      }),
+    );
   });
 
   it('keeps Changes while omitting Activity Log and Local Changes previews', async () => {

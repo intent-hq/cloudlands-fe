@@ -59,6 +59,8 @@
     openAgentTabRequested,
   } from '$store/renderer/slices/app-layout/app-layout-slice';
   import { selectPendingLocateInSidebar } from '$store/renderer/slices/app-layout/app-layout-selectors';
+  import { selectMcpServers } from '$store/renderer/slices/mcp-settings/mcp-settings-selectors';
+  import { selectSkills } from '$store/renderer/slices/skills/skills-selectors';
   import {
     faArrowUpRightFromSquare,
     faCompressAlt,
@@ -184,6 +186,8 @@
   const workspace = selectWorkspaceById(workspaceIdStore);
   const activePrSummary$ = selectWorkspaceActivePrSummary(workspaceIdStore);
   const notes = selectAllNotes(workspaceIdStore);
+  const mcpServers$ = selectMcpServers();
+  const skills$ = selectSkills(workspaceIdStore);
   const launcherNoteState = $derived(
     deriveNoteLauncherItems(
       $notes,
@@ -192,6 +196,17 @@
     ),
   );
   const launcherNotes = $derived(launcherNoteState.launcherNotes);
+  const launcherHasSpecNote = $derived(launcherNotes.some((note) => isSpecNote(note.id as string)));
+  const contextCapabilitySummary = $derived.by(() => {
+    const hasMcpServers = $mcpServers$.length > 0;
+    const hasSkills = $skills$.length > 0;
+    if (hasMcpServers && hasSkills) {
+      return m.workspace_multiSelectSidebar_contextSummarySpecMcpSkills_label();
+    }
+    if (hasMcpServers) return m.workspace_multiSelectSidebar_contextSummarySpecMcp_label();
+    if (hasSkills) return m.workspace_multiSelectSidebar_contextSummarySpecSkills_label();
+    return m.workspace_multiSelectSidebar_contextSummarySpec_label();
+  });
   const launcherNoteOverflowCount = $derived(launcherNoteState.overflowCount);
   const launcherNoteOverflowLabel = $derived(
     m.lib_commandPalette_showMoreNotes_label({
@@ -275,6 +290,16 @@
   function launcherGridTemplateColumns(tabId: string): string {
     const itemCount = launcherItemCount(tabId);
     const hasOverflow = tabId === 'context' && launcherNoteOverflowCount > 0;
+    if (tabId === 'context' && launcherHasSpecNote) {
+      if (hasOverflow) {
+        return itemCount > 2
+          ? `max-content repeat(${itemCount - 3}, ${LAUNCHER_STEP_SIZE}px) ${LAUNCHER_TARGET_SIZE}px max-content`
+          : 'max-content max-content';
+      }
+      return itemCount > 1
+        ? `max-content repeat(${itemCount - 2}, ${LAUNCHER_STEP_SIZE}px) ${LAUNCHER_VISIBLE_SIZE}px`
+        : 'max-content';
+    }
     if (hasOverflow) {
       return itemCount > 2
         ? `repeat(${itemCount - 2}, ${LAUNCHER_STEP_SIZE}px) ${LAUNCHER_TARGET_SIZE}px max-content`
@@ -1287,6 +1312,7 @@
                     {:else if tab.id === 'context'}
                       {#each launcherNotes as note, index (note.id)}
                         {@const panelState = getNotePanelState(note.id as string)}
+                        {@const isSpec = isSpecNote(note.id as string)}
                         <SidebarLauncherHoverCard
                           title={note.title || m.chat_mentions_untitledNote_label()}
                           rows={[{ text: getNoteLauncherPreview(note) }]}
@@ -1299,7 +1325,10 @@
                         >
                           <Button
                             variant="plain"
-                            class={LAUNCHER_ICON_BUTTON_CLASS}
+                            class={cn(
+                              LAUNCHER_ICON_BUTTON_CLASS,
+                              isSpec && 'w-auto justify-start gap-1 pe-1',
+                            )}
                             onclick={(event) => handleOpenNoteInPanel(note.id as string, event)}
                             aria-label={note.title || m.chat_mentions_untitledNote_label()}
                             data-sidebar-context={note.id}
@@ -1311,12 +1340,20 @@
                                 kind="note"
                                 class="transition-colors group-hover/preview:bg-background/70! group-focus-visible/preview:bg-background/80!"
                               />
-                              <OpenPanelIndicator
-                                count={panelState.count}
-                                active={panelState.isActive}
-                                overlay
-                              />
+                              {#if !isSpec}
+                                <OpenPanelIndicator
+                                  count={panelState.count}
+                                  active={panelState.isActive}
+                                  overlay
+                                />
+                              {/if}
                             </span>
+                            {#if isSpec}
+                              <span
+                                class="whitespace-nowrap text-[11px] leading-none font-medium text-muted-foreground"
+                                data-context-capability-summary>{contextCapabilitySummary}</span
+                              >
+                            {/if}
                           </Button>
                         </SidebarLauncherHoverCard>
                       {/each}

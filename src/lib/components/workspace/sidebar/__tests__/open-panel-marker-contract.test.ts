@@ -13,6 +13,17 @@ describe('sidebar open-panel marker contract', () => {
     expect(sidebar).toContain('<OpenPanelIndicator');
   });
 
+  it('excludes the compact Spec affordance from the shared marker', () => {
+    const sidebar = source('../../MultiSelectTabbedSidebar.svelte');
+    const compactContext = sidebar.slice(
+      sidebar.indexOf("{:else if tab.id === 'context'}"),
+      sidebar.indexOf("{:else if tab.id === 'changes'}"),
+    );
+    expect(compactContext).toContain('{#if !isSpec}');
+    expect(compactContext.match(/<OpenPanelIndicator/g)).toHaveLength(1);
+    expect(compactContext).toContain('data-context-capability-summary');
+  });
+
   it.each([
     '../NotesPanel.svelte',
     '../ContextItemRow.svelte',
