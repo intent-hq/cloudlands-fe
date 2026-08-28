@@ -179,6 +179,16 @@ const mockReduxState = vi.hoisted(
     workspaceAgents: { byWorkspaceId: Record<string, any> };
     providerSettings: { activeProviderId: string };
     hardwareConsole: { pttRecording: boolean; voiceTranscribing: boolean };
+    skills: {
+      byWorkspaceId: Record<
+        string,
+        {
+          skills: Array<{ name: string; description: string; location: string }>;
+          loading: boolean;
+          error: string | null;
+        }
+      >;
+    };
     voiceSettings: {
       isLoading: boolean;
       engine: string;
@@ -194,6 +204,7 @@ const mockReduxState = vi.hoisted(
     providerSettings: { activeProviderId: '' },
     // The composer mic button subscribes to these hardware-console flags
     hardwareConsole: { pttRecording: false, voiceTranscribing: false },
+    skills: { byWorkspaceId: {} },
     // The oversized-attachment placement flow reads daemon locality to pick
     // the sourcePath fast path vs. the wire data variant
     daemonHealth: { hostLocality: null, transport: null },
@@ -294,6 +305,51 @@ warmImport(() => import('../../ui/__tests__/mocks/button.svelte'));
 warmImport(() => import('../__tests__/mocks/TipTapEditor.svelte'));
 warmImport(() => import('../__tests__/mocks/ModelPicker.svelte'));
 warmImport(() => import('../__tests__/mocks/SlotOnly.svelte'));
+
+describe('SimpleRichInput workspace skills', () => {
+  afterEach(() => {
+    cleanup();
+    mockReduxState.skills.byWorkspaceId = {};
+  });
+
+  it('follows workspace changes and live Redux skill updates', async () => {
+    mockReduxState.skills.byWorkspaceId = {
+      'ws-1': {
+        skills: [{ name: 'review', description: 'Review', location: '/skills/review' }],
+        loading: false,
+        error: null,
+      },
+      'ws-2': {
+        skills: [{ name: 'research', description: 'Research', location: '/skills/research' }],
+        loading: true,
+        error: null,
+      },
+    };
+    const workspace = (id: string) => ({ id, path: `/tmp/${id}` }) as any;
+    const view = render(SimpleRichInput, {
+      props: { value: '', contextItems: [], workspace: workspace('ws-1') },
+    });
+    const editor = screen.getByTestId('tiptap-editor');
+    expect(editor.getAttribute('data-skills')).toBe('review');
+
+    await view.rerender({ value: '', contextItems: [], workspace: workspace('ws-2') });
+    const { store } = await import('$store/renderer/store');
+    (store as typeof store & { emitState: () => void }).emitState();
+    await waitFor(() => expect(editor.getAttribute('data-skills')).toBe('research'));
+    expect(editor.getAttribute('data-skills-loading')).toBe('true');
+
+    mockReduxState.skills.byWorkspaceId['ws-2'] = {
+      skills: [{ name: 'audit', description: 'Audit', location: '/skills/audit' }],
+      loading: false,
+      error: 'refresh failed',
+    };
+    (store as typeof store & { emitState: () => void }).emitState();
+
+    await waitFor(() => expect(editor.getAttribute('data-skills')).toBe('audit'));
+    expect(editor.getAttribute('data-skills-loading')).toBe('false');
+    expect(editor.getAttribute('data-skills-error')).toBe('refresh failed');
+  });
+});
 
 describe('SimpleRichInput draft change notification', () => {
   afterEach(() => {

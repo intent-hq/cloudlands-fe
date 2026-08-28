@@ -2,7 +2,7 @@
   /* eslint-disable max-lines */
   import { onMount, onDestroy, mount, unmount } from 'svelte';
 
-  import { Editor } from '@tiptap/core';
+  import { Editor, getTextBetween, getTextSerializersFromSchema } from '@tiptap/core';
   import { PluginKey, TextSelection } from '@tiptap/pm/state';
   import StarterKit from '@tiptap/starter-kit';
   import Placeholder from '@tiptap/extension-placeholder';
@@ -35,6 +35,14 @@
     trailingHintPluginKey,
     type TrailingHint,
   } from './trailing-hint-extension';
+  import SlashSkillSuggestionList from './SlashSkillSuggestionList.svelte';
+  import {
+    applySlashSkillSelection,
+    findSlashCommandContext,
+    rankSlashSkills,
+    type SlashCommandContext,
+  } from './slash-skill-command';
+  import type { SkillInfo } from '$store/renderer/slices/skills/skills-types';
 
   /** Represents an inline image in the editor content */
   export interface InlineImage {
@@ -141,6 +149,9 @@
     onSelectionChange?: (selectedText: string | null) => void;
     contextItems?: ContextItem[];
     trailingHint?: TrailingHint | null;
+    skills?: readonly SkillInfo[];
+    skillsLoading?: boolean;
+    skillsError?: string | null;
     minHeight?: number;
     maxHeight?: number;
   }
@@ -168,6 +179,9 @@
 
     contextItems: _contextItems = [],
     trailingHint = null,
+    skills = [],
+    skillsLoading = false,
+    skillsError = null,
     minHeight = 80,
     maxHeight = 300,
   }: Props = $props();
@@ -185,6 +199,81 @@
   let hoverPreview: any = null;
   let hoverPreviewContainer: HTMLDivElement | null = null;
   let isClearing = false;
+  let editorFocused = $state(false);
+  let slashContext = $state<SlashCommandContext | null>(null);
+  let dismissedSlashContext = $state<string | null>(null);
+  let slashSuggestionList: { onKeyDown: (props: { event: KeyboardEvent }) => boolean } | null =
+    $state(null);
+
+  const filteredSkills = $derived(slashContext ? rankSlashSkills(skills, slashContext.query) : []);
+  const slashContextKey = $derived(
+    slashContext ? `${slashContext.from}:${slashContext.to}:${slashContext.query}` : null,
+  );
+  const slashMenuOpen = $derived(
+    editorFocused &&
+      slashContext !== null &&
+      slashContextKey !== dismissedSlashContext &&
+      isEditable,
+  );
+
+  function textBeforeCursor(activeEditor: Editor): string {
+    const text = getTextBetween(
+      activeEditor.state.doc,
+      { from: 0, to: activeEditor.state.selection.from },
+      {
+        blockSeparator: '\n\n',
+        textSerializers: {
+          ...getTextSerializersFromSchema(activeEditor.schema),
+          hardBreak: () => '\n',
+        },
+      },
+    );
+    return text.replace(/\u00A0/g, ' ');
+  }
+
+  function refreshSlashContext(activeEditor: Editor) {
+    const prompt = serializeEditorText(activeEditor);
+    const nextContext = findSlashCommandContext(prompt, textBeforeCursor(activeEditor).length);
+    if (!nextContext) dismissedSlashContext = null;
+    slashContext = nextContext;
+  }
+
+  function dismissSlashMenu() {
+    dismissedSlashContext = slashContextKey;
+  }
+
+  function selectSlashSkill(skill: SkillInfo) {
+    if (!editor || !slashContext) return;
+    const selection = applySlashSkillSelection(serializeEditorText(editor), slashContext, skill);
+    editor
+      .chain()
+      .setContent(plainTextToEditorHTML(selection.text))
+      .setTextSelection(selection.cursorOffset + 1)
+      .focus()
+      .run();
+  }
+
+  function handleSlashMenuKeyDown(event: KeyboardEvent): boolean {
+    if (!slashMenuOpen || !slashSuggestionList) return false;
+    const isPlainNavigationKey =
+      !event.shiftKey &&
+      !event.metaKey &&
+      !event.ctrlKey &&
+      !event.altKey &&
+      ['ArrowUp', 'ArrowDown', 'Enter'].includes(event.key);
+    if (event.key !== 'Escape' && !isPlainNavigationKey) return false;
+
+    const handled = slashSuggestionList.onKeyDown({ event });
+    if (handled) return true;
+
+    // An open loading/empty/error menu still owns plain Enter so `/` cannot
+    // accidentally submit while the user is trying to select a command.
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      return true;
+    }
+    return false;
+  }
 
   // Export method to insert @ symbol
   export function insertAtSymbol() {
@@ -706,6 +795,7 @@
           delete: false,
         },
         onCreate: ({ editor }) => {
+          refreshSlashContext(editor);
           if (autoFocus) {
             // Focus the DOM element directly with preventScroll to avoid scroll jank
             const editorElement = editor.view.dom as HTMLElement;
@@ -718,9 +808,11 @@
             return;
           }
           const text = serializeEditorText(editor);
+          refreshSlashContext(editor);
           onUpdate?.(text);
         },
         onSelectionUpdate: ({ editor }) => {
+          refreshSlashContext(editor);
           // Get the selected text from the editor
           const { from, to, empty } = editor.state.selection;
           if (empty) {
@@ -729,6 +821,13 @@
             const selectedText = editor.state.doc.textBetween(from, to, ' ');
             onSelectionChange?.(selectedText.trim() || null);
           }
+        },
+        onFocus: ({ editor }) => {
+          editorFocused = true;
+          refreshSlashContext(editor);
+        },
+        onBlur: () => {
+          editorFocused = false;
         },
         editorProps: {
           attributes: {
@@ -778,6 +877,10 @@
             return isFileDragEvent(event);
           },
           handleKeyDown: (view, event) => {
+            if (handleSlashMenuKeyDown(event)) {
+              return true;
+            }
+
             // Handle Escape for cancel (in edit mode)
             if (event.key === 'Escape' && onEscape) {
               event.preventDefault();
@@ -1372,14 +1475,39 @@
   });
 </script>
 
-<div
-  bind:this={element}
-  class="tiptap-container {className}"
-  class:placeholder-suppressed={placeholderSuppressed}
-  style={`--tt-min-height:${minHeight}px;--tt-max-height:${maxHeight}px`}
-></div>
+<div class="tiptap-root">
+  {#if slashMenuOpen}
+    <div class="slash-skill-menu">
+      <SlashSkillSuggestionList
+        bind:this={slashSuggestionList}
+        items={filteredSkills}
+        loading={skillsLoading}
+        error={skillsError}
+        onSelect={selectSlashSkill}
+        onDismiss={dismissSlashMenu}
+      />
+    </div>
+  {/if}
+  <div
+    bind:this={element}
+    class="tiptap-container {className}"
+    class:placeholder-suppressed={placeholderSuppressed}
+    style={`--tt-min-height:${minHeight}px;--tt-max-height:${maxHeight}px`}
+  ></div>
+</div>
 
 <style>
+  .tiptap-root {
+    position: relative;
+    width: 100%;
+  }
+
+  .slash-skill-menu {
+    position: relative;
+    z-index: var(--layer-popover);
+    margin: 0 0.5rem 0.25rem;
+  }
+
   .tiptap-container {
     width: 100%;
     min-height: var(--tt-min-height, 80px);
