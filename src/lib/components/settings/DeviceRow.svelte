@@ -157,7 +157,7 @@
   }
 
   function selectedAccentStyle(value: Exclude<ConnectionAccent, null>): string {
-    return `outline: 1px solid color-mix(in srgb, var(--color-${value}-500) 45%, transparent); outline-offset: 2px;`;
+    return `outline: 2px solid color-mix(in srgb, var(--color-${value}-500) 45%, transparent); outline-offset: 3px;`;
   }
 
   function statusLabel(status: ConnectionOpenStatus): string {
@@ -315,16 +315,21 @@
       aria-label={m.settings_devices_status_ariaLabel({ status: statusLabel(openStatus) })}
     ></span>
     <div class="min-w-0 flex-1">
-      <p id={`device-${device.id}-name`} class="truncate text-sm font-medium text-foreground">
-        {displayName}
-      </p>
+      <div class="flex min-w-0 items-baseline gap-2">
+        <p
+          id={`device-${device.id}-name`}
+          class="min-w-0 flex-1 truncate text-sm font-medium text-foreground"
+        >
+          {displayName}
+        </p>
+        {#if openStatus === 'connected' && device.intentdVersion}
+          <p class="shrink-0 whitespace-nowrap text-xs text-muted-foreground">
+            {m.settings_devices_version_label({ version: device.intentdVersion })}
+          </p>
+        {/if}
+      </div>
       {#if displayHostname}
         <p class="truncate text-xs text-muted-foreground">{displayHostname}</p>
-      {/if}
-      {#if openStatus === 'connected' && device.intentdVersion}
-        <p class="truncate text-xs text-muted-foreground">
-          {m.settings_devices_version_label({ version: device.intentdVersion })}
-        </p>
       {/if}
     </div>
     <DropdownMenu align="end" contentClass="p-0!">
@@ -480,7 +485,7 @@
                   </span>
                 {:else}
                   <span
-                    class={cn('size-3.5 rounded-full', CONNECTION_ACCENT_CLASSES[option])}
+                    class={cn('size-2.5 rounded-full', CONNECTION_ACCENT_CLASSES[option])}
                     style={option === accent ? selectedAccentStyle(option) : undefined}
                     aria-hidden="true"
                   ></span>
