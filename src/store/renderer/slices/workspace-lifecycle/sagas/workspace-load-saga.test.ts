@@ -20,6 +20,10 @@ import {
   workspaceOpenSucceeded,
 } from '../workspace-lifecycle-slice';
 import { workspaceLoadSaga } from './workspace-load-saga';
+import {
+  markWorkspaceNavigationInitialized,
+  workspaceNavigationReducer,
+} from '../../workspace-navigation/workspace-navigation-slice';
 
 const mocks = vi.hoisted(() => ({ get: vi.fn(), open: vi.fn() }));
 vi.mock('../../workspace/utils/workspace.client', () => ({
@@ -62,6 +66,7 @@ function createHarness(options: { cached?: Workspace; live?: boolean; openTab?: 
   let workspaceState = initialWorkspaceState;
   let lifecycleState = initialLifecycleState;
   let tabState = tabStateReducer(undefined, { type: '@@INIT' });
+  let navigationState = workspaceNavigationReducer(undefined, { type: '@@INIT' });
   if (options.cached) {
     workspaceState = workspaceReducer(workspaceState, {
       type: 'workspace/setWorkspaceEntity',
@@ -85,11 +90,13 @@ function createHarness(options: { cached?: Workspace; live?: boolean; openTab?: 
     workspace: workspaceState,
     workspaceLifecycle: lifecycleState,
     tabState,
+    workspaceNavigation: navigationState,
   });
   const dispatch = (action: { type: string; payload?: unknown[] }) => {
     workspaceState = workspaceReducer(workspaceState, action as never);
     lifecycleState = workspaceLifecycleReducer(lifecycleState, action as never);
     tabState = tabStateReducer(tabState, action as never);
+    navigationState = workspaceNavigationReducer(navigationState, action as never);
     actions.push(action);
     channel.put(action);
     return action;
@@ -124,6 +131,11 @@ describe('workspaceLoadSaga', () => {
       status: 'ready',
       error: null,
     });
+    expect(run.actions).toContainEqual(markWorkspaceNavigationInitialized(opened.id));
+    expect(run.getState().workspaceNavigation.byWorkspaceId[opened.id]).toMatchObject({
+      ui: { hasInitialized: true },
+      navigation: { currentIndex: 0, history: [expect.objectContaining({ id: 'spec' })] },
+    });
     await stop(run.task);
   });
 
@@ -143,6 +155,14 @@ describe('workspaceLoadSaga', () => {
     gate.resolve({ ok: true, data: cached });
     await settle();
     expect(run.getState().workspaceLifecycle.loadByWorkspaceId[cached.id]?.status).toBe('ready');
+    expect(run.actions).toContainEqual(markWorkspaceNavigationInitialized(cached.id));
+    expect(run.getState().workspaceNavigation.byWorkspaceId[cached.id]).toMatchObject({
+      ui: { hasInitialized: true },
+      navigation: { currentIndex: 0, history: [expect.objectContaining({ id: 'spec' })] },
+    });
+    const initializedNavigation = run.getState().workspaceNavigation;
+    run.dispatch(markWorkspaceNavigationInitialized(cached.id));
+    expect(run.getState().workspaceNavigation).toBe(initializedNavigation);
     await stop(run.task);
   });
 
@@ -176,6 +196,11 @@ describe('workspaceLoadSaga', () => {
       false,
     );
     expect(run.getState().workspaceLifecycle.loadByWorkspaceId[cached.id]?.status).toBe('ready');
+    expect(run.actions).toContainEqual(markWorkspaceNavigationInitialized(cached.id));
+    expect(run.getState().workspaceNavigation.byWorkspaceId[cached.id]).toMatchObject({
+      ui: { hasInitialized: true },
+      navigation: { currentIndex: 0, history: [expect.objectContaining({ id: 'spec' })] },
+    });
     await stop(run.task);
   });
 
@@ -214,6 +239,7 @@ describe('workspaceLoadSaga', () => {
 
     expect(run.getState().workspace.workspaces.ids).not.toContain('deleted-space');
     expect(run.getState().workspaceLifecycle.loadByWorkspaceId['deleted-space']).toBeUndefined();
+    expect(run.actions).not.toContainEqual(markWorkspaceNavigationInitialized('deleted-space'));
     await stop(run.task);
   });
 
@@ -235,6 +261,7 @@ describe('workspaceLoadSaga', () => {
       type: 'workspace-lifecycle/workspaceOpenSucceeded',
       payload: [cached.id],
     });
+    expect(run.actions).not.toContainEqual(markWorkspaceNavigationInitialized(cached.id));
     await stop(run.task);
   });
 
@@ -254,6 +281,7 @@ describe('workspaceLoadSaga', () => {
       type: 'workspace-lifecycle/workspaceLoadFailed',
       payload: ['evicted-open', { kind: 'error', message: 'Backend unavailable' }],
     });
+    expect(run.actions).not.toContainEqual(markWorkspaceNavigationInitialized('evicted-open'));
     await stop(run.task);
   });
 
@@ -276,6 +304,7 @@ describe('workspaceLoadSaga', () => {
       type: 'workspace-lifecycle/workspaceOpenSucceeded',
       payload: [opened.id],
     });
+    expect(run.actions).not.toContainEqual(markWorkspaceNavigationInitialized(opened.id));
     await stop(run.task);
   });
 
@@ -418,6 +447,7 @@ describe('workspaceLoadSaga', () => {
     expect(run.getState().workspaceLifecycle.loadByWorkspaceId['optimistic-1']?.status).toBe(
       'optimistic',
     );
+    expect(run.actions).not.toContainEqual(markWorkspaceNavigationInitialized('optimistic-1'));
     await stop(run.task);
   });
 });

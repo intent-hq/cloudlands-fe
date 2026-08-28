@@ -9,6 +9,7 @@ import {
 } from '../../workspace/workspace-slice';
 import { selectWorkspaceById } from '../../workspace/workspace-selectors';
 import { closeWorkspaceTab } from '../../tab-state/tab-state-slice';
+import { markWorkspaceNavigationInitialized } from '../../workspace-navigation/workspace-navigation-slice';
 import { WorkspaceId } from '$shared/types/branded-ids';
 import { appClient } from '$lib/client';
 import {
@@ -58,6 +59,7 @@ function* loadWorkspace(action: ReturnType<typeof workspaceLoadRequested>): Saga
   const live = yield* select(selectIsWorkspaceSessionLive.select, workspaceId);
   if (cached && live) {
     yield* put(workspaceLoadSucceeded(workspaceId));
+    yield* put(markWorkspaceNavigationInitialized(workspaceId));
     return;
   }
   yield* put(workspaceLoadStarted(workspaceId));
@@ -115,6 +117,7 @@ function* loadWorkspace(action: ReturnType<typeof workspaceLoadRequested>): Saga
     if (yield* isLoadInvalidated(workspaceId)) return;
     yield* put(workspaceOpenSucceeded(workspaceId));
     yield* put(workspaceLoadSucceeded(workspaceId));
+    yield* put(markWorkspaceNavigationInitialized(workspaceId));
   } catch (error) {
     if (yield* isLoadInvalidated(workspaceId)) return;
     if (cached) {
