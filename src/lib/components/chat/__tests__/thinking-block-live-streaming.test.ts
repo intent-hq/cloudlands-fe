@@ -112,7 +112,7 @@ describe('ThinkingBlock — live streaming integration', () => {
     expect(updatedButton.getAttribute('aria-expanded')).toBe('true');
   });
 
-  it('thinking block stays expanded while accumulating, then becomes inline', async () => {
+  it('thinking block stays expanded while accumulating, collapses when text starts', async () => {
     const StreamingMessageContent = (await import('../StreamingMessageContent.svelte')).default;
     const reconciler = new ChatTranscriptReconciler();
 
@@ -162,9 +162,18 @@ describe('ThinkingBlock — live streaming integration', () => {
     transcript = reconciler.transcript();
     rerender({ content: transcript.messages[0].contentBlocks || [], isStreaming: true });
 
-    // Completed headingless thinking becomes inline when the answer starts.
-    await waitFor(() => expect(screen.queryByTestId('reasoning-disclosure')).toBeNull());
+    // Completed headingless thinking collapses into its disclosure when the
+    // answer starts (intent-hq/intent#3753: never re-typed to inline prose).
+    await waitFor(() => {
+      const toggle = screen.getByRole('button', { name: 'Reasoning' });
+      expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    });
+
+    // Wait for collapse transition to complete
+    await new Promise((r) => setTimeout(r, 300));
+
+    // Only the text block viewer stays visible (thinking collapsed)
     const viewers = screen.getAllByTestId('markdown-viewer');
-    expect(viewers.map((viewer) => viewer.textContent)).toEqual(['Reasoning...', 'Answer: 42.']);
+    expect(viewers.map((viewer) => viewer.textContent)).toEqual(['Answer: 42.']);
   });
 });
