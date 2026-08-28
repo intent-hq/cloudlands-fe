@@ -1,6 +1,6 @@
 export const uiComponentGuardrails = {
   internalImports: {
-    '$lib/components/ui/button/button.svelte': 35,
+    '$lib/components/ui/button/button.svelte': 34,
     '$lib/components/ui/button/index.js': 1,
     '$lib/components/ui/checkbox/checkbox.svelte': 3,
     '$lib/components/ui/dropdown/Dropdown.svelte': 1,
