@@ -4,6 +4,21 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.104.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.103.0...v2.104.0) (2026-08-28)
+
+
+### 🚀 Features
+
+* add Chief cross-workspace messaging UI ([#1794](https://github.com/intent-hq/cloudlands-fe/issues/1794)) ([9cc107e](https://github.com/intent-hq/cloudlands-fe/commit/9cc107ebaec1631d37468a8602632939adf6a9d4))
+* restore every backend's saved windows at boot and dock-activate ([#1805](https://github.com/intent-hq/cloudlands-fe/issues/1805)) ([c9c79c0](https://github.com/intent-hq/cloudlands-fe/commit/c9c79c041919f1119a1453889d9058c8b23d1f40))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.8.12 ([#1813](https://github.com/intent-hq/cloudlands-fe/issues/1813)) ([5b13eb9](https://github.com/intent-hq/cloudlands-fe/commit/5b13eb995eee85867b19364edcb3771013cb97c8))
+* detect onboarding default branch ([#1799](https://github.com/intent-hq/cloudlands-fe/issues/1799)) ([e4ff578](https://github.com/intent-hq/cloudlands-fe/commit/e4ff578cd8dab09eba116db686836659fe730c06))
+* hide the dead fork button in chat message actions ([#1808](https://github.com/intent-hq/cloudlands-fe/issues/1808)) ([1e8a809](https://github.com/intent-hq/cloudlands-fe/commit/1e8a809af190f7817664ec07014c720d79918b8d))
+
 ## [2.103.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.102.0...v2.103.0) (2026-08-28)
 
 
