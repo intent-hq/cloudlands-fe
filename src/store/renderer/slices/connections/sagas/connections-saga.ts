@@ -37,8 +37,6 @@ import type {
   OpenConnectionParams,
   OpenConnectionResult,
   SetKeychainSyncEnabledParams,
-  SwitchConnectionParams,
-  SwitchConnectionResult,
   UpdateBackendParams,
   UpdateBackendResult,
 } from '$shared/types/connections';
@@ -59,7 +57,6 @@ import {
   openConnectionRequested,
   protocolMismatchReceived,
   setKeychainSyncEnabledRequested,
-  switchConnectionRequested,
   updateBackendRequested,
 } from '../connections-slice';
 
@@ -156,14 +153,6 @@ async function invokeForgetConnection(
   const api = getApi();
   if (!api) throw new Error('electronAPI is not available');
   return (await api.invoke(CONNECTIONS.FORGET, params)) as ForgetConnectionResult;
-}
-
-async function invokeSwitchConnection(
-  params: SwitchConnectionParams,
-): Promise<SwitchConnectionResult> {
-  const api = getApi();
-  if (!api) throw new Error('electronAPI is not available');
-  return (await api.invoke(CONNECTIONS.SWITCH, params)) as SwitchConnectionResult;
 }
 
 async function invokeUpdateBackend(params: UpdateBackendParams): Promise<UpdateBackendResult> {
@@ -327,30 +316,6 @@ function* openConnection(action: ReturnType<typeof openConnectionRequested>): Sa
   }
 }
 
-function* switchConnection(
-  action: ReturnType<typeof switchConnectionRequested>,
-): SagaGenerator<void> {
-  let settled = false;
-  yield* put(connectOperationStarted());
-  try {
-    yield* call(invokeSwitchConnection, { id: action.payload[0] });
-    yield* put(connectOperationSettled());
-    yield* put(action.success(undefined as never));
-    settled = true;
-  } catch (error) {
-    const resolved = toError(error);
-    yield* put(connectOperationFailed(resolved.message));
-    yield* put(action.failure(resolved));
-    settled = true;
-  } finally {
-    if (!settled && (yield* cancelled())) {
-      const resolved = new Error('Connection switch was cancelled');
-      yield* put(connectOperationFailed(resolved.message));
-      yield* put(action.failure(resolved));
-    }
-  }
-}
-
 function* updateBackend(action: ReturnType<typeof updateBackendRequested>): SagaGenerator<void> {
   let settled = false;
   try {
@@ -430,7 +395,6 @@ function* watchConnectionsActions(): SagaGenerator<void> {
     takeLeading(addConnectionRequested, addConnection),
     takeLeading(openConnectionRequested, openConnection),
     takeLeading(forgetConnectionRequested, forgetConnection),
-    takeLeading(switchConnectionRequested, switchConnection),
     // takeEvery, not takeLeading: each action targets one backend id, and
     // multiple connected remotes can be updated back-to-back — takeLeading
     // would drop the second action, leaving its promise unresolved and the

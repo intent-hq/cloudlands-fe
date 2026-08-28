@@ -854,7 +854,7 @@ export const IPC_CHANNELS = {
 
   // Multi-backend connect: the "Connect to another intentd" registry.
   // Request/response channels for the connections list + TOFU pairing +
-  // switch. Handlers land in T3; the renderer-facing contract types live in
+  // open. Handlers land in T3; the renderer-facing contract types live in
   // `shared/types/connections.ts`. CHANGED / CERT_MISMATCH are main→renderer
   // push events (also listed in EVENT_CHANNELS for the preload allow-list).
   CONNECTIONS: {
@@ -863,7 +863,6 @@ export const IPC_CHANNELS = {
     ADD: 'connections:add',
     OPEN: 'connections:open',
     FORGET: 'connections:forget',
-    SWITCH: 'connections:switch',
     // Ask one connected remote backend's daemon to self-update (routes
     // `system.requestUpdate` to that backend's pooled client). Structured
     // result — never throws for daemon-side failures (unsupported/old daemon,

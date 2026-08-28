@@ -4,10 +4,10 @@
    *
    * A `connections:cert-mismatch` push means a (re)connect presented a cert
    * whose fingerprint differs from the pinned one. The mismatch is only
-   * detectable async after the switch resolves, so the app is already parked on
-   * the (disconnected) new backend — there is no auto-revert. We surface the
-   * stored vs presented fingerprint and offer an explicit way out:
-   *   - switch back to the local sidecar,
+   * detectable async after the connect resolves, so this window is already
+   * bound to the (disconnected) backend — there is no auto-revert. We surface
+   * the stored vs presented fingerprint and offer an explicit way out:
+   *   - open the local sidecar's window,
    *   - forget & re-pair the connection,
    *   - dismiss.
    *
@@ -22,12 +22,12 @@
 
   interface Props {
     event: ConnectionCertMismatchEvent;
-    onSwitchBack?: () => void;
+    onOpenLocal?: () => void;
     onForget?: (id: string) => void;
     onDismiss?: () => void;
   }
 
-  let { event, onSwitchBack, onForget, onDismiss }: Props = $props();
+  let { event, onOpenLocal, onForget, onDismiss }: Props = $props();
 
   function handleKeydown(e: KeyboardEvent) {
     if (e.key === 'Escape') {
@@ -101,8 +101,8 @@
 
     <!-- Footer -->
     <div class="px-6 py-4 border-t border-border flex flex-col gap-2">
-      <Button variant="default" onclick={() => onSwitchBack?.()}>
-        {m.modals_certMismatch_switchBack_label()}
+      <Button variant="default" onclick={() => onOpenLocal?.()}>
+        {m.modals_certMismatch_openLocal_label()}
       </Button>
       <Button variant="destructive" onclick={() => onForget?.(event.id)}>
         {m.modals_certMismatch_forget_label()}

@@ -35,9 +35,9 @@ export type {
 } from '$shared/types/connections';
 
 /**
- * Status of the current connect/switch operation (add or switch).
+ * Status of the current connect operation (add or open).
  *   - `idle`       → no operation in flight.
- *   - `connecting` → an add/open/switch invoke is pending.
+ *   - `connecting` → an add/open invoke is pending.
  *   - `error`      → the last operation failed (see `error`).
  */
 type ConnectionOpStatus = 'idle' | 'connecting' | 'error';
@@ -72,9 +72,9 @@ export interface ConnectionsState {
    * first list payload carrying the field lands.
    */
   connectedIds: string[];
-  /** Status of the in-flight add/open/switch operation. */
+  /** Status of the in-flight add/open operation. */
   status: ConnectionOpStatus;
-  /** Error message from the last failed add/open/switch operation, or null. */
+  /** Error message from the last failed add/open operation, or null. */
   error: string | null;
   /**
    * Last cert-mismatch push (`connections:cert-mismatch`), or null. A pinned
@@ -86,10 +86,10 @@ export interface ConnectionsState {
    * Last auth-rejected push (`connections:auth-rejected`), or null. The remote
    * backend rejected the WebSocket upgrade with HTTP 401/403 (bad/rotated
    * token, or the WS API is disabled) — retrying with the same token cannot
-   * succeed, so the UI surfaces a "re-pair or switch" state instead of the
+   * succeed, so the UI surfaces a "re-pair or open local" state instead of the
    * generic cannot-connect overlay. Latched per connection id: selectors gate
-   * visibility on this window's connection, and a new add/switch operation clears
-   * it (a re-pair refreshes the token; a switch changes the target).
+   * visibility on this window's connection, and a new add/open operation clears
+   * it (a re-pair refreshes the token; a fresh open rebuilds the client).
    */
   authRejected: ConnectionAuthRejectedEvent | null;
   /**
@@ -103,7 +103,7 @@ export interface ConnectionsState {
   /**
    * Whether the user has dismissed the advisory protocol-mismatch modal for the
    * current {@link protocolMismatch}. Reset to `false` on each new push so a
-   * later switch to a mismatched backend shows the modal again — except for
+   * later connect to a mismatched backend shows the modal again — except for
    * boot-origin pushes (`origin: 'boot'`), which set it to `true` up front so
    * only the persistent menu warning shows; the menu warning ignores this flag.
    */

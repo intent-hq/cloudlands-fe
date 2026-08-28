@@ -1199,46 +1199,43 @@ describe('DaemonStatusIndicator', () => {
       await fireEvent.click(screen.getByRole('button', { name: 'intentd: healthy' }));
 
       // The row is a submenu trigger: collapsed with menu-popup semantics, and no
-      // Open/Switch/Forget rendered until it is opened (no inline expansion).
+      // Open/Forget rendered until it is opened (no inline expansion).
       const remoteRow = screen.getByText('desk:4180').closest('[role="menuitem"]');
       expect(remoteRow?.getAttribute('aria-haspopup')).toBe('menu');
       expect(remoteRow?.getAttribute('aria-expanded')).toBe('false');
-      expect(screen.queryByText('Switch')).toBeNull();
+      expect(screen.queryByText('Open')).toBeNull();
 
       // Opening the row flips aria-expanded and reveals the flyout actions.
       await fireEvent.click(remoteRow!);
       expect(remoteRow?.getAttribute('aria-expanded')).toBe('true');
       expect(screen.getByText('Open')).toBeTruthy();
-      expect(screen.getByText('Switch')).toBeTruthy();
       expect(screen.getByText('Forget')).toBeTruthy();
 
       // The flyout is a portaled submenu, so the parent menu's overflow
       // scroll container cannot clip it.
-      const flyout = screen.getByText('Switch').closest('[data-slot="menu-sub-content"]');
+      const flyout = screen.getByText('Open').closest('[data-slot="menu-sub-content"]');
       expect(flyout).toBeTruthy();
       const parentContent = remoteRow!.closest('[data-slot="menu-content"]');
       expect(parentContent?.contains(flyout)).toBe(false);
     });
 
-    it('expands local to Open + Switch (Forget hidden); remote to all three actions', async () => {
+    it('expands local to Open (Forget hidden); remote to Open + Forget', async () => {
       mockStoreState = { daemonHealth: { ...healthy }, connections: withConnections('local') };
 
       const DaemonStatusIndicator = (await import('./DaemonStatusIndicator.svelte')).default;
       render(DaemonStatusIndicator);
       await fireEvent.click(screen.getByRole('button', { name: 'intentd: healthy' }));
 
-      // Local: Open + Switch present, Forget absent (un-forgettable).
+      // Local: Open present, Forget absent (un-forgettable).
       await fireEvent.click(screen.getByText('This machine (local)'));
       expect(screen.getAllByText('Open')).toHaveLength(1);
-      expect(screen.getAllByText('Switch')).toHaveLength(1);
       expect(screen.queryByText('Forget')).toBeNull();
 
-      // Remote: Open, Switch, and Forget present in its flyout.
+      // Remote: Open and Forget present in its flyout.
       await fireEvent.click(screen.getByText('desk:4180'));
       const forget = screen.getByText('Forget');
       const flyout = forget.closest('[data-slot="menu-sub-content"]')!;
       expect(within(flyout as HTMLElement).getByText('Open')).toBeTruthy();
-      expect(within(flyout as HTMLElement).getByText('Switch')).toBeTruthy();
     });
 
     it('dispatches openConnectionRequested for this window remote and closes the dropdown', async () => {
@@ -1269,53 +1266,6 @@ describe('DaemonStatusIndicator', () => {
         }),
       );
       expect(screen.queryByText('Connections')).toBeNull();
-    });
-
-    it('dispatches switchConnectionRequested when Switch is chosen on a non-active remote', async () => {
-      mockStoreState = { daemonHealth: { ...healthy }, connections: withConnections('local') };
-
-      const DaemonStatusIndicator = (await import('./DaemonStatusIndicator.svelte')).default;
-      render(DaemonStatusIndicator);
-      await fireEvent.click(screen.getByRole('button', { name: 'intentd: healthy' }));
-
-      await fireEvent.click(screen.getByText('desk:4180'));
-      await fireEvent.click(screen.getByText('Switch'));
-
-      expect(mockDispatch).toHaveBeenCalledWith(
-        expect.objectContaining({
-          payload: ['r1'],
-          type: 'connections/switchRequested',
-          asyncActionType: 'connections/switch',
-        }),
-      );
-    });
-
-    it('disables Switch for this window entry even when persisted activeId differs', async () => {
-      mockStoreState = {
-        daemonHealth: { ...healthy },
-        connections: withConnections('r1', 'local'),
-      };
-
-      const DaemonStatusIndicator = (await import('./DaemonStatusIndicator.svelte')).default;
-      render(DaemonStatusIndicator);
-      // With r1 active the trigger's accessible name includes the remote name.
-      await fireEvent.click(screen.getByRole('button', { name: 'intentd: healthy — desk:4180' }));
-
-      // With r1 active, the trigger button also shows "desk:4180" next to the
-      // dot — target the connections-list row (the submenu trigger).
-      const menuRow = screen
-        .getAllByText('desk:4180')
-        .map((el) => el.closest('[role="menuitem"]'))
-        .find((row) => row?.getAttribute('aria-haspopup') === 'menu');
-      await fireEvent.click(menuRow!);
-      const switchItem = screen.getByText('Switch').closest('[role="menuitem"]');
-      expect(switchItem?.getAttribute('aria-disabled')).toBe('true');
-
-      // Selecting the disabled item dispatches nothing.
-      await fireEvent.click(switchItem!);
-      expect(mockDispatch).not.toHaveBeenCalledWith(
-        expect.objectContaining({ type: 'connections/switchRequested' }),
-      );
     });
 
     it('opens a confirm dialog on Forget and dispatches forgetConnectionRequested on confirm', async () => {
@@ -1489,7 +1439,7 @@ describe('DaemonStatusIndicator', () => {
         await fireEvent.click(screen.getByRole('button', { name: 'intentd: healthy' }));
         await fireEvent.click(screen.getByText('desk:4180'));
 
-        expect(screen.getByText('Switch')).toBeTruthy();
+        expect(screen.getByText('Open')).toBeTruthy();
         expect(screen.queryByText('Update')).toBeNull();
       });
 
@@ -1504,7 +1454,7 @@ describe('DaemonStatusIndicator', () => {
         await fireEvent.click(screen.getByRole('button', { name: 'intentd: healthy' }));
         await fireEvent.click(screen.getByText('desk:4180'));
 
-        expect(screen.getByText('Switch')).toBeTruthy();
+        expect(screen.getByText('Open')).toBeTruthy();
         expect(screen.queryByText('Update')).toBeNull();
       });
 
@@ -1525,7 +1475,7 @@ describe('DaemonStatusIndicator', () => {
         await fireEvent.click(screen.getByRole('button', { name: 'intentd: healthy' }));
         await fireEvent.click(screen.getByText('This machine (local)'));
 
-        expect(screen.getByText('Switch')).toBeTruthy();
+        expect(screen.getByText('Open')).toBeTruthy();
         expect(screen.queryByText('Update')).toBeNull();
       });
 
@@ -1821,10 +1771,10 @@ describe('DaemonStatusIndicator', () => {
       expect(screen.getByText('Certificate changed')).toBeTruthy();
       expect(screen.getByText('AA:BB:CC')).toBeTruthy();
       expect(screen.getByText('DD:EE:FF')).toBeTruthy();
-      expect(screen.getByText('Switch back to This machine (local)')).toBeTruthy();
+      expect(screen.getByText('Open This machine (local)')).toBeTruthy();
     });
 
-    it('switch-back clears the mismatch and dispatches a local switch request', async () => {
+    it('open-local clears the mismatch and dispatches a local open request', async () => {
       mockStoreState = {
         daemonHealth: { health: 'healthy', stats: null, lastUpdated: null, polling: false },
         connections: withMismatch(),
@@ -1833,7 +1783,7 @@ describe('DaemonStatusIndicator', () => {
       const DaemonStatusIndicator = (await import('./DaemonStatusIndicator.svelte')).default;
       render(DaemonStatusIndicator);
 
-      await fireEvent.click(screen.getByText('Switch back to This machine (local)'));
+      await fireEvent.click(screen.getByText('Open This machine (local)'));
 
       expect(mockDispatch).toHaveBeenCalledWith(
         expect.objectContaining({ type: 'connections/certMismatchCleared' }),
@@ -1841,8 +1791,8 @@ describe('DaemonStatusIndicator', () => {
       expect(mockDispatch).toHaveBeenCalledWith(
         expect.objectContaining({
           payload: ['local'],
-          type: 'connections/switchRequested',
-          asyncActionType: 'connections/switch',
+          type: 'connections/openRequested',
+          asyncActionType: 'connections/open',
         }),
       );
     });
