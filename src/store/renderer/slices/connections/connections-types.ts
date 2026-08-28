@@ -32,7 +32,6 @@ export type {
   TestConnectionResult,
   UpdateConnectionParams,
   UpdateConnectionResult,
-  ConnectionAccent,
   ConnectionOpenStatus,
   UpdateBackendResult,
   ConnectionAuthRejectedEvent,

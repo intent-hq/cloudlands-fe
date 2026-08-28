@@ -275,7 +275,7 @@ export interface UpdateConnectionParams {
 }
 
 /** Machine-readable validation outcomes; renderer copy is localized by status/reason. */
-export type ConnectionValidationResult =
+type ConnectionValidationResult =
   | { status: 'success'; fingerprint: string }
   | { status: 'secret-unavailable' }
   | {
