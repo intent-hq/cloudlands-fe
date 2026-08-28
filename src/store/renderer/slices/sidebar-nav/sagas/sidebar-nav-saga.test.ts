@@ -33,12 +33,12 @@ const current = {
     chiefActiveAgentId: 'agent-1',
     multiSelectTabOrder: ['context', 'overview'],
   },
-  connections: { activeId: LOCAL_CONNECTION_ID },
+  connections: { activeId: LOCAL_CONNECTION_ID, windowBackendId: LOCAL_CONNECTION_ID },
 };
 
 const REMOTE_ID = 'remote-1';
 const REMOTE_PINNED_KEY = `backend:${REMOTE_ID}:${PINNED_WORKSPACES_KEY}`;
-const remoteCurrent = { ...current, connections: { activeId: REMOTE_ID } };
+const remoteCurrent = { ...current, connections: { activeId: REMOTE_ID, windowBackendId: REMOTE_ID } };
 
 const settle = async () => {
   await Promise.resolve();
@@ -174,7 +174,7 @@ describe('sidebarNavSaga', () => {
       dispatch.mockClear();
 
       state = remoteCurrent;
-      channel.put(connectionsListReceived({ connections: [], activeId: REMOTE_ID }));
+      channel.put(connectionsListReceived({ connections: [], activeId: REMOTE_ID, windowBackendId: REMOTE_ID }));
       await settle();
 
       expect(dispatch.mock.calls.map(([action]) => action)).toEqual([

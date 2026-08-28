@@ -361,7 +361,7 @@ describe('userPreferencesPersistenceSaga', () => {
 
   describe('backend-scoped completedProviderSetup key', () => {
     const stateFor = (activeId: string, hasCompletedProviderSetup = true) => ({
-      connections: { activeId },
+      connections: { activeId, windowBackendId: activeId },
       userPreferences: { hasCompletedProviderSetup },
     });
 
@@ -448,7 +448,7 @@ describe('userPreferencesPersistenceSaga', () => {
 
       activeId = 'remote-1';
       channel.put(
-        connectionsListReceived({ connections: [], activeId: 'remote-1' } as never),
+        connectionsListReceived({ connections: [], activeId: 'remote-1', windowBackendId: 'remote-1' } as never),
       );
       await settle();
       // Fresh remote: no scoped value stored, so the flag resets to false.
@@ -458,7 +458,7 @@ describe('userPreferencesPersistenceSaga', () => {
       stored['backend:remote-2:workspace-list:completedProviderSetup'] = true;
       activeId = 'remote-2';
       channel.put(
-        connectionsListReceived({ connections: [], activeId: 'remote-2' } as never),
+        connectionsListReceived({ connections: [], activeId: 'remote-2', windowBackendId: 'remote-2' } as never),
       );
       await settle();
       expect(dispatch.mock.calls).toContainEqual([setHasCompletedProviderSetup(true)]);
@@ -466,7 +466,7 @@ describe('userPreferencesPersistenceSaga', () => {
       // Same backend id again: no re-hydration dispatch.
       dispatch.mockClear();
       channel.put(
-        connectionsListReceived({ connections: [], activeId: 'remote-2' } as never),
+        connectionsListReceived({ connections: [], activeId: 'remote-2', windowBackendId: 'remote-2' } as never),
       );
       await settle();
       expect(dispatch.mock.calls).toEqual([]);
