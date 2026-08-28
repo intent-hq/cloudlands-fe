@@ -107,6 +107,23 @@ describe('stripAgentMessageHeader', () => {
     expect(stripAgentMessageHeader(A2A_HEADER)).toBe('');
   });
 
+  it('preserves leading whitespace of the body (indented / code-formatted)', () => {
+    expect(stripAgentMessageHeader(`${A2A_HEADER}\n\n    indented code line\ndone`)).toBe(
+      '    indented code line\ndone',
+    );
+    expect(stripAgentMessageHeader(`${A2A_HEADER}\n\n\nextra blank belongs to body`)).toBe(
+      '\nextra blank belongs to body',
+    );
+    expect(stripAgentMessageHeader(`${A2A_HEADER}\n\n\t tab-indented`)).toBe('\t tab-indented');
+  });
+
+  it('leaves a user-authored lookalike first line untouched', () => {
+    const prose = '[MESSAGE FROM AGENT quoted prose]\n\nbody';
+    expect(stripAgentMessageHeader(prose)).toBe(prose);
+    const noIdTail = '[MESSAGE FROM AGENT Research Agent]\n\nbody';
+    expect(stripAgentMessageHeader(noIdTail)).toBe(noIdTail);
+  });
+
   it('returns text without the header unchanged', () => {
     expect(stripAgentMessageHeader('plain agent message')).toBe('plain agent message');
     expect(stripAgentMessageHeader(`Quoting:\n${A2A_HEADER}\ndone`)).toBe(

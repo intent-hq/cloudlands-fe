@@ -42,11 +42,15 @@ export function getAgentMessageAttribution(metadata: unknown): AgentMessageAttri
  * content: `[MESSAGE FROM AGENT {name} ({agent-id})]` (name-absent shape
  * `[MESSAGE FROM AGENT ({agent-id})]`), followed by a blank line. The
  * attribution chip conveys the sender instead, so the rendered body strips
- * the header with a single-line regex (same pattern as
- * `hook-wake-attribution.ts`). Display-only strip — the stored message text
- * is never mutated. Returns the input unchanged when no header matches.
+ * the header (same pattern as `hook-wake-attribution.ts`). The regex is
+ * pinned to the two exact daemon shapes — the `(agent-{uuid})]` tail is
+ * required, so a user-authored lookalike first line stays byte-identical —
+ * and consumes exactly the header line plus the one blank separator line
+ * the daemon emits, never leading whitespace belonging to the body.
+ * Display-only strip — the stored message text is never mutated. Returns
+ * the input unchanged when no header matches.
  */
-const A2A_SENDER_HEADER = /^\[MESSAGE FROM AGENT [^\n]*\]\s*/;
+const A2A_SENDER_HEADER = /^\[MESSAGE FROM AGENT (?:[^\n]+ )?\(agent-[0-9a-f-]+\)\](?:\n\n?|$)/;
 
 export function stripAgentMessageHeader(text: string): string {
   return text.replace(A2A_SENDER_HEADER, '');

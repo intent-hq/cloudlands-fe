@@ -511,10 +511,10 @@ describe('ChatMessage agent-to-agent sender attribution', () => {
         message: userMessage(
           {
             type: 'agent_message',
-            fromAgentId: 'agent-sender-1',
+            fromAgentId: 'agent-11111111-2222-3333-4444-555555555555',
             fromAgentName: 'Builder',
           },
-          '[MESSAGE FROM AGENT Builder (agent-sender-1)]\n\nhello from another agent',
+          '[MESSAGE FROM AGENT Builder (agent-11111111-2222-3333-4444-555555555555)]\n\nhello from another agent',
         ),
       },
     });
