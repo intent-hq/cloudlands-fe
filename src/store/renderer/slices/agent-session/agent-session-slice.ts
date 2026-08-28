@@ -1120,7 +1120,10 @@ export const agentSessionRetryFromStalledRequested = createAsyncAction<
   void
 >('agentSessions/retryFromStalled', 'agentSessions/retryFromStalledRequested');
 
-/** Saga-owned fork-session side effect trigger. Resolves with the forked agent id. */
+/**
+ * Saga-owned fork-session side effect trigger. Resolves with the forked agent id.
+ * @public not dispatched yet — reserved for the fork feature (intent-hq/intent#3729)
+ */
 export const agentSessionForkSessionRequested = createAsyncAction<
   [agentId: string, wsId: string, options?: AgentSessionForkOptions],
   string
