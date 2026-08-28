@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { AgentMessage } from '$shared/types';
+import { stripAgentMessageHeader } from '../agent-message-attribution';
 import {
   getPresentedUserMessageText,
   stripInternalDeliveryNotes,
@@ -71,6 +72,77 @@ describe('user-message presentation sanitization', () => {
 
     expect(getPresentedUserMessageText(message)).toBe('Review the attachment');
     expect(message.contentBlocks).toHaveLength(4);
+  });
+});
+
+// PROTOCOL.md §5.5 A2A sender header, exactly as intentd prepends it.
+const A2A_HEADER = '[MESSAGE FROM AGENT Research Agent (agent-1234)]';
+
+function agentMessage(text: string, metadata?: Record<string, unknown>): AgentMessage {
+  return {
+    id: 'agent-origin-message',
+    role: 'user',
+    timestamp: '2026-08-17T05:00:00Z',
+    contentBlocks: [{ type: 'text', text }],
+    metadata: metadata ?? {
+      type: 'agent_message',
+      fromAgentId: 'agent-1234',
+      fromAgentName: 'Research Agent',
+    },
+  } as AgentMessage;
+}
+
+describe('stripAgentMessageHeader', () => {
+  it('strips the header line and its blank-line separator', () => {
+    expect(stripAgentMessageHeader(`${A2A_HEADER}\n\nPlease review the diff.`)).toBe(
+      'Please review the diff.',
+    );
+  });
+
+  it('strips the name-absent header shape', () => {
+    expect(stripAgentMessageHeader('[MESSAGE FROM AGENT (agent-1234)]\n\nPing')).toBe('Ping');
+  });
+
+  it('strips a header constituting the whole string (empty body)', () => {
+    expect(stripAgentMessageHeader(A2A_HEADER)).toBe('');
+  });
+
+  it('returns text without the header unchanged', () => {
+    expect(stripAgentMessageHeader('plain agent message')).toBe('plain agent message');
+    expect(stripAgentMessageHeader(`Quoting:\n${A2A_HEADER}\ndone`)).toBe(
+      `Quoting:\n${A2A_HEADER}\ndone`,
+    );
+  });
+});
+
+describe('A2A sender header presentation', () => {
+  it('drops the header from attributed rows without mutating stored content', () => {
+    const message = agentMessage(`${A2A_HEADER}\n\nPlease review the diff.`);
+    const snapshot = structuredClone(message);
+
+    expect(getPresentedUserMessageText(message)).toBe('Please review the diff.');
+    expect(message).toEqual(snapshot);
+  });
+
+  it('renders attributed rows without the header byte-identically', () => {
+    expect(getPresentedUserMessageText(agentMessage('plain agent message'))).toBe(
+      'plain agent message',
+    );
+  });
+
+  it('keeps a matching first line on rows without agent_message metadata', () => {
+    const text = `${A2A_HEADER}\n\nUser-authored text.`;
+    expect(getPresentedUserMessageText(agentMessage(text, {}))).toBe(text);
+  });
+
+  it('strips the header alongside a trailing dequeue-wait note', () => {
+    const message = agentMessage(`${A2A_HEADER}\n\nShip it\n\n${WAIT_NOTE}`, {
+      type: 'agent_message',
+      fromAgentId: 'agent-1234',
+      fromAgentName: 'Research Agent',
+      queueInfo: { queuedAt: '2026-08-17T05:00:00.123456Z', waitedMs: 67_000 },
+    });
+    expect(getPresentedUserMessageText(message)).toBe('Ship it');
   });
 });
 
