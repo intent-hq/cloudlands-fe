@@ -1,10 +1,10 @@
 /**
  * Multi-backend connections registry (main process).
  *
- * Persists the set of remote intentd connections the user has paired with,
- * plus which backend is currently active, to a dedicated JSON file under
- * `app.getPath('userData')` — `backend-connections.json`, separate from
- * `local-prefs.json` so the two stores evolve independently.
+ * Persists the set of remote intentd connections the user has paired with to
+ * a dedicated JSON file under `app.getPath('userData')` —
+ * `backend-connections.json`, separate from `local-prefs.json` so the two
+ * stores evolve independently.
  *
  * The bearer token for each remote is encrypted at rest with Electron's
  * cross-platform `safeStorage` when `isEncryptionAvailable()` is true; when
@@ -14,7 +14,12 @@
  *
  * The local sidecar is not a persisted record: a synthetic, non-forgettable
  * "This machine (local)" entry (id `local`) is always synthesized as the
- * first item of `list()`, and `activeId` defaults to `local`.
+ * first item of `list()`. The file also carries the legacy `activeId` field
+ * (defaults to `local`) — Open-only: it no longer drives client routing. It
+ * is read primarily as a boot-time default (which session bucket restores
+ * first / the fallback backend for a fresh first window), plus a couple of
+ * legacy compat reads: the `connections:add` rebuild-if-active check (and its
+ * `switched` result field) and the browser-capture state-dir key.
  *
  * Writes are serialized behind a promise chain (mirroring `local-prefs.ts`)
  * so a mid-write reader sees either the old or new file, never a torn one.
@@ -639,15 +644,19 @@ export async function forget(id: string): Promise<void> {
   if (changed) notifyMutated();
 }
 
-/** The currently active backend id; defaults to `local`. */
+/**
+ * The legacy persisted `activeId`; defaults to `local`. Open-only: not a
+ * routing concept — read primarily as a boot-time default, plus a couple of
+ * legacy compat reads (see the file header).
+ */
 export async function getActiveId(): Promise<string> {
   const state = await readState();
   return state.activeId;
 }
 
 /**
- * Set the active backend. `local` is always valid; any other id must match a
- * persisted connection, else this rejects.
+ * Set the legacy persisted `activeId`. `local` is always valid; any other id
+ * must match a persisted connection, else this rejects.
  */
 export async function setActiveId(id: string): Promise<void> {
   await mutate((state) => {

@@ -1,15 +1,16 @@
 /**
  * HUD grid-filter persistence — restores the header FLEET OPS repo + status
  * filter per backend id on activation and persists every change, so the
- * selection survives app restarts and backend switches. Redux stays the
+ * selection survives app restarts and is kept per backend. Redux stays the
  * source of truth; this is a thin localStorage layer (`safeLocalStorage` via
  * the backend-scoped helpers) started/stopped by `startHudSubscription`.
  *
- * Hydration waits for the connections list (`hasReceivedList`) so the active
- * backend id is authoritative — the id can arrive after HUD mount, and backend
- * switches destroy/recreate the HUD window, so one hydration per start
- * suffices. Persisted values are sanitized on the way in: unknown status keys
- * are dropped and malformed payloads fall back to `EMPTY_HUD_GRID_FILTER`.
+ * Hydration waits for the connections list (`hasReceivedList`) so this
+ * window's backend id is authoritative — the id can arrive after HUD mount,
+ * and a HUD window is bound to one backend for its lifetime, so one hydration
+ * per start suffices. Persisted values are sanitized on the way in: unknown
+ * status keys are dropped and malformed payloads fall back to
+ * `EMPTY_HUD_GRID_FILTER`.
  */
 import { store as appStore } from '$store/renderer/store';
 import type { StoreState } from '$store/renderer/types';
@@ -96,10 +97,10 @@ export function startHudGridFilterPersistence(): () => void {
     const filter = state.hud.gridFilter;
     if (filter === lastSeen) return;
     lastSeen = filter;
-    // Defensive: a backend switch destroys/recreates the HUD window, so the
-    // active id should never change within one start — but if that invariant
-    // ever breaks (e.g. a web build where windows survive a switch), skip the
-    // write rather than land it under the stale backend's key.
+    // Defensive: a HUD window is bound to one backend for its lifetime, so
+    // the window's backend id should never change within one start — but if
+    // that invariant ever breaks (e.g. a web build), skip the write rather
+    // than land it under the stale backend's key.
     if (getActiveBackendId(state) !== backendId) return;
     persistHudGridFilter(backendId, filter);
   }

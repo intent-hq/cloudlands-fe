@@ -16,11 +16,12 @@
    * health === 'down', auto-dismisses when backend:status returns 'connected'
    * (resubscription on reconnect is handled by the existing RESUB-1 path — this
    * component issues no wire requests itself). Offers actionable recovery when
-   * the connection is down (T20): "Start local intentd" (offered in any
-   * external mode — it switches the active backend to local first, then spawns
-   * the app-managed sidecar) or the app-managed sidecar retry when the
-   * supervisor gave up restarting, plus a one-click switch to any other saved
-   * backend so the user can fail over without opening the daemon-status menu.
+   * the connection is down (T20, Open-only — no action retargets this window):
+   * "Start local intentd" in a local window (spawns the app-managed sidecar) /
+   * "Open local" in a remote window (spawns if needed and opens the local
+   * backend's windows), the sidecar retry when the supervisor gave up
+   * restarting, plus one-click Open actions for the other saved backends so
+   * the user can fail over without opening the daemon-status menu.
    */
   import { page } from '$app/stores';
   import { store as appStore } from '$store/renderer/store';
@@ -145,11 +146,12 @@
   // Actionable token-rejected posture: this window's remote backend rejected the
   // WebSocket upgrade with HTTP 401/403 (`connections:auth-rejected`), so
   // retrying with the same stored token cannot succeed. The overlay swaps the
-  // generic cannot-connect copy for a "re-pair or switch" state: no
-  // "Retrying…" indicator (it would be misleading), and a Re-pair button that
-  // opens the add-connection flow with host/port prefilled — re-adding the
-  // same host:port replaces the stored token, and the resulting add/switch
-  // clears the latched rejection (connectOperationStarted).
+  // generic cannot-connect copy for a re-pair state: no "Retrying…" indicator
+  // (it would be misleading), and a Re-pair button that opens the
+  // add-connection flow with host/port prefilled — re-adding the same
+  // host:port replaces the stored token and rebuilds the live client in
+  // place, and the fresh client clears the latched rejection
+  // (connectOperationStarted).
   const isAuthRejected = $derived($authRejected$ !== null);
   let repairModalOpen = $state(false);
 
