@@ -299,6 +299,17 @@ describe('AgentTabType specialist panel-actions menu item', () => {
     expect(separatorsAfterDelete()).toBe(1);
   });
 
+  it('falls back to the raw specialist id when the display-name lookup misses (AgentCard parity)', async () => {
+    seedSession({ metadata: { specialist: 'mystery-specialist' } });
+    renderTab();
+    await openPanelActionsMenu();
+
+    const item = await screen.findByText('Specialist: mystery-specialist');
+    const menuItem = item.closest('[role="menuitem"]');
+    expect(menuItem).not.toBeNull();
+    expect(menuItem!.getAttribute('aria-disabled')).toBe('true');
+  });
+
   it('omits the item entirely when the agent has no specialist', async () => {
     seedSession({ harnessVersion: '1.0' });
     renderTab();

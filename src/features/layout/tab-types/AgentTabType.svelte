@@ -96,14 +96,15 @@
 
   const agentMessages = $derived(agentSession?.messages || []);
 
-  // Get specialist display name
+  // Get specialist display name, falling back to the raw id when the
+  // lookup misses (parity with AgentCard).
   const agentSpecialistName = $derived.by(() => {
     void $specialists$;
     if (!tab.agentId) return null;
     const specialistId =
       agentSession?.metadata?.specialist || (agentSession as any)?.agentMetadata?.specialist;
     if (!specialistId) return null;
-    return selectSpecialistName.select(appStore.state, specialistId);
+    return selectSpecialistName.select(appStore.state, specialistId) ?? specialistId;
   });
 
   // Resolve "Delegated by" reactively once the parent session is loaded into Redux.
