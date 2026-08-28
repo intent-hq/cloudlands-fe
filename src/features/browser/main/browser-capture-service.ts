@@ -73,6 +73,10 @@ async function getCaptureRoot(workspaceId: string): Promise<string> {
   if (errors.length > 0) {
     throw new Error(`Invalid workspace ID: ${errors.join('. ')}`);
   }
+  // Deliberately keyed by the persisted activeId, NOT a window's backend id:
+  // captures are written to the LOCAL disk regardless of which backend the
+  // capturing window talks to, and this id only namespaces that on-disk state
+  // dir. Re-keying it per window would strand previously captured snapshots.
   const backendId = await getActiveId();
   return path.resolve(
     workspaceStateDir(workspaceId, backendId),

@@ -292,7 +292,13 @@ describe('DaemonStoppedOverlay', () => {
       isLocal: false,
     };
     render(DaemonStoppedOverlay);
-    appStore.dispatch(connectionsListReceived({ connections: [remote], activeId: 'conn-1' }));
+    appStore.dispatch(
+      connectionsListReceived({
+        connections: [remote],
+        activeId: 'conn-1',
+        windowBackendId: 'conn-1',
+      }),
+    );
     await showOverlay({ mode: 'external-ws', target: 'wss:192.168.1.20:5181' });
     const details = screen.getByTestId('daemon-stopped-connection-details');
     expect(details.textContent).toContain('Lost connection to studio.local (192.168.1.20:5181)');

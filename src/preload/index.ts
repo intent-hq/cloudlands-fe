@@ -542,7 +542,6 @@ const ALLOWED_CHANNELS = [
   "connections:cert-mismatch",
   "connections:protocol-mismatch",
   "connections:auth-rejected",
-  "connections:get-boot-fallback",
   "connections:sync-get-state",
   "connections:sync-set-enabled",
   "connections:sync-status-changed",

@@ -2556,7 +2556,6 @@
   "layout_daemonStatus_healthy_label": "intentd: healthy",
   "layout_daemonStatus_degraded_label": "intentd: degraded",
   "layout_daemonStatus_down_label": "intentd: not running",
-  "layout_daemonStatus_bootFallback_notice": "Couldn't reach {label}; using this machine.",
   "layout_daemonStatus_header": "Daemon Status",
   "layout_daemonStatus_status_label": "Status",
   "layout_daemonStatus_notRunning_label": "Not running",

@@ -366,7 +366,10 @@ describe('multi-backend connect — end-to-end journey', () => {
     expect(captureAndClose).toHaveBeenCalledWith('local');
     expect(restore).toHaveBeenCalledWith(remoteId);
 
-    const remoteConfig = mod.getBackendClient().getConfig() as Record<string, unknown>;
+    const remoteConfig = mod.getBackendClientForId(remoteId).getConfig() as Record<
+      string,
+      unknown
+    >;
     expect(remoteConfig).toMatchObject({
       transport: 'wss',
       host: '10.0.0.5',
@@ -378,10 +381,12 @@ describe('multi-backend connect — end-to-end journey', () => {
     // Active selection persisted through the real store.
     await expect(invoke('connections:list')).resolves.toMatchObject({ activeId: remoteId });
 
-    // Switch back to local: fast path, transport is no longer the pinned wss.
+    // Switch back to local: the remote's pooled client is torn down and the
+    // always-on local member (never a wss transport) serves local windows.
     await expect(invoke('connections:switch', { id: 'local' })).resolves.toEqual({
       activeId: 'local',
     });
+    expect(mod.getBackendClientForConnection(remoteId)).toBeUndefined();
     const localConfig = mod.getBackendClient().getConfig() as Record<string, unknown>;
     expect(localConfig.transport).not.toBe('wss');
     await expect(invoke('connections:list')).resolves.toMatchObject({ activeId: 'local' });
@@ -436,7 +441,7 @@ describe('multi-backend connect — end-to-end journey', () => {
     expect(restore).not.toHaveBeenCalled();
 
     // The rebuilt client carries the rotated token, and only one record remains.
-    const config = mod.getBackendClient().getConfig() as Record<string, unknown>;
+    const config = mod.getBackendClientForId('dup-2').getConfig() as Record<string, unknown>;
     expect(config).toMatchObject({ transport: 'wss', token: 'rotated-token' });
     const listed = await invoke<{ connections: Array<{ id: string }>; activeId: string }>(
       'connections:list',
@@ -465,7 +470,9 @@ describe('multi-backend connect — end-to-end journey', () => {
     await invoke('connections:switch', { id: remoteId }); // now pinned to the remote
 
     const { PinMismatchError } = await import('../backend-connection');
-    const client = mod.getBackendClient() as unknown as { emit(e: string, arg: unknown): void };
+    const client = mod.getBackendClientForId(remoteId) as unknown as {
+      emit(e: string, arg: unknown): void;
+    };
 
     // The pinned wss transport re-raises the mismatch on every reconnect retry;
     // the renderer must see exactly ONE blocking failure modal.
@@ -505,8 +512,9 @@ describe('multi-backend connect — notifications survive a switch (T9 guard)', 
     mod.onBackendStatus(onStatus);
     mod.onBackendReconnected(onReconnect);
 
-    // Pair a remote and run a full switch cycle: local → remote → local. Each
-    // hop disposes the live client and builds a fresh one.
+    // Pair a remote and run a full switch cycle: local → remote → local. The
+    // remote hop builds (and the switch-back disposes) the remote's pooled
+    // client; the local member persists throughout.
     await invoke('connections:capture-fingerprint', {
       host: REMOTE_INPUT.host,
       port: REMOTE_INPUT.port,
@@ -520,9 +528,9 @@ describe('multi-backend connect — notifications survive a switch (T9 guard)', 
     await invoke('connections:switch', { id: added.connection.id });
     await invoke('connections:switch', { id: 'local' });
 
-    // Each switch nudges the reconnect forwarder once so services resubscribe
-    // against the new target.
-    expect(onReconnect).toHaveBeenCalledTimes(2);
+    // The switch back to local nudges the (local-scoped) reconnect forwarder
+    // once so services resubscribe against it.
+    expect(onReconnect).toHaveBeenCalledTimes(1);
 
     // The four representative daemon event kinds must still reach the handler
     // that was registered BEFORE any client swap — on the current (post-switch)

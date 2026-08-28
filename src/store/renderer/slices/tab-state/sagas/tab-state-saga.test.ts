@@ -48,13 +48,13 @@ const state = {
     workspaceStacks: [['ws-1']],
   },
   workspace: { hasLoaded: true },
-  connections: { activeId: LOCAL_CONNECTION_ID },
+  connections: { activeId: LOCAL_CONNECTION_ID, windowBackendId: LOCAL_CONNECTION_ID },
 };
 
 const REMOTE_ID = 'remote-1';
 const REMOTE_TABS_KEY = `backend:${REMOTE_ID}:${WORKSPACE_TABS_STORAGE_KEY}`;
 const REMOTE_SCROLL_KEY = `backend:${REMOTE_ID}:${TAB_SCROLL_POSITIONS_STORAGE_KEY}`;
-const remoteState = { ...state, connections: { activeId: REMOTE_ID } };
+const remoteState = { ...state, connections: { activeId: REMOTE_ID, windowBackendId: REMOTE_ID } };
 
 const settle = async () => {
   await Promise.resolve();
@@ -131,7 +131,7 @@ describe('tabStateSaga', () => {
       dispatch.mockClear();
 
       current = remoteState;
-      channel.put(connectionsListReceived({ connections: [], activeId: REMOTE_ID }));
+      channel.put(connectionsListReceived({ connections: [], activeId: REMOTE_ID, windowBackendId: REMOTE_ID }));
       await settle();
 
       expect(dispatch.mock.calls.map(([action]) => action)).toEqual([
@@ -153,7 +153,7 @@ describe('tabStateSaga', () => {
         {
           channel,
           dispatch,
-          getState: () => ({ ...state, connections: { activeId: backendId } }),
+          getState: () => ({ ...state, connections: { activeId: backendId, windowBackendId: backendId } }),
         },
         tabStateSaga,
       );
@@ -171,7 +171,7 @@ describe('tabStateSaga', () => {
 
       backendId = 'remote-backend';
       dispatch.mockClear();
-      channel.put(connectionsListReceived({ connections: [], activeId: 'remote-backend' }));
+      channel.put(connectionsListReceived({ connections: [], activeId: 'remote-backend', windowBackendId: 'remote-backend' }));
       await new Promise(setImmediate);
 
       const loadActions = dispatch.mock.calls.filter(

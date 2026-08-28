@@ -46,7 +46,7 @@
   } from '$store/renderer/slices/daemon-health/daemon-health-slice';
   import {
     selectConnections,
-    selectActiveConnectionId,
+    selectCurrentConnectionId,
     selectIsConnecting,
     selectActiveAuthRejected,
   } from '$store/renderer/slices/connections/connections-selectors';
@@ -71,7 +71,7 @@
   const runLogPending$ = selectSidecarRunLogPending();
   const runLogError$ = selectSidecarRunLogError();
   const connections$ = selectConnections();
-  const activeConnectionId$ = selectActiveConnectionId();
+  const activeConnectionId$ = selectCurrentConnectionId();
   const isConnecting$ = selectIsConnecting();
   const authRejected$ = selectActiveAuthRejected();
 
@@ -133,12 +133,12 @@
 
   // Other saved backends the user can fail over to without opening the menu
   // (T20). Excludes the local entry — "Start local intentd" is its dedicated
-  // action — and the currently-active connection (switching to it is a no-op).
+  // action — and this window's own backend (switching to it is a no-op).
   const otherConnections = $derived(
     $connections$.filter((c) => !c.isLocal && c.id !== $activeConnectionId$),
   );
 
-  // Actionable token-rejected posture: the active remote backend rejected the
+  // Actionable token-rejected posture: this window's remote backend rejected the
   // WebSocket upgrade with HTTP 401/403 (`connections:auth-rejected`), so
   // retrying with the same stored token cannot succeed. The overlay swaps the
   // generic cannot-connect copy for a "re-pair or switch" state: no
@@ -158,11 +158,11 @@
     return conn.label;
   }
 
-  // Connection details for the lost external daemon (#1750): prefer the active
-  // connection record's `hostname (host:port)` label (captured from host.status
-  // on first connect); fall back to the transport target (sanitized WS URL or
-  // UDS socket path) when the active connection is the local entry (external-uds
-  // adoption) or the record has not loaded.
+  // Connection details for the lost external daemon (#1750): prefer this
+  // window's connection record's `hostname (host:port)` label (captured from
+  // host.status on first connect); fall back to the transport target (sanitized
+  // WS URL or UDS socket path) when the window's backend is the local entry
+  // (external-uds adoption) or the record has not loaded.
   const activeConnection = $derived(
     $connections$.find((c) => c.id === $activeConnectionId$) ?? null,
   );
@@ -172,9 +172,9 @@
   });
 
   function handleSpawnSidecar() {
-    // In external/remote mode the active target is a remote backend; the
-    // on-demand sidecar binds the local UDS socket, so we must switch active →
-    // local first (making that UDS the reconnect target) before spawning.
+    // When this window targets a remote backend, the on-demand sidecar binds
+    // the local UDS socket, so we must switch the window to local first
+    // (making that UDS the reconnect target) before spawning.
     //
     // The switch destroys THIS window (captureAndCloseWindowsForBackendSwitch)
     // before the switch IPC returns, so a renderer continuation that dispatched

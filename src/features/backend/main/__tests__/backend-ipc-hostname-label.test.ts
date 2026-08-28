@@ -256,6 +256,13 @@ describe('switchBackend serialization (monorepo#2221)', () => {
 
   it('a slow previous backend never overwrites the new backend label; the live client ends on B', async () => {
     store.list.mockResolvedValue([LOCAL, REMOTE, REMOTE_B]);
+    // Track the persisted active id so each switch sees the real outgoing
+    // backend and disposes its pooled client.
+    let activeId = 'local';
+    store.getActiveId.mockImplementation(async () => activeId);
+    store.setActiveId.mockImplementation(async (id: string) => {
+      activeId = id;
+    });
 
     // Backend A (remote-1) answers `host.status` only when the test says so;
     // backend B (remote-2) answers immediately with its own hostname.
@@ -299,9 +306,11 @@ describe('switchBackend serialization (monorepo#2221)', () => {
     await new Promise((r) => setTimeout(r, 0));
     expect(store.setHostname).not.toHaveBeenCalledWith('remote-2', 'alpha.local');
 
-    // The live client and the pinned connection identity both target B.
-    expect((mod.getBackendClient().getConfig() as { host?: string }).host).toBe('10.0.0.6');
-    expect(mod.__getActiveConnectionMetaForTesting()?.id).toBe('remote-2');
+    // B's pooled client is live and targets B; A's client is torn down.
+    expect((mod.getBackendClientForId('remote-2').getConfig() as { host?: string }).host).toBe(
+      '10.0.0.6',
+    );
+    expect(mod.getBackendClientForConnection('remote-1')).toBeUndefined();
   });
 });
 
@@ -325,6 +334,12 @@ describe('captureRemoteHostname stale-completion guard (monorepo#2221)', () => {
 
   it('discards a host.status result that arrives after the active connection switched away', async () => {
     store.list.mockResolvedValue([LOCAL, REMOTE, REMOTE_B]);
+    // Track the persisted active id so the second switch disposes A's client.
+    let activeId = 'local';
+    store.getActiveId.mockImplementation(async () => activeId);
+    store.setActiveId.mockImplementation(async (id: string) => {
+      activeId = id;
+    });
 
     // Backend A (remote-1) answers `host.status` only when the test says so;
     // backend B (remote-2) answers immediately with its own hostname.

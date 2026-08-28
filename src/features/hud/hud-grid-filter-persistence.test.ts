@@ -53,12 +53,13 @@ function remote(id: string): ConnectionRecord {
   return { id, label: id, host: '10.0.0.5', port: 4443, fingerprint: 'AA:BB', isLocal: false };
 }
 
-/** Dispatch a connections:list result making `activeId` the active backend. */
-function receiveConnections(activeId: string): void {
+/** Dispatch a connections:list result binding this window to `backendId`. */
+function receiveConnections(backendId: string): void {
   appStore.dispatch(
     connectionsListReceived({
       connections: [LOCAL, remote('remote-1'), remote('remote-2')],
-      activeId,
+      activeId: backendId,
+      windowBackendId: backendId,
     }),
   );
 }

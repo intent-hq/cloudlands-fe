@@ -322,7 +322,7 @@ afterEach(() => {
 // ---------------------------------------------------------------------------
 
 describe('switchBackend teardown-before-connect', () => {
-  it('captures+closes old windows, disposes the old client, then connects + restores', async () => {
+  it('captures+closes old windows, keeps local connected, then connects + restores', async () => {
     const { mod, captureAndClose, restore } = await loadModule();
     mod.getBackendClient(); // client #1 (local)
     expect(lifecycle.events).toEqual([
@@ -333,14 +333,14 @@ describe('switchBackend teardown-before-connect', () => {
     const result = await mod.switchBackend('remote-1');
     expect(result).toEqual({ activeId: 'remote-1' });
 
-    // Ordering: capture+close the OLD windows, dispose(#1) BEFORE the new client
-    // is constructed/started, and restore the NEW windows only after the swap.
+    // Ordering: capture+close the OLD windows, then construct/start the new
+    // client, and restore the NEW windows only after the connect. The local
+    // pool member (#1) is never disposed — main-process services stay on it.
     const kinds = lifecycle.events.map((e) => `${e.type}#${e.seq}`);
     expect(kinds).toEqual([
       'construct#1',
       'start#1',
       'capture#0',
-      'dispose#1',
       'construct#2',
       'start#2',
       'restore#0',
@@ -392,8 +392,8 @@ describe('pinned-cert mismatch propagation', () => {
     const { mod } = await loadModule();
     const { PinMismatchError } = await import('../backend-connection');
 
-    await mod.switchBackend('remote-1'); // now pinned to REMOTE
-    const client = mod.getBackendClient() as unknown as {
+    await mod.switchBackend('remote-1'); // remote-1's pooled client is live
+    const client = mod.getBackendClientForId('remote-1') as unknown as {
       emit(event: string, arg: unknown): void;
     };
 
@@ -418,7 +418,7 @@ describe('pinned-cert mismatch propagation', () => {
     const send = installWindow('remote-1');
     const { mod } = await loadModule();
     await mod.switchBackend('remote-1');
-    const client = mod.getBackendClient() as unknown as {
+    const client = mod.getBackendClientForId('remote-1') as unknown as {
       emit(event: string, arg: unknown): void;
     };
 
@@ -477,8 +477,8 @@ describe('WSS auth-rejection propagation', () => {
     const { mod } = await loadModule();
     const { AuthRejectedError } = await import('../backend-connection');
 
-    await mod.switchBackend('remote-1'); // now pinned to REMOTE
-    const client = mod.getBackendClient() as unknown as {
+    await mod.switchBackend('remote-1'); // remote-1's pooled client is live
+    const client = mod.getBackendClientForId('remote-1') as unknown as {
       emit(event: string, arg: unknown): void;
     };
 
@@ -505,7 +505,7 @@ describe('WSS auth-rejection propagation', () => {
     mod.registerBackendHandlers();
 
     await mod.switchBackend('remote-1');
-    const client = mod.getBackendClient() as unknown as {
+    const client = mod.getBackendClientForId('remote-1') as unknown as {
       emit(event: string, arg: unknown): void;
     };
     client.emit('error', new AuthRejectedError(401));
@@ -536,7 +536,7 @@ describe('WSS auth-rejection propagation', () => {
     const { AuthRejectedError } = await import('../backend-connection');
 
     await mod.switchBackend('remote-1');
-    const client = mod.getBackendClient() as unknown as {
+    const client = mod.getBackendClientForId('remote-1') as unknown as {
       emit(event: string, arg: unknown): void;
     };
 
@@ -553,7 +553,7 @@ describe('WSS auth-rejection propagation', () => {
     const { AuthRejectedError } = await import('../backend-connection');
 
     await mod.switchBackend('remote-1');
-    let client = mod.getBackendClient() as unknown as {
+    let client = mod.getBackendClientForId('remote-1') as unknown as {
       emit(event: string, arg: unknown): void;
     };
     client.emit('error', new AuthRejectedError(401));
@@ -561,7 +561,9 @@ describe('WSS auth-rejection propagation', () => {
 
     // A switch disposes the old client and builds a fresh one → latch resets.
     await mod.switchBackend('remote-1');
-    client = mod.getBackendClient() as unknown as { emit(event: string, arg: unknown): void };
+    client = mod.getBackendClientForId('remote-1') as unknown as {
+      emit(event: string, arg: unknown): void;
+    };
     client.emit('error', new AuthRejectedError(401));
     expect(send.mock.calls.filter(([c]) => c === 'connections:auth-rejected')).toHaveLength(2);
   });
@@ -570,7 +572,7 @@ describe('WSS auth-rejection propagation', () => {
     const send = installWindow('remote-1');
     const { mod } = await loadModule();
     await mod.switchBackend('remote-1');
-    const client = mod.getBackendClient() as unknown as {
+    const client = mod.getBackendClientForId('remote-1') as unknown as {
       emit(event: string, arg: unknown): void;
     };
 
@@ -879,7 +881,8 @@ describe('connections:* IPC handlers', () => {
     store.getActiveId.mockResolvedValue('remote-1');
     const send = installWindow();
     const { mod, captureAndClose, restore } = await loadModule();
-    mod.getBackendClient(); // client #1 (pinned to whatever was live)
+    mod.getBackendClient(); // warm the always-on local pool member
+    await mod.connectBackendClient('remote-1'); // the active target's pooled client is live
     mod.registerBackendHandlers();
     const handler = findHandler('connections:add');
     lifecycle.events = [];
@@ -973,12 +976,13 @@ describe('connections:* IPC handlers', () => {
     expect(send.mock.calls.some(([c]) => c === 'connections:changed')).toBe(true);
   });
 
-  it('connections:forget of the active connection retargets primary without global teardown', async () => {
+  it('connections:forget of the active connection disposes only its pooled client', async () => {
     store.getActiveId.mockResolvedValue('remote-1');
     store.forget.mockResolvedValue(undefined);
     installWindow();
     const { mod, captureAndClose, restore, ensureLocalWindowBeforeClose, closeForBackend } =
       await loadModule();
+    const local = mod.getBackendClient(); // the always-on local pool member
     await mod.switchBackend('remote-1');
     lifecycle.events = [];
     captureAndClose.mockClear();
@@ -996,8 +1000,9 @@ describe('connections:* IPC handlers', () => {
     expect(captureAndClose).not.toHaveBeenCalled();
     expect(restore).not.toHaveBeenCalled();
     expect(mod.getBackendClientForConnection('remote-1')).toBeUndefined();
-    expect(mod.getBackendClientForConnection('local')).toBe(mod.getBackendClient());
-    expect(lifecycle.events.map((event) => event.type)).toEqual(['dispose', 'construct', 'start']);
+    // The local pool member survives untouched — no retarget/rebuild needed.
+    expect(mod.getBackendClientForConnection('local')).toBe(local);
+    expect(lifecycle.events.map((event) => event.type)).toEqual(['dispose']);
   });
 
   it('connections:switch routes through switchBackend', async () => {
@@ -1273,16 +1278,18 @@ describe('self-publish IPC', () => {
     expect(store.add).not.toHaveBeenCalled();
   });
 
-  it('connections:publish-self rejects when a remote backend is active (no local client)', async () => {
+  it('connections:publish-self works while a remote backend is active (pooled local client)', async () => {
     installPairingInfo();
+    store.add.mockResolvedValue(SELF_RECORD);
     const { mod } = await loadModule();
-    await mod.switchBackend('remote-1'); // whole app pinned to the remote
+    await mod.switchBackend('remote-1'); // remote windows active; local member persists
     mod.registerBackendHandlers();
 
-    await expect(findHandler('connections:publish-self')!({}, undefined)).rejects.toThrow(
-      /local backend is not connected/i,
-    );
-    expect(store.add).not.toHaveBeenCalled();
+    const result = (await findHandler('connections:publish-self')!({}, undefined)) as {
+      connection: { id: string };
+    };
+    expect(result.connection.id).toBe('self-1');
+    expect(store.add).toHaveBeenCalled();
   });
 
   it('connections:self-published-state matches a record by the live fingerprint', async () => {
@@ -1616,17 +1623,18 @@ describe('self-entry refresh IPC', () => {
     expect(store.add).not.toHaveBeenCalled();
   });
 
-  it('is a no-op when a remote backend is active (no local client)', async () => {
+  it('refreshes via the pooled local client even while a remote backend is active', async () => {
     installPairingInfo();
+    store.add.mockResolvedValue(SELF_RECORD);
     store.list.mockResolvedValue([LOCAL, { ...REMOTE, fingerprint: '11:22:33:44' }]);
     const { mod } = await loadModule();
-    await mod.switchBackend('remote-1'); // whole app pinned to the remote
+    await mod.switchBackend('remote-1'); // remote windows active; local member persists
     mod.registerBackendHandlers();
 
     const result = await findHandler('connections:refresh-self')!({}, undefined);
 
-    expect(result).toEqual({ refreshed: false });
-    expect(store.add).not.toHaveBeenCalled();
+    expect(result).toEqual({ refreshed: true });
+    expect(store.add).toHaveBeenCalled();
   });
 });
 
@@ -1930,7 +1938,10 @@ describe('multi-host candidates (#1746)', () => {
     store.list.mockResolvedValue([LOCAL, { ...REMOTE, hosts: ['10.0.0.5', '192.168.1.5'] }]);
     const { mod } = await loadModule();
     await mod.switchBackend('remote-1');
-    const config = mod.getBackendClient().getConfig() as { host?: string; hosts?: string[] };
+    const config = mod.getBackendClientForId('remote-1').getConfig() as {
+      host?: string;
+      hosts?: string[];
+    };
     expect(config.host).toBe('10.0.0.5');
     expect(config.hosts).toEqual(['10.0.0.5', '192.168.1.5']);
   });
@@ -1938,7 +1949,7 @@ describe('multi-host candidates (#1746)', () => {
   it('switchBackend falls back to a one-element host list for records without hosts', async () => {
     const { mod } = await loadModule();
     await mod.switchBackend('remote-1');
-    const config = mod.getBackendClient().getConfig() as { hosts?: string[] };
+    const config = mod.getBackendClientForId('remote-1').getConfig() as { hosts?: string[] };
     expect(config.hosts).toEqual(['10.0.0.5']);
   });
 
@@ -1963,9 +1974,14 @@ describe('multi-host candidates (#1746)', () => {
     const { mod } = await loadModule();
     await mod.switchBackend('remote-1');
 
-    // The hostname capture still runs, but no pairingInfo call and no setHosts.
-    await vi.waitFor(() => expect(rpc.calls).toContain('host.status'));
-    expect(rpc.calls).not.toContain('server.pairingInfo');
+    // The hostname capture still runs, but no pairingInfo call on the remote
+    // client and no setHosts. (The local pool member's own self-fingerprint
+    // probe may issue server.pairingInfo — that one targets local.)
+    const remoteRequest = vi.mocked(mod.getBackendClientForId('remote-1').request);
+    await vi.waitFor(() =>
+      expect(remoteRequest.mock.calls.map(([m]) => m)).toContain('host.status'),
+    );
+    expect(remoteRequest.mock.calls.map(([m]) => m)).not.toContain('server.pairingInfo');
     expect(store.setHosts).not.toHaveBeenCalled();
   });
 
@@ -1994,8 +2010,15 @@ describe('multi-host candidates (#1746)', () => {
     expect(store.setHosts).not.toHaveBeenCalled();
   });
 
-  it('drops a pairingInfo result that lands after a switch to another backend', async () => {
+  it('drops a pairingInfo result that lands after its pooled client was torn down', async () => {
     installWindow();
+    // Track the persisted active id so the second switch sees remote-1 as the
+    // outgoing backend and disposes its pooled client mid-flight.
+    let activeId = 'local';
+    store.getActiveId.mockImplementation(async () => activeId);
+    store.setActiveId.mockImplementation(async (id: string) => {
+      activeId = id;
+    });
     // Hold the pairingInfo answer open until the test releases it.
     let releasePairingInfo!: () => void;
     const gate = new Promise<void>((resolve) => (releasePairingInfo = resolve));
@@ -2010,7 +2033,7 @@ describe('multi-host candidates (#1746)', () => {
     await mod.switchBackend('remote-1');
     await vi.waitFor(() => expect(rpc.calls).toContain('server.pairingInfo'));
 
-    // The active backend changes while the refresh is still in flight…
+    // remote-1's pooled client is disposed while the refresh is still in flight…
     await mod.switchBackend('local');
     releasePairingInfo();
 
@@ -2220,41 +2243,6 @@ describe('backend client pool', () => {
     expect(mod.getBackendClient()).toBe(local);
     expect(mod.getBackendClientForConnection('local')).toBe(local);
     expect(mod.getBackendClientForConnection('remote-1')).toBeUndefined();
-  });
-
-  it('retargets the primary to local when the disconnected backend owns the compatibility client', async () => {
-    // Boot-restored persisted remote: the primary/compatibility client is
-    // pinned to the remote (activeConnectionMeta set), then its last window
-    // closes. Disposal must clear the remote pin and rebuild a local primary —
-    // otherwise the next lazy getBackendClient() would re-dial the window-less
-    // remote and recreate the reconnect/heartbeat timers.
-    const { mod } = await loadModule();
-    mod.__setActiveConnectionMetaForTesting({ id: 'remote-1', host: '10.0.0.5', port: 8443 });
-    const remotePrimary = mod.getBackendClient();
-    expect(mod.getBackendClientForConnection('remote-1')).toBe(remotePrimary);
-    const onLocalReconnect = vi.fn();
-    mod.onBackendReconnected(onLocalReconnect, 'local');
-    lifecycle.events = [];
-    vi.mocked(app.emit).mockClear();
-
-    mod.disconnectBackendClient('remote-1');
-
-    // Old remote primary disposed, fresh local primary constructed + started.
-    expect(lifecycle.events.map((event) => event.type)).toEqual(['dispose', 'construct', 'start']);
-    expect(vi.mocked(app.emit)).toHaveBeenCalledWith(
-      mod.BACKEND_CLIENT_DISCONNECTED_EVENT,
-      remotePrimary,
-    );
-    expect(vi.mocked(app.emit)).toHaveBeenCalledWith('backend-connection-changed');
-    expect(onLocalReconnect).toHaveBeenCalledTimes(1);
-    // The remote pin is cleared: the rebuilt primary is local, not the remote.
-    expect(mod.__getActiveConnectionMetaForTesting()).toBeNull();
-    expect(mod.getBackendClientForConnection('remote-1')).toBeUndefined();
-    const rebuilt = mod.getBackendClient();
-    expect(rebuilt).not.toBe(remotePrimary);
-    expect(mod.getBackendClientForConnection('local')).toBe(rebuilt);
-    // No further construction on subsequent calls (the rebuild is stable).
-    expect(mod.getBackendClient()).toBe(rebuilt);
   });
 
   it('scopes main-process reconnect listeners to their backend', async () => {
