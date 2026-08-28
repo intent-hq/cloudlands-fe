@@ -1,6 +1,6 @@
 export type WorkspaceSessionPhase = 'hydrated' | 'opened' | 'live';
 
-export type WorkspaceLoadStatus =
+type WorkspaceLoadStatus =
   'idle' | 'loading' | 'cached-ready' | 'optimistic' | 'ready' | 'not-found' | 'error';
 
 export interface WorkspaceLoadError {

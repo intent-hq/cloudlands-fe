@@ -3,7 +3,7 @@ import type { Workspace } from '$shared/types';
 import { getItem } from '@augmentcode/themis/utils/collections/collection-utils';
 import type { WorkspaceLoadError, WorkspaceLoadState } from './workspace-lifecycle-types';
 
-export const INITIAL_WORKSPACE_LOAD_STATE: WorkspaceLoadState = {
+const INITIAL_WORKSPACE_LOAD_STATE: WorkspaceLoadState = {
   status: 'idle',
   error: null,
 };
@@ -27,7 +27,7 @@ export const selectWorkspaceLoadResult = store.createSelector<
   );
 });
 
-export const selectWorkspaceSessionPhase = store.createSelector<[wsId: string]>(
+const selectWorkspaceSessionPhase = store.createSelector<[wsId: string]>(
   (state, wsId) => state.workspaceLifecycle.sessionPhaseByWorkspaceId[wsId],
 );
 

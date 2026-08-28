@@ -16,6 +16,7 @@ import {
   workspaceLoadRequested,
   workspaceLifecycleReducer,
   workspaceMounted,
+  workspaceOpenFailed,
   workspaceOpenSucceeded,
 } from '../workspace-lifecycle-slice';
 import { workspaceLoadSaga } from './workspace-load-saga';
@@ -283,18 +284,89 @@ describe('workspaceLoadSaga', () => {
     mocks.open.mockResolvedValue({ ok: false, error: 'Workspace not found' });
     const run = createHarness({ cached, openTab: true });
 
+    vi.useFakeTimers();
+    try {
+      run.dispatch(workspaceLoadRequested(cached.id));
+      await settle();
+
+      expect(mocks.open).toHaveBeenCalledTimes(1);
+      expect(run.actions).toContainEqual({
+        type: 'workspace/loadWorkspacesRequested',
+        payload: [],
+      });
+
+      await vi.advanceTimersByTimeAsync(499);
+      await settle();
+      expect(mocks.open).toHaveBeenCalledTimes(1);
+
+      await vi.advanceTimersByTimeAsync(1);
+      await settle();
+      expect(mocks.open).toHaveBeenCalledTimes(2);
+      expect(run.getState().workspace.workspaces.ids).not.toContain(cached.id);
+      expect(run.getState().tabState.openTabs[cached.id]).toBeFalsy();
+      expect(run.getState().workspaceLifecycle.loadByWorkspaceId[cached.id]).toEqual({
+        status: 'not-found',
+        error: { kind: 'not_found', message: 'Workspace not found' },
+      });
+    } finally {
+      await stop(run.task);
+      vi.useRealTimers();
+    }
+  });
+
+  it('retains cached-ready presentation when a generic open failure is returned', async () => {
+    const cached = workspace('cached-flaky-space');
+    mocks.open.mockResolvedValueOnce({ ok: false, error: 'Backend unavailable' });
+    const run = createHarness({ cached });
+
     run.dispatch(workspaceLoadRequested(cached.id));
     await settle();
 
-    expect(mocks.open).toHaveBeenCalledTimes(2);
-    expect(run.actions).toContainEqual({ type: 'workspace/loadWorkspacesRequested', payload: [] });
-    expect(run.getState().workspace.workspaces.ids).not.toContain(cached.id);
-    expect(run.getState().tabState.openTabs[cached.id]).toBeFalsy();
+    expect(mocks.open).toHaveBeenCalledExactlyOnceWith(cached.id);
     expect(run.getState().workspaceLifecycle.loadByWorkspaceId[cached.id]).toEqual({
-      status: 'not-found',
-      error: { kind: 'not_found', message: 'Workspace not found' },
+      status: 'cached-ready',
+      error: null,
+    });
+    expect(selectWorkspaceById.select(run.getState() as never, cached.id)).toMatchObject(cached);
+    expect(run.actions).toContainEqual(workspaceOpenFailed(cached.id));
+    expect(run.actions).not.toContainEqual({
+      type: 'workspace-lifecycle/workspaceLoadFailed',
+      payload: [cached.id, { kind: 'error', message: 'Backend unavailable' }],
     });
     await stop(run.task);
+  });
+
+  it('allows a refreshed workspace to recover from a transient not-found after the delay', async () => {
+    const recovered = workspace('transient-space');
+    mocks.open
+      .mockResolvedValueOnce({ ok: false, error: 'Workspace not found' })
+      .mockResolvedValueOnce({ ok: true, data: recovered });
+    const run = createHarness({ cached: recovered });
+
+    vi.useFakeTimers();
+    try {
+      run.dispatch(workspaceLoadRequested(recovered.id));
+      await settle();
+
+      expect(mocks.open).toHaveBeenCalledTimes(1);
+      expect(run.getState().workspace.workspaces.ids).toContain(recovered.id);
+
+      await vi.advanceTimersByTimeAsync(500);
+      await settle();
+
+      expect(mocks.open).toHaveBeenCalledTimes(2);
+      expect(mocks.open.mock.calls).toEqual([[recovered.id], [recovered.id]]);
+      expect(run.getState().workspaceLifecycle.loadByWorkspaceId[recovered.id]).toEqual({
+        status: 'ready',
+        error: null,
+      });
+      expect(selectWorkspaceById.select(run.getState() as never, recovered.id)).toMatchObject(
+        recovered,
+      );
+    } finally {
+      await stop(run.task);
+      vi.useRealTimers();
+    }
   });
 
   it('recovers from failure and reloads a deleted then recreated workspace', async () => {

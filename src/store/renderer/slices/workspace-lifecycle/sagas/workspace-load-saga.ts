@@ -1,5 +1,5 @@
 import type { Task } from 'redux-saga';
-import { call, cancel, fork, put, select, take, type SagaGenerator } from 'typed-redux-saga';
+import { call, cancel, delay, fork, put, select, take, type SagaGenerator } from 'typed-redux-saga';
 
 import { workspaceClient } from '../../workspace/utils/workspace.client';
 import {
@@ -27,6 +27,8 @@ import {
   selectIsWorkspaceSessionLive,
   selectWorkspaceLoadState,
 } from '../workspace-lifecycle-selectors';
+
+const NOT_FOUND_RETRY_DELAY_MS = 500;
 
 function isNotFoundError(error: string): boolean {
   const normalized = error
@@ -67,6 +69,8 @@ function* loadWorkspace(action: ReturnType<typeof workspaceLoadRequested>): Saga
     if (yield* isLoadInvalidated(workspaceId)) return;
     if (!result.ok && isNotFoundError(result.error)) {
       yield* put(loadWorkspacesRequested());
+      yield* delay(NOT_FOUND_RETRY_DELAY_MS);
+      if (yield* isLoadInvalidated(workspaceId)) return;
       result = yield* call([workspaceClient, workspaceClient.open], WorkspaceId(workspaceId));
       if (yield* isLoadInvalidated(workspaceId)) return;
     }
@@ -76,6 +80,9 @@ function* loadWorkspace(action: ReturnType<typeof workspaceLoadRequested>): Saga
       if (notFound) {
         yield* put(closeWorkspaceTab(workspaceId));
         yield* put(removeWorkspaceEntity(workspaceId));
+      } else if (cached) {
+        yield* put(workspaceOpenFailed(workspaceId));
+        return;
       }
       yield* put(
         workspaceLoadFailed(workspaceId, {
@@ -110,6 +117,10 @@ function* loadWorkspace(action: ReturnType<typeof workspaceLoadRequested>): Saga
     yield* put(workspaceLoadSucceeded(workspaceId));
   } catch (error) {
     if (yield* isLoadInvalidated(workspaceId)) return;
+    if (cached) {
+      yield* put(workspaceOpenFailed(workspaceId));
+      return;
+    }
     yield* put(workspaceLoadFailed(workspaceId, { kind: 'error', message: errorMessage(error) }));
     yield* put(workspaceOpenFailed(workspaceId));
   }
