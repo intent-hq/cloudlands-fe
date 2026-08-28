@@ -5594,6 +5594,8 @@
   "specialists_builtin_prReviewer_description": "確度の高い実用的なフィードバックでプルリクエストをレビューします",
   "specialists_builtin_uiDesigner_name": "UI デザイナー",
   "specialists_builtin_uiDesigner_description": "エレガントでアクセシブルな、本番環境に対応したユーザーインターフェースを作成します",
+  "specialists_builtin_vulnerabilityScanner_name": "脆弱性スキャナー",
+  "specialists_builtin_vulnerabilityScanner_description": "コード内の現実に悪用可能なセキュリティ脆弱性を検出します",
   "specialists_builtin_developer_name": "開発者",
   "specialists_builtin_developer_description": "計画、実装、検証をすべて 1 つのエージェントで行います",
   "specialists_builtin_chiefOfStaff_name": "チーフ・オブ・スタッフ",

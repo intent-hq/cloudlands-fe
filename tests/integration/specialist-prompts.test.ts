@@ -47,14 +47,15 @@ describe('Specialist Prompts Verification', () => {
   });
 
   describe('Specialist Definitions', () => {
-    it('should have exactly 7 specialists defined', () => {
-      expect(SPECIALISTS).toHaveLength(7);
+    it('should have exactly 8 specialists defined', () => {
+      expect(SPECIALISTS).toHaveLength(8);
       expect(SPECIALISTS.map((s) => s.id)).toEqual([
         'spec-writer',
         'implementor',
         'verifier',
         'pr-reviewer',
         'ui-designer',
+        'vulnerability-scanner',
         'developer',
         'chief-of-staff',
       ]);
@@ -187,6 +188,9 @@ describe('Specialist Prompts Verification', () => {
       // All specialists should be included so agents know about them
       expect(formatted).toContain('Coordinator');
       expect(formatted).toContain('spec-writer');
+      expect(formatted).toContain(
+        '| **Vulnerability Scanner** | `vulnerability-scanner` | Finds real, exploitable security vulnerabilities in code |',
+      );
     });
 
     it('should include usage examples', async () => {

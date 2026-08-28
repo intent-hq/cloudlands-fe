@@ -5594,6 +5594,8 @@
   "specialists_builtin_prReviewer_description": "Revisa pull requests con comentarios fiables y accionables",
   "specialists_builtin_uiDesigner_name": "Diseñador de UI",
   "specialists_builtin_uiDesigner_description": "Crea interfaces de usuario elegantes, accesibles y listas para producción",
+  "specialists_builtin_vulnerabilityScanner_name": "Escáner de vulnerabilidades",
+  "specialists_builtin_vulnerabilityScanner_description": "Encuentra vulnerabilidades de seguridad reales y explotables en el código",
   "specialists_builtin_developer_name": "Desarrollador",
   "specialists_builtin_developer_description": "Planifica, implementa y verifica: todo en un solo agente",
   "specialists_builtin_chiefOfStaff_name": "Jefe de gabinete",

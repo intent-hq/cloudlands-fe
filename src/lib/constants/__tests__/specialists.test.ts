@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
@@ -6,6 +7,45 @@ import { describe, expect, it } from 'vitest';
 import { getSpecialistById } from '../specialists';
 
 describe('SPECIALISTS', () => {
+  it('defines the Vulnerability Scanner fallback metadata and prompt', () => {
+    const specialist = getSpecialistById('vulnerability-scanner');
+
+    expect(specialist).toMatchObject({
+      id: 'vulnerability-scanner',
+      name: 'Vulnerability Scanner',
+      description: 'Finds real, exploitable security vulnerabilities in code',
+      icon: 'pr-reviewer',
+    });
+    expect(specialist).not.toHaveProperty('codingAgent');
+    expect(specialist).not.toHaveProperty('defaultModel');
+    expect(specialist?.role).toBeUndefined();
+    expect(specialist?.hidden).toBeUndefined();
+    expect(specialist?.defaultBehaviorPrompt).toContain('## Vulnerability Scanner');
+    expect(specialist?.defaultBehaviorPrompt).toContain(
+      '**MUST trace real code paths. NEVER speculate about vulnerabilities',
+    );
+    expect(specialist?.defaultBehaviorPrompt).toContain('`ws.note.create` through `workspace_api`');
+    expect(specialist?.defaultBehaviorPrompt).toContain('`ws.agent.reportToParent`');
+    expect(specialist?.defaultBehaviorPrompt).toContain('**Top-level agent**');
+    expect(specialist?.defaultBehaviorPrompt).not.toContain('submit_comments');
+    expect(specialist?.defaultBehaviorPrompt).not.toContain('create_note_workspace-mcp');
+  });
+
+  it('keeps both scanner prompt copies byte-identical to the canonical intentd body', () => {
+    const specialist = getSpecialistById('vulnerability-scanner');
+    const bundled = readFileSync(
+      resolve(__dirname, '../../../../resources/specialists/vulnerability-scanner.md'),
+      'utf8',
+    );
+    const bundledBody = bundled.replace(/^---\n[\s\S]*?\n---\n\n/, '');
+
+    expect(bundled).not.toMatch(/^(codingAgent|model):/m);
+    expect(bundledBody).toBe(specialist?.defaultBehaviorPrompt);
+    expect(createHash('sha256').update(bundledBody).digest('hex')).toBe(
+      '0f2c2dc42ec65311e80fb7afd5f899fcf509df09fcfeeb6d343d3163c9c7c9ee',
+    );
+  });
+
   it('keeps chief workspace creation extraction guidance', () => {
     const chief = getSpecialistById('chief-of-staff');
 

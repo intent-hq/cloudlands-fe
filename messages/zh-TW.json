@@ -5594,6 +5594,8 @@
   "specialists_builtin_prReviewer_description": "以高置信度、可操作的回饋審查拉取請求",
   "specialists_builtin_uiDesigner_name": "UI 設計師",
   "specialists_builtin_uiDesigner_description": "打造優雅、無障礙、生產就緒的使用者介面",
+  "specialists_builtin_vulnerabilityScanner_name": "弱點掃描器",
+  "specialists_builtin_vulnerabilityScanner_description": "找出程式碼中真實且可利用的安全弱點",
   "specialists_builtin_developer_name": "開發者",
   "specialists_builtin_developer_description": "規劃、實現和驗證——一個智慧體全部搞定",
   "specialists_builtin_chiefOfStaff_name": "幕僚長",

@@ -5594,6 +5594,8 @@
   "specialists_builtin_prReviewer_description": "확신도 높고 실행 가능한 피드백으로 풀 리퀘스트를 검토합니다",
   "specialists_builtin_uiDesigner_name": "UI 디자이너",
   "specialists_builtin_uiDesigner_description": "우아하고 접근성 높으며 프로덕션에 바로 사용할 수 있는 사용자 인터페이스를 만듭니다",
+  "specialists_builtin_vulnerabilityScanner_name": "취약점 스캐너",
+  "specialists_builtin_vulnerabilityScanner_description": "코드에서 실제로 악용 가능한 보안 취약점을 찾습니다",
   "specialists_builtin_developer_name": "개발자",
   "specialists_builtin_developer_description": "계획, 구현, 검증을 하나의 에이전트에서 모두 수행합니다",
   "specialists_builtin_chiefOfStaff_name": "비서실장",
