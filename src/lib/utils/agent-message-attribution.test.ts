@@ -9,7 +9,12 @@ describe('getAgentMessageAttribution', () => {
         fromAgentId: 'agent-builder',
         fromAgentName: 'Builder',
       }),
-    ).toEqual({ kind: 'agent', fromAgentId: 'agent-builder', displayName: 'Builder' });
+    ).toEqual({
+      kind: 'agent',
+      fromAgentId: 'agent-builder',
+      displayName: 'Builder',
+      rawName: 'Builder',
+    });
   });
 
   it('extracts complete Chief attribution and its canonical source link', () => {

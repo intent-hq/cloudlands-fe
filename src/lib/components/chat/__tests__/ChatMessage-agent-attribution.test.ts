@@ -507,6 +507,29 @@ describe('ChatMessage agent-to-agent sender attribution', () => {
     expect(toggle.getAttribute('aria-expanded')).toBe('false');
   });
 
+  it('hides the daemon sender header line from the preview and expanded body', async () => {
+    render(ChatMessage, {
+      props: {
+        message: userMessage(
+          {
+            type: 'agent_message',
+            fromAgentId: 'agent-11111111-2222-3333-4444-555555555555',
+            fromAgentName: 'Builder',
+          },
+          '[MESSAGE FROM AGENT Builder (agent-11111111-2222-3333-4444-555555555555)]\n\nhello from another agent',
+        ),
+      },
+    });
+
+    const preview = screen.getByTestId('agent-message-preview');
+    expect(preview.textContent).toContain('hello from another agent');
+    expect(preview.textContent).not.toContain('[MESSAGE FROM AGENT');
+
+    await fireEvent.click(screen.getByTestId('agent-message-disclosure-toggle'));
+    expect(screen.getByText('hello from another agent')).toBeTruthy();
+    expect(screen.queryByText(/\[MESSAGE FROM AGENT/)).toBeNull();
+  });
+
   it('dispatches openAgentTabRequested with the sender agent id on click', async () => {
     render(ChatMessageRouteContextHarness, {
       props: {
