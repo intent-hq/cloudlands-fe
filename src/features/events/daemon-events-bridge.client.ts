@@ -2182,6 +2182,10 @@ function handleDisplayStatusChangedEvent(event: WorkspaceEvent, envelopeWorkspac
   appStore.dispatch(
     bulkUpdateWorkspaceEntities([updateWorkspaceEntity(workspaceId, { displayStatus })]),
   );
+  // The partial merge is a silent no-op when the entity is not hydrated yet —
+  // recover the dropped delta via a targeted workspace.get (see
+  // {@link hydrateWorkspaceEntityIfMissing}).
+  void hydrateWorkspaceEntityIfMissing(workspaceId);
 }
 
 /**
@@ -2209,6 +2213,10 @@ function handleAttentionChangedEvent(event: WorkspaceEvent, envelopeWorkspaceId:
   appStore.dispatch(
     bulkUpdateWorkspaceEntities([updateWorkspaceEntity(workspaceId, { attention })]),
   );
+  // The partial merge is a silent no-op when the entity is not hydrated yet —
+  // recover the dropped delta via a targeted workspace.get (see
+  // {@link hydrateWorkspaceEntityIfMissing}).
+  void hydrateWorkspaceEntityIfMissing(workspaceId);
   // An unread raise is NOT auto-cleared for the workspace on screen: unread is
   // daemon-derived from per-agent seen markers (§5.1) and only reading each
   // agent's conversation clears it. When the raising agent's conversation is
@@ -2243,6 +2251,73 @@ function handleWaitingChangedEvent(
   const waiting = data.waiting;
   if (!workspaceId || typeof waiting !== 'boolean') return;
   appStore.dispatch(bulkUpdateWorkspaceEntities([updateWorkspaceEntity(workspaceId, { waiting })]));
+  // The partial merge is a silent no-op when the entity is not hydrated yet —
+  // recover the dropped delta via a targeted workspace.get (see
+  // {@link hydrateWorkspaceEntityIfMissing}).
+  void hydrateWorkspaceEntityIfMissing(workspaceId);
+}
+
+/**
+ * Recover a dropped partial merge when the target workspace entity is not in
+ * this window's store. The `bulkUpdateWorkspaceEntities` reducer is a no-op
+ * for unknown ids, so a self-sufficient transition payload
+ * (`workspace:attention-changed` / `workspace:waiting-changed` /
+ * `workspace:displayStatus-changed`) arriving before the entity hydrates
+ * (workspace created by another client on the same daemon, or the event
+ * racing the initial `workspace.list`) would otherwise be silently lost until
+ * an unrelated refetch. When the entity is missing, fetch `workspace.get` and
+ * seed the full entity via `setWorkspaceEntity` — the fresh projection
+ * carries the flag the dropped delta announced. Single-flighted with trailing
+ * coalesce per workspaceId (AGENTS.md "Event-driven refetches — single-flight
+ * and coalesced"): a burst of deltas for one missing workspace produces at
+ * most one immediate fetch plus at most one trailing follow-up. Workspaces
+ * with a pending local deletion are skipped so a tombstoned row is not
+ * resurrected.
+ */
+const missingEntityFetchInFlightByWorkspace = new Set<string>();
+const missingEntityFetchFollowUpWantedByWorkspace = new Set<string>();
+
+async function runHydrateMissingWorkspaceEntityFetch(workspaceId: string): Promise<void> {
+  const { backendRequest } = await import('$lib/client/live/backend-transport');
+  try {
+    const response = (await backendRequest('workspace.get', { workspaceId })) as
+      { workspace?: Workspace } | undefined;
+    const workspace = response?.workspace;
+    if (workspace) {
+      const { setWorkspaceEntity } =
+        await import('$store/renderer/slices/workspace/workspace-slice');
+      appStore.dispatch(setWorkspaceEntity(workspace));
+    }
+  } catch (_error) {
+    // Workspace might have been deleted or transport error; no-op is safe.
+  } finally {
+    // Trailing coalesce: one or more triggers arrived while this fetch was in
+    // flight — run exactly one follow-up fetch to pick up the latest state,
+    // regardless of how many triggers piled up. The in-flight marker stays
+    // set across the trailing fetch so triggers arriving during it keep
+    // coalescing instead of starting a parallel fetch; it is only cleared
+    // when no follow-up is pending.
+    if (missingEntityFetchFollowUpWantedByWorkspace.delete(workspaceId)) {
+      void runHydrateMissingWorkspaceEntityFetch(workspaceId);
+    } else {
+      missingEntityFetchInFlightByWorkspace.delete(workspaceId);
+    }
+  }
+}
+
+async function hydrateWorkspaceEntityIfMissing(workspaceId: string): Promise<void> {
+  const { getItem } = await import('@augmentcode/themis/utils/collections/collection-utils');
+  const state = appStore.state as {
+    workspace: { workspaces: unknown; pendingDeletions: Record<string, boolean> };
+  };
+  if (state.workspace.pendingDeletions[workspaceId]) return;
+  if (getItem(state.workspace.workspaces as never, workspaceId as never)) return;
+  if (missingEntityFetchInFlightByWorkspace.has(workspaceId)) {
+    missingEntityFetchFollowUpWantedByWorkspace.add(workspaceId);
+    return;
+  }
+  missingEntityFetchInFlightByWorkspace.add(workspaceId);
+  await runHydrateMissingWorkspaceEntityFetch(workspaceId);
 }
 
 /**
@@ -4022,6 +4097,8 @@ export function disposeDaemonEventsRoutingState(): void {
   agentSummaryFetchFollowUpWantedByWorkspace.clear();
   activityFetchInFlightByWorkspace.clear();
   activityFetchFollowUpWantedByWorkspace.clear();
+  missingEntityFetchInFlightByWorkspace.clear();
+  missingEntityFetchFollowUpWantedByWorkspace.clear();
 }
 
 /** Test-only — reset stream accumulators and debounce state. */
