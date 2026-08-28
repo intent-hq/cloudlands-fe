@@ -150,6 +150,12 @@ vi.mock('../../../browser/main/browser-exec-reverse', () => ({
   registerBrowserExecReverseHandler: vi.fn(),
 }));
 
+// Deterministic intentd version pin (the real reader would read the repo's
+// live intentd.version file, making list-shape assertions drift on every bump).
+vi.mock('../intentd-version-pin', () => ({
+  readPinnedVersion: vi.fn(() => '0.1.0'),
+}));
+
 // Keep the real PinMismatchError + resolveBackendConfig; stub only the network
 // fingerprint capture (trust-on-first-use dials the remote's TLS socket).
 const mockCaptureFingerprint = vi.hoisted(() => vi.fn());
@@ -301,6 +307,8 @@ describe('multi-backend connect — end-to-end journey', () => {
       windowBackendId: 'local',
       protocolMismatch: null,
       authRejected: null,
+      pinnedVersion: '0.1.0',
+      connectedIds: [],
     });
 
     // Trust-on-first-use: capture the remote's presented fingerprint.

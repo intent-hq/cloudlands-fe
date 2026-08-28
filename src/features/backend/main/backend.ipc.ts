@@ -100,6 +100,7 @@ import type {
   SelfPublishedStateResult,
   SwitchConnectionResult,
   UnpublishSelfResult,
+  UpdateBackendResult,
 } from '../../../shared/types/connections';
 import { compareProtocolMajor } from './protocol-compat';
 import {
@@ -115,6 +116,7 @@ import {
   ConnectionsSyncGetStateSchema,
   ConnectionsSyncSetEnabledSchema,
   ConnectionsUnpublishSelfSchema,
+  ConnectionsUpdateBackendSchema,
 } from '../../../main/ipc-schemas';
 import { createValidatedHandler } from '../../../main/ipc-validation-middleware';
 import { getBackendIdForWebContents, getFocusedWindowBackendId } from '../../../main/window';
@@ -157,6 +159,31 @@ function logDaemonHelloBuild(helloResult: unknown, connectionId: string): void {
 /** @internal Test seam: clear the per-connection daemon-build log dedupe. */
 export function __resetDaemonBuildLogForTesting(): void {
   lastLoggedDaemonBuildKeys.clear();
+}
+
+/**
+ * Capture a REMOTE backend's daemon version from its `client.hello` result
+ * (`server.version`) and persist it on the connection record, following the
+ * `setHostname` capture pattern. The handshake re-runs on every (re)connect,
+ * so a daemon upgrade refreshes the stored value. Fire-and-forget/fail-soft
+ * by design — a store write error must never disturb the handshake — and the
+ * `connections:changed` broadcast fires only when the stored value actually
+ * changed (the store dedupes the common every-reconnect same-version case).
+ * Never called for the local entry: the `DaemonVersionInfo` path owns the
+ * local daemon's version.
+ */
+function captureRemoteDaemonVersion(helloResult: unknown, connectionId: string): void {
+  const helloBuild = extractDaemonHelloBuildInfo(helloResult);
+  if (!helloBuild) return;
+  void connectionsStore
+    .setDaemonVersion(connectionId, helloBuild.version)
+    .then((changed) => (changed ? broadcastConnectionsChanged() : undefined))
+    .catch((error: unknown) => {
+      logger.warn('Failed to capture remote daemon version', {
+        connectionId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    });
 }
 const backendClients = new Map<string, JsonRpcClient>();
 const backendClientConnects = new Map<string, Promise<JsonRpcClient>>();
@@ -231,6 +258,17 @@ backendNotificationForwarder.setMaxListeners(50);
  */
 const backendStatusForwarder = new EventEmitter();
 backendStatusForwarder.setMaxListeners(50);
+
+// Keep the renderer's per-connection connectivity view (`connectedIds` on the
+// connections list payload) current: any client's connected/disconnected
+// transition re-broadcasts `connections:changed`. Both the primary and every
+// pool member pipe `status` through this stable forwarder, so one listener
+// covers all clients across swaps. 'connecting' is skipped — connectivity has
+// not changed yet at that point (still disconnected).
+backendStatusForwarder.on('status', (_id: string, status: ConnectionStatus) => {
+  if (status === 'connecting') return;
+  void broadcastConnectionsChanged().catch(() => {});
+});
 
 /**
  * Connection target for the NEXT `getBackendClient()` construction. `null`
@@ -597,6 +635,14 @@ export function getBackendClient(): JsonRpcClient {
       // #3649: log the connected daemon's build identity once at INFO so the
       // log file records which daemon build it talked to.
       logDaemonHelloBuild(result, connectionId);
+      // Persist a REMOTE backend's reported daemon version on its connection
+      // record (refreshed on every reconnect). Guarded on the live active
+      // meta so a hello landing after a switch away cannot mislabel the
+      // record (the monorepo#2221 pattern); the local entry never captures —
+      // the #3448 refresh below owns the local daemon's version.
+      if (activeConnectionMeta?.id === connectionId) {
+        captureRemoteDaemonVersion(result, connectionId);
+      }
       // #3448: refresh the adopted external daemon's version info from the
       // live `server.version` on every (re)connect — the startup probe only
       // latches it once, so a daemon upgrade would otherwise stay stale. For
@@ -773,6 +819,39 @@ export function getLocalBackendClient(): JsonRpcClient {
   return getBackendClientForId(LOCAL_CONNECTION_ID);
 }
 
+/**
+ * Ask one connected remote backend's daemon to self-update via
+ * `system.requestUpdate` (the daemon signals its serve-mode sitter, which
+ * installs the newer version and restarts the daemon). Returns a structured
+ * {@link UpdateBackendResult} instead of throwing for daemon-side failures so
+ * the renderer can toast a specific message:
+ *   - local id → 'unsupported' (the local sidecar is never updated this way);
+ *   - no live pooled client → 'not-connected' (saved-but-disconnected remote);
+ *   - JSON-RPC -32601 → 'unsupported' (daemon too old to know the method);
+ *   - any other daemon/transport error → 'failed' with the error message.
+ */
+async function requestBackendUpdate(id: string): Promise<UpdateBackendResult> {
+  if (id === LOCAL_CONNECTION_ID) {
+    return { ok: false, reason: 'unsupported' };
+  }
+  const target = backendClients.get(id);
+  if (!target || target.getStatus() !== 'connected') {
+    return { ok: false, reason: 'not-connected' };
+  }
+  try {
+    await target.request('system.requestUpdate');
+    return { ok: true };
+  } catch (error) {
+    if (error instanceof JsonRpcError && error.rpcCode === -32601) {
+      logger.warn('Remote daemon does not support system.requestUpdate', { id });
+      return { ok: false, reason: 'unsupported' };
+    }
+    const message = error instanceof Error ? error.message : String(error);
+    logger.warn('Remote daemon update request failed', { id, error: message });
+    return { ok: false, reason: 'failed', message };
+  }
+}
+
 /** Resolve a renderer sender to its backend id, with the local fallback. */
 export function getBackendIdForIpcSender(sender: Electron.WebContents): string {
   return getBackendIdForWebContents(sender);
@@ -888,6 +967,12 @@ function createAdditionalBackendClient(id: string, config: BackendConnectionConf
       // #3649: pool members log their daemon's build identity too, keyed by
       // connection id so multi-backend setups record every daemon build.
       logDaemonHelloBuild(result, id);
+      // Pool members capture their remote's daemon version too; the id is
+      // fixed at construction so no active-meta guard is needed. Skipped for
+      // a pooled local client (the DaemonVersionInfo path owns local).
+      if (id !== LOCAL_CONNECTION_ID) {
+        captureRemoteDaemonVersion(result, id);
+      }
     },
   });
   instance.on('notification', (notification: JsonRpcNotification) => {
@@ -1610,6 +1695,15 @@ async function listConnections(
     windowBackendId,
     protocolMismatch: protocolMismatchById.get(windowBackendId) ?? null,
     authRejected: authRejectedById.get(windowBackendId) ?? null,
+    // The app's pinned intentd version so the renderer can compare each
+    // remote's captured `daemonVersion` without a separate channel.
+    pinnedVersion: getPinnedVersion(),
+    // Live per-connection connectivity so the renderer can gate
+    // connected-only actions (the remote Update button). Kept fresh by the
+    // status-forwarder re-broadcast of `connections:changed`.
+    connectedIds: [...backendClients.entries()]
+      .filter(([, instance]) => instance.getStatus() === 'connected')
+      .map(([id]) => id),
   };
 }
 
@@ -2371,6 +2465,23 @@ function registerConnectionsHandlers(): void {
       ConnectionsSwitchSchema,
       async (_event, { id }) => switchBackend(id),
       CONNECTIONS.SWITCH,
+    ),
+  );
+
+  // Ask one connected remote backend's daemon to self-update: route
+  // `system.requestUpdate` to that backend's pooled client. The daemon signals
+  // its serve-mode sitter (SIGUSR1), which installs the newer version and
+  // gracefully restarts the daemon — the client then reconnects on its own.
+  // The result is structured (never a thrown daemon error) so the renderer can
+  // toast a specific message per failure mode: local/method-unknown daemons →
+  // 'unsupported', no live client → 'not-connected', a structured daemon error
+  // (unsupervised, non-unix) → 'failed' with the daemon's message.
+  ipcMain.handle(
+    CONNECTIONS.UPDATE_BACKEND,
+    createValidatedHandler(
+      ConnectionsUpdateBackendSchema,
+      async (_event, { id }) => requestBackendUpdate(id),
+      CONNECTIONS.UPDATE_BACKEND,
     ),
   );
 

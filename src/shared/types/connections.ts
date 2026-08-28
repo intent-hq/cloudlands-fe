@@ -87,6 +87,15 @@ export interface ConnectionRecord {
    */
   hostname?: string | null;
   /**
+   * The remote daemon's reported version (`server.version` from its
+   * `client.hello` handshake, PROTOCOL §5.17), captured on connect and
+   * refreshed on every reconnect so the UI can compare it against the app's
+   * pinned intentd version. `null`/absent until captured (or for daemons that
+   * predate the field). Never set for the local entry — the existing
+   * `DaemonVersionInfo` path owns the local daemon's version.
+   */
+  daemonVersion?: string | null;
+  /**
    * Per-backend keychain-sync exclusion (spec Phase 2): `true` when the user
    * opted this backend out of iCloud sync at add time, making the record
    * local-only (never pushed to the keychain, never touched by pulls).
@@ -124,6 +133,21 @@ export interface ConnectionsListResult {
    * auth is good (or it is local).
    */
   authRejected?: ConnectionAuthRejectedEvent | null;
+  /**
+   * The app's pinned intentd version (the `intentd.version` file bundled with
+   * the FE), or `null` when the pin is missing/malformed. Carried here so the
+   * renderer can compare each remote's captured `daemonVersion` against the
+   * version the app expects without a separate channel.
+   */
+  pinnedVersion?: string | null;
+  /**
+   * ids of the connections with a live, currently-connected pooled client
+   * (includes the local sidecar when its client is up). Refreshed on every
+   * pool status transition via a `connections:changed` broadcast so the
+   * renderer can gate connected-only actions (the remote Update button).
+   * Optional so payloads from an older main process remain valid.
+   */
+  connectedIds?: string[];
 }
 
 /**
@@ -218,6 +242,30 @@ export interface SwitchConnectionParams {
 export interface SwitchConnectionResult {
   activeId: string;
 }
+
+/** `connections:update-backend` params. */
+export interface UpdateBackendParams {
+  id: string;
+}
+
+/**
+ * `connections:update-backend` result. Structured rather than thrown so the
+ * renderer can toast a specific message per failure mode:
+ *   - `ok: true`        → `system.requestUpdate` was accepted; the remote's
+ *                          sitter will install the newer version and restart
+ *                          the daemon (the FE reconnects automatically).
+ *   - `'not-connected'` → no live pooled client for that id (saved but
+ *                          disconnected remote, or the id is unknown).
+ *   - `'unsupported'`   → the daemon rejected the method (JSON-RPC -32601:
+ *                          too old to know `system.requestUpdate`) or the id
+ *                          was the local entry (never updated this way).
+ *   - `'failed'`        → the daemon returned a structured error (e.g. not
+ *                          sitter-supervised, non-unix host); `message`
+ *                          carries the daemon's error text.
+ */
+export type UpdateBackendResult =
+  | { ok: true }
+  | { ok: false; reason: 'not-connected' | 'unsupported' | 'failed'; message?: string };
 
 // ============================================================================
 // Push-event payloads (main → renderer)

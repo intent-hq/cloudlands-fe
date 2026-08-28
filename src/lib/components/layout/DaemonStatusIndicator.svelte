@@ -1,5 +1,6 @@
 <script lang="ts" module>
   import { formatNumber } from '$lib/i18n/format';
+  import { compareToPinnedVersion } from '$shared/intentd-version-compare';
 
   /**
    * Format raw sysinfo CPU percent (may exceed 100% on multi-core hosts)
@@ -86,6 +87,23 @@
     }
     return conn.label;
   }
+
+  /**
+   * Visibility predicate for the connections-submenu Update action: only a
+   * remote row with a live connection whose captured daemon version compares
+   * semver-`older` than the app's pinned intentd version shows it. Local,
+   * disconnected, ahead/equal, and unknown/unparsable versions render nothing.
+   */
+  export function shouldShowUpdateAction(
+    conn: { id: string; isLocal: boolean; daemonVersion?: string | null },
+    connectedIds: readonly string[] | undefined,
+    pinnedVersion: string | null | undefined,
+  ): boolean {
+    if (conn.isLocal) return false;
+    if (!conn.daemonVersion || !pinnedVersion) return false;
+    if (!connectedIds?.includes(conn.id)) return false;
+    return compareToPinnedVersion(conn.daemonVersion, pinnedVersion) === 'older';
+  }
 </script>
 
 <script lang="ts">
@@ -125,12 +143,14 @@
   } from '$store/renderer/slices/daemon-health/daemon-health-slice';
   import {
     selectConnections,
+    selectConnectedIds,
     selectCurrentConnectionId,
     selectCurrentConnection,
     selectConnectionCertMismatch,
     selectActiveProtocolMismatch,
     selectProtocolMismatchModal,
     selectKeychainSyncState,
+    selectPinnedDaemonVersion,
   } from '$store/renderer/slices/connections/connections-selectors';
   import {
     certMismatchCleared,
@@ -141,6 +161,7 @@
     switchConnectionRequested,
     forgetConnectionRequested,
     loadKeychainSyncStateRequested,
+    updateBackendRequested,
   } from '$store/renderer/slices/connections/connections-slice';
   import { LOCAL_CONNECTION_ID } from '$shared/types/connections';
   import type { ConnectionRecord } from '$shared/types/connections';
@@ -154,6 +175,8 @@
   const unslothStatus$ = selectUnslothStatus();
   const unslothStopping$ = selectUnslothStopping();
   const connections$ = selectConnections();
+  const connectedIds$ = selectConnectedIds();
+  const pinnedDaemonVersion$ = selectPinnedDaemonVersion();
   const currentConnectionId$ = selectCurrentConnectionId();
   const currentConnection$ = selectCurrentConnection();
   const certMismatch$ = selectConnectionCertMismatch();
@@ -386,6 +409,18 @@
       await action.promise;
     } catch {
       // Refresh + any error surface via the connections service; no-op here.
+    }
+  }
+
+  async function handleUpdateConnection(id: string) {
+    dropdownOpen = false;
+    try {
+      const action = updateBackendRequested(id);
+      appStore.dispatch(action);
+      await action.promise;
+    } catch {
+      // Outcomes (success and every failure mode) surface as saga-owned
+      // toasts; nothing more to do here.
     }
   }
 
@@ -889,6 +924,20 @@
                 >
                   {m.layout_daemonStatus_switch_action()}
                 </Menu.Item>
+                {#if shouldShowUpdateAction(conn, $connectedIds$, $pinnedDaemonVersion$)}
+                  {@const updateTooltip = m.layout_daemonStatus_update_tooltip({
+                    daemonVersion: stripLeadingV(conn.daemonVersion ?? ''),
+                    pinnedVersion: stripLeadingV($pinnedDaemonVersion$ ?? ''),
+                  })}
+                  <Menu.Item
+                    class="cursor-pointer text-xs"
+                    title={updateTooltip}
+                    aria-label={updateTooltip}
+                    onSelect={() => handleUpdateConnection(conn.id)}
+                  >
+                    {m.layout_daemonStatus_update_action()}
+                  </Menu.Item>
+                {/if}
                 {#if !conn.isLocal}
                   <Menu.Item
                     class="cursor-pointer text-xs text-error-foreground data-[highlighted]:text-error-foreground"
