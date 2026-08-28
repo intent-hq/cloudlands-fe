@@ -1,21 +1,16 @@
 /**
- * T8/T9 — switch robustness: boot reconciliation + stable forwarders.
+ * T8/T9 — switch robustness: stable forwarders.
  *
  * Switching-correctness gaps closed here:
- *   - **Boot reconciliation** (T8): the live client is always built from the
- *     local/env default at startup, but the connections store may persist a
- *     remote `activeId` from a prior session. `reconcileActiveConnectionOnBoot`
- *     resets a stale remote active-id to `local` so `connections:list` agrees
- *     with the live (local) transport.
  *   - **Reconnect forwarder** (T8): main-process services attach reconnect
  *     handlers ONCE via `onBackendReconnected`. Those handlers must survive a
- *     `switchBackend` (which disposes the old client and builds a new one) and
- *     still fire on a post-switch reconnect, replaying subscriptions against the
- *     NEW client.
+ *     `switchBackend` (which can dispose and rebuild a backend's pooled
+ *     client) and still fire on a post-switch reconnect, replaying
+ *     subscriptions against the NEW client.
  *   - **Notification / status forwarders** (T9): services attach their daemon
  *     `notification` (and connect-retry `status`) listeners ONCE via
  *     `onBackendNotification` / `onBackendStatus`. A notification/status event
- *     on the client built by a `switchBackend` must reach a handler registered
+ *     on a client built by a `switchBackend` must reach a handler registered
  *     before the switch — otherwise terminal/script/idle/settings events are
  *     silently dropped for the rest of the session.
  *
@@ -147,9 +142,12 @@ beforeEach(() => {
   vi.resetModules();
   vi.clearAllMocks();
   lifecycle.events = [];
-  store.getActiveId.mockResolvedValue('local');
+  let activeId = 'local';
+  store.getActiveId.mockImplementation(async () => activeId);
+  store.setActiveId.mockImplementation(async (id: string) => {
+    activeId = id;
+  });
   store.list.mockResolvedValue([LOCAL, REMOTE]);
-  store.setActiveId.mockResolvedValue(undefined);
   store.getDecryptedToken.mockResolvedValue('secret-token');
   vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([]);
 });
@@ -159,62 +157,29 @@ afterEach(() => {
 });
 
 // ---------------------------------------------------------------------------
-// Boot reconciliation
-// ---------------------------------------------------------------------------
-
-describe('reconcileActiveConnectionOnBoot', () => {
-  it('restores a reachable last-used remote at boot (does not reset to local)', async () => {
-    // Persisted state from a prior session: a remote was active on last close.
-    // The fake client's `host.status` probe resolves → the remote is reachable,
-    // so the FE stays on it and never rewrites the active id to local.
-    store.getActiveId.mockResolvedValue('remote-1');
-    const mod = await loadModule();
-
-    await mod.reconcileActiveConnectionOnBoot();
-
-    expect(store.setActiveId).not.toHaveBeenCalledWith('local');
-    // A client was constructed for the restored remote target.
-    expect(lifecycle.events.some((e) => e.type === 'construct')).toBe(true);
-  });
-
-  it('is a no-op when the persisted active-id is already local', async () => {
-    store.getActiveId.mockResolvedValue('local');
-    const mod = await loadModule();
-
-    await mod.reconcileActiveConnectionOnBoot();
-
-    expect(store.setActiveId).not.toHaveBeenCalled();
-  });
-
-  it('never throws when the store read fails (fail-soft at boot)', async () => {
-    store.getActiveId.mockRejectedValueOnce(new Error('disk gone'));
-    const mod = await loadModule();
-
-    await expect(mod.reconcileActiveConnectionOnBoot()).resolves.toBeUndefined();
-  });
-});
-
-// ---------------------------------------------------------------------------
 // Reconnect forwarder survives a client swap
 // ---------------------------------------------------------------------------
 
 describe('reconnect forwarder', () => {
   it('replays a registered handler on a reconnect of the NEW client after a switch', async () => {
     const mod = await loadModule();
-    mod.getBackendClient(); // client #1 (local)
+    mod.getBackendClient(); // local pool member
 
-    // A main-process service attaches its resubscribe handler ONCE, up front.
+    // A main-process service attaches its resubscribe handler ONCE, up front,
+    // scoped to the remote backend it cares about.
     const handler = vi.fn();
-    mod.onBackendReconnected(handler);
+    mod.onBackendReconnected(handler, 'remote-1');
 
-    // Switch to the remote: client #1 disposed, client #2 built. The switch
-    // itself nudges the forwarder once so services resubscribe to the new target.
+    // Switch to the remote: its pooled client is built. The switch itself
+    // nudges the forwarder once so services resubscribe to the new target.
     await mod.switchBackend('remote-1');
     expect(handler).toHaveBeenCalledTimes(1);
 
     // A later reconnect of the NEW client must still reach the handler, even
-    // though it was registered before #1 was ever disposed.
-    const newClient = mod.getBackendClient() as unknown as { emit(e: string): void };
+    // though it was registered before the client ever existed.
+    const newClient = mod.getBackendClientForId('remote-1') as unknown as {
+      emit(e: string): void;
+    };
     newClient.emit('reconnected');
     expect(handler).toHaveBeenCalledTimes(2);
   });
@@ -223,16 +188,16 @@ describe('reconnect forwarder', () => {
     const mod = await loadModule();
     mod.getBackendClient();
     const handler = vi.fn();
-    mod.onBackendReconnected(handler);
+    mod.onBackendReconnected(handler); // defaults to the local backend
 
-    await mod.switchBackend('remote-1'); // 1 (switch nudge)
-    await mod.switchBackend('local'); // 2 (switch nudge)
-    expect(handler).toHaveBeenCalledTimes(2);
+    await mod.switchBackend('remote-1');
+    await mod.switchBackend('local'); // switch-back nudges the local forwarder
+    expect(handler).toHaveBeenCalledTimes(1);
 
-    // The live client after the second switch still forwards its own reconnects.
+    // The always-on local client still forwards its own reconnects.
     const current = mod.getBackendClient() as unknown as { emit(e: string): void };
     current.emit('reconnected');
-    expect(handler).toHaveBeenCalledTimes(3);
+    expect(handler).toHaveBeenCalledTimes(2);
   });
 
   it('stops forwarding after the disposer runs', async () => {
@@ -262,18 +227,19 @@ describe('notification forwarder', () => {
 
   it('delivers a NEW client notification to a handler registered before the switch', async () => {
     const mod = await loadModule();
-    mod.getBackendClient(); // client #1 (local)
+    mod.getBackendClient(); // local pool member
 
-    // A main-process service attaches its notification listener ONCE, up front.
+    // A main-process service attaches its notification listener ONCE, up
+    // front, scoped to the remote backend it cares about.
     const handler = vi.fn();
-    mod.onBackendNotification(handler);
+    mod.onBackendNotification(handler, 'remote-1');
 
-    // Switch to the remote: client #1 disposed, client #2 built.
+    // Switch to the remote: its pooled client is built.
     await mod.switchBackend('remote-1');
 
     // A daemon notification on the NEW client must still reach the handler,
-    // even though it was registered before #1 was ever disposed.
-    const newClient = mod.getBackendClient() as unknown as {
+    // even though it was registered before the client ever existed.
+    const newClient = mod.getBackendClientForId('remote-1') as unknown as {
       emit(e: string, arg?: unknown): void;
     };
     newClient.emit('notification', NOTIFICATION);
@@ -281,14 +247,14 @@ describe('notification forwarder', () => {
     expect(handler).toHaveBeenCalledWith(NOTIFICATION);
   });
 
-  it('keeps delivering after switching back to local (also a fresh client)', async () => {
+  it('keeps delivering on the local client across switches away and back', async () => {
     const mod = await loadModule();
     mod.getBackendClient();
     const handler = vi.fn();
-    mod.onBackendNotification(handler);
+    mod.onBackendNotification(handler); // defaults to the local backend
 
     await mod.switchBackend('remote-1');
-    await mod.switchBackend('local'); // switch-back builds yet another client
+    await mod.switchBackend('local');
 
     const current = mod.getBackendClient() as unknown as {
       emit(e: string, arg?: unknown): void;
@@ -301,11 +267,11 @@ describe('notification forwarder', () => {
     const mod = await loadModule();
     mod.getBackendClient();
     const handler = vi.fn();
-    const dispose = mod.onBackendNotification(handler);
+    const dispose = mod.onBackendNotification(handler, 'remote-1');
 
     dispose();
     await mod.switchBackend('remote-1');
-    const current = mod.getBackendClient() as unknown as {
+    const current = mod.getBackendClientForId('remote-1') as unknown as {
       emit(e: string, arg?: unknown): void;
     };
     current.emit('notification', NOTIFICATION);
@@ -323,11 +289,11 @@ describe('status forwarder', () => {
     const mod = await loadModule();
     mod.getBackendClient();
     const handler = vi.fn();
-    mod.onBackendStatus(handler);
+    mod.onBackendStatus(handler, 'remote-1');
 
     await mod.switchBackend('remote-1');
 
-    const newClient = mod.getBackendClient() as unknown as {
+    const newClient = mod.getBackendClientForId('remote-1') as unknown as {
       emit(e: string, arg?: unknown): void;
     };
     newClient.emit('status', 'connected');
@@ -367,14 +333,15 @@ describe('switchBackend serialization', () => {
     await expect(second).resolves.toEqual({ activeId: 'local' });
 
     expect(store.setActiveId.mock.calls.map(([id]) => id)).toEqual(['remote-1', 'local']);
-    // Strict client lifecycle: switch 1 builds+starts its client, then switch 2
-    // disposes it before building its own — never interleaved.
+    // Strict client lifecycle: switch 1 builds+starts the remote client (the
+    // local member is built lazily alongside it), then switch 2 disposes the
+    // outgoing remote and reuses the pooled local member — never interleaved.
     expect(lifecycle.events.map((e) => e.type)).toEqual([
       'construct',
       'start',
-      'dispose',
       'construct',
       'start',
+      'dispose',
     ]);
     // The final switch targeted local, so no remote identity is pinned.
     expect(mod.isRemoteBackendActive()).toBe(false);

@@ -291,6 +291,13 @@ describe('sticky protocol mismatch replayed on connections:list', () => {
   });
 
   it('clears the sticky mismatch after switching back to local', async () => {
+    // Track the persisted active id so the switch back to local sees remote-1
+    // as the outgoing backend and disposes its pooled client (clearing latches).
+    let activeId = 'local';
+    store.getActiveId.mockImplementation(async () => activeId);
+    store.setActiveId.mockImplementation(async (id: string) => {
+      activeId = id;
+    });
     const mod = await loadModule();
     mod.getBackendClient();
     fireHello(0, { protocolVersion: '1' });
@@ -298,8 +305,7 @@ describe('sticky protocol mismatch replayed on connections:list', () => {
     fireHello(1, { protocolVersion: '2' });
     expect((await mod.__listConnectionsForTesting('remote-1')).protocolMismatch).not.toBeNull();
 
-    store.getActiveId.mockResolvedValue('local');
-    await mod.switchBackend('local'); // fresh local client clears the sticky state
+    await mod.switchBackend('local'); // disposing remote-1's client clears the sticky state
     const list = await mod.__listConnectionsForTesting('remote-1');
     expect(list.protocolMismatch ?? null).toBeNull();
   });
