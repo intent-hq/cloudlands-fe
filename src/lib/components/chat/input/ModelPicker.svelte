@@ -24,6 +24,7 @@
   } from '$features/agent/components/AgentProviderIcon.svelte';
   import { faSettings } from '$lib/icons/phosphor-icons';
   import ModelPickerEmptyState from './ModelPickerEmptyState.svelte';
+  import EffortGauge from './EffortGauge.svelte';
   import EffortPicker from './EffortPicker.svelte';
   import ModelPickerGroupHeader from './ModelPickerGroupHeader.svelte';
   import ModelPickerLegacyGroupHeader from './ModelPickerLegacyGroupHeader.svelte';
@@ -952,9 +953,6 @@
     return availableModels.some((m) => m.value === localModel);
   });
 
-  const lockedButtonTitle = $derived(
-    lockedTitle?.trim() || m.chat_modelPicker_modelLocked_title({ model: currentModelLabel }),
-  );
   const shouldShowLockIconWhenLocked = $derived(isCompact || showLockIconWhenLocked);
 
   const buttonSize = $derived(isCompact ? 'icon' : size);
@@ -1313,9 +1311,20 @@
       ? reasoningLevelLabel(currentReasoningEffort)
       : m.chat_effortPicker_level_auto(),
   );
+  const currentReasoningLevelIndex = $derived(
+    currentReasoningEffort ? reasoningLevels.indexOf(currentReasoningEffort) : -1,
+  );
+  const showTriggerReasoningGauge = $derived(
+    currentReasoningEffort !== null &&
+      currentReasoningEffort !== 'none' &&
+      currentReasoningLevelIndex >= 0,
+  );
   const triggerLabel = $derived(currentModelLabel);
   const triggerAccessibleLabel = $derived(
     showReasoningFooter ? `${currentModelLabel} · ${currentReasoningLabel}` : currentModelLabel,
+  );
+  const lockedButtonTitle = $derived(
+    lockedTitle?.trim() || m.chat_modelPicker_modelLocked_title({ model: triggerAccessibleLabel }),
   );
   let updatingReasoningEffort = $state(false);
   const reasoningControlDisabled = $derived(
@@ -1696,6 +1705,7 @@
     class={cn(buttonClass, 'cursor-default')}
     title={lockedButtonTitle}
     tooltip={lockedButtonTitle}
+    aria-label={triggerAccessibleLabel}
     disabled={true}
   >
     {#if isCompact}
@@ -1708,10 +1718,17 @@
         <ProviderIcon providerId={triggerProviderId} class="size-3.5" />
       {/if}
       <span class="flex-1 text-left truncate">{triggerLabel}</span>
-      {#if showReasoningFooter}
+      {#if showReasoningFooter && currentReasoningEffort === null}
         <span class="shrink-0 text-xs" data-testid="model-reasoning-strength"
           >· {currentReasoningLabel}</span
         >
+      {:else if showTriggerReasoningGauge}
+        <EffortGauge
+          value={currentReasoningLevelIndex}
+          max={Math.max(1, reasoningLevels.length - 1)}
+          testId="model-reasoning-effort-gauge"
+          class="[&_line]:transition-none!"
+        />
       {/if}
     {:else}
       <span class={cn('flex items-center', shouldShowLockIconWhenLocked && 'gap-1.5')}>
@@ -1722,10 +1739,17 @@
           <ProviderIcon providerId={triggerProviderId} class="size-3.5" />
         {/if}
         <span class="text-xs truncate">{triggerLabel}</span>
-        {#if showReasoningFooter}
+        {#if showReasoningFooter && currentReasoningEffort === null}
           <span class="shrink-0 text-xs" data-testid="model-reasoning-strength"
             >· {currentReasoningLabel}</span
           >
+        {:else if showTriggerReasoningGauge}
+          <EffortGauge
+            value={currentReasoningLevelIndex}
+            max={Math.max(1, reasoningLevels.length - 1)}
+            testId="model-reasoning-effort-gauge"
+            class="[&_line]:transition-none!"
+          />
         {/if}
       </span>
     {/if}
@@ -1860,10 +1884,17 @@
             <ProviderIcon providerId={triggerProviderId} class="size-3.5" />
           {/if}
           <span class="truncate">{triggerLabel}</span>
-          {#if showReasoningFooter}
+          {#if showReasoningFooter && currentReasoningEffort === null}
             <span class="shrink-0 text-xs" data-testid="model-reasoning-strength"
               >· {currentReasoningLabel}</span
             >
+          {:else if showTriggerReasoningGauge}
+            <EffortGauge
+              value={currentReasoningLevelIndex}
+              max={Math.max(1, reasoningLevels.length - 1)}
+              testId="model-reasoning-effort-gauge"
+              class="[&_line]:transition-none!"
+            />
           {/if}
         {:else}
           <div class="h-3.5 w-24 bg-muted/50 rounded-sm animate-pulse"></div>

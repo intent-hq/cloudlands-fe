@@ -558,6 +558,71 @@ describe('ModelPicker combined reasoning mode', () => {
     });
   }
 
+  const triggerBranches: Array<{
+    name: string;
+    props: { size?: 'xs'; isLocked?: boolean };
+  }> = [
+    { name: 'regular', props: {} },
+    { name: 'xs', props: { size: 'xs' } },
+    { name: 'locked', props: { isLocked: true } },
+  ];
+
+  it.each(triggerBranches)(
+    'renders Auto, Off, and explicit effort gauges in the $name trigger',
+    async ({ props }) => {
+      const levels = ['none', 'low', 'medium', 'high'];
+      const cases: Array<{
+        effort: string | null;
+        label: string;
+        gaugeValue: number | null;
+      }> = [
+        { effort: null, label: 'Auto', gaugeValue: null },
+        { effort: 'none', label: 'Off', gaugeValue: null },
+        { effort: 'low', label: 'Low', gaugeValue: 1 },
+        { effort: 'medium', label: 'Medium', gaugeValue: 2 },
+        { effort: 'high', label: 'High', gaugeValue: 3 },
+      ];
+
+      for (const { effort, label, gaugeValue } of cases) {
+        reasoningEffort$.set(effort);
+        agentModelEffortLevels$.set(levels);
+        render(ModelPicker, {
+          props: {
+            selectedModel: 'codex:gpt-5.6-sol',
+            agentId: 'agent-1',
+            workspaceId: 'ws-1',
+            showReasoning: true,
+            portal: false,
+            ...props,
+          },
+        });
+
+        const accessibleLabel = `GPT-5.6-Sol · ${label}`;
+        const trigger = await waitFor(() => screen.getByRole('button', { name: accessibleLabel }));
+        const titleElement = props.isLocked ? trigger : trigger.querySelector('[title]');
+        expect(titleElement?.getAttribute('title')).toContain(accessibleLabel);
+
+        const gauge = screen.queryByTestId('model-reasoning-effort-gauge');
+        if (gaugeValue === null) {
+          expect(gauge).toBeNull();
+        } else {
+          expect(gauge?.dataset.gaugeValue).toBe(String(gaugeValue));
+          expect(gauge?.dataset.gaugeSize).toBe('compact');
+        }
+
+        if (effort === null) {
+          expect(screen.getByTestId('model-reasoning-strength').textContent).toContain('Auto');
+        } else {
+          expect(screen.queryByTestId('model-reasoning-strength')).toBeNull();
+          expect(trigger.textContent).not.toContain(label);
+        }
+
+        cleanup();
+        document.body.innerHTML = '';
+      }
+    },
+  );
+
   it('hides the reasoning footer when the selected model has no effort levels', async () => {
     const models = [{ value: 'no-effort', label: 'No effort model' }];
     mockModelState.availableModels = models;
@@ -576,7 +641,7 @@ describe('ModelPicker combined reasoning mode', () => {
     expect(screen.queryByTestId('model-reasoning-section')).toBeNull();
   });
 
-  it('shows a compact reasoning select and keeps the current strength in the trigger', async () => {
+  it('shows a compact reasoning select and replaces the current strength with a gauge', async () => {
     render(ModelPicker, {
       props: {
         selectedModel: 'codex:gpt-5.6-sol',
@@ -589,8 +654,9 @@ describe('ModelPicker combined reasoning mode', () => {
 
     const trigger = screen.getByRole('button');
     expect(trigger.textContent).toContain('GPT-5.6-Sol');
-    await waitFor(() => expect(trigger.textContent).toContain('Medium'));
-    expect(screen.getByLabelText('GPT-5.6-Sol · Medium')).toBeTruthy();
+    await waitFor(() => expect(screen.getByLabelText('GPT-5.6-Sol · Medium')).toBeTruthy());
+    expect(trigger.textContent).not.toContain('Medium');
+    expect(screen.getByTestId('model-reasoning-effort-gauge').dataset.gaugeValue).toBe('1');
     expect(screen.queryByTestId('effort-gauge')).toBeNull();
 
     await fireEvent.click(trigger);
@@ -698,6 +764,8 @@ describe('ModelPicker combined reasoning mode', () => {
 
     const trigger = screen.getByRole('button');
     await waitFor(() => expect(screen.getByLabelText('GPT-5.6-Sol · High')).toBeTruthy());
+    expect(trigger.textContent).not.toContain('High');
+    expect(screen.getByTestId('model-reasoning-effort-gauge').dataset.gaugeValue).toBe('2');
     expect(screen.queryByTestId('effort-gauge')).toBeNull();
 
     await fireEvent.click(trigger);
@@ -1049,7 +1117,8 @@ describe('ModelPicker combined reasoning mode', () => {
 
     const trigger = screen.getByRole('button');
     expect(trigger.textContent).toContain('GPT-5.6-Sol');
-    expect(trigger.textContent).toContain('Medium');
+    expect(trigger.textContent).not.toContain('Medium');
+    expect(screen.getByTestId('model-reasoning-effort-gauge').dataset.gaugeValue).toBe('1');
 
     await fireEvent.click(trigger);
     expect(screen.getByTestId('model-reasoning-section')).toBeTruthy();
@@ -1106,14 +1175,16 @@ describe('ModelPicker combined reasoning mode', () => {
     const trigger = screen.getByRole('button');
     const labeledTrigger = await waitFor(() => screen.getByLabelText('GPT-5.6-Sol · Off'));
     expect(labeledTrigger.getAttribute('title')).toBe('GPT-5.6-Sol · Off');
-    expect(screen.getByTestId('model-reasoning-strength').textContent).toContain('Off');
+    expect(trigger.textContent).not.toContain('Off');
+    expect(screen.queryByTestId('model-reasoning-strength')).toBeNull();
+    expect(screen.queryByTestId('model-reasoning-effort-gauge')).toBeNull();
 
     await fireEvent.click(trigger);
     const selectTrigger = effortTrigger();
     expect(selectTrigger.textContent?.trim()).toBe('Off');
     expect(selectTrigger.getAttribute('aria-label')).toContain('Off');
     const gauge = screen.getByTestId('effort-gauge');
-    expect(screen.getByText('Reasoning effort').contains(gauge)).toBe(true);
+    expect(screen.getByTestId('model-reasoning-section').contains(gauge)).toBe(true);
     expect(gauge.dataset.gaugeValue).toBe('0');
     const listbox = await openEffortSelect();
     expect(
