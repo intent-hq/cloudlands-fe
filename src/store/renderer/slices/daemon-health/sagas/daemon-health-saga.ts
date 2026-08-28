@@ -24,6 +24,7 @@ import {
   pollSystemStatus,
   pollUnslothStatus,
   openLocalAndSpawnRequested,
+  openLocalAndSpawnSucceeded,
   spawnSidecarFailed,
   spawnSidecarRequested,
   stopUnslothFailed,
@@ -313,7 +314,11 @@ function* spawnSidecarSaga() {
 function* openLocalAndSpawnSaga() {
   try {
     const result = yield* call(invokeOpenLocalAndSpawn);
-    if (!result?.ok) {
+    if (result?.ok) {
+      // This window keeps its own (dead) backend, so no 'connected' status
+      // event ever reaches it — clear the pending flag explicitly.
+      yield* put(openLocalAndSpawnSucceeded());
+    } else {
       yield* put(
         spawnSidecarFailed(
           result?.error?.message ?? result?.reason ?? m.daemonStatus_spawnSidecarFailed_error(),

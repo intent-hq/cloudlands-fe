@@ -21,6 +21,7 @@ import {
   fetchSidecarRunLogSucceeded,
   heartbeatFailed,
   openLocalAndSpawnRequested,
+  openLocalAndSpawnSucceeded,
   pollUnslothStatus,
   spawnSidecarFailed,
   spawnSidecarRequested,
@@ -604,13 +605,38 @@ describe('daemonHealthSaga', () => {
       if (channel === BACKEND.OPEN_LOCAL_AND_SPAWN) return { ok: true, spawned: true };
       return undefined;
     });
-    const { input, task } = startHealthSaga();
+    const { input, dispatched, task } = startHealthSaga();
     await settle();
 
     input.put(openLocalAndSpawnRequested());
     await settle();
 
     expect(invoke).toHaveBeenCalledWith(BACKEND.OPEN_LOCAL_AND_SPAWN);
+    // The initiating window keeps its own (dead) backend, so no 'connected'
+    // status event ever clears the pending flag — the success action must.
+    expect(dispatched).toContainEqual(openLocalAndSpawnSucceeded());
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('does not dispatch the open-local success action when the open fails', async () => {
+    invoke.mockImplementation(async (channel: string) => {
+      if (channel === BACKEND.GET_STATUS) return { status: 'connected' };
+      if (channel === BACKEND.OPEN_LOCAL_AND_SPAWN) return { ok: false, reason: 'deadline' };
+      return undefined;
+    });
+    const { input, dispatched, task } = startHealthSaga();
+    await settle();
+
+    input.put(openLocalAndSpawnRequested());
+    await settle();
+
+    expect(dispatched).toContainEqual(spawnSidecarFailed('deadline'));
+    expect(
+      dispatched.some(
+        (action) => (action as { type?: string }).type === openLocalAndSpawnSucceeded.type,
+      ),
+    ).toBe(false);
     task.cancel();
     await task.toPromise();
   });

@@ -82,7 +82,6 @@ import {
   connectionsListReceived,
   connectOperationStarted,
   openConnectionRequested,
-  switchConnectionRequested,
 } from '$store/renderer/slices/connections/connections-slice';
 import { LOCAL_CONNECTION_ID } from '$shared/types/connections';
 
@@ -575,10 +574,13 @@ describe('DaemonStoppedOverlay', () => {
         .map(([action]) => action as { type: string; payload?: unknown[] })
         .find((action) => action.type === openConnectionRequested.type);
       expect(dispatched?.payload).toEqual(['remote-2']);
-      // Open-only: the legacy retargeting action must never fire from the overlay.
+      // Open-only: the legacy retargeting action must never fire from the
+      // overlay. Literal type string: the remove-switch follow-up deletes the
+      // action creator, and this negative assertion must survive that.
       expect(
         dispatchSpy.mock.calls.some(
-          ([action]) => (action as { type: string }).type === switchConnectionRequested.type,
+          ([action]) =>
+            (action as { type: string }).type === 'connections/switchConnectionRequested',
         ),
       ).toBe(false);
       dispatchSpy.mockRestore();

@@ -110,6 +110,15 @@ export const openLocalAndSpawnRequested = createAction(
 );
 
 /**
+ * backend:open-local-and-spawn resolved ok. The initiating window stays bound
+ * to its own (dead) backend, so no 'connected' backend:status event ever
+ * reaches it to clear the pending flag — this action is that reset.
+ */
+export const openLocalAndSpawnSucceeded = createAction(
+  'daemonHealth/openLocalAndSpawnSucceeded',
+);
+
+/**
  * backend:spawn-sidecar failed (binary not found, spawn error). A successful
  * spawn has no dedicated action — the pending flag clears when the reconnect
  * lands as a 'connected' backend:status event.
@@ -301,6 +310,9 @@ daemonHealthReducer.with(spawnSidecarRequested, (state) => {
 });
 daemonHealthReducer.with(openLocalAndSpawnRequested, (state) => {
   return { ...state, sidecarSpawnPending: true, sidecarSpawnError: null };
+});
+daemonHealthReducer.with(openLocalAndSpawnSucceeded, (state) => {
+  return { ...state, sidecarSpawnPending: false };
 });
 daemonHealthReducer.with(spawnSidecarFailed, (state, { payload: [error] }) => {
   return { ...state, sidecarSpawnPending: false, sidecarSpawnError: error };
