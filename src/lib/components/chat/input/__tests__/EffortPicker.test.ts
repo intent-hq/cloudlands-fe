@@ -171,6 +171,10 @@ describe('EffortPicker', () => {
     const content = screen.getByTestId('effort-picker-content');
     expect(content.textContent).toContain('Reasoning effort');
     expect(trigger().textContent?.trim()).toBe('Low');
+    const gauge = screen.getByTestId('effort-gauge');
+    expect(screen.getByText('Reasoning effort').contains(gauge)).toBe(true);
+    expect(gauge.dataset.gaugeValue).toBe('0');
+    expect(gauge.className.baseVal).toContain('[&_line]:transition-none!');
 
     const listbox = await openSelect();
     expect(within(listbox).getAllByRole('option')).toHaveLength(3);
@@ -188,6 +192,20 @@ describe('EffortPicker', () => {
     });
     expect(trigger().getAttribute('aria-label')).toContain('High');
     expect(trigger().textContent).toContain('High');
+    const gauge = screen.getByTestId('effort-gauge');
+    expect(trigger().contains(gauge)).toBe(true);
+    expect(gauge.dataset.gaugeValue).toBe('2');
+  });
+
+  it('hides the dial for standalone and embedded Auto selections', () => {
+    mount({ id: 'agent-1', workspaceId: 'ws-1', model: 'codex:gpt-5.3-codex' });
+    expect(screen.queryByTestId('effort-gauge')).toBeNull();
+    cleanup();
+
+    render(EffortPicker, {
+      props: { mode: 'embedded', effortLevels: ['low', 'high'], effort: null },
+    });
+    expect(screen.queryByTestId('effort-gauge')).toBeNull();
   });
 
   it('lists Auto followed by localized provider levels in their advertised order', async () => {
@@ -219,6 +237,7 @@ describe('EffortPicker', () => {
     ).toEqual(['Auto', 'Off', 'Low', 'ultra']);
     expect(applyReasoningEffort).not.toHaveBeenCalled();
     await selectOption(listbox, 'Auto');
+    expect(screen.queryByTestId('effort-gauge')).toBeNull();
 
     await waitFor(() => {
       expect(applyReasoningEffort).toHaveBeenCalledWith('agent-1', 'ws-1', null, 'none');
@@ -229,6 +248,7 @@ describe('EffortPicker', () => {
     mount({ id: 'agent-1', workspaceId: 'ws-1', model: 'provider:off-capable' });
     const listbox = await openSelect();
     await selectOption(listbox, 'Off');
+    expect(screen.getByTestId('effort-gauge')).toBeTruthy();
 
     await waitFor(() => {
       expect(applyReasoningEffort).toHaveBeenCalledWith('agent-1', 'ws-1', 'none', null);
@@ -316,6 +336,7 @@ describe('EffortPicker', () => {
     await waitFor(() => {
       expect(trigger().getAttribute('aria-label')).toContain('Auto');
     });
+    expect(screen.queryByTestId('effort-gauge')).toBeNull();
 
     const listbox = await openSelect();
     expect(within(listbox).getAllByRole('option')).toHaveLength(3);

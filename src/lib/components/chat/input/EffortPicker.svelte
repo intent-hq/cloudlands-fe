@@ -18,6 +18,7 @@
   import { writable } from 'svelte/store';
   import { cn } from '$lib/utils';
   import { Select } from '$lib/components/ui/select';
+  import EffortGauge from './EffortGauge.svelte';
   import { m } from '$shared/paraglide/messages.js';
   import { applyReasoningEffort } from '$features/agent/reasoning-effort';
   import { store as appStore } from '$store/renderer/store';
@@ -77,7 +78,12 @@
     return LEVEL_LABELS[level]?.() ?? level;
   }
 
-  type EffortOption = { value: string; label: string; effort: string | null };
+  type EffortOption = {
+    value: string;
+    label: string;
+    effort: string | null;
+    levelIndex: number | null;
+  };
 
   const AUTO_OPTION_VALUE = 'auto';
 
@@ -87,11 +93,17 @@
   const controlDisabled = $derived(disabled || (!embedded && !workspaceId));
 
   const options = $derived.by<EffortOption[]>(() => [
-    { value: AUTO_OPTION_VALUE, label: m.chat_effortPicker_level_auto(), effort: null },
+    {
+      value: AUTO_OPTION_VALUE,
+      label: m.chat_effortPicker_level_auto(),
+      effort: null,
+      levelIndex: null,
+    },
     ...levels.map((level, index) => ({
       value: `effort-${index}`,
       label: levelLabel(level),
       effort: level,
+      levelIndex: index,
     })),
   ]);
   const selectItems = $derived(options.map(({ value, label }) => ({ value, label })));
@@ -105,10 +117,9 @@
     return supportedIndex >= 0 ? `effort-${supportedIndex}` : `unsupported-${persistedValue}`;
   });
   let selectedOptionValue = $state('');
-  const selectedLabel = $derived(
-    options.find((option) => option.value === selectedOptionValue)?.label ??
-      m.chat_effortPicker_level_auto(),
-  );
+  const selectedOption = $derived(options.find((option) => option.value === selectedOptionValue));
+  const selectedLabel = $derived(selectedOption?.label ?? m.chat_effortPicker_level_auto());
+  const selectedLevelIndex = $derived(selectedOption?.levelIndex ?? -1);
   let selectOpen = $state(false);
 
   $effect(() => {
@@ -147,7 +158,14 @@
     }}
   >
     {#if embedded}
-      <span class="type-caption text-muted-foreground">
+      <span class="inline-flex items-center gap-1 type-caption text-muted-foreground">
+        {#if selectedLevelIndex >= 0}
+          <EffortGauge
+            value={selectedLevelIndex}
+            max={Math.max(1, levels.length - 1)}
+            class="[&_line]:transition-none!"
+          />
+        {/if}
         {m.chat_effortPicker_title_label()}
       </span>
     {/if}
@@ -160,10 +178,17 @@
         onchange={(value) => void commit(value)}
       >
         <Select.Trigger
-          class="h-7 px-2 text-xs"
+          class="h-7 gap-1 px-2 text-xs"
           aria-label={m.chat_effortPicker_trigger_ariaLabel({ level: selectedLabel })}
           data-testid="effort-picker-trigger"
         >
+          {#if !embedded && selectedLevelIndex >= 0}
+            <EffortGauge
+              value={selectedLevelIndex}
+              max={Math.max(1, levels.length - 1)}
+              class="[&_line]:transition-none!"
+            />
+          {/if}
           <span class="min-w-0 flex-1 truncate text-left">
             {#if !embedded}{m.chat_effortPicker_title_label()} ·{' '}
             {/if}{selectedLabel}

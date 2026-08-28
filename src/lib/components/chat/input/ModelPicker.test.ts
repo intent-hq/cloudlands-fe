@@ -609,6 +609,7 @@ describe('ModelPicker combined reasoning mode', () => {
     expect(selectTrigger.textContent?.trim()).toBe('Medium');
     expect(selectTrigger.className).toContain('text-xs');
     expect(selectTrigger.getAttribute('aria-expanded')).toBe('false');
+    expect(screen.getByTestId('effort-gauge')).toBeTruthy();
     expect(screen.queryByRole('slider')).toBeNull();
 
     const effortListbox = await openEffortSelect();
@@ -1085,6 +1086,7 @@ describe('ModelPicker combined reasoning mode', () => {
     await waitFor(() => expect(selectTrigger.disabled).toBe(false));
     expect(selectTrigger.textContent?.trim()).toBe('Auto');
     expect(selectTrigger.className).toContain('text-xs');
+    expect(screen.queryByTestId('effort-gauge')).toBeNull();
   });
 
   it('shows explicit none as Off in the composer, tooltip, accessibility label, and select', async () => {
@@ -1110,6 +1112,9 @@ describe('ModelPicker combined reasoning mode', () => {
     const selectTrigger = effortTrigger();
     expect(selectTrigger.textContent?.trim()).toBe('Off');
     expect(selectTrigger.getAttribute('aria-label')).toContain('Off');
+    const gauge = screen.getByTestId('effort-gauge');
+    expect(screen.getByText('Reasoning effort').contains(gauge)).toBe(true);
+    expect(gauge.dataset.gaugeValue).toBe('0');
     const listbox = await openEffortSelect();
     expect(
       within(listbox)
@@ -1118,6 +1123,7 @@ describe('ModelPicker combined reasoning mode', () => {
     ).toEqual(['Auto', 'Off', 'Low', 'ultra']);
     expect(applyReasoningEffortMock).not.toHaveBeenCalled();
     await selectEffort(listbox, 'Auto');
+    expect(screen.queryByTestId('effort-gauge')).toBeNull();
 
     await waitFor(() => {
       expect(applyReasoningEffortMock).toHaveBeenCalledWith('agent-1', 'ws-1', null, 'none');
