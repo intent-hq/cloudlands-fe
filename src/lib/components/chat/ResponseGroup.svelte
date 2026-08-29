@@ -34,6 +34,7 @@
     isTerminal?: boolean;
     children: Snippet;
     currentChild?: Snippet;
+    currentChildKey?: string;
     blocks?: ContentBlock[];
     reasoningPhase?: boolean;
     adjacentOperationalRow?: boolean;
@@ -47,6 +48,7 @@
     isTerminal = false,
     children,
     currentChild,
+    currentChildKey,
     blocks,
     reasoningPhase = false,
     adjacentOperationalRow = false,
@@ -242,7 +244,18 @@
         data-operational-expanded-guide
         aria-hidden="true"
       ></span>
-      {@render currentChild?.()}
+      <!-- Keying on the current child's block identity makes a discrete swap
+           replace nodes: the outgoing child's outro and the incoming child's
+           intro run the same tick-driven disclosure motion, so their combined
+           height interpolates old→new under the followed-bottom lease.
+           Streaming growth within one child keeps the key stable and never
+           animates; the local transition stays inert when the preview itself
+           mounts or unmounts. -->
+      {#key currentChildKey}
+        <div data-response-group-preview-child transition:safeDisclosureTransition>
+          {@render currentChild?.()}
+        </div>
+      {/key}
     </div>
   </CylinderScroller>
 {/snippet}

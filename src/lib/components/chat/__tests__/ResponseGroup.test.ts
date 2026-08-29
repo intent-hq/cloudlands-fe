@@ -272,7 +272,8 @@ describe('ResponseGroup - collapse state model', () => {
   }
 
   // jsdom reports zero layout height, which short-circuits the disclosure
-  // motion; give the preview container a measurable height so the outro runs.
+  // motion; give the preview container and the keyed preview child a
+  // measurable height so their outros run.
   function mockMeasuredPreviewStyle() {
     const original = window.getComputedStyle.bind(window);
     return vi
@@ -280,7 +281,7 @@ describe('ResponseGroup - collapse state model', () => {
       .mockImplementation((element: Element, pseudo?: string | null) => {
         if (
           element instanceof HTMLElement &&
-          element.matches('[data-operational-preview-content]')
+          element.matches('[data-operational-preview-content], [data-response-group-preview-child]')
         ) {
           return {
             height: '40px',
@@ -361,6 +362,102 @@ describe('ResponseGroup - collapse state model', () => {
       expect(previewContent(container)).toBeNull();
       expect(details(container)).not.toBeNull();
     } finally {
+      styleSpy.mockRestore();
+    }
+  });
+
+  const firstPreviewChild = createRawSnippet(() => ({
+    render: () => '<div data-testid="preview-child-first">first chunk</div>',
+  }));
+  const secondPreviewChild = createRawSnippet(() => ({
+    render: () => '<div data-testid="preview-child-second">second chunk</div>',
+  }));
+
+  it('animates a current-child swap instead of replacing it instantly', async () => {
+    const styleSpy = mockMeasuredPreviewStyle();
+    try {
+      const { container, rerender } = render(ResponseGroup, {
+        props: {
+          name: 'Live group',
+          isStreaming: true,
+          currentChild: firstPreviewChild,
+          currentChildKey: 'child-1',
+          children,
+        },
+      });
+      expect(container.querySelector('[data-testid="preview-child-first"]')).not.toBeNull();
+
+      await rerender({ currentChild: secondPreviewChild, currentChildKey: 'child-2' });
+      expect(container.querySelector('[data-testid="preview-child-second"]')).not.toBeNull();
+      expect(container.querySelector('[data-testid="preview-child-first"]')).not.toBeNull();
+      await waitFor(() =>
+        expect(container.querySelector('[data-testid="preview-child-first"]')).toBeNull(),
+      );
+      expect(container.querySelectorAll('[data-response-group-preview-child]')).toHaveLength(1);
+    } finally {
+      styleSpy.mockRestore();
+    }
+  });
+
+  it('updates the current child in place when its key is unchanged', async () => {
+    const styleSpy = mockMeasuredPreviewStyle();
+    try {
+      const { container, rerender } = render(ResponseGroup, {
+        props: {
+          name: 'Live group',
+          isStreaming: true,
+          currentChild: firstPreviewChild,
+          currentChildKey: 'child-1',
+          children,
+        },
+      });
+      expect(container.querySelector('[data-testid="preview-child-first"]')).not.toBeNull();
+
+      await rerender({ currentChild: secondPreviewChild });
+      expect(container.querySelector('[data-testid="preview-child-second"]')).not.toBeNull();
+      expect(container.querySelector('[data-testid="preview-child-first"]')).toBeNull();
+      expect(container.querySelectorAll('[data-response-group-preview-child]')).toHaveLength(1);
+    } finally {
+      styleSpy.mockRestore();
+    }
+  });
+
+  it('swaps the current child immediately under reduced motion', async () => {
+    const styleSpy = mockMeasuredPreviewStyle();
+    vi.stubGlobal(
+      'matchMedia',
+      vi.fn(
+        (query: string) =>
+          ({
+            matches: query.includes('prefers-reduced-motion'),
+            media: query,
+            onchange: null,
+            addListener: vi.fn(),
+            removeListener: vi.fn(),
+            addEventListener: vi.fn(),
+            removeEventListener: vi.fn(),
+            dispatchEvent: vi.fn(),
+          }) as unknown as MediaQueryList,
+      ),
+    );
+    try {
+      const { container, rerender } = render(ResponseGroup, {
+        props: {
+          name: 'Live group',
+          isStreaming: true,
+          currentChild: firstPreviewChild,
+          currentChildKey: 'child-1',
+          children,
+        },
+      });
+      expect(container.querySelector('[data-testid="preview-child-first"]')).not.toBeNull();
+
+      await rerender({ currentChild: secondPreviewChild, currentChildKey: 'child-2' });
+      expect(container.querySelector('[data-testid="preview-child-second"]')).not.toBeNull();
+      expect(container.querySelector('[data-testid="preview-child-first"]')).toBeNull();
+      expect(container.querySelectorAll('[data-response-group-preview-child]')).toHaveLength(1);
+    } finally {
+      vi.unstubAllGlobals();
       styleSpy.mockRestore();
     }
   });

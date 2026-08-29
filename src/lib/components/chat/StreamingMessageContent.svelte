@@ -987,6 +987,10 @@
         {/each}
       {:else}
         {@const currentChildIndex = getResponseGroupCurrentChildIndex(group)}
+        {@const currentChildKey =
+          currentChildIndex >= 0
+            ? getResponseGroupBlockKeys(group.children)[currentChildIndex]
+            : undefined}
         {#snippet currentChild()}
           {@render renderResponseGroupChild(
             group,
@@ -1012,6 +1016,7 @@
             searchPath={chatSearchBlockPath(blockIndex)}
             reasoningPhase={group.isReasoningPhase}
             currentChild={currentChildIndex >= 0 ? currentChild : undefined}
+            {currentChildKey}
             adjacentOperationalRow={isAdjacentOperationalClusterRow(
               groupedBlocks,
               blockIndex,
