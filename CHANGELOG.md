@@ -4,6 +4,28 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.108.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.107.0...v2.108.0) (2026-08-29)
+
+
+### 🚀 Features
+
+* persist Q&A wizard collapsed state and auto-collapse while typing ([#1843](https://github.com/intent-hq/cloudlands-fe/issues/1843)) ([0ee249e](https://github.com/intent-hq/cloudlands-fe/commit/0ee249e28c9e0464b80201545a6e0242f61f11bb))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.8.16 ([#1853](https://github.com/intent-hq/cloudlands-fe/issues/1853)) ([c5150e9](https://github.com/intent-hq/cloudlands-fe/commit/c5150e96aa086a24c292164eb722522c3c83d30c))
+* clean up device status menu ([#1834](https://github.com/intent-hq/cloudlands-fe/issues/1834)) ([41d7c12](https://github.com/intent-hq/cloudlands-fe/commit/41d7c12cce94685bd8d07baa0e87c8a634e0b62f))
+* skip window-session tombstoning during app quit/update install ([#1851](https://github.com/intent-hq/cloudlands-fe/issues/1851)) ([2dd7293](https://github.com/intent-hq/cloudlands-fe/commit/2dd729338f7656f0ba8b1bae0b57450574dd2edb))
+* **workspace:** clear warm session phases on backend reconnect ([#1847](https://github.com/intent-hq/cloudlands-fe/issues/1847)) ([751e8ee](https://github.com/intent-hq/cloudlands-fe/commit/751e8eef3b10bf99959f0026c86b1663ea39a0cb))
+
+
+### ⚡ Performance
+
+* **agent-avatar:** defer stack measurement off the mount path ([#1848](https://github.com/intent-hq/cloudlands-fe/issues/1848)) ([98d9a8e](https://github.com/intent-hq/cloudlands-fe/commit/98d9a8efefb756365406cf6c006ed04004dcd29a))
+* defer smartScroll bottom snap on retained-surface reactivation ([#1845](https://github.com/intent-hq/cloudlands-fe/issues/1845)) ([8a60044](https://github.com/intent-hq/cloudlands-fe/commit/8a60044f6dfce4685fdb394a3b63efb0499274e5))
+* **layout:** skip resize intro measurement on zero-duration plays ([#1849](https://github.com/intent-hq/cloudlands-fe/issues/1849)) ([e6a1c49](https://github.com/intent-hq/cloudlands-fe/commit/e6a1c49f51fa796eb41746dfd16c07c8f541c1fe))
+
 ## [2.107.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.106.2...v2.107.0) (2026-08-29)
 
 
