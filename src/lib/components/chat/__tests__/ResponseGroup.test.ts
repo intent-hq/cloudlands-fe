@@ -366,6 +366,60 @@ describe('ResponseGroup - collapse state model', () => {
     }
   });
 
+  it('hands the preview off without stacking when the terminal stream ends', async () => {
+    const styleSpy = mockMeasuredPreviewStyle();
+    try {
+      const { container, rerender } = render(ResponseGroup, {
+        props: {
+          name: 'Live group',
+          isStreaming: true,
+          isTerminal: true,
+          currentChild: livePreviewChild,
+          children,
+        },
+      });
+      const btn = header(container);
+      expect(previewContent(container)).not.toBeNull();
+      expect(details(container)).toBeNull();
+
+      await rerender({ isStreaming: false, isTerminal: true });
+      expect(btn.getAttribute('aria-expanded')).toBe('true');
+      expect(details(container)).not.toBeNull();
+      expect(previewContent(container)).toBeNull();
+    } finally {
+      styleSpy.mockRestore();
+    }
+  });
+
+  it('still animates the preview out when a user-collapsed terminal stream ends', async () => {
+    const styleSpy = mockMeasuredPreviewStyle();
+    try {
+      const { container, rerender } = render(ResponseGroup, {
+        props: {
+          name: 'Live group',
+          isStreaming: true,
+          isTerminal: true,
+          currentChild: livePreviewChild,
+          children,
+        },
+      });
+      const btn = header(container);
+
+      await fireEvent.click(btn);
+      await fireEvent.click(btn);
+      expect(btn.getAttribute('aria-expanded')).toBe('false');
+      expect(previewContent(container)).not.toBeNull();
+
+      await rerender({ isStreaming: false, isTerminal: true });
+      expect(btn.getAttribute('aria-expanded')).toBe('false');
+      expect(details(container)).toBeNull();
+      expect(previewContent(container)).not.toBeNull();
+      await waitFor(() => expect(previewContent(container)).toBeNull());
+    } finally {
+      styleSpy.mockRestore();
+    }
+  });
+
   const firstPreviewChild = createRawSnippet(() => ({
     render: () => '<div data-testid="preview-child-first">first chunk</div>',
   }));

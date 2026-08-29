@@ -207,13 +207,19 @@
   // Disclosure motion for the streaming preview. When the preview leaves
   // because the group expanded, the details body mounts in the same tick with
   // its own disclosure intro — skip the preview outro so two containers never
-  // animate height against the followed bottom at once.
+  // animate height against the followed bottom at once. The terminal
+  // stream-end auto-expand needs its own gate: the outro config is captured
+  // during the template flush, before the streaming-edge effect flips
+  // isExpanded, so mirror that effect's decision from the already-updated
+  // props instead.
   function previewTransition(
     node: Element,
     params: { duration?: number; y?: number } = {},
     options: { direction?: 'in' | 'out' | 'both' } = {},
   ): TransitionConfig {
-    if (isExpanded) return { duration: 0 };
+    if (isExpanded || (!isStreaming && isTerminal && disclosureOverride !== 'collapsed')) {
+      return { duration: 0 };
+    }
     return safeDisclosureTransition(node, params, options);
   }
 </script>

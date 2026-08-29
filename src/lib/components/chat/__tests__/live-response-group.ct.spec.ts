@@ -42,6 +42,9 @@ test('settles a keyed current-child swap on the new child', async ({ mount }) =>
   await component.update({
     props: { chunk: 'second chunk', chunkKey: 'child-b', isStreaming: true },
   });
+  // Svelte's keyed-block anchoring inserts the incoming child after the
+  // outgoing one mid-swap, so .last() targets the new child; the
+  // toHaveCount(1) below keeps the test sound if that DOM order ever changes.
   await expect(child.last()).toHaveText('second chunk');
   await expect(child).toHaveCount(1);
   await expect(child).toHaveText('second chunk');

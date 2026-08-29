@@ -32,7 +32,11 @@
     detailsId?: string;
     previewClass?: string;
     detailsClass?: string;
-    previewTransition?: (node: Element) => TransitionConfig;
+    previewTransition?: (
+      node: Element,
+      params?: { duration?: number; y?: number },
+      options?: { direction?: 'in' | 'out' | 'both' },
+    ) => TransitionConfig;
     detailsTransition?: (node: Element) => TransitionConfig;
     detailsMotion?: string;
     detailsInert?: boolean;
@@ -98,12 +102,13 @@
 
   // Delegates to the consumer transition when provided; the zero-duration
   // fallback keeps removal synchronous for rows without preview motion.
-  function previewContentTransition(node: Element, ...rest: unknown[]): TransitionConfig {
+  function previewContentTransition(
+    node: Element,
+    params?: { duration?: number; y?: number },
+    options?: { direction?: 'in' | 'out' | 'both' },
+  ): TransitionConfig {
     if (!previewTransition) return { duration: 0 };
-    return (previewTransition as (node: Element, ...rest: unknown[]) => TransitionConfig)(
-      node,
-      ...rest,
-    );
+    return previewTransition(node, params, options);
   }
 </script>
 
