@@ -20,6 +20,7 @@ import type {
 } from './git-types';
 export type { GitOperationCompletedEvent, GitOperationFailedEvent } from './git-types';
 import type { GitStatus } from '$shared/types';
+import type { CommitFile } from '$features/file-tracking/types';
 
 export const defaultGitOperationFlags: GitOperationFlags = {
   isPushing: false,
@@ -70,6 +71,9 @@ export const setGitStatus = createAction('git/setStatus', (wsId: string, status:
 export const loadSecondaryRootGit = createAction<
   [wsId: string, gitRootId: string, registeredCommitSha?: string, limit?: number]
 >('git/loadSecondaryRoot');
+export const loadSecondaryRootCommitFiles = createAction<
+  [wsId: string, gitRootId: string, commitHash: string]
+>('git/loadSecondaryRootCommitFiles');
 export const setSecondaryRootGitLoading = createAction<
   [wsId: string, gitRootId: string]
 >('git/setSecondaryRootLoading');
@@ -84,6 +88,15 @@ export const setSecondaryRootGit = createAction(
 export const setSecondaryRootGitError = createAction<
   [wsId: string, gitRootId: string, error: string]
 >('git/setSecondaryRootError');
+export const setSecondaryRootCommitFiles = createAction(
+  'git/setSecondaryRootCommitFiles',
+  (wsId: string, gitRootId: string, commitHash: string, files: CommitFile[]) => ({
+    wsId,
+    gitRootId,
+    commitHash,
+    files,
+  }),
+);
 
 // ── Git Operation Event Actions ──
 
@@ -161,6 +174,22 @@ gitReducer.with(setSecondaryRootGitError, (state, { payload: [wsId, gitRootId, e
         commitFiles: current?.commitFiles ?? {},
         loading: false,
         error,
+      },
+    },
+  });
+});
+gitReducer.with(setSecondaryRootCommitFiles, (state, { payload }) => {
+  const { wsId, gitRootId, commitHash, files } = payload;
+  const ws = getWorkspaceState(state, wsId);
+  const current = ws.secondaryRoots[gitRootId];
+  if (!current) return state;
+  return setWorkspaceState(state, wsId, {
+    ...ws,
+    secondaryRoots: {
+      ...ws.secondaryRoots,
+      [gitRootId]: {
+        ...current,
+        commitFiles: { ...current.commitFiles, [commitHash]: files },
       },
     },
   });

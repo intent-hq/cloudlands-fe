@@ -11,6 +11,7 @@ import {
   setSecondaryRootGit,
   setSecondaryRootGitError,
   setSecondaryRootGitLoading,
+  setSecondaryRootCommitFiles,
 } from "./git-slice";
 import type { GitStatus } from "$shared/types";
 import { workspaceUnmounted } from "../workspace-lifecycle/workspace-lifecycle-slice";
@@ -118,6 +119,29 @@ describe("gitReducer", () => {
       );
       const state = reduce(loaded, workspaceUnmounted("ws-1"));
       expect(state.byWorkspaceId["ws-1"]).toBeUndefined();
+    });
+
+    it("stores recovered commit files without changing other root data", () => {
+      const loaded = reduce(
+        initialState,
+        setSecondaryRootGit("ws-1", "root-1", {
+          status: makeGitStatus(),
+          commits: [],
+          commitFiles: { abc123: null },
+          nextToken: undefined,
+        }),
+      );
+      const state = reduce(
+        loaded,
+        setSecondaryRootCommitFiles("ws-1", "root-1", "abc123", [
+          { path: "recovered.ts", additions: 1, deletions: 0 },
+        ]),
+      );
+      expect(
+        getGitWorkspaceState(state, "ws-1").secondaryRoots["root-1"].commitFiles,
+      ).toEqual({
+        abc123: [{ path: "recovered.ts", additions: 1, deletions: 0 }],
+      });
     });
   });
 });

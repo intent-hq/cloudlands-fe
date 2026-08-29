@@ -11,10 +11,12 @@ import {
 } from '../../workspace-lifecycle/workspace-lifecycle-slice';
 import {
   loadGitStatus,
+  loadSecondaryRootCommitFiles,
   loadSecondaryRootGit,
   setGitStatus,
   setSecondaryRootGit,
   setSecondaryRootGitError,
+  setSecondaryRootCommitFiles,
 } from '../git-slice';
 import { gitReadSaga } from './git-read-saga';
 
@@ -138,7 +140,10 @@ describe('gitReadSaga', () => {
   });
 
   it('cancels all in-flight root reads when the workspace unmounts', async () => {
-    vi.spyOn(gitClient, 'getStatus').mockReturnValue(new Promise(() => {}));
+    const resolvers: Array<(value: { ok: true; data: GitStatus }) => void> = [];
+    vi.spyOn(gitClient, 'getStatus').mockImplementation(
+      () => new Promise((resolve) => resolvers.push(resolve)),
+    );
     vi.spyOn(gitClient, 'getHistory').mockResolvedValue({ ok: true, data: { items: [] } });
     const channel = stdChannel();
     const actions: unknown[] = [];
@@ -148,6 +153,22 @@ describe('gitReadSaga', () => {
     channel.put(loadSecondaryRootGit('ws-1', 'root-2'));
     await settle();
     channel.put(workspaceUnmounted('ws-1'));
+    await settle();
+    for (const resolve of resolvers) {
+      resolve({
+        ok: true,
+        data: {
+          branch: 'late',
+          ahead: 0,
+          behind: 0,
+          diverged: false,
+          files: [],
+          hasUncommittedChanges: false,
+          hasUntrackedFiles: false,
+        },
+      });
+    }
+    await settle();
     await settle();
     expect(
       actions.some((action) =>
@@ -171,6 +192,32 @@ describe('gitReadSaga', () => {
     await vi.waitFor(() =>
       expect(actions).toContainEqual(
         setSecondaryRootGitError('ws-1', 'root-1', 'status failed'),
+      ),
+    );
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('keeps a null commit-detail read recoverable and accepts a later retry', async () => {
+    vi.spyOn(appClient.git, 'commitDetails')
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({
+        files: ['recovered.ts'],
+        fileDetails: [],
+      });
+    const channel = stdChannel();
+    const actions: unknown[] = [];
+    const task = runSaga({ channel, dispatch: (action) => actions.push(action) }, gitReadSaga);
+
+    channel.put(loadSecondaryRootCommitFiles('ws-1', 'root-1', 'abc123'));
+    await settle();
+    expect(actions).not.toContainEqual(expect.objectContaining({ type: setSecondaryRootGitError.type }));
+    channel.put(loadSecondaryRootCommitFiles('ws-1', 'root-1', 'abc123'));
+    await vi.waitFor(() =>
+      expect(actions).toContainEqual(
+        setSecondaryRootCommitFiles('ws-1', 'root-1', 'abc123', [
+          { path: 'recovered.ts', additions: 0, deletions: 0 },
+        ]),
       ),
     );
     task.cancel();

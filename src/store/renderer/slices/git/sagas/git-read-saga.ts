@@ -11,11 +11,13 @@ import { takeSingleFlightInContext } from '../../../utils/context-saga-effects';
 import { workspaceUnmounted } from '../../workspace-lifecycle/workspace-lifecycle-slice';
 import {
   loadGitStatus,
+  loadSecondaryRootCommitFiles,
   loadSecondaryRootGit,
   setGitStatus,
   setSecondaryRootGit,
   setSecondaryRootGitError,
   setSecondaryRootGitLoading,
+  setSecondaryRootCommitFiles,
 } from '../git-slice';
 import { toGitStatus } from '../utils/git-status';
 
@@ -78,14 +80,14 @@ async function readSecondaryRoot(
       appClient.git.commitDetails(workspaceId, commit.hash, { gitRootId }),
     ),
   );
-  const commitFiles: Record<string, CommitFile[]> = {};
+  const commitFiles: Record<string, CommitFile[] | null> = {};
   commits.forEach((commit, index) => {
     const detail = details[index];
-    if (!detail) throw new Error(`Failed to load commit details for ${commit.hash}`);
-    commitFiles[commit.hash] =
-      detail.fileDetails.length > 0
+    commitFiles[commit.hash] = detail
+      ? detail.fileDetails.length > 0
         ? detail.fileDetails
-        : detail.files.map((path) => ({ path, additions: 0, deletions: 0 }));
+        : detail.files.map((path) => ({ path, additions: 0, deletions: 0 }))
+      : null;
   });
   return { status: statusResult.data, commits, nextToken, commitFiles };
 }
@@ -116,11 +118,39 @@ function* loadSecondaryRootWorker(
   }
 }
 
+function* loadSecondaryRootCommitFilesWorker(
+  action: ReturnType<typeof loadSecondaryRootCommitFiles>,
+): SagaGenerator<void> {
+  const [workspaceId, gitRootId, commitHash] = action.payload;
+  try {
+    const detail = yield* call(
+      [appClient.git, appClient.git.commitDetails],
+      workspaceId,
+      commitHash,
+      { gitRootId },
+    );
+    if (!detail) return;
+    const files: CommitFile[] =
+      detail.fileDetails.length > 0
+        ? detail.fileDetails
+        : detail.files.map((path) => ({ path, additions: 0, deletions: 0 }));
+    yield* put(setSecondaryRootCommitFiles(workspaceId, gitRootId, commitHash, files));
+  } catch (error) {
+    logger.error('Failed to load secondary-root commit details', error);
+  }
+}
+
 function* watchSecondaryRootReads(): SagaGenerator<never> {
   const tasks = new Map<string, Task>();
   while (true) {
-    const action: ReturnType<typeof loadSecondaryRootGit> | ReturnType<typeof workspaceUnmounted> =
-      yield* take([loadSecondaryRootGit, workspaceUnmounted]);
+    const action:
+      | ReturnType<typeof loadSecondaryRootGit>
+      | ReturnType<typeof loadSecondaryRootCommitFiles>
+      | ReturnType<typeof workspaceUnmounted> = yield* take([
+      loadSecondaryRootGit,
+      loadSecondaryRootCommitFiles,
+      workspaceUnmounted,
+    ]);
     const workspaceId = action.payload[0];
     if (action.type === workspaceUnmounted.type) {
       for (const [key, task] of tasks) {
@@ -130,14 +160,33 @@ function* watchSecondaryRootReads(): SagaGenerator<never> {
       }
       continue;
     }
-    const rootAction = action as ReturnType<typeof loadSecondaryRootGit>;
-    const key = `${workspaceId}:${rootAction.payload[1]}`;
+    const rootAction = action as
+      | ReturnType<typeof loadSecondaryRootGit>
+      | ReturnType<typeof loadSecondaryRootCommitFiles>;
+    const rootId = action.payload[1];
+    const key =
+      action.type === loadSecondaryRootCommitFiles.type
+        ? `${workspaceId}:${rootId}:${action.payload[2]}`
+        : `${workspaceId}:${rootId}`;
+    if (action.type === loadSecondaryRootGit.type) {
+      for (const [runningKey, runningTask] of tasks) {
+        if (runningKey !== key && !runningKey.startsWith(`${key}:`)) continue;
+        tasks.delete(runningKey);
+        if (runningTask.isRunning()) yield* cancel(runningTask);
+      }
+    }
     const current = tasks.get(key);
     if (current?.isRunning()) yield* cancel(current);
     let task!: Task;
     task = yield* fork(function* latestRootRead() {
       try {
-        yield* loadSecondaryRootWorker(rootAction);
+        if (rootAction.type === loadSecondaryRootCommitFiles.type) {
+          yield* loadSecondaryRootCommitFilesWorker(
+            rootAction as ReturnType<typeof loadSecondaryRootCommitFiles>,
+          );
+        } else {
+          yield* loadSecondaryRootWorker(rootAction as ReturnType<typeof loadSecondaryRootGit>);
+        }
       } finally {
         if (tasks.get(key) === task) tasks.delete(key);
       }

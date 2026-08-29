@@ -14,7 +14,10 @@ type RootGitTestState = {
   status: GitStatus | null;
   commits: CommitInfo[];
   nextToken?: string;
-  commitFiles: Record<string, Array<{ path: string; additions: number; deletions: number }>>;
+  commitFiles: Record<
+    string,
+    Array<{ path: string; additions: number; deletions: number }> | null
+  >;
   loading: boolean;
   error: string | null;
 };
@@ -27,14 +30,8 @@ const mocks = vi.hoisted(() => ({
   writeTextToClipboard: vi.fn(),
   toastSuccess: vi.fn(),
   toastError: vi.fn(),
-  rootGit: (() => {
-    let value: RootGitTestState = {
-      status: null,
-      commits: [],
-      commitFiles: {},
-      loading: false,
-      error: null,
-    };
+  rootGitRoots: (() => {
+    let value: Record<string, RootGitTestState> = {};
     const subscribers = new Set<(next: typeof value) => void>();
     return {
       subscribe(run: (next: typeof value) => void) {
@@ -42,9 +39,16 @@ const mocks = vi.hoisted(() => ({
         run(value);
         return () => subscribers.delete(run);
       },
-      set(next: typeof value) {
-        value = next;
+      reset() {
+        value = {};
         subscribers.forEach((run) => run(value));
+      },
+      setRoot(rootId: string, next: RootGitTestState) {
+        value = { ...value, [rootId]: next };
+        subscribers.forEach((run) => run(value));
+      },
+      getRoot(rootId: string) {
+        return value[rootId];
       },
     };
   })(),
@@ -79,9 +83,7 @@ vi.mock('$store/renderer/slices/git/git-selectors', () => ({
   },
   selectSecondaryRootGitRoots: vi.fn(() => ({
     subscribe(run: (value: Record<string, unknown>) => void) {
-      return mocks.rootGit.subscribe((value) =>
-        run({ 'root-1': value, 'root-2': value, 'root-9': value }),
-      );
+      return mocks.rootGitRoots.subscribe(run);
     },
   })),
 }));
@@ -93,6 +95,10 @@ vi.mock('$store/renderer/slices/git/git-slice', () => ({
       payload: [wsId, gitRootId, registeredCommitSha, limit],
     }),
   ),
+  loadSecondaryRootCommitFiles: vi.fn((wsId: string, gitRootId: string, commitHash: string) => ({
+    type: 'git/loadSecondaryRootCommitFiles',
+    payload: [wsId, gitRootId, commitHash],
+  })),
 }));
 
 vi.mock('$store/renderer/slices/workspace-navigation/workspace-navigation-slice', () => ({
@@ -194,21 +200,34 @@ describe('SecondaryRootChangesView', () => {
     mocks.getHistory.mockResolvedValue({ ok: true, data: { items: [] } });
     mocks.commitDetails.mockResolvedValue(null);
     mocks.writeTextToClipboard.mockResolvedValue(undefined);
-    mocks.rootGit.set({
-      status: null,
-      commits: [],
-      commitFiles: {},
-      loading: false,
-      error: null,
-    });
+    mocks.rootGitRoots.reset();
     requestEpochs.clear();
     mocks.dispatch.mockImplementation((action) => {
+      if (action.type === 'git/loadSecondaryRootCommitFiles') {
+        const [wsId, gitRootId, commitHash] = action.payload;
+        void mocks.commitDetails(wsId, commitHash, { gitRootId }).then((detail) => {
+          if (!detail) return;
+          const current = mocks.rootGitRoots.getRoot(gitRootId);
+          if (!current) return;
+          mocks.rootGitRoots.setRoot(gitRootId, {
+            ...current,
+            commitFiles: {
+              ...current.commitFiles,
+              [commitHash]:
+                detail.fileDetails.length > 0
+                  ? detail.fileDetails
+                  : detail.files.map((path) => ({ path, additions: 0, deletions: 0 })),
+            },
+          });
+        });
+        return;
+      }
       if (action.type !== 'git/loadSecondaryRoot') return;
       const [wsId, gitRootId, registeredCommitSha, limit] = action.payload;
       const requestKey = `${wsId}:${gitRootId}`;
       const epoch = (requestEpochs.get(requestKey) ?? 0) + 1;
       requestEpochs.set(requestKey, epoch);
-      mocks.rootGit.set({
+      mocks.rootGitRoots.setRoot(gitRootId, {
         status: null,
         commits: [],
         commitFiles: {},
@@ -222,7 +241,7 @@ describe('SecondaryRootChangesView', () => {
         ]);
         if (epoch !== requestEpochs.get(requestKey)) return;
         if (!statusResult.ok || !firstPage.ok) {
-          mocks.rootGit.set({
+          mocks.rootGitRoots.setRoot(gitRootId, {
             status: null,
             commits: [],
             commitFiles: {},
@@ -240,7 +259,7 @@ describe('SecondaryRootChangesView', () => {
           const page = await mocks.getHistory(wsId, limit, { gitRootId, nextToken });
           if (epoch !== requestEpochs.get(requestKey)) return;
           if (!page.ok) {
-            mocks.rootGit.set({
+            mocks.rootGitRoots.setRoot(gitRootId, {
               status: null,
               commits: [],
               commitFiles: {},
@@ -261,7 +280,7 @@ describe('SecondaryRootChangesView', () => {
           recent.map((commit) => mocks.commitDetails(wsId, commit.hash, { gitRootId })),
         );
         if (epoch !== requestEpochs.get(requestKey)) return;
-        mocks.rootGit.set({
+        mocks.rootGitRoots.setRoot(gitRootId, {
           status: statusResult.data,
           commits,
           commitFiles: Object.fromEntries(
@@ -273,7 +292,7 @@ describe('SecondaryRootChangesView', () => {
                   ? detail.fileDetails.length > 0
                     ? detail.fileDetails
                     : detail.files.map((path) => ({ path, additions: 0, deletions: 0 }))
-                  : [],
+                  : null,
               ];
             }),
           ),
@@ -707,7 +726,7 @@ describe('SecondaryRootChangesView', () => {
     );
   });
 
-  it('lazily fetches the gitRootId-scoped file list on first expand and renders it', async () => {
+  it('renders the saga-loaded gitRootId-scoped file list on expand', async () => {
     mocks.getStatus.mockResolvedValue({ ok: true, data: makeStatus('main') });
     mocks.getHistory.mockResolvedValue({
       ok: true,
@@ -730,7 +749,7 @@ describe('SecondaryRootChangesView', () => {
     expect(queryAllByTestId('file-row')).toHaveLength(0);
 
     await fireEvent.click(toggle);
-    // The details read is gitRootId-scoped (PROTOCOL §5.6).
+    // The saga-owned details read is gitRootId-scoped (PROTOCOL §5.6).
     await waitFor(() =>
       expect(mocks.commitDetails).toHaveBeenCalledWith('ws-1', 'aaaa111', { gitRootId: 'root-9' }),
     );
@@ -742,7 +761,7 @@ describe('SecondaryRootChangesView', () => {
     expect(rows[0].getAttribute('data-file-path')).toBe('src/a.ts');
     expect(rows[1].getAttribute('data-file-path')).toBe('src/b.ts');
 
-    // Collapse hides the list; a second expand reuses the cache (no refetch).
+    // Collapse hides the list; a second expand reuses the saga cache (no refetch).
     await fireEvent.click(toggle);
     await waitFor(() => expect(queryAllByTestId('file-row')).toHaveLength(0));
     await fireEvent.click(toggle);
@@ -756,8 +775,8 @@ describe('SecondaryRootChangesView', () => {
       ok: true,
       data: { items: [makeCommit('aaaa111', 'feat: retryable')] },
     });
-    // First read fails (folds to null) → row shows no files; the in-flight
-    // marker must be cleared so a later expand can retry.
+    // The eager saga read fails (folds to null); expanding dispatches a
+    // recoverable saga retry without turning the whole root into an error.
     mocks.commitDetails.mockResolvedValueOnce(null);
     const { getAllByTestId, queryAllByTestId } = await renderView(makeEntry('main', 'root-9'));
     const toggle = await waitFor(() => getAllByTestId('secondary-root-commit-toggle')[0]);
@@ -781,7 +800,7 @@ describe('SecondaryRootChangesView', () => {
     await waitFor(() => expect(queryAllByTestId('file-row')).toHaveLength(1));
   });
 
-  it('resets expand state on a root switch and drops a stale in-flight details response', async () => {
+  it('keeps root-keyed state isolated when an old root read resolves late', async () => {
     mocks.getStatus.mockResolvedValue({ ok: true, data: makeStatus('main') });
     mocks.getHistory.mockResolvedValue({
       ok: true,
@@ -794,33 +813,6 @@ describe('SecondaryRootChangesView', () => {
         resolveDetails = resolve;
       }),
     );
-    const { getAllByTestId, queryAllByTestId, rerender } = await renderView(
-      makeEntry('main', 'root-9'),
-    );
-    const toggle = await waitFor(() => getAllByTestId('secondary-root-commit-toggle')[0]);
-    await fireEvent.click(toggle);
-    await waitFor(() =>
-      expect(mocks.commitDetails).toHaveBeenCalledWith('ws-1', 'aaaa111', { gitRootId: 'root-9' }),
-    );
-
-    // Switch roots: the $effect resets expandedCommits + commitFileCache.
-    await rerender({ workspaceId: 'ws-1', entry: makeEntry('main', 'root-10') });
-    await waitFor(() => expect(mocks.getHistory).toHaveBeenCalledTimes(2));
-
-    // The stale response resolves after the switch — it must be discarded, so
-    // the new root's row stays collapsed with an empty cache (no file rows).
-    resolveDetails({
-      commitHash: 'aaaa111',
-      author: 'Dev',
-      authorEmail: 'dev@example.com',
-      date: '2026-07-01T00:00:00Z',
-      message: 'feat: shared commit',
-      files: ['src/stale.ts'],
-      fileDetails: [{ path: 'src/stale.ts', additions: 9, deletions: 9 }],
-    });
-    await waitFor(() => expect(queryAllByTestId('file-row')).toHaveLength(0));
-
-    // Expanding on the new root fetches fresh, scoped to the new gitRootId.
     mocks.commitDetails.mockResolvedValueOnce({
       commitHash: 'aaaa111',
       author: 'Dev',
@@ -830,16 +822,36 @@ describe('SecondaryRootChangesView', () => {
       files: ['src/fresh.ts'],
       fileDetails: [{ path: 'src/fresh.ts', additions: 1, deletions: 0 }],
     });
+    const { getAllByTestId, queryAllByTestId, rerender } = await renderView(
+      makeEntry('main', 'root-9'),
+    );
+    await waitFor(() =>
+      expect(mocks.commitDetails).toHaveBeenCalledWith('ws-1', 'aaaa111', { gitRootId: 'root-9' }),
+    );
+
+    await rerender({ workspaceId: 'ws-1', entry: makeEntry('main', 'root-10') });
     const newToggle = await waitFor(() => getAllByTestId('secondary-root-commit-toggle')[0]);
     await fireEvent.click(newToggle);
-    await waitFor(() =>
-      expect(mocks.commitDetails).toHaveBeenCalledWith('ws-1', 'aaaa111', { gitRootId: 'root-10' }),
-    );
     const rows = await waitFor(() => {
       const fileRows = queryAllByTestId('file-row');
       expect(fileRows).toHaveLength(1);
       return fileRows;
     });
     expect(rows[0].getAttribute('data-file-path')).toBe('src/fresh.ts');
+
+    resolveDetails({
+      commitHash: 'aaaa111',
+      author: 'Dev',
+      authorEmail: 'dev@example.com',
+      date: '2026-07-01T00:00:00Z',
+      message: 'feat: shared commit',
+      files: ['src/stale.ts'],
+      fileDetails: [{ path: 'src/stale.ts', additions: 9, deletions: 9 }],
+    });
+    await waitFor(() =>
+      expect(queryAllByTestId('file-row')[0]?.getAttribute('data-file-path')).toBe(
+        'src/fresh.ts',
+      ),
+    );
   });
 });

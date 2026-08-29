@@ -18,7 +18,10 @@
     emptySecondaryRootState,
     selectSecondaryRootGitRoots,
   } from '$store/renderer/slices/git/git-selectors';
-  import { loadSecondaryRootGit } from '$store/renderer/slices/git/git-slice';
+  import {
+    loadSecondaryRootCommitFiles,
+    loadSecondaryRootGit,
+  } from '$store/renderer/slices/git/git-slice';
   import type { CommitInfo } from '$shared/types';
   import AgentAvatar from '$features/agent/components/agent-avatar/AgentAvatar.svelte';
   import FileRow from '$lib/components/file-tracking/accept-changes/FileRow.svelte';
@@ -97,6 +100,9 @@
       newSet.delete(commit.hash);
     } else {
       newSet.add(commit.hash);
+      if (commitFileCache[commit.hash] === null) {
+        appStore.dispatch(loadSecondaryRootCommitFiles(workspaceId, gitRootId, commit.hash));
+      }
     }
     expandedCommits = newSet;
   }

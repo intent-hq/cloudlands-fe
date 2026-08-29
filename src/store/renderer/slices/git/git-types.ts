@@ -106,7 +106,7 @@ export type SecondaryRootGitState = {
   status: GitStatus | null;
   commits: CommitInfo[];
   nextToken?: string;
-  commitFiles: Record<string, CommitFile[]>;
+  commitFiles: Record<string, CommitFile[] | null>;
   loading: boolean;
   error: string | null;
 };
