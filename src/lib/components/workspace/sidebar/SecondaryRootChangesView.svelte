@@ -78,7 +78,7 @@
     const epoch = ++requestEpoch;
     loading = true;
     loadError = null;
-    const [statusResult, historyResult] = await Promise.all([
+    const [statusResult, initialHistoryResult] = await Promise.all([
       // eslint-disable-next-line intent/no-component-async-data-fetch -- interaction-gated read-only per-root browse (monorepo#2053); secondary-root git state is transient view data, not Redux domain state
       gitClient.getStatus(wsId as WorkspaceId, { gitRootId: rootId }),
       // eslint-disable-next-line intent/no-component-async-data-fetch -- same read-only per-root browse as above
@@ -94,15 +94,40 @@
       status = null;
       loadError = statusResult.error;
     }
-    if (historyResult.ok) {
-      commits = historyResult.data.items;
-      nextToken = historyResult.data.nextToken;
+    if (initialHistoryResult.ok) {
+      const loadedCommits = [...initialHistoryResult.data.items];
+      let token = initialHistoryResult.data.nextToken;
+      // The summary cannot be exact until the registration boundary is
+      // found (or history is exhausted), so complete pagination eagerly.
+      while (
+        token &&
+        (!registeredCommitSha || !loadedCommits.some((commit) => commit.hash === registeredCommitSha))
+      ) {
+        // eslint-disable-next-line intent/no-component-async-data-fetch -- same root-scoped read-only browse as the initial page
+        const page = await gitClient.getHistory(wsId as WorkspaceId, COMMIT_LIMIT, {
+          gitRootId: rootId,
+          nextToken: token,
+        });
+        if (epoch !== requestEpoch || rootId !== gitRootId || wsId !== workspaceId) return;
+        if (!page.ok) {
+          commits = [];
+          nextToken = undefined;
+          loadError = loadError ?? page.error;
+          loading = false;
+          return;
+        }
+        const seen = new Set(loadedCommits.map((commit) => commit.hash));
+        loadedCommits.push(...page.data.items.filter((commit) => !seen.has(commit.hash)));
+        token = page.data.nextToken;
+      }
+      commits = loadedCommits;
+      nextToken = token;
     } else {
       // A commits failure must surface as the error state, not a
       // plausible-but-wrong "No commits" empty state.
       commits = [];
       nextToken = undefined;
-      loadError = loadError ?? historyResult.error;
+      loadError = loadError ?? initialHistoryResult.error;
     }
     loading = false;
   }

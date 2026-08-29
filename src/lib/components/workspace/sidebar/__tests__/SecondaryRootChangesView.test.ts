@@ -154,32 +154,41 @@ describe('SecondaryRootChangesView', () => {
       { path: 'src/working.ts', status: '?', staged: false },
     ];
     mocks.getStatus.mockResolvedValue({ ok: true, data: status });
-    mocks.getHistory.mockResolvedValue({
+    mocks.getHistory.mockResolvedValueOnce({
+      ok: true,
+      data: {
+        items: [makeCommit('newer222', 'feat: newest')],
+        nextToken: 'page-2',
+      },
+    });
+    mocks.getHistory.mockResolvedValueOnce({
       ok: true,
       data: {
         items: [
-          makeCommit('newer222', 'feat: after registration'),
+          makeCommit('newer111', 'feat: older post-registration'),
           makeCommit('bound111', 'chore: registration boundary'),
         ],
       },
     });
-    mocks.commitDetails.mockResolvedValue({
-      files: ['src/shared.ts', 'src/committed.ts'],
-      fileDetails: [
-        { path: 'src/shared.ts', additions: 1, deletions: 0 },
-        { path: 'src/committed.ts', additions: 2, deletions: 0 },
-      ],
-    });
+    mocks.commitDetails.mockImplementation((_ws, hash) =>
+      Promise.resolve({
+        files:
+          hash === 'newer222'
+            ? ['src/shared.ts', 'src/committed.ts']
+            : ['src/committed.ts', 'src/second-commit.ts'],
+        fileDetails: [],
+      }),
+    );
     const { getByTestId } = await renderView(makeEntry('main', 'root-9', 'bound111'));
 
     const summary = await waitFor(() => getByTestId('secondary-root-all-changes'));
-    expect(summary.textContent).toContain('3 files changed in Workspace');
+    expect(summary.textContent).toContain('4 files changed in Workspace');
     await fireEvent.click(summary);
     expect(mocks.dispatch).toHaveBeenCalledWith({
       type: 'workspaceNavigation/openWorkspaceLocalChanges',
       payload: ['ws-1', { gitRootId: 'root-9' }],
     });
-    expect(mocks.commitDetails).toHaveBeenCalledTimes(1);
+    expect(mocks.commitDetails).toHaveBeenCalledTimes(2);
   });
 
   it('falls back to entry.branch while the status is still loading', async () => {
@@ -353,27 +362,18 @@ describe('SecondaryRootChangesView', () => {
       ok: true,
       data: { items: [makeCommit('aaaa111', 'feat: page one')], nextToken: 'tok-2' },
     });
-    const { container, getByTestId, queryByTestId } = await renderView(
-      makeEntry('main', 'root-1', 'bound111'),
-    );
-
-    // First page: boundary not found yet — all loaded commits render
-    // normally with a "Show more" affordance instead of the divider.
-    await waitFor(() => expect(container.textContent).toContain('feat: page one'));
-    expect(queryByTestId('secondary-root-boundary-toggle')).toBeNull();
-    expect(mocks.getHistory).toHaveBeenCalledWith('ws-1', expect.any(Number), {
-      gitRootId: 'root-1',
-    });
-
     mocks.getHistory.mockResolvedValueOnce({
       ok: true,
       data: {
         items: [makeCommit('bound111', 'chore: at registration')],
       },
     });
-    await fireEvent.click(getByTestId('secondary-root-show-more'));
+    const { container, getByTestId, queryByTestId } = await renderView(
+      makeEntry('main', 'root-1', 'bound111'),
+    );
 
-    // The next page request threads the nextToken, still gitRootId-scoped.
+    // The boundary page is loaded eagerly so the summary cannot expose a
+    // partial or pre-registration count.
     await waitFor(() =>
       expect(mocks.getHistory).toHaveBeenCalledWith('ws-1', expect.any(Number), {
         gitRootId: 'root-1',
@@ -388,43 +388,6 @@ describe('SecondaryRootChangesView', () => {
     expect(container.textContent).not.toContain('chore: at registration');
   });
 
-  it('does not wedge "Show more" when a refresh supersedes an in-flight page load', async () => {
-    mocks.getStatus.mockResolvedValue({ ok: true, data: makeStatus('main') });
-    const page1 = {
-      ok: true,
-      data: { items: [makeCommit('aaaa111', 'feat: page one')], nextToken: 'tok-2' },
-    };
-    mocks.getHistory.mockResolvedValueOnce(page1);
-    const { getByTestId, getByTitle } = await renderView(makeEntry('main', 'root-1', 'bound111'));
-    await waitFor(() => expect(getByTestId('secondary-root-show-more')).toBeTruthy());
-
-    // Click "Show more" (page 2 hangs), then refresh while it is in flight.
-    let resolvePage2!: (v: unknown) => void;
-    mocks.getHistory.mockReturnValueOnce(new Promise((resolve) => (resolvePage2 = resolve)));
-    await fireEvent.click(getByTestId('secondary-root-show-more'));
-    mocks.getHistory.mockResolvedValueOnce(page1);
-    await fireEvent.click(getByTitle('Refresh git status'));
-    await waitFor(() => expect(mocks.getHistory).toHaveBeenCalledTimes(3));
-
-    // The superseded page-2 response resolves and must be discarded —
-    // without re-wedging loadingMore (the stuck-spinner regression).
-    resolvePage2({
-      ok: true,
-      data: { items: [makeCommit('zzzz999', 'feat: stale page two')] },
-    });
-    await new Promise((resolve) => setTimeout(resolve, 10));
-    const showMore = getByTestId('secondary-root-show-more');
-    expect((showMore as HTMLButtonElement).disabled).toBe(false);
-
-    // The affordance still works after the discarded response.
-    mocks.getHistory.mockResolvedValueOnce({
-      ok: true,
-      data: { items: [makeCommit('bound111', 'chore: at registration')] },
-    });
-    await fireEvent.click(showMore);
-    await waitFor(() => expect(getByTestId('secondary-root-boundary-toggle')).toBeTruthy());
-  });
-
   it('de-dups appended commits so an offset-shifted page cannot repeat hashes', async () => {
     // The daemon token is an offset skip token: a commit landing between
     // pages shifts offsets, so page 2 can repeat page 1's tail.
@@ -436,16 +399,15 @@ describe('SecondaryRootChangesView', () => {
         nextToken: 'tok-2',
       },
     });
-    const { container, getByTestId } = await renderView(makeEntry('main', 'root-1', 'bound111'));
-    await waitFor(() => expect(getByTestId('secondary-root-show-more')).toBeTruthy());
-
     mocks.getHistory.mockResolvedValueOnce({
       ok: true,
       data: {
         items: [makeCommit('bbbb222', 'fix: two'), makeCommit('bound111', 'chore: at registration')],
       },
     });
-    await fireEvent.click(getByTestId('secondary-root-show-more'));
+    const { container, getByTestId } = await renderView(
+      makeEntry('main', 'root-1', 'bound111'),
+    );
 
     // Duplicate hash filtered on append (a duplicate key would crash the
     // keyed {#each}); the boundary from the appended page still applies.

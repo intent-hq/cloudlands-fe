@@ -306,6 +306,7 @@
   isLoading={gitRootId ? rootLoading : $ftLoading$}
   changes={localChangesForPanel}
   gitRootId={gitRootId || undefined}
+  gitRootPath={gitRootId ? effectiveRootPath : undefined}
   branchBaseRef={$workspace?.baseRef ?? null}
   branchBaseCommitSha={gitRootId
     ? selectedRoot?.registeredCommitSha || null

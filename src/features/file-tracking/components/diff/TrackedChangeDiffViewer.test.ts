@@ -278,4 +278,32 @@ describe('TrackedChangeDiffViewer content loading regressions', () => {
       path: '/repo/src/app.ts',
     });
   });
+
+  it('passes secondary-root identity and path to working-tree diff reads', async () => {
+    testState.batchedGitDiffMock.mockResolvedValue({
+      file: 'src/app.ts',
+      oldContent: 'before',
+      newContent: 'after',
+    });
+
+    render(TrackedChangeDiffViewer, {
+      props: {
+        change: createChange({
+          file: '/repo/packages/sub/src/app.ts',
+          relativePath: '/repo/packages/sub/src/app.ts',
+        }),
+        workspaceId: 'ws-1',
+        gitRootId: 'root-9',
+        gitRootPath: '/repo/packages/sub',
+      },
+    });
+
+    await waitFor(() =>
+      expect(testState.batchedGitDiffMock).toHaveBeenCalledWith('ws-1', false, 'src/app.ts', {
+        gitlink: undefined,
+        gitRootId: 'root-9',
+        gitRootPath: '/repo/packages/sub',
+      }),
+    );
+  });
 });
