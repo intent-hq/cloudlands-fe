@@ -174,7 +174,11 @@
     deriveWizardPendingQuestions,
   } from './questions/wizard-gate';
   import { classifyPendingQuestionMarker } from './questions/pending-questions';
-  import { wizardDraftKey } from './questions/wizard-draft-storage';
+  import {
+    initialWizardCollapsed,
+    saveWizardCollapsed,
+    wizardDraftKey,
+  } from './questions/wizard-draft-storage';
   import { buildAnswerMessageMetadata, flattenAnswersToMessage } from './questions/answer-message';
   import {
     classifyScrollbackGesture,
@@ -926,13 +930,25 @@
     );
   });
 
+  // Collapsed (Hide) state is host-owned and persisted per question set
+  // alongside the answer draft. A newly pending set starts from its persisted
+  // value when one exists; otherwise it auto-collapses when the composer
+  // holds in-flight user input (text or attachments) so the input textbox is
+  // never replaced mid-typing — Hide semantics only, nothing is dismissed.
   let questionWizardCollapsed = $state(false);
   let questionWizardMessageId = $state<string | null>(null);
   $effect(() => {
     const id = pendingQuestions?.messageId ?? null;
     if (id !== questionWizardMessageId) {
       questionWizardMessageId = id;
-      questionWizardCollapsed = false;
+      questionWizardCollapsed =
+        id !== null &&
+        untrack(() =>
+          initialWizardCollapsed(
+            wizardDraftKey(agentId, id),
+            inputValue.trim() !== '' || contextItems.length > 0,
+          ),
+        );
     }
   });
 
@@ -5954,7 +5970,13 @@
                     questions={pendingQuestions.questions}
                     draftKey={wizardDraftKey(agentId, pendingQuestions.messageId)}
                     collapsed={questionWizardCollapsed}
-                    onToggleCollapsed={(collapsed) => (questionWizardCollapsed = collapsed)}
+                    onToggleCollapsed={(collapsed) => {
+                      questionWizardCollapsed = collapsed;
+                      saveWizardCollapsed(
+                        wizardDraftKey(agentId, pendingQuestions.messageId),
+                        collapsed,
+                      );
+                    }}
                     onComplete={handleQuestionWizardComplete}
                     onDismiss={handleQuestionWizardDismiss}
                   />

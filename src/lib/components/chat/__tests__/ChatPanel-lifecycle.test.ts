@@ -774,7 +774,7 @@ describe('ChatPanel mounted lifecycle', () => {
     );
   });
 
-  it('preserves typed text when the composer remounts', async () => {
+  it('keeps the composer mounted (wizard auto-collapsed) when questions arrive mid-typing', async () => {
     mocks.draftGet.mockResolvedValue(null);
     render(ChatPanel, {
       props: { workspace: workspace('workspace-a'), agentId: 'agent-a' },
@@ -789,7 +789,12 @@ describe('ChatPanel mounted lifecycle', () => {
     mocks.pendingQuestions = { messageId: 'question-1', questions: [] };
     mocks.agentMessages.set([{ id: 'question-1' }]);
     await tick();
-    expect(screen.queryByTestId('mock-rich-input')).toBeNull();
+    // Auto-collapse: the wizard renders as the collapsed banner and the
+    // composer stays mounted with the in-flight text — never replaced.
+    expect(screen.getByTestId('question-wizard-slot')).not.toBeNull();
+    expect(screen.getByTestId('mock-rich-input').getAttribute('data-value')).toBe(
+      'keep this draft',
+    );
 
     mocks.pendingQuestions = null;
     mocks.agentMessages.set([]);
@@ -800,6 +805,22 @@ describe('ChatPanel mounted lifecycle', () => {
       'keep this draft',
     );
     expect(mocks.draftGet).toHaveBeenCalledOnce();
+  });
+
+  it('replaces the composer with the wizard when questions arrive on an empty composer', async () => {
+    mocks.draftGet.mockResolvedValue(null);
+    render(ChatPanel, {
+      props: { workspace: workspace('workspace-a'), agentId: 'agent-a' },
+    });
+    await tick();
+    await Promise.resolve();
+    await tick();
+
+    mocks.pendingQuestions = { messageId: 'question-1', questions: [] };
+    mocks.agentMessages.set([{ id: 'question-1' }]);
+    await tick();
+    expect(screen.getByTestId('question-wizard-slot')).not.toBeNull();
+    expect(screen.queryByTestId('mock-rich-input')).toBeNull();
   });
 
   it('does not overwrite typing that races delayed draft hydration', async () => {
