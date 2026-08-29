@@ -178,4 +178,19 @@ describe('createDeferredWidthApplier', () => {
     frames.flush();
     expect(applied).toEqual([48]);
   });
+
+  it('does not wedge under a synchronously-invoking scheduler', () => {
+    const applied: number[] = [];
+    const applier = createDeferredWidthApplier(
+      (w) => applied.push(w),
+      (callback) => {
+        callback();
+        return 1;
+      },
+      () => {},
+    );
+    applier.set(120);
+    applier.set(80);
+    expect(applied).toEqual([120, 80]);
+  });
 });

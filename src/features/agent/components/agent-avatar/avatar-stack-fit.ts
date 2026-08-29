@@ -63,12 +63,19 @@ export function createDeferredWidthApplier(
   return {
     set(width: number) {
       pendingWidth = width;
-      handle ??= schedule(() => {
+      if (handle !== undefined) return;
+      let ran = false;
+      const scheduled = schedule(() => {
+        ran = true;
         handle = undefined;
         const latestWidth = pendingWidth as number;
         pendingWidth = undefined;
         apply(latestWidth);
       });
+      // Guard against a synchronously-invoking scheduler: its callback already
+      // cleared the pending state, so retaining the stale handle would wedge
+      // the applier (rAF itself is always asynchronous).
+      if (!ran) handle = scheduled;
     },
     cancel() {
       if (handle !== undefined) {
