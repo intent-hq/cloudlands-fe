@@ -1,6 +1,6 @@
 {
   "name": "intent",
-  "version": "2.105.0",
+  "version": "2.106.1",
   "description": "Intent",
   "type": "module",
   "main": "dist/main/index.js",
@@ -283,7 +283,7 @@
     "svelte": "^5.56.9",
     "svelte-check": "^4.7.6",
     "svelte-eslint-parser": "^1.8.0",
-    "svelte-sonner": "^1.0.5",
+    "svelte-sonner": "^1.2.1",
     "svelte-tiptap": "^3.0.1",
     "tailwind-merge": "^3.3.1",
     "tailwind-variants": "^3.3.1",
@@ -342,8 +342,7 @@
     ],
     "patchedDependencies": {
       "bits-ui@2.18.1": "patches/bits-ui@2.18.1.patch",
-      "brace-expansion@5.0.8": "patches/brace-expansion@5.0.8.patch",
-      "svelte-sonner@1.1.1": "patches/svelte-sonner@1.1.1.patch"
+      "brace-expansion@5.0.8": "patches/brace-expansion@5.0.8.patch"
     }
   }
 }

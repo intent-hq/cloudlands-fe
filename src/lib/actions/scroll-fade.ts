@@ -5,6 +5,8 @@ export interface ScrollFadeOptions {
   fadeSize?: number;
   /** Scroll axis to fade along. Defaults to 'y'. */
   axis?: 'x' | 'y';
+  /** Detach observers and listeners while the owning surface is inactive. */
+  enabled?: boolean;
 }
 
 /**
@@ -18,6 +20,10 @@ export const scrollFade: Action<HTMLElement, ScrollFadeOptions | undefined> = (
 ) => {
   let fadeSize = options?.fadeSize ?? 24;
   let axis = options?.axis ?? 'y';
+  let enabled = options?.enabled ?? true;
+  let listening = false;
+  let resizeObserver: ResizeObserver | undefined;
+  let mutationObserver: MutationObserver | undefined;
 
   function update() {
     const scrollStart = axis === 'y' ? el.scrollTop : el.scrollLeft;
@@ -35,25 +41,37 @@ export const scrollFade: Action<HTMLElement, ScrollFadeOptions | undefined> = (
     el.style.maskImage = `linear-gradient(${direction}, transparent, black ${start}px, black calc(100% - ${end}px), transparent)`;
   }
 
-  update();
-  el.addEventListener('scroll', update, { passive: true });
-  const resizeObserver =
-    typeof ResizeObserver === 'undefined' ? undefined : new ResizeObserver(update);
-  resizeObserver?.observe(el);
-  const mutationObserver = new MutationObserver(update);
-  mutationObserver.observe(el, { childList: true, subtree: true });
+  function stop() {
+    if (listening) el.removeEventListener('scroll', update);
+    listening = false;
+    resizeObserver?.disconnect();
+    resizeObserver = undefined;
+    mutationObserver?.disconnect();
+    mutationObserver = undefined;
+    el.style.maskImage = '';
+  }
+
+  function start() {
+    stop();
+    if (!enabled) return;
+    update();
+    el.addEventListener('scroll', update, { passive: true });
+    listening = true;
+    resizeObserver = typeof ResizeObserver === 'undefined' ? undefined : new ResizeObserver(update);
+    resizeObserver?.observe(el);
+    mutationObserver = new MutationObserver(update);
+    mutationObserver.observe(el, { childList: true, subtree: true });
+  }
+
+  start();
 
   return {
     update(newOptions: ScrollFadeOptions | undefined) {
       fadeSize = newOptions?.fadeSize ?? 24;
       axis = newOptions?.axis ?? 'y';
-      update();
+      enabled = newOptions?.enabled ?? true;
+      start();
     },
-    destroy() {
-      el.removeEventListener('scroll', update);
-      resizeObserver?.disconnect();
-      mutationObserver.disconnect();
-      el.style.maskImage = '';
-    },
+    destroy: stop,
   };
 };

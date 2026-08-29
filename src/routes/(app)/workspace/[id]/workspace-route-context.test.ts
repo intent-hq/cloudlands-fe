@@ -7,9 +7,14 @@ const surfaceSource = readFileSync(resolve(__dirname, 'WorkspaceSurface.svelte')
 const rootLayoutSource = readFileSync(resolve(process.cwd(), 'src/routes/+layout.svelte'), 'utf8');
 
 describe('workspace route context installation', () => {
-  it('keeps the workspace surface mounted when page.params.id changes', () => {
+  it('routes workspace changes through the active-gated retention surface', () => {
     expect(pageSource).toContain('page.params?.id');
-    expect(pageSource).toContain('<WorkspaceSurface {workspaceId} />');
+    expect(pageSource).toContain('<RetainedWorkspaceSurfaces');
+    expect(pageSource).toContain('activeWorkspaceId={workspaceId}');
+    expect(pageSource).toContain(
+      '{#snippet children(retainedWorkspaceId: string, active: boolean)}',
+    );
+    expect(pageSource).toContain('<WorkspaceSurface workspaceId={retainedWorkspaceId} {active} />');
     expect(pageSource).not.toContain('{#key routeWorkspaceId}');
     expect(pageSource).not.toContain('window.location.pathname');
   });

@@ -4,6 +4,30 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.106.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.106.0...v2.106.1) (2026-08-29)
+
+
+### 🐛 Bug Fixes
+
+* preserve onboarding prompt draft when navigating away ([#1830](https://github.com/intent-hq/cloudlands-fe/issues/1830)) ([16ce926](https://github.com/intent-hq/cloudlands-fe/commit/16ce9261c9a286c8c1bf2423f0b1490022143486))
+
+## [2.106.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.105.0...v2.106.0) (2026-08-28)
+
+
+### 🚀 Features
+
+* add reliable full-layout pane drag previews ([#1793](https://github.com/intent-hq/cloudlands-fe/issues/1793)) ([780b7c8](https://github.com/intent-hq/cloudlands-fe/commit/780b7c84918cd52f6a57fa652870a4a2eb6b2e7a))
+* add vulnerability scanner fallback ([#1773](https://github.com/intent-hq/cloudlands-fe/issues/1773)) ([7778bb6](https://github.com/intent-hq/cloudlands-fe/commit/7778bb6d8bfdd8c863d6811f816c29dd9f13d191))
+* **chat:** simplify model picker reasoning controls ([#1815](https://github.com/intent-hq/cloudlands-fe/issues/1815)) ([eb2da9a](https://github.com/intent-hq/cloudlands-fe/commit/eb2da9a40de137ce0a5194db904acbd9095e6fb1))
+* redesign remote Devices settings ([#1816](https://github.com/intent-hq/cloudlands-fe/issues/1816)) ([2db94cf](https://github.com/intent-hq/cloudlands-fe/commit/2db94cfaee4a5169750824c7b436bcdca2e0495a))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.8.13 ([#1826](https://github.com/intent-hq/cloudlands-fe/issues/1826)) ([1c5b4e6](https://github.com/intent-hq/cloudlands-fe/commit/1c5b4e60f2aaf51f3830177c7290322c664edbbe))
+* bump intentd sidecar to v0.8.14 ([#1831](https://github.com/intent-hq/cloudlands-fe/issues/1831)) ([e9bf139](https://github.com/intent-hq/cloudlands-fe/commit/e9bf1395ddbf1e9e57869b56c0058b8cea6d77ae))
+* reconcile per-window workspace attention so hardware unread-cycle keys don't skip or pin ([#1814](https://github.com/intent-hq/cloudlands-fe/issues/1814)) ([632a4f6](https://github.com/intent-hq/cloudlands-fe/commit/632a4f6ea9c7243cefc7067bb0f6300a5049fd62))
+
 ## [2.105.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.104.0...v2.105.0) (2026-08-28)
 
 

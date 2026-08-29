@@ -7,8 +7,13 @@ import {
   tabStateReducer,
 } from '../../tab-state/tab-state-slice';
 import {
+  initialState as initialWorkspaceLifecycleState,
   workspaceDeleted,
-  workspaceHydrationRequested,
+  workspaceLoadRequested,
+  workspaceLifecycleReducer,
+  workspaceMounted,
+  workspaceOpenFailed,
+  workspaceOpenSucceeded,
   workspaceUnmounted,
 } from '../workspace-lifecycle-slice';
 import { workspaceTabCleanupSaga } from './workspace-tab-cleanup-saga';
@@ -19,16 +24,27 @@ const settle = async () => {
   await Promise.resolve();
 };
 
-function createHarness(openWorkspaceIds: string[] = []) {
+function createHarness(openWorkspaceIds: string[] = [], liveWorkspaceIds: string[] = []) {
   const initialTabState = openWorkspaceIds.reduce(
     (state, workspaceId) => tabStateReducer(state, openWorkspaceTab(workspaceId)),
     tabStateReducer(undefined, { type: '@@INIT' }),
   );
-  let state = { tabState: initialTabState };
+  const initialLifecycleState = liveWorkspaceIds.reduce(
+    (lifecycleState, workspaceId) =>
+      workspaceLifecycleReducer(
+        workspaceLifecycleReducer(lifecycleState, workspaceMounted(workspaceId)),
+        workspaceOpenSucceeded(workspaceId),
+      ),
+    initialWorkspaceLifecycleState,
+  );
+  let state = { tabState: initialTabState, workspaceLifecycle: initialLifecycleState };
   const channel = stdChannel();
   const listeners = new Set<() => void>();
   const dispatch = vi.fn((action: Parameters<typeof tabStateReducer>[1]) => {
-    state = { tabState: tabStateReducer(state.tabState, action) };
+    state = {
+      tabState: tabStateReducer(state.tabState, action),
+      workspaceLifecycle: workspaceLifecycleReducer(state.workspaceLifecycle, action),
+    };
     channel.put(action);
     for (const listener of listeners) listener();
     return action;
@@ -52,7 +68,7 @@ function lifecycleActions(harness: ReturnType<typeof createHarness>) {
     .map(([action]) => action)
     .filter(
       (action) =>
-        action.type === workspaceUnmounted.type || action.type === workspaceHydrationRequested.type,
+        action.type === workspaceUnmounted.type || action.type === workspaceLoadRequested.type,
     );
 }
 
@@ -61,13 +77,13 @@ describe('workspaceTabCleanupSaga', () => {
     const harness = createHarness(['ws-A', 'ws-B']);
     await settle();
 
-    expect(lifecycleActions(harness)).toEqual([workspaceHydrationRequested('ws-B')]);
+    expect(lifecycleActions(harness)).toEqual([workspaceLoadRequested('ws-B')]);
     harness.task.cancel();
     await harness.task.toPromise();
   });
 
-  it('preserves live sessions across A → B → A focus changes', async () => {
-    const harness = createHarness(['ws-B', 'ws-A']);
+  it('emits no hydration requests across live A → B → A focus changes', async () => {
+    const harness = createHarness(['ws-B', 'ws-A'], ['ws-A', 'ws-B']);
     await settle();
 
     harness.dispatch(openWorkspaceTab('ws-B'));
@@ -75,11 +91,7 @@ describe('workspaceTabCleanupSaga', () => {
     harness.dispatch(openWorkspaceTab('ws-A'));
     await settle();
 
-    expect(lifecycleActions(harness)).toEqual([
-      workspaceHydrationRequested('ws-A'),
-      workspaceHydrationRequested('ws-B'),
-      workspaceHydrationRequested('ws-A'),
-    ]);
+    expect(lifecycleActions(harness)).toEqual([]);
     harness.task.cancel();
     await harness.task.toPromise();
   });
@@ -90,7 +102,7 @@ describe('workspaceTabCleanupSaga', () => {
     harness.dispatch(openWorkspaceTab('ws-A'));
     await settle();
 
-    expect(lifecycleActions(harness)).toEqual([workspaceHydrationRequested('ws-A')]);
+    expect(lifecycleActions(harness)).toEqual([workspaceLoadRequested('ws-A')]);
     harness.task.cancel();
     await harness.task.toPromise();
   });
@@ -102,16 +114,16 @@ describe('workspaceTabCleanupSaga', () => {
     await settle();
 
     expect(lifecycleActions(harness)).toEqual([
-      workspaceHydrationRequested('ws-B'),
+      workspaceLoadRequested('ws-B'),
       workspaceUnmounted('ws-B'),
-      workspaceHydrationRequested('ws-A'),
+      workspaceLoadRequested('ws-A'),
     ]);
     harness.task.cancel();
     await harness.task.toPromise();
   });
 
   it('does not unmount a still-open background workspace when focus changes', async () => {
-    const harness = createHarness(['ws-A', 'ws-B']);
+    const harness = createHarness(['ws-A', 'ws-B'], ['ws-A', 'ws-B']);
     await settle();
 
     harness.dispatch(openWorkspaceTab('ws-A'));
@@ -119,11 +131,7 @@ describe('workspaceTabCleanupSaga', () => {
     harness.dispatch(openWorkspaceTab('ws-B'));
     await settle();
 
-    expect(lifecycleActions(harness)).toEqual([
-      workspaceHydrationRequested('ws-B'),
-      workspaceHydrationRequested('ws-A'),
-      workspaceHydrationRequested('ws-B'),
-    ]);
+    expect(lifecycleActions(harness)).toEqual([]);
     expect(lifecycleActions(harness)).not.toContainEqual(workspaceUnmounted('ws-A'));
     harness.task.cancel();
     await harness.task.toPromise();
@@ -136,7 +144,7 @@ describe('workspaceTabCleanupSaga', () => {
     await settle();
 
     expect(lifecycleActions(harness)).toEqual([
-      workspaceHydrationRequested('ws-B'),
+      workspaceLoadRequested('ws-B'),
       workspaceUnmounted('ws-A'),
     ]);
     harness.task.cancel();
@@ -150,7 +158,7 @@ describe('workspaceTabCleanupSaga', () => {
     await settle();
 
     expect(lifecycleActions(harness)).toEqual([
-      workspaceHydrationRequested('ws-B'),
+      workspaceLoadRequested('ws-B'),
       workspaceUnmounted('ws-A'),
     ]);
     harness.task.cancel();
@@ -158,7 +166,7 @@ describe('workspaceTabCleanupSaga', () => {
   });
 
   it('hydrates a recreated same-ID workspace after background deletion', async () => {
-    const harness = createHarness(['ws-A', 'ws-B']);
+    const harness = createHarness(['ws-A', 'ws-B'], ['ws-A', 'ws-B']);
     await settle();
     harness.dispatch(workspaceDeleted('ws-A', []));
     await settle();
@@ -166,10 +174,23 @@ describe('workspaceTabCleanupSaga', () => {
     await settle();
 
     expect(lifecycleActions(harness)).toEqual([
-      workspaceHydrationRequested('ws-B'),
       workspaceUnmounted('ws-A'),
-      workspaceHydrationRequested('ws-A'),
+      workspaceLoadRequested('ws-A'),
     ]);
+    harness.task.cancel();
+    await harness.task.toPromise();
+  });
+
+  it('hydrates a workspace again after its live session fails', async () => {
+    const harness = createHarness(['ws-B', 'ws-A'], ['ws-A', 'ws-B']);
+    await settle();
+    harness.dispatch(workspaceOpenFailed('ws-A'));
+    harness.dispatch(openWorkspaceTab('ws-B'));
+    await settle();
+    harness.dispatch(openWorkspaceTab('ws-A'));
+    await settle();
+
+    expect(lifecycleActions(harness)).toEqual([workspaceLoadRequested('ws-A')]);
     harness.task.cancel();
     await harness.task.toPromise();
   });
@@ -183,9 +204,9 @@ describe('workspaceTabCleanupSaga', () => {
     await settle();
 
     expect(lifecycleActions(harness)).toEqual([
-      workspaceHydrationRequested('ws-B'),
+      workspaceLoadRequested('ws-B'),
       workspaceUnmounted('ws-B'),
-      workspaceHydrationRequested('ws-A'),
+      workspaceLoadRequested('ws-A'),
     ]);
     harness.task.cancel();
     await harness.task.toPromise();

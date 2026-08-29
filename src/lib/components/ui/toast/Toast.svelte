@@ -34,38 +34,44 @@
   }
 </script>
 
-<!-- `expand` keeps stacked toasts at their own height with content visible.
-     Collapsed stacking hides children of non-front toasts but clamps them to
-     --front-toast-height, which svelte-sonner 1.1.1 derives from the OLDEST
-     toast (heights are pushed in mount order), so a taller toast behind a
-     shorter one rendered as a blank opaque slab. -->
-<Sonner
-  id="app-toast-region"
-  theme={$isDarkTheme ? 'dark' : 'light'}
-  class="toaster group"
-  style="--app-toast-width: min(26rem, calc(100vw - clamp(2rem, 8vw, 4rem)))"
-  {offset}
-  {mobileOffset}
-  containerAriaLabel={m.ui_toast_notifications_ariaLabel()}
-  closeButtonAriaLabel={m.ui_toast_close_ariaLabel()}
-  toastOptions={{
-    classes: {
-      toast:
-        'group toast w-full min-w-0 max-w-full group-[.toaster]:bg-card group-[.toaster]:text-foreground group-[.toaster]:border group-[.toaster]:border-border group-[.toaster]:shadow-(--elevation-overlay)',
-      description: 'group-[.toast]:text-subtle text-sm',
-      actionButton:
-        'group-[.toast]:bg-transparent group-[.toast]:text-foreground group-[.toast]:border group-[.toast]:border-border group-[.toast]:hover:bg-muted group-[.toast]:px-4 group-[.toast]:py-2 group-[.toast]:text-sm group-[.toast]:font-semibold group-[.toast]:transition-colors',
-      cancelButton:
-        'group-[.toast]:bg-transparent group-[.toast]:text-foreground group-[.toast]:border group-[.toast]:border-border group-[.toast]:hover:bg-muted group-[.toast]:px-4 group-[.toast]:py-2 group-[.toast]:text-sm group-[.toast]:font-semibold',
-      action: 'text-sm font-semibold',
-    },
-  }}
-  position="bottom-left"
-  closeButton
-  duration={10000}
-  gap={8}
-  expand
-/>
+<!-- The wrapper div owns the `app-toast-region` DOM id: since svelte-sonner
+     1.2.0 the `id` prop identifies the toaster for `toast(..., { toasterId })`
+     targeting (an id-bearing toaster renders ONLY matching toasts) and is no
+     longer applied to the <ol> element, so it must not be passed here. The
+     MutationObserver selector and the Clear-all `aria-controls` anchor on this
+     div instead.
+
+     `expand` keeps stacked toasts at their own height with content visible —
+     a UX decision kept through the 1.2.1 upgrade (which fixed heights ordering
+     so --front-toast-height now tracks the front toast). -->
+<div id="app-toast-region">
+  <Sonner
+    theme={$isDarkTheme ? 'dark' : 'light'}
+    class="toaster group"
+    style="--app-toast-width: min(26rem, calc(100vw - clamp(2rem, 8vw, 4rem)))"
+    {offset}
+    {mobileOffset}
+    containerAriaLabel={m.ui_toast_notifications_ariaLabel()}
+    closeButtonAriaLabel={m.ui_toast_close_ariaLabel()}
+    toastOptions={{
+      classes: {
+        toast:
+          'group toast w-full min-w-0 max-w-full group-[.toaster]:bg-card group-[.toaster]:text-foreground group-[.toaster]:border group-[.toaster]:border-border group-[.toaster]:shadow-(--elevation-overlay)',
+        description: 'group-[.toast]:text-subtle text-sm',
+        actionButton:
+          'group-[.toast]:bg-transparent group-[.toast]:text-foreground group-[.toast]:border group-[.toast]:border-border group-[.toast]:hover:bg-muted group-[.toast]:px-4 group-[.toast]:py-2 group-[.toast]:text-sm group-[.toast]:font-semibold group-[.toast]:transition-colors',
+        cancelButton:
+          'group-[.toast]:bg-transparent group-[.toast]:text-foreground group-[.toast]:border group-[.toast]:border-border group-[.toast]:hover:bg-muted group-[.toast]:px-4 group-[.toast]:py-2 group-[.toast]:text-sm group-[.toast]:font-semibold',
+        action: 'text-sm font-semibold',
+      },
+    }}
+    position="bottom-left"
+    closeButton
+    duration={10000}
+    gap={8}
+    expand
+  />
+</div>
 
 {#if showClearAll}
   <Button

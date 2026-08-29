@@ -6,6 +6,7 @@
   import { getPanelCanvasWidths } from './panel-canvas-width';
 
   let {
+    active = true,
     sizing,
     viewportWidth,
     panelColumnWidths,
@@ -20,6 +21,7 @@
     onResizeCancel,
     children,
   }: {
+    active?: boolean;
     sizing: PanelCanvasSizing;
     viewportWidth: number;
     panelColumnWidths: readonly number[];
@@ -53,6 +55,7 @@
 </script>
 
 <ResizablePanel
+  {active}
   storageKey={null}
   minWidth={widths.minWidth}
   maxWidth={widths.defaultWidth + 2560}

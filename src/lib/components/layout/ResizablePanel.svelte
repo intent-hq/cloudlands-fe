@@ -25,6 +25,7 @@
     className = '',
     handleClassName = '',
     showHandleIndicator = false,
+    active = true,
 
     // Width props (for horizontal orientation)
     minWidth = 280,
@@ -90,6 +91,7 @@
     className?: string;
     handleClassName?: string;
     showHandleIndicator?: boolean;
+    active?: boolean;
 
     // Width props (for horizontal orientation)
     minWidth?: number;
@@ -500,7 +502,7 @@
   // React to Redux-driven sidebar collapse changes (Cmd+B, title-bar toggle, etc.).
   // The first run captures the baseline; subsequent runs apply collapse/expand.
   $effect(() => {
-    if (!followsSidebarCollapsed || orientation !== 'horizontal') return;
+    if (!active || !followsSidebarCollapsed || orientation !== 'horizontal') return;
 
     const collapsed = $sidebarIsCollapsed;
     if (lastSidebarCollapsed === undefined) {
@@ -536,23 +538,22 @@
     expandedWidthPercent = pixelsToPercent(expandedWidth, true);
     heightPercent = pixelsToPercent(panelHeight, false);
 
-    // Listen for window resize if any percentage weight is used
-    if (effectiveWeight > 0) {
-      window.addEventListener('resize', handleWindowResize);
-    }
-
-    // Listen for sidebar toggle event (only for workspace left panel)
+    // Initialize from store's collapsed state for workspace sidebars.
     if (followsSidebarCollapsed) {
-      // Initialize from store's collapsed state
       const initialCollapsed = $sidebarIsCollapsed;
       if (initialCollapsed) {
         widthBeforeToggle = panelWidth;
         panelWidth = 0;
         widthPercent = 0;
       }
-      window.addEventListener('workspace:toggle-left-sidebar', handleSidebarToggle);
     }
+  });
 
+  $effect(() => {
+    if (!active) return;
+    if (effectiveWeight > 0) window.addEventListener('resize', handleWindowResize);
+    if (followsSidebarCollapsed)
+      window.addEventListener('workspace:toggle-left-sidebar', handleSidebarToggle);
     return () => {
       window.removeEventListener('resize', handleWindowResize);
       if (followsSidebarCollapsed) {
@@ -727,6 +728,7 @@
   }
 
   function startResize(e: MouseEvent) {
+    if (!active) return;
     isResizing = true;
     onResizeStart?.();
     document.body.classList.add('panel-resizing');
@@ -878,7 +880,7 @@
 
   $effect(() => {
     const width = actualWidth;
-    untrack(() => onWidthChange?.(width));
+    if (active) untrack(() => onWidthChange?.(width));
   });
 </script>
 

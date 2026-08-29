@@ -112,10 +112,23 @@ describe('captureScrollAnchor / restoreScrollAnchor', () => {
         scrollTop = value;
       },
     });
-    Object.defineProperty(container, 'scrollHeight', { configurable: true, value: opts.scrollHeight });
-    Object.defineProperty(container, 'clientHeight', { configurable: true, value: opts.clientHeight });
+    Object.defineProperty(container, 'scrollHeight', {
+      configurable: true,
+      value: opts.scrollHeight,
+    });
+    Object.defineProperty(container, 'clientHeight', {
+      configurable: true,
+      value: opts.clientHeight,
+    });
     container.getBoundingClientRect = () =>
-      ({ top: 0, bottom: opts.clientHeight, left: 0, right: 0, width: 0, height: opts.clientHeight }) as DOMRect;
+      ({
+        top: 0,
+        bottom: opts.clientHeight,
+        left: 0,
+        right: 0,
+        width: 0,
+        height: opts.clientHeight,
+      }) as DOMRect;
     document.body.appendChild(container);
     return container;
   }
@@ -135,7 +148,11 @@ describe('captureScrollAnchor / restoreScrollAnchor', () => {
 
   it('skips anchoring near the bottom and restore leaves scrollTop untouched', () => {
     // distance from bottom = 1000 - 550 - 400 = 50 <= 100 threshold
-    const container = makeScrollContainer({ scrollTop: 550, scrollHeight: 1000, clientHeight: 400 });
+    const container = makeScrollContainer({
+      scrollTop: 550,
+      scrollHeight: 1000,
+      clientHeight: 400,
+    });
     addMessage(container, 'm1', 20);
 
     const anchor = captureScrollAnchor(container);
@@ -148,7 +165,11 @@ describe('captureScrollAnchor / restoreScrollAnchor', () => {
 
   it('anchors the first visible element and compensates scrollTop by its movement', () => {
     // distance from bottom = 2000 - 500 - 400 = 1100 > 100 threshold
-    const container = makeScrollContainer({ scrollTop: 500, scrollHeight: 2000, clientHeight: 400 });
+    const container = makeScrollContainer({
+      scrollTop: 500,
+      scrollHeight: 2000,
+      clientHeight: 400,
+    });
     addMessage(container, 'above-viewport', -60); // above viewport, not eligible
     const anchorEl = addMessage(container, 'first-visible', 20);
     addMessage(container, 'second-visible', 80);
@@ -172,7 +193,11 @@ describe('captureScrollAnchor / restoreScrollAnchor', () => {
   });
 
   it('restores gracefully when the anchor element was removed from the DOM', () => {
-    const container = makeScrollContainer({ scrollTop: 500, scrollHeight: 2000, clientHeight: 400 });
+    const container = makeScrollContainer({
+      scrollTop: 500,
+      scrollHeight: 2000,
+      clientHeight: 400,
+    });
     const anchorEl = addMessage(container, 'doomed', 20);
 
     const anchor = captureScrollAnchor(container);
@@ -222,6 +247,7 @@ describe('followBottom policy', () => {
   let resizeUnobserved: Element[];
   let resizeActive: Set<Element>;
   let mutationCallbacks: MutationCallback[];
+  let mutationDisconnects: number;
   let scrollHeight: number;
   let clientHeight: number;
   let scrollTop: number;
@@ -234,6 +260,7 @@ describe('followBottom policy', () => {
     resizeUnobserved = [];
     resizeActive = new Set();
     mutationCallbacks = [];
+    mutationDisconnects = 0;
     scrollHeight = 900;
     clientHeight = 300;
     scrollTop = 600;
@@ -268,7 +295,9 @@ describe('followBottom policy', () => {
           mutationCallbacks.push(callback);
         }
         observe() {}
-        disconnect() {}
+        disconnect() {
+          mutationDisconnects += 1;
+        }
       },
     );
     container = document.createElement('div');
@@ -347,6 +376,28 @@ describe('followBottom policy', () => {
       {} as MutationObserver,
     );
   }
+
+  it('detaches and restores every listener and observer when disabled', () => {
+    const removeContainerListener = vi.spyOn(container, 'removeEventListener');
+    const removeWindowListener = vi.spyOn(window, 'removeEventListener');
+    const action = followBottom(container, { enabled: true, follow: true });
+
+    expect(isFollowingBottom(container)).toBe(true);
+    expect(resizeActive.size).toBeGreaterThan(0);
+
+    action.update({ enabled: false, follow: true });
+    expect(isFollowingBottom(container)).toBe(false);
+    expect(resizeActive.size).toBe(0);
+    expect(mutationDisconnects).toBe(1);
+    expect(removeContainerListener).toHaveBeenCalledWith('scroll', expect.any(Function));
+    expect(removeWindowListener).toHaveBeenCalledWith('pointerup', expect.any(Function));
+
+    action.update({ enabled: true, follow: true });
+    expect(isFollowingBottom(container)).toBe(true);
+    expect(resizeActive.size).toBeGreaterThan(0);
+
+    action.destroy();
+  });
 
   function fireRemovedMutation(node: Node) {
     mutationCallbacks[0]?.(

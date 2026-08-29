@@ -41,6 +41,7 @@ export interface ChatDraftManagerOptions {
   drafts: Pick<DraftsClient, 'get' | 'set'>;
   workspaceId: () => string | undefined;
   agentId: () => string | undefined;
+  active?: () => boolean;
   inputValue: () => string;
   setInputValue: (text: string) => void;
   contextItems: () => ContextItem[];
@@ -126,8 +127,23 @@ export function createChatDraftManager(options: ChatDraftManagerOptions): ChatDr
 
   // Restore draft from backend on mount and on (workspaceId, agentId) change
   $effect(() => {
+    const active = options.active?.() ?? true;
     const workspaceId = options.workspaceId();
     const agentId = options.agentId();
+    if (!active) {
+      untrack(() => {
+        restoreGeneration += 1;
+        restoreKey = null;
+        if (gateTimeoutId) clearTimeout(gateTimeoutId);
+        gateTimeoutId = null;
+        clearGateVisible();
+        if (hydrateTimeoutId) clearTimeout(hydrateTimeoutId);
+        hydrateTimeoutId = null;
+        gateActive = false;
+        flushPendingSave();
+      });
+      return;
+    }
     if (!workspaceId || !agentId) return;
     const key = `${workspaceId}\u0000${agentId}`;
     if (restoreKey === key) return;
@@ -171,17 +187,27 @@ export function createChatDraftManager(options: ChatDraftManagerOptions): ChatDr
           .then((draft) => {
             // Discard late revalidations after unmount, a pair change, or an
             // invalidation (the composer's current state won the race).
-            if (destroyed || restoreKey !== key || restoreGeneration !== generation) return;
+            if (
+              destroyed ||
+              !(options.active?.() ?? true) ||
+              restoreKey !== key ||
+              restoreGeneration !== generation
+            )
+              return;
             const freshText = draft?.text ?? '';
             const freshAttachments = draft?.attachments ?? [];
             const freshAttachmentsJson = JSON.stringify(freshAttachments);
-            setCachedDraft(workspaceId, agentId, { text: freshText, attachments: freshAttachments });
+            setCachedDraft(workspaceId, agentId, {
+              text: freshText,
+              attachments: freshAttachments,
+            });
 
             // User typing is authoritative — only apply the revalidated
             // result if the composer still matches what the cache hydrated.
             const untouched =
               options.inputValue() === hydratedText &&
-              JSON.stringify(serializeDraftAttachments(options.contextItems())) === hydratedAttachmentsJson;
+              JSON.stringify(serializeDraftAttachments(options.contextItems())) ===
+                hydratedAttachmentsJson;
             if (!untouched) return;
             if (freshText !== hydratedText) {
               options.setInputValue(freshText);
@@ -204,14 +230,17 @@ export function createChatDraftManager(options: ChatDraftManagerOptions): ChatDr
       // The spinner only earns its place once the restore is visibly slow.
       gateVisibleTimeoutId = setTimeout(() => {
         gateVisibleTimeoutId = null;
+        if (!(options.active?.() ?? true)) return;
         gateVisible = true;
       }, GATE_VISIBLE_DELAY_MS);
       gateTimeoutId = setTimeout(() => {
+        if (!(options.active?.() ?? true)) return;
         gateActive = false;
         clearGateVisible();
       }, GATE_TIMEOUT_MS);
       const release = () => {
-        if (restoreKey !== key || restoreGeneration !== generation) return;
+        if (!(options.active?.() ?? true) || restoreKey !== key || restoreGeneration !== generation)
+          return;
         if (gateTimeoutId) clearTimeout(gateTimeoutId);
         gateActive = false;
         clearGateVisible();
@@ -222,7 +251,13 @@ export function createChatDraftManager(options: ChatDraftManagerOptions): ChatDr
         .then((draft) => {
           // Discard late restores after unmount, a pair change, or an
           // invalidation (the composer's current state won the race).
-          if (destroyed || restoreKey !== key || restoreGeneration !== generation) return;
+          if (
+            destroyed ||
+            !(options.active?.() ?? true) ||
+            restoreKey !== key ||
+            restoreGeneration !== generation
+          )
+            return;
           // User typing is authoritative — never overwrite a non-empty
           // composer with restored text or attachments.
           const userHasTyped = !!options.inputValue();
@@ -233,7 +268,7 @@ export function createChatDraftManager(options: ChatDraftManagerOptions): ChatDr
             options.setInputValue(draft.text);
             hydrateTimeoutId = setTimeout(() => {
               // Re-check: skip if the user edited during the hydration window.
-              if (options.inputValue() === draft.text) {
+              if ((options.active?.() ?? true) && options.inputValue() === draft.text) {
                 options.applyEditorContent(draft.text);
               }
             }, HYDRATE_DELAY_MS);
@@ -258,9 +293,16 @@ export function createChatDraftManager(options: ChatDraftManagerOptions): ChatDr
 
   // Save draft to backend (debounced)
   $effect(() => {
+    const active = options.active?.() ?? true;
     const workspaceId = options.workspaceId();
     const agentId = options.agentId();
     const gated = gateActive;
+    if (!active) {
+      if (saveTimeoutId) clearTimeout(saveTimeoutId);
+      saveTimeoutId = null;
+      pendingSave = null;
+      return;
+    }
     if (!workspaceId || !agentId) return;
     const currentValue = options.inputValue();
     const currentAttachments = serializeDraftAttachments(options.contextItems());
@@ -304,6 +346,7 @@ export function createChatDraftManager(options: ChatDraftManagerOptions): ChatDr
           currentAttachments.length > 0 ? currentAttachments : undefined,
         )
         .then(() => {
+          if (!(options.active?.() ?? true)) return;
           // Only track dirty state if this pair is still the current one.
           if (restoreKey === saveKey) {
             lastPersisted = { text: currentValue, attachmentsJson };
@@ -316,6 +359,7 @@ export function createChatDraftManager(options: ChatDraftManagerOptions): ChatDr
           }
         })
         .catch((err) => {
+          if (!(options.active?.() ?? true)) return;
           // The synchronous cache write above advertised text the daemon
           // never accepted — roll it back to the last persisted state so a
           // switch-back cache-hit hydrates what the daemon actually holds.
