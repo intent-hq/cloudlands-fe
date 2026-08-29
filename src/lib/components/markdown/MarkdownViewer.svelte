@@ -41,6 +41,8 @@
       options?: { openInAdjacentPanel?: boolean; sourcePanelId?: string },
     ) => void;
     taskBlockRenderMode?: 'placeholder' | 'content';
+    /** Chat transcript only: render inline workspace-file images as fixed square thumbnails. */
+    chatImageThumbnails?: boolean;
   }
 
   let {
@@ -52,6 +54,7 @@
     onCodeBlockAction: _onCodeBlockAction,
     onFileClick,
     taskBlockRenderMode = 'placeholder',
+    chatImageThumbnails = false,
   }: Props = $props();
 
   // PERF: Detect content complexity to choose rendering strategy
@@ -578,6 +581,7 @@
   <div
     role="group"
     class="markdown-viewer streaming-content {className}"
+    class:chat-image-thumbnails={chatImageThumbnails}
     bind:this={streamingContentElement}
     onclick={handleLinkClick}
     onkeydown={handleLinkKeydown}
@@ -596,6 +600,7 @@
   <div
     role="group"
     class="markdown-viewer static-content {className}"
+    class:chat-image-thumbnails={chatImageThumbnails}
     bind:this={staticContentElement}
     onclick={handleLinkClick}
     onkeydown={handleLinkKeydown}
@@ -604,7 +609,11 @@
   </div>
 {:else}
   <!-- Complex content - needs TipTap for interactivity (task lists, etc.) -->
-  <div class="markdown-viewer {className}" bind:this={editorElement}></div>
+  <div
+    class="markdown-viewer {className}"
+    class:chat-image-thumbnails={chatImageThumbnails}
+    bind:this={editorElement}
+  ></div>
 {/if}
 
 {#if lightboxImageUrl}
@@ -1028,6 +1037,16 @@
   /* Inline workspace file images open in a lightbox on click */
   .markdown-viewer :global(img[src^='workspace-file://']) {
     cursor: zoom-in;
+  }
+
+  /* Chat transcript: inline workspace file images render as fixed square
+     bordered thumbnails (cropped), matching ChatImageBlock */
+  .markdown-viewer.chat-image-thumbnails :global(img[src^='workspace-file://']) {
+    width: 10rem;
+    height: 10rem;
+    object-fit: cover;
+    border: 1px solid hsl(var(--border));
+    border-radius: 0.5rem;
   }
 
   /* Task Block - Skeleton loader styled like final checkbox state */

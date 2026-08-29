@@ -52,7 +52,7 @@
     <button
       bind:this={openerElement}
       type="button"
-      class="block w-fit max-w-full cursor-zoom-in overflow-hidden rounded-lg border border-border bg-muted/30 p-0 shadow-(--elevation-raised) transition-opacity hover:opacity-90 focus-visible:border-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+      class="block size-40 cursor-zoom-in overflow-hidden rounded-lg border border-border bg-muted/30 p-0 shadow-(--elevation-raised) transition-opacity hover:opacity-90 focus-visible:border-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
       class:animate-pulse={hydrationLoading}
       onclick={handleClick}
       aria-label={needsHydration
@@ -66,7 +66,7 @@
         {alt}
         loading="lazy"
         decoding="async"
-        class="block max-h-[32rem] w-auto max-w-full object-contain"
+        class="block size-full object-cover"
       />
     </button>
   {:else if dataTruncated}
