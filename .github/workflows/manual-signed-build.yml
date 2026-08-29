@@ -161,11 +161,14 @@ jobs:
       # Stage the Developer ID provisioning profile for the keychain-sync
       # helper (dev.intentapp.cloudlands-fe.keychain-helper). scripts/
       # sign-sidecar.js embeds it and signs the helper with the restricted
-      # keychain entitlements the profile authorizes. Fail-soft: when the
-      # secret is empty the env var stays unset, the helper ships
-      # unprovisioned, and keychain sync reports "unavailable" at runtime —
-      # the build never fails. Gated on `sign` like the rest of the signing
-      # env; the decoded file is removed by the always() cleanup step.
+      # keychain entitlements the profile authorizes. When the secret is
+      # empty the env var stays unset and this step exits 0 — but signed
+      # builds set REQUIRE_SHARED_KEYCHAIN_GROUP=1 on the build step, so
+      # scripts/sign-sidecar.js then FAILS the build (intent-hq/intent#3848)
+      # instead of shipping a helper without keychain sync (unsigned builds
+      # skip helper signing entirely and are unaffected). Gated on `sign`
+      # like the rest of the signing env; the decoded file is removed by the
+      # always() cleanup step.
       - name: Stage keychain-helper provisioning profile
         if: ${{ inputs.sign }}
         env:

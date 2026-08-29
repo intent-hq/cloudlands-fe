@@ -151,10 +151,12 @@ export function parsePlutilRawArrayLength(stdout) {
  *   keychain-access-groups array is present
  */
 export function parseKeychainAccessGroupsFromXml(xml) {
+  // plutil serializes an empty array as self-closing <array/>.
   const arrayMatch = String(xml ?? '').match(
-    /<key>keychain-access-groups<\/key>\s*<array>([\s\S]*?)<\/array>/,
+    /<key>keychain-access-groups<\/key>\s*(?:<array\s*\/>|<array>([\s\S]*?)<\/array>)/,
   );
   if (!arrayMatch) return null;
+  if (arrayMatch[1] === undefined) return [];
   const groups = [];
   const stringRe = /<string>([^<]*)<\/string>/g;
   let entry;
@@ -550,6 +552,11 @@ async function signSidecar(context) {
     console.log('=== Sidecar signing complete ===');
   } catch (error) {
     console.error('=== Sidecar signing failed ===');
+    // The guardrail must never be swallowed by the unsigned-build escape
+    // hatch below — with REQUIRE_SHARED_KEYCHAIN_GROUP=1 the build fails.
+    if (process.env.REQUIRE_SHARED_KEYCHAIN_GROUP === '1') {
+      throw error;
+    }
     // If we couldn't find a cert and signing failed, that's expected for unsigned builds
     const keychainIdentity = await findSigningIdentity();
     if (!keychainIdentity && !process.env.CSC_NAME) {

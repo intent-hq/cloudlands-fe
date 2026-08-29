@@ -132,6 +132,15 @@ describe('parseKeychainAccessGroupsFromXml', () => {
     expect(parseKeychainAccessGroupsFromXml(xml)).toEqual([]);
   });
 
+  it('returns an empty list for the self-closing <array/> form plutil emits', () => {
+    expect(parseKeychainAccessGroupsFromXml('<key>keychain-access-groups</key><array/>')).toEqual(
+      [],
+    );
+    expect(
+      parseKeychainAccessGroupsFromXml('<key>keychain-access-groups</key>\n\t<array />'),
+    ).toEqual([]);
+  });
+
   it('decodes XML entities in group values', () => {
     const xml =
       '<key>keychain-access-groups</key><array><string>TEAM12345X.a&amp;b</string></array>';
