@@ -13,8 +13,12 @@ import {
   setSecondaryRootGitLoading,
   setSecondaryRootCommitFiles,
 } from "./git-slice";
-import type { GitStatus } from "$shared/types";
+import type { CommitInfo, GitStatus } from "$shared/types";
 import { workspaceUnmounted } from "../workspace-lifecycle/workspace-lifecycle-slice";
+import {
+  createCollection,
+  getItems,
+} from '@augmentcode/themis/utils/collections/collection-utils';
 
 const reduce = gitReducer;
 
@@ -69,23 +73,36 @@ describe("gitReducer", () => {
 
     it("stores successful results under the requested root", () => {
       const status = makeGitStatus({ branch: "secondary" });
+      const commits = [
+        { hash: 'newer', message: 'newer' } as CommitInfo,
+        { hash: 'older', message: 'older' } as CommitInfo,
+      ];
       const state = reduce(
         initialState,
         setSecondaryRootGit("ws-1", "root-2", {
           status,
-          commits: [],
-          commitFiles: {},
+          commits,
+          commitFiles: {
+            newer: [{ path: 'newer.ts', additions: 1, deletions: 0 }],
+            older: null,
+          },
           nextToken: "next",
         }),
       );
-      expect(getGitWorkspaceState(state, "ws-1").secondaryRoots["root-2"]).toEqual({
-        status,
-        commits: [],
-        commitFiles: {},
-        nextToken: "next",
-        loading: false,
-        error: null,
-      });
+      const root = getGitWorkspaceState(state, "ws-1").secondaryRoots["root-2"];
+      expect(getItems(root.commits)).toEqual(commits);
+      expect(getItems(root.commitFiles)).toEqual([
+        {
+          commitHash: 'newer',
+          files: createCollection('path', [
+            { path: 'newer.ts', additions: 1, deletions: 0 },
+          ]),
+        },
+        { commitHash: 'older', files: null },
+      ]);
+      expect(root).toEqual(
+        expect.objectContaining({ status, nextToken: "next", loading: false, error: null }),
+      );
     });
 
     it("stores errors without clearing cached root data", () => {
@@ -139,9 +156,16 @@ describe("gitReducer", () => {
       );
       expect(
         getGitWorkspaceState(state, "ws-1").secondaryRoots["root-1"].commitFiles,
-      ).toEqual({
-        abc123: [{ path: "recovered.ts", additions: 1, deletions: 0 }],
-      });
+      ).toEqual(
+        createCollection('commitHash', [
+          {
+            commitHash: 'abc123',
+            files: createCollection('path', [
+              { path: "recovered.ts", additions: 1, deletions: 0 },
+            ]),
+          },
+        ]),
+      );
     });
   });
 });

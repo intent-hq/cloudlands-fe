@@ -10,8 +10,13 @@ import {
   defaultGitOperationFlags,
   getGitWorkspaceState,
 } from "./git-slice";
-import type { GitOperationFlags, PostMergeState, SecondaryRootGitState } from "./git-types";
+import type { GitOperationFlags, PostMergeState } from "./git-types";
 import type { GitStatus } from "$shared/types";
+import {
+  getItems,
+} from '@augmentcode/themis/utils/collections/collection-utils';
+import type { CommitFile } from '$features/file-tracking/types';
+import type { CommitInfo } from '$shared/types';
 
 const defaultPostMergeState: PostMergeState = {
   aheadOfTrunk: null,
@@ -41,7 +46,16 @@ export const selectGitBehind: AppSelector<number, [wsId: string]> =
     (state, wsId: string) => getGitWorkspaceState(state.git, wsId).behind
   );
 
-const emptySecondaryRootState: SecondaryRootGitState = {
+export type SecondaryRootGitViewState = {
+  status: GitStatus | null;
+  commits: CommitInfo[];
+  nextToken?: string;
+  commitFiles: Record<string, CommitFile[] | null>;
+  loading: boolean;
+  error: string | null;
+};
+
+const emptySecondaryRootState: SecondaryRootGitViewState = {
   status: null,
   commits: [],
   commitFiles: {},
@@ -51,10 +65,27 @@ const emptySecondaryRootState: SecondaryRootGitState = {
 export { emptySecondaryRootState };
 
 export const selectSecondaryRootGitRoots: AppSelector<
-  Record<string, SecondaryRootGitState>,
+  Record<string, SecondaryRootGitViewState>,
   [wsId: string]
 > = store.createSelector(
-  (state, wsId: string) => getGitWorkspaceState(state.git, wsId).secondaryRoots
+  (state, wsId: string) =>
+    Object.fromEntries(
+      Object.entries(getGitWorkspaceState(state.git, wsId).secondaryRoots).map(
+        ([gitRootId, root]): [string, SecondaryRootGitViewState] => [
+          gitRootId,
+          {
+            ...root,
+            commits: getItems(root.commits),
+            commitFiles: Object.fromEntries(
+              getItems(root.commitFiles).map(({ commitHash, files }) => [
+                commitHash,
+                files ? getItems(files) : null,
+              ]),
+            ),
+          },
+        ],
+      ),
+    )
 );
 
 // ── Sidebar post-merge / git operation flag selectors (moved from transient-ui) ──

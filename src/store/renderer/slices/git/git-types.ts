@@ -6,6 +6,7 @@
 
 import type { CommitFile } from '$features/file-tracking/types';
 import type { CommitInfo, GitStatus, DiffChunk } from '$shared/types';
+import type { Collection } from '@augmentcode/themis/utils/collections/collection-utils';
 
 // ── Git Operation Event Types ──
 
@@ -104,11 +105,23 @@ export type GitWorkspaceState = {
 
 export type SecondaryRootGitState = {
   status: GitStatus | null;
+  commits: Collection<CommitInfo, 'hash'>;
+  nextToken?: string;
+  commitFiles: Collection<SecondaryRootCommitFiles, 'commitHash'>;
+  loading: boolean;
+  error: string | null;
+};
+
+export type SecondaryRootCommitFiles = {
+  commitHash: string;
+  files: Collection<CommitFile, 'path'> | null;
+};
+
+export type SecondaryRootGitData = {
+  status: GitStatus | null;
   commits: CommitInfo[];
   nextToken?: string;
   commitFiles: Record<string, CommitFile[] | null>;
-  loading: boolean;
-  error: string | null;
 };
 
 export type GitState = {

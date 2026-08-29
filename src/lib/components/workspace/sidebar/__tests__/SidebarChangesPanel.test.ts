@@ -194,6 +194,13 @@ vi.mock('$features/git/git.client', () => ({
 }));
 
 vi.mock('$store/renderer/slices/git/git-selectors', () => ({
+  emptySecondaryRootState: {
+    status: null,
+    commits: [],
+    commitFiles: {},
+    loading: false,
+    error: null,
+  },
   selectGitAhead: Object.assign(() => createReadable(mockGitState.ahead), {
     select: () => mockGitState.ahead,
   }),

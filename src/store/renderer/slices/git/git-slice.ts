@@ -7,6 +7,10 @@
 
 import { createAction } from '@augmentcode/themis/utils/store/create-action';
 import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
+import {
+  createCollection,
+  upsertItem,
+} from '@augmentcode/themis/utils/collections/collection-utils';
 import { createWorkspaceScopedHelpers } from '../../utils/workspace-scoped';
 import { workspaceUnmounted } from '../workspace-lifecycle/workspace-lifecycle-slice';
 import type {
@@ -17,6 +21,7 @@ import type {
   GitOperationFlagName,
   GitOperationFlags,
   PostMergeState,
+  SecondaryRootGitData,
 } from './git-types';
 export type { GitOperationCompletedEvent, GitOperationFailedEvent } from './git-types';
 import type { GitStatus } from '$shared/types';
@@ -82,7 +87,7 @@ export const setSecondaryRootGit = createAction(
   (
     wsId: string,
     gitRootId: string,
-    data: Omit<import('./git-types').SecondaryRootGitState, 'loading' | 'error'>,
+    data: SecondaryRootGitData,
   ) => ({ wsId, gitRootId, data }),
 );
 export const setSecondaryRootGitError = createAction<
@@ -141,9 +146,9 @@ gitReducer.with(setSecondaryRootGitLoading, (state, { payload: [wsId, gitRootId]
       ...ws.secondaryRoots,
       [gitRootId]: {
         status: current?.status ?? null,
-        commits: current?.commits ?? [],
+        commits: current?.commits ?? createCollection('hash'),
         nextToken: current?.nextToken,
-        commitFiles: current?.commitFiles ?? {},
+        commitFiles: current?.commitFiles ?? createCollection('commitHash'),
         loading: true,
         error: null,
       },
@@ -152,11 +157,21 @@ gitReducer.with(setSecondaryRootGitLoading, (state, { payload: [wsId, gitRootId]
 });
 gitReducer.with(setSecondaryRootGit, (state, { payload: { wsId, gitRootId, data } }) => {
   const ws = getWorkspaceState(state, wsId);
+  const commitFiles = Object.entries(data.commitFiles).map(([commitHash, files]) => ({
+    commitHash,
+    files: files ? createCollection('path', files) : null,
+  }));
   return setWorkspaceState(state, wsId, {
     ...ws,
     secondaryRoots: {
       ...ws.secondaryRoots,
-      [gitRootId]: { ...data, loading: false, error: null },
+      [gitRootId]: {
+        ...data,
+        commits: createCollection('hash', data.commits),
+        commitFiles: createCollection('commitHash', commitFiles),
+        loading: false,
+        error: null,
+      },
     },
   });
 });
@@ -169,9 +184,9 @@ gitReducer.with(setSecondaryRootGitError, (state, { payload: [wsId, gitRootId, e
       ...ws.secondaryRoots,
       [gitRootId]: {
         status: current?.status ?? null,
-        commits: current?.commits ?? [],
+        commits: current?.commits ?? createCollection('hash'),
         nextToken: current?.nextToken,
-        commitFiles: current?.commitFiles ?? {},
+        commitFiles: current?.commitFiles ?? createCollection('commitHash'),
         loading: false,
         error,
       },
@@ -189,7 +204,10 @@ gitReducer.with(setSecondaryRootCommitFiles, (state, { payload }) => {
       ...ws.secondaryRoots,
       [gitRootId]: {
         ...current,
-        commitFiles: { ...current.commitFiles, [commitHash]: files },
+        commitFiles: upsertItem(current.commitFiles, {
+          commitHash,
+          files: createCollection('path', files),
+        }),
       },
     },
   });
