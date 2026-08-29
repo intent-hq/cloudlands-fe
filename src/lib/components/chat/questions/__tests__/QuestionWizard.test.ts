@@ -11,6 +11,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import QuestionWizard, { type QuestionAnswer } from '../QuestionWizard.svelte';
+import QuestionWizardNullableKeyHost from './QuestionWizardNullableKeyHost.svelte';
 import { wizardDraftKey } from '../wizard-draft-storage';
 import type { Question } from '$shared/types/question-resource';
 
@@ -706,6 +707,32 @@ describe('QuestionWizard draft persistence', () => {
     render(QuestionWizard, { props: { questions: [SINGLE, MULTI, LAST], draftKey: KEY } });
     expect(screen.getByText('1 of 3')).toBeTruthy();
     expect(window.localStorage.getItem(KEY)).toBeNull();
+  });
+
+  it('teardown after the draftKey source goes null still flushes under the original key', async () => {
+    // Mirrors the host: the wizard lives under `{#if pendingQuestions}` with
+    // `draftKey={wizardDraftKey(agentId, pendingQuestions.messageId)}`, so
+    // nulling the reactive source both tears the wizard down and makes the
+    // prop expression unevaluable. Regression: the onDestroy flush re-read
+    // the prop and threw `Cannot read properties of null`; the key is now
+    // captured once at init.
+    const { rerender } = render(QuestionWizardNullableKeyHost, {
+      props: {
+        questions: [SINGLE, LAST],
+        pendingQuestions: { messageId: 'msg-draft-test' },
+      },
+    });
+
+    // Arm a pending debounced save, then null the source to unmount.
+    const input = screen.getByPlaceholderText('Or type your own answer…');
+    await fireEvent.input(input, { target: { value: 'draft' } });
+    expect(window.localStorage.getItem(KEY)).toBeNull();
+
+    await rerender({ pendingQuestions: null });
+
+    expect(screen.queryByTestId('question-wizard-card')).toBeNull();
+    const stored = JSON.parse(window.localStorage.getItem(KEY)!);
+    expect(stored.answers[0]).toEqual({ sel: [], text: 'draft', skipped: false });
   });
 
   it('without draftKey the wizard never reads or writes wizard-draft storage', async () => {

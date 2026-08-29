@@ -83,11 +83,18 @@
     skipped: boolean;
   }
 
+  // The host remounts the wizard per question set ({#key} on the
+  // question-bearing message id), so the draft key is immutable per instance.
+  // Capture it once at init so teardown-time reads (the onDestroy flush) never
+  // re-evaluate the prop getter against a host source that may already be null.
+  // svelte-ignore state_referenced_locally
+  const draftStorageKey = draftKey;
+
   // Restore any persisted draft for this exact question set before the state
   // below initializes. Intentional initial capture (like `answers` below):
   // the host remounts the wizard per question set.
   // svelte-ignore state_referenced_locally
-  const restoredDraft = draftKey ? loadWizardDraft(draftKey, questions) : null;
+  const restoredDraft = draftStorageKey ? loadWizardDraft(draftStorageKey, questions) : null;
 
   let idx = $state(restoredDraft?.idx ?? 0);
   // The host normally unmounts this component after completion. Keep a local,
@@ -150,14 +157,14 @@
 
   /** Delete the stored draft and stop persisting — the set is resolved. */
   function resolveDraft() {
-    if (!draftKey) return;
+    if (!draftStorageKey) return;
     draftResolved = true;
     cancelPendingDraftSave();
-    clearWizardDraft(draftKey);
+    clearWizardDraft(draftStorageKey);
   }
 
   $effect(() => {
-    const key = draftKey;
+    const key = draftStorageKey;
     if (!key) return;
     // Deep read so any selection/text/skipped/step mutation re-runs this.
     const snapshot: WizardDraft = {
@@ -181,8 +188,8 @@
   });
 
   onDestroy(() => {
-    if (draftKey && pendingDraftSave && !draftResolved) {
-      saveWizardDraft(draftKey, pendingDraftSave);
+    if (draftStorageKey && pendingDraftSave && !draftResolved) {
+      saveWizardDraft(draftStorageKey, pendingDraftSave);
     }
     cancelPendingDraftSave();
   });
