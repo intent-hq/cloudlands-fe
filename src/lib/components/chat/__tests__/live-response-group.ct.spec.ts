@@ -32,6 +32,42 @@ test('keeps one current row until click opens the full live history', async ({ m
   await expect(component.getByTestId('response-group-snippet')).toContainText('earlier chunk');
 });
 
+test('caps and follows a tall current row as a streaming cylinder', async ({ mount, page }) => {
+  const component = await mount(LiveResponseGroupHost, {
+    props: { chunk: 'streaming line', lineCount: 12, isStreaming: true },
+  });
+  const trigger = component.getByTestId('response-group-disclosure');
+  const scroller = component.locator('.cylinder-scroller');
+
+  await expect(trigger).toHaveAttribute('aria-expanded', 'false');
+  await expect(scroller).toHaveCSS('max-height', '100px');
+  expect((await scroller.boundingBox())!.height).toBeLessThanOrEqual(100);
+  await expect.poll(() => scroller.evaluate((node) => node.scrollTop)).toBeGreaterThan(0);
+  await expect
+    .poll(() => scroller.evaluate((node) => node.style.maskImage))
+    .toContain('linear-gradient');
+
+  await scroller.evaluate((node) => {
+    node.scrollTop = 0;
+    node.dispatchEvent(new Event('scroll'));
+  });
+  await expect.poll(() => scroller.evaluate((node) => node.style.maskImage)).toBe('');
+  await page.waitForTimeout(200);
+
+  await component.update({
+    props: { chunk: 'latest streaming line', lineCount: 14, isStreaming: true },
+  });
+  await expect.poll(() => scroller.evaluate((node) => node.scrollTop)).toBeGreaterThan(0);
+  await expect
+    .poll(() => scroller.evaluate((node) => node.style.maskImage))
+    .toContain('linear-gradient');
+
+  await trigger.click();
+  await expect(trigger).toHaveAttribute('aria-expanded', 'true');
+  await expect(scroller).not.toHaveCSS('max-height', '100px');
+  await expect(component.getByTestId('live-history-child')).toHaveCount(2);
+});
+
 test('reconciles a tag-first streaming group through explicit close and completion', async ({
   mount,
 }) => {

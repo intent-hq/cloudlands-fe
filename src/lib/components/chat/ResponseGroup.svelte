@@ -221,7 +221,7 @@
 {/snippet}
 
 {#snippet preview()}
-  <CylinderScroller isActive={isStreaming} constrained={false}>
+  <CylinderScroller isActive={isStreaming} constrained>
     <div class="relative flex flex-col gap-0" data-response-group-content>
       <span
         class="operational-group-guide pointer-events-none absolute inset-y-0 w-px -translate-x-1/2 bg-border"

@@ -2,8 +2,11 @@
   import type { ContentBlock } from '$shared/types';
   import ResponseGroup from '../ResponseGroup.svelte';
 
-  let { chunk = 'current chunk', isStreaming = true }: { chunk?: string; isStreaming?: boolean } =
-    $props();
+  let {
+    chunk = 'current chunk',
+    isStreaming = true,
+    lineCount = 1,
+  }: { chunk?: string; isStreaming?: boolean; lineCount?: number } = $props();
 
   const blocks = $derived([
     { type: 'text', text: 'earlier chunk' },
@@ -13,7 +16,11 @@
 
 <ResponseGroup name="Working" {isStreaming} {blocks}>
   {#snippet currentChild()}
-    <div data-testid="live-current-child">{chunk}</div>
+    <div data-testid="live-current-child">
+      {#each Array.from({ length: lineCount }) as _, index}
+        <div data-testid="live-stream-line">{chunk}{lineCount > 1 ? ` ${index + 1}` : ''}</div>
+      {/each}
+    </div>
   {/snippet}
   {#snippet children()}
     <div data-testid="live-history-child">earlier chunk</div>
