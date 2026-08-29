@@ -165,13 +165,15 @@ describe('ConnectBackendModal', () => {
     await fireEvent.input(screen.getByLabelText('Device name'), {
       target: { value: 'Render box' },
     });
-    await fireEvent.click(screen.getByRole('button', { name: 'Use Rose accent' }));
+    expect(screen.queryByRole('button', { name: 'Use Rose accent' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Use Orange accent' })).toBeNull();
+    await fireEvent.click(screen.getByRole('button', { name: 'Use Emerald accent' }));
     await fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
     await screen.findByText('AA:BB:CC:DD');
     await fireEvent.click(screen.getByRole('button', { name: 'Confirm & connect' }));
 
     expect(mocks.addConnectionRequested).toHaveBeenCalledWith(
-      expect.objectContaining({ label: 'Render box', accent: 'rose' }),
+      expect.objectContaining({ label: 'Render box', accent: 'emerald' }),
     );
   });
 
