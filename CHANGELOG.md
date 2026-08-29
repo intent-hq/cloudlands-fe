@@ -4,6 +4,21 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.107.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.106.2...v2.107.0) (2026-08-29)
+
+
+### 🚀 Features
+
+* persist Q&A wizard answer drafts and current step locally ([#1841](https://github.com/intent-hq/cloudlands-fe/issues/1841)) ([c48a9b1](https://github.com/intent-hq/cloudlands-fe/commit/c48a9b1f14c114301974ef60f4721cad932cbfe9))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.8.15 ([#1846](https://github.com/intent-hq/cloudlands-fe/issues/1846)) ([69b8ee4](https://github.com/intent-hq/cloudlands-fe/commit/69b8ee490226dd1b4906da63e0ba38b295a6f412))
+* **hud:** gate attention panel rows and ATTN counter to top-level non-background agents ([#1837](https://github.com/intent-hq/cloudlands-fe/issues/1837)) ([ec154f0](https://github.com/intent-hq/cloudlands-fe/commit/ec154f041f99c6a45b6f0aa67f869b7f486f44fd))
+* match connection accent dot to the daemon status dot (size-2, no ring) ([#1838](https://github.com/intent-hq/cloudlands-fe/issues/1838)) ([8377dcf](https://github.com/intent-hq/cloudlands-fe/commit/8377dcf14dc17c3d0a817680111f0008f34796a2))
+* **workspace:** anchor isNotFoundError to the workspace subject ([#1840](https://github.com/intent-hq/cloudlands-fe/issues/1840)) ([9b84088](https://github.com/intent-hq/cloudlands-fe/commit/9b84088312e6324f55c12cc613f49c4241289c48))
+
 ## [2.106.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.106.1...v2.106.2) (2026-08-29)
 
 
