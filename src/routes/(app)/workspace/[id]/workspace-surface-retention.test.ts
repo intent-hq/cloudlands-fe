@@ -107,14 +107,14 @@ describe('workspace surface retention', () => {
     const inactiveA = view.container.querySelector<HTMLElement>(
       '[data-retained-workspace-surface="workspace-a"]',
     );
-    expect(inactiveA).toBe(retainedA.parentElement);
+    expect(inactiveA?.contains(retainedA)).toBe(true);
     expect(inactiveA?.hasAttribute('hidden')).toBe(true);
     expect((inactiveA as HTMLElement & { inert: boolean }).inert).toBe(true);
     expect(inactiveA?.getAttribute('aria-hidden')).toBe('true');
     expect(document.activeElement).not.toBe(retainedA);
 
     await view.rerender(input('workspace-a'));
-    await waitFor(() => expect(retainedA.parentElement?.hasAttribute('hidden')).toBe(false));
+    await waitFor(() => expect(inactiveA?.hasAttribute('hidden')).toBe(false));
     expect(view.getByRole('button', { name: 'workspace-a' })).toBe(retainedA);
   });
 });

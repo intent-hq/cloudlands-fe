@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { Button } from '$lib/components/ui/button';
   import RetainedWorkspaceSurfaces from './RetainedWorkspaceSurfaces.svelte';
 
   let {
@@ -14,12 +15,8 @@
 
 <RetainedWorkspaceSurfaces {activeWorkspaceId} {openWorkspaceIds} {workspaceEntityIds}>
   {#snippet children(workspaceId: string, active: boolean)}
-    <button
-      type="button"
-      data-workspace-content={workspaceId}
-      data-workspace-content-active={active}
-    >
+    <Button data-workspace-content={workspaceId} data-workspace-content-active={active}>
       {workspaceId}
-    </button>
+    </Button>
   {/snippet}
 </RetainedWorkspaceSurfaces>

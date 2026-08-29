@@ -1,4 +1,4 @@
-export interface RetainedWorkspaceSurface {
+interface RetainedWorkspaceSurface {
   workspaceId: string;
   generation: number;
   lastActive: number;
