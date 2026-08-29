@@ -5,6 +5,15 @@ import { fileURLToPath } from 'url';
 import { dirname } from 'path';
 import { Logger } from '../shared/logger';
 import { getActiveId } from '../features/backend/main/connections-store';
+import { DOCK_WINDOW_WIDTH } from '../shared/dock-layout';
+
+export {
+  DOCK_HOVER_CARD_WIDTH,
+  DOCK_PREVIEW_GAP,
+  DOCK_RAIL_WIDTH,
+  DOCK_WINDOW_WIDTH,
+  getDockHorizontalLayout,
+} from '../shared/dock-layout';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -12,7 +21,6 @@ const __dirname = dirname(__filename);
 const logger = new Logger('DockWindow');
 
 export const DOCK_ROUTE_PREFIX = '/dock';
-export const DOCK_WINDOW_WIDTH = 420;
 
 let dockWindowRef: BrowserWindow | null = null;
 let removeLifecycleListeners: (() => void) | null = null;
@@ -45,6 +53,48 @@ export function getDockBounds(workArea: Rectangle): Rectangle {
   };
 }
 
+export function supportsDockPointerForwarding(platform: NodeJS.Platform): boolean {
+  return platform === 'darwin' || platform === 'win32';
+}
+
+/**
+ * Keep only an active dock surface interactive. On Linux, Electron cannot
+ * forward mouse moves through an ignored window, so leave the window interactive.
+ */
+export function setDockPointerRegionActive(
+  window: BrowserWindow,
+  active: boolean,
+  platform: NodeJS.Platform = process.platform,
+): boolean {
+  if (!isDockWindow(window) || window.isDestroyed()) return false;
+
+  if (!supportsDockPointerForwarding(platform)) {
+    try {
+      window.setIgnoreMouseEvents(false);
+    } catch (error) {
+      logger.warn('Failed to keep dock pointer input enabled', { error });
+    }
+    return false;
+  }
+
+  try {
+    if (active) {
+      window.setIgnoreMouseEvents(false);
+    } else {
+      window.setIgnoreMouseEvents(true, { forward: true });
+    }
+    return true;
+  } catch (error) {
+    logger.warn('Failed to update dock pointer routing', { error });
+    try {
+      window.setIgnoreMouseEvents(false);
+    } catch {
+      // The window may already be closing. There is no further safe recovery.
+    }
+    return false;
+  }
+}
+
 function buildDockUrl(): string {
   if (process.env.NODE_ENV === 'development') {
     const devPort = process.env.DEV_PORT || '5190';
@@ -55,6 +105,7 @@ function buildDockUrl(): string {
 
 function clearTrackedWindow(window: BrowserWindow): void {
   if (dockWindowRef !== window) return;
+  if (!window.isDestroyed()) setDockPointerRegionActive(window, false);
   removeLifecycleListeners?.();
   removeLifecycleListeners = null;
   dockWindowRef = null;
@@ -91,6 +142,9 @@ function attachLifecycleListeners(window: BrowserWindow): void {
     if (window.isDestroyed()) return;
     refreshDockBackend(window, false);
   };
+  const resetPointerRouting = (): void => {
+    if (!window.isDestroyed()) setDockPointerRegionActive(window, false);
+  };
 
   screen.on('display-metrics-changed', updateBounds);
   screen.on('display-removed', updateBounds);
@@ -102,6 +156,9 @@ function attachLifecycleListeners(window: BrowserWindow): void {
   };
 
   window.on('closed', () => clearTrackedWindow(window));
+  window.on('blur', resetPointerRouting);
+  window.on('hide', resetPointerRouting);
+  window.on('close', resetPointerRouting);
   window.webContents.on('render-process-gone', (_event, details) => {
     logger.warn('Dock renderer exited; closing dock window', { reason: details.reason });
     clearTrackedWindow(window);
@@ -150,6 +207,7 @@ export function createDockWindow(): BrowserWindow {
   dockWindowRef = window;
   attachLifecycleListeners(window);
   configurePlatformBehavior(window);
+  setDockPointerRegionActive(window, false);
   window.once('ready-to-show', () => {
     if (!window.isDestroyed()) window.showInactive();
   });

@@ -341,6 +341,7 @@ export const IPC_CHANNELS = {
     SET_BROWSER_FOCUSED: 'window:set-browser-focused',
     SET_FULL_SCREEN: 'window:set-full-screen',
     GET_FULL_SCREEN: 'window:get-full-screen',
+    SET_DOCK_POINTER_REGION: 'window:set-dock-pointer-region',
   },
 
   // Terminal

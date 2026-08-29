@@ -269,6 +269,7 @@ const ALLOWED_CHANNELS = [
   'window:set-browser-focused',
   'window:set-full-screen',
   'window:get-full-screen',
+  'window:set-dock-pointer-region',
   'terminal:createWithCommand',
   'terminal:professional:create',
   'terminal:professional:list',

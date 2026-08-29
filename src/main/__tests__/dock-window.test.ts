@@ -32,6 +32,7 @@ const mocks = vi.hoisted(() => {
     setAlwaysOnTop = vi.fn();
     setFullScreenable = vi.fn();
     setVisibleOnAllWorkspaces = vi.fn();
+    setIgnoreMouseEvents = vi.fn();
     showInactive = vi.fn();
     show = vi.fn();
     focus = vi.fn();
@@ -124,11 +125,17 @@ import {
   _resetDockWindowForTests,
   closeDockWindow,
   createDockWindow,
+  DOCK_HOVER_CARD_WIDTH,
+  DOCK_PREVIEW_GAP,
+  DOCK_RAIL_WIDTH,
   DOCK_WINDOW_WIDTH,
   focusDockWindow,
   getDockBounds,
+  getDockHorizontalLayout,
   getDockWindow,
   isDockWindow,
+  setDockPointerRegionActive,
+  supportsDockPointerForwarding,
 } from '../dock-window';
 
 const emit = (handlers: Map<string, Set<(...args: unknown[]) => void>>, event: string) => {
@@ -151,7 +158,7 @@ describe('dock window service', () => {
 
     expect(mocks.FakeBrowserWindow.instances).toHaveLength(1);
     expect(window.options).toMatchObject({
-      x: 1280,
+      x: 1060,
       y: 40,
       width: DOCK_WINDOW_WIDTH,
       height: 900,
@@ -166,6 +173,16 @@ describe('dock window service', () => {
     expect(window.backendId).toBe('remote-a');
     expect(window.setAlwaysOnTop).toHaveBeenCalledWith(true, 'floating');
     expect(window.setFullScreenable).toHaveBeenCalledWith(false);
+    expect(DOCK_WINDOW_WIDTH).toBe(DOCK_HOVER_CARD_WIDTH + DOCK_RAIL_WIDTH + DOCK_PREVIEW_GAP);
+    expect(getDockHorizontalLayout()).toEqual({
+      preview: { x: 0, width: DOCK_HOVER_CARD_WIDTH },
+      rail: { x: DOCK_HOVER_CARD_WIDTH + DOCK_PREVIEW_GAP, width: DOCK_RAIL_WIDTH },
+    });
+    if (supportsDockPointerForwarding(process.platform)) {
+      expect(window.setIgnoreMouseEvents).toHaveBeenCalledWith(true, { forward: true });
+    } else {
+      expect(window.setIgnoreMouseEvents).toHaveBeenCalledWith(false);
+    }
     if (process.platform === 'darwin') {
       expect(window.setVisibleOnAllWorkspaces).toHaveBeenCalledWith(true, {
         visibleOnFullScreen: true,
@@ -201,7 +218,7 @@ describe('dock window service', () => {
     emit(mocks.screenHandlers, 'display-metrics-changed');
     emit(mocks.screenHandlers, 'display-removed');
 
-    const expected = { x: -420, y: 0, width: 420, height: 1040 };
+    const expected = { x: -640, y: 0, width: 640, height: 1040 };
     expect(window.setBounds).toHaveBeenNthCalledWith(1, expected, false);
     expect(window.setBounds).toHaveBeenNthCalledWith(2, expected, false);
   });
@@ -234,5 +251,51 @@ describe('dock window service', () => {
     expect(window.destroyed).toBe(true);
     expect(getDockWindow()).toBeNull();
     expect(mocks.screenHandlers.get('display-removed')?.size ?? 0).toBe(0);
+  });
+
+  it('routes pointer input only while a dock region is active', () => {
+    const window = createDockWindow() as unknown as InstanceType<typeof mocks.FakeBrowserWindow>;
+    window.setIgnoreMouseEvents.mockClear();
+
+    expect(setDockPointerRegionActive(window as never, true, 'darwin')).toBe(true);
+    expect(setDockPointerRegionActive(window as never, false, 'darwin')).toBe(true);
+
+    expect(window.setIgnoreMouseEvents).toHaveBeenNthCalledWith(1, false);
+    expect(window.setIgnoreMouseEvents).toHaveBeenNthCalledWith(2, true, { forward: true });
+  });
+
+  it('resets pointer routing on blur, hide, and close', () => {
+    const window = createDockWindow() as unknown as InstanceType<typeof mocks.FakeBrowserWindow>;
+    window.setIgnoreMouseEvents.mockClear();
+
+    setDockPointerRegionActive(window as never, true, 'darwin');
+    window.emit('blur');
+    window.emit('hide');
+    window.emit('close');
+
+    if (supportsDockPointerForwarding(process.platform)) {
+      expect(window.setIgnoreMouseEvents).toHaveBeenLastCalledWith(true, { forward: true });
+    } else {
+      expect(window.setIgnoreMouseEvents).toHaveBeenLastCalledWith(false);
+    }
+  });
+
+  it('keeps pointer input enabled when forwarded mouse moves are unavailable', () => {
+    const window = createDockWindow() as unknown as InstanceType<typeof mocks.FakeBrowserWindow>;
+    window.setIgnoreMouseEvents.mockClear();
+
+    expect(setDockPointerRegionActive(window as never, false, 'linux')).toBe(false);
+    expect(window.setIgnoreMouseEvents).toHaveBeenCalledWith(false);
+  });
+
+  it('falls back to interactive input when native pointer routing fails', () => {
+    const window = createDockWindow() as unknown as InstanceType<typeof mocks.FakeBrowserWindow>;
+    window.setIgnoreMouseEvents.mockClear();
+    window.setIgnoreMouseEvents.mockImplementationOnce(() => {
+      throw new Error('native failure');
+    });
+
+    expect(setDockPointerRegionActive(window as never, false, 'win32')).toBe(false);
+    expect(window.setIgnoreMouseEvents).toHaveBeenLastCalledWith(false);
   });
 });

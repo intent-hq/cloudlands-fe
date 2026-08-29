@@ -41,6 +41,7 @@ import {
   WindowSetInWorkspaceSchema,
   WindowSetOpenWorkspaceTabsSchema,
   WindowSetBrowserFocusedSchema,
+  WindowSetDockPointerRegionSchema,
   WindowSetFullScreenSchema,
   XcodeOpenSchema,
 } from '../../../main/ipc-schemas';
@@ -79,6 +80,7 @@ import { posixSingleQuote } from '../../../shared/utils/posix-single-quote';
 import { resolveAppIconPath } from '../../../main/utils/resolve-app-icon';
 import { LOCAL_CONNECTION_ID } from '../../../shared/types/connections';
 import { CHIEF_WORKSPACE_ID } from '../../../shared/types/branded-ids';
+import { isDockWindow, setDockPointerRegionActive } from '../../../main/dock-window';
 
 // ESM-compatible __dirname
 const __filename = fileURLToPath(import.meta.url);
@@ -1044,6 +1046,24 @@ export function setupSystemIPC() {
         return { success: true, fullScreen: window ? window.isFullScreen() : false };
       },
       WINDOW_CHANNELS.GET_FULL_SCREEN,
+    ),
+  );
+
+  ipcMain.handle(
+    WINDOW_CHANNELS.SET_DOCK_POINTER_REGION,
+    createSafeValidatedHandler(
+      WindowSetDockPointerRegionSchema,
+      async (event, validated) => {
+        const window = BrowserWindow.fromWebContents(event.sender);
+        if (!window || !isDockWindow(window)) {
+          return { success: false, supported: false };
+        }
+        return {
+          success: true,
+          supported: setDockPointerRegionActive(window, validated.active),
+        };
+      },
+      WINDOW_CHANNELS.SET_DOCK_POINTER_REGION,
     ),
   );
 

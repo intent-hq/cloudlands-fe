@@ -723,6 +723,10 @@ export const WindowSetFullScreenSchema = z.object({
   fullScreen: z.boolean(),
 });
 
+export const WindowSetDockPointerRegionSchema = z.object({
+  active: z.boolean(),
+});
+
 export const WindowSetBrowserFocusedSchema = z.object({
   browserFocused: z.boolean(),
   focusOwnerId: z.string().min(1, 'Focus owner ID is required'),
