@@ -54,6 +54,8 @@
      * localStorage key (see `wizardDraftKey`) that persists in-progress
      * answers + the current step across unmounts/reloads. Absent → no
      * persistence (behavior identical to before the prop existed).
+     * Captured once at init — later changes to the prop are ignored, so a
+     * host must remount (e.g. via `{#key}`) to change the key.
      */
     draftKey?: string;
     /** Host-owned Ignore state — true renders the compact banner. */
