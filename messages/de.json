@@ -76,6 +76,8 @@
   "menu_select_previous_tab": "Vorherigen Bereich auswählen",
   "menu_select_next_tab": "Nächsten Bereich auswählen",
   "menu_bring_all_to_front": "Alle nach vorne bringen",
+  "menu_window_hud_label": "HUD",
+  "menu_window_localBackend_label": "lokal",
   "menu_help": "Hilfe",
   "menu_export_debug_logs": "Debug-Protokolle exportieren",
   "menu_show_release_notes": "Versionshinweise anzeigen",

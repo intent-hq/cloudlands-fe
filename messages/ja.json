@@ -76,6 +76,8 @@
   "menu_select_previous_tab": "前のペインを選択",
   "menu_select_next_tab": "次のペインを選択",
   "menu_bring_all_to_front": "すべてを手前に移動",
+  "menu_window_hud_label": "HUD",
+  "menu_window_localBackend_label": "ローカル",
   "menu_help": "ヘルプ",
   "menu_export_debug_logs": "デバッグログを書き出す",
   "menu_show_release_notes": "リリースノートを表示",

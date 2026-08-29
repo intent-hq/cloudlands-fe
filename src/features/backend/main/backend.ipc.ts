@@ -1228,6 +1228,9 @@ async function listConnections(
 
 /** Broadcast the current list + selections, tailored to each recipient window. */
 async function broadcastConnectionsChanged(): Promise<void> {
+  // Also notify main-process listeners (the Window menu labels entries with
+  // connection labels) — renderers get the tailored payload below.
+  app.emit('connections-changed');
   const payload = await listConnections();
   for (const win of BrowserWindow.getAllWindows()) {
     if (win.isDestroyed()) continue;

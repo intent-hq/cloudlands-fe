@@ -76,6 +76,8 @@
   "menu_select_previous_tab": "選擇上一個窗格",
   "menu_select_next_tab": "選擇下一個窗格",
   "menu_bring_all_to_front": "前置全部視窗",
+  "menu_window_hud_label": "HUD",
+  "menu_window_localBackend_label": "本地",
   "menu_help": "幫助",
   "menu_export_debug_logs": "匯出除錯日誌",
   "menu_show_release_notes": "顯示版本資訊",

@@ -33,7 +33,7 @@ vi.mock('electron', () => ({
 }));
 
 import { _resetHudWindowRefForTests } from '../hud-window';
-import { setupWebviewSecurity } from '../webview-security';
+import { isWebviewPopupWindow, setupWebviewSecurity } from '../webview-security';
 
 type WindowOpenHandler = (details: { url: string }) => { action: 'allow' | 'deny' };
 type DidCreateWindowHandler = (win: unknown, details: { url: string }) => void;
@@ -187,5 +187,59 @@ describe('setWindowOpenHandler HUD singleton (window.open bridge path)', () => {
 
     expect(remote.openHandler({ url: 'app://workspaces/hud' })).toEqual({ action: 'deny' });
     expect(remoteHud.focus).toHaveBeenCalled();
+  });
+});
+
+describe('isWebviewPopupWindow', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    electronMocks.getAllWindows.mockReturnValue([]);
+    _resetHudWindowRefForTests();
+    setupWebviewSecurity();
+  });
+
+  /** Simulate a webview's contents passing through web-contents-created. */
+  function attachWebviewContents() {
+    const contentsOn = vi.fn();
+    const contents = {
+      getType: () => 'webview',
+      on: contentsOn,
+      setWindowOpenHandler: vi.fn(),
+    };
+    const created = electronMocks.appOn.mock.calls.find(([e]) => e === 'web-contents-created');
+    if (!created) throw new Error('web-contents-created listener not registered');
+    (created[1] as (e: unknown, c: unknown) => void)(undefined, contents);
+    const didCreate = contentsOn.mock.calls.find(([e]) => e === 'did-create-window');
+    if (!didCreate) throw new Error('did-create-window listener not registered');
+    return { didCreateWindow: didCreate[1] as (win: unknown) => void };
+  }
+
+  function makePopupWindow(contentsId: number) {
+    const closedListeners: Array<() => void> = [];
+    return {
+      webContents: { id: contentsId, isDestroyed: () => false, on: vi.fn() },
+      on: vi.fn((event: string, handler: () => void) => {
+        if (event === 'closed') closedListeners.push(handler);
+      }),
+      close: () => closedListeners.forEach((h) => h()),
+    };
+  }
+
+  it('identifies a tracked webview popup and forgets it once closed', () => {
+    const { didCreateWindow } = attachWebviewContents();
+    const popup = makePopupWindow(101);
+
+    didCreateWindow(popup);
+    expect(isWebviewPopupWindow(popup as never)).toBe(true);
+
+    popup.close();
+    expect(isWebviewPopupWindow(popup as never)).toBe(false);
+  });
+
+  it('does not identify app windows (never tracked) as webview popups', () => {
+    attachWebviewContents();
+    const appWindow = makePopupWindow(202);
+
+    expect(isWebviewPopupWindow(appWindow as never)).toBe(false);
   });
 });

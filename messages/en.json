@@ -76,6 +76,8 @@
   "menu_select_previous_tab": "Select Previous Pane",
   "menu_select_next_tab": "Select Next Pane",
   "menu_bring_all_to_front": "Bring All to Front",
+  "menu_window_hud_label": "HUD",
+  "menu_window_localBackend_label": "local",
   "menu_help": "Help",
   "menu_export_debug_logs": "Export Debug Logs",
   "menu_show_release_notes": "Show Release Notes",

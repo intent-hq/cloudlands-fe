@@ -13,7 +13,7 @@
  * orchestration runs without a live socket or the Electron window graph.
  */
 
-import { BrowserWindow } from 'electron';
+import { app, BrowserWindow } from 'electron';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // `host.status` result the fake client answers with; individual tests override.
@@ -178,6 +178,8 @@ describe('openBackendWindow hostname labeling', () => {
     await vi.waitFor(() =>
       expect(send.mock.calls.some(([c]) => c === 'connections:changed')).toBe(true),
     );
+    // The main process is notified too (Window menu entries carry backend labels).
+    expect(vi.mocked(app.emit).mock.calls.some(([e]) => e === 'connections-changed')).toBe(true);
   });
 
   it('prefers a trimmed prettyHostname over hostname when host.status carries both', async () => {
