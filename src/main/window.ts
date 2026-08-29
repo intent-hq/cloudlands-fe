@@ -276,6 +276,39 @@ let lastKnownSessions: WindowSessionsMap = {};
 // on-disk bucket cannot be restored before the next aggregate save removes it.
 const closedBackendSessions = new Set<string>();
 
+// True once the app has entered a quit/update-install teardown. Window closes
+// during teardown are not deliberate per-backend closes: the close listener
+// must keep refreshing the in-memory snapshot but must NOT tombstone/prune a
+// backend whose windows are only closing because the whole app is exiting —
+// otherwise gracefulShutdown()'s mainWindow.close() wipes the bucket that
+// before-quit/installUpdate() just saved. One-way on the gracefulShutdown()
+// path (that path always exits); the auto-update service unmarks it when
+// quitAndInstall() fails and the process keeps running.
+let isQuitTeardownInProgress = false;
+
+/**
+ * Mark the start of an app-quit/update-install teardown so subsequent window
+ * closes are not treated as deliberate per-backend closes. Registered callers
+ * are index.ts (gracefulShutdown, which every quit path — before-quit,
+ * window-all-closed, SIGTERM/SIGINT — funnels through) and the auto-update
+ * service (before quitAndInstall(), which closes windows before before-quit
+ * fires on macOS) — a plain setter, so window.ts never imports those modules.
+ */
+export function markWindowSessionTeardown(): void {
+  isQuitTeardownInProgress = true;
+}
+
+/**
+ * Revert markWindowSessionTeardown() when a teardown aborts and the process
+ * keeps running — e.g. quitAndInstall() throws in installUpdate(). Without the
+ * revert, a later deliberate last-window close in the still-running session
+ * would skip tombstoning/pruning and wrongly restore the closed backend on the
+ * next launch. gracefulShutdown() never calls this: that path always exits.
+ */
+export function unmarkWindowSessionTeardown(): void {
+  isQuitTeardownInProgress = false;
+}
+
 /**
  * Synchronously drop one backend's bucket from window-sessions.json.
  * Runs inside the window `close` listener (captureWindowSessionsSnapshot), so
@@ -375,7 +408,10 @@ export function captureWindowSessionsSnapshot(this: BrowserWindowType | void): v
       if (sessions.length > 0) lastKnownSessions[backendId] = sessions;
     }
 
-    if (this && typeof this.isDestroyed === 'function') {
+    // During app-quit/update-install teardown, window closes are a side effect
+    // of the whole process exiting — refresh the snapshot above, but never
+    // tombstone/prune a backend the user did not deliberately close.
+    if (!isQuitTeardownInProgress && this && typeof this.isDestroyed === 'function') {
       const closingBackendId = getBackendIdForWindow(this);
       const isLastForBackend =
         liveWindows.filter((window) => getBackendIdForWindow(window) === closingBackendId)
@@ -500,6 +536,7 @@ export function _resetWindowSessionsCacheForTests(): void {
   clearWindowSessionsSnapshot();
   closedBackendSessions.clear();
   onLastWindowClosedForBackend = null;
+  isQuitTeardownInProgress = false;
 }
 
 export function isValidWindowSession(s: unknown): s is WindowSession {
