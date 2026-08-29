@@ -610,7 +610,7 @@
                     {/each}
                     {#if activeAgents.length > 3}
                       <span
-                        class="ml-1! inline-flex w-max flex-none items-center bg-transparent text-xs leading-none text-subtle"
+                        class="relative z-10 -ml-1.5! inline-flex h-4 min-w-4 w-max flex-none items-center justify-center rounded-[5px] bg-muted px-1 text-xs font-medium leading-none text-muted-foreground"
                         data-agent-avatar-overflow
                       >
                         +{activeAgents.length - 3}
@@ -754,7 +754,7 @@
                     {/each}
                     {#if activeAgents.length > 3}
                       <span
-                        class="ml-1! inline-flex w-max flex-none items-center bg-transparent text-xs leading-none text-subtle"
+                        class="relative z-10 -ml-1.5! inline-flex h-4 min-w-4 w-max flex-none items-center justify-center rounded-[5px] bg-muted px-1 text-xs font-medium leading-none text-muted-foreground"
                         data-agent-avatar-overflow
                       >
                         +{activeAgents.length - 3}
