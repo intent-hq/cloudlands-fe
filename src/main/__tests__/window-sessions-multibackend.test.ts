@@ -217,6 +217,17 @@ describe('multi-backend window sessions', () => {
       expect(loadWindowSessions('remote-1')).toHaveLength(20);
     });
 
+    it('never restores a persisted dock route as a normal window session', () => {
+      const bounds = { x: 1500, y: 0, width: 420, height: 1080 };
+      fs.writeFileSync(
+        getWindowSessionsPath(),
+        JSON.stringify({ local: [{ route: '/dock', bounds }] }),
+        'utf-8',
+      );
+
+      expect(loadWindowSessions('local')).toBeNull();
+    });
+
     it('explicit local save/load round-trips under the local bucket', async () => {
       const bounds = { x: 7, y: 8, width: 1280, height: 820 };
       seedLiveWindow('app://workspaces/work/default', bounds);
@@ -487,6 +498,20 @@ describe('multi-backend window sessions', () => {
 
       expect(loadWindowSessions('remote-1')).toBeNull();
     });
+  });
+
+  it('does not restore the last normal window closed while the dock remains open', async () => {
+      const normal = seedLiveWindow('app://workspaces/work/closed');
+      const dock = seedLiveWindow('app://workspaces/dock');
+      await saveAllWindowSessions();
+
+      captureWindowSessionsSnapshot.call(normal as never);
+      normal.destroy();
+
+      expect(dock.isDestroyed()).toBe(false);
+      expect(loadWindowSessions('local')).toBeNull();
+      await saveAllWindowSessions();
+      expect(readMap()).toEqual({});
   });
 
   describe('legacy migration', () => {

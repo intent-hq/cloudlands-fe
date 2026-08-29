@@ -374,6 +374,7 @@ import { isHudWindow, isTrackedHudWindow } from './hud-window.js';
 import { getBackendIdForWindow } from './window-backend.js';
 import { buildWindowMenuEntries } from './window-menu-entries.js';
 import { getMainWindow } from './state';
+import { isDockWindow } from './dock-window.js';
 import {
   captureWindowSessionsSnapshot,
   clearWindowSessionsSnapshot,
@@ -2073,7 +2074,7 @@ app.on('activate', async () => {
   if (isSecondInstance) return;
 
   const allWindows = BrowserWindow.getAllWindows().filter(
-    (w: BrowserWindowType) => !w.isDestroyed(),
+    (w: BrowserWindowType) => !w.isDestroyed() && !isDockWindow(w),
   );
   if (allWindows.length > 0) {
     // Focus an existing window instead of creating a new one

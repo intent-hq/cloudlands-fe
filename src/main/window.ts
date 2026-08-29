@@ -15,6 +15,7 @@ import {
   getWindowTitleBarOptions,
 } from '../shared/main/window-appearance';
 import { resolveAppDockIconPath, resolveAppIconPath } from './utils/resolve-app-icon';
+import { isDockRoute, isDockWindow } from './dock-window';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -38,7 +39,9 @@ export { getBackendIdForWebContents, getBackendIdForWindow, stampWindowWithBacke
 /** The focused window's backend; falls back to the main window, then local. */
 export function getFocusedWindowBackendId(): string {
   const focused = BrowserWindow.getFocusedWindow();
-  if (focused && !focused.isDestroyed()) return getBackendIdForWindow(focused);
+  if (focused && !focused.isDestroyed() && !isDockWindow(focused)) {
+    return getBackendIdForWindow(focused);
+  }
   const main = getMainWindow();
   return main && !main.isDestroyed() ? getBackendIdForWindow(main) : LOCAL_CONNECTION_ID;
 }
@@ -248,13 +251,19 @@ function readSessionsMap(): WindowSessionsMap {
     const data = JSON.parse(fs.readFileSync(sessionsPath, 'utf-8'));
     if (Array.isArray(data)) {
       // Legacy global sessions → migrate under the local backend id.
-      return { [LOCAL_CONNECTION_ID]: data.filter(isValidWindowSession) };
+      return {
+        [LOCAL_CONNECTION_ID]: data
+          .filter(isValidWindowSession)
+          .filter((s) => !isDockRoute(s.route)),
+      };
     }
     if (data && typeof data === 'object') {
       const map: WindowSessionsMap = {};
       for (const [backendId, sessions] of Object.entries(data)) {
         if (Array.isArray(sessions)) {
-          map[backendId] = sessions.filter(isValidWindowSession);
+          map[backendId] = sessions
+            .filter(isValidWindowSession)
+            .filter((s) => !isDockRoute(s.route));
         }
       }
       return map;
@@ -362,6 +371,7 @@ function buildSessionsFromOpenWindows(backendId: string): WindowSession[] {
   return BrowserWindow.getAllWindows()
     .filter((w: BrowserWindowType) => {
       if (w.isDestroyed()) return false;
+      if (isDockWindow(w)) return false;
       if (getBackendIdForWindow(w) !== backendId) return false;
       const url = w.webContents.getURL();
       // Skip windows that haven't loaded yet (about:blank) or have empty URLs
@@ -401,7 +411,8 @@ function buildSessionsFromOpenWindows(backendId: string): WindowSession[] {
  */
 export function captureWindowSessionsSnapshot(this: BrowserWindowType | void): void {
   try {
-    const liveWindows = BrowserWindow.getAllWindows().filter((window) => !window.isDestroyed());
+    const allLiveWindows = BrowserWindow.getAllWindows().filter((window) => !window.isDestroyed());
+    const liveWindows = allLiveWindows.filter((window) => !isDockWindow(window));
     const backendIds = new Set(liveWindows.map(getBackendIdForWindow));
     for (const backendId of backendIds) {
       const sessions = buildSessionsFromOpenWindows(backendId);
@@ -411,7 +422,12 @@ export function captureWindowSessionsSnapshot(this: BrowserWindowType | void): v
     // During app-quit/update-install teardown, window closes are a side effect
     // of the whole process exiting — refresh the snapshot above, but never
     // tombstone/prune a backend the user did not deliberately close.
-    if (!isQuitTeardownInProgress && this && typeof this.isDestroyed === 'function') {
+    if (
+      !isQuitTeardownInProgress &&
+      this &&
+      typeof this.isDestroyed === 'function' &&
+      !isDockWindow(this)
+    ) {
       const closingBackendId = getBackendIdForWindow(this);
       const isLastForBackend =
         liveWindows.filter((window) => getBackendIdForWindow(window) === closingBackendId)
@@ -419,7 +435,10 @@ export function captureWindowSessionsSnapshot(this: BrowserWindowType | void): v
       const hasSurvivingBackend = liveWindows.some(
         (window) => getBackendIdForWindow(window) !== closingBackendId,
       );
-      if (isLastForBackend && hasSurvivingBackend) {
+      const hasSurvivingDock = allLiveWindows.some(
+        (window) => window !== this && isDockWindow(window),
+      );
+      if (isLastForBackend && (hasSurvivingBackend || hasSurvivingDock)) {
         closedBackendSessions.add(closingBackendId);
         delete lastKnownSessions[closingBackendId];
         // The tombstone is process-local: prune the on-disk bucket now so a
@@ -489,7 +508,7 @@ export async function saveAllWindowSessions(): Promise<void> {
       ...Object.keys(lastKnownSessions),
       ...closedBackendSessions,
       ...BrowserWindow.getAllWindows()
-        .filter((window) => !window.isDestroyed())
+        .filter((window) => !window.isDestroyed() && !isDockWindow(window))
         .map(getBackendIdForWindow),
     ]);
     const map = readSessionsMap();
@@ -582,6 +601,7 @@ export function createWindowForSession(
   setAsMain: boolean,
   backendId: string = LOCAL_CONNECTION_ID,
 ): void {
+  if (isDockRoute(session.route)) return;
   const iconPath = resolveIcon(setAsMain);
   const { workArea } = screen.getPrimaryDisplay();
   const bounds = validateBounds(session.bounds, workArea);
@@ -737,7 +757,9 @@ export async function restoreAllBackendWindowSessions(
 export function openOrFocusWindowsForBackend(backendId: string): void {
   const existing = BrowserWindow.getAllWindows().find(
     (window) =>
-      !window.isDestroyed() && getBackendIdForWebContents(window.webContents) === backendId,
+      !window.isDestroyed() &&
+      !isDockWindow(window) &&
+      getBackendIdForWebContents(window.webContents) === backendId,
   );
   if (existing) {
     if (existing.isMinimized()) existing.restore();
@@ -751,7 +773,9 @@ export function openOrFocusWindowsForBackend(backendId: string): void {
 
 /** Ensure closing one backend cannot destroy the app's final live window. */
 export function ensureLocalWindowBeforeClosingBackend(backendId: string): void {
-  const liveWindows = BrowserWindow.getAllWindows().filter((window) => !window.isDestroyed());
+  const liveWindows = BrowserWindow.getAllWindows().filter(
+    (window) => !window.isDestroyed() && !isDockWindow(window),
+  );
   const closesAnyWindow = liveWindows.some((window) => getBackendIdForWindow(window) === backendId);
   const hasSurvivingWindow = liveWindows.some(
     (window) => getBackendIdForWindow(window) !== backendId,
@@ -765,11 +789,17 @@ export function ensureLocalWindowBeforeClosingBackend(backendId: string): void {
 export function closeWindowsForBackend(backendId: string): void {
   const windows = BrowserWindow.getAllWindows();
   for (const window of windows) {
-    if (!window.isDestroyed() && getBackendIdForWindow(window) === backendId) window.destroy();
+    if (
+      !window.isDestroyed() &&
+      !isDockWindow(window) &&
+      getBackendIdForWindow(window) === backendId
+    ) {
+      window.destroy();
+    }
   }
   const main = getMainWindow();
   if (main?.isDestroyed()) {
-    setMainWindow(windows.find((window) => !window.isDestroyed()) ?? null);
+    setMainWindow(windows.find((window) => !window.isDestroyed() && !isDockWindow(window)) ?? null);
   }
 }
 
