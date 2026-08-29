@@ -2,7 +2,7 @@ import { runSaga, stdChannel } from 'redux-saga';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // The update saga lazy-imports svelte-sonner for its outcome toasts.
-const toast = vi.hoisted(() => ({ success: vi.fn(), error: vi.fn() }));
+const toast = vi.hoisted(() => ({ success: vi.fn(), error: vi.fn(), warning: vi.fn() }));
 vi.mock('svelte-sonner', () => ({ toast }));
 
 import {
@@ -79,6 +79,7 @@ describe('connectionsSaga', () => {
     callbacks = {};
     toast.success.mockClear();
     toast.error.mockClear();
+    toast.warning.mockClear();
     invoke = vi.fn(async (channel: string, params?: unknown) => {
       if (channel === CONNECTION_CHANNELS.LIST)
         return {
@@ -725,5 +726,161 @@ describe('connectionsSaga', () => {
 
     run.task.cancel();
     await run.task.toPromise();
+  });
+
+  describe('daemon-behind-pin toast on connect', () => {
+    const BEHIND = { ...REMOTE, daemonVersion: '0.9.0' };
+    const changed = (
+      connections: ConnectionRecord[],
+      connectedIds: string[],
+      pinnedVersion?: string,
+    ) =>
+      callbacks[CONNECTIONS_CHANGED_EVENT]!({
+        connections,
+        activeId: LOCAL.id,
+        windowBackendId: LOCAL.id,
+        connectedIds,
+        ...(pinnedVersion !== undefined ? { pinnedVersion } : {}),
+      });
+
+    it('toasts once on the transition to connected, not on re-broadcasts', async () => {
+      const run = start();
+      await settle();
+
+      // v-prefixed reported versions must not double the template's own "v".
+      const vBehind = { ...BEHIND, daemonVersion: 'v0.9.0' };
+      changed([LOCAL, vBehind], [BEHIND.id], 'v0.10.0');
+      await vi.waitFor(() => expect(toast.warning).toHaveBeenCalledTimes(1));
+      const [message, options] = toast.warning.mock.calls[0]!;
+      expect(String(message)).toContain('Studio Mac');
+      expect(String(message)).toContain('v0.9.0');
+      expect(String(message)).toContain('v0.10.0');
+      expect(String(message)).not.toContain('vv');
+      expect(options.id).toBe(`connections-daemon-behind-${BEHIND.id}`);
+      expect(options.action.label).toEqual(expect.any(String));
+
+      // Same connected pool re-broadcast: no second toast.
+      changed([LOCAL, vBehind], [BEHIND.id], 'v0.10.0');
+      await settle();
+      expect(toast.warning).toHaveBeenCalledTimes(1);
+
+      run.task.cancel();
+      await run.task.toPromise();
+    });
+
+    it('toasts again after a disconnect/reconnect cycle', async () => {
+      const run = start();
+      await settle();
+
+      changed([LOCAL, BEHIND], [BEHIND.id], '0.10.0');
+      await vi.waitFor(() => expect(toast.warning).toHaveBeenCalledTimes(1));
+      changed([LOCAL, BEHIND], [], '0.10.0');
+      await settle();
+      changed([LOCAL, BEHIND], [BEHIND.id], '0.10.0');
+      await vi.waitFor(() => expect(toast.warning).toHaveBeenCalledTimes(2));
+
+      run.task.cancel();
+      await run.task.toPromise();
+    });
+
+    it('toasts on the version-bearing follow-up when the connect broadcast precedes the capture', async () => {
+      const run = start();
+      await settle();
+
+      // The fire-and-forget daemonVersion capture hasn't landed yet: the
+      // first 'connected' broadcast carries no version — inconclusive, so the
+      // id must NOT count as evaluated.
+      changed([LOCAL, { ...BEHIND, daemonVersion: null }], [BEHIND.id], '0.10.0');
+      await settle();
+      expect(toast.warning).not.toHaveBeenCalled();
+
+      // The capture's write/broadcast arrives: still counts as the transition.
+      changed([LOCAL, BEHIND], [BEHIND.id], '0.10.0');
+      await vi.waitFor(() => expect(toast.warning).toHaveBeenCalledTimes(1));
+
+      // Unchanged re-broadcast after the conclusive one: silent.
+      changed([LOCAL, BEHIND], [BEHIND.id], '0.10.0');
+      await settle();
+      expect(toast.warning).toHaveBeenCalledTimes(1);
+
+      run.task.cancel();
+      await run.task.toPromise();
+    });
+
+    it('announces an already-connected behind backend once at startup hydration', async () => {
+      invoke.mockImplementation(async (channel: string) => {
+        if (channel === CONNECTION_CHANNELS.LIST)
+          return {
+            connections: [LOCAL, BEHIND],
+            activeId: LOCAL.id,
+            windowBackendId: LOCAL.id,
+            connectedIds: [BEHIND.id],
+            pinnedVersion: '0.10.0',
+          };
+        return {};
+      });
+      const run = start();
+      await vi.waitFor(() => expect(toast.warning).toHaveBeenCalledTimes(1));
+
+      // The first post-hydration broadcast of the same pool stays silent —
+      // the hydration announcement seeded the tracker.
+      changed([LOCAL, BEHIND], [BEHIND.id], '0.10.0');
+      await settle();
+      expect(toast.warning).toHaveBeenCalledTimes(1);
+
+      run.task.cancel();
+      await run.task.toPromise();
+    });
+
+    it('stays silent for equal/newer/unknown versions, missing pin, local, and not-connected', async () => {
+      const run = start();
+      await settle();
+
+      const equal = { ...REMOTE, id: 'remote-eq', daemonVersion: '0.10.0' };
+      const newer = { ...REMOTE, id: 'remote-new', daemonVersion: '0.11.0' };
+      const unknown = { ...REMOTE, id: 'remote-unk', daemonVersion: null };
+      const notConnected = { ...REMOTE, id: 'remote-off', daemonVersion: '0.9.0' };
+      changed(
+        [LOCAL, equal, newer, unknown, notConnected],
+        [equal.id, newer.id, unknown.id],
+        '0.10.0',
+      );
+      await settle();
+      expect(toast.warning).not.toHaveBeenCalled();
+
+      // Behind but no pinned version reported: silent.
+      changed([LOCAL, BEHIND], [BEHIND.id]);
+      await settle();
+      expect(toast.warning).not.toHaveBeenCalled();
+
+      run.task.cancel();
+      await run.task.toPromise();
+    });
+
+    it('dispatches updateBackendRequested for the right id when Update is clicked', async () => {
+      invoke.mockImplementation(async (channel: string) => {
+        if (channel === CONNECTION_CHANNELS.LIST)
+          return { connections: [LOCAL], activeId: LOCAL.id, windowBackendId: LOCAL.id };
+        if (channel === CONNECTION_CHANNELS.UPDATE_BACKEND) return { ok: true };
+        return {};
+      });
+      const run = start();
+      await settle();
+
+      changed([LOCAL, BEHIND], [BEHIND.id], '0.10.0');
+      await vi.waitFor(() => expect(toast.warning).toHaveBeenCalledTimes(1));
+      const [, options] = toast.warning.mock.calls[0]!;
+      options.action.onClick();
+      await vi.waitFor(() =>
+        expect(invoke).toHaveBeenCalledWith(CONNECTION_CHANNELS.UPDATE_BACKEND, {
+          id: BEHIND.id,
+        }),
+      );
+      // The outcome surfaces via the existing per-result update toast.
+      await vi.waitFor(() => expect(toast.success).toHaveBeenCalledTimes(1));
+
+      run.task.cancel();
+      await run.task.toPromise();
+    });
   });
 });

@@ -1,4 +1,11 @@
-import { END, eventChannel, buffers, type EventChannel } from 'redux-saga';
+import {
+  END,
+  eventChannel,
+  buffers,
+  channel as sagaChannel,
+  type Channel,
+  type EventChannel,
+} from 'redux-saga';
 import {
   all,
   call,
@@ -12,6 +19,8 @@ import {
   type SagaGenerator,
 } from 'typed-redux-saga';
 
+import { canRequestDeviceUpdate } from '$lib/utils/device-update-eligibility';
+import { formatConnectionLabel } from '$lib/utils/connection-label';
 import { IPC_CHANNELS } from '$shared/ipc-registry';
 import {
   CONNECTIONS_CHANGED_EVENT,
@@ -28,6 +37,7 @@ import type {
   ConnectionAuthRejectedEvent,
   ConnectionCertMismatchEvent,
   ConnectionProtocolMismatchEvent,
+  ConnectionRecord,
   ConnectionsChangedEvent,
   ConnectionsListResult,
   ForgetConnectionParams,
@@ -225,6 +235,94 @@ async function showUpdateBackendRequestErrorToast(): Promise<void> {
   toast.error(m.layout_daemonStatus_updateRequestError_toast());
 }
 
+/** Long enough to act on the Update action, short enough not to nag. */
+const DAEMON_BEHIND_TOAST_DURATION_MS = 10000;
+
+type UpdateBackendAction = ReturnType<typeof updateBackendRequested>;
+
+/**
+ * Toast a remote whose daemon just connected behind the app's pinned intentd
+ * version, with an Update action. Same lazy imports as the other update
+ * toasts; the per-connection toast id makes a reconnect update the existing
+ * toast instead of stacking a new one.
+ */
+async function showDaemonBehindPinToast(
+  conn: ConnectionRecord,
+  daemonVersion: string,
+  pinnedVersion: string,
+  onUpdate: () => void,
+): Promise<void> {
+  const [{ toast }, { m }] = await Promise.all([
+    import('svelte-sonner'),
+    import('$shared/paraglide/messages.js'),
+  ]);
+  toast.warning(
+    m.layout_daemonStatus_daemonBehind_toast({
+      name: formatConnectionLabel(conn),
+      // The message template prepends "v" — strip any reported prefix (same as DeviceRow).
+      daemonVersion: daemonVersion.replace(/^v/, ''),
+      pinnedVersion: pinnedVersion.replace(/^v/, ''),
+    }),
+    {
+      id: `connections-daemon-behind-${conn.id}`,
+      duration: DAEMON_BEHIND_TOAST_DURATION_MS,
+      action: { label: m.layout_daemonStatus_update_action(), onClick: onUpdate },
+    },
+  );
+}
+
+/**
+ * The behind-pin announcements already evaluated: connected remote id → the
+ * `daemonVersion` that was evaluated. Saga-local mutable state shared between
+ * the hydration path (startup seeding + announcement) and the
+ * `connections:changed` consumer.
+ */
+interface DaemonBehindTracker {
+  evaluatedById: ReadonlyMap<string, string>;
+}
+
+/**
+ * Toast each connected remote whose daemon is behind the app's pin, once per
+ * (id, daemonVersion) while it stays connected. An id only counts as
+ * evaluated when the check was conclusive (both `daemonVersion` and
+ * `pinnedVersion` present) — the daemon-version capture on connect is
+ * fire-and-forget, so the 'connected' broadcast can precede the
+ * version-bearing one; deferring keeps that follow-up broadcast counting as
+ * the transition, and a version refresh re-evaluates (the per-id toast id
+ * updates in place rather than stacking). Re-broadcasts of an unchanged pool
+ * stay silent; a disconnect clears the id so a reconnect announces again.
+ * The Update action feeds `updateActions` (pumped back into the store as an
+ * `updateBackendRequested` dispatch); the outcome then surfaces via the
+ * existing per-result update toasts.
+ */
+function* announceDaemonsBehindPin(
+  payload: ConnectionsChangedEvent,
+  tracker: DaemonBehindTracker,
+  updateActions: Channel<UpdateBackendAction>,
+): SagaGenerator<void> {
+  const { connections, connectedIds, pinnedVersion } = payload;
+  // Older main process without connected info: nothing to evaluate.
+  if (!connectedIds) return;
+  const previous = tracker.evaluatedById;
+  const evaluated = new Map<string, string>();
+  for (const conn of connections) {
+    if (conn.isLocal || !connectedIds.includes(conn.id)) continue;
+    const { daemonVersion } = conn;
+    if (!daemonVersion || !pinnedVersion) continue;
+    evaluated.set(conn.id, daemonVersion);
+    if (previous.get(conn.id) === daemonVersion) continue;
+    if (!canRequestDeviceUpdate(conn, connectedIds, pinnedVersion)) continue;
+    yield* call(showDaemonBehindPinToast, conn, daemonVersion, pinnedVersion, () => {
+      const action = updateBackendRequested(conn.id);
+      // Failure feedback is the update saga's toast; the unobserved promise
+      // must not surface as an unhandled rejection.
+      action.promise.catch(() => {});
+      updateActions.put(action);
+    });
+  }
+  tracker.evaluatedById = evaluated;
+}
+
 async function invokeSyncGetState(): Promise<KeychainSyncStateResult> {
   const api = getApi();
   if (!api) throw new Error('electronAPI is not available');
@@ -240,12 +338,20 @@ async function invokeSyncSetEnabled(
 }
 
 function* hydrateConnections(
+  tracker: DaemonBehindTracker,
+  updateActions: Channel<UpdateBackendAction>,
   action: ReturnType<typeof loadConnectionsRequested>,
 ): SagaGenerator<void> {
   let settled = false;
   try {
     const result = yield* call(invokeConnectionsList);
     yield* put(connectionsListReceived(result));
+    // Deliberate startup announcement: the boot-wide restore connects pooled
+    // clients before windows exist (see the cert-mismatch note below), so a
+    // backend already connected behind the pin would otherwise never toast.
+    // The shared tracker keeps later `connections:changed` broadcasts silent
+    // for the same (id, daemonVersion).
+    yield* call(announceDaemonsBehindPin, result, tracker, updateActions);
     if (result.protocolMismatch) yield* put(protocolMismatchReceived(result.protocolMismatch));
     // Replay the latched auth rejection for the active backend so a window
     // created/reloaded after the one-shot push (including boot) still surfaces
@@ -452,13 +558,19 @@ function* setKeychainSyncEnabled(
   }
 }
 
-function* consumeConnectionsEvents(channel: EventChannel<ConnectionsEvent>): SagaGenerator<void> {
+function* consumeConnectionsEvents(
+  channel: EventChannel<ConnectionsEvent>,
+  tracker: DaemonBehindTracker,
+  updateActions: Channel<UpdateBackendAction>,
+): SagaGenerator<void> {
   try {
     while (true) {
       const event = yield* take(channel);
       if (event === (END as unknown as ConnectionsEvent)) return;
-      if (event.kind === 'changed') yield* put(connectionsListReceived(event.payload));
-      else if (event.kind === 'cert-mismatch') yield* put(certMismatchReceived(event.payload));
+      if (event.kind === 'changed') {
+        yield* put(connectionsListReceived(event.payload));
+        yield* call(announceDaemonsBehindPin, event.payload, tracker, updateActions);
+      } else if (event.kind === 'cert-mismatch') yield* put(certMismatchReceived(event.payload));
       else if (event.kind === 'auth-rejected') yield* put(authRejectedReceived(event.payload));
       else if (event.kind === 'sync-status') yield* put(keychainSyncStatusReceived(event.payload));
       else yield* put(protocolMismatchReceived(event.payload));
@@ -468,9 +580,12 @@ function* consumeConnectionsEvents(channel: EventChannel<ConnectionsEvent>): Sag
   }
 }
 
-function* watchConnectionsActions(): SagaGenerator<void> {
+function* watchConnectionsActions(
+  tracker: DaemonBehindTracker,
+  updateActions: Channel<UpdateBackendAction>,
+): SagaGenerator<void> {
   yield* all([
-    takeLeading(loadConnectionsRequested, hydrateConnections),
+    takeLeading(loadConnectionsRequested, hydrateConnections, tracker, updateActions),
     takeLeading(captureFingerprintRequested, captureFingerprint),
     takeLeading(addConnectionRequested, addConnection),
     takeEvery(updateConnectionRequested, updateConnection),
@@ -488,17 +603,29 @@ function* watchConnectionsActions(): SagaGenerator<void> {
   ]);
 }
 
+/** Re-dispatch toast-action clicks into the store (a toast onClick runs outside saga context). */
+function* pumpUpdateActions(updateActions: Channel<UpdateBackendAction>): SagaGenerator<void> {
+  while (true) {
+    const action = yield* take(updateActions);
+    yield* put(action);
+  }
+}
+
 export function* connectionsSaga(): SagaGenerator<void> {
   if (!getApi()) return;
 
   const events = createConnectionsEventChannel();
-  const eventTask = yield* fork(consumeConnectionsEvents, events);
-  const actionsTask = yield* fork(watchConnectionsActions);
+  const updateActions = sagaChannel<UpdateBackendAction>();
+  const tracker: DaemonBehindTracker = { evaluatedById: new Map() };
+  const eventTask = yield* fork(consumeConnectionsEvents, events, tracker, updateActions);
+  const pumpTask = yield* fork(pumpUpdateActions, updateActions);
+  const actionsTask = yield* fork(watchConnectionsActions, tracker, updateActions);
   const initial = loadConnectionsRequested();
   try {
-    yield* call(hydrateConnections, initial);
-    yield* all([join(eventTask), join(actionsTask)]);
+    yield* call(hydrateConnections, tracker, updateActions, initial);
+    yield* all([join(eventTask), join(pumpTask), join(actionsTask)]);
   } finally {
     events.close();
+    updateActions.close();
   }
 }
