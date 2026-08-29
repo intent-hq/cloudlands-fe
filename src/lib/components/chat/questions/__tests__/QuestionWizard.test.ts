@@ -9,8 +9,10 @@
  * unmount) and restore on remount; completing or dismissing clears the draft.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { flushSync, mount, unmount } from 'svelte';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import QuestionWizard, { type QuestionAnswer } from '../QuestionWizard.svelte';
+import { createNullableMessageSource } from './nullable-message-source.svelte';
 import { wizardDraftKey } from '../wizard-draft-storage';
 import type { Question } from '$shared/types/question-resource';
 
@@ -706,6 +708,50 @@ describe('QuestionWizard draft persistence', () => {
     render(QuestionWizard, { props: { questions: [SINGLE, MULTI, LAST], draftKey: KEY } });
     expect(screen.getByText('1 of 3')).toBeTruthy();
     expect(window.localStorage.getItem(KEY)).toBeNull();
+  });
+
+  it('teardown after the draftKey source goes null still flushes under the original key', async () => {
+    // Mirrors the host: ChatPanel computes `draftKey` from a nullable
+    // `$derived` (`wizardDraftKey(agentId, pendingQuestions.messageId)`), so
+    // nulling the source makes the prop expression unevaluable while the
+    // wizard tears down. `mount()` with a get-accessor prop over a rune-backed
+    // source reproduces the crash deterministically: nulling the `$state`
+    // dirties the prop derived, so any teardown-time re-read of the prop
+    // (the pre-fix onDestroy flush) re-executes the accessor against null and
+    // throws `Cannot read properties of null (reading 'messageId')`. The key
+    // is now captured once at init, so unmount must not throw AND the pending
+    // draft must flush under the original key.
+    vi.useFakeTimers();
+    const source = createNullableMessageSource('msg-draft-test');
+    const target = document.createElement('div');
+    document.body.appendChild(target);
+    const wizard = mount(QuestionWizard, {
+      target,
+      props: {
+        questions: [SINGLE, LAST],
+        get draftKey() {
+          return wizardDraftKey('agent-draft-test', source.current!.messageId);
+        },
+      },
+    });
+    flushSync();
+
+    try {
+      // Arm a pending debounced save, then null the source and unmount.
+      const input = screen.getByPlaceholderText('Or type your own answer…');
+      await fireEvent.input(input, { target: { value: 'draft' } });
+      expect(window.localStorage.getItem(KEY)).toBeNull();
+
+      source.current = null;
+      flushSync();
+      unmount(wizard);
+      flushSync();
+
+      const stored = JSON.parse(window.localStorage.getItem(KEY)!);
+      expect(stored.answers[0]).toEqual({ sel: [], text: 'draft', skipped: false });
+    } finally {
+      target.remove();
+    }
   });
 
   it('without draftKey the wizard never reads or writes wizard-draft storage', async () => {

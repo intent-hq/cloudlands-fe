@@ -5985,6 +5985,9 @@
                     draftKey={wizardDraftKey(agentId, pendingQuestions.messageId)}
                     collapsed={questionWizardCollapsed}
                     onToggleCollapsed={(collapsed) => {
+                      // Can be invoked around the teardown frame after the
+                      // pending-questions source is already nulled.
+                      if (!pendingQuestions) return;
                       questionWizardCollapsedOverride = {
                         messageId: pendingQuestions.messageId,
                         collapsed,
