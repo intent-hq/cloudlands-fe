@@ -60,6 +60,15 @@ export const workspaceOpenFailed = createAction<[wsId: string]>(
 export const workspaceDeleted = createAction<[wsId: string, agentIds: string[]]>(
   'workspace-lifecycle/workspaceDeleted',
 );
+/**
+ * The backend transport reconnected (daemon restart or connection recovery).
+ * Warm session phases describe sessions opened against the previous daemon
+ * process, so every phase is cleared: the next visit of any workspace takes
+ * the cold path (hydration + `workspace.open`) instead of the warm skip
+ * (monorepo#3788). Load state is kept so mounted workspaces do not flash a
+ * loading UI on reconnect.
+ */
+export const backendReconnected = createAction('workspace-lifecycle/backendReconnected');
 
 // Match cross-slice invalidation actions by type without importing workspace-slice,
 // which already imports workspaceDeleted and would create a runtime cycle.
@@ -147,4 +156,8 @@ workspaceLifecycleReducer.with(workspaceDeleted, (state, { payload: [wsId] }) =>
 workspaceLifecycleReducer.with(workspaceEntityRemoved, (state, { payload: [wsId] }) =>
   clearLoadState(clearSession(state, wsId), wsId),
 );
+workspaceLifecycleReducer.with(backendReconnected, (state) => {
+  if (Object.keys(state.sessionPhaseByWorkspaceId).length === 0) return state;
+  return { ...state, sessionPhaseByWorkspaceId: {} };
+});
 workspaceLifecycleReducer.with(workspaceStateReset, () => initialState);
