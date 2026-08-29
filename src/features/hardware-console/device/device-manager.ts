@@ -63,6 +63,10 @@ export class HardwareConsoleManager {
   private connectError: HardwareConsoleConnectError | null = null;
   /** The device whose open() produced `connectError` (for removal clearing). */
   private failedDevice: HidDeviceLike | null = null;
+  /** The device an in-flight performOpen is opening (for removal detection). */
+  private openTarget: HidDeviceLike | null = null;
+  /** Set when `openTarget` is unplugged while its open() is still in flight. */
+  private openTargetRemoved = false;
   /** Pending auto-retry of a failed open (see scheduleOpenRetry), or `null`. */
   private retryTimer: ReturnType<typeof setTimeout> | null = null;
   /** Next index into OPEN_RETRY_DELAYS_MS; reset when the retry cycle ends. */
@@ -184,6 +188,11 @@ export class HardwareConsoleManager {
   async requestConnect(): Promise<boolean> {
     if (!this.platform) return false;
     if (this.currentStatus === 'connected') return true;
+    // An explicit user gesture starts a fresh auto-retry cycle: without the
+    // reset, a Retry after the backoff schedule is exhausted would arm no
+    // further retries, and a mid-cycle Retry would consume the shared
+    // backoff budget.
+    this.retryAttempt = 0;
     const device = await this.platform.requestDevice();
     if (!device) return false;
     await this.openDevice(device);
@@ -225,6 +234,10 @@ export class HardwareConsoleManager {
   }
 
   private handleDeviceRemoval(device: HidDeviceLike): void {
+    // The device being opened right now was unplugged: flag it so the
+    // open's rejection is not surfaced as a failure of a present device
+    // (`failedDevice` is still null in that window).
+    if (device === this.openTarget) this.openTargetRemoved = true;
     if (device !== this.device) {
       // The device whose open() failed was unplugged: the failure no longer
       // describes a present device, so drop it and refresh listeners (there
@@ -322,10 +335,28 @@ export class HardwareConsoleManager {
   private async performOpen(device: HidDeviceLike): Promise<boolean> {
     const generation = this.generation;
     this.setStatus('connecting');
+    this.openTarget = device;
+    this.openTargetRemoved = false;
     try {
       if (!device.opened) await device.open();
     } catch (error) {
       logger.warn('Failed to open device', { error: String(error) });
+      if (generation !== this.generation) {
+        // A stop() (or stop→start toggle) superseded this open while
+        // device.open() was rejecting: the failure belongs to the obsolete
+        // lifecycle, so recording it (or arming retries) would mutate the
+        // live generation's state. Report superseded so openDevice's rescan
+        // can reconnect the live generation to the still-present device.
+        this.setStatus('disconnected');
+        return true;
+      }
+      if (this.openTargetRemoved) {
+        // The device was unplugged while open() was in flight: the failure
+        // no longer describes a present device — surfacing it (or arming
+        // retries for the unplugged device) would resurrect a stale error.
+        this.setStatus('disconnected');
+        return false;
+      }
       this.connectError = {
         name: error instanceof Error ? error.name : 'Error',
         message: error instanceof Error ? error.message : String(error),
@@ -334,6 +365,8 @@ export class HardwareConsoleManager {
       this.setStatus('disconnected');
       this.scheduleOpenRetry(device, generation);
       return false;
+    } finally {
+      this.openTarget = null;
     }
     if (generation !== this.generation) {
       // A stop() (or stop→start toggle) superseded this open while
@@ -407,7 +440,10 @@ export class HardwareConsoleManager {
    * (intent-hq/monorepo#1434/#1437/#1438). Cancelled by stop(), removal of
    * the failing device, and a successful connect (via clearConnectError).
    * Once the schedule is exhausted the manager stays disconnected with
-   * `lastConnectError` still set for the UI.
+   * `lastConnectError` still set for the UI. An explicit user Retry
+   * (requestConnect) resets the backoff budget, so a failed manual attempt
+   * always starts a fresh cycle rather than consuming — or being refused
+   * by — the exhausted automatic schedule.
    */
   private scheduleOpenRetry(device: HidDeviceLike, generation: number): void {
     if (!this.started || generation !== this.generation) return;

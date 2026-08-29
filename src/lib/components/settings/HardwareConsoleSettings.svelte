@@ -19,6 +19,7 @@
   import Button from '$lib/components/ui/button/button.svelte';
   import Checkbox from '$lib/components/ui/checkbox/checkbox.svelte';
   import { m } from '$shared/paraglide/messages.js';
+  import { MACOS_INPUT_MONITORING_SETTINGS_URL } from '$shared/constants';
   import { formatNumber } from '$lib/i18n/format';
   import { store as appStore } from '$store/renderer/store';
   import {
@@ -103,11 +104,6 @@
   let connectFailed = $state(false);
   let lastConnectError = $state<HardwareConsoleConnectError | null>(null);
 
-  // macOS System Settings deep link to Privacy & Security → Input Monitoring.
-  // i18n-ignore (URL)
-  const MACOS_INPUT_MONITORING_SETTINGS_URL =
-    'x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent';
-
   const promptLimitOptions = Array.from({ length: MAX_PROMPT_PICKER_LIMIT }, (_, i) => i + 1);
 
   async function refreshConnectionDetails() {
@@ -132,11 +128,11 @@
   onMount(() => {
     const manager = getHardwareConsoleManager();
     connectionStatus = manager.status;
-    lastConnectError = manager.lastConnectError ?? null;
+    lastConnectError = manager.lastConnectError;
     if (manager.status === 'connected') void refreshConnectionDetails();
     return manager.onStatusChange((status) => {
       connectionStatus = status;
-      lastConnectError = manager.lastConnectError ?? null;
+      lastConnectError = manager.lastConnectError;
       if (status === 'connected') {
         connectFailed = false;
         void refreshConnectionDetails();
@@ -186,7 +182,7 @@
     } catch {
       connectFailed = true;
     } finally {
-      lastConnectError = manager.lastConnectError ?? null;
+      lastConnectError = manager.lastConnectError;
       connecting = false;
     }
   }
@@ -360,6 +356,12 @@
               </p>
               <p class="text-xs text-subtle mt-1">
                 {m.settings_hardware_inputMonitoring_regrant_description()}
+              </p>
+              <!-- A NotAllowedError is not always Input Monitoring (e.g. the
+                   device claimed exclusively elsewhere), so keep the raw
+                   error detail visible in case the guidance misdiagnoses. -->
+              <p class="text-xs text-subtle/70 mt-1">
+                {m.settings_hardware_connectError_label({ error: lastConnectError?.message ?? '' })}
               </p>
               <Button
                 variant="ghost-light"

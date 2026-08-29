@@ -6,6 +6,7 @@
  */
 
 import { z } from 'zod';
+import { BROWSER_PROTOCOLS } from '../shared/constants';
 import { FirstVisitStateSchema, WorkspaceStatusMessageSchema } from '../shared/schemas';
 import { isValidWorkspaceId } from '../shared/types/branded-ids';
 import { CONNECTION_ACCENTS } from '../shared/types/connections';
@@ -745,11 +746,18 @@ export const DialogOpenSchema = z.object({
 export const ShellOpenExternalSchema = z.object({
   url: z.string().refine(
     (val) => {
-      // Allow http, https, mailto, other common protocols, and the macOS
-      // System Settings deep-link scheme (x-apple.systempreferences:)
-      return /^(https?|mailto|tel|file|x-apple\.systempreferences):/.test(val);
+      // Allow http, https, mailto, tel, file — plus the exact hardcoded OS
+      // deep links in BROWSER_PROTOCOLS.EXTERNAL_EXACT (e.g. the macOS Input
+      // Monitoring System Settings pane). Full-string match only: the
+      // x-apple.systempreferences: scheme is never allowlisted wholesale.
+      return (
+        /^(https?|mailto|tel|file):/.test(val) || BROWSER_PROTOCOLS.EXTERNAL_EXACT.includes(val)
+      );
     },
-    { message: 'Invalid URL format - must start with http, https, mailto, tel, or file' },
+    {
+      message:
+        'Invalid URL format - must start with http, https, mailto, tel, or file, or be an allowlisted OS settings deep link',
+    },
   ),
 });
 
