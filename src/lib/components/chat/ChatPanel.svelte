@@ -638,6 +638,7 @@
   let showLockConfirmation = $state(false);
   let lockConfirmationTimer: ReturnType<typeof setTimeout> | null = null;
   const highlightRemovalTimers = new Set<ReturnType<typeof setTimeout>>();
+  const activeAnimationFrames = new Set<number>();
 
   function scheduleHighlightRemoval(element: HTMLElement, className: string, delayMs: number) {
     if (!isActive) return;
@@ -648,10 +649,21 @@
     highlightRemovalTimers.add(timer);
   }
 
+  function scheduleActiveAnimationFrame(callback: () => void) {
+    if (!isActive) return;
+    const frame = requestAnimationFrame(() => {
+      activeAnimationFrames.delete(frame);
+      if (isActive) callback();
+    });
+    activeAnimationFrames.add(frame);
+  }
+
   $effect(() => {
     if (isActive) return;
     for (const timer of highlightRemovalTimers) clearTimeout(timer);
     highlightRemovalTimers.clear();
+    for (const frame of activeAnimationFrames) cancelAnimationFrame(frame);
+    activeAnimationFrames.clear();
   });
   const LOCK_CONFIRMATION_DURATION_MS = 1500;
 
@@ -1126,6 +1138,7 @@
     keepMessageId: string | undefined,
     keep: ReadonlySet<string>,
   ) {
+    if (!isActive) return;
     if (!container) return;
     const remaining: Array<{ messageId: string; disclosureId: string }> = [];
     for (const opened of [...searchOpenedDisclosures].reverse()) {
@@ -1141,6 +1154,7 @@
       );
       if (disclosure) requestSearchDisclosure(disclosure, false);
       await tick();
+      if (!isActive) return;
     }
     searchOpenedDisclosures = remaining;
   }
@@ -1149,9 +1163,10 @@
     match: ChatSearchMatch | undefined,
     container: HTMLDivElement | undefined,
   ) {
+    if (!isActive) return;
     const required = new Set(match?.disclosurePath ?? []);
     await restoreSearchDisclosures(container, match?.messageId, required);
-    if (!match || !container) return;
+    if (!isActive || !match || !container) return;
     const message = container.querySelector(`[data-message-id="${CSS.escape(match.messageId)}"]`);
     if (!message) return;
     for (const id of match.disclosurePath) {
@@ -1169,13 +1184,16 @@
           searchOpenedDisclosures.push({ messageId: match.messageId, disclosureId: id });
         }
         await tick();
+        if (!isActive) return;
         await new Promise(requestAnimationFrame);
+        if (!isActive) return;
       }
     }
   }
 
   // Trigger highlighting after LazyTurn materialization and disclosure reveal.
   async function triggerHighlight() {
+    if (!isActive) return;
     const request = ++searchHighlightRequest;
     const query = untrack(() => debouncedSearchQuery);
     const index = untrack(() => currentSearchIndex);
@@ -1183,12 +1201,13 @@
     const matches = untrack(() => allSearchMatches);
     const container = untrack(() => scrollContainer);
     await tick();
-    if (request !== searchHighlightRequest) return;
+    if (!isActive || request !== searchHighlightRequest) return;
     await revealSearchMatch(isShowing ? matches[index] : undefined, container);
-    if (request !== searchHighlightRequest) return;
+    if (!isActive || request !== searchHighlightRequest) return;
     await tick();
+    if (!isActive) return;
     await new Promise(requestAnimationFrame);
-    if (request !== searchHighlightRequest) return;
+    if (!isActive || request !== searchHighlightRequest) return;
     doHighlightSearchMatches(query, index, matches, isShowing, container);
   }
 
@@ -1412,8 +1431,9 @@
   }
 
   $effect(() => {
-    if (isActive || searchDebounceTimer === null) return;
-    clearTimeout(searchDebounceTimer);
+    if (isActive) return;
+    searchHighlightRequest += 1;
+    if (searchDebounceTimer !== null) clearTimeout(searchDebounceTimer);
     searchDebounceTimer = null;
   });
 
@@ -3436,9 +3456,7 @@
         smoothScrollTo(messageElement, 'center');
         // Add highlight effect
         messageElement.classList.add('highlight-flash');
-        setTimeout(() => {
-          messageElement.classList.remove('highlight-flash');
-        }, 1500);
+        scheduleHighlightRemoval(messageElement, 'highlight-flash', 1500);
       } else {
         logger.warn('[ChatPanel] Could not find message for turn', { turnNumber });
       }
@@ -3526,9 +3544,7 @@
             smoothScrollTo(messageElement, 'center');
             // Add highlight effect
             messageElement.classList.add('highlight-flash');
-            setTimeout(() => {
-              messageElement.classList.remove('highlight-flash');
-            }, 1500);
+            scheduleHighlightRemoval(messageElement, 'highlight-flash', 1500);
             logger.info('[ChatPanel] Scrolled to subscription message', { messageId: message.id });
             return;
           }
@@ -3729,7 +3745,7 @@
   async function handleOpenMessage(event: Event) {
     const detail = (event as CustomEvent).detail as
       { agentId: string; messageId: string; query?: string; requestId: string } | undefined;
-    if (!detail || detail.agentId !== agentId) return;
+    if (!isActive || !detail || detail.agentId !== agentId) return;
     // The helper dispatches on a retry ladder (the panel may still be
     // mounting); dedup so a successfully handled request runs exactly once.
     if (handledOpenMessageRequestIds.has(detail.requestId)) return;
@@ -3739,7 +3755,9 @@
     deepOpenTurnKey = messageIdToTurnKey.get(detail.messageId) ?? detail.messageId;
     shouldFollowBottom = false;
     await tick();
-    requestAnimationFrame(() => {
+    if (!isActive) return;
+    scheduleActiveAnimationFrame(() => {
+      if (!isActive) return;
       const targetElement = scrollContainer?.querySelector(
         `[data-message-id="${CSS.escape(detail.messageId)}"]`,
       ) as HTMLElement | null;
@@ -3902,10 +3920,26 @@
   let draftPromptApplied = $state(false);
   // Flash the input to draw attention when draft prompt is applied
   let showInputFlash = $state(false);
+  let draftPromptApplyTimer: ReturnType<typeof setTimeout> | null = null;
+  let draftPromptFlashTimer: ReturnType<typeof setTimeout> | null = null;
+
+  function cancelDraftPromptTimers() {
+    if (draftPromptApplyTimer !== null) clearTimeout(draftPromptApplyTimer);
+    if (draftPromptFlashTimer !== null) clearTimeout(draftPromptFlashTimer);
+    draftPromptApplyTimer = null;
+    draftPromptFlashTimer = null;
+    showInputFlash = false;
+  }
+
+  $effect(() => {
+    void isActive;
+    if (!isActive) cancelDraftPromptTimers();
+    return cancelDraftPromptTimers;
+  });
 
   // Handle draft prompt - pre-fill the input without sending
   $effect(() => {
-    if (!draftPrompt || draftPromptApplied) return;
+    if (!isActive || !draftPrompt || draftPromptApplied || draftPromptApplyTimer !== null) return;
     if (!$agentSession$) return; // Wait for session to be ready
 
     // Pre-fill the input
@@ -3915,16 +3949,20 @@
     });
 
     // Use a small delay to ensure the input component is ready
-    setTimeout(async () => {
+    draftPromptApplyTimer = setTimeout(async () => {
+      draftPromptApplyTimer = null;
+      if (!isActive) return;
       inputValue = draftPrompt;
       await inputComponent?.setContent?.(draftPrompt);
+      if (!isActive) return;
       inputComponent?.focus?.();
       draftPromptApplied = true;
 
       // Trigger subtle flash animation
       showInputFlash = true;
-      setTimeout(() => {
-        showInputFlash = false;
+      draftPromptFlashTimer = setTimeout(() => {
+        draftPromptFlashTimer = null;
+        if (isActive) showInputFlash = false;
       }, 600);
     }, 100);
   });
