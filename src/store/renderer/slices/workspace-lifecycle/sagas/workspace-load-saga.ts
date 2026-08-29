@@ -31,12 +31,24 @@ import {
 
 const NOT_FOUND_RETRY_DELAY_MS = 500;
 
+// Anchored to the workspace subject (monorepo#3787): a generic backend error
+// that merely contains "not found" (e.g. "git binary not found") must not be
+// classified as workspace-not-found — that classification feeds the
+// destructive path (closeWorkspaceTab + removeWorkspaceEntity). Covers the
+// daemon's actual missing-workspace phrasings: the workspace.* router mapping
+// and FE IPC fold ("Workspace not found"), id-suffixed variants
+// ("Workspace not found: {id}"), and the generic domain-error display
+// ("not found: workspace {id}"). The `[^:]*` barrier keeps a prefixed cause
+// like "failed to open workspace: <tool> not found" out of the match.
 function isNotFoundError(error: string): boolean {
   const normalized = error
     .toLowerCase()
     .replace(/[\s_-]+/g, ' ')
     .trim();
-  return normalized.includes('not found') || normalized.includes('does not exist');
+  return (
+    /\bworkspace\b[^:]*\b(?:not found|does not exist)\b/.test(normalized) ||
+    /\bnot found: workspace\b/.test(normalized)
+  );
 }
 
 function errorMessage(error: unknown): string {

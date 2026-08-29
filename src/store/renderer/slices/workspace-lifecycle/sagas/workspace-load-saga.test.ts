@@ -2,7 +2,11 @@ import { runSaga, stdChannel } from 'redux-saga';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { Workspace } from '$shared/types';
-import { openWorkspaceTab, tabStateReducer } from '../../tab-state/tab-state-slice';
+import {
+  closeWorkspaceTab,
+  openWorkspaceTab,
+  tabStateReducer,
+} from '../../tab-state/tab-state-slice';
 import {
   initialState as initialWorkspaceState,
   removeWorkspaceEntity,
@@ -336,6 +340,63 @@ describe('workspaceLoadSaga', () => {
       expect(run.getState().workspaceLifecycle.loadByWorkspaceId[cached.id]).toEqual({
         status: 'not-found',
         error: { kind: 'not_found', message: 'Workspace not found' },
+      });
+    } finally {
+      await stop(run.task);
+      vi.useRealTimers();
+    }
+  });
+
+  it('does not treat a generic error containing "not found" as workspace-not-found (#3787)', async () => {
+    const cached = workspace('git-error-space');
+    mocks.open.mockResolvedValue({ ok: false, error: 'git binary not found' });
+    const run = createHarness({ cached, openTab: true });
+
+    run.dispatch(workspaceLoadRequested(cached.id));
+    await settle();
+
+    expect(mocks.open).toHaveBeenCalledExactlyOnceWith(cached.id);
+    expect(run.actions).not.toContainEqual({
+      type: 'workspace/loadWorkspacesRequested',
+      payload: [],
+    });
+    expect(run.actions).not.toContainEqual(closeWorkspaceTab(cached.id));
+    expect(run.actions).not.toContainEqual(removeWorkspaceEntity(cached.id));
+    expect(selectWorkspaceById.select(run.getState() as never, cached.id)).toMatchObject(cached);
+    expect(run.getState().tabState.openTabs[cached.id]).toBeTruthy();
+    expect(run.getState().workspaceLifecycle.loadByWorkspaceId[cached.id]).toEqual({
+      status: 'cached-ready',
+      error: null,
+    });
+    await stop(run.task);
+  });
+
+  it.each([
+    // Daemon workspace.* not-found mapping and the FE IPC fold (PROTOCOL §5.1).
+    'Workspace not found',
+    // Adapter/agent phrasing carrying the workspace id.
+    'Workspace not found: missing-space',
+    // Daemon generic Error::NotFound display ("not found: {subject}").
+    'not found: workspace missing-space',
+    'workspace missing-space does not exist',
+  ])('classifies %j as workspace-not-found and evicts after the retry', async (message) => {
+    const cached = workspace('missing-space');
+    mocks.open.mockResolvedValue({ ok: false, error: message });
+    const run = createHarness({ cached, openTab: true });
+
+    vi.useFakeTimers();
+    try {
+      run.dispatch(workspaceLoadRequested(cached.id));
+      await settle();
+      await vi.advanceTimersByTimeAsync(500);
+      await settle();
+
+      expect(mocks.open).toHaveBeenCalledTimes(2);
+      expect(run.getState().workspace.workspaces.ids).not.toContain(cached.id);
+      expect(run.getState().tabState.openTabs[cached.id]).toBeFalsy();
+      expect(run.getState().workspaceLifecycle.loadByWorkspaceId[cached.id]).toEqual({
+        status: 'not-found',
+        error: { kind: 'not_found', message },
       });
     } finally {
       await stop(run.task);
