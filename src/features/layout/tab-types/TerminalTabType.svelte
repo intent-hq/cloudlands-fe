@@ -8,12 +8,12 @@
   import type { TabTypeComponentProps } from './registry';
   import Terminal from '$lib/components/terminal/Terminal.svelte';
 
-  let { tab, workspaceId }: TabTypeComponentProps = $props();
+  let { tab, workspaceId, isActive }: TabTypeComponentProps = $props();
 
   const terminalId = $derived(tab.terminalId);
 </script>
 
-{#if terminalId}
+{#if terminalId && isActive}
   {#key terminalId}
     <Terminal {terminalId} {workspaceId} class="h-full" />
   {/key}

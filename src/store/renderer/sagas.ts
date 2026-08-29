@@ -74,6 +74,7 @@ import { statsReadSaga } from './slices/stats/sagas/stats-read-saga';
 import { tabStateSaga } from './slices/tab-state/sagas/tab-state-saga';
 import { workspaceTabReconciliationSaga } from './slices/tab-state/sagas/workspace-tab-reconciliation-saga';
 import { workspaceTabCleanupSaga } from './slices/workspace-lifecycle/sagas/workspace-tab-cleanup-saga';
+import { workspaceLoadSaga } from './slices/workspace-lifecycle/sagas/workspace-load-saga';
 import { taskAgentAssociationsSaga } from './slices/task-agent-associations/sagas/task-agent-associations-saga';
 import { terminalPersistenceSaga } from './slices/terminals/sagas/terminal-persistence-saga';
 import { themeSaga } from './slices/theme/sagas/theme-saga';
@@ -150,6 +151,7 @@ export const sagas = [
   scriptsOperationSaga,
   lifecycleReadSaga,
   lifecycleIpcReadSaga,
+  workspaceLoadSaga,
   modelSelectionSaga,
   backgroundAgentSettingsSaga,
   providerSettingsSaga,

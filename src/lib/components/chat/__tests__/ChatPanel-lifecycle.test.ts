@@ -36,11 +36,15 @@ const mocks = vi.hoisted(() => {
     draftGet: vi.fn(),
     draftSet: vi.fn(),
     draftClear: vi.fn(),
+    invoke: vi.fn().mockResolvedValue(null),
+    listenSync: vi.fn(),
+    ipcListenerCleanups: [] as Array<ReturnType<typeof vi.fn>>,
     chatDrafts: {} as Record<string, string>,
     resizeObserve: vi.fn(),
     resizeDisconnect: vi.fn(),
     resizeConstructor: vi.fn(),
     agentMessages: mutableReadable<unknown[]>([]),
+    agentSession: mutableReadable<unknown>(null),
     chatError: mutableReadable<string | null>(null),
     failureCorrelation: mutableReadable<
       { turnCorrelation?: string; turnIdCorrelation?: string } | undefined
@@ -65,6 +69,7 @@ const mocks = vi.hoisted(() => {
     dividerSessionValue: { anchorId: null } as { anchorId: string | null } | null,
     prefersReducedMotion: false,
     followBottomOptions: null as {
+      enabled?: boolean;
       follow: boolean;
       onFollowChange?: (follow: boolean) => void;
     } | null,
@@ -94,7 +99,7 @@ vi.mock('$lib/client', () => ({
 }));
 vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
   selectAgentAttentionRequest: mocks.selector(null),
-  selectAgentSession: mocks.selector(null),
+  selectAgentSession: Object.assign(() => mocks.agentSession, { select: () => null }),
   selectAgentSessionIsStreaming: mocks.selector(false),
   selectAgentMessages: Object.assign(() => mocks.agentMessages, { select: () => [] }),
   selectAgentHistoryMessages: mocks.selector([]),
@@ -217,13 +222,24 @@ vi.mock('$lib/utils/smartScroll', () => ({
         isFollowing: options.follow,
       });
     };
-    node.addEventListener('scroll', report);
-    report();
+    let listening = false;
+    const sync = () => {
+      if (options.enabled === false && listening) {
+        node.removeEventListener('scroll', report);
+        listening = false;
+      } else if (options.enabled !== false && !listening) {
+        node.addEventListener('scroll', report);
+        listening = true;
+        report();
+      }
+    };
+    sync();
     return {
       update: (next: typeof initial) => {
         options = next;
         mocks.followBottomOptions = next;
-        report();
+        sync();
+        if (listening) report();
       },
       destroy: () => node.removeEventListener('scroll', report),
     };
@@ -267,8 +283,8 @@ vi.mock('$lib/utils/client-logger', () => ({
   createLogger: () => ({ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() }),
 }));
 vi.mock('$lib/electron-bridge', () => ({
-  invoke: vi.fn().mockResolvedValue(null),
-  listenSync: vi.fn(() => () => {}),
+  invoke: mocks.invoke,
+  listenSync: mocks.listenSync,
 }));
 vi.mock('$features/agent/services/consolidated-backend.service', () => ({
   unifiedOrchestrator: { editQueuedMessage: vi.fn() },
@@ -430,6 +446,12 @@ beforeEach(() => {
     dispatchEvent: vi.fn(),
   }));
   vi.clearAllMocks();
+  mocks.ipcListenerCleanups = [];
+  mocks.listenSync.mockImplementation(() => {
+    const cleanupListener = vi.fn();
+    mocks.ipcListenerCleanups.push(cleanupListener);
+    return cleanupListener;
+  });
   clearDraftCacheForTests();
   clearChatScrollCacheForTests();
   mocks.draftSet.mockResolvedValue({ ok: true, updatedAt: '2026-01-01T00:00:00.000Z' });
@@ -443,6 +465,7 @@ beforeEach(() => {
     return action;
   });
   mocks.agentMessages.set([]);
+  mocks.agentSession.set(null);
   mocks.chatError.set(null);
   mocks.failureCorrelation.set(undefined);
   mocks.awaitingSwitchBackSnapshot.set(false);
@@ -797,6 +820,31 @@ describe('ChatPanel mounted lifecycle', () => {
 
     expect(screen.getByTestId('mock-rich-input').getAttribute('data-value')).toBe(
       'restored draft plus new typing',
+    );
+  });
+
+  it('ignores a pending draft restore while inactive and restores again on reactivation', async () => {
+    const inactiveRestore = deferred<{ text: string }>();
+    mocks.draftGet
+      .mockImplementationOnce(() => inactiveRestore.promise)
+      .mockResolvedValueOnce({ text: 'restored when active' });
+    const currentWorkspace = workspace('workspace-a');
+    const view = render(ChatPanel, {
+      props: { workspace: currentWorkspace, agentId: 'agent-a', isActive: true },
+    });
+    await tick();
+
+    await view.rerender({ workspace: currentWorkspace, agentId: 'agent-a', isActive: false });
+    inactiveRestore.resolve({ text: 'must stay inactive' });
+    await Promise.resolve();
+    await vi.advanceTimersByTimeAsync(50);
+    expect(screen.getByTestId('mock-rich-input').getAttribute('data-value')).toBe('');
+
+    await view.rerender({ workspace: currentWorkspace, agentId: 'agent-a', isActive: true });
+    await Promise.resolve();
+    await vi.advanceTimersByTimeAsync(50);
+    expect(screen.getByTestId('mock-rich-input').getAttribute('data-value')).toBe(
+      'restored when active',
     );
   });
 
@@ -1294,9 +1342,243 @@ describe('ChatPanel mounted lifecycle', () => {
     view.unmount();
     flushFrame();
 
-    expect(mocks.resizeConstructor).toHaveBeenCalledOnce();
-    expect(mocks.resizeDisconnect).toHaveBeenCalledOnce();
+    expect(mocks.resizeConstructor).not.toHaveBeenCalled();
+    expect(mocks.resizeDisconnect).not.toHaveBeenCalled();
     expect(frames).toHaveLength(0);
+  });
+
+  it('detaches IPC, observer, and scroll-action lifecycles while inactive and restores them', async () => {
+    mocks.draftGet.mockResolvedValue(null);
+    const currentWorkspace = workspace('workspace-a');
+    const view = render(ChatPanel, {
+      props: { workspace: currentWorkspace, agentId: 'agent-a', isActive: true },
+    });
+    await tick();
+
+    expect(mocks.listenSync).toHaveBeenCalledTimes(3);
+    expect(mocks.followBottomOptions?.enabled).toBe(true);
+
+    flushFrame();
+    const transcript = screen.getByTestId('chat-transcript-scroll-viewport');
+    const sizeObserverCallback = mocks.resizeConstructor.mock.calls[0]?.[0] as
+      ResizeObserverCallback | undefined;
+    sizeObserverCallback?.(
+      [{ target: transcript, contentRect: { height: 600 } }] as unknown as ResizeObserverEntry[],
+      {} as ResizeObserver,
+    );
+    await tick();
+    expect(mocks.pinnedPromptOptions?.enabled).toBe(true);
+
+    const disconnectsBeforeDeactivate = mocks.resizeDisconnect.mock.calls.length;
+    await view.rerender({ workspace: currentWorkspace, agentId: 'agent-a', isActive: false });
+    await tick();
+
+    expect(mocks.ipcListenerCleanups).toHaveLength(3);
+    expect(
+      mocks.ipcListenerCleanups.every((cleanupListener) => cleanupListener.mock.calls.length === 1),
+    ).toBe(true);
+    expect(mocks.followBottomOptions?.enabled).toBe(false);
+    expect(mocks.pinnedPromptOptions?.enabled).toBe(false);
+    expect(mocks.resizeDisconnect.mock.calls.length).toBeGreaterThan(disconnectsBeforeDeactivate);
+
+    await view.rerender({ workspace: currentWorkspace, agentId: 'agent-a', isActive: true });
+    await tick();
+    expect(mocks.listenSync).toHaveBeenCalledTimes(6);
+    expect(mocks.followBottomOptions?.enabled).toBe(true);
+  });
+
+  it('cancels pending spacer work on deactivation and permits a fresh active schedule', async () => {
+    mocks.draftGet.mockResolvedValue(null);
+    const setTimeoutSpy = vi.spyOn(globalThis, 'setTimeout');
+    const clearTimeoutSpy = vi.spyOn(globalThis, 'clearTimeout');
+    const currentWorkspace = workspace('workspace-a');
+    const view = render(ChatPanel, {
+      props: { workspace: currentWorkspace, agentId: 'agent-a', isActive: true },
+    });
+    await tick();
+    mocks.agentMessages.set([
+      { id: 'm1', role: 'assistant', content: 'first', timestamp: '2026-01-01T00:00:00.000Z' },
+    ]);
+    await tick();
+
+    const spacerCallIndex = setTimeoutSpy.mock.calls.findLastIndex(([, delay]) => delay === 400);
+    expect(spacerCallIndex).toBeGreaterThanOrEqual(0);
+    const spacerTimer = setTimeoutSpy.mock.results[spacerCallIndex]?.value;
+    const staleSpacerCallback = setTimeoutSpy.mock.calls[spacerCallIndex]?.[0] as () => void;
+
+    await view.rerender({ workspace: currentWorkspace, agentId: 'agent-a', isActive: false });
+    expect(clearTimeoutSpy).toHaveBeenCalledWith(spacerTimer);
+    const dispatchCount = mocks.dispatch.mock.calls.length;
+    staleSpacerCallback();
+    expect(mocks.dispatch).toHaveBeenCalledTimes(dispatchCount);
+
+    const schedulesBeforeReactivate = setTimeoutSpy.mock.calls.filter(
+      ([, delay]) => delay === 400,
+    ).length;
+    await view.rerender({ workspace: currentWorkspace, agentId: 'agent-a', isActive: true });
+    mocks.agentMessages.set([
+      { id: 'm2', role: 'assistant', content: 'second', timestamp: '2026-01-01T00:00:01.000Z' },
+    ]);
+    await tick();
+    expect(setTimeoutSpy.mock.calls.filter(([, delay]) => delay === 400).length).toBeGreaterThan(
+      schedulesBeforeReactivate,
+    );
+  });
+
+  it('cancels pending turn highlights and open-message frames while inactive', async () => {
+    mocks.draftGet.mockResolvedValue(null);
+    mocks.agentMessages.set([
+      {
+        id: 'message-a',
+        role: 'assistant',
+        timestamp: '2026-01-01T00:00:00.000Z',
+        contentBlocks: [{ type: 'tool_use', id: 'subscription-a' }],
+      },
+    ]);
+    const currentWorkspace = workspace('workspace-a');
+    const view = render(ChatPanel, {
+      props: { workspace: currentWorkspace, agentId: 'agent-a', isActive: true },
+    });
+    await tick();
+    const transcript = screen.getByTestId('chat-transcript-scroll-viewport');
+    const target = document.createElement('div');
+    target.dataset.turnNumber = '7';
+    target.dataset.messageId = 'message-a';
+    transcript.appendChild(target);
+
+    window.dispatchEvent(
+      new CustomEvent('agent:scroll-to-turn', {
+        detail: { agentId: 'agent-a', turnNumber: 7 },
+      }),
+    );
+    expect(target.classList.contains('highlight-flash')).toBe(true);
+    window.dispatchEvent(
+      new CustomEvent('agent:scroll-to-subscription', {
+        detail: { agentId: 'agent-a', subscriptionId: 'subscription-a' },
+      }),
+    );
+    window.dispatchEvent(
+      new CustomEvent('chat:open-message', {
+        detail: {
+          agentId: 'agent-a',
+          messageId: 'message-a',
+          query: 'needle',
+          requestId: 'request-a',
+        },
+      }),
+    );
+    await tick();
+
+    await view.rerender({ workspace: currentWorkspace, agentId: 'agent-a', isActive: false });
+    await vi.advanceTimersByTimeAsync(1600);
+    while (frames.length > 0) flushFrame();
+    expect(target.classList.contains('highlight-flash')).toBe(true);
+    expect(target.classList.contains('message-highlight-flash')).toBe(false);
+
+    await view.rerender({ workspace: currentWorkspace, agentId: 'agent-a', isActive: true });
+    window.dispatchEvent(
+      new CustomEvent('agent:scroll-to-turn', {
+        detail: { agentId: 'agent-a', turnNumber: 7 },
+      }),
+    );
+    await vi.advanceTimersByTimeAsync(1600);
+    expect(target.classList.contains('highlight-flash')).toBe(false);
+  });
+
+  it('cancels active highlight timers and open-message frames on unmount', async () => {
+    mocks.draftGet.mockResolvedValue(null);
+    const setTimeoutSpy = vi.spyOn(globalThis, 'setTimeout');
+    const clearTimeoutSpy = vi.spyOn(globalThis, 'clearTimeout');
+    const cancelAnimationFrameSpy = vi.spyOn(globalThis, 'cancelAnimationFrame');
+    const view = render(ChatPanel, {
+      props: { workspace: workspace('workspace-a'), agentId: 'agent-a', isActive: true },
+    });
+    await tick();
+    while (frames.length > 0) flushFrame();
+
+    const transcript = screen.getByTestId('chat-transcript-scroll-viewport');
+    const target = document.createElement('div');
+    target.dataset.turnNumber = '7';
+    target.dataset.messageId = 'message-a';
+    transcript.appendChild(target);
+
+    window.dispatchEvent(
+      new CustomEvent('agent:scroll-to-turn', {
+        detail: { agentId: 'agent-a', turnNumber: 7 },
+      }),
+    );
+    const highlightTimerCall = setTimeoutSpy.mock.calls.findLastIndex(
+      ([, delay]) => delay === 1500,
+    );
+    expect(highlightTimerCall).toBeGreaterThanOrEqual(0);
+    const highlightTimer = setTimeoutSpy.mock.results[highlightTimerCall]?.value;
+
+    const frameIdsBeforeOpen = new Set(frames.map((frame) => frame.id));
+    window.dispatchEvent(
+      new CustomEvent('chat:open-message', {
+        detail: {
+          agentId: 'agent-a',
+          messageId: 'message-a',
+          requestId: 'request-a',
+        },
+      }),
+    );
+    await tick();
+    await tick();
+    const openFrame = frames.find((frame) => !frameIdsBeforeOpen.has(frame.id));
+    expect(openFrame).toBeDefined();
+
+    view.unmount();
+    expect(clearTimeoutSpy).toHaveBeenCalledWith(highlightTimer);
+    expect(cancelAnimationFrameSpy).toHaveBeenCalledWith(openFrame?.id);
+
+    openFrame?.callback(performance.now());
+    const staleHighlightCallback = setTimeoutSpy.mock.calls[highlightTimerCall]?.[0] as () => void;
+    staleHighlightCallback();
+    expect(target.classList.contains('message-highlight-flash')).toBe(false);
+    expect(target.classList.contains('highlight-flash')).toBe(true);
+  });
+
+  it('cancels draftPrompt apply and focus while inactive and restores on reactivation', async () => {
+    mocks.draftGet.mockResolvedValue(null);
+    mocks.agentSession.set({
+      id: 'agent-a',
+      status: 'idle',
+      messages: [],
+      backendSessionId: 'backend-session-a',
+    });
+    const currentWorkspace = workspace('workspace-a');
+    const view = render(ChatPanel, {
+      props: {
+        workspace: currentWorkspace,
+        agentId: 'agent-a',
+        isActive: true,
+        draftPrompt: 'review this change',
+      },
+    });
+    await tick();
+
+    await view.rerender({
+      workspace: currentWorkspace,
+      agentId: 'agent-a',
+      isActive: false,
+      draftPrompt: 'review this change',
+    });
+    await vi.advanceTimersByTimeAsync(700);
+    expect(screen.getByTestId('mock-rich-input').getAttribute('data-value')).toBe('');
+
+    await view.rerender({
+      workspace: currentWorkspace,
+      agentId: 'agent-a',
+      isActive: true,
+      draftPrompt: 'review this change',
+    });
+    await tick();
+    await vi.advanceTimersByTimeAsync(100);
+    await tick();
+    expect(screen.getByTestId('mock-rich-input').getAttribute('data-value')).toBe(
+      'review this change',
+    );
   });
 
   it('does not render the moved bottom control inside the transcript', async () => {
@@ -1511,7 +1793,7 @@ describe('ChatPanel mounted lifecycle', () => {
     // Scroll authority + read-only pinned-prompt tracker + older-history
     // scrollback trigger.
     expect(removeListener.mock.calls.filter(([type]) => type === 'scroll')).toHaveLength(3);
-    expect(mocks.resizeDisconnect).toHaveBeenCalledTimes(2);
+    expect(mocks.resizeDisconnect).toHaveBeenCalledOnce();
     expect(frames).toHaveLength(0);
   });
 
@@ -1671,6 +1953,48 @@ describe('ChatPanel mounted lifecycle', () => {
       clientHeight: { configurable: true, value: 500 },
     });
     flushFrame();
+    expect(scrollContainer.scrollTop).toBe(987);
+  });
+
+  it('cancels a cached-scroll retry while inactive and restores it after reactivation', async () => {
+    mocks.draftGet.mockResolvedValue(null);
+    setCachedChatScroll('workspace-a', 'agent-a', {
+      scrollTop: 987,
+      shouldFollowBottom: false,
+    });
+    mocks.agentMessages.set([
+      { id: 'm1', role: 'assistant', content: 'hello', timestamp: '2026-01-01T00:00:00.000Z' },
+    ]);
+    const currentWorkspace = workspace('workspace-a');
+    const view = render(ChatPanel, {
+      props: { workspace: currentWorkspace, agentId: 'agent-a', isActive: true },
+    });
+    const scrollContainer = view.container.querySelector('.overflow-y-auto') as HTMLDivElement;
+    let scrollTopValue = 0;
+    Object.defineProperty(scrollContainer, 'scrollTop', {
+      configurable: true,
+      get: () => scrollTopValue,
+      set(value: number) {
+        const max = Math.max(0, this.scrollHeight - this.clientHeight);
+        scrollTopValue = Math.max(0, Math.min(value, max));
+      },
+    });
+    await tick();
+    await Promise.resolve();
+    await tick();
+    flushFrame();
+
+    await view.rerender({ workspace: currentWorkspace, agentId: 'agent-a', isActive: false });
+    Object.defineProperties(scrollContainer, {
+      scrollHeight: { configurable: true, value: 2000 },
+      clientHeight: { configurable: true, value: 500 },
+    });
+    flushFrame();
+    expect(scrollContainer.scrollTop).toBe(0);
+
+    await view.rerender({ workspace: currentWorkspace, agentId: 'agent-a', isActive: true });
+    await tick();
+    while (frames.length > 0) flushFrame();
     expect(scrollContainer.scrollTop).toBe(987);
   });
 

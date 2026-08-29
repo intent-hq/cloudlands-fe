@@ -637,16 +637,53 @@
   // hover hit-tests or land in the tab order (monorepo#2508).
   let showLockConfirmation = $state(false);
   let lockConfirmationTimer: ReturnType<typeof setTimeout> | null = null;
+  const highlightRemovalTimers = new Set<ReturnType<typeof setTimeout>>();
+  const activeAnimationFrames = new Set<number>();
+
+  function scheduleHighlightRemoval(element: HTMLElement, className: string, delayMs: number) {
+    if (!isActive) return;
+    const timer = setTimeout(() => {
+      highlightRemovalTimers.delete(timer);
+      if (isActive && !isComponentDestroyed) element.classList.remove(className);
+    }, delayMs);
+    highlightRemovalTimers.add(timer);
+  }
+
+  function scheduleActiveAnimationFrame(callback: () => void) {
+    if (!isActive) return;
+    const frame = requestAnimationFrame(() => {
+      activeAnimationFrames.delete(frame);
+      if (isActive && !isComponentDestroyed) callback();
+    });
+    activeAnimationFrames.add(frame);
+  }
+
+  $effect(() => {
+    if (isActive) return;
+    for (const timer of highlightRemovalTimers) clearTimeout(timer);
+    highlightRemovalTimers.clear();
+    for (const frame of activeAnimationFrames) cancelAnimationFrame(frame);
+    activeAnimationFrames.clear();
+  });
   const LOCK_CONFIRMATION_DURATION_MS = 1500;
 
   function flashLockConfirmation(): void {
+    if (!isActive) return;
     if (lockConfirmationTimer !== null) clearTimeout(lockConfirmationTimer);
     showLockConfirmation = true;
     lockConfirmationTimer = setTimeout(() => {
+      if (!isActive) return;
       showLockConfirmation = false;
       lockConfirmationTimer = null;
     }, LOCK_CONFIRMATION_DURATION_MS);
   }
+
+  $effect(() => {
+    if (isActive || lockConfirmationTimer === null) return;
+    clearTimeout(lockConfirmationTimer);
+    lockConfirmationTimer = null;
+    showLockConfirmation = false;
+  });
 
   let lazyTurnHeightCache = $state.raw<LazyTurnHeightCache>(createLazyTurnHeightCache('unbound'));
   let lazyTurnCacheScope = 'unbound';
@@ -1101,6 +1138,7 @@
     keepMessageId: string | undefined,
     keep: ReadonlySet<string>,
   ) {
+    if (!isActive) return;
     if (!container) return;
     const remaining: Array<{ messageId: string; disclosureId: string }> = [];
     for (const opened of [...searchOpenedDisclosures].reverse()) {
@@ -1116,6 +1154,7 @@
       );
       if (disclosure) requestSearchDisclosure(disclosure, false);
       await tick();
+      if (!isActive) return;
     }
     searchOpenedDisclosures = remaining;
   }
@@ -1124,9 +1163,10 @@
     match: ChatSearchMatch | undefined,
     container: HTMLDivElement | undefined,
   ) {
+    if (!isActive) return;
     const required = new Set(match?.disclosurePath ?? []);
     await restoreSearchDisclosures(container, match?.messageId, required);
-    if (!match || !container) return;
+    if (!isActive || !match || !container) return;
     const message = container.querySelector(`[data-message-id="${CSS.escape(match.messageId)}"]`);
     if (!message) return;
     for (const id of match.disclosurePath) {
@@ -1144,13 +1184,16 @@
           searchOpenedDisclosures.push({ messageId: match.messageId, disclosureId: id });
         }
         await tick();
+        if (!isActive) return;
         await new Promise(requestAnimationFrame);
+        if (!isActive) return;
       }
     }
   }
 
   // Trigger highlighting after LazyTurn materialization and disclosure reveal.
   async function triggerHighlight() {
+    if (!isActive) return;
     const request = ++searchHighlightRequest;
     const query = untrack(() => debouncedSearchQuery);
     const index = untrack(() => currentSearchIndex);
@@ -1158,12 +1201,13 @@
     const matches = untrack(() => allSearchMatches);
     const container = untrack(() => scrollContainer);
     await tick();
-    if (request !== searchHighlightRequest) return;
+    if (!isActive || request !== searchHighlightRequest) return;
     await revealSearchMatch(isShowing ? matches[index] : undefined, container);
-    if (request !== searchHighlightRequest) return;
+    if (!isActive || request !== searchHighlightRequest) return;
     await tick();
+    if (!isActive) return;
     await new Promise(requestAnimationFrame);
-    if (request !== searchHighlightRequest) return;
+    if (!isActive || request !== searchHighlightRequest) return;
     doHighlightSearchMatches(query, index, matches, isShowing, container);
   }
 
@@ -1344,6 +1388,7 @@
   // intermediate keystrokes don't trigger a full rewalk + LazyTurn re-render
   // cascade. An empty query flushes immediately to clear highlights.
   function handleSearchInput() {
+    if (!isActive) return;
     currentSearchIndex = 0;
     if (searchDebounceTimer !== null) {
       clearTimeout(searchDebounceTimer);
@@ -1355,6 +1400,7 @@
       return;
     }
     searchDebounceTimer = setTimeout(() => {
+      if (!isActive) return;
       searchDebounceTimer = null;
       debouncedSearchQuery = searchQuery;
       triggerHighlight();
@@ -1362,6 +1408,7 @@
   }
 
   function openSearchFromSelection() {
+    if (!isActive) return;
     const selectedText = getSelectedTextWithinSurface(panelElement);
 
     if (selectedText) {
@@ -1376,11 +1423,19 @@
 
     showSearch = true;
     tick().then(() => {
+      if (!isActive) return;
       searchInputRef?.focus();
       searchInputRef?.select();
       if (selectedText) triggerHighlight();
     });
   }
+
+  $effect(() => {
+    if (isActive) return;
+    searchHighlightRequest += 1;
+    if (searchDebounceTimer !== null) clearTimeout(searchDebounceTimer);
+    searchDebounceTimer = null;
+  });
 
   // Context items for the input
   let contextItems = $state<ContextItem[]>([]);
@@ -1457,6 +1512,7 @@
   // it as the synchronous same-process remount cache.
   const draftManager = createChatDraftManager({
     drafts: appClient.drafts,
+    active: () => isActive,
     workspaceId: () => workspace?.id,
     agentId: () => agentId,
     inputValue: () => inputValue,
@@ -1674,6 +1730,7 @@
   // Listen for the custom 'editor:selection-change' event dispatched by CodeEditor and TipTap
   // Editors dispatch 'editor:selection-change' custom events which we sync to Redux
   $effect(() => {
+    if (!isActive) return;
     const handleSelectionChange = (
       event: CustomEvent<{ text: string; file?: string; language?: string; source: string }>,
     ) => {
@@ -1833,7 +1890,7 @@
 
   function maybeRequestOlderHistory() {
     const container = scrollContainer;
-    if (!container || !workspace?.id || !agentId) return;
+    if (!isActive || !container || !workspace?.id || !agentId) return;
     // A far-flick seek owns the transcript while in flight / landing: its
     // landing REPLACES the segment, so no serial page may race it.
     if ($fetchingHistorySeek$ || seekLandingPending) return;
@@ -1986,7 +2043,7 @@
    * row). Returns true when the segment was dropped.
    */
   function maybeCollapseHistorySegmentAtTail(): boolean {
-    if (!workspace?.id || !agentId) return false;
+    if (!isActive || !workspace?.id || !agentId) return false;
     if ($fetchingOlderHistory$ || $fetchingGapFill$) return false;
     if ($fetchingHistorySeek$ || seekLandingPending) return false;
     if (!viewportFullyBelowOpenHole()) return false;
@@ -2007,9 +2064,11 @@
   // the settled scrollTop, so intermediate drag positions never fire.
   function armSeekDebounce() {
     cancelSeekDebounce();
+    if (!isActive) return;
     seekDebounceTimer = setTimeout(() => {
       seekDebounceTimer = null;
-      if (isComponentDestroyed || !scrollContainer || !workspace?.id || !agentId) return;
+      if (!isActive || isComponentDestroyed || !scrollContainer || !workspace?.id || !agentId)
+        return;
       if ($fetchingHistorySeek$ || seekLandingPending) return;
       // Racing serial fetch: let it settle, the settle chain re-classifies.
       if ($fetchingOlderHistory$ || $fetchingGapFill$) return;
@@ -2040,11 +2099,15 @@
   let wasFetchingHistorySeek = false;
   $effect(() => {
     const fetching = $fetchingHistorySeek$;
+    if (!isActive) {
+      wasFetchingHistorySeek = fetching;
+      return;
+    }
     const settled = wasFetchingHistorySeek && !fetching;
     wasFetchingHistorySeek = fetching;
     if (!settled) return;
     tick().then(() => {
-      if (isComponentDestroyed || !scrollContainer) return;
+      if (!isActive || isComponentDestroyed || !scrollContainer) return;
       // Discard raced this settle: the dispatch that cleared
       // fetchingHistorySeek was a resumed:false reset, not a landing. The
       // discard effect below owns the viewport (followToBottom on this
@@ -2069,7 +2132,7 @@
       virtualSpacerHeight = above;
       virtualSpacerBelowHeight = below;
       tick().then(() => {
-        if (isComponentDestroyed || !scrollContainer) return;
+        if (!isActive || isComponentDestroyed || !scrollContainer) return;
         scrollContainer.scrollTop = Math.max(
           0,
           Math.round(
@@ -2133,7 +2196,7 @@
       shouldFollowBottom = true;
       tick().then(() => {
         discardReanchorPending = false;
-        if (isComponentDestroyed || !scrollContainer) return;
+        if (!isActive || isComponentDestroyed || !scrollContainer) return;
         followToBottom(scrollContainer);
       });
     });
@@ -2181,14 +2244,19 @@
 
   function scheduleSpacerReconcile() {
     if (spacerReconcileTimer !== null) clearTimeout(spacerReconcileTimer);
+    if (!isActive) {
+      spacerReconcileTimer = null;
+      return;
+    }
     spacerReconcileTimer = setTimeout(() => {
       spacerReconcileTimer = null;
+      if (!isActive) return;
       runSpacerReconcile(false);
     }, SPACER_QUIET_MS);
   }
 
   function runSpacerReconcile(force: boolean) {
-    if (isComponentDestroyed) return;
+    if (!isActive || isComponentDestroyed) return;
     const container = scrollContainer;
     if (!container) return;
     // A seek in flight / landing owns the spacers — its settle handler sizes
@@ -2264,7 +2332,7 @@
     if (belowResult.applied) virtualSpacerBelowHeight = belowResult.spacerHeight;
     if (compensation === 0) return;
     tick().then(() => {
-      if (isComponentDestroyed || !scrollContainer) return;
+      if (!isActive || isComponentDestroyed || !scrollContainer) return;
       scrollContainer.scrollTop = Math.max(0, previousScrollTop + compensation);
     });
   }
@@ -2274,6 +2342,7 @@
   // no hysteresis). The spacer state itself is never a dep — the effect
   // only re-arms off external inputs.
   $effect(() => {
+    if (!isActive) return;
     void ($agentHistoryMessages$.length + $agentMessages$.length);
     void $transcriptSnapshotMeta$?.totalMessages;
     const exhausted = $historyExhausted$;
@@ -2320,6 +2389,7 @@
     restatedHistoryLength = historyLength;
     restatedHistoryFirstId = firstId;
     restatedHistoryLastId = lastId;
+    if (!isActive) return;
     const container = untrack(() => scrollContainer);
     if (isFirstRun || !container) return;
     untrack(() => {
@@ -2356,14 +2426,20 @@
       virtualSpacerBelowHeight = restated.below;
       if (compensation === 0) return;
       tick().then(() => {
-        if (isComponentDestroyed || !scrollContainer) return;
+        if (!isActive || isComponentDestroyed || !scrollContainer) return;
         scrollContainer.scrollTop = Math.max(0, previousScrollTop + compensation);
       });
     });
   });
 
-  // Clear the reconcile + seek debounce timers on destroy.
+  // Clear deferred viewport work on deactivate as well as destroy.
   $effect(() => {
+    if (isActive) return;
+    if (spacerReconcileTimer !== null) {
+      clearTimeout(spacerReconcileTimer);
+      spacerReconcileTimer = null;
+    }
+    cancelSeekDebounce();
     return () => {
       if (spacerReconcileTimer !== null) clearTimeout(spacerReconcileTimer);
       cancelSeekDebounce();
@@ -2378,7 +2454,7 @@
   // load every intermediate page on the way to a far target.
   $effect(() => {
     const container = scrollContainer;
-    if (!container) return;
+    if (!isActive || !container) return;
     const onScroll = () => {
       lastScrollActivityAt = performance.now();
       scheduleSpacerReconcile();
@@ -2415,6 +2491,7 @@
   let olderHistoryIndicatorHideTimer: ReturnType<typeof setTimeout> | null = null;
 
   function syncOlderHistoryIndicator(fetching: boolean) {
+    if (!isActive) return;
     const action = olderHistoryIndicatorAction({
       fetching,
       chainEvaluationPending: olderHistoryChainEvaluationPending,
@@ -2430,7 +2507,7 @@
     } else if (action === 'arm-hide') {
       olderHistoryIndicatorHideTimer = setTimeout(() => {
         olderHistoryIndicatorHideTimer = null;
-        if (isComponentDestroyed) return;
+        if (!isActive || isComponentDestroyed) return;
         olderHistoryIndicatorVisible = false;
       }, OLDER_HISTORY_INDICATOR_QUIET_MS);
     }
@@ -2454,8 +2531,9 @@
     wasFetchingOlderHistory = false;
   }
 
-  // Clear the indicator hide timer on destroy.
+  // Clear the indicator hide timer on deactivate and destroy.
   $effect(() => {
+    if (!isActive) untrack(resetOlderHistoryIndicator);
     return () => {
       if (olderHistoryIndicatorHideTimer !== null) clearTimeout(olderHistoryIndicatorHideTimer);
     };
@@ -2474,6 +2552,11 @@
   let wasFetchingOlderHistory = false;
   $effect(() => {
     const fetching = $fetchingOlderHistory$;
+    if (!isActive) {
+      wasFetchingOlderHistory = fetching;
+      olderHistoryChainEvaluationPending = false;
+      return;
+    }
     const settled = wasFetchingOlderHistory && !fetching;
     wasFetchingOlderHistory = fetching;
     // The pending flag is raised BEFORE the indicator sync so the settle
@@ -2485,7 +2568,7 @@
       requestAnimationFrame(() => {
         requestAnimationFrame(() => {
           olderHistoryChainEvaluationPending = false;
-          if (isComponentDestroyed) return;
+          if (!isActive || isComponentDestroyed) return;
           if (scrollContainer) maybeRequestOlderHistory();
           // The saga raises the fetching flag synchronously on dispatch, so
           // this read distinguishes "chain continued" (stay visible) from
@@ -2497,7 +2580,7 @@
   });
 
   function requestHistoryGapFill() {
-    if (!workspace?.id || !agentId) return;
+    if (!isActive || !workspace?.id || !agentId) return;
     if ($fetchingGapFill$ || !$historySegmentMeta$.gapToTail) return;
     // Never race a settling seek (mirror of maybeRequestOlderHistory): the
     // seek REPLACES the segment, so a gap page anchored at the pre-seek
@@ -2518,13 +2601,17 @@
   let wasFetchingGapFill = false;
   $effect(() => {
     const fetching = $fetchingGapFill$;
+    if (!isActive) {
+      wasFetchingGapFill = fetching;
+      return;
+    }
     const settled = wasFetchingGapFill && !fetching;
     wasFetchingGapFill = fetching;
     if (!settled) return;
     tick().then(() => {
       requestAnimationFrame(() => {
         requestAnimationFrame(() => {
-          if (isComponentDestroyed || !scrollContainer) return;
+          if (!isActive || isComponentDestroyed || !scrollContainer) return;
           if (maybeCollapseHistorySegmentAtTail()) return;
           if (viewportOverlapsBelowSpacer()) requestHistoryGapFill();
         });
@@ -2538,7 +2625,7 @@
   $effect(() => {
     const sentinel = historyGapSentinel;
     const root = scrollContainer;
-    if (!sentinel || !root) return;
+    if (!isActive || !sentinel || !root) return;
     const observer = new IntersectionObserver(
       (entries) => {
         if (entries.some((entry) => entry.isIntersecting)) requestHistoryGapFill();
@@ -2557,6 +2644,10 @@
   let anchoredHistoryLength = -1;
   $effect.pre(() => {
     const historyLength = $agentHistoryMessages$.length;
+    if (!isActive) {
+      anchoredHistoryLength = historyLength;
+      return;
+    }
     if (historyLength === anchoredHistoryLength) return;
     const isFirstRun = anchoredHistoryLength === -1;
     anchoredHistoryLength = historyLength;
@@ -2569,7 +2660,7 @@
     const anchor = captureScrollAnchor(container);
     tick().then(() => {
       requestAnimationFrame(() => {
-        if (isComponentDestroyed || !scrollContainer) return;
+        if (!isActive || isComponentDestroyed || !scrollContainer) return;
         restoreScrollAnchor(scrollContainer, anchor);
       });
     });
@@ -2625,18 +2716,34 @@
   const CACHED_SCROLL_RESTORE_MAX_ATTEMPTS = 60;
   let cachedScrollRestoreAttempts = 0;
   let cachedScrollRestoreRetryFrame: number | null = null;
+  $effect(() => {
+    if (isActive) {
+      if (cachedScrollRestoreTop !== null && !hasConsumedCachedScrollRestore)
+        scheduleCachedScrollRestoreRetry();
+      return;
+    }
+    if (cachedScrollRestoreRetryFrame !== null) {
+      cancelAnimationFrame(cachedScrollRestoreRetryFrame);
+      cachedScrollRestoreRetryFrame = null;
+    }
+    return () => {
+      if (cachedScrollRestoreRetryFrame !== null)
+        cancelAnimationFrame(cachedScrollRestoreRetryFrame);
+    };
+  });
   function scheduleCachedScrollRestoreRetry() {
-    if (cachedScrollRestoreRetryFrame !== null) return;
+    if (!isActive || cachedScrollRestoreRetryFrame !== null) return;
     cachedScrollRestoreRetryFrame = requestAnimationFrame(() => {
       cachedScrollRestoreRetryFrame = null;
-      if (isComponentDestroyed) return;
+      if (!isActive || isComponentDestroyed) return;
       applyCachedScrollRestore();
     });
   }
   // Reapply the previous instance's scroll position (see cachedScrollRestoreTop
   // above). Returns true when the cached position was consumed.
   function applyCachedScrollRestore(): boolean {
-    if (cachedScrollRestoreTop === null || hasConsumedCachedScrollRestore) return false;
+    if (!isActive || cachedScrollRestoreTop === null || hasConsumedCachedScrollRestore)
+      return false;
     // Not consumed until the container is bound, so a premature call cannot
     // silently drop the cached position.
     if (!scrollContainer) return false;
@@ -2684,7 +2791,7 @@
   // scroll intents.
   $effect(() => {
     const container = scrollContainer;
-    if (!container) return;
+    if (!isActive || !container) return;
     const cancel = () => cancelPendingCachedScrollRestore();
     const onPointerDown = (event: PointerEvent) => {
       if (event.target === container && event.offsetX >= container.clientWidth) {
@@ -2914,10 +3021,13 @@
   let autoCommitStatuses = $state<CommitStatus[]>([]);
 
   function refreshAutoCommitStatuses() {
-    if (!agentId) return;
-    invoke<{ success: boolean; data: CommitStatus[] }>('git:get-auto-commit-status', { agentId })
+    const requestedAgentId = agentId;
+    if (!isActive || !requestedAgentId) return;
+    invoke<{ success: boolean; data: CommitStatus[] }>('git:get-auto-commit-status', {
+      agentId: requestedAgentId,
+    })
       .then((response) => {
-        if (response?.success && response.data) {
+        if (isActive && requestedAgentId === agentId && response?.success && response.data) {
           autoCommitStatuses = response.data;
         }
       })
@@ -2929,11 +3039,13 @@
   // Fetch on mount / when agentId changes
   $effect(() => {
     void agentId;
+    if (!isActive) return;
     refreshAutoCommitStatuses();
   });
 
   // Listen for real-time auto-commit events (3 listeners total, not per-turn)
   $effect(() => {
+    if (!isActive) return;
     const cleanupStarted = listenSync<{ agentId: string }>('git:auto-commit-started', (event) => {
       const data = event.payload || event;
       if (data.agentId === agentId) refreshAutoCommitStatuses();
@@ -2990,15 +3102,6 @@
 
   // Initialize chat on mount
   onMount(() => {
-    // Interest lease (intent-hq/monorepo#3295): acquired SYNCHRONOUSLY at the
-    // top of mount, BEFORE chatTrackedWorkspaceSet/initializeChatRequested are
-    // dispatched, so the lease exists before a sibling panel's
-    // markAgentAsViewed sweep can run in either redux flush ordering.
-    // Released in onDestroy.
-    if (agentId && !agentId.startsWith('terminal-')) {
-      acquireChatInterestLease(agentId, instanceId);
-    }
-
     logger.info('ChatPanel mounted', {
       instanceId,
       agentId,
@@ -3074,6 +3177,7 @@
     // Empty chats start at the top and unlock until the first send. Non-empty
     // chats are positioned by the follow action itself.
     const initialScrollFrame = requestAnimationFrame(() => {
+      if (!isActive) return;
       if (scrollContainer) {
         if ($agentMessages$.length > 0) {
           if (cachedScrollRestoreTop !== null) {
@@ -3096,6 +3200,13 @@
     return () => cancelAnimationFrame(initialScrollFrame);
   });
 
+  $effect(() => {
+    const interestedAgentId = agentId;
+    if (!isActive || !interestedAgentId || interestedAgentId.startsWith('terminal-')) return;
+    acquireChatInterestLease(interestedAgentId, instanceId);
+    return () => releaseChatInterestLease(interestedAgentId, instanceId);
+  });
+
   // ── Auto-focus on mount (used by Chief of Staff) ──
   function isEditableElement(element: Element | null): boolean {
     if (!element) return false;
@@ -3115,6 +3226,7 @@
 
     const autoFocusTimer = setTimeout(async () => {
       await tick();
+      if (!isActive) return;
       if (shouldSkipPromptAutoFocus()) return;
       focusPrompt();
     }, 100);
@@ -3203,7 +3315,7 @@
     block: 'start' | 'center' | 'end' = 'center',
     duration: number = 150,
   ) {
-    if (!scrollContainer) return;
+    if (!isActive || !scrollContainer) return;
 
     const containerRect = scrollContainer.getBoundingClientRect();
     const elementRect = element.getBoundingClientRect();
@@ -3230,14 +3342,15 @@
       scrollContainer.scrollTop = targetScrollTop;
       return;
     }
-    animateScrollTo(() => scrollContainer, targetScrollTop, duration);
+    animateScrollTo(() => (isActive ? scrollContainer : null), targetScrollTop, duration);
   }
 
   /**
    * Smoothly scroll to a specific position with 150ms animation.
    */
   function smoothScrollToPosition(top: number, duration: number = 150) {
-    animateScrollTo(() => scrollContainer, top, duration);
+    if (!isActive) return;
+    animateScrollTo(() => (isActive ? scrollContainer : null), top, duration);
   }
 
   // Navigate to a specific message by index
@@ -3313,7 +3426,7 @@
 
   // Set up message navigation listener
   $effect(() => {
-    if (typeof window === 'undefined') return;
+    if (!isActive || typeof window === 'undefined') return;
 
     window.addEventListener('navigate-message', handleNavigateMessage);
 
@@ -3324,7 +3437,7 @@
 
   // Listen for scroll-to-turn events (from agent attribution badges)
   $effect(() => {
-    if (typeof window === 'undefined') return;
+    if (!isActive || typeof window === 'undefined') return;
 
     const handleScrollToTurn = (event: Event) => {
       const { agentId: targetAgentId, turnNumber } = (event as CustomEvent).detail || {};
@@ -3343,9 +3456,7 @@
         smoothScrollTo(messageElement, 'center');
         // Add highlight effect
         messageElement.classList.add('highlight-flash');
-        setTimeout(() => {
-          messageElement.classList.remove('highlight-flash');
-        }, 1500);
+        scheduleHighlightRemoval(messageElement, 'highlight-flash', 1500);
       } else {
         logger.warn('[ChatPanel] Could not find message for turn', { turnNumber });
       }
@@ -3360,7 +3471,7 @@
 
   // Activity items open the agent and request the most precise matching chat location.
   $effect(() => {
-    if (typeof window === 'undefined') return;
+    if (!isActive || typeof window === 'undefined') return;
 
     const handleScrollToActivity = (event: Event) => {
       const {
@@ -3385,7 +3496,7 @@
       if (targetElement instanceof HTMLElement) {
         smoothScrollTo(targetElement, 'center');
         targetElement.classList.add('highlight-flash');
-        setTimeout(() => targetElement.classList.remove('highlight-flash'), 1500);
+        scheduleHighlightRemoval(targetElement, 'highlight-flash', 1500);
       }
     };
 
@@ -3395,7 +3506,7 @@
 
   // Listen for scroll-to-subscription events (from AgentSubscriptions component)
   $effect(() => {
-    if (typeof window === 'undefined') return;
+    if (!isActive || typeof window === 'undefined') return;
 
     const handleScrollToSubscription = (event: Event) => {
       const { agentId: targetAgentId } = (event as CustomEvent).detail || {};
@@ -3433,9 +3544,7 @@
             smoothScrollTo(messageElement, 'center');
             // Add highlight effect
             messageElement.classList.add('highlight-flash');
-            setTimeout(() => {
-              messageElement.classList.remove('highlight-flash');
-            }, 1500);
+            scheduleHighlightRemoval(messageElement, 'highlight-flash', 1500);
             logger.info('[ChatPanel] Scrolled to subscription message', { messageId: message.id });
             return;
           }
@@ -3486,6 +3595,8 @@
   // the shared observer and follow the asymmetric displayport frontier.
   $effect(() => {
     const messages = hydrationMessages;
+    messageHydrationPolicy.setActive(isActive);
+    if (!isActive) return;
     messageHydrationPolicy.updateMessages(messages);
     for (const message of messages) {
       messageHydrationPolicy.setForced(message.id, isMessageForceVisible(message.id));
@@ -3504,23 +3615,39 @@
 
   function scheduleDeepOpenRelease(turnKey = deepOpenTurnKey) {
     if (deepOpenReleaseTimer !== null) clearTimeout(deepOpenReleaseTimer);
+    if (!isActive) {
+      deepOpenReleaseTimer = null;
+      return;
+    }
     deepOpenReleaseTimer = setTimeout(() => {
+      if (!isActive) return;
       if (deepOpenTurnKey === turnKey) deepOpenTurnKey = null;
       deepOpenReleaseTimer = null;
     }, 200);
   }
+
+  $effect(() => {
+    if (isActive) return;
+    if (deepOpenReleaseTimer !== null) clearTimeout(deepOpenReleaseTimer);
+    deepOpenReleaseTimer = null;
+    deepOpenTurnKey = null;
+    untrack(() => clearDeepOpenHighlight?.());
+  });
 
   // Force-render a message's turn through the LazyTurn virtualization (reuses
   // the deep-open force-visible key) and resolve its DOM element once rendered.
   // Drops follow so the placeholder expanding doesn't yank the viewport back
   // down. Retries across a few frames; resolves null if it never appears.
   async function forceRenderAndFindMessage(messageId: string): Promise<HTMLElement | null> {
+    if (!isActive) return null;
     deepOpenTurnKey = messageIdToTurnKey.get(messageId) ?? messageId;
     shouldFollowBottom = false;
     await tick();
+    if (!isActive) return null;
     const selector = `[data-message-id="${CSS.escape(messageId)}"]`;
     for (let attempt = 0; attempt < 5; attempt++) {
       await new Promise(requestAnimationFrame);
+      if (!isActive) return null;
       const targetElement = scrollContainer?.querySelector(selector) as HTMLElement | null;
       if (targetElement) return targetElement;
     }
@@ -3541,7 +3668,7 @@
   // renders.
   async function scrollToNewMessagesDivider(anchorMessageId: string) {
     const anchorElement = await forceRenderAndFindMessage(anchorMessageId);
-    if (isComponentDestroyed || !scrollContainer) return;
+    if (!isActive || isComponentDestroyed || !scrollContainer) return;
     const dividerElement = scrollContainer.querySelector(
       '[data-new-messages-divider]',
     ) as HTMLElement | null;
@@ -3610,10 +3737,15 @@
     clearDeepOpenHighlight = clear;
   }
 
+  $effect(() => {
+    if (isActive) return;
+    untrack(() => clearDeepOpenHighlight?.());
+  });
+
   async function handleOpenMessage(event: Event) {
     const detail = (event as CustomEvent).detail as
       { agentId: string; messageId: string; query?: string; requestId: string } | undefined;
-    if (!detail || detail.agentId !== agentId) return;
+    if (!isActive || !detail || detail.agentId !== agentId) return;
     // The helper dispatches on a retry ladder (the panel may still be
     // mounting); dedup so a successfully handled request runs exactly once.
     if (handledOpenMessageRequestIds.has(detail.requestId)) return;
@@ -3623,7 +3755,9 @@
     deepOpenTurnKey = messageIdToTurnKey.get(detail.messageId) ?? detail.messageId;
     shouldFollowBottom = false;
     await tick();
-    requestAnimationFrame(() => {
+    if (!isActive) return;
+    scheduleActiveAnimationFrame(() => {
+      if (!isActive) return;
       const targetElement = scrollContainer?.querySelector(
         `[data-message-id="${CSS.escape(detail.messageId)}"]`,
       ) as HTMLElement | null;
@@ -3639,13 +3773,13 @@
       smoothScrollTo(targetElement, 'center');
       scheduleDeepOpenRelease();
       targetElement.classList.add('message-highlight-flash');
-      setTimeout(() => targetElement.classList.remove('message-highlight-flash'), 600);
+      scheduleHighlightRemoval(targetElement, 'message-highlight-flash', 600);
       if (detail.query) applyDeepOpenQueryHighlight(targetElement, detail.query);
     });
   }
 
   $effect(() => {
-    if (typeof window === 'undefined') return;
+    if (!isActive || typeof window === 'undefined') return;
 
     const listener = (event: Event) => void handleOpenMessage(event);
     window.addEventListener('chat:open-message', listener);
@@ -3659,7 +3793,7 @@
 
   // Listen for panel:focus-content events (from panel keyboard navigation)
   $effect(() => {
-    if (typeof window === 'undefined') return;
+    if (!isActive || typeof window === 'undefined') return;
 
     const handlePanelFocusContent = (event: Event) => {
       const detail = (event as CustomEvent<ChatFocusRequest>).detail;
@@ -3710,7 +3844,8 @@
   }
 
   // Track container height for compact mode using ResizeObserver
-  onMount(() => {
+  $effect(() => {
+    if (!isActive) return;
     let destroyed = false;
     let readinessFrame: number | null = null;
     let observer: ResizeObserver | null = null;
@@ -3785,10 +3920,26 @@
   let draftPromptApplied = $state(false);
   // Flash the input to draw attention when draft prompt is applied
   let showInputFlash = $state(false);
+  let draftPromptApplyTimer: ReturnType<typeof setTimeout> | null = null;
+  let draftPromptFlashTimer: ReturnType<typeof setTimeout> | null = null;
+
+  function cancelDraftPromptTimers() {
+    if (draftPromptApplyTimer !== null) clearTimeout(draftPromptApplyTimer);
+    if (draftPromptFlashTimer !== null) clearTimeout(draftPromptFlashTimer);
+    draftPromptApplyTimer = null;
+    draftPromptFlashTimer = null;
+    showInputFlash = false;
+  }
+
+  $effect(() => {
+    void isActive;
+    if (!isActive) cancelDraftPromptTimers();
+    return cancelDraftPromptTimers;
+  });
 
   // Handle draft prompt - pre-fill the input without sending
   $effect(() => {
-    if (!draftPrompt || draftPromptApplied) return;
+    if (!isActive || !draftPrompt || draftPromptApplied || draftPromptApplyTimer !== null) return;
     if (!$agentSession$) return; // Wait for session to be ready
 
     // Pre-fill the input
@@ -3798,16 +3949,20 @@
     });
 
     // Use a small delay to ensure the input component is ready
-    setTimeout(async () => {
+    draftPromptApplyTimer = setTimeout(async () => {
+      draftPromptApplyTimer = null;
+      if (!isActive) return;
       inputValue = draftPrompt;
       await inputComponent?.setContent?.(draftPrompt);
+      if (!isActive) return;
       inputComponent?.focus?.();
       draftPromptApplied = true;
 
       // Trigger subtle flash animation
       showInputFlash = true;
-      setTimeout(() => {
-        showInputFlash = false;
+      draftPromptFlashTimer = setTimeout(() => {
+        draftPromptFlashTimer = null;
+        if (isActive) showInputFlash = false;
       }, 600);
     }, 100);
   });
@@ -3852,12 +4007,6 @@
     // from accessing reactive state after destruction, which would cause
     // "N is not a function" errors in Svelte's reactive system.
     isComponentDestroyed = true;
-    // Release this instance's interest lease (intent-hq/monorepo#3295) before
-    // any destroy-path dispatch, so the trailing scoped clear is not spared by
-    // the dying panel's own lease.
-    if (agentId && !agentId.startsWith('terminal-')) {
-      releaseChatInterestLease(agentId, instanceId);
-    }
     cancelAllSendTransitions();
     if (lockConfirmationTimer !== null) {
       clearTimeout(lockConfirmationTimer);
@@ -3867,6 +4016,10 @@
       cancelAnimationFrame(cachedScrollRestoreRetryFrame);
       cachedScrollRestoreRetryFrame = null;
     }
+    for (const timer of highlightRemovalTimers) clearTimeout(timer);
+    highlightRemovalTimers.clear();
+    for (const frame of activeAnimationFrames) cancelAnimationFrame(frame);
+    activeAnimationFrames.clear();
 
     // Cache the transcript scroll state so a remount restores the user's
     // reading position instead of re-entering at the bottom. Guarded
@@ -4466,13 +4619,16 @@
 
   // Handle editing a suggested prompt - loads into input without sending
   async function handleEditSuggestedPrompt(prompt: string) {
+    if (!isActive) return;
     inputValue = prompt;
     await inputComponent?.setContent?.(prompt);
+    if (!isActive) return;
     inputComponent?.focus?.();
   }
 
   // Export functions for parent components
   export function focusPrompt(): boolean {
+    if (!isActive) return false;
     const result = inputComponent?.focus?.() ?? false;
     if (result && typeof result === 'boolean') {
       onFocus?.();
@@ -4482,10 +4638,12 @@
   }
 
   export function scrollToTop() {
+    if (!isActive) return;
     smoothScrollToPosition(0);
   }
 
   export function scrollToBottom() {
+    if (!isActive) return;
     const container = scrollContainer;
     if (!container) return;
     if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
@@ -4495,11 +4653,11 @@
     }
     shouldFollowBottom = false;
     animateScrollTo(
-      () => (scrollContainer === container ? container : null),
+      () => (isActive && scrollContainer === container ? container : null),
       Math.max(0, container.scrollHeight - container.clientHeight),
       150,
       () => {
-        if (scrollContainer !== container) return;
+        if (!isActive || scrollContainer !== container) return;
         shouldFollowBottom = true;
         followToBottom(container);
       },
@@ -4507,6 +4665,7 @@
   }
 
   export async function navigateToUserMessage(messageId: string): Promise<boolean> {
+    if (!isActive) return false;
     if (!userMessageNavigationItems.some((message) => message.id === messageId)) return false;
     // Index-only row: the message is outside the loaded transcript (neither
     // the loaded scrollback nor the live tail — messageIdToTurnKey spans
@@ -4518,11 +4677,11 @@
       if (!(await seekConversationToMessage(agentId, messageId))) return false;
     }
     const targetElement = await forceRenderAndFindMessage(messageId);
-    if (!targetElement) return false;
+    if (!isActive || !targetElement) return false;
     currentMessageIndex = getMessageIndex(messageId);
     smoothScrollTo(targetElement, 'start');
     targetElement.classList.add('message-highlight-flash');
-    setTimeout(() => targetElement.classList.remove('message-highlight-flash'), 600);
+    scheduleHighlightRemoval(targetElement, 'message-highlight-flash', 600);
     scheduleDeepOpenRelease();
     return true;
   }
@@ -4534,11 +4693,13 @@
    * Other failures keep the cached index (or tail-only) silently.
    */
   export function refreshUserMessageIndex(): void {
-    if (userMessageIndexUnsupported || userMessageIndexFetchInFlight || !agentId) return;
+    if (!isActive || userMessageIndexUnsupported || userMessageIndexFetchInFlight || !agentId)
+      return;
     userMessageIndexFetchInFlight = true;
     void appClient.agents
       .listUserMessages(agentId)
       .then((result) => {
+        if (!isActive) return;
         if (result.ok) {
           userMessageIndexItems = getUserMessageNavigationItemsFromIndex(result.items);
         } else if (result.unsupported) {
@@ -4557,6 +4718,14 @@
   }
 
   export function getNavigationState() {
+    if (!isActive) {
+      return {
+        userMessageCount: $agentMessages$.filter((message) => message.role === 'user').length,
+        currentMessageIndex: -1,
+        isAtTop: false,
+        isAtBottom: false,
+      };
+    }
     const userMessages = $agentMessages$.filter((m) => m.role === 'user');
     return {
       userMessageCount: userMessages.length,
@@ -4595,7 +4764,7 @@
 
   // Listen for resend message event (Alt+Enter keyboard shortcut)
   $effect(() => {
-    if (typeof window === 'undefined') return;
+    if (!isActive || typeof window === 'undefined') return;
 
     const handleResendEvent = () => {
       handleResendLastMessage();
@@ -4611,6 +4780,7 @@
 
 <svelte:window
   onkeydown={(e) => {
+    if (!isActive) return;
     if ((e.metaKey || e.ctrlKey) && e.key === 'f') {
       // Only open search if this panel is focused and active, and focus is not in terminal
       if (
@@ -4755,10 +4925,11 @@
     <div
       bind:this={scrollContainer}
       use:trackPinnedPrompt={{
-        enabled: containerHeight >= 400,
+        enabled: isActive && containerHeight >= 400,
         onChange: setPinnedPrompt,
       }}
       use:followBottom={{
+        enabled: isActive,
         // While search is open we drive our own programmatic scrolls (to the
         // current match), so we drop `follow` to keep the mutation/resize
         // observers from yanking the viewport to the bottom when a LazyTurn

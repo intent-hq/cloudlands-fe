@@ -6,6 +6,7 @@
   import { onDestroy } from 'svelte';
   import type { Snippet } from 'svelte';
   import * as Menu from './menu';
+  import { pushEscapeLayer } from '$lib/utils/escapeLayers';
   import { m } from '$shared/paraglide/messages.js';
 
   let {
@@ -67,6 +68,16 @@
     const previousClose = closeActiveMenu;
     closeActiveMenu = close;
     if (previousClose && previousClose !== close) previousClose();
+  });
+
+  // Escape ordering: while open, occupy the top of the escape-layer stack so
+  // underlying overlays (e.g. an expanded sidebar panel) do not also dismiss
+  // on the same keypress. Decline (return false) so the event still falls
+  // through to bits-ui's own Escape handling, which closes the menu and
+  // restores focus to the trigger.
+  $effect(() => {
+    if (!open) return;
+    return pushEscapeLayer(() => false);
   });
 
   onDestroy(() => {

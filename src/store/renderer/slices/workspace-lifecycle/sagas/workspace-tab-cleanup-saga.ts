@@ -8,9 +8,10 @@ import {
 import { CURRENT_WORKSPACE_TAB_SELECTION_ACTIONS } from '../../tab-state/tab-state-slice';
 import {
   workspaceDeleted,
-  workspaceHydrationRequested,
+  workspaceLoadRequested,
   workspaceUnmounted,
 } from '../workspace-lifecycle-slice';
+import { selectIsWorkspaceSessionLive } from '../workspace-lifecycle-selectors';
 
 export function* workspaceTabCleanupSaga(): SagaGenerator<void> {
   const lifecycleChanges = yield* actionChannel(
@@ -22,7 +23,9 @@ export function* workspaceTabCleanupSaga(): SagaGenerator<void> {
   const unmountedWorkspaceIds = new Set<string>();
 
   try {
-    if (previousFocusedId) yield* put(workspaceHydrationRequested(previousFocusedId));
+    if (previousFocusedId && !(yield* selectIsWorkspaceSessionLive.effect(previousFocusedId))) {
+      yield* put(workspaceLoadRequested(previousFocusedId));
+    }
 
     while (true) {
       const action = yield* take(lifecycleChanges);
@@ -51,7 +54,9 @@ export function* workspaceTabCleanupSaga(): SagaGenerator<void> {
       }
       if (focusChanged && currentFocusedId) {
         unmountedWorkspaceIds.delete(currentFocusedId);
-        yield* put(workspaceHydrationRequested(currentFocusedId));
+        if (!(yield* selectIsWorkspaceSessionLive.effect(currentFocusedId))) {
+          yield* put(workspaceLoadRequested(currentFocusedId));
+        }
       }
     }
   } finally {

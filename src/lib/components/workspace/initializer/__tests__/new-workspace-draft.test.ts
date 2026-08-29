@@ -12,14 +12,18 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { DraftAttachment, DraftsClient } from '$lib/client/app-client';
 import type { ContextItem } from '$lib/components/chat/input/context-api';
 import {
+  LEGACY_ONBOARDING_PROMPT_SESSION_KEY,
   LEGACY_PROMPT_SESSION_KEY,
   MAX_DRAFT_ATTACHMENTS_BYTES,
   NEW_WORKSPACE_DRAFT_AGENT_ID,
   NEW_WORKSPACE_DRAFT_WORKSPACE_ID,
   buildNewWorkspaceDraftPayload,
   clearNewWorkspaceDraft,
+  contextItemsToInlineImages,
   createNewWorkspaceDraftSaver,
+  inlineImagesToContextItems,
   persistNewWorkspaceDraft,
+  resolveDraftImages,
   restoreNewWorkspaceDraft,
 } from '../new-workspace-draft';
 
@@ -140,6 +144,39 @@ describe('restoreNewWorkspaceDraft', () => {
     expect(sessionStorage.getItem(LEGACY_PROMPT_SESSION_KEY)).toBe('legacy prompt');
     expect(drafts.set).not.toHaveBeenCalled();
   });
+
+  it('migrates the onboarding legacy key when passed via options.legacyKey', async () => {
+    sessionStorage.setItem(LEGACY_ONBOARDING_PROMPT_SESSION_KEY, 'onboarding legacy prompt');
+    const drafts = createMockDrafts(null);
+
+    const restored = await restoreNewWorkspaceDraft(drafts, {
+      legacyKey: LEGACY_ONBOARDING_PROMPT_SESSION_KEY,
+    });
+
+    expect(restored).toEqual({
+      status: 'restored',
+      text: 'onboarding legacy prompt',
+      contextItems: [],
+    });
+    expect(sessionStorage.getItem(LEGACY_ONBOARDING_PROMPT_SESSION_KEY)).toBeNull();
+    expect(drafts.set).toHaveBeenCalledWith(
+      '__new-workspace__',
+      '__initializer__',
+      'onboarding legacy prompt',
+      undefined,
+    );
+  });
+
+  it('removes only the provided legacy key when a daemon draft exists', async () => {
+    sessionStorage.setItem(LEGACY_ONBOARDING_PROMPT_SESSION_KEY, 'stale onboarding prompt');
+    sessionStorage.setItem(LEGACY_PROMPT_SESSION_KEY, 'modal prompt untouched');
+    const drafts = createMockDrafts({ text: 'daemon wins', updatedAt: '2026-07-23T00:00:00Z' });
+
+    await restoreNewWorkspaceDraft(drafts, { legacyKey: LEGACY_ONBOARDING_PROMPT_SESSION_KEY });
+
+    expect(sessionStorage.getItem(LEGACY_ONBOARDING_PROMPT_SESSION_KEY)).toBeNull();
+    expect(sessionStorage.getItem(LEGACY_PROMPT_SESSION_KEY)).toBe('modal prompt untouched');
+  });
 });
 
 describe('buildNewWorkspaceDraftPayload', () => {
@@ -237,8 +274,9 @@ describe('persistNewWorkspaceDraft', () => {
 });
 
 describe('clearNewWorkspaceDraft', () => {
-  it('issues drafts.clear under the sentinel keys and removes the legacy sessionStorage key', () => {
-    sessionStorage.setItem(LEGACY_PROMPT_SESSION_KEY, 'stale');
+  it('issues drafts.clear under the sentinel keys and removes BOTH legacy sessionStorage keys (shared draft: the other surface must not migrate a cleared draft back in)', () => {
+    sessionStorage.setItem(LEGACY_PROMPT_SESSION_KEY, 'stale modal prompt');
+    sessionStorage.setItem(LEGACY_ONBOARDING_PROMPT_SESSION_KEY, 'stale onboarding prompt');
     const drafts = createMockDrafts();
 
     clearNewWorkspaceDraft(drafts);
@@ -246,6 +284,7 @@ describe('clearNewWorkspaceDraft', () => {
     expect(drafts.clear).toHaveBeenCalledOnce();
     expect(drafts.clear).toHaveBeenCalledWith('__new-workspace__', '__initializer__');
     expect(sessionStorage.getItem(LEGACY_PROMPT_SESSION_KEY)).toBeNull();
+    expect(sessionStorage.getItem(LEGACY_ONBOARDING_PROMPT_SESSION_KEY)).toBeNull();
   });
 
   it('is non-fatal when drafts.clear rejects', async () => {
@@ -256,6 +295,169 @@ describe('clearNewWorkspaceDraft', () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
 
     expect(drafts.clear).toHaveBeenCalledOnce();
+  });
+});
+
+describe('inline image ↔ context item conversion', () => {
+  const PNG_DATA_URL = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUg==';
+
+  it('projects data-URL inline images into image context items for the draft attachments', () => {
+    expect(
+      inlineImagesToContextItems([
+        { src: PNG_DATA_URL, alt: 'screenshot.png' },
+        { src: 'https://example.com/remote.png', alt: 'skipped' },
+      ]),
+    ).toEqual([
+      {
+        id: 'inline-image-0',
+        type: 'file',
+        label: 'screenshot.png',
+        imageData: 'iVBORw0KGgoAAAANSUhEUg==',
+        imageMimeType: 'image/png',
+      },
+    ]);
+  });
+
+  it('falls back to a positional label when the image has no alt', () => {
+    const [item] = inlineImagesToContextItems([{ src: PNG_DATA_URL }]);
+
+    expect(item.label).toBe('image-1');
+  });
+
+  it('excludes non-image data URLs (image/ mime enforced via parseImageDataUrl)', () => {
+    expect(
+      inlineImagesToContextItems([
+        { src: 'data:application/pdf;base64,JVBERi0xLjQ=', alt: 'not-an-image.pdf' },
+        { src: PNG_DATA_URL, alt: 'screenshot.png' },
+      ]),
+    ).toEqual([
+      {
+        id: 'inline-image-1',
+        type: 'file',
+        label: 'screenshot.png',
+        imageData: 'iVBORw0KGgoAAAANSUhEUg==',
+        imageMimeType: 'image/png',
+      },
+    ]);
+  });
+
+  it('rebuilds data URLs from restored image context items, skipping non-image items', () => {
+    expect(contextItemsToInlineImages([imageItem, plainItem])).toEqual([
+      { src: PNG_DATA_URL, alt: 'screenshot.png' },
+    ]);
+  });
+
+  it('round-trips an inline image through serialize → deserialize shape', () => {
+    const items = inlineImagesToContextItems([{ src: PNG_DATA_URL, alt: 'screenshot.png' }]);
+    const roundTripped = contextItemsToInlineImages(items);
+
+    expect(roundTripped).toEqual([{ src: PNG_DATA_URL, alt: 'screenshot.png' }]);
+  });
+});
+
+describe('resolveDraftImages', () => {
+  const PNG_DATA_URL = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUg==';
+  const restoredImages = [{ src: PNG_DATA_URL, alt: 'screenshot.png' }];
+
+  it('falls back to the retained images when the editor is unmounted (null live read)', () => {
+    expect(resolveDraftImages(null, restoredImages)).toEqual(restoredImages);
+  });
+
+  it('lets a mounted editor win, including an empty read (deliberate deletion)', () => {
+    expect(resolveDraftImages([], restoredImages)).toEqual([]);
+    const liveImages = [{ src: PNG_DATA_URL, alt: 'live.png' }];
+    expect(resolveDraftImages(liveImages, restoredImages)).toEqual(liveImages);
+  });
+
+  it('regression: a save scheduled while the editor is unmounted keeps the restored images in the drafts.set payload instead of wiping them', () => {
+    vi.useFakeTimers();
+    try {
+      const drafts = createMockDrafts();
+      const saver = createNewWorkspaceDraftSaver(drafts);
+
+      // Editor absent (restore settled before step 4, or the prompt step was
+      // destroyed mid-create): the live read is null, the fallback carries
+      // the restored draft images.
+      saver.schedule(
+        'restored prompt',
+        inlineImagesToContextItems(resolveDraftImages(null, restoredImages)),
+      );
+      vi.advanceTimersByTime(300);
+
+      expect(drafts.set).toHaveBeenCalledOnce();
+      expect(drafts.set).toHaveBeenCalledWith(
+        '__new-workspace__',
+        '__initializer__',
+        'restored prompt',
+        [
+          {
+            id: 'inline-image-0',
+            type: 'file',
+            label: 'screenshot.png',
+            imageData: 'iVBORw0KGgoAAAANSUhEUg==',
+            imageMimeType: 'image/png',
+          },
+        ],
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('regression: staged non-image attachments ride the drafts.set payload alongside inline images (a text save must not wipe them)', () => {
+    vi.useFakeTimers();
+    try {
+      const drafts = createMockDrafts();
+      const saver = createNewWorkspaceDraftSaver(drafts);
+      // Path-only staged item as OnboardingPromptStep stages it (no bytes;
+      // placed at create-time redemption).
+      const stagedItem: ContextItem = {
+        id: 'staged-file-1721650000000-0',
+        type: 'file',
+        label: 'report.pdf',
+        description: 'application/pdf • 1.2 MB',
+        path: 'report.pdf',
+        attachmentMimeType: 'application/pdf',
+        attachmentSize: 1258291,
+        sourcePath: '/home/user/report.pdf',
+      };
+
+      // Mirrors the onboarding save payload: inline editor images + staged
+      // non-image items in one attachments array.
+      saver.schedule('typed after staging a pdf', [
+        ...inlineImagesToContextItems(resolveDraftImages(null, restoredImages)),
+        stagedItem,
+      ]);
+      vi.advanceTimersByTime(300);
+
+      expect(drafts.set).toHaveBeenCalledOnce();
+      expect(drafts.set).toHaveBeenCalledWith(
+        '__new-workspace__',
+        '__initializer__',
+        'typed after staging a pdf',
+        [
+          {
+            id: 'inline-image-0',
+            type: 'file',
+            label: 'screenshot.png',
+            imageData: 'iVBORw0KGgoAAAANSUhEUg==',
+            imageMimeType: 'image/png',
+          },
+          {
+            id: 'staged-file-1721650000000-0',
+            type: 'file',
+            label: 'report.pdf',
+            description: 'application/pdf • 1.2 MB',
+            path: 'report.pdf',
+            attachmentMimeType: 'application/pdf',
+            attachmentSize: 1258291,
+            sourcePath: '/home/user/report.pdf',
+          },
+        ],
+      );
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 
@@ -360,6 +562,57 @@ describe('createNewWorkspaceDraftSaver', () => {
     saver.schedule('typed before destroy', []);
 
     expect(() => saver.flush()).not.toThrow();
+  });
+
+  it('cancel() drops an armed debounced save (regression: a queued drafts.set firing after drafts.clear resurrects the draft)', () => {
+    const drafts = createMockDrafts();
+    const saver = createNewWorkspaceDraftSaver(drafts);
+
+    saver.schedule('submitted prompt', [imageItem]);
+    saver.cancel();
+
+    vi.advanceTimersByTime(300);
+    expect(drafts.set).not.toHaveBeenCalled();
+
+    // The pending payload is dropped too — a later flush must not revive it.
+    saver.flush();
+    expect(drafts.set).not.toHaveBeenCalled();
+  });
+
+  it('cancel() does not break subsequent schedules', () => {
+    const drafts = createMockDrafts();
+    const saver = createNewWorkspaceDraftSaver(drafts);
+
+    saver.schedule('cancelled', []);
+    saver.cancel();
+    saver.schedule('kept', []);
+    vi.advanceTimersByTime(300);
+
+    expect(drafts.set).toHaveBeenCalledOnce();
+    expect(drafts.set).toHaveBeenCalledWith(
+      '__new-workspace__',
+      '__initializer__',
+      'kept',
+      undefined,
+    );
+  });
+
+  it('text typed while the restore is pending is flushable (regression: navigate away during a slow drafts.get)', () => {
+    const drafts = createMockDrafts();
+    // Mirrors the onboarding wiring: skipEmptySave is true until the restore
+    // settles, so pre-settle empty saves are dropped but typed text persists.
+    const saver = createNewWorkspaceDraftSaver(drafts, { skipEmptySave: () => true });
+
+    saver.schedule('typed during restore', []);
+    saver.flush();
+
+    expect(drafts.set).toHaveBeenCalledOnce();
+    expect(drafts.set).toHaveBeenCalledWith(
+      '__new-workspace__',
+      '__initializer__',
+      'typed during restore',
+      undefined,
+    );
   });
 });
 

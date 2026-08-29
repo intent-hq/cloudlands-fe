@@ -113,7 +113,7 @@ describe('editorial conversation presentation contract', () => {
 
     // The overlay is derived from source-row geometry, so compaction cannot
     // change the source row's height or restart pin detection.
-    expect(panel).toContain('enabled: containerHeight >= 400');
+    expect(panel).toContain('enabled: isActive && containerHeight >= 400');
     const pinned = source('src/lib/components/chat/pinned-prompt.ts');
     expect(pinned).toContain(
       "const SELECTOR = '[data-pinnable-user-prompt][data-pinned-prompt-id]';",
@@ -121,8 +121,8 @@ describe('editorial conversation presentation contract', () => {
     expect(pinned).toContain("source.closest<HTMLElement>('[data-conversation-turn]')");
     expect(pinned).toContain('candidate.sourceBottom <= containerTop - ENTER_OFFSET');
     expect(pinned).toContain('candidate.turnBottom > containerTop + ENTER_OFFSET');
-    expect(pinned).toContain('const resizeObserver = new ResizeObserver(schedule);');
-    expect(pinned).toContain('const mutationObserver = new MutationObserver(() => {');
+    expect(pinned).toContain('resizeObserver = new ResizeObserver(schedule);');
+    expect(pinned).toContain('mutationObserver = new MutationObserver(() => {');
 
     // With native anchoring off, LazyTurn owns scroll compensation for ALL of
     // its height changes above the reader's viewport — placeholder <-> content

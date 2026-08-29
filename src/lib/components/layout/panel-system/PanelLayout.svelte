@@ -1,6 +1,6 @@
 <script lang="ts">
   /* eslint-disable max-lines */
-  import { setContext, onMount, onDestroy, tick, untrack } from 'svelte';
+  import { setContext, onDestroy, tick, untrack } from 'svelte';
   import { m } from '$shared/paraglide/messages.js';
   import {
     getPanelLayoutManager,
@@ -346,7 +346,8 @@
     }
   });
 
-  function measurePanelViewportWidth(node: HTMLElement) {
+  function measurePanelViewportWidth(node: HTMLElement, enabled = true) {
+    let observer: ResizeObserver | null = null;
     function update() {
       const styles = getComputedStyle(node);
       panelViewportWidth = getPanelViewportContentWidth(
@@ -357,10 +358,20 @@
       onAvailableCanvasWidthChange?.(panelViewportWidth);
     }
 
-    update();
-    const observer = new ResizeObserver(update);
-    observer.observe(node);
-    return { destroy: () => observer.disconnect() };
+    function sync(nextEnabled: boolean) {
+      observer?.disconnect();
+      observer = null;
+      if (!nextEnabled) return;
+      update();
+      observer = new ResizeObserver(update);
+      observer.observe(node);
+    }
+
+    sync(enabled);
+    return {
+      update: sync,
+      destroy: () => observer?.disconnect(),
+    };
   }
   const retainedRootPanelWidth = $derived(
     $root$.type === 'panel' && retainedRootPanel?.panelId === $root$.panelId
@@ -530,7 +541,7 @@
   $effect(() => {
     const layoutElement = panelLayoutMotionElement;
     const panelIds = $panelIds$;
-    if (!layoutElement) return;
+    if (!active || !layoutElement) return;
 
     const observer = new ResizeObserver(invalidatePaneInsertionGeometry);
     observer.observe(layoutElement);
@@ -765,7 +776,7 @@
   const isSettled = $derived(settledForWorkspaceId === effectiveLayoutId);
 
   $effect(() => {
-    if (untrack(() => settledForWorkspaceId) === effectiveLayoutId) return;
+    if (!active || untrack(() => settledForWorkspaceId) === effectiveLayoutId) return;
 
     if (isLayoutSettledNow($restoreStatus$, $allTabs$.length)) {
       settledForWorkspaceId = effectiveLayoutId;
@@ -798,7 +809,8 @@
 
   $effect(() => {
     const layoutId = effectiveLayoutId;
-    if (!shouldRenderPanelContainer || lifecycleMotionReadyForLayoutId === layoutId) return;
+    if (!active || !shouldRenderPanelContainer || lifecycleMotionReadyForLayoutId === layoutId)
+      return;
 
     const frame = requestAnimationFrame(() => {
       if (effectiveLayoutId === layoutId) lifecycleMotionReadyForLayoutId = layoutId;
@@ -819,6 +831,7 @@
 
   // Register keyboard shortcuts in cache so they can be accessed from outside
   $effect(() => {
+    if (!active) return;
     registerPanelKeyboardShortcuts(effectiveLayoutId, keyboardShortcuts);
     return () => {
       unregisterPanelKeyboardShortcuts(effectiveLayoutId);
@@ -872,6 +885,10 @@
   // Terminal history updates are handled via the onMount subscription
   $effect(() => {
     const wsId = workspaceId;
+    if (!active) {
+      lastLoadedWorkspaceId = null;
+      return;
+    }
 
     // Only reload if workspace changed
     if (wsId !== lastLoadedWorkspaceId) {
@@ -883,9 +900,10 @@
     }
   });
 
-  // Subscribe to terminal history updates via onMount
+  // Subscribe to terminal history updates only while this surface is active.
   // We track the first call to skip the immediate invocation that happens on subscribe
-  onMount(() => {
+  $effect(() => {
+    if (!active) return;
     let isFirstCall = true;
     const unsubscribe = terminalHistoryTracker.updateCounter.subscribe(() => {
       // Skip the first call (immediate invocation on subscribe)
@@ -1367,7 +1385,8 @@
   }
 
   // Use capture phase for panel-specific shortcuts.
-  onMount(() => {
+  $effect(() => {
+    if (!active) return;
     window.addEventListener('keydown', handleKeyDown, true);
 
     // Listen for terminal creation events
@@ -1462,6 +1481,7 @@
     // payload's workspaceId so background workspaces answer too (monorepo#2756).
 
     return () => {
+      window.removeEventListener('keydown', handleKeyDown, true);
       document.removeEventListener('layout:configure-panels', handleConfigurePanels);
       unsubTerminalCreated();
     };
@@ -1475,15 +1495,14 @@
     else clearPanelMovePreviewNow();
     if (reportedPanelMovePreviewWidthRatio !== 1) onPanelMovePreviewWidthRatioChange?.(1);
     browserFocusOwnership.destroy();
-    window.removeEventListener('keydown', handleKeyDown, true);
     keyboardShortcuts.cleanup();
   });
 </script>
 
 <svelte:window
-  ondragend={handleWindowPaneDragEnd}
-  ondragleave={handleWindowPaneDragLeave}
-  ondrop={handleWindowPaneDrop}
+  ondragend={() => active && handleWindowPaneDragEnd()}
+  ondragleave={(event) => active && handleWindowPaneDragLeave(event)}
+  ondrop={() => active && handleWindowPaneDrop()}
 />
 
 {#snippet panelCanvas()}
@@ -1507,6 +1526,7 @@
           dominantPanelId={$expandedPanelId$}
           {workspaceId}
           layoutId={effectiveLayoutId}
+          {active}
           {contained}
           suppressLayoutMotion={suppressCommittedPanelMoveMotion}
           {retainedRootPanelWidth}
@@ -1587,19 +1607,20 @@
     <!-- Main panel area -->
     <div
       bind:this={panelWorkspaceInset}
-      use:measurePanelViewportWidth
+      use:measurePanelViewportWidth={active}
       class={cn(
         'min-h-0 min-w-0 flex-1 overflow-y-hidden scrollbar-none bg-sidebar',
         contained ? 'overflow-hidden py-2 px-2' : 'overflow-x-auto py-2 pr-2 sm:py-3 sm:pr-3',
       )}
       data-testid="panel-workspace-inset"
-      use:scrollFade={{ axis: 'x', fadeSize: contained ? 0 : 24 }}
+      use:scrollFade={{ axis: 'x', fadeSize: contained ? 0 : 24, enabled: active }}
     >
       <!-- The flex track makes the fixed-width canvas participate in max-content
            sizing, which keeps the container's right padding in the scroll range. -->
       <div class={contained ? 'h-full w-full min-w-0' : 'flex h-full w-max min-w-full'}>
         {#key effectiveLayoutId}
           <PanelCanvasFrame
+            {active}
             sizing={canvasSizing}
             viewportWidth={panelViewportWidth}
             panelColumnWidths={panelColumnPreferredWidths}

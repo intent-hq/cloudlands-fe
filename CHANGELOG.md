@@ -4,6 +4,20 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.106.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.106.1...v2.106.2) (2026-08-29)
+
+
+### ⚡ Performance
+
+* **workspace:** skip redundant warm workspace refreshes ([#1829](https://github.com/intent-hq/cloudlands-fe/issues/1829)) ([bca6897](https://github.com/intent-hq/cloudlands-fe/commit/bca6897ed48809ca238f58a76020e364001d162b))
+
+## [2.106.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.106.0...v2.106.1) (2026-08-29)
+
+
+### 🐛 Bug Fixes
+
+* preserve onboarding prompt draft when navigating away ([#1830](https://github.com/intent-hq/cloudlands-fe/issues/1830)) ([16ce926](https://github.com/intent-hq/cloudlands-fe/commit/16ce9261c9a286c8c1bf2423f0b1490022143486))
+
 ## [2.106.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.105.0...v2.106.0) (2026-08-28)
 
 
