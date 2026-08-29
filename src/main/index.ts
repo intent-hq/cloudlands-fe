@@ -378,6 +378,7 @@ import {
   createWindow,
   createWindowForDeepLink,
   getWindowSessionsPath,
+  markWindowSessionTeardown,
   restoreAllBackendWindowSessions,
   saveAllWindowSessions,
   setOnLastWindowClosedForBackend,
@@ -428,6 +429,14 @@ async function gracefulShutdown() {
     return;
   }
   isShuttingDown = true;
+
+  // Quit-time window closes (performGracefulShutdown's mainWindow.close())
+  // are not deliberate per-backend closes: without this mark, closing the
+  // last window of one backend while another backend's windows survive would
+  // tombstone + prune the bucket that before-quit just saved. Every quit path
+  // (before-quit, window-all-closed, SIGTERM/SIGINT) funnels through here
+  // before any window is closed.
+  markWindowSessionTeardown();
 
   // Bound the cleanup chain with a hard-exit watchdog: if a cleanup step
   // stalls and app.exit(0) is never reached, force-exit so SIGTERM/SIGINT

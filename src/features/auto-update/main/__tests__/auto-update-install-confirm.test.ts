@@ -57,6 +57,7 @@ vi.mock('../../../../main/quit-confirmation', () => ({
 
 vi.mock('../../../../main/window', () => ({
   saveAllWindowSessions: vi.fn(async () => {}),
+  markWindowSessionTeardown: vi.fn(),
 }));
 
 let testUserDataPath: string;
@@ -65,7 +66,8 @@ let testUserDataPath: string;
 async function setupDownloadedService() {
   const svc = await import('../auto-update.service');
   const { confirmQuitWithRunningAgents } = await import('../../../../main/quit-confirmation');
-  const { saveAllWindowSessions } = await import('../../../../main/window');
+  const { saveAllWindowSessions, markWindowSessionTeardown } =
+    await import('../../../../main/window');
   const { default: electronUpdater } = await import('electron-updater');
 
   const mockWindow = {
@@ -85,6 +87,7 @@ async function setupDownloadedService() {
     svc,
     confirmMock: confirmQuitWithRunningAgents as Mock,
     saveMock: saveAllWindowSessions as Mock,
+    teardownMock: markWindowSessionTeardown as Mock,
     quitAndInstallMock: electronUpdater.autoUpdater.quitAndInstall as Mock,
   };
 }
@@ -106,13 +109,15 @@ describe('AutoUpdateService.installUpdate confirmation gating', () => {
   });
 
   it('cancel is a clean no-op: no session save, no install flag, no quitAndInstall, state stays downloaded', async () => {
-    const { svc, confirmMock, saveMock, quitAndInstallMock } = await setupDownloadedService();
+    const { svc, confirmMock, saveMock, teardownMock, quitAndInstallMock } =
+      await setupDownloadedService();
     confirmMock.mockResolvedValue(false);
 
     await svc.autoUpdateService.installUpdate();
 
     expect(confirmMock).toHaveBeenCalledTimes(1);
     expect(saveMock).not.toHaveBeenCalled();
+    expect(teardownMock).not.toHaveBeenCalled();
     expect(quitAndInstallMock).not.toHaveBeenCalled();
     expect(svc.isInstallingUpdate).toBe(false);
     expect(svc.autoUpdateService.getState().status).toBe('downloaded');
@@ -124,7 +129,8 @@ describe('AutoUpdateService.installUpdate confirmation gating', () => {
   });
 
   it('confirm proceeds: confirmation runs before saving all backend windows and installing', async () => {
-    const { svc, confirmMock, saveMock, quitAndInstallMock } = await setupDownloadedService();
+    const { svc, confirmMock, saveMock, teardownMock, quitAndInstallMock } =
+      await setupDownloadedService();
     confirmMock.mockResolvedValue(true);
 
     await svc.autoUpdateService.installUpdate();
@@ -133,6 +139,16 @@ describe('AutoUpdateService.installUpdate confirmation gating', () => {
     expect(saveMock).toHaveBeenCalledTimes(1);
     expect(confirmMock.mock.invocationCallOrder[0]).toBeLessThan(
       saveMock.mock.invocationCallOrder[0],
+    );
+    // Teardown must be marked after the session save (so the saved buckets are
+    // final) and before quitAndInstall(), which closes windows before
+    // before-quit fires on macOS.
+    expect(teardownMock).toHaveBeenCalledTimes(1);
+    expect(saveMock.mock.invocationCallOrder[0]).toBeLessThan(
+      teardownMock.mock.invocationCallOrder[0],
+    );
+    expect(teardownMock.mock.invocationCallOrder[0]).toBeLessThan(
+      quitAndInstallMock.mock.invocationCallOrder[0],
     );
     expect(svc.isInstallingUpdate).toBe(true);
     expect(quitAndInstallMock).toHaveBeenCalledWith(false, true);

@@ -16,7 +16,7 @@ import { DEFAULTS } from '../../../shared/constants';
 import { Logger } from '../../../shared/logger';
 import { m } from '../../../shared/paraglide/messages.js';
 import { confirmQuitWithRunningAgents } from '../../../main/quit-confirmation';
-import { saveAllWindowSessions } from '../../../main/window';
+import { markWindowSessionTeardown, saveAllWindowSessions } from '../../../main/window';
 import { broadcastToRenderers } from './auto-update-broadcast';
 import { isUpdateChannel, type UpdateChannel, type UpdateState, type UpdateStatus } from '../types';
 
@@ -757,6 +757,10 @@ class AutoUpdateService {
       // Persist every live backend. activeId remains only the boot restore default.
       await saveAllWindowSessions();
       isInstallingUpdate = true;
+      // quitAndInstall() closes every window BEFORE before-quit fires (macOS),
+      // so mark teardown now — the window close listeners must not tombstone/
+      // prune the buckets saveAllWindowSessions() just wrote.
+      markWindowSessionTeardown();
 
       logger.info('Installing update and restarting...');
       autoUpdater.quitAndInstall(false, true);
