@@ -4,6 +4,7 @@
   import { Input } from '$lib/components/ui/input';
   import { Label } from '$lib/components/ui/label';
   import * as Menu from '$lib/components/ui/menu';
+  import { Tooltip } from '$lib/components/ui/tooltip';
   import { cn } from '$lib/utils';
   import {
     CONNECTION_ACCENT_CLASSES,
@@ -365,12 +366,15 @@
           </p>
         {/if}
         {#if daemonBehindTooltip}
-          <span
-            class="size-2 shrink-0 self-center rounded-full bg-yellow-500"
-            role="img"
-            aria-label={daemonBehindTooltip}
-            title={daemonBehindTooltip}
-          ></span>
+          <!-- The Tooltip trigger wrapper gives this non-interactive dot a tab
+               stop, so the explanation is reachable by keyboard focus too. -->
+          <Tooltip content={daemonBehindTooltip} class="shrink-0 self-center">
+            <span
+              class="block size-2 rounded-full bg-yellow-500"
+              role="img"
+              aria-label={daemonBehindTooltip}
+            ></span>
+          </Tooltip>
         {/if}
       </div>
     </div>
