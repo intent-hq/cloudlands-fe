@@ -981,8 +981,8 @@
   {#each groupedBlocks as block, blockIndex (blockKeys[blockIndex])}
     {#if block.type === 'content_group'}
       {@const group = block as ContentBlockGroup}
+      {@const childKeys = getResponseGroupBlockKeys(group.children)}
       {#if shouldRenderResponseGroupInline(group)}
-        {@const childKeys = getResponseGroupBlockKeys(group.children)}
         {#each group.children as childBlock, childIndex (childKeys[childIndex])}
           {#if childBlock.type !== 'tool_result'}
             {@render renderResponseGroupChild(group, blockIndex, childBlock, childIndex)}
@@ -990,6 +990,7 @@
         {/each}
       {:else}
         {@const currentChildIndex = getResponseGroupCurrentChildIndex(group)}
+        {@const currentChildKey = currentChildIndex >= 0 ? childKeys[currentChildIndex] : undefined}
         {#snippet currentChild()}
           {@render renderResponseGroupChild(
             group,
@@ -1015,6 +1016,7 @@
             searchPath={chatSearchBlockPath(blockIndex)}
             reasoningPhase={group.isReasoningPhase}
             currentChild={currentChildIndex >= 0 ? currentChild : undefined}
+            {currentChildKey}
             adjacentOperationalRow={isAdjacentOperationalClusterRow(
               groupedBlocks,
               blockIndex,
@@ -1022,7 +1024,6 @@
             )}
           >
             {#snippet children()}
-              {@const childKeys = getResponseGroupBlockKeys(group.children)}
               {#each group.children as childBlock, childIndex (childKeys[childIndex])}
                 {#if childBlock.type !== 'tool_result'}
                   {@render renderResponseGroupChild(group, blockIndex, childBlock, childIndex)}

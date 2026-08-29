@@ -10,6 +10,7 @@
   import Fa from 'svelte-fa';
   import type { Snippet } from 'svelte';
   import { flushSync, onDestroy } from 'svelte';
+  import type { TransitionConfig } from 'svelte/transition';
   import type { ContentBlock } from '$shared/types';
   import { getContentBlockText } from '$shared/utils/content-block-helpers';
   import { m } from '$shared/paraglide/messages.js';
@@ -33,6 +34,7 @@
     isTerminal?: boolean;
     children: Snippet;
     currentChild?: Snippet;
+    currentChildKey?: string;
     blocks?: ContentBlock[];
     reasoningPhase?: boolean;
     adjacentOperationalRow?: boolean;
@@ -46,6 +48,7 @@
     isTerminal = false,
     children,
     currentChild,
+    currentChildKey,
     blocks,
     reasoningPhase = false,
     adjacentOperationalRow = false,
@@ -200,6 +203,25 @@
   const groupContentClass = $derived(
     `${OPERATIONAL_GROUP_CONTENT_CLASS} ${getOperationalGroupContentSpacingClass(blocks)}`,
   );
+
+  // Disclosure motion for the streaming preview. When the preview leaves
+  // because the group expanded, the details body mounts in the same tick with
+  // its own disclosure intro — skip the preview outro so two containers never
+  // animate height against the followed bottom at once. The terminal
+  // stream-end auto-expand needs its own gate: the outro config is captured
+  // during the template flush, before the streaming-edge effect flips
+  // isExpanded, so mirror that effect's decision from the already-updated
+  // props instead.
+  function previewTransition(
+    node: Element,
+    params: { duration?: number; y?: number } = {},
+    options: { direction?: 'in' | 'out' | 'both' } = {},
+  ): TransitionConfig {
+    if (isExpanded || (!isStreaming && isTerminal && disclosureOverride !== 'collapsed')) {
+      return { duration: 0 };
+    }
+    return safeDisclosureTransition(node, params, options);
+  }
 </script>
 
 {#snippet leading()}
@@ -228,7 +250,18 @@
         data-operational-expanded-guide
         aria-hidden="true"
       ></span>
-      {@render currentChild?.()}
+      <!-- Keying on the current child's block identity makes a discrete swap
+           replace nodes: the outgoing child's outro and the incoming child's
+           intro run the same tick-driven disclosure motion, so their combined
+           height interpolates old→new under the followed-bottom lease.
+           Streaming growth within one child keeps the key stable and never
+           animates; the local transition stays inert when the preview itself
+           mounts or unmounts. -->
+      {#key currentChildKey}
+        <div data-response-group-preview-child transition:safeDisclosureTransition>
+          {@render currentChild?.()}
+        </div>
+      {/key}
     </div>
   </CylinderScroller>
 {/snippet}
@@ -262,6 +295,7 @@
   {detailsId}
   previewClass={groupContentClass}
   detailsClass={groupContentClass}
+  {previewTransition}
   detailsTransition={safeDisclosureTransition}
   detailsMotion="height-opacity-y"
   detailsInert={isClosing}
