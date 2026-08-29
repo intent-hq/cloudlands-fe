@@ -409,7 +409,7 @@ describe('WorkspaceTabStrip', () => {
     render(WorkspaceTabStrip);
 
     const tablist = screen.getByRole('tablist', { name: 'Open spaces' });
-    expect(tablist.className).toContain('pl-3');
+    expect(tablist.className).toContain('pl-7');
     expect(tablist.className).toContain('pr-3');
     expect(tablist.className).toContain('-ml-1');
     expect(tablist.className).not.toContain('-ml-3');
@@ -459,7 +459,7 @@ describe('WorkspaceTabStrip', () => {
 
     const tablist = screen.getByRole('tablist', { name: 'Open spaces' });
     const firstTab = document.querySelector('[data-workspace-tab="ws-1"]')!;
-    expect(tablist.className).toContain('pl-3');
+    expect(tablist.className).toContain('pl-7');
     expect(tablist.className).toContain('-ml-1');
     expect(tablist.className).not.toContain('-ml-3');
     expect(firstTab.hasAttribute('data-workspace-tab-leading-shape')).toBe(false);
@@ -686,12 +686,14 @@ describe('WorkspaceTabStrip', () => {
     const tab = tabButton(source);
     const strip = screen.getByRole('tablist', { name: 'Open spaces' });
 
-    expect(tab.className).toContain('cursor-grab');
+    expect(tab.className).toContain('cursor-pointer');
+    expect(source.className).toContain('cursor-pointer');
     expect(source.querySelector<HTMLElement>('[data-workspace-tab-close]')!.className).toContain(
       'cursor-pointer',
     );
 
     await fireEvent(tab, makePointerEvent('pointerdown', 80));
+    expect(tab.className).not.toContain('cursor-grabbing');
     await fireEvent(tab, makePointerEvent('pointermove', 82));
     expect(source.className).not.toContain('fixed');
     expect(strip.className).not.toContain('cursor-grabbing');
@@ -702,7 +704,7 @@ describe('WorkspaceTabStrip', () => {
     expect(source.className).not.toContain('shadow-lg');
     expect(strip.className).toContain('cursor-grabbing');
     expect(source.style.left).toBe('8px');
-    expect(source.style.top).toBe('20px');
+    expect(source.style.top).toBe('18px');
     const reservedSlot = document.querySelector<HTMLElement>(
       '[data-workspace-tab-placeholder="ws-1"]',
     );
@@ -712,12 +714,12 @@ describe('WorkspaceTabStrip', () => {
 
     await fireEvent(tab, makePointerEvent('pointermove', 120, -900));
     expect(source.style.left).toBe('40px');
-    expect(source.style.top).toBe('20px');
+    expect(source.style.top).toBe('18px');
 
     await fireEvent(tab, makePointerEvent('pointermove', 250, 900));
 
     expect(source.style.left).toBe('170px');
-    expect(source.style.top).toBe('20px');
+    expect(source.style.top).toBe('18px');
     expect(renderedTabOrder()).toEqual(['ws-2', 'ws-1', 'ws-3']);
     expect(
       document
@@ -962,6 +964,6 @@ describe('WorkspaceTabStrip', () => {
 
     expect(document.querySelector('[data-workspace-drop-placement]')).toBeNull();
     expect(document.querySelector('[data-workspace-stack-preview]')).toBeNull();
-    expect(source.style.top).toBe('20px');
+    expect(source.style.top).toBe('18px');
   });
 });
