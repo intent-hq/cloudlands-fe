@@ -76,6 +76,8 @@
   "menu_select_previous_tab": "Seleccionar panel anterior",
   "menu_select_next_tab": "Seleccionar panel siguiente",
   "menu_bring_all_to_front": "Traer todo al frente",
+  "menu_window_hud_label": "HUD",
+  "menu_window_localBackend_label": "local",
   "menu_help": "Ayuda",
   "menu_export_debug_logs": "Exportar registros de depuración",
   "menu_show_release_notes": "Mostrar notas de la versión",

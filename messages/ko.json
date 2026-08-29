@@ -76,6 +76,8 @@
   "menu_select_previous_tab": "이전 창 선택",
   "menu_select_next_tab": "다음 창 선택",
   "menu_bring_all_to_front": "모두 앞으로 가져오기",
+  "menu_window_hud_label": "HUD",
+  "menu_window_localBackend_label": "로컬",
   "menu_help": "도움말",
   "menu_export_debug_logs": "디버그 로그 내보내기",
   "menu_show_release_notes": "릴리스 노트 표시",

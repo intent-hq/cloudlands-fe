@@ -322,7 +322,7 @@ import {
 import { registerWorkspaceTransferHandlers } from '../features/backend/main/workspace-transfer.ipc';
 import { registerWorkspaceImportHandlers } from '../features/backend/main/workspace-import.ipc';
 import { getConnectionMode } from '../features/backend/main/connection-mode';
-import { getActiveId } from '../features/backend/main/connections-store';
+import { getActiveId, list as listConnections } from '../features/backend/main/connections-store';
 import { LOCAL_CONNECTION_ID } from '../shared/types/connections';
 import { startIntentdSidecar, stopIntentdSidecar } from '../features/backend/main/intentd-sidecar';
 import { startMemoryMonitor, stopMemoryMonitor } from './memory-monitor';
@@ -335,7 +335,6 @@ import {
   isFocusedWindowBrowserActive,
   getFocusedWindowWorkspaceId,
   getAllOpenWorkspaceIds,
-  getWindowIdForWorkspace,
   installIntentCli,
   autoRepairCliSymlink,
 } from '../features/system/main/system.ipc';
@@ -371,6 +370,9 @@ import { protocolAdapter } from '../features/protocol/main/protocol-adapter';
 import { registerWorkspacePRHandlers } from '../features/workspace/main/workspace-pr.ipc';
 import { ipcCleanupManager } from './ipc-cleanup-manager';
 import { setResolvedAppName } from './utils/resolve-app-title.js';
+import { isHudWindow, isTrackedHudWindow } from './hud-window.js';
+import { getBackendIdForWindow } from './window-backend.js';
+import { buildWindowMenuEntries } from './window-menu-entries.js';
 import { getMainWindow } from './state';
 import {
   captureWindowSessionsSnapshot,
@@ -954,42 +956,45 @@ app.whenReady().then(async () => {
       windowMenuItems.push({ role: 'front', label: m.menu_bring_all_to_front() });
     }
 
-    // Add workspaces with open windows to the Window menu
-    const openWorkspaceIds = getAllOpenWorkspaceIds();
-    if (openWorkspaceIds.length > 0) {
-      type WorkspaceItem = { status?: string; title?: string; name?: string; id: string };
-      const workspaceTitles = new Map<string, string>();
+    // Add the app's open windows to the Window menu, labeled by kind + backend
+    const liveWindows = (BrowserWindow.getAllWindows() as BrowserWindowType[]).filter(
+      (w) => !w.isDestroyed(),
+    );
+    if (liveWindows.length > 0) {
+      let connections: Awaited<ReturnType<typeof listConnections>> = [];
       try {
-        const result = await protocolAdapter.listAllWorkspaces({ lite: true });
-        if (result.ok && result.data) {
-          for (const ws of result.data as WorkspaceItem[]) {
-            const displayName = ws.title || ws.name || ws.id;
-            workspaceTitles.set(ws.id, displayName);
-          }
-        }
+        connections = await listConnections();
       } catch {
-        // Fall back to workspace IDs
+        // Fall back to backend ids as labels
       }
-
-      const focusedWorkspaceId = getFocusedWindowWorkspaceId();
+      const entries = buildWindowMenuEntries(
+        liveWindows.map((w) => ({
+          windowId: w.id,
+          isHud: isHudWindow(w) || isTrackedHudWindow(w),
+          backendId: getBackendIdForWindow(w),
+          isFocused: w.isFocused(),
+        })),
+        connections,
+        {
+          mainWindowLabel: appName,
+          hudLabel: m.menu_window_hud_label(),
+          localBackendLabel: m.menu_window_localBackend_label(),
+        },
+      );
 
       windowMenuItems.push({ type: 'separator' });
-      for (const wsId of openWorkspaceIds) {
-        const label = workspaceTitles.get(wsId) || wsId;
+      for (const entry of entries) {
         windowMenuItems.push({
-          label,
+          label: entry.label,
           type: 'radio',
-          checked: wsId === focusedWorkspaceId,
+          checked: entry.checked,
           click: () => {
-            const windowId = getWindowIdForWorkspace(wsId);
-            if (windowId !== undefined) {
-              const win = BrowserWindow.fromId(windowId);
-              if (win && !win.isDestroyed()) {
-                if (win.isMinimized()) {
-                  win.restore();
-                }
-                win.focus();
+            const win = BrowserWindow.fromId(entry.windowId);
+            if (win && !win.isDestroyed()) {
+              if (win.isMinimized()) {
+                win.restore();
               }
+              win.focus();
             }
           },
         });

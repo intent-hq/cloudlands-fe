@@ -76,6 +76,8 @@
   "menu_select_previous_tab": "Sélectionner le volet précédent",
   "menu_select_next_tab": "Sélectionner le volet suivant",
   "menu_bring_all_to_front": "Tout ramener au premier plan",
+  "menu_window_hud_label": "HUD",
+  "menu_window_localBackend_label": "local",
   "menu_help": "Aide",
   "menu_export_debug_logs": "Exporter les journaux de débogage",
   "menu_show_release_notes": "Afficher les notes de version",
