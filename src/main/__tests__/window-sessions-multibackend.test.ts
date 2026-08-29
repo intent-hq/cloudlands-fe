@@ -530,17 +530,17 @@ describe('multi-backend window sessions', () => {
   });
 
   it('does not restore the last normal window closed while the dock remains open', async () => {
-      const normal = seedLiveWindow('app://workspaces/work/closed');
-      const dock = seedLiveWindow('app://workspaces/dock');
-      await saveAllWindowSessions();
+    const normal = seedLiveWindow('app://workspaces/work/closed');
+    const dock = seedLiveWindow('app://workspaces/dock');
+    await saveAllWindowSessions();
 
-      captureWindowSessionsSnapshot.call(normal as never);
-      normal.destroy();
+    captureWindowSessionsSnapshot.call(normal as never);
+    normal.destroy();
 
-      expect(dock.isDestroyed()).toBe(false);
-      expect(loadWindowSessions('local')).toBeNull();
-      await saveAllWindowSessions();
-      expect(readMap()).toEqual({});
+    expect(dock.isDestroyed()).toBe(false);
+    expect(loadWindowSessions('local')).toBeNull();
+    await saveAllWindowSessions();
+    expect(readMap()).toEqual({});
   });
 
   describe('legacy migration', () => {
