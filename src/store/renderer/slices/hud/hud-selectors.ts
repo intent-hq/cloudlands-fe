@@ -499,7 +499,15 @@ export interface HudCardAgent {
    * workspace-level NEEDS INPUT / BLOCKED derivation.
    */
   topLevel: boolean;
-  /** Background agent (session `isBackground` / `metadata.isBackground`, §5.5). */
+  /**
+   * Background agent (session `isBackground` / `metadata.isBackground`, §5.5).
+   * KNOWN LIMITATION: background-ness comes only from the tracked session —
+   * the §5.1 summary row carries no `isBackground` field — so a summary-only
+   * failed background agent transiently passes the top-level gating in
+   * `selectHudAttentionItems` / `selectHudAttnCount` (raising an
+   * `agent_failed` row + ATTN count) until session hydration; tracked in
+   * intent-hq/intent#3789 (additive daemon summary field is the fix-site).
+   */
   isBackground: boolean;
   /**
    * Pending attention request kind (PROTOCOL §5.5 `attentionRequestKind`,
