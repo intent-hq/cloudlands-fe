@@ -5,10 +5,14 @@ import AgentMessageList from '../AgentMessageList.svelte';
 import MessageContent from '../MessageContent.svelte';
 import { findChatSearchMatches } from '../chat-search';
 import {
+  groupedResultBlocks,
+  headinglessGroupedOrphanBlocks,
+  liveGroupedOrphanBlocks,
   liveGroupBlocks,
   orphanResultBlocks,
   pairedResultBlocks,
   reconcileToolResultMessage,
+  rehydrateToolResultMessage,
   resilienceBlocks,
 } from './tool-result-parity-fixtures';
 
@@ -59,6 +63,74 @@ function resultRows(container: HTMLElement) {
 }
 
 describe('tool-result production renderer parity', () => {
+  it.each(surfaces)(
+    'renders grouped paired and orphan results once in source order in $name chat',
+    async (surface) => {
+      const message = rehydrateToolResultMessage(groupedResultBlocks());
+      const view = surface.render(message.contentBlocks ?? [], false);
+      const disclosure = view.container.querySelector('[data-testid="response-group-disclosure"]')!;
+
+      expect(disclosure.getAttribute('aria-expanded')).toBe('false');
+      await fireEvent.click(disclosure);
+      for (const toolDisclosure of view.container.querySelectorAll(
+        '[data-testid="tool-call-disclosure"]',
+      )) {
+        await fireEvent.click(toolDisclosure);
+      }
+
+      expect(view.container.textContent?.match(/grouped-first-paired-marker/g)).toHaveLength(1);
+      expect(view.container.textContent).toContain('grouped-paired-error-marker');
+      expect(resultRows(view.container)).toHaveLength(2);
+      expect(
+        Array.from(view.container.querySelectorAll('[data-response-group-child]'), (node) =>
+          node.getAttribute('data-message-content-block'),
+        ),
+      ).toEqual(['text', 'tool_use', 'text', 'tool_result', 'tool_use', 'tool_result', 'text']);
+      const text = view.container.textContent ?? '';
+      expect(text.indexOf('Grouped middle marker.')).toBeLessThan(
+        text.indexOf('grouped-orphan-search-marker'),
+      );
+      expect(text.indexOf('grouped-missing-id-orphan-marker')).toBeLessThan(
+        text.indexOf('Grouped end marker.'),
+      );
+    },
+  );
+
+  it.each(surfaces)('renders a headingless grouped orphan inline in $name chat', (surface) => {
+    const message = reconcileToolResultMessage(headinglessGroupedOrphanBlocks(), true);
+    const view = surface.render(message.contentBlocks ?? [], false);
+
+    expect(view.container.querySelector('[data-testid="response-group-disclosure"]')).toBeNull();
+    expect(resultRows(view.container)).toHaveLength(1);
+    expect(view.container.textContent?.match(/inline-orphan-marker/g)).toHaveLength(1);
+  });
+
+  it.each(surfaces)(
+    'keeps a terminal group expanded when its newly visible child is an orphan in $name chat',
+    async (surface) => {
+      vi.useFakeTimers();
+      const live = reconcileToolResultMessage(groupedResultBlocks().slice(0, 4));
+      const complete = reconcileToolResultMessage(groupedResultBlocks(), true);
+      const view = surface.render(live.contentBlocks ?? [], true);
+      const disclosure = view.container.querySelector('[data-testid="response-group-disclosure"]')!;
+      await fireEvent.click(disclosure);
+
+      await view.rerender(
+        surface.name === 'normal workspace'
+          ? {
+              messages: [complete],
+              streamingContent: complete.contentBlocks,
+              isStreaming: false,
+              enableTransitions: false,
+            }
+          : { content: complete.contentBlocks ?? [], isStreaming: false, role: 'assistant' },
+      );
+      await vi.advanceTimersByTimeAsync(1_600);
+
+      expect(disclosure.getAttribute('aria-expanded')).toBe('true');
+    },
+  );
+
   it.each(surfaces)(
     'renders a paired result once inside its visible call in $name chat',
     async (surface) => {
@@ -205,5 +277,34 @@ describe('tool-result production renderer parity', () => {
       },
     });
     expect(resultRows(normal.container)).toHaveLength(1);
+  });
+
+  it('indexes grouped orphans at their child paths without indexing paired results twice', () => {
+    const titled = reconcileToolResultMessage(groupedResultBlocks(), true);
+    const inline = reconcileToolResultMessage(headinglessGroupedOrphanBlocks(), true);
+
+    expect(findChatSearchMatches([titled], 'grouped-orphan-search-marker', new Map())).toEqual([
+      expect.objectContaining({ blockPath: 'b:0:c:4', disclosurePath: ['group:b:0'] }),
+    ]);
+    expect(findChatSearchMatches([titled], 'grouped-missing-id-orphan-marker', new Map())).toEqual([
+      expect.objectContaining({ blockPath: 'b:0:c:7', disclosurePath: ['group:b:0'] }),
+    ]);
+    expect(findChatSearchMatches([titled], 'grouped-first-paired-marker', new Map())).toHaveLength(
+      0,
+    );
+    expect(findChatSearchMatches([inline], 'inline-orphan-marker', new Map())).toEqual([
+      expect.objectContaining({ blockPath: 'b:0:c:1', disclosurePath: [] }),
+    ]);
+  });
+
+  it('indexes a live grouped orphan through its disclosure without replacing preview search', () => {
+    const message = reconcileToolResultMessage(liveGroupedOrphanBlocks());
+
+    expect(findChatSearchMatches([message], 'Current visible live child', new Map())).toEqual([
+      expect.objectContaining({ blockPath: 'b:0:c:1', disclosurePath: [] }),
+    ]);
+    expect(findChatSearchMatches([message], 'live-grouped-orphan', new Map())).toEqual([
+      expect.objectContaining({ blockPath: 'b:0:c:2', disclosurePath: ['group:b:0'] }),
+    ]);
   });
 });

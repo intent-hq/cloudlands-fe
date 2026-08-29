@@ -27,6 +27,27 @@ export function reconcileToolResultMessage(
   return reconciler.transcript().messages[0];
 }
 
+export function rehydrateToolResultMessage(blocks: ContentBlock[]): AgentMessage {
+  const reconciler = new ChatTranscriptReconciler();
+  reconciler.applySnapshot(0, {
+    agentId: 'agent-tool-result-parity',
+    messages: [
+      {
+        id: messageId,
+        role: 'assistant',
+        contentBlocks: blocks.map((block, index) => ({
+          ...block,
+          id: block.id ?? `${messageId}:${index}`,
+        })),
+      },
+    ],
+    truncated: false,
+    totalMessages: 1,
+    deltaEncoding: 'incremental',
+  });
+  return reconciler.transcript().messages[0];
+}
+
 export const liveGroupBlocks = (): ContentBlock[] => [
   { type: 'text', text: '<group:Inspecting>' },
   { type: 'thinking', text: 'Review the production renderer path.' },
@@ -57,6 +78,57 @@ export const pairedResultBlocks = (): ContentBlock[] => [
     tool_use_id: 'call-visible-shell',
     output: 'paired-result-marker',
   },
+];
+
+export const groupedResultBlocks = (): ContentBlock[] => [
+  { type: 'text', text: '<group:Grouped results>Grouped start marker.' },
+  {
+    type: 'tool_use',
+    toolCallId: 'grouped-call-first',
+    name: 'launch-process',
+    input: { command: 'printf grouped-first' },
+  },
+  {
+    type: 'tool_result',
+    tool_use_id: 'grouped-call-first',
+    output: 'grouped-first-paired-marker',
+  },
+  { type: 'text', text: 'Grouped middle marker.' },
+  {
+    type: 'tool_result',
+    tool_use_id: 'grouped-call-missing',
+    output: 'grouped-orphan-search-marker',
+  },
+  {
+    type: 'tool_use',
+    toolCallId: 'grouped-call-error',
+    name: 'workspace_api',
+    input: { summary: 'Verify grouped result parity' },
+  },
+  {
+    type: 'tool_result',
+    tool_use_id: 'grouped-call-error',
+    output: 'Error: grouped-paired-error-marker',
+    is_error: true,
+  },
+  {
+    type: 'tool_result',
+    output: 'Error: grouped-missing-id-orphan-marker',
+    is_error: true,
+  },
+  { type: 'text', text: 'Grouped end marker.</group:Grouped results>' },
+];
+
+export const headinglessGroupedOrphanBlocks = (): ContentBlock[] => [
+  { type: 'text', text: '<group:Prepping>Inline group start marker.' },
+  { type: 'tool_result', tool_use_id: 'inline-missing-call', output: 'inline-orphan-marker' },
+  { type: 'text', text: 'Inline group end marker.</group:Prepping>' },
+];
+
+export const liveGroupedOrphanBlocks = (): ContentBlock[] => [
+  { type: 'text', text: '<group:Live grouped result>Live group preview.' },
+  { type: 'thinking', text: 'Current visible live child.' },
+  { type: 'tool_result', tool_use_id: 'live-missing-call', output: 'live-grouped-orphan' },
 ];
 
 export const resilienceBlocks = (): ContentBlock[] => [

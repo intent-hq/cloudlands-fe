@@ -78,3 +78,31 @@ test('search treats headingless reasoning as inline content and preserves titled
   await findBar.getByRole('textbox').press('Escape');
   await expect(titledDisclosure).toHaveAttribute('aria-expanded', 'true');
 });
+
+test('search reveals a grouped orphan result and restores manual disclosure state', async ({
+  mount,
+  page,
+}) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  const component = await mount(ChatPanelOperationalGeometryHost, {
+    props: { theme: 'light', zoom: 1, width: 560, groupedOrphanSearchOnly: true },
+  });
+  const group = component.locator('[data-chat-search-disclosure-id="group:b:0"]');
+  const disclosure = group.getByTestId('response-group-disclosure');
+  await expect(disclosure).toHaveAttribute('aria-expanded', 'false');
+
+  await disclosure.focus();
+  await disclosure.press('Meta+f');
+  const findBar = component.getByRole('search', { name: 'Find in panel' });
+  await findBar.getByRole('textbox').fill('grouped-search-orphan-marker');
+  await expect(disclosure).toHaveAttribute('aria-expanded', 'true');
+  await expect(group.getByText('grouped-search-orphan-marker', { exact: true })).toBeVisible();
+  await findBar.getByRole('textbox').press('Escape');
+  await expect(disclosure).toHaveAttribute('aria-expanded', 'false');
+
+  await disclosure.click();
+  await disclosure.press('Meta+f');
+  await findBar.getByRole('textbox').fill('grouped-search-orphan-marker');
+  await findBar.getByRole('textbox').press('Escape');
+  await expect(disclosure).toHaveAttribute('aria-expanded', 'true');
+});

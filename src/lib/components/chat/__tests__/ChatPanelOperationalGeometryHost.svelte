@@ -22,6 +22,7 @@
     seamOnly = false,
     detachedStatus = false,
     reasoningSearchOnly = false,
+    groupedOrphanSearchOnly = false,
   }: {
     theme?: 'light' | 'dark';
     zoom?: number;
@@ -29,6 +30,7 @@
     seamOnly?: boolean;
     detachedStatus?: boolean;
     reasoningSearchOnly?: boolean;
+    groupedOrphanSearchOnly?: boolean;
   } = $props();
   const workspaceId = 'chat-panel-operational-geometry';
   const agentId = 'chat-panel-operational-agent';
@@ -404,6 +406,38 @@
       },
     ]),
   ];
+  const groupedOrphanSearchMessages = [
+    message('user-grouped-orphan-search', 'user', [
+      { type: 'text', text: 'Check grouped orphan search' },
+    ]),
+    message('assistant-grouped-orphan-search', 'assistant', [
+      { type: 'text', text: '<group:Grouped result search>Visible group summary.' },
+      {
+        type: 'tool_use',
+        id: 'grouped-search-tool',
+        toolCallId: 'grouped-search-call',
+        name: 'view',
+        input: { path: 'src/grouped-search.ts' },
+      },
+      {
+        type: 'tool_result',
+        id: 'grouped-search-paired-result',
+        tool_use_id: 'grouped-search-call',
+        output: 'grouped-search-paired-marker',
+      },
+      { type: 'text', text: 'Visible middle content.' },
+      {
+        type: 'tool_result',
+        id: 'grouped-search-orphan-result',
+        tool_use_id: 'missing-grouped-search-call',
+        output: 'grouped-search-orphan-marker',
+      },
+      { type: 'text', text: 'Visible ending content.</group:Grouped result search>' },
+    ]),
+    message('user-after-grouped-orphan-search', 'user', [
+      { type: 'text', text: 'Continue after grouped orphan search' },
+    ]),
+  ];
   const seamMessages = [
     {
       ...message('assistant-orphan-tool-a', 'assistant', toolOnlyContent('orphan-a')),
@@ -443,13 +477,15 @@
     message('assistant-tool-message-streaming', 'assistant', toolOnlyContent('message-streaming')),
   ];
   // svelte-ignore state_referenced_locally -- each CT mount uses one immutable fixture scenario.
-  const messages = reasoningSearchOnly
-    ? reasoningSearchMessages
-    : seamOnly
-      ? seamMessages
-      : alignmentMessages;
+  const messages = groupedOrphanSearchOnly
+    ? groupedOrphanSearchMessages
+    : reasoningSearchOnly
+      ? reasoningSearchMessages
+      : seamOnly
+        ? seamMessages
+        : alignmentMessages;
   // svelte-ignore state_referenced_locally -- each CT mount uses one immutable fixture scenario.
-  const fixtureIsStreaming = !reasoningSearchOnly && !detachedStatus;
+  const fixtureIsStreaming = !reasoningSearchOnly && !groupedOrphanSearchOnly && !detachedStatus;
   const session = {
     id: agentId,
     workspaceId,

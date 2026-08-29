@@ -62,7 +62,7 @@ function buildMessageSearchBlocks(message: AgentMessage, turnKey: string): ChatS
     groupContentBlocks(parsedPromptBlocks.contentBlocks, !!message.isStreaming),
     !!message.isStreaming,
   );
-  const toolResultClassification = classifyToolResults(parsedPromptBlocks.contentBlocks);
+  const toolResultClassification = classifyToolResults(grouped);
   const output: ChatSearchBlock[] = [];
   const addText = (text: string, blockPath: string, disclosurePath: string[]) => {
     const cleaned = parseSuggestedPrompts(text).cleanedContent;
@@ -91,27 +91,44 @@ function buildMessageSearchBlocks(message: AgentMessage, turnKey: string): ChatS
           [],
         );
       }
+      block.children.forEach((child, childIndex) => {
+        if (
+          child.type === 'tool_result' &&
+          isStandaloneToolResult(toolResultClassification, child)
+        ) {
+          addText(getToolResultText(child), chatSearchBlockPath(blockIndex, childIndex), [
+            `group:${path}`,
+          ]);
+        }
+      });
       return;
     }
     if (block.isReasoningPhase) {
       const rendersInline = shouldRenderResponseGroupInline(block);
-      if (!rendersInline && block.name.trim().toLowerCase() === 'reasoning') return;
       const disclosurePath = rendersInline ? [] : [`group:${path}`];
       block.children.forEach((child, childIndex) => {
-        if (child.type === 'tool_result') return;
-        addText(
-          getContentBlockText(child),
-          chatSearchBlockPath(blockIndex, childIndex),
-          disclosurePath,
-        );
+        const childPath = chatSearchBlockPath(blockIndex, childIndex);
+        if (child.type === 'tool_result') {
+          if (isStandaloneToolResult(toolResultClassification, child)) {
+            addText(getToolResultText(child), childPath, disclosurePath);
+          }
+          return;
+        }
+        if (!rendersInline && block.name.trim().toLowerCase() === 'reasoning') return;
+        addText(getContentBlockText(child), childPath, disclosurePath);
       });
       return;
     }
     block.children.forEach((child, childIndex) => {
-      if (child.type !== 'text') return;
-      addText(child.text || child.content || '', chatSearchBlockPath(blockIndex, childIndex), [
-        `group:${path}`,
-      ]);
+      const childPath = chatSearchBlockPath(blockIndex, childIndex);
+      if (child.type === 'text') {
+        addText(child.text || child.content || '', childPath, [`group:${path}`]);
+      } else if (
+        child.type === 'tool_result' &&
+        isStandaloneToolResult(toolResultClassification, child)
+      ) {
+        addText(getToolResultText(child), childPath, [`group:${path}`]);
+      }
     });
   });
   return output;

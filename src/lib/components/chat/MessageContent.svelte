@@ -189,10 +189,13 @@
   );
 
   function isVisibleGroupChild(block: RenderContentBlock): boolean {
-    return block.type !== 'tool_result';
+    return (
+      block.type !== 'tool_result' ||
+      isStandaloneToolResult(toolResultClassification, block as ContentBlock)
+    );
   }
 
-  const toolResultClassification = $derived.by(() => classifyToolResults(blocks));
+  const toolResultClassification = $derived.by(() => classifyToolResults(groupedBlocks));
   const toolResultsMap = $derived(toolResultClassification.resultsMap);
 
   // Compute tool states based on results
@@ -705,7 +708,7 @@
       {@const childKeys = getResponseGroupBlockKeys(group.children)}
       {#if shouldRenderResponseGroupInline(group)}
         {#each group.children as childBlock, childIndex (childKeys[childIndex])}
-          {#if childBlock.type !== 'tool_result'}
+          {#if isVisibleGroupChild(childBlock)}
             {@render renderResponseGroupChild(group, blockIndex, childBlock, childIndex)}
           {/if}
         {/each}
@@ -735,7 +738,7 @@
             isStreaming={group.isStreaming}
             isTerminal={blockIndex === lastVisibleTopLevelBlockIndex}
             {isLastConversationMessage}
-            blocks={group.children}
+            blocks={group.children.filter(isVisibleGroupChild)}
             searchPath={chatSearchBlockPath(blockIndex)}
             reasoningPhase={group.isReasoningPhase}
             currentChild={currentChildIndex >= 0 ? currentChild : undefined}
@@ -748,7 +751,7 @@
           >
             {#snippet children()}
               {#each group.children as childBlock, childIndex (childKeys[childIndex])}
-                {#if childBlock.type !== 'tool_result'}
+                {#if isVisibleGroupChild(childBlock)}
                   {@render renderResponseGroupChild(group, blockIndex, childBlock, childIndex)}
                 {/if}
               {/each}

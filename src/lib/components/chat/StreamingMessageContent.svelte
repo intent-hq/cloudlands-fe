@@ -287,7 +287,7 @@
   // Track tool states
   let toolStates = $state<Map<string, 'running' | 'completed' | 'error'>>(new Map());
 
-  let toolResultClassification = $derived.by(() => classifyToolResults(blocks));
+  let toolResultClassification = $derived.by(() => classifyToolResults(groupedBlocks));
   let toolResultsMap = $derived(toolResultClassification.resultsMap);
 
   // Update tool states based on content
@@ -584,6 +584,10 @@
     return contentBlock.type === 'tool_use' || contentBlock.type === 'thinking';
   }
 
+  function isVisibleGroupChild(block: ContentBlock): boolean {
+    return block.type !== 'tool_result' || isStandaloneToolResult(toolResultClassification, block);
+  }
+
   let lastVisibleTopLevelBlockIndex = $derived.by(() => {
     for (let i = groupedBlocks.length - 1; i >= 0; i--) {
       if (isVisibleTopLevelBlock(groupedBlocks[i])) return i;
@@ -601,7 +605,7 @@
   function lastRenderableChildIndex(children: ContentBlock[]): number {
     for (let i = children.length - 1; i >= 0; i--) {
       const child = children[i];
-      if (child.type === 'tool_result') continue;
+      if (!isVisibleGroupChild(child)) continue;
       if (child.type === 'text') {
         const text = child.text || (child as any).content || '';
         if (!parseSuggestedPrompts(text).cleanedContent.trim()) continue;
@@ -911,7 +915,7 @@
       : getOperationalClusterSpacingClass(
           group.children,
           childIndex,
-          (candidate) => candidate.type !== 'tool_result',
+          isVisibleGroupChild,
           group.isReasoningPhase,
         )} {isOperationalClusterBlock(childBlock)
       ? OPERATIONAL_GROUP_CHILD_ROW_CLASS
@@ -930,11 +934,7 @@
         groupIndex === groupedBlocks.length - 1 &&
         childIndex === lastRenderableChildIndex(group.children),
       true,
-      isAdjacentOperationalClusterRow(
-        group.children,
-        childIndex,
-        (candidate) => candidate.type !== 'tool_result',
-      ),
+      isAdjacentOperationalClusterRow(group.children, childIndex, isVisibleGroupChild),
       group.isReasoningPhase,
     )}
   </div>
@@ -953,7 +953,7 @@
       {@const childKeys = getResponseGroupBlockKeys(group.children)}
       {#if shouldRenderResponseGroupInline(group)}
         {#each group.children as childBlock, childIndex (childKeys[childIndex])}
-          {#if childBlock.type !== 'tool_result'}
+          {#if isVisibleGroupChild(childBlock)}
             {@render renderResponseGroupChild(group, blockIndex, childBlock, childIndex)}
           {/if}
         {/each}
@@ -983,7 +983,7 @@
             isStreaming={group.isStreaming}
             isTerminal={blockIndex === lastVisibleTopLevelBlockIndex}
             {isLastConversationMessage}
-            blocks={group.children}
+            blocks={group.children.filter(isVisibleGroupChild)}
             searchPath={chatSearchBlockPath(blockIndex)}
             reasoningPhase={group.isReasoningPhase}
             currentChild={currentChildIndex >= 0 ? currentChild : undefined}
@@ -996,7 +996,7 @@
           >
             {#snippet children()}
               {#each group.children as childBlock, childIndex (childKeys[childIndex])}
-                {#if childBlock.type !== 'tool_result'}
+                {#if isVisibleGroupChild(childBlock)}
                   {@render renderResponseGroupChild(group, blockIndex, childBlock, childIndex)}
                 {/if}
               {/each}

@@ -133,6 +133,19 @@ describe('classifyToolResults — transcript visibility', () => {
 
     expect(isStandaloneToolResult(classification, result)).toBe(true);
   });
+
+  it('classifies paired and orphan results recursively inside content groups', () => {
+    const use = toolUse('msg_1:0', 'tc_grouped');
+    const paired = toolResult('msg_1:1', 'tc_grouped', 'paired');
+    const orphan = toolResult('msg_1:2', 'missing', 'orphan');
+    const classification = classifyToolResults([
+      { type: 'content_group', children: [use, paired, orphan] },
+    ]);
+
+    expect(findToolResult(classification.resultsMap, use)).toBe(paired);
+    expect(isStandaloneToolResult(classification, paired)).toBe(false);
+    expect(isStandaloneToolResult(classification, orphan)).toBe(true);
+  });
 });
 
 describe('getToolResultPayload / getToolResultText — §7.1 output extraction', () => {

@@ -16,6 +16,23 @@ export interface ToolResultClassification {
   standaloneResults: ReadonlySet<ContentBlock>;
 }
 
+export type ToolResultClassificationBlock =
+  | ContentBlock
+  | {
+      type: 'content_group';
+      children: readonly ToolResultClassificationBlock[];
+    };
+
+function* contentBlocks(blocks: readonly ToolResultClassificationBlock[]): Generator<ContentBlock> {
+  for (const block of blocks) {
+    if (block.type === 'content_group') {
+      yield* contentBlocks(block.children);
+    } else {
+      yield block;
+    }
+  }
+}
+
 function toolUseReferences(block: ContentBlock): string[] {
   return [block.id, block.toolCallId].filter((ref): ref is string => Boolean(ref));
 }
@@ -29,17 +46,20 @@ function toolResultReferences(block: ContentBlock): string[] {
  * when any of its protocol identifiers references a visible sibling tool_use;
  * every other result is standalone.
  */
-export function classifyToolResults(blocks: readonly ContentBlock[]): ToolResultClassification {
+export function classifyToolResults(
+  blocks: readonly ToolResultClassificationBlock[],
+): ToolResultClassification {
   const visibleToolUseReferences = new Set<string>();
   const resultsMap = new Map<string, ContentBlock>();
   const standaloneResults = new Set<ContentBlock>();
+  const flattenedBlocks = [...contentBlocks(blocks)];
 
-  for (const block of blocks) {
+  for (const block of flattenedBlocks) {
     if (block.type !== 'tool_use') continue;
     for (const ref of toolUseReferences(block)) visibleToolUseReferences.add(ref);
   }
 
-  for (const block of blocks) {
+  for (const block of flattenedBlocks) {
     if (block.type !== 'tool_result') continue;
     const references = toolResultReferences(block);
     for (const ref of references) resultsMap.set(ref, block);

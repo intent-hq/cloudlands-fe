@@ -23,6 +23,7 @@ describe('operational cluster spacing', () => {
   it('adds 16px before group prose but keeps operational group children flush', () => {
     expect(getOperationalGroupContentSpacingClass(blocks('text'))).toBe('pt-4');
     expect(getOperationalGroupContentSpacingClass(blocks('tool_result', 'text'))).toBe('pt-4');
+    expect(getOperationalGroupContentSpacingClass(blocks('tool_result'))).toBe('pt-4');
     expect(getOperationalGroupContentSpacingClass(blocks('tool_use'))).toBe('');
     expect(getOperationalGroupContentSpacingClass(blocks('thinking'))).toBe('');
   });
