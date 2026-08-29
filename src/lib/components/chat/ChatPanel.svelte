@@ -1674,6 +1674,7 @@
   // Listen for the custom 'editor:selection-change' event dispatched by CodeEditor and TipTap
   // Editors dispatch 'editor:selection-change' custom events which we sync to Redux
   $effect(() => {
+    if (!isActive) return;
     const handleSelectionChange = (
       event: CustomEvent<{ text: string; file?: string; language?: string; source: string }>,
     ) => {
@@ -2378,7 +2379,7 @@
   // load every intermediate page on the way to a far target.
   $effect(() => {
     const container = scrollContainer;
-    if (!container) return;
+    if (!isActive || !container) return;
     const onScroll = () => {
       lastScrollActivityAt = performance.now();
       scheduleSpacerReconcile();
@@ -2684,7 +2685,7 @@
   // scroll intents.
   $effect(() => {
     const container = scrollContainer;
-    if (!container) return;
+    if (!isActive || !container) return;
     const cancel = () => cancelPendingCachedScrollRestore();
     const onPointerDown = (event: PointerEvent) => {
       if (event.target === container && event.offsetX >= container.clientWidth) {
@@ -2990,15 +2991,6 @@
 
   // Initialize chat on mount
   onMount(() => {
-    // Interest lease (intent-hq/monorepo#3295): acquired SYNCHRONOUSLY at the
-    // top of mount, BEFORE chatTrackedWorkspaceSet/initializeChatRequested are
-    // dispatched, so the lease exists before a sibling panel's
-    // markAgentAsViewed sweep can run in either redux flush ordering.
-    // Released in onDestroy.
-    if (agentId && !agentId.startsWith('terminal-')) {
-      acquireChatInterestLease(agentId, instanceId);
-    }
-
     logger.info('ChatPanel mounted', {
       instanceId,
       agentId,
@@ -3074,6 +3066,7 @@
     // Empty chats start at the top and unlock until the first send. Non-empty
     // chats are positioned by the follow action itself.
     const initialScrollFrame = requestAnimationFrame(() => {
+      if (!isActive) return;
       if (scrollContainer) {
         if ($agentMessages$.length > 0) {
           if (cachedScrollRestoreTop !== null) {
@@ -3096,6 +3089,13 @@
     return () => cancelAnimationFrame(initialScrollFrame);
   });
 
+  $effect(() => {
+    const interestedAgentId = agentId;
+    if (!isActive || !interestedAgentId || interestedAgentId.startsWith('terminal-')) return;
+    acquireChatInterestLease(interestedAgentId, instanceId);
+    return () => releaseChatInterestLease(interestedAgentId, instanceId);
+  });
+
   // ── Auto-focus on mount (used by Chief of Staff) ──
   function isEditableElement(element: Element | null): boolean {
     if (!element) return false;
@@ -3115,6 +3115,7 @@
 
     const autoFocusTimer = setTimeout(async () => {
       await tick();
+      if (!isActive) return;
       if (shouldSkipPromptAutoFocus()) return;
       focusPrompt();
     }, 100);
@@ -3313,7 +3314,7 @@
 
   // Set up message navigation listener
   $effect(() => {
-    if (typeof window === 'undefined') return;
+    if (!isActive || typeof window === 'undefined') return;
 
     window.addEventListener('navigate-message', handleNavigateMessage);
 
@@ -3324,7 +3325,7 @@
 
   // Listen for scroll-to-turn events (from agent attribution badges)
   $effect(() => {
-    if (typeof window === 'undefined') return;
+    if (!isActive || typeof window === 'undefined') return;
 
     const handleScrollToTurn = (event: Event) => {
       const { agentId: targetAgentId, turnNumber } = (event as CustomEvent).detail || {};
@@ -3360,7 +3361,7 @@
 
   // Activity items open the agent and request the most precise matching chat location.
   $effect(() => {
-    if (typeof window === 'undefined') return;
+    if (!isActive || typeof window === 'undefined') return;
 
     const handleScrollToActivity = (event: Event) => {
       const {
@@ -3395,7 +3396,7 @@
 
   // Listen for scroll-to-subscription events (from AgentSubscriptions component)
   $effect(() => {
-    if (typeof window === 'undefined') return;
+    if (!isActive || typeof window === 'undefined') return;
 
     const handleScrollToSubscription = (event: Event) => {
       const { agentId: targetAgentId } = (event as CustomEvent).detail || {};
@@ -3645,7 +3646,7 @@
   }
 
   $effect(() => {
-    if (typeof window === 'undefined') return;
+    if (!isActive || typeof window === 'undefined') return;
 
     const listener = (event: Event) => void handleOpenMessage(event);
     window.addEventListener('chat:open-message', listener);
@@ -3659,7 +3660,7 @@
 
   // Listen for panel:focus-content events (from panel keyboard navigation)
   $effect(() => {
-    if (typeof window === 'undefined') return;
+    if (!isActive || typeof window === 'undefined') return;
 
     const handlePanelFocusContent = (event: Event) => {
       const detail = (event as CustomEvent<ChatFocusRequest>).detail;
@@ -3710,7 +3711,8 @@
   }
 
   // Track container height for compact mode using ResizeObserver
-  onMount(() => {
+  $effect(() => {
+    if (!isActive) return;
     let destroyed = false;
     let readinessFrame: number | null = null;
     let observer: ResizeObserver | null = null;
@@ -3852,12 +3854,6 @@
     // from accessing reactive state after destruction, which would cause
     // "N is not a function" errors in Svelte's reactive system.
     isComponentDestroyed = true;
-    // Release this instance's interest lease (intent-hq/monorepo#3295) before
-    // any destroy-path dispatch, so the trailing scoped clear is not spared by
-    // the dying panel's own lease.
-    if (agentId && !agentId.startsWith('terminal-')) {
-      releaseChatInterestLease(agentId, instanceId);
-    }
     cancelAllSendTransitions();
     if (lockConfirmationTimer !== null) {
       clearTimeout(lockConfirmationTimer);
@@ -4595,7 +4591,7 @@
 
   // Listen for resend message event (Alt+Enter keyboard shortcut)
   $effect(() => {
-    if (typeof window === 'undefined') return;
+    if (!isActive || typeof window === 'undefined') return;
 
     const handleResendEvent = () => {
       handleResendLastMessage();
@@ -4611,6 +4607,7 @@
 
 <svelte:window
   onkeydown={(e) => {
+    if (!isActive) return;
     if ((e.metaKey || e.ctrlKey) && e.key === 'f') {
       // Only open search if this panel is focused and active, and focus is not in terminal
       if (

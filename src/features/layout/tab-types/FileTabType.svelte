@@ -230,6 +230,7 @@
   // rendering until this completes so an incorrect workspace-file URL is not
   // committed before a unique candidate can retarget the owning tab.
   $effect(() => {
+    if (!isActive) return;
     const requestedPath = workspaceMediaPath;
     const sourceFilePath = tab.filePath;
     const wsId = workspaceId;
@@ -322,6 +323,7 @@
     const filePath = tab.filePath;
     const absolutePath = fileAbsolutePath;
     const wsId = workspaceId;
+    if (!isActive) return;
 
     // `file.read` is scoped by workspaceId and accepts a repository-relative
     // path. Do not block the read while the workspace entity/root hydrates —
@@ -472,7 +474,7 @@
   });
 </script>
 
-<svelte:window onkeydown={handleKeyDown} />
+<svelte:window onkeydown={(event) => isActive && handleKeyDown(event)} />
 
 {#snippet fileDisplayActions()}
   <!-- Save/edit affordances are hidden for out-of-workspace paths -->

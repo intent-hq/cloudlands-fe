@@ -87,14 +87,15 @@
 
   interface Props {
     workspaceId: string;
+    active?: boolean;
   }
 
-  let { workspaceId }: Props = $props();
+  let { workspaceId, active = true }: Props = $props();
   const surfaceWorkspaceId = $derived(
     workspaceId && workspaceId !== 'new' ? WorkspaceId(workspaceId) : null,
   );
   const panelLayoutId = $derived(workspaceId);
-  const panelLayoutIdStore = writable(workspaceId);
+  const panelLayoutIdStore = writable(untrack(() => workspaceId));
   $effect(() => panelLayoutIdStore.set(workspaceId));
   const panelLayoutRoot$ = selectPanelLayoutRoot(panelLayoutIdStore);
 
@@ -181,7 +182,12 @@
 
   $effect(() => {
     const currentWorkspaceId = workspaceId;
-    if (!currentWorkspaceId || currentWorkspaceId === 'undefined' || currentWorkspaceId === 'new') {
+    if (
+      !active ||
+      !currentWorkspaceId ||
+      currentWorkspaceId === 'undefined' ||
+      currentWorkspaceId === 'new'
+    ) {
       return;
     }
     appStore.dispatch(workspaceLoadRequested(currentWorkspaceId));
@@ -205,6 +211,7 @@
 
   // When workspaceId changes from 'new' to a real ID, start crossfade transition
   $effect(() => {
+    if (!active) return;
     if (workspaceId !== 'new' && onboardingHoldActive) {
       // Start fade-out animation on the onboarding content
       onboardingFadingOut = true;
@@ -227,6 +234,7 @@
   // ResizablePanel only reads initiallyCollapsed at init time, so we dispatch
   // the toggle event to animate it open after workspace creation.
   $effect(() => {
+    if (!active) return;
     // While the boot-route gate is holding, showOnboarding is suppressed but
     // onboarding has not "ended" — skip so the hold is not misread as an
     // onboarding→workspace transition (which would expand an empty sidebar
@@ -244,6 +252,7 @@
 
   // Hide the left nav bar and top bar workspace controls during onboarding
   $effect(() => {
+    if (!active) return;
     appStore.dispatch(setOnboardingActive(showOnboarding));
     return () => appStore.dispatch(setOnboardingActive(false));
   });
@@ -273,6 +282,7 @@
 
   // Properly manage state lifecycle with improved error handling
   $effect(() => {
+    if (!active) return;
     // Only track these specific values to avoid unnecessary re-runs
     const currentWorkspaceId = workspaceId;
 
@@ -419,17 +429,18 @@
 
   // Restore scroll position after workspace state is created
   $effect(() => {
-    if (workspaceState) {
+    if (active && workspaceState) {
       // Restore scroll position after initial load
       // Use a delay to ensure content is rendered
       // Capture reference to avoid stale closure if workspaceState becomes null
       const currentState = workspaceState;
-      setTimeout(() => {
+      const timeout = setTimeout(() => {
         // Check if the state is still valid before calling
         if (currentState) {
           currentState.restoreInitialScrollPosition();
         }
       }, 200);
+      return () => clearTimeout(timeout);
     }
   });
 
@@ -477,6 +488,7 @@
   // onboarding path), so the FE no longer performs any pending-agent
   // activation, session-storage sniffing, or drawer heuristics here.
   $effect(() => {
+    if (!active) return;
     const capturedWorkspaceId = $workspace?.id;
     if (!capturedWorkspaceId) return;
     const errorKey = `workspace:${capturedWorkspaceId}:creation-error`;
@@ -507,6 +519,7 @@
 
   // Monitor file tracking store's main panel view for commit and diff navigation
   $effect(() => {
+    if (!active) return;
     const mainPanelView = $ftMainPanelView$;
     if (mainPanelView?.type === 'commit' && mainPanelView.commit && workspaceState) {
       logger.info('[WorkspacePage] Navigating to commit view', {
@@ -564,6 +577,7 @@
   }
 
   $effect(() => {
+    if (!active) return;
     const pending = $pendingCommandPaletteAction$;
     if (!pending) return;
     if (pending.workspaceId !== workspaceId) return;
@@ -625,7 +639,7 @@
 
   usePanelShortcuts({
     get enabled() {
-      return true;
+      return active;
     },
     // Cmd+B is registered once by the global workspace shortcut router.
     onOpenAgentOverview: () => {
@@ -732,16 +746,11 @@
      Template - Using WorkspaceLayout with snippets
      ============================================================================ -->
 
-<svelte:head>
-  <title
-    >{isOnboarding || showOnboarding
-      ? m.workspace_page_newSpace_title()
-      : $workspace?.title || m.workspace_page_space_title()}</title
-  >
-</svelte:head>
 <!-- Sidebar Snippet -->
 {#snippet sidebarContent()}
-  {#if showOnboarding || isCreatingWorkspace}
+  {#if !active}
+    <div class="h-full w-full"></div>
+  {:else if showOnboarding || isCreatingWorkspace}
     <!-- Empty sidebar during onboarding and workspace creation -->
     <div class="flex items-center flex-none w-full"></div>
   {:else if !$workspace || isCreatingWorkspace}
@@ -813,6 +822,7 @@
           <PanelLayout
             workspaceId={$workspace?.id || workspaceId}
             layoutId={panelLayoutId}
+            {active}
             onCreateAgent={(panelId) => handleCreateAgent(undefined, panelId)}
             onCreateAgentWithSpecialist={handleCreateAgentWithSpecialist}
             onCreateNote={handleCreateNote}
@@ -825,23 +835,27 @@
 
 <!-- Terminal Overlay Snippet -->
 {#snippet terminalOverlayContent()}
-  <QuakeTerminalOverlay
-    workspaceId={WorkspaceId($workspace?.id || workspaceId)}
-    showDockWhenClosed={false}
-  />
+  {#if active}
+    <QuakeTerminalOverlay
+      workspaceId={WorkspaceId($workspace?.id || workspaceId)}
+      showDockWhenClosed={false}
+    />
+  {/if}
 {/snippet}
 
 <!-- Modals Snippet -->
 {#snippet modalsContent()}
-  <WorkspaceModals workspace={$workspace ?? null} showPRCreator={false} />
-  <InputDialog
-    bind:open={createFileDialogOpen}
-    title={m.workspace_page_createFile_title()}
-    description={m.workspace_page_createFile_description()}
-    placeholder={m.workspace_page_createFile_placeholder()}
-    confirmLabel={m.workspace_page_create_label()}
-    onConfirm={handleCreateFileConfirm}
-  />
+  {#if active}
+    <WorkspaceModals workspace={$workspace ?? null} showPRCreator={false} />
+    <InputDialog
+      bind:open={createFileDialogOpen}
+      title={m.workspace_page_createFile_title()}
+      description={m.workspace_page_createFile_description()}
+      placeholder={m.workspace_page_createFile_placeholder()}
+      confirmLabel={m.workspace_page_create_label()}
+      onConfirm={handleCreateFileConfirm}
+    />
+  {/if}
 {/snippet}
 
 <!-- Always render WorkspaceLayout — sidebar starts collapsed during onboarding -->
@@ -861,6 +875,7 @@
       >
         {#snippet children()}
           <WorkspaceLayout
+            {active}
             sidebar={sidebarContent}
             content={mainContent}
             terminalOverlay={terminalOverlayContent}

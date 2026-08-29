@@ -49,6 +49,7 @@
     showFocusBorder?: boolean;
     workspaceId: string;
     layoutId: string;
+    active?: boolean;
     availableCanvasWidth?: number;
     isRightmostPanel?: boolean;
     canCreateColumn?: boolean;
@@ -96,6 +97,7 @@
     showFocusBorder = false,
     workspaceId,
     layoutId,
+    active = true,
     availableCanvasWidth,
     isRightmostPanel = false,
     canCreateColumn = true,
@@ -220,7 +222,7 @@
 
   // Update cache when active tab or tab membership changes.
   $effect(() => {
-    applyTabCacheUpdate(panel.tabs, panel.activeTabId);
+    if (active) applyTabCacheUpdate(panel.tabs, panel.activeTabId);
   });
 
   // Clear focus before a content-triggered tab switch hides its cached wrapper.
@@ -237,6 +239,7 @@
   // Enforce the TTL even when the active tab does not change again. Without
   // this timer, inactive browser/editor/diff tabs can stay mounted forever.
   $effect(() => {
+    if (!active) return;
     const delay = getNextPanelTabCacheExpiryDelay(
       cachedTabIds,
       panel.activeTabId,
@@ -519,7 +522,7 @@
       {#if panel.tabs.length > 0 && activeTab}
         <!-- Render all cached tabs, showing only the active one -->
         {#each tabsToRender as tab (tab.id)}
-          {@const isActive = tab.id === panel.activeTabId}
+          {@const isActive = active && tab.id === panel.activeTabId}
           <div
             class="tab-content-wrapper h-full w-full"
             class:hidden={!isActive}

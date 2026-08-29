@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   },
   workspace: null as null | { id: string; title: string },
   dispatch: vi.fn(),
+  usePanelShortcuts: vi.fn(),
 }));
 const action = vi.hoisted(
   () => (type: string) => Object.assign((...payload: unknown[]) => ({ type, payload }), { type }),
@@ -47,7 +48,7 @@ vi.mock('./composables/workspace-page-state.svelte', () => ({
 }));
 vi.mock('./composables', () => ({
   useCloseHandlers: vi.fn(),
-  usePanelShortcuts: vi.fn(),
+  usePanelShortcuts: mocks.usePanelShortcuts,
   useTabManagement: () => ({ isInTransition: false }),
 }));
 
@@ -162,6 +163,7 @@ beforeEach(() => {
   mocks.loadState = { status: 'idle', error: null };
   mocks.workspace = null;
   mocks.dispatch.mockClear();
+  mocks.usePanelShortcuts.mockClear();
 });
 
 describe('WorkspaceSurface terminal shell boundary', () => {
@@ -293,4 +295,27 @@ describe('WorkspaceSurface session lifecycle', () => {
       expect(mocks.dispatch).not.toHaveBeenCalledWith(workspaceLoadRequested(workspaceId));
     },
   );
+
+  it('gates inactive shortcuts and active-only chrome while retaining the panel tree', () => {
+    mocks.loadState = { status: 'ready', error: null };
+    mocks.workspace = { id: 'inactive-workspace', title: 'Inactive' };
+
+    const { container } = render(WorkspaceSurface, {
+      props: { workspaceId: 'inactive-workspace', active: false },
+    });
+
+    const shortcutConfig = mocks.usePanelShortcuts.mock.calls.at(-1)?.[0] as {
+      enabled: boolean;
+    };
+    expect(shortcutConfig.enabled).toBe(false);
+    expect(
+      container
+        .querySelector('[data-workspace-surface-part="valid-panel-layout"]')
+        ?.getAttribute('data-active'),
+    ).toBe('false');
+    expect(container.querySelector('[data-workspace-surface-part="valid-sidebar"]')).toBeNull();
+    expect(container.querySelector('[data-workspace-surface-part="quake-terminal"]')).toBeNull();
+    expect(container.querySelector('[data-workspace-surface-part="modals"]')).toBeNull();
+    expect(mocks.dispatch).not.toHaveBeenCalledWith(workspaceLoadRequested('inactive-workspace'));
+  });
 });
