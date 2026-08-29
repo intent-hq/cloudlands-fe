@@ -295,7 +295,14 @@ jobs:
           # GITHUB_ENV from "Stage keychain-helper provisioning profile"
           # (only when the secret is present); when unset,
           # scripts/sign-sidecar.js signs the helper without restricted
-          # entitlements (fail-soft).
+          # entitlements (fail-soft) — except that the guardrail below
+          # overrides the fail-soft posture for this release job.
+          # Guardrail (intent-hq/intent#3848): fail the release build if the
+          # keychain helper cannot be signed with the shared cross-app group
+          # (TEAMID.dev.intentapp.backends) — a missing profile, failed
+          # entitlement extraction, or an unauthorized profile must not
+          # silently ship an alpha without keychain sync.
+          REQUIRE_SHARED_KEYCHAIN_GROUP: '1'
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: List built artifacts

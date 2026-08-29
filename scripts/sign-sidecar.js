@@ -128,6 +128,73 @@ export function resolveKeychainAccessGroups(teamId, profileGroups) {
 }
 
 /**
+ * Parse the element count plutil prints when `-extract <keypath> raw` targets
+ * an array (raw mode prints an array's length, not its contents).
+ *
+ * @param {string} stdout - plutil raw-mode output
+ * @returns {number|null} the non-negative element count, or null when the
+ *   output is not a plain integer
+ */
+export function parsePlutilRawArrayLength(stdout) {
+  const trimmed = String(stdout ?? '').trim();
+  if (!/^\d+$/.test(trimmed)) return null;
+  return Number.parseInt(trimmed, 10);
+}
+
+/**
+ * Pull the `keychain-access-groups` string values out of an XML plist (the
+ * decoded provisioning profile converted with `plutil -convert xml1 -o -`).
+ * Pure text parsing — independent of plutil's json/raw extraction modes.
+ *
+ * @param {string} xml - XML plist source
+ * @returns {string[]|null} the group strings, or null when no
+ *   keychain-access-groups array is present
+ */
+export function parseKeychainAccessGroupsFromXml(xml) {
+  const arrayMatch = String(xml ?? '').match(
+    /<key>keychain-access-groups<\/key>\s*<array>([\s\S]*?)<\/array>/,
+  );
+  if (!arrayMatch) return null;
+  const groups = [];
+  const stringRe = /<string>([^<]*)<\/string>/g;
+  let entry;
+  while ((entry = stringRe.exec(arrayMatch[1])) !== null) {
+    const value = entry[1]
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/&quot;/g, '"')
+      .replace(/&apos;/g, "'")
+      .replace(/&amp;/g, '&')
+      .trim();
+    if (value) groups.push(value);
+  }
+  return groups;
+}
+
+/**
+ * Guardrail decision: when REQUIRE_SHARED_KEYCHAIN_GROUP=1 the build must
+ * fail unless the resolved entitlements include the shared cross-app group
+ * (`TEAMID.dev.intentapp.backends`) — otherwise a release silently ships a
+ * helper without keychain sync (intent-hq/intent#3848).
+ *
+ * @param {string} teamId - 10-char Apple team ID
+ * @param {string[]} accessGroups - groups from resolveKeychainAccessGroups
+ * @param {string|undefined} requireFlag - value of REQUIRE_SHARED_KEYCHAIN_GROUP
+ * @returns {string|null} an error message when the build must fail, else null
+ */
+export function sharedKeychainGroupGuardrailError(teamId, accessGroups, requireFlag) {
+  if (requireFlag !== '1') return null;
+  const sharedGroup = `${teamId}.${SHARED_KEYCHAIN_GROUP_SUFFIX}`;
+  if (Array.isArray(accessGroups) && accessGroups.includes(sharedGroup)) return null;
+  return (
+    `REQUIRE_SHARED_KEYCHAIN_GROUP=1 but the resolved keychain-access-groups ` +
+    `${JSON.stringify(accessGroups)} do not include the shared group ${sharedGroup}. ` +
+    'Either the provisioning profile does not authorize it or extraction failed ' +
+    '(see the warnings above) — refusing to ship a helper without keychain sync.'
+  );
+}
+
+/**
  * Render the helper's entitlements plist for the given team + access groups.
  *
  * @param {string} teamId - 10-char Apple team ID
@@ -154,6 +221,109 @@ ${groupEntries}
 </dict>
 </plist>
 `;
+}
+
+/**
+ * Log a failed extraction attempt with the real underlying error (message +
+ * any stderr the tool produced) so CI failures are diagnosable from the logs.
+ *
+ * @param {string} label - which extraction strategy failed
+ * @param {unknown} error - the thrown error (execFile errors carry .stderr)
+ */
+function logExtractionFailure(label, error) {
+  const message = error instanceof Error ? error.message : String(error);
+  console.warn(`  ${label} failed: ${message}`);
+  const stderr = error && typeof error === 'object' && 'stderr' in error ? error.stderr : '';
+  if (stderr && String(stderr).trim()) {
+    console.warn(`  stderr: ${String(stderr).trim()}`);
+  }
+}
+
+/**
+ * Read the keychain-access-groups the decoded provisioning profile authorizes.
+ *
+ * plutil's json-mode array extraction has failed on hosted macos-15 runners
+ * against bytes that extract fine on developer Macs (intent-hq/intent#3848),
+ * so this tries three independent strategies in order:
+ *   1. `plutil -extract Entitlements.keychain-access-groups json`
+ *   2. raw mode per element (raw on an array prints its element count, then
+ *      `Entitlements.keychain-access-groups.N raw` reads each entry) — raw
+ *      extraction is the mode that keeps working on the runner (TeamIdentifier)
+ *   3. `plutil -convert xml1 -o -` on the whole profile, parsed for the
+ *      <string> values under the keychain-access-groups key
+ * Every failed attempt logs the real error; null means all three failed.
+ *
+ * @param {string} decodedProfile - path to the decoded profile plist
+ * @returns {Promise<string[]|null>} the authorized groups, or null
+ */
+async function extractProfileKeychainGroups(decodedProfile) {
+  const keypath = 'Entitlements.keychain-access-groups';
+
+  try {
+    const { stdout: groupsJson } = await execFileAsync('plutil', [
+      '-extract',
+      keypath,
+      'json',
+      '-o',
+      '-',
+      decodedProfile,
+    ]);
+    const parsed = JSON.parse(groupsJson);
+    if (!Array.isArray(parsed)) {
+      throw new Error(`json extraction returned a non-array: ${groupsJson.trim()}`);
+    }
+    return parsed.filter((g) => typeof g === 'string');
+  } catch (error) {
+    logExtractionFailure(`plutil -extract ${keypath} json`, error);
+  }
+
+  try {
+    const { stdout: countRaw } = await execFileAsync('plutil', [
+      '-extract',
+      keypath,
+      'raw',
+      '-o',
+      '-',
+      decodedProfile,
+    ]);
+    const count = parsePlutilRawArrayLength(countRaw);
+    if (count === null) {
+      throw new Error(`raw extraction printed "${countRaw.trim()}" instead of an element count`);
+    }
+    const groups = [];
+    for (let i = 0; i < count; i++) {
+      const { stdout } = await execFileAsync('plutil', [
+        '-extract',
+        `${keypath}.${i}`,
+        'raw',
+        '-o',
+        '-',
+        decodedProfile,
+      ]);
+      const value = stdout.trim();
+      if (value) groups.push(value);
+    }
+    return groups;
+  } catch (error) {
+    logExtractionFailure(`plutil -extract ${keypath} raw (per element)`, error);
+  }
+
+  try {
+    const { stdout: xml } = await execFileAsync(
+      'plutil',
+      ['-convert', 'xml1', '-o', '-', decodedProfile],
+      { maxBuffer: 16 * 1024 * 1024 },
+    );
+    const groups = parseKeychainAccessGroupsFromXml(xml);
+    if (groups === null) {
+      throw new Error('no keychain-access-groups array found in the xml1 output');
+    }
+    return groups;
+  } catch (error) {
+    logExtractionFailure('plutil -convert xml1 + XML parse', error);
+  }
+
+  return null;
 }
 
 /**
@@ -186,6 +356,13 @@ async function signKeychainHelper(bundlePath, identity) {
     if (profilePath) {
       console.warn(`  KEYCHAIN_HELPER_PROVISIONING_PROFILE not found at ${profilePath}`);
     }
+    if (process.env.REQUIRE_SHARED_KEYCHAIN_GROUP === '1') {
+      throw new Error(
+        'REQUIRE_SHARED_KEYCHAIN_GROUP=1 but no keychain-helper provisioning profile is ' +
+          'available (KEYCHAIN_HELPER_PROVISIONING_PROFILE unset or missing) — refusing to ' +
+          'ship a helper without keychain sync.',
+      );
+    }
     console.log(
       '  No keychain-helper provisioning profile — signing without restricted entitlements ' +
         '(keychain sync will report "unavailable" at runtime).',
@@ -214,31 +391,23 @@ async function signKeychainHelper(bundlePath, identity) {
     ]);
     const teamId = teamRaw.trim();
     if (!/^[A-Z0-9]{10}$/.test(teamId)) {
-      throw new Error(`Could not extract a team ID from the provisioning profile (got "${teamId}")`);
+      throw new Error(
+        `Could not extract a team ID from the provisioning profile (got "${teamId}")`,
+      );
     }
 
     // The shared cross-app group is included only when the profile authorizes
     // it (see resolveKeychainAccessGroups) — signing with an unauthorized
     // group would fail, so an older profile keeps today's single-group setup.
-    let profileGroups = [];
-    try {
-      const { stdout: groupsJson } = await execFileAsync('plutil', [
-        '-extract',
-        'Entitlements.keychain-access-groups',
-        'json',
-        '-o',
-        '-',
-        decodedProfile,
-      ]);
-      const parsed = JSON.parse(groupsJson);
-      if (Array.isArray(parsed)) profileGroups = parsed.filter((g) => typeof g === 'string');
-    } catch {
+    const profileGroups = await extractProfileKeychainGroups(decodedProfile);
+    if (profileGroups === null) {
       console.warn(
-        '  Could not read keychain-access-groups from the profile — ' +
-          'signing with the default app-identifier group only.',
+        '  Could not read keychain-access-groups from the profile (all extraction ' +
+          'strategies failed, see errors above) — signing with the default ' +
+          'app-identifier group only.',
       );
     }
-    const accessGroups = resolveKeychainAccessGroups(teamId, profileGroups);
+    const accessGroups = resolveKeychainAccessGroups(teamId, profileGroups ?? []);
     if (accessGroups.length > 1) {
       console.log(`  Profile authorizes the shared keychain group: ${accessGroups[1]}`);
     } else {
@@ -246,6 +415,14 @@ async function signKeychainHelper(bundlePath, identity) {
         '  Profile does not authorize the shared keychain group — ' +
           'helper will keep using the default group.',
       );
+    }
+    const guardrailError = sharedKeychainGroupGuardrailError(
+      teamId,
+      accessGroups,
+      process.env.REQUIRE_SHARED_KEYCHAIN_GROUP,
+    );
+    if (guardrailError) {
+      throw new Error(guardrailError);
     }
 
     const entitlementsPath = path.join(tmpDir, 'entitlements.plist');
@@ -363,6 +540,11 @@ async function signSidecar(context) {
     // when KEYCHAIN_HELPER_PROVISIONING_PROFILE is set).
     if (fs.existsSync(keychainHelperBundlePath)) {
       await signKeychainHelper(keychainHelperBundlePath, identity);
+    } else if (process.env.REQUIRE_SHARED_KEYCHAIN_GROUP === '1') {
+      throw new Error(
+        `REQUIRE_SHARED_KEYCHAIN_GROUP=1 but the keychain sync helper bundle is missing at ` +
+          `${keychainHelperBundlePath} — refusing to ship without keychain sync.`,
+      );
     }
 
     console.log('=== Sidecar signing complete ===');
