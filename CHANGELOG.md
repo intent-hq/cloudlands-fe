@@ -4,6 +4,25 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.110.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.109.0...v2.110.0) (2026-08-29)
+
+
+### 🚀 Features
+
+* animate response-group close and child swap during streaming ([#1866](https://github.com/intent-hq/cloudlands-fe/issues/1866)) ([24e62be](https://github.com/intent-hq/cloudlands-fe/commit/24e62be9e4204fef9f570dd83ce7db98cd442f92))
+* behind-pin update indicator and pretty device names on the Devices page ([#1862](https://github.com/intent-hq/cloudlands-fe/issues/1862)) ([d4ffd69](https://github.com/intent-hq/cloudlands-fe/commit/d4ffd69bacf002929463e7920c1b2ef76b96246b))
+* **chat:** square image thumbnails with ellipsis actions menu ([#1864](https://github.com/intent-hq/cloudlands-fe/issues/1864)) ([01f452a](https://github.com/intent-hq/cloudlands-fe/commit/01f452a75bdeefb01e7d601492e48eeb0d51fcb8))
+* list actual app windows per backend in the Window menu ([#1861](https://github.com/intent-hq/cloudlands-fe/issues/1861)) ([5124d7a](https://github.com/intent-hq/cloudlands-fe/commit/5124d7ab18c9e9c27cc29eabc4335feabb74474b))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.8.18 ([#1863](https://github.com/intent-hq/cloudlands-fe/issues/1863)) ([41c6a88](https://github.com/intent-hq/cloudlands-fe/commit/41c6a882c4274852468426ab9943f4cf1f17bcc5))
+* bump intentd sidecar to v0.8.19 ([#1868](https://github.com/intent-hq/cloudlands-fe/issues/1868)) ([ec9cd65](https://github.com/intent-hq/cloudlands-fe/commit/ec9cd6591fb2b042fa8083e85f01a4500b83e133))
+* capture QuestionWizard draftKey at init so teardown never reads null pendingQuestions ([#1857](https://github.com/intent-hq/cloudlands-fe/issues/1857)) ([09124f8](https://github.com/intent-hq/cloudlands-fe/commit/09124f8ec5517c8183d3d381e9d5f7516ab106a4))
+* harden keychain-access-groups extraction and guard shared-group signing ([#1865](https://github.com/intent-hq/cloudlands-fe/issues/1865)) ([5a22275](https://github.com/intent-hq/cloudlands-fe/commit/5a2227574bdaf96b387df522a19748916797394b))
+* surface hardware console open failures and auto-retry with macOS Input Monitoring guidance ([#1867](https://github.com/intent-hq/cloudlands-fe/issues/1867)) ([29daaca](https://github.com/intent-hq/cloudlands-fe/commit/29daaca4466335c4606f0ea1cc97089a2f7e8615))
+
 ## [2.109.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.108.0...v2.109.0) (2026-08-29)
 
 
