@@ -4,6 +4,24 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.109.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.108.0...v2.109.0) (2026-08-29)
+
+
+### 🚀 Features
+
+* **hud:** route aligned takeover edges straight through empty cells ([#1856](https://github.com/intent-hq/cloudlands-fe/issues/1856)) ([963df70](https://github.com/intent-hq/cloudlands-fe/commit/963df706c1a5a280276db540bdccdbc9081762b7))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.8.17 ([#1859](https://github.com/intent-hq/cloudlands-fe/issues/1859)) ([42f1832](https://github.com/intent-hq/cloudlands-fe/commit/42f1832f789127b2d3609703fbdd345e646659f7))
+
+
+### ⚡ Performance
+
+* **agent-avatar:** apply resize-observed stack width on a later frame ([#1854](https://github.com/intent-hq/cloudlands-fe/issues/1854)) ([4f5a0ca](https://github.com/intent-hq/cloudlands-fe/commit/4f5a0cad346168253af7da4c2e9073530cf9db75))
+* **smart-scroll:** defer observer-driven layout work to a coalesced frame ([#1855](https://github.com/intent-hq/cloudlands-fe/issues/1855)) ([9ad0a18](https://github.com/intent-hq/cloudlands-fe/commit/9ad0a18e0b62b0320d2eda670589dc2afc015442))
+
 ## [2.108.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.107.0...v2.108.0) (2026-08-29)
 
 
