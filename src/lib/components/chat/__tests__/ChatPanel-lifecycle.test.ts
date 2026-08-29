@@ -36,6 +36,9 @@ const mocks = vi.hoisted(() => {
     draftGet: vi.fn(),
     draftSet: vi.fn(),
     draftClear: vi.fn(),
+    invoke: vi.fn().mockResolvedValue(null),
+    listenSync: vi.fn(),
+    ipcListenerCleanups: [] as Array<ReturnType<typeof vi.fn>>,
     chatDrafts: {} as Record<string, string>,
     resizeObserve: vi.fn(),
     resizeDisconnect: vi.fn(),
@@ -65,6 +68,7 @@ const mocks = vi.hoisted(() => {
     dividerSessionValue: { anchorId: null } as { anchorId: string | null } | null,
     prefersReducedMotion: false,
     followBottomOptions: null as {
+      enabled?: boolean;
       follow: boolean;
       onFollowChange?: (follow: boolean) => void;
     } | null,
@@ -217,13 +221,24 @@ vi.mock('$lib/utils/smartScroll', () => ({
         isFollowing: options.follow,
       });
     };
-    node.addEventListener('scroll', report);
-    report();
+    let listening = false;
+    const sync = () => {
+      if (options.enabled === false && listening) {
+        node.removeEventListener('scroll', report);
+        listening = false;
+      } else if (options.enabled !== false && !listening) {
+        node.addEventListener('scroll', report);
+        listening = true;
+        report();
+      }
+    };
+    sync();
     return {
       update: (next: typeof initial) => {
         options = next;
         mocks.followBottomOptions = next;
-        report();
+        sync();
+        if (listening) report();
       },
       destroy: () => node.removeEventListener('scroll', report),
     };
@@ -267,8 +282,8 @@ vi.mock('$lib/utils/client-logger', () => ({
   createLogger: () => ({ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() }),
 }));
 vi.mock('$lib/electron-bridge', () => ({
-  invoke: vi.fn().mockResolvedValue(null),
-  listenSync: vi.fn(() => () => {}),
+  invoke: mocks.invoke,
+  listenSync: mocks.listenSync,
 }));
 vi.mock('$features/agent/services/consolidated-backend.service', () => ({
   unifiedOrchestrator: { editQueuedMessage: vi.fn() },
@@ -430,6 +445,12 @@ beforeEach(() => {
     dispatchEvent: vi.fn(),
   }));
   vi.clearAllMocks();
+  mocks.ipcListenerCleanups = [];
+  mocks.listenSync.mockImplementation(() => {
+    const cleanupListener = vi.fn();
+    mocks.ipcListenerCleanups.push(cleanupListener);
+    return cleanupListener;
+  });
   clearDraftCacheForTests();
   clearChatScrollCacheForTests();
   mocks.draftSet.mockResolvedValue({ ok: true, updatedAt: '2026-01-01T00:00:00.000Z' });
@@ -1294,9 +1315,49 @@ describe('ChatPanel mounted lifecycle', () => {
     view.unmount();
     flushFrame();
 
-    expect(mocks.resizeConstructor).toHaveBeenCalledOnce();
-    expect(mocks.resizeDisconnect).toHaveBeenCalledOnce();
+    expect(mocks.resizeConstructor).not.toHaveBeenCalled();
+    expect(mocks.resizeDisconnect).not.toHaveBeenCalled();
     expect(frames).toHaveLength(0);
+  });
+
+  it('detaches IPC, observer, and scroll-action lifecycles while inactive and restores them', async () => {
+    mocks.draftGet.mockResolvedValue(null);
+    const currentWorkspace = workspace('workspace-a');
+    const view = render(ChatPanel, {
+      props: { workspace: currentWorkspace, agentId: 'agent-a', isActive: true },
+    });
+    await tick();
+
+    expect(mocks.listenSync).toHaveBeenCalledTimes(3);
+    expect(mocks.followBottomOptions?.enabled).toBe(true);
+
+    flushFrame();
+    const transcript = screen.getByTestId('chat-transcript-scroll-viewport');
+    const sizeObserverCallback = mocks.resizeConstructor.mock.calls[0]?.[0] as
+      ResizeObserverCallback | undefined;
+    sizeObserverCallback?.(
+      [{ target: transcript, contentRect: { height: 600 } }] as unknown as ResizeObserverEntry[],
+      {} as ResizeObserver,
+    );
+    await tick();
+    expect(mocks.pinnedPromptOptions?.enabled).toBe(true);
+
+    const disconnectsBeforeDeactivate = mocks.resizeDisconnect.mock.calls.length;
+    await view.rerender({ workspace: currentWorkspace, agentId: 'agent-a', isActive: false });
+    await tick();
+
+    expect(mocks.ipcListenerCleanups).toHaveLength(3);
+    expect(
+      mocks.ipcListenerCleanups.every((cleanupListener) => cleanupListener.mock.calls.length === 1),
+    ).toBe(true);
+    expect(mocks.followBottomOptions?.enabled).toBe(false);
+    expect(mocks.pinnedPromptOptions?.enabled).toBe(false);
+    expect(mocks.resizeDisconnect.mock.calls.length).toBeGreaterThan(disconnectsBeforeDeactivate);
+
+    await view.rerender({ workspace: currentWorkspace, agentId: 'agent-a', isActive: true });
+    await tick();
+    expect(mocks.listenSync).toHaveBeenCalledTimes(6);
+    expect(mocks.followBottomOptions?.enabled).toBe(true);
   });
 
   it('does not render the moved bottom control inside the transcript', async () => {
@@ -1511,7 +1572,7 @@ describe('ChatPanel mounted lifecycle', () => {
     // Scroll authority + read-only pinned-prompt tracker + older-history
     // scrollback trigger.
     expect(removeListener.mock.calls.filter(([type]) => type === 'scroll')).toHaveLength(3);
-    expect(mocks.resizeDisconnect).toHaveBeenCalledTimes(2);
+    expect(mocks.resizeDisconnect).toHaveBeenCalledOnce();
     expect(frames).toHaveLength(0);
   });
 

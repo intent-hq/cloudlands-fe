@@ -1834,7 +1834,7 @@
 
   function maybeRequestOlderHistory() {
     const container = scrollContainer;
-    if (!container || !workspace?.id || !agentId) return;
+    if (!isActive || !container || !workspace?.id || !agentId) return;
     // A far-flick seek owns the transcript while in flight / landing: its
     // landing REPLACES the segment, so no serial page may race it.
     if ($fetchingHistorySeek$ || seekLandingPending) return;
@@ -2475,6 +2475,11 @@
   let wasFetchingOlderHistory = false;
   $effect(() => {
     const fetching = $fetchingOlderHistory$;
+    if (!isActive) {
+      wasFetchingOlderHistory = fetching;
+      olderHistoryChainEvaluationPending = false;
+      return;
+    }
     const settled = wasFetchingOlderHistory && !fetching;
     wasFetchingOlderHistory = fetching;
     // The pending flag is raised BEFORE the indicator sync so the settle
@@ -2486,7 +2491,7 @@
       requestAnimationFrame(() => {
         requestAnimationFrame(() => {
           olderHistoryChainEvaluationPending = false;
-          if (isComponentDestroyed) return;
+          if (!isActive || isComponentDestroyed) return;
           if (scrollContainer) maybeRequestOlderHistory();
           // The saga raises the fetching flag synchronously on dispatch, so
           // this read distinguishes "chain continued" (stay visible) from
@@ -2498,7 +2503,7 @@
   });
 
   function requestHistoryGapFill() {
-    if (!workspace?.id || !agentId) return;
+    if (!isActive || !workspace?.id || !agentId) return;
     if ($fetchingGapFill$ || !$historySegmentMeta$.gapToTail) return;
     // Never race a settling seek (mirror of maybeRequestOlderHistory): the
     // seek REPLACES the segment, so a gap page anchored at the pre-seek
@@ -2519,13 +2524,17 @@
   let wasFetchingGapFill = false;
   $effect(() => {
     const fetching = $fetchingGapFill$;
+    if (!isActive) {
+      wasFetchingGapFill = fetching;
+      return;
+    }
     const settled = wasFetchingGapFill && !fetching;
     wasFetchingGapFill = fetching;
     if (!settled) return;
     tick().then(() => {
       requestAnimationFrame(() => {
         requestAnimationFrame(() => {
-          if (isComponentDestroyed || !scrollContainer) return;
+          if (!isActive || isComponentDestroyed || !scrollContainer) return;
           if (maybeCollapseHistorySegmentAtTail()) return;
           if (viewportOverlapsBelowSpacer()) requestHistoryGapFill();
         });
@@ -2539,7 +2548,7 @@
   $effect(() => {
     const sentinel = historyGapSentinel;
     const root = scrollContainer;
-    if (!sentinel || !root) return;
+    if (!isActive || !sentinel || !root) return;
     const observer = new IntersectionObserver(
       (entries) => {
         if (entries.some((entry) => entry.isIntersecting)) requestHistoryGapFill();
@@ -2558,6 +2567,10 @@
   let anchoredHistoryLength = -1;
   $effect.pre(() => {
     const historyLength = $agentHistoryMessages$.length;
+    if (!isActive) {
+      anchoredHistoryLength = historyLength;
+      return;
+    }
     if (historyLength === anchoredHistoryLength) return;
     const isFirstRun = anchoredHistoryLength === -1;
     anchoredHistoryLength = historyLength;
@@ -2570,7 +2583,7 @@
     const anchor = captureScrollAnchor(container);
     tick().then(() => {
       requestAnimationFrame(() => {
-        if (isComponentDestroyed || !scrollContainer) return;
+        if (!isActive || isComponentDestroyed || !scrollContainer) return;
         restoreScrollAnchor(scrollContainer, anchor);
       });
     });
@@ -2915,10 +2928,13 @@
   let autoCommitStatuses = $state<CommitStatus[]>([]);
 
   function refreshAutoCommitStatuses() {
-    if (!agentId) return;
-    invoke<{ success: boolean; data: CommitStatus[] }>('git:get-auto-commit-status', { agentId })
+    const requestedAgentId = agentId;
+    if (!isActive || !requestedAgentId) return;
+    invoke<{ success: boolean; data: CommitStatus[] }>('git:get-auto-commit-status', {
+      agentId: requestedAgentId,
+    })
       .then((response) => {
-        if (response?.success && response.data) {
+        if (isActive && requestedAgentId === agentId && response?.success && response.data) {
           autoCommitStatuses = response.data;
         }
       })
@@ -2930,11 +2946,13 @@
   // Fetch on mount / when agentId changes
   $effect(() => {
     void agentId;
+    if (!isActive) return;
     refreshAutoCommitStatuses();
   });
 
   // Listen for real-time auto-commit events (3 listeners total, not per-turn)
   $effect(() => {
+    if (!isActive) return;
     const cleanupStarted = listenSync<{ agentId: string }>('git:auto-commit-started', (event) => {
       const data = event.payload || event;
       if (data.agentId === agentId) refreshAutoCommitStatuses();
@@ -3204,7 +3222,7 @@
     block: 'start' | 'center' | 'end' = 'center',
     duration: number = 150,
   ) {
-    if (!scrollContainer) return;
+    if (!isActive || !scrollContainer) return;
 
     const containerRect = scrollContainer.getBoundingClientRect();
     const elementRect = element.getBoundingClientRect();
@@ -3231,14 +3249,15 @@
       scrollContainer.scrollTop = targetScrollTop;
       return;
     }
-    animateScrollTo(() => scrollContainer, targetScrollTop, duration);
+    animateScrollTo(() => (isActive ? scrollContainer : null), targetScrollTop, duration);
   }
 
   /**
    * Smoothly scroll to a specific position with 150ms animation.
    */
   function smoothScrollToPosition(top: number, duration: number = 150) {
-    animateScrollTo(() => scrollContainer, top, duration);
+    if (!isActive) return;
+    animateScrollTo(() => (isActive ? scrollContainer : null), top, duration);
   }
 
   // Navigate to a specific message by index
@@ -3610,6 +3629,11 @@
     window.addEventListener('wheel', clear, true);
     clearDeepOpenHighlight = clear;
   }
+
+  $effect(() => {
+    if (isActive) return;
+    untrack(() => clearDeepOpenHighlight?.());
+  });
 
   async function handleOpenMessage(event: Event) {
     const detail = (event as CustomEvent).detail as
@@ -4478,10 +4502,12 @@
   }
 
   export function scrollToTop() {
+    if (!isActive) return;
     smoothScrollToPosition(0);
   }
 
   export function scrollToBottom() {
+    if (!isActive) return;
     const container = scrollContainer;
     if (!container) return;
     if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
@@ -4491,11 +4517,11 @@
     }
     shouldFollowBottom = false;
     animateScrollTo(
-      () => (scrollContainer === container ? container : null),
+      () => (isActive && scrollContainer === container ? container : null),
       Math.max(0, container.scrollHeight - container.clientHeight),
       150,
       () => {
-        if (scrollContainer !== container) return;
+        if (!isActive || scrollContainer !== container) return;
         shouldFollowBottom = true;
         followToBottom(container);
       },
@@ -4752,10 +4778,11 @@
     <div
       bind:this={scrollContainer}
       use:trackPinnedPrompt={{
-        enabled: containerHeight >= 400,
+        enabled: isActive && containerHeight >= 400,
         onChange: setPinnedPrompt,
       }}
       use:followBottom={{
+        enabled: isActive,
         // While search is open we drive our own programmatic scrolls (to the
         // current match), so we drop `follow` to keep the mutation/resize
         // observers from yanking the viewport to the bottom when a LazyTurn

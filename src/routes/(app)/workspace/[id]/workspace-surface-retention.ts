@@ -31,7 +31,8 @@ export function reconcileWorkspaceSurfaces(
   const continuesCreationSurface =
     state.activeWorkspaceId !== null &&
     isCreationWorkspaceId(state.activeWorkspaceId) &&
-    state.activeWorkspaceId !== activeWorkspaceId;
+    state.activeWorkspaceId !== activeWorkspaceId &&
+    !state.surfaces.some((surface) => surface.workspaceId === activeWorkspaceId);
   let surfaces = state.surfaces
     .map((surface) =>
       continuesCreationSurface && surface.workspaceId === state.activeWorkspaceId

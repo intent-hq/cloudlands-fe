@@ -1,7 +1,11 @@
 /** @vitest-environment jsdom */
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { AgentMessage } from '$shared/types';
-import { attachPinnedPromptMessage, createPinnedPromptController } from '../pinned-prompt';
+import {
+  attachPinnedPromptMessage,
+  createPinnedPromptController,
+  trackPinnedPrompt,
+} from '../pinned-prompt';
 import { measureScrollbarGutterWidth } from '../scrollbar-gutter';
 
 function message(id: string): AgentMessage {
@@ -92,6 +96,58 @@ describe('pinned prompt controller', () => {
     container.prepend(earlier);
 
     expect(controller.update(container, true)?.id).toBe('current');
+  });
+});
+
+describe('pinned prompt tracker lifecycle', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  it('disconnects and restores listeners and observers when disabled', () => {
+    const resizeDisconnect = vi.fn();
+    const mutationDisconnect = vi.fn();
+    const resizeConstructed = vi.fn();
+    const mutationConstructed = vi.fn();
+    vi.stubGlobal(
+      'requestAnimationFrame',
+      vi.fn(() => 1),
+    );
+    vi.stubGlobal('cancelAnimationFrame', vi.fn());
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        constructor() {
+          resizeConstructed();
+        }
+        observe() {}
+        disconnect = resizeDisconnect;
+      },
+    );
+    vi.stubGlobal(
+      'MutationObserver',
+      class {
+        constructor() {
+          mutationConstructed();
+        }
+        observe() {}
+        disconnect = mutationDisconnect;
+      },
+    );
+    const container = document.createElement('div');
+    const removeListener = vi.spyOn(container, 'removeEventListener');
+    const action = trackPinnedPrompt(container, { enabled: true, onChange: vi.fn() });
+
+    action.update({ enabled: false, onChange: vi.fn() });
+    expect(resizeDisconnect).toHaveBeenCalledOnce();
+    expect(mutationDisconnect).toHaveBeenCalledOnce();
+    expect(removeListener).toHaveBeenCalledWith('scroll', expect.any(Function));
+
+    action.update({ enabled: true, onChange: vi.fn() });
+    expect(resizeConstructed).toHaveBeenCalledTimes(2);
+    expect(mutationConstructed).toHaveBeenCalledTimes(2);
+    action.destroy();
   });
 });
 

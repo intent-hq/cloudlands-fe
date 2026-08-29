@@ -79,6 +79,17 @@ describe('workspace surface retention', () => {
     expect(generation(state, 'workspace-a')).toBe(generationBeforeHandoff);
   });
 
+  it('drops a creation surface instead of duplicating an already-retained destination', () => {
+    let state = createWorkspaceSurfaceRetentionState();
+    state = reconcileWorkspaceSurfaces(state, input('workspace-a'));
+    const retainedGeneration = generation(state, 'workspace-a');
+    state = reconcileWorkspaceSurfaces(state, input('new'));
+    state = reconcileWorkspaceSurfaces(state, input('workspace-a'));
+
+    expect(state.surfaces.map(({ workspaceId }) => workspaceId)).toEqual(['workspace-a']);
+    expect(generation(state, 'workspace-a')).toBe(retainedGeneration);
+  });
+
   it('hides and inerts inactive content, releases focus, and preserves the retained DOM', async () => {
     const view = render(RetentionHarness, {
       props: input('workspace-a'),
