@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/experimental-ct-svelte';
 import ReasoningHistoryGeometryHost from './ReasoningHistoryGeometryHost.svelte';
 
-test('removes only the unintended gap between adjacent reasoning history blocks', async ({
+test('preserves nested reasoning section seams and operational row adjacency', async ({
   mount,
   page,
 }) => {
@@ -25,8 +25,8 @@ test('removes only the unintended gap between adjacent reasoning history blocks'
     }),
   );
   expect(geometry.map(({ type }) => type)).toEqual(['text', 'thinking', 'thinking', 'tool_use']);
-  expect(geometry[1].paddingTop).toBe('16px');
-  expect(geometry[2].paddingTop).toBe('0px');
+  expect(geometry[1].paddingTop).toBe('24px');
+  expect(geometry[2].paddingTop).toBe('24px');
 
   const titles = fixture.getByTestId('reasoning-history-title');
   await expect(titles).toHaveCount(4);
@@ -46,9 +46,9 @@ test('removes only the unintended gap between adjacent reasoning history blocks'
       children.nth(0).boundingBox(),
       children.nth(1).boundingBox(),
     ]);
-  expect(firstHistoryRowBox!.y - (descriptionBox!.y + descriptionBox!.height)).toBeCloseTo(16, 1);
+  expect(firstHistoryRowBox!.y - (descriptionBox!.y + descriptionBox!.height)).toBeCloseTo(24, 1);
   expect(secondHistoryFirstRowBox!.y - (firstHistoryBox!.y + firstHistoryBox!.height)).toBeCloseTo(
-    0,
+    24,
     1,
   );
   const secondHistory = children.nth(2);
