@@ -1,13 +1,15 @@
 import type { SagaGenerator } from 'typed-redux-saga';
-import { call, cancel, fork, join, put, take } from 'typed-redux-saga';
-import type { Task } from 'redux-saga';
+import { call, fork, join, put, takeEvery } from 'typed-redux-saga';
 
 import { gitClient } from '$features/git/git.client';
 import { appClient } from '$lib/client';
 import { createLogger } from '$lib/utils/client-logger';
 import type { CommitFile } from '$features/file-tracking/types';
 import type { CommitInfo, GitStatus, WorkspaceId } from '$shared/types';
-import { takeSingleFlightInContext } from '../../../utils/context-saga-effects';
+import {
+  takeLatestInContext,
+  takeSingleFlightInContext,
+} from '../../../utils/context-saga-effects';
 import { workspaceUnmounted } from '../../workspace-lifecycle/workspace-lifecycle-slice';
 import {
   loadGitStatus,
@@ -93,9 +95,11 @@ async function readSecondaryRoot(
 }
 
 function* loadSecondaryRootWorker(
+  versions: SecondaryRootReadVersions,
   action: ReturnType<typeof loadSecondaryRootGit>,
 ): SagaGenerator<void> {
   const [workspaceId, gitRootId, registeredCommitSha, limit = 30] = action.payload;
+  const workspaceVersion = versions.workspaces.get(workspaceId) ?? 0;
   yield* put(setSecondaryRootGitLoading(workspaceId, gitRootId));
   try {
     const data = yield* call(
@@ -105,8 +109,10 @@ function* loadSecondaryRootWorker(
       registeredCommitSha,
       limit,
     );
+    if ((versions.workspaces.get(workspaceId) ?? 0) !== workspaceVersion) return;
     yield* put(setSecondaryRootGit(workspaceId, gitRootId, data));
   } catch (error) {
+    if ((versions.workspaces.get(workspaceId) ?? 0) !== workspaceVersion) return;
     logger.error('Failed to load secondary Git root', error);
     yield* put(
       setSecondaryRootGitError(
@@ -119,9 +125,13 @@ function* loadSecondaryRootWorker(
 }
 
 function* loadSecondaryRootCommitFilesWorker(
+  versions: SecondaryRootReadVersions,
   action: ReturnType<typeof loadSecondaryRootCommitFiles>,
 ): SagaGenerator<void> {
   const [workspaceId, gitRootId, commitHash] = action.payload;
+  const workspaceVersion = versions.workspaces.get(workspaceId) ?? 0;
+  const rootKey = secondaryRootContext(action);
+  const rootVersion = versions.roots.get(rootKey) ?? 0;
   try {
     const detail = yield* call(
       [appClient.git, appClient.git.commitDetails],
@@ -130,6 +140,11 @@ function* loadSecondaryRootCommitFilesWorker(
       { gitRootId },
     );
     if (!detail) return;
+    if (
+      (versions.workspaces.get(workspaceId) ?? 0) !== workspaceVersion ||
+      (versions.roots.get(rootKey) ?? 0) !== rootVersion
+    )
+      return;
     const files: CommitFile[] =
       detail.fileDetails.length > 0
         ? detail.fileDetails
@@ -140,59 +155,38 @@ function* loadSecondaryRootCommitFilesWorker(
   }
 }
 
-function* watchSecondaryRootReads(): SagaGenerator<never> {
-  const tasks = new Map<string, Task>();
-  while (true) {
-    const action:
-      | ReturnType<typeof loadSecondaryRootGit>
-      | ReturnType<typeof loadSecondaryRootCommitFiles>
-      | ReturnType<typeof workspaceUnmounted> = yield* take([
-      loadSecondaryRootGit,
-      loadSecondaryRootCommitFiles,
-      workspaceUnmounted,
-    ]);
-    const workspaceId = action.payload[0];
-    if (action.type === workspaceUnmounted.type) {
-      for (const [key, task] of tasks) {
-        if (!key.startsWith(`${workspaceId}:`)) continue;
-        tasks.delete(key);
-        if (task.isRunning()) yield* cancel(task);
-      }
-      continue;
-    }
-    const rootAction = action as
-      | ReturnType<typeof loadSecondaryRootGit>
-      | ReturnType<typeof loadSecondaryRootCommitFiles>;
-    const rootId = action.payload[1];
-    const key =
-      action.type === loadSecondaryRootCommitFiles.type
-        ? `${workspaceId}:${rootId}:${action.payload[2]}`
-        : `${workspaceId}:${rootId}`;
-    if (action.type === loadSecondaryRootGit.type) {
-      for (const [runningKey, runningTask] of tasks) {
-        if (runningKey !== key && !runningKey.startsWith(`${key}:`)) continue;
-        tasks.delete(runningKey);
-        if (runningTask.isRunning()) yield* cancel(runningTask);
-      }
-    }
-    const current = tasks.get(key);
-    if (current?.isRunning()) yield* cancel(current);
-    let task!: Task;
-    task = yield* fork(function* latestRootRead() {
-      try {
-        if (rootAction.type === loadSecondaryRootCommitFiles.type) {
-          yield* loadSecondaryRootCommitFilesWorker(
-            rootAction as ReturnType<typeof loadSecondaryRootCommitFiles>,
-          );
-        } else {
-          yield* loadSecondaryRootWorker(rootAction as ReturnType<typeof loadSecondaryRootGit>);
-        }
-      } finally {
-        if (tasks.get(key) === task) tasks.delete(key);
-      }
-    });
-    tasks.set(key, task);
-  }
+type SecondaryRootReadVersions = {
+  workspaces: Map<string, number>;
+  roots: Map<string, number>;
+};
+
+function secondaryRootContext(
+  action:
+    | ReturnType<typeof loadSecondaryRootGit>
+    | ReturnType<typeof loadSecondaryRootCommitFiles>,
+) {
+  return `${action.payload[0]}:${action.payload[1]}`;
+}
+
+function secondaryRootCommitContext(action: ReturnType<typeof loadSecondaryRootCommitFiles>) {
+  return `${secondaryRootContext(action)}:${action.payload[2]}`;
+}
+
+function* loadLatestSecondaryRootWorker(
+  versions: SecondaryRootReadVersions,
+  action: ReturnType<typeof loadSecondaryRootGit>,
+): SagaGenerator<void> {
+  const context = secondaryRootContext(action);
+  versions.roots.set(context, (versions.roots.get(context) ?? 0) + 1);
+  yield* loadSecondaryRootWorker(versions, action);
+}
+
+function* invalidateSecondaryRootWorkspace(
+  versions: SecondaryRootReadVersions,
+  action: ReturnType<typeof workspaceUnmounted>,
+): SagaGenerator<void> {
+  const [workspaceId] = action.payload;
+  versions.workspaces.set(workspaceId, (versions.workspaces.get(workspaceId) ?? 0) + 1);
 }
 
 function* loadGitStatusRequestWorker(action: GitStatusReadAction): SagaGenerator<void> {
@@ -203,11 +197,31 @@ function* loadGitStatusRequestWorker(action: GitStatusReadAction): SagaGenerator
 }
 
 export function* gitReadSaga() {
+  const secondaryRootReadVersions: SecondaryRootReadVersions = {
+    workspaces: new Map<string, number>(),
+    roots: new Map<string, number>(),
+  };
   const watcher = yield* takeSingleFlightInContext(
     [loadGitStatus, workspaceUnmounted],
     workspaceReadContext,
     loadGitStatusRequestWorker,
   );
-  yield* fork(watchSecondaryRootReads);
+  yield* takeLatestInContext(
+    loadSecondaryRootGit,
+    secondaryRootContext,
+    loadLatestSecondaryRootWorker,
+    secondaryRootReadVersions,
+  );
+  yield* takeLatestInContext(
+    loadSecondaryRootCommitFiles,
+    secondaryRootCommitContext,
+    loadSecondaryRootCommitFilesWorker,
+    secondaryRootReadVersions,
+  );
+  yield* takeEvery(
+    workspaceUnmounted,
+    invalidateSecondaryRootWorkspace,
+    secondaryRootReadVersions,
+  );
   yield* join(watcher);
 }

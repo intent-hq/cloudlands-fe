@@ -141,16 +141,21 @@ describe('gitReadSaga', () => {
 
   it('cancels all in-flight root reads when the workspace unmounts', async () => {
     const resolvers: Array<(value: { ok: true; data: GitStatus }) => void> = [];
+    let resolveCommitDetails!: (value: { files: string[]; fileDetails: [] }) => void;
     vi.spyOn(gitClient, 'getStatus').mockImplementation(
       () => new Promise((resolve) => resolvers.push(resolve)),
     );
     vi.spyOn(gitClient, 'getHistory').mockResolvedValue({ ok: true, data: { items: [] } });
+    vi.spyOn(appClient.git, 'commitDetails').mockReturnValue(
+      new Promise((resolve) => (resolveCommitDetails = resolve)),
+    );
     const channel = stdChannel();
     const actions: unknown[] = [];
     const task = runSaga({ channel, dispatch: (action) => actions.push(action) }, gitReadSaga);
 
     channel.put(loadSecondaryRootGit('ws-1', 'root-1'));
     channel.put(loadSecondaryRootGit('ws-1', 'root-2'));
+    channel.put(loadSecondaryRootCommitFiles('ws-1', 'root-1', 'abc123'));
     await settle();
     channel.put(workspaceUnmounted('ws-1'));
     await settle();
@@ -168,11 +173,16 @@ describe('gitReadSaga', () => {
         },
       });
     }
+    resolveCommitDetails({ files: ['late.ts'], fileDetails: [] });
     await settle();
     await settle();
     expect(
       actions.some((action) =>
-        [setSecondaryRootGit.type, setSecondaryRootGitError.type].includes(
+        [
+          setSecondaryRootGit.type,
+          setSecondaryRootGitError.type,
+          setSecondaryRootCommitFiles.type,
+        ].includes(
           (action as { type: string }).type,
         ),
       ),
@@ -219,6 +229,43 @@ describe('gitReadSaga', () => {
           { path: 'recovered.ts', additions: 0, deletions: 0 },
         ]),
       ),
+    );
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('discards an in-flight commit-detail response when its root refreshes', async () => {
+    let resolveCommitDetails!: (value: { files: string[]; fileDetails: [] }) => void;
+    vi.spyOn(appClient.git, 'commitDetails').mockReturnValue(
+      new Promise((resolve) => (resolveCommitDetails = resolve)),
+    );
+    vi.spyOn(gitClient, 'getStatus').mockResolvedValue({
+      ok: true,
+      data: {
+        branch: 'main',
+        ahead: 0,
+        behind: 0,
+        diverged: false,
+        files: [],
+        hasUncommittedChanges: false,
+        hasUntrackedFiles: false,
+      },
+    });
+    vi.spyOn(gitClient, 'getHistory').mockResolvedValue({ ok: true, data: { items: [] } });
+    const channel = stdChannel();
+    const actions: unknown[] = [];
+    const task = runSaga({ channel, dispatch: (action) => actions.push(action) }, gitReadSaga);
+
+    channel.put(loadSecondaryRootCommitFiles('ws-1', 'root-1', 'abc123'));
+    await settle();
+    channel.put(loadSecondaryRootGit('ws-1', 'root-1'));
+    await vi.waitFor(() =>
+      expect(actions).toContainEqual(expect.objectContaining({ type: setSecondaryRootGit.type })),
+    );
+    resolveCommitDetails({ files: ['stale.ts'], fileDetails: [] });
+    await settle();
+    expect(actions).not.toContainEqual(
+      expect.objectContaining({ type: setSecondaryRootCommitFiles.type }),
     );
     task.cancel();
     await task.toPromise();
