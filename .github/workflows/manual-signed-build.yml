@@ -161,11 +161,14 @@ jobs:
       # Stage the Developer ID provisioning profile for the keychain-sync
       # helper (dev.intentapp.cloudlands-fe.keychain-helper). scripts/
       # sign-sidecar.js embeds it and signs the helper with the restricted
-      # keychain entitlements the profile authorizes. Fail-soft: when the
-      # secret is empty the env var stays unset, the helper ships
-      # unprovisioned, and keychain sync reports "unavailable" at runtime —
-      # the build never fails. Gated on `sign` like the rest of the signing
-      # env; the decoded file is removed by the always() cleanup step.
+      # keychain entitlements the profile authorizes. When the secret is
+      # empty the env var stays unset and this step exits 0 — but signed
+      # builds set REQUIRE_SHARED_KEYCHAIN_GROUP=1 on the build step, so
+      # scripts/sign-sidecar.js then FAILS the build (intent-hq/intent#3848)
+      # instead of shipping a helper without keychain sync (unsigned builds
+      # skip helper signing entirely and are unaffected). Gated on `sign`
+      # like the rest of the signing env; the decoded file is removed by the
+      # always() cleanup step.
       - name: Stage keychain-helper provisioning profile
         if: ${{ inputs.sign }}
         env:
@@ -249,7 +252,14 @@ jobs:
           # GITHUB_ENV from "Stage keychain-helper provisioning profile"
           # (only on the signing path with the secret present); when unset,
           # scripts/sign-sidecar.js signs the helper without restricted
-          # entitlements (fail-soft).
+          # entitlements (fail-soft) — except that on the signing path the
+          # guardrail below overrides the fail-soft posture.
+          # Guardrail (intent-hq/intent#3848): signed manual builds must fail
+          # if the keychain helper cannot be signed with the shared cross-app
+          # group (TEAMID.dev.intentapp.backends), matching release-alpha.yml.
+          # Unsigned builds ('' here) skip helper signing entirely, so the
+          # guardrail stays off for them.
+          REQUIRE_SHARED_KEYCHAIN_GROUP: ${{ inputs.sign && '1' || '' }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: List built artifacts
