@@ -1137,7 +1137,7 @@ export const selectWorkspaceTabStatuses = store.createSelector(
 
 export type DockWorkspaceBadgeKind = 'failure' | 'blocker' | 'question' | 'review' | 'none';
 
-export type DockWorkspacePriorityGroup = 'action' | 'unread' | 'active';
+type DockWorkspacePriorityGroup = 'action' | 'unread' | 'active';
 
 /** One workspace shown in the dock, projected from the existing workspace and HUD views. */
 export interface DockWorkspaceView {

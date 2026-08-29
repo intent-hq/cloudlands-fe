@@ -1,7 +1,7 @@
 import { invoke } from '$lib/electron-bridge';
 import { IPC_CHANNELS } from '$shared/ipc-registry';
 
-export interface DockWorkspaceOpenResult {
+interface DockWorkspaceOpenResult {
   success?: boolean;
   windowId?: number;
   reused?: boolean;

@@ -3,7 +3,7 @@ export const DOCK_RAIL_WIDTH = 64;
 export const DOCK_PREVIEW_GAP = 16;
 export const DOCK_WINDOW_WIDTH = DOCK_HOVER_CARD_WIDTH + DOCK_RAIL_WIDTH + DOCK_PREVIEW_GAP;
 
-export interface DockHorizontalRegion {
+interface DockHorizontalRegion {
   x: number;
   width: number;
 }

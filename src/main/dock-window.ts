@@ -20,7 +20,7 @@ const __dirname = dirname(__filename);
 
 const logger = new Logger('DockWindow');
 
-export const DOCK_ROUTE_PREFIX = '/dock';
+const DOCK_ROUTE_PREFIX = '/dock';
 
 let dockWindowRef: BrowserWindow | null = null;
 let removeLifecycleListeners: (() => void) | null = null;
