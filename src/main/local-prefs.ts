@@ -28,6 +28,8 @@ const logger = new Logger('LocalPrefs');
 /** File name inside `app.getPath('userData')`. */
 const FILE_NAME = 'local-prefs.json';
 
+export const DOCK_ENABLED_LOCAL_PREF_KEY = 'dockEnabled';
+
 /** In-flight write chain so concurrent writers serialize. */
 let writeChain: Promise<void> = Promise.resolve();
 
@@ -82,6 +84,14 @@ export async function setLocalPref(key: string, value: unknown): Promise<void> {
     logger.error('Failed to write local-prefs', error as Error);
   });
   return writeChain;
+}
+
+export async function getDockEnabledLocalPref(): Promise<boolean> {
+  return (await getLocalPref(DOCK_ENABLED_LOCAL_PREF_KEY)) === true;
+}
+
+export async function setDockEnabledLocalPref(enabled: boolean): Promise<void> {
+  await setLocalPref(DOCK_ENABLED_LOCAL_PREF_KEY, enabled);
 }
 
 /** Delete a single FE-local preference (serialized). */

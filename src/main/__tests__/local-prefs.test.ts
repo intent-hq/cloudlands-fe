@@ -47,6 +47,16 @@ describe('local-prefs', () => {
     expect(await hasLocalPref('featureCodes')).toBe(true);
   });
 
+  it('round-trips the saved dock enabled preference as a strict boolean', async () => {
+    const { getDockEnabledLocalPref, setDockEnabledLocalPref, setLocalPref } =
+      await import('../local-prefs');
+    expect(await getDockEnabledLocalPref()).toBe(false);
+    await setDockEnabledLocalPref(true);
+    expect(await getDockEnabledLocalPref()).toBe(true);
+    await setLocalPref('dockEnabled', 'true');
+    expect(await getDockEnabledLocalPref()).toBe(false);
+  });
+
   it('preserves other keys when writing one', async () => {
     const { setLocalPref, getLocalPref } = await import('../local-prefs');
     await setLocalPref('keychainSettings', { keychainAccessChoice: 'allow' });

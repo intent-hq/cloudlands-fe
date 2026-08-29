@@ -78,6 +78,8 @@
   "menu_bring_all_to_front": "前置全部窗口",
   "menu_window_hud_label": "HUD",
   "menu_window_localBackend_label": "本地",
+  "menu_show_intent_dock": "显示 Intent Dock",
+  "menu_focus_intent_dock": "聚焦 Intent Dock",
   "menu_help": "帮助",
   "menu_export_debug_logs": "导出调试日志",
   "menu_show_release_notes": "显示发行说明",

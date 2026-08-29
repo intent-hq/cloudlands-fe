@@ -78,6 +78,8 @@
   "menu_bring_all_to_front": "Tout ramener au premier plan",
   "menu_window_hud_label": "HUD",
   "menu_window_localBackend_label": "local",
+  "menu_show_intent_dock": "Afficher le dock Intent",
+  "menu_focus_intent_dock": "Activer le dock Intent",
   "menu_help": "Aide",
   "menu_export_debug_logs": "Exporter les journaux de débogage",
   "menu_show_release_notes": "Afficher les notes de version",

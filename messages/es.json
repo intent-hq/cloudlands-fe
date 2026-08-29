@@ -78,6 +78,8 @@
   "menu_bring_all_to_front": "Traer todo al frente",
   "menu_window_hud_label": "HUD",
   "menu_window_localBackend_label": "local",
+  "menu_show_intent_dock": "Mostrar el dock de Intent",
+  "menu_focus_intent_dock": "Enfocar el dock de Intent",
   "menu_help": "Ayuda",
   "menu_export_debug_logs": "Exportar registros de depuración",
   "menu_show_release_notes": "Mostrar notas de la versión",

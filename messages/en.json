@@ -78,6 +78,8 @@
   "menu_bring_all_to_front": "Bring All to Front",
   "menu_window_hud_label": "HUD",
   "menu_window_localBackend_label": "local",
+  "menu_show_intent_dock": "Show Intent Dock",
+  "menu_focus_intent_dock": "Focus Intent Dock",
   "menu_help": "Help",
   "menu_export_debug_logs": "Export Debug Logs",
   "menu_show_release_notes": "Show Release Notes",

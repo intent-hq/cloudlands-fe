@@ -64,6 +64,14 @@ describe('main-locale', () => {
     expect(m.quit_dialog_quit_button()).toBe('Quit');
   });
 
+  it('provides localized dock menu labels in every catalog', () => {
+    for (const locale of locales) {
+      setMainLanguagePreference(locale, []);
+      expect(m.menu_show_intent_dock()).not.toBe('');
+      expect(m.menu_focus_intent_dock()).not.toBe('');
+    }
+  });
+
   it('keeps m.*() bound to main-locale with the chat export path loaded (menu localization regression)', () => {
     // Force the exporter's module graph to fully evaluate.
     expect(exportChatToHtml([], { title: 't' })).toContain('<!DOCTYPE html>');

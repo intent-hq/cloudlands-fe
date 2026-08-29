@@ -374,7 +374,15 @@ import { isHudWindow, isTrackedHudWindow } from './hud-window.js';
 import { getBackendIdForWindow } from './window-backend.js';
 import { buildWindowMenuEntries } from './window-menu-entries.js';
 import { getMainWindow } from './state';
-import { isDockWindow } from './dock-window.js';
+import {
+  closeDockWindow,
+  createDockWindow,
+  focusDockWindow,
+  getDockWindow,
+  isDockWindow,
+} from './dock-window.js';
+import { createDockMenuController } from './dock-menu-controller.js';
+import { getDockEnabledLocalPref, setDockEnabledLocalPref } from './local-prefs.js';
 import {
   captureWindowSessionsSnapshot,
   clearWindowSessionsSnapshot,
@@ -912,6 +920,16 @@ app.whenReady().then(async () => {
     );
   };
 
+  const dockMenuController = createDockMenuController({
+    createWindow: createDockWindow,
+    getWindow: getDockWindow,
+    closeWindow: closeDockWindow,
+    focusWindow: focusDockWindow,
+    readEnabledPreference: getDockEnabledLocalPref,
+    writeEnabledPreference: setDockEnabledLocalPref,
+    onStateChange: () => app.emit('dock-window-state-changed'),
+  });
+
   // Function to rebuild and set the application menu
   const rebuildMenu = async () => {
     // Check if focused window is in a workspace (for enabling/disabling tab menu items)
@@ -922,6 +940,19 @@ app.whenReady().then(async () => {
     const windowMenuItems: Electron.MenuItemConstructorOptions[] = [
       { role: 'minimize', label: m.menu_minimize(), accelerator: 'CmdOrCtrl+M' },
       { role: 'zoom', label: m.menu_window_fill() },
+      { type: 'separator' },
+      {
+        label: m.menu_show_intent_dock(),
+        type: 'checkbox',
+        checked: dockMenuController.isEnabled(),
+        click: (menuItem) => void dockMenuController.setEnabled(menuItem.checked),
+      },
+      {
+        label: m.menu_focus_intent_dock(),
+        accelerator: 'CmdOrCtrl+Shift+D',
+        enabled: dockMenuController.isEnabled(),
+        click: () => dockMenuController.focus(),
+      },
       { type: 'separator' },
       {
         label: m.menu_select_previous_tab(),
@@ -1455,7 +1486,7 @@ app.whenReady().then(async () => {
   };
 
   // Build initial menu (workspaces may not be loaded yet, will update later)
-  rebuildMenu();
+  void rebuildMenu();
 
   // Rebuild menu when a window gains focus to refresh recent workspaces
   let menuRebuildTimeout: NodeJS.Timeout | null = null;
@@ -1473,6 +1504,10 @@ app.whenReady().then(async () => {
   // Rebuild menu when the main-process locale changes (renderer synced a new
   // language preference over app:set-language-preference)
   app.on('main-locale-changed', () => {
+    rebuildMenu();
+  });
+
+  app.on('dock-window-state-changed', () => {
     rebuildMenu();
   });
 
@@ -1603,6 +1638,10 @@ app.whenReady().then(async () => {
   registerBackendHandlers(); // Needed for live JSON-RPC transport (workspaces domain)
   registerWorkspaceTransferHandlers(); // Workspace transfer relay (wizard steps 3–4)
   registerWorkspaceImportHandlers(); // Import Workspace from File (File menu)
+
+  // Restore only after app readiness, protocol setup, and boot backend reconciliation.
+  await dockMenuController.restore();
+  void rebuildMenu();
 
   // Hydrate the main-process provider catalog cache (non-blocking): the
   // JSON-RPC client queues the request until the daemon socket connects.
