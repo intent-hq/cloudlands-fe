@@ -523,6 +523,8 @@ workspaceNavigationReducer.with(
 );
 workspaceNavigationReducer.with(markWorkspaceNavigationInitialized, (state, { payload: [wsId] }) =>
   withWorkspaceNavigationState(state, wsId, (workspaceState) => {
+    if (workspaceState.ui.hasInitialized) return workspaceState;
+
     let nextState = mergeWorkspaceNavigationState(workspaceState, {
       ui: {
         ...workspaceState.ui,

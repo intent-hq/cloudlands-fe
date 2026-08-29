@@ -87,7 +87,7 @@
   );
   $effect(() => {
     const noteId = tab.noteId;
-    if (!noteId || !noteContentStale || contentLoadFailedNoteId === noteId) return;
+    if (!isActive || !noteId || !noteContentStale || contentLoadFailedNoteId === noteId) return;
     void ensureNoteContentLoaded(workspaceId, noteId).then((loaded) => {
       if (!loaded && tab.noteId === noteId) contentLoadFailedNoteId = noteId;
     });
@@ -100,7 +100,7 @@
   // Get actual workspace root for file path
   let actualWorkspaceRoot = $state<string | null>(null);
   $effect(() => {
-    if (workspaceId) {
+    if (isActive && workspaceId) {
       invoke<string>('workspace:get-root', { workspaceId }).then((rootPath) => {
         if (rootPath) actualWorkspaceRoot = rootPath;
       });

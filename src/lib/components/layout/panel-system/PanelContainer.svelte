@@ -6,7 +6,7 @@
    * Handles resizing between children.
    */
 
-  import { onDestroy, onMount } from 'svelte';
+  import { onDestroy } from 'svelte';
   import type {
     PanelLayoutNode,
     PanelState,
@@ -43,6 +43,7 @@
     focusedPanelId: string | null;
     workspaceId: string;
     layoutId: string;
+    active?: boolean;
     contained?: boolean;
     suppressLayoutMotion?: boolean;
     retainedRootPanelWidth?: number | null;
@@ -128,6 +129,7 @@
     focusedPanelId,
     workspaceId,
     layoutId,
+    active = true,
     contained = false,
     suppressLayoutMotion = false,
     retainedRootPanelWidth = null,
@@ -229,7 +231,11 @@
     return resize(nodeToResize, params);
   }
 
-  onMount(() => {
+  $effect(() => {
+    if (!active) {
+      lifecycleMotionReady = false;
+      return;
+    }
     const frame = requestAnimationFrame(() => {
       lifecycleMotionReady = true;
     });
@@ -334,7 +340,7 @@
   }
 
   $effect(() => {
-    if (node.type !== 'split' || !containerRef) return;
+    if (!active || node.type !== 'split' || !containerRef) return;
 
     const observedElement =
       nodePath.length === 0
@@ -634,6 +640,7 @@
         {panel}
         {workspaceId}
         {layoutId}
+        {active}
         {availableCanvasWidth}
         canCreateColumn={panelOrder.length < 4}
         isRightmostPanel={panelOrder.at(-1) === node.panelId}
@@ -721,6 +728,7 @@
             {focusedPanelId}
             {workspaceId}
             {layoutId}
+            {active}
             {availableCanvasWidth}
             {contained}
             {suppressLayoutMotion}
@@ -756,28 +764,30 @@
           />
         {:else}
           <!-- i18n-ignore (scanner false positive on the < comparison) -->
-          <PanelSplitHandle
-            direction={node.direction}
-            {nodePath}
-            handleIndex={item.index}
-            immediateResize={resizesRootDivider}
-            onResizeStart={handleResizeStart}
-            onResize={(delta) => handleResize(item.index, delta)}
-            onResizeEnd={handleResizeEnd}
-            onTabDropToHandle={onTabDropToSplitHandle}
-          />
-          <!-- Corner handles at intersection points -->
-          {#each getCornerPositions(item.index) as corner (corner.position)}
-            <PanelCornerHandle
+          {#if active}
+            <PanelSplitHandle
+              direction={node.direction}
+              {nodePath}
+              handleIndex={item.index}
+              immediateResize={resizesRootDivider}
               onResizeStart={handleResizeStart}
-              onResize={(deltaX, deltaY) =>
-                handleCornerResize(item.index, corner.targets, deltaX, deltaY)}
-              onResizeEnd={() => handleCornerResizeEnd(item.index)}
-              style={node.direction === 'horizontal'
-                ? `top: ${corner.position}%; left: 50%;`
-                : `left: ${corner.position}%; top: 50%;`}
+              onResize={(delta) => handleResize(item.index, delta)}
+              onResizeEnd={handleResizeEnd}
+              onTabDropToHandle={onTabDropToSplitHandle}
             />
-          {/each}
+            <!-- Corner handles at intersection points -->
+            {#each getCornerPositions(item.index) as corner (corner.position)}
+              <PanelCornerHandle
+                onResizeStart={handleResizeStart}
+                onResize={(deltaX, deltaY) =>
+                  handleCornerResize(item.index, corner.targets, deltaX, deltaY)}
+                onResizeEnd={() => handleCornerResizeEnd(item.index)}
+                style={node.direction === 'horizontal'
+                  ? `top: ${corner.position}%; left: 50%;`
+                  : `left: ${corner.position}%; top: 50%;`}
+              />
+            {/each}
+          {/if}
         {/if}
       </div>
     {/each}

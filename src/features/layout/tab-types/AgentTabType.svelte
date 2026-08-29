@@ -82,7 +82,7 @@
   // Subscribe to agent session updates
   let agentSession = $state<AgentSession | undefined>(undefined);
   $effect(() => {
-    if (!tab.agentId) {
+    if (!isActive || !tab.agentId) {
       agentSession = undefined;
       return;
     }
