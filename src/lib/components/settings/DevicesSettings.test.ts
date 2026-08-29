@@ -199,6 +199,24 @@ describe('DevicesSettings', () => {
     expect(screen.getByText('No remote devices saved')).toBeTruthy();
   });
 
+  it('cycles automatic accents through only the selectable palette', async () => {
+    mocks.connections = [
+      local,
+      remote,
+      { ...remote, id: 'remote-2' },
+      { ...remote, id: 'remote-3' },
+    ];
+    render(DevicesSettings);
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Add device' }));
+
+    expect(
+      screen.getByRole('button', { name: 'Use Teal accent' }).getAttribute('aria-pressed'),
+    ).toBe('true');
+    expect(screen.queryByRole('button', { name: 'Use Rose accent' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Use Orange accent' })).toBeNull();
+  });
+
   async function openAction(name: 'Connect' | 'Edit' | 'Remove', deviceName = 'Studio Mac') {
     await fireEvent.click(screen.getByRole('button', { name: `Actions for ${deviceName}` }));
     await fireEvent.click(await screen.findByRole('menuitem', { name }));
@@ -218,12 +236,13 @@ describe('DevicesSettings', () => {
     await fireEvent.input(screen.getByRole('textbox', { name: 'Port' }), {
       target: { value: '5190' },
     });
-    await fireEvent.click(screen.getByRole('button', { name: 'Use Rose accent' }));
+    expect(screen.queryByRole('button', { name: 'Use Orange accent' })).toBeNull();
+    await fireEvent.click(screen.getByRole('button', { name: 'Use Emerald accent' }));
     await fireEvent.click(screen.getByRole('button', { name: 'Update' }));
     expect(mocks.update).toHaveBeenCalledWith({
       id: 'remote-1',
       label: 'Render box',
-      accent: 'rose',
+      accent: 'emerald',
       host: 'render.local',
       port: 5190,
     });
@@ -232,6 +251,33 @@ describe('DevicesSettings', () => {
     );
     expect(mocks.rotate).not.toHaveBeenCalled();
   });
+
+  it.each(['rose', 'orange'] as const)(
+    'preserves a legacy %s accent until the user explicitly changes it',
+    async (legacyAccent) => {
+      mocks.connections = [local, { ...remote, accent: legacyAccent }];
+      render(DevicesSettings);
+
+      await openAction('Edit');
+      const legacyOption = screen.getByRole('button', {
+        name: `Use ${legacyAccent[0].toUpperCase()}${legacyAccent.slice(1)} accent`,
+      });
+      expect(legacyOption.getAttribute('aria-pressed')).toBe('true');
+      const unavailableWarmAccent = legacyAccent === 'rose' ? 'Orange' : 'Rose';
+      expect(
+        screen.queryByRole('button', { name: `Use ${unavailableWarmAccent} accent` }),
+      ).toBeNull();
+
+      await fireEvent.input(screen.getByRole('textbox', { name: 'Name' }), {
+        target: { value: 'Renamed device' },
+      });
+      await fireEvent.click(screen.getByRole('button', { name: 'Update' }));
+
+      expect(mocks.update).toHaveBeenCalledWith(
+        expect.objectContaining({ label: 'Renamed device', accent: legacyAccent }),
+      );
+    },
+  );
 
   it('can clear a previously selected device accent', async () => {
     render(DevicesSettings);
