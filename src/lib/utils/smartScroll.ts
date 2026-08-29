@@ -432,8 +432,8 @@ export function followBottom(container: HTMLElement, options: FollowBottomOption
       reactivationFrame = requestAnimationFrame(() => {
         reactivationFrame = null;
         if (destroyed || !enabled) return;
-        if (isFollowing) setExactBottom();
-        reportState();
+        if (isFollowing) requestBottomSettle();
+        else reportState();
       });
       return;
     }

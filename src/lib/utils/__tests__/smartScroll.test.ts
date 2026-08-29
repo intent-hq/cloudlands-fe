@@ -992,6 +992,13 @@ describe('followBottom policy', () => {
         return scrollHeight;
       },
     });
+    Object.defineProperty(container, 'clientHeight', {
+      configurable: true,
+      get: () => {
+        layoutReads += 1;
+        return clientHeight;
+      },
+    });
     distances.length = 0;
 
     action.update({ ...options, enabled: true });
@@ -1031,6 +1038,7 @@ describe('followBottom policy', () => {
     action.update({ ...options, enabled: true });
     expect(animationFrames).toHaveLength(1);
     action.update({ ...options, enabled: false });
+    expect(cancelAnimationFrame).toHaveBeenCalledWith(1);
     runFrame();
 
     expect(scrollTop).toBe(300);
