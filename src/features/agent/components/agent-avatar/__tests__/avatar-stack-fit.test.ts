@@ -1,0 +1,76 @@
+import { describe, expect, it } from 'vitest';
+import { agentAvatarGeometry } from '../avatar-size';
+import { computeAdaptiveVisibleCount, type AvatarStackFitOptions } from '../avatar-stack-fit';
+
+// card-stack geometry: surface 24, overlap 6 → step 18.
+const geometry = agentAvatarGeometry['card-stack'];
+
+function fit(overrides: Partial<AvatarStackFitOptions>): number {
+  return computeAdaptiveVisibleCount({
+    itemCount: 5,
+    maxVisible: 3,
+    availableWidth: 200,
+    surface: geometry.surface,
+    overlap: geometry.overlap,
+    overflowGap: 4,
+    measureOverflowText: () => 20,
+    ...overrides,
+  });
+}
+
+describe('computeAdaptiveVisibleCount', () => {
+  it('shows every item when all fit within the cap and width', () => {
+    // 3 avatars = 24 + 2*18 = 60
+    expect(fit({ itemCount: 3, availableWidth: 60 })).toBe(3);
+    expect(fit({ itemCount: 1, availableWidth: 24 })).toBe(1);
+    expect(fit({ itemCount: 0, availableWidth: 100 })).toBe(0);
+  });
+
+  it('caps at maxVisible and reserves room for the overflow label', () => {
+    // 3 avatars (60) + gap (4) + label (20) = 84
+    expect(fit({ availableWidth: 84 })).toBe(3);
+    expect(fit({ availableWidth: 83 })).toBe(2);
+  });
+
+  it('drops avatars until avatars plus overflow label fit', () => {
+    // 2 avatars (42) + gap (4) + label (20) = 66
+    expect(fit({ availableWidth: 66 })).toBe(2);
+    // 1 avatar (24) + gap (4) + label (20) = 48
+    expect(fit({ availableWidth: 48 })).toBe(1);
+  });
+
+  it('omits the overflow gap when only the label fits', () => {
+    // 0 avatars + label (20), no gap
+    expect(fit({ availableWidth: 20 })).toBe(0);
+    expect(fit({ availableWidth: 5 })).toBe(0);
+  });
+
+  it('returns zero for non-positive widths', () => {
+    expect(fit({ availableWidth: 0 })).toBe(0);
+    expect(fit({ availableWidth: -10 })).toBe(0);
+  });
+
+  it('clamps a negative maxVisible to zero visible avatars', () => {
+    expect(fit({ maxVisible: -1, availableWidth: 200 })).toBe(0);
+  });
+
+  it('uses the measured overflow text width', () => {
+    // 2 avatars (42) + gap (4) + wide label (60) = 106 > 100 → drop to 1 (24 + 4 + 60 = 88)
+    expect(fit({ availableWidth: 100, measureOverflowText: () => 60 })).toBe(1);
+  });
+
+  it('measures the actual remaining count', () => {
+    const seen: number[] = [];
+    fit({
+      itemCount: 10,
+      maxVisible: 3,
+      availableWidth: 48,
+      measureOverflowText: (remaining) => {
+        seen.push(remaining);
+        return 20;
+      },
+    });
+    // cap=3 → remaining 7, then 8 as the count shrinks to the fitting 1-avatar layout.
+    expect(seen).toEqual([7, 8, 9]);
+  });
+});
