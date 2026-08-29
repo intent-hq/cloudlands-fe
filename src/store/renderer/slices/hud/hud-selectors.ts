@@ -1135,6 +1135,92 @@ export const selectWorkspaceTabStatuses = store.createSelector(
   },
 );
 
+export type DockWorkspaceBadgeKind = 'failure' | 'blocker' | 'question' | 'review' | 'none';
+
+export type DockWorkspacePriorityGroup = 'action' | 'unread' | 'active';
+
+/** One workspace shown in the dock, projected from the existing workspace and HUD views. */
+export interface DockWorkspaceView {
+  workspace: Workspace;
+  badgeKind: DockWorkspaceBadgeKind;
+  priorityGroup: DockWorkspacePriorityGroup;
+  isUnread: boolean;
+  isRunning: boolean;
+  isWaiting: boolean;
+}
+
+const DOCK_ACTION_CATEGORIES: ReadonlySet<WorkspaceTabStatusCategory> = new Set([
+  'failed',
+  'blocker',
+  'question',
+  'discussion',
+  'needs_input',
+  'review',
+]);
+
+function dockBadgeKind(status: WorkspaceTabStatus | undefined): DockWorkspaceBadgeKind {
+  for (const item of status?.categories ?? []) {
+    switch (item.category) {
+      case 'failed':
+        return 'failure';
+      case 'blocker':
+        return 'blocker';
+      case 'question':
+        return 'question';
+      case 'review':
+        return 'review';
+    }
+  }
+  return 'none';
+}
+
+/**
+ * Dock workspaces in stable priority groups: action, unread, then running or
+ * waiting. The canonical collection order is retained inside each group, so
+ * activity timestamps never reorder peers. A workspace with multiple signals
+ * appears once in its highest-priority group.
+ */
+export const selectDockWorkspaces = store.createSelector((state): DockWorkspaceView[] => {
+  const cards = selectHudWorkspaceCards.select(state);
+  const statuses = selectWorkspaceTabStatuses.select(state);
+  const workspacesById = new Map(
+    selectHudWorkspaces.select(state).map((workspace) => [String(workspace.id), workspace]),
+  );
+  const groups: Record<DockWorkspacePriorityGroup, DockWorkspaceView[]> = {
+    action: [],
+    unread: [],
+    active: [],
+  };
+
+  for (const card of cards) {
+    const workspace = workspacesById.get(card.workspaceId);
+    if (!workspace) continue;
+    const status = statuses[card.workspaceId];
+    const categories = status?.categories ?? [];
+    const hasAction = categories.some((item) => DOCK_ACTION_CATEGORIES.has(item.category));
+    const isUnread = card.isUnread;
+    const isRunning = categories.some((item) => item.category === 'running');
+    const priorityGroup: DockWorkspacePriorityGroup | null = hasAction
+      ? 'action'
+      : isUnread
+        ? 'unread'
+        : isRunning || card.isWaiting
+          ? 'active'
+          : null;
+    if (!priorityGroup) continue;
+    groups[priorityGroup].push({
+      workspace,
+      badgeKind: dockBadgeKind(status),
+      priorityGroup,
+      isUnread,
+      isRunning,
+      isWaiting: card.isWaiting,
+    });
+  }
+
+  return [...groups.action, ...groups.unread, ...groups.active];
+});
+
 /**
  * Header ATTN counter (mock `stats.attn` — per-agent wait + fail). An agent
  * counts when it is a TOP-LEVEL NON-BACKGROUND agent in the `failed` bucket
