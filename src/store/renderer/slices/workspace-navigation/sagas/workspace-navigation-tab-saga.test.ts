@@ -86,6 +86,28 @@ describe('workspaceNavigationTabSaga', () => {
     await task.toPromise();
   });
 
+  it('threads gitRootId into a secondary-root all-changes tab', async () => {
+    const channel = stdChannel();
+    const dispatch = vi.fn();
+    const task = runSaga({ channel, dispatch, getState: () => ({}) }, workspaceNavigationTabSaga);
+
+    channel.put(openWorkspaceLocalChanges('ws-1', { gitRootId: 'root-9' }));
+    await settle();
+
+    expect(dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        payload: expect.objectContaining({
+          tab: expect.objectContaining({
+            type: 'local-changes',
+            data: { gitRootId: 'root-9' },
+          }),
+        }),
+      }),
+    );
+    task.cancel();
+    await task.toPromise();
+  });
+
   it('routes other panel-backed workspace navigation actions through the panel layout', async () => {
     const channel = stdChannel();
     const dispatch = vi.fn();

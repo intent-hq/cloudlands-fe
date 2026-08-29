@@ -446,7 +446,9 @@ export function chatChangesDedupId(options?: {
   return 'aggregate';
 }
 
-export const openWorkspaceLocalChanges = createAction<[wsId: string]>(
+export const openWorkspaceLocalChanges = createAction<
+  [wsId: string, options?: { gitRootId?: string }]
+>(
   'workspaceNavigation/openWorkspaceLocalChanges',
 );
 

@@ -40,6 +40,10 @@ vi.mock('$store/renderer/store', async () => {
 });
 
 vi.mock('$store/renderer/slices/workspace-navigation/workspace-navigation-slice', () => ({
+  openWorkspaceLocalChanges: vi.fn((...args: unknown[]) => ({
+    type: 'workspaceNavigation/openWorkspaceLocalChanges',
+    payload: args,
+  })),
   openWorkspaceCommitChangeset: vi.fn((...args: unknown[]) => ({
     type: 'workspaceNavigation/openWorkspaceCommitChangeset',
     payload: args,
@@ -141,6 +145,41 @@ describe('SecondaryRootChangesView', () => {
     const { container } = await renderView(makeEntry('stale-branch'));
     await waitFor(() => expect(container.textContent).toContain('fresh-branch'));
     expect(container.textContent).not.toContain('stale-branch');
+  });
+
+  it('shows an exact unique-file summary and opens all changes scoped to the root', async () => {
+    const status = makeStatus('main');
+    status.files = [
+      { path: 'src/shared.ts', status: 'M', staged: false },
+      { path: 'src/working.ts', status: '?', staged: false },
+    ];
+    mocks.getStatus.mockResolvedValue({ ok: true, data: status });
+    mocks.getHistory.mockResolvedValue({
+      ok: true,
+      data: {
+        items: [
+          makeCommit('newer222', 'feat: after registration'),
+          makeCommit('bound111', 'chore: registration boundary'),
+        ],
+      },
+    });
+    mocks.commitDetails.mockResolvedValue({
+      files: ['src/shared.ts', 'src/committed.ts'],
+      fileDetails: [
+        { path: 'src/shared.ts', additions: 1, deletions: 0 },
+        { path: 'src/committed.ts', additions: 2, deletions: 0 },
+      ],
+    });
+    const { getByTestId } = await renderView(makeEntry('main', 'root-9', 'bound111'));
+
+    const summary = await waitFor(() => getByTestId('secondary-root-all-changes'));
+    expect(summary.textContent).toContain('3 files changed in Workspace');
+    await fireEvent.click(summary);
+    expect(mocks.dispatch).toHaveBeenCalledWith({
+      type: 'workspaceNavigation/openWorkspaceLocalChanges',
+      payload: ['ws-1', { gitRootId: 'root-9' }],
+    });
+    expect(mocks.commitDetails).toHaveBeenCalledTimes(1);
   });
 
   it('falls back to entry.branch while the status is still loading', async () => {
@@ -511,7 +550,7 @@ describe('SecondaryRootChangesView', () => {
     const toggle = await waitFor(() => getAllByTestId('secondary-root-commit-toggle')[0]);
 
     await fireEvent.click(toggle);
-    await waitFor(() => expect(mocks.commitDetails).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(mocks.commitDetails).toHaveBeenCalledTimes(2));
     expect(queryAllByTestId('file-row')).toHaveLength(0);
 
     mocks.commitDetails.mockResolvedValueOnce({
@@ -525,7 +564,7 @@ describe('SecondaryRootChangesView', () => {
     });
     await fireEvent.click(toggle); // collapse
     await fireEvent.click(toggle); // expand again → retry
-    await waitFor(() => expect(mocks.commitDetails).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(mocks.commitDetails).toHaveBeenCalledTimes(3));
     await waitFor(() => expect(queryAllByTestId('file-row')).toHaveLength(1));
   });
 

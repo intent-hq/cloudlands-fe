@@ -166,7 +166,7 @@ function* openBrowser(action: ReturnType<typeof openWorkspaceBrowser>): SagaGene
 function* openLocalChanges(
   action: ReturnType<typeof openWorkspaceLocalChanges>,
 ): SagaGenerator<void> {
-  const [workspaceId] = action.payload;
+  const [workspaceId, options] = action.payload;
   if (!workspaceId) return;
   yield* openWorkspaceTab(
     workspaceId,
@@ -175,6 +175,7 @@ function* openLocalChanges(
       title: m.layout_presetExecutor_allChanges_title(),
       workspaceId,
       closable: true,
+      ...(options?.gitRootId ? { data: { gitRootId: options.gitRootId } } : {}),
     },
     false,
   );

@@ -11,7 +11,10 @@
   import { gitClient } from '$features/git/git.client';
   import type { CommitFile } from '$features/file-tracking/types';
   import type { WorkspaceGitRootEntry } from '$store/renderer/slices/git-roots/git-roots-selectors';
-  import { openWorkspaceCommitChangeset } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
+  import {
+    openWorkspaceCommitChangeset,
+    openWorkspaceLocalChanges,
+  } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
   import { store as appStore } from '$store/renderer/store';
   import type { GitStatus, CommitInfo, WorkspaceId } from '$shared/types';
   import AgentAvatar from '$features/agent/components/agent-avatar/AgentAvatar.svelte';
@@ -26,6 +29,7 @@
   import { writeTextToClipboard } from '$lib/utils/clipboard';
   import { logger } from '$lib/utils/client-logger';
   import { m } from '$shared/paraglide/messages.js';
+  import { formatInteger } from '$lib/i18n/format';
   import {
     faArrowsRotate,
     faChevronDown,
@@ -62,6 +66,8 @@
   // in-flight fetch; it is cleared on failure so a later expand retries.
   let expandedCommits = $state<Set<string>>(new Set());
   let commitFileCache = $state<Record<string, CommitFile[] | null>>({});
+  let summaryCommitFiles = $state<Record<string, CommitFile[] | null>>({});
+  let summaryFetches = $state<Set<string>>(new Set());
   // Monotonic request epoch: only the most recent load may apply its results,
   // so an older in-flight response can't overwrite a newer refresh.
   let requestEpoch = 0;
@@ -145,6 +151,8 @@
     loadingMore = false;
     expandedCommits = new Set();
     commitFileCache = {};
+    summaryCommitFiles = {};
+    summaryFetches = new Set();
     if (wsId && rootId) load(wsId, rootId);
   });
 
@@ -217,6 +225,55 @@
   const recentCommits = $derived(boundaryIndex >= 0 ? commits.slice(0, boundaryIndex) : commits);
   const olderCommits = $derived(boundaryIndex >= 0 ? commits.slice(boundaryIndex) : []);
 
+  // The workspace summary counts each root-relative path once across the
+  // working tree and commits made after this root was registered.
+  $effect(() => {
+    const wsId = workspaceId;
+    const rootId = gitRootId;
+    for (const commit of recentCommits) {
+      if (summaryCommitFiles[commit.hash] !== undefined || summaryFetches.has(commit.hash)) continue;
+      summaryFetches = new Set(summaryFetches).add(commit.hash);
+      appClient.git
+        .commitDetails(wsId, commit.hash, { gitRootId: rootId })
+        .then((result) => {
+          if (rootId !== gitRootId || wsId !== workspaceId) return;
+          const files = result
+            ? result.fileDetails.length > 0
+              ? result.fileDetails
+              : result.files.map((path) => ({ path, additions: 0, deletions: 0 }))
+            : null;
+          summaryCommitFiles = {
+            ...summaryCommitFiles,
+            [commit.hash]: files,
+          };
+          if (files) commitFileCache = { ...commitFileCache, [commit.hash]: files };
+        })
+        .catch((error) => {
+          logger.error('Failed to fetch commit details for root summary', {
+            hash: commit.hash,
+            error,
+          });
+        });
+    }
+  });
+
+  const summaryReady = $derived(
+    recentCommits.every((commit) => Array.isArray(summaryCommitFiles[commit.hash])),
+  );
+  const changedFileCount = $derived.by(() => {
+    const paths = new Set(status?.files.map((file) => file.path) ?? []);
+    if (summaryReady) {
+      for (const commit of recentCommits) {
+        for (const file of summaryCommitFiles[commit.hash] ?? []) paths.add(file.path);
+      }
+    }
+    return paths.size;
+  });
+
+  function openAllChanges() {
+    appStore.dispatch(openWorkspaceLocalChanges(workspaceId, { gitRootId }));
+  }
+
   // Prefer the freshly loaded status over the cached git-root list entry so
   // a refresh after a branch checkout shows the new branch immediately.
   const branchName = $derived(status?.branch || entry.branch || '');
@@ -288,6 +345,21 @@
       {m.workspace_sidebarChanges_rootLoadFailed_error()}
     </p>
   {:else}
+    {#if summaryReady && changedFileCount > 0}
+      <Button
+        type="button"
+        variant="plain"
+        class="h-auto w-full cursor-pointer justify-start rounded-sm border border-transparent px-2 py-1.5 text-left text-subtle"
+        onclick={openAllChanges}
+        data-testid="secondary-root-all-changes"
+      >
+        {changedFileCount === 1
+          ? m.workspace_sidebarChanges_filesChangedInSpace_one()
+          : m.workspace_sidebarChanges_filesChangedInSpace_many({
+              count: formatInteger(changedFileCount),
+            })}
+      </Button>
+    {/if}
     <!-- Changed files (read-only) -->
     <div>
       <p class="text-ui text-subtle mb-1">
