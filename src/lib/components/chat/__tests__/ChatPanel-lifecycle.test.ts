@@ -1485,6 +1485,60 @@ describe('ChatPanel mounted lifecycle', () => {
     expect(target.classList.contains('highlight-flash')).toBe(false);
   });
 
+  it('cancels active highlight timers and open-message frames on unmount', async () => {
+    mocks.draftGet.mockResolvedValue(null);
+    const setTimeoutSpy = vi.spyOn(globalThis, 'setTimeout');
+    const clearTimeoutSpy = vi.spyOn(globalThis, 'clearTimeout');
+    const cancelAnimationFrameSpy = vi.spyOn(globalThis, 'cancelAnimationFrame');
+    const view = render(ChatPanel, {
+      props: { workspace: workspace('workspace-a'), agentId: 'agent-a', isActive: true },
+    });
+    await tick();
+    while (frames.length > 0) flushFrame();
+
+    const transcript = screen.getByTestId('chat-transcript-scroll-viewport');
+    const target = document.createElement('div');
+    target.dataset.turnNumber = '7';
+    target.dataset.messageId = 'message-a';
+    transcript.appendChild(target);
+
+    window.dispatchEvent(
+      new CustomEvent('agent:scroll-to-turn', {
+        detail: { agentId: 'agent-a', turnNumber: 7 },
+      }),
+    );
+    const highlightTimerCall = setTimeoutSpy.mock.calls.findLastIndex(
+      ([, delay]) => delay === 1500,
+    );
+    expect(highlightTimerCall).toBeGreaterThanOrEqual(0);
+    const highlightTimer = setTimeoutSpy.mock.results[highlightTimerCall]?.value;
+
+    const frameIdsBeforeOpen = new Set(frames.map((frame) => frame.id));
+    window.dispatchEvent(
+      new CustomEvent('chat:open-message', {
+        detail: {
+          agentId: 'agent-a',
+          messageId: 'message-a',
+          requestId: 'request-a',
+        },
+      }),
+    );
+    await tick();
+    await tick();
+    const openFrame = frames.find((frame) => !frameIdsBeforeOpen.has(frame.id));
+    expect(openFrame).toBeDefined();
+
+    view.unmount();
+    expect(clearTimeoutSpy).toHaveBeenCalledWith(highlightTimer);
+    expect(cancelAnimationFrameSpy).toHaveBeenCalledWith(openFrame?.id);
+
+    openFrame?.callback(performance.now());
+    const staleHighlightCallback = setTimeoutSpy.mock.calls[highlightTimerCall]?.[0] as () => void;
+    staleHighlightCallback();
+    expect(target.classList.contains('message-highlight-flash')).toBe(false);
+    expect(target.classList.contains('highlight-flash')).toBe(true);
+  });
+
   it('cancels draftPrompt apply and focus while inactive and restores on reactivation', async () => {
     mocks.draftGet.mockResolvedValue(null);
     mocks.agentSession.set({

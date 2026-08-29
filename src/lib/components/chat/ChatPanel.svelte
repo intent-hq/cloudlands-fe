@@ -644,7 +644,7 @@
     if (!isActive) return;
     const timer = setTimeout(() => {
       highlightRemovalTimers.delete(timer);
-      if (isActive) element.classList.remove(className);
+      if (isActive && !isComponentDestroyed) element.classList.remove(className);
     }, delayMs);
     highlightRemovalTimers.add(timer);
   }
@@ -653,7 +653,7 @@
     if (!isActive) return;
     const frame = requestAnimationFrame(() => {
       activeAnimationFrames.delete(frame);
-      if (isActive) callback();
+      if (isActive && !isComponentDestroyed) callback();
     });
     activeAnimationFrames.add(frame);
   }
@@ -4016,6 +4016,10 @@
       cancelAnimationFrame(cachedScrollRestoreRetryFrame);
       cachedScrollRestoreRetryFrame = null;
     }
+    for (const timer of highlightRemovalTimers) clearTimeout(timer);
+    highlightRemovalTimers.clear();
+    for (const frame of activeAnimationFrames) cancelAnimationFrame(frame);
+    activeAnimationFrames.clear();
 
     // Cache the transcript scroll state so a remount restores the user's
     // reading position instead of re-entering at the bottom. Guarded
