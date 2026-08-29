@@ -4,6 +4,7 @@ import type { Workspace, WorkspaceId } from '$shared/types';
 import { WorkspaceStatus } from '$shared/types';
 import type { DockWorkspaceView } from '$store/renderer/slices/hud/hud-selectors';
 import type { DockPointerRegionController } from '$features/hud/utils/dock-pointer-routing';
+import { DOCK_HOVER_CARD_WIDTH, DOCK_PREVIEW_GAP, DOCK_RAIL_WIDTH } from '$shared/dock-layout';
 
 vi.mock(
   '$lib/components/workspace/WorkspaceHoverCard.svelte',
@@ -11,6 +12,12 @@ vi.mock(
 );
 
 import DockRail from './DockRail.svelte';
+
+const originalInnerWidth = window.innerWidth;
+
+function setRendererWidth(width: number): void {
+  Object.defineProperty(window, 'innerWidth', { configurable: true, value: width });
+}
 
 function workspace(id: string, title = `Workspace ${id}`): Workspace {
   return {
@@ -54,7 +61,10 @@ function pointerController(): DockPointerRegionController & {
   };
 }
 
-afterEach(() => vi.restoreAllMocks());
+afterEach(() => {
+  setRendererWidth(originalInnerWidth);
+  vi.restoreAllMocks();
+});
 
 describe('DockRail', () => {
   it('renders the localized icon-only empty state and routes the rail pointer region', async () => {
@@ -125,6 +135,34 @@ describe('DockRail', () => {
     await fireEvent.keyDown(buttons[1], { key: 'Escape' });
     expect(screen.queryByTestId('dock-preview')).toBeNull();
     expect(pointer.deactivate).toHaveBeenCalled();
+  });
+
+  it('resizes the preview around the rail and keeps rail buttons clickable', async () => {
+    setRendererWidth(640);
+    const pointer = pointerController();
+    const onOpenWorkspace = vi.fn();
+    render(DockRail, {
+      workspaces: [dockItem('one'), dockItem('two')],
+      pointerController: pointer,
+      onOpenWorkspace,
+    });
+    const buttons = screen.getAllByRole('button');
+
+    await fireEvent.pointerEnter(buttons[0]);
+    const preview = screen.getByTestId('dock-preview');
+    expect(preview.style.width).toBe(`${DOCK_HOVER_CARD_WIDTH}px`);
+
+    setRendererWidth(300);
+    window.dispatchEvent(new Event('resize'));
+    await waitFor(() => expect(preview.style.width).toBe('220px'));
+    expect(preview.style.left).toBe('0px');
+    expect(Number.parseFloat(preview.style.width) + DOCK_PREVIEW_GAP + DOCK_RAIL_WIDTH).toBe(
+      window.innerWidth,
+    );
+
+    await fireEvent.click(buttons[1]);
+    expect(onOpenWorkspace).toHaveBeenCalledWith('two');
+    expect(screen.queryByTestId('dock-preview')).toBeNull();
   });
 
   it('opens the selected workspace without navigating the dock renderer', async () => {

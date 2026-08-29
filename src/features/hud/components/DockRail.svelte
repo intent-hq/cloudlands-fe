@@ -11,7 +11,7 @@
   import Logo from '$lib/components/Logo.svelte';
   import WorkspaceHoverCard from '$lib/components/workspace/WorkspaceHoverCard.svelte';
   import { m } from '$shared/paraglide/messages.js';
-  import { DOCK_RAIL_WIDTH, getDockHorizontalLayout } from '$shared/dock-layout';
+  import { DOCK_RAIL_WIDTH, DOCK_WINDOW_WIDTH, getDockHorizontalLayout } from '$shared/dock-layout';
   import type {
     DockWorkspaceBadgeKind,
     DockWorkspaceView,
@@ -34,7 +34,8 @@
   // svelte-ignore state_referenced_locally
   // eslint-disable-next-line intent/no-component-async-data-fetch -- synchronous pointer-region state controller, not a domain-data request
   const pointerRegion = pointerController ?? createDockPointerRegionController();
-  const layout = getDockHorizontalLayout();
+  let rendererWidth = $state(DOCK_WINDOW_WIDTH);
+  const layout = $derived(getDockHorizontalLayout(rendererWidth));
   let buttonElements = $state<HTMLButtonElement[]>([]);
   const previousBadges = new Map<string, DockWorkspaceBadgeKind>();
   let badgeEpochs = $state<Record<string, number>>({});
@@ -157,6 +158,8 @@
   });
 </script>
 
+<svelte:window bind:innerWidth={rendererWidth} />
+
 <div class="dock-shell" data-testid="dock-shell">
   <div
     class="dock-rail"
@@ -229,7 +232,7 @@
               {#if item.badgeKind !== 'none'}
                 {#key `${workspaceId}:${badgeEpochs[workspaceId] ?? 0}`}
                   <span
-                    class="dock-badge"
+                    class="dock-badge bg-destructive text-destructive-foreground"
                     data-badge-kind={item.badgeKind}
                     data-badge-animated={(badgeEpochs[workspaceId] ?? 0) > 0}
                     aria-hidden="true"
@@ -353,8 +356,6 @@
     place-items: center;
     border: 2px solid hsl(var(--background));
     border-radius: 9999px;
-    background: hsl(var(--destructive));
-    color: hsl(var(--destructive-foreground));
     animation: dock-badge-enter 180ms ease-out both;
   }
   .dock-badge[data-badge-kind='question'],
