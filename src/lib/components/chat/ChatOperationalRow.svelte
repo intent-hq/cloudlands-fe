@@ -32,6 +32,7 @@
     detailsId?: string;
     previewClass?: string;
     detailsClass?: string;
+    previewTransition?: (node: Element) => TransitionConfig;
     detailsTransition?: (node: Element) => TransitionConfig;
     detailsMotion?: string;
     detailsInert?: boolean;
@@ -72,6 +73,7 @@
     detailsId,
     previewClass = '',
     detailsClass = '',
+    previewTransition,
     detailsTransition = safeOperationalDetailsTransition,
     detailsMotion,
     detailsInert = false,
@@ -93,6 +95,16 @@
     onSearchRestore,
     class: className = '',
   }: Props = $props();
+
+  // Delegates to the consumer transition when provided; the zero-duration
+  // fallback keeps removal synchronous for rows without preview motion.
+  function previewContentTransition(node: Element, ...rest: unknown[]): TransitionConfig {
+    if (!previewTransition) return { duration: 0 };
+    return (previewTransition as (node: Element, ...rest: unknown[]) => TransitionConfig)(
+      node,
+      ...rest,
+    );
+  }
 </script>
 
 <div
@@ -173,7 +185,7 @@
   </div>
 
   {#if preview}
-    <div class={previewClass} data-operational-preview-content>
+    <div class={previewClass} data-operational-preview-content out:previewContentTransition>
       {@render preview()}
     </div>
   {/if}

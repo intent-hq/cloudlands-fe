@@ -267,6 +267,104 @@ describe('ResponseGroup - collapse state model', () => {
     }
   });
 
+  function previewContent(container: HTMLElement): HTMLElement | null {
+    return container.querySelector('[data-operational-preview-content]');
+  }
+
+  // jsdom reports zero layout height, which short-circuits the disclosure
+  // motion; give the preview container a measurable height so the outro runs.
+  function mockMeasuredPreviewStyle() {
+    const original = window.getComputedStyle.bind(window);
+    return vi
+      .spyOn(window, 'getComputedStyle')
+      .mockImplementation((element: Element, pseudo?: string | null) => {
+        if (
+          element instanceof HTMLElement &&
+          element.matches('[data-operational-preview-content]')
+        ) {
+          return {
+            height: '40px',
+            opacity: '1',
+            paddingTop: '0px',
+            paddingBottom: '0px',
+            marginTop: '0px',
+            marginBottom: '0px',
+          } as CSSStyleDeclaration;
+        }
+        return original(element, pseudo);
+      });
+  }
+
+  const livePreviewChild = createRawSnippet(() => ({
+    render: () => '<div data-testid="live-preview-child">live chunk</div>',
+  }));
+
+  it('animates the streaming preview out instead of removing it instantly', async () => {
+    const styleSpy = mockMeasuredPreviewStyle();
+    try {
+      const { container, rerender } = render(ResponseGroup, {
+        props: { name: 'Live group', isStreaming: true, currentChild: livePreviewChild, children },
+      });
+      expect(previewContent(container)).not.toBeNull();
+
+      await rerender({ isStreaming: false });
+      expect(previewContent(container)).not.toBeNull();
+      await waitFor(() => expect(previewContent(container)).toBeNull());
+    } finally {
+      styleSpy.mockRestore();
+    }
+  });
+
+  it('removes the streaming preview immediately under reduced motion', async () => {
+    const styleSpy = mockMeasuredPreviewStyle();
+    vi.stubGlobal(
+      'matchMedia',
+      vi.fn(
+        (query: string) =>
+          ({
+            matches: query.includes('prefers-reduced-motion'),
+            media: query,
+            onchange: null,
+            addListener: vi.fn(),
+            removeListener: vi.fn(),
+            addEventListener: vi.fn(),
+            removeEventListener: vi.fn(),
+            dispatchEvent: vi.fn(),
+          }) as unknown as MediaQueryList,
+      ),
+    );
+    try {
+      const { container, rerender } = render(ResponseGroup, {
+        props: { name: 'Live group', isStreaming: true, currentChild: livePreviewChild, children },
+      });
+      expect(previewContent(container)).not.toBeNull();
+
+      await rerender({ isStreaming: false });
+      expect(previewContent(container)).toBeNull();
+    } finally {
+      vi.unstubAllGlobals();
+      styleSpy.mockRestore();
+    }
+  });
+
+  it('hands the preview off to the details body without stacking during expand', async () => {
+    const styleSpy = mockMeasuredPreviewStyle();
+    try {
+      const { container } = render(ResponseGroup, {
+        props: { name: 'Live group', isStreaming: true, currentChild: livePreviewChild, children },
+      });
+      const btn = header(container);
+      expect(previewContent(container)).not.toBeNull();
+      expect(details(container)).toBeNull();
+
+      await fireEvent.click(btn);
+      expect(previewContent(container)).toBeNull();
+      expect(details(container)).not.toBeNull();
+    } finally {
+      styleSpy.mockRestore();
+    }
+  });
+
   it('auto-collapses exactly 800 ms after its own stream completes', async () => {
     vi.useFakeTimers();
     try {

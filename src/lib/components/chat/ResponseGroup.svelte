@@ -10,6 +10,7 @@
   import Fa from 'svelte-fa';
   import type { Snippet } from 'svelte';
   import { flushSync, onDestroy } from 'svelte';
+  import type { TransitionConfig } from 'svelte/transition';
   import type { ContentBlock } from '$shared/types';
   import { getContentBlockText } from '$shared/utils/content-block-helpers';
   import { m } from '$shared/paraglide/messages.js';
@@ -200,6 +201,19 @@
   const groupContentClass = $derived(
     `${OPERATIONAL_GROUP_CONTENT_CLASS} ${getOperationalGroupContentSpacingClass(blocks)}`,
   );
+
+  // Disclosure motion for the streaming preview. When the preview leaves
+  // because the group expanded, the details body mounts in the same tick with
+  // its own disclosure intro — skip the preview outro so two containers never
+  // animate height against the followed bottom at once.
+  function previewTransition(
+    node: Element,
+    params: { duration?: number; y?: number } = {},
+    options: { direction?: 'in' | 'out' | 'both' } = {},
+  ): TransitionConfig {
+    if (isExpanded) return { duration: 0 };
+    return safeDisclosureTransition(node, params, options);
+  }
 </script>
 
 {#snippet leading()}
@@ -262,6 +276,7 @@
   {detailsId}
   previewClass={groupContentClass}
   detailsClass={groupContentClass}
+  {previewTransition}
   detailsTransition={safeDisclosureTransition}
   detailsMotion="height-opacity-y"
   detailsInert={isClosing}
