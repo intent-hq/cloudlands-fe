@@ -5982,6 +5982,7 @@
                 compactMode={isCompactMode}
                 editorClassName={isChiefWorkspace ? 'w-full px-3!' : 'w-full px-4! sm:px-6!'}
                 contentInsetClassName={isChiefWorkspace ? 'w-full px-3' : 'w-full px-4 sm:px-6'}
+                actionBarEndClassName={isChiefWorkspace ? 'pr-3!' : undefined}
                 edgeDocked
                 externalDropTarget
                 requiresModelSwitchConfirmation={!canChangeProvider}
