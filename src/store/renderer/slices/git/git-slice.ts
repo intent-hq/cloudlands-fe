@@ -41,6 +41,7 @@ const emptyWorkspaceState: GitWorkspaceState = {
   behind: 0,
   postMergeState: null,
   gitOperations: { ...defaultGitOperationFlags },
+  secondaryRoots: {},
 };
 
 const { getWorkspaceState, setWorkspaceState, clearWorkspaceState } =
@@ -65,6 +66,24 @@ export const setGitStatus = createAction('git/setStatus', (wsId: string, status:
   wsId,
   status,
 }));
+
+export const loadSecondaryRootGit = createAction<
+  [wsId: string, gitRootId: string, registeredCommitSha?: string, limit?: number]
+>('git/loadSecondaryRoot');
+export const setSecondaryRootGitLoading = createAction<
+  [wsId: string, gitRootId: string]
+>('git/setSecondaryRootLoading');
+export const setSecondaryRootGit = createAction(
+  'git/setSecondaryRoot',
+  (
+    wsId: string,
+    gitRootId: string,
+    data: Omit<import('./git-types').SecondaryRootGitState, 'loading' | 'error'>,
+  ) => ({ wsId, gitRootId, data }),
+);
+export const setSecondaryRootGitError = createAction<
+  [wsId: string, gitRootId: string, error: string]
+>('git/setSecondaryRootError');
 
 // ── Git Operation Event Actions ──
 
@@ -98,6 +117,52 @@ gitReducer.with(setGitStatus, (state, action) => {
     branch: status.branch || null,
     ahead: status.ahead || 0,
     behind: status.behind || 0,
+  });
+});
+gitReducer.with(setSecondaryRootGitLoading, (state, { payload: [wsId, gitRootId] }) => {
+  const ws = getWorkspaceState(state, wsId);
+  const current = ws.secondaryRoots[gitRootId];
+  return setWorkspaceState(state, wsId, {
+    ...ws,
+    secondaryRoots: {
+      ...ws.secondaryRoots,
+      [gitRootId]: {
+        status: current?.status ?? null,
+        commits: current?.commits ?? [],
+        nextToken: current?.nextToken,
+        commitFiles: current?.commitFiles ?? {},
+        loading: true,
+        error: null,
+      },
+    },
+  });
+});
+gitReducer.with(setSecondaryRootGit, (state, { payload: { wsId, gitRootId, data } }) => {
+  const ws = getWorkspaceState(state, wsId);
+  return setWorkspaceState(state, wsId, {
+    ...ws,
+    secondaryRoots: {
+      ...ws.secondaryRoots,
+      [gitRootId]: { ...data, loading: false, error: null },
+    },
+  });
+});
+gitReducer.with(setSecondaryRootGitError, (state, { payload: [wsId, gitRootId, error] }) => {
+  const ws = getWorkspaceState(state, wsId);
+  const current = ws.secondaryRoots[gitRootId];
+  return setWorkspaceState(state, wsId, {
+    ...ws,
+    secondaryRoots: {
+      ...ws.secondaryRoots,
+      [gitRootId]: {
+        status: current?.status ?? null,
+        commits: current?.commits ?? [],
+        nextToken: current?.nextToken,
+        commitFiles: current?.commitFiles ?? {},
+        loading: false,
+        error,
+      },
+    },
   });
 });
 gitReducer.with(workspaceUnmounted, (state, { payload: [wsId] }) =>

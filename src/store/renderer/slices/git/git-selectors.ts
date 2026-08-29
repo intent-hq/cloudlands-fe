@@ -10,7 +10,7 @@ import {
   defaultGitOperationFlags,
   getGitWorkspaceState,
 } from "./git-slice";
-import type { GitOperationFlags, PostMergeState } from "./git-types";
+import type { GitOperationFlags, PostMergeState, SecondaryRootGitState } from "./git-types";
 import type { GitStatus } from "$shared/types";
 
 const defaultPostMergeState: PostMergeState = {
@@ -40,6 +40,22 @@ export const selectGitBehind: AppSelector<number, [wsId: string]> =
   store.createSelector(
     (state, wsId: string) => getGitWorkspaceState(state.git, wsId).behind
   );
+
+const emptySecondaryRootState: SecondaryRootGitState = {
+  status: null,
+  commits: [],
+  commitFiles: {},
+  loading: false,
+  error: null,
+};
+export { emptySecondaryRootState };
+
+export const selectSecondaryRootGitRoots: AppSelector<
+  Record<string, SecondaryRootGitState>,
+  [wsId: string]
+> = store.createSelector(
+  (state, wsId: string) => getGitWorkspaceState(state.git, wsId).secondaryRoots
+);
 
 // ── Sidebar post-merge / git operation flag selectors (moved from transient-ui) ──
 

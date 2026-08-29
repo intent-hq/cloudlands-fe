@@ -38,10 +38,12 @@
   import { m } from '$shared/paraglide/messages.js';
   import { isAbsolutePath, normalizePath } from '$lib/utils/path-utils';
   import { store as appStore } from '$store/renderer/store';
-  import { gitClient } from '$features/git/git.client';
-  import { appClient } from '$lib/client';
+  import {
+    emptySecondaryRootState,
+    selectSecondaryRootGitRoots,
+  } from '$store/renderer/slices/git/git-selectors';
+  import { loadSecondaryRootGit } from '$store/renderer/slices/git/git-slice';
   import { selectGitRoots } from '$store/renderer/slices/git-roots/git-roots-selectors';
-  import type { CommitInfo, GitStatus, WorkspaceId } from '$shared/types';
 
   const lineWrapping = selectLineWrapping();
   const foldUnchanged = selectFoldUnchanged();
@@ -66,66 +68,28 @@
   // svelte-ignore state_referenced_locally
   const ftLoading$ = selectFileTrackingLoading(workspaceId);
   const allCommits = $derived($ftCommits$ || []);
-  let rootStatus = $state<GitStatus | null>(null);
-  let rootCommits = $state<CommitInfo[]>([]);
-  let rootCommitFiles = $state<
-    Record<string, Array<{ path: string; additions: number; deletions: number }>>
-  >({});
-  let rootLoading = $state(false);
-  let rootRequestEpoch = 0;
-
-  async function loadSecondaryRoot(wsId: string, rootId: string) {
-    const epoch = ++rootRequestEpoch;
-    rootLoading = true;
-    const statusResult = await gitClient.getStatus(wsId as WorkspaceId, { gitRootId: rootId });
-    const commits: CommitInfo[] = [];
+  // svelte-ignore state_referenced_locally
+  const rootGitRoots$ = selectSecondaryRootGitRoots(workspaceId);
+  const rootGit = $derived($rootGitRoots$[gitRootId] ?? emptySecondaryRootState);
+  const rootStatus = $derived(rootGit.status);
+  const rootLoading = $derived(rootGit.loading);
+  const rootCommitFiles = $derived(rootGit.commitFiles);
+  const rootCommits = $derived.by(() => {
     const boundary = selectedRoot?.registeredCommitSha;
-    let nextToken: string | undefined;
-    do {
-      const historyResult = await gitClient.getHistory(wsId as WorkspaceId, 100, {
-        gitRootId: rootId,
-        ...(nextToken ? { nextToken } : {}),
-      });
-      if (!historyResult.ok) break;
-      commits.push(...historyResult.data.items);
-      nextToken = historyResult.data.nextToken;
-    } while (
-      nextToken &&
-      (!boundary || !commits.some((commit) => commit.hash === boundary)) &&
-      epoch === rootRequestEpoch
-    );
-
-    const boundaryIndex = boundary ? commits.findIndex((commit) => commit.hash === boundary) : -1;
-    const recent = boundaryIndex >= 0 ? commits.slice(0, boundaryIndex) : commits;
-    const details = await Promise.all(
-      recent.map((commit) => appClient.git.commitDetails(wsId, commit.hash, { gitRootId: rootId })),
-    );
-    if (epoch !== rootRequestEpoch || rootId !== gitRootId || wsId !== workspaceId) return;
-    rootStatus = statusResult.ok ? statusResult.data : null;
-    rootCommits = recent;
-    rootCommitFiles = Object.fromEntries(
-      recent.map((commit, index) => {
-        const detail = details[index];
-        return [
-          commit.hash,
-          detail
-            ? detail.fileDetails.length > 0
-              ? detail.fileDetails
-              : detail.files.map((path) => ({ path, additions: 0, deletions: 0 }))
-            : [],
-        ];
-      }),
-    );
-    rootLoading = false;
-  }
+    const index = boundary
+      ? rootGit.commits.findIndex((commit) => commit.hash === boundary)
+      : -1;
+    return index >= 0 ? rootGit.commits.slice(0, index) : rootGit.commits;
+  });
 
   $effect(() => {
     const wsId = workspaceId;
     const rootId = gitRootId;
-    rootStatus = null;
-    rootCommits = [];
-    rootCommitFiles = {};
-    if (wsId && rootId) void loadSecondaryRoot(wsId, rootId);
+    if (wsId && rootId) {
+      appStore.dispatch(
+        loadSecondaryRootGit(wsId, rootId, selectedRoot?.registeredCommitSha, 100),
+      );
+    }
   });
 
   // State for expand/collapse and panel ref

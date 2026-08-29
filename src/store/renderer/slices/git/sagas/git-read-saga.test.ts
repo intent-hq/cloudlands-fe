@@ -2,13 +2,19 @@ import { runSaga, stdChannel } from 'redux-saga';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { appClient } from '$lib/client';
-import type { GitStatus } from '$shared/types';
+import { gitClient } from '$features/git/git.client';
+import type { CommitInfo, GitStatus } from '$shared/types';
 import { refreshRequested } from '../../changes/changes-slice';
 import {
   workspaceDeleted,
   workspaceUnmounted,
 } from '../../workspace-lifecycle/workspace-lifecycle-slice';
-import { loadGitStatus, setGitStatus } from '../git-slice';
+import {
+  loadGitStatus,
+  loadSecondaryRootGit,
+  setGitStatus,
+  setSecondaryRootGit,
+} from '../git-slice';
 import { gitReadSaga } from './git-read-saga';
 
 const settle = async () => {
@@ -19,6 +25,72 @@ const settle = async () => {
 describe('gitReadSaga', () => {
   afterEach(() => {
     vi.restoreAllMocks();
+  });
+
+  it('loads a secondary root through the saga with exact boundary pagination', async () => {
+    vi.spyOn(gitClient, 'getStatus').mockResolvedValue({
+      ok: true,
+      data: {
+        branch: 'feature',
+        ahead: 0,
+        behind: 0,
+        diverged: false,
+        files: [{ path: 'working.ts', status: 'M', staged: false }],
+        hasUncommittedChanges: true,
+        hasUntrackedFiles: false,
+      },
+    });
+    vi.spyOn(gitClient, 'getHistory')
+      .mockResolvedValueOnce({
+        ok: true,
+        data: {
+          items: [{ hash: 'new', message: 'new' } as CommitInfo],
+          nextToken: 'page-2',
+        },
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        data: { items: [{ hash: 'boundary', message: 'boundary' } as CommitInfo] },
+      });
+    vi.spyOn(appClient.git, 'commitDetails').mockImplementation(async (_wsId, hash) => ({
+      files: [`${hash}.ts`],
+      fileDetails: [],
+    }));
+    const channel = stdChannel();
+    const actions: unknown[] = [];
+    const task = runSaga({ channel, dispatch: (action) => actions.push(action) }, gitReadSaga);
+
+    channel.put(loadSecondaryRootGit('ws-1', 'root-1', 'boundary', 30));
+    await vi.waitFor(() =>
+      expect(actions).toContainEqual(
+        expect.objectContaining({ type: setSecondaryRootGit.type }),
+      ),
+    );
+    const completed = actions.find(
+      (action) => (action as { type?: string }).type === setSecondaryRootGit.type,
+    ) as ReturnType<typeof setSecondaryRootGit>;
+    expect(completed.payload).toEqual(
+      expect.objectContaining({
+        wsId: 'ws-1',
+        gitRootId: 'root-1',
+        data: expect.objectContaining({
+          commits: [
+            expect.objectContaining({ hash: 'new' }),
+            expect.objectContaining({ hash: 'boundary' }),
+          ],
+          commitFiles: {
+            new: [{ path: 'new.ts', additions: 0, deletions: 0 }],
+            boundary: [{ path: 'boundary.ts', additions: 0, deletions: 0 }],
+          },
+        }),
+      }),
+    );
+    expect(gitClient.getHistory).toHaveBeenNthCalledWith(2, 'ws-1', 30, {
+      gitRootId: 'root-1',
+      nextToken: 'page-2',
+    });
+    task.cancel();
+    await task.toPromise();
   });
 
   it('maps the protocol response field by field', async () => {

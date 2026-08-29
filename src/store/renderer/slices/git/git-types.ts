@@ -4,7 +4,8 @@
  * Types for the git Redux slice. Safe to import from any process.
  */
 
-import type { GitStatus, DiffChunk } from '$shared/types';
+import type { CommitFile } from '$features/file-tracking/types';
+import type { CommitInfo, GitStatus, DiffChunk } from '$shared/types';
 
 // ── Git Operation Event Types ──
 
@@ -98,6 +99,16 @@ export type GitWorkspaceState = {
   behind: number;
   postMergeState: PostMergeState | null;
   gitOperations: GitOperationFlags;
+  secondaryRoots: Record<string, SecondaryRootGitState>;
+};
+
+export type SecondaryRootGitState = {
+  status: GitStatus | null;
+  commits: CommitInfo[];
+  nextToken?: string;
+  commitFiles: Record<string, CommitFile[]>;
+  loading: boolean;
+  error: string | null;
 };
 
 export type GitState = {

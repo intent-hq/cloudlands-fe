@@ -10,6 +10,15 @@ import { warmImport } from '../../../../../test/warm-import';
 import type { WorkspaceGitRootEntry } from '$store/renderer/slices/git-roots/git-roots-selectors';
 import type { CommitInfo, GitStatus } from '$shared/types';
 
+type RootGitTestState = {
+  status: GitStatus | null;
+  commits: CommitInfo[];
+  nextToken?: string;
+  commitFiles: Record<string, Array<{ path: string; additions: number; deletions: number }>>;
+  loading: boolean;
+  error: string | null;
+};
+
 const mocks = vi.hoisted(() => ({
   getStatus: vi.fn(),
   getHistory: vi.fn(),
@@ -18,6 +27,27 @@ const mocks = vi.hoisted(() => ({
   writeTextToClipboard: vi.fn(),
   toastSuccess: vi.fn(),
   toastError: vi.fn(),
+  rootGit: (() => {
+    let value: RootGitTestState = {
+      status: null,
+      commits: [],
+      commitFiles: {},
+      loading: false,
+      error: null,
+    };
+    const subscribers = new Set<(next: typeof value) => void>();
+    return {
+      subscribe(run: (next: typeof value) => void) {
+        subscribers.add(run);
+        run(value);
+        return () => subscribers.delete(run);
+      },
+      set(next: typeof value) {
+        value = next;
+        subscribers.forEach((run) => run(value));
+      },
+    };
+  })(),
 }));
 
 // gitRootId-scoped read-only per-root reads (PROTOCOL §5.6, monorepo#2053).
@@ -25,7 +55,7 @@ vi.mock('$features/git/git.client', () => ({
   gitClient: { getStatus: mocks.getStatus, getHistory: mocks.getHistory },
 }));
 
-// Lazy per-commit file fetch on expand (`git.commitDetails`, gitRootId-scoped).
+// Saga-owned per-commit file reads (`git.commitDetails`, gitRootId-scoped).
 vi.mock('$lib/client', () => ({
   appClient: { git: { commitDetails: mocks.commitDetails } },
 }));
@@ -38,6 +68,32 @@ vi.mock('$store/renderer/store', async () => {
     dispatch: mocks.dispatch,
   });
 });
+
+vi.mock('$store/renderer/slices/git/git-selectors', () => ({
+  emptySecondaryRootState: {
+    status: null,
+    commits: [],
+    commitFiles: {},
+    loading: false,
+    error: null,
+  },
+  selectSecondaryRootGitRoots: vi.fn(() => ({
+    subscribe(run: (value: Record<string, unknown>) => void) {
+      return mocks.rootGit.subscribe((value) =>
+        run({ 'root-1': value, 'root-2': value, 'root-9': value }),
+      );
+    },
+  })),
+}));
+
+vi.mock('$store/renderer/slices/git/git-slice', () => ({
+  loadSecondaryRootGit: vi.fn(
+    (wsId: string, gitRootId: string, registeredCommitSha?: string, limit = 30) => ({
+      type: 'git/loadSecondaryRoot',
+      payload: [wsId, gitRootId, registeredCommitSha, limit],
+    }),
+  ),
+}));
 
 vi.mock('$store/renderer/slices/workspace-navigation/workspace-navigation-slice', () => ({
   openWorkspaceLocalChanges: vi.fn((...args: unknown[]) => ({
@@ -125,6 +181,8 @@ warmImport(() => import('./mocks/Fa.svelte'));
 warmImport(() => import('../SecondaryRootChangesView.svelte'));
 
 describe('SecondaryRootChangesView', () => {
+  let requestEpoch = 0;
+
   beforeEach(() => {
     mocks.getStatus.mockReset();
     mocks.getHistory.mockReset();
@@ -136,6 +194,92 @@ describe('SecondaryRootChangesView', () => {
     mocks.getHistory.mockResolvedValue({ ok: true, data: { items: [] } });
     mocks.commitDetails.mockResolvedValue(null);
     mocks.writeTextToClipboard.mockResolvedValue(undefined);
+    mocks.rootGit.set({
+      status: null,
+      commits: [],
+      commitFiles: {},
+      loading: false,
+      error: null,
+    });
+    requestEpoch = 0;
+    mocks.dispatch.mockImplementation((action) => {
+      if (action.type !== 'git/loadSecondaryRoot') return;
+      const [wsId, gitRootId, registeredCommitSha, limit] = action.payload;
+      const epoch = ++requestEpoch;
+      mocks.rootGit.set({
+        status: null,
+        commits: [],
+        commitFiles: {},
+        loading: true,
+        error: null,
+      });
+      void (async () => {
+        const [statusResult, firstPage] = await Promise.all([
+          mocks.getStatus(wsId, { gitRootId }),
+          mocks.getHistory(wsId, limit, { gitRootId }),
+        ]);
+        if (epoch !== requestEpoch) return;
+        if (!statusResult.ok || !firstPage.ok) {
+          mocks.rootGit.set({
+            status: null,
+            commits: [],
+            commitFiles: {},
+            loading: false,
+            error: statusResult.error ?? firstPage.error,
+          });
+          return;
+        }
+        const commits = [...firstPage.data.items];
+        let nextToken = firstPage.data.nextToken;
+        while (
+          nextToken &&
+          (!registeredCommitSha || !commits.some((commit) => commit.hash === registeredCommitSha))
+        ) {
+          const page = await mocks.getHistory(wsId, limit, { gitRootId, nextToken });
+          if (epoch !== requestEpoch) return;
+          if (!page.ok) {
+            mocks.rootGit.set({
+              status: null,
+              commits: [],
+              commitFiles: {},
+              loading: false,
+              error: page.error,
+            });
+            return;
+          }
+          const seen = new Set(commits.map((commit) => commit.hash));
+          commits.push(...page.data.items.filter((commit) => !seen.has(commit.hash)));
+          nextToken = page.data.nextToken;
+        }
+        const boundaryIndex = registeredCommitSha
+          ? commits.findIndex((commit) => commit.hash === registeredCommitSha)
+          : -1;
+        const recent = boundaryIndex >= 0 ? commits.slice(0, boundaryIndex) : commits;
+        const details = await Promise.all(
+          recent.map((commit) => mocks.commitDetails(wsId, commit.hash, { gitRootId })),
+        );
+        if (epoch !== requestEpoch) return;
+        mocks.rootGit.set({
+          status: statusResult.data,
+          commits,
+          commitFiles: Object.fromEntries(
+            recent.map((commit, index) => {
+              const detail = details[index];
+              return [
+                commit.hash,
+                detail
+                  ? detail.fileDetails.length > 0
+                    ? detail.fileDetails
+                    : detail.files.map((path) => ({ path, additions: 0, deletions: 0 }))
+                  : [],
+              ];
+            }),
+          ),
+          loading: false,
+          error: null,
+        });
+      })();
+    });
   });
 
   it('prefers the freshly loaded status.branch over the cached entry.branch', async () => {
@@ -473,7 +617,7 @@ describe('SecondaryRootChangesView', () => {
         items: [makeCommit('bound111', 'chore: at registration')],
       },
     });
-    const { container, getByTestId, queryByTestId } = await renderView(
+    const { container, queryByTestId } = await renderView(
       makeEntry('main', 'root-1', 'bound111'),
     );
 
@@ -510,7 +654,7 @@ describe('SecondaryRootChangesView', () => {
         items: [makeCommit('bbbb222', 'fix: two'), makeCommit('bound111', 'chore: at registration')],
       },
     });
-    const { container, getByTestId } = await renderView(
+    const { container } = await renderView(
       makeEntry('main', 'root-1', 'bound111'),
     );
 

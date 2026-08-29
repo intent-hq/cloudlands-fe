@@ -19,6 +19,21 @@ const { createMockSelector, dispatchMock, mockReduxState, resetMockReduxState } 
     ftCommits: [] as unknown[],
     activityChanges: [] as unknown[],
     gitRoots: [] as unknown[],
+    secondaryRootGit: {
+      status: {
+        branch: 'main',
+        ahead: 0,
+        behind: 0,
+        diverged: false,
+        files: [{ path: 'src/root.ts', status: 'M', staged: false }],
+        hasUncommittedChanges: true,
+        hasUntrackedFiles: false,
+      },
+      commits: [],
+      commitFiles: {},
+      loading: false,
+      error: null,
+    },
   };
 
   function resetMockReduxState() {
@@ -103,6 +118,19 @@ vi.mock('$store/renderer/slices/git-roots/git-roots-selectors', () => ({
   selectGitRoots: createMockSelector(() => mockReduxState.gitRoots),
 }));
 
+vi.mock('$store/renderer/slices/git/git-selectors', () => ({
+  emptySecondaryRootState: {
+    status: null,
+    commits: [],
+    commitFiles: {},
+    loading: false,
+    error: null,
+  },
+  selectSecondaryRootGitRoots: createMockSelector(() => ({
+    'root-9': mockReduxState.secondaryRootGit,
+  })),
+}));
+
 vi.mock('$store/renderer/slices/ui-layout/ui-layout-selectors', () => ({
   selectLineWrapping: createMockSelector(() => false),
   selectFoldUnchanged: createMockSelector(() => false),
@@ -163,6 +191,10 @@ vi.mock('$store/renderer/slices/changes/changes-slice', () => ({
 
 vi.mock('$store/renderer/slices/git/git-slice', () => ({
   loadGitStatus: (...args: unknown[]) => ({ type: 'git/loadGitStatus', payload: args }),
+  loadSecondaryRootGit: (...args: unknown[]) => ({
+    type: 'git/loadSecondaryRoot',
+    payload: args,
+  }),
 }));
 
 vi.mock('$features/git/git.client', () => ({
