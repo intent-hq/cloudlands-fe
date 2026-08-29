@@ -94,6 +94,23 @@ describe('ChatImageBlock', () => {
     expect(document.activeElement).toBe(trigger);
   });
 
+  it('suppresses the actions menu on truncated thumbnail blocks until hydration', async () => {
+    render(ChatImageBlock, {
+      props: {
+        data: pngData,
+        mimeType: 'image/png',
+        alt: 'screenshot.png',
+        dataTruncated: true,
+        dataIsThumbnail: true,
+        onHydrate: vi.fn(),
+      },
+    });
+
+    // The block only carries the low-res thumbnail bytes: the menu's
+    // download/copy/info actions would act on the wrong image.
+    expect(screen.queryByRole('button', { name: /image options/i })).toBeNull();
+  });
+
   it('exposes the actions menu inside the opened lightbox', async () => {
     render(ChatImageBlock, {
       props: { data: pngData, mimeType: 'image/png', alt: 'screenshot.png' },
@@ -162,6 +179,74 @@ describe('ImageActionsMenu actions', () => {
     const item = write.mock.calls[0][0][0] as InstanceType<typeof FakeClipboardItem>;
     expect(item.items['image/png']).toBeInstanceOf(Blob);
     expect(item.items['image/png'].type).toBe('image/png');
+    vi.unstubAllGlobals();
+  });
+
+  it('discards a stale dimensions probe that resolves after the URL changed', async () => {
+    const probes: Array<{
+      naturalWidth: number;
+      naturalHeight: number;
+      onload: (() => void) | null;
+      src: string;
+    }> = [];
+    class FakeImage {
+      naturalWidth = 0;
+      naturalHeight = 0;
+      onload: (() => void) | null = null;
+      src = '';
+      constructor() {
+        probes.push(this);
+      }
+    }
+    vi.stubGlobal('Image', FakeImage);
+
+    const { rerender } = render(ImageActionsMenu, {
+      props: { imageUrl: `data:image/png;base64,${pngData}` },
+    });
+    await openImageActionsMenu();
+    await waitFor(() => expect(probes).toHaveLength(1));
+
+    // Hydration swaps the URL while the first probe is still in flight.
+    await rerender({ imageUrl: `data:image/jpeg;base64,${pngData}` });
+    await waitFor(() => expect(probes).toHaveLength(2));
+
+    // The stale probe resolves late: its dimensions must be discarded.
+    probes[0].naturalWidth = 11;
+    probes[0].naturalHeight = 22;
+    probes[0].onload?.();
+    expect(screen.queryByTestId('image-info-dimensions')).toBeNull();
+
+    probes[1].naturalWidth = 800;
+    probes[1].naturalHeight = 600;
+    probes[1].onload?.();
+    await waitFor(() =>
+      expect(screen.getByTestId('image-info-dimensions').textContent).toContain('800'),
+    );
+    vi.unstubAllGlobals();
+  });
+
+  it('discards a stale byte-size fetch that resolves after the URL changed', async () => {
+    const pending: Array<(response: unknown) => void> = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => new Promise((resolve) => pending.push(resolve))),
+    );
+
+    const { rerender } = render(ImageActionsMenu, {
+      props: { imageUrl: 'workspace-file://ws-1/old.png' },
+    });
+    await openImageActionsMenu();
+    await waitFor(() => expect(pending).toHaveLength(1));
+
+    await rerender({ imageUrl: 'workspace-file://ws-1/new.png' });
+    await waitFor(() => expect(pending).toHaveLength(2));
+
+    // The stale fetch resolves late: its byte size must be discarded.
+    pending[0]({ ok: true, blob: async () => ({ size: 111 }) });
+    pending[1]({ ok: true, blob: async () => ({ size: 2048 }) });
+
+    await waitFor(() => expect(screen.getByTestId('image-info-size').textContent).toContain('2'));
+    expect(screen.getByTestId('image-info-size').textContent).not.toContain('111');
     vi.unstubAllGlobals();
   });
 });

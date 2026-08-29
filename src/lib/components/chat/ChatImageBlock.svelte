@@ -73,11 +73,17 @@
           class="block size-full object-cover"
         />
       </button>
-      <ImageActionsMenu
-        {imageUrl}
-        imageName={alt}
-        triggerClass="absolute right-1.5 top-1.5 opacity-0 transition-opacity focus-visible:opacity-100 group-focus-within:opacity-100 group-hover:opacity-100 data-[state=open]:opacity-100"
-      />
+      {#if !dataTruncated}
+        <!-- Truncated blocks only carry the low-res write-time thumbnail, so
+             the menu would download/copy/inspect the wrong bytes; clicking
+             hydrates the original, after which the menu (and the lightbox's)
+             acts on the real image. -->
+        <ImageActionsMenu
+          {imageUrl}
+          imageName={alt}
+          triggerClass="absolute right-1.5 top-1.5 opacity-0 transition-opacity focus-visible:opacity-100 group-focus-within:opacity-100 group-hover:opacity-100 data-[state=open]:opacity-100"
+        />
+      {/if}
     </div>
   {:else if dataTruncated}
     <!-- Legacy slim row with no persisted thumbnail: placeholder chip with

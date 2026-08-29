@@ -55,12 +55,16 @@
 
   function loadInfo() {
     if (infoLoadedFor === imageUrl) return;
-    infoLoadedFor = imageUrl;
+    // Captured against the URL this load started with: callbacks resolving
+    // after the URL changed (e.g. hydration swapped in the full image and a
+    // fresh load started) must not overwrite the newer image's info.
+    const loadedFor = (infoLoadedFor = imageUrl);
     dimensions = null;
     byteSize = dataUrl ? base64ByteSize(dataUrl.base64) : null;
 
     const probe = new Image();
     probe.onload = () => {
+      if (infoLoadedFor !== loadedFor) return;
       dimensions = { width: probe.naturalWidth, height: probe.naturalHeight };
     };
     probe.src = imageUrl;
@@ -70,7 +74,7 @@
       void fetch(imageUrl)
         .then((response) => (response.ok ? response.blob() : null))
         .then((blob) => {
-          if (blob) byteSize = blob.size;
+          if (blob && infoLoadedFor === loadedFor) byteSize = blob.size;
         })
         .catch(() => {
           // Size row simply stays hidden when the bytes cannot be fetched.
