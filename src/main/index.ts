@@ -129,7 +129,7 @@ import { exportHandlerDebugInfo, setupIPCInterceptor } from './ipc-handler-wrapp
 import { initializeWarningSuppression } from './utils/suppress-warnings';
 import { runWithHardExitTimeout } from './utils/hard-exit-timeout';
 import { handleUncaughtException, handleUnhandledRejection } from './utils/process-error-handlers';
-import { setupWebviewSecurity } from './webview-security';
+import { isWebviewPopupWindow, setupWebviewSecurity } from './webview-security';
 import { attachAppCommandHistoryNavigation } from './app-command-navigation';
 import { attachSwipeHistoryNavigation } from './swipe-navigation';
 import { setupHardwareConsoleMain } from '../features/hardware-console/main/hardware-console.ipc';
@@ -956,9 +956,10 @@ app.whenReady().then(async () => {
       windowMenuItems.push({ role: 'front', label: m.menu_bring_all_to_front() });
     }
 
-    // Add the app's open windows to the Window menu, labeled by kind + backend
+    // Add the app's open windows to the Window menu, labeled by kind + backend.
+    // External webview popups (OAuth/auth flows) are not app windows — skip them.
     const liveWindows = (BrowserWindow.getAllWindows() as BrowserWindowType[]).filter(
-      (w) => !w.isDestroyed(),
+      (w) => !w.isDestroyed() && !isWebviewPopupWindow(w),
     );
     if (liveWindows.length > 0) {
       let connections: Awaited<ReturnType<typeof listConnections>> = [];
@@ -1478,6 +1479,12 @@ app.whenReady().then(async () => {
   // restore of a remote) — the Help ▸ Sample intentd Process item is gated on
   // win32 + local sidecar (#1889)
   app.on('backend-connection-changed', () => {
+    rebuildMenu();
+  });
+
+  // Rebuild menu when connection records change (add/forget/rename/hostname
+  // capture) so window entries pick up fresh backend labels
+  app.on('connections-changed', () => {
     rebuildMenu();
   });
 
