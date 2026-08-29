@@ -745,8 +745,9 @@ export const DialogOpenSchema = z.object({
 export const ShellOpenExternalSchema = z.object({
   url: z.string().refine(
     (val) => {
-      // Allow http, https, mailto, and other common protocols
-      return /^(https?|mailto|tel|file):/.test(val);
+      // Allow http, https, mailto, other common protocols, and the macOS
+      // System Settings deep-link scheme (x-apple.systempreferences:)
+      return /^(https?|mailto|tel|file|x-apple\.systempreferences):/.test(val);
     },
     { message: 'Invalid URL format - must start with http, https, mailto, tel, or file' },
   ),

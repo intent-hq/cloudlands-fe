@@ -21,7 +21,21 @@ import type { HidCollectionInfoLike, HidDeviceLike } from './webhid-types';
 
 const logger = new Logger('HardwareConsoleManager');
 
+/**
+ * Backoff schedule for auto-retrying a failed open. With the device still
+ * present, no WebHID `connect` event will ever re-trigger an open, so
+ * without retries a transient failure (boot race, device briefly claimed
+ * elsewhere) strands the manager disconnected until a replug or toggle.
+ */
+const OPEN_RETRY_DELAYS_MS = [1000, 2000, 5000];
+
 export type HardwareConsoleStatus = 'unavailable' | 'disconnected' | 'connecting' | 'connected';
+
+/** Why the last `device.open()` failed; `name` preserves e.g. `NotAllowedError`. */
+export interface HardwareConsoleConnectError {
+  name: string;
+  message: string;
+}
 
 export interface HardwareConsoleManagerOptions {
   requestTimeoutMs?: number;
@@ -46,6 +60,13 @@ export class HardwareConsoleManager {
   private readonly logListeners = new Set<(text: string) => void>();
   private started = false;
   private opening = false;
+  private connectError: HardwareConsoleConnectError | null = null;
+  /** The device whose open() produced `connectError` (for removal clearing). */
+  private failedDevice: HidDeviceLike | null = null;
+  /** Pending auto-retry of a failed open (see scheduleOpenRetry), or `null`. */
+  private retryTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Next index into OPEN_RETRY_DELAYS_MS; reset when the retry cycle ends. */
+  private retryAttempt = 0;
   private openInFlight: Promise<boolean> | null = null;
   /**
    * Lifecycle generation token, incremented by every start()/stop(). Async
@@ -67,6 +88,17 @@ export class HardwareConsoleManager {
 
   get status(): HardwareConsoleStatus {
     return this.currentStatus;
+  }
+
+  /**
+   * Why the last `device.open()` failed, or `null`. Set when an open attempt
+   * rejects (device present but unopenable — e.g. macOS Input Monitoring
+   * denial); cleared on successful connect, `stop()`, and removal of the
+   * failing device, notifying status listeners when the cleared error would
+   * otherwise leave stale UI (status alone does not change).
+   */
+  get lastConnectError(): HardwareConsoleConnectError | null {
+    return this.connectError;
   }
 
   /** The live RPC client, or `null` while disconnected. */
@@ -161,6 +193,10 @@ export class HardwareConsoleManager {
   /** Tear down the connection and stop listening for hotplug events. */
   async stop(): Promise<void> {
     const generation = ++this.generation;
+    // A pending open retry belongs to the generation being stopped; cancel
+    // it even when a racing start() wins the trailing-teardown guard below
+    // (clearConnectError would then be skipped).
+    this.cancelOpenRetry();
     for (const unsub of this.platformUnsubs) unsub();
     this.platformUnsubs = [];
     this.started = false;
@@ -171,6 +207,9 @@ export class HardwareConsoleManager {
     // A start() during the await owns any connection attached since; tearing
     // it down here would leave started === true with a closed device.
     if (generation !== this.generation) return;
+    // Status is often already 'disconnected' after a failed open, so the
+    // teardown transition alone would not refresh listeners — notify.
+    this.clearConnectError(true);
     await this.teardown('manager stopped');
   }
 
@@ -186,7 +225,13 @@ export class HardwareConsoleManager {
   }
 
   private handleDeviceRemoval(device: HidDeviceLike): void {
-    if (device !== this.device) return;
+    if (device !== this.device) {
+      // The device whose open() failed was unplugged: the failure no longer
+      // describes a present device, so drop it and refresh listeners (there
+      // is no status transition to do it — status is already disconnected).
+      if (device === this.failedDevice) this.clearConnectError(true);
+      return;
+    }
     logger.info('Connected device removed');
     void this.teardown('device disconnected')
       .then(() => this.reopenRemainingDevice(device))
@@ -281,7 +326,13 @@ export class HardwareConsoleManager {
       if (!device.opened) await device.open();
     } catch (error) {
       logger.warn('Failed to open device', { error: String(error) });
+      this.connectError = {
+        name: error instanceof Error ? error.name : 'Error',
+        message: error instanceof Error ? error.message : String(error),
+      };
+      this.failedDevice = device;
       this.setStatus('disconnected');
+      this.scheduleOpenRetry(device, generation);
       return false;
     }
     if (generation !== this.generation) {
@@ -322,6 +373,8 @@ export class HardwareConsoleManager {
     this.device = device;
     this.transport = transport;
     this.rpcClient = client;
+    // The 'connected' transition below notifies listeners; no extra notify.
+    this.clearConnectError(false);
     this.setStatus('connected');
     return false;
   }
@@ -343,6 +396,68 @@ export class HardwareConsoleManager {
       }
     }
     this.setStatus(this.platform ? 'disconnected' : 'unavailable');
+  }
+
+  /**
+   * Bounded-backoff auto-retry after a failed open, so a transient failure
+   * self-heals without a replug or integration toggle. Armed only while the
+   * manager is still started for the same generation; the fired callback
+   * re-checks the generation token before opening, mirroring the async
+   * lifecycle discipline of start()/performOpen()
+   * (intent-hq/monorepo#1434/#1437/#1438). Cancelled by stop(), removal of
+   * the failing device, and a successful connect (via clearConnectError).
+   * Once the schedule is exhausted the manager stays disconnected with
+   * `lastConnectError` still set for the UI.
+   */
+  private scheduleOpenRetry(device: HidDeviceLike, generation: number): void {
+    if (!this.started || generation !== this.generation) return;
+    if (this.retryAttempt >= OPEN_RETRY_DELAYS_MS.length) {
+      logger.warn('Open retries exhausted; staying disconnected', {
+        attempts: this.retryAttempt,
+      });
+      return;
+    }
+    const delayMs = OPEN_RETRY_DELAYS_MS[this.retryAttempt];
+    this.retryAttempt += 1;
+    if (this.retryTimer !== null) clearTimeout(this.retryTimer);
+    this.retryTimer = setTimeout(() => {
+      this.retryTimer = null;
+      // Cancellation should have caught lifecycle changes already; the
+      // generation token stays the authority for a timer that fires while
+      // a stop()/toggle races it.
+      if (!this.started || generation !== this.generation) return;
+      if (this.device || this.opening) return;
+      logger.info('Retrying device open', { attempt: this.retryAttempt });
+      void this.openDevice(device).catch((error: unknown) => {
+        logger.warn('Open retry failed', { error: String(error) });
+      });
+    }, delayMs);
+  }
+
+  /** Cancel any pending open retry and reset the backoff schedule. */
+  private cancelOpenRetry(): void {
+    if (this.retryTimer !== null) {
+      clearTimeout(this.retryTimer);
+      this.retryTimer = null;
+    }
+    this.retryAttempt = 0;
+  }
+
+  /**
+   * Drop the recorded connect error. `notify` re-fires status listeners with
+   * the current status for call sites where no status transition happens
+   * (already 'disconnected'), so subscribed UI re-reads `lastConnectError`.
+   * Every call site also ends the open-retry cycle: successful connect,
+   * stop(), and removal of the failing device.
+   */
+  private clearConnectError(notify: boolean): void {
+    this.cancelOpenRetry();
+    const hadError = this.connectError !== null;
+    this.connectError = null;
+    this.failedDevice = null;
+    if (notify && hadError) {
+      for (const listener of this.statusListeners) listener(this.currentStatus);
+    }
   }
 
   private setStatus(status: HardwareConsoleStatus): void {

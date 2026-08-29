@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { HardwareConsoleManager, type HardwareConsoleStatus } from '../device-manager';
 import { createWebHidPlatform } from '../platform';
@@ -81,6 +81,69 @@ describe('HardwareConsoleManager', () => {
     hid.devices = [device];
     await manager.start();
     expect(manager.status).toBe('disconnected');
+    // Cancel the retry timer the failure armed, so it cannot fire later.
+    await manager.stop();
+  });
+
+  it('records the last connect error when open() fails, preserving the error name', async () => {
+    const { hid, manager } = makeManager();
+    const device = new FakeHidDevice(CM2.vendorId, CM2.productId);
+    const error = new Error('Failed to open the device.');
+    error.name = 'NotAllowedError';
+    device.openError = error;
+    hid.devices = [device];
+    await manager.start();
+    expect(manager.status).toBe('disconnected');
+    expect(manager.lastConnectError).toEqual({
+      name: 'NotAllowedError',
+      message: 'Failed to open the device.',
+    });
+    // Cancel the retry timer the failure armed, so it cannot fire later.
+    await manager.stop();
+  });
+
+  it('clears the connect error on the next successful connect', async () => {
+    const { hid, manager } = makeManager();
+    const device = new FakeHidDevice(CM2.vendorId, CM2.productId);
+    device.openError = new Error('access denied');
+    hid.devices = [device];
+    await manager.start();
+    expect(manager.lastConnectError).not.toBeNull();
+    device.openError = null;
+    hid.requestDeviceResult = [device];
+    await expect(manager.requestConnect()).resolves.toBe(true);
+    expect(manager.lastConnectError).toBeNull();
+  });
+
+  it('clears the connect error on stop() and notifies status listeners', async () => {
+    const { hid, manager, statuses } = makeManager();
+    const device = new FakeHidDevice(CM2.vendorId, CM2.productId);
+    device.openError = new Error('access denied');
+    hid.devices = [device];
+    await manager.start();
+    expect(manager.lastConnectError).not.toBeNull();
+    const before = statuses.length;
+    await manager.stop();
+    expect(manager.lastConnectError).toBeNull();
+    // Status was already 'disconnected'; the clear still notifies so
+    // subscribed UI re-reads lastConnectError.
+    expect(statuses.length).toBeGreaterThan(before);
+  });
+
+  it('clears the connect error when the failing device is removed and notifies listeners', async () => {
+    const { hid, manager, statuses } = makeManager();
+    const device = new FakeHidDevice(CM2.vendorId, CM2.productId);
+    device.openError = new Error('access denied');
+    hid.devices = [device];
+    await manager.start();
+    expect(manager.lastConnectError).not.toBeNull();
+    const before = statuses.length;
+    hid.devices = [];
+    hid.emitDisconnect(device);
+    await flushMicrotasks();
+    expect(manager.lastConnectError).toBeNull();
+    expect(manager.status).toBe('disconnected');
+    expect(statuses.length).toBeGreaterThan(before);
   });
 
   it('exposes a working RPC client end to end', async () => {
@@ -503,6 +566,153 @@ describe('HardwareConsoleManager', () => {
     hid.emitConnect(new FakeHidDevice(CM2.vendorId, CM2.productId));
     await flushMicrotasks();
     expect(manager.status).toBe('disconnected');
+  });
+
+  describe('auto-retry after a failed open', () => {
+    beforeEach(() => {
+      vi.useFakeTimers();
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    /** A device whose open() fails until `openError` is cleared, counting attempts. */
+    function makeFailingDevice(): { device: FakeHidDevice; attempts: () => number } {
+      const device = new FakeHidDevice(CM2.vendorId, CM2.productId);
+      device.openError = new Error('transient failure');
+      let attempts = 0;
+      const open = device.open.bind(device);
+      device.open = () => {
+        attempts += 1;
+        return open();
+      };
+      return { device, attempts: () => attempts };
+    }
+
+    it('retries with backoff and connects when a later attempt succeeds', async () => {
+      const { hid, manager } = makeManager();
+      const { device, attempts } = makeFailingDevice();
+      hid.devices = [device];
+      await manager.start();
+      expect(manager.status).toBe('disconnected');
+      expect(attempts()).toBe(1);
+      // First retry (1s) still fails.
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(attempts()).toBe(2);
+      expect(manager.status).toBe('disconnected');
+      // Second retry (2s) succeeds — no replug or toggle involved.
+      device.openError = null;
+      await vi.advanceTimersByTimeAsync(2000);
+      expect(attempts()).toBe(3);
+      expect(manager.status).toBe('connected');
+      expect(manager.lastConnectError).toBeNull();
+      // The successful connect ended the cycle: nothing fires later.
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(attempts()).toBe(3);
+      await manager.stop();
+    });
+
+    it('stops after the backoff schedule is exhausted, keeping lastConnectError', async () => {
+      const { hid, manager } = makeManager();
+      const { device, attempts } = makeFailingDevice();
+      hid.devices = [device];
+      await manager.start();
+      await vi.advanceTimersByTimeAsync(1000);
+      await vi.advanceTimersByTimeAsync(2000);
+      await vi.advanceTimersByTimeAsync(5000);
+      expect(attempts()).toBe(4);
+      // Schedule exhausted: no further attempts, error stays surfaced.
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(attempts()).toBe(4);
+      expect(manager.status).toBe('disconnected');
+      expect(manager.lastConnectError).toEqual({
+        name: 'Error',
+        message: 'transient failure',
+      });
+      await manager.stop();
+    });
+
+    it('stop() cancels a pending retry', async () => {
+      const { hid, manager } = makeManager();
+      const { device, attempts } = makeFailingDevice();
+      hid.devices = [device];
+      await manager.start();
+      expect(attempts()).toBe(1);
+      await manager.stop();
+      // If the retry fired anyway, the open would succeed and attach.
+      device.openError = null;
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(attempts()).toBe(1);
+      expect(device.opened).toBe(false);
+      expect(manager.status).toBe('disconnected');
+      expect(manager.client).toBeNull();
+    });
+
+    it('a retry armed before a stop→start toggle never fires into the new generation', async () => {
+      const { hid, manager } = makeManager();
+      const { device, attempts } = makeFailingDevice();
+      hid.devices = [device];
+      await manager.start();
+      expect(attempts()).toBe(1);
+      // Make a leaked retry visible: its open would now succeed and attach.
+      device.openError = null;
+      // The restarted generation's own scan finds nothing.
+      hid.devices = [];
+      await manager.stop();
+      await manager.start();
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(attempts()).toBe(1);
+      expect(device.opened).toBe(false);
+      expect(manager.status).toBe('disconnected');
+      await manager.stop();
+    });
+
+    it('removal of the failing device cancels a pending retry', async () => {
+      const { hid, manager } = makeManager();
+      const { device, attempts } = makeFailingDevice();
+      hid.devices = [device];
+      await manager.start();
+      expect(attempts()).toBe(1);
+      hid.devices = [];
+      hid.emitDisconnect(device);
+      await flushMicrotasks();
+      expect(manager.lastConnectError).toBeNull();
+      device.openError = null;
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(attempts()).toBe(1);
+      expect(manager.status).toBe('disconnected');
+      await manager.stop();
+    });
+
+    it('a successful connect via hotplug cancels the pending retry (no duplicate opens)', async () => {
+      const { hid, manager } = makeManager();
+      const { device, attempts } = makeFailingDevice();
+      hid.devices = [device];
+      await manager.start();
+      expect(attempts()).toBe(1);
+      device.openError = null;
+      hid.emitConnect(device);
+      await flushMicrotasks();
+      expect(manager.status).toBe('connected');
+      expect(attempts()).toBe(2);
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(attempts()).toBe(2);
+      expect(manager.status).toBe('connected');
+      await manager.stop();
+    });
+
+    it('does not arm retries for a failed open on a never-started manager', async () => {
+      const { hid, manager } = makeManager();
+      const { device, attempts } = makeFailingDevice();
+      hid.requestDeviceResult = [device];
+      await expect(manager.requestConnect()).resolves.toBe(false);
+      expect(attempts()).toBe(1);
+      device.openError = null;
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(attempts()).toBe(1);
+      expect(manager.status).toBe('disconnected');
+    });
   });
 });
 

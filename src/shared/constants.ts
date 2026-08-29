@@ -320,8 +320,11 @@ export const BROWSER_PROTOCOLS = {
 
   /**
    * Protocols for external URL opening (system browser, shell:openExternal).
+   * x-apple.systempreferences: deep-links into macOS System Settings panes
+   * (e.g. Privacy & Security → Input Monitoring); it cannot inject code and
+   * is a no-op on other platforms.
    */
-  EXTERNAL: ['http:', 'https:'] as readonly string[],
+  EXTERNAL: ['http:', 'https:', 'x-apple.systempreferences:'] as readonly string[],
 
   /**
    * Internal app protocols (not user-facing).

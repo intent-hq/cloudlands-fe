@@ -8,8 +8,9 @@
  * PROTOCOL §5.14 defines `host.openExternal` as a daemon→client reverse RPC
  * ("FE-served"): the CLIENT owns opening URLs, so this never calls the daemon.
  * Resolution order:
- *   1. Validate the scheme — only http/https (`BROWSER_PROTOCOLS.EXTERNAL`)
- *      may be shell-opened; anything else throws.
+ *   1. Validate the scheme — only `BROWSER_PROTOCOLS.EXTERNAL` schemes
+ *      (http/https + the macOS System Settings deep link) may be
+ *      shell-opened; anything else throws.
  *   2. Real Electron preload bridge (`window.electronAPI.invoke`) when
  *      present — routes to main-process `shell.openExternal`
  *      (features/system/main/system.ipc.ts), the canonical desktop path.
