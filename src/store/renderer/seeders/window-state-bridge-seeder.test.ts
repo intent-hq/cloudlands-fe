@@ -45,6 +45,7 @@ const INVOKE_CHANNELS = [
   IPC_CHANNELS.WINDOW.SET_THEME,
   IPC_CHANNELS.WINDOW.SET_TITLE,
   IPC_CHANNELS.WINDOW.SET_BROWSER_FOCUSED,
+  IPC_CHANNELS.WINDOW.SET_DOCK_POINTER_REGION,
 ];
 
 const originalElectronAPI = (window as any).electronAPI;
@@ -93,6 +94,7 @@ describe('window-state-bridge-seeder', () => {
       browserFocused: true,
       focusOwnerId: 'owner-1',
     });
+    await mockInvoke(IPC_CHANNELS.WINDOW.SET_DOCK_POINTER_REGION, { active: true });
 
     expect(invokeSpy).toHaveBeenNthCalledWith(1, IPC_CHANNELS.WINDOW.SET_IN_WORKSPACE, {
       inWorkspace: true,
@@ -111,15 +113,21 @@ describe('window-state-bridge-seeder', () => {
       browserFocused: true,
       focusOwnerId: 'owner-1',
     });
+    expect(invokeSpy).toHaveBeenNthCalledWith(6, IPC_CHANNELS.WINDOW.SET_DOCK_POINTER_REGION, {
+      active: true,
+    });
   });
 
-  it('resolves undefined when no preload bridge exists (browser dev build)', async () => {
+  it('returns safe browser fallbacks when no preload bridge exists', async () => {
     (window as any).electronAPI = undefined;
     registerWindowStateBridge();
 
-    for (const channel of INVOKE_CHANNELS) {
+    for (const channel of INVOKE_CHANNELS.slice(0, -1)) {
       await expect(mockInvoke(channel, { probe: channel })).resolves.toBeUndefined();
     }
+    await expect(
+      mockInvoke(IPC_CHANNELS.WINDOW.SET_DOCK_POINTER_REGION, { active: true }),
+    ).resolves.toEqual({ success: false, supported: false });
   });
 
   it('forwards only the window theme channel and its exact payload to preload', async () => {

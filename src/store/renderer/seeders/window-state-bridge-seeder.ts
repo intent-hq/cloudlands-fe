@@ -1,7 +1,7 @@
 /**
  * Window workspace-state invoke bridge — forwards `window:set-in-workspace`,
  * `window:set-open-workspace-tabs`, `window:set-theme`, `window:set-title`,
- * and `window:set-browser-focused` to the real Electron preload bridge
+ * `window:set-browser-focused`, and `window:set-dock-pointer-region` to the real Electron preload bridge
  * (`window.electronAPI.invoke`) when present.
  *
  * The generated `invoke()` routes ALL legacy renderer invokes through the
@@ -41,6 +41,7 @@ const WINDOW_STATE_INVOKE_CHANNELS = [
   IPC_CHANNELS.WINDOW.SET_THEME,
   IPC_CHANNELS.WINDOW.SET_TITLE,
   IPC_CHANNELS.WINDOW.SET_BROWSER_FOCUSED,
+  IPC_CHANNELS.WINDOW.SET_DOCK_POINTER_REGION,
 ] as const;
 
 /** Forward the selected app theme to Electron's registered main-process handler. */
@@ -63,6 +64,9 @@ export function registerWindowStateBridge(): void {
       const bridge = typeof window !== 'undefined' ? window.electronAPI : undefined;
       if (bridge && typeof bridge.invoke === 'function') {
         return bridge.invoke(channel, payload);
+      }
+      if (channel === IPC_CHANNELS.WINDOW.SET_DOCK_POINTER_REGION) {
+        return { success: false, supported: false };
       }
       return undefined;
     });
