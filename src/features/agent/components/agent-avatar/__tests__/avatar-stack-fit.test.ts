@@ -70,7 +70,7 @@ describe('computeAdaptiveVisibleCount', () => {
         return 20;
       },
     });
-    // cap=3 → remaining 7, then 8 as the count shrinks to the fitting 1-avatar layout.
+    // cap=3 → remaining 7, then 8, then 9 as the count shrinks to the 1-avatar floor.
     expect(seen).toEqual([7, 8, 9]);
   });
 });
