@@ -1136,25 +1136,29 @@ export const selectWorkspaceTabStatuses = store.createSelector(
 );
 
 /**
- * Header ATTN counter (mock `stats.attn` — per-agent wait + fail): counts
- * exactly what renders an attention state on the grid, so the blinking
- * counter always agrees with the cards. An agent counts when it is a
- * TOP-LEVEL NON-BACKGROUND agent in the `failed` bucket or with a pending
- * attention request / outstanding question (the daemon's step-0
- * `needs_attention` gating, intentd#825, mirrored per-agent for ALL signals
- * — failed included, per the spec decision; delegated (`parentAgentId`,
- * §5.1 v2.9 — the parentage signal main's #573 uses to skip toasts) and
- * background agents never count, so a failed sub-agent is the coordinator's
- * business, not a user call to action). Each raised workspace-level
- * attention flag adds one (it renders NEEDS ATTENTION with no raising
- * agent), as does an attention card state (`wait`/`blocked`/`failed` — the
- * BE rollup, §5.1) no per-agent signal already covered (the daemon rollup
- * is authoritative — e.g. a question hold the FE never captured must still
- * blink). Pending requests clear only on user-origin deliveries
- * (`attentionRequestCleared`, §5.5), so a cleared request drops out live —
- * no stale entries linger. The ATTENTION panel
+ * Header ATTN counter (mock `stats.attn` — per-agent wait + fail). An agent
+ * counts when it is a TOP-LEVEL NON-BACKGROUND agent in the `failed` bucket
+ * or with a pending attention request / outstanding question (the daemon's
+ * step-0 `needs_attention` gating, intentd#825, mirrored per-agent for ALL
+ * signals — failed included, per the spec decision; delegated
+ * (`parentAgentId`, §5.1 v2.9 — the parentage signal main's #573 uses to
+ * skip toasts) and background agents never count, so a failed sub-agent is
+ * the coordinator's business, not a user call to action). Each raised
+ * workspace-level attention flag adds one (it renders NEEDS ATTENTION with
+ * no raising agent), as does an attention card state
+ * (`wait`/`blocked`/`failed` — the BE rollup, §5.1) no per-agent signal
+ * already covered (the daemon rollup is authoritative — e.g. a question
+ * hold the FE never captured must still blink). Pending requests clear only
+ * on user-origin deliveries (`attentionRequestCleared`, §5.5), so a cleared
+ * request drops out live — no stale entries linger. The ATTENTION panel
  * (`selectHudAttentionItems`) applies this exact per-agent rule, so the
  * counter and the panel rows always agree.
+ *
+ * The per-agent axis is a SEPARATE axis over the agent roster, not a second
+ * opinion on the workspace card state: a failed top-level agent counts even
+ * while the BE rollup leaves the card `in_progress` (the card keeps
+ * rendering the daemon value verbatim), so the counter and the cards can
+ * legitimately disagree.
  */
 export const selectHudAttnCount = store.createSelector((state): number => {
   const flags = state.hud.attentionByWorkspaceId;

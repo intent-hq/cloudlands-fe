@@ -951,11 +951,14 @@ describe('selectHudAttentionItems', () => {
     expect(blocker?.message).toBe('Sandbox network is down');
   });
 
-  /** ws-1 (in_progress) with a top-level root + delegated child, plus session overlays. */
-  function gatedItemsState(sessions: Record<string, Record<string, unknown>>): StoreState {
+  /** ws-1 (in_progress by default) with a top-level root + delegated child, plus session overlays. */
+  function gatedItemsState(
+    sessions: Record<string, Record<string, unknown>>,
+    displayStatus: WorkspaceDisplayStatus = 'in_progress',
+  ): StoreState {
     const base = mockState([
       makeWorkspace('ws-1', {
-        displayStatus: 'in_progress',
+        displayStatus,
         agentSummary: {
           count: 2,
           agentIds: ['root', 'child'],
@@ -1012,6 +1015,25 @@ describe('selectHudAttentionItems', () => {
       'agent_failed',
     ]);
     expect(selectHudAttnCount.select(failedRoot)).toBe(1);
+  });
+
+  it('an attention card state whose only per-agent signal is gated out falls back to a generic row', () => {
+    // Card state `failed` (BE rollup) while the only failed agent is a
+    // delegated sub-agent: the gated-out agent covers nothing, so the
+    // authoritative-rollup fallback raises ONE generic workspace_attention
+    // row (no agent fields) — not the old named agent_failed row — and the
+    // ATTN counter counts the same 1 via the card-state fallback.
+    const state = gatedItemsState({ child: { status: 'error', messages: [] } }, 'failed');
+    expect(selectHudAttentionItems.select(state)).toEqual([
+      {
+        workspaceId: 'ws-1',
+        workspaceTitle: 'Workspace ws-1',
+        kind: 'workspace_attention',
+        message: null,
+        sinceTs: null,
+      },
+    ]);
+    expect(selectHudAttnCount.select(state)).toBe(1);
   });
 
   it('surfaces raised workspace attention flags with their raise time', () => {
