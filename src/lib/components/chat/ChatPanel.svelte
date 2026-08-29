@@ -174,6 +174,7 @@
     deriveWizardPendingQuestions,
   } from './questions/wizard-gate';
   import { classifyPendingQuestionMarker } from './questions/pending-questions';
+  import { wizardDraftKey } from './questions/wizard-draft-storage';
   import { buildAnswerMessageMetadata, flattenAnswersToMessage } from './questions/answer-message';
   import {
     classifyScrollbackGesture,
@@ -5945,6 +5946,7 @@
                 <div class="w-full" data-testid="question-wizard-slot">
                   <QuestionWizard
                     questions={pendingQuestions.questions}
+                    draftKey={wizardDraftKey(agentId, pendingQuestions.messageId)}
                     collapsed={questionWizardCollapsed}
                     onToggleCollapsed={(collapsed) => (questionWizardCollapsed = collapsed)}
                     onComplete={handleQuestionWizardComplete}

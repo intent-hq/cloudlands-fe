@@ -4,11 +4,14 @@
  * Next, Enter in the free-form field advances, Skip clears + advances, Back
  * returns with the previous answer pre-selected, Hide collapses to the
  * banner, Dismiss is gated behind a confirmation dialog, and Send on the
- * last typed answer hands back the full answers array.
+ * last typed answer hands back the full answers array. With a `draftKey`,
+ * in-progress answers + step persist to localStorage (debounced, flushed on
+ * unmount) and restore on remount; completing or dismissing clears the draft.
  */
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import QuestionWizard, { type QuestionAnswer } from '../QuestionWizard.svelte';
+import { wizardDraftKey } from '../wizard-draft-storage';
 import type { Question } from '$shared/types/question-resource';
 
 const SINGLE: Question = {
@@ -542,5 +545,157 @@ describe('QuestionWizard', () => {
     expect(screen.queryByRole('button', { name: /dismiss/i })).toBeNull();
     await rerender({ collapsed: true });
     expect(screen.queryByRole('button', { name: /dismiss/i })).toBeNull();
+  });
+});
+
+describe('QuestionWizard draft persistence', () => {
+  const KEY = wizardDraftKey('agent-draft-test', 'msg-draft-test');
+  const PREFIX = 'chat.questionWizardDraft/';
+
+  // The global test-setup localStorage stub is a no-op. Install a functional
+  // mock whose entries are enumerable own properties (Web Storage enumeration
+  // semantics) so `safeLocalStorage.keysWithPrefix` — which save-time pruning
+  // depends on — sees them; methods stay configurable for `vi.spyOn`.
+  function installEnumerableLocalStorage(): void {
+    const storage: Record<string, string> = {};
+    const methods: Record<string, unknown> = {
+      getItem: (key: string) =>
+        Object.prototype.hasOwnProperty.call(storage, key) ? storage[key] : null,
+      setItem: (key: string, value: string) => {
+        storage[key] = String(value);
+      },
+      removeItem: (key: string) => {
+        delete storage[key];
+      },
+      clear: () => {
+        for (const key of Object.keys(storage)) delete storage[key];
+      },
+    };
+    for (const [name, fn] of Object.entries(methods)) {
+      Object.defineProperty(storage, name, { value: fn, enumerable: false, configurable: true });
+    }
+    Object.defineProperty(window, 'localStorage', { configurable: true, value: storage });
+  }
+
+  beforeEach(() => {
+    installEnumerableLocalStorage();
+  });
+
+  function seedDraft(
+    idx: number,
+    answers: Array<{ sel: number[]; text: string; skipped: boolean }>,
+  ) {
+    window.localStorage.setItem(
+      KEY,
+      JSON.stringify({ version: 1, idx, answers, savedAt: Date.now() }),
+    );
+  }
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+    window.localStorage.clear();
+  });
+
+  it('restores skipped flags, selections, free text, and the step on remount', async () => {
+    const questions = [SINGLE, MULTI, LAST];
+    const first = render(QuestionWizard, { props: { questions, draftKey: KEY } });
+    // Q1: explicit skip; Q2: multi-select + free text, left mid-answer.
+    await fireEvent.click(screen.getByRole('button', { name: /skip/i }));
+    await fireEvent.click(screen.getByText('Desktop app'));
+    const input = screen.getByPlaceholderText('Or type your own answer…');
+    await fireEvent.input(input, { target: { value: 'Also the API' } });
+    // Unmount before the debounce fires — the pending save must flush.
+    first.unmount();
+
+    const onComplete = vi.fn<(answers: QuestionAnswer[]) => void>();
+    render(QuestionWizard, { props: { questions, draftKey: KEY, onComplete } });
+    expect(screen.getByText('2 of 3')).toBeTruthy();
+    const option = screen.getByText('Desktop app').closest('button') as HTMLButtonElement;
+    expect(option.getAttribute('aria-pressed')).toBe('true');
+    expect(
+      (screen.getByPlaceholderText('Or type your own answer…') as HTMLInputElement).value,
+    ).toBe('Also the API');
+
+    await fireEvent.click(screen.getByRole('button', { name: /next/i }));
+    await fireEvent.click(screen.getByText('Migrate silently'));
+    expect(onComplete.mock.calls[0][0]).toEqual([
+      { question: SINGLE, selectedLabels: [], freeText: '', skipped: true },
+      { question: MULTI, selectedLabels: ['Desktop app'], freeText: 'Also the API', skipped: false },
+      { question: LAST, selectedLabels: ['Migrate silently'], freeText: '', skipped: false },
+    ]);
+  });
+
+  it('debounces draft writes while typing; rendering alone writes nothing', async () => {
+    vi.useFakeTimers();
+    render(QuestionWizard, { props: { questions: [SINGLE, LAST], draftKey: KEY } });
+    expect(window.localStorage.getItem(KEY)).toBeNull();
+
+    const input = screen.getByPlaceholderText('Or type your own answer…');
+    await fireEvent.input(input, { target: { value: 'd' } });
+    await fireEvent.input(input, { target: { value: 'draft' } });
+    expect(window.localStorage.getItem(KEY)).toBeNull();
+
+    vi.advanceTimersByTime(300);
+    const stored = JSON.parse(window.localStorage.getItem(KEY)!);
+    expect(stored.idx).toBe(0);
+    expect(stored.answers[0]).toEqual({ sel: [], text: 'draft', skipped: false });
+  });
+
+  it('completing the wizard clears the stored draft and unmount cannot resurrect it', async () => {
+    vi.useFakeTimers();
+    const view = render(QuestionWizard, {
+      props: { questions: [LAST], draftKey: KEY, onComplete: vi.fn() },
+    });
+    const input = screen.getByPlaceholderText('Or type your own answer…');
+    await fireEvent.input(input, { target: { value: 'Redis' } });
+    vi.advanceTimersByTime(300);
+    expect(window.localStorage.getItem(KEY)).not.toBeNull();
+
+    await fireEvent.keyDown(input, { key: 'Enter' });
+    expect(window.localStorage.getItem(KEY)).toBeNull();
+    view.unmount();
+    expect(window.localStorage.getItem(KEY)).toBeNull();
+  });
+
+  it('confirmed Dismiss clears the stored draft', async () => {
+    seedDraft(0, [{ sel: [], text: 'draft', skipped: false }]);
+    const view = render(QuestionWizard, {
+      props: { questions: [LAST], draftKey: KEY, onDismiss: vi.fn() },
+    });
+    expect(
+      (screen.getByPlaceholderText('Or type your own answer…') as HTMLInputElement).value,
+    ).toBe('draft');
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }));
+    await fireEvent.click(screen.getByRole('button', { name: 'Dismiss questions' }));
+    expect(window.localStorage.getItem(KEY)).toBeNull();
+    view.unmount();
+    expect(window.localStorage.getItem(KEY)).toBeNull();
+  });
+
+  it('a draft for a mismatched question set is discarded and the wizard starts fresh', () => {
+    seedDraft(0, [{ sel: [0], text: '', skipped: false }]);
+    render(QuestionWizard, { props: { questions: [SINGLE, MULTI, LAST], draftKey: KEY } });
+    expect(screen.getByText('1 of 3')).toBeTruthy();
+    expect(window.localStorage.getItem(KEY)).toBeNull();
+  });
+
+  it('without draftKey the wizard never reads or writes wizard-draft storage', async () => {
+    const getSpy = vi.spyOn(window.localStorage, 'getItem');
+    const setSpy = vi.spyOn(window.localStorage, 'setItem');
+    const removeSpy = vi.spyOn(window.localStorage, 'removeItem');
+
+    const view = render(QuestionWizard, { props: { questions: [SINGLE, LAST] } });
+    const input = screen.getByPlaceholderText('Or type your own answer…');
+    await fireEvent.input(input, { target: { value: 'draft' } });
+    await fireEvent.keyDown(input, { key: 'Enter' });
+    view.unmount();
+
+    const draftCalls = (spy: ReturnType<typeof vi.spyOn>) =>
+      spy.mock.calls.filter(([key]) => String(key).startsWith(PREFIX));
+    expect(draftCalls(getSpy)).toHaveLength(0);
+    expect(draftCalls(setSpy)).toHaveLength(0);
+    expect(draftCalls(removeSpy)).toHaveLength(0);
   });
 });
