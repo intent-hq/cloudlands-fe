@@ -1238,7 +1238,11 @@ describe('connections:* IPC handlers', () => {
         ]),
       });
     });
-    expect(rpc.calls.every((method) => method === 'server.pairingInfo')).toBe(true);
+    // Only the self-fingerprint probe and the reconnect-hello hostname
+    // re-capture may hit the wire here — never a fingerprint capture.
+    expect(
+      rpc.calls.every((method) => method === 'server.pairingInfo' || method === 'host.status'),
+    ).toBe(true);
     expect(mockCaptureFingerprint).not.toHaveBeenCalled();
 
     remote.emit('status', 'disconnected');

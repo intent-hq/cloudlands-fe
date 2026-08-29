@@ -144,6 +144,42 @@ describe('DevicesSettings', () => {
     expect(screen.getByRole('button', { name: 'Actions for 10.0.0.2:5181' })).toBeTruthy();
   });
 
+  it('shows the backend pretty hostname when the label is just the saved address', () => {
+    mocks.connections = [
+      local,
+      { ...remote, label: '10.0.0.2:5181', hostname: 'Clement’s Mac Studio' },
+    ];
+    render(DevicesSettings);
+
+    expect(screen.getByText('Clement’s Mac Studio')).toBeTruthy();
+    expect(screen.queryByText('10.0.0.2:5181')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Actions for Clement’s Mac Studio' })).toBeTruthy();
+  });
+
+  it('prefers the backend hostname over the address for a blank name', () => {
+    mocks.connections = [local, { ...remote, label: '  ', hostname: 'studio-pretty' }];
+    render(DevicesSettings);
+
+    expect(screen.getByText('studio-pretty')).toBeTruthy();
+    expect(screen.queryByText('10.0.0.2:5181')).toBeNull();
+  });
+
+  it('still edits the stored label when the hostname is displayed', async () => {
+    mocks.connections = [
+      local,
+      { ...remote, label: '10.0.0.2:5181', hostname: 'Clement’s Mac Studio' },
+    ];
+    render(DevicesSettings);
+
+    await openAction('Edit', 'Clement’s Mac Studio');
+
+    // The Name field edits the user-configured label — the captured pretty
+    // hostname never leaks into (or overwrites) the stored label.
+    expect((screen.getByRole('textbox', { name: 'Name' }) as HTMLInputElement).value).toBe(
+      '10.0.0.2:5181',
+    );
+  });
+
   it('dispatches Connect through the existing open/focus action', async () => {
     render(DevicesSettings);
 

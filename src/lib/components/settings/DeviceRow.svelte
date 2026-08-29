@@ -10,6 +10,7 @@
     CONNECTION_ACCENT_COLORS,
     connectionAccentOptions,
   } from '$lib/utils/connection-accents';
+  import { formatConnectionLabel } from '$lib/utils/connection-label';
   import { m } from '$shared/paraglide/messages.js';
   import {
     DEFAULT_CONNECTION_ACCENT,
@@ -65,8 +66,9 @@
     device.accent === undefined ? DEFAULT_CONNECTION_ACCENT : device.accent,
   );
   const accentOptions = $derived(connectionAccentOptions(savedAccent));
-  const address = $derived(`${device.host ?? ''}:${device.port ?? ''}`);
-  const displayName = $derived(device.label.trim() || address);
+  // Same preference order as the daemon-status menu: configured name →
+  // captured backend hostname (prefers prettyHostname) → label → address.
+  const displayName = $derived(formatConnectionLabel(device));
   const openStatus = $derived(device.status ?? 'not-open');
   const trimmedName = $derived(name.trim());
   const trimmedHost = $derived(host.trim());

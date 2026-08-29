@@ -25,12 +25,26 @@ const hostStatus = vi.hoisted(() => ({
   byHost: new Map<string, () => Promise<unknown>>(),
 }));
 
+// Every fake client instance, in construction order, with its constructor
+// options — lets tests fire client hooks (e.g. `onHelloResult`) directly to
+// simulate a reconnect handshake without a live socket.
+const fakeClients = vi.hoisted(
+  () =>
+    [] as Array<{
+      getConfig(): unknown;
+      opts: { onHelloResult?: (result: unknown) => void };
+    }>,
+);
+
 vi.mock('../json-rpc-client', () => {
   class FakeJsonRpcClient {
     private readonly config: unknown;
     private readonly listeners = new Map<string, Array<(arg: unknown) => void>>();
-    constructor(opts: { config: unknown }) {
+    readonly opts: { config: unknown; onHelloResult?: (result: unknown) => void };
+    constructor(opts: { config: unknown; onHelloResult?: (result: unknown) => void }) {
       this.config = opts.config;
+      this.opts = opts;
+      fakeClients.push(this);
     }
     on(event: string, handler: (arg: unknown) => void): this {
       const arr = this.listeners.get(event) ?? [];
@@ -78,6 +92,7 @@ vi.mock('../intentd-sidecar', () => ({
   onSidecarStartupFailed: vi.fn(() => () => {}),
   getSidecarRunLog: vi.fn(() => ({ available: false })),
   getSidecarStartupFailure: vi.fn(() => null),
+  getLocalDaemonProtocolVersion: vi.fn(() => null),
   spawnSidecarOnDemand: vi.fn(),
 }));
 
@@ -93,6 +108,7 @@ const store = vi.hoisted(() => ({
   forget: vi.fn(),
   getDecryptedToken: vi.fn(),
   setHostname: vi.fn(),
+  setDaemonVersion: vi.fn(),
   getDetectHosts: vi.fn(),
   setHosts: vi.fn(),
 }));
@@ -105,6 +121,7 @@ vi.mock('../connections-store', () => ({
   forget: store.forget,
   getDecryptedToken: store.getDecryptedToken,
   setHostname: store.setHostname,
+  setDaemonVersion: store.setDaemonVersion,
   getDetectHosts: store.getDetectHosts,
   setHosts: store.setHosts,
 }));
@@ -148,11 +165,13 @@ beforeEach(() => {
   vi.clearAllMocks();
   hostStatus.value = {};
   hostStatus.byHost.clear();
+  fakeClients.length = 0;
   store.getActiveId.mockResolvedValue('local');
   store.list.mockResolvedValue([LOCAL, REMOTE]);
   store.setActiveId.mockResolvedValue(undefined);
   store.getDecryptedToken.mockResolvedValue('secret-token');
   store.setHostname.mockResolvedValue(undefined);
+  store.setDaemonVersion.mockResolvedValue(false);
   store.getDetectHosts.mockResolvedValue(false);
   store.setHosts.mockResolvedValue(undefined);
   vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([]);
@@ -309,6 +328,80 @@ describe('openBackendWindow serialization (monorepo#2221)', () => {
 // setHostname persist, no connections:changed broadcast from the dangling
 // capture. Mirrors the guard refreshRemoteHosts already has.
 // ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// Reconnect refresh: the `onHelloResult` hook runs on EVERY (re)connect
+// handshake, and its remote branch re-triggers the hostname capture — so a
+// backend machine rename propagates on the next reconnect (not just on the
+// explicit open path), reaches the store, and re-broadcasts
+// `connections:changed` so row labels update live.
+// ---------------------------------------------------------------------------
+
+describe('reconnect hello hostname refresh', () => {
+  /** The pooled fake client pinned to `host`, else the connect fails the test. */
+  function fakeClientForHost(host: string) {
+    const client = fakeClients.find(
+      (c) => (c.getConfig() as { host?: string } | null)?.host === host,
+    );
+    expect(client).toBeDefined();
+    return client!;
+  }
+
+  it('re-captures the hostname on a reconnect hello and broadcasts the change', async () => {
+    hostStatus.value = { hostname: 'studio.local' };
+    const send = installWindow();
+    const mod = await loadModule();
+
+    await mod.connectBackendClient('remote-1');
+    const client = fakeClientForHost('10.0.0.5');
+
+    // Simulate the (re)connect handshake completing.
+    client.opts.onHelloResult?.({});
+    await vi.waitFor(() =>
+      expect(store.setHostname).toHaveBeenCalledWith('remote-1', 'studio.local'),
+    );
+    await vi.waitFor(() =>
+      expect(send.mock.calls.some(([c]) => c === 'connections:changed')).toBe(true),
+    );
+  });
+
+  it('propagates a backend rename on the next reconnect hello', async () => {
+    hostStatus.value = { hostname: 'studio.local' };
+    const mod = await loadModule();
+
+    await mod.connectBackendClient('remote-1');
+    const client = fakeClientForHost('10.0.0.5');
+
+    client.opts.onHelloResult?.({});
+    await vi.waitFor(() =>
+      expect(store.setHostname).toHaveBeenCalledWith('remote-1', 'studio.local'),
+    );
+
+    // The backend machine is renamed; the next reconnect hello re-captures it.
+    hostStatus.value = { hostname: 'studio.local', prettyHostname: 'Renamed Studio' };
+    client.opts.onHelloResult?.({});
+    await vi.waitFor(() =>
+      expect(store.setHostname).toHaveBeenCalledWith('remote-1', 'Renamed Studio'),
+    );
+  });
+
+  it('does not capture a hostname on the local client hello', async () => {
+    hostStatus.value = { hostname: 'studio.local' };
+    const mod = await loadModule();
+
+    await mod.connectBackendClient('local');
+    const client = fakeClients.find(
+      (c) => (c.getConfig() as { host?: string } | null)?.host === undefined,
+    );
+    expect(client).toBeDefined();
+
+    client!.opts.onHelloResult?.({});
+    await new Promise((r) => setTimeout(r, 0));
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(store.setHostname).not.toHaveBeenCalled();
+  });
+});
 
 describe('captureRemoteHostname stale-completion guard (monorepo#2221)', () => {
   it('discards a host.status result that arrives after the client was disposed', async () => {

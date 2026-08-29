@@ -674,6 +674,11 @@ function createAdditionalBackendClient(id: string, config: BackendConnectionConf
       // pooled local client — the #3448 refresh below owns local.
       if (id !== LOCAL_CONNECTION_ID) {
         captureRemoteDaemonVersion(result, id);
+        // Re-capture the remote's hostname on every (re)connect hello — not
+        // just the explicit open path — so a backend machine rename
+        // propagates on the next reconnect. Fire-and-forget/fail-soft like
+        // the version capture; the store dedupes the unchanged common case.
+        void captureRemoteHostname(id);
       } else {
         // #3448: refresh the adopted external daemon's version info from the
         // live `server.version` on every (re)connect — the startup probe only
