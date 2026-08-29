@@ -233,4 +233,20 @@ describe('message hydration policy', () => {
     expect(transitions).toEqual([]);
     expect(policy.getHydratedIds()).toEqual([]);
   });
+
+  it('detaches visibility observers while inactive and restores registrations', () => {
+    const policy = createPolicy([assistant('a')]);
+    const elements = observe(policy, ['a']);
+    const firstObserver = MockIntersectionObserver.instances[0];
+
+    policy.setActive(false);
+    expect(firstObserver.disconnect).toHaveBeenCalledOnce();
+
+    policy.setActive(true);
+    expect(MockIntersectionObserver.instances).toHaveLength(2);
+    MockIntersectionObserver.instances[1].fire([
+      { target: elements.get('a')!, isIntersecting: true },
+    ]);
+    expect(policy.getHydratedIds()).toEqual(['a']);
+  });
 });

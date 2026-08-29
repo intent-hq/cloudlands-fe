@@ -637,16 +637,41 @@
   // hover hit-tests or land in the tab order (monorepo#2508).
   let showLockConfirmation = $state(false);
   let lockConfirmationTimer: ReturnType<typeof setTimeout> | null = null;
+  const highlightRemovalTimers = new Set<ReturnType<typeof setTimeout>>();
+
+  function scheduleHighlightRemoval(element: HTMLElement, className: string, delayMs: number) {
+    if (!isActive) return;
+    const timer = setTimeout(() => {
+      highlightRemovalTimers.delete(timer);
+      if (isActive) element.classList.remove(className);
+    }, delayMs);
+    highlightRemovalTimers.add(timer);
+  }
+
+  $effect(() => {
+    if (isActive) return;
+    for (const timer of highlightRemovalTimers) clearTimeout(timer);
+    highlightRemovalTimers.clear();
+  });
   const LOCK_CONFIRMATION_DURATION_MS = 1500;
 
   function flashLockConfirmation(): void {
+    if (!isActive) return;
     if (lockConfirmationTimer !== null) clearTimeout(lockConfirmationTimer);
     showLockConfirmation = true;
     lockConfirmationTimer = setTimeout(() => {
+      if (!isActive) return;
       showLockConfirmation = false;
       lockConfirmationTimer = null;
     }, LOCK_CONFIRMATION_DURATION_MS);
   }
+
+  $effect(() => {
+    if (isActive || lockConfirmationTimer === null) return;
+    clearTimeout(lockConfirmationTimer);
+    lockConfirmationTimer = null;
+    showLockConfirmation = false;
+  });
 
   let lazyTurnHeightCache = $state.raw<LazyTurnHeightCache>(createLazyTurnHeightCache('unbound'));
   let lazyTurnCacheScope = 'unbound';
@@ -1344,6 +1369,7 @@
   // intermediate keystrokes don't trigger a full rewalk + LazyTurn re-render
   // cascade. An empty query flushes immediately to clear highlights.
   function handleSearchInput() {
+    if (!isActive) return;
     currentSearchIndex = 0;
     if (searchDebounceTimer !== null) {
       clearTimeout(searchDebounceTimer);
@@ -1355,6 +1381,7 @@
       return;
     }
     searchDebounceTimer = setTimeout(() => {
+      if (!isActive) return;
       searchDebounceTimer = null;
       debouncedSearchQuery = searchQuery;
       triggerHighlight();
@@ -1362,6 +1389,7 @@
   }
 
   function openSearchFromSelection() {
+    if (!isActive) return;
     const selectedText = getSelectedTextWithinSurface(panelElement);
 
     if (selectedText) {
@@ -1376,11 +1404,18 @@
 
     showSearch = true;
     tick().then(() => {
+      if (!isActive) return;
       searchInputRef?.focus();
       searchInputRef?.select();
       if (selectedText) triggerHighlight();
     });
   }
+
+  $effect(() => {
+    if (isActive || searchDebounceTimer === null) return;
+    clearTimeout(searchDebounceTimer);
+    searchDebounceTimer = null;
+  });
 
   // Context items for the input
   let contextItems = $state<ContextItem[]>([]);
@@ -1457,6 +1492,7 @@
   // it as the synchronous same-process remount cache.
   const draftManager = createChatDraftManager({
     drafts: appClient.drafts,
+    active: () => isActive,
     workspaceId: () => workspace?.id,
     agentId: () => agentId,
     inputValue: () => inputValue,
@@ -1987,7 +2023,7 @@
    * row). Returns true when the segment was dropped.
    */
   function maybeCollapseHistorySegmentAtTail(): boolean {
-    if (!workspace?.id || !agentId) return false;
+    if (!isActive || !workspace?.id || !agentId) return false;
     if ($fetchingOlderHistory$ || $fetchingGapFill$) return false;
     if ($fetchingHistorySeek$ || seekLandingPending) return false;
     if (!viewportFullyBelowOpenHole()) return false;
@@ -2008,9 +2044,11 @@
   // the settled scrollTop, so intermediate drag positions never fire.
   function armSeekDebounce() {
     cancelSeekDebounce();
+    if (!isActive) return;
     seekDebounceTimer = setTimeout(() => {
       seekDebounceTimer = null;
-      if (isComponentDestroyed || !scrollContainer || !workspace?.id || !agentId) return;
+      if (!isActive || isComponentDestroyed || !scrollContainer || !workspace?.id || !agentId)
+        return;
       if ($fetchingHistorySeek$ || seekLandingPending) return;
       // Racing serial fetch: let it settle, the settle chain re-classifies.
       if ($fetchingOlderHistory$ || $fetchingGapFill$) return;
@@ -2041,11 +2079,15 @@
   let wasFetchingHistorySeek = false;
   $effect(() => {
     const fetching = $fetchingHistorySeek$;
+    if (!isActive) {
+      wasFetchingHistorySeek = fetching;
+      return;
+    }
     const settled = wasFetchingHistorySeek && !fetching;
     wasFetchingHistorySeek = fetching;
     if (!settled) return;
     tick().then(() => {
-      if (isComponentDestroyed || !scrollContainer) return;
+      if (!isActive || isComponentDestroyed || !scrollContainer) return;
       // Discard raced this settle: the dispatch that cleared
       // fetchingHistorySeek was a resumed:false reset, not a landing. The
       // discard effect below owns the viewport (followToBottom on this
@@ -2070,7 +2112,7 @@
       virtualSpacerHeight = above;
       virtualSpacerBelowHeight = below;
       tick().then(() => {
-        if (isComponentDestroyed || !scrollContainer) return;
+        if (!isActive || isComponentDestroyed || !scrollContainer) return;
         scrollContainer.scrollTop = Math.max(
           0,
           Math.round(
@@ -2134,7 +2176,7 @@
       shouldFollowBottom = true;
       tick().then(() => {
         discardReanchorPending = false;
-        if (isComponentDestroyed || !scrollContainer) return;
+        if (!isActive || isComponentDestroyed || !scrollContainer) return;
         followToBottom(scrollContainer);
       });
     });
@@ -2182,14 +2224,19 @@
 
   function scheduleSpacerReconcile() {
     if (spacerReconcileTimer !== null) clearTimeout(spacerReconcileTimer);
+    if (!isActive) {
+      spacerReconcileTimer = null;
+      return;
+    }
     spacerReconcileTimer = setTimeout(() => {
       spacerReconcileTimer = null;
+      if (!isActive) return;
       runSpacerReconcile(false);
     }, SPACER_QUIET_MS);
   }
 
   function runSpacerReconcile(force: boolean) {
-    if (isComponentDestroyed) return;
+    if (!isActive || isComponentDestroyed) return;
     const container = scrollContainer;
     if (!container) return;
     // A seek in flight / landing owns the spacers — its settle handler sizes
@@ -2265,7 +2312,7 @@
     if (belowResult.applied) virtualSpacerBelowHeight = belowResult.spacerHeight;
     if (compensation === 0) return;
     tick().then(() => {
-      if (isComponentDestroyed || !scrollContainer) return;
+      if (!isActive || isComponentDestroyed || !scrollContainer) return;
       scrollContainer.scrollTop = Math.max(0, previousScrollTop + compensation);
     });
   }
@@ -2275,6 +2322,7 @@
   // no hysteresis). The spacer state itself is never a dep — the effect
   // only re-arms off external inputs.
   $effect(() => {
+    if (!isActive) return;
     void ($agentHistoryMessages$.length + $agentMessages$.length);
     void $transcriptSnapshotMeta$?.totalMessages;
     const exhausted = $historyExhausted$;
@@ -2321,6 +2369,7 @@
     restatedHistoryLength = historyLength;
     restatedHistoryFirstId = firstId;
     restatedHistoryLastId = lastId;
+    if (!isActive) return;
     const container = untrack(() => scrollContainer);
     if (isFirstRun || !container) return;
     untrack(() => {
@@ -2357,14 +2406,20 @@
       virtualSpacerBelowHeight = restated.below;
       if (compensation === 0) return;
       tick().then(() => {
-        if (isComponentDestroyed || !scrollContainer) return;
+        if (!isActive || isComponentDestroyed || !scrollContainer) return;
         scrollContainer.scrollTop = Math.max(0, previousScrollTop + compensation);
       });
     });
   });
 
-  // Clear the reconcile + seek debounce timers on destroy.
+  // Clear deferred viewport work on deactivate as well as destroy.
   $effect(() => {
+    if (isActive) return;
+    if (spacerReconcileTimer !== null) {
+      clearTimeout(spacerReconcileTimer);
+      spacerReconcileTimer = null;
+    }
+    cancelSeekDebounce();
     return () => {
       if (spacerReconcileTimer !== null) clearTimeout(spacerReconcileTimer);
       cancelSeekDebounce();
@@ -2416,6 +2471,7 @@
   let olderHistoryIndicatorHideTimer: ReturnType<typeof setTimeout> | null = null;
 
   function syncOlderHistoryIndicator(fetching: boolean) {
+    if (!isActive) return;
     const action = olderHistoryIndicatorAction({
       fetching,
       chainEvaluationPending: olderHistoryChainEvaluationPending,
@@ -2431,7 +2487,7 @@
     } else if (action === 'arm-hide') {
       olderHistoryIndicatorHideTimer = setTimeout(() => {
         olderHistoryIndicatorHideTimer = null;
-        if (isComponentDestroyed) return;
+        if (!isActive || isComponentDestroyed) return;
         olderHistoryIndicatorVisible = false;
       }, OLDER_HISTORY_INDICATOR_QUIET_MS);
     }
@@ -2455,8 +2511,9 @@
     wasFetchingOlderHistory = false;
   }
 
-  // Clear the indicator hide timer on destroy.
+  // Clear the indicator hide timer on deactivate and destroy.
   $effect(() => {
+    if (!isActive) untrack(resetOlderHistoryIndicator);
     return () => {
       if (olderHistoryIndicatorHideTimer !== null) clearTimeout(olderHistoryIndicatorHideTimer);
     };
@@ -2639,18 +2696,34 @@
   const CACHED_SCROLL_RESTORE_MAX_ATTEMPTS = 60;
   let cachedScrollRestoreAttempts = 0;
   let cachedScrollRestoreRetryFrame: number | null = null;
+  $effect(() => {
+    if (isActive) {
+      if (cachedScrollRestoreTop !== null && !hasConsumedCachedScrollRestore)
+        scheduleCachedScrollRestoreRetry();
+      return;
+    }
+    if (cachedScrollRestoreRetryFrame !== null) {
+      cancelAnimationFrame(cachedScrollRestoreRetryFrame);
+      cachedScrollRestoreRetryFrame = null;
+    }
+    return () => {
+      if (cachedScrollRestoreRetryFrame !== null)
+        cancelAnimationFrame(cachedScrollRestoreRetryFrame);
+    };
+  });
   function scheduleCachedScrollRestoreRetry() {
-    if (cachedScrollRestoreRetryFrame !== null) return;
+    if (!isActive || cachedScrollRestoreRetryFrame !== null) return;
     cachedScrollRestoreRetryFrame = requestAnimationFrame(() => {
       cachedScrollRestoreRetryFrame = null;
-      if (isComponentDestroyed) return;
+      if (!isActive || isComponentDestroyed) return;
       applyCachedScrollRestore();
     });
   }
   // Reapply the previous instance's scroll position (see cachedScrollRestoreTop
   // above). Returns true when the cached position was consumed.
   function applyCachedScrollRestore(): boolean {
-    if (cachedScrollRestoreTop === null || hasConsumedCachedScrollRestore) return false;
+    if (!isActive || cachedScrollRestoreTop === null || hasConsumedCachedScrollRestore)
+      return false;
     // Not consumed until the container is bound, so a premature call cannot
     // silently drop the cached position.
     if (!scrollContainer) return false;
@@ -3405,7 +3478,7 @@
       if (targetElement instanceof HTMLElement) {
         smoothScrollTo(targetElement, 'center');
         targetElement.classList.add('highlight-flash');
-        setTimeout(() => targetElement.classList.remove('highlight-flash'), 1500);
+        scheduleHighlightRemoval(targetElement, 'highlight-flash', 1500);
       }
     };
 
@@ -3506,6 +3579,8 @@
   // the shared observer and follow the asymmetric displayport frontier.
   $effect(() => {
     const messages = hydrationMessages;
+    messageHydrationPolicy.setActive(isActive);
+    if (!isActive) return;
     messageHydrationPolicy.updateMessages(messages);
     for (const message of messages) {
       messageHydrationPolicy.setForced(message.id, isMessageForceVisible(message.id));
@@ -3524,23 +3599,39 @@
 
   function scheduleDeepOpenRelease(turnKey = deepOpenTurnKey) {
     if (deepOpenReleaseTimer !== null) clearTimeout(deepOpenReleaseTimer);
+    if (!isActive) {
+      deepOpenReleaseTimer = null;
+      return;
+    }
     deepOpenReleaseTimer = setTimeout(() => {
+      if (!isActive) return;
       if (deepOpenTurnKey === turnKey) deepOpenTurnKey = null;
       deepOpenReleaseTimer = null;
     }, 200);
   }
+
+  $effect(() => {
+    if (isActive) return;
+    if (deepOpenReleaseTimer !== null) clearTimeout(deepOpenReleaseTimer);
+    deepOpenReleaseTimer = null;
+    deepOpenTurnKey = null;
+    untrack(() => clearDeepOpenHighlight?.());
+  });
 
   // Force-render a message's turn through the LazyTurn virtualization (reuses
   // the deep-open force-visible key) and resolve its DOM element once rendered.
   // Drops follow so the placeholder expanding doesn't yank the viewport back
   // down. Retries across a few frames; resolves null if it never appears.
   async function forceRenderAndFindMessage(messageId: string): Promise<HTMLElement | null> {
+    if (!isActive) return null;
     deepOpenTurnKey = messageIdToTurnKey.get(messageId) ?? messageId;
     shouldFollowBottom = false;
     await tick();
+    if (!isActive) return null;
     const selector = `[data-message-id="${CSS.escape(messageId)}"]`;
     for (let attempt = 0; attempt < 5; attempt++) {
       await new Promise(requestAnimationFrame);
+      if (!isActive) return null;
       const targetElement = scrollContainer?.querySelector(selector) as HTMLElement | null;
       if (targetElement) return targetElement;
     }
@@ -3561,7 +3652,7 @@
   // renders.
   async function scrollToNewMessagesDivider(anchorMessageId: string) {
     const anchorElement = await forceRenderAndFindMessage(anchorMessageId);
-    if (isComponentDestroyed || !scrollContainer) return;
+    if (!isActive || isComponentDestroyed || !scrollContainer) return;
     const dividerElement = scrollContainer.querySelector(
       '[data-new-messages-divider]',
     ) as HTMLElement | null;
@@ -3664,7 +3755,7 @@
       smoothScrollTo(targetElement, 'center');
       scheduleDeepOpenRelease();
       targetElement.classList.add('message-highlight-flash');
-      setTimeout(() => targetElement.classList.remove('message-highlight-flash'), 600);
+      scheduleHighlightRemoval(targetElement, 'message-highlight-flash', 600);
       if (detail.query) applyDeepOpenQueryHighlight(targetElement, detail.query);
     });
   }
@@ -4486,13 +4577,16 @@
 
   // Handle editing a suggested prompt - loads into input without sending
   async function handleEditSuggestedPrompt(prompt: string) {
+    if (!isActive) return;
     inputValue = prompt;
     await inputComponent?.setContent?.(prompt);
+    if (!isActive) return;
     inputComponent?.focus?.();
   }
 
   // Export functions for parent components
   export function focusPrompt(): boolean {
+    if (!isActive) return false;
     const result = inputComponent?.focus?.() ?? false;
     if (result && typeof result === 'boolean') {
       onFocus?.();
@@ -4529,6 +4623,7 @@
   }
 
   export async function navigateToUserMessage(messageId: string): Promise<boolean> {
+    if (!isActive) return false;
     if (!userMessageNavigationItems.some((message) => message.id === messageId)) return false;
     // Index-only row: the message is outside the loaded transcript (neither
     // the loaded scrollback nor the live tail — messageIdToTurnKey spans
@@ -4540,11 +4635,11 @@
       if (!(await seekConversationToMessage(agentId, messageId))) return false;
     }
     const targetElement = await forceRenderAndFindMessage(messageId);
-    if (!targetElement) return false;
+    if (!isActive || !targetElement) return false;
     currentMessageIndex = getMessageIndex(messageId);
     smoothScrollTo(targetElement, 'start');
     targetElement.classList.add('message-highlight-flash');
-    setTimeout(() => targetElement.classList.remove('message-highlight-flash'), 600);
+    scheduleHighlightRemoval(targetElement, 'message-highlight-flash', 600);
     scheduleDeepOpenRelease();
     return true;
   }
@@ -4556,11 +4651,13 @@
    * Other failures keep the cached index (or tail-only) silently.
    */
   export function refreshUserMessageIndex(): void {
-    if (userMessageIndexUnsupported || userMessageIndexFetchInFlight || !agentId) return;
+    if (!isActive || userMessageIndexUnsupported || userMessageIndexFetchInFlight || !agentId)
+      return;
     userMessageIndexFetchInFlight = true;
     void appClient.agents
       .listUserMessages(agentId)
       .then((result) => {
+        if (!isActive) return;
         if (result.ok) {
           userMessageIndexItems = getUserMessageNavigationItemsFromIndex(result.items);
         } else if (result.unsupported) {
@@ -4579,6 +4676,14 @@
   }
 
   export function getNavigationState() {
+    if (!isActive) {
+      return {
+        userMessageCount: $agentMessages$.filter((message) => message.role === 'user').length,
+        currentMessageIndex: -1,
+        isAtTop: false,
+        isAtBottom: false,
+      };
+    }
     const userMessages = $agentMessages$.filter((m) => m.role === 'user');
     return {
       userMessageCount: userMessages.length,

@@ -821,6 +821,31 @@ describe('ChatPanel mounted lifecycle', () => {
     );
   });
 
+  it('ignores a pending draft restore while inactive and restores again on reactivation', async () => {
+    const inactiveRestore = deferred<{ text: string }>();
+    mocks.draftGet
+      .mockImplementationOnce(() => inactiveRestore.promise)
+      .mockResolvedValueOnce({ text: 'restored when active' });
+    const currentWorkspace = workspace('workspace-a');
+    const view = render(ChatPanel, {
+      props: { workspace: currentWorkspace, agentId: 'agent-a', isActive: true },
+    });
+    await tick();
+
+    await view.rerender({ workspace: currentWorkspace, agentId: 'agent-a', isActive: false });
+    inactiveRestore.resolve({ text: 'must stay inactive' });
+    await Promise.resolve();
+    await vi.advanceTimersByTimeAsync(50);
+    expect(screen.getByTestId('mock-rich-input').getAttribute('data-value')).toBe('');
+
+    await view.rerender({ workspace: currentWorkspace, agentId: 'agent-a', isActive: true });
+    await Promise.resolve();
+    await vi.advanceTimersByTimeAsync(50);
+    expect(screen.getByTestId('mock-rich-input').getAttribute('data-value')).toBe(
+      'restored when active',
+    );
+  });
+
   it('keeps the composer clear when a pending draft restore resolves after send', async () => {
     const draft = deferred<{ text: string }>();
     mocks.draftGet.mockReturnValue(draft.promise);
@@ -1360,6 +1385,44 @@ describe('ChatPanel mounted lifecycle', () => {
     expect(mocks.followBottomOptions?.enabled).toBe(true);
   });
 
+  it('cancels pending spacer work on deactivation and permits a fresh active schedule', async () => {
+    mocks.draftGet.mockResolvedValue(null);
+    const setTimeoutSpy = vi.spyOn(globalThis, 'setTimeout');
+    const clearTimeoutSpy = vi.spyOn(globalThis, 'clearTimeout');
+    const currentWorkspace = workspace('workspace-a');
+    const view = render(ChatPanel, {
+      props: { workspace: currentWorkspace, agentId: 'agent-a', isActive: true },
+    });
+    await tick();
+    mocks.agentMessages.set([
+      { id: 'm1', role: 'assistant', content: 'first', timestamp: '2026-01-01T00:00:00.000Z' },
+    ]);
+    await tick();
+
+    const spacerCallIndex = setTimeoutSpy.mock.calls.findLastIndex(([, delay]) => delay === 400);
+    expect(spacerCallIndex).toBeGreaterThanOrEqual(0);
+    const spacerTimer = setTimeoutSpy.mock.results[spacerCallIndex]?.value;
+    const staleSpacerCallback = setTimeoutSpy.mock.calls[spacerCallIndex]?.[0] as () => void;
+
+    await view.rerender({ workspace: currentWorkspace, agentId: 'agent-a', isActive: false });
+    expect(clearTimeoutSpy).toHaveBeenCalledWith(spacerTimer);
+    const dispatchCount = mocks.dispatch.mock.calls.length;
+    staleSpacerCallback();
+    expect(mocks.dispatch).toHaveBeenCalledTimes(dispatchCount);
+
+    const schedulesBeforeReactivate = setTimeoutSpy.mock.calls.filter(
+      ([, delay]) => delay === 400,
+    ).length;
+    await view.rerender({ workspace: currentWorkspace, agentId: 'agent-a', isActive: true });
+    mocks.agentMessages.set([
+      { id: 'm2', role: 'assistant', content: 'second', timestamp: '2026-01-01T00:00:01.000Z' },
+    ]);
+    await tick();
+    expect(setTimeoutSpy.mock.calls.filter(([, delay]) => delay === 400).length).toBeGreaterThan(
+      schedulesBeforeReactivate,
+    );
+  });
+
   it('does not render the moved bottom control inside the transcript', async () => {
     mocks.draftGet.mockResolvedValue(null);
     mocks.agentMessages.set([{ id: 'message-1' }]);
@@ -1732,6 +1795,48 @@ describe('ChatPanel mounted lifecycle', () => {
       clientHeight: { configurable: true, value: 500 },
     });
     flushFrame();
+    expect(scrollContainer.scrollTop).toBe(987);
+  });
+
+  it('cancels a cached-scroll retry while inactive and restores it after reactivation', async () => {
+    mocks.draftGet.mockResolvedValue(null);
+    setCachedChatScroll('workspace-a', 'agent-a', {
+      scrollTop: 987,
+      shouldFollowBottom: false,
+    });
+    mocks.agentMessages.set([
+      { id: 'm1', role: 'assistant', content: 'hello', timestamp: '2026-01-01T00:00:00.000Z' },
+    ]);
+    const currentWorkspace = workspace('workspace-a');
+    const view = render(ChatPanel, {
+      props: { workspace: currentWorkspace, agentId: 'agent-a', isActive: true },
+    });
+    const scrollContainer = view.container.querySelector('.overflow-y-auto') as HTMLDivElement;
+    let scrollTopValue = 0;
+    Object.defineProperty(scrollContainer, 'scrollTop', {
+      configurable: true,
+      get: () => scrollTopValue,
+      set(value: number) {
+        const max = Math.max(0, this.scrollHeight - this.clientHeight);
+        scrollTopValue = Math.max(0, Math.min(value, max));
+      },
+    });
+    await tick();
+    await Promise.resolve();
+    await tick();
+    flushFrame();
+
+    await view.rerender({ workspace: currentWorkspace, agentId: 'agent-a', isActive: false });
+    Object.defineProperties(scrollContainer, {
+      scrollHeight: { configurable: true, value: 2000 },
+      clientHeight: { configurable: true, value: 500 },
+    });
+    flushFrame();
+    expect(scrollContainer.scrollTop).toBe(0);
+
+    await view.rerender({ workspace: currentWorkspace, agentId: 'agent-a', isActive: true });
+    await tick();
+    while (frames.length > 0) flushFrame();
     expect(scrollContainer.scrollTop).toBe(987);
   });
 
