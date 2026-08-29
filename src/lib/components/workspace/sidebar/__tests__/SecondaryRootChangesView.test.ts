@@ -191,6 +191,79 @@ describe('SecondaryRootChangesView', () => {
     expect(mocks.commitDetails).toHaveBeenCalledTimes(2);
   });
 
+  it('shows the summary for working-tree-only changes', async () => {
+    const status = makeStatus('main');
+    status.files = [{ path: 'src/working.ts', status: 'M', staged: false }];
+    mocks.getStatus.mockResolvedValue({ ok: true, data: status });
+
+    const { getByTestId } = await renderView(makeEntry('main', 'root-9', 'bound111'));
+
+    const summary = await waitFor(() => getByTestId('secondary-root-all-changes'));
+    expect(summary.textContent).toContain('1 file changed in Workspace');
+    expect(mocks.commitDetails).not.toHaveBeenCalled();
+  });
+
+  it('shows the summary for commit-only changes after registration', async () => {
+    mocks.getStatus.mockResolvedValue({ ok: true, data: makeStatus('main') });
+    mocks.getHistory.mockResolvedValue({
+      ok: true,
+      data: {
+        items: [
+          makeCommit('newer222', 'feat: after registration'),
+          makeCommit('bound111', 'chore: registration boundary'),
+        ],
+      },
+    });
+    mocks.commitDetails.mockResolvedValue({
+      files: ['src/a.ts', 'src/b.ts'],
+      fileDetails: [],
+    });
+
+    const { getByTestId } = await renderView(makeEntry('main', 'root-9', 'bound111'));
+
+    const summary = await waitFor(() => getByTestId('secondary-root-all-changes'));
+    expect(summary.textContent).toContain('2 files changed in Workspace');
+  });
+
+  it('keeps an empty root in the no-changes state without a summary affordance', async () => {
+    mocks.getStatus.mockResolvedValue({ ok: true, data: makeStatus('main') });
+
+    const { container, queryByTestId } = await renderView(
+      makeEntry('main', 'root-9', 'bound111'),
+    );
+
+    await waitFor(() => expect(container.textContent).toContain('No changes'));
+    expect(queryByTestId('secondary-root-all-changes')).toBeNull();
+  });
+
+  it('refreshes the exact working-tree summary', async () => {
+    const initial = makeStatus('main');
+    initial.files = [{ path: 'src/a.ts', status: 'M', staged: false }];
+    const refreshed = makeStatus('main');
+    refreshed.files = [
+      { path: 'src/a.ts', status: 'M', staged: false },
+      { path: 'src/b.ts', status: '?', staged: false },
+    ];
+    mocks.getStatus.mockResolvedValueOnce({ ok: true, data: initial });
+    mocks.getStatus.mockResolvedValueOnce({ ok: true, data: refreshed });
+    const { getByTestId, getByTitle } = await renderView(
+      makeEntry('main', 'root-9', 'bound111'),
+    );
+    await waitFor(() =>
+      expect(getByTestId('secondary-root-all-changes').textContent).toContain(
+        '1 file changed in Workspace',
+      ),
+    );
+
+    await fireEvent.click(getByTitle('Refresh git status'));
+
+    await waitFor(() =>
+      expect(getByTestId('secondary-root-all-changes').textContent).toContain(
+        '2 files changed in Workspace',
+      ),
+    );
+  });
+
   it('falls back to entry.branch while the status is still loading', async () => {
     mocks.getStatus.mockReturnValue(new Promise(() => {}));
     mocks.getHistory.mockReturnValue(new Promise(() => {}));
