@@ -56,7 +56,7 @@ describe('editorial conversation presentation contract', () => {
     );
     expect(panel).not.toContain('max-w-[var(--content-measure-wide)]');
     expect(panel).toContain('<div class="w-full" data-testid="question-wizard-slot">');
-    expect(panel).toContain("? 'w-full px-1.5!'");
+    expect(panel).toContain("? 'w-full px-3!'");
     expect(panel).toContain(": 'w-full px-4 sm:px-6'");
     expect(panel).toContain('conversation-composer relative z-10 w-full');
     expect(panel).toContain(
