@@ -24,7 +24,7 @@
   import { formatInteger } from '$lib/i18n/format';
   import AgentAvatarWithState from './AgentAvatarWithState.svelte';
   import { agentAvatarGeometry } from './avatar-size';
-  import { computeAdaptiveVisibleCount } from './avatar-stack-fit';
+  import { computeAdaptiveVisibleCount, createDeferredWidthApplier } from './avatar-stack-fit';
 
   interface Props {
     items: AgentAvatarStackItem[];
@@ -52,8 +52,12 @@
     class: className = '',
   }: Props = $props();
   let rootElement: HTMLElement | undefined = $state();
-  // Fed by the ResizeObserver (initial delivery runs post-layout, pre-paint), so
-  // the fit computation never forces a synchronous layout during mount.
+  // Fed by the ResizeObserver but applied one animation frame later: the
+  // observer's initial delivery lands inside the mount/reveal frame, so
+  // consuming the width there (fit computation, overflow text measurement,
+  // re-render) would extend that frame's long task. Until the deferred width
+  // lands, the stack renders up to `maxVisible` items, clipped by the
+  // container's `overflow: hidden`.
   let availableWidth: number | undefined = $state();
   const geometry = $derived(agentAvatarGeometry[variant]);
   const measuredVisibleCount = $derived(
@@ -99,12 +103,18 @@
 
   $effect(() => {
     if (!adaptive || !rootElement || typeof ResizeObserver === 'undefined') return;
+    const deferredWidth = createDeferredWidthApplier((width) => {
+      availableWidth = width;
+    });
     const observer = new ResizeObserver((entries) => {
       const entry = entries[entries.length - 1];
-      availableWidth = entry.borderBoxSize?.[0]?.inlineSize ?? entry.contentRect.width;
+      deferredWidth.set(entry.borderBoxSize?.[0]?.inlineSize ?? entry.contentRect.width);
     });
     observer.observe(rootElement);
-    return () => observer.disconnect();
+    return () => {
+      observer.disconnect();
+      deferredWidth.cancel();
+    };
   });
 </script>
 

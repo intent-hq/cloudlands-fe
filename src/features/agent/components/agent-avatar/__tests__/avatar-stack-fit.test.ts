@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { agentAvatarGeometry } from '../avatar-size';
-import { computeAdaptiveVisibleCount, type AvatarStackFitOptions } from '../avatar-stack-fit';
+import {
+  computeAdaptiveVisibleCount,
+  createDeferredWidthApplier,
+  type AvatarStackFitOptions,
+} from '../avatar-stack-fit';
 
 // card-stack geometry: surface 24, overlap 6 → step 18.
 const geometry = agentAvatarGeometry['card-stack'];
@@ -72,5 +76,121 @@ describe('computeAdaptiveVisibleCount', () => {
     });
     // cap=3 → remaining 7, then 8, then 9 as the count shrinks to the 1-avatar floor.
     expect(seen).toEqual([7, 8, 9]);
+  });
+});
+
+function createFakeFrameScheduler() {
+  let nextHandle = 1;
+  const pending = new Map<number, () => void>();
+  return {
+    schedule: (callback: () => void) => {
+      const handle = nextHandle++;
+      pending.set(handle, callback);
+      return handle;
+    },
+    unschedule: (handle: number) => {
+      pending.delete(handle);
+    },
+    flush() {
+      const callbacks = [...pending.values()];
+      pending.clear();
+      for (const callback of callbacks) callback();
+    },
+    get pendingCount() {
+      return pending.size;
+    },
+  };
+}
+
+describe('createDeferredWidthApplier', () => {
+  it('never applies in the delivering frame — only when the next frame runs', () => {
+    const frames = createFakeFrameScheduler();
+    const applied: number[] = [];
+    const applier = createDeferredWidthApplier(
+      (w) => applied.push(w),
+      frames.schedule,
+      frames.unschedule,
+    );
+    applier.set(120);
+    expect(applied).toEqual([]);
+    frames.flush();
+    expect(applied).toEqual([120]);
+  });
+
+  it('coalesces multiple deliveries into one apply with the latest width', () => {
+    const frames = createFakeFrameScheduler();
+    const applied: number[] = [];
+    const applier = createDeferredWidthApplier(
+      (w) => applied.push(w),
+      frames.schedule,
+      frames.unschedule,
+    );
+    applier.set(120);
+    applier.set(90);
+    applier.set(64);
+    expect(frames.pendingCount).toBe(1);
+    frames.flush();
+    expect(applied).toEqual([64]);
+  });
+
+  it('schedules a fresh frame for deliveries after an apply', () => {
+    const frames = createFakeFrameScheduler();
+    const applied: number[] = [];
+    const applier = createDeferredWidthApplier(
+      (w) => applied.push(w),
+      frames.schedule,
+      frames.unschedule,
+    );
+    applier.set(120);
+    frames.flush();
+    applier.set(80);
+    expect(frames.pendingCount).toBe(1);
+    frames.flush();
+    expect(applied).toEqual([120, 80]);
+  });
+
+  it('cancel drops the pending apply', () => {
+    const frames = createFakeFrameScheduler();
+    const applied: number[] = [];
+    const applier = createDeferredWidthApplier(
+      (w) => applied.push(w),
+      frames.schedule,
+      frames.unschedule,
+    );
+    applier.set(120);
+    applier.cancel();
+    expect(frames.pendingCount).toBe(0);
+    frames.flush();
+    expect(applied).toEqual([]);
+  });
+
+  it('accepts new deliveries after cancel', () => {
+    const frames = createFakeFrameScheduler();
+    const applied: number[] = [];
+    const applier = createDeferredWidthApplier(
+      (w) => applied.push(w),
+      frames.schedule,
+      frames.unschedule,
+    );
+    applier.set(120);
+    applier.cancel();
+    applier.set(48);
+    frames.flush();
+    expect(applied).toEqual([48]);
+  });
+
+  it('does not wedge under a synchronously-invoking scheduler', () => {
+    const applied: number[] = [];
+    const applier = createDeferredWidthApplier(
+      (w) => applied.push(w),
+      (callback) => {
+        callback();
+        return 1;
+      },
+      () => {},
+    );
+    applier.set(120);
+    applier.set(80);
+    expect(applied).toEqual([120, 80]);
   });
 });

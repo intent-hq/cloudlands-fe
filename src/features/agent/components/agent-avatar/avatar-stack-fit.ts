@@ -39,3 +39,50 @@ export function computeAdaptiveVisibleCount(options: AvatarStackFitOptions): num
   }
   return 0;
 }
+
+export interface DeferredWidthApplier {
+  set(width: number): void;
+  cancel(): void;
+}
+
+/**
+ * Coalesces observed widths onto the next animation frame. ResizeObserver
+ * callbacks run inside the delivering frame's rendering steps (after that
+ * frame's rAF callbacks), so a rAF scheduled from one executes in the
+ * following frame — consuming the width there (fit computation, overflow
+ * text measurement, re-render) never extends the frame that delivered the
+ * resize, e.g. the workspace-switch reveal frame.
+ */
+export function createDeferredWidthApplier(
+  apply: (width: number) => void,
+  schedule: (callback: () => void) => number = (callback) => requestAnimationFrame(callback),
+  unschedule: (handle: number) => void = (handle) => cancelAnimationFrame(handle),
+): DeferredWidthApplier {
+  let pendingWidth: number | undefined;
+  let handle: number | undefined;
+  return {
+    set(width: number) {
+      pendingWidth = width;
+      if (handle !== undefined) return;
+      let ran = false;
+      const scheduled = schedule(() => {
+        ran = true;
+        handle = undefined;
+        const latestWidth = pendingWidth as number;
+        pendingWidth = undefined;
+        apply(latestWidth);
+      });
+      // Guard against a synchronously-invoking scheduler: its callback already
+      // cleared the pending state, so retaining the stale handle would wedge
+      // the applier (rAF itself is always asynchronous).
+      if (!ran) handle = scheduled;
+    },
+    cancel() {
+      if (handle !== undefined) {
+        unschedule(handle);
+        handle = undefined;
+      }
+      pendingWidth = undefined;
+    },
+  };
+}
