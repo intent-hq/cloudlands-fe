@@ -75,6 +75,7 @@ export function followBottom(container: HTMLElement, options: FollowBottomOption
   let resizeObserver: ResizeObserver | null = null;
   let settleFrame: number | null = null;
   let reactivationFrame: number | null = null;
+  let layoutReportFrame: number | null = null;
   let stableFrames = 0;
   let previousMaximum: number | null = null;
   let activeMutationLocks = 0;
@@ -209,13 +210,24 @@ export function followBottom(container: HTMLElement, options: FollowBottomOption
   }
 
   function handleLayoutChange() {
+    // Observer callbacks can fire on a dirty tree — e.g. when a retained
+    // surface is revealed — where a synchronous scrollHeight/clientHeight
+    // read forces layout. Defer all layout reads to a single coalesced
+    // animation frame (still pre-paint); the native bottom anchor keeps a
+    // followed viewport pinned until the settle frame snaps exactly.
+    if (destroyed || !enabled) return;
     if (isFollowing) {
-      const maximum = setExactBottom();
       stableFrames = 0;
-      previousMaximum = maximum;
+      previousMaximum = null;
       scheduleBottomSettle();
+      return;
     }
-    reportState();
+    if (layoutReportFrame !== null) return;
+    layoutReportFrame = requestAnimationFrame(() => {
+      layoutReportFrame = null;
+      if (destroyed || !enabled) return;
+      reportState();
+    });
   }
 
   const follower: BottomFollower = {
@@ -448,6 +460,8 @@ export function followBottom(container: HTMLElement, options: FollowBottomOption
     cancelSettle();
     if (reactivationFrame !== null) cancelAnimationFrame(reactivationFrame);
     reactivationFrame = null;
+    if (layoutReportFrame !== null) cancelAnimationFrame(layoutReportFrame);
+    layoutReportFrame = null;
     if (bottomFollowers.get(container) === follower) bottomFollowers.delete(container);
     teardownObservers();
     teardownNativeBottomAnchor();
