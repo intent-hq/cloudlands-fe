@@ -74,6 +74,7 @@ export function followBottom(container: HTMLElement, options: FollowBottomOption
   let mutationObserver: MutationObserver | null = null;
   let resizeObserver: ResizeObserver | null = null;
   let settleFrame: number | null = null;
+  let reactivationFrame: number | null = null;
   let stableFrames = 0;
   let previousMaximum: number | null = null;
   let activeMutationLocks = 0;
@@ -409,7 +410,7 @@ export function followBottom(container: HTMLElement, options: FollowBottomOption
     resizeObserver = null;
   }
 
-  function attachLifecycle() {
+  function attachLifecycle(deferSnap = false) {
     if (!enabled || destroyed) return;
     bottomFollowers.set(container, follower);
     container.addEventListener('scroll', handleScroll, { passive: true });
@@ -423,6 +424,19 @@ export function followBottom(container: HTMLElement, options: FollowBottomOption
     window.addEventListener('pointercancel', handlePointerUp, { passive: true });
     setupNativeBottomAnchor();
     setupObservers();
+    if (deferSnap) {
+      // Re-enable of a retained surface: its DOM and scroll position were
+      // preserved while detached, and the surface was just revealed, so a
+      // synchronous scrollHeight/clientHeight read here forces layout on a
+      // dirty tree. Defer the snap/report to the frame (still pre-paint).
+      reactivationFrame = requestAnimationFrame(() => {
+        reactivationFrame = null;
+        if (destroyed || !enabled) return;
+        if (isFollowing) requestBottomSettle();
+        else reportState();
+      });
+      return;
+    }
     if (isFollowing) setExactBottom();
     reportState();
   }
@@ -432,6 +446,8 @@ export function followBottom(container: HTMLElement, options: FollowBottomOption
     mutationElements.clear();
     pointerScrolling = false;
     cancelSettle();
+    if (reactivationFrame !== null) cancelAnimationFrame(reactivationFrame);
+    reactivationFrame = null;
     if (bottomFollowers.get(container) === follower) bottomFollowers.delete(container);
     teardownObservers();
     teardownNativeBottomAnchor();
@@ -458,7 +474,14 @@ export function followBottom(container: HTMLElement, options: FollowBottomOption
       if (enabled !== nextEnabled) {
         if (!nextEnabled) detachLifecycle();
         enabled = nextEnabled;
-        if (enabled) attachLifecycle();
+        if (enabled) {
+          // Sync the consumer's follow policy first (no onFollowChange echo),
+          // then attach with the bottom snap/report deferred — the reveal of
+          // a retained surface must not force layout synchronously.
+          isFollowing = newOptions.follow;
+          attachLifecycle(true);
+          return;
+        }
       }
 
       // Consumer-driven changes do not echo through onFollowChange. That

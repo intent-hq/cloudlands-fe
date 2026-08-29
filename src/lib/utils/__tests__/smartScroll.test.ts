@@ -971,6 +971,80 @@ describe('followBottom policy', () => {
     action.destroy();
   });
 
+  it('defers the reactivation snap and layout reads to an animation frame', () => {
+    const distances: number[] = [];
+    const options = {
+      enabled: true,
+      follow: true,
+      onScrollStateChange: (state: { distanceFromBottom: number }) =>
+        distances.push(state.distanceFromBottom),
+    };
+    const action = followBottom(container, options);
+    action.update({ ...options, enabled: false });
+
+    // Content grew while the surface was retained/disabled.
+    scrollHeight += 100;
+    let layoutReads = 0;
+    Object.defineProperty(container, 'scrollHeight', {
+      configurable: true,
+      get: () => {
+        layoutReads += 1;
+        return scrollHeight;
+      },
+    });
+    Object.defineProperty(container, 'clientHeight', {
+      configurable: true,
+      get: () => {
+        layoutReads += 1;
+        return clientHeight;
+      },
+    });
+    distances.length = 0;
+
+    action.update({ ...options, enabled: true });
+    expect(layoutReads).toBe(0);
+    expect(scrollTop).toBe(600);
+    expect(distances).toEqual([]);
+    expect(isFollowingBottom(container)).toBe(true);
+    expect(animationFrames).toHaveLength(1);
+
+    runFrame();
+    expect(layoutReads).toBeGreaterThan(0);
+    expect(scrollTop).toBe(700);
+    expect(distances).toEqual([0]);
+    action.destroy();
+  });
+
+  it('applies an unfollowed reactivation without snapping to the bottom', () => {
+    const options = { enabled: true, follow: true };
+    const action = followBottom(container, options);
+    action.update({ ...options, enabled: false });
+    scrollTop = 300;
+
+    action.update({ ...options, enabled: true, follow: false });
+    expect(isFollowingBottom(container)).toBe(false);
+    runFrame();
+
+    expect(scrollTop).toBe(300);
+    action.destroy();
+  });
+
+  it('abandons a pending reactivation snap when disabled before the frame', () => {
+    const options = { enabled: true, follow: true };
+    const action = followBottom(container, options);
+    action.update({ ...options, enabled: false });
+    scrollTop = 300;
+
+    action.update({ ...options, enabled: true });
+    expect(animationFrames).toHaveLength(1);
+    action.update({ ...options, enabled: false });
+    expect(cancelAnimationFrame).toHaveBeenCalledWith(1);
+    runFrame();
+
+    expect(scrollTop).toBe(300);
+    action.destroy();
+  });
+
   it('does not echo consumer follow updates and snaps on consumer re-lock', () => {
     const followChanges: boolean[] = [];
     const options = {
