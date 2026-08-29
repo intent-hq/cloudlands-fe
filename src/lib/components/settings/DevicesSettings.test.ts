@@ -9,12 +9,15 @@ import type { ConnectionRecord } from '$shared/types/connections';
 const mocks = vi.hoisted(() => ({
   loaded: true,
   connections: [] as ConnectionRecord[],
+  pinnedVersion: null as string | null,
+  connectedIds: [] as string[],
   dispatch: vi.fn(),
   update: vi.fn(),
   test: vi.fn(),
   rotate: vi.fn(),
   open: vi.fn(),
   forget: vi.fn(),
+  updateBackend: vi.fn(),
   readable: <T>(get: () => T) => ({
     subscribe(run: (value: T) => void) {
       run(get());
@@ -32,6 +35,8 @@ vi.mock('$store/renderer/slices/connections/connections-selectors', () => ({
   selectRemoteConnections: () =>
     mocks.readable(() => mocks.connections.filter((connection) => !connection.isLocal)),
   selectKeychainSyncState: () => mocks.readable(() => null),
+  selectPinnedDaemonVersion: () => mocks.readable(() => mocks.pinnedVersion),
+  selectConnectedIds: () => mocks.readable(() => mocks.connectedIds),
 }));
 
 vi.mock('$store/renderer/slices/connections/connections-slice', () => ({
@@ -40,6 +45,7 @@ vi.mock('$store/renderer/slices/connections/connections-slice', () => ({
   rotateConnectionSecretRequested: (params: unknown) => mocks.rotate(params),
   openConnectionRequested: (id: string) => mocks.open(id),
   forgetConnectionRequested: (id: string) => mocks.forget(id),
+  updateBackendRequested: (id: string) => mocks.updateBackend(id),
   captureFingerprintRequested: vi.fn(),
   addConnectionRequested: vi.fn(),
   loadKeychainSyncStateRequested: () => ({ promise: Promise.resolve() }),
@@ -74,6 +80,8 @@ describe('DevicesSettings', () => {
     vi.clearAllMocks();
     mocks.loaded = true;
     mocks.connections = [local, remote];
+    mocks.pinnedVersion = null;
+    mocks.connectedIds = [];
     mocks.update.mockImplementation((params) => ({
       type: 'connections/updateRequested',
       payload: [params],
@@ -98,6 +106,11 @@ describe('DevicesSettings', () => {
       type: 'connections/forgetRequested',
       payload: [id],
       promise: Promise.resolve(),
+    }));
+    mocks.updateBackend.mockImplementation((id) => ({
+      type: 'connections/updateBackendRequested',
+      payload: [id],
+      promise: Promise.resolve({ ok: true }),
     }));
   });
 
@@ -253,10 +266,77 @@ describe('DevicesSettings', () => {
     expect(screen.queryByRole('button', { name: 'Use Orange accent' })).toBeNull();
   });
 
-  async function openAction(name: 'Connect' | 'Edit' | 'Remove', deviceName = 'Studio Mac') {
+  async function openAction(
+    name: 'Connect' | 'Edit' | 'Remove' | 'Update',
+    deviceName = 'Studio Mac',
+  ) {
     await fireEvent.click(screen.getByRole('button', { name: `Actions for ${deviceName}` }));
     await fireEvent.click(await screen.findByRole('menuitem', { name }));
   }
+
+  describe('behind-pin indicator and Update action', () => {
+    const behindLabel = m.settings_devices_daemonBehind_tooltip({
+      daemonVersion: '0.9.0',
+      pinnedVersion: '0.9.1',
+    });
+
+    it('marks a device whose captured daemon version is behind the pin, even while disconnected', () => {
+      mocks.pinnedVersion = '0.9.1';
+      mocks.connections = [local, { ...remote, daemonVersion: 'v0.9.0' }];
+      render(DevicesSettings);
+
+      expect(screen.getByRole('img', { name: behindLabel })).toBeTruthy();
+    });
+
+    it('shows no indicator for up-to-date or unknown versions', () => {
+      mocks.pinnedVersion = '0.9.1';
+      mocks.connections = [
+        local,
+        { ...remote, daemonVersion: '0.9.1' },
+        { ...remote, id: 'remote-2', label: 'Other Mac' },
+      ];
+      render(DevicesSettings);
+
+      expect(screen.queryByRole('img')).toBeNull();
+    });
+
+    it('shows no indicator when the pinned version is unknown', () => {
+      mocks.connections = [local, { ...remote, daemonVersion: '0.9.0' }];
+      render(DevicesSettings);
+
+      expect(screen.queryByRole('img')).toBeNull();
+    });
+
+    it('offers Update only for connected behind devices and dispatches the backend update', async () => {
+      mocks.pinnedVersion = '0.9.1';
+      mocks.connectedIds = ['remote-1'];
+      mocks.connections = [local, { ...remote, daemonVersion: '0.9.0', status: 'connected' }];
+      render(DevicesSettings);
+
+      await openAction('Update');
+
+      expect(mocks.updateBackend).toHaveBeenCalledWith('remote-1');
+      expect(mocks.dispatch).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: 'connections/updateBackendRequested',
+          payload: ['remote-1'],
+        }),
+      );
+      expect(mocks.update).not.toHaveBeenCalled();
+    });
+
+    it('hides Update for a behind device without a live connection', async () => {
+      mocks.pinnedVersion = '0.9.1';
+      mocks.connections = [local, { ...remote, daemonVersion: '0.9.0' }];
+      render(DevicesSettings);
+
+      await fireEvent.click(screen.getByRole('button', { name: 'Actions for Studio Mac' }));
+      await screen.findByRole('menuitem', { name: 'Connect' });
+
+      expect(screen.queryByRole('menuitem', { name: 'Update' })).toBeNull();
+      expect(mocks.updateBackend).not.toHaveBeenCalled();
+    });
+  });
 
   it('edits metadata inline', async () => {
     render(DevicesSettings);

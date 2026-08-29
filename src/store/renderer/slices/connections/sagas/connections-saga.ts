@@ -1,4 +1,11 @@
-import { END, eventChannel, buffers, type EventChannel } from 'redux-saga';
+import {
+  END,
+  eventChannel,
+  buffers,
+  channel as sagaChannel,
+  type Channel,
+  type EventChannel,
+} from 'redux-saga';
 import {
   all,
   call,
@@ -12,6 +19,8 @@ import {
   type SagaGenerator,
 } from 'typed-redux-saga';
 
+import { canRequestDeviceUpdate } from '$lib/utils/device-update-eligibility';
+import { formatConnectionLabel } from '$lib/utils/connection-label';
 import { IPC_CHANNELS } from '$shared/ipc-registry';
 import {
   CONNECTIONS_CHANGED_EVENT,
@@ -28,6 +37,7 @@ import type {
   ConnectionAuthRejectedEvent,
   ConnectionCertMismatchEvent,
   ConnectionProtocolMismatchEvent,
+  ConnectionRecord,
   ConnectionsChangedEvent,
   ConnectionsListResult,
   ForgetConnectionParams,
@@ -223,6 +233,70 @@ async function showUpdateBackendRequestErrorToast(): Promise<void> {
     import('$shared/paraglide/messages.js'),
   ]);
   toast.error(m.layout_daemonStatus_updateRequestError_toast());
+}
+
+/** Long enough to act on the Update action, short enough not to nag. */
+const DAEMON_BEHIND_TOAST_DURATION_MS = 10000;
+
+type UpdateBackendAction = ReturnType<typeof updateBackendRequested>;
+
+/**
+ * Toast a remote whose daemon just connected behind the app's pinned intentd
+ * version, with an Update action. Same lazy imports as the other update
+ * toasts; the per-connection toast id makes a reconnect update the existing
+ * toast instead of stacking a new one.
+ */
+async function showDaemonBehindPinToast(
+  conn: ConnectionRecord,
+  daemonVersion: string,
+  pinnedVersion: string,
+  onUpdate: () => void,
+): Promise<void> {
+  const [{ toast }, { m }] = await Promise.all([
+    import('svelte-sonner'),
+    import('$shared/paraglide/messages.js'),
+  ]);
+  toast.warning(
+    m.layout_daemonStatus_daemonBehind_toast({
+      name: formatConnectionLabel(conn),
+      // The message template prepends "v" — strip any reported prefix (same as DeviceRow).
+      daemonVersion: daemonVersion.replace(/^v/, ''),
+      pinnedVersion: pinnedVersion.replace(/^v/, ''),
+    }),
+    {
+      id: `connections-daemon-behind-${conn.id}`,
+      duration: DAEMON_BEHIND_TOAST_DURATION_MS,
+      action: { label: m.layout_daemonStatus_update_action(), onClick: onUpdate },
+    },
+  );
+}
+
+/**
+ * Toast each remote that TRANSITIONED to connected on this broadcast while its
+ * daemon is behind the app's pin. `previous` is the connected set from the
+ * last broadcast, so re-broadcasts of an unchanged pool stay silent. The
+ * Update action feeds `updateActions` (pumped back into the store as an
+ * `updateBackendRequested` dispatch); the outcome then surfaces via the
+ * existing per-result update toasts.
+ */
+function* announceDaemonsBehindPin(
+  payload: ConnectionsChangedEvent,
+  previous: ReadonlySet<string>,
+  updateActions: Channel<UpdateBackendAction>,
+): SagaGenerator<void> {
+  const { connections, connectedIds, pinnedVersion } = payload;
+  for (const conn of connections) {
+    const { daemonVersion } = conn;
+    if (previous.has(conn.id) || !daemonVersion || !pinnedVersion) continue;
+    if (!canRequestDeviceUpdate(conn, connectedIds, pinnedVersion)) continue;
+    yield* call(showDaemonBehindPinToast, conn, daemonVersion, pinnedVersion, () => {
+      const action = updateBackendRequested(conn.id);
+      // Failure feedback is the update saga's toast; the unobserved promise
+      // must not surface as an unhandled rejection.
+      action.promise.catch(() => {});
+      updateActions.put(action);
+    });
+  }
 }
 
 async function invokeSyncGetState(): Promise<KeychainSyncStateResult> {
@@ -452,13 +526,22 @@ function* setKeychainSyncEnabled(
   }
 }
 
-function* consumeConnectionsEvents(channel: EventChannel<ConnectionsEvent>): SagaGenerator<void> {
+function* consumeConnectionsEvents(
+  channel: EventChannel<ConnectionsEvent>,
+  updateActions: Channel<UpdateBackendAction>,
+): SagaGenerator<void> {
+  // Connected ids seen on the previous `connections:changed` broadcast —
+  // transition detection so only a connect toasts, not every re-broadcast.
+  let previousConnectedIds: ReadonlySet<string> = new Set();
   try {
     while (true) {
       const event = yield* take(channel);
       if (event === (END as unknown as ConnectionsEvent)) return;
-      if (event.kind === 'changed') yield* put(connectionsListReceived(event.payload));
-      else if (event.kind === 'cert-mismatch') yield* put(certMismatchReceived(event.payload));
+      if (event.kind === 'changed') {
+        yield* put(connectionsListReceived(event.payload));
+        yield* call(announceDaemonsBehindPin, event.payload, previousConnectedIds, updateActions);
+        if (event.payload.connectedIds) previousConnectedIds = new Set(event.payload.connectedIds);
+      } else if (event.kind === 'cert-mismatch') yield* put(certMismatchReceived(event.payload));
       else if (event.kind === 'auth-rejected') yield* put(authRejectedReceived(event.payload));
       else if (event.kind === 'sync-status') yield* put(keychainSyncStatusReceived(event.payload));
       else yield* put(protocolMismatchReceived(event.payload));
@@ -488,17 +571,28 @@ function* watchConnectionsActions(): SagaGenerator<void> {
   ]);
 }
 
+/** Re-dispatch toast-action clicks into the store (a toast onClick runs outside saga context). */
+function* pumpUpdateActions(updateActions: Channel<UpdateBackendAction>): SagaGenerator<void> {
+  while (true) {
+    const action = yield* take(updateActions);
+    yield* put(action);
+  }
+}
+
 export function* connectionsSaga(): SagaGenerator<void> {
   if (!getApi()) return;
 
   const events = createConnectionsEventChannel();
-  const eventTask = yield* fork(consumeConnectionsEvents, events);
+  const updateActions = sagaChannel<UpdateBackendAction>();
+  const eventTask = yield* fork(consumeConnectionsEvents, events, updateActions);
+  const pumpTask = yield* fork(pumpUpdateActions, updateActions);
   const actionsTask = yield* fork(watchConnectionsActions);
   const initial = loadConnectionsRequested();
   try {
     yield* call(hydrateConnections, initial);
-    yield* all([join(eventTask), join(actionsTask)]);
+    yield* all([join(eventTask), join(pumpTask), join(actionsTask)]);
   } finally {
     events.close();
+    updateActions.close();
   }
 }
