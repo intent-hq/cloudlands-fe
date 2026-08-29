@@ -95,6 +95,7 @@ let nativeThemeBackgroundSyncInstalled = false;
 function refreshNativeWindowBackgrounds(): void {
   const backgroundColor = getWindowBackgroundColor(nativeTheme.shouldUseDarkColors);
   for (const window of BrowserWindow.getAllWindows()) {
+    if (isDockWindow(window)) continue;
     window.setBackgroundColor(backgroundColor);
   }
 }

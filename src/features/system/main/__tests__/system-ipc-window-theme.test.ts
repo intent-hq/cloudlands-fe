@@ -1,11 +1,17 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 type Handler = (...args: unknown[]) => unknown;
+type NativeWindow = {
+  setBackgroundColor: ReturnType<typeof vi.fn>;
+  isDestroyed: () => boolean;
+  webContents: { isDestroyed: () => boolean; getURL: () => string };
+};
 
 const electronMocks = vi.hoisted(() => ({
   handle: vi.fn(),
   fromWebContents: vi.fn(),
-  getAllWindows: vi.fn(() => [] as Array<{ setBackgroundColor: ReturnType<typeof vi.fn> }>),
+  // eslint-disable-next-line themis/collection-state-shape -- Electron window mocks are not Redux state.
+  getAllWindows: vi.fn(() => [] as NativeWindow[]),
   nativeTheme: {
     themeSource: 'system',
     shouldUseDarkColors: false,
@@ -45,6 +51,17 @@ function handlerFor(channel: string): Handler {
   const call = electronMocks.handle.mock.calls.find(([registered]) => registered === channel);
   if (!call) throw new Error(`no handler registered for ${channel}`);
   return call[1] as Handler;
+}
+
+function createNativeWindow(route: string): NativeWindow {
+  return {
+    setBackgroundColor: vi.fn(),
+    isDestroyed: () => false,
+    webContents: {
+      isDestroyed: () => false,
+      getURL: () => `app://workspaces${route}`,
+    },
+  };
 }
 
 beforeEach(() => {
@@ -91,8 +108,11 @@ describe('WINDOW_CHANNELS.SET_THEME', () => {
     expect(result).toEqual({ success: true });
   });
 
-  it('refreshes every native window when the system appearance changes', () => {
-    const windows = [{ setBackgroundColor: vi.fn() }, { setBackgroundColor: vi.fn() }];
+  it('refreshes normal and HUD windows but keeps the dock transparent', () => {
+    const normalWindow = createNativeWindow('/work/example');
+    const hudWindow = createNativeWindow('/hud');
+    const dockWindow = createNativeWindow('/dock');
+    const windows = [normalWindow, hudWindow, dockWindow];
     electronMocks.getAllWindows.mockReturnValue(windows);
     electronMocks.nativeTheme.shouldUseDarkColors = true;
     const listener = electronMocks.nativeTheme.on.mock.calls.find(
@@ -102,10 +122,11 @@ describe('WINDOW_CHANNELS.SET_THEME', () => {
     expect(listener).toBeTypeOf('function');
     listener();
 
-    for (const window of windows) {
+    for (const window of [normalWindow, hudWindow]) {
       expect(window.setBackgroundColor).toHaveBeenCalledWith(
         getWindowBackgroundColor(true, process.platform),
       );
     }
+    expect(dockWindow.setBackgroundColor).not.toHaveBeenCalled();
   });
 });
