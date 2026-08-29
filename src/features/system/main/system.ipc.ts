@@ -81,6 +81,7 @@ import { resolveAppIconPath } from '../../../main/utils/resolve-app-icon';
 import { LOCAL_CONNECTION_ID } from '../../../shared/types/connections';
 import { CHIEF_WORKSPACE_ID } from '../../../shared/types/branded-ids';
 import { isDockWindow, setDockPointerRegionActive } from '../../../main/dock-window';
+import { isHudWindow } from '../../../main/hud-window';
 
 // ESM-compatible __dirname
 const __filename = fileURLToPath(import.meta.url);
@@ -969,6 +970,22 @@ export function setupSystemIPC() {
     return newWindow;
   }
 
+  function focusExistingWorkspaceWindow(workspaceId: string): BrowserWindow | null {
+    for (const windowId of getWindowIdsForWorkspace(workspaceId)) {
+      const existing = BrowserWindow.fromId(windowId);
+      if (!existing || existing.isDestroyed() || isDockWindow(existing) || isHudWindow(existing))
+        continue;
+      if (existing.isMinimized()) existing.restore();
+      existing.show();
+      existing.focus();
+      if (!existing.webContents.isDestroyed()) {
+        existing.webContents.send('notification:navigate', { workspaceId });
+      }
+      return existing;
+    }
+    return null;
+  }
+
   // Create new window
   ipcMain.handle(
     WINDOW_CHANNELS.CREATE,
@@ -1001,6 +1018,12 @@ export function setupSystemIPC() {
       WindowOpenNewSchema,
       async (event, validated) => {
         try {
+          const workspaceMatch = validated.route?.match(/^\/workspace\/([^/]+)$/);
+          const existing =
+            validated.reuseExistingWorkspace && workspaceMatch
+              ? focusExistingWorkspaceWindow(workspaceMatch[1])
+              : null;
+          if (existing) return { success: true, windowId: existing.id, reused: true };
           const newWindow = await createAppWindow(
             validated.route,
             getBackendIdForIpcSender(event.sender),

@@ -700,6 +700,7 @@ export const WindowCreateSchema = z.object({
 
 export const WindowOpenNewSchema = z.object({
   route: z.string().optional(),
+  reuseExistingWorkspace: z.boolean().optional(),
 });
 
 export const WindowSetThemeSchema = z.object({

@@ -52,6 +52,7 @@ const electronMocks = vi.hoisted(() => {
 vi.mock('electron', () => ({
   app: {
     on: electronMocks.appOn,
+    emit: vi.fn(),
     getAppPath: vi.fn(() => '/tmp/app'),
     getVersion: vi.fn(() => '0.0.0'),
     getName: vi.fn(() => 'Intent'),
@@ -96,6 +97,8 @@ describe('HUD window singleton via WINDOW.OPEN_NEW', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     electronMocks.constructed.length = 0;
+    electronMocks.MockBrowserWindow.fromId.mockReset();
+    electronMocks.MockBrowserWindow.fromWebContents.mockReset();
     electronMocks.MockBrowserWindow.getAllWindows.mockReturnValue([]);
     _resetHudWindowRefForTests();
     setupSystemIPC();
@@ -147,6 +150,39 @@ describe('HUD window singleton via WINDOW.OPEN_NEW', () => {
     await openNew({ sender: {} }, { route: '/workspace/ws-1' });
     await openNew({ sender: {} }, { route: '/workspace/ws-2' });
     expect(electronMocks.constructed).toHaveLength(2);
+  });
+
+  it('reuses a normal window that already has the requested workspace tab', async () => {
+    const openNew = handlerFor(WINDOW_CHANNELS.OPEN_NEW);
+    await openNew({ sender: {} }, { route: '/workspace/current' });
+    const existing = electronMocks.constructed[0];
+    electronMocks.MockBrowserWindow.fromWebContents.mockReturnValue(existing);
+    electronMocks.MockBrowserWindow.fromId.mockReturnValue(existing);
+    await handlerFor(WINDOW_CHANNELS.SET_OPEN_WORKSPACE_TABS)(
+      { sender: {} },
+      { workspaceIds: ['requested'] },
+    );
+
+    const result = await openNew(
+      { sender: {} },
+      { route: '/workspace/requested', reuseExistingWorkspace: true },
+    );
+
+    expect(result).toEqual({ success: true, windowId: existing.id, reused: true });
+    expect(electronMocks.constructed).toHaveLength(1);
+    expect(existing.focus).toHaveBeenCalled();
+    expect(existing.webContents.send).toHaveBeenCalledWith('notification:navigate', {
+      workspaceId: 'requested',
+    });
+  });
+
+  it('creates a normal window when no existing workspace tab matches', async () => {
+    await handlerFor(WINDOW_CHANNELS.OPEN_NEW)(
+      { sender: {} },
+      { route: '/workspace/requested', reuseExistingWorkspace: true },
+    );
+    expect(electronMocks.constructed).toHaveLength(1);
+    expect(electronMocks.constructed[0].loadedUrl).toContain('/workspace/requested');
   });
 
   it.each([WINDOW_CHANNELS.CREATE, WINDOW_CHANNELS.OPEN_NEW])(
