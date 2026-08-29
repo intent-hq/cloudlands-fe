@@ -5988,8 +5988,9 @@
                 {agentId}
                 selectedModel={hydratedInputModel}
                 compactMode={isCompactMode}
-                editorClassName={isChiefWorkspace ? 'w-full px-1.5!' : 'w-full px-4! sm:px-6!'}
-                contentInsetClassName={isChiefWorkspace ? 'w-full px-1.5' : 'w-full px-4 sm:px-6'}
+                editorClassName={isChiefWorkspace ? 'w-full px-3!' : 'w-full px-4! sm:px-6!'}
+                contentInsetClassName={isChiefWorkspace ? 'w-full px-3' : 'w-full px-4 sm:px-6'}
+                actionBarEndClassName={isChiefWorkspace ? 'pr-3!' : undefined}
                 edgeDocked
                 externalDropTarget
                 requiresModelSwitchConfirmation={!canChangeProvider}
@@ -6083,24 +6084,28 @@
   }
 
   .conversation-composer {
-    --composer-lane-inset: 1rem;
+    --composer-lane-inset-x: 1rem;
+    --composer-lane-inset-bottom: 1rem;
   }
 
   .conversation-composer.chief-composer {
-    --composer-lane-inset: 0.25rem;
+    --composer-lane-inset-x: 0;
+    --composer-lane-inset-bottom: 0.25rem;
   }
 
   .composer-prompt-lane {
-    padding: 0.5rem var(--composer-lane-inset) var(--composer-lane-inset);
+    padding: 0.5rem var(--composer-lane-inset-x) var(--composer-lane-inset-bottom);
   }
 
   @media (min-width: 640px) {
     .conversation-composer {
-      --composer-lane-inset: 1.5rem;
+      --composer-lane-inset-x: 1.5rem;
+      --composer-lane-inset-bottom: 1.5rem;
     }
 
     .conversation-composer.chief-composer {
-      --composer-lane-inset: 0.5rem;
+      --composer-lane-inset-x: 0;
+      --composer-lane-inset-bottom: 0.5rem;
     }
   }
 
