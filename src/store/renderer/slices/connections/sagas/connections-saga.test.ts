@@ -748,7 +748,8 @@ describe('connectionsSaga', () => {
       await settle();
 
       // v-prefixed reported versions must not double the template's own "v".
-      changed([LOCAL, { ...BEHIND, daemonVersion: 'v0.9.0' }], [BEHIND.id], 'v0.10.0');
+      const vBehind = { ...BEHIND, daemonVersion: 'v0.9.0' };
+      changed([LOCAL, vBehind], [BEHIND.id], 'v0.10.0');
       await vi.waitFor(() => expect(toast.warning).toHaveBeenCalledTimes(1));
       const [message, options] = toast.warning.mock.calls[0]!;
       expect(String(message)).toContain('Studio Mac');
@@ -759,7 +760,7 @@ describe('connectionsSaga', () => {
       expect(options.action.label).toEqual(expect.any(String));
 
       // Same connected pool re-broadcast: no second toast.
-      changed([LOCAL, BEHIND], [BEHIND.id], '0.10.0');
+      changed([LOCAL, vBehind], [BEHIND.id], 'v0.10.0');
       await settle();
       expect(toast.warning).toHaveBeenCalledTimes(1);
 
@@ -777,6 +778,55 @@ describe('connectionsSaga', () => {
       await settle();
       changed([LOCAL, BEHIND], [BEHIND.id], '0.10.0');
       await vi.waitFor(() => expect(toast.warning).toHaveBeenCalledTimes(2));
+
+      run.task.cancel();
+      await run.task.toPromise();
+    });
+
+    it('toasts on the version-bearing follow-up when the connect broadcast precedes the capture', async () => {
+      const run = start();
+      await settle();
+
+      // The fire-and-forget daemonVersion capture hasn't landed yet: the
+      // first 'connected' broadcast carries no version — inconclusive, so the
+      // id must NOT count as evaluated.
+      changed([LOCAL, { ...BEHIND, daemonVersion: null }], [BEHIND.id], '0.10.0');
+      await settle();
+      expect(toast.warning).not.toHaveBeenCalled();
+
+      // The capture's write/broadcast arrives: still counts as the transition.
+      changed([LOCAL, BEHIND], [BEHIND.id], '0.10.0');
+      await vi.waitFor(() => expect(toast.warning).toHaveBeenCalledTimes(1));
+
+      // Unchanged re-broadcast after the conclusive one: silent.
+      changed([LOCAL, BEHIND], [BEHIND.id], '0.10.0');
+      await settle();
+      expect(toast.warning).toHaveBeenCalledTimes(1);
+
+      run.task.cancel();
+      await run.task.toPromise();
+    });
+
+    it('announces an already-connected behind backend once at startup hydration', async () => {
+      invoke.mockImplementation(async (channel: string) => {
+        if (channel === CONNECTION_CHANNELS.LIST)
+          return {
+            connections: [LOCAL, BEHIND],
+            activeId: LOCAL.id,
+            windowBackendId: LOCAL.id,
+            connectedIds: [BEHIND.id],
+            pinnedVersion: '0.10.0',
+          };
+        return {};
+      });
+      const run = start();
+      await vi.waitFor(() => expect(toast.warning).toHaveBeenCalledTimes(1));
+
+      // The first post-hydration broadcast of the same pool stays silent —
+      // the hydration announcement seeded the tracker.
+      changed([LOCAL, BEHIND], [BEHIND.id], '0.10.0');
+      await settle();
+      expect(toast.warning).toHaveBeenCalledTimes(1);
 
       run.task.cancel();
       await run.task.toPromise();

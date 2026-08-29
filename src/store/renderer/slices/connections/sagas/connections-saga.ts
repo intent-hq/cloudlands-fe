@@ -272,22 +272,45 @@ async function showDaemonBehindPinToast(
 }
 
 /**
- * Toast each remote that TRANSITIONED to connected on this broadcast while its
- * daemon is behind the app's pin. `previous` is the connected set from the
- * last broadcast, so re-broadcasts of an unchanged pool stay silent. The
- * Update action feeds `updateActions` (pumped back into the store as an
+ * The behind-pin announcements already evaluated: connected remote id → the
+ * `daemonVersion` that was evaluated. Saga-local mutable state shared between
+ * the hydration path (startup seeding + announcement) and the
+ * `connections:changed` consumer.
+ */
+interface DaemonBehindTracker {
+  evaluatedById: ReadonlyMap<string, string>;
+}
+
+/**
+ * Toast each connected remote whose daemon is behind the app's pin, once per
+ * (id, daemonVersion) while it stays connected. An id only counts as
+ * evaluated when the check was conclusive (both `daemonVersion` and
+ * `pinnedVersion` present) — the daemon-version capture on connect is
+ * fire-and-forget, so the 'connected' broadcast can precede the
+ * version-bearing one; deferring keeps that follow-up broadcast counting as
+ * the transition, and a version refresh re-evaluates (the per-id toast id
+ * updates in place rather than stacking). Re-broadcasts of an unchanged pool
+ * stay silent; a disconnect clears the id so a reconnect announces again.
+ * The Update action feeds `updateActions` (pumped back into the store as an
  * `updateBackendRequested` dispatch); the outcome then surfaces via the
  * existing per-result update toasts.
  */
 function* announceDaemonsBehindPin(
   payload: ConnectionsChangedEvent,
-  previous: ReadonlySet<string>,
+  tracker: DaemonBehindTracker,
   updateActions: Channel<UpdateBackendAction>,
 ): SagaGenerator<void> {
   const { connections, connectedIds, pinnedVersion } = payload;
+  // Older main process without connected info: nothing to evaluate.
+  if (!connectedIds) return;
+  const previous = tracker.evaluatedById;
+  const evaluated = new Map<string, string>();
   for (const conn of connections) {
+    if (conn.isLocal || !connectedIds.includes(conn.id)) continue;
     const { daemonVersion } = conn;
-    if (previous.has(conn.id) || !daemonVersion || !pinnedVersion) continue;
+    if (!daemonVersion || !pinnedVersion) continue;
+    evaluated.set(conn.id, daemonVersion);
+    if (previous.get(conn.id) === daemonVersion) continue;
     if (!canRequestDeviceUpdate(conn, connectedIds, pinnedVersion)) continue;
     yield* call(showDaemonBehindPinToast, conn, daemonVersion, pinnedVersion, () => {
       const action = updateBackendRequested(conn.id);
@@ -297,6 +320,7 @@ function* announceDaemonsBehindPin(
       updateActions.put(action);
     });
   }
+  tracker.evaluatedById = evaluated;
 }
 
 async function invokeSyncGetState(): Promise<KeychainSyncStateResult> {
@@ -314,12 +338,20 @@ async function invokeSyncSetEnabled(
 }
 
 function* hydrateConnections(
+  tracker: DaemonBehindTracker,
+  updateActions: Channel<UpdateBackendAction>,
   action: ReturnType<typeof loadConnectionsRequested>,
 ): SagaGenerator<void> {
   let settled = false;
   try {
     const result = yield* call(invokeConnectionsList);
     yield* put(connectionsListReceived(result));
+    // Deliberate startup announcement: the boot-wide restore connects pooled
+    // clients before windows exist (see the cert-mismatch note below), so a
+    // backend already connected behind the pin would otherwise never toast.
+    // The shared tracker keeps later `connections:changed` broadcasts silent
+    // for the same (id, daemonVersion).
+    yield* call(announceDaemonsBehindPin, result, tracker, updateActions);
     if (result.protocolMismatch) yield* put(protocolMismatchReceived(result.protocolMismatch));
     // Replay the latched auth rejection for the active backend so a window
     // created/reloaded after the one-shot push (including boot) still surfaces
@@ -528,19 +560,16 @@ function* setKeychainSyncEnabled(
 
 function* consumeConnectionsEvents(
   channel: EventChannel<ConnectionsEvent>,
+  tracker: DaemonBehindTracker,
   updateActions: Channel<UpdateBackendAction>,
 ): SagaGenerator<void> {
-  // Connected ids seen on the previous `connections:changed` broadcast —
-  // transition detection so only a connect toasts, not every re-broadcast.
-  let previousConnectedIds: ReadonlySet<string> = new Set();
   try {
     while (true) {
       const event = yield* take(channel);
       if (event === (END as unknown as ConnectionsEvent)) return;
       if (event.kind === 'changed') {
         yield* put(connectionsListReceived(event.payload));
-        yield* call(announceDaemonsBehindPin, event.payload, previousConnectedIds, updateActions);
-        if (event.payload.connectedIds) previousConnectedIds = new Set(event.payload.connectedIds);
+        yield* call(announceDaemonsBehindPin, event.payload, tracker, updateActions);
       } else if (event.kind === 'cert-mismatch') yield* put(certMismatchReceived(event.payload));
       else if (event.kind === 'auth-rejected') yield* put(authRejectedReceived(event.payload));
       else if (event.kind === 'sync-status') yield* put(keychainSyncStatusReceived(event.payload));
@@ -551,9 +580,12 @@ function* consumeConnectionsEvents(
   }
 }
 
-function* watchConnectionsActions(): SagaGenerator<void> {
+function* watchConnectionsActions(
+  tracker: DaemonBehindTracker,
+  updateActions: Channel<UpdateBackendAction>,
+): SagaGenerator<void> {
   yield* all([
-    takeLeading(loadConnectionsRequested, hydrateConnections),
+    takeLeading(loadConnectionsRequested, hydrateConnections, tracker, updateActions),
     takeLeading(captureFingerprintRequested, captureFingerprint),
     takeLeading(addConnectionRequested, addConnection),
     takeEvery(updateConnectionRequested, updateConnection),
@@ -584,12 +616,13 @@ export function* connectionsSaga(): SagaGenerator<void> {
 
   const events = createConnectionsEventChannel();
   const updateActions = sagaChannel<UpdateBackendAction>();
-  const eventTask = yield* fork(consumeConnectionsEvents, events, updateActions);
+  const tracker: DaemonBehindTracker = { evaluatedById: new Map() };
+  const eventTask = yield* fork(consumeConnectionsEvents, events, tracker, updateActions);
   const pumpTask = yield* fork(pumpUpdateActions, updateActions);
-  const actionsTask = yield* fork(watchConnectionsActions);
+  const actionsTask = yield* fork(watchConnectionsActions, tracker, updateActions);
   const initial = loadConnectionsRequested();
   try {
-    yield* call(hydrateConnections, initial);
+    yield* call(hydrateConnections, tracker, updateActions, initial);
     yield* all([join(eventTask), join(pumpTask), join(actionsTask)]);
   } finally {
     events.close();
