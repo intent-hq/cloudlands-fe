@@ -783,15 +783,21 @@ describe('ChatPanel mounted lifecycle', () => {
     await Promise.resolve();
     await tick();
 
-    await fireEvent.input(screen.getByTestId('mock-rich-input-editor'), {
+    const editorBefore = screen.getByTestId('mock-rich-input-editor');
+    await fireEvent.input(editorBefore, {
       target: { value: 'keep this draft' },
     });
     mocks.pendingQuestions = { messageId: 'question-1', questions: [] };
     mocks.agentMessages.set([{ id: 'question-1' }]);
     await tick();
-    // Auto-collapse: the wizard renders as the collapsed banner and the
-    // composer stays mounted with the in-flight text — never replaced.
+    // Auto-collapse resolves synchronously with the pendingQuestions change:
+    // the wizard's first render is already the collapsed banner and the
+    // composer's input element is NEVER destroyed — the exact same DOM node
+    // survives (a transient expanded render would recreate it, dropping
+    // editor focus/selection and in-progress IME composition even though the
+    // text rebinds).
     expect(screen.getByTestId('question-wizard-slot')).not.toBeNull();
+    expect(screen.getByTestId('mock-rich-input-editor')).toBe(editorBefore);
     expect(screen.getByTestId('mock-rich-input').getAttribute('data-value')).toBe(
       'keep this draft',
     );

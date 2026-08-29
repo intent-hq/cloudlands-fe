@@ -173,7 +173,12 @@ export function loadWizardCollapsed(key: string): boolean | null {
   return s.collapsed;
 }
 
-/** Persist the collapsed state for the draft `key` and prune stale entries. */
+/**
+ * Prune stale namespace entries, then persist the collapsed state for the
+ * draft `key` — same ordering rationale as `saveWizardDraft`: pruning first
+ * frees quota headroom so a near-full localStorage cannot fail the write
+ * (`safeLocalStorage.setItem` swallows quota errors).
+ */
 export function saveWizardCollapsed(key: string, collapsed: boolean): void {
   const collapsedKey = wizardCollapsedKey(key);
   const stored: StoredWizardCollapsed = {
@@ -181,8 +186,8 @@ export function saveWizardCollapsed(key: string, collapsed: boolean): void {
     collapsed,
     savedAt: Date.now(),
   };
-  safeLocalStorage.setJSON(collapsedKey, stored);
   pruneStaleWizardDrafts(collapsedKey);
+  safeLocalStorage.setJSON(collapsedKey, stored);
 }
 
 /**
