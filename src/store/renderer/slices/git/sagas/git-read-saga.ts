@@ -1,5 +1,6 @@
 import type { SagaGenerator } from 'typed-redux-saga';
-import { call, join, put } from 'typed-redux-saga';
+import { call, cancel, fork, join, put, take } from 'typed-redux-saga';
+import type { Task } from 'redux-saga';
 
 import { gitClient } from '$features/git/git.client';
 import { appClient } from '$lib/client';
@@ -34,16 +35,13 @@ function* loadGitStatusWorker(workspaceId: string): SagaGenerator<void> {
 
 type GitStatusReadAction =
   | ReturnType<typeof loadGitStatus>
-  | ReturnType<typeof loadSecondaryRootGit>
   | ReturnType<typeof workspaceUnmounted>;
 
 function workspaceReadContext(action: GitStatusReadAction) {
   const workspaceId = action.payload[0];
   return action.type === workspaceUnmounted.type
     ? { context: workspaceId, cancel: true as const }
-    : action.type === loadSecondaryRootGit.type
-      ? `${workspaceId}:${action.payload[1]}`
-      : workspaceId;
+    : workspaceId;
 }
 
 async function readSecondaryRoot(
@@ -92,42 +90,75 @@ async function readSecondaryRoot(
   return { status: statusResult.data, commits, nextToken, commitFiles };
 }
 
+function* loadSecondaryRootWorker(
+  action: ReturnType<typeof loadSecondaryRootGit>,
+): SagaGenerator<void> {
+  const [workspaceId, gitRootId, registeredCommitSha, limit = 30] = action.payload;
+  yield* put(setSecondaryRootGitLoading(workspaceId, gitRootId));
+  try {
+    const data = yield* call(
+      readSecondaryRoot,
+      workspaceId,
+      gitRootId,
+      registeredCommitSha,
+      limit,
+    );
+    yield* put(setSecondaryRootGit(workspaceId, gitRootId, data));
+  } catch (error) {
+    logger.error('Failed to load secondary Git root', error);
+    yield* put(
+      setSecondaryRootGitError(
+        workspaceId,
+        gitRootId,
+        error instanceof Error ? error.message : String(error),
+      ),
+    );
+  }
+}
+
+function* watchSecondaryRootReads(): SagaGenerator<never> {
+  const tasks = new Map<string, Task>();
+  while (true) {
+    const action: ReturnType<typeof loadSecondaryRootGit> | ReturnType<typeof workspaceUnmounted> =
+      yield* take([loadSecondaryRootGit, workspaceUnmounted]);
+    const workspaceId = action.payload[0];
+    if (action.type === workspaceUnmounted.type) {
+      for (const [key, task] of tasks) {
+        if (!key.startsWith(`${workspaceId}:`)) continue;
+        tasks.delete(key);
+        if (task.isRunning()) yield* cancel(task);
+      }
+      continue;
+    }
+    const rootAction = action as ReturnType<typeof loadSecondaryRootGit>;
+    const key = `${workspaceId}:${rootAction.payload[1]}`;
+    const current = tasks.get(key);
+    if (current?.isRunning()) yield* cancel(current);
+    let task!: Task;
+    task = yield* fork(function* latestRootRead() {
+      try {
+        yield* loadSecondaryRootWorker(rootAction);
+      } finally {
+        if (tasks.get(key) === task) tasks.delete(key);
+      }
+    });
+    tasks.set(key, task);
+  }
+}
+
 function* loadGitStatusRequestWorker(action: GitStatusReadAction): SagaGenerator<void> {
   const [workspaceId] = action.payload;
   if (!workspaceId) return;
   if (action.type === workspaceUnmounted.type) return;
-  if (action.type === loadSecondaryRootGit.type) {
-    const [, gitRootId, registeredCommitSha, limit = 30] = action.payload;
-    yield* put(setSecondaryRootGitLoading(workspaceId, gitRootId));
-    try {
-      const data = yield* call(
-        readSecondaryRoot,
-        workspaceId,
-        gitRootId,
-        registeredCommitSha,
-        limit,
-      );
-      yield* put(setSecondaryRootGit(workspaceId, gitRootId, data));
-    } catch (error) {
-      logger.error('Failed to load secondary Git root', error);
-      yield* put(
-        setSecondaryRootGitError(
-          workspaceId,
-          gitRootId,
-          error instanceof Error ? error.message : String(error),
-        ),
-      );
-    }
-    return;
-  }
   yield* call(loadGitStatusWorker, workspaceId);
 }
 
 export function* gitReadSaga() {
   const watcher = yield* takeSingleFlightInContext(
-    [loadGitStatus, loadSecondaryRootGit, workspaceUnmounted],
+    [loadGitStatus, workspaceUnmounted],
     workspaceReadContext,
     loadGitStatusRequestWorker,
   );
+  yield* fork(watchSecondaryRootReads);
   yield* join(watcher);
 }

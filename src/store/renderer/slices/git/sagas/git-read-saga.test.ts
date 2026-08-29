@@ -14,6 +14,7 @@ import {
   loadSecondaryRootGit,
   setGitStatus,
   setSecondaryRootGit,
+  setSecondaryRootGitError,
 } from '../git-slice';
 import { gitReadSaga } from './git-read-saga';
 
@@ -89,6 +90,89 @@ describe('gitReadSaga', () => {
       gitRootId: 'root-1',
       nextToken: 'page-2',
     });
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('discards a superseded same-root response', async () => {
+    let resolveFirst!: (value: { ok: true; data: GitStatus }) => void;
+    const fresh = {
+      branch: 'fresh',
+      ahead: 0,
+      behind: 0,
+      diverged: false,
+      files: [],
+      hasUncommittedChanges: false,
+      hasUntrackedFiles: false,
+    } satisfies GitStatus;
+    vi.spyOn(gitClient, 'getStatus')
+      .mockReturnValueOnce(new Promise((resolve) => (resolveFirst = resolve)))
+      .mockResolvedValueOnce({ ok: true, data: fresh });
+    vi.spyOn(gitClient, 'getHistory').mockResolvedValue({ ok: true, data: { items: [] } });
+    const channel = stdChannel();
+    const actions: unknown[] = [];
+    const task = runSaga({ channel, dispatch: (action) => actions.push(action) }, gitReadSaga);
+
+    channel.put(loadSecondaryRootGit('ws-1', 'root-1'));
+    await settle();
+    channel.put(loadSecondaryRootGit('ws-1', 'root-1'));
+    await vi.waitFor(() =>
+      expect(actions).toContainEqual(
+        setSecondaryRootGit('ws-1', 'root-1', {
+          status: fresh,
+          commits: [],
+          nextToken: undefined,
+          commitFiles: {},
+        }),
+      ),
+    );
+    resolveFirst({ ok: true, data: { ...fresh, branch: 'stale' } });
+    await settle();
+    expect(
+      actions.filter(
+        (action) => (action as { type?: string }).type === setSecondaryRootGit.type,
+      ),
+    ).toHaveLength(1);
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('cancels all in-flight root reads when the workspace unmounts', async () => {
+    vi.spyOn(gitClient, 'getStatus').mockReturnValue(new Promise(() => {}));
+    vi.spyOn(gitClient, 'getHistory').mockResolvedValue({ ok: true, data: { items: [] } });
+    const channel = stdChannel();
+    const actions: unknown[] = [];
+    const task = runSaga({ channel, dispatch: (action) => actions.push(action) }, gitReadSaga);
+
+    channel.put(loadSecondaryRootGit('ws-1', 'root-1'));
+    channel.put(loadSecondaryRootGit('ws-1', 'root-2'));
+    await settle();
+    channel.put(workspaceUnmounted('ws-1'));
+    await settle();
+    expect(
+      actions.some((action) =>
+        [setSecondaryRootGit.type, setSecondaryRootGitError.type].includes(
+          (action as { type: string }).type,
+        ),
+      ),
+    ).toBe(false);
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('stores a secondary-root read error', async () => {
+    vi.spyOn(gitClient, 'getStatus').mockResolvedValue({ ok: false, error: 'status failed' });
+    vi.spyOn(gitClient, 'getHistory').mockResolvedValue({ ok: true, data: { items: [] } });
+    const channel = stdChannel();
+    const actions: unknown[] = [];
+    const task = runSaga({ channel, dispatch: (action) => actions.push(action) }, gitReadSaga);
+
+    channel.put(loadSecondaryRootGit('ws-1', 'root-1'));
+    await vi.waitFor(() =>
+      expect(actions).toContainEqual(
+        setSecondaryRootGitError('ws-1', 'root-1', 'status failed'),
+      ),
+    );
     task.cancel();
     await task.toPromise();
   });
