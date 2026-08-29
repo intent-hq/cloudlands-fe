@@ -1,6 +1,7 @@
 /**
  * @vitest-environment jsdom
  */
+import { m } from '$shared/paraglide/messages.js';
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Workspace } from '$shared/types';
@@ -233,7 +234,9 @@ describe('ChatWorkspaceCard overflow menu', () => {
     expect(screen.getByRole('menuitem', { name: 'Open' })).toBeTruthy();
     expect(screen.getByRole('menuitem', { name: 'Open in New Window' })).toBeTruthy();
     expect(screen.getByRole('menuitem', { name: 'Archive' })).toBeTruthy();
-    expect(screen.getByRole('menuitem', { name: 'Delete Space…' })).toBeTruthy();
+    expect(
+      screen.getByRole('menuitem', { name: m.chat_chatWorkspaceCard_menu_deleteSpace_label() }),
+    ).toBeTruthy();
 
     await fireEvent.keyDown(document, { key: 'Escape' });
     await waitFor(() => expect(document.body.contains(menu)).toBe(false));
@@ -419,7 +422,9 @@ describe('ChatWorkspaceCard overflow menu', () => {
     await waitFor(() => expect(screen.queryByRole('menu')).toBeNull());
     await openMenu();
     mocks.dispatch.mockClear();
-    await fireEvent.click(screen.getByRole('menuitem', { name: 'Delete Space…' }));
+    await fireEvent.click(
+      screen.getByRole('menuitem', { name: m.chat_chatWorkspaceCard_menu_deleteSpace_label() }),
+    );
     expect(
       mocks.dispatch.mock.calls.filter(
         ([action]) => action.type === 'workspaceOperations/requestDeleteWorkspace',

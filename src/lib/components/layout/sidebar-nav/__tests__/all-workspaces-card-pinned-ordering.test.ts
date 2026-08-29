@@ -3,6 +3,7 @@
  * All workspaces panel (Recent view), both when pins are present at
  * mount time (hydrated) and when toggled live.
  */
+import { m } from '$shared/paraglide/messages.js';
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { store as appStore } from '$store/renderer/store';
@@ -10,7 +11,11 @@ import {
   setWorkspaceEntity,
   setWorkspaceHasLoaded,
 } from '$store/renderer/slices/workspace/workspace-slice';
-import { hydrateSidebarNav, togglePinWorkspace, setAllSpacesViewMode } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
+import {
+  hydrateSidebarNav,
+  togglePinWorkspace,
+  setAllSpacesViewMode,
+} from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
 import { WorkspaceStatus, type Workspace, type WorkspaceId } from '$shared/types';
 import AllWorkspacesCardHarness from './mocks/AllWorkspacesCardHarness.svelte';
 import {
@@ -19,8 +24,6 @@ import {
 } from '$lib/components/__tests__/helpers/visual-state-characterization';
 
 const setPinnedWorkspaceIds = (ids: string[]) => hydrateSidebarNav({ pinnedWorkspaceIds: ids });
-
-
 
 vi.mock('$lib/components/workspace/WorkspaceCard.svelte', async () => ({
   default: (await import('./mocks/MockWorkspaceCard.svelte')).default,
@@ -174,7 +177,7 @@ describe('AllWorkspacesCard pinned-first ordering (Recent view)', () => {
 
     await waitFor(() => expect(renderedCard('ws-oldest').getAttribute('data-pinned')).toBe('true'));
 
-    const search = await screen.findByPlaceholderText('Search spaces...');
+    const search = await screen.findByPlaceholderText(m.layout_activeCard_search_placeholder());
     await fireEvent.input(search, { target: { value: 'Oldest' } });
     await waitFor(() => expect(renderedOrder()).toEqual(['ws-oldest']));
     expect(renderedCard('ws-oldest').getAttribute('data-pinned')).toBe('true');
