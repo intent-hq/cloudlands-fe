@@ -864,10 +864,7 @@
               <Menu.SubTrigger class="w-full cursor-pointer text-xs px-2 py-1.5">
                 {#if !conn.isLocal && accent !== null}
                   <span
-                    class={cn(
-                      'size-2.5 shrink-0 rounded-full ring-1 ring-background',
-                      CONNECTION_ACCENT_CLASSES[accent],
-                    )}
+                    class={cn('size-2 shrink-0 rounded-full', CONNECTION_ACCENT_CLASSES[accent])}
                     aria-hidden="true"
                     data-connection-accent={accent}
                   ></span>
