@@ -504,11 +504,14 @@ describe('followBottom policy', () => {
 
     scrollHeight += 120;
     fireMutation();
+    expect(animationFrames).toHaveLength(1);
+    runFrame();
     expect(scrollTop).toBe(720);
     expect(distances.at(-1)).toBe(0);
 
     scrollHeight += 30;
     fireResize();
+    runFrame();
     expect(scrollTop).toBe(750);
     runFrame();
     expect(scrollTop).toBe(750);
@@ -573,6 +576,7 @@ describe('followBottom policy', () => {
 
     scrollHeight += 21;
     fireResizeFor(child);
+    runFrame();
     expect(scrollTop).toBe(621);
     action.destroy();
   });
@@ -590,6 +594,7 @@ describe('followBottom policy', () => {
     expect(resizeUnobserved).not.toContain(child);
     scrollHeight += 17;
     fireResizeFor(child);
+    runFrame();
     expect(scrollTop).toBe(617);
     action.destroy();
   });
@@ -646,15 +651,19 @@ describe('followBottom policy', () => {
     fireResizeFor(row);
     runFrame();
 
+    // The resize delivery no longer snaps synchronously: the trace callback
+    // (registered before the settle frame) still sees the pre-snap position,
+    // and the settle frame in the same pre-paint batch corrects it.
     expect(trace).toEqual([
       {
         phase: 'edit-grow-first-frame',
         maximum: 613,
-        scrollTop: 613,
-        distance: 0,
+        scrollTop: 600,
+        distance: 13,
         settleFrames: 0,
       },
     ]);
+    expect(scrollTop).toBe(613);
     mutation.settle();
     expect(resizeUnobserved).toContain(row);
     action.destroy();
@@ -943,8 +952,9 @@ describe('followBottom policy', () => {
 
     scrollHeight += 17;
     fireMutation();
-    expect(scrollTop).toBe(scrollHeight - clientHeight);
     expect(animationFrames).toHaveLength(1);
+    runFrame();
+    expect(scrollTop).toBe(scrollHeight - clientHeight);
     runSettleTail();
     expect(animationFrames).toHaveLength(0);
     expect(followChanges).toEqual([]);
@@ -957,15 +967,17 @@ describe('followBottom policy', () => {
 
     scrollHeight += 11;
     fireAttributeMutation();
-    expect(scrollTop).toBe(611);
     expect(animationFrames).toHaveLength(1);
+    runFrame();
+    expect(scrollTop).toBe(611);
     runSettleTail();
     expect(animationFrames).toHaveLength(0);
 
     scrollHeight += 13;
     fireResize();
-    expect(scrollTop).toBe(624);
     expect(animationFrames).toHaveLength(1);
+    runFrame();
+    expect(scrollTop).toBe(624);
     runSettleTail();
     expect(animationFrames).toHaveLength(0);
     action.destroy();
@@ -1042,6 +1054,114 @@ describe('followBottom policy', () => {
     runFrame();
 
     expect(scrollTop).toBe(300);
+    action.destroy();
+  });
+
+  it('defers observer-driven layout work out of the reveal frame', () => {
+    const options = { enabled: true, follow: true };
+    const action = followBottom(container, options);
+    action.update({ ...options, enabled: false });
+
+    // Content grew while the surface was retained/disabled.
+    scrollHeight += 100;
+    let layoutReads = 0;
+    Object.defineProperty(container, 'scrollHeight', {
+      configurable: true,
+      get: () => {
+        layoutReads += 1;
+        return scrollHeight;
+      },
+    });
+    Object.defineProperty(container, 'clientHeight', {
+      configurable: true,
+      get: () => {
+        layoutReads += 1;
+        return clientHeight;
+      },
+    });
+
+    action.update({ ...options, enabled: true });
+    // Observers fire during the reveal frame on the still-dirty tree.
+    fireMutation();
+    fireResize();
+    fireMutation();
+    expect(layoutReads).toBe(0);
+    expect(scrollTop).toBe(600);
+
+    runSettleTail();
+    expect(layoutReads).toBeGreaterThan(0);
+    expect(scrollTop).toBe(700);
+    action.destroy();
+  });
+
+  it('coalesces a burst of observer callbacks into one deferred settle', () => {
+    const action = followBottom(container, { follow: true });
+    expect(animationFrames).toHaveLength(0);
+
+    scrollHeight += 40;
+    fireMutation();
+    fireResize();
+    fireAttributeMutation();
+    expect(animationFrames).toHaveLength(1);
+    expect(scrollTop).toBe(600);
+
+    runFrame();
+    expect(scrollTop).toBe(640);
+    runSettleTail();
+    expect(animationFrames).toHaveLength(0);
+    action.destroy();
+  });
+
+  it('coalesces unfollowed observer reports into one deferred frame without snapping', () => {
+    const distances: number[] = [];
+    const action = followBottom(container, {
+      follow: false,
+      onScrollStateChange: (state) => distances.push(state.distanceFromBottom),
+    });
+    distances.length = 0;
+    scrollTop = 300;
+    scrollHeight += 100;
+    fireMutation();
+    fireResize();
+    expect(animationFrames).toHaveLength(1);
+    expect(distances).toEqual([]);
+
+    runFrame();
+    expect(scrollTop).toBe(300);
+    expect(distances).toEqual([400]);
+    expect(animationFrames).toHaveLength(0);
+    action.destroy();
+  });
+
+  it('cancels a deferred observer settle on destroy', () => {
+    const action = followBottom(container, { follow: true });
+    scrollHeight += 50;
+    fireMutation();
+    expect(animationFrames).toHaveLength(1);
+
+    action.destroy();
+    expect(cancelAnimationFrame).toHaveBeenCalledWith(1);
+    runFrame();
+    expect(scrollTop).toBe(600);
+  });
+
+  it('cancels a pending unfollowed report frame when disabled', () => {
+    const distances: number[] = [];
+    const options = {
+      enabled: true,
+      follow: false,
+      onScrollStateChange: (state: { distanceFromBottom: number }) =>
+        distances.push(state.distanceFromBottom),
+    };
+    const action = followBottom(container, options);
+    distances.length = 0;
+    fireResize();
+    expect(animationFrames).toHaveLength(1);
+
+    action.update({ ...options, enabled: false });
+    expect(cancelAnimationFrame).toHaveBeenCalledWith(1);
+    runFrame();
+    expect(distances).toEqual([]);
     action.destroy();
   });
 
