@@ -103,7 +103,7 @@ export type GitWorkspaceState = {
   secondaryRoots: Record<string, SecondaryRootGitState>;
 };
 
-export type SecondaryRootGitState = {
+type SecondaryRootGitState = {
   status: GitStatus | null;
   commits: Collection<CommitInfo, 'hash'>;
   nextToken?: string;
@@ -112,7 +112,7 @@ export type SecondaryRootGitState = {
   error: string | null;
 };
 
-export type SecondaryRootCommitFiles = {
+type SecondaryRootCommitFiles = {
   commitHash: string;
   files: Collection<CommitFile, 'path'> | null;
 };

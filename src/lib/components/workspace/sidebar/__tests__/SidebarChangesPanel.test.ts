@@ -2217,36 +2217,9 @@ describe('SidebarChangesPanel', () => {
       expect(container.textContent).toContain(m.workspace_sidebarChanges_rootPrimary_label());
     });
 
-    it('selecting a secondary root swaps in the read-only view driven by gitRootId reads', async () => {
+    it('selecting a secondary root swaps in the read-only view and dispatches a scoped load', async () => {
       mockWorkspaceStore.findById.mockReturnValue(makeWorkspace());
       await seedGitRoots([makeGitRoot()]);
-      mockRootGetStatus.mockResolvedValue({
-        ok: true,
-        data: {
-          branch: 'feature/sub',
-          ahead: 0,
-          behind: 0,
-          diverged: false,
-          files: [{ path: 'src/a.ts', status: 'M', staged: false }],
-          hasUncommittedChanges: true,
-          hasUntrackedFiles: false,
-        },
-      });
-      mockRootGetHistory.mockResolvedValue({
-        ok: true,
-        data: {
-          items: [
-            {
-              hash: 'aaaa1111bbbb',
-              sha: 'aaaa111',
-              author: 'Dev',
-              email: 'dev@example.com',
-              date: new Date().toISOString(),
-              message: 'feat: sub work',
-            },
-          ],
-        },
-      });
 
       const { container } = await renderPanel();
 
@@ -2271,20 +2244,15 @@ describe('SidebarChangesPanel', () => {
         expect(container.querySelector('[data-testid="secondary-root-changes-view"]')).toBeTruthy();
       });
 
-      // Reads are scoped to the registered root
+      // The component delegates scoped reads to the Redux saga.
       await waitFor(() => {
-        expect(mockRootGetStatus).toHaveBeenCalledWith('ws-1', { gitRootId: 'root-1' });
-        expect(mockRootGetHistory).toHaveBeenCalledWith('ws-1', expect.any(Number), {
-          gitRootId: 'root-1',
+        expect(mockDispatch).toHaveBeenCalledWith({
+          type: 'git/loadSecondaryRoot',
+          payload: ['ws-1', 'root-1', undefined, 30],
         });
       });
 
-      // Read-only content rendered; no mutation affordances
-      await waitFor(() => {
-        const text = container.textContent || '';
-        expect(text).toContain('src/a.ts');
-        expect(text).toContain('feat: sub work');
-      });
+      // The selected view remains read-only.
       const viewText = container.textContent || '';
       expect(viewText).not.toContain('Stage all');
       expect(viewText).not.toContain('Create PR');
