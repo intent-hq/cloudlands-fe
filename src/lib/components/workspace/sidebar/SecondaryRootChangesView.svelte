@@ -370,7 +370,7 @@
       {m.workspace_sidebarChanges_rootLoadFailed_error()}
     </p>
   {:else}
-    {#if summaryReady && changedFileCount > 0}
+    {#if !loading && summaryReady && changedFileCount > 0}
       <Button
         type="button"
         variant="plain"

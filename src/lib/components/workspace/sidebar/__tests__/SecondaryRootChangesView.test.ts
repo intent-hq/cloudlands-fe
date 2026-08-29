@@ -191,6 +191,38 @@ describe('SecondaryRootChangesView', () => {
     expect(mocks.commitDetails).toHaveBeenCalledTimes(2);
   });
 
+  it('does not expose a partial summary while the boundary page is pending', async () => {
+    const status = makeStatus('main');
+    status.files = [{ path: 'src/working.ts', status: 'M', staged: false }];
+    mocks.getStatus.mockResolvedValue({ ok: true, data: status });
+    mocks.getHistory.mockResolvedValueOnce({
+      ok: true,
+      data: { items: [makeCommit('newer222', 'feat: newest')], nextToken: 'page-2' },
+    });
+    let resolveBoundaryPage!: (value: unknown) => void;
+    mocks.getHistory.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveBoundaryPage = resolve;
+      }),
+    );
+    mocks.commitDetails.mockResolvedValue({
+      files: ['src/committed.ts'],
+      fileDetails: [],
+    });
+    const { queryByTestId } = await renderView(makeEntry('main', 'root-9', 'bound111'));
+
+    await waitFor(() => expect(mocks.getHistory).toHaveBeenCalledTimes(2));
+    expect(queryByTestId('secondary-root-all-changes')).toBeNull();
+
+    resolveBoundaryPage({
+      ok: true,
+      data: { items: [makeCommit('bound111', 'chore: registration boundary')] },
+    });
+
+    const summary = await waitFor(() => queryByTestId('secondary-root-all-changes'));
+    expect(summary?.textContent).toContain('2 files changed in Workspace');
+  });
+
   it('shows the summary for working-tree-only changes', async () => {
     const status = makeStatus('main');
     status.files = [{ path: 'src/working.ts', status: 'M', staged: false }];
