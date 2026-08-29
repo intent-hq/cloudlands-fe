@@ -374,7 +374,9 @@ describe('SecondaryRootChangesView', () => {
       files: ['src/committed.ts'],
       fileDetails: [],
     });
-    const { queryByTestId } = await renderView(makeEntry('main', 'root-9', 'bound111'));
+    const { getByTestId, queryByTestId } = await renderView(
+      makeEntry('main', 'root-9', 'bound111'),
+    );
 
     await waitFor(() => expect(mocks.getHistory).toHaveBeenCalledTimes(2));
     expect(queryByTestId('secondary-root-all-changes')).toBeNull();
@@ -384,8 +386,8 @@ describe('SecondaryRootChangesView', () => {
       data: { items: [makeCommit('bound111', 'chore: registration boundary')] },
     });
 
-    const summary = await waitFor(() => queryByTestId('secondary-root-all-changes'));
-    expect(summary?.textContent).toContain('2 files changed in Workspace');
+    const summary = await waitFor(() => getByTestId('secondary-root-all-changes'));
+    expect(summary.textContent).toContain('2 files changed in Workspace');
   });
 
   it('shows the summary for working-tree-only changes', async () => {
@@ -675,7 +677,7 @@ describe('SecondaryRootChangesView', () => {
         items: [makeCommit('bbbb222', 'fix: two'), makeCommit('bound111', 'chore: at registration')],
       },
     });
-    const { container } = await renderView(
+    const { container, getByTestId } = await renderView(
       makeEntry('main', 'root-1', 'bound111'),
     );
 

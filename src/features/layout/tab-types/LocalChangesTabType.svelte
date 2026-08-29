@@ -114,8 +114,8 @@
           (rootCommitFiles[commit.hash] ?? []).map((file) => ({
             filePath: `${effectiveRootPath}/${file.path}`,
             action: 'modify' as const,
-            additions: file.additions,
-            deletions: file.deletions,
+            additions: file.additions ?? 0,
+            deletions: file.deletions ?? 0,
             toolName: 'local',
             toolCallId: `root-commit-${commit.hash}-${file.path}`,
             staged: false,

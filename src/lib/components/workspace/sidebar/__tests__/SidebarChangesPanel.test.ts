@@ -211,6 +211,7 @@ vi.mock('$store/renderer/slices/git/git-selectors', () => ({
     (workspaceId: string) => createSelectorReadable(workspaceId, () => mockGitOperationFlags),
     { select: () => mockGitOperationFlags },
   ),
+  selectSecondaryRootGitRoots: () => createReadable({}),
 }));
 
 vi.mock('$store/renderer/slices/git/git-slice', async (importOriginal) => ({
