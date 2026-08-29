@@ -13,6 +13,7 @@ import {
   setSecondaryRootGitLoading,
 } from "./git-slice";
 import type { GitStatus } from "$shared/types";
+import { workspaceUnmounted } from "../workspace-lifecycle/workspace-lifecycle-slice";
 
 const reduce = gitReducer;
 
@@ -103,6 +104,20 @@ describe("gitReducer", () => {
       expect(getGitWorkspaceState(state, "ws-1").secondaryRoots["root-1"]).toEqual(
         expect.objectContaining({ loading: false, error: "daemon error" }),
       );
+    });
+
+    it("clears every secondary root when the workspace unmounts", () => {
+      const loaded = reduce(
+        initialState,
+        setSecondaryRootGit("ws-1", "root-1", {
+          status: makeGitStatus(),
+          commits: [],
+          commitFiles: {},
+          nextToken: undefined,
+        }),
+      );
+      const state = reduce(loaded, workspaceUnmounted("ws-1"));
+      expect(state.byWorkspaceId["ws-1"]).toBeUndefined();
     });
   });
 });

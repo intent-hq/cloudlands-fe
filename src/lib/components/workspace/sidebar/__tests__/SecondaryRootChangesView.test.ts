@@ -181,7 +181,7 @@ warmImport(() => import('./mocks/Fa.svelte'));
 warmImport(() => import('../SecondaryRootChangesView.svelte'));
 
 describe('SecondaryRootChangesView', () => {
-  let requestEpoch = 0;
+  const requestEpochs = new Map<string, number>();
 
   beforeEach(() => {
     mocks.getStatus.mockReset();
@@ -201,11 +201,13 @@ describe('SecondaryRootChangesView', () => {
       loading: false,
       error: null,
     });
-    requestEpoch = 0;
+    requestEpochs.clear();
     mocks.dispatch.mockImplementation((action) => {
       if (action.type !== 'git/loadSecondaryRoot') return;
       const [wsId, gitRootId, registeredCommitSha, limit] = action.payload;
-      const epoch = ++requestEpoch;
+      const requestKey = `${wsId}:${gitRootId}`;
+      const epoch = (requestEpochs.get(requestKey) ?? 0) + 1;
+      requestEpochs.set(requestKey, epoch);
       mocks.rootGit.set({
         status: null,
         commits: [],
@@ -218,7 +220,7 @@ describe('SecondaryRootChangesView', () => {
           mocks.getStatus(wsId, { gitRootId }),
           mocks.getHistory(wsId, limit, { gitRootId }),
         ]);
-        if (epoch !== requestEpoch) return;
+        if (epoch !== requestEpochs.get(requestKey)) return;
         if (!statusResult.ok || !firstPage.ok) {
           mocks.rootGit.set({
             status: null,
@@ -236,7 +238,7 @@ describe('SecondaryRootChangesView', () => {
           (!registeredCommitSha || !commits.some((commit) => commit.hash === registeredCommitSha))
         ) {
           const page = await mocks.getHistory(wsId, limit, { gitRootId, nextToken });
-          if (epoch !== requestEpoch) return;
+          if (epoch !== requestEpochs.get(requestKey)) return;
           if (!page.ok) {
             mocks.rootGit.set({
               status: null,
@@ -258,7 +260,7 @@ describe('SecondaryRootChangesView', () => {
         const details = await Promise.all(
           recent.map((commit) => mocks.commitDetails(wsId, commit.hash, { gitRootId })),
         );
-        if (epoch !== requestEpoch) return;
+        if (epoch !== requestEpochs.get(requestKey)) return;
         mocks.rootGit.set({
           status: statusResult.data,
           commits,
