@@ -533,6 +533,7 @@
         {isStreaming}
         {workspaceId}
         taskBlockRenderMode="content"
+        chatImageThumbnails
         onFileClick={(path, options) => handleOpenFile({ path, ...options })}
       />
     </div>
@@ -608,6 +609,7 @@
               {isStreaming}
               {workspaceId}
               taskBlockRenderMode="content"
+              chatImageThumbnails
               onFileClick={(path, options) => handleOpenFile({ path, ...options })}
             />
           </div>
@@ -666,6 +668,7 @@
                   content={nestedBlock.text}
                   {workspaceId}
                   taskBlockRenderMode="content"
+                  chatImageThumbnails
                   onFileClick={(path, options) => handleOpenFile({ path, ...options })}
                 />
               </div>

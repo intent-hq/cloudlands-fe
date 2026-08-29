@@ -757,6 +757,7 @@
         isStreaming={isStreaming && isLastBlock}
         {workspaceId}
         taskBlockRenderMode="content"
+        chatImageThumbnails
         onFileClick={(path, options) => handleOpenFile({ path, ...options })}
       />
     </div>
@@ -767,6 +768,7 @@
         isStreaming={isStreaming && isLastBlock}
         {workspaceId}
         taskBlockRenderMode="content"
+        chatImageThumbnails
         onFileClick={(path, options) => handleOpenFile({ path, ...options })}
       />
     </div>
@@ -849,6 +851,7 @@
               isStreaming={isStreaming && isLastBlock}
               {workspaceId}
               taskBlockRenderMode="content"
+              chatImageThumbnails
               onFileClick={(path, options) => handleOpenFile({ path, ...options })}
             />
           </div>
