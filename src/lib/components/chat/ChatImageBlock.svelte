@@ -1,5 +1,6 @@
 <script lang="ts">
   import ImageLightbox from '$lib/components/ui/ImageLightbox.svelte';
+  import ImageActionsMenu from '$lib/components/ui/ImageActionsMenu.svelte';
   import { Button } from '$lib/components/ui/button';
   import Fa from 'svelte-fa';
   import { faImage } from '@fortawesome/free-solid-svg-icons';
@@ -49,26 +50,35 @@
 
 <div class="my-2 min-w-0 max-w-2xl" data-chat-image>
   {#if imageUrl}
-    <button
-      bind:this={openerElement}
-      type="button"
-      class="block size-40 cursor-zoom-in overflow-hidden rounded-lg border border-border bg-muted/30 p-0 shadow-(--elevation-raised) transition-opacity hover:opacity-90 focus-visible:border-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
-      class:animate-pulse={hydrationLoading}
-      onclick={handleClick}
-      aria-label={needsHydration
-        ? m.chat_imageBlock_loadFullImage_ariaLabel({ alt })
-        : m.chat_imageBlock_viewFullSize_ariaLabel({ alt })}
-      title={needsHydration && dataIsThumbnail ? m.chat_imageBlock_thumbnail_tooltip() : undefined}
-      data-image-thumbnail={dataIsThumbnail || undefined}
-    >
-      <img
-        src={imageUrl}
-        {alt}
-        loading="lazy"
-        decoding="async"
-        class="block size-full object-cover"
+    <div class="group relative size-40">
+      <button
+        bind:this={openerElement}
+        type="button"
+        class="block size-40 cursor-zoom-in overflow-hidden rounded-lg border border-border bg-muted/30 p-0 shadow-(--elevation-raised) transition-opacity hover:opacity-90 focus-visible:border-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+        class:animate-pulse={hydrationLoading}
+        onclick={handleClick}
+        aria-label={needsHydration
+          ? m.chat_imageBlock_loadFullImage_ariaLabel({ alt })
+          : m.chat_imageBlock_viewFullSize_ariaLabel({ alt })}
+        title={needsHydration && dataIsThumbnail
+          ? m.chat_imageBlock_thumbnail_tooltip()
+          : undefined}
+        data-image-thumbnail={dataIsThumbnail || undefined}
+      >
+        <img
+          src={imageUrl}
+          {alt}
+          loading="lazy"
+          decoding="async"
+          class="block size-full object-cover"
+        />
+      </button>
+      <ImageActionsMenu
+        {imageUrl}
+        imageName={alt}
+        triggerClass="absolute right-1.5 top-1.5 opacity-0 transition-opacity focus-visible:opacity-100 group-focus-within:opacity-100 group-hover:opacity-100 data-[state=open]:opacity-100"
       />
-    </button>
+    </div>
   {:else if dataTruncated}
     <!-- Legacy slim row with no persisted thumbnail: placeholder chip with
          the same on-demand fetch. -->
@@ -93,5 +103,11 @@
 </div>
 
 {#if imageUrl}
-  <ImageLightbox bind:open={lightboxOpen} {imageUrl} imageName={alt} {openerElement} />
+  <ImageLightbox
+    bind:open={lightboxOpen}
+    {imageUrl}
+    imageName={alt}
+    {openerElement}
+    showActionsMenu
+  />
 {/if}
