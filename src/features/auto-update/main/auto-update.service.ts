@@ -16,7 +16,11 @@ import { DEFAULTS } from '../../../shared/constants';
 import { Logger } from '../../../shared/logger';
 import { m } from '../../../shared/paraglide/messages.js';
 import { confirmQuitWithRunningAgents } from '../../../main/quit-confirmation';
-import { markWindowSessionTeardown, saveAllWindowSessions } from '../../../main/window';
+import {
+  markWindowSessionTeardown,
+  saveAllWindowSessions,
+  unmarkWindowSessionTeardown,
+} from '../../../main/window';
 import { broadcastToRenderers } from './auto-update-broadcast';
 import { isUpdateChannel, type UpdateChannel, type UpdateState, type UpdateStatus } from '../types';
 
@@ -763,7 +767,16 @@ class AutoUpdateService {
       markWindowSessionTeardown();
 
       logger.info('Installing update and restarting...');
-      autoUpdater.quitAndInstall(false, true);
+      try {
+        autoUpdater.quitAndInstall(false, true);
+      } catch (error) {
+        // quitAndInstall() can fail and leave the process running. Revert the
+        // teardown mark so a later deliberate last-window close in this
+        // still-running session tombstones/prunes as usual.
+        unmarkWindowSessionTeardown();
+        isInstallingUpdate = false;
+        throw error;
+      }
     } finally {
       this.isConfirmingInstall = false;
     }

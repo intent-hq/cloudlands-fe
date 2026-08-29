@@ -281,8 +281,9 @@ const closedBackendSessions = new Set<string>();
 // must keep refreshing the in-memory snapshot but must NOT tombstone/prune a
 // backend whose windows are only closing because the whole app is exiting —
 // otherwise gracefulShutdown()'s mainWindow.close() wipes the bucket that
-// before-quit/installUpdate() just saved. One-way for the process lifetime
-// (mirrors isInstallingUpdate); reset only by the test helper.
+// before-quit/installUpdate() just saved. One-way on the gracefulShutdown()
+// path (that path always exits); the auto-update service unmarks it when
+// quitAndInstall() fails and the process keeps running.
 let isQuitTeardownInProgress = false;
 
 /**
@@ -295,6 +296,17 @@ let isQuitTeardownInProgress = false;
  */
 export function markWindowSessionTeardown(): void {
   isQuitTeardownInProgress = true;
+}
+
+/**
+ * Revert markWindowSessionTeardown() when a teardown aborts and the process
+ * keeps running — e.g. quitAndInstall() throws in installUpdate(). Without the
+ * revert, a later deliberate last-window close in the still-running session
+ * would skip tombstoning/pruning and wrongly restore the closed backend on the
+ * next launch. gracefulShutdown() never calls this: that path always exits.
+ */
+export function unmarkWindowSessionTeardown(): void {
+  isQuitTeardownInProgress = false;
 }
 
 /**

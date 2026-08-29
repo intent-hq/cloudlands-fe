@@ -137,6 +137,7 @@ import {
   loadWindowSessions,
   markWindowSessionTeardown,
   openOrFocusWindowsForBackend,
+  unmarkWindowSessionTeardown,
   restoreAllBackendWindowSessions,
   restoreWindowsForBackend,
   saveAllWindowSessions,
@@ -384,6 +385,25 @@ describe('multi-backend window sessions', () => {
         local: [{ route: '/work/local', bounds: local.bounds }],
         'remote-1': [{ route: '/work/remote', bounds: remote.bounds }],
       });
+    });
+
+    it('unmark (aborted update install) restores tombstoning for later deliberate closes', async () => {
+      const local = seedLiveWindow('app://workspaces/work/local', undefined, 'local');
+      const remote = seedLiveWindow('app://workspaces/work/closed', undefined, 'remote-1');
+      await saveAllWindowSessions();
+
+      // quitAndInstall() failed: the teardown mark is reverted and the app
+      // keeps running — a later deliberate last-window close must behave
+      // exactly as if teardown was never marked.
+      markWindowSessionTeardown();
+      unmarkWindowSessionTeardown();
+      captureWindowSessionsSnapshot.call(remote as never);
+      remote.destroy();
+
+      expect(readMap()).toEqual({
+        local: [{ route: '/work/local', bounds: local.bounds }],
+      });
+      expect(loadWindowSessions('remote-1')).toBeNull();
     });
 
     it('a deliberate last-window close before teardown still tombstones + prunes', async () => {
