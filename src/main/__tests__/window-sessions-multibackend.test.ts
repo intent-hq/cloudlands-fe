@@ -460,6 +460,35 @@ describe('multi-backend window sessions', () => {
       expect(disposer).not.toHaveBeenCalled();
     });
 
+    it('keeps the remote client when only its dock survives while tombstoning sessions', async () => {
+      const disposer = vi.fn();
+      setOnLastWindowClosedForBackend(disposer);
+      const remote = seedLiveWindow('app://workspaces/work/remote', undefined, 'remote-1');
+      const dock = seedLiveWindow('app://workspaces/dock', undefined, 'remote-1');
+      await saveAllWindowSessions();
+
+      captureWindowSessionsSnapshot.call(remote as never);
+      remote.destroy();
+
+      expect(disposer).not.toHaveBeenCalled();
+      expect(dock.isDestroyed()).toBe(false);
+      expect(loadWindowSessions('remote-1')).toBeNull();
+      expect(readMap()).toEqual({});
+    });
+
+    it('disposes a remote client when the surviving dock uses a different backend', () => {
+      const disposer = vi.fn();
+      setOnLastWindowClosedForBackend(disposer);
+      const remote = seedLiveWindow('app://workspaces/work/remote', undefined, 'remote-1');
+      seedLiveWindow('app://workspaces/dock', undefined, 'remote-2');
+
+      captureWindowSessionsSnapshot.call(remote as never);
+      remote.destroy();
+
+      expect(disposer).toHaveBeenCalledOnce();
+      expect(disposer).toHaveBeenCalledWith('remote-1');
+    });
+
     it('never disposes the local backend (sidecar management stays alive)', () => {
       const disposer = vi.fn();
       setOnLastWindowClosedForBackend(disposer);

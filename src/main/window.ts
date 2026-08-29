@@ -353,11 +353,11 @@ async function writeSessionsMapRespectingTombstones(map: WindowSessionsMap): Pro
   }
 }
 
-// Invoked when a non-local backend's last window is explicitly closed while
-// another backend's windows survive, so its pooled JSON-RPC client (socket,
-// reconnect timers, subscriptions) can be disposed. Registered by index.ts —
-// which wraps the quit guard around disconnectBackendClient() — so window.ts
-// never imports the backend IPC module graph.
+// Invoked when a non-local backend's last consumer window is explicitly closed
+// while another backend's windows survive, so its pooled JSON-RPC client
+// (socket, reconnect timers, subscriptions) can be disposed. Registered by
+// index.ts — which wraps the quit guard around disconnectBackendClient() — so
+// window.ts never imports the backend IPC module graph.
 type LastWindowClosedForBackendHandler = (backendId: string) => void;
 let onLastWindowClosedForBackend: LastWindowClosedForBackendHandler | null = null;
 
@@ -438,6 +438,12 @@ export function captureWindowSessionsSnapshot(this: BrowserWindowType | void): v
       const hasSurvivingDock = allLiveWindows.some(
         (window) => window !== this && isDockWindow(window),
       );
+      const hasSurvivingDockForBackend = allLiveWindows.some(
+        (window) =>
+          window !== this &&
+          isDockWindow(window) &&
+          getBackendIdForWindow(window) === closingBackendId,
+      );
       if (isLastForBackend && (hasSurvivingBackend || hasSurvivingDock)) {
         closedBackendSessions.add(closingBackendId);
         delete lastKnownSessions[closingBackendId];
@@ -445,11 +451,12 @@ export function captureWindowSessionsSnapshot(this: BrowserWindowType | void): v
         // crash/force-quit before the next aggregate save cannot resurrect the
         // explicitly closed backend's windows at the next boot-wide restore.
         pruneSessionsBucketFromDisk(closingBackendId);
-        // Explicit last-window close for this backend: dispose its pooled
+        // Explicit last-consumer close for this backend: dispose its pooled
         // client so no socket or reconnect timer keeps dialing a daemon with
-        // no windows left ("Open" reconnects on demand). Local is exempt —
-        // the sidecar management must stay alive.
-        if (closingBackendId !== LOCAL_CONNECTION_ID) {
+        // no windows left ("Open" reconnects on demand). A same-backend dock
+        // still uses the client; local is exempt because its sidecar must stay
+        // alive.
+        if (closingBackendId !== LOCAL_CONNECTION_ID && !hasSurvivingDockForBackend) {
           try {
             onLastWindowClosedForBackend?.(closingBackendId);
           } catch (err) {
