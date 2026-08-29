@@ -1,5 +1,5 @@
 import type { SagaGenerator } from 'typed-redux-saga';
-import { call, fork, join, put, takeEvery } from 'typed-redux-saga';
+import { call, join, put, takeEvery } from 'typed-redux-saga';
 
 import { gitClient } from '$features/git/git.client';
 import { appClient } from '$lib/client';
