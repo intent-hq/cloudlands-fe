@@ -11,7 +11,9 @@
   dismissing clears the stored draft. Dismiss is a
   destructive action gated behind a confirmation dialog; confirming hands off
   to `onDismiss` — the host calls `agent.dismissQuestions`, which persists
-  the dismissal (survives reload) and releases the question hold. On the last
+  the dismissal (survives reload) and releases the question hold. The stored
+  draft is only cleared once `onDismiss` resolves, so a failed dismissal
+  (wizard re-surfaces) keeps the in-progress answers. On the last
   question an option submits immediately; typed text uses Send. Single-question
   wizards hide the step counter, progress segments, and Back button — none
   carry information when there is only one step.
@@ -57,8 +59,12 @@
     collapsed?: boolean;
     onToggleCollapsed?: (collapsed: boolean) => void;
     onComplete?: (answers: QuestionAnswer[]) => void;
-    /** Persistent dismissal — host calls `agent.dismissQuestions`. */
-    onDismiss?: () => void;
+    /**
+     * Persistent dismissal — host calls `agent.dismissQuestions`. May return
+     * a promise; the stored draft is cleared only after it resolves, so a
+     * failed dismissal keeps the draft for the re-surfaced wizard.
+     */
+    onDismiss?: () => Promise<void> | void;
   }
 
   let {
@@ -420,10 +426,16 @@
 
 <DismissQuestionsConfirmDialog
   open={confirmingDismiss}
-  onConfirm={() => {
+  onConfirm={async () => {
     confirmingDismiss = false;
-    resolveDraft();
-    onDismiss?.();
+    try {
+      await onDismiss?.();
+      // Only clear once the dismissal is confirmed — a rejected dismissal
+      // (host rolls back + toasts) re-surfaces the wizard with the draft.
+      resolveDraft();
+    } catch {
+      // Host surfaces the failure; the draft stays for the retry.
+    }
   }}
   onCancel={() => (confirmingDismiss = false)}
 />

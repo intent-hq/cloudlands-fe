@@ -621,7 +621,12 @@ describe('QuestionWizard draft persistence', () => {
     await fireEvent.click(screen.getByText('Migrate silently'));
     expect(onComplete.mock.calls[0][0]).toEqual([
       { question: SINGLE, selectedLabels: [], freeText: '', skipped: true },
-      { question: MULTI, selectedLabels: ['Desktop app'], freeText: 'Also the API', skipped: false },
+      {
+        question: MULTI,
+        selectedLabels: ['Desktop app'],
+        freeText: 'Also the API',
+        skipped: false,
+      },
       { question: LAST, selectedLabels: ['Migrate silently'], freeText: '', skipped: false },
     ]);
   });
@@ -658,10 +663,10 @@ describe('QuestionWizard draft persistence', () => {
     expect(window.localStorage.getItem(KEY)).toBeNull();
   });
 
-  it('confirmed Dismiss clears the stored draft', async () => {
+  it('confirmed Dismiss clears the stored draft once onDismiss resolves', async () => {
     seedDraft(0, [{ sel: [], text: 'draft', skipped: false }]);
     const view = render(QuestionWizard, {
-      props: { questions: [LAST], draftKey: KEY, onDismiss: vi.fn() },
+      props: { questions: [LAST], draftKey: KEY, onDismiss: vi.fn(async () => {}) },
     });
     expect(
       (screen.getByPlaceholderText('Or type your own answer…') as HTMLInputElement).value,
@@ -669,9 +674,31 @@ describe('QuestionWizard draft persistence', () => {
 
     await fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }));
     await fireEvent.click(screen.getByRole('button', { name: 'Dismiss questions' }));
-    expect(window.localStorage.getItem(KEY)).toBeNull();
+    await waitFor(() => expect(window.localStorage.getItem(KEY)).toBeNull());
     view.unmount();
     expect(window.localStorage.getItem(KEY)).toBeNull();
+  });
+
+  it('a failed dismissal keeps the stored draft for the re-surfaced wizard', async () => {
+    seedDraft(0, [{ sel: [], text: 'draft', skipped: false }]);
+    let rejectDismiss!: (error: Error) => void;
+    const onDismiss = vi.fn(
+      () =>
+        new Promise<void>((_, reject) => {
+          rejectDismiss = reject;
+        }),
+    );
+    render(QuestionWizard, { props: { questions: [LAST], draftKey: KEY, onDismiss } });
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }));
+    await fireEvent.click(screen.getByRole('button', { name: 'Dismiss questions' }));
+    expect(onDismiss).toHaveBeenCalledTimes(1);
+    // Still in flight — the draft must not be cleared optimistically.
+    expect(window.localStorage.getItem(KEY)).not.toBeNull();
+
+    rejectDismiss(new Error('wire failure'));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(window.localStorage.getItem(KEY)).not.toBeNull();
   });
 
   it('a draft for a mismatched question set is discarded and the wizard starts fresh', () => {

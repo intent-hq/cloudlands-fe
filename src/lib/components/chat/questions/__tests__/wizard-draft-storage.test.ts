@@ -34,7 +34,7 @@ function installEnumerableLocalStorage(): void {
     },
   };
   for (const [name, fn] of Object.entries(methods)) {
-    Object.defineProperty(storage, name, { value: fn, enumerable: false });
+    Object.defineProperty(storage, name, { value: fn, enumerable: false, configurable: true });
   }
   Object.defineProperty(window, 'localStorage', { configurable: true, value: storage });
 }
@@ -72,6 +72,7 @@ const DRAFT: WizardDraft = {
 };
 
 afterEach(() => {
+  vi.restoreAllMocks();
   window.localStorage.clear();
   vi.useRealTimers();
 });
@@ -168,6 +169,29 @@ describe('pruning on save', () => {
     window.localStorage.setItem(junkKey, '{not json');
     saveWizardDraft(KEY, DRAFT);
     expect(window.localStorage.getItem(junkKey)).toBeNull();
+  });
+
+  it('prunes before writing, so a quota-full store freed by pruning still saves', () => {
+    // Simulate a one-entry quota: setItem throws while another entry exists,
+    // so the new draft can only land if pruning ran first and freed the slot.
+    const staleKey = wizardDraftKey('agent-1', 'msg-old');
+    const now = Date.now();
+    vi.useFakeTimers();
+    vi.setSystemTime(now - 15 * 24 * 60 * 60 * 1000);
+    saveWizardDraft(staleKey, DRAFT);
+    vi.setSystemTime(now);
+
+    const realSetItem = window.localStorage.setItem.bind(window.localStorage);
+    vi.spyOn(window.localStorage, 'setItem').mockImplementation((key, value) => {
+      if (window.localStorage.getItem(staleKey) !== null) {
+        throw new DOMException('quota exceeded', 'QuotaExceededError');
+      }
+      realSetItem(key, value);
+    });
+
+    saveWizardDraft(KEY, DRAFT);
+    expect(window.localStorage.getItem(staleKey)).toBeNull();
+    expect(loadWizardDraft(KEY, QUESTIONS)).toEqual(DRAFT);
   });
 });
 

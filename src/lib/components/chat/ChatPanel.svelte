@@ -969,11 +969,17 @@
   // `agent.dismissQuestions` — the daemon persists the marker (survives
   // reload) and releases the question hold. On failure the middleware rolls
   // the metadata back, so the wizard re-surfaces, and surfaces the error toast.
-  function handleQuestionWizardDismiss() {
+  // Returns the action promise so the wizard clears its stored draft only
+  // after the dismissal is confirmed (a failure keeps the draft).
+  async function handleQuestionWizardDismiss(): Promise<void> {
     if (!workspace || !pendingQuestions) return;
-    appStore.dispatch(
-      agentSessionDismissQuestionsRequested(agentId, workspace.id, pendingQuestions.messageId),
+    const action = agentSessionDismissQuestionsRequested(
+      agentId,
+      workspace.id,
+      pendingQuestions.messageId,
     );
+    appStore.dispatch(action);
+    await action.promise;
   }
 
   // Completing the wizard flattens all answers into ONE plain-text user

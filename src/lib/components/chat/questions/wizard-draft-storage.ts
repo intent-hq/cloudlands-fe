@@ -17,7 +17,7 @@ const DRAFT_VERSION = 1;
 const MAX_DRAFT_AGE_MS = 14 * 24 * 60 * 60 * 1000;
 
 /** Mirrors the wizard's internal per-question `DraftAnswer` shape. */
-export interface WizardDraftAnswer {
+interface WizardDraftAnswer {
   /** Selected option indices (selection order). */
   sel: number[];
   /** Raw free-form "Other" text. */
@@ -100,7 +100,12 @@ function isStoredDraft(value: unknown, questions: Question[]): value is StoredWi
   );
 }
 
-/** Persist the draft under `key` and prune stale entries in the namespace. */
+/**
+ * Prune stale entries in the namespace, then persist the draft under `key`.
+ * Pruning first frees quota headroom, so a near-full localStorage cannot
+ * fail the write while stale drafts still occupy the namespace
+ * (`safeLocalStorage.setItem` swallows quota errors).
+ */
 export function saveWizardDraft(key: string, draft: WizardDraft): void {
   const stored: StoredWizardDraft = {
     version: DRAFT_VERSION,
@@ -108,8 +113,8 @@ export function saveWizardDraft(key: string, draft: WizardDraft): void {
     answers: draft.answers,
     savedAt: Date.now(),
   };
-  safeLocalStorage.setJSON(key, stored);
   pruneStaleWizardDrafts(key);
+  safeLocalStorage.setJSON(key, stored);
 }
 
 /** Delete the draft stored under `key` (answers sent or set dismissed). */
@@ -120,7 +125,7 @@ export function clearWizardDraft(key: string): void {
 /**
  * Drop namespace entries older than 14 days (by `savedAt`), so drafts of
  * sets resolved elsewhere or dismissed never accumulate. Unreadable entries
- * are dropped too; `skipKey` (the entry just written) is left alone.
+ * are dropped too; `skipKey` (the entry about to be written) is left alone.
  */
 function pruneStaleWizardDrafts(skipKey: string): void {
   const cutoff = Date.now() - MAX_DRAFT_AGE_MS;
