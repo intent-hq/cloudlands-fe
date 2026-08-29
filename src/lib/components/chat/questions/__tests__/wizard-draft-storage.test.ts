@@ -1,12 +1,17 @@
 /**
  * Q&A wizard draft storage: localStorage round-trip restore, validation that
  * discards (and clears) corrupt/shape-mismatched entries, idx clamping,
- * 14-day pruning of stale namespace entries on save, and clear.
+ * 14-day pruning of stale namespace entries on save, clear, and the sibling
+ * collapsed-state record (round trip, initial-collapsed resolution, cleared
+ * with the draft, pruned with the namespace).
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   clearWizardDraft,
+  initialWizardCollapsed,
+  loadWizardCollapsed,
   loadWizardDraft,
+  saveWizardCollapsed,
   saveWizardDraft,
   wizardDraftKey,
   type WizardDraft,
@@ -201,5 +206,82 @@ describe('clearWizardDraft', () => {
     clearWizardDraft(KEY);
     expect(window.localStorage.getItem(KEY)).toBeNull();
     expect(loadWizardDraft(KEY, QUESTIONS)).toBeNull();
+  });
+
+  it('removes the collapsed state stored with the draft', () => {
+    saveWizardDraft(KEY, DRAFT);
+    saveWizardCollapsed(KEY, true);
+    clearWizardDraft(KEY);
+    expect(loadWizardCollapsed(KEY)).toBeNull();
+    expect(window.localStorage.getItem(`${KEY}/collapsed`)).toBeNull();
+  });
+});
+
+describe('collapsed state persistence', () => {
+  it('round-trips true and false', () => {
+    saveWizardCollapsed(KEY, true);
+    expect(loadWizardCollapsed(KEY)).toBe(true);
+    saveWizardCollapsed(KEY, false);
+    expect(loadWizardCollapsed(KEY)).toBe(false);
+  });
+
+  it('returns null when nothing is stored', () => {
+    expect(loadWizardCollapsed(KEY)).toBeNull();
+  });
+
+  it('does not leak across question sets', () => {
+    saveWizardCollapsed(KEY, true);
+    expect(loadWizardCollapsed(wizardDraftKey('agent-1', 'msg-q2'))).toBeNull();
+  });
+
+  it('discards and clears corrupt or shape-mismatched entries', () => {
+    const collapsedKey = `${KEY}/collapsed`;
+    window.localStorage.setItem(collapsedKey, '{not json');
+    expect(loadWizardCollapsed(KEY)).toBeNull();
+    expect(window.localStorage.getItem(collapsedKey)).toBeNull();
+
+    window.localStorage.setItem(
+      collapsedKey,
+      JSON.stringify({ version: 2, collapsed: true, savedAt: Date.now() }),
+    );
+    expect(loadWizardCollapsed(KEY)).toBeNull();
+    expect(window.localStorage.getItem(collapsedKey)).toBeNull();
+
+    window.localStorage.setItem(
+      collapsedKey,
+      JSON.stringify({ version: 1, collapsed: 'yes', savedAt: Date.now() }),
+    );
+    expect(loadWizardCollapsed(KEY)).toBeNull();
+    expect(window.localStorage.getItem(collapsedKey)).toBeNull();
+  });
+
+  it('is pruned with the namespace after 14 days', () => {
+    const now = Date.now();
+    vi.useFakeTimers();
+    vi.setSystemTime(now - 15 * 24 * 60 * 60 * 1000);
+    saveWizardCollapsed(KEY, true);
+    vi.setSystemTime(now);
+    saveWizardDraft(wizardDraftKey('agent-2', 'msg-new'), DRAFT);
+    expect(window.localStorage.getItem(`${KEY}/collapsed`)).toBeNull();
+  });
+
+  it('draft saves do not prune a fresh collapsed sibling', () => {
+    saveWizardCollapsed(KEY, true);
+    saveWizardDraft(KEY, DRAFT);
+    expect(loadWizardCollapsed(KEY)).toBe(true);
+  });
+});
+
+describe('initialWizardCollapsed', () => {
+  it('prefers the persisted value over the composer-input flag', () => {
+    saveWizardCollapsed(KEY, false);
+    expect(initialWizardCollapsed(KEY, true)).toBe(false);
+    saveWizardCollapsed(KEY, true);
+    expect(initialWizardCollapsed(KEY, false)).toBe(true);
+  });
+
+  it('auto-collapses on composer input when nothing is persisted', () => {
+    expect(initialWizardCollapsed(KEY, true)).toBe(true);
+    expect(initialWizardCollapsed(KEY, false)).toBe(false);
   });
 });

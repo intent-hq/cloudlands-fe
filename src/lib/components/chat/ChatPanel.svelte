@@ -174,7 +174,11 @@
     deriveWizardPendingQuestions,
   } from './questions/wizard-gate';
   import { classifyPendingQuestionMarker } from './questions/pending-questions';
-  import { wizardDraftKey } from './questions/wizard-draft-storage';
+  import {
+    initialWizardCollapsed,
+    saveWizardCollapsed,
+    wizardDraftKey,
+  } from './questions/wizard-draft-storage';
   import { buildAnswerMessageMetadata, flattenAnswersToMessage } from './questions/answer-message';
   import {
     classifyScrollbackGesture,
@@ -926,14 +930,40 @@
     );
   });
 
-  let questionWizardCollapsed = $state(false);
-  let questionWizardMessageId = $state<string | null>(null);
-  $effect(() => {
+  // Collapsed (Hide) state is host-owned and persisted per question set
+  // alongside the answer draft. A newly pending set starts from its persisted
+  // value when one exists; otherwise it auto-collapses when the composer
+  // holds in-flight user input (text or attachments) so the input textbox is
+  // never replaced mid-typing — Hide semantics only, nothing is dismissed.
+  // Resolved in a $derived (not a post-render $effect) so the very first
+  // render of a newly pending set already sees the collapsed value — an
+  // effect would run after the DOM update, transiently unmounting the
+  // composer (losing editor focus/selection/IME composition) before
+  // collapsing. The initial resolution is latched per messageId in a
+  // non-reactive cache so it is decided once per set; user toggles override
+  // it reactively.
+  let wizardCollapsedInitial: { messageId: string; collapsed: boolean } | null = null;
+  let questionWizardCollapsedOverride = $state<{ messageId: string; collapsed: boolean } | null>(
+    null,
+  );
+  const questionWizardCollapsed = $derived.by(() => {
     const id = pendingQuestions?.messageId ?? null;
-    if (id !== questionWizardMessageId) {
-      questionWizardMessageId = id;
-      questionWizardCollapsed = false;
+    if (id === null) return false;
+    if (questionWizardCollapsedOverride?.messageId === id) {
+      return questionWizardCollapsedOverride.collapsed;
     }
+    if (wizardCollapsedInitial?.messageId !== id) {
+      wizardCollapsedInitial = {
+        messageId: id,
+        collapsed: untrack(() =>
+          initialWizardCollapsed(
+            wizardDraftKey(agentId, id),
+            inputValue.trim() !== '' || contextItems.length > 0,
+          ),
+        ),
+      };
+    }
+    return wizardCollapsedInitial.collapsed;
   });
 
   // Queue entries the user should see: user-authored ones only. Daemon-origin
@@ -5954,7 +5984,16 @@
                     questions={pendingQuestions.questions}
                     draftKey={wizardDraftKey(agentId, pendingQuestions.messageId)}
                     collapsed={questionWizardCollapsed}
-                    onToggleCollapsed={(collapsed) => (questionWizardCollapsed = collapsed)}
+                    onToggleCollapsed={(collapsed) => {
+                      questionWizardCollapsedOverride = {
+                        messageId: pendingQuestions.messageId,
+                        collapsed,
+                      };
+                      saveWizardCollapsed(
+                        wizardDraftKey(agentId, pendingQuestions.messageId),
+                        collapsed,
+                      );
+                    }}
                     onComplete={handleQuestionWizardComplete}
                     onDismiss={handleQuestionWizardDismiss}
                   />

@@ -4,11 +4,12 @@
   the pending questions one at a time; choose-one advances on selection,
   multi-select keeps a Next button, Enter in the free-form field advances,
   Skip clears + advances, Back returns with the previous answer pre-selected.
-  Hide collapses the well to a compact re-expandable banner (transient —
-  the host owns the collapse flag; the flag is never persisted). With a
+  Hide collapses the well to a compact re-expandable banner (the host owns
+  the collapse flag and its persistence). With a
   `draftKey` the in-progress answers + current step persist to localStorage
   (wizard-draft-storage) and restore on remount/reload; completing or
-  dismissing clears the stored draft. Dismiss is a
+  dismissing clears the stored draft (and the host's persisted collapsed
+  state stored beside it). Dismiss is a
   destructive action gated behind a confirmation dialog; confirming hands off
   to `onDismiss` — the host calls `agent.dismissQuestions`, which persists
   the dismissal (survives reload) and releases the question hold. The stored
