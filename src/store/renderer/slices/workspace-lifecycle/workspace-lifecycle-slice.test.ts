@@ -2,9 +2,11 @@ import { describe, expect, it } from 'vitest';
 
 import { removeWorkspaceEntity, resetWorkspaceState } from '../workspace/workspace-slice';
 import {
+  backendReconnected,
   initialState,
   workspaceDeleted,
   workspaceLifecycleReducer,
+  workspaceLoadSucceeded,
   workspaceMounted,
   workspaceOpenFailed,
   workspaceOpenSucceeded,
@@ -45,6 +47,18 @@ describe('workspaceLifecycleReducer', () => {
     );
 
     expect(workspaceLifecycleReducer(live, action).sessionPhaseByWorkspaceId).toEqual({});
+  });
+
+  it('clears every session phase on backend reconnect but keeps load state (#3788)', () => {
+    let state = workspaceLifecycleReducer(initialState, workspaceMounted('ws-a'));
+    state = workspaceLifecycleReducer(state, workspaceOpenSucceeded('ws-a'));
+    state = workspaceLifecycleReducer(state, workspaceMounted('ws-b'));
+    state = workspaceLifecycleReducer(state, workspaceLoadSucceeded('ws-a'));
+
+    const reconnected = workspaceLifecycleReducer(state, backendReconnected());
+    expect(reconnected.sessionPhaseByWorkspaceId).toEqual({});
+    expect(reconnected.loadByWorkspaceId).toBe(state.loadByWorkspaceId);
+    expect(workspaceLifecycleReducer(reconnected, backendReconnected())).toBe(reconnected);
   });
 
   it('clears all sessions on workspace state reset and preserves no-op identity', () => {
