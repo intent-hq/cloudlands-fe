@@ -5,10 +5,15 @@
   multi-select keeps a Next button, Enter in the free-form field advances,
   Skip clears + advances, Back returns with the previous answer pre-selected.
   Hide collapses the well to a compact re-expandable banner (transient —
-  the host owns the collapse flag; nothing is persisted). Dismiss is a
+  the host owns the collapse flag; the flag is never persisted). With a
+  `draftKey` the in-progress answers + current step persist to localStorage
+  (wizard-draft-storage) and restore on remount/reload; completing or
+  dismissing clears the stored draft. Dismiss is a
   destructive action gated behind a confirmation dialog; confirming hands off
   to `onDismiss` — the host calls `agent.dismissQuestions`, which persists
-  the dismissal (survives reload) and releases the question hold. On the last
+  the dismissal (survives reload) and releases the question hold. The stored
+  draft is only cleared once `onDismiss` resolves, so a failed dismissal
+  (wizard re-surfaces) keeps the in-progress answers. On the last
   question an option submits immediately; typed text uses Send. Single-question
   wizards hide the step counter, progress segments, and Back button — none
   carry information when there is only one step.
@@ -23,6 +28,7 @@
 </script>
 
 <script lang="ts">
+  import { onDestroy } from 'svelte';
   import Fa from 'svelte-fa';
   import {
     faChevronLeft,
@@ -34,18 +40,41 @@
   import Button from '$lib/components/ui/button/button.svelte';
   import DismissQuestionsConfirmDialog from './DismissQuestionsConfirmDialog.svelte';
   import { m } from '$shared/paraglide/messages.js';
+  import {
+    clearWizardDraft,
+    loadWizardDraft,
+    saveWizardDraft,
+    type WizardDraft,
+  } from './wizard-draft-storage';
 
   interface Props {
     questions: Question[];
+    /**
+     * localStorage key (see `wizardDraftKey`) that persists in-progress
+     * answers + the current step across unmounts/reloads. Absent → no
+     * persistence (behavior identical to before the prop existed).
+     */
+    draftKey?: string;
     /** Host-owned Ignore state — true renders the compact banner. */
     collapsed?: boolean;
     onToggleCollapsed?: (collapsed: boolean) => void;
     onComplete?: (answers: QuestionAnswer[]) => void;
-    /** Persistent dismissal — host calls `agent.dismissQuestions`. */
-    onDismiss?: () => void;
+    /**
+     * Persistent dismissal — host calls `agent.dismissQuestions`. May return
+     * a promise; the stored draft is cleared only after it resolves, so a
+     * failed dismissal keeps the draft for the re-surfaced wizard.
+     */
+    onDismiss?: () => Promise<void> | void;
   }
 
-  let { questions, collapsed = false, onToggleCollapsed, onComplete, onDismiss }: Props = $props();
+  let {
+    questions,
+    draftKey = undefined,
+    collapsed = false,
+    onToggleCollapsed,
+    onComplete,
+    onDismiss,
+  }: Props = $props();
 
   interface DraftAnswer {
     sel: number[];
@@ -53,7 +82,13 @@
     skipped: boolean;
   }
 
-  let idx = $state(0);
+  // Restore any persisted draft for this exact question set before the state
+  // below initializes. Intentional initial capture (like `answers` below):
+  // the host remounts the wizard per question set.
+  // svelte-ignore state_referenced_locally
+  const restoredDraft = draftKey ? loadWizardDraft(draftKey, questions) : null;
+
+  let idx = $state(restoredDraft?.idx ?? 0);
   // The host normally unmounts this component after completion. Keep a local,
   // synchronous latch so rapid clicks cannot complete or replace an answer twice.
   let completed = $state(false);
@@ -62,7 +97,9 @@
   // Intentional initial capture: the host remounts the wizard ({#key} on the
   // question-bearing message id) whenever a different question set pends.
   // svelte-ignore state_referenced_locally
-  let answers = $state<DraftAnswer[]>(questions.map(() => ({ sel: [], text: '', skipped: false })));
+  let answers = $state<DraftAnswer[]>(
+    restoredDraft?.answers ?? questions.map(() => ({ sel: [], text: '', skipped: false })),
+  );
 
   const current = $derived(questions[idx]);
   const draft = $derived(answers[idx]);
@@ -88,6 +125,67 @@
       ? 0
       : 150;
 
+  // ── Draft persistence (only when `draftKey` is set) ────────────────────
+  // Saves are debounced so typing does not write every keystroke; the
+  // pending save is flushed on unmount so switching away mid-typing loses
+  // nothing. Completion and confirmed Dismiss clear the stored draft.
+  const DRAFT_SAVE_DEBOUNCE_MS = 300;
+  let draftSaveTimer: ReturnType<typeof setTimeout> | null = null;
+  let pendingDraftSave: WizardDraft | null = null;
+  // Latched once the draft is cleared (answers sent / set dismissed) so no
+  // later save or unmount flush can resurrect it.
+  let draftResolved = false;
+  // The first effect run only captures the initial (restored) state — skip
+  // it so merely rendering the wizard never writes a draft.
+  let draftEffectPrimed = false;
+
+  function cancelPendingDraftSave() {
+    if (draftSaveTimer !== null) {
+      clearTimeout(draftSaveTimer);
+      draftSaveTimer = null;
+    }
+    pendingDraftSave = null;
+  }
+
+  /** Delete the stored draft and stop persisting — the set is resolved. */
+  function resolveDraft() {
+    if (!draftKey) return;
+    draftResolved = true;
+    cancelPendingDraftSave();
+    clearWizardDraft(draftKey);
+  }
+
+  $effect(() => {
+    const key = draftKey;
+    if (!key) return;
+    // Deep read so any selection/text/skipped/step mutation re-runs this.
+    const snapshot: WizardDraft = {
+      idx,
+      answers: answers.map((a) => ({ sel: [...a.sel], text: a.text, skipped: a.skipped })),
+    };
+    if (!draftEffectPrimed) {
+      draftEffectPrimed = true;
+      return;
+    }
+    if (draftResolved) return;
+    pendingDraftSave = snapshot;
+    if (draftSaveTimer !== null) clearTimeout(draftSaveTimer);
+    draftSaveTimer = setTimeout(() => {
+      draftSaveTimer = null;
+      if (pendingDraftSave && !draftResolved) {
+        saveWizardDraft(key, pendingDraftSave);
+        pendingDraftSave = null;
+      }
+    }, DRAFT_SAVE_DEBOUNCE_MS);
+  });
+
+  onDestroy(() => {
+    if (draftKey && pendingDraftSave && !draftResolved) {
+      saveWizardDraft(draftKey, pendingDraftSave);
+    }
+    cancelPendingDraftSave();
+  });
+
   function buildAnswers(): QuestionAnswer[] {
     return questions.map((q, i) => {
       const a = answers[i];
@@ -104,6 +202,7 @@
     if (idx >= questions.length - 1) {
       if (completed) return;
       completed = true;
+      resolveDraft();
       onComplete?.(buildAnswers());
       return;
     }
@@ -327,9 +426,16 @@
 
 <DismissQuestionsConfirmDialog
   open={confirmingDismiss}
-  onConfirm={() => {
+  onConfirm={async () => {
     confirmingDismiss = false;
-    onDismiss?.();
+    try {
+      await onDismiss?.();
+      // Only clear once the dismissal is confirmed — a rejected dismissal
+      // (host rolls back + toasts) re-surfaces the wizard with the draft.
+      resolveDraft();
+    } catch {
+      // Host surfaces the failure; the draft stays for the retry.
+    }
   }}
   onCancel={() => (confirmingDismiss = false)}
 />

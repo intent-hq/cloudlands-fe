@@ -174,6 +174,7 @@
     deriveWizardPendingQuestions,
   } from './questions/wizard-gate';
   import { classifyPendingQuestionMarker } from './questions/pending-questions';
+  import { wizardDraftKey } from './questions/wizard-draft-storage';
   import { buildAnswerMessageMetadata, flattenAnswersToMessage } from './questions/answer-message';
   import {
     classifyScrollbackGesture,
@@ -968,11 +969,17 @@
   // `agent.dismissQuestions` — the daemon persists the marker (survives
   // reload) and releases the question hold. On failure the middleware rolls
   // the metadata back, so the wizard re-surfaces, and surfaces the error toast.
-  function handleQuestionWizardDismiss() {
+  // Returns the action promise so the wizard clears its stored draft only
+  // after the dismissal is confirmed (a failure keeps the draft).
+  async function handleQuestionWizardDismiss(): Promise<void> {
     if (!workspace || !pendingQuestions) return;
-    appStore.dispatch(
-      agentSessionDismissQuestionsRequested(agentId, workspace.id, pendingQuestions.messageId),
+    const action = agentSessionDismissQuestionsRequested(
+      agentId,
+      workspace.id,
+      pendingQuestions.messageId,
     );
+    appStore.dispatch(action);
+    await action.promise;
   }
 
   // Completing the wizard flattens all answers into ONE plain-text user
@@ -5945,6 +5952,7 @@
                 <div class="w-full" data-testid="question-wizard-slot">
                   <QuestionWizard
                     questions={pendingQuestions.questions}
+                    draftKey={wizardDraftKey(agentId, pendingQuestions.messageId)}
                     collapsed={questionWizardCollapsed}
                     onToggleCollapsed={(collapsed) => (questionWizardCollapsed = collapsed)}
                     onComplete={handleQuestionWizardComplete}
