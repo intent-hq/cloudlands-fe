@@ -15,6 +15,7 @@
  */
 
 import { app, BrowserWindow, Notification, screen } from 'electron';
+import { isDockWindow } from '../../../main/dock-window';
 import { isHudWindow } from '../../../main/hud-window';
 import { Logger } from '../../../shared/logger';
 import { m } from '../../../shared/paraglide/messages.js';
@@ -138,16 +139,24 @@ interface NotificationContent {
 /**
  * Pick the window a notification click should focus/navigate: prefer a
  * window with the workspace open, then the focused window, then any other
- * window — never the HUD pop-out (detected by the shared `isHudWindow`
- * helper in main/hud-window.ts). Returns undefined when only HUD (or no)
- * windows are live; the click handler then opens a fresh main window instead.
+ * window — never an auxiliary HUD or dock window. Returns undefined when only
+ * auxiliary (or no) windows are live; the click handler then opens a fresh
+ * main window instead.
  */
 function pickNotificationClickTarget(workspaceWindows: BrowserWindow[]): BrowserWindow | undefined {
-  const nonHudWorkspaceWindow = workspaceWindows.find((w) => !w.isDestroyed() && !isHudWindow(w));
-  if (nonHudWorkspaceWindow) return nonHudWorkspaceWindow;
+  const regularWorkspaceWindow = workspaceWindows.find(
+    (window) => !window.isDestroyed() && !isNotificationAuxiliaryWindow(window),
+  );
+  if (regularWorkspaceWindow) return regularWorkspaceWindow;
   const focused = BrowserWindow.getFocusedWindow();
-  if (focused && !focused.isDestroyed() && !isHudWindow(focused)) return focused;
-  return BrowserWindow.getAllWindows().find((w) => !w.isDestroyed() && !isHudWindow(w));
+  if (focused && !focused.isDestroyed() && !isNotificationAuxiliaryWindow(focused)) return focused;
+  return BrowserWindow.getAllWindows().find(
+    (window) => !window.isDestroyed() && !isNotificationAuxiliaryWindow(window),
+  );
+}
+
+function isNotificationAuxiliaryWindow(window: BrowserWindow): boolean {
+  return isHudWindow(window) || isDockWindow(window);
 }
 
 /**
@@ -499,11 +508,11 @@ export class NotificationService {
       // on macOS (electron#51885). Skip the OS banner and deliver an in-app
       // clickable toast instead — `navigateTarget` mirrors the banner
       // click-payload so the renderer routes the same way. A focused HUD
-      // pop-out does NOT count as frontmost: the HUD renders no toast UI and
-      // is never a notification target, so HUD-focused delivery stays on the
-      // OS-banner path (whose click goes through the HUD-excluding picker).
+      // pop-out or dock does NOT count as frontmost: auxiliary renderers are
+      // never notification targets, so their delivery stays on the OS-banner
+      // path (whose click goes through the auxiliary-window-excluding picker).
       const focusedWindow = BrowserWindow.getFocusedWindow();
-      const appFrontmost = focusedWindow !== null && !isHudWindow(focusedWindow);
+      const appFrontmost = focusedWindow !== null && !isNotificationAuxiliaryWindow(focusedWindow);
       if (appFrontmost) {
         logger.debug('App is frontmost, delivering in-app toast instead of OS banner', {
           workspaceId,
@@ -703,11 +712,11 @@ export class NotificationService {
         }
 
         // Re-validate at click time: the window picked at show time may
-        // have closed or navigated to /hud while the notification sat in
-        // the notification center — selection always goes through the
-        // picker, so a HUD window can never be the click target.
+        // have closed or navigated to an auxiliary route while the
+        // notification sat in the notification center — selection always
+        // goes through the picker, so an auxiliary window is never targeted.
         let target = mainWindow;
-        if (!target || target.isDestroyed() || isHudWindow(target)) {
+        if (!target || target.isDestroyed() || isNotificationAuxiliaryWindow(target)) {
           const workspaceWindows = workspaceId
             ? getWindowIdsForWorkspace(workspaceId)
                 .map((id) => BrowserWindow.fromId(id))
@@ -717,9 +726,9 @@ export class NotificationService {
         }
 
         if (!target || target.isDestroyed()) {
-          // No regular window is live (e.g. only the HUD pop-out is open,
+          // No regular window is live (e.g. only an auxiliary window is open,
           // or no windows at all): open a fresh app window directly on the
-          // workspace route rather than navigating the HUD (simplest
+          // workspace route rather than navigating an auxiliary renderer
           // correct behavior — no IPC races against a still-loading
           // renderer).
           this.openWindowForNotificationClick(workspaceId);

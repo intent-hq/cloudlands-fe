@@ -37,9 +37,9 @@ export interface NotificationNavigatePayload {
  * Route a notification click: `goto(/workspace/{workspaceId})`, guarding
  * null/missing payloads. Chief-of-staff payloads (`chief: true` or the chief
  * virtual workspace id) open the sidebar Assistant panel and select the chat
- * thread instead — the chief workspace page is hidden. No-ops in the HUD
- * pop-out window so a stray `notification:navigate` IPC can never replace
- * the /hud route with a workspace view. Never rejects; errors are logged.
+ * thread instead — the chief workspace page is hidden. No-ops in auxiliary
+ * HUD and dock windows so a stray `notification:navigate` IPC can never
+ * replace their route with a workspace view. Never rejects; errors are logged.
  */
 export async function handleNotificationNavigate(
   data?: NotificationNavigatePayload | null,
@@ -48,10 +48,10 @@ export async function handleNotificationNavigate(
     return;
   }
 
-  // The HUD window registers the same IPC listeners as every renderer; the
-  // main process avoids targeting it, but guard here too (defense in depth).
-  if (typeof window !== 'undefined' && window.location.pathname.startsWith('/hud')) {
-    logger.debug('Ignoring notification navigate in HUD window', {
+  // Auxiliary windows register the same IPC listeners as every renderer; the
+  // main process avoids targeting them, but guard here too (defense in depth).
+  if (typeof window !== 'undefined' && isNotificationAuxiliaryRoute(window.location.pathname)) {
+    logger.debug('Ignoring notification navigate in auxiliary window', {
       workspaceId: data.workspaceId,
     });
     return;
@@ -79,4 +79,8 @@ export async function handleNotificationNavigate(
       error,
     });
   }
+}
+
+function isNotificationAuxiliaryRoute(pathname: string): boolean {
+  return ['/hud', '/dock'].some((route) => pathname === route || pathname.startsWith(`${route}/`));
 }

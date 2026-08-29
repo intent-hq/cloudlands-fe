@@ -1118,7 +1118,7 @@ describe('NotificationService showNotification click behavior', () => {
   });
 });
 
-describe('NotificationService click-target selection excludes the HUD window', () => {
+describe('NotificationService click-target selection excludes auxiliary windows', () => {
   function buildIdleEvent(): AgentIdleEvent {
     return {
       type: 'agent:idle',
@@ -1150,6 +1150,7 @@ describe('NotificationService click-target selection excludes the HUD window', (
   }
 
   const HUD_URL = 'http://127.0.0.1:5190/hud';
+  const DOCK_URL = 'http://127.0.0.1:5190/dock';
   const MAIN_URL = 'http://127.0.0.1:5190/';
 
   beforeEach(() => {
@@ -1236,6 +1237,60 @@ describe('NotificationService click-target selection excludes the HUD window', (
 
     expect(hudWindow.focus).not.toHaveBeenCalled();
     expect(hudWindow.webContents.send).not.toHaveBeenCalledWith(
+      'notification:navigate',
+      expect.anything(),
+    );
+    expect(createWindowForSessionMock).toHaveBeenCalledWith(
+      expect.objectContaining({ route: '/workspace/workspace-1' }),
+      true,
+    );
+  });
+
+  it('uses the OS banner and navigates a regular window when the dock is focused', async () => {
+    const dockWindow = makeWindow(1, DOCK_URL);
+    const regularWindow = makeWindow(2, MAIN_URL);
+    vi.mocked(getWindowIdsForWorkspace).mockReturnValue([dockWindow.id]);
+    vi.mocked(BrowserWindow.fromId).mockImplementation(
+      (id: number) => (id === 1 ? dockWindow : id === 2 ? regularWindow : null) as never,
+    );
+    vi.mocked(BrowserWindow.getFocusedWindow).mockReturnValue(dockWindow as never);
+    vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([dockWindow, regularWindow] as never);
+
+    const service = new NotificationService();
+    await service.handleAgentIdle(buildIdleEvent());
+
+    expect(mockNotificationInstances.length).toBe(1);
+    mockNotificationInstances[0].handlers['click']();
+
+    expect(regularWindow.focus).toHaveBeenCalled();
+    expect(regularWindow.webContents.send).toHaveBeenCalledWith('notification:navigate', {
+      workspaceId: 'workspace-1',
+    });
+    expect(dockWindow.focus).not.toHaveBeenCalled();
+    expect(dockWindow.webContents.send).not.toHaveBeenCalledWith(
+      'notification:navigate',
+      expect.anything(),
+    );
+  });
+
+  it('opens a fresh main window when the dock is the only live window', async () => {
+    const dockWindow = makeWindow(1, DOCK_URL);
+    vi.mocked(getWindowIdsForWorkspace).mockReturnValue([dockWindow.id]);
+    vi.mocked(BrowserWindow.fromId).mockImplementation(
+      (id: number) => (id === 1 ? dockWindow : null) as never,
+    );
+    vi.mocked(BrowserWindow.getFocusedWindow).mockReturnValue(dockWindow as never);
+    vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([dockWindow] as never);
+
+    const service = new NotificationService();
+    await service.handleAgentIdle(buildIdleEvent());
+
+    expect(mockNotificationInstances.length).toBe(1);
+    mockNotificationInstances[0].handlers['click']();
+    await flush();
+
+    expect(dockWindow.focus).not.toHaveBeenCalled();
+    expect(dockWindow.webContents.send).not.toHaveBeenCalledWith(
       'notification:navigate',
       expect.anything(),
     );
