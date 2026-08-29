@@ -1,10 +1,5 @@
 <script lang="ts">
-  import type {
-    ContentBlock,
-    ToolUseBlock,
-    Proposal,
-    MessageRole,
-  } from '$shared/types';
+  import type { ContentBlock, ToolUseBlock, Proposal, MessageRole } from '$shared/types';
   import {
     dedupeAgentVideoContentBlocks,
     isProposal,
