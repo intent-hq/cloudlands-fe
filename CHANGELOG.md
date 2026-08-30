@@ -4,6 +4,25 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.114.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.113.0...v2.114.0) (2026-08-30)
+
+
+### 🚀 Features
+
+* **release-notes:** open release-notes links directly in the external browser ([#1899](https://github.com/intent-hq/cloudlands-fe/issues/1899)) ([7637928](https://github.com/intent-hq/cloudlands-fe/commit/76379287775cd722a7f0bcb4e3d443f6fedfdece))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.8.25 ([#1905](https://github.com/intent-hq/cloudlands-fe/issues/1905)) ([d3b9446](https://github.com/intent-hq/cloudlands-fe/commit/d3b9446c97a8f17f7c61b03a2493c7cfd4088c95))
+
+
+### ⚡ Performance
+
+* **chat:** defer forced-reflow layout reads and focus out of the workspace mount flush ([#1901](https://github.com/intent-hq/cloudlands-fe/issues/1901)) ([89b2388](https://github.com/intent-hq/cloudlands-fe/commit/89b238813ecc83336d79c84e09c3b17ee1b65a6a))
+* defer code-block syntax highlighting off the mount flush ([#1903](https://github.com/intent-hq/cloudlands-fe/issues/1903)) ([75ae895](https://github.com/intent-hq/cloudlands-fe/commit/75ae8950113bd09b8b683f2619e7a8204c112d00))
+* virtualize user rows so a workspace switch mounts only the displayport ([#1904](https://github.com/intent-hq/cloudlands-fe/issues/1904)) ([96e8fa2](https://github.com/intent-hq/cloudlands-fe/commit/96e8fa2e89430bc9a8c11d68d922fe78cefb2d3e))
+
 ## [2.113.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.112.2...v2.113.0) (2026-08-30)
 
 
