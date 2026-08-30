@@ -28,3 +28,11 @@ export const selectProposalResult = store.createSelector(
   (state, proposalId: string): ProposalApplyResult | null =>
     state.proposalLifecycle[proposalId]?.result ?? null,
 );
+
+/**
+ * The whole lifecycle map — reactivity source for derivations that scan
+ * statuses across many proposals at once (the composer-slot proposal tray).
+ */
+export const selectProposalLifecycleMap = store.createSelector(
+  (state): Record<string, ProposalLifecycleEntry> => state.proposalLifecycle,
+);

@@ -27,6 +27,8 @@
     onApply?: (detail: ProposalActionDetail) => void;
     onDiscard?: (detail: ProposalActionDetail) => void;
     onUndo?: (proposalId: string) => void;
+    /** Tray-hosted Dismiss: skip the local "Discarded" tombstone state. */
+    suppressLocalDiscard?: boolean;
   }
 
   type SettingsChangePayload = { path: string; value: unknown; apply?: AppSettingApplyPlan };
@@ -39,7 +41,14 @@
     editable: boolean;
   };
 
-  let { proposal, disabled = false, onApply, onDiscard, onUndo }: Props = $props();
+  let {
+    proposal,
+    disabled = false,
+    onApply,
+    onDiscard,
+    onUndo,
+    suppressLocalDiscard = false,
+  }: Props = $props();
   let rootElement = $state<HTMLElement | undefined>();
   let statusElement = $state<HTMLElement | undefined>();
   let isDismissed = $state(false);
@@ -195,7 +204,7 @@
 
   function handleDiscard() {
     const detail = buildDetail();
-    isDismissed = true;
+    if (!suppressLocalDiscard) isDismissed = true;
     onDiscard?.(detail);
     emitAction('proposaldiscard', detail);
   }

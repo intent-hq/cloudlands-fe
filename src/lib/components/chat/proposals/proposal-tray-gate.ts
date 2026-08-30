@@ -65,6 +65,24 @@ export function deriveTrayPendingProposals(
   return entries.filter((entry) => !isLocallyResolved(lifecycle, getProposalId(entry.proposal)));
 }
 
+/**
+ * Composer-slot precedence gate: the Question wizard outranks the proposal
+ * tray, so the tray renders only when no wizard is expanded (a collapsed
+ * wizard shows its banner AND lets the tray through — both are "quiet").
+ * Deliberately independent of agent responding/streaming state: proposals
+ * hold no deliveries, so the tray stays visible and actionable while the
+ * agent runs a turn (wakes from other agents/events must not hide it).
+ */
+export function proposalTrayVisible(input: {
+  hasPendingProposals: boolean;
+  hasPendingQuestions: boolean;
+  questionWizardCollapsed: boolean;
+}): boolean {
+  if (!input.hasPendingProposals) return false;
+  if (input.hasPendingQuestions && !input.questionWizardCollapsed) return false;
+  return true;
+}
+
 export interface PendingProposalRecoveryRequest {
   messageId: string;
   shouldRequest: boolean;
