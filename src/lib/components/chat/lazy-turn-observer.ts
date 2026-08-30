@@ -23,7 +23,16 @@ function createGroup(root: HTMLElement | null): ObserverGroup {
     nextOrder: 0,
     observer: new IntersectionObserver(
       (entries) => {
-        const orderedEntries = [...entries].sort((a, b) => {
+        // A single delivery can carry several chronological entries for the
+        // SAME target (layout churn moving a row out and back in between
+        // callbacks). Only the final state is current — coalesce to it first,
+        // because the enter-first sort below would otherwise replay a stale
+        // exit AFTER the final enter and strand an on-screen row as
+        // non-intersecting (permanently dehydrated: the placeholder keeps the
+        // row's height, so no boundary crossing ever corrects it).
+        const latestByTarget = new Map<Element, IntersectionObserverEntry>();
+        for (const entry of entries) latestByTarget.set(entry.target, entry);
+        const orderedEntries = [...latestByTarget.values()].sort((a, b) => {
           // Entering rows establish the displayport frontier before exits can
           // make an older row eligible for dehydration.
           if (a.isIntersecting !== b.isIntersecting) return a.isIntersecting ? -1 : 1;

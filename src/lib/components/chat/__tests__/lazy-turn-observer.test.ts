@@ -48,21 +48,31 @@ describe('LazyTurn shared observer ownership', () => {
     release();
   });
 
-  it('delivers mixed observer entries with entries first and registration order within each side', () => {
+  it('coalesces same-target entries to the final state and delivers enters first', () => {
     const root = document.createElement('div');
     const old = document.createElement('div');
+    const mid = document.createElement('div');
     const newer = document.createElement('div');
     const calls: string[] = [];
     const releaseOld = observeLazyTurnVisibility(old, root, (visible) =>
       calls.push(`old:${visible}`),
+    );
+    const releaseMid = observeLazyTurnVisibility(mid, root, (visible) =>
+      calls.push(`mid:${visible}`),
     );
     const releaseNewer = observeLazyTurnVisibility(newer, root, (visible) =>
       calls.push(`newer:${visible}`),
     );
     const observer = MockIntersectionObserver.instances[0];
 
+    // One delivery can carry several chronological entries per target; only
+    // the final state per target is delivered (a stale exit replayed after
+    // the final enter would strand an on-screen row as non-intersecting),
+    // enters before exits, registration order within each side.
     observer.callback(
       [
+        { target: mid, isIntersecting: true },
+        { target: mid, isIntersecting: false },
         { target: newer, isIntersecting: false },
         { target: newer, isIntersecting: true },
         { target: old, isIntersecting: false },
@@ -71,8 +81,9 @@ describe('LazyTurn shared observer ownership', () => {
       observer as unknown as IntersectionObserver,
     );
 
-    expect(calls).toEqual(['old:true', 'newer:true', 'old:false', 'newer:false']);
+    expect(calls).toEqual(['old:true', 'newer:true', 'mid:false']);
     releaseOld();
+    releaseMid();
     releaseNewer();
   });
 });

@@ -187,10 +187,16 @@ export function createMessageHydrationPolicy(
       const previous = new Map(records);
       const nextIds = new Set(nextMessages.map((message) => message.id));
       for (const [id, registration] of registrations) {
-        if (!nextIds.has(id)) {
-          registration.release?.();
-          registrations.delete(id);
-        }
+        if (nextIds.has(id)) continue;
+        // The component owns the registration lifecycle (observe()'s cleanup
+        // runs on unmount). A mounted row whose message transiently leaves
+        // the composed list must keep its observation — IntersectionObserver
+        // only re-fires on boundary crossings, so a released registration
+        // goes permanently silent and the republished row stays a blank
+        // placeholder. Retain the dropped record's last visibility so the
+        // replay below restores it when the message returns.
+        const dropped = previous.get(id);
+        if (dropped) registration.pendingReport = dropped.isIntersecting;
       }
       records.clear();
       nextMessages.forEach((message, index) => {
