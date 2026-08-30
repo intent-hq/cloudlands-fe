@@ -316,7 +316,6 @@ import {
   connectBackendClient,
   disconnectBackendClient,
   disposeAllBackendClients,
-  getLocalBackendClient,
   isSameHostBackendActive,
 } from '../features/backend/main/backend.ipc';
 import { registerWorkspaceTransferHandlers } from '../features/backend/main/workspace-transfer.ipc';
@@ -647,7 +646,6 @@ app.whenReady().then(async () => {
     applicationName: appName,
     applicationVersion: versionWithCommit,
     copyright: '\u00A9 2026 Intent Contributors',
-    providerVersion: '',
   };
 
   // Set initial about panel options (macOS only)
@@ -658,61 +656,6 @@ app.whenReady().then(async () => {
       copyright: aboutPanelInfo.copyright,
     });
   }
-
-  // Asynchronously fetch active provider version and update the about panel.
-  // Routed through the daemon's `host.exec` (PROTOCOL §5.14) — the FE no longer
-  // spawns provider `--version` locally. Failure is silent: the About panel just
-  // omits the CLI version line (honest-degrade on RPC / non-zero exit).
-  (async () => {
-    try {
-      const { hostExec } = await import('../shared/main/host-exec.js');
-      const { fetchProviderCatalog } = await import('./utils/provider-catalog-accessor.js');
-      const catalog = await fetchProviderCatalog();
-      // The registry carries no default designation — probe the persisted
-      // active provider (`providers.active`, the effective-default rule used
-      // renderer-side), falling back to the first catalog row when unset.
-      // The settings read is best-effort: a failure just means first-row.
-      const activeProviderId = await getLocalBackendClient()
-        .request('settings.get', { path: 'providers.active' })
-        .then((result) => {
-          const value = (result as { value?: unknown } | null)?.value;
-          return typeof value === 'string' ? value : '';
-        })
-        .catch(() => '');
-      const defaultProvider =
-        catalog.providers.find((provider) => provider.id === activeProviderId) ??
-        catalog.providers[0];
-      if (!defaultProvider) return;
-
-      const result = await hostExec(defaultProvider.command, {
-        args: ['--version'],
-        timeoutMs: 5000,
-      });
-      if (result.exitCode !== 0) {
-        logger.debug('Could not get provider CLI version for about panel', {
-          exitCode: result.exitCode,
-        });
-        return;
-      }
-      const providerVersion = (result.stdout || '').trim();
-      if (providerVersion) {
-        aboutPanelInfo.providerVersion = `${defaultProvider.displayName} CLI: ${providerVersion}`;
-        if (isMacOS) {
-          app.setAboutPanelOptions({
-            applicationName: aboutPanelInfo.applicationName,
-            applicationVersion: aboutPanelInfo.applicationVersion,
-            version: aboutPanelInfo.providerVersion,
-            copyright: aboutPanelInfo.copyright,
-          });
-        }
-      }
-    } catch (err) {
-      // Provider CLI not installed / not accessible / RPC failure - that's fine
-      logger.debug('Could not get provider CLI version for about panel', {
-        error: err instanceof Error ? err.message : String(err),
-      });
-    }
-  })();
 
   // Function to build the File menu with recent workspaces
   const buildFileMenu = async (): Promise<Electron.MenuItemConstructorOptions> => {
@@ -1013,7 +956,6 @@ app.whenReady().then(async () => {
           const aboutMessage = [
             `${aboutPanelInfo.applicationName}`,
             m.dialog_about_version({ version: aboutPanelInfo.applicationVersion }),
-            aboutPanelInfo.providerVersion ? `${aboutPanelInfo.providerVersion}` : '',
             `${aboutPanelInfo.copyright}`,
           ]
             .filter(Boolean)
