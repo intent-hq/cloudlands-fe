@@ -194,10 +194,11 @@ export function createMessageHydrationPolicy(
       // Appended rows (newer than every previously known row) hydrate eagerly:
       // a just-sent user message or a fresh streaming row must not paint as a
       // placeholder while waiting for an intersection report. Interior
-      // insertions and older-history prepends stay placeholders, and an
-      // initial install (no previous records) starts fully dehydrated so a
-      // workspace switch mounts only what the observer reports visible.
-      const hadRecords = previous.size > 0;
+      // insertions and older-history prepends stay placeholders. Eagerness
+      // requires a surviving previous row (lastKnownIndex >= 0): both an
+      // initial install AND a full transcript replacement (a rebound panel
+      // publishing a disjoint id set on workspace/agent switch) start fully
+      // dehydrated so only what the observer reports visible mounts.
       let lastKnownIndex = -1;
       nextMessages.forEach((message, index) => {
         if (previous.has(message.id)) lastKnownIndex = index;
@@ -226,7 +227,7 @@ export function createMessageHydrationPolicy(
           });
         } else {
           const record = makeRecord(message, index);
-          if (hadRecords && index > lastKnownIndex) {
+          if (lastKnownIndex >= 0 && index > lastKnownIndex) {
             record.hydrated = true;
             options.onHydrate?.(record.id);
           }

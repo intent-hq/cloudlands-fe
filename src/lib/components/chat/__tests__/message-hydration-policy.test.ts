@@ -250,6 +250,26 @@ describe('message hydration policy', () => {
     expect(policy.getHydratedIds()).toEqual(['sent']);
   });
 
+  it('starts a full transcript replacement as placeholders, never append-eager', () => {
+    const transitions: string[] = [];
+    const policy = createPolicy([user('old-u'), assistant('old-a')], (transition) =>
+      transitions.push(transition),
+    );
+
+    // A rebound panel publishing a disjoint id set (workspace/agent switch
+    // without an intervening empty list) shares no ids with the previous
+    // records: no row may hydrate eagerly, or the whole replacement
+    // transcript mounts synchronously — the workspace-switch stall.
+    policy.updateMessages(
+      Array.from({ length: 50 }, (_, index) =>
+        index % 2 === 0 ? user(`next-u${index}`) : assistant(`next-a${index}`),
+      ),
+    );
+
+    expect(transitions).toEqual([]);
+    expect(policy.getHydratedIds()).toEqual([]);
+  });
+
   it('cleans up removed rows, callbacks, and all state on dispose', () => {
     const transitions: string[] = [];
     const policy = createPolicy([assistant('a'), assistant('b')], (transition) =>
