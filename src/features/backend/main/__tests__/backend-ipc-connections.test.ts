@@ -698,15 +698,58 @@ describe('connections:* IPC handlers', () => {
     expect(rpc.calls).toContain('system.requestUpdate');
   });
 
-  it('connections:update-backend rejects the local id as unsupported', async () => {
+  it('connections:update-backend rejects the local id as unsupported in sidecar/unknown mode', async () => {
     const { mod } = await loadModule();
+    const connectionMode = await import('../connection-mode');
     mod.registerBackendHandlers();
+    const handler = findHandler('connections:update-backend')!;
 
-    await expect(findHandler('connections:update-backend')!({}, { id: 'local' })).resolves.toEqual({
+    // Default (unresolved) mode — the FE manages its own sidecar.
+    await expect(handler({}, { id: 'local' })).resolves.toEqual({
+      ok: false,
+      reason: 'unsupported',
+    });
+
+    // Explicit sidecar mode — the app updater owns the sidecar, never this RPC.
+    connectionMode.setConnectionMode('sidecar');
+    const local = mod.getBackendClient() as unknown as { status: string };
+    local.status = 'connected';
+    await expect(handler({}, { id: 'local' })).resolves.toEqual({
       ok: false,
       reason: 'unsupported',
     });
     expect(rpc.calls).not.toContain('system.requestUpdate');
+    connectionMode.__resetConnectionModeForTesting();
+  });
+
+  it('connections:update-backend routes the local id to the pooled local client in external mode', async () => {
+    const { mod } = await loadModule();
+    const connectionMode = await import('../connection-mode');
+    connectionMode.setConnectionMode('external');
+    mod.registerBackendHandlers();
+    const local = mod.getBackendClient() as unknown as { status: string };
+    local.status = 'connected';
+
+    await expect(findHandler('connections:update-backend')!({}, { id: 'local' })).resolves.toEqual({
+      ok: true,
+    });
+    expect(rpc.calls).toContain('system.requestUpdate');
+    connectionMode.__resetConnectionModeForTesting();
+  });
+
+  it('connections:update-backend reports not-connected for a disconnected external local daemon', async () => {
+    const { mod } = await loadModule();
+    const connectionMode = await import('../connection-mode');
+    connectionMode.setConnectionMode('external');
+    mod.registerBackendHandlers();
+    mod.getBackendClient(); // pooled local client stays 'disconnected'
+
+    await expect(findHandler('connections:update-backend')!({}, { id: 'local' })).resolves.toEqual({
+      ok: false,
+      reason: 'not-connected',
+    });
+    expect(rpc.calls).not.toContain('system.requestUpdate');
+    connectionMode.__resetConnectionModeForTesting();
   });
 
   it('connections:update-backend reports not-connected without a live client', async () => {

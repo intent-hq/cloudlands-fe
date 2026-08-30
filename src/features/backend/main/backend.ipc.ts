@@ -544,18 +544,21 @@ export function getLocalBackendClient(): JsonRpcClient {
 }
 
 /**
- * Ask one connected remote backend's daemon to self-update via
+ * Ask one connected backend's daemon to self-update via
  * `system.requestUpdate` (the daemon signals its serve-mode sitter, which
  * installs the newer version and restarts the daemon). Returns a structured
  * {@link UpdateBackendResult} instead of throwing for daemon-side failures so
  * the renderer can toast a specific message:
- *   - local id → 'unsupported' (the local sidecar is never updated this way);
- *   - no live pooled client → 'not-connected' (saved-but-disconnected remote);
+ *   - local id in sidecar/unknown mode → 'unsupported' (the FE's app updater
+ *     owns the app-managed sidecar; only an adopted `external` local daemon
+ *     is routed like a remote, over the pooled local client);
+ *   - no live pooled client → 'not-connected' (saved-but-disconnected remote,
+ *     or a disconnected external local daemon);
  *   - JSON-RPC -32601 → 'unsupported' (daemon too old to know the method);
  *   - any other daemon/transport error → 'failed' with the error message.
  */
 async function requestBackendUpdate(id: string): Promise<UpdateBackendResult> {
-  if (id === LOCAL_CONNECTION_ID) {
+  if (id === LOCAL_CONNECTION_ID && getConnectionMode() !== 'external') {
     return { ok: false, reason: 'unsupported' };
   }
   const target = backendClients.get(id);
@@ -567,11 +570,11 @@ async function requestBackendUpdate(id: string): Promise<UpdateBackendResult> {
     return { ok: true };
   } catch (error) {
     if (error instanceof JsonRpcError && error.rpcCode === -32601) {
-      logger.warn('Remote daemon does not support system.requestUpdate', { id });
+      logger.warn('Daemon does not support system.requestUpdate', { id });
       return { ok: false, reason: 'unsupported' };
     }
     const message = error instanceof Error ? error.message : String(error);
-    logger.warn('Remote daemon update request failed', { id, error: message });
+    logger.warn('Daemon update request failed', { id, error: message });
     return { ok: false, reason: 'failed', message };
   }
 }
