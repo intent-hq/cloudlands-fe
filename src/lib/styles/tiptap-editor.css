@@ -391,10 +391,8 @@
   color: hsl(var(--muted-foreground));
   border: 1px solid hsl(var(--border));
   border-radius: 9999px;
-  font-weight: 500;
   white-space: nowrap;
   vertical-align: baseline;
-  line-height: 1.5;
   box-decoration-break: clone;
   -webkit-box-decoration-break: clone;
 }

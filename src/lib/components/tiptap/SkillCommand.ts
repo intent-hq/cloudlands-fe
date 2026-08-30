@@ -41,7 +41,7 @@ export const SkillCommand = Node.create({
       'span',
       mergeAttributes(HTMLAttributes, {
         'data-type': 'skill-command',
-        class: 'skill-command-chip',
+        class: 'skill-command-chip type-code',
         role: 'code',
         'aria-label': command,
         contenteditable: 'false',

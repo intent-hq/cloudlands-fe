@@ -58,6 +58,7 @@ describe('TipTapEditor slash skills', () => {
     expect(chip?.getAttribute('aria-label')).toBe('/review');
     expect(chip?.getAttribute('contenteditable')).toBe('false');
     expect(chip?.classList.contains('skill-command-chip')).toBe(true);
+    expect(chip?.classList.contains('type-code')).toBe(true);
 
     component.insertText('audit this');
     expect(component.getTextContent()).toBe('Please /review audit this');

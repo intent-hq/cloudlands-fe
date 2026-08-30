@@ -38,7 +38,7 @@ function injectSkillCommandSpans(html: string, skillNames: readonly string[]): s
   );
   return html.replace(pattern, (_match, boundary: string, name: string) => {
     const attribute = name.replace(/"/g, '&quot;');
-    return `${boundary}<span data-type="skill-command" data-skill-name="${attribute}" class="skill-command-chip" role="code" aria-label="/${attribute}" contenteditable="false">/${name}</span>`;
+    return `${boundary}<span data-type="skill-command" data-skill-name="${attribute}" class="skill-command-chip type-code" role="code" aria-label="/${attribute}" contenteditable="false">/${name}</span>`;
   });
 }
 

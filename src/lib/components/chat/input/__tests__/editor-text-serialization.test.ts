@@ -166,6 +166,7 @@ describe('editor-text-serialization (#1151)', () => {
     try {
       skillEditor.commands.setContent(plainTextToEditorHTML('Use /review now', ['review']));
       expect(skillEditor.getHTML()).toContain('data-type="skill-command"');
+      expect(skillEditor.getHTML()).toContain('class="skill-command-chip type-code"');
       expect(serializeEditorText(skillEditor)).toBe('Use /review now');
 
       skillEditor.commands.selectAll();
