@@ -1050,6 +1050,39 @@ describe('handleFinishedRecording with a composer dictation target', () => {
     expect(hasComposerDictationTarget()).toBe(false);
   });
 
+  it('the default focus path dispatches dictation-flagged requests, so a mid-dictation panel switch cannot misroute', async () => {
+    // The mic button that started the dictation belonged to agent-b; by
+    // finish time the user focused another panel, so ChatPanel's plain
+    // panel-navigation guard would reject the focus request for agent-b's
+    // (now unfocused) panel. The dictation flow must dispatch the seam
+    // with `source: 'dictation'` so the originating composer still accepts.
+    setComposerDictationTarget('agent-b');
+    const transcribe = vi.fn().mockResolvedValue(TRANSCRIBE_RESULT);
+    const insertText = vi.fn().mockReturnValue(true);
+    const focusRequests: unknown[] = [];
+    const onFocusContent = (event: Event) =>
+      focusRequests.push((event as CustomEvent<unknown>).detail);
+    window.addEventListener('panel:focus-content', onFocusContent);
+
+    try {
+      vi.useFakeTimers();
+      // No focusComposer dep: the real default (focusAgentComposer with the
+      // dictation flag) dispatches the panel:focus-content window events.
+      const flow = handleFinishedRecording(RECORDING, { transcribe, insertText });
+      await vi.advanceTimersByTimeAsync(1000);
+      await flow;
+    } finally {
+      window.removeEventListener('panel:focus-content', onFocusContent);
+    }
+
+    expect(focusRequests.length).toBeGreaterThan(0);
+    for (const detail of focusRequests) {
+      expect(detail).toEqual({ tabType: 'agent', agentId: 'agent-b', source: 'dictation' });
+    }
+    expect(insertText).toHaveBeenCalledWith(TRANSCRIBE_RESULT.text);
+    expect(toastError).not.toHaveBeenCalled();
+  });
+
   it('with autoSend, the send lands on the captured composer', async () => {
     setComposerDictationTarget('agent-b');
     const transcribe = vi.fn().mockResolvedValue(TRANSCRIBE_RESULT);

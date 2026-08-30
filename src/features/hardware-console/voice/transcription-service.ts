@@ -82,6 +82,19 @@ const TRANSCRIBING_HUD_REFRESH_MS = 800;
  */
 const TRANSCRIPT_INSERT_DELAYS_MS = [250, 800] as const;
 
+/**
+ * Default composer focus for the dictation flow: the `source: 'dictation'`
+ * flag lets ChatPanel accept the request even when the user focused a
+ * different panel mid-dictation (the plain panel-navigation guard rejects
+ * unfocused panels, which would leave the insertion retries landing in
+ * whatever editable holds focus). Limitation: when the agent's tab is no
+ * longer the active tab in its panel the request still fails, and the
+ * insert-failed toast fallback preserves the transcript.
+ */
+function focusDictationComposer(agentId: string): void {
+  focusAgentComposer(agentId, { source: 'dictation' });
+}
+
 /** Shared id: transcription toasts replace one another instead of stacking. */
 const TRANSCRIPTION_TOAST_ID = 'hardware-console-voice-transcription';
 
@@ -308,7 +321,7 @@ function insertTranscript(
   targetAgentId: string | null,
   deps: TranscriptionDeps = {},
 ): Promise<boolean> {
-  const focusComposer = deps.focusComposer ?? focusAgentComposer;
+  const focusComposer = deps.focusComposer ?? focusDictationComposer;
   const insertText = deps.insertText ?? ((value: string) => insertTranscriptText(value));
   if (targetAgentId === null) return Promise.resolve(insertText(text));
   focusComposer(targetAgentId);
@@ -340,7 +353,7 @@ function triggerComposerSend(
   targetAgentId: string | null,
   deps: TranscriptionDeps = {},
 ): Promise<boolean> {
-  const focusComposer = deps.focusComposer ?? focusAgentComposer;
+  const focusComposer = deps.focusComposer ?? focusDictationComposer;
   const send = deps.sendComposer ?? (() => sendFocusedComposer());
   if (targetAgentId === null) return Promise.resolve(send());
   focusComposer(targetAgentId);
