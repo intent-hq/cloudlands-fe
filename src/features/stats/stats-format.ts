@@ -16,7 +16,17 @@ import type {
 import { formatInteger, formatNumber } from '$lib/i18n/format';
 import { m } from '$shared/paraglide/messages.js';
 
-/** Sum of every token counter (Spec D6), thoughts included when reported. */
+/**
+ * Canonical total: the five-counter sum (input + output + cacheRead +
+ * cacheCreation + thought). The counters are disjoint buckets at ingestion
+ * since intentd 0.8.20, and `thoughtTokens` is omitted when zero (PROTOCOL
+ * §5.23 / §5.36).
+ *
+ * Legacy caveat: codex rows persisted BEFORE the 0.8.20 cutover stored
+ * `thoughtTokens` as a subset of `outputTokens`, so this sum overstates those
+ * rows. Accepted as documented daemon-side (no data migration) — the FE does
+ * not special-case legacy rows.
+ */
 export function totalTokens(t: UsageTokenTotals): number {
   return (
     t.inputTokens +
@@ -77,7 +87,7 @@ export const MODEL_BAR_COLORS = [
 
 export interface RankedModel {
   model: string;
-  /** Sum of the model's 4 token counters. */
+  /** Sum of the model's five token counters (`totalTokens`). */
   tokens: number;
   /** Fraction of the grand total across ALL models (not just the top 4). */
   share: number;
@@ -103,7 +113,7 @@ export function rankModels(byModel: UsageModelStats[], limit = 4): RankedModel[]
 export interface RankedProvider {
   /** Raw provider id as sent on the wire (`claude-code`, `codex`, …). */
   provider: string;
-  /** Sum of the provider's 4 token counters. */
+  /** Sum of the provider's five token counters (`totalTokens`). */
   tokens: number;
   /** Fraction of the grand total across ALL providers (not just the top 4). */
   share: number;
