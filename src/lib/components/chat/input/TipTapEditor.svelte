@@ -707,9 +707,15 @@
         },
         onCreate: ({ editor }) => {
           if (autoFocus) {
-            // Focus the DOM element directly with preventScroll to avoid scroll jank
-            const editorElement = editor.view.dom as HTMLElement;
-            editorElement?.focus({ preventScroll: true });
+            // Defer the focus out of the mount flush: a synchronous focus()
+            // here forces style/layout mid-flush. rAF still runs pre-paint,
+            // so focus lands in the same frame without a forced reflow.
+            requestAnimationFrame(() => {
+              if (editor.isDestroyed) return;
+              // Focus the DOM element directly with preventScroll to avoid scroll jank
+              const editorElement = editor.view.dom as HTMLElement;
+              editorElement?.focus({ preventScroll: true });
+            });
           }
         },
         onUpdate: ({ editor, transaction }) => {

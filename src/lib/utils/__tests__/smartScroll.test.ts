@@ -454,9 +454,35 @@ describe('followBottom policy', () => {
     action.destroy();
   });
 
-  it('starts followed and idle with no pending animation frame', () => {
+  it('defers the initial mount snap and layout reads to an animation frame', () => {
+    // Start the viewport away from the bottom so the deferred path must
+    // actually snap it there — a no-op attach would leave it at 100.
+    scrollTop = 100;
+    let layoutReads = 0;
+    Object.defineProperty(container, 'scrollHeight', {
+      configurable: true,
+      get: () => {
+        layoutReads += 1;
+        return scrollHeight;
+      },
+    });
+    Object.defineProperty(container, 'clientHeight', {
+      configurable: true,
+      get: () => {
+        layoutReads += 1;
+        return clientHeight;
+      },
+    });
     const action = followBottom(container, { follow: true });
 
+    // Initial mount runs inside the component mount flush on a dirty tree:
+    // no synchronous layout read, snap deferred to the frame (pre-paint).
+    expect(layoutReads).toBe(0);
+    expect(scrollTop).toBe(100);
+    expect(animationFrames).toHaveLength(1);
+
+    runSettleTail();
+    expect(layoutReads).toBeGreaterThan(0);
     expect(scrollTop).toBe(600);
     expect(animationFrames).toHaveLength(0);
     action.destroy();
@@ -519,6 +545,7 @@ describe('followBottom policy', () => {
       follow: true,
       onScrollStateChange: (state) => distances.push(state.distanceFromBottom),
     });
+    runSettleTail();
 
     scrollHeight += 120;
     fireMutation();
@@ -644,6 +671,7 @@ describe('followBottom policy', () => {
     wrapper.append(row);
     container.append(wrapper);
     const action = followBottom(container, { follow: true });
+    runSettleTail();
     const trace: Array<{
       phase: string;
       maximum: number;
@@ -980,6 +1008,7 @@ describe('followBottom policy', () => {
 
   it('restarts an idle settle tail for attribute and resize observations', () => {
     const action = followBottom(container, { follow: true });
+    runSettleTail();
     expect(animationFrames).toHaveLength(0);
 
     scrollHeight += 11;
@@ -1009,6 +1038,7 @@ describe('followBottom policy', () => {
         distances.push(state.distanceFromBottom),
     };
     const action = followBottom(container, options);
+    runSettleTail();
     action.update({ ...options, enabled: false });
 
     // Content grew while the surface was retained/disabled.
@@ -1061,6 +1091,7 @@ describe('followBottom policy', () => {
   it('abandons a pending reactivation snap when disabled before the frame', () => {
     const options = { enabled: true, follow: true };
     const action = followBottom(container, options);
+    runSettleTail();
     action.update({ ...options, enabled: false });
     scrollTop = 300;
 
@@ -1113,6 +1144,7 @@ describe('followBottom policy', () => {
 
   it('snaps synchronously on resize delivery while following', () => {
     const action = followBottom(container, { follow: true });
+    runSettleTail();
     expect(animationFrames).toHaveLength(0);
 
     // ResizeObserver delivers after layout, pre-paint, on a clean tree. The
@@ -1135,6 +1167,7 @@ describe('followBottom policy', () => {
 
   it('coalesces a burst of mutation callbacks into one deferred settle', () => {
     const action = followBottom(container, { follow: true });
+    runSettleTail();
     expect(animationFrames).toHaveLength(0);
 
     scrollHeight += 40;
@@ -1160,6 +1193,7 @@ describe('followBottom policy', () => {
       follow: false,
       onScrollStateChange: (state) => distances.push(state.distanceFromBottom),
     });
+    runSettleTail();
     distances.length = 0;
     scrollTop = 300;
     scrollHeight += 100;
@@ -1177,6 +1211,7 @@ describe('followBottom policy', () => {
 
   it('cancels a deferred observer settle on destroy', () => {
     const action = followBottom(container, { follow: true });
+    runSettleTail();
     scrollHeight += 50;
     fireMutation();
     expect(animationFrames).toHaveLength(1);
@@ -1196,6 +1231,7 @@ describe('followBottom policy', () => {
         distances.push(state.distanceFromBottom),
     };
     const action = followBottom(container, options);
+    runSettleTail();
     distances.length = 0;
     fireResize();
     expect(animationFrames).toHaveLength(1);

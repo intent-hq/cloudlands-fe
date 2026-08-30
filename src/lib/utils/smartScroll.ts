@@ -515,7 +515,10 @@ export function followBottom(container: HTMLElement, options: FollowBottomOption
     window.removeEventListener('pointercancel', handlePointerUp);
   }
 
-  attachLifecycle();
+  // Initial mount runs inside the component mount flush on a dirty tree, so
+  // the same deferred snap/report as a retained-surface re-enable applies: a
+  // synchronous scrollHeight/clientHeight read here forces layout mid-flush.
+  attachLifecycle(true);
 
   return {
     update(newOptions: FollowBottomOptions) {
