@@ -5455,6 +5455,7 @@
   "hardwareConsole_voice_openSettings_label": "설정 열기",
   "hardwareConsole_voice_transcribeFailed_error": "음성 전사에 실패했습니다",
   "hardwareConsole_voice_insertFailed_error": "전사 내용을 삽입할 수 없습니다 — 포커스된 채팅 입력창이 없습니다",
+  "hardwareConsole_voice_insertFailedCopied_error": "전사 내용을 삽입할 수 없습니다 — 대신 클립보드에 복사했습니다",
   "hardwareConsole_voice_osAuthDenied_error": "macOS가 음성 인식을 거부했습니다 — 시스템 설정 › 개인정보 보호 및 보안 › 음성 인식에서 Intent를 허용하세요",
   "hardwareConsole_voice_osUnavailable_error": "이 기기에서는 OS 받아쓰기를 사용할 수 없습니다 — 설정 › 음성 받아쓰기에서 다른 제공업체를 선택하세요",
   "hardwareConsole_actionKey_noAgents_message": "에이전트가 없습니다",

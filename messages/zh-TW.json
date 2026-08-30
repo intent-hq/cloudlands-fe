@@ -5455,6 +5455,7 @@
   "hardwareConsole_voice_openSettings_label": "開啟設定",
   "hardwareConsole_voice_transcribeFailed_error": "語音轉錄失敗",
   "hardwareConsole_voice_insertFailed_error": "無法插入轉錄文字 — 沒有聚焦的聊天輸入框",
+  "hardwareConsole_voice_insertFailedCopied_error": "無法插入轉錄文字 — 已複製到剪貼簿",
   "hardwareConsole_voice_osAuthDenied_error": "macOS 拒絕了語音辨識 — 請在系統設定 › 隱私權與安全性 › 語音辨識中允許 Intent",
   "hardwareConsole_voice_osUnavailable_error": "此裝置不支援系統聽寫 — 請在設定 › 語音聽寫中選擇其他供應商",
   "hardwareConsole_actionKey_noAgents_message": "沒有智慧體",

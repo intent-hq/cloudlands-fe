@@ -312,7 +312,14 @@
       showVoiceSetupToast();
       return;
     }
-    toggleComposerMicRecording(micContext);
+    toggleComposerMicRecording(micContext, agentId);
+  }
+
+  // Toolbar-button pattern: swallow mousedown's default action (focus) so
+  // clicking the mic never blurs the editor — the caret stays in the input
+  // across start/stop/cancel clicks. The click itself still fires.
+  function handleMicMouseDown(event: MouseEvent) {
+    event.preventDefault();
   }
 
   function handleMicEscape(event: KeyboardEvent) {
@@ -1648,6 +1655,7 @@
             variant="ghost-light"
             size="icon-sm"
             onclick={handleMicCancelTranscription}
+            onmousedown={handleMicMouseDown}
             aria-label={m.chat_richInput_micCancelTranscribing_label()}
             data-testid="composer-mic-button"
           >
@@ -1660,6 +1668,7 @@
             variant="ghost-light"
             size="icon-sm"
             onclick={handleMicClick}
+            onmousedown={handleMicMouseDown}
             aria-label={m.chat_richInput_micStop_label()}
             aria-pressed="true"
             class="text-error-foreground animate-pulse"
@@ -1675,6 +1684,7 @@
             size="icon-sm"
             {disabled}
             onclick={handleMicClick}
+            onmousedown={handleMicMouseDown}
             aria-label={m.chat_richInput_micStart_label()}
             aria-pressed="false"
             data-testid="composer-mic-button"

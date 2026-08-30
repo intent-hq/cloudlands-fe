@@ -474,6 +474,32 @@ describe('composer focus', () => {
     }
   });
 
+  it('focusAgentComposer includes the dictation source flag only when asked', async () => {
+    vi.useFakeTimers();
+    try {
+      const { focusAgentComposer } = await import('../action-key-service');
+      focusAgentComposer('a-1', { source: 'dictation' });
+      vi.advanceTimersByTime(COMPOSER_FOCUS_DELAYS_MS[COMPOSER_FOCUS_DELAYS_MS.length - 1]);
+      expect(dispatchWindowEvent).toHaveBeenCalledTimes(COMPOSER_FOCUS_DELAYS_MS.length);
+      expect(dispatchWindowEvent).toHaveBeenCalledWith('panel:focus-content', {
+        tabType: 'agent',
+        agentId: 'a-1',
+        source: 'dictation',
+      });
+
+      (dispatchWindowEvent as ReturnType<typeof vi.fn>).mockClear();
+      focusAgentComposer('a-1');
+      vi.advanceTimersByTime(COMPOSER_FOCUS_DELAYS_MS[COMPOSER_FOCUS_DELAYS_MS.length - 1]);
+      // Panel keyboard-navigation semantics untouched: no source flag.
+      expect(dispatchWindowEvent).toHaveBeenCalledWith('panel:focus-content', {
+        tabType: 'agent',
+        agentId: 'a-1',
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('new-agent press arms a one-shot composer focus fired on the next agent-tab open', async () => {
     window.history.replaceState({}, '', '/workspace/ws-1');
     vi.useFakeTimers();
