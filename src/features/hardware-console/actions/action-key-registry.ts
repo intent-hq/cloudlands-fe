@@ -3,7 +3,8 @@
  * workspace top-level agents, the global cross-workspace cycle family
  * (in-progress, attention, idle, unread, failed agents), stop agent, see
  * spec, toggle workspace sidebar tabs, new agent, new workspace, switch
- * panel layouts, push to talk (hold-capable), and none/unassigned.
+ * panel layouts, cycle open windows, push to talk (hold-capable), and
+ * none/unassigned.
  *
  * Each entry carries a label (i18n getter), an icon, an availability
  * predicate, and an execute function. Both evaluate against an
@@ -28,6 +29,7 @@ import {
   faRobot,
   faStop,
   faTableColumns,
+  faWindowMaximize,
   faWindowRestore,
 } from '@fortawesome/free-solid-svg-icons';
 import { m } from '$shared/paraglide/messages.js';
@@ -53,6 +55,7 @@ import {
   resolveEffectiveVoiceEngine,
   type EffectiveVoiceEngineInputs,
 } from '$features/voice/effective-voice-engine';
+import { isElectronPlatform } from '$lib/utils/platform-capabilities';
 import { createLogger } from '$lib/utils/client-logger';
 import { isVoiceRecordingSupported } from '../voice/voice-recorder';
 import {
@@ -79,6 +82,7 @@ import {
   type SessionAttentionPriority,
 } from './agent-cycle';
 import type { CycleScope, CycleScopeFamilyId } from './cycle-scope';
+import { cycleOpenWindows } from './window-cycle';
 
 const logger = createLogger('HardwareConsoleActionKeyRegistry');
 
@@ -619,6 +623,36 @@ export const ACTION_KEY_REGISTRY: readonly ActionKeyDefinition[] = [
         })
         .catch((error: unknown) => {
           logger.error('Failed to apply layout preset', { presetId, wsId, error });
+        });
+    },
+  },
+  {
+    id: 'cycle-open-windows',
+    get label() {
+      return m.hardwareConsole_actionKey_cycleOpenWindows_label();
+    },
+    icon: faWindowMaximize,
+    isAvailable() {
+      // Window cycling needs the Electron main process (BrowserWindow focus);
+      // web builds have no other app windows to cycle to.
+      return isElectronPlatform();
+    },
+    execute(context) {
+      // The IPC invoke lives in window-cycle.ts (not inline) so this
+      // registry — imported by Svelte components for labels/icons — stays
+      // free of bridge references per intent/no-component-async-data-fetch.
+      void cycleOpenWindows()
+        .then((result) => {
+          if (result?.cycled) {
+            context.dispatch(actionHudShown(m.hardwareConsole_actionKey_cycleOpenWindows_label()));
+          } else {
+            // One (or zero) cycleable window: nothing to switch to — say so
+            // instead of a silent no-op.
+            context.showHint(m.hardwareConsole_actionKey_noOtherOpenWindows_message());
+          }
+        })
+        .catch((error: unknown) => {
+          logger.error('Failed to cycle open windows', { error });
         });
     },
   },

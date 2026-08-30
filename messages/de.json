@@ -5447,6 +5447,8 @@
   "hardwareConsole_actionKey_newWorkspace_label": "Neuer Workspace",
   "hardwareConsole_actionKey_switchWindowLayouts_label": "Panel-Layouts wechseln",
   "hardwareConsole_actionKey_switchWindowLayouts_notApplicable_hint": "Für dieses Layout gibt es nichts anzuzeigen",
+  "hardwareConsole_actionKey_cycleOpenWindows_label": "Offene Fenster durchschalten",
+  "hardwareConsole_actionKey_noOtherOpenWindows_message": "Keine anderen offenen Fenster",
   "hardwareConsole_actionKey_pushToTalk_label": "Push-to-Talk",
   "hardwareConsole_ptt_listening_label": "Höre zu…",
   "hardwareConsole_ptt_unavailable_message": "Sprachaufnahme ist auf diesem System nicht verfügbar",

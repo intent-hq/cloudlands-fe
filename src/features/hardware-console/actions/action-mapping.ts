@@ -49,6 +49,7 @@ export const ACTION_KEY_ACTION_IDS = [
   'new-agent',
   'new-workspace',
   'switch-window-layouts',
+  'cycle-open-windows',
   'push-to-talk',
   'none',
 ] as const;
@@ -72,10 +73,10 @@ export const CODEX_MIC_LINKED_SLOT = 5;
  * Per-model default mappings on ACT06–ACT12.
  *
  * CM2 (7 discrete keys): creation/navigation actions first, then row 4
- * (ACT10–ACT12, Settings-graphic keys 2/3/4) = push-to-talk, in-progress
+ * (ACT10–ACT12, Settings-graphic keys 2/3/4) = push-to-talk, open-window
  * cycling, unread cycling; `cycle-workspace-agents`,
- * `cycle-attention-agents`, `stop-agent`, and `toggle-sidebar-tabs` ship
- * unassigned (all stay assignable).
+ * `cycle-in-progress-agents`, `cycle-attention-agents`, `stop-agent`, and
+ * `toggle-sidebar-tabs` ship unassigned (all stay assignable).
  *
  * Codex Micro (6 printed caps): row 3 = lightning (ACT06), checkmark
  * (ACT07), x-mark (ACT08), branching (ACT09); row 4 = the linked 2U Mic
@@ -89,7 +90,7 @@ export const DEFAULT_ACTION_MAPPINGS: Record<HardwareDeviceModel, readonly Actio
     'see-spec',
     'switch-window-layouts',
     'push-to-talk',
-    'cycle-in-progress-agents',
+    'cycle-open-windows',
     'cycle-unread-agents',
   ],
   'codex-micro': [
@@ -147,11 +148,27 @@ export const PRE_PTT_CM2_DEFAULT_ACTION_MAPPING: readonly ActionKeyActionId[] = 
   'cycle-unread-agents',
 ];
 
+/**
+ * CM2 defaults before open-window cycling landed on slot 5 (ACT11) — that
+ * slot still carried `cycle-in-progress-agents`. Used only by the one-shot
+ * hydration migration below.
+ */
+export const PRE_WINDOW_CYCLE_CM2_DEFAULT_ACTION_MAPPING: readonly ActionKeyActionId[] = [
+  'new-workspace',
+  'new-agent',
+  'see-spec',
+  'switch-window-layouts',
+  'push-to-talk',
+  'cycle-in-progress-agents',
+  'cycle-unread-agents',
+];
+
 /** Every prior CM2 default generation the migration recognizes. */
 const PRIOR_CM2_DEFAULT_ACTION_MAPPINGS: readonly (readonly ActionKeyActionId[])[] = [
   LEGACY_CM2_DEFAULT_ACTION_MAPPING,
   PREVIOUS_CM2_DEFAULT_ACTION_MAPPING,
   PRE_PTT_CM2_DEFAULT_ACTION_MAPPING,
+  PRE_WINDOW_CYCLE_CM2_DEFAULT_ACTION_MAPPING,
 ];
 
 /**
