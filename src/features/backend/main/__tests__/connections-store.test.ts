@@ -997,6 +997,20 @@ describe('connections-store', () => {
     expect((await store.list())[1].updateSupported).toBe(false);
   });
 
+  it('setUpdateSupported(null) clears a previously-stored flag back to unknown', async () => {
+    const store = await import('../connections-store');
+    const rec = await store.add(sampleConn);
+
+    // A daemon replaced by one too old to report the field must not keep
+    // the stale true: a conclusive flagless response clears to unknown.
+    await expect(store.setUpdateSupported(rec.id, true)).resolves.toBe(true);
+    await expect(store.setUpdateSupported(rec.id, null)).resolves.toBe(true);
+    expect((await store.list())[1].updateSupported).toBeNull();
+
+    // Already-unknown (absent or null) is a no-op — no write, no broadcast.
+    await expect(store.setUpdateSupported(rec.id, null)).resolves.toBe(false);
+  });
+
   it('setUpdateSupported is a no-op for an unknown id (fail-soft)', async () => {
     const store = await import('../connections-store');
     await store.add(sampleConn);

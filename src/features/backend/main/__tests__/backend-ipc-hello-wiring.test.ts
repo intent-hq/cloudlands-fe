@@ -633,24 +633,28 @@ describe('backend.ipc remote updateSupported capture on hello', () => {
     expect(mockSetUpdateSupported).not.toHaveBeenCalled();
   });
 
-  it('leaves the stored flag as-is when system.status omits updateSupported (older daemon)', async () => {
+  it('clears the stored flag to null when system.status omits updateSupported (older daemon)', async () => {
     systemStatus.value = { status: 'ok' }; // no updateSupported field
     const { connectBackendClient, disconnectBackendClient } = await import('../backend.ipc');
     await connectBackendClient('conn-remote');
     const poolCtor = ctorOptions[ctorOptions.length - 1];
     const onHelloResult = poolCtor.onHelloResult as (result: unknown) => void;
 
+    // A successful flagless response is a conclusive "unknown" — a
+    // previously-persisted true must not survive a daemon replaced by one
+    // too old to report the field.
     onHelloResult({ server: { version: '0.9.0' } });
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    expect(mockSetUpdateSupported).not.toHaveBeenCalled();
+    await vi.waitFor(() => {
+      expect(mockSetUpdateSupported).toHaveBeenCalledWith('conn-remote', null);
+    });
 
-    // A malformed (non-boolean) field is ignored the same way.
+    // A malformed (non-boolean) field clears the same way.
+    mockSetUpdateSupported.mockClear();
     systemStatus.value = { updateSupported: 'yes' };
     onHelloResult({ server: { version: '0.9.0' } });
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    expect(mockSetUpdateSupported).not.toHaveBeenCalled();
+    await vi.waitFor(() => {
+      expect(mockSetUpdateSupported).toHaveBeenCalledWith('conn-remote', null);
+    });
 
     disconnectBackendClient('conn-remote');
   });

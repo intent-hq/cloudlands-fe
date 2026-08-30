@@ -829,19 +829,23 @@ export async function setDaemonVersion(id: string, version: string): Promise<boo
 
 /**
  * Persist whether the remote daemon reports self-update support
- * (`updateSupported` from its `system.status`). Returns `true` when the
- * stored value actually changed so the caller can broadcast the refreshed
+ * (`updateSupported` from its `system.status`). `null` clears the flag back
+ * to "unknown" — used when a successful `system.status` lacks the field (the
+ * daemon was replaced/downgraded to one too old to report it), so a stale
+ * `true` never survives a conclusive flagless response. Returns `true` when
+ * the stored value actually changed so the caller can broadcast the refreshed
  * list. A no-op for an unknown id (fail-soft: the flag only gates a UI
  * affordance, never a hard requirement). Like {@link setDaemonVersion}, this
  * is per-machine observational state: it never bumps the LWW clock
  * (`updatedAt`) and never notifies keychain sync.
  */
-export async function setUpdateSupported(id: string, supported: boolean): Promise<boolean> {
+export async function setUpdateSupported(id: string, supported: boolean | null): Promise<boolean> {
   return mutate(async (state) => {
     const conn = state.connections.find((c) => c.id === id);
     if (!conn) return false; // unknown id: nothing to update
     // Unchanged flag (the common every-reconnect case): skip the write.
-    if (conn.updateSupported === supported) return false;
+    // Absent and null both mean "unknown" — normalize before comparing.
+    if ((conn.updateSupported ?? null) === supported) return false;
     conn.updateSupported = supported;
     await writeState(state);
     return true;

@@ -1052,7 +1052,7 @@ async function captureRemoteHostname(id: string): Promise<void> {
 /**
  * Pull the `updateSupported` flag out of a `system.status` result. Returns
  * `null` when the field is absent or malformed (a daemon too old to report
- * it) so callers keep the stored value as "unknown".
+ * it) so callers persist "unknown" for a conclusive-but-flagless response.
  */
 function extractUpdateSupported(result: unknown): boolean | null {
   if (result && typeof result === 'object') {
@@ -1068,13 +1068,14 @@ function extractUpdateSupported(result: unknown): boolean | null {
  * record, following the `captureRemoteHostname` capture pattern. Runs on
  * every (re)connect hello so a daemon upgrade/downgrade (or a supervision
  * change) refreshes the stored flag; the renderer gates the Update affordance
- * on it. Fire-and-forget/fail-soft by design: any failure (unreachable,
- * method unknown, malformed result, store write error) is swallowed with a
- * warn and the stored value stays as-is ("unknown" until first captured).
- * An absent field (older daemon) is also left as-is rather than persisted as
- * `false` — unknown and unsupported are distinct states. Results that arrive
- * after the backend's client was disposed are discarded (monorepo#2221).
- * Never called for the local entry.
+ * on it. A SUCCESSFUL response lacking a boolean field (a daemon too old to
+ * report it — e.g. the machine's daemon was replaced/downgraded) is a
+ * conclusive "unknown" and clears any previously-stored flag to `null`, so a
+ * stale `true` never keeps offering Update against a daemon whose capability
+ * is no longer known. Only a FAILED request (unreachable, method unknown,
+ * store write error) is fail-soft: swallowed with a warn, stored value kept
+ * as-is. Results that arrive after the backend's client was disposed are
+ * discarded (monorepo#2221). Never called for the local entry.
  */
 async function captureRemoteUpdateSupported(id: string): Promise<void> {
   try {
@@ -1085,7 +1086,7 @@ async function captureRemoteUpdateSupported(id: string): Promise<void> {
     const supported = extractUpdateSupported(result);
     // Drop the result when this backend's client changed mid-flight — the
     // snapshot client may have answered just before its disposal.
-    if (supported !== null && backendClients.get(id) === client) {
+    if (backendClients.get(id) === client) {
       const changed = await connectionsStore.setUpdateSupported(id, supported);
       if (changed) await broadcastConnectionsChanged();
     }

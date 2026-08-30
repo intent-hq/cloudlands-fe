@@ -283,17 +283,19 @@ interface DaemonBehindTracker {
 
 /**
  * Toast the window's own backend (`windowBackendId`) when it is a connected
- * remote whose daemon is behind the app's pin, once per (id, daemonVersion)
- * while it stays connected. Other backends' connections are skipped entirely
- * (not tracked either), so a window never announces a daemon it isn't bound
- * to and the tracker semantics cover the window's backend only. An id only
- * counts as
+ * remote whose daemon is behind the app's pin, once per
+ * (id, daemonVersion, updateSupported) while it stays connected. Other
+ * backends' connections are skipped entirely (not tracked either), so a
+ * window never announces a daemon it isn't bound to and the tracker semantics
+ * cover the window's backend only. An id only counts as
  * evaluated when the check was conclusive (`daemonVersion`, `pinnedVersion`,
  * and `updateSupported` all present) — the daemon-version and updateSupported
  * captures on connect are fire-and-forget, so the 'connected' broadcast can
  * precede the value-bearing ones; deferring keeps those follow-up broadcasts
- * counting as the transition, and a version refresh re-evaluates (the per-id
- * toast id updates in place rather than stacking). Re-broadcasts of an
+ * counting as the transition, and a version OR flag refresh re-evaluates (the
+ * per-id toast id updates in place rather than stacking) — so a daemon whose
+ * flag flips false→true at an unchanged version still gets its toast.
+ * Re-broadcasts of an
  * unchanged pool stay silent; a disconnect clears the id so a reconnect
  * announces again. Daemons that report `updateSupported: false` are evaluated
  * but never toasted (the Update affordance is gated on explicit support —
@@ -320,10 +322,13 @@ function* announceDaemonsBehindPin(
     // The updateSupported capture is fire-and-forget like the version
     // capture: unknown (absent/null) is inconclusive, so the flag-bearing
     // follow-up broadcast still counts as the transition. An explicit
-    // `false` IS conclusive — evaluated but suppressed below.
+    // `false` IS conclusive — evaluated but suppressed below. The flag is
+    // part of the evaluated value so a false→true refresh at an unchanged
+    // daemonVersion re-evaluates (and toasts) like a version refresh.
     if (conn.updateSupported == null) continue;
-    evaluated.set(conn.id, daemonVersion);
-    if (previous.get(conn.id) === daemonVersion) continue;
+    const evaluatedValue = `${daemonVersion}|${conn.updateSupported}`;
+    evaluated.set(conn.id, evaluatedValue);
+    if (previous.get(conn.id) === evaluatedValue) continue;
     if (!canRequestDeviceUpdate(conn, connectedIds, pinnedVersion)) continue;
     yield* call(showDaemonBehindPinToast, conn, daemonVersion, pinnedVersion, () => {
       const action = updateBackendRequested(conn.id);

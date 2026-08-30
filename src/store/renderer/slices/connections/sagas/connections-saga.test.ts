@@ -827,6 +827,29 @@ describe('connectionsSaga', () => {
       await run.task.toPromise();
     });
 
+    it('toasts when the flag refreshes false→true at an unchanged daemonVersion', async () => {
+      const run = start();
+      await settle();
+
+      // A stale/conclusive false is evaluated but suppressed.
+      changed([LOCAL, { ...BEHIND, updateSupported: false }], [BEHIND.id], '0.10.0');
+      await settle();
+      expect(toast.warning).not.toHaveBeenCalled();
+
+      // The fire-and-forget capture then flips the flag with the SAME
+      // daemonVersion: the refresh must re-evaluate and toast exactly once.
+      changed([LOCAL, BEHIND], [BEHIND.id], '0.10.0');
+      await vi.waitFor(() => expect(toast.warning).toHaveBeenCalledTimes(1));
+
+      // Unchanged re-broadcast after the toast: silent.
+      changed([LOCAL, BEHIND], [BEHIND.id], '0.10.0');
+      await settle();
+      expect(toast.warning).toHaveBeenCalledTimes(1);
+
+      run.task.cancel();
+      await run.task.toPromise();
+    });
+
     it('toasts on the flag-bearing follow-up when the connect broadcast precedes the updateSupported capture', async () => {
       const run = start();
       await settle();
