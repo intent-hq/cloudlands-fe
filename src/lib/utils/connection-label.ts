@@ -1,7 +1,10 @@
 /**
- * Display label for a remote connection: prefer its configured name, with
- * captured hostname and raw address retained as legacy fallbacks. The local
- * entry is labeled elsewhere.
+ * Display label for a remote connection: the Name (`label`) wins outright.
+ * The main-process store defaults an uncustomized Name to the backend pretty
+ * hostname on capture, so post-migration records carry the pretty name in
+ * `label` itself. For unmigrated records (never reconnected since), a label
+ * equal to the `host:port` address still defers to the captured hostname,
+ * then falls back to the raw address. The local entry is labeled elsewhere.
  */
 export function formatConnectionLabel(conn: {
   hostname?: string | null;

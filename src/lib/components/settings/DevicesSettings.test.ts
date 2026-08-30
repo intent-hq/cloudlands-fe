@@ -186,10 +186,31 @@ describe('DevicesSettings', () => {
 
     await openAction('Edit', 'Clement’s Mac Studio');
 
-    // The Name field edits the user-configured label — the captured pretty
-    // hostname never leaks into (or overwrites) the stored label.
+    // The Name field always edits the raw stored label. For an unmigrated
+    // record (never reconnected since pretty-name defaulting landed) that is
+    // still the address — the store migrates it on the next hostname capture.
     expect((screen.getByRole('textbox', { name: 'Name' }) as HTMLInputElement).value).toBe(
       '10.0.0.2:5181',
+    );
+  });
+
+  it('shows the migrated pretty name in the row and the edit form', async () => {
+    mocks.connections = [
+      local,
+      { ...remote, label: 'Clement’s Mac Studio', hostname: 'Clement’s Mac Studio' },
+    ];
+    render(DevicesSettings);
+
+    expect(screen.getByText('Clement’s Mac Studio')).toBeTruthy();
+    expect(screen.queryByText('10.0.0.2:5181')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Actions for Clement’s Mac Studio' })).toBeTruthy();
+
+    await openAction('Edit', 'Clement’s Mac Studio');
+
+    // Post-migration the stored label IS the pretty name, so the Name field
+    // shows it directly.
+    expect((screen.getByRole('textbox', { name: 'Name' }) as HTMLInputElement).value).toBe(
+      'Clement’s Mac Studio',
     );
   });
 

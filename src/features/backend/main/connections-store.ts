@@ -606,7 +606,16 @@ export async function updateMetadata(
       return { conn, changed: false };
     }
     const previous = { ...conn, hosts: conn.hosts ? [...conn.hosts] : undefined };
-    conn.label = label;
+    // An identity change clears the captured hostname below. When the
+    // submitted label was itself auto-captured (equal to the previous address
+    // or the hostname being cleared — see setHostname), reset it to the NEW
+    // address default: that keeps it recognizably uncustomized so the next
+    // connect's capture migrates it to the (possibly different) machine's
+    // pretty name, instead of freezing the stale name as if user-given.
+    const labelAutoCaptured =
+      label === `${conn.host.trim()}:${conn.port}` ||
+      (conn.hostname != null && label === conn.hostname.trim());
+    conn.label = identityChanged && labelAutoCaptured ? `${nextHost}:${nextPort}` : label;
     conn.accent = metadata.accent;
     conn.host = nextHost;
     conn.port = nextPort;
@@ -663,6 +672,13 @@ export async function replaceSecret(
     conn.encToken = encryptToken(token);
     if (fingerprintKey(conn.fingerprint) !== fingerprintKey(normalizedFingerprint)) {
       conn.fingerprint = normalizedFingerprint;
+      // The cert changed, so the captured hostname may describe a different
+      // machine. A label auto-captured from it (see setHostname) resets to
+      // the address default so it stays recognizably uncustomized and the
+      // next connect re-captures the pretty name.
+      if (conn.hostname != null && conn.label.trim() === conn.hostname.trim()) {
+        conn.label = `${conn.host.trim()}:${conn.port}`;
+      }
       conn.hostname = null;
     }
     conn.updatedAt = Date.now();
@@ -718,6 +734,33 @@ export async function getDetectHosts(id: string): Promise<boolean> {
  * A no-op for an unknown id (fail-soft: hostname is a display nicety, never a
  * hard requirement). Empty/whitespace hostnames are ignored so the UI keeps its
  * `host:port` fallback rather than showing a blank label.
+ *
+ * The user-editable `label` follows the capture while it is UNCUSTOMIZED —
+ * equal (trimmed) to the record's `host:port` address (the add-form default),
+ * equal to the previously captured hostname (a label that only ever followed
+ * captures), or blank (a whitespace-only label slips past the add schema's
+ * `.min(1)` and would otherwise stay blank forever). That migrates
+ * address-named records to the pretty name on the next (re)connect and
+ * follows backend machine renames, while a label the user typed themselves
+ * is never touched. Corollary: editing the label back to exactly the address
+ * (or the current hostname) makes it uncustomized again, so the next capture
+ * overwrites it — accepted by design.
+ *
+ * Unlike the observational {@link setDaemonVersion}, both fields written here
+ * are part of the keychain-sync surface, and a label change in particular is
+ * a real user-visible edit — so any change bumps the LWW clock (`updatedAt`)
+ * and notifies sync, exactly as before. The unchanged common every-connect
+ * case still skips the write so a stale record cannot win over a newer
+ * remote edit. The stamp is forced strictly past the record's current clock
+ * (the store's usual `Math.max(now, previous + 1)` guard): the first capture
+ * routinely lands in the same millisecond as `add`, and reconciliation treats
+ * equal live clocks as in-sync — an un-bumped stamp would keep the migrated
+ * label from propagating to a device still holding the address label.
+ * Trade-off: because the migration is an AUTOMATIC write that bumps the
+ * clock, it can out-clock a manual rename made on another machine shortly
+ * before but not yet synced — that rename then loses the LWW reconcile. A
+ * one-shot-per-rename window, accepted by the spec decision that label
+ * migrations are real syncable edits.
  */
 export async function setHostname(id: string, hostname: string): Promise<void> {
   const trimmed = hostname.trim();
@@ -725,12 +768,19 @@ export async function setHostname(id: string, hostname: string): Promise<void> {
   const changed = await mutate(async (state) => {
     const conn = state.connections.find((c) => c.id === id);
     if (!conn) return false; // unknown id: nothing to label
-    // Unchanged hostname (the common every-connect case): skip the write so
-    // the LWW clock is not artificially bumped, which would let this stale
-    // record win over a newer remote edit in keychain sync.
-    if (conn.hostname === trimmed) return false;
+    const label = conn.label.trim();
+    const uncustomized =
+      label === '' ||
+      label === `${conn.host.trim()}:${conn.port}` ||
+      (conn.hostname != null && label === conn.hostname.trim());
+    const nextLabel = uncustomized ? trimmed : conn.label;
+    // Unchanged hostname AND label (the common every-connect case): skip the
+    // write so the LWW clock is not artificially bumped, which would let this
+    // stale record win over a newer remote edit in keychain sync.
+    if (conn.hostname === trimmed && nextLabel === conn.label) return false;
     conn.hostname = trimmed;
-    conn.updatedAt = Date.now();
+    conn.label = nextLabel;
+    conn.updatedAt = Math.max(Date.now(), (conn.updatedAt ?? 0) + 1);
     await writeState(state);
     return true;
   });
