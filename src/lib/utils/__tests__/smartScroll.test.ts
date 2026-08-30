@@ -455,6 +455,9 @@ describe('followBottom policy', () => {
   });
 
   it('defers the initial mount snap and layout reads to an animation frame', () => {
+    // Start the viewport away from the bottom so the deferred path must
+    // actually snap it there — a no-op attach would leave it at 100.
+    scrollTop = 100;
     let layoutReads = 0;
     Object.defineProperty(container, 'scrollHeight', {
       configurable: true,
@@ -475,7 +478,7 @@ describe('followBottom policy', () => {
     // Initial mount runs inside the component mount flush on a dirty tree:
     // no synchronous layout read, snap deferred to the frame (pre-paint).
     expect(layoutReads).toBe(0);
-    expect(scrollTop).toBe(600);
+    expect(scrollTop).toBe(100);
     expect(animationFrames).toHaveLength(1);
 
     runSettleTail();
