@@ -29,7 +29,11 @@ function createGroup(root: HTMLElement | null): ObserverGroup {
         // because the enter-first sort below would otherwise replay a stale
         // exit AFTER the final enter and strand an on-screen row as
         // non-intersecting (permanently dehydrated: the placeholder keeps the
-        // row's height, so no boundary crossing ever corrects it).
+        // row's height, so no boundary crossing ever corrects it). Last-wins
+        // is sound because the IntersectionObserver spec guarantees same-target
+        // entries within one delivery are chronological: each "update
+        // intersection observations" step appends at most one entry per target
+        // to the queue, and steps are time-ordered.
         const latestByTarget = new Map<Element, IntersectionObserverEntry>();
         for (const entry of entries) latestByTarget.set(entry.target, entry);
         const orderedEntries = [...latestByTarget.values()].sort((a, b) => {

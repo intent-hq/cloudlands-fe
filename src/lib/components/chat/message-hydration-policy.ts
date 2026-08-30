@@ -22,6 +22,14 @@ interface MessageHydrationPolicyOptions {
 }
 
 export interface MessageHydrationPolicy {
+  /**
+   * Registers a mounted row element for visibility observation. The returned
+   * cleanup is the ONLY way a registration is released before dispose() —
+   * updateMessages() never releases registrations (ids transiently absent
+   * from the list stay observed) — so callers MUST invoke it on unmount, and
+   * boundedness relies on every observed id being a row rendered from the
+   * same composed message list.
+   */
   observe(id: string, element: Element, root: HTMLElement | null): () => void;
   setActive(active: boolean): void;
   setForced(id: string, forced: boolean): void;
