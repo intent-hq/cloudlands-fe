@@ -19,6 +19,11 @@ export const CHIEF_LAZY_MESSAGE_THRESHOLD = 10;
 // bottom do not cross the materialization boundary on every turn.
 export const FORCE_VISIBLE_TURN_COUNT = 3;
 
+// Placeholder estimate for unmeasured virtualized user rows. User prompts are
+// typically a few lines, far below the default (assistant-sized) estimate;
+// an oversized placeholder inflates the scroll extent on first paint.
+export const USER_ROW_ESTIMATED_HEIGHT = 80;
+
 export function shouldVirtualizeTurns(
   turnCount: number,
   messageCount = 0,

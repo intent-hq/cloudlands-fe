@@ -4,8 +4,12 @@
  * The input order is the composed chronological order. A displayport frontier
  * is the oldest currently adjacent row; once known, hydrated rows newer than
  * it are retained even after they leave the preload band. Only older,
- * non-user, non-forced rows may dehydrate. DOM observation and geometry stay
- * with the component; this module only reports deterministic transitions.
+ * non-user, non-forced rows may dehydrate. Every row — user rows included —
+ * starts as a placeholder so a workspace switch mounts only the displayport;
+ * user rows differ solely in that once hydrated they never dehydrate (their
+ * DOM anchors pinned-prompt tracking and prompt navigation). DOM observation
+ * and geometry stay with the component; this module only reports
+ * deterministic transitions.
  */
 
 import { observeLazyTurnVisibility } from './lazy-turn-observer';
@@ -50,10 +54,6 @@ function isUserHydrationMessage(message: HydrationMessage): boolean {
   return message.role === 'user' || message.isUser === true;
 }
 
-function shouldStartAsMessagePlaceholder(message: HydrationMessage, forced = false): boolean {
-  return !isUserHydrationMessage(message) && !forced;
-}
-
 function sortByIndex(records: Iterable<MessageRecord>): MessageRecord[] {
   return [...records].sort((a, b) => a.index - b.index);
 }
@@ -75,16 +75,24 @@ export function createMessageHydrationPolicy(
   let disposed = false;
   let active = true;
 
+  /**
+   * At most this many appended rows hydrate eagerly per update. A single send
+   * or streaming turn appends only a handful of rows, so the "sends never
+   * flash" property is unaffected; a large batch append (an inactive panel
+   * reactivating after heavy background chatter delivers the whole backlog as
+   * one append) must not mount synchronously — rows beyond the tail window
+   * stay placeholders for the observer/frontier to hydrate on demand.
+   */
+  const MAX_EAGER_APPEND_ROWS = 8;
+
   function makeRecord(message: HydrationMessage, index: number): MessageRecord {
-    const forced = false;
-    const isUser = isUserHydrationMessage(message);
     return {
       ...message,
       index,
-      isUser,
-      forced,
+      isUser: isUserHydrationMessage(message),
+      forced: false,
       isIntersecting: false,
-      hydrated: !shouldStartAsMessagePlaceholder(message, forced),
+      hydrated: false,
     };
   }
 
@@ -115,8 +123,7 @@ export function createMessageHydrationPolicy(
     const boundary = frontierIndex();
     for (const record of sortByIndex(records.values())) {
       const isAtOrNewerThanFrontier = boundary !== undefined && record.index >= boundary;
-      const shouldHydrate =
-        record.isUser || record.forced || record.isIntersecting || isAtOrNewerThanFrontier;
+      const shouldHydrate = record.forced || record.isIntersecting || isAtOrNewerThanFrontier;
       if (shouldHydrate && !record.hydrated) {
         record.hydrated = true;
         options.onHydrate?.(record.id);
@@ -194,6 +201,23 @@ export function createMessageHydrationPolicy(
       if (disposed) return;
       const previous = new Map(records);
       const nextIds = new Set(nextMessages.map((message) => message.id));
+      // Appended rows (newer than every previously known row) hydrate eagerly:
+      // a just-sent user message or a fresh streaming row must not paint as a
+      // placeholder while waiting for an intersection report. Interior
+      // insertions and older-history prepends stay placeholders. Eagerness
+      // requires a surviving previous row (lastKnownIndex >= 0): both an
+      // initial install AND a full transcript replacement (a rebound panel
+      // publishing a disjoint id set on workspace/agent switch) start fully
+      // dehydrated so only what the observer reports visible mounts. Eagerness
+      // is also capped to the trailing MAX_EAGER_APPEND_ROWS of the list so a
+      // reactivation backlog (every row a background agent appended while the
+      // panel was inactive, delivered as one large append) cannot mount
+      // synchronously either.
+      let lastKnownIndex = -1;
+      nextMessages.forEach((message, index) => {
+        if (previous.has(message.id)) lastKnownIndex = index;
+      });
+      const eagerTailStart = nextMessages.length - MAX_EAGER_APPEND_ROWS;
       for (const [id, registration] of registrations) {
         if (nextIds.has(id)) continue;
         // The component owns the registration lifecycle (observe()'s cleanup
@@ -217,7 +241,12 @@ export function createMessageHydrationPolicy(
             isUser: isUserHydrationMessage(message),
           });
         } else {
-          records.set(message.id, makeRecord(message, index));
+          const record = makeRecord(message, index);
+          records.set(message.id, record);
+          if (lastKnownIndex >= 0 && index > lastKnownIndex && index >= eagerTailStart) {
+            record.hydrated = true;
+            options.onHydrate?.(record.id);
+          }
         }
       });
       for (const [id, registration] of registrations) {
