@@ -730,15 +730,18 @@ describe('connectionsSaga', () => {
 
   describe('daemon-behind-pin toast on connect', () => {
     const BEHIND = { ...REMOTE, daemonVersion: '0.9.0' };
+    // The toast is scoped to the window's own backend, so the simulated
+    // window is bound to the behind remote unless a test overrides it.
     const changed = (
       connections: ConnectionRecord[],
       connectedIds: string[],
       pinnedVersion?: string,
+      windowBackendId: string = BEHIND.id,
     ) =>
       callbacks[CONNECTIONS_CHANGED_EVENT]!({
         connections,
         activeId: LOCAL.id,
-        windowBackendId: LOCAL.id,
+        windowBackendId,
         connectedIds,
         ...(pinnedVersion !== undefined ? { pinnedVersion } : {}),
       });
@@ -813,7 +816,7 @@ describe('connectionsSaga', () => {
           return {
             connections: [LOCAL, BEHIND],
             activeId: LOCAL.id,
-            windowBackendId: LOCAL.id,
+            windowBackendId: BEHIND.id,
             connectedIds: [BEHIND.id],
             pinnedVersion: '0.10.0',
           };
@@ -840,11 +843,13 @@ describe('connectionsSaga', () => {
       const newer = { ...REMOTE, id: 'remote-new', daemonVersion: '0.11.0' };
       const unknown = { ...REMOTE, id: 'remote-unk', daemonVersion: null };
       const notConnected = { ...REMOTE, id: 'remote-off', daemonVersion: '0.9.0' };
-      changed(
-        [LOCAL, equal, newer, unknown, notConnected],
-        [equal.id, newer.id, unknown.id],
-        '0.10.0',
-      );
+      const pool = [LOCAL, equal, newer, unknown, notConnected];
+      const connectedIds = [equal.id, newer.id, unknown.id];
+      // One broadcast per window-backend binding: each candidate is evaluated
+      // as the window's own backend and must still stay silent.
+      for (const own of [LOCAL.id, equal.id, newer.id, unknown.id, notConnected.id]) {
+        changed(pool, connectedIds, '0.10.0', own);
+      }
       await settle();
       expect(toast.warning).not.toHaveBeenCalled();
 
@@ -852,6 +857,32 @@ describe('connectionsSaga', () => {
       changed([LOCAL, BEHIND], [BEHIND.id]);
       await settle();
       expect(toast.warning).not.toHaveBeenCalled();
+
+      run.task.cancel();
+      await run.task.toPromise();
+    });
+
+    it("never toasts a behind daemon that is not the window's own backend", async () => {
+      const run = start();
+      await settle();
+
+      // Window bound to the local backend: another backend's behind daemon
+      // is not this window's to announce.
+      changed([LOCAL, BEHIND], [BEHIND.id], '0.10.0', LOCAL.id);
+      await settle();
+      expect(toast.warning).not.toHaveBeenCalled();
+
+      // Window bound to a different remote: same silence.
+      const other = { ...REMOTE, id: 'remote-2', daemonVersion: '0.10.0' };
+      changed([LOCAL, BEHIND, other], [BEHIND.id, other.id], '0.10.0', other.id);
+      await settle();
+      expect(toast.warning).not.toHaveBeenCalled();
+
+      // The skipped backend was never marked evaluated: the window that owns
+      // it still announces on its own broadcast.
+      changed([LOCAL, BEHIND], [BEHIND.id], '0.10.0', BEHIND.id);
+      await vi.waitFor(() => expect(toast.warning).toHaveBeenCalledTimes(1));
+      expect(toast.warning.mock.calls[0]![1].id).toBe(`connections-daemon-behind-${BEHIND.id}`);
 
       run.task.cancel();
       await run.task.toPromise();
