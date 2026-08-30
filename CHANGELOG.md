@@ -4,6 +4,13 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.116.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.115.0...v2.116.0) (2026-08-30)
+
+
+### 🚀 Features
+
+* support slash skill commands in prompt composer ([#1811](https://github.com/intent-hq/cloudlands-fe/issues/1811)) ([c82649f](https://github.com/intent-hq/cloudlands-fe/commit/c82649fc74937b320c55cd79de256d284a116554))
+
 ## [2.115.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.114.0...v2.115.0) (2026-08-30)
 
 
