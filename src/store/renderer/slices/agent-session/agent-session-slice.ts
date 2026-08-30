@@ -1068,6 +1068,21 @@ export const agentSessionDismissQuestionsRequested = createAsyncAction<
   void
 >('agentSessions/dismissQuestions', 'agentSessions/dismissQuestionsRequested');
 
+/**
+ * Saga-owned pending-proposal resolution trigger (`agent.resolveProposal`,
+ * PROTOCOL §5.5). Success reconciles the proposal-lifecycle slice
+ * (`proposalResolutionReconciled`); failure surfaces a toast and leaves the
+ * proposal pending.
+ */
+export const agentProposalResolveRequested = createAsyncAction<
+  [
+    agentId: string,
+    wsId: string,
+    request: { proposalId: string; outcome: 'applied' | 'dismissed'; detail?: string },
+  ],
+  void
+>('agentSessions/resolveProposal', 'agentSessions/resolveProposalRequested');
+
 /** Saga-owned agent launch side effect trigger. Resolves with the created session. */
 export const agentSessionLaunchAgentRequested = createAsyncAction<
   [wsId: string, config: AgentSessionLaunchConfig, options?: AgentSessionLaunchOptions],

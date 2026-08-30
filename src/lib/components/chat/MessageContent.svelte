@@ -80,6 +80,12 @@
     applySettingsProposal,
     undoSettingsProposal,
   } from './proposals/settings-proposal-actions';
+  import {
+    classifyPendingProposalRefs,
+    classifyProposalResolutions,
+    proposalTranscriptDisposition,
+  } from './proposals/pending-proposals';
+  import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-session-selectors';
 
   import { createLogger } from '$lib/utils/client-logger';
   import { fly } from 'svelte/transition';
@@ -126,6 +132,41 @@
     mergeHydratedContent(content || [], messageId, $hydratedBlocks$),
   );
 
+  // Proposal transcript reconciliation (PROTOCOL §5.5): while a proposal's
+  // identity pends in `pendingProposals` session metadata its transcript card
+  // is stripped (the composer tray is the sole surface — question-wizard
+  // model); once in `proposalResolutions` the card renders resolved
+  // (applied/dismissed). Absent metadata (old daemon / no agentId) degrades
+  // to today's interactive transcript-only cards.
+  // svelte-ignore state_referenced_locally -- intentional initial snapshot; keyed component identity is fixed.
+  const agentSession$ = selectAgentSession(agentId);
+  const pendingProposalIds = $derived(
+    new Set(
+      classifyPendingProposalRefs($agentSession$?.metadata?.pendingProposals).map(
+        (ref) => ref.proposalId,
+      ),
+    ),
+  );
+  const proposalResolutions = $derived(
+    classifyProposalResolutions($agentSession$?.metadata?.proposalResolutions),
+  );
+
+  function proposalDisposition(
+    proposal: Proposal,
+  ): 'hidden' | 'interactive' | 'applied' | 'dismissed' {
+    return proposalTranscriptDisposition(proposal, pendingProposalIds, proposalResolutions);
+  }
+
+  function isPendingProposalBlock(block: ContentBlock): boolean {
+    const proposal = getProposalFromBlock(block);
+    return proposal !== null && proposalDisposition(proposal) === 'hidden';
+  }
+
+  function proposalResolvedOutcome(proposal: Proposal): 'applied' | 'dismissed' | null {
+    const disposition = proposalDisposition(proposal);
+    return disposition === 'applied' || disposition === 'dismissed' ? disposition : null;
+  }
+
   function hydrateImageBlock(blockId: string | undefined) {
     if (!agentId || !messageId || !blockId) return;
     appStore.dispatch(messageBlockHydrationRequested(agentId, messageId, blockId));
@@ -156,6 +197,11 @@
       // Agent Q&A questions are wizard-only: they never render in the
       // transcript (pending or resolved), so strip them here.
       if (isQuestionResourceBlock(block)) {
+        return false;
+      }
+      // Pending proposals render only in the composer tray (PROTOCOL §5.5
+      // `pendingProposals`): strip their transcript cards until resolved.
+      if (isPendingProposalBlock(block)) {
         return false;
       }
       if (block.type === 'text') {
@@ -384,9 +430,13 @@
 
   // Handlers handed to the MIME-keyed card registry when resolving a §7.1
   // resource block to its card component (ProposalCard et al.).
+  // `proposalResolvedOutcome` reads the reactive metadata at props-build time
+  // (props are rebuilt on every resolveCard call), so resolved state stays
+  // live without invalidating the registry's per-block parse memo.
   const cardHandlers = {
     onProposalApply: handleProposalApply,
     onProposalUndo: handleProposalUndo,
+    proposalResolvedOutcome,
   };
 
   /**
@@ -575,6 +625,7 @@
           neutralBorder={workspaceId === CHIEF_WORKSPACE_ID}
           onApply={handleProposalApply}
           onUndo={handleProposalUndo}
+          resolvedOutcome={proposalResolvedOutcome(proposal)}
         />
       </div>
     {/if}
@@ -710,6 +761,7 @@
                   neutralBorder={workspaceId === CHIEF_WORKSPACE_ID}
                   onApply={handleProposalApply}
                   onUndo={handleProposalUndo}
+                  resolvedOutcome={proposalResolvedOutcome(nestedProposal)}
                 />
               {/if}
             {/if}

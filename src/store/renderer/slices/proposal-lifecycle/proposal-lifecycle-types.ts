@@ -1,9 +1,18 @@
 import type { ProposalActionDetail, ProposalKind } from '$shared/types/proposal';
 import type { WorkspaceId } from '$shared/types/branded-ids';
 
-export type ProposalLifecycleStatus = 'idle' | 'applying' | 'applied' | 'undoing' | 'failed';
+export type ProposalLifecycleStatus =
+  | 'idle'
+  | 'applying'
+  | 'applied'
+  | 'undoing'
+  | 'failed'
+  // Daemon-persisted dismissal (`agent.resolveProposal` outcome 'dismissed',
+  // PROTOCOL §5.5) reconciled into local lifecycle state — the proposal never
+  // pends again and its transcript card renders the dismissed outcome.
+  | 'dismissed';
 
-export type ProposalLifecycleAction = 'apply' | 'undo';
+export type ProposalLifecycleAction = 'apply' | 'undo' | 'dismiss';
 
 // Serializable, operation-specific outputs surfaced back to the UI after a
 // proposal applies. Today only workspace.create returns anything; new kinds can

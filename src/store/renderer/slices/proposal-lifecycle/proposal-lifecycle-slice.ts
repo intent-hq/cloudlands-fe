@@ -41,6 +41,30 @@ export const proposalFailed = createAction<
   ]
 >('proposalLifecycle/proposalFailed');
 
+/**
+ * Reconcile a daemon-persisted `agent.resolveProposal` outcome (PROTOCOL
+ * §5.5) into local lifecycle state. Dispatched by the resolve-proposal
+ * mutation saga on wire success and by metadata-driven reconciliation
+ * (resolutions from other clients converging via `agent:updated`). An
+ * existing 'applied' entry is never downgraded to 'dismissed' — resolution
+ * is idempotent daemon-side and the first outcome wins.
+ */
+export const proposalResolutionReconciled = createAction<
+  [payload: { proposalId: string; outcome: 'applied' | 'dismissed'; completedAt: number }]
+>('proposalLifecycle/proposalResolutionReconciled');
+
+/**
+ * Agent-scoped lifecycle key for daemon-parity proposal identities
+ * (`applyToolCallId ?? preview.title`, PROTOCOL §5.5). Id-less proposals are
+ * title-keyed, so a global entry for "Split flaky suite" resolved on agent A
+ * would also retire agent B's identically titled, still-pending proposal.
+ * Wire reconciliations therefore key under agent + daemon id; transcript-card
+ * applies (keyed by `getProposalId`) stay global.
+ */
+export function agentScopedProposalKey(agentId: string, proposalId: string): string {
+  return `${agentId}::${proposalId}`;
+}
+
 export function pruneAppliedProposalLifecycleEntries(
   entries: ProposalLifecycleState,
   now: number,
@@ -48,7 +72,9 @@ export function pruneAppliedProposalLifecycleEntries(
   const cutoff = now - PROPOSAL_LIFECYCLE_RETENTION_MS;
   return Object.fromEntries(
     Object.entries(entries).filter(
-      ([, entry]) => entry.status === 'applied' && (entry.completedAt ?? 0) >= cutoff,
+      ([, entry]) =>
+        (entry.status === 'applied' || entry.status === 'dismissed') &&
+        (entry.completedAt ?? 0) >= cutoff,
     ),
   );
 }
@@ -99,4 +125,38 @@ proposalLifecycleReducer.with(
       lastAction,
     },
   }),
+);
+proposalLifecycleReducer.with(
+  proposalResolutionReconciled,
+  (state, { payload: [{ proposalId, outcome, completedAt }] }) => {
+    const current = state[proposalId];
+    if (current?.status === outcome) return state;
+    // First outcome wins: never downgrade a locally applied proposal to
+    // dismissed (or vice versa) — resolution is idempotent daemon-side.
+    if (current?.status === 'applied' || current?.status === 'dismissed') return state;
+    if (outcome === 'applied') {
+      return {
+        ...state,
+        [proposalId]: {
+          ...current,
+          status: 'applied',
+          error: undefined,
+          errorCode: undefined,
+          completedAt,
+          lastAction: 'apply' as const,
+        },
+      };
+    }
+    return {
+      ...state,
+      [proposalId]: {
+        ...current,
+        status: 'dismissed',
+        error: undefined,
+        errorCode: undefined,
+        completedAt,
+        lastAction: 'dismiss' as const,
+      },
+    };
+  },
 );

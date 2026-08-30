@@ -52,6 +52,11 @@ import { estimateSeekLandingStartOrdinal } from '$lib/utils/seek-landing-estimat
 import type { AgentMessage } from '$shared/types';
 import { dedupeResourceBlocks } from '$shared/types/resource-block-identity';
 import { getQuestionFromResourceBlock, type Question } from '$shared/types/question-resource';
+import {
+  classifyPendingProposalRefs,
+  proposalsOf,
+} from '$lib/components/chat/proposals/pending-proposals';
+import type { Proposal } from '$shared/types/proposal';
 import { isAgentDeletionPending } from '$features/agent/utils/pending-agent-deletions';
 import {
   appendHistoryMessages,
@@ -73,6 +78,9 @@ import {
   historyGapFillRequested,
   historySeekRequested,
   olderHistoryPageRequested,
+  pendingProposalRecoveryPruned,
+  pendingProposalRecoveryRequested,
+  pendingProposalRecoverySettled,
   pendingQuestionRecoveryCleared,
   pendingQuestionRecoveryRequested,
   pendingQuestionRecoverySettled,
@@ -121,6 +129,38 @@ function* pendingQuestionRecoveryIsCurrent(
     session?.metadata?.pendingQuestionsMessageId === messageId &&
     chat.pendingQuestionRecovery?.messageId === messageId &&
     chat.pendingQuestionRecovery.status === 'loading'
+  );
+}
+
+/** Tray projection of a recovered carrying message (never transcript state). */
+function recoveredProposals(message: AgentMessage): { proposalId: string; proposal: Proposal }[] {
+  return [...proposalsOf(message)].map(([proposalId, proposal]) => ({ proposalId, proposal }));
+}
+
+function stopsPendingProposalRecovery(
+  action: ObservedAction,
+  agentId: string,
+  messageId: string,
+): boolean {
+  if (!Array.isArray(action.payload) || action.payload[0] !== agentId) return false;
+  if (action.type === removeSession.type) return true;
+  return (
+    action.type === pendingProposalRecoveryPruned.type &&
+    Array.isArray(action.payload[1]) &&
+    !action.payload[1].includes(messageId)
+  );
+}
+
+function* pendingProposalRecoveryIsCurrent(
+  agentId: string,
+  messageId: string,
+): SagaGenerator<boolean> {
+  const session = yield* selectAgentSession.effect(agentId);
+  const chat = yield* selectChatAgentState.effect(agentId);
+  const refs = classifyPendingProposalRefs(session?.metadata?.pendingProposals);
+  return (
+    refs.some((ref) => ref.messageId === messageId) &&
+    chat.pendingProposalRecovery?.[messageId]?.status === 'loading'
   );
 }
 
@@ -261,9 +301,7 @@ function isInvalidParamsError(error: unknown): boolean {
   return candidate.rpcCode === -32602 || candidate.code === 'INVALID_PARAMS';
 }
 
-function* historySeekWorker(
-  action: ReturnType<typeof historySeekRequested>,
-): SagaGenerator<void> {
+function* historySeekWorker(action: ReturnType<typeof historySeekRequested>): SagaGenerator<void> {
   const [, agentId, targetOrdinal] = action.payload;
   if (yield* call(isAgentDeletionPending, agentId)) return;
   const chat = yield* selectChatAgentState.effect(agentId);
@@ -454,6 +492,118 @@ function* recoverPendingQuestionWorker(
 }
 
 /**
+ * Mirror of `recoverPendingQuestionWorker` for pending-proposal carrying
+ * messages outside the loaded window: one bounded `aroundMessageId` seek per
+ * requested messageId (multiple recoveries may run for one agent — proposals
+ * can span carrying messages). Same retry ladder and cancellation triggers
+ * (session removal, or a prune dropping the messageId from the tracked set).
+ */
+function* recoverPendingProposalWorker(
+  inFlight: Set<string>,
+  action: ReturnType<typeof pendingProposalRecoveryRequested>,
+): SagaGenerator<void> {
+  const [agentId, messageId] = action.payload;
+  const key = `${agentId}\u0000${messageId}`;
+  const chat = yield* selectChatAgentState.effect(agentId);
+  if (chat.pendingProposalRecovery?.[messageId]?.status !== 'loading' || inFlight.has(key)) {
+    return;
+  }
+  const resident = yield* selectAgentMessageById.effect(agentId, messageId);
+  if (resident) {
+    const proposals = recoveredProposals(resident);
+    yield* put(
+      pendingProposalRecoverySettled(
+        agentId,
+        messageId,
+        proposals.length > 0 ? 'found' : 'not-found',
+        proposals,
+      ),
+    );
+    return;
+  }
+
+  inFlight.add(key);
+  try {
+    for (let attempt = 0; attempt <= MARKED_QUESTION_RETRY_DELAYS_MS.length; attempt++) {
+      try {
+        const outcome: { page?: ConversationPage; stopped?: ObservedAction } = yield* race({
+          page: call(
+            [appClient.agents, appClient.agents.getConversation],
+            agentId,
+            MARKED_QUESTION_LIMIT,
+            undefined,
+            messageId,
+          ),
+          stopped: take((action: ObservedAction) =>
+            stopsPendingProposalRecovery(action, agentId, messageId),
+          ),
+        });
+        if (outcome.stopped || !outcome.page) {
+          yield* put(pendingProposalRecoverySettled(agentId, messageId, 'cancelled'));
+          return;
+        }
+        if (!(yield* pendingProposalRecoveryIsCurrent(agentId, messageId))) {
+          yield* put(pendingProposalRecoverySettled(agentId, messageId, 'cancelled'));
+          return;
+        }
+        const carrying = outcome.page.messages.find((message) => message.id === messageId);
+        if (!carrying) {
+          yield* put(pendingProposalRecoverySettled(agentId, messageId, 'not-found'));
+          return;
+        }
+        const proposals = recoveredProposals(carrying);
+        yield* put(
+          pendingProposalRecoverySettled(
+            agentId,
+            messageId,
+            proposals.length > 0 ? 'found' : 'not-found',
+            proposals,
+          ),
+        );
+        return;
+      } catch (error) {
+        if (isInvalidParamsError(error)) {
+          yield* put(pendingProposalRecoverySettled(agentId, messageId, 'not-found'));
+          return;
+        }
+        if (!(yield* pendingProposalRecoveryIsCurrent(agentId, messageId))) {
+          yield* put(pendingProposalRecoverySettled(agentId, messageId, 'cancelled'));
+          return;
+        }
+        const retryDelay = MARKED_QUESTION_RETRY_DELAYS_MS[attempt];
+        if (retryDelay === undefined) {
+          logger.error('Failed to recover pending proposal message after bounded retries', {
+            agentId,
+            messageId,
+            error,
+          });
+          yield* put(pendingProposalRecoverySettled(agentId, messageId, 'error'));
+          return;
+        }
+        logger.warn('Retrying pending proposal message recovery', {
+          agentId,
+          messageId,
+          attempt: attempt + 1,
+          error,
+        });
+        const { stopped }: { stopped?: ObservedAction } = yield* race({
+          elapsed: delay(retryDelay),
+          stopped: take((action: ObservedAction) =>
+            stopsPendingProposalRecovery(action, agentId, messageId),
+          ),
+        });
+        if (stopped || !(yield* pendingProposalRecoveryIsCurrent(agentId, messageId))) {
+          yield* put(pendingProposalRecoverySettled(agentId, messageId, 'cancelled'));
+          return;
+        }
+      }
+    }
+  } finally {
+    inFlight.delete(key);
+  }
+}
+
+/**
  * True when a §7.1 `resumed: false` discard landed after the caller captured
  * `epoch` (before its wire call). The discard reducer already reset the
  * fetching flags + cursors atomically with the snapshot, so a worker
@@ -503,6 +653,7 @@ function* snapshotResetWorker(
 
 export function* chatScrollbackSaga(): SagaGenerator<void> {
   const pendingQuestionRecoveries = new Set<string>();
+  const pendingProposalRecoveries = new Set<string>();
   try {
     yield* all([
       takeEvery(olderHistoryPageRequested, fetchOlderPageWorker),
@@ -513,11 +664,17 @@ export function* chatScrollbackSaga(): SagaGenerator<void> {
         recoverPendingQuestionWorker,
         pendingQuestionRecoveries,
       ),
+      takeEvery(
+        pendingProposalRecoveryRequested,
+        recoverPendingProposalWorker,
+        pendingProposalRecoveries,
+      ),
       takeEvery(removeSession, continuationResetWorker),
       takeEvery(clearHistorySegment, continuationResetWorker),
       takeEvery(chatTranscriptSnapshotApplied, snapshotResetWorker),
     ]);
   } finally {
     pendingQuestionRecoveries.clear();
+    pendingProposalRecoveries.clear();
   }
 }

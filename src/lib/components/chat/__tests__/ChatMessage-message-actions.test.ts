@@ -34,6 +34,10 @@ vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
     () => ({ subscribe: (run: (value: undefined) => void) => (run(undefined), () => {}) }),
     { select: () => undefined },
   ),
+  selectAgentSession: Object.assign(
+    () => ({ subscribe: (run: (value: undefined) => void) => (run(undefined), () => {}) }),
+    { select: () => undefined },
+  ),
 }));
 
 vi.mock('../input/SimpleRichInput.svelte', async () => ({

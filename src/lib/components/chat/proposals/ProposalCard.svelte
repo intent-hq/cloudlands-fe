@@ -24,6 +24,7 @@
   import SettingsChangeCard from './SettingsChangeCard.svelte';
   import SpecialistChangeCard from './SpecialistChangeCard.svelte';
   import { getProposalId } from './proposal-id';
+  import type { ProposalCardDraft } from './proposal-tray-storage';
   import { goto } from '$app/navigation';
   import {
     selectProposalError,
@@ -47,6 +48,27 @@
     onApply?: (detail: ProposalActionDetail) => void;
     onDiscard?: (detail: ProposalActionDetail) => void;
     onUndo?: (proposalId: string) => void;
+    /**
+     * Tray-hosted restore: transient edits (field values, bulk selections,
+     * workspace-create text edits) captured by a previous mount. Applied
+     * once at init — later changes to the prop are ignored, so the tray
+     * remounts the card (`{#key proposalId}`) to change it.
+     */
+    initialDraft?: ProposalCardDraft | null;
+    /** Reports every transient-edit change so the tray can persist it. */
+    onDraftChange?: (draft: ProposalCardDraft) => void;
+    /**
+     * Tray-hosted Dismiss: skip the local "Discarded" tombstone state so the
+     * host can route discard through its own confirm dialog + resolve flow.
+     */
+    suppressLocalDiscard?: boolean;
+    /**
+     * Daemon-persisted resolution outcome (PROTOCOL §5.5
+     * `proposalResolutions`): 'applied' renders the applied state with
+     * actions disabled, 'dismissed' the discarded tombstone — correct across
+     * reloads and clients. Null/absent keeps the card interactive.
+     */
+    resolvedOutcome?: 'applied' | 'dismissed' | null;
   }
 
   type EditorHandle = {
@@ -65,12 +87,24 @@
     onApply,
     onDiscard,
     onUndo,
+    initialDraft = null,
+    onDraftChange,
+    suppressLocalDiscard = false,
+    resolvedOutcome = null,
   }: Props = $props();
+
+  // Captured once at init (tray remounts per proposal via {#key}), so a
+  // teardown-frame prop change can never re-overlay stale edits.
+  // svelte-ignore state_referenced_locally
+  const restoredDraft = initialDraft;
 
   let rootElement = $state<HTMLElement | undefined>();
   let statusElement = $state<HTMLElement | undefined>();
   let isDismissed = $state(false);
   let fieldValues = $state<Record<string, string>>({});
+  // Settings proposals delegate field editing to SettingsChangeCard; its
+  // string-serialized enum edits stand in for `fieldValues` in the draft.
+  let settingsEditedFields = $state<Record<string, string> | null>(null);
   let selectedBulkItemIds = $state<string[]>([]);
   let editingFieldKey = $state<string | null>(null);
   let draftFieldValue = $state('');
@@ -119,7 +153,10 @@
   const isApplying = $derived($lifecycleStatus === 'applying');
   const isUndoing = $derived($lifecycleStatus === 'undoing');
   const isFailed = $derived($lifecycleStatus === 'failed');
-  const isApplied = $derived($lifecycleStatus === 'applied');
+  // Daemon-persisted resolution (resolvedOutcome) folds into the local
+  // lifecycle states so a resolved card renders identically after reload.
+  const isApplied = $derived($lifecycleStatus === 'applied' || resolvedOutcome === 'applied');
+  const showDismissed = $derived(isDismissed || resolvedOutcome === 'dismissed');
   const createdWorkspaceId = $derived($lifecycleResult?.workspaceId);
   const isWorkspaceCreated = $derived(isWorkspaceCreate && isApplied);
   const workspaceHeading = $derived(
@@ -180,13 +217,67 @@
       : 'my-2 min-w-0 w-full max-w-xl overflow-hidden rounded-(--radius-medium) border border-border bg-card shadow-(--elevation-raised)';
   });
 
+  // One-shot restored-draft overlays: consumed on the first run of the
+  // matching sync effect so a later proposal identity change (remount-less
+  // hosts) resets cleanly from the proposal itself.
+  let pendingFieldDraft = restoredDraft;
+  let pendingWorkspaceDraft = restoredDraft?.workspace ?? null;
+
   $effect(() => {
-    fieldValues = Object.fromEntries(
+    const defaults = Object.fromEntries(
       fields.map((field) => [field.key, formatValue(getFieldValue(field))]),
     );
-    selectedBulkItemIds = bulkItems
+    const defaultBulkIds = bulkItems
       .filter((item) => item.selected !== false && !item.disabled)
       .map((item) => item.id);
+    if (pendingFieldDraft) {
+      const draft = pendingFieldDraft;
+      pendingFieldDraft = null;
+      const knownKeys = new Set(Object.keys(defaults));
+      const knownBulkIds = new Set(bulkItems.map((item) => item.id));
+      fieldValues = {
+        ...defaults,
+        ...Object.fromEntries(
+          Object.entries(draft.fieldValues).filter(([key]) => knownKeys.has(key)),
+        ),
+      };
+      selectedBulkItemIds =
+        bulkItems.length > 0
+          ? draft.selectedBulkItemIds.filter((id) => knownBulkIds.has(id))
+          : defaultBulkIds;
+      return;
+    }
+    fieldValues = defaults;
+    selectedBulkItemIds = defaultBulkIds;
+  });
+
+  // Report transient edits to a tray host so they survive unmount/reload.
+  // The first run only captures the initial (possibly restored) snapshot.
+  // Settings proposals report the child card's enum edits in place of the
+  // outer card's (unused) fieldValues.
+  let draftReportPrimed = false;
+  $effect(() => {
+    const snapshot: ProposalCardDraft = {
+      fieldValues: settingsProposal
+        ? { ...(settingsEditedFields ?? restoredDraft?.fieldValues ?? {}) }
+        : { ...fieldValues },
+      selectedBulkItemIds: [...selectedBulkItemIds],
+      ...(isWorkspaceCreate
+        ? {
+            workspace: {
+              title: workspaceTitle,
+              initialPrompt: workspaceInitialPrompt,
+              branch: workspaceBranch,
+              specialist: workspaceSpecialist,
+            },
+          }
+        : {}),
+    };
+    if (!draftReportPrimed) {
+      draftReportPrimed = true;
+      return;
+    }
+    onDraftChange?.(snapshot);
   });
 
   $effect(() => {
@@ -222,6 +313,18 @@
     prBranchLookupRequest = undefined;
     proposedBranchMissing = '';
     branchListDefault = '';
+    if (pendingWorkspaceDraft) {
+      const draft = pendingWorkspaceDraft;
+      pendingWorkspaceDraft = null;
+      workspaceTitle = draft.title;
+      workspaceInitialPrompt = draft.initialPrompt;
+      workspaceSpecialist = draft.specialist;
+      if (draft.branch && draft.branch !== workspaceBranch) {
+        // Restored user-chosen branch: suppress the PR-head lookup override.
+        workspaceBranch = draft.branch;
+        prBranchUserEdited = true;
+      }
+    }
   });
 
   $effect(() => {
@@ -658,7 +761,7 @@
     if (isUndoing) return m.chat_shared_undoing_label();
     if (isFailed)
       return `${m.chat_shared_actionFailed_label()}${$lifecycleError ? `: ${$lifecycleError}` : ''}`;
-    if ($lifecycleStatus === 'applied') return m.chat_shared_appliedStatus_label();
+    if (isApplied) return m.chat_shared_appliedStatus_label();
     return '';
   }
 
@@ -672,7 +775,7 @@
   function handleDiscard() {
     if (actionDisabled) return;
     const detail = buildDetail();
-    isDismissed = true;
+    if (!suppressLocalDiscard) isDismissed = true;
     onDiscard?.(detail);
     emitAction('proposaldiscard', detail);
   }
@@ -684,7 +787,7 @@
   }
 </script>
 
-{#if isDismissed}
+{#if showDismissed}
   <div
     class="type-body my-2 rounded-(--radius-medium) border border-border bg-muted/30 px-3 py-2 text-muted-foreground"
   >
@@ -692,9 +795,27 @@
     {proposal.preview.title}
   </div>
 {:else if settingsProposal}
-  <SettingsChangeCard proposal={settingsProposal} {disabled} {onApply} {onDiscard} {onUndo} />
+  <SettingsChangeCard
+    proposal={settingsProposal}
+    {disabled}
+    {onApply}
+    {onDiscard}
+    {onUndo}
+    {suppressLocalDiscard}
+    {resolvedOutcome}
+    initialEditedFields={restoredDraft?.fieldValues ?? null}
+    onEditedFieldsChange={(fields) => (settingsEditedFields = fields)}
+  />
 {:else if specialistProposal}
-  <SpecialistChangeCard proposal={specialistProposal} {disabled} {onApply} {onDiscard} {onUndo} />
+  <SpecialistChangeCard
+    proposal={specialistProposal}
+    {disabled}
+    {onApply}
+    {onDiscard}
+    {onUndo}
+    {suppressLocalDiscard}
+    {resolvedOutcome}
+  />
 {:else}
   <section
     bind:this={rootElement}

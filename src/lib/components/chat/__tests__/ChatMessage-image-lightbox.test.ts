@@ -40,6 +40,15 @@ vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
     }),
     { select: () => mockStoreMessage.value },
   ),
+  selectAgentSession: Object.assign(
+    () => ({
+      subscribe: (run: (value: undefined) => void) => {
+        run(undefined);
+        return () => {};
+      },
+    }),
+    { select: () => undefined },
+  ),
 }));
 
 import ChatMessage from '../ChatMessage.svelte';

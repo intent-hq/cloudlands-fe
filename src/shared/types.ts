@@ -1072,6 +1072,16 @@ export interface AgentProgress {
   description: string;
 }
 
+// One entry of the daemon-persisted `pendingProposals` session-metadata set
+// (PROTOCOL §5.5): the proposal's stable identity (`applyToolCallId ??
+// preview.title` — same identity as the proposal resource uri and the FE
+// lifecycle slice key) plus the id of the assistant message carrying the
+// proposal resource block.
+export interface PendingProposalRef {
+  proposalId: string;
+  messageId: string;
+}
+
 // AgentMetadata definition
 // Note: Also defined in agent.types.ts but we define it here to avoid circular dependency
 export interface AgentMetadata {
@@ -1105,6 +1115,22 @@ export interface AgentMetadata {
   // sessions, the question-bearing assistant message id while pending, and an
   // empty string after the daemon has cleared the pending set.
   pendingQuestionsMessageId?: string;
+  // Ordered pending-proposal set (PROTOCOL §5.5): one entry per unresolved
+  // lifted proposal resource block, persisted by the daemon in session
+  // metadata and served on AgentLite (`agent.list` / `agent.get`), converged
+  // via `agent:updated`. Unlike the single-slot question marker this is a
+  // SET — proposals across turns stay pending together — and it does NOT
+  // clear while the agent runs later turns: entries leave only on
+  // `agent.resolveProposal`. Absent on legacy daemons (FE degrades to
+  // transcript-only cards).
+  pendingProposals?: PendingProposalRef[];
+  // Resolved-proposal outcomes (PROTOCOL §5.5, `agent.resolveProposal`):
+  // proposalId → "applied" | "dismissed", persisted by the daemon in session
+  // metadata (capped at 100 entries, oldest evicted), served on AgentLite and
+  // converged via `agent:updated`. Drives the resolved transcript-card
+  // rendering so state agrees across reloads and clients. Absent on legacy
+  // daemons and while nothing has been resolved.
+  proposalResolutions?: Record<string, 'applied' | 'dismissed'>;
   // Per-conversation seen marker (PROTOCOL §5.5, `agent.markSeen`): id of the
   // newest message the user had seen. Persisted by the daemon in session
   // metadata, served on AgentLite / agent.getSession, converged via
@@ -1120,7 +1146,15 @@ export interface AgentMetadata {
   // per-agent unread suppression for delegated children.
   createdByAgentId?: string;
   // Allow additional properties for flexibility with proper typing
-  [key: string]: string | number | boolean | null | undefined | any[] | ContextReference[];
+  [key: string]:
+    | string
+    | number
+    | boolean
+    | null
+    | undefined
+    | any[]
+    | ContextReference[]
+    | Record<string, 'applied' | 'dismissed'>;
 }
 
 /**

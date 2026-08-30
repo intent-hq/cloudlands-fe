@@ -27,6 +27,11 @@ import ProposalCard from '../proposals/ProposalCard.svelte';
 export interface CardHandlers {
   onProposalApply: (detail: ProposalActionDetail) => void;
   onProposalUndo: (proposalId: string) => void;
+  /**
+   * Daemon-persisted resolution outcome for a proposal (PROTOCOL §5.5
+   * `proposalResolutions`); null/absent renders the card interactive.
+   */
+  proposalResolvedOutcome?: (proposal: Proposal) => 'applied' | 'dismissed' | null;
 }
 
 /**
@@ -72,6 +77,7 @@ register<Proposal>(PROPOSAL_RESOURCE_MIME_TYPE, {
     proposal,
     onApply: handlers.onProposalApply,
     onUndo: handlers.onProposalUndo,
+    resolvedOutcome: handlers.proposalResolvedOutcome?.(proposal) ?? null,
   }),
 });
 

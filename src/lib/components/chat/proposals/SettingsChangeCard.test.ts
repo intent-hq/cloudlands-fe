@@ -176,4 +176,55 @@ describe('SettingsChangeCard', () => {
 
     expect(onApply).toHaveBeenCalledWith(expect.objectContaining({ proposal: makeProposal() }));
   });
+
+  it('renders the applied state without Apply/Discard when resolvedOutcome is applied', () => {
+    render(SettingsChangeCard, {
+      props: { proposal: makeProposal(), resolvedOutcome: 'applied' },
+    });
+
+    expect(screen.queryByRole('button', { name: 'Apply' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Discard' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Undo' })).toBeTruthy();
+  });
+
+  it('renders the discarded tombstone when resolvedOutcome is dismissed', () => {
+    render(SettingsChangeCard, {
+      props: { proposal: makeProposal(), resolvedOutcome: 'dismissed' },
+    });
+
+    expect(screen.getByText(/Discarded/)).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Apply' })).toBeNull();
+  });
+
+  it('restores initialEditedFields and reports enum edits via onEditedFieldsChange', async () => {
+    const proposal = makeProposal();
+    proposal.payload = { changes: [{ path: 'theme.activePresetId', value: null }] };
+    proposal.preview.fields = [
+      { key: 'theme.activePresetId', label: 'Theme preset', before: 'dracula', after: 'Default' },
+    ];
+    const onEditedFieldsChange = vi.fn();
+    const onApply = vi.fn();
+    render(SettingsChangeCard, {
+      props: {
+        proposal,
+        onApply,
+        onEditedFieldsChange,
+        initialEditedFields: { 'theme.activePresetId': 'dracula' },
+      },
+    });
+
+    // Restored edit overrides the proposal's own value on apply.
+    await fireEvent.click(screen.getByRole('button', { name: 'Apply' }));
+    expect(onApply.mock.calls[0]?.[0].editedFields['theme.activePresetId']).toBe('dracula');
+
+    // A fresh edit reports string-serialized fields for persistence.
+    const trigger = screen.getByLabelText('Theme preset');
+    await fireEvent.keyDown(trigger, { key: 'Enter' });
+    await fireEvent.keyDown(trigger, { key: 'ArrowUp' });
+    await fireEvent.keyDown(trigger, { key: 'Enter' });
+    await waitFor(() => expect(onEditedFieldsChange).toHaveBeenCalled());
+    const reported = onEditedFieldsChange.mock.calls.at(-1)?.[0];
+    expect(typeof reported).toBe('object');
+    expect(Object.values(reported).every((value) => typeof value === 'string')).toBe(true);
+  });
 });
