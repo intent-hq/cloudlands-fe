@@ -21,7 +21,14 @@ export interface FollowBottomOptions {
   threshold?: number;
   /** Callback when follow state changes due to user interaction */
   onFollowChange?: (follow: boolean) => void;
-  /** Reports live geometry for controls outside the scroll container. */
+  /**
+   * Reports live geometry for controls outside the scroll container.
+   *
+   * While following, this can fire synchronously inside ResizeObserver
+   * delivery (see handleResizeDelivery), so it must stay layout-cheap:
+   * reads of already-clean geometry and state writes are fine, but dirtying
+   * style and then reading geometry here would force layout mid-broadcast.
+   */
   onScrollStateChange?: (state: FollowBottomState) => void;
   /** Keep the native anchor active without contributing layout height. */
   layoutNeutralBottomAnchor?: boolean;
@@ -90,7 +97,12 @@ export function followBottom(container: HTMLElement, options: FollowBottomOption
   // Chromium and Gecko (w3c/csswg-drafts#3483), so the layout-neutral form
   // keeps a 1px box and cancels it with a negative margin instead of
   // collapsing to 0px — net scrollHeight contribution stays zero while the
-  // anchor remains eligible to hold a followed viewport pinned.
+  // anchor remains eligible to hold a followed viewport pinned. Neutrality
+  // holds in flex parents (margins don't collapse) and in block containers
+  // via adjacent-margin collapsing — ChatPanel appends the anchor to its
+  // block scroll viewport, where the -1px margin collapses with the
+  // preceding sibling's bottom margin and the 1px height restores the
+  // difference.
   nativeBottomAnchor.style.cssText =
     `height:1px;${options.layoutNeutralBottomAnchor ? 'margin-top:-1px;' : ''}` +
     'overflow-anchor:auto;pointer-events:none;flex:0 0 auto;';
@@ -245,7 +257,10 @@ export function followBottom(container: HTMLElement, options: FollowBottomOption
     // geometry reads here are cheap. Snap synchronously while following:
     // deferring to a rAF (which runs in the NEXT frame from an RO callback)
     // would paint one stale-scrollTop frame per resize burst — the footer
-    // utility bar flicker under rapid streaming.
+    // utility bar flicker under rapid streaming. ("Clean" is per broadcast
+    // depth: an earlier ResizeObserver in the same broadcast that dirties
+    // style forces one bounded re-layout here; the settle tail corrects any
+    // residue.)
     if (destroyed || !enabled) return;
     if (isFollowing) {
       requestBottomSettle();

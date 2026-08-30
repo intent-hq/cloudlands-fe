@@ -441,10 +441,16 @@ describe('followBottom policy', () => {
     const anchor = container.querySelector<HTMLElement>('[data-follow-bottom-anchor]')!;
 
     // Zero-sized boxes are rejected as scroll-anchor candidates by Chromium
-    // and Gecko (w3c/csswg-drafts#3483): keep a 1px box and cancel its
-    // layout contribution with a negative margin instead.
-    expect(anchor.style.height).toBe('1px');
-    expect(anchor.style.marginTop).toBe('-1px');
+    // and Gecko (w3c/csswg-drafts#3483): the declared box must be non-zero
+    // and its margin must cancel that height exactly so the net scrollable
+    // extent is unchanged. jsdom has no layout, so assert the numeric
+    // invariant here; real-browser eligibility + neutrality is covered by
+    // bottom-anchoring.ct.spec.ts ("layout-neutral bottom anchor is a real
+    // anchor candidate with zero net scroll height").
+    const declaredHeight = Number.parseFloat(anchor.style.height);
+    const cancellingMargin = Number.parseFloat(anchor.style.marginTop);
+    expect(declaredHeight).toBeGreaterThan(0);
+    expect(declaredHeight + cancellingMargin).toBe(0);
     action.destroy();
   });
 

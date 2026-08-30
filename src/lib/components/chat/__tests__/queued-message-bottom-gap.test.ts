@@ -26,11 +26,10 @@ describe('queued-message outer bottom layout', () => {
     expect(screen.getByTestId('chat-scroll-end-marker').className).toBe(
       CHAT_SCROLL_END_MARKER_CLASS,
     );
-    // Layout-neutral anchor: 1px box (zero-sized boxes are rejected as
-    // scroll-anchor candidates) cancelled by a -1px margin.
-    const anchor = document.querySelector<HTMLElement>('[data-follow-bottom-anchor]');
-    expect(anchor?.style.height).toBe('1px');
-    expect(anchor?.style.marginTop).toBe('-1px');
+    // The layout-neutral bottom anchor coexists with the zero-size end
+    // marker; its box/margin invariant is asserted in smartScroll.test.ts
+    // and its real-browser behavior in bottom-anchoring.ct.spec.ts.
+    expect(document.querySelector('[data-follow-bottom-anchor]')).not.toBeNull();
   });
 
   it('gives the queue zero outer inset without changing the normal empty-state inset', () => {
