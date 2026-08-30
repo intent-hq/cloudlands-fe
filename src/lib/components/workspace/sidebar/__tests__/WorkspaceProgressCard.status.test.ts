@@ -335,11 +335,13 @@ describe('WorkspaceProgressCard status message', () => {
 
     const transfer = screen.getByRole('button', { name: 'Transfer/Download…' });
     const archive = screen.getByRole('button', { name: 'Archive Workspace' });
+    const menuActions = Array.from(transfer.parentElement!.querySelectorAll('button'));
+    const transferIndex = menuActions.indexOf(transfer);
+    const archiveIndex = menuActions.indexOf(archive);
 
     expect(transfer.dataset.iconName).toBe('right-left');
-    expect(
-      transfer.compareDocumentPosition(archive) & Node.DOCUMENT_POSITION_FOLLOWING,
-    ).toBeTruthy();
+    expect(transferIndex).toBeGreaterThanOrEqual(0);
+    expect(archiveIndex).toBe(transferIndex + 1);
   });
 
   it('dispatches the transfer payload and dismisses the menu', async () => {
@@ -363,14 +365,17 @@ describe('WorkspaceProgressCard status message', () => {
     const { container } = await renderProgressCard();
     const loadedWorkspace = mocks.workspaceEntity;
 
-    mocks.workspaceEntity = null as unknown as Workspace;
-    mocks.notifySelectors();
-    await tick();
-    await fireEvent.click(container.querySelector('[data-workspace-actions-trigger]')!);
+    try {
+      mocks.workspaceEntity = null as unknown as Workspace;
+      mocks.notifySelectors();
+      await tick();
+      await fireEvent.click(container.querySelector('[data-workspace-actions-trigger]')!);
 
-    expect(screen.queryByRole('button', { name: 'Transfer/Download…' })).toBeNull();
-    mocks.workspaceEntity = loadedWorkspace;
-    mocks.notifySelectors();
+      expect(screen.queryByRole('button', { name: 'Transfer/Download…' })).toBeNull();
+    } finally {
+      mocks.workspaceEntity = loadedWorkspace;
+      mocks.notifySelectors();
+    }
   });
 
   it('renders title, metadata, progress, then status like the sidebar reference', async () => {
