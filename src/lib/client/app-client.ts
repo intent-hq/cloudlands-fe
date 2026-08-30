@@ -720,6 +720,23 @@ export interface AgentsClient {
     messageId: string;
   }): Promise<MutationResult>;
   /**
+   * Resolve one pending proposal (`agent.resolveProposal`, §5.5). The daemon
+   * removes `proposalId` from the session-metadata `pendingProposals` set,
+   * persists the resolution outcome, emits `agent:updated`, and delivers a
+   * system-origin notice to the model for BOTH outcomes (applied/dismissed;
+   * `detail` rides the applied notice, e.g. the created workspace id).
+   * Idempotent on re-resolution. The Apply itself stays FE-driven — this
+   * records the outcome and notifies. A nonexistent agent or a workspace
+   * mismatch rejects (folded into `{ success: false, error }`).
+   */
+  resolveProposal(params: {
+    agentId: string;
+    workspaceId: string;
+    proposalId: string;
+    outcome: 'applied' | 'dismissed';
+    detail?: string;
+  }): Promise<MutationResult>;
+  /**
    * Advance the per-conversation seen marker (`agent.markSeen`, §5.5). The
    * daemon persists `lastSeenMessageId` in session metadata — served on
    * `AgentLite` and converging via `agent:updated`. The wire ack carries

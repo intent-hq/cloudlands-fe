@@ -11,6 +11,7 @@ import type {
   QueuedRetryRecord,
   SendMessagePayload,
   InitializeChatOptions,
+  PendingProposalRecovery,
   StreamStatusContext,
   StreamFailureCorrelation,
   TranscriptSnapshotMeta,
@@ -598,12 +599,9 @@ export const chatQueuedRetryRecordsCleared = createAction<[agentId: string]>(
  * so no drain-start event under this client's key ever promoted it).
  */
 export const chatSendFailed =
-  createAction<[
-    agentId: string,
-    error: string,
-    turnId?: string,
-    failureCorrelation?: StreamFailureCorrelation,
-  ]>('chatState/sendFailed');
+  createAction<
+    [agentId: string, error: string, turnId?: string, failureCorrelation?: StreamFailureCorrelation]
+  >('chatState/sendFailed');
 
 /**
  * `agent:queue:processing` drain-start signal (PROTOCOL §6.5): the daemon
@@ -839,6 +837,25 @@ export const pendingQuestionRecoveryCleared = createAction<[agentId: string]>(
   'chatState/pendingQuestionRecoveryCleared',
 );
 
+/** Fetch one pending-proposal carrying message with a bounded targeted seek. */
+export const pendingProposalRecoveryRequested = createAction<[agentId: string, messageId: string]>(
+  'chatState/pendingProposalRecoveryRequested',
+);
+
+export const pendingProposalRecoverySettled = createAction<
+  [
+    agentId: string,
+    messageId: string,
+    outcome: 'found' | 'not-found' | 'error' | 'cancelled',
+    proposals?: NonNullable<PendingProposalRecovery['proposals']>,
+  ]
+>('chatState/pendingProposalRecoverySettled');
+
+/** Drop recovery entries for messages the metadata refs no longer name. */
+export const pendingProposalRecoveryPruned = createAction<
+  [agentId: string, keepMessageIds: string[]]
+>('chatState/pendingProposalRecoveryPruned');
+
 /** A scrollback page fetch entered flight for the given direction. */
 export const scrollbackFetchStarted = createAction<
   [agentId: string, direction: 'older' | 'gap' | 'seek']
@@ -1013,34 +1030,37 @@ chatStateReducer.with(
 chatStateReducer.with(chatQueueProcessingReceived, (state, { payload: [agentId, turnId] }) =>
   reduceQueueProcessing(state, agentId, turnId),
 );
-chatStateReducer.with(chatSendFailed, (state, { payload: [agentId, error, turnId, failureCorrelation] }) => {
-  // monorepo#1057: when the failure names a turn whose record is still
-  // PARKED (e.g. an agent.retry redrive that failed again — its requeued
-  // entry has a new id, so no processing event promoted it under this
-  // client's key), pair the banner with the exact record.
-  // An already-promoted or unknown turnId leaves the slot untouched —
-  // `lastAttemptedMessage` already holds the right payload (or none).
-  const agent = state.byAgentId[agentId];
-  const key = agent ? findParkedRecordKey(agent, turnId) : null;
-  if (agent && key !== null) {
-    const remaining = { ...agent.queuedRetryRecords };
-    delete remaining[key];
+chatStateReducer.with(
+  chatSendFailed,
+  (state, { payload: [agentId, error, turnId, failureCorrelation] }) => {
+    // monorepo#1057: when the failure names a turn whose record is still
+    // PARKED (e.g. an agent.retry redrive that failed again — its requeued
+    // entry has a new id, so no processing event promoted it under this
+    // client's key), pair the banner with the exact record.
+    // An already-promoted or unknown turnId leaves the slot untouched —
+    // `lastAttemptedMessage` already holds the right payload (or none).
+    const agent = state.byAgentId[agentId];
+    const key = agent ? findParkedRecordKey(agent, turnId) : null;
+    if (agent && key !== null) {
+      const remaining = { ...agent.queuedRetryRecords };
+      delete remaining[key];
+      return updateAgent(state, agentId, {
+        streamingStartTime: null,
+        error,
+        failureCorrelation,
+        modelUnavailable: null,
+        lastAttemptedMessage: agent.queuedRetryRecords[key].record,
+        queuedRetryRecords: remaining,
+      });
+    }
     return updateAgent(state, agentId, {
       streamingStartTime: null,
       error,
       failureCorrelation,
       modelUnavailable: null,
-      lastAttemptedMessage: agent.queuedRetryRecords[key].record,
-      queuedRetryRecords: remaining,
     });
-  }
-  return updateAgent(state, agentId, {
-    streamingStartTime: null,
-    error,
-    failureCorrelation,
-    modelUnavailable: null,
-  });
-});
+  },
+);
 chatStateReducer.with(chatInterrupted, (state, { payload: [agentId] }) =>
   updateAgent(state, agentId, {
     streamingStartTime: null,
@@ -1371,6 +1391,50 @@ chatStateReducer.with(pendingQuestionRecoveryCleared, (state, { payload: [agentI
   if (!agent?.pendingQuestionRecovery) return state;
   return updateAgent(state, agentId, { pendingQuestionRecovery: undefined });
 });
+chatStateReducer.with(
+  pendingProposalRecoveryRequested,
+  (state, { payload: [agentId, messageId] }) => {
+    const existing = getAgent(state, agentId).pendingProposalRecovery;
+    if (existing?.[messageId]) return state;
+    return updateAgent(state, agentId, {
+      agentId,
+      pendingProposalRecovery: { ...existing, [messageId]: { status: 'loading' } },
+    });
+  },
+);
+chatStateReducer.with(
+  pendingProposalRecoverySettled,
+  (state, { payload: [agentId, messageId, outcome, proposals] }) => {
+    const existing = state.byAgentId[agentId]?.pendingProposalRecovery;
+    if (!existing?.[messageId]) return state;
+    if (outcome === 'cancelled') {
+      const { [messageId]: _dropped, ...rest } = existing;
+      return updateAgent(state, agentId, { pendingProposalRecovery: rest });
+    }
+    return updateAgent(state, agentId, {
+      pendingProposalRecovery: {
+        ...existing,
+        [messageId]: {
+          status: outcome,
+          ...(outcome === 'found' ? { proposals: proposals ?? [] } : {}),
+        },
+      },
+    });
+  },
+);
+chatStateReducer.with(
+  pendingProposalRecoveryPruned,
+  (state, { payload: [agentId, keepMessageIds] }) => {
+    const existing = state.byAgentId[agentId]?.pendingProposalRecovery;
+    if (!existing) return state;
+    const keep = new Set(keepMessageIds);
+    const entries = Object.entries(existing).filter(([messageId]) => keep.has(messageId));
+    if (entries.length === Object.keys(existing).length) return state;
+    return updateAgent(state, agentId, {
+      pendingProposalRecovery: entries.length > 0 ? Object.fromEntries(entries) : undefined,
+    });
+  },
+);
 chatStateReducer.with(workspaceDeleted, (state, { payload: [, agentIds] }) => {
   if (agentIds.length === 0) return state;
   let changed = false;

@@ -4666,6 +4666,7 @@
   "agent_mutation_renameFailed_error": "Failed to rename agent",
   "agent_mutation_renameSessionFailed_error": "Failed to rename agent session",
   "agent_mutation_dismissQuestionsFailed_error": "Failed to dismiss questions",
+  "agent_mutation_resolveProposalFailed_error": "Failed to resolve proposal",
   "agent_mutation_stopFailed_error": "Failed to stop agent",
   "agent_mutation_cancelSubscriptionsFailed_error": "Failed to cancel",
   "agent_mutation_deleteFailed_error": "Failed to delete agent",

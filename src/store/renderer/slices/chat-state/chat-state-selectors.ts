@@ -159,6 +159,11 @@ export const selectPendingQuestionRecovery = store.createSelector(
   (state, agentId: string) => getAgentChatState(state, agentId).pendingQuestionRecovery,
 );
 
+/** Per-messageId results of the pending-proposal carrying-message recoveries. */
+export const selectPendingProposalRecovery = store.createSelector(
+  (state, agentId: string) => getAgentChatState(state, agentId).pendingProposalRecovery,
+);
+
 /**
  * Switch-back transcript reveal gate: true while the viewed conversation is
  * awaiting a fresh seq-0 snapshot from its (re)opening standing subscription.

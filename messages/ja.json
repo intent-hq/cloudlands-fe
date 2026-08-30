@@ -4665,6 +4665,7 @@
   "agent_mutation_renameFailed_error": "エージェントの名前を変更できませんでした",
   "agent_mutation_renameSessionFailed_error": "エージェントセッションの名前を変更できませんでした",
   "agent_mutation_dismissQuestionsFailed_error": "質問を閉じられませんでした",
+  "agent_mutation_resolveProposalFailed_error": "提案を解決できませんでした",
   "agent_mutation_stopFailed_error": "エージェントを停止できませんでした",
   "agent_mutation_cancelSubscriptionsFailed_error": "キャンセルできませんでした",
   "agent_mutation_deleteFailed_error": "エージェントを削除できませんでした",

@@ -4665,6 +4665,7 @@
   "agent_mutation_renameFailed_error": "重命名智能体失败",
   "agent_mutation_renameSessionFailed_error": "重命名智能体会话失败",
   "agent_mutation_dismissQuestionsFailed_error": "关闭问题失败",
+  "agent_mutation_resolveProposalFailed_error": "无法解决提案",
   "agent_mutation_stopFailed_error": "停止智能体失败",
   "agent_mutation_cancelSubscriptionsFailed_error": "取消失败",
   "agent_mutation_deleteFailed_error": "删除智能体失败",

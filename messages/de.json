@@ -4665,6 +4665,7 @@
   "agent_mutation_renameFailed_error": "Agent konnte nicht umbenannt werden",
   "agent_mutation_renameSessionFailed_error": "Agenten-Sitzung konnte nicht umbenannt werden",
   "agent_mutation_dismissQuestionsFailed_error": "Fragen konnten nicht verworfen werden",
+  "agent_mutation_resolveProposalFailed_error": "Vorschlag konnte nicht aufgelöst werden",
   "agent_mutation_stopFailed_error": "Agent konnte nicht gestoppt werden",
   "agent_mutation_cancelSubscriptionsFailed_error": "Abbrechen fehlgeschlagen",
   "agent_mutation_deleteFailed_error": "Agent konnte nicht gelöscht werden",

@@ -28,7 +28,12 @@ import {
   refreshWorkspaceSubscriptionEntriesRequested,
   removeWatchedAgent,
 } from '../../agent-subscription-ui/agent-subscription-ui-slice';
-import { agentSessionDismissQuestionsRequested, updateSession } from '../agent-session-slice';
+import {
+  agentProposalResolveRequested,
+  agentSessionDismissQuestionsRequested,
+  updateSession,
+} from '../agent-session-slice';
+import { proposalResolutionReconciled } from '../../proposal-lifecycle/proposal-lifecycle-slice';
 import {
   activateAgentRequested,
   deleteAgentSessionRequested,
@@ -143,9 +148,7 @@ function* restoreRetiredAgent(
     yield* put(action.success(undefined as never));
     settled = true;
   } catch (error) {
-    yield* put(
-      action.failure(mutationError(error, m.agent_mutation_restoreRetiredFailed_error())),
-    );
+    yield* put(action.failure(mutationError(error, m.agent_mutation_restoreRetiredFailed_error())));
     settled = true;
   } finally {
     if (!settled && (yield* cancelled())) {
@@ -339,6 +342,44 @@ function* dismissQuestions(
   } finally {
     if (!settled && (yield* cancelled())) {
       yield* put(action.failure(new Error(m.agent_mutation_dismissQuestionsFailed_error())));
+    }
+  }
+}
+
+function* resolveProposal(
+  action: ReturnType<typeof agentProposalResolveRequested>,
+): SagaGenerator<void> {
+  const [agentId, workspaceId, request] = action.payload;
+  let settled = false;
+  try {
+    const result = yield* call([appClient.agents, appClient.agents.resolveProposal], {
+      agentId,
+      workspaceId,
+      proposalId: request.proposalId,
+      outcome: request.outcome,
+      ...(request.detail !== undefined ? { detail: request.detail } : {}),
+    });
+    if (!result.success)
+      throw new Error(result.error || m.agent_mutation_resolveProposalFailed_error());
+    // Reconcile local lifecycle immediately — the tray retires the box
+    // without waiting for the `agent:updated` metadata convergence.
+    yield* put(
+      proposalResolutionReconciled({
+        proposalId: request.proposalId,
+        outcome: request.outcome,
+        completedAt: Date.now(),
+      }),
+    );
+    yield* put(action.success(undefined as never));
+    settled = true;
+  } catch (error) {
+    const failure = mutationError(error, m.agent_mutation_resolveProposalFailed_error());
+    yield* call(showError, failure.message);
+    yield* put(action.failure(failure));
+    settled = true;
+  } finally {
+    if (!settled && (yield* cancelled())) {
+      yield* put(action.failure(new Error(m.agent_mutation_resolveProposalFailed_error())));
     }
   }
 }
@@ -542,6 +583,7 @@ export function* agentMutationSaga(): SagaGenerator<void> {
     takeEvery(renameAgentSessionRequested, renameAgent),
     takeEvery(stopAgentSessionRequested, stopAgent),
     takeEvery(agentSessionDismissQuestionsRequested, dismissQuestions),
+    takeEvery(agentProposalResolveRequested, resolveProposal),
     takeEvery(cancelAgentSubscriptionsRequested, cancelAgentSubscriptions),
     takeEvery(deleteAgentWithUndoRequested, deleteWithUndo),
     takeEvery(undoAgentDeletionRequested, undoDeletion),

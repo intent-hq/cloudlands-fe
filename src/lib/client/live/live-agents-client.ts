@@ -97,10 +97,7 @@ function normalizeAgent(raw: Record<string, unknown>): AgentSession {
 }
 
 export class LiveAgentsClient implements AgentsClient {
-  async list(
-    workspaceId: string,
-    options?: { retiredOnly?: boolean },
-  ): Promise<AgentSession[]> {
+  async list(workspaceId: string, options?: { retiredOnly?: boolean }): Promise<AgentSession[]> {
     const { agents } = await this.listWithMeta(workspaceId, options);
     return agents;
   }
@@ -541,6 +538,30 @@ export class LiveAgentsClient implements AgentsClient {
       workspaceId: params.workspaceId,
       messageId: params.messageId,
     });
+  }
+  async resolveProposal(params: {
+    agentId: string;
+    workspaceId: string;
+    proposalId: string;
+    outcome: 'applied' | 'dismissed';
+    detail?: string;
+  }): Promise<MutationResult> {
+    // `agent.resolveProposal` (§5.5) takes `{ workspaceId, agentId,
+    // proposalId, outcome }` plus optional `detail` (applied-notice context,
+    // e.g. the created workspace id). `detail` is omitted entirely when unset
+    // — never an explicit `undefined` on the wire. The daemon removes the id
+    // from the `pendingProposals` metadata set, persists the resolution,
+    // emits `agent:updated` (all clients converge), and delivers the
+    // system-origin notice to the model for both outcomes. Idempotent on
+    // re-resolution.
+    const rpcParams: Record<string, unknown> = {
+      workspaceId: params.workspaceId,
+      agentId: params.agentId,
+      proposalId: params.proposalId,
+      outcome: params.outcome,
+    };
+    if (params.detail !== undefined) rpcParams.detail = params.detail;
+    return runMutation('agent.resolveProposal', rpcParams);
   }
   async markSeen(params: {
     agentId: string;
