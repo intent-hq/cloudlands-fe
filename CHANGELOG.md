@@ -4,6 +4,14 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.110.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.110.1...v2.110.2) (2026-08-30)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.8.21 ([#1875](https://github.com/intent-hq/cloudlands-fe/issues/1875)) ([8511127](https://github.com/intent-hq/cloudlands-fe/commit/8511127baf6ddf02fe7f0394783650d83f4109ee))
+* include thoughtTokens in HUD card token sum; align docs with disjoint-counter convention ([#1873](https://github.com/intent-hq/cloudlands-fe/issues/1873)) ([d92a130](https://github.com/intent-hq/cloudlands-fe/commit/d92a130cf1bf14162acb7113925982bdf0c9ac81))
+
 ## [2.110.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.110.0...v2.110.1) (2026-08-29)
 
 
