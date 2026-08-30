@@ -8,12 +8,16 @@
   import { m } from '$shared/paraglide/messages.js';
   import { SELECTABLE_CONNECTION_ACCENTS, type ConnectionRecord } from '$shared/types/connections';
   import {
+    selectConnections,
     selectConnectionsLoaded,
     selectRemoteConnections,
   } from '$store/renderer/slices/connections/connections-selectors';
   import { forgetConnectionRequested } from '$store/renderer/slices/connections/connections-slice';
   import { store as appStore } from '$store/renderer/store';
 
+  // Full ordered list (local first) drives the rows; the remote-only list
+  // keeps driving the empty state and accent cycling.
+  const connections$ = selectConnections();
   const devices$ = selectRemoteConnections();
   const loaded$ = selectConnectionsLoaded();
 
@@ -80,23 +84,26 @@
     >
       {m.settings_devices_loading_label()}
     </p>
-  {:else if $devices$.length === 0}
-    <div class="rounded-xl border border-dashed border-border bg-card p-8 text-center">
-      <p class="text-sm font-medium text-foreground">{m.settings_devices_empty_title()}</p>
-      <p class="mt-1 text-sm text-muted-foreground">{m.settings_devices_empty_description()}</p>
-    </div>
   {:else}
-    <div class="flex flex-col overflow-hidden rounded-xl bg-card divide-y divide-border">
-      {#each $devices$ as device (device.id)}
-        <DeviceRow
-          {device}
-          panelMode={activeDeviceId === device.id ? activePanel : null}
-          onOpenPanel={(panel) => openPanel(device.id, panel)}
-          onClosePanel={closePanel}
-          onRequestRemove={requestRemove}
-        />
-      {/each}
-    </div>
+    {#if $connections$.length > 0}
+      <div class="flex flex-col overflow-hidden rounded-xl bg-card divide-y divide-border">
+        {#each $connections$ as device (device.id)}
+          <DeviceRow
+            {device}
+            panelMode={activeDeviceId === device.id ? activePanel : null}
+            onOpenPanel={(panel) => openPanel(device.id, panel)}
+            onClosePanel={closePanel}
+            onRequestRemove={requestRemove}
+          />
+        {/each}
+      </div>
+    {/if}
+    {#if $devices$.length === 0}
+      <div class="rounded-xl border border-dashed border-border bg-card p-8 text-center">
+        <p class="text-sm font-medium text-foreground">{m.settings_devices_empty_title()}</p>
+        <p class="mt-1 text-sm text-muted-foreground">{m.settings_devices_empty_description()}</p>
+      </div>
+    {/if}
   {/if}
 
   <div class="flex justify-end">
