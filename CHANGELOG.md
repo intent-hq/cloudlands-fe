@@ -4,6 +4,19 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.111.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.110.2...v2.111.0) (2026-08-30)
+
+
+### 🚀 Features
+
+* default device names to the backend pretty hostname ([#1874](https://github.com/intent-hq/cloudlands-fe/issues/1874)) ([89f13d4](https://github.com/intent-hq/cloudlands-fe/commit/89f13d452e977edd7438a5496efdb2ff3e9b70fb))
+
+
+### 🐛 Bug Fixes
+
+* **chat:** replay visibility reports that arrive before hydration records exist ([#1876](https://github.com/intent-hq/cloudlands-fe/issues/1876)) ([e1d826c](https://github.com/intent-hq/cloudlands-fe/commit/e1d826cfd5ae809f99e7e86b20c3811756141bd3))
+* **connections:** scope daemon-behind-pin toast to the window's own backend ([#1879](https://github.com/intent-hq/cloudlands-fe/issues/1879)) ([3fefbbe](https://github.com/intent-hq/cloudlands-fe/commit/3fefbbee25931a719528d8b0adcd5ceb8ed8acbc))
+
 ## [2.110.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.110.1...v2.110.2) (2026-08-30)
 
 
