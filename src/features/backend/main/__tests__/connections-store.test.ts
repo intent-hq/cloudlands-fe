@@ -783,6 +783,72 @@ describe('connections-store', () => {
     expect(remote?.label).toBe('renamed.local');
   });
 
+  it('an endpoint edit resets an auto-captured label to the new address default (rename still followed)', async () => {
+    const store = await import('../connections-store');
+    const rec = await store.add({ ...sampleConn, label: '192.168.1.10:8443' });
+    await store.setHostname(rec.id, 'studio.local');
+    expect((await store.list())[1].label).toBe('studio.local');
+
+    // The edit form submits the displayed (auto-captured) label untouched
+    // alongside a new address. The hostname is cleared, so the label resets
+    // to the new address default instead of freezing the stale pretty name.
+    await store.updateMetadata(rec.id, {
+      label: 'studio.local',
+      accent: 'blue',
+      host: '10.0.0.42',
+      port: 9443,
+    });
+    let remote = (await store.list()).find((c) => c.id === rec.id);
+    expect(remote?.label).toBe('10.0.0.42:9443');
+    expect(remote?.hostname).toBeNull();
+
+    // The next connect's capture (a backend rename here) is followed.
+    await store.setHostname(rec.id, "Clement's Mac mini");
+    remote = (await store.list()).find((c) => c.id === rec.id);
+    expect(remote?.label).toBe("Clement's Mac mini");
+  });
+
+  it('an endpoint edit with a user-given label keeps it verbatim', async () => {
+    const store = await import('../connections-store');
+    const rec = await store.add(sampleConn); // label 'Studio Mac' (customized)
+    await store.setHostname(rec.id, 'studio.local');
+
+    await store.updateMetadata(rec.id, {
+      label: 'Studio Mac',
+      accent: 'blue',
+      host: '10.0.0.42',
+      port: 9443,
+    });
+    await store.setHostname(rec.id, "Clement's Mac mini");
+    const remote = (await store.list()).find((c) => c.id === rec.id);
+    expect(remote?.label).toBe('Studio Mac');
+  });
+
+  it('a certificate rotation via replaceSecret resets an auto-captured label to the address default', async () => {
+    const store = await import('../connections-store');
+    const rec = await store.add({ ...sampleConn, label: '192.168.1.10:8443' });
+    await store.setHostname(rec.id, 'studio.local');
+    expect((await store.list())[1].label).toBe('studio.local');
+
+    // A different cert may mean a different machine: the captured hostname is
+    // cleared, and the auto-captured label falls back to the address so the
+    // next connect re-captures the (possibly new) pretty name.
+    await store.replaceSecret(rec.id, 'rotated-token', 'DD:EE:FF');
+    let remote = (await store.list()).find((c) => c.id === rec.id);
+    expect(remote?.label).toBe('192.168.1.10:8443');
+    expect(remote?.hostname).toBeNull();
+
+    await store.setHostname(rec.id, 'renamed.local');
+    remote = (await store.list()).find((c) => c.id === rec.id);
+    expect(remote?.label).toBe('renamed.local');
+
+    // A user-given label survives the same rotation untouched.
+    await store.updateMetadata(rec.id, { label: 'My Mac', accent: 'blue' });
+    await store.replaceSecret(rec.id, 'rotated-again', '11:22:33');
+    remote = (await store.list()).find((c) => c.id === rec.id);
+    expect(remote?.label).toBe('My Mac');
+  });
+
   it('records default to a null daemonVersion until one is captured', async () => {
     const store = await import('../connections-store');
     const rec = await store.add(sampleConn);
@@ -995,8 +1061,15 @@ describe('connections-store keychain sync surface', () => {
       vi.setSystemTime(1_700_000_000_000);
       const store = await import('../connections-store');
       const rec = await store.add({ ...sampleConn, label: '192.168.1.10:8443' });
+      // The first capture lands in the same millisecond as add: the stamp is
+      // forced strictly past the record's clock so reconciliation (which
+      // treats equal live clocks as in-sync) propagates the migrated label
+      // to a device still holding the address label.
       await store.setHostname(rec.id, 'studio.local');
       await store.__drainWriteChainForTesting();
+      const file = path.join(tmpDir, 'backend-connections.json');
+      let parsed = JSON.parse(await fs.readFile(file, 'utf8'));
+      expect(parsed.connections[0].updatedAt).toBe(1_700_000_000_001);
 
       const listener = vi.fn();
       const unsubscribe = store.onConnectionsMutated(listener);
@@ -1006,10 +1079,9 @@ describe('connections-store keychain sync surface', () => {
       vi.setSystemTime(1_700_000_001_000);
       await store.setHostname(rec.id, 'studio.local');
       await store.__drainWriteChainForTesting();
-      const file = path.join(tmpDir, 'backend-connections.json');
-      let parsed = JSON.parse(await fs.readFile(file, 'utf8'));
+      parsed = JSON.parse(await fs.readFile(file, 'utf8'));
       expect(parsed.connections[0].label).toBe('studio.local');
-      expect(parsed.connections[0].updatedAt).toBe(1_700_000_000_000);
+      expect(parsed.connections[0].updatedAt).toBe(1_700_000_000_001);
       expect(listener).not.toHaveBeenCalled();
 
       // A rename moves both fields, bumps the clock, and notifies — the new

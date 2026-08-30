@@ -606,7 +606,16 @@ export async function updateMetadata(
       return { conn, changed: false };
     }
     const previous = { ...conn, hosts: conn.hosts ? [...conn.hosts] : undefined };
-    conn.label = label;
+    // An identity change clears the captured hostname below. When the
+    // submitted label was itself auto-captured (equal to the previous address
+    // or the hostname being cleared — see setHostname), reset it to the NEW
+    // address default: that keeps it recognizably uncustomized so the next
+    // connect's capture migrates it to the (possibly different) machine's
+    // pretty name, instead of freezing the stale name as if user-given.
+    const labelAutoCaptured =
+      label === `${conn.host.trim()}:${conn.port}` ||
+      (conn.hostname != null && label === conn.hostname.trim());
+    conn.label = identityChanged && labelAutoCaptured ? `${nextHost}:${nextPort}` : label;
     conn.accent = metadata.accent;
     conn.host = nextHost;
     conn.port = nextPort;
@@ -663,6 +672,13 @@ export async function replaceSecret(
     conn.encToken = encryptToken(token);
     if (fingerprintKey(conn.fingerprint) !== fingerprintKey(normalizedFingerprint)) {
       conn.fingerprint = normalizedFingerprint;
+      // The cert changed, so the captured hostname may describe a different
+      // machine. A label auto-captured from it (see setHostname) resets to
+      // the address default so it stays recognizably uncustomized and the
+      // next connect re-captures the pretty name.
+      if (conn.hostname != null && conn.label.trim() === conn.hostname.trim()) {
+        conn.label = `${conn.host.trim()}:${conn.port}`;
+      }
       conn.hostname = null;
     }
     conn.updatedAt = Date.now();
@@ -733,7 +749,11 @@ export async function getDetectHosts(id: string): Promise<boolean> {
  * a real user-visible edit — so any change bumps the LWW clock (`updatedAt`)
  * and notifies sync, exactly as before. The unchanged common every-connect
  * case still skips the write so a stale record cannot win over a newer
- * remote edit.
+ * remote edit. The stamp is forced strictly past the record's current clock
+ * (the store's usual `Math.max(now, previous + 1)` guard): the first capture
+ * routinely lands in the same millisecond as `add`, and reconciliation treats
+ * equal live clocks as in-sync — an un-bumped stamp would keep the migrated
+ * label from propagating to a device still holding the address label.
  */
 export async function setHostname(id: string, hostname: string): Promise<void> {
   const trimmed = hostname.trim();
@@ -752,7 +772,7 @@ export async function setHostname(id: string, hostname: string): Promise<void> {
     if (conn.hostname === trimmed && nextLabel === conn.label) return false;
     conn.hostname = trimmed;
     conn.label = nextLabel;
-    conn.updatedAt = Date.now();
+    conn.updatedAt = Math.max(Date.now(), (conn.updatedAt ?? 0) + 1);
     await writeState(state);
     return true;
   });
