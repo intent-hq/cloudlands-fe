@@ -282,8 +282,12 @@ interface DaemonBehindTracker {
 }
 
 /**
- * Toast each connected remote whose daemon is behind the app's pin, once per
- * (id, daemonVersion) while it stays connected. An id only counts as
+ * Toast the window's own backend (`windowBackendId`) when it is a connected
+ * remote whose daemon is behind the app's pin, once per (id, daemonVersion)
+ * while it stays connected. Other backends' connections are skipped entirely
+ * (not tracked either), so a window never announces a daemon it isn't bound
+ * to and the tracker semantics cover the window's backend only. An id only
+ * counts as
  * evaluated when the check was conclusive (both `daemonVersion` and
  * `pinnedVersion` present) — the daemon-version capture on connect is
  * fire-and-forget, so the 'connected' broadcast can precede the
@@ -300,12 +304,13 @@ function* announceDaemonsBehindPin(
   tracker: DaemonBehindTracker,
   updateActions: Channel<UpdateBackendAction>,
 ): SagaGenerator<void> {
-  const { connections, connectedIds, pinnedVersion } = payload;
+  const { connections, connectedIds, pinnedVersion, windowBackendId } = payload;
   // Older main process without connected info: nothing to evaluate.
   if (!connectedIds) return;
   const previous = tracker.evaluatedById;
   const evaluated = new Map<string, string>();
   for (const conn of connections) {
+    if (conn.id !== windowBackendId) continue;
     if (conn.isLocal || !connectedIds.includes(conn.id)) continue;
     const { daemonVersion } = conn;
     if (!daemonVersion || !pinnedVersion) continue;
