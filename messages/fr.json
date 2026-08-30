@@ -5455,6 +5455,7 @@
   "hardwareConsole_voice_openSettings_label": "Ouvrir les Paramètres",
   "hardwareConsole_voice_transcribeFailed_error": "Échec de la transcription vocale",
   "hardwareConsole_voice_insertFailed_error": "Impossible d'insérer la transcription — aucun compositeur de chat n'a le focus",
+  "hardwareConsole_voice_insertFailedCopied_error": "Impossible d'insérer la transcription — copiée dans le presse-papiers à la place",
   "hardwareConsole_voice_osAuthDenied_error": "macOS a refusé la reconnaissance vocale — autorisez Intent dans Réglages Système › Confidentialité et sécurité › Reconnaissance vocale",
   "hardwareConsole_voice_osUnavailable_error": "La dictée du système n'est pas disponible sur cet appareil — choisissez un autre fournisseur dans Réglages › Dictée vocale",
   "hardwareConsole_actionKey_noAgents_message": "Aucun agent",

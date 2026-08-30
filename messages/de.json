@@ -5457,6 +5457,7 @@
   "hardwareConsole_voice_openSettings_label": "Einstellungen öffnen",
   "hardwareConsole_voice_transcribeFailed_error": "Sprachtranskription fehlgeschlagen",
   "hardwareConsole_voice_insertFailed_error": "Transkript konnte nicht eingefügt werden — kein Chat-Eingabefeld fokussiert",
+  "hardwareConsole_voice_insertFailedCopied_error": "Transkript konnte nicht eingefügt werden — stattdessen in die Zwischenablage kopiert",
   "hardwareConsole_voice_osAuthDenied_error": "macOS hat die Spracherkennung verweigert — erlauben Sie Intent unter Systemeinstellungen › Datenschutz & Sicherheit › Spracherkennung",
   "hardwareConsole_voice_osUnavailable_error": "OS-Diktat ist auf diesem Gerät nicht verfügbar — wählen Sie in den Einstellungen › Sprachdiktat einen anderen Anbieter",
   "hardwareConsole_actionKey_noAgents_message": "Keine Agenten",

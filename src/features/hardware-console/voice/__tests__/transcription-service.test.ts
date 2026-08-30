@@ -688,18 +688,41 @@ describe('handleFinishedRecording', () => {
     );
   });
 
-  it('retries insertion after composer focus and toasts (with the text) when it never lands', async () => {
+  it('retries insertion after composer focus, copies to the clipboard, and toasts (with the text) when it never lands', async () => {
     const transcribe = vi.fn().mockResolvedValue(TRANSCRIBE_RESULT);
     const insertText = vi.fn().mockReturnValue(false);
+    const copyToClipboard = vi.fn().mockResolvedValue(undefined);
     vi.useFakeTimers();
     const flow = handleFinishedRecording(RECORDING, {
       transcribe,
       insertText,
       focusComposer: vi.fn(),
+      copyToClipboard,
     });
     await vi.advanceTimersByTimeAsync(1000);
     await flow;
     expect(insertText).toHaveBeenCalledTimes(2);
+    expect(copyToClipboard).toHaveBeenCalledWith(TRANSCRIBE_RESULT.text);
+    expect(toastError).toHaveBeenCalledWith(
+      m.hardwareConsole_voice_insertFailedCopied_error(),
+      expect.objectContaining({ description: TRANSCRIBE_RESULT.text }),
+    );
+  });
+
+  it('falls back to the original insert-failed toast when the clipboard write also fails', async () => {
+    const transcribe = vi.fn().mockResolvedValue(TRANSCRIBE_RESULT);
+    const insertText = vi.fn().mockReturnValue(false);
+    const copyToClipboard = vi.fn().mockRejectedValue(new Error('clipboard unavailable'));
+    vi.useFakeTimers();
+    const flow = handleFinishedRecording(RECORDING, {
+      transcribe,
+      insertText,
+      focusComposer: vi.fn(),
+      copyToClipboard,
+    });
+    await vi.advanceTimersByTimeAsync(1000);
+    await flow;
+    expect(copyToClipboard).toHaveBeenCalledWith(TRANSCRIBE_RESULT.text);
     expect(toastError).toHaveBeenCalledWith(
       m.hardwareConsole_voice_insertFailed_error(),
       expect.objectContaining({ description: TRANSCRIBE_RESULT.text }),
@@ -752,6 +775,7 @@ describe('handleFinishedRecording', () => {
   it('with autoSend, does not send when insertion never lands (transcript preserved in toast)', async () => {
     const transcribe = vi.fn().mockResolvedValue(TRANSCRIBE_RESULT);
     const sendComposer = vi.fn();
+    const copyToClipboard = vi.fn().mockResolvedValue(undefined);
     vi.useFakeTimers();
     const flow = handleFinishedRecording(
       RECORDING,
@@ -760,6 +784,7 @@ describe('handleFinishedRecording', () => {
         insertText: vi.fn().mockReturnValue(false),
         sendComposer,
         focusComposer: vi.fn(),
+        copyToClipboard,
       },
       { autoSend: true },
     );
@@ -767,7 +792,7 @@ describe('handleFinishedRecording', () => {
     await flow;
     expect(sendComposer).not.toHaveBeenCalled();
     expect(toastError).toHaveBeenCalledWith(
-      m.hardwareConsole_voice_insertFailed_error(),
+      m.hardwareConsole_voice_insertFailedCopied_error(),
       expect.objectContaining({ description: TRANSCRIBE_RESULT.text }),
     );
   });
@@ -830,10 +855,11 @@ describe('handleFinishedRecording with a prompt dictation target', () => {
     expect(sendComposer).not.toHaveBeenCalled();
   });
 
-  it('toasts (with the text) when the prompt insertion never lands', async () => {
+  it('copies to the clipboard and toasts (with the text) when the prompt insertion never lands', async () => {
     const transcribe = vi.fn().mockResolvedValue(TRANSCRIBE_RESULT);
     const insertText = vi.fn().mockReturnValue(false);
     const promptFocus = vi.fn();
+    const copyToClipboard = vi.fn().mockResolvedValue(undefined);
     setPromptDictationTarget({ focus: promptFocus });
 
     vi.useFakeTimers();
@@ -841,12 +867,14 @@ describe('handleFinishedRecording with a prompt dictation target', () => {
       transcribe,
       insertText,
       focusComposer: vi.fn(),
+      copyToClipboard,
     });
     await vi.advanceTimersByTimeAsync(1000);
     await flow;
     expect(insertText).toHaveBeenCalledTimes(2);
+    expect(copyToClipboard).toHaveBeenCalledWith(TRANSCRIBE_RESULT.text);
     expect(toastError).toHaveBeenCalledWith(
-      m.hardwareConsole_voice_insertFailed_error(),
+      m.hardwareConsole_voice_insertFailedCopied_error(),
       expect.objectContaining({ description: TRANSCRIBE_RESULT.text }),
     );
   });

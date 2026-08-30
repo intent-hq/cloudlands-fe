@@ -5457,6 +5457,7 @@
   "hardwareConsole_voice_openSettings_label": "Open Settings",
   "hardwareConsole_voice_transcribeFailed_error": "Voice transcription failed",
   "hardwareConsole_voice_insertFailed_error": "Could not insert the transcript — no chat composer is focused",
+  "hardwareConsole_voice_insertFailedCopied_error": "Could not insert the transcript — copied to the clipboard instead",
   "hardwareConsole_voice_osAuthDenied_error": "macOS denied speech recognition — allow Intent under System Settings › Privacy & Security › Speech Recognition",
   "hardwareConsole_voice_osUnavailable_error": "OS dictation is unavailable on this device — choose another provider in Settings › Voice dictation",
   "hardwareConsole_actionKey_noAgents_message": "No agents",

@@ -39,6 +39,7 @@ import {
 } from '$features/voice/effective-voice-engine';
 import { store as appStore } from '$store/renderer/store';
 import { createLogger } from '$lib/utils/client-logger';
+import { writeTextToClipboard } from '$lib/utils/clipboard';
 import { getItem, type Collection } from '@augmentcode/themis/utils/collections/collection-utils';
 import { selectCurrentWorkspaceTabId } from '$store/renderer/slices/tab-state/tab-state-selectors';
 import { m } from '$shared/paraglide/messages.js';
@@ -194,6 +195,8 @@ export interface TranscriptionDeps {
   dispatch?: (action: unknown) => void;
   /** Current workspace-tab seam. */
   getCurrentWorkspaceId?: () => string | null;
+  /** Copy text to the clipboard (insert-failed fallback). Defaults to `writeTextToClipboard`. */
+  copyToClipboard?: (text: string) => Promise<void>;
 }
 
 /** Per-run flow options (gesture-decided, orthogonal to the injected deps). */
@@ -518,11 +521,29 @@ export async function handleFinishedRecording(
       : await insertTranscript(text, targetAgentId, deps);
     if (!inserted) {
       logger.warn('Transcript insertion failed: no focused composer after retries');
+      // Fail-soft clipboard fallback so the transcript is never stranded in
+      // the toast description alone: on a successful copy the toast says so;
+      // a clipboard failure degrades to the original insert-failed toast.
+      const copyToClipboard = deps.copyToClipboard ?? writeTextToClipboard;
+      let copied = false;
+      try {
+        await copyToClipboard(text);
+        copied = true;
+      } catch (clipboardError) {
+        logger.warn('Clipboard fallback for the failed insertion also failed', {
+          error: clipboardError,
+        });
+      }
       const toast = await getToast();
-      toast.error(m.hardwareConsole_voice_insertFailed_error(), {
-        id: TRANSCRIPTION_TOAST_ID,
-        description: text,
-      });
+      toast.error(
+        copied
+          ? m.hardwareConsole_voice_insertFailedCopied_error()
+          : m.hardwareConsole_voice_insertFailed_error(),
+        {
+          id: TRANSCRIPTION_TOAST_ID,
+          description: text,
+        },
+      );
       return;
     }
     // The successful insertion leaves the composer focused, so the send

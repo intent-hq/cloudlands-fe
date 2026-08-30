@@ -5455,6 +5455,7 @@
   "hardwareConsole_voice_openSettings_label": "打开设置",
   "hardwareConsole_voice_transcribeFailed_error": "语音转写失败",
   "hardwareConsole_voice_insertFailed_error": "无法插入转写文本 — 没有聚焦的聊天输入框",
+  "hardwareConsole_voice_insertFailedCopied_error": "无法插入转写文本 — 已复制到剪贴板",
   "hardwareConsole_voice_osAuthDenied_error": "macOS 拒绝了语音识别 — 请在系统设置 › 隐私与安全性 › 语音识别中允许 Intent",
   "hardwareConsole_voice_osUnavailable_error": "此设备不支持系统听写 — 请在设置 › 语音听写中选择其他提供商",
   "hardwareConsole_actionKey_noAgents_message": "没有智能体",
