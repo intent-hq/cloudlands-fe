@@ -53,6 +53,7 @@ import {
 import type { VoiceRecordingResult } from './voice-recorder';
 import { voiceSettingsToastAction } from './voice-setup-toast';
 import { focusAgentComposer } from '../actions/action-key-service';
+import { consumeComposerDictationTarget } from './composer-dictation-target';
 import {
   consumePromptDictationTarget,
   type PromptDictationTarget,
@@ -416,6 +417,13 @@ function insertTranscriptIntoPrompt(
  * stolen from the modal, and `autoSend` is suppressed for the same reason
  * as the prompt target (intent-hq/monorepo#1461).
  *
+ * The agent-composer routing itself prefers the composer dictation target —
+ * the agentId of the composer whose mic button started the session, also
+ * consumed one-shot up front — over the store-resolved active agent, so the
+ * transcript lands in the composer that started the dictation even when
+ * `activeAgentId` points elsewhere by finish time. Hardware-PTT sessions
+ * register no capture and keep the `resolveTargetAgentId` fallback.
+ *
  * The run registers itself with the cancellation seam
  * (transcription-cancellation): `cancelActiveTranscription` — the mic
  * buttons' cancel-while-transcribing affordance — settles the in-flight
@@ -430,6 +438,9 @@ export async function handleFinishedRecording(
   const dispatch = deps.dispatch ?? ((action: unknown) => appStore.dispatch(action as never));
   const transcribe = deps.transcribe ?? transcribeWithSelectedEngine;
   const promptTarget = consumePromptDictationTarget();
+  // Consumed unconditionally (one-shot) even when a higher-precedence route
+  // wins, so this session's capture can never leak into a later session.
+  const composerAgentId = consumeComposerDictationTarget();
   // Captured synchronously at recording-finish time, before any await —
   // the modal is what holds focus right now, whatever happens later.
   const dialogFocused = isFocusInsideDialog();
@@ -440,7 +451,9 @@ export async function handleFinishedRecording(
   )();
   // A focused modal keeps the insertion: null target → focused-editable
   // caret path, never `focusAgentComposer` stealing focus from the modal.
-  const targetAgentId = dialogFocused ? null : resolveTargetAgentId(state, routeWorkspaceId);
+  const targetAgentId = dialogFocused
+    ? null
+    : (composerAgentId ?? resolveTargetAgentId(state, routeWorkspaceId));
   const context = gatherTranscriptionContext(state, routeWorkspaceId);
   // The active workspace (chief excluded, same rule as the context) opts the
   // call into workspace-vocabulary biasing on both engines (§5.41 v5.1).

@@ -312,7 +312,7 @@
       showVoiceSetupToast();
       return;
     }
-    toggleComposerMicRecording(micContext);
+    toggleComposerMicRecording(micContext, agentId);
   }
 
   function handleMicEscape(event: KeyboardEvent) {

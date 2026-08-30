@@ -105,6 +105,11 @@ import {
   setPromptDictationTarget,
 } from '../prompt-dictation-target';
 import {
+  clearComposerDictationTarget,
+  hasComposerDictationTarget,
+  setComposerDictationTarget,
+} from '../composer-dictation-target';
+import {
   cancelActiveTranscription,
   hasActiveTranscriptionSession,
   resetTranscriptionCancellation,
@@ -132,6 +137,7 @@ beforeEach(() => {
 
 afterEach(() => {
   clearPromptDictationTarget();
+  clearComposerDictationTarget();
   resetTranscriptionCancellation();
   document.body.innerHTML = '';
   vi.clearAllMocks();
@@ -966,6 +972,101 @@ describe('handleFinishedRecording with focus inside a modal dialog', () => {
 
     expect(focusComposer).toHaveBeenCalledWith('agent-a');
     expect(insertText).toHaveBeenCalledWith(TRANSCRIBE_RESULT.text);
+    expect(sendComposer).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('handleFinishedRecording with a composer dictation target', () => {
+  it('routes the transcript to the captured composer, not the active agent', async () => {
+    // The store's active agent is 'agent-a'; the mic button that started
+    // this dictation belonged to a different composer.
+    setComposerDictationTarget('agent-b');
+    const transcribe = vi.fn().mockResolvedValue(TRANSCRIBE_RESULT);
+    const insertText = vi.fn().mockReturnValue(true);
+    const focusComposer = vi.fn();
+
+    vi.useFakeTimers();
+    const flow = handleFinishedRecording(RECORDING, { transcribe, insertText, focusComposer });
+    await vi.advanceTimersByTimeAsync(1000);
+    await flow;
+
+    expect(focusComposer).toHaveBeenCalledWith('agent-b');
+    expect(insertText).toHaveBeenCalledWith(TRANSCRIBE_RESULT.text);
+    expect(toastError).not.toHaveBeenCalled();
+  });
+
+  it('consumes the capture (one-shot): the next dictation falls back to the active agent', async () => {
+    setComposerDictationTarget('agent-b');
+    const transcribe = vi.fn().mockResolvedValue(TRANSCRIBE_RESULT);
+    const insertText = vi.fn().mockReturnValue(true);
+    const focusComposer = vi.fn();
+
+    vi.useFakeTimers();
+    let flow = handleFinishedRecording(RECORDING, { transcribe, insertText, focusComposer });
+    await vi.advanceTimersByTimeAsync(1000);
+    await flow;
+    expect(hasComposerDictationTarget()).toBe(false);
+
+    flow = handleFinishedRecording(RECORDING, { transcribe, insertText, focusComposer });
+    await vi.advanceTimersByTimeAsync(1000);
+    await flow;
+    expect(focusComposer).toHaveBeenLastCalledWith('agent-a');
+  });
+
+  it('a prompt dictation target wins, and the capture is still consumed', async () => {
+    setComposerDictationTarget('agent-b');
+    const promptFocus = vi.fn();
+    setPromptDictationTarget({ focus: promptFocus });
+    const transcribe = vi.fn().mockResolvedValue(TRANSCRIBE_RESULT);
+    const insertText = vi.fn().mockReturnValue(true);
+    const focusComposer = vi.fn();
+
+    vi.useFakeTimers();
+    const flow = handleFinishedRecording(RECORDING, { transcribe, insertText, focusComposer });
+    await vi.advanceTimersByTimeAsync(1000);
+    await flow;
+
+    expect(promptFocus).toHaveBeenCalled();
+    expect(focusComposer).not.toHaveBeenCalled();
+    // Consumed even though the prompt route won — this session's capture
+    // must never leak into a later session.
+    expect(hasComposerDictationTarget()).toBe(false);
+  });
+
+  it('a focused modal dialog wins, and the capture is still consumed', async () => {
+    setComposerDictationTarget('agent-b');
+    focusEditableInDialog();
+    const transcribe = vi.fn().mockResolvedValue(TRANSCRIBE_RESULT);
+    const insertText = vi.fn().mockReturnValue(true);
+    const focusComposer = vi.fn();
+
+    vi.useFakeTimers();
+    const flow = handleFinishedRecording(RECORDING, { transcribe, insertText, focusComposer });
+    await vi.advanceTimersByTimeAsync(1000);
+    await flow;
+
+    expect(focusComposer).not.toHaveBeenCalled();
+    expect(insertText).toHaveBeenCalledWith(TRANSCRIBE_RESULT.text);
+    expect(hasComposerDictationTarget()).toBe(false);
+  });
+
+  it('with autoSend, the send lands on the captured composer', async () => {
+    setComposerDictationTarget('agent-b');
+    const transcribe = vi.fn().mockResolvedValue(TRANSCRIBE_RESULT);
+    const insertText = vi.fn().mockReturnValue(true);
+    const sendComposer = vi.fn().mockReturnValue(true);
+    const focusComposer = vi.fn();
+
+    vi.useFakeTimers();
+    const flow = handleFinishedRecording(
+      RECORDING,
+      { transcribe, insertText, sendComposer, focusComposer },
+      { autoSend: true },
+    );
+    await vi.advanceTimersByTimeAsync(1000);
+    await flow;
+
+    expect(focusComposer).toHaveBeenCalledWith('agent-b');
     expect(sendComposer).toHaveBeenCalledTimes(1);
   });
 });
