@@ -4,6 +4,7 @@
 
 import { activeStreamsTracker } from '$features/agent/services/active-streams-tracker';
 import type { BackgroundHook } from '$features/hooks/background-hooks-service';
+import { constructPrUrl } from '$lib/components/workspace/sidebar/sidebar-changes-utils';
 import { PullRequestStatus, type PullRequestInfo } from '$shared/types';
 import { selectBackgroundHooks } from '$store/renderer/slices/background-hooks/background-hooks-selectors';
 import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
@@ -72,6 +73,7 @@ export async function getActiveHookNames(workspaceId: string): Promise<string[]>
 export interface OpenPrWarningItem {
   number: number;
   title: string;
+  /** May be '' when the wire url is empty and no repo owner/name is known to construct one. */
   url: string;
   status: 'Open' | 'Draft';
   mergeConflicts?: boolean;
@@ -81,6 +83,8 @@ export interface OpenPrWarningItem {
  * Collect the workspace's unmerged PRs (status Open/Draft) from the Redux
  * workspace slice: union of `pullRequests` and `activePullRequest`, deduped
  * by url (fallback number). `isDraft: true` is reported as status Draft.
+ * A missing wire `url` is constructed from the workspace's repository
+ * owner/name (as the sidebar PR presentation does via `constructPrUrl`).
  * @param workspaceId - The workspace ID to check
  */
 export function getOpenPrItems(workspaceId: string): OpenPrWarningItem[] {
@@ -94,13 +98,15 @@ export function getOpenPrItems(workspaceId: string): OpenPrWarningItem[] {
   const items: OpenPrWarningItem[] = [];
   for (const pr of pool) {
     if (pr.status !== PullRequestStatus.Open && pr.status !== PullRequestStatus.Draft) continue;
-    const key = pr.url || String(pr.number);
+    const url =
+      pr.url || constructPrUrl(pr.number, workspace.repositoryOwner, workspace.repositoryName);
+    const key = url || String(pr.number);
     if (seen.has(key)) continue;
     seen.add(key);
     items.push({
       number: pr.number,
       title: pr.title,
-      url: pr.url,
+      url,
       status: pr.isDraft || pr.status === PullRequestStatus.Draft ? 'Draft' : 'Open',
       ...(pr.mergeConflicts !== undefined ? { mergeConflicts: pr.mergeConflicts } : {}),
     });

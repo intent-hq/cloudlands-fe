@@ -124,15 +124,19 @@
                   })}
             </p>
             <ul class="mt-2 max-h-28 space-y-1 overflow-auto pr-1">
-              {#each openPrs as pr (pr.url)}
+              {#each openPrs as pr (pr.url || pr.number)}
                 <li class="flex items-center gap-2 text-sm text-subtle">
-                  <a
-                    href={pr.url}
-                    class="min-w-0 truncate text-primary hover:underline"
-                    onclick={(event) => handlePrLinkClick(event, pr.url)}
-                  >
-                    #{pr.number} {pr.title}
-                  </a>
+                  {#if pr.url}
+                    <a
+                      href={pr.url}
+                      class="min-w-0 truncate text-primary hover:underline"
+                      onclick={(event) => handlePrLinkClick(event, pr.url)}
+                    >
+                      #{pr.number} {pr.title}
+                    </a>
+                  {:else}
+                    <span class="min-w-0 truncate">#{pr.number} {pr.title}</span>
+                  {/if}
                   <Badge variant={pr.status === 'Draft' ? 'secondary' : 'success'}>
                     {pr.status === 'Draft'
                       ? m.workspace_prSection_statusDraft_label()

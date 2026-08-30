@@ -160,6 +160,30 @@ describe('DeleteWarningDialog', () => {
     expect(clickEvent.defaultPrevented).toBe(true);
   });
 
+  it('renders a URL-less PR as plain text instead of a link', async () => {
+    const DeleteWarningDialog = (await import('../DeleteWarningDialog.svelte')).default;
+
+    render(DeleteWarningDialog, {
+      props: {
+        open: true,
+        openPrs: [
+          {
+            number: 9,
+            title: 'No url yet',
+            url: '',
+            status: 'Open' as const,
+          },
+        ],
+      },
+    });
+
+    expect(screen.queryByRole('link')).toBeNull();
+    const item = screen.getByText('#9 No url yet');
+    await fireEvent.click(item);
+
+    expect(openExternalUrlMock).not.toHaveBeenCalled();
+  });
+
   it('renders the PR section in archive mode with no agents or hooks', async () => {
     const DeleteWarningDialog = (await import('../DeleteWarningDialog.svelte')).default;
 

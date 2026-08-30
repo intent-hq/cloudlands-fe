@@ -164,7 +164,11 @@ function makePr(number: number, overrides: Partial<PullRequestInfo> = {}): PullR
   };
 }
 
-function seedWorkspace(pullRequests: PullRequestInfo[], activePullRequest?: PullRequestInfo) {
+function seedWorkspace(
+  pullRequests: PullRequestInfo[],
+  activePullRequest?: PullRequestInfo,
+  repo?: { repositoryOwner?: string; repositoryName?: string },
+) {
   appStore.dispatch(
     setWorkspaceEntity({
       id: WS,
@@ -172,6 +176,7 @@ function seedWorkspace(pullRequests: PullRequestInfo[], activePullRequest?: Pull
       status: 'Active',
       pullRequests,
       ...(activePullRequest ? { activePullRequest } : {}),
+      ...(repo ?? {}),
     } as unknown as Workspace),
   );
 }
@@ -232,5 +237,22 @@ describe('getOpenPrItems', () => {
     seedWorkspace([], makePr(6, { status: PullRequestStatus.Merged }));
 
     expect(getOpenPrItems(WS)).toEqual([]);
+  });
+
+  it('constructs the URL from the workspace repository when the wire url is empty', () => {
+    seedWorkspace([makePr(7, { url: '' })], undefined, {
+      repositoryOwner: 'acme',
+      repositoryName: 'repo',
+    });
+
+    expect(getOpenPrItems(WS)).toEqual([
+      { number: 7, title: 'PR 7', url: 'https://github.com/acme/repo/pull/7', status: 'Open' },
+    ]);
+  });
+
+  it('keeps url empty (never a broken link) when no repo owner/name is known either', () => {
+    seedWorkspace([makePr(8, { url: '' }), makePr(8, { url: '' })]);
+
+    expect(getOpenPrItems(WS)).toEqual([{ number: 8, title: 'PR 8', url: '', status: 'Open' }]);
   });
 });
