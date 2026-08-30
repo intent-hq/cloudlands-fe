@@ -360,6 +360,38 @@ describe('message hydration policy', () => {
     expect(policy.getHydratedIds()).toContain('m8');
   });
 
+  it('releases a retained registration via observe() cleanup on unmount and supports re-registration', () => {
+    const policy = createPolicy([assistant('a'), assistant('b')]);
+    const elementA = document.createElement('div');
+    const cleanupA = policy.observe('a', elementA, document.body);
+    const elements = observe(policy, ['b']);
+    const observer = MockIntersectionObserver.instances[0];
+    observer.fire([
+      { target: elementA, isIntersecting: true },
+      { target: elements.get('b')!, isIntersecting: true },
+    ]);
+    expect(policy.getHydratedIds()).toEqual(['a', 'b']);
+
+    // Transient omission retains the registration (updateMessages never
+    // releases; observe()'s cleanup is the only pre-dispose release path).
+    policy.updateMessages([assistant('b')]);
+    expect(observer.unobserve).not.toHaveBeenCalledWith(elementA);
+    expect(inspectLazyTurnObserverOwnership().targetCount).toBe(2);
+
+    // Genuine unmount: the stored cleanup releases the retained registration.
+    cleanupA();
+    expect(observer.unobserve).toHaveBeenCalledWith(elementA);
+    expect(inspectLazyTurnObserverOwnership().targetCount).toBe(1);
+
+    // The id republishes onto a fresh registration and reports visibility.
+    policy.updateMessages([assistant('a'), assistant('b')]);
+    const freshElementA = document.createElement('div');
+    policy.observe('a', freshElementA, document.body);
+    expect(inspectLazyTurnObserverOwnership().targetCount).toBe(2);
+    observer.fire([{ target: freshElementA, isIntersecting: true }]);
+    expect(policy.getHydratedIds()).toEqual(['a', 'b']);
+  });
+
   it('hydrates viewport rows after detach/re-attach when fresh reports cover only those rows', () => {
     const messages = ['a0', 'a1', 'a2', 'a3', 'a4'].map(assistant);
     const policy = createPolicy(messages);
