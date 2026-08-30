@@ -241,7 +241,7 @@ const DAEMON_BEHIND_TOAST_DURATION_MS = 10000;
 type UpdateBackendAction = ReturnType<typeof updateBackendRequested>;
 
 /**
- * Toast a remote whose daemon just connected behind the app's pinned intentd
+ * Toast a backend whose daemon just connected behind the app's pinned intentd
  * version, with an Update action. Same lazy imports as the other update
  * toasts; the per-connection toast id makes a reconnect update the existing
  * toast instead of stacking a new one.
@@ -272,7 +272,7 @@ async function showDaemonBehindPinToast(
 }
 
 /**
- * The behind-pin announcements already evaluated: connected remote id → the
+ * The behind-pin announcements already evaluated: connected backend id → the
  * `daemonVersion` that was evaluated. Saga-local mutable state shared between
  * the hydration path (startup seeding + announcement) and the
  * `connections:changed` consumer.
@@ -283,9 +283,12 @@ interface DaemonBehindTracker {
 
 /**
  * Toast the window's own backend (`windowBackendId`) when it is a connected
- * remote whose daemon is behind the app's pin, once per
- * (id, daemonVersion, updateSupported) while it stays connected. Other
- * backends' connections are skipped entirely (not tracked either), so a
+ * backend whose daemon is behind the app's pin, once per
+ * (id, daemonVersion, updateSupported) while it stays connected. The local
+ * entry is evaluated like a remote: its record only carries
+ * `daemonVersion`/`updateSupported` for an adopted external daemon over UDS,
+ * so the spawned sidecar (which carries neither) stays silent naturally.
+ * Other backends' connections are skipped entirely (not tracked either), so a
  * window never announces a daemon it isn't bound to and the tracker semantics
  * cover the window's backend only. An id only counts as
  * evaluated when the check was conclusive (`daemonVersion`, `pinnedVersion`,
@@ -316,7 +319,7 @@ function* announceDaemonsBehindPin(
   const evaluated = new Map<string, string>();
   for (const conn of connections) {
     if (conn.id !== windowBackendId) continue;
-    if (conn.isLocal || !connectedIds.includes(conn.id)) continue;
+    if (!connectedIds.includes(conn.id)) continue;
     const { daemonVersion } = conn;
     if (!daemonVersion || !pinnedVersion) continue;
     // The updateSupported capture is fire-and-forget like the version

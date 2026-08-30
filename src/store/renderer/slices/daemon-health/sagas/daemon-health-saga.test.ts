@@ -209,6 +209,76 @@ describe('daemonHealthSaga', () => {
     await task.toPromise();
   });
 
+  it('suppresses the generic mismatch toast when the behind-pin Update toast owns it', async () => {
+    invoke.mockImplementation(async (channel: string) => {
+      if (channel === BACKEND.GET_STATUS) {
+        return {
+          status: 'connected',
+          transport: {
+            mode: 'external-uds',
+            versionMismatch: true,
+            daemonVersion: '1.0.0',
+            pinnedVersion: '2.0.0',
+            updateSupported: true,
+          },
+        };
+      }
+      return undefined;
+    });
+    const { task } = startHealthSaga();
+    await settle();
+    await vi.advanceTimersByTimeAsync(0);
+    // Behind the pin with explicit update support: the actionable Update
+    // toast (connections-saga) owns this mismatch — no passive warning.
+    expect(mocks.toastWarning).not.toHaveBeenCalled();
+
+    // Suppression does not consume the latch: if the flag later reads false
+    // (e.g. after a daemon swap) the passive warning still fires once.
+    statusHandler!({
+      status: 'connected',
+      transport: {
+        mode: 'external-uds',
+        versionMismatch: true,
+        daemonVersion: '1.0.0',
+        pinnedVersion: '2.0.0',
+        updateSupported: false,
+      },
+    });
+    await settle();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(mocks.toastWarning).toHaveBeenCalledTimes(1);
+
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('keeps the passive mismatch toast for a newer-than-pin daemon even with update support', async () => {
+    invoke.mockImplementation(async (channel: string) => {
+      if (channel === BACKEND.GET_STATUS) {
+        return {
+          status: 'connected',
+          transport: {
+            mode: 'external-uds',
+            versionMismatch: true,
+            daemonVersion: '3.0.0',
+            pinnedVersion: '2.0.0',
+            updateSupported: true,
+          },
+        };
+      }
+      return undefined;
+    });
+    const { task } = startHealthSaga();
+    await settle();
+    await vi.advanceTimersByTimeAsync(0);
+    // Newer than the pin is not the behind-pin toast's case: warn passively.
+    expect(mocks.toastWarning).toHaveBeenCalledTimes(1);
+    expect(mocks.toastWarning.mock.calls[0]![0]).toContain('v3.0.0');
+
+    task.cancel();
+    await task.toPromise();
+  });
+
   it('keeps suppressing the generic mismatch toast for orphaned sidecars after the latch resets', async () => {
     invoke.mockImplementation(async (channel: string) => {
       if (channel === BACKEND.GET_STATUS) {

@@ -97,6 +97,13 @@ export interface BackendTransportInfo {
   daemonBuildCommit?: string;
   /** True when the adopted daemon's version differs from the bundled intentd.version pin (warn-only). */
   versionMismatch?: boolean;
+  /**
+   * Whether the adopted external daemon reports self-update support
+   * (`updateSupported` from `system.status`), captured after each local
+   * hello. Absent when unknown (capture pending, daemon too old to report
+   * the field) and in every non-external-uds mode.
+   */
+  updateSupported?: boolean;
   /** The bundled intentd.version pin, reported in every transport mode. */
   pinnedVersion?: string;
   /**
