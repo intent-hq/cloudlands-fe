@@ -4,6 +4,18 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.115.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.114.0...v2.115.0) (2026-08-30)
+
+
+### 🚀 Features
+
+* **connections:** upgrade support for the local external (non-sidecar) daemon ([#1896](https://github.com/intent-hq/cloudlands-fe/issues/1896)) ([b8e1bfd](https://github.com/intent-hq/cloudlands-fe/commit/b8e1bfd75dfd2e49916fc071610f94d33f05167e))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.8.26 ([#1908](https://github.com/intent-hq/cloudlands-fe/issues/1908)) ([4bfec8b](https://github.com/intent-hq/cloudlands-fe/commit/4bfec8ba980ffccfa2ab083c2942ea7a075219cb))
+
 ## [2.114.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.113.0...v2.114.0) (2026-08-30)
 
 
