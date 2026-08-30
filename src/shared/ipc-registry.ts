@@ -341,6 +341,9 @@ export const IPC_CHANNELS = {
     SET_BROWSER_FOCUSED: 'window:set-browser-focused',
     SET_FULL_SCREEN: 'window:set-full-screen',
     GET_FULL_SCREEN: 'window:get-full-screen',
+    // Renderer → main invoke: focus the next open app window (wraps; skips
+    // destroyed and HUD pop-out windows) → { cycled: boolean, windowCount: number }
+    CYCLE_FOCUS: 'window:cycle-focus',
   },
 
   // Terminal

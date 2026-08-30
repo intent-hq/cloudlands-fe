@@ -77,6 +77,7 @@ import {
 import { meetsMinimumVersion } from '../../../shared/utils/version-compare';
 import { posixSingleQuote } from '../../../shared/utils/posix-single-quote';
 import { resolveAppIconPath } from '../../../main/utils/resolve-app-icon';
+import { isHudWindow } from '../../../main/hud-window';
 import { LOCAL_CONNECTION_ID } from '../../../shared/types/connections';
 import { CHIEF_WORKSPACE_ID } from '../../../shared/types/branded-ids';
 
@@ -1044,6 +1045,32 @@ export function setupSystemIPC() {
         return { success: true, fullScreen: window ? window.isFullScreen() : false };
       },
       WINDOW_CHANNELS.GET_FULL_SCREEN,
+    ),
+  );
+
+  // Focus the next open app window in list order, wrapping around. Destroyed
+  // windows and HUD pop-outs are excluded from the cycle. Returns whether a
+  // window was focused plus the cycleable window count so the renderer can
+  // show a hint when there is nothing to cycle to.
+  ipcMain.handle(
+    WINDOW_CHANNELS.CYCLE_FOCUS,
+    createSafeValidatedHandler(
+      EmptySchema,
+      async (event) => {
+        const windows = BrowserWindow.getAllWindows().filter(
+          (w) => !w.isDestroyed() && w.isVisible() && !isHudWindow(w),
+        );
+        if (windows.length < 2) {
+          return { cycled: false, windowCount: windows.length };
+        }
+        const senderWindow = BrowserWindow.fromWebContents(event.sender);
+        const senderIndex = senderWindow ? windows.indexOf(senderWindow) : -1;
+        const next = windows[(senderIndex + 1) % windows.length];
+        if (next.isMinimized()) next.restore();
+        next.focus();
+        return { cycled: true, windowCount: windows.length };
+      },
+      WINDOW_CHANNELS.CYCLE_FOCUS,
     ),
   );
 
