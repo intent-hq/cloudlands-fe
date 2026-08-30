@@ -102,6 +102,9 @@
   let statusElement = $state<HTMLElement | undefined>();
   let isDismissed = $state(false);
   let fieldValues = $state<Record<string, string>>({});
+  // Settings proposals delegate field editing to SettingsChangeCard; its
+  // string-serialized enum edits stand in for `fieldValues` in the draft.
+  let settingsEditedFields = $state<Record<string, string> | null>(null);
   let selectedBulkItemIds = $state<string[]>([]);
   let editingFieldKey = $state<string | null>(null);
   let draftFieldValue = $state('');
@@ -250,10 +253,14 @@
 
   // Report transient edits to a tray host so they survive unmount/reload.
   // The first run only captures the initial (possibly restored) snapshot.
+  // Settings proposals report the child card's enum edits in place of the
+  // outer card's (unused) fieldValues.
   let draftReportPrimed = false;
   $effect(() => {
     const snapshot: ProposalCardDraft = {
-      fieldValues: { ...fieldValues },
+      fieldValues: settingsProposal
+        ? { ...(settingsEditedFields ?? restoredDraft?.fieldValues ?? {}) }
+        : { ...fieldValues },
       selectedBulkItemIds: [...selectedBulkItemIds],
       ...(isWorkspaceCreate
         ? {
@@ -795,6 +802,9 @@
     {onDiscard}
     {onUndo}
     {suppressLocalDiscard}
+    {resolvedOutcome}
+    initialEditedFields={restoredDraft?.fieldValues ?? null}
+    onEditedFieldsChange={(fields) => (settingsEditedFields = fields)}
   />
 {:else if specialistProposal}
   <SpecialistChangeCard
@@ -804,6 +814,7 @@
     {onDiscard}
     {onUndo}
     {suppressLocalDiscard}
+    {resolvedOutcome}
   />
 {:else}
   <section

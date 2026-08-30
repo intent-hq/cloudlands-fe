@@ -57,7 +57,10 @@ import {
   bulkUpsertSessions,
   updateSession,
 } from '../agent-session-slice';
-import { proposalResolutionReconciled } from '../../proposal-lifecycle/proposal-lifecycle-slice';
+import {
+  agentScopedProposalKey,
+  proposalResolutionReconciled,
+} from '../../proposal-lifecycle/proposal-lifecycle-slice';
 import { AGENT_DELETION_TOMBSTONE_TTL_MS, agentMutationSaga } from './agent-mutation-saga';
 
 const WS = 'ws-mutation';
@@ -347,7 +350,12 @@ describe('agentMutationSaga', () => {
       (candidate) => candidate.type === proposalResolutionReconciled.type,
     );
     expect(reconciled).toHaveLength(1);
-    expect(reconciled[0].payload[0]).toMatchObject({ proposalId: 'toolu-1', outcome: 'dismissed' });
+    // Reconciled under the agent-scoped key: daemon ids fall back to
+    // preview.title, which can collide across agents.
+    expect(reconciled[0].payload[0]).toMatchObject({
+      proposalId: agentScopedProposalKey(A1, 'toolu-1'),
+      outcome: 'dismissed',
+    });
     expect(mocks.error).not.toHaveBeenCalled();
     await stop(task);
   });

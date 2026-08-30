@@ -201,6 +201,7 @@
   } from './proposals/settings-proposal-actions';
   import { applyWorkspaceProposal } from '$store/renderer/slices/workspace-operations/workspace-operations-slice';
   import { selectProposalLifecycleMap } from '$store/renderer/slices/proposal-lifecycle/proposal-lifecycle-selectors';
+  import { agentScopedProposalKey } from '$store/renderer/slices/proposal-lifecycle/proposal-lifecycle-slice';
   import type { ProposalActionDetail } from '$shared/types/proposal';
   import {
     initialWizardCollapsed,
@@ -1195,18 +1196,33 @@
     for (const ref of refs) {
       if (proposalResolveSent.has(ref.proposalId)) continue;
       const localId = trayProposalIdentities.get(ref.proposalId);
-      const applied =
-        lifecycle[ref.proposalId]?.status === 'applied' ||
-        (localId !== undefined && lifecycle[localId]?.status === 'applied');
-      if (!applied) continue;
+      const scopedEntry = lifecycle[agentScopedProposalKey(agentId, ref.proposalId)];
+      const localEntry = localId !== undefined ? lifecycle[localId] : undefined;
+      const appliedEntry =
+        scopedEntry?.status === 'applied'
+          ? scopedEntry
+          : localEntry?.status === 'applied'
+            ? localEntry
+            : undefined;
+      if (!appliedEntry) continue;
       proposalResolveSent.add(ref.proposalId);
       clearTrayDraft(agentId, ref.proposalId);
-      appStore.dispatch(
-        agentProposalResolveRequested(agentId, wsId, {
-          proposalId: ref.proposalId,
-          outcome: 'applied',
-        }),
-      );
+      // Workspace-create applies carry the created workspace id in the
+      // lifecycle result; forward it as the resolution detail so the
+      // daemon's applied notice gives the model the created-workspace
+      // context (PROTOCOL §5.5).
+      const createdWorkspaceId = appliedEntry.result?.workspaceId;
+      // i18n-ignore (wire detail appended to the model notice, not UI copy)
+      const detail = createdWorkspaceId ? `Created workspace ${createdWorkspaceId}.` : undefined;
+      const action = agentProposalResolveRequested(agentId, wsId, {
+        proposalId: ref.proposalId,
+        outcome: 'applied',
+        ...(detail ? { detail } : {}),
+      });
+      appStore.dispatch(action);
+      // A wire failure (middleware toasts) drops the sent mark so a later
+      // pass retries the resolution — mirrors the dismiss path.
+      action.promise.catch(() => proposalResolveSent.delete(ref.proposalId));
     }
   });
 

@@ -27,6 +27,7 @@ import {
   deriveTrayPendingProposals,
 } from '$lib/components/chat/proposals/proposal-tray-gate';
 import { getProposalId } from '$lib/components/chat/proposals/proposal-id';
+import { agentScopedProposalKey } from '../../proposal-lifecycle/proposal-lifecycle-slice';
 import {
   HISTORY_SEGMENT_MAX,
   agentSessionReducer,
@@ -603,9 +604,21 @@ describe('chatScrollbackSaga (on-demand history paging)', () => {
     // Locally resolved under the daemon key (wire-reconciled resolution).
     const daemonKeyResolved = {
       ...run.state(),
-      proposalLifecycle: { 'Split flaky suite': { status: 'dismissed' } },
+      proposalLifecycle: {
+        [agentScopedProposalKey(AGENT, 'Split flaky suite')]: { status: 'dismissed' },
+      },
     } as StoreState;
     expect(deriveTrayPendingProposals(daemonKeyResolved, AGENT, [carrying])).toEqual([]);
+
+    // Another agent's resolution of the same title never retires this
+    // agent's still-pending proposal (title keys collide across agents).
+    const otherAgentResolved = {
+      ...run.state(),
+      proposalLifecycle: {
+        [agentScopedProposalKey('agent-other', 'Split flaky suite')]: { status: 'dismissed' },
+      },
+    } as StoreState;
+    expect(deriveTrayPendingProposals(otherAgentResolved, AGENT, [carrying])).toHaveLength(1);
 
     // Locally resolved under getProposalId's hash key (transcript-card apply
     // of an id-less proposal) retires the tray entry too.

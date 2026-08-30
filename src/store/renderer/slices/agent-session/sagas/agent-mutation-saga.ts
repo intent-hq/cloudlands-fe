@@ -33,7 +33,10 @@ import {
   agentSessionDismissQuestionsRequested,
   updateSession,
 } from '../agent-session-slice';
-import { proposalResolutionReconciled } from '../../proposal-lifecycle/proposal-lifecycle-slice';
+import {
+  agentScopedProposalKey,
+  proposalResolutionReconciled,
+} from '../../proposal-lifecycle/proposal-lifecycle-slice';
 import {
   activateAgentRequested,
   deleteAgentSessionRequested,
@@ -362,10 +365,13 @@ function* resolveProposal(
     if (!result.success)
       throw new Error(result.error || m.agent_mutation_resolveProposalFailed_error());
     // Reconcile local lifecycle immediately — the tray retires the box
-    // without waiting for the `agent:updated` metadata convergence.
+    // without waiting for the `agent:updated` metadata convergence. Keyed
+    // per agent: daemon ids fall back to `preview.title` for id-less
+    // proposals, so a global key would retire another agent's identically
+    // titled proposal too.
     yield* put(
       proposalResolutionReconciled({
-        proposalId: request.proposalId,
+        proposalId: agentScopedProposalKey(agentId, request.proposalId),
         outcome: request.outcome,
         completedAt: Date.now(),
       }),

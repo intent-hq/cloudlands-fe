@@ -10,14 +10,17 @@ import {
   type PendingProposalEntry,
 } from './pending-proposals';
 import { getProposalId } from './proposal-id';
+import { agentScopedProposalKey } from '$store/renderer/slices/proposal-lifecycle/proposal-lifecycle-slice';
 
 type ProposalLifecycleMap = NonNullable<StoreState['proposalLifecycle']>;
 
 /**
- * Locally resolved under EITHER identity: the daemon-parity key (metadata
- * ref / wire-reconciled resolutions) or `getProposalId` (transcript-card
- * applies, whose fallback for id-less proposals is a payload hash — a
- * different key than the daemon's `preview.title`).
+ * Locally resolved under EITHER identity: the agent-scoped daemon-parity key
+ * (wire-reconciled resolutions — scoped because id-less proposals fall back
+ * to `preview.title`, which can collide across agents) or the global
+ * `getProposalId` (transcript-card applies, whose fallback for id-less
+ * proposals is a payload hash — a different key than the daemon's
+ * `preview.title`).
  */
 function isLocallyResolved(lifecycle: ProposalLifecycleMap, ...proposalIds: string[]): boolean {
   return proposalIds.some((proposalId) => {
@@ -50,7 +53,9 @@ export function deriveTrayPendingProposals(
   if (refs.length === 0) return [];
   const recovery = state.chatState?.byAgentId[agentId]?.pendingProposalRecovery;
   const lifecycle = state.proposalLifecycle ?? {};
-  const unresolved = refs.filter((ref) => !isLocallyResolved(lifecycle, ref.proposalId));
+  const unresolved = refs.filter(
+    (ref) => !isLocallyResolved(lifecycle, agentScopedProposalKey(agentId, ref.proposalId)),
+  );
   const byId = new Map(messages.map((message) => [message.id, message]));
   const entries = derivePendingProposals(unresolved, (messageId) => {
     const resident =
@@ -98,7 +103,9 @@ export function derivePendingProposalRecoveryState(
   const refs = classifyPendingProposalRefs(session?.metadata?.pendingProposals);
   if (refs.length === 0) return [];
   const lifecycle = state.proposalLifecycle ?? {};
-  const unresolved = refs.filter((ref) => !isLocallyResolved(lifecycle, ref.proposalId));
+  const unresolved = refs.filter(
+    (ref) => !isLocallyResolved(lifecycle, agentScopedProposalKey(agentId, ref.proposalId)),
+  );
   const missing = missingPendingProposalMessageIds(
     unresolved,
     (messageId) => selectAgentMessageById.select(state, agentId, messageId) !== undefined,

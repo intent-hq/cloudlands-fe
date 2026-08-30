@@ -63,6 +63,15 @@ vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
     }),
     { select: () => undefined },
   ),
+  selectAgentSession: Object.assign(
+    () => ({
+      subscribe: (run: (value: unknown) => void) => {
+        run(undefined);
+        return () => {};
+      },
+    }),
+    { select: () => undefined },
+  ),
 }));
 
 vi.mock('$features/agent/components/agent-avatar/AgentAvatar.svelte', async () => ({

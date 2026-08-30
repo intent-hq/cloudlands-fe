@@ -46,7 +46,7 @@ function positionKey(agentId: string): string {
 }
 
 /** Draft storage key for one proposal: namespaced per agent + proposal id. */
-export function trayDraftKey(agentId: string, proposalId: string): string {
+function trayDraftKey(agentId: string, proposalId: string): string {
   return `${KEY_PREFIX}${agentId}/draft/${encodeURIComponent(proposalId)}`;
 }
 

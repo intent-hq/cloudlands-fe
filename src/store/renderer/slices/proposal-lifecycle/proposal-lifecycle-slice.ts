@@ -53,6 +53,18 @@ export const proposalResolutionReconciled = createAction<
   [payload: { proposalId: string; outcome: 'applied' | 'dismissed'; completedAt: number }]
 >('proposalLifecycle/proposalResolutionReconciled');
 
+/**
+ * Agent-scoped lifecycle key for daemon-parity proposal identities
+ * (`applyToolCallId ?? preview.title`, PROTOCOL §5.5). Id-less proposals are
+ * title-keyed, so a global entry for "Split flaky suite" resolved on agent A
+ * would also retire agent B's identically titled, still-pending proposal.
+ * Wire reconciliations therefore key under agent + daemon id; transcript-card
+ * applies (keyed by `getProposalId`) stay global.
+ */
+export function agentScopedProposalKey(agentId: string, proposalId: string): string {
+  return `${agentId}::${proposalId}`;
+}
+
 export function pruneAppliedProposalLifecycleEntries(
   entries: ProposalLifecycleState,
   now: number,
