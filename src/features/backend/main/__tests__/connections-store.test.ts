@@ -716,6 +716,73 @@ describe('connections-store', () => {
     expect((await store.list()).some((c) => c.hostname === 'ghost.local')).toBe(false);
   });
 
+  it('setHostname migrates an address-default label to the captured pretty name', async () => {
+    const store = await import('../connections-store');
+    // The add form auto-fills the label with the address; trimmed comparison.
+    const rec = await store.add({ ...sampleConn, label: ' 192.168.1.10:8443 ' });
+    await store.setHostname(rec.id, "Clement's Mac mini");
+
+    const remote = (await store.list()).find((c) => c.id === rec.id);
+    expect(remote?.label).toBe("Clement's Mac mini");
+    expect(remote?.hostname).toBe("Clement's Mac mini");
+  });
+
+  it('setHostname migrates the label even when the hostname itself is unchanged (pre-feature records)', async () => {
+    const store = await import('../connections-store');
+    const rec = await store.add({ ...sampleConn, label: '192.168.1.10:8443' });
+    await store.__drainWriteChainForTesting();
+
+    // Simulate a record whose hostname was captured before labels followed it.
+    const file = path.join(tmpDir, 'backend-connections.json');
+    const parsed = JSON.parse(await fs.readFile(file, 'utf8'));
+    parsed.connections[0].hostname = 'studio.local';
+    await fs.writeFile(file, JSON.stringify(parsed), 'utf8');
+
+    // The routine same-hostname re-capture still migrates the address label.
+    await store.setHostname(rec.id, 'studio.local');
+    const remote = (await store.list()).find((c) => c.id === rec.id);
+    expect(remote?.label).toBe('studio.local');
+  });
+
+  it('an uncustomized label follows a backend rename on re-capture', async () => {
+    const store = await import('../connections-store');
+    const rec = await store.add({ ...sampleConn, label: '192.168.1.10:8443' });
+    await store.setHostname(rec.id, 'studio.local');
+    expect((await store.list())[1].label).toBe('studio.local');
+
+    // The backend machine is renamed; the label (still equal to the previous
+    // capture) follows the new pretty name.
+    await store.setHostname(rec.id, "Clement's Mac mini");
+    const remote = (await store.list()).find((c) => c.id === rec.id);
+    expect(remote?.label).toBe("Clement's Mac mini");
+    expect(remote?.hostname).toBe("Clement's Mac mini");
+  });
+
+  it('a user-edited label is never overwritten by hostname captures', async () => {
+    const store = await import('../connections-store');
+    const rec = await store.add(sampleConn); // label 'Studio Mac' (customized)
+    await store.setHostname(rec.id, 'studio.local');
+    expect((await store.list())[1].label).toBe('Studio Mac');
+
+    // A backend rename updates the hostname but still leaves the label alone.
+    await store.setHostname(rec.id, "Clement's Mac mini");
+    const remote = (await store.list()).find((c) => c.id === rec.id);
+    expect(remote?.label).toBe('Studio Mac');
+    expect(remote?.hostname).toBe("Clement's Mac mini");
+  });
+
+  it('editing the label back to the address makes it uncustomized again (follows the next capture)', async () => {
+    const store = await import('../connections-store');
+    const rec = await store.add({ ...sampleConn, label: 'My Custom Name' });
+    await store.setHostname(rec.id, 'studio.local');
+    expect((await store.list())[1].label).toBe('My Custom Name');
+
+    await store.updateMetadata(rec.id, { label: '192.168.1.10:8443', accent: 'blue' });
+    await store.setHostname(rec.id, 'renamed.local');
+    const remote = (await store.list()).find((c) => c.id === rec.id);
+    expect(remote?.label).toBe('renamed.local');
+  });
+
   it('records default to a null daemonVersion until one is captured', async () => {
     const store = await import('../connections-store');
     const rec = await store.add(sampleConn);
@@ -916,6 +983,44 @@ describe('connections-store keychain sync surface', () => {
       const parsed = JSON.parse(await fs.readFile(file, 'utf8'));
       expect(parsed.connections[0].updatedAt).toBe(1_700_000_000_000);
       expect(listener).not.toHaveBeenCalled();
+      unsubscribe();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('a setHostname label migration is a real edit: bumps the LWW clock and notifies sync', async () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(1_700_000_000_000);
+      const store = await import('../connections-store');
+      const rec = await store.add({ ...sampleConn, label: '192.168.1.10:8443' });
+      await store.setHostname(rec.id, 'studio.local');
+      await store.__drainWriteChainForTesting();
+
+      const listener = vi.fn();
+      const unsubscribe = store.onConnectionsMutated(listener);
+
+      // Same hostname re-capture with the label already following it: the
+      // routine every-connect no-op keeps the clock and stays silent.
+      vi.setSystemTime(1_700_000_001_000);
+      await store.setHostname(rec.id, 'studio.local');
+      await store.__drainWriteChainForTesting();
+      const file = path.join(tmpDir, 'backend-connections.json');
+      let parsed = JSON.parse(await fs.readFile(file, 'utf8'));
+      expect(parsed.connections[0].label).toBe('studio.local');
+      expect(parsed.connections[0].updatedAt).toBe(1_700_000_000_000);
+      expect(listener).not.toHaveBeenCalled();
+
+      // A rename moves both fields, bumps the clock, and notifies — the new
+      // label must propagate to the user's other machines.
+      vi.setSystemTime(1_700_000_002_000);
+      await store.setHostname(rec.id, "Clement's Mac mini");
+      await store.__drainWriteChainForTesting();
+      parsed = JSON.parse(await fs.readFile(file, 'utf8'));
+      expect(parsed.connections[0].label).toBe("Clement's Mac mini");
+      expect(parsed.connections[0].updatedAt).toBe(1_700_000_002_000);
+      expect(listener).toHaveBeenCalledTimes(1);
       unsubscribe();
     } finally {
       vi.useRealTimers();

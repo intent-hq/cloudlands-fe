@@ -718,6 +718,22 @@ export async function getDetectHosts(id: string): Promise<boolean> {
  * A no-op for an unknown id (fail-soft: hostname is a display nicety, never a
  * hard requirement). Empty/whitespace hostnames are ignored so the UI keeps its
  * `host:port` fallback rather than showing a blank label.
+ *
+ * The user-editable `label` follows the capture while it is UNCUSTOMIZED —
+ * equal (trimmed) to the record's `host:port` address (the add-form default)
+ * or to the previously captured hostname (a label that only ever followed
+ * captures). That migrates address-named records to the pretty name on the
+ * next (re)connect and follows backend machine renames, while a label the
+ * user typed themselves is never touched. Corollary: editing the label back
+ * to exactly the address (or the current hostname) makes it uncustomized
+ * again, so the next capture overwrites it — accepted by design.
+ *
+ * Unlike the observational {@link setDaemonVersion}, both fields written here
+ * are part of the keychain-sync surface, and a label change in particular is
+ * a real user-visible edit — so any change bumps the LWW clock (`updatedAt`)
+ * and notifies sync, exactly as before. The unchanged common every-connect
+ * case still skips the write so a stale record cannot win over a newer
+ * remote edit.
  */
 export async function setHostname(id: string, hostname: string): Promise<void> {
   const trimmed = hostname.trim();
@@ -725,11 +741,17 @@ export async function setHostname(id: string, hostname: string): Promise<void> {
   const changed = await mutate(async (state) => {
     const conn = state.connections.find((c) => c.id === id);
     if (!conn) return false; // unknown id: nothing to label
-    // Unchanged hostname (the common every-connect case): skip the write so
-    // the LWW clock is not artificially bumped, which would let this stale
-    // record win over a newer remote edit in keychain sync.
-    if (conn.hostname === trimmed) return false;
+    const label = conn.label.trim();
+    const uncustomized =
+      label === `${conn.host.trim()}:${conn.port}` ||
+      (conn.hostname != null && label === conn.hostname.trim());
+    const nextLabel = uncustomized ? trimmed : conn.label;
+    // Unchanged hostname AND label (the common every-connect case): skip the
+    // write so the LWW clock is not artificially bumped, which would let this
+    // stale record win over a newer remote edit in keychain sync.
+    if (conn.hostname === trimmed && nextLabel === conn.label) return false;
     conn.hostname = trimmed;
+    conn.label = nextLabel;
     conn.updatedAt = Date.now();
     await writeState(state);
     return true;
