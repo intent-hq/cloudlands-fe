@@ -48,6 +48,14 @@ describe('sendWorkspaceCommand', () => {
     expect(mainSource).not.toContain("accelerator: 'CmdOrCtrl+PageDown'");
   });
 
+  it('creates New Window with the focused window backend instead of the local default', () => {
+    const mainSource = readFileSync(resolve(process.cwd(), 'src/main/index.ts'), 'utf8');
+
+    expect(mainSource).toMatch(
+      /label: m\.menu_new_window\(\),\s*accelerator: 'CmdOrCtrl\+Shift\+N',\s*click: \(\) => \{[^}]*createWindow\(getFocusedWindowBackendId\(\)\);/,
+    );
+  });
+
   it('emits every workspace menu channel with the exact workspace payload', () => {
     const { window, send } = createWindow();
 

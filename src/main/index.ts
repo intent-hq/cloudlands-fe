@@ -385,6 +385,7 @@ import {
   clearWindowSessionsSnapshot,
   createWindow,
   createWindowForDeepLink,
+  getFocusedWindowBackendId,
   getWindowSessionsPath,
   markWindowSessionTeardown,
   restoreAllBackendWindowSessions,
@@ -765,7 +766,9 @@ app.whenReady().then(async () => {
         label: m.menu_new_window(),
         accelerator: 'CmdOrCtrl+Shift+N',
         click: () => {
-          createWindow();
+          // New Window inherits the focused window's backend (falls back to
+          // the main window's backend, then local) instead of the local default.
+          createWindow(getFocusedWindowBackendId());
         },
       },
       {
