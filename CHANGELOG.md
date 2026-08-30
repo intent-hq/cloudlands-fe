@@ -4,6 +4,13 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.112.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.112.0...v2.112.1) (2026-08-30)
+
+
+### 🐛 Bug Fixes
+
+* **chat:** keep on-screen rows hydrated through streaming layout churn ([#1887](https://github.com/intent-hq/cloudlands-fe/issues/1887)) ([0ae8e52](https://github.com/intent-hq/cloudlands-fe/commit/0ae8e52788a63a0c001eed84f8e1938c0160ff58))
+
 ## [2.112.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.111.0...v2.112.0) (2026-08-30)
 
 
