@@ -234,6 +234,46 @@ describe('message hydration policy', () => {
     expect(policy.getHydratedIds()).toEqual([]);
   });
 
+  it('replays a visibility report that arrives before updateMessages installs the record', () => {
+    const transitions: string[] = [];
+    const policy = createPolicy([], (transition) => transitions.push(transition));
+    const elements = observe(policy, ['a']);
+
+    MockIntersectionObserver.instances[0].fire([
+      { target: elements.get('a')!, isIntersecting: true },
+    ]);
+    policy.updateMessages([assistant('a'), assistant('b')]);
+
+    expect(transitions).toEqual(['hydrate:a', 'hydrate:b']);
+    expect(policy.getHydratedIds()).toEqual(['a', 'b']);
+  });
+
+  it('keeps a pre-record non-intersecting report from hydrating an offscreen row', () => {
+    const policy = createPolicy([]);
+    const elements = observe(policy, ['a']);
+
+    MockIntersectionObserver.instances[0].fire([
+      { target: elements.get('a')!, isIntersecting: false },
+    ]);
+    policy.updateMessages([assistant('a')]);
+
+    expect(policy.getHydratedIds()).toEqual([]);
+  });
+
+  it('hydrates intersecting rows reported between setActive re-attach and updateMessages', () => {
+    const policy = createPolicy([]);
+    policy.setActive(false);
+    const elements = observe(policy, ['a']);
+
+    policy.setActive(true);
+    MockIntersectionObserver.instances[0].fire([
+      { target: elements.get('a')!, isIntersecting: true },
+    ]);
+    policy.updateMessages([assistant('a')]);
+
+    expect(policy.getHydratedIds()).toEqual(['a']);
+  });
+
   it('detaches visibility observers while inactive and restores registrations', () => {
     const policy = createPolicy([assistant('a')]);
     const elements = observe(policy, ['a']);

@@ -55,10 +55,14 @@ export function createMessageHydrationPolicy(
   options: MessageHydrationPolicyOptions = {},
 ): MessageHydrationPolicy {
   const records = new Map<string, MessageRecord>();
-  const registrations = new Map<
-    string,
-    { element: Element; root: HTMLElement | null; release: (() => void) | null }
-  >();
+  interface Registration {
+    element: Element;
+    root: HTMLElement | null;
+    release: (() => void) | null;
+    /** Last visibility report seen before a matching record existed. */
+    pendingReport: boolean | null;
+  }
+  const registrations = new Map<string, Registration>();
   let frontierId: string | undefined;
   let disposed = false;
   let active = true;
@@ -118,16 +122,20 @@ export function createMessageHydrationPolicy(
   function reportVisibility(id: string, isIntersecting: boolean): void {
     if (disposed) return;
     const record = records.get(id);
-    if (!record) return;
+    if (!record) {
+      // Rows can report before updateMessages() installs their record, and
+      // IntersectionObserver only re-fires on boundary crossings — retain the
+      // report so updateMessages() can replay it instead of dropping it.
+      const registration = registrations.get(id);
+      if (registration) registration.pendingReport = isIntersecting;
+      return;
+    }
     record.isIntersecting = isIntersecting;
     recomputeFrontier();
     reconcile();
   }
 
-  function attachRegistration(
-    id: string,
-    registration: { element: Element; root: HTMLElement | null; release: (() => void) | null },
-  ) {
+  function attachRegistration(id: string, registration: Registration) {
     if (!active || disposed || registration.release) return;
     registration.release = observeLazyTurnVisibility(
       registration.element,
@@ -140,10 +148,10 @@ export function createMessageHydrationPolicy(
     observe(id, element, root) {
       // Child rows may mount before the parent effect publishes the composed
       // message list. Keep that stable registration; visibility reports are
-      // safely ignored until updateMessages() installs the matching record.
+      // retained until updateMessages() installs the matching record.
       if (disposed) return () => {};
       registrations.get(id)?.release?.();
-      const registration = { element, root, release: null as (() => void) | null };
+      const registration: Registration = { element, root, release: null, pendingReport: null };
       registrations.set(id, registration);
       attachRegistration(id, registration);
       return () => {
@@ -195,6 +203,13 @@ export function createMessageHydrationPolicy(
           records.set(message.id, makeRecord(message, index));
         }
       });
+      for (const [id, registration] of registrations) {
+        if (registration.pendingReport === null) continue;
+        const record = records.get(id);
+        if (!record) continue;
+        record.isIntersecting = registration.pendingReport;
+        registration.pendingReport = null;
+      }
       recomputeFrontier();
       reconcile();
     },
