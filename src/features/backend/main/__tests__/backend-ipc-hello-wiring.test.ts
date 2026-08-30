@@ -711,7 +711,7 @@ describe('backend.ipc local external updateSupported capture on hello', () => {
     });
   });
 
-  it('does not re-broadcast when the captured flag is unchanged', async () => {
+  it('re-hello resets the flag to unknown before re-capturing (reconnect may be a replaced daemon)', async () => {
     const onHelloResult = await freshLocalOnHelloResult();
     setConnectionMode('external');
     systemStatus.value = { updateSupported: true };
@@ -721,10 +721,12 @@ describe('backend.ipc local external updateSupported capture on hello', () => {
     await vi.waitFor(() => expect(getLocalUpdateSupported()).toBe(true));
     const afterFirst = changedCalls().length;
 
+    // A reconnect may face a replaced daemon: the previously-captured flag is
+    // reset (broadcast) before the fresh capture answers (broadcast again).
     onHelloResult({});
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    expect(changedCalls().length).toBe(afterFirst);
+    expect(getLocalUpdateSupported()).toBeNull();
+    await vi.waitFor(() => expect(getLocalUpdateSupported()).toBe(true));
+    expect(changedCalls().length).toBe(afterFirst + 2);
   });
 
   it('keeps null for a flagless/malformed system.status (unknown daemon capability)', async () => {
@@ -755,6 +757,62 @@ describe('backend.ipc local external updateSupported capture on hello', () => {
     await vi.waitFor(() => {
       expect(getLocalUpdateSupported()).toBeNull();
       expect(changedCalls().length).toBeGreaterThan(0);
+    });
+  });
+
+  it('resets a previously-captured flag synchronously on reconnect (no stale value in the capture window)', async () => {
+    const onHelloResult = await freshLocalOnHelloResult();
+    setConnectionMode('external');
+    setLocalUpdateSupported(true);
+    // Keep the capture pending: the daemon behind the socket may have been
+    // replaced, so the old `true` must not be advertised while it answers.
+    let resolveStatus!: (value: unknown) => void;
+    systemStatus.value = new Promise((resolve) => (resolveStatus = resolve));
+
+    onHelloResult({});
+    expect(getLocalUpdateSupported()).toBeNull();
+
+    resolveStatus({ updateSupported: false });
+    await vi.waitFor(() => expect(getLocalUpdateSupported()).toBe(false));
+  });
+
+  it('concludes unknown when the capture request fails (reset is not undone)', async () => {
+    const onHelloResult = await freshLocalOnHelloResult();
+    setConnectionMode('external');
+    setLocalUpdateSupported(true);
+    let rejectStatus!: (reason: unknown) => void;
+    const failing = new Promise((_resolve, reject) => (rejectStatus = reject));
+    // The capture catches the rejection; this handler only keeps the shared
+    // fixture promise itself off vitest's unhandled-rejection tracker.
+    failing.catch(() => {});
+    systemStatus.value = failing;
+
+    onHelloResult({});
+    expect(getLocalUpdateSupported()).toBeNull();
+
+    rejectStatus(new Error('boom'));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(getLocalUpdateSupported()).toBeNull();
+  });
+
+  it('re-pushes backend:status when the captured flag changes (behind-pin suppression sees the flag)', async () => {
+    const onHelloResult = await freshLocalOnHelloResult();
+    setConnectionMode('external');
+    systemStatus.value = { updateSupported: true };
+    const send = vi.fn();
+    vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([
+      { id: 1, isDestroyed: () => false, webContents: { send } } as never,
+    ]);
+
+    onHelloResult({});
+    await vi.waitFor(() => {
+      const statusCalls = send.mock.calls.filter(([c]) => c === 'backend:status');
+      expect(statusCalls.length).toBeGreaterThan(0);
+      // The re-pushed payload carries the flag-bearing transport info.
+      expect(statusCalls.at(-1)?.[1]).toMatchObject({
+        transport: expect.objectContaining({ mode: 'external-uds', updateSupported: true }),
+      });
     });
   });
 

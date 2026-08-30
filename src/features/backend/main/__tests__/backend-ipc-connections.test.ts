@@ -629,6 +629,30 @@ describe('connections:* IPC handlers', () => {
     connectionMode.__resetConnectionModeForTesting();
   });
 
+  it('connections:list maps the external daemon version into the connected local row intentdVersion', async () => {
+    const { mod } = await loadModule();
+    const connectionMode = await import('../connection-mode');
+    connectionMode.setConnectionMode('external');
+    connectionMode.setDaemonVersionInfo({
+      daemonVersion: '0.2.0',
+      pinnedVersion: '0.1.0',
+      versionMismatch: true,
+    });
+    mod.registerBackendHandlers();
+    // Only a CONNECTED local row shows the inline version, like remotes.
+    const local = mod.getBackendClient() as unknown as { status: string };
+    local.status = 'connected';
+
+    const result = (await findHandler('connections:list')!({}, undefined)) as {
+      connections: Array<Record<string, unknown>>;
+    };
+    expect(result.connections.find((c) => c.id === 'local')).toMatchObject({
+      status: 'connected',
+      intentdVersion: '0.2.0',
+    });
+    connectionMode.__resetConnectionModeForTesting();
+  });
+
   it('connections:list leaves the local record unenriched in sidecar mode', async () => {
     const { mod } = await loadModule();
     const connectionMode = await import('../connection-mode');
@@ -735,6 +759,31 @@ describe('connections:* IPC handlers', () => {
     });
     expect(rpc.calls).toContain('system.requestUpdate');
     connectionMode.__resetConnectionModeForTesting();
+  });
+
+  it('connections:update-backend rejects the local id as unsupported over a non-UDS transport', async () => {
+    // External mode with an env transport override (the INTENTD_WS_URL
+    // two-terminal dev flow): the pooled local client is not UDS, so the
+    // routing must mirror the capture's transport guard and refuse.
+    const priorWsUrl = process.env.INTENTD_WS_URL;
+    process.env.INTENTD_WS_URL = 'ws://127.0.0.1:51337/ws';
+    try {
+      const { mod } = await loadModule();
+      const connectionMode = await import('../connection-mode');
+      connectionMode.setConnectionMode('external');
+      mod.registerBackendHandlers();
+      const local = mod.getBackendClient() as unknown as { status: string };
+      local.status = 'connected';
+
+      await expect(
+        findHandler('connections:update-backend')!({}, { id: 'local' }),
+      ).resolves.toEqual({ ok: false, reason: 'unsupported' });
+      expect(rpc.calls).not.toContain('system.requestUpdate');
+      connectionMode.__resetConnectionModeForTesting();
+    } finally {
+      if (priorWsUrl === undefined) delete process.env.INTENTD_WS_URL;
+      else process.env.INTENTD_WS_URL = priorWsUrl;
+    }
   });
 
   it('connections:update-backend reports not-connected for a disconnected external local daemon', async () => {
