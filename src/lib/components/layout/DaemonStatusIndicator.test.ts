@@ -1340,6 +1340,20 @@ describe('DaemonStatusIndicator', () => {
       ).toBe('studio.local');
     });
 
+    it('formatConnectionLabel shows the migrated Name for pretty-defaulted records', async () => {
+      const { formatConnectionLabel } = await import('./DaemonStatusIndicator.svelte');
+      // Post-migration the stored label equals the captured pretty hostname;
+      // the Name wins outright.
+      expect(
+        formatConnectionLabel({
+          host: '10.0.0.2',
+          port: 4180,
+          label: 'Clement’s Mac Studio',
+          hostname: 'Clement’s Mac Studio',
+        }),
+      ).toBe('Clement’s Mac Studio');
+    });
+
     it('renders a configured remote name in the menu', async () => {
       const remoteWithHostname = {
         id: 'r1',

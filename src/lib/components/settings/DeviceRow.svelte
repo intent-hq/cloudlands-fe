@@ -81,8 +81,8 @@
     device.accent === undefined ? DEFAULT_CONNECTION_ACCENT : device.accent,
   );
   const accentOptions = $derived(connectionAccentOptions(savedAccent));
-  // Same preference order as the daemon-status menu: configured name →
-  // captured backend hostname (prefers prettyHostname) → label → address.
+  // Shared with the daemon-status menu: the Name wins outright, with
+  // hostname → address fallbacks for unmigrated records.
   const displayName = $derived(formatConnectionLabel(device));
   const openStatus = $derived(device.status ?? 'not-open');
   const trimmedName = $derived(name.trim());
