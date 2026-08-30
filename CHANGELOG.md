@@ -4,6 +4,25 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.113.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.112.2...v2.113.0) (2026-08-30)
+
+
+### 🚀 Features
+
+* **hardware-console:** cycle open windows action with CM2 ACT11 default ([#1894](https://github.com/intent-hq/cloudlands-fe/issues/1894)) ([9bb4de8](https://github.com/intent-hq/cloudlands-fe/commit/9bb4de8d8fcfdf4e742891dae2ea9b45ec1e1203))
+* **workspace:** warn about open PRs when archiving or deleting a workspace ([#1895](https://github.com/intent-hq/cloudlands-fe/issues/1895)) ([c87c77b](https://github.com/intent-hq/cloudlands-fe/commit/c87c77bade6337c5f5043a649c60109cdf51e96b))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.8.24 ([#1900](https://github.com/intent-hq/cloudlands-fe/issues/1900)) ([ef75557](https://github.com/intent-hq/cloudlands-fe/commit/ef755574441bfa21c34703665dd011aa0cd474c3))
+
+
+### ⚡ Performance
+
+* **chat:** render read-only markdown as static HTML without ProseMirror ([#1892](https://github.com/intent-hq/cloudlands-fe/issues/1892)) ([59dffa7](https://github.com/intent-hq/cloudlands-fe/commit/59dffa79425b3d956ca0ac5d0f42b98677acf1e7))
+* **sidebar:** delay workspace hover-card mount until pointer rests ([#1893](https://github.com/intent-hq/cloudlands-fe/issues/1893)) ([a285b99](https://github.com/intent-hq/cloudlands-fe/commit/a285b9960b0c25062cc420ca659979700260a08d))
+
 ## [2.112.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.112.1...v2.112.2) (2026-08-30)
 
 
