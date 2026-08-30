@@ -49,6 +49,8 @@
     hydrationController?: MessageHydrationPolicy;
     /** Controller-owned hydration decision for this row. */
     hydrated?: boolean;
+    /** Placeholder height before the first measurement (row-type specific). */
+    estimatedHeight?: number;
     /** The content to render */
     children: Snippet;
   }
@@ -60,6 +62,7 @@
     heightCache,
     hydrationController,
     hydrated,
+    estimatedHeight = DEFAULT_ESTIMATED_HEIGHT,
     children,
   }: Props = $props();
 
@@ -288,7 +291,7 @@
   });
 
   // PERF: Compute placeholder height - use cached or estimated default
-  let placeholderHeight = $derived(localCachedHeight ?? DEFAULT_ESTIMATED_HEIGHT);
+  let placeholderHeight = $derived(localCachedHeight ?? estimatedHeight);
 </script>
 
 <div

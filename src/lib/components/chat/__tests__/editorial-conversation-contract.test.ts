@@ -278,8 +278,10 @@ describe('editorial conversation presentation contract', () => {
 
     expect(panel).not.toContain('class:bg-sidebar={isChiefWorkspace}');
     expect(panel).not.toContain('class:bg-card={!isChiefWorkspace}');
+    // The window spans the LazyTurn virtualization wrapper between the
+    // always-mounted nav-target div and the inner bubble surface.
     expect(panel).toMatch(
-      /message-nav-target relative z-20[\s\S]{0,700}<div class=\{isChiefWorkspace \? 'mx-1 sm:mx-2' : ''\}>/,
+      /message-nav-target relative z-20[\s\S]{0,1400}<div class=\{isChiefWorkspace \? 'mx-1 sm:mx-2' : ''\}>/,
     );
     expect(panel).not.toContain('chief-sticky-message-mask');
     expect(panel).not.toContain('backdrop-filter: blur(24px)');

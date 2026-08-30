@@ -68,9 +68,9 @@ describe('message hydration policy', () => {
     );
   }
 
-  it('starts eligible non-user messages as placeholders but keeps users hydrated', () => {
+  it('starts every row as a placeholder, user rows included', () => {
     const policy = createPolicy([assistant('a'), user('u'), assistant('b')]);
-    expect(policy.getHydratedIds()).toEqual(['u']);
+    expect(policy.getHydratedIds()).toEqual([]);
   });
 
   it('hydrates displayport rows and derives the oldest adjacent frontier', () => {
@@ -140,12 +140,11 @@ describe('message hydration policy', () => {
     const elements = observe(policy, ['assistant-190', 'assistant-195']);
     const observer = MockIntersectionObserver.instances[0];
 
-    expect(policy.getHydratedIds()).toEqual(['user-anchor']);
+    expect(policy.getHydratedIds()).toEqual([]);
     observer.fire([{ target: elements.get('assistant-190')!, isIntersecting: true }]);
-    expect(policy.getHydratedIds()).toEqual([
-      'user-anchor',
-      ...Array.from({ length: 10 }, (_, index) => `assistant-${index + 190}`),
-    ]);
+    expect(policy.getHydratedIds()).toEqual(
+      Array.from({ length: 10 }, (_, index) => `assistant-${index + 190}`),
+    );
     transitions.length = 0;
 
     observer.fire([
@@ -156,10 +155,9 @@ describe('message hydration policy', () => {
     expect(transitions).toEqual(
       Array.from({ length: 5 }, (_, index) => `dehydrate:assistant-${index + 190}`),
     );
-    expect(policy.getHydratedIds()).toEqual([
-      'user-anchor',
-      ...Array.from({ length: 5 }, (_, index) => `assistant-${index + 195}`),
-    ]);
+    expect(policy.getHydratedIds()).toEqual(
+      Array.from({ length: 5 }, (_, index) => `assistant-${index + 195}`),
+    );
   });
 
   it('makes mixed observer entry/exit ordering deterministic and enter-safe', () => {
@@ -193,7 +191,7 @@ describe('message hydration policy', () => {
     expect(first.getHydratedIds()).toEqual(second.getHydratedIds());
   });
 
-  it('never dehydrates user messages and supports forced rows', () => {
+  it('keeps user rows above the frontier as placeholders and supports forced rows', () => {
     const transitions: string[] = [];
     const policy = createPolicy(
       [user('user'), assistant('forced'), assistant('frontier')],
@@ -205,8 +203,51 @@ describe('message hydration policy', () => {
       { target: elements.get('frontier')!, isIntersecting: true },
     ]);
 
-    expect(policy.getHydratedIds()).toEqual(['user', 'forced', 'frontier']);
+    expect(policy.getHydratedIds()).toEqual(['forced', 'frontier']);
     expect(transitions).toEqual(['hydrate:forced', 'hydrate:frontier']);
+  });
+
+  it('never dehydrates a user row once it has hydrated', () => {
+    const transitions: string[] = [];
+    const policy = createPolicy([user('u'), assistant('a'), assistant('b')], (transition) =>
+      transitions.push(transition),
+    );
+    const elements = observe(policy, ['u', 'a', 'b']);
+    const observer = MockIntersectionObserver.instances[0];
+    observer.fire([
+      { target: elements.get('u')!, isIntersecting: true },
+      { target: elements.get('a')!, isIntersecting: true },
+      { target: elements.get('b')!, isIntersecting: true },
+    ]);
+    expect(policy.getHydratedIds()).toEqual(['u', 'a', 'b']);
+    transitions.length = 0;
+
+    // Scrolling down moves the frontier past both older rows: the assistant
+    // row dehydrates, the user row stays (pinned-prompt/nav DOM anchor).
+    observer.fire([
+      { target: elements.get('u')!, isIntersecting: false },
+      { target: elements.get('a')!, isIntersecting: false },
+      { target: elements.get('b')!, isIntersecting: true },
+    ]);
+
+    expect(transitions).toEqual(['dehydrate:a']);
+    expect(policy.getHydratedIds()).toEqual(['u', 'b']);
+  });
+
+  it('eagerly hydrates appended rows but not interior insertions or prepends', () => {
+    const transitions: string[] = [];
+    const policy = createPolicy([assistant('a')], (transition) => transitions.push(transition));
+
+    // Appended past every known row (a just-sent user message): hydrates
+    // immediately without waiting for an intersection report.
+    policy.updateMessages([assistant('a'), user('sent')]);
+    expect(transitions).toEqual(['hydrate:sent']);
+    transitions.length = 0;
+
+    // Older-history prepend: stays a placeholder.
+    policy.updateMessages([user('prepended'), assistant('a'), user('sent')]);
+    expect(transitions).toEqual([]);
+    expect(policy.getHydratedIds()).toEqual(['sent']);
   });
 
   it('cleans up removed rows, callbacks, and all state on dispose', () => {

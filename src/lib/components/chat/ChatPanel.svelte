@@ -262,6 +262,7 @@
     INITIAL_LAZY_MODE_TRACKER,
     isOlderHistoryPrepend,
     nextLazyMode,
+    USER_ROW_ESTIMATED_HEIGHT,
   } from './chat-turn-virtualization';
   import {
     EMPTY_TEMPORARY_TURN_MATERIALIZATION,
@@ -3628,8 +3629,9 @@
   }
 
   // The controller order is the composed history + live-tail chronology, not
-  // turn position. Users remain eagerly rendered; assistant rows register with
-  // the shared observer and follow the asymmetric displayport frontier.
+  // turn position. User and assistant rows both register with the shared
+  // observer and follow the asymmetric displayport frontier; user rows never
+  // dehydrate once hydrated (see message-hydration-policy.ts).
   $effect(() => {
     const messages = hydrationMessages;
     messageHydrationPolicy.setActive(isActive);
@@ -3638,9 +3640,7 @@
     for (const message of messages) {
       messageHydrationPolicy.setForced(message.id, isMessageForceVisible(message.id));
     }
-    lazyTurnHeightCache.retain(
-      messages.filter((message) => message.role === 'assistant').map((message) => message.id),
-    );
+    lazyTurnHeightCache.retain(messages.map((message) => message.id));
     syncHydratedMessageIds();
   });
 
@@ -5578,6 +5578,12 @@
                     {#if turn.userMessage && !isEventNotification}
                       {@const message = turn.userMessage}
                       {@const globalIndex = getMessageIndex(message.id)}
+                      <!-- Outer div stays always mounted: it carries the nav/
+                           pinned-prompt/send-transition anchors (data attributes
+                           and geometry) that scroll restoration and the pinned
+                           prompt overlay query even while the row's content is a
+                           virtualized placeholder. Only the inner ChatMessage
+                           goes through LazyTurn. -->
                       <div
                         data-message-id={message.id}
                         data-message-role="user"
@@ -5593,24 +5599,36 @@
                         )}
                         use:attachPinnedPromptMessage={message}
                       >
-                        <div class={isChiefWorkspace ? 'mx-1 sm:mx-2' : ''}>
-                          <ChatMessage
-                            {agentId}
-                            messageId={message.id}
-                            ownsMessageIdentity={false}
-                            {workspace}
-                            onEditSubmit={isRetiredSession
-                              ? undefined
-                              : (newText, model, blocks) =>
-                                  handleEditMessage(message.id, newText, model, blocks)}
-                            onEditStateChange={(isEditing) =>
-                              handleTurnEditStateChange(turnKey, isEditing)}
-                            editModel={turn.assistantMessages[0]?.metadata?.model ??
-                              hydratedInputModel}
-                            onScrollToPrevious={() => scrollToPreviousUserMessage(message.id)}
-                            backendSessionId={auggieSessionId}
-                          />
-                        </div>
+                        <LazyTurn
+                          turnKey={message.id}
+                          scrollRoot={scrollContainer}
+                          heightCache={lazyTurnHeightCache}
+                          hydrationController={messageHydrationPolicy}
+                          hydrated={hydratedMessageIds.has(message.id)}
+                          forceVisible={isMessageForceVisible(message.id)}
+                          estimatedHeight={USER_ROW_ESTIMATED_HEIGHT}
+                        >
+                          {#snippet children()}
+                            <div class={isChiefWorkspace ? 'mx-1 sm:mx-2' : ''}>
+                              <ChatMessage
+                                {agentId}
+                                messageId={message.id}
+                                ownsMessageIdentity={false}
+                                {workspace}
+                                onEditSubmit={isRetiredSession
+                                  ? undefined
+                                  : (newText, model, blocks) =>
+                                      handleEditMessage(message.id, newText, model, blocks)}
+                                onEditStateChange={(isEditing) =>
+                                  handleTurnEditStateChange(turnKey, isEditing)}
+                                editModel={turn.assistantMessages[0]?.metadata?.model ??
+                                  hydratedInputModel}
+                                onScrollToPrevious={() => scrollToPreviousUserMessage(message.id)}
+                                backendSessionId={auggieSessionId}
+                              />
+                            </div>
+                          {/snippet}
+                        </LazyTurn>
                       </div>
                       {@render newMessagesDividerAfter(message.id, dividerAtTurnBoundary)}
                     {/if}

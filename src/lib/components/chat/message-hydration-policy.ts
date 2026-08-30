@@ -4,8 +4,12 @@
  * The input order is the composed chronological order. A displayport frontier
  * is the oldest currently adjacent row; once known, hydrated rows newer than
  * it are retained even after they leave the preload band. Only older,
- * non-user, non-forced rows may dehydrate. DOM observation and geometry stay
- * with the component; this module only reports deterministic transitions.
+ * non-user, non-forced rows may dehydrate. Every row — user rows included —
+ * starts as a placeholder so a workspace switch mounts only the displayport;
+ * user rows differ solely in that once hydrated they never dehydrate (their
+ * DOM anchors pinned-prompt tracking and prompt navigation). DOM observation
+ * and geometry stay with the component; this module only reports
+ * deterministic transitions.
  */
 
 import { observeLazyTurnVisibility } from './lazy-turn-observer';
@@ -50,10 +54,6 @@ function isUserHydrationMessage(message: HydrationMessage): boolean {
   return message.role === 'user' || message.isUser === true;
 }
 
-function shouldStartAsMessagePlaceholder(message: HydrationMessage, forced = false): boolean {
-  return !isUserHydrationMessage(message) && !forced;
-}
-
 function sortByIndex(records: Iterable<MessageRecord>): MessageRecord[] {
   return [...records].sort((a, b) => a.index - b.index);
 }
@@ -76,15 +76,13 @@ export function createMessageHydrationPolicy(
   let active = true;
 
   function makeRecord(message: HydrationMessage, index: number): MessageRecord {
-    const forced = false;
-    const isUser = isUserHydrationMessage(message);
     return {
       ...message,
       index,
-      isUser,
-      forced,
+      isUser: isUserHydrationMessage(message),
+      forced: false,
       isIntersecting: false,
-      hydrated: !shouldStartAsMessagePlaceholder(message, forced),
+      hydrated: false,
     };
   }
 
@@ -115,8 +113,7 @@ export function createMessageHydrationPolicy(
     const boundary = frontierIndex();
     for (const record of sortByIndex(records.values())) {
       const isAtOrNewerThanFrontier = boundary !== undefined && record.index >= boundary;
-      const shouldHydrate =
-        record.isUser || record.forced || record.isIntersecting || isAtOrNewerThanFrontier;
+      const shouldHydrate = record.forced || record.isIntersecting || isAtOrNewerThanFrontier;
       if (shouldHydrate && !record.hydrated) {
         record.hydrated = true;
         options.onHydrate?.(record.id);
@@ -194,6 +191,17 @@ export function createMessageHydrationPolicy(
       if (disposed) return;
       const previous = new Map(records);
       const nextIds = new Set(nextMessages.map((message) => message.id));
+      // Appended rows (newer than every previously known row) hydrate eagerly:
+      // a just-sent user message or a fresh streaming row must not paint as a
+      // placeholder while waiting for an intersection report. Interior
+      // insertions and older-history prepends stay placeholders, and an
+      // initial install (no previous records) starts fully dehydrated so a
+      // workspace switch mounts only what the observer reports visible.
+      const hadRecords = previous.size > 0;
+      let lastKnownIndex = -1;
+      nextMessages.forEach((message, index) => {
+        if (previous.has(message.id)) lastKnownIndex = index;
+      });
       for (const [id, registration] of registrations) {
         if (nextIds.has(id)) continue;
         // The component owns the registration lifecycle (observe()'s cleanup
@@ -217,7 +225,12 @@ export function createMessageHydrationPolicy(
             isUser: isUserHydrationMessage(message),
           });
         } else {
-          records.set(message.id, makeRecord(message, index));
+          const record = makeRecord(message, index);
+          if (hadRecords && index > lastKnownIndex) {
+            record.hydrated = true;
+            options.onHydrate?.(record.id);
+          }
+          records.set(message.id, record);
         }
       });
       for (const [id, registration] of registrations) {
