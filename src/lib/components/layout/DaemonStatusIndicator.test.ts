@@ -142,6 +142,26 @@ describe('DaemonStatusIndicator', () => {
   });
 
   describe('dropdown interaction', () => {
+    it('does not show a tooltip when the status trigger is hovered or focused', async () => {
+      mockStoreState = {
+        daemonHealth: { health: 'healthy', stats: null, lastUpdated: null, polling: false },
+      };
+      render(DaemonStatusIndicatorPreloaded);
+
+      const trigger = screen.getByRole('button', { name: 'intentd: healthy' });
+
+      await fireEvent.mouseEnter(trigger);
+      expect(screen.queryByRole('tooltip')).toBeNull();
+
+      trigger.focus();
+      expect(trigger).toBe(document.activeElement);
+      expect(screen.queryByRole('tooltip')).toBeNull();
+
+      await fireEvent.click(trigger);
+      expect(screen.getByRole('menuitem', { name: 'Status - Healthy' })).toBeTruthy();
+      expect(screen.getByRole('button', { name: 'Connect another device' })).toBeTruthy();
+    });
+
     it('dispatches pollSystemStatus when dropdown opens ($effect at line 72)', async () => {
       // This test verifies the $effect at line 72
       // which dispatches pollSystemStatus when dropdownOpen becomes true
