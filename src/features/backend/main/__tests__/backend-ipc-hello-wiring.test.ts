@@ -25,6 +25,8 @@ const {
   mockGetOrCreateClientId,
   mockPersistClientId,
   mockSetDaemonVersion,
+  mockSetUpdateSupported,
+  systemStatus,
   mockRunLog,
   startupFailedListeners,
   mockStartupFailure,
@@ -33,6 +35,9 @@ const {
   mockGetOrCreateClientId: vi.fn(async () => 'cli-persisted'),
   mockPersistClientId: vi.fn(async () => {}),
   mockSetDaemonVersion: vi.fn(async () => false),
+  mockSetUpdateSupported: vi.fn(async () => false),
+  // `system.status` result the fake client answers with; tests override.
+  systemStatus: { value: {} as unknown },
   mockRunLog: {
     available: true,
     startedAt: '2026-07-26T00:00:00.000Z',
@@ -56,7 +61,9 @@ vi.mock('../json-rpc-client', () => ({
     }
     start(): void {}
     dispose(): void {}
-    request = vi.fn(async () => ({}));
+    request = vi.fn(async (method: string) =>
+      method === 'system.status' ? systemStatus.value : {},
+    );
     registerMethod(): () => void {
       return () => {};
     }
@@ -111,6 +118,7 @@ vi.mock('../connections-store', async (importOriginal) => ({
   ]),
   getDecryptedToken: vi.fn(async () => 'tok-remote'),
   setDaemonVersion: mockSetDaemonVersion,
+  setUpdateSupported: mockSetUpdateSupported,
 }));
 
 describe('backend.ipc client identity wiring (§5.17)', () => {
@@ -539,6 +547,110 @@ describe('backend.ipc remote daemon version capture on hello', () => {
     onHelloResult({ server: { version: 42 } });
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(mockSetDaemonVersion).not.toHaveBeenCalled();
+
+    disconnectBackendClient('conn-remote');
+  });
+});
+
+describe('backend.ipc remote updateSupported capture on hello', () => {
+  afterEach(() => {
+    vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([]);
+    mockSetUpdateSupported.mockClear();
+    mockSetUpdateSupported.mockResolvedValue(false);
+    systemStatus.value = {};
+  });
+
+  it('persists a pool member remote updateSupported flag keyed by its connection id', async () => {
+    systemStatus.value = { updateSupported: true };
+    const { connectBackendClient, disconnectBackendClient } = await import('../backend.ipc');
+    await connectBackendClient('conn-remote');
+    const poolCtor = ctorOptions[ctorOptions.length - 1];
+    const onHelloResult = poolCtor.onHelloResult as (result: unknown) => void;
+
+    onHelloResult({ server: { version: '0.9.0' } });
+    await vi.waitFor(() => {
+      expect(mockSetUpdateSupported).toHaveBeenCalledWith('conn-remote', true);
+    });
+
+    disconnectBackendClient('conn-remote');
+  });
+
+  it('persists an explicit updateSupported: false (unsupported is conclusive)', async () => {
+    systemStatus.value = { updateSupported: false };
+    const { connectBackendClient, disconnectBackendClient } = await import('../backend.ipc');
+    await connectBackendClient('conn-remote');
+    const poolCtor = ctorOptions[ctorOptions.length - 1];
+    const onHelloResult = poolCtor.onHelloResult as (result: unknown) => void;
+
+    onHelloResult({ server: { version: '0.9.0' } });
+    await vi.waitFor(() => {
+      expect(mockSetUpdateSupported).toHaveBeenCalledWith('conn-remote', false);
+    });
+
+    disconnectBackendClient('conn-remote');
+  });
+
+  it('broadcasts connections:changed only when the captured flag actually changed', async () => {
+    systemStatus.value = { updateSupported: true };
+    const { connectBackendClient, disconnectBackendClient } = await import('../backend.ipc');
+    await connectBackendClient('conn-remote');
+    const poolCtor = ctorOptions[ctorOptions.length - 1];
+    const onHelloResult = poolCtor.onHelloResult as (result: unknown) => void;
+
+    const send = vi.fn();
+    vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([
+      { id: 1, isDestroyed: () => false, webContents: { send } } as never,
+    ]);
+
+    // Unchanged flag (the store dedupes): no broadcast.
+    mockSetUpdateSupported.mockResolvedValueOnce(false);
+    onHelloResult({ server: { version: '0.9.0' } });
+    await vi.waitFor(() => expect(mockSetUpdateSupported).toHaveBeenCalledTimes(1));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(send.mock.calls.filter(([c]) => c === 'connections:changed')).toHaveLength(0);
+
+    // A changed flag pushes the refreshed list to every window.
+    mockSetUpdateSupported.mockResolvedValueOnce(true);
+    onHelloResult({ server: { version: '0.9.0' } });
+    await vi.waitFor(() => {
+      expect(send.mock.calls.filter(([c]) => c === 'connections:changed').length).toBeGreaterThan(
+        0,
+      );
+    });
+
+    disconnectBackendClient('conn-remote');
+  });
+
+  it('never captures for the local backend (pooled local client)', async () => {
+    systemStatus.value = { updateSupported: true };
+    const { getBackendClient } = await import('../backend.ipc');
+    getBackendClient();
+    const onHelloResult = ctorOptions[0].onHelloResult as (result: unknown) => void;
+
+    onHelloResult({ server: { version: '0.9.0' } });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(mockSetUpdateSupported).not.toHaveBeenCalled();
+  });
+
+  it('leaves the stored flag as-is when system.status omits updateSupported (older daemon)', async () => {
+    systemStatus.value = { status: 'ok' }; // no updateSupported field
+    const { connectBackendClient, disconnectBackendClient } = await import('../backend.ipc');
+    await connectBackendClient('conn-remote');
+    const poolCtor = ctorOptions[ctorOptions.length - 1];
+    const onHelloResult = poolCtor.onHelloResult as (result: unknown) => void;
+
+    onHelloResult({ server: { version: '0.9.0' } });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(mockSetUpdateSupported).not.toHaveBeenCalled();
+
+    // A malformed (non-boolean) field is ignored the same way.
+    systemStatus.value = { updateSupported: 'yes' };
+    onHelloResult({ server: { version: '0.9.0' } });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(mockSetUpdateSupported).not.toHaveBeenCalled();
 
     disconnectBackendClient('conn-remote');
   });

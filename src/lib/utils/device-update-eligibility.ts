@@ -16,6 +16,12 @@ export interface UpdateEligibilityConnection {
   isLocal: boolean;
   /** The remote daemon's reported version, or null/absent until captured. */
   daemonVersion?: string | null;
+  /**
+   * Whether the remote daemon reports self-update support (`updateSupported`
+   * from `system.status`), or null/absent while unknown (capture pending, or
+   * a daemon too old to report the field).
+   */
+  updateSupported?: boolean | null;
 }
 
 /**
@@ -34,8 +40,11 @@ export function isDaemonBehindPin(
 
 /**
  * True when the remote Update action may be offered for `conn`: its daemon is
- * behind the pin ({@link isDaemonBehindPin}) AND it has a live, currently
- * connected client in main's pool (`connectedIds`).
+ * behind the pin ({@link isDaemonBehindPin}), it explicitly reports
+ * self-update support (`updateSupported === true` — strict: unknown/absent is
+ * NOT offered, e.g. a daemon too old to report the field or one not
+ * sitter-supervised), AND it has a live, currently connected client in main's
+ * pool (`connectedIds`).
  */
 export function canRequestDeviceUpdate(
   conn: UpdateEligibilityConnection,
@@ -43,5 +52,6 @@ export function canRequestDeviceUpdate(
   pinnedVersion: string | null | undefined,
 ): boolean {
   if (!isDaemonBehindPin(conn, pinnedVersion)) return false;
+  if (conn.updateSupported !== true) return false;
   return connectedIds?.includes(conn.id) ?? false;
 }

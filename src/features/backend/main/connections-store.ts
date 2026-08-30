@@ -91,6 +91,15 @@ interface StoredConnection {
    */
   daemonVersion?: string | null;
   /**
+   * Whether the remote daemon reports self-update support (`updateSupported`
+   * from `system.status`), captured after connect and refreshed on every
+   * reconnect. Absent on records written before this field existed and until
+   * the first capture (= unknown). Observational, per-machine state like
+   * `daemonVersion`: NEVER part of the keychain-sync surface, so writes never
+   * bump the LWW clock or notify sync.
+   */
+  updateSupported?: boolean | null;
+  /**
    * Candidate hosts (#1746): the primary `host` first, then any additional IPs
    * the backend reported via `server.pairingInfo`. Absent on records written
    * before this field existed — treated as `[host]` (single-host behavior).
@@ -224,6 +233,7 @@ function toRecord(stored: StoredConnection): ConnectionRecord {
     fingerprint: stored.fingerprint,
     hostname: stored.hostname ?? null,
     daemonVersion: stored.daemonVersion ?? null,
+    updateSupported: stored.updateSupported ?? null,
     syncExcluded: stored.syncExcluded === true,
     isLocal: false,
   };
@@ -248,6 +258,11 @@ function isStoredConnection(value: unknown): value is StoredConnection {
     (c.daemonVersion === undefined ||
       c.daemonVersion === null ||
       typeof c.daemonVersion === 'string') &&
+    // `updateSupported` is an optional late addition: absent on older records,
+    // a boolean once captured. Accept missing/null/boolean; reject other types.
+    (c.updateSupported === undefined ||
+      c.updateSupported === null ||
+      typeof c.updateSupported === 'boolean') &&
     // `hosts` / `detectHosts` are optional late additions (#1746): absent on
     // older records. Accept missing or well-typed; reject any other type.
     (c.hosts === undefined ||
@@ -807,6 +822,27 @@ export async function setDaemonVersion(id: string, version: string): Promise<boo
     // Unchanged version (the common every-reconnect case): skip the write.
     if (conn.daemonVersion === trimmed) return false;
     conn.daemonVersion = trimmed;
+    await writeState(state);
+    return true;
+  });
+}
+
+/**
+ * Persist whether the remote daemon reports self-update support
+ * (`updateSupported` from its `system.status`). Returns `true` when the
+ * stored value actually changed so the caller can broadcast the refreshed
+ * list. A no-op for an unknown id (fail-soft: the flag only gates a UI
+ * affordance, never a hard requirement). Like {@link setDaemonVersion}, this
+ * is per-machine observational state: it never bumps the LWW clock
+ * (`updatedAt`) and never notifies keychain sync.
+ */
+export async function setUpdateSupported(id: string, supported: boolean): Promise<boolean> {
+  return mutate(async (state) => {
+    const conn = state.connections.find((c) => c.id === id);
+    if (!conn) return false; // unknown id: nothing to update
+    // Unchanged flag (the common every-reconnect case): skip the write.
+    if (conn.updateSupported === supported) return false;
+    conn.updateSupported = supported;
     await writeState(state);
     return true;
   });

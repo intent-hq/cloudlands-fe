@@ -130,6 +130,14 @@ export interface ConnectionRecord {
    */
   daemonVersion?: string | null;
   /**
+   * Whether the remote daemon reports self-update support (`updateSupported`
+   * from `system.status`), captured after connect and refreshed on every
+   * reconnect. `null`/absent = unknown (capture pending, or a daemon too old
+   * to report the field) — the UI treats anything but `true` as "do not offer
+   * the Update action". Never set for the local entry.
+   */
+  updateSupported?: boolean | null;
+  /**
    * Per-backend keychain-sync exclusion (spec Phase 2): `true` when the user
    * opted this backend out of iCloud sync at add time, making the record
    * local-only (never pushed to the keychain, never touched by pulls).

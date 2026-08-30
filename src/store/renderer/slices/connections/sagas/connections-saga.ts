@@ -288,13 +288,16 @@ interface DaemonBehindTracker {
  * (not tracked either), so a window never announces a daemon it isn't bound
  * to and the tracker semantics cover the window's backend only. An id only
  * counts as
- * evaluated when the check was conclusive (both `daemonVersion` and
- * `pinnedVersion` present) — the daemon-version capture on connect is
- * fire-and-forget, so the 'connected' broadcast can precede the
- * version-bearing one; deferring keeps that follow-up broadcast counting as
- * the transition, and a version refresh re-evaluates (the per-id toast id
- * updates in place rather than stacking). Re-broadcasts of an unchanged pool
- * stay silent; a disconnect clears the id so a reconnect announces again.
+ * evaluated when the check was conclusive (`daemonVersion`, `pinnedVersion`,
+ * and `updateSupported` all present) — the daemon-version and updateSupported
+ * captures on connect are fire-and-forget, so the 'connected' broadcast can
+ * precede the value-bearing ones; deferring keeps those follow-up broadcasts
+ * counting as the transition, and a version refresh re-evaluates (the per-id
+ * toast id updates in place rather than stacking). Re-broadcasts of an
+ * unchanged pool stay silent; a disconnect clears the id so a reconnect
+ * announces again. Daemons that report `updateSupported: false` are evaluated
+ * but never toasted (the Update affordance is gated on explicit support —
+ * the Devices-page behind-pin badge stays as the informational surface).
  * The Update action feeds `updateActions` (pumped back into the store as an
  * `updateBackendRequested` dispatch); the outcome then surfaces via the
  * existing per-result update toasts.
@@ -314,6 +317,11 @@ function* announceDaemonsBehindPin(
     if (conn.isLocal || !connectedIds.includes(conn.id)) continue;
     const { daemonVersion } = conn;
     if (!daemonVersion || !pinnedVersion) continue;
+    // The updateSupported capture is fire-and-forget like the version
+    // capture: unknown (absent/null) is inconclusive, so the flag-bearing
+    // follow-up broadcast still counts as the transition. An explicit
+    // `false` IS conclusive — evaluated but suppressed below.
+    if (conn.updateSupported == null) continue;
     evaluated.set(conn.id, daemonVersion);
     if (previous.get(conn.id) === daemonVersion) continue;
     if (!canRequestDeviceUpdate(conn, connectedIds, pinnedVersion)) continue;

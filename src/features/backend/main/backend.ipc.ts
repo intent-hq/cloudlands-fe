@@ -679,6 +679,10 @@ function createAdditionalBackendClient(id: string, config: BackendConnectionConf
         // propagates on the next reconnect. Fire-and-forget/fail-soft like
         // the version capture; the store dedupes the unchanged common case.
         void captureRemoteHostname(id);
+        // Capture whether the daemon supports self-update (system.status
+        // `updateSupported`) so the renderer can gate the Update affordance.
+        // Fire-and-forget/fail-soft like the captures above.
+        void captureRemoteUpdateSupported(id);
       } else {
         // #3448: refresh the adopted external daemon's version info from the
         // live `server.version` on every (re)connect — the startup probe only
@@ -1040,6 +1044,54 @@ async function captureRemoteHostname(id: string): Promise<void> {
     }
   } catch (error) {
     logger.warn('Failed to capture remote hostname for connection label', {
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+}
+
+/**
+ * Pull the `updateSupported` flag out of a `system.status` result. Returns
+ * `null` when the field is absent or malformed (a daemon too old to report
+ * it) so callers keep the stored value as "unknown".
+ */
+function extractUpdateSupported(result: unknown): boolean | null {
+  if (result && typeof result === 'object') {
+    const value = (result as { updateSupported?: unknown }).updateSupported;
+    if (typeof value === 'boolean') return value;
+  }
+  return null;
+}
+
+/**
+ * Capture whether a freshly-connected remote's daemon supports self-update
+ * (`updateSupported` from `system.status`) and persist it on the connection
+ * record, following the `captureRemoteHostname` capture pattern. Runs on
+ * every (re)connect hello so a daemon upgrade/downgrade (or a supervision
+ * change) refreshes the stored flag; the renderer gates the Update affordance
+ * on it. Fire-and-forget/fail-soft by design: any failure (unreachable,
+ * method unknown, malformed result, store write error) is swallowed with a
+ * warn and the stored value stays as-is ("unknown" until first captured).
+ * An absent field (older daemon) is also left as-is rather than persisted as
+ * `false` — unknown and unsupported are distinct states. Results that arrive
+ * after the backend's client was disposed are discarded (monorepo#2221).
+ * Never called for the local entry.
+ */
+async function captureRemoteUpdateSupported(id: string): Promise<void> {
+  try {
+    // Snapshot this backend's pooled client; the id-keyed pool lookup below
+    // protects against a stale capture after the client is disposed.
+    const client = getBackendClientForId(id);
+    const result = await client.request('system.status');
+    const supported = extractUpdateSupported(result);
+    // Drop the result when this backend's client changed mid-flight — the
+    // snapshot client may have answered just before its disposal.
+    if (supported !== null && backendClients.get(id) === client) {
+      const changed = await connectionsStore.setUpdateSupported(id, supported);
+      if (changed) await broadcastConnectionsChanged();
+    }
+  } catch (error) {
+    logger.warn('Failed to capture remote updateSupported flag', {
+      id,
       error: error instanceof Error ? error.message : String(error),
     });
   }

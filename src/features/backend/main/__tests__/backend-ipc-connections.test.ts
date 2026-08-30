@@ -129,6 +129,7 @@ const store = vi.hoisted(() => ({
   getDecryptedToken: vi.fn(),
   setHostname: vi.fn(),
   setDaemonVersion: vi.fn(),
+  setUpdateSupported: vi.fn(),
   setHosts: vi.fn(),
   getDetectHosts: vi.fn(),
 }));
@@ -144,6 +145,7 @@ vi.mock('../connections-store', () => ({
   getDecryptedToken: store.getDecryptedToken,
   setHostname: store.setHostname,
   setDaemonVersion: store.setDaemonVersion,
+  setUpdateSupported: store.setUpdateSupported,
   setHosts: store.setHosts,
   getDetectHosts: store.getDetectHosts,
   // Keychain-sync lifecycle wiring (T3); inert in these suites.
@@ -1238,10 +1240,16 @@ describe('connections:* IPC handlers', () => {
         ]),
       });
     });
-    // Only the self-fingerprint probe and the reconnect-hello hostname
-    // re-capture may hit the wire here — never a fingerprint capture.
+    // Only the self-fingerprint probe and the reconnect-hello hostname +
+    // updateSupported re-captures may hit the wire here — never a
+    // fingerprint capture.
     expect(
-      rpc.calls.every((method) => method === 'server.pairingInfo' || method === 'host.status'),
+      rpc.calls.every(
+        (method) =>
+          method === 'server.pairingInfo' ||
+          method === 'host.status' ||
+          method === 'system.status',
+      ),
     ).toBe(true);
     expect(mockCaptureFingerprint).not.toHaveBeenCalled();
 

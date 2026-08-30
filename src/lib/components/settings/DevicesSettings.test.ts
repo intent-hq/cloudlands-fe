@@ -331,7 +331,10 @@ describe('DevicesSettings', () => {
     it('offers Update only for connected behind devices and dispatches the backend update', async () => {
       mocks.pinnedVersion = '0.9.1';
       mocks.connectedIds = ['remote-1'];
-      mocks.connections = [local, { ...remote, daemonVersion: '0.9.0', status: 'connected' }];
+      mocks.connections = [
+        local,
+        { ...remote, daemonVersion: '0.9.0', updateSupported: true, status: 'connected' },
+      ];
       render(DevicesSettings);
 
       await openAction('Update');
@@ -348,12 +351,43 @@ describe('DevicesSettings', () => {
 
     it('hides Update for a behind device without a live connection', async () => {
       mocks.pinnedVersion = '0.9.1';
-      mocks.connections = [local, { ...remote, daemonVersion: '0.9.0' }];
+      mocks.connections = [local, { ...remote, daemonVersion: '0.9.0', updateSupported: true }];
       render(DevicesSettings);
 
       await fireEvent.click(screen.getByRole('button', { name: 'Actions for Studio Mac' }));
       await screen.findByRole('menuitem', { name: 'Connect' });
 
+      expect(screen.queryByRole('menuitem', { name: 'Update' })).toBeNull();
+      expect(mocks.updateBackend).not.toHaveBeenCalled();
+    });
+
+    it('hides Update when the daemon does not support self-update or the flag is unknown', async () => {
+      mocks.pinnedVersion = '0.9.1';
+      mocks.connectedIds = ['remote-1', 'remote-2'];
+      mocks.connections = [
+        local,
+        { ...remote, daemonVersion: '0.9.0', updateSupported: false, status: 'connected' },
+        {
+          ...remote,
+          id: 'remote-2',
+          label: 'Other Mac',
+          daemonVersion: '0.9.0',
+          status: 'connected',
+        },
+      ];
+      render(DevicesSettings);
+
+      // The behind-pin badge stays informational even without update support.
+      expect(screen.getAllByRole('img', { name: behindLabel })).toHaveLength(2);
+
+      await fireEvent.click(screen.getByRole('button', { name: 'Actions for Studio Mac' }));
+      await screen.findByRole('menuitem', { name: 'Edit' });
+      expect(screen.queryByRole('menuitem', { name: 'Update' })).toBeNull();
+      // Close before opening the second device's menu.
+      await fireEvent.keyDown(document.body, { key: 'Escape' });
+
+      await fireEvent.click(screen.getByRole('button', { name: 'Actions for Other Mac' }));
+      await screen.findByRole('menuitem', { name: 'Edit' });
       expect(screen.queryByRole('menuitem', { name: 'Update' })).toBeNull();
       expect(mocks.updateBackend).not.toHaveBeenCalled();
     });

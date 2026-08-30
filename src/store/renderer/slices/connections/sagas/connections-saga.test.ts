@@ -729,7 +729,7 @@ describe('connectionsSaga', () => {
   });
 
   describe('daemon-behind-pin toast on connect', () => {
-    const BEHIND = { ...REMOTE, daemonVersion: '0.9.0' };
+    const BEHIND = { ...REMOTE, daemonVersion: '0.9.0', updateSupported: true };
     // The toast is scoped to the window's own backend, so the simulated
     // window is bound to the behind remote unless a test overrides it.
     const changed = (
@@ -810,6 +810,41 @@ describe('connectionsSaga', () => {
       await run.task.toPromise();
     });
 
+    it('never toasts a behind daemon that reports updateSupported: false', async () => {
+      const run = start();
+      await settle();
+
+      changed([LOCAL, { ...BEHIND, updateSupported: false }], [BEHIND.id], '0.10.0');
+      await settle();
+      expect(toast.warning).not.toHaveBeenCalled();
+
+      // Re-broadcasts of the same conclusive state stay silent too.
+      changed([LOCAL, { ...BEHIND, updateSupported: false }], [BEHIND.id], '0.10.0');
+      await settle();
+      expect(toast.warning).not.toHaveBeenCalled();
+
+      run.task.cancel();
+      await run.task.toPromise();
+    });
+
+    it('toasts on the flag-bearing follow-up when the connect broadcast precedes the updateSupported capture', async () => {
+      const run = start();
+      await settle();
+
+      // The fire-and-forget updateSupported capture hasn't landed yet:
+      // unknown is inconclusive, so the id must NOT count as evaluated.
+      changed([LOCAL, { ...BEHIND, updateSupported: null }], [BEHIND.id], '0.10.0');
+      await settle();
+      expect(toast.warning).not.toHaveBeenCalled();
+
+      // The capture's write/broadcast arrives: still counts as the transition.
+      changed([LOCAL, BEHIND], [BEHIND.id], '0.10.0');
+      await vi.waitFor(() => expect(toast.warning).toHaveBeenCalledTimes(1));
+
+      run.task.cancel();
+      await run.task.toPromise();
+    });
+
     it('announces an already-connected behind backend once at startup hydration', async () => {
       invoke.mockImplementation(async (channel: string) => {
         if (channel === CONNECTION_CHANNELS.LIST)
@@ -839,10 +874,10 @@ describe('connectionsSaga', () => {
       const run = start();
       await settle();
 
-      const equal = { ...REMOTE, id: 'remote-eq', daemonVersion: '0.10.0' };
-      const newer = { ...REMOTE, id: 'remote-new', daemonVersion: '0.11.0' };
-      const unknown = { ...REMOTE, id: 'remote-unk', daemonVersion: null };
-      const notConnected = { ...REMOTE, id: 'remote-off', daemonVersion: '0.9.0' };
+      const equal = { ...BEHIND, id: 'remote-eq', daemonVersion: '0.10.0' };
+      const newer = { ...BEHIND, id: 'remote-new', daemonVersion: '0.11.0' };
+      const unknown = { ...BEHIND, id: 'remote-unk', daemonVersion: null };
+      const notConnected = { ...BEHIND, id: 'remote-off', daemonVersion: '0.9.0' };
       const pool = [LOCAL, equal, newer, unknown, notConnected];
       const connectedIds = [equal.id, newer.id, unknown.id];
       // One broadcast per window-backend binding: each candidate is evaluated

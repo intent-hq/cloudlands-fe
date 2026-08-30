@@ -962,6 +962,78 @@ describe('connections-store', () => {
     }
   });
 
+  it('records default to a null updateSupported until one is captured', async () => {
+    const store = await import('../connections-store');
+    const rec = await store.add(sampleConn);
+    expect(rec.updateSupported).toBeNull();
+    expect((await store.list())[1].updateSupported).toBeNull();
+  });
+
+  it('setUpdateSupported persists the captured flag and it round-trips through disk', async () => {
+    const store = await import('../connections-store');
+    const rec = await store.add(sampleConn);
+    await expect(store.setUpdateSupported(rec.id, true)).resolves.toBe(true);
+    await store.__drainWriteChainForTesting();
+
+    vi.resetModules();
+    mockElectron();
+    const reloaded = await import('../connections-store');
+    const remote = (await reloaded.list()).find((c) => c.id === rec.id);
+    expect(remote?.updateSupported).toBe(true);
+  });
+
+  it('setUpdateSupported refreshes a changed flag and reports unchanged writes as false', async () => {
+    const store = await import('../connections-store');
+    const rec = await store.add(sampleConn);
+
+    await expect(store.setUpdateSupported(rec.id, true)).resolves.toBe(true);
+    expect((await store.list())[1].updateSupported).toBe(true);
+
+    // The routine every-reconnect same-flag capture is a no-op.
+    await expect(store.setUpdateSupported(rec.id, true)).resolves.toBe(false);
+
+    // A supervision change (or daemon downgrade) refreshes the stored flag.
+    await expect(store.setUpdateSupported(rec.id, false)).resolves.toBe(true);
+    expect((await store.list())[1].updateSupported).toBe(false);
+  });
+
+  it('setUpdateSupported is a no-op for an unknown id (fail-soft)', async () => {
+    const store = await import('../connections-store');
+    await store.add(sampleConn);
+    await expect(store.setUpdateSupported('does-not-exist', true)).resolves.toBe(false);
+    expect((await store.list()).some((c) => c.updateSupported === true)).toBe(false);
+  });
+
+  it('setUpdateSupported never bumps the LWW clock or notifies keychain sync (per-machine state)', async () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(1_700_000_000_000);
+      const store = await import('../connections-store');
+      const rec = await store.add(sampleConn);
+      await store.__drainWriteChainForTesting();
+
+      const listener = vi.fn();
+      const unsubscribe = store.onConnectionsMutated(listener);
+
+      vi.setSystemTime(1_700_000_001_000);
+      await store.setUpdateSupported(rec.id, true);
+      await store.__drainWriteChainForTesting();
+
+      const file = path.join(tmpDir, 'backend-connections.json');
+      const parsed = JSON.parse(await fs.readFile(file, 'utf8'));
+      expect(parsed.connections[0].updateSupported).toBe(true);
+      expect(parsed.connections[0].updatedAt).toBe(1_700_000_000_000);
+      expect(listener).not.toHaveBeenCalled();
+      unsubscribe();
+
+      // The captured flag never enters the sync surface either.
+      const records = await store.listSyncRecords();
+      expect(JSON.stringify(records)).not.toContain('updateSupported');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('malformed JSON on disk yields just the local entry (defensive)', async () => {
     await fs.writeFile(path.join(tmpDir, 'backend-connections.json'), 'not json', 'utf8');
     const store = await import('../connections-store');
