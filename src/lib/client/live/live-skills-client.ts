@@ -49,12 +49,7 @@ function normalizeSkill(wire: WireSkill): SkillInfo {
 }
 
 export class LiveSkillsClient implements SkillsClient {
-  /**
-   * Raw `skill.list` fetch — throws on transport/daemon failure. The public
-   * `list()` folds errors to an empty list; event-driven refetches use this
-   * directly so a transient failure keeps the last known-good view instead of
-   * wiping it (#610).
-   */
+  /** Raw `skill.list` fetch — throws on transport/daemon failure. */
   private async fetchList(workspaceId: string): Promise<SkillInfo[]> {
     // `skill.list` (§5.34) returns a bare array of skills (name-sorted).
     const result = await backendRequest<WireSkill[]>("skill.list", { workspaceId });
@@ -62,12 +57,7 @@ export class LiveSkillsClient implements SkillsClient {
   }
 
   async list(workspaceId: string): Promise<SkillInfo[]> {
-    try {
-      return await this.fetchList(workspaceId);
-    } catch {
-      // Fold transport/daemon errors to empty list (graceful degradation).
-      return [];
-    }
+    return this.fetchList(workspaceId);
   }
 
   subscribe(handler: SubscriptionHandler<SkillInfo[]>): Unsubscribe {
