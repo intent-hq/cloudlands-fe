@@ -740,14 +740,19 @@
   groupIndex: number,
   childBlock: ContentBlock,
   childIndex: number,
+  suppressSpacing: boolean = false,
 )}
   <div
-    class={`${getOperationalClusterSpacingClass(
-      group.children,
-      childIndex,
-      isVisibleOperationalBlock,
-      group.isReasoningPhase,
-    )} ${
+    class={`${
+      suppressSpacing
+        ? ''
+        : getOperationalClusterSpacingClass(
+            group.children,
+            childIndex,
+            isVisibleOperationalBlock,
+            group.isReasoningPhase,
+          )
+    } ${
       isOperationalClusterBlock(childBlock)
         ? OPERATIONAL_GROUP_CHILD_ROW_CLASS
         : OPERATIONAL_GROUP_CHILD_CONTENT_CLASS
@@ -790,6 +795,7 @@
             blockIndex,
             group.children[currentChildIndex],
             currentChildIndex,
+            true,
           )}
         {/snippet}
         <div
