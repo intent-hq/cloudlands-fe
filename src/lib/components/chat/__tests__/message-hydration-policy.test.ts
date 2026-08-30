@@ -274,6 +274,25 @@ describe('message hydration policy', () => {
     expect(policy.getHydratedIds()).toEqual(['a']);
   });
 
+  it('drops a retained pre-record report when observation deactivates', () => {
+    const policy = createPolicy([]);
+    const elements = observe(policy, ['a']);
+    MockIntersectionObserver.instances[0].fire([
+      { target: elements.get('a')!, isIntersecting: true },
+    ]);
+
+    policy.setActive(false);
+    policy.setActive(true);
+    policy.updateMessages([assistant('a')]);
+
+    expect(policy.getHydratedIds()).toEqual([]);
+
+    MockIntersectionObserver.instances[1].fire([
+      { target: elements.get('a')!, isIntersecting: true },
+    ]);
+    expect(policy.getHydratedIds()).toEqual(['a']);
+  });
+
   it('detaches visibility observers while inactive and restores registrations', () => {
     const policy = createPolicy([assistant('a')]);
     const elements = observe(policy, ['a']);

@@ -169,6 +169,9 @@ export function createMessageHydrationPolicy(
         for (const registration of registrations.values()) {
           registration.release?.();
           registration.release = null;
+          // A retained pre-record report is stale once observation stops; the
+          // re-attached observer reports fresh visibility on activation.
+          registration.pendingReport = null;
         }
       }
     },
