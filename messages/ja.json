@@ -2116,6 +2116,8 @@
   "chat_backgroundHooks_modal_lastError_label": "前回のエラー",
   "chat_backgroundHooks_details_nextRun_label": "次回実行",
   "chat_backgroundHooks_details_interval_label": "間隔",
+  "chat_backgroundHooks_details_schedule_label": "スケジュール",
+  "chat_backgroundHooks_details_onceAt_value": "{time} に1回",
   "chat_backgroundHooks_details_expires_label": "有効期限",
   "chat_backgroundHooks_details_runs_label": "実行回数",
   "chat_hookWakeAttribution_wokeAgent_after": "がエージェントを起こしました",

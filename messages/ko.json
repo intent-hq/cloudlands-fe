@@ -2116,6 +2116,8 @@
   "chat_backgroundHooks_modal_lastError_label": "마지막 오류",
   "chat_backgroundHooks_details_nextRun_label": "다음 실행",
   "chat_backgroundHooks_details_interval_label": "간격",
+  "chat_backgroundHooks_details_schedule_label": "일정",
+  "chat_backgroundHooks_details_onceAt_value": "{time}에 1회",
   "chat_backgroundHooks_details_expires_label": "만료",
   "chat_backgroundHooks_details_runs_label": "실행 횟수",
   "chat_hookWakeAttribution_wokeAgent_after": "이(가) 에이전트를 깨웠습니다",
