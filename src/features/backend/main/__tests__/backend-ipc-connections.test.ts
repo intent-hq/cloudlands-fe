@@ -606,6 +606,74 @@ describe('connections:* IPC handlers', () => {
     });
   });
 
+  it('connections:list enriches the local record with the external daemon version + updateSupported', async () => {
+    const { mod } = await loadModule();
+    // Same module registry as the loaded backend.ipc (vi.resetModules ran in
+    // beforeEach), so this state is the instance the handler reads.
+    const connectionMode = await import('../connection-mode');
+    connectionMode.setConnectionMode('external');
+    connectionMode.setDaemonVersionInfo({
+      daemonVersion: '0.2.0',
+      pinnedVersion: '0.1.0',
+      versionMismatch: true,
+    });
+    connectionMode.setLocalUpdateSupported(true);
+    mod.registerBackendHandlers();
+
+    await expect(findHandler('connections:list')!({}, undefined)).resolves.toMatchObject({
+      connections: [
+        { ...LOCAL, daemonVersion: '0.2.0', updateSupported: true, status: 'disconnected' },
+        { ...REMOTE, status: 'not-open' },
+      ],
+    });
+    connectionMode.__resetConnectionModeForTesting();
+  });
+
+  it('connections:list maps the external daemon version into the connected local row intentdVersion', async () => {
+    const { mod } = await loadModule();
+    const connectionMode = await import('../connection-mode');
+    connectionMode.setConnectionMode('external');
+    connectionMode.setDaemonVersionInfo({
+      daemonVersion: '0.2.0',
+      pinnedVersion: '0.1.0',
+      versionMismatch: true,
+    });
+    mod.registerBackendHandlers();
+    // Only a CONNECTED local row shows the inline version, like remotes.
+    const local = mod.getBackendClient() as unknown as { status: string };
+    local.status = 'connected';
+
+    const result = (await findHandler('connections:list')!({}, undefined)) as {
+      connections: Array<Record<string, unknown>>;
+    };
+    expect(result.connections.find((c) => c.id === 'local')).toMatchObject({
+      status: 'connected',
+      intentdVersion: '0.2.0',
+    });
+    connectionMode.__resetConnectionModeForTesting();
+  });
+
+  it('connections:list leaves the local record unenriched in sidecar mode', async () => {
+    const { mod } = await loadModule();
+    const connectionMode = await import('../connection-mode');
+    connectionMode.setConnectionMode('sidecar');
+    connectionMode.setDaemonVersionInfo({
+      daemonVersion: '0.2.0',
+      pinnedVersion: '0.1.0',
+      versionMismatch: true,
+    });
+    connectionMode.setLocalUpdateSupported(true);
+    mod.registerBackendHandlers();
+
+    const result = (await findHandler('connections:list')!({}, undefined)) as {
+      connections: Array<Record<string, unknown>>;
+    };
+    const local = result.connections.find((c) => c.id === 'local');
+    expect(local).not.toHaveProperty('daemonVersion');
+    expect(local).not.toHaveProperty('updateSupported');
+    connectionMode.__resetConnectionModeForTesting();
+  });
+
   it('connections:list reports connected pool members in connectedIds', async () => {
     const { mod } = await loadModule();
     mod.getBackendClient(); // local stays 'disconnected'
@@ -654,15 +722,83 @@ describe('connections:* IPC handlers', () => {
     expect(rpc.calls).toContain('system.requestUpdate');
   });
 
-  it('connections:update-backend rejects the local id as unsupported', async () => {
+  it('connections:update-backend rejects the local id as unsupported in sidecar/unknown mode', async () => {
     const { mod } = await loadModule();
+    const connectionMode = await import('../connection-mode');
     mod.registerBackendHandlers();
+    const handler = findHandler('connections:update-backend')!;
 
-    await expect(findHandler('connections:update-backend')!({}, { id: 'local' })).resolves.toEqual({
+    // Default (unresolved) mode — the FE manages its own sidecar.
+    await expect(handler({}, { id: 'local' })).resolves.toEqual({
+      ok: false,
+      reason: 'unsupported',
+    });
+
+    // Explicit sidecar mode — the app updater owns the sidecar, never this RPC.
+    connectionMode.setConnectionMode('sidecar');
+    const local = mod.getBackendClient() as unknown as { status: string };
+    local.status = 'connected';
+    await expect(handler({}, { id: 'local' })).resolves.toEqual({
       ok: false,
       reason: 'unsupported',
     });
     expect(rpc.calls).not.toContain('system.requestUpdate');
+    connectionMode.__resetConnectionModeForTesting();
+  });
+
+  it('connections:update-backend routes the local id to the pooled local client in external mode', async () => {
+    const { mod } = await loadModule();
+    const connectionMode = await import('../connection-mode');
+    connectionMode.setConnectionMode('external');
+    mod.registerBackendHandlers();
+    const local = mod.getBackendClient() as unknown as { status: string };
+    local.status = 'connected';
+
+    await expect(findHandler('connections:update-backend')!({}, { id: 'local' })).resolves.toEqual({
+      ok: true,
+    });
+    expect(rpc.calls).toContain('system.requestUpdate');
+    connectionMode.__resetConnectionModeForTesting();
+  });
+
+  it('connections:update-backend rejects the local id as unsupported over a non-UDS transport', async () => {
+    // External mode with an env transport override (the INTENTD_WS_URL
+    // two-terminal dev flow): the pooled local client is not UDS, so the
+    // routing must mirror the capture's transport guard and refuse.
+    const priorWsUrl = process.env.INTENTD_WS_URL;
+    process.env.INTENTD_WS_URL = 'ws://127.0.0.1:51337/ws';
+    try {
+      const { mod } = await loadModule();
+      const connectionMode = await import('../connection-mode');
+      connectionMode.setConnectionMode('external');
+      mod.registerBackendHandlers();
+      const local = mod.getBackendClient() as unknown as { status: string };
+      local.status = 'connected';
+
+      await expect(
+        findHandler('connections:update-backend')!({}, { id: 'local' }),
+      ).resolves.toEqual({ ok: false, reason: 'unsupported' });
+      expect(rpc.calls).not.toContain('system.requestUpdate');
+      connectionMode.__resetConnectionModeForTesting();
+    } finally {
+      if (priorWsUrl === undefined) delete process.env.INTENTD_WS_URL;
+      else process.env.INTENTD_WS_URL = priorWsUrl;
+    }
+  });
+
+  it('connections:update-backend reports not-connected for a disconnected external local daemon', async () => {
+    const { mod } = await loadModule();
+    const connectionMode = await import('../connection-mode');
+    connectionMode.setConnectionMode('external');
+    mod.registerBackendHandlers();
+    mod.getBackendClient(); // pooled local client stays 'disconnected'
+
+    await expect(findHandler('connections:update-backend')!({}, { id: 'local' })).resolves.toEqual({
+      ok: false,
+      reason: 'not-connected',
+    });
+    expect(rpc.calls).not.toContain('system.requestUpdate');
+    connectionMode.__resetConnectionModeForTesting();
   });
 
   it('connections:update-backend reports not-connected without a live client', async () => {
@@ -1246,9 +1382,7 @@ describe('connections:* IPC handlers', () => {
     expect(
       rpc.calls.every(
         (method) =>
-          method === 'server.pairingInfo' ||
-          method === 'host.status' ||
-          method === 'system.status',
+          method === 'server.pairingInfo' || method === 'host.status' || method === 'system.status',
       ),
     ).toBe(true);
     expect(mockCaptureFingerprint).not.toHaveBeenCalled();

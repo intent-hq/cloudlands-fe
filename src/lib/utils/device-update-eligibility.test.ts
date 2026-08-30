@@ -3,7 +3,6 @@ import { isDaemonBehindPin, canRequestDeviceUpdate } from './device-update-eligi
 
 const remote = (daemonVersion?: string | null, updateSupported: boolean | null = true) => ({
   id: 'remote-1',
-  isLocal: false,
   daemonVersion,
   updateSupported,
 });
@@ -38,10 +37,12 @@ describe('isDaemonBehindPin', () => {
     expect(isDaemonBehindPin(remote('0.9.0'), '')).toBe(false);
   });
 
-  it('is never true for the local entry', () => {
-    expect(
-      isDaemonBehindPin({ id: 'local', isLocal: true, daemonVersion: '0.9.0' }, '0.10.0'),
-    ).toBe(false);
+  it('is true for the local entry once its external daemon version is captured behind', () => {
+    expect(isDaemonBehindPin({ id: 'local', daemonVersion: '0.9.0' }, '0.10.0')).toBe(true);
+  });
+
+  it('is false for the local sidecar entry (no captured version)', () => {
+    expect(isDaemonBehindPin({ id: 'local' }, '0.10.0')).toBe(false);
   });
 
   it('handles a leading v and prerelease ordering', () => {
@@ -69,14 +70,18 @@ describe('canRequestDeviceUpdate', () => {
     expect(canRequestDeviceUpdate(remote('0.11.0'), ['remote-1'], '0.10.0')).toBe(false);
   });
 
-  it('is false for the local entry, even if listed as connected', () => {
+  it('is true for the connected local entry with an external daemon behind and update support', () => {
     expect(
       canRequestDeviceUpdate(
-        { id: 'local', isLocal: true, daemonVersion: '0.9.0' },
+        { id: 'local', daemonVersion: '0.9.0', updateSupported: true },
         ['local'],
         '0.10.0',
       ),
-    ).toBe(false);
+    ).toBe(true);
+  });
+
+  it('is false for the local sidecar entry (no captured version/support), even if connected', () => {
+    expect(canRequestDeviceUpdate({ id: 'local' }, ['local'], '0.10.0')).toBe(false);
   });
 
   it('is false when daemonVersion or the pin is missing', () => {

@@ -1,7 +1,10 @@
 /**
- * Update-eligibility predicates for the Devices page — decide when a remote
+ * Update-eligibility predicates for the Devices page — decide when a
  * device's daemon is behind the app's pinned intentd version and when the
- * remote Update action may be offered.
+ * Update action may be offered. The synthesized local entry is evaluated
+ * like a remote: its record only carries `daemonVersion`/`updateSupported`
+ * for an adopted external daemon over UDS, so the spawned sidecar (which
+ * carries neither) stays ineligible naturally.
  *
  * Keep this module dependency-light and side-effect free: it only compares
  * already-known values (no stores, services, or IPC).
@@ -12,12 +15,10 @@ import { compareToPinnedVersion } from '$shared/intentd-version-compare';
 /** The minimal connection shape the eligibility predicates need. */
 export interface UpdateEligibilityConnection {
   id: string;
-  /** True for the synthesized local sidecar entry — never update-eligible. */
-  isLocal: boolean;
-  /** The remote daemon's reported version, or null/absent until captured. */
+  /** The daemon's reported version, or null/absent until captured. */
   daemonVersion?: string | null;
   /**
-   * Whether the remote daemon reports self-update support (`updateSupported`
+   * Whether the daemon reports self-update support (`updateSupported`
    * from `system.status`), or null/absent while unknown (capture pending, or
    * a daemon too old to report the field).
    */
@@ -26,20 +27,19 @@ export interface UpdateEligibilityConnection {
 
 /**
  * True when the connection's captured daemon version is strictly older than
- * the pinned sidecar version. Never true for the local entry, when either
- * version is missing, or when the comparison is `unknown` (unparsable).
+ * the pinned sidecar version. Never true when either version is missing or
+ * when the comparison is `unknown` (unparsable).
  */
 export function isDaemonBehindPin(
   conn: UpdateEligibilityConnection,
   pinnedVersion: string | null | undefined,
 ): boolean {
-  if (conn.isLocal) return false;
   if (!conn.daemonVersion || !pinnedVersion) return false;
   return compareToPinnedVersion(conn.daemonVersion, pinnedVersion) === 'older';
 }
 
 /**
- * True when the remote Update action may be offered for `conn`: its daemon is
+ * True when the Update action may be offered for `conn`: its daemon is
  * behind the pin ({@link isDaemonBehindPin}), it explicitly reports
  * self-update support (`updateSupported === true` — strict: unknown/absent is
  * NOT offered, e.g. a daemon too old to report the field or one not

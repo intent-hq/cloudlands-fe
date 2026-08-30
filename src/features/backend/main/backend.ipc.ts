@@ -57,8 +57,10 @@ import {
 import {
   getConnectionMode,
   getDaemonVersionInfo,
+  getLocalUpdateSupported,
   getOrphanedSidecarInfo,
   setDaemonVersionInfo,
+  setLocalUpdateSupported,
   setOrphanedSidecarInfo,
 } from './connection-mode';
 import { computeDaemonVersionRefresh } from './daemon-version-refresh';
@@ -542,19 +544,34 @@ export function getLocalBackendClient(): JsonRpcClient {
 }
 
 /**
- * Ask one connected remote backend's daemon to self-update via
+ * Ask one connected backend's daemon to self-update via
  * `system.requestUpdate` (the daemon signals its serve-mode sitter, which
  * installs the newer version and restarts the daemon). Returns a structured
  * {@link UpdateBackendResult} instead of throwing for daemon-side failures so
  * the renderer can toast a specific message:
- *   - local id → 'unsupported' (the local sidecar is never updated this way);
- *   - no live pooled client → 'not-connected' (saved-but-disconnected remote);
+ *   - local id in sidecar/unknown mode, or over a non-UDS transport →
+ *     'unsupported' (the FE's app updater owns the app-managed sidecar; only
+ *     an adopted `external` local daemon over UDS is routed like a remote,
+ *     over the pooled local client — the same predicate as
+ *     {@link captureLocalUpdateSupported});
+ *   - no live pooled client → 'not-connected' (saved-but-disconnected remote,
+ *     or a disconnected external local daemon);
  *   - JSON-RPC -32601 → 'unsupported' (daemon too old to know the method);
  *   - any other daemon/transport error → 'failed' with the error message.
  */
 async function requestBackendUpdate(id: string): Promise<UpdateBackendResult> {
   if (id === LOCAL_CONNECTION_ID) {
-    return { ok: false, reason: 'unsupported' };
+    // Same predicate as captureLocalUpdateSupported: only an adopted
+    // `external` daemon over UDS is self-updatable. External mode is also set
+    // for env transport overrides (e.g. the INTENTD_WS_URL two-terminal dev
+    // flow), where the pooled local client is not UDS — the UI never offers
+    // Update there, and a direct IPC call must not route around that.
+    const config =
+      backendClients.get(LOCAL_CONNECTION_ID)?.getConfig() ??
+      resolveBackendConfig(process.env, { isDev: !app.isPackaged });
+    if (getConnectionMode() !== 'external' || config.transport !== 'uds') {
+      return { ok: false, reason: 'unsupported' };
+    }
   }
   const target = backendClients.get(id);
   if (!target || target.getStatus() !== 'connected') {
@@ -565,11 +582,11 @@ async function requestBackendUpdate(id: string): Promise<UpdateBackendResult> {
     return { ok: true };
   } catch (error) {
     if (error instanceof JsonRpcError && error.rpcCode === -32601) {
-      logger.warn('Remote daemon does not support system.requestUpdate', { id });
+      logger.warn('Daemon does not support system.requestUpdate', { id });
       return { ok: false, reason: 'unsupported' };
     }
     const message = error instanceof Error ? error.message : String(error);
-    logger.warn('Remote daemon update request failed', { id, error: message });
+    logger.warn('Daemon update request failed', { id, error: message });
     return { ok: false, reason: 'failed', message };
   }
 }
@@ -711,6 +728,11 @@ function createAdditionalBackendClient(id: string, config: BackendConnectionConf
             id,
           );
         }
+        // Capture whether the adopted external local daemon supports
+        // self-update (system.status `updateSupported`), mirroring the
+        // remote capture above. Fire-and-forget/fail-soft; the capture
+        // itself guards on external + UDS and clears otherwise.
+        void captureLocalUpdateSupported();
       }
     },
   });
@@ -1099,6 +1121,78 @@ async function captureRemoteUpdateSupported(id: string): Promise<void> {
 }
 
 /**
+ * Capture whether the adopted external LOCAL daemon supports self-update
+ * (`updateSupported` from `system.status`), mirroring
+ * {@link captureRemoteUpdateSupported} but storing the flag in the
+ * connection-mode module state (the local entry is synthesized, never
+ * persisted). Runs from the local `onHelloResult` branch on every
+ * (re)connect. Only an `external` connection mode over UDS captures —
+ * sidecar/unresolved modes and non-UDS transports clear the flag to `null`
+ * (unknown). A (re)connect first resets a previously-captured flag to `null`
+ * synchronously — the daemon behind the socket may have been replaced, so the
+ * old value must not be advertised during the capture window — which also
+ * makes a FAILED request conclude as "unknown" rather than retaining a stale
+ * value (the failure itself stays fail-soft: swallowed with a warn). A
+ * successful flagless response is a conclusive "unknown" and stays `null` the
+ * same way. Results that arrive after the local client was disposed/replaced
+ * are discarded (monorepo#2221). Broadcasts `connections:changed` only when
+ * the value actually changed; a changed capture also re-pushes
+ * `backend:status` so the daemon-health saga's behind-pin suppression sees
+ * the flag-bearing transport payload (its earlier connected status is emitted
+ * before this capture resolves).
+ */
+async function captureLocalUpdateSupported(): Promise<void> {
+  try {
+    // Snapshot the pooled local client; the pool lookup below protects
+    // against a stale capture after the client is disposed/replaced.
+    const client = backendClients.get(LOCAL_CONNECTION_ID);
+    if (!client) return;
+    if (getConnectionMode() !== 'external' || client.getConfig().transport !== 'uds') {
+      if (getLocalUpdateSupported() !== null) {
+        setLocalUpdateSupported(null);
+        await broadcastConnectionsChanged();
+      }
+      return;
+    }
+    // Reset before the async capture: the connected daemon's capability is
+    // unknown until this hello's own capture answers, and the reset runs
+    // synchronously within the hello callback so no broadcast in the capture
+    // window carries the previous daemon's flag.
+    if (getLocalUpdateSupported() !== null) {
+      setLocalUpdateSupported(null);
+      await broadcastConnectionsChanged();
+    }
+    const result = await client.request('system.status');
+    const supported = extractUpdateSupported(result);
+    // Drop the result when the local client changed mid-flight — the
+    // snapshot client may have answered just before its disposal.
+    if (backendClients.get(LOCAL_CONNECTION_ID) === client) {
+      if (getLocalUpdateSupported() !== supported) {
+        setLocalUpdateSupported(supported);
+        await broadcastConnectionsChanged();
+        // The daemon-health saga decides the passive mismatch warning from
+        // `backend:status`, whose connected event precedes this capture —
+        // push a flag-bearing status so its behind-pin suppression can
+        // resolve (see daemon-health-saga `maybeNotifyVersionMismatch`).
+        broadcast(
+          BACKEND.STATUS,
+          {
+            status: client.getStatus(),
+            transport: formatTransportInfo(client.getConfig(), getPinnedVersion()),
+            reconnectAttempts: client.getReconnectAttempts(),
+          },
+          LOCAL_CONNECTION_ID,
+        );
+      }
+    }
+  } catch (error) {
+    logger.warn('Failed to capture local updateSupported flag', {
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+}
+
+/**
  * Pull the local-IP list out of a `server.pairingInfo` result (PROTOCOL §2 —
  * returns `{ token, certFingerprint, port, path, localIps, hostname }`).
  * Returns the non-empty string entries, else `null` when the shape is absent
@@ -1254,15 +1348,38 @@ async function listConnections(
   // created after the remote handshake already fired, a boot into
   // a rejecting remote, or a reload of a pooled-backend window) still surfaces
   // the advisory / actionable state (cloudlands-fe#823 pattern), per backend.
+  // The local entry is synthesized (never persisted), so its adopted external
+  // daemon observations live in connection-mode state rather than the store:
+  // enrich it here with the daemon's version and updateSupported capture.
+  // Sidecar/unresolved modes leave both fields absent.
+  const localVersionInfo = getConnectionMode() === 'external' ? getDaemonVersionInfo() : null;
+  const localUpdateSupported =
+    getConnectionMode() === 'external' ? getLocalUpdateSupported() : null;
   return {
     connections: connections
       .filter((c) => !isSelfConnectionRecord(c, selfKeys))
       .map((connection) => {
         const status = backendClients.get(connection.id)?.getStatus() ?? 'not-open';
+        // `connectedDaemonVersions` only holds remote captures (the local id
+        // skips captureRemoteDaemonVersion) — the connected local row's inline
+        // version comes from the external-daemon version handshake instead,
+        // so it renders like every connected remote's.
         const intentdVersion =
-          status === 'connected' ? connectedDaemonVersions.get(connection.id) : undefined;
+          status === 'connected'
+            ? connection.id === LOCAL_CONNECTION_ID
+              ? (localVersionInfo?.daemonVersion ?? undefined)
+              : connectedDaemonVersions.get(connection.id)
+            : undefined;
         return {
           ...connection,
+          ...(connection.id === LOCAL_CONNECTION_ID
+            ? {
+                ...(localVersionInfo?.daemonVersion
+                  ? { daemonVersion: localVersionInfo.daemonVersion }
+                  : {}),
+                ...(localUpdateSupported !== null ? { updateSupported: localUpdateSupported } : {}),
+              }
+            : {}),
           status,
           ...(intentdVersion ? { intentdVersion } : {}),
         };

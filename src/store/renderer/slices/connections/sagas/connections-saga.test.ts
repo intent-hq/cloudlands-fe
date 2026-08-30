@@ -893,7 +893,7 @@ describe('connectionsSaga', () => {
       await run.task.toPromise();
     });
 
-    it('stays silent for equal/newer/unknown versions, missing pin, local, and not-connected', async () => {
+    it('stays silent for equal/newer/unknown versions, missing pin, local sidecar, and not-connected', async () => {
       const run = start();
       await settle();
 
@@ -967,6 +967,98 @@ describe('connectionsSaga', () => {
       );
       // The outcome surfaces via the existing per-result update toast.
       await vi.waitFor(() => expect(toast.success).toHaveBeenCalledTimes(1));
+
+      run.task.cancel();
+      await run.task.toPromise();
+    });
+
+    it('toasts the local entry once its adopted external daemon is captured behind the pin', async () => {
+      const run = start();
+      await settle();
+
+      // Sidecar-shaped local record (no captured version/flag): inconclusive,
+      // silent, and not marked evaluated.
+      changed([LOCAL], [LOCAL.id], '0.10.0', LOCAL.id);
+      await settle();
+      expect(toast.warning).not.toHaveBeenCalled();
+
+      // The external-daemon capture enriches the local record: toast once.
+      const localExternal = { ...LOCAL, daemonVersion: '0.9.0', updateSupported: true };
+      changed([localExternal], [LOCAL.id], '0.10.0', LOCAL.id);
+      await vi.waitFor(() => expect(toast.warning).toHaveBeenCalledTimes(1));
+      const [message, options] = toast.warning.mock.calls[0]!;
+      expect(String(message)).toContain('This machine (local)');
+      expect(String(message)).toContain('v0.9.0');
+      expect(String(message)).toContain('v0.10.0');
+      expect(options.id).toBe(`connections-daemon-behind-${LOCAL.id}`);
+
+      // Unchanged re-broadcast: silent.
+      changed([localExternal], [LOCAL.id], '0.10.0', LOCAL.id);
+      await settle();
+      expect(toast.warning).toHaveBeenCalledTimes(1);
+
+      run.task.cancel();
+      await run.task.toPromise();
+    });
+
+    it("names the local entry's toast via the localized label, not the persisted fallback", async () => {
+      const run = start();
+      await settle();
+
+      // The main-process record's `label` is an untranslated English
+      // fallback — the toast must use the localized message instead (same as
+      // DeviceRow), so a divergent persisted label never leaks through.
+      const localExternal = {
+        ...LOCAL,
+        label: 'persisted-fallback-label',
+        daemonVersion: '0.9.0',
+        updateSupported: true,
+      };
+      changed([localExternal], [LOCAL.id], '0.10.0', LOCAL.id);
+      await vi.waitFor(() => expect(toast.warning).toHaveBeenCalledTimes(1));
+      const [message] = toast.warning.mock.calls[0]!;
+      expect(String(message)).toContain('This machine (local)');
+      expect(String(message)).not.toContain('persisted-fallback-label');
+
+      run.task.cancel();
+      await run.task.toPromise();
+    });
+
+    it("dispatches updateBackendRequested for the local entry when its toast's Update is clicked", async () => {
+      invoke.mockImplementation(async (channel: string) => {
+        if (channel === CONNECTION_CHANNELS.LIST)
+          return { connections: [LOCAL], activeId: LOCAL.id, windowBackendId: LOCAL.id };
+        if (channel === CONNECTION_CHANNELS.UPDATE_BACKEND) return { ok: true };
+        return {};
+      });
+      const run = start();
+      await settle();
+
+      const localExternal = { ...LOCAL, daemonVersion: '0.9.0', updateSupported: true };
+      changed([localExternal], [LOCAL.id], '0.10.0', LOCAL.id);
+      await vi.waitFor(() => expect(toast.warning).toHaveBeenCalledTimes(1));
+      const [, options] = toast.warning.mock.calls[0]!;
+      options.action.onClick();
+      await vi.waitFor(() =>
+        expect(invoke).toHaveBeenCalledWith(CONNECTION_CHANNELS.UPDATE_BACKEND, {
+          id: LOCAL.id,
+        }),
+      );
+      // The outcome surfaces via the existing per-result update toast.
+      await vi.waitFor(() => expect(toast.success).toHaveBeenCalledTimes(1));
+
+      run.task.cancel();
+      await run.task.toPromise();
+    });
+
+    it('never toasts the local entry when its external daemon reports updateSupported: false', async () => {
+      const run = start();
+      await settle();
+
+      const localExternal = { ...LOCAL, daemonVersion: '0.9.0', updateSupported: false };
+      changed([localExternal], [LOCAL.id], '0.10.0', LOCAL.id);
+      await settle();
+      expect(toast.warning).not.toHaveBeenCalled();
 
       run.task.cancel();
       await run.task.toPromise();

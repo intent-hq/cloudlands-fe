@@ -11,6 +11,15 @@ const mocks = vi.hoisted(() => ({
   connections: [] as ConnectionRecord[],
   pinnedVersion: null as string | null,
   connectedIds: [] as string[],
+  // Optional overrides for the shared eligibility predicates (null = real
+  // implementation). Lets local-row tests exercise the eligible path without
+  // depending on the predicate's local-entry handling.
+  isDaemonBehindPin: null as
+    | (typeof import('$lib/utils/device-update-eligibility'))['isDaemonBehindPin']
+    | null,
+  canRequestDeviceUpdate: null as
+    | (typeof import('$lib/utils/device-update-eligibility'))['canRequestDeviceUpdate']
+    | null,
   dispatch: vi.fn(),
   update: vi.fn(),
   test: vi.fn(),
@@ -31,6 +40,7 @@ vi.mock('$store/renderer/store', () => ({
 }));
 
 vi.mock('$store/renderer/slices/connections/connections-selectors', () => ({
+  selectConnections: () => mocks.readable(() => mocks.connections),
   selectConnectionsLoaded: () => mocks.readable(() => mocks.loaded),
   selectRemoteConnections: () =>
     mocks.readable(() => mocks.connections.filter((connection) => !connection.isLocal)),
@@ -38,6 +48,19 @@ vi.mock('$store/renderer/slices/connections/connections-selectors', () => ({
   selectPinnedDaemonVersion: () => mocks.readable(() => mocks.pinnedVersion),
   selectConnectedIds: () => mocks.readable(() => mocks.connectedIds),
 }));
+
+vi.mock('$lib/utils/device-update-eligibility', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('$lib/utils/device-update-eligibility')>();
+  return {
+    ...actual,
+    isDaemonBehindPin: (...args: Parameters<typeof actual.isDaemonBehindPin>) =>
+      mocks.isDaemonBehindPin ? mocks.isDaemonBehindPin(...args) : actual.isDaemonBehindPin(...args),
+    canRequestDeviceUpdate: (...args: Parameters<typeof actual.canRequestDeviceUpdate>) =>
+      mocks.canRequestDeviceUpdate
+        ? mocks.canRequestDeviceUpdate(...args)
+        : actual.canRequestDeviceUpdate(...args),
+  };
+});
 
 vi.mock('$store/renderer/slices/connections/connections-slice', () => ({
   updateConnectionRequested: (params: unknown) => mocks.update(params),
@@ -82,6 +105,8 @@ describe('DevicesSettings', () => {
     mocks.connections = [local, remote];
     mocks.pinnedVersion = null;
     mocks.connectedIds = [];
+    mocks.isDaemonBehindPin = null;
+    mocks.canRequestDeviceUpdate = null;
     mocks.update.mockImplementation((params) => ({
       type: 'connections/updateRequested',
       payload: [params],
@@ -122,7 +147,7 @@ describe('DevicesSettings', () => {
     expect(screen.getByText('Studio Mac')).toBeTruthy();
     expect(screen.queryByText('10.0.0.2:5181')).toBeNull();
     expect(screen.getByRole('status', { name: 'Status: Not open' }).textContent).toBe('');
-    expect(screen.queryByText('This machine')).toBeNull();
+    expect(screen.getByText('This machine (local)')).toBeTruthy();
     expect(screen.queryByRole('textbox')).toBeNull();
     expect(mocks.dispatch).not.toHaveBeenCalled();
   });
@@ -137,7 +162,9 @@ describe('DevicesSettings', () => {
     expect(screen.queryByText('studio-host')).toBeNull();
     expect(screen.getByText('6.8.0')).toBeTruthy();
     expect(screen.queryByText('10.0.0.2:5181')).toBeNull();
-    expect(screen.getByRole('status').getAttribute('aria-label')).toBeTruthy();
+    for (const status of screen.getAllByRole('status')) {
+      expect(status.getAttribute('aria-label')).toBeTruthy();
+    }
   });
 
   it('omits hostname and version when the connected version is unknown', () => {
@@ -146,7 +173,9 @@ describe('DevicesSettings', () => {
 
     expect(screen.getByText('Studio Mac')).toBeTruthy();
     expect(screen.queryByText('studio-host')).toBeNull();
-    expect(screen.getByRole('status').getAttribute('aria-label')).toBeTruthy();
+    for (const status of screen.getAllByRole('status')) {
+      expect(status.getAttribute('aria-label')).toBeTruthy();
+    }
   });
 
   it('falls back to the address for a blank name', () => {
@@ -263,8 +292,15 @@ describe('DevicesSettings', () => {
     expect(screen.getByRole('status').textContent).toContain('Loading devices');
     loading.unmount();
 
+    // The local row alone suppresses the empty-state box — the two must not
+    // render together (the box only appears when there are no rows at all).
     mocks.loaded = true;
     mocks.connections = [local];
+    const withLocal = render(DevicesSettings);
+    expect(screen.queryByText('No remote devices saved')).toBeNull();
+    withLocal.unmount();
+
+    mocks.connections = [];
     render(DevicesSettings);
     expect(screen.getByText('No remote devices saved')).toBeTruthy();
   });
@@ -390,6 +426,74 @@ describe('DevicesSettings', () => {
       await screen.findByRole('menuitem', { name: 'Edit' });
       expect(screen.queryByRole('menuitem', { name: 'Update' })).toBeNull();
       expect(mocks.updateBackend).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('local device row', () => {
+    const localLabel = m.layout_daemonStatus_localConnection_label();
+    const behindLabel = m.settings_devices_daemonBehind_tooltip({
+      daemonVersion: '0.9.0',
+      pinnedVersion: '0.9.1',
+    });
+
+    it('lists the local machine first with its connection status and no remote-only actions', () => {
+      render(DevicesSettings);
+
+      const [firstRow] = screen.getAllByRole('article');
+      expect(within(firstRow).getByText(localLabel)).toBeTruthy();
+      expect(within(firstRow).getByRole('status', { name: 'Status: Connected' })).toBeTruthy();
+      // Ineligible local rows expose no actions at all — Connect, Edit, and
+      // Remove are remote-only.
+      expect(screen.queryByRole('button', { name: `Actions for ${localLabel}` })).toBeNull();
+    });
+
+    it('shows no badge or Update affordance for the sidecar local row', () => {
+      // Sidecar mode: the local record is never enriched with daemonVersion /
+      // updateSupported, so the real predicates keep both affordances hidden.
+      mocks.pinnedVersion = '0.9.1';
+      mocks.connectedIds = ['local'];
+      mocks.connections = [local];
+      render(DevicesSettings);
+
+      expect(screen.queryByRole('img')).toBeNull();
+      expect(screen.queryByRole('button', { name: `Actions for ${localLabel}` })).toBeNull();
+    });
+
+    it('offers the badge and Update when the shared predicates deem the local row eligible', async () => {
+      const actual = await vi.importActual<typeof import('$lib/utils/device-update-eligibility')>(
+        '$lib/utils/device-update-eligibility',
+      );
+      // The eligibility predicates' local-entry exclusion is being lifted for
+      // the behind-pin external local daemon (owned by the behind-pin toast
+      // change). Model that here: the row stays entirely predicate-driven.
+      mocks.isDaemonBehindPin = (conn, pinned) =>
+        actual.isDaemonBehindPin({ ...conn, isLocal: false }, pinned);
+      mocks.canRequestDeviceUpdate = (conn, ids, pinned) =>
+        actual.canRequestDeviceUpdate({ ...conn, isLocal: false }, ids, pinned);
+      mocks.pinnedVersion = '0.9.1';
+      mocks.connectedIds = ['local'];
+      mocks.connections = [
+        { ...local, daemonVersion: '0.9.0', updateSupported: true },
+        remote,
+      ];
+      render(DevicesSettings);
+
+      expect(screen.getByRole('img', { name: behindLabel })).toBeTruthy();
+
+      await fireEvent.click(screen.getByRole('button', { name: `Actions for ${localLabel}` }));
+      expect(await screen.findByRole('menuitem', { name: 'Update' })).toBeTruthy();
+      expect(screen.queryByRole('menuitem', { name: 'Connect' })).toBeNull();
+      expect(screen.queryByRole('menuitem', { name: 'Edit' })).toBeNull();
+      expect(screen.queryByRole('menuitem', { name: 'Remove' })).toBeNull();
+
+      await fireEvent.click(screen.getByRole('menuitem', { name: 'Update' }));
+      expect(mocks.updateBackend).toHaveBeenCalledWith('local');
+      expect(mocks.dispatch).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: 'connections/updateBackendRequested',
+          payload: ['local'],
+        }),
+      );
     });
   });
 

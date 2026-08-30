@@ -11,6 +11,7 @@ import {
 } from 'typed-redux-saga';
 
 import { backendRequest } from '$lib/client/live/backend-transport';
+import { compareToPinnedVersion } from '$shared/intentd-version-compare';
 import { m } from '$shared/paraglide/messages.js';
 import { IPC_CHANNELS } from '$shared/ipc-registry';
 import { createElectronChannel } from '$store/renderer/utils/ipc-channel';
@@ -166,6 +167,18 @@ function statusAction(payload: BackendStatusPayload, snapshot: boolean) {
   });
 }
 
+/**
+ * True when the actionable behind-pin Update toast (connections-saga) owns
+ * this mismatch: the daemon explicitly reports self-update support AND is
+ * strictly behind the pin. A newer-than-pin daemon or one without update
+ * support keeps the passive warning.
+ */
+function ownedByBehindPinToast(transport: BackendTransportInfo): boolean {
+  if (transport.updateSupported !== true) return false;
+  if (!transport.daemonVersion || !transport.pinnedVersion) return false;
+  return compareToPinnedVersion(transport.daemonVersion, transport.pinnedVersion) === 'older';
+}
+
 function* maybeNotifyVersionMismatch(
   transport: BackendTransportInfo | undefined,
   alreadyNotified: boolean,
@@ -174,9 +187,11 @@ function* maybeNotifyVersionMismatch(
   // daemon downgraded again) notifies once more with the current version.
   if (!transport?.versionMismatch) return false;
   // An orphaned sidecar gets its own actionable toast (see
-  // maybeNotifyOrphanedSidecar); the generic mismatch warning would be
-  // redundant noise on the same daemon.
-  if (transport.isOrphanedSidecar || alreadyNotified) return alreadyNotified;
+  // maybeNotifyOrphanedSidecar), and a behind-pin daemon with update support
+  // gets the actionable Update toast (connections-saga); the generic mismatch
+  // warning would be redundant noise on the same daemon.
+  if (transport.isOrphanedSidecar || ownedByBehindPinToast(transport) || alreadyNotified)
+    return alreadyNotified;
   return yield* call(notifyVersionMismatch, transport);
 }
 

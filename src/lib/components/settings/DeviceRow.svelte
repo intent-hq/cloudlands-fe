@@ -81,9 +81,12 @@
     device.accent === undefined ? DEFAULT_CONNECTION_ACCENT : device.accent,
   );
   const accentOptions = $derived(connectionAccentOptions(savedAccent));
-  // Shared with the daemon-status menu: the Name wins outright, with
+  // Shared with the daemon-status menu: the local entry gets the fixed
+  // "This machine (local)" label; for remotes the Name wins outright, with
   // hostname → address fallbacks for unmigrated records.
-  const displayName = $derived(formatConnectionLabel(device));
+  const displayName = $derived(
+    device.isLocal ? m.layout_daemonStatus_localConnection_label() : formatConnectionLabel(device),
+  );
   const openStatus = $derived(device.status ?? 'not-open');
   const trimmedName = $derived(name.trim());
   const trimmedHost = $derived(host.trim());
@@ -378,64 +381,72 @@
         {/if}
       </div>
     </div>
-    <Menu.Root bind:open={actionsMenuOpen}>
-      <Menu.Trigger>
-        {#snippet child({ props })}
-          <Button
-            {...props}
-            bind:ref={actionsButton}
-            variant="ghost-light"
-            size="icon-xs"
-            aria-label={m.settings_devices_actionsFor_ariaLabel({ name: displayName })}
-          >
-            <Fa icon={faEllipsisVertical} />
-          </Button>
-        {/snippet}
-      </Menu.Trigger>
-      <Menu.Content align="end" class="p-0!">
-        <div class="w-44 py-1">
-          <Menu.Item
-            onclick={() => {
-              actionsMenuOpen = false;
-              void connectDevice();
-            }}
-          >
-            <Fa icon={faPlug} class="size-3.5 text-muted-foreground" />
-            {m.settings_devices_connect_label()}
-          </Menu.Item>
-          {#if canUpdateDaemon}
-            <Menu.Item
-              onclick={() => {
-                actionsMenuOpen = false;
-                void requestDaemonUpdate();
-              }}
+    <!-- The local row has no remote-only actions (Connect/Edit/Remove), so its
+         menu only exists while the Update action is offered. -->
+    {#if !device.isLocal || canUpdateDaemon}
+      <Menu.Root bind:open={actionsMenuOpen}>
+        <Menu.Trigger>
+          {#snippet child({ props })}
+            <Button
+              {...props}
+              bind:ref={actionsButton}
+              variant="ghost-light"
+              size="icon-xs"
+              aria-label={m.settings_devices_actionsFor_ariaLabel({ name: displayName })}
             >
-              <Fa icon={faArrowsRotate} class="size-3.5 text-muted-foreground" />
-              {m.layout_daemonStatus_update_action()}
-            </Menu.Item>
-          {/if}
-          <Menu.Item
-            onclick={() => {
-              actionsMenuOpen = false;
-              onOpenPanel('edit');
-            }}
-          >
-            <Fa icon={faPen} class="size-3.5 text-muted-foreground" />
-            {m.settings_devices_edit_label()}
-          </Menu.Item>
-          <Menu.Item
-            destructive
-            onclick={() => {
-              actionsMenuOpen = false;
-              onRequestRemove(device);
-            }}
-          >
-            <Fa icon={faTrash} class="size-3.5 text-muted-foreground" />
-            {m.settings_devices_remove_label()}
-          </Menu.Item>
-        </div>
-      </Menu.Content>
-    </Menu.Root>
+              <Fa icon={faEllipsisVertical} />
+            </Button>
+          {/snippet}
+        </Menu.Trigger>
+        <Menu.Content align="end" class="p-0!">
+          <div class="w-44 py-1">
+            {#if !device.isLocal}
+              <Menu.Item
+                onclick={() => {
+                  actionsMenuOpen = false;
+                  void connectDevice();
+                }}
+              >
+                <Fa icon={faPlug} class="size-3.5 text-muted-foreground" />
+                {m.settings_devices_connect_label()}
+              </Menu.Item>
+            {/if}
+            {#if canUpdateDaemon}
+              <Menu.Item
+                onclick={() => {
+                  actionsMenuOpen = false;
+                  void requestDaemonUpdate();
+                }}
+              >
+                <Fa icon={faArrowsRotate} class="size-3.5 text-muted-foreground" />
+                {m.layout_daemonStatus_update_action()}
+              </Menu.Item>
+            {/if}
+            {#if !device.isLocal}
+              <Menu.Item
+                onclick={() => {
+                  actionsMenuOpen = false;
+                  onOpenPanel('edit');
+                }}
+              >
+                <Fa icon={faPen} class="size-3.5 text-muted-foreground" />
+                {m.settings_devices_edit_label()}
+              </Menu.Item>
+              <Menu.Item
+                destructive
+                onclick={() => {
+                  actionsMenuOpen = false;
+                  onRequestRemove(device);
+                }}
+              >
+                <Fa icon={faTrash} class="size-3.5 text-muted-foreground" />
+                {m.settings_devices_remove_label()}
+              </Menu.Item>
+            {/if}
+          </div>
+        </Menu.Content>
+      </Menu.Root>
+    {/if}
   </div>
 
   {#if connectionError}
