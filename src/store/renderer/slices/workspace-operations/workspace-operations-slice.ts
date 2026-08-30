@@ -4,8 +4,8 @@ import {
   createCollection,
   type Collection,
 } from '@augmentcode/themis/utils/collections/collection-utils';
-import type { OpenPrWarningItem } from '$lib/utils/delete-warning-utils';
 import type { WorkspaceProposalApplyPayload } from '$shared/app-workspace-operations';
+import type { OpenPrWarningItem } from './workspace-operations-types';
 
 export type WorkspaceOperationsState = {
   showDeleteWarning: boolean;

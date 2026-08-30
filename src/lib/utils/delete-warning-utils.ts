@@ -9,6 +9,7 @@ import { PullRequestStatus, type PullRequestInfo } from '$shared/types';
 import { selectBackgroundHooks } from '$store/renderer/slices/background-hooks/background-hooks-selectors';
 import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
 import { selectAllWorkspaceAgents } from '$store/renderer/slices/workspace-agents/workspace-agents-selectors';
+import type { OpenPrWarningItem } from '$store/renderer/slices/workspace-operations/workspace-operations-types';
 import { store as appStore } from '$store/renderer/store';
 
 /**
@@ -69,15 +70,7 @@ export async function getActiveHookNames(workspaceId: string): Promise<string[]>
     .map((hook) => hook.name || hook.hookId.substring(0, 8));
 }
 
-/** Serializable projection of an unmerged PR for the archive/delete warnings. */
-export interface OpenPrWarningItem {
-  number: number;
-  title: string;
-  /** May be '' when the wire url is empty and no repo owner/name is known to construct one. */
-  url: string;
-  status: 'Open' | 'Draft';
-  mergeConflicts?: boolean;
-}
+export type { OpenPrWarningItem } from '$store/renderer/slices/workspace-operations/workspace-operations-types';
 
 /**
  * Collect the workspace's unmerged PRs (status Open/Draft) from the Redux

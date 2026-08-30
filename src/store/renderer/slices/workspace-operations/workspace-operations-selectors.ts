@@ -2,8 +2,8 @@ import {
   getItems,
   type Collection,
 } from '@augmentcode/themis/utils/collections/collection-utils';
-import type { OpenPrWarningItem } from '$lib/utils/delete-warning-utils';
 import { store } from '../../store';
+import type { OpenPrWarningItem } from './workspace-operations-types';
 
 export const selectShowDeleteWarning = store.createSelector((state) => {
   return state.workspaceOperations.showDeleteWarning;
