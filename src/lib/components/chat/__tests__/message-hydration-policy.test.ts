@@ -220,7 +220,9 @@ describe('message hydration policy', () => {
     expect(transitions).toEqual(['hydrate:a', 'hydrate:b']);
 
     policy.updateMessages([assistant('b')]);
-    expect(observer.unobserve).toHaveBeenCalledWith(elements.get('a'));
+    // Mounted registrations survive a list omission (the component's unmount
+    // cleanup owns release) so a republished row can still report visibility.
+    expect(observer.unobserve).not.toHaveBeenCalledWith(elements.get('a'));
     expect(policy.getHydratedIds()).toEqual(['b']);
     policy.dispose();
     expect(observer.disconnect).toHaveBeenCalledOnce();
@@ -307,5 +309,109 @@ describe('message hydration policy', () => {
       { target: elements.get('a')!, isIntersecting: true },
     ]);
     expect(policy.getHydratedIds()).toEqual(['a']);
+  });
+
+  it('restores observation for a row whose message transiently leaves the list while mounted', () => {
+    const policy = createPolicy([assistant('a'), assistant('b')]);
+    const elements = observe(policy, ['a', 'b']);
+    const observer = MockIntersectionObserver.instances[0];
+    observer.fire([{ target: elements.get('b')!, isIntersecting: true }]);
+    expect(policy.getHydratedIds()).toEqual(['b']);
+
+    // Transcript recomposition transiently omits 'a' while its row (and thus
+    // its registration) stays mounted, then republishes it.
+    policy.updateMessages([assistant('b')]);
+    policy.updateMessages([assistant('a'), assistant('b')]);
+
+    // The row scrolls into the viewport: the observation restored on
+    // republish must deliver this report, or the row is a permanent blank
+    // placeholder despite occupying the viewport.
+    observer.fire([{ target: elements.get('a')!, isIntersecting: true }]);
+    expect(policy.getHydratedIds()).toEqual(['a', 'b']);
+  });
+
+  it('keeps an on-screen row hydrated when a streaming-churn batch carries out-and-back-in entries', () => {
+    const messages = Array.from({ length: 12 }, (_, index) => assistant(`m${index}`));
+    const transitions: string[] = [];
+    const policy = createPolicy(messages, (transition) => transitions.push(transition));
+    const elements = observe(policy, ['m8', 'm9', 'm10', 'm11']);
+    const observer = MockIntersectionObserver.instances[0];
+    observer.fire([
+      { target: elements.get('m8')!, isIntersecting: true },
+      { target: elements.get('m9')!, isIntersecting: true },
+      { target: elements.get('m10')!, isIntersecting: true },
+      { target: elements.get('m11')!, isIntersecting: true },
+    ]);
+    expect(policy.getHydratedIds()).toEqual(['m8', 'm9', 'm10', 'm11']);
+    transitions.length = 0;
+
+    // Streaming appends a new tail message...
+    policy.updateMessages([...messages, assistant('m12')]);
+    // ...and its layout churn makes the frontier row cross out and back in
+    // between observer deliveries: ONE batch carries both crossings in
+    // chronological order, ending intersecting. The row is still on screen,
+    // so no further boundary crossing will ever correct a stale final state.
+    observer.fire([
+      { target: elements.get('m8')!, isIntersecting: false },
+      { target: elements.get('m8')!, isIntersecting: true },
+    ]);
+
+    expect(transitions).not.toContain('dehydrate:m8');
+    expect(policy.getHydratedIds()).toContain('m8');
+  });
+
+  it('releases a retained registration via observe() cleanup on unmount and supports re-registration', () => {
+    const policy = createPolicy([assistant('a'), assistant('b')]);
+    const elementA = document.createElement('div');
+    const cleanupA = policy.observe('a', elementA, document.body);
+    const elements = observe(policy, ['b']);
+    const observer = MockIntersectionObserver.instances[0];
+    observer.fire([
+      { target: elementA, isIntersecting: true },
+      { target: elements.get('b')!, isIntersecting: true },
+    ]);
+    expect(policy.getHydratedIds()).toEqual(['a', 'b']);
+
+    // Transient omission retains the registration (updateMessages never
+    // releases; observe()'s cleanup is the only pre-dispose release path).
+    policy.updateMessages([assistant('b')]);
+    expect(observer.unobserve).not.toHaveBeenCalledWith(elementA);
+    expect(inspectLazyTurnObserverOwnership().targetCount).toBe(2);
+
+    // Genuine unmount: the stored cleanup releases the retained registration.
+    cleanupA();
+    expect(observer.unobserve).toHaveBeenCalledWith(elementA);
+    expect(inspectLazyTurnObserverOwnership().targetCount).toBe(1);
+
+    // The id republishes onto a fresh registration and reports visibility.
+    policy.updateMessages([assistant('a'), assistant('b')]);
+    const freshElementA = document.createElement('div');
+    policy.observe('a', freshElementA, document.body);
+    expect(inspectLazyTurnObserverOwnership().targetCount).toBe(2);
+    observer.fire([{ target: freshElementA, isIntersecting: true }]);
+    expect(policy.getHydratedIds()).toEqual(['a', 'b']);
+  });
+
+  it('hydrates viewport rows after detach/re-attach when fresh reports cover only those rows', () => {
+    const messages = ['a0', 'a1', 'a2', 'a3', 'a4'].map(assistant);
+    const policy = createPolicy(messages);
+    const elements = observe(policy, ['a0', 'a1', 'a2', 'a3', 'a4']);
+    MockIntersectionObserver.instances[0].fire([
+      { target: elements.get('a3')!, isIntersecting: true },
+      { target: elements.get('a4')!, isIntersecting: true },
+    ]);
+    expect(policy.getHydratedIds()).toEqual(['a3', 'a4']);
+
+    policy.setActive(false);
+    policy.setActive(true);
+    // ChatPanel reactivation replays the message list before fresh reports.
+    policy.updateMessages(messages);
+
+    // Fresh reports arrive only for the rows now occupying the viewport.
+    MockIntersectionObserver.instances[1].fire([
+      { target: elements.get('a0')!, isIntersecting: true },
+      { target: elements.get('a1')!, isIntersecting: true },
+    ]);
+    expect(policy.getHydratedIds()).toEqual(expect.arrayContaining(['a0', 'a1']));
   });
 });

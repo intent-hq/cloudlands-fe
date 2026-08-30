@@ -22,6 +22,14 @@ interface MessageHydrationPolicyOptions {
 }
 
 export interface MessageHydrationPolicy {
+  /**
+   * Registers a mounted row element for visibility observation. The returned
+   * cleanup is the ONLY way a registration is released before dispose() —
+   * updateMessages() never releases registrations (ids transiently absent
+   * from the list stay observed) — so callers MUST invoke it on unmount, and
+   * boundedness relies on every observed id being a row rendered from the
+   * same composed message list.
+   */
   observe(id: string, element: Element, root: HTMLElement | null): () => void;
   setActive(active: boolean): void;
   setForced(id: string, forced: boolean): void;
@@ -187,10 +195,16 @@ export function createMessageHydrationPolicy(
       const previous = new Map(records);
       const nextIds = new Set(nextMessages.map((message) => message.id));
       for (const [id, registration] of registrations) {
-        if (!nextIds.has(id)) {
-          registration.release?.();
-          registrations.delete(id);
-        }
+        if (nextIds.has(id)) continue;
+        // The component owns the registration lifecycle (observe()'s cleanup
+        // runs on unmount). A mounted row whose message transiently leaves
+        // the composed list must keep its observation — IntersectionObserver
+        // only re-fires on boundary crossings, so a released registration
+        // goes permanently silent and the republished row stays a blank
+        // placeholder. Retain the dropped record's last visibility so the
+        // replay below restores it when the message returns.
+        const dropped = previous.get(id);
+        if (dropped) registration.pendingReport = dropped.isIntersecting;
       }
       records.clear();
       nextMessages.forEach((message, index) => {
