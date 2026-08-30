@@ -1001,6 +1001,29 @@ describe('connectionsSaga', () => {
       await run.task.toPromise();
     });
 
+    it("names the local entry's toast via the localized label, not the persisted fallback", async () => {
+      const run = start();
+      await settle();
+
+      // The main-process record's `label` is an untranslated English
+      // fallback — the toast must use the localized message instead (same as
+      // DeviceRow), so a divergent persisted label never leaks through.
+      const localExternal = {
+        ...LOCAL,
+        label: 'persisted-fallback-label',
+        daemonVersion: '0.9.0',
+        updateSupported: true,
+      };
+      changed([localExternal], [LOCAL.id], '0.10.0', LOCAL.id);
+      await vi.waitFor(() => expect(toast.warning).toHaveBeenCalledTimes(1));
+      const [message] = toast.warning.mock.calls[0]!;
+      expect(String(message)).toContain('This machine (local)');
+      expect(String(message)).not.toContain('persisted-fallback-label');
+
+      run.task.cancel();
+      await run.task.toPromise();
+    });
+
     it("dispatches updateBackendRequested for the local entry when its toast's Update is clicked", async () => {
       invoke.mockImplementation(async (channel: string) => {
         if (channel === CONNECTION_CHANNELS.LIST)

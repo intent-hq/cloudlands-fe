@@ -258,7 +258,9 @@ async function showDaemonBehindPinToast(
   ]);
   toast.warning(
     m.layout_daemonStatus_daemonBehind_toast({
-      name: formatConnectionLabel(conn),
+      // The local entry's persisted label is an English fallback — use the
+      // localized label, same as DeviceRow and the daemon-status menu.
+      name: conn.isLocal ? m.layout_daemonStatus_localConnection_label() : formatConnectionLabel(conn),
       // The message template prepends "v" — strip any reported prefix (same as DeviceRow).
       daemonVersion: daemonVersion.replace(/^v/, ''),
       pinnedVersion: pinnedVersion.replace(/^v/, ''),
