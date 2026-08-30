@@ -10,9 +10,13 @@
   let {
     additionalActions = [],
     onClose,
+    onArchive,
+    showArchiveOption = false,
   }: {
     additionalActions?: Action[];
     onClose?: () => void;
+    onArchive?: () => void;
+    showArchiveOption?: boolean;
     [key: string]: unknown;
   } = $props();
 </script>
@@ -29,3 +33,15 @@
     {action.label}
   </button>
 {/each}
+
+{#if showArchiveOption}
+  <button
+    type="button"
+    onclick={() => {
+      onArchive?.();
+      onClose?.();
+    }}
+  >
+    Archive Workspace
+  </button>
+{/if}

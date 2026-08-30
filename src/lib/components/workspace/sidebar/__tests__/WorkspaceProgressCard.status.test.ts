@@ -190,7 +190,15 @@ vi.mock('$store/renderer/slices/ui-layout/ui-layout-selectors', () => ({
 }));
 
 vi.mock('$store/renderer/slices/ui-layout/ui-layout-slice', () => ({
+  toggleSidebar: vi.fn(() => ({ type: 'uiLayout/toggleSidebar' })),
   toggleSidebarSide: vi.fn(() => ({ type: 'uiLayout/toggleSidebarSide' })),
+}));
+
+vi.mock('$store/renderer/slices/workspace-transfer/workspace-transfer-slice', () => ({
+  openTransferModal: vi.fn((payload: { workspaceId: string; workspaceTitle: string }) => ({
+    type: 'workspaceTransfer/openTransferModal',
+    payload,
+  })),
 }));
 
 vi.mock('$store/renderer/slices/workspace-operations/workspace-operations-slice', () => ({
@@ -226,10 +234,10 @@ vi.mock('$lib/components/ui/button/button.svelte', async () => ({
   default: (await import('../../../terminal/__tests__/mocks/MockButton.svelte')).default,
 }));
 vi.mock('$lib/components/ui/dropdown-menu.svelte', async () => ({
-  default: (await import('./mocks/MockSimple.svelte')).default,
+  default: (await import('../../../ui/__tests__/mocks/dropdown-menu.svelte')).default,
 }));
 vi.mock('$features/workspace/components/WorkspaceActionsMenu.svelte', async () => ({
-  default: (await import('./mocks/MockSimple.svelte')).default,
+  default: (await import('./mocks/MockWorkspaceActionsMenu.svelte')).default,
 }));
 vi.mock('$lib/components/ui/tooltip/Tooltip.svelte', async () => ({
   default: (await import('./mocks/MockTooltip.svelte')).default,
@@ -292,6 +300,8 @@ function makeNote(overrides: Partial<Note>): Note {
 // billed to the first test's timeout (intent-hq/monorepo#1464).
 warmImport(() => import('../../../terminal/__tests__/mocks/MockButton.svelte'));
 warmImport(() => import('./mocks/MockSimple.svelte'));
+warmImport(() => import('./mocks/MockWorkspaceActionsMenu.svelte'));
+warmImport(() => import('../../../ui/__tests__/mocks/dropdown-menu.svelte'));
 warmImport(() => import('./mocks/MockFlameGraph.svelte'));
 warmImport(() => import('./mocks/MockTooltip.svelte'));
 warmImport(() => import('./mocks/Fa.svelte'));
@@ -317,6 +327,50 @@ describe('WorkspaceProgressCard status message', () => {
       value: { writeText: mocks.clipboardWrite },
       configurable: true,
     });
+  });
+
+  it('places the transfer action immediately before archive with the established icon', async () => {
+    const { container } = await renderProgressCard();
+    await fireEvent.click(container.querySelector('[data-workspace-actions-trigger]')!);
+
+    const transfer = screen.getByRole('button', { name: 'Transfer/Download…' });
+    const archive = screen.getByRole('button', { name: 'Archive Workspace' });
+
+    expect(transfer.dataset.iconName).toBe('right-left');
+    expect(
+      transfer.compareDocumentPosition(archive) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
+  it('dispatches the transfer payload and dismisses the menu', async () => {
+    const { container } = await renderProgressCard();
+    await fireEvent.click(container.querySelector('[data-workspace-actions-trigger]')!);
+    const transfer = screen.getByRole('button', { name: 'Transfer/Download…' });
+
+    await fireEvent.click(transfer);
+
+    expect(mocks.dispatch).toHaveBeenCalledWith({
+      type: 'workspaceTransfer/openTransferModal',
+      payload: { workspaceId: 'ws-1', workspaceTitle: 'Active Workspace' },
+    });
+    expect(container.querySelector('[data-workspace-actions-trigger]')).toHaveAttribute(
+      'aria-expanded',
+      'false',
+    );
+  });
+
+  it('omits the transfer action when workspace data becomes unavailable', async () => {
+    const { container } = await renderProgressCard();
+    const loadedWorkspace = mocks.workspaceEntity;
+
+    mocks.workspaceEntity = null as unknown as Workspace;
+    mocks.notifySelectors();
+    await tick();
+    await fireEvent.click(container.querySelector('[data-workspace-actions-trigger]')!);
+
+    expect(screen.queryByRole('button', { name: 'Transfer/Download…' })).toBeNull();
+    mocks.workspaceEntity = loadedWorkspace;
+    mocks.notifySelectors();
   });
 
   it('renders title, metadata, progress, then status like the sidebar reference', async () => {

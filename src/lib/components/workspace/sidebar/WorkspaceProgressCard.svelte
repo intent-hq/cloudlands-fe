@@ -16,6 +16,7 @@
     faCodePullRequest,
     faCheck,
     faFileLines,
+    faRightLeft,
   } from '@fortawesome/free-solid-svg-icons';
   import SidebarIcon from '$lib/components/icons/SidebarIcon.svelte';
   import Tooltip from '$lib/components/ui/tooltip/Tooltip.svelte';
@@ -76,6 +77,7 @@
     WorkspaceProgressInput,
   } from '$store/renderer/slices/workspace/workspace-types';
   import { store as appStore } from '$store/renderer/store';
+  import { openTransferModal } from '$store/renderer/slices/workspace-transfer/workspace-transfer-slice';
   import KebabIcon from '$lib/components/icons/KebabIcon.svelte';
 
   const readyLogger = createLogger('ReadyTasks');
@@ -538,6 +540,30 @@
     },
   });
 
+  const transferAction: MenuAction | null = $derived(
+    $workspace
+      ? {
+          label: m.workspace_card_transfer_label(),
+          icon: faRightLeft,
+          onClick: () => {
+            if (!$workspace) return;
+            appStore.dispatch(
+              openTransferModal({
+                workspaceId: $workspace.id,
+                workspaceTitle: $workspace.title,
+              }),
+            );
+          },
+        }
+      : null,
+  );
+
+  const additionalActions: MenuAction[] = $derived([
+    sidebarToggleAction,
+    sidebarSideAction,
+    ...(transferAction ? [transferAction] : []),
+  ]);
+
   function handleClickOutside(e: MouseEvent) {
     if (isEditingTitle && titleInputRef && !titleInputRef.contains(e.target as Node)) {
       saveTitle();
@@ -958,7 +984,7 @@
                 showArchiveOption={true}
                 showFileNameCopy={false}
                 showFileActions={true}
-                additionalActions={[sidebarToggleAction, sidebarSideAction]}
+                {additionalActions}
               />
             </div>
           {/snippet}
