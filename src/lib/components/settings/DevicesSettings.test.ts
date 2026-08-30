@@ -292,8 +292,15 @@ describe('DevicesSettings', () => {
     expect(screen.getByRole('status').textContent).toContain('Loading devices');
     loading.unmount();
 
+    // The local row alone suppresses the empty-state box — the two must not
+    // render together (the box only appears when there are no rows at all).
     mocks.loaded = true;
     mocks.connections = [local];
+    const withLocal = render(DevicesSettings);
+    expect(screen.queryByText('No remote devices saved')).toBeNull();
+    withLocal.unmount();
+
+    mocks.connections = [];
     render(DevicesSettings);
     expect(screen.getByText('No remote devices saved')).toBeTruthy();
   });

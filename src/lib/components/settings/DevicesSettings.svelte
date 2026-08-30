@@ -15,8 +15,9 @@
   import { forgetConnectionRequested } from '$store/renderer/slices/connections/connections-slice';
   import { store as appStore } from '$store/renderer/store';
 
-  // Full ordered list (local first) drives the rows; the remote-only list
-  // keeps driving the empty state and accent cycling.
+  // Full ordered list (local first) drives the rows AND the empty state (the
+  // always-present local row and the "no devices" box must not render
+  // together); the remote-only list keeps driving accent cycling.
   const connections$ = selectConnections();
   const devices$ = selectRemoteConnections();
   const loaded$ = selectConnectionsLoaded();
@@ -98,7 +99,7 @@
         {/each}
       </div>
     {/if}
-    {#if $devices$.length === 0}
+    {#if $connections$.length === 0}
       <div class="rounded-xl border border-dashed border-border bg-card p-8 text-center">
         <p class="text-sm font-medium text-foreground">{m.settings_devices_empty_title()}</p>
         <p class="mt-1 text-sm text-muted-foreground">{m.settings_devices_empty_description()}</p>
