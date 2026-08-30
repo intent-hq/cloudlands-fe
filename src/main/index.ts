@@ -320,10 +320,17 @@ import {
 } from '../features/backend/main/backend.ipc';
 import { registerWorkspaceTransferHandlers } from '../features/backend/main/workspace-transfer.ipc';
 import { registerWorkspaceImportHandlers } from '../features/backend/main/workspace-import.ipc';
-import { getConnectionMode } from '../features/backend/main/connection-mode';
+import { getConnectionMode, getDaemonVersionInfo } from '../features/backend/main/connection-mode';
 import { getActiveId, list as listConnections } from '../features/backend/main/connections-store';
 import { LOCAL_CONNECTION_ID } from '../shared/types/connections';
-import { startIntentdSidecar, stopIntentdSidecar } from '../features/backend/main/intentd-sidecar';
+import {
+  probeDaemonVersion,
+  resolveSocketPath,
+  startIntentdSidecar,
+  stopIntentdSidecar,
+} from '../features/backend/main/intentd-sidecar';
+import { readPinnedVersion } from '../features/backend/main/intentd-version-pin';
+import { formatIntentdAboutVersion } from '../features/backend/main/intentd-about-version';
 import { startMemoryMonitor, stopMemoryMonitor } from './memory-monitor';
 import { setupUserRulesIPC as setupWorkspaceRulesIPC } from '../features/rules/main/user-rules.ipc';
 
@@ -641,21 +648,66 @@ app.whenReady().then(async () => {
   const commitHash = BUILD_CONFIG.GIT_COMMIT_HASH;
   const versionWithCommit = commitHash ? `${app.getVersion()} (${commitHash})` : app.getVersion();
 
+  // Bundled sidecar intentd version: the pin is readable synchronously; the
+  // build commit is filled in by refreshAboutPanelIntentdVersion once the
+  // daemon is up (after startIntentdSidecar below).
+  const pinnedIntentdVersion = readPinnedVersion({
+    isPackaged: app.isPackaged,
+    resourcesPath: process.resourcesPath,
+  });
+
   // Store about panel info for use in dialogs
   const aboutPanelInfo = {
     applicationName: appName,
     applicationVersion: versionWithCommit,
     copyright: '\u00A9 2026 Intent Contributors',
+    intentdVersion: formatIntentdAboutVersion({ pinnedVersion: pinnedIntentdVersion }) ?? '',
   };
 
-  // Set initial about panel options (macOS only)
-  if (isMacOS) {
+  const applyAboutPanelOptions = (): void => {
+    if (!isMacOS) return;
     app.setAboutPanelOptions({
       applicationName: aboutPanelInfo.applicationName,
       applicationVersion: aboutPanelInfo.applicationVersion,
+      ...(aboutPanelInfo.intentdVersion ? { version: aboutPanelInfo.intentdVersion } : {}),
       copyright: aboutPanelInfo.copyright,
     });
-  }
+  };
+
+  // Set initial about panel options (macOS only)
+  applyAboutPanelOptions();
+
+  // Best-effort refresh of the bundled sidecar's build commit: reuse the
+  // adoption handshake's cached info when it already carries a commit,
+  // otherwise probe the local daemon's system.status once. Failure is silent —
+  // the About box just keeps showing the pin (or omits the line entirely when
+  // the pin is unreadable too), the same honest-degrade as the removed
+  // provider CLI line.
+  const refreshAboutPanelIntentdVersion = async (): Promise<void> => {
+    try {
+      const cached = getDaemonVersionInfo();
+      let probedVersion = cached?.daemonVersion ?? null;
+      let buildCommit = cached?.daemonBuildCommit ?? null;
+      if (!buildCommit) {
+        const probe = await probeDaemonVersion(resolveSocketPath(process.env));
+        probedVersion = probe.version ?? probedVersion;
+        buildCommit = probe.buildCommit ?? buildCommit;
+      }
+      const line = formatIntentdAboutVersion({
+        pinnedVersion: pinnedIntentdVersion,
+        probedVersion,
+        buildCommit,
+      });
+      if (line && line !== aboutPanelInfo.intentdVersion) {
+        aboutPanelInfo.intentdVersion = line;
+        applyAboutPanelOptions();
+      }
+    } catch (err) {
+      logger.debug('Could not get intentd build commit for about panel', {
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  };
 
   // Function to build the File menu with recent workspaces
   const buildFileMenu = async (): Promise<Electron.MenuItemConstructorOptions> => {
@@ -956,6 +1008,7 @@ app.whenReady().then(async () => {
           const aboutMessage = [
             `${aboutPanelInfo.applicationName}`,
             m.dialog_about_version({ version: aboutPanelInfo.applicationVersion }),
+            aboutPanelInfo.intentdVersion ? `${aboutPanelInfo.intentdVersion}` : '',
             `${aboutPanelInfo.copyright}`,
           ]
             .filter(Boolean)
@@ -1540,6 +1593,10 @@ app.whenReady().then(async () => {
   // The daemon owns PATH discovery. Seed only after starting/adopting it, and
   // retry briefly while a newly spawned sidecar creates its socket.
   await seedPathFromHostEnv();
+
+  // Fill in the bundled sidecar's build commit on the About box now that the
+  // daemon is up (fire-and-forget; see refreshAboutPanelIntentdVersion above).
+  void refreshAboutPanelIntentdVersion();
 
   registerBackendHandlers(); // Needed for live JSON-RPC transport (workspaces domain)
   registerWorkspaceTransferHandlers(); // Workspace transfer relay (wizard steps 3–4)
