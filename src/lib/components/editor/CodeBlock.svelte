@@ -1,5 +1,5 @@
 <script lang="ts">
-  import hljs from 'highlight.js';
+  import { escapeCodeHtml, getCachedHighlight, highlightAsync } from '$lib/utils/code-highlighter';
   import '$lib/styles/syntax-highlighting.css';
   import CopyButton from '$lib/components/ui/CopyButton.svelte';
   import { selectIsDarkTheme } from '$store/renderer/slices/theme/theme-selectors';
@@ -20,7 +20,7 @@
     noMargin?: boolean;
     doScroll?: boolean;
     className?: string;
-  }
+  };
 
   const {
     code = '',
@@ -39,32 +39,34 @@
     className = '',
   } = $props();
 
-  let highlighted = $state('');
+  // PERF: No synchronous highlight.js work on mount — render escaped plain
+  // code (or a cache hit) immediately and swap in highlighted HTML async.
+  // Initial values only; the $effect below tracks subsequent prop changes.
+  // svelte-ignore state_referenced_locally
+  let highlighted = $state(getCachedHighlight(code, language) ?? escapeCodeHtml(code));
   const isDarkTheme = selectIsDarkTheme();
 
   $effect(() => {
-    // Highlight code when it changes
-    try {
-      if (language && hljs.getLanguage(language)) {
-        highlighted = hljs.highlight(code, { language }).value;
-      } else {
-        highlighted = hljs.highlightAuto(code).value;
-      }
-    } catch {
-      highlighted = escapeHtml(code);
-    }
-  });
+    // Re-highlight when code/language change (e.g. streaming appends)
+    const currentCode = code;
+    const currentLanguage = language;
 
-  function escapeHtml(text: string): string {
-    const map: Record<string, string> = {
-      '&': '&amp;',
-      '<': '&lt;',
-      '>': '&gt;',
-      '"': '&quot;',
-      "'": '&#039;',
+    const cached = getCachedHighlight(currentCode, currentLanguage);
+    if (cached !== null) {
+      highlighted = cached;
+      return;
+    }
+
+    // Show correct (unhighlighted) text right away; colors arrive async
+    highlighted = escapeCodeHtml(currentCode);
+    let stale = false;
+    highlightAsync(currentCode, currentLanguage).then((html) => {
+      if (!stale) highlighted = html;
+    });
+    return () => {
+      stale = true;
     };
-    return text.replace(/[&<>"']/g, (m) => map[m]);
-  }
+  });
 
   // Split highlighted HTML into lines for proper rendering
   const lines = $derived(highlighted.split('\n'));
