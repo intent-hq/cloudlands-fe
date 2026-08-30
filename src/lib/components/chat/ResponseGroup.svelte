@@ -293,7 +293,7 @@
   summaryTitle={accessibleSummary}
   onclick={toggle}
   {detailsId}
-  previewClass={groupContentClass}
+  previewClass={OPERATIONAL_GROUP_CONTENT_CLASS}
   detailsClass={groupContentClass}
   {previewTransition}
   detailsTransition={safeDisclosureTransition}

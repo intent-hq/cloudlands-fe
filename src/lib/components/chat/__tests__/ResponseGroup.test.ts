@@ -1096,6 +1096,37 @@ describe('MessageContent - top-level response rows', () => {
     ).toContain('ml-2');
   });
 
+  it('renders the collapsed streaming preview child without text-adjacency spacing', async () => {
+    const StreamingMessageContent = (await import('../StreamingMessageContent.svelte')).default;
+    const content: ContentBlock[] = [
+      { type: 'text', text: '<group:Working>' },
+      { type: 'text', text: 'Group description' },
+      { type: 'tool_use', id: 'group-tool', name: 'view', input: { path: 'src/example.ts' } },
+    ];
+
+    const { container } = render(StreamingMessageContent, {
+      props: { content, isStreaming: true },
+    });
+
+    const preview = container.querySelector('[data-operational-preview-content]')!;
+    expect(preview).not.toBeNull();
+    expect(preview.className).not.toMatch(/\bpt-4\b/);
+    const previewChild = preview.querySelector('[data-message-content-block="tool_use"]')!;
+    expect(previewChild).not.toBeNull();
+    expect(previewChild.className).not.toMatch(/\bpt-/);
+
+    await fireEvent.click(container.querySelector('[data-testid="response-group-disclosure"]')!);
+    const details = await waitFor(() => {
+      const node = container.querySelector('[data-operational-expanded-content]');
+      expect(node).toBeTruthy();
+      return node!;
+    });
+    expect(details.className).toMatch(/\bpt-4\b/);
+    const detailsChild = details.querySelector('[data-message-content-block="tool_use"]')!;
+    expect(detailsChild).not.toBeNull();
+    expect(detailsChild.className).toMatch(/\bpt-4\b/);
+  });
+
   it.each([
     ['MessageContent', () => import('../MessageContent.svelte')],
     ['StreamingMessageContent', () => import('../StreamingMessageContent.svelte')],
