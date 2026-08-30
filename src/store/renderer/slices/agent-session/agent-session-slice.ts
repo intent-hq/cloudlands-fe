@@ -48,13 +48,15 @@ export {
 
 /**
  * Single authoritative transcript cap: the store prunes each agent's messages
- * to the newest 500, and the transcript pagers (chat-read-service,
+ * to the newest 200, and the transcript pagers (chat-read-service,
  * chat-read-saga's older-history fetch) deliberately stop fetching at the same
  * bound — pages past it would only be sliced off by the prune
- * (intent-hq/monorepo#2627). Keep pager bound and prune cap coupled by
- * importing this constant rather than mirroring the value.
+ * (intent-hq/monorepo#2627). Kept small so a long ACTIVE conversation stays
+ * memory-bounded in the renderer — evicted older rows are re-fetched on
+ * demand by the scroll-to-load history segment. Keep pager bound and prune
+ * cap coupled by importing this constant rather than mirroring the value.
  */
-export const MAX_MESSAGES_PER_AGENT = 500;
+export const MAX_MESSAGES_PER_AGENT = 200;
 /** Cap for the on-demand scrollback history segment (rows older than the tail). */
 export const HISTORY_SEGMENT_MAX = 500;
 const USER_REPLY_ORDER_WINDOW_MS = 1_000;
