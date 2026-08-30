@@ -1,10 +1,11 @@
 import { describe, it, expect } from 'vitest';
 import { isDaemonBehindPin, canRequestDeviceUpdate } from './device-update-eligibility';
 
-const remote = (daemonVersion?: string | null) => ({
+const remote = (daemonVersion?: string | null, updateSupported: boolean | null = true) => ({
   id: 'remote-1',
   isLocal: false,
   daemonVersion,
+  updateSupported,
 });
 
 describe('isDaemonBehindPin', () => {
@@ -81,5 +82,25 @@ describe('canRequestDeviceUpdate', () => {
   it('is false when daemonVersion or the pin is missing', () => {
     expect(canRequestDeviceUpdate(remote(null), ['remote-1'], '0.10.0')).toBe(false);
     expect(canRequestDeviceUpdate(remote('0.9.0'), ['remote-1'], null)).toBe(false);
+  });
+
+  it('is false when the daemon reports updateSupported: false', () => {
+    expect(canRequestDeviceUpdate(remote('0.9.0', false), ['remote-1'], '0.10.0')).toBe(false);
+  });
+
+  it('is false while updateSupported is unknown (absent/null) — strict gating', () => {
+    expect(canRequestDeviceUpdate(remote('0.9.0', null), ['remote-1'], '0.10.0')).toBe(false);
+    expect(
+      canRequestDeviceUpdate(
+        { id: 'remote-1', isLocal: false, daemonVersion: '0.9.0' },
+        ['remote-1'],
+        '0.10.0',
+      ),
+    ).toBe(false);
+  });
+
+  it('does not affect isDaemonBehindPin (informational badge stays)', () => {
+    expect(isDaemonBehindPin(remote('0.9.0', false), '0.10.0')).toBe(true);
+    expect(isDaemonBehindPin(remote('0.9.0', null), '0.10.0')).toBe(true);
   });
 });
