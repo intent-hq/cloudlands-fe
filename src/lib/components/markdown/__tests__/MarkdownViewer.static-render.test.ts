@@ -34,6 +34,10 @@ describe('MarkdownViewer static rendering', () => {
     expect(checkboxes.length).toBe(2);
     expect(checkboxes[0]?.checked).toBe(false);
     expect(checkboxes[1]?.checked).toBe(true);
+    // Read-only: static checkboxes must be disabled so they are not
+    // focusable/toggleable via keyboard
+    expect(checkboxes[0]?.disabled).toBe(true);
+    expect(checkboxes[1]?.disabled).toBe(true);
   });
 
   it('renders tables as static HTML without a ProseMirror view', async () => {

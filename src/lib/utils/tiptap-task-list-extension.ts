@@ -238,7 +238,7 @@ export const createTiptapTaskListMarked = () => {
           // Build attributes including optional agent ID
           const agentAttr = agentId ? ` data-delegated-agent-id="${agentId}"` : '';
 
-          return `<li class="task-item flex items-start gap-2" data-type="taskItem" data-checked="${isChecked}" data-status="${status}"${agentAttr}><label><input type="checkbox"${isChecked ? ' checked' : ''}><span></span></label><div>${content}</div></li>`;
+          return `<li class="task-item flex items-start gap-2" data-type="taskItem" data-checked="${isChecked}" data-status="${status}"${agentAttr}><label><input type="checkbox" disabled${isChecked ? ' checked' : ''}><span></span></label><div>${content}</div></li>`;
         } else {
           // Check if this is a [/] in-progress task (not recognized by GFM)
           // We need to manually detect [/] pattern in the text
@@ -251,7 +251,7 @@ export const createTiptapTaskListMarked = () => {
           if (emptyTaskMatch) {
             const isChecked = emptyTaskMatch[1] !== ' ';
             const status = isChecked ? 'done' : 'todo';
-            return `<li class="task-item flex items-start gap-2" data-type="taskItem" data-checked="${isChecked}" data-status="${status}"><label><input type="checkbox"${isChecked ? ' checked' : ''}><span></span></label><div><p></p></div></li>`;
+            return `<li class="task-item flex items-start gap-2" data-type="taskItem" data-checked="${isChecked}" data-status="${status}"><label><input type="checkbox" disabled${isChecked ? ' checked' : ''}><span></span></label><div><p></p></div></li>`;
           }
 
           const inProgressMatch =
@@ -301,7 +301,7 @@ export const createTiptapTaskListMarked = () => {
             // Build attributes including optional agent ID
             const agentAttr = agentId ? ` data-delegated-agent-id="${agentId}"` : '';
 
-            return `<li class="task-item flex items-start gap-2" data-type="taskItem" data-checked="false" data-status="in-progress"${agentAttr}><label><input type="checkbox"><span></span></label><div>${content}</div></li>`;
+            return `<li class="task-item flex items-start gap-2" data-type="taskItem" data-checked="false" data-status="in-progress"${agentAttr}><label><input type="checkbox" disabled><span></span></label><div>${content}</div></li>`;
           }
 
           // Render as regular list item (use default behavior)
