@@ -937,14 +937,17 @@
   groupIndex: number,
   childBlock: ContentBlock,
   childIndex: number,
+  suppressSpacing: boolean = false,
 )}
   <div
-    class="content-block content-block--{childBlock.type} {getOperationalClusterSpacingClass(
-      group.children,
-      childIndex,
-      (candidate) => candidate.type !== 'tool_result',
-      group.isReasoningPhase,
-    )} {isOperationalClusterBlock(childBlock)
+    class="content-block content-block--{childBlock.type} {suppressSpacing
+      ? ''
+      : getOperationalClusterSpacingClass(
+          group.children,
+          childIndex,
+          (candidate) => candidate.type !== 'tool_result',
+          group.isReasoningPhase,
+        )} {isOperationalClusterBlock(childBlock)
       ? OPERATIONAL_GROUP_CHILD_ROW_CLASS
       : OPERATIONAL_GROUP_CHILD_CONTENT_CLASS}"
     style:padding-left={isOperationalClusterBlock(childBlock)
@@ -997,6 +1000,7 @@
             blockIndex,
             group.children[currentChildIndex],
             currentChildIndex,
+            true,
           )}
         {/snippet}
         <div

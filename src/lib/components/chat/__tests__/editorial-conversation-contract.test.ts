@@ -219,14 +219,18 @@ describe('editorial conversation presentation contract', () => {
       'isAdjacentOperationalClusterRow(groupedBlocks, blockIndex, isVisibleOperationalBlock)',
     );
     expect(staticContent).toMatch(
-      /{#snippet renderResponseGroupChild\([\s\S]{0,500}?getOperationalClusterSpacingClass\(\s+group\.children,\s+childIndex,\s+isVisibleOperationalBlock,\s+group\.isReasoningPhase,\s+\)/,
+      /{#snippet renderResponseGroupChild\([\s\S]{0,500}?suppressSpacing\s+\?\s+''\s+:\s+getOperationalClusterSpacingClass\(\s+group\.children,\s+childIndex,\s+isVisibleOperationalBlock,\s+group\.isReasoningPhase,\s+\)/,
     );
     expect(staticContent.match(/{@render renderResponseGroupChild\(/g)).toHaveLength(3);
     expect(staticContent).toContain('{#if shouldRenderResponseGroupInline(group)}');
     expect(streamingContent).toContain('getOperationalClusterSpacingClass(');
-    expect(streamingContent).toContain(
-      "getOperationalClusterSpacingClass(\n      group.children,\n      childIndex,\n      (candidate) => candidate.type !== 'tool_result',",
+    expect(streamingContent).toMatch(
+      /suppressSpacing\s+\?\s+''\s+:\s+getOperationalClusterSpacingClass\(\s+group\.children,\s+childIndex,\s+\(candidate\) => candidate\.type !== 'tool_result',/,
     );
+    expect(staticContent).toContain('suppressSpacing: boolean = false,');
+    expect(streamingContent).toContain('suppressSpacing: boolean = false,');
+    expect(staticContent).toMatch(/currentChildIndex,\s+true,\s+\)}/);
+    expect(streamingContent).toMatch(/currentChildIndex,\s+true,\s+\)}/);
     expect(streamingContent).toContain(
       '{@render renderResponseGroupChild(group, blockIndex, childBlock, childIndex)}',
     );
