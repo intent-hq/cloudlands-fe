@@ -4,6 +4,21 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.112.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.111.0...v2.112.0) (2026-08-30)
+
+
+### 🚀 Features
+
+* capture updateSupported and gate the remote Update affordance ([#1881](https://github.com/intent-hq/cloudlands-fe/issues/1881)) ([791b67c](https://github.com/intent-hq/cloudlands-fe/commit/791b67c3c1800774d6f1928b8fed1a2b31d40e15))
+* **chat:** display cron and runAt hook schedules in the background-hooks row ([#1884](https://github.com/intent-hq/cloudlands-fe/issues/1884)) ([6e9ee9c](https://github.com/intent-hq/cloudlands-fe/commit/6e9ee9cd17d798a54b8a92d4fda64e41aff77db7))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.8.22 ([#1883](https://github.com/intent-hq/cloudlands-fe/issues/1883)) ([4c53d27](https://github.com/intent-hq/cloudlands-fe/commit/4c53d27e786ca31756b58227659bf13994227170))
+* bump intentd sidecar to v0.8.23 ([#1885](https://github.com/intent-hq/cloudlands-fe/issues/1885)) ([f0f5081](https://github.com/intent-hq/cloudlands-fe/commit/f0f508113fd8e9c7b0846d9ba71ede353bfa7866))
+* **voice:** keep composer focus on dictation and target the originating composer ([#1880](https://github.com/intent-hq/cloudlands-fe/issues/1880)) ([c5faaaf](https://github.com/intent-hq/cloudlands-fe/commit/c5faaafa73210ee7a625f282a6dfc707c1195246))
+
 ## [2.111.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.110.2...v2.111.0) (2026-08-30)
 
 
