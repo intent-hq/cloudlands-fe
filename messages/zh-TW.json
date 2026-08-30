@@ -2116,6 +2116,8 @@
   "chat_backgroundHooks_modal_lastError_label": "上次錯誤",
   "chat_backgroundHooks_details_nextRun_label": "下次執行",
   "chat_backgroundHooks_details_interval_label": "間隔",
+  "chat_backgroundHooks_details_schedule_label": "排程",
+  "chat_backgroundHooks_details_onceAt_value": "{time} 執行一次",
   "chat_backgroundHooks_details_expires_label": "到期時間",
   "chat_backgroundHooks_details_runs_label": "執行次數",
   "chat_hookWakeAttribution_wokeAgent_after": "喚醒了智慧體",

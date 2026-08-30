@@ -2116,6 +2116,8 @@
   "chat_backgroundHooks_modal_lastError_label": "Dernière erreur",
   "chat_backgroundHooks_details_nextRun_label": "Prochaine exécution",
   "chat_backgroundHooks_details_interval_label": "Intervalle",
+  "chat_backgroundHooks_details_schedule_label": "Planification",
+  "chat_backgroundHooks_details_onceAt_value": "une fois le {time}",
   "chat_backgroundHooks_details_expires_label": "Expiration",
   "chat_backgroundHooks_details_runs_label": "Exécutions",
   "chat_hookWakeAttribution_wokeAgent_after": "a réveillé l'agent",
