@@ -390,7 +390,7 @@
   background: hsl(var(--muted) / 0.7);
   color: hsl(var(--muted-foreground));
   border: 1px solid hsl(var(--border));
-  border-radius: 9999px;
+  border-radius: var(--radius-small);
   white-space: nowrap;
   vertical-align: baseline;
   box-decoration-break: clone;

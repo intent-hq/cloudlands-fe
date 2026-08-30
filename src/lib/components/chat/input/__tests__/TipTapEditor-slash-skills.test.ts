@@ -1,6 +1,9 @@
 /**
  * @vitest-environment jsdom
  */
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -27,6 +30,16 @@ async function mountEditor(props: Record<string, unknown> = {}) {
 }
 
 describe('TipTapEditor slash skills', () => {
+  it('uses the small semantic corner radius for inline command chips', () => {
+    const stylesheet = readFileSync(resolve('src/lib/styles/tiptap-editor.css'), 'utf8');
+    const chipRule = stylesheet.match(/\.skill-command-chip\s*\{(?<declarations>[^}]*)\}/)?.groups
+      ?.declarations;
+
+    expect(chipRule).toContain('border-radius: var(--radius-small)');
+    expect(chipRule).not.toContain('9999px');
+    expect(chipRule).not.toContain('var(--radius-full)');
+  });
+
   it('activates at any token boundary, filters case-insensitively, and ignores embedded slashes', async () => {
     const command = await mountEditor();
     command.component.insertText('explain /RES');
