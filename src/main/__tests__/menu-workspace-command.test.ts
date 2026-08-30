@@ -3,6 +3,13 @@ import { resolve } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 
 import { sendWorkspaceCommand, type WorkspaceCommandWindow } from '../menu-workspace-command';
+import { openNewWindowFromMenu } from '../menu-new-window';
+import { createWindow as createAppWindow, getFocusedWindowBackendId } from '../window.js';
+
+vi.mock('../window.js', () => ({
+  createWindow: vi.fn(),
+  getFocusedWindowBackendId: vi.fn(),
+}));
 
 const WORKSPACE_CHANNELS = [
   'menu:new-agent',
@@ -48,12 +55,12 @@ describe('sendWorkspaceCommand', () => {
     expect(mainSource).not.toContain("accelerator: 'CmdOrCtrl+PageDown'");
   });
 
-  it('creates New Window with the focused window backend instead of the local default', () => {
-    const mainSource = readFileSync(resolve(process.cwd(), 'src/main/index.ts'), 'utf8');
+  it('opens New Window on the focused window backend instead of the local default', () => {
+    vi.mocked(getFocusedWindowBackendId).mockReturnValue('remote-1');
 
-    expect(mainSource).toMatch(
-      /label: m\.menu_new_window\(\),\s*accelerator: 'CmdOrCtrl\+Shift\+N',\s*click: \(\) => \{[^}]*createWindow\(getFocusedWindowBackendId\(\)\);/,
-    );
+    openNewWindowFromMenu();
+
+    expect(createAppWindow).toHaveBeenCalledExactlyOnceWith('remote-1');
   });
 
   it('emits every workspace menu channel with the exact workspace payload', () => {
