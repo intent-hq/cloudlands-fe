@@ -4,8 +4,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ReduxStoreContext } from '$store/renderer/types';
 import { initAppStore, store as appStore } from '$store/renderer/store';
 import {
+  closePanel,
   initializeLayout,
+  preparePanelLayoutBackendRestore,
   setRestoreStatus,
+  splitPanel,
 } from '$store/renderer/slices/panel-layout/panel-layout-slice';
 import {
   selectPanelCanvasWidth,
@@ -27,6 +30,7 @@ const INITIAL_CANVAS_WIDTH = 1200;
 const INITIAL_CONTENT_WIDTH = 1184;
 const INITIAL_WIDTHS = [320, 500, 364];
 let storeContext: ReduxStoreContext | undefined;
+let measuredViewportWidth = INITIAL_CANVAS_WIDTH;
 
 class TestResizeObserver {
   static instances = new Set<TestResizeObserver>();
@@ -49,8 +53,9 @@ function flexWidth(element: HTMLElement): number {
 }
 
 function canvasWidth(): number {
-  const canvas = document.querySelector<HTMLElement>('.panel-canvas-resize-handle')?.parentElement;
-  return Number.parseFloat(canvas?.style.width ?? '0');
+  let node = document.querySelector<HTMLElement>('.panel-split-container.horizontal');
+  while (node && !node.style.width) node = node.parentElement;
+  return Number.parseFloat(node?.style.width ?? '0');
 }
 
 function panelGeometry() {
@@ -147,7 +152,7 @@ beforeEach(() => {
     return Number.parseFloat(this.style.width) || 0;
   });
   vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockImplementation(function () {
-    if (this.dataset.testid === 'panel-workspace-inset') return INITIAL_CANVAS_WIDTH;
+    if (this.dataset.testid === 'panel-workspace-inset') return measuredViewportWidth;
     return Number.parseFloat(this.style.width) || 0;
   });
   vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function () {
@@ -167,6 +172,7 @@ beforeEach(() => {
     } as DOMRect;
   });
   storeContext = initAppStore(appStore);
+  measuredViewportWidth = INITIAL_CANVAS_WIDTH;
   initializeThreePanels();
 });
 
@@ -180,6 +186,117 @@ afterEach(() => {
 });
 
 describe('root horizontal panel resizing', () => {
+  it('fills the measured viewport when a one-panel workspace restores a skinny explicit canvas', async () => {
+    appStore.dispatch(preparePanelLayoutBackendRestore(WORKSPACE_ID));
+    appStore.dispatch(
+      initializeLayout(WORKSPACE_ID, {
+        root: { type: 'panel', panelId: 'restored' },
+        panels: {
+          restored: { id: 'restored', tabs: [], activeTabId: null },
+        },
+        focusedPanelId: 'restored',
+        canvasWidth: 420,
+        canvasWidthSource: 'explicit',
+      }),
+    );
+    appStore.dispatch(setRestoreStatus(WORKSPACE_ID, 'restored'));
+
+    await renderLayout(false, INITIAL_CANVAS_WIDTH);
+    expect(canvasWidth()).toBe(INITIAL_CANVAS_WIDTH);
+  });
+
+  it.each([600, 2400])(
+    'normalizes a restored %spx root canvas and keeps its relative panel widths',
+    async (persistedCanvasWidth) => {
+      appStore.dispatch(
+        initializeLayout(WORKSPACE_ID, {
+          root: {
+            type: 'split',
+            direction: 'horizontal',
+            sizes: [20, 30, 50],
+            children: ['p1', 'p2', 'p3'].map((panelId) => ({
+              type: 'panel' as const,
+              panelId,
+            })),
+          },
+          panels: Object.fromEntries(
+            ['p1', 'p2', 'p3'].map((panelId) => [
+              panelId,
+              { id: panelId, tabs: [], activeTabId: null },
+            ]),
+          ),
+          focusedPanelId: 'p1',
+          canvasWidth: persistedCanvasWidth,
+          canvasWidthSource: 'explicit',
+        }),
+      );
+      appStore.dispatch(setRestoreStatus(WORKSPACE_ID, 'restored'));
+
+      await renderLayout(false, INITIAL_CANVAS_WIDTH);
+      expectGeometry(panelGeometry(), [236.8, 355.2, 592]);
+    },
+  );
+
+  it('keeps the viewport filled after adding and closing a restored root column', async () => {
+    appStore.dispatch(preparePanelLayoutBackendRestore(WORKSPACE_ID));
+    appStore.dispatch(
+      initializeLayout(WORKSPACE_ID, {
+        root: { type: 'panel', panelId: 'p1' },
+        panels: {
+          p1: {
+            id: 'p1',
+            tabs: [{ id: 'note', type: 'note', title: 'Note', noteId: 'note' }],
+            activeTabId: 'note',
+          },
+        },
+        focusedPanelId: 'p1',
+        columnCount: 1,
+        canvasWidth: 420,
+        canvasWidthSource: 'explicit',
+      }),
+    );
+    appStore.dispatch(setRestoreStatus(WORKSPACE_ID, 'restored'));
+    await renderLayout(false, INITIAL_CANVAS_WIDTH);
+
+    const split = splitPanel(WORKSPACE_ID, 'p1', 'horizontal', undefined, 10);
+    appStore.dispatch(split);
+    await waitFor(() => expect(panelGeometry()).toHaveLength(2));
+    expect(panelGeometry().reduce((sum, panel) => sum + panel.width, 0) + GUTTER_WIDTH).toBeCloseTo(
+      INITIAL_CANVAS_WIDTH,
+      6,
+    );
+
+    appStore.dispatch(closePanel(WORKSPACE_ID, split.payload.newPanelId, 20));
+    await waitFor(() => expect(canvasWidth()).toBe(INITIAL_CANVAS_WIDTH));
+  });
+
+  it('refits restored root proportions when the measured viewport resizes', async () => {
+    await renderLayout(false);
+    measuredViewportWidth = 800;
+    TestResizeObserver.flush();
+    await waitFor(() => expect(canvasWidth()).toBe(800));
+
+    const scale = (800 - GUTTER_WIDTH * 2) / INITIAL_CONTENT_WIDTH;
+    expectGeometry(
+      panelGeometry(),
+      INITIAL_WIDTHS.map((width) => width * scale),
+    );
+  });
+
+  it('keeps the viewport fixed while its right edge updates relative proportions', async () => {
+    await renderLayout(false);
+    const handle = document.querySelector<HTMLButtonElement>('.panel-canvas-resize-handle')!;
+    await fireEvent.mouseDown(handle, { clientX: 1200 });
+    await fireEvent.mouseMove(document, { clientX: 1290 });
+    await tick();
+    expect(canvasWidth()).toBe(INITIAL_CANVAS_WIDTH);
+    expect(
+      panelGeometry().reduce((sum, panel) => sum + panel.width, 0) + GUTTER_WIDTH * 2,
+    ).toBeCloseTo(INITIAL_CANVAS_WIDTH, 6);
+    await fireEvent.mouseUp(document);
+    await waitFor(() => expect(canvasWidth()).toBe(INITIAL_CANVAS_WIDTH));
+  });
+
   it.each([true, false])(
     'keeps the canvas fixed through proportional resize, commit, and measurement (contained=%s)',
     async (contained) => {

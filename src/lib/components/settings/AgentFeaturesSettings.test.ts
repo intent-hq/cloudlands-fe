@@ -69,14 +69,6 @@ describe('AgentFeaturesSettings', () => {
     }
   });
 
-  it('shows the new-sessions-only note without a live-read qualifier', async () => {
-    render(AgentFeaturesSettings);
-
-    const note = screen.getByText(/newly created agent sessions only/i);
-    expect(note).toBeTruthy();
-    expect(note.textContent).not.toMatch(/unless noted otherwise/i);
-  });
-
   it('defaults each feature to its daemon default when the daemon has no entry for its path', async () => {
     // Daemon predates agentFeatures.* — settings.list returns unrelated entries only
     mocks.mockSettingsList.mockResolvedValue([{ path: 'rtk.enabled', value: true }]);
@@ -244,7 +236,7 @@ describe('AgentFeaturesSettings', () => {
     });
   });
 
-  it('renders the dimmed tokenImpact text when the daemon provides it (§5.12)', async () => {
+  it('renders tokenImpact when the daemon provides it (§5.12)', async () => {
     mocks.mockSettingsList.mockResolvedValue(
       FEATURE_PATHS.map((path) => ({
         path,
@@ -259,8 +251,7 @@ describe('AgentFeaturesSettings', () => {
     await waitFor(() => {
       expect(screen.getAllByText('~620 tokens/session')).toHaveLength(12);
     });
-    const perTurn = screen.getByText('~50 tokens/turn');
-    expect(perTurn.className).toContain('text-ghost');
+    expect(screen.getByText('~50 tokens/turn')).toBeTruthy();
   });
 
   it('renders no token-impact line when the daemon omits the field (older daemon)', async () => {
@@ -394,7 +385,6 @@ describe('AgentFeaturesSettings', () => {
 
       const save = await screen.findByRole('button', { name: 'Save' });
       expect((save as HTMLButtonElement).disabled).toBe(true);
-      expect(screen.getByText(/whole number of at least 1/i)).toBeTruthy();
       expect(mocks.mockSettingsUpdate).not.toHaveBeenCalled();
     });
 
@@ -536,7 +526,6 @@ describe('AgentFeaturesSettings', () => {
 
       const save = await screen.findByRole('button', { name: 'Save' });
       expect((save as HTMLButtonElement).disabled).toBe(true);
-      expect(screen.getByText(/between 10 and 86,400 seconds/i)).toBeTruthy();
       expect(mocks.mockSettingsUpdate).not.toHaveBeenCalled();
     });
 

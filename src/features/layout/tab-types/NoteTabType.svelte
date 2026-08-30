@@ -87,7 +87,7 @@
   );
   $effect(() => {
     const noteId = tab.noteId;
-    if (!noteId || !noteContentStale || contentLoadFailedNoteId === noteId) return;
+    if (!isActive || !noteId || !noteContentStale || contentLoadFailedNoteId === noteId) return;
     void ensureNoteContentLoaded(workspaceId, noteId).then((loaded) => {
       if (!loaded && tab.noteId === noteId) contentLoadFailedNoteId = noteId;
     });
@@ -100,7 +100,7 @@
   // Get actual workspace root for file path
   let actualWorkspaceRoot = $state<string | null>(null);
   $effect(() => {
-    if (workspaceId) {
+    if (isActive && workspaceId) {
       invoke<string>('workspace:get-root', { workspaceId }).then((rootPath) => {
         if (rootPath) actualWorkspaceRoot = rootPath;
       });
@@ -255,19 +255,6 @@
     label={noteCopyFeedback || m.layout_noteTab_copyFullNote_tooltip()}
     onclick={handleCopyNote}
   />
-  <!-- Version history toggle hidden for now -->
-  <!-- <Button
-    variant="ghost-light"
-    size="icon-xs"
-    onclick={() => (showVersionHistory = !showVersionHistory)}
-    tooltip={showVersionHistory
-      ? m.layout_noteTab_hideVersionHistory_tooltip()
-      : m.layout_noteTab_showVersionHistory_tooltip()}
-    tooltipSide="bottom"
-    class={showVersionHistory ? 'text-foreground' : 'text-muted-foreground'}
-  >
-    <Fa icon={faClockRotateLeft} size="xs" />
-  </Button> -->
   {#if noteFilePath}
     <OpenComboButton filePath={noteFilePath} {workspaceId} isDirectory={false} embedded />
   {/if}

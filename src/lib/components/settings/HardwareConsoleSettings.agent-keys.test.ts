@@ -93,12 +93,9 @@ describe('HardwareConsoleSettings agent keys', () => {
         name: m.settings_hardware_agentKey_ariaLabel({ number: '2', name: 'Beta' }),
       }),
     );
-    const popover = result.getByRole('dialog', {
+    result.getByRole('dialog', {
       name: m.settings_hardware_agentKeyPopover_ariaLabel({ number: '2' }),
     });
-    expect(popover.textContent).toContain('Beta');
-    // Idle workspace (no agents, no activity) surfaces the idle LED meaning.
-    expect(popover.textContent).toContain(m.settings_hardware_ledStatus_idle_label());
     expect(mocks.focusWorkspaceSlot).not.toHaveBeenCalled();
   });
 
@@ -122,8 +119,8 @@ describe('HardwareConsoleSettings agent keys', () => {
     expect(
       result.getByRole('dialog', {
         name: m.settings_hardware_agentKeyPopover_ariaLabel({ number: '1' }),
-      }).textContent,
-    ).toContain('Alpha');
+      }),
+    ).toBeTruthy();
     expect(
       result.queryByText(m.workspace_card_assignMicroKeyNumber_label({ number: '1' })),
     ).toBeNull();

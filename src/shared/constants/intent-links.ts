@@ -57,6 +57,17 @@ export function noteLink(text: string, noteId: string, workspaceId?: string): st
 }
 
 /**
+ * Generate an intent:// URL for one message in an agent conversation.
+ */
+export function conversationMessageUrl(
+  workspaceId: string,
+  agentId: string,
+  messageId: string,
+): string {
+  return `${INTENT_BASE_URL}/${workspaceId}/agent/${agentId}/message/${messageId}`;
+}
+
+/**
  * Same as TASK_LINK_REGEX but with a more flexible ID pattern
  * Use this when you need to match any ID format (e.g., for validation)
  */

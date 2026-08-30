@@ -12,7 +12,9 @@ describe('editorial workspace shell presentation contract', () => {
     expect(layout).toContain(
       "contained ? 'overflow-hidden py-2 px-2' : 'overflow-x-auto py-2 pr-2 sm:py-3 sm:pr-3'",
     );
-    expect(layout).toContain("use:scrollFade={{ axis: 'x', fadeSize: contained ? 0 : 24 }}");
+    expect(layout).toContain(
+      "use:scrollFade={{ axis: 'x', fadeSize: contained ? 0 : 24, enabled: active }}",
+    );
     expect(layout).toContain('data-testid="panel-workspace-inset"');
     expect(layout).toContain('flex h-full w-max min-w-full');
     expect(layout).not.toMatch(/\bpr-0\b/);

@@ -23,6 +23,7 @@ interface MessageHydrationPolicyOptions {
 
 export interface MessageHydrationPolicy {
   observe(id: string, element: Element, root: HTMLElement | null): () => void;
+  setActive(active: boolean): void;
   setForced(id: string, forced: boolean): void;
   updateMessages(messages: readonly HydrationMessage[]): void;
   getHydratedIds(): string[];
@@ -54,9 +55,13 @@ export function createMessageHydrationPolicy(
   options: MessageHydrationPolicyOptions = {},
 ): MessageHydrationPolicy {
   const records = new Map<string, MessageRecord>();
-  const registrations = new Map<string, () => void>();
+  const registrations = new Map<
+    string,
+    { element: Element; root: HTMLElement | null; release: (() => void) | null }
+  >();
   let frontierId: string | undefined;
   let disposed = false;
+  let active = true;
 
   function makeRecord(message: HydrationMessage, index: number): MessageRecord {
     const forced = false;
@@ -119,22 +124,45 @@ export function createMessageHydrationPolicy(
     reconcile();
   }
 
+  function attachRegistration(
+    id: string,
+    registration: { element: Element; root: HTMLElement | null; release: (() => void) | null },
+  ) {
+    if (!active || disposed || registration.release) return;
+    registration.release = observeLazyTurnVisibility(
+      registration.element,
+      registration.root,
+      (isIntersecting) => reportVisibility(id, isIntersecting),
+    );
+  }
+
   return {
     observe(id, element, root) {
       // Child rows may mount before the parent effect publishes the composed
       // message list. Keep that stable registration; visibility reports are
       // safely ignored until updateMessages() installs the matching record.
       if (disposed) return () => {};
-      registrations.get(id)?.();
-      const release = observeLazyTurnVisibility(element, root, (isIntersecting) => {
-        reportVisibility(id, isIntersecting);
-      });
-      registrations.set(id, release);
+      registrations.get(id)?.release?.();
+      const registration = { element, root, release: null as (() => void) | null };
+      registrations.set(id, registration);
+      attachRegistration(id, registration);
       return () => {
-        if (registrations.get(id) !== release) return;
+        if (registrations.get(id) !== registration) return;
         registrations.delete(id);
-        release();
+        registration.release?.();
       };
+    },
+    setActive(nextActive) {
+      if (disposed || active === nextActive) return;
+      active = nextActive;
+      if (active) {
+        for (const [id, registration] of registrations) attachRegistration(id, registration);
+      } else {
+        for (const registration of registrations.values()) {
+          registration.release?.();
+          registration.release = null;
+        }
+      }
     },
     setForced(id, forced) {
       if (disposed) return;
@@ -147,9 +175,9 @@ export function createMessageHydrationPolicy(
       if (disposed) return;
       const previous = new Map(records);
       const nextIds = new Set(nextMessages.map((message) => message.id));
-      for (const [id, release] of registrations) {
+      for (const [id, registration] of registrations) {
         if (!nextIds.has(id)) {
-          release();
+          registration.release?.();
           registrations.delete(id);
         }
       }
@@ -177,7 +205,7 @@ export function createMessageHydrationPolicy(
     },
     dispose() {
       disposed = true;
-      for (const release of registrations.values()) release();
+      for (const registration of registrations.values()) registration.release?.();
       registrations.clear();
       records.clear();
       frontierId = undefined;

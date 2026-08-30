@@ -8,20 +8,19 @@
  */
 
 import { BrowserWindow } from 'electron';
-import { findExistingHudWindow, isHudWindow } from '../../../main/hud-window';
+import { isHudWindow, isTrackedHudWindow } from '../../../main/hud-window';
 
 /**
  * Send an auto-update event to all live (non-destroyed) windows,
- * skipping the HUD window.
+ * skipping HUD windows (any backend).
  */
 export function broadcastToRenderers(channel: string, ...args: unknown[]): void {
   // isHudWindow() is URL-based and misses a newly registered HUD that is
-  // still on about:blank, so also exclude the tracked HUD reference —
-  // findExistingHudWindow() returns it even mid-navigation.
-  const hudWindow = findExistingHudWindow();
+  // still on about:blank, so also exclude tracked HUD windows —
+  // isTrackedHudWindow() covers them even mid-navigation.
   for (const window of BrowserWindow.getAllWindows()) {
     if (window.isDestroyed() || window.webContents.isDestroyed()) continue;
-    if (window === hudWindow || isHudWindow(window)) continue;
+    if (isTrackedHudWindow(window) || isHudWindow(window)) continue;
     window.webContents.send(channel, ...args);
   }
 }

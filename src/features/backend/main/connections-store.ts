@@ -1,10 +1,10 @@
 /**
  * Multi-backend connections registry (main process).
  *
- * Persists the set of remote intentd connections the user has paired with,
- * plus which backend is currently active, to a dedicated JSON file under
- * `app.getPath('userData')` — `backend-connections.json`, separate from
- * `local-prefs.json` so the two stores evolve independently.
+ * Persists the set of remote intentd connections the user has paired with to
+ * a dedicated JSON file under `app.getPath('userData')` —
+ * `backend-connections.json`, separate from `local-prefs.json` so the two
+ * stores evolve independently.
  *
  * The bearer token for each remote is encrypted at rest with Electron's
  * cross-platform `safeStorage` when `isEncryptionAvailable()` is true; when
@@ -14,7 +14,12 @@
  *
  * The local sidecar is not a persisted record: a synthetic, non-forgettable
  * "This machine (local)" entry (id `local`) is always synthesized as the
- * first item of `list()`, and `activeId` defaults to `local`.
+ * first item of `list()`. The file also carries the legacy `activeId` field
+ * (defaults to `local`) — Open-only: it no longer drives client routing. It
+ * is read primarily as a boot-time default (which session bucket restores
+ * first / the fallback backend for a fresh first window), plus a couple of
+ * legacy compat reads: the `connections:add` rebuild-if-active check (and its
+ * `switched` result field) and the browser-capture state-dir key.
  *
  * Writes are serialized behind a promise chain (mirroring `local-prefs.ts`)
  * so a mid-write reader sees either the old or new file, never a torn one.
@@ -24,8 +29,15 @@ import { promises as fs } from 'fs';
 import * as path from 'path';
 import { randomUUID } from 'crypto';
 import { app, safeStorage } from 'electron';
+import { normalizeFingerprint } from './backend-connection';
 import { Logger } from '../../../shared/logger';
-import { LOCAL_CONNECTION_ID, type ConnectionRecord } from '../../../shared/types/connections';
+import {
+  DEFAULT_CONNECTION_ACCENT,
+  LOCAL_CONNECTION_ID,
+  isConnectionAccent,
+  type ConnectionAccent,
+  type ConnectionRecord,
+} from '../../../shared/types/connections';
 import { TOMBSTONE_TTL_MS, accountKeyFor, type KeychainSyncRecord } from './keychain-sync';
 
 // Re-export the shared contract types so existing store importers keep a single
@@ -57,6 +69,8 @@ interface EncryptedToken {
 interface StoredConnection {
   id: string;
   label: string;
+  /** Optional for backward compatibility; missing uses the default, null is explicitly blank. */
+  accent?: ConnectionAccent;
   host: string;
   port: number;
   fingerprint: string;
@@ -67,6 +81,15 @@ interface StoredConnection {
    * "unavailable" (the UI falls back to `host:port`).
    */
   hostname?: string | null;
+  /**
+   * The remote daemon's reported version (`server.version` from its
+   * `client.hello`), captured on connect and refreshed on every reconnect.
+   * Absent on records written before this field existed and until the first
+   * capture. Observational, per-machine state: it is NEVER part of the
+   * keychain-sync surface (each machine observes the daemon itself), so
+   * writes never bump the LWW clock or notify sync.
+   */
+  daemonVersion?: string | null;
   /**
    * Candidate hosts (#1746): the primary `host` first, then any additional IPs
    * the backend reported via `server.pairingInfo`. Absent on records written
@@ -103,6 +126,7 @@ interface StoredConnection {
  */
 interface StoredTombstone {
   label: string;
+  accent?: ConnectionAccent;
   host: string;
   port: number;
   fingerprint: string;
@@ -124,6 +148,7 @@ interface StoredTombstone {
 /** Fields required to register a new remote connection. */
 export interface NewConnection {
   label: string;
+  accent?: ConnectionAccent;
   host: string;
   port: number;
   fingerprint: string;
@@ -157,6 +182,7 @@ function localRecord(): ConnectionRecord {
   return {
     id: LOCAL_CONNECTION_ID,
     label: LOCAL_CONNECTION_LABEL,
+    accent: null,
     host: null,
     hosts: null,
     port: null,
@@ -191,11 +217,13 @@ function toRecord(stored: StoredConnection): ConnectionRecord {
   return {
     id: stored.id,
     label: stored.label,
+    accent: stored.accent === undefined ? DEFAULT_CONNECTION_ACCENT : stored.accent,
     host: stored.host,
     hosts: candidateHosts(stored),
     port: stored.port,
     fingerprint: stored.fingerprint,
     hostname: stored.hostname ?? null,
+    daemonVersion: stored.daemonVersion ?? null,
     syncExcluded: stored.syncExcluded === true,
     isLocal: false,
   };
@@ -208,12 +236,18 @@ function isStoredConnection(value: unknown): value is StoredConnection {
   return (
     typeof c.id === 'string' &&
     typeof c.label === 'string' &&
+    (c.accent === undefined || isConnectionAccent(c.accent)) &&
     typeof c.host === 'string' &&
     typeof c.port === 'number' &&
     typeof c.fingerprint === 'string' &&
     // `hostname` is an optional late addition: absent on older records, a string
     // once captured. Accept missing/null/string; reject any other type.
     (c.hostname === undefined || c.hostname === null || typeof c.hostname === 'string') &&
+    // `daemonVersion` is an optional late addition: absent on older records,
+    // a string once captured. Accept missing/null/string; reject any other type.
+    (c.daemonVersion === undefined ||
+      c.daemonVersion === null ||
+      typeof c.daemonVersion === 'string') &&
     // `hosts` / `detectHosts` are optional late additions (#1746): absent on
     // older records. Accept missing or well-typed; reject any other type.
     (c.hosts === undefined ||
@@ -237,6 +271,7 @@ function isStoredTombstone(value: unknown): value is StoredTombstone {
   const t = value as Record<string, unknown>;
   return (
     typeof t.label === 'string' &&
+    (t.accent === undefined || isConnectionAccent(t.accent)) &&
     typeof t.host === 'string' &&
     typeof t.port === 'number' &&
     typeof t.fingerprint === 'string' &&
@@ -307,9 +342,23 @@ function encryptToken(token: string): EncryptedToken {
   return { encrypted: false, value: token };
 }
 
+class ConnectionSecretUnavailableError extends Error {
+  readonly code = 'connection-secret-unavailable';
+
+  constructor() {
+    // i18n-ignore (internal error)
+    super('Connection secret unavailable');
+    this.name = 'ConnectionSecretUnavailableError';
+  }
+}
+
 function decryptToken(encToken: EncryptedToken): string {
   if (encToken.encrypted) {
-    return safeStorage.decryptString(Buffer.from(encToken.value, 'base64'));
+    try {
+      return safeStorage.decryptString(Buffer.from(encToken.value, 'base64'));
+    } catch {
+      throw new ConnectionSecretUnavailableError();
+    }
   }
   return encToken.value;
 }
@@ -358,7 +407,7 @@ function sameTarget(
  * null when the record carries no usable fingerprint (legacy/blank).
  */
 function fingerprintKey(fingerprint: string | undefined | null): string | null {
-  const key = (fingerprint ?? '').trim().toUpperCase();
+  const key = normalizeFingerprint(fingerprint ?? '');
   return key === '' ? null : key;
 }
 
@@ -439,6 +488,8 @@ export async function list(): Promise<ConnectionRecord[]> {
  * marked plaintext) before it hits disk. Returns the token-free record.
  */
 export async function add(conn: NewConnection): Promise<ConnectionRecord> {
+  const accent = conn.accent === undefined ? DEFAULT_CONNECTION_ACCENT : conn.accent;
+  if (!isConnectionAccent(accent)) throw new Error('Invalid connection accent');
   const encToken = encryptToken(conn.token);
   const stored = await mutate(async (state) => {
     // Identity matching: fingerprint first (canonical machine identity, so a
@@ -458,6 +509,7 @@ export async function add(conn: NewConnection): Promise<ConnectionRecord> {
     if (duplicates.length > 0) {
       const survivor = duplicates.find((c) => c.id === state.activeId) ?? duplicates[0];
       survivor.label = conn.label;
+      survivor.accent = accent;
       survivor.host = conn.host;
       survivor.port = conn.port;
       // Extras keyed to the old primary may be stale after a host change;
@@ -478,6 +530,7 @@ export async function add(conn: NewConnection): Promise<ConnectionRecord> {
     const record: StoredConnection = {
       id: randomUUID(),
       label: conn.label,
+      accent,
       host: conn.host,
       port: conn.port,
       fingerprint: conn.fingerprint,
@@ -492,6 +545,132 @@ export async function add(conn: NewConnection): Promise<ConnectionRecord> {
   });
   notifyMutated();
   return toRecord(stored);
+}
+
+/**
+ * Update the user-editable metadata for a saved remote. The bearer token and
+ * transport identity fields are deliberately untouched. Local and unknown ids
+ * reject so callers cannot edit the synthetic sidecar or silently lose work.
+ */
+export async function updateMetadata(
+  id: string,
+  metadata: {
+    label: string;
+    accent: ConnectionAccent;
+    host?: string;
+    port?: number;
+    fingerprint?: string;
+  },
+): Promise<ConnectionRecord> {
+  if (id === LOCAL_CONNECTION_ID) throw new Error('Cannot update the local connection');
+  const label = metadata.label.trim();
+  if (!label) throw new Error('Connection label is required');
+  if (!isConnectionAccent(metadata.accent)) throw new Error('Invalid connection accent');
+  const host = metadata.host?.trim();
+  if (metadata.host !== undefined && !host) throw new Error('Connection host is required');
+  if (
+    metadata.port !== undefined &&
+    (!Number.isInteger(metadata.port) || metadata.port < 1 || metadata.port > 65_535)
+  ) {
+    throw new Error('Invalid connection port');
+  }
+  const fingerprint = metadata.fingerprint?.trim();
+  if (metadata.fingerprint !== undefined && !fingerprint) {
+    throw new Error('Connection fingerprint is required');
+  }
+
+  const result = await mutate(async (state) => {
+    const conn = state.connections.find((candidate) => candidate.id === id);
+    if (!conn) throw new Error(`Unknown connection id: ${id}`);
+    const nextHost = host ?? conn.host;
+    const nextPort = metadata.port ?? conn.port;
+    const nextFingerprint = fingerprint ?? conn.fingerprint;
+    const addressChanged = conn.host !== nextHost || conn.port !== nextPort;
+    const fingerprintChanged = fingerprintKey(conn.fingerprint) !== fingerprintKey(nextFingerprint);
+    const identityChanged = addressChanged || fingerprintChanged;
+    const nextIdentity = { host: nextHost, port: nextPort, fingerprint: nextFingerprint };
+    const duplicates = state.connections.filter(
+      (candidate) => candidate !== conn && sameBackend(candidate, nextIdentity),
+    );
+    const matchingTombstone = state.tombstones.find((tombstone) =>
+      tombstoneMatches(tombstone, nextIdentity),
+    );
+    if (
+      conn.label === label &&
+      conn.accent === metadata.accent &&
+      !addressChanged &&
+      !fingerprintChanged &&
+      duplicates.length === 0 &&
+      !matchingTombstone
+    ) {
+      return { conn, changed: false };
+    }
+    const previous = { ...conn, hosts: conn.hosts ? [...conn.hosts] : undefined };
+    conn.label = label;
+    conn.accent = metadata.accent;
+    conn.host = nextHost;
+    conn.port = nextPort;
+    conn.fingerprint = nextFingerprint;
+    if (addressChanged) conn.hosts = [];
+    if (addressChanged || fingerprintChanged) conn.hostname = null;
+    const now = Math.max(
+      Date.now(),
+      ...duplicates.map((candidate) => (candidate.updatedAt ?? 0) + 1),
+      matchingTombstone ? matchingTombstone.updatedAt + 1 : 0,
+    );
+    conn.updatedAt = now;
+    if (identityChanged || matchingTombstone) clearTombstone(state, nextIdentity);
+    if (duplicates.some((candidate) => candidate.id === state.activeId)) state.activeId = conn.id;
+    state.connections = state.connections.filter(
+      (candidate) => candidate === conn || !duplicates.includes(candidate),
+    );
+    if (addressChanged && fingerprintChanged) {
+      clearTombstone(state, previous);
+      state.tombstones.push({
+        label: previous.label,
+        accent: previous.accent === undefined ? DEFAULT_CONNECTION_ACCENT : previous.accent,
+        host: previous.host,
+        port: previous.port,
+        fingerprint: previous.fingerprint,
+        hostname: previous.hostname ?? null,
+        hosts: previous.hosts,
+        detectHosts: previous.detectHosts,
+        updatedAt: now,
+        deletedAt: now,
+        excluded: previous.syncExcluded === true,
+      });
+    }
+    await writeState(state);
+    return { conn, changed: true };
+  });
+  if (result.changed) notifyMutated();
+  return toRecord(result.conn);
+}
+
+/** Atomically replace a remote's encrypted secret after main-process validation. */
+export async function replaceSecret(
+  id: string,
+  token: string,
+  fingerprint: string,
+): Promise<ConnectionRecord> {
+  if (id === LOCAL_CONNECTION_ID) throw new Error('Cannot update the local connection');
+  if (!token) throw new Error('Connection token is required');
+  const normalizedFingerprint = fingerprint.trim();
+  if (!normalizedFingerprint) throw new Error('Connection fingerprint is required');
+  const result = await mutate(async (state) => {
+    const conn = state.connections.find((candidate) => candidate.id === id);
+    if (!conn) throw new Error(`Unknown connection id: ${id}`);
+    conn.encToken = encryptToken(token);
+    if (fingerprintKey(conn.fingerprint) !== fingerprintKey(normalizedFingerprint)) {
+      conn.fingerprint = normalizedFingerprint;
+      conn.hostname = null;
+    }
+    conn.updatedAt = Date.now();
+    await writeState(state);
+    return conn;
+  });
+  notifyMutated();
+  return toRecord(result);
 }
 
 /**
@@ -559,6 +738,31 @@ export async function setHostname(id: string, hostname: string): Promise<void> {
 }
 
 /**
+ * Persist the remote daemon's reported version for a connection (from its
+ * `client.hello` `server.version`). Returns `true` when the stored value
+ * actually changed so the caller can broadcast the refreshed list. A no-op
+ * for an unknown id and for empty/whitespace versions (fail-soft: the version
+ * is an observational display nicety, never a hard requirement). Unlike
+ * {@link setHostname}, this is per-machine observational state: it never
+ * bumps the LWW clock (`updatedAt`) and never notifies keychain sync — each
+ * machine captures the version from its own connection, and a re-stamp would
+ * let a stale record win over a newer remote edit.
+ */
+export async function setDaemonVersion(id: string, version: string): Promise<boolean> {
+  const trimmed = version.trim();
+  if (!trimmed) return false;
+  return mutate(async (state) => {
+    const conn = state.connections.find((c) => c.id === id);
+    if (!conn) return false; // unknown id: nothing to update
+    // Unchanged version (the common every-reconnect case): skip the write.
+    if (conn.daemonVersion === trimmed) return false;
+    conn.daemonVersion = trimmed;
+    await writeState(state);
+    return true;
+  });
+}
+
+/**
  * Forget a remote connection. Rejects the reserved `local` id. If the
  * forgotten connection was active, the active selection falls back to `local`.
  * Writes a tombstone for the removed backend so keychain sync propagates the
@@ -582,6 +786,7 @@ export async function forget(id: string): Promise<void> {
       clearTombstone(state, removed);
       state.tombstones.push({
         label: removed.label,
+        accent: removed.accent === undefined ? DEFAULT_CONNECTION_ACCENT : removed.accent,
         host: removed.host,
         port: removed.port,
         fingerprint: removed.fingerprint,
@@ -599,15 +804,19 @@ export async function forget(id: string): Promise<void> {
   if (changed) notifyMutated();
 }
 
-/** The currently active backend id; defaults to `local`. */
+/**
+ * The legacy persisted `activeId`; defaults to `local`. Open-only: not a
+ * routing concept — read primarily as a boot-time default, plus a couple of
+ * legacy compat reads (see the file header).
+ */
 export async function getActiveId(): Promise<string> {
   const state = await readState();
   return state.activeId;
 }
 
 /**
- * Set the active backend. `local` is always valid; any other id must match a
- * persisted connection, else this rejects.
+ * Set the legacy persisted `activeId`. `local` is always valid; any other id
+ * must match a persisted connection, else this rejects.
  */
 export async function setActiveId(id: string): Promise<void> {
   await mutate((state) => {
@@ -673,6 +882,7 @@ export async function listSyncRecords(): Promise<KeychainSyncRecord[]> {
     }
     records.push({
       label: conn.label,
+      accent: conn.accent === undefined ? DEFAULT_CONNECTION_ACCENT : conn.accent,
       host: conn.host,
       hosts: candidateHosts(conn),
       port: conn.port,
@@ -688,6 +898,7 @@ export async function listSyncRecords(): Promise<KeychainSyncRecord[]> {
     if (t.excluded === true) continue;
     records.push({
       label: t.label,
+      accent: t.accent === undefined ? DEFAULT_CONNECTION_ACCENT : t.accent,
       host: t.host,
       hosts: candidateHosts(t),
       port: t.port,
@@ -754,6 +965,7 @@ export async function applyRemoteSyncRecord(record: KeychainSyncRecord): Promise
       clearTombstone(state, record);
       state.tombstones.push({
         label: record.label,
+        accent: record.accent === undefined ? DEFAULT_CONNECTION_ACCENT : record.accent,
         host: record.host,
         port: record.port,
         fingerprint: record.fingerprint,
@@ -792,6 +1004,7 @@ export async function applyRemoteSyncRecord(record: KeychainSyncRecord): Promise
     if (duplicates.length > 0) {
       const survivor = duplicates.find((c) => c.id === state.activeId) ?? duplicates[0];
       survivor.label = record.label;
+      survivor.accent = record.accent === undefined ? DEFAULT_CONNECTION_ACCENT : record.accent;
       survivor.host = record.host;
       survivor.port = record.port;
       survivor.fingerprint = record.fingerprint;
@@ -807,6 +1020,7 @@ export async function applyRemoteSyncRecord(record: KeychainSyncRecord): Promise
       state.connections.push({
         id: randomUUID(),
         label: record.label,
+        accent: record.accent === undefined ? DEFAULT_CONNECTION_ACCENT : record.accent,
         host: record.host,
         port: record.port,
         fingerprint: record.fingerprint,

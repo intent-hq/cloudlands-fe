@@ -19,6 +19,7 @@
   import Button from '$lib/components/ui/button/button.svelte';
   import Checkbox from '$lib/components/ui/checkbox/checkbox.svelte';
   import { m } from '$shared/paraglide/messages.js';
+  import { MACOS_INPUT_MONITORING_SETTINGS_URL } from '$shared/constants';
   import { formatNumber } from '$lib/i18n/format';
   import { store as appStore } from '$store/renderer/store';
   import {
@@ -51,7 +52,10 @@
   } from '$features/hardware-console/actions/cycle-scope';
   import type { HardwareDeviceModel } from '$features/hardware-console/input/types';
   import { getHardwareConsoleManager } from '$features/hardware-console/instance';
-  import type { HardwareConsoleStatus } from '$features/hardware-console/device/device-manager';
+  import type {
+    HardwareConsoleConnectError,
+    HardwareConsoleStatus,
+  } from '$features/hardware-console/device/device-manager';
   import { getNavigatorHid } from '$features/hardware-console/device/platform';
   import {
     inferTransportFromCollections,
@@ -62,6 +66,8 @@
     type DeviceConnectionSnapshot,
   } from '$features/hardware-console/codex-probe';
   import { isElectronPlatform } from '$lib/utils/platform-capabilities';
+  import { isMacPlatform } from '$lib/utils/shortcuts';
+  import { openExternalUrl } from '$lib/utils/open-external';
   import { MAX_PROMPT_PICKER_LIMIT } from '$features/hardware-console/prompt-picker/curation';
   import HardwareConsoleDeviceSvg, { codexCapLabel } from './HardwareConsoleDeviceSvg.svelte';
 
@@ -96,6 +102,7 @@
   let snapshot = $state<DeviceConnectionSnapshot | null>(null);
   let connecting = $state(false);
   let connectFailed = $state(false);
+  let lastConnectError = $state<HardwareConsoleConnectError | null>(null);
 
   const promptLimitOptions = Array.from({ length: MAX_PROMPT_PICKER_LIMIT }, (_, i) => i + 1);
 
@@ -121,9 +128,11 @@
   onMount(() => {
     const manager = getHardwareConsoleManager();
     connectionStatus = manager.status;
+    lastConnectError = manager.lastConnectError;
     if (manager.status === 'connected') void refreshConnectionDetails();
     return manager.onStatusChange((status) => {
       connectionStatus = status;
+      lastConnectError = manager.lastConnectError;
       if (status === 'connected') {
         connectFailed = false;
         void refreshConnectionDetails();
@@ -164,16 +173,24 @@
   }
 
   async function handleConnect() {
+    const manager = getHardwareConsoleManager();
     connecting = true;
     connectFailed = false;
     try {
-      const connected = await getHardwareConsoleManager().requestConnect();
+      const connected = await manager.requestConnect();
       connectFailed = !connected;
     } catch {
       connectFailed = true;
     } finally {
+      lastConnectError = manager.lastConnectError;
       connecting = false;
     }
+  }
+
+  function handleOpenInputMonitoringSettings() {
+    // Best-effort deep link; the guidance text still tells the user where to go.
+    // eslint-disable-next-line intent/no-component-async-data-fetch -- opens the macOS System Settings pane externally, not a domain data fetch
+    void openExternalUrl(MACOS_INPUT_MONITORING_SETTINGS_URL);
   }
 
   // Resolved agent-key slot assignments for the device graphic badges;
@@ -188,6 +205,22 @@
     })),
   );
   const agentKeysInteractive = $derived(connectionStatus === 'connected');
+
+  // Failed-open state: a device was present but open() rejected. Distinct
+  // from plain "no device connected", and grants Electron a Retry button
+  // (Electron normally auto-connects without a user gesture).
+  const showConnectError = $derived(
+    connectionStatus === 'disconnected' && lastConnectError !== null,
+  );
+  const showInputMonitoringHint = $derived(
+    showConnectError &&
+      lastConnectError?.name === 'NotAllowedError' &&
+      isElectronPlatform() &&
+      isMacPlatform(),
+  );
+  const showRetryButton = $derived(
+    (showConnectButton || showConnectError) && connectionStatus !== 'connected',
+  );
 
   // Status line for the key's workspace-info popover: the same per-slot
   // state the LED engine surfaces (one-time read at popover open).
@@ -316,18 +349,45 @@
             <p class="text-xs text-subtle mt-0.5">
               {m.settings_hardware_status_unavailable_label()}
             </p>
+          {:else if showConnectError}
+            {#if showInputMonitoringHint}
+              <p class="text-xs text-amber-500/90 mt-0.5">
+                {m.settings_hardware_inputMonitoring_error()}
+              </p>
+              <p class="text-xs text-subtle mt-1">
+                {m.settings_hardware_inputMonitoring_regrant_description()}
+              </p>
+              <!-- A NotAllowedError is not always Input Monitoring (e.g. the
+                   device claimed exclusively elsewhere), so keep the raw
+                   error detail visible in case the guidance misdiagnoses. -->
+              <p class="text-xs text-subtle/70 mt-1">
+                {m.settings_hardware_connectError_label({ error: lastConnectError?.message ?? '' })}
+              </p>
+              <Button
+                variant="ghost-light"
+                size="xs"
+                class="mt-1.5"
+                onclick={handleOpenInputMonitoringSettings}
+              >
+                {m.settings_hardware_inputMonitoring_openSettings_button()}
+              </Button>
+            {:else}
+              <p class="text-xs text-amber-500/90 mt-0.5">
+                {m.settings_hardware_connectError_label({ error: lastConnectError?.message ?? '' })}
+              </p>
+            {/if}
           {:else}
             <p class="text-xs text-subtle mt-0.5">
               {m.settings_hardware_status_disconnected_label()}
             </p>
           {/if}
-          {#if connectFailed}
+          {#if connectFailed && !showConnectError}
             <p class="text-xs text-amber-500/90 mt-1">
               {m.settings_hardware_connectFailed_error()}
             </p>
           {/if}
         </div>
-        {#if showConnectButton && connectionStatus !== 'connected'}
+        {#if showRetryButton}
           <Button
             variant="outline"
             size="sm"
@@ -335,7 +395,9 @@
             disabled={connecting}
             onclick={handleConnect}
           >
-            {m.settings_hardware_connect_button()}
+            {showConnectError
+              ? m.settings_hardware_retry_button()
+              : m.settings_hardware_connect_button()}
           </Button>
         {/if}
       </div>

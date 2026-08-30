@@ -10,11 +10,7 @@
  *     index.ts is overwritten at build time and never reaches a packaged app.
  */
 
-import {
-  contextBridge,
-  ipcRenderer,
-  webUtils,
-} from 'electron';
+import { contextBridge, ipcRenderer, webUtils } from 'electron';
 
 // ============================================
 // GENERATED IPC CHANNELS - DO NOT EDIT MANUALLY

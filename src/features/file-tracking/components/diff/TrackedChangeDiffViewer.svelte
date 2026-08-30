@@ -8,7 +8,7 @@
    * - Hunk staging/unstaging with hover actions in the gutter
    * - Real-time updates when file content changes
    */
-  import { onMount, untrack } from 'svelte';
+  import { untrack } from 'svelte';
   import { writable } from 'svelte/store';
   import { invoke } from '$lib/electron-bridge';
 
@@ -40,6 +40,7 @@
 
   interface Props {
     change: TrackedChange;
+    active?: boolean;
     workspaceId?: string;
     viewMode?: 'unified' | 'split';
     showHeader?: boolean;
@@ -94,6 +95,7 @@
 
   let {
     change,
+    active = true,
     workspaceId: workspaceIdProp,
     viewMode = 'unified',
     showHeader = false,
@@ -1025,8 +1027,9 @@
     return changedLineMemoValue;
   }
 
-  // Load content on mount
-  onMount(() => {
+  // Load on mount and refresh after a retained workspace surface is reactivated.
+  $effect(() => {
+    if (!active) return;
     logger.info('[onMount] Component mounted', {
       instanceId,
       changeId: change?.id,
@@ -1034,10 +1037,11 @@
       stage: change?.stage,
       commitHash: change?.commitHash,
     });
-    loadDiffContent();
+    untrack(() => void loadDiffContent());
   });
 
   $effect(() => {
+    if (!active) return;
     const wsId = workspaceId;
     const filePath = resolveRelativeFilePath(change?.relativePath || change?.file || '');
     const absolutePath = getAbsoluteFilePath(filePath);
@@ -1069,7 +1073,7 @@
   });
 
   $effect(() => {
-    if (useProvidedContent) return;
+    if (!active || useProvidedContent) return;
     const content = $workingTreeFileContentStore;
     if (content === null || content === lastObservedWorkingTreeContent) return;
 
@@ -1086,6 +1090,7 @@
 
   // Watch for refreshKey changes
   $effect(() => {
+    if (!active) return;
     if (refreshKey !== undefined && refreshKey !== lastRefreshKey) {
       const isFirst = lastRefreshKey === undefined;
       lastRefreshKey = refreshKey;
@@ -1103,6 +1108,7 @@
   // Watch for change prop changes - only reload when the actual change identity changes
   // Skip the initial run since onMount already handles loading
   $effect(() => {
+    if (!active) return;
     const currentId = change?.id;
     const currentFile = change?.file;
 
@@ -1136,6 +1142,7 @@
   // Manage hover button - append to number element when hovering a changed line
   // Only react to hoveredLine changes - use untrack for everything else to prevent loops
   $effect(() => {
+    if (!active) return;
     const line = hoveredLine;
 
     // Cleanup previous button

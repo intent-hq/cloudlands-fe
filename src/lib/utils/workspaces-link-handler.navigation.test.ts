@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   backendRequest: vi.fn(),
   dispatch: vi.fn(),
   navigateToRoute: vi.fn(),
+  openMessage: vi.fn(),
 }));
 
 vi.mock('svelte-sonner', () => ({ toast: { error: vi.fn() } }));
@@ -21,6 +22,7 @@ vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
 }));
 vi.mock('$lib/client/live/backend-transport', () => ({ backendRequest: mocks.backendRequest }));
 vi.mock('./navigation.client', () => ({ navigateToRoute: mocks.navigateToRoute }));
+vi.mock('./open-message', () => ({ openMessage: mocks.openMessage }));
 
 import { handleIntentLink } from './workspaces-link-handler';
 
@@ -113,5 +115,66 @@ describe('handleIntentLink panel navigation', () => {
         sourcePanelId: undefined,
       }),
     );
+  });
+
+  it('opens a canonical conversation message link at the exact message', async () => {
+    await handleIntentLink('intent://local/__chief__/agent/agent-chief-1/message/msg-source-1', {
+      workspaceId: 'owning-workspace',
+    });
+
+    expect(mocks.openMessage).toHaveBeenCalledWith({
+      workspaceId: '__chief__',
+      agentId: 'agent-chief-1',
+      messageId: 'msg-source-1',
+    });
+    expect(mocks.backendRequest).not.toHaveBeenCalled();
+  });
+
+  it('opens a completed relay link at the exact target message', async () => {
+    await handleIntentLink(
+      'intent://local/target-workspace/agent/agent-target-1/message/msg-final-assistant',
+      { workspaceId: '__chief__' },
+    );
+
+    expect(mocks.openMessage).toHaveBeenCalledWith({
+      workspaceId: 'target-workspace',
+      agentId: 'agent-target-1',
+      messageId: 'msg-final-assistant',
+    });
+  });
+
+  it.each(['.', '..', '%2e', '%2e%2e', '%2F', '%5C'])(
+    'fails closed for unsafe message workspace segment %s',
+    async (workspaceSegment) => {
+      await handleIntentLink(
+        `intent://local/${workspaceSegment}/agent/agent-target-1/message/msg-final-assistant`,
+        { workspaceId: 'owning-workspace' },
+      );
+
+      expect(mocks.openMessage).not.toHaveBeenCalled();
+      expect(mocks.navigateToRoute).not.toHaveBeenCalled();
+      expect(mocks.dispatch).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([
+    ['agent', '%2e%2e'],
+    ['agent', '%2F'],
+    ['agent', 'agent\\other'],
+    ['message', '%2e%2e'],
+    ['message', '%5C'],
+    ['message', 'msg/other'],
+  ])('fails closed for unsafe %s segment %s', async (segmentType, unsafeSegment) => {
+    const agentSegment = segmentType === 'agent' ? unsafeSegment : 'agent-target-1';
+    const messageSegment = segmentType === 'message' ? unsafeSegment : 'msg-final-assistant';
+
+    await handleIntentLink(
+      `intent://local/target-workspace/agent/${agentSegment}/message/${messageSegment}`,
+      { workspaceId: 'owning-workspace' },
+    );
+
+    expect(mocks.openMessage).not.toHaveBeenCalled();
+    expect(mocks.navigateToRoute).not.toHaveBeenCalled();
+    expect(mocks.dispatch).not.toHaveBeenCalled();
   });
 });

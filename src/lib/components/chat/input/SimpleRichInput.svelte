@@ -156,6 +156,8 @@
     editorClassName?: string;
     /** Override the horizontal inset applied to context rows and the action bar. */
     contentInsetClassName?: string;
+    /** Override the action bar's important trailing-edge padding (defaults to `pr-1.5!`). */
+    actionBarEndClassName?: string;
     /**
      * The parent owns file drag-and-drop (e.g. ChatPanel's full-panel drop
      * target): the container's own drag handlers and drop overlay are disabled
@@ -219,6 +221,7 @@
     edgeDocked = false,
     editorClassName = 'px-2!',
     contentInsetClassName = undefined,
+    actionBarEndClassName = 'pr-1.5!',
     externalDropTarget = false,
     onsubmit,
     onforcesubmit,
@@ -1580,7 +1583,7 @@
   <input bind:this={fileInput} type="file" multiple class="hidden" onchange={handleFileChange} />
   <!-- Action Bar -->
   <div
-    class="action-bar flex items-center justify-between pb-1.5 pr-1.5! pt-0 text-muted-foreground transition-opacity duration-150 {edgeDocked
+    class="action-bar flex items-center justify-between pb-1.5 {actionBarEndClassName} pt-0 text-muted-foreground transition-opacity duration-150 {edgeDocked
       ? 'flex-wrap gap-y-1'
       : ''} {contentInsetClasses}"
     data-chat-input-action-bar

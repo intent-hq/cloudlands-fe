@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { AgentMessage } from '$shared/types';
+import { stripAgentMessageHeader } from '../agent-message-attribution';
 import {
   getPresentedUserMessageText,
   stripInternalDeliveryNotes,
@@ -71,6 +72,151 @@ describe('user-message presentation sanitization', () => {
 
     expect(getPresentedUserMessageText(message)).toBe('Review the attachment');
     expect(message.contentBlocks).toHaveLength(4);
+  });
+});
+
+// PROTOCOL.md §5.5 A2A sender header, exactly as intentd prepends it.
+const A2A_HEADER = '[MESSAGE FROM AGENT Research Agent (agent-1234)]';
+
+function agentMessage(text: string, metadata?: Record<string, unknown>): AgentMessage {
+  return {
+    id: 'agent-origin-message',
+    role: 'user',
+    timestamp: '2026-08-17T05:00:00Z',
+    contentBlocks: [{ type: 'text', text }],
+    metadata: metadata ?? {
+      type: 'agent_message',
+      fromAgentId: 'agent-1234',
+      fromAgentName: 'Research Agent',
+    },
+  } as AgentMessage;
+}
+
+describe('stripAgentMessageHeader', () => {
+  it('strips the header line and its blank-line separator', () => {
+    expect(stripAgentMessageHeader(`${A2A_HEADER}\n\nPlease review the diff.`)).toBe(
+      'Please review the diff.',
+    );
+  });
+
+  it('strips the name-absent header shape', () => {
+    expect(stripAgentMessageHeader('[MESSAGE FROM AGENT (agent-1234)]\n\nPing')).toBe('Ping');
+  });
+
+  it('strips a header constituting the whole string (empty body)', () => {
+    expect(stripAgentMessageHeader(A2A_HEADER)).toBe('');
+  });
+
+  it('preserves leading whitespace of the body (indented / code-formatted)', () => {
+    expect(stripAgentMessageHeader(`${A2A_HEADER}\n\n    indented code line\ndone`)).toBe(
+      '    indented code line\ndone',
+    );
+    expect(stripAgentMessageHeader(`${A2A_HEADER}\n\n\nextra blank belongs to body`)).toBe(
+      '\nextra blank belongs to body',
+    );
+    expect(stripAgentMessageHeader(`${A2A_HEADER}\n\n\t tab-indented`)).toBe('\t tab-indented');
+  });
+
+  it('leaves a user-authored lookalike first line untouched', () => {
+    const prose = '[MESSAGE FROM AGENT quoted prose]\n\nbody';
+    expect(stripAgentMessageHeader(prose)).toBe(prose);
+    const noIdTail = '[MESSAGE FROM AGENT Research Agent]\n\nbody';
+    expect(stripAgentMessageHeader(noIdTail)).toBe(noIdTail);
+  });
+
+  it('returns text without the header unchanged', () => {
+    expect(stripAgentMessageHeader('plain agent message')).toBe('plain agent message');
+    expect(stripAgentMessageHeader(`Quoting:\n${A2A_HEADER}\ndone`)).toBe(
+      `Quoting:\n${A2A_HEADER}\ndone`,
+    );
+  });
+
+  it('strips the exact literal header rebuilt from attribution metadata', () => {
+    const attribution = {
+      kind: 'agent' as const,
+      fromAgentId: 'agent-1234',
+      displayName: 'Research Agent',
+      rawName: 'Research Agent',
+    };
+    expect(stripAgentMessageHeader(`${A2A_HEADER}\n\nbody`, attribution)).toBe('body');
+    expect(stripAgentMessageHeader(A2A_HEADER, attribution)).toBe('');
+    expect(stripAgentMessageHeader(`${A2A_HEADER}\n\n    indented`, attribution)).toBe(
+      '    indented',
+    );
+  });
+
+  it('exact-literal path handles a name the regex fallback cannot match', () => {
+    const rawName = 'Weird ) name (x)';
+    const attribution = {
+      kind: 'agent' as const,
+      fromAgentId: 'agent-99Z',
+      displayName: rawName,
+      rawName,
+    };
+    const text = `[MESSAGE FROM AGENT ${rawName} (agent-99Z)]\n\nbody`;
+    expect(stripAgentMessageHeader(text, attribution)).toBe('body');
+  });
+
+  it('exact-literal path strips the name-absent shape when rawName is empty', () => {
+    const attribution = {
+      kind: 'agent' as const,
+      fromAgentId: 'agent-1234',
+      displayName: 'Agent',
+      rawName: '',
+    };
+    expect(stripAgentMessageHeader('[MESSAGE FROM AGENT (agent-1234)]\n\nPing', attribution)).toBe(
+      'Ping',
+    );
+  });
+
+  it('with attribution, a mismatched literal falls back to the pinned regex only', () => {
+    const attribution = {
+      kind: 'agent' as const,
+      fromAgentId: 'agent-5678',
+      displayName: 'Other',
+      rawName: 'Other',
+    };
+    expect(stripAgentMessageHeader(`${A2A_HEADER}\n\nbody`, attribution)).toBe('body');
+    const lookalike = '[MESSAGE FROM AGENT quoted prose]\n\nbody';
+    expect(stripAgentMessageHeader(lookalike, attribution)).toBe(lookalike);
+  });
+
+  it('a chief attribution uses only the pinned regex fallback', () => {
+    const attribution = { kind: 'chief' as const, fromAgentId: 'agent-chief' };
+    expect(stripAgentMessageHeader(`${A2A_HEADER}\n\nbody`, attribution)).toBe('body');
+    const lookalike = '[MESSAGE FROM AGENT quoted prose]\n\nbody';
+    expect(stripAgentMessageHeader(lookalike, attribution)).toBe(lookalike);
+  });
+});
+
+describe('A2A sender header presentation', () => {
+  it('drops the header from attributed rows without mutating stored content', () => {
+    const message = agentMessage(`${A2A_HEADER}\n\nPlease review the diff.`);
+    const snapshot = structuredClone(message);
+
+    expect(getPresentedUserMessageText(message)).toBe('Please review the diff.');
+    expect(message).toEqual(snapshot);
+  });
+
+  it('renders attributed rows without the header byte-identically', () => {
+    expect(getPresentedUserMessageText(agentMessage('plain agent message'))).toBe(
+      'plain agent message',
+    );
+  });
+
+  it('keeps a matching first line on rows without agent_message metadata', () => {
+    const text = `${A2A_HEADER}\n\nUser-authored text.`;
+    expect(getPresentedUserMessageText(agentMessage(text, {}))).toBe(text);
+  });
+
+  it('strips the header alongside a trailing dequeue-wait note', () => {
+    const message = agentMessage(`${A2A_HEADER}\n\nShip it\n\n${WAIT_NOTE}`, {
+      type: 'agent_message',
+      fromAgentId: 'agent-1234',
+      fromAgentName: 'Research Agent',
+      queueInfo: { queuedAt: '2026-08-17T05:00:00.123456Z', waitedMs: 67_000 },
+    });
+    expect(getPresentedUserMessageText(message)).toBe('Ship it');
   });
 });
 

@@ -89,6 +89,8 @@
     selectBackendSetupGate,
   } from '$store/renderer/slices/setup-prompt/setup-prompt-selectors';
   import { bootRouteGateResolved } from '$store/renderer/slices/setup-prompt/setup-prompt-slice';
+  import { selectCurrentConnection } from '$store/renderer/slices/connections/connections-selectors';
+  import { connectionShellTint } from '$lib/utils/connection-accents';
   import {
     BOOT_ROUTE_HOLD_TIMEOUT_MS,
     decideBootRoute,
@@ -154,6 +156,10 @@
   const showReleaseNotesModal$ = selectShowReleaseNotesModal();
   const releaseNotes$ = selectReleaseNotes();
   const showCreateModal$ = selectShowCreateModal();
+  const currentConnection$ = selectCurrentConnection();
+  const applicationShellTint = $derived(
+    connectionShellTint($currentConnection$?.accent, $currentConnection$?.isLocal ?? true),
+  );
 
   // Register all tab types early
   // This must happen before any panels are rendered
@@ -934,6 +940,7 @@
   <!-- Main Layout with Title Bar -->
   <div
     class="panel-layout-container relative h-screen w-screen overflow-hidden bg-transparent text-foreground flex flex-col"
+    style:background-image={applicationShellTint}
     aria-label={m.layout_appShell_shell_ariaLabel()}
     data-testid="app-ready"
   >

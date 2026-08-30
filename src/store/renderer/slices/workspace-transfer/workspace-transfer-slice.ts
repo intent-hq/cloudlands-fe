@@ -107,9 +107,10 @@ export const setTransferArchiveSource = createAction<[value: boolean]>(
 /**
  * Step 4 primary button: settle the source via `workspace.export.finalize`
  * (archive + final status message) and optionally resume agents on the
- * target. The saga closes the modal (and optionally switches backend) after.
+ * target. The saga closes the modal (and optionally opens the target
+ * backend's window) after.
  */
-export const transferFinalizeRequested = createAction<[payload: { switchToTarget: boolean }]>(
+export const transferFinalizeRequested = createAction<[payload: { openTarget: boolean }]>(
   'workspaceTransfer/finalizeRequested',
 );
 

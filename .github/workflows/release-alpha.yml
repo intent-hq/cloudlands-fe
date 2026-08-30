@@ -230,11 +230,12 @@ jobs:
       # Stage the Developer ID provisioning profile for the keychain-sync
       # helper (dev.intentapp.cloudlands-fe.keychain-helper). scripts/
       # sign-sidecar.js embeds it and signs the helper with the restricted
-      # keychain entitlements the profile authorizes. Fail-soft: when the
-      # secret is empty the env var stays unset, the helper ships
-      # unprovisioned, and keychain sync reports "unavailable" at runtime —
-      # the build never fails. The decoded file is removed by the always()
-      # cleanup step.
+      # keychain entitlements the profile authorizes. When the secret is
+      # empty the env var stays unset and this step exits 0 — but because
+      # this job sets REQUIRE_SHARED_KEYCHAIN_GROUP=1 on the build step,
+      # scripts/sign-sidecar.js then FAILS the build (intent-hq/intent#3848)
+      # instead of shipping a helper without keychain sync. The decoded file
+      # is removed by the always() cleanup step.
       - name: Stage keychain-helper provisioning profile
         env:
           KEYCHAIN_HELPER_PROFILE_B64: ${{ secrets.CLOUDLANDS_KEYCHAIN_HELPER_PROFILE_B64 }}
@@ -250,7 +251,7 @@ jobs:
 
       # Drop build output left by a previous run so the artifact upload can't
       # pick up stale files (no-op on this ephemeral hosted runner; kept for
-      # parity with the Windows job and the still self-hosted Linux x64 leg).
+      # parity with the Windows and Linux jobs).
       - name: Clean previous build output
         run: rm -rf dist-electron
 
@@ -295,7 +296,14 @@ jobs:
           # GITHUB_ENV from "Stage keychain-helper provisioning profile"
           # (only when the secret is present); when unset,
           # scripts/sign-sidecar.js signs the helper without restricted
-          # entitlements (fail-soft).
+          # entitlements (fail-soft) — except that the guardrail below
+          # overrides the fail-soft posture for this release job.
+          # Guardrail (intent-hq/intent#3848): fail the release build if the
+          # keychain helper cannot be signed with the shared cross-app group
+          # (TEAMID.dev.intentapp.backends) — a missing profile, failed
+          # entitlement extraction, or an unauthorized profile must not
+          # silently ship an alpha without keychain sync.
+          REQUIRE_SHARED_KEYCHAIN_GROUP: '1'
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: List built artifacts
@@ -419,8 +427,7 @@ jobs:
 
       # Drop build output left by a previous run so the artifact upload
       # can't pick up stale files (no-op on this ephemeral hosted runner;
-      # kept for parity with the macOS job and the still self-hosted Linux
-      # x64 leg).
+      # kept for parity with the macOS and Linux jobs).
       - name: Clean previous build output
         shell: bash
         run: rm -rf dist-electron
@@ -487,16 +494,18 @@ jobs:
         include:
           # node_heap: per-arch --max-old-space-size (MB).
           #
-          # x64 runs on the self-hosted tinybox pool: the bundle outgrew the
-          # 16 GB ubuntu-latest hosted runner in the v2.13.0 rebuilds
-          # (monorepo#1340) — 8192 JS-heap-OOMs (run 30767000964, after
-          # passing at 8192 earlier the same day; the bundle sits right at
-          # that limit), while 12288 (run 30764745052) and later 10240 plus
-          # node/vite overhead trip the OS OOM killer. tinybox has the RAM
-          # for the same 12288 cap as the arm64 leg's 32 GB hosted runner.
-          # Fall back to a hosted runner only if it offers well over 16 GB.
+          # x64 builds on the gh-linux-8x org larger runner (GH-hosted,
+          # 8-core/32 GB X64) — the "well over 16 GB" class this leg
+          # requires: the bundle outgrew the 16 GB ubuntu-latest hosted
+          # runner in the v2.13.0 rebuilds (monorepo#1340) — 8192
+          # JS-heap-OOMs (run 30767000964, after passing at 8192 earlier
+          # the same day; the bundle sits right at that limit), while 12288
+          # (run 30764745052) and later 10240 plus node/vite overhead trip
+          # the OS OOM killer on 16 GB machines. 32 GB holds the same 12288
+          # cap as the arm64 leg. Never downgrade this leg to a 16 GB
+          # runner.
           - arch: x64
-            runner: [self-hosted, Linux, X64, tinybox]
+            runner: gh-linux-8x
             intentd_target: x86_64-unknown-linux-musl
             targets: AppImage:x64 deb:x64
             node_heap: 12288
@@ -556,9 +565,9 @@ jobs:
           INTENTD_TARGET: ${{ matrix.intentd_target }}
         run: node scripts/fetch-sidecar.cjs
 
-      # The self-hosted x64 runner is non-ephemeral; drop build output left
-      # by a previous run so the artifact upload can't pick up stale files
-      # (no-op on the ephemeral hosted arm64 runner).
+      # Both legs run on ephemeral GH-hosted runners now, so this is a
+      # harmless no-op — kept so a future move back to a persistent runner
+      # can't resurface stale build output in the artifact upload.
       - name: Clean previous build output
         run: rm -rf dist-electron
 
@@ -604,9 +613,9 @@ jobs:
           -c.linux.maintainer='Intent HQ <intent-hq@users.noreply.github.com>'
         env:
           # Per-arch heap cap — see the matrix node_heap comments: 12288 on
-          # both legs — self-hosted tinybox (x64) and the 32 GB
-          # gh-linux-arm64-8x hosted runner (arm64); 16 GB machines can't
-          # hold this bundle (monorepo#1340).
+          # both legs — the 32 GB gh-linux-8x (x64) and gh-linux-arm64-8x
+          # (arm64) hosted runners; 16 GB machines can't hold this bundle
+          # (monorepo#1340).
           NODE_OPTIONS: '--max-old-space-size=${{ matrix.node_heap }}'
           # Sourcemap generation multiplies rollup's peak heap past the
           # cap (same OOM as monorepo#1074; both Linux legs died at ~7.6 GB in

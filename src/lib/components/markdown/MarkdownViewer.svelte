@@ -1,4 +1,5 @@
 <script lang="ts">
+  /* eslint-disable max-lines */
   import { onMount, onDestroy } from 'svelte';
   import { Editor } from '@tiptap/core';
   import StarterKit from '@tiptap/starter-kit';
@@ -18,6 +19,7 @@
   import { handleLink } from '$features/navigation/link-handler';
   import { getWorkspaceRouteContext } from '$lib/utils/workspace-route-context';
   import ImageLightbox from '$lib/components/ui/ImageLightbox.svelte';
+  import ImageActionsMenu from '$lib/components/ui/ImageActionsMenu.svelte';
 
   import {
     openWorkspaceFile,
@@ -41,6 +43,8 @@
       options?: { openInAdjacentPanel?: boolean; sourcePanelId?: string },
     ) => void;
     taskBlockRenderMode?: 'placeholder' | 'content';
+    /** Chat transcript only: render inline workspace-file images as fixed square thumbnails. */
+    chatImageThumbnails?: boolean;
   }
 
   let {
@@ -52,6 +56,7 @@
     onCodeBlockAction: _onCodeBlockAction,
     onFileClick,
     taskBlockRenderMode = 'placeholder',
+    chatImageThumbnails = false,
   }: Props = $props();
 
   // PERF: Detect content complexity to choose rendering strategy
@@ -283,6 +288,41 @@
   let lightboxImageUrl = $state('');
   let lightboxImageAlt = $state<string | undefined>(undefined);
   let lightboxOpenerElement = $state<HTMLElement | null>(null);
+
+  // Hover overlay: chat-transcript thumbnails get an image actions menu.
+  // The images live in {@html}/TipTap-managed DOM, so a single Svelte-rendered
+  // trigger is positioned over whichever thumbnail is hovered.
+  let hoveredImage = $state<HTMLImageElement | null>(null);
+  let hoveredImagePosition = $state({ top: 0, left: 0 });
+  let imageActionsOpen = $state(false);
+  let imageActionsOverlayElement = $state<HTMLElement | null>(null);
+
+  function handleImageHover(event: MouseEvent): void {
+    if (!chatImageThumbnails) return;
+    const target = event.target;
+    if (
+      target instanceof HTMLImageElement &&
+      (target.getAttribute('src') || '').startsWith('workspace-file://')
+    ) {
+      if (hoveredImage === target) return;
+      const container = event.currentTarget as HTMLElement;
+      const imageRect = target.getBoundingClientRect();
+      const containerRect = container.getBoundingClientRect();
+      hoveredImage = target;
+      hoveredImagePosition = {
+        top: imageRect.top - containerRect.top + 6,
+        left: imageRect.right - containerRect.left - 34,
+      };
+    } else if (hoveredImage && !imageActionsOpen) {
+      // Keep the overlay while the pointer is on the trigger itself.
+      if (target instanceof Node && imageActionsOverlayElement?.contains(target)) return;
+      hoveredImage = null;
+    }
+  }
+
+  function handleImageHoverLeave(): void {
+    if (!imageActionsOpen) hoveredImage = null;
+  }
 
   // PERF: Single reusable link click handler - shared between TipTap and static content
   // Routes all link clicks through the unified link handler for consistent behavior:
@@ -573,16 +613,37 @@
 <!-- simple: plain text, no markdown - just <p> -->
 <!-- static: processed HTML without TipTap (for links, code blocks, etc.) -->
 <!-- complex: full TipTap for interactive content (task lists) -->
+{#snippet imageActionsOverlay()}
+  {#if chatImageThumbnails && hoveredImage}
+    <div
+      bind:this={imageActionsOverlayElement}
+      class="absolute z-10"
+      style="top: {hoveredImagePosition.top}px; left: {hoveredImagePosition.left}px;"
+      data-testid="markdown-image-actions-overlay"
+    >
+      <ImageActionsMenu
+        imageUrl={hoveredImage.getAttribute('src') || ''}
+        imageName={hoveredImage.getAttribute('alt') || undefined}
+        bind:open={imageActionsOpen}
+      />
+    </div>
+  {/if}
+{/snippet}
+
 {#if isStreaming}
   <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions a11y_no_noninteractive_element_interactions -->
   <div
     role="group"
     class="markdown-viewer streaming-content {className}"
+    class:chat-image-thumbnails={chatImageThumbnails}
     bind:this={streamingContentElement}
     onclick={handleLinkClick}
     onkeydown={handleLinkKeydown}
+    onmouseover={handleImageHover}
+    onmouseleave={handleImageHoverLeave}
   >
     {@html processedContent}
+    {@render imageActionsOverlay()}
   </div>
 {:else if contentComplexity === 'simple'}
   <!-- PERF: Simple text - render directly without any processing -->
@@ -596,15 +657,29 @@
   <div
     role="group"
     class="markdown-viewer static-content {className}"
+    class:chat-image-thumbnails={chatImageThumbnails}
     bind:this={staticContentElement}
     onclick={handleLinkClick}
     onkeydown={handleLinkKeydown}
+    onmouseover={handleImageHover}
+    onmouseleave={handleImageHoverLeave}
   >
     {@html processedContent}
+    {@render imageActionsOverlay()}
   </div>
 {:else}
   <!-- Complex content - needs TipTap for interactivity (task lists, etc.) -->
-  <div class="markdown-viewer {className}" bind:this={editorElement}></div>
+  <!-- svelte-ignore a11y_no_static_element_interactions -->
+  <div
+    class="markdown-viewer {className}"
+    class:chat-image-thumbnails={chatImageThumbnails}
+    bind:this={editorElement}
+    onmouseover={handleImageHover}
+    onmouseleave={handleImageHoverLeave}
+  >
+    <!-- TipTap appends its ProseMirror view here; the overlay is a sibling. -->
+    {@render imageActionsOverlay()}
+  </div>
 {/if}
 
 {#if lightboxImageUrl}
@@ -613,6 +688,7 @@
     imageUrl={lightboxImageUrl}
     imageName={lightboxImageAlt}
     openerElement={lightboxOpenerElement}
+    showActionsMenu={chatImageThumbnails}
   />
 {/if}
 
@@ -1028,6 +1104,16 @@
   /* Inline workspace file images open in a lightbox on click */
   .markdown-viewer :global(img[src^='workspace-file://']) {
     cursor: zoom-in;
+  }
+
+  /* Chat transcript: inline workspace file images render as fixed square
+     bordered thumbnails (cropped), matching ChatImageBlock */
+  .markdown-viewer.chat-image-thumbnails :global(img[src^='workspace-file://']) {
+    width: 10rem;
+    height: 10rem;
+    object-fit: cover;
+    border: 1px solid hsl(var(--border));
+    border-radius: 0.5rem;
   }
 
   /* Task Block - Skeleton loader styled like final checkbox state */

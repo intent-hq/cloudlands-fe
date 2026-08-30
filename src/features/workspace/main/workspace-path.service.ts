@@ -1,6 +1,11 @@
 /**
  * Workspace Path Service (monorepo#1759)
  *
+ * Backend policy: local-only. Lookups resolve exclusively against the LOCAL
+ * backend's pooled client (remote backend ids return `null` — the checkout
+ * lives on the remote host), and the event subscription + reconnect
+ * listeners are pinned to `LOCAL_CONNECTION_ID`.
+ *
  * Main-process seam that resolves a workspace's checkout directory ONLY from
  * daemon-reported data (`Workspace.path` / `worktreePath` / `repositoryPath`
  * via `workspace.get`, PROTOCOL.md §5.1). Zero filesystem probing: the FE
@@ -24,9 +29,8 @@
 import { Logger } from '../../../shared/logger';
 import { CHIEF_WORKSPACE_ID } from '../../../shared/types/branded-ids';
 import {
-  getBackendClient,
   getBackendClientForConnection,
-  getPrimaryBackendId,
+  getLocalBackendClient,
   onBackendNotification,
   onBackendReconnected,
 } from '../../backend/main/backend.ipc';
@@ -144,11 +148,14 @@ export async function getWorkspacePathInfo(
   // which do not exist on this machine.
   if (backendId !== LOCAL_CONNECTION_ID) return null;
 
-  if (
-    !getBackendClientForConnection(LOCAL_CONNECTION_ID) &&
-    getPrimaryBackendId() === LOCAL_CONNECTION_ID
-  ) {
-    getBackendClient();
+  // Lazily create the local client when absent (boot order) — fail-soft:
+  // lookups against a truly unavailable local backend fold to null below.
+  if (!getBackendClientForConnection(LOCAL_CONNECTION_ID)) {
+    try {
+      getLocalBackendClient();
+    } catch {
+      // No local client available; fetch below returns null.
+    }
   }
 
   attachListeners();

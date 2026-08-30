@@ -8,8 +8,10 @@
  * PROTOCOL §5.14 defines `host.openExternal` as a daemon→client reverse RPC
  * ("FE-served"): the CLIENT owns opening URLs, so this never calls the daemon.
  * Resolution order:
- *   1. Validate the scheme — only http/https (`BROWSER_PROTOCOLS.EXTERNAL`)
- *      may be shell-opened; anything else throws.
+ *   1. Validate the URL — only `BROWSER_PROTOCOLS.EXTERNAL` schemes
+ *      (http/https) or an exact `BROWSER_PROTOCOLS.EXTERNAL_EXACT` entry
+ *      (hardcoded OS deep links, e.g. the macOS Input Monitoring System
+ *      Settings pane) may be shell-opened; anything else throws.
  *   2. Real Electron preload bridge (`window.electronAPI.invoke`) when
  *      present — routes to main-process `shell.openExternal`
  *      (features/system/main/system.ipc.ts), the canonical desktop path.
@@ -33,8 +35,11 @@ export async function openExternalUrl(url: string): Promise<void> {
   } catch {
     throw new Error(`Invalid external URL: ${url}`);
   }
-  if (!BROWSER_PROTOCOLS.EXTERNAL.includes(parsed.protocol)) {
-    throw new Error(`Refusing to open non-http(s) URL externally: ${parsed.protocol}`);
+  if (
+    !BROWSER_PROTOCOLS.EXTERNAL.includes(parsed.protocol) &&
+    !BROWSER_PROTOCOLS.EXTERNAL_EXACT.includes(url)
+  ) {
+    throw new Error(`Refusing to open URL externally (scheme not allowed): ${parsed.protocol}`);
   }
   if (typeof window === 'undefined') {
     throw new Error('Unable to open external URL outside a window context');

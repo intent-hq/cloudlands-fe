@@ -25,6 +25,7 @@
     className = '',
     handleClassName = '',
     showHandleIndicator = false,
+    active = true,
 
     // Width props (for horizontal orientation)
     minWidth = 280,
@@ -66,6 +67,7 @@
 
     // Follow reactive default changes exactly, discarding a manual offset.
     syncWithDefaultWidth = false,
+    lockRenderedWidthDuringResize = false,
 
     // Apply a temporary visual delta without changing or persisting the base width.
     transientWidthDelta = 0,
@@ -89,6 +91,7 @@
     className?: string;
     handleClassName?: string;
     showHandleIndicator?: boolean;
+    active?: boolean;
 
     // Width props (for horizontal orientation)
     minWidth?: number;
@@ -133,6 +136,8 @@
 
     // Resize exactly to each reactive default.
     syncWithDefaultWidth?: boolean;
+    /** Report resize deltas while keeping the rendered width fixed. */
+    lockRenderedWidthDuringResize?: boolean;
 
     // Temporary rendered-width delta that is never persisted.
     transientWidthDelta?: number;
@@ -497,7 +502,7 @@
   // React to Redux-driven sidebar collapse changes (Cmd+B, title-bar toggle, etc.).
   // The first run captures the baseline; subsequent runs apply collapse/expand.
   $effect(() => {
-    if (!followsSidebarCollapsed || orientation !== 'horizontal') return;
+    if (!active || !followsSidebarCollapsed || orientation !== 'horizontal') return;
 
     const collapsed = $sidebarIsCollapsed;
     if (lastSidebarCollapsed === undefined) {
@@ -533,23 +538,22 @@
     expandedWidthPercent = pixelsToPercent(expandedWidth, true);
     heightPercent = pixelsToPercent(panelHeight, false);
 
-    // Listen for window resize if any percentage weight is used
-    if (effectiveWeight > 0) {
-      window.addEventListener('resize', handleWindowResize);
-    }
-
-    // Listen for sidebar toggle event (only for workspace left panel)
+    // Initialize from store's collapsed state for workspace sidebars.
     if (followsSidebarCollapsed) {
-      // Initialize from store's collapsed state
       const initialCollapsed = $sidebarIsCollapsed;
       if (initialCollapsed) {
         widthBeforeToggle = panelWidth;
         panelWidth = 0;
         widthPercent = 0;
       }
-      window.addEventListener('workspace:toggle-left-sidebar', handleSidebarToggle);
     }
+  });
 
+  $effect(() => {
+    if (!active) return;
+    if (effectiveWeight > 0) window.addEventListener('resize', handleWindowResize);
+    if (followsSidebarCollapsed)
+      window.addEventListener('workspace:toggle-left-sidebar', handleSidebarToggle);
     return () => {
       window.removeEventListener('resize', handleWindowResize);
       if (followsSidebarCollapsed) {
@@ -568,12 +572,12 @@
     // Clamp to min/max
     newWidth = Math.max(minWidth, Math.min(maxWidth, newWidth));
 
-    // Update the appropriate width based on expanded state
-    if (isExpanded) {
+    // Update the appropriate width based on expanded state.
+    if (isExpanded && !lockRenderedWidthDuringResize) {
       expandedWidth = newWidth;
       // Always update percentage for window resize tracking
       expandedWidthPercent = pixelsToPercent(newWidth, true);
-    } else {
+    } else if (!lockRenderedWidthDuringResize) {
       // Check if we should collapse (if collapse feature is enabled)
       if (collapseThreshold !== null) {
         if (newWidth < collapseThreshold) {
@@ -595,9 +599,13 @@
         appStore.dispatch(setSidebarWidth(panelWidth));
       }
     }
-    const nextRenderedWidth = isExpanded ? expandedWidth : panelWidth;
-    onResize?.(lastResizeWidth, nextRenderedWidth);
-    lastResizeWidth = nextRenderedWidth;
+    const nextReportedWidth = lockRenderedWidthDuringResize
+      ? newWidth
+      : isExpanded
+        ? expandedWidth
+        : panelWidth;
+    onResize?.(lastResizeWidth, nextReportedWidth);
+    lastResizeWidth = nextReportedWidth;
   }
 
   function scheduleResizeAutoScroll() {
@@ -656,7 +664,13 @@
     if (resizeAutoScrollFrame !== null) cancelAnimationFrame(resizeAutoScrollFrame);
     resizeAutoScrollFrame = null;
     const finalSize =
-      orientation === 'horizontal' ? (isExpanded ? expandedWidth : panelWidth) : panelHeight;
+      orientation === 'horizontal'
+        ? lockRenderedWidthDuringResize
+          ? lastResizeWidth
+          : isExpanded
+            ? expandedWidth
+            : panelWidth
+        : panelHeight;
     onResizeEnd?.(orientation === 'horizontal' ? startWidth : startHeight, finalSize);
     document.body.classList.remove('panel-resizing');
     document.body.style.cursor = '';
@@ -714,6 +728,7 @@
   }
 
   function startResize(e: MouseEvent) {
+    if (!active) return;
     isResizing = true;
     onResizeStart?.();
     document.body.classList.add('panel-resizing');
@@ -865,7 +880,7 @@
 
   $effect(() => {
     const width = actualWidth;
-    untrack(() => onWidthChange?.(width));
+    if (active) untrack(() => onWidthChange?.(width));
   });
 </script>
 

@@ -47,6 +47,7 @@
 
     // Start with sidebar collapsed (width 0) — used for onboarding flow
     startCollapsed?: boolean;
+    active?: boolean;
 
     // Allow additional props to pass through
     [key: string]: unknown;
@@ -66,6 +67,7 @@
     sidebarPercentageWeight = 0,
     sidebarSide = 'left',
     startCollapsed = false,
+    active = true,
   }: Props = $props();
 
   const workspaceLogger = new Logger('WorkspaceLayout');
@@ -89,6 +91,7 @@
 
       <!-- Sidebar -->
       <ResizablePanel
+        {active}
         side={sidebarSide}
         minWidth={sidebarMinWidth}
         maxWidth={sidebarMaxWidth}

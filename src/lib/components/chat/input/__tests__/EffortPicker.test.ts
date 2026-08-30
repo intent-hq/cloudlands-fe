@@ -2,13 +2,13 @@
 
 /**
  * EffortPicker — the session-level reasoning-effort control next to the model
- * picker. Covers the hidden-without-levels gate, the step ordering (a leading
- * "Default" step plus one step per advertised level), the commit path
+ * picker. Covers the hidden-without-levels gate, Auto plus each provider level,
+ * the canonical select interaction, the commit path
  * (`agent.update` via the AppClient seam + the session-field dispatch), and
  * re-derivation when the session's model changes.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { writable } from 'svelte/store';
 
 type Session = {
@@ -55,13 +55,8 @@ vi.mock('svelte-fa', async () => {
 });
 
 vi.mock('@fortawesome/free-solid-svg-icons', () => ({
-  faGaugeHigh: { iconName: 'gauge-high' },
+  faChevronDown: { iconName: 'chevron-down' },
 }));
-
-vi.mock('$lib/components/ui/button/button.svelte', async () => {
-  const Button = (await import('../../../ui/__tests__/mocks/button.svelte')).default;
-  return { default: Button };
-});
 
 vi.mock('$features/agent/reasoning-effort', () => ({ applyReasoningEffort }));
 
@@ -104,6 +99,7 @@ describe('EffortPicker', () => {
     modelEffortLevels.set('codex:gpt-5.3-codex', ['low', 'medium', 'high', 'xhigh']);
     modelEffortLevels.set('codex:gpt-5.1-codex-max', ['low', 'high']);
     modelEffortLevels.set('gpt5.6-sol', ['low', 'medium', 'high', 'max']);
+    modelEffortLevels.set('provider:off-capable', ['none', 'low', 'ultra']);
     inheritedModel = undefined;
     sessionVersion$.set(0);
   });
@@ -123,6 +119,17 @@ describe('EffortPicker', () => {
 
   const trigger = () => screen.getByTestId('effort-picker-trigger');
 
+  async function openSelect() {
+    await fireEvent.click(trigger());
+    return await screen.findByRole('listbox');
+  }
+
+  async function selectOption(listbox: HTMLElement, name: string) {
+    await fireEvent.pointerUp(within(listbox).getByRole('option', { name }), {
+      pointerType: 'mouse',
+    });
+  }
+
   it('renders nothing when the session model advertises no effort levels', () => {
     mount({ id: 'agent-1', workspaceId: 'ws-1', model: 'auggie:butler' });
     expect(screen.queryByTestId('effort-picker-trigger')).toBeFalsy();
@@ -132,25 +139,22 @@ describe('EffortPicker', () => {
     inheritedModel = 'gpt5.6-sol';
     mount({ id: 'agent-1', workspaceId: 'ws-1', model: null });
 
-    expect(trigger().getAttribute('aria-label')).toContain('Default');
-    expect(screen.getByTestId('effort-gauge')).toBeTruthy();
+    expect(trigger().getAttribute('aria-label')).toContain('Auto');
+    expect(trigger().textContent).toContain('Auto');
   });
 
-  it('renders an icon-only gauge with the current default in its accessible label', () => {
+  it('renders a compact canonical select without slider-only UI', () => {
     mount({ id: 'agent-1', workspaceId: 'ws-1', model: 'codex:gpt-5.3-codex' });
-    expect(trigger().getAttribute('aria-label')).toContain('Default');
-    expect(trigger().textContent?.trim()).toBe('');
-    expect(screen.getByTestId('effort-gauge').dataset.gaugeValue).toBe('0');
-    expect(screen.getByTestId('effort-gauge').dataset.gaugeCentered).toBe('true');
-    expect(screen.getByTestId('effort-gauge-needle').getAttribute('style')).toContain(
-      'rotate(0deg)',
-    );
-    expect(trigger().dataset.size).toBe('icon-sm');
-    expect(screen.getByTestId('effort-gauge').getAttribute('width')).toBe('16');
-    expect(screen.getByTestId('effort-gauge').getAttribute('height')).toBe('16');
+    expect(trigger().getAttribute('aria-label')).toContain('Auto');
+    expect(trigger().textContent?.trim()).toContain('Reasoning effort · Auto');
+    expect(trigger().getAttribute('aria-haspopup')).toBe('listbox');
+    expect(trigger().className).toContain('h-7');
+    expect(screen.queryByRole('slider')).toBeNull();
+    expect(screen.queryByTestId('effort-gauge')).toBeNull();
+    expect(screen.queryByTestId('effort-slider-tick')).toBeNull();
   });
 
-  it('reuses the slider content without a trigger or popover in embedded mode', async () => {
+  it('uses the canonical select inline in embedded mode', async () => {
     const onEffortChange = vi.fn(async () => true);
     render(EffortPicker, {
       props: {
@@ -163,31 +167,23 @@ describe('EffortPicker', () => {
       },
     });
 
-    expect(screen.queryByTestId('effort-picker-trigger')).toBeNull();
     expect(screen.queryByRole('dialog')).toBeNull();
     const content = screen.getByTestId('effort-picker-content');
-    expect(content.textContent).not.toContain('Reasoning effort');
-    expect(screen.queryByTestId('effort-current-value')).toBeNull();
-    const nextSendCaption = screen.getByText('Applies on the next message you send.');
-    expect(nextSendCaption).toBeTruthy();
-    expect(nextSendCaption.className).toContain('text-muted-foreground');
-    expect(nextSendCaption.parentElement?.className).toContain('justify-between');
+    expect(content.textContent).toContain('Reasoning effort');
+    expect(trigger().textContent?.trim()).toBe('Low');
     const gauge = screen.getByTestId('effort-gauge');
-    expect(nextSendCaption.parentElement?.contains(gauge)).toBe(true);
+    expect(screen.getByText('Reasoning effort').nextElementSibling).toBe(gauge);
     expect(gauge.dataset.gaugeValue).toBe('0');
-    expect(gauge.dataset.gaugeCentered).toBe('false');
-    const slider = screen.getByRole('slider');
-    expect(slider.getAttribute('max')).toBe('2');
-    expect(slider.getAttribute('aria-valuetext')).toBe('Low');
-    expect(screen.getAllByTestId('effort-slider-tick')).toHaveLength(3);
+    expect(gauge.className.baseVal).toContain('[&_line]:transition-none!');
 
-    await fireEvent.change(slider, { target: { value: '2' } });
+    const listbox = await openSelect();
+    expect(within(listbox).getAllByRole('option')).toHaveLength(3);
+    await selectOption(listbox, 'High');
     expect(onEffortChange).toHaveBeenCalledWith('high');
-    expect(gauge.dataset.gaugeValue).toBe('1');
     expect(applyReasoningEffort).not.toHaveBeenCalled();
   });
 
-  it('represents the current effort level on the gauge', () => {
+  it('shows the localized current effort label', () => {
     mount({
       id: 'agent-1',
       workspaceId: 'ws-1',
@@ -195,51 +191,69 @@ describe('EffortPicker', () => {
       reasoningEffort: 'high',
     });
     expect(trigger().getAttribute('aria-label')).toContain('High');
-    expect(screen.getByTestId('effort-gauge').dataset.gaugeValue).toBe('2');
-    expect(screen.getByTestId('effort-gauge').dataset.gaugeCentered).toBe('false');
+    expect(trigger().textContent).toContain('High');
+    const gauge = screen.getByTestId('effort-gauge');
+    expect(trigger().contains(gauge)).toBe(true);
+    expect(screen.getByText('Reasoning effort').nextElementSibling).toBe(gauge);
+    expect(gauge.dataset.gaugeValue).toBe('2');
   });
 
-  it('updates the label, stable ticks, and animated gauge live while sliding', async () => {
+  it('hides the dial for standalone and embedded Auto selections', () => {
     mount({ id: 'agent-1', workspaceId: 'ws-1', model: 'codex:gpt-5.3-codex' });
-    await fireEvent.click(trigger());
+    expect(screen.queryByTestId('effort-gauge')).toBeNull();
+    cleanup();
+
+    render(EffortPicker, {
+      props: { mode: 'embedded', effortLevels: ['low', 'high'], effort: null },
+    });
+    expect(screen.queryByTestId('effort-gauge')).toBeNull();
+  });
+
+  it('lists Auto followed by localized provider levels in their advertised order', async () => {
+    mount({ id: 'agent-1', workspaceId: 'ws-1', model: 'codex:gpt-5.3-codex' });
+    const listbox = await openSelect();
+    expect(
+      within(listbox)
+        .getAllByRole('option')
+        .map((option) => option.textContent?.replace('✓', '').trim()),
+    ).toEqual(['Auto', 'Low', 'Medium', 'High', 'Extra high']);
+    expect(applyReasoningEffort).not.toHaveBeenCalled();
+  });
+
+  it('labels explicit none as Off while preserving provider order and exact commits', async () => {
+    mount({
+      id: 'agent-1',
+      workspaceId: 'ws-1',
+      model: 'provider:off-capable',
+      reasoningEffort: 'none',
+    });
+
+    expect(trigger().textContent).toContain('Off');
+    expect(trigger().getAttribute('aria-label')).toContain('Off');
+    const listbox = await openSelect();
+    expect(
+      within(listbox)
+        .getAllByRole('option')
+        .map((option) => option.textContent?.replace('✓', '').trim()),
+    ).toEqual(['Auto', 'Off', 'Low', 'ultra']);
+    expect(applyReasoningEffort).not.toHaveBeenCalled();
+    await selectOption(listbox, 'Auto');
+    expect(screen.queryByTestId('effort-gauge')).toBeNull();
 
     await waitFor(() => {
-      expect(screen.getByRole('dialog', { name: /reasoning effort/i })).toBeTruthy();
+      expect(applyReasoningEffort).toHaveBeenCalledWith('agent-1', 'ws-1', null, 'none');
     });
-    expect(screen.getByRole('dialog').textContent).toContain('Reasoning effort');
+  });
 
-    const slider = screen.getByRole('slider');
-    expect(slider.getAttribute('max')).toBe('4');
-    expect(slider.className).toContain('operate-slider');
-    expect(screen.getAllByTestId('effort-slider-tick')).toHaveLength(5);
-    expect(screen.getByTestId('effort-current-value').textContent?.trim()).toBe('Default');
-    expect(screen.queryByTestId('effort-gauge-popover')).toBeNull();
-    expect(
-      screen
-        .getAllByTestId('effort-slider-tick')
-        .every((tick) => tick.className.includes('h-3 w-px')),
-    ).toBe(true);
+  it('commits the exact explicit none value separately from Auto', async () => {
+    mount({ id: 'agent-1', workspaceId: 'ws-1', model: 'provider:off-capable' });
+    const listbox = await openSelect();
+    await selectOption(listbox, 'Off');
+    expect(screen.getByTestId('effort-gauge')).toBeTruthy();
 
-    await fireEvent.input(slider, { target: { value: '2' } });
-    expect(slider.getAttribute('aria-valuetext')).toBe('Medium');
-    expect(screen.getByTestId('effort-current-value').textContent?.trim()).toBe('Medium');
-    expect(
-      screen.getByTestId('effort-current-value').querySelector('[data-motion-direction]')?.dataset
-        .motionDirection,
-    ).toBe('up');
-    expect(screen.getByTestId('effort-gauge').dataset.gaugeValue).toBe('1');
-    expect(screen.getByTestId('effort-gauge-needle').className.baseVal).toContain(
-      'transition-transform',
-    );
-    const markers = screen.getAllByTestId('effort-slider-tick-marker');
-    expect(markers.every((marker) => marker.className.includes('w-px'))).toBe(true);
-
-    await fireEvent.input(slider, { target: { value: '1' } });
-    expect(screen.getByTestId('effort-current-value').textContent?.trim()).toBe('Low');
-    expect(
-      screen.getByTestId('effort-current-value').querySelector('[data-motion-direction]')?.dataset
-        .motionDirection,
-    ).toBe('down');
+    await waitFor(() => {
+      expect(applyReasoningEffort).toHaveBeenCalledWith('agent-1', 'ws-1', 'none', null);
+    });
   });
 
   it('commits the selected level, passing the previous effort for rollback', async () => {
@@ -249,69 +263,61 @@ describe('EffortPicker', () => {
       model: 'codex:gpt-5.3-codex',
       reasoningEffort: 'low',
     });
-    await fireEvent.click(trigger());
-
-    const slider = await waitFor(() => screen.getByRole('slider'));
-    await fireEvent.change(slider, { target: { value: '3' } });
+    const listbox = await openSelect();
+    await selectOption(listbox, 'High');
 
     await waitFor(() => {
       expect(applyReasoningEffort).toHaveBeenCalledWith('agent-1', 'ws-1', 'high', 'low');
     });
   });
 
-  it('commits the Default step as an explicit null to clear the session field', async () => {
+  it('commits Auto as null to clear the session field', async () => {
     mount({
       id: 'agent-1',
       workspaceId: 'ws-1',
       model: 'codex:gpt-5.3-codex',
       reasoningEffort: 'high',
     });
-    await fireEvent.click(trigger());
-
-    const slider = await waitFor(() => screen.getByRole('slider'));
-    await fireEvent.change(slider, { target: { value: '0' } });
+    const listbox = await openSelect();
+    await selectOption(listbox, 'Auto');
 
     await waitFor(() => {
       expect(applyReasoningEffort).toHaveBeenCalledWith('agent-1', 'ws-1', null, 'high');
     });
   });
 
-  it('commits Default to clear a persisted effort the model no longer advertises', async () => {
-    // `gpt-5.1-codex-max` advertises only low/high, so the stale `xhigh`
-    // already renders at the Default position — picking Default must still
-    // clear it on the daemon rather than no-op.
+  it('commits the provider default to clear an unsupported persisted effort', async () => {
     mount({
       id: 'agent-1',
       workspaceId: 'ws-1',
       model: 'codex:gpt-5.1-codex-max',
       reasoningEffort: 'xhigh',
     });
-    await fireEvent.click(trigger());
-
-    const slider = await waitFor(() => screen.getByRole('slider'));
-    await fireEvent.change(slider, { target: { value: '0' } });
+    expect(trigger().textContent).toContain('Auto');
+    const listbox = await openSelect();
+    expect(applyReasoningEffort).not.toHaveBeenCalled();
+    await selectOption(listbox, 'Auto');
 
     await waitFor(() => {
       expect(applyReasoningEffort).toHaveBeenCalledWith('agent-1', 'ws-1', null, 'xhigh');
     });
   });
 
-  it('does not commit when the slider lands back on the current level', async () => {
+  it('does not commit when merely opened or when the current level is selected', async () => {
     mount({
       id: 'agent-1',
       workspaceId: 'ws-1',
       model: 'codex:gpt-5.3-codex',
       reasoningEffort: 'high',
     });
-    await fireEvent.click(trigger());
-
-    const slider = await waitFor(() => screen.getByRole('slider'));
-    await fireEvent.change(slider, { target: { value: '3' } });
+    const listbox = await openSelect();
+    expect(applyReasoningEffort).not.toHaveBeenCalled();
+    await selectOption(listbox, 'High');
 
     expect(applyReasoningEffort).not.toHaveBeenCalled();
   });
 
-  it('re-derives levels on a model switch and falls back to Default for an unsupported effort', async () => {
+  it('re-derives levels on a model switch and resolves unsupported effort to Auto', async () => {
     mount({
       id: 'agent-1',
       workspaceId: 'ws-1',
@@ -329,13 +335,46 @@ describe('EffortPicker', () => {
     bumpVersion();
 
     await waitFor(() => {
-      expect(trigger().getAttribute('aria-label')).toContain('Default');
+      expect(trigger().getAttribute('aria-label')).toContain('Auto');
+    });
+    expect(screen.queryByTestId('effort-gauge')).toBeNull();
+
+    const listbox = await openSelect();
+    expect(within(listbox).getAllByRole('option')).toHaveLength(3);
+    expect(within(listbox).getByRole('option', { name: 'Auto' })).toBeTruthy();
+  });
+
+  it('delegates keyboard navigation, Escape, and focus restoration to the canonical select', async () => {
+    const onEffortChange = vi.fn(async () => true);
+    render(EffortPicker, {
+      props: {
+        mode: 'embedded',
+        effortLevels: ['low', 'medium', 'high'],
+        effort: 'low',
+        onEffortChange,
+      },
     });
 
-    await fireEvent.click(trigger());
-    const slider = await waitFor(() => screen.getByRole('slider'));
-    expect(slider.getAttribute('max')).toBe('2');
-    expect(screen.getAllByTestId('effort-slider-tick')).toHaveLength(3);
+    const selectTrigger = trigger();
+    selectTrigger.focus();
+    await fireEvent.keyDown(selectTrigger, { key: 'Enter' });
+    expect(screen.getByRole('listbox')).toBeTruthy();
+    await fireEvent.keyDown(selectTrigger, { key: 'ArrowDown' });
+    await fireEvent.keyDown(selectTrigger, { key: 'Enter' });
+    expect(onEffortChange).toHaveBeenLastCalledWith('medium');
+    expect(document.activeElement).toBe(selectTrigger);
+
+    await fireEvent.keyDown(selectTrigger, { key: 'Enter' });
+    await fireEvent.keyDown(screen.getByRole('listbox'), { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByRole('listbox')).toBeNull());
+    expect(document.activeElement).toBe(selectTrigger);
+  });
+
+  it('uses the canonical disabled state', () => {
+    render(EffortPicker, {
+      props: { mode: 'embedded', effortLevels: ['low', 'high'], disabled: true },
+    });
+    expect((trigger() as HTMLButtonElement).disabled).toBe(true);
   });
 
   it('hides the control once the session switches to a model without effort levels', async () => {

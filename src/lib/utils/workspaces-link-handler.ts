@@ -7,6 +7,7 @@
  * - intent://local/{workspace-id}/note/{note-id} - Note in specific workspace (cross-workspace)
  * - intent://local/file/{path} - Workspace-relative file in current workspace
  * - intent://local/{workspace-id}/file/{path} - File in specific workspace (cross-workspace)
+ * - intent://local/{workspace-id}/agent/{agent-id}/message/{message-id} - Exact message
  *
  * Currently org-id is a placeholder "local" since we don't have org concept yet.
  * This reserves the URL slot for future use.
@@ -37,10 +38,11 @@ function invalidFormatError(): string {
 }
 
 export interface WorkspacesLinkInfo {
-  type: 'note' | 'task' | 'file' | 'unknown';
+  type: 'note' | 'task' | 'file' | 'message' | 'unknown';
   orgId: string; // Reserved for future, currently "local"
   workspaceId?: string; // Target workspace ID (undefined = current workspace)
-  resourceId: string; // noteId, or decoded workspace-relative file path for file links
+  resourceId: string; // noteId, messageId, or decoded workspace-relative file path
+  agentId?: string; // Conversation owner for message links
   valid: boolean;
   error?: string;
 }
@@ -59,6 +61,7 @@ export class NotFoundError extends Error {
  * - intent://local/{workspace-id}/note/{note-id} - Note in specific workspace
  * - intent://local/file/{path} - Workspace-relative file in current workspace
  * - intent://local/{workspace-id}/file/{path} - File in specific workspace
+ * - intent://local/{workspace-id}/agent/{agent-id}/message/{message-id} - Exact message
  */
 export function parseIntentLink(url: string): WorkspacesLinkInfo {
   try {
@@ -99,6 +102,7 @@ export function parseIntentLink(url: string): WorkspacesLinkInfo {
     let workspaceId: string | undefined;
     let resourceType: string;
     let resourceId: string;
+    let agentId: string | undefined;
 
     if (rawSegments[0] === 'file') {
       // Short format: file/{workspace-relative-path} (remaining segments form the path)
@@ -106,13 +110,28 @@ export function parseIntentLink(url: string): WorkspacesLinkInfo {
       resourceId = decodeFilePathSegments(rawSegments.slice(1));
     } else if (
       rawSegments.length >= 3 &&
-      isValidWorkspaceIdSegment(rawSegments[0]) &&
+      isValidRawIdSegment(rawSegments[0]) &&
       rawSegments[1] === 'file'
     ) {
       // Long format: {workspace-id}/file/{workspace-relative-path}
       workspaceId = rawSegments[0];
       resourceType = 'file';
       resourceId = decodeFilePathSegments(rawSegments.slice(2));
+    } else if (
+      rawSegments.length === 5 &&
+      rawSegments[1] === 'agent' &&
+      rawSegments[3] === 'message' &&
+      isValidRawIdSegment(rawSegments[0]) &&
+      isValidRawIdSegment(rawSegments[2]) &&
+      isValidRawIdSegment(rawSegments[4]) &&
+      pathSegments.length === 5 &&
+      pathSegments[1] === 'agent' &&
+      pathSegments[3] === 'message'
+    ) {
+      workspaceId = pathSegments[0];
+      resourceType = 'message';
+      agentId = pathSegments[2];
+      resourceId = pathSegments[4];
     } else if (pathSegments[0] === 'note' || pathSegments[0] === 'task') {
       // Short format: note/{note-id} or task/{note-id}
       resourceType = pathSegments[0];
@@ -178,6 +197,17 @@ export function parseIntentLink(url: string): WorkspacesLinkInfo {
       };
     }
 
+    if (resourceType === 'message' && workspaceId && agentId) {
+      return {
+        type: 'message',
+        orgId,
+        workspaceId,
+        resourceId,
+        agentId,
+        valid: true,
+      };
+    }
+
     return {
       type: 'unknown',
       orgId,
@@ -221,20 +251,18 @@ function isSafeWorkspaceRelativePath(path: string): boolean {
 }
 
 /**
- * A raw workspace-ID segment must not be a "." / ".." dot component (literal
- * or percent-encoded) or contain path separators — it is interpolated into
- * the /workspace/{id} route, where dot segments would resolve away from it.
+ * A raw ID segment must not be a "." / ".." dot component (literal or
+ * percent-encoded) or contain path separators. Validate before using the URL
+ * parser's normalized path segments.
  */
-function isValidWorkspaceIdSegment(segment: string): boolean {
+function isValidRawIdSegment(segment: string): boolean {
   let decoded: string;
   try {
     decoded = decodeURIComponent(segment);
   } catch {
     return false;
   }
-  return (
-    decoded.length > 0 && decoded !== '.' && decoded !== '..' && !/[\\/]/.test(decoded)
-  );
+  return decoded.length > 0 && decoded !== '.' && decoded !== '..' && !/[\\/]/.test(decoded);
 }
 
 /**
@@ -275,6 +303,15 @@ export async function handleIntentLink(
       case 'file':
         await navigateToFile(info, options);
         break;
+      case 'message': {
+        const { openMessage } = await import('./open-message');
+        await openMessage({
+          workspaceId: info.workspaceId!,
+          agentId: info.agentId!,
+          messageId: info.resourceId,
+        });
+        break;
+      }
       default:
         toast.error(m.ui_linkHandler_unsupportedLink_title(), {
           description: m.ui_linkHandler_unsupportedLink_description({ type: info.type }),

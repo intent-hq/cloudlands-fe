@@ -898,11 +898,7 @@
 >
   <!-- Fixed Top Section: Progress Card -->
   <div class="shrink-0 px-6 pb-2 pt-5" data-workspace-title-region>
-    <WorkspaceProgressCard
-      {workspaceId}
-      onOpenNote={handleOpenNoteInPanel}
-      hideActionsMenu={!isLauncherOverview}
-    />
+    <WorkspaceProgressCard {workspaceId} onOpenNote={handleOpenNoteInPanel} />
   </div>
 
   {#if !isNewWorkspaceSession}

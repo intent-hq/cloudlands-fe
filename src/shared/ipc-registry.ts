@@ -837,13 +837,12 @@ export const IPC_CHANNELS = {
     NOTIFICATION: 'backend:notification',
     STATUS: 'backend:status',
     SPAWN_SIDECAR: 'backend:spawn-sidecar',
-    // Atomic recovery from external/remote mode: switch the active backend to
-    // local AND spawn the app-managed sidecar in ONE main-process action. The
-    // switch destroys every window (captureAndClose) before the switch IPC
-    // returns, so a renderer that switched then dispatched the spawn separately
-    // could be torn down before the second step runs — this single handler keeps
-    // both steps in main so recovery survives the window teardown.
-    SWITCH_LOCAL_AND_SPAWN: 'backend:switch-local-and-spawn',
+    // Open-only recovery from a remote window's stopped overlay: spawn the
+    // app-managed local sidecar (if needed) AND open/focus the local backend's
+    // windows in ONE main-process action. No window is ever retargeted — the
+    // initiating window keeps its own backend — and both steps stay in main so
+    // recovery completes even if the initiating renderer goes away mid-flight.
+    OPEN_LOCAL_AND_SPAWN: 'backend:open-local-and-spawn',
     GET_SIDECAR_RUN_LOG: 'backend:get-sidecar-run-log',
     // Kill-and-restart recovery for an orphaned sidecar (#2444): the adopted
     // daemon's executable lives inside our own bundle (leftover from a
@@ -855,24 +854,27 @@ export const IPC_CHANNELS = {
 
   // Multi-backend connect: the "Connect to another intentd" registry.
   // Request/response channels for the connections list + TOFU pairing +
-  // switch. Handlers land in T3; the renderer-facing contract types live in
+  // open. Handlers land in T3; the renderer-facing contract types live in
   // `shared/types/connections.ts`. CHANGED / CERT_MISMATCH are main→renderer
   // push events (also listed in EVENT_CHANNELS for the preload allow-list).
   CONNECTIONS: {
     LIST: 'connections:list',
     CAPTURE_FINGERPRINT: 'connections:capture-fingerprint',
     ADD: 'connections:add',
+    UPDATE: 'connections:update',
+    TEST: 'connections:test',
+    ROTATE_SECRET: 'connections:rotate-secret',
     OPEN: 'connections:open',
     FORGET: 'connections:forget',
-    SWITCH: 'connections:switch',
+    // Ask one connected remote backend's daemon to self-update (routes
+    // `system.requestUpdate` to that backend's pooled client). Structured
+    // result — never throws for daemon-side failures (unsupported/old daemon,
+    // unsupervised) so the renderer can toast a specific message.
+    UPDATE_BACKEND: 'connections:update-backend',
     CHANGED: 'connections:changed',
     CERT_MISMATCH: 'connections:cert-mismatch',
     PROTOCOL_MISMATCH: 'connections:protocol-mismatch',
     AUTH_REJECTED: 'connections:auth-rejected',
-    // Pull the one-shot boot-restore fallback notice latched in main (T19),
-    // consume-once. The renderer fetches this once on mount and surfaces a
-    // non-blocking toast; the notice never becomes connections-slice state.
-    GET_BOOT_FALLBACK: 'connections:get-boot-fallback',
     // iCloud-keychain backend sync (T4): read the opt-in pref + availability
     // status, and set the pref (enabling requests an immediate reconcile).
     // SYNC_STATUS_CHANGED is a main→renderer push (also in EVENT_CHANNELS).

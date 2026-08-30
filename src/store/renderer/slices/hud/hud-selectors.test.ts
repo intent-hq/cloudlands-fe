@@ -737,16 +737,20 @@ describe('selectHudAttnCount', () => {
     expect(selectHudAttnCount.select(cleared)).toBe(0);
   });
 
-  it('counts a top-level blocker and a failed agent (failed is ungated)', () => {
+  it('counts a top-level blocker and a top-level failed agent, not a failed child (gated)', () => {
     const blocker = attnState({
       root: { status: 'active', attentionRequestKind: 'blocker', messages: [] },
     });
     expect(selectHudAttnCount.select(blocker)).toBe(1);
-    // A failed CHILD agent still counts on the per-agent axis — but the card
-    // state stays whatever the BE rolled up (no local `failed` synthesis).
+    const failedRoot = attnState({ root: { status: 'error', messages: [] } });
+    expect(selectHudAttnCount.select(failedRoot)).toBe(1);
+    // A failed CHILD agent no longer counts (spec decision: failed is gated
+    // to top-level non-background too) — and the card state stays whatever
+    // the BE rolled up (no local `failed` synthesis), so nothing blinks.
     const failedChild = attnState({ child: { status: 'error', messages: [] } });
     expect(selectHudWorkspaceCards.select(failedChild)[0].stateKey).toBe('in_progress');
-    expect(selectHudAttnCount.select(failedChild)).toBe(1);
+    expect(selectHudAttnCount.select(failedChild)).toBe(0);
+    expect(selectHudAttentionItems.select(failedChild)).toEqual([]);
   });
 
   it.each(['failed', 'blocked'] as const)(
@@ -945,6 +949,91 @@ describe('selectHudAttentionItems', () => {
     const blocker = items.find((item) => item.agentName === 'Implementor');
     expect(blocker?.signal).toBe('blocker');
     expect(blocker?.message).toBe('Sandbox network is down');
+  });
+
+  /** ws-1 (in_progress by default) with a top-level root + delegated child, plus session overlays. */
+  function gatedItemsState(
+    sessions: Record<string, Record<string, unknown>>,
+    displayStatus: WorkspaceDisplayStatus = 'in_progress',
+  ): StoreState {
+    const base = mockState([
+      makeWorkspace('ws-1', {
+        displayStatus,
+        agentSummary: {
+          count: 2,
+          agentIds: ['root', 'child'],
+          agents: [
+            { id: 'root', name: 'Coordinator', status: 'active' },
+            { id: 'child', name: 'Implementor', status: 'active', parentAgentId: 'root' },
+          ],
+        } as Workspace['agentSummary'],
+      }),
+    ]);
+    return {
+      ...base,
+      agentSessions: { byAgentId: sessions, agentIdsByWorkspace: {} },
+    } as unknown as StoreState;
+  }
+
+  it('a delegated sub-agent pending discussion raises no row (regression: gated to top-level)', () => {
+    const state = gatedItemsState({
+      child: {
+        status: 'active',
+        attentionRequestKind: 'discussion',
+        attentionRequestReason: 'Need a call on the rollout order',
+        messages: [],
+      },
+    });
+    expect(selectHudAttentionItems.select(state)).toEqual([]);
+    expect(selectHudAttnCount.select(state)).toBe(0);
+  });
+
+  it('a background agent attention request or failure raises no row', () => {
+    const attention = gatedItemsState({
+      root: {
+        status: 'active',
+        isBackground: true,
+        attentionRequestKind: 'blocker',
+        messages: [],
+      },
+    });
+    expect(selectHudAttentionItems.select(attention)).toEqual([]);
+    expect(selectHudAttnCount.select(attention)).toBe(0);
+    const failed = gatedItemsState({
+      root: { status: 'error', isBackground: true, messages: [] },
+    });
+    expect(selectHudAttentionItems.select(failed)).toEqual([]);
+    expect(selectHudAttnCount.select(failed)).toBe(0);
+  });
+
+  it('a failed delegated sub-agent raises no row; a failed top-level agent still does', () => {
+    const failedChild = gatedItemsState({ child: { status: 'error', messages: [] } });
+    expect(selectHudAttentionItems.select(failedChild)).toEqual([]);
+    expect(selectHudAttnCount.select(failedChild)).toBe(0);
+    const failedRoot = gatedItemsState({ root: { status: 'error', messages: [] } });
+    expect(selectHudAttentionItems.select(failedRoot).map((item) => item.kind)).toEqual([
+      'agent_failed',
+    ]);
+    expect(selectHudAttnCount.select(failedRoot)).toBe(1);
+  });
+
+  it('an attention card state whose only per-agent signal is gated out falls back to a generic row', () => {
+    // Card state `failed` (BE rollup) while the only failed agent is a
+    // delegated sub-agent: the gated-out agent covers nothing, so the
+    // authoritative-rollup fallback raises ONE generic workspace_attention
+    // row (no agent fields) — not the old named agent_failed row — and the
+    // ATTN counter counts the same 1 via the card-state fallback.
+    const state = gatedItemsState({ child: { status: 'error', messages: [] } }, 'failed');
+    expect(selectHudAttentionItems.select(state)).toEqual([
+      {
+        workspaceId: 'ws-1',
+        workspaceTitle: 'Workspace ws-1',
+        kind: 'workspace_attention',
+        message: null,
+        sinceTs: null,
+      },
+    ]);
+    expect(selectHudAttnCount.select(state)).toBe(1);
   });
 
   it('surfaces raised workspace attention flags with their raise time', () => {
@@ -3392,4 +3481,3 @@ describe('selectHudSystem remote hostname', () => {
     expect(view.remoteHostname).toBe('intent1');
   });
 });
-

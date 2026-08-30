@@ -1,6 +1,7 @@
 /**
  * @vitest-environment jsdom
  */
+import { m } from '$shared/paraglide/messages.js';
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { describe, expect, it, vi } from 'vitest';
 import { warmImport } from '../../../../test/warm-import';
@@ -28,9 +29,8 @@ describe('DeleteWarningDialog', () => {
     });
 
     expect(
-      await screen.findByRole('dialog', { name: 'Stop active work and delete space?' }),
+      await screen.findByRole('dialog', { name: m.modals_deleteWarning_title() }),
     ).toBeTruthy();
-    expect(screen.getByText('Stop active work and delete space?')).toBeTruthy();
     expect(screen.getByText('Agent One')).toBeTruthy();
     expect(screen.getByText('Agent Two')).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Close delete warning dialog' })).toBeTruthy();
@@ -107,7 +107,7 @@ describe('DeleteWarningDialog', () => {
     });
 
     expect(
-      await screen.findByRole('dialog', { name: 'Stop active work and archive space?' }),
+      await screen.findByRole('dialog', { name: m.modals_archiveWarning_title() }),
     ).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Close archive warning dialog' })).toBeTruthy();
 
@@ -130,7 +130,7 @@ describe('DeleteWarningDialog', () => {
     });
 
     const dialog = await screen.findByRole('dialog', {
-      name: 'Stop active work and delete space?',
+      name: m.modals_deleteWarning_title(),
     });
 
     await fireEvent.keyDown(dialog, { key: 'Escape' });

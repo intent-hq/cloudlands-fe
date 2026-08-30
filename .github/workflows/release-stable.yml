@@ -35,16 +35,18 @@ concurrency:
 
 jobs:
   promote-to-stable:
-    # Non-ephemeral self-hosted runner: all scratch files live under
-    # RUNNER_TEMP (wiped by the runner between jobs) instead of /tmp, so a
-    # previous run's assets can never leak into this promotion (#553).
-    runs-on: [self-hosted, Linux, X64]
+    # GH-hosted larger runner (ephemeral): download/re-upload-heavy promotion
+    # work. Scratch files still live under RUNNER_TEMP — harmless on an
+    # ephemeral runner and it keeps the guarantee that a previous run's
+    # assets can never leak into this promotion (#553) even if this ever
+    # moves back to a persistent runner.
+    runs-on: gh-linux-8x
     timeout-minutes: 30
 
     steps:
-      # Fail fast if the self-hosted runner is missing a CLI tool the
-      # promotion needs (all preinstalled on ubuntu-latest, not guaranteed
-      # here) — a mid-promotion failure after assets were already uploaded
+      # Fail fast if the runner is missing a CLI tool the promotion needs
+      # (all preinstalled on GH-hosted images, so this is expected to always
+      # pass) — a mid-promotion failure after assets were already uploaded
       # to the stable channel is much worse than an early abort.
       - name: Preflight required tools
         run: |
@@ -53,7 +55,7 @@ jobs:
             command -v "$tool" >/dev/null 2>&1 || MISSING="$MISSING $tool"
           done
           if [ -n "$MISSING" ]; then
-            echo "::error::Self-hosted runner is missing required tools:$MISSING"
+            echo "::error::Runner is missing required tools:$MISSING"
             exit 1
           fi
           # Version-range computation needs GNU sort's -V
@@ -439,8 +441,9 @@ jobs:
         with:
           ref: refs/tags/v${{ inputs.version }}
 
-      # The self-hosted Linux runner has no system Node; the summary generator
-      # below needs one. Fail-soft like the rest of the notes pipeline — a
+      # Pin the Node version the summary generator below runs on (GH-hosted
+      # images ship a system Node, but the pinned version keeps the output
+      # reproducible). Fail-soft like the rest of the notes pipeline — a
       # setup failure only skips the summary section.
       - name: Setup Node.js
         if: steps.notes_base.outputs.skip_notes != 'true'

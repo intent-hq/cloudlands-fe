@@ -24,6 +24,7 @@ const {
   ctorOptions,
   mockGetOrCreateClientId,
   mockPersistClientId,
+  mockSetDaemonVersion,
   mockRunLog,
   startupFailedListeners,
   mockStartupFailure,
@@ -31,6 +32,7 @@ const {
   ctorOptions: [] as Array<Record<string, unknown>>,
   mockGetOrCreateClientId: vi.fn(async () => 'cli-persisted'),
   mockPersistClientId: vi.fn(async () => {}),
+  mockSetDaemonVersion: vi.fn(async () => false),
   mockRunLog: {
     available: true,
     startedAt: '2026-07-26T00:00:00.000Z',
@@ -108,6 +110,7 @@ vi.mock('../connections-store', async (importOriginal) => ({
     },
   ]),
   getDecryptedToken: vi.fn(async () => 'tok-remote'),
+  setDaemonVersion: mockSetDaemonVersion,
 }));
 
 describe('backend.ipc client identity wiring (§5.17)', () => {
@@ -213,10 +216,8 @@ describe('backend.ipc sidecar run-log bridge', () => {
 });
 
 describe('backend.ipc daemon version refresh on hello (#3448)', () => {
-  afterEach(async () => {
+  afterEach(() => {
     __resetConnectionModeForTesting();
-    const { __setActiveConnectionMetaForTesting } = await import('../backend.ipc');
-    __setActiveConnectionMetaForTesting(null);
   });
 
   async function getOnHelloResult(): Promise<(result: unknown) => void> {
@@ -318,15 +319,16 @@ describe('backend.ipc daemon version refresh on hello (#3448)', () => {
   });
 
   it('does not let a remote backend hello overwrite the local daemon version info', async () => {
-    const onHelloResult = await getOnHelloResult();
-    const { __setActiveConnectionMetaForTesting } = await import('../backend.ipc');
+    const { connectBackendClient, disconnectBackendClient } = await import('../backend.ipc');
     setConnectionMode('external');
     setDaemonVersionInfo({
       daemonVersion: '0.1.0',
       pinnedVersion: '0.1.0',
       versionMismatch: false,
     });
-    __setActiveConnectionMetaForTesting({ id: 'conn-1', host: 'remote', port: 443 });
+    await connectBackendClient('conn-remote');
+    const poolCtor = ctorOptions[ctorOptions.length - 1];
+    const onHelloResult = poolCtor.onHelloResult as (result: unknown) => void;
 
     const send = vi.fn();
     vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([
@@ -345,6 +347,7 @@ describe('backend.ipc daemon version refresh on hello (#3448)', () => {
       expect.objectContaining({ transport: expect.anything() }),
     );
     vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([]);
+    disconnectBackendClient('conn-remote');
   });
 
   it('leaves stored info unchanged and skips the broadcast for a malformed server.version', async () => {
@@ -459,6 +462,84 @@ describe('backend.ipc daemon build-identity log on hello (#3649)', () => {
     });
 
     const { disconnectBackendClient } = await import('../backend.ipc');
+    disconnectBackendClient('conn-remote');
+  });
+});
+
+describe('backend.ipc remote daemon version capture on hello', () => {
+  afterEach(() => {
+    vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([]);
+    mockSetDaemonVersion.mockClear();
+    mockSetDaemonVersion.mockResolvedValue(false);
+  });
+
+  it('persists a pool member remote daemon version keyed by its connection id', async () => {
+    const { connectBackendClient, disconnectBackendClient } = await import('../backend.ipc');
+    await connectBackendClient('conn-remote');
+    const poolCtor = ctorOptions[ctorOptions.length - 1];
+    const onHelloResult = poolCtor.onHelloResult as (result: unknown) => void;
+
+    onHelloResult({ server: { version: '0.9.0', buildCommit: 'fed9876' } });
+    await vi.waitFor(() => {
+      expect(mockSetDaemonVersion).toHaveBeenCalledWith('conn-remote', '0.9.0');
+    });
+
+    disconnectBackendClient('conn-remote');
+  });
+
+  it('broadcasts connections:changed only when the captured version actually changed', async () => {
+    const { connectBackendClient, disconnectBackendClient } = await import('../backend.ipc');
+    await connectBackendClient('conn-remote');
+    const poolCtor = ctorOptions[ctorOptions.length - 1];
+    const onHelloResult = poolCtor.onHelloResult as (result: unknown) => void;
+
+    const send = vi.fn();
+    vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([
+      { id: 1, isDestroyed: () => false, webContents: { send } } as never,
+    ]);
+
+    // Unchanged version (the store dedupes): no broadcast.
+    mockSetDaemonVersion.mockResolvedValueOnce(false);
+    onHelloResult({ server: { version: '0.9.0' } });
+    await vi.waitFor(() => expect(mockSetDaemonVersion).toHaveBeenCalledTimes(1));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(send.mock.calls.filter(([c]) => c === 'connections:changed')).toHaveLength(0);
+
+    // A changed version pushes the refreshed list to every window.
+    mockSetDaemonVersion.mockResolvedValueOnce(true);
+    onHelloResult({ server: { version: '1.0.0' } });
+    await vi.waitFor(() => {
+      expect(send.mock.calls.filter(([c]) => c === 'connections:changed').length).toBeGreaterThan(
+        0,
+      );
+    });
+
+    disconnectBackendClient('conn-remote');
+  });
+
+  it('never captures for the local backend (pooled local client)', async () => {
+    const { getBackendClient } = await import('../backend.ipc');
+    getBackendClient();
+    const onHelloResult = ctorOptions[0].onHelloResult as (result: unknown) => void;
+
+    onHelloResult({ server: { version: '0.9.0' } });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(mockSetDaemonVersion).not.toHaveBeenCalled();
+  });
+
+  it('ignores hellos without a well-formed server.version', async () => {
+    const { connectBackendClient, disconnectBackendClient } = await import('../backend.ipc');
+    await connectBackendClient('conn-remote');
+    const poolCtor = ctorOptions[ctorOptions.length - 1];
+    const onHelloResult = poolCtor.onHelloResult as (result: unknown) => void;
+
+    onHelloResult(undefined);
+    onHelloResult({});
+    onHelloResult({ server: {} });
+    onHelloResult({ server: { version: 42 } });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(mockSetDaemonVersion).not.toHaveBeenCalled();
+
     disconnectBackendClient('conn-remote');
   });
 });

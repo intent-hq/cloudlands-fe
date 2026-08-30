@@ -112,10 +112,23 @@ describe('captureScrollAnchor / restoreScrollAnchor', () => {
         scrollTop = value;
       },
     });
-    Object.defineProperty(container, 'scrollHeight', { configurable: true, value: opts.scrollHeight });
-    Object.defineProperty(container, 'clientHeight', { configurable: true, value: opts.clientHeight });
+    Object.defineProperty(container, 'scrollHeight', {
+      configurable: true,
+      value: opts.scrollHeight,
+    });
+    Object.defineProperty(container, 'clientHeight', {
+      configurable: true,
+      value: opts.clientHeight,
+    });
     container.getBoundingClientRect = () =>
-      ({ top: 0, bottom: opts.clientHeight, left: 0, right: 0, width: 0, height: opts.clientHeight }) as DOMRect;
+      ({
+        top: 0,
+        bottom: opts.clientHeight,
+        left: 0,
+        right: 0,
+        width: 0,
+        height: opts.clientHeight,
+      }) as DOMRect;
     document.body.appendChild(container);
     return container;
   }
@@ -135,7 +148,11 @@ describe('captureScrollAnchor / restoreScrollAnchor', () => {
 
   it('skips anchoring near the bottom and restore leaves scrollTop untouched', () => {
     // distance from bottom = 1000 - 550 - 400 = 50 <= 100 threshold
-    const container = makeScrollContainer({ scrollTop: 550, scrollHeight: 1000, clientHeight: 400 });
+    const container = makeScrollContainer({
+      scrollTop: 550,
+      scrollHeight: 1000,
+      clientHeight: 400,
+    });
     addMessage(container, 'm1', 20);
 
     const anchor = captureScrollAnchor(container);
@@ -148,7 +165,11 @@ describe('captureScrollAnchor / restoreScrollAnchor', () => {
 
   it('anchors the first visible element and compensates scrollTop by its movement', () => {
     // distance from bottom = 2000 - 500 - 400 = 1100 > 100 threshold
-    const container = makeScrollContainer({ scrollTop: 500, scrollHeight: 2000, clientHeight: 400 });
+    const container = makeScrollContainer({
+      scrollTop: 500,
+      scrollHeight: 2000,
+      clientHeight: 400,
+    });
     addMessage(container, 'above-viewport', -60); // above viewport, not eligible
     const anchorEl = addMessage(container, 'first-visible', 20);
     addMessage(container, 'second-visible', 80);
@@ -172,7 +193,11 @@ describe('captureScrollAnchor / restoreScrollAnchor', () => {
   });
 
   it('restores gracefully when the anchor element was removed from the DOM', () => {
-    const container = makeScrollContainer({ scrollTop: 500, scrollHeight: 2000, clientHeight: 400 });
+    const container = makeScrollContainer({
+      scrollTop: 500,
+      scrollHeight: 2000,
+      clientHeight: 400,
+    });
     const anchorEl = addMessage(container, 'doomed', 20);
 
     const anchor = captureScrollAnchor(container);
@@ -222,6 +247,7 @@ describe('followBottom policy', () => {
   let resizeUnobserved: Element[];
   let resizeActive: Set<Element>;
   let mutationCallbacks: MutationCallback[];
+  let mutationDisconnects: number;
   let scrollHeight: number;
   let clientHeight: number;
   let scrollTop: number;
@@ -234,6 +260,7 @@ describe('followBottom policy', () => {
     resizeUnobserved = [];
     resizeActive = new Set();
     mutationCallbacks = [];
+    mutationDisconnects = 0;
     scrollHeight = 900;
     clientHeight = 300;
     scrollTop = 600;
@@ -268,7 +295,9 @@ describe('followBottom policy', () => {
           mutationCallbacks.push(callback);
         }
         observe() {}
-        disconnect() {}
+        disconnect() {
+          mutationDisconnects += 1;
+        }
       },
     );
     container = document.createElement('div');
@@ -347,6 +376,28 @@ describe('followBottom policy', () => {
       {} as MutationObserver,
     );
   }
+
+  it('detaches and restores every listener and observer when disabled', () => {
+    const removeContainerListener = vi.spyOn(container, 'removeEventListener');
+    const removeWindowListener = vi.spyOn(window, 'removeEventListener');
+    const action = followBottom(container, { enabled: true, follow: true });
+
+    expect(isFollowingBottom(container)).toBe(true);
+    expect(resizeActive.size).toBeGreaterThan(0);
+
+    action.update({ enabled: false, follow: true });
+    expect(isFollowingBottom(container)).toBe(false);
+    expect(resizeActive.size).toBe(0);
+    expect(mutationDisconnects).toBe(1);
+    expect(removeContainerListener).toHaveBeenCalledWith('scroll', expect.any(Function));
+    expect(removeWindowListener).toHaveBeenCalledWith('pointerup', expect.any(Function));
+
+    action.update({ enabled: true, follow: true });
+    expect(isFollowingBottom(container)).toBe(true);
+    expect(resizeActive.size).toBeGreaterThan(0);
+
+    action.destroy();
+  });
 
   function fireRemovedMutation(node: Node) {
     mutationCallbacks[0]?.(
@@ -453,11 +504,14 @@ describe('followBottom policy', () => {
 
     scrollHeight += 120;
     fireMutation();
+    expect(animationFrames).toHaveLength(1);
+    runFrame();
     expect(scrollTop).toBe(720);
     expect(distances.at(-1)).toBe(0);
 
     scrollHeight += 30;
     fireResize();
+    runFrame();
     expect(scrollTop).toBe(750);
     runFrame();
     expect(scrollTop).toBe(750);
@@ -522,6 +576,7 @@ describe('followBottom policy', () => {
 
     scrollHeight += 21;
     fireResizeFor(child);
+    runFrame();
     expect(scrollTop).toBe(621);
     action.destroy();
   });
@@ -539,6 +594,7 @@ describe('followBottom policy', () => {
     expect(resizeUnobserved).not.toContain(child);
     scrollHeight += 17;
     fireResizeFor(child);
+    runFrame();
     expect(scrollTop).toBe(617);
     action.destroy();
   });
@@ -595,15 +651,19 @@ describe('followBottom policy', () => {
     fireResizeFor(row);
     runFrame();
 
+    // The resize delivery no longer snaps synchronously: the trace callback
+    // (registered before the settle frame) still sees the pre-snap position,
+    // and the settle frame in the same pre-paint batch corrects it.
     expect(trace).toEqual([
       {
         phase: 'edit-grow-first-frame',
         maximum: 613,
-        scrollTop: 613,
-        distance: 0,
+        scrollTop: 600,
+        distance: 13,
         settleFrames: 0,
       },
     ]);
+    expect(scrollTop).toBe(613);
     mutation.settle();
     expect(resizeUnobserved).toContain(row);
     action.destroy();
@@ -892,8 +952,9 @@ describe('followBottom policy', () => {
 
     scrollHeight += 17;
     fireMutation();
-    expect(scrollTop).toBe(scrollHeight - clientHeight);
     expect(animationFrames).toHaveLength(1);
+    runFrame();
+    expect(scrollTop).toBe(scrollHeight - clientHeight);
     runSettleTail();
     expect(animationFrames).toHaveLength(0);
     expect(followChanges).toEqual([]);
@@ -906,17 +967,201 @@ describe('followBottom policy', () => {
 
     scrollHeight += 11;
     fireAttributeMutation();
-    expect(scrollTop).toBe(611);
     expect(animationFrames).toHaveLength(1);
+    runFrame();
+    expect(scrollTop).toBe(611);
     runSettleTail();
     expect(animationFrames).toHaveLength(0);
 
     scrollHeight += 13;
     fireResize();
-    expect(scrollTop).toBe(624);
     expect(animationFrames).toHaveLength(1);
+    runFrame();
+    expect(scrollTop).toBe(624);
     runSettleTail();
     expect(animationFrames).toHaveLength(0);
+    action.destroy();
+  });
+
+  it('defers the reactivation snap and layout reads to an animation frame', () => {
+    const distances: number[] = [];
+    const options = {
+      enabled: true,
+      follow: true,
+      onScrollStateChange: (state: { distanceFromBottom: number }) =>
+        distances.push(state.distanceFromBottom),
+    };
+    const action = followBottom(container, options);
+    action.update({ ...options, enabled: false });
+
+    // Content grew while the surface was retained/disabled.
+    scrollHeight += 100;
+    let layoutReads = 0;
+    Object.defineProperty(container, 'scrollHeight', {
+      configurable: true,
+      get: () => {
+        layoutReads += 1;
+        return scrollHeight;
+      },
+    });
+    Object.defineProperty(container, 'clientHeight', {
+      configurable: true,
+      get: () => {
+        layoutReads += 1;
+        return clientHeight;
+      },
+    });
+    distances.length = 0;
+
+    action.update({ ...options, enabled: true });
+    expect(layoutReads).toBe(0);
+    expect(scrollTop).toBe(600);
+    expect(distances).toEqual([]);
+    expect(isFollowingBottom(container)).toBe(true);
+    expect(animationFrames).toHaveLength(1);
+
+    runFrame();
+    expect(layoutReads).toBeGreaterThan(0);
+    expect(scrollTop).toBe(700);
+    expect(distances).toEqual([0]);
+    action.destroy();
+  });
+
+  it('applies an unfollowed reactivation without snapping to the bottom', () => {
+    const options = { enabled: true, follow: true };
+    const action = followBottom(container, options);
+    action.update({ ...options, enabled: false });
+    scrollTop = 300;
+
+    action.update({ ...options, enabled: true, follow: false });
+    expect(isFollowingBottom(container)).toBe(false);
+    runFrame();
+
+    expect(scrollTop).toBe(300);
+    action.destroy();
+  });
+
+  it('abandons a pending reactivation snap when disabled before the frame', () => {
+    const options = { enabled: true, follow: true };
+    const action = followBottom(container, options);
+    action.update({ ...options, enabled: false });
+    scrollTop = 300;
+
+    action.update({ ...options, enabled: true });
+    expect(animationFrames).toHaveLength(1);
+    action.update({ ...options, enabled: false });
+    expect(cancelAnimationFrame).toHaveBeenCalledWith(1);
+    runFrame();
+
+    expect(scrollTop).toBe(300);
+    action.destroy();
+  });
+
+  it('defers observer-driven layout work out of the reveal frame', () => {
+    const options = { enabled: true, follow: true };
+    const action = followBottom(container, options);
+    action.update({ ...options, enabled: false });
+
+    // Content grew while the surface was retained/disabled.
+    scrollHeight += 100;
+    let layoutReads = 0;
+    Object.defineProperty(container, 'scrollHeight', {
+      configurable: true,
+      get: () => {
+        layoutReads += 1;
+        return scrollHeight;
+      },
+    });
+    Object.defineProperty(container, 'clientHeight', {
+      configurable: true,
+      get: () => {
+        layoutReads += 1;
+        return clientHeight;
+      },
+    });
+
+    action.update({ ...options, enabled: true });
+    // Observers fire during the reveal frame on the still-dirty tree.
+    fireMutation();
+    fireResize();
+    fireMutation();
+    expect(layoutReads).toBe(0);
+    expect(scrollTop).toBe(600);
+
+    runSettleTail();
+    expect(layoutReads).toBeGreaterThan(0);
+    expect(scrollTop).toBe(700);
+    action.destroy();
+  });
+
+  it('coalesces a burst of observer callbacks into one deferred settle', () => {
+    const action = followBottom(container, { follow: true });
+    expect(animationFrames).toHaveLength(0);
+
+    scrollHeight += 40;
+    fireMutation();
+    fireResize();
+    fireAttributeMutation();
+    expect(animationFrames).toHaveLength(1);
+    expect(scrollTop).toBe(600);
+
+    runFrame();
+    expect(scrollTop).toBe(640);
+    runSettleTail();
+    expect(animationFrames).toHaveLength(0);
+    action.destroy();
+  });
+
+  it('coalesces unfollowed observer reports into one deferred frame without snapping', () => {
+    const distances: number[] = [];
+    const action = followBottom(container, {
+      follow: false,
+      onScrollStateChange: (state) => distances.push(state.distanceFromBottom),
+    });
+    distances.length = 0;
+    scrollTop = 300;
+    scrollHeight += 100;
+    fireMutation();
+    fireResize();
+    expect(animationFrames).toHaveLength(1);
+    expect(distances).toEqual([]);
+
+    runFrame();
+    expect(scrollTop).toBe(300);
+    expect(distances).toEqual([400]);
+    expect(animationFrames).toHaveLength(0);
+    action.destroy();
+  });
+
+  it('cancels a deferred observer settle on destroy', () => {
+    const action = followBottom(container, { follow: true });
+    scrollHeight += 50;
+    fireMutation();
+    expect(animationFrames).toHaveLength(1);
+
+    action.destroy();
+    expect(cancelAnimationFrame).toHaveBeenCalledWith(1);
+    runFrame();
+    expect(scrollTop).toBe(600);
+  });
+
+  it('cancels a pending unfollowed report frame when disabled', () => {
+    const distances: number[] = [];
+    const options = {
+      enabled: true,
+      follow: false,
+      onScrollStateChange: (state: { distanceFromBottom: number }) =>
+        distances.push(state.distanceFromBottom),
+    };
+    const action = followBottom(container, options);
+    distances.length = 0;
+    fireResize();
+    expect(animationFrames).toHaveLength(1);
+
+    action.update({ ...options, enabled: false });
+    expect(cancelAnimationFrame).toHaveBeenCalledWith(1);
+    runFrame();
+    expect(distances).toEqual([]);
     action.destroy();
   });
 

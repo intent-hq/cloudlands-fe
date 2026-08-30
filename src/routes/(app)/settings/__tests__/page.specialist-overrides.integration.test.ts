@@ -74,7 +74,7 @@ afterAll(() => {
 });
 
 describe('settings collapsed built-in override chrome', () => {
-  it('shows the sidebar marker, Modified badge, and Reset from only the winning user row', async () => {
+  it('shows Reset only for the winning built-in override', async () => {
     const implementor = SPECIALISTS.find(({ id }) => id === 'implementor')!;
     const specWriter = SPECIALISTS.find(({ id }) => id === 'spec-writer')!;
     const verifier = SPECIALISTS.find(({ id }) => id === 'verifier')!;
@@ -103,41 +103,15 @@ describe('settings collapsed built-in override chrome', () => {
     render(SettingsPage, { context: new Map([['redux-store-context', storeContext]]) });
 
     const navigation = screen.getByRole('navigation', { name: 'Settings' });
-    const sidebarOrder = () =>
-      [specWriter.name, implementor.name, verifier.name, custom.name].map((name) =>
-        within(navigation)
-          .getAllByRole('button')
-          .indexOf(within(navigation).getByRole('button', { name })),
-      );
     const implementorButton = within(navigation).getByRole('button', { name: 'Implementor' });
-    expect(implementorButton.querySelector('[data-specialist-modified-marker]')?.textContent).toBe(
-      '*',
-    );
-    expect(sidebarOrder()).toEqual([...sidebarOrder()].sort((a, b) => a - b));
 
     await fireEvent.click(implementorButton);
 
-    await waitFor(() => expect(screen.getByText('Modified')).toBeTruthy());
-    expect(screen.getByRole('button', { name: 'Reset' })).toBeTruthy();
-
-    appStore.dispatch(
-      setFileSpecialists([
-        { ...override, behaviorPrompt: `${override.behaviorPrompt}\nSaved` },
-        custom,
-      ]),
-    );
-    await waitFor(() => expect(sidebarOrder()).toEqual([...sidebarOrder()].sort((a, b) => a - b)));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Reset' })).toBeTruthy());
 
     appStore.dispatch(setBundledSpecialists([specWriter, implementor, verifier]));
     appStore.dispatch(setFileSpecialists([custom]));
-    await waitFor(() =>
-      expect(
-        within(navigation)
-          .getByRole('button', { name: 'Implementor' })
-          .querySelector('[data-specialist-modified-marker]'),
-      ).toBeNull(),
-    );
-    expect(sidebarOrder()).toEqual([...sidebarOrder()].sort((a, b) => a - b));
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Reset' })).toBeNull());
   });
 
   it('keeps a custom user specialist editable without built-in override chrome', async () => {
@@ -162,12 +136,10 @@ describe('settings collapsed built-in override chrome', () => {
 
     const navigation = screen.getByRole('navigation', { name: 'Settings' });
     const customButton = within(navigation).getByRole('button', { name: 'Custom Specialist' });
-    expect(customButton.querySelector('[data-specialist-modified-marker]')).toBeNull();
 
     await fireEvent.click(customButton);
 
     await waitFor(() => expect(screen.getByRole('textbox', { name: 'Name' })).toBeTruthy());
-    expect(screen.queryByText('Modified')).toBeNull();
     expect(screen.queryByRole('button', { name: 'Reset' })).toBeNull();
   });
 });

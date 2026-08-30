@@ -176,7 +176,7 @@ function storeState(
     },
     userPreferences: userPreferencesInitialState,
     tabState: { currentTabId: activeWorkspaceId },
-    connections: { activeId: activeBackendId },
+    connections: { activeId: activeBackendId, windowBackendId: activeBackendId },
     workspaceAgents: { byWorkspaceId: {} },
   };
 }
@@ -270,7 +270,7 @@ function startRestoreSaga(
   });
   const getState = () => ({
     ...state,
-    connections: { ...state.connections, activeId: backendId },
+    connections: { ...state.connections, activeId: backendId, windowBackendId: backendId },
   });
   const task = runSaga({ channel, dispatch, getState }, panelLayoutSaga, {
     activeWorkspaceId: WS_1,
@@ -1294,7 +1294,7 @@ describe('panelLayoutSaga', () => {
       dispatch.mockClear();
 
       backendId = REMOTE_ID;
-      channel.put(connectionsListReceived({ connections: [], activeId: REMOTE_ID }));
+      channel.put(connectionsListReceived({ connections: [], activeId: REMOTE_ID, windowBackendId: REMOTE_ID }));
       await settle();
 
       expect(mocks.resolveBrowserLinkUrl).toHaveBeenCalledWith(REQUESTED, expect.anything());
@@ -1382,7 +1382,7 @@ describe('panelLayoutSaga', () => {
       dispatch.mockClear();
 
       backendId = REMOTE_ID;
-      channel.put(connectionsListReceived({ connections: [], activeId: REMOTE_ID }));
+      channel.put(connectionsListReceived({ connections: [], activeId: REMOTE_ID, windowBackendId: REMOTE_ID }));
       await settle();
 
       let waited = false;
@@ -1956,7 +1956,7 @@ describe('panelLayoutSaga', () => {
       );
       run.setBackendId(REMOTE_ID);
 
-      run.send(connectionsListReceived({ connections: [], activeId: REMOTE_ID }));
+      run.send(connectionsListReceived({ connections: [], activeId: REMOTE_ID, windowBackendId: REMOTE_ID }));
       await settle();
 
       const workspace = run.getState().panelLayout.byWorkspaceId[WS_1];
@@ -2018,12 +2018,12 @@ describe('panelLayoutSaga', () => {
         key === REMOTE_STORAGE_KEY_1 ? layout : localLayout,
       );
       run.setBackendId(REMOTE_ID);
-      run.send(connectionsListReceived({ connections: [], activeId: REMOTE_ID }));
+      run.send(connectionsListReceived({ connections: [], activeId: REMOTE_ID, windowBackendId: REMOTE_ID }));
       await settle();
       expect(run.getState().panelLayout.byWorkspaceId[WS_1].columnCount).toBe(1);
 
       run.setBackendId(LOCAL_CONNECTION_ID);
-      run.send(connectionsListReceived({ connections: [], activeId: LOCAL_CONNECTION_ID }));
+      run.send(connectionsListReceived({ connections: [], activeId: LOCAL_CONNECTION_ID, windowBackendId: LOCAL_CONNECTION_ID }));
       await settle();
       expect(run.getState().panelLayout.byWorkspaceId[WS_1].columnCount).toBe(2);
       await cancelSaga(run.task);
@@ -2075,7 +2075,7 @@ describe('panelLayoutSaga', () => {
       dispatch.mockClear();
 
       backendId = REMOTE_ID;
-      channel.put(connectionsListReceived({ connections: [], activeId: REMOTE_ID }));
+      channel.put(connectionsListReceived({ connections: [], activeId: REMOTE_ID, windowBackendId: REMOTE_ID }));
       await settle();
 
       expect(dispatch.mock.calls.map(([action]) => action)).toEqual([
@@ -2106,7 +2106,7 @@ describe('panelLayoutSaga', () => {
       dispatch.mockClear();
 
       backendId = REMOTE_ID;
-      channel.put(connectionsListReceived({ connections: [], activeId: REMOTE_ID }));
+      channel.put(connectionsListReceived({ connections: [], activeId: REMOTE_ID, windowBackendId: REMOTE_ID }));
       await settle();
 
       // WS_1-before-WS_2 relies on Set insertion order (retroactiveRestore
@@ -2148,7 +2148,7 @@ describe('panelLayoutSaga', () => {
         key === REMOTE_STORAGE_KEY_1 ? storedPromise : undefined,
       );
       backendId = REMOTE_ID;
-      channel.put(connectionsListReceived({ connections: [], activeId: REMOTE_ID }));
+      channel.put(connectionsListReceived({ connections: [], activeId: REMOTE_ID, windowBackendId: REMOTE_ID }));
       await settle();
 
       let waited = false;
@@ -2192,7 +2192,7 @@ describe('panelLayoutSaga', () => {
       dispatch.mockClear();
 
       backendId = REMOTE_ID;
-      channel.put(connectionsListReceived({ connections: [], activeId: REMOTE_ID }));
+      channel.put(connectionsListReceived({ connections: [], activeId: REMOTE_ID, windowBackendId: REMOTE_ID }));
       await settle();
 
       expect(dispatch.mock.calls.map(([action]) => action)).toEqual([
@@ -2218,7 +2218,7 @@ describe('panelLayoutSaga', () => {
       dispatch.mockClear();
 
       backendId = REMOTE_ID;
-      channel.put(connectionsListReceived({ connections: [], activeId: REMOTE_ID }));
+      channel.put(connectionsListReceived({ connections: [], activeId: REMOTE_ID, windowBackendId: REMOTE_ID }));
       await settle();
 
       const dispatched = dispatch.mock.calls.map(([action]) => action);
@@ -2258,7 +2258,7 @@ describe('panelLayoutSaga', () => {
       dispatch.mockClear();
 
       backendId = REMOTE_ID;
-      channel.put(connectionsListReceived({ connections: [], activeId: REMOTE_ID }));
+      channel.put(connectionsListReceived({ connections: [], activeId: REMOTE_ID, windowBackendId: REMOTE_ID }));
       await settle();
 
       expect(dispatch.mock.calls.map(([action]) => action)).toEqual([
@@ -2278,7 +2278,7 @@ describe('panelLayoutSaga', () => {
       mocks.getJSON.mockReturnValue(undefined);
       run.setBackendId(REMOTE_ID);
 
-      run.send(connectionsListReceived({ connections: [], activeId: REMOTE_ID }));
+      run.send(connectionsListReceived({ connections: [], activeId: REMOTE_ID, windowBackendId: REMOTE_ID }));
       await settle();
 
       const workspace = run.getState().panelLayout.byWorkspaceId[WS_1];
@@ -2317,7 +2317,7 @@ describe('panelLayoutSaga', () => {
       channel.put({ type: openTab.type, payload: { wsId: WS_1 } });
       await settle();
       backendId = REMOTE_ID;
-      channel.put(connectionsListReceived({ connections: [], activeId: REMOTE_ID }));
+      channel.put(connectionsListReceived({ connections: [], activeId: REMOTE_ID, windowBackendId: REMOTE_ID }));
       await settle();
       await vi.advanceTimersByTimeAsync(HISTORY_PERSIST_DEBOUNCE_MS);
       await settle();
@@ -2338,7 +2338,7 @@ describe('panelLayoutSaga', () => {
       await settle();
 
       backendId = REMOTE_ID;
-      channel.put(connectionsListReceived({ connections: [], activeId: REMOTE_ID }));
+      channel.put(connectionsListReceived({ connections: [], activeId: REMOTE_ID, windowBackendId: REMOTE_ID }));
       await settle();
       mocks.saveHistory.mockClear();
       await cancelSaga(task);

@@ -81,6 +81,7 @@ import {
   authRejectedReceived,
   connectionsListReceived,
   connectOperationStarted,
+  openConnectionRequested,
 } from '$store/renderer/slices/connections/connections-slice';
 import { LOCAL_CONNECTION_ID } from '$shared/types/connections';
 
@@ -175,6 +176,9 @@ describe('DaemonStoppedOverlay', () => {
     bootTransport = sidecarTransport;
     invokeMock = vi.fn(async (channel: string, ...args: unknown[]) => {
       if (channel === BACKEND.SPAWN_SIDECAR) {
+        return { ok: true, spawned: true, reason: 'sidecar spawned' };
+      }
+      if (channel === BACKEND.OPEN_LOCAL_AND_SPAWN) {
         return { ok: true, spawned: true, reason: 'sidecar spawned' };
       }
       if (channel === BACKEND.GET_STATUS) {
@@ -292,7 +296,13 @@ describe('DaemonStoppedOverlay', () => {
       isLocal: false,
     };
     render(DaemonStoppedOverlay);
-    appStore.dispatch(connectionsListReceived({ connections: [remote], activeId: 'conn-1' }));
+    appStore.dispatch(
+      connectionsListReceived({
+        connections: [remote],
+        activeId: 'conn-1',
+        windowBackendId: 'conn-1',
+      }),
+    );
     await showOverlay({ mode: 'external-ws', target: 'wss:192.168.1.20:5181' });
     const details = screen.getByTestId('daemon-stopped-connection-details');
     expect(details.textContent).toContain('Lost connection to studio.local (192.168.1.20:5181)');
@@ -481,6 +491,102 @@ describe('DaemonStoppedOverlay', () => {
     });
   });
 
+  describe('Open-only recovery actions in a remote window', () => {
+    const REMOTE = {
+      id: 'remote-1',
+      label: 'Studio Mac',
+      host: '10.0.0.5',
+      port: 8443,
+      fingerprint: 'AB:CD',
+      isLocal: false,
+    };
+    const OTHER = { ...REMOTE, id: 'remote-2', label: 'Other Mac', host: '10.0.0.6' };
+    const LOCAL = {
+      id: LOCAL_CONNECTION_ID,
+      label: 'This machine (local)',
+      host: null,
+      port: null,
+      fingerprint: null,
+      isLocal: true,
+    };
+    const wsTransport: BackendTransportInfo = {
+      mode: 'external-ws',
+      target: 'wss://10.0.0.5:8443/ws',
+    };
+
+    function bindWindowToRemote(connections = [LOCAL, REMOTE, OTHER]) {
+      dispatchAndFlush(
+        connectionsListReceived({
+          connections,
+          activeId: REMOTE.id,
+          windowBackendId: REMOTE.id,
+        }),
+      );
+    }
+
+    it('offers "Open local" and routes it through backend:open-local-and-spawn', async () => {
+      render(DaemonStoppedOverlay);
+      await showOverlay(wsTransport);
+      bindWindowToRemote();
+
+      const button = screen.getByTestId('daemon-stopped-spawn-sidecar') as HTMLButtonElement;
+      expect(button.textContent).toContain('Open local');
+      // The remote-window note explains this window keeps its own backend.
+      expect(overlay()!.textContent).toContain('stays connected to the remote backend');
+
+      await fireEvent.click(button);
+      await vi.waitFor(() => {
+        expect(invokeMock).toHaveBeenCalledWith(BACKEND.OPEN_LOCAL_AND_SPAWN);
+      });
+      // The plain spawn channel (local-window path) must NOT fire from a
+      // remote window — spawning without opening would target this window's
+      // dead remote connection.
+      expect(invokeMock).not.toHaveBeenCalledWith(BACKEND.SPAWN_SIDECAR);
+    });
+
+    it('keeps "Start local intentd" (plain spawn) when the window backend is local', async () => {
+      render(DaemonStoppedOverlay);
+      await showOverlay(externalTransport);
+      // Default windowBackendId is local — external-uds adoption posture.
+      const button = screen.getByTestId('daemon-stopped-spawn-sidecar') as HTMLButtonElement;
+      expect(button.textContent).toContain('Start local intentd');
+
+      await fireEvent.click(button);
+      await vi.waitFor(() => {
+        expect(invokeMock).toHaveBeenCalledWith(BACKEND.SPAWN_SIDECAR);
+      });
+      expect(invokeMock).not.toHaveBeenCalledWith(BACKEND.OPEN_LOCAL_AND_SPAWN);
+    });
+
+    it('lists other backends as "Open …" actions that dispatch openConnectionRequested', async () => {
+      render(DaemonStoppedOverlay);
+      await showOverlay(wsTransport);
+      bindWindowToRemote();
+
+      const openButtons = screen.getAllByTestId('daemon-stopped-open-backend');
+      expect(openButtons).toHaveLength(1);
+      expect(openButtons[0].textContent).toContain('Open');
+      expect(openButtons[0].textContent).toContain('Other Mac');
+
+      const dispatchSpy = vi.spyOn(appStore, 'dispatch');
+      await fireEvent.click(openButtons[0]);
+      const dispatched = dispatchSpy.mock.calls
+        .map(([action]) => action as { type: string; payload?: unknown[] })
+        .find((action) => action.type === openConnectionRequested.type);
+      expect(dispatched?.payload).toEqual(['remote-2']);
+      // Open-only: the legacy retargeting action must never fire from the
+      // overlay. Literal type string: the remove-switch change deleted the
+      // action creator, and this negative assertion must survive that.
+      expect(
+        dispatchSpy.mock.calls.some(
+          ([action]) =>
+            (action as { type: string }).type === 'connections/switchConnectionRequested',
+        ),
+      ).toBe(false);
+      dispatchSpy.mockRestore();
+    });
+  });
+
   it('keeps the spawn section visible when the transport flips to sidecar-uds mid-spawn', async () => {
     render(DaemonStoppedOverlay);
     await showOverlay(externalTransport);
@@ -531,6 +637,7 @@ describe('DaemonStoppedOverlay', () => {
       host: '10.0.0.5',
       port: 8443,
       fingerprint: 'AB:CD',
+      accent: 'indigo' as const,
       isLocal: false,
     };
     const LOCAL = {
@@ -548,7 +655,11 @@ describe('DaemonStoppedOverlay', () => {
 
     function activateRemote() {
       dispatchAndFlush(
-        connectionsListReceived({ connections: [LOCAL, REMOTE], activeId: REMOTE.id }),
+        connectionsListReceived({
+          connections: [LOCAL, REMOTE],
+          activeId: REMOTE.id,
+          windowBackendId: REMOTE.id,
+        }),
       );
     }
 
@@ -601,19 +712,40 @@ describe('DaemonStoppedOverlay', () => {
       expect(overlay()!.textContent).toContain('(HTTP 403)');
     });
 
-    it('keeps the switch-backend fail-over list visible in the token-rejected state', async () => {
+    it('keeps the open-backend fail-over list visible in the token-rejected state', async () => {
       const OTHER = { ...REMOTE, id: 'remote-2', label: 'Other Mac', host: '10.0.0.6' };
       render(DaemonStoppedOverlay);
       await showOverlay(wsTransport);
       dispatchAndFlush(
-        connectionsListReceived({ connections: [LOCAL, REMOTE, OTHER], activeId: REMOTE.id }),
+        connectionsListReceived({
+          connections: [LOCAL, REMOTE, OTHER],
+          activeId: REMOTE.id,
+          windowBackendId: REMOTE.id,
+        }),
       );
       rejectAuth(401);
 
       expect(screen.getByTestId('daemon-stopped-known-backends')).toBeTruthy();
     });
 
-    it('ignores a primary rejection latch that only matches the secondary window identity', async () => {
+    it('ignores a rejection latched for the primary when it does not match this window backend', async () => {
+      render(DaemonStoppedOverlay);
+      await showOverlay(wsTransport);
+      dispatchAndFlush(
+        connectionsListReceived({
+          connections: [LOCAL, REMOTE],
+          activeId: REMOTE.id,
+          windowBackendId: LOCAL_CONNECTION_ID,
+        }),
+      );
+      rejectAuth(401);
+
+      expect(overlay()!.textContent).not.toContain('Authentication rejected');
+      expect(screen.queryByTestId('daemon-stopped-repair')).toBeNull();
+      expect(screen.getByTestId('daemon-stopped-retrying')).toBeTruthy();
+    });
+
+    it('shows a rejection matching this window backend even when it is not the primary', async () => {
       render(DaemonStoppedOverlay);
       await showOverlay(wsTransport);
       dispatchAndFlush(
@@ -625,9 +757,9 @@ describe('DaemonStoppedOverlay', () => {
       );
       rejectAuth(401);
 
-      expect(overlay()!.textContent).not.toContain('Authentication rejected');
-      expect(screen.queryByTestId('daemon-stopped-repair')).toBeNull();
-      expect(screen.getByTestId('daemon-stopped-retrying')).toBeTruthy();
+      expect(overlay()!.textContent).toContain('Authentication rejected');
+      expect(screen.getByTestId('daemon-stopped-repair')).toBeTruthy();
+      expect(screen.queryByTestId('daemon-stopped-retrying')).toBeNull();
     });
 
     it('returns to the generic posture when a new connect operation clears the latch', async () => {
@@ -643,7 +775,7 @@ describe('DaemonStoppedOverlay', () => {
       expect(screen.queryByTestId('daemon-stopped-repair')).toBeNull();
     });
 
-    it('opens the re-pair modal with host and port prefilled', async () => {
+    it('opens the re-pair modal with saved metadata and address prefilled', async () => {
       render(DaemonStoppedOverlay);
       await showOverlay(wsTransport);
       activateRemote();
@@ -653,8 +785,13 @@ describe('DaemonStoppedOverlay', () => {
 
       const hostInput = (await screen.findByLabelText(/host/i)) as HTMLInputElement;
       const portInput = screen.getByLabelText(/port/i) as HTMLInputElement;
+      const nameInput = screen.getByLabelText(/name/i) as HTMLInputElement;
       expect(hostInput.value).toBe('10.0.0.5');
       expect(portInput.value).toBe('8443');
+      expect(nameInput.value).toBe(REMOTE.label);
+      expect(screen.getByRole('button', { name: /indigo/i }).getAttribute('aria-pressed')).toBe(
+        'true',
+      );
     });
   });
 

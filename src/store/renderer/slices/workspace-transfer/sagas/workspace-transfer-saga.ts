@@ -27,7 +27,7 @@ import type {
   TransferStartResult,
 } from '$shared/types/workspace-transfer';
 import { takeEveryFromElectronChannel } from '../../../utils/ipc-channel';
-import { switchConnectionRequested } from '../../connections/connections-slice';
+import { openConnectionRequested } from '../../connections/connections-slice';
 import {
   closeTransferModal,
   transferFinalizeFailed,
@@ -164,11 +164,11 @@ function* resolveDestinationLabel(): SagaGenerator<string> {
   );
 }
 
-/** Step 4: settle the source, optionally resume target agents + switch. */
+/** Step 4: settle the source, optionally resume target agents + open target. */
 function* finalizeTransfer(
   action: ReturnType<typeof transferFinalizeRequested>,
 ): SagaGenerator<void> {
-  const [{ switchToTarget }] = action.payload;
+  const [{ openTarget }] = action.payload;
   const destination = yield* selectTransferDestinationValue.effect();
   const archiveSource = yield* selectTransferArchiveSource.effect();
   const restartAgents = yield* selectTransferRestartAgents.effect();
@@ -201,8 +201,8 @@ function* finalizeTransfer(
       yield* call(showResumeFailedToast, resumeFailed.length);
     }
     yield* put(closeTransferModal());
-    if (switchToTarget && destination?.kind === 'server') {
-      yield* put(switchConnectionRequested(destination.connectionId));
+    if (openTarget && destination?.kind === 'server') {
+      yield* put(openConnectionRequested(destination.connectionId));
     }
   } catch (error) {
     logger.error('transfer:finalize failed', { error });

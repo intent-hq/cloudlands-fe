@@ -136,8 +136,9 @@ function isDraining(entry: InflightExecStream): boolean {
 }
 
 /**
- * Cancel + notify every in-flight `host.execStream`, invoked by `switchBackend`
- * BEFORE the old client is disposed. Each stream's subscription and settle
+ * Cancel + notify every in-flight `host.execStream`, invoked by
+ * `disconnectBackendClient` BEFORE the client is disposed. Each stream's
+ * subscription and settle
  * callbacks are bound to the outgoing client; once it is disposed the remaining
  * output and terminal exit frame are unreachable and the consumer's `done`
  * would hang forever. For each in-flight stream this best-effort fires (never

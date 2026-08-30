@@ -5,10 +5,10 @@ import {
   DEFAULT_MEDIUM_PANEL_WIDTH,
   DEFAULT_PANEL_WIDTH,
   FIRST_CHAT_PREFERRED_WIDTH,
-  MAX_AUTOMATIC_PANEL_WIDTH,
   PANEL_SPLIT_GUTTER_WIDTH,
   allocateAutomaticPanelWidths,
   allocatePanelWidths,
+  allocateViewportPanelWidths,
   getAutomaticPanelCanvasWidth,
   getPanelDefaultWidth,
   getResolvedPanelCanvasWidth,
@@ -44,16 +44,12 @@ describe('panel type default widths', () => {
     expect(getAutomaticPanelCanvasWidth([500, 900], 'viewport', 1600)).toBe(1600);
     expect(getAutomaticPanelCanvasWidth([500, 900], 'viewport', 1000)).toBe(1000);
     expect(getResolvedPanelCanvasWidth([500, 900], 'content', 1000, 1725)).toBe(1725);
-    expect(getResolvedPanelCanvasWidth([500], 'viewport', 1600, 420)).toBe(420);
-    expect(getResolvedPanelCanvasWidth([500], 'viewport', 5000, 1800)).toBe(1800);
+    expect(getResolvedPanelCanvasWidth([500], 'viewport', 1600, 420)).toBe(1600);
+    expect(getResolvedPanelCanvasWidth([500], 'viewport', 5000, 1800)).toBe(5000);
   });
 });
 
-describe('capped equal automatic panel allocation', () => {
-  it('uses a 2000px automatic per-panel maximum', () => {
-    expect(MAX_AUTOMATIC_PANEL_WIDTH).toBe(2000);
-  });
-
+describe('exact viewport panel allocation', () => {
   it.each([1, 2, 3, 4])('fits %s equal column(s) inside a narrow viewport', (count) => {
     const allocation = allocateAutomaticPanelWidths(count, 300);
     const expectedWidth = (300 - PANEL_SPLIT_GUTTER_WIDTH * (count - 1)) / count;
@@ -64,29 +60,40 @@ describe('capped equal automatic panel allocation', () => {
     expect(allocation.overflows).toBe(false);
   });
 
-  it.each([1, 2, 3, 4])('caps %s column(s) at the exact 2000px threshold', (count) => {
+  it.each([1, 2, 3, 4])('fills a wide viewport with %s column(s)', (count) => {
     const totalGapWidth = PANEL_SPLIT_GUTTER_WIDTH * (count - 1);
-    const threshold = MAX_AUTOMATIC_PANEL_WIDTH * count + totalGapWidth;
-    const below = allocateAutomaticPanelWidths(count, threshold - 1);
-    const exact = allocateAutomaticPanelWidths(count, threshold);
-    const above = allocateAutomaticPanelWidths(count, threshold + 1);
-
-    expect(below.panelWidths).toEqual(
+    const viewportWidth = 10_001;
+    const allocation = allocateAutomaticPanelWidths(count, viewportWidth);
+    expect(allocation.panelWidths).toEqual(
       Array.from({ length: count }, () =>
-        expect.closeTo((threshold - 1 - totalGapWidth) / count, 8),
+        expect.closeTo((viewportWidth - totalGapWidth) / count, 8),
       ),
     );
-    expect(below.canvasWidth).toBeCloseTo(threshold - 1, 8);
-    expect(exact.panelWidths).toEqual(
-      Array.from({ length: count }, () => MAX_AUTOMATIC_PANEL_WIDTH),
-    );
-    expect(exact.canvasWidth).toBe(threshold);
-    expect(above).toMatchObject({
-      panelWidths: Array.from({ length: count }, () => MAX_AUTOMATIC_PANEL_WIDTH),
-      canvasWidth: threshold,
-      overflows: false,
-    });
-    expect(above.canvasWidth).toBeLessThan(threshold + 1);
+    expect(allocation.canvasWidth).toBe(viewportWidth);
+    expect(allocation.overflows).toBe(false);
+  });
+
+  it('preserves valid restored proportions while fitting narrow and wide viewports', () => {
+    for (const viewportWidth of [600, 2400]) {
+      const allocation = allocateViewportPanelWidths([20, 30, 50], viewportWidth);
+      const contentWidth = viewportWidth - PANEL_SPLIT_GUTTER_WIDTH * 2;
+      expect(allocation.panelWidths).toEqual([
+        expect.closeTo(contentWidth * 0.2, 8),
+        expect.closeTo(contentWidth * 0.3, 8),
+        expect.closeTo(contentWidth * 0.5, 8),
+      ]);
+      expect(
+        allocation.panelWidths.reduce((sum, width) => sum + width, 0) +
+          PANEL_SPLIT_GUTTER_WIDTH * 2,
+      ).toBeCloseTo(viewportWidth, 8);
+    }
+  });
+
+  it('repairs an invalid restored ratio with the existing ten-percent minimum', () => {
+    expect(allocateViewportPanelWidths([1, 99], 800).panelWidths).toEqual([
+      expect.closeTo(79.2, 8),
+      expect.closeTo(712.8, 8),
+    ]);
   });
 
   it('falls back safely before measurement and for invalid counts', () => {

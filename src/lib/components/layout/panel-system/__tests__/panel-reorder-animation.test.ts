@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   animatePanelPreviewPositions,
   capturePanelPositions,
@@ -12,6 +12,8 @@ import {
 function rect(left: number, top: number, width: number, height: number): DOMRect {
   return { left, top, width, height } as DOMRect;
 }
+
+afterEach(() => vi.restoreAllMocks());
 
 describe('translatePanel', () => {
   it('affirms adjacent-panel first-frame translation in every required visual state', async () => {
@@ -51,7 +53,7 @@ describe('translatePanel', () => {
     expect(animation.duration).toBe(180);
   });
 
-  it('animates preview slots with translation only', () => {
+  it('animates preview position and size in 140ms', () => {
     const root = document.createElement('div');
     const panel = document.createElement('div');
     panel.dataset.panelLayoutPreviewPanel = 'panel-1';
@@ -68,10 +70,27 @@ describe('translatePanel', () => {
 
     expect(cancel).toHaveBeenCalledOnce();
     expect(animate).toHaveBeenCalledWith(
-      [{ transform: 'translate3d(-400px, 0px, 0)' }, { transform: 'translate3d(0, 0, 0)' }],
-      expect.objectContaining({ duration: 240 }),
+      [
+        { transform: 'translate3d(-400px, 0px, 0) scale(2.142857142857143, 1)' },
+        { transform: 'translate3d(0, 0, 0)' },
+      ],
+      expect.objectContaining({ duration: 140 }),
     );
-    expect(JSON.stringify(animate.mock.calls)).not.toContain('scale');
+    expect(panel.style.transformOrigin).toBe('top left');
+  });
+
+  it('does not animate the projected layout under reduced motion', () => {
+    vi.spyOn(window, 'matchMedia').mockReturnValue({ matches: true } as MediaQueryList);
+    const root = document.createElement('div');
+    const panel = document.createElement('div');
+    panel.dataset.panelLayoutPreviewPanel = 'panel-1';
+    const animate = vi.fn();
+    Object.defineProperty(panel, 'animate', { value: animate });
+    root.append(panel);
+
+    animatePanelPreviewPositions(root, new Map([['panel-1', rect(20, 10, 600, 800)]]));
+
+    expect(animate).not.toHaveBeenCalled();
   });
 
   it('captures positions by stable panel id', () => {

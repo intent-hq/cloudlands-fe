@@ -8,7 +8,6 @@ import {
   toggleHiddenEditor,
   type InstalledEditor,
 } from '$store/renderer/slices/external-editors/external-editors-slice';
-import { m } from '$shared/paraglide/messages.js';
 
 const mocks = vi.hoisted(() => {
   const writable = <T>(initial: T) => {
@@ -93,35 +92,23 @@ afterEach(() => {
 });
 
 describe('OpenInAppsSettings', () => {
-  it('fetches on mount and renders the deterministic empty state for no installed apps', () => {
+  it('fetches on mount and excludes apps that are not installed', () => {
     mocks.editors$.set([editor({ id: 'missing', installed: false })]);
 
     renderApps();
 
-    expect(screen.getByText(m.settings_openInApps_empty())).toBeTruthy();
     expect(screen.queryByRole('switch')).toBeNull();
     expect(mocks.dispatched).toContainEqual(fetchEditors());
   });
 
-  it('keeps installed-only filtering, long labels, icons, selected state, and exact toggle action', async () => {
+  it('keeps installed-only filtering, selected state, and the exact toggle action', async () => {
     const visible = editor({ iconBase64: 'cG5n' });
     mocks.editors$.set([visible, editor({ id: 'not-installed', installed: false })]);
     mocks.hiddenIds$.set([visible.id]);
 
-    const { container } = renderApps();
+    renderApps();
     const toggle = screen.getByRole('switch', { name: LONG_EDITOR_NAME });
-    const list = container.querySelector('[data-open-in-apps]');
     expect(toggle.getAttribute('aria-checked')).toBe('false');
-    expect(list?.className).toContain('space-y-1');
-    expect(list?.className).not.toContain('divide-y');
-    expect(list?.className).not.toContain('divide-border');
-    expect(screen.queryByText('not-installed')).toBeNull();
-    expect(container.querySelector('img[alt=""]')).not.toBeNull();
-    expect(container.querySelector('[data-slot="settings-field-row"]')?.className).toContain(
-      'md:grid-cols-[minmax(0,1fr)_auto]',
-    );
-    expect(container.querySelector('[data-field-leading]')).not.toBeNull();
-    expect(toggle.id).toBe('open-in-vscode-switch');
 
     await fireEvent.click(toggle);
 

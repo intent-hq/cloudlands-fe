@@ -14,8 +14,13 @@ vi.mock('$store/renderer/slices/theme/theme-selectors', () => ({
 }));
 
 describe('Toast', () => {
-  afterEach(() => {
+  afterEach(async () => {
     toast.dismiss();
+    // Since svelte-sonner 1.2, dismiss() only flags toasts; they leave the
+    // module-level state when the still-mounted toaster's removal timer
+    // fires. Wait for that (DOM removal tracks state removal) before
+    // cleanup(), or dismissed toasts leak into the next test's toaster.
+    await waitFor(() => expect(document.querySelectorAll('[data-sonner-toast]')).toHaveLength(0));
     cleanup();
   });
 

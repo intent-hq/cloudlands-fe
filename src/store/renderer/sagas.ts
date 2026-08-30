@@ -29,7 +29,6 @@ import { chatScrollbackSaga } from './slices/chat-state/sagas/chat-scrollback-sa
 import { chatSendSaga } from './slices/chat-state/sagas/chat-send-saga';
 import { chatSubscribeSaga } from './slices/chat-state/sagas/chat-subscribe-saga';
 import { switchTimingSaga } from './slices/chat-state/sagas/switch-timing-saga';
-import { bootFallbackToastSaga } from './slices/connections/sagas/boot-fallback-toast-saga';
 import { connectionsSaga } from './slices/connections/sagas/connections-saga';
 import { contextSaga } from './slices/context/sagas/context-saga';
 import { daemonHealthSaga } from './slices/daemon-health/sagas/daemon-health-saga';
@@ -75,6 +74,8 @@ import { statsReadSaga } from './slices/stats/sagas/stats-read-saga';
 import { tabStateSaga } from './slices/tab-state/sagas/tab-state-saga';
 import { workspaceTabReconciliationSaga } from './slices/tab-state/sagas/workspace-tab-reconciliation-saga';
 import { workspaceTabCleanupSaga } from './slices/workspace-lifecycle/sagas/workspace-tab-cleanup-saga';
+import { workspaceLoadSaga } from './slices/workspace-lifecycle/sagas/workspace-load-saga';
+import { workspaceReconnectSaga } from './slices/workspace-lifecycle/sagas/workspace-reconnect-saga';
 import { taskAgentAssociationsSaga } from './slices/task-agent-associations/sagas/task-agent-associations-saga';
 import { terminalPersistenceSaga } from './slices/terminals/sagas/terminal-persistence-saga';
 import { themeSaga } from './slices/theme/sagas/theme-saga';
@@ -119,7 +120,6 @@ export const sagas = [
   daemonEventsSaga,
   daemonHealthSaga,
   connectionsSaga,
-  bootFallbackToastSaga,
   settingsHydrationSaga,
   activeStreamsSaga,
   agentReadSaga,
@@ -152,6 +152,8 @@ export const sagas = [
   scriptsOperationSaga,
   lifecycleReadSaga,
   lifecycleIpcReadSaga,
+  workspaceLoadSaga,
+  workspaceReconnectSaga,
   modelSelectionSaga,
   backgroundAgentSettingsSaga,
   providerSettingsSaga,

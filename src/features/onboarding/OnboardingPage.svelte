@@ -15,6 +15,16 @@
   import { invoke } from '$shared/generated/ipc-client';
   import { appClient } from '$lib/client';
   import {
+    clearNewWorkspaceDraft,
+    contextItemsToInlineImages,
+    createNewWorkspaceDraftSaver,
+    type DraftInlineImage,
+    inlineImagesToContextItems,
+    LEGACY_ONBOARDING_PROMPT_SESSION_KEY,
+    resolveDraftImages,
+    restoreNewWorkspaceDraft,
+  } from '$lib/components/workspace/initializer/new-workspace-draft';
+  import {
     enhancePrompt,
     EnhancePromptUnavailableError,
     isEnhancePromptAvailable,
@@ -319,6 +329,12 @@
     });
   });
 
+  // Set when the initial prompt was seeded from the legacy sessionStorage key
+  // (not a WORKSPACE_PREFILL_KEY prefill): the shared daemon draft may be
+  // NEWER than that stale value, so the restore below lets the daemon draft
+  // win over an untouched legacy seed.
+  let legacySeededPrompt = '';
+
   function getInitialOnboardingPrompt(): string {
     try {
       const prefill = sessionStorage.getItem(WORKSPACE_PREFILL_KEY);
@@ -329,10 +345,16 @@
     } catch {
       // Ignore malformed prefill data; ProjectPickerMessage clears it after parsing.
     }
-    return sessionStorage.getItem('onboarding-prompt') || '';
+    // Legacy sessionStorage draft: captured synchronously here, before the
+    // onMount resetOnboarding dispatch lets the workspace-initializer saga
+    // remove the key. A captured value migrates to the daemon draft via the
+    // debounced save below.
+    legacySeededPrompt = sessionStorage.getItem(LEGACY_ONBOARDING_PROMPT_SESSION_KEY) || '';
+    return legacySeededPrompt;
   }
 
-  let onboardingInputValue = $state(getInitialOnboardingPrompt());
+  const initialOnboardingPrompt = getInitialOnboardingPrompt();
+  let onboardingInputValue = $state(initialOnboardingPrompt);
   let promptStepRef: OnboardingPromptStep | null = $state(null);
   let isOnboardingEnhancing = $state(false);
   // Non-image files staged path-only in the prompt step; placed into the
@@ -364,26 +386,128 @@
   let hasFiredOnboardingClick = $state(false);
   let hasFiredOnboardingType = $state(false);
 
-  // Persist onboarding prompt to sessionStorage with debounce
-  let onboardingPromptSaveTimer: ReturnType<typeof setTimeout> | null = null;
-  $effect(() => {
-    const prompt = onboardingInputValue;
-    if (!isOnboarding) return;
-    if (onboardingPromptSaveTimer) clearTimeout(onboardingPromptSaveTimer);
-    onboardingPromptSaveTimer = setTimeout(() => {
-      if (prompt) {
-        sessionStorage.setItem('onboarding-prompt', prompt);
-      } else {
-        sessionStorage.removeItem('onboarding-prompt');
+  // Onboarding prompt drafts live in the daemon (drafts.* under the reserved
+  // sentinel keys, PROTOCOL §5.16) so text + inline images survive app
+  // restarts. Until the restore settles, saves are limited to text the user
+  // actually typed (see scheduleOnboardingDraftSave) and empty saves are
+  // skipped, so an initial empty/seeded save cannot clobber a not-yet-read
+  // daemon draft; if the restore failed, empty saves stay skipped so a draft
+  // that was never read can't be cleared. All drafts.* failures are non-fatal.
+  let onboardingDraftRestored = $state(false);
+  let onboardingDraftRestoreFailed = false;
+  // Set after a successful create: the draft is cleared and must not be
+  // re-saved by a late flush or effect re-run.
+  let onboardingDraftCleared = false;
+  // Restored image attachments waiting for the prompt step's editor to mount.
+  let pendingOnboardingDraftImages = $state<DraftInlineImage[] | null>(null);
+  // Last known inline images (restored draft images / last live editor read):
+  // scheduled saves fall back to these while the editor is unmounted (restore
+  // settles before step 4; isOnboardingCreating destroys the step mid-create)
+  // so they never wipe the draft's image attachments.
+  let onboardingDraftImageFallback: DraftInlineImage[] = [];
+  const onboardingDraftSaver = createNewWorkspaceDraftSaver(appClient.drafts, {
+    skipEmptySave: () => !onboardingDraftRestored || onboardingDraftRestoreFailed,
+  });
+  (async () => {
+    try {
+      const restore = await restoreNewWorkspaceDraft(appClient.drafts, {
+        legacyKey: LEGACY_ONBOARDING_PROMPT_SESSION_KEY,
+      });
+      onboardingDraftRestoreFailed = restore.status === 'error';
+      if (restore.status === 'restored') {
+        // Never clobber a WORKSPACE_PREFILL_KEY prefill or text the user
+        // typed while the restore was pending. An UNTOUCHED legacy
+        // sessionStorage seed is the exception: the shared daemon draft is
+        // authoritative and supersedes that stale value.
+        const inputUntouched =
+          !onboardingInputValue ||
+          (!!legacySeededPrompt && onboardingInputValue === legacySeededPrompt);
+        if (restore.text && inputUntouched) {
+          onboardingInputValue = restore.text;
+          // If the prompt step is already mounted, its editor initialized from
+          // the empty value — push the restored text in; otherwise the editor
+          // picks up the bound value on mount.
+          void getOnboardingRichTextarea()?.setContent(restore.text);
+        }
+        // Same no-clobber guard for images: when the text restore is skipped
+        // (prefill / user typing), stale draft images must not sneak in.
+        if (inputUntouched && restore.contextItems.length > 0) {
+          const restoredImages = contextItemsToInlineImages(restore.contextItems);
+          onboardingDraftImageFallback = restoredImages;
+          pendingOnboardingDraftImages = restoredImages;
+          // Non-image items (path-only staged files from either surface)
+          // rehydrate into the staged list so they survive the round trip —
+          // they are placed at create-time redemption, and a failed pill
+          // stays blocking/retryable rather than silently dropped.
+          const restoredStaged = restore.contextItems.filter((item) => !item.imageData);
+          if (restoredStaged.length > 0 && onboardingStagedItems.length === 0) {
+            onboardingStagedItems = restoredStaged;
+          }
+        }
       }
-    }, 300);
+    } finally {
+      onboardingDraftRestored = true;
+    }
+  })();
 
-    return () => {
-      if (onboardingPromptSaveTimer) {
-        clearTimeout(onboardingPromptSaveTimer);
-        onboardingPromptSaveTimer = null;
-      }
-    };
+  // Re-insert restored inline images once the prompt step's editor exists
+  // (the prompt step mounts several onboarding steps after the restore).
+  $effect(() => {
+    if (!promptStepRef || !pendingOnboardingDraftImages?.length) return;
+    const images = pendingOnboardingDraftImages;
+    // Same editor-init delay as the modal's draft restore. `pending` is
+    // nulled only after the images are actually inserted, so a save
+    // scheduled inside the delay still reads them via the fallback instead
+    // of a not-yet-populated editor.
+    setTimeout(() => {
+      const richTextarea = getOnboardingRichTextarea();
+      for (const image of images) richTextarea?.insertImage(image.src, image.alt);
+      pendingOnboardingDraftImages = null;
+    }, 50);
+  });
+
+  /** Debounced daemon draft save: prompt text + inline editor images +
+   * staged non-image attachments (path-only; placed at create-time
+   * redemption). */
+  function scheduleOnboardingDraftSave() {
+    if (!isOnboarding || onboardingDraftCleared) return;
+    // Pre-settle, only text the user actually typed is scheduled: it must be
+    // flushable if they navigate away, and it is newer than any daemon draft.
+    // The untouched initial value (prefill / legacy seed / empty) stays
+    // unscheduled so it cannot clobber a newer shared daemon draft.
+    if (!onboardingDraftRestored && onboardingInputValue === initialOnboardingPrompt) return;
+    // Live editor images win once the editor is mounted and any restored
+    // images have been inserted (an empty live read is a deliberate
+    // deletion); otherwise fall back to the retained images.
+    const richTextarea = getOnboardingRichTextarea();
+    const liveImages =
+      richTextarea && pendingOnboardingDraftImages === null ? richTextarea.getInlineImages() : null;
+    if (liveImages) onboardingDraftImageFallback = liveImages;
+    onboardingDraftSaver.schedule(onboardingInputValue, [
+      ...inlineImagesToContextItems(resolveDraftImages(liveImages, onboardingDraftImageFallback)),
+      ...onboardingStagedItems,
+    ]);
+  }
+
+  // Text changes flow through the bound value; image-only changes don't touch
+  // it, so handleOnboardingContentChange also schedules a save. Staged
+  // non-image attachments are tracked here too — adding/removing a staged
+  // file must persist without a keystroke.
+  $effect(() => {
+    void onboardingInputValue;
+    void onboardingDraftRestored;
+    void onboardingStagedItems;
+    scheduleOnboardingDraftSave();
+  });
+
+  // A reload or window close inside the debounce window would drop the newest
+  // keystrokes — flush the pending save on unload and destroy.
+  const flushOnboardingDraftSave = () => {
+    if (!onboardingDraftCleared) onboardingDraftSaver.flush();
+  };
+  onMount(() => {
+    window.addEventListener('beforeunload', flushOnboardingDraftSave);
+    return () => window.removeEventListener('beforeunload', flushOnboardingDraftSave);
   });
 
   // Save onboarding form state through Redux whenever it changes. Debouncing and
@@ -555,7 +679,7 @@
 
   onDestroy(() => {
     appStore.dispatch(cancelWorkspaceInitializerOnboardingFormStateDebounce());
-    if (onboardingPromptSaveTimer) clearTimeout(onboardingPromptSaveTimer);
+    flushOnboardingDraftSave();
     if (onboardingContentChangeTimer) clearTimeout(onboardingContentChangeTimer);
     setupScriptProbeScheduler.dispose();
   });
@@ -771,6 +895,9 @@
 
   // Handle content changes - check for PRs and fetch branch info if needed
   function handleOnboardingContentChange() {
+    // Inline image add/remove doesn't change the bound text value — keep the
+    // daemon draft in sync from the content-change signal too.
+    scheduleOnboardingDraftSave();
     if (onboardingContentChangeTimer) clearTimeout(onboardingContentChangeTimer);
     onboardingContentChangeTimer = setTimeout(handleOnboardingContentChangeImmediate, 300);
   }
@@ -945,6 +1072,13 @@
       }
       onboardingPendingSend = null;
       onboardingStagedItems = [];
+      // The held first message is sent — cancel any armed debounced save
+      // (its timer would fire drafts.set AFTER drafts.clear and resurrect
+      // the draft), then clear the persisted daemon draft and stop saving so
+      // a late flush can't resurrect it either.
+      onboardingDraftCleared = true;
+      onboardingDraftSaver.cancel();
+      clearNewWorkspaceDraft(appClient.drafts);
       await goto(`/workspace/${pending.workspaceId}`);
     } catch (err) {
       onboardingCreationError =
@@ -964,6 +1098,21 @@
       await resumeOnboardingPendingSend();
       return;
     }
+
+    // Existing repositories cannot be created until BranchSelector resolves
+    // (or the user manually enters) a branch. Snapshot the effective branch
+    // before the prompt step unmounts so workspace.create never receives ''.
+    const isNewRepo = projectSelection.type === 'new';
+    const currentBranch = projectSelection.branch;
+    const effectiveBranch =
+      selectedPRBranch && currentBranch !== selectedPRBranch && !isNewRepo
+        ? selectedPRBranch
+        : currentBranch;
+    if (!isNewRepo && !effectiveBranch.trim()) {
+      toast.error(m.onboarding_page_branchRequired_toast());
+      return;
+    }
+
     if (hasBlockingAttachments(onboardingStagedItems)) {
       // The error banner's Retry also lands here — surface why nothing
       // happened instead of a silent no-op (pills must be retried/removed).
@@ -1079,13 +1228,6 @@
           return;
         }
       }
-
-      const isNewRepo = projectSelection.type === 'new';
-      const currentBranch = projectSelection.branch;
-      const effectiveBranch =
-        selectedPRBranch && currentBranch !== selectedPRBranch && !isNewRepo
-          ? selectedPRBranch
-          : currentBranch;
 
       // Await any in-flight repo-config probe (bounded, sub-second) so the
       // setup-script decision below sees the committed `.intent/config.json`
@@ -1310,6 +1452,15 @@
       setupAgentStatus = 'active';
       await new Promise((r) => setTimeout(r, 300));
       setupAgentStatus = 'done';
+
+      // The prompt was submitted — cancel any armed debounced save (its
+      // timer would fire drafts.set AFTER drafts.clear and resurrect the
+      // draft), then immediately clear the persisted daemon draft
+      // (drafts.clear under the sentinel keys, PROTOCOL §5.16) and stop
+      // saving so a late flush can't resurrect it either.
+      onboardingDraftCleared = true;
+      onboardingDraftSaver.cancel();
+      clearNewWorkspaceDraft(appClient.drafts);
 
       // Use the onboarding reset action as the cleanup signal; initializer
       // persistence/session cleanup is handled by the workspace-initializer saga.

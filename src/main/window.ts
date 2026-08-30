@@ -23,26 +23,17 @@ const logger = new Logger('Main');
 
 // ---- Shared Window Helpers ----
 
-type BackendBoundWindow = BrowserWindowType & { backendId?: string };
+// Backend stamping lives in the dependency-light window-backend.ts (so
+// hud-window.ts and other small modules can read stamps without this
+// module's graph); re-exported here for the existing import sites.
+import { HUD_ROUTE_PREFIX, registerHudWindow } from './hud-window';
+import {
+  getBackendIdForWebContents,
+  getBackendIdForWindow,
+  stampWindowWithBackend,
+} from './window-backend';
 
-/** Stamp a BrowserWindow with the backend used by its renderer. */
-export function stampWindowWithBackend(
-  window: BrowserWindowType,
-  backendId: string = LOCAL_CONNECTION_ID,
-): void {
-  (window as BackendBoundWindow).backendId = backendId;
-}
-
-/** Resolve a BrowserWindow's backend, defaulting legacy/unbound windows to local. */
-export function getBackendIdForWindow(window: BrowserWindowType): string {
-  return (window as BackendBoundWindow).backendId ?? LOCAL_CONNECTION_ID;
-}
-
-/** Resolve an IPC sender's backend, defaulting unbound windows to local. */
-export function getBackendIdForWebContents(webContents: Electron.WebContents): string {
-  const window = BrowserWindow.fromWebContents(webContents) as BackendBoundWindow | null;
-  return window ? getBackendIdForWindow(window) : LOCAL_CONNECTION_ID;
-}
+export { getBackendIdForWebContents, getBackendIdForWindow, stampWindowWithBackend };
 
 /** The focused window's backend; falls back to the main window, then local. */
 export function getFocusedWindowBackendId(): string {
@@ -219,8 +210,8 @@ function buildLoadUrl(route: string = DEFAULT_WINDOW_ROUTE): string {
 
 // ---- Window Session Persistence ----
 // Saves and restores window sessions so the app reopens with the same
-// workspaces/windows. Sessions are keyed by the active backend id (T2's
-// connections store), so each backend restores its own window layout on switch.
+// workspaces/windows. Sessions are keyed by backend id (T2's connections
+// store), so each backend restores its own window layout at boot.
 
 export interface WindowSession {
   route: string;
@@ -285,6 +276,88 @@ let lastKnownSessions: WindowSessionsMap = {};
 // on-disk bucket cannot be restored before the next aggregate save removes it.
 const closedBackendSessions = new Set<string>();
 
+// True once the app has entered a quit/update-install teardown. Window closes
+// during teardown are not deliberate per-backend closes: the close listener
+// must keep refreshing the in-memory snapshot but must NOT tombstone/prune a
+// backend whose windows are only closing because the whole app is exiting —
+// otherwise gracefulShutdown()'s mainWindow.close() wipes the bucket that
+// before-quit/installUpdate() just saved. One-way on the gracefulShutdown()
+// path (that path always exits); the auto-update service unmarks it when
+// quitAndInstall() fails and the process keeps running.
+let isQuitTeardownInProgress = false;
+
+/**
+ * Mark the start of an app-quit/update-install teardown so subsequent window
+ * closes are not treated as deliberate per-backend closes. Registered callers
+ * are index.ts (gracefulShutdown, which every quit path — before-quit,
+ * window-all-closed, SIGTERM/SIGINT — funnels through) and the auto-update
+ * service (before quitAndInstall(), which closes windows before before-quit
+ * fires on macOS) — a plain setter, so window.ts never imports those modules.
+ */
+export function markWindowSessionTeardown(): void {
+  isQuitTeardownInProgress = true;
+}
+
+/**
+ * Revert markWindowSessionTeardown() when a teardown aborts and the process
+ * keeps running — e.g. quitAndInstall() throws in installUpdate(). Without the
+ * revert, a later deliberate last-window close in the still-running session
+ * would skip tombstoning/pruning and wrongly restore the closed backend on the
+ * next launch. gracefulShutdown() never calls this: that path always exits.
+ */
+export function unmarkWindowSessionTeardown(): void {
+  isQuitTeardownInProgress = false;
+}
+
+/**
+ * Synchronously drop one backend's bucket from window-sessions.json.
+ * Runs inside the window `close` listener (captureWindowSessionsSnapshot), so
+ * it must be sync — the tombstone alone is process-local and a crash before
+ * the next aggregate save would leave the stale bucket to be restored by the
+ * boot-wide enumeration.
+ */
+function pruneSessionsBucketFromDisk(backendId: string): void {
+  try {
+    const map = readSessionsMap();
+    if (!(backendId in map)) return;
+    delete map[backendId];
+    fs.writeFileSync(getWindowSessionsPath(), JSON.stringify(map), 'utf-8');
+    logger.debug('Pruned closed backend session bucket from disk', { backendId });
+  } catch (err) {
+    logger.warn('Failed to prune closed backend session bucket:', err);
+  }
+}
+
+/**
+ * Write the sessions map while honoring tombstones on both sides of the async
+ * write. Tombstoned buckets are stripped before serialization, and because a
+ * window `close` listener can tombstone + sync-prune a bucket while the write
+ * is in flight (the completing write would silently resurrect the pruned
+ * bucket on disk), any bucket tombstoned mid-write is re-pruned after the
+ * write settles.
+ */
+async function writeSessionsMapRespectingTombstones(map: WindowSessionsMap): Promise<void> {
+  for (const backendId of closedBackendSessions) delete map[backendId];
+  await fsAsync.writeFile(getWindowSessionsPath(), JSON.stringify(map), 'utf-8');
+  for (const backendId of closedBackendSessions) {
+    if (backendId in map) pruneSessionsBucketFromDisk(backendId);
+  }
+}
+
+// Invoked when a non-local backend's last window is explicitly closed while
+// another backend's windows survive, so its pooled JSON-RPC client (socket,
+// reconnect timers, subscriptions) can be disposed. Registered by index.ts —
+// which wraps the quit guard around disconnectBackendClient() — so window.ts
+// never imports the backend IPC module graph.
+type LastWindowClosedForBackendHandler = (backendId: string) => void;
+let onLastWindowClosedForBackend: LastWindowClosedForBackendHandler | null = null;
+
+export function setOnLastWindowClosedForBackend(
+  handler: LastWindowClosedForBackendHandler | null,
+): void {
+  onLastWindowClosedForBackend = handler;
+}
+
 function buildSessionsFromOpenWindows(backendId: string): WindowSession[] {
   return BrowserWindow.getAllWindows()
     .filter((w: BrowserWindowType) => {
@@ -335,7 +408,10 @@ export function captureWindowSessionsSnapshot(this: BrowserWindowType | void): v
       if (sessions.length > 0) lastKnownSessions[backendId] = sessions;
     }
 
-    if (this && typeof this.isDestroyed === 'function') {
+    // During app-quit/update-install teardown, window closes are a side effect
+    // of the whole process exiting — refresh the snapshot above, but never
+    // tombstone/prune a backend the user did not deliberately close.
+    if (!isQuitTeardownInProgress && this && typeof this.isDestroyed === 'function') {
       const closingBackendId = getBackendIdForWindow(this);
       const isLastForBackend =
         liveWindows.filter((window) => getBackendIdForWindow(window) === closingBackendId)
@@ -346,6 +422,21 @@ export function captureWindowSessionsSnapshot(this: BrowserWindowType | void): v
       if (isLastForBackend && hasSurvivingBackend) {
         closedBackendSessions.add(closingBackendId);
         delete lastKnownSessions[closingBackendId];
+        // The tombstone is process-local: prune the on-disk bucket now so a
+        // crash/force-quit before the next aggregate save cannot resurrect the
+        // explicitly closed backend's windows at the next boot-wide restore.
+        pruneSessionsBucketFromDisk(closingBackendId);
+        // Explicit last-window close for this backend: dispose its pooled
+        // client so no socket or reconnect timer keeps dialing a daemon with
+        // no windows left ("Open" reconnects on demand). Local is exempt —
+        // the sidecar management must stay alive.
+        if (closingBackendId !== LOCAL_CONNECTION_ID) {
+          try {
+            onLastWindowClosedForBackend?.(closingBackendId);
+          } catch (err) {
+            logger.warn('Failed to dispose backend client on last window close:', err);
+          }
+        }
       }
     }
   } catch (err) {
@@ -362,10 +453,8 @@ export async function saveWindowSessions(backendId: string): Promise<void> {
       closedBackendSessions.delete(backendId);
       lastKnownSessions[backendId] = sessions;
     } else if (closedBackendSessions.has(backendId)) {
-      const map = readSessionsMap();
-      delete map[backendId];
       delete lastKnownSessions[backendId];
-      await fsAsync.writeFile(getWindowSessionsPath(), JSON.stringify(map), 'utf-8');
+      await writeSessionsMapRespectingTombstones(readSessionsMap());
       return;
     } else if (lastKnownSessions[backendId]?.length > 0) {
       // No live windows (e.g., non-macOS window-all-closed). Fall back to the
@@ -381,7 +470,7 @@ export async function saveWindowSessions(backendId: string): Promise<void> {
       // never clobbers another backend's saved sessions.
       const map = readSessionsMap();
       map[backendId] = sessions;
-      await fsAsync.writeFile(getWindowSessionsPath(), JSON.stringify(map), 'utf-8');
+      await writeSessionsMapRespectingTombstones(map);
       logger.debug('Saved window sessions', {
         backendId,
         count: sessions.length,
@@ -418,7 +507,7 @@ export async function saveAllWindowSessions(): Promise<void> {
       map[backendId] = sessions;
     }
     if (backendIds.size > 0) {
-      await fsAsync.writeFile(getWindowSessionsPath(), JSON.stringify(map), 'utf-8');
+      await writeSessionsMapRespectingTombstones(map);
     }
   } catch (err) {
     logger.warn('Failed to save all window sessions:', err);
@@ -446,34 +535,8 @@ export function clearWindowSessionsSnapshot(): void {
 export function _resetWindowSessionsCacheForTests(): void {
   clearWindowSessionsSnapshot();
   closedBackendSessions.clear();
-  backendSwitchWindowTeardownInProgress = false;
-}
-
-// True between captureAndCloseWindowsForBackendSwitch() destroying every
-// window and restoreWindowsForBackend() recreating the incoming backend's
-// layout. Destroying the last window mid-switch fires Electron's
-// `window-all-closed`, whose handler treats it as the user manually closing
-// everything — on macOS it deletes window-sessions.json (the file the switch
-// just wrote) and wipes the snapshot cache, so the restore half finds nothing;
-// on non-macOS it starts the quit flow. The handler consults this flag and
-// ignores the event while a switch teardown is in flight (same pattern as its
-// `isInstallingUpdate` guard).
-let backendSwitchWindowTeardownInProgress = false;
-
-export function isBackendSwitchWindowTeardownInProgress(): boolean {
-  return backendSwitchWindowTeardownInProgress;
-}
-
-/**
- * Failure-path clear of the backend-switch teardown guard. The switch
- * orchestration calls this from a finally so a throw between
- * `captureAndCloseWindowsForBackendSwitch` (flag set) and
- * `restoreWindowsForBackend` (flag cleared at its top) cannot leave
- * `window-all-closed` handling suppressed for the rest of the session.
- * Idempotent — on the success path the restore half has already cleared it.
- */
-export function clearBackendSwitchWindowTeardownGuard(): void {
-  backendSwitchWindowTeardownInProgress = false;
+  onLastWindowClosedForBackend = null;
+  isQuitTeardownInProgress = false;
 }
 
 export function isValidWindowSession(s: unknown): s is WindowSession {
@@ -526,10 +589,16 @@ export function createWindowForSession(
   const window = new BrowserWindow(
     buildWindowOptions({ bounds, title: resolveAppTitle(), iconPath }),
   );
-  stampWindowWithBackend(
-    window,
-    session.route.startsWith('/hud') ? LOCAL_CONNECTION_ID : backendId,
-  );
+  // A restored HUD session keeps its saved backend bucket — the HUD is bound
+  // to the backend it was opened on, not forced to local. Register it as THE
+  // HUD for that backend right away (stamp first — the registry keys off the
+  // stamp): its URL is still loading during startup restore, so the URL-scan
+  // fallback would miss it and a concurrent open-HUD request could create a
+  // duplicate.
+  stampWindowWithBackend(window, backendId);
+  if (session.route.startsWith(HUD_ROUTE_PREFIX)) {
+    registerHudWindow(window);
+  }
   forwardRendererConsoleToMainLog(window);
 
   if (setAsMain) {
@@ -580,56 +649,15 @@ export function createWindowForSession(
 }
 
 /**
- * Backend-switch window hook — capture + teardown half (consumed by T3's
- * switch orchestration).
- *
- * Persists the currently-open workspace/HUD windows under `fromBackendId` (so
- * switching back restores them), then tears them all down. Split from
- * `restoreWindowsForBackend` so the orchestrator can dispose the old client,
- * connect the new one, and flip the active id in between — the windows it later
- * restores then hit the NEW daemon.
- *
- * Windows are `destroy()`ed, not `close()`d, so the graceful close-snapshot /
- * debounced-save handlers can't race a stale layout back into the wrong
- * backend's bucket.
- */
-export async function captureAndCloseWindowsForBackendSwitch(fromBackendId: string): Promise<void> {
-  // Persist the outgoing backend's layout while its windows are still live.
-  await saveWindowSessions(fromBackendId);
-  // That capture belongs to fromBackendId; wipe the id-agnostic snapshot cache
-  // so a later save for the incoming backend can't resurrect it.
-  clearWindowSessionsSnapshot();
-
-  // Destroying the last window below fires `window-all-closed`; flag the
-  // teardown first so that handler ignores it (it would otherwise delete the
-  // sessions file we just wrote — on macOS — or start the quit flow).
-  // restoreWindowsForBackend() clears the flag before recreating windows.
-  backendSwitchWindowTeardownInProgress = true;
-
-  // Tear down every workspace/HUD window.
-  for (const w of BrowserWindow.getAllWindows()) {
-    if (!w.isDestroyed()) w.destroy();
-  }
-  setMainWindow(null);
-}
-
-/**
- * Backend-switch window hook — restore half (consumed by T3's switch
- * orchestration).
- *
- * Restores `toBackendId`'s saved window layout, or opens one fresh default
- * window when that backend has no saved sessions. Call AFTER the new client is
- * connected and the active id has been flipped, so restored windows load
- * against the incoming daemon.
+ * Restore `toBackendId`'s saved window layout, or open one fresh default
+ * window when that backend has no saved sessions. Call AFTER the backend's
+ * client is connected, so restored windows load against a live daemon.
+ * Consumed by the boot-wide restore and Open-with-saved-sessions paths.
  */
 export function restoreWindowsForBackend(toBackendId: string): void {
-  // The switch's window teardown is over: windows are about to exist again, so
-  // window-all-closed handling must return to normal (a later genuine
-  // last-window close should clear sessions / quit as usual).
-  backendSwitchWindowTeardownInProgress = false;
   const savedSessions = loadWindowSessions(toBackendId);
   if (savedSessions && savedSessions.length > 0) {
-    logger.info('Restoring window sessions for backend switch', {
+    logger.info('Restoring window sessions for backend', {
       backendId: toBackendId,
       count: savedSessions.length,
     });
@@ -642,6 +670,67 @@ export function restoreWindowsForBackend(toBackendId: string): void {
     });
     createWindow(toBackendId);
   }
+}
+
+/**
+ * Enumerate the backend ids that have a non-empty saved session bucket on
+ * disk, excluding backends whose final window was explicitly closed this
+ * session (tombstoned — see `closedBackendSessions`).
+ */
+export function listSavedSessionBackendIds(): string[] {
+  try {
+    return Object.entries(readSessionsMap())
+      .filter(([id, sessions]) => sessions.length > 0 && !closedBackendSessions.has(id))
+      .map(([id]) => id);
+  } catch (err) {
+    logger.warn('Failed to enumerate saved window session backends:', err);
+    return [];
+  }
+}
+
+/**
+ * Boot/dock-activate restore across EVERY backend that has a saved session
+ * bucket, not just the active one. The active backend restores first so its
+ * first window becomes the main window; every bucket gets a pooled client
+ * connected via `connectBackend` (injected — window.ts must not import
+ * backend.ipc; idempotent for already-connected backends) BEFORE its windows
+ * open, so restored windows resolve their own
+ * daemon. Fail-soft per bucket: a backend whose client config cannot even be
+ * built (forgotten remote, missing token) is skipped with a log, while an
+ * unreachable-but-buildable backend still restores — client construction does
+ * not await reachability, and the per-window stopped overlay shows until its
+ * client connects. Returns true when at least one window was restored.
+ */
+export async function restoreAllBackendWindowSessions(
+  activeBackendId: string,
+  connectBackend: (backendId: string) => Promise<unknown>,
+): Promise<boolean> {
+  const backendIds = listSavedSessionBackendIds();
+  // Stable sort: active bucket first, others keep their on-disk order.
+  backendIds.sort((a, b) => Number(b === activeBackendId) - Number(a === activeBackendId));
+  let restoredAny = false;
+  for (const backendId of backendIds) {
+    // Connect every bucket unconditionally — connectBackend is idempotent
+    // (returns the existing pooled client when one is already connected), so
+    // this holds no assumption about which client boot already created.
+    try {
+      await connectBackend(backendId);
+    } catch (err) {
+      logger.warn('Skipping window restore for backend without a connectable client', {
+        backendId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      continue;
+    }
+    const sessions = loadWindowSessions(backendId);
+    if (!sessions || sessions.length === 0) continue;
+    logger.info('Restoring window sessions', { backendId, count: sessions.length });
+    for (let i = 0; i < sessions.length; i++) {
+      createWindowForSession(sessions[i], !restoredAny && i === 0, backendId);
+    }
+    restoredAny = true;
+  }
+  return restoredAny;
 }
 
 /** Focus a live window for a backend, or add that backend's saved/fresh windows. */

@@ -59,12 +59,12 @@ describe('panel canvas width', () => {
     });
   });
 
-  it('preserves explicit widths in viewport and content sizing', () => {
+  it('normalizes explicit viewport pixels while preserving explicit content pixels', () => {
     expect(getPanelCanvasWidths(1200, 2, 'viewport', 1080)).toEqual({
-      defaultWidth: 1080,
+      defaultWidth: 1200,
       resetWidth: 1200,
       minWidth: 280,
-      panelWidths: [536, 536],
+      panelWidths: [596, 596],
       overflows: false,
     });
     expect(getPanelCanvasWidths(1200, 2, 'content', 1080)).toEqual({
@@ -76,11 +76,31 @@ describe('panel canvas width', () => {
     });
   });
 
-  it('recomputes automatic widths while preserving explicit width provenance', () => {
+  it('fits viewport widths regardless of restored width provenance', () => {
     expect(getPanelCanvasWidths(1200, [720], 'viewport', 500, null).defaultWidth).toBe(1200);
-    expect(getPanelCanvasWidths(1200, [720], 'viewport', 500, 'explicit').defaultWidth).toBe(500);
-    expect(getPanelCanvasWidths(480, [720], 'viewport', 500, 'explicit').defaultWidth).toBe(500);
+    expect(getPanelCanvasWidths(1200, [720], 'viewport', 500, 'explicit').defaultWidth).toBe(1200);
+    expect(getPanelCanvasWidths(480, [720], 'viewport', 500, 'explicit').defaultWidth).toBe(480);
   });
+
+  it.each([400, 2400])(
+    'preserves restored root proportions from a %spx canvas without preserving its pixels',
+    (persistedWidth) => {
+      const result = getPanelCanvasWidths(
+        1000,
+        [200, 300, 500],
+        'viewport',
+        persistedWidth,
+        'explicit',
+      );
+      expect(result.defaultWidth).toBe(1000);
+      expect(result.panelWidths).toEqual([
+        expect.closeTo(196.8, 8),
+        expect.closeTo(295.2, 8),
+        expect.closeTo(492, 8),
+      ]);
+      expect(result.panelWidths.reduce((sum, width) => sum + width, 0) + 16).toBeCloseTo(1000, 8);
+    },
+  );
 
   it('bypasses intrinsic tiers in automatic viewport mode', () => {
     expect(getPanelCanvasWidths(3440, [720, 700], 'viewport', 1428, 'intrinsic')).toMatchObject({

@@ -1,3 +1,4 @@
+import { m } from '$shared/paraglide/messages.js';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import Tab from './Tab.svelte';
@@ -11,7 +12,7 @@ describe('product panel Tab', () => {
     const ondragstart = vi.fn();
     render(Tab, { props: { id: 'agent-1', active: true, onclick, ondragstart } });
 
-    const tab = screen.getByRole('tab', { name: 'Space tab: agent-1' });
+    const tab = screen.getByRole('tab', { name: m.ui_tab_spaceTab_ariaLabel({ id: 'agent-1' }) });
     expect(tab.getAttribute('aria-selected')).toBe('true');
     expect(tab.getAttribute('tabindex')).toBe('0');
     expect(tab.getAttribute('draggable')).toBe('true');
@@ -30,7 +31,7 @@ describe('product panel Tab', () => {
     const onclose = vi.fn();
     render(Tab, { props: { id: 'note-1', onclick, onclose } });
 
-    const tab = screen.getByRole('tab', { name: 'Space tab: note-1' });
+    const tab = screen.getByRole('tab', { name: m.ui_tab_spaceTab_ariaLabel({ id: 'note-1' }) });
     await fireEvent(tab, new MouseEvent('auxclick', { bubbles: true, button: 1 }));
     await fireEvent.click(screen.getByRole('button', { name: 'Close tab' }));
 

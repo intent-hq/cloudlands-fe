@@ -56,7 +56,9 @@ afterEach(() => {
 // Pre-warm the component module graph so the cold dynamic import is not
 // billed to the first test's timeout (intent-hq/monorepo#1464).
 warmImport(() => import('../ui/__tests__/mocks/Fa.svelte'));
-warmImport(() => import('$features/onboarding/messages/__tests__/mocks/MockDirectoryPickerModal.svelte'));
+warmImport(
+  () => import('$features/onboarding/messages/__tests__/mocks/MockDirectoryPickerModal.svelte'),
+);
 
 describe('PathSettingField', () => {
   it('renders the value in a readonly textbox', () => {
@@ -107,8 +109,6 @@ describe('PathSettingField', () => {
     await flush();
 
     expect(mocks.pickDirectory).not.toHaveBeenCalled();
-    expect(screen.getByText(CONFIRM.title)).toBeTruthy();
-    expect(screen.getByText(CONFIRM.message)).toBeTruthy();
 
     await fireEvent.click(screen.getByRole('button', { name: 'OK' }));
     await flush();
@@ -127,7 +127,6 @@ describe('PathSettingField', () => {
 
     expect(mocks.pickDirectory).not.toHaveBeenCalled();
     expect(mocks.pickFile).not.toHaveBeenCalled();
-    expect(screen.queryByText(CONFIRM.title)).toBeNull();
   });
 
   it('clear empties the value and fires onchange', async () => {

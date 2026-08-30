@@ -343,9 +343,6 @@ describe('FileTabType Redux integration', () => {
 
     expect(screen.getByRole('menuitemcheckbox', { name: 'Wrap lines' })).toBeTruthy();
     expect(screen.getByRole('menuitemcheckbox', { name: 'Diff indicators' })).toBeTruthy();
-    expect(
-      screen.queryByRole('button', { name: m.layout_diffHeader_wrappingOn_tooltip() }),
-    ).toBeNull();
 
     await fireEvent.click(screen.getByRole('menuitemcheckbox', { name: 'Wrap lines' }));
     expect(dispatchMock).toHaveBeenCalledWith({

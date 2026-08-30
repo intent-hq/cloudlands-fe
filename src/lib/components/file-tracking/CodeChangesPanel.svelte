@@ -542,64 +542,6 @@
         {/if}
       </div>
 
-      <!-- {#if commitHistory.length > 0}
-        <ListSection
-          class="mb-3"
-          title={m.fileTracking_codeChanges_commitsCount_title({ count: commitHistory.length })}
-          icon={faHistory}
-          collapsible
-          collapsed={commitsCollapsed}
-          onToggleCollapse={() => (commitsCollapsed = !commitsCollapsed)}
-        >
-          <ListContainer spacing="compact">
-            {#each commitHistory as commit (commit.hash)}
-              <button
-                class="w-full flex items-center gap-2 px-2 py-1 hover:bg-muted/50 rounded text-left"
-                onclick={async () => {
-                  logger.info('Commit clicked, opening in main panel', { hash: commit.hash });
-
-                  // Get the changes for this commit
-                  const commitChanges = $ftChanges$.filter(
-                    (change) => change.commitHash === commit.hash
-                  );
-
-                  // Set the main panel view to show this commit
-                  appStore.dispatch(ftSetMainPanelView({
-                    type: 'commit',
-                    commit,
-                    change: commitChanges[0], // Pass first change for context
-                  }));
-                }}
-              >
-                <div class="shrink-0">
-                  {#if commit.stage === 'merged'}
-                    <Fa icon={faCodeMerge} size="xs" class="text-purple-600" />
-                  {:else if commit.stage === 'pr'}
-                    <Fa icon={faCodePullRequest} size="xs" class="text-blue-600" />
-                  {:else if commit.stage === 'pushed'}
-                    <Fa icon={faCloudArrowUp} size="xs" class="text-green-600" />
-                  {:else}
-                    <Fa icon={faCodeCommit} size="xs" class="text-ghost" />
-                  {/if}
-                </div>
-
-                <div class="flex-1 min-w-0">
-                  <div class="text-xs truncate">
-                    {commit.message ||
-                      commit.hash?.substring(0, 7) ||
-                      m.fileTracking_codeChanges_unknown_fallback()}
-                  </div>
-                </div>
-
-                <div class="shrink-0 text-xs text-subtle">
-                  {commit.filesChanged || commit.files?.length || 0}
-                </div>
-              </button>
-            {/each}
-          </ListContainer>
-        </ListSection>
-      {/if} -->
-
       <!-- {#if workspacePRs.length > 0}
         <ListSection
           class="mb-3"

@@ -195,6 +195,7 @@ describe('Specialist Configuration', () => {
         'implementor',
         'verifier',
         'pr-reviewer',
+        'vulnerability-scanner',
         'ui-designer',
         'developer',
         'chief-of-staff',
@@ -297,6 +298,21 @@ describe('Specialist Configuration', () => {
       expect(resolved?.codingAgent).toBe('codex');
       // No model synthesis in the main process
       expect(resolved?.model).toBe('');
+    });
+
+    it('resolves Vulnerability Scanner from the populated bundled-file cache without pins', () => {
+      const resolved = getEffectiveSpecialist('vulnerability-scanner', 'codex');
+
+      expect(resolved).toMatchObject({
+        name: 'Vulnerability Scanner',
+        description: 'Finds real, exploitable security vulnerabilities in code',
+        codingAgent: 'codex',
+        model: '',
+        isCustomized: false,
+      });
+      expect(resolved?.behaviorPrompt).toContain(
+        'MUST use a concise standard security category for `vul_type`.',
+      );
     });
 
     it('uses an explicit file specialist codingAgent when present', async () => {

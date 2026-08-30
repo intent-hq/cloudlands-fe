@@ -13,6 +13,8 @@
  */
 
 export interface FollowBottomOptions {
+  /** Detach all listeners and observers while the owning surface is inactive. */
+  enabled?: boolean;
   /** Whether to follow (auto-scroll) - reactive */
   follow: boolean;
   /** Threshold in pixels from bottom to consider "at bottom" (default: 100) */
@@ -59,6 +61,7 @@ const FOLLOW_BOTTOM_STABLE_FRAMES = 2;
  * maximum until the observed layout is stable. Enabling follow also snaps immediately.
  */
 export function followBottom(container: HTMLElement, options: FollowBottomOptions) {
+  let enabled = options.enabled ?? true;
   let isFollowing = options.follow;
   let onFollowChange = options.onFollowChange;
   let onScrollStateChange = options.onScrollStateChange;
@@ -71,6 +74,8 @@ export function followBottom(container: HTMLElement, options: FollowBottomOption
   let mutationObserver: MutationObserver | null = null;
   let resizeObserver: ResizeObserver | null = null;
   let settleFrame: number | null = null;
+  let reactivationFrame: number | null = null;
+  let layoutReportFrame: number | null = null;
   let stableFrames = 0;
   let previousMaximum: number | null = null;
   let activeMutationLocks = 0;
@@ -161,6 +166,10 @@ export function followBottom(container: HTMLElement, options: FollowBottomOption
   }
 
   function setFollowing(value: boolean, notify = true) {
+    if (!enabled) {
+      isFollowing = value;
+      return;
+    }
     const changed = isFollowing !== value;
     if (changed) {
       isFollowing = value;
@@ -173,7 +182,7 @@ export function followBottom(container: HTMLElement, options: FollowBottomOption
 
   function runSettleFrame() {
     settleFrame = null;
-    if (destroyed || !isFollowing) return;
+    if (destroyed || !enabled || !isFollowing) return;
     const maximum = setExactBottom();
     reportState();
     if (maximum === previousMaximum) stableFrames += 1;
@@ -187,12 +196,12 @@ export function followBottom(container: HTMLElement, options: FollowBottomOption
   }
 
   function scheduleBottomSettle() {
-    if (destroyed || !isFollowing || settleFrame !== null) return;
+    if (destroyed || !enabled || !isFollowing || settleFrame !== null) return;
     settleFrame = requestAnimationFrame(runSettleFrame);
   }
 
   function requestBottomSettle() {
-    if (destroyed || !isFollowing) return;
+    if (destroyed || !enabled || !isFollowing) return;
     const maximum = setExactBottom();
     reportState();
     stableFrames = 0;
@@ -201,13 +210,24 @@ export function followBottom(container: HTMLElement, options: FollowBottomOption
   }
 
   function handleLayoutChange() {
+    // Observer callbacks can fire on a dirty tree — e.g. when a retained
+    // surface is revealed — where a synchronous scrollHeight/clientHeight
+    // read forces layout. Defer all layout reads to a single coalesced
+    // animation frame (still pre-paint); the native bottom anchor keeps a
+    // followed viewport pinned until the settle frame snaps exactly.
+    if (destroyed || !enabled) return;
     if (isFollowing) {
-      const maximum = setExactBottom();
       stableFrames = 0;
-      previousMaximum = maximum;
+      previousMaximum = null;
       scheduleBottomSettle();
+      return;
     }
-    reportState();
+    if (layoutReportFrame !== null) return;
+    layoutReportFrame = requestAnimationFrame(() => {
+      layoutReportFrame = null;
+      if (destroyed || !enabled) return;
+      reportState();
+    });
   }
 
   const follower: BottomFollower = {
@@ -219,7 +239,7 @@ export function followBottom(container: HTMLElement, options: FollowBottomOption
     isNativeScrollAnchoringActive: () =>
       !isFollowing && getComputedStyle(container).overflowAnchor !== 'none',
     beforeMutation(element) {
-      if (destroyed || !isFollowing) return inertFollowBottomMutation;
+      if (destroyed || !enabled || !isFollowing) return inertFollowBottomMutation;
       activeMutationLocks += 1;
       const elementLocks = mutationElements.get(element) ?? 0;
       mutationElements.set(element, elementLocks + 1);
@@ -247,14 +267,13 @@ export function followBottom(container: HTMLElement, options: FollowBottomOption
       };
     },
   };
-  bottomFollowers.set(container, follower);
-
   // Handle wheel events - user is scrolling with mouse/trackpad
   function handleWheel(e: WheelEvent) {
     if (e.deltaY < 0) {
       setFollowing(false);
     } else if (e.deltaY > 0) {
       requestAnimationFrame(() => {
+        if (!enabled) return;
         if (checkIfAtBottom()) follower.followAndScroll();
         else reportState();
       });
@@ -280,6 +299,7 @@ export function followBottom(container: HTMLElement, options: FollowBottomOption
   function handleTouchEnd() {
     // Check if at bottom after touch scroll ends
     requestAnimationFrame(() => {
+      if (!enabled) return;
       if (checkIfAtBottom()) follower.followAndScroll();
       else reportState();
     });
@@ -292,6 +312,7 @@ export function followBottom(container: HTMLElement, options: FollowBottomOption
     } else if (['ArrowDown', 'PageDown', 'End'].includes(e.key)) {
       // Check if at bottom after keyboard scroll
       requestAnimationFrame(() => {
+        if (!enabled) return;
         if (checkIfAtBottom()) follower.followAndScroll();
         else reportState();
       });
@@ -401,34 +422,87 @@ export function followBottom(container: HTMLElement, options: FollowBottomOption
     resizeObserver = null;
   }
 
-  // Attach event listeners
-  container.addEventListener('scroll', handleScroll, { passive: true });
-  container.addEventListener('wheel', handleWheel, { passive: true });
-  container.addEventListener('touchstart', handleTouchStart, { passive: true });
-  container.addEventListener('touchmove', handleTouchMove, { passive: true });
-  container.addEventListener('touchend', handleTouchEnd, { passive: true });
-  container.addEventListener('keydown', handleKeyDown);
-  container.addEventListener('pointerdown', handlePointerDown, { passive: true });
-  window.addEventListener('pointerup', handlePointerUp, { passive: true });
-  window.addEventListener('pointercancel', handlePointerUp, { passive: true });
-
-  // Initial setup
-  setupNativeBottomAnchor();
-  setupObservers();
-  if (isFollowing) {
-    setExactBottom();
+  function attachLifecycle(deferSnap = false) {
+    if (!enabled || destroyed) return;
+    bottomFollowers.set(container, follower);
+    container.addEventListener('scroll', handleScroll, { passive: true });
+    container.addEventListener('wheel', handleWheel, { passive: true });
+    container.addEventListener('touchstart', handleTouchStart, { passive: true });
+    container.addEventListener('touchmove', handleTouchMove, { passive: true });
+    container.addEventListener('touchend', handleTouchEnd, { passive: true });
+    container.addEventListener('keydown', handleKeyDown);
+    container.addEventListener('pointerdown', handlePointerDown, { passive: true });
+    window.addEventListener('pointerup', handlePointerUp, { passive: true });
+    window.addEventListener('pointercancel', handlePointerUp, { passive: true });
+    setupNativeBottomAnchor();
+    setupObservers();
+    if (deferSnap) {
+      // Re-enable of a retained surface: its DOM and scroll position were
+      // preserved while detached, and the surface was just revealed, so a
+      // synchronous scrollHeight/clientHeight read here forces layout on a
+      // dirty tree. Defer the snap/report to the frame (still pre-paint).
+      reactivationFrame = requestAnimationFrame(() => {
+        reactivationFrame = null;
+        if (destroyed || !enabled) return;
+        if (isFollowing) requestBottomSettle();
+        else reportState();
+      });
+      return;
+    }
+    if (isFollowing) setExactBottom();
+    reportState();
   }
-  reportState();
+
+  function detachLifecycle() {
+    activeMutationLocks = 0;
+    mutationElements.clear();
+    pointerScrolling = false;
+    cancelSettle();
+    if (reactivationFrame !== null) cancelAnimationFrame(reactivationFrame);
+    reactivationFrame = null;
+    if (layoutReportFrame !== null) cancelAnimationFrame(layoutReportFrame);
+    layoutReportFrame = null;
+    if (bottomFollowers.get(container) === follower) bottomFollowers.delete(container);
+    teardownObservers();
+    teardownNativeBottomAnchor();
+    container.removeEventListener('scroll', handleScroll);
+    container.removeEventListener('wheel', handleWheel);
+    container.removeEventListener('touchstart', handleTouchStart);
+    container.removeEventListener('touchmove', handleTouchMove);
+    container.removeEventListener('touchend', handleTouchEnd);
+    container.removeEventListener('keydown', handleKeyDown);
+    container.removeEventListener('pointerdown', handlePointerDown);
+    window.removeEventListener('pointerup', handlePointerUp);
+    window.removeEventListener('pointercancel', handlePointerUp);
+  }
+
+  attachLifecycle();
 
   return {
     update(newOptions: FollowBottomOptions) {
       onFollowChange = newOptions.onFollowChange;
       onScrollStateChange = newOptions.onScrollStateChange;
       threshold = newOptions.threshold ?? 100;
+      const nextEnabled = newOptions.enabled ?? true;
+
+      if (enabled !== nextEnabled) {
+        if (!nextEnabled) detachLifecycle();
+        enabled = nextEnabled;
+        if (enabled) {
+          // Sync the consumer's follow policy first (no onFollowChange echo),
+          // then attach with the bottom snap/report deferred — the reveal of
+          // a retained surface must not force layout synchronously.
+          isFollowing = newOptions.follow;
+          attachLifecycle(true);
+          return;
+        }
+      }
 
       // Consumer-driven changes do not echo through onFollowChange. That
       // callback is reserved for wheel, touch, keyboard, and scrollbar input.
-      if (newOptions.follow && !isFollowing) {
+      if (!enabled) {
+        isFollowing = newOptions.follow;
+      } else if (newOptions.follow && !isFollowing) {
         setFollowing(true, false);
         requestBottomSettle();
       } else if (!newOptions.follow && isFollowing) setFollowing(false, false);
@@ -437,21 +511,7 @@ export function followBottom(container: HTMLElement, options: FollowBottomOption
 
     destroy() {
       destroyed = true;
-      activeMutationLocks = 0;
-      mutationElements.clear();
-      cancelSettle();
-      if (bottomFollowers.get(container) === follower) bottomFollowers.delete(container);
-      teardownObservers();
-      teardownNativeBottomAnchor();
-      container.removeEventListener('scroll', handleScroll);
-      container.removeEventListener('wheel', handleWheel);
-      container.removeEventListener('touchstart', handleTouchStart);
-      container.removeEventListener('touchmove', handleTouchMove);
-      container.removeEventListener('touchend', handleTouchEnd);
-      container.removeEventListener('keydown', handleKeyDown);
-      container.removeEventListener('pointerdown', handlePointerDown);
-      window.removeEventListener('pointerup', handlePointerUp);
-      window.removeEventListener('pointercancel', handlePointerUp);
+      detachLifecycle();
     },
   };
 }

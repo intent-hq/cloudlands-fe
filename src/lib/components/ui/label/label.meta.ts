@@ -13,6 +13,7 @@ export const labelMetadata = parseUiComponentMetadata({
     'src/lib/component-catalog/renderers/ContentFieldCatalogPreview.svelte',
     'src/lib/components/debug/DebugPanel.svelte',
     'src/lib/components/layout/ConnectBackendModal.svelte',
+    'src/lib/components/settings/DeviceRow.svelte',
     'src/lib/components/ui/settings-field-row/settings-field-row.svelte',
     'src/lib/components/workspace/initializer/AddRemoteSetupModal.svelte',
   ],

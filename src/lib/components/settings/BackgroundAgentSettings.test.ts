@@ -26,9 +26,8 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock('$store/renderer/store', async () => {
-  const { createAppStoreMockModule } = await import(
-    '$store/renderer/utils/test-helpers/store-mock'
-  );
+  const { createAppStoreMockModule } =
+    await import('$store/renderer/utils/test-helpers/store-mock');
   return createAppStoreMockModule({
     state: () => ({}),
     dispatch: (action: { type: string; payload: unknown[] }) => {
@@ -55,9 +54,8 @@ vi.mock('$store/renderer/slices/provider-catalog/provider-catalog-selectors', ()
 }));
 
 vi.mock('$lib/components/chat/input/ModelPicker.svelte', async () => ({
-  default: (
-    await import('../workspace/initializer/__tests__/mocks/MockModelPicker.svelte')
-  ).default,
+  default: (await import('../workspace/initializer/__tests__/mocks/MockModelPicker.svelte'))
+    .default,
 }));
 
 import BackgroundAgentSettings from './BackgroundAgentSettings.svelte';
@@ -71,12 +69,6 @@ describe('BackgroundAgentSettings (quick-action settings pane)', () => {
     mocks.dispatched.length = 0;
   });
 
-  it('renders the multi-provider ModelPicker for the default AND all three override rows', () => {
-    render(BackgroundAgentSettings);
-    // 1 default picker + commit/pr/fast overrides — same catalog component everywhere.
-    expect(screen.getAllByTestId('mock-model-picker')).toHaveLength(4);
-  });
-
   it('shows the stored override model in its row picker', () => {
     mocks.typeOverrides.value = {
       commit: 'codex:gpt-5.3-codex',
@@ -85,9 +77,7 @@ describe('BackgroundAgentSettings (quick-action settings pane)', () => {
       fast: '',
     };
     render(BackgroundAgentSettings);
-    const values = screen
-      .getAllByTestId('picker-selected')
-      .map((el) => el.textContent);
+    const values = screen.getAllByTestId('picker-selected').map((el) => el.textContent);
     expect(values).toEqual(['', 'codex:gpt-5.3-codex', '', '']);
   });
 

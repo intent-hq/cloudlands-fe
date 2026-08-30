@@ -57,6 +57,7 @@ import {
   getPanelOrder,
   appendHorizontalPanelToLayout,
   insertFixedColumnInLayout,
+  projectPaneMoveInLayout,
   removePanelPreservingHorizontalWidths,
   commitRootHorizontalPanelWidths,
   resizePanelTreeRightEdge,
@@ -1275,55 +1276,30 @@ function moveTabIntoFixedColumn(
   newPanelId: string,
   timestamp: number,
 ): WorkspacePanelLayoutState | null {
-  const panelIds = getFixedColumnPanelIds(workspace);
-  const fromPanel = workspace.panels[fromPanelId];
-  if (
-    !panelIds ||
-    panelIds.length >= 4 ||
-    !panelIds.includes(targetPanelId) ||
-    !fromPanel ||
-    workspace.panels[newPanelId]
-  ) {
-    return null;
-  }
-  const tabIndex = fromPanel.tabs.findIndex((tab) => tab.id === tabId);
-  if (tabIndex < 0) return null;
-  const tab = fromPanel.tabs[tabIndex];
-  const remainingTabs = fromPanel.tabs.filter((_, index) => index !== tabIndex);
-  const activeTabId =
-    fromPanel.activeTabId === tabId
-      ? (remainingTabs[Math.min(tabIndex, remainingTabs.length - 1)]?.id ?? null)
-      : fromPanel.activeTabId;
-  const saved = saveToHistory(workspace, timestamp);
-  let moved = insertFixedColumn(
-    saved,
-    targetPanelId,
-    { id: newPanelId, tabs: [tab], activeTabId: tab.id },
-    position,
+  const projection = projectPaneMoveInLayout(
+    workspace,
+    tabId,
+    fromPanelId,
+    { kind: 'panel', targetPanelId, position },
+    newPanelId,
   );
-  if (!moved) return null;
-  moved = {
-    ...moved,
-    panels: {
-      ...moved.panels,
-      [fromPanelId]: {
-        ...fromPanel,
-        tabs: remainingTabs,
-        activeTabId,
-        attentionTabIds: fromPanel.attentionTabIds?.filter((id) => id !== tab.id),
-        pristine: remainingTabs.length === 0 ? true : fromPanel.pristine,
-      },
-    },
+  if (!projection?.changed) return null;
+  const saved = saveToHistory(workspace, timestamp);
+  const columnCount = countHorizontalPanelColumns(projection.root);
+  return {
+    ...saved,
+    root: projection.root,
+    panels: projection.panels,
+    focusedPanelId: projection.destinationPanelId,
+    columnCount: isPanelColumnCount(columnCount) ? columnCount : saved.columnCount,
+    columnCountInitialized: isPanelColumnCount(columnCount) ? true : saved.columnCountInitialized,
+    canvasWidth: projection.canvasWidth ?? null,
+    canvasWidthSource:
+      workspace.canvasWidthSource === 'intrinsic' &&
+      projection.canvasWidth !== workspace.canvasWidth
+        ? null
+        : workspace.canvasWidthSource,
   };
-  if (
-    remainingTabs.length === 0 &&
-    Object.entries(moved.panels).some(
-      ([panelId, panel]) => panelId !== fromPanelId && panel.tabs.length === 0,
-    )
-  ) {
-    moved = closePanelHelper(moved, fromPanelId);
-  }
-  return moved;
 }
 
 function stripLegacyPanelPin(panel: PanelState): PanelState {
@@ -2729,6 +2705,7 @@ panelLayoutReducer.with(reorderTabs, (state, { payload: [wsId, panelId, fromInde
 // --- Move Tab To Panel ---
 panelLayoutReducer.with(moveTabToPanel, (state, { payload }) => {
   const { wsId, tabId, fromPanelId, toPanelId, insertIndex, timestamp } = payload;
+  if (fromPanelId === toPanelId) return state;
   let ws = getWorkspaceState(state, wsId);
   const fromPanel = ws.panels[fromPanelId];
   const toPanel = ws.panels[toPanelId];
@@ -2769,13 +2746,7 @@ panelLayoutReducer.with(moveTabToPanel, (state, { payload }) => {
     focusedPanelId: toPanelId,
   };
 
-  // Collapse the emptied source only when another empty column remains.
-  if (
-    newFromTabs.length === 0 &&
-    Object.entries(ws.panels).some(
-      ([panelId, panel]) => panelId !== fromPanelId && panel.tabs.length === 0,
-    )
-  ) {
+  if (newFromTabs.length === 0) {
     ws = closePanelHelper(ws, fromPanelId);
   }
   return setWorkspaceState(state, wsId, ws);

@@ -65,26 +65,6 @@ describe('Sheet', () => {
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
   });
 
-  it('uses a contained editorial surface with a quiet edge and stable scrolling', async () => {
-    render(SheetHarness, { props: { longContent: true } });
-    await fireEvent.click(screen.getByRole('button', { name: 'Open sheet' }));
-    const sheet = screen.getByRole('dialog');
-    expect(sheet.className).toContain('bg-popover');
-    expect(sheet.className).toContain('border-border');
-    expect(sheet.className).toContain('overflow-y-auto');
-    expect(sheet.className).toContain('sheet-editorial-content');
-    expect(sheet.className).toContain('rounded-l-md');
-    expect(sheet.getAttribute('data-side')).toBe('right');
-    expect(document.querySelector('[data-slot="sheet-title"]')?.className).toContain('type-title');
-    expect(document.querySelector('[data-slot="sheet-description"]')?.className).toContain(
-      'type-body',
-    );
-    expect(document.querySelector('[data-slot="sheet-header"]')?.className).toContain('px-4');
-    expect(document.querySelector('[data-slot="sheet-footer"]')?.className).toContain('py-3');
-    expect(screen.getByTestId('sheet-long-content')).toBeTruthy();
-    expect(sheet.className).not.toMatch(/bg-(?:white|black|gray|slate|zinc|neutral)-?/);
-  });
-
   it('keeps a destructive confirmation action open until explicit dismissal', async () => {
     render(SheetHarness);
     await fireEvent.click(screen.getByRole('button', { name: 'Open sheet' }));

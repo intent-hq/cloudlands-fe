@@ -129,7 +129,7 @@ describe('Spaces panel options menu', () => {
 
   it('toggles archived visibility while search is hidden and keeps the menu open', async () => {
     renderPanel();
-    expect(screen.queryByPlaceholderText('Search spaces...')).toBeNull();
+    expect(screen.queryByPlaceholderText(m.layout_activeCard_search_placeholder())).toBeNull();
     await openOptionsWithPointer();
 
     const checkbox = screen.getByRole('menuitemcheckbox', { name: 'Show Archived' });

@@ -129,7 +129,7 @@ import { exportHandlerDebugInfo, setupIPCInterceptor } from './ipc-handler-wrapp
 import { initializeWarningSuppression } from './utils/suppress-warnings';
 import { runWithHardExitTimeout } from './utils/hard-exit-timeout';
 import { handleUncaughtException, handleUnhandledRejection } from './utils/process-error-handlers';
-import { setupWebviewSecurity } from './webview-security';
+import { isWebviewPopupWindow, setupWebviewSecurity } from './webview-security';
 import { attachAppCommandHistoryNavigation } from './app-command-navigation';
 import { attachSwipeHistoryNavigation } from './swipe-navigation';
 import { setupHardwareConsoleMain } from '../features/hardware-console/main/hardware-console.ipc';
@@ -313,15 +313,17 @@ import { setupReleaseNotesIPC } from '../features/release-notes/main/release-not
 import { isInstallingUpdate } from '../features/auto-update/main/auto-update.service';
 import {
   registerBackendHandlers,
-  disposeBackendClient,
-  getBackendClient,
+  connectBackendClient,
+  disconnectBackendClient,
+  disposeAllBackendClients,
+  getLocalBackendClient,
   isSameHostBackendActive,
-  reconcileActiveConnectionOnBoot,
 } from '../features/backend/main/backend.ipc';
 import { registerWorkspaceTransferHandlers } from '../features/backend/main/workspace-transfer.ipc';
 import { registerWorkspaceImportHandlers } from '../features/backend/main/workspace-import.ipc';
 import { getConnectionMode } from '../features/backend/main/connection-mode';
-import { getActiveId } from '../features/backend/main/connections-store';
+import { getActiveId, list as listConnections } from '../features/backend/main/connections-store';
+import { LOCAL_CONNECTION_ID } from '../shared/types/connections';
 import { startIntentdSidecar, stopIntentdSidecar } from '../features/backend/main/intentd-sidecar';
 import { startMemoryMonitor, stopMemoryMonitor } from './memory-monitor';
 import { setupUserRulesIPC as setupWorkspaceRulesIPC } from '../features/rules/main/user-rules.ipc';
@@ -333,7 +335,6 @@ import {
   isFocusedWindowBrowserActive,
   getFocusedWindowWorkspaceId,
   getAllOpenWorkspaceIds,
-  getWindowIdForWorkspace,
   installIntentCli,
   autoRepairCliSymlink,
 } from '../features/system/main/system.ipc';
@@ -369,17 +370,20 @@ import { protocolAdapter } from '../features/protocol/main/protocol-adapter';
 import { registerWorkspacePRHandlers } from '../features/workspace/main/workspace-pr.ipc';
 import { ipcCleanupManager } from './ipc-cleanup-manager';
 import { setResolvedAppName } from './utils/resolve-app-title.js';
+import { isHudWindow, isTrackedHudWindow } from './hud-window.js';
+import { getBackendIdForWindow } from './window-backend.js';
+import { buildWindowMenuEntries } from './window-menu-entries.js';
 import { getMainWindow } from './state';
 import {
   captureWindowSessionsSnapshot,
   clearWindowSessionsSnapshot,
   createWindow,
   createWindowForDeepLink,
-  createWindowForSession,
   getWindowSessionsPath,
-  isBackendSwitchWindowTeardownInProgress,
-  loadWindowSessions,
+  markWindowSessionTeardown,
+  restoreAllBackendWindowSessions,
   saveAllWindowSessions,
+  setOnLastWindowClosedForBackend,
   stampWindowWithBackend,
 } from './window.js';
 import {
@@ -428,6 +432,14 @@ async function gracefulShutdown() {
   }
   isShuttingDown = true;
 
+  // Quit-time window closes (performGracefulShutdown's mainWindow.close())
+  // are not deliberate per-backend closes: without this mark, closing the
+  // last window of one backend while another backend's windows survive would
+  // tombstone + prune the bucket that before-quit just saved. Every quit path
+  // (before-quit, window-all-closed, SIGTERM/SIGINT) funnels through here
+  // before any window is closed.
+  markWindowSessionTeardown();
+
   // Bound the cleanup chain with a hard-exit watchdog: if a cleanup step
   // stalls and app.exit(0) is never reached, force-exit so SIGTERM/SIGINT
   // always terminate the process.
@@ -469,20 +481,20 @@ async function performGracefulShutdown() {
     // fires. This delay gives those threads time to finish.
     await new Promise((resolve) => setTimeout(resolve, 300));
 
-    // Dispose the live backend JSON-RPC client (closes the UDS/TCP socket).
+    // Dispose every pooled backend JSON-RPC client (closes the UDS/WSS sockets).
     try {
-      disposeBackendClient();
-      logger.info('Backend JSON-RPC client disposed');
+      disposeAllBackendClients();
+      logger.info('Backend JSON-RPC clients disposed');
     } catch (error) {
       logger.error(
         // i18n-ignore (developer log message)
-        'Error disposing backend client:',
+        'Error disposing backend clients:',
         error instanceof Error ? error : new Error(String(error)),
       );
     }
 
     // Stop the intentd sidecar daemon (if we spawned it). SIGTERM with a grace
-    // period, then SIGKILL. This runs AFTER disposeBackendClient() so the FE
+    // period, then SIGKILL. This runs AFTER disposeAllBackendClients() so the FE
     // closes the socket before we kill the daemon. In external mode the daemon
     // is not ours to stop — skip the stop path entirely so no code path ever
     // signals an external daemon.
@@ -587,6 +599,15 @@ app.whenReady().then(async () => {
     sessionSaveTimeout = setTimeout(() => void saveOpenWindowSessions(), 1000);
   };
 
+  // Dispose a non-local backend's pooled client when its last window is
+  // explicitly closed (window.ts already excludes local). Guard against the
+  // quit flow: before-quit closes every window, and per-backend disposal
+  // there would race gracefulShutdown()'s own client teardown.
+  setOnLastWindowClosedForBackend((backendId) => {
+    if (isShuttingDown) return;
+    disconnectBackendClient(backendId);
+  });
+
   app.on('browser-window-created', (_event: Electron.Event, window: BrowserWindowType) => {
     stampWindowWithBackend(window);
     window.on('resize', debouncedSaveWindowSessions);
@@ -651,7 +672,7 @@ app.whenReady().then(async () => {
       // active provider (`providers.active`, the effective-default rule used
       // renderer-side), falling back to the first catalog row when unset.
       // The settings read is best-effort: a failure just means first-row.
-      const activeProviderId = await getBackendClient()
+      const activeProviderId = await getLocalBackendClient()
         .request('settings.get', { path: 'providers.active' })
         .then((result) => {
           const value = (result as { value?: unknown } | null)?.value;
@@ -935,42 +956,46 @@ app.whenReady().then(async () => {
       windowMenuItems.push({ role: 'front', label: m.menu_bring_all_to_front() });
     }
 
-    // Add workspaces with open windows to the Window menu
-    const openWorkspaceIds = getAllOpenWorkspaceIds();
-    if (openWorkspaceIds.length > 0) {
-      type WorkspaceItem = { status?: string; title?: string; name?: string; id: string };
-      const workspaceTitles = new Map<string, string>();
+    // Add the app's open windows to the Window menu, labeled by kind + backend.
+    // External webview popups (OAuth/auth flows) are not app windows — skip them.
+    const liveWindows = (BrowserWindow.getAllWindows() as BrowserWindowType[]).filter(
+      (w) => !w.isDestroyed() && !isWebviewPopupWindow(w),
+    );
+    if (liveWindows.length > 0) {
+      let connections: Awaited<ReturnType<typeof listConnections>> = [];
       try {
-        const result = await protocolAdapter.listAllWorkspaces({ lite: true });
-        if (result.ok && result.data) {
-          for (const ws of result.data as WorkspaceItem[]) {
-            const displayName = ws.title || ws.name || ws.id;
-            workspaceTitles.set(ws.id, displayName);
-          }
-        }
+        connections = await listConnections();
       } catch {
-        // Fall back to workspace IDs
+        // Fall back to backend ids as labels
       }
-
-      const focusedWorkspaceId = getFocusedWindowWorkspaceId();
+      const entries = buildWindowMenuEntries(
+        liveWindows.map((w) => ({
+          windowId: w.id,
+          isHud: isHudWindow(w) || isTrackedHudWindow(w),
+          backendId: getBackendIdForWindow(w),
+          isFocused: w.isFocused(),
+        })),
+        connections,
+        {
+          mainWindowLabel: appName,
+          hudLabel: m.menu_window_hud_label(),
+          localBackendLabel: m.menu_window_localBackend_label(),
+        },
+      );
 
       windowMenuItems.push({ type: 'separator' });
-      for (const wsId of openWorkspaceIds) {
-        const label = workspaceTitles.get(wsId) || wsId;
+      for (const entry of entries) {
         windowMenuItems.push({
-          label,
+          label: entry.label,
           type: 'radio',
-          checked: wsId === focusedWorkspaceId,
+          checked: entry.checked,
           click: () => {
-            const windowId = getWindowIdForWorkspace(wsId);
-            if (windowId !== undefined) {
-              const win = BrowserWindow.fromId(windowId);
-              if (win && !win.isDestroyed()) {
-                if (win.isMinimized()) {
-                  win.restore();
-                }
-                win.focus();
+            const win = BrowserWindow.fromId(entry.windowId);
+            if (win && !win.isDestroyed()) {
+              if (win.isMinimized()) {
+                win.restore();
               }
+              win.focus();
             }
           },
         });
@@ -1134,7 +1159,7 @@ app.whenReady().then(async () => {
     // Add Sample intentd Process (daemon-side capture via debug.sampleStacks,
     // PROTOCOL §5.43). Hidden on a Windows FE whose daemon is same-host (UDS,
     // no saved remote) — it can never support sampling (#1889); the menu is
-    // rebuilt on 'backend-connection-changed' so the gate tracks switches. Any
+    // rebuilt on 'backend-connection-changed' so the gate tracks changes. Any
     // other unsupported daemon surfaces its own error through the dialog below.
     if (shouldShowStackSampleMenuItem(process.platform, isSameHostBackendActive())) {
       helpMenuItems.push({
@@ -1457,6 +1482,12 @@ app.whenReady().then(async () => {
     rebuildMenu();
   });
 
+  // Rebuild menu when connection records change (add/forget/rename/hostname
+  // capture) so window entries pick up fresh backend labels
+  app.on('connections-changed', () => {
+    rebuildMenu();
+  });
+
   // Rebuild menu when workspace state changes (enables/disables tab menu items)
   app.on('window-workspace-state-changed', () => {
     const openWorkspaceIds = getAllOpenWorkspaceIds();
@@ -1567,11 +1598,6 @@ app.whenReady().then(async () => {
   // The daemon owns PATH discovery. Seed only after starting/adopting it, and
   // retry briefly while a newly spawned sidecar creates its socket.
   await seedPathFromHostEnv();
-
-  // Boot reconciliation (T8): the live client is built from the local/env
-  // default, so make the persisted active connection agree with it before any
-  // window queries `connections:list`. Reset a stale remote active-id to local.
-  await reconcileActiveConnectionOnBoot();
 
   registerBackendHandlers(); // Needed for live JSON-RPC transport (workspaces domain)
   registerWorkspaceTransferHandlers(); // Workspace transfer relay (wizard steps 3–4)
@@ -1713,23 +1739,37 @@ app.whenReady().then(async () => {
     // Check for intent:// deep link in process.argv (cold start)
     const intentUrlArg = process.argv.find((arg: string) => arg.startsWith('intent://'));
 
-    // Try to restore saved window sessions (unless we have a deep link to process).
-    // Key off the RESOLVED boot backend (T21): reconcileActiveConnectionOnBoot()
-    // above has already run to completion, so getActiveId() now reflects the
-    // actually-connected backend — the reconnected remote when it was reachable,
-    // otherwise local. Restoring under this id (never the hard-coded local
-    // default) ensures a remote's windows are only restored when we booted back
-    // onto that remote, and local's windows when we fell back to local.
+    // Try to restore saved window sessions (unless we have a deep link to
+    // process, which keeps its single-window bypass). EVERY backend with a
+    // saved session bucket is restored, each bucket's windows stamped with its
+    // own backend id and backed by its own pooled client (fail-soft — an
+    // unreachable backend still gets its windows behind the stopped overlay).
+    // The last-used bucket (persisted activeId, legacy field) restores first
+    // and provides the main window; each backend's own pooled client connects
+    // on demand, so no boot-time reconciliation of the field is needed.
     const bootBackendId = await getActiveId();
-    const savedSessions = intentUrlArg ? null : loadWindowSessions(bootBackendId);
-    if (savedSessions && savedSessions.length > 0) {
-      logger.info('Restoring window sessions from previous run', { count: savedSessions.length });
-      for (let i = 0; i < savedSessions.length; i++) {
-        createWindowForSession(savedSessions[i], i === 0, bootBackendId);
+    const restored = intentUrlArg
+      ? false
+      : await restoreAllBackendWindowSessions(bootBackendId, connectBackendClient);
+    if (!restored) {
+      // No saved sessions anywhere (or has deep link) — create a single default
+      // window. A remote boot backend needs its pooled client connected first
+      // (only the local client is created lazily); if its client cannot be
+      // built (deleted record, missing token), fall back to a local window
+      // rather than one whose every RPC fails closed.
+      let windowBackendId = bootBackendId;
+      if (bootBackendId !== LOCAL_CONNECTION_ID) {
+        try {
+          await connectBackendClient(bootBackendId);
+        } catch (error) {
+          logger.warn('Boot backend has no connectable client; opening a local window', {
+            backendId: bootBackendId,
+            error: error instanceof Error ? error.message : String(error),
+          });
+          windowBackendId = LOCAL_CONNECTION_ID;
+        }
       }
-    } else {
-      // No saved sessions (or has deep link) — create a single default window
-      createWindow(bootBackendId);
+      createWindow(windowBackendId);
     }
 
     startupMetrics.end('createWindow');
@@ -1858,16 +1898,6 @@ app.on('before-quit', async (event: Electron.Event) => {
 });
 
 app.on('window-all-closed', async () => {
-  // A backend switch destroys every window between its capture and restore
-  // halves, which fires this event mid-switch. Treating that as a manual
-  // last-window close would delete the sessions file the switch just wrote
-  // (macOS) or start the quit flow (Windows/Linux) — so ignore it entirely;
-  // restoreWindowsForBackend() reopens windows right after.
-  if (isBackendSwitchWindowTeardownInProgress()) {
-    logger.info('window-all-closed ignored: backend-switch window teardown in progress');
-    return;
-  }
-
   // On macOS the app stays alive after all windows are closed.
   // Clear the saved sessions file so that clicking the dock icon opens a single
   // fresh window instead of restoring every window the user just closed.
@@ -2053,17 +2083,13 @@ app.on('activate', async () => {
     targetWindow.show();
     targetWindow.focus();
   } else {
-    // No windows at all — restore sessions or create a new one. Key off the
-    // currently-active backend (T21) so a dock-click reopen restores the live
-    // backend's windows, never the hard-coded local default.
+    // No windows at all — restore every backend's saved sessions (same
+    // multi-bucket restore as boot) or create a new one. The active backend
+    // (T21) restores first and provides the main window, so a dock-click
+    // reopen never keys everything to the hard-coded local default.
     const backendId = await getActiveId();
-    const savedSessions = loadWindowSessions(backendId);
-    if (savedSessions && savedSessions.length > 0) {
-      logger.info('Restoring window sessions on activate', { count: savedSessions.length });
-      for (let i = 0; i < savedSessions.length; i++) {
-        createWindowForSession(savedSessions[i], i === 0, backendId);
-      }
-    } else {
+    const restored = await restoreAllBackendWindowSessions(backendId, connectBackendClient);
+    if (!restored) {
       createWindow(backendId);
     }
   }
