@@ -1,8 +1,9 @@
 <script lang="ts">
   /* eslint-disable max-lines */
   import { onMount, onDestroy, mount, unmount } from 'svelte';
+  import { Popover } from 'bits-ui';
 
-  import { Editor } from '@tiptap/core';
+  import { Editor, getTextBetween, getTextSerializersFromSchema } from '@tiptap/core';
   import { PluginKey, TextSelection } from '@tiptap/pm/state';
   import StarterKit from '@tiptap/starter-kit';
   import Placeholder from '@tiptap/extension-placeholder';
@@ -13,6 +14,7 @@
     type ContextMentionAttributes,
   } from '$lib/components/tiptap/ContextMention';
   import { PasteChip } from '$lib/components/tiptap/PasteChip';
+  import { SkillCommand } from '$lib/components/tiptap/SkillCommand';
   import { createLogger } from '$lib/utils/client-logger';
   import { m } from '$shared/paraglide/messages.js';
   import type { ContextItem } from './context-api';
@@ -35,6 +37,13 @@
     trailingHintPluginKey,
     type TrailingHint,
   } from './trailing-hint-extension';
+  import SlashSkillSuggestionList from './SlashSkillSuggestionList.svelte';
+  import {
+    findSlashCommandContext,
+    rankSlashSkills,
+    type SlashCommandContext,
+  } from './slash-skill-command';
+  import type { SkillInfo } from '$store/renderer/slices/skills/skills-types';
 
   /** Represents an inline image in the editor content */
   export interface InlineImage {
@@ -141,6 +150,9 @@
     onSelectionChange?: (selectedText: string | null) => void;
     contextItems?: ContextItem[];
     trailingHint?: TrailingHint | null;
+    skills?: readonly SkillInfo[];
+    skillsLoading?: boolean;
+    skillsError?: string | null;
     minHeight?: number;
     maxHeight?: number;
   }
@@ -168,6 +180,9 @@
 
     contextItems: _contextItems = [],
     trailingHint = null,
+    skills = [],
+    skillsLoading = false,
+    skillsError = null,
     minHeight = 80,
     maxHeight = 300,
   }: Props = $props();
@@ -180,11 +195,111 @@
   // extension options are fixed at editor creation, so suppression is CSS-side.
   const placeholderSuppressed = $derived(!isEditable && !inputLocked);
 
-  let element: HTMLDivElement;
+  let element = $state<HTMLDivElement>();
   let editor: Editor | null = $state(null);
   let hoverPreview: any = null;
   let hoverPreviewContainer: HTMLDivElement | null = null;
   let isClearing = false;
+  let editorFocused = $state(false);
+  let slashContext = $state<SlashCommandContext | null>(null);
+  let dismissedSlashContext = $state<string | null>(null);
+  let slashSuggestionList: { onKeyDown: (props: { event: KeyboardEvent }) => boolean } | null =
+    $state(null);
+  const componentId = $props.id();
+  const slashListboxId = `slash-skill-listbox-${componentId}`;
+  let slashActiveOptionId = $state<string | undefined>();
+
+  const filteredSkills = $derived(slashContext ? rankSlashSkills(skills, slashContext.query) : []);
+  const slashContextKey = $derived(
+    slashContext ? `${slashContext.from}:${slashContext.to}:${slashContext.query}` : null,
+  );
+  const slashMenuOpen = $derived(
+    editorFocused &&
+      slashContext !== null &&
+      slashContextKey !== dismissedSlashContext &&
+      isEditable,
+  );
+
+  function textBeforeCursor(activeEditor: Editor): string {
+    const text = getTextBetween(
+      activeEditor.state.doc,
+      { from: 0, to: activeEditor.state.selection.from },
+      {
+        blockSeparator: '\n\n',
+        textSerializers: {
+          ...getTextSerializersFromSchema(activeEditor.schema),
+          hardBreak: () => '\n',
+        },
+      },
+    );
+    return text.replace(/\u00A0/g, ' ');
+  }
+
+  function refreshSlashContext(activeEditor: Editor) {
+    const prompt = serializeEditorText(activeEditor);
+    const nextContext = findSlashCommandContext(prompt, textBeforeCursor(activeEditor).length);
+    if (!nextContext) dismissedSlashContext = null;
+    slashContext = nextContext;
+  }
+
+  function dismissSlashMenu() {
+    dismissedSlashContext = slashContextKey;
+  }
+
+  function preserveEditorFocus(event: Event) {
+    event.preventDefault();
+  }
+
+  function selectSlashSkill(skill: SkillInfo) {
+    if (!editor || !slashContext) return;
+    const prompt = serializeEditorText(editor);
+    const cursorOffset = textBeforeCursor(editor).length;
+    const range = {
+      from: editor.state.selection.from - slashContext.query.length - 1,
+      to: editor.state.selection.from + slashContext.to - cursorOffset,
+    };
+    const needsSpace =
+      slashContext.to === prompt.length || !/^\s/u.test(prompt.slice(slashContext.to));
+    const content = [
+      { type: 'skillCommand', attrs: { name: skill.name } },
+      ...(needsSpace ? [{ type: 'text', text: ' ' }] : []),
+    ];
+    editor
+      .chain()
+      .focus()
+      .insertContentAt(range, content)
+      .setTextSelection(range.from + 2)
+      .run();
+  }
+
+  function editorHTML(text: string): string {
+    return plainTextToEditorHTML(
+      text,
+      skills.map((skill) => skill.name),
+    );
+  }
+
+  function handleSlashMenuKeyDown(event: KeyboardEvent): boolean {
+    if (!slashMenuOpen || !slashSuggestionList) return false;
+    const isPlainNavigationKey =
+      !event.shiftKey &&
+      !event.metaKey &&
+      !event.ctrlKey &&
+      !event.altKey &&
+      ['ArrowUp', 'ArrowDown', 'Enter'].includes(event.key);
+    if (event.key !== 'Escape' && !isPlainNavigationKey) return false;
+
+    const handled = slashSuggestionList.onKeyDown({ event });
+    if (handled) return true;
+
+    // An open loading/empty/error menu still owns plain Enter so `/` cannot
+    // accidentally submit while the user is trying to select a command.
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      return true;
+    }
+    return false;
+  }
 
   // Export method to insert @ symbol
   export function insertAtSymbol() {
@@ -274,7 +389,7 @@
    */
   export async function setContent(text: string) {
     if (!editor) return;
-    const html = plainTextToEditorHTML(text || '');
+    const html = editorHTML(text || '');
     editor
       .chain()
       .command(({ tr }) => {
@@ -571,11 +686,13 @@
     let cancelled = false;
     (async () => {
       // Rehydrate any @-tokens (or bare filenames) into mention spans before creating the editor
-      const initialHTML = plainTextToEditorHTML(value || '');
+      const initialHTML = editorHTML(value || '');
       if (cancelled) return;
+      const editorElement = element;
+      if (!editorElement) return;
 
       editor = new Editor({
-        element,
+        element: editorElement,
         extensions: [
           StarterKit.configure({
             heading: false,
@@ -695,6 +812,7 @@
           }),
           // Paste chip for multi-line pasted text (5+ lines)
           PasteChip,
+          SkillCommand,
           TrailingHintExtension,
         ],
         content: initialHTML,
@@ -706,6 +824,7 @@
           delete: false,
         },
         onCreate: ({ editor }) => {
+          refreshSlashContext(editor);
           if (autoFocus) {
             // Defer the focus out of the mount flush: a synchronous focus()
             // here forces style/layout mid-flush. rAF still runs pre-paint,
@@ -724,9 +843,11 @@
             return;
           }
           const text = serializeEditorText(editor);
+          refreshSlashContext(editor);
           onUpdate?.(text);
         },
         onSelectionUpdate: ({ editor }) => {
+          refreshSlashContext(editor);
           // Get the selected text from the editor
           const { from, to, empty } = editor.state.selection;
           if (empty) {
@@ -735,6 +856,13 @@
             const selectedText = editor.state.doc.textBetween(from, to, ' ');
             onSelectionChange?.(selectedText.trim() || null);
           }
+        },
+        onFocus: ({ editor }) => {
+          editorFocused = true;
+          refreshSlashContext(editor);
+        },
+        onBlur: () => {
+          editorFocused = false;
         },
         editorProps: {
           attributes: {
@@ -784,6 +912,10 @@
             return isFileDragEvent(event);
           },
           handleKeyDown: (view, event) => {
+            if (handleSlashMenuKeyDown(event)) {
+              return true;
+            }
+
             // Handle Escape for cancel (in edit mode)
             if (event.key === 'Escape' && onEscape) {
               event.preventDefault();
@@ -983,7 +1115,7 @@
                 if (prevValue !== null) {
                   event.preventDefault();
                   // Set the content and move cursor to end
-                  editor?.chain().setContent(plainTextToEditorHTML(prevValue)).focus('end').run();
+                  editor?.chain().setContent(editorHTML(prevValue)).focus('end').run();
                   // Notify parent of the change
                   onUpdate?.(prevValue);
                   return true;
@@ -1019,7 +1151,7 @@
                 if (nextValue !== null) {
                   event.preventDefault();
                   // Set the content and move cursor to end
-                  editor?.chain().setContent(plainTextToEditorHTML(nextValue)).focus('end').run();
+                  editor?.chain().setContent(editorHTML(nextValue)).focus('end').run();
                   // Notify parent of the change
                   onUpdate?.(nextValue);
                   return true;
@@ -1052,9 +1184,9 @@
       });
 
       // Add hover and click listeners for mentions
-      element.addEventListener('mouseover', handleMentionHover);
-      element.addEventListener('mouseout', handleMentionMouseOut);
-      element.addEventListener('click', handleMentionClick);
+      editorElement.addEventListener('mouseover', handleMentionHover);
+      editorElement.addEventListener('mouseout', handleMentionMouseOut);
+      editorElement.addEventListener('click', handleMentionClick);
 
       // Add keydown handler directly to the ProseMirror editor element (not the container)
       // This is the actual contenteditable element that receives keyboard events
@@ -1334,7 +1466,7 @@
     const requestId = ++valueUpdateRequestId;
 
     (async () => {
-      const html = plainTextToEditorHTML(value || '');
+      const html = editorHTML(value || '');
 
       // PERF: Check if this is still the latest request and editor still exists
       // This prevents race conditions when value changes rapidly
@@ -1376,16 +1508,64 @@
     if (!editor || editor.isDestroyed) return;
     editor.view.dispatch(editor.state.tr.setMeta(trailingHintPluginKey, trailingHint));
   });
+
+  $effect(() => {
+    const editorElement = editor?.view.dom;
+    if (!editorElement) return;
+
+    editorElement.setAttribute('aria-haspopup', 'listbox');
+    editorElement.setAttribute('aria-expanded', String(slashMenuOpen));
+    if (slashMenuOpen && slashActiveOptionId) {
+      editorElement.setAttribute('aria-controls', slashListboxId);
+      editorElement.setAttribute('aria-activedescendant', slashActiveOptionId);
+    } else {
+      editorElement.removeAttribute('aria-controls');
+      editorElement.removeAttribute('aria-activedescendant');
+    }
+  });
 </script>
 
-<div
-  bind:this={element}
-  class="tiptap-container {className}"
-  class:placeholder-suppressed={placeholderSuppressed}
-  style={`--tt-min-height:${minHeight}px;--tt-max-height:${maxHeight}px`}
-></div>
+<div class="tiptap-root">
+  <Popover.Root bind:open={() => slashMenuOpen, (open) => !open && dismissSlashMenu()}>
+    <Popover.Portal>
+      <Popover.Content
+        customAnchor={element ?? null}
+        side="top"
+        align="start"
+        sideOffset={4}
+        trapFocus={false}
+        onOpenAutoFocus={preserveEditorFocus}
+        onCloseAutoFocus={preserveEditorFocus}
+        class="z-(--layer-popover) w-72 max-w-full outline-none"
+        data-testid="slash-skill-menu"
+      >
+        <SlashSkillSuggestionList
+          bind:this={slashSuggestionList}
+          listboxId={slashListboxId}
+          items={filteredSkills}
+          loading={skillsLoading}
+          error={skillsError}
+          onSelect={selectSlashSkill}
+          onDismiss={dismissSlashMenu}
+          onActiveOptionChange={(optionId) => (slashActiveOptionId = optionId)}
+        />
+      </Popover.Content>
+    </Popover.Portal>
+  </Popover.Root>
+  <div
+    bind:this={element}
+    class="tiptap-container {className}"
+    class:placeholder-suppressed={placeholderSuppressed}
+    style={`--tt-min-height:${minHeight}px;--tt-max-height:${maxHeight}px`}
+  ></div>
+</div>
 
 <style>
+  .tiptap-root {
+    position: relative;
+    width: 100%;
+  }
+
   .tiptap-container {
     width: 100%;
     min-height: var(--tt-min-height, 80px);

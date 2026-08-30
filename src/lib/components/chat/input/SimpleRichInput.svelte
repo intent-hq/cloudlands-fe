@@ -2,6 +2,7 @@
   import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-session-selectors';
   /* eslint-disable max-lines */
   import { onMount, tick } from 'svelte';
+  import { writable } from 'svelte/store';
   import { toast } from 'svelte-sonner';
   import { createLogger } from '$lib/utils/client-logger';
   import type { Workspace } from '$shared/types';
@@ -65,6 +66,11 @@
   import * as Menu from '$lib/components/ui/menu';
   import type { StackedMenuGroup } from '$lib/components/ui/menu';
   import { parseImageDataUrl } from './image-data-url';
+  import {
+    selectSkills,
+    selectSkillsError,
+    selectSkillsLoading,
+  } from '$store/renderer/slices/skills/skills-selectors';
 
   import {
     togglePanel as togglePanelAction,
@@ -260,6 +266,17 @@
   // svelte-ignore state_referenced_locally -- intentional initial snapshots for transition detection.
   let previousInputLocked = $state(inputLocked);
   let hasInlineImages = $state(false);
+
+  // Selector readables are created at component init; mirror the reactive prop
+  // so a composer moved between workspaces follows that workspace's skill roster.
+  // svelte-ignore state_referenced_locally -- intentional initial prop snapshot.
+  const workspaceIdStore = writable(workspace?.id ?? '');
+  $effect(() => {
+    workspaceIdStore.set(workspace?.id ?? '');
+  });
+  const skills$ = selectSkills(workspaceIdStore);
+  const skillsLoading$ = selectSkillsLoading(workspaceIdStore);
+  const skillsError$ = selectSkillsError(workspaceIdStore);
 
   // Derived state: whether there's content to send (text, context items, or inline images).
   // Blocked while any attachment placement is in flight or failed — a failed
@@ -1501,6 +1518,9 @@
       editableWhileDisabled={editableWhileDisabled && !isEnhancing}
       {inputLocked}
       workspace={workspace ?? undefined}
+      skills={$skills$}
+      skillsLoading={$skillsLoading$}
+      skillsError={$skillsError$}
       onUpdate={(text) => {
         handleCancelEnhance();
         if (

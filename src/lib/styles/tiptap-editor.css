@@ -382,6 +382,26 @@
   outline-offset: 1px;
 }
 
+/* Selected slash commands use the same compact chip rhythm as mentions. */
+.skill-command-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 6px;
+  background: hsl(var(--muted) / 0.7);
+  color: hsl(var(--muted-foreground));
+  border: 1px solid hsl(var(--border));
+  border-radius: var(--radius-small);
+  white-space: nowrap;
+  vertical-align: baseline;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+}
+
+.skill-command-chip.ProseMirror-selectednode {
+  outline: 2px solid hsl(var(--ring));
+  outline-offset: 1px;
+}
+
 /* Mention chip icon */
 .mention-chip-icon {
   font-size: 0.75rem;
