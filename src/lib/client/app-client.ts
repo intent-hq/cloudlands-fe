@@ -1824,15 +1824,19 @@ export interface ProvidersClient {
 /** Wire `period` mode for `stats.getUsage`. */
 export type UsageStatsPeriod = '24h' | 'month' | 'year';
 
-/** The separate token counters for one `stats.getUsage` aggregation cell. */
+/**
+ * The separate token counters for one `stats.getUsage` aggregation cell —
+ * five disjoint buckets since intentd 0.8.20 (§5.23 / §5.36).
+ */
 export interface UsageTokenTotals {
   inputTokens: number;
   outputTokens: number;
   cacheReadTokens: number;
   cacheCreationTokens: number;
   /**
-   * Reasoning ("thought") tokens — **omitted when zero or unreported** (§5.23),
-   * so an absent field means no provider broke reasoning out of `outputTokens`.
+   * Reasoning ("thought") tokens — a counter disjoint from `outputTokens`,
+   * **omitted when zero or unreported** (§5.23), so an absent field means no
+   * provider reported reasoning tokens.
    */
   thoughtTokens?: number;
 }

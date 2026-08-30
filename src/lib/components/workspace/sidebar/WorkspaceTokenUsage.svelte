@@ -97,8 +97,9 @@
       modelRows.some((row) => row.cost !== null) ||
       agentRows.some((row) => row.cost !== null),
   );
-  // Same for Thinking: `thoughtTokens` is omitted when no provider broke
-  // reasoning tokens out of the output count (PROTOCOL §5.23).
+  // Same for Thinking: `thoughtTokens` (a counter disjoint from
+  // `outputTokens`) is omitted when no provider reported reasoning tokens
+  // (PROTOCOL §5.23).
   const thoughtTokens = $derived(totals.thoughtTokens ?? 0);
   const hasThinking = $derived(
     thoughtTokens > 0 ||
