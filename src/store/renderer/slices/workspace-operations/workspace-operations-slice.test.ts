@@ -3,6 +3,7 @@ import {
   expect,
   it,
 } from "vitest";
+import { getItems } from "@augmentcode/themis/utils/collections/collection-utils";
 import {
   bulkArchiveActiveWorkComputed,
   closeArchiveWarning,
@@ -42,7 +43,7 @@ describe("workspaceOperationsReducer", () => {
     expect(opened.pendingDeleteWorkspaceId).toBe("ws-1");
     expect(opened.runningAgentNamesForDelete).toEqual(["Agent One"]);
     expect(opened.activeHookNamesForDelete).toEqual(["ci-watch"]);
-    expect(opened.openPrsForDelete).toEqual([openPr]);
+    expect(getItems(opened.openPrsForDelete)).toEqual([openPr]);
 
     const closed = workspaceOperationsReducer(opened, closeDeleteWarning());
 
@@ -50,7 +51,7 @@ describe("workspaceOperationsReducer", () => {
     expect(closed.pendingDeleteWorkspaceId).toBeNull();
     expect(closed.runningAgentNamesForDelete).toEqual([]);
     expect(closed.activeHookNamesForDelete).toEqual([]);
-    expect(closed.openPrsForDelete).toEqual([]);
+    expect(getItems(closed.openPrsForDelete)).toEqual([]);
   });
 
   it("opens and clears the archive warning state", () => {
@@ -68,7 +69,7 @@ describe("workspaceOperationsReducer", () => {
     expect(opened.pendingArchiveWorkspaceId).toBe("ws-2");
     expect(opened.runningAgentNamesForArchive).toEqual(["Agent Two"]);
     expect(opened.activeHookNamesForArchive).toEqual(["pr-watch"]);
-    expect(opened.openPrsForArchive).toEqual([
+    expect(getItems(opened.openPrsForArchive)).toEqual([
       { ...openPr, status: "Draft", mergeConflicts: true },
     ]);
 
@@ -78,7 +79,7 @@ describe("workspaceOperationsReducer", () => {
     expect(closed.pendingArchiveWorkspaceId).toBeNull();
     expect(closed.runningAgentNamesForArchive).toEqual([]);
     expect(closed.activeHookNamesForArchive).toEqual([]);
-    expect(closed.openPrsForArchive).toEqual([]);
+    expect(getItems(closed.openPrsForArchive)).toEqual([]);
   });
 
   it("tracks and clears bulk delete warning details", () => {

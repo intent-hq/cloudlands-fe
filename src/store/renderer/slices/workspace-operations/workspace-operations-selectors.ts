@@ -1,3 +1,8 @@
+import {
+  getItems,
+  type Collection,
+} from '@augmentcode/themis/utils/collections/collection-utils';
+import type { OpenPrWarningItem } from '$lib/utils/delete-warning-utils';
 import { store } from '../../store';
 
 export const selectShowDeleteWarning = store.createSelector((state) => {
@@ -16,8 +21,10 @@ export const selectActiveHookNamesForDelete = store.createSelector((state) => {
   return state.workspaceOperations.activeHookNamesForDelete;
 });
 
-export const selectOpenPrsForDelete = store.createSelector((state) => {
-  return state.workspaceOperations.openPrsForDelete;
+export const selectOpenPrsForDelete = store.createSelector((state): OpenPrWarningItem[] => {
+  return getItems<OpenPrWarningItem, 'number'>(
+    state.workspaceOperations.openPrsForDelete as Collection<OpenPrWarningItem, 'number'>,
+  );
 });
 
 export const selectShowArchiveWarning = store.createSelector((state) => {
@@ -36,8 +43,10 @@ export const selectActiveHookNamesForArchive = store.createSelector((state) => {
   return state.workspaceOperations.activeHookNamesForArchive;
 });
 
-export const selectOpenPrsForArchive = store.createSelector((state) => {
-  return state.workspaceOperations.openPrsForArchive;
+export const selectOpenPrsForArchive = store.createSelector((state): OpenPrWarningItem[] => {
+  return getItems<OpenPrWarningItem, 'number'>(
+    state.workspaceOperations.openPrsForArchive as Collection<OpenPrWarningItem, 'number'>,
+  );
 });
 
 export const selectPendingBulkRepoKey = store.createSelector((state) => {
