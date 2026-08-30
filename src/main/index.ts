@@ -356,6 +356,7 @@ import { isCdpMcpBridgeEnabled } from './utils/cdp-debug';
 import { confirmQuitWithRunningAgents } from './quit-confirmation';
 import { m } from '../shared/paraglide/messages.js';
 import { sendWorkspaceCommand as sendWorkspaceMenuCommand } from './menu-workspace-command';
+import { openNewWindowFromMenu } from './menu-new-window';
 import { toggleWindowDevTools } from './menu-devtools-toggle';
 
 import { registerMissingAgentHandlers } from '../features/agent/main/agent-missing.ipc';
@@ -765,7 +766,9 @@ app.whenReady().then(async () => {
         label: m.menu_new_window(),
         accelerator: 'CmdOrCtrl+Shift+N',
         click: () => {
-          createWindow();
+          // New Window inherits the focused window's backend (falls back to
+          // the main window's backend, then local) instead of the local default.
+          openNewWindowFromMenu();
         },
       },
       {
