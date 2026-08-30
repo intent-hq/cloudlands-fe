@@ -51,6 +51,7 @@
     saveAgentSessionRequested,
   } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
   import {
+    agentProposalResolveRequested,
     agentSessionDismissQuestionsRequested,
     agentSessionEditAndRegenerateRequested,
     agentSessionRegenerateFromMessageRequested,
@@ -109,6 +110,8 @@
     olderHistoryPageRequested,
     historyGapFillRequested,
     historySeekRequested,
+    pendingProposalRecoveryPruned,
+    pendingProposalRecoveryRequested,
     pendingQuestionRecoveryRequested,
     pendingQuestionRecoveryCleared,
   } from '$store/renderer/slices/chat-state/chat-state-slice';
@@ -127,6 +130,7 @@
     selectFetchingOlderHistory,
     selectHistoryExhausted,
     selectHistorySeekUnsupported,
+    selectPendingProposalRecovery,
     selectPendingQuestionRecovery,
     selectTranscriptHydratedOnce,
     selectTranscriptHydration,
@@ -174,6 +178,30 @@
     deriveWizardPendingQuestions,
   } from './questions/wizard-gate';
   import { classifyPendingQuestionMarker } from './questions/pending-questions';
+  import ProposalTray from './proposals/ProposalTray.svelte';
+  import {
+    derivePendingProposalRecoveryState,
+    deriveTrayPendingProposals,
+    proposalTrayVisible,
+  } from './proposals/proposal-tray-gate';
+  import {
+    clearTrayDraft,
+    loadTrayCollapsed,
+    saveTrayCollapsed,
+  } from './proposals/proposal-tray-storage';
+  import {
+    classifyPendingProposalRefs,
+    type PendingProposalEntry,
+  } from './proposals/pending-proposals';
+  import { getProposalId } from './proposals/proposal-id';
+  import { applySpecialistProposal } from './proposals/specialist-proposal-actions';
+  import {
+    applySettingsProposal,
+    undoSettingsProposal,
+  } from './proposals/settings-proposal-actions';
+  import { applyWorkspaceProposal } from '$store/renderer/slices/workspace-operations/workspace-operations-slice';
+  import { selectProposalLifecycleMap } from '$store/renderer/slices/proposal-lifecycle/proposal-lifecycle-selectors';
+  import type { ProposalActionDetail } from '$shared/types/proposal';
   import {
     initialWizardCollapsed,
     saveWizardCollapsed,
@@ -419,6 +447,10 @@
   const historySeekUnsupported$ = selectHistorySeekUnsupported(agentIdStore);
   const historyExhausted$ = selectHistoryExhausted(agentIdStore);
   const pendingQuestionRecovery$ = selectPendingQuestionRecovery(agentIdStore);
+  const pendingProposalRecovery$ = selectPendingProposalRecovery(agentIdStore);
+  // Whole-map lifecycle readable: the tray derivation scans resolution
+  // statuses across all pending proposals at once.
+  const proposalLifecycleMap$ = selectProposalLifecycleMap();
   const agentTasks$ = selectTasksForAgent(workspaceIdStore, agentIdStore);
   const queuedMessages$ = selectAgentQueueMessages(agentIdStore);
   const chatStreamingContent$ = selectAgentSessionStreamingContent(agentIdStore);
@@ -1034,6 +1066,149 @@
     );
     void performLocalSendCleanup({ followBottom: true });
   }
+
+  // ── Pending-proposal tray (composer slot) ────────────────────────────────
+  // Derived from the daemon's `pendingProposals` session metadata (PROTOCOL
+  // §5.5) intersected with transcript resource blocks + the targeted-recovery
+  // cache. Unlike the Q&A wizard there is NO turn-active gating: proposals
+  // hold no deliveries, so the tray stays visible/actionable while the agent
+  // runs later turns. The void reads keep the $derived reactive to every
+  // store input the shared helper re-reads from state.
+  const trayPendingProposals = $derived.by(() => {
+    void $agentSession$?.metadata?.pendingProposals;
+    void $pendingProposalRecovery$;
+    void $proposalLifecycleMap$;
+    return deriveTrayPendingProposals(appStore.state, agentId, $agentMessages$);
+  });
+  const showProposalTray = $derived(
+    proposalTrayVisible({
+      hasPendingProposals: trayPendingProposals.length > 0,
+      hasPendingQuestions: !!pendingQuestions,
+      questionWizardCollapsed,
+    }),
+  );
+
+  // Targeted recovery for refs whose carrying message is not hydrated
+  // (mirrors the marked-question recovery): request each missing messageId
+  // once the transcript settles; prune cache entries for refs that left the
+  // metadata so resolved proposals do not pin stale recoveries.
+  const pendingProposalRecoveryRequests = $derived.by(() => {
+    void $agentMessages$;
+    void $agentHistoryMessages$;
+    void $agentSession$?.metadata?.pendingProposals;
+    void $pendingProposalRecovery$;
+    void $proposalLifecycleMap$;
+    return derivePendingProposalRecoveryState(appStore.state, agentId);
+  });
+  $effect(() => {
+    if ($agentSession$?.id !== agentId) return;
+    const refs = classifyPendingProposalRefs($agentSession$?.metadata?.pendingProposals);
+    const tracked = $pendingProposalRecovery$;
+    const keep = [...new Set(refs.map((ref) => ref.messageId))];
+    if (tracked && Object.keys(tracked).some((messageId) => !keep.includes(messageId))) {
+      appStore.dispatch(pendingProposalRecoveryPruned(agentId, keep));
+    }
+    if (refs.length === 0 || $transcriptHydration$ !== 'settled') return;
+    for (const request of pendingProposalRecoveryRequests) {
+      if (request.shouldRequest) {
+        appStore.dispatch(pendingProposalRecoveryRequested(agentId, request.messageId));
+      }
+    }
+  });
+
+  // Hide state is host-owned and persisted per agent, like the wizard's
+  // collapse flag; the initial value restores from storage (untracked so the
+  // load never re-runs on unrelated state flips).
+  let proposalTrayCollapsedOverride = $state<{ agentId: string; collapsed: boolean } | null>(null);
+  const proposalTrayCollapsed = $derived.by(() => {
+    if (proposalTrayCollapsedOverride?.agentId === agentId) {
+      return proposalTrayCollapsedOverride.collapsed;
+    }
+    return untrack(() => loadTrayCollapsed(agentId)) ?? false;
+  });
+
+  // Apply mirrors the transcript cards (MessageContent.handleProposalApply):
+  // workspace-create/bulk-op route through the workspace-operations saga,
+  // specialist edits through the specialist actions, everything else through
+  // the settings actions. Lifecycle success is bridged to the daemon
+  // resolution below.
+  function handleProposalTrayApply(detail: ProposalActionDetail) {
+    const { proposal } = detail;
+    if (proposal.kind === 'workspace-create' || proposal.kind === 'bulk-op') {
+      appStore.dispatch(
+        applyWorkspaceProposal({
+          proposal,
+          editedFields: detail.editedFields,
+          selectedBulkItemIds: detail.selectedBulkItemIds,
+        }),
+      );
+      return;
+    }
+    if (applySpecialistProposal(detail)) return;
+    applySettingsProposal(detail);
+  }
+
+  function handleProposalTrayUndo(proposalId: string) {
+    undoSettingsProposal(proposalId);
+  }
+
+  // Dismiss is persistent: `agent.resolveProposal { outcome: 'dismissed' }`.
+  // The wire ack reconciles lifecycle (the saga dispatches
+  // proposalResolutionReconciled), which retires the entry from the gate; a
+  // failure (middleware toasts) rethrows so the tray keeps the entry pending.
+  async function handleProposalTrayDismiss(entry: PendingProposalEntry): Promise<void> {
+    if (!workspace) return;
+    proposalResolveSent.add(entry.proposalId);
+    const action = agentProposalResolveRequested(agentId, workspace.id, {
+      proposalId: entry.proposalId,
+      outcome: 'dismissed',
+    });
+    appStore.dispatch(action);
+    try {
+      await action.promise;
+      clearTrayDraft(agentId, entry.proposalId);
+    } catch (error) {
+      proposalResolveSent.delete(entry.proposalId);
+      throw error;
+    }
+  }
+
+  // Apply→resolve bridge. Transcript-style applies key lifecycle under
+  // `getProposalId(proposal)` — which can differ from the daemon's metadata
+  // ref key — and the gate retires an entry the instant its lifecycle turns
+  // 'applied', so the bridge works off a captured ref→transcript identity
+  // map rather than the filtered entries. Any still-pending metadata ref
+  // whose lifecycle shows 'applied' under either identity gets ONE
+  // resolve(applied) (daemon resolution is idempotent; first outcome wins).
+  const trayProposalIdentities = new Map<string, string>();
+  const proposalResolveSent = new Set<string>();
+  $effect(() => {
+    for (const entry of trayPendingProposals) {
+      trayProposalIdentities.set(entry.proposalId, getProposalId(entry.proposal));
+    }
+  });
+  $effect(() => {
+    const wsId = workspace?.id;
+    if (!wsId || $agentSession$?.id !== agentId) return;
+    const lifecycle = $proposalLifecycleMap$ ?? {};
+    const refs = classifyPendingProposalRefs($agentSession$?.metadata?.pendingProposals);
+    for (const ref of refs) {
+      if (proposalResolveSent.has(ref.proposalId)) continue;
+      const localId = trayProposalIdentities.get(ref.proposalId);
+      const applied =
+        lifecycle[ref.proposalId]?.status === 'applied' ||
+        (localId !== undefined && lifecycle[localId]?.status === 'applied');
+      if (!applied) continue;
+      proposalResolveSent.add(ref.proposalId);
+      clearTrayDraft(agentId, ref.proposalId);
+      appStore.dispatch(
+        agentProposalResolveRequested(agentId, wsId, {
+          proposalId: ref.proposalId,
+          outcome: 'applied',
+        }),
+      );
+    }
+  });
 
   // Search state
   let showSearch = $state(false);
@@ -5999,6 +6174,24 @@
                     }}
                     onComplete={handleQuestionWizardComplete}
                     onDismiss={handleQuestionWizardDismiss}
+                  />
+                </div>
+              {/key}
+            {/if}
+            {#if showProposalTray}
+              {#key agentId}
+                <div class="w-full" data-testid="proposal-tray-slot">
+                  <ProposalTray
+                    {agentId}
+                    entries={trayPendingProposals}
+                    collapsed={proposalTrayCollapsed}
+                    onToggleCollapsed={(collapsed) => {
+                      proposalTrayCollapsedOverride = { agentId, collapsed };
+                      saveTrayCollapsed(agentId, collapsed);
+                    }}
+                    onApply={handleProposalTrayApply}
+                    onDismiss={handleProposalTrayDismiss}
+                    onUndo={handleProposalTrayUndo}
                   />
                 </div>
               {/key}
