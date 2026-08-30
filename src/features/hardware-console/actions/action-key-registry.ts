@@ -55,8 +55,6 @@ import {
   resolveEffectiveVoiceEngine,
   type EffectiveVoiceEngineInputs,
 } from '$features/voice/effective-voice-engine';
-import { invoke } from '$lib/electron-bridge';
-import { IPC_CHANNELS } from '$shared/ipc-registry';
 import { isElectronPlatform } from '$lib/utils/platform-capabilities';
 import { createLogger } from '$lib/utils/client-logger';
 import { isVoiceRecordingSupported } from '../voice/voice-recorder';
@@ -84,6 +82,7 @@ import {
   type SessionAttentionPriority,
 } from './agent-cycle';
 import type { CycleScope, CycleScopeFamilyId } from './cycle-scope';
+import { cycleOpenWindows } from './window-cycle';
 
 const logger = createLogger('HardwareConsoleActionKeyRegistry');
 
@@ -639,9 +638,10 @@ export const ACTION_KEY_REGISTRY: readonly ActionKeyDefinition[] = [
       return isElectronPlatform();
     },
     execute(context) {
-      void invoke<{ cycled: boolean; windowCount: number } | undefined>(
-        IPC_CHANNELS.WINDOW.CYCLE_FOCUS,
-      )
+      // The IPC invoke lives in window-cycle.ts (not inline) so this
+      // registry — imported by Svelte components for labels/icons — stays
+      // free of bridge references per intent/no-component-async-data-fetch.
+      void cycleOpenWindows()
         .then((result) => {
           if (result?.cycled) {
             context.dispatch(actionHudShown(m.hardwareConsole_actionKey_cycleOpenWindows_label()));

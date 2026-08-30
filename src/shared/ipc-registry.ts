@@ -342,7 +342,8 @@ export const IPC_CHANNELS = {
     SET_FULL_SCREEN: 'window:set-full-screen',
     GET_FULL_SCREEN: 'window:get-full-screen',
     // Renderer → main invoke: focus the next open app window (wraps; skips
-    // destroyed and HUD pop-out windows) → { cycled: boolean, windowCount: number }
+    // destroyed, hidden, and HUD pop-out windows; minimized windows are
+    // restored) → { cycled: boolean, windowCount: number }
     CYCLE_FOCUS: 'window:cycle-focus',
   },
 

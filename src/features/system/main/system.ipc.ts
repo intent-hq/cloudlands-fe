@@ -77,7 +77,7 @@ import {
 import { meetsMinimumVersion } from '../../../shared/utils/version-compare';
 import { posixSingleQuote } from '../../../shared/utils/posix-single-quote';
 import { resolveAppIconPath } from '../../../main/utils/resolve-app-icon';
-import { isHudWindow } from '../../../main/hud-window';
+import { isHudWindow, isTrackedHudWindow } from '../../../main/hud-window';
 import { LOCAL_CONNECTION_ID } from '../../../shared/types/connections';
 import { CHIEF_WORKSPACE_ID } from '../../../shared/types/branded-ids';
 
@@ -1048,17 +1048,25 @@ export function setupSystemIPC() {
     ),
   );
 
-  // Focus the next open app window in list order, wrapping around. Destroyed
-  // windows and HUD pop-outs are excluded from the cycle. Returns whether a
-  // window was focused plus the cycleable window count so the renderer can
-  // show a hint when there is nothing to cycle to.
+  // Focus the next open app window in list order, wrapping around. Destroyed,
+  // hidden, and HUD pop-out windows (URL-detected or tracked pre-navigation)
+  // are excluded from the cycle. Minimized windows are included — macOS
+  // reports them as not visible while Windows/Linux keep them visible, so the
+  // isMinimized() check makes the cycle platform-consistent — and restored
+  // before focusing. Returns whether a window was focused plus the cycleable
+  // window count so the renderer can show a hint when there is nothing to
+  // cycle to.
   ipcMain.handle(
     WINDOW_CHANNELS.CYCLE_FOCUS,
     createSafeValidatedHandler(
       EmptySchema,
       async (event) => {
         const windows = BrowserWindow.getAllWindows().filter(
-          (w) => !w.isDestroyed() && w.isVisible() && !isHudWindow(w),
+          (w) =>
+            !w.isDestroyed() &&
+            (w.isVisible() || w.isMinimized()) &&
+            !isHudWindow(w) &&
+            !isTrackedHudWindow(w),
         );
         if (windows.length < 2) {
           return { cycled: false, windowCount: windows.length };

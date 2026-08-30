@@ -37,8 +37,10 @@ vi.mock('../../../../shared/main/async-utils', () => ({
   findVSCodeAsync: vi.fn(),
 }));
 
+import type { BrowserWindow } from 'electron';
 import { setupSystemIPC } from '../system.ipc';
 import { WINDOW_CHANNELS } from '../../../../shared/ipc/channels';
+import { registerHudWindow, _resetHudWindowRefForTests } from '../../../../main/hud-window';
 
 function handlerFor(channel: string): Handler {
   const call = electronMocks.handle.mock.calls.find(([registered]) => registered === channel);
@@ -55,6 +57,7 @@ function makeWindow(
     isMinimized: () => opts.minimized ?? false,
     restore: vi.fn(),
     focus: vi.fn(),
+    on: vi.fn(),
     webContents: {
       isDestroyed: () => false,
       getURL: () => opts.url ?? 'http://localhost:5173/',
@@ -71,6 +74,7 @@ beforeEach(() => {
   electronMocks.handle.mockReset();
   electronMocks.fromWebContents.mockReset();
   electronMocks.getAllWindows.mockReset().mockReturnValue([]);
+  _resetHudWindowRefForTests();
   setupSystemIPC();
 });
 
@@ -133,6 +137,29 @@ describe('WINDOW_CHANNELS.CYCLE_FOCUS', () => {
     expect(hud.focus).not.toHaveBeenCalled();
   });
 
+  it('skips a tracked HUD window still on about:blank', async () => {
+    const [w1, hud, w2] = [makeWindow(), makeWindow({ url: 'about:blank' }), makeWindow()];
+    registerHudWindow(hud as unknown as BrowserWindow);
+    electronMocks.getAllWindows.mockReturnValue([w1, hud, w2]);
+
+    const result = await cycleFrom(w1);
+
+    expect(result).toEqual({ cycled: true, windowCount: 2 });
+    expect(w2.focus).toHaveBeenCalled();
+    expect(hud.focus).not.toHaveBeenCalled();
+  });
+
+  it('skips hidden windows', async () => {
+    const [w1, hidden, w2] = [makeWindow(), makeWindow({ visible: false }), makeWindow()];
+    electronMocks.getAllWindows.mockReturnValue([w1, hidden, w2]);
+
+    const result = await cycleFrom(w1);
+
+    expect(result).toEqual({ cycled: true, windowCount: 2 });
+    expect(w2.focus).toHaveBeenCalled();
+    expect(hidden.focus).not.toHaveBeenCalled();
+  });
+
   it('focuses the first cycleable window when the sender is not in the cycle', async () => {
     const [w1, w2] = [makeWindow(), makeWindow()];
     electronMocks.getAllWindows.mockReturnValue([w1, w2]);
@@ -145,6 +172,17 @@ describe('WINDOW_CHANNELS.CYCLE_FOCUS', () => {
 
   it('restores a minimized window before focusing it', async () => {
     const [w1, w2] = [makeWindow(), makeWindow({ minimized: true })];
+    electronMocks.getAllWindows.mockReturnValue([w1, w2]);
+
+    const result = await cycleFrom(w1);
+
+    expect(result).toEqual({ cycled: true, windowCount: 2 });
+    expect(w2.restore).toHaveBeenCalled();
+    expect(w2.focus).toHaveBeenCalled();
+  });
+
+  it('includes a minimized window that reports not visible (macOS) and restores it', async () => {
+    const [w1, w2] = [makeWindow(), makeWindow({ minimized: true, visible: false })];
     electronMocks.getAllWindows.mockReturnValue([w1, w2]);
 
     const result = await cycleFrom(w1);
