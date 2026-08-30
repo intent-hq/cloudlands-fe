@@ -128,6 +128,24 @@ export function registerWindowFullScreenEventRelay(): void {
 }
 
 /**
+ * Forward the window-cycle invoke (`window:cycle-focus`, the hardware-console
+ * cycle-open-windows action) to the registered main-process handler
+ * (system.ipc.ts — focuses the next visible non-HUD app window and returns
+ * `{ cycled, windowCount }`). Resolves undefined without a bridge (browser
+ * dev build): the action is gated on the Electron platform, and the caller
+ * treats a non-cycled result as "no other windows". Idempotent.
+ */
+export function registerWindowCycleFocusBridge(): void {
+  registerMockIpcHandler(IPC_CHANNELS.WINDOW.CYCLE_FOCUS, async (payload?: unknown) => {
+    const bridge = typeof window !== 'undefined' ? window.electronAPI : undefined;
+    if (bridge && typeof bridge.invoke === 'function') {
+      return bridge.invoke(IPC_CHANNELS.WINDOW.CYCLE_FOCUS, payload);
+    }
+    return undefined;
+  });
+}
+
+/**
  * Forward the Electron app-version read (`app:get-version`) to the registered
  * main-process handler (system.ipc.ts, `app.getVersion()`). No production
  * renderer caller remains today (the analytics common-properties reader was
@@ -150,4 +168,5 @@ registerWindowStateBridge();
 registerWindowThemeBridge();
 registerWindowFullScreenBridge();
 registerWindowFullScreenEventRelay();
+registerWindowCycleFocusBridge();
 registerAppVersionBridge();

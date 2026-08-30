@@ -5445,6 +5445,8 @@
   "hardwareConsole_actionKey_newWorkspace_label": "Nuevo workspace",
   "hardwareConsole_actionKey_switchWindowLayouts_label": "Cambiar diseños de paneles",
   "hardwareConsole_actionKey_switchWindowLayouts_notApplicable_hint": "No hay nada que mostrar en este diseño",
+  "hardwareConsole_actionKey_cycleOpenWindows_label": "Alternar ventanas abiertas",
+  "hardwareConsole_actionKey_noOtherOpenWindows_message": "No hay otras ventanas abiertas",
   "hardwareConsole_actionKey_pushToTalk_label": "Pulsar para hablar",
   "hardwareConsole_ptt_listening_label": "Escuchando…",
   "hardwareConsole_ptt_unavailable_message": "La grabación de voz no está disponible en este sistema",

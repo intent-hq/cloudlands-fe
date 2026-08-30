@@ -5445,6 +5445,8 @@
   "hardwareConsole_actionKey_newWorkspace_label": "新建工作区",
   "hardwareConsole_actionKey_switchWindowLayouts_label": "切换面板布局",
   "hardwareConsole_actionKey_switchWindowLayouts_notApplicable_hint": "此布局没有可显示的内容",
+  "hardwareConsole_actionKey_cycleOpenWindows_label": "切换打开的窗口",
+  "hardwareConsole_actionKey_noOtherOpenWindows_message": "没有其他打开的窗口",
   "hardwareConsole_actionKey_pushToTalk_label": "按键通话",
   "hardwareConsole_ptt_listening_label": "正在聆听…",
   "hardwareConsole_ptt_unavailable_message": "此系统不支持语音录制",

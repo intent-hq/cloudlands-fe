@@ -26,6 +26,14 @@ vi.mock('$features/layout/preset-executor', () => ({
   applyContentPreset: vi.fn(async () => true),
 }));
 
+vi.mock('$lib/electron-bridge', () => ({
+  invoke: vi.fn(async () => ({ cycled: true, windowCount: 2 })),
+}));
+
+vi.mock('$lib/utils/platform-capabilities', () => ({
+  isElectronPlatform: vi.fn(() => true),
+}));
+
 import { isVoiceRecordingSupported } from '../../voice/voice-recorder';
 import {
   handleVoiceKeyDown,
@@ -34,6 +42,9 @@ import {
 } from '../../voice/ptt-controller';
 import { showVoiceSetupToast } from '../../voice/voice-setup-toast';
 import { applyContentPreset } from '$features/layout/preset-executor';
+import { invoke } from '$lib/electron-bridge';
+import { isElectronPlatform } from '$lib/utils/platform-capabilities';
+import { IPC_CHANNELS } from '$shared/ipc-registry';
 import {
   ACTION_KEY_REGISTRY,
   actionSlotIcons,
@@ -1526,6 +1537,68 @@ describe('execute dispatch', () => {
     getActionKeyDefinition('none').execute(context);
     expect(dispatch).not.toHaveBeenCalled();
     expect(navigate).not.toHaveBeenCalled();
+  });
+});
+
+describe('cycle-open-windows', () => {
+  const invokeMock = invoke as ReturnType<typeof vi.fn>;
+  const definition = () => getActionKeyDefinition('cycle-open-windows');
+
+  it('availability follows the Electron platform gate', () => {
+    const { context } = makeContext(makeState({ currentWorkspaceId: null }));
+    expect(definition().isAvailable(context)).toBe(true);
+    (isElectronPlatform as ReturnType<typeof vi.fn>).mockReturnValueOnce(false);
+    expect(definition().isAvailable(context)).toBe(false);
+  });
+
+  it('invokes the window-cycle IPC and shows the action HUD on a cycled result', async () => {
+    invokeMock.mockResolvedValueOnce({ cycled: true, windowCount: 2 });
+    const { context, dispatch, showHint } = makeContext(makeState());
+    definition().execute(context);
+    await vi.waitFor(() => {
+      expect(dispatch).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: 'hardwareConsole/actionHudShown',
+          payload: [m.hardwareConsole_actionKey_cycleOpenWindows_label()],
+        }),
+      );
+    });
+    expect(invokeMock).toHaveBeenCalledExactlyOnceWith(IPC_CHANNELS.WINDOW.CYCLE_FOCUS);
+    expect(showHint).not.toHaveBeenCalled();
+  });
+
+  it('hints "no other open windows" when the result reports a single window', async () => {
+    invokeMock.mockResolvedValueOnce({ cycled: false, windowCount: 1 });
+    const { context, dispatch, showHint } = makeContext(makeState());
+    definition().execute(context);
+    await vi.waitFor(() => {
+      expect(showHint).toHaveBeenCalledExactlyOnceWith(
+        m.hardwareConsole_actionKey_noOtherOpenWindows_message(),
+      );
+    });
+    expect(dispatch).not.toHaveBeenCalled();
+  });
+
+  it('hints when the bridge resolves undefined (browser dev build)', async () => {
+    invokeMock.mockResolvedValueOnce(undefined);
+    const { context, showHint } = makeContext(makeState());
+    definition().execute(context);
+    await vi.waitFor(() => {
+      expect(showHint).toHaveBeenCalledExactlyOnceWith(
+        m.hardwareConsole_actionKey_noOtherOpenWindows_message(),
+      );
+    });
+  });
+
+  it('catches and logs a rejected invoke without throwing', async () => {
+    invokeMock.mockRejectedValueOnce(new Error('boom'));
+    const { context, dispatch, showHint } = makeContext(makeState());
+    expect(() => definition().execute(context)).not.toThrow();
+    await vi.waitFor(() => {
+      expect(invokeMock).toHaveBeenCalledTimes(1);
+    });
+    expect(dispatch).not.toHaveBeenCalled();
+    expect(showHint).not.toHaveBeenCalled();
   });
 });
 
