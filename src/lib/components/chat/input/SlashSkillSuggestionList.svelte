@@ -8,11 +8,21 @@
     items?: readonly SkillInfo[];
     loading?: boolean;
     error?: string | null;
+    listboxId: string;
     onSelect: (skill: SkillInfo) => void;
     onDismiss?: () => void;
+    onActiveOptionChange?: (optionId: string | undefined) => void;
   }
 
-  let { items = [], loading = false, error = null, onSelect, onDismiss }: Props = $props();
+  let {
+    items = [],
+    loading = false,
+    error = null,
+    listboxId,
+    onSelect,
+    onDismiss,
+    onActiveOptionChange,
+  }: Props = $props();
 
   const componentId = $props.id();
   let selectedIndex = $state(0);
@@ -27,6 +37,10 @@
     loading;
     error;
     selectedIndex = 0;
+  });
+
+  $effect(() => {
+    onActiveOptionChange?.(selectedOptionId);
   });
 
   function scrollToSelected() {
@@ -100,6 +114,7 @@
     </div>
   {:else}
     <div
+      id={listboxId}
       class="slash-skill-options"
       role="listbox"
       aria-label={m.chat_slashSkillSuggestionList_ariaLabel()}

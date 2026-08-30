@@ -205,6 +205,9 @@
   let dismissedSlashContext = $state<string | null>(null);
   let slashSuggestionList: { onKeyDown: (props: { event: KeyboardEvent }) => boolean } | null =
     $state(null);
+  const componentId = $props.id();
+  const slashListboxId = `slash-skill-listbox-${componentId}`;
+  let slashActiveOptionId = $state<string | undefined>();
 
   const filteredSkills = $derived(slashContext ? rankSlashSkills(skills, slashContext.query) : []);
   const slashContextKey = $derived(
@@ -1499,6 +1502,21 @@
     if (!editor || editor.isDestroyed) return;
     editor.view.dispatch(editor.state.tr.setMeta(trailingHintPluginKey, trailingHint));
   });
+
+  $effect(() => {
+    const editorElement = editor?.view.dom;
+    if (!editorElement) return;
+
+    editorElement.setAttribute('aria-haspopup', 'listbox');
+    editorElement.setAttribute('aria-expanded', String(slashMenuOpen));
+    if (slashMenuOpen && slashActiveOptionId) {
+      editorElement.setAttribute('aria-controls', slashListboxId);
+      editorElement.setAttribute('aria-activedescendant', slashActiveOptionId);
+    } else {
+      editorElement.removeAttribute('aria-controls');
+      editorElement.removeAttribute('aria-activedescendant');
+    }
+  });
 </script>
 
 <div class="tiptap-root">
@@ -1517,11 +1535,13 @@
       >
         <SlashSkillSuggestionList
           bind:this={slashSuggestionList}
+          listboxId={slashListboxId}
           items={filteredSkills}
           loading={skillsLoading}
           error={skillsError}
           onSelect={selectSlashSkill}
           onDismiss={dismissSlashMenu}
+          onActiveOptionChange={(optionId) => (slashActiveOptionId = optionId)}
         />
       </Popover.Content>
     </Popover.Portal>

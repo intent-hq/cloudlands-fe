@@ -183,6 +183,32 @@ describe('TipTapEditor slash skills', () => {
     expect(document.activeElement).toBe(editor);
   });
 
+  it('exposes the open listbox and keyboard-driven active option on the focused editor', async () => {
+    const { component, editor } = await mountEditor();
+
+    expect(editor.getAttribute('aria-haspopup')).toBe('listbox');
+    expect(editor.getAttribute('aria-expanded')).toBe('false');
+    expect(editor.hasAttribute('aria-controls')).toBe(false);
+    expect(editor.hasAttribute('aria-activedescendant')).toBe(false);
+
+    component.insertText('/');
+    const listbox = await screen.findByRole('listbox');
+    const options = screen.getAllByRole('option');
+    await waitFor(() => {
+      expect(editor.getAttribute('aria-expanded')).toBe('true');
+      expect(editor.getAttribute('aria-controls')).toBe(listbox.id);
+      expect(editor.getAttribute('aria-activedescendant')).toBe(options[0].id);
+    });
+
+    await fireEvent.keyDown(editor, { key: 'ArrowDown' });
+    await waitFor(() => expect(editor.getAttribute('aria-activedescendant')).toBe(options[1].id));
+
+    await fireEvent.keyDown(editor, { key: 'Escape' });
+    expect(editor.getAttribute('aria-expanded')).toBe('false');
+    expect(editor.hasAttribute('aria-controls')).toBe(false);
+    expect(editor.hasAttribute('aria-activedescendant')).toBe(false);
+  });
+
   it('dismisses before the outer Escape action and reopens when the query changes', async () => {
     const onEscape = vi.fn();
     const { component, editor } = await mountEditor({ onEscape });
