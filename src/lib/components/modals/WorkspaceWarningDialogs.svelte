@@ -10,6 +10,8 @@
   import {
     selectActiveHookNamesForArchive,
     selectActiveHookNamesForDelete,
+    selectOpenPrsForArchive,
+    selectOpenPrsForDelete,
     selectRunningAgentNamesForArchive,
     selectRunningAgentNamesForDelete,
     selectShowArchiveWarning,
@@ -19,9 +21,11 @@
   const showDeleteWarning$ = selectShowDeleteWarning();
   const runningAgentNamesForDelete$ = selectRunningAgentNamesForDelete();
   const activeHookNamesForDelete$ = selectActiveHookNamesForDelete();
+  const openPrsForDelete$ = selectOpenPrsForDelete();
   const showArchiveWarning$ = selectShowArchiveWarning();
   const runningAgentNamesForArchive$ = selectRunningAgentNamesForArchive();
   const activeHookNamesForArchive$ = selectActiveHookNamesForArchive();
+  const openPrsForArchive$ = selectOpenPrsForArchive();
 </script>
 
 <!-- Redux-owned delete warning host (global for all workspace delete entrypoints) -->
@@ -29,6 +33,7 @@
   open={$showDeleteWarning$}
   agentNames={$runningAgentNamesForDelete$}
   hookNames={$activeHookNamesForDelete$}
+  openPrs={$openPrsForDelete$}
   onDeleteAnyway={() => appStore.dispatch(confirmDeleteWorkspace())}
   onCancel={() => appStore.dispatch(closeDeleteWarning())}
 />
@@ -39,6 +44,7 @@
   mode="archive"
   agentNames={$runningAgentNamesForArchive$}
   hookNames={$activeHookNamesForArchive$}
+  openPrs={$openPrsForArchive$}
   onDeleteAnyway={() => appStore.dispatch(confirmArchiveWorkspace())}
   onCancel={() => appStore.dispatch(closeArchiveWarning())}
 />
