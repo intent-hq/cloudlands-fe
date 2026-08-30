@@ -436,6 +436,18 @@ describe('followBottom policy', () => {
     expect(child.style.overflowAnchor).toBe('auto');
   });
 
+  it('keeps the layout-neutral anchor a viable non-zero-sized anchor candidate', () => {
+    const action = followBottom(container, { follow: true, layoutNeutralBottomAnchor: true });
+    const anchor = container.querySelector<HTMLElement>('[data-follow-bottom-anchor]')!;
+
+    // Zero-sized boxes are rejected as scroll-anchor candidates by Chromium
+    // and Gecko (w3c/csswg-drafts#3483): keep a 1px box and cancel its
+    // layout contribution with a negative margin instead.
+    expect(anchor.style.height).toBe('1px');
+    expect(anchor.style.marginTop).toBe('-1px');
+    action.destroy();
+  });
+
   it('starts followed and idle with no pending animation frame', () => {
     const action = followBottom(container, { follow: true });
 
@@ -651,15 +663,14 @@ describe('followBottom policy', () => {
     fireResizeFor(row);
     runFrame();
 
-    // The resize delivery no longer snaps synchronously: the trace callback
-    // (registered before the settle frame) still sees the pre-snap position,
-    // and the settle frame in the same pre-paint batch corrects it.
+    // Resize delivery snaps synchronously (post-layout, pre-paint), so the
+    // trace callback already sees the corrected position in the same frame.
     expect(trace).toEqual([
       {
         phase: 'edit-grow-first-frame',
         maximum: 613,
-        scrollTop: 600,
-        distance: 13,
+        scrollTop: 613,
+        distance: 0,
         settleFrames: 0,
       },
     ]);
@@ -1057,7 +1068,7 @@ describe('followBottom policy', () => {
     action.destroy();
   });
 
-  it('defers observer-driven layout work out of the reveal frame', () => {
+  it('defers mutation-driven layout work out of the reveal frame', () => {
     const options = { enabled: true, follow: true };
     const action = followBottom(container, options);
     action.update({ ...options, enabled: false });
@@ -1081,9 +1092,9 @@ describe('followBottom policy', () => {
     });
 
     action.update({ ...options, enabled: true });
-    // Observers fire during the reveal frame on the still-dirty tree.
+    // Mutation observers fire as microtasks during the reveal on the
+    // still-dirty tree — their layout work stays deferred to the frame.
     fireMutation();
-    fireResize();
     fireMutation();
     expect(layoutReads).toBe(0);
     expect(scrollTop).toBe(600);
@@ -1094,16 +1105,41 @@ describe('followBottom policy', () => {
     action.destroy();
   });
 
-  it('coalesces a burst of observer callbacks into one deferred settle', () => {
+  it('snaps synchronously on resize delivery while following', () => {
+    const action = followBottom(container, { follow: true });
+    expect(animationFrames).toHaveLength(0);
+
+    // ResizeObserver delivers after layout, pre-paint, on a clean tree. The
+    // snap must land in the same frame: deferring it to a rAF (which runs in
+    // the NEXT frame from an RO callback) paints one stale-scrollTop frame
+    // per resize burst — the footer utility bar flicker under rapid streaming.
+    scrollHeight += 40;
+    fireResize();
+    expect(scrollTop).toBe(640);
+
+    scrollHeight += 25;
+    fireResize();
+    expect(scrollTop).toBe(665);
+
+    runSettleTail();
+    expect(scrollTop).toBe(665);
+    expect(animationFrames).toHaveLength(0);
+    action.destroy();
+  });
+
+  it('coalesces a burst of mutation callbacks into one deferred settle', () => {
     const action = followBottom(container, { follow: true });
     expect(animationFrames).toHaveLength(0);
 
     scrollHeight += 40;
     fireMutation();
-    fireResize();
     fireAttributeMutation();
     expect(animationFrames).toHaveLength(1);
     expect(scrollTop).toBe(600);
+
+    fireResize();
+    expect(animationFrames).toHaveLength(1);
+    expect(scrollTop).toBe(640);
 
     runFrame();
     expect(scrollTop).toBe(640);

@@ -26,9 +26,11 @@ describe('queued-message outer bottom layout', () => {
     expect(screen.getByTestId('chat-scroll-end-marker').className).toBe(
       CHAT_SCROLL_END_MARKER_CLASS,
     );
-    expect(document.querySelector<HTMLElement>('[data-follow-bottom-anchor]')?.style.height).toBe(
-      '0px',
-    );
+    // Layout-neutral anchor: 1px box (zero-sized boxes are rejected as
+    // scroll-anchor candidates) cancelled by a -1px margin.
+    const anchor = document.querySelector<HTMLElement>('[data-follow-bottom-anchor]');
+    expect(anchor?.style.height).toBe('1px');
+    expect(anchor?.style.marginTop).toBe('-1px');
   });
 
   it('gives the queue zero outer inset without changing the normal empty-state inset', () => {

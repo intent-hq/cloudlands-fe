@@ -23,7 +23,7 @@ export interface FollowBottomOptions {
   onFollowChange?: (follow: boolean) => void;
   /** Reports live geometry for controls outside the scroll container. */
   onScrollStateChange?: (state: FollowBottomState) => void;
-  /** Keep the native anchor active without reserving a layout pixel. */
+  /** Keep the native anchor active without contributing layout height. */
   layoutNeutralBottomAnchor?: boolean;
 }
 
@@ -86,8 +86,13 @@ export function followBottom(container: HTMLElement, options: FollowBottomOption
   const nativeBottomAnchor = document.createElement('div');
   nativeBottomAnchor.dataset.followBottomAnchor = '';
   nativeBottomAnchor.setAttribute('aria-hidden', 'true');
+  // Zero-sized elements are rejected as scroll-anchor candidates by both
+  // Chromium and Gecko (w3c/csswg-drafts#3483), so the layout-neutral form
+  // keeps a 1px box and cancels it with a negative margin instead of
+  // collapsing to 0px — net scrollHeight contribution stays zero while the
+  // anchor remains eligible to hold a followed viewport pinned.
   nativeBottomAnchor.style.cssText =
-    `height:${options.layoutNeutralBottomAnchor ? 0 : 1}px;` +
+    `height:1px;${options.layoutNeutralBottomAnchor ? 'margin-top:-1px;' : ''}` +
     'overflow-anchor:auto;pointer-events:none;flex:0 0 auto;';
 
   function excludeNativeAnchor(element: HTMLElement) {
@@ -209,12 +214,22 @@ export function followBottom(container: HTMLElement, options: FollowBottomOption
     scheduleBottomSettle();
   }
 
+  function scheduleLayoutReport() {
+    if (layoutReportFrame !== null) return;
+    layoutReportFrame = requestAnimationFrame(() => {
+      layoutReportFrame = null;
+      if (destroyed || !enabled) return;
+      reportState();
+    });
+  }
+
   function handleLayoutChange() {
-    // Observer callbacks can fire on a dirty tree — e.g. when a retained
-    // surface is revealed — where a synchronous scrollHeight/clientHeight
-    // read forces layout. Defer all layout reads to a single coalesced
-    // animation frame (still pre-paint); the native bottom anchor keeps a
-    // followed viewport pinned until the settle frame snaps exactly.
+    // Mutation callbacks fire as microtasks on a dirty tree — e.g. when a
+    // retained surface is revealed — where a synchronous
+    // scrollHeight/clientHeight read forces layout. Defer all layout reads
+    // to a single coalesced animation frame (still pre-paint); the native
+    // bottom anchor keeps a followed viewport pinned until the settle frame
+    // snaps exactly.
     if (destroyed || !enabled) return;
     if (isFollowing) {
       stableFrames = 0;
@@ -222,12 +237,21 @@ export function followBottom(container: HTMLElement, options: FollowBottomOption
       scheduleBottomSettle();
       return;
     }
-    if (layoutReportFrame !== null) return;
-    layoutReportFrame = requestAnimationFrame(() => {
-      layoutReportFrame = null;
-      if (destroyed || !enabled) return;
-      reportState();
-    });
+    scheduleLayoutReport();
+  }
+
+  function handleResizeDelivery() {
+    // ResizeObserver delivers after layout, pre-paint, on a clean tree, so
+    // geometry reads here are cheap. Snap synchronously while following:
+    // deferring to a rAF (which runs in the NEXT frame from an RO callback)
+    // would paint one stale-scrollTop frame per resize burst — the footer
+    // utility bar flicker under rapid streaming.
+    if (destroyed || !enabled) return;
+    if (isFollowing) {
+      requestBottomSettle();
+      return;
+    }
+    scheduleLayoutReport();
   }
 
   const follower: BottomFollower = {
@@ -404,7 +428,7 @@ export function followBottom(container: HTMLElement, options: FollowBottomOption
     });
 
     // Watch for size changes
-    resizeObserver = new ResizeObserver(handleLayoutChange);
+    resizeObserver = new ResizeObserver(handleResizeDelivery);
     observePersistentResize(container);
 
     // Also observe children for size changes
