@@ -20,32 +20,22 @@ export function escapeCodeHtml(text: string): string {
   return text.replace(/[&<>"']/g, (m) => map[m]);
 }
 
-/**
- * Fast, high-quality string hash (cyrb53 variant) for cache keys.
- * Much cheaper than storing full code strings as Map keys.
- */
-function fastHash(str: string): string {
-  let h1 = 0xdeadbeef;
-  let h2 = 0x41c6ce57;
-  for (let i = 0; i < str.length; i++) {
-    const ch = str.charCodeAt(i);
-    h1 = Math.imul(h1 ^ ch, 2654435761);
-    h2 = Math.imul(h2 ^ ch, 1597334677);
-  }
-  h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507);
-  h1 ^= Math.imul(h2 ^ (h2 >>> 13), 3266489909);
-  h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507);
-  h2 ^= Math.imul(h1 ^ (h1 >>> 13), 3266489909);
-  return (4294967296 * (2097151 & h2) + (h1 >>> 0)).toString(36);
-}
-
 // LRU cache of highlight results. Map iteration order doubles as LRU order:
 // hits are re-inserted, evictions remove the oldest (first) key.
+// Bounded by entry count AND total chars; oversize values are never cached
+// so a few huge blocks cannot pin lots of memory.
 const HIGHLIGHT_CACHE_SIZE = 300;
+const HIGHLIGHT_CACHE_MAX_CHARS = 2_000_000;
+const HIGHLIGHT_ENTRY_MAX_CHARS = 100_000;
 const highlightCache = new Map<string, string>();
+let highlightCacheChars = 0;
 
+// Keys embed the full code: values (highlighted HTML) are strictly larger
+// than the code, so hashing would save little while risking a collision
+// silently serving another block's HTML. '\u0000' cannot appear in a
+// language identifier, so keys are unambiguous.
 function cacheKey(code: string, language: string): string {
-  return `${language}|${fastHash(code)}:${code.length}`;
+  return `${language}\u0000${code}`;
 }
 
 /**
@@ -63,19 +53,40 @@ export function getCachedHighlight(code: string, language: string): string | nul
   return hit;
 }
 
-function setCachedHighlight(key: string, value: string): void {
-  highlightCache.delete(key);
-  while (highlightCache.size >= HIGHLIGHT_CACHE_SIZE) {
-    const oldest = highlightCache.keys().next().value;
-    if (oldest === undefined) break;
-    highlightCache.delete(oldest);
+function deleteCacheEntry(key: string): void {
+  const existing = highlightCache.get(key);
+  if (existing !== undefined) {
+    highlightCacheChars -= key.length + existing.length;
+    highlightCache.delete(key);
   }
-  highlightCache.set(key, value);
 }
 
-/** Clear the highlight cache (for tests). */
+function setCachedHighlight(key: string, value: string): void {
+  deleteCacheEntry(key);
+  const entryChars = key.length + value.length;
+  if (entryChars > HIGHLIGHT_ENTRY_MAX_CHARS) return;
+  while (
+    highlightCache.size >= HIGHLIGHT_CACHE_SIZE ||
+    (highlightCache.size > 0 && highlightCacheChars + entryChars > HIGHLIGHT_CACHE_MAX_CHARS)
+  ) {
+    const oldest = highlightCache.keys().next().value;
+    if (oldest === undefined) break;
+    deleteCacheEntry(oldest);
+  }
+  highlightCache.set(key, value);
+  highlightCacheChars += entryChars;
+}
+
+// Bumped on clear so in-flight computations from before the clear cannot
+// repopulate the cache when they resolve.
+let cacheGeneration = 0;
+
+/** Clear the highlight cache and pending computations (for tests). */
 export function clearHighlightCache(): void {
   highlightCache.clear();
+  highlightCacheChars = 0;
+  pendingHighlights.clear();
+  cacheGeneration++;
 }
 
 /** Yield until the browser is idle (bounded), so highlighting never lands in the mount flush. */
@@ -89,7 +100,11 @@ function whenIdle(): Promise<void> {
   });
 }
 
-/** Synchronous highlight.js invocation with escape fallback on failure. */
+/**
+ * Synchronous highlight.js invocation with escape fallback on failure.
+ * The fallback is cached like a real result — hljs throws are rare and
+ * deterministic for a given input, so re-running would not help.
+ */
 function highlightNow(code: string, language: string): string {
   try {
     if (language && hljs.getLanguage(language)) {
@@ -102,28 +117,49 @@ function highlightNow(code: string, language: string): string {
 }
 
 // Dedupe concurrent requests for identical content (e.g. the same snippet
-// rendered by several mounted blocks at once).
-const pendingHighlights = new Map<string, Promise<string>>();
+// rendered by several mounted blocks at once). Each requester may register
+// a staleness check; the computation is skipped when ALL requesters have
+// gone stale by the time the idle callback fires.
+type PendingHighlight = { promise: Promise<string>; staleChecks: (() => boolean)[] };
+const pendingHighlights = new Map<string, PendingHighlight>();
 
 /**
  * Highlight `code` asynchronously (idle callback; setTimeout fallback) and
  * cache the result. Cache hits resolve without invoking highlight.js;
  * identical concurrent requests share one computation.
+ *
+ * `isStale` lets callers cancel superseded requests (e.g. streaming chunks
+ * that were replaced before idle): when every requester of a computation
+ * reports stale, highlight.js is skipped and the promise resolves with
+ * escaped code that is never cached.
  */
-export function highlightAsync(code: string, language: string): Promise<string> {
+export function highlightAsync(
+  code: string,
+  language: string,
+  isStale?: () => boolean,
+): Promise<string> {
   const key = cacheKey(code, language);
   const cached = highlightCache.get(key);
   if (cached !== undefined) return Promise.resolve(cached);
 
   const pending = pendingHighlights.get(key);
-  if (pending) return pending;
+  if (pending) {
+    pending.staleChecks.push(isStale ?? (() => false));
+    return pending.promise;
+  }
 
-  const promise = whenIdle().then(() => {
+  const generation = cacheGeneration;
+  const entry: PendingHighlight = {
+    staleChecks: [isStale ?? (() => false)],
+    promise: Promise.resolve(''),
+  };
+  entry.promise = whenIdle().then(() => {
+    if (pendingHighlights.get(key) === entry) pendingHighlights.delete(key);
+    if (entry.staleChecks.every((check) => check())) return escapeCodeHtml(code);
     const html = highlightNow(code, language);
-    setCachedHighlight(key, html);
-    pendingHighlights.delete(key);
+    if (generation === cacheGeneration) setCachedHighlight(key, html);
     return html;
   });
-  pendingHighlights.set(key, promise);
-  return promise;
+  pendingHighlights.set(key, entry);
+  return entry.promise;
 }

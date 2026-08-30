@@ -70,6 +70,38 @@ describe('highlightAsync', () => {
     const html = await highlightAsync('<b>&</b>', LANG);
     expect(html).toBe('&lt;b&gt;&amp;&lt;/b&gt;');
   });
+
+  it('skips highlight.js when every requester reports stale', async () => {
+    const highlightSpy = vi.spyOn(hljs, 'highlight');
+    const html = await highlightAsync(CODE, LANG, () => true);
+    expect(highlightSpy).not.toHaveBeenCalled();
+    expect(html).toBe(escapeCodeHtml(CODE));
+    // Stale results are never cached
+    expect(getCachedHighlight(CODE, LANG)).toBeNull();
+  });
+
+  it('still highlights when at least one concurrent requester is live', async () => {
+    const [stale, live] = await Promise.all([
+      highlightAsync(CODE, LANG, () => true),
+      highlightAsync(CODE, LANG, () => false),
+    ]);
+    expect(live).toContain('hljs-');
+    expect(stale).toBe(live);
+    expect(getCachedHighlight(CODE, LANG)).toBe(live);
+  });
+
+  it('does not cache oversize results', async () => {
+    const huge = 'x'.repeat(200_000);
+    await highlightAsync(huge, 'plaintext');
+    expect(getCachedHighlight(huge, 'plaintext')).toBeNull();
+  });
+
+  it('in-flight resolution does not repopulate a cleared cache', async () => {
+    const pending = highlightAsync(CODE, LANG);
+    clearHighlightCache();
+    await pending;
+    expect(getCachedHighlight(CODE, LANG)).toBeNull();
+  });
 });
 
 describe('getCachedHighlight', () => {

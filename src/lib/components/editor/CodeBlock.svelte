@@ -57,10 +57,12 @@
       return;
     }
 
-    // Show correct (unhighlighted) text right away; colors arrive async
+    // Show correct (unhighlighted) text right away; colors arrive async.
+    // The stale flag suppresses superseded results AND lets highlightAsync
+    // skip the highlight.js work entirely (e.g. replaced streaming chunks).
     highlighted = escapeCodeHtml(currentCode);
     let stale = false;
-    highlightAsync(currentCode, currentLanguage).then((html) => {
+    highlightAsync(currentCode, currentLanguage, () => stale).then((html) => {
       if (!stale) highlighted = html;
     });
     return () => {
