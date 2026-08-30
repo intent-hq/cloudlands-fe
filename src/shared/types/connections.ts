@@ -125,16 +125,18 @@ export interface ConnectionRecord {
    * `client.hello` handshake, PROTOCOL §5.17), captured on connect and
    * refreshed on every reconnect so the UI can compare it against the app's
    * pinned intentd version. `null`/absent until captured (or for daemons that
-   * predate the field). Never set for the local entry — the existing
-   * `DaemonVersionInfo` path owns the local daemon's version.
+   * predate the field). On the synthesized local entry it is populated only
+   * in `external` connection mode from the `DaemonVersionInfo` path (absent
+   * for the spawned sidecar).
    */
   daemonVersion?: string | null;
   /**
-   * Whether the remote daemon reports self-update support (`updateSupported`
-   * from `system.status`), captured after connect and refreshed on every
+   * Whether the daemon reports self-update support (`updateSupported` from
+   * `system.status`), captured after connect and refreshed on every
    * reconnect. `null`/absent = unknown (capture pending, or a daemon too old
    * to report the field) — the UI treats anything but `true` as "do not offer
-   * the Update action". Never set for the local entry.
+   * the Update action". On the synthesized local entry it is populated only
+   * for an adopted external daemon over UDS (absent for the spawned sidecar).
    */
   updateSupported?: boolean | null;
   /**

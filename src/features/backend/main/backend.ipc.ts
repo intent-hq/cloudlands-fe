@@ -57,8 +57,10 @@ import {
 import {
   getConnectionMode,
   getDaemonVersionInfo,
+  getLocalUpdateSupported,
   getOrphanedSidecarInfo,
   setDaemonVersionInfo,
+  setLocalUpdateSupported,
   setOrphanedSidecarInfo,
 } from './connection-mode';
 import { computeDaemonVersionRefresh } from './daemon-version-refresh';
@@ -711,6 +713,11 @@ function createAdditionalBackendClient(id: string, config: BackendConnectionConf
             id,
           );
         }
+        // Capture whether the adopted external local daemon supports
+        // self-update (system.status `updateSupported`), mirroring the
+        // remote capture above. Fire-and-forget/fail-soft; the capture
+        // itself guards on external + UDS and clears otherwise.
+        void captureLocalUpdateSupported();
       }
     },
   });
@@ -1099,6 +1106,50 @@ async function captureRemoteUpdateSupported(id: string): Promise<void> {
 }
 
 /**
+ * Capture whether the adopted external LOCAL daemon supports self-update
+ * (`updateSupported` from `system.status`), mirroring
+ * {@link captureRemoteUpdateSupported} but storing the flag in the
+ * connection-mode module state (the local entry is synthesized, never
+ * persisted). Runs from the local `onHelloResult` branch on every
+ * (re)connect. Only an `external` connection mode over UDS captures —
+ * sidecar/unresolved modes and non-UDS transports clear the flag to `null`
+ * (unknown). A successful flagless response is a conclusive "unknown" and
+ * clears the same way. Only a FAILED request is fail-soft: swallowed with a
+ * warn, stored value kept as-is. Results that arrive after the local client
+ * was disposed/replaced are discarded (monorepo#2221). Broadcasts
+ * `connections:changed` only when the value actually changed.
+ */
+async function captureLocalUpdateSupported(): Promise<void> {
+  try {
+    // Snapshot the pooled local client; the pool lookup below protects
+    // against a stale capture after the client is disposed/replaced.
+    const client = backendClients.get(LOCAL_CONNECTION_ID);
+    if (!client) return;
+    if (getConnectionMode() !== 'external' || client.getConfig().transport !== 'uds') {
+      if (getLocalUpdateSupported() !== null) {
+        setLocalUpdateSupported(null);
+        await broadcastConnectionsChanged();
+      }
+      return;
+    }
+    const result = await client.request('system.status');
+    const supported = extractUpdateSupported(result);
+    // Drop the result when the local client changed mid-flight — the
+    // snapshot client may have answered just before its disposal.
+    if (backendClients.get(LOCAL_CONNECTION_ID) === client) {
+      if (getLocalUpdateSupported() !== supported) {
+        setLocalUpdateSupported(supported);
+        await broadcastConnectionsChanged();
+      }
+    }
+  } catch (error) {
+    logger.warn('Failed to capture local updateSupported flag', {
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+}
+
+/**
  * Pull the local-IP list out of a `server.pairingInfo` result (PROTOCOL §2 —
  * returns `{ token, certFingerprint, port, path, localIps, hostname }`).
  * Returns the non-empty string entries, else `null` when the shape is absent
@@ -1254,6 +1305,13 @@ async function listConnections(
   // created after the remote handshake already fired, a boot into
   // a rejecting remote, or a reload of a pooled-backend window) still surfaces
   // the advisory / actionable state (cloudlands-fe#823 pattern), per backend.
+  // The local entry is synthesized (never persisted), so its adopted external
+  // daemon observations live in connection-mode state rather than the store:
+  // enrich it here with the daemon's version and updateSupported capture.
+  // Sidecar/unresolved modes leave both fields absent.
+  const localVersionInfo = getConnectionMode() === 'external' ? getDaemonVersionInfo() : null;
+  const localUpdateSupported =
+    getConnectionMode() === 'external' ? getLocalUpdateSupported() : null;
   return {
     connections: connections
       .filter((c) => !isSelfConnectionRecord(c, selfKeys))
@@ -1263,6 +1321,14 @@ async function listConnections(
           status === 'connected' ? connectedDaemonVersions.get(connection.id) : undefined;
         return {
           ...connection,
+          ...(connection.id === LOCAL_CONNECTION_ID
+            ? {
+                ...(localVersionInfo?.daemonVersion
+                  ? { daemonVersion: localVersionInfo.daemonVersion }
+                  : {}),
+                ...(localUpdateSupported !== null ? { updateSupported: localUpdateSupported } : {}),
+              }
+            : {}),
           status,
           ...(intentdVersion ? { intentdVersion } : {}),
         };

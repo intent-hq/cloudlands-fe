@@ -606,6 +606,50 @@ describe('connections:* IPC handlers', () => {
     });
   });
 
+  it('connections:list enriches the local record with the external daemon version + updateSupported', async () => {
+    const { mod } = await loadModule();
+    // Same module registry as the loaded backend.ipc (vi.resetModules ran in
+    // beforeEach), so this state is the instance the handler reads.
+    const connectionMode = await import('../connection-mode');
+    connectionMode.setConnectionMode('external');
+    connectionMode.setDaemonVersionInfo({
+      daemonVersion: '0.2.0',
+      pinnedVersion: '0.1.0',
+      versionMismatch: true,
+    });
+    connectionMode.setLocalUpdateSupported(true);
+    mod.registerBackendHandlers();
+
+    await expect(findHandler('connections:list')!({}, undefined)).resolves.toMatchObject({
+      connections: [
+        { ...LOCAL, daemonVersion: '0.2.0', updateSupported: true, status: 'disconnected' },
+        { ...REMOTE, status: 'not-open' },
+      ],
+    });
+    connectionMode.__resetConnectionModeForTesting();
+  });
+
+  it('connections:list leaves the local record unenriched in sidecar mode', async () => {
+    const { mod } = await loadModule();
+    const connectionMode = await import('../connection-mode');
+    connectionMode.setConnectionMode('sidecar');
+    connectionMode.setDaemonVersionInfo({
+      daemonVersion: '0.2.0',
+      pinnedVersion: '0.1.0',
+      versionMismatch: true,
+    });
+    connectionMode.setLocalUpdateSupported(true);
+    mod.registerBackendHandlers();
+
+    const result = (await findHandler('connections:list')!({}, undefined)) as {
+      connections: Array<Record<string, unknown>>;
+    };
+    const local = result.connections.find((c) => c.id === 'local');
+    expect(local).not.toHaveProperty('daemonVersion');
+    expect(local).not.toHaveProperty('updateSupported');
+    connectionMode.__resetConnectionModeForTesting();
+  });
+
   it('connections:list reports connected pool members in connectedIds', async () => {
     const { mod } = await loadModule();
     mod.getBackendClient(); // local stays 'disconnected'
@@ -1246,9 +1290,7 @@ describe('connections:* IPC handlers', () => {
     expect(
       rpc.calls.every(
         (method) =>
-          method === 'server.pairingInfo' ||
-          method === 'host.status' ||
-          method === 'system.status',
+          method === 'server.pairingInfo' || method === 'host.status' || method === 'system.status',
       ),
     ).toBe(true);
     expect(mockCaptureFingerprint).not.toHaveBeenCalled();
