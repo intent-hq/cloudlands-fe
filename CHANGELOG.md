@@ -4,6 +4,13 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.112.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.112.1...v2.112.2) (2026-08-30)
+
+
+### 🐛 Bug Fixes
+
+* **smart-scroll:** snap synchronously on resize delivery while following ([#1886](https://github.com/intent-hq/cloudlands-fe/issues/1886)) ([9d881b7](https://github.com/intent-hq/cloudlands-fe/commit/9d881b7ab36a88312f5096b0d6d7db11624ec4e9))
+
 ## [2.112.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.112.0...v2.112.1) (2026-08-30)
 
 
