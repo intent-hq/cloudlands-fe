@@ -28,6 +28,8 @@
     taskBlockRenderMode?: 'placeholder' | 'content';
     /** Chat transcript only: render inline workspace-file images as fixed square thumbnails. */
     chatImageThumbnails?: boolean;
+    /** Open all http(s) links directly in the external browser (e.g. release notes). */
+    forceExternalLinks?: boolean;
   }
 
   let {
@@ -40,6 +42,7 @@
     onFileClick,
     taskBlockRenderMode = 'placeholder',
     chatImageThumbnails = false,
+    forceExternalLinks = false,
   }: Props = $props();
 
   // PERF: Detect content complexity to choose rendering strategy
@@ -329,6 +332,7 @@
         sourcePanelId,
         event,
         rawHref: anchor.getAttribute('href') ?? undefined,
+        ...(forceExternalLinks ? { forceExternal: true } : {}),
       });
       return;
     }
