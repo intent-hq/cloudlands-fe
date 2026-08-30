@@ -1,0 +1,58 @@
+/**
+ * @vitest-environment jsdom
+ *
+ * Read-only markdown renders as static processed HTML — no ProseMirror
+ * EditorView is constructed for chat transcript messages.
+ */
+import { render, waitFor } from '@testing-library/svelte';
+import { describe, expect, it } from 'vitest';
+import MarkdownViewer from '../MarkdownViewer.svelte';
+
+describe('MarkdownViewer static rendering', () => {
+  it('renders plain text through the simple path', () => {
+    const { container } = render(MarkdownViewer, {
+      props: { content: 'just plain text with no markdown' },
+    });
+    expect(container.querySelector('.simple-content')).toBeTruthy();
+    expect(container.querySelector('.ProseMirror')).toBeNull();
+  });
+
+  it('renders task lists as static HTML without a ProseMirror view', async () => {
+    const { container } = render(MarkdownViewer, {
+      props: { content: '- [ ] open item\n- [x] done item' },
+    });
+
+    await waitFor(() => {
+      const items = container.querySelectorAll('li[data-type="taskItem"]');
+      expect(items.length).toBe(2);
+    });
+
+    expect(container.querySelector('.static-content')).toBeTruthy();
+    expect(container.querySelector('.ProseMirror')).toBeNull();
+
+    const checkboxes = container.querySelectorAll<HTMLInputElement>('input[type="checkbox"]');
+    expect(checkboxes.length).toBe(2);
+    expect(checkboxes[0]?.checked).toBe(false);
+    expect(checkboxes[1]?.checked).toBe(true);
+  });
+
+  it('renders tables as static HTML without a ProseMirror view', async () => {
+    const { container } = render(MarkdownViewer, {
+      props: { content: '| a | b |\n| --- | --- |\n| 1 | 2 |' },
+    });
+
+    await waitFor(() => expect(container.querySelector('table')).toBeTruthy());
+    expect(container.querySelector('.static-content')).toBeTruthy();
+    expect(container.querySelector('.ProseMirror')).toBeNull();
+  });
+
+  it('renders fenced code blocks as static HTML', async () => {
+    const { container } = render(MarkdownViewer, {
+      props: { content: '```ts\nconst x = 1;\n```' },
+    });
+
+    await waitFor(() => expect(container.querySelector('pre code')).toBeTruthy());
+    expect(container.querySelector('.ProseMirror')).toBeNull();
+    expect(container.querySelector('pre code')?.textContent).toContain('const x = 1;');
+  });
+});

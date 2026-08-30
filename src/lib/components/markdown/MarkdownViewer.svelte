@@ -1,21 +1,7 @@
 <script lang="ts">
-  /* eslint-disable max-lines */
-  import { onMount, onDestroy } from 'svelte';
-  import { Editor } from '@tiptap/core';
-  import StarterKit from '@tiptap/starter-kit';
-  import CodeBlockLowlight from '@tiptap/extension-code-block-lowlight';
-  import TaskList from '@tiptap/extension-task-list';
-  import TaskItem from '@tiptap/extension-task-item';
-  import { Table } from '@tiptap/extension-table';
-  import { TableRow } from '@tiptap/extension-table-row';
-  import { TableHeader } from '@tiptap/extension-table-header';
-  import { TableCell } from '@tiptap/extension-table-cell';
-  import Image from '@tiptap/extension-image';
-  import { safeLowlight } from '$lib/utils/safe-lowlight';
+  import { onDestroy } from 'svelte';
   import { logger } from '$lib/utils/client-logger';
   import { processMarkdownToHTML } from '$lib/utils/markdown-processor';
-  import { createIntentLink } from '$lib/utils/tiptap-link-extension';
-  import { TasksBlock } from '$lib/components/tiptap/TasksBlock';
   import { handleLink } from '$features/navigation/link-handler';
   import { getWorkspaceRouteContext } from '$lib/utils/workspace-route-context';
   import ImageLightbox from '$lib/components/ui/ImageLightbox.svelte';
@@ -28,9 +14,6 @@
   import { store as appStore } from '$store/renderer/store';
   import { WorkspaceId } from '$shared/types/branded-ids';
   import { isCmdClickModifier } from '$shared/utils/link-helpers';
-
-  // Use shared safe lowlight instance (handles unregistered languages gracefully)
-  const lowlight = safeLowlight;
 
   interface Props {
     content: string;
@@ -61,16 +44,16 @@
 
   // PERF: Detect content complexity to choose rendering strategy
   // - Simple: plain text, no markdown - render as <p>
-  // - Static: has markdown but can use processed HTML without TipTap
-  // - Complex: needs TipTap for interactivity (task lists, etc.)
+  // - Static: has markdown - render the processed HTML directly (no TipTap)
+  //
+  // Read-only rendering never needs a live ProseMirror view: the markdown
+  // processor already emits final HTML for task lists (read-only checkboxes),
+  // tables, images, and intent:// links, and the container click/keydown
+  // handlers below provide the interactivity.
 
-  // Patterns that REQUIRE TipTap for interactivity
-  const needsTipTapPatterns = [
-    /^\s*[-*]\s*\[[ x]\]/m, // Task lists - TipTap handles checkbox interaction
-  ];
-
-  // Patterns that need markdown processing but not TipTap
+  // Patterns that need markdown processing (rendered as processed static HTML)
   const needsProcessingPatterns = [
+    /^\s*[-*]\s*\[[ x]\]/m, // Task lists (rendered read-only)
     // i18n-ignore (scanner false positive: backticks in regex literal confuse the string tracker)
     /```/, // Code blocks (triple backticks)
     /`[^`]+`/, // Inline code (single backticks)
@@ -101,10 +84,6 @@
 
   const contentComplexity = $derived.by(() => {
     if (!content) return 'simple';
-    // Check if needs TipTap interactivity
-    if (needsTipTapPatterns.some((pattern) => pattern.test(content))) {
-      return 'complex';
-    }
     // Check if needs markdown processing
     if (needsProcessingPatterns.some((pattern) => pattern.test(content))) {
       return 'static';
@@ -115,15 +94,13 @@
   // Track static content element for click handling
   let staticContentElement: HTMLElement | null = $state(null);
 
-  let editorElement: HTMLElement = $state(null!);
-  let editor: Editor | null = null;
   let processedContent = $state('');
   let lastProcessedContent = '';
   // The rendered HTML also depends on workspaceId (short-form intent://local/file/
   // image links resolve against it), so it participates in the memoization guard
   let lastProcessedWorkspaceId: string | undefined;
 
-  // PERF: Track streaming state to avoid expensive TipTap updates during streaming
+  // PERF: Track streaming state to throttle re-renders during streaming
   let isCurrentlyStreaming = false;
   let streamingContentElement: HTMLElement | null = $state(null);
 
@@ -133,7 +110,7 @@
   let pendingUpdateRafId: number | null = null;
   let pendingContent: string | null = null;
 
-  // Process markdown to HTML (full processing with TipTap)
+  // Process markdown to HTML for the static render path
   async function updateContentFull(markdown: string) {
     // Skip if content hasn't actually changed
     if (markdown === lastProcessedContent && workspaceId === lastProcessedWorkspaceId) {
@@ -158,14 +135,7 @@
       processedContent = html;
       lastProcessedContent = markdown;
       lastProcessedWorkspaceId = workspaceId;
-
-      // Update editor content if it exists
-      if (editor && !editor.isDestroyed) {
-        // Use a transaction to batch updates
-        editor.commands.setContent(html, { emitUpdate: false });
-        // Note: Scroll management is handled by the parent component via followBottom action
-        // Do NOT call scrollIntoView here as it overrides user scroll position
-      }
+      // Note: Scroll management is handled by the parent component via followBottom action
     } catch (error) {
       logger.error('Failed to process markdown:', error);
       // Escape HTML for safety — processedContent is injected with {@html}
@@ -179,7 +149,7 @@
     }
   }
 
-  // PERF: Lightweight streaming update - uses innerHTML directly instead of TipTap
+  // PERF: Lightweight streaming update - writes innerHTML directly
   async function updateContentStreaming(markdown: string) {
     // Skip if content hasn't actually changed
     if (markdown === lastProcessedContent && workspaceId === lastProcessedWorkspaceId) {
@@ -207,13 +177,10 @@
       lastProcessedWorkspaceId = workspaceId;
       processedContent = html;
 
-      // PERF: During streaming, update innerHTML directly instead of TipTap's setContent
-      // This is much faster as it avoids TipTap's internal diffing and transaction system
+      // PERF: During streaming, update innerHTML directly to avoid re-rendering
+      // the whole {@html} block on every throttled tick
       if (streamingContentElement) {
         streamingContentElement.innerHTML = html;
-      } else if (editor && !editor.isDestroyed) {
-        // Fallback to editor if no streaming element
-        editor.commands.setContent(html, { emitUpdate: false });
       }
     } catch (error) {
       logger.error('Failed to process streaming markdown:', error);
@@ -290,7 +257,7 @@
   let lightboxOpenerElement = $state<HTMLElement | null>(null);
 
   // Hover overlay: chat-transcript thumbnails get an image actions menu.
-  // The images live in {@html}/TipTap-managed DOM, so a single Svelte-rendered
+  // The images live in {@html}-managed DOM, so a single Svelte-rendered
   // trigger is positioned over whichever thumbnail is hovered.
   let hoveredImage = $state<HTMLImageElement | null>(null);
   let hoveredImagePosition = $state({ top: 0, left: 0 });
@@ -324,7 +291,7 @@
     if (!imageActionsOpen) hoveredImage = null;
   }
 
-  // PERF: Single reusable link click handler - shared between TipTap and static content
+  // PERF: Single reusable link click handler - shared between streaming and static content
   // Routes all link clicks through the unified link handler for consistent behavior:
   // - Click → embedded browser panel (for http/https)
   // - Cmd+Click → external browser
@@ -432,187 +399,16 @@
     return target.closest<HTMLElement>('[data-panel-id]')?.dataset.panelId;
   }
 
-  // Store file click handler for cleanup
-  let fileClickHandler: ((event: MouseEvent) => void) | null = null;
-
-  // Function to initialize the editor (called when editorElement is available)
-  function initializeEditor(element: HTMLElement) {
-    // Attach link click handler (using the shared handler function)
-    element.addEventListener('click', handleLinkClick, true);
-    element.addEventListener('keydown', handleLinkKeydown, true);
-
-    // Create a new TipTap editor for this element
-    // NOTE: Editor pooling was disabled because TipTap editors cannot be reliably
-    // reattached to new DOM elements after creation. The setOptions({ element })
-    // approach doesn't work - the ProseMirror view remains bound to the original element.
-    editor = new Editor({
-      element: element,
-      editable: false,
-      content: processedContent,
-      extensions: [
-        StarterKit.configure({
-          codeBlock: false,
-          link: false,
-        }),
-        createIntentLink({
-          openOnClick: false,
-          HTMLAttributes: {
-            class: 'markdown-link cursor-pointer',
-          },
-        }),
-        TaskList.configure({
-          HTMLAttributes: {
-            class: 'task-list',
-          },
-        }),
-        TaskItem.configure({
-          nested: true,
-          HTMLAttributes: {
-            class: 'task-item',
-          },
-        }),
-        CodeBlockLowlight.configure({
-          lowlight,
-          HTMLAttributes: {
-            class: 'code-block',
-          },
-        }),
-        Table.configure({
-          resizable: false,
-          HTMLAttributes: {
-            class: 'note-table',
-          },
-        }),
-        TableRow,
-        TableHeader.configure({
-          HTMLAttributes: {
-            class: 'note-table-header',
-          },
-        }),
-        TableCell.configure({
-          HTMLAttributes: {
-            class: 'note-table-cell',
-          },
-        }),
-        Image.configure({
-          // Inline so a link mark can wrap the image — keeps link-wrapped
-          // images following the link (matching the static/streaming paths)
-          // instead of TipTap dropping the anchor on parse
-          inline: true,
-          HTMLAttributes: {
-            class: 'markdown-image',
-          },
-        }),
-        TasksBlock,
-      ],
-      // Disable the buggy 'delete' core extension that emits delete events.
-      // It has a bug where it calls nodeAt(newStart - 1) without checking if newStart is 0,
-      // causing "Position -1 outside of fragment" errors.
-      enableCoreExtensions: {
-        delete: false,
-      },
-      editorProps: {
-        handleClick: (_view, _pos, event) => {
-          const target = event.target as HTMLElement;
-          const anchor = target.closest('a');
-          if (anchor?.href?.startsWith('intent://')) {
-            return true;
-          }
-          return false;
-        },
-      },
-    });
-
-    // Set initial content if available
-    if (processedContent && editor) {
-      editor.commands.setContent(processedContent, { emitUpdate: false });
-    }
-
-    // Add click handler for file references
-    fileClickHandler = (event: MouseEvent) => {
-      const target = event.target as HTMLElement;
-
-      // Check if clicked element is a file reference (starts with @ or is in backticks)
-      const text = target.textContent || '';
-
-      // Pattern to match file paths
-      const filePathPattern = /^@?([\/\w\-\.]+\.\w+)$/;
-      const match = text.match(filePathPattern);
-
-      if (match && onFileClick) {
-        event.preventDefault();
-        const filePath = match[1];
-        logger.info('File reference clicked in markdown', { filePath });
-        onFileClick(filePath, {
-          openInAdjacentPanel: event.metaKey || event.ctrlKey,
-          sourcePanelId: getSourcePanelId(event),
-        });
-      }
-
-      // Also check for code elements that might contain file paths
-      if (target.tagName === 'CODE' && text.includes('/')) {
-        const cleanPath = text.replace(/^@/, '').replace(/`/g, '');
-        if (cleanPath.includes('.') && onFileClick) {
-          event.preventDefault();
-          logger.info('Code file reference clicked', { cleanPath });
-          onFileClick(cleanPath, {
-            openInAdjacentPanel: event.metaKey || event.ctrlKey,
-            sourcePanelId: getSourcePanelId(event),
-          });
-        }
-      }
-    };
-
-    element.addEventListener('click', fileClickHandler);
-  }
-
-  // Track if editor has been initialized
-  let editorInitialized = false;
-
-  onMount(() => {
-    // If editorElement is already available (not streaming), initialize immediately
-    if (editorElement && !isStreaming) {
-      initializeEditor(editorElement);
-      editorInitialized = true;
-    }
-  });
-
-  // Effect to initialize editor when switching from streaming to non-streaming
-  $effect(() => {
-    if (editorElement && !isStreaming && !editorInitialized) {
-      initializeEditor(editorElement);
-      editorInitialized = true;
-    }
-  });
-
   onDestroy(() => {
-    // Clean up link click handler from TipTap editor element
-    if (editorElement) {
-      editorElement.removeEventListener('click', handleLinkClick, true);
-      editorElement.removeEventListener('keydown', handleLinkKeydown, true);
-    }
-
-    // Clean up file click handler
-    if (fileClickHandler && editorElement) {
-      editorElement.removeEventListener('click', fileClickHandler);
-    }
-
     // Clean up pending streaming updates
     cancelPendingUpdates();
-
-    // Destroy the editor
-    if (editor) {
-      editor.destroy();
-      editor = null;
-    }
   });
 </script>
 
 <!-- PERF: Use separate rendering paths based on content complexity -->
 <!-- streaming: live updates with processed HTML -->
 <!-- simple: plain text, no markdown - just <p> -->
-<!-- static: processed HTML without TipTap (for links, code blocks, etc.) -->
-<!-- complex: full TipTap for interactive content (task lists) -->
+<!-- static: processed HTML without TipTap (links, code blocks, task lists, tables, etc.) -->
 {#snippet imageActionsOverlay()}
   {#if chatImageThumbnails && hoveredImage}
     <div
@@ -650,9 +446,9 @@
   <div class="markdown-viewer simple-content {className}">
     <p class="whitespace-pre-wrap">{content}</p>
   </div>
-{:else if contentComplexity === 'static'}
+{:else}
   <!-- PERF: Static content - use processed HTML without TipTap -->
-  <!-- This path handles links, code blocks, etc. without the overhead of TipTap -->
+  <!-- This path handles links, code blocks, task lists, tables, etc. without the overhead of TipTap -->
   <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions a11y_no_noninteractive_element_interactions -->
   <div
     role="group"
@@ -665,19 +461,6 @@
     onmouseleave={handleImageHoverLeave}
   >
     {@html processedContent}
-    {@render imageActionsOverlay()}
-  </div>
-{:else}
-  <!-- Complex content - needs TipTap for interactivity (task lists, etc.) -->
-  <!-- svelte-ignore a11y_no_static_element_interactions -->
-  <div
-    class="markdown-viewer {className}"
-    class:chat-image-thumbnails={chatImageThumbnails}
-    bind:this={editorElement}
-    onmouseover={handleImageHover}
-    onmouseleave={handleImageHoverLeave}
-  >
-    <!-- TipTap appends its ProseMirror view here; the overlay is a sibling. -->
     {@render imageActionsOverlay()}
   </div>
 {/if}
@@ -728,19 +511,8 @@
     margin-top: 0.75rem;
   }
 
-  /* ProseMirror container styles */
-  .markdown-viewer :global(.ProseMirror) {
-    outline: none;
-    min-height: 1em;
-  }
-
   /* PERF: Apply same styles to streaming content (direct children) */
-  /* Use .markdown-viewer prefix for specificity parity with .ProseMirror rule */
   .markdown-viewer.streaming-content > :global(* + *) {
-    margin-top: 0.75rem;
-  }
-
-  .markdown-viewer :global(.ProseMirror > * + *) {
     margin-top: 0.75rem;
   }
 
