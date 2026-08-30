@@ -236,18 +236,82 @@ describe('message hydration policy', () => {
 
   it('eagerly hydrates appended rows but not interior insertions or prepends', () => {
     const transitions: string[] = [];
-    const policy = createPolicy([assistant('a')], (transition) => transitions.push(transition));
+    const policy = createPolicy([assistant('a'), assistant('b')], (transition) =>
+      transitions.push(transition),
+    );
 
     // Appended past every known row (a just-sent user message): hydrates
     // immediately without waiting for an intersection report.
-    policy.updateMessages([assistant('a'), user('sent')]);
+    policy.updateMessages([assistant('a'), assistant('b'), user('sent')]);
     expect(transitions).toEqual(['hydrate:sent']);
     transitions.length = 0;
 
+    // Interior insertion (a new id between two known ids): stays a
+    // placeholder — it is not newer than every previously known row.
+    policy.updateMessages([assistant('a'), assistant('inserted'), assistant('b'), user('sent')]);
+    expect(transitions).toEqual([]);
+
     // Older-history prepend: stays a placeholder.
-    policy.updateMessages([user('prepended'), assistant('a'), user('sent')]);
+    policy.updateMessages([
+      user('prepended'),
+      assistant('a'),
+      assistant('inserted'),
+      assistant('b'),
+      user('sent'),
+    ]);
     expect(transitions).toEqual([]);
     expect(policy.getHydratedIds()).toEqual(['sent']);
+  });
+
+  it('installs the first transcript into an empty policy fully dehydrated', () => {
+    const transitions: string[] = [];
+    // The production path: ChatPanel constructs the policy with [] and the
+    // first updateMessages carries the whole transcript — nothing may
+    // hydrate eagerly or a workspace switch mounts everything synchronously.
+    const policy = createPolicy([], (transition) => transitions.push(transition));
+
+    policy.updateMessages(
+      Array.from({ length: 200 }, (_, index) =>
+        index % 2 === 0 ? user(`u${index}`) : assistant(`a${index}`),
+      ),
+    );
+
+    expect(transitions).toEqual([]);
+    expect(policy.getHydratedIds()).toEqual([]);
+  });
+
+  it('caps eager hydration of a large append backlog to a small tail window', () => {
+    const transitions: string[] = [];
+    const policy = createPolicy([assistant('a')], (transition) => transitions.push(transition));
+
+    // A panel reactivating after heavy background chatter delivers the whole
+    // backlog as one append past the surviving row. Only a small trailing
+    // window hydrates eagerly; the rest stay placeholders for the
+    // observer/frontier, so switch-back cost is O(cap), not O(backlog).
+    const backlog = Array.from({ length: 150 }, (_, index) =>
+      index % 2 === 0 ? assistant(`bg${index}`) : user(`bg${index}`),
+    );
+    policy.updateMessages([assistant('a'), ...backlog]);
+
+    expect(transitions.length).toBeLessThanOrEqual(10);
+    // The eager window is the newest tail of the list.
+    const hydrated = policy.getHydratedIds();
+    expect(hydrated).toEqual(backlog.slice(-hydrated.length).map((message) => message.id));
+    expect(hydrated[hydrated.length - 1]).toBe('bg149');
+  });
+
+  it('reports appended rows via getHydratedIds from inside onHydrate', () => {
+    const seenDuringCallback: string[][] = [];
+    const policy = createMessageHydrationPolicy([assistant('a')], {
+      onHydrate: () => seenDuringCallback.push(policy.getHydratedIds()),
+    });
+    policies.push(policy);
+
+    policy.updateMessages([assistant('a'), user('sent')]);
+
+    // The record must be committed before the callback fires so a consumer
+    // reading getHydratedIds inside onHydrate sees the row it was told about.
+    expect(seenDuringCallback).toEqual([['sent']]);
   });
 
   it('starts a full transcript replacement as placeholders, never append-eager', () => {

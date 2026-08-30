@@ -75,6 +75,16 @@ export function createMessageHydrationPolicy(
   let disposed = false;
   let active = true;
 
+  /**
+   * At most this many appended rows hydrate eagerly per update. A single send
+   * or streaming turn appends only a handful of rows, so the "sends never
+   * flash" property is unaffected; a large batch append (an inactive panel
+   * reactivating after heavy background chatter delivers the whole backlog as
+   * one append) must not mount synchronously — rows beyond the tail window
+   * stay placeholders for the observer/frontier to hydrate on demand.
+   */
+  const MAX_EAGER_APPEND_ROWS = 8;
+
   function makeRecord(message: HydrationMessage, index: number): MessageRecord {
     return {
       ...message,
@@ -198,11 +208,16 @@ export function createMessageHydrationPolicy(
       // requires a surviving previous row (lastKnownIndex >= 0): both an
       // initial install AND a full transcript replacement (a rebound panel
       // publishing a disjoint id set on workspace/agent switch) start fully
-      // dehydrated so only what the observer reports visible mounts.
+      // dehydrated so only what the observer reports visible mounts. Eagerness
+      // is also capped to the trailing MAX_EAGER_APPEND_ROWS of the list so a
+      // reactivation backlog (every row a background agent appended while the
+      // panel was inactive, delivered as one large append) cannot mount
+      // synchronously either.
       let lastKnownIndex = -1;
       nextMessages.forEach((message, index) => {
         if (previous.has(message.id)) lastKnownIndex = index;
       });
+      const eagerTailStart = nextMessages.length - MAX_EAGER_APPEND_ROWS;
       for (const [id, registration] of registrations) {
         if (nextIds.has(id)) continue;
         // The component owns the registration lifecycle (observe()'s cleanup
@@ -227,11 +242,11 @@ export function createMessageHydrationPolicy(
           });
         } else {
           const record = makeRecord(message, index);
-          if (lastKnownIndex >= 0 && index > lastKnownIndex) {
+          records.set(message.id, record);
+          if (lastKnownIndex >= 0 && index > lastKnownIndex && index >= eagerTailStart) {
             record.hydrated = true;
             options.onHydrate?.(record.id);
           }
-          records.set(message.id, record);
         }
       });
       for (const [id, registration] of registrations) {
