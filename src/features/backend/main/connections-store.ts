@@ -736,13 +736,15 @@ export async function getDetectHosts(id: string): Promise<boolean> {
  * `host:port` fallback rather than showing a blank label.
  *
  * The user-editable `label` follows the capture while it is UNCUSTOMIZED —
- * equal (trimmed) to the record's `host:port` address (the add-form default)
- * or to the previously captured hostname (a label that only ever followed
- * captures). That migrates address-named records to the pretty name on the
- * next (re)connect and follows backend machine renames, while a label the
- * user typed themselves is never touched. Corollary: editing the label back
- * to exactly the address (or the current hostname) makes it uncustomized
- * again, so the next capture overwrites it — accepted by design.
+ * equal (trimmed) to the record's `host:port` address (the add-form default),
+ * equal to the previously captured hostname (a label that only ever followed
+ * captures), or blank (a whitespace-only label slips past the add schema's
+ * `.min(1)` and would otherwise stay blank forever). That migrates
+ * address-named records to the pretty name on the next (re)connect and
+ * follows backend machine renames, while a label the user typed themselves
+ * is never touched. Corollary: editing the label back to exactly the address
+ * (or the current hostname) makes it uncustomized again, so the next capture
+ * overwrites it — accepted by design.
  *
  * Unlike the observational {@link setDaemonVersion}, both fields written here
  * are part of the keychain-sync surface, and a label change in particular is
@@ -754,6 +756,11 @@ export async function getDetectHosts(id: string): Promise<boolean> {
  * routinely lands in the same millisecond as `add`, and reconciliation treats
  * equal live clocks as in-sync — an un-bumped stamp would keep the migrated
  * label from propagating to a device still holding the address label.
+ * Trade-off: because the migration is an AUTOMATIC write that bumps the
+ * clock, it can out-clock a manual rename made on another machine shortly
+ * before but not yet synced — that rename then loses the LWW reconcile. A
+ * one-shot-per-rename window, accepted by the spec decision that label
+ * migrations are real syncable edits.
  */
 export async function setHostname(id: string, hostname: string): Promise<void> {
   const trimmed = hostname.trim();
@@ -763,6 +770,7 @@ export async function setHostname(id: string, hostname: string): Promise<void> {
     if (!conn) return false; // unknown id: nothing to label
     const label = conn.label.trim();
     const uncustomized =
+      label === '' ||
       label === `${conn.host.trim()}:${conn.port}` ||
       (conn.hostname != null && label === conn.hostname.trim());
     const nextLabel = uncustomized ? trimmed : conn.label;

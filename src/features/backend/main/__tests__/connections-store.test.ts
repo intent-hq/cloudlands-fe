@@ -727,6 +727,15 @@ describe('connections-store', () => {
     expect(remote?.hostname).toBe("Clement's Mac mini");
   });
 
+  it('setHostname counts a whitespace-only label as uncustomized (add schema only enforces min(1))', async () => {
+    const store = await import('../connections-store');
+    const rec = await store.add({ ...sampleConn, label: '   ' });
+    await store.setHostname(rec.id, 'studio.local');
+
+    const remote = (await store.list()).find((c) => c.id === rec.id);
+    expect(remote?.label).toBe('studio.local');
+  });
+
   it('setHostname migrates the label even when the hostname itself is unchanged (pre-feature records)', async () => {
     const store = await import('../connections-store');
     const rec = await store.add({ ...sampleConn, label: '192.168.1.10:8443' });
@@ -780,6 +789,34 @@ describe('connections-store', () => {
     await store.updateMetadata(rec.id, { label: '192.168.1.10:8443', accent: 'blue' });
     await store.setHostname(rec.id, 'renamed.local');
     const remote = (await store.list()).find((c) => c.id === rec.id);
+    expect(remote?.label).toBe('renamed.local');
+  });
+
+  it('an address edit re-defaults an unmigrated address label to the new address (no stale freeze)', async () => {
+    const store = await import('../connections-store');
+    // Pre-migration record: label still the address, hostname already captured
+    // (labels did not follow captures yet when this record was written).
+    const rec = await store.add({ ...sampleConn, label: '192.168.1.10:8443' });
+    await store.__drainWriteChainForTesting();
+    const file = path.join(tmpDir, 'backend-connections.json');
+    const parsed = JSON.parse(await fs.readFile(file, 'utf8'));
+    parsed.connections[0].hostname = 'studio.local';
+    await fs.writeFile(file, JSON.stringify(parsed), 'utf8');
+
+    // The user edits the address; the label equal to the OLD host:port is
+    // re-defaulted to the new address instead of freezing the stale one.
+    await store.updateMetadata(rec.id, {
+      label: '192.168.1.10:8443',
+      accent: 'blue',
+      host: '10.0.0.42',
+      port: 9443,
+    });
+    let remote = (await store.list()).find((c) => c.id === rec.id);
+    expect(remote?.label).toBe('10.0.0.42:9443');
+
+    // Still uncustomized: the next capture is followed.
+    await store.setHostname(rec.id, 'renamed.local');
+    remote = (await store.list()).find((c) => c.id === rec.id);
     expect(remote?.label).toBe('renamed.local');
   });
 
