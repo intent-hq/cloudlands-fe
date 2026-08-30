@@ -9,6 +9,22 @@ import {
   proposalsOf,
   type PendingProposalEntry,
 } from './pending-proposals';
+import { getProposalId } from './proposal-id';
+
+type ProposalLifecycleMap = NonNullable<StoreState['proposalLifecycle']>;
+
+/**
+ * Locally resolved under EITHER identity: the daemon-parity key (metadata
+ * ref / wire-reconciled resolutions) or `getProposalId` (transcript-card
+ * applies, whose fallback for id-less proposals is a payload hash — a
+ * different key than the daemon's `preview.title`).
+ */
+function isLocallyResolved(lifecycle: ProposalLifecycleMap, ...proposalIds: string[]): boolean {
+  return proposalIds.some((proposalId) => {
+    const status = lifecycle[proposalId]?.status;
+    return status === 'applied' || status === 'dismissed';
+  });
+}
 
 /**
  * Production tray gate: derive the ordered pending-proposal entries for the
@@ -34,12 +50,9 @@ export function deriveTrayPendingProposals(
   if (refs.length === 0) return [];
   const recovery = state.chatState?.byAgentId[agentId]?.pendingProposalRecovery;
   const lifecycle = state.proposalLifecycle ?? {};
-  const unresolved = refs.filter((ref) => {
-    const status = lifecycle[ref.proposalId]?.status;
-    return status !== 'applied' && status !== 'dismissed';
-  });
+  const unresolved = refs.filter((ref) => !isLocallyResolved(lifecycle, ref.proposalId));
   const byId = new Map(messages.map((message) => [message.id, message]));
-  return derivePendingProposals(unresolved, (messageId) => {
+  const entries = derivePendingProposals(unresolved, (messageId) => {
     const resident =
       byId.get(messageId) ?? selectAgentMessageById.select(state, agentId, messageId);
     if (resident) return resident.isStreaming ? undefined : proposalsOf(resident);
@@ -49,6 +62,7 @@ export function deriveTrayPendingProposals(
       recovered.proposals.map(({ proposalId, proposal }) => [proposalId, proposal]),
     );
   });
+  return entries.filter((entry) => !isLocallyResolved(lifecycle, getProposalId(entry.proposal)));
 }
 
 export interface PendingProposalRecoveryRequest {
@@ -66,10 +80,7 @@ export function derivePendingProposalRecoveryState(
   const refs = classifyPendingProposalRefs(session?.metadata?.pendingProposals);
   if (refs.length === 0) return [];
   const lifecycle = state.proposalLifecycle ?? {};
-  const unresolved = refs.filter((ref) => {
-    const status = lifecycle[ref.proposalId]?.status;
-    return status !== 'applied' && status !== 'dismissed';
-  });
+  const unresolved = refs.filter((ref) => !isLocallyResolved(lifecycle, ref.proposalId));
   const missing = missingPendingProposalMessageIds(
     unresolved,
     (messageId) => selectAgentMessageById.select(state, agentId, messageId) !== undefined,

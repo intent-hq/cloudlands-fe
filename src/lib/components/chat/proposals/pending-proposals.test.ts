@@ -6,6 +6,7 @@ import {
   classifyPendingProposalRefs,
   derivePendingProposals,
   missingPendingProposalMessageIds,
+  pendingProposalKeyOf,
   proposalsOf,
 } from './pending-proposals';
 
@@ -13,6 +14,15 @@ function makeProposal(applyToolCallId: string, title = `Proposal ${applyToolCall
   return {
     kind: 'workspace-create',
     applyToolCallId,
+    payload: { params: { title } },
+    preview: { title, workspaceCreate: { mode: 'sibling', title } },
+  } as Proposal;
+}
+
+/** proposeSibling-shaped proposal: the daemon injects NO applyToolCallId. */
+function makeIdlessProposal(title: string): Proposal {
+  return {
+    kind: 'workspace-create',
     payload: { params: { title } },
     preview: { title, workspaceCreate: { mode: 'sibling', title } },
   } as Proposal;
@@ -121,6 +131,13 @@ describe('derivePendingProposals', () => {
   });
 });
 
+describe('pendingProposalKeyOf', () => {
+  it('uses applyToolCallId when present, raw preview.title otherwise (daemon parity)', () => {
+    expect(pendingProposalKeyOf(makeProposal('toolu-1'))).toBe('toolu-1');
+    expect(pendingProposalKeyOf(makeIdlessProposal('Fix flaky CI job'))).toBe('Fix flaky CI job');
+  });
+});
+
 describe('proposalsOf', () => {
   it('keys parsed proposals by their stable identity and ignores non-assistant rows', () => {
     const p1 = makeProposal('toolu-1');
@@ -128,6 +145,18 @@ describe('proposalsOf', () => {
     expect([...byId.keys()]).toEqual(['toolu-1']);
     const userRow = { ...carryingMessage('m1', [p1]), role: 'user' } as AgentMessage;
     expect(proposalsOf(userRow).size).toBe(0);
+  });
+
+  it('keys id-less (proposeSibling-style) proposals by raw preview.title', () => {
+    const idless = makeIdlessProposal('Investigate slow startup');
+    const byId = proposalsOf(carryingMessage('m1', [idless]));
+    expect([...byId.keys()]).toEqual(['Investigate slow startup']);
+    expect(
+      derivePendingProposals(
+        [{ proposalId: 'Investigate slow startup', messageId: 'm1' }],
+        residentResolver([carryingMessage('m1', [idless])]),
+      ),
+    ).toEqual([{ proposalId: 'Investigate slow startup', messageId: 'm1', proposal: idless }]);
   });
 });
 

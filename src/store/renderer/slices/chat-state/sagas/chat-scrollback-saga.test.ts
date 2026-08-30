@@ -26,6 +26,7 @@ import {
   derivePendingProposalRecoveryState,
   deriveTrayPendingProposals,
 } from '$lib/components/chat/proposals/proposal-tray-gate';
+import { getProposalId } from '$lib/components/chat/proposals/proposal-id';
 import {
   HISTORY_SEGMENT_MAX,
   agentSessionReducer,
@@ -118,6 +119,15 @@ function trayProposal(applyToolCallId: string): Proposal {
     applyToolCallId,
     payload: { params: { title: `Proposal ${applyToolCallId}` } },
     preview: { title: `Proposal ${applyToolCallId}` },
+  } as Proposal;
+}
+
+/** proposeSibling-shaped: no applyToolCallId — the daemon keys it by title. */
+function idlessTrayProposal(title: string): Proposal {
+  return {
+    kind: 'workspace-create',
+    payload: { params: { title } },
+    preview: { title },
   } as Proposal;
 }
 
@@ -563,6 +573,47 @@ describe('chatScrollbackSaga (on-demand history paging)', () => {
       proposalMessage('m-resident', 90, [p2]),
     ]);
     expect(entries.map((entry) => entry.proposalId)).toEqual(['toolu-1', 'toolu-2']);
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('derives id-less (proposeSibling-shaped) proposals by daemon title key and filters local resolutions under either identity', async () => {
+    const run = harness();
+    const idless = idlessTrayProposal('Split flaky suite');
+    const carrying = proposalMessage('m-sibling', 90, [idless]);
+    run.dispatch(
+      bulkUpsertSessions([
+        session({
+          messages: [carrying],
+          metadata: {
+            // The daemon keys refs by `applyToolCallId ?? preview.title`; a
+            // proposeSibling proposal has no applyToolCallId.
+            pendingProposals: [{ proposalId: 'Split flaky suite', messageId: 'm-sibling' }],
+          },
+        }),
+      ]),
+    );
+    const entries = deriveTrayPendingProposals(run.state(), AGENT, [carrying]);
+    expect(entries).toEqual([
+      { proposalId: 'Split flaky suite', messageId: 'm-sibling', proposal: idless },
+    ]);
+    // Resident carrying message: no targeted lookup needed.
+    expect(derivePendingProposalRecoveryState(run.state(), AGENT)).toEqual([]);
+
+    // Locally resolved under the daemon key (wire-reconciled resolution).
+    const daemonKeyResolved = {
+      ...run.state(),
+      proposalLifecycle: { 'Split flaky suite': { status: 'dismissed' } },
+    } as StoreState;
+    expect(deriveTrayPendingProposals(daemonKeyResolved, AGENT, [carrying])).toEqual([]);
+
+    // Locally resolved under getProposalId's hash key (transcript-card apply
+    // of an id-less proposal) retires the tray entry too.
+    const legacyKeyResolved = {
+      ...run.state(),
+      proposalLifecycle: { [getProposalId(idless)]: { status: 'applied' } },
+    } as StoreState;
+    expect(deriveTrayPendingProposals(legacyKeyResolved, AGENT, [carrying])).toEqual([]);
     run.task.cancel();
     await run.task.toPromise();
   });

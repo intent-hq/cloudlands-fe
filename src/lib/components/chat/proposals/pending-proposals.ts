@@ -2,7 +2,6 @@ import type { AgentMessage, PendingProposalRef } from '$shared/types';
 import type { Proposal } from '$shared/types/proposal';
 import { getProposalFromResourceBlock } from '$shared/types/proposal-resource';
 import { dedupeResourceBlocks } from '$shared/types/resource-block-identity';
-import { getProposalId } from './proposal-id';
 
 /**
  * Pending-proposal derivation for the composer-slot tray. The daemon's
@@ -26,14 +25,25 @@ export interface PendingProposalEntry {
   proposal: Proposal;
 }
 
-/** All parsed proposal bodies on a message, keyed by their stable identity. */
+/**
+ * Daemon-parity proposal identity: `applyToolCallId ?? preview.title` (raw
+ * title, not percent-encoded), matching intentd's `proposal_block_id` — the
+ * key its `pendingProposals` metadata refs carry. Id-less proposals (e.g.
+ * proposeSibling) fall to the title, so this must NOT be swapped for
+ * `getProposalId` (whose fallback is a payload hash the daemon never emits).
+ */
+export function pendingProposalKeyOf(proposal: Proposal): string {
+  return proposal.applyToolCallId ?? proposal.preview.title;
+}
+
+/** All parsed proposal bodies on a message, keyed by daemon-parity identity. */
 export function proposalsOf(message: AgentMessage): Map<string, Proposal> {
   const byId = new Map<string, Proposal>();
   if (message.role !== 'assistant') return byId;
   for (const block of dedupeResourceBlocks(message.contentBlocks ?? [])) {
     const proposal = getProposalFromResourceBlock(block);
     if (proposal === null) continue;
-    const id = getProposalId(proposal);
+    const id = pendingProposalKeyOf(proposal);
     if (!byId.has(id)) byId.set(id, proposal);
   }
   return byId;
