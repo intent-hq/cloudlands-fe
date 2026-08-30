@@ -1124,6 +1124,13 @@ export interface AgentMetadata {
   // `agent.resolveProposal`. Absent on legacy daemons (FE degrades to
   // transcript-only cards).
   pendingProposals?: PendingProposalRef[];
+  // Resolved-proposal outcomes (PROTOCOL §5.5, `agent.resolveProposal`):
+  // proposalId → "applied" | "dismissed", persisted by the daemon in session
+  // metadata (capped at 100 entries, oldest evicted), served on AgentLite and
+  // converged via `agent:updated`. Drives the resolved transcript-card
+  // rendering so state agrees across reloads and clients. Absent on legacy
+  // daemons and while nothing has been resolved.
+  proposalResolutions?: Record<string, 'applied' | 'dismissed'>;
   // Per-conversation seen marker (PROTOCOL §5.5, `agent.markSeen`): id of the
   // newest message the user had seen. Persisted by the daemon in session
   // metadata, served on AgentLite / agent.getSession, converged via
@@ -1139,7 +1146,15 @@ export interface AgentMetadata {
   // per-agent unread suppression for delegated children.
   createdByAgentId?: string;
   // Allow additional properties for flexibility with proper typing
-  [key: string]: string | number | boolean | null | undefined | any[] | ContextReference[];
+  [key: string]:
+    | string
+    | number
+    | boolean
+    | null
+    | undefined
+    | any[]
+    | ContextReference[]
+    | Record<string, 'applied' | 'dismissed'>;
 }
 
 /**

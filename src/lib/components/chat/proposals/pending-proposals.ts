@@ -49,6 +49,51 @@ export function proposalsOf(message: AgentMessage): Map<string, Proposal> {
   return byId;
 }
 
+export type ProposalResolutionOutcome = 'applied' | 'dismissed';
+
+/**
+ * Validate the raw `proposalResolutions` metadata map (PROTOCOL §5.5,
+ * `agent.resolveProposal`); {} when absent/malformed. Entries with unknown
+ * outcomes are skipped, never coerced.
+ */
+export function classifyProposalResolutions(
+  proposalResolutions: unknown,
+): Record<string, ProposalResolutionOutcome> {
+  if (
+    !proposalResolutions ||
+    typeof proposalResolutions !== 'object' ||
+    Array.isArray(proposalResolutions)
+  ) {
+    return {};
+  }
+  const outcomes: Record<string, ProposalResolutionOutcome> = {};
+  for (const [proposalId, outcome] of Object.entries(proposalResolutions)) {
+    if (proposalId.length === 0) continue;
+    if (outcome !== 'applied' && outcome !== 'dismissed') continue;
+    outcomes[proposalId] = outcome;
+  }
+  return outcomes;
+}
+
+/**
+ * Transcript disposition for a proposal block: 'hidden' while its identity
+ * pends in the `pendingProposals` metadata (the composer tray is the sole
+ * rendering surface — question-wizard model), the persisted outcome once
+ * resolved (resolution outranks a stale pending ref), and 'interactive' when
+ * the metadata knows nothing about it (old daemon / legacy transcript-only
+ * cards).
+ */
+export function proposalTranscriptDisposition(
+  proposal: Proposal,
+  pendingIds: ReadonlySet<string>,
+  resolutions: Readonly<Record<string, ProposalResolutionOutcome>>,
+): 'hidden' | 'interactive' | ProposalResolutionOutcome {
+  const proposalId = pendingProposalKeyOf(proposal);
+  const outcome = resolutions[proposalId];
+  if (outcome) return outcome;
+  return pendingIds.has(proposalId) ? 'hidden' : 'interactive';
+}
+
 /** Validate a raw metadata value into ordered refs; [] when absent/malformed. */
 export function classifyPendingProposalRefs(pendingProposals: unknown): PendingProposalRef[] {
   if (!Array.isArray(pendingProposals)) return [];

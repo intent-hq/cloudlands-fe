@@ -62,6 +62,13 @@
      * host can route discard through its own confirm dialog + resolve flow.
      */
     suppressLocalDiscard?: boolean;
+    /**
+     * Daemon-persisted resolution outcome (PROTOCOL §5.5
+     * `proposalResolutions`): 'applied' renders the applied state with
+     * actions disabled, 'dismissed' the discarded tombstone — correct across
+     * reloads and clients. Null/absent keeps the card interactive.
+     */
+    resolvedOutcome?: 'applied' | 'dismissed' | null;
   }
 
   type EditorHandle = {
@@ -83,6 +90,7 @@
     initialDraft = null,
     onDraftChange,
     suppressLocalDiscard = false,
+    resolvedOutcome = null,
   }: Props = $props();
 
   // Captured once at init (tray remounts per proposal via {#key}), so a
@@ -142,7 +150,10 @@
   const isApplying = $derived($lifecycleStatus === 'applying');
   const isUndoing = $derived($lifecycleStatus === 'undoing');
   const isFailed = $derived($lifecycleStatus === 'failed');
-  const isApplied = $derived($lifecycleStatus === 'applied');
+  // Daemon-persisted resolution (resolvedOutcome) folds into the local
+  // lifecycle states so a resolved card renders identically after reload.
+  const isApplied = $derived($lifecycleStatus === 'applied' || resolvedOutcome === 'applied');
+  const showDismissed = $derived(isDismissed || resolvedOutcome === 'dismissed');
   const createdWorkspaceId = $derived($lifecycleResult?.workspaceId);
   const isWorkspaceCreated = $derived(isWorkspaceCreate && isApplied);
   const workspaceHeading = $derived(
@@ -743,7 +754,7 @@
     if (isUndoing) return m.chat_shared_undoing_label();
     if (isFailed)
       return `${m.chat_shared_actionFailed_label()}${$lifecycleError ? `: ${$lifecycleError}` : ''}`;
-    if ($lifecycleStatus === 'applied') return m.chat_shared_appliedStatus_label();
+    if (isApplied) return m.chat_shared_appliedStatus_label();
     return '';
   }
 
@@ -769,7 +780,7 @@
   }
 </script>
 
-{#if isDismissed}
+{#if showDismissed}
   <div
     class="type-body my-2 rounded-(--radius-medium) border border-border bg-muted/30 px-3 py-2 text-muted-foreground"
   >
