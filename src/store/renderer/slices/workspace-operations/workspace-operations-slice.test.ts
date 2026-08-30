@@ -19,17 +19,30 @@ import {
   workspaceOperationsReducer,
 } from "./workspace-operations-slice";
 
+const openPr = {
+  number: 7,
+  title: "feat: add thing",
+  url: "https://github.com/o/r/pull/7",
+  status: "Open" as const,
+};
+
 describe("workspaceOperationsReducer", () => {
   it("opens and clears the delete warning state", () => {
     const opened = workspaceOperationsReducer(
       initialState,
-      openDeleteWarning({ workspaceId: "ws-1", agentNames: ["Agent One"], hookNames: ["ci-watch"] })
+      openDeleteWarning({
+        workspaceId: "ws-1",
+        agentNames: ["Agent One"],
+        hookNames: ["ci-watch"],
+        openPrs: [openPr],
+      })
     );
 
     expect(opened.showDeleteWarning).toBe(true);
     expect(opened.pendingDeleteWorkspaceId).toBe("ws-1");
     expect(opened.runningAgentNamesForDelete).toEqual(["Agent One"]);
     expect(opened.activeHookNamesForDelete).toEqual(["ci-watch"]);
+    expect(opened.openPrsForDelete).toEqual([openPr]);
 
     const closed = workspaceOperationsReducer(opened, closeDeleteWarning());
 
@@ -37,18 +50,27 @@ describe("workspaceOperationsReducer", () => {
     expect(closed.pendingDeleteWorkspaceId).toBeNull();
     expect(closed.runningAgentNamesForDelete).toEqual([]);
     expect(closed.activeHookNamesForDelete).toEqual([]);
+    expect(closed.openPrsForDelete).toEqual([]);
   });
 
   it("opens and clears the archive warning state", () => {
     const opened = workspaceOperationsReducer(
       initialState,
-      openArchiveWarning({ workspaceId: "ws-2", agentNames: ["Agent Two"], hookNames: ["pr-watch"] })
+      openArchiveWarning({
+        workspaceId: "ws-2",
+        agentNames: ["Agent Two"],
+        hookNames: ["pr-watch"],
+        openPrs: [{ ...openPr, status: "Draft" as const, mergeConflicts: true }],
+      })
     );
 
     expect(opened.showArchiveWarning).toBe(true);
     expect(opened.pendingArchiveWorkspaceId).toBe("ws-2");
     expect(opened.runningAgentNamesForArchive).toEqual(["Agent Two"]);
     expect(opened.activeHookNamesForArchive).toEqual(["pr-watch"]);
+    expect(opened.openPrsForArchive).toEqual([
+      { ...openPr, status: "Draft", mergeConflicts: true },
+    ]);
 
     const closed = workspaceOperationsReducer(opened, closeArchiveWarning());
 
@@ -56,6 +78,7 @@ describe("workspaceOperationsReducer", () => {
     expect(closed.pendingArchiveWorkspaceId).toBeNull();
     expect(closed.runningAgentNamesForArchive).toEqual([]);
     expect(closed.activeHookNamesForArchive).toEqual([]);
+    expect(closed.openPrsForArchive).toEqual([]);
   });
 
   it("tracks and clears bulk delete warning details", () => {

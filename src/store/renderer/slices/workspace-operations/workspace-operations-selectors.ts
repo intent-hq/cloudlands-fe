@@ -16,6 +16,10 @@ export const selectActiveHookNamesForDelete = store.createSelector((state) => {
   return state.workspaceOperations.activeHookNamesForDelete;
 });
 
+export const selectOpenPrsForDelete = store.createSelector((state) => {
+  return state.workspaceOperations.openPrsForDelete;
+});
+
 export const selectShowArchiveWarning = store.createSelector((state) => {
   return state.workspaceOperations.showArchiveWarning;
 });
@@ -30,6 +34,10 @@ export const selectPendingArchiveWorkspaceId = store.createSelector((state) => {
 
 export const selectActiveHookNamesForArchive = store.createSelector((state) => {
   return state.workspaceOperations.activeHookNamesForArchive;
+});
+
+export const selectOpenPrsForArchive = store.createSelector((state) => {
+  return state.workspaceOperations.openPrsForArchive;
 });
 
 export const selectPendingBulkRepoKey = store.createSelector((state) => {

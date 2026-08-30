@@ -4,7 +4,9 @@
 
 import { activeStreamsTracker } from '$features/agent/services/active-streams-tracker';
 import type { BackgroundHook } from '$features/hooks/background-hooks-service';
+import { PullRequestStatus, type PullRequestInfo } from '$shared/types';
 import { selectBackgroundHooks } from '$store/renderer/slices/background-hooks/background-hooks-selectors';
+import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
 import { selectAllWorkspaceAgents } from '$store/renderer/slices/workspace-agents/workspace-agents-selectors';
 import { store as appStore } from '$store/renderer/store';
 
@@ -66,20 +68,63 @@ export async function getActiveHookNames(workspaceId: string): Promise<string[]>
     .map((hook) => hook.name || hook.hookId.substring(0, 8));
 }
 
-/** Streaming agent names + active hook names for one workspace, for gating. */
-export interface ActiveWorkNames {
-  agentNames: string[];
-  hookNames: string[];
+/** Serializable projection of an unmerged PR for the archive/delete warnings. */
+export interface OpenPrWarningItem {
+  number: number;
+  title: string;
+  url: string;
+  status: 'Open' | 'Draft';
+  mergeConflicts?: boolean;
 }
 
 /**
- * Collect the names of in-flight work (streaming agents and active background
- * hooks) that a workspace archive/delete would stop.
+ * Collect the workspace's unmerged PRs (status Open/Draft) from the Redux
+ * workspace slice: union of `pullRequests` and `activePullRequest`, deduped
+ * by url (fallback number). `isDraft: true` is reported as status Draft.
+ * @param workspaceId - The workspace ID to check
+ */
+export function getOpenPrItems(workspaceId: string): OpenPrWarningItem[] {
+  const workspace = selectWorkspaceById.select(appStore.state, workspaceId);
+  if (!workspace) return [];
+  const pool: PullRequestInfo[] = [
+    ...(workspace.pullRequests ?? []),
+    ...(workspace.activePullRequest ? [workspace.activePullRequest] : []),
+  ];
+  const seen = new Set<string>();
+  const items: OpenPrWarningItem[] = [];
+  for (const pr of pool) {
+    if (pr.status !== PullRequestStatus.Open && pr.status !== PullRequestStatus.Draft) continue;
+    const key = pr.url || String(pr.number);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    items.push({
+      number: pr.number,
+      title: pr.title,
+      url: pr.url,
+      status: pr.isDraft || pr.status === PullRequestStatus.Draft ? 'Draft' : 'Open',
+      ...(pr.mergeConflicts !== undefined ? { mergeConflicts: pr.mergeConflicts } : {}),
+    });
+  }
+  return items;
+}
+
+/** Streaming agent names, active hook names, and open PRs for one workspace, for gating. */
+export interface ActiveWorkNames {
+  agentNames: string[];
+  hookNames: string[];
+  openPrs: OpenPrWarningItem[];
+}
+
+/**
+ * Collect the in-flight work (streaming agents and active background hooks)
+ * that a workspace archive/delete would stop, plus its unmerged (Open/Draft)
+ * PRs.
  * @param workspaceId - The workspace ID to check
  */
 export async function getActiveWorkNames(workspaceId: string): Promise<ActiveWorkNames> {
   return {
     agentNames: getRunningAgentNames(workspaceId),
     hookNames: await getActiveHookNames(workspaceId),
+    openPrs: getOpenPrItems(workspaceId),
   };
 }

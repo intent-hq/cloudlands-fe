@@ -14,13 +14,17 @@ import {
   resetMockBackend,
   type MockBackendHandle,
 } from '../../../test/mocks/backend-transport.mock';
-import { getActiveHookNames } from '../delete-warning-utils';
+import { getActiveHookNames, getOpenPrItems } from '../delete-warning-utils';
 import { store as appStore } from '$store/renderer/store';
 import {
   backgroundHooksMarkedStale,
   backgroundHooksUpdated,
 } from '$store/renderer/slices/background-hooks/background-hooks-slice';
-import { removeWorkspaceEntity } from '$store/renderer/slices/workspace/workspace-slice';
+import {
+  removeWorkspaceEntity,
+  setWorkspaceEntity,
+} from '$store/renderer/slices/workspace/workspace-slice';
+import { PullRequestStatus, type PullRequestInfo, type Workspace } from '$shared/types';
 
 const WS = 'ws-hooks-test';
 
@@ -144,5 +148,89 @@ describe('getActiveHookNames', () => {
 
     expect(names).toEqual([]);
     expect(hookListRequests()).toEqual([{ method: 'hook.list', params: { workspaceId: WS } }]);
+  });
+});
+
+function makePr(number: number, overrides: Partial<PullRequestInfo> = {}): PullRequestInfo {
+  return {
+    id: `pr-${number}`,
+    number,
+    url: `https://github.com/o/r/pull/${number}`,
+    title: `PR ${number}`,
+    status: PullRequestStatus.Open,
+    createdAt: '2026-08-04T00:00:00.000Z',
+    updatedAt: '2026-08-04T00:00:00.000Z',
+    ...overrides,
+  };
+}
+
+function seedWorkspace(pullRequests: PullRequestInfo[], activePullRequest?: PullRequestInfo) {
+  appStore.dispatch(
+    setWorkspaceEntity({
+      id: WS,
+      title: WS,
+      status: 'Active',
+      pullRequests,
+      ...(activePullRequest ? { activePullRequest } : {}),
+    } as unknown as Workspace),
+  );
+}
+
+describe('getOpenPrItems', () => {
+  beforeAll(() => appStore.init());
+
+  afterEach(() => {
+    appStore.dispatch(removeWorkspaceEntity(WS));
+  });
+
+  it('returns [] for an unknown workspace', () => {
+    expect(getOpenPrItems('ws-missing')).toEqual([]);
+  });
+
+  it('keeps only Open/Draft PRs, projected to serializable warning items', () => {
+    seedWorkspace([
+      makePr(1),
+      makePr(2, { status: PullRequestStatus.Merged }),
+      makePr(3, { status: PullRequestStatus.Closed }),
+      makePr(4, { status: PullRequestStatus.Draft }),
+    ]);
+
+    expect(getOpenPrItems(WS)).toEqual([
+      { number: 1, title: 'PR 1', url: 'https://github.com/o/r/pull/1', status: 'Open' },
+      { number: 4, title: 'PR 4', url: 'https://github.com/o/r/pull/4', status: 'Draft' },
+    ]);
+  });
+
+  it('reports isDraft: true as status Draft and carries mergeConflicts when set', () => {
+    seedWorkspace([makePr(1, { isDraft: true, mergeConflicts: true })]);
+
+    expect(getOpenPrItems(WS)).toEqual([
+      {
+        number: 1,
+        title: 'PR 1',
+        url: 'https://github.com/o/r/pull/1',
+        status: 'Draft',
+        mergeConflicts: true,
+      },
+    ]);
+  });
+
+  it('unions activePullRequest into the pool and dedupes by url', () => {
+    const active = makePr(2);
+    seedWorkspace([makePr(1), makePr(2)], active);
+
+    expect(getOpenPrItems(WS).map((pr) => pr.number)).toEqual([1, 2]);
+  });
+
+  it('includes an Open activePullRequest absent from pullRequests', () => {
+    seedWorkspace([makePr(1)], makePr(5));
+
+    expect(getOpenPrItems(WS).map((pr) => pr.number)).toEqual([1, 5]);
+  });
+
+  it('excludes a merged activePullRequest', () => {
+    seedWorkspace([], makePr(6, { status: PullRequestStatus.Merged }));
+
+    expect(getOpenPrItems(WS)).toEqual([]);
   });
 });

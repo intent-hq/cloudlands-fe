@@ -115,10 +115,11 @@ function activeForRepo(repoKey: string, workspaces: Workspace[]): Workspace[] {
   );
 }
 
-function hasActiveWork({ agentNames, hookNames }: ActiveWorkNames): boolean {
-  return agentNames.length > 0 || hookNames.length > 0;
+function hasActiveWork({ agentNames, hookNames, openPrs }: ActiveWorkNames): boolean {
+  return agentNames.length > 0 || hookNames.length > 0 || openPrs.length > 0;
 }
 
+// Bulk flows count only agents/hooks — open PRs never change bulk counts.
 function countActiveWork(items: ActiveWorkNames[]): { agentCount: number; hookCount: number } {
   return items.reduce(
     (counts, item) => ({

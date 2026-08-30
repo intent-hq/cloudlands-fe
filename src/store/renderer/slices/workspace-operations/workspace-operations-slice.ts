@@ -1,5 +1,6 @@
 import { createAction } from '@augmentcode/themis/utils/store/create-action';
 import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
+import type { OpenPrWarningItem } from '$lib/utils/delete-warning-utils';
 import type { WorkspaceProposalApplyPayload } from '$shared/app-workspace-operations';
 
 export type WorkspaceOperationsState = {
@@ -7,10 +8,12 @@ export type WorkspaceOperationsState = {
   pendingDeleteWorkspaceId: string | null;
   runningAgentNamesForDelete: string[];
   activeHookNamesForDelete: string[];
+  openPrsForDelete: OpenPrWarningItem[];
   showArchiveWarning: boolean;
   pendingArchiveWorkspaceId: string | null;
   runningAgentNamesForArchive: string[];
   activeHookNamesForArchive: string[];
+  openPrsForArchive: OpenPrWarningItem[];
   showBulkArchiveConfirm: boolean;
   bulkArchiveActiveAgentCount: number;
   bulkArchiveActiveHookCount: number;
@@ -32,10 +35,12 @@ export const initialState: WorkspaceOperationsState = {
   pendingDeleteWorkspaceId: null,
   runningAgentNamesForDelete: [],
   activeHookNamesForDelete: [],
+  openPrsForDelete: [],
   showArchiveWarning: false,
   pendingArchiveWorkspaceId: null,
   runningAgentNamesForArchive: [],
   activeHookNamesForArchive: [],
+  openPrsForArchive: [],
   showBulkArchiveConfirm: false,
   bulkArchiveActiveAgentCount: 0,
   bulkArchiveActiveHookCount: 0,
@@ -70,13 +75,27 @@ export const applyWorkspaceProposal = createAction<[payload: WorkspaceProposalAp
 );
 
 export const openDeleteWarning = createAction<
-  [payload: { workspaceId: string; agentNames: string[]; hookNames: string[] }]
+  [
+    payload: {
+      workspaceId: string;
+      agentNames: string[];
+      hookNames: string[];
+      openPrs: OpenPrWarningItem[];
+    },
+  ]
 >('workspaceOperations/openDeleteWarning');
 
 export const closeDeleteWarning = createAction('workspaceOperations/closeDeleteWarning');
 
 export const openArchiveWarning = createAction<
-  [payload: { workspaceId: string; agentNames: string[]; hookNames: string[] }]
+  [
+    payload: {
+      workspaceId: string;
+      agentNames: string[];
+      hookNames: string[];
+      openPrs: OpenPrWarningItem[];
+    },
+  ]
 >('workspaceOperations/openArchiveWarning');
 
 export const closeArchiveWarning = createAction('workspaceOperations/closeArchiveWarning');
@@ -130,12 +149,13 @@ export const confirmRemoveRepo = createAction('workspaceOperations/confirmRemove
 export const workspaceOperationsReducer = createReducer<WorkspaceOperationsState>(initialState);
 workspaceOperationsReducer.with(
   openDeleteWarning,
-  (state, { payload: [{ workspaceId, agentNames, hookNames }] }) => ({
+  (state, { payload: [{ workspaceId, agentNames, hookNames, openPrs }] }) => ({
     ...state,
     showDeleteWarning: true,
     pendingDeleteWorkspaceId: workspaceId,
     runningAgentNamesForDelete: agentNames,
     activeHookNamesForDelete: hookNames,
+    openPrsForDelete: openPrs,
   }),
 );
 workspaceOperationsReducer.with(closeDeleteWarning, (state) => ({
@@ -144,15 +164,17 @@ workspaceOperationsReducer.with(closeDeleteWarning, (state) => ({
   pendingDeleteWorkspaceId: null,
   runningAgentNamesForDelete: [],
   activeHookNamesForDelete: [],
+  openPrsForDelete: [],
 }));
 workspaceOperationsReducer.with(
   openArchiveWarning,
-  (state, { payload: [{ workspaceId, agentNames, hookNames }] }) => ({
+  (state, { payload: [{ workspaceId, agentNames, hookNames, openPrs }] }) => ({
     ...state,
     showArchiveWarning: true,
     pendingArchiveWorkspaceId: workspaceId,
     runningAgentNamesForArchive: agentNames,
     activeHookNamesForArchive: hookNames,
+    openPrsForArchive: openPrs,
   }),
 );
 workspaceOperationsReducer.with(closeArchiveWarning, (state) => ({
@@ -161,6 +183,7 @@ workspaceOperationsReducer.with(closeArchiveWarning, (state) => ({
   pendingArchiveWorkspaceId: null,
   runningAgentNamesForArchive: [],
   activeHookNamesForArchive: [],
+  openPrsForArchive: [],
 }));
 workspaceOperationsReducer.with(openBulkArchiveConfirm, (state, { payload: [repoKey] }) => ({
   ...state,

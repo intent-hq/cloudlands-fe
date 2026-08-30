@@ -1,8 +1,11 @@
 <script lang="ts">
+  import { Badge } from '$lib/components/ui/badge';
   import { Button } from '$lib/components/ui/button';
   import * as Dialog from '$lib/components/ui/dialog';
   import { m } from '$shared/paraglide/messages.js';
   import { formatInteger } from '$lib/i18n/format';
+  import { openExternalUrl } from '$lib/utils/open-external';
+  import type { OpenPrWarningItem } from '$lib/utils/delete-warning-utils';
 
   interface Props {
     open?: boolean;
@@ -10,6 +13,7 @@
     mode?: 'delete' | 'archive';
     agentNames?: string[];
     hookNames?: string[];
+    openPrs?: OpenPrWarningItem[];
     onDeleteAnyway?: () => void;
     onCancel?: () => void;
   }
@@ -19,6 +23,7 @@
     mode = 'delete',
     agentNames = [],
     hookNames = [],
+    openPrs = [],
     onDeleteAnyway,
     onCancel,
   }: Props = $props();
@@ -38,6 +43,12 @@
   function handleDeleteAnyway() {
     onDeleteAnyway?.();
     open = false;
+  }
+
+  function handlePrLinkClick(event: MouseEvent, url: string) {
+    event.preventDefault();
+    // eslint-disable-next-line intent/no-component-async-data-fetch -- opens an external URL in the system browser, not a domain data fetch
+    void openExternalUrl(url);
   }
 
   let confirmButtonRef: HTMLButtonElement | null = $state(null);
@@ -65,7 +76,7 @@
         </Dialog.Description>
       </Dialog.Header>
 
-      {#if agentNames.length > 0 || hookNames.length > 0}
+      {#if agentNames.length > 0 || hookNames.length > 0 || openPrs.length > 0}
         <div class="rounded-md border border-border bg-muted/40 p-3">
           {#if agentNames.length > 0}
             <p class="text-sm font-medium text-foreground">
@@ -96,6 +107,43 @@
             <ul class="mt-2 max-h-28 space-y-1 overflow-auto pr-1">
               {#each hookNames as name}
                 <li class="truncate text-sm text-subtle">{name}</li>
+              {/each}
+            </ul>
+          {/if}
+          {#if openPrs.length > 0}
+            <p
+              class="text-sm font-medium text-foreground"
+              class:mt-3={agentNames.length > 0 || hookNames.length > 0}
+            >
+              {openPrs.length === 1
+                ? m.modals_deleteWarning_openPrs_one({
+                    count: formatInteger(openPrs.length),
+                  })
+                : m.modals_deleteWarning_openPrs_many({
+                    count: formatInteger(openPrs.length),
+                  })}
+            </p>
+            <ul class="mt-2 max-h-28 space-y-1 overflow-auto pr-1">
+              {#each openPrs as pr (pr.url)}
+                <li class="flex items-center gap-2 text-sm text-subtle">
+                  <a
+                    href={pr.url}
+                    class="min-w-0 truncate text-primary hover:underline"
+                    onclick={(event) => handlePrLinkClick(event, pr.url)}
+                  >
+                    #{pr.number} {pr.title}
+                  </a>
+                  <Badge variant={pr.status === 'Draft' ? 'secondary' : 'success'}>
+                    {pr.status === 'Draft'
+                      ? m.workspace_prSection_statusDraft_label()
+                      : m.workspace_prSection_statusOpen_label()}
+                  </Badge>
+                  {#if pr.mergeConflicts === true}
+                    <Badge variant="destructive">
+                      {m.modals_deleteWarning_prMergeConflicts_label()}
+                    </Badge>
+                  {/if}
+                </li>
               {/each}
             </ul>
           {/if}
