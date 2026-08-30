@@ -316,15 +316,21 @@ import {
   connectBackendClient,
   disconnectBackendClient,
   disposeAllBackendClients,
-  getLocalBackendClient,
   isSameHostBackendActive,
 } from '../features/backend/main/backend.ipc';
 import { registerWorkspaceTransferHandlers } from '../features/backend/main/workspace-transfer.ipc';
 import { registerWorkspaceImportHandlers } from '../features/backend/main/workspace-import.ipc';
-import { getConnectionMode } from '../features/backend/main/connection-mode';
+import { getConnectionMode, getDaemonVersionInfo } from '../features/backend/main/connection-mode';
 import { getActiveId, list as listConnections } from '../features/backend/main/connections-store';
 import { LOCAL_CONNECTION_ID } from '../shared/types/connections';
-import { startIntentdSidecar, stopIntentdSidecar } from '../features/backend/main/intentd-sidecar';
+import {
+  probeDaemonVersion,
+  resolveSocketPath,
+  startIntentdSidecar,
+  stopIntentdSidecar,
+} from '../features/backend/main/intentd-sidecar';
+import { readPinnedVersion } from '../features/backend/main/intentd-version-pin';
+import { formatIntentdAboutVersion } from '../features/backend/main/intentd-about-version';
 import { startMemoryMonitor, stopMemoryMonitor } from './memory-monitor';
 import { setupUserRulesIPC as setupWorkspaceRulesIPC } from '../features/rules/main/user-rules.ipc';
 
@@ -642,77 +648,66 @@ app.whenReady().then(async () => {
   const commitHash = BUILD_CONFIG.GIT_COMMIT_HASH;
   const versionWithCommit = commitHash ? `${app.getVersion()} (${commitHash})` : app.getVersion();
 
+  // Bundled sidecar intentd version: the pin is readable synchronously; the
+  // build commit is filled in by refreshAboutPanelIntentdVersion once the
+  // daemon is up (after startIntentdSidecar below).
+  const pinnedIntentdVersion = readPinnedVersion({
+    isPackaged: app.isPackaged,
+    resourcesPath: process.resourcesPath,
+  });
+
   // Store about panel info for use in dialogs
   const aboutPanelInfo = {
     applicationName: appName,
     applicationVersion: versionWithCommit,
     copyright: '\u00A9 2026 Intent Contributors',
-    providerVersion: '',
+    intentdVersion: formatIntentdAboutVersion({ pinnedVersion: pinnedIntentdVersion }) ?? '',
   };
 
-  // Set initial about panel options (macOS only)
-  if (isMacOS) {
+  const applyAboutPanelOptions = (): void => {
+    if (!isMacOS) return;
     app.setAboutPanelOptions({
       applicationName: aboutPanelInfo.applicationName,
       applicationVersion: aboutPanelInfo.applicationVersion,
+      ...(aboutPanelInfo.intentdVersion ? { version: aboutPanelInfo.intentdVersion } : {}),
       copyright: aboutPanelInfo.copyright,
     });
-  }
+  };
 
-  // Asynchronously fetch active provider version and update the about panel.
-  // Routed through the daemon's `host.exec` (PROTOCOL §5.14) — the FE no longer
-  // spawns provider `--version` locally. Failure is silent: the About panel just
-  // omits the CLI version line (honest-degrade on RPC / non-zero exit).
-  (async () => {
+  // Set initial about panel options (macOS only)
+  applyAboutPanelOptions();
+
+  // Best-effort refresh of the bundled sidecar's build commit: reuse the
+  // adoption handshake's cached info when it already carries a commit,
+  // otherwise probe the local daemon's system.status once. Failure is silent —
+  // the About box just keeps showing the pin (or omits the line entirely when
+  // the pin is unreadable too), the same honest-degrade as the removed
+  // provider CLI line.
+  const refreshAboutPanelIntentdVersion = async (): Promise<void> => {
     try {
-      const { hostExec } = await import('../shared/main/host-exec.js');
-      const { fetchProviderCatalog } = await import('./utils/provider-catalog-accessor.js');
-      const catalog = await fetchProviderCatalog();
-      // The registry carries no default designation — probe the persisted
-      // active provider (`providers.active`, the effective-default rule used
-      // renderer-side), falling back to the first catalog row when unset.
-      // The settings read is best-effort: a failure just means first-row.
-      const activeProviderId = await getLocalBackendClient()
-        .request('settings.get', { path: 'providers.active' })
-        .then((result) => {
-          const value = (result as { value?: unknown } | null)?.value;
-          return typeof value === 'string' ? value : '';
-        })
-        .catch(() => '');
-      const defaultProvider =
-        catalog.providers.find((provider) => provider.id === activeProviderId) ??
-        catalog.providers[0];
-      if (!defaultProvider) return;
-
-      const result = await hostExec(defaultProvider.command, {
-        args: ['--version'],
-        timeoutMs: 5000,
-      });
-      if (result.exitCode !== 0) {
-        logger.debug('Could not get provider CLI version for about panel', {
-          exitCode: result.exitCode,
-        });
-        return;
+      const cached = getDaemonVersionInfo();
+      let probedVersion = cached?.daemonVersion ?? null;
+      let buildCommit = cached?.daemonBuildCommit ?? null;
+      if (!buildCommit) {
+        const probe = await probeDaemonVersion(resolveSocketPath(process.env));
+        probedVersion = probe.version ?? probedVersion;
+        buildCommit = probe.buildCommit ?? buildCommit;
       }
-      const providerVersion = (result.stdout || '').trim();
-      if (providerVersion) {
-        aboutPanelInfo.providerVersion = `${defaultProvider.displayName} CLI: ${providerVersion}`;
-        if (isMacOS) {
-          app.setAboutPanelOptions({
-            applicationName: aboutPanelInfo.applicationName,
-            applicationVersion: aboutPanelInfo.applicationVersion,
-            version: aboutPanelInfo.providerVersion,
-            copyright: aboutPanelInfo.copyright,
-          });
-        }
+      const line = formatIntentdAboutVersion({
+        pinnedVersion: pinnedIntentdVersion,
+        probedVersion,
+        buildCommit,
+      });
+      if (line && line !== aboutPanelInfo.intentdVersion) {
+        aboutPanelInfo.intentdVersion = line;
+        applyAboutPanelOptions();
       }
     } catch (err) {
-      // Provider CLI not installed / not accessible / RPC failure - that's fine
-      logger.debug('Could not get provider CLI version for about panel', {
+      logger.debug('Could not get intentd build commit for about panel', {
         error: err instanceof Error ? err.message : String(err),
       });
     }
-  })();
+  };
 
   // Function to build the File menu with recent workspaces
   const buildFileMenu = async (): Promise<Electron.MenuItemConstructorOptions> => {
@@ -1013,7 +1008,7 @@ app.whenReady().then(async () => {
           const aboutMessage = [
             `${aboutPanelInfo.applicationName}`,
             m.dialog_about_version({ version: aboutPanelInfo.applicationVersion }),
-            aboutPanelInfo.providerVersion ? `${aboutPanelInfo.providerVersion}` : '',
+            aboutPanelInfo.intentdVersion ? `${aboutPanelInfo.intentdVersion}` : '',
             `${aboutPanelInfo.copyright}`,
           ]
             .filter(Boolean)
@@ -1598,6 +1593,10 @@ app.whenReady().then(async () => {
   // The daemon owns PATH discovery. Seed only after starting/adopting it, and
   // retry briefly while a newly spawned sidecar creates its socket.
   await seedPathFromHostEnv();
+
+  // Fill in the bundled sidecar's build commit on the About box now that the
+  // daemon is up (fire-and-forget; see refreshAboutPanelIntentdVersion above).
+  void refreshAboutPanelIntentdVersion();
 
   registerBackendHandlers(); // Needed for live JSON-RPC transport (workspaces domain)
   registerWorkspaceTransferHandlers(); // Workspace transfer relay (wizard steps 3–4)
