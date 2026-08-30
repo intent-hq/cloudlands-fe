@@ -21,16 +21,19 @@ const mocks = vi.hoisted(() => {
     },
   };
   const dispatch = vi.fn((action: { type: string; payload?: unknown[] }) => {
-    const [workspaceId, token] = action.payload ?? [];
-    if (action.type === 'workspace/beginWorkspaceTitleMutation') {
-      storeState.workspace.pendingTitleMutations[workspaceId as string] = {
-        token: token as number,
-      };
-    } else if (
+    if (
+      action.type === 'workspace/beginWorkspaceTitleMutation' ||
       action.type === 'workspace/completeWorkspaceTitleMutation' ||
       action.type === 'workspace/failWorkspaceTitleMutation'
     ) {
-      delete storeState.workspace.pendingTitleMutations[workspaceId as string];
+      const [workspaceId, token] = action.payload ?? [];
+      if (action.type === 'workspace/beginWorkspaceTitleMutation') {
+        storeState.workspace.pendingTitleMutations[workspaceId as string] = {
+          token: token as number,
+        };
+      } else {
+        delete storeState.workspace.pendingTitleMutations[workspaceId as string];
+      }
     }
     return action;
   });
@@ -355,10 +358,9 @@ describe('WorkspaceProgressCard status message', () => {
       type: 'workspaceTransfer/openTransferModal',
       payload: { workspaceId: 'ws-1', workspaceTitle: 'Active Workspace' },
     });
-    expect(container.querySelector('[data-workspace-actions-trigger]')).toHaveAttribute(
-      'aria-expanded',
-      'false',
-    );
+    expect(
+      container.querySelector('[data-workspace-actions-trigger]')?.getAttribute('aria-expanded'),
+    ).toBe('false');
   });
 
   it('omits the transfer action when workspace data becomes unavailable', async () => {
