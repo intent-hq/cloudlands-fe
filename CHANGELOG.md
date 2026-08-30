@@ -4,6 +4,13 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.116.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.116.0...v2.116.1) (2026-08-30)
+
+
+### 🐛 Bug Fixes
+
+* New Window inherits the focused window's backend ([#1909](https://github.com/intent-hq/cloudlands-fe/issues/1909)) ([9c51c63](https://github.com/intent-hq/cloudlands-fe/commit/9c51c637d48ea9201c6679b753854dd005e569c2))
+
 ## [2.116.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.115.0...v2.116.0) (2026-08-30)
 
 
