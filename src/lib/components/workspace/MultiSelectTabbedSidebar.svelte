@@ -53,6 +53,7 @@
   import { workspaceClient } from '$store/renderer/slices/workspace/utils/workspace.client';
   import { cn } from '$lib/utils';
   import { scrollFade } from '$lib/actions/scroll-fade';
+  import { scheduleLayoutRead } from '$lib/utils/layout-phases';
 
   import { loadWorkspacesRequested } from '$store/renderer/slices/workspace/workspace-slice';
   import {
@@ -695,28 +696,29 @@
   }
 
   onMount(() => {
-    updateExpandedOverlayBounds();
-    updateLauncherIconLimit();
-    const frame = requestAnimationFrame(() => {
+    // Measurement is deferred to ResizeObserver's guaranteed initial
+    // delivery (after layout, pre-paint) instead of running synchronously
+    // here: mount happens mid-flush on workspace switches, where the
+    // getBoundingClientRect sweep forces a reflow.
+    let cancelRead: (() => void) | null = null;
+    const measure = () => {
       updateExpandedOverlayBounds();
       updateLauncherIconLimit();
-    });
+    };
     if (typeof ResizeObserver === 'undefined' || !sidebarElement) {
-      return () => cancelAnimationFrame(frame);
+      cancelRead = scheduleLayoutRead(() => {
+        cancelRead = null;
+        measure();
+      });
+      return () => cancelRead?.();
     }
 
-    const observer = new ResizeObserver(() => {
-      updateExpandedOverlayBounds();
-      updateLauncherIconLimit();
-    });
+    const observer = new ResizeObserver(measure);
     observer.observe(sidebarElement);
     const titleRegion = sidebarElement.querySelector<HTMLElement>('[data-workspace-title-region]');
     if (titleRegion) observer.observe(titleRegion);
     if (bottomLaunchersElement) observer.observe(bottomLaunchersElement);
-    return () => {
-      cancelAnimationFrame(frame);
-      observer.disconnect();
-    };
+    return () => observer.disconnect();
   });
 
   // Map registry sidebar tab IDs to MultiSelectTabbedSidebar tab IDs

@@ -13,6 +13,7 @@
    */
   import { onMount, onDestroy } from 'svelte';
   import { browser } from '$app/environment';
+  import { scheduleLayoutRead, type CancelLayoutTask } from '$lib/utils/layout-phases';
 
   interface Props {
     agentId?: string;
@@ -54,6 +55,12 @@
   // Cached device pixel ratio (updated on resize, not every frame)
   let cachedDpr = 1;
 
+  // Canvas CSS size cached from ResizeObserver deliveries; -1 = not yet
+  // delivered. Lets the render loop avoid clientWidth/clientHeight reads.
+  let cachedClientWidth = -1;
+  let cachedClientHeight = -1;
+  let hasSizeObserver = false;
+
   function getSemanticAuroraColor(): [number, number, number] | null {
     if (!canvas) return null;
 
@@ -74,6 +81,25 @@
       return null;
     }
     return rgb as [number, number, number];
+  }
+
+  // The getComputedStyle read in getSemanticAuroraColor forces a style
+  // recalc when it runs mid-flush (component mount during a workspace
+  // switch) or from the render loop right after other rAF callbacks wrote
+  // to the DOM. Route every sync through the shared batched read phase so
+  // the read shares one clean layout pass with the other measurers.
+  // The pending flag (not the cancel handle) gates re-scheduling: a
+  // synchronously-invoking rAF stub runs the task before the handle lands.
+  let colorReadPending = false;
+  let cancelColorRead: CancelLayoutTask | null = null;
+
+  function scheduleSemanticColorSync() {
+    if (colorReadPending) return;
+    colorReadPending = true;
+    cancelColorRead = scheduleLayoutRead(() => {
+      colorReadPending = false;
+      if (!destroyed) syncSemanticAuroraColor();
+    });
   }
 
   function syncSemanticAuroraColor(): boolean {
@@ -340,7 +366,7 @@
       color3: gl.getUniformLocation(program, 'u_color3'),
       seed: gl.getUniformLocation(program, 'u_seed'),
     };
-    syncSemanticAuroraColor();
+    scheduleSemanticColorSync();
 
     // Cache initial DPR
     cachedDpr = window.devicePixelRatio || 1;
@@ -368,9 +394,27 @@
     }
     lastFrameTime = now - (elapsed % TARGET_FRAME_TIME);
 
+    // Canvas size comes from the ResizeObserver cache when available so the
+    // loop never reads clientWidth/clientHeight (a forced-reflow hazard right
+    // after other rAF callbacks mutate the DOM). Until the observer's initial
+    // delivery the size is unknown — keep looping without drawing.
+    let clientWidth: number;
+    let clientHeight: number;
+    if (hasSizeObserver) {
+      if (cachedClientWidth < 0) {
+        animationFrame = requestAnimationFrame(render);
+        return;
+      }
+      clientWidth = cachedClientWidth;
+      clientHeight = cachedClientHeight;
+    } else {
+      clientWidth = canvas.clientWidth;
+      clientHeight = canvas.clientHeight;
+    }
+
     // Use cached DPR instead of reading window.devicePixelRatio every frame
-    const width = canvas.clientWidth * cachedDpr;
-    const height = canvas.clientHeight * cachedDpr;
+    const width = clientWidth * cachedDpr;
+    const height = clientHeight * cachedDpr;
 
     if (canvas.width !== width || canvas.height !== height) {
       canvas.width = width;
@@ -390,7 +434,10 @@
     gl.uniform2f(uniformLocations.resolution, width, height);
     gl.uniform1f(uniformLocations.seed, seed);
 
-    if (!semanticColorReady && !syncSemanticAuroraColor()) {
+    if (!semanticColorReady) {
+      // Sync runs in the batched read phase, never from the render loop —
+      // draw resumes once the color lands.
+      scheduleSemanticColorSync();
       animationFrame = requestAnimationFrame(render);
       return;
     }
@@ -405,6 +452,9 @@
       cancelAnimationFrame(animationFrame);
       animationFrame = 0;
     }
+    cancelColorRead?.();
+    cancelColorRead = null;
+    colorReadPending = false;
     if (gl) {
       if (positionBuffer) {
         gl.deleteBuffer(positionBuffer);
@@ -475,6 +525,20 @@
     // Listen for DPR changes (e.g., moving between retina/non-retina displays)
     setupDprListener();
 
+    // Cache the canvas CSS size off ResizeObserver deliveries (after layout,
+    // pre-paint, no forced reflow) so the render loop never reads
+    // clientWidth/clientHeight itself.
+    let sizeObserver: ResizeObserver | null = null;
+    if (typeof ResizeObserver !== 'undefined' && canvas) {
+      hasSizeObserver = true;
+      sizeObserver = new ResizeObserver(() => {
+        if (!canvas) return;
+        cachedClientWidth = canvas.clientWidth;
+        cachedClientHeight = canvas.clientHeight;
+      });
+      sizeObserver.observe(canvas);
+    }
+
     const handleSemanticColorChange = () => syncSemanticAuroraColor();
     const themeObserver = new MutationObserver(handleSemanticColorChange);
     themeObserver.observe(document.documentElement, {
@@ -490,6 +554,7 @@
       motionQuery.removeEventListener('change', handleMotionPreference);
       window.removeEventListener('theme-changed', handleSemanticColorChange);
       themeObserver.disconnect();
+      sizeObserver?.disconnect();
       dprCleanup?.();
     };
   });

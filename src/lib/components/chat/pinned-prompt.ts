@@ -1,4 +1,5 @@
 import type { AgentMessage } from '$shared/types';
+import { scheduleLayoutRead, type CancelLayoutTask } from '$lib/utils/layout-phases';
 
 export interface PinnedPromptState {
   id: string;
@@ -87,23 +88,29 @@ export function trackPinnedPrompt(
   const controller = createPinnedPromptController();
   let options = initialOptions;
   let current: PinnedPromptState | null = null;
-  let frame: number | null = null;
+  let readPending = false;
+  let cancelRead: CancelLayoutTask | null = null;
   let destroyed = false;
   const observedElements = new Set<Element>();
   let resizeObserver: ResizeObserver | null = null;
   let mutationObserver: MutationObserver | null = null;
 
   const measure = () => {
-    frame = null;
+    readPending = false;
     if (destroyed || !options.enabled) return;
     const next = controller.update(container, options.enabled);
     if (next?.id === current?.id && next?.message === current?.message) return;
     current = next;
     options.onChange(next);
   };
+  // Batched into the shared read phase so the getBoundingClientRect sweep
+  // shares one layout pass with the other workspace-switch measurers. The
+  // pending flag (not the cancel handle) gates re-scheduling: a
+  // synchronously-invoking rAF stub runs measure before the handle lands.
   const schedule = () => {
-    if (destroyed || !options.enabled || frame !== null) return;
-    frame = requestAnimationFrame(measure);
+    if (destroyed || !options.enabled || readPending) return;
+    readPending = true;
+    cancelRead = scheduleLayoutRead(measure);
   };
   const observeGeometry = () => {
     for (const element of [container, container.firstElementChild]) {
@@ -120,8 +127,9 @@ export function trackPinnedPrompt(
     mutationObserver?.disconnect();
     mutationObserver = null;
     observedElements.clear();
-    if (frame !== null) cancelAnimationFrame(frame);
-    frame = null;
+    cancelRead?.();
+    cancelRead = null;
+    readPending = false;
     controller.reset();
     if (current) {
       current = null;
