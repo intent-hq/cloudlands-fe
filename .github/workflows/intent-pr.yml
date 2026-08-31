@@ -36,17 +36,18 @@ jobs:
   # job in this workflow carries the same-repo guard, either directly via an
   # `if:` on `github.event.pull_request.head.repo.full_name ==
   # github.repository` or transitively through `needs` on a guarded job
-  # (checks / build-web / test skip when the guarded route job skips, via
-  # their existing `needs.route.result == 'success'` condition) — EXCEPT the
+  # (checks / build-web / test / test-ct skip when the guarded route job
+  # skips, via their existing `needs.route.result == 'success'` condition)
+  # — EXCEPT the
   # gate, which deliberately still runs on fork PRs so the required "CI
   # Gate" context fails red there (a skipped job would SATISFY a required
   # check; see the gate job's comment). Fork PRs are auto-closed by
   # close-fork-prs.yml.
 
-  # Decides where the heavy jobs (checks / build-web / test) run: the local
-  # tinybox runner normally, or GH-hosted larger runners when the tinybox
-  # queue is backed up or the fleet is unavailable (ported from intentd's
-  # ci.yml route job). Runs on a small GH-hosted runner so the burst
+  # Decides where the heavy jobs (checks / build-web / test / test-ct) run:
+  # the local tinybox runner normally, or GH-hosted larger runners when the
+  # tinybox queue is backed up or the fleet is unavailable (ported from
+  # intentd's ci.yml route job). Runs on a small GH-hosted runner so the burst
   # decision is independent of the tinybox queue: probing from tinybox
   # would queue behind the very backlog it measures (and deadlock entirely
   # with tinybox offline). The probe FAILS OPEN TO GH-HOSTED (gh-linux-8x):
@@ -97,7 +98,7 @@ jobs:
           github-token: ${{ secrets.CI_QUEUE_READ_TOKEN || github.token }}
           script: |
             const tinybox = ["self-hosted", "Linux", "X64"];
-            // All three heavy jobs burst to the 8-core / 32 GB runner:
+            // All the routed heavy jobs burst to the 8-core / 32 GB runner:
             // build-web needs well over 8 GB of heap with sourcemaps on
             // (documented OOM history, monorepo#1074), and 32 GB clears its
             // 16 GB Node heap cap comfortably.
@@ -127,6 +128,17 @@ jobs:
               // runners (currently none — the degraded mode keeps
               // bursting). An empty list still routes to burst by design
               // (never deadlock on an invisible fleet).
+              // NOTE: the org list is NOT scoped to the runner groups this
+              // repo can access, so the probe assumes every online
+              // self-hosted+Linux+X64 org runner is the tinybox fleet in a
+              // group visible to this repo. Ops invariant: keep the fleet's
+              // group visible to the CI repos, and never register
+              // generically-labeled org runners outside it — a matching but
+              // inaccessible runner would route jobs onto labels nothing
+              // can serve. (Group-scoped listing via the runner-groups API
+              // was considered and rejected: it needs extra calls per group
+              // and fails on plans without runner-group support, which
+              // would silently regress the probe to always-burst.)
               let runners;
               let runnerSource = "org";
               try {
@@ -563,9 +575,14 @@ jobs:
         run: pnpm run test:integration
 
   # Playwright component tests (*.ct.spec.ts via playwright-ct.config.ts;
-  # monorepo#2091). Pinned to ubuntu-latest rather than routed: browser
-  # provisioning needs `playwright install --with-deps` (sudo apt), which the
-  # self-hosted tinybox runner doesn't offer. The suite has grown to ~350
+  # monorepo#2091). Routed through the probe like checks / build-web / test:
+  # tinybox when healthy, gh-linux-8x on burst (the burst runner replaces
+  # the old ubuntu-latest pin; its 8 cores / 32 GB also clear the 16 GB
+  # ubuntu-latest VMs whose memory exhaustion killed shard legs,
+  # monorepo#3352). Browser provisioning (`playwright install --with-deps`,
+  # sudo apt) works on tinybox too — the runner user has passwordless sudo
+  # (see intentd ci.yml's libssl-dev step) — with the co-tenant caveats
+  # handled per step below. The suite has grown to ~350
   # tests across ~56 files running serially (workers: 1 on CI — deliberate),
   # so a single job straddled the 30-min budget (monorepo#2887); it runs as a
   # shard matrix instead (Playwright shards by file), 4-way since the 2-way
@@ -578,14 +595,15 @@ jobs:
   # comment for the full skip/fail-safe rationale.
   test-ct:
     name: Component Tests (shard ${{ matrix.shard }}/4)
-    needs: [release-fast-path]
-    # The explicit same-repo guard is required here (fork-PR hardening note):
-    # `!cancelled()` overrides the default skip propagation from needs, so a
-    # skipped release-fast-path alone would not skip this matrix on fork PRs.
-    # Merge groups come from the repo's own ruleset, so the guard passes
-    # there via the event check.
-    if: ${{ !cancelled() && (github.event_name == 'merge_group' || github.event.pull_request.head.repo.full_name == github.repository) && needs.release-fast-path.outputs.fast_path != 'true' }}
-    runs-on: ubuntu-latest
+    # The route.result guard subsumes the old explicit same-repo `if:` guard
+    # (fork-PR hardening note): fork PRs skip the guarded route job, and
+    # `needs.route.result == 'success'` then skips this matrix too — the
+    # same transitive guard as checks / build-web / test (a route failure
+    # also skips it; see the checks job's comment). Merge groups pass the
+    # route job's guard via its event check.
+    needs: [route, release-fast-path]
+    if: ${{ !cancelled() && needs.route.result == 'success' && needs.release-fast-path.outputs.fast_path != 'true' }}
+    runs-on: ${{ fromJSON(needs.route.outputs.linux_labels) }}
     strategy:
       # Let the sibling shards finish so one flaky leg doesn't hide the
       # other legs' results.
@@ -614,13 +632,14 @@ jobs:
         with:
           version: 10.30.3
           run_install: false
+          # Per-runner-instance dest (see checks).
+          dest: ~/setup-pnpm-${{ runner.name }}
       - name: Setup Node.js
-        # Always GH-hosted (never tinybox), so the pnpm cache is always
-        # worthwhile — unlike the routed jobs' burst-gated cache.
+        # cache: 'pnpm' only on the burst path (see checks).
         uses: actions/setup-node@v7
         with:
           node-version: '24'
-          cache: 'pnpm'
+          cache: ${{ needs.route.outputs.linux_burst == 'true' && 'pnpm' || '' }}
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
       - name: Generate i18n messages
@@ -631,13 +650,35 @@ jobs:
       - name: Resolve CT playwright version
         id: ct-playwright
         run: echo "version=$(node scripts/run-ct-tests.mjs --print-playwright-version)" >> "$GITHUB_OUTPUT"
+      - name: Point Playwright at per-slot paths (tinybox)
+        # The 8 tinybox runner slots share one $HOME: concurrent shards
+        # installing into the default ~/.cache/ms-playwright would clobber
+        # each other, so the browsers dir is keyed per $RUNNER_NAME (same
+        # pattern as intentd ci.yml's per-slot CARGO_TARGET_DIR). The CT
+        # harness also binds a fixed Vite endpoint port (ctPort 3100), which
+        # co-tenant shards would collide on — derive a per-slot CT_PORT from
+        # the runner name's slot number (tinybox-1..8 → 3101..3108;
+        # playwright-ct.config.ts honors the override).
+        if: needs.route.outputs.linux_burst != 'true'
+        run: |
+          echo "PLAYWRIGHT_BROWSERS_PATH=$HOME/.cache/ms-playwright-$RUNNER_NAME" >> "$GITHUB_ENV"
+          slot=$(printf '%s' "$RUNNER_NAME" | grep -oE '[0-9]+$' || true)
+          echo "CT_PORT=$((3100 + ${slot:-0}))" >> "$GITHUB_ENV"
       - name: Cache Playwright browsers
+        # Burst path only: tinybox's per-slot browsers dir (above) is
+        # persistent, so the GH cache tarball round-trip would be pure
+        # overhead there (same rationale as the burst-gated pnpm cache).
+        if: needs.route.outputs.linux_burst == 'true'
         uses: actions/cache@v6
         id: playwright-cache
         with:
           path: ~/.cache/ms-playwright
           key: playwright-browsers-${{ runner.os }}-${{ steps.ct-playwright.outputs.version }}
       - name: Harden apt against mirror stalls
+        # Burst path only: the mirror+file indirection is specific to the
+        # GH-hosted image, and the step persistently edits /etc/apt — it
+        # must never mutate the shared tinybox host.
+        if: needs.route.outputs.linux_burst == 'true'
         # The runner image prefers the azure.archive.ubuntu.com mirror, which
         # has stalled mid-transfer until the 30-min job budget expired —
         # twice, before any test ran (monorepo#2832). The image routes apt
@@ -671,6 +712,7 @@ jobs:
             'Acquire::https::Timeout "30";' \
             | sudo tee /etc/apt/apt.conf.d/99-bounded-acquire >/dev/null
       - name: Install Playwright browsers
+        if: needs.route.outputs.linux_burst == 'true'
         # --with-deps runs even on a cache hit (OS packages aren't cached),
         # but the browser download itself is skipped when already present.
         # Step-level timeout so an apt/download stall the Acquire bounds
@@ -679,6 +721,31 @@ jobs:
         # (monorepo#2832). Normal runs take ~1-2 min.
         timeout-minutes: 8
         run: node scripts/run-ct-tests.mjs --install-browsers --with-deps chromium
+      - name: Install Playwright browsers (tinybox)
+        # Same install with the co-tenant apt caveat: --with-deps drives
+        # sudo apt-get itself, so intentd ci.yml's DPkg::Lock::Timeout
+        # option can't be injected and a co-tenant apt lock race
+        # (monorepo#1515) would fail the run — retry the whole (idempotent)
+        # install instead. OS deps persist on the host once installed, so a
+        # per-version marker in the per-slot browsers dir skips apt entirely
+        # on warm runs (the browser download self-skips when present).
+        if: needs.route.outputs.linux_burst != 'true'
+        timeout-minutes: 8
+        run: |
+          set -euo pipefail
+          marker="$PLAYWRIGHT_BROWSERS_PATH/.with-deps-${{ steps.ct-playwright.outputs.version }}"
+          if [ -f "$marker" ]; then
+            node scripts/run-ct-tests.mjs --install-browsers chromium
+          else
+            for i in 1 2 3; do
+              if node scripts/run-ct-tests.mjs --install-browsers --with-deps chromium; then
+                touch "$marker"
+                break
+              fi
+              if [ "$i" -eq 3 ]; then exit 1; fi
+              sleep $((i * 15))
+            done
+          fi
       - name: Build CT bundle
         # The full CT Vite bundle transforms more than 7,400 modules and
         # needs an 8 GB heap while Rollup renders chunks — but ONLY here.
