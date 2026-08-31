@@ -1,5 +1,18 @@
 import { describe, expect, it } from 'vitest';
-import { hydrateSidebarNav, initialState, openPanel, setCombinedPanelSplit, setShowArchivedWorkspaces, setMultiSelectSidebarSelectedTabs, setStatsOverlayOpen, sidebarNavReducer, togglePanel, toggleShowArchivedWorkspaces, toggleWorkspaceCollapsedNote } from './sidebar-nav-slice';
+import {
+  hydrateSidebarNav,
+  hydrateWorkspaceSidebarUi,
+  initialState,
+  openPanel,
+  setCombinedPanelSplit,
+  setShowArchivedWorkspaces,
+  setMultiSelectSidebarSelectedTabs,
+  setStatsOverlayOpen,
+  sidebarNavReducer,
+  togglePanel,
+  toggleShowArchivedWorkspaces,
+  toggleWorkspaceCollapsedNote,
+} from './sidebar-nav-slice';
 import { isCombinedWorkspacePanelItem } from './sidebar-nav-types';
 
 describe('sidebarNavReducer Chief navigation', () => {
@@ -128,6 +141,40 @@ describe('sidebarNavReducer workspace sidebar UI persistence', () => {
 
     expect(collapsed.collapsedNoteIdsByWorkspaceId['ws-1']).toEqual(['note-1']);
     expect(expanded.collapsedNoteIdsByWorkspaceId['ws-1']).toEqual([]);
+  });
+
+  it('hydrates per-workspace selected tabs and collapsed notes without touching other workspaces', () => {
+    const seeded = sidebarNavReducer(
+      initialState,
+      setMultiSelectSidebarSelectedTabs('ws-other', ['overview']),
+    );
+    const hydrated = sidebarNavReducer(
+      seeded,
+      hydrateWorkspaceSidebarUi('ws-1', {
+        selectedTabIds: ['context', 'overview'],
+        collapsedNoteIds: ['note-1'],
+      }),
+    );
+
+    expect(hydrated.multiSelectSelectedTabIdsByWorkspaceId).toEqual({
+      'ws-other': ['overview'],
+      'ws-1': ['context', 'overview'],
+    });
+    expect(hydrated.collapsedNoteIdsByWorkspaceId).toEqual({ 'ws-1': ['note-1'] });
+
+    const tabsOnly = sidebarNavReducer(
+      seeded,
+      hydrateWorkspaceSidebarUi('ws-1', { selectedTabIds: ['context'] }),
+    );
+    expect(tabsOnly.collapsedNoteIdsByWorkspaceId).toBe(seeded.collapsedNoteIdsByWorkspaceId);
+
+    const notesOnly = sidebarNavReducer(
+      seeded,
+      hydrateWorkspaceSidebarUi('ws-1', { collapsedNoteIds: ['note-2'] }),
+    );
+    expect(notesOnly.multiSelectSelectedTabIdsByWorkspaceId).toBe(
+      seeded.multiSelectSelectedTabIdsByWorkspaceId,
+    );
   });
 });
 

@@ -13,7 +13,6 @@ import {
   openWorkspaceFile,
   openWorkspaceNote,
   setWorkspaceMainPanel,
-  setWorkspaceNavigationWorkspaceStatus,
   type WorkspaceNavigationMainPanelState,
   type WorkspaceNavigationMainPanelType,
   type WorkspaceNavigationWorkspaceState,
@@ -101,12 +100,6 @@ export function createWorkspacePageState(workspaceId: string) {
 
       if ('workspaceEvents' in updates && updates.workspaceEvents) {
         workspaceEvents = updates.workspaceEvents;
-      }
-
-      if (updates.workspace?.status) {
-        appStore.dispatch(
-          setWorkspaceNavigationWorkspaceStatus(workspaceId, updates.workspace.status),
-        );
       }
     },
 

@@ -36,7 +36,6 @@
     markNoteRead,
     refreshUnreadNotes,
   } from '$store/renderer/slices/note-read-tracking/note-read-tracking-slice';
-  import { initializeNotes } from '$store/renderer/slices/workspace-notes/workspace-notes-slice';
   import {
     fetchRetiredAgentsRequested,
     restoreRetiredAgentRequested,
@@ -470,19 +469,11 @@
   const focusedContentAgentId = $derived($activeTab$?.agentId ?? null);
   const focusedContentFilePath = $derived($activeTab$?.filePath ?? null);
   const focusedContentDiffPath = $derived($activeTab$?.diffPath ?? null);
-  let lastInitializedNotesWorkspaceId: string | null = null;
 
   $effect(() => {
     workspaceId;
     agentSearchQuery = '';
     contextSearchQuery = '';
-  });
-
-  $effect(() => {
-    if (!workspaceId || lastInitializedNotesWorkspaceId === workspaceId) return;
-    lastInitializedNotesWorkspaceId = workspaceId;
-    const initialSelectedNoteId = focusedContentType === 'note' ? focusedContentNoteId : undefined;
-    appStore.dispatch(initializeNotes(workspaceId, initialSelectedNoteId ?? undefined));
   });
 
   const effectiveSelectedNoteId = $derived(
