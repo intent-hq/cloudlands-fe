@@ -4,6 +4,13 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.117.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.117.0...v2.117.1) (2026-08-31)
+
+
+### 🐛 Bug Fixes
+
+* keep cross-repo context on workspace card PR rows ([#1934](https://github.com/intent-hq/cloudlands-fe/issues/1934)) ([4094e98](https://github.com/intent-hq/cloudlands-fe/commit/4094e98a605cbe35549f4d58ab15b352477ddf1e))
+
 ## [2.117.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.116.2...v2.117.0) (2026-08-31)
 
 
