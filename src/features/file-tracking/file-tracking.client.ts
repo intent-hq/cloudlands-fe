@@ -57,6 +57,9 @@ export function toLockRecord(value: unknown): Record<string, true> {
  * A failed read degrades to unlocked (empty records), matching the daemon's
  * own store-failure behavior — a stale locked snapshot must never outlive a
  * hydration attempt; the `changes:agent-locks` event converges it later.
+ * Note: an event landing while this read is in flight is overwritten by the
+ * (older) read response; the daemon only re-emits on diff, so the window is
+ * tiny and self-heals on the next real change.
  */
 export async function hydrateAgentLocks(workspaceId: string): Promise<void> {
   let lockedAgentIds: Record<string, true> = {};
