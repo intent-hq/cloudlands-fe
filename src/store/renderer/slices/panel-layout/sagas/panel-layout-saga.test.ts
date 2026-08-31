@@ -41,6 +41,7 @@ import { LOCAL_CONNECTION_ID } from '$shared/types/connections';
 import type { AgentSession, ContextLink, Note, Workspace } from '$shared/types';
 import { ContentType, NoteVisibility } from '$shared/types';
 import { connectionsListReceived } from '../../connections/connections-slice';
+import { setWorkspaceEntity, setWorkspaceHasLoaded } from '../../workspace/workspace-slice';
 import {
   workspaceMounted,
   workspaceUnmounted,
@@ -247,6 +248,7 @@ function startRestoreSaga(
   agents: AgentSession[],
   initialLayout = emptyWorkspaceState,
   contextLinks?: ContextLink[],
+  opts: { workspaceListLoaded?: boolean } = {},
 ) {
   mocks.getJSON.mockReturnValue(stored);
   let backendId = LOCAL_CONNECTION_ID;
@@ -270,16 +272,35 @@ function startRestoreSaga(
         'id',
         contextLinks ? [{ id: WS_1, contextLinks } as unknown as Workspace] : [],
       ),
+      hasLoaded: opts.workspaceListLoaded ?? true,
     },
   };
   const channel = stdChannel();
   const dispatch = vi.fn((action) => {
     state = { ...state, panelLayout: panelLayoutReducer(state.panelLayout, action) };
+    if (action.type === setWorkspaceEntity.type) {
+      state = {
+        ...state,
+        workspace: {
+          ...state.workspace,
+          workspaces: createCollection('id', [action.payload[0]]),
+        },
+      };
+    }
+    if (action.type === setWorkspaceHasLoaded.type) {
+      state = { ...state, workspace: { ...state.workspace, hasLoaded: action.payload[0] } };
+    }
     channel.put(action);
   });
+  // The loaded-list stamp follows the active backend: a real backend switch
+  // reloads the workspace list for the incoming backend.
   const getState = () => ({
     ...state,
     connections: { ...state.connections, activeId: backendId, windowBackendId: backendId },
+    workspace: {
+      ...state.workspace,
+      loadedBackendId: state.workspace.hasLoaded ? backendId : null,
+    },
   });
   const task = runSaga({ channel, dispatch, getState }, panelLayoutSaga, {
     activeWorkspaceId: WS_1,
@@ -1239,6 +1260,53 @@ describe('panelLayoutSaga', () => {
         const workspace = run.getState().panelLayout.byWorkspaceId[WS_1];
         expect(workspace.root.type).toBe('panel');
         expect(Object.values(workspace.panels).flatMap((panel: any) => panel.tabs)).toEqual([]);
+        await cancelSaga(run.task);
+      });
+
+      it('defers a first open that races the workspace-list load, then seeds when the entity arrives', async () => {
+        const initial = agent('agent-initial', 'Initial', undefined, { isInitialAgent: true });
+        const run = startRestoreSaga(undefined, [initial], emptyWorkspaceState, undefined, {
+          workspaceListLoaded: false,
+        });
+        await settle();
+
+        // Record not landed + list not loaded: no tab may open, or the seed
+        // would be permanently lost to a persisted linkless layout.
+        expect(
+          Object.values(run.getState().panelLayout.byWorkspaceId[WS_1].panels).flatMap(
+            (panel: any) => panel.tabs,
+          ),
+        ).toEqual([]);
+
+        run.dispatch(setWorkspaceEntity({ id: WS_1, contextLinks } as unknown as Workspace));
+        await settle();
+
+        expectSeededSplit(run.getState().panelLayout.byWorkspaceId[WS_1], 'agent-initial');
+        await cancelSaga(run.task);
+      });
+
+      it('opens the plain agent tab when the record is still missing after the list load', async () => {
+        const initial = agent('agent-initial', 'Initial', undefined, { isInitialAgent: true });
+        const run = startRestoreSaga(undefined, [initial], emptyWorkspaceState, undefined, {
+          workspaceListLoaded: false,
+        });
+        await settle();
+
+        expect(
+          Object.values(run.getState().panelLayout.byWorkspaceId[WS_1].panels).flatMap(
+            (panel: any) => panel.tabs,
+          ),
+        ).toEqual([]);
+
+        run.dispatch(setWorkspaceHasLoaded(true));
+        await settle();
+
+        const workspace = run.getState().panelLayout.byWorkspaceId[WS_1];
+        expect(workspace.root.type).toBe('panel');
+        const tabs = Object.values(workspace.panels).flatMap((panel: any) => panel.tabs);
+        expect(tabs).toEqual([
+          expect.objectContaining({ type: 'agent', agentId: 'agent-initial' }),
+        ]);
         await cancelSaga(run.task);
       });
 
