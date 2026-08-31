@@ -3,9 +3,9 @@
  * Extracted from the component so they are testable outside Svelte.
  */
 
-import { WorkspaceStatus, type Note } from "$shared/types";
-import { formatRelativeTime as formatRelative, formatShortDate } from "$lib/i18n/format";
-import type { PaletteMruEntry, PaletteMruEntryType } from "../palette/palette-types";
+import { WorkspaceStatus, type Note } from '$shared/types';
+import { formatRelativeTime as formatRelative, formatShortDate } from '$lib/i18n/format';
+import type { PaletteMruEntry, PaletteMruEntryType } from '../palette/palette-types';
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -28,19 +28,19 @@ export type MRUEntry = PaletteMruEntry;
 
 /** All palette filter targets: workspace object types plus the palette-only
  * `workspace` and `message` (chat transcript) sections. */
-export type PaletteFilter = WorkspaceObjectType | "workspace" | "message";
+export type PaletteFilter = WorkspaceObjectType | 'workspace' | 'message';
 
 // ── Filter prefix mapping ──────────────────────────────────────────────────
 
 export const FILTER_PREFIXES: Record<string, PaletteFilter> = {
-  "@": "agent",
-  "#": "note",
-  ">": "terminal",
-  "~": "change",
-  "/": "file",
-  "*": "workspace",
-  "^": "browser",
-  "?": "message",
+  '@': 'agent',
+  '#': 'note',
+  '>': 'terminal',
+  '~': 'change',
+  '/': 'file',
+  '*': 'workspace',
+  '^': 'browser',
+  '?': 'message',
 };
 
 // ── Pure functions ─────────────────────────────────────────────────────────
@@ -56,29 +56,34 @@ export function buildNoteBreadcrumbs(note: Note, allNotes: Note[]): string {
     visited.add(currentNote.id as string);
     const parent = noteMap.get(currentNote.parentId as string);
     if (parent) {
-      breadcrumbs.unshift(parent.title || "Untitled");
+      breadcrumbs.unshift(parent.title || 'Untitled');
       currentNote = parent;
     } else {
       break;
     }
   }
 
-  return breadcrumbs.join(" / ");
+  return breadcrumbs.join(' / ');
 }
 
 /** Lightweight fuzzy scorer: returns -Infinity if not a subsequence match. */
 export function fuzzyScore(haystackRaw: string, needleRaw: string): number {
-  const haystack = (haystackRaw || "").toLowerCase();
-  const needle = (needleRaw || "").toLowerCase();
+  const haystack = (haystackRaw || '').toLowerCase();
+  const needle = (needleRaw || '').toLowerCase();
   if (!needle) return 0;
   if (haystack === needle) return 1000;
   if (haystack.startsWith(needle)) return 200 + Math.max(0, 20 - needle.length);
 
   let best = -Infinity;
-  for (let subIdx = haystack.indexOf(needle); subIdx !== -1; subIdx = haystack.indexOf(needle, subIdx + 1)) {
+  for (
+    let subIdx = haystack.indexOf(needle);
+    subIdx !== -1;
+    subIdx = haystack.indexOf(needle, subIdx + 1)
+  ) {
     const prev = haystack[subIdx - 1];
-    const atBoundary = prev === " " || prev === "/" || prev === "-" || prev === "_" || prev === ".";
-    const occScore = (atBoundary ? 100 : 50) + Math.max(0, 20 - needle.length) + Math.max(0, 10 - subIdx);
+    const atBoundary = prev === ' ' || prev === '/' || prev === '-' || prev === '_' || prev === '.';
+    const occScore =
+      (atBoundary ? 100 : 50) + Math.max(0, 20 - needle.length) + Math.max(0, 10 - subIdx);
     if (occScore > best) best = occScore;
   }
   if (best !== -Infinity) return best;
@@ -89,8 +94,8 @@ export function fuzzyScore(haystackRaw: string, needleRaw: string): number {
   for (const ch of needle) {
     const idx = haystack.indexOf(ch, i);
     if (idx === -1) return -Infinity;
-    const prev = idx > 0 ? haystack[idx - 1] : " ";
-    if (prev === " " || prev === "/" || prev === "-" || prev === "_" || prev === ".") score += 5;
+    const prev = idx > 0 ? haystack[idx - 1] : ' ';
+    if (prev === ' ' || prev === '/' || prev === '-' || prev === '_' || prev === '.') score += 5;
     streak = idx === i ? streak + 1 : 1;
     score += streak * 2;
     score += Math.max(0, 3 - idx);
@@ -101,18 +106,56 @@ export function fuzzyScore(haystackRaw: string, needleRaw: string): number {
   return (49 * score) / (score + 49);
 }
 
+/** Weight applied to description/searchText matches so label matches rank higher. */
+const SECONDARY_FIELD_WEIGHT = 0.5;
+
+/**
+ * Order-independent multi-word scorer over an item's fields. The query is
+ * split on whitespace into tokens; every token must fuzzy-match at least one
+ * field (AND semantics) or the result is -Infinity. Each token scores the
+ * label at full weight and description/searchText down-weighted, taking the
+ * best; the item score is the sum of per-token scores.
+ */
+export function scoreItemFields(
+  fields: { label: string; description?: string; searchText?: string },
+  query: string,
+): number {
+  const tokens = (query || '').trim().split(/\s+/).filter(Boolean);
+  if (tokens.length === 0) return 0;
+
+  let total = 0;
+  for (const token of tokens) {
+    let tokenScore = fuzzyScore(fields.label, token);
+    if (fields.description) {
+      tokenScore = Math.max(
+        tokenScore,
+        SECONDARY_FIELD_WEIGHT * fuzzyScore(fields.description, token),
+      );
+    }
+    if (fields.searchText) {
+      tokenScore = Math.max(
+        tokenScore,
+        SECONDARY_FIELD_WEIGHT * fuzzyScore(fields.searchText, token),
+      );
+    }
+    if (tokenScore === -Infinity) return -Infinity;
+    total += tokenScore;
+  }
+  return total;
+}
+
 /**
  * Format a date string as a compact relative time label in the active locale;
  * dates older than a week show a short date instead. Falsy inputs — including
  * the epoch-0 placeholder used for unattributed changes — format as "".
  */
 export function formatRelativeTime(dateStr: Date | string | number | undefined): string {
-  if (!dateStr) return "";
+  if (!dateStr) return '';
   const date = new Date(dateStr);
-  if (Number.isNaN(date.getTime())) return "";
+  if (Number.isNaN(date.getTime())) return '';
   const diffDays = (Date.now() - date.getTime()) / 86_400_000;
   if (diffDays >= 7) return formatShortDate(date);
-  return formatRelative(date, { style: "narrow" });
+  return formatRelative(date, { style: 'narrow' });
 }
 
 /** Parse a search query for filter prefix. */
@@ -121,7 +164,7 @@ export function parseQueryFilter(query: string): {
   searchTerm: string;
 } {
   const trimmed = query.trim();
-  if (!trimmed) return { filter: null, searchTerm: "" };
+  if (!trimmed) return { filter: null, searchTerm: '' };
 
   const firstChar = trimmed[0];
   if (FILTER_PREFIXES[firstChar]) {
@@ -176,4 +219,3 @@ export function buildRecentItems(
     .filter((obj): obj is WorkspaceObject => obj !== undefined)
     .slice(0, MAX_RECENT_ITEMS);
 }
-

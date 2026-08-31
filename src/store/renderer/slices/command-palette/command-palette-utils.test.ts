@@ -9,6 +9,7 @@ import {
 } from "vitest";
 import {
   fuzzyScore,
+  scoreItemFields,
   formatRelativeTime,
   parseQueryFilter,
   buildNoteBreadcrumbs,
@@ -91,6 +92,91 @@ describe("fuzzyScore", () => {
     expect(scattered).toBeLessThan(50);
   });
 });
+
+// ── scoreItemFields ────────────────────────────────────────────────────────
+
+describe("scoreItemFields", () => {
+  it("returns 0 for an empty query", () => {
+    expect(scoreItemFields({ label: "anything" }, "")).toBe(0);
+    expect(scoreItemFields({ label: "anything" }, "   ")).toBe(0);
+  });
+
+  it("matches multi-word queries regardless of token order", () => {
+    const label = "Improve cmd+k search ranking";
+    const forward = scoreItemFields({ label }, "cmd search");
+    const reversed = scoreItemFields({ label }, "search cmd");
+    expect(forward).toBeGreaterThan(0);
+    expect(reversed).toBeGreaterThan(0);
+    expect(reversed).toBe(forward);
+  });
+
+  it("gives a strong score when every token substring-matches the label", () => {
+    const score = scoreItemFields({ label: "Improve cmd+k search ranking" }, "search cmd");
+    // Both tokens are word-boundary substrings of the label (>= 100 each).
+    expect(score).toBeGreaterThan(200);
+  });
+
+  it("returns -Infinity when any token matches no field (AND semantics)", () => {
+    expect(
+      scoreItemFields(
+        { label: "Improve cmd+k search ranking", description: "palette scoring" },
+        "search zzzqqq",
+      ),
+    ).toBe(-Infinity);
+  });
+
+  it("lets a token match the description when the label misses", () => {
+    const score = scoreItemFields(
+      { label: "Open settings", description: "keyboard shortcuts" },
+      "settings keyboard",
+    );
+    expect(score).toBeGreaterThan(0);
+  });
+
+  it("lets a token match searchText when label and description miss", () => {
+    const score = scoreItemFields(
+      { label: "Open settings", searchText: "preferences config" },
+      "config",
+    );
+    expect(score).toBeGreaterThan(0);
+  });
+
+  it("ranks a label match above the same match in the description", () => {
+    const labelMatch = scoreItemFields(
+      { label: "search ranking", description: "unrelated" },
+      "search",
+    );
+    const descriptionMatch = scoreItemFields(
+      { label: "unrelated thing", description: "search ranking" },
+      "search",
+    );
+    expect(labelMatch).toBeGreaterThan(descriptionMatch);
+  });
+
+  it("scores fields separately rather than a concatenated haystack", () => {
+    // "labeltail" would subsequence-match across a "label tail" concatenation
+    // of label + description, but matches neither field alone.
+    expect(
+      scoreItemFields({ label: "label", description: "tail" }, "labeltail"),
+    ).toBe(-Infinity);
+  });
+
+  it("preserves fuzzyScore ordering for single-token queries against the label", () => {
+    const rank = (label: string) => scoreItemFields({ label }, "hud");
+    const exact = rank("hud");
+    const prefix = rank("hud panel");
+    const boundary = rank("Open HUD ");
+    const substring = rank("shudder");
+    const subsequence = rank("Hardware update discussion some note description");
+    expect(exact).toBeGreaterThan(prefix);
+    expect(prefix).toBeGreaterThan(boundary);
+    expect(boundary).toBeGreaterThan(substring);
+    expect(substring).toBeGreaterThan(subsequence);
+    expect(exact).toBe(fuzzyScore("hud", "hud"));
+    expect(prefix).toBe(fuzzyScore("hud panel", "hud"));
+  });
+});
+
 // ── parseQueryFilter ───────────────────────────────────────────────────────
 
 describe("parseQueryFilter", () => {

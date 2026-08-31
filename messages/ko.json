@@ -4476,6 +4476,7 @@
   "layout_sidebarNav_openChief_label": "대화를 계속하려면 Chief를 여세요.",
   "settings_fonts_systemDefault_label": "시스템 기본값",
   "layout_commandPalette_recent_group": "최근",
+  "layout_commandPalette_commands_group": "명령",
   "layout_commandPalette_agents_group": "에이전트",
   "layout_commandPalette_context_group": "컨텍스트",
   "layout_commandPalette_changes_group": "변경 사항",

@@ -4476,6 +4476,7 @@
   "layout_sidebarNav_openChief_label": "開啟幕僚長以繼續對話。",
   "settings_fonts_systemDefault_label": "系統預設",
   "layout_commandPalette_recent_group": "最近",
+  "layout_commandPalette_commands_group": "指令",
   "layout_commandPalette_agents_group": "智慧體",
   "layout_commandPalette_context_group": "上下文",
   "layout_commandPalette_changes_group": "更改",

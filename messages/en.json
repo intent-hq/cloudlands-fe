@@ -4477,6 +4477,7 @@
   "layout_sidebarNav_openChief_label": "Open Chief to continue the conversation.",
   "settings_fonts_systemDefault_label": "System Default",
   "layout_commandPalette_recent_group": "Recent",
+  "layout_commandPalette_commands_group": "Commands",
   "layout_commandPalette_agents_group": "Agents",
   "layout_commandPalette_context_group": "Context",
   "layout_commandPalette_changes_group": "Changes",

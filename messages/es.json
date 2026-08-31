@@ -4476,6 +4476,7 @@
   "layout_sidebarNav_openChief_label": "Abra Chief para continuar la conversación.",
   "settings_fonts_systemDefault_label": "Predeterminado del sistema",
   "layout_commandPalette_recent_group": "Recientes",
+  "layout_commandPalette_commands_group": "Comandos",
   "layout_commandPalette_agents_group": "Agentes",
   "layout_commandPalette_context_group": "Contexto",
   "layout_commandPalette_changes_group": "Cambios",
