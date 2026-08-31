@@ -4,6 +4,32 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.117.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.116.2...v2.117.0) (2026-08-31)
+
+
+### 🚀 Features
+
+* actionable login guidance + explicit Recheck on the log-in surfaces ([#1919](https://github.com/intent-hq/cloudlands-fe/issues/1919)) ([39c444b](https://github.com/intent-hq/cloudlands-fe/commit/39c444ba86cc2a1f6e576bf35138489b4b86b0af))
+* sticky behind-pin update toast and undo-toast countdown bar ([#1914](https://github.com/intent-hq/cloudlands-fe/issues/1914)) ([da3c005](https://github.com/intent-hq/cloudlands-fe/commit/da3c0052423fa2a9f7c7e78559aa8cf412a67b48))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.8.28 ([#1923](https://github.com/intent-hq/cloudlands-fe/issues/1923)) ([5a07555](https://github.com/intent-hq/cloudlands-fe/commit/5a07555a1faafcb59821400e191359c325462eab))
+* bump intentd sidecar to v0.8.29 ([#1931](https://github.com/intent-hq/cloudlands-fe/issues/1931)) ([d0c4069](https://github.com/intent-hq/cloudlands-fe/commit/d0c406903b505e8dc66d32318101988b67cc1df1))
+* hide uncommitted-changes indicator when skip-isolation is active ([#1920](https://github.com/intent-hq/cloudlands-fe/issues/1920)) ([fc0079a](https://github.com/intent-hq/cloudlands-fe/commit/fc0079ab25d7fb1c5178d4fce87b134dd1deca0b))
+* prevent slash-skill popup from opening on pasted content ([#1917](https://github.com/intent-hq/cloudlands-fe/issues/1917)) ([95e3d74](https://github.com/intent-hq/cloudlands-fe/commit/95e3d742dbc549bc2dcb715557d28af9f5c68cf2))
+* prevent state_unsafe_mutation when editor blurs during tab or workspace switch ([#1921](https://github.com/intent-hq/cloudlands-fe/issues/1921)) ([033a9cd](https://github.com/intent-hq/cloudlands-fe/commit/033a9cd77a56588cdf86f3b41261ff2cb7287705))
+* recapture local updateSupported after startup mode resolution ([#1916](https://github.com/intent-hq/cloudlands-fe/issues/1916)) ([3cfb3a6](https://github.com/intent-hq/cloudlands-fe/commit/3cfb3a617081d6fd4b975f587ed5de898e02bd02))
+* restore purple merged-PR pill styling in workspace PR rows ([#1924](https://github.com/intent-hq/cloudlands-fe/issues/1924)) ([1daa210](https://github.com/intent-hq/cloudlands-fe/commit/1daa210baf3497d084bab05cecddad9465c7234c))
+* uniform spacing for batched system-event rows ([#1925](https://github.com/intent-hq/cloudlands-fe/issues/1925)) ([0928a2c](https://github.com/intent-hq/cloudlands-fe/commit/0928a2c9c2b48585bbe2a7906c3a1e3fa13e6bc7))
+
+
+### ⚡ Performance
+
+* batch layout reads/writes to eliminate forced reflows on workspace switch ([#1926](https://github.com/intent-hq/cloudlands-fe/issues/1926)) ([0eba390](https://github.com/intent-hq/cloudlands-fe/commit/0eba390a1b6ea29d97d9a7570637aeaa7de15459))
+* **store:** cache selector tracking proxies to cut dispatch fan-out cost ([#1915](https://github.com/intent-hq/cloudlands-fe/issues/1915)) ([86277b0](https://github.com/intent-hq/cloudlands-fe/commit/86277b0a6dc856024b6f31525a248087c0ad3317))
+
 ## [2.116.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.116.1...v2.116.2) (2026-08-31)
 
 
