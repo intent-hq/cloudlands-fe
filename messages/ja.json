@@ -652,6 +652,7 @@
   "settings_section_keyboardShortcuts": "キーボードショートカット",
   "settings_keyboardShortcuts_resetRow_ariaLabel": "{label}をデフォルトに戻す",
   "settings_keyboardShortcuts_resetAll_button": "すべてリセット",
+  "settings_keyboardShortcuts_capture_placeholder": "ショートカットを押す",
   "settings_keyboardShortcuts_invalid_error": "mod+shift+p のように、任意の修飾キーと1つのキーを入力してください。",
   "settings_section_git": "Git",
   "settings_section_shell": "シェル",

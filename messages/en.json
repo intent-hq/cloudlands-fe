@@ -652,6 +652,7 @@
   "settings_section_keyboardShortcuts": "Keyboard Shortcuts",
   "settings_keyboardShortcuts_resetRow_ariaLabel": "Reset {label} to default",
   "settings_keyboardShortcuts_resetAll_button": "Reset all",
+  "settings_keyboardShortcuts_capture_placeholder": "Press shortcut",
   "settings_keyboardShortcuts_invalid_error": "Enter one key with optional modifiers, such as mod+shift+p.",
   "settings_section_git": "Git",
   "settings_section_shell": "Shell",

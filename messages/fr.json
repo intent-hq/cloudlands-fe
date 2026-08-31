@@ -652,6 +652,7 @@
   "settings_section_keyboardShortcuts": "Raccourcis clavier",
   "settings_keyboardShortcuts_resetRow_ariaLabel": "Réinitialiser {label} par défaut",
   "settings_keyboardShortcuts_resetAll_button": "Tout réinitialiser",
+  "settings_keyboardShortcuts_capture_placeholder": "Appuyez sur le raccourci",
   "settings_keyboardShortcuts_invalid_error": "Saisissez une touche avec des modificateurs facultatifs, par exemple mod+shift+p.",
   "settings_section_git": "Git",
   "settings_section_shell": "Interpréteur de commandes",

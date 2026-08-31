@@ -3,7 +3,7 @@
  */
 import { cleanup, fireEvent, render, screen } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { SHORTCUT_REGISTRY } from '$lib/utils/shortcuts';
+import { formatShortcut, SHORTCUT_REGISTRY } from '$lib/utils/shortcuts';
 import {
   resetAllShortcutOverrides,
   resetShortcutOverride,
@@ -37,13 +37,13 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe('KeyboardShortcutsSettings', () => {
-  it('renders every registry row as a labelled text input in the existing order', () => {
+  it('renders every registry row with its formatted, platform-aware binding', () => {
     render(KeyboardShortcutsSettings);
 
     const inputs = screen.getAllByRole('textbox') as HTMLInputElement[];
     expect(inputs).toHaveLength(SHORTCUT_REGISTRY.length);
     expect(inputs.map((input) => input.value)).toEqual(
-      SHORTCUT_REGISTRY.map(({ defaultKey }) => defaultKey),
+      SHORTCUT_REGISTRY.map(({ defaultKey }) => formatShortcut(defaultKey)),
     );
     expect(inputs.every((input) => input.hasAttribute('data-shortcut-input'))).toBe(true);
     expect(screen.getByRole('textbox', { name: 'Settings' })).toBeTruthy();
@@ -52,38 +52,51 @@ describe('KeyboardShortcutsSettings', () => {
     );
   });
 
-  it('normalizes and dispatches valid edits on Enter', async () => {
+  it('enters empty capture mode on focus and captures modifier combinations', async () => {
     render(KeyboardShortcutsSettings);
     const input = screen.getByRole('textbox', { name: 'Settings' }) as HTMLInputElement;
 
-    input.focus();
-    await fireEvent.input(input, { target: { value: ' Command + Shift + , ' } });
-    await fireEvent.keyDown(input, { key: 'Enter' });
+    await fireEvent.focus(input);
+    expect(input.value).toBe('');
+    expect(input.placeholder).toBe('Press shortcut');
+    await fireEvent.keyDown(input, {
+      key: 'P',
+      code: 'KeyP',
+      ctrlKey: true,
+      shiftKey: true,
+    });
 
     expect(mocks.dispatch).toHaveBeenCalledWith(
-      setShortcutOverride('global.settings', 'mod+shift+,'),
+      setShortcutOverride('global.settings', 'mod+shift+p'),
     );
-    expect(input.value).toBe('mod+shift+,');
+    expect(input.value).toBe(formatShortcut('mod+shift+p'));
+    expect(document.activeElement).not.toBe(input);
   });
 
-  it('keeps the last effective binding and shows actionable feedback for invalid edits', async () => {
+  it('preserves the last effective binding when capture is cancelled', async () => {
     mocks.state.userPreferences.shortcutOverrides = { 'global.settings': 'alt+,' };
     render(KeyboardShortcutsSettings);
     const input = screen.getByRole('textbox', { name: 'Settings' }) as HTMLInputElement;
 
-    await fireEvent.input(input, { target: { value: 'mod+' } });
-    await fireEvent.blur(input);
-
-    expect(mocks.dispatch).not.toHaveBeenCalled();
-    expect(input.value).toBe('mod+');
-    expect(input.getAttribute('aria-invalid')).toBe('true');
-    expect(screen.getByRole('alert').textContent).toContain('Enter one key');
-
-    input.focus();
+    await fireEvent.focus(input);
     await fireEvent.keyDown(input, { key: 'Escape' });
-    expect(input.value).toBe('alt+,');
-    expect(input.hasAttribute('aria-invalid')).toBe(false);
+    expect(input.value).toBe(formatShortcut('alt+,'));
+    expect(mocks.dispatch).not.toHaveBeenCalled();
     expect(document.activeElement).not.toBe(input);
+  });
+
+  it('ignores unsupported and modifier-only presses without losing the effective binding', async () => {
+    render(KeyboardShortcutsSettings);
+    const input = screen.getByRole('textbox', { name: 'Settings' }) as HTMLInputElement;
+
+    await fireEvent.focus(input);
+    await fireEvent.keyDown(input, { key: 'Control', code: 'ControlLeft', ctrlKey: true });
+    await fireEvent.keyDown(input, { key: 'Dead', code: 'Quote' });
+    expect(input.value).toBe('');
+    expect(mocks.dispatch).not.toHaveBeenCalled();
+
+    await fireEvent.blur(input);
+    expect(input.value).toBe(formatShortcut('mod+,'));
   });
 
   it('shows row reset only for overrides and resets only that shortcut', async () => {
@@ -93,6 +106,19 @@ describe('KeyboardShortcutsSettings', () => {
     expect(screen.queryByRole('button', { name: 'Reset Search to default' })).toBeNull();
     await fireEvent.click(screen.getByRole('button', { name: 'Reset Settings to default' }));
     expect(mocks.dispatch).toHaveBeenCalledWith(resetShortcutOverride('global.settings'));
+  });
+
+  it('keeps the reset control in a gutter outside the fixed input column', () => {
+    mocks.state.userPreferences.shortcutOverrides = { 'global.settings': 'alt+,' };
+    render(KeyboardShortcutsSettings);
+
+    const input = screen.getByRole('textbox', { name: 'Settings' });
+    const reset = screen.getByRole('button', { name: 'Reset Settings to default' });
+    expect(input.closest('[data-shortcut-entry]')?.className).toContain(
+      'grid-cols-[minmax(0,1fr)_9rem]',
+    );
+    expect(reset.className).toContain('absolute');
+    expect(reset.className).toContain('left-full');
   });
 
   it('enables Reset all for overrides and dispatches the global reset', async () => {

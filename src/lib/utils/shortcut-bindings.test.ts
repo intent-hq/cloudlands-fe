@@ -6,6 +6,7 @@ import {
   normalizeShortcut,
   resolveShortcut,
   sanitizeShortcutOverrides,
+  shortcutFromKeyboardEvent,
 } from './shortcut-bindings';
 import { SHORTCUT_REGISTRY, SHORTCUTS } from './shortcuts';
 
@@ -37,6 +38,51 @@ describe('shortcut bindings', () => {
     expect(matchesShortcut(macEvent, 'mod+shift+p', true)).toBe(true);
     expect(matchesShortcut(macEvent, 'mod+shift+p', false)).toBe(false);
     expect(matchesShortcut({ ...macEvent, altKey: true }, 'mod+shift+p', true)).toBe(false);
+  });
+
+  it('converts platform modifiers and pressed keys into canonical bindings', () => {
+    const keyPress = {
+      key: 'P',
+      code: 'KeyP',
+      metaKey: false,
+      ctrlKey: true,
+      altKey: false,
+      shiftKey: true,
+    };
+    expect(shortcutFromKeyboardEvent(keyPress, false)).toBe('mod+shift+p');
+    expect(shortcutFromKeyboardEvent({ ...keyPress, metaKey: true, ctrlKey: false }, true)).toBe(
+      'mod+shift+p',
+    );
+    expect(shortcutFromKeyboardEvent({ ...keyPress, ctrlKey: true }, true)).toBe('ctrl+shift+p');
+  });
+
+  it('rejects modifier-only and unrepresentable key presses', () => {
+    expect(
+      shortcutFromKeyboardEvent(
+        {
+          key: 'Control',
+          code: 'ControlLeft',
+          metaKey: false,
+          ctrlKey: true,
+          altKey: false,
+          shiftKey: false,
+        },
+        false,
+      ),
+    ).toBeNull();
+    expect(
+      shortcutFromKeyboardEvent(
+        {
+          key: 'Dead',
+          code: 'Quote',
+          metaKey: false,
+          ctrlKey: false,
+          altKey: false,
+          shiftKey: false,
+        },
+        false,
+      ),
+    ).toBeNull();
   });
 
   it('keeps valid known overrides and ignores unknown, default, and malformed values', () => {

@@ -652,6 +652,7 @@
   "settings_section_keyboardShortcuts": "鍵盤快速鍵",
   "settings_keyboardShortcuts_resetRow_ariaLabel": "將{label}重設為預設值",
   "settings_keyboardShortcuts_resetAll_button": "全部重設",
+  "settings_keyboardShortcuts_capture_placeholder": "按下快速鍵",
   "settings_keyboardShortcuts_invalid_error": "請輸入一個按鍵和選用的輔助鍵，例如 mod+shift+p。",
   "settings_section_git": "Git",
   "settings_section_shell": "命令列",

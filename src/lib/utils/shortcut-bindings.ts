@@ -114,10 +114,34 @@ export interface ParsedShortcut {
 
 export interface ShortcutKeyboardEvent {
   key: string;
+  code?: string;
   metaKey: boolean;
   ctrlKey: boolean;
   altKey: boolean;
   shiftKey: boolean;
+}
+
+const MODIFIER_EVENT_KEYS = new Set(['alt', 'control', 'meta', 'shift']);
+
+/** Convert a supported key press into the canonical value stored in preferences. */
+export function shortcutFromKeyboardEvent(
+  event: ShortcutKeyboardEvent,
+  mac: boolean,
+): string | null {
+  if (MODIFIER_EVENT_KEYS.has(event.key.toLowerCase())) return null;
+  if (!mac && event.metaKey) return null;
+
+  let key = event.key;
+  if (event.altKey && event.code?.startsWith('Key')) key = event.code.slice(3);
+  else if (event.altKey && event.code?.startsWith('Digit')) key = event.code.slice(5);
+
+  const parts: string[] = [];
+  if ((mac && event.metaKey) || (!mac && event.ctrlKey)) parts.push('mod');
+  if (mac && event.ctrlKey) parts.push('ctrl');
+  if (event.altKey) parts.push('alt');
+  if (event.shiftKey) parts.push('shift');
+  parts.push(key);
+  return normalizeShortcut(parts.join('+'));
 }
 
 export function isShortcutId(value: string): value is ShortcutId {

@@ -652,6 +652,7 @@
   "settings_section_keyboardShortcuts": "Atajos de teclado",
   "settings_keyboardShortcuts_resetRow_ariaLabel": "Restablecer {label} al valor predeterminado",
   "settings_keyboardShortcuts_resetAll_button": "Restablecer todo",
+  "settings_keyboardShortcuts_capture_placeholder": "Pulsa el atajo",
   "settings_keyboardShortcuts_invalid_error": "Introduce una tecla con modificadores opcionales, como mod+shift+p.",
   "settings_section_git": "Git",
   "settings_section_shell": "Intérprete de comandos",

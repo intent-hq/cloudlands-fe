@@ -1,7 +1,7 @@
 <script lang="ts">
   import { Button } from '$lib/components/ui/button';
-  import { normalizeShortcut, type ShortcutId } from '$lib/utils/shortcut-bindings';
-  import { SHORTCUT_CATEGORIES, SHORTCUT_REGISTRY } from '$lib/utils/shortcuts';
+  import { shortcutFromKeyboardEvent, type ShortcutId } from '$lib/utils/shortcut-bindings';
+  import { formatShortcut, SHORTCUT_CATEGORIES, SHORTCUT_REGISTRY } from '$lib/utils/shortcuts';
   import { m } from '$shared/paraglide/messages.js';
   import { selectShortcutOverrides } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
   import {
@@ -16,55 +16,50 @@
     ([, category]) => category.shortcuts.length > 0,
   );
 
-  let drafts = $state<Partial<Record<ShortcutId, string>>>({});
-  let errors = $state<Partial<Record<ShortcutId, boolean>>>({});
+  const isMac =
+    typeof navigator !== 'undefined' && navigator.platform.toUpperCase().includes('MAC');
+  let capturing = $state<ShortcutId | null>(null);
+  let capturedValues = $state<Partial<Record<ShortcutId, string>>>({});
 
   function effectiveValue(id: ShortcutId, defaultKey: string) {
-    return drafts[id] ?? $shortcutOverrides[id] ?? defaultKey;
+    return capturedValues[id] ?? $shortcutOverrides[id] ?? defaultKey;
   }
 
-  function updateDraft(id: ShortcutId, value: string) {
-    drafts[id] = value;
-    delete errors[id];
-  }
-
-  function commit(id: ShortcutId) {
-    const draft = drafts[id];
-    if (draft === undefined) return;
-    const normalized = normalizeShortcut(draft);
-    if (!normalized) {
-      errors[id] = true;
-      return;
-    }
-    appStore.dispatch(setShortcutOverride(id, normalized));
-    drafts[id] = normalized;
-    delete errors[id];
-  }
-
-  function restoreEffective(id: ShortcutId) {
-    delete drafts[id];
-    delete errors[id];
+  function startCapture(id: ShortcutId) {
+    capturing = id;
   }
 
   function handleKeydown(event: KeyboardEvent, id: ShortcutId) {
-    if (event.key === 'Enter') {
-      event.preventDefault();
-      commit(id);
-    } else if (event.key === 'Escape') {
-      event.preventDefault();
-      restoreEffective(id);
+    event.preventDefault();
+    event.stopPropagation();
+    if (event.key === 'Escape') {
+      capturing = null;
       (event.currentTarget as HTMLInputElement).blur();
+      return;
+    }
+    const normalized = shortcutFromKeyboardEvent(event, isMac);
+    if (!normalized) return;
+    capturedValues[id] = normalized;
+    appStore.dispatch(setShortcutOverride(id, normalized));
+    capturing = null;
+    (event.currentTarget as HTMLInputElement).blur();
+  }
+
+  function cancelCapture(id: ShortcutId) {
+    if (capturing === id) {
+      capturing = null;
     }
   }
 
   function resetRow(id: ShortcutId) {
-    restoreEffective(id);
+    delete capturedValues[id];
+    if (capturing === id) capturing = null;
     appStore.dispatch(resetShortcutOverride(id));
   }
 
   function resetAll() {
-    drafts = {};
-    errors = {};
+    capturedValues = {};
+    capturing = null;
     appStore.dispatch(resetAllShortcutOverrides());
   }
 </script>
@@ -88,46 +83,43 @@
               index
             ]}
             {#if definition}
-              {@const errorId = `shortcut-${definition.id}-error`}
-              <div class="flex items-start justify-between gap-4" data-shortcut-entry>
+              <div
+                class="grid grid-cols-[minmax(0,1fr)_9rem] items-start gap-4"
+                data-shortcut-entry
+              >
                 <dt class="min-w-0 pt-1.5 text-sm text-foreground">
                   <label for={`shortcut-${definition.id}`}>{shortcut.label}</label>
                 </dt>
-                <dd class="flex min-w-0 flex-col items-end gap-1">
-                  <div class="flex items-center gap-1">
-                    <input
-                      id={`shortcut-${definition.id}`}
-                      class="h-7 w-36 rounded-md border border-input bg-transparent px-2 text-xs text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                      type="text"
-                      data-shortcut-input
-                      value={effectiveValue(definition.id, definition.defaultKey)}
-                      aria-invalid={errors[definition.id] || undefined}
-                      aria-describedby={errors[definition.id] ? errorId : undefined}
-                      oninput={(event) => updateDraft(definition.id, event.currentTarget.value)}
-                      onblur={() => commit(definition.id)}
-                      onkeydown={(event) => handleKeydown(event, definition.id)}
-                    />
-                    {#if definition.id in $shortcutOverrides}
-                      <Button
-                        variant="ghost-light"
-                        size="icon-xs"
-                        aria-label={m.settings_keyboardShortcuts_resetRow_ariaLabel({
-                          label: shortcut.label,
-                        })}
-                        onclick={() => resetRow(definition.id)}
-                      >
-                        <span aria-hidden="true">×</span>
-                      </Button>
-                    {/if}
-                  </div>
-                  {#if errors[definition.id]}
-                    <p
-                      id={errorId}
-                      role="alert"
-                      class="max-w-52 text-right text-xs text-destructive"
+                <dd class="relative min-w-0">
+                  <input
+                    id={`shortcut-${definition.id}`}
+                    class="h-7 w-36 rounded-md border border-input bg-transparent px-2 text-xs text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    type="text"
+                    readonly
+                    data-shortcut-input
+                    value={capturing === definition.id
+                      ? ''
+                      : formatShortcut(effectiveValue(definition.id, definition.defaultKey))}
+                    placeholder={capturing === definition.id
+                      ? m.settings_keyboardShortcuts_capture_placeholder()
+                      : undefined}
+                    onfocus={() => startCapture(definition.id)}
+                    onclick={() => startCapture(definition.id)}
+                    onblur={() => cancelCapture(definition.id)}
+                    onkeydown={(event) => handleKeydown(event, definition.id)}
+                  />
+                  {#if definition.id in $shortcutOverrides}
+                    <Button
+                      variant="ghost-light"
+                      size="icon-xs"
+                      class="absolute top-0 left-full ml-1"
+                      aria-label={m.settings_keyboardShortcuts_resetRow_ariaLabel({
+                        label: shortcut.label,
+                      })}
+                      onclick={() => resetRow(definition.id)}
                     >
-                      {m.settings_keyboardShortcuts_invalid_error()}
-                    </p>
+                      <span aria-hidden="true">×</span>
+                    </Button>
                   {/if}
                 </dd>
               </div>
