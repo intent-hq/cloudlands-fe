@@ -4,6 +4,18 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.116.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.116.1...v2.116.2) (2026-08-31)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.8.27 ([#1913](https://github.com/intent-hq/cloudlands-fe/issues/1913)) ([ec7c501](https://github.com/intent-hq/cloudlands-fe/commit/ec7c501f12a157e041882fed2a8866c666848d73))
+
+
+### ⚡ Performance
+
+* cap in-memory chat transcript at 200 messages ([#1906](https://github.com/intent-hq/cloudlands-fe/issues/1906)) ([aecedaf](https://github.com/intent-hq/cloudlands-fe/commit/aecedafac2e3d64c5616644630c16a8342d4080d))
+
 ## [2.116.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.116.0...v2.116.1) (2026-08-30)
 
 
