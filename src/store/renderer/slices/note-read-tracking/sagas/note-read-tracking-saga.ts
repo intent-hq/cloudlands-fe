@@ -1,4 +1,4 @@
-import { call, debounce, put, takeEvery } from 'typed-redux-saga';
+import { call, delay, put, takeEvery, takeLatest } from 'typed-redux-saga';
 
 import { invoke } from '$lib/electron-bridge';
 import { createLogger } from '$lib/utils/client-logger';
@@ -22,10 +22,15 @@ type IpcResult<T> = { success: boolean; data?: T; error?: string };
 function* persistMarkNoteRead(action: ReturnType<typeof markNoteRead>) {
   const { workspaceId, noteId } = action.payload;
   try {
-    yield* call(invoke<IpcResult<never>>, USER_ACTIVITY_CHANNELS.MARK_NOTE_READ, {
+    const result = yield* call(invoke<IpcResult<never>>, USER_ACTIVITY_CHANNELS.MARK_NOTE_READ, {
       workspaceId,
       noteId,
     });
+    // The handler try/catches internally and returns the failure envelope
+    // rather than throwing — surface it so persistence failures aren't silent.
+    if (!result?.success) {
+      logger.warn('Failed to persist note read state', { noteId, error: result?.error });
+    }
   } catch (error) {
     logger.warn('Failed to persist note read state', { noteId, error });
   }
@@ -65,8 +70,16 @@ function* computeUnreadNotes(action: ReturnType<typeof refreshUnreadNotes>) {
   }
 }
 
+/** Debounce, then compute. Run under takeLatest (not `debounce`) so a newer
+ * refresh cancels an in-flight compute — including its IPC await — and a
+ * stale response can never overwrite a fresher computeUnreadNotesSuccess. */
+function* debouncedComputeUnreadNotes(action: ReturnType<typeof refreshUnreadNotes>) {
+  yield* delay(COMPUTE_DEBOUNCE_MS);
+  yield* call(computeUnreadNotes, action);
+}
+
 /** Root saga: persists read marks and recomputes unread notes (debounced). */
 export function* noteReadTrackingSaga() {
   yield* takeEvery(markNoteRead, persistMarkNoteRead);
-  yield* debounce(COMPUTE_DEBOUNCE_MS, refreshUnreadNotes, computeUnreadNotes);
+  yield* takeLatest(refreshUnreadNotes, debouncedComputeUnreadNotes);
 }

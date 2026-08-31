@@ -12,6 +12,7 @@ vi.mock(
 
 import { invoke } from '$lib/electron-bridge';
 import { USER_ACTIVITY_CHANNELS } from '$shared/ipc/channels';
+import { mockLogger } from '$store/renderer/utils/test-helpers/client-logger-mock';
 import { selectUnreadNoteIds } from '../note-read-tracking-selectors';
 import {
   initialState,
@@ -126,6 +127,45 @@ describe('noteReadTrackingSaga', () => {
       workspaceId: 'ws-1',
       noteId: 'note-1',
     });
+    expect(mockLogger.warn).not.toHaveBeenCalled();
+    await harness.finish();
+  });
+
+  it('warns when markNoteRead persistence returns the failure envelope', async () => {
+    vi.mocked(invoke).mockResolvedValue({ success: false, error: 'store unavailable' });
+    const harness = createHarness();
+
+    harness.put(markNoteRead('ws-1', 'note-1'));
+    await settle();
+
+    expect(mockLogger.warn).toHaveBeenCalledWith('Failed to persist note read state', {
+      noteId: 'note-1',
+      error: 'store unavailable',
+    });
+    await harness.finish();
+  });
+
+  it('cancels an in-flight compute when a newer refresh arrives (no stale overwrite)', async () => {
+    let resolveStale!: (value: unknown) => void;
+    const stale = new Promise((resolve) => {
+      resolveStale = resolve;
+    });
+    vi.mocked(invoke)
+      .mockReturnValueOnce(stale as Promise<never>)
+      .mockResolvedValueOnce({ success: true, data: ['note-2'] });
+    const harness = createHarness();
+
+    harness.put(refreshUnreadNotes('ws-1', NOTES));
+    await settle(); // first compute is now awaiting its IPC response
+
+    harness.put(refreshUnreadNotes('ws-1', NOTES)); // cancels the in-flight compute
+    await settle();
+
+    resolveStale({ success: true, data: ['note-1', 'note-2'] }); // stale response lands late
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(invoke).toHaveBeenCalledTimes(2);
+    expect(harness.state().noteReadTracking.unreadNoteIds).toEqual({ 'note-2': true });
     await harness.finish();
   });
 
