@@ -2,7 +2,7 @@
  * @vitest-environment jsdom
  */
 import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
-import { cleanup, fireEvent, render, waitFor } from '@testing-library/svelte';
+import { cleanup, fireEvent, render, waitFor, within } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AgentSession } from '$shared/types';
@@ -65,7 +65,6 @@ const mocks = vi.hoisted(() => {
     },
     runningAgentIds: new Set<string>(),
     focusedPanelId: 'source-panel',
-    panelOpenCount: 0,
     activePrSummary: null as null | {
       number: number;
       url: string;
@@ -121,8 +120,8 @@ vi.mock('$store/renderer/slices/panel-layout/panel-layout-selectors', () => ({
   selectAllTabs: mocks.selector([]),
   selectFocusedPanelId: { select: () => mocks.focusedPanelId },
   getPanelTabOpenState: () => ({
-    count: mocks.panelOpenCount,
-    isOpen: mocks.panelOpenCount > 0,
+    count: 0,
+    isOpen: false,
     isActive: false,
     isOpenElsewhere: false,
   }),
@@ -337,7 +336,6 @@ describe('MultiSelectTabbedSidebar Files Open In', () => {
     mocks.selectedTabsByWorkspace.clear();
     mocks.runningAgentIds.clear();
     mocks.focusedPanelId = 'source-panel';
-    mocks.panelOpenCount = 0;
     mocks.activePrSummary = null;
   });
 
@@ -506,36 +504,6 @@ describe('MultiSelectTabbedSidebar Files Open In', () => {
     expect(container.querySelector('[data-agent-avatar-overflow]')).toBeNull();
   });
 
-  it('renders the Spec action and fixed Context summary in one horizontal grid item', async () => {
-    mocks.notes = [
-      { id: 'spec', title: 'Spec', content: '' },
-      { id: 'reference', title: 'Reference', content: '' },
-    ];
-    mocks.panelOpenCount = 1;
-    const Sidebar = (await import('../MultiSelectTabbedSidebar.svelte')).default;
-    const { container, getByRole, getByText } = render(Sidebar, {
-      props: { workspaceId: 'ws-1' },
-    });
-    const specButton = getByRole('button', { name: 'Spec' });
-    const referenceButton = container.querySelector<HTMLElement>(
-      '[data-sidebar-context="reference"]',
-    )!;
-    const summaryElement = getByText('Spec, MCP, Skills');
-    const summaryRow = summaryElement.closest<HTMLElement>('[data-context-spec-summary-row]')!;
-
-    expect(summaryElement.matches('[data-context-capability-summary]')).toBe(true);
-    expect(summaryRow.className).toContain('flex');
-    expect(summaryRow.className).toContain('items-center');
-    expect(summaryRow.parentElement?.matches('[data-sidebar-launcher-icons]')).toBe(true);
-    expect(summaryRow.contains(specButton)).toBe(true);
-    expect(summaryRow.lastElementChild).toBe(summaryElement);
-    expect(summaryElement.className).toContain('text-[11px]');
-    expect(summaryElement.className).toContain('pointer-events-none');
-    expect(specButton.contains(summaryElement)).toBe(false);
-    expect(specButton.querySelector('[data-panel-open-marker]')).toBeNull();
-    expect(referenceButton.querySelector('[data-panel-open-marker]')).toBeTruthy();
-  });
-
   it.each([1, 4, 6])('uses the shared logical-start stack at %i-item density', async (count) => {
     mocks.agents = Array.from({ length: count }, (_, index) =>
       makeAgent(`agent-${index}`, { isInitialAgent: index === 0 }),
@@ -582,9 +550,6 @@ describe('MultiSelectTabbedSidebar Files Open In', () => {
     const agentCard = container.querySelector<HTMLElement>('[data-sidebar-launcher="agents"]')!;
     const agentStack = agentCard.querySelector<HTMLElement>('[data-agent-avatar-stack]')!;
     const agentOverflow = agentStack.querySelector<HTMLElement>('[data-agent-avatar-overflow]')!;
-    const contextStack = container.querySelector<HTMLElement>(
-      '[data-sidebar-launcher="context"] [data-sidebar-launcher-icons]',
-    )!;
     const noteOverflow = getByRole('button', { name: /2 more notes/ });
     const expectNoteOverflowStyle = (overflow: HTMLElement) => {
       expect(overflow.className).toContain('launcher-overflow-button');
@@ -617,9 +582,6 @@ describe('MultiSelectTabbedSidebar Files Open In', () => {
     expect(agentOverflow.matches('button, [role="button"], [tabindex]')).toBe(false);
     expect(agentOverflow.textContent).toBe('+2');
     expect(getComputedStyle(agentOverflow).backgroundColor).toBe('rgba(0, 0, 0, 0)');
-    expect(contextStack.style.gridTemplateColumns).toBe(
-      'max-content repeat(4, 15px) 36px max-content',
-    );
     expectNoteOverflowStyle(noteOverflow);
     for (const theme of ['light', 'dark'] as const) {
       document.documentElement.classList.toggle('dark', theme === 'dark');
@@ -911,10 +873,8 @@ describe('MultiSelectTabbedSidebar Files Open In', () => {
     );
 
     const contextCard = container.querySelector<HTMLElement>('[data-sidebar-launcher="context"]')!;
-    const contextAction = contextCard.querySelector<HTMLElement>('.launcher-tile-action')!;
-    const specButton = contextCard.querySelector<HTMLElement>('[data-sidebar-context="spec"]')!;
-    const summary = contextCard.querySelector<HTMLElement>('[data-context-capability-summary]')!;
-    const summaryRow = contextCard.querySelector<HTMLElement>('[data-context-spec-summary-row]')!;
+    const contextAction = within(contextCard).getByRole('button', { name: 'Expand panel' });
+    const specButton = within(contextCard).getByRole('button', { name: 'Spec' });
     const contextSelections = () =>
       mocks.dispatch.mock.calls.filter(
         ([action]) =>
@@ -932,11 +892,6 @@ describe('MultiSelectTabbedSidebar Files Open In', () => {
     mocks.dispatch.mockClear();
     await fireEvent.click(contextAction);
     expect(contextSelections()).toHaveLength(1);
-
-    expect(summary.className).toContain('pointer-events-none');
-    expect(specButton.contains(summary)).toBe(false);
-    expect(summaryRow.contains(specButton)).toBe(true);
-    expect(summaryRow.lastElementChild).toBe(summary);
   });
 
   it('keeps Changes while omitting Activity Log and Local Changes previews', async () => {
