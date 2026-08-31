@@ -85,7 +85,6 @@
   const trackWidth = $derived(
     visibleItems.length === 0 ? 0 : geometry.surface + (visibleItems.length - 1) * itemStep,
   );
-  const OVERFLOW_INLINE_PADDING = 12;
 
   function overflowTextWidth(remaining: number): number {
     const text = `+${formatInteger(remaining)}`;
