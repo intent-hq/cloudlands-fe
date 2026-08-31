@@ -6,6 +6,7 @@
  * Labels/titles use property getters so they re-resolve on locale change.
  */
 import { m } from '$shared/paraglide/messages.js';
+import { SHORTCUT_DEFAULTS, type ShortcutId, type ShortcutOverrides } from './shortcut-bindings';
 
 // Detect platform once
 const isMac =
@@ -528,6 +529,75 @@ export interface ShortcutEntry {
   contexts?: ShortcutContext[];
 }
 
+const SHORTCUT_IDS_BY_CATEGORY: Record<ShortcutCategory, readonly ShortcutId[]> = {
+  global: [
+    'global.command-palette',
+    'global.settings',
+    'global.keyboard-shortcuts',
+    'global.command-palette-alt',
+    'global.toggle-spaces',
+    'global.new-space',
+    'global.search',
+    'global.next-space',
+    'global.previous-space',
+  ],
+  navigation: [
+    'navigation.go-to-tab',
+    'navigation.new-tab',
+    'navigation.close-tab',
+    'navigation.close-space-tab',
+    'navigation.reopen-tab',
+  ],
+  chat: [
+    'chat.send',
+    'chat.force-send',
+    'chat.new-line',
+    'chat.stop',
+    'chat.focus-input',
+    'chat.mention-context',
+  ],
+  editor: [
+    'editor.go-to-line',
+    'editor.save',
+    'editor.undo',
+    'editor.redo',
+    'editor.toggle-task-list',
+    'editor.toggle-word-wrap',
+    'editor.copy',
+    'editor.select-all',
+  ],
+  panel: [
+    'panel.toggle-sidebar',
+    'panel.create-column-right',
+    'panel.focus-next-column',
+    'panel.maximize',
+    'panel.focus-previous-column',
+    'panel.next-pane',
+    'panel.previous-pane',
+    'panel.move-pane-next-column',
+    'panel.move-pane-previous-column',
+    'panel.copy-browser-url',
+  ],
+  leader: [
+    'leader.navigate-panels',
+    'leader.resize-panels',
+    'leader.split-right',
+    'leader.split-down',
+    'leader.toggle-zoom',
+    'leader.close-panel',
+    'leader.next-previous-panel',
+    'leader.equalize-sizes',
+    'leader.jump-to-panel',
+    'leader.cycle-layout',
+  ],
+};
+
+export interface ShortcutDefinition extends ShortcutEntry {
+  id: ShortcutId;
+  category: ShortcutCategory;
+  defaultKey: string;
+}
+
 /**
  * Categorized shortcuts for the cheat sheet
  */
@@ -914,6 +984,39 @@ export const SHORTCUT_CATEGORIES: Record<
     ],
   },
 };
+
+export const SHORTCUT_REGISTRY: readonly ShortcutDefinition[] = (
+  Object.entries(SHORTCUT_CATEGORIES) as [
+    ShortcutCategory,
+    { title: string; shortcuts: ShortcutEntry[] },
+  ][]
+).flatMap(([category, data]) =>
+  data.shortcuts.map((entry, index) => {
+    const id = SHORTCUT_IDS_BY_CATEGORY[category][index];
+    if (!id || SHORTCUT_DEFAULTS[id] !== entry.key) {
+      throw new Error(`Shortcut registry mismatch for ${category} entry ${index}`);
+    }
+    return {
+      id,
+      category,
+      defaultKey: SHORTCUT_DEFAULTS[id],
+      get key() {
+        return entry.key;
+      },
+      get label() {
+        return entry.label;
+      },
+      contexts: entry.contexts,
+    };
+  }),
+);
+
+export function getShortcutDefinitions(overrides: ShortcutOverrides = {}): ShortcutDefinition[] {
+  return SHORTCUT_REGISTRY.map((entry) => ({
+    ...entry,
+    key: overrides[entry.id] ?? entry.defaultKey,
+  }));
+}
 
 /**
  * Get shortcuts for a specific context
