@@ -28,6 +28,22 @@ const allStatusTasks: TaskProgressItem[] = [
   { id: 'review', title: 'Review the result', status: 'review_required' },
 ];
 
+const checklistCases: Array<{
+  name: string;
+  items: TaskProgressItem[];
+  completed: number;
+}> = [
+  { name: 'one task', items: [tasks[0]], completed: 0 },
+  { name: 'many tasks', items: tasks, completed: 2 },
+  { name: 'active tasks', items: tasks.slice(0, 3), completed: 0 },
+  {
+    name: 'completed tasks',
+    items: tasks.map((task) => ({ ...task, status: 'completed' as const })),
+    completed: tasks.length,
+  },
+  { name: 'overflow tasks', items: allStatusTasks, completed: 1 },
+];
+
 beforeEach(() => {
   Object.defineProperty(Element.prototype, 'getAnimations', {
     configurable: true,
@@ -108,6 +124,32 @@ describe('TaskProgressControl', () => {
     expect(screen.queryByTestId('task-progress-completed-toggle')).toBeNull();
     expect(screen.queryByRole('tooltip', { hidden: true })).toBeNull();
   });
+
+  it.each(checklistCases)(
+    'renders one checklist trigger with accessible progress and the full popover for $name',
+    async ({ items, completed }) => {
+      render(TaskProgressControl, { props: { tasks: items, presentation: 'checklist' } });
+
+      const trigger = screen.getByTestId('task-progress-trigger');
+      expect(trigger.getAttribute('aria-label')).toBe(
+        `Task progress: ${completed} of ${items.length} completed`,
+      );
+      expect(trigger.getAttribute('aria-expanded')).toBe('false');
+      expect(screen.getByTestId('task-progress-checklist-icon')).toBeTruthy();
+      expect(trigger.querySelectorAll('[data-icon="list-check"]')).toHaveLength(1);
+      expect(trigger.querySelector('[data-testid="task-progress-icon-stack"]')).toBeNull();
+      expect(trigger.querySelector('[data-testid="task-progress-status-icon"]')).toBeNull();
+      expect(trigger.querySelector('[data-testid="task-progress-overflow-indicator"]')).toBeNull();
+
+      trigger.focus();
+      const dialog = await screen.findByRole('dialog', { name: 'Agent tasks' });
+      await waitFor(() => expect(trigger.getAttribute('aria-expanded')).toBe('true'));
+      expect(screen.getAllByTestId('task-progress-row')).toHaveLength(items.length);
+      expect(dialog.querySelectorAll('[data-testid="task-progress-row-status-icon"]')).toHaveLength(
+        items.length,
+      );
+    },
+  );
 
   it('uses the canonical 28px action target for one task without enlarging its disk', () => {
     render(TaskProgressControl, { props: { tasks: [tasks[0]] } });

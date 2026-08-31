@@ -58,6 +58,7 @@ vi.mock('@fortawesome/free-solid-svg-icons', () => ({
   faCopy: { iconName: 'copy' },
   faEye: { iconName: 'eye' },
   faList: { iconName: 'list' },
+  faListCheck: { iconName: 'list-check' },
   faSpinner: { iconName: 'spinner' },
   faSliders: { iconName: 'sliders' },
   faTrash: { iconName: 'trash' },
@@ -228,7 +229,7 @@ describe('AgentTabType agent model reactivity', () => {
     });
   });
 
-  it('renders task progress in the registered primary header actions', async () => {
+  it('renders checklist task progress in the registered primary header actions', async () => {
     render(AgentTabTypePrimaryActionsHarness, {
       props: {
         tab: { id: 'tab-1', type: 'agent', title: 'Agent', agentId: 'agent-1' },
@@ -251,11 +252,16 @@ describe('AgentTabType agent model reactivity', () => {
       'min-w-(--row-action-target-compact)',
     );
     expect(screen.getByTestId('task-progress-trigger').className).toContain('w-fit');
-    expect(screen.getAllByTestId('task-progress-status-icon')).toHaveLength(2);
-    expect(
-      screen
-        .getAllByTestId('task-progress-status-icon')
-        .every((icon) => icon.className.includes('size-3.5') && !icon.className.includes('size-4')),
-    ).toBe(true);
+    expect(screen.getByTestId('task-progress-checklist-icon')).toBeTruthy();
+    expect(header.querySelectorAll('[data-icon="list-check"]')).toHaveLength(1);
+    expect(header.querySelector('[data-testid="task-progress-icon-stack"]')).toBeNull();
+    expect(header.querySelector('[data-testid="task-progress-status-icon"]')).toBeNull();
+
+    screen.getByTestId('task-progress-trigger').focus();
+    const dialog = await screen.findByRole('dialog', { name: 'Agent tasks' });
+    expect(dialog.querySelectorAll('[data-testid="task-progress-row"]')).toHaveLength(2);
+    expect(dialog.querySelectorAll('[data-testid="task-progress-row-status-icon"]')).toHaveLength(
+      2,
+    );
   });
 });

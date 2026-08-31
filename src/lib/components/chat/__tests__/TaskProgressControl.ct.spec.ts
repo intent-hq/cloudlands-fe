@@ -86,4 +86,30 @@ for (const theme of ['light', 'dark'] as const) {
     await expect(page.getByTestId('task-progress-stack-item')).toHaveCount(5);
     await expect(trigger).toHaveCSS('height', '28px');
   });
+
+  test(`renders one 28px checklist glyph without stack disks in ${theme} mode`, async ({
+    mount,
+    page,
+  }) => {
+    await page.evaluate((selectedTheme) => {
+      document.documentElement.classList.toggle('dark', selectedTheme === 'dark');
+      document.documentElement.classList.toggle('light', selectedTheme === 'light');
+    }, theme);
+    await mount(TaskProgressControl, {
+      props: { tasks: [...tasks], presentation: 'checklist' },
+    });
+
+    const trigger = page.getByTestId('task-progress-trigger');
+    const checklist = page.getByTestId('task-progress-checklist-icon');
+    await expect(trigger).toHaveCSS('height', '28px');
+    await expect(trigger).toHaveCSS('width', '28px');
+    await expect(checklist.locator('svg')).toHaveCount(1);
+    await expect(page.getByTestId('task-progress-icon-stack')).toHaveCount(0);
+    await expect(page.getByTestId('task-progress-status-icon')).toHaveCount(0);
+    await expect(page.getByTestId('task-progress-overflow-indicator')).toHaveCount(0);
+
+    await trigger.focus();
+    await expect(page.getByTestId('task-progress-popover')).toBeVisible();
+    await expect(page.getByTestId('task-progress-row')).toHaveCount(tasks.length);
+  });
 }

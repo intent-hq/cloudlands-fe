@@ -8,6 +8,7 @@
     faClock,
     faEllipsis,
     faEye,
+    faListCheck,
     faSpinner,
     faTriangleExclamation,
   } from '@fortawesome/free-solid-svg-icons';
@@ -17,7 +18,12 @@
   import type { TaskProgressItem, TaskProgressStatus } from './workspace-task-fallback';
   import { taskProgressFlip, taskProgressRowTransition } from './task-progress-motion';
 
-  let { tasks }: { tasks: TaskProgressItem[] } = $props();
+  interface Props {
+    tasks: TaskProgressItem[];
+    presentation?: 'status-stack' | 'checklist';
+  }
+
+  let { tasks, presentation = 'status-stack' }: Props = $props();
   let open = $state(false);
   let triggerElement: HTMLButtonElement | null = $state(null);
   let collisionBoundary: Element[] = $state([]);
@@ -133,54 +139,64 @@
           onfocus={handleTriggerFocus}
           data-testid="task-progress-trigger"
         >
-          <span
-            class="isolate flex items-center"
-            aria-hidden="true"
-            data-testid="task-progress-icon-stack"
-          >
-            {#if completedTasks.length > 0}
-              <span
-                class="relative z-0 inline-flex shrink-0"
-                data-testid="task-progress-stack-item"
-                data-task-status="completed"
-              >
-                {@render statusIndicator(
-                  'completed',
-                  'task-progress-status-icon',
-                  completedTasks.length,
-                )}
-              </span>
-            {/if}
-            {#each stackedActiveTasks as task, index (task.id)}
-              <span
-                class="relative inline-flex shrink-0 {completedTasks.length > 0 || index > 0
-                  ? '-ml-1.75'
-                  : ''}"
-                style:z-index={task.status === 'running' ? MAX_STACK_SLOTS + 1 : index + 1}
-                data-testid="task-progress-stack-item"
-                data-task-id={task.id}
-              >
-                {@render statusIndicator(task.status, 'task-progress-status-icon')}
-              </span>
-            {/each}
-            {#if hasStackOverflow}
-              <span
-                class="relative -ml-1.75 inline-flex shrink-0"
-                style:z-index={MAX_STACK_SLOTS}
-                data-testid="task-progress-stack-item"
-                data-task-status="overflow"
-              >
+          {#if presentation === 'checklist'}
+            <span
+              class="inline-flex size-3.5 items-center justify-center"
+              aria-hidden="true"
+              data-testid="task-progress-checklist-icon"
+            >
+              <Fa icon={faListCheck} size={14} class="size-3.5!" />
+            </span>
+          {:else}
+            <span
+              class="isolate flex items-center"
+              aria-hidden="true"
+              data-testid="task-progress-icon-stack"
+            >
+              {#if completedTasks.length > 0}
                 <span
-                  class="inline-flex size-3.5 shrink-0 items-center justify-center rounded-full bg-[hsl(var(--background))] text-foreground leading-none"
-                  aria-hidden="true"
-                  data-testid="task-progress-overflow-indicator"
-                  data-overflow-count={overflowCount}
+                  class="relative z-0 inline-flex shrink-0"
+                  data-testid="task-progress-stack-item"
+                  data-task-status="completed"
                 >
-                  <Fa icon={faEllipsis} size={8} class="size-2!" />
+                  {@render statusIndicator(
+                    'completed',
+                    'task-progress-status-icon',
+                    completedTasks.length,
+                  )}
                 </span>
-              </span>
-            {/if}
-          </span>
+              {/if}
+              {#each stackedActiveTasks as task, index (task.id)}
+                <span
+                  class="relative inline-flex shrink-0 {completedTasks.length > 0 || index > 0
+                    ? '-ml-1.75'
+                    : ''}"
+                  style:z-index={task.status === 'running' ? MAX_STACK_SLOTS + 1 : index + 1}
+                  data-testid="task-progress-stack-item"
+                  data-task-id={task.id}
+                >
+                  {@render statusIndicator(task.status, 'task-progress-status-icon')}
+                </span>
+              {/each}
+              {#if hasStackOverflow}
+                <span
+                  class="relative -ml-1.75 inline-flex shrink-0"
+                  style:z-index={MAX_STACK_SLOTS}
+                  data-testid="task-progress-stack-item"
+                  data-task-status="overflow"
+                >
+                  <span
+                    class="inline-flex size-3.5 shrink-0 items-center justify-center rounded-full bg-[hsl(var(--background))] text-foreground leading-none"
+                    aria-hidden="true"
+                    data-testid="task-progress-overflow-indicator"
+                    data-overflow-count={overflowCount}
+                  >
+                    <Fa icon={faEllipsis} size={8} class="size-2!" />
+                  </span>
+                </span>
+              {/if}
+            </span>
+          {/if}
         </button>
       {/snippet}
     </Popover.Trigger>

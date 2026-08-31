@@ -240,7 +240,7 @@
 </script>
 
 {#snippet agentPrimaryActions()}
-  <TaskProgressControl tasks={taskProgressItems} />
+  <TaskProgressControl tasks={taskProgressItems} presentation="checklist" />
   <ChatMessageNavigator
     messages={chatNavigationState.userMessages}
     isAtBottom={chatNavigationState.isAtBottom}
