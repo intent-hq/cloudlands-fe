@@ -45,6 +45,7 @@ describe('KeyboardShortcutsSettings', () => {
     expect(inputs.map((input) => input.value)).toEqual(
       SHORTCUT_REGISTRY.map(({ defaultKey }) => defaultKey),
     );
+    expect(inputs.every((input) => input.hasAttribute('data-shortcut-input'))).toBe(true);
     expect(screen.getByRole('textbox', { name: 'Settings' })).toBeTruthy();
     expect((screen.getByRole('button', { name: 'Reset all' }) as HTMLButtonElement).disabled).toBe(
       true,

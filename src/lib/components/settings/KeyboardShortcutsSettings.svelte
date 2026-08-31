@@ -99,6 +99,7 @@
                       id={`shortcut-${definition.id}`}
                       class="h-7 w-36 rounded-md border border-input bg-transparent px-2 text-xs text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring"
                       type="text"
+                      data-shortcut-input
                       value={effectiveValue(definition.id, definition.defaultKey)}
                       aria-invalid={errors[definition.id] || undefined}
                       aria-describedby={errors[definition.id] ? errorId : undefined}
