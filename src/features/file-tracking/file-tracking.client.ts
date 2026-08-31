@@ -54,22 +54,21 @@ export function toLockRecord(value: unknown): Record<string, true> {
  * Hydrate a workspace's agent-lock snapshot from the daemon
  * (PROTOCOL §5.19 `file-tracking.getAgentLocks` — the hydration read for the
  * `changes:agent-locks` event, §6.5) and fold it into the agent-lock slice.
- * Errors are swallowed: a failed read leaves the current (default-empty,
- * unlocked) state, matching the daemon's own degrade-to-unlocked behavior.
+ * A failed read degrades to unlocked (empty records), matching the daemon's
+ * own store-failure behavior — a stale locked snapshot must never outlive a
+ * hydration attempt; the `changes:agent-locks` event converges it later.
  */
 export async function hydrateAgentLocks(workspaceId: string): Promise<void> {
+  let lockedAgentIds: Record<string, true> = {};
+  let lockedFilePaths: Record<string, true> = {};
   try {
     const result = await backendRequest<Record<string, unknown>>('file-tracking.getAgentLocks', {
       workspaceId,
     });
-    appStore.dispatch(
-      setAgentLockState(
-        workspaceId,
-        toLockRecord(result?.lockedAgentIds),
-        toLockRecord(result?.lockedFilePaths),
-      ),
-    );
+    lockedAgentIds = toLockRecord(result?.lockedAgentIds);
+    lockedFilePaths = toLockRecord(result?.lockedFilePaths);
   } catch {
-    // Leave current state; the `changes:agent-locks` event converges it later.
+    // Degrade to unlocked; the `changes:agent-locks` event converges it later.
   }
+  appStore.dispatch(setAgentLockState(workspaceId, lockedAgentIds, lockedFilePaths));
 }

@@ -78,12 +78,12 @@ describe('file-tracking client (§5.19 getAgentLocks hydration, fake transport)'
     expect(dispatchSpy).toHaveBeenCalledWith(setAgentLockState('ws-abc', {}, {}));
   });
 
-  it('swallows transport errors without dispatching (state converges via the event)', async () => {
+  it('degrades transport errors to unlocked (empty records) so stale locks never persist', async () => {
     mockedRequest.mockRejectedValueOnce(new Error('daemon down'));
 
     await hydrateAgentLocks('ws-abc');
 
-    expect(dispatchSpy).not.toHaveBeenCalled();
+    expect(dispatchSpy).toHaveBeenCalledWith(setAgentLockState('ws-abc', {}, {}));
   });
 });
 
