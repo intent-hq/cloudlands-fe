@@ -135,9 +135,12 @@ describe('Tooltip', () => {
     try {
       render(TooltipHarness);
       await new Promise((resolve) => setTimeout(resolve, 25));
+      // Snapshot before the DOM queries so testing-library internals are not
+      // inside the measured window.
+      const readsWhileClosed = layoutReads;
       expect(screen.queryByRole('tooltip', { hidden: true })).toBeNull();
       expect(document.querySelector('[data-tooltip-content]')).toBeNull();
-      expect(layoutReads).toBe(0);
+      expect(readsWhileClosed).toBe(0);
     } finally {
       window.getComputedStyle = originalGetComputedStyle;
       Element.prototype.getBoundingClientRect = originalGetBoundingClientRect;
