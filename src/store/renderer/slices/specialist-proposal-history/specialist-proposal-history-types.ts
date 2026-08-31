@@ -12,7 +12,7 @@ interface FileSpecialistWritePayload {
   workspacePath?: string;
 }
 
-type SpecialistReverseAction =
+export type SpecialistReverseAction =
   | { kind: 'delete'; id: string; scope: SpecialistFileScope; workspacePath?: string }
   | { kind: 'save'; specialist: FileSpecialistWritePayload };
 
