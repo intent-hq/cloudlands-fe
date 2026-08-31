@@ -1,11 +1,16 @@
 import { runSaga, stdChannel } from 'redux-saga';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-const mocks = vi.hoisted(() => ({ createAgent: vi.fn(), toastError: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+  createAgent: vi.fn(),
+  toastError: vi.fn(),
+  backendRequest: vi.fn(),
+}));
 vi.mock('$features/agent/services/agent-factory', () => ({
   agentFactory: { createAgent: mocks.createAgent },
 }));
 vi.mock('svelte-sonner', () => ({ toast: { error: mocks.toastError } }));
+vi.mock('$lib/client/live/backend-transport', () => ({ backendRequest: mocks.backendRequest }));
 
 import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
 import { appClient } from '$lib/client';
@@ -23,6 +28,7 @@ import {
   createAgentFromConfigRequested,
   createAgentRequested,
   createAgentWithSpecialistRequested,
+  delegateExistingTaskRequested,
   runAgentForNoteRequested,
 } from '../workspace-agents-slice';
 import { agentCreationSaga } from './agent-creation-saga';
@@ -599,6 +605,59 @@ describe('agentCreationSaga', () => {
     task.cancel();
 
     await expect(action.promise).rejects.toThrow('Failed to create agent');
+    await task.toPromise();
+  });
+
+  it('routes existing-task delegation to the daemon agent.delegate RPC', async () => {
+    mocks.backendRequest.mockResolvedValue({ ok: true, agentId: AGENT, name: 'Task note' });
+    const { channel, dispatched, task } = start();
+    channel.put(delegateExistingTaskRequested(WS, NOTE, 'Task note', false));
+    await settle();
+
+    expect(mocks.backendRequest).toHaveBeenCalledWith('agent.delegate', {
+      workspaceId: WS,
+      taskNoteId: NOTE,
+    });
+    expect(dispatched).not.toContainEqual(
+      expect.objectContaining({ type: 'appLayout/openAgentTabRequested' }),
+    );
+    expect(mocks.toastError).not.toHaveBeenCalled();
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('opens the delegated agent when the trigger asks for it', async () => {
+    mocks.backendRequest.mockResolvedValue({ ok: true, agentId: AGENT, name: 'Task note' });
+    const { channel, dispatched, task } = start();
+    channel.put(delegateExistingTaskRequested(WS, NOTE, 'Task note', true));
+    await settle();
+
+    expect(dispatched).toContainEqual(openAgentTabRequested(WS, { agentId: AGENT }));
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('surfaces a toast when agent.delegate rejects (e.g. occupancy guard)', async () => {
+    mocks.backendRequest.mockRejectedValue(new Error('task already has a live assigned agent'));
+    const { channel, dispatched, task } = start();
+    channel.put(delegateExistingTaskRequested(WS, NOTE, 'Task note', true));
+    await settle();
+
+    expect(mocks.toastError).toHaveBeenCalledOnce();
+    expect(dispatched).not.toContainEqual(
+      expect.objectContaining({ type: 'appLayout/openAgentTabRequested' }),
+    );
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('does not call the daemon when the workspace is unknown', async () => {
+    const { channel, task } = start();
+    channel.put(delegateExistingTaskRequested('ws-missing', NOTE, 'Task note', false));
+    await settle();
+
+    expect(mocks.backendRequest).not.toHaveBeenCalled();
+    task.cancel();
     await task.toPromise();
   });
 });
