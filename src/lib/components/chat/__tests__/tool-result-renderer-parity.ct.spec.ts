@@ -1,7 +1,10 @@
 import { expect, test } from '@playwright/experimental-ct-svelte';
 import ToolResultRendererParityHost from './ToolResultRendererParityHost.svelte';
 import {
+  groupedObjectEnvelopeOrphanBlocks,
   groupedResultBlocks,
+  markdownImageOrphanBlocks,
+  objectEnvelopeOrphanBlocks,
   headinglessGroupedOrphanBlocks,
   orphanResultBlocks,
   pairedResultBlocks,
@@ -31,10 +34,12 @@ test('renders paired and orphan results with matching production-surface semanti
   await component.update({ props: { content: orphan.contentBlocks ?? [], isStreaming: false } });
   for (const surface of [normal, dedicated]) {
     const row = surface.locator('[data-message-content-block="tool_result"]');
+    const payload = row.locator('[data-tool-result-payload]');
     await expect(row).toHaveCount(1);
     await expect(row).toContainText('orphan-search-marker');
     await expect(row).toHaveClass(/pt-4/);
-    await expect(row).toHaveAttribute('data-chat-search-block-path', 'b:1');
+    await expect(row).not.toHaveAttribute('data-chat-search-block-path', /.+/);
+    await expect(payload).toHaveAttribute('data-chat-search-block-path', 'b:1');
     expect(await row.ariaSnapshot()).toContain('orphan-search-marker');
   }
 });
@@ -62,7 +67,11 @@ test('renders grouped orphans in titled and headingless groups across both surfa
     await expect(rows).toHaveCount(2);
     await expect(rows.first()).toContainText('grouped-orphan-search-marker');
     await expect(rows.last()).toContainText('grouped-missing-id-orphan-marker');
-    await expect(rows.first()).toHaveAttribute('data-chat-search-block-path', 'b:0:c:4');
+    await expect(rows.first()).not.toHaveAttribute('data-chat-search-block-path', /.+/);
+    await expect(rows.first().locator('[data-tool-result-payload]')).toHaveAttribute(
+      'data-chat-search-block-path',
+      'b:0:c:4',
+    );
     await expect(rows.first()).toHaveClass(/pt-1/);
     await expect(rows.last()).toHaveClass(/pt-4/);
     expect(await rows.first().ariaSnapshot()).toContain('grouped-orphan-search-marker');
@@ -84,5 +93,65 @@ test('renders grouped orphans in titled and headingless groups across both surfa
   ]) {
     await expect(surface.getByTestId('response-group-disclosure')).toHaveCount(0);
     await expect(surface.getByText('inline-orphan-marker', { exact: true })).toBeVisible();
+  }
+});
+
+test('renders object-envelope orphan text at payload-scoped search paths', async ({
+  mount,
+  page,
+}) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  const topLevel = reconcileToolResultMessage(objectEnvelopeOrphanBlocks(), true);
+  const component = await mount(ToolResultRendererParityHost, {
+    props: { content: topLevel.contentBlocks ?? [], isStreaming: true },
+  });
+  for (const surface of [
+    component.getByTestId('normal-workspace-surface'),
+    component.getByTestId('dedicated-agent-surface'),
+  ]) {
+    const payload = surface.locator('[data-chat-search-block-path="b:0"]');
+    await expect(payload).toHaveText('object-orphan-marker');
+    await expect(payload).not.toContainText('Tool Result');
+  }
+
+  const grouped = reconcileToolResultMessage(groupedObjectEnvelopeOrphanBlocks(), true);
+  await component.update({ props: { content: grouped.contentBlocks ?? [], isStreaming: true } });
+  for (const surface of [
+    component.getByTestId('normal-workspace-surface'),
+    component.getByTestId('dedicated-agent-surface'),
+  ]) {
+    const disclosure = surface.getByTestId('response-group-disclosure');
+    if ((await disclosure.count()) > 0) await disclosure.click();
+    const payload = surface.locator('[data-chat-search-block-path="b:0:c:3"]');
+    await expect(payload).toHaveText('grouped-object-orphan-marker');
+    await expect(payload).not.toContainText('Tool Result');
+    await expect(surface.getByText('grouped-object-orphan-marker', { exact: true })).toHaveCount(1);
+  }
+});
+
+test('keeps markdown workspace images in chat thumbnail mode on both surfaces', async ({
+  mount,
+  page,
+}) => {
+  const message = reconcileToolResultMessage(markdownImageOrphanBlocks(), true);
+  const component = await mount(ToolResultRendererParityHost, {
+    props: { content: message.contentBlocks ?? [], isStreaming: true },
+  });
+  for (const surface of [
+    component.getByTestId('normal-workspace-surface'),
+    component.getByTestId('dedicated-agent-surface'),
+  ]) {
+    const workspaceImage = surface.locator('img[src^="workspace-file://"]');
+    const externalImage = surface.locator('img[src="https://example.com/unrelated.png"]');
+    await expect(workspaceImage).toHaveCount(1);
+    await expect(
+      workspaceImage.locator('xpath=ancestor::div[contains(@class, "markdown-viewer")]'),
+    ).toHaveClass(/chat-image-thumbnails/);
+    await workspaceImage.hover();
+    await expect(surface.getByTestId('markdown-image-actions-overlay')).toBeVisible();
+    await page.mouse.move(0, 0);
+    await expect(surface.getByTestId('markdown-image-actions-overlay')).toHaveCount(0);
+    await externalImage.hover();
+    await expect(surface.getByTestId('markdown-image-actions-overlay')).toHaveCount(0);
   }
 });

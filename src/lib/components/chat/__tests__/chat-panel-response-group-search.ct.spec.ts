@@ -94,15 +94,43 @@ test('search reveals a grouped orphan result and restores manual disclosure stat
   await disclosure.focus();
   await disclosure.press('Meta+f');
   const findBar = component.getByRole('search', { name: 'Find in panel' });
-  await findBar.getByRole('textbox').fill('grouped-search-orphan-marker');
+  await findBar.getByRole('textbox').fill('grouped-search-orphan-tool-marker');
   await expect(disclosure).toHaveAttribute('aria-expanded', 'true');
-  await expect(group.getByText('grouped-search-orphan-marker', { exact: true })).toBeVisible();
+  await expect(group.getByText('grouped-search-orphan-tool-marker', { exact: true })).toBeVisible();
   await findBar.getByRole('textbox').press('Escape');
   await expect(disclosure).toHaveAttribute('aria-expanded', 'false');
 
   await disclosure.click();
   await disclosure.press('Meta+f');
-  await findBar.getByRole('textbox').fill('grouped-search-orphan-marker');
+  await findBar.getByRole('textbox').fill('grouped-search-orphan-tool-marker');
   await findBar.getByRole('textbox').press('Escape');
   await expect(disclosure).toHaveAttribute('aria-expanded', 'true');
+});
+
+test('search highlights a result query in the standalone payload instead of its card label', async ({
+  mount,
+  page,
+}) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  const component = await mount(ChatPanelOperationalGeometryHost, {
+    props: { theme: 'light', zoom: 1, width: 560, groupedOrphanSearchOnly: true },
+  });
+  await component.getByText('Continue after grouped orphan search').focus();
+  await page.keyboard.press('Meta+f');
+  await component.getByRole('search', { name: 'Find in panel' }).getByRole('textbox').fill('tool');
+
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        const highlight = CSS.highlights?.get('current-search-result') as
+          Iterable<Range> | undefined;
+        const range = highlight ? Array.from(highlight)[0] : undefined;
+        const parent = range?.startContainer.parentElement;
+        return {
+          text: range?.toString().toLowerCase(),
+          inPayload: Boolean(parent?.closest('[data-tool-result-payload]')),
+        };
+      }),
+    )
+    .toEqual({ text: 'tool', inPayload: true });
 });

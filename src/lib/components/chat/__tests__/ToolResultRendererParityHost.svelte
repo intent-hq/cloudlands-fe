@@ -30,8 +30,14 @@
     {isStreaming}
     {searchQuery}
     enableTransitions={false}
+    workspaceId="tool-result-parity-workspace"
   />
 </section>
 <section data-testid="dedicated-agent-surface">
-  <MessageContent {content} {isStreaming} role="assistant" />
+  <MessageContent
+    {content}
+    {isStreaming}
+    role="assistant"
+    workspaceId="tool-result-parity-workspace"
+  />
 </section>

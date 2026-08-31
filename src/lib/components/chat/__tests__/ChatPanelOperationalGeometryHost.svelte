@@ -430,7 +430,7 @@
         type: 'tool_result',
         id: 'grouped-search-orphan-result',
         tool_use_id: 'missing-grouped-search-call',
-        output: 'grouped-search-orphan-marker',
+        output: { output: 'grouped-search-orphan-tool-marker' },
       },
       { type: 'text', text: 'Visible ending content.</group:Grouped result search>' },
     ]),

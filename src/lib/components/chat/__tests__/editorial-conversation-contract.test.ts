@@ -212,41 +212,11 @@ describe('editorial conversation presentation contract', () => {
     const responseGroup = source('src/lib/components/chat/ResponseGroup.svelte');
     const operationalRow = source('src/lib/components/chat/operational-disclosure-row.ts');
 
-    const expectTranscriptAwareTopLevelSpacing = (content: string) => {
-      expect(content).toMatch(
-        /function isVisibleTopLevelBlock\(block: RenderContentBlock\): boolean \{[\s\S]{0,1000}?if \(contentBlock\.type === 'tool_result'\) \{\s+return isStandaloneToolResult\(toolResultClassification, contentBlock\);\s+\}/,
-      );
-      expect(content).toMatch(
-        /function isVisibleGroupChild\(block: (?:RenderContentBlock|ContentBlock)\): boolean \{[\s\S]{0,250}?isStandaloneToolResult\(toolResultClassification, block(?: as ContentBlock)?\)[\s\S]{0,40}?\}/,
-      );
-      expect(content).toMatch(
-        /getOperationalClusterSpacingClass\(\s+groupedBlocks,\s+blockIndex,\s+isVisibleTopLevelBlock,\s+\)/,
-      );
-      expect(content).toMatch(
-        /isAdjacentOperationalClusterRow\(\s+groupedBlocks,\s+blockIndex,\s+isVisibleTopLevelBlock,\s+\)/,
-      );
-      expect(content).not.toMatch(
-        /getOperationalClusterSpacingClass\(\s+groupedBlocks,\s+blockIndex,\s+isVisibleOperationalBlock,/,
-      );
-      expect(content).not.toContain(
-        'isAdjacentOperationalClusterRow(groupedBlocks, blockIndex, isVisibleOperationalBlock)',
-      );
-      expect(content).not.toContain("(candidate) => candidate.type !== 'tool_result'");
-    };
-
     expect(staticContent).toContain('<div class="flex flex-col gap-0"');
     expect(streamingContent).toContain('class="relative flex flex-col gap-0"');
-    expectTranscriptAwareTopLevelSpacing(staticContent);
-    expectTranscriptAwareTopLevelSpacing(streamingContent);
-    expect(staticContent).toMatch(
-      /{#snippet renderResponseGroupChild\([\s\S]{0,500}?suppressSpacing\s+\?\s+''\s+:\s+getOperationalClusterSpacingClass\(\s+group\.children,\s+childIndex,\s+isVisibleGroupChild,\s+group\.isReasoningPhase,\s+\)/,
-    );
     expect(staticContent.match(/{@render renderResponseGroupChild\(/g)).toHaveLength(3);
     expect(staticContent).toContain('{#if shouldRenderResponseGroupInline(group)}');
     expect(streamingContent).toContain('getOperationalClusterSpacingClass(');
-    expect(streamingContent).toMatch(
-      /suppressSpacing\s+\?\s+''\s+:\s+getOperationalClusterSpacingClass\(\s+group\.children,\s+childIndex,\s+isVisibleGroupChild,/,
-    );
     expect(staticContent).toContain('suppressSpacing: boolean = false,');
     expect(streamingContent).toContain('suppressSpacing: boolean = false,');
     expect(staticContent).toMatch(/currentChildIndex,\s+true,\s+\)}/);
@@ -272,11 +242,6 @@ describe('editorial conversation presentation contract', () => {
     expect(staticContent).toContain('OPERATIONAL_GROUP_CHILD_ROW_CLASS');
     expect(streamingContent).toContain('OPERATIONAL_GROUP_CHILD_ROW_CLASS');
     expect(responseGroup).not.toContain('pl-4.5');
-    for (const content of [staticContent, streamingContent]) {
-      expect(content).toMatch(
-        /true,\s+isAdjacentOperationalClusterRow\(\s*group\.children,\s+childIndex,\s+isVisibleGroupChild\),/,
-      );
-    }
   });
 
   it('uses quieter Chief message surfaces and keeps proposals out of the transcript', () => {

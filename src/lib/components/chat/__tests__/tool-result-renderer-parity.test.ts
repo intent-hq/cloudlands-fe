@@ -5,10 +5,12 @@ import AgentMessageList from '../AgentMessageList.svelte';
 import MessageContent from '../MessageContent.svelte';
 import { findChatSearchMatches } from '../chat-search';
 import {
+  groupedObjectEnvelopeOrphanBlocks,
   groupedResultBlocks,
   headinglessGroupedOrphanBlocks,
   liveGroupedOrphanBlocks,
   liveGroupBlocks,
+  objectEnvelopeOrphanBlocks,
   orphanResultBlocks,
   pairedResultBlocks,
   reconcileToolResultMessage,
@@ -63,6 +65,48 @@ function resultRows(container: HTMLElement) {
 }
 
 describe('tool-result production renderer parity', () => {
+  it.each(surfaces)(
+    'renders top-level object-envelope orphan text at its search path in $name chat',
+    (surface) => {
+      const message = reconcileToolResultMessage(objectEnvelopeOrphanBlocks(), true);
+      const view = surface.render(message.contentBlocks ?? [], true);
+      const payload = view.container.querySelector('[data-chat-search-block-path="b:0"]');
+
+      expect(view.container.textContent?.match(/object-orphan-marker/g)).toHaveLength(1);
+      expect(payload?.textContent?.trim()).toBe('object-orphan-marker');
+      expect(payload?.textContent).not.toContain('Tool Result');
+      expect(findChatSearchMatches([message], 'object-orphan-marker', new Map())).toEqual([
+        expect.objectContaining({ blockPath: 'b:0', disclosurePath: [] }),
+      ]);
+      expect(
+        findChatSearchMatches([message], 'unsupported-object-hidden-marker', new Map()),
+      ).toEqual([]);
+    },
+  );
+
+  it.each(surfaces)(
+    'renders grouped object-envelope orphan text once without duplicating paired results in $name chat',
+    async (surface) => {
+      const message = reconcileToolResultMessage(groupedObjectEnvelopeOrphanBlocks(), true);
+      const view = surface.render(message.contentBlocks ?? [], true);
+      const disclosure = view.container.querySelector('[data-testid="response-group-disclosure"]');
+      if (disclosure) await fireEvent.click(disclosure);
+      const payload = view.container.querySelector('[data-chat-search-block-path="b:0:c:3"]');
+
+      expect(view.container.textContent?.match(/grouped-object-orphan-marker/g)).toHaveLength(1);
+      expect(payload?.textContent?.trim()).toBe('grouped-object-orphan-marker');
+      expect(payload?.textContent).not.toContain('Tool Result');
+      expect(resultRows(view.container)).toHaveLength(2);
+      expect(findChatSearchMatches([message], 'grouped-object-orphan-marker', new Map())).toEqual([
+        expect.objectContaining({ blockPath: 'b:0:c:3', disclosurePath: ['group:b:0'] }),
+      ]);
+      expect(findChatSearchMatches([message], 'paired-object-marker', new Map())).toEqual([]);
+      expect(
+        findChatSearchMatches([message], 'grouped-unsupported-hidden-marker', new Map()),
+      ).toEqual([]);
+    },
+  );
+
   it.each(surfaces)(
     'renders grouped paired and orphan results once in source order in $name chat',
     async (surface) => {

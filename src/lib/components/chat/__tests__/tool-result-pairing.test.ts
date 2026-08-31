@@ -14,6 +14,7 @@ import {
   classifyToolResults,
   extractPayloadText,
   findToolResult,
+  getStandaloneToolResultPresentation,
   getToolResultPayload,
   getToolResultText,
   isStandaloneToolResult,
@@ -210,5 +211,32 @@ describe('extractPayloadText — §7.1 payload shapes', () => {
     expect(extractPayloadText(undefined)).toBeNull();
     expect(extractPayloadText([{ type: 'image', data: 'aaaa' }])).toBeNull();
     expect(extractPayloadText({ code: -1 })).toBeNull();
+  });
+});
+
+describe('getStandaloneToolResultPresentation — visible/searchable parity', () => {
+  it('preserves strings and content arrays', () => {
+    const blocks = [{ type: 'text', text: 'array text' }];
+    expect(getStandaloneToolResultPresentation(toolResult('a', 'missing', 'plain'))).toEqual({
+      payload: 'plain',
+      searchableText: 'plain',
+    });
+    expect(getStandaloneToolResultPresentation(toolResult('b', 'missing', blocks))).toEqual({
+      payload: blocks,
+      searchableText: 'array text',
+    });
+  });
+
+  it('presents only explicit object-envelope output text', () => {
+    expect(
+      getStandaloneToolResultPresentation(
+        toolResult('a', 'missing', { output: 'object-orphan-marker', privateMetadata: 'hidden' }),
+      ),
+    ).toEqual({ payload: 'object-orphan-marker', searchableText: 'object-orphan-marker' });
+    expect(
+      getStandaloneToolResultPresentation(
+        toolResult('b', 'missing', { privateMetadata: 'unsupported-object-hidden-marker' }),
+      ),
+    ).toEqual({ payload: null, searchableText: '' });
   });
 });

@@ -63,6 +63,61 @@ export const orphanResultBlocks = (): ContentBlock[] => [
   },
 ];
 
+export const objectEnvelopeOrphanBlocks = (): ContentBlock[] => [
+  {
+    type: 'tool_result',
+    tool_use_id: 'missing-object-envelope-call',
+    output: { output: 'object-orphan-marker' },
+  },
+  {
+    type: 'tool_result',
+    tool_use_id: 'missing-unsupported-object-call',
+    output: { privateMetadata: 'unsupported-object-hidden-marker' },
+  },
+];
+
+export const groupedObjectEnvelopeOrphanBlocks = (): ContentBlock[] => [
+  { type: 'text', text: '<group:Grouped object results>Visible object result summary.' },
+  {
+    type: 'tool_use',
+    toolCallId: 'grouped-object-paired-call',
+    name: 'launch-process',
+    input: { command: 'printf paired-object' },
+  },
+  {
+    type: 'tool_result',
+    tool_use_id: 'grouped-object-paired-call',
+    output: { output: 'paired-object-marker' },
+  },
+  {
+    type: 'tool_result',
+    tool_use_id: 'missing-grouped-object-call',
+    output: { output: 'grouped-object-orphan-marker' },
+  },
+  {
+    type: 'tool_result',
+    tool_use_id: 'missing-grouped-unsupported-call',
+    output: { privateMetadata: 'grouped-unsupported-hidden-marker' },
+  },
+  { type: 'text', text: 'Visible object result ending.</group:Grouped object results>' },
+];
+
+export const markdownImageOrphanBlocks = (): ContentBlock[] => [
+  {
+    type: 'tool_result',
+    tool_use_id: 'missing-markdown-image-call',
+    output: [
+      {
+        type: 'text',
+        text: [
+          '![Workspace result image](intent://local/file/images/result.png)',
+          '![External result image](https://example.com/unrelated.png)',
+        ].join('\n'),
+      },
+    ],
+  },
+];
+
 export const pairedResultBlocks = (): ContentBlock[] => [
   {
     type: 'tool_use',

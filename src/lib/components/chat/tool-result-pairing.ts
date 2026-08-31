@@ -16,6 +16,11 @@ export interface ToolResultClassification {
   standaloneResults: ReadonlySet<ContentBlock>;
 }
 
+export interface StandaloneToolResultPresentation {
+  payload: string | unknown[] | null;
+  searchableText: string;
+}
+
 export type ToolResultClassificationBlock =
   | ContentBlock
   | {
@@ -139,6 +144,25 @@ export function extractPayloadText(payload: unknown): string | null {
     if (typeof output === 'string') return output;
   }
   return null;
+}
+
+/**
+ * Select the payload representation shared by standalone result rendering and
+ * search. Strings and content arrays retain their existing representation;
+ * an object envelope exposes only its explicit string `output` field.
+ */
+export function getStandaloneToolResultPresentation(
+  result: ContentBlock | null | undefined,
+): StandaloneToolResultPresentation {
+  const payload = getToolResultPayload(result);
+  if (typeof payload === 'string') return { payload, searchableText: payload };
+  if (Array.isArray(payload)) {
+    return { payload, searchableText: extractPayloadText(payload) ?? '' };
+  }
+  const searchableText = extractPayloadText(payload);
+  return searchableText === null
+    ? { payload: null, searchableText: '' }
+    : { payload: searchableText, searchableText };
 }
 
 /**

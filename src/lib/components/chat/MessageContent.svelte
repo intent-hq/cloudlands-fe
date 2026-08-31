@@ -8,6 +8,7 @@
   import {
     classifyToolResults,
     findToolResult,
+    getStandaloneToolResultPresentation,
     getToolResultPayload,
     getToolResultText,
     isStandaloneToolResult,
@@ -514,6 +515,7 @@
   nested = false,
   adjacentOperationalRow = false,
   reasoningHistory = false,
+  searchPath: string | undefined = undefined,
 )}
   {#if isNavLinkBlock(block)}
     <div class="w-full" in:fly={{ y: 10, duration: 200 }}>
@@ -592,17 +594,17 @@
       />
     </div>
   {:else if block.type === 'tool_result' && isStandaloneToolResult(toolResultClassification, block)}
-    {@const resultPayload = getToolResultPayload(block)}
+    {@const resultPresentation = getStandaloneToolResultPresentation(block)}
     <div class="border border-border rounded-md" in:fly={{ y: 10, duration: 200 }}>
       <div class="px-3 py-2 bg-muted/50 border-b border-border">
         <span class="type-caption text-subtle">{m.chat_messageContent_toolResult_label()}</span>
       </div>
-      <div class="p-3">
-        {#if typeof resultPayload === 'string'}
-          <CodeBlock code={resultPayload} />
-        {:else if Array.isArray(resultPayload)}
+      <div class="p-3" data-tool-result-payload data-chat-search-block-path={searchPath}>
+        {#if typeof resultPresentation.payload === 'string'}
+          <CodeBlock code={resultPresentation.payload} />
+        {:else if Array.isArray(resultPresentation.payload)}
           <!-- Recursively render nested content blocks -->
-          {#each resultPayload as any[] as nestedBlock, nestedIndex (`nested-${blockIndex}-${nestedIndex}-${nestedBlock.id ?? nestedBlock.type}`)}
+          {#each resultPresentation.payload as any[] as nestedBlock, nestedIndex (`nested-${blockIndex}-${nestedIndex}-${nestedBlock.id ?? nestedBlock.type}`)}
             {#if nestedBlock.type === 'text' && nestedBlock.text}
               <div class="w-full">
                 <MarkdownViewer
@@ -687,7 +689,9 @@
       ? undefined
       : 'calc(var(--operational-row-inline-padding) + var(--operational-leading-slot-size) + var(--operational-leading-gap))'}
     data-message-content-block={childBlock.type}
-    data-chat-search-block-path={chatSearchBlockPath(groupIndex, childIndex)}
+    data-chat-search-block-path={childBlock.type === 'tool_result'
+      ? undefined
+      : chatSearchBlockPath(groupIndex, childIndex)}
     data-response-group-child
   >
     {@render renderContentBlock(
@@ -697,6 +701,7 @@
       true,
       isAdjacentOperationalClusterRow(group.children, childIndex, isVisibleGroupChild),
       group.isReasoningPhase,
+      chatSearchBlockPath(groupIndex, childIndex),
     )}
   </div>
 {/snippet}
@@ -764,7 +769,7 @@
         class={getOperationalClusterSpacingClass(groupedBlocks, blockIndex, isVisibleTopLevelBlock)}
         data-operational-cluster-row={isOperationalClusterBlock(block) ? block.type : undefined}
         data-message-content-block={block.type}
-        data-chat-search-block-path={block.type === 'text' || block.type === 'tool_result'
+        data-chat-search-block-path={block.type === 'text'
           ? chatSearchBlockPath(blockIndex)
           : undefined}
       >
@@ -774,6 +779,8 @@
           blockIndex,
           false,
           isAdjacentOperationalClusterRow(groupedBlocks, blockIndex, isVisibleTopLevelBlock),
+          false,
+          chatSearchBlockPath(blockIndex),
         )}
       </div>
     {/if}

@@ -21,7 +21,7 @@ import {
 } from './response-group-blocks';
 import {
   classifyToolResults,
-  getToolResultText,
+  getStandaloneToolResultPresentation,
   isStandaloneToolResult,
 } from './tool-result-pairing';
 
@@ -77,7 +77,7 @@ function buildMessageSearchBlocks(message: AgentMessage, turnKey: string): ChatS
       return;
     }
     if (block.type === 'tool_result' && isStandaloneToolResult(toolResultClassification, block)) {
-      addText(getToolResultText(block), path, []);
+      addText(getStandaloneToolResultPresentation(block).searchableText, path, []);
       return;
     }
     if (block.type !== 'content_group') return;
@@ -96,9 +96,11 @@ function buildMessageSearchBlocks(message: AgentMessage, turnKey: string): ChatS
           child.type === 'tool_result' &&
           isStandaloneToolResult(toolResultClassification, child)
         ) {
-          addText(getToolResultText(child), chatSearchBlockPath(blockIndex, childIndex), [
-            `group:${path}`,
-          ]);
+          addText(
+            getStandaloneToolResultPresentation(child).searchableText,
+            chatSearchBlockPath(blockIndex, childIndex),
+            [`group:${path}`],
+          );
         }
       });
       return;
@@ -110,7 +112,11 @@ function buildMessageSearchBlocks(message: AgentMessage, turnKey: string): ChatS
         const childPath = chatSearchBlockPath(blockIndex, childIndex);
         if (child.type === 'tool_result') {
           if (isStandaloneToolResult(toolResultClassification, child)) {
-            addText(getToolResultText(child), childPath, disclosurePath);
+            addText(
+              getStandaloneToolResultPresentation(child).searchableText,
+              childPath,
+              disclosurePath,
+            );
           }
           return;
         }
@@ -127,7 +133,9 @@ function buildMessageSearchBlocks(message: AgentMessage, turnKey: string): ChatS
         child.type === 'tool_result' &&
         isStandaloneToolResult(toolResultClassification, child)
       ) {
-        addText(getToolResultText(child), childPath, [`group:${path}`]);
+        addText(getStandaloneToolResultPresentation(child).searchableText, childPath, [
+          `group:${path}`,
+        ]);
       }
     });
   });
