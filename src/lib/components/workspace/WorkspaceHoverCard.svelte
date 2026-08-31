@@ -30,7 +30,9 @@
     selectWorkspaceDiffSummary,
     selectWorkspaceGitSummary,
   } from '$store/renderer/slices/workspace-summaries/workspace-summaries-selectors';
-  import { loadWorkspaceSummariesRequested } from '$store/renderer/slices/workspace-summaries/workspace-summaries-slice';
+  import { loadWorkspaceSummariesSucceeded } from '$store/renderer/slices/workspace-summaries/workspace-summaries-slice';
+  import { workspaceClient } from '$store/renderer/slices/workspace/utils/workspace.client';
+  import { WorkspaceId } from '$shared/types/branded-ids';
   import { selectWorkspaceActivePullRequest } from '$store/renderer/slices/workspace/workspace-selectors';
   import { selectPrMonitors } from '$store/renderer/slices/pr-monitor/pr-monitor-selectors';
 
@@ -219,11 +221,29 @@
   const workspaceGitSummary$ = selectWorkspaceGitSummary(workspaceIdStore);
   const prMonitors$ = selectPrMonitors(workspaceIdStore);
 
+  // Fetch on-demand diff/git summaries; results are kept per workspace in the
+  // store and stale values remain visible while a refresh is in flight.
+  async function loadWorkspaceSummaries(workspaceId: string): Promise<void> {
+    const [diffResult, gitResult] = await Promise.all([
+      workspaceClient.getDiffSummary(WorkspaceId(workspaceId)),
+      workspaceClient.getGitSummary(WorkspaceId(workspaceId)),
+    ]);
+    if (!diffResult.ok && !gitResult.ok) return;
+
+    appStore.dispatch(
+      loadWorkspaceSummariesSucceeded(
+        workspaceId,
+        diffResult.ok ? (diffResult.data ?? null) : null,
+        gitResult.ok ? (gitResult.data ?? null) : null,
+      ),
+    );
+  }
+
   // Fetch on-demand task/summary data when the hovered workspace changes.
   $effect(() => {
     const workspaceId = workspace?.id;
     if (!loadWorkspaceData || !workspaceId) return;
-    appStore.dispatch(loadWorkspaceSummariesRequested(String(workspaceId)));
+    void loadWorkspaceSummaries(String(workspaceId));
     appStore.dispatch(ensureWorkspaceTasksLoaded(String(workspaceId)));
   });
 

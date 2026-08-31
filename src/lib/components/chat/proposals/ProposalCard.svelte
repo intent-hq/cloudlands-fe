@@ -32,7 +32,13 @@
     selectProposalResult,
     selectProposalStatus,
   } from '$store/renderer/slices/proposal-lifecycle/proposal-lifecycle-selectors';
-  import { requestPrBranchLookup } from '$store/renderer/slices/pr-branch-lookup/pr-branch-lookup-slice';
+  import { invoke } from '$lib/electron-bridge';
+  import {
+    getPrBranchLookupKey,
+    prBranchLookupFailed as prBranchLookupFailedAction,
+    prBranchLookupStarted,
+    prBranchLookupSucceeded,
+  } from '$store/renderer/slices/pr-branch-lookup/pr-branch-lookup-slice';
   import { selectPrBranchLookupEntries } from '$store/renderer/slices/pr-branch-lookup/pr-branch-lookup-selectors';
   import type { PrBranchLookupRequest } from '$store/renderer/slices/pr-branch-lookup/pr-branch-lookup-types';
   import { store as appStore } from '$store/renderer/store';
@@ -121,6 +127,10 @@
   let proposedBranchMissing = $state('');
   let branchListDefault = $state('');
   const BEFORE_AFTER_STACK_THRESHOLD = 40;
+  // Cross-render dedup for direct PR-branch lookups; the store's `loading`
+  // entry (written synchronously by prBranchLookupStarted) dedups across
+  // component instances.
+  const prBranchLookupInFlightKeys = new Set<string>();
 
   const prBranchLookupEntries = selectPrBranchLookupEntries();
 
@@ -341,7 +351,7 @@
     if (!prBranchLookupRequest || !prBranchLookupKey || prBranchLookup) return;
     if (!canUseElectronPrLookup()) return;
 
-    appStore.dispatch(requestPrBranchLookup(prBranchLookupRequest));
+    void performPrBranchLookup(prBranchLookupRequest);
   });
 
   $effect(() => {
@@ -453,6 +463,47 @@
   function canUseElectronPrLookup(): boolean {
     if (typeof window === 'undefined' || !window.electronAPI) return false;
     return window.electronAPI.versions?.electron !== '0.0.0-browser';
+  }
+
+  async function performPrBranchLookup(request: PrBranchLookupRequest): Promise<void> {
+    const payload = { ...request, key: getPrBranchLookupKey(request) };
+    if (prBranchLookupInFlightKeys.has(payload.key)) return;
+
+    prBranchLookupInFlightKeys.add(payload.key);
+    appStore.dispatch(prBranchLookupStarted(payload));
+
+    try {
+      const response = await invoke<{
+        success: boolean;
+        data?: { sourceBranch?: string };
+        error?: string;
+      }>('git-tracking:get-pull-request', {
+        owner: payload.owner,
+        repo: payload.repo,
+        number: payload.prNumber,
+      });
+      const branch = response?.success ? response.data?.sourceBranch?.trim() : undefined;
+
+      if (branch) {
+        appStore.dispatch(prBranchLookupSucceeded(payload, branch));
+        return;
+      }
+
+      appStore.dispatch(
+        // i18n-ignore — internal store error string, never rendered directly
+        prBranchLookupFailedAction(payload, response?.error ?? 'Could not detect PR branch'),
+      );
+    } catch (error) {
+      appStore.dispatch(
+        prBranchLookupFailedAction(
+          payload,
+          // i18n-ignore — internal store error string, never rendered directly
+          error instanceof Error ? error.message : 'PR branch lookup failed',
+        ),
+      );
+    } finally {
+      prBranchLookupInFlightKeys.delete(payload.key);
+    }
   }
 
   function toDomId(value: string): string {
