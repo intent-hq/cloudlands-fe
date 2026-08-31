@@ -5712,6 +5712,18 @@
                        structured attention-to-answer flow has its own rhythm. -->
                   {@const batchedDeliveryTurnSeam =
                     !attentionQuestionAnswerTurnSeam && isBatchedDeliverySeam(turn, nextTurn)}
+                  <!-- Seam BEFORE this turn: the same batch test against the
+                       previous rendered turn (crossing group boundaries like
+                       nextTurn). When true, the preceding h-2 gap owns the
+                       seam and this turn's rows drop their own top margins. -->
+                  {@const prevTurn =
+                    turns[turnIndex - 1] ??
+                    conversationTurnIndex.groups[groupIndex - 1]?.turns.at(-1)}
+                  {@const batchedSeamBefore = Boolean(
+                    prevTurn &&
+                    !isAttentionQuestionAnswerSeam(prevTurn, turn) &&
+                    isBatchedDeliverySeam(prevTurn, turn),
+                  )}
                   <!-- Conversation turn container - constrains sticky behavior -->
                   <!-- Fallback chain mirrors the row render order below. Edge case:
                        a user message with metadata.type === 'event_notification' but
@@ -5762,6 +5774,7 @@
                           {messageText}
                           asDivider={true}
                           compact={isCompactMode}
+                          suppressTopGap={batchedSeamBefore}
                           showAgentCards={!isDelegatedBackgroundTaskAgent}
                           {workspace}
                         />
@@ -5787,8 +5800,9 @@
                         data-send-app-message-id={message.appMessageId}
                         data-message-index={globalIndex}
                         class="message-nav-target relative z-20"
-                        class:mb-5={isAutomatedMessage(message)}
-                        class:mb-7={!isAutomatedMessage(message)}
+                        class:mb-0={batchedDeliveryTurnSeam}
+                        class:mb-5={!batchedDeliveryTurnSeam && isAutomatedMessage(message)}
+                        class:mb-7={!batchedDeliveryTurnSeam && !isAutomatedMessage(message)}
                         class:invisible={pendingSendMessageIds.has(
                           String(message.appMessageId ?? ''),
                         )}
@@ -5820,6 +5834,7 @@
                                   hydratedInputModel}
                                 onScrollToPrevious={() => scrollToPreviousUserMessage(message.id)}
                                 backendSessionId={auggieSessionId}
+                                suppressAutomatedWakeTopSpacing={batchedSeamBefore}
                               />
                             </div>
                           {/snippet}

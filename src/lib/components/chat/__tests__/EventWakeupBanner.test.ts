@@ -46,6 +46,7 @@ function renderBanner(
   props: Partial<{
     embedded: boolean;
     compact: boolean;
+    suppressTopGap: boolean;
     messageText: string;
     showAgentCards: boolean;
     workspace: Workspace;
@@ -114,6 +115,22 @@ describe('EventWakeupBanner details disclosure', () => {
     expect(details.className).toContain('py-2');
     expect(details.className).not.toContain('border-l');
     expect(details.className).not.toContain('pl-5');
+  });
+
+  it('yields its external top gap to the batched-delivery seam when suppressed', () => {
+    renderBanner(
+      { type: 'event_notification', eventCount: 1, eventTypes: ['workspace:updated'] },
+      { suppressTopGap: true },
+    );
+
+    const card = screen.getByTestId('event-wakeup-card');
+    expect(card.classList.contains(EVENT_WAKEUP_IN_THREAD_SPACING_CLASS)).toBe(false);
+    expect(card.classList.contains('mt-0')).toBe(true);
+    // The preceding gap owns the seam, so the card no longer claims it.
+    expect(card.hasAttribute('data-external-spacing-owner')).toBe(false);
+    for (const token of SUBSCRIPTION_CARD_SURFACE_CLASS.split(' ')) {
+      expect(card.classList.contains(token)).toBe(true);
+    }
   });
 
   it('stays flat and spacing-neutral when embedded in an existing card', async () => {
