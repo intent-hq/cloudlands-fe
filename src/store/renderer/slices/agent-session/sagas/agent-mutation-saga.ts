@@ -17,6 +17,7 @@ import {
   type PendingAgentDeletion,
 } from '$features/agent/utils/pending-agent-deletions';
 import { appClient } from '$lib/client';
+import { withToastCountdown } from '$lib/components/ui/toast/toast-countdown';
 import { createLogger } from '$lib/utils/client-logger';
 import { m } from '$shared/paraglide/messages.js';
 import type { AgentSession } from '$shared/types';
@@ -84,13 +85,13 @@ async function showUndoToast(wsId: string, agentId: string, agentName?: string):
       agentName
         ? m.agent_mutation_deletedAgent_message({ name: agentName })
         : m.agent_mutation_deletedAgentGeneric_message(),
-      {
+      withToastCountdown({
         duration: UNDO_DURATION_MS,
         action: {
           label: m.agent_mutation_undo_label(),
           onClick: () => store.dispatch(undoAgentDeletionRequested(wsId, agentId)),
         },
-      },
+      }),
     );
   } catch (error) {
     logger.error('Failed to show agent deletion undo toast', error);

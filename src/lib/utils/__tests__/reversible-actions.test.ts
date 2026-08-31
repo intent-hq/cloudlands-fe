@@ -2,14 +2,7 @@
  * Tests for reversible-actions
  */
 
-import {
-  describe,
-  it,
-  expect,
-  vi,
-  beforeEach,
-  afterEach,
-} from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 // Mock svelte-sonner
 vi.mock('svelte-sonner', () => ({
@@ -71,6 +64,28 @@ describe('reversible-actions', () => {
         'Test action',
         expect.objectContaining({
           action: expect.objectContaining({ label: 'Undo' }),
+        }),
+      );
+    });
+
+    it('opts the undo toast into the countdown bar with the toast duration', async () => {
+      const action = vi.fn();
+      const onUndo = vi.fn();
+
+      await reversibleActions.execute({
+        id: 'test-countdown-bar',
+        message: 'Test action',
+        action,
+        onUndo,
+        duration: 15,
+      });
+
+      expect(toast.warning).toHaveBeenCalledWith(
+        'Test action',
+        expect.objectContaining({
+          duration: 15000,
+          class: expect.stringContaining('toast-countdown'),
+          style: expect.stringContaining('--toast-countdown-duration: 15000ms'),
         }),
       );
     });

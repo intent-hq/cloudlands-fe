@@ -1,6 +1,7 @@
 import { toast } from 'svelte-sonner';
 import { Logger } from '$shared/logger';
 import { m } from '$shared/paraglide/messages.js';
+import { withToastCountdown } from '$lib/components/ui/toast/toast-countdown';
 
 const logger = new Logger('ReversibleActions');
 
@@ -40,28 +41,31 @@ class ReversibleActionManager {
 
         const onUndo = config.onUndo;
         if (onUndo) {
-          const toastId = toast.warning(config.message, {
-            duration: duration * 1000,
-            action: {
-              label: m.ui_reversibleActions_undo_label(),
-              onClick: async () => {
-                try {
-                  undoExecuted = true;
-                  await onUndo();
-                  this.completedActions.delete(actionId);
-                  // Just dismiss the toast, don't show a new one
-                  toast.dismiss(toastId);
-                } catch (error) {
-                  logger.error(
-                    // i18n-ignore (developer log message)
-                    'Failed to undo action:',
-                    error instanceof Error ? error : new Error(String(error)),
-                  );
-                  toast.error(m.ui_reversibleActions_undoFailed_error());
-                }
+          const toastId = toast.warning(
+            config.message,
+            withToastCountdown({
+              duration: duration * 1000,
+              action: {
+                label: m.ui_reversibleActions_undo_label(),
+                onClick: async () => {
+                  try {
+                    undoExecuted = true;
+                    await onUndo();
+                    this.completedActions.delete(actionId);
+                    // Just dismiss the toast, don't show a new one
+                    toast.dismiss(toastId);
+                  } catch (error) {
+                    logger.error(
+                      // i18n-ignore (developer log message)
+                      'Failed to undo action:',
+                      error instanceof Error ? error : new Error(String(error)),
+                    );
+                    toast.error(m.ui_reversibleActions_undoFailed_error());
+                  }
+                },
               },
-            },
-          });
+            }),
+          );
         } else {
           toast.success(config.message);
         }

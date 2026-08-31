@@ -61,6 +61,7 @@ import {
   agentScopedProposalKey,
   proposalResolutionReconciled,
 } from '../../proposal-lifecycle/proposal-lifecycle-slice';
+import { TOAST_COUNTDOWN_CLASS } from '$lib/components/ui/toast/toast-countdown';
 import { AGENT_DELETION_TOMBSTONE_TTL_MS, agentMutationSaga } from './agent-mutation-saga';
 
 const WS = 'ws-mutation';
@@ -428,6 +429,16 @@ describe('agentMutationSaga', () => {
     await expect(deletion.promise).resolves.toEqual(session());
     expect(mocks.deleteAgent).toHaveBeenCalledExactlyOnceWith(A1, WS, { undoDelayMs: 15_000 });
     expect(dispatched).toContainEqual(removeWatchedAgent(WS, A1));
+    await vi.waitFor(() =>
+      expect(mocks.warning).toHaveBeenCalledExactlyOnceWith(
+        expect.any(String),
+        expect.objectContaining({
+          duration: 15_000,
+          class: expect.stringContaining(TOAST_COUNTDOWN_CLASS),
+          style: expect.stringContaining('--toast-countdown-duration: 15000ms'),
+        }),
+      ),
+    );
 
     const undo = undoAgentDeletionRequested(WS, A1);
     channel.put(undo);

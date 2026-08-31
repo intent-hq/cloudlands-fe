@@ -33,6 +33,7 @@
   import NoteVersionHistory from '$lib/components/workspace/NoteVersionHistory.svelte';
   import SpecWritingOnboarding from '$lib/components/workspace/SpecWritingOnboarding.svelte';
   import { Button } from '$lib/components/ui/button';
+  import { withToastCountdown } from '$lib/components/ui/toast/toast-countdown';
   import { Skeleton } from '$lib/components/ui/skeleton';
   import * as Menu from '$lib/components/ui/menu';
   import OpenComboButton from '$features/external-editors/components/OpenComboButton.svelte';
@@ -203,30 +204,33 @@
 
       // Show undo toast
       const { toast } = await import('svelte-sonner');
-      const toastId = toast.warning(m.layout_noteTab_deletedNote_toast({ title: noteTitle }), {
-        duration: 15000,
-        action: savedNote
-          ? {
-              label: m.ui_workspaceActions_undo_label(),
-              onClick: () => {
-                try {
-                  void createNote(savedNote.workspaceId, {
-                    title: savedNote.title,
-                    content: savedNote.content,
-                    contentType: savedNote.contentType,
-                    tags: savedNote.tags,
-                    parentId: savedNote.parentId,
-                    visibility: savedNote.visibility,
-                  });
-                  toast.dismiss(toastId);
-                } catch (err) {
-                  logger.error('Failed to restore note', err);
-                  toast.error(m.layout_noteTab_restoreFailed_error());
-                }
-              },
-            }
-          : undefined,
-      });
+      const toastId = toast.warning(
+        m.layout_noteTab_deletedNote_toast({ title: noteTitle }),
+        withToastCountdown({
+          duration: 15000,
+          action: savedNote
+            ? {
+                label: m.ui_workspaceActions_undo_label(),
+                onClick: () => {
+                  try {
+                    void createNote(savedNote.workspaceId, {
+                      title: savedNote.title,
+                      content: savedNote.content,
+                      contentType: savedNote.contentType,
+                      tags: savedNote.tags,
+                      parentId: savedNote.parentId,
+                      visibility: savedNote.visibility,
+                    });
+                    toast.dismiss(toastId);
+                  } catch (err) {
+                    logger.error('Failed to restore note', err);
+                    toast.error(m.layout_noteTab_restoreFailed_error());
+                  }
+                },
+              }
+            : undefined,
+        }),
+      );
     } catch (error) {
       logger.error('Failed to delete note', error);
       const { toast } = await import('svelte-sonner');

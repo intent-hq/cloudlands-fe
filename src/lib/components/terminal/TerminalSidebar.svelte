@@ -20,6 +20,7 @@
   import { ListContainer, ListItem, ListSection } from '$lib/components/ui/list';
   import { Skeleton } from '$lib/components/ui/skeleton';
   import { toast } from '$lib/components/ui/toast';
+  import { withToastCountdown } from '$lib/components/ui/toast/toast-countdown';
   import { useBackgroundAgent } from '$lib/hooks/use-background-agent.svelte';
   import {
     selectExecutorIsRunning,
@@ -226,31 +227,34 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
       showAgentAssist = selectScriptEntries.select(appStore.state, workspaceId).length === 0;
 
       if (parts.length > 0) {
-        toast.success(m.terminal_sidebar_scriptsUpdated_success({ changes: parts.join(', ') }), {
-          action: {
-            label: m.terminal_sidebar_undo_label(),
-            onClick: async () => {
-              for (const s of selectScriptEntries.select(appStore.state, workspaceId)) {
-                await scriptsClient.remove(workspaceId, s.id);
-              }
-              for (const s of snapshot) {
-                await scriptsClient.create(workspaceId, {
-                  name: s.name,
-                  command: s.command,
-                  mode: s.mode,
-                  category: s.category,
-                  source: s.source || 'user',
-                  cwd: s.cwd,
-                  env: s.env,
-                  autoStart: s.autoStart,
-                });
-              }
-              appStore.dispatch(refreshScripts(workspaceId));
-              toast.success(m.terminal_sidebar_scriptsRestored_success());
+        toast.success(
+          m.terminal_sidebar_scriptsUpdated_success({ changes: parts.join(', ') }),
+          withToastCountdown({
+            action: {
+              label: m.terminal_sidebar_undo_label(),
+              onClick: async () => {
+                for (const s of selectScriptEntries.select(appStore.state, workspaceId)) {
+                  await scriptsClient.remove(workspaceId, s.id);
+                }
+                for (const s of snapshot) {
+                  await scriptsClient.create(workspaceId, {
+                    name: s.name,
+                    command: s.command,
+                    mode: s.mode,
+                    category: s.category,
+                    source: s.source || 'user',
+                    cwd: s.cwd,
+                    env: s.env,
+                    autoStart: s.autoStart,
+                  });
+                }
+                appStore.dispatch(refreshScripts(workspaceId));
+                toast.success(m.terminal_sidebar_scriptsRestored_success());
+              },
             },
-          },
-          duration: 10000,
-        });
+            duration: 10000,
+          }),
+        );
       } else {
         toast.info(m.terminal_sidebar_noScriptChanges_info());
       }

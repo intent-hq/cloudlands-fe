@@ -4,6 +4,7 @@
   import { onMount, tick } from 'svelte';
   import { writable } from 'svelte/store';
   import { toast } from 'svelte-sonner';
+  import { withToastCountdown } from '$lib/components/ui/toast/toast-countdown';
   import { createLogger } from '$lib/utils/client-logger';
   import type { Workspace } from '$shared/types';
   import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
@@ -835,7 +836,16 @@
         enhancementUndoValue = originalPrompt;
         enhancedPromptValue = result.enhanced;
         updateValue(result.enhanced);
-        toast.success(m.chat_richInput_promptEnhanced_toast());
+        toast.success(
+          m.chat_richInput_promptEnhanced_toast(),
+          withToastCountdown({
+            duration: 10000,
+            action: {
+              label: m.chat_richInput_undoEnhance_label(),
+              onClick: handleUndoEnhance,
+            },
+          }),
+        );
       }
     } catch (error) {
       // Ignore errors from requests invalidated by cancellation or a newer request.

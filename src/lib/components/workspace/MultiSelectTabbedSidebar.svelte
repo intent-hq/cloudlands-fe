@@ -28,6 +28,7 @@
   } from '$features/agent/components/agent-avatar/avatar-state';
   import { getAgentAvatarStateLabel } from '$features/agent/components/agent-avatar/avatar-state-label';
   import { Button } from '$lib/components/ui/button';
+  import { withToastCountdown } from '$lib/components/ui/toast/toast-countdown';
   import OpenComboButton from '$features/external-editors/components/OpenComboButton.svelte';
   import ResourceIconTile from '$lib/components/shared/ResourceIconTile.svelte';
 
@@ -602,18 +603,21 @@
     const result = await workspaceClient.archive($workspace.id);
     if (result.ok) {
       appStore.dispatch(loadWorkspacesRequested());
-      toast.warning(m.workspace_multiSelectSidebar_archivedSpace_toast({ title: workspaceTitle }), {
-        duration: 15000,
-        action: {
-          label: m.workspace_multiSelectSidebar_undo_label(),
-          onClick: async () => {
-            const undoResult = await workspaceClient.unarchive($workspace.id);
-            if (undoResult.ok) {
-              appStore.dispatch(loadWorkspacesRequested());
-            }
+      toast.warning(
+        m.workspace_multiSelectSidebar_archivedSpace_toast({ title: workspaceTitle }),
+        withToastCountdown({
+          duration: 15000,
+          action: {
+            label: m.workspace_multiSelectSidebar_undo_label(),
+            onClick: async () => {
+              const undoResult = await workspaceClient.unarchive($workspace.id);
+              if (undoResult.ok) {
+                appStore.dispatch(loadWorkspacesRequested());
+              }
+            },
           },
-        },
-      });
+        }),
+      );
       await navigateAfterWorkspaceRemoval($workspace.id);
     } else {
       toast.error(m.workspace_multiSelectSidebar_archiveFailed_error());
