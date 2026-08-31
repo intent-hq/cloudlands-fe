@@ -290,7 +290,7 @@
            copy-to-clipboard (docs link above stays the secondary action).
            Clicks must not bubble to the card (which opens docs). -->
       {#if needsLogin && provider.loginCommandHint}
-        <!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
+        <!-- svelte-ignore a11y_no_static_element_interactions, a11y_click_events_have_key_events -->
         <div
           data-testid="provider-card-login-hint"
           class="mt-2 text-xs"
