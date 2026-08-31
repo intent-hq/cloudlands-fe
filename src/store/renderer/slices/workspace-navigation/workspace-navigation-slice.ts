@@ -394,6 +394,8 @@ export const openWorkspaceDiff = createAction<
       sourcePanelId?: string;
       branchBaseRef?: string;
       branchBaseCommitSha?: string;
+      gitRootId?: string;
+      gitRootPath?: string;
     },
   ]
 >('workspaceNavigation/openWorkspaceDiff');
@@ -438,7 +440,9 @@ export function chatChangesDedupId(options?: {
   return 'aggregate';
 }
 
-export const openWorkspaceLocalChanges = createAction<[wsId: string]>(
+export const openWorkspaceLocalChanges = createAction<
+  [wsId: string, options?: { gitRootId?: string }]
+>(
   'workspaceNavigation/openWorkspaceLocalChanges',
 );
 

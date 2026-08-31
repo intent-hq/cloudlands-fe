@@ -18,6 +18,22 @@ const { createMockSelector, dispatchMock, mockReduxState, resetMockReduxState } 
     ftChanges: [] as unknown[],
     ftCommits: [] as unknown[],
     activityChanges: [] as unknown[],
+    gitRoots: [] as unknown[],
+    secondaryRootGit: {
+      status: {
+        branch: 'main',
+        ahead: 0,
+        behind: 0,
+        diverged: false,
+        files: [{ path: 'src/root.ts', status: 'M', staged: false }],
+        hasUncommittedChanges: true,
+        hasUntrackedFiles: false,
+      },
+      commits: [],
+      commitFiles: {},
+      loading: false,
+      error: null,
+    },
   };
 
   function resetMockReduxState() {
@@ -29,6 +45,7 @@ const { createMockSelector, dispatchMock, mockReduxState, resetMockReduxState } 
     mockReduxState.ftChanges = [];
     mockReduxState.ftCommits = [];
     mockReduxState.activityChanges = [];
+    mockReduxState.gitRoots = [];
   }
 
   function isReadable(
@@ -97,6 +114,23 @@ vi.mock('$store/renderer/slices/changes/changes-selectors', () => ({
   selectFileTrackingBoundarySha: createMockSelector(() => null),
 }));
 
+vi.mock('$store/renderer/slices/git-roots/git-roots-selectors', () => ({
+  selectGitRoots: createMockSelector(() => mockReduxState.gitRoots),
+}));
+
+vi.mock('$store/renderer/slices/git/git-selectors', () => ({
+  emptySecondaryRootState: {
+    status: null,
+    commits: [],
+    commitFiles: {},
+    loading: false,
+    error: null,
+  },
+  selectSecondaryRootGitRoots: createMockSelector(() => ({
+    'root-9': mockReduxState.secondaryRootGit,
+  })),
+}));
+
 vi.mock('$store/renderer/slices/ui-layout/ui-layout-selectors', () => ({
   selectLineWrapping: createMockSelector(() => false),
   selectFoldUnchanged: createMockSelector(() => false),
@@ -157,13 +191,34 @@ vi.mock('$store/renderer/slices/changes/changes-slice', () => ({
 
 vi.mock('$store/renderer/slices/git/git-slice', () => ({
   loadGitStatus: (...args: unknown[]) => ({ type: 'git/loadGitStatus', payload: args }),
+  loadSecondaryRootGit: (...args: unknown[]) => ({
+    type: 'git/loadSecondaryRoot',
+    payload: args,
+  }),
 }));
 
 vi.mock('$features/git/git.client', () => ({
   gitClient: {
+    getStatus: vi.fn(async () => ({
+      ok: true,
+      data: {
+        branch: 'main',
+        ahead: 0,
+        behind: 0,
+        diverged: false,
+        files: [{ path: 'src/root.ts', status: 'M', staged: false }],
+        hasUncommittedChanges: true,
+        hasUntrackedFiles: false,
+      },
+    })),
+    getHistory: vi.fn(async () => ({ ok: true, data: { items: [] } })),
     stageHunk: vi.fn(async () => ({ ok: true })),
     unstageHunk: vi.fn(async () => ({ ok: true })),
   },
+}));
+
+vi.mock('$lib/client', () => ({
+  appClient: { git: { commitDetails: vi.fn(async () => null) } },
 }));
 
 vi.mock('$features/git/git-cache', () => ({
@@ -329,6 +384,32 @@ describe('tab-type absolute path joins (intent-hq/monorepo#1567)', () => {
       expect(openButton.getAttribute('data-file-path')).toBe('C:/repo/src/x.ts');
     });
 
+    it('forwards secondary-root scope and keeps hunk mutations disabled', async () => {
+      render(MockTabTypeHeaderHarness, {
+        props: {
+          component: DiffTabType,
+          tab: {
+            id: 'tab-diff-root',
+            type: 'diff',
+            title: 'root.ts',
+            closable: true,
+            diffPath: 'src/root.ts',
+            data: {
+              gitRootId: 'root-9',
+              gitRootPath: '/repo/packages/sub',
+              change: makeTrackedChange('src/root.ts', 'unstaged'),
+            },
+          },
+          workspaceId: 'ws-1',
+        },
+      });
+      const viewer = await screen.findByTestId('tracked-change-diff-viewer');
+      expect(viewer.getAttribute('data-git-root-id')).toBe('root-9');
+      expect(viewer.getAttribute('data-git-root-path')).toBe('/repo/packages/sub');
+      expect(screen.queryByTestId('stage-hunk')).toBeNull();
+      expect(screen.queryByTestId('unstage-hunk')).toBeNull();
+    });
+
     it('still joins relative paths under the workspace root', async () => {
       renderDiff('src/x.ts');
       const openButton = await findOpenComboButton();
@@ -457,6 +538,61 @@ describe('tab-type absolute path joins (intent-hq/monorepo#1567)', () => {
 
       await fireEvent.click(stageButton);
       expect(stageFiles).toHaveBeenCalledWith('ws-1', ['src/a.ts']);
+    });
+
+    it('loads secondary-root paths and forwards the read-only root scope', async () => {
+      mockReduxState.gitRoots = [
+        { id: 'root-9', path: '/repo/packages/sub', registeredCommitSha: 'bound111' },
+      ];
+      render(LocalChangesTabType, {
+        props: {
+          tab: {
+            id: 'tab-local-root',
+            type: 'local-changes',
+            title: 'Local',
+            closable: true,
+            data: { gitRootId: 'root-9' },
+          },
+          workspaceId: 'ws-1',
+          isActive: true,
+        },
+      });
+
+      const panel = await screen.findByTestId('chat-changes-panel');
+      await vi.waitFor(async () =>
+        expect(await findChangePaths()).toEqual(['/repo/packages/sub/src/root.ts']),
+      );
+      expect(panel.getAttribute('data-git-root-id')).toBe('root-9');
+      expect(panel.getAttribute('data-git-root-path')).toBe('/repo/packages/sub');
+      expect(panel.getAttribute('data-show-staging-controls')).toBe('false');
+    });
+
+    it('renders secondary-root working-tree line counts without mutation controls', async () => {
+      mockReduxState.gitRoots = [{ id: 'root-9', path: '/repo/packages/sub' }];
+      mockReduxState.secondaryRootGit.status.files = [
+        { path: 'src/root.ts', status: 'M', staged: false, additions: 7, deletions: 3 } as never,
+      ];
+      render(LocalChangesTabType, {
+        props: {
+          tab: {
+            id: 'tab-local-root',
+            type: 'local-changes',
+            title: 'Local',
+            closable: true,
+            data: { gitRootId: 'root-9' },
+          },
+          workspaceId: 'ws-1',
+          isActive: true,
+        },
+      });
+      const row = await screen.findByTestId('chat-change');
+      expect(row.getAttribute('data-additions')).toBe('7');
+      expect(row.getAttribute('data-deletions')).toBe('3');
+      expect(
+        (await screen.findByTestId('chat-changes-panel')).getAttribute(
+          'data-show-staging-controls',
+        ),
+      ).toBe('false');
     });
   });
 

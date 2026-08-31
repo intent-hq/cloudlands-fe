@@ -375,6 +375,15 @@
     gitRootPath = undefined,
   }: Props = $props();
 
+  function toGitRootRelativePath(filePath: string, rootPath?: string): string {
+    if (!rootPath) return filePath;
+    const normalizedPath = filePath.replaceAll('\\', '/');
+    const normalizedRoot = rootPath.replaceAll('\\', '/').replace(/\/$/, '');
+    return normalizedPath.startsWith(`${normalizedRoot}/`)
+      ? normalizedPath.slice(normalizedRoot.length + 1)
+      : filePath;
+  }
+
   // Group-by-commit toggle state (default: combined view)
   // svelte-ignore state_referenced_locally -- initial-value prop seeds the local toggle; later changes are user-driven.
   let groupByCommit = $state(initialGroupByCommit);
@@ -668,6 +677,7 @@
     const currentBranchBaseRef = branchBaseRef ?? undefined;
     const currentBranchBaseCommitSha = branchBaseCommitSha ?? undefined;
     const currentGitRootId = gitRootId;
+    const currentGitRootPath = gitRootPath;
     const workspaceId = routeWorkspaceId;
 
     if (!workspaceId || currentChanges.length === 0) {
@@ -914,12 +924,16 @@
         plan.map((item) => {
           if (item.kind === 'fetch-committed') {
             // `currentGitRootId` scopes the reads to a registered secondary
-            // root (v6.15); absolute paths under that root are made relative
-            // daemon-side, same as primary-worktree paths.
+            // root (v6.15); normalize absolute UI paths against that root
+            // before sending the root-relative Git path.
             const showOpts = currentGitRootId ? { gitRootId: currentGitRootId } : undefined;
+            const rootRelativePath = toGitRootRelativePath(
+              item.change.filePath,
+              currentGitRootPath,
+            );
             return Promise.all([
-              dedupedShowFile(workspaceId, item.commitHash, item.change.filePath, showOpts),
-              dedupedShowFile(workspaceId, `${item.commitHash}^`, item.change.filePath, showOpts),
+              dedupedShowFile(workspaceId, item.commitHash, rootRelativePath, showOpts),
+              dedupedShowFile(workspaceId, `${item.commitHash}^`, rootRelativePath, showOpts),
             ])
               .then(([newRes, oldRes]) => ({ item, newRes, oldRes }))
               .catch((error) => {
@@ -951,6 +965,8 @@
             // git.showFile/file.read calls that can only fail (#1739).
             return batchedGitDiff(workspaceId, item.staged, item.change.filePath, {
               gitlink: item.change.gitlink,
+              gitRootId: currentGitRootId,
+              gitRootPath: currentGitRootPath,
             })
               .then((chunk) => ({ item, chunk }))
               .catch((error) => {
@@ -1313,7 +1329,10 @@
       const fetchStart = performance.now();
       const chunks = await Promise.all(
         reactiveChanges.map((change) =>
-          batchedGitDiff(workspaceId, false, change.filePath).catch((error) => {
+          batchedGitDiff(workspaceId, false, change.filePath, {
+            gitRootId,
+            gitRootPath,
+          }).catch((error) => {
             logger.warn('Failed to fetch git diff', { filePath: change.filePath, error });
             return undefined;
           }),
@@ -1634,6 +1653,8 @@
         sourcePanelId,
         branchBaseRef: branchBaseRef ?? undefined,
         branchBaseCommitSha: branchBaseCommitSha ?? undefined,
+        gitRootId,
+        gitRootPath,
       }),
     );
   }
@@ -1669,8 +1690,12 @@
       // `batchedGitDiff` so concurrent refreshes for different files on the same
       // tick coalesce into one IPC per staging group.
       const [stagedChunk, unstagedChunk] = await Promise.all([
-        batchedGitDiff(workspaceId, true, filePath).catch(() => undefined),
-        batchedGitDiff(workspaceId, false, filePath).catch(() => undefined),
+        batchedGitDiff(workspaceId, true, filePath, { gitRootId, gitRootPath }).catch(
+          () => undefined,
+        ),
+        batchedGitDiff(workspaceId, false, filePath, { gitRootId, gitRootPath }).catch(
+          () => undefined,
+        ),
       ]);
 
       const hasStagedChanges =
