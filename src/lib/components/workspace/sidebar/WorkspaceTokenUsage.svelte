@@ -4,9 +4,9 @@
    *
    * Compact token usage disclosure for the collapsed Agents launcher. Shows
    * only the processed total, with composition and ranked agent/model details
-   * on demand. Provider-reported cost and reasoning tokens remain display-only
-   * additions to the daemon-owned accounting. Renders nothing until token data
-   * is available (no layout shift).
+   * on demand. Reasoning tokens remain a display-only addition to the
+   * daemon-owned accounting. Renders nothing until token data is available (no
+   * layout shift).
    */
   import { onMount, tick } from 'svelte';
   import { writable } from 'svelte/store';
@@ -16,15 +16,9 @@
   import { Button } from '$lib/components/ui/button';
   import AnimatedNumber from '$lib/components/ui/AnimatedNumber.svelte';
   import { portal } from '$lib/actions/portal';
-  import {
-    formatCompactNumber,
-    formatCurrency,
-    formatInteger,
-    formatNumber,
-  } from '$lib/i18n/format';
+  import { formatCompactNumber, formatInteger, formatNumber } from '$lib/i18n/format';
   import { formatModelLabel } from '$features/token-usage/utils/format-model-label';
   import type {
-    TokenUsageCost,
     TokenUsageCrossFilterRow,
     TokenUsageTotals,
   } from '$features/token-usage/token-usage-types';
@@ -129,13 +123,6 @@
     return formatCompactNumber(value, { maximumFractionDigits: 0 });
   }
 
-  /** Formatted cost, or null when the daemon reported none for the entry. */
-  function costLabel(cost: TokenUsageCost | null | undefined): string | null {
-    if (!cost) return null;
-    const label = formatCurrency(cost.amount, cost.currency, { fractionDigits: 0 });
-    return label === '' ? null : label;
-  }
-
   const legacyModelRows = $derived(
     Object.entries($usage$.byModel)
       .map(([model, modelTotals]): BreakdownRow => ({
@@ -230,13 +217,7 @@
           agentMessages: summary.agentMessages,
         };
       })
-      .filter(
-        (row) =>
-          row.tokens > 0 ||
-          row.humanMessages > 0 ||
-          row.agentMessages > 0 ||
-          row.totals.cost !== undefined,
-      )
+      .filter((row) => row.tokens > 0 || row.humanMessages > 0 || row.agentMessages > 0)
       .sort((a, b) => b.tokens - a.tokens || a.label.localeCompare(b.label));
   }
 
@@ -282,7 +263,6 @@
     crossFilterAvailable ? crossFilterSummary.totals : (legacyPreviewRow?.totals ?? totals),
   );
   const previewProcessedTokens = $derived(tokenCount(previewTotals));
-  const previewCost = $derived(costLabel(previewTotals.cost));
   const previewHumanMessages = $derived(
     crossFilterAvailable ? crossFilterSummary.humanMessages : null,
   );
@@ -499,7 +479,6 @@
 
     agentRows.length;
     modelRows.length;
-    previewCost;
     updateOverlayPosition();
     let cancelled = false;
     let frame = 0;
@@ -845,16 +824,6 @@
             {/each}
           </dl>
         </section>
-
-        {#if previewCost !== null}
-          <div
-            class="flex justify-between gap-3 border-t border-border px-4 py-3 text-sm"
-            data-testid="token-usage-total-cost"
-          >
-            <span class="text-muted-foreground">{m.workspace_tokenUsage_totalCost_label()}</span>
-            <span class="text-right font-normal tabular-nums text-foreground">{previewCost}</span>
-          </div>
-        {/if}
       </section>
     {/if}
   </div>
@@ -985,9 +954,5 @@
 
   .breakdown-section + .breakdown-section {
     border-left: 1px solid hsl(var(--border));
-  }
-
-  .composition-row + .composition-row {
-    border-top: 1px solid hsl(var(--border));
   }
 </style>
