@@ -111,16 +111,16 @@ const SECONDARY_FIELD_WEIGHT = 0.5;
 
 /**
  * Order-independent multi-word scorer over an item's fields. The query is
- * split on whitespace into tokens; every token must fuzzy-match at least one
- * field (AND semantics) or the result is -Infinity. Each token scores the
- * label at full weight and description/searchText down-weighted, taking the
- * best; the item score is the sum of per-token scores.
+ * split on whitespace into deduplicated tokens; every token must fuzzy-match
+ * at least one field (AND semantics) or the result is -Infinity. Each token
+ * scores the label at full weight and description/searchText down-weighted,
+ * taking the best; the item score is the sum of per-token scores.
  */
 export function scoreItemFields(
   fields: { label: string; description?: string; searchText?: string },
   query: string,
 ): number {
-  const tokens = (query || '').trim().split(/\s+/).filter(Boolean);
+  const tokens = [...new Set((query || '').trim().split(/\s+/).filter(Boolean))];
   if (tokens.length === 0) return 0;
 
   let total = 0;

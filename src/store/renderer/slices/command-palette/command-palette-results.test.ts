@@ -166,6 +166,19 @@ describe('computeResults', () => {
     expect(fileItems.map((r: any) => r.id)).toEqual(['f1', 'f2', 'f3']);
   });
 
+  it('drops stale file entries that no longer match the query, keeping order', () => {
+    // Files load asynchronously, so the incoming list can belong to a previous
+    // query; non-matching entries must be dropped without reordering the rest.
+    const files = [
+      { id: 'f1', type: 'file', label: 'zzz.ts', icon, description: 'src/zzz.ts' },
+      { id: 'f2', type: 'file', label: 'report.ts', icon, description: 'src/report.ts' },
+      { id: 'f3', type: 'file', label: 'a-report.ts', icon, description: 'src/a-report.ts' },
+    ];
+    const results = computeResults(makeInput({ files, query: 'report' }));
+    const fileItems = results.filter((r: any) => r.type === 'file');
+    expect(fileItems.map((r: any) => r.id)).toEqual(['f2', 'f3']);
+  });
+
   it('shows recent items group when present and no filter', () => {
     const recentItems = [makeAgent('a1', 'Recent Agent')];
     const results = computeResults(makeInput({ recentItems }));

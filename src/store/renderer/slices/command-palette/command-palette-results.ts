@@ -4,6 +4,7 @@
  */
 
 import {
+  fuzzyScore,
   scoreItemFields,
   type PaletteFilter,
   type WorkspaceObject,
@@ -131,8 +132,15 @@ export function computeResults(input: ComputeResultsInput): any[] {
       (c) => c.id !== 'new-workspace' && (workspaceId || c.id !== 'new-file'),
     );
 
-    // Files keep their incoming order (already fuzzy+MRU ranked upstream) and
-    // messages are already FTS-ranked and capped by the transcript search.
+    // Files keep their incoming order (already fuzzy+MRU ranked upstream) but
+    // are re-checked against the current query: they load asynchronously, so
+    // the incoming list can be stale for a beat after the query changes. The
+    // guard drops entries that no longer match without reordering the rest
+    // (fresh results always pass — queryFiles filters on the same predicate).
+    // Messages are already FTS-ranked and capped by the transcript search.
+    const currentFiles = files.filter(
+      (f: any) => fuzzyScore(`${f.label} ${f.description || ''}`, q) !== -Infinity,
+    );
     const groups: Array<{
       filter: PaletteFilter | null;
       items: () => any[];
@@ -176,7 +184,7 @@ export function computeResults(input: ComputeResultsInput): any[] {
       },
       {
         filter: 'file',
-        items: () => files,
+        items: () => currentFiles,
         label: m.layout_commandPalette_files_group(),
         shortcutKey: '/',
       },
