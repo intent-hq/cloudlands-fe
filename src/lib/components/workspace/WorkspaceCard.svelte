@@ -823,7 +823,7 @@
             <span
               class={cn(
                 'inline-flex items-center gap-1',
-                stats.pr.hasMerged ? 'text-primary' : 'text-success',
+                stats.pr.hasMerged ? 'text-purple-500' : 'text-success',
               )}>{statusPrLabel}</span
             >
           </div>
