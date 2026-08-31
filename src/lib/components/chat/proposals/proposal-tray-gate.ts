@@ -18,8 +18,8 @@ type ProposalLifecycleMap = NonNullable<StoreState['proposalLifecycle']>;
  * Locally resolved under EITHER identity: the agent-scoped daemon-parity key
  * (wire-reconciled resolutions — scoped because id-less proposals fall back
  * to `preview.title`, which can collide across agents) or the global
- * `getProposalId` (transcript-card applies, whose fallback for id-less
- * proposals is a payload hash — a different key than the daemon's
+ * `getProposalId` (card applies via the lifecycle saga, whose fallback for
+ * id-less proposals is a payload hash — a different key than the daemon's
  * `preview.title`).
  */
 function isLocallyResolved(lifecycle: ProposalLifecycleMap, ...proposalIds: string[]): boolean {
@@ -40,7 +40,8 @@ function isLocallyResolved(lifecycle: ProposalLifecycleMap, ...proposalIds: stri
  * 'applied'/'dismissed', reconciled from the wire ack or from other clients'
  * resolutions via `agent:updated`) retire immediately without waiting for
  * the metadata convergence. Absent metadata (old daemon) derives to empty —
- * the tray degrades to today's transcript-only cards. Lives outside
+ * proposals surface nowhere (the tray is the sole rendering surface; the
+ * transcript renderers strip proposal blocks entirely). Lives outside
  * pending-proposals.ts so that module stays dependency-light (no stores).
  */
 export function deriveTrayPendingProposals(

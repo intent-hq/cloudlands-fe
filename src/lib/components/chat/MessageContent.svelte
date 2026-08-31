@@ -1,11 +1,5 @@
 <script lang="ts">
-  import type {
-    ContentBlock,
-    ToolUseBlock,
-    Proposal,
-    ProposalActionDetail,
-    MessageRole,
-  } from '$shared/types';
+  import type { ContentBlock, ToolUseBlock, Proposal, MessageRole } from '$shared/types';
   import {
     dedupeAgentVideoContentBlocks,
     isProposal,
@@ -24,7 +18,6 @@
   import { isQuestionResourceBlock } from '$shared/types/question-resource';
   import { dedupeResourceBlocks } from '$shared/types/resource-block-identity';
   import { getContentBlockText } from '$shared/utils/content-block-helpers';
-  import { resolveCard, type ResolvedCard } from './cards/card-registry';
   import type { DiagramPrimitive } from '$shared/types/notes-primitives';
   import ToolCall from './ToolCall.svelte';
   import ThinkingBlock from './ThinkingBlock.svelte';
@@ -74,18 +67,6 @@
   } from './response-group-blocks';
   import { chatSearchBlockPath } from './chat-search';
   import NavLink from './NavLink.svelte';
-  import ProposalCard from './proposals/ProposalCard.svelte';
-  import { applySpecialistProposal } from './proposals/specialist-proposal-actions';
-  import {
-    applySettingsProposal,
-    undoSettingsProposal,
-  } from './proposals/settings-proposal-actions';
-  import {
-    classifyPendingProposalRefs,
-    classifyProposalResolutions,
-    proposalTranscriptDisposition,
-  } from './proposals/pending-proposals';
-  import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-session-selectors';
 
   import { createLogger } from '$lib/utils/client-logger';
   import { fly } from 'svelte/transition';
@@ -95,9 +76,7 @@
     openWorkspaceFile,
     openWorkspaceNote,
   } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
-  import { applyWorkspaceProposal } from '$store/renderer/slices/workspace-operations/workspace-operations-slice';
   import { store as appStore } from '$store/renderer/store';
-  import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
 
   const logger = createLogger('MessageContent');
 
@@ -132,41 +111,6 @@
     mergeHydratedContent(content || [], messageId, $hydratedBlocks$),
   );
 
-  // Proposal transcript reconciliation (PROTOCOL §5.5): while a proposal's
-  // identity pends in `pendingProposals` session metadata its transcript card
-  // is stripped (the composer tray is the sole surface — question-wizard
-  // model); once in `proposalResolutions` the card renders resolved
-  // (applied/dismissed). Absent metadata (old daemon / no agentId) degrades
-  // to today's interactive transcript-only cards.
-  // svelte-ignore state_referenced_locally -- intentional initial snapshot; keyed component identity is fixed.
-  const agentSession$ = selectAgentSession(agentId);
-  const pendingProposalIds = $derived(
-    new Set(
-      classifyPendingProposalRefs($agentSession$?.metadata?.pendingProposals).map(
-        (ref) => ref.proposalId,
-      ),
-    ),
-  );
-  const proposalResolutions = $derived(
-    classifyProposalResolutions($agentSession$?.metadata?.proposalResolutions),
-  );
-
-  function proposalDisposition(
-    proposal: Proposal,
-  ): 'hidden' | 'interactive' | 'applied' | 'dismissed' {
-    return proposalTranscriptDisposition(proposal, pendingProposalIds, proposalResolutions);
-  }
-
-  function isPendingProposalBlock(block: ContentBlock): boolean {
-    const proposal = getProposalFromBlock(block);
-    return proposal !== null && proposalDisposition(proposal) === 'hidden';
-  }
-
-  function proposalResolvedOutcome(proposal: Proposal): 'applied' | 'dismissed' | null {
-    const disposition = proposalDisposition(proposal);
-    return disposition === 'applied' || disposition === 'dismissed' ? disposition : null;
-  }
-
   function hydrateImageBlock(blockId: string | undefined) {
     if (!agentId || !messageId || !blockId) return;
     appStore.dispatch(messageBlockHydrationRequested(agentId, messageId, blockId));
@@ -199,9 +143,10 @@
       if (isQuestionResourceBlock(block)) {
         return false;
       }
-      // Pending proposals render only in the composer tray (PROTOCOL §5.5
-      // `pendingProposals`): strip their transcript cards until resolved.
-      if (isPendingProposalBlock(block)) {
+      // Proposals are tray-only (PROTOCOL §5.5 `pendingProposals` — the
+      // composer tray is the sole rendering surface, question-wizard model):
+      // proposal blocks never render in the transcript, in any state.
+      if (getProposalFromBlock(block) !== null) {
         return false;
       }
       if (block.type === 'text') {
@@ -278,8 +223,11 @@
     return states;
   });
 
+  // Collected from the pre-strip content: proposal blocks never render in
+  // the transcript, but a bulk-op proposal's covered workspace cards stay
+  // suppressed so the prose does not duplicate the tray's list.
   const bulkProposalWorkspaceIds = $derived.by(() =>
-    collectBulkProposalWorkspaceIds(groupedBlocks),
+    collectBulkProposalWorkspaceIds(hydratedContent),
   );
 
   // Pre-compute parsed content for all text blocks - memoized via $derived
@@ -407,38 +355,6 @@
     return ids;
   }
 
-  function handleProposalApply(detail: ProposalActionDetail) {
-    const { proposal } = detail;
-    if (proposal.kind === 'workspace-create' || proposal.kind === 'bulk-op') {
-      appStore.dispatch(
-        applyWorkspaceProposal({
-          proposal,
-          editedFields: detail.editedFields,
-          selectedBulkItemIds: detail.selectedBulkItemIds,
-        }),
-      );
-      return;
-    }
-
-    if (applySpecialistProposal(detail)) return;
-    applySettingsProposal(detail);
-  }
-
-  function handleProposalUndo(proposalId: string) {
-    undoSettingsProposal(proposalId);
-  }
-
-  // Handlers handed to the MIME-keyed card registry when resolving a §7.1
-  // resource block to its card component (ProposalCard et al.).
-  // `proposalResolvedOutcome` reads the reactive metadata at props-build time
-  // (props are rebuilt on every resolveCard call), so resolved state stays
-  // live without invalidating the registry's per-block parse memo.
-  const cardHandlers = {
-    onProposalApply: handleProposalApply,
-    onProposalUndo: handleProposalUndo,
-    proposalResolvedOutcome,
-  };
-
   /**
    * Generate a stable unique key for a render content block.
    * Handles both regular ContentBlocks and ContentBlockGroups.
@@ -450,9 +366,6 @@
     }
     const contentBlock = block as ContentBlock;
     if (isNavLinkBlock(contentBlock)) return `nav-link-${index}-${contentBlock.target}`;
-    const proposal = getProposalFromBlock(contentBlock);
-    if (proposal)
-      return `proposal-${index}-${proposal.kind}-${proposal.applyToolCallId ?? proposal.preview.title}`;
     if (contentBlock.id) return contentBlock.id;
     if (contentBlock.type === 'text') {
       const text = contentBlock.text || '';
@@ -476,11 +389,7 @@
   function isVisibleTopLevelBlock(block: RenderContentBlock): boolean {
     if (block.type === 'content_group') return true;
     const contentBlock = block as ContentBlock;
-    if (
-      isNavLinkBlock(contentBlock) ||
-      resolveCard(contentBlock, cardHandlers) ||
-      getProposalFromBlock(contentBlock)
-    ) {
+    if (isNavLinkBlock(contentBlock)) {
       return true;
     }
     if (contentBlock.type === 'text') {
@@ -590,11 +499,6 @@
   {/if}
 {/snippet}
 
-{#snippet renderCard(card: ResolvedCard)}
-  {@const Card = card.component}
-  <Card {...card.props} />
-{/snippet}
-
 {#snippet renderContentBlock(
   block: ContentBlock,
   parsedKey: string,
@@ -607,28 +511,6 @@
     <div class="w-full" in:fly={{ y: 10, duration: 200 }}>
       <NavLink target={block.target} label={block.label} {workspaceId} />
     </div>
-  {:else if resolveCard(block, cardHandlers)}
-    <!-- §7.1 standalone resource block with a registered card (MIME-keyed
-         card registry): ProposalCard under the proposal MIME today. -->
-    {@const card = resolveCard(block, cardHandlers)}
-    {#if card}
-      <div class="w-full" in:fly={{ y: 10, duration: 200 }}>
-        {@render renderCard(card)}
-      </div>
-    {/if}
-  {:else if getProposalFromBlock(block)}
-    {@const proposal = getProposalFromBlock(block)}
-    {#if proposal}
-      <div class="w-full" in:fly={{ y: 10, duration: 200 }}>
-        <ProposalCard
-          {proposal}
-          neutralBorder={workspaceId === CHIEF_WORKSPACE_ID}
-          onApply={handleProposalApply}
-          onUndo={handleProposalUndo}
-          resolvedOutcome={proposalResolvedOutcome(proposal)}
-        />
-      </div>
-    {/if}
   {:else if block.type === 'text' && block.text}
     {@const parsedContent = parsedContentMap.get(parsedKey) || []}
     <div class="w-full" in:fly={{ y: 10, duration: 200 }}>
@@ -748,22 +630,6 @@
                 result={nestedResultContent}
                 {workspaceId}
               />
-            {:else if resolveCard(nestedBlock, cardHandlers)}
-              {@const nestedCard = resolveCard(nestedBlock, cardHandlers)}
-              {#if nestedCard}
-                {@render renderCard(nestedCard)}
-              {/if}
-            {:else if getProposalFromBlock(nestedBlock)}
-              {@const nestedProposal = getProposalFromBlock(nestedBlock)}
-              {#if nestedProposal}
-                <ProposalCard
-                  proposal={nestedProposal}
-                  neutralBorder={workspaceId === CHIEF_WORKSPACE_ID}
-                  onApply={handleProposalApply}
-                  onUndo={handleProposalUndo}
-                  resolvedOutcome={proposalResolvedOutcome(nestedProposal)}
-                />
-              {/if}
             {/if}
           {/each}
         {/if}

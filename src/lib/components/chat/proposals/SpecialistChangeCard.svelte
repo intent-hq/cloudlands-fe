@@ -22,13 +22,6 @@
     onUndo?: (proposalId: string) => void;
     /** Tray-hosted Dismiss: skip the local "Discarded" tombstone state. */
     suppressLocalDiscard?: boolean;
-    /**
-     * Daemon-persisted resolution outcome (PROTOCOL §5.5
-     * `proposalResolutions`): 'applied' renders the applied state with
-     * actions disabled, 'dismissed' the discarded tombstone. Null/absent
-     * keeps the card interactive.
-     */
-    resolvedOutcome?: 'applied' | 'dismissed' | null;
   }
 
   type DisplayRow = {
@@ -45,7 +38,6 @@
     onDiscard,
     onUndo,
     suppressLocalDiscard = false,
-    resolvedOutcome = null,
   }: Props = $props();
   let rootElement = $state<HTMLElement | undefined>();
   let statusElement = $state<HTMLElement | undefined>();
@@ -60,12 +52,8 @@
   const isApplying = $derived($lifecycleStatus === 'applying');
   const isUndoing = $derived($lifecycleStatus === 'undoing');
   const isFailed = $derived($lifecycleStatus === 'failed');
-  // Daemon-persisted resolution (resolvedOutcome) folds into the local
-  // lifecycle states so a resolved card renders identically after reload.
-  const isApplied = $derived(
-    $lifecycleStatus === 'applied' || Boolean($appliedState) || resolvedOutcome === 'applied',
-  );
-  const showDismissed = $derived(isDismissed || resolvedOutcome === 'dismissed');
+  const isApplied = $derived($lifecycleStatus === 'applied' || Boolean($appliedState));
+  const showDismissed = $derived(isDismissed);
   const actionDisabled = $derived(disabled || isApplying || isUndoing);
   const timeAgo = $derived($appliedState ? formatTimeAgo(now - $appliedState.appliedAt) : '');
   const statusMessage = $derived(getStatusMessage());

@@ -13,7 +13,31 @@
   localStorage per agent (proposal-tray-storage) and restore on
   remount/reload; the host clears drafts when a proposal resolves. Inline
   only — no pop-outs — and narrow-first (min-w-0, works down to ~300px).
+  The body is a vertical scroll region capped by the host-supplied
+  maxBodyHeight (derived from the chat panel's measured height), with the
+  header outside the scroll region, so a tall card in a short/narrow panel
+  (the Chief sidebar) never pushes its own actions or the composer out of
+  reach.
 -->
+<script module lang="ts">
+  /**
+   * Cap for the scrollable tray body, derived from the host chat panel's
+   * measured height: reserve room for the panel chrome around the tray
+   * (transcript sliver, tray header, composer input — ~240px) and never
+   * exceed 480px so tall panels keep the transcript dominant. In panels too
+   * short for the full reserve the chrome compresses instead (the transcript
+   * sliver flexes away, leaving ~140px of fixed chrome — tray header +
+   * composer), so the body target becomes panelHeight - 140 up to a 160px
+   * comfort ceiling, with a hard 96px floor so the card stays a usable
+   * scroll region. 0 (unmeasured host) falls back to the cap.
+   */
+  export function trayBodyMaxHeight(panelHeight: number): number {
+    if (panelHeight <= 0) return 480;
+    const shortPanelBody = Math.min(160, panelHeight - 140);
+    return Math.max(96, Math.min(Math.max(panelHeight - 240, shortPanelBody), 480));
+  }
+</script>
+
 <script lang="ts">
   import { onDestroy } from 'svelte';
   import Fa from 'svelte-fa';
@@ -48,6 +72,8 @@
      */
     onDismiss?: (entry: PendingProposalEntry) => Promise<void> | void;
     onUndo?: (proposalId: string) => void;
+    /** Pixel cap for the scrollable body (trayBodyMaxHeight of the host). */
+    maxBodyHeight?: number;
   }
 
   let {
@@ -58,6 +84,7 @@
     onApply,
     onDismiss,
     onUndo,
+    maxBodyHeight = 480,
   }: Props = $props();
 
   // The host remounts the tray per agent ({#key agentId}), so the storage
@@ -216,7 +243,11 @@
     </div>
 
     {#key current.proposalId}
-      <div class="min-w-0 px-3 pb-1 sm:px-4" data-proposal-tray-body>
+      <div
+        class="min-w-0 overflow-y-auto overscroll-contain px-3 pb-1 sm:px-4"
+        style:max-height="{maxBodyHeight}px"
+        data-proposal-tray-body
+      >
         <ProposalCard
           proposal={current.proposal}
           neutralBorder

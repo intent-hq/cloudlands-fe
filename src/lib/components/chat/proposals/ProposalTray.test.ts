@@ -97,7 +97,7 @@ vi.mock('$store/renderer/store', () => ({
   },
 }));
 
-import ProposalTray from './ProposalTray.svelte';
+import ProposalTray, { trayBodyMaxHeight } from './ProposalTray.svelte';
 import type { PendingProposalEntry } from './pending-proposals';
 import { saveTrayPosition } from './proposal-tray-storage';
 import { warmImport } from '../../../../test/warm-import';
@@ -272,5 +272,34 @@ describe('ProposalTray', () => {
     render(ProposalTray, { props: { agentId: AGENT, entries: ENTRIES } });
 
     expect(screen.getByText('1 of 2')).toBeTruthy();
+  });
+
+  it('caps the body as a scroll region with the header outside it', () => {
+    const { container } = render(ProposalTray, {
+      props: { agentId: AGENT, entries: ENTRIES, maxBodyHeight: 200 },
+    });
+
+    const body = container.querySelector('[data-proposal-tray-body]') as HTMLElement;
+    expect(body.style.maxHeight).toBe('200px');
+    expect(body.className).toContain('overflow-y-auto');
+    const header = container.querySelector('[data-proposal-tray-header]') as HTMLElement;
+    expect(body.contains(header)).toBe(false);
+  });
+});
+
+describe('trayBodyMaxHeight', () => {
+  it('reserves panel chrome, floors short panels, and caps tall ones', () => {
+    // Short Chief sidebar: compressed chrome (~140px) still fits the body.
+    expect(trayBodyMaxHeight(300)).toBe(160);
+    // Shorter panels shrink the body with the panel instead of overflowing.
+    expect(trayBodyMaxHeight(250)).toBe(110);
+    // Hard 96px floor keeps the body a usable scroll region.
+    expect(trayBodyMaxHeight(200)).toBe(96);
+    // Mid-size panel: panel height minus the reserved chrome.
+    expect(trayBodyMaxHeight(600)).toBe(360);
+    // Tall panel: capped so the transcript stays dominant.
+    expect(trayBodyMaxHeight(2000)).toBe(480);
+    // Unmeasured host falls back to the cap.
+    expect(trayBodyMaxHeight(0)).toBe(480);
   });
 });

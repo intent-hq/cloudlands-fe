@@ -265,34 +265,6 @@ describe('ProposalCard', () => {
     expect(onDiscard).not.toHaveBeenCalled();
   });
 
-  it('renders the applied state from a daemon-persisted resolvedOutcome with idle lifecycle', () => {
-    lifecycleSelectorState.status = 'idle';
-    render(ProposalCard, {
-      props: {
-        proposal: makeProposal([{ key: 'title', label: 'Title', value: 'Workspace title' }]),
-        resolvedOutcome: 'applied',
-      },
-    });
-
-    expect(screen.getByRole('status').textContent).toContain('Applied.');
-    expect(screen.queryByRole('button', { name: 'Apply' })).toBeNull();
-    expect(screen.queryByRole('button', { name: 'Discard' })).toBeNull();
-  });
-
-  it('renders the discarded tombstone from a daemon-persisted resolvedOutcome', () => {
-    lifecycleSelectorState.status = 'idle';
-    const { container } = render(ProposalCard, {
-      props: {
-        proposal: makeProposal([{ key: 'title', label: 'Title', value: 'Workspace title' }]),
-        resolvedOutcome: 'dismissed',
-      },
-    });
-
-    expect(container.textContent).toContain('Discarded:');
-    expect(screen.queryByRole('button', { name: 'Apply' })).toBeNull();
-    expect(screen.queryByRole('button', { name: 'Discard' })).toBeNull();
-  });
-
   it('uses a neutral outer border for completed cards when requested by the host', () => {
     lifecycleSelectorState.status = 'applied';
     const { container } = render(ProposalCard, {

@@ -177,25 +177,6 @@ describe('SettingsChangeCard', () => {
     expect(onApply).toHaveBeenCalledWith(expect.objectContaining({ proposal: makeProposal() }));
   });
 
-  it('renders the applied state without Apply/Discard when resolvedOutcome is applied', () => {
-    render(SettingsChangeCard, {
-      props: { proposal: makeProposal(), resolvedOutcome: 'applied' },
-    });
-
-    expect(screen.queryByRole('button', { name: 'Apply' })).toBeNull();
-    expect(screen.queryByRole('button', { name: 'Discard' })).toBeNull();
-    expect(screen.getByRole('button', { name: 'Undo' })).toBeTruthy();
-  });
-
-  it('renders the discarded tombstone when resolvedOutcome is dismissed', () => {
-    render(SettingsChangeCard, {
-      props: { proposal: makeProposal(), resolvedOutcome: 'dismissed' },
-    });
-
-    expect(screen.getByText(/Discarded/)).toBeTruthy();
-    expect(screen.queryByRole('button', { name: 'Apply' })).toBeNull();
-  });
-
   it('restores initialEditedFields and reports enum edits via onEditedFieldsChange', async () => {
     const proposal = makeProposal();
     proposal.payload = { changes: [{ path: 'theme.activePresetId', value: null }] };
