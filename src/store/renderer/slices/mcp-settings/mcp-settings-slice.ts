@@ -97,14 +97,33 @@ export const bulkSetServerStatus = createAction<[statusMap: Record<string, McpSe
   'mcpSettings/bulkSetServerStatus',
 );
 
-/** Toggle a workspace-specific server enabled state and persist it */
-export const toggleWorkspaceMcpServer = createAction<
-  [workspaceId: string, serverName: string, enabled: boolean]
->('mcpSettings/toggleWorkspaceMcpServer');
+/** Set one server's daemon-confirmed per-workspace disabled state */
+export const setWorkspaceMcpServerDisabled = createAction<
+  [workspaceId: string, serverName: string, disabled: boolean]
+>('mcpSettings/setWorkspaceMcpServerDisabled');
+
+/** Replace a workspace's disabled-server map from the daemon's scoped list */
+export const setWorkspaceDisabledMcpServers = createAction<
+  [workspaceId: string, disabled: Record<string, true>]
+>('mcpSettings/setWorkspaceDisabledMcpServers');
 
 // ============================================================================
 // Saga trigger actions (side-effect-only, no reducer handler)
 // ============================================================================
+
+/**
+ * Trigger: toggle a server for one workspace via the daemon's workspace-scoped
+ * `mcp.servers.toggle` (PROTOCOL §5.22 per-workspace disable). State is written
+ * by the saga via `setWorkspaceMcpServerDisabled` once the daemon confirms.
+ */
+export const toggleWorkspaceMcpServer = createAction<
+  [workspaceId: string, serverName: string, enabled: boolean]
+>('mcpSettings/toggleWorkspaceMcpServer');
+
+/** Trigger: hydrate a workspace's disabled-server map from the daemon's scoped list */
+export const hydrateWorkspaceMcpDisabled = createAction<[workspaceId: string]>(
+  'mcpSettings/hydrateWorkspaceMcpDisabled',
+);
 
 /** Trigger: load servers from main process */
 export const loadServers = createAction('mcpSettings/loadServers');
@@ -226,20 +245,25 @@ mcpSettingsReducer.with(setAdvancedSaveStatus, (state, { payload: [status, error
   advancedSaveError: error ?? null,
 }));
 mcpSettingsReducer.with(
-  toggleWorkspaceMcpServer,
-  (state, { payload: [workspaceId, serverName, enabled] }) => {
+  setWorkspaceMcpServerDisabled,
+  (state, { payload: [workspaceId, serverName, disabled] }) => {
     if (!workspaceId) return state;
     const wsState = getWorkspaceState(state, workspaceId);
     const currentlyDisabled = serverName in wsState.disabledServers;
+    if (disabled === currentlyDisabled) return state;
 
-    if (enabled && !currentlyDisabled) return state;
-    if (!enabled && currentlyDisabled) return state;
-
-    const disabledServers = enabled
-      ? omitKey(wsState.disabledServers, serverName)
-      : { ...wsState.disabledServers, [serverName]: true as const };
+    const disabledServers = disabled
+      ? { ...wsState.disabledServers, [serverName]: true as const }
+      : omitKey(wsState.disabledServers, serverName);
 
     return setWorkspaceState(state, workspaceId, { disabledServers });
+  },
+);
+mcpSettingsReducer.with(
+  setWorkspaceDisabledMcpServers,
+  (state, { payload: [workspaceId, disabled] }) => {
+    if (!workspaceId) return state;
+    return setWorkspaceState(state, workspaceId, { disabledServers: disabled });
   },
 );
 mcpSettingsReducer.with(workspaceUnmounted, (state, { payload: [workspaceId] }) => {

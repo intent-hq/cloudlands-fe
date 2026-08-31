@@ -9,6 +9,7 @@
   import type { McpServerConfig } from '$store/renderer/slices/mcp-settings/mcp-settings-types';
 
   import {
+    hydrateWorkspaceMcpDisabled,
     loadServers,
     toggleWorkspaceMcpServer,
   } from '$store/renderer/slices/mcp-settings/mcp-settings-slice';
@@ -72,12 +73,13 @@
   // Track favicon load errors to show fallback
   let faviconErrors = $state<Record<string, boolean>>({});
 
-  // Load servers on workspace change
+  // Load servers + the daemon's per-workspace disabled state on workspace change
   let lastInitWorkspaceId: string | undefined;
   $effect(() => {
     if (workspaceId && workspaceId !== lastInitWorkspaceId) {
       lastInitWorkspaceId = workspaceId;
       appStore.dispatch(loadServers());
+      appStore.dispatch(hydrateWorkspaceMcpDisabled(workspaceId));
     }
   });
 

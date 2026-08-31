@@ -1109,6 +1109,23 @@ export interface SettingsClient {
    * fails are omitted (live updates arrive via `mcp.servers:status-changed`).
    */
   getMcpServerStatuses(serverIds: string[]): Promise<McpServerRuntimeStatus[]>;
+  /**
+   * Workspace-scoped `mcp.servers.list` (§5.22 per-workspace disable). Returns
+   * the names of servers whose entry carries `workspaceDisabled: true`; `null`
+   * when the read fails (callers keep their current state).
+   */
+  getWorkspaceDisabledMcpServerNames(workspaceId: string): Promise<string[] | null>;
+  /**
+   * Workspace-scoped `mcp.servers.toggle` (§5.22 per-workspace disable): sets
+   * (`enabled: false`) or clears (`enabled: true`) the per-workspace disabled
+   * marker only — the global config is untouched. Success carries the daemon's
+   * resulting `workspaceDisabled`.
+   */
+  toggleWorkspaceMcpServer(
+    workspaceId: string,
+    serverId: string,
+    enabled: boolean,
+  ): Promise<MutationResult & { workspaceDisabled?: boolean }>;
   getWorkspaceSettings(workspaceId: string): Promise<SingleWorkspaceSettings | null>;
   setWorkspaceSettings(
     workspaceId: string,
