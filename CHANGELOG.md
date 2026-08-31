@@ -4,6 +4,13 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.122.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.121.0...v2.122.0) (2026-08-31)
+
+
+### 🚀 Features
+
+* refine project sidebar workspace actions ([#1966](https://github.com/intent-hq/cloudlands-fe/issues/1966)) ([5191ced](https://github.com/intent-hq/cloudlands-fe/commit/5191ced77ae1e1e76bdc84271f352bd4d0fece5b))
+
 ## [2.121.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.120.0...v2.121.0) (2026-08-31)
 
 
