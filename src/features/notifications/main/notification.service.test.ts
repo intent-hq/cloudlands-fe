@@ -652,6 +652,67 @@ describe('NotificationService daemon agent:idle subscription', () => {
     expect(requestMock).not.toHaveBeenCalledWith('agent.list', expect.anything());
     service.stop();
   });
+
+  it("drops a disposed backend's state on BACKEND_CLIENT_DISCONNECTED_EVENT so a later reopen resubscribes (no daemon-side unsubscribe)", async () => {
+    liveBackendIds.push('remote-1');
+    const remoteMock = requestMockFor('remote-1');
+    const service = new NotificationService();
+    service.start();
+    await flush();
+
+    const subscribeCalls = (mock: typeof requestMock) =>
+      mock.mock.calls.filter(([m]) => m === 'events.subscribe');
+    expect(subscribeCalls(remoteMock)).toHaveLength(1);
+
+    // The service registered a disposal listener on the app emitter.
+    const disposalCall = vi
+      .mocked(app.on)
+      .mock.calls.find(([evt]) => evt === 'backend-client-disconnected');
+    expect(disposalCall).toBeDefined();
+    const disposalListener = disposalCall![1] as () => void;
+
+    // disconnectBackendClient removes the client from the pool BEFORE
+    // emitting, and the payload is the client instance (not its id) — the
+    // listener infers the dropped backend by scanning tracked ids without a
+    // live pooled client.
+    liveBackendIds.splice(liveBackendIds.indexOf('remote-1'), 1);
+    disposalListener();
+    await flush();
+
+    // No daemon-side unsubscribe on the dead connection.
+    expect(remoteMock).not.toHaveBeenCalledWith('events.unsubscribe', expect.anything());
+    // Stale state is gone: the disposed backend's old subscription id no
+    // longer matches anything.
+    notificationListeners[0](
+      'remote-1',
+      buildEventsEventNotification({ subscriptionId: 'remote-1-sub-1' }),
+    );
+    await flush();
+    expect(mockNotificationInstances.length).toBe(0);
+
+    // The local backend's subscription is untouched.
+    notificationListeners[0](LOCAL_ID, buildEventsEventNotification());
+    await flush();
+    expect(mockNotificationInstances.length).toBe(1);
+
+    // Reopen: the backend is pooled again and its first `connected`
+    // transition subscribes it fresh — a stale entry with the dead
+    // subscription id would have swallowed this (the regression this path
+    // guards against).
+    liveBackendIds.push('remote-1');
+    statusListeners[0]('remote-1', 'connected');
+    await flush();
+    expect(subscribeCalls(remoteMock)).toHaveLength(2);
+
+    // Events on the NEW subscription id notify again.
+    notificationListeners[0](
+      'remote-1',
+      buildEventsEventNotification({ subscriptionId: 'remote-1-sub-2' }),
+    );
+    await flush();
+    expect(mockNotificationInstances.length).toBe(2);
+    service.stop();
+  });
 });
 
 describe('getNotificationService app-wide singleton', () => {
