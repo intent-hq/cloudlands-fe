@@ -41,6 +41,7 @@ const mockState: {
     provider: 'elevenlabs',
     keyConfigured: { elevenlabs: true, openai: false },
   },
+  panelLayout: { byWorkspaceId: {} },
 };
 
 const dispatched: { type: string; payload?: unknown }[] = [];
