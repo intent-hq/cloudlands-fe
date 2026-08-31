@@ -420,24 +420,19 @@
   portal={true}
 >
   {#snippet trigger({ props })}
-    <Tooltip side="bottom">
-      {#snippet content()}
-        <span>{triggerLabel}</span>
-      {/snippet}
-      <button
-        {...props}
-        class={cn(
-          'flex items-center justify-center h-6 hover:bg-muted/50 rounded transition-colors cursor-pointer',
-          currentRemoteName ? 'gap-1.5 px-1.5' : 'w-6',
-        )}
-        aria-label={triggerAriaLabel}
-      >
-        {#if currentRemoteName}
-          <span class="text-xs text-subtle truncate max-w-32">{currentRemoteName}</span>
-        {/if}
-        <div class={cn('w-2 h-2 rounded-full shrink-0', dotColorClass)}></div>
-      </button>
-    </Tooltip>
+    <button
+      {...props}
+      class={cn(
+        'flex items-center justify-center h-6 hover:bg-muted/50 rounded transition-colors cursor-pointer',
+        currentRemoteName ? 'gap-1.5 px-1.5' : 'w-6',
+      )}
+      aria-label={triggerAriaLabel}
+    >
+      {#if currentRemoteName}
+        <span class="text-xs text-subtle truncate max-w-32">{currentRemoteName}</span>
+      {/if}
+      <div class={cn('w-2 h-2 rounded-full shrink-0', dotColorClass)}></div>
+    </button>
   {/snippet}
 
   {#snippet content()}
