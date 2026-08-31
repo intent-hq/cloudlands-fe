@@ -1220,14 +1220,22 @@
     const parentPanel = containerRef.closest('.group\\/panel') as HTMLElement | null;
     if (!parentPanel) return;
 
+    const updateParentPanelHeight = (height: number) => {
+      if (height !== parentPanelHeight) {
+        parentPanelHeight = height;
+      }
+    };
+
     const resizeObserver = new ResizeObserver((entries) => {
       for (const entry of entries) {
-        parentPanelHeight = entry.contentRect.height;
+        if (entry.target === parentPanel) {
+          updateParentPanelHeight(entry.contentRect.height);
+        }
       }
     });
     resizeObserver.observe(parentPanel);
     // Get initial height
-    parentPanelHeight = parentPanel.clientHeight;
+    updateParentPanelHeight(parentPanel.clientHeight);
 
     return () => {
       resizeObserver.disconnect();
