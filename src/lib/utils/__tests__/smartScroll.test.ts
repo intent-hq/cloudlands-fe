@@ -8,6 +8,7 @@ import {
   isFollowingBottom,
   isNativeScrollAnchoringActive,
   restoreScrollAnchor,
+  type FollowBottomState,
 } from '../smartScroll';
 import { safeDisclosureTransition } from '../../components/chat/disclosure-motion';
 
@@ -485,6 +486,22 @@ describe('followBottom policy', () => {
     expect(layoutReads).toBeGreaterThan(0);
     expect(scrollTop).toBe(600);
     expect(animationFrames).toHaveLength(0);
+    action.destroy();
+  });
+
+  it('deduplicates unchanged geometry reports during repeated scroll events', () => {
+    const states: FollowBottomState[] = [];
+    const action = followBottom(container, {
+      follow: true,
+      onScrollStateChange: (state) => states.push(state),
+    });
+    const initialReports = states.length;
+
+    container.dispatchEvent(new Event('scroll'));
+    container.dispatchEvent(new Event('scroll'));
+    container.dispatchEvent(new Event('scroll'));
+
+    expect(states).toHaveLength(initialReports);
     action.destroy();
   });
 

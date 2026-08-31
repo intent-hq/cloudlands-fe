@@ -106,7 +106,7 @@
         const index = parseInt(indexStr, 10);
         return codeBlocks[index] !== undefined
           ? codeBlocks[index]
-          : `${PLACEHOLDER_PREFIX}${indexStr}${PLACEHOLDER_SUFFIX}`;
+          : `${PLACEHOLDER_PREFIX}${indexStr}${PLACEHOLDER_SUFFIX}`; // i18n-ignore (unresolved internal markdown placeholder, not user-facing)
       },
     );
 

@@ -77,6 +77,8 @@ export function followBottom(container: HTMLElement, options: FollowBottomOption
   let pointerMaximum = 0;
   let pointerDistanceFromBottom = 0;
   let pointerMovedTowardBottom = false;
+  let userStateFrame: number | null = null;
+  let lastReportedState: FollowBottomState | null = null;
 
   let mutationObserver: MutationObserver | null = null;
   let resizeObserver: ResizeObserver | null = null;
@@ -175,10 +177,29 @@ export function followBottom(container: HTMLElement, options: FollowBottomOption
 
   function reportState() {
     const distance = Math.max(0, maximumScrollTop() - container.scrollTop);
+    const isAtBottom = distance <= threshold;
+    if (
+      lastReportedState?.distanceFromBottom === distance &&
+      lastReportedState.isAtBottom === isAtBottom &&
+      lastReportedState.isFollowing === isFollowing
+    ) {
+      return;
+    }
+    lastReportedState = { distanceFromBottom: distance, isAtBottom, isFollowing };
     onScrollStateChange?.({
       distanceFromBottom: distance,
-      isAtBottom: distance <= threshold,
+      isAtBottom,
       isFollowing,
+    });
+  }
+
+  function scheduleUserStateCheck() {
+    if (userStateFrame !== null) return;
+    userStateFrame = requestAnimationFrame(() => {
+      userStateFrame = null;
+      if (destroyed || !enabled) return;
+      if (checkIfAtBottom()) follower.followAndScroll();
+      else reportState();
     });
   }
 
@@ -190,8 +211,8 @@ export function followBottom(container: HTMLElement, options: FollowBottomOption
     const changed = isFollowing !== value;
     if (changed) {
       isFollowing = value;
+      setNativeBottomAnchorActive(value);
     }
-    setNativeBottomAnchorActive(value);
     if (changed && notify) onFollowChange?.(value);
     if (!value) cancelSettle();
     reportState();
@@ -311,11 +332,7 @@ export function followBottom(container: HTMLElement, options: FollowBottomOption
     if (e.deltaY < 0) {
       setFollowing(false);
     } else if (e.deltaY > 0) {
-      requestAnimationFrame(() => {
-        if (!enabled) return;
-        if (checkIfAtBottom()) follower.followAndScroll();
-        else reportState();
-      });
+      scheduleUserStateCheck();
     }
   }
 
@@ -337,11 +354,7 @@ export function followBottom(container: HTMLElement, options: FollowBottomOption
 
   function handleTouchEnd() {
     // Check if at bottom after touch scroll ends
-    requestAnimationFrame(() => {
-      if (!enabled) return;
-      if (checkIfAtBottom()) follower.followAndScroll();
-      else reportState();
-    });
+    scheduleUserStateCheck();
   }
 
   // Handle keyboard events for scroll keys
@@ -350,11 +363,7 @@ export function followBottom(container: HTMLElement, options: FollowBottomOption
       setFollowing(false);
     } else if (['ArrowDown', 'PageDown', 'End'].includes(e.key)) {
       // Check if at bottom after keyboard scroll
-      requestAnimationFrame(() => {
-        if (!enabled) return;
-        if (checkIfAtBottom()) follower.followAndScroll();
-        else reportState();
-      });
+      scheduleUserStateCheck();
     }
   }
 
@@ -497,6 +506,8 @@ export function followBottom(container: HTMLElement, options: FollowBottomOption
     mutationElements.clear();
     pointerScrolling = false;
     cancelSettle();
+    if (userStateFrame !== null) cancelAnimationFrame(userStateFrame);
+    userStateFrame = null;
     if (reactivationFrame !== null) cancelAnimationFrame(reactivationFrame);
     reactivationFrame = null;
     if (layoutReportFrame !== null) cancelAnimationFrame(layoutReportFrame);
