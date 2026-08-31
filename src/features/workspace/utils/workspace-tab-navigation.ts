@@ -30,6 +30,7 @@ import { resolveEmptyWindowDestination } from './empty-window-destination';
 import type { KeyboardShortcut } from '$lib/utils/keyboardShortcuts';
 import { m } from '$shared/paraglide/messages.js';
 import { SHORTCUTS, getShortcutChord } from '$lib/utils/shortcuts';
+import type { ShortcutId } from '$lib/utils/shortcut-bindings';
 import { getPanelKeyboardShortcuts } from '$features/layout/panel-keyboard-shortcuts.svelte';
 
 export type WorkspaceTabDirection = 'next' | 'previous';
@@ -60,6 +61,7 @@ interface RegisterWorkspaceTabShortcutsOptions {
   getCurrentPath: () => string;
   navigate: (path: string) => unknown;
   openNewWorkspace: () => void;
+  resolveBinding?: (id: ShortcutId) => string;
 }
 
 function navigateToSelectedWorkspace(
@@ -243,12 +245,16 @@ export function registerWorkspaceTabShortcuts({
   getCurrentPath,
   navigate,
   openNewWorkspace,
+  resolveBinding,
 }: RegisterWorkspaceTabShortcutsOptions): void {
   const mod = isMac ? { meta: true } : { ctrl: true };
   const sidebarChord = getShortcutChord('TOGGLE_SIDEBAR', isMac);
   const withRoute = (action: (currentPath: string) => unknown) => () => action(getCurrentPath());
+  const effective = (id: ShortcutId) =>
+    resolveBinding ? { binding: () => resolveBinding(id) } : {};
 
   register({
+    ...effective('global.new-space'),
     ...mod,
     key: 'n',
     global: true,
@@ -256,12 +262,14 @@ export function registerWorkspaceTabShortcuts({
     action: openNewWorkspace,
   });
   register({
+    ...effective('panel.toggle-sidebar'),
     ...sidebarChord,
     global: true,
     description: SHORTCUTS.TOGGLE_SIDEBAR.label,
     action: () => store.dispatch(toggleSidebar()),
   });
   register({
+    ...effective('navigation.new-tab'),
     ...mod,
     key: 't',
     global: true,
@@ -269,6 +277,7 @@ export function registerWorkspaceTabShortcuts({
     action: withRoute((path) => openNewPanel(store, path)),
   });
   register({
+    ...effective('navigation.close-tab'),
     ...mod,
     key: 'w',
     global: true,
@@ -276,6 +285,7 @@ export function registerWorkspaceTabShortcuts({
     action: withRoute((path) => closeActivePanelTab(store, path)),
   });
   register({
+    ...effective('navigation.close-space-tab'),
     ...mod,
     key: 'w',
     shift: true,
@@ -284,6 +294,7 @@ export function registerWorkspaceTabShortcuts({
     action: withRoute((path) => closeActiveWorkspaceTab(store, path, navigate)),
   });
   register({
+    ...effective('navigation.reopen-tab'),
     ...mod,
     key: 't',
     shift: true,
@@ -297,6 +308,7 @@ export function registerWorkspaceTabShortcuts({
     ['previous', true],
   ] as const) {
     register({
+      ...effective(direction === 'next' ? 'global.next-space' : 'global.previous-space'),
       key: 'Tab',
       ctrl: true,
       shift,

@@ -168,10 +168,12 @@ export function matchesShortcut(
   const parsed = parseShortcut(shortcut);
   if (!parsed) return false;
   const eventKey = KEY_ALIASES[event.key.toLowerCase()] ?? event.key.toLowerCase();
-  const implicitShift =
-    parsed.key.length === 1 && parsed.key.toUpperCase() === parsed.key && /\W/.test(parsed.key);
+  const shiftedBaseKey = parsed.shift
+    ? ({ '{': '[', '}': ']', '|': '\\' } as Record<string, string>)[eventKey]
+    : undefined;
+  const implicitShift = parsed.key.length === 1 && '~!@#$%^&*()_+{}|:"<>?'.includes(parsed.key);
   return (
-    eventKey === parsed.key &&
+    (eventKey === parsed.key || shiftedBaseKey === parsed.key) &&
     event.metaKey === (parsed.mod && mac) &&
     event.ctrlKey === (parsed.ctrl || (parsed.mod && !mac)) &&
     event.altKey === parsed.alt &&

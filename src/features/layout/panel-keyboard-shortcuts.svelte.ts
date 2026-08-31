@@ -33,6 +33,7 @@ import {
 import type { PanelLayoutManager } from './panel-layout-adapter';
 import type { PanelCycleDirection } from './panel-cycle-navigation';
 import { store as appStore } from '$store/renderer/store';
+import { matchesShortcut, resolveShortcut, type ShortcutId } from '$lib/utils/shortcut-bindings';
 
 const logger = createLogger('PanelKeyboardShortcuts');
 
@@ -364,19 +365,33 @@ export function createPanelKeyboardShortcuts(
     // On Mac, "Mod" is Cmd (metaKey) only — Ctrl is reserved for Emacs bindings and other uses.
     // On Win/Linux, "Mod" is Ctrl.
     const isMod = isMac ? e.metaKey && !e.ctrlKey : e.ctrlKey && !e.metaKey;
-    const bracketDirection =
-      e.key === '[' || e.key === '{' ? 'prev' : e.key === ']' || e.key === '}' ? 'next' : null;
+    const matches = (id: ShortcutId) =>
+      matchesShortcut(
+        e,
+        resolveShortcut(id, appStore.state.userPreferences?.shortcutOverrides ?? {}),
+        isMac,
+      );
+    const focusColumnDirection = matches('panel.focus-previous-column')
+      ? 'prev'
+      : matches('panel.focus-next-column')
+        ? 'next'
+        : null;
+    const paneDirection = matches('panel.previous-pane')
+      ? 'prev'
+      : matches('panel.next-pane')
+        ? 'next'
+        : null;
 
     // Column focus is global, including while panel content or a terminal owns focus.
-    if (isMod && e.shiftKey && !e.altKey && bracketDirection) {
-      const handled = focusAdjacentColumn(getLayoutManager(), bracketDirection);
+    if (focusColumnDirection) {
+      const handled = focusAdjacentColumn(getLayoutManager(), focusColumnDirection);
       if (handled) e.preventDefault();
       return handled;
     }
 
     // Pane selection is global when that direction is available, including from editable content.
-    if (isMod && !e.shiftKey && !e.altKey && bracketDirection) {
-      const handled = selectAdjacentPane(getLayoutManager(), bracketDirection);
+    if (paneDirection) {
+      const handled = selectAdjacentPane(getLayoutManager(), paneDirection);
       if (handled) e.preventDefault();
       return handled;
     }
@@ -389,19 +404,18 @@ export function createPanelKeyboardShortcuts(
     const layoutManager = getLayoutManager();
 
     // PageUp/PageDown remain compatibility aliases for column focus and pane movement.
-    if (isMod && (e.key === 'PageUp' || e.key === 'PageDown')) {
-      const direction = e.key === 'PageDown' ? 'next' : 'prev';
-      const handled =
-        e.altKey && !e.shiftKey
-          ? moveActivePane(layoutManager, direction)
-          : e.shiftKey && !e.altKey
-            ? focusAdjacentColumn(layoutManager, direction)
-            : false;
+    const movePaneDirection = matches('panel.move-pane-previous-column')
+      ? 'prev'
+      : matches('panel.move-pane-next-column')
+        ? 'next'
+        : null;
+    if (movePaneDirection) {
+      const handled = moveActivePane(layoutManager, movePaneDirection);
       if (handled) e.preventDefault();
       return handled;
     }
 
-    if (isMod && e.key === '\\' && !e.shiftKey && !e.altKey) {
+    if (matches('panel.create-column-right')) {
       const handled = createColumnToRight(layoutManager);
       if (handled) e.preventDefault();
       return handled;
