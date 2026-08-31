@@ -225,15 +225,21 @@
     if (active) applyTabCacheUpdate(panel.tabs, panel.activeTabId);
   });
 
-  // Clear focus before a content-triggered tab switch hides its cached wrapper.
+  // Clear focus before a tab switch or panel deactivation flips `inert` on a
+  // cached wrapper. Flipping `inert` while a descendant holds focus makes the
+  // browser blur it synchronously inside the template effect, where widgets
+  // that write $state on blur (e.g. TipTap) throw state_unsafe_mutation.
   // Header controls are outside these wrappers and keep their focus normally.
   $effect.pre(() => {
     const activeTabId = panel.activeTabId;
+    const panelActive = active;
     if (typeof document === 'undefined' || !panelRef) return;
     const focusedElement = document.activeElement;
     if (!(focusedElement instanceof HTMLElement) || !panelRef.contains(focusedElement)) return;
     const focusedWrapper = focusedElement.closest<HTMLElement>('.tab-content-wrapper');
-    if (focusedWrapper && focusedWrapper.dataset.tabId !== activeTabId) focusedElement.blur();
+    if (focusedWrapper && (!panelActive || focusedWrapper.dataset.tabId !== activeTabId)) {
+      focusedElement.blur();
+    }
   });
 
   // Enforce the TTL even when the active tab does not change again. Without
