@@ -132,7 +132,10 @@ vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
 vi.mock('$store/renderers/terminal-overlay.store.svelte', () => ({
   terminalsStore: { terminals: [], activeTerminalId: null },
 }));
-vi.mock('$lib/components/ui/toast', () => ({ toast }));
+vi.mock('$lib/components/ui/toast', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('$lib/components/ui/toast')>()),
+  toast,
+}));
 vi.mock('$lib/utils/client-logger', () => ({
   createLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }),
 }));

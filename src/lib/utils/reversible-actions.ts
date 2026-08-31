@@ -1,6 +1,7 @@
 import { toast } from 'svelte-sonner';
 import { Logger } from '$shared/logger';
 import { m } from '$shared/paraglide/messages.js';
+import { withToastCountdown } from '$lib/components/ui/toast';
 
 const logger = new Logger('ReversibleActions');
 
@@ -40,28 +41,34 @@ class ReversibleActionManager {
 
         const onUndo = config.onUndo;
         if (onUndo) {
-          const toastId = toast.warning(config.message, {
-            duration: duration * 1000,
-            action: {
-              label: m.ui_reversibleActions_undo_label(),
-              onClick: async () => {
-                try {
-                  undoExecuted = true;
-                  await onUndo();
-                  this.completedActions.delete(actionId);
-                  // Just dismiss the toast, don't show a new one
-                  toast.dismiss(toastId);
-                } catch (error) {
-                  logger.error(
-                    // i18n-ignore (developer log message)
-                    'Failed to undo action:',
-                    error instanceof Error ? error : new Error(String(error)),
-                  );
-                  toast.error(m.ui_reversibleActions_undoFailed_error());
-                }
+          const toastId = toast.warning(
+            config.message,
+            withToastCountdown(
+              {
+                duration: duration * 1000,
+                action: {
+                  label: m.ui_reversibleActions_undo_label(),
+                  onClick: async () => {
+                    try {
+                      undoExecuted = true;
+                      await onUndo();
+                      this.completedActions.delete(actionId);
+                      // Just dismiss the toast, don't show a new one
+                      toast.dismiss(toastId);
+                    } catch (error) {
+                      logger.error(
+                        // i18n-ignore (developer log message)
+                        'Failed to undo action:',
+                        error instanceof Error ? error : new Error(String(error)),
+                      );
+                      toast.error(m.ui_reversibleActions_undoFailed_error());
+                    }
+                  },
+                },
               },
-            },
-          });
+              { pauseOnHover: false },
+            ),
+          );
         } else {
           toast.success(config.message);
         }
@@ -138,6 +145,15 @@ class ReversibleActionManager {
           resolve(false);
         };
 
+        // The bar animates over the full duration from toast creation; the
+        // per-second updates below keep this exact class/style (only sonner's
+        // own duration shrinks) so the animation never restarts and stays in
+        // sync with the setTimeout-driven deadline.
+        const countdownShape = withToastCountdown(
+          { duration: duration * 1000 },
+          { pauseOnHover: false },
+        );
+
         // Show initial toast with countdown
         const toastId = toast.warning(
           m.ui_reversibleActions_countdown_message({
@@ -145,7 +161,7 @@ class ReversibleActionManager {
             seconds: remainingTime,
           }),
           {
-            duration: duration * 1000,
+            ...countdownShape,
             action: {
               label: m.ui_reversibleActions_cancel_label(),
               onClick: cancelAction,
@@ -165,6 +181,7 @@ class ReversibleActionManager {
                 seconds: remainingTime,
               }),
               {
+                ...countdownShape,
                 id: toastId,
                 duration: remainingTime * 1000,
                 action: {
@@ -234,12 +251,18 @@ class ReversibleActionManager {
         };
 
         // eslint-disable-next-line @typescript-eslint/no-unused-vars
-        const toastId = toast.info(`${config.message}`, {
-          duration: duration * 1000,
-          action: { label: m.ui_reversibleActions_execute_label(), onClick: executeNow },
-          onDismiss: cancel,
-          onAutoClose: executeNow,
-        });
+        const toastId = toast.info(
+          `${config.message}`,
+          withToastCountdown(
+            {
+              duration: duration * 1000,
+              action: { label: m.ui_reversibleActions_execute_label(), onClick: executeNow },
+              onDismiss: cancel,
+              onAutoClose: executeNow,
+            },
+            { pauseOnHover: false },
+          ),
+        );
 
         const timeout = setTimeout(expire, duration * 1000);
         this.pendingActions.set(actionId, { timeout, action: config });

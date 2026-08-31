@@ -4,6 +4,7 @@
   import { onMount, tick } from 'svelte';
   import { writable } from 'svelte/store';
   import { toast } from 'svelte-sonner';
+  import { withToastCountdown } from '$lib/components/ui/toast';
   import { createLogger } from '$lib/utils/client-logger';
   import type { Workspace } from '$shared/types';
   import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
@@ -835,7 +836,29 @@
         enhancementUndoValue = originalPrompt;
         enhancedPromptValue = result.enhanced;
         updateValue(result.enhanced);
-        toast.success(m.chat_richInput_promptEnhanced_toast());
+        // Capture THIS enhancement's undo state in the closure: a lingering
+        // toast's Undo must not revert a newer enhancement (or a cancelled
+        // one) based on whatever the component state holds at click time.
+        const undoValueForToast = originalPrompt;
+        const enhancedValueForToast = result.enhanced;
+        toast.success(
+          m.chat_richInput_promptEnhanced_toast(),
+          withToastCountdown({
+            duration: 10000,
+            action: {
+              label: m.chat_richInput_undoEnhance_label(),
+              onClick: () => {
+                if (
+                  enhancementUndoValue !== undoValueForToast ||
+                  enhancedPromptValue !== enhancedValueForToast
+                ) {
+                  return;
+                }
+                handleUndoEnhance();
+              },
+            },
+          }),
+        );
       }
     } catch (error) {
       // Ignore errors from requests invalidated by cancellation or a newer request.

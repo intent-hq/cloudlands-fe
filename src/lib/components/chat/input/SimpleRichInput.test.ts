@@ -1627,6 +1627,50 @@ describe('SimpleRichInput prompt enhancement menu (§5.31)', () => {
       'make this prompt better',
     );
   });
+
+  it("ignores a stale toast's Undo after a newer enhancement replaced it", async () => {
+    mockReduxState.providerSettings.activeProviderId = 'auggie';
+    enhancePromptMock
+      .mockResolvedValueOnce({ enhanced: 'first enhanced prompt' })
+      .mockResolvedValueOnce({ enhanced: 'second enhanced prompt' });
+    render(SimpleRichInput, { props: baseProps() });
+
+    startEnhancement();
+    await waitFor(() => {
+      expect((screen.getByTestId('tiptap-editor') as HTMLTextAreaElement).value).toBe(
+        'first enhanced prompt',
+      );
+    });
+
+    const { toast } = await import('svelte-sonner');
+    const successMock = toast.success as ReturnType<typeof vi.fn>;
+    expect(successMock).toHaveBeenCalledTimes(1);
+    const firstToastUndo = successMock.mock.calls[0]![1].action.onClick as () => void;
+
+    startEnhancement();
+    await waitFor(() => {
+      expect((screen.getByTestId('tiptap-editor') as HTMLTextAreaElement).value).toBe(
+        'second enhanced prompt',
+      );
+    });
+    expect(successMock).toHaveBeenCalledTimes(2);
+
+    // The first toast may still linger on screen: its Undo must no-op, not
+    // revert the newer enhancement to the first toast's original prompt.
+    firstToastUndo();
+    expect((screen.getByTestId('tiptap-editor') as HTMLTextAreaElement).value).toBe(
+      'second enhanced prompt',
+    );
+
+    // The current toast's Undo still restores that enhancement's original.
+    const secondToastUndo = successMock.mock.calls[1]![1].action.onClick as () => void;
+    secondToastUndo();
+    await waitFor(() => {
+      expect((screen.getByTestId('tiptap-editor') as HTMLTextAreaElement).value).toBe(
+        'first enhanced prompt',
+      );
+    });
+  });
 });
 
 describe('SimpleRichInput input lock while enhancing', () => {

@@ -2,7 +2,12 @@ import { runSaga, stdChannel } from 'redux-saga';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // The update saga lazy-imports svelte-sonner for its outcome toasts.
-const toast = vi.hoisted(() => ({ success: vi.fn(), error: vi.fn(), warning: vi.fn() }));
+const toast = vi.hoisted(() => ({
+  success: vi.fn(),
+  error: vi.fn(),
+  warning: vi.fn(),
+  dismiss: vi.fn(),
+}));
 vi.mock('svelte-sonner', () => ({ toast }));
 
 import {
@@ -80,6 +85,7 @@ describe('connectionsSaga', () => {
     toast.success.mockClear();
     toast.error.mockClear();
     toast.warning.mockClear();
+    toast.dismiss.mockClear();
     invoke = vi.fn(async (channel: string, params?: unknown) => {
       if (channel === CONNECTION_CHANNELS.LIST)
         return {
@@ -760,12 +766,16 @@ describe('connectionsSaga', () => {
       expect(String(message)).toContain('v0.10.0');
       expect(String(message)).not.toContain('vv');
       expect(options.id).toBe(`connections-daemon-behind-${BEHIND.id}`);
+      // Sticky: never auto-dismisses — dismissal is programmatic.
+      expect(options.duration).toBe(Number.POSITIVE_INFINITY);
       expect(options.action.label).toEqual(expect.any(String));
 
-      // Same connected pool re-broadcast: no second toast.
+      // Same connected pool re-broadcast: no second toast, and the sticky
+      // toast still applies — no dismissal either.
       changed([LOCAL, vBehind], [BEHIND.id], 'v0.10.0');
       await settle();
       expect(toast.warning).toHaveBeenCalledTimes(1);
+      expect(toast.dismiss).not.toHaveBeenCalled();
 
       run.task.cancel();
       await run.task.toPromise();
@@ -781,6 +791,91 @@ describe('connectionsSaga', () => {
       await settle();
       changed([LOCAL, BEHIND], [BEHIND.id], '0.10.0');
       await vi.waitFor(() => expect(toast.warning).toHaveBeenCalledTimes(2));
+
+      run.task.cancel();
+      await run.task.toPromise();
+    });
+
+    it('dismisses the sticky toast when the tracked backend disconnects', async () => {
+      const run = start();
+      await settle();
+
+      changed([LOCAL, BEHIND], [BEHIND.id], '0.10.0');
+      await vi.waitFor(() => expect(toast.warning).toHaveBeenCalledTimes(1));
+      expect(toast.dismiss).not.toHaveBeenCalled();
+
+      changed([LOCAL, BEHIND], [], '0.10.0');
+      await vi.waitFor(() => expect(toast.dismiss).toHaveBeenCalledTimes(1));
+      expect(toast.dismiss).toHaveBeenCalledWith(`connections-daemon-behind-${BEHIND.id}`);
+
+      // The toast was already dismissed: a further disconnected re-broadcast
+      // must not dismiss again.
+      changed([LOCAL, BEHIND], [], '0.10.0');
+      await settle();
+      expect(toast.dismiss).toHaveBeenCalledTimes(1);
+
+      run.task.cancel();
+      await run.task.toPromise();
+    });
+
+    it('dismisses the sticky toast when the daemon comes back at/above the pin', async () => {
+      const run = start();
+      await settle();
+
+      changed([LOCAL, BEHIND], [BEHIND.id], '0.10.0');
+      await vi.waitFor(() => expect(toast.warning).toHaveBeenCalledTimes(1));
+
+      // The version refresh (e.g. after a successful update) re-evaluates the
+      // still-connected backend as no longer behind the pin.
+      changed([LOCAL, { ...BEHIND, daemonVersion: '0.10.0' }], [BEHIND.id], '0.10.0');
+      await vi.waitFor(() => expect(toast.dismiss).toHaveBeenCalledTimes(1));
+      expect(toast.dismiss).toHaveBeenCalledWith(`connections-daemon-behind-${BEHIND.id}`);
+      expect(toast.warning).toHaveBeenCalledTimes(1);
+
+      run.task.cancel();
+      await run.task.toPromise();
+    });
+
+    it('keeps the sticky toast through inconclusive re-broadcasts while connected', async () => {
+      const run = start();
+      await settle();
+
+      changed([LOCAL, BEHIND], [BEHIND.id], '0.10.0');
+      await vi.waitFor(() => expect(toast.warning).toHaveBeenCalledTimes(1));
+
+      // Still connected, but the broadcast lost its verdict inputs (e.g. a
+      // refresh raced the fire-and-forget captures): no daemonVersion, no
+      // pinnedVersion, no updateSupported. None of these may dismiss.
+      changed([LOCAL, { ...BEHIND, daemonVersion: undefined }], [BEHIND.id], '0.10.0');
+      await settle();
+      changed([LOCAL, BEHIND], [BEHIND.id], undefined);
+      await settle();
+      changed([LOCAL, { ...BEHIND, updateSupported: undefined }], [BEHIND.id], '0.10.0');
+      await settle();
+      expect(toast.dismiss).not.toHaveBeenCalled();
+      expect(toast.warning).toHaveBeenCalledTimes(1);
+
+      // A later conclusive verdict (back at the pin) still dismisses.
+      changed([LOCAL, { ...BEHIND, daemonVersion: '0.10.0' }], [BEHIND.id], '0.10.0');
+      await vi.waitFor(() => expect(toast.dismiss).toHaveBeenCalledTimes(1));
+      expect(toast.dismiss).toHaveBeenCalledWith(`connections-daemon-behind-${BEHIND.id}`);
+
+      run.task.cancel();
+      await run.task.toPromise();
+    });
+
+    it('never dismisses when no toast was raised', async () => {
+      const run = start();
+      await settle();
+
+      // Evaluated but suppressed (updateSupported: false): no toast raised,
+      // so its disconnect must not fire a spurious dismiss.
+      changed([LOCAL, { ...BEHIND, updateSupported: false }], [BEHIND.id], '0.10.0');
+      await settle();
+      changed([LOCAL, { ...BEHIND, updateSupported: false }], [], '0.10.0');
+      await settle();
+      expect(toast.warning).not.toHaveBeenCalled();
+      expect(toast.dismiss).not.toHaveBeenCalled();
 
       run.task.cancel();
       await run.task.toPromise();

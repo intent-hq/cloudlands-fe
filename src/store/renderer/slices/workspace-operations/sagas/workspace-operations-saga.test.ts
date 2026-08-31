@@ -62,6 +62,7 @@ import {
   requestUnarchiveWorkspace,
   workspaceOperationsReducer,
 } from '../workspace-operations-slice';
+import { TOAST_COUNTDOWN_CLASS } from '$lib/components/ui/toast';
 import {
   WORKSPACE_DELETION_TOMBSTONE_TTL_MS,
   WORKSPACE_OPERATION_UNDO_DURATION_MS,
@@ -346,6 +347,16 @@ describe('workspaceOperationsSaga', () => {
       undoDelayMs: WORKSPACE_OPERATION_UNDO_DURATION_MS,
     });
     expect(getItem(run.state().workspace.workspaces, 'ws-1')).toBeUndefined();
+    expect(mocks.toast.warning).toHaveBeenCalledExactlyOnceWith(
+      expect.any(String),
+      expect.objectContaining({
+        duration: WORKSPACE_OPERATION_UNDO_DURATION_MS,
+        class: expect.stringContaining(TOAST_COUNTDOWN_CLASS),
+        style: expect.stringContaining(
+          `--toast-countdown-duration: ${WORKSPACE_OPERATION_UNDO_DURATION_MS}ms`,
+        ),
+      }),
+    );
     latestUndo()?.();
     await settle();
     expect(mocks.cancelDelete).toHaveBeenCalledExactlyOnceWith('ws-1');
@@ -520,6 +531,13 @@ describe('workspaceOperationsSaga', () => {
     ]);
     run.send(requestArchiveWorkspace('ws-1'));
     await settle();
+    expect(mocks.toast.warning).toHaveBeenCalledExactlyOnceWith(
+      expect.any(String),
+      expect.objectContaining({
+        duration: WORKSPACE_OPERATION_UNDO_DURATION_MS,
+        class: expect.stringContaining(TOAST_COUNTDOWN_CLASS),
+      }),
+    );
     latestUndo()?.();
     await settle();
     // Undo focuses the restored workspace: tab reopen + navigation
