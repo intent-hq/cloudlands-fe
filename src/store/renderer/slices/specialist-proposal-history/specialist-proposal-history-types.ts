@@ -1,6 +1,6 @@
 import type { SpecialistFileScope } from '$shared/specialist-file-types';
 
-interface FileSpecialistWritePayload {
+export interface FileSpecialistWritePayload {
   id: string;
   name: string;
   description: string;
@@ -12,7 +12,7 @@ interface FileSpecialistWritePayload {
   workspacePath?: string;
 }
 
-type SpecialistReverseAction =
+export type SpecialistReverseAction =
   | { kind: 'delete'; id: string; scope: SpecialistFileScope; workspacePath?: string }
   | { kind: 'save'; specialist: FileSpecialistWritePayload };
 

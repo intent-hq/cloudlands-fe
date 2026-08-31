@@ -12,6 +12,11 @@ const lifecycleSelectorState = vi.hoisted(() => ({
   result: null as { workspaceId?: string } | null,
 }));
 
+const historySelectorState = vi.hoisted(() => ({
+  settingsApplied: null as null | { appliedAt: number; reverseChanges: unknown[] },
+  specialistApplied: null as null | { appliedAt: number; reverse: unknown },
+}));
+
 const navigationMocks = vi.hoisted(() => ({
   goto: vi.fn(),
 }));
@@ -59,8 +64,8 @@ vi.mock(
   '$store/renderer/slices/settings-proposal-history/settings-proposal-history-selectors',
   () => ({
     selectProposalAppliedState: vi.fn(() => ({
-      subscribe: (run: (value: null) => void) => {
-        run(null);
+      subscribe: (run: (value: typeof historySelectorState.settingsApplied) => void) => {
+        run(historySelectorState.settingsApplied);
         return () => {};
       },
     })),
@@ -70,8 +75,8 @@ vi.mock(
   '$store/renderer/slices/specialist-proposal-history/specialist-proposal-history-selectors',
   () => ({
     selectSpecialistProposalAppliedState: vi.fn(() => ({
-      subscribe: (run: (value: null) => void) => {
-        run(null);
+      subscribe: (run: (value: typeof historySelectorState.specialistApplied) => void) => {
+        run(historySelectorState.specialistApplied);
         return () => {};
       },
     })),
@@ -167,6 +172,8 @@ beforeEach(() => {
   lifecycleSelectorState.error = null;
   lifecycleSelectorState.errorCode = null;
   lifecycleSelectorState.result = null;
+  historySelectorState.settingsApplied = null;
+  historySelectorState.specialistApplied = null;
   navigationMocks.goto.mockReset();
   prBranchLookupState.reset();
 });
@@ -549,6 +556,38 @@ describe('ProposalCard', () => {
     expect(screen.getByText('Edit specialist: Review Buddy')).toBeTruthy();
     expect(container.textContent).toContain('Name: Reviewer → Review Buddy');
     expect(container.textContent).not.toContain('specialist edit');
+  });
+
+  // Undo reachability (intent-hq/intent#3965): an applied proposal routed
+  // through ProposalCard must surface the Undo affordance from its history
+  // entry and forward onUndo with the proposal id.
+  it('offers Undo on an applied specialist proposal and forwards onUndo', async () => {
+    historySelectorState.specialistApplied = { appliedAt: Date.now(), reverse: {} };
+    const proposal = { ...makeSpecialistProposal(), applyToolCallId: 'tool-specialist-edit' };
+    const onUndo = vi.fn();
+    render(ProposalCard, { props: { proposal, onUndo } });
+
+    expect(screen.queryByRole('button', { name: 'Apply' })).toBeNull();
+    await fireEvent.click(screen.getByRole('button', { name: 'Undo' }));
+
+    expect(onUndo).toHaveBeenCalledWith('tool-specialist-edit');
+  });
+
+  it('offers Undo on an applied settings proposal and forwards onUndo', async () => {
+    historySelectorState.settingsApplied = { appliedAt: Date.now(), reverseChanges: [] };
+    const proposal: Proposal = {
+      kind: 'settings-change',
+      applyToolCallId: 'tool-settings-change',
+      payload: { changes: [{ path: 'theme.activePresetId', value: 'dracula' }] },
+      preview: { title: 'Theme preset: Dracula' },
+    };
+    const onUndo = vi.fn();
+    render(ProposalCard, { props: { proposal, onUndo } });
+
+    expect(screen.queryByRole('button', { name: 'Apply' })).toBeNull();
+    await fireEvent.click(screen.getByRole('button', { name: 'Undo' }));
+
+    expect(onUndo).toHaveBeenCalledWith('tool-settings-change');
   });
 
   it('renders workspace initialPrompt as an always-visible textarea and applies typed edits', async () => {

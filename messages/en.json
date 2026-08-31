@@ -2432,6 +2432,8 @@
   "chat_settingsProposalActions_unknownError_fallback": "Unknown settings error",
   "chat_settingsProposalActions_applyFailed_label": "Failed to apply settings change",
   "chat_settingsProposalActions_undoFailed_label": "Failed to undo settings change",
+  "chat_proposalLifecycle_applyFailed_label": "Failed to apply changes",
+  "chat_proposalLifecycle_undoFailed_label": "Failed to undo changes",
   "chat_proposalCard_addTitle_placeholder": "Add title…",
   "chat_proposalCard_notSet_label": "(not set)",
   "chat_proposalCard_detectingPrBranch_label": "Detecting PR branch…",

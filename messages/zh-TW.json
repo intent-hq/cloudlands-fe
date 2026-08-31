@@ -2431,6 +2431,8 @@
   "chat_settingsProposalActions_unknownError_fallback": "未知設定錯誤",
   "chat_settingsProposalActions_applyFailed_label": "套用設定更改失敗",
   "chat_settingsProposalActions_undoFailed_label": "復原設定更改失敗",
+  "chat_proposalLifecycle_applyFailed_label": "套用更改失敗",
+  "chat_proposalLifecycle_undoFailed_label": "復原更改失敗",
   "chat_proposalCard_addTitle_placeholder": "新增標題…",
   "chat_proposalCard_notSet_label": "（未設定）",
   "chat_proposalCard_detectingPrBranch_label": "正在偵測 PR 分支…",

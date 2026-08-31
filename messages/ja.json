@@ -2431,6 +2431,8 @@
   "chat_settingsProposalActions_unknownError_fallback": "不明な設定エラー",
   "chat_settingsProposalActions_applyFailed_label": "設定の変更を適用できませんでした",
   "chat_settingsProposalActions_undoFailed_label": "設定の変更を元に戻せませんでした",
+  "chat_proposalLifecycle_applyFailed_label": "変更を適用できませんでした",
+  "chat_proposalLifecycle_undoFailed_label": "変更を元に戻せませんでした",
   "chat_proposalCard_addTitle_placeholder": "タイトルを追加…",
   "chat_proposalCard_notSet_label": "（未設定）",
   "chat_proposalCard_detectingPrBranch_label": "PR ブランチを検出中…",

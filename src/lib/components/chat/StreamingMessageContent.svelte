@@ -445,7 +445,6 @@
   let bulkProposalWorkspaceIds = $derived.by(() =>
     collectBulkProposalWorkspaceIds(hydratedContent),
   );
-
   // Parse text blocks to extract augment_code_snippet blocks, digests, and setup scripts
   // PERFORMANCE: Memoize results to avoid re-parsing on every render
   type ParsedTextResult = {
