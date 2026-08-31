@@ -143,7 +143,7 @@ describe('sidebarNavReducer workspace sidebar UI persistence', () => {
     expect(expanded.collapsedNoteIdsByWorkspaceId['ws-1']).toEqual([]);
   });
 
-  it('hydrates per-workspace selected tabs and collapsed notes without touching other workspaces', () => {
+  it('hydrates per-workspace selected tabs, note order, and collapsed notes without touching other workspaces', () => {
     const seeded = sidebarNavReducer(
       initialState,
       setMultiSelectSidebarSelectedTabs('ws-other', ['overview']),
@@ -152,6 +152,7 @@ describe('sidebarNavReducer workspace sidebar UI persistence', () => {
       seeded,
       hydrateWorkspaceSidebarUi('ws-1', {
         selectedTabIds: ['context', 'overview'],
+        noteOrder: ['note-2', 'note-1'],
         collapsedNoteIds: ['note-1'],
       }),
     );
@@ -160,12 +161,14 @@ describe('sidebarNavReducer workspace sidebar UI persistence', () => {
       'ws-other': ['overview'],
       'ws-1': ['context', 'overview'],
     });
+    expect(hydrated.noteOrderByWorkspaceId).toEqual({ 'ws-1': ['note-2', 'note-1'] });
     expect(hydrated.collapsedNoteIdsByWorkspaceId).toEqual({ 'ws-1': ['note-1'] });
 
     const tabsOnly = sidebarNavReducer(
       seeded,
       hydrateWorkspaceSidebarUi('ws-1', { selectedTabIds: ['context'] }),
     );
+    expect(tabsOnly.noteOrderByWorkspaceId).toBe(seeded.noteOrderByWorkspaceId);
     expect(tabsOnly.collapsedNoteIdsByWorkspaceId).toBe(seeded.collapsedNoteIdsByWorkspaceId);
 
     const notesOnly = sidebarNavReducer(
@@ -175,6 +178,7 @@ describe('sidebarNavReducer workspace sidebar UI persistence', () => {
     expect(notesOnly.multiSelectSelectedTabIdsByWorkspaceId).toBe(
       seeded.multiSelectSelectedTabIdsByWorkspaceId,
     );
+    expect(notesOnly.noteOrderByWorkspaceId).toBe(seeded.noteOrderByWorkspaceId);
   });
 });
 

@@ -157,7 +157,10 @@ export const hydrateSidebarNav = createAction(
 );
 
 export const hydrateWorkspaceSidebarUi = createAction<
-  [workspaceId: string, data: { selectedTabIds?: string[]; collapsedNoteIds?: string[] }]
+  [
+    workspaceId: string,
+    data: { selectedTabIds?: string[]; noteOrder?: string[]; collapsedNoteIds?: string[] },
+  ]
 >('sidebarNav/hydrateWorkspaceSidebarUi');
 
 function migrateLegacyPanelItem(item: SidebarNavItem | 'home' | null): SidebarNavItem | null {
@@ -331,6 +334,13 @@ sidebarNavReducer.with(hydrateWorkspaceSidebarUi, (state, { payload: [workspaceI
       : {
           ...state.multiSelectSelectedTabIdsByWorkspaceId,
           [workspaceId]: data.selectedTabIds,
+        },
+  noteOrderByWorkspaceId:
+    data.noteOrder === undefined
+      ? state.noteOrderByWorkspaceId
+      : {
+          ...state.noteOrderByWorkspaceId,
+          [workspaceId]: data.noteOrder,
         },
   collapsedNoteIdsByWorkspaceId:
     data.collapsedNoteIds === undefined

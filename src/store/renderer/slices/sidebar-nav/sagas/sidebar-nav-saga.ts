@@ -22,6 +22,7 @@ import {
   selectPinnedWorkspaceIds,
   selectShowArchivedWorkspaces,
   selectWorkspaceCollapsedNoteIds,
+  selectWorkspaceNoteOrder,
 } from '../sidebar-nav-selectors';
 import {
   CARD_PINNED_KEY,
@@ -46,6 +47,7 @@ import {
   setMultiSelectSidebarSelectedTabs,
   setPanelWidth,
   setShowArchivedWorkspaces,
+  setWorkspaceNoteOrder,
   SHOW_ARCHIVED_KEY,
   toggleCardPinned,
   togglePanel,
@@ -53,6 +55,7 @@ import {
   toggleWorkspaceCollapsedNote,
   VIEW_MODE_KEY,
   WORKSPACE_COLLAPSED_NOTES_PREFIX,
+  WORKSPACE_NOTE_ORDER_PREFIX,
 } from '../sidebar-nav-slice';
 import type { AllSpacesViewMode, SidebarNavItem } from '../sidebar-nav-types';
 
@@ -84,6 +87,10 @@ function selectedTabsKey(backendId: string, workspaceId: string): string {
     `${MULTISELECT_SIDEBAR_SELECTED_TABS_PREFIX}${workspaceId}`,
     backendId,
   );
+}
+
+function noteOrderKey(backendId: string, workspaceId: string): string {
+  return namespaceBackendKey(`${WORKSPACE_NOTE_ORDER_PREFIX}${workspaceId}`, backendId);
 }
 
 function collapsedNotesKey(backendId: string, workspaceId: string): string {
@@ -274,11 +281,16 @@ function* hydrateWorkspaceSidebarUiState(
   if (!workspaceId) return;
   try {
     const backendId = yield* selectActiveBackendId();
-    const data: { selectedTabIds?: string[]; collapsedNoteIds?: string[] } = {};
+    const data: { selectedTabIds?: string[]; noteOrder?: string[]; collapsedNoteIds?: string[] } =
+      {};
     const selectedTabIds = stringArray(
       yield* call(getLocalStorageJSON<unknown>, selectedTabsKey(backendId, workspaceId)),
     );
     if (selectedTabIds !== undefined) data.selectedTabIds = selectedTabIds;
+    const noteOrder = stringArray(
+      yield* call(getLocalStorageJSON<unknown>, noteOrderKey(backendId, workspaceId)),
+    );
+    if (noteOrder !== undefined) data.noteOrder = noteOrder;
     const collapsedNoteIds = stringArray(
       yield* call(getLocalStorageJSON<unknown>, collapsedNotesKey(backendId, workspaceId)),
     );
@@ -298,6 +310,21 @@ function* persistWorkspaceSelectedTabs(
       setLocalStorageJSON,
       selectedTabsKey(yield* selectActiveBackendId(), workspaceId),
       yield* selectMultiSelectSidebarSelectedTabIds.effect(workspaceId),
+    );
+  } catch {
+    // Storage failures are non-fatal and must not terminate the watcher.
+  }
+}
+
+function* persistWorkspaceNoteOrder(
+  action: ReturnType<typeof setWorkspaceNoteOrder>,
+): SagaGenerator<void> {
+  const [workspaceId] = action.payload;
+  try {
+    yield* call(
+      setLocalStorageJSON,
+      noteOrderKey(yield* selectActiveBackendId(), workspaceId),
+      yield* selectWorkspaceNoteOrder.effect(workspaceId),
     );
   } catch {
     // Storage failures are non-fatal and must not terminate the watcher.
@@ -370,5 +397,6 @@ export function* sidebarNavSaga(): SagaGenerator<void> {
   yield* takeEvery(setChiefActiveAgentId, persistChiefActiveAgentId);
   yield* takeEvery(workspaceMounted, hydrateWorkspaceSidebarUiState);
   yield* takeEvery(setMultiSelectSidebarSelectedTabs, persistWorkspaceSelectedTabs);
+  yield* takeEvery(setWorkspaceNoteOrder, persistWorkspaceNoteOrder);
   yield* takeEvery(toggleWorkspaceCollapsedNote, persistWorkspaceCollapsedNotes);
 }

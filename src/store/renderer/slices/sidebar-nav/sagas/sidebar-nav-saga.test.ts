@@ -29,10 +29,12 @@ import {
   setAllSpacesViewMode,
   setMultiSelectSidebarSelectedTabs,
   setPanelWidth,
+  setWorkspaceNoteOrder,
   SHOW_ARCHIVED_KEY,
   toggleWorkspaceCollapsedNote,
   VIEW_MODE_KEY,
   WORKSPACE_COLLAPSED_NOTES_PREFIX,
+  WORKSPACE_NOTE_ORDER_PREFIX,
 } from '../sidebar-nav-slice';
 import { initialState } from '../sidebar-nav-slice';
 import { LOCAL_CONNECTION_ID } from '$shared/types/connections';
@@ -219,12 +221,14 @@ describe('sidebarNavSaga', () => {
 
   describe('per-workspace sidebar UI persistence', () => {
     const SELECTED_TABS_KEY = `${MULTISELECT_SIDEBAR_SELECTED_TABS_PREFIX}ws-1`;
+    const NOTE_ORDER_KEY = `${WORKSPACE_NOTE_ORDER_PREFIX}ws-1`;
     const COLLAPSED_NOTES_KEY = `${WORKSPACE_COLLAPSED_NOTES_PREFIX}ws-1`;
 
-    it('hydrates stored selected tabs and collapsed notes on workspaceMounted', async () => {
+    it('hydrates stored selected tabs, note order, and collapsed notes on workspaceMounted', async () => {
       storage.getItem.mockReturnValue(null);
       storage.getJSON.mockImplementation((key: string) => {
         if (key === SELECTED_TABS_KEY) return ['context', 7, 'overview'];
+        if (key === NOTE_ORDER_KEY) return ['note-2', 'note-1'];
         if (key === COLLAPSED_NOTES_KEY) return ['note-1'];
         return undefined;
       });
@@ -240,6 +244,7 @@ describe('sidebarNavSaga', () => {
       expect(dispatch.mock.calls.map(([action]) => action)).toEqual([
         hydrateWorkspaceSidebarUi('ws-1', {
           selectedTabIds: ['context', 'overview'],
+          noteOrder: ['note-2', 'note-1'],
           collapsedNoteIds: ['note-1'],
         }),
       ]);
@@ -264,7 +269,7 @@ describe('sidebarNavSaga', () => {
       await task.toPromise();
     });
 
-    it('persists selected tabs and collapsed notes under workspace-scoped keys', async () => {
+    it('persists selected tabs, note order, and collapsed notes under workspace-scoped keys', async () => {
       storage.getItem.mockReturnValue(null);
       storage.getJSON.mockReturnValue(undefined);
       const state = {
@@ -272,6 +277,7 @@ describe('sidebarNavSaga', () => {
         sidebarNav: {
           ...current.sidebarNav,
           multiSelectSelectedTabIdsByWorkspaceId: { 'ws-1': ['context', 'overview'] },
+          noteOrderByWorkspaceId: { 'ws-1': ['note-2', 'note-1'] },
           collapsedNoteIdsByWorkspaceId: { 'ws-1': ['note-1'] },
         },
       };
@@ -280,11 +286,13 @@ describe('sidebarNavSaga', () => {
       await settle();
 
       channel.put(setMultiSelectSidebarSelectedTabs('ws-1', ['context', 'overview']));
+      channel.put(setWorkspaceNoteOrder('ws-1', ['note-2', 'note-1']));
       channel.put(toggleWorkspaceCollapsedNote('ws-1', 'note-1'));
       await settle();
 
       expect(storage.setJSON.mock.calls).toEqual([
         [SELECTED_TABS_KEY, ['context', 'overview']],
+        [NOTE_ORDER_KEY, ['note-2', 'note-1']],
         [COLLAPSED_NOTES_KEY, ['note-1']],
       ]);
       task.cancel();
