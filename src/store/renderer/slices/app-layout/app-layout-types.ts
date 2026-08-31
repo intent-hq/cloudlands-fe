@@ -31,9 +31,3 @@ export type OpenAgentTabDetail = {
   adaptiveFirstChat?: boolean;
 };
 
-export type OpenTerminalTabDetail = {
-  terminalId: string;
-  openInAdjacentPanel?: boolean;
-  sourcePanelId?: string;
-  panelLayoutId?: string;
-};

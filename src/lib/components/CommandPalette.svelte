@@ -46,8 +46,8 @@
   import {
     commandPaletteNewFileRequested,
     openAgentTabRequested,
-    openTerminalTabRequested,
   } from '$store/renderer/slices/app-layout/app-layout-slice';
+  import { openTab } from '$store/renderer/slices/panel-layout/panel-layout-slice';
   import {
     resetOnboarding,
     setOnboardingFullFlowRequested,
@@ -717,7 +717,14 @@
           break;
         case 'terminal':
           if (workspaceId) {
-            appStore.dispatch(openTerminalTabRequested(workspaceId, { terminalId: item.id }));
+            appStore.dispatch(
+              openTab(workspaceId, {
+                type: 'terminal',
+                title: m.layout_tabTypes_terminal_title(),
+                terminalId: item.id,
+                closable: true,
+              }),
+            );
           }
           break;
         case 'browser':

@@ -3,7 +3,6 @@ import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
 import type {
   AppLayoutState,
   OpenAgentTabDetail,
-  OpenTerminalTabDetail,
   SidebarLocateTarget,
 } from './app-layout-types';
 
@@ -18,10 +17,6 @@ export const createFileRequested = createAction<
 
 export const openAgentTabRequested = createAction<[wsId: string, detail: OpenAgentTabDetail]>(
   'appLayout/openAgentTabRequested',
-);
-
-export const openTerminalTabRequested = createAction<[wsId: string, detail: OpenTerminalTabDetail]>(
-  'appLayout/openTerminalTabRequested',
 );
 
 // `agentDriven` marks focuses originating from agent browser ops

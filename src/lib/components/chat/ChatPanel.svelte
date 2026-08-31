@@ -245,7 +245,7 @@
   import { safeSlide } from '$lib/utils/animations';
   import { navigateToTask } from '$lib/utils/workspace-navigation';
   import { seekConversationToMessage } from '$lib/utils/open-message';
-  import { openTerminalTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
+  import { openTab } from '$store/renderer/slices/panel-layout/panel-layout-slice';
   import ChatFileChangesSummary from './ChatFileChangesSummary.svelte';
   import { isAggregateFileChangesRedundant } from '$lib/utils/get-file-changes-from-messages';
   import AutoCommitStatus, { type CommitStatus } from './AutoCommitStatus.svelte';
@@ -824,7 +824,14 @@
   function handleFocusSetupTerminal() {
     const setupTerminal = selectWorkspaceSetupTerminal.select(appStore.state, workspace.id);
     if (setupTerminal) {
-      appStore.dispatch(openTerminalTabRequested(workspace.id, { terminalId: setupTerminal.id }));
+      appStore.dispatch(
+        openTab(workspace.id, {
+          type: 'terminal',
+          title: m.layout_tabTypes_terminal_title(),
+          terminalId: setupTerminal.id,
+          closable: true,
+        }),
+      );
     }
   }
 

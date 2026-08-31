@@ -125,10 +125,6 @@ export const setModelPickerGroupCollapsed = createAction<[groupKey: string, coll
   'model/setModelPickerGroupCollapsed',
 );
 
-export const requestHydrateModelFallbackInfo = createAction<[agentId: string]>(
-  'model/requestHydrateModelFallbackInfo',
-);
-
 export const setModelFallbackInfo = createAction<[agentId: string, info: ModelFallbackInfo]>(
   'model/setModelFallbackInfo',
 );
@@ -138,7 +134,6 @@ export const clearModelFallbackInfo = createAction<[agentId: string]>(
 );
 export const selectModel = createAction<[model: string]>('model/selectModel');
 export const reloadModelsForProvider = createAction('model/reloadModelsForProvider');
-export const retryLoadModels = createAction('model/retryLoadModels');
 
 // ============================================================================
 // Reducer

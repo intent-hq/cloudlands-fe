@@ -83,7 +83,6 @@ vi.mock('$store/renderer/slices/terminals/terminals-slice', () => ({
     type: 'terminals/clearScriptSelection',
     payload,
   }),
-  terminalCreated: (...payload: any[]) => ({ type: 'terminals/terminalCreated', payload }),
 }));
 
 vi.mock('$store/renderer/slices/scripts/scripts-selectors', () => {
@@ -103,7 +102,6 @@ vi.mock('$store/renderer/slices/scripts/scripts-selectors', () => {
 
 vi.mock('$store/renderer/slices/scripts/scripts-slice', () => ({
   refreshScripts: (...payload: any[]) => ({ type: 'scripts/refresh', payload }),
-  initializeScripts: (...payload: any[]) => ({ type: 'scripts/initialize', payload }),
   disposeScripts: (...payload: any[]) => ({ type: 'scripts/dispose', payload }),
   removeScript: (...payload: any[]) => ({ type: 'scripts/remove', payload }),
 }));

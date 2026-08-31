@@ -13,7 +13,7 @@
    * - Persisted height and custom names
    */
   import { sanitizeCommandForDisplay } from '$shared/utils/sanitize-credentials';
-  import { onDestroy, untrack } from 'svelte';
+  import { onDestroy } from 'svelte';
   import { writable } from 'svelte/store';
   import {
     localizeDaemonTerminalName,
@@ -36,7 +36,6 @@
     renameTerminal,
     selectScript,
     clearScriptSelection,
-    terminalCreated,
     type TerminalTab,
   } from '$store/renderer/slices/terminals/terminals-slice';
   import { appClient } from '$lib/client';
@@ -74,11 +73,7 @@
     selectWorkspaceScriptEntries,
     selectWorkspaceScriptsInitialized,
   } from '$store/renderer/slices/scripts/scripts-selectors';
-  import {
-    refreshScripts,
-    initializeScripts,
-    removeScript,
-  } from '$store/renderer/slices/scripts/scripts-slice';
+  import { refreshScripts, removeScript } from '$store/renderer/slices/scripts/scripts-slice';
   import { cn } from '$lib/utils';
   import { ListContainer, ListItem } from '$lib/components/ui/list';
   import { Tooltip, TooltipRich } from '$lib/components/ui/tooltip';
@@ -535,17 +530,6 @@
   // Effects
   // ============================================================================
 
-  // Initialize scripts store at overlay level. Scripts state is intentionally
-  // NOT disposed on unmount or workspace switch: it is workspace-keyed in the
-  // store and must survive overlay remounts, mirroring terminals
-  // (intent-hq/monorepo#1330). Lifecycle hydration reconciles it on the next
-  // workspaceMounted.
-  $effect(() => {
-    if (isRealWorkspace && workspaceId) {
-      untrack(() => appStore.dispatch(initializeScripts(workspaceId)));
-    }
-  });
-
   // Update CSS custom property for layout bottom padding
   $effect(() => {
     if (typeof document === 'undefined') return;
@@ -792,7 +776,6 @@
           ),
         );
       }
-      appStore.dispatch(terminalCreated(createWorkspaceId));
       if (stale) return;
       if (!$isOpen) appStore.dispatch(openTerminalOverlay(createWorkspaceId, result.id));
       requestAnimationFrame(() => overlayContainer?.focus());

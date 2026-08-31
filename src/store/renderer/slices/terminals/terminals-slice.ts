@@ -185,14 +185,6 @@ export const closeActiveTerminalRequested = createAction<[wsId: string]>(
   'terminals/closeActiveTerminalRequested',
 );
 
-/**
- * Signals a successful daemon `terminal.create` (PROTOCOL §5.13) from an
- * interactive create flow. Trigger-only action with no reducer entry; the
- * lifecycle read saga invalidates any in-flight `terminal.list` fetch and
- * starts a coalesced refetch so the store converges on the daemon list.
- */
-export const terminalCreated = createAction<[wsId: string]>('terminals/terminalCreated');
-
 // ============================================================================
 // Reducer helpers
 // ============================================================================
