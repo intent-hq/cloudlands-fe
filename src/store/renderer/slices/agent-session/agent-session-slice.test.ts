@@ -53,7 +53,11 @@ import {
   chatTranscriptSnapshotApplied,
   streamCompleted,
 } from '../chat-state/chat-state-slice';
-import { splitUnloadedRows } from '$lib/components/chat/chat-scrollback-composition';
+import {
+  isConversationStartLoaded,
+  shouldRequestOlderHistory,
+  splitUnloadedRows,
+} from '$lib/components/chat/chat-scrollback-composition';
 import { eventReceived } from '../workspace-events/workspace-events-slice';
 import { workspaceDeleted } from '../workspace-lifecycle/workspace-lifecycle-slice';
 import {
@@ -6249,5 +6253,156 @@ describe('history segment (scrollback)', () => {
       const storeState = { agentSessions: state } as unknown as StoreState;
       expect(selectHistorySegmentMeta.select(storeState, 'a1').holeRowsEstimate).toBe(50);
     });
+  });
+});
+
+// ===========================================================================
+// Tail cap-pruned latch (live growth past MAX_MESSAGES_PER_AGENT)
+// ===========================================================================
+
+describe('tailCapPruned latch (live tail growth past the client cap)', () => {
+  const BASE_MS = Date.parse('2024-01-01T00:00:00.000Z');
+  const ts = (i: number) => new Date(BASE_MS + i * 1000).toISOString();
+  const liveMsg = (i: number) => makeUniqueMessage(`live-${i}`, 'user', ts(i));
+
+  it('live appends past the cap latch tailCapPruned so shouldRequestOlderHistory fires despite stale non-truncated snapshot meta', () => {
+    // Session under the cap + non-truncated snapshot: chat-init captured
+    // totalMessages = tailCount, truncated = false — and that meta is never
+    // refreshed by live growth.
+    const initialCount = MAX_MESSAGES_PER_AGENT - 1;
+    const tail = Array.from({ length: initialCount }, (_, i) => liveMsg(i));
+    let state = agentSessionReducer(
+      initialState,
+      upsertSession(makeSession('a1', 'ws-1', { messages: tail })),
+    );
+    expect(state.byAgentId['a1'].tailCapPruned).toBeUndefined();
+
+    // Live appends cross the cap: rows are silently dropped from the head.
+    state = agentSessionReducer(state, addMessage('a1', liveMsg(initialCount)));
+    expect(state.byAgentId['a1'].tailCapPruned).toBeUndefined();
+    state = agentSessionReducer(state, addMessage('a1', liveMsg(initialCount + 1)));
+    state = agentSessionReducer(state, addMessage('a1', liveMsg(initialCount + 2)));
+
+    const messages = state.byAgentId['a1'].messages;
+    expect(messages).toHaveLength(MAX_MESSAGES_PER_AGENT);
+    expect(messages.map((m) => m.id)).not.toContain('live-0');
+    expect(state.byAgentId['a1'].tailCapPruned).toBe(true);
+
+    // Trigger inputs as ChatPanel builds them: the stale snapshot meta alone
+    // (truncated=false, totalMessages=initialCount+3 never updated — use the
+    // stale initialCount) would NOT fire; OR-ing the latch makes it fire.
+    const staleMeta = { truncated: false, totalMessages: initialCount };
+    const baseParams = {
+      scrollTop: 0,
+      threshold: 240,
+      canScroll: true,
+      fetching: false,
+      exhausted: false,
+      historyCount: 0,
+      tailCount: messages.length,
+      totalMessages: staleMeta.totalMessages,
+    };
+    expect(shouldRequestOlderHistory({ ...baseParams, tailTruncated: staleMeta.truncated })).toBe(
+      false,
+    );
+    expect(
+      shouldRequestOlderHistory({
+        ...baseParams,
+        tailTruncated: staleMeta.truncated || state.byAgentId['a1'].tailCapPruned === true,
+      }),
+    ).toBe(true);
+    // And the intro-card gate stops claiming the start is loaded.
+    expect(
+      isConversationStartLoaded({
+        exhausted: false,
+        historyCount: 0,
+        tailCount: messages.length,
+        tailTruncated: staleMeta.truncated || state.byAgentId['a1'].tailCapPruned === true,
+        totalMessages: staleMeta.totalMessages,
+      }),
+    ).toBe(false);
+  });
+
+  it('tail cap prune severs a contiguous history segment: gapToTail flips true and holeRowsEstimate grows', () => {
+    // Tail at exactly the cap; a serial-walk history segment contiguous with
+    // the tail (gapToTail false, untracked start ordinal).
+    const tail = Array.from({ length: MAX_MESSAGES_PER_AGENT }, (_, i) => liveMsg(i + 1000));
+    let state = agentSessionReducer(
+      initialState,
+      upsertSession(makeSession('a1', 'ws-1', { messages: tail })),
+    );
+    state = agentSessionReducer(
+      state,
+      prependHistoryMessages('a1', [
+        makeUniqueMessage('hist-0', 'user', ts(0)),
+        makeUniqueMessage('hist-1', 'user', ts(1)),
+      ]),
+    );
+    expect(state.historySegmentsByAgentId?.['a1']?.gapToTail).toBe(false);
+
+    // Two live appends past the cap drop two tail-resident rows into the
+    // history→tail hole.
+    state = agentSessionReducer(state, addMessage('a1', liveMsg(2000)));
+    state = agentSessionReducer(state, addMessage('a1', liveMsg(2001)));
+
+    const segment = state.historySegmentsByAgentId?.['a1'];
+    expect(segment?.gapToTail).toBe(true);
+    expect(segment?.holeRowsEstimate).toBe(2);
+    expect(state.byAgentId['a1'].tailCapPruned).toBe(true);
+    expect(state.byAgentId['a1'].messages.map((m) => m.id)).not.toContain('live-1000');
+  });
+
+  it('replaceMessages (streaming transcript apply) past the cap latches; a prepend-shaped replacement does not', () => {
+    const tail = Array.from({ length: MAX_MESSAGES_PER_AGENT }, (_, i) => liveMsg(i + 1000));
+    let state = agentSessionReducer(
+      initialState,
+      upsertSession(makeSession('a1', 'ws-1', { messages: tail })),
+    );
+
+    // Prepend-shaped replacement: older rows added below the resident window
+    // get sliced right back off — they were never tail-resident, no latch.
+    state = agentSessionReducer(
+      state,
+      replaceMessages('a1', [makeUniqueMessage('older-0', 'user', ts(0)), ...tail]),
+    );
+    expect(state.byAgentId['a1'].tailCapPruned).toBeUndefined();
+
+    // Live-growth replacement: same resident rows + one newer row prunes a
+    // tail-resident row — latch.
+    state = agentSessionReducer(state, replaceMessages('a1', [...tail, liveMsg(3000)]));
+    expect(state.byAgentId['a1'].tailCapPruned).toBe(true);
+    expect(state.byAgentId['a1'].messages.map((m) => m.id)).not.toContain('live-1000');
+  });
+
+  it('the latch survives session upserts and clears on chatReset and a resumed:false snapshot', () => {
+    const tail = Array.from({ length: MAX_MESSAGES_PER_AGENT }, (_, i) => liveMsg(i));
+    let state = agentSessionReducer(
+      initialState,
+      upsertSession(makeSession('a1', 'ws-1', { messages: tail })),
+    );
+    state = agentSessionReducer(state, addMessage('a1', liveMsg(5000)));
+    expect(state.byAgentId['a1'].tailCapPruned).toBe(true);
+
+    // Wire sessions never carry the FE-owned latch — an upsert preserves it.
+    state = agentSessionReducer(
+      state,
+      upsertSession(makeSession('a1', 'ws-1', { messages: state.byAgentId['a1'].messages })),
+    );
+    expect(state.byAgentId['a1'].tailCapPruned).toBe(true);
+
+    // chatReset clears it (full transcript reset).
+    const afterReset = agentSessionReducer(state, chatReset('a1'));
+    expect(afterReset.byAgentId['a1'].tailCapPruned).toBe(false);
+
+    // A §7.1 resumed:false snapshot clears it too.
+    const afterFresh = agentSessionReducer(
+      state,
+      chatTranscriptSnapshotApplied('a1', {
+        resumed: false,
+        truncated: false,
+        totalMessages: 1,
+      }),
+    );
+    expect(afterFresh.byAgentId['a1'].tailCapPruned).toBe(false);
   });
 });

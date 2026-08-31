@@ -344,6 +344,53 @@ function setSession(
   };
 }
 
+/**
+ * Count how many of the rows a tail cap prune dropped were resident in the
+ * PREVIOUS tail. Distinguishes genuine live growth past the cap (dropped
+ * rows were tail-resident and are now lost client-side) from a
+ * prepend-shaped replacement whose added older rows are sliced right back
+ * off (those were never in the tail and are still hydrated elsewhere).
+ */
+function countDroppedResidentTailRows(
+  previous: AgentMessage[],
+  ordered: AgentMessage[],
+  pruned: AgentMessage[],
+): number {
+  const droppedCount = ordered.length - pruned.length;
+  if (droppedCount === 0 || previous.length === 0) return 0;
+  const previousIds = new Set(previous.map((message) => message.id));
+  let count = 0;
+  for (let i = 0; i < droppedCount; i++) {
+    if (previousIds.has(ordered[i].id)) count++;
+  }
+  return count;
+}
+
+/**
+ * History-segment bookkeeping for rows the live tail's
+ * `MAX_MESSAGES_PER_AGENT` prune dropped: the dropped rows now sit between
+ * history's newest row and the tail's oldest retained row, so a contiguous
+ * segment is severed (the gap opens) and serial-walk segments count the
+ * dropped rows into the hole estimate so the virtual extent attributes them
+ * to the hole. The per-session `tailCapPruned` latch is set by the caller
+ * alongside the pruned messages array.
+ */
+function accountTailCapPrune(
+  state: AgentSessionState,
+  agentId: string,
+  dropped: number,
+): AgentSessionState {
+  const segment = getHistorySegment(state, agentId);
+  if (!segment || segment.messages.length === 0) return state;
+  return setHistorySegment(state, agentId, {
+    ...segment,
+    gapToTail: true,
+    ...(segment.startOrdinalEstimate === undefined
+      ? { holeRowsEstimate: (segment.holeRowsEstimate ?? 0) + dropped }
+      : {}),
+  });
+}
+
 function addMessageToSession(
   state: AgentSessionState,
   agentId: string,
@@ -354,11 +401,16 @@ function addMessageToSession(
   const currentList = session.messages;
   const insertedMessages = insertAgentMessageWithDedup(currentList, message);
   if (insertedMessages === currentList) return state;
-  const nextMessages = pruneMessages(orderMessagesForConversation(insertedMessages));
-  return setSession(state, agentId, {
+  const ordered = orderMessagesForConversation(insertedMessages);
+  const nextMessages = pruneMessages(ordered);
+  const droppedResident = countDroppedResidentTailRows(currentList, ordered, nextMessages);
+  let next = setSession(state, agentId, {
     ...session,
     messages: nextMessages,
+    ...(droppedResident > 0 ? { tailCapPruned: true } : {}),
   });
+  if (droppedResident > 0) next = accountTailCapPrune(next, agentId, droppedResident);
+  return next;
 }
 
 function replaceSessionMessageById(
@@ -741,6 +793,7 @@ type SessionComparisonSnapshot = Pick<
   turnInFlight: boolean | undefined;
   liveTurnOpen: boolean | undefined;
   liveTurnOpenedAt: string | undefined;
+  tailCapPruned: boolean | undefined;
   harnessVersion: string | undefined;
   harnessFeaturesKey: string | undefined;
 };
@@ -807,6 +860,7 @@ function toSessionComparisonSnapshot(session: StoredAgentSession): SessionCompar
     liveTurnOpen: session.liveTurnOpen === true ? true : undefined,
     liveTurnOpenedAt:
       typeof session.liveTurnOpenedAt === 'string' ? session.liveTurnOpenedAt : undefined,
+    tailCapPruned: session.tailCapPruned === true ? true : undefined,
     // Harness stamp (§5.5, additive): normally immutable, but a daemon
     // upgrade backfills harnessVersion on legacy rows and first activation
     // materializes harnessFeatures — those upserts must not be swallowed
@@ -853,6 +907,17 @@ function applySessionUpsert(
   const agentId = String(finalSession.id);
   const wsId = String(session.workspaceId);
   const existing = getSession(state, agentId);
+
+  // The latch is FE-owned: wire sessions never carry it, so an upsert must
+  // not clear it. An incoming snapshot itself overflowing the cap also
+  // latches (its overflow rows were just dropped client-side). No hole
+  // accounting here — a re-delivered snapshot must not double-count.
+  if (
+    existing?.tailCapPruned === true ||
+    (session.messages?.length ?? 0) > MAX_MESSAGES_PER_AGENT
+  ) {
+    finalSession.tailCapPruned = true;
+  }
 
   if (existing) {
     // When a turn is actively in flight (both runtime flags set, e.g. right
@@ -1278,12 +1343,21 @@ agentSessionReducer.with(updateMessage, (state, { payload: [agentId, messageId, 
 agentSessionReducer.with(replaceMessages, (state, { payload: [agentId, messages] }) => {
   const session = getSession(state, agentId);
   if (!session) return state;
-  const nextMessages = reconcileMessageIdentities(
-    session.messages,
-    normalizeSortPruneMessages(messages),
-  );
+  const ordered = normalizeSortHistoryMessages(messages);
+  const pruned = pruneMessages(ordered);
+  const nextMessages = reconcileMessageIdentities(session.messages, pruned);
   if (nextMessages === session.messages) return state;
-  return setSession(state, agentId, { ...session, messages: nextMessages });
+  // Cap prune dropped rows that were tail-resident: live growth past the cap
+  // (not a prepend-shaped replacement re-slicing rows never in the tail) —
+  // latch it and account the dropped rows into the history-segment gap.
+  const droppedResident = countDroppedResidentTailRows(session.messages, ordered, pruned);
+  let next = setSession(state, agentId, {
+    ...session,
+    messages: nextMessages,
+    ...(droppedResident > 0 ? { tailCapPruned: true } : {}),
+  });
+  if (droppedResident > 0) next = accountTailCapPrune(next, agentId, droppedResident);
+  return next;
 });
 agentSessionReducer.with(removeMessage, (state, { payload: [agentId, messageId] }) => {
   const session = getSession(state, agentId);
@@ -1300,10 +1374,20 @@ agentSessionReducer.with(updateSession, (state, { payload: [agentId, updates] })
   if (!session) return state;
   const { messages, ...otherUpdates } = updates;
   let merged: StoredAgentSession = { ...session, ...otherUpdates };
+  let droppedResident = 0;
   if (messages && Array.isArray(messages)) {
-    merged = { ...merged, messages: normalizeSortPruneMessages(messages) };
+    const ordered = normalizeSortHistoryMessages(messages);
+    const pruned = pruneMessages(ordered);
+    droppedResident = countDroppedResidentTailRows(session.messages, ordered, pruned);
+    merged = {
+      ...merged,
+      messages: pruned,
+      ...(droppedResident > 0 ? { tailCapPruned: true } : {}),
+    };
   }
-  return setSession(state, agentId, merged);
+  let next = setSession(state, agentId, merged);
+  if (droppedResident > 0) next = accountTailCapPrune(next, agentId, droppedResident);
+  return next;
 });
 agentSessionReducer.with(eventReceived, (state, { payload: [, event] }) => {
   const userMessage = userMessageFromWorkspaceEvent(event);
@@ -1468,6 +1552,9 @@ agentSessionReducer.with(chatReset, (state, { payload: [agentId] }) =>
       isStreaming: false,
       isProcessing: false,
       isResponding: false,
+      // Full transcript reset — the cap-pruned latch no longer describes the
+      // fresh transcript (only written when latched, keeping no-ops no-ops).
+      ...(getSession(state, agentId)?.tailCapPruned === true ? { tailCapPruned: false } : {}),
     }),
     agentId,
   ),
@@ -1671,5 +1758,12 @@ agentSessionReducer.with(clearHistorySegment, (state, { payload: [agentId] }) =>
 // saga's clearHistorySegment chain still runs and is idempotent here).
 agentSessionReducer.with(chatTranscriptSnapshotApplied, (state, { payload: [agentId, meta] }) => {
   if (meta.resumed !== false) return state;
-  return removeHistorySegment(state, agentId);
+  // Fresh (non-resumed) transcript: clear the FE-owned cap-pruned latch with
+  // the segment — both described the discarded transcript. Only touch the
+  // session when actually latched so an unlatched apply stays a state no-op.
+  const next =
+    getSession(state, agentId)?.tailCapPruned === true
+      ? updateSessionFields(state, agentId, { tailCapPruned: false })
+      : state;
+  return removeHistorySegment(next, agentId);
 });

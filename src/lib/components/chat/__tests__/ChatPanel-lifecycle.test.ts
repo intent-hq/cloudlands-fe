@@ -109,6 +109,7 @@ vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
     historyCount: 0,
     tailCount: 0,
   }),
+  selectAgentTailCapPruned: mocks.selector(false),
   selectAgentSessionStreamingContent: mocks.selector(''),
   selectAgentIsResponding: mocks.selector(false),
   selectAgentIsRunning: mocks.selector(false),

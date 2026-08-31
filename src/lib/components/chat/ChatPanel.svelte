@@ -70,6 +70,7 @@
     selectAgentMessages,
     selectAgentHistoryMessages,
     selectHistorySegmentMeta,
+    selectAgentTailCapPruned,
   } from '$store/renderer/slices/agent-session/agent-session-selectors';
   import { selectAgentQueueMessages } from '$store/renderer/slices/agent-queue/agent-queue-selectors';
   import { removeQueuedMessageRequested } from '$store/renderer/slices/agent-queue/agent-queue-slice';
@@ -414,6 +415,9 @@
   // Scrollback history segment (older rows hydrated on demand) + paging state.
   const agentHistoryMessages$ = selectAgentHistoryMessages(agentIdStore);
   const historySegmentMeta$ = selectHistorySegmentMeta(agentIdStore);
+  // FE-owned latch: the client cap dropped live tail rows, so older rows
+  // exist even when the (stale) chat-init snapshot meta says otherwise.
+  const agentTailCapPruned$ = selectAgentTailCapPruned(agentIdStore);
   const fetchingOlderHistory$ = selectFetchingOlderHistory(agentIdStore);
   const fetchingGapFill$ = selectFetchingGapFill(agentIdStore);
   const fetchingHistorySeek$ = selectFetchingHistorySeek(agentIdStore);
@@ -1917,7 +1921,7 @@
       exhausted: $historyExhausted$,
       historyCount: $agentHistoryMessages$.length,
       tailCount: $agentMessages$.length,
-      tailTruncated: $transcriptSnapshotMeta$?.truncated === true,
+      tailTruncated: $transcriptSnapshotMeta$?.truncated === true || $agentTailCapPruned$,
       totalMessages: $transcriptSnapshotMeta$?.totalMessages ?? 0,
     }),
   );
@@ -1940,7 +1944,7 @@
       exhausted: $historyExhausted$,
       historyCount: $agentHistoryMessages$.length,
       tailCount: $agentMessages$.length,
-      tailTruncated: $transcriptSnapshotMeta$?.truncated === true,
+      tailTruncated: $transcriptSnapshotMeta$?.truncated === true || $agentTailCapPruned$,
       totalMessages: $transcriptSnapshotMeta$?.totalMessages ?? 0,
       // Any viewport position inside the virtual spacer (reached by dragging
       // the scrollbar thumb up) drives the same older-history walk.
