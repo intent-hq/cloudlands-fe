@@ -691,7 +691,16 @@ test('centers the finished summary and gives completed avatars a muted semantic 
   }
 });
 
-test('screenshots the finished summary and completed participant treatment', async ({ mount }) => {
+test('screenshots the finished summary and completed participant treatment', async ({
+  mount,
+  page,
+}) => {
+  /* The host fixture pins agent timestamps to 2026-08-15, but the compact
+     relative-time label ("2d", "2w", …) is computed from the real clock, so
+     the rendered text — and the screenshot — drifts as calendar time moves
+     past the fixture dates. Pin the clock 2 days after the fixture timestamps
+     to match the committed baselines. */
+  await page.clock.setFixedTime(new Date('2026-08-17T12:05:00.000Z'));
   const component = await mount(AgentSubscriptionInlineHost, {
     props: { mode: 'agents', agentCount: 7, finishedCount: 2, initiallyExpanded: true },
   });
@@ -853,6 +862,21 @@ test('caps one through eight participants at three and computes overflow from re
     .getByTestId('one-shot-header')
     .locator('[data-agent-avatar-stack]');
   await expect.poll(() => measuredStack.locator('[data-agent-avatar-stack-item]').count()).toBe(3);
+  /* The cutout mask is applied via CSS after the stack items render; under
+     load (e.g. shared CI runners) the style evaluate below can win the race
+     and read maskImage before it is applied. Wait for the masks first. */
+  await expect
+    .poll(() =>
+      measuredStack.evaluate((stack) => {
+        const items = Array.from(
+          stack.querySelectorAll<HTMLElement>('[data-agent-avatar-stack-item]'),
+        );
+        return items
+          .slice(0, -1)
+          .every((item) => getComputedStyle(item).maskImage.includes('url('));
+      }),
+    )
+    .toBe(true);
   const style = await measuredStack.evaluate((stack) => {
     const items = Array.from(stack.querySelectorAll<HTMLElement>('[data-agent-avatar-stack-item]'));
     const overflow = stack.querySelector('[data-agent-avatar-overflow]') as HTMLElement;
