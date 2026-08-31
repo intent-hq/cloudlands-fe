@@ -59,7 +59,7 @@
   import { toast } from 'svelte-sonner';
   import { m } from '$shared/paraglide/messages.js';
   import GrokLogo from '../ui/GrokLogo.svelte';
-  import CopyButton from '../ui/CopyButton.svelte';
+  import CopyButton from '$lib/components/ui/CopyButton.svelte';
   import AuggieLogo from '../AuggieLogo.svelte';
   import ProviderPathConfig from './ProviderPathConfig.svelte';
   import { checkPiMcpAdapterInstalled, installPiMcpAdapter } from '$features/pi/pi-models.client';
