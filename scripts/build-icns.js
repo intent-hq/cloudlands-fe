@@ -6,7 +6,7 @@ import { createHash } from 'crypto';
 import fs from 'fs';
 import path from 'path';
 import sharp from 'sharp';
-import { fileURLToPath } from 'url';
+import { fileURLToPath, pathToFileURL } from 'url';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -18,7 +18,8 @@ const DEV_SOURCE_PATH = path.join(SOURCE_DIR, 'Dev-Source.png');
 const DEV_ICONSET_DIR = path.join(ICONS_DIR, 'DevAppIcon.iconset');
 const FAVICON_PATH = path.join(__dirname, '../static/favicon.png');
 const SOURCE_SIZES = [32, 64, 128, 256, 512, 1024];
-const ICO_SIZES = [16, 32, 48, 64, 128, 256];
+export const ICO_SIZES = [16, 32, 48, 64, 128, 256];
+const WINDOWS_CONTENT_INSET_RATIO = 0.03;
 const DEV_SOURCE_SHA256 = '4e6e13f59557bb3ee33ed7810ba07d05f7308d564e16456b1117885822c68581';
 const DEV_SOURCE_ALPHA_BOUNDS = { left: 80, top: 91, right: 943, bottom: 954 };
 
@@ -46,6 +47,23 @@ async function releasePngBuffer(size) {
   const metadata = await sharp(source).metadata();
   if (metadata.width === size && metadata.height === size) return fs.readFileSync(source);
   return sharp(source).resize(size, size).png().toBuffer();
+}
+
+export async function releaseWindowsPngBuffer(size) {
+  const inset = Math.max(1, Math.round(size * WINDOWS_CONTENT_INSET_RATIO));
+  const contentSize = size - inset * 2;
+  return sharp(sourcePath(1024))
+    .trim({ background: { r: 0, g: 0, b: 0, alpha: 0 }, threshold: 0 })
+    .resize(contentSize, contentSize, { fit: 'contain' })
+    .extend({
+      top: inset,
+      bottom: inset,
+      left: inset,
+      right: inset,
+      background: { r: 0, g: 0, b: 0, alpha: 0 },
+    })
+    .png()
+    .toBuffer();
 }
 
 async function devPngBuffer(size) {
@@ -105,7 +123,7 @@ async function buildIcns(pngBuffer, iconsetDirectory, destination) {
   }
 }
 
-async function buildIco(pngBuffer, destination) {
+export async function buildIco(pngBuffer, destination) {
   const images = await Promise.all(ICO_SIZES.map((size) => pngBuffer(size)));
   const headerSize = 6 + images.length * 16;
   const header = Buffer.alloc(headerSize);
@@ -152,7 +170,7 @@ async function main() {
   await validateDevSource();
 
   await buildIcns(releasePngBuffer, ICONSET_DIR, path.join(ICONS_DIR, 'icon.icns'));
-  await buildIco(releasePngBuffer, path.join(ICONS_DIR, 'icon.ico'));
+  await buildIco(releaseWindowsPngBuffer, path.join(ICONS_DIR, 'icon.ico'));
   fs.copyFileSync(sourcePath(512), path.join(ICONS_DIR, 'icon.png'));
   fs.copyFileSync(sourcePath(128), FAVICON_PATH);
 
@@ -160,7 +178,9 @@ async function main() {
   console.log('Created release icons, favicon.png, and dev-icon PNG/ICO/ICNS assets');
 }
 
-main().catch((error) => {
-  console.error(error.message);
-  process.exit(1);
-});
+if (process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url) {
+  main().catch((error) => {
+    console.error(error.message);
+    process.exit(1);
+  });
+}
