@@ -3108,8 +3108,8 @@
               foldUnchanged={$foldUnchanged}
               lineWrapping={$lineWrapping}
               {isAggregate}
-              onStageHunk={showStagingControls ? handleStageHunk : undefined}
-              onUnstageHunk={showStagingControls ? handleUnstageHunk : undefined}
+              onStageHunk={showStagingControls && !locked ? handleStageHunk : undefined}
+              onUnstageHunk={showStagingControls && !locked ? handleUnstageHunk : undefined}
               onOpenCommit={handleOpenCommit}
               {virtualizer}
             />
@@ -3124,10 +3124,10 @@
                 ? scrollTarget?.lineNumber
                 : undefined}
               {isAggregate}
-              onStageHunk={showStagingControls && category === 'unstaged'
+              onStageHunk={showStagingControls && !locked && category === 'unstaged'
                 ? handleStageHunk
                 : undefined}
-              onUnstageHunk={showStagingControls && category === 'staged'
+              onUnstageHunk={showStagingControls && !locked && category === 'staged'
                 ? handleUnstageHunk
                 : undefined}
               onOpenCommit={category === 'committed' ? handleOpenCommit : undefined}
