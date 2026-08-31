@@ -57,7 +57,7 @@ export interface WorkspaceGitStatus {
 }
 
 /** File changed in a commit */
-export interface CommitFile {
+interface CommitFile {
   path: string;
   additions: number;
   deletions: number;

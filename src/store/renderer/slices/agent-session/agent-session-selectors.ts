@@ -204,6 +204,17 @@ export const selectAgentHistoryMessages = store.createSelector(
   },
 );
 
+/**
+ * True when a scrollback history segment RECORD exists for the agent — even
+ * with zero hydrated rows (a page whose rows were all tail-resident merges to
+ * an empty segment but keeps the record). Segment-clearing paths remove the
+ * record entirely.
+ */
+export const selectHasHistorySegment = store.createSelector(
+  (state, agentId: string): boolean =>
+    state.agentSessions?.historySegmentsByAgentId?.[agentId] !== undefined,
+);
+
 export interface HistorySegmentMeta {
   /** true when a hole is open between history and the tail. */
   gapToTail: boolean;

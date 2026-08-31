@@ -28,6 +28,22 @@ export const proposalApplySucceeded = createAction<
   [payload: { proposalId: string; completedAt: number; result?: ProposalApplyResult }]
 >('proposalLifecycle/proposalApplySucceeded');
 
+export const proposalUndoStarted = createAction<
+  [payload: { proposalId: string; startedAt: number }]
+>('proposalLifecycle/proposalUndoStarted');
+
+export const proposalUndoSucceeded = createAction<
+  [payload: { proposalId: string; completedAt: number }]
+>('proposalLifecycle/proposalUndoSucceeded');
+
+export const clearProposalLifecycle = createAction<[proposalId: string]>(
+  'proposalLifecycle/clearProposalLifecycle',
+);
+
+export const hydrateProposalLifecycle = createAction<[entries: ProposalLifecycleState]>(
+  'proposalLifecycle/hydrateProposalLifecycle',
+);
+
 export const proposalFailed = createAction<
   [
     payload: {
@@ -111,6 +127,53 @@ proposalLifecycleReducer.with(
       ...(result !== undefined ? { result } : {}),
     },
   }),
+);
+proposalLifecycleReducer.with(
+  proposalUndoStarted,
+  (state, { payload: [{ proposalId, startedAt }] }) => {
+    const current = state[proposalId];
+    if (
+      current?.status === 'undoing' ||
+      current?.status === 'applying' ||
+      current?.status === 'idle'
+    ) {
+      return state;
+    }
+    return {
+      ...state,
+      [proposalId]: {
+        ...current,
+        status: 'undoing',
+        error: undefined,
+        errorCode: undefined,
+        startedAt,
+        lastAction: 'undo',
+      },
+    };
+  },
+);
+proposalLifecycleReducer.with(
+  proposalUndoSucceeded,
+  (state, { payload: [{ proposalId, completedAt }] }) => ({
+    ...state,
+    [proposalId]: {
+      ...state[proposalId],
+      status: 'idle',
+      error: undefined,
+      errorCode: undefined,
+      completedAt,
+      lastAction: 'undo',
+    },
+  }),
+);
+proposalLifecycleReducer.with(clearProposalLifecycle, (state, { payload: [proposalId] }) => {
+  if (!(proposalId in state)) return state;
+  const { [proposalId]: _removed, ...rest } = state;
+  return rest;
+});
+proposalLifecycleReducer.with(
+  hydrateProposalLifecycle,
+  (_state, { payload: [entries] }) => entries,
 );
 proposalLifecycleReducer.with(
   proposalFailed,

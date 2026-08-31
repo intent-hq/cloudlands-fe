@@ -10,15 +10,19 @@ import {
   setLocalStorageJSON,
 } from '../../../utils/safe-local-storage-saga';
 import { connectionsListReceived } from '../../connections/connections-slice';
+import { workspaceMounted } from '../../workspace-lifecycle/workspace-lifecycle-slice';
 import {
   selectAllSpacesViewMode,
   selectChiefActiveAgentId,
   selectCombinedPanelSplit,
   selectIsCardPinned,
+  selectMultiSelectSidebarSelectedTabIds,
   selectPanelItem,
   selectPanelWidth,
   selectPinnedWorkspaceIds,
   selectShowArchivedWorkspaces,
+  selectWorkspaceCollapsedNoteIds,
+  selectWorkspaceNoteOrder,
 } from '../sidebar-nav-selectors';
 import {
   CARD_PINNED_KEY,
@@ -28,7 +32,9 @@ import {
   closeHoverCards,
   closePanel,
   hydrateSidebarNav,
+  hydrateWorkspaceSidebarUi,
   LEGACY_HOME_PANEL_SPLIT_KEY,
+  MULTISELECT_SIDEBAR_SELECTED_TABS_PREFIX,
   MULTISELECT_SIDEBAR_TAB_ORDER_KEY,
   openPanel,
   PANEL_ITEM_KEY,
@@ -38,13 +44,18 @@ import {
   setCardPinned,
   setChiefActiveAgentId,
   setCombinedPanelSplit,
+  setMultiSelectSidebarSelectedTabs,
   setPanelWidth,
   setShowArchivedWorkspaces,
+  setWorkspaceNoteOrder,
   SHOW_ARCHIVED_KEY,
   toggleCardPinned,
   togglePanel,
   togglePinWorkspace,
+  toggleWorkspaceCollapsedNote,
   VIEW_MODE_KEY,
+  WORKSPACE_COLLAPSED_NOTES_PREFIX,
+  WORKSPACE_NOTE_ORDER_PREFIX,
 } from '../sidebar-nav-slice';
 import type { AllSpacesViewMode, SidebarNavItem } from '../sidebar-nav-types';
 
@@ -67,6 +78,23 @@ function chiefActiveAgentIdKey(backendId: string): string {
 
 function multiSelectTabOrderKey(backendId: string): string {
   return namespaceBackendKey(MULTISELECT_SIDEBAR_TAB_ORDER_KEY, backendId);
+}
+
+// Per-workspace keys embed backend-specific workspace IDs, so they are
+// backend-namespaced too (local keeps the legacy un-prefixed key).
+function selectedTabsKey(backendId: string, workspaceId: string): string {
+  return namespaceBackendKey(
+    `${MULTISELECT_SIDEBAR_SELECTED_TABS_PREFIX}${workspaceId}`,
+    backendId,
+  );
+}
+
+function noteOrderKey(backendId: string, workspaceId: string): string {
+  return namespaceBackendKey(`${WORKSPACE_NOTE_ORDER_PREFIX}${workspaceId}`, backendId);
+}
+
+function collapsedNotesKey(backendId: string, workspaceId: string): string {
+  return namespaceBackendKey(`${WORKSPACE_COLLAPSED_NOTES_PREFIX}${workspaceId}`, backendId);
 }
 
 function stringArray(value: unknown): string[] | undefined {
@@ -246,6 +274,78 @@ function* persistChiefActiveAgentId(): SagaGenerator<void> {
   }
 }
 
+function* hydrateWorkspaceSidebarUiState(
+  action: ReturnType<typeof workspaceMounted>,
+): SagaGenerator<void> {
+  const [workspaceId] = action.payload;
+  if (!workspaceId) return;
+  try {
+    const backendId = yield* selectActiveBackendId();
+    const data: { selectedTabIds?: string[]; noteOrder?: string[]; collapsedNoteIds?: string[] } =
+      {};
+    const selectedTabIds = stringArray(
+      yield* call(getLocalStorageJSON<unknown>, selectedTabsKey(backendId, workspaceId)),
+    );
+    if (selectedTabIds !== undefined) data.selectedTabIds = selectedTabIds;
+    const noteOrder = stringArray(
+      yield* call(getLocalStorageJSON<unknown>, noteOrderKey(backendId, workspaceId)),
+    );
+    if (noteOrder !== undefined) data.noteOrder = noteOrder;
+    const collapsedNoteIds = stringArray(
+      yield* call(getLocalStorageJSON<unknown>, collapsedNotesKey(backendId, workspaceId)),
+    );
+    if (collapsedNoteIds !== undefined) data.collapsedNoteIds = collapsedNoteIds;
+    if (Object.keys(data).length > 0) yield* put(hydrateWorkspaceSidebarUi(workspaceId, data));
+  } catch {
+    // Hydration is best-effort; malformed or unavailable storage is ignored.
+  }
+}
+
+function* persistWorkspaceSelectedTabs(
+  action: ReturnType<typeof setMultiSelectSidebarSelectedTabs>,
+): SagaGenerator<void> {
+  const [workspaceId] = action.payload;
+  try {
+    yield* call(
+      setLocalStorageJSON,
+      selectedTabsKey(yield* selectActiveBackendId(), workspaceId),
+      yield* selectMultiSelectSidebarSelectedTabIds.effect(workspaceId),
+    );
+  } catch {
+    // Storage failures are non-fatal and must not terminate the watcher.
+  }
+}
+
+function* persistWorkspaceNoteOrder(
+  action: ReturnType<typeof setWorkspaceNoteOrder>,
+): SagaGenerator<void> {
+  const [workspaceId] = action.payload;
+  try {
+    yield* call(
+      setLocalStorageJSON,
+      noteOrderKey(yield* selectActiveBackendId(), workspaceId),
+      yield* selectWorkspaceNoteOrder.effect(workspaceId),
+    );
+  } catch {
+    // Storage failures are non-fatal and must not terminate the watcher.
+  }
+}
+
+function* persistWorkspaceCollapsedNotes(
+  action: ReturnType<typeof toggleWorkspaceCollapsedNote>,
+): SagaGenerator<void> {
+  const [workspaceId] = action.payload;
+  try {
+    yield* call(
+      setLocalStorageJSON,
+      collapsedNotesKey(yield* selectActiveBackendId(), workspaceId),
+      yield* selectWorkspaceCollapsedNoteIds.effect(workspaceId),
+    );
+  } catch {
+    // Storage failures are non-fatal and must not terminate the watcher.
+  }
+}
+
 /**
  * Backend switched (activeId flips via the boot connections:list refresh after
  * the window reloads): re-hydrate the per-backend keys from the incoming
@@ -295,4 +395,8 @@ export function* sidebarNavSaga(): SagaGenerator<void> {
   yield* takeEvery(PANEL_ITEM_ACTIONS, persistPanelAndCardState);
   yield* takeEvery(CARD_PINNED_ACTIONS, persistCardPinned);
   yield* takeEvery(setChiefActiveAgentId, persistChiefActiveAgentId);
+  yield* takeEvery(workspaceMounted, hydrateWorkspaceSidebarUiState);
+  yield* takeEvery(setMultiSelectSidebarSelectedTabs, persistWorkspaceSelectedTabs);
+  yield* takeEvery(setWorkspaceNoteOrder, persistWorkspaceNoteOrder);
+  yield* takeEvery(toggleWorkspaceCollapsedNote, persistWorkspaceCollapsedNotes);
 }

@@ -62,14 +62,17 @@ import {
 } from './slices/notifications/sagas/notifications-saga';
 import { panelLayoutSaga } from './slices/panel-layout/sagas/panel-layout-saga';
 import { permissionResponseSaga } from './slices/permission/sagas/permission-response-saga';
+import { proposalLifecycleSaga } from './slices/proposal-lifecycle/sagas/proposal-lifecycle-saga';
 import { providerSettingsSaga } from './slices/provider-settings/sagas/provider-settings-saga';
 import { prMonitorSaga } from './slices/pr-monitor/sagas/pr-monitor-saga';
 import { releaseNotesSaga } from './slices/release-notes/sagas/release-notes-saga';
 import { sentryAuthSaga } from './slices/sentry-auth/sagas/sentry-auth-saga';
 import { scriptsOperationSaga } from './slices/scripts/sagas/scripts-operation-saga';
 import { settingsHydrationSaga } from './slices/settings-events/sagas/settings-hydration-saga';
+import { settingsProposalHistorySaga } from './slices/settings-proposal-history/sagas/settings-proposal-history-saga';
 import { setupPromptSaga } from './slices/setup-prompt/sagas/setup-prompt-saga';
 import { sidebarNavSaga } from './slices/sidebar-nav/sagas/sidebar-nav-saga';
+import { specialistProposalHistorySaga } from './slices/specialist-proposal-history/sagas/specialist-proposal-history-saga';
 import { specialistsSaga } from './slices/specialists/sagas/specialists-saga';
 import { statsReadSaga } from './slices/stats/sagas/stats-read-saga';
 import { tabStateSaga } from './slices/tab-state/sagas/tab-state-saga';
@@ -170,6 +173,9 @@ export const sagas = [
   themeSaga,
   autoUpdateSaga,
   specialistsSaga,
+  proposalLifecycleSaga,
+  settingsProposalHistorySaga,
+  specialistProposalHistorySaga,
   githubAuthSaga,
   githubRepoSearchSaga,
   sentryAuthSaga,

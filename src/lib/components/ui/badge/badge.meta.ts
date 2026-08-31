@@ -13,7 +13,6 @@ export const badgeMetadata = parseUiComponentMetadata({
     'src/lib/components/chat/ChatHeader.svelte',
     'src/lib/components/code-review/CodeReviewPanel.svelte',
     'src/lib/components/code-review/CodeReviewTabContent.svelte',
-    'src/lib/components/file-tracking/accept-changes/PRNode.svelte',
     'src/lib/components/workspace/PullRequestCreator.svelte',
   ],
   replacement: null,

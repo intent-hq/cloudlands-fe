@@ -156,6 +156,13 @@ export const hydrateSidebarNav = createAction(
   (data: SidebarNavHydrationState) => data,
 );
 
+export const hydrateWorkspaceSidebarUi = createAction<
+  [
+    workspaceId: string,
+    data: { selectedTabIds?: string[]; noteOrder?: string[]; collapsedNoteIds?: string[] },
+  ]
+>('sidebarNav/hydrateWorkspaceSidebarUi');
+
 function migrateLegacyPanelItem(item: SidebarNavItem | 'home' | null): SidebarNavItem | null {
   return item === 'home' ? 'all-workspaces' : item;
 }
@@ -318,6 +325,30 @@ sidebarNavReducer.with(clearDeferredLeave, (state) => ({
 sidebarNavReducer.with(setStatsOverlayOpen, (state, { payload: [open] }) => ({
   ...state,
   statsOverlayOpen: open,
+}));
+sidebarNavReducer.with(hydrateWorkspaceSidebarUi, (state, { payload: [workspaceId, data] }) => ({
+  ...state,
+  multiSelectSelectedTabIdsByWorkspaceId:
+    data.selectedTabIds === undefined
+      ? state.multiSelectSelectedTabIdsByWorkspaceId
+      : {
+          ...state.multiSelectSelectedTabIdsByWorkspaceId,
+          [workspaceId]: data.selectedTabIds,
+        },
+  noteOrderByWorkspaceId:
+    data.noteOrder === undefined
+      ? state.noteOrderByWorkspaceId
+      : {
+          ...state.noteOrderByWorkspaceId,
+          [workspaceId]: data.noteOrder,
+        },
+  collapsedNoteIdsByWorkspaceId:
+    data.collapsedNoteIds === undefined
+      ? state.collapsedNoteIdsByWorkspaceId
+      : {
+          ...state.collapsedNoteIdsByWorkspaceId,
+          [workspaceId]: data.collapsedNoteIds,
+        },
 }));
 sidebarNavReducer.with(hydrateSidebarNav, (state, { payload }) => {
   const hydrated = payload;

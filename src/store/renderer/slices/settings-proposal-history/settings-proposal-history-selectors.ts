@@ -6,3 +6,7 @@ export const selectProposalAppliedState = store.createSelector(
     return state.settingsProposalHistory.entries[proposalId] ?? null;
   },
 );
+
+export const selectSettingsProposalHistoryEntries = store.createSelector(
+  (state): Record<string, SettingsProposalHistoryEntry> => state.settingsProposalHistory.entries,
+);

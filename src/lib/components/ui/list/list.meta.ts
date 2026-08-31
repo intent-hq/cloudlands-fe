@@ -14,7 +14,6 @@ export const listMetadata = parseUiComponentMetadata({
     'src/lib/components/browser/BrowserPanel.svelte',
     'src/lib/components/file-explorer/VirtualizedFileTree.svelte',
     'src/lib/components/file-explorer/file-tree-view.svelte',
-    'src/lib/components/file-tracking/CodeChangesPanel.svelte',
     'src/lib/components/file-tracking/FileChangesList.svelte',
     'src/lib/components/file-tracking/TreeNode.svelte',
     'src/lib/components/notes/NotesPanel.svelte',

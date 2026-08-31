@@ -5,6 +5,7 @@
 
 import {
   fuzzyScore,
+  scoreItemFields,
   type PaletteFilter,
   type WorkspaceObject,
   type WorkspaceObjectType,
@@ -28,6 +29,8 @@ interface WorkspaceItem {
   description?: string;
   _workspace: true;
   _time?: string;
+  /** Raw last-activity timestamp (ms) used as a search-ranking tiebreak. */
+  _activityTime?: number;
 }
 
 export interface ComputeResultsInput {
@@ -48,6 +51,7 @@ export interface ComputeResultsInput {
 }
 
 const MAX_ITEMS_PER_GROUP = 3;
+const MAX_SEARCH_ITEMS_PER_GROUP = 5;
 
 /**
  * Build the flat list of palette results.
@@ -100,7 +104,7 @@ export function computeResults(input: ComputeResultsInput): any[] {
     }
   };
 
-  // Searching: show filtered results across all types
+  // Searching: show per-class groups, each ranked by its own algorithm
   if (q) {
     // With the message filter active, show only the transcript matches.
     if (activeFilter === 'message') {
@@ -108,33 +112,108 @@ export function computeResults(input: ComputeResultsInput): any[] {
       return flat;
     }
 
-    const allItems = [
-      ...commands.filter((c) => c.id !== 'new-workspace' && (workspaceId || c.id !== 'new-file')),
-      ...agents,
-      ...notes,
-      ...changes,
-      ...terminals,
-      ...browserUrls,
-      ...files,
-      ...workspaceItems,
+    const rank = (items: any[], tiebreak?: (a: any, b: any) => number): any[] =>
+      items
+        .map((item: any) => ({
+          item,
+          score: scoreItemFields(
+            { label: item.label, description: item.description, searchText: item.searchText },
+            q,
+          ),
+        }))
+        .filter((entry) => entry.score !== -Infinity)
+        .sort((a, b) => b.score - a.score || (tiebreak ? tiebreak(a.item, b.item) : 0))
+        .map((entry) => entry.item);
+
+    const byActivityDesc = (a: WorkspaceItem, b: WorkspaceItem) =>
+      (b._activityTime ?? 0) - (a._activityTime ?? 0);
+
+    const searchCommands = commands.filter(
+      (c) => c.id !== 'new-workspace' && (workspaceId || c.id !== 'new-file'),
+    );
+
+    // Files keep their incoming order (already fuzzy+MRU ranked upstream) but
+    // are re-checked against the current query: they load asynchronously, so
+    // the incoming list can be stale for a beat after the query changes. The
+    // guard drops entries that no longer match without reordering the rest
+    // (fresh results always pass — queryFiles filters on the same predicate).
+    // Messages are already FTS-ranked and capped by the transcript search.
+    const currentFiles = files.filter(
+      (f: any) => fuzzyScore(`${f.label} ${f.description || ''}`, q) !== -Infinity,
+    );
+    const groups: Array<{
+      filter: PaletteFilter | null;
+      items: () => any[];
+      label: string;
+      shortcutKey?: string;
+    }> = [
+      {
+        filter: null,
+        items: () => rank(searchCommands),
+        label: m.layout_commandPalette_commands_group(),
+      },
+      {
+        filter: 'agent',
+        items: () => rank(agents),
+        label: m.layout_commandPalette_agents_group(),
+        shortcutKey: '@',
+      },
+      {
+        filter: 'note',
+        items: () => rank(notes),
+        label: m.layout_commandPalette_context_group(),
+        shortcutKey: '#',
+      },
+      {
+        filter: 'change',
+        items: () => rank(changes),
+        label: m.layout_commandPalette_changes_group(),
+        shortcutKey: '~',
+      },
+      {
+        filter: 'terminal',
+        items: () => rank(terminals),
+        label: m.layout_commandPalette_terminals_group(),
+        shortcutKey: '>',
+      },
+      {
+        filter: 'browser',
+        items: () => rank(browserUrls),
+        label: m.layout_commandPalette_browser_group(),
+        shortcutKey: '^',
+      },
+      {
+        filter: 'file',
+        items: () => currentFiles,
+        label: m.layout_commandPalette_files_group(),
+        shortcutKey: '/',
+      },
+      {
+        filter: 'workspace',
+        items: () => rank(workspaceItems, byActivityDesc),
+        label: m.layout_commandPalette_otherSpaces_group(),
+        shortcutKey: '*',
+      },
+      {
+        filter: 'message',
+        items: () => messages,
+        label: m.layout_commandPalette_messages_group(),
+        shortcutKey: '?',
+      },
     ];
 
-    const filtered = allItems
-      .map((item: any) => ({
-        ...item,
-        _score: fuzzyScore(`${item.label} ${item.description || ''} ${item.searchText || ''}`, q),
-      }))
-      .filter((item: any) => item._score !== -Infinity)
-      .sort((a: any, b: any) => (b._score as number) - (a._score as number))
-
-      .map(({ _score, ...rest }: any) => rest)
-      .slice(0, 20);
-
-    addItems(filtered);
-    // Transcript matches are already query-driven (FTS) — append as their own
-    // labeled group rather than re-filtering them through fuzzyScore.
-    if (messages.length > 0) {
-      addItems(messages, m.layout_commandPalette_messages_group(), '?', 'message');
+    for (const group of groups) {
+      if (activeFilter) {
+        // A class filter shows only that class's group, uncapped.
+        if (group.filter !== activeFilter) continue;
+        addItems(group.items(), group.label, group.shortcutKey);
+      } else {
+        addItems(
+          group.items().slice(0, MAX_SEARCH_ITEMS_PER_GROUP),
+          group.label,
+          group.shortcutKey,
+        );
+      }
     }
     return flat;
   }

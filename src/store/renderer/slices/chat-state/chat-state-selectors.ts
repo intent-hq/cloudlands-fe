@@ -31,6 +31,11 @@ export const selectChatAgentState = store.createSelector((state, agentId: string
   getAgentChatState(state, agentId),
 );
 
+/** All agent ids holding a chat-state entry (bulk hygiene sweeps in sagas). */
+export const selectChatAgentIds = store.createSelector((state): string[] =>
+  Object.keys(state.chatState?.byAgentId ?? {}),
+);
+
 /** Select error */
 export const selectChatError = store.createSelector(
   (state, agentId: string): string | null => getAgentChatState(state, agentId).error,

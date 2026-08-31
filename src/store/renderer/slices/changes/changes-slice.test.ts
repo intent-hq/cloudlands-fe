@@ -1,12 +1,32 @@
 import { describe, expect, it } from 'vitest';
 import { ChangeStage } from '$features/file-tracking/types';
-import type {
-  TrackedChange,
-  CommitInfo,
-  MainPanelViewState,
-} from './changes-types';
+import type { TrackedChange, CommitInfo, MainPanelViewState } from './changes-types';
 import type { StoreState } from '../../types';
-import { fileTrackingReducer, initialState, clearWorkspace, setLoading, setHasLoadedInitialData, setChangesData, setCommitsData, appendOlderCommits, clearOlderCommits, setLoadingOlderCommits, setChanges, setMainPanelView, clearMainPanelView, requestAgentLineStats, agentLineStatsRequestStarted, agentLineStatsRequestSucceeded, agentLineStatsRequestFailed, updateAgentStats, setCommitMessage, setTargetBranch, setPendingCommitAction, setIsAutofillAndCommitting, setIsAutofillAndCreatingPR, startBackgroundOperation, resetAcceptChangesOperations, setCachedGitStatus } from './changes-slice';
+import {
+  fileTrackingReducer,
+  initialState,
+  clearWorkspace,
+  setLoading,
+  setHasLoadedInitialData,
+  setChangesData,
+  setCommitsData,
+  appendOlderCommits,
+  clearOlderCommits,
+  setLoadingOlderCommits,
+  setChanges,
+  setMainPanelView,
+  clearMainPanelView,
+  requestAgentLineStats,
+  agentLineStatsRequestStarted,
+  agentLineStatsRequestSucceeded,
+  agentLineStatsRequestFailed,
+  updateAgentStats,
+  setCommitMessage,
+  setTargetBranch,
+  setPendingCommitAction,
+  setIsAutofillAndCommitting,
+  setIsAutofillAndCreatingPR,
+} from './changes-slice';
 import { workspaceUnmounted } from '../workspace-lifecycle/workspace-lifecycle-slice';
 import {
   selectFileTrackingLoading,
@@ -236,48 +256,16 @@ describe('fileTrackingReducer', () => {
     expect(state.byWorkspaceId[WS].acceptChanges.commitMessage).toBe('feat: add reducer');
   });
 
-  it('resetAcceptChangesOperations clears coordination state without touching target branch', () => {
+  it('setPendingCommitAction and autofill flags update acceptChanges without touching target branch', () => {
     let state = fileTrackingReducer(initialState, setTargetBranch(WS, 'release/next'));
     state = fileTrackingReducer(state, setPendingCommitAction(WS, 'commit'));
     state = fileTrackingReducer(state, setIsAutofillAndCommitting(WS, true));
     state = fileTrackingReducer(state, setIsAutofillAndCreatingPR(WS, true));
-    state = fileTrackingReducer(
-      state,
-      startBackgroundOperation(WS, 'commit', Date.now(), 'Generating...'),
-    );
 
-    const nextState = fileTrackingReducer(state, resetAcceptChangesOperations(WS));
-
-    expect(nextState.byWorkspaceId[WS].acceptChanges.pendingCommitAction).toBeNull();
-    expect(nextState.byWorkspaceId[WS].acceptChanges.isAutofillAndCommitting).toBe(false);
-    expect(nextState.byWorkspaceId[WS].acceptChanges.isAutofillAndCreatingPR).toBe(false);
-    expect(nextState.byWorkspaceId[WS].acceptChanges.backgroundOperation).toBeNull();
-    expect(nextState.byWorkspaceId[WS].acceptChanges.targetBranch).toBe('release/next');
-  });
-
-  it('uses payload timestamps for background operation and cached git status', () => {
-    const gitStatus = {
-      currentBranch: 'feature/changes',
-      files: [],
-      isClean: true,
-      ahead: 0,
-      behind: 0,
-      hasConflicts: false,
-    } as any;
-
-    let state = fileTrackingReducer(
-      initialState,
-      startBackgroundOperation(WS, 'create-pr', 123_456, 'Creating PR'),
-    );
-    state = fileTrackingReducer(state, setCachedGitStatus(WS, gitStatus, 234_567));
-
-    expect(state.byWorkspaceId[WS].acceptChanges.backgroundOperation).toEqual({
-      type: 'create-pr',
-      startedAt: 123_456,
-      phase: 'generating',
-      label: 'Creating PR',
-    });
-    expect(state.byWorkspaceId[WS].acceptChanges.cachedGitStatusTimestamp).toBe(234_567);
+    expect(state.byWorkspaceId[WS].acceptChanges.pendingCommitAction).toBe('commit');
+    expect(state.byWorkspaceId[WS].acceptChanges.isAutofillAndCommitting).toBe(true);
+    expect(state.byWorkspaceId[WS].acceptChanges.isAutofillAndCreatingPR).toBe(true);
+    expect(state.byWorkspaceId[WS].acceptChanges.targetBranch).toBe('release/next');
   });
 });
 

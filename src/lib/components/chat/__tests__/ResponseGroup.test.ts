@@ -553,6 +553,99 @@ describe('ResponseGroup - collapse state model', () => {
     }
   });
 
+  it('mounts expanded when terminal in the conversation-final message and not streaming', () => {
+    const { container } = render(ResponseGroup, {
+      props: {
+        name: 'Final group',
+        isStreaming: false,
+        isTerminal: true,
+        isLastConversationMessage: true,
+        children,
+      },
+    });
+    const btn = header(container);
+
+    expect(btn.getAttribute('aria-expanded')).toBe('true');
+    expect(details(container)).not.toBeNull();
+  });
+
+  it('mounts collapsed when terminal but not in the conversation-final message', () => {
+    const { container } = render(ResponseGroup, {
+      props: {
+        name: 'History group',
+        isStreaming: false,
+        isTerminal: true,
+        isLastConversationMessage: false,
+        children,
+      },
+    });
+
+    expect(header(container).getAttribute('aria-expanded')).toBe('false');
+    expect(details(container)).toBeNull();
+  });
+
+  it('mounts collapsed when non-terminal in the conversation-final message', () => {
+    const { container } = render(ResponseGroup, {
+      props: {
+        name: 'Earlier group',
+        isStreaming: false,
+        isTerminal: false,
+        isLastConversationMessage: true,
+        children,
+      },
+    });
+
+    expect(header(container).getAttribute('aria-expanded')).toBe('false');
+    expect(details(container)).toBeNull();
+  });
+
+  it('collapses the expanded terminal group when its message stops being conversation-final', async () => {
+    vi.useFakeTimers();
+    try {
+      const { container, rerender } = render(ResponseGroup, {
+        props: {
+          name: 'Final group',
+          isStreaming: false,
+          isTerminal: true,
+          isLastConversationMessage: true,
+          children,
+        },
+      });
+      const btn = header(container);
+      expect(btn.getAttribute('aria-expanded')).toBe('true');
+
+      await rerender({ isLastConversationMessage: false });
+      await vi.advanceTimersByTimeAsync(799);
+      expect(btn.getAttribute('aria-expanded')).toBe('true');
+      await vi.advanceTimersByTimeAsync(1);
+      expect(btn.getAttribute('aria-expanded')).toBe('false');
+      expect(details(container)).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('keeps a user-collapsed conversation-final terminal group collapsed through prop churn', async () => {
+    const { container, rerender } = render(ResponseGroup, {
+      props: {
+        name: 'Final group',
+        isStreaming: false,
+        isTerminal: true,
+        isLastConversationMessage: true,
+        children,
+      },
+    });
+    const btn = header(container);
+    expect(btn.getAttribute('aria-expanded')).toBe('true');
+
+    await fireEvent.click(btn);
+    await waitFor(() => expect(btn.getAttribute('aria-expanded')).toBe('false'));
+
+    await rerender({ isLastConversationMessage: true, isTerminal: true });
+    expect(btn.getAttribute('aria-expanded')).toBe('false');
+    expect(details(container)).toBeNull();
+  });
+
   it('preserves a user-collapsed terminal group when its stream completes', async () => {
     vi.useFakeTimers();
     try {
@@ -1185,6 +1278,29 @@ describe('MessageContent - top-level response rows', () => {
           .querySelector('[data-testid="response-group-disclosure"]')
           ?.getAttribute('aria-expanded'),
       ).toBe('false');
+    },
+  );
+
+  it.each([
+    ['MessageContent', () => import('../MessageContent.svelte')],
+    ['StreamingMessageContent', () => import('../StreamingMessageContent.svelte')],
+  ] as const)(
+    'mounts the terminal group expanded on a completed %s conversation-final mount',
+    async (_name, loadComponent) => {
+      const Component = (await loadComponent()).default;
+      const content = [
+        { type: 'text', text: '<group:Final>' },
+        { type: 'text', text: 'Final detail' },
+      ] as ContentBlock[];
+      const { container } = render(Component, {
+        props: { content, isStreaming: false, isLastConversationMessage: true },
+      });
+
+      expect(
+        container
+          .querySelector('[data-testid="response-group-disclosure"]')
+          ?.getAttribute('aria-expanded'),
+      ).toBe('true');
     },
   );
 

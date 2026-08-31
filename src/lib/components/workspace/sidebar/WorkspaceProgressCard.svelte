@@ -1118,6 +1118,7 @@
               content={action?.tooltip}
               side="bottom"
               align="start"
+              delayDuration={300}
               disabled={!action?.tooltip}
             >
               <Button
@@ -1238,6 +1239,7 @@
             content={action?.tooltip}
             side="bottom"
             align="start"
+            delayDuration={300}
             disabled={!action?.tooltip}
           >
             <Button

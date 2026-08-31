@@ -512,6 +512,18 @@ export function getBackendClientForConnection(id: string): JsonRpcClient | undef
 }
 
 /**
+ * Snapshot of every live pooled backend id. Ensures the local client exists
+ * first (parity with the `on*` forwarder hooks) so the always-on local
+ * backend is always included. For services that partition per-backend state
+ * (e.g. the notification service's per-backend `agent:idle` subscriptions)
+ * and need to seed it for backends that connected before they started.
+ */
+export function getLiveBackendIds(): string[] {
+  getLocalBackendClient();
+  return [...backendClients.keys()];
+}
+
+/**
  * Resolve a backend id to its live pooled client — fail-closed. The one
  * exception: the local sidecar id lazily creates its pooled client
  * (startup boot order), matching {@link getBackendClientForIpcEvent}. Any
@@ -886,6 +898,22 @@ export function onBackendNotification(
 }
 
 /**
+ * Register a main-process listener for daemon JSON-RPC notifications on ANY
+ * backend, receiving the emitting backend id. For consumers whose state is
+ * partitioned per backend (e.g. the notification service's per-backend
+ * `agent:idle` subscriptions) rather than pinned to one id. Returns a disposer.
+ */
+export function onAnyBackendNotification(
+  handler: (backendId: string, notification: JsonRpcNotification) => void,
+): () => void {
+  getLocalBackendClient();
+  const listener = (emittingBackendId: string, notification: JsonRpcNotification): void =>
+    handler(emittingBackendId, notification);
+  backendNotificationForwarder.on('notification', listener);
+  return () => backendNotificationForwarder.off('notification', listener);
+}
+
+/**
  * Register a main-process listener for backend connection-status transitions
  * (the same values broadcast on `backend:status`). Fires for every status
  * change on whatever client is currently live. Returns a disposer.
@@ -902,6 +930,24 @@ export function onBackendStatus(
   const listener = (emittingBackendId: string, status: ConnectionStatus): void => {
     if (emittingBackendId === (backendId ?? LOCAL_CONNECTION_ID)) handler(status);
   };
+  backendStatusForwarder.on('status', listener);
+  return () => backendStatusForwarder.off('status', listener);
+}
+
+/**
+ * Register a main-process listener for status transitions on ANY backend,
+ * receiving the emitting backend id. This is also the "new backend appeared"
+ * signal: a freshly pooled client's first `connected` transition flows
+ * through here (its first connect is a plain `connected`, never a
+ * `reconnected`), so per-backend services can pick up late-opened remotes.
+ * Returns a disposer.
+ */
+export function onAnyBackendStatus(
+  handler: (backendId: string, status: ConnectionStatus) => void,
+): () => void {
+  getLocalBackendClient();
+  const listener = (emittingBackendId: string, status: ConnectionStatus): void =>
+    handler(emittingBackendId, status);
   backendStatusForwarder.on('status', listener);
   return () => backendStatusForwarder.off('status', listener);
 }
