@@ -30,6 +30,17 @@ export default defineConfig({
   /* Reporter to use. See https://playwright.dev/docs/test-reporters */
   reporter: 'html',
 
+  expect: {
+    /* Screenshot baselines are generated on the GH-hosted runner image, but
+       the CI shards can also route to the self-hosted tinybox runners, which
+       rasterize the odd pixel differently at 200% zoom (a 1-pixel diff
+       failed a shard deterministically). Tolerate a few pixels of
+       rasterization drift so baselines stay portable across runner
+       environments — do NOT regenerate baselines on tinybox instead, that
+       just flips the failure onto the GH-hosted burst path. */
+    toHaveScreenshot: { maxDiffPixels: 4 },
+  },
+
   /* Shared settings for all the projects below. See https://playwright.dev/docs/api/class-testoptions. */
   use: {
     /* Collect trace when retrying the failed test. See https://playwright.dev/docs/trace-viewer */
